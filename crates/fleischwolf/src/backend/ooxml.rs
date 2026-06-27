@@ -201,14 +201,13 @@ pub fn content_type(content_types_xml: &str, part: &str) -> Option<String> {
                             return attr(b"ContentType");
                         }
                     }
-                    b"Default" => {
+                    b"Default"
                         if attr(b"Extension")
                             .map(|x| x.to_ascii_lowercase())
                             .as_deref()
-                            == Some(ext.as_str())
-                        {
-                            default = attr(b"ContentType");
-                        }
+                            == Some(ext.as_str()) =>
+                    {
+                        default = attr(b"ContentType");
                     }
                     _ => {}
                 }
