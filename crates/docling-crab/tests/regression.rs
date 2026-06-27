@@ -21,6 +21,17 @@ use std::path::{Path, PathBuf};
 use docling_crab::{DocumentConverter, SourceDocument};
 
 fn data_dir() -> PathBuf {
+    // `cargo test` runs with the working directory set to the package root, so
+    // resolve there first — this stays correct even if `target/` was copied from
+    // another checkout (which leaves env!("CARGO_MANIFEST_DIR"), baked at compile
+    // time, pointing at a now-stale absolute path). Fall back to the baked path
+    // for non-`cargo test` invocations.
+    if let Ok(cwd) = std::env::current_dir() {
+        let d = cwd.join("tests/data");
+        if d.is_dir() {
+            return d;
+        }
+    }
     Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/data")
 }
 
