@@ -26,9 +26,16 @@ echo ">> releasing v$new (was v$current)"
 # Bump the single version key in the root manifest's [workspace.package].
 sed -i -E "0,/^version = \"[^\"]+\"/ s//version = \"$new\"/" Cargo.toml
 
+# Keep internal path-dependency requirements in lockstep with the workspace
+# version. Without this the published crates resolve each other to an OLDER
+# release (the version req is a literal, not inherited), which fails to build.
+for manifest in crates/*/Cargo.toml; do
+  sed -i -E "/path = \"\.\.\/fleischwolf/ s/version = \"[^\"]+\"/version = \"$new\"/" "$manifest"
+done
+
 git config user.name "github-actions[bot]"
 git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-git add Cargo.toml
+git add Cargo.toml crates/*/Cargo.toml
 git commit -m "chore(release): v$new [skip ci]"
 git tag -a "v$new" -m "v$new"
 git push origin HEAD:master
