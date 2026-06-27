@@ -216,8 +216,12 @@ CI (`.github/workflows/ci.yml`) gates every pull request and master push on
 `cargo test` (the fast pure-Rust suite — no model downloads). fmt/clippy run on a
 **pinned** toolchain (`LINT_TOOLCHAIN` in the workflow) so a new stable can't fail
 CI on unrelated commits; tests run on current `stable`. On master it then runs
-`scripts/ci_publish.sh`, which publishes any version-bumped crate to crates.io in
-dependency order and skips those already published.
+`scripts/release.sh`: it derives the next version from the conventional-commit
+messages since the last `v*` tag (`feat:` → minor, `fix:`/`perf:` → patch, a
+`type!:`/`BREAKING CHANGE` → major; docs/chore/ci/etc → no release), bumps the
+workspace version, commits + tags it (with `[skip ci]`, via `GITHUB_TOKEN`, so it
+doesn't loop), and publishes the crates with `scripts/ci_publish.sh` in
+dependency order — skipping any version already on crates.io.
 
 ---
 
