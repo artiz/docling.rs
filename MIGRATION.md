@@ -213,9 +213,11 @@ Explicitly **not done**, with the reason:
 
 CI (`.github/workflows/ci.yml`) gates every pull request and master push on
 `cargo fmt --check`, `cargo clippy --workspace --all-targets -- -D warnings` and
-`cargo test` (the fast pure-Rust suite — no model downloads). On master it then
-runs `scripts/ci_publish.sh`, which publishes any version-bumped crate to
-crates.io in dependency order and skips those already published.
+`cargo test` (the fast pure-Rust suite — no model downloads). fmt/clippy run on a
+**pinned** toolchain (`LINT_TOOLCHAIN` in the workflow) so a new stable can't fail
+CI on unrelated commits; tests run on current `stable`. On master it then runs
+`scripts/ci_publish.sh`, which publishes any version-bumped crate to crates.io in
+dependency order and skips those already published.
 
 ---
 

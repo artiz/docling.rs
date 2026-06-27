@@ -13,16 +13,22 @@ concurrency:
 
 env:
   CARGO_TERM_COLOR: always
+  # Rust version for the style/lint gates. Pinned on purpose: rustfmt and clippy
+  # change their output/lints between releases, so a floating `stable` would let
+  # a new toolchain fail CI on otherwise-unrelated commits. Bump this manually
+  # (and fix any new findings in the same PR) when you want to adopt a newer one.
+  LINT_TOOLCHAIN: "1.96.0"
 
 jobs:
-  test:
-    name: fmt · clippy · test
+  lint:
+    name: fmt · clippy (pinned)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@master
         with:
+          toolchain: ${{ env.LINT_TOOLCHAIN }}
           components: rustfmt, clippy
 
       - uses: Swatinem/rust-cache@v2
@@ -33,6 +39,17 @@ jobs:
       - name: Clippy
         run: cargo clippy --workspace --all-targets -- -D warnings
 
+  test:
+    name: test (stable)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Tests stay on the current stable so they catch real compiler breakage.
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
       # Pure-Rust unit tests + the output-regression suite. The PDF/image/METS
       # snapshot tests need pdfium + the ONNX models, so they are NOT run here —
       # this job downloads no ML models and stays fast.
@@ -41,7 +58,7 @@ jobs:
 
   publish:
     name: publish changed crates
-    needs: test
+    needs: [lint, test]
     if: github.event_name == 'push' && github.ref == 'refs/heads/master'
     runs-on: ubuntu-latest
     steps:
