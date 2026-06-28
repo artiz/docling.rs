@@ -152,9 +152,8 @@ cargo run -p fleischwolf-cli -- --images referenced document.pdf > out.md
 # or via the example
 cargo run -p fleischwolf --example convert -- crates/fleischwolf/sample.md
 
-# score HTML output vs docling's groundtruth (no Python), or vs live docling
+# score HTML output against the latest published docling (installed from PyPI)
 scripts/conformance.sh html
-scripts/conformance.sh html --live
 
 # diff Python docling vs Rust on one file (installs published docling from PyPI)
 scripts/compare.sh tests/data/html/sources/example_03.html
