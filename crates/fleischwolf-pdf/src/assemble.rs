@@ -233,20 +233,63 @@ fn crop_region(page: &PdfPage, region: &Region) -> Option<PictureImage> {
     })
 }
 
+/// For each `picture` region, find the `caption` region closest below it (and
+/// horizontally overlapping); docling pairs them and emits the caption first.
+/// Each caption is claimed by at most one picture.
+fn pair_captions(regions: &[Region]) -> Vec<Option<usize>> {
+    let mut pairs = vec![None; regions.len()];
+    let mut taken = vec![false; regions.len()];
+    for (pi, p) in regions.iter().enumerate() {
+        if p.label != "picture" {
+            continue;
+        }
+        let mut best: Option<(usize, f32)> = None;
+        for (ci, c) in regions.iter().enumerate() {
+            if c.label != "caption" || taken[ci] {
+                continue;
+            }
+            let line_h = (c.b - c.t).abs().max(1.0);
+            let gap = c.t - p.b; // caption sits below the picture
+            let h_overlap = (p.r.min(c.r) - p.l.max(c.l)).max(0.0);
+            if gap > -line_h && gap < line_h * 3.0 && h_overlap > 0.0 {
+                let dist = gap.abs();
+                if best.is_none_or(|(_, bd)| dist < bd) {
+                    best = Some((ci, dist));
+                }
+            }
+        }
+        if let Some((ci, _)) = best {
+            pairs[pi] = Some(ci);
+            taken[ci] = true;
+        }
+    }
+    pairs
+}
+
 /// Assemble one page from its (already overlap-resolved) layout regions and
 /// text cells.
 pub fn assemble_page(page: &PdfPage, mut regions: Vec<Region>, doc: &mut DoclingDocument) {
     order_regions(&mut regions, page.width);
+    // docling emits a figure's caption *before* the image marker. Pair each
+    // picture with the caption region nearest below it and consume that caption,
+    // so it isn't also emitted in its own (lower) reading-order position.
+    let caption_for = pair_captions(&regions);
+    let mut consumed = vec![false; regions.len()];
+    for ci in caption_for.iter().flatten() {
+        consumed[*ci] = true;
+    }
 
-    for region in &regions {
-        if is_skipped(region.label) {
+    for (i, region) in regions.iter().enumerate() {
+        if is_skipped(region.label) || consumed[i] {
             continue;
         }
         if region.label == "picture" {
-            // Caption text, if any, is emitted by its own `caption` region.
             // The figure pixels are cropped from the page render for image export.
+            let caption = caption_for[i]
+                .map(|ci| region_text(&regions[ci], &page.cells))
+                .filter(|t| !t.is_empty());
             doc.push(Node::Picture {
-                caption: None,
+                caption,
                 image: crop_region(page, region),
             });
             continue;
@@ -277,7 +320,12 @@ pub fn assemble_page(page: &PdfPage, mut regions: Vec<Region>, doc: &mut Docling
                 };
                 doc.push(Node::Table(Table { rows }));
             }
-            // text, caption, footnote, formula, code → paragraph
+            // docling does not decode formulas in the standard pipeline; it emits
+            // a placeholder comment rather than the (garbled) raw glyph text.
+            "formula" => doc.push(Node::Paragraph {
+                text: "<!-- formula-not-decoded -->".into(),
+            }),
+            // text, caption, footnote, code → paragraph
             _ => doc.push(Node::Paragraph { text }),
         }
     }

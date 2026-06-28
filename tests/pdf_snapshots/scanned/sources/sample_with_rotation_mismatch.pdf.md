@@ -28,6 +28,6 @@ Probably you have uses for this facility in your organisation.
 
 Yours sincerely,
 
-<!-- image -->
-
 P.J.CROSS Group Leader - Facsimile Research
+
+<!-- image -->

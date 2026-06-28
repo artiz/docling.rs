@@ -12,9 +12,9 @@ The spring, through the medium of the locking section, exerts a constant locking
 
 Boots self-locking nuts are made with three different spring styles and in various shapes and sizes. The wing type that is
 
-<!-- image -->
-
 Figure 7-26. Self-locking nuts.
+
+<!-- image -->
 
 the most common ranges in size for No. 6 up to 1 ⁄ 1 ⁄4 ⁄4 inch, the Rol-top ranges from 1 ⁄ 1 ⁄4 inch to 1 ⁄ 1 ⁄6 inch, and the bellows type ⁄4 ⁄6 ranges in size from No. 8 up to 3 ⁄ 3 ⁄8 ⁄8 inch. Wing-type nuts are made of anodized aluminum alloy, cadmium-plated carbon steel, or stainless steel. The Rol-top nut is cadmium-plated steel, and the bellows type is made of aluminum alloy only.
 
@@ -26,6 +26,6 @@ The stainless steel self-locking nut may be spun on and off by hand as its locki
 
 The elastic stop nut is a standard nut with the height increased to accommodate a fiber locking collar. This
 
-<!-- image -->
-
 Figure 7-27. Stainless steel self-locking nut.
+
+<!-- image -->

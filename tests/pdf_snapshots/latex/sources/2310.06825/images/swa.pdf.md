@@ -1,13 +1,13 @@
-<!-- image -->
-
-<!-- image -->
-
-<!-- image -->
-
-<!-- image -->
-
 Effective Context Length
+
+<!-- image -->
+
+<!-- image -->
+
+Vanilla Attention
+
+<!-- image -->
 
 Sliding Window Attention
 
-Vanilla Attention
+<!-- image -->
