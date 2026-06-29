@@ -73,7 +73,6 @@
 |                                                                                               |  Other (Please specify) _____________________________________________________            |                       |
 
 - 27. If your country allows legal aid services through university-based student law clinics, what type of legal aid services is a student authorized to undertake? (Please select all that apply)
--  They can represent people in administrative or civil law hearings
 - 28. Are specialized legal aid services provided focusing on specific disadvantaged population groups? If yes, please indicate to whom these services are provided, and whether they are provided by State-funded legal aid, civil society organizations, or both.
 
 |                                                      | legal aid CSOs   |

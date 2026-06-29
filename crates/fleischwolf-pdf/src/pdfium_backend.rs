@@ -115,13 +115,21 @@ fn extract_page(
         cells = segment_cells(&page.text()?, height);
     }
 
-    let tw = (width * RENDER_SCALE).round().max(1.0) as i32;
-    let th = (height * RENDER_SCALE).round().max(1.0) as i32;
+    // docling renders at 1.5× the target scale and downsamples "to make it
+    // sharper" (pypdfium2 → PIL BICUBIC). Replicate exactly: the TableFormer
+    // model is pixel-sensitive, so the page bitmap must match byte-for-byte.
+    // `CatmullRom` is the same a=-0.5 cubic kernel as PIL's BICUBIC.
+    const SUPERSAMPLE: f32 = 1.5;
+    let tw = (width * RENDER_SCALE * SUPERSAMPLE).round().max(1.0) as i32;
+    let th = (height * RENDER_SCALE * SUPERSAMPLE).round().max(1.0) as i32;
     let cfg = PdfRenderConfig::new()
         .set_target_width(tw)
         .set_target_height(th);
     let bitmap = page.render_with_config(&cfg)?;
-    let image = bitmap.as_image().into_rgb8();
+    let big = bitmap.as_image().into_rgb8();
+    let dw = (width * RENDER_SCALE).round().max(1.0) as u32;
+    let dh = (height * RENDER_SCALE).round().max(1.0) as u32;
+    let image = image::imageops::resize(&big, dw, dh, image::imageops::FilterType::CatmullRom);
 
     Ok(PdfPage {
         width,

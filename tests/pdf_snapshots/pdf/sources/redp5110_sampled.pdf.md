@@ -1,5 +1,7 @@
 of duties
 
+<!-- image -->
+
 Leverage row permissions on the database
 
 Protect columns by defining column masks
@@ -7,8 +9,6 @@ Protect columns by defining column masks
 <!-- image -->
 
 ## Row and Column Access Control
-
-<!-- image -->
 
 Hernando Bedoya Rob Bestgen Mike Cain Dan Cruikshank Jim Denton Doug Mack Tom McKinley
 
@@ -229,6 +229,8 @@ VERI FY_GROUP_FOR_USER (CURRENT_USER,' MGR') VERI FY_GROUP_FOR_USER (CURRENT_USE
 
 The following function invocation returns a value of 0:
 
+The following function invocation returns a value of 0:
+
 CASE WHEN VERI FY_GROUP_FOR_USER (SESSION_USER,' HR',' EMP') = 1 TH EN EMPLOYEES. DATE_OF_BI RTH WHEN VERI FY_GROUP_FOR_USER (SESSION_USER,' MGR') = 1 AND SESS ION_USER = EMPLOYEES. USER_I D TH EN EMPLOYEES. DATE_OF_BI RTH WHEN VERI FY_GROUP_FOR_USER (SESSION_USER,' MGR') = 1 AND SESS ION_USER <> EMPLOYEES. USER_I D TH EN (9999 | |' -' | | MONTH (EMPLOYEES. DATE_OF_BIRTH) | |' -' | | DAY (EMPLOYEES. DATE_OF_BIRTH)) END ELSE NULL ENABLE;
 
 - 2. The other column to mask in this example is the TAX_ID information. In this example, the rules to enforce include the following ones:
@@ -255,7 +257,7 @@ Now that you have created the row permission and the two column masks, RCAC must
 
 Example 3-10 Activating RCAC on the EMPLOYEES table
 
-<!-- image -->
+/* Acti ve Row Access Control (permi ssi ons) */ /* Acti ve Col umn Access Control (masks) */ ALTER TABLE HR_SCHEMA. EMPLOYEES ACT I VATE ROW ACCESS CONTROL ACT I VATE COLUMN ACCESS CONTROL;
 
 - 2. Look at the definition of the EMPLOYEE table, as shown in Figure 3-11. To do this, from the main navigation pane of System i Navigator, click Schemas  HR_SCHEMA  Tables, right-click the EMPLOYEES table, and click Definition.
 

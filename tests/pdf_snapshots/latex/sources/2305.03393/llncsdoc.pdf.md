@@ -30,7 +30,7 @@ The llncs class is invoked by replacing article by llncs in the first line of yo
 
 If your file is already coded with LATEX, you can easily adapt it to the llncs document class by replacing
 
-\documentclass{article} with \documentclass{llncs}
+\documentclass{article}
 
 with
 

@@ -31,18 +31,20 @@ fn main() {
         let regions = layout
             .predict(&page.image, page.width, page.height)
             .expect("layout");
-        // docling resizes the whole page to 1024px height, then crops the table
-        // bbox out of *that*. Replicate so the model sees the same pixels.
+        // docling resizes the whole page to 1024px height (cv2.INTER_AREA), then
+        // crops the table bbox out of *that*. Replicate exactly.
         let sf = 1024.0 / page.image.height() as f32;
-        let pw1024 = (page.image.width() as f32 * sf).round() as u32;
-        let page1024 = imageops::thumbnail(&page.image, pw1024, 1024);
+        let pw1024 = (page.image.width() as f32 * sf) as u32; // docling: int(w*r)
+        let page1024 = fleischwolf_pdf::resample::inter_area(&page.image, pw1024, 1024);
         for r in regions.iter().filter(|r| r.label == "table") {
-            // bbox (points) → 1024px-page coords: scale*sf = 1024/page_h_pt.
+            // bbox (points) → 1024px-page coords: scale*sf = 1024/page_h_pt;
+            // docling rounds the crop edges.
             let k = 1024.0 / page.height;
-            let x = (r.l * k).max(0.0) as u32;
-            let y = (r.t * k).max(0.0) as u32;
-            let w = ((r.r - r.l) * k) as u32;
-            let h = ((r.b - r.t) * k) as u32;
+            let x = (r.l * k).round().max(0.0) as u32;
+            let y = (r.t * k).round().max(0.0) as u32;
+            let x2 = (r.r * k).round() as u32;
+            let y2 = (r.b * k).round() as u32;
+            let (w, h) = (x2 - x, y2 - y);
             let crop = imageops::crop_imm(&page1024, x, y, w, h).to_image();
             let otsl = tf.predict_otsl(&crop).expect("predict");
             let rows = otsl.iter().filter(|&&t| t == 9).count();

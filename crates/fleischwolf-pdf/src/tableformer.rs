@@ -63,16 +63,37 @@ impl TableFormer {
 
     /// Predict the OTSL structure-token sequence for a table-region image.
     pub fn predict_otsl(&mut self, img: &RgbImage) -> Result<Vec<i64>, String> {
-        // Preprocess: resize to 448², normalize per channel, lay out CHW.
-        // docling's final 448 resize is BILINEAR (the page→1024px step that
-        // box-averages happens earlier, in the caller).
-        let resized =
-            image::imageops::resize(img, SIDE, SIDE, image::imageops::FilterType::Triangle);
+        // Preprocess exactly as docling: bilinear (cv2.INTER_LINEAR) resize the
+        // crop to 448², normalize (x/255 − mean)/std, laid out as (C, W, H) —
+        // docling transposes (2,1,0), so width is the major spatial axis (not
+        // C,H,W). The page→1024px box-average (cv2.INTER_AREA) is the caller's.
         let n = (SIDE * SIDE) as usize;
+        let side = SIDE as usize;
+        let (sw, sh) = (img.width() as i32, img.height() as i32);
+        let sxr = sw as f32 / SIDE as f32;
+        let syr = sh as f32 / SIDE as f32;
         let mut data = vec![0f32; 3 * n];
-        for (i, px) in resized.pixels().enumerate() {
-            for c in 0..3 {
-                data[c * n + i] = (px[c] as f32 / 255.0 - MEAN[c]) / STD[c];
+        for h in 0..side {
+            let fy = (h as f32 + 0.5) * syr - 0.5;
+            let wy = fy - fy.floor();
+            let y0c = (fy.floor() as i32).clamp(0, sh - 1) as u32;
+            let y1c = (fy.floor() as i32 + 1).clamp(0, sh - 1) as u32;
+            for w in 0..side {
+                let fx = (w as f32 + 0.5) * sxr - 0.5;
+                let wx = fx - fx.floor();
+                let x0c = (fx.floor() as i32).clamp(0, sw - 1) as u32;
+                let x1c = (fx.floor() as i32 + 1).clamp(0, sw - 1) as u32;
+                let p00 = img.get_pixel(x0c, y0c);
+                let p01 = img.get_pixel(x1c, y0c);
+                let p10 = img.get_pixel(x0c, y1c);
+                let p11 = img.get_pixel(x1c, y1c);
+                let idx = w * side + h; // (C, W, H): c*n + w*H + h
+                for c in 0..3 {
+                    let top = p00[c] as f32 * (1.0 - wx) + p01[c] as f32 * wx;
+                    let bot = p10[c] as f32 * (1.0 - wx) + p11[c] as f32 * wx;
+                    let v = top * (1.0 - wy) + bot * wy;
+                    data[c * n + idx] = (v / 255.0 - MEAN[c]) / STD[c];
+                }
             }
         }
         let input = Tensor::from_array(([1usize, 3, SIDE as usize, SIDE as usize], data))

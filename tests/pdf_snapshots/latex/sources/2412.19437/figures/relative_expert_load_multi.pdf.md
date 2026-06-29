@@ -2,8 +2,4 @@
 
 <!-- image -->
 
-- Github
-
-<!-- image -->
-
 <!-- image -->
