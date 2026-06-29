@@ -18,6 +18,8 @@ pub enum ImageMode {
 /// Serializer state threaded through the render walk.
 struct Ctx {
     strict: bool,
+    /// Emit compact `| a | b |` tables instead of the padded GitHub serializer.
+    compact_tables: bool,
     images: ImageMode,
     artifacts_dir: String,
     /// (relative path, bytes) for each referenced image — written by the caller.
@@ -45,6 +47,7 @@ pub fn to_markdown_images(
 ) -> (String, Vec<(String, Vec<u8>)>) {
     let mut ctx = Ctx {
         strict,
+        compact_tables: doc.compact_tables,
         images,
         artifacts_dir: artifacts_dir.to_string(),
         artifacts: Vec::new(),
@@ -172,7 +175,7 @@ fn render_one(node: &Node, blocks: &mut Vec<String>, ctx: &mut Ctx) {
             blocks.push(format!("```{lang}\n{text}\n```"));
         }
         Node::Table(table) => {
-            let rendered = render_table(table);
+            let rendered = render_table(table, ctx.compact_tables);
             if !rendered.is_empty() {
                 blocks.push(rendered);
             }
@@ -223,15 +226,20 @@ fn ext_for(mimetype: &str) -> &str {
     }
 }
 
-/// Render a table the way docling-core does: `tabulate(tablefmt="github")`.
+/// Render a table. `compact` selects between two serializers:
 ///
-/// Each cell is first escaped (`\n` → space, `|` → `&#124;`) so it can't break
-/// the table. Columns are padded to a fixed width; the header contributes its
-/// width plus a minimum padding of 2; numeric columns (every data cell parses
-/// as a number) are right-aligned, others left-aligned; the separator is plain
-/// dashes of `width + 2` (github tablefmt emits no alignment colons here). Row 0
-/// is the header.
-fn render_table(table: &Table) -> String {
+/// - **padded** (default) — docling-core's `tabulate(tablefmt="github")`: columns
+///   are padded to a fixed width (header width + a minimum padding of 2, or the
+///   widest data cell); numeric columns (every data cell parses as a number) are
+///   right-aligned, others left-aligned; separators are plain dashes of
+///   `width + 2`. Matches current published docling (DOCX/HTML conformance).
+/// - **compact** — `| a | b |` cells with single-dash `| - | - |` separators, no
+///   width padding. Matches the committed PDF groundtruth corpus, which predates
+///   the padded serializer.
+///
+/// Each cell is first escaped (`\n` → space, `|` → `&#124;`) so it can't break the
+/// table. Row 0 is the header.
+fn render_table(table: &Table, compact: bool) -> String {
     if table.rows.is_empty() {
         return String::new();
     }
@@ -260,15 +268,64 @@ fn render_table(table: &Table) -> String {
         })
         .collect();
 
-    // Compact format, matching the committed groundtruth corpus (which predates
-    // docling-core's current padded GitHub serializer): cells joined by " | ",
-    // no width padding, single-dash separators (`| - | - |`).
-    let render_row = |r: usize| -> String { format!("| {} |", grid[r].join(" | ")) };
+    if compact {
+        // Compact: cells joined by " | ", no padding, single-dash separators.
+        let render_row = |r: usize| -> String { format!("| {} |", grid[r].join(" | ")) };
+        let mut lines = Vec::with_capacity(grid.len() + 1);
+        lines.push(render_row(0));
+        let sep: Vec<&str> = (0..num_cols).map(|_| "-").collect();
+        lines.push(format!("| {} |", sep.join(" | ")));
+        for r in 1..grid.len() {
+            lines.push(render_row(r));
+        }
+        return lines.join("\n");
+    }
+
+    // Display width (Unicode scalar count — good enough for now).
+    let dw = |s: &str| s.chars().count();
+    let data_rows = 1..grid.len();
+
+    // A column is right-aligned when it has data and every data cell is numeric.
+    let right: Vec<bool> = (0..num_cols)
+        .map(|c| {
+            !data_rows.is_empty()
+                && data_rows.clone().all(|r| {
+                    let t = grid[r][c].trim();
+                    !t.is_empty() && t.parse::<f64>().is_ok()
+                })
+        })
+        .collect();
+
+    // Column width = max(header_width + MIN_PADDING(2), max data-cell width).
+    let width: Vec<usize> = (0..num_cols)
+        .map(|c| {
+            let mut w = dw(&grid[0][c]) + 2;
+            for r in data_rows.clone() {
+                w = w.max(dw(&grid[r][c]));
+            }
+            w
+        })
+        .collect();
+
+    let fmt_cell = |s: &str, c: usize| -> String {
+        let pad = " ".repeat(width[c].saturating_sub(dw(s)));
+        let body = if right[c] {
+            format!("{pad}{s}")
+        } else {
+            format!("{s}{pad}")
+        };
+        format!(" {body} ")
+    };
+    let render_row = |r: usize| -> String {
+        let cells: Vec<String> = (0..num_cols).map(|c| fmt_cell(&grid[r][c], c)).collect();
+        format!("|{}|", cells.join("|"))
+    };
+
     let mut lines = Vec::with_capacity(grid.len() + 1);
     lines.push(render_row(0));
-    let sep: Vec<&str> = (0..num_cols).map(|_| "-").collect();
-    lines.push(format!("| {} |", sep.join(" | ")));
-    for r in 1..grid.len() {
+    let sep: Vec<String> = (0..num_cols).map(|c| "-".repeat(width[c] + 2)).collect();
+    lines.push(format!("|{}|", sep.join("|")));
+    for r in data_rows {
         lines.push(render_row(r));
     }
     lines.join("\n")
@@ -310,12 +367,25 @@ mod tests {
     #[test]
     fn renders_compact_table() {
         let mut doc = DoclingDocument::new("t");
+        // The compact form is opt-in (the PDF backend sets it); default output uses
+        // the padded GitHub serializer (covered by the regression fixtures).
+        doc.compact_tables = true;
         doc.push(Node::Table(Table {
             rows: vec![vec!["a".into(), "b".into()], vec!["1".into(), "2".into()]],
         }));
         let md = doc.export_to_markdown();
-        // Compact format matching the committed groundtruth corpus.
         assert_eq!(md, "| a | b |\n| - | - |\n| 1 | 2 |\n");
+    }
+
+    #[test]
+    fn renders_padded_github_table_by_default() {
+        let mut doc = DoclingDocument::new("t");
+        doc.push(Node::Table(Table {
+            rows: vec![vec!["a".into(), "b".into()], vec!["1".into(), "2".into()]],
+        }));
+        let md = doc.export_to_markdown();
+        // Numeric data columns are right-aligned; columns padded to header+2.
+        assert_eq!(md, "|   a |   b |\n|-----|-----|\n|   1 |   2 |\n");
     }
 
     #[test]

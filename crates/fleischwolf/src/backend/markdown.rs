@@ -639,7 +639,7 @@ mod tests {
         let doc = convert("| **A** | B |\n|---|---|\n| x | y |\n");
         assert_eq!(
             doc.export_to_markdown(),
-            "| A | B |\n| - | - |\n| x | y |\n"
+            "| A   | B   |\n|-----|-----|\n| x   | y   |\n"
         );
     }
 
