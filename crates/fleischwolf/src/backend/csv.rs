@@ -76,7 +76,7 @@ mod tests {
         let doc = convert(b"name,age\nAlice,30\nBob,25\n");
         assert_eq!(
             doc.export_to_markdown(),
-            "| name   |   age |\n|--------|-------|\n| Alice  |    30 |\n| Bob    |    25 |\n"
+            "| name | age |\n| - | - |\n| Alice | 30 |\n| Bob | 25 |\n"
         );
     }
 

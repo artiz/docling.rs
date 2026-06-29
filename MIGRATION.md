@@ -135,11 +135,13 @@ These are deliberate or unavoidable divergences, not bugs.
    entity re-escaping); `strict` produces cleaner Markdown. docling has no such
    switch. All conformance numbers are measured in **legacy** mode.
 
-4. **Tables match *current* docling, not the committed fixtures.** docling-core's
-   Markdown table serializer emits padded GitHub tables today; the repo's
-   committed groundtruth `.md` corpus predates that and uses a minimal `| - |`
-   format. `fleischwolf` matches the **current/live** output — so table-bearing
-   formats look correct against live docling and "wrong" against the stale `.md`.
+4. **Tables use the committed groundtruth's compact `| - |` format.** The whole
+   committed groundtruth corpus (HTML, CSV, LaTeX, PDF, …) uses docling-core's
+   older minimal serializer (`| a | b |` cells, single-dash `| - | - |`
+   separators, no width padding). `fleischwolf` now emits that exact format so it
+   matches the conformance reference byte-for-byte, which is required for the PDF
+   table work (TableFormer) to land conformant output. (Current docling-core emits
+   *padded* GitHub tables; we deliberately target the committed fixtures instead.)
 
 5. **The PDF pipeline is discriminative and partial.** Ported from docling's
    standard pipeline, with substitutions:

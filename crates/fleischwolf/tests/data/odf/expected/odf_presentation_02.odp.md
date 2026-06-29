@@ -1,8 +1,8 @@
-| Column 1   | Column 2                      | Column 3                      | Column 4   | Column 5   |
-|------------|-------------------------------|-------------------------------|------------|------------|
-| Row 1      | Merged cells row 1-3, col 2-3 | Merged cells row 1-3, col 2-3 |            |            |
-| Row 2      |                               |                               |            |            |
-| Row 3      |                               |                               |            |            |
+| Column 1 | Column 2 | Column 3 | Column 4 | Column 5 |
+| - | - | - | - | - |
+| Row 1 | Merged cells row 1-3, col 2-3 | Merged cells row 1-3, col 2-3 |  |  |
+| Row 2 |  |  |  |  |
+| Row 3 |  |  |  |  |
 
 Complex list
 

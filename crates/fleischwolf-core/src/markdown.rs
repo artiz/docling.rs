@@ -260,51 +260,15 @@ fn render_table(table: &Table) -> String {
         })
         .collect();
 
-    // Display width (Unicode scalar count — good enough for now).
-    let dw = |s: &str| s.chars().count();
-    let data_rows = 1..grid.len();
-
-    // A column is right-aligned when it has data and every data cell is numeric.
-    let right: Vec<bool> = (0..num_cols)
-        .map(|c| {
-            !data_rows.is_empty()
-                && data_rows.clone().all(|r| {
-                    let t = grid[r][c].trim();
-                    !t.is_empty() && t.parse::<f64>().is_ok()
-                })
-        })
-        .collect();
-
-    // Column width = max(header_width + MIN_PADDING(2), max data-cell width).
-    let width: Vec<usize> = (0..num_cols)
-        .map(|c| {
-            let mut w = dw(&grid[0][c]) + 2;
-            for r in data_rows.clone() {
-                w = w.max(dw(&grid[r][c]));
-            }
-            w
-        })
-        .collect();
-
-    let fmt_cell = |s: &str, c: usize| -> String {
-        let pad = " ".repeat(width[c].saturating_sub(dw(s)));
-        let body = if right[c] {
-            format!("{pad}{s}")
-        } else {
-            format!("{s}{pad}")
-        };
-        format!(" {body} ")
-    };
-    let render_row = |r: usize| -> String {
-        let cells: Vec<String> = (0..num_cols).map(|c| fmt_cell(&grid[r][c], c)).collect();
-        format!("|{}|", cells.join("|"))
-    };
-
+    // Compact format, matching the committed groundtruth corpus (which predates
+    // docling-core's current padded GitHub serializer): cells joined by " | ",
+    // no width padding, single-dash separators (`| - | - |`).
+    let render_row = |r: usize| -> String { format!("| {} |", grid[r].join(" | ")) };
     let mut lines = Vec::with_capacity(grid.len() + 1);
     lines.push(render_row(0));
-    let sep: Vec<String> = (0..num_cols).map(|c| "-".repeat(width[c] + 2)).collect();
-    lines.push(format!("|{}|", sep.join("|")));
-    for r in data_rows {
+    let sep: Vec<&str> = (0..num_cols).map(|_| "-").collect();
+    lines.push(format!("| {} |", sep.join(" | ")));
+    for r in 1..grid.len() {
         lines.push(render_row(r));
     }
     lines.join("\n")
@@ -344,15 +308,14 @@ mod tests {
     }
 
     #[test]
-    fn renders_github_table() {
+    fn renders_compact_table() {
         let mut doc = DoclingDocument::new("t");
         doc.push(Node::Table(Table {
             rows: vec![vec!["a".into(), "b".into()], vec!["1".into(), "2".into()]],
         }));
         let md = doc.export_to_markdown();
-        // Matches tabulate(tablefmt="github"): padded columns, numeric cells
-        // right-aligned, separator of width+2 dashes.
-        assert_eq!(md, "|   a |   b |\n|-----|-----|\n|   1 |   2 |\n");
+        // Compact format matching the committed groundtruth corpus.
+        assert_eq!(md, "| a | b |\n| - | - |\n| 1 | 2 |\n");
     }
 
     #[test]

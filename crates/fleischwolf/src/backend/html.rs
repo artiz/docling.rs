@@ -970,7 +970,7 @@ mod tests {
         );
         assert_eq!(
             doc.export_to_markdown(),
-            "| Name   |   Age |\n|--------|-------|\n| Ada    |    36 |\n"
+            "| Name | Age |\n| - | - |\n| Ada | 36 |\n"
         );
     }
 
