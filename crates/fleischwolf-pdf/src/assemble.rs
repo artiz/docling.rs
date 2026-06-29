@@ -269,6 +269,12 @@ fn region_text(region: &Region, cells: &[TextCell]) -> String {
     let mut prev: Option<&&TextCell> = None;
     for c in &inside {
         let t = c.text.trim();
+        // Skip whitespace-only cells (e.g. a justified line's trailing space glyph
+        // at a wrap): the join already inserts a separator, so an empty cell would
+        // double it (`all-metal  construction`).
+        if t.is_empty() {
+            continue;
+        }
         if let Some(p) = prev {
             let same_band = ((p.t / band).round() as i64) == ((c.t / band).round() as i64);
             let h = (c.b - c.t).abs().max((p.b - p.t).abs()).max(1.0);
