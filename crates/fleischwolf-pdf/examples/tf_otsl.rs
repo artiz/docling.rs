@@ -46,22 +46,28 @@ fn main() {
             let y2 = (r.b * k).round() as u32;
             let (w, h) = (x2 - x, y2 - y);
             let crop = imageops::crop_imm(&page1024, x, y, w, h).to_image();
-            let otsl = tf.predict_otsl(&crop).expect("predict");
-            let rows = otsl.iter().filter(|&&t| t == 9).count();
-            let cols = otsl.iter().take_while(|&&t| t != 9).count();
+            let cells = tf.predict_table_structure(&crop).expect("predict");
             println!(
-                "page {} table {}x{}px -> {} tokens, {} rows x {} cols",
+                "page {} table {}x{}px -> {} cells",
                 pi + 1,
                 w,
                 h,
-                otsl.len(),
-                rows,
-                cols
+                cells.len()
             );
-            println!(
-                "  {}",
-                otsl.iter().map(|&t| name(t)).collect::<Vec<_>>().join(" ")
-            );
+            for c in &cells {
+                println!(
+                    "  r{} c{} {}x{} {} | cxcywh {:.4} {:.4} {:.4} {:.4}",
+                    c.row,
+                    c.col,
+                    c.colspan,
+                    c.rowspan,
+                    name(c.tag),
+                    c.cx,
+                    c.cy,
+                    c.w,
+                    c.h
+                );
+            }
         }
     }
 }
