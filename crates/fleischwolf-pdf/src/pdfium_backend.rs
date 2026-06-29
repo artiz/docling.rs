@@ -259,7 +259,7 @@ impl Drop for FfiText<'_> {
 /// Debug helper: the raw pdfium glyph stream (codepoint + native bottom-left
 /// box) for a page, in pdfium's character order. For comparing against
 /// docling-parse's char cells.
-pub fn debug_glyphs(bytes: &[u8], index: i32) -> Vec<(char, f32, u64)> {
+pub fn debug_glyphs(bytes: &[u8], index: i32) -> Vec<(char, f32, f32)> {
     let Ok(pdfium) = bind() else {
         return Vec::new();
     };
@@ -276,7 +276,7 @@ pub fn debug_glyphs(bytes: &[u8], index: i32) -> Vec<(char, f32, u64)> {
     let mut out = Vec::new();
     if !tp.is_null() {
         for g in glyphs(b, tp, true) {
-            out.push((g.ch, g.l, g.font));
+            out.push((g.ch, g.ll, g.lr));
         }
         b.FPDFText_ClosePage(tp);
     }

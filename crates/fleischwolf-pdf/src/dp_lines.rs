@@ -186,41 +186,49 @@ fn contract(cells: &mut Vec<Cell>) {
 
 /// Build line cells from a page's glyph stream via the docling-parse contraction.
 pub(crate) fn line_cells(glyphs: &[Glyph], page_h: f32) -> Vec<TextCell> {
-    let mut cells: Vec<Cell> = glyphs
-        .iter()
-        .filter_map(|g| {
-            // Use the loose box (uniform font ascent/descent + advance) so adjacent
-            // glyphs share a top edge, matching docling-parse's `compute_rect`.
-            if !g.ll.is_finite() {
-                return None;
+    let mut cells: Vec<Cell> = Vec::new();
+    for g in glyphs {
+        // Use the loose box (uniform font ascent/descent + advance) so adjacent
+        // glyphs share a top edge, matching docling-parse's `compute_rect`.
+        if !g.ll.is_finite() {
+            continue;
+        }
+        // Drop *degenerate* space glyphs (zero-width loose box): pdfium's generated
+        // spaces get a zero-width box at the wrong baseline that breaks the
+        // corner-distance adjacency. Without them the inter-word gap drives
+        // `merge_with`'s space insertion. Spaces with a real width are kept (they
+        // carry justified double-space information).
+        if g.ch == ' ' && (g.lr - g.ll).abs() < 0.5 {
+            continue;
+        }
+        // Recompose a ligature: pdfium decomposes one font glyph (Latin fi/ffi,
+        // Arabic lam-alef) into several chars at the *same* loose box. Append them
+        // into one cell so the contraction never inserts a space inside it.
+        if let Some(last) = cells.last_mut() {
+            if (last.rx0 - g.ll as f64).abs() < 0.5 && (last.rx1 - g.lr as f64).abs() < 0.5 {
+                last.text.push(g.ch);
+                last.ltr = !is_right_to_left(&last.text);
+                continue;
             }
-            // Drop *degenerate* space glyphs (zero-width loose box): pdfium's
-            // generated spaces get a zero-width box at the wrong baseline that
-            // breaks corner-distance adjacency. Without them the inter-word gap
-            // drives `merge_with`'s space insertion. Spaces with a real width are
-            // kept (they carry justified double-space information).
-            if g.ch == ' ' && (g.lr - g.ll).abs() < 0.5 {
-                return None;
-            }
-            let text = g.ch.to_string();
-            let ltr = !is_right_to_left(&text);
-            Some(Cell {
-                text,
-                rx0: g.ll as f64,
-                ry0: g.lb as f64,
-                rx1: g.lr as f64,
-                ry1: g.lb as f64,
-                rx2: g.lr as f64,
-                ry2: g.lt as f64,
-                rx3: g.ll as f64,
-                ry3: g.lt as f64,
-                ltr,
-                active: true,
-                lig_carry: false,
-                font: g.font,
-            })
-        })
-        .collect();
+        }
+        let text = g.ch.to_string();
+        let ltr = !is_right_to_left(&text);
+        cells.push(Cell {
+            text,
+            rx0: g.ll as f64,
+            ry0: g.lb as f64,
+            rx1: g.lr as f64,
+            ry1: g.lb as f64,
+            rx2: g.lr as f64,
+            ry2: g.lt as f64,
+            rx3: g.ll as f64,
+            ry3: g.lt as f64,
+            ltr,
+            active: true,
+            lig_carry: false,
+            font: g.font,
+        });
+    }
     contract(&mut cells);
     cells
         .into_iter()
