@@ -12,17 +12,11 @@ m n m e a e t b a r . h n a i x p u e n t . o l M c i d m , o u l c N e r o u t 
 
 <!-- image -->
 
-| c | n |
-| - | - |
-| o | 3 |
-| l |  |
-| 2 |  |
-| - |  |
-|  | C |
-|  | o |
-|  | l |
-|  | u |
-|  | m |
+|  |  | c o l 3R |  |  |
+| - | - | - | - | - |
+|  |  |  |  |  |
+|  | 5R | C o |  |  |
+|  |  |  |  |  |
 
 o l
 

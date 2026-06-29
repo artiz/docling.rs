@@ -58,19 +58,23 @@ fn is_skipped(label: &str) -> bool {
 }
 
 /// Reading-order sort of regions, with two-column detection on the page.
-fn order_regions(regions: &mut [Region], page_w: f32) {
+fn order_regions<T>(items: &mut [T], page_w: f32, reg: impl Fn(&T) -> &Region) {
     let cx = page_w / 2.0;
     let band = page_w * 0.08;
-    let crossing = regions
+    let crossing = items
         .iter()
-        .filter(|r| r.l < cx - band && r.r > cx + band)
+        .filter(|t| {
+            let r = reg(t);
+            r.l < cx - band && r.r > cx + band
+        })
         .count();
-    let two_col = !regions.is_empty()
-        && (crossing as f32) / (regions.len() as f32) < 0.25
-        && regions.iter().any(|r| r.r <= cx)
-        && regions.iter().any(|r| r.l >= cx);
+    let two_col = !items.is_empty()
+        && (crossing as f32) / (items.len() as f32) < 0.25
+        && items.iter().any(|t| reg(t).r <= cx)
+        && items.iter().any(|t| reg(t).l >= cx);
     if two_col {
-        regions.sort_by(|a, b| {
+        items.sort_by(|a, b| {
+            let (a, b) = (reg(a), reg(b));
             let ca = ((a.l + a.r) / 2.0) >= cx;
             let cb = ((b.l + b.r) / 2.0) >= cx;
             ca.cmp(&cb)
@@ -78,7 +82,10 @@ fn order_regions(regions: &mut [Region], page_w: f32) {
                 .then(a.l.total_cmp(&b.l))
         });
     } else {
-        regions.sort_by(|a, b| a.t.total_cmp(&b.t).then(a.l.total_cmp(&b.l)));
+        items.sort_by(|a, b| {
+            let (a, b) = (reg(a), reg(b));
+            a.t.total_cmp(&b.t).then(a.l.total_cmp(&b.l))
+        });
     }
 }
 
@@ -303,8 +310,22 @@ fn pair_code_captions(regions: &[Region]) -> Vec<Option<usize>> {
 
 /// Assemble one page from its (already overlap-resolved) layout regions and
 /// text cells.
-pub fn assemble_page(page: &PdfPage, mut regions: Vec<Region>, doc: &mut DoclingDocument) {
-    order_regions(&mut regions, page.width);
+pub fn assemble_page(
+    page: &PdfPage,
+    regions: Vec<Region>,
+    table_rows: &[Option<Vec<Vec<String>>>],
+    doc: &mut DoclingDocument,
+) {
+    // Pair each region with its precomputed TableFormer grid (indexed by original
+    // order) and order by reading order together, so they stay aligned.
+    let mut items: Vec<(Region, Option<Vec<Vec<String>>>)> = regions
+        .into_iter()
+        .enumerate()
+        .map(|(i, r)| (r, table_rows.get(i).cloned().flatten()))
+        .collect();
+    order_regions(&mut items, page.width, |it| &it.0);
+    let table_rows: Vec<Option<Vec<Vec<String>>>> = items.iter().map(|(_, t)| t.clone()).collect();
+    let regions: Vec<Region> = items.into_iter().map(|(r, _)| r).collect();
     // docling emits a figure's caption *before* the image marker. Pair each
     // picture with the caption region nearest below it and consume that caption,
     // so it isn't also emitted in its own (lower) reading-order position.
@@ -353,15 +374,18 @@ pub fn assemble_page(page: &PdfPage, mut regions: Vec<Region>, doc: &mut Docling
                     .to_string(),
                 level: 0,
             }),
-            // Geometric grid reconstruction from the text layer (TableFormer
-            // would refine structure / spans). Falls back to a single cell.
+            // TableFormer structure (cells + spans, text matched from word cells)
+            // when available; otherwise geometric grid reconstruction; finally a
+            // single cell.
             "table" => {
-                let rows = reconstruct_table(region, &page.cells);
-                let rows = if rows.iter().any(|r| r.len() > 1) {
-                    rows
-                } else {
-                    vec![vec![text]]
-                };
+                let rows = table_rows[i].clone().unwrap_or_else(|| {
+                    let rows = reconstruct_table(region, &page.cells);
+                    if rows.iter().any(|r| r.len() > 1) {
+                        rows
+                    } else {
+                        vec![vec![text.clone()]]
+                    }
+                });
                 doc.push(Node::Table(Table { rows }));
             }
             // docling does not decode formulas in the standard pipeline; it emits

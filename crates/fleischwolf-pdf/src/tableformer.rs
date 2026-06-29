@@ -4,6 +4,7 @@
 //! autoregressively to emit an OTSL structure-token sequence (the same model
 //! docling runs). See PDF_CONFORMANCE.md.
 
+use crate::pdfium_backend::TextCell;
 use image::RgbImage;
 use ort::session::Session;
 use ort::value::Tensor;
@@ -236,6 +237,95 @@ impl TableFormer {
             .collect();
         let merged = merge_spans(&boxes, &merge);
         Ok(build_table_cells(&otsl, &merged))
+    }
+
+    /// Predict a table region's Markdown grid: crop the region (docling's
+    /// page→1024px box-average then bbox crop), run the structure model, map each
+    /// cell box back to page points, match the page's word cells into cells by
+    /// intersection-over-word-area, and expand spans into a dense `rows × cols`
+    /// grid. `region` is `(l, t, r, b)` in page points (top-left). Returns `None`
+    /// if no structure is predicted.
+    pub fn predict_table_rows(
+        &mut self,
+        page_image: &RgbImage,
+        page_h: f32,
+        region: [f32; 4],
+        words: &[TextCell],
+    ) -> Option<Vec<Vec<String>>> {
+        // page → 1024px height (cv2.INTER_AREA), then crop the table bbox.
+        let sf = 1024.0 / page_image.height() as f32;
+        let pw = (page_image.width() as f32 * sf) as u32;
+        let page1024 = crate::resample::inter_area(page_image, pw, 1024);
+        let k = 1024.0 / page_h;
+        let x = (region[0] * k).round().max(0.0) as u32;
+        let y = (region[1] * k).round().max(0.0) as u32;
+        let x2 = ((region[2] * k).round() as u32).min(page1024.width());
+        let y2 = ((region[3] * k).round() as u32).min(page1024.height());
+        if x2 <= x || y2 <= y {
+            return None;
+        }
+        let crop = image::imageops::crop_imm(&page1024, x, y, x2 - x, y2 - y).to_image();
+        let cells = self.predict_table_structure(&crop).ok()?;
+        if cells.is_empty() {
+            return None;
+        }
+        let (rw, rh) = (region[2] - region[0], region[3] - region[1]);
+
+        // Cell boxes in page points (top-left), aligned with `cells`.
+        let boxes: Vec<[f32; 4]> = cells
+            .iter()
+            .map(|c| {
+                [
+                    region[0] + (c.cx - c.w / 2.0) * rw,
+                    region[1] + (c.cy - c.h / 2.0) * rh,
+                    region[0] + (c.cx + c.w / 2.0) * rw,
+                    region[1] + (c.cy + c.h / 2.0) * rh,
+                ]
+            })
+            .collect();
+
+        // Assign each word to the cell it overlaps most (intersection / word area).
+        let mut cell_words: Vec<Vec<usize>> = vec![Vec::new(); cells.len()];
+        for (wi, w) in words.iter().enumerate() {
+            let wa = ((w.r - w.l) * (w.b - w.t)).max(1.0);
+            let mut best: Option<(f32, usize)> = None;
+            for (ci, b) in boxes.iter().enumerate() {
+                let ix = (w.r.min(b[2]) - w.l.max(b[0])).max(0.0);
+                let iy = (w.b.min(b[3]) - w.t.max(b[1])).max(0.0);
+                let io = ix * iy / wa;
+                if io > 0.0 && best.is_none_or(|(bo, _)| io > bo) {
+                    best = Some((io, ci));
+                }
+            }
+            if let Some((_, ci)) = best {
+                cell_words[ci].push(wi);
+            }
+        }
+
+        let num_rows = cells.iter().map(|c| c.row + c.rowspan).max().unwrap_or(0);
+        let num_cols = cells.iter().map(|c| c.col + c.colspan).max().unwrap_or(0);
+        if num_rows == 0 || num_cols == 0 {
+            return None;
+        }
+        let mut grid = vec![vec![String::new(); num_cols]; num_rows];
+        for (ci, c) in cells.iter().enumerate() {
+            // Keep words in text-stream order (the order they were collected =
+            // their word index), matching docling's cell text assembly — geometric
+            // re-sorting scrambles wrapped cells (`Inference time (secs)`).
+            let wis = std::mem::take(&mut cell_words[ci]);
+            let text = wis
+                .iter()
+                .map(|&i| words[i].text.trim())
+                .collect::<Vec<_>>()
+                .join(" ");
+            // Spanned cells repeat their text across the covered grid positions.
+            for row in grid.iter_mut().skip(c.row).take(c.rowspan) {
+                for cell in row.iter_mut().skip(c.col).take(c.colspan) {
+                    *cell = text.clone();
+                }
+            }
+        }
+        Some(grid)
     }
 }
 

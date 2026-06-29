@@ -129,29 +129,21 @@ The FUNCTION_USAGE view contains function usage configuration details. Table 2-1
 
 Table 2- 1 FUNCTION _USAGE view
 
-| FUNCTION_ID VARCHAR(30) ID of the function. |  |
-| - | - |
-| USER_NAME VARCHAR(10) Name of the user profile that has a usage setting for this |  |
-|  | function. |
-| USAGE VARCHAR(7) Usage setting: |  |
-|  | ALLOWED: The user profile is allowed to use the function. |
-|  | DENIED: The user profile is not allowed to use the function. |
-| USER_TYPE VARCHAR(5) Type of user profile: |  |
-|  | USER: The user profile is a user. |
-|  | GROUP: The user profile is a group. |
+| name | Data type | Description |
+| - | - | - |
+| FUNCTION_ID | VARCHAR(30) | ID of the function. |
+| USER_NAME | VARCHAR(10) | Name of the user profile that has a usage setting for this function. |
+| USAGE | VARCHAR(7) | authority.Column Usage setting:  ALLOWED: The user profile is allowed to use the function.  DENIED: The user profile is not allowed to use the function. |
+| USER_TYPE | VARCHAR(5) | i2.1.6 Type of user profile:  USER: The user profile is a user.  GROUP: The user profile is a group. |
 
 To discover who has authorization to define and manage RCAC, you can use the query that is shown in Example 2-1.
 
 Example 2-1 Query to determine who has authority to define and manage RCAC
 
-| SELECT functi on_i d, |  |
+| SELECT | functi on_i d, u s er_n ame, u s age, er_type |
 | - | - |
-|  | u s er_n ame, |
-|  | u s age, |
-|  | u s er_type |
-| FROM functi on_usage |  |
-| WHERE functi on_i d=’QIBM_DB_SECADM’ |  |
-| ORDER BY user_name; |  |
+| FROM | i2.1.6 functi on_usage functi on_i d=’QIBM_DB_SECADM’ user_name; authority.Column |
+| WHERE |  |
 
 ## 2.2 Separation of duties
 
@@ -171,21 +163,20 @@ Table 2-2 shows a comparison of the different function usage IDs and *JOBCTL aut
 
 Table 2-2 Comparison of the different function usage IDs and * JOBCTL authority
 
-| User action |  | QIBM_DB_SECADM | QIBM_DB_SQLADM | QIBM_DB_SYSMON |  |
+| User action | *JOBCTL | QIBM_DB_SECADM | QIBM_DB_SQLADM | QIBM_DB_SYSMON | No Authority |
 | - | - | - | - | - | - |
-|  | *JOBCTL |  |  |  | No Authority |
-| SET CURRENT DEGREE (SQL statement) X X |  |  |  |  |  |
-| CHGQRYA command targeting a different user's job X X |  |  |  |  |  |
-| STRDBMON or ENDDBMON commands targeting a different user's job X X |  |  |  |  |  |
-| STRDBMON or ENDDBMON commands targeting a job that matches the current user X X X X |  |  |  |  |  |
-| QUSRJOBI() API format 900 or System i Navigator's SQL Details for Job X X X |  |  |  |  |  |
-| Visual Explain within Run SQL scripts X X X X |  |  |  |  |  |
-| Visual Explain outside of Run SQL scripts X X |  |  |  |  |  |
-| ANALYZE PLAN CACHE procedure X X |  |  |  |  |  |
-| DUMP PLAN CACHE procedure X X |  |  |  |  |  |
-| MODIFY PLAN CACHE procedure X X |  |  |  |  |  |
-| MODIFY PLAN CACHE PROPERTIES procedure (currently does not check authority) X X |  |  |  |  |  |
-| CHANGE PLAN CACHE SIZE procedure (currently does not check authority) X X |  |  |  |  |  |
+| SET CURRENT DEGREE (SQL statement) | X |  | X |  |  |
+| CHGQRYA command targeting a different user's job | X |  | X |  |  |
+| STRDBMON or ENDDBMON commands targeting a different user's job | X |  | X |  |  |
+| STRDBMON or ENDDBMON commands targeting a job that matches the current user | X |  | X | X | X |
+| QUSRJOBI() API format 900 or System i Navigator's SQL Details for Job | X |  | X | X |  |
+| Visual Explain within Run SQL scripts | X |  | X | X | X |
+| Visual Explain outside of Run SQL scripts | X |  | X |  |  |
+| ANALYZE PLAN CACHE procedure | X |  | X |  |  |
+| DUMP PLAN CACHE procedure | X |  | X |  |  |
+| MODIFY PLAN CACHE procedure | X |  | X |  |  |
+| 1For MODIFY PLAN CACHE PROPERTIES procedure (currently does not check authority) | X |  | X |  |  |
+| CHANGE PLAN CACHE SIZE procedure (currently does not check authority) | X |  | X |  |  |
 
 initially enable or disable the row access rules.
 
@@ -199,11 +190,11 @@ A column mask is a database object that manifests a column value access control 
 
 Table 3-1 Special registers and their corresponding values
 
-| SESSION_USER The effective user of the thread excluding adopted authority. USER or |  |
+| register | Corresponding value |
 | - | - |
-| CURRENT_USER The effective user of the thread including adopted authority. When no adopted |  |
-|  | authority is present, this has the same value as USER. |
-| SYSTEM_USER The authorization ID that initiated the connection. |  |
+| USER or SESSION_USER | The effective user of the thread excluding adopted authority. |
+| CURRENT_USER | 9Table logic.Special The effective user of the thread including adopted authority. When no adopted authority is present, this has the same value as USER. |
+| SYSTEM_USER | The authorization ID that initiated the connection. |
 
 Figure 3-5 shows the difference in the special register values when an adopted authority is used:
 
@@ -225,8 +216,17 @@ IBM DB2 for i supports nine different built-in global variables that are read on
 
 Table 3-2 Built-in global variables
 
-| CLIENT_HOST VARCHAR(255) Host name of the current client as returned by the system CLIENT_IPADDR VARCHAR(128) IP address of the current client as returned by the system CLIENT_PORT INTEGER Port used by the current client to communicate with the server PACKAGE_NAME VARCHAR(128) Name of the currently running package PACKAGE_SCHEMA VARCHAR(128) Schema name of the currently running package PACKAGE_VERSION VARCHAR(64) Version identifier of the currently running package ROUTINE_SCHEMA VARCHAR(128) Schema name of the currently running routine ROUTINE_SPECIFIC_NAME VARCHAR(128) Name of the currently running routine ROUTINE_TYPE CHAR(1) Type of the currently running routine |
-| - |
+| variable | Type | Description |
+| - | - | - |
+| CLIENT_HOST | VARCHAR(255) | Host name of the current client as returned by the system |
+| CLIENT_IPADDR | VARCHAR(128) | TONY')Global IP address of the current client as returned by the system |
+| CLIENT_PORT | INTEGER | Port used by the current client to communicate with the server |
+| PACKAGE_NAME | VARCHAR(128) | Name of the currently running package |
+| PACKAGE_SCHEMA | VARCHAR(128) | Schema name of the currently running package |
+| PACKAGE_VERSION | VARCHAR(64) | Version identifier of the currently running package |
+| ROUTINE_SCHEMA | VARCHAR(128) | Schema name of the currently running routine |
+| ROUTINE_SPECIFIC_NAME | iTable VARCHAR(128) | Name of the currently running routine |
+| ROUTINE_TYPE | CHAR(1) | Type of the currently running routine |
 
 ## 3.3 VERIFY_GROUP_FOR_USER function
 

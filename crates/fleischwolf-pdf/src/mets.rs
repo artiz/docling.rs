@@ -70,6 +70,7 @@ pub fn convert_mets_gbs(bytes: &[u8], name: &str) -> Result<DoclingDocument, Pdf
             scale: 1.0,
             cells,
             code_cells: Vec::new(),
+            word_cells: Vec::new(),
             image,
         });
     }

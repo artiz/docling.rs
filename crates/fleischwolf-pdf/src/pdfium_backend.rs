@@ -41,6 +41,9 @@ pub struct PdfPage {
     /// Same text grouped for code regions: split only at pdfium space glyphs, so
     /// monospace runs keep their source spacing instead of the prose heuristic's.
     pub code_cells: Vec<TextCell>,
+    /// Per-word cells (one per word, not joined into lines) for TableFormer cell
+    /// matching.
+    pub word_cells: Vec<TextCell>,
     pub image: RgbImage,
 }
 
@@ -113,7 +116,7 @@ fn extract_page(
     let width = page.width().value;
     let height = page.height().value;
 
-    let (mut cells, code_cells) = ffi.page_cells(index, height);
+    let (mut cells, code_cells, word_cells) = ffi.page_cells(index, height);
     if cells.is_empty() {
         cells = segment_cells(&page.text()?, height);
     }
@@ -140,6 +143,7 @@ fn extract_page(
         scale: RENDER_SCALE,
         cells,
         code_cells,
+        word_cells,
         image,
     })
 }
@@ -193,24 +197,26 @@ impl<'a> FfiText<'a> {
     /// chars→words→lines grouping. Returns `(prose_cells, code_cells)` — the same
     /// glyphs grouped two ways (gap-heuristic for prose, space-glyph-only for
     /// code). Both empty on any failure (caller falls back).
-    fn page_cells(&self, index: i32, page_h: f32) -> (Vec<TextCell>, Vec<TextCell>) {
+    fn page_cells(&self, index: i32, page_h: f32) -> (Vec<TextCell>, Vec<TextCell>, Vec<TextCell>) {
+        let empty = || (Vec::new(), Vec::new(), Vec::new());
         if self.doc.is_null() {
-            return (Vec::new(), Vec::new());
+            return empty();
         }
         let b = self.bindings;
         let page = b.FPDF_LoadPage(self.doc, index);
         if page.is_null() {
-            return (Vec::new(), Vec::new());
+            return empty();
         }
         let tp = b.FPDFText_LoadPage(page);
         let out = if tp.is_null() {
-            (Vec::new(), Vec::new())
+            empty()
         } else {
             let g = glyphs(b, tp);
             b.FPDFText_ClosePage(tp);
             (
                 lines_from_glyphs(&g, page_h, false),
                 lines_from_glyphs(&g, page_h, true),
+                words_from_glyphs(&g, page_h),
             )
         };
         b.FPDF_ClosePage(page);
@@ -354,6 +360,79 @@ fn lines_from_glyphs(gs: &[Glyph], page_h: f32, code: bool) -> Vec<TextCell> {
     }
     push_word(&mut word, &mut words);
     push_line(&mut words, (ll, lb, lr, lt), page_h, &mut cells);
+    cells
+}
+
+/// Per-word cells (each word's text + top-left bbox), using the same word/line
+/// splitting as [`lines_from_glyphs`] but emitting one cell per word instead of
+/// joining into lines — the TableFormer matcher places individual words into
+/// grid cells (a table line spans many cells, so line cells can't be matched).
+fn words_from_glyphs(gs: &[Glyph], page_h: f32) -> Vec<TextCell> {
+    let mut cells = Vec::new();
+    let mut word = String::new();
+    let inf = (
+        f32::INFINITY,
+        f32::INFINITY,
+        f32::NEG_INFINITY,
+        f32::NEG_INFINITY,
+    );
+    let (mut wl, mut wb, mut wr, mut wt) = inf;
+    let mut line_h: f32 = 0.0;
+    let mut prev: Option<&Glyph> = None;
+    let mut pending_space = false;
+    for g in gs {
+        if g.ch == ' ' {
+            pending_space = true;
+            continue;
+        }
+        let h = (g.t - g.b).abs().max(1.0);
+        let mut new_line = false;
+        let mut new_word = false;
+        if let Some(p) = prev {
+            new_line = (p.b - g.b > h * 0.5 && g.l < p.r) || (p.b - g.b > line_h.max(h) * 1.5);
+            // No digit-digit glue here (unlike the prose grouping): table cells in
+            // adjacent columns are numeric and a column gap must still split them
+            // (`0.965` `0.934`, not `0.9650.934`). Intra-number digits have no gap
+            // so they stay together regardless.
+            let glued = is_close_punct(g.ch)
+                || is_open_punct(p.ch)
+                || (p.ch == '.'
+                    && !pending_space
+                    && (g.ch.is_ascii_digit() || g.ch.is_ascii_lowercase()));
+            let word_gap = line_h.max(h) * 0.25;
+            new_word = new_line || ((pending_space || g.l - p.r > word_gap) && !glued);
+        }
+        pending_space = false;
+        if new_word && !word.is_empty() {
+            cells.push(TextCell {
+                text: std::mem::take(&mut word),
+                l: wl,
+                t: page_h - wt,
+                r: wr,
+                b: page_h - wb,
+            });
+            (wl, wb, wr, wt) = inf;
+        }
+        if new_line {
+            line_h = 0.0;
+        }
+        word.push(g.ch);
+        wl = wl.min(g.l);
+        wb = wb.min(g.b);
+        wr = wr.max(g.r);
+        wt = wt.max(g.t);
+        line_h = line_h.max(h);
+        prev = Some(g);
+    }
+    if !word.is_empty() {
+        cells.push(TextCell {
+            text: word,
+            l: wl,
+            t: page_h - wt,
+            r: wr,
+            b: page_h - wb,
+        });
+    }
     cells
 }
 

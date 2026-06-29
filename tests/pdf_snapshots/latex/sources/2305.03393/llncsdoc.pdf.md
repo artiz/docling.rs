@@ -164,8 +164,14 @@ The llncs document class supports some additional special characters:
 
 If you need blackboard bold characters, i.e. for sets of numbers, please load the related AMS-TEXfonts. If for some reason this is not possible you can also use the following commands from the llncs class:
 
-| \bbbc yields C \bbbf yields IF \bbbh yields IH \bbbk yields IK \bbbm yields IM \bbbn yields IN \bbbp yields IP \bbbq yields Q \bbbr yields IR \bbbs yields S \bbbt yields T \bbbz yields ZZ \bbbone yields 1l |
-| - |
+| \bbbc | yields | C | \bbbf | yields | IF |
+| - | - | - | - | - | - |
+| \bbbh | yields | IH | \bbbk | yields | IK |
+| \bbbm | yields | IM | \bbbn | yields | IN |
+| \bbbp | yields | IP | \bbbq | yields | Q |
+| \bbbr | yields | IR | \bbbs | yields | S |
+| \bbbt | yields | T | \bbbz | yields | ZZ |
+| \bbbone | yields | 1l |  |  |  |
 
 Please note that all these characters are only available in math mode.
 
