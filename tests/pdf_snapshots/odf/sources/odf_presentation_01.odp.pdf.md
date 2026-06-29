@@ -1,15 +1,13 @@
-## e e a e gr ss s ● e 1
+## ●
 
 ```
-eWe●aseFl● eTe●● ueTrFe●●● seFC●● tCA2●●● C● abeTl asFl● ur asFl● asl aseuelTr●● B●● assl Sdli
+eW e● a s e F l ● e T e● ● u e T r F e● ● ● s e F C● ● t C A 2● ● ● C ● a b e T l a s F l ● u r a s F l ● a s l a s e u e l T r ● ● B ● ● a s s l S d l i
 ```
 
 <!-- image -->
 
-- S
+- • Some info:
 
-A•:•S etImB etIm oeominf
+• • Some info: Item B Item A
 
-- o tI tI m
-- e e e m m
-- n f o
+- Item B Item A

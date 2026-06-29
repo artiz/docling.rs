@@ -1,46 +1,34 @@
 - 보안분
 
-<!-- image -->
-
-<!-- image -->
-
-
-
-<!-- image -->
-
-## 스마트 데이터 컪비스 훟심 컴퓨팅 보안 기술
-
-<!-- image -->
-
-(Edge Computing)
-
-<!-- image -->
-
-(Next AI)
+## [그림 4-5] 8대 미래 유망 보안기술 도출
 
 <!-- image -->
 
 <!-- image -->
 
-(DATA)
-
-
-
-<!-- image -->
-
-## 블록체인에컪픦 팢 솒빪 방지 짝 쭖쩣 먾래 헏방지 기술
-
 <!-- image -->
 
 <!-- image -->
 
-차세대 AI
+엣지컴퓨팅 (Edge Computing)
 
 <!-- image -->
 
-
+차세대 AI (Next AI)
 
-## 젊기몒 인터페이스 몋에컪픦 캏오윦이캏맞지 기술
+<!-- image -->
+
+<!-- image -->
+
+<!-- image -->
+
+<!-- image -->
+
+<!-- image -->
+
+차세대 AI (Next AI)
+
+<!-- image -->
 
 <!-- image -->
 
@@ -52,11 +40,9 @@
 
 웨어러블 컨트롤 인터페이스
 
-(Wearable Control
+(Wearable Control Interfaces)
 
-## [그림 4-5] 8대 미래 유망 보안기술 도출
-
-묾푷 차세대 비체(1A7)킹 방지읊 퓒 칺몮 대픟 기술
+(Hyper-Connected Networking)
 
 84 ICT 기술변화에 따른 미래 보안기술 전망 보고서
 
