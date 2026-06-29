@@ -101,7 +101,13 @@ fn applicable(a: &Cell, b: &Cell) -> bool {
     if !a.active || !b.active {
         return false;
     }
-    if a.font != b.font && !is_ligature(&a.text) && !is_ligature(&b.text) {
+    // font 0 = unknown/space (font-neutral); ligatures bridge fonts too.
+    if a.font != 0
+        && b.font != 0
+        && a.font != b.font
+        && !is_ligature(&a.text)
+        && !is_ligature(&b.text)
+    {
         return false;
     }
     a.same_orientation(b)
@@ -186,7 +192,15 @@ pub(crate) fn line_cells(glyphs: &[Glyph], page_h: f32) -> Vec<TextCell> {
             // Use the loose box (uniform font ascent/descent + advance) so adjacent
             // glyphs share a top edge, matching docling-parse's `compute_rect`.
             if !g.ll.is_finite() {
-                return None; // a space pdfium gave no box for; can't place it
+                return None;
+            }
+            // Drop *degenerate* space glyphs (zero-width loose box): pdfium's
+            // generated spaces get a zero-width box at the wrong baseline that
+            // breaks corner-distance adjacency. Without them the inter-word gap
+            // drives `merge_with`'s space insertion. Spaces with a real width are
+            // kept (they carry justified double-space information).
+            if g.ch == ' ' && (g.lr - g.ll).abs() < 0.5 {
+                return None;
             }
             let text = g.ch.to_string();
             let ltr = !is_right_to_left(&text);

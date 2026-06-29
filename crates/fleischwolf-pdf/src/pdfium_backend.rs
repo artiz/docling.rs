@@ -317,7 +317,14 @@ fn glyphs(b: &dyn PdfiumLibraryBindings, tp: FPDF_TEXTPAGE, fetch_font: bool) ->
         if ch == '\r' || ch == '\n' {
             continue;
         }
-        let font = if fetch_font { font_hash(b, tp, i) } else { 0 };
+        // Spaces are font-neutral (0): pdfium's generated spaces carry a default
+        // font that would otherwise block every word↔space merge under
+        // enforce_same_font; docling-parse's spaces inherit the run's font.
+        let font = if fetch_font && !ch.is_whitespace() {
+            font_hash(b, tp, i)
+        } else {
+            0
+        };
         let (mut l, mut r, mut bot, mut top) = (0f64, 0f64, 0f64, 0f64);
         let has_box = b.FPDFText_GetCharBox(tp, i, &mut l, &mut r, &mut bot, &mut top) != 0;
         // Loose box: font ascent/descent + glyph advance, uniform per font/size.
