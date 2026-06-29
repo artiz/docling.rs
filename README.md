@@ -166,6 +166,40 @@ The comparison scripts install the latest published Python `docling` from PyPI
 into `.venv-compare` automatically on first run. See
 [`COMPARING.md`](./COMPARING.md).
 
+## Performance
+
+`scripts/performance.sh` runs the **largest fixture of each supported type** through
+both engines (published Python `docling` vs the Rust release binary) and reports
+peak RSS, CPU utilization, and conversion time. Ratios below are docling ÷
+fleischwolf — bigger means Rust wins by more.
+
+| File | Size | Peak-memory ratio | CPU ratio | Warm-conversion speedup |
+|---|---:|---:|---:|---:|
+| `2203.01017v2.pdf` (PDF, 47 pp) | 6.9 MB | **2.2× less** | 1.3× | 1.2× |
+| `docx_rich_tables_01.docx` (DOCX) | 3.1 MB | **41× less** | 2.7× | 21× |
+| `wiki_duck.html` (HTML) | 240 KB | **57× less** | 3.2× | 46× |
+| `elife-56337.nxml` (JATS XML) | 180 KB | **61× less** | 2.9× | 10× |
+| `xlsx_04_inflated.xlsx` (XLSX) | 168 KB | **59× less** | 2.9× | 12× |
+| `powerpoint_with_image.pptx` (PPTX) | 80 KB | **57× less** | 2.8× | 4.4× |
+| `wiki.md` (Markdown) | 8 KB | **58× less** | 2.9× | 1.3× |
+| `csv-comma.csv` (CSV) | 4 KB | **66× less** | 2.9× | 0.6× † |
+
+- **Peak memory** is where Rust wins decisively: a declarative conversion holds a
+  few MB versus docling's ~750 MB (it imports torch even for non-ML formats). The
+  PDF runs the full ML pipeline in both engines (torch vs ONNX), so the gap there
+  is 2.2× rather than 50×+, but Rust still peaks at 1.4 GB vs docling's 3.1 GB.
+- **CPU**: docling spreads across 2.7–3.2 cores for declarative work that Rust does
+  on a single core (~100%); on the PDF both go multi-core (Rust 525% vs docling
+  674%).
+- **Warm-conversion speedup** isolates the parse/convert work — it times docling
+  *in-process* (excluding its ~3 s interpreter + import startup) against the Rust
+  whole-process figure. Rust wins on substantial inputs (HTML 46×, DOCX 21×); the
+  end-to-end figure, which re-pays docling's startup every invocation, is **377–
+  1190× faster** for the declarative formats.
+- † For trivial inputs (a 4 KB CSV) the conversion itself is microseconds, so Rust's
+  own process startup dominates its number while warm-Python excludes startup — the
+  warm metric understates Rust there. End-to-end, the CSV is **1190× faster** in Rust.
+
 ## Layout
 
 | Crate | Role | Python analogue |

@@ -10,10 +10,13 @@
 //! table-structure and OCR ONNX stages land behind [`Pipeline`] next.
 
 mod assemble;
+mod dp_lines;
 pub mod layout;
 mod mets;
 mod ocr;
-mod pdfium_backend;
+pub mod pdfium_backend;
+pub mod resample;
+pub mod tableformer;
 
 use std::fmt;
 
@@ -71,14 +74,20 @@ pub(crate) fn intra_threads() -> usize {
 pub struct Pipeline {
     layout: layout::LayoutModel,
     ocr: Option<ocr::OcrModel>,
+    /// TableFormer structure model; `None` when its ONNX graphs aren't present
+    /// (the assembler then falls back to geometric table reconstruction).
+    tables: Option<tableformer::TableFormer>,
 }
 
 impl Pipeline {
-    /// Load the layout model (the only always-required model).
+    /// Load the layout model (the only always-required model). TableFormer loads
+    /// if its exported graphs are present, else table regions use the geometric
+    /// fallback.
     pub fn new() -> Result<Self, PdfError> {
         Ok(Self {
             layout: layout::LayoutModel::load().map_err(PdfError::Layout)?,
             ocr: None,
+            tables: tableformer::TableFormer::load(),
         })
     }
 
@@ -99,6 +108,7 @@ impl Pipeline {
         pdfium_backend::for_each_page(bytes, password, |n, _total, mut page| {
             self.process_one_page(n, &mut page, &mut doc)
         })?;
+        assemble::merge_continuations(&mut doc.nodes);
         Ok(doc)
     }
 
@@ -116,6 +126,8 @@ impl Pipeline {
             height: h as f32,
             scale: 1.0,
             cells: Vec::new(),
+            code_cells: Vec::new(),
+            word_cells: Vec::new(),
             image,
         };
         self.process_pages(vec![page], name)
@@ -147,7 +159,21 @@ impl Pipeline {
                 .map_err(|e| PdfError::Ocr(format!("page {}: {e}", n + 1)))?;
             page.cells = cells;
         }
-        assemble::assemble_page(page, regions, doc);
+        // TableFormer structure per table region (else geometric fallback).
+        let mut table_rows: Vec<Option<Vec<Vec<String>>>> = vec![None; regions.len()];
+        if let Some(tf) = self.tables.as_mut() {
+            for (i, r) in regions.iter().enumerate() {
+                if r.label == "table" {
+                    table_rows[i] = tf.predict_table_rows(
+                        &page.image,
+                        page.height,
+                        [r.l, r.t, r.r, r.b],
+                        &page.word_cells,
+                    );
+                }
+            }
+        }
+        assemble::assemble_page(page, regions, &table_rows, doc);
         Ok(())
     }
 
@@ -162,6 +188,7 @@ impl Pipeline {
         for (n, page) in pages.iter_mut().enumerate() {
             self.process_one_page(n, page, &mut doc)?;
         }
+        assemble::merge_continuations(&mut doc.nodes);
         Ok(doc)
     }
 }

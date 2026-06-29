@@ -47,9 +47,14 @@ impl OcrModel {
             std::env::var("DOCLING_OCR_REC_ONNX").unwrap_or_else(|_| "models/ocr_rec.onnx".into());
         let dict_path =
             std::env::var("DOCLING_OCR_DICT").unwrap_or_else(|_| "models/ppocr_keys_v1.txt".into());
+        // Single-threaded: ORT's multi-threaded float-reduction order varies
+        // across runs, which flips the CTC argmax on low-confidence characters
+        // (e.g. noisy faxes) and makes the snapshot output non-deterministic. The
+        // recognition inputs are tiny per-line crops, so the throughput cost is
+        // negligible.
         let rec = Session::builder()
             .map_err(|e| format!("ocr: builder: {e}"))?
-            .with_intra_threads(crate::intra_threads())
+            .with_intra_threads(1)
             .map_err(|e| format!("ocr: intra_threads: {e}"))?
             .commit_from_file(&rec_path)
             .map_err(|e| format!("ocr: load {rec_path}: {e}"))?;

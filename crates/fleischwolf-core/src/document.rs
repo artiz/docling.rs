@@ -19,6 +19,11 @@ pub struct DoclingDocument {
     /// (the default) reproduces docling's legacy output byte-for-byte; `true`
     /// emits cleaner, more conformant Markdown. Set by `DocumentConverter`.
     pub strict_markdown: bool,
+    /// Emit tables in the compact `| a | b |` / `| - | - |` form rather than
+    /// docling-core's width-padded GitHub serializer. The PDF backend sets this
+    /// (its committed groundtruth corpus predates the padded serializer); DOCX/HTML
+    /// leave it `false` to match current published docling.
+    pub compact_tables: bool,
 }
 
 /// A single piece of document content.
@@ -92,6 +97,7 @@ impl DoclingDocument {
             name: name.into(),
             nodes: Vec::new(),
             strict_markdown: false,
+            compact_tables: false,
         }
     }
 

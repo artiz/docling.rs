@@ -18,6 +18,8 @@ pub enum ImageMode {
 /// Serializer state threaded through the render walk.
 struct Ctx {
     strict: bool,
+    /// Emit compact `| a | b |` tables instead of the padded GitHub serializer.
+    compact_tables: bool,
     images: ImageMode,
     artifacts_dir: String,
     /// (relative path, bytes) for each referenced image — written by the caller.
@@ -45,6 +47,7 @@ pub fn to_markdown_images(
 ) -> (String, Vec<(String, Vec<u8>)>) {
     let mut ctx = Ctx {
         strict,
+        compact_tables: doc.compact_tables,
         images,
         artifacts_dir: artifacts_dir.to_string(),
         artifacts: Vec::new(),
@@ -61,16 +64,25 @@ pub fn to_markdown_images(
     (md, ctx.artifacts)
 }
 
-/// In `strict` mode, undo the legacy `\_` underscore escaping the backends bake
-/// into inline text. Legacy output keeps `\_` (byte-for-byte with docling, which
-/// escapes underscores); strict prefers literal `_` for readability. Only inline
-/// text nodes are escaped — code blocks and table cells are left alone.
+/// In `strict` mode, rewrite inline text for readability rather than byte-for-byte
+/// docling fidelity: undo the legacy `\_` underscore escaping, and tighten stray
+/// spaces around punctuation (`[ 37 , 36 ]` → `[37, 36]`, `( x )` → `(x)`). This
+/// cleans up both the PDF backend's glyph-split spacing and the space the legacy
+/// emphasis serialization leaves before punctuation (`*a* ,` → `*a*,`).
+/// Legacy/default output keeps docling's spacing untouched. Only inline text
+/// nodes pass through here — code blocks and table cells are left alone.
 fn strict_text(text: &str, strict: bool) -> String {
-    if strict {
-        text.replace("\\_", "_")
-    } else {
-        text.to_string()
+    if !strict {
+        return text.to_string();
     }
+    text.replace("\\_", "_")
+        .replace(" ,", ",")
+        .replace(" .", ".")
+        .replace(" ;", ";")
+        .replace(" )", ")")
+        .replace("( ", "(")
+        .replace(" ]", "]")
+        .replace("[ ", "[")
 }
 
 fn render(nodes: &[Node], blocks: &mut Vec<String>, ctx: &mut Ctx) {
@@ -163,7 +175,7 @@ fn render_one(node: &Node, blocks: &mut Vec<String>, ctx: &mut Ctx) {
             blocks.push(format!("```{lang}\n{text}\n```"));
         }
         Node::Table(table) => {
-            let rendered = render_table(table);
+            let rendered = render_table(table, ctx.compact_tables);
             if !rendered.is_empty() {
                 blocks.push(rendered);
             }
@@ -214,15 +226,20 @@ fn ext_for(mimetype: &str) -> &str {
     }
 }
 
-/// Render a table the way docling-core does: `tabulate(tablefmt="github")`.
+/// Render a table. `compact` selects between two serializers:
 ///
-/// Each cell is first escaped (`\n` → space, `|` → `&#124;`) so it can't break
-/// the table. Columns are padded to a fixed width; the header contributes its
-/// width plus a minimum padding of 2; numeric columns (every data cell parses
-/// as a number) are right-aligned, others left-aligned; the separator is plain
-/// dashes of `width + 2` (github tablefmt emits no alignment colons here). Row 0
-/// is the header.
-fn render_table(table: &Table) -> String {
+/// - **padded** (default) — docling-core's `tabulate(tablefmt="github")`: columns
+///   are padded to a fixed width (header width + a minimum padding of 2, or the
+///   widest data cell); numeric columns (every data cell parses as a number) are
+///   right-aligned, others left-aligned; separators are plain dashes of
+///   `width + 2`. Matches current published docling (DOCX/HTML conformance).
+/// - **compact** — `| a | b |` cells with single-dash `| - | - |` separators, no
+///   width padding. Matches the committed PDF groundtruth corpus, which predates
+///   the padded serializer.
+///
+/// Each cell is first escaped (`\n` → space, `|` → `&#124;`) so it can't break the
+/// table. Row 0 is the header.
+fn render_table(table: &Table, compact: bool) -> String {
     if table.rows.is_empty() {
         return String::new();
     }
@@ -250,6 +267,19 @@ fn render_table(table: &Table) -> String {
                 .collect()
         })
         .collect();
+
+    if compact {
+        // Compact: cells joined by " | ", no padding, single-dash separators.
+        let render_row = |r: usize| -> String { format!("| {} |", grid[r].join(" | ")) };
+        let mut lines = Vec::with_capacity(grid.len() + 1);
+        lines.push(render_row(0));
+        let sep: Vec<&str> = (0..num_cols).map(|_| "-").collect();
+        lines.push(format!("| {} |", sep.join(" | ")));
+        for r in 1..grid.len() {
+            lines.push(render_row(r));
+        }
+        return lines.join("\n");
+    }
 
     // Display width (Unicode scalar count — good enough for now).
     let dw = |s: &str| s.chars().count();
@@ -335,14 +365,26 @@ mod tests {
     }
 
     #[test]
-    fn renders_github_table() {
+    fn renders_compact_table() {
+        let mut doc = DoclingDocument::new("t");
+        // The compact form is opt-in (the PDF backend sets it); default output uses
+        // the padded GitHub serializer (covered by the regression fixtures).
+        doc.compact_tables = true;
+        doc.push(Node::Table(Table {
+            rows: vec![vec!["a".into(), "b".into()], vec!["1".into(), "2".into()]],
+        }));
+        let md = doc.export_to_markdown();
+        assert_eq!(md, "| a | b |\n| - | - |\n| 1 | 2 |\n");
+    }
+
+    #[test]
+    fn renders_padded_github_table_by_default() {
         let mut doc = DoclingDocument::new("t");
         doc.push(Node::Table(Table {
             rows: vec![vec!["a".into(), "b".into()], vec!["1".into(), "2".into()]],
         }));
         let md = doc.export_to_markdown();
-        // Matches tabulate(tablefmt="github"): padded columns, numeric cells
-        // right-aligned, separator of width+2 dashes.
+        // Numeric data columns are right-aligned; columns padded to header+2.
         assert_eq!(md, "|   a |   b |\n|-----|-----|\n|   1 |   2 |\n");
     }
 
@@ -362,5 +404,15 @@ mod tests {
         assert_eq!(doc.export_to_markdown(), "# a\\_b\n\nx\\_y\n\n- i\\_j\n");
         // Strict prefers literal underscores (Rust-only readability mode).
         assert_eq!(doc.export_to_markdown_with(true), "# a_b\n\nx_y\n\n- i_j\n");
+    }
+
+    #[test]
+    fn strict_tightens_punctuation_spacing_legacy_keeps_it() {
+        let mut doc = DoclingDocument::new("t");
+        doc.add_paragraph("see [ 37 , 36 ] and ( x ) .");
+        // Legacy keeps docling's spacing byte-for-byte.
+        assert_eq!(doc.export_to_markdown(), "see [ 37 , 36 ] and ( x ) .\n");
+        // Strict tightens punctuation for readable Markdown.
+        assert_eq!(doc.export_to_markdown_with(true), "see [37, 36] and (x).\n");
     }
 }
