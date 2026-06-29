@@ -100,6 +100,19 @@ fn order_regions<T>(items: &mut [T], page_w: f32, reg: impl Fn(&T) -> &Region) {
 /// tighten punctuation spacing: docling preserves the PDF's own spaces (it keeps
 /// `{ ahn }`, `Name 1 .`, `[ 9 ]`), and a geometric gap heuristic diverges from
 /// it more than a plain single-space join does.
+/// An ordered-list enumeration marker at the start of a list item: leading ASCII
+/// digits followed by `.`, e.g. `1. Undo/Redo` → `(1, "Undo/Redo")`. Returns
+/// `None` when the text doesn't start with `digits.`.
+fn parse_ordered_marker(s: &str) -> Option<(u64, String)> {
+    let digits: String = s.chars().take_while(|c| c.is_ascii_digit()).collect();
+    if digits.is_empty() {
+        return None;
+    }
+    let rest = s[digits.len()..].strip_prefix('.')?;
+    let number = digits.parse().ok()?;
+    Some((number, rest.trim_start().to_string()))
+}
+
 fn clean_text(text: &str) -> String {
     let replaced = text
         .replace("\u{2} ", "")
@@ -217,15 +230,33 @@ fn region_text(region: &Region, cells: &[TextCell]) -> String {
     let mut joined = String::new();
     let mut prev: Option<&&TextCell> = None;
     for c in &inside {
+        let t = c.text.trim();
         if let Some(p) = prev {
             let same_band = ((p.t / band).round() as i64) == ((c.t / band).round() as i64);
             let h = (c.b - c.t).abs().max((p.b - p.t).abs()).max(1.0);
             let gap = if rtl { p.l - c.r } else { c.l - p.r };
-            if dp || !same_band || gap > h * 0.25 {
+            // Dehyphenate a wrapped word: a line ending in a hyphen/dash followed
+            // by a lowercase continuation joins without the dash or a space
+            // (`platforms—` + `reflects` → `platformsreflects`). The dash is still
+            // raw here (clean_text normalizes em/en dashes later), so match them all.
+            let ends_dash = matches!(
+                joined.chars().last(),
+                Some('-' | '\u{2010}' | '\u{2013}' | '\u{2014}')
+            );
+            let dehyph = dp
+                && ends_dash
+                && joined
+                    .chars()
+                    .nth_back(1)
+                    .is_some_and(|c| c.is_alphabetic())
+                && t.chars().next().is_some_and(|c| c.is_lowercase());
+            if dehyph {
+                joined.pop();
+            } else if dp || !same_band || gap > h * 0.25 {
                 joined.push(' ');
             }
         }
-        joined.push_str(c.text.trim());
+        joined.push_str(t);
         prev = Some(c);
     }
     clean_text(&joined)
@@ -455,17 +486,31 @@ pub fn assemble_page(
             // `##` (it never emits a top-level `#` for PDFs), so match that.
             "title" | "section_header" => doc.push(Node::Heading { level: 2, text }),
             // docling drops the rendered bullet glyph; the Markdown serializer
-            // adds its own `- ` marker.
-            "list_item" => doc.push(Node::ListItem {
-                ordered: false,
-                number: 0,
-                first_in_list: false,
-                text: text
+            // adds its own `- ` marker. An item whose text opens with an `N.`
+            // enumeration marker is an ordered item (rendered `N. text`).
+            "list_item" => {
+                let stripped = text
                     .trim_start_matches(['•', '◦', '▪', '·', '*', '-'])
                     .trim_start()
-                    .to_string(),
-                level: 0,
-            }),
+                    .to_string();
+                if let Some((number, rest)) = parse_ordered_marker(&stripped) {
+                    doc.push(Node::ListItem {
+                        ordered: true,
+                        number,
+                        first_in_list: false,
+                        text: rest,
+                        level: 0,
+                    });
+                } else {
+                    doc.push(Node::ListItem {
+                        ordered: false,
+                        number: 0,
+                        first_in_list: false,
+                        text: stripped,
+                        level: 0,
+                    });
+                }
+            }
             // TableFormer structure (cells + spans, text matched from word cells)
             // when available; otherwise geometric grid reconstruction; finally a
             // single cell.

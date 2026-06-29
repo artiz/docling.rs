@@ -43,7 +43,7 @@ fn main() {
         // raw line cells in extraction order (to inspect RTL ordering)
         if std::env::var("DUMP_CELLS").is_ok() {
             for (ci, c) in page.cells.iter().enumerate() {
-                let snip: String = c.text.chars().take(50).collect();
+                let snip: String = c.text.chars().take(300).collect();
                 println!(
                     "   CELL[{ci}] t={:6.1} l={:6.1} r={:6.1} | {}",
                     c.t, c.l, c.r, snip
