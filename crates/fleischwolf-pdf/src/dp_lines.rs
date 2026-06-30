@@ -236,7 +236,7 @@ pub(crate) fn line_cells(glyphs: &[Glyph], page_h: f32, euclidean: bool) -> Vec<
                 // several chars at the *identical* box (`ﬀ`→`ff`, diff ≈ 0) — is still
                 // recomposed; real doubled letters sit a full advance apart (> 0.5).
                 let offset = (g.ll as f64 - last.rx0).abs();
-                if euclidean && offset > 0.1 && last.text.chars().next_back() == Some(g.ch) {
+                if euclidean && offset > 0.1 && last.text.ends_with(g.ch) {
                     continue;
                 }
                 last.text.push(g.ch);

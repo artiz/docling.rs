@@ -215,7 +215,8 @@ fn differences_gid_names(doc: &Document, fdict: &Dictionary) -> HashMap<u8, Stri
     else {
         return map;
     };
-    let Some(Object::Array(diffs)) = enc.get(b"Differences").ok().and_then(|o| deref(doc, o)) else {
+    let Some(Object::Array(diffs)) = enc.get(b"Differences").ok().and_then(|o| deref(doc, o))
+    else {
         return map;
     };
     let mut code = 0u8;
@@ -258,7 +259,9 @@ fn is_gid_name(name: &[u8]) -> bool {
     // letter+`.suffix` variants).
     let alpha = s.bytes().take_while(|b| b.is_ascii_alphabetic()).count();
     let digits = s.len() - alpha;
-    (1..=3).contains(&alpha) && digits >= 3 && s.as_bytes()[alpha..].iter().all(|b| b.is_ascii_digit())
+    (1..=3).contains(&alpha)
+        && digits >= 3
+        && s.as_bytes()[alpha..].iter().all(|b| b.is_ascii_digit())
 }
 
 fn font_ascent_descent(doc: &Document, fdict: &Dictionary, two_byte: bool) -> (f64, f64) {

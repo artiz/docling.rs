@@ -37,14 +37,10 @@ fn main() {
             .find_map(|id| doc.get_dictionary(id).ok().cloned())
     });
     if let Some(rd) = &resd {
-        if let Some(Object::Dictionary(xo)) = rd
-            .get(b"XObject")
-            .ok()
-            .map(|o| match o {
-                Object::Reference(r) => doc.get_object(*r).unwrap().clone(),
-                other => other.clone(),
-            })
-        {
+        if let Some(Object::Dictionary(xo)) = rd.get(b"XObject").ok().map(|o| match o {
+            Object::Reference(r) => doc.get_object(*r).unwrap().clone(),
+            other => other.clone(),
+        }) {
             println!("XObjects:");
             for (name, v) in xo.iter() {
                 let st = match v {
