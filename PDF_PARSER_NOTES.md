@@ -109,14 +109,24 @@ Diff: `up to  1 / 4` / `from  1 / 4` have a **double** space; `1 / 6` and
   box-geometry layer has to match docling globally, not per-case. Left for a
   dedicated font-metrics effort; a magic-number nudge is too fragile to ship.
 
-## Blocker C — right_to_left_02 (open, two parts)
-1. Layout: the top `11` page number is classified as a picture (`<!-- image -->`);
-   the recovered orphan lands at the bottom. docling labels it `text`, first.
-   This is an RT-DETR layout-model classification difference, not a text issue.
-2. Text: the parser emits ~25 extra `و` (waw) on the scanned-garbled Arabic
-   (`قويووووة` vs `قويوووة`) — a kashida/tatweel elongation the parser renders as
-   repeated glyphs where docling collapses them. Needs the parser to match
-   docling's tatweel handling.
+## Blocker C — right_to_left_02 (text half DONE; layout half open)
+
+`right_to_left_02` went 8 → **6** diff-lines. Two independent diffs; one fixed:
+
+1. ~~**Kashida over-emission**~~ — DONE. The parser emitted ~25 extra `و`
+   (`قويووووة` vs `قويوووة`): the scanned-garbled Arabic re-stamps a waw
+   elongation segment offset by ≪ its width (overprint for weight), and the line
+   sanitizer's ligature-recompose was appending the duplicate. `line_cells` now
+   drops a same-character glyph re-stamped at an *offset* overlapping box (>0.1
+   offset so a ligature expansion at the *identical* box — `ﬀ`→`ff` — is still
+   recomposed; verified 2305-pg9 stays exact). The whole garbled paragraph now
+   matches docling byte-for-byte.
+2. **Layout/reading-order (open).** The bottom-left page number `11` is emitted
+   by docling as a *text* item, **first** in reading order, with no picture. Our
+   pipeline false-detects a picture at the top (`<!-- image -->`) and orders the
+   orphan-recovered `11` last. Matching needs docling's picture-suppression +
+   page-number-first reading order for this page — a layout-model/ordering
+   change with cross-fixture risk, deferred.
 
 ## Future improvements (validated by the completeness pass)
 

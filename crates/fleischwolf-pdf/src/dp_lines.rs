@@ -228,6 +228,17 @@ pub(crate) fn line_cells(glyphs: &[Glyph], page_h: f32, euclidean: bool) -> Vec<
         // into one cell so the contraction never inserts a space inside it.
         if let Some(last) = cells.last_mut() {
             if (last.rx0 - g.ll as f64).abs() < 0.5 && (last.rx1 - g.lr as f64).abs() < 0.5 {
+                // Overprint duplicate: the *same* character re-stamped, offset by a
+                // fraction of its width (a kashida/elongation segment re-drawn for
+                // weight). docling-parse drops it; appending over-counts
+                // (right_to_left_02's `قويووووة` vs `قويوووة`). Require a real offset
+                // (> 0.1) so a ligature expansion — which decomposes one glyph into
+                // several chars at the *identical* box (`ﬀ`→`ff`, diff ≈ 0) — is still
+                // recomposed; real doubled letters sit a full advance apart (> 0.5).
+                let offset = (g.ll as f64 - last.rx0).abs();
+                if euclidean && offset > 0.1 && last.text.chars().next_back() == Some(g.ch) {
+                    continue;
+                }
                 last.text.push(g.ch);
                 last.ltr = !is_right_to_left(&last.text);
                 continue;
