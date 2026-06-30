@@ -45,6 +45,20 @@ pub struct PdfPage {
     /// matching.
     pub word_cells: Vec<TextCell>,
     pub image: RgbImage,
+    /// Hyperlink annotations on the page (rect in top-left page coords + target
+    /// URI), restricted to web/mail/tel schemes. Used only by strict Markdown.
+    pub links: Vec<LinkAnnot>,
+}
+
+/// A PDF link annotation: its rectangle (top-left page coordinates, matching
+/// [`TextCell`]) and target URI.
+#[derive(Debug, Clone)]
+pub struct LinkAnnot {
+    pub l: f32,
+    pub t: f32,
+    pub r: f32,
+    pub b: f32,
+    pub uri: String,
 }
 
 /// A parsed PDF: per-page text cells and page images.
@@ -84,12 +98,33 @@ impl PdfDocument {
         let pdfium = bind()?;
         let ffi = FfiText::load(pdfium.bindings(), bytes, password);
         let doc = pdfium.load_pdf_from_byte_slice(bytes, password)?;
+        let mut rust = rust_parser_cells(bytes);
         let mut pages = Vec::new();
         for (i, page) in doc.pages().iter().enumerate() {
-            pages.push(extract_page(&page, &ffi, i as i32)?);
+            let rc = rust.as_mut().and_then(|v| v.get_mut(i).map(std::mem::take));
+            pages.push(extract_page(&page, &ffi, i as i32, rc)?);
         }
         Ok(PdfDocument { pages })
     }
+}
+
+/// Per-page prose line cells from the pure-Rust text parser. This is the
+/// **default** text layer (it matches docling-parse's char geometry and is a
+/// strict improvement on byte-conformance — e.g. it recovers the Arabic
+/// sentence-period attachment in `right_to_left_01`). Set `DOCLING_PDFIUM_TEXT`
+/// to fall back to pdfium's text layer. The parser returns an empty page when a
+/// PDF (or a page) has no parseable text layer; the caller keeps pdfium's cells
+/// in that case, so scanned/edge-case pages are unaffected.
+fn rust_parser_cells(bytes: &[u8]) -> Option<Vec<Vec<TextCell>>> {
+    if std::env::var("DOCLING_PDFIUM_TEXT").is_ok() {
+        return None;
+    }
+    Some(
+        crate::textparse::pdf_textlines(bytes)
+            .into_iter()
+            .map(|(_, _, cells)| cells)
+            .collect(),
+    )
 }
 
 /// Render + extract pages one at a time, handing each (owned) [`PdfPage`] to `f`.
@@ -106,10 +141,12 @@ where
     let pdfium = bind()?;
     let ffi = FfiText::load(pdfium.bindings(), bytes, password);
     let doc = pdfium.load_pdf_from_byte_slice(bytes, password)?;
+    let mut rust = rust_parser_cells(bytes);
     let pages = doc.pages();
     let total = pages.len() as usize;
     for (i, page) in pages.iter().enumerate() {
-        let extracted = extract_page(&page, &ffi, i as i32)?;
+        let rc = rust.as_mut().and_then(|v| v.get_mut(i).map(std::mem::take));
+        let extracted = extract_page(&page, &ffi, i as i32, rc)?;
         f(i, total, extracted)?;
     }
     Ok(())
@@ -119,6 +156,7 @@ fn extract_page(
     page: &pdfium_render::prelude::PdfPage<'_>,
     ffi: &FfiText<'_>,
     index: i32,
+    rust_cells: Option<Vec<TextCell>>,
 ) -> Result<PdfPage, PdfiumError> {
     let width = page.width().value;
     let height = page.height().value;
@@ -126,6 +164,14 @@ fn extract_page(
     let (mut cells, code_cells, word_cells) = ffi.page_cells(index, height);
     if cells.is_empty() {
         cells = segment_cells(&page.text()?, height);
+    }
+    // Default: use the pure-Rust text parser's prose line cells instead of
+    // pdfium's (override with `DOCLING_PDFIUM_TEXT`). Word/code cells stay on
+    // pdfium so TableFormer cell-matching is unaffected.
+    if let Some(rc) = rust_cells {
+        if !rc.is_empty() {
+            cells = rc;
+        }
     }
 
     // docling renders at 1.5× the target scale and downsamples "to make it
@@ -152,7 +198,41 @@ fn extract_page(
         code_cells,
         word_cells,
         image,
+        links: extract_links(page, height),
     })
+}
+
+/// Collect web/mail/tel hyperlink annotations on a page, mapping each link's
+/// rectangle into top-left page coordinates (like [`TextCell`]). `file://` and
+/// in-document destinations are skipped — only externally meaningful targets are
+/// rendered. pdfium occasionally lists a link twice; rects are kept as-is and the
+/// caller dedupes by resolved anchor text.
+fn extract_links(page: &pdfium_render::prelude::PdfPage<'_>, page_h: f32) -> Vec<LinkAnnot> {
+    let mut out = Vec::new();
+    for link in page.links().iter() {
+        let Some(uri) = link
+            .action()
+            .and_then(|a| a.as_uri_action().and_then(|u| u.uri().ok()))
+        else {
+            continue;
+        };
+        let scheme_ok = ["http://", "https://", "mailto:", "tel:"]
+            .iter()
+            .any(|s| uri.starts_with(s));
+        if !scheme_ok {
+            continue;
+        }
+        if let Ok(rect) = link.rect() {
+            out.push(LinkAnnot {
+                l: rect.left().value,
+                t: page_h - rect.top().value,
+                r: rect.right().value,
+                b: page_h - rect.bottom().value,
+                uri,
+            });
+        }
+    }
+    out
 }
 
 /// Fallback line cells from pdfium-render's style segments (one cell per
@@ -235,7 +315,7 @@ impl<'a> FfiText<'a> {
             // Prose line cells: the docling-parse-style sanitizer (behind a flag
             // while it's validated) or the legacy gap-heuristic reconstruction.
             let prose = if dp {
-                crate::dp_lines::line_cells(&g, page_h)
+                crate::dp_lines::line_cells(&g, page_h, false)
             } else {
                 lines_from_glyphs(&g, page_h, false)
             };

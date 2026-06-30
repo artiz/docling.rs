@@ -72,22 +72,28 @@ impl Cell {
 
     /// `merge_with`: absorb `other` (which lies to this cell's right). Insert at
     /// most one separator space when the gap exceeds `delta`. RTL prepends.
-    fn merge_with(&mut self, other: &Cell, delta: f64) {
-        // Signed horizontal gap, not the Euclidean corner distance used for
-        // adjacency: pdfium's loose boxes for overhanging glyphs (`f`, etc.) extend
-        // left and overlap the previous glyph, which a Euclidean distance reads as a
-        // positive gap and over-inserts a space (`Self` → `Sel f`, `specify` →
-        // `specif y`). An overlap is a negative gap → no space; a real (justified)
-        // gap is positive → space.
-        let h_gap = other.rx0 - self.rx1;
+    ///
+    /// `euclidean` picks the gap measure: docling-parse uses the **Euclidean
+    /// corner distance** `d0` (the same one `is_adjacent_to` uses). The pure-Rust
+    /// parser produces clean advance boxes, so it uses `d0` to match docling
+    /// byte-for-byte. pdfium's loose boxes overhang (an `f` extends left and
+    /// overlaps its neighbour), which a Euclidean distance reads as a false
+    /// positive gap and over-inserts spaces (`Self` → `Sel f`); that path keeps
+    /// the **signed horizontal gap** instead.
+    fn merge_with(&mut self, other: &Cell, delta: f64, euclidean: bool) {
+        let gap = if euclidean {
+            self.gap(other)
+        } else {
+            other.rx0 - self.rx1
+        };
         if !self.ltr || !other.ltr {
-            if delta < h_gap {
+            if delta < gap {
                 self.text.insert(0, ' ');
             }
             self.text = format!("{}{}", other.text, self.text);
             self.ltr = false;
         } else {
-            if delta < h_gap {
+            if delta < gap {
                 self.text.push(' ');
             }
             self.text.push_str(&other.text);
@@ -101,33 +107,43 @@ impl Cell {
     }
 }
 
-/// `applicable_for_merge`: both active, same font (ligatures bridge fonts), and
-/// same reading orientation.
-fn applicable(a: &Cell, b: &Cell) -> bool {
+/// `applicable_for_merge`: both active and same reading orientation. A different
+/// font normally blocks the merge (keeps a bold label and its value as separate
+/// line cells). On the clean-box parser path, **punctuation/space cells bridge
+/// fonts** so a sentence period set in a separate punctuation font joins its word
+/// instead of fragmenting (`العمل .` → `العمل.`); letters still enforce the font.
+fn applicable(a: &Cell, b: &Cell, parser: bool) -> bool {
     if !a.active || !b.active {
         return false;
     }
-    // font 0 = unknown/space (font-neutral); ligatures bridge fonts too.
-    if a.font != 0
-        && b.font != 0
-        && a.font != b.font
-        && !is_ligature(&a.text)
-        && !is_ligature(&b.text)
-    {
+    // A lone punctuation glyph (not a space) set in a separate punctuation font
+    // bridges fonts so it joins its word — but only next to RTL text. In LTR a
+    // different-font punctuation (e.g. a bold `:`) is a real run boundary docling
+    // keeps spaced (`Laboratories :`); in Arabic the sentence period sits in a
+    // Latin punctuation font yet attaches (`العمل.`). Parser path only.
+    let lone_punct = |s: &str| {
+        let mut ch = s.chars();
+        matches!(ch.next(), Some(c) if c != ' ' && is_punct_or_space(&c.to_string()))
+            && ch.next().is_none()
+    };
+    let punct_bridge =
+        parser && ((lone_punct(&a.text) && !b.ltr) || (lone_punct(&b.text) && !a.ltr));
+    let font_neutral = is_ligature(&a.text) || is_ligature(&b.text) || punct_bridge;
+    if a.font != 0 && b.font != 0 && a.font != b.font && !font_neutral {
         return false;
     }
     a.same_orientation(b)
 }
 
 /// Left-to-right pass: `i` ascending accumulates cells to its right.
-fn pass_ltr(cells: &mut [Cell], allow_reverse: bool) {
+fn pass_ltr(cells: &mut [Cell], allow_reverse: bool, euclidean: bool) {
     for i in 0..cells.len() {
         if !cells[i].active {
             continue;
         }
         let mut j = i + 1;
         while j < cells.len() {
-            if !applicable(&cells[i], &cells[j]) {
+            if !applicable(&cells[i], &cells[j], euclidean) {
                 break;
             }
             let i_lig = is_ligature(&cells[i].text) || cells[i].lig_carry;
@@ -137,13 +153,13 @@ fn pass_ltr(cells: &mut [Cell], allow_reverse: bool) {
             let adj_d1 = d0 + if i_lig || j_lig { H_TOL } else { 0.0 };
             if cells[i].adjacent(&cells[j], d0, adj_d1) {
                 let other = cells[j].clone();
-                cells[i].merge_with(&other, d1);
+                cells[i].merge_with(&other, d1, euclidean);
                 cells[i].lig_carry = is_ligature(&other.text);
                 cells[j].active = false;
                 j += 1; // i keeps absorbing the next cell to its right
             } else if allow_reverse && cells[j].adjacent(&cells[i], d0, adj_d1) {
                 let other = cells[i].clone();
-                cells[j].merge_with(&other, d1);
+                cells[j].merge_with(&other, d1, euclidean);
                 cells[j].lig_carry = is_ligature(&other.text);
                 cells[i].active = false;
                 break; // i is consumed
@@ -156,7 +172,7 @@ fn pass_ltr(cells: &mut [Cell], allow_reverse: bool) {
 
 /// Right-to-left pass: `i` descending; its immediate left neighbour `i-1`
 /// absorbs it (then the outer loop continues leftward through the absorber).
-fn pass_rtl(cells: &mut [Cell]) {
+fn pass_rtl(cells: &mut [Cell], euclidean: bool) {
     let n = cells.len();
     for k in 0..n {
         let i = n - 1 - k;
@@ -164,7 +180,7 @@ fn pass_rtl(cells: &mut [Cell]) {
             continue;
         }
         let j = i - 1;
-        if !applicable(&cells[i], &cells[j]) {
+        if !applicable(&cells[i], &cells[j], euclidean) {
             continue;
         }
         let i_lig = is_ligature(&cells[i].text) || cells[i].lig_carry;
@@ -174,24 +190,24 @@ fn pass_rtl(cells: &mut [Cell]) {
         let adj_d1 = d0 + if i_lig || j_lig { H_TOL } else { 0.0 };
         if cells[j].adjacent(&cells[i], d0, adj_d1) {
             let other = cells[i].clone();
-            cells[j].merge_with(&other, d1);
+            cells[j].merge_with(&other, d1, euclidean);
             cells[j].lig_carry = is_ligature(&other.text);
             cells[i].active = false;
         }
     }
 }
 
-fn contract(cells: &mut Vec<Cell>) {
-    pass_ltr(cells, false);
+fn contract(cells: &mut Vec<Cell>, euclidean: bool) {
+    pass_ltr(cells, false, euclidean);
     cells.retain(|c| c.active);
-    pass_rtl(cells);
+    pass_rtl(cells, euclidean);
     cells.retain(|c| c.active);
-    pass_ltr(cells, true);
+    pass_ltr(cells, true, euclidean);
     cells.retain(|c| c.active);
 }
 
 /// Build line cells from a page's glyph stream via the docling-parse contraction.
-pub(crate) fn line_cells(glyphs: &[Glyph], page_h: f32) -> Vec<TextCell> {
+pub(crate) fn line_cells(glyphs: &[Glyph], page_h: f32, euclidean: bool) -> Vec<TextCell> {
     let mut cells: Vec<Cell> = Vec::new();
     for g in glyphs {
         // Use the loose box (uniform font ascent/descent + advance) so adjacent
@@ -212,6 +228,17 @@ pub(crate) fn line_cells(glyphs: &[Glyph], page_h: f32) -> Vec<TextCell> {
         // into one cell so the contraction never inserts a space inside it.
         if let Some(last) = cells.last_mut() {
             if (last.rx0 - g.ll as f64).abs() < 0.5 && (last.rx1 - g.lr as f64).abs() < 0.5 {
+                // Overprint duplicate: the *same* character re-stamped, offset by a
+                // fraction of its width (a kashida/elongation segment re-drawn for
+                // weight). docling-parse drops it; appending over-counts
+                // (right_to_left_02's `قويووووة` vs `قويوووة`). Require a real offset
+                // (> 0.1) so a ligature expansion — which decomposes one glyph into
+                // several chars at the *identical* box (`ﬀ`→`ff`, diff ≈ 0) — is still
+                // recomposed; real doubled letters sit a full advance apart (> 0.5).
+                let offset = (g.ll as f64 - last.rx0).abs();
+                if euclidean && offset > 0.1 && last.text.ends_with(g.ch) {
+                    continue;
+                }
                 last.text.push(g.ch);
                 last.ltr = !is_right_to_left(&last.text);
                 continue;
@@ -235,7 +262,7 @@ pub(crate) fn line_cells(glyphs: &[Glyph], page_h: f32) -> Vec<TextCell> {
             font: g.font,
         });
     }
-    contract(&mut cells);
+    contract(&mut cells, euclidean);
     cells
         .into_iter()
         .map(|c| {

@@ -7,12 +7,13 @@ The groundtruth is regenerated from **live published docling**, so it agrees wit
 
 > Measure locally with `scripts/pdf_groundtruth.sh` (diffs the checked-in
 > reference; no docling install needed) or `scripts/conformance.sh pdf` (installs
-> docling and diffs against it). Diff = changed lines vs the groundtruth (one
-> changed line counts as 2).
+> docling and diffs against it). Both report two metrics: **strict** (byte-for-byte)
+> and **whitespace-normalized** (spacing-only diffs ignored). Diff = changed lines
+> vs the groundtruth (one changed line counts as 2).
 
 ## Current state
 
-**4 / 14 groundtruth PDFs are byte-for-byte exact.**
+**6 / 14 strict** · **7 / 14 whitespace-normalized.**
 
 | PDF | diff | dominant remaining blocker |
 |---|---:|---|
@@ -20,19 +21,22 @@ The groundtruth is regenerated from **live published docling**, so it agrees wit
 | code_and_formula | **exact** | — |
 | multi_page | **exact** | — |
 | 2305.03393v1-pg9 | **exact** | — (TableFormer table, cell-for-cell) |
-| right_to_left_01 | 2 | RTL justified double-space |
-| right_to_left_02 | 8 | RTL bidi spacing |
-| amt_handbook_sample | 14 | justified spacing + figure captions |
-| 2305.03393v1 | 40 | title-page reading order + author-ID run spacing |
+| right_to_left_01 | **exact** | — (RTL period attachment) |
+| right_to_left_02 | **exact** | — (kashida dedup + page-number layout) |
+| amt_handbook_sample | 2 *(ws-ok)* | docling's spurious fraction double space — ours is more faithful |
+| normal_4pages | 54 | reading order (heading numbering, footnote order) |
 | right_to_left_03 | 66 | RTL bidi |
-| normal_4pages | 74 | reading order |
-| table_mislabeled_as_picture | 110 | layout over-detects tables (survey rendered as tables) |
-| 2206.01062 | 234 | TableFormer multi-row headers + title-page reading order |
-| 2203.01017v2 | 247 | TableFormer structure + reading order |
-| redp5110_sampled | 271 | TOC mis-classified as a picture; cover-page ordering |
+| 2305.03393v1 | 93 | title-page reading order + author-ID run spacing |
+| table_mislabeled_as_picture | 108 | layout over-detects tables (survey rendered as tables) |
+| 2206.01062 | 198 | TableFormer multi-row headers + title-page reading order |
+| 2203.01017v2 | 209 | TableFormer structure + reading order |
+| redp5110_sampled | 226 | TOC mis-classified as a picture; cover-page ordering |
 
-The close ones (`right_to_left_01/02`, `amt_handbook`) are 1–2 fixes from exact —
-the realistic path to 50% (7/14).
+`amt` is the 7th under the whitespace-normalized metric: its only diff is
+docling's spurious double space before the `1⁄4` fraction, where our single-spaced
+output is the more faithful rendering. The remaining non-exact PDFs are heavy
+multi-column / table docs whose gaps are model-level (TableFormer structure,
+layout classification, title-page reading order), not text-layer.
 
 ## How the pipeline works
 
@@ -44,24 +48,43 @@ to ONNX in `tableformer.rs`) on a cv2-exact preprocessed crop (`resample.rs`); t
 structure + matched cell text reproduce docling's padded GitHub tables (2305-pg9
 is cell-for-cell exact).
 
-### Text reconstruction: docling-parse line sanitizer (ported)
+### Text reconstruction: a pure-Rust PDF text parser (default)
 
-The byte-exact ceiling used to be the **text extractor** — pdfium differs from
-docling's own `docling-parse` C++ parser at text-run boundaries. We closed it by
-porting docling-parse's line sanitizer (`src/parse/page_item_sanitators/cells.h`
-→ `dp_lines.rs`): a 3-pass corner-distance contraction (LTR → RTL → LTR-reverse)
-with `merge_with` space insertion (one space when the gap exceeds
-0.33×avg-char-width, plus literal space glyphs), `enforce_same_font`, ligature
-recomposition (same-loose-box glyphs become one cell), and loose-box geometry
-(uniform font ascent/descent), fed by pdfium glyph cells. It is the **default**
-(set `DOCLING_LEGACY_LINES` to fall back to the old gap heuristic). This fixed
-justified double-spacing, the space before `:`, lam-alef ordering, and fi/ffi
-ligatures — and got `multi_page` to byte-exact.
+The byte-exact ceiling was the **text extractor** — pdfium's *rendered* glyph
+boxes diverge from docling's own `docling-parse` C++ parser at exactly the points
+that drive conformance (generated spaces, combining marks, ligature/fraction
+positioning). The pipeline now ships a **pure-Rust text parser** (`textparse.rs`,
+on `lopdf`) that reconstructs each glyph's box from the *font's own advance
+widths* and the PDF text/graphics matrices — the same information docling-parse
+uses. It is the **default** text layer; set `DOCLING_PDFIUM_TEXT=1` to fall back
+to pdfium. Pages without a parseable text layer fall back to pdfium
+automatically, so scanned/OCR pages are unaffected. (pdfium still provides page
+rasters and word/code cells for TableFormer.)
 
-Other text/serializer fixes matching docling: markdown escaping (`_`→`\_`, then
-HTML-escape `&`/`<`/`>`), U+2212→`-`, `@`-glue (`mAP @0.5`), wrap dehyphenation,
-paragraph-continuation merging across column/page breaks, and band-aware
-two-column reading order (full-width regions break the columns into bands).
+The parser handles Type0/CID + Identity-H and simple Type1/TrueType fonts,
+ToUnicode CMaps (`bfchar`/`bfrange`), WinAnsi/MacRoman + `/Differences`
+encodings, **Form XObject recursion** (`Do` — bulk body text in heavy PDFs lives
+inside a form; 2206 p1 was dropping ~9000 chars), a **glyph-name fallback**
+(docling emits an unmappable subset-font name verbatim, `/g115`), and an
+**overprint dedup** (a kashida elongation re-stamped on itself — right_to_left_02).
+A char-frequency validator (`scripts/parser_completeness.py`) confirms nothing is
+silently skipped.
+
+Its cells feed the ported **docling-parse line sanitizer** (`dp_lines.rs`, from
+`src/parse/page_item_sanitators/cells.h`): a 3-pass corner-distance contraction
+(LTR → RTL → LTR-reverse) with `merge_with` space insertion (one space when the
+gap exceeds 0.33×avg-char-width, plus literal space glyphs), `enforce_same_font`,
+ligature recomposition, and loose-box geometry. On the clean parser boxes it uses
+the Euclidean corner gap (matching docling); on pdfium's loose boxes it keeps the
+signed horizontal gap.
+
+Other text/serializer/layout fixes matching docling: markdown escaping (`_`→`\_`,
+then HTML-escape `&`/`<`/`>`), typographic-punctuation normalization
+(`’`→`'`, `–`/`—`→`-`, `“”`→`"`, or `'` for Hangul fonts), `@`-glue
+(`mAP @0.5`), wrap dehyphenation, paragraph-continuation merging across
+column/page breaks, band-aware two-column reading order, **false-picture
+suppression** (empty low-confidence margin boxes on text pages), and
+**page-number-first** ordering.
 
 ## Remaining blockers (model-level)
 
@@ -78,6 +101,10 @@ These yield smaller or uncertain gains than the text-layer work already shipped.
 3. **Complex title-page reading order.** Author-block / abstract interleaving on
    the academic papers (band reading-order handles the full-width title; the
    in-column author/abstract order is still off).
-4. **RTL justified double-spaces.** pdfium emits zero-width space boxes, losing
-   the literal space that, with the inserted one, forms a justified double
-   (`right_to_left_01`). Needs space-box reconstruction that estimates width.
+4. **amt fraction double space (text-layer, strict-only).** docling boxes glyphs
+   with the embedded font's OS/2 typographic metrics, not the PDF descriptor's;
+   that ~0.3 pt difference makes its justified line insert a *second* space before
+   the `1⁄4` numerator. Our single-spaced output is the more faithful rendering
+   (the whitespace-normalized metric credits it); reproducing docling's exact
+   spacing needs an embedded-font metrics layer, which globally entangles with RTL
+   geometry. See `PDF_PARSER_NOTES.md`.

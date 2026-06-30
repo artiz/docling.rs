@@ -10,11 +10,12 @@ phased plan is kept at the end as history.)
 > (legacy + a Rust-only *strict* mode), docling-native **JSON** output, and
 > **image extraction**. The declarative formats are pure-Rust and checked
 > byte-for-byte against *live* docling; the PDF/image/METS ML path lives in
-> `fleischwolf-pdf` (pdfium + ONNX layout/TableFormer/OCR + a port of
-> docling-parse's line sanitizer) and is also measured byte-for-byte against live
-> docling — **4 / 14 PDF fixtures exact** (see `PDF_CONFORMANCE.md`), with a
-> snapshot baseline guarding against regressions. `cargo test` is green (unit
-> tests + a 131-source output-regression suite).
+> `fleischwolf-pdf` (a pure-Rust PDF text parser + pdfium rasterization + ONNX
+> layout/TableFormer/OCR + a port of docling-parse's line sanitizer) and is also
+> measured byte-for-byte against live docling — **6 / 14 PDF fixtures exact, 7 / 14
+> whitespace-normalized** (see `PDF_CONFORMANCE.md`), with a snapshot baseline
+> guarding against regressions. `cargo test` is green (unit tests + a 131-source
+> output-regression suite).
 
 ---
 
@@ -86,13 +87,13 @@ content-type resolution, and image extraction — reused by DOCX/PPTX/XLSX/EPUB.
 
 These run docling's *discriminative* PDF pipeline ported to ONNX. They are now
 measured **byte-for-byte against live docling** (the committed PDF groundtruth is
-regenerated from it): **4 / 14 exact**, the rest close — see `PDF_CONFORMANCE.md`.
-A deterministic snapshot baseline (`scripts/pdf_conformance.sh`) still guards
-against regressions.
+regenerated from it): **6 / 14 exact (7 / 14 whitespace-normalized)**, the rest
+close — see `PDF_CONFORMANCE.md`. A deterministic snapshot baseline
+(`scripts/pdf_conformance.sh`) still guards against regressions.
 
 | Format | How |
 |---|---|
-| PDF | pdfium glyph cells + page render → RT-DETR layout (ONNX) → **TableFormer** table structure (ONNX) → PP-OCRv3 OCR for scanned pages → **docling-parse line sanitizer** (`dp_lines.rs`) + reading-order assembly |
+| PDF | **pure-Rust text parser** (`textparse.rs`, font-advance glyph boxes) + pdfium page render → RT-DETR layout (ONNX) → **TableFormer** table structure (ONNX) → PP-OCRv3 OCR for scanned pages → **docling-parse line sanitizer** (`dp_lines.rs`) + reading-order assembly |
 | Images (tiff/webp/png/jpeg) | the same pipeline, image as a single page |
 | METS / Google Books | `.tar.gz` of per-page hOCR + TIFF → cells from hOCR → the same layout+assembly path (no OCR needed) |
 
@@ -158,15 +159,22 @@ These are deliberate or unavoidable divergences, not bugs.
      decoder + cell-bbox decoder, ported to ONNX), on a cv2-exact preprocessed
      crop. Reproduces docling's padded GitHub tables — `2305-pg9` is cell-for-cell
      exact; multi-row headers / spans on the dense papers still differ.
-   - **Text assembly** — a port of docling-parse's line sanitizer (`dp_lines.rs`):
-     3-pass corner-distance contraction with gap-proportional space insertion,
-     `enforce_same_font`, ligature recomposition, loose-box geometry. Plus
-     docling's markdown escaping, wrap dehyphenation, paragraph-continuation
-     merging, and band-aware two-column reading order. Default; set
-     `DOCLING_LEGACY_LINES` for the old gap-heuristic join.
+   - **Text** — a **pure-Rust PDF text parser** (`textparse.rs`, on `lopdf`)
+     reconstructs glyph boxes from font advance widths + the text/graphics matrices
+     (matching docling-parse's geometry, not pdfium's rendered boxes); handles
+     Type0/CID + simple fonts, ToUnicode/encodings, Form XObject recursion, a
+     glyph-name fallback, and overprint dedup. It is the default text layer
+     (`DOCLING_PDFIUM_TEXT=1` falls back to pdfium). Its cells feed a port of
+     docling-parse's line sanitizer (`dp_lines.rs`): 3-pass corner-distance
+     contraction with gap-proportional space insertion, `enforce_same_font`,
+     ligature recomposition, loose-box geometry. Plus docling's markdown escaping,
+     typographic-punctuation normalization, wrap dehyphenation,
+     paragraph-continuation merging, band-aware two-column reading order, and
+     false-picture / page-number layout fixes.
    - Output is measured **byte-for-byte against live docling** (PDF_CONFORMANCE.md):
-     **4 / 14 exact**, the rest close. The remaining gaps are model-level
-     (TableFormer structure on complex tables, layout classification, RTL).
+     **6 / 14 exact, 7 / 14 whitespace-normalized**, the rest close. The remaining
+     gaps are model-level (TableFormer structure on complex tables, layout
+     classification) plus `amt`'s fraction spacing (a docling quirk).
 
 6. **Extracted image bytes are real but not byte-identical.** Cropped/embedded
    pixels are correct, but the PNG re-encoding differs from docling's, so the
@@ -225,7 +233,7 @@ when the TableFormer graphs aren't present.)
   committed fixtures (131 sources × 3). `FLEISCHWOLF_REGEN=1` refreshes them.
   The JSON fixtures double as a docling-core load check.
 - **Snapshot harness** — `scripts/pdf_conformance.sh` regenerates and diffs the
-  PDF/image/METS baseline (needs pdfium + the ONNX models; **76/76 exact**).
+  PDF/image/METS baseline (needs pdfium + the ONNX models; **91/91 exact**).
 - **Conformance** — `scripts/conformance.sh <fmt>` scores a format against the
   latest published docling (installed from PyPI; see
   [`COMPARING.md`](./COMPARING.md)).

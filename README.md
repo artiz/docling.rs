@@ -29,9 +29,9 @@ the full architecture, the Python → Rust mapping, and the phased plan.
 The public API works end to end across **Markdown, CSV, HTML, AsciiDoc, DOCX,
 PPTX, XLSX, EPUB, ODF, WebVTT, Email, JATS, USPTO, XBRL, LaTeX, JSON, PDF,
 images and METS** — plus Markdown / docling-JSON output and image extraction.
-The discriminative PDF/image pipeline (pdfium + ONNX layout/OCR) lives in
-`fleischwolf-pdf`. Audio/ASR is the main format still on the roadmap (see
-`MIGRATION.md`).
+The discriminative PDF/image pipeline lives in `fleischwolf-pdf`: a pure-Rust PDF
+text parser, pdfium for page rasterization, and an ONNX layout/TableFormer/OCR
+stack. Audio/ASR is the main format still on the roadmap (see `MIGRATION.md`).
 
 Output is checked against upstream Python docling — declarative formats
 byte-for-byte against live docling, the ML pipeline against a deterministic
@@ -149,7 +149,7 @@ export PDFIUM_DYNAMIC_LIB_PATH="$(pwd)/.pdfium/lib"
 export DOCLING_LAYOUT_ONNX="$(pwd)/models/layout_heron.onnx"
 export DOCLING_OCR_REC_ONNX="$(pwd)/models/ocr_rec.onnx"
 export DOCLING_OCR_DICT="$(pwd)/models/ppocr_keys_v1.txt"
-bash scripts/pdf_conformance.sh     # regenerate + diff the snapshot baseline (76/76)
+bash scripts/pdf_conformance.sh     # regenerate + diff the snapshot baseline (91/91)
 ```
 
 ## Try it

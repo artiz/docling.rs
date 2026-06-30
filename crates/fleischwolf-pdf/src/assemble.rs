@@ -43,6 +43,118 @@ pub fn resolve(mut regions: Vec<Region>) -> Vec<Region> {
     kept
 }
 
+/// Append `text` regions for cells the layout left uncovered ("orphan cells"),
+/// the way docling's `LayoutPostprocessor` does (`create_orphan_clusters`): any
+/// non-empty cell that no kept region covers (>50% of the cell's area) becomes a
+/// text region of its own, so text the detector missed (a stray `.`, a small
+/// label) is still emitted instead of silently dropped. Adjacent orphan cells on a
+/// line are merged so a missed paragraph doesn't shatter into one block per line.
+pub fn add_orphan_regions(regions: &mut Vec<Region>, cells: &[TextCell]) {
+    // docling assigns a cell to its best-overlapping cluster at
+    // intersection-over-self > 0.2; only cells below that for *every* region are
+    // orphans. (Our text extraction uses a stricter 0.5, but matching docling's
+    // 0.2 here avoids emitting cells it already placed in a neighbouring region.)
+    let assigned = |c: &TextCell| {
+        let ca = area(c.l, c.t, c.r, c.b).max(1.0);
+        regions
+            .iter()
+            .any(|r| inter(r, c.l, c.t, c.r, c.b) / ca > 0.2)
+    };
+    // Collect orphan cells (non-empty, unassigned), in page order.
+    let mut orphans: Vec<&TextCell> = cells
+        .iter()
+        .filter(|c| !c.text.trim().is_empty() && !assigned(c))
+        .collect();
+    if orphans.is_empty() {
+        return;
+    }
+    orphans.sort_by(|a, b| a.t.total_cmp(&b.t).then(a.l.total_cmp(&b.l)));
+    // Merge cells that sit on the same line and nearly touch into one region, so a
+    // dropped multi-word line stays one block (docling's refinement merges these).
+    let mut merged: Vec<Region> = Vec::new();
+    for c in orphans {
+        let h = (c.b - c.t).abs().max(1.0);
+        if let Some(last) = merged.last_mut() {
+            let same_line = (last.t - c.t).abs() < h * 0.5;
+            let touching = c.l <= last.r + h && c.l >= last.l - h;
+            if same_line && touching {
+                last.l = last.l.min(c.l);
+                last.r = last.r.max(c.r);
+                last.t = last.t.min(c.t);
+                last.b = last.b.max(c.b);
+                continue;
+            }
+        }
+        merged.push(Region {
+            label: "text",
+            score: 0.0,
+            l: c.l,
+            t: c.t,
+            r: c.r,
+            b: c.b,
+        });
+    }
+    regions.extend(merged);
+}
+
+/// Drop a `picture` detection that is a small, empty, low-confidence margin box on
+/// a **text page** — a false positive the RT-DETR layout sometimes emits (e.g.
+/// `right_to_left_02`'s phantom right-column picture, score 0.40); docling does not
+/// emit it. The gate is deliberately narrow so a genuine figure is never dropped:
+/// (1) only on pages with a digital text layer — image/scanned/figure pages have
+/// no `cells` yet at this point (OCR runs later), so their pictures, which *are*
+/// the content, are kept; (2) only a box covering < 25 % of the page (a margin
+/// artifact, not a dominant figure); (3) only when it contains no text and scores
+/// below 0.5 (real empty figures in the corpus all score ≥ 0.86).
+pub fn drop_false_pictures(
+    regions: &mut Vec<Region>,
+    cells: &[TextCell],
+    page_w: f32,
+    page_h: f32,
+) {
+    if cells.iter().all(|c| c.text.trim().is_empty()) {
+        return; // no digital text layer (image/scanned page) — keep all pictures
+    }
+    // A text-document page carries several text-bearing non-picture regions (so a
+    // spurious margin picture is clearly extra). A slide / figure page has at most
+    // one — there the picture is the content, so never drop it.
+    let content_regions = regions
+        .iter()
+        .filter(|r| r.label != "picture" && !region_text(r, cells).trim().is_empty())
+        .count();
+    if content_regions < 2 {
+        return;
+    }
+    let page_area = (page_w * page_h).max(1.0);
+    regions.retain(|r| {
+        if r.label != "picture" || r.score >= 0.5 {
+            return true;
+        }
+        if area(r.l, r.t, r.r, r.b) / page_area >= 0.25 {
+            return true; // a dominant figure, not a margin artifact
+        }
+        // Keep it if any text cell falls mostly inside (a real captioned/labelled
+        // figure); drop only the genuinely empty low-confidence boxes.
+        cells.iter().any(|c| {
+            let ca = area(c.l, c.t, c.r, c.b).max(1.0);
+            !c.text.trim().is_empty() && inter(r, c.l, c.t, c.r, c.b) / ca > 0.5
+        })
+    });
+}
+
+/// A small digit-only region in the top/bottom margin: a page number. docling
+/// emits `right_to_left_02`'s bottom `11` as the page's *first* text item (its
+/// reading-order model floats the page number to the front), whereas our
+/// position-based ordering would place a bottom region last.
+fn is_page_number(region: &Region, cells: &[TextCell], page_h: f32) -> bool {
+    let t = region_text(region, cells);
+    let t = t.trim();
+    !t.is_empty()
+        && t.chars().all(|c| c.is_ascii_digit())
+        && (region.b - region.t).abs() < 30.0
+        && (region.t < page_h * 0.12 || region.b > page_h * 0.88)
+}
+
 /// Furniture / not-yet-emitted labels.
 fn is_skipped(label: &str) -> bool {
     matches!(
@@ -151,12 +263,18 @@ fn md_escape(text: &str) -> String {
 }
 
 fn clean_text(text: &str) -> String {
+    // Korean (Hangul) bodies use single straight quotes where the font's double
+    // curly glyph maps; docling renders `“ ”` as `'` for these fonts (normal_4pages
+    // `‘코로나’`), not the Latin `"`. Key on Hangul syllables so Latin docs (2305's
+    // genuine `quotedbl` → `"`) are unaffected.
+    let hangul = text.chars().any(|c| ('\u{AC00}'..='\u{D7A3}').contains(&c));
+    let dquote = if hangul { "'" } else { "\"" };
     let replaced = text
         .replace("\u{2} ", "")
         .replace("\u{ad} ", "")
         .replace(['\u{2}', '\u{ad}'], "") // any stray wrap hyphens not at a join
         .replace(['\u{2018}', '\u{2019}'], "'") // ‘ ’ → '
-        .replace(['\u{201c}', '\u{201d}'], "\"") // “ ” → "
+        .replace(['\u{201c}', '\u{201d}'], dquote) // “ ” → " (or ' for Hangul)
         .replace(['\u{2013}', '\u{2014}', '\u{2212}'], "-") // – — − → -
         .replace('\u{2044}', "/") // ⁄ fraction slash → /
         .replace('\u{2026}', "..."); // … → ...
@@ -197,6 +315,11 @@ fn fix_arabic_lam_alef(s: &str) -> String {
             && chars.get(i + 1) == Some(&'\u{0644}')
             && i > 0
             && is_arabic_letter(chars[i - 1])
+            // A preceding lam means this alef-variant is *already* the logical
+            // `lam + alef` ligature; the following lam is the next syllable's
+            // letter, not a reversed ligature — swapping it corrupts `لآل` → `للآ`
+            // (e.g. التعلم الآلي → الآلي, not اللآي).
+            && chars[i - 1] != '\u{0644}'
         {
             a.push('\u{0644}');
             a.push(c);
@@ -222,6 +345,58 @@ fn fix_arabic_lam_alef(s: &str) -> String {
         out.push(c);
     }
     out.into_iter().collect()
+}
+
+/// Resolve each page hyperlink to the visible text it covers, as `(anchor, uri)`
+/// in reading order. The anchor is the cells whose centre falls in the link rect,
+/// joined left-to-right and cleaned the same way prose is (so it matches the
+/// serialized text), deduped against the immediately-preceding link so pdfium's
+/// occasional duplicate annotation doesn't double-list. Empty anchors are dropped.
+pub(crate) fn resolve_link_anchors(page: &PdfPage) -> Vec<(String, String)> {
+    let mut out: Vec<(String, String)> = Vec::new();
+    // Use per-word cells, not the line-merged `cells`: a link rect covers a few
+    // words on a line, and a whole merged line cell would over-capture (its centre
+    // lands in one link's rect, grabbing the entire line as that link's anchor).
+    let words = if page.word_cells.is_empty() {
+        &page.cells
+    } else {
+        &page.word_cells
+    };
+    for link in &page.links {
+        let mut inside: Vec<&TextCell> = words
+            .iter()
+            .filter(|c| {
+                let (cx, cy) = ((c.l + c.r) / 2.0, (c.t + c.b) / 2.0);
+                cx >= link.l && cx <= link.r && cy >= link.t && cy <= link.b
+            })
+            .collect();
+        // Reading order: top band then left-to-right (link anchors are LTR).
+        let band = inside
+            .iter()
+            .map(|c| (c.b - c.t).abs())
+            .fold(0.0f32, f32::max)
+            .max(1.0);
+        inside.sort_by_key(|c| ((c.t / band).round() as i64, (c.l * 10.0) as i64));
+        let anchor = clean_text(
+            &inside
+                .iter()
+                .map(|c| c.text.trim())
+                .filter(|t| !t.is_empty())
+                .collect::<Vec<_>>()
+                .join(" "),
+        );
+        if anchor.is_empty() {
+            continue;
+        }
+        if out
+            .last()
+            .is_some_and(|(a, u)| a == &anchor && u == &link.uri)
+        {
+            continue;
+        }
+        out.push((anchor, link.uri.clone()));
+    }
+    out
 }
 
 /// Cells assigned to a region (best container), in reading order, joined.
@@ -483,6 +658,8 @@ pub fn assemble_page(
     table_rows: &[Option<Vec<Vec<String>>>],
     doc: &mut DoclingDocument,
 ) {
+    // Recover this page's hyperlinks (rendered only in strict Markdown).
+    doc.links.extend(resolve_link_anchors(page));
     // Pair each region with its precomputed TableFormer grid (indexed by original
     // order) and order by reading order together, so they stay aligned.
     let mut items: Vec<(Region, Option<Vec<Vec<String>>>)> = regions
@@ -491,6 +668,11 @@ pub fn assemble_page(
         .map(|(i, r)| (r, table_rows.get(i).cloned().flatten()))
         .collect();
     order_regions(&mut items, page.width, |it| &it.0);
+    // Float a margin page number to the front of reading order (docling parity:
+    // right_to_left_02's bottom `11` is its first item). Stable, so everything
+    // else keeps its order; no-op on pages without such a region.
+    let page_h = page.height;
+    items.sort_by_key(|(r, _)| !is_page_number(r, &page.cells, page_h));
     let table_rows: Vec<Option<Vec<Vec<String>>>> = items.iter().map(|(_, t)| t.clone()).collect();
     let regions: Vec<Region> = items.into_iter().map(|(r, _)| r).collect();
     // docling emits a figure's caption *before* the image marker. Pair each
@@ -613,30 +795,49 @@ pub fn assemble_page(
 /// Merge paragraph fragments split across a column or page break. docling joins a
 /// paragraph whose previous fragment ends mid-sentence (a letter, not sentence
 /// punctuation) with a lowercase continuation: `…definition of` + `lists in…` →
-/// `…definition of lists in…`. Only consecutive top-level paragraphs merge — a
-/// heading/table/figure between them ends the paragraph.
+/// `…definition of lists in…`. The fragments are consecutive paragraphs, or
+/// separated only by figure(s) the text wraps around: a column whose body flows
+/// past a figure resumes below it (`…The wing type that is` ⟶[figure]⟶ `the most
+/// common…`), and docling emits the whole paragraph before the figure. A heading,
+/// table, or list between them ends the paragraph (no merge).
 pub(crate) fn merge_continuations(nodes: &mut Vec<Node>) {
     let mut i = 0;
     while i + 1 < nodes.len() {
-        let merged = match (&nodes[i], &nodes[i + 1]) {
-            (Node::Paragraph { text: a }, Node::Paragraph { text: b }) => {
-                // Open if the fragment ends mid-word (a letter) or with a wrap
-                // hyphen/dash — docling joins `vocab-` + `ulary` → `vocab- ulary`.
-                let a_open = a.trim_end().chars().next_back().is_some_and(|c| {
-                    c.is_alphabetic() || matches!(c, '-' | '\u{2010}' | '\u{2013}' | '\u{2014}')
-                });
-                let b_cont = b
-                    .trim_start()
-                    .chars()
-                    .next()
-                    .is_some_and(|c| c.is_lowercase());
-                (a_open && b_cont).then(|| format!("{} {}", a.trim_end(), b.trim_start()))
-            }
-            _ => None,
+        let Node::Paragraph { text: a } = &nodes[i] else {
+            i += 1;
+            continue;
         };
-        if let Some(text) = merged {
-            nodes[i] = Node::Paragraph { text };
-            nodes.remove(i + 1);
+        // Open if the fragment ends mid-word (a letter) or with a wrap hyphen/dash
+        // — docling joins `vocab-` + `ulary` → `vocab- ulary`.
+        let a_open = a.trim_end().chars().next_back().is_some_and(|c| {
+            c.is_alphabetic() || matches!(c, '-' | '\u{2010}' | '\u{2013}' | '\u{2014}')
+        });
+        if !a_open {
+            i += 1;
+            continue;
+        }
+        // The continuation is the next paragraph, looking past any figures the
+        // text wraps around (but nothing else).
+        let mut j = i + 1;
+        while matches!(nodes.get(j), Some(Node::Picture { .. })) {
+            j += 1;
+        }
+        let cont = matches!(nodes.get(j), Some(Node::Paragraph { text: b })
+            if b.trim_start().chars().next().is_some_and(char::is_lowercase));
+        if cont {
+            let a = match &nodes[i] {
+                Node::Paragraph { text } => text.trim_end().to_string(),
+                _ => unreachable!(),
+            };
+            let b = match &nodes[j] {
+                Node::Paragraph { text } => text.trim_start().to_string(),
+                _ => unreachable!(),
+            };
+            nodes[i] = Node::Paragraph {
+                text: format!("{a} {b}"),
+            };
+            nodes.remove(j);
+            // Re-check i: the merged paragraph may continue further.
         } else {
             i += 1;
         }
@@ -663,5 +864,22 @@ mod tests {
         // The dp default (the docling-parse sanitizer) preserves internal spacing
         // it placed deliberately; line breaks/tabs normalize to a space, ends trim.
         assert_eq!(clean_text("a   b\nc"), "a   b c");
+    }
+
+    #[test]
+    fn lam_alef_only_swaps_a_genuinely_reversed_ligature() {
+        // A mid-word `alef-variant + lam` is pdfium's reversed lam-alef ligature and
+        // is swapped back to logical `lam + alef-variant` (`ب أ ل` → `ب ل أ`).
+        assert_eq!(
+            clean_text("\u{0628}\u{0623}\u{0644}"),
+            "\u{0628}\u{0644}\u{0623}"
+        );
+        // But when the alef-variant is *already* preceded by a lam it is the logical
+        // ligature `لآ`; the following lam is the next syllable's letter and must not
+        // move. `التعلم الآلي` must stay `الآلي`, not become `اللآي`.
+        assert_eq!(
+            clean_text("\u{0627}\u{0644}\u{0622}\u{0644}\u{064a}"),
+            "\u{0627}\u{0644}\u{0622}\u{0644}\u{064a}"
+        );
     }
 }

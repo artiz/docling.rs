@@ -17,6 +17,7 @@ mod ocr;
 pub mod pdfium_backend;
 pub mod resample;
 pub mod tableformer;
+pub mod textparse;
 
 use std::fmt;
 
@@ -129,6 +130,7 @@ impl Pipeline {
             code_cells: Vec::new(),
             word_cells: Vec::new(),
             image,
+            links: Vec::new(),
         };
         self.process_pages(vec![page], name)
     }
@@ -145,7 +147,11 @@ impl Pipeline {
             .predict(&page.image, page.width, page.height)
             .map_err(|e| PdfError::Layout(format!("page {}: {e}", n + 1)))?;
         // Resolve overlapping detections once, before OCR.
-        let regions = assemble::resolve(regions);
+        let mut regions = assemble::resolve(regions);
+        // Emit text the detector missed as orphan text regions (docling parity).
+        assemble::add_orphan_regions(&mut regions, &page.cells);
+        // Drop phantom empty low-confidence picture boxes (docling parity).
+        assemble::drop_false_pictures(&mut regions, &page.cells, page.width, page.height);
         // No text layer → recognise text from the page image via OCR.
         if page.cells.is_empty() {
             if self.ocr.is_none() {
