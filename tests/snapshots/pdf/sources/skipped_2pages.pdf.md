@@ -8,8 +8,6 @@
 
 <!-- image -->
 
-<!-- image -->
-
 엣지컴퓨팅 (Edge Computing)
 
 <!-- image -->

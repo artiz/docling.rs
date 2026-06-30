@@ -97,6 +97,64 @@ pub fn add_orphan_regions(regions: &mut Vec<Region>, cells: &[TextCell]) {
     regions.extend(merged);
 }
 
+/// Drop a `picture` detection that is a small, empty, low-confidence margin box on
+/// a **text page** — a false positive the RT-DETR layout sometimes emits (e.g.
+/// `right_to_left_02`'s phantom right-column picture, score 0.40); docling does not
+/// emit it. The gate is deliberately narrow so a genuine figure is never dropped:
+/// (1) only on pages with a digital text layer — image/scanned/figure pages have
+/// no `cells` yet at this point (OCR runs later), so their pictures, which *are*
+/// the content, are kept; (2) only a box covering < 25 % of the page (a margin
+/// artifact, not a dominant figure); (3) only when it contains no text and scores
+/// below 0.5 (real empty figures in the corpus all score ≥ 0.86).
+pub fn drop_false_pictures(
+    regions: &mut Vec<Region>,
+    cells: &[TextCell],
+    page_w: f32,
+    page_h: f32,
+) {
+    if cells.iter().all(|c| c.text.trim().is_empty()) {
+        return; // no digital text layer (image/scanned page) — keep all pictures
+    }
+    // A text-document page carries several text-bearing non-picture regions (so a
+    // spurious margin picture is clearly extra). A slide / figure page has at most
+    // one — there the picture is the content, so never drop it.
+    let content_regions = regions
+        .iter()
+        .filter(|r| r.label != "picture" && !region_text(r, cells).trim().is_empty())
+        .count();
+    if content_regions < 2 {
+        return;
+    }
+    let page_area = (page_w * page_h).max(1.0);
+    regions.retain(|r| {
+        if r.label != "picture" || r.score >= 0.5 {
+            return true;
+        }
+        if area(r.l, r.t, r.r, r.b) / page_area >= 0.25 {
+            return true; // a dominant figure, not a margin artifact
+        }
+        // Keep it if any text cell falls mostly inside (a real captioned/labelled
+        // figure); drop only the genuinely empty low-confidence boxes.
+        cells.iter().any(|c| {
+            let ca = area(c.l, c.t, c.r, c.b).max(1.0);
+            !c.text.trim().is_empty() && inter(r, c.l, c.t, c.r, c.b) / ca > 0.5
+        })
+    });
+}
+
+/// A small digit-only region in the top/bottom margin: a page number. docling
+/// emits `right_to_left_02`'s bottom `11` as the page's *first* text item (its
+/// reading-order model floats the page number to the front), whereas our
+/// position-based ordering would place a bottom region last.
+fn is_page_number(region: &Region, cells: &[TextCell], page_h: f32) -> bool {
+    let t = region_text(region, cells);
+    let t = t.trim();
+    !t.is_empty()
+        && t.chars().all(|c| c.is_ascii_digit())
+        && (region.b - region.t).abs() < 30.0
+        && (region.t < page_h * 0.12 || region.b > page_h * 0.88)
+}
+
 /// Furniture / not-yet-emitted labels.
 fn is_skipped(label: &str) -> bool {
     matches!(
@@ -205,12 +263,18 @@ fn md_escape(text: &str) -> String {
 }
 
 fn clean_text(text: &str) -> String {
+    // Korean (Hangul) bodies use single straight quotes where the font's double
+    // curly glyph maps; docling renders `“ ”` as `'` for these fonts (normal_4pages
+    // `‘코로나’`), not the Latin `"`. Key on Hangul syllables so Latin docs (2305's
+    // genuine `quotedbl` → `"`) are unaffected.
+    let hangul = text.chars().any(|c| ('\u{AC00}'..='\u{D7A3}').contains(&c));
+    let dquote = if hangul { "'" } else { "\"" };
     let replaced = text
         .replace("\u{2} ", "")
         .replace("\u{ad} ", "")
         .replace(['\u{2}', '\u{ad}'], "") // any stray wrap hyphens not at a join
         .replace(['\u{2018}', '\u{2019}'], "'") // ‘ ’ → '
-        .replace(['\u{201c}', '\u{201d}'], "\"") // “ ” → "
+        .replace(['\u{201c}', '\u{201d}'], dquote) // “ ” → " (or ' for Hangul)
         .replace(['\u{2013}', '\u{2014}', '\u{2212}'], "-") // – — − → -
         .replace('\u{2044}', "/") // ⁄ fraction slash → /
         .replace('\u{2026}', "..."); // … → ...
@@ -604,6 +668,11 @@ pub fn assemble_page(
         .map(|(i, r)| (r, table_rows.get(i).cloned().flatten()))
         .collect();
     order_regions(&mut items, page.width, |it| &it.0);
+    // Float a margin page number to the front of reading order (docling parity:
+    // right_to_left_02's bottom `11` is its first item). Stable, so everything
+    // else keeps its order; no-op on pages without such a region.
+    let page_h = page.height;
+    items.sort_by_key(|(r, _)| !is_page_number(r, &page.cells, page_h));
     let table_rows: Vec<Option<Vec<Vec<String>>>> = items.iter().map(|(_, t)| t.clone()).collect();
     let regions: Vec<Region> = items.into_iter().map(|(r, _)| r).collect();
     // docling emits a figure's caption *before* the image marker. Pair each

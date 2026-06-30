@@ -150,6 +150,8 @@ impl Pipeline {
         let mut regions = assemble::resolve(regions);
         // Emit text the detector missed as orphan text regions (docling parity).
         assemble::add_orphan_regions(&mut regions, &page.cells);
+        // Drop phantom empty low-confidence picture boxes (docling parity).
+        assemble::drop_false_pictures(&mut regions, &page.cells, page.width, page.height);
         // No text layer → recognise text from the page image via OCR.
         if page.cells.is_empty() {
             if self.ocr.is_none() {
