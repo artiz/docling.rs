@@ -20,6 +20,7 @@ image = "0.25"
 flate2 = "1"
 tar = "0.4"
 regex = "1.11"
+lopdf = "0.34"
 
 [lib]
 name = "fleischwolf_pdf"

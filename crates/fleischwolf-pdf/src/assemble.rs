@@ -43,6 +43,60 @@ pub fn resolve(mut regions: Vec<Region>) -> Vec<Region> {
     kept
 }
 
+/// Append `text` regions for cells the layout left uncovered ("orphan cells"),
+/// the way docling's `LayoutPostprocessor` does (`create_orphan_clusters`): any
+/// non-empty cell that no kept region covers (>50% of the cell's area) becomes a
+/// text region of its own, so text the detector missed (a stray `.`, a small
+/// label) is still emitted instead of silently dropped. Adjacent orphan cells on a
+/// line are merged so a missed paragraph doesn't shatter into one block per line.
+pub fn add_orphan_regions(regions: &mut Vec<Region>, cells: &[TextCell]) {
+    // docling assigns a cell to its best-overlapping cluster at
+    // intersection-over-self > 0.2; only cells below that for *every* region are
+    // orphans. (Our text extraction uses a stricter 0.5, but matching docling's
+    // 0.2 here avoids emitting cells it already placed in a neighbouring region.)
+    let assigned = |c: &TextCell| {
+        let ca = area(c.l, c.t, c.r, c.b).max(1.0);
+        regions
+            .iter()
+            .any(|r| inter(r, c.l, c.t, c.r, c.b) / ca > 0.2)
+    };
+    // Collect orphan cells (non-empty, unassigned), in page order.
+    let mut orphans: Vec<&TextCell> = cells
+        .iter()
+        .filter(|c| !c.text.trim().is_empty() && !assigned(c))
+        .collect();
+    if orphans.is_empty() {
+        return;
+    }
+    orphans.sort_by(|a, b| a.t.total_cmp(&b.t).then(a.l.total_cmp(&b.l)));
+    // Merge cells that sit on the same line and nearly touch into one region, so a
+    // dropped multi-word line stays one block (docling's refinement merges these).
+    let mut merged: Vec<Region> = Vec::new();
+    for c in orphans {
+        let h = (c.b - c.t).abs().max(1.0);
+        if let Some(last) = merged.last_mut() {
+            let same_line = (last.t - c.t).abs() < h * 0.5;
+            let touching = c.l <= last.r + h && c.l >= last.l - h;
+            if same_line && touching {
+                last.l = last.l.min(c.l);
+                last.r = last.r.max(c.r);
+                last.t = last.t.min(c.t);
+                last.b = last.b.max(c.b);
+                continue;
+            }
+        }
+        merged.push(Region {
+            label: "text",
+            score: 0.0,
+            l: c.l,
+            t: c.t,
+            r: c.r,
+            b: c.b,
+        });
+    }
+    regions.extend(merged);
+}
+
 /// Furniture / not-yet-emitted labels.
 fn is_skipped(label: &str) -> bool {
     matches!(

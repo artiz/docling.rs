@@ -98,12 +98,28 @@ impl PdfDocument {
         let pdfium = bind()?;
         let ffi = FfiText::load(pdfium.bindings(), bytes, password);
         let doc = pdfium.load_pdf_from_byte_slice(bytes, password)?;
+        let mut rust = rust_parser_cells(bytes);
         let mut pages = Vec::new();
         for (i, page) in doc.pages().iter().enumerate() {
-            pages.push(extract_page(&page, &ffi, i as i32)?);
+            let rc = rust.as_mut().and_then(|v| v.get_mut(i).map(std::mem::take));
+            pages.push(extract_page(&page, &ffi, i as i32, rc)?);
         }
         Ok(PdfDocument { pages })
     }
+}
+
+/// Per-page prose line cells from the pure-Rust text parser, when opted in via
+/// `DOCLING_RUST_PARSER`. `None` keeps the default pdfium text layer.
+fn rust_parser_cells(bytes: &[u8]) -> Option<Vec<Vec<TextCell>>> {
+    if std::env::var("DOCLING_RUST_PARSER").is_err() {
+        return None;
+    }
+    Some(
+        crate::textparse::pdf_textlines(bytes)
+            .into_iter()
+            .map(|(_, _, cells)| cells)
+            .collect(),
+    )
 }
 
 /// Render + extract pages one at a time, handing each (owned) [`PdfPage`] to `f`.
@@ -120,10 +136,12 @@ where
     let pdfium = bind()?;
     let ffi = FfiText::load(pdfium.bindings(), bytes, password);
     let doc = pdfium.load_pdf_from_byte_slice(bytes, password)?;
+    let mut rust = rust_parser_cells(bytes);
     let pages = doc.pages();
     let total = pages.len() as usize;
     for (i, page) in pages.iter().enumerate() {
-        let extracted = extract_page(&page, &ffi, i as i32)?;
+        let rc = rust.as_mut().and_then(|v| v.get_mut(i).map(std::mem::take));
+        let extracted = extract_page(&page, &ffi, i as i32, rc)?;
         f(i, total, extracted)?;
     }
     Ok(())
@@ -133,6 +151,7 @@ fn extract_page(
     page: &pdfium_render::prelude::PdfPage<'_>,
     ffi: &FfiText<'_>,
     index: i32,
+    rust_cells: Option<Vec<TextCell>>,
 ) -> Result<PdfPage, PdfiumError> {
     let width = page.width().value;
     let height = page.height().value;
@@ -140,6 +159,14 @@ fn extract_page(
     let (mut cells, code_cells, word_cells) = ffi.page_cells(index, height);
     if cells.is_empty() {
         cells = segment_cells(&page.text()?, height);
+    }
+    // Opt-in (`DOCLING_RUST_PARSER`): use the pure-Rust text parser's prose line
+    // cells instead of pdfium's. Word/code cells stay on pdfium so TableFormer
+    // cell-matching is unaffected while the parser is validated.
+    if let Some(rc) = rust_cells {
+        if !rc.is_empty() {
+            cells = rc;
+        }
     }
 
     // docling renders at 1.5× the target scale and downsamples "to make it
