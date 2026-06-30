@@ -163,9 +163,10 @@ numbering and footnote reading order.)
 4. ~~Korean quote normalization~~ — DONE (normal_4pages 74→54).
 5. **Now: 6/14 strict, 7/14 whitespace-normalized.** Blocker B (amt) needs a
    font-metrics layer for strict 7/14.
-6. **Word cells off pdfium — DONE (parser is now the default word source).** The
-   parser is already the sole *prose* source (item 2); **word** cells now come
-   from it too. The insight: docling-parse's `word_cells` are exactly the line
+6. **Drop pdfium's text path — DONE (parser is the sole text source).** The
+   parser was already the sole *prose* source (item 2); **word** and **code**
+   cells now come from it too, so pdfium does only rasterisation + links.
+   *Word cells:* the insight is that docling-parse's `word_cells` are exactly the line
    contraction's runs, split at the points where `merge_with` inserts a separator
    space (`delta < gap`). So instead of the legacy gap-heuristic
    (`words_from_glyphs`, which blob-joined TJ-spaced runs like
@@ -184,12 +185,25 @@ numbering and footnote reading order.)
    the now docling-faithful output (e.g. `bold ,` / `x 2`, which docling-parse's
    own `word_cells` confirm — the old `bold,` / `x2` were pdfium punct-gluing).
 
-   **Code cells still pdfium.** The parser's space-glyph-only code grouping drops
-   the inter-token spaces pdfium recovers in monospace listings
-   (`function add` → `functionadd`, a regression vs groundtruth), so code cells
-   stay on pdfium, gated behind `DOCLING_PARSER_CODE` for a future fix (the parser
-   needs faithful monospace spacing before the *code* path can retire too). pdfium
-   thus remains for code cells + page rasterisation + link annotations.
+   **Code cells off pdfium too — DONE (pdfium's text path fully retired).** The
+   first attempt at parser code cells used the space-glyph-only grouping, which
+   dropped the inter-token spaces pdfium recovers (`function add` → `functionadd`)
+   because the parser emits no space glyphs — a source space is a positioning
+   *gap*. The fix is a third grouping mode, `Grouping::CodeGap`: split on the
+   inter-glyph gap (a space wherever it exceeds ~0.25× the line height) but with
+   **no punctuation glue**, so a real gap always splits (`et al. 2000`, not
+   `et al.2000` — the prose glue rule is wrong for code) while genuinely touching
+   tokens stay joined (`add(a,` / `b)`). The parser's clean advance boxes make the
+   gap reliable here, where pdfium's overhanging loose boxes would over-split
+   (`f un c t i o n`) — which is why pdfium keeps the space-glyph path.
+   `code_and_formula` is byte-exact (`function add(a, b) { return a + b; }
+   console.log(add(3, 5));`); it's the default (opt out with `DOCLING_PDFIUM_WORDS`
+   or `DOCLING_PDFIUM_TEXT`). Two snapshots (`2305` llncsdoc, `redp5110`) drift in
+   garbled multi-column LaTeX/SQL "code" regions — conformance-**neutral** vs the
+   groundtruth (337/337, 175/175), regenerated to the parser output.
+
+   pdfium now does **only** page rasterisation + link annotations; all text
+   (prose, words, code) comes from the pure-Rust parser.
 
 ## Tooling (under `scripts/`)
 

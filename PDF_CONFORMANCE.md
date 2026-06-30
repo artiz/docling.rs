@@ -87,9 +87,10 @@ on `lopdf`) that reconstructs each glyph's box from the *font's own advance
 widths* and the PDF text/graphics matrices — the same information docling-parse
 uses. It is the **default** text layer; set `DOCLING_PDFIUM_TEXT=1` to fall back
 to pdfium. Pages without a parseable text layer fall back to pdfium
-automatically, so scanned/OCR pages are unaffected. The parser also supplies the
-**word cells** TableFormer matches against (`DOCLING_PDFIUM_WORDS` keeps pdfium's);
-pdfium still provides page rasters, code cells, and link annotations.
+automatically, so scanned/OCR pages are unaffected. The parser supplies **all**
+text — prose, the **word cells** TableFormer matches against, and **code cells**
+(`DOCLING_PDFIUM_WORDS` reverts words+code to pdfium; `DOCLING_PDFIUM_TEXT`
+reverts everything). pdfium now does only page rasterisation + link annotations.
 
 The parser handles Type0/CID + Identity-H and simple Type1/TrueType fonts,
 ToUnicode CMaps (`bfchar`/`bfrange`), WinAnsi/MacRoman + `/Differences`
@@ -113,10 +114,13 @@ is a maximal run of glyphs the contraction merges *without* inserting a separato
 space, so the per-word segments split at exactly the `delta < gap` points — which
 reproduces docling-parse's `word_cells` byte-for-byte (377/377 on 2305-pg9). These
 are the per-word tokens TableFormer matches against table-grid cells, replacing
-pdfium's word cells (roadmap item 6). Code cells stay on pdfium for now — the
-parser's space-glyph-only code grouping drops monospace spacing
-(`function add` → `functionadd`); opt into the parser code path with
-`DOCLING_PARSER_CODE` once that's fixed.
+pdfium's word cells (roadmap item 6). **Code cells** come from the parser too,
+via a gap-based grouping (`Grouping::CodeGap`): the parser emits no space glyphs
+(a source space is a positioning gap), so a word breaks wherever the inter-glyph
+gap exceeds ~0.25× the line height, with no punctuation glue — `et al. 2000`
+keeps its space while `add(a,` / `b)` stay joined. `code_and_formula` is byte-exact
+(`function add(a, b) { return a + b; }`). With this, pdfium's text path is fully
+retired (rasters + links only).
 
 Other text/serializer/layout fixes matching docling: markdown escaping (`_`→`\_`,
 then HTML-escape `&`/`<`/`>`), typographic-punctuation normalization
