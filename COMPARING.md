@@ -177,35 +177,44 @@ case — see the divergence table below.
 | **PPTX** | **7 / 7** ✅ | 7 / 7 |
 | **DOCX** | **25 / 26** | 25 / 26 |
 | **HTML** | **28 / 33** | 28 / 33 |
-| **PDF** | **4 / 14** † | 5 / 14 |
+| **PDF** | **6 / 14** † | 7 / 14 |
 
 > † The pure-parse backends above are scored against **live** docling. **PDF** is a
 > discriminative ML reconstruction pipeline (not a deterministic parse), so it is
 > scored against a committed groundtruth corpus (`tests/data/pdf/groundtruth`) that
 > is **regenerated from live docling** and therefore matches `scripts/conformance.sh
-> pdf` (padded GitHub tables, current docling text). Within-one adds
-> `right_to_left_01` (a 2-line diff).
+> pdf` (padded GitHub tables, current docling text). The PDF score is reported two
+> ways: **6 / 14 strict** byte-for-byte, and **7 / 14 whitespace-normalized** — the
+> 7th (`amt_handbook_sample`) differs only by docling's spurious double space in a
+> `1⁄4` fraction, where the Rust output's single space is the more faithful
+> rendering.
 
-**PDF** (`*.pdf`) ports docling's *standard* (discriminative) PDF pipeline. pdfium
-extracts the text layer (glyph cells + bounding boxes) and renders each page to a
-bitmap; an ONNX model stack then interprets it — **layout detection** (the
-`heron`/RT-DETR region model), **TableFormer** table-structure recognition (a full
-port: image encoder + autoregressive OTSL structure decoder + cell-bbox decoder,
-exported to ONNX — see `tableformer.rs`, with cv2-exact `INTER_AREA`/`INTER_LINEAR`
+**PDF** (`*.pdf`) ports docling's *standard* (discriminative) PDF pipeline. A
+**pure-Rust text parser** (`textparse.rs`, on `lopdf`) reconstructs each glyph's
+box from the font's own advance widths and the PDF text/graphics matrices — the
+same information docling's `docling-parse` C++ parser uses, and a closer match
+than pdfium's *rendered* boxes. It is the default text layer (`DOCLING_PDFIUM_TEXT=1`
+falls back to pdfium; pages with no text layer fall back automatically). pdfium
+still renders each page to a bitmap and supplies word/code cells for tables. An
+ONNX model stack interprets the page — **layout detection** (the `heron`/RT-DETR
+region model), **TableFormer** table-structure recognition (a full port: image
+encoder + autoregressive OTSL structure decoder + cell-bbox decoder, exported to
+ONNX — see `tableformer.rs`, with cv2-exact `INTER_AREA`/`INTER_LINEAR`
 preprocessing in `resample.rs`), and **PaddleOCR** recognition for scanned /
 image-only pages — and regions are assembled in reading order into a
-`DoclingDocument`. Text reconstruction ports **docling-parse's line sanitizer**
-(`dp_lines.rs`, from `cells.h`): the 3-pass corner-distance contraction with
-`merge_with` space insertion, `enforce_same_font`, ligature recomposition, and
-loose-box geometry — fed by pdfium glyphs. This closed the text-run-boundary gap
-that previously capped conformance (inter-run spacing like `LABEL :`, justified
-double-spacing, lam-alef ordering). Byte-exact today: `picture_classification`,
-`code_and_formula`, `2305.03393v1-pg9` (**including its TableFormer-reconstructed
-table, cell for cell**), and `multi_page`. The rest are structurally correct but
-not yet byte-exact; the remaining gaps are model-level — TableFormer multi-row
-header/span structure on dense papers, layout classification (a TOC read as a
-picture, a survey read as tables), title-page reading order, and justified RTL
-double-spaces (`right_to_left_01`, within one line).
+`DoclingDocument`. The parser's cells feed the ported **docling-parse line
+sanitizer** (`dp_lines.rs`, from `cells.h`): the 3-pass corner-distance
+contraction with `merge_with` space insertion, `enforce_same_font`, ligature
+recomposition, and loose-box geometry. Together they closed the text-run-boundary
+gap that capped conformance (inter-run spacing like `LABEL :`, justified
+double-spacing, lam-alef ordering, the RTL sentence period, kashida over-emission).
+Byte-exact today: `picture_classification`, `code_and_formula`,
+`2305.03393v1-pg9` (**including its TableFormer-reconstructed table, cell for
+cell**), `multi_page`, `right_to_left_01`, and `right_to_left_02`. `amt` matches
+once whitespace is normalized. The rest are structurally correct but not yet
+byte-exact; the remaining gaps are model-level — TableFormer multi-row header/span
+structure on dense papers, layout classification (a TOC read as a picture, a
+survey read as tables), and title-page reading order.
 
 **DOCX** (`*.docx`) is a core port of `MsWordDocumentBackend` (`roxmltree` over
 the `ooxml` helper): paragraphs, headings (by style, incl. Title), **numbered
