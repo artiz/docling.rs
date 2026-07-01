@@ -82,23 +82,33 @@ type PageOut = (Vec<Node>, Vec<(String, String)>);
 /// parallel page-worker owns its own `Worker` so inference runs concurrently
 /// without sharing an ONNX session (`ort`'s `Session::run` is `&mut self`).
 struct Worker {
-    layout: layout::LayoutModel,
+    /// `None` when `no_ocr` skips layout entirely — no model load, no inference.
+    layout: Option<layout::LayoutModel>,
     ocr: Option<ocr::OcrModel>,
     /// TableFormer structure model; `None` when its ONNX graphs aren't present
-    /// (the assembler then falls back to geometric table reconstruction).
+    /// (the assembler then falls back to geometric table reconstruction) or
+    /// when `no_table_former`/`no_ocr` skip it.
     tables: Option<tableformer::TableFormer>,
+    /// Skip layout, OCR, and TableFormer; reconstruct text purely from the PDF's
+    /// embedded text layer. See [`Pipeline::no_ocr`].
+    no_ocr: bool,
 }
 
 impl Worker {
-    fn load(intra: usize, no_table_former: bool) -> Result<Self, PdfError> {
+    fn load(intra: usize, no_table_former: bool, no_ocr: bool) -> Result<Self, PdfError> {
         Ok(Self {
-            layout: layout::LayoutModel::load_with(intra).map_err(PdfError::Layout)?,
+            layout: if no_ocr {
+                None
+            } else {
+                Some(layout::LayoutModel::load_with(intra).map_err(PdfError::Layout)?)
+            },
             ocr: None,
-            tables: if no_table_former {
+            tables: if no_table_former || no_ocr {
                 None
             } else {
                 tableformer::TableFormer::load_with(intra)
             },
+            no_ocr,
         })
     }
 
@@ -106,8 +116,25 @@ impl Worker {
     /// into its nodes and links. Pure given the page (mutates only the worker's
     /// lazily-loaded OCR model), so it is safe to run concurrently across pages.
     fn process(&mut self, n: usize, page: &mut PdfPage) -> Result<PageOut, PdfError> {
+        if self.no_ocr {
+            // Fastest path: no layout/OCR/TableFormer inference at all. The PDF's
+            // embedded text cells (if any) become flat, line-grouped paragraphs in
+            // reading order via the same orphan-region machinery that normally
+            // rescues text the detector missed — here it rescues *all* of it.
+            // Pages with no embedded text layer (scanned/image-only) yield nothing;
+            // convert those without `no_ocr`.
+            let mut regions = Vec::new();
+            assemble::add_orphan_regions(&mut regions, &page.cells);
+            let table_rows = vec![None; regions.len()];
+            return Ok(timing::timed("assemble_page", || {
+                assemble::assemble_page(page, regions, &table_rows)
+            }));
+        }
         let regions = timing::timed("layout.predict", || {
-            self.layout.predict(&page.image, page.width, page.height)
+            self.layout
+                .as_mut()
+                .expect("layout model loaded unless no_ocr")
+                .predict(&page.image, page.width, page.height)
         })
         .map_err(|e| PdfError::Layout(format!("page {}: {e}", n + 1)))?;
         // Resolve overlapping detections once, before OCR.
@@ -215,6 +242,8 @@ pub struct Pipeline {
     /// Skip loading/running TableFormer; table regions fall back to geometric
     /// reconstruction. See [`Pipeline::no_table_former`].
     no_table_former: bool,
+    /// Skip layout, OCR, and TableFormer entirely. See [`Pipeline::no_ocr`].
+    no_ocr: bool,
 }
 
 impl Pipeline {
@@ -228,6 +257,7 @@ impl Pipeline {
             target_workers: pdf_worker_count(),
             parallel_min: pdf_parallel_min(),
             no_table_former: false,
+            no_ocr: false,
         })
     }
 
@@ -242,10 +272,27 @@ impl Pipeline {
         self
     }
 
+    /// Skip layout detection, OCR, and TableFormer entirely — no model load, no
+    /// inference of any kind. The PDF's embedded text cells are grouped by line
+    /// and emitted as plain paragraphs in reading order: no headings, lists,
+    /// tables, code blocks, or pictures, since that structure comes from the
+    /// layout model. The fastest possible PDF path, but pages with no embedded
+    /// text layer (scanned/image-only PDFs) yield no text at all — convert those
+    /// without this flag. Implies `no_table_former`. No effect if a worker is
+    /// already loaded; set this before the first conversion.
+    pub fn no_ocr(mut self, disable: bool) -> Self {
+        self.no_ocr = disable;
+        self
+    }
+
     /// The full-intra serial worker, loaded on first use.
     fn primary(&mut self) -> Result<&mut Worker, PdfError> {
         if self.primary.is_none() {
-            self.primary = Some(Worker::load(intra_threads(), self.no_table_former)?);
+            self.primary = Some(Worker::load(
+                intra_threads(),
+                self.no_table_former,
+                self.no_ocr,
+            )?);
         }
         Ok(self.primary.as_mut().unwrap())
     }
@@ -280,8 +327,9 @@ impl Pipeline {
         name: &str,
     ) -> Result<DoclingDocument, PdfError> {
         let mut doc = DoclingDocument::new(name);
+        let render_image = !self.no_ocr;
         let worker = self.primary()?;
-        pdfium_backend::for_each_page(bytes, password, |n, _total, mut page| {
+        pdfium_backend::for_each_page(bytes, password, render_image, |n, _total, mut page| {
             let (nodes, links) = worker.process(n, &mut page)?;
             doc.nodes.extend(nodes);
             doc.links.extend(links);
@@ -304,6 +352,7 @@ impl Pipeline {
     ) -> Result<DoclingDocument, PdfError> {
         self.ensure_pool()?;
         let n_workers = self.pool.len();
+        let render_image = !self.no_ocr;
         let (work_tx, work_rx) = sync_channel::<(usize, PdfPage)>(n_workers * 2);
         let work_rx: Arc<Mutex<Receiver<(usize, PdfPage)>>> = Arc::new(Mutex::new(work_rx));
         let results: Arc<Mutex<Vec<(usize, PageOut)>>> = Arc::new(Mutex::new(Vec::new()));
@@ -335,11 +384,12 @@ impl Pipeline {
             // Render on this thread and feed the workers; backpressure blocks here
             // when the channel is full. Dropping `work_tx` afterwards signals the
             // workers (recv → Err) to finish.
-            let render = pdfium_backend::for_each_page(bytes, password, |i, _total, page| {
-                work_tx
-                    .send((i, page))
-                    .map_err(|_| PdfError::Pdfium("page-worker channel closed".into()))
-            });
+            let render =
+                pdfium_backend::for_each_page(bytes, password, render_image, |i, _total, page| {
+                    work_tx
+                        .send((i, page))
+                        .map_err(|_| PdfError::Pdfium("page-worker channel closed".into()))
+                });
             drop(work_tx);
             if let Err(e) = render {
                 let mut slot = first_err.lock().unwrap();
@@ -412,8 +462,9 @@ impl Pipeline {
         F: FnMut(Vec<Node>, Vec<(String, String)>) -> Result<(), PdfError>,
     {
         let mut asm = assemble::StreamAssembler::new();
+        let render_image = !self.no_ocr;
         let worker = self.primary()?;
-        pdfium_backend::for_each_page(bytes, password, |n, _total, mut page| {
+        pdfium_backend::for_each_page(bytes, password, render_image, |n, _total, mut page| {
             let (nodes, links) = worker.process(n, &mut page)?;
             emit(asm.push(nodes), links)
         })?;
@@ -437,6 +488,7 @@ impl Pipeline {
     {
         self.ensure_pool()?;
         let n_workers = self.pool.len();
+        let render_image = !self.no_ocr;
         let (work_tx, work_rx) = sync_channel::<(usize, PdfPage)>(n_workers * 2);
         let work_rx: Arc<Mutex<Receiver<(usize, PdfPage)>>> = Arc::new(Mutex::new(work_rx));
         // Workers and the renderer report here; the calling thread drains it in
@@ -467,12 +519,16 @@ impl Pipeline {
             {
                 let res_tx = res_tx.clone();
                 s.spawn(move || {
-                    let render =
-                        pdfium_backend::for_each_page(bytes, password, |i, _total, page| {
+                    let render = pdfium_backend::for_each_page(
+                        bytes,
+                        password,
+                        render_image,
+                        |i, _total, page| {
                             work_tx
                                 .send((i, page))
                                 .map_err(|_| PdfError::Pdfium("page-worker channel closed".into()))
-                        });
+                        },
+                    );
                     drop(work_tx); // signal workers to finish
                     if let Err(e) = render {
                         let _ = res_tx.send(Err(e));
@@ -527,9 +583,10 @@ impl Pipeline {
         }
         let intra = pdf_intra();
         let no_table_former = self.no_table_former;
+        let no_ocr = self.no_ocr;
         let loaded: Vec<Result<Worker, PdfError>> = std::thread::scope(|s| {
             let handles: Vec<_> = (0..need)
-                .map(|_| s.spawn(move || Worker::load(intra, no_table_former)))
+                .map(|_| s.spawn(move || Worker::load(intra, no_table_former, no_ocr)))
                 .collect();
             handles.into_iter().map(|h| h.join().unwrap()).collect()
         });
@@ -587,53 +644,62 @@ pub fn convert(
     password: Option<&str>,
     name: &str,
 ) -> Result<DoclingDocument, PdfError> {
-    convert_with_options(bytes, password, name, false)
+    convert_with_options(bytes, password, name, false, false)
 }
 
 /// Like [`convert`], but optionally skips loading/running TableFormer (see
-/// [`Pipeline::no_table_former`]).
+/// [`Pipeline::no_table_former`]) and/or layout+OCR+TableFormer entirely (see
+/// [`Pipeline::no_ocr`]).
 pub fn convert_with_options(
     bytes: &[u8],
     password: Option<&str>,
     name: &str,
     no_table_former: bool,
+    no_ocr: bool,
 ) -> Result<DoclingDocument, PdfError> {
     Pipeline::new()?
         .no_table_former(no_table_former)
+        .no_ocr(no_ocr)
         .convert(bytes, password, name)
 }
 
 /// Convenience one-shot image conversion (loads the pipeline per call).
 pub fn convert_image(bytes: &[u8], name: &str) -> Result<DoclingDocument, PdfError> {
-    convert_image_with_options(bytes, name, false)
+    convert_image_with_options(bytes, name, false, false)
 }
 
 /// Like [`convert_image`], but optionally skips loading/running TableFormer (see
-/// [`Pipeline::no_table_former`]).
+/// [`Pipeline::no_table_former`]) and/or layout+OCR+TableFormer entirely (see
+/// [`Pipeline::no_ocr`]).
 pub fn convert_image_with_options(
     bytes: &[u8],
     name: &str,
     no_table_former: bool,
+    no_ocr: bool,
 ) -> Result<DoclingDocument, PdfError> {
     Pipeline::new()?
         .no_table_former(no_table_former)
+        .no_ocr(no_ocr)
         .convert_image(bytes, name)
 }
 
 /// Convert pre-segmented pages (image + already-known text cells, e.g. METS/hOCR
 /// scans) through the shared layout + assembly pipeline.
 pub fn convert_pages(pages: Vec<PdfPage>, name: &str) -> Result<DoclingDocument, PdfError> {
-    convert_pages_with_options(pages, name, false)
+    convert_pages_with_options(pages, name, false, false)
 }
 
 /// Like [`convert_pages`], but optionally skips loading/running TableFormer (see
-/// [`Pipeline::no_table_former`]).
+/// [`Pipeline::no_table_former`]) and/or layout+OCR+TableFormer entirely (see
+/// [`Pipeline::no_ocr`]).
 pub fn convert_pages_with_options(
     pages: Vec<PdfPage>,
     name: &str,
     no_table_former: bool,
+    no_ocr: bool,
 ) -> Result<DoclingDocument, PdfError> {
     Pipeline::new()?
         .no_table_former(no_table_former)
+        .no_ocr(no_ocr)
         .process_pages(pages, name)
 }
