@@ -40,7 +40,158 @@ pub fn resolve(mut regions: Vec<Region>) -> Vec<Region> {
             kept.push(r);
         }
     }
+    dedup_nested_code(&mut kept);
     kept
+}
+
+/// True for a bare, single-token source-code language label (`XML`, `C#`, `JSON`,
+/// `bash`, …) — the little header the docs render above a code block. Matched
+/// case-insensitively; anything with whitespace or longer than a token is out.
+fn is_code_language(t: &str) -> bool {
+    let t = t.trim();
+    if t.is_empty() || t.chars().any(char::is_whitespace) || t.chars().count() > 12 {
+        return false;
+    }
+    const LANGS: &[&str] = &[
+        "xml",
+        "html",
+        "xhtml",
+        "json",
+        "jsonc",
+        "yaml",
+        "yml",
+        "toml",
+        "ini",
+        "c#",
+        "csharp",
+        "f#",
+        "fsharp",
+        "vb",
+        "c",
+        "c++",
+        "cpp",
+        "java",
+        "kotlin",
+        "scala",
+        "go",
+        "golang",
+        "rust",
+        "swift",
+        "javascript",
+        "js",
+        "typescript",
+        "ts",
+        "jsx",
+        "tsx",
+        "python",
+        "py",
+        "ruby",
+        "rb",
+        "php",
+        "perl",
+        "lua",
+        "r",
+        "dart",
+        "bash",
+        "sh",
+        "shell",
+        "powershell",
+        "zsh",
+        "batch",
+        "cmd",
+        "sql",
+        "tsql",
+        "plsql",
+        "graphql",
+        "dockerfile",
+        "makefile",
+        "css",
+        "scss",
+        "sass",
+        "less",
+        "markdown",
+        "md",
+        "tex",
+        "latex",
+        "diff",
+        "proto",
+        "razor",
+        "cshtml",
+        "xaml",
+        "aspx",
+        "http",
+    ];
+    let lower = t.to_ascii_lowercase();
+    LANGS.contains(&lower.as_str())
+}
+
+/// Mark the region indices that are a code block's **language label** — a bare
+/// `XML`/`C#`/… token sitting directly above a `code` region — so they are consumed
+/// rather than emitted as their own stray paragraph/heading. The label may also be
+/// captured inside a wider code box (rendered as the fence's first line); dropping
+/// the standalone copy just removes the duplicate.
+fn code_language_labels(regions: &[Region], cells: &[TextCell]) -> Vec<bool> {
+    let mut drop = vec![false; regions.len()];
+    for (i, r) in regions.iter().enumerate() {
+        if matches!(r.label, "code" | "picture" | "table") {
+            continue;
+        }
+        if !is_code_language(&region_text(r, cells)) {
+            continue;
+        }
+        // The label sits just above the code (a blank line's gap) or is swallowed
+        // into the top of a wider code box; either way it is that block's label.
+        // The window is generous because the label's own font is small, so a
+        // one-line gap is several times its height.
+        let line_h = (r.b - r.t).abs().max(1.0);
+        let window = (line_h * 4.0).max(28.0);
+        let labels_code = regions.iter().enumerate().any(|(j, c)| {
+            if j == i || c.label != "code" {
+                return false;
+            }
+            let gap = c.t - r.b; // >0 when the code is below the label
+            let h_overlap = (r.r.min(c.r) - r.l.max(c.l)).max(0.0);
+            gap > -line_h * 3.0 && gap < window && h_overlap > 0.0
+        });
+        if labels_code {
+            drop[i] = true;
+        }
+    }
+    drop
+}
+
+/// Collapse `code` regions where one is nested inside another, keeping the larger.
+///
+/// RT-DETR sometimes emits a tight code box *and* a wider near-duplicate that also
+/// captures the block's language label (`XML`, `C#`, …). When the tight box scores
+/// higher it is kept first, and the wider container — not "mostly inside" the tight
+/// box — survives [`resolve`]'s greedy pass, so the block is emitted twice. Keeping
+/// the **larger** box (rather than dropping it) collapses the pair without leaking
+/// the container's extra cells back out as orphan text, since the larger box still
+/// covers every cell. Restricted to `code` so genuinely distinct nested regions of
+/// other kinds are untouched.
+fn dedup_nested_code(kept: &mut Vec<Region>) {
+    let mut drop = vec![false; kept.len()];
+    for i in 0..kept.len() {
+        if kept[i].label != "code" {
+            continue;
+        }
+        let ai = area(kept[i].l, kept[i].t, kept[i].r, kept[i].b).max(1.0);
+        for j in 0..kept.len() {
+            if i == j || drop[j] || kept[j].label != "code" {
+                continue;
+            }
+            let aj = area(kept[j].l, kept[j].t, kept[j].r, kept[j].b).max(1.0);
+            // Drop i when it is mostly inside a strictly larger code box j.
+            let overlap = inter(&kept[i], kept[j].l, kept[j].t, kept[j].r, kept[j].b);
+            if aj > ai && overlap / ai > 0.7 {
+                drop[i] = true;
+                break;
+            }
+        }
+    }
+    let mut keep = drop.iter();
+    kept.retain(|_| !*keep.next().unwrap());
 }
 
 /// Append `text` regions for cells the layout left uncovered ("orphan cells"),
@@ -488,6 +639,98 @@ fn region_text(region: &Region, cells: &[TextCell]) -> String {
     clean_text(&joined)
 }
 
+/// Tighten the spaces pdfium leaves around tight punctuation in a code line
+/// (`console .log` → `console.log`, `add (3 , 5)` → `add(3, 5)`), matching
+/// docling-parse's source spacing.
+fn tighten_code_punct(s: &str) -> String {
+    s.replace(" .", ".")
+        .replace(" ,", ",")
+        .replace(" ;", ";")
+        .replace(" )", ")")
+        .replace(" (", "(")
+}
+
+/// Assemble a **code** region's text with its line structure preserved.
+///
+/// Unlike [`region_text`] — which joins every cell with a single space, the right
+/// thing for prose reflow — a code block's line breaks and indentation are
+/// significant. The `code_cells` are already one physical source line each
+/// (grouped space-glyph-only, so monospace runs keep their spacing), so this:
+///
+/// 1. groups the cells into vertical line bands and orders them top→bottom,
+///    left→right;
+/// 2. joins the lines with `\n` (rather than spaces), keeping the carriage
+///    returns; and
+/// 3. reconstructs each line's leading indentation from its left offset, in units
+///    of the block's estimated monospace character width, so nesting survives.
+///
+/// Typography is normalized per line via [`clean_text`] (smart quotes, dashes,
+/// ellipsis), which never merges lines. Returns an empty string if the region has
+/// no code cells (the caller falls back to the prose text).
+fn code_region_text(region: &Region, cells: &[TextCell]) -> String {
+    let mut inside: Vec<&TextCell> = cells
+        .iter()
+        .filter(|c| {
+            let ca = area(c.l, c.t, c.r, c.b).max(1.0);
+            inter(region, c.l, c.t, c.r, c.b) / ca > 0.5
+        })
+        .filter(|c| !c.text.trim().is_empty())
+        .collect();
+    if inside.is_empty() {
+        return String::new();
+    }
+
+    // Quantize the top edge into ~line bands (like `region_text`), then order the
+    // cells by band (top→bottom) and, within a band, by left edge.
+    let band = inside
+        .iter()
+        .map(|c| (c.b - c.t).abs())
+        .fold(0.0f32, f32::max)
+        .max(1.0);
+    let line_of = |c: &TextCell| (c.t / band).round() as i64;
+    inside.sort_by_key(|c| (line_of(c), (c.l * 10.0) as i64));
+
+    // Estimate one monospace character's width (total ink width / total glyphs) to
+    // convert a line's left offset into a count of leading spaces. Measured over
+    // all lines so a single short line can't skew it.
+    let (mut total_w, mut total_chars) = (0.0f32, 0usize);
+    for c in &inside {
+        let n = c.text.trim().chars().count();
+        if n > 0 {
+            total_w += (c.r - c.l).max(0.0);
+            total_chars += n;
+        }
+    }
+    let char_w = if total_chars > 0 {
+        (total_w / total_chars as f32).max(1.0)
+    } else {
+        1.0
+    };
+    // The block's own left margin is the zero-indent baseline.
+    let base_l = inside.iter().map(|c| c.l).fold(f32::INFINITY, f32::min);
+
+    let mut lines: Vec<String> = Vec::new();
+    let mut cur: Option<i64> = None;
+    for c in &inside {
+        // Tighten pdfium's spaced punctuation per line (on the trimmed content, so
+        // the reconstructed leading indentation is never nibbled).
+        let text = tighten_code_punct(&clean_text(c.text.trim()));
+        if Some(line_of(c)) == cur {
+            // A second cell sharing this band (rare — e.g. split columns): keep it
+            // on the same source line, separated by a space.
+            if let Some(last) = lines.last_mut() {
+                last.push(' ');
+                last.push_str(&text);
+            }
+            continue;
+        }
+        let indent = ((c.l - base_l) / char_w).round().max(0.0) as usize;
+        lines.push(format!("{}{}", " ".repeat(indent), text));
+        cur = Some(line_of(c));
+    }
+    lines.join("\n")
+}
+
 /// Reconstruct a table's grid geometrically from the text cells inside its
 /// region: cluster cells into rows (by vertical centre) and columns (by clustered
 /// left edges), then place each cell. A model-free stand-in for TableFormer that
@@ -694,6 +937,16 @@ pub fn assemble_page(
     for ci in code_caption_for.iter().flatten() {
         consumed[*ci] = true;
     }
+    // A code block's language label (`XML`, `C#`, …) is chrome, not content — the
+    // detector emits it as its own region above the code; consume it.
+    for (i, is_label) in code_language_labels(&regions, &page.cells)
+        .into_iter()
+        .enumerate()
+    {
+        if is_label {
+            consumed[i] = true;
+        }
+    }
 
     for (i, region) in regions.iter().enumerate() {
         if is_skipped(region.label) || consumed[i] {
@@ -767,18 +1020,19 @@ pub fn assemble_page(
                 text: "<!-- formula-not-decoded -->".into(),
             }),
             // Code blocks: use the space-glyph-only grouping (monospace keeps its
-            // source spacing) and emit a fenced block. pdfium still inserts spaces
-            // around tight punctuation (`console .log`, `add (3 , 5)`); tighten
-            // them to match docling-parse's source spacing.
+            // source spacing) and emit a fenced block, preserving the line breaks
+            // and indentation of the source (unlike prose, which reflows). pdfium
+            // still inserts spaces around tight punctuation (`console .log`,
+            // `add (3 , 5)`); tighten them to match docling-parse's source spacing.
             "code" => {
-                let code = region_text(region, &page.code_cells);
-                let code = if code.is_empty() { text } else { code };
-                let code = code
-                    .replace(" .", ".")
-                    .replace(" ,", ",")
-                    .replace(" ;", ";")
-                    .replace(" )", ")")
-                    .replace(" (", "(");
+                // `code_region_text` preserves line breaks/indentation and tightens
+                // each line itself; the fallback prose `text` is tightened here.
+                let code = code_region_text(region, &page.code_cells);
+                let code = if code.is_empty() {
+                    tighten_code_punct(&text)
+                } else {
+                    code
+                };
                 nodes.push(Node::Code {
                     language: None,
                     text: code,
@@ -942,8 +1196,155 @@ impl StreamAssembler {
 #[cfg(test)]
 mod tests {
     use super::clean_text;
-    use super::{merge_continuations, StreamAssembler};
+    use super::{code_region_text, merge_continuations, StreamAssembler};
+    use crate::layout::Region;
+    use crate::pdfium_backend::TextCell;
     use fleischwolf_core::Node;
+
+    /// A one-line code cell at `[l, r] × [t, b]` (top-left coords).
+    fn cell(text: &str, l: f32, t: f32, r: f32, b: f32) -> TextCell {
+        TextCell {
+            text: text.into(),
+            l,
+            t,
+            r,
+            b,
+        }
+    }
+
+    fn region(label: &'static str, score: f32, l: f32, t: f32, r: f32, b: f32) -> Region {
+        Region {
+            label,
+            score,
+            l,
+            t,
+            r,
+            b,
+        }
+    }
+
+    #[test]
+    fn resolve_collapses_nested_code_keeping_the_larger_box() {
+        // A tight high-score `code` box and a taller lower-score near-duplicate that
+        // contains it must collapse to one — the *larger* box, so every cell stays
+        // covered and nothing leaks out as orphan text.
+        let tight = region("code", 0.95, 78.0, 292.0, 300.0, 330.0);
+        let wide = region("code", 0.66, 63.0, 260.0, 320.0, 346.0);
+        let kept = super::resolve(vec![tight, wide]);
+        assert_eq!(kept.len(), 1, "nested code boxes must collapse to one");
+        assert!(
+            kept[0].l == 63.0 && kept[0].b == 346.0,
+            "the larger containing box is kept"
+        );
+    }
+
+    #[test]
+    fn resolve_keeps_distinct_and_differently_typed_regions() {
+        // A text box fully inside a lower-score *table* must NOT be collapsed (the
+        // code dedup is code-only), and two separate code blocks stay separate.
+        let text = region("text", 0.95, 90.0, 210.0, 200.0, 230.0);
+        let table = region("table", 0.60, 80.0, 200.0, 400.0, 500.0);
+        assert_eq!(super::resolve(vec![text, table]).len(), 2);
+
+        let code_a = region("code", 0.9, 78.0, 100.0, 300.0, 140.0);
+        let code_b = region("code", 0.9, 78.0, 300.0, 300.0, 360.0); // far below, no overlap
+        assert_eq!(super::resolve(vec![code_a, code_b]).len(), 2);
+    }
+
+    #[test]
+    fn code_language_label_above_code_is_detected() {
+        // A bare "XML" token directly above a code box is a language label; a real
+        // heading above the same code is not; a language word with no code below is
+        // left alone.
+        let label = region("section_header", 0.9, 76.0, 540.0, 96.0, 549.0);
+        let code = region("code", 0.7, 77.0, 552.0, 290.0, 640.0);
+        let heading = region("section_header", 0.9, 76.0, 500.0, 260.0, 512.0);
+        let cells = vec![
+            cell("XML", 78.0, 541.0, 94.0, 548.0),       // inside `label`
+            cell("Overview", 78.0, 501.0, 250.0, 511.0), // inside `heading`
+        ];
+        let drop = super::code_language_labels(&[label, code, heading], &cells);
+        assert_eq!(drop, vec![true, false, false], "only the label is consumed");
+
+        // Same label with no code region present → not consumed.
+        let label2 = region("section_header", 0.9, 76.0, 540.0, 96.0, 549.0);
+        let only = vec![cell("XML", 78.0, 541.0, 94.0, 548.0)];
+        assert_eq!(super::code_language_labels(&[label2], &only), vec![false]);
+
+        // A label swallowed into the top of a wider code box (negative gap) is still
+        // recognized.
+        let inside_lbl = region("text", 0.9, 76.0, 540.0, 96.0, 549.0);
+        let wide_code = region("code", 0.7, 63.0, 531.0, 320.0, 654.0);
+        let cells2 = vec![cell("XML", 78.0, 541.0, 94.0, 548.0)];
+        assert_eq!(
+            super::code_language_labels(&[inside_lbl, wide_code], &cells2),
+            vec![true, false]
+        );
+
+        assert!(super::is_code_language("XML") && super::is_code_language("c#"));
+        assert!(!super::is_code_language("Configure") && !super::is_code_language("XML schema"));
+    }
+
+    #[test]
+    fn code_region_text_keeps_lines_and_indentation() {
+        // Three source lines; each glyph is 6 units wide (width / chars = 6), so the
+        // `int X;` line indented to x=22 is (22-10)/6 = 2 spaces in.
+        let region = Region {
+            label: "code",
+            score: 1.0,
+            l: 0.0,
+            t: -5.0,
+            r: 100.0,
+            b: 40.0,
+        };
+        let cells = vec![
+            cell("struct P {", 10.0, 0.0, 70.0, 10.0),
+            cell("int X;", 22.0, 12.0, 58.0, 22.0),
+            cell("}", 10.0, 24.0, 16.0, 34.0),
+        ];
+        assert_eq!(code_region_text(&region, &cells), "struct P {\n  int X;\n}");
+    }
+
+    #[test]
+    fn code_region_text_tightens_punctuation_without_eating_indentation() {
+        // A fluent `.Foo()` line at x=22 (2 chars in). Per-line tightening must not
+        // consume the leading indent space by matching " ." across it.
+        let region = Region {
+            label: "code",
+            score: 1.0,
+            l: 0.0,
+            t: -5.0,
+            r: 100.0,
+            b: 40.0,
+        };
+        let cells = vec![
+            cell("builder", 10.0, 0.0, 52.0, 10.0),
+            // pdfium spaced the call: ".Foo (x)" tightens to ".Foo(x)", still 2-indented.
+            cell(".Foo (x)", 22.0, 12.0, 70.0, 22.0),
+        ];
+        assert_eq!(code_region_text(&region, &cells), "builder\n  .Foo(x)");
+    }
+
+    #[test]
+    fn code_region_text_orders_out_of_order_cells_and_ignores_blank_lines() {
+        let region = Region {
+            label: "code",
+            score: 1.0,
+            l: 0.0,
+            t: -5.0,
+            r: 100.0,
+            b: 60.0,
+        };
+        // Fed bottom-up and with a whitespace-only cell; output is top-down, no blank.
+        let cells = vec![
+            cell("b();", 10.0, 24.0, 34.0, 34.0),
+            cell("   ", 10.0, 12.0, 20.0, 22.0),
+            cell("a();", 10.0, 0.0, 34.0, 10.0),
+        ];
+        assert_eq!(code_region_text(&region, &cells), "a();\nb();");
+        // No code cells → empty, so the caller falls back to the prose text.
+        assert_eq!(code_region_text(&region, &[]), "");
+    }
 
     fn para(text: &str) -> Node {
         Node::Paragraph { text: text.into() }
