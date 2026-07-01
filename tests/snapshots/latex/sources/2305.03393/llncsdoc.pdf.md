@@ -113,7 +113,7 @@ Multiple affiliations are separated by \and , which automatically assures correc
 \and
 
 ```
-\institute{<name of an institute> \and <name of the next institute> \and <name of the next institute>} \email Inside \institute you can use \email{<email address>} \url and \url{<url>}
+\institute{<name of an institute> \and <name of the next institute> \and <name of the next institute>} Inside \institute you can use\email \email{<email address>} and\url \url{<url>}
 ```
 
 ```
@@ -143,7 +143,7 @@ Please note that, if email addresses are given in your paper, they will also be 
 abstract ( env. ) The abstract is coded as follows:
 
 ```
-abstract(env.) The abstract is coded as follows: \begin{abstract} <Text of the summary of your paper> \end{abstract}
+The abstract is coded as follows:abstract(env.) \begin{abstract} <Text of the summary of your paper> \end{abstract}
 ```
 
 ```
@@ -167,7 +167,7 @@ From a technical point of view, the llncs document class does not require any sp
 The llncs document class supports some additional special characters:
 
 ```
-\grole yields > < \getsto yields ← → \lid yields < = \gid yields > =
+\grole yields > \lid yields < < \getsto yields ←→ = \gid yields > =
 ```
 
 If you need blackboard bold characters, i.e. for sets of numbers, please load the related A M S -T E Xfonts. If for some reason this is not possible you can also use the following commands from the llncs class:
@@ -200,7 +200,7 @@ proposition ( env. )
 example ( env. )
 
 ```
-property(env.) question(env.) exercise(env.) solution(env.)heading is bold as well: problem(env.) note(env.) \begin{case} <text> \end{case} \begin{conjecture} <text> \end{conjecture} \begin{example} <text> \end{example} \begin{exercise} <text> \end{exercise} \begin{note} <text> \end{note} \begin{problem} <text> \end{problem} remark(env.) \begin{property} <text> \end{property} \begin{question} <text> \end{question} \begin{remark} <text> \end{remark} \begin{solution} <text> \end{solution}
+exercise(env.) property(env.) question(env.) solution(env.) heading is bold as well: problem(env.) note(env.) \begin{case} <text> \end{case} \begin{conjecture} <text> \end{conjecture} \begin{example} <text> \end{example} \begin{exercise} <text> \end{exercise} \begin{note} <text> \end{note} \begin{problem} <text> \end{problem} remark(env.) \begin{property} <text> \end{property} \begin{question} <text> \end{question} \begin{remark} <text> \end{remark} \begin{solution} <text> \end{solution}
 ```
 
 claim ( env. ) Finally, there are also two unnumbered environments that have the run-in headproof ( env. ) ing in italics and the text in upright roman.
@@ -260,7 +260,7 @@ citeauthoryear
 Please note that this option does not automatically change your citations to the author/year style. It basically redefines the \bibitem command to take the publication year as an optional parameter that is displayed instead of an arabic number. Author name(s) and, if necessary, parentheses are to be typed manually. If your reference reads
 
 ```
-\bibitem[2016]{vdaalst:2016} van der Aalst, W.: Process Mining, 2nd ed. Springer, Heidelberg(2016) and is cited as follows:... is shown by van der Aalst(\cite{vdaalst:2016}) the resulting text will be: "... is shown by van der Aalst(2016)."
+\bibitem[2016]{vdaalst:2016} van der Aalst, W.: Process Mining, 2nd ed. Springer, Heidelberg(2016) and is cited as follows:... is shown by van der Aalst(\cite{vdaalst:2016}) the resulting text will be: "...is shown by van der Aalst(2016)."
 ```
 
 We encourage you to use Bib T E X for typesetting your references. For formatting the bibliography according to Springer's standard (for mathematics, physical sciences, and computer science), please use the bibliography style file splncs04.bst that comes with the llncs document class. You simply need to add \bibliographystyle{splncs04} to your document. DOIs should be provided in the doi field of your .bib database. Bib T E X will then automatically add them to your references. Please note that we do not provide an option to implement splncs04.bst

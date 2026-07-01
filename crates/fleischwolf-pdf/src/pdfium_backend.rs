@@ -86,13 +86,15 @@ pub(crate) fn use_parser_words() -> bool {
     std::env::var("DOCLING_PDFIUM_WORDS").is_err() && std::env::var("DOCLING_PDFIUM_TEXT").is_err()
 }
 
-/// Whether to source **code** cells from the parser too. Off by default: the
-/// parser's space-glyph-only code grouping drops the inter-token spaces pdfium
-/// recovers in monospace listings (`function add` → `functionadd`), a regression
-/// vs the docling groundtruth. Opt in with `DOCLING_PARSER_CODE` once the parser
-/// emits faithful monospace spacing. `DOCLING_PDFIUM_TEXT` always wins (pdfium).
+/// Whether to source **code** cells from the parser too (the default) — the last
+/// text layer to leave pdfium, fully retiring its text path. The parser's
+/// gap-based code grouping ([`code_cells_from_glyphs`]) reconstructs monospace
+/// spacing from positioning gaps (`function add(a, b) { … }`), so it no longer
+/// drops the inter-token spaces the old space-glyph-only grouping lost
+/// (`functionadd`). Reverts to pdfium with `DOCLING_PDFIUM_WORDS` (alongside word
+/// cells) or `DOCLING_PDFIUM_TEXT` (all text).
 pub(crate) fn use_parser_code() -> bool {
-    std::env::var("DOCLING_PARSER_CODE").is_ok() && std::env::var("DOCLING_PDFIUM_TEXT").is_err()
+    std::env::var("DOCLING_PDFIUM_WORDS").is_err() && std::env::var("DOCLING_PDFIUM_TEXT").is_err()
 }
 
 fn bind() -> Result<Pdfium, PdfiumError> {
@@ -355,11 +357,11 @@ impl<'a> FfiText<'a> {
             let prose = if dp {
                 crate::dp_lines::line_cells(&g, page_h, false)
             } else {
-                lines_from_glyphs(&g, page_h, false)
+                lines_from_glyphs(&g, page_h, Grouping::Prose)
             };
             (
                 prose,
-                lines_from_glyphs(&g, page_h, true),
+                lines_from_glyphs(&g, page_h, Grouping::CodeSpaceOnly),
                 words_from_glyphs(&g, page_h),
             )
         };
@@ -548,18 +550,33 @@ fn glyphs(b: &dyn PdfiumLibraryBindings, tp: FPDF_TEXTPAGE, fetch_font: bool) ->
     out
 }
 
+/// How [`lines_from_glyphs`] splits a line into words.
+#[derive(Clone, Copy, PartialEq)]
+enum Grouping {
+    /// Gap heuristic + punctuation glue (`engines,`, `[37`, `98.5`) — prose.
+    Prose,
+    /// Split only at literal space glyphs, never glue — pdfium code cells.
+    /// pdfium's monospace listings carry a real space glyph at every source space,
+    /// and its overhanging loose boxes would make the gap heuristic over-split
+    /// (`f un c t i o n`), so honouring just the spaces reproduces the spacing.
+    CodeSpaceOnly,
+    /// Split on the inter-glyph **gap** (or a space glyph), but never glue — for
+    /// the parser's code cells: the parser emits no space glyphs (a source space
+    /// is a positioning gap), and its clean advance boxes make the gap reliable.
+    /// Unlike [`Grouping::Prose`] there is no punctuation glue, so a real gap
+    /// always splits (`et al. 2000`, not `et al.2000`) while genuinely touching
+    /// tokens stay joined (`add(a,` / `b)`).
+    CodeGap,
+}
+
 /// Group glyphs (document order) into words then lines, the way docling-parse
 /// does: a new **word** starts where the horizontal gap to the previous glyph
 /// exceeds ~0.2 × the font height (a real space is ~0.3 × height; letter
 /// tracking is smaller, so titles don't shatter); a new **line** starts where
 /// the baseline drops by ~half the font height (a superscript rises without
 /// dropping, so it stays on its line). Coordinates are flipped to top-left.
-/// `code` mode splits words **only** at pdfium's own space glyphs and never glues
-/// punctuation — monospace code has wide inter-glyph advances that the prose
-/// gap heuristic mistakes for spaces (`f un c t i o n`), but pdfium emits a real
-/// space glyph at every true gap, so honoring just those reproduces the source
-/// spacing (`function add(a, b)`).
-fn lines_from_glyphs(gs: &[Glyph], page_h: f32, code: bool) -> Vec<TextCell> {
+/// See [`Grouping`] for how each mode decides word boundaries.
+fn lines_from_glyphs(gs: &[Glyph], page_h: f32, mode: Grouping) -> Vec<TextCell> {
     let mut cells: Vec<TextCell> = Vec::new();
     let mut words: Vec<String> = Vec::new(); // words on the current line
     let mut word = String::new();
@@ -613,8 +630,11 @@ fn lines_from_glyphs(gs: &[Glyph], page_h: f32, code: bool) -> Vec<TextCell> {
                     && !pending_space
                     && (g.ch.is_ascii_digit() || g.ch.is_ascii_lowercase()));
             let word_gap = line_h.max(h) * 0.25;
-            new_word = if code {
+            new_word = if mode == Grouping::CodeSpaceOnly {
                 new_line || pending_space
+            } else if mode == Grouping::CodeGap {
+                // Gap-based, no glue: a real gap always splits, touching tokens join.
+                new_line || pending_space || g.l - p.r > word_gap
             } else if is_arabic(g.ch) || is_arabic(p.ch) {
                 // RTL runs right-to-left, so the inter-word gap is `p.l - g.r`. A
                 // real word space has a gap; pdfium also emits spurious zero-gap
@@ -652,11 +672,16 @@ fn lines_from_glyphs(gs: &[Glyph], page_h: f32, code: bool) -> Vec<TextCell> {
     cells
 }
 
-/// Code line cells from a glyph stream (parser or pdfium): split only at space
-/// glyphs so monospace runs keep their source spacing. Thin wrapper over
-/// [`lines_from_glyphs`] with `code = true`, for the parser text path.
+/// Code line cells from the **parser**'s glyph stream. Unlike pdfium — whose
+/// monospace listings carry explicit space glyphs (so [`Grouping::CodeSpaceOnly`]
+/// keeps their spacing) — the parser emits no space glyphs: a source space is a
+/// positioning gap. So code cells use [`Grouping::CodeGap`], which splits on the
+/// inter-glyph gap (a space wherever it exceeds ~0.25× the line height) but never
+/// glues punctuation, so `et al. 2000` keeps its space while `add(a,` / `b)` stay
+/// joined. The parser's clean advance boxes make the gap heuristic reliable here,
+/// where pdfium's overhanging loose boxes would over-split (`f un c t i o n`).
 pub(crate) fn code_cells_from_glyphs(gs: &[Glyph], page_h: f32) -> Vec<TextCell> {
-    lines_from_glyphs(gs, page_h, true)
+    lines_from_glyphs(gs, page_h, Grouping::CodeGap)
 }
 
 /// Per-word cells (each word's text + top-left bbox), using the same word/line
