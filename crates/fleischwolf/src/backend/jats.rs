@@ -839,7 +839,10 @@ mod tests {
           </ref-list></back></article>"#;
         let src = SourceDocument::from_bytes("p", InputFormat::XmlJats, xml.as_bytes().to_vec());
         let md = JatsBackend.convert(&src).unwrap().export_to_markdown();
-        assert!(md.contains("Fig 1 A caption.\n\n<!-- image -->"), "figure:\n{md}");
+        assert!(
+            md.contains("Fig 1 A caption.\n\n<!-- image -->"),
+            "figure:\n{md}"
+        );
         assert!(md.contains("Table 1 Table cap."), "table caption:\n{md}");
         assert!(md.contains("| Name"), "table grid:\n{md}");
         assert!(md.contains("## References"), "refs heading:\n{md}");

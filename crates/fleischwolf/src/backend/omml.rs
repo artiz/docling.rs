@@ -482,10 +482,7 @@ mod tests {
 
     fn latex(xml: &str) -> String {
         let doc = Document::parse(xml).unwrap();
-        let omath = doc
-            .descendants()
-            .find(|n| n.has_tag_name("oMath"))
-            .unwrap();
+        let omath = doc.descendants().find(|n| n.has_tag_name("oMath")).unwrap();
         to_latex(omath)
     }
 

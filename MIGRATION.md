@@ -73,7 +73,7 @@ PyPI; run via `scripts/conformance.sh <fmt>`), not the committed groundtruth
 | WebVTT | `webvtt.rs` | **4/4 exact** |
 | Email (.eml) | `email.rs` (mail-parser) | **2/2 exact** |
 | EPUB | `epub.rs` → HTML backend | core exact (shares HTML residual) |
-| ODF (odt/ods/odp) | `odf.rs` | core + list continuation + ODS table regions; residual in §5 |
+| ODF (odt/ods/odp) | `odf.rs` | core + list continuation + rich table cells + ODS table regions; residual in §5 |
 | JATS | `jats.rs` (roxmltree) | metadata + full `<body>`/`<back>` (tables, figures, references, lists, footnotes, formulas) |
 | USPTO | `uspto.rs` | modern `us-patent-*-v4x` core; residual in §5 |
 | XBRL | `xbrl.rs` | arelle-free core (dei facts → title, `*TextBlock` → HTML) |
@@ -208,13 +208,16 @@ when the TableFormer graphs aren't present.)
 - **Older patent schemas.** USPTO covers the modern `v4x` XML only; the
   `pap-v1` / 2001-era `pa`/`pg` schemas and the legacy **APS text** (`pftaps`)
   format are not handled (two files even use HTML entities roxmltree rejects).
-- **ODF rich table cells** — cells holding lists, nested tables or images (and the
-  plain-vs-rich cell distinction that keeps simple cells unformatted). The
-  mixed-style **list continuation**, empty-list-item level collapse and
-  **ODS sheet→table region detection with numeric alignment** are now done (a
-  flood-fill splits a sheet into its disconnected data regions, each emitted as a
-  table; `<text:list>` siblings continue their numbering across an empty nested
-  item).
+- **ODF presentation title/shape/notes** — slide-title heading detection, free
+  shape-text extraction and the drop of speaker-notes on `.odp` slides. The
+  mixed-style **list continuation**, empty-list-item level collapse,
+  **ODS sheet→table region detection with numeric alignment**, and **rich table
+  cells** are now done (a flood-fill splits a sheet into its disconnected data
+  regions; `<text:list>` siblings continue numbering across an empty nested item;
+  a cell holding lists/nested tables/images/multiple paragraphs renders its full
+  block content flattened into the cell while a plain cell stays unformatted, and
+  merged cells leave their covered columns blank). What remains on `.odt` is
+  charts/embedded-object frames (`text_document_02`).
 - **DOCX grouped/anchored drawings** — position-sorted layout of grouped shapes
   and `<mc:AlternateContent>` image de-duplication (`drawingml` fixture). The
   Word multilevel list/heading *shared* numbering and **advanced OMML +

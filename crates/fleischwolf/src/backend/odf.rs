@@ -242,8 +242,9 @@ fn collect_runs(el: XmlNode, styles: &Styles, base: Fmt, out: &mut Vec<Run>) {
                         fmt: base,
                     });
                 }
-                "a" | "ruby" | "ruby-base" => collect_runs(child, styles, base, out),
-                _ => {}
+                // docling's `_odf_text_runs` recurses into every child, so an
+                // image's `<svg:desc>`/`<svg:title>` text is picked up too.
+                _ => collect_runs(child, styles, base, out),
             }
         }
     }
@@ -269,7 +270,9 @@ fn runs_to_text(mut runs: Vec<Run>) -> String {
         .filter(|s| !s.is_empty())
         .collect::<Vec<_>>()
         .join(" ")
-        .trim_end()
+        // docling's `_normalize_odf_text_runs` strips the paragraph at both ends
+        // (e.g. a leading `<text:line-break/>`), keeping only internal breaks.
+        .trim()
         .to_string()
 }
 
@@ -326,6 +329,7 @@ fn handle_block(
     let _ = counters;
     match el.tag_name().name() {
         "h" => {
+            emit_paragraph_images(el, doc);
             let level = attr(el, "outline-level")
                 .and_then(|v| v.parse::<i64>().ok())
                 .unwrap_or(1)
@@ -341,6 +345,9 @@ fn handle_block(
             }
         }
         "p" => {
+            // docling's `_add_odf_paragraph` emits a paragraph's pictures before
+            // its text.
+            emit_paragraph_images(el, doc);
             let names = paragraph_style_names(styles, attr(el, "style-name"));
             let mut runs = Vec::new();
             collect_runs(el, styles, Fmt::default(), &mut runs);
@@ -365,6 +372,24 @@ fn handle_block(
             }
         }
         _ => {}
+    }
+}
+
+/// Emit a placeholder picture for each embedded bitmap (`<draw:image>`) in a
+/// paragraph, skipping the `ObjectReplacements/` previews of embedded objects.
+fn emit_paragraph_images(el: XmlNode, doc: &mut DoclingDocument) {
+    for img in el.descendants().filter(|n| n.has_tag_name("image")) {
+        let href = attr(img, "href").unwrap_or("");
+        if href
+            .trim_start_matches("./")
+            .starts_with("ObjectReplacements/")
+        {
+            continue;
+        }
+        doc.push(Node::Picture {
+            caption: None,
+            image: None,
+        });
     }
 }
 
@@ -561,49 +586,218 @@ fn add_odf_list(
 // ---------------------------------------------------------------- tables
 
 fn parse_table(table: XmlNode, styles: &Styles) -> Option<Table> {
-    let mut rows = Vec::new();
-    for tr in table.descendants().filter(|n| n.has_tag_name("table-row")) {
-        let mut cells = Vec::new();
-        for tc in tr.children().filter(|c| c.has_tag_name("table-cell")) {
-            let repeat: usize = attr(tc, "number-columns-repeated")
-                .and_then(|v| v.parse().ok())
-                .unwrap_or(1);
-            let span: usize = attr(tc, "number-columns-spanned")
-                .and_then(|v| v.parse().ok())
-                .unwrap_or(1);
-            let text = cell_text(tc, styles);
-            for _ in 0..(repeat.max(1) * span.max(1)) {
-                cells.push(text.clone());
-            }
-        }
-        // Trailing empty repeated cells inflate rows; trim trailing blanks.
-        while cells.last().map(|c| c.is_empty()).unwrap_or(false) {
-            cells.pop();
-        }
-        if !cells.is_empty() {
-            rows.push(cells);
-        }
-    }
-    if rows.is_empty() {
+    // Only rows of *this* table — `descendants()` would also pull in the rows of
+    // any nested table (which a rich cell renders on its own).
+    let tr_rows: Vec<XmlNode> = table
+        .descendants()
+        .filter(|n| {
+            n.has_tag_name("table-row")
+                && n.ancestors().find(|a| a.has_tag_name("table")) == Some(table)
+        })
+        .collect();
+    if tr_rows.is_empty() {
         return None;
     }
-    Some(Table { rows })
-}
 
-fn cell_text(tc: XmlNode, styles: &Styles) -> String {
-    let mut parts = Vec::new();
-    for p in tc
-        .children()
-        .filter(|c| c.has_tag_name("p") || c.has_tag_name("h"))
-    {
-        let mut runs = Vec::new();
-        collect_runs(p, styles, Fmt::default(), &mut runs);
-        let t = runs_to_text(runs);
-        if !t.is_empty() {
-            parts.push(t);
+    // Each `<table:table-cell>`/`<table:covered-table-cell>` occupies one column
+    // (times its `number-columns-repeated`). ODF emits an explicit
+    // `covered-table-cell` for every spanned-over position, so col/row spans need
+    // no extra bookkeeping: the anchor carries the text and the covered cells are
+    // blank — exactly docling's grid.
+    let cells_of = |tr: &XmlNode| -> Vec<(bool, usize)> {
+        tr.children()
+            .filter(|c| c.has_tag_name("table-cell") || c.has_tag_name("covered-table-cell"))
+            .map(|c| {
+                (
+                    c.has_tag_name("covered-table-cell"),
+                    repeat(c, "number-columns-repeated"),
+                )
+            })
+            .collect()
+    };
+    let num_cols = tr_rows
+        .iter()
+        .map(|tr| cells_of(tr).iter().map(|(_, r)| r).sum::<usize>())
+        .max()
+        .unwrap_or(0);
+    if num_cols == 0 {
+        return None;
+    }
+
+    let mut grid = vec![vec![String::new(); num_cols]; tr_rows.len()];
+    for (ri, tr) in tr_rows.iter().enumerate() {
+        let mut ci = 0usize;
+        for tc in tr
+            .children()
+            .filter(|c| c.has_tag_name("table-cell") || c.has_tag_name("covered-table-cell"))
+        {
+            let reps = repeat(tc, "number-columns-repeated");
+            let text = if tc.has_tag_name("covered-table-cell") {
+                String::new()
+            } else {
+                cell_text(tc, styles)
+            };
+            for _ in 0..reps {
+                if ci >= num_cols {
+                    break;
+                }
+                grid[ri][ci] = text.clone();
+                ci += 1;
+            }
         }
     }
-    parts.join(" ")
+
+    trim_grid_to_bounds(grid).map(|rows| Table { rows })
+}
+
+/// Trim a table grid to the smallest rectangle covering all non-empty cells
+/// (docling's `_find_true_data_bounds`); returns `None` when the grid is empty.
+fn trim_grid_to_bounds(grid: Vec<Vec<String>>) -> Option<Vec<Vec<String>>> {
+    let non_empty = |r: &Vec<String>| r.iter().any(|c| !c.trim().is_empty());
+    let (min_r, max_r) = (
+        grid.iter().position(non_empty)?,
+        grid.iter().rposition(non_empty)?,
+    );
+    let ncols = grid[0].len();
+    let col_used = |c: usize| (min_r..=max_r).any(|r| !grid[r][c].trim().is_empty());
+    let min_c = (0..ncols).find(|&c| col_used(c))?;
+    let max_c = (0..ncols).rposition(col_used)?;
+    Some(
+        grid[min_r..=max_r]
+            .iter()
+            .map(|row| row[min_c..=max_c].to_vec())
+            .collect(),
+    )
+}
+
+/// A table cell's Markdown. A *rich* cell (lists, multiple paragraphs, nested
+/// tables or images) renders its full block content — formatting kept — flattened
+/// to a single line; a *plain* cell renders its unformatted text. Mirrors
+/// docling's `_odf_cell_is_rich` / `_odf_cell_text` split.
+fn cell_text(tc: XmlNode, styles: &Styles) -> String {
+    if is_rich_cell(tc, styles) {
+        rich_cell_markdown(tc, styles)
+    } else {
+        plain_cell_text(tc)
+    }
+}
+
+/// Whether a cell must render as rich block content — docling's
+/// `_odf_cell_has_rich_content`: it holds an image, a renderable list, a header,
+/// a nested table with content, a paragraph with an image, or more than one
+/// non-empty paragraph.
+fn is_rich_cell(tc: XmlNode, styles: &Styles) -> bool {
+    if cell_has_image(tc) {
+        return true;
+    }
+    let mut non_empty_paragraphs = 0;
+    for child in tc.children().filter(XmlNode::is_element) {
+        match child.tag_name().name() {
+            "list" if list_has_renderable(child, styles) => return true,
+            "h" if !clean_lines(&para_plain_text(child)).is_empty() => return true,
+            "table" if table_has_content(child) => return true,
+            "p" => {
+                if !clean_lines(&para_plain_text(child)).is_empty() {
+                    non_empty_paragraphs += 1;
+                }
+                if cell_has_image(child) {
+                    return true;
+                }
+            }
+            _ => {}
+        }
+    }
+    non_empty_paragraphs > 1
+}
+
+/// A cell/paragraph holding a bitmap image (`<draw:image>`).
+fn cell_has_image(n: XmlNode) -> bool {
+    n.descendants().any(|d| d.has_tag_name("image"))
+}
+
+/// Whether a nested table has any non-empty cell.
+fn table_has_content(table: XmlNode) -> bool {
+    table
+        .descendants()
+        .filter(|n| n.has_tag_name("table-cell"))
+        .any(|c| !plain_cell_text(c).trim().is_empty() || cell_has_image(c))
+}
+
+/// A plain cell's text: its paragraphs' unformatted text, blank-line-joined
+/// (docling's `str(cell.value)` — subscripts inline, no Markdown markers).
+fn plain_cell_text(tc: XmlNode) -> String {
+    tc.children()
+        .filter(|c| c.has_tag_name("p") || c.has_tag_name("h"))
+        .map(para_plain_text)
+        .filter(|t| !t.is_empty())
+        .collect::<Vec<_>>()
+        .join("\n\n")
+}
+
+/// A paragraph's unformatted text, expanding `<text:s>`/`<text:tab>`/
+/// `<text:line-break>` but dropping span formatting.
+fn para_plain_text(el: XmlNode) -> String {
+    let mut out = String::new();
+    para_plain_into(el, &mut out);
+    out
+}
+
+fn para_plain_into(el: XmlNode, out: &mut String) {
+    for child in el.children() {
+        if child.is_text() {
+            out.push_str(child.text().unwrap_or(""));
+        } else if child.is_element() {
+            match child.tag_name().name() {
+                "line-break" => out.push('\n'),
+                "tab" => out.push('\t'),
+                "s" => {
+                    let n: usize = attr(child, "c").and_then(|v| v.parse().ok()).unwrap_or(1);
+                    out.push_str(&" ".repeat(n));
+                }
+                _ => para_plain_into(child, out),
+            }
+        }
+    }
+}
+
+/// Render a rich cell's block content to Markdown, then flatten to a single line
+/// (docling's `RichTableCell` group serialized into the cell). A nested table is
+/// flattened to its space-joined cell texts.
+fn rich_cell_markdown(tc: XmlNode, styles: &Styles) -> String {
+    let mut sub = DoclingDocument::new("");
+    let mut prev_state: Option<ListCont> = None;
+    for child in tc.children().filter(XmlNode::is_element) {
+        match child.tag_name().name() {
+            "list" => {
+                prev_state = add_odf_list(child, styles, &mut sub, 0, 1, false, prev_state.take());
+            }
+            "table" => {
+                prev_state = None;
+                if let Some(table) = parse_table(child, styles) {
+                    let text = table
+                        .rows
+                        .iter()
+                        .flatten()
+                        .filter(|c| !c.is_empty())
+                        .cloned()
+                        .collect::<Vec<_>>()
+                        .join(" ");
+                    if !text.is_empty() {
+                        sub.push(Node::Paragraph { text });
+                    }
+                }
+            }
+            "p" | "h" => {
+                prev_state = None;
+                handle_block(child, styles, &mut sub, 0, &mut Vec::new());
+            }
+            _ => {}
+        }
+    }
+    sub.export_to_markdown()
+        .replace('\n', " ")
+        .trim()
+        .to_string()
 }
 
 // ---------------------------------------------------------------- spreadsheet
@@ -846,7 +1040,10 @@ mod tests {
             .iter()
             .filter_map(|n| match n {
                 Node::ListItem {
-                    number, level, text, ..
+                    number,
+                    level,
+                    text,
+                    ..
                 } => Some((*number, *level, text.as_str())),
                 _ => None,
             })
@@ -860,5 +1057,48 @@ mod tests {
                 (3, 0, "three"),
             ]
         );
+    }
+
+    fn table_of(xml: &str) -> Table {
+        let dom = Document::parse(xml).unwrap();
+        let styles = parse_styles(&dom, None);
+        let table = dom.descendants().find(|n| n.has_tag_name("table")).unwrap();
+        parse_table(table, &styles).unwrap()
+    }
+
+    #[test]
+    fn rich_cell_renders_list_plain_cell_drops_formatting() {
+        let xml = r#"<root xmlns:table="t" xmlns:text="x">
+          <table:table><table:table-row>
+            <table:table-cell><text:p>List:</text:p><text:list>
+              <text:list-item><text:p>a</text:p></text:list-item>
+              <text:list-item><text:p>b</text:p></text:list-item></text:list></table:table-cell>
+            <table:table-cell><text:p>plain <text:span>bold</text:span></text:p></table:table-cell>
+          </table:table-row></table:table></root>"#;
+        let t = table_of(xml);
+        // Rich cell: the list is rendered with markers and flattened into the cell.
+        assert_eq!(t.rows[0][0], "List:  - a - b");
+        // Plain cell: single paragraph, no Markdown markers.
+        assert_eq!(t.rows[0][1], "plain bold");
+    }
+
+    #[test]
+    fn merged_cells_leave_covered_columns_blank() {
+        let xml = r#"<root xmlns:table="t" xmlns:text="x">
+          <table:table>
+            <table:table-row>
+              <table:table-cell table:number-columns-spanned="2"><text:p>Wide</text:p></table:table-cell>
+              <table:covered-table-cell/>
+              <table:table-cell><text:p>C</text:p></table:table-cell>
+            </table:table-row>
+            <table:table-row>
+              <table:table-cell><text:p>x</text:p></table:table-cell>
+              <table:table-cell><text:p>y</text:p></table:table-cell>
+              <table:table-cell><text:p>z</text:p></table:table-cell>
+            </table:table-row>
+          </table:table></root>"#;
+        let t = table_of(xml);
+        assert_eq!(t.rows[0], vec!["Wide", "", "C"]);
+        assert_eq!(t.rows[1], vec!["x", "y", "z"]);
     }
 }
