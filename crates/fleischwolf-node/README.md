@@ -21,8 +21,10 @@ npm install fleischwolf   # or: bun add fleischwolf
 
 Prebuilt platforms: Linux x64 / arm64 (glibc), macOS x64 / arm64, Windows x64.
 The right binary is pulled in automatically as a platform-specific
-`optionalDependency` (`fleischwolf-<triple>`). Each release is published to npm
-from CI (`.github/workflows/npm-publish.yml`) on the version tag.
+`optionalDependency` (`fleischwolf-<triple>`). Releases are published to npm by
+manually running the `npm publish` workflow
+(`.github/workflows/npm-publish.yml`) for a chosen release tag — decoupled from
+the crates.io release.
 
 ## Build from source
 

@@ -1,14 +1,14 @@
-# Publish the `fleischwolf` npm package (Node.js / Bun native bindings) on each
-# release. The package is a native N-API addon, so it can't be a one-line
+# Publish the `fleischwolf` npm package (Node.js / Bun native bindings) for a
+# chosen release. The package is a native N-API addon, so it can't be a one-line
 # `npm publish`: it's built on a matrix of native runners (one per OS/arch),
 # each producing a platform `.node`, then a publish job assembles the main
 # package plus per-platform `optionalDependencies` (fleischwolf-<triple>) via
 # napi-rs and publishes them all.
 #
-# Trigger: the `v*` tag that scripts/release.sh pushes for a crates.io release
-# (pushed with RELEASE_PAT, so it triggers this workflow). The npm version is
-# taken from the tag, so it tracks the crate version. Can also be dispatched
-# manually with an explicit version.
+# Trigger: manual only (workflow_dispatch). Pick the release tag to build — the
+# workflow checks out that tag and publishes the npm version derived from it, so
+# npm releases stay decoupled from the crates.io release on every master push.
+# Run it from the Actions tab (or `gh workflow run npm-publish.yml -f tag=v0.7.0`).
 #
 # Requires one repository secret: NPM_TOKEN — an npm automation token with
 # publish rights to `fleischwolf` and the `fleischwolf-*` platform packages.
@@ -16,18 +16,18 @@
 name: npm publish
 
 on:
-  push:
-    tags:
-      - "v*"
   workflow_dispatch:
     inputs:
+      tag:
+        description: "Release tag to build and publish (e.g. v0.7.0)."
+        required: true
       version:
-        description: "Version to publish (e.g. 0.7.0). Blank = derive from the tag."
+        description: "Override the npm version (e.g. 0.7.0). Blank = derive from the tag."
         required: false
         default: ""
 
 concurrency:
-  group: npm-publish-${{ github.ref }}
+  group: npm-publish-${{ inputs.tag }}
   cancel-in-progress: false
 
 defaults:
@@ -56,6 +56,8 @@ jobs:
             host: windows-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag }}
 
       - uses: dtolnay/rust-toolchain@stable
         with:
@@ -110,6 +112,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag }}
 
       - uses: actions/setup-node@v4
         with:
@@ -133,12 +137,14 @@ jobs:
           name: js-binding
           path: crates/fleischwolf-node
 
+      # Version = the explicit override, else the selected tag with its leading `v`.
       - name: Resolve version
         id: ver
         run: |
-          v="${{ github.event.inputs.version }}"
-          if [ -z "$v" ]; then v="${GITHUB_REF_NAME#v}"; fi
+          v="${{ inputs.version }}"
+          if [ -z "$v" ]; then v="${{ inputs.tag }}"; v="${v#v}"; fi
           echo "version=$v" >> "$GITHUB_OUTPUT"
+          echo "Publishing fleischwolf@$v from tag ${{ inputs.tag }}"
 
       # Skip cleanly if this version is already on npm (idempotent re-runs).
       - name: Check if already published
