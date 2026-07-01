@@ -90,8 +90,8 @@ jobs:
         run: |
           mkdir -p release-assets
           stage() { # <source-path> <asset-name>
-            [ -f "$1" ] && cp "$1" "release-assets/$2"
-            [ -f "$1.data" ] && cp "$1.data" "release-assets/$2.data"
+            if [ -f "$1" ]; then cp "$1" "release-assets/$2"; fi
+            if [ -f "$1.data" ]; then cp "$1.data" "release-assets/$2.data"; fi
           }
           stage third-party/lib/libpdfium.so libpdfium.so
           stage third-party/ocr_rec.onnx ocr_rec.onnx
