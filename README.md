@@ -174,7 +174,11 @@ const json = await convertFileAsync('paper.pdf', { to: 'json' })
 for await (const chunk of streamFileMarkdown('paper.pdf')) process.stdout.write(chunk)
 ```
 
-See [`crates/fleischwolf-node/README.md`](./crates/fleischwolf-node/README.md)
+Declarative formats work out of the box. The PDF/image pipeline needs pdfium +
+the ONNX models (not bundled), so it throws until you call `installDependencies()`
+— which auto-downloads pdfium/OCR and fetches the layout/TableFormer ONNX from a
+`modelsUrl` you host. A reusable `Pipeline` keeps those models warm across many
+PDFs. See [`crates/fleischwolf-node/README.md`](./crates/fleischwolf-node/README.md)
 for the full API and runnable Node + Bun examples.
 
 ## Testing

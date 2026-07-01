@@ -12,12 +12,15 @@
 //! - the [`DocumentConverter`] class, which holds converter config so it can be
 //!   reused across many documents.
 
+use std::cell::RefCell;
+
 use napi::bindgen_prelude::*;
 use napi::threadsafe_function::{ErrorStrategy, ThreadsafeFunction, ThreadsafeFunctionCallMode};
 use napi_derive::napi;
 
 use fleischwolf::{
-    ConversionStatus, DocumentConverter as RsConverter, ImageMode, InputFormat, SourceDocument,
+    ConversionStatus, DoclingDocument, DocumentConverter as RsConverter, ImageMode, InputFormat,
+    Pipeline as RsPipeline, SourceDocument,
 };
 
 // ---------------------------------------------------------------------------
@@ -191,16 +194,15 @@ fn build_converter(cfg: &ConvertConfig) -> RsConverter {
     base.strict(cfg.strict).fetch_images(cfg.fetch_images)
 }
 
-/// Run a buffered conversion and render it per the config. Runs off the JS
-/// thread for the async path, so it must stay free of napi/JS types.
-fn run_convert(source: SourceDocument, cfg: &ConvertConfig) -> Result<RawResult> {
-    let converter = build_converter(cfg);
-    let result = converter.convert(source).map_err(convert_err)?;
-    let format = result.format.as_str().to_string();
-    let status = status_str(result.status);
-    let input_name = result.input_name;
-    let doc = result.document;
-
+/// Render an already-converted document to Markdown/JSON per the config. The
+/// document's `strict_markdown` is assumed already set by whoever produced it.
+fn render_doc(
+    doc: DoclingDocument,
+    cfg: &ConvertConfig,
+    input_name: String,
+    format: String,
+    status: String,
+) -> RawResult {
     let (content, images) = match cfg.to {
         OutputKind::Json => (doc.export_to_json(), Vec::new()),
         OutputKind::Markdown => match cfg.image_mode {
@@ -208,14 +210,29 @@ fn run_convert(source: SourceDocument, cfg: &ConvertConfig) -> Result<RawResult>
             mode => doc.export_to_markdown_with_images(mode, &cfg.artifacts_dir),
         },
     };
-
-    Ok(RawResult {
+    RawResult {
         content,
         format,
         status,
         input_name,
         images,
-    })
+    }
+}
+
+/// Run a buffered conversion and render it per the config. Runs off the JS
+/// thread for the async path, so it must stay free of napi/JS types.
+fn run_convert(source: SourceDocument, cfg: &ConvertConfig) -> Result<RawResult> {
+    let converter = build_converter(cfg);
+    let result = converter.convert(source).map_err(convert_err)?;
+    let format = result.format.as_str().to_string();
+    let status = status_str(result.status);
+    Ok(render_doc(
+        result.document,
+        cfg,
+        result.input_name,
+        format,
+        status,
+    ))
 }
 
 /// Load a [`SourceDocument`] from an in-memory [`ConvertInput`].
@@ -507,6 +524,113 @@ impl DocumentConverter {
         });
         Ok(())
     }
+}
+
+// ---------------------------------------------------------------------------
+// Reusable warm PDF/image pipeline.
+// ---------------------------------------------------------------------------
+
+/// A reusable PDF/image pipeline that keeps the ONNX models (layout, OCR,
+/// TableFormer) loaded across calls — the analogue of the Rust `Pipeline`. Use
+/// this instead of the per-call `convertFile` when converting many PDFs/images:
+/// the one-shot functions rebuild the pipeline (reloading every model) each
+/// call, whereas this loads them once.
+///
+/// Handles `pdf` and `image` inputs (the ML pipeline). Models load lazily on
+/// first use, so constructing a `Pipeline` is cheap; the first conversion pays
+/// the model-load cost. Synchronous and single-threaded — reuse one instance
+/// for a sequence of documents (e.g. behind a job queue).
+#[napi]
+pub struct Pipeline {
+    // RefCell: the Rust pipeline needs `&mut` to convert (models are mutable
+    // sessions), but napi hands us `&self`. A Pipeline is bound to the JS thread,
+    // so single-threaded interior mutability is sound here.
+    inner: RefCell<RsPipeline>,
+    strict: bool,
+}
+
+#[napi]
+impl Pipeline {
+    /// Construct the pipeline. Only `strict` is read (cleaner Markdown);
+    /// `fetchImages` / `allowedFormats` don't apply to the PDF/image pipeline.
+    #[napi(constructor)]
+    pub fn new(options: Option<ConverterOptions>) -> Result<Self> {
+        let strict = options.and_then(|o| o.strict).unwrap_or(false);
+        Ok(Self {
+            inner: RefCell::new(RsPipeline::new().map_err(convert_err)?),
+            strict,
+        })
+    }
+
+    /// Convert a PDF or image file, reusing the warm models.
+    #[napi]
+    pub fn convert_file(
+        &self,
+        path: String,
+        options: Option<OutputOptions>,
+    ) -> Result<ConvertResult> {
+        let source = SourceDocument::from_file(&path).map_err(convert_err)?;
+        self.run(source, options)
+    }
+
+    /// Convert PDF or image bytes, reusing the warm models.
+    #[napi]
+    pub fn convert(
+        &self,
+        input: ConvertInput,
+        options: Option<OutputOptions>,
+    ) -> Result<ConvertResult> {
+        let source = source_from_input(input)?;
+        self.run(source, options)
+    }
+}
+
+impl Pipeline {
+    fn run(&self, source: SourceDocument, options: Option<OutputOptions>) -> Result<ConvertResult> {
+        let cfg = output_config(options, self.strict)?;
+        let mut pipe = self.inner.borrow_mut();
+        let mut doc = match source.format {
+            InputFormat::Pdf => pipe
+                .convert(&source.bytes, None, &source.name)
+                .map_err(convert_err)?,
+            InputFormat::Image => pipe
+                .convert_image(&source.bytes, &source.name)
+                .map_err(convert_err)?,
+            other => {
+                return Err(Error::new(
+                    Status::InvalidArg,
+                    format!(
+                        "Pipeline handles pdf and image inputs (the ML pipeline); got '{}'. \
+                         Use convertFile / convert for other formats.",
+                        other.as_str()
+                    ),
+                ))
+            }
+        };
+        doc.strict_markdown = self.strict;
+        Ok(render_doc(
+            doc,
+            &cfg,
+            source.name,
+            source.format.as_str().to_string(),
+            "success".to_string(),
+        )
+        .into_js())
+    }
+}
+
+/// Build a render-only [`ConvertConfig`] from per-call output options (the
+/// converter-config fields are unused when rendering a document we already have).
+fn output_config(out: Option<OutputOptions>, strict: bool) -> Result<ConvertConfig> {
+    let out = out.unwrap_or_default();
+    Ok(ConvertConfig {
+        strict,
+        fetch_images: false,
+        allowed_formats: None,
+        to: parse_output_kind(out.to.as_deref())?,
+        image_mode: parse_image_mode(out.image_mode.as_deref())?,
+        artifacts_dir: out.artifacts_dir.unwrap_or_else(|| "artifacts".to_string()),
+    })
 }
 
 // ---------------------------------------------------------------------------

@@ -75,6 +75,71 @@ for await (const chunk of streamFileMarkdown('paper.pdf')) {
 }
 ```
 
+### PDF / images: installing the ML models
+
+Declarative formats (Markdown, HTML, DOCX, XLSX, …) are pure Rust and need
+nothing. The **PDF/image** path needs native assets that are *not* bundled in the
+addon — pdfium plus the ONNX models (layout, OCR, TableFormer) — the same way
+Python docling downloads its models on first use. Converting a PDF/image/METS
+input **throws** until they're installed:
+
+```js
+import { installDependencies, checkDependencies, convertFileAsync } from 'fleischwolf'
+
+await convertFileAsync('paper.pdf') // ❌ throws: "requires the PDF/ML dependencies … call installDependencies()"
+
+await installDependencies()          // provisions everything, then:
+await convertFileAsync('paper.pdf')  // ✅ works
+```
+
+What `installDependencies()` fetches, into `~/.cache/fleischwolf` (override with
+`dir` or `$FLEISCHWOLF_HOME`), wiring the matching `DOCLING_*` /
+`PDFIUM_DYNAMIC_LIB_PATH` env vars in-process:
+
+| Asset | Source | Required for |
+| --- | --- | --- |
+| **pdfium** | bblanchon prebuilt (auto, platform-detected) | PDF |
+| **OCR** rec model + dictionary | HuggingFace / GitHub (auto) | scanned pages |
+| **layout** (`layout_heron.onnx`) | your `modelsUrl` (see below) | PDF **and** image |
+| **TableFormer** (`tableformer/*.onnx`) | your `modelsUrl` | tables (else geometric fallback) |
+
+> **layout + TableFormer have no public prebuilt download.** They're PyTorch→ONNX
+> exports (`docling-project/docling-layout-heron`, `docling_ibm_models`). Host the
+> exported `.onnx` yourself and point `installDependencies` at the base URL via
+> `{ modelsUrl }` or `FLEISCHWOLF_MODELS_URL` — it fetches `layout_heron.onnx` and
+> `tableformer/{encoder,decoder,bbox}.onnx` from there. Or export them locally
+> (repo `scripts/export_layout.py`, `scripts/export_tableformer.py`) and set
+> `DOCLING_LAYOUT_ONNX` / `DOCLING_TABLEFORMER_*` — `installDependencies` detects
+> those as already installed. Without a layout source it installs pdfium/OCR and
+> throws, naming what's missing.
+
+```js
+await installDependencies({
+  modelsUrl: 'https://you.example/fleischwolf-models', // serves layout_heron.onnx, tableformer/*.onnx
+  onProgress: (m) => console.log(m),
+})
+
+checkDependencies() // { home, pdfium, layout, ocr, tableformer, ready, missing }
+```
+
+### Reusing a warm `Pipeline` (many PDFs)
+
+The one-shot `convertFile` / `convertFileAsync` rebuild the pipeline — reloading
+every ONNX model — on each call. To convert many PDFs/images, reuse a `Pipeline`
+so the models load **once**:
+
+```js
+import { Pipeline } from 'fleischwolf'
+
+const pipeline = new Pipeline({ strict: true })
+for (const path of pdfPaths) {
+  const { content } = pipeline.convertFile(path, { to: 'markdown' }) // warm models
+}
+```
+
+`Pipeline` handles `pdf` and `image` inputs (the ML pipeline) and is synchronous
+— reuse one instance behind a job queue.
+
 ### Images
 
 Pick how pictures render in Markdown with `imageMode`:
@@ -105,6 +170,11 @@ JSON output always embeds extracted images as data URIs.
 | `streamFileMarkdown(path, options?)` | `AsyncGenerator<string>` | Markdown chunks in document order. |
 | `supportedFormats()` | `string[]` | Supported input format ids. |
 | `formatFromName(name)` | `string \| null` | Detect a format id from a filename/extension. |
+| `installDependencies(options?)` | `Promise<DependencyStatus>` | Download/validate the PDF/image models + pdfium. |
+| `checkDependencies(options?)` | `DependencyStatus` | Report which PDF/image deps are present. |
+
+`Pipeline` is the reusable warm PDF/image converter: `new Pipeline(converterOptions)`
+then `convertFile` / `convert`.
 
 `DocumentConverter` is the reusable form: `new DocumentConverter(converterOptions)`
 then `convert` / `convertFile` / `convertFileAsync` / `convertAsync` /
@@ -139,8 +209,9 @@ Full TypeScript types are generated into `index.d.ts` / `native.d.ts`.
 
 ## Examples
 
-- [`examples/node-basic.mjs`](examples/node-basic.mjs) — Node.js (ESM).
+- [`examples/node-basic.mjs`](examples/node-basic.mjs) — Node.js (ESM): file, bytes, JSON, reuse.
 - [`examples/bun-basic.ts`](examples/bun-basic.ts) — Bun + TypeScript, with async and streaming.
+- [`examples/pdf-pipeline.mjs`](examples/pdf-pipeline.mjs) — `installDependencies` + warm `Pipeline` for PDFs.
 
 ```bash
 npm run build          # once

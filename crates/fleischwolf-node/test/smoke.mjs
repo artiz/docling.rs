@@ -6,11 +6,13 @@
 
 import assert from 'node:assert/strict'
 import {
+  checkDependencies,
   convert,
   convertFile,
   convertFileAsync,
   DocumentConverter,
   formatFromName,
+  Pipeline,
   streamFileMarkdown,
   supportedFormats,
 } from '../index.js'
@@ -81,6 +83,41 @@ async function main() {
   await check('unknown format string is rejected', () => {
     assert.throws(() => convert({ name: 'x', data: Buffer.from(MD), format: 'nope' }))
   })
+
+  // --- ML dependency guards (models not installed in this test env) ---------
+
+  await check('checkDependencies reports status without downloading', () => {
+    const status = checkDependencies()
+    assert.equal(typeof status.ready, 'boolean')
+    assert.equal(typeof status.pdfium, 'boolean')
+    assert.ok(Array.isArray(status.missing))
+  })
+
+  // These assume the ML models are NOT installed (true on a fresh CI checkout).
+  const depsInstalled = checkDependencies().ready
+  if (!depsInstalled) {
+    await check('convert PDF (sync) throws pointing at installDependencies', () => {
+      assert.throws(
+        () => convert({ name: 'doc.pdf', data: Buffer.from('%PDF-1.4') }),
+        /installDependencies/,
+      )
+    })
+
+    await check('convertFileAsync PDF rejects (not a sync throw)', async () => {
+      await assert.rejects(convertFileAsync('missing.pdf'), /installDependencies/)
+    })
+
+    await check('image bytes are guarded too', () => {
+      assert.throws(() => convert({ name: 'scan.png', data: Buffer.from([0]) }), /installDependencies/)
+    })
+
+    await check('Pipeline convertFile is guarded', () => {
+      const pipe = new Pipeline()
+      assert.throws(() => pipe.convertFile('x.pdf'), /installDependencies/)
+    })
+  } else {
+    console.log('  --  ML deps installed; skipping guard checks')
+  }
 
   // File-based sync + async + streaming, using a temp Markdown file.
   const { writeFileSync, mkdtempSync } = await import('node:fs')
