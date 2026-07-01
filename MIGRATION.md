@@ -66,7 +66,7 @@ PyPI; run via `scripts/conformance.sh <fmt>`), not the committed groundtruth
 |---|---|---|
 | Markdown | `markdown.rs` (pulldown-cmark) | **10/10 exact** |
 | CSV | `csv.rs` (`csv` crate) | **9/9 exact** |
-| HTML | `html.rs` (scraper/html5ever) | **28/32 exact** (rest need a headless browser — §5) |
+| HTML | `html.rs` (scraper/html5ever) | **30/32 exact** (rest need a headless browser — §5) |
 | AsciiDoc | `asciidoc.rs` (regex) | **4/4 exact** |
 | DeepSeek-OCR Markdown | `deepseek.rs` | **3/3 exact** (auto-detected VLM-token variant) |
 | XLSX | `xlsx.rs` (calamine) | **9/9 exact** |
@@ -225,12 +225,16 @@ Explicitly **not done**, with the reason:
   inline-group spacing and stay attached to their list item; `\operatorname`
   functions, limit-label space escaping and the two-space symbol padding match
   pylatexenc byte-for-byte).
-- **HTML browser-render subsystem** — nav/visibility suppression (`wiki_duck`)
-  and deep nested-table cell padding from rendered bounding boxes. (**Form
-  key-value regions are now done** — `kvp_data_example`'s `field_region` /
-  `field_item` structure is detected statically from docling's `keyN` /
-  `keyN_valueM` / `keyN_marker` `id`-convention, no browser needed; the
-  remaining behaviours genuinely depend on a rendered page.) ~3 HTML fixtures.
+- **HTML browser-render subsystem** — what genuinely needs a rendered page:
+  stylesheet-driven (CSS-cascade) nav/visibility suppression (`wiki_duck`'s
+  collapsed menus, kept distinct from the still-visible table of contents) and
+  deep nested-table cell padding from rendered bounding boxes. The parts that
+  don't need a browser are **now done**: form key-value regions
+  (`kvp_data_example`, detected statically from docling's `keyN` /
+  `keyN_valueM` / `keyN_marker` `id`-convention), docling-faithful inline-image
+  handling (inline images emit nothing; only block / `<a>`-wrapped / `<figure>`
+  images become pictures), and inline visibility suppression (`hidden` /
+  inline `display:none` / `visibility:hidden`). ~2 HTML fixtures remain.
 
 
 ---
