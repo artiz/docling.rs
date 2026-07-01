@@ -411,6 +411,87 @@ pub fn debug_glyphs(bytes: &[u8], index: i32) -> Vec<(char, f32, f32)> {
     out
 }
 
+/// One text object on a page, for the hidden-layer diagnostic.
+#[derive(Debug, Clone)]
+pub struct DebugTextObject {
+    /// True when the object is drawn invisibly (text render mode 3) — the marker of
+    /// a hidden duplicate text layer.
+    pub invisible: bool,
+    /// Bounding box in native PDF points (bottom-left origin).
+    pub l: f32,
+    pub b: f32,
+    pub r: f32,
+    pub t: f32,
+    /// The object's text (best-effort; empty if it could not be read).
+    pub text: String,
+}
+
+/// Diagnostic: every text object on page `index`, each tagged visible/invisible
+/// (via the object-level [`FPDFTextObj_GetTextRenderMode`], which — unlike the
+/// per-character render-mode API — is available on the default pdfium binding).
+/// A hidden duplicate text layer shows up as invisible objects repeating the
+/// visible text. Used by the `dump_render_modes` example.
+///
+/// [`FPDFTextObj_GetTextRenderMode`]: pdfium_render::prelude::PdfiumLibraryBindings::FPDFTextObj_GetTextRenderMode
+pub fn debug_text_objects(bytes: &[u8], index: i32) -> Vec<DebugTextObject> {
+    let Ok(pdfium) = bind() else {
+        return Vec::new();
+    };
+    let ffi = FfiText::load(pdfium.bindings(), bytes, None);
+    if ffi.doc.is_null() {
+        return Vec::new();
+    }
+    let b = ffi.bindings;
+    let page = b.FPDF_LoadPage(ffi.doc, index);
+    if page.is_null() {
+        return Vec::new();
+    }
+    let tp = b.FPDFText_LoadPage(page);
+    let mut out = Vec::new();
+    let n = b.FPDFPage_CountObjects(page);
+    for i in 0..n {
+        let obj = b.FPDFPage_GetObject(page, i);
+        if obj.is_null() || b.FPDFPageObj_GetType(obj) != FPDF_PAGEOBJ_TEXT as i32 {
+            continue;
+        }
+        let (mut l, mut bot, mut r, mut top) = (0f32, 0f32, 0f32, 0f32);
+        if b.FPDFPageObj_GetBounds(obj, &mut l, &mut bot, &mut r, &mut top) == 0 {
+            continue;
+        }
+        let invisible = b.FPDFTextObj_GetTextRenderMode(obj) == INVISIBLE_RENDER_MODE;
+        let text = if tp.is_null() {
+            String::new()
+        } else {
+            // FPDFTextObj_GetText returns the count of UTF-16 code units, including
+            // the trailing NUL; call once for the size, once to fill.
+            let need = b.FPDFTextObj_GetText(obj, tp, std::ptr::null_mut(), 0);
+            if need <= 1 {
+                String::new()
+            } else {
+                let mut buf = vec![0u16; need as usize];
+                b.FPDFTextObj_GetText(obj, tp, buf.as_mut_ptr(), need);
+                if let Some(&0) = buf.last() {
+                    buf.pop();
+                }
+                String::from_utf16_lossy(&buf)
+            }
+        };
+        out.push(DebugTextObject {
+            invisible,
+            l,
+            b: bot,
+            r,
+            t: top,
+            text,
+        });
+    }
+    if !tp.is_null() {
+        b.FPDFText_ClosePage(tp);
+    }
+    b.FPDF_ClosePage(page);
+    out
+}
+
 /// Hash a glyph's PDF font name + flags, for `enforce_same_font`. 0 if unavailable.
 fn font_hash(b: &dyn PdfiumLibraryBindings, tp: FPDF_TEXTPAGE, i: i32) -> u64 {
     use std::hash::{Hash, Hasher};
@@ -432,6 +513,12 @@ fn font_hash(b: &dyn PdfiumLibraryBindings, tp: FPDF_TEXTPAGE, i: i32) -> u64 {
     flags.hash(&mut h);
     h.finish()
 }
+
+/// pdfium text render mode 3: the glyph is drawn with neither fill nor stroke —
+/// an invisible glyph. Web-to-PDF exporters put a hidden plain-text copy of
+/// syntax-highlighted code (and other "copy"/accessibility layers) in this mode,
+/// which the char-level text API then extracts as a duplicate of the visible text.
+const INVISIBLE_RENDER_MODE: i32 = 3;
 
 fn glyphs(b: &dyn PdfiumLibraryBindings, tp: FPDF_TEXTPAGE, fetch_font: bool) -> Vec<Glyph> {
     let n = b.FPDFText_CountChars(tp);
