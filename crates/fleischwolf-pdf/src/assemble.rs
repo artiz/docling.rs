@@ -488,6 +488,98 @@ fn region_text(region: &Region, cells: &[TextCell]) -> String {
     clean_text(&joined)
 }
 
+/// Tighten the spaces pdfium leaves around tight punctuation in a code line
+/// (`console .log` → `console.log`, `add (3 , 5)` → `add(3, 5)`), matching
+/// docling-parse's source spacing.
+fn tighten_code_punct(s: &str) -> String {
+    s.replace(" .", ".")
+        .replace(" ,", ",")
+        .replace(" ;", ";")
+        .replace(" )", ")")
+        .replace(" (", "(")
+}
+
+/// Assemble a **code** region's text with its line structure preserved.
+///
+/// Unlike [`region_text`] — which joins every cell with a single space, the right
+/// thing for prose reflow — a code block's line breaks and indentation are
+/// significant. The `code_cells` are already one physical source line each
+/// (grouped space-glyph-only, so monospace runs keep their spacing), so this:
+///
+/// 1. groups the cells into vertical line bands and orders them top→bottom,
+///    left→right;
+/// 2. joins the lines with `\n` (rather than spaces), keeping the carriage
+///    returns; and
+/// 3. reconstructs each line's leading indentation from its left offset, in units
+///    of the block's estimated monospace character width, so nesting survives.
+///
+/// Typography is normalized per line via [`clean_text`] (smart quotes, dashes,
+/// ellipsis), which never merges lines. Returns an empty string if the region has
+/// no code cells (the caller falls back to the prose text).
+fn code_region_text(region: &Region, cells: &[TextCell]) -> String {
+    let mut inside: Vec<&TextCell> = cells
+        .iter()
+        .filter(|c| {
+            let ca = area(c.l, c.t, c.r, c.b).max(1.0);
+            inter(region, c.l, c.t, c.r, c.b) / ca > 0.5
+        })
+        .filter(|c| !c.text.trim().is_empty())
+        .collect();
+    if inside.is_empty() {
+        return String::new();
+    }
+
+    // Quantize the top edge into ~line bands (like `region_text`), then order the
+    // cells by band (top→bottom) and, within a band, by left edge.
+    let band = inside
+        .iter()
+        .map(|c| (c.b - c.t).abs())
+        .fold(0.0f32, f32::max)
+        .max(1.0);
+    let line_of = |c: &TextCell| (c.t / band).round() as i64;
+    inside.sort_by_key(|c| (line_of(c), (c.l * 10.0) as i64));
+
+    // Estimate one monospace character's width (total ink width / total glyphs) to
+    // convert a line's left offset into a count of leading spaces. Measured over
+    // all lines so a single short line can't skew it.
+    let (mut total_w, mut total_chars) = (0.0f32, 0usize);
+    for c in &inside {
+        let n = c.text.trim().chars().count();
+        if n > 0 {
+            total_w += (c.r - c.l).max(0.0);
+            total_chars += n;
+        }
+    }
+    let char_w = if total_chars > 0 {
+        (total_w / total_chars as f32).max(1.0)
+    } else {
+        1.0
+    };
+    // The block's own left margin is the zero-indent baseline.
+    let base_l = inside.iter().map(|c| c.l).fold(f32::INFINITY, f32::min);
+
+    let mut lines: Vec<String> = Vec::new();
+    let mut cur: Option<i64> = None;
+    for c in &inside {
+        // Tighten pdfium's spaced punctuation per line (on the trimmed content, so
+        // the reconstructed leading indentation is never nibbled).
+        let text = tighten_code_punct(&clean_text(c.text.trim()));
+        if Some(line_of(c)) == cur {
+            // A second cell sharing this band (rare — e.g. split columns): keep it
+            // on the same source line, separated by a space.
+            if let Some(last) = lines.last_mut() {
+                last.push(' ');
+                last.push_str(&text);
+            }
+            continue;
+        }
+        let indent = ((c.l - base_l) / char_w).round().max(0.0) as usize;
+        lines.push(format!("{}{}", " ".repeat(indent), text));
+        cur = Some(line_of(c));
+    }
+    lines.join("\n")
+}
+
 /// Reconstruct a table's grid geometrically from the text cells inside its
 /// region: cluster cells into rows (by vertical centre) and columns (by clustered
 /// left edges), then place each cell. A model-free stand-in for TableFormer that
@@ -767,18 +859,19 @@ pub fn assemble_page(
                 text: "<!-- formula-not-decoded -->".into(),
             }),
             // Code blocks: use the space-glyph-only grouping (monospace keeps its
-            // source spacing) and emit a fenced block. pdfium still inserts spaces
-            // around tight punctuation (`console .log`, `add (3 , 5)`); tighten
-            // them to match docling-parse's source spacing.
+            // source spacing) and emit a fenced block, preserving the line breaks
+            // and indentation of the source (unlike prose, which reflows). pdfium
+            // still inserts spaces around tight punctuation (`console .log`,
+            // `add (3 , 5)`); tighten them to match docling-parse's source spacing.
             "code" => {
-                let code = region_text(region, &page.code_cells);
-                let code = if code.is_empty() { text } else { code };
-                let code = code
-                    .replace(" .", ".")
-                    .replace(" ,", ",")
-                    .replace(" ;", ";")
-                    .replace(" )", ")")
-                    .replace(" (", "(");
+                // `code_region_text` preserves line breaks/indentation and tightens
+                // each line itself; the fallback prose `text` is tightened here.
+                let code = code_region_text(region, &page.code_cells);
+                let code = if code.is_empty() {
+                    tighten_code_punct(&text)
+                } else {
+                    code
+                };
                 nodes.push(Node::Code {
                     language: None,
                     text: code,
@@ -942,8 +1035,82 @@ impl StreamAssembler {
 #[cfg(test)]
 mod tests {
     use super::clean_text;
-    use super::{merge_continuations, StreamAssembler};
+    use super::{code_region_text, merge_continuations, StreamAssembler};
+    use crate::layout::Region;
+    use crate::pdfium_backend::TextCell;
     use fleischwolf_core::Node;
+
+    /// A one-line code cell at `[l, r] × [t, b]` (top-left coords).
+    fn cell(text: &str, l: f32, t: f32, r: f32, b: f32) -> TextCell {
+        TextCell {
+            text: text.into(),
+            l,
+            t,
+            r,
+            b,
+        }
+    }
+
+    #[test]
+    fn code_region_text_keeps_lines_and_indentation() {
+        // Three source lines; each glyph is 6 units wide (width / chars = 6), so the
+        // `int X;` line indented to x=22 is (22-10)/6 = 2 spaces in.
+        let region = Region {
+            label: "code",
+            score: 1.0,
+            l: 0.0,
+            t: -5.0,
+            r: 100.0,
+            b: 40.0,
+        };
+        let cells = vec![
+            cell("struct P {", 10.0, 0.0, 70.0, 10.0),
+            cell("int X;", 22.0, 12.0, 58.0, 22.0),
+            cell("}", 10.0, 24.0, 16.0, 34.0),
+        ];
+        assert_eq!(code_region_text(&region, &cells), "struct P {\n  int X;\n}");
+    }
+
+    #[test]
+    fn code_region_text_tightens_punctuation_without_eating_indentation() {
+        // A fluent `.Foo()` line at x=22 (2 chars in). Per-line tightening must not
+        // consume the leading indent space by matching " ." across it.
+        let region = Region {
+            label: "code",
+            score: 1.0,
+            l: 0.0,
+            t: -5.0,
+            r: 100.0,
+            b: 40.0,
+        };
+        let cells = vec![
+            cell("builder", 10.0, 0.0, 52.0, 10.0),
+            // pdfium spaced the call: ".Foo (x)" tightens to ".Foo(x)", still 2-indented.
+            cell(".Foo (x)", 22.0, 12.0, 70.0, 22.0),
+        ];
+        assert_eq!(code_region_text(&region, &cells), "builder\n  .Foo(x)");
+    }
+
+    #[test]
+    fn code_region_text_orders_out_of_order_cells_and_ignores_blank_lines() {
+        let region = Region {
+            label: "code",
+            score: 1.0,
+            l: 0.0,
+            t: -5.0,
+            r: 100.0,
+            b: 60.0,
+        };
+        // Fed bottom-up and with a whitespace-only cell; output is top-down, no blank.
+        let cells = vec![
+            cell("b();", 10.0, 24.0, 34.0, 34.0),
+            cell("   ", 10.0, 12.0, 20.0, 22.0),
+            cell("a();", 10.0, 0.0, 34.0, 10.0),
+        ];
+        assert_eq!(code_region_text(&region, &cells), "a();\nb();");
+        // No code cells → empty, so the caller falls back to the prose text.
+        assert_eq!(code_region_text(&region, &[]), "");
+    }
 
     fn para(text: &str) -> Node {
         Node::Paragraph { text: text.into() }
