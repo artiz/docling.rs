@@ -225,9 +225,12 @@ Explicitly **not done**, with the reason:
   inline-group spacing and stay attached to their list item; `\operatorname`
   functions, limit-label space escaping and the two-space symbol padding match
   pylatexenc byte-for-byte).
-- **HTML browser-render subsystem** — nav/visibility suppression (`wiki_duck`),
-  form key-value-pair regions (`kvp_data_example`), deep nested-table cell padding
-  from rendered bounding boxes. ~4 HTML fixtures + KVP.
+- **HTML browser-render subsystem** — nav/visibility suppression (`wiki_duck`)
+  and deep nested-table cell padding from rendered bounding boxes. (**Form
+  key-value regions are now done** — `kvp_data_example`'s `field_region` /
+  `field_item` structure is detected statically from docling's `keyN` /
+  `keyN_valueM` / `keyN_marker` `id`-convention, no browser needed; the
+  remaining behaviours genuinely depend on a rendered page.) ~3 HTML fixtures.
 
 
 ---

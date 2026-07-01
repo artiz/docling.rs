@@ -5,10 +5,12 @@
 //! is the Rust counterpart of `docling/backend/html_backend.py`'s `_walk`.
 //!
 //! Scope (Phase 2): block structure (headings, paragraphs, nested lists,
-//! tables, code blocks, figures/images) and inline formatting (bold, italic,
-//! inline code, links). Out of scope for now and tracked in `MIGRATION.md`:
-//! browser rendering, bounding boxes, forms, and the rich per-cell table
-//! provenance the Python backend computes.
+//! tables, code blocks, figures/images), inline formatting (bold, italic,
+//! inline code, links), and key-value form regions (docling's `field_region`,
+//! detected from the `keyN` / `keyN_valueM` / `keyN_marker` `id`-convention).
+//! Out of scope for now and tracked in `MIGRATION.md`: browser rendering,
+//! rendered bounding boxes, CSS visibility suppression, and the rich per-cell
+//! table provenance the Python backend computes.
 
 use fleischwolf_core::{DoclingDocument, Node, Table};
 use scraper::{ElementRef, Html, Node as HtmlNode, Selector};
@@ -251,8 +253,84 @@ fn handle_block(
             image: figure_img_src(elem).and_then(|s| images.resolve(&s)),
         }),
         "hr" => {}
+        // A `form_region`-classed container holding `keyN`-convention fields is a
+        // docling key-value region; emit it as one instead of recursing (so the
+        // field divs aren't also flattened into paragraphs).
+        _ if !base.raw => match detect_field_region(elem) {
+            Some(items) => nodes.push(Node::FieldRegion { items }),
+            None => walk_block(elem, nodes, list_level, base, images),
+        },
         // Transparent containers (div, section, blockquote, …): recurse.
         _ => walk_block(elem, nodes, list_level, base, images),
+    }
+}
+
+/// Detect docling's HTML key-value region: an element classed `form_region`
+/// whose descendants carry the `keyN` / `keyN_valueM` / `keyN_marker` `id`
+/// convention. Returns the fields ordered by their numeric key, or `None` when
+/// this element is not such a region (so the caller recurses normally).
+fn detect_field_region(elem: ElementRef) -> Option<Vec<fleischwolf_core::FieldItem>> {
+    let is_form_region = elem
+        .value()
+        .attr("class")
+        .is_some_and(|c| c.split_whitespace().any(|cls| cls == "form_region"));
+    if !is_form_region {
+        return None;
+    }
+    // Collect each numbered field's parts by scanning `id`-bearing descendants.
+    // A BTreeMap keeps the fields ordered by their numeric key.
+    let mut fields: std::collections::BTreeMap<u32, fleischwolf_core::FieldItem> =
+        std::collections::BTreeMap::new();
+    for el in elem.select(cached_selector!("[id]")) {
+        let Some(id) = el.value().attr("id") else {
+            continue;
+        };
+        let Some((n, kind)) = parse_kvp_id(id) else {
+            continue;
+        };
+        let text = normalize_ws(&el.text().collect::<String>());
+        if text.is_empty() {
+            continue;
+        }
+        let field = fields.entry(n).or_default();
+        match kind {
+            KvpKind::Marker => field.marker.get_or_insert(text),
+            KvpKind::Key => field.key.get_or_insert(text),
+            KvpKind::Value => field.value.get_or_insert(text),
+        };
+    }
+    if fields.is_empty() {
+        return None;
+    }
+    Some(fields.into_values().collect())
+}
+
+/// Which part of a key-value field an element's `id` names.
+enum KvpKind {
+    Marker,
+    Key,
+    Value,
+}
+
+/// Parse docling's key-value `id` convention: `keyN` (the key), `keyN_markerN`
+/// / `keyN_marker` (its marker), `keyN_valueM` (a value). Returns the field
+/// number and which part it is, or `None` for any other `id`.
+fn parse_kvp_id(id: &str) -> Option<(u32, KvpKind)> {
+    let rest = id.strip_prefix("key")?;
+    if let Ok(n) = rest.parse::<u32>() {
+        return Some((n, KvpKind::Key));
+    }
+    let (num, suffix) = rest.split_once('_')?;
+    let n = num.parse::<u32>().ok()?;
+    if suffix == "marker" {
+        Some((n, KvpKind::Marker))
+    } else if suffix
+        .strip_prefix("value")
+        .is_some_and(|m| m.parse::<u32>().is_ok())
+    {
+        Some((n, KvpKind::Value))
+    } else {
+        None
     }
 }
 
@@ -948,6 +1026,36 @@ mod tests {
     fn nested_lists() {
         let doc = convert("<ul><li>one<ul><li>one-a</li></ul></li><li>two</li></ul>");
         assert_eq!(doc.export_to_markdown(), "- one\n    - one-a\n- two\n");
+    }
+
+    #[test]
+    fn form_region_becomes_key_value_fields() {
+        // A `form_region` container with the `keyN` / `keyN_marker` / `keyN_valueM`
+        // id-convention is a docling field region: region + each item render as a
+        // `<!-- missing-text -->` marker, then the item's marker/key/value texts.
+        let doc = convert(
+            "<div class=\"form_region\">\
+               <div class=\"field\">\
+                 <div id=\"key1_marker\">1</div>\
+                 <span id=\"key1\">Restaurant</span>\
+                 <span id=\"key1_value1\">Docling</span>\
+               </div>\
+               <div class=\"field\">\
+                 <div id=\"key2_marker\">2</div>\
+                 <span id=\"key2\">Telephone</span>\
+                 <span id=\"key2_value1\">123</span>\
+               </div>\
+             </div>",
+        );
+        assert_eq!(
+            doc.export_to_markdown(),
+            "<!-- missing-text -->\n\n\
+             <!-- missing-text -->\n\n1\n\nRestaurant\n\nDocling\n\n\
+             <!-- missing-text -->\n\n2\n\nTelephone\n\n123\n",
+        );
+        // A plain container without the id-convention stays ordinary text.
+        let plain = convert("<div class=\"form_region\"><p>just text</p></div>");
+        assert_eq!(plain.export_to_markdown(), "just text\n");
     }
 
     #[test]
