@@ -23,8 +23,9 @@ Prebuilt platforms: Linux x64 / arm64 (glibc), macOS x64 / arm64, Windows x64.
 The right binary is pulled in automatically as a platform-specific
 `optionalDependency` (`fleischwolf-<triple>`). Releases are published to npm by
 manually running the `npm publish` workflow
-(`.github/workflows/npm-publish.yml`) for a chosen release tag — decoupled from
-the crates.io release.
+(`.github/workflows/npm-publish.yml`) — by default it builds the latest master
+(the workspace version); optionally pass a release tag to build that instead.
+Decoupled from the crates.io release.
 
 ## Build from source
 
