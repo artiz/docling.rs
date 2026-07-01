@@ -1,11 +1,14 @@
-# Export the RT-DETR layout model + TableFormer to ONNX and publish them as
-# GitHub Release assets, so `installDependencies()` in the `fleischwolf` npm
-# package (crates/fleischwolf-node/deps.js) can fetch them with zero
-# configuration instead of every user needing a local torch toolchain.
+# Export the RT-DETR layout model + TableFormer to ONNX, re-host pdfium + the
+# OCR model, and publish everything as GitHub Release assets, so
+# `scripts/download_dependencies.sh` can fetch the whole PDF/image ML stack
+# from a single host (this repo's releases) with zero configuration.
 #
-# Both are PyTorch→ONNX *format conversions* of docling-project's own models
-# (Apache-2.0 / CDLA-Permissive-2.0 — see MODELS_NOTICE.md); no weights are
-# retrained or modified here.
+# The layout model and TableFormer are PyTorch→ONNX *format conversions* of
+# docling-project's own models (Apache-2.0 / CDLA-Permissive-2.0 — see
+# MODELS_NOTICE.md); no weights are retrained or modified here. pdfium and the
+# OCR model are re-hosted third-party binaries, unmodified, from their own
+# public releases — mirrored here only so `download_dependencies.sh` needs one
+# host instead of three.
 #
 # Trigger: manual only (workflow_dispatch) — it installs torch and exports two
 # models, several GB and 10-20 minutes, not something to run on every push.
@@ -62,13 +65,26 @@ jobs:
         id: tf-export
         run: python scripts/export_tableformer.py models/tableformer
 
+      # --- pdfium + OCR (re-hosted third-party binaries, not exports) -----
+      - name: Fetch pdfium + OCR assets
+        run: |
+          mkdir -p third-party
+          curl -fsSL -o /tmp/pdfium.tgz \
+            "https://github.com/bblanchon/pdfium-binaries/releases/latest/download/pdfium-linux-x64.tgz"
+          tar -xzf /tmp/pdfium.tgz -C third-party
+          curl -fsSL -o third-party/ocr_rec.onnx \
+            "https://huggingface.co/SWHL/RapidOCR/resolve/main/PP-OCRv3/ch_PP-OCRv3_rec_infer.onnx"
+          curl -fsSL -o third-party/ppocr_keys_v1.txt \
+            "https://raw.githubusercontent.com/PaddlePaddle/PaddleOCR/main/ppocr/utils/ppocr_keys_v1.txt"
+
       # --- stage + publish -------------------------------------------------
       # GitHub release assets can't contain "/", so tableformer/*.onnx is
-      # flattened to tableformer-*.onnx (deps.js downloads the matching flat
-      # names by default). Each file is staged only if the export produced it,
-      # including the optional `.onnx.data` external-weights sidecar some
-      # exports need above ONNX's ~2GB protobuf limit (currently just the
-      # TableFormer decoder, but checked for every file since that's
+      # flattened to bare encoder.onnx / decoder.onnx / bbox.onnx (no naming
+      # collision with anything else in this release; download_dependencies.sh
+      # downloads these exact names). Each file is staged only if the export
+      # produced it, including the optional `.onnx.data` external-weights
+      # sidecar some exports need above ONNX's ~2GB protobuf limit (currently
+      # just the TableFormer decoder, but checked for every file since that's
       # export-size dependent, not fixed).
       - name: Stage release assets
         run: |
@@ -77,10 +93,13 @@ jobs:
             [ -f "$1" ] && cp "$1" "release-assets/$2"
             [ -f "$1.data" ] && cp "$1.data" "release-assets/$2.data"
           }
+          stage third-party/lib/libpdfium.so libpdfium.so
+          stage third-party/ocr_rec.onnx ocr_rec.onnx
+          stage third-party/ppocr_keys_v1.txt ppocr_keys_v1.txt
           stage models/layout_heron.onnx layout_heron.onnx
-          stage models/tableformer/encoder.onnx tableformer-encoder.onnx
-          stage models/tableformer/decoder.onnx tableformer-decoder.onnx
-          stage models/tableformer/bbox.onnx tableformer-bbox.onnx
+          stage models/tableformer/encoder.onnx encoder.onnx
+          stage models/tableformer/decoder.onnx decoder.onnx
+          stage models/tableformer/bbox.onnx bbox.onnx
           echo "staged:"
           ls -la release-assets/
 

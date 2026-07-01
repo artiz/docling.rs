@@ -13,10 +13,10 @@ code (see [`LICENSE`](./LICENSE)) under their upstream terms:
 `scripts/export_layout.py` and `scripts/export_tableformer.py` do the
 conversion (PyTorch → ONNX via `torch.onnx.export`); no weights are retrained,
 fine-tuned, or otherwise altered. `.github/workflows/publish-models.yml` runs
-that conversion and republishes the resulting `.onnx` files as GitHub Release
-assets on this repo (tag `models-v1`, downloaded automatically by
-`installDependencies()` in the `fleischwolf` npm package — see
-`crates/fleischwolf-node/deps.js`), purely to spare downstream users the
+that conversion (and re-hosts pdfium + the OCR model alongside it) and
+publishes everything as GitHub Release assets on this repo (tag `models-v1`),
+fetched by `scripts/download_dependencies.sh` — see that script and
+`crates/fleischwolf-node/deps.js` — purely to spare downstream users the
 PyTorch/`transformers`/`docling_ibm_models` toolchain needed to export them
 locally.
 
