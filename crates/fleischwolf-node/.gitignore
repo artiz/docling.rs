@@ -11,3 +11,8 @@ native.d.ts
 
 # Example scratch output
 examples/artifacts/
+
+# Cross-platform publish scaffolding, generated in CI by `napi create-npm-dir`
+# and `napi artifacts` (per-platform packages + downloaded prebuilt binaries)
+npm/
+artifacts/

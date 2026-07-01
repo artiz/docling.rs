@@ -10,15 +10,30 @@ Built with [napi-rs](https://napi.rs), so it ships a real native addon (`.node`)
 that loads in both Node.js and Bun (Bun implements N-API) — the same binary, no
 rebuild between runtimes.
 
-## Install & build
+## Install
 
-This package lives in the Fleischwolf Cargo workspace and builds the addon from
-the Rust source. You need a Rust toolchain (1.82+) and Node.js 14+ (or Bun).
+Released versions ship **prebuilt** native binaries, so no Rust toolchain is
+needed to use the package:
+
+```bash
+npm install fleischwolf   # or: bun add fleischwolf
+```
+
+Prebuilt platforms: Linux x64 / arm64 (glibc), macOS x64 / arm64, Windows x64.
+The right binary is pulled in automatically as a platform-specific
+`optionalDependency` (`fleischwolf-<triple>`). Each release is published to npm
+from CI (`.github/workflows/npm-publish.yml`) on the version tag.
+
+## Build from source
+
+This package lives in the Fleischwolf Cargo workspace and can also build the
+addon from Rust source — needed for local development or an unsupported
+platform. You need a Rust toolchain (1.82+) and Node.js 14+ (or Bun).
 
 ```bash
 cd crates/fleischwolf-node
 npm install          # installs @napi-rs/cli
-npm run build        # release build → index.<platform>.node + native.js/.d.ts
+npm run build        # release build → fleischwolf.<platform>.node + native.js/.d.ts
 # npm run build:debug  # faster, unoptimized
 ```
 
