@@ -28,3 +28,4 @@ __pycache__/
 # Local docling ground-truth env & scratch dir for this migration work
 /.venv-gt
 /scratch-gt
+
