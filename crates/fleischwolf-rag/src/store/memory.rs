@@ -95,6 +95,25 @@ impl VectorStore for MemoryStore {
         Ok(())
     }
 
+    async fn delete_documents_by_source(&self, source_uri: &str) -> Result<()> {
+        let ids: Vec<String> = {
+            let docs = self.docs.read().unwrap();
+            docs.iter()
+                .filter(|d| d.source_uri == source_uri)
+                .map(|d| d.id.clone())
+                .collect()
+        };
+        self.docs
+            .write()
+            .unwrap()
+            .retain(|d| d.source_uri != source_uri);
+        self.chunks
+            .write()
+            .unwrap()
+            .retain(|c| !ids.contains(&c.doc_id));
+        Ok(())
+    }
+
     async fn clear(&self) -> Result<()> {
         self.docs.write().unwrap().clear();
         self.chunks.write().unwrap().clear();

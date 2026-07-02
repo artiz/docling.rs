@@ -123,9 +123,16 @@ impl Pipeline {
             "processing document"
         );
 
-        // The document row must exist before its chunks (FK). Title is refined
-        // (first heading) and metrics attached with a final upsert.
-        let mut doc = Document::new(&r.uri, stem(&r.name), &hash)
+        // Remove stale rows for this source first: leftovers from interrupted
+        // runs, or previous versions of a file whose content changed.
+        self.store.delete_documents_by_source(&r.uri).await?;
+
+        // The document row must exist before its chunks (FK). It is inserted
+        // with a sentinel hash — the real hash is written only on success, so an
+        // interrupted run can never satisfy the dedup check above and the
+        // document is reprocessed next time. Title is refined (first heading)
+        // and metrics attached with the final upsert.
+        let mut doc = Document::new(&r.uri, stem(&r.name), format!("pending:{hash}"))
             .with_metadata(serde_json::json!({ "source": r.uri }));
         self.store.upsert_document(&doc).await?;
 
@@ -187,6 +194,7 @@ impl Pipeline {
             "ingested document"
         );
         doc.title = title;
+        doc.hash = hash; // success: replace the sentinel with the real hash
         doc.metadata = serde_json::json!({ "source": r.uri, "metrics": m.to_json() });
         self.store.upsert_document(&doc).await?;
         Ok(IngestOutcome::Ingested(n))

@@ -55,6 +55,10 @@ pub trait VectorStore: Send + Sync {
     /// streaming ingest). Deleting an unknown id is not an error.
     async fn delete_document(&self, doc_id: &str) -> Result<()>;
 
+    /// Delete every document (and chunks) originating from `source_uri` — stale
+    /// rows from interrupted runs or previous versions of a changed file.
+    async fn delete_documents_by_source(&self, source_uri: &str) -> Result<()>;
+
     /// Remove all documents and chunks.
     async fn clear(&self) -> Result<()>;
 }

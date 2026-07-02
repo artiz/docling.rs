@@ -145,19 +145,82 @@ fleischwolf-rag query "how does hybrid search work?" --answer
 # sweep chunk sizes / overlaps / modes over a labelled dataset and rank them
 fleischwolf-rag eval --dataset crates/fleischwolf-rag/tests/data/eval_dataset.json
 
+# run an unlabelled QA benchmark through the full RAG+LLM loop (see "eval" below)
+fleischwolf-rag answers --questions rag/questions.json
+
+# remove incomplete document records left by interrupted ingests
+fleischwolf-rag prune
+
 # serve the REST API (optionally ingesting first); see "REST API" above
 fleischwolf-rag serve --ingest --addr 0.0.0.0:8080
 ```
 
-The `eval` sweep prints a ranked table:
+## Evaluating configurations (`eval`)
+
+`eval` sweeps a matrix of chunk sizes / overlaps × retrieval modes over a
+labelled dataset, builds a fresh in-memory index per chunk config with the
+**configured embedder** (`RAG_EMBED_PROVIDER` — run with Ollama up for real
+numbers, `hash` for a quick offline smoke), and prints the configurations
+ranked best-first:
 
 ```
 | chunk | overlap | mode   | embedder | recall | MRR   | nDCG  | ms/query |
 |------:|--------:|--------|----------|-------:|------:|------:|---------:|
 | 200   | 0.00    | bm25   | hash:512 | 1.000  | 1.000 | 1.000 | 0.30     |
 | 300   | 0.05    | hybrid | hash:512 | 1.000  | 0.800 | 0.852 | 0.48     |
-| ...   |         |        |          |        |       |       |          |
 ```
+
+- **recall@k** — fraction of the expected evidence found in the top-k
+- **MRR** — how high the first relevant chunk ranks (1.0 = always first)
+- **nDCG@k** — ranking quality across all relevant hits
+
+Without `OPENROUTER_API_KEY` the sweep covers the three offline modes
+(vector/bm25/hybrid); with a key it also evaluates `multi-query` and `hyde`.
+
+Two ways to provide the dataset:
+
+```bash
+# 1. a self-contained file
+fleischwolf-rag eval --dataset crates/fleischwolf-rag/tests/data/eval_dataset.json
+
+# 2. assemble it from the ingested corpus: the .md mirror written by
+#    RAG_DOCUMENTS_OUTPUT plus a questions file
+fleischwolf-rag eval --from-md-dir ./data --questions rag/questions.json \
+    --sizes 200,300,500 --overlaps 0,0.05,0.1 --top-k 5   # optional matrix override
+```
+
+Dataset / questions format — a retrieved chunk counts as relevant if it
+contains any `relevant` substring (case-insensitive; substrings are used
+because chunk ids change with every chunking config):
+
+```json
+{ "documents": [ { "name": "report", "markdown": "# …" } ],
+  "queries":   [ { "query": "default chunk size?", "relevant": ["300 words"] } ] }
+```
+
+The questions file is a plain array and also accepts the QA-benchmark shape
+`{"text": "…", "kind": "boolean|number|name"}`; entries **without** `relevant`
+labels are skipped by `eval` (retrieval scoring needs ground truth) — run those
+through `answers` instead:
+
+```bash
+# Full RAG + LLM loop against the *ingested store* for unlabelled questions:
+# prints each answer with its source count and latency (add --json for machines).
+fleischwolf-rag answers --questions rag/questions.json --mode hybrid -k 5
+```
+
+`answers` needs `OPENROUTER_API_KEY` and an ingested store; it does not score
+correctness (the `{text, kind}` format carries no gold answers) — it automates
+running the benchmark so you can review answers and compare latency across
+modes.
+
+## Maintenance
+
+`fleischwolf-rag prune` removes incomplete document records — rows left behind
+when an ingest was interrupted (killed mid-run), recognizable by their missing
+processing metrics. Ingestion is also self-healing: a document's content hash
+is only written after a fully successful ingest, and re-ingesting a source
+replaces any stale rows for the same URI.
 
 ## Library
 

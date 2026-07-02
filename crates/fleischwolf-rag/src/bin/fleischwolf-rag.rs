@@ -1,7 +1,8 @@
 //! `fleischwolf-rag` command-line interface.
 //!
-//! Subcommands: `init-db`, `ingest`, `query`, `eval`, `stats`. Configuration is
-//! read from the environment / `.env` (see `RagConfig`); flags override it.
+//! Subcommands: `init-db`, `ingest`, `query`, `eval`, `answers`, `prune`,
+//! `stats`, `serve`. Configuration is read from the environment / `.env`
+//! (see `RagConfig`); flags override it.
 
 use clap::{Parser, Subcommand};
 use fleischwolf_rag::config::{DbBackend, SourceKind};
@@ -54,11 +55,27 @@ enum Cmd {
         chunks: bool,
     },
 
-    /// Sweep chunk sizes / overlaps / modes over a labelled dataset.
+    /// Sweep chunk sizes / overlaps / modes over a labelled dataset and rank
+    /// the configurations by retrieval quality (recall@k / MRR / nDCG@k).
     Eval {
-        /// Path to a JSON dataset ({documents, queries}).
-        #[arg(long)]
-        dataset: PathBuf,
+        /// Path to a self-contained JSON dataset ({documents, queries}).
+        #[arg(long, conflicts_with_all = ["from_md_dir", "questions"])]
+        dataset: Option<PathBuf>,
+        /// Build the documents from a directory of .md files (e.g. the
+        /// RAG_DOCUMENTS_OUTPUT mirror). Requires --questions.
+        #[arg(long, requires = "questions")]
+        from_md_dir: Option<PathBuf>,
+        /// Questions JSON: [{"query"|"text", "relevant": [..], "kind"?}, …].
+        /// Entries without `relevant` labels are skipped (retrieval eval needs
+        /// ground truth; see `answers` for unlabelled QA benchmarks).
+        #[arg(long, requires = "from_md_dir")]
+        questions: Option<PathBuf>,
+        /// Chunk sizes to sweep, comma-separated (e.g. 200,300,500).
+        #[arg(long, value_delimiter = ',')]
+        sizes: Vec<usize>,
+        /// Overlap fractions to sweep, comma-separated (e.g. 0,0.05,0.1).
+        #[arg(long, value_delimiter = ',')]
+        overlaps: Vec<f32>,
         /// Results per query.
         #[arg(long, default_value_t = 5)]
         top_k: usize,
@@ -66,6 +83,28 @@ enum Cmd {
         #[arg(long)]
         json: bool,
     },
+
+    /// Run an unlabelled QA benchmark ({"text", "kind"} questions) through the
+    /// full RAG + LLM loop against the configured store; prints each answer
+    /// with its latency. Needs an ingested store and OPENROUTER_API_KEY.
+    Answers {
+        /// Questions JSON: [{"text"|"query": "...", "kind"?: "..."}, …].
+        #[arg(long)]
+        questions: PathBuf,
+        /// Retrieval mode (vector|bm25|hybrid|multi-query|hyde).
+        #[arg(long)]
+        mode: Option<String>,
+        /// Passages retrieved per question.
+        #[arg(long, short = 'k')]
+        top_k: Option<usize>,
+        /// Emit JSON instead of Markdown.
+        #[arg(long)]
+        json: bool,
+    },
+
+    /// Remove incomplete document records (interrupted ingests: rows without
+    /// processing metrics or with a pending hash).
+    Prune,
 
     /// Print store statistics (document / chunk counts).
     Stats,
@@ -181,11 +220,67 @@ async fn run() -> Result<()> {
 
         Cmd::Eval {
             dataset,
+            from_md_dir,
+            questions,
+            sizes,
+            overlaps,
             top_k,
             json,
         } => {
-            let raw = std::fs::read_to_string(&dataset)?;
-            let ds: EvalDataset = serde_json::from_str(&raw)?;
+            // Assemble the dataset from either a self-contained file or an
+            // .md directory + questions file.
+            let ds: EvalDataset = match (dataset, from_md_dir, questions) {
+                (Some(path), _, _) => serde_json::from_str(&std::fs::read_to_string(&path)?)?,
+                (None, Some(md_dir), Some(qpath)) => {
+                    let documents = fleischwolf_rag::eval::documents_from_md_dir(&md_dir)?;
+                    let all = fleischwolf_rag::eval::load_questions(&qpath)?;
+                    let total = all.len();
+                    let queries: Vec<_> = all
+                        .into_iter()
+                        .filter(|q| !q.relevant.is_empty())
+                        .map(|q| fleischwolf_rag::eval::QueryCase {
+                            query: q.query,
+                            relevant: q.relevant,
+                        })
+                        .collect();
+                    if queries.len() < total {
+                        eprintln!(
+                            "note: skipped {} question(s) without `relevant` labels \
+                             (retrieval eval needs ground truth; use `answers` for those)",
+                            total - queries.len()
+                        );
+                    }
+                    if queries.is_empty() {
+                        return Err(fleischwolf_rag::RagError::config(
+                            "no questions carry `relevant` labels — nothing to evaluate",
+                        ));
+                    }
+                    EvalDataset { documents, queries }
+                }
+                _ => {
+                    return Err(fleischwolf_rag::RagError::config(
+                        "pass --dataset FILE, or --from-md-dir DIR --questions FILE",
+                    ))
+                }
+            };
+
+            // Chunk-config matrix: default pairs, or the cross product of the
+            // provided --sizes / --overlaps lists.
+            let chunk_configs: Vec<(usize, f32)> = if sizes.is_empty() && overlaps.is_empty() {
+                vec![(200, 0.0), (300, 0.05), (500, 0.1)]
+            } else {
+                let sizes = if sizes.is_empty() { vec![300] } else { sizes };
+                let overlaps = if overlaps.is_empty() {
+                    vec![0.05]
+                } else {
+                    overlaps
+                };
+                sizes
+                    .iter()
+                    .flat_map(|&s| overlaps.iter().map(move |&o| (s, o)))
+                    .collect()
+            };
+
             // Use the configured embedder; attach the LLM only if a key is present.
             let embedder = embed::from_config(&cfg)?;
             let chat = match cfg.openrouter_api_key {
@@ -197,7 +292,6 @@ async fn run() -> Result<()> {
             } else {
                 RetrievalMode::OFFLINE.to_vec()
             };
-            let chunk_configs = [(200usize, 0.0f32), (300, 0.05), (500, 0.1)];
             let harness = Harness::new(embedder, chat);
             let report = harness.run(&ds, &chunk_configs, &modes, top_k).await?;
             if json {
@@ -205,6 +299,93 @@ async fn run() -> Result<()> {
             } else {
                 println!("{}", report.to_markdown());
             }
+        }
+
+        Cmd::Answers {
+            questions,
+            mode,
+            top_k,
+            json,
+        } => {
+            let mode = match mode {
+                Some(m) => RetrievalMode::from_str(&m)?,
+                None => cfg.retrieval_mode,
+            };
+            let k = top_k.unwrap_or(cfg.top_k);
+            if cfg.openrouter_api_key.is_none() {
+                return Err(fleischwolf_rag::RagError::config(
+                    "`answers` needs an LLM: set OPENROUTER_API_KEY (see .env.example)",
+                ));
+            }
+            let pipeline = Pipeline::from_config(&cfg).await?;
+            if pipeline.store().count_chunks().await? == 0 {
+                return Err(fleischwolf_rag::RagError::config(
+                    "the store is empty — run `ingest` first",
+                ));
+            }
+            let qs = fleischwolf_rag::eval::load_questions(&questions)?;
+            let mut rows = Vec::new();
+            for (i, q) in qs.iter().enumerate() {
+                let start = std::time::Instant::now();
+                let result = pipeline.answer(&q.query, mode, k).await;
+                let ms = start.elapsed().as_secs_f64() * 1000.0;
+                match result {
+                    Ok(a) => {
+                        if !json {
+                            println!(
+                                "## Q{} [{}] {}\n\n{}\n\n({} source(s), {:.0} ms, mode: {mode})\n",
+                                i + 1,
+                                q.kind.as_deref().unwrap_or("-"),
+                                q.query,
+                                a.text.trim(),
+                                a.sources.len(),
+                                ms
+                            );
+                        }
+                        rows.push(serde_json::json!({
+                            "question": q.query,
+                            "kind": q.kind,
+                            "answer": a.text,
+                            "sources": a.sources.len(),
+                            "ms": ms,
+                            "mode": mode.to_string(),
+                        }));
+                    }
+                    Err(e) => {
+                        if !json {
+                            eprintln!("## Q{} {}\n\nERROR: {e}\n", i + 1, q.query);
+                        }
+                        rows.push(serde_json::json!({
+                            "question": q.query,
+                            "kind": q.kind,
+                            "error": e.to_string(),
+                            "ms": ms,
+                        }));
+                    }
+                }
+            }
+            if json {
+                println!("{}", serde_json::to_string_pretty(&rows)?);
+            }
+        }
+
+        Cmd::Prune => {
+            let pipeline = Pipeline::from_config(&cfg).await?;
+            let docs = pipeline.store().list_documents().await?;
+            let mut removed = 0;
+            for d in &docs {
+                let incomplete = d.hash.starts_with("pending:")
+                    || d.metadata.get("metrics").is_none_or(|m| m.is_null());
+                if incomplete {
+                    pipeline.store().delete_document(&d.id).await?;
+                    println!(
+                        "removed incomplete document: {} ({})",
+                        d.title, d.source_uri
+                    );
+                    removed += 1;
+                }
+            }
+            println!("pruned {removed} incomplete document(s) of {}", docs.len());
         }
 
         Cmd::Serve { addr, ingest } => {

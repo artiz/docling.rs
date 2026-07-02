@@ -229,6 +229,22 @@ impl VectorStore for PostgresStore {
         Ok(())
     }
 
+    async fn delete_documents_by_source(&self, source_uri: &str) -> Result<()> {
+        let mut tx = self.pool.begin().await?;
+        sqlx::query(
+            "DELETE FROM chunks WHERE doc_id IN (SELECT id FROM documents WHERE source_uri = $1)",
+        )
+        .bind(source_uri)
+        .execute(&mut *tx)
+        .await?;
+        sqlx::query("DELETE FROM documents WHERE source_uri = $1")
+            .bind(source_uri)
+            .execute(&mut *tx)
+            .await?;
+        tx.commit().await?;
+        Ok(())
+    }
+
     async fn clear(&self) -> Result<()> {
         sqlx::query("DELETE FROM chunks")
             .execute(&self.pool)

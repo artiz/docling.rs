@@ -37,6 +37,66 @@ pub struct QueryCase {
     pub relevant: Vec<String>,
 }
 
+/// A question as loaded from an external questions file. Accepts both this
+/// crate's `{query, relevant}` shape and the QA-benchmark `{text, kind}` shape;
+/// only entries with non-empty `relevant` labels can score retrieval.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Question {
+    /// The question text (`text` accepted as an alias).
+    #[serde(alias = "text")]
+    pub query: String,
+    /// Expected answer kind (`boolean`, `number`, `name`, …) — informational.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub kind: Option<String>,
+    /// Ground-truth substrings for retrieval scoring (may be empty).
+    #[serde(default)]
+    pub relevant: Vec<String>,
+}
+
+/// Load a questions file (a JSON array of [`Question`]s in either shape).
+pub fn load_questions(path: &std::path::Path) -> Result<Vec<Question>> {
+    let raw = std::fs::read_to_string(path)?;
+    Ok(serde_json::from_str(&raw)?)
+}
+
+/// Build eval documents from a directory tree of Markdown files — typically the
+/// `RAG_DOCUMENTS_OUTPUT` mirror produced by `ingest`. Non-`.md` files are
+/// skipped; `name` is the path relative to `dir`.
+pub fn documents_from_md_dir(dir: &std::path::Path) -> Result<Vec<EvalDoc>> {
+    fn walk(dir: &std::path::Path, root: &std::path::Path, out: &mut Vec<EvalDoc>) {
+        let Ok(entries) = std::fs::read_dir(dir) else {
+            return;
+        };
+        let mut paths: Vec<_> = entries.filter_map(|e| e.ok().map(|e| e.path())).collect();
+        paths.sort();
+        for path in paths {
+            if path.is_dir() {
+                walk(&path, root, out);
+            } else if path.extension().is_some_and(|e| e == "md") {
+                if let Ok(markdown) = std::fs::read_to_string(&path) {
+                    out.push(EvalDoc {
+                        name: path
+                            .strip_prefix(root)
+                            .unwrap_or(&path)
+                            .to_string_lossy()
+                            .into_owned(),
+                        markdown,
+                    });
+                }
+            }
+        }
+    }
+    let mut docs = Vec::new();
+    walk(dir, dir, &mut docs);
+    if docs.is_empty() {
+        return Err(crate::RagError::config(format!(
+            "no .md files found under {}",
+            dir.display()
+        )));
+    }
+    Ok(docs)
+}
+
 /// A full evaluation dataset.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EvalDataset {
@@ -237,6 +297,44 @@ mod tests {
                 relevant: vec!["overlapping chunks".into()],
             }],
         }
+    }
+
+    #[test]
+    fn loads_questions_in_both_shapes() {
+        let dir = std::env::temp_dir().join(format!("rag-q-{}", crate::model::new_id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("questions.json");
+        std::fs::write(
+            &path,
+            r#"[
+                {"text": "Did X mention mergers?", "kind": "boolean"},
+                {"query": "chunk size default", "relevant": ["300 words"]}
+            ]"#,
+        )
+        .unwrap();
+        let qs = load_questions(&path).unwrap();
+        assert_eq!(qs.len(), 2);
+        assert_eq!(qs[0].query, "Did X mention mergers?");
+        assert_eq!(qs[0].kind.as_deref(), Some("boolean"));
+        assert!(qs[0].relevant.is_empty());
+        assert_eq!(qs[1].relevant, vec!["300 words"]);
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn builds_documents_from_md_dir() {
+        let dir = std::env::temp_dir().join(format!("rag-mdd-{}", crate::model::new_id()));
+        std::fs::create_dir_all(dir.join("sub")).unwrap();
+        std::fs::write(dir.join("a.pdf.md"), "# A\n\nalpha").unwrap();
+        std::fs::write(dir.join("sub/b.md"), "# B\n\nbeta").unwrap();
+        std::fs::write(dir.join("ignore.txt"), "not markdown").unwrap();
+        let docs = documents_from_md_dir(&dir).unwrap();
+        assert_eq!(docs.len(), 2);
+        assert!(docs.iter().any(|d| d.name == "a.pdf.md"));
+        assert!(docs
+            .iter()
+            .any(|d| d.name.ends_with("b.md") && d.markdown.contains("beta")));
+        std::fs::remove_dir_all(&dir).ok();
     }
 
     #[tokio::test]
