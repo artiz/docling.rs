@@ -58,6 +58,23 @@ the transformer decoder and detection-head MatMuls stay fp32.
 On text-dominated documents (layout = 80% of time) the end-to-end gain
 approaches ~1.7–2×; on table-heavy ones it is ~1.4×.
 
+Full-scale run — the 1913-page `dotnet-csharp-language-reference.pdf`,
+INT8 layout + INT8 TableFormer decoder vs fp32, same machine and binary,
+back-to-back:
+
+| | fp32 | INT8 | ratio |
+|---|---:|---:|---:|
+| wall clock | 1406 s (0.74 s/page) | **770 s (0.40 s/page)** | **1.83×** |
+| `layout.predict` (summed) | 2667 s | 1350 s | 1.98× |
+| output difference | — | 1199 of 52,615 Markdown lines (2.3%) | |
+
+The 2.3% of differing lines are the same near-threshold classification flips
+seen on the corpus (where groundtruth conformance measured *equal or slightly
+better* under INT8 — 812 vs 833 summed diff-lines), not a systematic
+degradation. With layout halved, `image.resize` becomes the next stage
+(24.8% of the INT8 run), which is why backlog item 4 matters more after
+quantization.
+
 **Quality gate.** Markdown diffed across the full PDF+scanned corpus (23 files):
 
 - Conv-only INT8: 12/23 byte-identical to fp32; remaining diffs are small
