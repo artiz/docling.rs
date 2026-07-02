@@ -38,18 +38,32 @@ import sys
 import numpy as np
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+# Where the fp32 models live and the int8 outputs go (a checkout's models/ by
+# default); FLEISCHWOLF_MODELS_DIR relocates it (e.g. /opt/models in a Docker
+# models stage).
+MODELS = os.environ.get("FLEISCHWOLF_MODELS_DIR", f"{REPO}/models")
+# FLEISCHWOLF_CALIBRATION_DIR: a directory scanned recursively for calibration
+# *.pdf files; defaults to the repo's PDF + scanned corpus (the set the
+# published quality numbers were measured with).
+CALIB = os.environ.get("FLEISCHWOLF_CALIBRATION_DIR")
 SIDE = 640  # layout model input side (layout.rs)
 
 
 def calibration_pages():
-    """Render up to 3 pages of every corpus PDF the way layout.rs preprocesses:
-    pdfium at scale 2.0, resize to 640x640 bilinear, /255, CHW float32."""
+    """Render up to 3 pages of every calibration PDF the way layout.rs
+    preprocesses: pdfium at scale 2.0, resize to 640x640 bilinear, /255, CHW
+    float32."""
     import pypdfium2 as pdfium
     from PIL import Image
 
-    pdfs = sorted(glob.glob(f"{REPO}/tests/data/pdf/sources/*.pdf")) + sorted(
-        glob.glob(f"{REPO}/tests/data/scanned/sources/*.pdf")
-    )
+    if CALIB:
+        pdfs = sorted(glob.glob(f"{CALIB}/**/*.pdf", recursive=True))
+    else:
+        pdfs = sorted(glob.glob(f"{REPO}/tests/data/pdf/sources/*.pdf")) + sorted(
+            glob.glob(f"{REPO}/tests/data/scanned/sources/*.pdf")
+        )
+    if not pdfs:
+        sys.exit("no calibration PDFs found (set FLEISCHWOLF_CALIBRATION_DIR)")
     for path in pdfs:
         try:
             doc = pdfium.PdfDocument(path)
@@ -72,9 +86,9 @@ def quantize_layout():
     )
     from onnxruntime.quantization.shape_inference import quant_pre_process
 
-    src = f"{REPO}/models/layout_heron.onnx"
-    pre = f"{REPO}/models/layout_heron_pre.onnx"
-    dst = f"{REPO}/models/layout_heron_int8.onnx"
+    src = f"{MODELS}/layout_heron.onnx"
+    pre = f"{MODELS}/layout_heron_pre.onnx"
+    dst = f"{MODELS}/layout_heron_int8.onnx"
 
     class Reader(CalibrationDataReader):
         def __init__(self):
@@ -107,9 +121,9 @@ def quantize_tableformer_decoder():
     import onnx
     from onnxruntime.quantization import QuantType, quantize_dynamic
 
-    src = f"{REPO}/models/tableformer/decoder.onnx"
-    tmp = f"{REPO}/models/tableformer/decoder_clean.onnx"
-    dst = f"{REPO}/models/tableformer/decoder_int8.onnx"
+    src = f"{MODELS}/tableformer/decoder.onnx"
+    tmp = f"{MODELS}/tableformer/decoder_clean.onnx"
+    dst = f"{MODELS}/tableformer/decoder_int8.onnx"
 
     # The export carries stale value_info shapes that break ORT's shape
     # inference; strip them (external weights get folded into the output).

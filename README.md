@@ -296,6 +296,7 @@ curl -fsSL https://raw.githubusercontent.com/artiz/fleischwolf/master/scripts/do
 | PP-OCRv3 rec + dictionary | `models/ocr_rec.onnx`, `models/ppocr_keys_v1.txt` |
 | TableFormer (optional) | `models/tableformer/{encoder,decoder,bbox}.onnx` (+ `.data` sidecars where the export needs them) |
 | Whisper tiny (audio/ASR; skip with `--no-asr`) | `models/asr/{encoder_model,decoder_model}.onnx`, `models/asr/vocab.json` (+ `added_tokens.json` for language selection) |
+| INT8 CPU models (optional; fetch with `--int8`) | `models/layout_heron_int8.onnx`, `models/tableformer/decoder_int8.onnx` |
 
 Idempotent — safe to re-run; it skips files already on disk. Pass `--force` to
 re-fetch everything, or set `$FLEISCHWOLF_MODELS_URL` to fetch from a
@@ -304,6 +305,26 @@ come from Hugging Face (`$FLEISCHWOLF_ASR_MODELS_URL` overrides, or point
 `DOCLING_ASR_{ENCODER,DECODER,VOCAB}` at explicit files). pdfium is Linux x64
 only for now — other platforms, or building the models from source, need
 [`scripts/pdf_setup.sh`](#testing) instead.
+
+### INT8 models (faster PDF conversion on CPU)
+
+The optional `*_int8` assets are post-training quantizations of the same
+models: Conv-only static INT8 of the layout detector (calibrated on this
+repo's PDF corpus) and dynamic INT8 of the TableFormer decoder. On CPUs with
+AVX-512 VNNI they make layout inference — the dominant PDF cost — **~2.4×
+faster** (~1.4–1.7× end-to-end) at conformance validated as unchanged against
+the corpus groundtruth; the TableFormer output is byte-identical. See
+[`PDF_PERFORMANCE.md`](./PDF_PERFORMANCE.md) for the measurements. They are
+opt-in — point the pipeline at them explicitly:
+
+```bash
+scripts/download_dependencies.sh --int8   # or: python scripts/quantize_models.py
+export DOCLING_LAYOUT_ONNX=$PWD/models/layout_heron_int8.onnx
+export DOCLING_TABLEFORMER_DECODER=$PWD/models/tableformer/decoder_int8.onnx
+```
+
+(The [example Dockerfile](./examples/Dockerfile) bakes and defaults to the
+INT8 models; build with `--build-arg INT8=0` for pure fp32.)
 
 Then either:
 

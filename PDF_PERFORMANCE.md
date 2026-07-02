@@ -170,3 +170,11 @@ uv venv .venv-quant && uv pip install --python .venv-quant/bin/python \
 export DOCLING_LAYOUT_ONNX=$PWD/models/layout_heron_int8.onnx
 export DOCLING_TABLEFORMER_DECODER=$PWD/models/tableformer/decoder_int8.onnx
 ```
+
+Integration points: `scripts/download_dependencies.sh --int8` fetches
+pre-quantized assets from the models release (published by
+`.github/workflows/publish-models.yml`, which quantizes after export);
+`scripts/pdf_setup.sh` quantizes locally with `FLEISCHWOLF_INT8=1`;
+`scripts/performance.sh` benchmarks the int8 stack with `FLEISCHWOLF_INT8=1`;
+`examples/Dockerfile` bakes both precisions and defaults to int8
+(`--build-arg INT8=0` for fp32).

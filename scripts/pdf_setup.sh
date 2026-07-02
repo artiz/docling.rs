@@ -50,9 +50,24 @@ if [ ! -f models/tableformer/decoder.onnx ]; then
   fi
 fi
 
+# Optional: INT8-quantize the layout model + TableFormer decoder for faster CPU
+# inference (validated conformance-neutral — see PDF_PERFORMANCE.md). Opt in
+# with FLEISCHWOLF_INT8=1; needs onnx onnxruntime sympy pypdfium2 pillow numpy.
+if [ "${FLEISCHWOLF_INT8:-0}" = "1" ] && [ ! -f models/layout_heron_int8.onnx ]; then
+  echo "→ INT8-quantizing layout + TableFormer decoder"
+  if ! "${PYTHON:-python3}" scripts/quantize_models.py; then
+    echo "  ! quantization failed (missing deps?). The fp32 models still work;"
+    echo "    re-run after: pip install onnx onnxruntime sympy pypdfium2 pillow numpy"
+  fi
+fi
+
 echo "done. export these before running the pipeline:"
 echo "  export PDFIUM_DYNAMIC_LIB_PATH=$(pwd)/.pdfium/lib"
-echo "  export DOCLING_LAYOUT_ONNX=$(pwd)/models/layout_heron.onnx"
+if [ -f models/layout_heron_int8.onnx ]; then
+  echo "  export DOCLING_LAYOUT_ONNX=$(pwd)/models/layout_heron_int8.onnx   # int8 (fp32: layout_heron.onnx)"
+else
+  echo "  export DOCLING_LAYOUT_ONNX=$(pwd)/models/layout_heron.onnx"
+fi
 echo "  export DOCLING_OCR_REC_ONNX=$(pwd)/models/ocr_rec.onnx"
 echo "  export DOCLING_OCR_DICT=$(pwd)/models/ppocr_keys_v1.txt"
 if [ -f models/tableformer/decoder.onnx ]; then
@@ -61,6 +76,10 @@ if [ -f models/tableformer/decoder.onnx ]; then
   # still loads (instead of silently falling back to geometric reconstruction)
   # no matter where the binary/binding is actually invoked from.
   echo "  export DOCLING_TABLEFORMER_ENCODER=$(pwd)/models/tableformer/encoder.onnx"
-  echo "  export DOCLING_TABLEFORMER_DECODER=$(pwd)/models/tableformer/decoder.onnx"
+  if [ -f models/tableformer/decoder_int8.onnx ]; then
+    echo "  export DOCLING_TABLEFORMER_DECODER=$(pwd)/models/tableformer/decoder_int8.onnx   # int8 (fp32: decoder.onnx)"
+  else
+    echo "  export DOCLING_TABLEFORMER_DECODER=$(pwd)/models/tableformer/decoder.onnx"
+  fi
   echo "  export DOCLING_TABLEFORMER_BBOX=$(pwd)/models/tableformer/bbox.onnx"
 fi
