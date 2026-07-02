@@ -231,11 +231,24 @@ async fn run() -> Result<()> {
             println!("documents: {docs}\nchunks:    {chunks}\n");
             let documents = pipeline.store().list_documents().await?;
             if !documents.is_empty() {
+                // Fixed column widths so rows line up in the terminal.
+                const TITLE_W: usize = 65;
                 println!(
-                    "| title | KiB | pages | words | chunks | parse w/s | parse p/s | chunk w/s | embed w/s |"
+                    "| {:<TITLE_W$} | {:>9} | {:>5} | {:>7} | {:>6} | {:>9} | {:>9} | {:>10} | {:>9} |",
+                    "title", "KiB", "pages", "words", "chunks", "parse w/s", "parse p/s", "chunk w/s", "embed w/s"
                 );
                 println!(
-                    "|-------|----:|------:|------:|-------:|----------:|----------:|----------:|----------:|"
+                    "|{:-<w$}|{:->11}|{:->7}|{:->9}|{:->8}|{:->11}|{:->11}|{:->12}|{:->11}|",
+                    "",
+                    ":",
+                    ":",
+                    ":",
+                    ":",
+                    ":",
+                    ":",
+                    ":",
+                    ":",
+                    w = TITLE_W + 2
                 );
                 for d in &documents {
                     let m = &d.metadata["metrics"];
@@ -254,8 +267,8 @@ async fn run() -> Result<()> {
                         .map(|b| format!("{:.1}", b as f64 / 1024.0))
                         .unwrap_or_else(|| "-".into());
                     println!(
-                        "| {} | {} | {} | {} | {} | {} | {} | {} | {} |",
-                        d.title,
+                        "| {:<TITLE_W$} | {:>9} | {:>5} | {:>7} | {:>6} | {:>9} | {:>9} | {:>10} | {:>9} |",
+                        ellipsize(&d.title, TITLE_W),
                         kib,
                         int(&m["pages"]),
                         int(&m["words"]),
@@ -270,6 +283,16 @@ async fn run() -> Result<()> {
         }
     }
     Ok(())
+}
+
+/// Truncate to `width` chars with a `...` tail (char-safe, no mid-UTF-8 cuts).
+fn ellipsize(s: &str, width: usize) -> String {
+    if s.chars().count() <= width {
+        s.to_string()
+    } else {
+        let cut: String = s.chars().take(width.saturating_sub(3)).collect();
+        format!("{cut}...")
+    }
 }
 
 fn backend_name(b: DbBackend) -> &'static str {
