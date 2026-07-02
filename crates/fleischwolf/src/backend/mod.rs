@@ -23,6 +23,8 @@ macro_rules! cached_regex {
 }
 
 mod asciidoc;
+#[cfg(feature = "web-browser")]
+pub(crate) mod browser;
 mod csv;
 mod deepseek;
 mod docling_json;
