@@ -168,6 +168,37 @@ Ordered by expected impact ÷ risk. Items 1–3 attack the 85–95%.
    still shave per-worker model-load latency; only worth it if pool spin-up
    shows up in a real deployment.
 
+## Memory
+
+Each pool worker used to own a full model set, so peak RSS scaled with the
+pool: on a 4-worker machine ~0.4 GB of TableFormer weights+arenas were
+duplicated four times even though tables appear on a minority of pages. The
+pool now shares **one lazily-loaded TableFormer** behind a mutex (loaded with
+the full intra-op budget, since tables serialise on it anyway; prediction is
+independent of which worker runs it). Measured on the 16-page table-heavy
+paper, INT8 stack:
+
+| pool | per-worker TF (before) | shared TF (after) |
+|---|---:|---:|
+| 4 workers | 3816 MB | **1880 MB** |
+| 2 workers | 2183 MB | **1517 MB** |
+| 4 workers, table-free doc | 682 MB | **331 MB** (TableFormer never loads) |
+
+`FLEISCHWOLF_PDF_WORKERS` remains the coarse memory knob on top.
+
+## Determinism note (pre-existing, worth knowing)
+
+Multi-threaded ONNX Runtime float reductions are **not deterministic
+run-to-run**: on `2203.01017v2.pdf` two identical invocations of the same
+binary can differ in a handful of borderline table cells (measured 0–20
+Markdown diff-lines between repeat runs, before any of this branch's
+changes). `ocr.rs` already pins its session to one thread for exactly this
+reason. Regression checks for structural changes should therefore compare
+outputs under `FLEISCHWOLF_PDF_THREADS=1` (single-thread inference is
+deterministic and byte-stable); multi-threaded corpus diffs of a few lines on
+table-dense fixtures are thread-scheduling jitter, not necessarily a real
+change.
+
 ## Correctness notes found during review (quality, not speed)
 
 - `textparse.rs` `"` operator: the `aw ac string "` form must set word/char
