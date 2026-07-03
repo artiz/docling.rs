@@ -4,6 +4,31 @@ Post-migration review of the PDF processing path: where the time actually goes,
 what was measured, which optimizations are validated, and a ranked backlog of
 further ideas that do **not** trade away output quality.
 
+## Results at a glance
+
+Everything below was landed across two optimization rounds (PR #26, #27),
+each change gated on corpus conformance — groundtruth distance unchanged or
+better, byte-identical where the change is structural:
+
+| Optimization | Measured effect |
+|---|---|
+| INT8 layout model (Conv-only static QDQ, calibrated; **default**) | layout inference **2.4×** faster; **1.83× end-to-end** on a 1913-page PDF (0.74 → 0.40 s/page) |
+| INT8 TableFormer decoder (dynamic, **default**) | ~10% faster table decode, byte-identical |
+| SIMD page downscale (`fast_image_resize`, same kernel; **default**) | `image.resize` stage **17×** faster (2607 → 152 ms / 16 pages) |
+| TableFormer KV cache fed back as `ort` values (no per-step copy) | ~9% faster table-structure decode, byte-identical |
+| One shared lazy TableFormer across the worker pool | peak RSS **3.8 → 1.9 GB** (4 workers); table-free docs 682 → 331 MB |
+| Single shared line/word contraction pass | `--no-ocr` conversion ~1.25× faster, identical output |
+| Per-document font + form caches in the text parser | 3–10% off `textparse` here; far more on CJK/form-heavy PDFs |
+| True-KV-cache decoder export (`decoder_kv.onnx`, optional) | parity at corpus table sizes; O(past)/step for very large tables |
+
+Cumulative head-to-head vs Python docling (measured on an 8-thread desktop,
+`scripts/performance.sh`): **4.3× faster warm conversion, 4.7× end-to-end,
+2.3–2.6× less peak memory** on the PDF ML pipeline — up from ~1.2× warm
+before this work. Model sizes: layout 172 → 68 MB, TF decoder 78 → 50 MB.
+Also fixed along the way: the `"` show-text operator dropped its word/char
+spacing operands (real spec violation), and OCR/TableFormer sub-stages are
+now visible in `FLEISCHWOLF_TIMING` profiles.
+
 Measured on a 4-core AVX-512(+VNNI/AMX) Xeon, release build (`lto = "thin"`),
 models from `scripts/download_dependencies.sh`, `FLEISCHWOLF_TIMING=1`.
 
@@ -122,32 +147,43 @@ Ordered by expected impact ÷ risk. Items 1–3 attack the 85–95%.
      the cache and the encoder's cross-K/V + `enc_out` stay owned `ort` values
      fed straight back into the next run (~9% faster structure decode,
      byte-identical output).
-   - The exported graph still re-embeds the **full tag sequence** every step
-     (`tags` grows each iteration) even though attention is KV-cached. Re-export
-     the decoder to take only the last tag (the cache carries the history) —
-     this is the remaining per-step cost; see `scripts/export_tableformer.py`.
+   - ~~The exported graph still re-embeds the **full tag sequence** every
+     step.~~ **Built and measured:** `scripts/export_tableformer.py` now also
+     exports `decoder_kv.onnx`, a true-KV-cache step (one tag in, projected
+     K/V cached per layer), verified argmax-identical over a 64-step rollout
+     and byte-identical on corpus output. Measured result: **parity** with
+     the legacy graph on corpus-sized tables (~100–300 tokens) — ONNX Runtime
+     executes the legacy graph's full-prefix re-projection as one efficient
+     batched GEMM, so the O(n²) FLOPs don't become O(n²) wall time until
+     tables get much larger. The Rust loop auto-detects either graph (input
+     names) and prefers the smaller legacy file by default; point
+     `DOCLING_TABLEFORMER_DECODER` at `decoder_kv(_int8).onnx` for
+     very-large-table workloads.
 3. **Layout batching for the parallel path**: the pool currently runs batch-1
    inference per page. RT-DETR's 640×640 input is fixed-shape, so pages can be
    batched (e.g. batch-4) per worker with one session — better core utilization
    and less framework overhead on wide machines. Output is per-image, so
    quality is unaffected. (Needs a re-export with a dynamic batch dim.)
-4. **Render → resize pipeline copies** (`pdfium_backend.rs:264-272`, ~15% on
-   text-heavy docs): pdfium's BGRA bitmap goes through `as_image()` (copy +
-   swizzle) then `.into_rgb8()` (second copy) before the 3×→2× CatmullRom
-   downsample (third buffer). A single BGRA→RGB pass into the resize source
-   removes one full-page copy + traversal per page. Keep the 1.5× supersample +
-   CatmullRom itself — it is deliberate PIL-BICUBIC parity for model input.
-   Also: when `layout.predict` is the only image consumer at 640×640, the
-   2×-page intermediate is only needed for TableFormer crops and OCR — a page
-   with no table regions and a text layer never needs it; rendering could be
-   deferred/skipped per page in a `no_ocr`-like fast path decided *after*
-   layout runs on a cheaper raster.
+4. **The 3×→2× page downscale** (~15% of a text-heavy conversion, ~25% after
+   INT8): ~~replace the scalar `image`-crate CatmullRom with a SIMD
+   convolution.~~ **Done on this branch:** `fast_image_resize` with the same
+   a=-0.5 Catmull-Rom kernel — `image.resize` drops **2607 → 152 ms (17×)**
+   on the 16-page doc. The SIMD fixed-point path differs from the scalar one
+   by ±1/255 on some pixels, which can flip borderline table cells, so it was
+   gated like INT8: groundtruth distance over the corpus is **817 (SIMD) vs
+   818 (scalar)** — conformance-neutral. `FLEISCHWOLF_SLOW_RESIZE=1` restores
+   the scalar path, and `pdf_conformance.sh`/`pdf_groundtruth.sh` pin it so
+   the committed snapshot baselines stay valid. (The render-side `as_image()`
+   copy turned out to be a non-issue: pdfium already renders with reversed
+   byte order, so it is one memcpy + one 4→3-channel pass, ~1% of total.)
 5. **textparse font caching** (marginal for PDFs — textparse is ≤1% — but
    real for `no_ocr` mode where it becomes the bottleneck):
-   - fonts are fully re-parsed (ToUnicode CMap decompression + tokenization,
-     Type1 program scan, width maps) for **every page** and every Form-XObject
-     invocation (`textparse.rs:794`); cache parsed `Font`s per document keyed
-     by the font dict's `ObjectId`, and cache decoded Form XObject content.
+   - ~~fonts are fully re-parsed for **every page** and every Form-XObject
+     invocation; decoded form content re-inflated per `Do`.~~ **Done on this
+     branch:** per-document caches keyed by object id (fonts also by resource
+     name, which feeds the docling-parse font hash). Identical output across
+     the corpus; 3–10% off the `textparse` stage on the test fixtures (their
+     ToUnicode CMaps are small — CJK/form-heavy documents benefit far more).
    - ~~`line_cells` + `word_cells` run the identical build+contract twice per
      page; one pass can emit both.~~ **Done on this branch**
      (`dp_lines::line_and_word_cells`): ~1.25× faster `--no-ocr` conversion,
@@ -167,6 +203,37 @@ Ordered by expected impact ÷ risk. Items 1–3 attack the 85–95%.
    `with_optimized_model_path` (caching the optimized graph on disk) could
    still shave per-worker model-load latency; only worth it if pool spin-up
    shows up in a real deployment.
+
+## Memory
+
+Each pool worker used to own a full model set, so peak RSS scaled with the
+pool: on a 4-worker machine ~0.4 GB of TableFormer weights+arenas were
+duplicated four times even though tables appear on a minority of pages. The
+pool now shares **one lazily-loaded TableFormer** behind a mutex (loaded with
+the full intra-op budget, since tables serialise on it anyway; prediction is
+independent of which worker runs it). Measured on the 16-page table-heavy
+paper, INT8 stack:
+
+| pool | per-worker TF (before) | shared TF (after) |
+|---|---:|---:|
+| 4 workers | 3816 MB | **1880 MB** |
+| 2 workers | 2183 MB | **1517 MB** |
+| 4 workers, table-free doc | 682 MB | **331 MB** (TableFormer never loads) |
+
+`FLEISCHWOLF_PDF_WORKERS` remains the coarse memory knob on top.
+
+## Determinism note (pre-existing, worth knowing)
+
+Multi-threaded ONNX Runtime float reductions are **not deterministic
+run-to-run**: on `2203.01017v2.pdf` two identical invocations of the same
+binary can differ in a handful of borderline table cells (measured 0–20
+Markdown diff-lines between repeat runs, before any of this branch's
+changes). `ocr.rs` already pins its session to one thread for exactly this
+reason. Regression checks for structural changes should therefore compare
+outputs under `FLEISCHWOLF_PDF_THREADS=1` (single-thread inference is
+deterministic and byte-stable); multi-threaded corpus diffs of a few lines on
+table-dense fixtures are thread-scheduling jitter, not necessarily a real
+change.
 
 ## Correctness notes found during review (quality, not speed)
 

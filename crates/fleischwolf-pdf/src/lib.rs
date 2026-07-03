@@ -82,6 +82,33 @@ pub(crate) fn fp32_forced() -> bool {
         .unwrap_or(false)
 }
 
+/// Resolve a default (CWD-relative) asset path. If it doesn't exist relative
+/// to the current directory, try next to the executable and one level above
+/// it (following symlinks — the layout `scripts/install.sh` produces:
+/// `/usr/local/bin/fleischwolf` → `/usr/local/fleischwolf/bin/fleischwolf`
+/// with `models/` and `.pdfium/` in `/usr/local/fleischwolf`). Lets an
+/// installed binary run from any working directory with no env vars; explicit
+/// env overrides never reach this. Returns `rel` unchanged when nothing
+/// exists anywhere, so callers' error messages keep the familiar path.
+pub(crate) fn resolve_asset(rel: &str) -> String {
+    if std::path::Path::new(rel).exists() {
+        return rel.to_string();
+    }
+    if let Some(dir) = std::env::current_exe()
+        .ok()
+        .and_then(|p| p.canonicalize().ok())
+        .and_then(|p| p.parent().map(std::path::Path::to_path_buf))
+    {
+        for base in [Some(dir.as_path()), dir.parent()].into_iter().flatten() {
+            let p = base.join(rel);
+            if p.exists() {
+                return p.to_string_lossy().into_owned();
+            }
+        }
+    }
+    rel.to_string()
+}
+
 /// Resolve a model path: an explicit env override always wins; otherwise the
 /// INT8 variant of the default path when it exists on disk (the quantized
 /// models are conformance-validated — see PDF_PERFORMANCE.md — and load/run
@@ -91,34 +118,55 @@ pub(crate) fn model_path(env: &str, fp32_default: &str, int8_default: &str) -> S
     if let Ok(p) = std::env::var(env) {
         return p;
     }
-    if !fp32_forced() && std::path::Path::new(int8_default).exists() {
-        return int8_default.to_string();
+    if !fp32_forced() {
+        let p = resolve_asset(int8_default);
+        if std::path::Path::new(&p).exists() {
+            return p;
+        }
     }
-    fp32_default.to_string()
+    resolve_asset(fp32_default)
 }
 
 /// One page's assembled output: typed nodes plus the page's hyperlinks, kept
 /// separate so pages processed out of order can be stitched back in page order.
 type PageOut = (Vec<Node>, Vec<(String, String)>);
 
-/// A self-contained set of the per-page models (layout, OCR, TableFormer). Each
-/// parallel page-worker owns its own `Worker` so inference runs concurrently
-/// without sharing an ONNX session (`ort`'s `Session::run` is `&mut self`).
+/// The pool-wide TableFormer slot: one instance shared by every worker, loaded
+/// lazily on the first table region any worker sees. Tables appear on a
+/// minority of pages, so per-worker copies mostly multiplied ~0.4 GB of
+/// weights+arenas by the pool size for nothing; a single shared instance keeps
+/// the peak flat regardless of pool width, and a table's structure prediction
+/// is independent of which worker runs it, so output is byte-identical. The
+/// mutex serialises concurrent tables — the shared instance is loaded with the
+/// full intra-op thread budget to compensate (one wide TableFormer instead of
+/// several narrow ones).
+enum TfSlot {
+    /// Not attempted yet (no table seen so far).
+    Unloaded,
+    /// Load attempted, graphs absent — geometric fallback (warned once).
+    Missing,
+    Ready(tableformer::TableFormer),
+}
+
+type SharedTables = Arc<Mutex<TfSlot>>;
+
+/// A self-contained set of the per-page models (layout, OCR). Each parallel
+/// page-worker owns its own `Worker` so inference runs concurrently without
+/// sharing an ONNX session (`ort`'s `Session::run` is `&mut self`); only the
+/// rarely-hit TableFormer is shared (see [`TfSlot`]).
 struct Worker {
     /// `None` when `no_ocr` skips layout entirely — no model load, no inference.
     layout: Option<layout::LayoutModel>,
     ocr: Option<ocr::OcrModel>,
-    /// TableFormer structure model; `None` when its ONNX graphs aren't present
-    /// (the assembler then falls back to geometric table reconstruction) or
-    /// when `no_table_former`/`no_ocr` skip it.
-    tables: Option<tableformer::TableFormer>,
+    /// Shared TableFormer slot; `None` when `no_table_former`/`no_ocr` skip it.
+    tables: Option<SharedTables>,
     /// Skip layout, OCR, and TableFormer; reconstruct text purely from the PDF's
     /// embedded text layer. See [`Pipeline::no_ocr`].
     no_ocr: bool,
 }
 
 impl Worker {
-    fn load(intra: usize, no_table_former: bool, no_ocr: bool) -> Result<Self, PdfError> {
+    fn load(intra: usize, tables: Option<SharedTables>, no_ocr: bool) -> Result<Self, PdfError> {
         Ok(Self {
             layout: if no_ocr {
                 None
@@ -126,11 +174,7 @@ impl Worker {
                 Some(layout::LayoutModel::load_with(intra).map_err(PdfError::Layout)?)
             },
             ocr: None,
-            tables: if no_table_former || no_ocr {
-                None
-            } else {
-                tableformer::TableFormer::load_with(intra)
-            },
+            tables,
             no_ocr,
         })
     }
@@ -180,21 +224,36 @@ impl Worker {
             .map_err(|e| PdfError::Ocr(format!("page {}: {e}", n + 1)))?;
             page.cells = cells;
         }
-        // TableFormer structure per table region (else geometric fallback).
+        // TableFormer structure per table region (else geometric fallback). The
+        // shared slot is only locked (and lazily loaded) when the page actually
+        // has a table, so table-free documents never pay for TableFormer at all.
         let mut table_rows: Vec<Option<Vec<Vec<String>>>> = vec![None; regions.len()];
-        if let Some(tf) = self.tables.as_mut() {
-            timing::timed("tableformer", || {
-                for (i, r) in regions.iter().enumerate() {
-                    if r.label == "table" {
-                        table_rows[i] = tf.predict_table_rows(
-                            &page.image,
-                            page.height,
-                            [r.l, r.t, r.r, r.b],
-                            &page.word_cells,
-                        );
+        if let Some(slot) = self.tables.as_ref() {
+            if regions.iter().any(|r| r.label == "table") {
+                timing::timed("tableformer", || {
+                    let mut guard = slot.lock().unwrap();
+                    if matches!(*guard, TfSlot::Unloaded) {
+                        // Full intra-op width: tables serialise on this mutex, so
+                        // the one instance gets the whole thread budget.
+                        *guard = match tableformer::TableFormer::load_with(intra_threads()) {
+                            Some(tf) => TfSlot::Ready(tf),
+                            None => TfSlot::Missing,
+                        };
                     }
-                }
-            });
+                    if let TfSlot::Ready(tf) = &mut *guard {
+                        for (i, r) in regions.iter().enumerate() {
+                            if r.label == "table" {
+                                table_rows[i] = tf.predict_table_rows(
+                                    &page.image,
+                                    page.height,
+                                    [r.l, r.t, r.r, r.b],
+                                    &page.word_cells,
+                                );
+                            }
+                        }
+                    }
+                });
+            }
         }
         Ok(timing::timed("assemble_page", || {
             assemble::assemble_page(page, regions, &table_rows)
@@ -259,6 +318,8 @@ pub struct Pipeline {
     /// Narrower workers (≈cores/`target_workers` threads each) for the parallel
     /// path; loaded on first multi-page use and cached.
     pool: Vec<Worker>,
+    /// The single TableFormer instance every worker shares (see [`TfSlot`]).
+    tables: SharedTables,
     /// Desired pool size for multi-page documents.
     target_workers: usize,
     /// Page count at/above which the parallel pool is worth its load cost.
@@ -278,6 +339,7 @@ impl Pipeline {
         Ok(Self {
             primary: None,
             pool: Vec::new(),
+            tables: Arc::new(Mutex::new(TfSlot::Unloaded)),
             target_workers: pdf_worker_count(),
             parallel_min: pdf_parallel_min(),
             no_table_former: false,
@@ -309,12 +371,22 @@ impl Pipeline {
         self
     }
 
+    /// The shared TableFormer slot handed to each worker, or `None` when the
+    /// pipeline options skip TableFormer entirely.
+    fn tables_slot(&self) -> Option<SharedTables> {
+        if self.no_table_former || self.no_ocr {
+            None
+        } else {
+            Some(Arc::clone(&self.tables))
+        }
+    }
+
     /// The full-intra serial worker, loaded on first use.
     fn primary(&mut self) -> Result<&mut Worker, PdfError> {
         if self.primary.is_none() {
             self.primary = Some(Worker::load(
                 intra_threads(),
-                self.no_table_former,
+                self.tables_slot(),
                 self.no_ocr,
             )?);
         }
@@ -606,11 +678,14 @@ impl Pipeline {
             return Ok(());
         }
         let intra = pdf_intra();
-        let no_table_former = self.no_table_former;
         let no_ocr = self.no_ocr;
+        let tables = self.tables_slot();
         let loaded: Vec<Result<Worker, PdfError>> = std::thread::scope(|s| {
             let handles: Vec<_> = (0..need)
-                .map(|_| s.spawn(move || Worker::load(intra, no_table_former, no_ocr)))
+                .map(|_| {
+                    let tables = tables.clone();
+                    s.spawn(move || Worker::load(intra, tables, no_ocr))
+                })
                 .collect();
             handles.into_iter().map(|h| h.join().unwrap()).collect()
         });
