@@ -42,7 +42,14 @@ RUST_BIN="$(build_rust_release)"
 # Point the Rust PDF pipeline at the fetched libs/models (scripts/pdf_setup.sh)
 # using absolute paths, so it runs the full pipeline no matter the caller's CWD.
 # Harmless for non-PDF inputs (the binary only reads these for PDFs/images).
+# Mirrors the pipeline's own default: the INT8 layout model + TableFormer
+# decoder when present (scripts/quantize_models.py; see PDF_PERFORMANCE.md),
+# fp32 with FLEISCHWOLF_FP32=1.
 [[ -e "$WORKSPACE_DIR/.pdfium/lib/libpdfium.so" ]] && export PDFIUM_DYNAMIC_LIB_PATH="${PDFIUM_DYNAMIC_LIB_PATH:-$WORKSPACE_DIR/.pdfium/lib}"
+if [[ "${FLEISCHWOLF_FP32:-0}" != "1" && -e "$WORKSPACE_DIR/models/layout_heron_int8.onnx" ]]; then
+  export DOCLING_LAYOUT_ONNX="${DOCLING_LAYOUT_ONNX:-$WORKSPACE_DIR/models/layout_heron_int8.onnx}"
+  [[ -e "$WORKSPACE_DIR/models/tableformer/decoder_int8.onnx" ]] && export DOCLING_TABLEFORMER_DECODER="${DOCLING_TABLEFORMER_DECODER:-$WORKSPACE_DIR/models/tableformer/decoder_int8.onnx}"
+fi
 [[ -e "$WORKSPACE_DIR/models/layout_heron.onnx" ]] && export DOCLING_LAYOUT_ONNX="${DOCLING_LAYOUT_ONNX:-$WORKSPACE_DIR/models/layout_heron.onnx}"
 [[ -e "$WORKSPACE_DIR/models/ocr_rec.onnx" ]] && export DOCLING_OCR_REC_ONNX="${DOCLING_OCR_REC_ONNX:-$WORKSPACE_DIR/models/ocr_rec.onnx}"
 [[ -e "$WORKSPACE_DIR/models/ppocr_keys_v1.txt" ]] && export DOCLING_OCR_DICT="${DOCLING_OCR_DICT:-$WORKSPACE_DIR/models/ppocr_keys_v1.txt}"

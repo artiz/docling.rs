@@ -702,9 +702,10 @@ pub fn pdf_all_cells(bytes: &[u8]) -> Vec<PageParserCells> {
         .map(|(_, pid)| {
             let (_w, h) = page_size(&doc, pid);
             let glyphs = page_glyphs(&doc, pid);
+            let (prose, words) = crate::dp_lines::line_and_word_cells(&glyphs, h, true);
             PageParserCells {
-                prose: crate::dp_lines::line_cells(&glyphs, h, true),
-                words: crate::dp_lines::word_cells(&glyphs, h, true),
+                prose,
+                words,
                 code: crate::pdfium_backend::code_cells_from_glyphs(&glyphs, h),
             }
         })
@@ -921,6 +922,12 @@ fn run_content(
                     }
                     .then(tlm);
                     tm = tlm;
+                }
+                if op.operator == "\"" {
+                    // `aw ac string "` sets word- and char-spacing before
+                    // showing the string (PDF 32000-1 §9.4.3), persisting after.
+                    tw = op_f(operands, 0);
+                    tc = op_f(operands, 1);
                 }
                 if let (Some(f), Some(Object::String(s, _))) = (font, operands.last()) {
                     show_text(f, s, fsize, tc, tw, th, trise, &mut tm, ctm, out);

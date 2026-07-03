@@ -74,6 +74,29 @@ pub(crate) fn intra_threads() -> usize {
         .unwrap_or(1)
 }
 
+/// True when `FLEISCHWOLF_FP32` (any value but `0`) forces the full-precision
+/// models even where an INT8 variant sits next to the fp32 default.
+pub(crate) fn fp32_forced() -> bool {
+    std::env::var("FLEISCHWOLF_FP32")
+        .map(|v| v != "0")
+        .unwrap_or(false)
+}
+
+/// Resolve a model path: an explicit env override always wins; otherwise the
+/// INT8 variant of the default path when it exists on disk (the quantized
+/// models are conformance-validated — see PDF_PERFORMANCE.md — and load/run
+/// markedly faster on CPU), unless `FLEISCHWOLF_FP32` opts back into full
+/// precision; else the fp32 default.
+pub(crate) fn model_path(env: &str, fp32_default: &str, int8_default: &str) -> String {
+    if let Ok(p) = std::env::var(env) {
+        return p;
+    }
+    if !fp32_forced() && std::path::Path::new(int8_default).exists() {
+        return int8_default.to_string();
+    }
+    fp32_default.to_string()
+}
+
 /// One page's assembled output: typed nodes plus the page's hyperlinks, kept
 /// separate so pages processed out of order can be stitched back in page order.
 type PageOut = (Vec<Node>, Vec<(String, String)>);
@@ -148,12 +171,13 @@ impl Worker {
             if self.ocr.is_none() {
                 self.ocr = Some(ocr::OcrModel::load().map_err(PdfError::Ocr)?);
             }
-            let cells = self
-                .ocr
-                .as_mut()
-                .unwrap()
-                .ocr_page(&page.image, &regions, page.scale)
-                .map_err(|e| PdfError::Ocr(format!("page {}: {e}", n + 1)))?;
+            let cells = timing::timed("ocr.page", || {
+                self.ocr
+                    .as_mut()
+                    .unwrap()
+                    .ocr_page(&page.image, &regions, page.scale)
+            })
+            .map_err(|e| PdfError::Ocr(format!("page {}: {e}", n + 1)))?;
             page.cells = cells;
         }
         // TableFormer structure per table region (else geometric fallback).

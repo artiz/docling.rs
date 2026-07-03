@@ -296,6 +296,7 @@ curl -fsSL https://raw.githubusercontent.com/artiz/fleischwolf/master/scripts/do
 | PP-OCRv3 rec + dictionary | `models/ocr_rec.onnx`, `models/ppocr_keys_v1.txt` |
 | TableFormer (optional) | `models/tableformer/{encoder,decoder,bbox}.onnx` (+ `.data` sidecars where the export needs them) |
 | Whisper tiny (audio/ASR; skip with `--no-asr`) | `models/asr/{encoder_model,decoder_model}.onnx`, `models/asr/vocab.json` (+ `added_tokens.json` for language selection) |
+| INT8 CPU models (optional; fetch with `--int8`) | `models/layout_heron_int8.onnx`, `models/tableformer/decoder_int8.onnx` |
 
 Idempotent — safe to re-run; it skips files already on disk. Pass `--force` to
 re-fetch everything, or set `$FLEISCHWOLF_MODELS_URL` to fetch from a
@@ -304,6 +305,31 @@ come from Hugging Face (`$FLEISCHWOLF_ASR_MODELS_URL` overrides, or point
 `DOCLING_ASR_{ENCODER,DECODER,VOCAB}` at explicit files). pdfium is Linux x64
 only for now — other platforms, or building the models from source, need
 [`scripts/pdf_setup.sh`](#testing) instead.
+
+### INT8 models (faster PDF conversion on CPU — the default)
+
+The `*_int8` assets are post-training quantizations of the same models:
+Conv-only static INT8 of the layout detector (calibrated on this repo's PDF
+corpus) and dynamic INT8 of the TableFormer decoder. On CPUs with AVX-512
+VNNI they make layout inference — the dominant PDF cost — **~2.4× faster**
+(~1.4–1.8× end-to-end) at conformance validated as unchanged against the
+corpus groundtruth; the TableFormer output is byte-identical. See
+[`PDF_PERFORMANCE.md`](./PDF_PERFORMANCE.md) for the measurements.
+
+**The pipeline uses them automatically** whenever they sit next to the fp32
+files at the default paths (`download_dependencies.sh` fetches them by
+default; `--no-int8` skips, or build them with `python
+scripts/quantize_models.py`). To force full precision:
+
+```bash
+FLEISCHWOLF_FP32=1 fleischwolf input.pdf          # keep the int8 files, use fp32
+# or pin a model explicitly — an explicit path always wins:
+export DOCLING_LAYOUT_ONNX=$PWD/models/layout_heron.onnx
+export DOCLING_TABLEFORMER_DECODER=$PWD/models/tableformer/decoder.onnx
+```
+
+(The [example Dockerfile](./examples/Dockerfile) bakes both precisions and
+defaults to INT8; build with `--build-arg INT8=0` for pure fp32.)
 
 Then either:
 
@@ -446,14 +472,17 @@ The image converts PDFs/images fully offline; the model export (torch +
 
 ## Performance
 
-`scripts/performance.sh` runs the **largest fixture of each supported type** through
-both engines (published Python `docling` vs the Rust release binary) and reports
-peak RSS, CPU utilization, and conversion time. Ratios below are docling ÷
-fleischwolf — bigger means Rust wins by more.
+`scripts/performance.sh` runs a representative fixture of each supported type
+through both engines (published Python `docling` vs the Rust release binary) and
+reports peak RSS, CPU utilization, and conversion time. Ratios below are
+docling ÷ fleischwolf — bigger means Rust wins by more. The PDF row is the
+**fp32** stack; the optional [INT8 models](#int8-models-faster-pdf-conversion-on-cpu)
+roughly double layout-inference speed on top of it (measured 1.83× end-to-end
+on a 1913-page document — see [`PDF_PERFORMANCE.md`](./PDF_PERFORMANCE.md)).
 
 | File | Size | Peak-memory ratio | CPU ratio | Warm-conversion speedup |
 |---|---:|---:|---:|---:|
-| `2203.01017v2.pdf` (PDF, 47 pp) | 6.9 MB | **2.2× less** | 1.3× | 1.2× |
+| `picture_classification.pdf` (PDF) | 208 KB | **2.3× less** | 1.0× | 2.3× |
 | `docx_rich_tables_01.docx` (DOCX) | 3.1 MB | **41× less** | 2.7× | 21× |
 | `wiki_duck.html` (HTML) | 240 KB | **57× less** | 3.2× | 46× |
 | `elife-56337.nxml` (JATS XML) | 180 KB | **61× less** | 2.9× | 10× |
@@ -465,10 +494,11 @@ fleischwolf — bigger means Rust wins by more.
 - **Peak memory** is where Rust wins decisively: a declarative conversion holds a
   few MB versus docling's ~750 MB (it imports torch even for non-ML formats). The
   PDF runs the full ML pipeline in both engines (torch vs ONNX), so the gap there
-  is 2.2× rather than 50×+, but Rust still peaks at 1.4 GB vs docling's 3.1 GB.
+  is 2.3× rather than 50×+, but Rust still peaks at 0.77 GB vs docling's 1.75 GB —
+  and the PDF converts **4.1× faster end-to-end** (docling re-pays its torch
+  import + model load on every invocation).
 - **CPU**: docling spreads across 2.7–3.2 cores for declarative work that Rust does
-  on a single core (~100%); on the PDF both go multi-core (Rust 525% vs docling
-  674%).
+  on a single core (~100%); on the PDF both go multi-core (~330% each here).
 - **Warm-conversion speedup** isolates the parse/convert work — it times docling
   *in-process* (excluding its ~3 s interpreter + import startup) against the Rust
   whole-process figure. Rust wins on substantial inputs (HTML 46×, DOCX 21×); the
