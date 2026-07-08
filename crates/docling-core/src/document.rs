@@ -169,6 +169,14 @@ impl DoclingDocument {
             .expect("DoclingDocument JSON is always serializable")
     }
 
+    /// Serialize to DocLang XML (`<doclang version="0.7">…`), the markup that
+    /// lives inside a `.dclx` archive — the Rust counterpart of docling-core's
+    /// `export_to_doclang()` with default parameters. No trailing newline; the
+    /// archive writer appends exactly one.
+    pub fn export_to_doclang(&self) -> String {
+        crate::doclang::export_to_doclang(&self.nodes)
+    }
+
     /// Serialize to Markdown with an explicit picture [`ImageMode`] (mirrors
     /// docling's `image_mode`). Returns the Markdown and, for
     /// [`ImageMode::Referenced`], the `(relative-path, bytes)` of each image the

@@ -1,0 +1,377 @@
+//! DocLang XML serialization (`export_to_doclang`) — the markup inside a
+//! `.dclx` archive, mirroring docling-core's `DocLangDocSerializer` with
+//! `DocLangParams()` defaults (version 0.7, 2-space pretty indent, AUTO
+//! CDATA/content wrapping, placeholder image mode → no `<src>` data).
+//!
+//! The Python reference builds a minified string, round-trips it through
+//! `xml.dom.minidom.toprettyxml`, filters empty lines and re-expands
+//! self-closing forms of non-self-closing tags. For the subset our `Node`
+//! model produces, that pipeline's output is reproduced *directly*: an
+//! element whose content is a single text/CDATA run renders inline
+//! (`<text>abc</text>`), anything with element children renders as an
+//! indented block. See docs in the .dclx conformance PR for the full spec.
+//!
+//! Inline formatting: our model bakes bold/italic/code/links into the text as
+//! docling-legacy Markdown markers; [`inline_runs`] re-parses those into the
+//! structural `<bold>`/`<italic>`/`<code>` elements DocLang expects.
+
+use crate::document::{FieldItem, Node, Table};
+
+const INDENT: &str = "  ";
+
+/// Rendered fragments: (indent depth, content, newline-after). minidom writes
+/// a CDATA child with no indent and no trailing newline, so the next fragment
+/// (usually the parent's closing tag, at its own indent) lands on the same
+/// line — `newline` false reproduces that glue.
+struct Out {
+    lines: Vec<(i32, String, bool)>,
+}
+
+impl Out {
+    fn push(&mut self, depth: i32, s: impl Into<String>) {
+        self.lines.push((depth, s.into(), true));
+    }
+
+    /// A fragment with no indent and no trailing newline (CDATA glue).
+    fn push_glue(&mut self, s: impl Into<String>) {
+        self.lines.push((0, s.into(), false));
+    }
+
+    fn finish(self) -> String {
+        let mut s = String::new();
+        let mut at_line_start = true;
+        for (d, line, nl) in self.lines {
+            if at_line_start && d > 0 {
+                for _ in 0..d {
+                    s.push_str(INDENT);
+                }
+            }
+            s.push_str(&line);
+            if nl {
+                s.push('\n');
+            }
+            at_line_start = nl;
+        }
+        // The reference's empty-line filter drops the trailing blank, so the
+        // serialized text carries no final newline; the archive writer adds
+        // exactly one back.
+        if s.ends_with('\n') {
+            s.pop();
+        }
+        s
+    }
+}
+
+/// AUTO escape: any of `"' &<>` in the text → CDATA; leading/trailing
+/// whitespace or a newline → additionally wrapped in `<content>`.
+fn escape_text(text: &str) -> String {
+    let needs_cdata = text.contains(['"', '\'', '&', '<', '>']);
+    let needs_content = text != text.trim() || text.contains('\n');
+    let mut t = if needs_cdata {
+        format!("<![CDATA[{text}]]>")
+    } else {
+        text.to_string()
+    };
+    if needs_content {
+        t = format!("<content>{t}</content>");
+    }
+    t
+}
+
+/// An inline run of a text node after re-parsing our Markdown markers.
+enum Run {
+    Plain(String),
+    Bold(String),
+    Italic(String),
+    BoldItalic(String),
+    Code(String),
+    /// `[anchor](uri)` — DocLang has no inline href element; the anchor text
+    /// stays inline and, when the run is the only content, the uri becomes a
+    /// `<href uri=…/>` in the element head.
+    Link {
+        anchor: String,
+        uri: String,
+    },
+}
+
+/// Split docling-legacy inline markers (`***x***`, `**x**`, `*x*`, `` `x` ``,
+/// `[t](u)`) into runs. Unmatched markers stay literal.
+fn inline_runs(text: &str) -> Vec<Run> {
+    let mut runs = Vec::new();
+    let mut plain = String::new();
+    let bytes: Vec<char> = text.chars().collect();
+    let n = bytes.len();
+    let mut i = 0;
+    let find = |open: usize, pat: &str| -> Option<usize> {
+        let hay: String = bytes[open..].iter().collect();
+        hay.find(pat).map(|p| open + hay[..p].chars().count())
+    };
+    while i < n {
+        let rest: String = bytes[i..].iter().collect();
+        let take = |runs: &mut Vec<Run>, plain: &mut String, r: Run| {
+            if !plain.is_empty() {
+                runs.push(Run::Plain(std::mem::take(plain)));
+            }
+            runs.push(r);
+        };
+        if rest.starts_with("***") {
+            if let Some(end) = find(i + 3, "***") {
+                let inner: String = bytes[i + 3..end].iter().collect();
+                take(&mut runs, &mut plain, Run::BoldItalic(inner));
+                i = end + 3;
+                continue;
+            }
+        }
+        if rest.starts_with("**") {
+            if let Some(end) = find(i + 2, "**") {
+                let inner: String = bytes[i + 2..end].iter().collect();
+                take(&mut runs, &mut plain, Run::Bold(inner));
+                i = end + 2;
+                continue;
+            }
+        }
+        if rest.starts_with('*') && !rest.starts_with("**") {
+            if let Some(end) = find(i + 1, "*") {
+                let inner: String = bytes[i + 1..end].iter().collect();
+                if !inner.is_empty() {
+                    take(&mut runs, &mut plain, Run::Italic(inner));
+                    i = end + 1;
+                    continue;
+                }
+            }
+        }
+        if rest.starts_with('`') {
+            if let Some(end) = find(i + 1, "`") {
+                let inner: String = bytes[i + 1..end].iter().collect();
+                take(&mut runs, &mut plain, Run::Code(inner));
+                i = end + 1;
+                continue;
+            }
+        }
+        if rest.starts_with('[') {
+            if let (Some(close), true) = (find(i + 1, "]("), true) {
+                if let Some(endp) = find(close + 2, ")") {
+                    let anchor: String = bytes[i + 1..close].iter().collect();
+                    let uri: String = bytes[close + 2..endp].iter().collect();
+                    take(&mut runs, &mut plain, Run::Link { anchor, uri });
+                    i = endp + 1;
+                    continue;
+                }
+            }
+        }
+        plain.push(bytes[i]);
+        i += 1;
+    }
+    if !plain.is_empty() {
+        runs.push(Run::Plain(plain));
+    }
+    runs
+}
+
+/// Attribute-value escaping for generated URIs/labels.
+fn attr_escape(v: &str) -> String {
+    v.replace('&', "&amp;").replace('"', "&quot;")
+}
+
+/// Render a text body (with inline markers) into `out`.
+///
+/// A single plain run renders inline within its wrapper; mixed runs become
+/// the reference's block form: plain fragments as bare indented lines,
+/// formatted fragments as their own inline elements — matching minidom's
+/// output for a `<text>` with element children.
+fn emit_text_element(out: &mut Out, depth: i32, tag_open: &str, tag: &str, text: &str) {
+    let runs = inline_runs(text);
+    let only_plain = runs.len() == 1 && matches!(runs[0], Run::Plain(_));
+    // A lone `[anchor](uri)` becomes `<href uri=…/>` in the head + plain anchor.
+    if runs.len() == 1 {
+        if let Run::Link { anchor, uri } = &runs[0] {
+            out.push(depth, format!("<{tag_open}>"));
+            out.push(depth + 1, format!("<href uri=\"{}\"/>", attr_escape(uri)));
+            if !anchor.trim().is_empty() {
+                out.push(depth + 1, escape_text(anchor));
+            }
+            out.push(depth, format!("</{tag}>"));
+            return;
+        }
+    }
+    if only_plain {
+        out.push(depth, format!("<{tag_open}>{}</{tag}>", escape_text(text)));
+        return;
+    }
+    out.push(depth, format!("<{tag_open}>"));
+    emit_runs(out, depth + 1, runs);
+    out.push(depth, format!("</{tag}>"));
+}
+
+fn emit_runs(out: &mut Out, depth: i32, runs: Vec<Run>) {
+    for run in runs {
+        match run {
+            Run::Plain(t) => {
+                let t = t.trim_matches('\n');
+                if !t.is_empty() {
+                    emit_text_node(out, depth, t);
+                }
+            }
+            Run::Bold(t) => out.push(depth, format!("<bold>{}</bold>", escape_text(&t))),
+            Run::Italic(t) => out.push(depth, format!("<italic>{}</italic>", escape_text(&t))),
+            Run::BoldItalic(t) => {
+                out.push(depth, "<italic>".to_string());
+                out.push(depth + 1, format!("<bold>{}</bold>", escape_text(&t)));
+                out.push(depth, "</italic>".to_string());
+            }
+            Run::Code(t) => out.push(depth, format!("<code>{}</code>", escape_text(&t))),
+            Run::Link { anchor, .. } => {
+                // Inline scope: DocLang drops the target, keeps the anchor.
+                if !anchor.is_empty() {
+                    emit_text_node(out, depth, &anchor);
+                }
+            }
+        }
+    }
+}
+
+/// A text node in block (element-children) context: plain data indents like
+/// any child; a `<content>` wrapper is a normal element; bare CDATA glues to
+/// the next fragment with no indent/newline (minidom's CDATA rule).
+fn emit_text_node(out: &mut Out, depth: i32, text: &str) {
+    let e = escape_text(text);
+    if e.starts_with("<![CDATA[") {
+        out.push_glue(e);
+    } else {
+        out.push(depth, e);
+    }
+}
+
+fn emit_table(out: &mut Out, depth: i32, table: &Table) {
+    out.push(depth, "<table>".to_string());
+    for (ri, row) in table.rows.iter().enumerate() {
+        for cell in row {
+            let tok = if cell.trim().is_empty() {
+                "<ecel/>"
+            } else if ri == 0 {
+                "<ched/>"
+            } else {
+                "<fcel/>"
+            };
+            out.push(depth + 1, tok.to_string());
+            if !cell.trim().is_empty() {
+                emit_cell_text(out, depth + 1, cell);
+            }
+        }
+        out.push(depth + 1, "<nl/>".to_string());
+    }
+    out.push(depth, "</table>".to_string());
+}
+
+/// Table-cell content: virtual text (no wrapper), inline markers re-parsed.
+fn emit_cell_text(out: &mut Out, depth: i32, text: &str) {
+    let runs = inline_runs(text.trim());
+    emit_runs(out, depth, runs);
+}
+
+/// Serialize the node stream to DocLang XML (no trailing newline).
+pub fn export_to_doclang(nodes: &[Node]) -> String {
+    let mut out = Out { lines: Vec::new() };
+    out.push(0, "<doclang version=\"0.7\">".to_string());
+    let mut i = 0usize;
+    emit_nodes(&mut out, 1, nodes, &mut i, 0);
+    out.push(0, "</doclang>".to_string());
+    out.finish()
+}
+
+/// Emit nodes at list-nesting `level`; consumes consecutive ListItems into
+/// `<list>` blocks (recursing for deeper levels).
+fn emit_nodes(out: &mut Out, depth: i32, nodes: &[Node], i: &mut usize, level: u8) {
+    while *i < nodes.len() {
+        match &nodes[*i] {
+            Node::Heading { level, text } => {
+                let open = if *level <= 1 {
+                    "heading".to_string()
+                } else {
+                    format!("heading level=\"{level}\"")
+                };
+                emit_text_element(out, depth, &open, "heading", text);
+                *i += 1;
+            }
+            Node::Paragraph { text } => {
+                emit_text_element(out, depth, "text", "text", text);
+                *i += 1;
+            }
+            Node::Code { language: _, text } => {
+                emit_text_element(out, depth, "code", "code", text);
+                *i += 1;
+            }
+            Node::Table(t) => {
+                emit_table(out, depth, t);
+                *i += 1;
+            }
+            Node::Picture { caption, image: _ } => {
+                if let Some(c) = caption.as_ref().filter(|c| !c.trim().is_empty()) {
+                    out.push(depth, "<picture>".to_string());
+                    out.push(depth + 1, format!("<caption>{}</caption>", escape_text(c)));
+                    out.push(depth, "</picture>".to_string());
+                } else {
+                    out.push(depth, "<picture></picture>".to_string());
+                }
+                *i += 1;
+            }
+            Node::ListItem { level: l, .. } => {
+                if *l < level {
+                    return; // caller's list continues / closes
+                }
+                emit_list(out, depth, nodes, i, *l);
+            }
+            Node::Group { children, .. } => {
+                let mut j = 0usize;
+                emit_nodes(out, depth, children, &mut j, 0);
+                *i += 1;
+            }
+            Node::FieldRegion { items } => {
+                emit_field_region(out, depth, items);
+                *i += 1;
+            }
+        }
+    }
+}
+
+fn emit_list(out: &mut Out, depth: i32, nodes: &[Node], i: &mut usize, level: u8) {
+    let ordered = matches!(nodes[*i], Node::ListItem { ordered: true, .. });
+    let open = if ordered {
+        "<list class=\"ordered\">"
+    } else {
+        "<list>"
+    };
+    out.push(depth, open.to_string());
+    while *i < nodes.len() {
+        match &nodes[*i] {
+            Node::ListItem { level: l, text, .. } if *l == level => {
+                out.push(depth + 1, "<ldiv/>".to_string());
+                emit_runs(out, depth + 1, inline_runs(text));
+                *i += 1;
+            }
+            Node::ListItem { level: l, .. } if *l > level => {
+                emit_list(out, depth + 1, nodes, i, *l);
+            }
+            _ => break,
+        }
+    }
+    out.push(depth, "</list>".to_string());
+}
+
+fn emit_field_region(out: &mut Out, depth: i32, items: &[FieldItem]) {
+    out.push(depth, "<field_region>".to_string());
+    for item in items {
+        out.push(depth + 1, "<field_item>".to_string());
+        if let Some(m) = item.marker.as_ref().filter(|s| !s.is_empty()) {
+            out.push(depth + 2, format!("<marker>{}</marker>", escape_text(m)));
+        }
+        if let Some(k) = item.key.as_ref().filter(|s| !s.is_empty()) {
+            out.push(depth + 2, format!("<key>{}</key>", escape_text(k)));
+        }
+        if let Some(v) = item.value.as_ref().filter(|s| !s.is_empty()) {
+            out.push(depth + 2, format!("<value>{}</value>", escape_text(v)));
+        }
+        out.push(depth + 1, "</field_item>".to_string());
+    }
+    out.push(depth, "</field_region>".to_string());
+}

@@ -24,6 +24,7 @@
 //! backends; PDF/DOCX/HTML and the ML pipeline land in later phases.
 
 mod converter;
+pub mod dclx;
 mod error;
 mod format;
 mod result;
