@@ -336,7 +336,17 @@ fn emit_text_element(out: &mut Out, depth: i32, tag_open: &str, tag: &str, text:
         }
     }
     if only_plain {
-        out.push(depth, format!("<{tag_open}>{}</{tag}>", escape_text(text)));
+        let body = escape_text(text);
+        // A `<content>` wrapper is an *element* child, so minidom renders the
+        // wrapper in block form; bare text / CDATA is a single text child and
+        // stays inline.
+        if body.starts_with("<content>") {
+            out.push(depth, format!("<{tag_open}>"));
+            out.push(depth + 1, body);
+            out.push(depth, format!("</{tag}>"));
+        } else {
+            out.push(depth, format!("<{tag_open}>{body}</{tag}>"));
+        }
         return;
     }
     out.push(depth, format!("<{tag_open}>"));
