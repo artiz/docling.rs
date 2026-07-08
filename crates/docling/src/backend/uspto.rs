@@ -21,7 +21,7 @@ pub struct UsptoBackend;
 impl DeclarativeBackend for UsptoBackend {
     fn convert(&self, source: &SourceDocument) -> Result<DoclingDocument, ConversionError> {
         let raw = source.text()?;
-        let xml = resolve_named_entities(&raw);
+        let xml = resolve_named_entities(raw);
         let opts = ParsingOptions {
             allow_dtd: true,
             ..Default::default()
@@ -251,9 +251,10 @@ fn resolve_named_entities(xml: &str) -> Cow<'_, str> {
         if name.is_empty() || !name.bytes().all(|b| b.is_ascii_alphanumeric()) {
             continue;
         }
-        match NAMED_ENTITIES.binary_search_by(|&(n, _)| n.cmp(name)) {
-            Ok(idx) => push_xml_escaped(&mut out, NAMED_ENTITIES[idx].1),
-            Err(_) => {} // unrecognized — dropped, matching docling
+        // Recognized names expand; unrecognized ones are dropped (docling skips
+        // them too).
+        if let Ok(idx) = NAMED_ENTITIES.binary_search_by(|&(n, _)| n.cmp(name)) {
+            push_xml_escaped(&mut out, NAMED_ENTITIES[idx].1);
         }
     }
     out.push_str(&xml[i..]);
