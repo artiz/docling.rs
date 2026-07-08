@@ -5,9 +5,12 @@
 //! and the CLAIMS. Older schemas (pap-v1, the legacy APS text format) and
 //! tables/figures/maths are out of scope for the core.
 
+use std::borrow::Cow;
+
 use roxmltree::{Document, Node as XmlNode, ParsingOptions};
 
 use crate::backend::markdown::escape_text;
+use crate::backend::uspto_entities::NAMED_ENTITIES;
 use crate::backend::DeclarativeBackend;
 use crate::error::ConversionError;
 use crate::source::SourceDocument;
@@ -17,12 +20,13 @@ pub struct UsptoBackend;
 
 impl DeclarativeBackend for UsptoBackend {
     fn convert(&self, source: &SourceDocument) -> Result<DoclingDocument, ConversionError> {
-        let xml = source.text()?;
+        let raw = source.text()?;
+        let xml = resolve_named_entities(&raw);
         let opts = ParsingOptions {
             allow_dtd: true,
             ..Default::default()
         };
-        let dom = Document::parse_with_options(xml, opts)
+        let dom = Document::parse_with_options(&xml, opts)
             .map_err(|e| ConversionError::Parse(format!("uspto: {e}")))?;
         let mut doc = DoclingDocument::new(&source.name);
 
@@ -201,10 +205,97 @@ fn script_char(c: char, sup: bool) -> char {
     }
 }
 
+/// Resolve non-predefined named character references (`&trade;`, `&agr;`,
+/// `&lsqb;`, …) into their literal characters so roxmltree — which only knows
+/// the five XML built-ins and internally declared entities — can parse legacy
+/// USPTO SGML documents. Mirrors docling's `skippedEntity` handling: the ISO
+/// 8879 Greek names fold onto their HTML5 counterparts inside the generated
+/// table, recognized entities expand, and unrecognized ones are dropped.
+///
+/// The XML built-ins (`amp`/`lt`/`gt`/`quot`/`apos`) and numeric references
+/// (`&#…;`) are left untouched for the parser to resolve. Entity references
+/// whose name uses characters outside `[A-Za-z0-9]` (the unparsed-graphics
+/// `NDATA` entities USPTO declares in its internal subset) are also dropped —
+/// they are illegal in element content and would abort the parse.
+fn resolve_named_entities(xml: &str) -> Cow<'_, str> {
+    if !xml.contains('&') {
+        return Cow::Borrowed(xml);
+    }
+    let mut out = String::with_capacity(xml.len());
+    let mut i = 0;
+    while let Some(rel) = xml[i..].find('&') {
+        let amp = i + rel;
+        out.push_str(&xml[i..amp]);
+        // Find the terminating ';' within a bounded window (entity names are short).
+        let end = xml[amp + 1..]
+            .char_indices()
+            .take(64)
+            .find(|&(_, c)| c == ';')
+            .map(|(off, _)| amp + 1 + off);
+        let Some(semi) = end else {
+            out.push('&');
+            i = amp + 1;
+            continue;
+        };
+        let name = &xml[amp + 1..semi];
+        i = semi + 1;
+        // Numeric references and the XML built-ins pass through verbatim.
+        if name.starts_with('#') || matches!(name, "amp" | "lt" | "gt" | "quot" | "apos") {
+            out.push('&');
+            out.push_str(name);
+            out.push(';');
+            continue;
+        }
+        // Only plain-alphanumeric names can be table entities; anything else is
+        // a declared graphics entity — drop it (docling skips those too).
+        if name.is_empty() || !name.bytes().all(|b| b.is_ascii_alphanumeric()) {
+            continue;
+        }
+        match NAMED_ENTITIES.binary_search_by(|&(n, _)| n.cmp(name)) {
+            Ok(idx) => push_xml_escaped(&mut out, NAMED_ENTITIES[idx].1),
+            Err(_) => {} // unrecognized — dropped, matching docling
+        }
+    }
+    out.push_str(&xml[i..]);
+    Cow::Owned(out)
+}
+
+/// Append `s`, re-escaping the three characters that would otherwise disturb
+/// the surrounding XML once this string is fed back to the parser.
+fn push_xml_escaped(out: &mut String, s: &str) {
+    for c in s.chars() {
+        match c {
+            '&' => out.push_str("&amp;"),
+            '<' => out.push_str("&lt;"),
+            '>' => out.push_str("&gt;"),
+            _ => out.push(c),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::format::InputFormat;
+
+    #[test]
+    fn resolves_iso_and_html_entities_and_drops_unknown() {
+        assert_eq!(resolve_named_entities("a&trade;b"), "a\u{2122}b");
+        assert_eq!(resolve_named_entities("x&agr;y"), "x\u{3b1}y"); // ISO 8879 alpha
+        assert_eq!(resolve_named_entities("p&lsqb;q&rsqb;"), "p[q]");
+        assert_eq!(
+            resolve_named_entities("keep &amp; and &#65;"),
+            "keep &amp; and &#65;"
+        );
+        assert_eq!(resolve_named_entities("drop&zzznope;it"), "dropit");
+        assert_eq!(resolve_named_entities("amp&AMP;ersand"), "amp&amp;ersand");
+        // Declared NDATA graphics entity (dot in the name) — dropped.
+        assert_eq!(resolve_named_entities("g&US001.TIF;h"), "gh");
+        assert_eq!(
+            resolve_named_entities("no entities here"),
+            "no entities here"
+        );
+    }
 
     #[test]
     fn title_abstract_headings_and_scripts() {
