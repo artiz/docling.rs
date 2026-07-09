@@ -43,12 +43,19 @@ pub enum Node {
     /// items, `number` is the display number (honoring the list's `start`); it
     /// is unused for unordered items. `first_in_list` marks the first item of a
     /// list so the serializer can blank-line-separate adjacent sibling lists.
+    ///
+    /// `marker` is the DocLang enumeration marker (`"1."`, `"1.1."`, …) when the
+    /// backend provides one — HTML and DOCX set it for enumerated items, so
+    /// DocLang emits `<ldiv><marker>…</marker></ldiv>`; Markdown and the other
+    /// declarative backends leave it `None`, giving a bare `<ldiv/>` (matching
+    /// docling, whose Markdown backend passes no marker).
     ListItem {
         ordered: bool,
         number: u64,
         first_in_list: bool,
         text: String,
         level: u8,
+        marker: Option<String>,
     },
     /// A fenced code block.
     Code {

@@ -392,12 +392,15 @@ fn parse_kvp_id(id: &str) -> Option<(u32, KvpKind)> {
 /// Emit one `ListItem` per `<li>`, recursing into nested `<ul>`/`<ol>` at a
 /// deeper level. Ordered items are numbered from the list's `start` attribute.
 fn walk_list(list: ElementRef, ordered: bool, nodes: &mut Vec<Node>, level: u8, base: Fmt) {
-    let mut number = list
+    let start = list
         .value()
         .attr("start")
         .and_then(|s| s.trim().parse().ok())
-        .filter(|_| ordered)
-        .unwrap_or(1);
+        .filter(|_| ordered);
+    // docling emits an enumeration `<marker>` only for an ordered list with an
+    // explicit `start` attribute; a plain `<ol>` carries no marker.
+    let has_start = start.is_some();
+    let mut number = start.unwrap_or(1);
     for child in list.children() {
         let Some(li) = ElementRef::wrap(child) else {
             continue;
@@ -423,6 +426,9 @@ fn walk_list(list: ElementRef, ordered: bool, nodes: &mut Vec<Node>, level: u8, 
                 first_in_list: false,
                 text,
                 level,
+                // docling's HTML backend passes an enumeration marker only for
+                // an ordered list with an explicit `start`; otherwise none.
+                marker: has_start.then(|| format!("{number}.")),
             });
         }
         number += 1;
@@ -518,6 +524,7 @@ fn walk_dl(dl: ElementRef, nodes: &mut Vec<Node>, level: u8, base: Fmt) {
                         first_in_list: false,
                         text,
                         level,
+                        marker: None,
                     });
                 }
             }
@@ -561,6 +568,7 @@ fn walk_dd(dd: ElementRef, nodes: &mut Vec<Node>, level: u8, base: Fmt) {
             first_in_list: false,
             text,
             level,
+            marker: None,
         });
     }
     for (kind, el) in nested {

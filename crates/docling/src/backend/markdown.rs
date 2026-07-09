@@ -478,6 +478,7 @@ fn emit_item(
             first_in_list,
             text,
             level,
+            marker: None,
         });
         *emitted = true;
     }

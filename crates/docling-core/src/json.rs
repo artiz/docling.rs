@@ -653,6 +653,7 @@ mod tests {
             first_in_list: true,
             text: "one".into(),
             level: 0,
+            marker: None,
         });
         doc.push(Node::ListItem {
             ordered: false,
@@ -660,6 +661,7 @@ mod tests {
             first_in_list: false,
             text: "two".into(),
             level: 0,
+            marker: None,
         });
         doc.push(Node::Table(Table {
             rows: vec![vec!["A".into(), "B".into()]],

@@ -561,6 +561,7 @@ fn add_odf_list(
             first_in_list: false,
             text,
             level: depth,
+            marker: None,
         });
         has_last = true;
         for n in &nested {

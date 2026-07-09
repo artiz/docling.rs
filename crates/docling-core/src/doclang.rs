@@ -750,7 +750,12 @@ fn emit_list(out: &mut Out, depth: i32, nodes: &[Node], i: &mut usize, level: u8
     out.push(depth, open.to_string());
     while *i < nodes.len() {
         match &nodes[*i] {
-            Node::ListItem { level: l, text, .. } if *l == level => {
+            Node::ListItem {
+                level: l,
+                text,
+                marker,
+                ..
+            } if *l == level => {
                 // docling wraps a list item's content in `<text>` when it carries
                 // formatting or is followed by a nested list (a "segment
                 // sibling"); a plain item with no nested list stays bare.
@@ -758,7 +763,16 @@ fn emit_list(out: &mut Out, depth: i32, nodes: &[Node], i: &mut usize, level: u8
                     nodes.get(*i + 1),
                     Some(Node::ListItem { level: nl, .. }) if *nl > level
                 );
-                out.push(depth + 1, "<ldiv/>".to_string());
+                // An enumeration marker (HTML/DOCX ordered items) rides inside
+                // the `<ldiv>`; without one the delimiter is self-closing.
+                match marker {
+                    Some(m) => {
+                        out.push(depth + 1, "<ldiv>".to_string());
+                        out.push(depth + 2, format!("<marker>{}</marker>", escape_text(m)));
+                        out.push(depth + 1, "</ldiv>".to_string());
+                    }
+                    None => out.push(depth + 1, "<ldiv/>".to_string()),
+                }
                 emit_list_item_content(out, depth + 1, text, has_nested);
                 *i += 1;
             }

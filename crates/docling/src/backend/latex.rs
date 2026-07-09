@@ -259,6 +259,7 @@ fn emit_list(inner: &str, doc: &mut DoclingDocument) {
                 first_in_list: first,
                 text,
                 level: 0,
+                marker: None,
             });
             first = false;
         }

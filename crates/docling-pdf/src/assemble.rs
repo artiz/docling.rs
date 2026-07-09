@@ -1041,6 +1041,7 @@ pub fn assemble_page(
                         first_in_list: false,
                         text: md_escape(&rest),
                         level: 0,
+                        marker: None,
                     });
                 } else {
                     nodes.push(Node::ListItem {
@@ -1049,6 +1050,7 @@ pub fn assemble_page(
                         first_in_list: false,
                         text: md_escape(&stripped),
                         level: 0,
+                        marker: None,
                     });
                 }
             }

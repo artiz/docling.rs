@@ -279,6 +279,7 @@ fn render_list_run(items: &[Node], blocks: &mut Vec<String>, strict: bool) {
             first_in_list,
             text,
             level,
+            marker: _,
         } = item
         else {
             continue;
@@ -597,6 +598,7 @@ mod tests {
             first_in_list: true,
             text: "first".into(),
             level: 0,
+            marker: None,
         });
         doc.push(Node::ListItem {
             ordered: false,
@@ -604,6 +606,7 @@ mod tests {
             first_in_list: false,
             text: "second".into(),
             level: 0,
+            marker: None,
         });
         let md = doc.export_to_markdown();
         assert_eq!(md, "# Title\n\nHello world.\n\n- first\n- second\n");
@@ -681,6 +684,7 @@ mod tests {
             first_in_list: true,
             text: "i\\_j".into(),
             level: 0,
+            marker: None,
         });
         // Legacy reproduces docling's `\_` escaping byte-for-byte.
         assert_eq!(doc.export_to_markdown(), "# a\\_b\n\nx\\_y\n\n- i\\_j\n");
@@ -737,6 +741,7 @@ mod tests {
             first_in_list: true,
             text: "a".into(),
             level: 0,
+            marker: None,
         });
         doc.push(Node::ListItem {
             ordered: false,
@@ -744,6 +749,7 @@ mod tests {
             first_in_list: false,
             text: "b".into(),
             level: 0,
+            marker: None,
         });
         doc.push(Node::Code {
             language: Some("rust".into()),

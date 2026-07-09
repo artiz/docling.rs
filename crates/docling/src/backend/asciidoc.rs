@@ -183,6 +183,7 @@ impl Parser {
             first_in_list: self.fresh_list,
             text: escape_text(text.trim()),
             level,
+            marker: None,
         });
         self.fresh_list = false;
     }

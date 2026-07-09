@@ -190,6 +190,7 @@ fn handle_text_shape(sp: XmlNode, doc: &mut DoclingDocument) {
                     first_in_list: false,
                     text,
                     level: 0,
+                    marker: None,
                 });
             }
             None => {
