@@ -4,8 +4,8 @@
 # input file, and show a unified diff.
 #
 # Usage:
-#   scripts/compare.sh <input-file>
-#   scripts/compare.sh tests/data/html/sources/example_03.html
+#   scripts/conformance/compare.sh <input-file>
+#   scripts/conformance/compare.sh tests/data/html/sources/example_03.html
 #
 # Python docling is the latest PUBLISHED release, installed from PyPI into
 # docling.rs/.venv-compare on first run (see _common.sh). For declarative
@@ -14,7 +14,7 @@
 
 set -euo pipefail
 
-source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/_common.sh"
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/../_common.sh"
 
 if [[ $# -lt 1 ]]; then
   echo "usage: $0 <input-file>" >&2

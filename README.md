@@ -56,7 +56,7 @@ OpenAI's timestamp rules — docling's ASR defaults), and each segment becomes a
 Output is checked against upstream Python docling — declarative formats
 byte-for-byte against live docling, the ML pipeline against a deterministic
 snapshot baseline. See [`COMPARING.md`](./COMPARING.md) and
-`scripts/conformance.sh`.
+`scripts/conformance/conformance.sh`.
 
 ## RAG subsystem
 
@@ -102,6 +102,40 @@ round-trips to the same Markdown.
 > into the text, so for those spans the JSON carries the rendered text rather
 > than docling's structured `formatting` / `hyperlink` fields. Block structure,
 > headings, lists, tables, code and display equations match.
+
+### DocLang (`.dclx`) output
+
+`export_to_doclang()` renders the document as **DocLang** — docling 2.110's
+XML serialization (`<doclang version="0.7">`) of the `DoclingDocument` tree:
+headings, paragraphs, rich inline runs (`<bold>` / `<italic>` / `<underline>` /
+`<strikethrough>` / `<subscript>` / `<superscript>`), lists with enumeration
+`<marker>`s, tables with per-cell `<location>` provenance, code blocks with a
+language `<label>`, formulas, pictures and furniture. The pretty-printed
+indentation follows Python's `minidom.toprettyxml` byte-for-byte.
+
+```rust
+println!("{}", result.document.export_to_doclang()); // <doclang> XML string
+```
+
+Wrap that XML in an OPC archive — the `.dclx` container docling's
+`save_as_doclang()` writes (`[Content_Types].xml` + `_rels/.rels` +
+`document.xml`) — with `docling::dclx::save_as_dclx`:
+
+```rust
+use std::path::Path;
+docling::dclx::save_as_dclx(&result.document, Path::new("out.dclx")).unwrap();
+```
+
+From the CLI, `--to dclx` writes `<input-stem>.dclx` next to the CWD:
+
+```sh
+cargo run -p docling-cli -- --to dclx crates/docling/sample.html   # -> sample.dclx
+```
+
+Conformance against docling's own `.dclx` output is tracked by
+`scripts/conformance/gen_dclx.py` (generates the groundtruth) and
+`scripts/conformance/dclx_conformance.sh` (line-diffs the extracted
+`document.xml`).
 
 ### Image extraction
 
@@ -261,7 +295,7 @@ const json = await convertFileAsync('report.docx', { to: 'json' })
 
 Declarative formats (Markdown, HTML, DOCX, XLSX, …) work out of the box. The
 PDF/image pipeline needs pdfium + the ONNX models (not bundled), so it throws
-until you fetch them with `scripts/download_dependencies.sh` — see
+until you fetch them with `scripts/install/download_dependencies.sh` — see
 [Getting the ML models](#getting-the-ml-models) below.
 
 A reusable `Pipeline` keeps those models warm across many PDFs.
@@ -278,7 +312,7 @@ The PDF/image pipeline needs native assets that aren't bundled in the crate or
 the npm addon: [pdfium](https://pdfium.googlesource.com/pdfium/) (text
 extraction + page rendering) and three ONNX models — RT-DETR layout, PP-OCRv3
 recognition, and TableFormer (optional; tables fall back to geometric
-reconstruction without it). `scripts/download_dependencies.sh` fetches all of
+reconstruction without it). `scripts/install/download_dependencies.sh` fetches all of
 them from this repo's [GitHub Releases](https://github.com/artiz/docling.rs/releases)
 (tag `models-v1`) straight into `./models` and `./.pdfium`, relative to the
 current directory — both the Rust CLI/library and the Node.js/Bun bindings
@@ -286,10 +320,10 @@ look there by default, so no env vars or extra setup are needed afterwards:
 
 ```bash
 # from a checkout of this repo, or any directory you'll run docling.rs from:
-scripts/download_dependencies.sh
+scripts/install/download_dependencies.sh
 
 # or, without a checkout — e.g. a container build step, or a fresh npm project:
-curl -fsSL https://raw.githubusercontent.com/artiz/docling.rs/master/scripts/download_dependencies.sh | sh
+curl -fsSL https://raw.githubusercontent.com/artiz/docling.rs/master/scripts/install/download_dependencies.sh | sh
 ```
 
 | Asset | Destination |
@@ -307,7 +341,7 @@ different host (your own export, an internal mirror, …); the Whisper assets
 come from Hugging Face (`$DOCLING_RS_ASR_MODELS_URL` overrides, or point
 `DOCLING_ASR_{ENCODER,DECODER,VOCAB}` at explicit files). pdfium is Linux x64
 only for now — other platforms, or building the models from source, need
-[`scripts/pdf_setup.sh`](#testing) instead.
+[`scripts/install/pdf_setup.sh`](#testing) instead.
 
 ### INT8 models (faster PDF conversion on CPU — the default)
 
@@ -322,7 +356,7 @@ corpus groundtruth; the TableFormer output is byte-identical. See
 **The pipeline uses them automatically** whenever they sit next to the fp32
 files at the default paths (`download_dependencies.sh` fetches them by
 default; `--no-int8` skips, or build them with `python
-scripts/quantize_models.py`). To force full precision:
+scripts/install/quantize_models.py`). To force full precision:
 
 ```bash
 DOCLING_RS_FP32=1 docling-rs input.pdf          # keep the int8 files, use fp32
@@ -388,11 +422,11 @@ The ML formats (PDF, images, METS) need pdfium + the ONNX models, so they are
 covered by a separate **deterministic snapshot** harness rather than `cargo test`:
 
 ```bash
-bash scripts/pdf_setup.sh           # one-time: fetch pdfium + export the ONNX models
+bash scripts/install/pdf_setup.sh           # one-time: fetch pdfium + export the ONNX models
                                     # (layout + TableFormer; needs a torch/docling Python)
 # Updating an existing checkout after a model-format change (e.g. the cached
-# TableFormer decoder): `rm -rf models/tableformer && bash scripts/pdf_setup.sh`,
-# or re-run `python scripts/export_tableformer.py models/tableformer` directly.
+# TableFormer decoder): `rm -rf models/tableformer && bash scripts/install/pdf_setup.sh`,
+# or re-run `python scripts/install/export_tableformer.py models/tableformer` directly.
 
 export PDFIUM_DYNAMIC_LIB_PATH="$(pwd)/.pdfium/lib"
 export DOCLING_LAYOUT_ONNX="$(pwd)/models/layout_heron.onnx"
@@ -406,7 +440,7 @@ export DOCLING_OCR_DICT="$(pwd)/models/ppocr_keys_v1.txt"
 export DOCLING_TABLEFORMER_ENCODER="$(pwd)/models/tableformer/encoder.onnx"
 export DOCLING_TABLEFORMER_DECODER="$(pwd)/models/tableformer/decoder.onnx"
 export DOCLING_TABLEFORMER_BBOX="$(pwd)/models/tableformer/bbox.onnx"
-bash scripts/pdf_conformance.sh     # regenerate + diff the snapshot baseline (91/91)
+bash scripts/conformance/pdf_conformance.sh     # regenerate + diff the snapshot baseline (91/91)
 ```
 
 ## Try it
@@ -421,7 +455,7 @@ cargo run -p docling-cli -- --to json crates/docling/sample.html
 cargo run -p docling-cli -- --to json crates/docling/sample.html > out.json
 
 # PDF/image conversion needs the ML models — see "Getting the ML models" above.
-scripts/download_dependencies.sh
+scripts/install/download_dependencies.sh
 cargo run -p docling-cli -- document.pdf
 
 # transcribe audio (wav/mp3/flac/ogg/aac/m4a, or an mp4/mov audio track) — the
@@ -441,13 +475,13 @@ cargo run -p docling --example convert -- crates/docling/sample.md
 cargo run -p docling --example stream  -- crates/docling/sample.md
 
 # score HTML output against the latest published docling (installed from PyPI)
-scripts/conformance.sh html
+scripts/conformance/conformance.sh html
 
 # diff Python docling vs Rust on one file (installs published docling from PyPI)
-scripts/compare.sh tests/data/html/sources/example_03.html
+scripts/conformance/compare.sh tests/data/html/sources/example_03.html
 
 # benchmark time / CPU / memory: Python docling vs Rust
-scripts/performance.sh tests/data/html/sources/wiki_duck.html 10
+scripts/test/performance.sh tests/data/html/sources/wiki_duck.html 10
 ```
 
 The comparison scripts install the latest published Python `docling` from PyPI
@@ -456,11 +490,11 @@ into `.venv-compare` automatically on first run. See
 
 ## Install locally / in CI (one-liner)
 
-`scripts/install.sh` builds the CLI from source and installs a self-contained
+`scripts/install/install.sh` builds the CLI from source and installs a self-contained
 tree — for a dev box or a pipeline step:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/artiz/docling.rs/master/scripts/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/artiz/docling.rs/master/scripts/install/install.sh | bash
 docling-rs your.pdf > out.md
 ```
 
@@ -502,7 +536,7 @@ The image converts PDFs/images fully offline; the model export (torch +
 
 ## Performance
 
-`scripts/performance.sh` runs a representative fixture of each supported type
+`scripts/test/performance.sh` runs a representative fixture of each supported type
 through both engines (published Python `docling` vs the Rust release binary) and
 reports peak RSS, CPU utilization, and conversion time. Ratios below are
 docling ÷ docling.rs — bigger means Rust wins by more. The PDF row is the

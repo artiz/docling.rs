@@ -16,18 +16,18 @@ PDF_PERFORMANCE.md for the measured speed/quality numbers):
   autoregressive tag decoder. Output is byte-identical on the corpus;
   ~10% faster table-structure decode, 78 -> 50 MB.
 
-Usage (from the repo root, models fetched by scripts/download_dependencies.sh):
+Usage (from the repo root, models fetched by scripts/install/download_dependencies.sh):
 
     uv venv .venv-quant && uv pip install --python .venv-quant/bin/python \
         onnx onnxruntime sympy pypdfium2 pillow numpy
-    .venv-quant/bin/python scripts/quantize_models.py layout tableformer-decoder
+    .venv-quant/bin/python scripts/install/quantize_models.py layout tableformer-decoder
 
 Then point the pipeline at the quantized files:
 
     export DOCLING_LAYOUT_ONNX=$PWD/models/layout_heron_int8.onnx
     export DOCLING_TABLEFORMER_DECODER=$PWD/models/tableformer/decoder_int8.onnx
 
-Re-run scripts/pdf_conformance.sh (or diff Markdown against
+Re-run scripts/conformance/pdf_conformance.sh (or diff Markdown against
 tests/data/pdf/groundtruth) after re-quantizing to re-verify quality.
 """
 
@@ -37,7 +37,7 @@ import sys
 
 import numpy as np
 
-REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 # Where the fp32 models live and the int8 outputs go (a checkout's models/ by
 # default); DOCLING_RS_MODELS_DIR relocates it (e.g. /opt/models in a Docker
 # models stage).

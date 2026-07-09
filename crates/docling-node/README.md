@@ -102,7 +102,7 @@ PDF/image/METS input **throws** until they're on disk. Fetch them with a
 one-liner from your app's directory (where you'll `npm install docling.rs`):
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/artiz/docling.rs/master/scripts/download_dependencies.sh | sh
+curl -fsSL https://raw.githubusercontent.com/artiz/docling.rs/master/scripts/install/download_dependencies.sh | sh
 ```
 
 ```js
@@ -111,7 +111,7 @@ import { convertFileAsync } from 'docling.rs'
 const res = await convertFileAsync('paper.pdf', { to: 'markdown' }) // ✅ works
 ```
 
-`scripts/download_dependencies.sh` fetches everything from this repo's
+`scripts/install/download_dependencies.sh` fetches everything from this repo's
 [GitHub Releases](https://github.com/artiz/docling.rs/releases) straight into
 `./models` and `./.pdfium` — which this package (and the Rust CLI) look for by
 default, relative to the process's current directory, so no env vars or setup
@@ -136,7 +136,7 @@ call are needed afterwards:
 > Run it from wherever your app lives — the script only writes to `./models`
 > and `./.pdfium` under the current directory, e.g. in a container build step:
 > ```bash
-> cd /path/to/your/app && curl -fsSL https://raw.githubusercontent.com/artiz/docling.rs/master/scripts/download_dependencies.sh | sh
+> cd /path/to/your/app && curl -fsSL https://raw.githubusercontent.com/artiz/docling.rs/master/scripts/install/download_dependencies.sh | sh
 > ```
 >
 > To use your own export/host instead, point the env vars at it directly:
@@ -242,7 +242,7 @@ cd examples
 npm install
 node node-basic.mjs        # ESM: file, bytes, JSON, reuse
 bun run bun-basic.ts       # Bun + TypeScript: async + streaming
-node pdf-pipeline.mjs       # warm Pipeline for PDFs (run scripts/download_dependencies.sh first)
+node pdf-pipeline.mjs       # warm Pipeline for PDFs (run scripts/install/download_dependencies.sh first)
 ```
 
 - [`examples/node-basic.mjs`](examples/node-basic.mjs) — Node.js (ESM): file, bytes, JSON, reuse.

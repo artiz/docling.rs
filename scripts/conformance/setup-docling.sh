@@ -7,6 +7,6 @@
 #
 # Usage: scripts/setup-docling.sh
 set -euo pipefail
-source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/_common.sh"
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/../_common.sh"
 ensure_docling
 echo "Done. Python docling is available at: $PYBIN"

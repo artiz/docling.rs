@@ -28,7 +28,7 @@ Run inside a Python env with docling (`docling_ibm_models` + torch) plus
 `onnx onnxscript onnxruntime`. The accurate-artifacts dir auto-resolves from the
 HuggingFace cache (downloading `docling-project/docling-models` if absent), or
 pass it explicitly:
-  .venv-compare/bin/python scripts/export_tableformer.py [accurate-artifacts-dir] [out_dir]
+  .venv-compare/bin/python scripts/install/export_tableformer.py [accurate-artifacts-dir] [out_dir]
 """
 import glob
 import json

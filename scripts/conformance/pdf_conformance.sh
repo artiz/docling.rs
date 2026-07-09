@@ -2,9 +2,9 @@
 # Regenerate PDF output for the test corpus and diff it against the committed
 # snapshot baseline (tests/snapshots/). The pipeline is deterministic, so a
 # clean checkout should report every fixture EXACT; a non-zero diff means the
-# output drifted. Run scripts/pdf_setup.sh first to fetch the libs/models.
+# output drifted. Run scripts/install/pdf_setup.sh first to fetch the libs/models.
 set -euo pipefail
-cd "$(dirname "$0")/.."   # docling.rs/
+cd "$(dirname "$0")/../.."   # docling.rs/
 
 export PDFIUM_DYNAMIC_LIB_PATH="${PDFIUM_DYNAMIC_LIB_PATH:-$(pwd)/.pdfium/lib}"
 # Pin the snapshot-baseline pixel path: the scalar image-crate resize (the
@@ -23,7 +23,7 @@ export DOCLING_TABLEFORMER_BBOX="${DOCLING_TABLEFORMER_BBOX:-$(pwd)/models/table
 
 for f in "$PDFIUM_DYNAMIC_LIB_PATH/libpdfium.so" "$DOCLING_LAYOUT_ONNX" \
          "$DOCLING_OCR_REC_ONNX" "$DOCLING_OCR_DICT"; do
-  [ -e "$f" ] || { echo "MISSING: $f  (run scripts/pdf_setup.sh)"; exit 1; }
+  [ -e "$f" ] || { echo "MISSING: $f  (run scripts/install/pdf_setup.sh)"; exit 1; }
 done
 
 tmp=$(mktemp -d)

@@ -7,15 +7,15 @@
 # installed docling can't convert.
 #
 # Usage:
-#   scripts/conformance.sh [format]      # default: html
-#   scripts/conformance.sh docx
+#   scripts/conformance/conformance.sh [format]      # default: html
+#   scripts/conformance/conformance.sh docx
 #
 # Output: a per-file table (diff-line count; one changed line counts as 2) and a
 # summary.
 
 set -euo pipefail
 
-source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/_common.sh"
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/../_common.sh"
 
 FORMAT="${1:-html}"
 

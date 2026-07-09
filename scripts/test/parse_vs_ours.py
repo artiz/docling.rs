@@ -7,7 +7,7 @@ pipeline's Markdown to surface text we silently drop (orphan cells, regions the
 layout missed). Reports, per PDF, the docling-parse lines whose (normalized)
 text does not appear anywhere in our Markdown output.
 
-Usage: python scripts/parse_vs_ours.py <stem> [<stem> ...]
+Usage: python scripts/test/parse_vs_ours.py <stem> [<stem> ...]
   reads tests/data/pdf/sources/<stem>.pdf and our output from
   <ours_dir>/<stem>.md (env OURS_DIR, default the scratch gen dir).
 """

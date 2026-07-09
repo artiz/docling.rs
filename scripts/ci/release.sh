@@ -14,11 +14,11 @@
 # from the commit history — used to release a version a failed/blocked run skipped.
 #
 # Requires: CARGO_REGISTRY_TOKEN (publish) and push access to master.
-# Usage: scripts/release.sh
+# Usage: scripts/ci/release.sh
 set -euo pipefail
-cd "$(dirname "$0")/.."
+cd "$(dirname "$0")/../.."
 
-new="${FORCE_VERSION:-$(scripts/bump_version.sh)}"
+new="${FORCE_VERSION:-$(scripts/ci/bump_version.sh)}"
 if [[ -z "$new" ]]; then
   echo "No release-worthy commits since the last tag — nothing to release."
   exit 0
@@ -75,7 +75,7 @@ git push origin "v$new"
 
 # Publish every crate at the new version (idempotent: skips any already on
 # crates.io), in dependency order.
-scripts/ci_publish.sh
+scripts/ci/ci_publish.sh
 
 # Hand the released version + notes file to the workflow, which cuts the GitHub
 # Release for the tag we just pushed. Guarded so the script still runs locally

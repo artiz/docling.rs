@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Fetch the native libs + models the PDF pipeline needs (all gitignored).
 #
-#   scripts/pdf_setup.sh
+#   scripts/install/pdf_setup.sh
 #
 # Downloads:
 #   - libpdfium (bblanchon prebuilt) -> .pdfium/lib/libpdfium.so
@@ -15,7 +15,7 @@
 #     weights). Skipped with a note if those deps are missing — the pipeline then
 #     falls back to geometric table reconstruction.
 set -euo pipefail
-cd "$(dirname "$0")/.."   # docling.rs/
+cd "$(dirname "$0")/../.."   # docling.rs/
 mkdir -p .pdfium models
 
 PLATFORM="${PDFIUM_PLATFORM:-linux-x64}"
@@ -39,12 +39,12 @@ fi
 
 if [ ! -f models/layout_heron.onnx ]; then
   echo "→ exporting RT-DETR layout model (needs torch+transformers+onnx)"
-  "${PYTHON:-python3}" scripts/export_layout.py models/layout_heron.onnx
+  "${PYTHON:-python3}" scripts/install/export_layout.py models/layout_heron.onnx
 fi
 
 if [ ! -f models/tableformer/decoder.onnx ]; then
   echo "→ exporting TableFormer (needs docling_ibm_models + onnxscript onnxruntime)"
-  if ! "${PYTHON:-python3}" scripts/export_tableformer.py models/tableformer; then
+  if ! "${PYTHON:-python3}" scripts/install/export_tableformer.py models/tableformer; then
     echo "  ! TableFormer export failed (missing deps or weights). Tables will use"
     echo "    the geometric fallback. Re-run after: pip install docling onnx onnxscript onnxruntime"
   fi
@@ -57,7 +57,7 @@ fi
 # numpy — a missing-deps failure is non-fatal (fp32 keeps working).
 if [ "${DOCLING_RS_FP32:-0}" != "1" ] && [ ! -f models/layout_heron_int8.onnx ]; then
   echo "→ INT8-quantizing layout + TableFormer decoder"
-  if ! "${PYTHON:-python3}" scripts/quantize_models.py; then
+  if ! "${PYTHON:-python3}" scripts/install/quantize_models.py; then
     echo "  ! quantization failed (missing deps?). The fp32 models still work;"
     echo "    re-run after: pip install onnx onnxruntime sympy pypdfium2 pillow numpy"
   fi

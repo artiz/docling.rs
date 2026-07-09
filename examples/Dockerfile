@@ -43,19 +43,19 @@ RUN pip install --no-cache-dir torch --index-url https://download.pytorch.org/wh
         sympy pypdfium2 pillow numpy
 
 WORKDIR /build
-COPY scripts/export_layout.py scripts/export_tableformer.py scripts/quantize_models.py ./scripts/
+COPY scripts/install/export_layout.py scripts/install/export_tableformer.py scripts/install/quantize_models.py ./scripts/
 # Real corpus pages for INT8 calibration (build-stage only, not in the runtime).
 COPY tests/data/pdf/sources ./tests/data/pdf/sources
 COPY tests/data/scanned/sources ./tests/data/scanned/sources
 
 RUN mkdir -p /opt/models /opt/pdfium \
     # RT-DETR layout detector -> models/layout_heron.onnx
-    && python scripts/export_layout.py /opt/models/layout_heron.onnx \
+    && python scripts/install/export_layout.py /opt/models/layout_heron.onnx \
     # TableFormer encoder/decoder/bbox. The decoder is the KV-cached step
     # (self-attention state cache + precomputed cross-attention K/V) — byte-exact
     # vs docling and ~2-4x faster on table-dense pages. The artifacts dir
     # auto-resolves (downloads docling-project/docling-models if absent).
-    && python scripts/export_tableformer.py /opt/models/tableformer \
+    && python scripts/install/export_tableformer.py /opt/models/tableformer \
     # PP-OCRv3 recognition model + dictionary (for scanned pages)
     && curl -sSL -o /opt/models/ocr_rec.onnx \
         "https://huggingface.co/SWHL/RapidOCR/resolve/main/PP-OCRv3/ch_PP-OCRv3_rec_infer.onnx" \
@@ -74,7 +74,7 @@ RUN mkdir -p /opt/models /opt/pdfium \
 # either way, so a container can switch back via the DOCLING_* env vars.
 ARG INT8=1
 RUN if [ "$INT8" = "1" ]; then \
-        DOCLING_RS_MODELS_DIR=/opt/models python scripts/quantize_models.py \
+        DOCLING_RS_MODELS_DIR=/opt/models python scripts/install/quantize_models.py \
         && ln -s layout_heron_int8.onnx /opt/models/layout_heron_active.onnx \
         && ln -s decoder_int8.onnx /opt/models/tableformer/decoder_active.onnx; \
     else \

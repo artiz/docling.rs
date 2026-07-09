@@ -106,8 +106,8 @@ fn try_bind_dir(path: &str) -> Option<Box<dyn pdfium_render::prelude::PdfiumLibr
 
 /// Bind to the pdfium dynamic library. Honors `PDFIUM_DYNAMIC_LIB_PATH` (a
 /// directory or file) first; else falls back to `.pdfium/lib` relative to the
-/// current directory (the layout `scripts/download_dependencies.sh` and
-/// `scripts/pdf_setup.sh` both produce); else the system library.
+/// current directory (the layout `scripts/install/download_dependencies.sh` and
+/// `scripts/install/pdf_setup.sh` both produce); else the system library.
 fn bind() -> Result<Pdfium, PdfiumError> {
     if let Ok(path) = std::env::var("PDFIUM_DYNAMIC_LIB_PATH") {
         if let Some(b) = try_bind_dir(&path) {
@@ -116,8 +116,8 @@ fn bind() -> Result<Pdfium, PdfiumError> {
     }
     // No env var (or it didn't resolve): fall back to `.pdfium/lib` relative to
     // the current directory — mirroring `layout.rs`/`ocr.rs`'s `models/…`
-    // defaults — the layout `scripts/download_dependencies.sh` (and
-    // `scripts/pdf_setup.sh`) produce, so a checkout with the dependencies
+    // defaults — the layout `scripts/install/download_dependencies.sh` (and
+    // `scripts/install/pdf_setup.sh`) produce, so a checkout with the dependencies
     // downloaded next to it needs no env var at all.
     if let Some(b) = try_bind_dir(&crate::resolve_asset(".pdfium/lib")) {
         return Ok(Pdfium::new(b));

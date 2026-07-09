@@ -4,16 +4,16 @@ Python docling, for every source under tests/data/<fmt>/sources/.
 
 Output lands next to the existing groundtruth as
 ``tests/data/<fmt>/groundtruth_dclx/<source-name>.dclx`` — the reference the
-Rust `--to dclx` output is scored against (scripts/dclx_conformance.sh).
+Rust `--to dclx` output is scored against (scripts/conformance/dclx_conformance.sh).
 
 Declarative formats go through the format backend directly (no torch), the
 PDF/image/audio formats through docling's full pipeline — the same split
-scripts/docling_convert.py uses. Page images are NOT generated for PDFs (the
+scripts/conformance/docling_convert.py uses. Page images are NOT generated for PDFs (the
 default pipeline keeps them off), so archives stay small and the comparison
 focuses on document structure.
 
 Usage:
-    .venv-compare/bin/python scripts/gen_dclx.py [fmt ...]   # default: all
+    .venv-compare/bin/python scripts/conformance/gen_dclx.py [fmt ...]   # default: all
 """
 
 from __future__ import annotations
@@ -23,9 +23,9 @@ import sys
 import traceback
 from pathlib import Path
 
-REPO = Path(__file__).resolve().parent.parent
+REPO = Path(__file__).resolve().parent.parent.parent
 
-_spec = importlib.util.spec_from_file_location("dc", REPO / "scripts/docling_convert.py")
+_spec = importlib.util.spec_from_file_location("dc", REPO / "scripts/conformance/docling_convert.py")
 _dc = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(_dc)
 
@@ -82,7 +82,7 @@ def _sniff_xml(path: Path) -> InputFormat:
 
 def build_document(path: Path):
     """The DoclingDocument for a source file, backend-direct where possible
-    (mirrors scripts/docling_convert.py's routing, extended to every format)."""
+    (mirrors scripts/conformance/docling_convert.py's routing, extended to every format)."""
     ext = path.suffix.lower().lstrip(".")
     if ext in _SKIP_EXT:
         raise ValueError("audio (ASR pipeline) — skipped for the dclx corpus")

@@ -1,12 +1,12 @@
 # Export the RT-DETR layout model + TableFormer to ONNX, re-host pdfium + the
 # OCR model, and publish everything as GitHub Release assets, so
-# `scripts/download_dependencies.sh` can fetch the whole PDF/image ML stack
+# `scripts/install/download_dependencies.sh` can fetch the whole PDF/image ML stack
 # from a single host (this repo's releases) with zero configuration.
 #
 # The layout model and TableFormer are PyTorch→ONNX *format conversions* of
 # docling-project's own models (Apache-2.0 / CDLA-Permissive-2.0 — see
 # MODELS_NOTICE.md); no weights are retrained here. The `*_int8` assets are
-# post-training quantizations of those same exports (scripts/quantize_models.py
+# post-training quantizations of those same exports (scripts/install/quantize_models.py
 # — a numeric re-encoding of the weights, no retraining; conformance-validated
 # in PDF_PERFORMANCE.md). pdfium and the OCR model are re-hosted third-party
 # binaries, unmodified, from their own public releases — mirrored here only so
@@ -53,7 +53,7 @@ jobs:
         run: pip install --upgrade pip && pip install torch transformers onnx
 
       - name: Export layout model
-        run: python scripts/export_layout.py models/layout_heron.onnx
+        run: python scripts/install/export_layout.py models/layout_heron.onnx
 
       # --- TableFormer (optional — a failure here doesn't block layout) ---
       - name: Install TableFormer export deps
@@ -65,7 +65,7 @@ jobs:
         if: steps.tf-deps.outcome == 'success'
         continue-on-error: true
         id: tf-export
-        run: python scripts/export_tableformer.py models/tableformer
+        run: python scripts/install/export_tableformer.py models/tableformer
 
       # --- INT8 quantization (optional — fp32 assets publish regardless) ---
       # Conv-only static INT8 of the layout model (calibrated on the repo's PDF
@@ -80,12 +80,12 @@ jobs:
       - name: Quantize layout model (static INT8, conv-only)
         if: steps.quant-deps.outcome == 'success'
         continue-on-error: true
-        run: python scripts/quantize_models.py layout
+        run: python scripts/install/quantize_models.py layout
 
       - name: Quantize TableFormer decoder (dynamic INT8)
         if: steps.quant-deps.outcome == 'success' && steps.tf-export.outcome == 'success'
         continue-on-error: true
-        run: python scripts/quantize_models.py tableformer-decoder
+        run: python scripts/install/quantize_models.py tableformer-decoder
 
       # --- pdfium + OCR (re-hosted third-party binaries, not exports) -----
       - name: Fetch pdfium + OCR assets

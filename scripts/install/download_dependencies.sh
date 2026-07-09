@@ -7,9 +7,9 @@
 # default.
 #
 # Run from your app's directory (or a checkout of this repo):
-#   scripts/download_dependencies.sh
+#   scripts/install/download_dependencies.sh
 # or, without a checkout:
-#   curl -fsSL https://raw.githubusercontent.com/artiz/docling.rs/master/scripts/download_dependencies.sh | sh
+#   curl -fsSL https://raw.githubusercontent.com/artiz/docling.rs/master/scripts/install/download_dependencies.sh | sh
 #
 # Then either:
 #   cargo run -p docling-cli -- <file>
@@ -37,10 +37,10 @@
 # files (no env vars needed); set DOCLING_RS_FP32=1 at runtime to force full
 # precision, or skip fetching them entirely with --no-int8. If the release
 # doesn't host the int8 assets (older tag), a note explains how to produce
-# them locally with scripts/quantize_models.py.
+# them locally with scripts/install/quantize_models.py.
 #
 # pdfium is Linux x64 only for now, matching what's hosted in the release; for
-# other platforms (or to build the models from source) see scripts/pdf_setup.sh.
+# other platforms (or to build the models from source) see scripts/install/pdf_setup.sh.
 #
 # Idempotent: skips files already on disk. Pass --force to re-fetch everything.
 set -eu
@@ -134,7 +134,7 @@ if [ "$WITH_INT8" = true ]; then
     echo "int8 assets not hosted at $BASE_URL — the fp32 models will be used."
     echo "To build the int8 models locally (see PDF_PERFORMANCE.md):"
     echo "  pip install onnx onnxruntime sympy pypdfium2 pillow numpy"
-    echo "  python scripts/quantize_models.py"
+    echo "  python scripts/install/quantize_models.py"
   fi
 fi
 

@@ -10,7 +10,7 @@ garbled text doesn't confuse it. Reports, per PDF, characters the parser drops
 
 Run after building the example:
   cargo build --release -p docling-pdf --example textparse_glyphs
-  python scripts/parser_completeness.py
+  python scripts/test/parser_completeness.py
 """
 import collections
 import re
@@ -21,7 +21,7 @@ from pathlib import Path
 
 from docling_parse.pdf_parser import DoclingPdfParser
 
-ROOT = Path(__file__).resolve().parent.parent
+ROOT = Path(__file__).resolve().parent.parent.parent
 SRC = ROOT / "tests/data/pdf/sources"
 BIN_EXAMPLE = ["cargo", "run", "--release", "--quiet", "-p", "docling-pdf",
                "--example", "textparse_glyphs", "--"]

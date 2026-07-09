@@ -7,10 +7,10 @@
 # Requires CARGO_REGISTRY_TOKEN in the environment for the actual upload (the
 # existence checks need no auth). Used by .github/workflows/ci.yml on master.
 #
-# Usage: scripts/ci_publish.sh
+# Usage: scripts/ci/ci_publish.sh
 set -euo pipefail
 
-cd "$(dirname "$0")/.."
+cd "$(dirname "$0")/../.."
 
 # Dependency order: a crate must be published before anything that depends on it.
 CRATES=(docling-core docling-pdf docling-asr docling docling-cli)

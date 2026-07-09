@@ -6,7 +6,7 @@
 //! converter's output so any unintended change is caught.
 //!
 //! The ML formats (PDF, images, METS) need pdfium + the ONNX models, so they are
-//! covered by the deterministic snapshot harness (`scripts/pdf_conformance.sh`)
+//! covered by the deterministic snapshot harness (`scripts/conformance/pdf_conformance.sh`)
 //! instead of this pure-Rust test.
 //!
 //! Regenerate the fixtures after an *intentional* output change:

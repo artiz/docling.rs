@@ -5,7 +5,7 @@ Needs a Python env with torch + transformers + onnx:
     pip install torch transformers onnx
 
 Usage:
-    python scripts/export_layout.py models/layout_heron.onnx
+    python scripts/install/export_layout.py models/layout_heron.onnx
 """
 
 import os

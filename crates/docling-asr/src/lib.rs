@@ -15,7 +15,7 @@
 //! Model files (`encoder_model.onnx`, `decoder_model.onnx`, `vocab.json`, and
 //! optionally `added_tokens.json` for non-English language selection) live in
 //! `models/asr/` (override with `DOCLING_ASR_{ENCODER,DECODER,VOCAB}`) —
-//! `scripts/download_dependencies.sh` fetches Whisper *tiny*, docling's ASR
+//! `scripts/install/download_dependencies.sh` fetches Whisper *tiny*, docling's ASR
 //! default. `DOCLING_RS_ASR_LANG` selects the transcription language (`en`).
 
 pub mod audio;
@@ -51,7 +51,7 @@ pub fn convert_audio(bytes: &[u8], name: &str) -> Result<DoclingDocument, AsrErr
     if !models_available() {
         return Err(AsrError(
             "asr: Whisper model files not found under models/asr/ \
-             (run scripts/download_dependencies.sh, or set \
+             (run scripts/install/download_dependencies.sh, or set \
              DOCLING_ASR_{ENCODER,DECODER,VOCAB})"
                 .into(),
         ));

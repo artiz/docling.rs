@@ -10,9 +10,9 @@
 #   docs/chore/ci/refactor/test/style/build/…      -> no release
 #
 # Pure: reads git history + the root Cargo.toml; writes nothing.
-# Usage: scripts/bump_version.sh
+# Usage: scripts/ci/bump_version.sh
 set -euo pipefail
-cd "$(dirname "$0")/.."
+cd "$(dirname "$0")/../.."
 
 current="$(grep -m1 '^version = ' Cargo.toml | sed -E 's/.*"([^"]+)".*/\1/')"
 

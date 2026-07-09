@@ -3,11 +3,11 @@
 # self-contained tree under /usr/local/docling.rs with a `docling.rs`
 # command on PATH. Designed for one-liner use in dev boxes and pipelines:
 #
-#   curl -fsSL https://raw.githubusercontent.com/artiz/docling.rs/master/scripts/install.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/artiz/docling.rs/master/scripts/install/install.sh | bash
 #
 # or from a checkout:
 #
-#   scripts/install.sh
+#   scripts/install/install.sh
 #
 # What it does:
 #   1. Checks for a Rust toolchain (>= 1.82 for the PDF crate); installs one
@@ -15,7 +15,7 @@
 #   2. Builds the CLI in release mode (`cargo build --release -p docling-cli`).
 #   3. Installs to $DOCLING_RS_PREFIX (default /usr/local/docling.rs):
 #        bin/docling-rs          the CLI (ONNX Runtime statically linked)
-#        models/…, .pdfium/…      fetched by scripts/download_dependencies.sh
+#        models/…, .pdfium/…      fetched by scripts/install/download_dependencies.sh
 #      and symlinks it as /usr/local/bin/docling-rs.
 #   4. Writes /etc/profile.d/docling-rs.sh exporting the DOCLING_*/PDFIUM_*
 #      paths. This is belt-and-braces only: the binary also resolves models
@@ -100,7 +100,7 @@ DL_ARGS=""
 [ "${DOCLING_RS_NO_ASR:-0}" = "1" ] && DL_ARGS="--no-asr"
 say "fetching models + pdfium into $PREFIX (idempotent)"
 # shellcheck disable=SC2086
-(cd "$PREFIX" && $SUDO sh "$SRC_DIR/scripts/download_dependencies.sh" $DL_ARGS)
+(cd "$PREFIX" && $SUDO sh "$SRC_DIR/scripts/install/download_dependencies.sh" $DL_ARGS)
 
 say "linking $BIN_DIR/docling.rs -> $PREFIX/bin/docling-rs"
 $SUDO mkdir -p "$BIN_DIR"
@@ -113,7 +113,7 @@ $SUDO ln -sfn "$PREFIX/bin/docling-rs" "$BIN_DIR/docling.rs"
 if [ -d /etc/profile.d ] && [ -n "$SUDO" -o -w /etc/profile.d ]; then
   say "writing /etc/profile.d/docling-rs.sh"
   $SUDO tee /etc/profile.d/docling-rs.sh >/dev/null <<EOF
-# docling.rs (installed by scripts/install.sh) — not required by the CLI
+# docling.rs (installed by scripts/install/install.sh) — not required by the CLI
 # itself (it resolves these relative to its own binary), provided for other
 # consumers of the same model tree.
 export PDFIUM_DYNAMIC_LIB_PATH="$PREFIX/.pdfium/lib"

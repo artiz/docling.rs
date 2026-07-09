@@ -5,10 +5,10 @@
 # no docling install — it diffs against the checked-in reference. Use it to track
 # how many groundtruth PDFs are byte-for-byte exact (see PDF_CONFORMANCE.md).
 #
-# Usage: scripts/pdf_groundtruth.sh
+# Usage: scripts/conformance/pdf_groundtruth.sh
 
 set -euo pipefail
-cd "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/.."
+cd "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/../.."
 
 export PDFIUM_DYNAMIC_LIB_PATH="${PDFIUM_DYNAMIC_LIB_PATH:-$(pwd)/.pdfium/lib}"
 # Pin the snapshot-baseline pixel path: the scalar image-crate resize (the

@@ -6,7 +6,7 @@
 #
 # Deliberately a STANDALONE crate (the empty [workspace] below opts it out of
 # the repo workspace): it is built only by maturin, is NOT published to
-# crates.io by scripts/ci_publish.sh, and the PyPI name is still tentative.
+# crates.io by scripts/ci/ci_publish.sh, and the PyPI name is still tentative.
 # Build/test locally per this crate's README.md.
 [package]
 name = "docling-py"

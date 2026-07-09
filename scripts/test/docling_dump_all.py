@@ -9,7 +9,7 @@ For each source PDF we emit a JSON with:
                        parser layer our pdfium glyph pipeline is trying to match
 
 Usage:
-  python scripts/docling_dump_all.py <pdf> [<pdf> ...] --out <dir>
+  python scripts/test/docling_dump_all.py <pdf> [<pdf> ...] --out <dir>
 """
 import argparse
 import json

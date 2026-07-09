@@ -84,7 +84,7 @@ pub(crate) fn fp32_forced() -> bool {
 
 /// Resolve a default (CWD-relative) asset path. If it doesn't exist relative
 /// to the current directory, try next to the executable and one level above
-/// it (following symlinks — the layout `scripts/install.sh` produces:
+/// it (following symlinks — the layout `scripts/install/install.sh` produces:
 /// `/usr/local/bin/docling-rs` → `/usr/local/docling.rs/bin/docling-rs`
 /// with `models/` and `.pdfium/` in `/usr/local/docling.rs`). Lets an
 /// installed binary run from any working directory with no env vars; explicit
