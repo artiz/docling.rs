@@ -74,9 +74,21 @@ struct OdfLevel {
 /// List style name → level (1-based) → level rendering.
 type ListStyles = HashMap<String, HashMap<i64, OdfLevel>>;
 
+/// An embedded chart object: its docling classification (`bar_chart`, …) and
+/// data grid, keyed in [`Styles::charts`] by the object name a `<draw:object>`
+/// references (e.g. `Object 1`).
+#[derive(Clone)]
+struct ChartInfo {
+    kind: String,
+    table: Table,
+}
+
 struct Styles {
     map: HashMap<String, StyleInfo>,
     lists: ListStyles,
+    /// Embedded chart objects by name (`Object 1` → chart). Empty for documents
+    /// with no charts.
+    charts: HashMap<String, ChartInfo>,
 }
 
 impl DeclarativeBackend for OdfBackend {
@@ -91,7 +103,8 @@ impl DeclarativeBackend for OdfBackend {
         let content_dom =
             Document::parse(&content).map_err(|e| ConversionError::Parse(format!("odf: {e}")))?;
         let styles_dom = Document::parse(&styles_xml).ok();
-        let styles = parse_styles(&content_dom, styles_dom.as_ref());
+        let mut styles = parse_styles(&content_dom, styles_dom.as_ref());
+        styles.charts = load_charts(&mut pkg, &content_dom, &styles);
 
         let mut doc = DoclingDocument::new(&source.name);
         let Some(body) = content_dom.descendants().find(|n| n.has_tag_name("body")) else {
@@ -152,7 +165,60 @@ fn parse_styles(content: &Document, styles: Option<&Document>) -> Styles {
             }
         }
     }
-    Styles { map, lists }
+    Styles {
+        map,
+        lists,
+        charts: HashMap::new(),
+    }
+}
+
+/// Load every embedded chart object a `<draw:object>` references. Each object is
+/// a sub-package part `{name}/content.xml` holding a `<chart:chart>`; we keep its
+/// classification and data `<table:table>` (parsed like any ODF table). Objects
+/// that are not charts (or fail to parse) are skipped.
+fn load_charts(
+    pkg: &mut Package,
+    content: &Document,
+    styles: &Styles,
+) -> HashMap<String, ChartInfo> {
+    let mut charts = HashMap::new();
+    for obj in content.descendants().filter(|n| n.has_tag_name("object")) {
+        let Some(href) = attr(obj, "href") else {
+            continue;
+        };
+        let name = href.trim_start_matches("./");
+        if charts.contains_key(name) {
+            continue;
+        }
+        let Some(xml) = pkg.read(&format!("{name}/content.xml")) else {
+            continue;
+        };
+        let Ok(dom) = Document::parse(&xml) else {
+            continue;
+        };
+        let Some(chart) = dom.descendants().find(|n| n.has_tag_name("chart")) else {
+            continue;
+        };
+        let kind = chart_kind(attr(chart, "class").unwrap_or(""));
+        let Some(table_node) = chart.descendants().find(|n| n.has_tag_name("table")) else {
+            continue;
+        };
+        if let Some(table) = parse_table(table_node, styles) {
+            charts.insert(name.to_string(), ChartInfo { kind, table });
+        }
+    }
+    charts
+}
+
+/// Map an ODF `chart:class` (`chart:bar`, `chart:line`, …) to docling's
+/// `PictureClassificationLabel` chart kind (`bar_chart`, `line_chart`, …).
+fn chart_kind(class: &str) -> String {
+    let base = class.strip_prefix("chart:").unwrap_or(class);
+    match base {
+        "circle" | "ring" => "pie_chart".to_string(),
+        "" => "chart".to_string(),
+        other => format!("{other}_chart"),
+    }
 }
 
 fn style_info(s: XmlNode) -> StyleInfo {
@@ -395,7 +461,7 @@ fn handle_block(
     let _ = counters;
     match el.tag_name().name() {
         "h" => {
-            emit_paragraph_images(el, doc);
+            emit_paragraph_images(el, styles, doc);
             let level = attr(el, "outline-level")
                 .and_then(|v| v.parse::<i64>().ok())
                 .unwrap_or(1)
@@ -413,7 +479,7 @@ fn handle_block(
         "p" => {
             // docling's `_add_odf_paragraph` emits a paragraph's pictures before
             // its text.
-            emit_paragraph_images(el, doc);
+            emit_paragraph_images(el, styles, doc);
             let names = paragraph_style_names(styles, attr(el, "style-name"));
             let mut runs = Vec::new();
             collect_runs(el, styles, Fmt::default(), &mut runs);
@@ -444,22 +510,45 @@ fn handle_block(
     }
 }
 
-/// Emit a placeholder picture for each embedded bitmap (`<draw:image>`) in a
-/// paragraph, skipping the `ObjectReplacements/` previews of embedded objects.
-fn emit_paragraph_images(el: XmlNode, doc: &mut DoclingDocument) {
-    for img in el.descendants().filter(|n| n.has_tag_name("image")) {
-        let href = attr(img, "href").unwrap_or("");
-        if href
-            .trim_start_matches("./")
-            .starts_with("ObjectReplacements/")
-        {
-            continue;
+/// Emit the graphics anchored in a paragraph: each `<draw:frame>` yields one
+/// node.
+fn emit_paragraph_images(el: XmlNode, styles: &Styles, doc: &mut DoclingDocument) {
+    for frame in el.descendants().filter(|n| n.has_tag_name("frame")) {
+        emit_frame_graphic(frame, styles, doc);
+    }
+}
+
+/// Emit one node for a `<draw:frame>`: a chart when it wraps a known embedded
+/// chart object, else a single picture placeholder from its first real image
+/// (an `ObjectReplacements/` preview and alternate encodings collapse into that
+/// one picture — docling emits one `PictureItem` per frame, not per bitmap).
+/// Returns whether a node was emitted.
+fn emit_frame_graphic(frame: XmlNode, styles: &Styles, doc: &mut DoclingDocument) -> bool {
+    if let Some(obj) = frame.children().find(|c| c.has_tag_name("object")) {
+        let name = attr(obj, "href").unwrap_or("").trim_start_matches("./");
+        if let Some(info) = styles.charts.get(name) {
+            doc.push(Node::Chart {
+                kind: info.kind.clone(),
+                table: info.table.clone(),
+            });
+            return true;
         }
+    }
+    let has_real_image = frame.children().any(|c| {
+        c.has_tag_name("image")
+            && !attr(c, "href")
+                .unwrap_or("")
+                .trim_start_matches("./")
+                .starts_with("ObjectReplacements/")
+    });
+    if has_real_image {
         doc.push(Node::Picture {
             caption: None,
             image: None,
         });
+        return true;
     }
+    false
 }
 
 /// Continuation state carried across sibling `<text:list>` elements — docling's
@@ -1106,6 +1195,18 @@ fn walk_presentation(pres: XmlNode, styles: &Styles, doc: &mut DoclingDocument) 
             for table in frame.children().filter(|c| c.has_tag_name("table")) {
                 if let Some(t) = parse_table(table, styles) {
                     doc.push(Node::Table(t));
+                }
+            }
+            // An embedded chart object on the slide → a chart node. A
+            // presentation's graphics are DocLang-only: they appear in the
+            // `.dclx` body but not in docling's presentation `.md`/`.json`.
+            if let Some(obj) = frame.children().find(|c| c.has_tag_name("object")) {
+                let name = attr(obj, "href").unwrap_or("").trim_start_matches("./");
+                if let Some(info) = styles.charts.get(name) {
+                    doc.push(Node::DoclangOnly(Box::new(Node::Chart {
+                        kind: info.kind.clone(),
+                        table: info.table.clone(),
+                    })));
                 }
             }
         }

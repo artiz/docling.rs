@@ -363,6 +363,11 @@ fn render_one(node: &Node, blocks: &mut Vec<String>, ctx: &mut Ctx) {
             }
             blocks.push(picture_marker(image.as_ref(), ctx));
         }
+        // A chart renders like a picture placeholder (its data table is
+        // DocLang-only); no image payload.
+        Node::Chart { .. } => blocks.push(picture_marker(None, ctx)),
+        // A DocLang-only node is omitted from Markdown.
+        Node::DoclangOnly(_) => {}
         Node::Group { children, .. } => render(children, blocks, ctx),
         Node::FieldRegion { items } => {
             // docling renders the region container (which carries no text of its

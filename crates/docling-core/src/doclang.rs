@@ -563,6 +563,28 @@ fn push_location(out: &mut Out, depth: i32, loc: &[u16; 4]) {
 
 fn emit_table(out: &mut Out, depth: i32, table: &Table) {
     out.push(depth, "<table>".to_string());
+    emit_table_rows(out, depth, table);
+    out.push(depth, "</table>".to_string());
+}
+
+/// A chart — docling's `PictureItem` with a tabular chart-data annotation:
+/// `<picture class="chart">` wrapping a `<label value="{kind}"/>` and the data
+/// grid as a `<tabular>` (same cell tokens as a table).
+fn emit_chart(out: &mut Out, depth: i32, kind: &str, table: &Table) {
+    out.push(depth, "<picture class=\"chart\">".to_string());
+    out.push(
+        depth + 1,
+        format!("<label value=\"{}\"/>", attr_escape(kind)),
+    );
+    out.push(depth + 1, "<tabular>".to_string());
+    emit_table_rows(out, depth + 1, table);
+    out.push(depth + 1, "</tabular>".to_string());
+    out.push(depth, "</picture>".to_string());
+}
+
+/// Emit a grid's cells (the shared body of `<table>` and a chart's `<tabular>`):
+/// the location head, then each row's OTSL cell tokens at `depth + 1`.
+fn emit_table_rows(out: &mut Out, depth: i32, table: &Table) {
     // Layout provenance (spreadsheet/slide backends): four `<location>` tokens
     // (x0,y0,x1,y1) precede the cells, matching docling's element head.
     if let Some(loc) = &table.location {
@@ -628,7 +650,6 @@ fn emit_table(out: &mut Out, depth: i32, table: &Table) {
         }
         out.push(depth + 1, "<nl/>".to_string());
     }
-    out.push(depth, "</table>".to_string());
 }
 
 /// Table-cell content: virtual text (no wrapper), inline markers re-parsed.
@@ -675,6 +696,15 @@ fn emit_nodes(out: &mut Out, depth: i32, nodes: &[Node], i: &mut usize, level: u
             }
             Node::Picture { caption, image: _ } => {
                 emit_picture(out, depth, caption.as_deref(), None);
+                *i += 1;
+            }
+            Node::Chart { kind, table } => {
+                emit_chart(out, depth, kind, table);
+                *i += 1;
+            }
+            Node::DoclangOnly(inner) => {
+                let mut j = 0;
+                emit_nodes(out, depth, std::slice::from_ref(inner), &mut j, level);
                 *i += 1;
             }
             Node::ListItem { level: l, .. } => {
