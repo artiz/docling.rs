@@ -79,7 +79,7 @@ fn main() -> ExitCode {
         }
     }
 
-    if !matches!(to.as_str(), "md" | "markdown" | "json") {
+    if !matches!(to.as_str(), "md" | "markdown" | "json" | "dclx") {
         eprintln!("error: unknown --to '{to}' (expected: md, json)");
         return ExitCode::from(2);
     }
@@ -180,6 +180,22 @@ fn main() -> ExitCode {
 
     if to == "json" {
         println!("{}", document.export_to_json());
+        return ExitCode::SUCCESS;
+    }
+
+    if to == "dclx" {
+        // Binary OPC archive: written next to the CWD as `<input-stem>.dclx`
+        // (stdout stays clean for terminals); the path is printed for scripts.
+        let stem = Path::new(&path)
+            .file_stem()
+            .map(|s| s.to_string_lossy().into_owned())
+            .unwrap_or_else(|| "document".into());
+        let out = std::path::PathBuf::from(format!("{stem}.dclx"));
+        if let Err(e) = docling::dclx::save_as_dclx(&document, &out) {
+            eprintln!("error: dclx: {e}");
+            return ExitCode::FAILURE;
+        }
+        println!("{}", out.display());
         return ExitCode::SUCCESS;
     }
 

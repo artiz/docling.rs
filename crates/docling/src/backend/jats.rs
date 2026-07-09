@@ -298,6 +298,7 @@ fn add_citation(doc: &mut DoclingDocument, parent_is_list: bool, text: &str) {
             first_in_list: false,
             text: escape_text(text),
             level: 0,
+            marker: None,
         });
     } else {
         doc.push(Node::Paragraph {
@@ -365,6 +366,7 @@ fn walk_linear(
                         first_in_list: false,
                         text: escape_text(&text),
                         level: 0,
+                        marker: None,
                     });
                 }
                 stop_walk = true;
@@ -594,7 +596,10 @@ fn parse_jats_table(table: XmlNode) -> Option<Table> {
             ci += cs;
         }
     }
-    Some(Table { rows: grid })
+    Some(Table {
+        rows: grid,
+        location: None,
+    })
 }
 
 fn col_span(cell: XmlNode) -> usize {
@@ -639,6 +644,7 @@ fn add_footnote_group(doc: &mut DoclingDocument, node: XmlNode, hlevel: i32) {
             first_in_list: false,
             text: escape_text(&item),
             level: 0,
+            marker: None,
         });
     }
 }

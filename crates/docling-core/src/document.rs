@@ -43,12 +43,19 @@ pub enum Node {
     /// items, `number` is the display number (honoring the list's `start`); it
     /// is unused for unordered items. `first_in_list` marks the first item of a
     /// list so the serializer can blank-line-separate adjacent sibling lists.
+    ///
+    /// `marker` is the DocLang enumeration marker (`"1."`, `"1.1."`, …) when the
+    /// backend provides one — HTML and DOCX set it for enumerated items, so
+    /// DocLang emits `<ldiv><marker>…</marker></ldiv>`; Markdown and the other
+    /// declarative backends leave it `None`, giving a bare `<ldiv/>` (matching
+    /// docling, whose Markdown backend passes no marker).
     ListItem {
         ordered: bool,
         number: u64,
         first_in_list: bool,
         text: String,
         level: u8,
+        marker: Option<String>,
     },
     /// A fenced code block.
     Code {
@@ -71,6 +78,83 @@ pub enum Node {
     /// `id`-convention); the serializers render each item's parts as separate
     /// labelled texts (`marker` / `field_key` / `field_value`).
     FieldRegion { items: Vec<FieldItem> },
+    /// Rich inline content — docling's `InlineGroup`: a run of styled text
+    /// segments that a backend captured with formatting (`<bold>`, `<italic>`,
+    /// `<underline>`, `<strikethrough>`, sub/superscript, inline `<code>`) the
+    /// flat Markdown text cannot represent. Markdown/JSON render this exactly
+    /// like `Paragraph { text: md_text }` (so their output is unchanged); the
+    /// DocLang serializer uses the structured `runs`. `unwrapped` is set when the
+    /// group's docling parent is a heading/text (no enclosing `<text>` wrapper).
+    InlineGroup {
+        unwrapped: bool,
+        runs: Vec<InlineRun>,
+        md_text: String,
+    },
+    /// A node in docling's `furniture` content layer (page headers/footers, the
+    /// HTML `<title>`, …). Markdown and JSON omit furniture by default; DocLang
+    /// renders the wrapped node with a `<layer value="furniture"/>` head.
+    Furniture(Box<Node>),
+}
+
+/// Vertical text position of an [`InlineRun`] — docling's `Script`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Script {
+    #[default]
+    Baseline,
+    Sub,
+    Super,
+}
+
+/// One styled segment of a [`Node::InlineGroup`] — the docling.rs analogue of a
+/// `TextItem` inside an `InlineGroup`, carrying the ancestor formatting docling
+/// tracks. `text` is already whitespace-normalized/trimmed (one segment per
+/// source text node). A hyperlink is intentionally not stored: DocLang drops the
+/// target inside inline scope, keeping only the anchor text.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct InlineRun {
+    pub text: String,
+    pub bold: bool,
+    pub italic: bool,
+    pub underline: bool,
+    pub strike: bool,
+    pub script: Script,
+    pub code: bool,
+}
+
+impl InlineRun {
+    /// A run with no active formatting (renders as bare inline text).
+    pub fn is_plain(&self) -> bool {
+        !self.bold
+            && !self.italic
+            && !self.underline
+            && !self.strike
+            && !self.code
+            && self.script == Script::Baseline
+    }
+}
+
+/// Build the [`Node`] for a paragraph of inline content from its structured
+/// `runs` and Markdown text, applying docling's `InlineGroup` boundary:
+///
+/// * a single plain run (or none) → a plain [`Node::Paragraph`] (which the
+///   serializers render as `<text>…</text>`, and a lone hyperlink via `<href>`);
+/// * a single uniformly-formatted run, or two or more runs → a
+///   [`Node::InlineGroup`]. `unwrapped` (the group's docling parent is a
+///   heading, so no enclosing `<text>`) only applies to multi-run groups.
+///
+/// Markdown/JSON render the group's `md_text`, so their output is identical to
+/// emitting a `Paragraph` — the structured runs are DocLang-only.
+pub fn inline_paragraph_node(md_text: String, runs: Vec<InlineRun>, unwrapped: bool) -> Node {
+    let single_plain = runs.len() <= 1 && runs.first().map_or(true, |r| r.is_plain());
+    if single_plain {
+        Node::Paragraph { text: md_text }
+    } else {
+        Node::InlineGroup {
+            unwrapped: unwrapped && runs.len() >= 2,
+            runs,
+            md_text,
+        }
+    }
 }
 
 /// One entry of a [`Node::FieldRegion`]: a marker/key/value triple, any of which
@@ -107,9 +191,15 @@ impl PictureImage {
 }
 
 /// A simple row-major table. `rows[0]` is the header row.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Default)]
 pub struct Table {
     pub rows: Vec<Vec<String>>,
+    /// Optional layout provenance: the four DocLang `<location>` values
+    /// (`x0,y0,x1,y1`, each already normalized to the 0–511 resolution) emitted
+    /// before the table's cells. Set only by backends with real geometry (e.g.
+    /// the spreadsheet backend, whose cell grid yields a bounding box); left
+    /// `None` by declarative backends, which have no coordinates.
+    pub location: Option<[u16; 4]>,
 }
 
 impl DoclingDocument {
@@ -167,6 +257,14 @@ impl DoclingDocument {
     pub fn export_to_json(&self) -> String {
         serde_json::to_string_pretty(&crate::json::to_json(self))
             .expect("DoclingDocument JSON is always serializable")
+    }
+
+    /// Serialize to DocLang XML (`<doclang version="0.7">…`), the markup that
+    /// lives inside a `.dclx` archive — the Rust counterpart of docling-core's
+    /// `export_to_doclang()` with default parameters. No trailing newline; the
+    /// archive writer appends exactly one.
+    pub fn export_to_doclang(&self) -> String {
+        crate::doclang::export_to_doclang(&self.nodes)
     }
 
     /// Serialize to Markdown with an explicit picture [`ImageMode`] (mirrors

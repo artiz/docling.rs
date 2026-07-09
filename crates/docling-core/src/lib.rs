@@ -11,11 +11,15 @@
 //! docling-core's JSON wire format lands in Phase 1 (see `MIGRATION.md`).
 
 pub mod base64;
+mod doclang;
 mod document;
 mod json;
 mod labels;
 mod markdown;
 
-pub use document::{DoclingDocument, FieldItem, Node, PictureImage, Table};
+pub use doclang::inline_runs_from_markdown;
+pub use document::{
+    inline_paragraph_node, DoclingDocument, FieldItem, InlineRun, Node, PictureImage, Script, Table,
+};
 pub use labels::DocItemLabel;
 pub use markdown::{ImageMode, MarkdownStreamer};

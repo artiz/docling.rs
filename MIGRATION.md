@@ -25,7 +25,7 @@ phased plan is kept at the end as history.)
 | **What** | A Rust port of docling's converter, backends, and discriminative PDF/ASR pipelines; same `convert → DoclingDocument → export_to_markdown()/json()` shape, single static binary, no Python/torch at runtime |
 | **Conformance** | Declarative formats byte-for-byte vs *live* PyPI docling (most 100%, see §2); PDF ML path 6/14 fixtures byte-exact, rest close; every optimization is gated on this not regressing |
 | **Performance** | PDF ML pipeline **4.3× faster warm / 4.7× end-to-end** than Python docling at 2.3–2.6× less peak RAM (INT8 + SIMD, conformance-validated); declarative formats 20–60× warm, ~60× less RAM; details + methodology in [`PDF_PERFORMANCE.md`](./PDF_PERFORMANCE.md) |
-| **Models** | docling's own checkpoints (layout heron, TableFormer, PP-OCRv3, Whisper tiny), format-converted to ONNX by `scripts/export_*.py` — no retraining; INT8 variants are calibrated post-training quantizations (`scripts/quantize_models.py`) |
+| **Models** | docling's own checkpoints (layout heron, TableFormer, PP-OCRv3, Whisper tiny), format-converted to ONNX by `scripts/export_*.py` — no retraining; INT8 variants are calibrated post-training quantizations (`scripts/install/quantize_models.py`) |
 | **Tracking upstream** | See [§9](#9-keeping-up-with-upstream-docling): conformance is measured against the *latest published* docling on demand, so an upstream release that changes output surfaces as a concrete per-fixture diff |
 | **Not ported (by design)** | VLM pipelines, enrichment models, DocTags input, legacy patent schemas (§5); inline formatting is baked into text rather than structured fields (§4) |
 
@@ -70,7 +70,7 @@ println!("{}", result.document.export_to_markdown());   // or .export_to_json()
 ## 2. Format coverage
 
 Conformance is measured against the latest **published** docling (installed from
-PyPI; run via `scripts/conformance.sh <fmt>`), not the committed groundtruth
+PyPI; run via `scripts/conformance/conformance.sh <fmt>`), not the committed groundtruth
 `.md` (which predates docling-core's current table serializer — see §4).
 "Exact" = byte-for-byte.
 
@@ -106,7 +106,7 @@ These run docling's *discriminative* PDF pipeline ported to ONNX. They are now
 measured **byte-for-byte against live docling** (the committed PDF groundtruth is
 regenerated from it): **6 / 14 exact (7 / 14 whitespace-normalized)**, the rest
 close — see `PDF_CONFORMANCE.md`. A deterministic snapshot baseline
-(`scripts/pdf_conformance.sh`) still guards against regressions.
+(`scripts/conformance/pdf_conformance.sh`) still guards against regressions.
 
 | Format | How |
 |---|---|
@@ -271,12 +271,12 @@ deliberate scope boundary or a cosmetic, single-fixture polish gap.
   converted to legacy Markdown, strict Markdown and docling JSON and compared to
   committed fixtures (133 sources × 3). `DOCLING_RS_REGEN=1` refreshes them.
   The JSON fixtures double as a docling-core load check.
-- **Snapshot harness** — `scripts/pdf_conformance.sh` regenerates and diffs the
+- **Snapshot harness** — `scripts/conformance/pdf_conformance.sh` regenerates and diffs the
   PDF/image/METS baseline (needs pdfium + the ONNX models; **91/91 exact**).
-- **Conformance** — `scripts/conformance.sh <fmt>` scores a format against the
+- **Conformance** — `scripts/conformance/conformance.sh <fmt>` scores a format against the
   latest published docling (installed from PyPI; see
   [`COMPARING.md`](./COMPARING.md)).
-- **Differential / perf** — `scripts/compare.sh`, `scripts/performance.sh`.
+- **Differential / perf** — `scripts/conformance/compare.sh`, `scripts/test/performance.sh`.
   The PDF pipeline's profiling data, the INT8/SIMD optimization results
   (4.3× warm vs Python docling on the ML pipeline), and the remaining
   performance backlog live in [`PDF_PERFORMANCE.md`](./PDF_PERFORMANCE.md).
@@ -286,11 +286,11 @@ CI (`.github/workflows/ci.yml`) gates every pull request and master push on
 `cargo test` (the fast pure-Rust suite — no model downloads). fmt/clippy run on a
 **pinned** toolchain (`LINT_TOOLCHAIN` in the workflow) so a new stable can't fail
 CI on unrelated commits; tests run on current `stable`. On master it then runs
-`scripts/release.sh`: it derives the next version from the conventional-commit
+`scripts/ci/release.sh`: it derives the next version from the conventional-commit
 messages since the last `v*` tag (`feat:` → minor, `fix:`/`perf:` → patch, a
 `type!:`/`BREAKING CHANGE` → major; docs/chore/ci/etc → no release), bumps the
 workspace version, commits + tags it (with `[skip ci]`, via `GITHUB_TOKEN`, so it
-doesn't loop), and publishes the crates with `scripts/ci_publish.sh` in
+doesn't loop), and publishes the crates with `scripts/ci/ci_publish.sh` in
 dependency order — skipping any version already on crates.io.
 
 ---
@@ -313,24 +313,24 @@ The port is built to be *measured against* upstream rather than merely
 inspired by it, which makes tracking new docling releases a mechanical
 process instead of a guess:
 
-1. **Detect drift.** `scripts/conformance.sh <fmt>` installs the **latest
+1. **Detect drift.** `scripts/conformance/conformance.sh <fmt>` installs the **latest
    published docling from PyPI** into an isolated venv and byte-diffs both
    engines' Markdown over the committed corpus, per fixture. An upstream
    release that changes output (a serializer tweak, a new label, a model
    bump) shows up as a concrete per-fixture diff — not as silent divergence.
-   `scripts/compare.sh` does the same for a single ad-hoc document.
+   `scripts/conformance/compare.sh` does the same for a single ad-hoc document.
 2. **Classify each diff.** Either upstream changed *serialization/logic* —
    port the change to the matching backend/serializer (the crate layout in §1
    maps one-to-one to docling's modules, so the port target is usually
    obvious) — or upstream shipped *new models*, in which case
-   `scripts/export_layout.py` / `export_tableformer.py` re-export the new
-   checkpoints to ONNX, `scripts/quantize_models.py` re-quantizes, and
+   `scripts/install/export_layout.py` / `export_tableformer.py` re-export the new
+   checkpoints to ONNX, `scripts/install/quantize_models.py` re-quantizes, and
    `.github/workflows/publish-models.yml` republishes the model release
    (bump the tag when the export itself changes).
-3. **Re-gate.** `scripts/pdf_conformance.sh` (deterministic snapshot baseline)
+3. **Re-gate.** `scripts/conformance/pdf_conformance.sh` (deterministic snapshot baseline)
    plus the 133-source regression suite in `cargo test` confirm nothing else
    moved. The committed PDF groundtruth is regenerated from live docling
-   (`scripts/pdf_groundtruth.sh`) whenever upstream output legitimately
+   (`scripts/conformance/pdf_groundtruth.sh`) whenever upstream output legitimately
    changes, so "exact" always means *exact against current docling*.
 4. **New formats/features** follow the same recipe the existing 20 formats
    did: a backend module + fixtures + conformance scoring, tracked in §2.

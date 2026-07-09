@@ -3,10 +3,10 @@
 How close the Rust PDF pipeline gets to docling's **default** Markdown, measured
 byte-for-byte against the committed groundtruth (`tests/data/pdf/groundtruth/*.md`).
 The groundtruth is regenerated from **live published docling**, so it agrees with
-`scripts/conformance.sh pdf`.
+`scripts/conformance/conformance.sh pdf`.
 
-> Measure locally with `scripts/pdf_groundtruth.sh` (diffs the checked-in
-> reference; no docling install needed) or `scripts/conformance.sh pdf` (installs
+> Measure locally with `scripts/conformance/pdf_groundtruth.sh` (diffs the checked-in
+> reference; no docling install needed) or `scripts/conformance/conformance.sh pdf` (installs
 > docling and diffs against it). Both report two metrics: **strict** (byte-for-byte)
 > and **whitespace-normalized** (spacing-only diffs ignored). Diff = changed lines
 > vs the groundtruth (one changed line counts as 2).
@@ -98,7 +98,7 @@ encodings, **Form XObject recursion** (`Do` — bulk body text in heavy PDFs liv
 inside a form; 2206 p1 was dropping ~9000 chars), a **glyph-name fallback**
 (docling emits an unmappable subset-font name verbatim, `/g115`), and an
 **overprint dedup** (a kashida elongation re-stamped on itself — right_to_left_02).
-A char-frequency validator (`scripts/parser_completeness.py`) confirms nothing is
+A char-frequency validator (`scripts/test/parser_completeness.py`) confirms nothing is
 silently skipped.
 
 Its cells feed the ported **docling-parse line sanitizer** (`dp_lines.rs`, from

@@ -22,7 +22,7 @@ better, byte-identical where the change is structural:
 | True-KV-cache decoder export (`decoder_kv.onnx`, optional) | parity at corpus table sizes; O(past)/step for very large tables |
 
 Cumulative head-to-head vs Python docling (measured on an 8-thread desktop,
-`scripts/performance.sh`): **4.3× faster warm conversion, 4.7× end-to-end,
+`scripts/test/performance.sh`): **4.3× faster warm conversion, 4.7× end-to-end,
 2.3–2.6× less peak memory** on the PDF ML pipeline — up from ~1.2× warm
 before this work. Model sizes: layout 172 → 68 MB, TF decoder 78 → 50 MB.
 Also fixed along the way: the `"` show-text operator dropped its word/char
@@ -30,7 +30,7 @@ spacing operands (real spec violation), and OCR/TableFormer sub-stages are
 now visible in `DOCLING_RS_TIMING` profiles.
 
 Measured on a 4-core AVX-512(+VNNI/AMX) Xeon, release build (`lto = "thin"`),
-models from `scripts/download_dependencies.sh`, `DOCLING_RS_TIMING=1`.
+models from `scripts/install/download_dependencies.sh`, `DOCLING_RS_TIMING=1`.
 
 ## Where the time goes
 
@@ -65,7 +65,7 @@ default 2×2 on 4 cores) was re-validated: 2×2 beat both 4×1 and 1×4 on the
 
 ## Validated win: INT8 quantization (quality-checked)
 
-`scripts/quantize_models.py` produces two quantized models. Point
+`scripts/install/quantize_models.py` produces two quantized models. Point
 `DOCLING_LAYOUT_ONNX` / `DOCLING_TABLEFORMER_DECODER` at them to opt in.
 
 **These are now the default:** when the `*_int8` files sit next to the fp32
@@ -148,7 +148,7 @@ Ordered by expected impact ÷ risk. Items 1–3 attack the 85–95%.
      fed straight back into the next run (~9% faster structure decode,
      byte-identical output).
    - ~~The exported graph still re-embeds the **full tag sequence** every
-     step.~~ **Built and measured:** `scripts/export_tableformer.py` now also
+     step.~~ **Built and measured:** `scripts/install/export_tableformer.py` now also
      exports `decoder_kv.onnx`, a true-KV-cache step (one tag in, projected
      K/V cached per layer), verified argmax-identical over a 64-step rollout
      and byte-identical on corpus output. Measured result: **parity** with
@@ -250,7 +250,7 @@ change.
 ## Reproducing
 
 ```bash
-scripts/download_dependencies.sh
+scripts/install/download_dependencies.sh
 cargo build --release
 
 # stage timing
@@ -259,16 +259,16 @@ DOCLING_RS_TIMING=1 ./target/release/docling-rs input.pdf > /dev/null
 # build the int8 models (used automatically once present)
 uv venv .venv-quant && uv pip install --python .venv-quant/bin/python \
     onnx onnxruntime sympy pypdfium2 pillow numpy
-.venv-quant/bin/python scripts/quantize_models.py
+.venv-quant/bin/python scripts/install/quantize_models.py
 
 # force full precision for a run
 DOCLING_RS_FP32=1 ./target/release/docling-rs input.pdf > /dev/null
 ```
 
-Integration points: `scripts/download_dependencies.sh` fetches the
+Integration points: `scripts/install/download_dependencies.sh` fetches the
 pre-quantized assets by default (`--no-int8` skips; published by
 `.github/workflows/publish-models.yml`, which quantizes after export);
-`scripts/pdf_setup.sh` quantizes locally unless `DOCLING_RS_FP32=1`;
-`scripts/performance.sh` benchmarks whatever the pipeline default resolves to
+`scripts/install/pdf_setup.sh` quantizes locally unless `DOCLING_RS_FP32=1`;
+`scripts/test/performance.sh` benchmarks whatever the pipeline default resolves to
 (int8 when present, `DOCLING_RS_FP32=1` for fp32); `examples/Dockerfile`
 bakes both precisions and defaults to int8 (`--build-arg INT8=0` for fp32).

@@ -9,6 +9,26 @@ use crate::backend::{
     XbrlBackend, XlsxBackend,
 };
 
+/// Whether `text` begins with an XML prolog — an `<?xml …?>` declaration or a
+/// non-HTML `<!DOCTYPE …>`. Used to route XML documents that arrived with a
+/// text/Markdown extension (e.g. a JATS article saved as `.txt`) to the XML
+/// backends. An HTML5 `<!DOCTYPE html>` is deliberately excluded.
+fn looks_like_xml(text: &str) -> bool {
+    let head = text.trim_start();
+    if head.starts_with("<?xml") {
+        return true;
+    }
+    if let Some(rest) = head.get(..9) {
+        if rest.eq_ignore_ascii_case("<!doctype") {
+            return !head[9..]
+                .trim_start()
+                .to_ascii_lowercase()
+                .starts_with("html");
+        }
+    }
+    false
+}
+
 /// Pick the concrete XML backend for a generic `.xml` source by sniffing its
 /// DOCTYPE / root element (the first part of the file).
 fn sniff_xml(text: &str) -> InputFormat {
@@ -217,6 +237,14 @@ impl DocumentConverter {
         }
 
         let mut document = match source.format {
+            // A text/Markdown-typed file that is actually an XML document (e.g. a
+            // JATS article saved with a `.txt` extension) routes to the XML
+            // backends by content, mirroring docling's content-based detection.
+            InputFormat::Md if looks_like_xml(source.text()?) => match sniff_xml(source.text()?) {
+                InputFormat::XmlUspto => UsptoBackend.convert(&source)?,
+                InputFormat::XmlXbrl => XbrlBackend.convert(&source)?,
+                _ => JatsBackend.convert(&source)?,
+            },
             // DeepSeek-OCR annotated Markdown (VLM token format) is detected by
             // its `<|ref|>…[[bbox]]` annotations and parsed separately.
             InputFormat::Md if is_deepseek_markdown(source.text()?) => {

@@ -190,6 +190,7 @@ fn handle_text_shape(sp: XmlNode, doc: &mut DoclingDocument) {
                     first_in_list: false,
                     text,
                     level: 0,
+                    marker: None,
                 });
             }
             None => {
@@ -276,7 +277,10 @@ fn parse_table(tbl: XmlNode) -> Option<Table> {
             }
         }
     }
-    Some(Table { rows: grid })
+    Some(Table {
+        rows: grid,
+        location: None,
+    })
 }
 
 /// A table cell's text: its paragraphs joined with newlines, then trimmed

@@ -123,6 +123,7 @@ fn text_item(item: &Value, level: u8, doc: &mut DoclingDocument) {
             first_in_list: true,
             text,
             level,
+            marker: None,
         }),
         "caption" => {} // rendered with its parent table/picture
         _ => doc.push(Node::Paragraph { text }), // text, paragraph, formula, footnote, …
@@ -179,6 +180,7 @@ fn list_group(children: &[Value], root: &Value, level: u8, doc: &mut DoclingDocu
             first_in_list: first,
             text: formatted_text(item),
             level,
+            marker: None,
         });
         first = false;
         if let Some(sub) = item["children"].as_array() {
@@ -204,7 +206,10 @@ fn table_item(item: &Value, root: &Value, doc: &mut DoclingDocument) {
         }
     }
     if !rows.is_empty() {
-        doc.push(Node::Table(Table { rows }));
+        doc.push(Node::Table(Table {
+            rows,
+            location: None,
+        }));
     }
     push_captions(item, root, doc);
 }

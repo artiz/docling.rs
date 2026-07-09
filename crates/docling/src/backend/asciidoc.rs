@@ -183,6 +183,7 @@ impl Parser {
             first_in_list: self.fresh_list,
             text: escape_text(text.trim()),
             level,
+            marker: None,
         });
         self.fresh_list = false;
     }
@@ -228,7 +229,10 @@ impl Parser {
                     r
                 })
                 .collect();
-            doc.push(Node::Table(Table { rows }));
+            doc.push(Node::Table(Table {
+                rows,
+                location: None,
+            }));
         }
         self.in_table = false;
         self.table_data.clear();

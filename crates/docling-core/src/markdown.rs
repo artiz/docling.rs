@@ -248,8 +248,21 @@ fn render(nodes: &[Node], blocks: &mut Vec<String>, ctx: &mut Ctx) {
         match &nodes[i] {
             Node::ListItem { .. } => {
                 let start = i;
-                while matches!(nodes.get(i), Some(Node::ListItem { .. })) {
-                    i += 1;
+                i += 1;
+                loop {
+                    match nodes.get(i) {
+                        Some(Node::ListItem { .. }) => i += 1,
+                        // An empty paragraph between two list items is absorbed
+                        // into the run — docling keeps such a ListGroup
+                        // contiguous rather than splitting it.
+                        Some(Node::Paragraph { text })
+                            if text.is_empty()
+                                && matches!(nodes.get(i + 1), Some(Node::ListItem { .. })) =>
+                        {
+                            i += 1
+                        }
+                        _ => break,
+                    }
                 }
                 render_list_run(&nodes[start..i], blocks, ctx.strict);
             }
@@ -279,6 +292,7 @@ fn render_list_run(items: &[Node], blocks: &mut Vec<String>, strict: bool) {
             first_in_list,
             text,
             level,
+            marker: _,
         } = item
         else {
             continue;
@@ -322,6 +336,9 @@ fn render_one(node: &Node, blocks: &mut Vec<String>, ctx: &mut Ctx) {
             let hashes = "#".repeat((*level).clamp(1, 6) as usize);
             blocks.push(format!("{hashes} {}", strict_text(text, ctx.strict)));
         }
+        // An empty body paragraph (docling's blank-line text item) contributes
+        // nothing to Markdown — only DocLang/JSON keep it.
+        Node::Paragraph { text } if text.is_empty() => {}
         Node::Paragraph { text } => blocks.push(strict_text(text, ctx.strict)),
         Node::Code { language, text } => {
             // Legacy docling never emits a language on the fence; strict keeps it.
@@ -359,6 +376,12 @@ fn render_one(node: &Node, blocks: &mut Vec<String>, ctx: &mut Ctx) {
                 }
             }
         }
+        // A rich inline group renders exactly like a paragraph of its Markdown
+        // text — the structured runs are DocLang-only.
+        Node::InlineGroup { md_text, .. } => blocks.push(strict_text(md_text, ctx.strict)),
+        // Furniture (page headers/footers, HTML `<title>`) is excluded from
+        // Markdown by default, mirroring docling.
+        Node::Furniture(_) => {}
         // Handled by the run-merging branch in `render`.
         Node::ListItem { .. } => unreachable!("list items are rendered in runs"),
     }
@@ -591,6 +614,7 @@ mod tests {
             first_in_list: true,
             text: "first".into(),
             level: 0,
+            marker: None,
         });
         doc.push(Node::ListItem {
             ordered: false,
@@ -598,6 +622,7 @@ mod tests {
             first_in_list: false,
             text: "second".into(),
             level: 0,
+            marker: None,
         });
         let md = doc.export_to_markdown();
         assert_eq!(md, "# Title\n\nHello world.\n\n- first\n- second\n");
@@ -646,6 +671,7 @@ mod tests {
         doc.compact_tables = true;
         doc.push(Node::Table(Table {
             rows: vec![vec!["a".into(), "b".into()], vec!["1".into(), "2".into()]],
+            location: None,
         }));
         let md = doc.export_to_markdown();
         assert_eq!(md, "| a | b |\n| - | - |\n| 1 | 2 |\n");
@@ -656,6 +682,7 @@ mod tests {
         let mut doc = DoclingDocument::new("t");
         doc.push(Node::Table(Table {
             rows: vec![vec!["a".into(), "b".into()], vec!["1".into(), "2".into()]],
+            location: None,
         }));
         let md = doc.export_to_markdown();
         // Numeric data columns are right-aligned; columns padded to header+2.
@@ -673,6 +700,7 @@ mod tests {
             first_in_list: true,
             text: "i\\_j".into(),
             level: 0,
+            marker: None,
         });
         // Legacy reproduces docling's `\_` escaping byte-for-byte.
         assert_eq!(doc.export_to_markdown(), "# a\\_b\n\nx\\_y\n\n- i\\_j\n");
@@ -729,6 +757,7 @@ mod tests {
             first_in_list: true,
             text: "a".into(),
             level: 0,
+            marker: None,
         });
         doc.push(Node::ListItem {
             ordered: false,
@@ -736,6 +765,7 @@ mod tests {
             first_in_list: false,
             text: "b".into(),
             level: 0,
+            marker: None,
         });
         doc.push(Node::Code {
             language: Some("rust".into()),
@@ -743,6 +773,7 @@ mod tests {
         });
         doc.push(Node::Table(Table {
             rows: vec![vec!["a".into(), "b".into()], vec!["1".into(), "2".into()]],
+            location: None,
         }));
         doc.push(Node::Picture {
             caption: Some("Fig 1".into()),

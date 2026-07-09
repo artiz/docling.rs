@@ -13,7 +13,7 @@ CORPUS_DIR="$WORKSPACE_DIR/tests/data"
 
 VENV="$WORKSPACE_DIR/.venv-compare"
 PYBIN="$VENV/bin/python"
-PY_RUNNER="$_COMMON_DIR/docling_convert.py"
+PY_RUNNER="$_COMMON_DIR/conformance/docling_convert.py"
 
 # Published docling (2.x) bundles every format backend AND the full PDF pipeline
 # (layout/table via docling-ibm-models → torch), so a single env handles both

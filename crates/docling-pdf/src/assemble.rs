@@ -1041,6 +1041,7 @@ pub fn assemble_page(
                         first_in_list: false,
                         text: md_escape(&rest),
                         level: 0,
+                        marker: None,
                     });
                 } else {
                     nodes.push(Node::ListItem {
@@ -1049,6 +1050,7 @@ pub fn assemble_page(
                         first_in_list: false,
                         text: md_escape(&stripped),
                         level: 0,
+                        marker: None,
                     });
                 }
             }
@@ -1064,7 +1066,10 @@ pub fn assemble_page(
                         vec![vec![text.clone()]]
                     }
                 });
-                nodes.push(Node::Table(Table { rows }));
+                nodes.push(Node::Table(Table {
+                    rows,
+                    location: None,
+                }));
             }
             // docling does not decode formulas in the standard pipeline; it emits
             // a placeholder comment rather than the (garbled) raw glyph text.

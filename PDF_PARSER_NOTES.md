@@ -63,7 +63,7 @@ next to RTL text, so the Arabic sentence period attaches (`العمل.`).
 
 ## Completeness validation — "nothing is skipped"
 
-`scripts/parser_completeness.py` compares, per PDF, the *multiset* of characters
+`scripts/test/parser_completeness.py` compares, per PDF, the *multiset* of characters
 docling-parse emits against the parser's (alignment-free, so garbled RTL doesn't
 confuse it). It surfaced two whole classes of silently-dropped text, both fixed:
 

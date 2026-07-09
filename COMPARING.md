@@ -18,13 +18,13 @@ The comparison scripts install the **latest published** `docling` from PyPI into
 an isolated `docling.rs/.venv-compare` (via `uv`) on first run:
 
 ```bash
-scripts/setup-docling.sh      # optional; the other scripts call this automatically
+scripts/conformance/setup-docling.sh      # optional; the other scripts call this automatically
 ```
 
 Published docling 2.x bundles every format backend plus the full PDF pipeline
 (torch + models), so the first install pulls a few hundred MB. For the
 declarative formats the Python side still calls the format backend directly (see
-`scripts/docling_convert.py`) rather than `DocumentConverter`, so it avoids
+`scripts/conformance/docling_convert.py`) rather than `DocumentConverter`, so it avoids
 paying the `torch` import cost on every run — the same conversion work, kept
 apples-to-apples with what `docling.rs` does.
 
@@ -43,8 +43,8 @@ tests/data/html/groundtruth/example_01.html.md    # older committed reference
 (installed from PyPI on first run — see `_common.sh`), per format:
 
 ```bash
-scripts/conformance.sh html
-scripts/conformance.sh docx
+scripts/conformance/conformance.sh html
+scripts/conformance/conformance.sh docx
 ```
 
 It prints a per-fixture diff-line count and a summary:
@@ -76,8 +76,8 @@ To compare on a file that isn't in the corpus — or to confirm the groundtruth
 hasn't drifted — run both implementations and diff:
 
 ```bash
-scripts/compare.sh tests/data/html/sources/example_03.html
-scripts/compare.sh /path/to/your/own.html
+scripts/conformance/compare.sh tests/data/html/sources/example_03.html
+scripts/conformance/compare.sh /path/to/your/own.html
 ```
 
 `compare.sh` runs the local Python docling backend and the Rust CLI on the same
@@ -88,7 +88,7 @@ Do it by hand if you prefer:
 
 ```bash
 # Python (using the local install in .venv-compare)
-.venv-compare/bin/python scripts/docling_convert.py in.html > py.md
+.venv-compare/bin/python scripts/conformance/docling_convert.py in.html > py.md
 
 # Rust
 cargo run -p docling-cli -- in.html > rs.md
@@ -100,13 +100,13 @@ diff -u py.md rs.md
 
 ## C. Performance (time, CPU, memory)
 
-`scripts/performance.sh` measures the processing cost of each engine on one
+`scripts/test/performance.sh` measures the processing cost of each engine on one
 file — wall-clock time, CPU utilization, and peak resident memory — using GNU
 `/usr/bin/time`. The Rust side is built in `--release`; the Python side runs the
 installed docling (declarative backends, no `torch` import).
 
 ```bash
-scripts/performance.sh tests/data/html/sources/wiki_duck.html 10   # 10 runs
+scripts/test/performance.sh tests/data/html/sources/wiki_duck.html 10   # 10 runs
 ```
 
 ```text
@@ -187,7 +187,7 @@ case — see the divergence table below.
 > † The pure-parse backends above are scored against **live** docling. **PDF** is a
 > discriminative ML reconstruction pipeline (not a deterministic parse), so it is
 > scored against a committed groundtruth corpus (`tests/data/pdf/groundtruth`) that
-> is **regenerated from live docling** and therefore matches `scripts/conformance.sh
+> is **regenerated from live docling** and therefore matches `scripts/conformance/conformance.sh
 > pdf` (padded GitHub tables, current docling text). The PDF score is reported two
 > ways: **6 / 14 strict** byte-for-byte, and **7 / 14 whitespace-normalized** — the
 > 7th (`amt_handbook_sample`) differs only by docling's spurious double space in a

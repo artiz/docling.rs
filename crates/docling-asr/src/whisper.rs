@@ -54,7 +54,7 @@ fn model_path(var: &str, default: &str) -> std::path::PathBuf {
         return p.into();
     }
     // Default is CWD-relative; fall back to the executable's directory and one
-    // level above it (the `scripts/install.sh` layout, reached through the
+    // level above it (the `scripts/install/install.sh` layout, reached through the
     // /usr/local/bin symlink), mirroring docling-pdf's asset resolution.
     if !std::path::Path::new(default).exists() {
         if let Some(dir) = std::env::current_exe()

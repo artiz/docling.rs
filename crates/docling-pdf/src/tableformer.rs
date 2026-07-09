@@ -1,5 +1,5 @@
 //! TableFormer: table-structure recovery via docling-ibm-models, exported to
-//! ONNX by `scripts/export_tableformer.py`. The image encoder + tag-transformer
+//! ONNX by `scripts/install/export_tableformer.py`. The image encoder + tag-transformer
 //! encoder run once to a memory tensor; the decoder is then stepped
 //! autoregressively to emit an OTSL structure-token sequence (the same model
 //! docling runs). See PDF_CONFORMANCE.md.

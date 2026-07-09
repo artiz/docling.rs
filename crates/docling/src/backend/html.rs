@@ -14,7 +14,7 @@
 //! cascade) visibility suppression, and the rich per-cell table provenance the
 //! Python backend computes.
 
-use docling_core::{DoclingDocument, Node, Table};
+use docling_core::{DoclingDocument, InlineRun, Node, Script, Table};
 use scraper::{ElementRef, Html, Node as HtmlNode, Selector};
 
 use crate::backend::images::{ImageResolver, NoFetch};
@@ -57,6 +57,16 @@ pub(crate) fn convert_html(name: &str, html: &str, images: &dyn ImageResolver) -
 /// docling does).
 pub(crate) fn append_fragment(html: &str, out: &mut Vec<Node>, images: &dyn ImageResolver) {
     let parsed = Html::parse_document(html);
+    // The document `<title>` is docling's furniture-layer title heading — it
+    // precedes the body content and is excluded from Markdown/JSON. Fragments
+    // (e.g. Markdown-embedded HTML) carry no `<title>`, so none is added.
+    if let Some(title) = parsed.select(cached_selector!("title")).next() {
+        let text = normalize_ws(&title.text().collect::<String>());
+        if !text.is_empty() {
+            out.push(Node::Furniture(Box::new(Node::Heading { level: 1, text })));
+        }
+    }
+
     // Prefer <body>; fall back to the root element for fragments.
     let body = parsed.select(cached_selector!("body")).next();
     let root = body.unwrap_or_else(|| parsed.root_element());
@@ -143,14 +153,15 @@ fn walk_block(
     base: Fmt,
     images: &dyn ImageResolver,
 ) {
-    let mut inline: Vec<String> = Vec::new();
+    let mut inline = RunBuf::default();
 
     for child in elem.children() {
         match child.value() {
             HtmlNode::Text(text) => {
                 let run = normalize_ws(text);
                 if !run.is_empty() {
-                    inline.push(serialize_run(&run, base, None));
+                    inline.md.push(serialize_run(&run, base, None));
+                    inline.push_rich(base.to_inline_run(&run));
                 }
             }
             HtmlNode::Element(e) => {
@@ -208,14 +219,28 @@ fn walk_block(
     flush_inline(&mut inline, nodes);
 }
 
-fn flush_inline(buf: &mut Vec<String>, nodes: &mut Vec<Node>) {
-    if !buf.is_empty() {
-        let text = finalize(buf);
-        if !text.is_empty() {
-            nodes.push(Node::Paragraph { text });
-        }
+fn flush_inline(buf: &mut RunBuf, nodes: &mut Vec<Node>) {
+    if !buf.md.is_empty() {
+        push_inline_paragraph(nodes, finalize(&buf.md), std::mem::take(&mut buf.rich));
     }
-    buf.clear();
+    *buf = RunBuf::default();
+}
+
+/// Push a paragraph of inline content as docling's `InlineGroup`. The Markdown
+/// text drives Markdown/JSON output unchanged; the structured `runs` (captured
+/// during the DOM walk, carrying underline/sub/superscript that Markdown cannot)
+/// drive DocLang. The group serializes unwrapped (no `<text>`) once any body
+/// heading has been emitted — mirroring docling, where such content is nested
+/// under the heading rather than the body group.
+fn push_inline_paragraph(nodes: &mut Vec<Node>, text: String, runs: Vec<InlineRun>) {
+    if text.is_empty() {
+        return;
+    }
+    // In docling's HTML backend loose content is nested under the current
+    // heading, so its `InlineGroup` serializes unwrapped once a body heading has
+    // been emitted; before the first heading it sits in the body group (wrapped).
+    let unwrapped = nodes.iter().any(|n| matches!(n, Node::Heading { .. }));
+    nodes.push(docling_core::inline_paragraph_node(text, runs, unwrapped));
 }
 
 fn handle_block(
@@ -242,10 +267,8 @@ fn handle_block(
                     text: code,
                 });
             } else {
-                let text = render_inline_fmt(elem, base);
-                if !text.is_empty() {
-                    nodes.push(Node::Paragraph { text });
-                }
+                let (text, runs) = render_inline(elem, base);
+                push_inline_paragraph(nodes, text, runs);
             }
         }
         "ul" | "ol" => walk_list(elem, name == "ol", nodes, list_level, base),
@@ -253,11 +276,11 @@ fn handle_block(
         "pre" => {
             // A <pre> with inline structure (links/formatting) renders each
             // segment as inline code; a plain <pre> is a code block.
-            let mut runs = Vec::new();
+            let mut runs = RunBuf::default();
             collect_runs(elem, Fmt { code: true, ..base }, None, &mut runs);
-            if runs.len() > 1 {
+            if runs.md.len() > 1 {
                 nodes.push(Node::Paragraph {
-                    text: runs.join(" "),
+                    text: runs.md.join(" "),
                 });
             } else {
                 let (language, text) = extract_pre(elem);
@@ -369,12 +392,15 @@ fn parse_kvp_id(id: &str) -> Option<(u32, KvpKind)> {
 /// Emit one `ListItem` per `<li>`, recursing into nested `<ul>`/`<ol>` at a
 /// deeper level. Ordered items are numbered from the list's `start` attribute.
 fn walk_list(list: ElementRef, ordered: bool, nodes: &mut Vec<Node>, level: u8, base: Fmt) {
-    let mut number = list
+    let start = list
         .value()
         .attr("start")
         .and_then(|s| s.trim().parse().ok())
-        .filter(|_| ordered)
-        .unwrap_or(1);
+        .filter(|_| ordered);
+    // docling emits an enumeration `<marker>` only for an ordered list with an
+    // explicit `start` attribute; a plain `<ol>` carries no marker.
+    let has_start = start.is_some();
+    let mut number = start.unwrap_or(1);
     for child in list.children() {
         let Some(li) = ElementRef::wrap(child) else {
             continue;
@@ -386,9 +412,9 @@ fn walk_list(list: ElementRef, ordered: bool, nodes: &mut Vec<Node>, level: u8, 
         // The item's own inline text, then its block content. Images fold into
         // the item text (so the list stays tight); nested lists follow as
         // adjacent items in the same run.
-        let mut runs: Vec<String> = Vec::new();
+        let mut runs = RunBuf::default();
         collect_li_inline(li, base, &mut runs);
-        let mut text = finalize(&runs);
+        let mut text = finalize(&runs.md);
         let mut nested: Vec<(&str, ElementRef)> = Vec::new();
         append_li_blocks(li, &mut text, &mut nested);
         if !text.is_empty() {
@@ -400,6 +426,9 @@ fn walk_list(list: ElementRef, ordered: bool, nodes: &mut Vec<Node>, level: u8, 
                 first_in_list: false,
                 text,
                 level,
+                // docling's HTML backend passes an enumeration marker only for
+                // an ordered list with an explicit `start`; otherwise none.
+                marker: has_start.then(|| format!("{number}.")),
             });
         }
         number += 1;
@@ -415,13 +444,14 @@ fn walk_list(list: ElementRef, ordered: bool, nodes: &mut Vec<Node>, level: u8, 
 
 /// Collect a list item's own inline text. Images and nested lists are pulled out
 /// as blocks (handled by `walk_li_blocks`); `<p>`/`<div>` wrappers are folded in.
-fn collect_li_inline(li: ElementRef, base: Fmt, runs: &mut Vec<String>) {
+fn collect_li_inline(li: ElementRef, base: Fmt, runs: &mut RunBuf) {
     for child in li.children() {
         match child.value() {
             HtmlNode::Text(t) => {
                 let run = normalize_ws(t);
                 if !run.is_empty() {
-                    runs.push(serialize_run(&run, base, None));
+                    runs.md.push(serialize_run(&run, base, None));
+                    runs.push_rich(base.to_inline_run(&run));
                 }
             }
             HtmlNode::Element(e) => {
@@ -494,6 +524,7 @@ fn walk_dl(dl: ElementRef, nodes: &mut Vec<Node>, level: u8, base: Fmt) {
                         first_in_list: false,
                         text,
                         level,
+                        marker: None,
                     });
                 }
             }
@@ -506,14 +537,15 @@ fn walk_dl(dl: ElementRef, nodes: &mut Vec<Node>, level: u8, base: Fmt) {
 /// A `<dd>`: its own inline text becomes an item at `level`, and any nested
 /// `<dl>`/`<ul>`/`<ol>` is walked at the same level.
 fn walk_dd(dd: ElementRef, nodes: &mut Vec<Node>, level: u8, base: Fmt) {
-    let mut runs: Vec<String> = Vec::new();
+    let mut runs = RunBuf::default();
     let mut nested: Vec<(&str, ElementRef)> = Vec::new();
     for child in dd.children() {
         match child.value() {
             HtmlNode::Text(t) => {
                 let run = normalize_ws(t);
                 if !run.is_empty() {
-                    runs.push(serialize_run(&run, base, None));
+                    runs.md.push(serialize_run(&run, base, None));
+                    runs.push_rich(base.to_inline_run(&run));
                 }
             }
             HtmlNode::Element(e) => {
@@ -528,7 +560,7 @@ fn walk_dd(dd: ElementRef, nodes: &mut Vec<Node>, level: u8, base: Fmt) {
             _ => {}
         }
     }
-    let text = finalize(&runs);
+    let text = finalize(&runs.md);
     if !text.is_empty() {
         nodes.push(Node::ListItem {
             ordered: false,
@@ -536,6 +568,7 @@ fn walk_dd(dd: ElementRef, nodes: &mut Vec<Node>, level: u8, base: Fmt) {
             first_in_list: false,
             text,
             level,
+            marker: None,
         });
     }
     for (kind, el) in nested {
@@ -548,25 +581,94 @@ fn walk_dd(dd: ElementRef, nodes: &mut Vec<Node>, level: u8, base: Fmt) {
 }
 
 /// Active inline formatting, accumulated from ancestor tags (mirrors docling's
-/// `_FORMAT_TAG_MAP`). `underline`/`sub`/`sup` carry no Markdown marker but
-/// still split runs; they're therefore not tracked here. `raw` suppresses
-/// `&<>`/`_` escaping — docling escapes body text but not table-cell text.
+/// `_FORMAT_TAG_MAP`). `underline` and `script` (sub/superscript) carry no
+/// Markdown marker — they only surface in DocLang, via the structured runs.
+/// `raw` suppresses `&<>`/`_` escaping — docling escapes body text but not
+/// table-cell text.
 #[derive(Clone, Copy, Default)]
 struct Fmt {
     bold: bool,
     italic: bool,
     strike: bool,
     code: bool,
+    underline: bool,
+    script: Script,
     raw: bool,
+}
+
+impl Fmt {
+    /// The structured [`InlineRun`] for a text segment under this formatting
+    /// (a hyperlink is intentionally dropped — DocLang inline scope keeps only
+    /// the anchor text).
+    fn to_inline_run(self, text: &str) -> InlineRun {
+        InlineRun {
+            text: text.to_string(),
+            bold: self.bold,
+            italic: self.italic,
+            underline: self.underline,
+            strike: self.strike,
+            script: self.script,
+            code: self.code,
+        }
+    }
+}
+
+/// Parallel accumulator for a paragraph's inline content: the Markdown-marker
+/// strings (`md`, joined/finalized for Markdown/JSON, unchanged) and the
+/// structured runs (`rich`, one per text segment) that drive DocLang.
+#[derive(Default)]
+struct RunBuf {
+    md: Vec<String>,
+    rich: Vec<InlineRun>,
+    /// A `<br>` was just seen: the next same-formatting text segment folds into
+    /// the previous run with a newline (docling keeps `a<br>b` as one text item
+    /// `"a\nb"`, not two runs).
+    merge_next: bool,
+}
+
+impl RunBuf {
+    /// Append a text segment as a structured run, folding it into the previous
+    /// run across a pending `<br>` when the formatting matches.
+    fn push_rich(&mut self, run: InlineRun) {
+        if self.merge_next {
+            self.merge_next = false;
+            if let Some(last) = self.rich.last_mut() {
+                if same_style(last, &run) {
+                    last.text.push('\n');
+                    last.text.push_str(&run.text);
+                    return;
+                }
+            }
+        }
+        self.rich.push(run);
+    }
+}
+
+/// Whether two runs carry identical formatting (ignoring their text).
+fn same_style(a: &InlineRun, b: &InlineRun) -> bool {
+    a.bold == b.bold
+        && a.italic == b.italic
+        && a.underline == b.underline
+        && a.strike == b.strike
+        && a.script == b.script
+        && a.code == b.code
 }
 
 /// Collect the inline content of `elem` as a Markdown string, the docling way:
 /// each text node becomes a "run" carrying its ancestor formatting, and runs are
 /// re-joined with single spaces (so `<a>x</a>.` → `[x](…) .`).
 fn render_inline_fmt(elem: ElementRef, base: Fmt) -> String {
-    let mut runs: Vec<String> = Vec::new();
+    let mut runs = RunBuf::default();
     collect_runs(elem, base, None, &mut runs);
-    finalize(&runs)
+    finalize(&runs.md)
+}
+
+/// Like [`render_inline_fmt`] but also returns the structured runs, for the
+/// paragraph path that emits an `InlineGroup`.
+fn render_inline(elem: ElementRef, base: Fmt) -> (String, Vec<InlineRun>) {
+    let mut runs = RunBuf::default();
+    collect_runs(elem, base, None, &mut runs);
+    (finalize(&runs.md), runs.rich)
 }
 
 /// docling represents a `<br>` with a sentinel that the serializer rewrites.
@@ -598,13 +700,14 @@ fn finalize(runs: &[String]) -> String {
     out.trim_matches('\n').to_string()
 }
 
-fn collect_runs(elem: ElementRef, fmt: Fmt, hyperlink: Option<&str>, runs: &mut Vec<String>) {
+fn collect_runs(elem: ElementRef, fmt: Fmt, hyperlink: Option<&str>, runs: &mut RunBuf) {
     for child in elem.children() {
         match child.value() {
             HtmlNode::Text(text) => {
                 let normalized = normalize_ws(text);
                 if !normalized.is_empty() {
-                    runs.push(serialize_run(&normalized, fmt, hyperlink));
+                    runs.md.push(serialize_run(&normalized, fmt, hyperlink));
+                    runs.push_rich(fmt.to_inline_run(&normalized));
                 }
             }
             HtmlNode::Element(_) => {
@@ -619,7 +722,7 @@ fn collect_runs(elem: ElementRef, fmt: Fmt, hyperlink: Option<&str>, runs: &mut 
 
 /// Process one inline element, applying its own tag (formatting / link / image)
 /// before recursing into its children.
-fn collect_element(elem: ElementRef, fmt: Fmt, hyperlink: Option<&str>, runs: &mut Vec<String>) {
+fn collect_element(elem: ElementRef, fmt: Fmt, hyperlink: Option<&str>, runs: &mut RunBuf) {
     let e = elem.value();
     if is_hidden(e) {
         return;
@@ -645,10 +748,42 @@ fn collect_element(elem: ElementRef, fmt: Fmt, hyperlink: Option<&str>, runs: &m
             runs,
         ),
         "code" | "kbd" | "samp" => collect_runs(elem, Fmt { code: true, ..fmt }, hyperlink, runs),
-        // Underline / sub / sup carry no marker but still split runs.
-        "u" | "ins" | "sub" | "sup" => collect_runs(elem, fmt, hyperlink, runs),
-        // A single <br> becomes a newline within the block (see `finalize`).
-        "br" => runs.push(BR_SENTINEL.to_string()),
+        // Underline and sub/superscript have no Markdown marker; they split runs
+        // (as before) and now also carry their formatting into the structured runs.
+        "u" | "ins" => collect_runs(
+            elem,
+            Fmt {
+                underline: true,
+                ..fmt
+            },
+            hyperlink,
+            runs,
+        ),
+        "sub" => collect_runs(
+            elem,
+            Fmt {
+                script: Script::Sub,
+                ..fmt
+            },
+            hyperlink,
+            runs,
+        ),
+        "sup" => collect_runs(
+            elem,
+            Fmt {
+                script: Script::Super,
+                ..fmt
+            },
+            hyperlink,
+            runs,
+        ),
+        // A single <br> becomes a newline within the block (see `finalize`). In
+        // the structured stream it folds the next same-formatting segment into
+        // the previous run with a newline (docling keeps `a<br>b` as one item).
+        "br" => {
+            runs.md.push(BR_SENTINEL.to_string());
+            runs.merge_next = true;
+        }
         "a" => {
             let href = e.attr("href").map(normalize_url);
             collect_runs(elem, fmt, href.as_deref().or(hyperlink), runs);
@@ -887,7 +1022,10 @@ fn parse_table_cells(
         .into_iter()
         .map(|row| row.into_iter().map(Option::unwrap_or_default).collect())
         .collect();
-    (!rows.is_empty()).then_some(Table { rows })
+    (!rows.is_empty()).then_some(Table {
+        rows,
+        location: None,
+    })
 }
 
 /// A `<tr>`'s direct `<td>`/`<th>` cells (not nested-table cells).

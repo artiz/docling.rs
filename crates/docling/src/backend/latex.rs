@@ -259,6 +259,7 @@ fn emit_list(inner: &str, doc: &mut DoclingDocument) {
                 first_in_list: first,
                 text,
                 level: 0,
+                marker: None,
             });
             first = false;
         }
@@ -288,7 +289,10 @@ fn emit_table(inner: &str, doc: &mut DoclingDocument) {
         );
     }
     if !rows.is_empty() {
-        doc.push(Node::Table(Table { rows }));
+        doc.push(Node::Table(Table {
+            rows,
+            location: None,
+        }));
     }
 }
 
