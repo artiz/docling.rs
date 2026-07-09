@@ -237,6 +237,11 @@ impl DocumentConverter {
         }
 
         let mut document = match source.format {
+            // A legacy APS (Automated Patent System) plain-text patent (`PATN`
+            // first record) is reconstructed verbatim, mirroring docling.
+            InputFormat::Md if crate::backend::uspto::looks_like_aps(source.text()?) => {
+                crate::backend::uspto::convert_aps(&source)?
+            }
             // A text/Markdown-typed file that is actually an XML document (e.g. a
             // JATS article saved with a `.txt` extension) routes to the XML
             // backends by content, mirroring docling's content-based detection.

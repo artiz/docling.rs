@@ -41,7 +41,7 @@ mod odf;
 mod omml;
 mod ooxml;
 mod pptx;
-mod uspto;
+pub(crate) mod uspto;
 mod uspto_entities;
 mod webvtt;
 pub(crate) mod xbrl;
