@@ -185,7 +185,7 @@ impl Parser {
             level,
             marker: None,
             location: None,
-        dclx: None,
+            dclx: None,
         });
         self.fresh_list = false;
     }

@@ -300,7 +300,7 @@ fn add_citation(doc: &mut DoclingDocument, parent_is_list: bool, text: &str) {
             level: 0,
             marker: None,
             location: None,
-        dclx: None,
+            dclx: None,
         });
     } else {
         doc.push(Node::Paragraph {
@@ -370,7 +370,7 @@ fn walk_linear(
                         level: 0,
                         marker: None,
                         location: None,
-                    dclx: None,
+                        dclx: None,
                     });
                 }
                 stop_walk = true;
@@ -652,7 +652,7 @@ fn add_footnote_group(doc: &mut DoclingDocument, node: XmlNode, hlevel: i32) {
             level: 0,
             marker: None,
             location: None,
-        dclx: None,
+            dclx: None,
         });
     }
 }

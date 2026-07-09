@@ -17,9 +17,7 @@
 
 use std::collections::HashMap;
 
-use docling_core::{
-    DoclingDocument, InlineRun, ListItemDclx, Node, PictureImage, Script, Table,
-};
+use docling_core::{DoclingDocument, InlineRun, ListItemDclx, Node, PictureImage, Script, Table};
 use roxmltree::{Document, Node as XmlNode};
 
 use crate::backend::markdown::escape_text;

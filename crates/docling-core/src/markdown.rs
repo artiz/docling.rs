@@ -631,7 +631,7 @@ mod tests {
             level: 0,
             marker: None,
             location: None,
-        dclx: None,
+            dclx: None,
         });
         doc.push(Node::ListItem {
             ordered: false,
@@ -641,7 +641,7 @@ mod tests {
             level: 0,
             marker: None,
             location: None,
-        dclx: None,
+            dclx: None,
         });
         let md = doc.export_to_markdown();
         assert_eq!(md, "# Title\n\nHello world.\n\n- first\n- second\n");
@@ -725,7 +725,7 @@ mod tests {
             level: 0,
             marker: None,
             location: None,
-        dclx: None,
+            dclx: None,
         });
         // Legacy reproduces docling's `\_` escaping byte-for-byte.
         assert_eq!(doc.export_to_markdown(), "# a\\_b\n\nx\\_y\n\n- i\\_j\n");
@@ -784,7 +784,7 @@ mod tests {
             level: 0,
             marker: None,
             location: None,
-        dclx: None,
+            dclx: None,
         });
         doc.push(Node::ListItem {
             ordered: false,
@@ -794,7 +794,7 @@ mod tests {
             level: 0,
             marker: None,
             location: None,
-        dclx: None,
+            dclx: None,
         });
         doc.push(Node::Code {
             language: Some("rust".into()),

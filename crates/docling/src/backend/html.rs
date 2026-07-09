@@ -430,7 +430,7 @@ fn walk_list(list: ElementRef, ordered: bool, nodes: &mut Vec<Node>, level: u8, 
                 // an ordered list with an explicit `start`; otherwise none.
                 marker: has_start.then(|| format!("{number}.")),
                 location: None,
-            dclx: None,
+                dclx: None,
             });
         }
         number += 1;
@@ -528,7 +528,7 @@ fn walk_dl(dl: ElementRef, nodes: &mut Vec<Node>, level: u8, base: Fmt) {
                         level,
                         marker: None,
                         location: None,
-                    dclx: None,
+                        dclx: None,
                     });
                 }
             }
@@ -574,7 +574,7 @@ fn walk_dd(dd: ElementRef, nodes: &mut Vec<Node>, level: u8, base: Fmt) {
             level,
             marker: None,
             location: None,
-        dclx: None,
+            dclx: None,
         });
     }
     for (kind, el) in nested {

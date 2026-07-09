@@ -794,7 +794,10 @@ fn emit_inline_group(out: &mut Out, depth: i32, unwrapped: bool, runs: &[InlineR
             if run.is_plain() {
                 out.push(0, escape_text(&run.text));
             } else if run.formula {
-                out.push(depth, format!("<formula>{}</formula>", escape_text(&run.text)));
+                out.push(
+                    depth,
+                    format!("<formula>{}</formula>", escape_text(&run.text)),
+                );
             } else {
                 emit_styled(out, depth, &style_tags(run), &escape_text(&run.text));
             }
@@ -835,7 +838,10 @@ fn emit_inline_runs_body(out: &mut Out, depth: i32, runs: &[InlineRun]) {
             };
             out.push(d, e);
         } else if run.formula {
-            out.push(depth, format!("<formula>{}</formula>", escape_text(&run.text)));
+            out.push(
+                depth,
+                format!("<formula>{}</formula>", escape_text(&run.text)),
+            );
         } else {
             emit_styled(out, depth, &style_tags(run), &escape_text(&run.text));
         }
@@ -980,7 +986,13 @@ fn emit_located(out: &mut Out, depth: i32, location: &[u16; 4], inner: &Node) {
             emit_text_element(out, depth, "text", "text", text, Some(location));
         }
         Node::Picture { caption, image } => {
-            emit_picture(out, depth, caption.as_deref(), image.as_ref(), Some(location));
+            emit_picture(
+                out,
+                depth,
+                caption.as_deref(),
+                image.as_ref(),
+                Some(location),
+            );
         }
         Node::Table(t) => {
             // The wrapper's location takes precedence over any on the table.
@@ -1067,9 +1079,7 @@ fn emit_list(out: &mut Out, depth: i32, nodes: &[Node], i: &mut usize, level: u8
                     // some formatted items in `<text>`, but that choice comes from
                     // its InlineGroup grouping, which is not recoverable from the
                     // OOXML alone, so we keep the faithful bare form.)
-                    Some(d) if !d.runs.is_empty() => {
-                        emit_inline_runs_body(out, depth + 1, &d.runs)
-                    }
+                    Some(d) if !d.runs.is_empty() => emit_inline_runs_body(out, depth + 1, &d.runs),
                     // A clean-text override (multilevel numbering) re-parses like
                     // a normal item but from the overlay's text.
                     Some(d) => emit_list_item_content(out, depth + 1, &d.text, has_nested),

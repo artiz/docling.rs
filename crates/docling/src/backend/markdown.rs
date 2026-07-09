@@ -482,7 +482,7 @@ fn emit_item(
             level,
             marker: None,
             location: None,
-        dclx: None,
+            dclx: None,
         });
         *emitted = true;
     }

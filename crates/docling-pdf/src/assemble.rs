@@ -1043,7 +1043,7 @@ pub fn assemble_page(
                         level: 0,
                         marker: None,
                         location: None,
-                    dclx: None,
+                        dclx: None,
                     });
                 } else {
                     nodes.push(Node::ListItem {
@@ -1054,7 +1054,7 @@ pub fn assemble_page(
                         level: 0,
                         marker: None,
                         location: None,
-                    dclx: None,
+                        dclx: None,
                     });
                 }
             }

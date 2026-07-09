@@ -49,7 +49,8 @@ pub fn convert_aps(source: &SourceDocument) -> Result<DoclingDocument, Conversio
         })
         .collect();
     if !runs.is_empty() {
-        doc.nodes.push(inline_paragraph_node(String::new(), runs, false));
+        doc.nodes
+            .push(inline_paragraph_node(String::new(), runs, false));
     }
     Ok(doc)
 }
