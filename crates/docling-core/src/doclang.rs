@@ -26,6 +26,9 @@ const INDENT: &str = "  ";
 /// line — `newline` false reproduces that glue.
 struct Out {
     lines: Vec<(i32, String, bool)>,
+    /// Running index for exported image assets (`assets/image_{NNNNNN}_…`),
+    /// incremented per image-bearing picture in document order.
+    pic_index: usize,
 }
 
 impl Out {
@@ -660,7 +663,10 @@ fn emit_cell_text(out: &mut Out, depth: i32, text: &str) {
 
 /// Serialize the node stream to DocLang XML (no trailing newline).
 pub fn export_to_doclang(nodes: &[Node]) -> String {
-    let mut out = Out { lines: Vec::new() };
+    let mut out = Out {
+        lines: Vec::new(),
+        pic_index: 0,
+    };
     out.push(0, "<doclang version=\"0.7\">".to_string());
     let mut i = 0usize;
     emit_nodes(&mut out, 1, nodes, &mut i, 0);
@@ -705,8 +711,8 @@ fn emit_nodes(out: &mut Out, depth: i32, nodes: &[Node], i: &mut usize, level: u
                 emit_table(out, depth, t);
                 *i += 1;
             }
-            Node::Picture { caption, image: _ } => {
-                emit_picture(out, depth, caption.as_deref(), None);
+            Node::Picture { caption, image } => {
+                emit_picture(out, depth, caption.as_deref(), image.as_ref(), None);
                 *i += 1;
             }
             Node::Chart { kind, table } => {
@@ -902,9 +908,26 @@ fn emit_furniture(out: &mut Out, depth: i32, inner: &Node) {
 
 /// Render a `<picture>` — with optional layout provenance and caption. Empty
 /// (no location, no caption) collapses to `<picture></picture>`.
-fn emit_picture(out: &mut Out, depth: i32, caption: Option<&str>, location: Option<&[u16; 4]>) {
+fn emit_picture(
+    out: &mut Out,
+    depth: i32,
+    caption: Option<&str>,
+    image: Option<&crate::document::PictureImage>,
+    location: Option<&[u16; 4]>,
+) {
     let caption = caption.filter(|c| !c.trim().is_empty());
-    if location.is_none() && caption.is_none() {
+    // An image-bearing picture carries a referenced-image `<src>` naming the
+    // exported asset (`assets/image_{index:06}_{sha256}.png`), matching docling's
+    // referenced-image mode. docling re-encodes every image to PNG through PIL, so
+    // the extension is always `.png` and the content hash is over those re-encoded
+    // bytes — not reproducible here, so we hash the source bytes and the
+    // conformance harness canonicalizes the digest before comparing.
+    let src = image.map(|img| {
+        let idx = out.pic_index;
+        out.pic_index += 1;
+        format!("assets/image_{idx:06}_{}.png", sha256_hex(&img.data))
+    });
+    if location.is_none() && caption.is_none() && src.is_none() {
         out.push(depth, "<picture></picture>".to_string());
         return;
     }
@@ -912,10 +935,21 @@ fn emit_picture(out: &mut Out, depth: i32, caption: Option<&str>, location: Opti
     if let Some(loc) = location {
         push_location(out, depth + 1, loc);
     }
+    if let Some(s) = src {
+        out.push(depth + 1, format!("<src uri=\"{}\"/>", attr_escape(&s)));
+    }
     if let Some(c) = caption {
         out.push(depth + 1, format!("<caption>{}</caption>", escape_text(c)));
     }
     out.push(depth, "</picture>".to_string());
+}
+
+/// Lowercase hex SHA-256 of `bytes` (image asset content hash).
+fn sha256_hex(bytes: &[u8]) -> String {
+    use sha2::{Digest, Sha256};
+    let mut h = Sha256::new();
+    h.update(bytes);
+    h.finalize().iter().map(|b| format!("{b:02x}")).collect()
 }
 
 /// Render a [`Node::Located`] wrapper: the inner element with its `<location>`
@@ -933,8 +967,8 @@ fn emit_located(out: &mut Out, depth: i32, location: &[u16; 4], inner: &Node) {
         Node::Paragraph { text } => {
             emit_text_element(out, depth, "text", "text", text, Some(location));
         }
-        Node::Picture { caption, .. } => {
-            emit_picture(out, depth, caption.as_deref(), Some(location));
+        Node::Picture { caption, image } => {
+            emit_picture(out, depth, caption.as_deref(), image.as_ref(), Some(location));
         }
         Node::Table(t) => {
             // The wrapper's location takes precedence over any on the table.
