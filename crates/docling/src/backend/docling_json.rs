@@ -125,6 +125,7 @@ fn text_item(item: &Value, level: u8, doc: &mut DoclingDocument) {
             level,
             marker: None,
             location: None,
+        dclx: None,
         }),
         "caption" => {} // rendered with its parent table/picture
         _ => doc.push(Node::Paragraph { text }), // text, paragraph, formula, footnote, …
@@ -183,6 +184,7 @@ fn list_group(children: &[Value], root: &Value, level: u8, doc: &mut DoclingDocu
             level,
             marker: None,
             location: None,
+        dclx: None,
         });
         first = false;
         if let Some(sub) = item["children"].as_array() {

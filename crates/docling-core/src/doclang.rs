@@ -683,7 +683,18 @@ fn emit_nodes(out: &mut Out, depth: i32, nodes: &[Node], i: &mut usize, level: u
                 *i += 1;
             }
             Node::Paragraph { text } => {
-                emit_text_element(out, depth, "text", "text", text, None);
+                // A standalone display equation (docling's block `FormulaItem`) is
+                // stored as a `$$…$$` paragraph so Markdown/JSON render the fenced
+                // math; DocLang emits it as a `<formula>` element.
+                if let Some(latex) = text
+                    .strip_prefix("$$")
+                    .and_then(|t| t.strip_suffix("$$"))
+                    .filter(|t| !t.is_empty())
+                {
+                    out.push(depth, format!("<formula>{}</formula>", escape_text(latex)));
+                } else {
+                    emit_text_element(out, depth, "text", "text", text, None);
+                }
                 *i += 1;
             }
             Node::Code { language, text } => {
@@ -764,6 +775,8 @@ fn emit_inline_group(out: &mut Out, depth: i32, unwrapped: bool, runs: &[InlineR
         for run in runs {
             if run.is_plain() {
                 out.push(0, escape_text(&run.text));
+            } else if run.formula {
+                out.push(depth, format!("<formula>{}</formula>", escape_text(&run.text)));
             } else {
                 emit_styled(out, depth, &style_tags(run), &escape_text(&run.text));
             }
@@ -784,24 +797,31 @@ fn emit_inline_group(out: &mut Out, depth: i32, unwrapped: bool, runs: &[InlineR
     }
 
     out.push(depth, "<text>".to_string());
+    emit_inline_runs_body(out, depth + 1, runs);
+    out.push(depth, "</text>".to_string());
+}
+
+/// Emit the child runs of an inline group at `depth` (the body shared by a
+/// wrapped `<text>` group and a list item's bare content). A `<content>`-wrapped
+/// run is an *element* child → indented; a bare text/CDATA node sits at column 0
+/// (its record delimiter's leading newline), except the first child, which has
+/// no leading newline and stays indented. Styled/formula runs are elements.
+fn emit_inline_runs_body(out: &mut Out, depth: i32, runs: &[InlineRun]) {
     for (i, run) in runs.iter().enumerate() {
         if run.is_plain() {
             let e = escape_text(&run.text);
-            // A `<content>`-wrapped run is an *element* child → indented like the
-            // styled runs. A bare text/CDATA node sits at column 0 (its record
-            // delimiter's leading newline), except the first child, which has no
-            // leading newline and stays indented.
             let d = if e.starts_with("<content>") || i == 0 {
-                depth + 1
+                depth
             } else {
                 0
             };
             out.push(d, e);
+        } else if run.formula {
+            out.push(depth, format!("<formula>{}</formula>", escape_text(&run.text)));
         } else {
-            emit_styled(out, depth + 1, &style_tags(run), &escape_text(&run.text));
+            emit_styled(out, depth, &style_tags(run), &escape_text(&run.text));
         }
     }
-    out.push(depth, "</text>".to_string());
 }
 
 /// The DocLang wrapping tags for a run, outermost first. docling applies
@@ -923,7 +943,12 @@ fn emit_located(out: &mut Out, depth: i32, location: &[u16; 4], inner: &Node) {
 }
 
 fn emit_list(out: &mut Out, depth: i32, nodes: &[Node], i: &mut usize, level: u8) {
-    let ordered = matches!(nodes[*i], Node::ListItem { ordered: true, .. });
+    // The list kind follows the first item's DocLang overlay when it has one
+    // (a docx multilevel item is a Markdown bullet but a DocLang ordered item).
+    let ordered = match &nodes[*i] {
+        Node::ListItem { ordered, dclx, .. } => dclx.as_ref().map_or(*ordered, |d| d.ordered),
+        _ => false,
+    };
     let open = if ordered {
         "<list class=\"ordered\">"
     } else {
@@ -942,13 +967,18 @@ fn emit_list(out: &mut Out, depth: i32, nodes: &[Node], i: &mut usize, level: u8
                 number,
                 first_in_list,
                 location,
+                dclx,
             } if *l == level => {
+                // The DocLang overlay wins over the flat Markdown fields for the
+                // list kind and marker (see `ListItemDclx`).
+                let eff_ordered = dclx.as_ref().map_or(*o, |d| d.ordered);
+                let eff_marker = dclx.as_ref().map_or(marker.as_ref(), |d| d.marker.as_ref());
                 // A new sibling list at this depth closes this one (the caller
                 // re-opens): the backend flagged a fresh list, the kind flips, or
                 // an ordered run breaks — matching the Markdown serializer.
                 if *i != start
                     && (*first_in_list
-                        || *o != ordered
+                        || eff_ordered != ordered
                         || (ordered && Some(*number) != prev_number.map(|n| n + 1)))
                 {
                     break;
@@ -963,7 +993,7 @@ fn emit_list(out: &mut Out, depth: i32, nodes: &[Node], i: &mut usize, level: u8
                 );
                 // An enumeration marker (HTML/DOCX ordered items) rides inside
                 // the `<ldiv>`; without one the delimiter is self-closing.
-                match marker {
+                match eff_marker {
                     Some(m) => {
                         out.push(depth + 1, "<ldiv>".to_string());
                         out.push(depth + 2, format!("<marker>{}</marker>", escape_text(m)));
@@ -977,7 +1007,20 @@ fn emit_list(out: &mut Out, depth: i32, nodes: &[Node], i: &mut usize, level: u8
                 if let Some(loc) = location {
                     push_location(out, depth + 1, loc);
                 }
-                emit_list_item_content(out, depth + 1, text, has_nested);
+                match dclx {
+                    // Structured DocLang content (equations/formatting): the runs
+                    // render directly — list-item content is bare. (docling wraps
+                    // some formatted items in `<text>`, but that choice comes from
+                    // its InlineGroup grouping, which is not recoverable from the
+                    // OOXML alone, so we keep the faithful bare form.)
+                    Some(d) if !d.runs.is_empty() => {
+                        emit_inline_runs_body(out, depth + 1, &d.runs)
+                    }
+                    // A clean-text override (multilevel numbering) re-parses like
+                    // a normal item but from the overlay's text.
+                    Some(d) => emit_list_item_content(out, depth + 1, &d.text, has_nested),
+                    None => emit_list_item_content(out, depth + 1, text, has_nested),
+                }
                 *i += 1;
             }
             Node::ListItem { level: l, .. } if *l > level => {

@@ -63,6 +63,13 @@ pub enum Node {
         /// item itself (rather than a [`Node::Located`] wrapper) so consecutive
         /// items still group into one `<list>`.
         location: Option<[u16; 4]>,
+        /// DocLang-only override for items whose DocLang form diverges from their
+        /// flat Markdown `text`. Markdown/JSON always render the fields above; the
+        /// DocLang serializer, when this is `Some`, takes the list kind, marker,
+        /// and content from here instead. Used for docx multilevel numbering
+        /// (Markdown shows `- 1.1. x`, DocLang an ordered `<marker>1.1.</marker>`
+        /// with clean text) and inline equations/formatting in list items.
+        dclx: Option<ListItemDclx>,
     },
     /// A fenced code block.
     Code {
@@ -156,6 +163,22 @@ pub struct InlineRun {
     pub strike: bool,
     pub script: Script,
     pub code: bool,
+    /// An inline equation (`text` holds LaTeX): DocLang renders `<formula>…`,
+    /// Markdown/JSON keep the `$…$` already baked into the group's `md_text`.
+    pub formula: bool,
+}
+
+/// DocLang-only content for a [`Node::ListItem`] whose DocLang form differs from
+/// its flat Markdown `text` (see [`Node::ListItem::dclx`]). `ordered` picks the
+/// enclosing `<list>` kind, `marker` the `<ldiv><marker>`; content is `runs`
+/// (structured equations/formatting) when non-empty, else `text` re-parsed for
+/// inline markers.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct ListItemDclx {
+    pub ordered: bool,
+    pub marker: Option<String>,
+    pub text: String,
+    pub runs: Vec<InlineRun>,
 }
 
 impl InlineRun {
@@ -166,6 +189,7 @@ impl InlineRun {
             && !self.underline
             && !self.strike
             && !self.code
+            && !self.formula
             && self.script == Script::Baseline
     }
 }

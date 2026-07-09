@@ -682,6 +682,7 @@ mod tests {
             level: 0,
             marker: None,
             location: None,
+        dclx: None,
         });
         doc.push(Node::ListItem {
             ordered: false,
@@ -691,6 +692,7 @@ mod tests {
             level: 0,
             marker: None,
             location: None,
+        dclx: None,
         });
         doc.push(Node::Table(Table {
             rows: vec![vec!["A".into(), "B".into()]],
