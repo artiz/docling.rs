@@ -228,6 +228,13 @@ pub struct Table {
     /// `rows` still carries the full text grid (span text replicated) for
     /// Markdown/JSON; DocLang uses this overlay to emit `<ched/>`/`<lcel/>`.
     pub structure: Option<TableStructure>,
+    /// Optional per-cell block content, parallel to `rows`. A *rich* cell (an
+    /// ODF cell holding a list, several paragraphs, or a nested table) carries
+    /// its DocLang blocks here; the DocLang serializer emits them after the
+    /// cell token instead of the flat `rows` text. Markdown/JSON ignore this
+    /// and render `rows`, so their output is unchanged. `None` (or an empty
+    /// `Vec` for a given cell) → the flat text is used everywhere.
+    pub cell_blocks: Option<Vec<Vec<Vec<Node>>>>,
 }
 
 /// OTSL structure overlay for a [`Table`], parallel to [`Table::rows`].

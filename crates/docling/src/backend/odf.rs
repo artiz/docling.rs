@@ -14,7 +14,9 @@ use crate::backend::ooxml::Package;
 use crate::backend::DeclarativeBackend;
 use crate::error::ConversionError;
 use crate::source::SourceDocument;
-use docling_core::{DoclingDocument, Node, Table};
+use docling_core::{
+    inline_paragraph_node, DoclingDocument, InlineRun, Node, Script, Table, TableStructure,
+};
 
 pub struct OdfBackend;
 
@@ -25,6 +27,27 @@ struct Fmt {
     strike: bool,
     underline: bool,
     script: u8, // 0 none, 1 sub, 2 super
+}
+
+impl Fmt {
+    /// The structured [`InlineRun`] for a text segment under this formatting —
+    /// the ODF analogue of the DOCX backend's `to_inline_run` (underline and
+    /// sub/superscript have no Markdown marker, so they only survive here).
+    fn to_inline_run(self, text: &str) -> InlineRun {
+        InlineRun {
+            text: text.to_string(),
+            bold: self.bold,
+            italic: self.italic,
+            underline: self.underline,
+            strike: self.strike,
+            script: match self.script {
+                1 => Script::Sub,
+                2 => Script::Super,
+                _ => Script::Baseline,
+            },
+            code: false,
+        }
+    }
 }
 
 #[derive(Default, Clone)]
@@ -38,11 +61,14 @@ struct StyleInfo {
     script: Option<u8>,
 }
 
-/// One list level's rendering: bullet vs numbered, and its `start-value`.
-#[derive(Default, Clone, Copy)]
+/// One list level's rendering: bullet vs numbered, its `start-value`, and the
+/// prefix/suffix wrapping an enumerated marker (`num-prefix`/`num-suffix`).
+#[derive(Default, Clone)]
 struct OdfLevel {
     numbered: bool,
     start: i64,
+    prefix: String,
+    suffix: String,
 }
 
 /// List style name → level (1-based) → level rendering.
@@ -107,7 +133,17 @@ fn parse_styles(content: &Document, styles: Option<&Document>) -> Styles {
                                 .and_then(|v| v.parse().ok())
                                 .map(|n: i64| n.max(1))
                                 .unwrap_or(1);
-                            levels.insert(level, OdfLevel { numbered, start });
+                            let prefix = attr(lv, "num-prefix").unwrap_or("").to_string();
+                            let suffix = attr(lv, "num-suffix").unwrap_or("").to_string();
+                            levels.insert(
+                                level,
+                                OdfLevel {
+                                    numbered,
+                                    start,
+                                    prefix,
+                                    suffix,
+                                },
+                            );
                         }
                         lists.insert(name.to_string(), levels);
                     }
@@ -205,6 +241,7 @@ fn paragraph_style_names(styles: &Styles, name: Option<&str>) -> Vec<String> {
 // ---------------------------------------------------------------- text runs
 
 /// One formatted run of text.
+#[derive(Clone)]
 struct Run {
     text: String,
     fmt: Fmt,
@@ -274,6 +311,35 @@ fn runs_to_text(mut runs: Vec<Run>) -> String {
         // (e.g. a leading `<text:line-break/>`), keeping only internal breaks.
         .trim()
         .to_string()
+}
+
+/// The structured [`InlineRun`]s for a paragraph — one per format group, the
+/// DocLang-only counterpart of [`runs_to_text`]. Adjacent same-format runs are
+/// merged (raw text kept, so inter-run spacing survives as docling emits it),
+/// then the whole paragraph is stripped at its two ends (docling's
+/// `_normalize_odf_text_runs`). Empty groups drop out.
+fn runs_to_inline(runs: Vec<Run>) -> Vec<InlineRun> {
+    let mut merged: Vec<Run> = Vec::new();
+    for r in runs {
+        if let Some(last) = merged.last_mut() {
+            if last.fmt == r.fmt {
+                last.text.push_str(&r.text);
+                continue;
+            }
+        }
+        merged.push(r);
+    }
+    if let Some(first) = merged.first_mut() {
+        first.text = first.text.trim_start().to_string();
+    }
+    if let Some(last) = merged.last_mut() {
+        last.text = last.text.trim_end().to_string();
+    }
+    merged
+        .into_iter()
+        .filter(|r| !r.text.is_empty())
+        .map(|r| r.fmt.to_inline_run(&r.text))
+        .collect()
 }
 
 fn serialize_run(text: &str, fmt: Fmt) -> String {
@@ -351,7 +417,7 @@ fn handle_block(
             let names = paragraph_style_names(styles, attr(el, "style-name"));
             let mut runs = Vec::new();
             collect_runs(el, styles, Fmt::default(), &mut runs);
-            let text = runs_to_text(runs);
+            let text = runs_to_text(runs.clone());
             if text.is_empty() {
                 return;
             }
@@ -360,7 +426,10 @@ fn handle_block(
             } else if names.iter().any(|n| n == "Subtitle") {
                 doc.push(Node::Heading { level: 2, text });
             } else {
-                doc.push(Node::Paragraph { text });
+                // Styled `<text:span>` runs → a rich `InlineGroup` (Markdown/JSON
+                // still render `text`, so their output is unchanged); a plain
+                // paragraph collapses back to `Node::Paragraph`.
+                doc.push(inline_paragraph_node(text, runs_to_inline(runs), false));
             }
         }
         "list" => {
@@ -394,12 +463,16 @@ fn emit_paragraph_images(el: XmlNode, doc: &mut DoclingDocument) {
 }
 
 /// Continuation state carried across sibling `<text:list>` elements — docling's
-/// `_OdfListState`.
-#[derive(Clone, Copy)]
+/// `_OdfListState`. Carries the marker affixes so a continued list keeps the
+/// original level's `num-prefix`/`num-suffix` even when its own `<text:list>`
+/// element resolves to a bare style.
+#[derive(Clone)]
 struct ListCont {
     enumerated: bool,
     counter: i64,
     has_last: bool,
+    prefix: String,
+    suffix: String,
 }
 
 /// A list's item elements (`<text:list-item>` / `<text:list-header>`).
@@ -486,6 +559,16 @@ fn level_start(styles: &Styles, list: XmlNode, level: i64) -> i64 {
         .unwrap_or(1)
 }
 
+/// A level's `num-prefix`/`num-suffix` — the affixes wrapping an enumerated
+/// marker (e.g. `"" / "."` → `1.`).
+fn level_affixes(styles: &Styles, list: XmlNode, level: i64) -> (String, String) {
+    attr(list, "style-name")
+        .and_then(|name| styles.lists.get(name))
+        .and_then(|levels| levels.get(&level))
+        .map(|lv| (lv.prefix.clone(), lv.suffix.clone()))
+        .unwrap_or_default()
+}
+
 /// Emit an ODF list as flat [`Node::ListItem`]s — a port of docling's
 /// `_add_odf_list`. `depth` is the Markdown nesting level for items of this list;
 /// `style_level` (1-based) drives style lookups; empty items collapse (their
@@ -504,7 +587,7 @@ fn add_odf_list(
         return None;
     }
     let style_enum = level_is_enumerated(styles, list, style_level, enumerated_fallback);
-    let should_continue = continued.map(|c| c.has_last).unwrap_or(false)
+    let should_continue = continued.as_ref().map(|c| c.has_last).unwrap_or(false)
         && list_starts_with_empty_nested(list, styles);
 
     // A list with no direct text of its own (and not continuing) is transparent:
@@ -519,9 +602,15 @@ fn add_odf_list(
         return None;
     }
 
-    let (mut counter, current_enum) = match (should_continue, continued) {
+    let (mut counter, current_enum) = match (should_continue, &continued) {
         (true, Some(c)) => (c.counter, c.enumerated),
         _ => (level_start(styles, list, style_level) - 1, style_enum),
+    };
+    // Enumerated-marker affixes: reuse the continued list's so numbering that
+    // spans sibling `<text:list>`s keeps one suffix; else this level's own.
+    let (prefix, suffix) = match (should_continue, &continued) {
+        (true, Some(c)) => (c.prefix.clone(), c.suffix.clone()),
+        _ => level_affixes(styles, list, style_level),
     };
     let mut has_last = should_continue;
 
@@ -550,10 +639,13 @@ fn add_odf_list(
             continue;
         }
         counter += 1;
-        let (ordered, number) = if current_enum {
-            (true, counter.max(0) as u64)
+        let (ordered, number, marker) = if current_enum {
+            let n = counter.max(0) as u64;
+            // docling renders an enumerated marker inside the `<ldiv>`:
+            // `<marker>{prefix}{n}{suffix}</marker>` (e.g. `1.`).
+            (true, n, Some(format!("{prefix}{n}{suffix}")))
         } else {
-            (false, 0)
+            (false, 0, None)
         };
         doc.push(Node::ListItem {
             ordered,
@@ -561,7 +653,7 @@ fn add_odf_list(
             first_in_list: false,
             text,
             level: depth,
-            marker: None,
+            marker,
             location: None,
         });
         has_last = true;
@@ -582,6 +674,8 @@ fn add_odf_list(
         enumerated: current_enum,
         counter,
         has_last,
+        prefix,
+        suffix,
     })
 }
 
@@ -626,7 +720,20 @@ fn parse_table(table: XmlNode, styles: &Styles) -> Option<Table> {
         return None;
     }
 
-    let mut grid = vec![vec![String::new(); num_cols]; tr_rows.len()];
+    // The text grid plus the OTSL span overlay. ODF marks a span on its anchor
+    // (`number-columns-spanned`/`number-rows-spanned`) and emits an explicit
+    // `covered-table-cell` at every covered position; we mark the anchor's
+    // rectangle so a covered cell becomes `<lcel/>` (horizontal), `<ucel/>`
+    // (vertical) or `<xcel/>` (both). Text stays on the anchor only, so
+    // Markdown/JSON are unchanged.
+    let nrows = tr_rows.len();
+    let mut grid = vec![vec![String::new(); num_cols]; nrows];
+    let mut col_cont = vec![vec![false; num_cols]; nrows];
+    let mut row_cont = vec![vec![false; num_cols]; nrows];
+    // Parallel per-cell block content for rich cells (lists / multiple
+    // paragraphs / nested tables). Empty for plain cells.
+    let mut blocks: Vec<Vec<Vec<Node>>> = vec![vec![Vec::new(); num_cols]; nrows];
+    let mut any_rich = false;
     for (ri, tr) in tr_rows.iter().enumerate() {
         let mut ci = 0usize;
         for tc in tr
@@ -634,31 +741,73 @@ fn parse_table(table: XmlNode, styles: &Styles) -> Option<Table> {
             .filter(|c| c.has_tag_name("table-cell") || c.has_tag_name("covered-table-cell"))
         {
             let reps = repeat(tc, "number-columns-repeated");
-            let text = if tc.has_tag_name("covered-table-cell") {
-                String::new()
-            } else {
-                cell_text(tc, styles)
-            };
+            if tc.has_tag_name("covered-table-cell") {
+                // A covered position: its continuation kind is set by the anchor
+                // whose rectangle reaches it; here we only advance the column.
+                ci = (ci + reps).min(num_cols);
+                continue;
+            }
+            let text = cell_text(tc, styles);
+            let cell_nodes = cell_blocks_of(tc, styles);
+            any_rich |= !cell_nodes.is_empty();
+            let cspan = repeat(tc, "number-columns-spanned");
+            let rspan = repeat(tc, "number-rows-spanned");
             for _ in 0..reps {
                 if ci >= num_cols {
                     break;
                 }
                 grid[ri][ci] = text.clone();
+                blocks[ri][ci] = cell_nodes.clone();
+                let r_end = (ri + rspan).min(nrows);
+                let c_end = (ci + cspan).min(num_cols);
+                for rr in ri..r_end {
+                    for cc in ci..c_end {
+                        if rr == ri && cc == ci {
+                            continue;
+                        }
+                        col_cont[rr][cc] |= cc > ci;
+                        row_cont[rr][cc] |= rr > ri;
+                    }
+                }
                 ci += 1;
             }
         }
     }
 
-    trim_grid_to_bounds(grid).map(|rows| Table {
+    let (min_r, max_r, min_c, max_c) = data_bounds(&grid)?;
+    let slice = |g: Vec<Vec<bool>>| -> Vec<Vec<bool>> {
+        g[min_r..=max_r]
+            .iter()
+            .map(|row| row[min_c..=max_c].to_vec())
+            .collect()
+    };
+    let rows: Vec<Vec<String>> = grid[min_r..=max_r]
+        .iter()
+        .map(|row| row[min_c..=max_c].to_vec())
+        .collect();
+    // docling marks the first (trimmed) row of an ODF table as the header band.
+    let header_row = (0..rows.len()).map(|r| r == 0).collect();
+    let cell_blocks = any_rich.then(|| {
+        blocks[min_r..=max_r]
+            .iter()
+            .map(|row| row[min_c..=max_c].to_vec())
+            .collect()
+    });
+    Some(Table {
         rows,
         location: None,
-        structure: None,
+        structure: Some(TableStructure {
+            header_row,
+            col_continuation: slice(col_cont),
+            row_continuation: slice(row_cont),
+        }),
+        cell_blocks,
     })
 }
 
-/// Trim a table grid to the smallest rectangle covering all non-empty cells
-/// (docling's `_find_true_data_bounds`); returns `None` when the grid is empty.
-fn trim_grid_to_bounds(grid: Vec<Vec<String>>) -> Option<Vec<Vec<String>>> {
+/// The smallest rectangle covering all non-empty cells as `(min_r, max_r,
+/// min_c, max_c)` — docling's `_find_true_data_bounds`; `None` when empty.
+fn data_bounds(grid: &[Vec<String>]) -> Option<(usize, usize, usize, usize)> {
     let non_empty = |r: &Vec<String>| r.iter().any(|c| !c.trim().is_empty());
     let (min_r, max_r) = (
         grid.iter().position(non_empty)?,
@@ -668,12 +817,7 @@ fn trim_grid_to_bounds(grid: Vec<Vec<String>>) -> Option<Vec<Vec<String>>> {
     let col_used = |c: usize| (min_r..=max_r).any(|r| !grid[r][c].trim().is_empty());
     let min_c = (0..ncols).find(|&c| col_used(c))?;
     let max_c = (0..ncols).rposition(col_used)?;
-    Some(
-        grid[min_r..=max_r]
-            .iter()
-            .map(|row| row[min_c..=max_c].to_vec())
-            .collect(),
-    )
+    Some((min_r, max_r, min_c, max_c))
 }
 
 /// A table cell's Markdown. A *rich* cell (lists, multiple paragraphs, nested
@@ -686,6 +830,20 @@ fn cell_text(tc: XmlNode, styles: &Styles) -> String {
     } else {
         plain_cell_text(tc)
     }
+}
+
+/// A *rich* cell's DocLang block content — the structured counterpart of
+/// [`rich_cell_markdown`], built by walking the cell's children exactly like a
+/// document body (so lists, headings, paragraphs with inline runs and nested
+/// tables all render through the same code). Empty for a plain cell, whose flat
+/// [`cell_text`] the serializer uses instead. Markdown/JSON never consult this.
+fn cell_blocks_of(tc: XmlNode, styles: &Styles) -> Vec<Node> {
+    if !is_rich_cell(tc, styles) {
+        return Vec::new();
+    }
+    let mut sub = DoclingDocument::new("");
+    walk_blocks(tc.children().filter(XmlNode::is_element), styles, &mut sub);
+    sub.nodes
 }
 
 /// Whether a cell must render as rich block content — docling's
@@ -907,6 +1065,7 @@ fn add_ods_sheet(table: XmlNode, doc: &mut DoclingDocument) {
                 rows,
                 location: None,
                 structure: None,
+                cell_blocks: None,
             }));
         }
     }
