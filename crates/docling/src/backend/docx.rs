@@ -305,10 +305,7 @@ fn handle_paragraph_inner(
             .and_then(|n| attr(n, "val"))
             == Some("1");
         let text = clean_checkbox_symbols(&paragraph_markdown(p, ctx));
-        let marker = if checked { "- [x] " } else { "- [ ] " };
-        doc.push(Node::Paragraph {
-            text: format!("{marker}{text}"),
-        });
+        doc.push(Node::CheckboxItem { checked, text });
         state.list_run_base = None;
         return;
     }

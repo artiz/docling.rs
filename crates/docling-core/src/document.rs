@@ -39,6 +39,10 @@ pub enum Node {
     Heading { level: u8, text: String },
     /// A run of body text.
     Paragraph { text: String },
+    /// A form checkbox (docling's `checkbox_selected`/`checkbox_unselected`): its
+    /// clean label `text` with the checked state. DocLang emits a `<checkbox>`
+    /// element head; Markdown/JSON render the task-list form (`- [x] `/`- [ ] `).
+    CheckboxItem { checked: bool, text: String },
     /// A single list item at the given nesting `level` (0 = top). For ordered
     /// items, `number` is the display number (honoring the list's `start`); it
     /// is unused for unordered items. `first_in_list` marks the first item of a

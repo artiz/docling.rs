@@ -342,6 +342,10 @@ fn render_one(node: &Node, blocks: &mut Vec<String>, ctx: &mut Ctx) {
         // nothing to Markdown — only DocLang/JSON keep it.
         Node::Paragraph { text } if text.is_empty() => {}
         Node::Paragraph { text } => blocks.push(strict_text(text, ctx.strict)),
+        Node::CheckboxItem { checked, text } => {
+            let mark = if *checked { "- [x] " } else { "- [ ] " };
+            blocks.push(strict_text(&format!("{mark}{text}"), ctx.strict));
+        }
         Node::Code { language, text } => {
             // Legacy docling never emits a language on the fence; strict keeps it.
             let lang = match language {

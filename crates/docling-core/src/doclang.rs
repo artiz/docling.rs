@@ -703,6 +703,18 @@ fn emit_nodes(out: &mut Out, depth: i32, nodes: &[Node], i: &mut usize, level: u
                 }
                 *i += 1;
             }
+            Node::CheckboxItem { checked, text } => {
+                // A `<text>` with a `<checkbox class="selected|unselected"/>` head
+                // element and the label text child (block form).
+                let class = if *checked { "selected" } else { "unselected" };
+                out.push(depth, "<text>".to_string());
+                out.push(depth + 1, format!("<checkbox class=\"{class}\"/>"));
+                if !text.is_empty() {
+                    out.push(depth + 1, escape_text(text));
+                }
+                out.push(depth, "</text>".to_string());
+                *i += 1;
+            }
             Node::Code { language, text } => {
                 emit_code(out, depth, language.as_deref(), text);
                 *i += 1;

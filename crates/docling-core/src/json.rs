@@ -177,6 +177,12 @@ impl Builder {
                     _ => Some(self.add_text("text", text, parent, json!({}))),
                 }
             }
+            Node::CheckboxItem { checked, text } => {
+                // JSON keeps the task-list form as a plain text item (the
+                // `checkbox_selected`/`checkbox_unselected` label is DocLang-only).
+                let mark = if *checked { "- [x] " } else { "- [ ] " };
+                Some(self.add_text("text", &format!("{mark}{text}"), parent, json!({})))
+            }
             Node::Code { language, text } => Some(self.add_code(text, language.as_deref(), parent)),
             Node::Table(t) => Some(self.add_table(t, parent)),
             Node::Picture { caption, image } => {
