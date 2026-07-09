@@ -2,8 +2,9 @@
 //! `us-patent-application`/`us-patent-grant` (v4x) path of docling's
 //! `PatentUsptoDocumentBackend`. Emits the invention title (#), the ABSTRACT
 //! (###) + text, the description's `<heading>`s (by their `level`) and `<p>`s,
-//! and the CLAIMS. Older schemas (pap-v1, the legacy APS text format) and
-//! tables/figures/maths are out of scope for the core.
+//! and the CLAIMS, including CALS `<table>`s (ported from docling's `XmlTable`).
+//! Older schemas (pap-v15, PATDOC, the legacy APS text format) and maths are
+//! out of scope for the core.
 
 use std::borrow::Cow;
 
@@ -14,7 +15,7 @@ use crate::backend::uspto_entities::NAMED_ENTITIES;
 use crate::backend::DeclarativeBackend;
 use crate::error::ConversionError;
 use crate::source::SourceDocument;
-use docling_core::{DoclingDocument, Node};
+use docling_core::{DoclingDocument, Node, Table, TableStructure};
 
 pub struct UsptoBackend;
 
@@ -101,17 +102,267 @@ fn walk_description(node: XmlNode, doc: &mut DoclingDocument) {
                 }
             }
             "p" => {
-                let t = node_text(child);
-                if !t.is_empty() {
-                    doc.push(Node::Paragraph {
-                        text: escape_text(&t),
-                    });
+                // A `<p>` may wrap `<tables>` (USPTO nests them inside a
+                // paragraph). docling adds a table at each `<table>` position and
+                // the wrapping paragraph emits no text of its own.
+                if child.descendants().any(|n| n.has_tag_name("table")) {
+                    push_tables(child, doc);
+                } else {
+                    let t = node_text(child);
+                    if !t.is_empty() {
+                        doc.push(Node::Paragraph {
+                            text: escape_text(&t),
+                        });
+                    }
                 }
             }
-            "maths" | "tables" | "table" => {}
+            "maths" => {}
+            "tables" | "table" => push_tables(child, doc),
             _ => walk_description(child, doc),
         }
     }
+}
+
+// ---------------------------------------------------------------------------
+// CALS table parsing — a port of docling's `XmlTable._parse_table` /
+// `_create_tg_range`. USPTO tables are CALS (`<tgroup>/<colspec>/<thead>/
+// <tbody>/<row>/<entry>`); several `<tgroup>`s with differing column counts are
+// merged into one grid `ncols_max` wide, spanned cell text is replicated across
+// the physical columns, and empty rows are dropped. The DocLang OTSL overlay
+// (`TableStructure`) records header rows and horizontal-span continuations.
+// ---------------------------------------------------------------------------
+
+/// Emit a [`Node::Table`] for every `<table>` element in `node`'s subtree
+/// (or `node` itself), in document order — mirroring docling, which records one
+/// table per `<table>` tag it encounters.
+fn push_tables(node: XmlNode, doc: &mut DoclingDocument) {
+    let tables: Vec<XmlNode> = if node.has_tag_name("table") {
+        vec![node]
+    } else {
+        node.descendants()
+            .filter(|n| n.has_tag_name("table"))
+            .collect()
+    };
+    for tn in tables {
+        if let Some(t) = parse_table(tn) {
+            doc.push(Node::Table(t));
+        }
+    }
+}
+
+/// Parse a CALS `<colspec>` width (`"42pt"`, `"24.47mm"`) to a number.
+fn parse_colwidth(s: &str) -> f64 {
+    let cleaned: String = s
+        .chars()
+        .filter(|c| c.is_ascii_digit() || *c == '.' || *c == '-')
+        .collect();
+    cleaned.parse::<f64>().unwrap_or(0.0)
+}
+
+/// Python `str.isnumeric()` for the ASCII digit case we care about.
+fn as_index(s: &str) -> Option<i64> {
+    if !s.is_empty() && s.bytes().all(|b| b.is_ascii_digit()) {
+        s.parse::<i64>().ok()
+    } else {
+        None
+    }
+}
+
+fn sorted_unique(mut v: Vec<f64>) -> Vec<f64> {
+    v.sort_by(|a, b| a.partial_cmp(b).unwrap());
+    v.dedup();
+    v
+}
+
+/// Build the per-tgroup unified column range mapping (`cell_offst`).
+/// `tgs[itg]` = that tgroup's colspec widths. Returns one `cell_offst` vector
+/// per tgroup, or `None` if the offsets are inconsistent (docling bails to an
+/// empty table).
+fn create_tg_range(tgs: &[Vec<f64>]) -> Option<Vec<Vec<i64>>> {
+    if tgs.is_empty() {
+        return Some(Vec::new());
+    }
+    // Cumulative column boundary offsets per tgroup (len = ncols + 1).
+    let mut offsets: Vec<Vec<f64>> = Vec::with_capacity(tgs.len());
+    for cws in tgs {
+        let mut off = Vec::with_capacity(cws.len() + 1);
+        let mut o = 0.0;
+        for &cw in cws {
+            off.push(o);
+            o += cw;
+        }
+        off.push(o);
+        offsets.push(off);
+    }
+    // Unified boundary set across all tgroups; zero-width columns are injected
+    // back as duplicate boundaries (docling does not de-dupe that final sort).
+    let mut min_off: Vec<f64> = offsets[0].clone();
+    let mut offset_w0: Vec<f64> = Vec::new();
+    for (itg, cws) in tgs.iter().enumerate() {
+        for (ic, &cw) in cws.iter().enumerate() {
+            if cw == 0.0 {
+                offset_w0.push(offsets[itg][ic]);
+            }
+        }
+        let union: Vec<f64> = offsets[itg].iter().chain(min_off.iter()).copied().collect();
+        min_off = sorted_unique(union);
+    }
+    offset_w0 = sorted_unique(offset_w0);
+    let mut combined: Vec<f64> = min_off.iter().chain(offset_w0.iter()).copied().collect();
+    combined.sort_by(|a, b| a.partial_cmp(b).unwrap());
+    min_off = combined;
+
+    // Map each tgroup's columns onto the unified grid.
+    let mut result: Vec<Vec<i64>> = Vec::with_capacity(tgs.len());
+    for col_offset in &offsets {
+        let mut cell_offst: Vec<i64> = vec![0];
+        let mut i = 1usize;
+        let mut range_: i64 = 1;
+        for min_i in 1..min_off.len() {
+            let min_offst = min_off[min_i];
+            let offst = *col_offset.get(i)?;
+            if min_offst == offst {
+                if col_offset.len() == i + 1 && min_off.len() > min_i + 1 {
+                    range_ += 1;
+                } else {
+                    cell_offst.push(cell_offst[cell_offst.len() - 1] + range_);
+                    range_ = 1;
+                    i += 1;
+                }
+            } else if min_offst < offst {
+                range_ += 1;
+            } else {
+                return None;
+            }
+        }
+        result.push(cell_offst);
+    }
+    Some(result)
+}
+
+/// A cell's plain text — docling uses BeautifulSoup `get_text().strip()` for
+/// table entries (no super/subscript translation, unlike paragraph text).
+fn cell_text(node: XmlNode) -> String {
+    let mut s = String::new();
+    for d in node.descendants() {
+        if d.is_text() {
+            if let Some(t) = d.text() {
+                s.push_str(t);
+            }
+        }
+    }
+    s.trim().to_string()
+}
+
+/// Port of `XmlTable._parse_table`: CALS `<table>` → a [`Table`] with an OTSL
+/// [`TableStructure`] overlay. Returns `None` for a broken/empty table.
+fn parse_table(table: XmlNode) -> Option<Table> {
+    let tgroups: Vec<XmlNode> = table
+        .children()
+        .filter(|n| n.has_tag_name("tgroup"))
+        .collect();
+    let tgs_cw: Vec<Vec<f64>> = tgroups
+        .iter()
+        .map(|tg| {
+            tg.children()
+                .filter(|n| n.has_tag_name("colspec"))
+                .map(|cs| cs.attribute("colwidth").map(parse_colwidth).unwrap_or(0.0))
+                .collect()
+        })
+        .collect();
+
+    let tgs_range = create_tg_range(&tgs_cw)?;
+    if tgs_range.is_empty() {
+        return None;
+    }
+    let ncols_max = tgs_cw.iter().map(Vec::len).max().unwrap_or(0);
+    if ncols_max == 0 {
+        return None;
+    }
+
+    let mut rows: Vec<Vec<String>> = Vec::new();
+    let mut header_row: Vec<bool> = Vec::new();
+    let mut col_continuation: Vec<Vec<bool>> = Vec::new();
+
+    for (itg, tg) in tgroups.iter().enumerate() {
+        let cell_offst = &tgs_range[itg];
+        let row_nodes: Vec<XmlNode> = tg
+            .descendants()
+            .filter(|n| n.has_tag_name("row") || n.has_tag_name("tr"))
+            .collect();
+        for row_sec in row_nodes {
+            let is_header = row_sec.parent().is_some_and(|p| p.has_tag_name("thead"));
+            let entries: Vec<XmlNode> = row_sec
+                .children()
+                .filter(|n| n.has_tag_name("entry") || n.has_tag_name("td"))
+                .collect();
+
+            let mut row_text: Vec<String> = Vec::new();
+            let mut row_cont: Vec<bool> = Vec::new();
+            let mut ncols = 0usize;
+            let mut is_row_empty = true;
+            let mut wrong_nbr_cols = false;
+
+            for (ientry, entry) in entries.iter().enumerate() {
+                let text = cell_text(*entry);
+                let start = entry
+                    .attribute("namest")
+                    .and_then(as_index)
+                    .unwrap_or(ientry as i64 + 1);
+                let (end, shift) = match entry.attribute("nameend").and_then(as_index) {
+                    Some(e) => (e, 0),
+                    None => (ientry as i64 + 2, 1),
+                };
+                if end > cell_offst.len() as i64 || start < 1 {
+                    wrong_nbr_cols = true;
+                    break;
+                }
+                let r0 = cell_offst[(start - 1) as usize];
+                let r1 = cell_offst[(end - 1) as usize] - shift;
+                if !text.is_empty() {
+                    is_row_empty = false;
+                }
+                let mut irep = r0;
+                let mut first = true;
+                while irep <= r1 {
+                    ncols += 1;
+                    row_text.push(text.clone());
+                    row_cont.push(!first);
+                    first = false;
+                    irep += 1;
+                }
+            }
+
+            if wrong_nbr_cols {
+                row_text.clear();
+                row_cont.clear();
+                ncols = 0;
+            }
+            while ncols < ncols_max {
+                row_text.push(String::new());
+                row_cont.push(false);
+                ncols += 1;
+            }
+
+            if !is_row_empty {
+                rows.push(row_text);
+                col_continuation.push(row_cont);
+                header_row.push(is_header);
+            }
+        }
+    }
+
+    if rows.is_empty() {
+        return None;
+    }
+    Some(Table {
+        rows,
+        location: None,
+        structure: Some(TableStructure {
+            header_row,
+            col_continuation,
+        }),
+    })
 }
 
 /// Each `<p>` descendant's normalized text.
@@ -336,6 +587,70 @@ mod tests {
         let src = SourceDocument::from_bytes("p", InputFormat::XmlUspto, xml.as_bytes().to_vec());
         let md = UsptoBackend.convert(&src).unwrap().export_to_markdown();
         assert!(md.contains("R¹—CO"), "got:\n{md}");
+    }
+
+    fn dclx_of(xml: &str) -> String {
+        let src = SourceDocument::from_bytes("p", InputFormat::XmlUspto, xml.as_bytes().to_vec());
+        UsptoBackend.convert(&src).unwrap().export_to_doclang()
+    }
+
+    #[test]
+    fn cals_table_spans_and_header() {
+        // A `<p>`-wrapped CALS table: `namest`/`nameend` span → `<ched/>`+`<lcel/>`,
+        // thead → header, empty `<entry/>` → `<ecel/>`, empty rows dropped.
+        let xml = r#"<us-patent-application><description><p><tables><table>
+            <tgroup cols="3">
+              <colspec colname="1" colwidth="40pt"/>
+              <colspec colname="2" colwidth="40pt"/>
+              <colspec colname="3" colwidth="40pt"/>
+              <thead>
+                <row><entry namest="1" nameend="3">Title</entry></row>
+              </thead>
+              <tbody>
+                <row><entry>a</entry><entry>b</entry><entry>c</entry></row>
+              </tbody>
+            </tgroup>
+          </table></tables></p></description></us-patent-application>"#;
+        let dclx = dclx_of(xml);
+        // Collapse indentation to a token stream for a layout-robust check.
+        let toks: Vec<&str> = dclx.split_whitespace().collect();
+        let joined = toks.join(" ");
+        assert!(
+            joined.contains("<ched/> Title <lcel/> <lcel/> <nl/>"),
+            "spanning header not <ched/>+<lcel/>×2:\n{dclx}"
+        );
+        assert!(
+            joined.contains("<fcel/> a <fcel/> b <fcel/> c <nl/>"),
+            "data row wrong:\n{dclx}"
+        );
+    }
+
+    #[test]
+    fn cals_table_drops_empty_rows_and_reads_scripts_as_plain() {
+        // An all-empty rule row is dropped; sup/sub in a cell stay plain text
+        // (docling uses get_text() for cells, no unicode script translation).
+        let xml = r#"<us-patent-application><description><p><tables><table>
+            <tgroup cols="2">
+              <colspec colname="1" colwidth="40pt"/>
+              <colspec colname="2" colwidth="40pt"/>
+              <tbody>
+                <row><entry/><entry/></row>
+                <row><entry>m<sup>2</sup></entry><entry>x</entry></row>
+              </tbody>
+            </tgroup>
+          </table></tables></p></description></us-patent-application>"#;
+        let dclx = dclx_of(xml);
+        // one data row only (empty row dropped) -> exactly one <nl/> inside the table
+        let table = dclx.split("<table>").nth(1).unwrap();
+        assert_eq!(
+            table.matches("<nl/>").count(),
+            1,
+            "empty row not dropped:\n{dclx}"
+        );
+        assert!(
+            dclx.contains("m2"),
+            "cell script converted (should be plain):\n{dclx}"
+        );
     }
 
     #[test]
