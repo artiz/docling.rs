@@ -44,7 +44,7 @@ The heavy table docs improved with the docling-parse **word-cell** grouping now
 feeding TableFormer (2305.03393v1 93→32, 2203.01017v2 209→183, 2206.01062
 198→164, redp5110 226→173): the parser's per-word cells reproduce docling-parse's
 `word_cells` byte-for-byte, so cell-to-grid matching tracks docling more closely.
-See "Text reconstruction" below and `PDF_PARSER_NOTES.md` item 6.
+See "Text reconstruction" below.
 
 ## How the pipeline works
 
@@ -151,4 +151,5 @@ These yield smaller or uncertain gains than the text-layer work already shipped.
    the `1⁄4` numerator. Our single-spaced output is the more faithful rendering
    (the whitespace-normalized metric credits it); reproducing docling's exact
    spacing needs an embedded-font metrics layer, which globally entangles with RTL
-   geometry. See `PDF_PARSER_NOTES.md`.
+   box geometry (a trial that fixed one `¼` regressed `right_to_left_01`). See
+   `MIGRATION.md` §4.
