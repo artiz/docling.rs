@@ -23,10 +23,12 @@ So `result.document` **is** the docling object — `export_to_markdown()`,
 Python code, unchanged. `docling-core` is a runtime dependency; nothing else from
 docling is required for the declarative path.
 
-> **Status: experimental, not published.** The PyPI distribution name
-> (`docling.rs`) is tentative and may change; nothing is uploaded anywhere.
-> Build and install locally as below. The crate is intentionally outside the
-> repo's Cargo workspace and its crates.io publish flow.
+> **Status: experimental.** The PyPI distribution name is `docling-rs`.
+> Releases are cut manually (like the npm package) via the
+> [`pypi-publish`](../../.github/workflows/pypi-publish.yml) workflow — see
+> [Publishing](#publishing) below. The crate is intentionally outside the repo's
+> Cargo workspace and its crates.io publish flow. For development, build and
+> install locally as shown next.
 
 ## Try it locally
 
@@ -84,3 +86,23 @@ operate on it directly (install docling-core's own extras for those:
 `pip install "docling-core[chunking]"`). The document carries rendered text for
 inline formatting rather than structured `formatting` fields — see
 `MIGRATION.md` §4 for the documented divergences.
+
+## Publishing
+
+Releases are **manual**, mirroring the npm package: the
+[`pypi-publish`](../../.github/workflows/pypi-publish.yml) GitHub Actions workflow
+(`workflow_dispatch`) builds an `abi3` wheel per platform (Linux x86-64/arm64 as
+`manylinux_2_28`, Windows x86-64 — one wheel covers every Python ≥ 3.9) plus an
+sdist, and uploads them to PyPI.
+
+```bash
+# From the Actions tab, or:
+gh workflow run pypi-publish.yml                 # version from pyproject.toml
+gh workflow run pypi-publish.yml -f version=0.16.0
+```
+
+It needs one repository secret, `PYPI_TOKEN` (a PyPI API token with publish
+rights to `docling-rs`); re-runs are idempotent (`skip-existing`). macOS wheels
+are omitted (no hosted runners here); macOS users install the sdist, which
+compiles from source. The ONNX runtime is bundled in the wheel; pdfium is fetched
+at runtime by `download_models()`.
