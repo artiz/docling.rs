@@ -101,8 +101,10 @@ gh workflow run pypi-publish.yml                 # version from pyproject.toml
 gh workflow run pypi-publish.yml -f version=0.16.0
 ```
 
-It needs one repository secret, `PYPI_TOKEN` (a PyPI API token with publish
-rights to `docling-rs`); re-runs are idempotent (`skip-existing`). macOS wheels
-are omitted (no hosted runners here); macOS users install the sdist, which
-compiles from source. The ONNX runtime is bundled in the wheel; pdfium is fetched
-at runtime by `download_models()`.
+No secrets: it publishes via PyPI **Trusted Publishing** (OIDC), like
+docling-core — a one-time PyPI setup adds a trusted publisher for `docling-rs`
+pointing at this repo, the `pypi-publish.yml` workflow and the `pypi`
+environment; re-runs are idempotent (`skip-existing`). macOS wheels are omitted
+(no hosted runners here); macOS users install the sdist, which compiles from
+source. The ONNX runtime is bundled in the wheel; pdfium is fetched at runtime by
+`download_models()`.
