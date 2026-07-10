@@ -15,9 +15,7 @@ use crate::backend::uspto_entities::NAMED_ENTITIES;
 use crate::backend::DeclarativeBackend;
 use crate::error::ConversionError;
 use crate::source::SourceDocument;
-use docling_core::{
-    inline_paragraph_node, DoclingDocument, InlineRun, Node, Table, TableStructure,
-};
+use docling_core::{DoclingDocument, Node, Table, TableStructure};
 
 /// Whether a plain-text file is a legacy APS (Automated Patent System) patent —
 /// its first non-blank line is the `PATN` record marker. docling reconstructs
@@ -39,18 +37,16 @@ pub fn convert_aps(source: &SourceDocument) -> Result<DoclingDocument, Conversio
     while lines.last().is_some_and(|l| l.trim().is_empty()) {
         lines.pop();
     }
-    let runs: Vec<InlineRun> = lines
+    // docling normalizes each source line's surrounding whitespace away
+    // (continuation lines wrap at column 0) and dumps the whole file as one text
+    // item.
+    let text = lines
         .into_iter()
-        .map(|l| InlineRun {
-            // docling normalizes each source line's leading indentation away
-            // (continuation lines are wrapped at column 0).
-            text: l.trim_start().to_string(),
-            ..InlineRun::default()
-        })
-        .collect();
-    if !runs.is_empty() {
-        doc.nodes
-            .push(inline_paragraph_node(String::new(), runs, false));
+        .map(|l| l.trim())
+        .collect::<Vec<_>>()
+        .join("\n");
+    if !text.is_empty() {
+        doc.push(Node::TextDump(text));
     }
     Ok(doc)
 }
