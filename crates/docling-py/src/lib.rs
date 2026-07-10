@@ -58,20 +58,36 @@ impl PyDocumentConverter {
         do_ocr = true,
         do_table_structure = true,
         use_web_browser = false,
+        allowed_formats = None,
     ))]
     fn new(
         fetch_images: bool,
         do_ocr: bool,
         do_table_structure: bool,
         use_web_browser: bool,
-    ) -> Self {
-        Self {
-            inner: docling::DocumentConverter::new()
+        allowed_formats: Option<Vec<String>>,
+    ) -> PyResult<Self> {
+        // `allowed_formats` (docling's converter arg) restricts which input
+        // formats convert; an unknown name is an error so typos surface early.
+        let base = match allowed_formats {
+            Some(names) => {
+                let mut formats = Vec::with_capacity(names.len());
+                for name in &names {
+                    formats.push(parse_format(name).ok_or_else(|| {
+                        PyRuntimeError::new_err(format!("unknown input format {name:?}"))
+                    })?);
+                }
+                docling::DocumentConverter::with_allowed_formats(formats)
+            }
+            None => docling::DocumentConverter::new(),
+        };
+        Ok(Self {
+            inner: base
                 .fetch_images(fetch_images)
                 .no_ocr(!do_ocr)
                 .no_table_former(!do_table_structure)
                 .use_web_browser(use_web_browser),
-        }
+        })
     }
 
     /// Convert a document from a filesystem path (str / os.PathLike).
@@ -111,6 +127,39 @@ impl PyDocumentConverter {
             .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
         Ok(native_result(result))
     }
+}
+
+/// Map a docling `InputFormat` string value (as in `docling_rs.InputFormat`,
+/// matching `docling::InputFormat::name()`) to the engine enum.
+fn parse_format(name: &str) -> Option<docling::InputFormat> {
+    use docling::InputFormat::*;
+    Some(match name {
+        "docx" => Docx,
+        "pptx" => Pptx,
+        "html" => Html,
+        "image" => Image,
+        "pdf" => Pdf,
+        "asciidoc" => Asciidoc,
+        "md" => Md,
+        "csv" => Csv,
+        "xlsx" => Xlsx,
+        "odt" => Odt,
+        "ods" => Ods,
+        "odp" => Odp,
+        "xml_uspto" => XmlUspto,
+        "xml_jats" => XmlJats,
+        "xml_xbrl" => XmlXbrl,
+        "xml_doclang" => XmlDoclang,
+        "mets_gbs" => MetsGbs,
+        "json_docling" => JsonDocling,
+        "audio" => Audio,
+        "vtt" => Vtt,
+        "latex" => Latex,
+        "email" => Email,
+        "epub" => Epub,
+        "mhtml" => Mhtml,
+        _ => return None,
+    })
 }
 
 fn native_result(r: docling::ConversionResult) -> PyNativeResult {

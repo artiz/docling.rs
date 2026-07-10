@@ -62,8 +62,9 @@ PY
 
 | docling.rs | docling counterpart | notes |
 |---|---|---|
-| `DocumentConverter(format_options=None, *, do_ocr=True, do_table_structure=True, fetch_images=False, use_web_browser=False, artifacts_path=None)` | `DocumentConverter(format_options=…)` | Pass `{InputFormat.PDF: PdfFormatOption(pipeline_options=PdfPipelineOptions(…))}` or the shorthand kwargs; `artifacts_path` overrides the model cache dir. |
+| `DocumentConverter(format_options=None, *, allowed_formats=None, do_ocr=True, do_table_structure=True, fetch_images=False, use_web_browser=False, artifacts_path=None)` | `DocumentConverter(allowed_formats=…, format_options=…)` | Pass `{InputFormat.PDF: PdfFormatOption(pipeline_options=PdfPipelineOptions(…))}` or the shorthand kwargs; `allowed_formats` restricts conversion; `artifacts_path` overrides the model cache dir. |
 | `.convert(path \| DocumentStream) -> ConversionResult` | `.convert(source)` | str / `pathlib.Path` / `DocumentStream`. Releases the GIL during conversion. |
+| `.convert_all(sources, raises_on_error=True) -> Iterator[ConversionResult]` | same | lazily converts many sources; `raises_on_error=False` yields a `failure` result instead of raising |
 | `.convert_bytes(name, data)` | `DocumentStream` | extension of `name` drives format detection |
 | `InputFormat`, `PdfPipelineOptions`, `PdfFormatOption`, `AcceleratorOptions`, `TableFormerMode`, `DocumentStream`, `ImageRefMode` | same modules | docling-shaped config re-exported from `docling_rs` (see below) |
 | `result.status` / `result.document` / `result.input.file` | same | `.status` is a `ConversionStatus` str-enum (`"success" / "partial_success" / "failure"`); `.document` is a genuine `docling_core` `DoclingDocument` |

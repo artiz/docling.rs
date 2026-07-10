@@ -36,7 +36,7 @@ import enum
 import os
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, Optional, Union
+from typing import Dict, Iterable, Iterator, Optional, Union
 
 from docling_core.types.doc import DoclingDocument, ImageRefMode
 
@@ -120,6 +120,8 @@ class DocumentConverter:
       ``format_options`` is given.
     * ``fetch_images`` — resolve remote/local ``<img src>`` for HTML/EPUB.
     * ``use_web_browser`` — render HTML via headless Chrome before parsing.
+    * ``allowed_formats`` — restrict conversion to these :class:`InputFormat`\\ s
+      (docling's converter arg); a source of any other format raises.
     * ``artifacts_path`` — override the model cache dir (docling's
       ``artifacts_path``); defaults to ``~/.cache/docling.rs``.
     """
@@ -128,6 +130,7 @@ class DocumentConverter:
         self,
         format_options: Optional[Dict[InputFormat, PdfFormatOption]] = None,
         *,
+        allowed_formats: Optional[Iterable[InputFormat]] = None,
         do_ocr: bool = True,
         do_table_structure: bool = True,
         fetch_images: bool = False,
@@ -152,23 +155,46 @@ class DocumentConverter:
             do_ocr=do_ocr,
             do_table_structure=do_table_structure,
             use_web_browser=use_web_browser,
+            allowed_formats=(
+                [InputFormat(f).value for f in allowed_formats]
+                if allowed_formats is not None
+                else None
+            ),
         )
 
     def convert(self, source: Union[str, os.PathLike, DocumentStream]) -> ConversionResult:
         """Convert a filesystem path (str / pathlib.Path) or an in-memory
         :class:`DocumentStream`."""
-        if isinstance(source, DocumentStream):
-            data = source.stream.read()
-            native = self._inner.convert_bytes(source.name, data)
-        else:
-            native = self._inner.convert(source)
+        native = self._convert_native(source)
         return _wrap(native)
+
+    def convert_all(
+        self,
+        sources: Iterable[Union[str, os.PathLike, DocumentStream]],
+        raises_on_error: bool = True,
+    ) -> Iterator[ConversionResult]:
+        """Convert many sources, yielding a :class:`ConversionResult` each
+        (docling's ``convert_all``). With ``raises_on_error=False`` a failing
+        source yields a ``failure`` result (empty document) instead of raising."""
+        for source in sources:
+            try:
+                yield _wrap(self._convert_native(source))
+            except Exception:
+                if raises_on_error:
+                    raise
+                name = source.name if isinstance(source, DocumentStream) else str(source)
+                yield ConversionResult("failure", name, DoclingDocument(name=Path(name).name))
 
     def convert_bytes(self, name: str, data: bytes) -> ConversionResult:
         """Convert in-memory bytes; ``name``'s extension drives format detection
         (docling's ``DocumentStream`` counterpart)."""
         native = self._inner.convert_bytes(name, data)
         return _wrap(native)
+
+    def _convert_native(self, source):
+        if isinstance(source, DocumentStream):
+            return self._inner.convert_bytes(source.name, source.stream.read())
+        return self._inner.convert(source)
 
 
 def _pdf_pipeline_options(

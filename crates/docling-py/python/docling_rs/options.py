@@ -42,6 +42,9 @@ class InputFormat(str, enum.Enum):
     EMAIL = "email"
     LATEX = "latex"
     MHTML = "mhtml"
+    XML_XBRL = "xml_xbrl"
+    XML_DOCLANG = "xml_doclang"
+    METS_GBS = "mets_gbs"
 
 
 class AcceleratorDevice(str, enum.Enum):

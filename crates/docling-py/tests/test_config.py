@@ -88,3 +88,41 @@ def test_image_ref_mode_reexport_drives_export():
     # docling-core's own export honours the re-exported enum.
     md = doc.export_to_markdown(image_mode=ImageRefMode.EMBEDDED)
     assert isinstance(md, str)
+
+
+def test_allowed_formats_restricts_conversion():
+    from docling_rs import DocumentConverter, InputFormat
+
+    # HTML allowed → converts.
+    ok = DocumentConverter(allowed_formats=[InputFormat.HTML]).convert(HTML)
+    assert ok.status == "success"
+
+    # HTML not in the allowed set → the engine refuses it.
+    conv = DocumentConverter(allowed_formats=[InputFormat.PDF, InputFormat.DOCX])
+    with pytest.raises(Exception):
+        conv.convert(HTML)
+
+
+def test_unknown_allowed_format_raises():
+    from docling_rs import DocumentConverter
+
+    with pytest.raises(Exception):
+        DocumentConverter(allowed_formats=["not_a_format"])
+
+
+def test_convert_all_yields_results():
+    from docling_rs import DocumentConverter
+
+    results = list(DocumentConverter().convert_all([HTML, HTML]))
+    assert len(results) == 2
+    assert all(r.status == "success" for r in results)
+
+
+def test_convert_all_raises_on_error_false():
+    from docling_rs import DocumentConverter
+
+    missing = REPO / "tests/data/html/sources/__does_not_exist__.html"
+    out = list(DocumentConverter().convert_all([HTML, missing], raises_on_error=False))
+    assert len(out) == 2
+    assert out[0].status == "success"
+    assert out[1].status == "failure"
