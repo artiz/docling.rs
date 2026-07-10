@@ -233,6 +233,80 @@ fn predict(orig: &[Bl], page_w: f32) -> Vec<usize> {
     order
 }
 
+/// `predict_merges` (docling `ReadingOrderPredictor`): given elements already in
+/// reading order, return for each head the ordered list of following elements to
+/// merge into it. A merge chain starts at a TEXT element and extends to the next
+/// non-skipped TEXT element as long as the head is *strictly left of* it
+/// (horizontally adjacent — an author column, a wrap into the next column) and
+/// the running tail ends with a lowercase letter / comma / hyphen while the
+/// candidate starts with a letter. `boxes` are top-left; `strictly_left_of` is
+/// horizontal-only, so origin does not matter. The cross-page branch is omitted —
+/// this runs per page, where cross-page continuations are handled separately.
+pub fn predict_merges(
+    boxes: &[(f32, f32, f32, f32)],
+    texts: &[String],
+    is_text: &[bool],
+    is_skip: &[bool],
+) -> Vec<Vec<usize>> {
+    let n = boxes.len();
+    let mut merges = vec![Vec::new(); n];
+    let mut curr: isize = -1;
+    for ind in 0..n {
+        if ind as isize <= curr || !is_text[ind] {
+            continue;
+        }
+        let mut check = ind;
+        loop {
+            let mut p1 = check + 1;
+            while p1 < n && is_skip[p1] {
+                p1 += 1;
+            }
+            if p1 < n
+                && is_text[p1]
+                && strictly_left_of(boxes[ind], boxes[p1])
+                && ends_mergeable(&texts[check])
+                && starts_mergeable(&texts[p1])
+            {
+                merges[ind].push(p1);
+                curr = p1 as isize;
+                check = p1;
+            } else {
+                break;
+            }
+        }
+    }
+    merges
+}
+
+/// `is_strictly_left_of` (horizontal-only): `a.r + eps < b.l`.
+fn strictly_left_of(a: (f32, f32, f32, f32), b: (f32, f32, f32, f32)) -> bool {
+    a.2 + EPS < b.0
+}
+
+/// Head/tail of a merge ends with a lowercase letter, comma, hyphen or soft
+/// hyphen (docling regex `.+([a-z,\-­])(\s*)` — at least two chars).
+fn ends_mergeable(t: &str) -> bool {
+    let s = t.trim_end();
+    s.chars().count() >= 2
+        && matches!(
+            s.chars().next_back(),
+            Some('a'..='z' | ',' | '-' | '\u{ad}')
+        )
+}
+
+/// Merge candidate starts with a (Latin) letter and has more after it (docling
+/// regex `(\s*[a-zA-ZÀ-ɏ])(.+)`).
+fn starts_mergeable(t: &str) -> bool {
+    let s = t.trim_start();
+    let mut ch = s.chars();
+    match ch.next() {
+        Some(c) if c.is_ascii_alphabetic() || ('\u{c0}'..='\u{24f}').contains(&c) => {
+            ch.next().is_some()
+        }
+        _ => false,
+    }
+}
+
 /// Order one page's elements (top-left coords) into reading order, returning the
 /// input-index permutation. `headers`/`footers` are ordered as their own groups
 /// and placed first/last, matching docling's per-page header→body→footer split.

@@ -1079,6 +1079,49 @@ pub fn assemble_page(
         }
     }
 
+    // docling `ReadingOrderPredictor.predict_merges`: join a text fragment with a
+    // following text fragment strictly to its right (an author column that wraps
+    // into the next, a paragraph continuing in the next column) into one block —
+    // the intra-page half of docling's reading-order merges (cross-page/vertical
+    // continuations stay with [`merge_continuations`]). Already-consumed regions
+    // (paired captions, code labels) are excluded.
+    let region_texts: Vec<String> = regions
+        .iter()
+        .map(|r| region_text(r, &page.cells))
+        .collect();
+    let is_text: Vec<bool> = regions
+        .iter()
+        .enumerate()
+        .map(|(i, r)| r.label == "text" && !consumed[i])
+        .collect();
+    let is_skip: Vec<bool> = regions
+        .iter()
+        .enumerate()
+        .map(|(i, r)| {
+            consumed[i]
+                || matches!(
+                    r.label,
+                    "page_header" | "page_footer" | "table" | "picture" | "caption" | "footnote"
+                )
+        })
+        .collect();
+    let boxes: Vec<(f32, f32, f32, f32)> = regions.iter().map(|r| (r.l, r.t, r.r, r.b)).collect();
+    let mut merge_suffix: Vec<String> = vec![String::new(); regions.len()];
+    for (head, children) in
+        crate::reading_order::predict_merges(&boxes, &region_texts, &is_text, &is_skip)
+            .into_iter()
+            .enumerate()
+    {
+        for c in children {
+            let t = region_texts[c].trim();
+            if !t.is_empty() {
+                merge_suffix[head].push(' ');
+                merge_suffix[head].push_str(t);
+            }
+            consumed[c] = true;
+        }
+    }
+
     for (i, region) in regions.iter().enumerate() {
         if is_skipped(region.label) || consumed[i] {
             continue;
@@ -1094,7 +1137,8 @@ pub fn assemble_page(
             });
             continue;
         }
-        let text = region_text(region, &page.cells);
+        let mut text = region_text(region, &page.cells);
+        text.push_str(&merge_suffix[i]);
         if text.is_empty() {
             continue;
         }
