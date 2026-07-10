@@ -126,3 +126,30 @@ def test_convert_all_raises_on_error_false():
     assert len(out) == 2
     assert out[0].status == "success"
     assert out[1].status == "failure"
+
+
+def test_conversion_error_type():
+    from docling_rs import DocumentConverter, ConversionError
+
+    missing = REPO / "tests/data/html/sources/__nope__.html"
+    with pytest.raises(ConversionError):
+        DocumentConverter().convert(missing)
+
+
+def test_gpu_device_warns_cpu_only():
+    from docling_rs import (
+        DocumentConverter,
+        InputFormat,
+        PdfFormatOption,
+        PdfPipelineOptions,
+        AcceleratorOptions,
+        AcceleratorDevice,
+    )
+
+    opts = PdfPipelineOptions(
+        accelerator_options=AcceleratorOptions(device=AcceleratorDevice.CUDA)
+    )
+    with pytest.warns(UserWarning, match="CPU"):
+        DocumentConverter(
+            format_options={InputFormat.PDF: PdfFormatOption(pipeline_options=opts)}
+        )

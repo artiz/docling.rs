@@ -34,6 +34,7 @@ from __future__ import annotations
 
 import enum
 import os
+import warnings
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, Iterable, Iterator, Optional, Union
@@ -52,13 +53,14 @@ from .options import (
     TableFormerMode,
     TableStructureOptions,
 )
-from ._native import __version__
+from ._native import ConversionError, __version__
 from ._native import DocumentConverter as _NativeDocumentConverter
 
 __all__ = [
     "DocumentConverter",
     "ConversionResult",
     "ConversionStatus",
+    "ConversionError",
     "InputDocument",
     "DoclingDocument",
     "ImageRefMode",
@@ -145,10 +147,17 @@ class DocumentConverter:
             do_ocr = pipeline.do_ocr
             do_table_structure = pipeline.do_table_structure
             acc = getattr(pipeline, "accelerator_options", None)
-            if acc is not None and acc.num_threads:
-                # Process-wide ONNX Runtime intra-op threads; don't clobber an
-                # explicit environment override.
-                os.environ.setdefault("DOCLING_RS_PDF_THREADS", str(acc.num_threads))
+            if acc is not None:
+                if acc.device in (AcceleratorDevice.CUDA, AcceleratorDevice.MPS):
+                    warnings.warn(
+                        f"docling.rs runs ONNX Runtime on the CPU; accelerator "
+                        f"device {acc.device.value!r} is ignored (using CPU).",
+                        stacklevel=2,
+                    )
+                if acc.num_threads:
+                    # Process-wide ONNX Runtime intra-op threads; don't clobber an
+                    # explicit environment override.
+                    os.environ.setdefault("DOCLING_RS_PDF_THREADS", str(acc.num_threads))
 
         self._inner = _NativeDocumentConverter(
             fetch_images=fetch_images,

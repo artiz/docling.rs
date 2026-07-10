@@ -67,6 +67,7 @@ PY
 | `.convert_all(sources, raises_on_error=True) -> Iterator[ConversionResult]` | same | lazily converts many sources; `raises_on_error=False` yields a `failure` result instead of raising |
 | `.convert_bytes(name, data)` | `DocumentStream` | extension of `name` drives format detection |
 | `InputFormat`, `PdfPipelineOptions`, `PdfFormatOption`, `AcceleratorOptions`, `TableFormerMode`, `DocumentStream`, `ImageRefMode` | same modules | docling-shaped config re-exported from `docling_rs` (see below) |
+| `ConversionError` | `docling.exceptions.ConversionError` | raised on a failed conversion; caught by `convert_all(..., raises_on_error=False)` |
 | `result.status` / `result.document` / `result.input.file` | same | `.status` is a `ConversionStatus` str-enum (`"success" / "partial_success" / "failure"`); `.document` is a genuine `docling_core` `DoclingDocument` |
 | `document.export_to_markdown(...)` | same | docling-core's own method — all of docling's params (`image_placeholder`, `page_break_placeholder`, …) apply |
 | `document.export_to_dict()` / `export_to_json()` / `export_to_doctags()` | same | docling-core's own serializers over the wire format |
@@ -101,7 +102,9 @@ The Rust engine acts on `do_ocr`, `do_table_structure`, and
 (`images_scale`, `generate_page_images`, `table_structure_options.mode`, …) are
 accepted for API compatibility but do not change the pipeline. `InputFormat`,
 `DocumentStream` and `ImageRefMode` are re-exported too (the last straight from
-`docling_core`, for `export_to_markdown(image_mode=…)`).
+`docling_core`, for `export_to_markdown(image_mode=…)`). A GPU
+`accelerator_options.device` (`CUDA`/`MPS`) is accepted but warns and falls back
+to CPU — the engine runs ONNX Runtime on the CPU execution provider.
 
 ## Not covered (yet)
 

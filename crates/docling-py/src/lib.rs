@@ -13,11 +13,15 @@
 //! document-shaped is reconstructed on the Python side. Model discovery/download
 //! lives in `docling_rs.models`, mirroring how docling fetches its artifacts.
 
-use pyo3::exceptions::PyRuntimeError;
+use pyo3::exceptions::{PyException, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::PyBytes;
 
 use docling::{ConversionStatus, SourceDocument};
+
+// docling's `ConversionError`: raised when a conversion fails (docling code does
+// `except ConversionError`). Re-exported from the Python package.
+pyo3::create_exception!(_native, ConversionError, PyException);
 
 /// The Rust processor's result: a conversion status, the input name, and the
 /// document as docling-core's JSON wire format. The Python layer validates the
@@ -74,7 +78,7 @@ impl PyDocumentConverter {
                 let mut formats = Vec::with_capacity(names.len());
                 for name in &names {
                     formats.push(parse_format(name).ok_or_else(|| {
-                        PyRuntimeError::new_err(format!("unknown input format {name:?}"))
+                        PyValueError::new_err(format!("unknown input format {name:?}"))
                     })?);
                 }
                 docling::DocumentConverter::with_allowed_formats(formats)
@@ -99,7 +103,7 @@ impl PyDocumentConverter {
                 let src = SourceDocument::from_file(&path)?;
                 self.inner.convert(src)
             })
-            .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
+            .map_err(|e| ConversionError::new_err(e.to_string()))?;
         Ok(native_result(result))
     }
 
@@ -117,14 +121,14 @@ impl PyDocumentConverter {
             .and_then(|e| e.to_str())
             .unwrap_or("");
         let format = docling::InputFormat::from_extension(ext).ok_or_else(|| {
-            PyRuntimeError::new_err(format!("cannot detect input format from name {name:?}"))
+            ConversionError::new_err(format!("cannot detect input format from name {name:?}"))
         })?;
         let result = py
             .allow_threads(|| {
                 self.inner
                     .convert(SourceDocument::from_bytes(&name, format, bytes))
             })
-            .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
+            .map_err(|e| ConversionError::new_err(e.to_string()))?;
         Ok(native_result(result))
     }
 }
@@ -194,6 +198,7 @@ impl<'py> FromPyObject<'py> for PathLike {
 fn _native(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyDocumentConverter>()?;
     m.add_class::<PyNativeResult>()?;
+    m.add("ConversionError", m.py().get_type::<ConversionError>())?;
     m.add("__version__", env!("CARGO_PKG_VERSION"))?;
     Ok(())
 }
