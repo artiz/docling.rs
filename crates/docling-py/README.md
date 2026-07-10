@@ -62,9 +62,10 @@ PY
 
 | docling.rs | docling counterpart | notes |
 |---|---|---|
-| `DocumentConverter(fetch_images=False, artifacts_path=None)` | `DocumentConverter(...)` | `fetch_images` resolves remote/local `<img src>` (HTML/EPUB); `artifacts_path` overrides the model cache dir. |
-| `.convert(path) -> ConversionResult` | `.convert(source)` | str / `pathlib.Path`. Releases the GIL during conversion. |
+| `DocumentConverter(format_options=None, *, do_ocr=True, do_table_structure=True, fetch_images=False, use_web_browser=False, artifacts_path=None)` | `DocumentConverter(format_options=…)` | Pass `{InputFormat.PDF: PdfFormatOption(pipeline_options=PdfPipelineOptions(…))}` or the shorthand kwargs; `artifacts_path` overrides the model cache dir. |
+| `.convert(path \| DocumentStream) -> ConversionResult` | `.convert(source)` | str / `pathlib.Path` / `DocumentStream`. Releases the GIL during conversion. |
 | `.convert_bytes(name, data)` | `DocumentStream` | extension of `name` drives format detection |
+| `InputFormat`, `PdfPipelineOptions`, `PdfFormatOption`, `AcceleratorOptions`, `TableFormerMode`, `DocumentStream`, `ImageRefMode` | same modules | docling-shaped config re-exported from `docling_rs` (see below) |
 | `result.status` / `result.document` / `result.input.file` | same | `.status` is a `ConversionStatus` str-enum (`"success" / "partial_success" / "failure"`); `.document` is a genuine `docling_core` `DoclingDocument` |
 | `document.export_to_markdown(...)` | same | docling-core's own method — all of docling's params (`image_placeholder`, `page_break_placeholder`, …) apply |
 | `document.export_to_dict()` / `export_to_json()` / `export_to_doctags()` | same | docling-core's own serializers over the wire format |
@@ -76,11 +77,36 @@ by `ensure_env()` (called by the constructor) → the process CWD (`models/`,
 `.pdfium/`, matching the CLI). pdfium is Linux x64 from the release; on other
 platforms set `PDFIUM_DYNAMIC_LIB_PATH` to a local build.
 
+## Configuration (docling-shaped)
+
+`docling_rs` re-exports docling-shaped config objects — same names and fields, so
+docling code reads unchanged:
+
+```python
+from docling_rs import DocumentConverter, InputFormat, PdfFormatOption, PdfPipelineOptions, AcceleratorOptions
+
+opts = PdfPipelineOptions(
+    do_ocr=False,                                   # skip OCR on scanned pages
+    do_table_structure=True,                        # TableFormer table recovery
+    accelerator_options=AcceleratorOptions(num_threads=4),
+)
+conv = DocumentConverter(format_options={InputFormat.PDF: PdfFormatOption(pipeline_options=opts)})
+# shorthand: DocumentConverter(do_ocr=False, do_table_structure=True)
+```
+
+The Rust engine acts on `do_ocr`, `do_table_structure`, and
+`accelerator_options.num_threads` (→ ONNX Runtime intra-op threads via
+`DOCLING_RS_PDF_THREADS`). The remaining `PdfPipelineOptions` fields
+(`images_scale`, `generate_page_images`, `table_structure_options.mode`, …) are
+accepted for API compatibility but do not change the pipeline. `InputFormat`,
+`DocumentStream` and `ImageRefMode` are re-exported too (the last straight from
+`docling_core`, for `export_to_markdown(image_mode=…)`).
+
 ## Not covered (yet)
 
-VLM/enrichment pipelines and docling's full options model
-(`PdfPipelineOptions`, per-format backend selection). Chunkers **are** available
-now — the returned object is a real `docling_core` `DoclingDocument`, so
+VLM/enrichment pipelines, GPU accelerator devices (the engine is ONNX Runtime on
+CPU), and per-format *backend* selection. Chunkers **are** available — the
+returned object is a real `docling_core` `DoclingDocument`, so
 `docling_core.transforms.chunker`'s `HierarchicalChunker` / `HybridChunker`
 operate on it directly (install docling-core's own extras for those:
 `pip install "docling-core[chunking]"`). The document carries rendered text for

@@ -42,14 +42,35 @@ struct PyDocumentConverter {
 
 #[pymethods]
 impl PyDocumentConverter {
-    /// `fetch_images` — resolve remote/local `<img src>` for HTML/EPUB (docling's
-    /// image fetch). Markdown flavour is chosen at export time by docling-core on
-    /// the Python side, so there is no `strict` knob here anymore.
+    /// Engine knobs mapped from docling's converter/`PdfPipelineOptions` on the
+    /// Python side:
+    /// * `fetch_images` — resolve remote/local `<img src>` for HTML/EPUB.
+    /// * `do_ocr` — run OCR on scanned PDF/image pages (docling's `do_ocr`).
+    /// * `do_table_structure` — recover table structure with TableFormer
+    ///   (docling's `do_table_structure`).
+    /// * `use_web_browser` — render HTML via headless Chrome before parsing.
+    ///
+    /// Markdown flavour is chosen at export time by docling-core, so there is no
+    /// `strict` knob here.
     #[new]
-    #[pyo3(signature = (fetch_images = false))]
-    fn new(fetch_images: bool) -> Self {
+    #[pyo3(signature = (
+        fetch_images = false,
+        do_ocr = true,
+        do_table_structure = true,
+        use_web_browser = false,
+    ))]
+    fn new(
+        fetch_images: bool,
+        do_ocr: bool,
+        do_table_structure: bool,
+        use_web_browser: bool,
+    ) -> Self {
         Self {
-            inner: docling::DocumentConverter::new().fetch_images(fetch_images),
+            inner: docling::DocumentConverter::new()
+                .fetch_images(fetch_images)
+                .no_ocr(!do_ocr)
+                .no_table_former(!do_table_structure)
+                .use_web_browser(use_web_browser),
         }
     }
 
