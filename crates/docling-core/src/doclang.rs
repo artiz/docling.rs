@@ -769,8 +769,240 @@ fn emit_nodes(out: &mut Out, depth: i32, nodes: &[Node], i: &mut usize, level: u
                 out.push(depth, "<page_break/>".to_string());
                 *i += 1;
             }
+            Node::TextDump(text) => {
+                emit_text_dump(out, depth, text);
+                *i += 1;
+            }
         }
     }
+}
+
+/// One minidom child of the dump's `<text>`: a plain text node, a `<![CDATA[…]]>`
+/// section, or a formatted element (`<italic>…</italic>`).
+enum DumpNode {
+    Text(String),
+    Cdata(String),
+    Elem(String),
+}
+
+/// Render docling's plain-text backend dump: the whole file as one `<text>` item,
+/// serialized the way `xml.dom.minidom.toprettyxml` renders a `<text>` element.
+///
+/// docling applies inline Markdown to the text item, then builds a minified
+/// `<text>…</text>` string — each source line a record, `*`-emphasis converted to
+/// `<italic>`, XML-significant lines (`" ' & < >`) wrapped in `<![CDATA[…]]>` — and
+/// pretty-prints it, dropping blank lines. This reproduces that pipeline: parse the
+/// emphasis ([`dump_records`]), assemble the minidom child nodes, then simulate
+/// `toprettyxml`, which writes a text node as `indent + data`, a CDATA section as a
+/// bare `<![CDATA[…]]>` (no indent, no newline — so the next child's indent glues
+/// onto its line), and an element as `indent + <tag>…</tag>`.
+fn emit_text_dump(out: &mut Out, depth: i32, text: &str) {
+    let records = dump_records(text);
+    if records.is_empty() {
+        out.push(depth, "<text></text>".to_string());
+        return;
+    }
+    // Assemble the `<text>` element's minidom children. Consecutive plain records
+    // (and the `\n` record separators around them) collapse into one text node; a
+    // CDATA or formatted record breaks the run into its own node.
+    let mut nodes: Vec<DumpNode> = Vec::new();
+    let mut buf = String::new();
+    for (r, (line, italic)) in records.iter().enumerate() {
+        if r > 0 {
+            buf.push('\n'); // the record separator
+        }
+        let raw = unescape_stored(line);
+        let s = raw.as_ref();
+        let is_cdata = s.contains(['"', '\'', '&', '<', '>']);
+        if *italic || is_cdata {
+            if !buf.is_empty() {
+                nodes.push(DumpNode::Text(std::mem::take(&mut buf)));
+            }
+            let inner = if is_cdata {
+                format!("<![CDATA[{s}]]>")
+            } else {
+                s.to_string()
+            };
+            if *italic {
+                nodes.push(DumpNode::Elem(format!("<italic>{inner}</italic>")));
+            } else {
+                nodes.push(DumpNode::Cdata(inner));
+            }
+        } else {
+            buf.push_str(s);
+        }
+    }
+    if !buf.is_empty() {
+        nodes.push(DumpNode::Text(buf));
+    }
+
+    // A lone text node is a single text child — minidom renders it inline.
+    if let [DumpNode::Text(d)] = nodes.as_slice() {
+        out.push(depth, format!("<text>{d}\n</text>"));
+        return;
+    }
+
+    // Simulate `toprettyxml`: element/text children indent at depth+1, CDATA sits
+    // bare; then drop the blank lines docling's empty-line filter removes.
+    let ind_child = INDENT.repeat((depth + 1).max(0) as usize);
+    let ind_self = INDENT.repeat(depth.max(0) as usize);
+    let mut raw = String::new();
+    for node in &nodes {
+        match node {
+            DumpNode::Text(d) => {
+                raw.push_str(&ind_child);
+                raw.push_str(d);
+                raw.push('\n');
+            }
+            DumpNode::Cdata(b) => raw.push_str(b),
+            DumpNode::Elem(b) => {
+                raw.push_str(&ind_child);
+                raw.push_str(b);
+                raw.push('\n');
+            }
+        }
+    }
+    let full = format!("{ind_self}<text>\n{raw}{ind_self}</text>");
+    for line in full.split('\n') {
+        if !line.trim().is_empty() {
+            out.push(0, line.to_string());
+        }
+    }
+}
+
+/// Parse a plain-text dump into one record per line, applying docling's inline
+/// Markdown: CommonMark `*`/`**` emphasis (flanking rules + the delimiter-stack
+/// match) is stripped and its span flagged `italic`; a Markdown thematic break (a
+/// line of only underscores) collapses to ten underscores; blank lines drop out.
+fn dump_records(text: &str) -> Vec<(String, bool)> {
+    let chars: Vec<char> = text.chars().collect();
+    let n = chars.len();
+
+    struct Delim {
+        pos: usize,
+        length: usize,
+        rem: usize,
+        can_open: bool,
+        can_close: bool,
+    }
+    let is_ws = |c: Option<char>| c.map_or(true, |c| c.is_whitespace());
+    let is_punct =
+        |c: Option<char>| c.is_some_and(|c| "!\"#$%&'()*+,-./:;<=>?@[\\]^_`{|}~".contains(c));
+
+    // Delimiter runs of `*`, each tagged left-/right-flanking (CommonMark 6.2).
+    let mut delims: Vec<Delim> = Vec::new();
+    let mut i = 0;
+    while i < n {
+        if chars[i] == '*' {
+            let mut j = i;
+            while j < n && chars[j] == '*' {
+                j += 1;
+            }
+            let prev = (i > 0).then(|| chars[i - 1]);
+            let next = (j < n).then(|| chars[j]);
+            let left = !is_ws(next) && (!is_punct(next) || is_ws(prev) || is_punct(prev));
+            let right = !is_ws(prev) && (!is_punct(prev) || is_ws(next) || is_punct(next));
+            delims.push(Delim {
+                pos: i,
+                length: j - i,
+                rem: j - i,
+                can_open: left,
+                can_close: right,
+            });
+            i = j;
+        } else {
+            i += 1;
+        }
+    }
+
+    // Match closers to the nearest eligible opener (CommonMark "process emphasis"),
+    // marking the delimiter characters consumed and the spanned text emphasized.
+    let mut emph = vec![false; n];
+    let mut consumed = vec![false; n];
+    let mut ci = 0;
+    while ci < delims.len() {
+        if !(delims[ci].can_close && delims[ci].rem > 0) {
+            ci += 1;
+            continue;
+        }
+        let mut found: Option<usize> = None;
+        let mut oi = ci as i64 - 1;
+        while oi >= 0 {
+            let o = &delims[oi as usize];
+            let c = &delims[ci];
+            if o.can_open && o.rem > 0 {
+                // "Rule of three": a run may not close its own kind when the
+                // combined length is a multiple of three (unless both are).
+                let odd = (o.can_close || c.can_open)
+                    && (o.length + c.length) % 3 == 0
+                    && !(o.length % 3 == 0 && c.length % 3 == 0);
+                if !odd {
+                    found = Some(oi as usize);
+                    break;
+                }
+            }
+            oi -= 1;
+        }
+        let Some(fi) = found else {
+            ci += 1;
+            continue;
+        };
+        let use_ = if delims[fi].rem >= 2 && delims[ci].rem >= 2 {
+            2
+        } else {
+            1
+        };
+        let oend = delims[fi].pos + delims[fi].rem;
+        for c in consumed.iter_mut().take(oend).skip(oend - use_) {
+            *c = true;
+        }
+        let cstart = delims[ci].pos + (delims[ci].length - delims[ci].rem);
+        for c in consumed.iter_mut().take(cstart + use_).skip(cstart) {
+            *c = true;
+        }
+        for e in emph.iter_mut().take(cstart).skip(oend) {
+            *e = true;
+        }
+        delims[fi].rem -= use_;
+        delims[ci].rem -= use_;
+        delims.drain((fi + 1)..ci);
+        ci = if delims[fi].rem == 0 { fi + 1 } else { fi };
+    }
+
+    // Drop the consumed markers, then split into lines carrying their emphasis.
+    let mut records: Vec<(String, bool)> = Vec::new();
+    let mut line = String::new();
+    let mut line_italic = false;
+    let push_line = |line: &mut String, italic: &mut bool, out: &mut Vec<(String, bool)>| {
+        let text = std::mem::take(line);
+        let ital = std::mem::replace(italic, false);
+        let trimmed = text.trim();
+        if trimmed.is_empty() {
+            return;
+        }
+        // A Markdown thematic break (underscores only) normalizes to ten.
+        let norm = if trimmed.len() >= 3 && trimmed.chars().all(|c| c == '_') {
+            "_".repeat(10)
+        } else {
+            text
+        };
+        out.push((norm, ital));
+    };
+    for k in 0..n {
+        if consumed[k] {
+            continue;
+        }
+        if chars[k] == '\n' {
+            push_line(&mut line, &mut line_italic, &mut records);
+        } else {
+            line.push(chars[k]);
+            if emph[k] {
+                line_italic = true;
+            }
+        }
+    }
+    push_line(&mut line, &mut line_italic, &mut records);
+    records
 }
 
 /// Render a [`Node::InlineGroup`] — docling's `InlineGroup`. Reproduces the
@@ -1412,6 +1644,27 @@ mod tests {
             out,
             "<doclang version=\"0.7\">\n  <heading>\n    <layer value=\"furniture\"/>\n    Anchor Links Test\n  </heading>\n</doclang>"
         );
+    }
+
+    #[test]
+    fn text_dump_reproduces_minidom_per_line_layout() {
+        // A plain-text dump: the first record indents, later plain records sit at
+        // column 0, a line with `"`/`&` becomes CDATA (with the next child's indent
+        // glued on as trailing whitespace), a `*`…`*` span becomes per-line
+        // `<italic>`, and an underscore rule collapses to ten underscores.
+        let text = "PATN\nWKU 1\nPAL K. \"Determination\"\nfollow-up\n*Note A\n_______________\nNote B*\nEND";
+        let out = export_to_doclang(&[Node::TextDump(text.into())]);
+        let expected = "<doclang version=\"0.7\">\n  \
+             <text>\n    \
+             PATN\nWKU 1\n\
+             <![CDATA[PAL K. \"Determination\"]]>    \n\
+             follow-up\n    \
+             <italic>Note A</italic>\n    \
+             <italic>__________</italic>\n    \
+             <italic>Note B</italic>\n\
+             END\n  \
+             </text>\n</doclang>";
+        assert_eq!(out, expected, "got:\n{out}");
     }
 
     #[test]

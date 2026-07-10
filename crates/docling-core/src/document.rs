@@ -155,6 +155,13 @@ pub enum Node {
     /// and charts, which appear in the `.dclx` body but not in its `.md`/`.json`.
     /// DocLang renders the wrapped node in place; Markdown and JSON skip it.
     DoclangOnly(Box<Node>),
+    /// A verbatim plain-text dump — docling's plain-text backend emits the whole
+    /// file as a single text item (used for legacy USPTO APS `.txt` grants, which
+    /// docling routes to plain text rather than its APS parser). The stored string
+    /// is the file body, one record per line. Markdown/JSON render it as one text
+    /// block; the DocLang serializer reproduces minidom's per-line layout, CDATA-
+    /// escaping only the lines that need it (see `emit_text_dump`).
+    TextDump(String),
 }
 
 /// Vertical text position of an [`InlineRun`] — docling's `Script`.

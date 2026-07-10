@@ -200,6 +200,8 @@ impl Builder {
             Node::InlineGroup { md_text, .. } => {
                 Some(self.add_text("text", md_text, parent, json!({})))
             }
+            // A plain-text backend dump is a single text item over the file body.
+            Node::TextDump(text) => Some(self.add_text("text", text, parent, json!({}))),
             // Furniture is not emitted into the body/JSON (DocLang-only layer).
             Node::Furniture { .. } => None,
             // Layout provenance is DocLang-only; emit the wrapped node.
