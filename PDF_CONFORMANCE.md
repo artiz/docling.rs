@@ -133,19 +133,24 @@ suppression** (empty low-confidence margin boxes on text pages), and
 ## Remaining blockers (model-level)
 
 These yield smaller or uncertain gains than the text-layer work already shipped.
+Each is tracked as its own issue:
 
-1. **TableFormer structure on complex tables.** Multi-row headers / spans on the
-   big papers (2206, 2203) differ from docling's OTSL prediction; one cell-
-   structure diff cascades through the padded columns into many row diffs
-   (2206's ~92 table-row diffs trace to ~4 structure diffs).
-2. **Layout classification.** The layout ONNX classifies redp5110's
-   table-of-contents as a *picture* (docling renders it as a table) and
-   table_mislabeled's survey as *tables* (docling renders lists/text) — opposite
-   classifications, not a text problem.
-3. **Complex title-page reading order.** Author-block / abstract interleaving on
-   the academic papers (band reading-order handles the full-width title; the
-   in-column author/abstract order is still off).
-4. **amt fraction double space (text-layer, strict-only).** docling boxes glyphs
+1. **TableFormer structure on complex tables**
+   ([#60](https://github.com/docling-project/docling.rs/issues/60)). Multi-row
+   headers / spans on the big papers (2206, 2203) differ from docling's OTSL
+   prediction; one cell-structure diff cascades through the padded columns into
+   many row diffs (2206's ~92 table-row diffs trace to ~4 structure diffs).
+2. **Layout classification**
+   ([#61](https://github.com/docling-project/docling.rs/issues/61)). The layout
+   ONNX classifies redp5110's table-of-contents as a *picture* (docling renders
+   it as a table) and table_mislabeled's survey as *tables* (docling renders
+   lists/text) — opposite classifications, not a text problem.
+3. **Complex title-page reading order**
+   ([#62](https://github.com/docling-project/docling.rs/issues/62)). Author-block
+   / abstract interleaving on the academic papers (band reading-order handles the
+   full-width title; the in-column author/abstract order is still off).
+4. **amt fraction double space (text-layer, strict-only)**
+   ([#63](https://github.com/docling-project/docling.rs/issues/63)). docling boxes glyphs
    with the embedded font's OS/2 typographic metrics, not the PDF descriptor's;
    that ~0.3 pt difference makes its justified line insert a *second* space before
    the `1⁄4` numerator. Our single-spaced output is the more faithful rendering
