@@ -42,6 +42,12 @@ struct PyNativeResult {
 #[pyclass(name = "DocumentConverter")]
 struct PyDocumentConverter {
     inner: docling::DocumentConverter,
+    /// A persistent, primed PDF pipeline once `initialize_pipeline` runs — so
+    /// PDFs reuse its warm models across `convert` calls instead of reloading
+    /// them each time (the transient path `inner` takes otherwise).
+    pdf_pipeline: std::sync::Mutex<Option<docling::Pipeline>>,
+    no_ocr: bool,
+    no_table_former: bool,
 }
 
 #[pymethods]
@@ -91,20 +97,45 @@ impl PyDocumentConverter {
                 .no_ocr(!do_ocr)
                 .no_table_former(!do_table_structure)
                 .use_web_browser(use_web_browser),
+            pdf_pipeline: std::sync::Mutex::new(None),
+            no_ocr: !do_ocr,
+            no_table_former: !do_table_structure,
         })
+    }
+
+    /// Eagerly load the PDF/image ML models (docling's `initialize_pipeline`), so
+    /// the first PDF conversion doesn't pay the model-load cost and later ones
+    /// reuse the warm pipeline. `format` mirrors docling's arg — only `"pdf"` /
+    /// `"image"` have models, so other formats are a no-op. Uses the converter's
+    /// configured `do_ocr` / `do_table_structure`.
+    #[pyo3(signature = (format = None))]
+    fn initialize_pipeline(&self, py: Python<'_>, format: Option<String>) -> PyResult<()> {
+        let is_ml = match format.as_deref() {
+            Some(f) => matches!(f, "pdf" | "image"),
+            None => true,
+        };
+        if !is_ml {
+            return Ok(());
+        }
+        let mut slot = self.pdf_pipeline.lock().unwrap();
+        if slot.is_none() {
+            let mut pipeline = docling::Pipeline::new()
+                .map_err(|e| ConversionError::new_err(e.to_string()))?
+                .no_table_former(self.no_table_former)
+                .no_ocr(self.no_ocr);
+            py.allow_threads(|| pipeline.warm_up())
+                .map_err(|e| ConversionError::new_err(e.to_string()))?;
+            *slot = Some(pipeline);
+        }
+        Ok(())
     }
 
     /// Convert a document from a filesystem path (str / os.PathLike).
     /// Releases the GIL for the (potentially long) conversion.
     fn convert(&self, py: Python<'_>, source: PathLike) -> PyResult<PyNativeResult> {
-        let path = source.0;
-        let result = py
-            .allow_threads(|| {
-                let src = SourceDocument::from_file(&path)?;
-                self.inner.convert(src)
-            })
+        let src = SourceDocument::from_file(&source.0)
             .map_err(|e| ConversionError::new_err(e.to_string()))?;
-        Ok(native_result(result))
+        self.convert_source(py, src)
     }
 
     /// Convert in-memory bytes; `name` (with extension) drives format detection,
@@ -123,11 +154,30 @@ impl PyDocumentConverter {
         let format = docling::InputFormat::from_extension(ext).ok_or_else(|| {
             ConversionError::new_err(format!("cannot detect input format from name {name:?}"))
         })?;
+        self.convert_source(py, SourceDocument::from_bytes(&name, format, bytes))
+    }
+}
+
+impl PyDocumentConverter {
+    /// Convert a prepared [`SourceDocument`], routing PDFs through the warm
+    /// pipeline when `initialize_pipeline` has primed it (otherwise the transient
+    /// `inner` path, which reloads models per call).
+    fn convert_source(&self, py: Python<'_>, src: SourceDocument) -> PyResult<PyNativeResult> {
+        if src.format == docling::InputFormat::Pdf {
+            let mut slot = self.pdf_pipeline.lock().unwrap();
+            if let Some(pipeline) = slot.as_mut() {
+                let doc = py
+                    .allow_threads(|| pipeline.convert(&src.bytes, None, &src.name))
+                    .map_err(|e| ConversionError::new_err(e.to_string()))?;
+                return Ok(PyNativeResult {
+                    status: "success".to_string(),
+                    input_name: src.name,
+                    document_json: doc.export_to_json(),
+                });
+            }
+        }
         let result = py
-            .allow_threads(|| {
-                self.inner
-                    .convert(SourceDocument::from_bytes(&name, format, bytes))
-            })
+            .allow_threads(|| self.inner.convert(src))
             .map_err(|e| ConversionError::new_err(e.to_string()))?;
         Ok(native_result(result))
     }

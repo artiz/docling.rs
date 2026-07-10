@@ -153,3 +153,13 @@ def test_gpu_device_warns_cpu_only():
         DocumentConverter(
             format_options={InputFormat.PDF: PdfFormatOption(pipeline_options=opts)}
         )
+
+
+def test_initialize_pipeline_noop_for_non_ml_format():
+    from docling_rs import DocumentConverter, InputFormat
+
+    conv = DocumentConverter()
+    # No models needed for a declarative format → clean no-op, and conversion
+    # still works afterwards.
+    conv.initialize_pipeline(InputFormat.MD)
+    assert conv.convert(HTML).status == "success"

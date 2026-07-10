@@ -171,6 +171,17 @@ class DocumentConverter:
             ),
         )
 
+    def initialize_pipeline(self, format: Optional[InputFormat] = None) -> None:
+        """Eagerly load the ML models for ``format`` (docling's
+        ``initialize_pipeline``), so the first PDF conversion doesn't pay the
+        model-load cost and later ones reuse the warm pipeline. Only ``PDF`` /
+        ``IMAGE`` have models; other formats are a no-op. Uses the converter's
+        configured ``do_ocr`` / ``do_table_structure`` (and needs the models
+        available — see :func:`download_models`)."""
+        self._inner.initialize_pipeline(
+            InputFormat(format).value if format is not None else None
+        )
+
     def convert(self, source: Union[str, os.PathLike, DocumentStream]) -> ConversionResult:
         """Convert a filesystem path (str / pathlib.Path) or an in-memory
         :class:`DocumentStream`."""
