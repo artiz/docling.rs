@@ -39,6 +39,10 @@ pub enum Node {
     Heading { level: u8, text: String },
     /// A run of body text.
     Paragraph { text: String },
+    /// A form checkbox (docling's `checkbox_selected`/`checkbox_unselected`): its
+    /// clean label `text` with the checked state. DocLang emits a `<checkbox>`
+    /// element head; Markdown/JSON render the task-list form (`- [x] `/`- [ ] `).
+    CheckboxItem { checked: bool, text: String },
     /// A single list item at the given nesting `level` (0 = top). For ordered
     /// items, `number` is the display number (honoring the list's `start`); it
     /// is unused for unordered items. `first_in_list` marks the first item of a
@@ -63,6 +67,22 @@ pub enum Node {
         /// item itself (rather than a [`Node::Located`] wrapper) so consecutive
         /// items still group into one `<list>`.
         location: Option<[u16; 4]>,
+        /// DocLang-only override for items whose DocLang form diverges from their
+        /// flat Markdown `text`. Markdown/JSON always render the fields above; the
+        /// DocLang serializer, when this is `Some`, takes the list kind, marker,
+        /// and content from here instead. Used for docx multilevel numbering
+        /// (Markdown shows `- 1.1. x`, DocLang an ordered `<marker>1.1.</marker>`
+        /// with clean text) and inline equations/formatting in list items.
+        dclx: Option<ListItemDclx>,
+        /// The item's hyperlink target, when its content is a link — docling's
+        /// HTML backend emits it as an `<href uri=…/>` in the item head, and the
+        /// anchor's Markdown link markup is stripped from the rendered content.
+        /// `None` for a plain item; ignored by Markdown/JSON.
+        href: Option<String>,
+        /// Non-body content layer (docling's HTML site chrome before the first
+        /// heading → `furniture`). DocLang emits a `<layer value=…/>` in the item
+        /// head; Markdown/JSON drop a non-body item entirely.
+        layer: Option<ContentLayer>,
     },
     /// A fenced code block.
     Code {
@@ -108,10 +128,14 @@ pub enum Node {
         runs: Vec<InlineRun>,
         md_text: String,
     },
-    /// A node in docling's `furniture` content layer (page headers/footers, the
-    /// HTML `<title>`, …). Markdown and JSON omit furniture by default; DocLang
-    /// renders the wrapped node with a `<layer value="furniture"/>` head.
-    Furniture(Box<Node>),
+    /// A node in a non-body content layer — `furniture` (page headers/footers,
+    /// the HTML `<title>`, site navigation/chrome) or `notes` (docx comments).
+    /// Markdown and JSON omit these layers by default; DocLang renders the wrapped
+    /// node with a `<layer value="{layer}"/>` head.
+    Furniture {
+        layer: ContentLayer,
+        inner: Box<Node>,
+    },
     /// A node carrying layout provenance — the four DocLang `<location>` values
     /// (`x0,y0,x1,y1`, normalized to 0–511) docling attaches to elements from
     /// backends with real geometry (e.g. the slide shapes in PPTX). Markdown and
@@ -156,6 +180,41 @@ pub struct InlineRun {
     pub strike: bool,
     pub script: Script,
     pub code: bool,
+    /// An inline equation (`text` holds LaTeX): DocLang renders `<formula>…`,
+    /// Markdown/JSON keep the `$…$` already baked into the group's `md_text`.
+    pub formula: bool,
+}
+
+/// A DocLang content layer other than the default `body` (see [`Node::Furniture`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ContentLayer {
+    /// Page headers/footers, HTML `<title>`, site navigation/chrome.
+    Furniture,
+    /// Editorial notes (docx reviewer comments).
+    Notes,
+}
+
+impl ContentLayer {
+    /// The `<layer value="…"/>` token value.
+    pub fn value(self) -> &'static str {
+        match self {
+            ContentLayer::Furniture => "furniture",
+            ContentLayer::Notes => "notes",
+        }
+    }
+}
+
+/// DocLang-only content for a [`Node::ListItem`] whose DocLang form differs from
+/// its flat Markdown `text` (see [`Node::ListItem::dclx`]). `ordered` picks the
+/// enclosing `<list>` kind, `marker` the `<ldiv><marker>`; content is `runs`
+/// (structured equations/formatting) when non-empty, else `text` re-parsed for
+/// inline markers.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct ListItemDclx {
+    pub ordered: bool,
+    pub marker: Option<String>,
+    pub text: String,
+    pub runs: Vec<InlineRun>,
 }
 
 impl InlineRun {
@@ -166,6 +225,7 @@ impl InlineRun {
             && !self.underline
             && !self.strike
             && !self.code
+            && !self.formula
             && self.script == Script::Baseline
     }
 }

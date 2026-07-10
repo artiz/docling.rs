@@ -15,7 +15,7 @@
 //! docling-legacy Markdown markers; [`inline_runs`] re-parses those into the
 //! structural `<bold>`/`<italic>`/`<code>` elements DocLang expects.
 
-use crate::document::{FieldItem, InlineRun, Node, Script, Table};
+use crate::document::{ContentLayer, FieldItem, InlineRun, Node, Script, Table};
 use std::borrow::Cow;
 
 const INDENT: &str = "  ";
@@ -26,6 +26,9 @@ const INDENT: &str = "  ";
 /// line — `newline` false reproduces that glue.
 struct Out {
     lines: Vec<(i32, String, bool)>,
+    /// Running index for exported image assets (`assets/image_{NNNNNN}_…`),
+    /// incremented per image-bearing picture in document order.
+    pic_index: usize,
 }
 
 impl Out {
@@ -660,7 +663,10 @@ fn emit_cell_text(out: &mut Out, depth: i32, text: &str) {
 
 /// Serialize the node stream to DocLang XML (no trailing newline).
 pub fn export_to_doclang(nodes: &[Node]) -> String {
-    let mut out = Out { lines: Vec::new() };
+    let mut out = Out {
+        lines: Vec::new(),
+        pic_index: 0,
+    };
     out.push(0, "<doclang version=\"0.7\">".to_string());
     let mut i = 0usize;
     emit_nodes(&mut out, 1, nodes, &mut i, 0);
@@ -683,7 +689,30 @@ fn emit_nodes(out: &mut Out, depth: i32, nodes: &[Node], i: &mut usize, level: u
                 *i += 1;
             }
             Node::Paragraph { text } => {
-                emit_text_element(out, depth, "text", "text", text, None);
+                // A standalone display equation (docling's block `FormulaItem`) is
+                // stored as a `$$…$$` paragraph so Markdown/JSON render the fenced
+                // math; DocLang emits it as a `<formula>` element.
+                if let Some(latex) = text
+                    .strip_prefix("$$")
+                    .and_then(|t| t.strip_suffix("$$"))
+                    .filter(|t| !t.is_empty())
+                {
+                    out.push(depth, format!("<formula>{}</formula>", escape_text(latex)));
+                } else {
+                    emit_text_element(out, depth, "text", "text", text, None);
+                }
+                *i += 1;
+            }
+            Node::CheckboxItem { checked, text } => {
+                // A `<text>` with a `<checkbox class="selected|unselected"/>` head
+                // element and the label text child (block form).
+                let class = if *checked { "selected" } else { "unselected" };
+                out.push(depth, "<text>".to_string());
+                out.push(depth + 1, format!("<checkbox class=\"{class}\"/>"));
+                if !text.is_empty() {
+                    out.push(depth + 1, escape_text(text));
+                }
+                out.push(depth, "</text>".to_string());
                 *i += 1;
             }
             Node::Code { language, text } => {
@@ -694,8 +723,8 @@ fn emit_nodes(out: &mut Out, depth: i32, nodes: &[Node], i: &mut usize, level: u
                 emit_table(out, depth, t);
                 *i += 1;
             }
-            Node::Picture { caption, image: _ } => {
-                emit_picture(out, depth, caption.as_deref(), None);
+            Node::Picture { caption, image } => {
+                emit_picture(out, depth, caption.as_deref(), image.as_ref(), None);
                 *i += 1;
             }
             Node::Chart { kind, table } => {
@@ -728,8 +757,8 @@ fn emit_nodes(out: &mut Out, depth: i32, nodes: &[Node], i: &mut usize, level: u
                 emit_inline_group(out, depth, *unwrapped, runs);
                 *i += 1;
             }
-            Node::Furniture(inner) => {
-                emit_furniture(out, depth, inner);
+            Node::Furniture { layer, inner } => {
+                emit_furniture(out, depth, *layer, inner);
                 *i += 1;
             }
             Node::Located { location, inner } => {
@@ -764,6 +793,11 @@ fn emit_inline_group(out: &mut Out, depth: i32, unwrapped: bool, runs: &[InlineR
         for run in runs {
             if run.is_plain() {
                 out.push(0, escape_text(&run.text));
+            } else if run.formula {
+                out.push(
+                    depth,
+                    format!("<formula>{}</formula>", escape_text(&run.text)),
+                );
             } else {
                 emit_styled(out, depth, &style_tags(run), &escape_text(&run.text));
             }
@@ -784,24 +818,34 @@ fn emit_inline_group(out: &mut Out, depth: i32, unwrapped: bool, runs: &[InlineR
     }
 
     out.push(depth, "<text>".to_string());
+    emit_inline_runs_body(out, depth + 1, runs);
+    out.push(depth, "</text>".to_string());
+}
+
+/// Emit the child runs of an inline group at `depth` (the body shared by a
+/// wrapped `<text>` group and a list item's bare content). A `<content>`-wrapped
+/// run is an *element* child → indented; a bare text/CDATA node sits at column 0
+/// (its record delimiter's leading newline), except the first child, which has
+/// no leading newline and stays indented. Styled/formula runs are elements.
+fn emit_inline_runs_body(out: &mut Out, depth: i32, runs: &[InlineRun]) {
     for (i, run) in runs.iter().enumerate() {
         if run.is_plain() {
             let e = escape_text(&run.text);
-            // A `<content>`-wrapped run is an *element* child → indented like the
-            // styled runs. A bare text/CDATA node sits at column 0 (its record
-            // delimiter's leading newline), except the first child, which has no
-            // leading newline and stays indented.
             let d = if e.starts_with("<content>") || i == 0 {
-                depth + 1
+                depth
             } else {
                 0
             };
             out.push(d, e);
+        } else if run.formula {
+            out.push(
+                depth,
+                format!("<formula>{}</formula>", escape_text(&run.text)),
+            );
         } else {
-            emit_styled(out, depth + 1, &style_tags(run), &escape_text(&run.text));
+            emit_styled(out, depth, &style_tags(run), &escape_text(&run.text));
         }
     }
-    out.push(depth, "</text>".to_string());
 }
 
 /// The DocLang wrapping tags for a run, outermost first. docling applies
@@ -849,10 +893,11 @@ fn emit_styled(out: &mut Out, depth: i32, tags: &[&str], inner: &str) {
 }
 
 /// Render a [`Node::Furniture`] wrapper: the inner element with a
-/// `<layer value="furniture"/>` head (which forces the block form). Only the
-/// heading case (the HTML `<title>`) is emitted today; other furniture nodes
-/// fall back to their body rendering.
-fn emit_furniture(out: &mut Out, depth: i32, inner: &Node) {
+/// `<layer value="{layer}"/>` head (which forces the block form). Headings (the
+/// HTML `<title>`, section chrome) and body text (docx comments, nav items) are
+/// emitted with the layer token; other nodes fall back to their body rendering.
+fn emit_furniture(out: &mut Out, depth: i32, layer: ContentLayer, inner: &Node) {
+    let token = format!("<layer value=\"{}\"/>", layer.value());
     match inner {
         Node::Heading { level, text } => {
             let open = if *level <= 1 {
@@ -861,9 +906,39 @@ fn emit_furniture(out: &mut Out, depth: i32, inner: &Node) {
                 format!("heading level=\"{level}\"")
             };
             out.push(depth, format!("<{open}>"));
-            out.push(depth + 1, "<layer value=\"furniture\"/>".to_string());
+            out.push(depth + 1, token);
             out.push(depth + 1, escape_text(text));
             out.push(depth, "</heading>".to_string());
+        }
+        Node::Paragraph { text } => {
+            out.push(depth, "<text>".to_string());
+            out.push(depth + 1, token);
+            out.push(depth + 1, escape_text(text));
+            out.push(depth, "</text>".to_string());
+        }
+        // A furniture picture (site-chrome logo/banner): the layer token, then a
+        // caption that carries its own `<href>`/`<layer>` head when the caption is
+        // a link.
+        Node::Picture { caption, .. } => {
+            let caption = caption.as_deref().filter(|c| !c.trim().is_empty());
+            out.push(depth, "<picture>".to_string());
+            out.push(depth + 1, token.clone());
+            if let Some(c) = caption {
+                out.push(depth + 1, "<caption>".to_string());
+                match inline_runs(c).into_iter().next() {
+                    Some(Run::Link { anchor, uri }) => {
+                        out.push(depth + 2, format!("<href uri=\"{}\"/>", attr_escape(&uri)));
+                        out.push(depth + 2, token.clone());
+                        out.push(depth + 2, escape_text(&anchor));
+                    }
+                    _ => {
+                        out.push(depth + 2, token.clone());
+                        out.push(depth + 2, escape_text(c));
+                    }
+                }
+                out.push(depth + 1, "</caption>".to_string());
+            }
+            out.push(depth, "</picture>".to_string());
         }
         other => {
             let mut i = 0usize;
@@ -874,9 +949,26 @@ fn emit_furniture(out: &mut Out, depth: i32, inner: &Node) {
 
 /// Render a `<picture>` — with optional layout provenance and caption. Empty
 /// (no location, no caption) collapses to `<picture></picture>`.
-fn emit_picture(out: &mut Out, depth: i32, caption: Option<&str>, location: Option<&[u16; 4]>) {
+fn emit_picture(
+    out: &mut Out,
+    depth: i32,
+    caption: Option<&str>,
+    image: Option<&crate::document::PictureImage>,
+    location: Option<&[u16; 4]>,
+) {
     let caption = caption.filter(|c| !c.trim().is_empty());
-    if location.is_none() && caption.is_none() {
+    // An image-bearing picture carries a referenced-image `<src>` naming the
+    // exported asset (`assets/image_{index:06}_{sha256}.png`), matching docling's
+    // referenced-image mode. docling re-encodes every image to PNG through PIL, so
+    // the extension is always `.png` and the content hash is over those re-encoded
+    // bytes — not reproducible here, so we hash the source bytes and the
+    // conformance harness canonicalizes the digest before comparing.
+    let src = image.map(|img| {
+        let idx = out.pic_index;
+        out.pic_index += 1;
+        format!("assets/image_{idx:06}_{}.png", sha256_hex(&img.data))
+    });
+    if location.is_none() && caption.is_none() && src.is_none() {
         out.push(depth, "<picture></picture>".to_string());
         return;
     }
@@ -884,10 +976,55 @@ fn emit_picture(out: &mut Out, depth: i32, caption: Option<&str>, location: Opti
     if let Some(loc) = location {
         push_location(out, depth + 1, loc);
     }
+    if let Some(s) = src {
+        out.push(depth + 1, format!("<src uri=\"{}\"/>", attr_escape(&s)));
+    }
     if let Some(c) = caption {
-        out.push(depth + 1, format!("<caption>{}</caption>", escape_text(c)));
+        emit_caption(out, depth + 1, c);
     }
     out.push(depth, "</picture>".to_string());
+}
+
+/// A `<caption>` — inline when plain text, or block form with an `<href uri=…/>`
+/// head + anchor text when the caption is a single Markdown link (docling's
+/// linked image captions).
+fn emit_caption(out: &mut Out, depth: i32, text: &str) {
+    if let Some(Run::Link { anchor, uri }) = inline_runs(text).into_iter().next() {
+        if inline_runs(text).len() == 1 {
+            out.push(depth, "<caption>".to_string());
+            out.push(depth + 1, format!("<href uri=\"{}\"/>", attr_escape(&uri)));
+            out.push(depth + 1, escape_text(&anchor));
+            out.push(depth, "</caption>".to_string());
+            return;
+        }
+    }
+    out.push(depth, format!("<caption>{}</caption>", escape_text(text)));
+}
+
+/// If `text` is a single `[anchor](uri)` Markdown link, return just `anchor`;
+/// otherwise return `text` unchanged. Used when the link's uri rides in a list
+/// item's `<href>` head, so the content keeps only the anchor text.
+fn strip_lone_link(text: &str) -> Cow<'_, str> {
+    if let Some(rest) = text.strip_prefix('[') {
+        if let Some(close) = rest.find("](") {
+            if rest.ends_with(')') {
+                let anchor = &rest[..close];
+                let uri = &rest[close + 2..rest.len() - 1];
+                if !anchor.contains(['[', ']']) && !uri.contains(['(', ')']) {
+                    return Cow::Owned(anchor.to_string());
+                }
+            }
+        }
+    }
+    Cow::Borrowed(text)
+}
+
+/// Lowercase hex SHA-256 of `bytes` (image asset content hash).
+fn sha256_hex(bytes: &[u8]) -> String {
+    use sha2::{Digest, Sha256};
+    let mut h = Sha256::new();
+    h.update(bytes);
+    h.finalize().iter().map(|b| format!("{b:02x}")).collect()
 }
 
 /// Render a [`Node::Located`] wrapper: the inner element with its `<location>`
@@ -905,8 +1042,14 @@ fn emit_located(out: &mut Out, depth: i32, location: &[u16; 4], inner: &Node) {
         Node::Paragraph { text } => {
             emit_text_element(out, depth, "text", "text", text, Some(location));
         }
-        Node::Picture { caption, .. } => {
-            emit_picture(out, depth, caption.as_deref(), Some(location));
+        Node::Picture { caption, image } => {
+            emit_picture(
+                out,
+                depth,
+                caption.as_deref(),
+                image.as_ref(),
+                Some(location),
+            );
         }
         Node::Table(t) => {
             // The wrapper's location takes precedence over any on the table.
@@ -923,7 +1066,12 @@ fn emit_located(out: &mut Out, depth: i32, location: &[u16; 4], inner: &Node) {
 }
 
 fn emit_list(out: &mut Out, depth: i32, nodes: &[Node], i: &mut usize, level: u8) {
-    let ordered = matches!(nodes[*i], Node::ListItem { ordered: true, .. });
+    // The list kind follows the first item's DocLang overlay when it has one
+    // (a docx multilevel item is a Markdown bullet but a DocLang ordered item).
+    let ordered = match &nodes[*i] {
+        Node::ListItem { ordered, dclx, .. } => dclx.as_ref().map_or(*ordered, |d| d.ordered),
+        _ => false,
+    };
     let open = if ordered {
         "<list class=\"ordered\">"
     } else {
@@ -942,13 +1090,20 @@ fn emit_list(out: &mut Out, depth: i32, nodes: &[Node], i: &mut usize, level: u8
                 number,
                 first_in_list,
                 location,
+                dclx,
+                href,
+                layer,
             } if *l == level => {
+                // The DocLang overlay wins over the flat Markdown fields for the
+                // list kind and marker (see `ListItemDclx`).
+                let eff_ordered = dclx.as_ref().map_or(*o, |d| d.ordered);
+                let eff_marker = dclx.as_ref().map_or(marker.as_ref(), |d| d.marker.as_ref());
                 // A new sibling list at this depth closes this one (the caller
                 // re-opens): the backend flagged a fresh list, the kind flips, or
                 // an ordered run breaks — matching the Markdown serializer.
                 if *i != start
                     && (*first_in_list
-                        || *o != ordered
+                        || eff_ordered != ordered
                         || (ordered && Some(*number) != prev_number.map(|n| n + 1)))
                 {
                     break;
@@ -963,7 +1118,7 @@ fn emit_list(out: &mut Out, depth: i32, nodes: &[Node], i: &mut usize, level: u8
                 );
                 // An enumeration marker (HTML/DOCX ordered items) rides inside
                 // the `<ldiv>`; without one the delimiter is self-closing.
-                match marker {
+                match eff_marker {
                     Some(m) => {
                         out.push(depth + 1, "<ldiv>".to_string());
                         out.push(depth + 2, format!("<marker>{}</marker>", escape_text(m)));
@@ -977,7 +1132,44 @@ fn emit_list(out: &mut Out, depth: i32, nodes: &[Node], i: &mut usize, level: u8
                 if let Some(loc) = location {
                     push_location(out, depth + 1, loc);
                 }
-                emit_list_item_content(out, depth + 1, text, has_nested);
+                match dclx {
+                    // Structured DocLang content (equations/formatting): the runs
+                    // render directly — list-item content is bare. (docling wraps
+                    // some formatted items in `<text>`, but that choice comes from
+                    // its InlineGroup grouping, which is not recoverable from the
+                    // OOXML alone, so we keep the faithful bare form.)
+                    Some(d) if !d.runs.is_empty() => emit_inline_runs_body(out, depth + 1, &d.runs),
+                    // A clean-text override (multilevel numbering) re-parses like
+                    // a normal item but from the overlay's text.
+                    Some(d) => emit_list_item_content(out, depth + 1, &d.text, has_nested),
+                    None => {
+                        // docling emits an `<href>` head only when the item's whole
+                        // content is a lone link (`[anchor](uri)`); a mixed item
+                        // (`text [anchor](uri) …`) keeps the anchor inline with no
+                        // head. A non-body layer always rides in the head.
+                        let stripped = strip_lone_link(text);
+                        let eff_href = href
+                            .as_deref()
+                            .filter(|_| matches!(stripped, Cow::Owned(_)));
+                        if eff_href.is_some() || layer.is_some() {
+                            let content: &str = if eff_href.is_some() {
+                                stripped.as_ref()
+                            } else {
+                                text.as_str()
+                            };
+                            emit_list_item_with_head(
+                                out,
+                                depth + 1,
+                                content,
+                                has_nested,
+                                eff_href,
+                                *layer,
+                            );
+                        } else {
+                            emit_list_item_content(out, depth + 1, text, has_nested);
+                        }
+                    }
+                }
                 *i += 1;
             }
             Node::ListItem { level: l, .. } if *l > level => {
@@ -1007,17 +1199,60 @@ fn emit_list(out: &mut Out, depth: i32, nodes: &[Node], i: &mut usize, level: u8
 /// one as its inline elements). (A uniformly-formatted item that docling stores
 /// with direct formatting rather than an inline group is also wrapped, but that
 /// backend-structural distinction isn't recoverable from the flat model.)
-fn emit_list_item_content(out: &mut Out, depth: i32, text: &str, has_nested: bool) {
-    if !has_nested {
+/// A list item whose head carries an `<href>` and/or `<layer>` (HTML links /
+/// site chrome). Bare content puts the head right after the `<ldiv>` then the
+/// anchor text; wrapped content (a `<text>` element, e.g. an item with a nested
+/// sublist) puts the head *inside* the `<text>`.
+fn emit_list_item_with_head(
+    out: &mut Out,
+    depth: i32,
+    text: &str,
+    has_nested: bool,
+    href: Option<&str>,
+    layer: Option<ContentLayer>,
+) {
+    let head = |out: &mut Out, d: i32| {
+        if let Some(uri) = href {
+            out.push(d, format!("<href uri=\"{}\"/>", attr_escape(uri)));
+        }
+        if let Some(l) = layer {
+            out.push(d, format!("<layer value=\"{}\"/>", l.value()));
+        }
+    };
+    if has_nested {
+        out.push(depth, "<text>".to_string());
+        head(out, depth + 1);
+        emit_runs(out, depth + 1, inline_runs(text));
+        out.push(depth, "</text>".to_string());
+    } else {
+        head(out, depth);
         emit_runs(out, depth, inline_runs(text));
-        return;
     }
+}
+
+fn emit_list_item_content(out: &mut Out, depth: i32, text: &str, has_nested: bool) {
+    // docling models an HTML list item's inline content as an InlineGroup: each
+    // text node / inline element becomes a separate child, links flatten to
+    // their anchor (the href is dropped in inline scope), and the children are
+    // rendered on their own lines. Re-parse the Markdown markers into runs and
+    // mirror that layout.
     let runs = inline_runs_from_markdown(text);
     let single_plain = runs.len() <= 1 && runs.first().map_or(true, |r| r.is_plain());
     if single_plain {
-        emit_text_element(out, depth, "text", "text", text, None);
-    } else {
+        if has_nested {
+            emit_text_element(out, depth, "text", "text", text, None);
+        } else {
+            let t = runs.first().map_or("", |r| r.text.as_str());
+            if !t.is_empty() {
+                emit_text_node(out, depth, t);
+            }
+        }
+    } else if has_nested {
         emit_inline_group(out, depth, false, &runs);
+    } else {
+        // Bare multi-segment item: the runs render at the item's own depth, the
+        // first indented and the rest column-0 (minidom's text-child layout).
+        emit_inline_runs_body(out, depth, &runs);
     }
 }
 
@@ -1166,10 +1401,13 @@ mod tests {
 
     #[test]
     fn furniture_heading_gets_layer_head() {
-        let out = export_to_doclang(&[Node::Furniture(Box::new(Node::Heading {
-            level: 1,
-            text: "Anchor Links Test".into(),
-        }))]);
+        let out = export_to_doclang(&[Node::Furniture {
+            layer: ContentLayer::Furniture,
+            inner: Box::new(Node::Heading {
+                level: 1,
+                text: "Anchor Links Test".into(),
+            }),
+        }]);
         assert_eq!(
             out,
             "<doclang version=\"0.7\">\n  <heading>\n    <layer value=\"furniture\"/>\n    Anchor Links Test\n  </heading>\n</doclang>"

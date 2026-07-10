@@ -42,6 +42,13 @@ for fmt in "${fmts[@]}"; do
     else
       unzip -p "$ref" document.xml > "$tmp/ref.xml" 2>/dev/null
       unzip -p "$ours" document.xml > "$tmp/ours.xml" 2>/dev/null
+      # Canonicalize exported image asset names. docling names referenced images
+      # assets/image_NNNNNN_<sha256>.png, where the digest is over the PIL-re-encoded
+      # PNG bytes — not reproducible outside docling. We emit the same structure with
+      # a source-bytes hash, so the index+digest are normalized on both sides here;
+      # only a genuine structural difference (missing/extra <src>) then shows up.
+      sed -E -i 's#image_[0-9]{6}_[0-9a-f]+\.png#image_NORM.png#g' \
+        "$tmp/ref.xml" "$tmp/ours.xml"
       d=$(diff "$tmp/ref.xml" "$tmp/ours.xml" | grep -c '^[<>]')
       lr=$(wc -l < "$tmp/ref.xml"); lo=$(wc -l < "$tmp/ours.xml")
       max=$(( lr > lo ? lr : lo )); [ "$max" -eq 0 ] && max=1

@@ -16,3 +16,6 @@ rust-version.workspace = true
 # (export_to_json); the model itself stays plain (walked into `Value` by json.rs).
 # `preserve_order` keeps docling's field order (schema_name, version, …).
 serde_json = { version = "1", features = ["preserve_order"] }
+# Content hash for exported image asset names (assets/image_NNNNNN_<sha256>.png),
+# matching docling's referenced-image naming scheme.
+sha2 = "0.10"

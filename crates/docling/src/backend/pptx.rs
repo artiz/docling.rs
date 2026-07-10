@@ -358,6 +358,9 @@ fn handle_text_shape(sp: XmlNode, location: [u16; 4], doc: &mut DoclingDocument)
                     level: 0,
                     marker: None,
                     location: Some(location),
+                    dclx: None,
+                    href: None,
+                    layer: None,
                 });
             }
             None => {

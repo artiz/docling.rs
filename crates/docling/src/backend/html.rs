@@ -14,7 +14,7 @@
 //! cascade) visibility suppression, and the rich per-cell table provenance the
 //! Python backend computes.
 
-use docling_core::{DoclingDocument, InlineRun, Node, Script, Table};
+use docling_core::{ContentLayer, DoclingDocument, InlineRun, Node, Script, Table};
 use scraper::{ElementRef, Html, Node as HtmlNode, Selector};
 
 use crate::backend::images::{ImageResolver, NoFetch};
@@ -63,14 +63,55 @@ pub(crate) fn append_fragment(html: &str, out: &mut Vec<Node>, images: &dyn Imag
     if let Some(title) = parsed.select(cached_selector!("title")).next() {
         let text = normalize_ws(&title.text().collect::<String>());
         if !text.is_empty() {
-            out.push(Node::Furniture(Box::new(Node::Heading { level: 1, text })));
+            out.push(Node::Furniture {
+                layer: docling_core::ContentLayer::Furniture,
+                inner: Box::new(Node::Heading { level: 1, text }),
+            });
         }
     }
 
+    let start = out.len();
     // Prefer <body>; fall back to the root element for fragments.
     let body = parsed.select(cached_selector!("body")).next();
     let root = body.unwrap_or_else(|| parsed.root_element());
     walk_block(root, out, 0, Fmt::default(), images);
+    // docling's `infer_furniture`: content before the first body heading is site
+    // chrome (navigation/menus/sidebars) → the `furniture` layer.
+    mark_leading_furniture(&mut out[start..]);
+}
+
+/// The first hyperlink target inside `el` (its own `<a href>` or a descendant),
+/// used as a list item's `<href>` head. `None` when the item has no link.
+fn first_href(el: ElementRef) -> Option<String> {
+    el.select(cached_selector!("a"))
+        .next()
+        .and_then(|a| a.value().attr("href"))
+        .filter(|h| !h.is_empty())
+        .map(str::to_string)
+}
+
+/// Tag every node before the first body heading as the `furniture` content layer
+/// (docling's `infer_furniture`, default on). No body heading → nothing is tagged
+/// (docling keeps such a document entirely in the body layer). A list item takes
+/// the layer on its `layer` field (so items still group into one `<list>`); any
+/// other node is wrapped in [`Node::Furniture`].
+fn mark_leading_furniture(nodes: &mut [Node]) {
+    let Some(first) = nodes.iter().position(|n| matches!(n, Node::Heading { .. })) else {
+        return;
+    };
+    for n in &mut nodes[..first] {
+        match n {
+            Node::ListItem { layer, .. } => *layer = Some(ContentLayer::Furniture),
+            Node::Furniture { .. } => {}
+            other => {
+                let inner = std::mem::replace(other, Node::PageBreak);
+                *other = Node::Furniture {
+                    layer: ContentLayer::Furniture,
+                    inner: Box::new(inner),
+                };
+            }
+        }
+    }
 }
 
 /// An element the page explicitly hides from rendering — the `hidden` attribute
@@ -430,6 +471,9 @@ fn walk_list(list: ElementRef, ordered: bool, nodes: &mut Vec<Node>, level: u8, 
                 // an ordered list with an explicit `start`; otherwise none.
                 marker: has_start.then(|| format!("{number}.")),
                 location: None,
+                dclx: None,
+                href: first_href(li),
+                layer: None,
             });
         }
         number += 1;
@@ -527,6 +571,9 @@ fn walk_dl(dl: ElementRef, nodes: &mut Vec<Node>, level: u8, base: Fmt) {
                         level,
                         marker: None,
                         location: None,
+                        dclx: None,
+                        href: first_href(c),
+                        layer: None,
                     });
                 }
             }
@@ -572,6 +619,9 @@ fn walk_dd(dd: ElementRef, nodes: &mut Vec<Node>, level: u8, base: Fmt) {
             level,
             marker: None,
             location: None,
+            dclx: None,
+            href: first_href(dd),
+            layer: None,
         });
     }
     for (kind, el) in nested {
@@ -612,6 +662,7 @@ impl Fmt {
             strike: self.strike,
             script: self.script,
             code: self.code,
+            formula: false,
         }
     }
 }

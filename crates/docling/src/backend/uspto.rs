@@ -15,7 +15,45 @@ use crate::backend::uspto_entities::NAMED_ENTITIES;
 use crate::backend::DeclarativeBackend;
 use crate::error::ConversionError;
 use crate::source::SourceDocument;
-use docling_core::{DoclingDocument, Node, Table, TableStructure};
+use docling_core::{
+    inline_paragraph_node, DoclingDocument, InlineRun, Node, Table, TableStructure,
+};
+
+/// Whether a plain-text file is a legacy APS (Automated Patent System) patent —
+/// its first non-blank line is the `PATN` record marker. docling reconstructs
+/// such a file verbatim into a single text item, one source line per run.
+pub fn looks_like_aps(text: &str) -> bool {
+    text.lines()
+        .find(|l| !l.trim().is_empty())
+        .is_some_and(|l| l.trim_end() == "PATN")
+}
+
+/// Reconstruct a legacy APS patent as docling does: the whole file becomes one
+/// text item whose runs are the source lines (CR stripped), so DocLang renders
+/// the lines verbatim (the first indented, the rest at column 0), CDATA-escaping
+/// only the lines that need it.
+pub fn convert_aps(source: &SourceDocument) -> Result<DoclingDocument, ConversionError> {
+    let raw = source.text()?;
+    let mut doc = DoclingDocument::new(&source.name);
+    let mut lines: Vec<&str> = raw.split('\n').map(|l| l.trim_end_matches('\r')).collect();
+    while lines.last().is_some_and(|l| l.trim().is_empty()) {
+        lines.pop();
+    }
+    let runs: Vec<InlineRun> = lines
+        .into_iter()
+        .map(|l| InlineRun {
+            // docling normalizes each source line's leading indentation away
+            // (continuation lines are wrapped at column 0).
+            text: l.trim_start().to_string(),
+            ..InlineRun::default()
+        })
+        .collect();
+    if !runs.is_empty() {
+        doc.nodes
+            .push(inline_paragraph_node(String::new(), runs, false));
+    }
+    Ok(doc)
+}
 
 pub struct UsptoBackend;
 

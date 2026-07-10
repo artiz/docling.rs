@@ -482,6 +482,9 @@ fn emit_item(
             level,
             marker: None,
             location: None,
+            dclx: None,
+            href: None,
+            layer: None,
         });
         *emitted = true;
     }

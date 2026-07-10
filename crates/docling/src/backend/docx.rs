@@ -17,7 +17,7 @@
 
 use std::collections::HashMap;
 
-use docling_core::{DoclingDocument, InlineRun, Node, PictureImage, Script, Table};
+use docling_core::{DoclingDocument, InlineRun, ListItemDclx, Node, PictureImage, Script, Table};
 use roxmltree::{Document, Node as XmlNode};
 
 use crate::backend::markdown::escape_text;
@@ -75,7 +75,64 @@ impl DeclarativeBackend for DocxBackend {
         for node in body.children().filter(XmlNode::is_element) {
             process_block(node, &ctx, &mut state, &mut doc);
         }
+        // Reviewer comments (docling's `notes` layer) are appended after the body
+        // as furniture text; Markdown/JSON drop them, DocLang emits `<layer
+        // value="notes"/>` items.
+        for comment in parse_comments(&mut pkg) {
+            doc.nodes.push(Node::Furniture {
+                layer: docling_core::ContentLayer::Notes,
+                inner: Box::new(Node::Paragraph { text: comment }),
+            });
+        }
         Ok(doc)
+    }
+}
+
+/// Parse `word/comments.xml` into docling's per-comment note strings:
+/// `[author: {author} ({initials}), time: {iso}]: {text}` (the author/initials
+/// parts drop out when absent). Empty when the part is missing.
+fn parse_comments(pkg: &mut Package) -> Vec<String> {
+    let Some(xml) = pkg.read("word/comments.xml") else {
+        return Vec::new();
+    };
+    let Ok(dom) = Document::parse(&xml) else {
+        return Vec::new();
+    };
+    let mut out = Vec::new();
+    for c in dom.descendants().filter(|n| n.has_tag_name("comment")) {
+        let author = attr(c, "author").unwrap_or("").trim();
+        let initials = attr(c, "initials").unwrap_or("").trim();
+        let date = attr(c, "date").map(format_comment_date).unwrap_or_default();
+        let text: String = c
+            .descendants()
+            .filter(|n| n.has_tag_name("t"))
+            .filter_map(|n| n.text())
+            .collect();
+        let head = if author.is_empty() {
+            format!("[time: {date}]")
+        } else if initials.is_empty() {
+            format!("[author: {author}, time: {date}]")
+        } else {
+            format!("[author: {author} ({initials}), time: {date}]")
+        };
+        out.push(format!("{head}: {text}"));
+    }
+    out
+}
+
+/// OOXML comment dates use e.g. `2026-01-04T05:48:07Z`; docling normalizes them
+/// to `2026-01-04T05:48:07.000+00:00` (millisecond precision, explicit offset).
+fn format_comment_date(raw: &str) -> String {
+    let base = raw.strip_suffix('Z').unwrap_or(raw);
+    let with_ms = if base.contains('.') {
+        base.to_string()
+    } else {
+        format!("{base}.000")
+    };
+    if raw.ends_with('Z') {
+        format!("{with_ms}+00:00")
+    } else {
+        with_ms
     }
 }
 
@@ -248,10 +305,7 @@ fn handle_paragraph_inner(
             .and_then(|n| attr(n, "val"))
             == Some("1");
         let text = clean_checkbox_symbols(&paragraph_markdown(p, ctx));
-        let marker = if checked { "- [x] " } else { "- [ ] " };
-        doc.push(Node::Paragraph {
-            text: format!("{marker}{text}"),
-        });
+        doc.push(Node::CheckboxItem { checked, text });
         state.list_run_base = None;
         return;
     }
@@ -302,9 +356,18 @@ fn handle_paragraph_inner(
         if numbered {
             get_list_counter(&mut state.counters, ctx.num_levels, &num_id, ilvl);
             let marker = build_enum_marker(&state.counters, ctx.num_levels, &num_id, ilvl);
-            if cached_regex!(r"^\d+\.$").is_match(&marker) {
-                // A plain `N.` marker renders as an ordered item.
-                let number = marker.trim_end_matches('.').parse::<u64>().unwrap_or(1);
+            // `number` is the marker's last numeric component so the DocLang
+            // serializer breaks a new ordered list when the sequence jumps
+            // (e.g. `1.1.1.` → `2.3.1.`).
+            let number = marker
+                .trim_end_matches(['.', ')'])
+                .rsplit(['.', ')'])
+                .next()
+                .and_then(|s| s.trim().parse::<u64>().ok())
+                .unwrap_or(1);
+            if cached_regex!(r"^\d+[.)]$").is_match(&marker) {
+                // A plain `N.` marker is an ordered item in both Markdown and
+                // DocLang.
                 doc.push(Node::ListItem {
                     ordered: true,
                     number,
@@ -312,23 +375,46 @@ fn handle_paragraph_inner(
                     text,
                     level,
                     // docling's DOCX backend passes the enumeration marker.
-                    marker: Some(marker.clone()),
+                    marker: Some(marker),
                     location: None,
+                    dclx: None,
+                    href: None,
+                    layer: None,
                 });
             } else {
-                // A multilevel marker (`1.1.`) renders as a bullet with the
-                // marker kept as a text prefix (docling's md_marker `-` + marker).
+                // A multilevel marker (`1.1.`) is a Markdown bullet with the
+                // marker kept as a text prefix (`- 1.1. text`), but an ordered
+                // DocLang item with a clean-text `<marker>` — carried in `dclx`.
+                let dclx = Some(ListItemDclx {
+                    ordered: true,
+                    marker: Some(marker.clone()),
+                    text: text.clone(),
+                    runs: Vec::new(),
+                });
                 doc.push(Node::ListItem {
                     ordered: false,
-                    number: 0,
+                    number,
                     first_in_list: false,
                     text: format!("{marker} {text}"),
                     level,
                     marker: None,
                     location: None,
+                    dclx,
+                    href: None,
+                    layer: None,
                 });
             }
         } else {
+            // A bullet item; inline equations carry structured `<formula>` runs in
+            // the DocLang overlay while Markdown keeps the flat `$…$` text. (Plain
+            // formatting is left to the flat-text re-parse, which matches docling's
+            // list-item rendering more closely than reconstructed runs.)
+            let dclx = has_equations.then(|| ListItemDclx {
+                ordered: false,
+                marker: None,
+                text: text.clone(),
+                runs: inline_equation_runs(&eq_parts),
+            });
             doc.push(Node::ListItem {
                 ordered: false,
                 number: 0,
@@ -337,6 +423,9 @@ fn handle_paragraph_inner(
                 level,
                 marker: None,
                 location: None,
+                dclx,
+                href: None,
+                layer: None,
             });
         }
         return;
@@ -359,7 +448,13 @@ fn handle_paragraph_inner(
     }
 
     if !text.is_empty() {
-        if rich && !has_equations {
+        if has_equations {
+            // A body paragraph with inline equations becomes an InlineGroup whose
+            // equation fragments are `<formula>` runs; Markdown/JSON keep the flat
+            // `$…$` text.
+            let runs = inline_equation_runs(&eq_parts);
+            doc.push(docling_core::inline_paragraph_node(text, runs, false));
+        } else if rich {
             // In a rich cell each format segment is its own block (joined with
             // blank lines, i.e. double spaces once flattened into the cell).
             let mut runs = Vec::new();
@@ -688,6 +783,56 @@ fn serialize_inline_equations(parts: &[EqPart]) -> String {
     out.join(" ")
 }
 
+/// Structured [`InlineRun`]s for a mixed text/equation paragraph — the DocLang
+/// side of [`serialize_inline_equations`]. Text fragments become plain runs
+/// (with the same end-trimming: the whole is stripped at its ends, the final
+/// fragment fully) and each `<m:oMath>` becomes a `formula` run carrying LaTeX.
+/// docling parents these under an `InlineGroup`; the flat `$…$` `md_text` still
+/// drives Markdown/JSON.
+fn inline_equation_runs(parts: &[EqPart]) -> Vec<InlineRun> {
+    let mut merged: Vec<EqPart> = Vec::new();
+    for part in parts {
+        match part {
+            EqPart::Text(t) => {
+                if let Some(EqPart::Text(last)) = merged.last_mut() {
+                    last.push_str(t);
+                } else {
+                    merged.push(EqPart::Text(t.clone()));
+                }
+            }
+            EqPart::Eq(e) => merged.push(EqPart::Eq(e.clone())),
+        }
+    }
+
+    let n = merged.len();
+    let mut runs = Vec::new();
+    for (i, part) in merged.iter().enumerate() {
+        match part {
+            EqPart::Eq(e) => runs.push(InlineRun {
+                text: e.clone(),
+                formula: true,
+                ..InlineRun::default()
+            }),
+            EqPart::Text(t) => {
+                let s = if i == n - 1 {
+                    t.trim()
+                } else if i == 0 {
+                    t.trim_start()
+                } else {
+                    t.as_str()
+                };
+                if !s.is_empty() {
+                    runs.push(InlineRun {
+                        text: s.to_string(),
+                        ..InlineRun::default()
+                    });
+                }
+            }
+        }
+    }
+    runs
+}
+
 #[derive(Clone, Copy, Default, PartialEq)]
 struct Fmt {
     bold: bool,
@@ -715,6 +860,7 @@ impl Fmt {
                 _ => Script::Baseline,
             },
             code: false,
+            formula: false,
         }
     }
 }
@@ -849,6 +995,10 @@ fn parse_table_with(tbl: XmlNode, ctx: &Ctx, nested: bool) -> Option<Table> {
     }
 
     let mut grid: Vec<Vec<String>> = vec![vec![String::new(); num_cols]; rows.len()];
+    // Structured block content for rich cells (dclx-only; Markdown/JSON use the
+    // flat `grid` text). Never built for a `nested` (flattened) table.
+    let mut blocks: Vec<Vec<Vec<Node>>> = vec![vec![Vec::new(); num_cols]; rows.len()];
+    let mut any_rich = false;
     for (ri, row) in rows.iter().enumerate() {
         let mut ci = 0usize;
         for tc in row.children().filter(|n| n.has_tag_name("tc")) {
@@ -873,6 +1023,19 @@ fn parse_table_with(tbl: XmlNode, ctx: &Ctx, nested: bool) -> Option<Table> {
             } else {
                 cell_markdown(tc, ctx)
             };
+            if ci < num_cols {
+                let cb = if v_continue && ri > 0 {
+                    blocks[ri - 1][ci].clone()
+                } else if nested {
+                    Vec::new()
+                } else {
+                    cell_blocks_of(tc, ctx)
+                };
+                if !cb.is_empty() {
+                    any_rich = true;
+                    blocks[ri][ci] = cb;
+                }
+            }
             let col_end = (ci + span).min(num_cols);
             for cell in grid[ri].iter_mut().take(col_end).skip(ci) {
                 *cell = text.clone();
@@ -884,7 +1047,7 @@ fn parse_table_with(tbl: XmlNode, ctx: &Ctx, nested: bool) -> Option<Table> {
         rows: grid,
         location: None,
         structure: None,
-        cell_blocks: None,
+        cell_blocks: any_rich.then_some(blocks),
     })
 }
 
@@ -974,6 +1137,31 @@ fn rich_cell_markdown(tc: XmlNode, ctx: &Ctx) -> String {
         }
     }
     sub.export_to_markdown().trim().to_string()
+}
+
+/// A rich cell's DocLang block content — the structured counterpart of
+/// [`rich_cell_markdown`]: the cell's paragraphs/lists plus *full* nested tables
+/// (kept as `Node::Table`, not flattened), built by walking the cell like a
+/// document body. Empty for a plain cell, whose flat text the serializer uses.
+/// Markdown/JSON never consult this (they render the flat cell text).
+fn cell_blocks_of(tc: XmlNode, ctx: &Ctx) -> Vec<Node> {
+    if !is_rich_cell(tc) {
+        return Vec::new();
+    }
+    let mut sub = DoclingDocument::new("");
+    let mut state = ListState::default();
+    for child in child_elements(tc) {
+        match child.tag_name().name() {
+            "p" => handle_paragraph_inner(child, ctx, &mut state, &mut sub, true, false),
+            "tbl" => {
+                if let Some(table) = parse_table_with(child, ctx, false) {
+                    sub.push(Node::Table(table));
+                }
+            }
+            _ => {}
+        }
+    }
+    sub.nodes
 }
 
 /// `<m:oMath>` elements introduced by a child (the child itself, or those inside
