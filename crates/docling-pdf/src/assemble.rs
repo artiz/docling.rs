@@ -1034,6 +1034,40 @@ fn pair_code_captions(regions: &[Region]) -> Vec<Option<usize>> {
 
 /// Assemble one page from its (already overlap-resolved) layout regions and
 /// text cells.
+/// Normalize a layout region (page points, top-left origin) to DocLang's 0–511
+/// location grid: `clamp(round(512 · coord / page_dim), 0, 511)`, per axis,
+/// order `[x0, y0, x1, y1]`. Mirrors docling_core's
+/// `_doclang_utils._create_location_tokens_for_bbox` (resolution 512) so the
+/// emitted `<location>` tokens line up with the Python groundtruth. Our heron
+/// cluster boxes match docling's to within ~1 grid unit; the residual (mainly
+/// the aspect-ratio-stretch vs letterbox preprocessing difference) is absorbed
+/// by the conformance harness's geometry tolerance.
+fn norm_loc(region: &Region, page_w: f32, page_h: f32) -> [u16; 4] {
+    let q = |v: f32, dim: f32| -> u16 {
+        if dim <= 0.0 {
+            return 0;
+        }
+        let g = (512.0 * (v as f64) / (dim as f64)).round() as i64;
+        g.clamp(0, 511) as u16
+    };
+    [
+        q(region.l, page_w),
+        q(region.t, page_h),
+        q(region.r, page_w),
+        q(region.b, page_h),
+    ]
+}
+
+/// Wrap a node in its layout provenance so the DocLang serializer emits the four
+/// `<location>` tokens as the element's head (Markdown/JSON render `inner`
+/// unchanged).
+fn located(loc: [u16; 4], inner: Node) -> Node {
+    Node::Located {
+        location: loc,
+        inner: Box::new(inner),
+    }
+}
+
 pub fn assemble_page(
     page: &PdfPage,
     regions: Vec<Region>,
@@ -1127,15 +1161,20 @@ pub fn assemble_page(
         if is_skipped(region.label) || consumed[i] {
             continue;
         }
+        // Layout provenance for this region, normalized to docling's 0–511 grid.
+        let loc = norm_loc(region, page.width, page_h);
         if region.label == "picture" {
             // The figure pixels are cropped from the page render for image export.
             let caption = caption_for[i]
                 .map(|ci| region_text(&regions[ci], &page.cells))
                 .filter(|t| !t.is_empty());
-            nodes.push(Node::Picture {
-                caption,
-                image: crate::timing::timed("crop_region", || crop_region(page, region)),
-            });
+            nodes.push(located(
+                loc,
+                Node::Picture {
+                    caption,
+                    image: crate::timing::timed("crop_region", || crop_region(page, region)),
+                },
+            ));
             continue;
         }
         let mut text = region_text(region, &page.cells);
@@ -1146,10 +1185,13 @@ pub fn assemble_page(
         match region.label {
             // docling renders both the document title and section headers as
             // `##` (it never emits a top-level `#` for PDFs), so match that.
-            "title" | "section_header" => nodes.push(Node::Heading {
-                level: 2,
-                text: md_escape(&text),
-            }),
+            "title" | "section_header" => nodes.push(located(
+                loc,
+                Node::Heading {
+                    level: 2,
+                    text: md_escape(&text),
+                },
+            )),
             // docling drops the rendered bullet glyph; the Markdown serializer
             // adds its own `- ` marker. An item whose text opens with an `N.`
             // enumeration marker is an ordered item (rendered `N. text`).
@@ -1198,12 +1240,15 @@ pub fn assemble_page(
                         vec![vec![text.clone()]]
                     }
                 });
-                nodes.push(Node::Table(Table {
-                    rows,
-                    location: None,
-                    structure: None,
-                    cell_blocks: None,
-                }));
+                nodes.push(located(
+                    loc,
+                    Node::Table(Table {
+                        rows,
+                        location: None,
+                        structure: None,
+                        cell_blocks: None,
+                    }),
+                ));
             }
             // docling does not decode formulas in the standard pipeline; it emits
             // a placeholder comment rather than the (garbled) raw glyph text.
@@ -1237,9 +1282,12 @@ pub fn assemble_page(
                 }
             }
             // text, caption, footnote → paragraph
-            _ => nodes.push(Node::Paragraph {
-                text: md_escape(&text),
-            }),
+            _ => nodes.push(located(
+                loc,
+                Node::Paragraph {
+                    text: md_escape(&text),
+                },
+            )),
         }
     }
     (nodes, links)
@@ -1271,10 +1319,42 @@ fn paragraph_is_open(text: &str) -> bool {
     })
 }
 
+/// The paragraph text inside a node, looking through a [`Node::Located`]
+/// provenance wrapper (PDF body paragraphs are wrapped since they carry a
+/// `<location>`). Returns `None` for non-paragraph nodes.
+fn as_paragraph(n: &Node) -> Option<&str> {
+    match n {
+        Node::Paragraph { text } => Some(text),
+        Node::Located { inner, .. } => match inner.as_ref() {
+            Node::Paragraph { text } => Some(text),
+            _ => None,
+        },
+        _ => None,
+    }
+}
+
+/// Whether a node is a picture, looking through a [`Node::Located`] wrapper.
+fn is_picture_node(n: &Node) -> bool {
+    match n {
+        Node::Picture { .. } => true,
+        Node::Located { inner, .. } => matches!(inner.as_ref(), Node::Picture { .. }),
+        _ => false,
+    }
+}
+
+/// Rebuild node `i` as a paragraph with `text`, preserving its `<location>`
+/// wrapper (and thus provenance) if it had one.
+fn reparagraph(node: &Node, text: String) -> Node {
+    match node {
+        Node::Located { location, .. } => located(*location, Node::Paragraph { text }),
+        _ => Node::Paragraph { text },
+    }
+}
+
 pub(crate) fn merge_continuations(nodes: &mut Vec<Node>) {
     let mut i = 0;
     while i + 1 < nodes.len() {
-        let Node::Paragraph { text: a } = &nodes[i] else {
+        let Some(a) = as_paragraph(&nodes[i]) else {
             i += 1;
             continue;
         };
@@ -1296,25 +1376,24 @@ pub(crate) fn merge_continuations(nodes: &mut Vec<Node>) {
         // own paragraph (an above-the-figure caption that didn't pair), since the
         // body text resumes after the whole figure+caption block.
         let mut j = i + 1;
-        while matches!(nodes.get(j), Some(Node::Picture { .. }))
-            || matches!(nodes.get(j), Some(Node::Paragraph { text }) if looks_like_caption(text))
+        while nodes.get(j).is_some_and(is_picture_node)
+            || nodes
+                .get(j)
+                .and_then(as_paragraph)
+                .is_some_and(looks_like_caption)
         {
             j += 1;
         }
-        let cont = matches!(nodes.get(j), Some(Node::Paragraph { text: b })
-            if b.trim_start().chars().next().is_some_and(char::is_lowercase));
+        let cont = nodes
+            .get(j)
+            .and_then(as_paragraph)
+            .is_some_and(|b| b.trim_start().chars().next().is_some_and(char::is_lowercase));
         if cont {
-            let a = match &nodes[i] {
-                Node::Paragraph { text } => text.trim_end().to_string(),
-                _ => unreachable!(),
-            };
-            let b = match &nodes[j] {
-                Node::Paragraph { text } => text.trim_start().to_string(),
-                _ => unreachable!(),
-            };
-            nodes[i] = Node::Paragraph {
-                text: format!("{a} {b}"),
-            };
+            let a = as_paragraph(&nodes[i]).unwrap().trim_end().to_string();
+            let b = as_paragraph(&nodes[j]).unwrap().trim_start().to_string();
+            // Keep node i's provenance wrapper; docling's merged paragraph keeps
+            // the first fragment's geometry as its primary location.
+            nodes[i] = reparagraph(&nodes[i], format!("{a} {b}"));
             nodes.remove(j);
             // Re-check i: the merged paragraph may continue further.
         } else {
@@ -1334,13 +1413,15 @@ pub(crate) fn merge_continuations(nodes: &mut Vec<Node>) {
 /// the whole buffer is safe to flush.
 fn hold_start(nodes: &[Node]) -> usize {
     for k in (0..nodes.len()).rev() {
-        match &nodes[k] {
-            // Skippable trailers: a forward merge looks straight past them.
-            Node::Picture { .. } => continue,
-            Node::Paragraph { text } if looks_like_caption(text) => continue,
+        // Skippable trailers: a forward merge looks straight past them.
+        if is_picture_node(&nodes[k]) {
+            continue;
+        }
+        match as_paragraph(&nodes[k]) {
+            Some(text) if looks_like_caption(text) => continue,
             // An open body paragraph might still pull a continuation off the next
             // page — hold from here to the end.
-            Node::Paragraph { text } if paragraph_is_open(text) => return k,
+            Some(text) if paragraph_is_open(text) => return k,
             // A closed paragraph, heading, table, list, etc. ends the paragraph:
             // nothing after it can merge backwards across it. Flush everything.
             _ => return nodes.len(),
