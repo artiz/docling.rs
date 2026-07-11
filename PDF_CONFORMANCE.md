@@ -46,6 +46,59 @@ feeding TableFormer (2305.03393v1 93→32, 2203.01017v2 209→183, 2206.01062
 `word_cells` byte-for-byte, so cell-to-grid matching tracks docling more closely.
 See "Text reconstruction" below.
 
+## DocLang (`.dclx`) conformance
+
+Separate from the Markdown metric above: how close `--to dclx` gets to docling's
+DocLang archive, scored on the extracted `document.xml` against the committed
+groundtruth (`tests/data/pdf/groundtruth_dclx/*.dclx`, from published docling
+2.112.0). Run `scripts/conformance/dclx_conformance.sh pdf`; sweep the tolerance
+with `scripts/conformance/dclx_pdf_tol_sweep.sh`.
+
+**PDF avg similarity: 51 % exact · 60 % at the default ±2-grid-unit tolerance**
+(issue #32 target: ≥50 %). The ±2 figure already sits at the *geometry-ignored*
+ceiling (61 %), so essentially all of the coordinate difference is absorbed by
+±2 — a wider tolerance buys nothing.
+
+### What the geometry tolerance is, and why it is honest
+
+Every laid-out block in a DocLang archive carries four `<location>` provenance
+tokens — its bbox as `round(512·coord/page_dim)` on a 0–511 page grid
+(docling_core's `_create_location_tokens_for_bbox`). We emit the same tokens
+from our layout cluster boxes (`assemble.rs`, `norm_loc`). Because our heron
+layout model is docling's, the boxes agree to **~1 grid unit**; the small
+residual is the aspect-ratio-stretch-vs-letterbox preprocessing difference, not a
+structural gap. `dclx_diff.py` therefore counts a `<location>` pair as matching
+when the two values are within `DCLX_TOL` (default **2**) grid units — **text,
+tags, nesting, spans, and every non-geometry line stay byte-exact, and unmatched
+lines always count against the score**. The tolerance is applied **only to PDF**,
+where the reference geometry comes from docling's own layout run; formats whose
+geometry is read from the same source file (OOXML slides/sheets) stay exact
+(`DCLX_TOL=0`). `DCLX_TOL=0` reproduces a raw `diff` line-for-line.
+
+### Per-fixture (±2)
+
+Text/list-heavy pages land high (code_and_formula 83 %, right_to_left_01 81 %,
+2305-pg9 78 %, normal_4pages/multi_page ~72 %); the low ones are **model-level,
+not provenance**: the big table papers (2203 51 %, 2305 52 %, 2206 58 %) diverge
+in TableFormer cell structure (2203 alone is ~19 k table-grid diff lines),
+table_mislabeled/picture_classification in layout classification, and
+skipped_1/2page (Korean image pages) in picture detection — the *same* blockers
+that cap the Markdown metric. The corpus average is bounded by these, so raising
+it toward 90 % is a model problem, not a serialization one.
+
+### Remaining serialization gaps (raise the 61 % ceiling)
+
+Emitting these would lift the geometry-ignored ceiling on the text-heavy docs;
+they do not touch the table/reading-order blockers:
+
+1. **List-item / code / formula `<location>`** — currently only text, headings,
+   tables, and pictures carry provenance (`assemble.rs`); list items still emit a
+   bare `<ldiv/>` and no location.
+2. **List markers** — docling emits `<ldiv><marker>·</marker></ldiv>`; we emit a
+   bare `<ldiv/>`.
+3. **Page-header/footer furniture** — docling emits `<page_header>`/`<page_footer>`
+   furniture blocks (with `<layer value="furniture"/>` + location); we skip them.
+
 ## How the pipeline works
 
 pdfium extracts the glyph layer and renders each page to a bitmap; an ONNX stack
