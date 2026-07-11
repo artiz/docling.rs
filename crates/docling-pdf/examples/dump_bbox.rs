@@ -9,7 +9,12 @@ fn main() {
     let doc = PdfDocument::open(&bytes, None).expect("open");
     let mut layout = LayoutModel::load().expect("layout");
     for (pi, page) in doc.pages.iter().enumerate() {
-        println!("# page {} size = {:.1} x {:.1} pt", pi + 1, page.width, page.height);
+        println!(
+            "# page {} size = {:.1} x {:.1} pt",
+            pi + 1,
+            page.width,
+            page.height
+        );
         let regions = layout
             .predict(&page.image, page.width, page.height)
             .expect("layout");

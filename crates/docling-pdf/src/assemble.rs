@@ -1158,7 +1158,24 @@ pub fn assemble_page(
     }
 
     for (i, region) in regions.iter().enumerate() {
-        if is_skipped(region.label) || consumed[i] {
+        if consumed[i] {
+            continue;
+        }
+        // Page headers/footers: docling emits them as furniture blocks
+        // (`<page_header>`/`<page_footer>` with a layer + location + text) at
+        // their reading-order position, not as body — emit them, don't skip.
+        if matches!(region.label, "page_header" | "page_footer") {
+            let text = region_text(region, &page.cells);
+            if !text.is_empty() {
+                nodes.push(Node::PageFurniture {
+                    footer: region.label == "page_footer",
+                    location: norm_loc(region, page.width, page_h),
+                    text: md_escape(&text),
+                });
+            }
+            continue;
+        }
+        if is_skipped(region.label) {
             continue;
         }
         // Layout provenance for this region, normalized to docling's 0–511 grid.
@@ -1208,7 +1225,7 @@ pub fn assemble_page(
                         text: md_escape(&rest),
                         level: 0,
                         marker: None,
-                        location: None,
+                        location: Some(loc),
                         dclx: None,
                         href: None,
                         layer: None,
@@ -1220,8 +1237,10 @@ pub fn assemble_page(
                         first_in_list: false,
                         text: md_escape(&stripped),
                         level: 0,
-                        marker: None,
-                        location: None,
+                        // docling keeps the bullet as the DocLang list marker
+                        // (`<ldiv><marker>·</marker></ldiv>`); Markdown ignores it.
+                        marker: Some("·".into()),
+                        location: Some(loc),
                         dclx: None,
                         href: None,
                         layer: None,
@@ -1269,10 +1288,13 @@ pub fn assemble_page(
                 } else {
                     code
                 };
-                nodes.push(Node::Code {
-                    language: None,
-                    text: code,
-                });
+                nodes.push(located(
+                    loc,
+                    Node::Code {
+                        language: None,
+                        text: code,
+                    },
+                ));
                 // docling emits the `Listing N:` caption after the code block.
                 if let Some(ci) = code_caption_for[i] {
                     let cap = region_text(&regions[ci], &page.cells);
@@ -1342,6 +1364,16 @@ fn is_picture_node(n: &Node) -> bool {
     }
 }
 
+/// A node a forward paragraph merge looks straight past: a figure the text wraps
+/// around, or a page header/footer that falls between the two fragments of a
+/// paragraph continuing across a page break (docling merges the body text and
+/// keeps the header/footer as a separate furniture layer).
+fn is_merge_trailer(n: &Node) -> bool {
+    is_picture_node(n)
+        || matches!(n, Node::PageFurniture { .. })
+        || as_paragraph(n).is_some_and(looks_like_caption)
+}
+
 /// Rebuild node `i` as a paragraph with `text`, preserving its `<location>`
 /// wrapper (and thus provenance) if it had one.
 fn reparagraph(node: &Node, text: String) -> Node {
@@ -1376,18 +1408,15 @@ pub(crate) fn merge_continuations(nodes: &mut Vec<Node>) {
         // own paragraph (an above-the-figure caption that didn't pair), since the
         // body text resumes after the whole figure+caption block.
         let mut j = i + 1;
-        while nodes.get(j).is_some_and(is_picture_node)
-            || nodes
-                .get(j)
-                .and_then(as_paragraph)
-                .is_some_and(looks_like_caption)
-        {
+        while nodes.get(j).is_some_and(is_merge_trailer) {
             j += 1;
         }
-        let cont = nodes
-            .get(j)
-            .and_then(as_paragraph)
-            .is_some_and(|b| b.trim_start().chars().next().is_some_and(char::is_lowercase));
+        let cont = nodes.get(j).and_then(as_paragraph).is_some_and(|b| {
+            b.trim_start()
+                .chars()
+                .next()
+                .is_some_and(char::is_lowercase)
+        });
         if cont {
             let a = as_paragraph(&nodes[i]).unwrap().trim_end().to_string();
             let b = as_paragraph(&nodes[j]).unwrap().trim_start().to_string();
@@ -1413,12 +1442,12 @@ pub(crate) fn merge_continuations(nodes: &mut Vec<Node>) {
 /// the whole buffer is safe to flush.
 fn hold_start(nodes: &[Node]) -> usize {
     for k in (0..nodes.len()).rev() {
-        // Skippable trailers: a forward merge looks straight past them.
-        if is_picture_node(&nodes[k]) {
+        // Skippable trailers (figures, page furniture, captions): a forward merge
+        // looks straight past them.
+        if is_merge_trailer(&nodes[k]) {
             continue;
         }
         match as_paragraph(&nodes[k]) {
-            Some(text) if looks_like_caption(text) => continue,
             // An open body paragraph might still pull a continuation off the next
             // page — hold from here to the end.
             Some(text) if paragraph_is_open(text) => return k,

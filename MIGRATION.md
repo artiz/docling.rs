@@ -135,8 +135,11 @@ line-diffed, similarity `= 100·(1 − difflines / max_lines)`. **≈91% mean ov
 The remaining format gaps are tracked under
 [issue #32](https://github.com/docling-project/docling.rs/issues/32); its children
 (#38–#41, #44) landed the ODF, USPTO legacy-entity, elife XML, wiki_duck and
-APS-plain-text work — `pftaps` is now byte-exact (§5). PDF `.dclx` is byte-exact
-on the one fixture with a groundtruth archive.
+APS-plain-text work — `pftaps` is now byte-exact (§5). The PDF path now emits
+full layout `<location>` provenance (text, headings, tables, pictures, list
+items, code, and page-header/footer furniture), scored against a 16-fixture
+DocLang groundtruth with a ±2-grid-unit geometry tolerance — **63% mean** (§3,
+`PDF_CONFORMANCE.md`).
 
 ---
 
@@ -163,7 +166,7 @@ on the one fixture with a groundtruth archive.
   children (#38–#41, #44). This is an **output** format; a DocLang *input* backend is
   still out of scope (§5). For **PDF**, where the reference `<location>` geometry
   comes from docling's own layout run, the metric is scored with a ±2-grid-unit
-  geometry tolerance (text/structure still byte-exact): **51% exact · 62% at ±2**
+  geometry tolerance (text/structure still byte-exact): **52% exact · 63% at ±2**
   (issue #32 target ≥50%); the remaining gap is model-level (TableFormer/layout/
   reading order), not serialization — see [`PDF_CONFORMANCE.md`](./PDF_CONFORMANCE.md).
 
