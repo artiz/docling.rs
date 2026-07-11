@@ -13,38 +13,39 @@ The groundtruth is regenerated from **live published docling**, so it agrees wit
 
 ## Current state
 
-**6 / 16 strict** · **7 / 16 whitespace-normalized.**
+**5 / 14 strict** · **6 / 14 whitespace-normalized.** (The two Korean
+image-only pages `skipped_1page`/`skipped_2pages` carry no text groundtruth and
+are no longer scored.)
 
 | PDF | diff | dominant remaining blocker |
 |---|---:|---|
 | picture_classification | **exact** | — |
-| code_and_formula | **exact** | — |
 | multi_page | **exact** | — |
 | 2305.03393v1-pg9 | **exact** | — (TableFormer table, cell-for-cell) |
 | right_to_left_01 | **exact** | — (RTL period attachment) |
 | right_to_left_02 | **exact** | — (kashida dedup + page-number layout) |
 | amt_handbook_sample | 2 *(ws-ok)* | docling's spurious fraction double space — ours is more faithful |
-| 2305.03393v1 | 32 | title-page reading order + author-ID run spacing |
-| skipped_1page | 40 | image/diagram page (Korean); layout picture-detection |
-| skipped_2pages | 44 | image/diagram pages (Korean); layout picture-detection |
-| normal_4pages | 54 | reading order (heading numbering, footnote order) |
-| right_to_left_03 | 66 | RTL bidi |
-| table_mislabeled_as_picture | 108 | layout over-detects tables (survey rendered as tables) |
-| 2206.01062 | 164 | TableFormer multi-row headers + title-page reading order |
-| redp5110_sampled | 173 | TOC mis-classified as a picture; cover-page ordering |
-| 2203.01017v2 | 183 | TableFormer structure + reading order |
+| code_and_formula | 5 | code block reflowed to multiple lines + trailing newline |
+| 2305.03393v1 | 30 | title-page reading order + author-ID run spacing |
+| normal_4pages | 56 | reading order (heading numbering, footnote order) |
+| right_to_left_03 | 60 | RTL bidi |
+| table_mislabeled_as_picture | 88 | layout over-detects tables (survey rendered as tables) |
+| 2206.01062 | 92 | TableFormer multi-row headers + title-page reading order |
+| 2203.01017v2 | 161 | TableFormer structure + reading order |
+| redp5110_sampled | 204 | TOC mis-classified as a picture; cover-page ordering |
 
-`amt` is the 7th under the whitespace-normalized metric: its only diff is
+`amt` is the 6th under the whitespace-normalized metric: its only diff is
 docling's spurious double space before the `1⁄4` fraction, where our single-spaced
 output is the more faithful rendering. The remaining non-exact PDFs are heavy
 multi-column / table docs whose gaps are model-level (TableFormer structure,
 layout classification, title-page reading order), not text-layer.
 
-The heavy table docs improved with the docling-parse **word-cell** grouping now
-feeding TableFormer (2305.03393v1 93→32, 2203.01017v2 209→183, 2206.01062
-198→164, redp5110 226→173): the parser's per-word cells reproduce docling-parse's
-`word_cells` byte-for-byte, so cell-to-grid matching tracks docling more closely.
-See "Text reconstruction" below.
+The heavy table docs improved with the docling-parse **word-cell** grouping
+feeding TableFormer and the #61 layout/reading-order postprocessor
+(2305.03393v1 93→30, 2203.01017v2 209→161, 2206.01062 198→92): the parser's
+per-word cells reproduce docling-parse's `word_cells` byte-for-byte, so
+cell-to-grid matching tracks docling more closely. See "Text reconstruction"
+below.
 
 ## DocLang (`.dclx`) conformance
 
