@@ -26,13 +26,13 @@ are no longer scored.)
 | right_to_left_02 | **exact** | — (kashida dedup + page-number layout) |
 | amt_handbook_sample | 2 *(ws-ok)* | docling's spurious fraction double space — ours is more faithful |
 | code_and_formula | 5 | code block reflowed to multiple lines + trailing newline |
-| 2305.03393v1 | 28 | title-page reading order + author-ID run spacing |
-| normal_4pages | 56 | reading order (heading numbering, footnote order) |
+| 2305.03393v1 | 26 | title-page reading order + author-ID run spacing |
+| normal_4pages | 44 | reading order (heading numbering, footnote order) |
 | right_to_left_03 | 60 | RTL bidi |
-| table_mislabeled_as_picture | 88 | layout over-detects tables (survey rendered as tables) |
-| 2206.01062 | 92 | TableFormer multi-row headers + title-page reading order |
-| 2203.01017v2 | 150 | TableFormer structure + reading order |
-| redp5110_sampled | 202 | TOC OTSL structure (model-level); cover-page ordering |
+| table_mislabeled_as_picture | 86 | layout over-detects tables (survey rendered as tables) |
+| 2206.01062 | 80 | TableFormer multi-row headers + title-page reading order |
+| 2203.01017v2 | 130 | TableFormer structure + reading order |
+| redp5110_sampled | 194 | TOC OTSL structure (model-level); cover-page ordering |
 
 `amt` is the 6th under the whitespace-normalized metric: its only diff is
 docling's spurious double space before the `1⁄4` fraction, where our single-spaced
@@ -47,7 +47,11 @@ per-word cells reproduce docling-parse's `word_cells` byte-for-byte, so
 cell-to-grid matching tracks docling more closely. See "Text reconstruction"
 below. The #60 matching work (docling's `MatchingPostProcessor` ported to
 `tf_match.rs`, plus docling's exact table-crop rounding chain) took
-2203 157→150 and redp5110 204→202 with every other fixture unchanged.
+2203 157→150 and redp5110 204→202 with every other fixture unchanged; the
+#62 text fixes (docling-parse's quote-normalization table — every curly
+quote → `'` — and joining region cells in docling-parse index order
+instead of geometric bands) then took 2203 →130, 2206 92→80, 2305 28→26,
+normal_4pages 56→44, redp5110 →194, and table_mislabeled 88→86.
 
 ## DocLang (`.dclx`) conformance
 
@@ -222,7 +226,13 @@ Each is tracked as its own issue:
 3. **Complex title-page reading order**
    ([#62](https://github.com/docling-project/docling.rs/issues/62)). Author-block
    / abstract interleaving on the academic papers (band reading-order handles the
-   full-width title; the in-column author/abstract order is still off).
+   full-width title; the in-column author/abstract order is still off). Two
+   pieces landed: the suspected "TeX-font quote decode" gap turned out to be
+   docling-parse's *sanitizer* table (every curly quote → `'`; a `"` only ever
+   comes from a literal `quotedbl` glyph) — no font-program parsing needed —
+   and region cells now join in docling-parse index order (docling's
+   `_sort_cells`), which fixes off-baseline glyph drift like 2206's inline
+   math `>` landing on the wrong line.
 4. **amt fraction double space (text-layer, strict-only)**
    ([#63](https://github.com/docling-project/docling.rs/issues/63)). docling boxes glyphs
    with the embedded font's OS/2 typographic metrics, not the PDF descriptor's;
