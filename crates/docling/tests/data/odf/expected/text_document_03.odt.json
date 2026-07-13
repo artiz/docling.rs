@@ -119,8 +119,8 @@
       "content_layer": "body",
       "label": "text",
       "prov": [],
-      "orig": "After table with  **bold** ,  underline ,  ~~strikethrough~~ , and  *italic*  formatting",
-      "text": "After table with  **bold** ,  underline ,  ~~strikethrough~~ , and  *italic*  formatting"
+      "orig": "After table with  **bold** underline ~~strikethrough~~ *italic*",
+      "text": "After table with  **bold** underline ~~strikethrough~~ *italic*"
     },
     {
       "self_ref": "#/texts/4",

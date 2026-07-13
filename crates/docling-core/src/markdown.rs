@@ -317,12 +317,16 @@ fn render_list_run(items: &[Node], blocks: &mut Vec<String>, strict: bool) {
         // A new sibling list at the same depth gets a blank line: the kind flips
         // (`<ul>`↔`<ol>`), an ordered run breaks (`1, 2` then `42`), or the
         // backend flagged a fresh list (e.g. Markdown's bullet changing `-`→`*`).
-        if let Some((prev_ordered, prev_number)) = prev[level] {
-            let new_list = *first_in_list
-                || prev_ordered != *ordered
-                || (*ordered && *number != prev_number + 1);
-            if new_list {
-                lines.push(String::new());
+        // Only at the top level: nested sibling groups are children of a list
+        // item, and docling joins an item's children without blank lines.
+        if level == 0 {
+            if let Some((prev_ordered, prev_number)) = prev[level] {
+                let new_list = *first_in_list
+                    || prev_ordered != *ordered
+                    || (*ordered && *number != prev_number + 1);
+                if new_list {
+                    lines.push(String::new());
+                }
             }
         }
 

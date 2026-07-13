@@ -24,7 +24,7 @@ phased plan is kept at the end as history.)
 | | |
 |---|---|
 | **What** | A Rust port of docling's converter, backends, and discriminative PDF/ASR pipelines; same `convert → DoclingDocument → export_to_markdown()/json()` shape, single static binary, no Python/torch at runtime |
-| **Conformance** | Declarative formats byte-for-byte vs *live* PyPI docling (most 100%, see §2); `.dclx` DocLang output ≈93% mean vs docling's own `.dclx`, OOXML all byte-exact (§2); PDF ML path 5/14 fixtures byte-exact, rest close; every optimization is gated on this not regressing |
+| **Conformance** | Declarative formats byte-for-byte vs *live* PyPI docling (most 100%, see §2); `.dclx` DocLang output ≈94% mean vs docling's own `.dclx`, OOXML all byte-exact (§2); PDF ML path 5/14 fixtures byte-exact, rest close; every optimization is gated on this not regressing |
 | **Performance** | PDF ML pipeline **4.3× faster warm / 4.7× end-to-end** than Python docling at 2.3–2.6× less peak RAM (INT8 + SIMD, conformance-validated); declarative formats 20–60× warm, ~60× less RAM; details + methodology in [`PDF_PERFORMANCE.md`](./PDF_PERFORMANCE.md) |
 | **Models** | docling's own checkpoints (layout heron, TableFormer, PP-OCRv3, Whisper tiny), format-converted to ONNX by `scripts/export_*.py` — no retraining; INT8 variants are calibrated post-training quantizations (`scripts/install/quantize_models.py`) |
 | **Tracking upstream** | See [§9](#9-keeping-up-with-upstream-docling): conformance is measured against the *latest published* docling on demand, so an upstream release that changes output surfaces as a concrete per-fixture diff |
@@ -91,7 +91,7 @@ PyPI; run via `scripts/conformance/conformance.sh <fmt>`), not the committed gro
 | WebVTT | `webvtt.rs` | **4/4 exact** |
 | Email (.eml) | `email.rs` (mail-parser) | **2/2 exact** |
 | EPUB | `epub.rs` → HTML backend | **0/1** — the single fixture is 39 diff lines (heading-italic nesting + colophon inline-link layout, the HTML inline residual) |
-| ODF (odt/ods/odp) | `odf.rs` | **2/6 exact** on the native files (`.ods` table + `text_document_01`; `text_document_03` within 2 lines); presentations/frames — §5 |
+| ODF (odt/ods/odp) | `odf.rs` | **6/6 exact** on the native files — slide-title/name headings, shape text, speaker-notes drop, chart classification + data tables, merged-cell semantics (plain repeat vs rich dedup), and docling's run-tail quirk |
 | JATS | `jats.rs` (roxmltree) | **3/4 exact**; the eLife plain-text route diverges (252 diff lines) |
 | USPTO | `uspto.rs` | **1/5 exact (2/5 whitespace-normalized)** on the sources live docling converts — it errors on the other 5 (those are validated byte-exact via `.dclx`), and its APS-text *Markdown* export is empty where ours emits the text dump (the `.dclx` matches exactly — §5) |
 | XBRL | `xbrl.rs` | arelle-free core (dei facts → title, `*TextBlock` → HTML); *vs committed groundtruth* 0/2 (30 / 346 diff lines) — live docling needs arelle, which the conformance venv doesn't ship |
@@ -121,20 +121,20 @@ close — see `PDF_CONFORMANCE.md`. A deterministic snapshot baseline
 
 The `.dclx` DocLang output (§3) is scored against docling's own `.dclx` archives
 with `scripts/conformance/dclx_conformance.sh` — the extracted `document.xml`
-line-diffed, similarity `= 100·(1 − difflines / max_lines)`. **≈93% mean over the
+line-diffed, similarity `= 100·(1 − difflines / max_lines)`. **≈94% mean over the
 134-fixture non-PDF corpus** (issue #32 target: ≥90%), per source format:
 
 | Format | `.dclx` similarity | Format | `.dclx` similarity |
 |---|---|---|---|
-| CSV / AsciiDoc / Email | **100%** | Markdown | 92% |
-| XLSX | **100%** | ODF / LaTeX | 91% |
-| DOCX / PPTX | **100%** | HTML | 84% |
-| USPTO | 98% | WebVTT | 81% |
-| JATS | 95% | | |
+| CSV / AsciiDoc / Email | **100%** | JATS | 95% |
+| XLSX | **100%** | Markdown | 92% |
+| DOCX / PPTX | **100%** | LaTeX | 91% |
+| USPTO | 98% | HTML | 84% |
+| ODF | 95% | WebVTT | 81% |
 
 This effort was tracked as
 [issue #32](https://github.com/docling-project/docling.rs/issues/32) — **closed,
-both targets met** (non-PDF ≥90%: 93%; PDF ≥50%: 65% at ±2). Its children
+both targets met** (non-PDF ≥90%: 94%; PDF ≥50%: 65% at ±2). Its children
 (#38–#41, #44, all closed) landed the ODF, USPTO legacy-entity, elife XML,
 wiki_duck and APS-plain-text work — `pftaps` is byte-exact (§5). The PDF path
 emits full layout `<location>` provenance (text, headings, tables, pictures,
@@ -161,7 +161,7 @@ blockers of `PDF_CONFORMANCE.md`), not serialization.
   `<strikethrough>`/`<sub|superscript>`), lists with enumeration `<marker>`s, OTSL
   tables (`<ched>`/`<fcel>`/`<lcel>`…) with per-cell `<location>`, code, formulas,
   pictures and furniture. Conformance is scored against docling's own `.dclx`
-  archives (`scripts/conformance/dclx_conformance.sh`): **≈93% mean similarity over
+  archives (`scripts/conformance/dclx_conformance.sh`): **≈94% mean similarity over
   the 134-fixture non-PDF corpus** (issue #32's ≥90% target) — every OOXML fixture
   (docx/pptx/xlsx) plus csv/asciidoc/email byte-exact, uspto/jats in the
   mid-to-high 90s, md/odf/latex low 90s, html/webvtt in the 80s (full table
@@ -303,17 +303,18 @@ deliberate scope boundary or a cosmetic, single-fixture polish gap.
   that serialization byte-exactly — the `.dclx` is a perfect match
   ([issue #44](https://github.com/docling-project/docling.rs/issues/44), done).
 
+- **ODF presentation frames** — done, **6/6 native files exact**: `.odp`
+  slides get their title frame (or slide name) as the title, free shape text,
+  chart pictures with classification ("Bar chart") + data tables, and the
+  speaker-notes drop; `.odt` merged cells repeat their text like docling's
+  plain `TableData` grid (while rich cells dedup), and paragraph runs
+  reproduce docling's lxml head-text semantics (a tail after a styled span is
+  dropped). Everything else on ODF was already done: mixed-style list
+  continuation, empty-list-item level collapse, ODS sheet→table region
+  detection with numeric alignment, and rich table cells.
+
 **Minor known gaps (cosmetic, tracked per-fixture):**
 
-- **ODF presentation frames** — slide-title heading detection, free
-  shape-text extraction and the speaker-notes drop on `.odp` slides
-  (`odf_presentation_01/02`). On `.odt`, embedded chart frames now render as
-  chart tables like docling; what's left in `text_document_02` is repeating
-  merged-cell text into every spanned cell and the chart-kind label
-  ("Bar chart" vs generic "Chart"), and `text_document_03` differs by one
-  inline-formatting spacing line. Everything else on ODF is done: mixed-style
-  list continuation, empty-list-item level collapse, ODS sheet→table region
-  detection with numeric alignment, and rich table cells.
 - **`wiki_duck` offline rendering.** The HTML subsystem itself is complete
   (31/32 exact): key-value form regions, docling-faithful inline-image
   handling, inline visibility suppression, deep nested-table cell flattening
