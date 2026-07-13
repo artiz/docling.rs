@@ -87,7 +87,7 @@ PyPI; run via `scripts/conformance/conformance.sh <fmt>`), not the committed gro
 | DeepSeek-OCR Markdown | `deepseek.rs` | **3/3 exact** (auto-detected VLM-token variant) |
 | XLSX | `xlsx.rs` (calamine) | **9/9 exact** |
 | PPTX | `pptx.rs` (roxmltree) | **7/7 exact** |
-| DOCX | `docx.rs` (roxmltree) | **24/26 exact** (residual: `drawingml` grouped shapes, `textbox` floating-frame layout — §5) |
+| DOCX | `docx.rs` (roxmltree) | **26/26 exact** |
 | WebVTT | `webvtt.rs` | **4/4 exact** |
 | Email (.eml) | `email.rs` (mail-parser) | **2/2 exact** |
 | EPUB | `epub.rs` → HTML backend | **0/1** — the single fixture is 39 diff lines (heading-italic nesting + colophon inline-link layout, the HTML inline residual) |
@@ -287,6 +287,14 @@ deliberate scope boundary or a cosmetic, single-fixture polish gap.
 
 **Now migrated (previously listed here):**
 
+- **DOCX grouped/anchored drawings and floating text frames.** Blip-less
+  DrawingML shapes yield docling's one-rendered-picture-per-paragraph as a
+  placeholder (docling rasterizes them through LibreOffice; the Markdown
+  placeholder is identical without rendering), pictures are emitted for
+  heading/list/checkbox paragraphs too, and the textbox de-duplication matches
+  docling's per-paragraph scope — `drawingml` and `textbox` are exact,
+  **DOCX is 26/26**.
+
 - **Legacy APS-text patents.** USPTO covers the modern `v4x` XML, the 2001-era
   `pap-v15` applications (`pa`) and `PATDOC`/ST.32 grants (`pg`) with their CALS
   tables, **and** the legacy **APS plain text** (`pftaps`): docling routes it to
@@ -301,11 +309,6 @@ deliberate scope boundary or a cosmetic, single-fixture polish gap.
   chart/embedded-object frames (`text_document_02`). Everything else on ODF is
   done: mixed-style list continuation, empty-list-item level collapse, ODS
   sheet→table region detection with numeric alignment, and rich table cells.
-- **DOCX grouped/anchored drawings** — position-sorted layout of grouped shapes
-  and `<mc:AlternateContent>` image de-duplication (`drawingml` fixture, 8 diff
-  lines), and floating text-frame ordering (`textbox` fixture, 40 diff lines).
-  Multilevel shared list/heading numbering and advanced OMML/inline-equation
-  spacing are done (byte-for-byte against pylatexenc).
 - **`wiki_duck` offline rendering.** The HTML subsystem itself is complete
   (31/32 exact): key-value form regions, docling-faithful inline-image
   handling, inline visibility suppression, deep nested-table cell flattening

@@ -11,9 +11,10 @@
 //!
 //! Inline equations reproduce docling's inline-group spacing and stay attached to
 //! their list item (`_handle_equations_in_text`); the OMML → LaTeX port is in
-//! `omml.rs`. Out of scope for now (tracked in MIGRATION.md §5): position-sorted
-//! layout of grouped/anchored drawings and the `<mc:AlternateContent>` image
-//! de-duplication for grouped shapes.
+//! `omml.rs`. Blip-less DrawingML shapes (grouped drawings, charts, floating
+//! text frames) yield one placeholder picture per paragraph — docling renders
+//! them through LibreOffice into a single image, which serializes as the same
+//! `<!-- image -->` placeholder.
 
 use std::collections::HashMap;
 
@@ -150,7 +151,6 @@ struct ListState {
     counters: HashMap<(String, i64), i64>, // (numId, ilvl) -> running number
     numbered_headers: HashMap<u8, u64>,    // heading level -> running number
     list_run_base: Option<i64>,            // base ilvl of the current contiguous list run
-    prev_textbox: Vec<String>,             // textbox labels emitted by the previous paragraph
 }
 
 /// Dispatch a body-level block: paragraph, table, or `<w:sdt>` (whose
@@ -233,10 +233,7 @@ fn handle_paragraph_inner(
         // `_handle_textbox_content`, which drops the `<mc:AlternateContent>`
         // duplicate as well as repeated identical labels in the same drawing.
         let mut seen: Vec<(String, usize)> = Vec::new();
-        let mut current: Vec<String> = Vec::new();
-        let mut any_textbox = false;
         for tc in p.descendants().filter(|n| n.has_tag_name("txbxContent")) {
-            any_textbox = true;
             for (idx, tp) in tc.children().filter(|n| n.has_tag_name("p")).enumerate() {
                 let trimmed = paragraph_markdown(tp, ctx).trim().to_string();
                 let key = if trimmed.is_empty() {
@@ -248,16 +245,9 @@ fn handle_paragraph_inner(
                     continue;
                 }
                 seen.push(key);
-                // Drop a label already emitted by the immediately preceding
-                // paragraph's textboxes — docling's global processed-element guard
-                // skips a duplicated drawing anchored to an adjacent paragraph.
-                if !trimmed.is_empty() && state.prev_textbox.contains(&trimmed) {
-                    continue;
-                }
                 // Process the paragraph fully (list items, formatting); `skip_textbox`
                 // stops it re-extracting nested textboxes, which this loop covers.
                 if !trimmed.is_empty() {
-                    current.push(trimmed.clone());
                     handle_paragraph_inner(tp, ctx, state, doc, false, true);
                 }
                 for image in drawing_images(tp, ctx, false) {
@@ -268,9 +258,21 @@ fn handle_paragraph_inner(
                 }
             }
         }
-        if any_textbox {
-            state.prev_textbox = current;
-        }
+    }
+
+    // docling emits a paragraph's images *before* its text for every paragraph
+    // kind — the body loop's `drawing_blip`/`vml`/`drawingml` branches run
+    // `_handle_pictures`/`_handle_drawingml` and only then the text handler, so
+    // a heading, list item (even an empty one) or checkbox paragraph carries
+    // its picture too. Images inside a textbox are skipped here — they're
+    // extracted as textbox content above. Modern DrawingML (`<a:blip>`) wins
+    // over legacy VML (`<v:imagedata>`), and blip-less shapes yield docling's
+    // single rendered placeholder (see `drawing_images`).
+    for image in drawing_images(p, ctx, true) {
+        doc.push(Node::Picture {
+            caption: None,
+            image,
+        });
     }
 
     // Equations. A paragraph whose only content is OMML becomes one or more
@@ -434,19 +436,6 @@ fn handle_paragraph_inner(
     // A plain (non-list) paragraph ends the current list run.
     state.list_run_base = None;
 
-    // docling emits a paragraph's images *before* its text (the `drawing_blip`
-    // branch runs `_handle_pictures` then `_handle_text_elements`). Images inside
-    // a textbox are skipped here — they're extracted as textbox text instead.
-    // Modern DrawingML (`<a:blip>`) wins over legacy VML (`<v:imagedata>`): when a
-    // paragraph has both (an `<mc:AlternateContent>` Choice + Fallback for the
-    // same image) docling's `elif` counts only the blips, never the fallback.
-    for image in drawing_images(p, ctx, true) {
-        doc.push(Node::Picture {
-            caption: None,
-            image,
-        });
-    }
-
     if !text.is_empty() {
         if has_equations {
             // A body paragraph with inline equations becomes an InlineGroup whose
@@ -492,7 +481,14 @@ fn has_drawing(p: XmlNode) -> bool {
 /// Whether a node is inside a textbox (`<w:txbxContent>` or `<v:textbox>`),
 /// whose images/text are handled by the textbox path, not the paragraph body.
 /// One entry per drawing in `node` (resolved to its extracted image when known):
-/// modern `<a:blip r:embed>` win over legacy `<v:imagedata r:id>`. With
+/// modern `<a:blip r:embed>` win over legacy `<v:imagedata r:id>`, and a
+/// paragraph whose drawings carry *neither* (pure DrawingML shapes, charts,
+/// SmartArt — docling's `drawingml_els` branch) yields **one** placeholder
+/// picture: docling renders all of the paragraph's shapes through LibreOffice
+/// into a single image (`_handle_drawingml` → `_convert_elements_via_docx`),
+/// which serializes as the same `<!-- image -->` placeholder we emit without
+/// rendering. (docling suppresses a render that comes back as an invisible
+/// spacer; no corpus fixture hits that, so no geometry heuristic here.) With
 /// `skip_textbox`, drawings nested in a textbox are excluded (they're extracted
 /// as textbox text instead).
 fn drawing_images(node: XmlNode, ctx: &Ctx, skip_textbox: bool) -> Vec<Option<PictureImage>> {
@@ -507,10 +503,21 @@ fn drawing_images(node: XmlNode, ctx: &Ctx, skip_textbox: bool) -> Vec<Option<Pi
             .map(|b| attr(*b, "embed").and_then(|id| ctx.images.get(id)).cloned())
             .collect();
     }
-    node.descendants()
+    let vml: Vec<Option<PictureImage>> = node
+        .descendants()
         .filter(|n| n.has_tag_name("imagedata") && keep(*n))
         .map(|d| attr(d, "id").and_then(|id| ctx.images.get(id)).cloned())
-        .collect()
+        .collect();
+    if !vml.is_empty() {
+        return vml;
+    }
+    if node
+        .descendants()
+        .any(|n| n.has_tag_name("drawing") && keep(n))
+    {
+        return vec![None];
+    }
+    Vec::new()
 }
 
 fn in_textbox(n: XmlNode) -> bool {
