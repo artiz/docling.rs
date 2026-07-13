@@ -721,17 +721,26 @@ fn region_text(region: &Region, cells: &[TextCell]) -> String {
         .filter(|c| c.is_ascii_alphabetic())
         .count();
     let rtl = arabic > latin;
-    inside.sort_by_key(|c| {
-        let x = (c.l * 10.0) as i64;
-        ((c.t / band).round() as i64, if rtl { -x } else { x })
-    });
+    let dp = crate::pdfium_backend::use_dp_lines();
+    if dp {
+        // docling orders a cluster's cells by their docling-parse cell index
+        // (`LayoutPostprocessor._sort_cells`: `sorted(cells, key=c.index)`) —
+        // the sanitizer's output order, which our `cells` slice already is. A
+        // geometric band-sort loses that on off-baseline glyphs: 2206's inline
+        // math `>` sits ~2 pt above its line's band and drifted into the next
+        // one, `( > 10 pages)` → `( 10 pages) … complex > tables`.
+    } else {
+        inside.sort_by_key(|c| {
+            let x = (c.l * 10.0) as i64;
+            ((c.t / band).round() as i64, if rtl { -x } else { x })
+        });
+    }
     // Join cells in reading order. With the docling-parse sanitizer the cells are
     // already correctly spaced words/lines, so adjacent cells join with a single
     // space (docling joins its line cells with a space) — matching e.g. a bold
     // label and its value, `LABEL` | `: value` → `LABEL : value`. The legacy
     // reconstruction instead joins same-band cells with a space only across a real
     // gap, because it can split a word into abutting segments (`الت`|`ي` → `التي`).
-    let dp = crate::pdfium_backend::use_dp_lines();
     let mut joined = String::new();
     let mut prev: Option<&&TextCell> = None;
     for c in &inside {
