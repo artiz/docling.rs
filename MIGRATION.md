@@ -132,14 +132,17 @@ line-diffed, similarity `= 100·(1 − difflines / max_lines)`. **≈91% mean ov
 | JATS | 95% | HTML | 84% |
 | | | WebVTT | 81% |
 
-The remaining format gaps are tracked under
-[issue #32](https://github.com/docling-project/docling.rs/issues/32); its children
-(#38–#41, #44) landed the ODF, USPTO legacy-entity, elife XML, wiki_duck and
-APS-plain-text work — `pftaps` is now byte-exact (§5). The PDF path now emits
-full layout `<location>` provenance (text, headings, tables, pictures, list
-items, code, and page-header/footer furniture), scored against a 16-fixture
-DocLang groundtruth with a ±2-grid-unit geometry tolerance — **63% mean** (§3,
-`PDF_CONFORMANCE.md`).
+This effort was tracked as
+[issue #32](https://github.com/docling-project/docling.rs/issues/32) — **closed,
+both targets met** (non-PDF ≥90%: 91%; PDF ≥50%: 63% at ±2). Its children
+(#38–#41, #44, all closed) landed the ODF, USPTO legacy-entity, elife XML,
+wiki_duck and APS-plain-text work — `pftaps` is byte-exact (§5). The PDF path
+emits full layout `<location>` provenance (text, headings, tables, pictures,
+list items, code, and page-header/footer furniture), scored against a
+16-fixture DocLang groundtruth with a ±2-grid-unit geometry tolerance —
+**63% mean** (§3, `PDF_CONFORMANCE.md`); the residual is model-level
+(TableFormer OTSL structure, layout classification — the closed-as-model-level
+blockers of `PDF_CONFORMANCE.md`), not serialization.
 
 ---
 
@@ -161,14 +164,15 @@ DocLang groundtruth with a ±2-grid-unit geometry tolerance — **63% mean** (§
   archives (`scripts/conformance/dclx_conformance.sh`): **≈91% mean similarity over
   the 134-fixture non-PDF corpus** (issue #32's ≥90% target) — csv/asciidoc/email
   exact, uspto/docx/pptx/jats in the mid-to-high 90s, md/odf/latex low 90s,
-  xlsx/html/webvtt in the 80s (full table in §2). The format-by-format gaps are
+  xlsx/html/webvtt in the 80s (full table in §2). The format-by-format work was
   tracked as [issue #32](https://github.com/docling-project/docling.rs/issues/32) and its
-  children (#38–#41, #44). This is an **output** format; a DocLang *input* backend is
-  still out of scope (§5). For **PDF**, where the reference `<location>` geometry
-  comes from docling's own layout run, the metric is scored with a ±2-grid-unit
-  geometry tolerance (text/structure still byte-exact): **52% exact · 63% at ±2**
-  (issue #32 target ≥50%); the remaining gap is model-level (TableFormer/layout/
-  reading order), not serialization — see [`PDF_CONFORMANCE.md`](./PDF_CONFORMANCE.md).
+  children (#38–#41, #44) — all closed, targets met. This is an **output** format;
+  a DocLang *input* backend is still out of scope (§5). For **PDF**, where the
+  reference `<location>` geometry comes from docling's own layout run, the metric
+  is scored with a ±2-grid-unit geometry tolerance (text/structure still
+  byte-exact): **52% exact · 63% at ±2** (against the ≥50% target); the remaining
+  gap is model-level (TableFormer/layout/reading order), not serialization — see
+  [`PDF_CONFORMANCE.md`](./PDF_CONFORMANCE.md).
 
 - **JSON** rebuilds docling's full `body`-tree-of-`$ref`s model from the `Node`
   tree (texts/groups/tables/pictures, labels, list grouping, table grids,
@@ -230,9 +234,10 @@ These are deliberate or unavoidable divergences, not bugs.
      docling-parse's line sanitizer (`dp_lines.rs`): 3-pass corner-distance
      contraction with gap-proportional space insertion, `enforce_same_font`,
      ligature recomposition, loose-box geometry. Plus docling's markdown escaping,
-     typographic-punctuation normalization, wrap dehyphenation,
-     paragraph-continuation merging, band-aware two-column reading order, and
-     false-picture / page-number layout fixes. The parser is now the **sole** text
+     docling-parse's typographic-punctuation table (every curly quote → `'`),
+     wrap dehyphenation, paragraph-continuation merging, docling's rule-based
+     reading-order predictor with cluster cells joined in docling-parse index
+     order, and false-picture / page-number layout fixes. The parser is now the **sole** text
      source — pdfium does only page rasterisation + link annotations. Its per-word
      cells reproduce docling-parse's `word_cells` byte-for-byte (377/377 on
      `2305-pg9`), which is what TableFormer matches against; a char-frequency

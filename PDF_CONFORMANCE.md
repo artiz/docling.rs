@@ -185,7 +185,9 @@ suppression** (empty low-confidence margin boxes on text pages), and
 ## Remaining blockers (model-level)
 
 These yield smaller or uncertain gains than the text-layer work already shipped.
-Each is tracked as its own issue:
+The issues that tracked them (#60–#63) are **closed**: everything
+heuristic-level in them landed, and what remains below is the documented
+model-level (or by-design) residual each issue closed with:
 
 1. **TableFormer structure on complex tables**
    ([#60](https://github.com/docling-project/docling.rs/issues/60)). The
