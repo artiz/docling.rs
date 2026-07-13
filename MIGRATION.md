@@ -14,7 +14,7 @@ phased plan is kept at the end as history.)
 > against *live* docling; the PDF/image/METS ML path lives in `docling-pdf`
 > (a pure-Rust PDF text parser + pdfium rasterization + ONNX
 > layout/TableFormer/OCR + a port of docling-parse's line sanitizer) and is also
-> measured byte-for-byte against live docling — **6 / 16 PDF fixtures exact, 7 / 16
+> measured byte-for-byte against live docling — **5 / 14 PDF fixtures exact, 6 / 14
 > whitespace-normalized** (see `PDF_CONFORMANCE.md`), with a snapshot baseline
 > guarding against regressions. `cargo test` is green (unit tests + a 133-source
 > output-regression suite).
@@ -24,7 +24,7 @@ phased plan is kept at the end as history.)
 | | |
 |---|---|
 | **What** | A Rust port of docling's converter, backends, and discriminative PDF/ASR pipelines; same `convert → DoclingDocument → export_to_markdown()/json()` shape, single static binary, no Python/torch at runtime |
-| **Conformance** | Declarative formats byte-for-byte vs *live* PyPI docling (most 100%, see §2); `.dclx` DocLang output ≈91% mean vs docling's own `.dclx` (§2); PDF ML path 6/16 fixtures byte-exact, rest close; every optimization is gated on this not regressing |
+| **Conformance** | Declarative formats byte-for-byte vs *live* PyPI docling (most 100%, see §2); `.dclx` DocLang output ≈91% mean vs docling's own `.dclx` (§2); PDF ML path 5/14 fixtures byte-exact, rest close; every optimization is gated on this not regressing |
 | **Performance** | PDF ML pipeline **4.3× faster warm / 4.7× end-to-end** than Python docling at 2.3–2.6× less peak RAM (INT8 + SIMD, conformance-validated); declarative formats 20–60× warm, ~60× less RAM; details + methodology in [`PDF_PERFORMANCE.md`](./PDF_PERFORMANCE.md) |
 | **Models** | docling's own checkpoints (layout heron, TableFormer, PP-OCRv3, Whisper tiny), format-converted to ONNX by `scripts/export_*.py` — no retraining; INT8 variants are calibrated post-training quantizations (`scripts/install/quantize_models.py`) |
 | **Tracking upstream** | See [§9](#9-keeping-up-with-upstream-docling): conformance is measured against the *latest published* docling on demand, so an upstream release that changes output surfaces as a concrete per-fixture diff |
@@ -106,7 +106,7 @@ content-type resolution, and image extraction — reused by DOCX/PPTX/XLSX/EPUB.
 
 These run docling's *discriminative* PDF pipeline ported to ONNX. They are now
 measured **byte-for-byte against live docling** (the committed PDF groundtruth is
-regenerated from it): **6 / 16 exact (7 / 16 whitespace-normalized)**, the rest
+regenerated from it): **5 / 14 exact (6 / 14 whitespace-normalized)**, the rest
 close — see `PDF_CONFORMANCE.md`. A deterministic snapshot baseline
 (`scripts/conformance/pdf_conformance.sh`) still guards against regressions.
 
@@ -128,15 +128,18 @@ line-diffed, similarity `= 100·(1 − difflines / max_lines)`. **≈91% mean ov
 |---|---|---|---|
 | CSV / AsciiDoc / Email | **100%** | Markdown | 92% |
 | USPTO | 98% | ODF / LaTeX | 91% |
-| DOCX / PPTX | 96% | XLSX | 87% |
+| DOCX / PPTX | 96% | XLSX | 85% |
 | JATS | 95% | HTML | 84% |
 | | | WebVTT | 81% |
 
 The remaining format gaps are tracked under
 [issue #32](https://github.com/docling-project/docling.rs/issues/32); its children
 (#38–#41, #44) landed the ODF, USPTO legacy-entity, elife XML, wiki_duck and
-APS-plain-text work — `pftaps` is now byte-exact (§5). PDF `.dclx` is byte-exact
-on the one fixture with a groundtruth archive.
+APS-plain-text work — `pftaps` is now byte-exact (§5). The PDF path now emits
+full layout `<location>` provenance (text, headings, tables, pictures, list
+items, code, and page-header/footer furniture), scored against a 16-fixture
+DocLang groundtruth with a ±2-grid-unit geometry tolerance — **63% mean** (§3,
+`PDF_CONFORMANCE.md`).
 
 ---
 
@@ -161,7 +164,11 @@ on the one fixture with a groundtruth archive.
   xlsx/html/webvtt in the 80s (full table in §2). The format-by-format gaps are
   tracked as [issue #32](https://github.com/docling-project/docling.rs/issues/32) and its
   children (#38–#41, #44). This is an **output** format; a DocLang *input* backend is
-  still out of scope (§5).
+  still out of scope (§5). For **PDF**, where the reference `<location>` geometry
+  comes from docling's own layout run, the metric is scored with a ±2-grid-unit
+  geometry tolerance (text/structure still byte-exact): **52% exact · 63% at ±2**
+  (issue #32 target ≥50%); the remaining gap is model-level (TableFormer/layout/
+  reading order), not serialization — see [`PDF_CONFORMANCE.md`](./PDF_CONFORMANCE.md).
 
 - **JSON** rebuilds docling's full `body`-tree-of-`$ref`s model from the `Node`
   tree (texts/groups/tables/pictures, labels, list grouping, table grids,
@@ -233,7 +240,7 @@ These are deliberate or unavoidable divergences, not bugs.
      dropped (Form-XObject text and glyph-name-only fonts were the two classes it
      surfaced and fixed).
    - Output is measured **byte-for-byte against live docling** (PDF_CONFORMANCE.md):
-     **6 / 16 exact, 7 / 16 whitespace-normalized**, the rest close. The remaining
+     **5 / 14 exact, 6 / 14 whitespace-normalized**, the rest close. The remaining
      gaps are model-level (TableFormer structure on complex tables, layout
      classification, title-page reading order) plus `amt`'s fraction spacing — a
      docling quirk from its embedded-font OS/2 metrics that our single-spaced output
