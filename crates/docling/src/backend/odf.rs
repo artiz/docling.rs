@@ -197,11 +197,24 @@ fn load_charts(
         let Ok(dom) = Document::parse(&xml) else {
             continue;
         };
-        let Some(chart) = dom.descendants().find(|n| n.has_tag_name("chart")) else {
+        if !dom.descendants().any(|n| n.has_tag_name("chart")) {
             continue;
-        };
-        let kind = chart_kind(attr(chart, "class").unwrap_or(""));
-        let Some(table_node) = chart.descendants().find(|n| n.has_tag_name("table")) else {
+        }
+        // Classification per docling: the first mapped `chart:class` on a
+        // `<chart:chart>` (never the `<office:chart>` wrapper, which carries no
+        // class), else on a `<chart:series>`, else "other_chart".
+        let kind = dom
+            .descendants()
+            .filter(|n| n.has_tag_name("chart"))
+            .find_map(|n| attr(n, "class").and_then(chart_kind))
+            .or_else(|| {
+                dom.descendants()
+                    .filter(|n| n.has_tag_name("series"))
+                    .find_map(|n| attr(n, "class").and_then(chart_kind))
+            })
+            .unwrap_or("other_chart")
+            .to_string();
+        let Some(table_node) = dom.descendants().find(|n| n.has_tag_name("table")) else {
             continue;
         };
         if let Some(table) = parse_table(table_node, styles) {
@@ -212,13 +225,16 @@ fn load_charts(
 }
 
 /// Map an ODF `chart:class` (`chart:bar`, `chart:line`, …) to docling's
-/// `PictureClassificationLabel` chart kind (`bar_chart`, `line_chart`, …).
-fn chart_kind(class: &str) -> String {
-    let base = class.strip_prefix("chart:").unwrap_or(class);
-    match base {
-        "circle" | "ring" => "pie_chart".to_string(),
-        "" => "chart".to_string(),
-        other => format!("{other}_chart"),
+/// `PictureClassificationLabel` chart kind — exactly docling's
+/// `_ODF_CHART_CLASS_TO_PICTURE_CLASSIFICATION` (unmapped classes fall back
+/// to `other_chart` at the call site).
+fn chart_kind(class: &str) -> Option<&'static str> {
+    match class {
+        "chart:bar" => Some("bar_chart"),
+        "chart:line" => Some("line_chart"),
+        "chart:circle" | "chart:pie" => Some("pie_chart"),
+        "chart:scatter" => Some("scatter_plot"),
+        _ => None,
     }
 }
 
@@ -316,8 +332,21 @@ struct Run {
 
 /// Collect runs from a paragraph/heading element (recursing spans).
 fn collect_runs(el: XmlNode, styles: &Styles, base: Fmt, out: &mut Vec<Run>) {
+    // docling's `_odf_text_runs` reads only `element.text` — the lxml *head*
+    // text before the first element child — plus the children's own runs.
+    // Text that trails a child element (its lxml `tail`) survives only when
+    // the child itself yields nothing (an empty inline marker like
+    // `<text:soft-page-break/>` falls back to `text_recursive`, which is its
+    // tail) or when the child is a `<text:line-break/>` (whose run is built
+    // from `text_recursive` too). A tail after a content-bearing child is
+    // dropped: "with <span>bold</span>, and <span>italic</span> formatting"
+    // loses the ", and" and " formatting" fragments.
+    let mut seen_element = false;
     for child in el.children() {
         if child.is_text() {
+            if seen_element {
+                continue;
+            }
             if let Some(t) = child.text() {
                 out.push(Run {
                     text: t.to_string(),
@@ -328,16 +357,23 @@ fn collect_runs(el: XmlNode, styles: &Styles, base: Fmt, out: &mut Vec<Run>) {
             match child.tag_name().name() {
                 "span" => {
                     let fmt = resolve_fmt(styles, attr(child, "style-name"), base);
+                    let before = out.len();
                     collect_runs(child, styles, fmt, out);
+                    seen_element |= out.len() > before || child.children().any(|c| c.is_element());
                 }
+                // The line-break run is `text_recursive`-based, so its tail
+                // rides along — the following text node stays collected.
                 "line-break" => out.push(Run {
                     text: "\n".into(),
                     fmt: base,
                 }),
-                "tab" => out.push(Run {
-                    text: "\t".into(),
-                    fmt: base,
-                }),
+                "tab" => {
+                    out.push(Run {
+                        text: "\t".into(),
+                        fmt: base,
+                    });
+                    seen_element = true;
+                }
                 "s" => {
                     // <text:s text:c="n"> = n spaces (default 1)
                     let n: usize = attr(child, "c").and_then(|v| v.parse().ok()).unwrap_or(1);
@@ -345,10 +381,15 @@ fn collect_runs(el: XmlNode, styles: &Styles, base: Fmt, out: &mut Vec<Run>) {
                         text: " ".repeat(n),
                         fmt: base,
                     });
+                    seen_element = true;
                 }
                 // docling's `_odf_text_runs` recurses into every child, so an
                 // image's `<svg:desc>`/`<svg:title>` text is picked up too.
-                _ => collect_runs(child, styles, base, out),
+                _ => {
+                    let before = out.len();
+                    collect_runs(child, styles, base, out);
+                    seen_element |= out.len() > before || child.children().any(|c| c.is_element());
+                }
             }
         }
     }
@@ -531,6 +572,8 @@ fn emit_frame_graphic(frame: XmlNode, styles: &Styles, doc: &mut DoclingDocument
             doc.push(Node::Chart {
                 kind: info.kind.clone(),
                 table: info.table.clone(),
+                caption: None,
+                location: None,
             });
             return true;
         }
@@ -703,6 +746,10 @@ fn add_odf_list(
         _ => level_affixes(styles, list, style_level),
     };
     let mut has_last = should_continue;
+    // A non-continued `<text:list>` opens a fresh docling ListGroup: its first
+    // rendered item carries the fresh-list flag (a following sibling group at
+    // the same depth gets its own `<list>` / top-level Markdown blank line).
+    let mut first = !should_continue;
 
     for item in list_items(list) {
         let (text, nested) = odf_item_content(item, styles);
@@ -740,7 +787,7 @@ fn add_odf_list(
         doc.push(Node::ListItem {
             ordered,
             number,
-            first_in_list: false,
+            first_in_list: std::mem::take(&mut first),
             text,
             level: depth,
             marker,
@@ -858,6 +905,16 @@ fn parse_table(table: XmlNode, styles: &Styles) -> Option<Table> {
                         if rr == ri && cc == ci {
                             continue;
                         }
+                        // docling's `TableData.grid` repeats a *plain* anchor's
+                        // text into every covered position (visible in
+                        // Markdown/JSON). A rich cell dedups instead: its
+                        // covered occurrences serialize empty (the visited-set
+                        // suppresses the repeated `RichTableCell` content).
+                        // DocLang ignores either way — continuation cells are
+                        // token-only.
+                        if cell_nodes.is_empty() {
+                            grid[rr][cc] = text.clone();
+                        }
                         col_cont[rr][cc] |= cc > ci;
                         row_cont[rr][cc] |= rr > ri;
                     }
@@ -867,7 +924,9 @@ fn parse_table(table: XmlNode, styles: &Styles) -> Option<Table> {
         }
     }
 
-    let (min_r, max_r, min_c, max_c) = data_bounds(&grid)?;
+    // An all-empty grid keeps docling's `(0, 0, 0, 0)` fallback bounds — the
+    // table renders as a 1×1 empty cell (`|    |`), not nothing.
+    let (min_r, max_r, min_c, max_c) = data_bounds(&grid).unwrap_or((0, 0, 0, 0));
     let slice = |g: Vec<Vec<bool>>| -> Vec<Vec<bool>> {
         g[min_r..=max_r]
             .iter()
@@ -893,6 +952,7 @@ fn parse_table(table: XmlNode, styles: &Styles) -> Option<Table> {
             header_row,
             col_continuation: slice(col_cont),
             row_continuation: slice(row_cont),
+            row_header: Vec::new(),
         }),
         cell_blocks,
     })
@@ -941,8 +1001,10 @@ fn cell_blocks_of(tc: XmlNode, styles: &Styles) -> Vec<Node> {
 
 /// Whether a cell must render as rich block content — docling's
 /// `_odf_cell_has_rich_content`: it holds an image, a renderable list, a header,
-/// a nested table with content, a paragraph with an image, or more than one
-/// non-empty paragraph.
+/// a nested table with content, a paragraph with an image, more than one
+/// non-empty paragraph, or any non-empty paragraph in a cell without a typed
+/// value (`office:value-type`) — presentation tables never type their cells, so
+/// their text cells are all rich (docling's `cell.value is None` clause).
 fn is_rich_cell(tc: XmlNode, styles: &Styles) -> bool {
     if cell_has_image(tc) {
         return true;
@@ -964,7 +1026,7 @@ fn is_rich_cell(tc: XmlNode, styles: &Styles) -> bool {
             _ => {}
         }
     }
-    non_empty_paragraphs > 1
+    non_empty_paragraphs > 1 || (attr(tc, "value-type").is_none() && non_empty_paragraphs > 0)
 }
 
 /// A cell/paragraph holding a bitmap image (`<draw:image>`).
@@ -1190,29 +1252,192 @@ fn ods_cell_text(cell: XmlNode) -> String {
 
 // ---------------------------------------------------------------- presentation
 
+/// Port of docling's `OdpDocumentBackend`: each `<draw:page>` gets its slide
+/// name as a title when no element on it is a visible title (a frame with
+/// `presentation:class="title"`, or a `draw:custom-shape` carrying the slide's
+/// first text); speaker notes (`<presentation:notes>`) and animations are
+/// dropped; a title element's paragraphs become the slide title.
 fn walk_presentation(pres: XmlNode, styles: &Styles, doc: &mut DoclingDocument) {
-    for page in pres.children().filter(|c| c.has_tag_name("page")) {
-        for frame in page.descendants().filter(|n| n.has_tag_name("frame")) {
-            for tb in frame.children().filter(|c| c.has_tag_name("text-box")) {
-                walk_blocks(tb.children().filter(XmlNode::is_element), styles, doc);
+    for (idx, page) in pres
+        .children()
+        .filter(|c| c.has_tag_name("page"))
+        .enumerate()
+    {
+        let name = attr(page, "name")
+            .filter(|n| !n.is_empty())
+            .map(str::to_string)
+            .unwrap_or_else(|| format!("slide-{}", idx + 1));
+        if !slide_has_visible_title(page) {
+            doc.push(Node::Heading {
+                level: 1,
+                text: name,
+            });
+        }
+        walk_slide(page, styles, doc);
+    }
+}
+
+/// docling's `_odf_image_can_be_bitmap`: an explicit `draw:mime-type` decides
+/// (raster `image/*` only); otherwise the href's suffix — vector/preview
+/// formats (`.svm`, `.svg`, `.emf`, `.wmf`, `.pdf`) never yield a picture.
+fn image_can_be_bitmap(img: XmlNode, href: &str) -> bool {
+    if let Some(mime) = attr(img, "mime-type") {
+        return mime.starts_with("image/") && mime != "image/svg+xml";
+    }
+    let name = href.rsplit('/').next().unwrap_or(href);
+    let suffix = match name.rsplit_once('.') {
+        Some((_, ext)) => ext.to_ascii_lowercase(),
+        None => String::new(),
+    };
+    matches!(
+        suffix.as_str(),
+        "" | "bmp" | "gif" | "jpeg" | "jpg" | "png" | "tif" | "tiff" | "webp"
+    )
+}
+
+/// Any non-blank text anywhere under the element (docling's
+/// `_clean_odf_text_lines(text_recursive)` non-emptiness).
+fn element_has_text(el: XmlNode) -> bool {
+    el.descendants()
+        .filter(|n| n.is_text())
+        .any(|n| !n.text().unwrap_or("").trim().is_empty())
+}
+
+/// docling's `_is_slide_title_element`: an explicit `presentation:class="title"`,
+/// or a `draw:custom-shape` holding the slide's first text content.
+fn is_slide_title_element(el: XmlNode, is_first_text_content: bool) -> bool {
+    if attr(el, "class") == Some("title") {
+        return true;
+    }
+    is_first_text_content && el.tag_name().name() == "custom-shape"
+}
+
+fn slide_has_visible_title(page: XmlNode) -> bool {
+    let mut seen_text = false;
+    for el in page.children().filter(XmlNode::is_element) {
+        let tag = el.tag_name().name();
+        if tag == "notes" || tag == "par" {
+            continue;
+        }
+        if is_slide_title_element(el, !seen_text) {
+            return true;
+        }
+        if element_has_text(el) {
+            seen_text = true;
+        }
+    }
+    false
+}
+
+fn walk_slide(page: XmlNode, styles: &Styles, doc: &mut DoclingDocument) {
+    let mut seen_text = false;
+    for el in page.children().filter(XmlNode::is_element) {
+        let tag = el.tag_name().name();
+        // Speaker notes and animation trees never reach the document.
+        if tag == "notes" || tag == "par" {
+            continue;
+        }
+        let has_text = element_has_text(el);
+        let is_title = is_slide_title_element(el, !seen_text);
+        if has_text {
+            seen_text = true;
+        }
+        if tag == "frame" {
+            walk_slide_frame(el, styles, doc, is_title);
+        } else {
+            walk_textbox_children(
+                el.children().filter(XmlNode::is_element),
+                styles,
+                doc,
+                is_title,
+            );
+        }
+    }
+}
+
+/// docling's `_walk_slide_frame` order: embedded charts, tables, images (the
+/// chart's `ObjectReplacements/` preview is skipped once the chart itself is
+/// emitted), then text boxes.
+fn walk_slide_frame(frame: XmlNode, styles: &Styles, doc: &mut DoclingDocument, is_title: bool) {
+    let mut chart_count = 0usize;
+    if let Some(obj) = frame.children().find(|c| c.has_tag_name("object")) {
+        let name = attr(obj, "href").unwrap_or("").trim_start_matches("./");
+        if let Some(info) = styles.charts.get(name) {
+            doc.push(Node::Chart {
+                kind: info.kind.clone(),
+                table: info.table.clone(),
+                caption: None,
+                location: None,
+            });
+            chart_count += 1;
+        }
+    }
+    for tbl in frame.descendants().filter(|n| n.has_tag_name("table")) {
+        if let Some(t) = parse_table(tbl, styles) {
+            doc.push(Node::Table(t));
+        }
+    }
+    for img in frame.descendants().filter(|n| n.has_tag_name("image")) {
+        let href = attr(img, "href").unwrap_or("");
+        if chart_count > 0
+            && href
+                .trim_start_matches("./")
+                .starts_with("ObjectReplacements/")
+        {
+            continue;
+        }
+        if !image_can_be_bitmap(img, href) {
+            continue;
+        }
+        doc.push(Node::Picture {
+            caption: None,
+            image: None,
+        });
+    }
+    for tb in frame.descendants().filter(|n| n.has_tag_name("text-box")) {
+        walk_textbox_children(
+            tb.children().filter(XmlNode::is_element),
+            styles,
+            doc,
+            is_title,
+        );
+    }
+}
+
+/// docling's `_walk_textbox_children`: headings keep their outline level, a
+/// title element's paragraphs become the slide TITLE (a `#` heading), other
+/// paragraphs plain text, and sibling lists continue their numbering.
+fn walk_textbox_children<'a, 'i: 'a>(
+    els: impl Iterator<Item = XmlNode<'a, 'i>>,
+    styles: &Styles,
+    doc: &mut DoclingDocument,
+    is_title: bool,
+) {
+    let mut prev_state: Option<ListCont> = None;
+    for el in els {
+        match el.tag_name().name() {
+            "h" => {
+                prev_state = None;
+                handle_block(el, styles, doc, 0, &mut Vec::new());
             }
-            for table in frame.children().filter(|c| c.has_tag_name("table")) {
-                if let Some(t) = parse_table(table, styles) {
-                    doc.push(Node::Table(t));
+            "p" => {
+                prev_state = None;
+                let mut runs = Vec::new();
+                collect_runs(el, styles, Fmt::default(), &mut runs);
+                let text = runs_to_text(runs.clone());
+                if text.is_empty() {
+                    continue;
+                }
+                if is_title {
+                    doc.push(Node::Heading { level: 1, text });
+                } else {
+                    doc.push(inline_paragraph_node(text, runs_to_inline(runs), false));
                 }
             }
-            // An embedded chart object on the slide → a chart node. A
-            // presentation's graphics are DocLang-only: they appear in the
-            // `.dclx` body but not in docling's presentation `.md`/`.json`.
-            if let Some(obj) = frame.children().find(|c| c.has_tag_name("object")) {
-                let name = attr(obj, "href").unwrap_or("").trim_start_matches("./");
-                if let Some(info) = styles.charts.get(name) {
-                    doc.push(Node::DoclangOnly(Box::new(Node::Chart {
-                        kind: info.kind.clone(),
-                        table: info.table.clone(),
-                    })));
-                }
+            "list" => {
+                prev_state = add_odf_list(el, styles, doc, 0, 1, false, prev_state.take());
             }
+            _ => {}
         }
     }
 }

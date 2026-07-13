@@ -68,6 +68,10 @@ for fmt in "${fmts[@]}"; do
       # only a genuine structural difference (missing/extra <src>) then shows up.
       sed -E -i 's#image_[0-9]{6}_[0-9a-f]+\.png#image_NORM.png#g' \
         "$tmp/ref.xml" "$tmp/ours.xml"
+      # Same rationale for base64 data URIs (furniture pictures embed the PIL
+      # re-encoded PNG inline): normalize the payload, keep the structure.
+      sed -E -i 's#data:image/[a-z]+;base64,[A-Za-z0-9+/=]+#data:image/NORM#g' \
+        "$tmp/ref.xml" "$tmp/ours.xml"
       ftol=0; [ "$is_pdf" -eq 1 ] && ftol="$TOL"   # geometry tolerance: PDF only
       d=$(python3 "$DIFF" "$tmp/ref.xml" "$tmp/ours.xml" --tol "$ftol")
       lr=$(wc -l < "$tmp/ref.xml"); lo=$(wc -l < "$tmp/ours.xml")

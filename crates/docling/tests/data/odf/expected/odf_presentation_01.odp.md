@@ -1,4 +1,4 @@
-Test Table Slide
+# Test Table Slide
 
 With footnote
 
@@ -13,7 +13,7 @@ With footnote
 |      |                   | - True  |         | - True     | - False | - False |
 |      | - True            | - False | - True  | - False    | - True  | - False |
 
-Second slide title
+# Second slide title
 
 1. Let’s introduce a list
 
@@ -21,7 +21,9 @@ Second slide title
 - Bar
 - And baz things
 
-Some notes on the second slide.
+A rectangle shape with this text inside.
+
+# Slide3
 
 1. List item4
 2. List item5
@@ -46,7 +48,3 @@ Maybe a list?
 - l1
 - l2
 - l3
-
-Final notes on the third slide.
-
-Second line of notes.

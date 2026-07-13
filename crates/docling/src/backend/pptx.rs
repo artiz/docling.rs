@@ -36,6 +36,7 @@ impl DeclarativeBackend for PptxBackend {
             .iter()
             .map(|r| (r.id.clone(), resolve("ppt", &r.target)))
             .collect();
+        let authors = comment_authors(&mut pkg);
 
         for (slide_ix, rid) in slide_rids(&presentation).into_iter().enumerate() {
             let Some(part) = rid_to_part.get(&rid).cloned() else {
@@ -78,17 +79,161 @@ impl DeclarativeBackend for PptxBackend {
                 continue;
             };
             if let Some(tree) = descendant(slide.root_element(), "spTree") {
-                // docling emits a page break at each slide boundary (one between
-                // consecutive slides).
-                if slide_ix > 0 {
-                    doc.push(Node::PageBreak);
-                }
                 for shape in tree.children().filter(XmlNode::is_element) {
                     handle_shape(shape, &valid_imgs, &images, slide_size, &phmap, &mut doc);
                 }
             }
+            // Speaker notes are slide content (docling gives them a zero-bbox
+            // provenance on the slide's page), so they precede the page break.
+            slide_notes(&mut pkg, &part, &dir, &mut doc);
+            // DocLang page break: docling's serializer places each slide
+            // boundary's break *after* the following slide's content (every
+            // slide beyond the first trails one — same artifact as XLSX
+            // sheets, see the xlsx module docs).
+            if slide_ix > 0 {
+                doc.push(Node::PageBreak);
+            }
+            // Review comments (`p:cm`) carry no provenance, so they serialize
+            // after the page break, matching docling's comment_section groups.
+            slide_comments(&mut pkg, &part, &dir, &authors, &mut doc);
         }
         Ok(doc)
+    }
+}
+
+/// Author id → (name, initials) from `ppt/commentAuthors.xml`.
+fn comment_authors(pkg: &mut Package) -> HashMap<String, (String, String)> {
+    let mut map = HashMap::new();
+    let Some(xml) = pkg.read("ppt/commentAuthors.xml") else {
+        return map;
+    };
+    let Ok(doc) = Document::parse(&xml) else {
+        return map;
+    };
+    for a in doc.descendants().filter(|n| n.has_tag_name("cmAuthor")) {
+        map.insert(
+            a.attribute("id").unwrap_or("").to_string(),
+            (
+                a.attribute("name").unwrap_or("").to_string(),
+                a.attribute("initials").unwrap_or("").to_string(),
+            ),
+        );
+    }
+    map
+}
+
+/// Emit a slide's speaker notes: python-pptx's `notes_text_frame.text` (the
+/// body placeholder's paragraphs joined with newlines, soft breaks as `\v`),
+/// stripped, as one notes-layer text with a zero-bbox location.
+fn slide_notes(pkg: &mut Package, part: &str, dir: &str, doc: &mut DoclingDocument) {
+    for r in pkg.rels_for(part) {
+        if !r.rel_type.ends_with("/notesSlide") {
+            continue;
+        }
+        let p = resolve(dir, &r.target);
+        let Some(xml) = pkg.read(&p) else {
+            continue;
+        };
+        let Ok(ndoc) = Document::parse(&xml) else {
+            continue;
+        };
+        let body = ndoc.descendants().find(|n| {
+            n.has_tag_name("sp")
+                && n.descendants()
+                    .any(|d| d.has_tag_name("ph") && d.attribute("type") == Some("body"))
+        });
+        let Some(tx) = body.and_then(|sp| descendant(sp, "txBody")) else {
+            continue;
+        };
+        let text = tx
+            .children()
+            .filter(|n| n.has_tag_name("p"))
+            .map(|p| {
+                let mut s = String::new();
+                for child in p.children().filter(XmlNode::is_element) {
+                    match child.tag_name().name() {
+                        "r" | "fld" => {
+                            if let Some(t) = child.children().find(|n| n.has_tag_name("t")) {
+                                s.push_str(t.text().unwrap_or(""));
+                            }
+                        }
+                        "br" => s.push('\u{b}'),
+                        _ => {}
+                    }
+                }
+                s
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+        let text = text.trim();
+        if !text.is_empty() {
+            doc.push(Node::Furniture {
+                layer: docling_core::ContentLayer::Notes,
+                inner: Box::new(Node::Located {
+                    location: [0, 0, 0, 0],
+                    inner: Box::new(Node::Paragraph {
+                        text: text.to_string(),
+                    }),
+                }),
+            });
+        }
+    }
+}
+
+/// Emit a slide's review comments as notes-layer texts, docling's format:
+/// `[author: Name (IN), time: dt]: text` (either metadata part may be absent;
+/// `dt` is the raw attribute string).
+fn slide_comments(
+    pkg: &mut Package,
+    part: &str,
+    dir: &str,
+    authors: &HashMap<String, (String, String)>,
+    doc: &mut DoclingDocument,
+) {
+    for r in pkg.rels_for(part) {
+        if !r.rel_type.ends_with("/comments") {
+            continue;
+        }
+        let p = resolve(dir, &r.target);
+        let Some(xml) = pkg.read(&p) else {
+            continue;
+        };
+        let Ok(cdoc) = Document::parse(&xml) else {
+            continue;
+        };
+        for cm in cdoc.descendants().filter(|n| n.has_tag_name("cm")) {
+            let text = cm
+                .children()
+                .find(|n| n.has_tag_name("text"))
+                .and_then(|t| t.text())
+                .unwrap_or("")
+                .trim();
+            if text.is_empty() {
+                continue;
+            }
+            let mut meta = Vec::new();
+            if let Some((name, initials)) = authors.get(cm.attribute("authorId").unwrap_or("")) {
+                if !name.is_empty() {
+                    let mut a = format!("author: {name}");
+                    if !initials.is_empty() {
+                        a.push_str(&format!(" ({initials})"));
+                    }
+                    meta.push(a);
+                }
+            }
+            if let Some(dt) = cm.attribute("dt").filter(|d| !d.is_empty()) {
+                meta.push(format!("time: {dt}"));
+            }
+            let full = if meta.is_empty() {
+                text.to_string()
+            } else {
+                format!("[{}]: {}", meta.join(", "), text)
+            };
+            doc.push(Node::Furniture {
+                layer: docling_core::ContentLayer::Notes,
+                inner: Box::new(Node::Paragraph { text: full }),
+            });
+        }
     }
 }
 
@@ -350,13 +495,14 @@ fn handle_text_shape(sp: XmlNode, location: [u16; 4], doc: &mut DoclingDocument)
                 // Each item carries its shape's `<location>` (all items of a
                 // body placeholder share the one box); the location rides on the
                 // item itself so consecutive items still group into one `<list>`.
+                // docling passes numbered items an `"N."` enumeration marker.
                 doc.push(Node::ListItem {
                     ordered: numbered,
                     number: n,
                     first_in_list: false,
                     text,
                     level: 0,
-                    marker: None,
+                    marker: numbered.then(|| format!("{n}.")),
                     location: Some(location),
                     dclx: None,
                     href: None,
@@ -476,6 +622,7 @@ fn parse_table(tbl: XmlNode) -> Option<Table> {
             header_row,
             col_continuation,
             row_continuation,
+            row_header: Vec::new(),
         }),
         cell_blocks: None,
     })

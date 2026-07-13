@@ -317,12 +317,16 @@ fn render_list_run(items: &[Node], blocks: &mut Vec<String>, strict: bool) {
         // A new sibling list at the same depth gets a blank line: the kind flips
         // (`<ul>`↔`<ol>`), an ordered run breaks (`1, 2` then `42`), or the
         // backend flagged a fresh list (e.g. Markdown's bullet changing `-`→`*`).
-        if let Some((prev_ordered, prev_number)) = prev[level] {
-            let new_list = *first_in_list
-                || prev_ordered != *ordered
-                || (*ordered && *number != prev_number + 1);
-            if new_list {
-                lines.push(String::new());
+        // Only at the top level: nested sibling groups are children of a list
+        // item, and docling joins an item's children without blank lines.
+        if level == 0 {
+            if let Some((prev_ordered, prev_number)) = prev[level] {
+                let new_list = *first_in_list
+                    || prev_ordered != *ordered
+                    || (*ordered && *number != prev_number + 1);
+                if new_list {
+                    lines.push(String::new());
+                }
             }
         }
 
@@ -379,9 +383,27 @@ fn render_one(node: &Node, blocks: &mut Vec<String>, ctx: &mut Ctx) {
             }
             blocks.push(picture_marker(image.as_ref(), ctx));
         }
-        // A chart renders like a picture placeholder (its data table is
-        // DocLang-only); no image payload.
-        Node::Chart { .. } => blocks.push(picture_marker(None, ctx)),
+        // A chart renders as docling's picture-with-meta markdown: the caption,
+        // the placeholder, the humanized classification ("line_chart" ->
+        // "Line chart"), then the chart's data grid as a regular table.
+        Node::Chart {
+            kind,
+            table,
+            caption,
+            ..
+        } => {
+            if let Some(cap) = caption {
+                if !cap.is_empty() {
+                    blocks.push(cap.clone());
+                }
+            }
+            blocks.push(picture_marker(None, ctx));
+            blocks.push(humanize_label(kind));
+            let rendered = render_table(table, false);
+            if !rendered.is_empty() {
+                blocks.push(rendered);
+            }
+        }
         // A DocLang-only node is omitted from Markdown.
         Node::DoclangOnly(_) => {}
         Node::Group { children, .. } => render(children, blocks, ctx),
@@ -426,6 +448,17 @@ const MISSING_TEXT: &str = "<!-- missing-text -->";
 
 /// The Markdown for a picture under the active [`ImageMode`]; Referenced mode also
 /// records the bytes in `ctx.artifacts` for the caller to write.
+/// docling-core's `_humanize_text`: underscores to spaces, first letter
+/// capitalized ("line_chart" -> "Line chart").
+fn humanize_label(label: &str) -> String {
+    let text = label.replace('_', " ");
+    let mut chars = text.chars();
+    match chars.next() {
+        Some(f) => f.to_uppercase().collect::<String>() + chars.as_str(),
+        None => text,
+    }
+}
+
 fn picture_marker(image: Option<&crate::PictureImage>, ctx: &mut Ctx) -> String {
     match (ctx.images, image) {
         (ImageMode::Embedded, Some(img)) => format!("![Image]({})", img.data_uri()),

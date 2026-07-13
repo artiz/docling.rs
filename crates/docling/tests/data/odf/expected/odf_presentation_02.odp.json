@@ -18,22 +18,55 @@
     "self_ref": "#/body",
     "children": [
       {
-        "$ref": "#/tables/0"
-      },
-      {
         "$ref": "#/texts/0"
       },
       {
         "$ref": "#/texts/1"
       },
       {
+        "$ref": "#/texts/2"
+      },
+      {
+        "$ref": "#/texts/3"
+      },
+      {
+        "$ref": "#/pictures/0"
+      },
+      {
+        "$ref": "#/texts/4"
+      },
+      {
+        "$ref": "#/tables/0"
+      },
+      {
+        "$ref": "#/texts/5"
+      },
+      {
+        "$ref": "#/pictures/1"
+      },
+      {
+        "$ref": "#/texts/6"
+      },
+      {
+        "$ref": "#/texts/7"
+      },
+      {
         "$ref": "#/groups/0"
       },
       {
-        "$ref": "#/texts/8"
+        "$ref": "#/groups/4"
       },
       {
-        "$ref": "#/texts/9"
+        "$ref": "#/texts/14"
+      },
+      {
+        "$ref": "#/texts/15"
+      },
+      {
+        "$ref": "#/tables/1"
+      },
+      {
+        "$ref": "#/pictures/2"
       }
     ],
     "content_layer": "body",
@@ -48,13 +81,10 @@
       },
       "children": [
         {
-          "$ref": "#/texts/2"
+          "$ref": "#/texts/8"
         },
         {
-          "$ref": "#/texts/3"
-        },
-        {
-          "$ref": "#/texts/7"
+          "$ref": "#/texts/9"
         }
       ],
       "content_layer": "body",
@@ -64,11 +94,11 @@
     {
       "self_ref": "#/groups/1",
       "parent": {
-        "$ref": "#/texts/3"
+        "$ref": "#/texts/9"
       },
       "children": [
         {
-          "$ref": "#/texts/4"
+          "$ref": "#/texts/10"
         }
       ],
       "content_layer": "body",
@@ -78,11 +108,11 @@
     {
       "self_ref": "#/groups/2",
       "parent": {
-        "$ref": "#/texts/4"
+        "$ref": "#/texts/10"
       },
       "children": [
         {
-          "$ref": "#/texts/5"
+          "$ref": "#/texts/11"
         }
       ],
       "content_layer": "body",
@@ -92,11 +122,25 @@
     {
       "self_ref": "#/groups/3",
       "parent": {
-        "$ref": "#/texts/3"
+        "$ref": "#/texts/9"
       },
       "children": [
         {
-          "$ref": "#/texts/6"
+          "$ref": "#/texts/12"
+        }
+      ],
+      "content_layer": "body",
+      "name": "list",
+      "label": "list"
+    },
+    {
+      "self_ref": "#/groups/4",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [
+        {
+          "$ref": "#/texts/13"
         }
       ],
       "content_layer": "body",
@@ -112,13 +156,85 @@
       },
       "children": [],
       "content_layer": "body",
+      "label": "title",
+      "prov": [],
+      "orig": "Text",
+      "text": "Text"
+    },
+    {
+      "self_ref": "#/texts/1",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
       "label": "text",
+      "prov": [],
+      "orig": "Lorem ipsum dolor sit amet, consectetur adipiscing elit. Nunc ac faucibus odio. Vestibulum neque massa, scelerisque sit amet ligula eu, congue molestie mi. Praesent ut varius sem. Nullam at porttitor arcu, nec lacinia nisi. Ut ac dolor vitae odio interdum condimentum. Vivamus dapibus sodales ex, vitae malesuada ipsum cursus convallis. Maecenas sed egestas nulla, ac condimentum orci. Mauris diam felis, vulputate ac suscipit et, iaculis non est. Curabitur semper arcu ac ligula semper, nec luctus nisl blandit. Integer lacinia ante ac libero lobortis imperdiet. Nullam mollis convallis ipsum, ac accumsan nunc vehicula vitae. Nulla eget justo in felis tristique fringilla. Morbi sit amet tortor quis risus auctor condimentum. Morbi in ullamcorper elit. Nulla iaculis tellus sit amet mauris tempus fringilla.",
+      "text": "Lorem ipsum dolor sit amet, consectetur adipiscing elit. Nunc ac faucibus odio. Vestibulum neque massa, scelerisque sit amet ligula eu, congue molestie mi. Praesent ut varius sem. Nullam at porttitor arcu, nec lacinia nisi. Ut ac dolor vitae odio interdum condimentum. Vivamus dapibus sodales ex, vitae malesuada ipsum cursus convallis. Maecenas sed egestas nulla, ac condimentum orci. Mauris diam felis, vulputate ac suscipit et, iaculis non est. Curabitur semper arcu ac ligula semper, nec luctus nisl blandit. Integer lacinia ante ac libero lobortis imperdiet. Nullam mollis convallis ipsum, ac accumsan nunc vehicula vitae. Nulla eget justo in felis tristique fringilla. Morbi sit amet tortor quis risus auctor condimentum. Morbi in ullamcorper elit. Nulla iaculis tellus sit amet mauris tempus fringilla."
+    },
+    {
+      "self_ref": "#/texts/2",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "Maecenas mauris lectus, lobortis et purus mattis, blandit dictum tellus. Maecenas non lorem quis tellus placerat varius. Nulla facilisi. Aenean congue fringilla justo ut aliquam. Mauris id ex erat. Nunc vulputate neque vitae justo facilisis, non condimentum ante sagittis. Morbi viverra semper lorem nec molestie. Maecenas tincidunt est efficitur ligula euismod, sit amet ornare est vulputate.",
+      "text": "Maecenas mauris lectus, lobortis et purus mattis, blandit dictum tellus. Maecenas non lorem quis tellus placerat varius. Nulla facilisi. Aenean congue fringilla justo ut aliquam. Mauris id ex erat. Nunc vulputate neque vitae justo facilisis, non condimentum ante sagittis. Morbi viverra semper lorem nec molestie. Maecenas tincidunt est efficitur ligula euismod, sit amet ornare est vulputate."
+    },
+    {
+      "self_ref": "#/texts/3",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "title",
+      "prov": [],
+      "orig": "Chart",
+      "text": "Chart"
+    },
+    {
+      "self_ref": "#/texts/4",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "title",
+      "prov": [],
+      "orig": "Table",
+      "text": "Table"
+    },
+    {
+      "self_ref": "#/texts/5",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "title",
+      "prov": [],
+      "orig": "Photo",
+      "text": "Photo"
+    },
+    {
+      "self_ref": "#/texts/6",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "title",
       "prov": [],
       "orig": "Complex list",
       "text": "Complex list"
     },
     {
-      "self_ref": "#/texts/1",
+      "self_ref": "#/texts/7",
       "parent": {
         "$ref": "#/body"
       },
@@ -130,7 +246,7 @@
       "text": "Hello"
     },
     {
-      "self_ref": "#/texts/2",
+      "self_ref": "#/texts/8",
       "parent": {
         "$ref": "#/groups/0"
       },
@@ -144,7 +260,7 @@
       "marker": "-"
     },
     {
-      "self_ref": "#/texts/3",
+      "self_ref": "#/texts/9",
       "parent": {
         "$ref": "#/groups/0"
       },
@@ -165,7 +281,7 @@
       "marker": "-"
     },
     {
-      "self_ref": "#/texts/4",
+      "self_ref": "#/texts/10",
       "parent": {
         "$ref": "#/groups/1"
       },
@@ -183,7 +299,7 @@
       "marker": "1."
     },
     {
-      "self_ref": "#/texts/5",
+      "self_ref": "#/texts/11",
       "parent": {
         "$ref": "#/groups/2"
       },
@@ -197,7 +313,7 @@
       "marker": "1."
     },
     {
-      "self_ref": "#/texts/6",
+      "self_ref": "#/texts/12",
       "parent": {
         "$ref": "#/groups/3"
       },
@@ -211,9 +327,9 @@
       "marker": "1."
     },
     {
-      "self_ref": "#/texts/7",
+      "self_ref": "#/texts/13",
       "parent": {
-        "$ref": "#/groups/0"
+        "$ref": "#/groups/4"
       },
       "children": [],
       "content_layer": "body",
@@ -225,7 +341,7 @@
       "marker": "-"
     },
     {
-      "self_ref": "#/texts/8",
+      "self_ref": "#/texts/14",
       "parent": {
         "$ref": "#/body"
       },
@@ -237,19 +353,62 @@
       "text": "Next paragraph text"
     },
     {
-      "self_ref": "#/texts/9",
+      "self_ref": "#/texts/15",
       "parent": {
         "$ref": "#/body"
       },
       "children": [],
       "content_layer": "body",
-      "label": "text",
+      "label": "title",
       "prov": [],
       "orig": "Table with pictures",
       "text": "Table with pictures"
     }
   ],
-  "pictures": [],
+  "pictures": [
+    {
+      "self_ref": "#/pictures/0",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "picture",
+      "prov": [],
+      "captions": [],
+      "references": [],
+      "footnotes": [],
+      "annotations": []
+    },
+    {
+      "self_ref": "#/pictures/1",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "picture",
+      "prov": [],
+      "captions": [],
+      "references": [],
+      "footnotes": [],
+      "annotations": []
+    },
+    {
+      "self_ref": "#/pictures/2",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "picture",
+      "prov": [],
+      "captions": [],
+      "references": [],
+      "footnotes": [],
+      "annotations": []
+    }
+  ],
   "tables": [
     {
       "self_ref": "#/tables/0",
@@ -792,6 +951,56 @@
               "end_col_offset_idx": 5,
               "text": "",
               "column_header": false,
+              "row_header": false,
+              "row_section": false,
+              "fillable": false
+            }
+          ]
+        ]
+      },
+      "annotations": []
+    },
+    {
+      "self_ref": "#/tables/1",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "table",
+      "prov": [],
+      "captions": [],
+      "references": [],
+      "footnotes": [],
+      "data": {
+        "table_cells": [
+          {
+            "row_span": 1,
+            "col_span": 1,
+            "start_row_offset_idx": 0,
+            "end_row_offset_idx": 1,
+            "start_col_offset_idx": 0,
+            "end_col_offset_idx": 1,
+            "text": "",
+            "column_header": true,
+            "row_header": false,
+            "row_section": false,
+            "fillable": false
+          }
+        ],
+        "num_rows": 1,
+        "num_cols": 1,
+        "grid": [
+          [
+            {
+              "row_span": 1,
+              "col_span": 1,
+              "start_row_offset_idx": 0,
+              "end_row_offset_idx": 1,
+              "start_col_offset_idx": 0,
+              "end_col_offset_idx": 1,
+              "text": "",
+              "column_header": true,
               "row_header": false,
               "row_section": false,
               "fillable": false
