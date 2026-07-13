@@ -9,6 +9,9 @@
             <path d="M284.8,894.232L179.735,783.955L130.222,645.203L125.538,504.726L185.211,385.816C209.006,322.738 249.951,278.973 302.281,248.028L406.684,203.333L413.483,175.767L436.637,152.428L451.408,153.312L457.726,183.183L485.164,165.379L526.92,159.699L557.014,177.545L612.652,211.018C679.009,226.066 740.505,264.146 797.138,325.26L862.813,423.477L891.583,560.826L883.273,683.32L814.268,809.924L734.431,894.384L644.495,926.906L497.146,954.121L361.064,940.647L284.8,894.232Z" style="fill:url(#_Linear1);"/>
             <circle cx="508" cy="575" r="370" style="fill:url(#_Linear1);"/>
             <g id="grinder" transform="matrix(0.907766,0,0,0.907766,43.878,93.824)">
+                <path d="M455,830L380,872" style="fill:none;stroke:black;stroke-width:38px;"/>
+                <path d="M455,830L380,872" style="fill:none;stroke:rgb(176,176,176);stroke-width:19px;"/>
+                <circle cx="366" cy="872" r="29" style="fill:rgb(199,68,6);stroke:black;stroke-width:13px;"/>
                 <path d="M393,697C425,713 585,713 617,697L541,748L541,760L469,760L469,748Z" style="fill:url(#_MetalFunnel);stroke:black;stroke-width:14px;"/>
                 <ellipse cx="505" cy="697" rx="112" ry="22" style="fill:rgb(38,38,38);stroke:black;stroke-width:12px;"/>
                 <ellipse cx="505" cy="838" rx="132" ry="95" style="fill:url(#_MetalBody);stroke:black;stroke-width:18px;"/>
@@ -19,10 +22,7 @@
                 <circle cx="470" cy="822" r="11.5" style="fill:rgb(35,35,35);"/>
                 <circle cx="470" cy="862" r="11.5" style="fill:rgb(35,35,35);"/>
                 <circle cx="505" cy="882" r="11.5" style="fill:rgb(35,35,35);"/>
-                <path d="M505,845L390,880" style="fill:none;stroke:black;stroke-width:38px;"/>
-                <path d="M505,845L390,880" style="fill:none;stroke:rgb(176,176,176);stroke-width:19px;"/>
                 <circle cx="505" cy="842" r="15" style="fill:rgb(130,130,130);stroke:black;stroke-width:10px;"/>
-                <circle cx="384" cy="880" r="29" style="fill:rgb(199,68,6);stroke:black;stroke-width:13px;"/>
                 <path d="M470,866C464,890 476,906 468,928" style="fill:none;stroke:black;stroke-width:27px;"/>
                 <path d="M470,866C464,890 476,906 468,928" style="fill:none;stroke:white;stroke-width:15px;"/>
                 <path d="M540,866C536,888 550,902 543,924" style="fill:none;stroke:black;stroke-width:27px;"/>
