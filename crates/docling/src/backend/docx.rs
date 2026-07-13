@@ -76,6 +76,12 @@ impl DeclarativeBackend for DocxBackend {
         for node in body.children().filter(XmlNode::is_element) {
             process_block(node, &ctx, &mut state, &mut doc);
         }
+        // Section headers/footers follow the body as furniture-layer content
+        // (docling's `_add_header_footer`): the first section always
+        // contributes, later sections only when they define a distinct first
+        // page (`<w:titlePg/>`), which also switches both to the first-page
+        // parts.
+        add_header_footer(&mut pkg, body, &ctx, &mut doc);
         // Reviewer comments (docling's `notes` layer) are appended after the body
         // as furniture text; Markdown/JSON drop them, DocLang emits `<layer
         // value="notes"/>` items.
@@ -86,6 +92,108 @@ impl DeclarativeBackend for DocxBackend {
             });
         }
         Ok(doc)
+    }
+}
+
+/// Append section headers/footers as furniture (docling's `_add_header_footer`).
+/// Sections are the `<w:sectPr>` elements in document order; header/footer
+/// references inherit from earlier sections per type (python-docx's
+/// linked-to-previous). The first section always contributes its parts; a later
+/// section only when it sets `<w:titlePg/>`, which selects the `first`-page
+/// references for both.
+fn add_header_footer(pkg: &mut Package, body: XmlNode, ctx: &Ctx, doc: &mut DoclingDocument) {
+    let doc_rels = ctx.rels;
+    let sect_prs: Vec<XmlNode> = body
+        .descendants()
+        .filter(|n| n.has_tag_name("sectPr"))
+        .collect();
+    let mut effective: HashMap<(&str, String), String> = HashMap::new();
+    for (sec_idx, sect) in sect_prs.iter().enumerate() {
+        for r in sect.children().filter(XmlNode::is_element) {
+            let kind = match r.tag_name().name() {
+                "headerReference" => "hdr",
+                "footerReference" => "ftr",
+                _ => continue,
+            };
+            let ty = attr(r, "type").unwrap_or("default").to_string();
+            if let Some(id) = attr(r, "id") {
+                effective.insert((kind, ty), id.to_string());
+            }
+        }
+        let title_pg = sect.children().any(|n| {
+            n.has_tag_name("titlePg")
+                && attr(n, "val") != Some("false")
+                && attr(n, "val") != Some("0")
+        });
+        if sec_idx > 0 && !title_pg {
+            continue;
+        }
+        let ty = if title_pg { "first" } else { "default" };
+        for kind in ["hdr", "ftr"] {
+            let Some(rid) = effective.get(&(kind, ty.to_string())) else {
+                continue;
+            };
+            let Some(part) = doc_rels.get(rid) else {
+                continue;
+            };
+            emit_header_footer_part(pkg, part, ctx, doc);
+        }
+    }
+}
+
+/// Walk one header/footer part and append its blocks wrapped in the furniture
+/// layer. docling skips a part with no visible content (no non-blank paragraph
+/// text, tables, images, or textboxes).
+fn emit_header_footer_part(pkg: &mut Package, part: &str, ctx: &Ctx, doc: &mut DoclingDocument) {
+    let Some(xml) = pkg.read(part) else {
+        return;
+    };
+    let Ok(dom) = Document::parse(&xml) else {
+        return;
+    };
+    let root = dom.root_element();
+    let has_content = root
+        .descendants()
+        .any(|n| n.has_tag_name("t") && n.text().is_some_and(|t| !t.trim().is_empty()))
+        || root.descendants().any(|n| {
+            matches!(
+                n.tag_name().name(),
+                "tbl" | "blip" | "imagedata" | "txbxContent"
+            )
+        });
+    if !has_content {
+        return;
+    }
+    let rels: HashMap<String, String> = pkg
+        .rels_for(part)
+        .iter()
+        .map(|r| {
+            let t = if r.rel_type.ends_with("/hyperlink") {
+                r.target.clone()
+            } else {
+                resolve("word", &r.target)
+            };
+            (r.id.clone(), t)
+        })
+        .collect();
+    let images = pkg.image_rels(part, "word");
+    let part_ctx = Ctx {
+        style_names: ctx.style_names,
+        style_nums: ctx.style_nums,
+        num_levels: ctx.num_levels,
+        rels: &rels,
+        images: &images,
+    };
+    let mut sub = DoclingDocument::new("");
+    let mut state = ListState::default();
+    for node in root.children().filter(XmlNode::is_element) {
+        process_block(node, &part_ctx, &mut state, &mut sub);
+    }
+    for n in sub.nodes {
+        doc.nodes.push(Node::Furniture {
+            layer: docling_core::ContentLayer::Furniture,
+            inner: Box::new(n),
+        });
     }
 }
 
@@ -151,6 +259,12 @@ struct ListState {
     counters: HashMap<(String, i64), i64>, // (numId, ilvl) -> running number
     numbered_headers: HashMap<u8, u64>,    // heading level -> running number
     list_run_base: Option<i64>,            // base ilvl of the current contiguous list run
+    /// Whether a heading/title was emitted before the current paragraph. In
+    /// docling's tree later content is parented under that heading `TextItem`,
+    /// and the DocLang serializer leaves an InlineGroup whose parent is a
+    /// `TextItem` *unwrapped* (no `<text>` element); under the body/a group it
+    /// is wrapped.
+    seen_heading: bool,
 }
 
 /// Dispatch a body-level block: paragraph, table, or `<w:sdt>` (whose
@@ -249,6 +363,13 @@ fn handle_paragraph_inner(
                 // stops it re-extracting nested textboxes, which this loop covers.
                 if !trimmed.is_empty() {
                     handle_paragraph_inner(tp, ctx, state, doc, false, true);
+                } else {
+                    // docling runs `_handle_text_elements` for *every* deduped
+                    // textbox paragraph, so an empty one still yields an empty
+                    // text item (DocLang `<text></text>`; Markdown drops it).
+                    doc.push(Node::Paragraph {
+                        text: String::new(),
+                    });
                 }
                 for image in drawing_images(tp, ctx, false) {
                     doc.push(Node::Picture {
@@ -337,6 +458,7 @@ fn handle_paragraph_inner(
                 text
             };
             doc.push(Node::Heading { level, text });
+            state.seen_heading = true;
         }
         state.list_run_base = None;
         return;
@@ -408,15 +530,35 @@ fn handle_paragraph_inner(
             }
         } else {
             // A bullet item; inline equations carry structured `<formula>` runs in
-            // the DocLang overlay while Markdown keeps the flat `$…$` text. (Plain
-            // formatting is left to the flat-text re-parse, which matches docling's
-            // list-item rendering more closely than reconstructed runs.)
-            let dclx = has_equations.then(|| ListItemDclx {
-                ordered: false,
-                marker: None,
-                text: text.clone(),
-                runs: inline_equation_runs(&eq_parts),
-            });
+            // the DocLang overlay while Markdown keeps the flat `$…$` text. Plain
+            // bold/italic formatting is left to the flat-text re-parse, but a
+            // segment with Markdown-invisible formatting (underline, strike,
+            // sub/superscript) needs reconstructed runs to survive into DocLang.
+            let dclx = if has_equations {
+                Some(ListItemDclx {
+                    ordered: false,
+                    marker: None,
+                    text: text.clone(),
+                    runs: inline_equation_runs(&eq_parts),
+                })
+            } else {
+                let mut tuples = Vec::new();
+                collect_run_tuples(p, Fmt::default(), None, ctx, &mut tuples);
+                let groups = run_groups(tuples);
+                groups
+                    .iter()
+                    .any(|(_, f, _)| f.underline || f.strike || f.script != 0)
+                    .then(|| ListItemDclx {
+                        ordered: false,
+                        marker: None,
+                        text: text.clone(),
+                        runs: groups
+                            .into_iter()
+                            .filter(|(t, _, _)| !t.is_empty())
+                            .map(|(t, f, _)| f.to_inline_run(&t))
+                            .collect(),
+                    })
+            };
             doc.push(Node::ListItem {
                 ordered: false,
                 number: 0,
@@ -444,27 +586,59 @@ fn handle_paragraph_inner(
             let runs = inline_equation_runs(&eq_parts);
             doc.push(docling_core::inline_paragraph_node(text, runs, false));
         } else if rich {
-            // In a rich cell each format segment is its own block (joined with
-            // blank lines, i.e. double spaces once flattened into the cell).
-            let mut runs = Vec::new();
-            collect_run_tuples(p, Fmt::default(), None, ctx, &mut runs);
-            for seg in run_segments(runs) {
-                doc.push(Node::Paragraph { text: seg });
+            // In a rich cell each format segment is its own block (docling adds
+            // one TextItem per element, keeping its formatting): a plain segment
+            // is a paragraph, a formatted one an InlineGroup whose single run
+            // carries the style (`<text><underline>…</underline></text>`).
+            let mut tuples = Vec::new();
+            collect_run_tuples(p, Fmt::default(), None, ctx, &mut tuples);
+            for (t, f, l) in run_groups(tuples) {
+                let seg = serialize_run(&t, f, l.as_deref());
+                if seg.is_empty() {
+                    continue;
+                }
+                if f == Fmt::default() {
+                    doc.push(Node::Paragraph { text: seg });
+                } else {
+                    doc.push(Node::InlineGroup {
+                        unwrapped: false,
+                        runs: vec![f.to_inline_run(&t)],
+                        md_text: seg,
+                    });
+                }
             }
         } else {
             // A body paragraph with inline formatting becomes an InlineGroup so
-            // DocLang carries the structure; Markdown/JSON still see `text`. The
-            // docx body is flat (docling parents these on the body group), so the
-            // group is always wrapped.
+            // DocLang carries the structure; Markdown/JSON still see `text`.
+            // docling parents it on the body group — wrapped in `<text>` —
+            // until a heading appears, after which content hangs off the
+            // heading `TextItem` and the group serializes unwrapped. A single
+            // formatted hyperlink stays a text item so its `<href>` head
+            // survives (the runs drop link targets).
             let mut tuples = Vec::new();
             collect_run_tuples(p, Fmt::default(), None, ctx, &mut tuples);
-            let runs = run_inline_runs(tuples);
-            doc.push(docling_core::inline_paragraph_node(text, runs, false));
+            let groups = run_groups(tuples);
+            let lone_link = groups.len() == 1 && groups[0].2.is_some();
+            if lone_link {
+                doc.push(Node::Paragraph { text });
+            } else {
+                let runs = groups
+                    .into_iter()
+                    .filter(|(t, _, _)| !t.is_empty())
+                    .map(|(t, f, _)| f.to_inline_run(&t))
+                    .collect();
+                doc.push(docling_core::inline_paragraph_node(
+                    text,
+                    runs,
+                    state.seen_heading,
+                ));
+            }
         }
-    } else if !rich && !has_equations && !has_drawing(p) {
-        // docling emits an empty text item for a blank body paragraph
-        // (`skip_empty_text=False`); paragraphs carrying a drawing skip it. This
-        // is DocLang/JSON-only — Markdown drops empty paragraphs.
+    } else if !has_equations && !has_drawing(p) {
+        // docling emits an empty text item for a blank paragraph — in the body
+        // (`skip_empty_text=False`) and inside rich cells alike; paragraphs
+        // carrying a drawing skip it. This is DocLang/JSON-only — Markdown
+        // drops empty paragraphs.
         doc.push(Node::Paragraph {
             text: String::new(),
         });
@@ -657,18 +831,6 @@ fn run_segments(runs: Vec<(String, Fmt, Option<String>)>) -> Vec<String> {
         .iter()
         .map(|(t, f, l)| serialize_run(t, *f, l.as_deref()))
         .filter(|s| !s.is_empty())
-        .collect()
-}
-
-/// The structured [`InlineRun`]s for a body paragraph — one per format group,
-/// carrying the formatting DocLang needs (including underline/sub/superscript,
-/// which have no Markdown marker). The hyperlink is dropped (DocLang inline
-/// scope keeps only the anchor text).
-fn run_inline_runs(runs: Vec<(String, Fmt, Option<String>)>) -> Vec<InlineRun> {
-    run_groups(runs)
-        .into_iter()
-        .filter(|(t, _, _)| !t.is_empty())
-        .map(|(t, f, _)| f.to_inline_run(&t))
         .collect()
 }
 
@@ -1006,6 +1168,12 @@ fn parse_table_with(tbl: XmlNode, ctx: &Ctx, nested: bool) -> Option<Table> {
     // flat `grid` text). Never built for a `nested` (flattened) table.
     let mut blocks: Vec<Vec<Vec<Node>>> = vec![vec![Vec::new(); num_cols]; rows.len()];
     let mut any_rich = false;
+    // OTSL span continuations (dclx-only): `gridSpan` columns beyond the first
+    // continue horizontally (`<lcel/>`), `vMerge` continuations vertically
+    // (`<ucel/>`), a covered corner both (`<xcel/>`).
+    let mut col_cont = vec![vec![false; num_cols]; rows.len()];
+    let mut row_cont = vec![vec![false; num_cols]; rows.len()];
+    let mut any_span = false;
     for (ri, row) in rows.iter().enumerate() {
         let mut ci = 0usize;
         for tc in row.children().filter(|n| n.has_tag_name("tc")) {
@@ -1047,13 +1215,35 @@ fn parse_table_with(tbl: XmlNode, ctx: &Ctx, nested: bool) -> Option<Table> {
             for cell in grid[ri].iter_mut().take(col_end).skip(ci) {
                 *cell = text.clone();
             }
+            for c in col_cont[ri].iter_mut().take(col_end).skip(ci + 1) {
+                *c = true;
+                any_span = true;
+            }
+            if v_continue && ri > 0 {
+                for c in row_cont[ri].iter_mut().take(col_end).skip(ci) {
+                    *c = true;
+                }
+                any_span = true;
+            }
             ci += span;
         }
     }
+    let structure = any_span.then(|| {
+        let mut header_row = vec![false; rows.len()];
+        if let Some(h) = header_row.first_mut() {
+            *h = true;
+        }
+        docling_core::TableStructure {
+            header_row,
+            col_continuation: col_cont,
+            row_continuation: row_cont,
+            row_header: Vec::new(),
+        }
+    });
     Some(Table {
         rows: grid,
         location: None,
-        structure: None,
+        structure,
         cell_blocks: any_rich.then_some(blocks),
     })
 }

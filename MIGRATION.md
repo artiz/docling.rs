@@ -24,7 +24,7 @@ phased plan is kept at the end as history.)
 | | |
 |---|---|
 | **What** | A Rust port of docling's converter, backends, and discriminative PDF/ASR pipelines; same `convert → DoclingDocument → export_to_markdown()/json()` shape, single static binary, no Python/torch at runtime |
-| **Conformance** | Declarative formats byte-for-byte vs *live* PyPI docling (most 100%, see §2); `.dclx` DocLang output ≈91% mean vs docling's own `.dclx` (§2); PDF ML path 5/14 fixtures byte-exact, rest close; every optimization is gated on this not regressing |
+| **Conformance** | Declarative formats byte-for-byte vs *live* PyPI docling (most 100%, see §2); `.dclx` DocLang output ≈93% mean vs docling's own `.dclx`, OOXML all byte-exact (§2); PDF ML path 5/14 fixtures byte-exact, rest close; every optimization is gated on this not regressing |
 | **Performance** | PDF ML pipeline **4.3× faster warm / 4.7× end-to-end** than Python docling at 2.3–2.6× less peak RAM (INT8 + SIMD, conformance-validated); declarative formats 20–60× warm, ~60× less RAM; details + methodology in [`PDF_PERFORMANCE.md`](./PDF_PERFORMANCE.md) |
 | **Models** | docling's own checkpoints (layout heron, TableFormer, PP-OCRv3, Whisper tiny), format-converted to ONNX by `scripts/export_*.py` — no retraining; INT8 variants are calibrated post-training quantizations (`scripts/install/quantize_models.py`) |
 | **Tracking upstream** | See [§9](#9-keeping-up-with-upstream-docling): conformance is measured against the *latest published* docling on demand, so an upstream release that changes output surfaces as a concrete per-fixture diff |
@@ -121,26 +121,26 @@ close — see `PDF_CONFORMANCE.md`. A deterministic snapshot baseline
 
 The `.dclx` DocLang output (§3) is scored against docling's own `.dclx` archives
 with `scripts/conformance/dclx_conformance.sh` — the extracted `document.xml`
-line-diffed, similarity `= 100·(1 − difflines / max_lines)`. **≈92% mean over the
+line-diffed, similarity `= 100·(1 − difflines / max_lines)`. **≈93% mean over the
 134-fixture non-PDF corpus** (issue #32 target: ≥90%), per source format:
 
 | Format | `.dclx` similarity | Format | `.dclx` similarity |
 |---|---|---|---|
 | CSV / AsciiDoc / Email | **100%** | Markdown | 92% |
 | XLSX | **100%** | ODF / LaTeX | 91% |
-| USPTO | 98% | HTML | 84% |
-| DOCX / PPTX | 96% | WebVTT | 81% |
+| DOCX / PPTX | **100%** | HTML | 84% |
+| USPTO | 98% | WebVTT | 81% |
 | JATS | 95% | | |
 
 This effort was tracked as
 [issue #32](https://github.com/docling-project/docling.rs/issues/32) — **closed,
-both targets met** (non-PDF ≥90%: 91%; PDF ≥50%: 63% at ±2). Its children
+both targets met** (non-PDF ≥90%: 93%; PDF ≥50%: 65% at ±2). Its children
 (#38–#41, #44, all closed) landed the ODF, USPTO legacy-entity, elife XML,
 wiki_duck and APS-plain-text work — `pftaps` is byte-exact (§5). The PDF path
 emits full layout `<location>` provenance (text, headings, tables, pictures,
 list items, code, and page-header/footer furniture), scored against a
 16-fixture DocLang groundtruth with a ±2-grid-unit geometry tolerance —
-**63% mean** (§3, `PDF_CONFORMANCE.md`); the residual is model-level
+**65% mean** (§3, `PDF_CONFORMANCE.md`); the residual is model-level
 (TableFormer OTSL structure, layout classification — the closed-as-model-level
 blockers of `PDF_CONFORMANCE.md`), not serialization.
 
@@ -161,16 +161,17 @@ blockers of `PDF_CONFORMANCE.md`), not serialization.
   `<strikethrough>`/`<sub|superscript>`), lists with enumeration `<marker>`s, OTSL
   tables (`<ched>`/`<fcel>`/`<lcel>`…) with per-cell `<location>`, code, formulas,
   pictures and furniture. Conformance is scored against docling's own `.dclx`
-  archives (`scripts/conformance/dclx_conformance.sh`): **≈92% mean similarity over
-  the 134-fixture non-PDF corpus** (issue #32's ≥90% target) — csv/asciidoc/email/xlsx
-  exact, uspto/docx/pptx/jats in the mid-to-high 90s, md/odf/latex low 90s,
-  html/webvtt in the 80s (full table in §2). The format-by-format work was
+  archives (`scripts/conformance/dclx_conformance.sh`): **≈93% mean similarity over
+  the 134-fixture non-PDF corpus** (issue #32's ≥90% target) — every OOXML fixture
+  (docx/pptx/xlsx) plus csv/asciidoc/email byte-exact, uspto/jats in the
+  mid-to-high 90s, md/odf/latex low 90s, html/webvtt in the 80s (full table
+  in §2). The format-by-format work was
   tracked as [issue #32](https://github.com/docling-project/docling.rs/issues/32) and its
   children (#38–#41, #44) — all closed, targets met. This is an **output** format;
   a DocLang *input* backend is still out of scope (§5). For **PDF**, where the
   reference `<location>` geometry comes from docling's own layout run, the metric
   is scored with a ±2-grid-unit geometry tolerance (text/structure still
-  byte-exact): **52% exact · 63% at ±2** (against the ≥50% target); the remaining
+  byte-exact): **56% exact · 65% at ±2** (against the ≥50% target); the remaining
   gap is model-level (TableFormer/layout/reading order), not serialization — see
   [`PDF_CONFORMANCE.md`](./PDF_CONFORMANCE.md).
 
@@ -304,11 +305,15 @@ deliberate scope boundary or a cosmetic, single-fixture polish gap.
 
 **Minor known gaps (cosmetic, tracked per-fixture):**
 
-- **ODF presentation/chart frames** — slide-title heading detection, free
-  shape-text extraction and the speaker-notes drop on `.odp` slides, and `.odt`
-  chart/embedded-object frames (`text_document_02`). Everything else on ODF is
-  done: mixed-style list continuation, empty-list-item level collapse, ODS
-  sheet→table region detection with numeric alignment, and rich table cells.
+- **ODF presentation frames** — slide-title heading detection, free
+  shape-text extraction and the speaker-notes drop on `.odp` slides
+  (`odf_presentation_01/02`). On `.odt`, embedded chart frames now render as
+  chart tables like docling; what's left in `text_document_02` is repeating
+  merged-cell text into every spanned cell and the chart-kind label
+  ("Bar chart" vs generic "Chart"), and `text_document_03` differs by one
+  inline-formatting spacing line. Everything else on ODF is done: mixed-style
+  list continuation, empty-list-item level collapse, ODS sheet→table region
+  detection with numeric alignment, and rich table cells.
 - **`wiki_duck` offline rendering.** The HTML subsystem itself is complete
   (31/32 exact): key-value form regions, docling-faithful inline-image
   handling, inline visibility suppression, deep nested-table cell flattening

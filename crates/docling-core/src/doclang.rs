@@ -368,13 +368,14 @@ fn emit_text_element(
     }
     let runs = inline_runs(text);
     let only_plain = runs.len() == 1 && matches!(runs[0], Run::Plain(_));
-    // A lone `[anchor](uri)` becomes `<href uri=…/>` in the head + plain anchor.
+    // A lone `[anchor](uri)` becomes `<href uri=…/>` in the head; the anchor's
+    // own markers still render (`[***x***](u)` → href + `<italic><bold>…`).
     if runs.len() == 1 {
         if let Run::Link { anchor, uri } = &runs[0] {
             out.push(depth, format!("<{tag_open}>"));
             out.push(depth + 1, format!("<href uri=\"{}\"/>", attr_escape(uri)));
             if !anchor.trim().is_empty() {
-                out.push(depth + 1, escape_text(anchor));
+                emit_runs(out, depth + 1, inline_runs(anchor));
             }
             out.push(depth, format!("</{tag}>"));
             return;
@@ -1151,7 +1152,16 @@ fn emit_inline_runs_body(out: &mut Out, depth: i32, runs: &[InlineRun]) {
             } else {
                 0
             };
-            out.push(d, e);
+            if e.starts_with("<![CDATA[") && i + 1 == runs.len() && d == 0 {
+                // minidom writes a trailing CDATA bare (no newline); the "\n"
+                // record delimiter that follows still writes its indentation
+                // before its newline, leaving trailing spaces on the CDATA line
+                // (the blank line it opens is dropped by the empty-line filter).
+                out.push_glue(e);
+                out.push(depth, "");
+            } else {
+                out.push(d, e);
+            }
         } else if run.formula {
             out.push(
                 depth,
@@ -1231,13 +1241,58 @@ fn emit_furniture(out: &mut Out, depth: i32, layer: ContentLayer, inner: &Node) 
             out.push(depth + 1, escape_text(text));
             out.push(depth, "</text>".to_string());
         }
-        // A furniture picture (site-chrome logo/banner): the layer token, then a
-        // caption that carries its own `<href>`/`<layer>` head when the caption is
-        // a link.
-        Node::Picture { caption, .. } => {
+        // A located notes text (PPTX speaker notes: docling gives them a zero
+        // bbox provenance): layer token first, then the location tokens.
+        Node::Located { location, inner } => {
+            if let Node::Paragraph { text } = &**inner {
+                out.push(depth, "<text>".to_string());
+                out.push(depth + 1, token);
+                push_location(out, depth + 1, location);
+                out.push(depth + 1, escape_text(text));
+                out.push(depth, "</text>".to_string());
+            } else {
+                let mut i = 0usize;
+                emit_nodes(out, depth, std::slice::from_ref(inner.as_ref()), &mut i, 0);
+            }
+        }
+        // A furniture inline group (a mixed-formatting header/footer paragraph):
+        // wrapped in `<text>`, with each child run carrying its own layer token
+        // (docling stamps the layer on every text item of the group).
+        Node::InlineGroup { runs, .. } => {
+            out.push(depth, "<text>".to_string());
+            for run in runs {
+                out.push(depth + 1, token.clone());
+                if run.is_plain() {
+                    out.push(depth + 1, escape_text(&run.text));
+                } else if run.formula {
+                    out.push(
+                        depth + 1,
+                        format!("<formula>{}</formula>", escape_text(&run.text)),
+                    );
+                } else {
+                    emit_styled(out, depth + 1, &style_tags(run), &escape_text(&run.text));
+                }
+            }
+            out.push(depth, "</text>".to_string());
+        }
+        // A furniture picture (site-chrome logo/banner, header/footer image):
+        // the layer token, an embedded-image `<src>` when the picture carries
+        // pixels (docling's referenced-asset conversion skips furniture, so the
+        // image stays a base64 data URI), then a caption that carries its own
+        // `<href>`/`<layer>` head when the caption is a link.
+        Node::Picture { caption, image } => {
             let caption = caption.as_deref().filter(|c| !c.trim().is_empty());
             out.push(depth, "<picture>".to_string());
             out.push(depth + 1, token.clone());
+            if let Some(img) = image {
+                out.push(
+                    depth + 1,
+                    format!(
+                        "<src uri=\"data:image/png;base64,{}\"/>",
+                        crate::base64::encode(&img.data)
+                    ),
+                );
+            }
             if let Some(c) = caption {
                 out.push(depth + 1, "<caption>".to_string());
                 match inline_runs(c).into_iter().next() {
@@ -1437,13 +1492,45 @@ fn emit_list(out: &mut Out, depth: i32, nodes: &[Node], i: &mut usize, level: u8
                     break;
                 }
                 prev_number = Some(*number);
-                // docling wraps a list item's content in `<text>` when it carries
-                // formatting or is followed by a nested list (a "segment
-                // sibling"); a plain item with no nested list stays bare.
-                let has_nested = matches!(
-                    nodes.get(*i + 1),
-                    Some(Node::ListItem { level: nl, .. }) if *nl > level
-                );
+                // docling wraps a list item's content in `<text>` when a nested
+                // list follows it *anywhere* inside the same `<list>` — its
+                // `_list_item_has_segment_siblings` scans the parent group's
+                // children after the item; a plain item with no later nested
+                // list stays bare.
+                let has_nested = {
+                    let mut found = false;
+                    let mut pn = Some(*number);
+                    let mut j = *i + 1;
+                    while let Some(Node::ListItem {
+                        level: nl,
+                        ordered: no,
+                        number: nn,
+                        first_in_list: nf,
+                        dclx: nd,
+                        ..
+                    }) = nodes.get(j)
+                    {
+                        if *nl > level {
+                            found = true;
+                            break;
+                        }
+                        if *nl < level {
+                            break;
+                        }
+                        // The same run-break rules as the main loop: a sibling
+                        // list at this depth ends this `<list>` element.
+                        let n_ordered = nd.as_ref().map_or(*no, |d| d.ordered);
+                        if *nf
+                            || n_ordered != ordered
+                            || (ordered && Some(*nn) != pn.map(|n| n + 1))
+                        {
+                            break;
+                        }
+                        pn = Some(*nn);
+                        j += 1;
+                    }
+                    found
+                };
                 // An enumeration marker (HTML/DOCX ordered items) rides inside
                 // the `<ldiv>`; without one the delimiter is self-closing.
                 match eff_marker {
@@ -1462,11 +1549,18 @@ fn emit_list(out: &mut Out, depth: i32, nodes: &[Node], i: &mut usize, level: u8
                 }
                 match dclx {
                     // Structured DocLang content (equations/formatting): the runs
-                    // render directly — list-item content is bare. (docling wraps
-                    // some formatted items in `<text>`, but that choice comes from
-                    // its InlineGroup grouping, which is not recoverable from the
-                    // OOXML alone, so we keep the faithful bare form.)
-                    Some(d) if !d.runs.is_empty() => emit_inline_runs_body(out, depth + 1, &d.runs),
+                    // render directly. The same `<text>` wrap rule as plain items
+                    // applies — a nested list following the item wraps its
+                    // content (docling's `_list_item_has_segment_siblings`).
+                    Some(d) if !d.runs.is_empty() => {
+                        if has_nested {
+                            out.push(depth + 1, "<text>".to_string());
+                            emit_inline_runs_body(out, depth + 2, &d.runs);
+                            out.push(depth + 1, "</text>".to_string());
+                        } else {
+                            emit_inline_runs_body(out, depth + 1, &d.runs);
+                        }
+                    }
                     // A clean-text override (multilevel numbering) re-parses like
                     // a normal item but from the overlay's text.
                     Some(d) => emit_list_item_content(out, depth + 1, &d.text, has_nested),
@@ -1503,14 +1597,23 @@ fn emit_list(out: &mut Out, depth: i32, nodes: &[Node], i: &mut usize, level: u8
             Node::ListItem { level: l, .. } if *l > level => {
                 emit_list(out, depth + 1, nodes, i, *l);
             }
-            // An empty paragraph between two list items is absorbed into the
-            // list (docling keeps the ListGroup contiguous) — skip it and carry
-            // on rather than closing the list.
+            // An empty paragraph between two items of the *same* list run is
+            // absorbed (docling deletes the empty text it added on close when
+            // it reuses the ListGroup for the same numId). When the next item
+            // starts a *new* list (fresh-list flag, kind flip, or an ordered
+            // sequence break), no reuse happens and the empty text survives.
             Node::Paragraph { text }
                 if text.is_empty()
                     && matches!(
                         nodes.get(*i + 1),
-                        Some(Node::ListItem { level: nl, .. }) if *nl >= level
+                        Some(Node::ListItem { level: nl, ordered: no, number: nn,
+                                              first_in_list: nf, dclx: nd, .. })
+                            if *nl > level
+                                || (*nl == level
+                                    && !*nf
+                                    && nd.as_ref().map_or(*no, |d| d.ordered) == ordered
+                                    && (!ordered
+                                        || Some(*nn) == prev_number.map(|n| n + 1)))
                     ) =>
             {
                 *i += 1;
@@ -1569,11 +1672,11 @@ fn emit_list_item_content(out: &mut Out, depth: i32, text: &str, has_nested: boo
     if single_plain {
         if has_nested {
             emit_text_element(out, depth, "text", "text", text, None);
-        } else {
-            let t = runs.first().map_or("", |r| r.text.as_str());
-            if !t.is_empty() {
-                emit_text_node(out, depth, t);
-            }
+        } else if !text.trim().is_empty() {
+            // The original text, not the re-parsed run: an unformatted item keeps
+            // its raw boundary whitespace (docling stores the backend's run text
+            // verbatim, and the serializer preserves it with `<content>`).
+            emit_text_node(out, depth, text);
         }
     } else if has_nested {
         emit_inline_group(out, depth, false, &runs);

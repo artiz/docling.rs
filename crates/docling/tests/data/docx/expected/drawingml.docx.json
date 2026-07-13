@@ -54,16 +54,19 @@
         "$ref": "#/texts/9"
       },
       {
+        "$ref": "#/texts/10"
+      },
+      {
         "$ref": "#/pictures/2"
       },
       {
-        "$ref": "#/texts/10"
+        "$ref": "#/texts/11"
       },
       {
         "$ref": "#/pictures/3"
       },
       {
-        "$ref": "#/texts/11"
+        "$ref": "#/texts/12"
       }
     ],
     "content_layer": "body",
@@ -201,11 +204,23 @@
       "content_layer": "body",
       "label": "text",
       "prov": [],
+      "orig": "",
+      "text": ""
+    },
+    {
+      "self_ref": "#/texts/11",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
       "orig": "Fig – Torque v/s Speed characteristics",
       "text": "Fig – Torque v/s Speed characteristics"
     },
     {
-      "self_ref": "#/texts/11",
+      "self_ref": "#/texts/12",
       "parent": {
         "$ref": "#/body"
       },
