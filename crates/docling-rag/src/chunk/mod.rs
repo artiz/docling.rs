@@ -26,36 +26,55 @@ pub fn docling_chunks(
     tokenizer: Option<&str>,
     max_tokens: usize,
 ) -> Result<Vec<Chunk>> {
-    use docling::chunker::{contextualize, HierarchicalChunker, HybridChunker};
-    let chunks = match kind {
-        ChunkerKind::Hierarchical => HierarchicalChunker.chunk(document),
+    let mut chunks = Vec::new();
+    docling_chunks_with(doc_id, document, kind, tokenizer, max_tokens, &mut |c| {
+        chunks.push(c);
+        true
+    })?;
+    Ok(chunks)
+}
+
+/// Streaming [`docling_chunks`]: `sink` receives each retrievable [`Chunk`] as
+/// the docling chunkers produce it, so chunks can flow into embedding while
+/// the rest of the document is still being chunked. A `false` return from
+/// `sink` cancels the chunking.
+pub fn docling_chunks_with(
+    doc_id: &str,
+    document: &docling::DoclingDocument,
+    kind: ChunkerKind,
+    tokenizer: Option<&str>,
+    max_tokens: usize,
+    sink: &mut dyn FnMut(Chunk) -> bool,
+) -> Result<()> {
+    use docling::chunker::{contextualize, DocChunk, HierarchicalChunker, HybridChunker};
+    let mut index: i64 = 0;
+    let mut map_sink = |c: DocChunk| -> bool {
+        let text = contextualize(&c);
+        let words = text.split_whitespace().count();
+        let mut chunk = Chunk::new(doc_id, index, text, words as i64);
+        chunk.metadata = serde_json::json!({
+            "headings": c.headings,
+            "doc_items": c.doc_items.iter().map(|d| d.self_ref.clone()).collect::<Vec<_>>(),
+        });
+        index += 1;
+        sink(chunk)
+    };
+    match kind {
+        ChunkerKind::Hierarchical => HierarchicalChunker.chunk_with(document, &mut map_sink),
         ChunkerKind::Hybrid => {
             // RAG_CHUNK_TOKENIZER, or the download script's default location
             // (models/chunk/tokenizer.json) when unset.
             let tok = docling::chunker::HuggingFaceTokenizer::resolve(tokenizer, max_tokens)
                 .map_err(RagError::config)?;
-            HybridChunker::new(tok).chunk(document)
+            HybridChunker::new(tok).chunk_with(document, &mut map_sink)
         }
         ChunkerKind::Window => {
             return Err(RagError::config(
                 "docling_chunks handles the hierarchical/hybrid chunkers only",
             ))
         }
-    };
-    Ok(chunks
-        .iter()
-        .enumerate()
-        .map(|(i, c)| {
-            let text = contextualize(c);
-            let words = text.split_whitespace().count();
-            let mut chunk = Chunk::new(doc_id, i as i64, text, words as i64);
-            chunk.metadata = serde_json::json!({
-                "headings": c.headings,
-                "doc_items": c.doc_items.iter().map(|d| d.self_ref.clone()).collect::<Vec<_>>(),
-            });
-            chunk
-        })
-        .collect())
+    }
+    Ok(())
 }
 
 /// Words per token, used to convert a token budget into a word budget when
@@ -477,5 +496,33 @@ mod docling_chunker_tests {
     fn window_kind_is_rejected() {
         let doc = convert("# A\n\ntext\n");
         assert!(docling_chunks("d", &doc, ChunkerKind::Window, None, 0).is_err());
+    }
+
+    #[test]
+    fn streaming_sink_sees_the_batch_chunks_and_can_cancel() {
+        let doc = convert("# Guide\n\n## Setup\n\nInstall the tools.\n\n- clone\n- build\n");
+        let all = docling_chunks("d", &doc, ChunkerKind::Hierarchical, None, 0).expect("chunk");
+        assert!(all.len() >= 2);
+
+        // The sink receives the same chunks in the same order...
+        let mut streamed = Vec::new();
+        docling_chunks_with("d", &doc, ChunkerKind::Hierarchical, None, 0, &mut |c| {
+            streamed.push(c);
+            true
+        })
+        .expect("stream");
+        assert_eq!(
+            streamed.iter().map(|c| &c.text).collect::<Vec<_>>(),
+            all.iter().map(|c| &c.text).collect::<Vec<_>>()
+        );
+
+        // ...and a false return cancels after the first chunk.
+        let mut n = 0;
+        docling_chunks_with("d", &doc, ChunkerKind::Hierarchical, None, 0, &mut |_| {
+            n += 1;
+            false
+        })
+        .expect("cancel");
+        assert_eq!(n, 1);
     }
 }
