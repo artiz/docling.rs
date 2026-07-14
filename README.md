@@ -143,6 +143,22 @@ for chunk in HybridChunker::new(tok).chunk(&result.document) {
 }
 ```
 
+Same thing from Python (the `docling_rs` package runs these natively):
+
+```python
+from docling_rs import DocumentConverter
+from docling_rs.chunking import HierarchicalChunker, HybridChunker
+
+doc = DocumentConverter().convert("report.docx").document
+
+for chunk in HierarchicalChunker().chunk(doc):
+    print(chunk.meta.headings, chunk.text)
+
+chunker = HybridChunker(tokenizer="tokenizer.json", max_tokens=256)
+for chunk in chunker.chunk(doc):
+    embed_me = chunker.contextualize(chunk)  # heading path + chunk text
+```
+
 `HierarchicalChunker` yields one chunk per document item (whole lists, triplet-
 serialized tables — `row, column = value` — picture captions), each carrying its
 heading path. `HybridChunker` refines them with a tokenizer: splits oversized
