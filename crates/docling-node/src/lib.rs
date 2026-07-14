@@ -834,6 +834,227 @@ fn output_config(out: Option<OutputOptions>, strict: bool) -> Result<ConvertConf
 }
 
 // ---------------------------------------------------------------------------
+// Chunking (docling-core's HierarchicalChunker / HybridChunker).
+// ---------------------------------------------------------------------------
+
+/// Options for the chunk* functions.
+#[napi(object)]
+#[derive(Clone, Default)]
+pub struct ChunkOptions {
+    /// `"hierarchical"` (default): one chunk per document item, docling's
+    /// structure-driven chunker. `"hybrid"`: tokenization-aware refinement —
+    /// splits oversized chunks and merges undersized same-heading neighbours;
+    /// requires `tokenizer`.
+    pub chunker: Option<String>,
+    /// Path to a HuggingFace `tokenizer.json` (e.g. all-MiniLM-L6-v2's) for the
+    /// hybrid chunker's token counts. When omitted, falls back to
+    /// `models/chunk/tokenizer.json` (populated by
+    /// `scripts/install/download_dependencies.sh`).
+    pub tokenizer: Option<String>,
+    /// The hybrid chunker's token budget per chunk. Default `256` (docling's
+    /// default for the MiniLM embedding model).
+    pub max_tokens: Option<u32>,
+    /// Merge undersized peer chunks with the same headings (hybrid only).
+    /// Default `true`, matching docling.
+    pub merge_peers: Option<bool>,
+}
+
+/// One chunk record — the analogue of docling's `DocChunk`.
+#[napi(object)]
+pub struct Chunk {
+    /// The chunk body (markdown-flavoured text, same as docling's `DocChunk.text`).
+    pub text: String,
+    /// The heading path above the chunk, outermost first; absent for content
+    /// above any heading.
+    pub headings: Option<Vec<String>>,
+    /// JSON-pointer refs of the document items the chunk was built from
+    /// (`"#/texts/12"`, `"#/tables/0"`, …).
+    pub doc_items: Vec<String>,
+    /// The embedding-ready rendering: heading path + text, newline-joined
+    /// (docling's `chunker.contextualize(chunk)`).
+    pub contextualized: String,
+}
+
+/// Resolved chunker config, free of JS types (moves onto the libuv pool).
+#[derive(Clone)]
+struct ChunkConfig {
+    hybrid: bool,
+    tokenizer: Option<String>,
+    max_tokens: usize,
+    merge_peers: bool,
+}
+
+fn build_chunk_config(options: Option<ChunkOptions>) -> Result<ChunkConfig> {
+    let o = options.unwrap_or_default();
+    let hybrid = match o.chunker.as_deref().map(str::to_ascii_lowercase).as_deref() {
+        None | Some("hierarchical") => false,
+        Some("hybrid") => true,
+        Some(other) => {
+            return Err(Error::new(
+                Status::InvalidArg,
+                format!("unknown chunker '{other}' (expected: hierarchical, hybrid)"),
+            ))
+        }
+    };
+    Ok(ChunkConfig {
+        hybrid,
+        tokenizer: o.tokenizer,
+        max_tokens: o.max_tokens.unwrap_or(256) as usize,
+        merge_peers: o.merge_peers.unwrap_or(true),
+    })
+}
+
+/// Run the configured chunker over a converted document. Off-thread-safe.
+fn run_chunker(doc: &DoclingDocument, cfg: &ChunkConfig) -> Result<Vec<Chunk>> {
+    use docling::chunker::{contextualize, HierarchicalChunker, HybridChunker};
+    let chunks = if cfg.hybrid {
+        // Explicit path, or models/chunk/tokenizer.json (the download script's
+        // default location); a clear error otherwise.
+        let tok = docling::chunker::HuggingFaceTokenizer::resolve(
+            cfg.tokenizer.as_deref(),
+            cfg.max_tokens,
+        )
+        .map_err(convert_err)?;
+        HybridChunker::new(tok)
+            .with_merge_peers(cfg.merge_peers)
+            .chunk(doc)
+    } else {
+        HierarchicalChunker.chunk(doc)
+    };
+    Ok(chunks
+        .iter()
+        .map(|c| Chunk {
+            text: c.text.clone(),
+            headings: c.headings.clone(),
+            doc_items: c.doc_items.iter().map(|i| i.self_ref.clone()).collect(),
+            contextualized: contextualize(c),
+        })
+        .collect())
+}
+
+/// Convert a source and chunk the result. The chunk text is docling-flavoured
+/// Markdown (never strict), matching what docling's chunkers emit.
+fn convert_and_chunk(source: SourceDocument, cfg: &ChunkConfig) -> Result<Vec<Chunk>> {
+    let result = RsConverter::new().convert(source).map_err(convert_err)?;
+    run_chunker(&result.document, cfg)
+}
+
+/// Chunk a file on disk with docling's chunkers: convert it, then run the
+/// hierarchical (default) or hybrid chunker over the document.
+#[napi]
+pub fn chunk_file(path: String, options: Option<ChunkOptions>) -> Result<Vec<Chunk>> {
+    let cfg = build_chunk_config(options)?;
+    let source = SourceDocument::from_file(&path).map_err(convert_err)?;
+    convert_and_chunk(source, &cfg)
+}
+
+/// Async (Promise-returning) [`chunk_file`]; conversion + chunking run on the
+/// libuv thread pool.
+#[napi(ts_return_type = "Promise<Array<Chunk>>")]
+pub fn chunk_file_async(
+    path: String,
+    options: Option<ChunkOptions>,
+) -> Result<AsyncTask<ChunkFileTask>> {
+    let cfg = build_chunk_config(options)?;
+    Ok(AsyncTask::new(ChunkFileTask { path, cfg }))
+}
+
+/// Chunk in-memory bytes (same contract as [`convert`], then chunk).
+#[napi]
+pub fn chunk(input: ConvertInput, options: Option<ChunkOptions>) -> Result<Vec<Chunk>> {
+    let cfg = build_chunk_config(options)?;
+    let source = source_from_input(input)?;
+    convert_and_chunk(source, &cfg)
+}
+
+/// Async (Promise-returning) [`chunk`].
+#[napi(ts_return_type = "Promise<Array<Chunk>>")]
+pub fn chunk_async(
+    input: ConvertInput,
+    options: Option<ChunkOptions>,
+) -> Result<AsyncTask<ChunkBytesTask>> {
+    let cfg = build_chunk_config(options)?;
+    let source = source_from_input(input)?;
+    Ok(AsyncTask::new(ChunkBytesTask {
+        source: Some(source),
+        cfg,
+    }))
+}
+
+/// Chunk an already-converted document, passed as docling-core JSON (the
+/// `content` of a `convert*` call with `to: "json"`) — so a document converted
+/// once (e.g. through the warm PDF `Pipeline`) can be chunked without
+/// re-converting.
+#[napi]
+pub fn chunk_document(document_json: String, options: Option<ChunkOptions>) -> Result<Vec<Chunk>> {
+    let cfg = build_chunk_config(options)?;
+    convert_and_chunk(json_source(document_json), &cfg)
+}
+
+/// Async (Promise-returning) [`chunk_document`].
+#[napi(ts_return_type = "Promise<Array<Chunk>>")]
+pub fn chunk_document_async(
+    document_json: String,
+    options: Option<ChunkOptions>,
+) -> Result<AsyncTask<ChunkBytesTask>> {
+    let cfg = build_chunk_config(options)?;
+    Ok(AsyncTask::new(ChunkBytesTask {
+        source: Some(json_source(document_json)),
+        cfg,
+    }))
+}
+
+fn json_source(document_json: String) -> SourceDocument {
+    SourceDocument::from_bytes(
+        "document",
+        InputFormat::JsonDocling,
+        document_json.into_bytes(),
+    )
+}
+
+pub struct ChunkFileTask {
+    path: String,
+    cfg: ChunkConfig,
+}
+
+impl Task for ChunkFileTask {
+    type Output = Vec<Chunk>;
+    type JsValue = Vec<Chunk>;
+
+    fn compute(&mut self) -> Result<Vec<Chunk>> {
+        let source = SourceDocument::from_file(&self.path).map_err(convert_err)?;
+        convert_and_chunk(source, &self.cfg)
+    }
+
+    fn resolve(&mut self, _env: Env, output: Vec<Chunk>) -> Result<Vec<Chunk>> {
+        Ok(output)
+    }
+}
+
+pub struct ChunkBytesTask {
+    // `Option` so `compute` can take ownership of the (non-Copy) source.
+    source: Option<SourceDocument>,
+    cfg: ChunkConfig,
+}
+
+impl Task for ChunkBytesTask {
+    type Output = Vec<Chunk>;
+    type JsValue = Vec<Chunk>;
+
+    fn compute(&mut self) -> Result<Vec<Chunk>> {
+        let source = self
+            .source
+            .take()
+            .ok_or_else(|| Error::new(Status::GenericFailure, "chunking task reused"))?;
+        convert_and_chunk(source, &self.cfg)
+    }
+
+    fn resolve(&mut self, _env: Env, output: Vec<Chunk>) -> Result<Vec<Chunk>> {
+        Ok(output)
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Format helpers exposed to JS.
 // ---------------------------------------------------------------------------
 

@@ -231,6 +231,64 @@ fn native_result(r: docling::ConversionResult) -> PyNativeResult {
     }
 }
 
+/// Chunk a document with the Rust chunkers (docling-core's
+/// `HierarchicalChunker` / `HybridChunker` ported to `docling::chunker`).
+///
+/// `document_json` is docling-core's JSON wire format (what
+/// `DoclingDocument.export_to_dict()` serializes to). With `hybrid = False`
+/// the hierarchical chunker runs; with `hybrid = True` the hybrid chunker
+/// refines against a `max_tokens` budget, counting tokens with the HuggingFace
+/// `tokenizer.json` at `tokenizer` — or at `models/chunk/tokenizer.json` (the
+/// path `scripts/install/download_dependencies.sh` populates) when `None`.
+/// Returns a JSON array of records `{text, headings, doc_items, contextualize}`
+/// — the Python layer (`docling_rs.chunking`) turns them into docling-shaped
+/// chunk objects. Releases the GIL for the parse + chunking.
+#[pyfunction]
+#[pyo3(signature = (document_json, hybrid = false, tokenizer = None, max_tokens = 256, merge_peers = true))]
+fn chunk_document(
+    py: Python<'_>,
+    document_json: String,
+    hybrid: bool,
+    tokenizer: Option<String>,
+    max_tokens: usize,
+    merge_peers: bool,
+) -> PyResult<String> {
+    py.allow_threads(move || {
+        use docling::chunker::{contextualize, HierarchicalChunker, HybridChunker};
+        let source = SourceDocument::from_bytes(
+            "document",
+            docling::InputFormat::JsonDocling,
+            document_json.into_bytes(),
+        );
+        let result = docling::DocumentConverter::new()
+            .convert(source)
+            .map_err(|e| ConversionError::new_err(e.to_string()))?;
+        let chunks = if hybrid {
+            let tok =
+                docling::chunker::HuggingFaceTokenizer::resolve(tokenizer.as_deref(), max_tokens)
+                    .map_err(ConversionError::new_err)?;
+            HybridChunker::new(tok)
+                .with_merge_peers(merge_peers)
+                .chunk(&result.document)
+        } else {
+            HierarchicalChunker.chunk(&result.document)
+        };
+        let records: Vec<serde_json::Value> = chunks
+            .iter()
+            .map(|c| {
+                serde_json::json!({
+                    "text": c.text,
+                    "headings": c.headings,
+                    "doc_items": c.doc_items.iter().map(|i| i.self_ref.clone()).collect::<Vec<_>>(),
+                    "contextualize": contextualize(c),
+                })
+            })
+            .collect();
+        serde_json::to_string(&records)
+            .map_err(|e| ConversionError::new_err(format!("chunk records: {e}")))
+    })
+}
+
 /// str / pathlib.Path / anything os.PathLike → PathBuf.
 struct PathLike(std::path::PathBuf);
 
@@ -248,6 +306,7 @@ impl<'py> FromPyObject<'py> for PathLike {
 fn _native(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyDocumentConverter>()?;
     m.add_class::<PyNativeResult>()?;
+    m.add_function(pyo3::wrap_pyfunction!(chunk_document, m)?)?;
     m.add("ConversionError", m.py().get_type::<ConversionError>())?;
     m.add("__version__", env!("CARGO_PKG_VERSION"))?;
     Ok(())

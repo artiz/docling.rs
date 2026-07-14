@@ -13,7 +13,7 @@
 'use strict'
 
 const native = require('./native.js')
-const { checkDependencies, assertMlReady } = require('./deps.js')
+const { checkDependencies, assertMlReady, defaultChunkTokenizer } = require('./deps.js')
 
 // Resolve the format id of an input for the ML guard. Uses the native
 // extension→format map; falls back to an explicitly-passed format string.
@@ -87,6 +87,48 @@ async function convertFileAsync(path, options) {
 async function convertAsync(input, options) {
   assertMlReady(mlFormatOf(input && input.name, input && input.format))
   return native.convertAsync(input, options)
+}
+
+// --- guarded chunking functions ---------------------------------------------
+
+// For the hybrid chunker with no explicit tokenizer, resolve the default one
+// (models/chunk/tokenizer.json) through the same install-home logic as the ML
+// models — so DOCLING_RS_HOME / ~/.cache installs work, not only ./models. The
+// native side keeps its own CWD-relative fallback as a backstop.
+function withDefaultTokenizer(options) {
+  if (!options || options.tokenizer) return options
+  if (String(options.chunker || '').toLowerCase() !== 'hybrid') return options
+  const tokenizer = defaultChunkTokenizer()
+  return tokenizer ? { ...options, tokenizer } : options
+}
+
+function chunkFile(path, options) {
+  assertMlReady(mlFormatOf(path))
+  return native.chunkFile(path, withDefaultTokenizer(options))
+}
+
+function chunk(input, options) {
+  assertMlReady(mlFormatOf(input && input.name, input && input.format))
+  return native.chunk(input, withDefaultTokenizer(options))
+}
+
+// async so a guard failure surfaces as a rejected promise, not a sync throw.
+async function chunkFileAsync(path, options) {
+  assertMlReady(mlFormatOf(path))
+  return native.chunkFileAsync(path, withDefaultTokenizer(options))
+}
+
+async function chunkAsync(input, options) {
+  assertMlReady(mlFormatOf(input && input.name, input && input.format))
+  return native.chunkAsync(input, withDefaultTokenizer(options))
+}
+
+function chunkDocument(documentJson, options) {
+  return native.chunkDocument(documentJson, withDefaultTokenizer(options))
+}
+
+async function chunkDocumentAsync(documentJson, options) {
+  return native.chunkDocumentAsync(documentJson, withDefaultTokenizer(options))
 }
 
 // --- guarded classes --------------------------------------------------------
@@ -202,6 +244,13 @@ module.exports.convert = convert
 module.exports.convertFile = convertFile
 module.exports.convertAsync = convertAsync
 module.exports.convertFileAsync = convertFileAsync
+module.exports.chunk = chunk
+module.exports.chunkFile = chunkFile
+module.exports.chunkAsync = chunkAsync
+module.exports.chunkFileAsync = chunkFileAsync
+// Chunking an already-converted JSON document touches no ML models — unguarded.
+module.exports.chunkDocument = chunkDocument
+module.exports.chunkDocumentAsync = chunkDocumentAsync
 module.exports.DocumentConverter = DocumentConverter
 module.exports.Pipeline = Pipeline
 module.exports.streamFileMarkdown = streamFileMarkdown

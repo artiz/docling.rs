@@ -77,9 +77,13 @@ pub struct RagConfig {
     pub llm_model: String,
 
     // --- chunking ---
+    pub chunker: ChunkerKind,
     pub chunk_size: usize,
     pub chunk_overlap: f32,
     pub chunk_unit: ChunkUnit,
+    /// Path to a HuggingFace `tokenizer.json` for the `hybrid` chunker's token
+    /// counts (`RAG_CHUNK_TOKENIZER`). Required when `chunker = hybrid`.
+    pub chunk_tokenizer: Option<String>,
 
     // --- retrieval ---
     pub retrieval_mode: RetrievalMode,
@@ -110,6 +114,21 @@ pub struct RagConfig {
     pub api_keys: Vec<String>,
 }
 
+/// Which chunker ingestion runs (`RAG_CHUNKER`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ChunkerKind {
+    /// The Markdown sliding-window chunker (`chunk_size`/`chunk_overlap`/
+    /// `chunk_unit`), streaming — chunks pages while later pages still convert.
+    /// Default.
+    Window,
+    /// docling's structure-driven `HierarchicalChunker`: one chunk per document
+    /// item with its heading path (buffered — needs the whole document).
+    Hierarchical,
+    /// docling's `HybridChunker`: hierarchical chunks refined against a real
+    /// tokenizer budget (`chunk_size` tokens, `chunk_tokenizer` counts them).
+    Hybrid,
+}
+
 /// The unit used to measure chunk size / overlap.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ChunkUnit {
@@ -135,9 +154,11 @@ impl Default for RagConfig {
             openrouter_api_key: None,
             openrouter_base_url: "https://openrouter.ai/api/v1".to_string(),
             llm_model: "deepseek/deepseek-chat".to_string(),
+            chunker: ChunkerKind::Window,
             chunk_size: 300,
             chunk_overlap: 0.05,
             chunk_unit: ChunkUnit::Word,
+            chunk_tokenizer: None,
             retrieval_mode: RetrievalMode::Hybrid,
             top_k: 5,
             rrf_k: 60.0,
@@ -191,12 +212,17 @@ impl RagConfig {
             openrouter_api_key: env_str("OPENROUTER_API_KEY"),
             openrouter_base_url: env_str("OPENROUTER_BASE_URL").unwrap_or(d.openrouter_base_url),
             llm_model: env_str("RAG_LLM_MODEL").unwrap_or(d.llm_model),
+            chunker: match env_str("RAG_CHUNKER") {
+                Some(s) => parse_chunker_kind(&s)?,
+                None => d.chunker,
+            },
             chunk_size: env_parse("RAG_CHUNK_SIZE", d.chunk_size)?,
             chunk_overlap: env_parse("RAG_CHUNK_OVERLAP", d.chunk_overlap)?,
             chunk_unit: match env_str("RAG_CHUNK_UNIT") {
                 Some(s) => parse_chunk_unit(&s)?,
                 None => d.chunk_unit,
             },
+            chunk_tokenizer: env_str("RAG_CHUNK_TOKENIZER"),
             retrieval_mode: match env_str("RAG_RETRIEVAL_MODE") {
                 Some(s) => RetrievalMode::from_str(&s)?,
                 None => d.retrieval_mode,
@@ -244,6 +270,16 @@ impl RagConfig {
         if !(0.0..0.95).contains(&self.chunk_overlap) {
             return Err(RagError::config("RAG_CHUNK_OVERLAP must be in [0.0, 0.95)"));
         }
+        if self.chunker == ChunkerKind::Hybrid
+            && self.chunk_tokenizer.is_none()
+            && !std::path::Path::new(docling::chunker::DEFAULT_TOKENIZER_PATH).exists()
+        {
+            return Err(RagError::config(format!(
+                "RAG_CHUNKER=hybrid needs a HuggingFace tokenizer.json: set RAG_CHUNK_TOKENIZER \
+                 or run scripts/install/download_dependencies.sh (populates {})",
+                docling::chunker::DEFAULT_TOKENIZER_PATH
+            )));
+        }
         if self.top_k == 0 {
             return Err(RagError::config("RAG_TOP_K must be > 0"));
         }
@@ -290,6 +326,17 @@ fn parse_embed_provider(s: &str) -> Result<EmbedProvider> {
         "hash" | "test" | "fake" => Ok(EmbedProvider::Hash),
         other => Err(RagError::config(format!(
             "unknown RAG_EMBED_PROVIDER '{other}'"
+        ))),
+    }
+}
+
+fn parse_chunker_kind(s: &str) -> Result<ChunkerKind> {
+    match s.to_ascii_lowercase().as_str() {
+        "window" => Ok(ChunkerKind::Window),
+        "hierarchical" => Ok(ChunkerKind::Hierarchical),
+        "hybrid" => Ok(ChunkerKind::Hybrid),
+        other => Err(RagError::config(format!(
+            "unknown RAG_CHUNKER '{other}' (expected: window, hierarchical, hybrid)"
         ))),
     }
 }

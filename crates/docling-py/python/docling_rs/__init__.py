@@ -53,6 +53,7 @@ from .options import (
     TableFormerMode,
     TableStructureOptions,
 )
+from . import chunking
 from ._native import ConversionError, __version__
 from ._native import DocumentConverter as _NativeDocumentConverter
 
@@ -73,6 +74,8 @@ __all__ = [
     "TableFormerMode",
     "AcceleratorOptions",
     "AcceleratorDevice",
+    # Rust-native chunkers (docling_rs.chunking.HierarchicalChunker / HybridChunker)
+    "chunking",
     # model / env helpers
     "download_models",
     "ensure_env",

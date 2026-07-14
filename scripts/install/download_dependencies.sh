@@ -28,6 +28,9 @@
 #   models/tableformer/bbox.onnx (+ .data, if the export needs it)
 #   models/asr/{encoder_model,decoder_model}.onnx + vocab.json   (Whisper tiny,
 #     from Hugging Face; skip with --no-asr)
+#   models/chunk/tokenizer.json                   (all-MiniLM-L6-v2's tokenizer,
+#     the HybridChunker's default token counter; falls back to Hugging Face when
+#     the release doesn't host it; skip with --no-chunk)
 #
 # Also fetches the INT8-quantized CPU models when the release hosts them (see
 # PDF_CONFORMANCE.md — ~2.4x faster layout inference at unchanged conformance):
@@ -55,14 +58,16 @@ ASR_BASE_URL="${DOCLING_RS_ASR_MODELS_URL:-https://huggingface.co/onnx-community
 FORCE=false
 WITH_ASR=true
 WITH_INT8=true
+WITH_CHUNK=true
 for arg in "$@"; do
   case "$arg" in
     --force) FORCE=true ;;
     --no-asr) WITH_ASR=false ;;
     --int8) WITH_INT8=true ;; # accepted for compatibility; int8 is the default
     --no-int8) WITH_INT8=false ;;
+    --no-chunk) WITH_CHUNK=false ;;
     *)
-      echo "usage: download_dependencies.sh [--force] [--no-asr] [--no-int8]" >&2
+      echo "usage: download_dependencies.sh [--force] [--no-asr] [--no-int8] [--no-chunk]" >&2
       exit 2
       ;;
   esac
@@ -120,6 +125,20 @@ if [ "$WITH_ASR" = true ]; then
   fetch "$ASR_BASE_URL/onnx/decoder_model.onnx" models/asr/decoder_model.onnx
   fetch "$ASR_BASE_URL/vocab.json" models/asr/vocab.json
   fetch_optional "$ASR_BASE_URL/added_tokens.json" models/asr/added_tokens.json
+fi
+
+if [ "$WITH_CHUNK" = true ]; then
+  # The hybrid chunker's default tokenizer (all-MiniLM-L6-v2's tokenizer.json,
+  # ~0.5 MB). The CLI (`--to chunks`), the Node/Python bindings and docling-rag
+  # all pick it up at models/chunk/tokenizer.json when no explicit path is
+  # given. Fetched from the release when hosted (newer tags), else straight
+  # from Hugging Face.
+  mkdir -p models/chunk
+  fetch_optional "$BASE_URL/chunk_tokenizer.json" models/chunk/tokenizer.json
+  if [ ! -f models/chunk/tokenizer.json ]; then
+    fetch "https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2/resolve/main/tokenizer.json" \
+      models/chunk/tokenizer.json
+  fi
 fi
 
 if [ "$WITH_INT8" = true ]; then

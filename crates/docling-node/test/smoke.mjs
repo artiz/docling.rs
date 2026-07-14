@@ -7,6 +7,11 @@
 import assert from 'node:assert/strict'
 import {
   checkDependencies,
+  chunk,
+  chunkAsync,
+  chunkDocument,
+  chunkDocumentAsync,
+  chunkFileAsync,
   convert,
   convertFile,
   convertFileAsync,
@@ -83,6 +88,90 @@ async function main() {
   await check('unknown format string is rejected', () => {
     assert.throws(() => convert({ name: 'x', data: Buffer.from(MD), format: 'nope' }))
   })
+
+  // --- chunking --------------------------------------------------------------
+
+  const CHUNK_MD = '# Guide\n\n## Setup\n\nInstall the tools.\n\n- clone\n- build\n\n## Usage\n\nRun it.\n'
+
+  await check('chunk (hierarchical) carries heading paths and doc items', () => {
+    const chunks = chunk({ name: 'guide.md', data: Buffer.from(CHUNK_MD) })
+    assert.ok(chunks.length >= 3)
+    const setup = chunks.find((c) => c.text.includes('Install'))
+    assert.deepEqual(setup.headings, ['Guide', 'Setup'])
+    assert.ok(setup.docItems.length >= 1)
+    assert.match(setup.docItems[0], /^#\//)
+    assert.equal(setup.contextualized, 'Guide\nSetup\nInstall the tools.')
+    const list = chunks.find((c) => c.text.includes('clone'))
+    assert.equal(list.text, '- clone\n- build')
+  })
+
+  await check('chunkAsync resolves off the event loop', async () => {
+    const chunks = await chunkAsync({ name: 'guide.md', data: Buffer.from(CHUNK_MD) })
+    assert.ok(chunks.length >= 3)
+  })
+
+  await check('chunkDocument chunks a converted JSON document', async () => {
+    const res = convert({ name: 'guide.md', data: Buffer.from(CHUNK_MD) }, { to: 'json' })
+    const sync = chunkDocument(res.content)
+    const async_ = await chunkDocumentAsync(res.content)
+    assert.deepEqual(async_, sync)
+    assert.ok(sync.some((c) => c.text.includes('Install')))
+  })
+
+  await check('hybrid without any tokenizer errors with the download hint', () => {
+    // No explicit path and no models/chunk/tokenizer.json in this test cwd.
+    assert.throws(
+      () => chunk({ name: 'g.md', data: Buffer.from(CHUNK_MD) }, { chunker: 'hybrid' }),
+      /download_dependencies|tokenizer/,
+    )
+  })
+
+  await check('unknown chunker name is rejected', () => {
+    assert.throws(
+      () => chunk({ name: 'g.md', data: Buffer.from(CHUNK_MD) }, { chunker: 'semantic' }),
+      /unknown chunker/,
+    )
+  })
+
+  // Hybrid end-to-end only when a tokenizer.json is available (repo checkout).
+  const { existsSync } = await import('node:fs')
+  const TOKENIZER = new URL('../../../tests/data/chunks/tokenizer.json', import.meta.url).pathname
+  if (existsSync(TOKENIZER)) {
+    await check('hybrid chunker splits against the token budget', async () => {
+      const long = '# Doc\n\n' + Array.from({ length: 40 }, (_, i) => `Sentence number ${i} padding words here.`).join(' ') + '\n'
+      const hier = chunk({ name: 'l.md', data: Buffer.from(long) })
+      const hybrid = await chunkAsync(
+        { name: 'l.md', data: Buffer.from(long) },
+        { chunker: 'hybrid', tokenizer: TOKENIZER, maxTokens: 64 },
+      )
+      assert.ok(hybrid.length > hier.length, `expected split: hybrid ${hybrid.length} vs hierarchical ${hier.length}`)
+      assert.deepEqual(hybrid[0].headings, ['Doc'])
+    })
+    await check('hybrid picks up models/chunk/tokenizer.json by default', async () => {
+      const { mkdirSync, copyFileSync, mkdtempSync: mktemp } = await import('node:fs')
+      const { tmpdir: osTmp } = await import('node:os')
+      const { join: joinPath } = await import('node:path')
+      const home = mktemp(joinPath(osTmp(), 'fw-chunk-'))
+      mkdirSync(joinPath(home, 'models', 'chunk'), { recursive: true })
+      copyFileSync(TOKENIZER, joinPath(home, 'models', 'chunk', 'tokenizer.json'))
+      const prevCwd = process.cwd()
+      process.chdir(home) // deps.js resolves the install home from the cwd
+      try {
+        const chunks = chunk(
+          { name: 'g.md', data: Buffer.from(CHUNK_MD) },
+          { chunker: 'hybrid', maxTokens: 64 },
+        )
+        // Undersized same-heading peers merge: Setup's paragraph + list
+        // become one chunk, so hybrid yields fewer chunks than hierarchical.
+        assert.ok(chunks.length >= 2)
+        assert.ok(chunks.some((c) => c.text.includes('Install') && c.text.includes('clone')))
+      } finally {
+        process.chdir(prevCwd)
+      }
+    })
+  } else {
+    console.log('  --  tokenizer.json not found; skipping hybrid end-to-end check')
+  }
 
   // --- ML dependency guards (models not installed in this test env) ---------
 

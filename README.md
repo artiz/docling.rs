@@ -45,7 +45,8 @@ snapshot baseline. See [`MIGRATION.md`](./MIGRATION.md) and
 
 [`crates/docling-rag`](./crates/docling-rag) builds a pluggable
 Retrieval-Augmented-Generation layer on top of the converter: it turns documents
-into Markdown, chunks them (configurable size / overlap), embeds the chunks, and
+into Markdown, chunks them (streaming sliding window, or docling's
+hierarchical/hybrid chunkers via `RAG_CHUNKER`), embeds the chunks, and
 stores them in a vector database for semantic search. Every external dependency is
 a swappable trait — embedders (**Ollama**/Gemini/local-ONNX), vector stores
 (**SQLite+sqlite-vec**/PostgreSQL+pgvector), LLM (**OpenRouter**, DeepSeek-V3 by default),
@@ -125,6 +126,57 @@ DocLang also reads back **in**: `.dclg`/`.dclg.xml` (bare DocLang XML) and
 `convert(SourceDocument::from_file("doc.dclx")?)` — scored byte-for-byte
 against live docling reading the same archives (15/15 exact,
 `tests/data/doclang`).
+
+### Chunking (docling's Hierarchical & Hybrid chunkers)
+
+`docling_core.transforms.chunker` ported to Rust — the chunkers RAG pipelines
+feed to embedding models, scored against live docling's output on the same
+corpus:
+
+```rust
+use docling::chunker::{contextualize, HierarchicalChunker, HybridChunker, HuggingFaceTokenizer};
+
+let chunks = HierarchicalChunker.chunk(&result.document);          // structure-driven
+let tok = HuggingFaceTokenizer::from_file("tokenizer.json", 256)?; // feature "chunking"
+for chunk in HybridChunker::new(tok).chunk(&result.document) {
+    let embed_me = contextualize(&chunk); // heading path + chunk text
+}
+```
+
+Same thing from Python (the `docling_rs` package runs these natively):
+
+```python
+from docling_rs import DocumentConverter
+from docling_rs.chunking import HierarchicalChunker, HybridChunker
+
+doc = DocumentConverter().convert("report.docx").document
+
+for chunk in HierarchicalChunker().chunk(doc):
+    print(chunk.meta.headings, chunk.text)
+
+chunker = HybridChunker(tokenizer="tokenizer.json", max_tokens=256)
+for chunk in chunker.chunk(doc):
+    embed_me = chunker.contextualize(chunk)  # heading path + chunk text
+```
+
+`HierarchicalChunker` yields one chunk per document item (whole lists, triplet-
+serialized tables — `row, column = value` — picture captions), each carrying its
+heading path. `HybridChunker` refines them with a tokenizer: splits oversized
+chunks (at item boundaries, then with docling's `semchunk` algorithm inside
+text; tables line-by-line), and merges undersized same-heading neighbours. The
+HuggingFace tokenizer (MiniLM etc.) sits behind the `chunking` cargo feature
+(on by default in the CLI); `--to chunks` dumps both chunkers' records.
+`scripts/install/download_dependencies.sh` fetches MiniLM's tokenizer to
+`models/chunk/tokenizer.json`, which every surface picks up automatically when
+no explicit tokenizer path is given (`DOCLING_CHUNK_TOKENIZER` overrides it
+for the CLI). The chunkers are also
+exposed in the [Node bindings](./crates/docling-node) (`chunkFile` /
+`chunkDocument` + async variants), the
+[Python bindings](./crates/docling-py) (`docling_rs.chunking`), and the
+[RAG subsystem](./crates/docling-rag) (`RAG_CHUNKER=hierarchical|hybrid`). Conformance vs
+docling's chunkers over the 83-doc corpus (`scripts/conformance/
+chunks_conformance.sh`): **hierarchical 91% / hybrid 87% identical chunk
+records** (text + headings), 77 and 74 of 83 documents fully exact.
 
 ### Image extraction
 

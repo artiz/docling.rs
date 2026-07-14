@@ -93,6 +93,42 @@ for await (const chunk of streamFileMarkdown('paper.pdf')) {
 }
 ```
 
+### Chunking (docling's chunkers, for RAG)
+
+`chunkFile` / `chunk` / `chunkDocument` (each with an `…Async` variant) run
+docling's chunkers over a converted document and return embedding-ready
+records. The default is the structure-driven **hierarchical** chunker (one
+chunk per document item — whole lists, triplet-serialized tables — with its
+heading path); pass `chunker: 'hybrid'` to refine against a token budget
+(split oversized chunks, merge undersized same-heading neighbours), matching
+docling's `HybridChunker`. The hybrid token counts come from a HuggingFace
+`tokenizer.json`: pass a path via `tokenizer`, or omit it to use
+`models/chunk/tokenizer.json` (all-MiniLM-L6-v2's — fetched by
+`scripts/download_dependencies.sh` alongside the ML models, resolved through
+the same install-home logic).
+
+```js
+import { chunkFileAsync, Pipeline, chunkDocumentAsync } from 'docling.rs'
+
+const chunks = await chunkFileAsync('report.docx', {
+  chunker: 'hybrid',
+  tokenizer: 'tokenizer.json', // e.g. all-MiniLM-L6-v2's
+  maxTokens: 256,
+})
+for (const c of chunks) {
+  await embed(c.contextualized) // heading path + text, ready for the embedder
+}
+
+// Chunk something you already converted (no re-conversion), e.g. a PDF
+// that went through the warm Pipeline:
+const { content } = new Pipeline().convertFile('paper.pdf', { to: 'json' })
+const pdfChunks = await chunkDocumentAsync(content)
+```
+
+Each `Chunk` is `{ text, headings?, docItems, contextualized }` — `docItems`
+holds the source items' JSON-pointer refs (`"#/texts/12"`), `contextualized`
+is docling's `contextualize()` rendering to feed the embedding model.
+
 ### PDF / images: getting the ML models
 
 Declarative formats (Markdown, HTML, DOCX, XLSX, …) are pure Rust and need
@@ -204,6 +240,10 @@ JSON output always embeds extracted images as data URIs.
 | `convertFileAsync(path, options?)` | `Promise<ConvertResult>` | Off the event loop. |
 | `convertAsync(input, options?)` | `Promise<ConvertResult>` | Off the event loop. |
 | `streamFileMarkdown(path, options?)` | `AsyncGenerator<string>` | Markdown chunks in document order. |
+| `chunkFile(path, options?)` | `Chunk[]` | Convert + run docling's hierarchical/hybrid chunker. |
+| `chunk(input, options?)` | `Chunk[]` | Same, over in-memory bytes. |
+| `chunkDocument(documentJson, options?)` | `Chunk[]` | Chunk an already-converted docling JSON document. |
+| `chunkFileAsync` / `chunkAsync` / `chunkDocumentAsync` | `Promise<Chunk[]>` | Off the event loop. |
 | `supportedFormats()` | `string[]` | Supported input format ids. |
 | `formatFromName(name)` | `string \| null` | Detect a format id from a filename/extension. |
 | `checkDependencies(options?)` | `DependencyStatus` | Report which PDF/image deps are present. |

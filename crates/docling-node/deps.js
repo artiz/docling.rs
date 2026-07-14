@@ -92,7 +92,20 @@ function resolvePaths(dir) {
     tfDecoder:
       process.env.DOCLING_TABLEFORMER_DECODER || path.join(models, 'tableformer', 'decoder.onnx'),
     tfBbox: process.env.DOCLING_TABLEFORMER_BBOX || path.join(models, 'tableformer', 'bbox.onnx'),
+    chunkTokenizer:
+      process.env.DOCLING_CHUNK_TOKENIZER || path.join(models, 'chunk', 'tokenizer.json'),
   }
+}
+
+/**
+ * The hybrid chunker's default tokenizer (all-MiniLM-L6-v2's tokenizer.json,
+ * fetched by `scripts/download_dependencies.sh` into `models/chunk/`), resolved
+ * through the same install-home logic as the ML models. Returns `null` when not
+ * installed — the native side then reports a clear error with the download hint.
+ */
+function defaultChunkTokenizer(dir) {
+  const p = resolvePaths(dir)
+  return fs.existsSync(p.chunkTokenizer) ? p.chunkTokenizer : null
 }
 
 /**
@@ -108,6 +121,7 @@ function checkDependencies(options = {}) {
     layout: has(p.layout),
     ocr: has(p.ocrRec) && has(p.ocrDict),
     tableformer: has(p.tfEncoder) && has(p.tfDecoder) && has(p.tfBbox),
+    chunkTokenizer: has(p.chunkTokenizer),
   }
   status.ready = status.pdfium && status.layout
   status.missing = [
@@ -185,4 +199,5 @@ module.exports = {
   assertMlReady,
   resolvePaths,
   exportEnv,
+  defaultChunkTokenizer,
 }

@@ -201,27 +201,63 @@ fn list_group(children: &[Value], root: &Value, level: u8, doc: &mut DoclingDocu
 
 fn table_item(item: &Value, root: &Value, doc: &mut DoclingDocument) {
     let mut rows = Vec::new();
+    // Per-cell flags carried through so DocTags export and the chunker's
+    // triplet serialization see docling's header/span structure, not just the
+    // flattened text grid.
+    let mut structure = docling_core::TableStructure::default();
     if let Some(grid) = item["data"]["grid"].as_array() {
-        for row in grid {
-            if let Some(cells) = row.as_array() {
-                rows.push(
-                    cells
-                        .iter()
-                        .map(|cell| cell["text"].as_str().unwrap_or("").to_string())
-                        .collect::<Vec<_>>(),
-                );
-            }
+        for (r, row) in grid.iter().enumerate() {
+            let Some(cells) = row.as_array() else {
+                continue;
+            };
+            rows.push(
+                cells
+                    .iter()
+                    .map(|cell| cell["text"].as_str().unwrap_or("").to_string())
+                    .collect::<Vec<_>>(),
+            );
+            // A spanning cell is repeated at each grid position it covers; its
+            // start offsets mark the anchor, everything past it a continuation.
+            let past = |cell: &Value, key: &str, idx: usize| {
+                cell[key].as_u64().is_some_and(|v| (v as usize) < idx)
+            };
+            structure
+                .col_header
+                .push(flags(cells, |c| c["column_header"].as_bool() == Some(true)));
+            structure
+                .row_header
+                .push(flags(cells, |c| c["row_header"].as_bool() == Some(true)));
+            structure.col_continuation.push(flags(cells.as_slice(), {
+                let mut col = 0;
+                move |c| {
+                    let cont = past(c, "start_col_offset_idx", col);
+                    col += 1;
+                    cont
+                }
+            }));
+            structure
+                .row_continuation
+                .push(flags(cells, |c| past(c, "start_row_offset_idx", r)));
         }
     }
     if !rows.is_empty() {
+        let has_structure = structure.col_header.iter().flatten().any(|&b| b)
+            || structure.row_header.iter().flatten().any(|&b| b)
+            || structure.col_continuation.iter().flatten().any(|&b| b)
+            || structure.row_continuation.iter().flatten().any(|&b| b);
         doc.push(Node::Table(Table {
             rows,
             location: None,
-            structure: None,
+            structure: has_structure.then_some(structure),
             cell_blocks: None,
         }));
     }
     push_captions(item, root, doc);
+}
+
+/// Map each grid cell to a flag.
+fn flags(cells: &[Value], f: impl FnMut(&Value) -> bool) -> Vec<bool> {
+    cells.iter().map(f).collect()
 }
 
 fn picture_item(item: &Value, root: &Value, doc: &mut DoclingDocument) {

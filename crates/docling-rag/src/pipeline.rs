@@ -139,7 +139,12 @@ impl Pipeline {
         // Run the staged pipeline; on failure roll back the document row and any
         // partially-inserted chunks so a retry reprocesses from scratch instead
         // of being skipped by the hash dedup.
-        let staged = self.ingest_streaming(r, &doc.id, bytes).await;
+        let staged = match self.cfg.chunker {
+            crate::config::ChunkerKind::Window => self.ingest_streaming(r, &doc.id, bytes).await,
+            // docling's chunkers walk the finished document tree, so their path
+            // is buffered: convert whole, chunk whole, then embed in batches.
+            _ => self.ingest_buffered(r, &doc.id, bytes).await,
+        };
         let out = match staged {
             Ok(out) => out,
             Err(e) => {
@@ -198,6 +203,83 @@ impl Pipeline {
         doc.metadata = serde_json::json!({ "source": r.uri, "metrics": m.to_json() });
         self.store.upsert_document(&doc).await?;
         Ok(IngestOutcome::Ingested(n))
+    }
+
+    /// The buffered variant of [`Self::ingest_streaming`] for the docling
+    /// chunkers (`RAG_CHUNKER=hierarchical|hybrid`): they need the complete
+    /// document tree, so conversion and chunking run whole-document on a
+    /// blocking thread, then the chunks embed + insert in batches.
+    async fn ingest_buffered(
+        &self,
+        r: &SourceRef,
+        doc_id: &str,
+        bytes: Vec<u8>,
+    ) -> Result<StagedOutcome> {
+        let name = r.name.clone();
+        let kind = self.cfg.chunker;
+        let tokenizer = self.cfg.chunk_tokenizer.clone();
+        let max_tokens = self.cfg.chunk_size;
+        let doc_id_owned = doc_id.to_string();
+        type Converted = (Option<usize>, f64, f64, String, Vec<crate::model::Chunk>);
+        let (pages, parse_secs, chunk_secs, markdown, chunks) =
+            tokio::task::spawn_blocking(move || -> Result<Converted> {
+                let ext = name.rsplit('.').next().unwrap_or("");
+                let fmt = InputFormat::from_extension(ext).ok_or_else(|| {
+                    RagError::Conversion(format!("unsupported extension '.{ext}'"))
+                })?;
+                let pages = metrics::count_pages(fmt, &bytes);
+                let src = SourceDocument::from_bytes(name, fmt, bytes);
+                let t = std::time::Instant::now();
+                let result = DocumentConverter::new()
+                    .convert(src)
+                    .map_err(|e| RagError::Conversion(e.to_string()))?;
+                let parse_secs = t.elapsed().as_secs_f64();
+                let markdown = result.document.export_to_markdown();
+                let t = std::time::Instant::now();
+                let chunks = crate::chunk::docling_chunks(
+                    &doc_id_owned,
+                    &result.document,
+                    kind,
+                    tokenizer.as_deref(),
+                    max_tokens,
+                )?;
+                let chunk_secs = t.elapsed().as_secs_f64();
+                Ok((pages, parse_secs, chunk_secs, markdown, chunks))
+            })
+            .await
+            .map_err(|e| RagError::Conversion(format!("convert join: {e}")))??;
+
+        let n = chunks.len();
+        let (mut embed_secs, mut embedded_words) = (0.0f64, 0usize);
+        const BATCH: usize = 64;
+        for batch in chunks.chunks(BATCH) {
+            let mut batch = batch.to_vec();
+            let texts: Vec<String> = batch.iter().map(|c| c.text.clone()).collect();
+            let t = std::time::Instant::now();
+            let embeddings = self.embedder.embed(&texts).await?;
+            embed_secs += t.elapsed().as_secs_f64();
+            if embeddings.len() != batch.len() {
+                return Err(RagError::Embedding("embedding count mismatch".into()));
+            }
+            for (chunk, emb) in batch.iter_mut().zip(embeddings) {
+                chunk.embedding = Some(emb);
+            }
+            embedded_words += texts
+                .iter()
+                .map(|t| t.split_whitespace().count())
+                .sum::<usize>();
+            self.store.insert_chunks(&batch).await?;
+        }
+
+        Ok(StagedOutcome {
+            pages,
+            parse_secs,
+            chunk_secs,
+            embed_secs,
+            embedded_words,
+            chunks: n,
+            markdown,
+        })
     }
 
     /// The overlapped parse → chunk → embed/insert stages for one document.

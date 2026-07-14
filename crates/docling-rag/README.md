@@ -83,13 +83,27 @@ curl -s -H 'X-Api-Key: dev-key' \
 
 | Concern      | Trait            | Backends                                                        |
 |--------------|------------------|-----------------------------------------------------------------|
-| Chunking     | `Chunker`        | Markdown-aware, configurable size (300) + overlap (5%)          |
+| Chunking     | `Chunker`        | **window** (Markdown sliding window, size 300 + 5% overlap, streaming; default), docling's `hierarchical` / `hybrid` (`RAG_CHUNKER`) |
 | Embeddings   | `Embedder`       | **Ollama** (default, bge-m3, 1024-d), Gemini, local ONNX, hash |
 | Vector store | `VectorStore`    | **SQLite + sqlite-vec** (default), PostgreSQL + pgvector, in-memory |
 | Retrieval    | `Retriever`      | vector, BM25, **Hybrid** (RRF), Multi-Query fusion, HyDE       |
 | LLM          | `ChatModel`      | OpenRouter (default model DeepSeek-V3)                          |
 | Sources      | `DocumentSource` | **folder** (default), FTP, SFTP                                 |
 | Queues       | `MessageQueue`   | **in-process** (default), RabbitMQ, Redis pub/sub              |
+
+`RAG_CHUNKER` selects the chunking strategy. The default `window` slides a
+fixed-size window (`RAG_CHUNK_SIZE` / `RAG_CHUNK_OVERLAP`) over the converted
+Markdown and never crosses a heading; it chunks **streaming**, overlapping
+page conversion with embedding. `hierarchical` and `hybrid` run docling's
+structure-aware chunkers (`docling::chunker`) over the document tree instead —
+one chunk per document item with its heading path, tables triplet-serialized;
+`hybrid` additionally splits/merges against a real token budget
+(`RAG_CHUNK_SIZE` tokens counted by a HuggingFace `tokenizer.json` —
+`RAG_CHUNK_TOKENIZER`, or `models/chunk/tokenizer.json` as fetched by
+`scripts/install/download_dependencies.sh`). These two are buffered (the whole
+document converts before chunking), have no overlap concept (`RAG_CHUNK_OVERLAP`
+applies to `window` only, matching docling's own chunkers), and put the heading
+path and source item refs in each chunk's metadata.
 
 Documents (metadata) and chunks (text + embedding) are stored in **two separate
 tables**.
