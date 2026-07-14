@@ -81,3 +81,27 @@ def test_bad_tokenizer_path_raises_conversion_error():
     chunker = HybridChunker(tokenizer="/nonexistent/tokenizer.json")
     with pytest.raises(docling_rs.ConversionError):
         list(chunker.chunk(_document()))
+
+
+@pytest.mark.skipif(not TOKENIZER.exists(), reason="MiniLM tokenizer.json not checked out")
+def test_ctrl_c_interrupts_native_chunking():
+    # A SIGINT arriving while the Rust side is chunking must raise
+    # KeyboardInterrupt promptly, not stall until the native call returns.
+    import signal
+    import threading
+    import time
+
+    big_md = "# Doc\n\n" + "\n\n".join(
+        " ".join(f"word{s}x{w}" for w in range(60)) for s in range(30_000)
+    )
+    doc = docling_rs.DocumentConverter().convert_bytes("big.md", big_md.encode()).document
+
+    timer = threading.Timer(0.5, lambda: signal.raise_signal(signal.SIGINT))
+    timer.start()
+    try:
+        t0 = time.monotonic()
+        with pytest.raises(KeyboardInterrupt):
+            list(HybridChunker(tokenizer=str(TOKENIZER), max_tokens=64).chunk(doc))
+        assert time.monotonic() - t0 < 5.0
+    finally:
+        timer.cancel()
