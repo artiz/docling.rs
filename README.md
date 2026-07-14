@@ -595,8 +595,8 @@ on a 1913-page document — see [`PDF_CONFORMANCE.md`](./PDF_CONFORMANCE.md)).
 | `docling-pdf` | PDF/image ML pipeline (pdfium + ONNX layout/table/OCR) | `docling` PDF pipeline |
 | `docling-asr` | audio/ASR pipeline (symphonia + ONNX Whisper) | `docling` ASR pipeline |
 | `docling-cli` | command-line interface | `docling.cli` |
-| `docling-node` | Node.js / Bun N-API bindings (npm package (docling.rs)[https://www.npmjs.com/package/docling.rs]) | — |
-| `docling-py` | Python bindings (npm package (docling-rs)[https://pypi.org/project/docling-rs/]) | — |
+| `docling-node` | Node.js / Bun N-API bindings | https://www.npmjs.com/package/docling.rs |
+| `docling-py` | Python bindings | https://pypi.org/project/docling-rs |
 | `docling-rag` | RAG layer: chunking, embeddings, vector search, REST API | — |
 
 ## License
