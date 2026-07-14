@@ -4,7 +4,7 @@ The Rust port of ``docling_core.transforms.chunker`` runs the chunking; this
 module mirrors docling's chunker API shape so call sites translate directly::
 
     from docling_rs import DocumentConverter
-    from docling_rs.chunking import HierarchicalChunker, HybridChunker
+    from docling_rs.chunking import HierarchicalChunker, HybridChunker, WindowChunker
 
     doc = DocumentConverter().convert("report.docx").document
 
@@ -15,7 +15,11 @@ module mirrors docling's chunker API shape so call sites translate directly::
     for chunk in chunker.chunk(doc):                         # tokenization-aware
         embed_me = chunker.contextualize(chunk)              # heading path + text
 
-Both chunkers **stream**: ``chunk()`` returns a lazy iterator fed by a native
+    chunker = WindowChunker(max_words=300, overlap=0.05)     # word-window, no tokenizer
+    for chunk in chunker.chunk(doc):                         # docling-rag's window chunker
+        embed_me = chunker.contextualize(chunk)              # '# path' line + body
+
+All chunkers **stream**: ``chunk()`` returns a lazy iterator fed by a native
 background thread — each chunk is handed to Python as the Rust side produces
 it, so the full chunk list is never materialized and the first chunk arrives
 before the last one is computed. Abandoning the iterator early (``break``,
@@ -34,7 +38,7 @@ Differences from docling's ``docling.chunking``:
 * ``chunk.meta.doc_items`` holds the items' JSON-pointer refs (``"#/texts/12"``)
   rather than resolved item objects.
 
-Both chunkers accept any ``docling_core.types.doc.DoclingDocument`` (or a
+All chunkers accept any ``docling_core.types.doc.DoclingDocument`` (or a
 plain docling-JSON ``dict``/``str``). Since this package's ``result.document``
 *is* a genuine ``DoclingDocument``, docling's own Python chunkers also keep
 working on it — these classes are the faster, dependency-free native path.
@@ -51,7 +55,7 @@ from pathlib import Path
 from . import models
 from ._native import chunk_document as _chunk_document
 
-__all__ = ["DocMeta", "DocChunk", "HierarchicalChunker", "HybridChunker"]
+__all__ = ["DocMeta", "DocChunk", "HierarchicalChunker", "HybridChunker", "WindowChunker"]
 
 
 @dataclass
@@ -90,13 +94,21 @@ def _document_json(dl_doc: Any) -> str:
 
 
 def _run(
-    dl_doc: Any, hybrid: bool, tokenizer: Optional[str], max_tokens: int, merge_peers: bool
+    dl_doc: Any,
+    chunker: str,
+    tokenizer: Optional[str] = None,
+    max_tokens: int = 256,
+    merge_peers: bool = True,
+    max_words: int = 300,
+    overlap: float = 0.05,
 ) -> Iterator[DocChunk]:
     # The native side streams: a background Rust thread parses the document and
     # chunks it, handing over one record at a time — chunks are consumed as
     # they are produced, never materialized as a whole. Abandoning the
     # iterator early cancels the background chunking.
-    stream = _chunk_document(_document_json(dl_doc), hybrid, tokenizer, max_tokens, merge_peers)
+    stream = _chunk_document(
+        _document_json(dl_doc), chunker, tokenizer, max_tokens, merge_peers, max_words, overlap
+    )
     for record in stream:
         r = json.loads(record)
         yield DocChunk(
@@ -118,7 +130,7 @@ class HierarchicalChunker(_BaseChunker):
     metadata."""
 
     def chunk(self, dl_doc: Any) -> Iterator[DocChunk]:
-        return _run(dl_doc, False, None, 0, True)
+        return _run(dl_doc, "hierarchical")
 
 
 class HybridChunker(_BaseChunker):
@@ -156,4 +168,40 @@ class HybridChunker(_BaseChunker):
             cached = models.cache_dir() / "models/chunk/tokenizer.json"
             if cached.exists():
                 tokenizer = str(cached)
-        return _run(dl_doc, True, tokenizer, self.max_tokens, self.merge_peers)
+        return _run(
+            dl_doc, "hybrid", tokenizer, max_tokens=self.max_tokens, merge_peers=self.merge_peers
+        )
+
+
+class WindowChunker(_BaseChunker):
+    """docling-rag's Markdown **window chunker**: the document's Markdown is cut
+    into heading-bounded sections of plain words (markup stripped), and a
+    fixed-size window of ``max_words`` words slides over each section with
+    ``overlap`` fractional overlap. A chunk never crosses a heading boundary.
+
+    No tokenizer and no ML models are involved — the budget is *words*, making
+    this the zero-dependency choice when an approximate chunk size is enough.
+
+    Two deltas from the docling-style chunkers above:
+
+    * ``chunk.text`` is plain words joined by single spaces (markdown markup
+      does not survive), and ``chunk.meta.doc_items`` is always empty — the
+      window chunker works on the rendered Markdown, not the document tree.
+    * ``contextualize(chunk)`` renders docling-rag style: a ``# Outer > Inner``
+      heading-context line, a blank line, then the chunk body.
+
+    :param max_words: window size in words (docling-rag's default 300).
+    :param overlap: fractional overlap between consecutive windows, ``0.0`` to
+        ``<1.0`` (docling-rag's default 0.05 = 5%).
+    """
+
+    def __init__(self, max_words: int = 300, overlap: float = 0.05):
+        if not isinstance(max_words, int) or isinstance(max_words, bool) or max_words < 1:
+            raise ValueError("WindowChunker(max_words=...) must be a positive integer")
+        if not 0.0 <= float(overlap) < 1.0:
+            raise ValueError("WindowChunker(overlap=...) must be in [0.0, 1.0)")
+        self.max_words = max_words
+        self.overlap = float(overlap)
+
+    def chunk(self, dl_doc: Any) -> Iterator[DocChunk]:
+        return _run(dl_doc, "window", max_words=self.max_words, overlap=self.overlap)

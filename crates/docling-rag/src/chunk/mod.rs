@@ -4,14 +4,17 @@
 //! heading path), then slides a fixed-size window with fractional overlap over the
 //! words of each section. A chunk never crosses a heading boundary, and each chunk
 //! is prefixed with its heading path so the embedded text keeps its context.
-
-mod markdown;
+//!
+//! The section parsing and windowing live in `docling::chunker::WindowChunker`
+//! (shared with the Python/Node bindings); this module maps its chunks onto
+//! retrievable [`Chunk`]s and adds the incremental [`StreamingChunker`] buffer.
 
 use crate::config::{ChunkUnit, ChunkerKind};
 use crate::model::Chunk;
 use crate::{RagError, Result};
+use docling::chunker::{parse_sections_with_stack, WindowChunker};
 
-pub use markdown::Section;
+pub use docling::chunker::Section;
 
 /// Chunk a converted document with docling's structure-aware chunkers
 /// (`RAG_CHUNKER=hierarchical|hybrid`), mapping each `DocChunk` onto a
@@ -163,40 +166,28 @@ impl Chunker {
     }
 
     /// Slide the window over one completed section, appending chunks.
+    /// The windowing is `docling::chunker::WindowChunker`'s; this maps each
+    /// window onto a retrievable [`Chunk`] (ordinal, configured units,
+    /// heading-context-prefixed text, heading metadata).
     fn pack_section(
         &self,
         doc_id: &str,
-        section: &markdown::Section,
+        section: &Section,
         ordinal: &mut i64,
         out: &mut Vec<Chunk>,
     ) {
-        let words = &section.words;
-        if words.is_empty() {
-            return;
-        }
-        let budget = self.word_budget();
-        let step = budget - self.overlap_words(budget); // ≥ 1 by construction
-        let context = section.heading_context();
-        let mut start = 0;
-        loop {
-            let end = (start + budget).min(words.len());
-            let body = words[start..end].join(" ");
-            let text = if context.is_empty() {
-                body
-            } else {
-                format!("{context}\n\n{body}")
-            };
-            let mut chunk = Chunk::new(doc_id, *ordinal, text, self.to_units(end - start));
-            if !section.heading_path.is_empty() {
-                chunk.metadata = serde_json::json!({ "headings": section.heading_path });
+        let window = WindowChunker::new(self.word_budget(), self.overlap);
+        window.pack_section(section, &mut |c| {
+            let words = c.text.split_whitespace().count();
+            let text = WindowChunker::contextualize(&c);
+            let mut chunk = Chunk::new(doc_id, *ordinal, text, self.to_units(words));
+            if let Some(headings) = &c.headings {
+                chunk.metadata = serde_json::json!({ "headings": headings });
             }
             out.push(chunk);
             *ordinal += 1;
-            if end >= words.len() {
-                break;
-            }
-            start += step;
-        }
+            true
+        });
     }
 }
 
@@ -263,7 +254,7 @@ impl StreamingChunker {
 
     fn emit(&mut self, markdown: &str) -> Vec<Chunk> {
         let (sections, stack) =
-            markdown::parse_sections_with_stack(markdown, std::mem::take(&mut self.heading_stack));
+            parse_sections_with_stack(markdown, std::mem::take(&mut self.heading_stack));
         self.heading_stack = stack;
         let mut out = Vec::new();
         for section in &sections {

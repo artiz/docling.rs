@@ -12,7 +12,12 @@ TOKENIZER = REPO / "tests/data/chunks/tokenizer.json"
 
 docling_rs = pytest.importorskip("docling_rs")
 
-from docling_rs.chunking import DocChunk, HierarchicalChunker, HybridChunker  # noqa: E402
+from docling_rs.chunking import (  # noqa: E402
+    DocChunk,
+    HierarchicalChunker,
+    HybridChunker,
+    WindowChunker,
+)
 
 MD = b"# Guide\n\n## Setup\n\nInstall the tools.\n\n- clone\n- build\n\n## Usage\n\nRun it.\n"
 
@@ -81,6 +86,43 @@ def test_bad_tokenizer_path_raises_conversion_error():
     chunker = HybridChunker(tokenizer="/nonexistent/tokenizer.json")
     with pytest.raises(docling_rs.ConversionError):
         list(chunker.chunk(_document()))
+
+
+def test_window_chunker_cuts_word_windows_with_overlap():
+    body = " ".join(f"w{i}" for i in range(25))
+    md = f"# A\n\n{body}\n\n# B\n\nshort tail\n".encode()
+    doc = docling_rs.DocumentConverter().convert_bytes("w.md", md).document
+
+    chunker = WindowChunker(max_words=10, overlap=0.2)  # step 8: windows of 10, 2 shared
+    chunks = list(chunker.chunk(doc))
+
+    a = [c for c in chunks if c.meta.headings == ["A"]]
+    assert len(a) == 3  # 25 words -> [0..10), [8..18), [16..25)
+    assert a[0].text.startswith("w0 ") and a[0].text.endswith(" w9")
+    assert a[1].text.startswith("w8 ")  # the 2-word overlap carries over
+    assert a[2].text.endswith(" w24")
+    # Windows never cross a heading; contextualize is docling-rag's rendering.
+    b = [c for c in chunks if c.meta.headings == ["B"]]
+    assert len(b) == 1 and b[0].text == "short tail"
+    assert chunker.contextualize(b[0]) == "# B\n\nshort tail"
+    assert b[0].meta.doc_items == []
+
+
+def test_window_chunker_defaults_and_validation():
+    # Defaults follow docling-rag: 300-word windows, 5% overlap.
+    chunker = WindowChunker()
+    assert (chunker.max_words, chunker.overlap) == (300, 0.05)
+    long_md = ("# Doc\n\n" + " ".join(f"word{i}" for i in range(650))).encode()
+    doc = docling_rs.DocumentConverter().convert_bytes("l.md", long_md).document
+    chunks = list(chunker.chunk(doc))
+    # 650 words, step 285 -> 3 windows, each within the budget.
+    assert len(chunks) == 3
+    assert all(len(c.text.split()) <= 300 for c in chunks)
+
+    with pytest.raises(ValueError):
+        WindowChunker(max_words=0)
+    with pytest.raises(ValueError):
+        WindowChunker(overlap=1.0)
 
 
 def _big_document(paragraphs=3_000):

@@ -356,14 +356,18 @@ impl Drop for PyChunkStream {
 }
 
 /// Chunk a document with the Rust chunkers (docling-core's
-/// `HierarchicalChunker` / `HybridChunker` ported to `docling::chunker`).
+/// `HierarchicalChunker` / `HybridChunker` ported to `docling::chunker`, plus
+/// docling-rag's Markdown `WindowChunker`).
 ///
 /// `document_json` is docling-core's JSON wire format (what
-/// `DoclingDocument.export_to_dict()` serializes to). With `hybrid = False`
-/// the hierarchical chunker runs; with `hybrid = True` the hybrid chunker
-/// refines against a `max_tokens` budget, counting tokens with the HuggingFace
-/// `tokenizer.json` at `tokenizer` — or at `models/chunk/tokenizer.json` (the
-/// path `scripts/install/download_dependencies.sh` populates) when `None`.
+/// `DoclingDocument.export_to_dict()` serializes to). `chunker` selects the
+/// mode: `"hierarchical"` (structure-driven), `"hybrid"` (refines against a
+/// `max_tokens` budget, counting tokens with the HuggingFace `tokenizer.json`
+/// at `tokenizer` — or at `models/chunk/tokenizer.json`, the path
+/// `scripts/install/download_dependencies.sh` populates, when `None`), or
+/// `"window"` (the document's Markdown cut into heading-bounded sections and
+/// windowed by `max_words` words with `overlap` fractional overlap —
+/// docling-rag's window chunker).
 ///
 /// Returns a [`PyChunkStream`] that yields one JSON record
 /// `{text, headings, doc_items, contextualize}` per chunk as the background
@@ -371,15 +375,28 @@ impl Drop for PyChunkStream {
 /// into docling-shaped chunk objects lazily. A parse/tokenizer error surfaces
 /// on the first `next()`.
 #[pyfunction]
-#[pyo3(signature = (document_json, hybrid = false, tokenizer = None, max_tokens = 256, merge_peers = true))]
+#[pyo3(signature = (
+    document_json,
+    chunker = "hierarchical".to_string(),
+    tokenizer = None,
+    max_tokens = 256,
+    merge_peers = true,
+    max_words = 300,
+    overlap = 0.05,
+))]
+#[allow(clippy::too_many_arguments)]
 fn chunk_document(
     document_json: String,
-    hybrid: bool,
+    chunker: String,
     tokenizer: Option<String>,
     max_tokens: usize,
     merge_peers: bool,
+    max_words: usize,
+    overlap: f32,
 ) -> PyChunkStream {
-    use docling::chunker::{contextualize, DocChunk, HierarchicalChunker, HybridChunker};
+    use docling::chunker::{
+        contextualize, DocChunk, HierarchicalChunker, HybridChunker, WindowChunker,
+    };
 
     let (tx, rx) = std::sync::mpsc::sync_channel::<Result<String, String>>(CHUNK_CHANNEL_DEPTH);
     let handle = std::thread::spawn(move || {
@@ -397,31 +414,46 @@ fn chunk_document(
         };
         // Once the consumer drops the stream, the send fails and the `false`
         // return cancels the walk — no work is spent on unread chunks.
-        let mut sink = |c: DocChunk| -> bool {
-            let record = serde_json::json!({
+        // The window chunker embeds its own (rag-style) contextualization.
+        let record = |c: &DocChunk, contextualized: String| -> String {
+            serde_json::json!({
                 "text": c.text,
                 "headings": c.headings,
                 "doc_items": c.doc_items.iter().map(|i| i.self_ref.clone()).collect::<Vec<_>>(),
-                "contextualize": contextualize(&c),
-            });
-            tx.send(Ok(record.to_string())).is_ok()
+                "contextualize": contextualized,
+            })
+            .to_string()
         };
-        if hybrid {
-            let tok = match docling::chunker::HuggingFaceTokenizer::resolve(
-                tokenizer.as_deref(),
-                max_tokens,
-            ) {
-                Ok(t) => t,
-                Err(e) => {
-                    let _ = tx.send(Err(e));
-                    return;
-                }
-            };
-            HybridChunker::new(tok)
-                .with_merge_peers(merge_peers)
-                .chunk_with(&result.document, &mut sink);
-        } else {
-            HierarchicalChunker.chunk_with(&result.document, &mut sink);
+        match chunker.as_str() {
+            "hybrid" => {
+                let tok = match docling::chunker::HuggingFaceTokenizer::resolve(
+                    tokenizer.as_deref(),
+                    max_tokens,
+                ) {
+                    Ok(t) => t,
+                    Err(e) => {
+                        let _ = tx.send(Err(e));
+                        return;
+                    }
+                };
+                HybridChunker::new(tok)
+                    .with_merge_peers(merge_peers)
+                    .chunk_with(&result.document, &mut |c| {
+                        tx.send(Ok(record(&c, contextualize(&c)))).is_ok()
+                    });
+            }
+            "window" => {
+                let markdown = result.document.export_to_markdown();
+                WindowChunker::new(max_words, overlap).chunk_with(&markdown, &mut |c| {
+                    tx.send(Ok(record(&c, WindowChunker::contextualize(&c))))
+                        .is_ok()
+                });
+            }
+            _ => {
+                HierarchicalChunker.chunk_with(&result.document, &mut |c| {
+                    tx.send(Ok(record(&c, contextualize(&c)))).is_ok()
+                });
+            }
         }
     });
     PyChunkStream {

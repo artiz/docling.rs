@@ -1729,6 +1729,329 @@ mod hf {
 #[cfg(feature = "chunking")]
 pub use hf::{resolve_tokenizer_path, HuggingFaceTokenizer, DEFAULT_TOKENIZER_PATH};
 
+// ---------------------------------------------------------------------------
+// Window chunker (feature `chunking`) — docling-rag's Markdown window chunker
+// ---------------------------------------------------------------------------
+
+#[cfg(feature = "chunking")]
+mod window {
+    use super::DocChunk;
+    use pulldown_cmark::{Event, HeadingLevel, Parser, Tag, TagEnd};
+
+    /// A contiguous run of body text under a heading path.
+    #[derive(Debug, Clone, Default)]
+    pub struct Section {
+        /// The heading stack in effect for this section, outermost first
+        /// (e.g. `["Guide", "Setup"]`). Empty for pre-heading / body-only text.
+        pub heading_path: Vec<String>,
+        /// The plain words of the section body, markup stripped.
+        pub words: Vec<String>,
+    }
+
+    impl Section {
+        /// The heading path rendered as a single context line, e.g.
+        /// `# Guide > Setup`. Empty string when there is no heading.
+        pub fn heading_context(&self) -> String {
+            if self.heading_path.is_empty() {
+                String::new()
+            } else {
+                format!("# {}", self.heading_path.join(" > "))
+            }
+        }
+    }
+
+    fn level_index(level: HeadingLevel) -> usize {
+        match level {
+            HeadingLevel::H1 => 1,
+            HeadingLevel::H2 => 2,
+            HeadingLevel::H3 => 3,
+            HeadingLevel::H4 => 4,
+            HeadingLevel::H5 => 5,
+            HeadingLevel::H6 => 6,
+        }
+    }
+
+    /// Parse Markdown into heading-bounded sections. A new section starts at
+    /// every heading; the heading path is maintained as a stack keyed by
+    /// heading level.
+    pub fn parse_sections(markdown: &str) -> Vec<Section> {
+        parse_sections_with_stack(markdown, Vec::new()).0
+    }
+
+    /// [`parse_sections`] with an explicit initial heading stack, returning the
+    /// final stack — lets a streaming caller carry heading context across
+    /// pieces. `heading_stack[i]` holds the current heading text at level `i+1`
+    /// (may be empty when a level was skipped).
+    pub fn parse_sections_with_stack(
+        markdown: &str,
+        initial_stack: Vec<String>,
+    ) -> (Vec<Section>, Vec<String>) {
+        let mut heading_stack: Vec<String> = initial_stack;
+        let mut sections: Vec<Section> = Vec::new();
+        // Text before the first heading of this piece continues the carried-over
+        // section, so it keeps the heading path in effect at the split point.
+        let mut current = Section {
+            heading_path: heading_stack
+                .iter()
+                .filter(|h| !h.is_empty())
+                .cloned()
+                .collect(),
+            words: Vec::new(),
+        };
+
+        let mut in_heading = false;
+        let mut heading_level = 0usize;
+        let mut heading_buf = String::new();
+
+        let push_words = |section: &mut Section, text: &str| {
+            for w in text.split_whitespace() {
+                section.words.push(w.to_string());
+            }
+        };
+
+        let flush = |sections: &mut Vec<Section>, section: &mut Section| {
+            if !section.words.is_empty() {
+                sections.push(std::mem::take(section));
+            } else {
+                *section = Section::default();
+            }
+        };
+
+        for event in Parser::new(markdown) {
+            match event {
+                Event::Start(Tag::Heading { level, .. }) => {
+                    in_heading = true;
+                    heading_level = level_index(level);
+                    heading_buf.clear();
+                }
+                Event::End(TagEnd::Heading(_)) => {
+                    in_heading = false;
+                    // Update the heading stack: set this level, drop anything deeper.
+                    let idx = heading_level.saturating_sub(1);
+                    if heading_stack.len() <= idx {
+                        heading_stack.resize(idx + 1, String::new());
+                    } else {
+                        heading_stack.truncate(idx + 1);
+                    }
+                    heading_stack[idx] = heading_buf.trim().to_string();
+                    // A heading begins a new section.
+                    flush(&mut sections, &mut current);
+                    current.heading_path = heading_stack
+                        .iter()
+                        .filter(|h| !h.is_empty())
+                        .cloned()
+                        .collect();
+                }
+                Event::Text(t) | Event::Code(t) => {
+                    if in_heading {
+                        if !heading_buf.is_empty() {
+                            heading_buf.push(' ');
+                        }
+                        heading_buf.push_str(&t);
+                    } else {
+                        push_words(&mut current, &t);
+                    }
+                }
+                // Treat hard/soft breaks and rules as whitespace (words already split).
+                Event::SoftBreak | Event::HardBreak | Event::Rule => {}
+                _ => {}
+            }
+        }
+        flush(&mut sections, &mut current);
+        (sections, heading_stack)
+    }
+
+    /// docling-rag's Markdown **window chunker**: the document is split into
+    /// heading-bounded [`Section`]s of plain words (markup stripped), and a
+    /// fixed-size window of [`Self::max_words`] words slides over each section
+    /// with [`Self::overlap`] fractional overlap. A chunk never crosses a
+    /// heading boundary; [`Self::contextualize`] prefixes the heading path.
+    #[derive(Debug, Clone)]
+    pub struct WindowChunker {
+        /// Window size in words (docling-rag's default 300).
+        pub max_words: usize,
+        /// Fractional overlap between consecutive windows (default 0.05 = 5%).
+        pub overlap: f32,
+    }
+
+    impl Default for WindowChunker {
+        fn default() -> Self {
+            WindowChunker {
+                max_words: 300,
+                overlap: 0.05,
+            }
+        }
+    }
+
+    impl WindowChunker {
+        pub fn new(max_words: usize, overlap: f32) -> Self {
+            WindowChunker { max_words, overlap }
+        }
+
+        /// The window size, kept ≥ 1.
+        fn word_budget(&self) -> usize {
+            self.max_words.max(1)
+        }
+
+        /// Number of words carried from one window into the next; capped so
+        /// the window always advances.
+        fn overlap_words(&self, budget: usize) -> usize {
+            let o = (budget as f32 * self.overlap).round() as usize;
+            o.min(budget.saturating_sub(1))
+        }
+
+        /// Chunk a Markdown document.
+        pub fn chunk(&self, markdown: &str) -> Vec<DocChunk> {
+            let mut chunks = Vec::new();
+            self.chunk_with(markdown, &mut |c| {
+                chunks.push(c);
+                true
+            });
+            chunks
+        }
+
+        /// Stream the chunks: `sink` receives each window as it is cut, and a
+        /// `false` return cancels. [`Self::chunk`] is this with a collecting
+        /// sink — the chunks and their order are identical.
+        pub fn chunk_with(&self, markdown: &str, sink: &mut dyn FnMut(DocChunk) -> bool) {
+            let (sections, _) = parse_sections_with_stack(markdown, Vec::new());
+            for section in &sections {
+                if !self.pack_section(section, sink) {
+                    return;
+                }
+            }
+        }
+
+        /// Slide the window over one completed section, feeding each chunk to
+        /// `sink`. Returns `false` once the sink cancels — exposed so a
+        /// streaming caller (docling-rag) can pack sections as they complete.
+        pub fn pack_section(
+            &self,
+            section: &Section,
+            sink: &mut dyn FnMut(DocChunk) -> bool,
+        ) -> bool {
+            let words = &section.words;
+            if words.is_empty() {
+                return true;
+            }
+            let budget = self.word_budget();
+            let step = budget - self.overlap_words(budget); // ≥ 1 by construction
+            let mut start = 0;
+            loop {
+                let end = (start + budget).min(words.len());
+                let chunk = DocChunk {
+                    text: words[start..end].join(" "),
+                    headings: (!section.heading_path.is_empty())
+                        .then(|| section.heading_path.clone()),
+                    doc_items: Vec::new(),
+                };
+                if !sink(chunk) {
+                    return false;
+                }
+                if end >= words.len() {
+                    return true;
+                }
+                start += step;
+            }
+        }
+
+        /// Render a window chunk for embedding — docling-rag's rendering: the
+        /// heading path as a `# Outer > Inner` context line, a blank line,
+        /// then the body (just the body above any heading). Note this differs
+        /// from the docling chunkers' [`contextualize`](super::contextualize),
+        /// matching docling-rag instead.
+        pub fn contextualize(chunk: &DocChunk) -> String {
+            match &chunk.headings {
+                Some(h) if !h.is_empty() => format!("# {}\n\n{}", h.join(" > "), chunk.text),
+                _ => chunk.text.clone(),
+            }
+        }
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+
+        #[test]
+        fn splits_on_headings_and_tracks_path() {
+            let md = "\
+intro words
+# Chapter 1
+para one
+## Section 1.1
+para two
+# Chapter 2
+para three";
+            let secs = parse_sections(md);
+            // pre-heading intro, Chapter 1, Section 1.1, Chapter 2.
+            assert_eq!(secs.len(), 4);
+            assert!(secs[0].heading_path.is_empty());
+            assert_eq!(secs[1].heading_path, vec!["Chapter 1"]);
+            assert_eq!(secs[2].heading_path, vec!["Chapter 1", "Section 1.1"]);
+            // A deeper heading is dropped when we return to H1.
+            assert_eq!(secs[3].heading_path, vec!["Chapter 2"]);
+        }
+
+        #[test]
+        fn strips_markup_to_plain_words() {
+            let md = "# T\n\nSome **bold** and `code` and [a link](http://x).";
+            let secs = parse_sections(md);
+            let words = &secs[0].words;
+            assert!(words.contains(&"bold".to_string()));
+            assert!(words.contains(&"code".to_string()));
+            assert!(words.contains(&"link".to_string()));
+            // No markdown punctuation survives as its own token.
+            assert!(!words.iter().any(|w| w.contains('*') || w.contains('`')));
+        }
+
+        #[test]
+        fn windows_overlap_and_never_cross_headings() {
+            let body: Vec<String> = (0..25).map(|i| format!("w{i}")).collect();
+            let md = format!("# A\n\n{}\n\n# B\n\nshort tail\n", body.join(" "));
+            let chunker = WindowChunker::new(10, 0.2); // step 8, overlap 2
+            let chunks = chunker.chunk(&md);
+            // Section A: 25 words → windows [0..10), [8..18), [16..25).
+            let a: Vec<_> = chunks
+                .iter()
+                .filter(|c| c.headings.as_deref() == Some(&["A".to_string()][..]))
+                .collect();
+            assert_eq!(a.len(), 3);
+            assert!(a[0].text.starts_with("w0 ") && a[0].text.ends_with(" w9"));
+            assert!(a[1].text.starts_with("w8 "), "overlap carries 2 words");
+            assert!(a[2].text.ends_with(" w24"));
+            // Section B stays its own chunk; nothing crosses the heading.
+            let b: Vec<_> = chunks
+                .iter()
+                .filter(|c| c.headings.as_deref() == Some(&["B".to_string()][..]))
+                .collect();
+            assert_eq!(b.len(), 1);
+            assert_eq!(b[0].text, "short tail");
+            assert_eq!(WindowChunker::contextualize(b[0]), "# B\n\nshort tail");
+        }
+
+        #[test]
+        fn sink_false_cancels_the_window_walk() {
+            let md = format!(
+                "# A\n\n{}\n",
+                (0..50)
+                    .map(|i| format!("w{i}"))
+                    .collect::<Vec<_>>()
+                    .join(" ")
+            );
+            let chunker = WindowChunker::new(10, 0.0);
+            let mut n = 0;
+            chunker.chunk_with(&md, &mut |_| {
+                n += 1;
+                false
+            });
+            assert_eq!(n, 1);
+        }
+    }
+}
+
+#[cfg(feature = "chunking")]
+pub use window::{parse_sections, parse_sections_with_stack, Section, WindowChunker};
+
 #[cfg(test)]
 mod tests {
     use super::*;

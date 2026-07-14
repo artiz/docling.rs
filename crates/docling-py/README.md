@@ -114,7 +114,7 @@ to CPU — the engine runs ONNX Runtime on the CPU execution provider.
 
 ```python
 from docling_rs import DocumentConverter
-from docling_rs.chunking import HierarchicalChunker, HybridChunker
+from docling_rs.chunking import HierarchicalChunker, HybridChunker, WindowChunker
 
 doc = DocumentConverter().convert("report.docx").document
 
@@ -124,7 +124,22 @@ for chunk in HierarchicalChunker().chunk(doc):        # structure-driven
 chunker = HybridChunker(tokenizer="tokenizer.json", max_tokens=256)
 for chunk in chunker.chunk(doc):                       # tokenization-aware
     embed_me = chunker.contextualize(chunk)            # heading path + text
+
+chunker = WindowChunker(max_words=300, overlap=0.05)   # word-window, no tokenizer
+for chunk in chunker.chunk(doc):                       # docling-rag's window chunker
+    embed_me = chunker.contextualize(chunk)            # '# path' line + body
 ```
+
+`WindowChunker` is **docling-rag's window chunker**: the document's Markdown is
+cut into heading-bounded sections of plain words (markup stripped), and a
+fixed window of `max_words` words (default 300) slides over each section with
+`overlap` fractional overlap (default 0.05 = 5%). A chunk never crosses a
+heading, `chunk.meta.headings` carries the heading path, and
+`contextualize(chunk)` renders rag-style — a `# Outer > Inner` context line, a
+blank line, then the body. No tokenizer and no ML models are involved, making
+it the zero-dependency choice when an approximate chunk size is enough
+(`meta.doc_items` is empty — it works on the rendered Markdown, not the
+document tree).
 
 Two deltas from docling: `HybridChunker(tokenizer=...)` takes a **path to a
 HuggingFace `tokenizer.json`** (loaded natively — no `transformers` install),
