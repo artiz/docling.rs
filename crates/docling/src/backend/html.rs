@@ -243,18 +243,30 @@ fn walk_block(
                     if let Some((caption, src)) = image_wrapper(cref) {
                         // An anchor wrapping only an image (`<a><img></a>`):
                         // docling pulls the image out as a Picture and drops the
-                        // wrapper. A non-anchor inline wrapper (`<span><img></span>`)
-                        // is left inline instead — docling never emits inline image
-                        // markers, so such an image produces no output.
+                        // wrapper.
                         flush_inline(&mut inline, nodes);
                         nodes.push(Node::Picture {
                             caption,
                             image: src.as_deref().and_then(|s| images.resolve(s)),
                             classification: None,
                         });
+                    } else if has_descendant(cref, "img") {
+                        // An anchor with an image among other content: docling
+                        // treats `img` as a block tag, so the wrapper is walked
+                        // block-wise (its text becomes text items, the image a
+                        // Picture with the `alt` caption).
+                        flush_inline(&mut inline, nodes);
+                        walk_block(cref, nodes, list_level, base, images);
                     } else {
                         collect_element(cref, base, None, &mut inline);
                     }
+                } else if has_descendant(cref, "img") {
+                    // An inline wrapper (`<span typeof="mw:File"><a><img></a></span>`,
+                    // Wikipedia's indicator/edit icons): docling's `img` is in its
+                    // block-tag set, so the wrapper is block-walked and the image
+                    // emits a Picture captioned with its `alt` text.
+                    flush_inline(&mut inline, nodes);
+                    walk_block(cref, nodes, list_level, base, images);
                 } else {
                     collect_element(cref, base, None, &mut inline);
                 }
@@ -355,11 +367,18 @@ fn handle_block(
                 nodes.push(Node::Table(table));
             }
         }
-        "figure" => nodes.push(Node::Picture {
-            caption: figure_caption(elem),
-            image: figure_img_src(elem).and_then(|s| images.resolve(&s)),
-            classification: None,
-        }),
+        "figure" => {
+            // docling's figure handler keys off the first `<img>`: a figure
+            // without one (e.g. a `<video>` thumb) emits nothing — not even its
+            // `<figcaption>`.
+            if has_descendant(elem, "img") {
+                nodes.push(Node::Picture {
+                    caption: figure_caption(elem),
+                    image: figure_img_src(elem).and_then(|s| images.resolve(&s)),
+                    classification: None,
+                });
+            }
+        }
         "hr" => {}
         // An `<input type="checkbox|radio">` is a checkbox item; its text comes
         // from the `<label for=…>` (or wrapping label), falling back to the
@@ -407,6 +426,27 @@ fn handle_block(
         }
         // A `form_region`-classed container holding `keyN`-convention fields is a
         // docling key-value region; emit it as one instead of recursing (so the
+        // docling's `_use_footer`: everything inside a `<footer>` lands in the
+        // furniture content layer (excluded from Markdown), whatever its
+        // position in the document.
+        "footer" => {
+            let mut inner: Vec<Node> = Vec::new();
+            walk_block(elem, &mut inner, list_level, base, images);
+            for mut n in inner {
+                match &mut n {
+                    Node::ListItem { layer, .. } => *layer = Some(ContentLayer::Furniture),
+                    Node::Furniture { .. } => {}
+                    _ => {
+                        let inner_node = std::mem::replace(&mut n, Node::PageBreak);
+                        n = Node::Furniture {
+                            layer: ContentLayer::Furniture,
+                            inner: Box::new(inner_node),
+                        };
+                    }
+                }
+                nodes.push(n);
+            }
+        }
         // field divs aren't also flattened into paragraphs).
         _ if !base.raw => match detect_field_region(elem) {
             Some(items) => nodes.push(Node::FieldRegion { items }),
@@ -498,6 +538,11 @@ fn walk_list(list: ElementRef, ordered: bool, nodes: &mut Vec<Node>, level: u8, 
     // explicit `start` attribute; a plain `<ol>` carries no marker.
     let has_start = start.is_some();
     let mut number = start.unwrap_or(1);
+    // Each top-level `<ul>`/`<ol>` is its own docling list group; its first
+    // item is flagged so the Markdown serializer separates sibling lists with
+    // a blank line (nested lists at level > 0 don't need it — the serializer
+    // only splits at level 0).
+    let mut first = level == 0;
     for child in list.children() {
         let Some(li) = ElementRef::wrap(child) else {
             continue;
@@ -518,9 +563,7 @@ fn walk_list(list: ElementRef, ordered: bool, nodes: &mut Vec<Node>, level: u8, 
             nodes.push(Node::ListItem {
                 ordered,
                 number,
-                // HTML sibling lists separate only on a kind flip / ordered
-                // restart, both handled by the serializer's heuristic.
-                first_in_list: false,
+                first_in_list: std::mem::take(&mut first),
                 text,
                 level,
                 // docling's HTML backend passes an enumeration marker only for
@@ -576,32 +619,47 @@ fn collect_li_inline(li: ElementRef, base: Fmt, runs: &mut RunBuf) {
 }
 
 /// Append a `<li>`'s block content: an image folds into the item text as a
-/// `<!-- image -->` marker (so the list stays tight); nested lists are collected
-/// for emission as adjacent items. Recurses through `<div>` wrappers.
+/// `<!-- image -->` marker on its own line (with a preceding caption line when
+/// the image carries an `alt`) — docling nests such images under the list
+/// item, and both its Markdown and this folding render them inside the list;
+/// the chunker strips the markers again (its image placeholder is empty).
+/// Nested lists are collected for emission as adjacent items. Recurses through
+/// `<div>` wrappers.
 fn append_li_blocks<'a>(
     elem: ElementRef<'a>,
     text: &mut String,
     nested: &mut Vec<(&'a str, ElementRef<'a>)>,
 ) {
+    fn fold_img(text: &mut String, img: ElementRef) {
+        text.push('\n');
+        if let Some(alt) = img.value().attr("alt").filter(|a| !a.is_empty()) {
+            text.push_str(&normalize_ws(alt));
+            text.push('\n');
+        }
+        text.push_str("<!-- image -->");
+    }
     for child in elem.children().filter_map(ElementRef::wrap) {
         let e = child.value();
         if is_hidden(e) {
             continue;
         }
         match e.name() {
-            "img" => {
-                text.push('\n');
-                if let Some(alt) = e.attr("alt").filter(|a| !a.is_empty()) {
-                    text.push_str(&normalize_ws(alt));
-                    text.push('\n');
-                }
-                text.push_str("<!-- image -->");
-            }
+            "img" => fold_img(text, child),
             "ul" => nested.push(("ul", child)),
             "ol" => nested.push(("ol", child)),
             "dl" => nested.push(("dl", child)),
             "p" | "div" | "section" | "blockquote" => append_li_blocks(child, text, nested),
-            _ => {}
+            _ => {
+                // Images wrapped in inline markup (`<span typeof="mw:File">
+                // <a><img></a></span>`, Wikipedia's sister-project icons): the
+                // wrapper's text is collected inline elsewhere; only its images
+                // surface here, like a direct `<img>` child.
+                if has_descendant(child, "img") {
+                    for img in child.select(cached_selector!("img")) {
+                        fold_img(text, img);
+                    }
+                }
+            }
         }
     }
 }
@@ -734,6 +792,10 @@ struct RunBuf {
     /// the previous run with a newline (docling keeps `a<br>b` as one text item
     /// `"a\nb"`, not two runs).
     merge_next: bool,
+    /// The last pushed run is a hyperlink. `InlineRun` doesn't carry the link
+    /// (it's baked into the md string), but docling treats a hyperlink as its
+    /// own annotation — a pending `<br>` never folds across a link boundary.
+    prev_link: bool,
 }
 
 impl RunBuf {
@@ -742,15 +804,43 @@ impl RunBuf {
     fn push_rich(&mut self, run: InlineRun) {
         if self.merge_next {
             self.merge_next = false;
-            if let Some(last) = self.rich.last_mut() {
-                if same_style(last, &run) {
-                    last.text.push('\n');
-                    last.text.push_str(&run.text);
-                    return;
+            if !self.prev_link {
+                if let Some(last) = self.rich.last_mut() {
+                    if same_style(last, &run) {
+                        last.text.push('\n');
+                        last.text.push_str(&run.text);
+                        return;
+                    }
                 }
             }
+            self.drop_single_sentinel();
         }
         self.rich.push(run);
+        self.prev_link = false;
+    }
+
+    /// Append a hyperlink run. A link is its own annotation in docling, so a
+    /// pending `<br>` never folds into it — the boundary becomes a space.
+    fn push_rich_link(&mut self, run: InlineRun) {
+        if self.merge_next {
+            self.merge_next = false;
+            self.drop_single_sentinel();
+        }
+        self.rich.push(run);
+        self.prev_link = true;
+    }
+
+    /// Annotation boundary: docling's extractor attaches the `<br>` newline to
+    /// the *following* fragment, whose `strip()` removes it when the fragment
+    /// starts a new annotation — the parts then join with a single space. Drop
+    /// the single pending sentinel from the md stream (a 2+ sentinel run
+    /// stays: that's a paragraph break). The caller pushes the md run before
+    /// the rich run, so the sentinel sits one before the end.
+    fn drop_single_sentinel(&mut self) {
+        let n = self.md.len();
+        if n >= 2 && self.md[n - 2] == BR_SENTINEL && (n < 3 || self.md[n - 3] != BR_SENTINEL) {
+            self.md.remove(n - 2);
+        }
     }
 }
 
@@ -817,7 +907,11 @@ fn collect_runs(elem: ElementRef, fmt: Fmt, hyperlink: Option<&str>, runs: &mut 
                 let normalized = normalize_ws(text);
                 if !normalized.is_empty() {
                     runs.md.push(serialize_run(&normalized, fmt, hyperlink));
-                    runs.push_rich(fmt.to_inline_run(&normalized));
+                    if hyperlink.is_some() {
+                        runs.push_rich_link(fmt.to_inline_run(&normalized));
+                    } else {
+                        runs.push_rich(fmt.to_inline_run(&normalized));
+                    }
                 }
             }
             HtmlNode::Element(_) => {
@@ -927,7 +1021,11 @@ fn collect_element(elem: ElementRef, fmt: Fmt, hyperlink: Option<&str>, runs: &m
                     fmt
                 };
                 runs.md.push(serialize_run(&joined, run_fmt, link));
-                runs.push_rich(run_fmt.to_inline_run(&joined));
+                if link.is_some() {
+                    runs.push_rich_link(run_fmt.to_inline_run(&joined));
+                } else {
+                    runs.push_rich(run_fmt.to_inline_run(&joined));
+                }
             } else {
                 collect_runs(elem, fmt, link, runs);
             }
@@ -1005,7 +1103,7 @@ fn lang_from_class(class: &str) -> Option<String> {
 }
 
 fn parse_table(table: ElementRef) -> Option<Table> {
-    parse_table_cells(table, render_cell)
+    parse_table_cells(table, |cell| (render_cell(cell), is_rich_cell(cell)))
 }
 
 /// Flatten a table nested inside another table's cell, the way docling's
@@ -1020,7 +1118,7 @@ fn flatten_nested_table(table: ElementRef) -> String {
     parse_table_cells(table, |cell| {
         let mut out = String::new();
         subtree_text(cell, &mut out);
-        out.trim().to_string()
+        (out.trim().to_string(), false)
     })
     .map(|t| {
         t.rows
@@ -1086,7 +1184,7 @@ fn subtree_text(elem: ElementRef, out: &mut String) {
 
 fn parse_table_cells(
     table: ElementRef,
-    render_cell: impl Fn(ElementRef) -> String,
+    render_cell: impl Fn(ElementRef) -> (String, bool),
 ) -> Option<Table> {
     // Collect this table's own rows without descending into nested tables (a
     // recursive `select` would pull a nested table's cells into the outer grid).
@@ -1142,6 +1240,10 @@ fn parse_table_cells(
         }
         let base = (row_idx + start_row_span as isize).max(0) as usize;
 
+        // docling's `column_header` is row-level: a row is a header row only
+        // when it contains no `<td>` at all; a `<th scope=row>` label next to
+        // `<td>` data is a *row* header, not a column header.
+        let all_th = cells.iter().all(|c| c.value().name() == "th");
         let mut col = 0;
         for cell in cells {
             let colspan = span_attr(cell, "colspan");
@@ -1152,14 +1254,24 @@ fn parse_table_cells(
             while col < num_cols && base < num_rows && grid[base][col].is_some() {
                 col += 1;
             }
-            let text = render_cell(cell);
-            let is_th = cell.value().name() == "th";
+            let (text, rich) = render_cell(cell);
+            let is_th = cell.value().name() == "th" && all_th;
+            let mut anchor_filled = false;
             for r in start_row_span..start_row_span + rowspan {
                 let gr = (row_idx + r as isize).max(0) as usize;
                 for dc in 0..colspan {
                     let gc = col + dc;
                     if gr < num_rows && gc < num_cols {
-                        grid[gr][gc] = Some(text.clone());
+                        // A rich cell renders only at its anchor slot; the rest
+                        // of its span stays empty (docling serializes the same
+                        // RichTableCell once — the `visited` set blanks every
+                        // later grid occurrence). Plain cells replicate.
+                        grid[gr][gc] = Some(if rich && anchor_filled {
+                            String::new()
+                        } else {
+                            text.clone()
+                        });
+                        anchor_filled = true;
                         th_grid[gr][gc] = is_th;
                     }
                 }
@@ -1359,8 +1471,19 @@ fn cell_richness(cell: ElementRef) -> (usize, bool) {
 
 fn figure_caption(fig: ElementRef) -> Option<String> {
     if let Some(cap) = fig.select(cached_selector!("figcaption")).next() {
-        // A figure caption is plain text (formatting/links are stripped).
-        let text = normalize_ws(&cap.text().collect::<String>());
+        // A figure caption is plain text (formatting/links are stripped), but
+        // docling's `to_single_text_element` builds it per source text node:
+        // each fragment is stripped and the fragments are joined with single
+        // spaces — so tag boundaries always yield a space ("Male mallard ." for
+        // `Male <a>mallard</a>.`, "[ 49 ]" for a cite's `[`/`49`/`]` spans).
+        let mut parts: Vec<String> = Vec::new();
+        for t in cap.text() {
+            let frag = normalize_ws(t);
+            if !frag.is_empty() {
+                parts.push(frag);
+            }
+        }
+        let text = parts.join(" ");
         if !text.is_empty() {
             return Some(text);
         }

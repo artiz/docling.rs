@@ -463,34 +463,19 @@ The Standard Ebooks logo.
 
 <!-- image -->
 
-*Poetry*
-was compiled from poems published between 1831 and 1836 by
-[Sarah Louisa Forten Purvis](https://en.wikipedia.org/wiki/Sarah_Louisa_Forten_Purvis).
+*Poetry* was compiled from poems published between 1831 and 1836 by [Sarah Louisa Forten Purvis](https://en.wikipedia.org/wiki/Sarah_Louisa_Forten_Purvis).
 
-This ebook was transcribed and produced for
-[Standard Ebooks](https://standardebooks.org/)
-by
-[Weijia Cheng](https://weijiarhymeswith.asia/),
-and is based on digital scans from the
-[Internet Archive](https://standardebooks.org/ebooks/sarah-louisa-forten-purvis/poetry#page-scans).
+This ebook was transcribed and produced for [Standard Ebooks](https://standardebooks.org/) by [Weijia Cheng](https://weijiarhymeswith.asia/),
+and is based on digital scans from the [Internet Archive](https://standardebooks.org/ebooks/sarah-louisa-forten-purvis/poetry#page-scans).
 
-The cover page is adapted from
-*Sunday Morning*,
-a painting completed in 1877 by
-[Thomas Waterman Wood](https://en.wikipedia.org/wiki/Thomas_Waterman_Wood).
-The cover and title pages feature the
-**League Spartan** and **Sorts Mill Goudy**
-typefaces created in 2014 and 2009 by
-[The League of Moveable Type](https://www.theleagueofmoveabletype.com/).
+The cover page is adapted from *Sunday Morning*,
+a painting completed in 1877 by [Thomas Waterman Wood](https://en.wikipedia.org/wiki/Thomas_Waterman_Wood).
+The cover and title pages feature the **League Spartan** and **Sorts Mill Goudy** typefaces created in 2014 and 2009 by [The League of Moveable Type](https://www.theleagueofmoveabletype.com/).
 
-This edition was released on
-**May 21, 2026, 6:29** **p.m.**
-and is based on
-**revision 936122b**.
+This edition was released on **May 21, 2026, 6:29** **p.m.** and is based on **revision 936122b**.
 The first edition of this ebook was released on
 December 6, 2023, 8:52 p.m.
-You can check for updates to this ebook, view its revision history, or download it for different ereading systems at
-[standardebooks.org/ebooks/sarah-louisa-forten-purvis/poetry](https://standardebooks.org/ebooks/sarah-louisa-forten-purvis/poetry).
+You can check for updates to this ebook, view its revision history, or download it for different ereading systems at [standardebooks.org/ebooks/sarah-louisa-forten-purvis/poetry](https://standardebooks.org/ebooks/sarah-louisa-forten-purvis/poetry).
 
 The volunteer-driven Standard Ebooks project relies on readers like you to submit typos, corrections, and other improvements. Anyone can contribute at [standardebooks.org](https://standardebooks.org/).
 
