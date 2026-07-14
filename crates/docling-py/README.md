@@ -107,14 +107,36 @@ accepted for API compatibility but do not change the pipeline. `InputFormat`,
 `accelerator_options.device` (`CUDA`/`MPS`) is accepted but warns and falls back
 to CPU — the engine runs ONNX Runtime on the CPU execution provider.
 
+## Chunking
+
+`docling_rs.chunking` ships the **Rust-native** ports of docling's chunkers
+(`docling::chunker`), API-shaped like `docling.chunking`:
+
+```python
+from docling_rs import DocumentConverter
+from docling_rs.chunking import HierarchicalChunker, HybridChunker
+
+doc = DocumentConverter().convert("report.docx").document
+
+for chunk in HierarchicalChunker().chunk(doc):        # structure-driven
+    print(chunk.meta.headings, chunk.text)
+
+chunker = HybridChunker(tokenizer="tokenizer.json", max_tokens=256)
+for chunk in chunker.chunk(doc):                       # tokenization-aware
+    embed_me = chunker.contextualize(chunk)            # heading path + text
+```
+
+Two deltas from docling: `HybridChunker(tokenizer=...)` takes a **path to a
+HuggingFace `tokenizer.json`** (loaded natively — no `transformers` install),
+and `chunk.meta.doc_items` holds the items' JSON-pointer refs. Since
+`result.document` is a genuine `docling_core` `DoclingDocument`, docling's own
+Python chunkers (`pip install "docling-core[chunking]"`) also keep working on
+it — the native classes are the faster, dependency-free path.
+
 ## Not covered (yet)
 
 VLM/enrichment pipelines, GPU accelerator devices (the engine is ONNX Runtime on
-CPU), and per-format *backend* selection. Chunkers **are** available — the
-returned object is a real `docling_core` `DoclingDocument`, so
-`docling_core.transforms.chunker`'s `HierarchicalChunker` / `HybridChunker`
-operate on it directly (install docling-core's own extras for those:
-`pip install "docling-core[chunking]"`). The document carries rendered text for
+CPU), and per-format *backend* selection. The document carries rendered text for
 inline formatting rather than structured `formatting` fields — see
 `MIGRATION.md` §4 for the documented divergences.
 

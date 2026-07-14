@@ -89,6 +89,29 @@ async function convertAsync(input, options) {
   return native.convertAsync(input, options)
 }
 
+// --- guarded chunking functions ---------------------------------------------
+
+function chunkFile(path, options) {
+  assertMlReady(mlFormatOf(path))
+  return native.chunkFile(path, options)
+}
+
+function chunk(input, options) {
+  assertMlReady(mlFormatOf(input && input.name, input && input.format))
+  return native.chunk(input, options)
+}
+
+// async so a guard failure surfaces as a rejected promise, not a sync throw.
+async function chunkFileAsync(path, options) {
+  assertMlReady(mlFormatOf(path))
+  return native.chunkFileAsync(path, options)
+}
+
+async function chunkAsync(input, options) {
+  assertMlReady(mlFormatOf(input && input.name, input && input.format))
+  return native.chunkAsync(input, options)
+}
+
 // --- guarded classes --------------------------------------------------------
 
 class DocumentConverter {
@@ -202,6 +225,13 @@ module.exports.convert = convert
 module.exports.convertFile = convertFile
 module.exports.convertAsync = convertAsync
 module.exports.convertFileAsync = convertFileAsync
+module.exports.chunk = chunk
+module.exports.chunkFile = chunkFile
+module.exports.chunkAsync = chunkAsync
+module.exports.chunkFileAsync = chunkFileAsync
+// Chunking an already-converted JSON document touches no ML models — unguarded.
+module.exports.chunkDocument = native.chunkDocument
+module.exports.chunkDocumentAsync = native.chunkDocumentAsync
 module.exports.DocumentConverter = DocumentConverter
 module.exports.Pipeline = Pipeline
 module.exports.streamFileMarkdown = streamFileMarkdown

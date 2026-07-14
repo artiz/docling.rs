@@ -8,9 +8,19 @@ import type {
   ConvertOptions,
   ConvertInput,
   ConvertResult,
+  ChunkOptions,
+  Chunk,
 } from './native'
 
-export type { ConverterOptions, OutputOptions, ConvertOptions, ConvertInput, ConvertResult }
+export type {
+  ConverterOptions,
+  OutputOptions,
+  ConvertOptions,
+  ConvertInput,
+  ConvertResult,
+  ChunkOptions,
+  Chunk,
+}
 
 // Format helpers pass straight through from the native binding.
 export { supportedFormats, formatFromName } from './native'
@@ -26,6 +36,27 @@ export declare function convert(input: ConvertInput, options?: ConvertOptions | 
 export declare function convertFileAsync(path: string, options?: ConvertOptions | null): Promise<ConvertResult>
 /** Async (Promise) bytes conversion, off the event loop. */
 export declare function convertAsync(input: ConvertInput, options?: ConvertOptions | null): Promise<ConvertResult>
+
+/**
+ * Chunk a file with docling's chunkers: convert it, then run the hierarchical
+ * (default) or hybrid (`chunker: 'hybrid'` + `tokenizer`) chunker over the
+ * document. Throws for PDF/image/METS if deps aren't installed.
+ */
+export declare function chunkFile(path: string, options?: ChunkOptions | null): Array<Chunk>
+/** Async (Promise) {@link chunkFile}; conversion + chunking run off the event loop. */
+export declare function chunkFileAsync(path: string, options?: ChunkOptions | null): Promise<Array<Chunk>>
+/** Chunk in-memory bytes (same input contract as {@link convert}). */
+export declare function chunk(input: ConvertInput, options?: ChunkOptions | null): Array<Chunk>
+/** Async (Promise) {@link chunk}. */
+export declare function chunkAsync(input: ConvertInput, options?: ChunkOptions | null): Promise<Array<Chunk>>
+/**
+ * Chunk an already-converted document, passed as docling-core JSON (the
+ * `content` of a `convert*` call with `to: 'json'`) — so a document converted
+ * once (e.g. through the warm PDF {@link Pipeline}) chunks without re-converting.
+ */
+export declare function chunkDocument(documentJson: string, options?: ChunkOptions | null): Array<Chunk>
+/** Async (Promise) {@link chunkDocument}. */
+export declare function chunkDocumentAsync(documentJson: string, options?: ChunkOptions | null): Promise<Array<Chunk>>
 
 /** A reusable converter holding config (strict / fetchImages / allowedFormats). */
 export declare class DocumentConverter {

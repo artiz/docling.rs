@@ -23,8 +23,10 @@ name = "docling_py"
 crate-type = ["cdylib"]
 
 [dependencies]
-docling = { path = "../docling" }
+# `chunking` enables the HF-tokenizer-backed HybridChunker for docling_rs.chunking.
+docling = { path = "../docling", features = ["chunking"] }
 pyo3 = { version = "0.23", features = ["abi3-py39", "extension-module"] }
+serde_json = "1"
 
 [profile.release]
 lto = "thin"

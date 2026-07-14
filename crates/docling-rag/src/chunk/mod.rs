@@ -7,10 +7,56 @@
 
 mod markdown;
 
-use crate::config::ChunkUnit;
+use crate::config::{ChunkUnit, ChunkerKind};
 use crate::model::Chunk;
+use crate::{RagError, Result};
 
 pub use markdown::Section;
+
+/// Chunk a converted document with docling's structure-aware chunkers
+/// (`RAG_CHUNKER=hierarchical|hybrid`), mapping each `DocChunk` onto a
+/// retrievable [`Chunk`]. The embedded text is docling's `contextualize()`
+/// rendering (heading path + chunk body), the analogue of the window chunker's
+/// heading-context prefix; the heading path and source item refs are kept as
+/// chunk metadata.
+pub fn docling_chunks(
+    doc_id: &str,
+    document: &docling::DoclingDocument,
+    kind: ChunkerKind,
+    tokenizer: Option<&str>,
+    max_tokens: usize,
+) -> Result<Vec<Chunk>> {
+    use docling::chunker::{contextualize, HierarchicalChunker, HybridChunker};
+    let chunks = match kind {
+        ChunkerKind::Hierarchical => HierarchicalChunker.chunk(document),
+        ChunkerKind::Hybrid => {
+            let path = tokenizer
+                .ok_or_else(|| RagError::config("RAG_CHUNKER=hybrid needs RAG_CHUNK_TOKENIZER"))?;
+            let tok = docling::chunker::HuggingFaceTokenizer::from_file(path, max_tokens)
+                .map_err(RagError::config)?;
+            HybridChunker::new(tok).chunk(document)
+        }
+        ChunkerKind::Window => {
+            return Err(RagError::config(
+                "docling_chunks handles the hierarchical/hybrid chunkers only",
+            ))
+        }
+    };
+    Ok(chunks
+        .iter()
+        .enumerate()
+        .map(|(i, c)| {
+            let text = contextualize(c);
+            let words = text.split_whitespace().count();
+            let mut chunk = Chunk::new(doc_id, i as i64, text, words as i64);
+            chunk.metadata = serde_json::json!({
+                "headings": c.headings,
+                "doc_items": c.doc_items.iter().map(|d| d.self_ref.clone()).collect::<Vec<_>>(),
+            });
+            chunk
+        })
+        .collect())
+}
 
 /// Words per token, used to convert a token budget into a word budget when
 /// `unit == Token` (English text averages ≈1.3 tokens/word).
@@ -379,5 +425,52 @@ final words of the document";
         assert_eq!(body_word_count(&chunks[0]), 30);
         // token_count is reported back in tokens (30 words / 0.75 = 40).
         assert_eq!(chunks[0].token_count, 40);
+    }
+}
+
+#[cfg(test)]
+mod docling_chunker_tests {
+    use super::*;
+
+    fn convert(md: &str) -> docling::DoclingDocument {
+        let src = docling::SourceDocument::from_bytes("t.md", docling::InputFormat::Md, md.into());
+        docling::DocumentConverter::new()
+            .convert(src)
+            .expect("convert")
+            .document
+    }
+
+    #[test]
+    fn hierarchical_maps_docchunks_onto_rag_chunks() {
+        let doc = convert("# Guide\n\n## Setup\n\nInstall the tools.\n\n- clone\n- build\n");
+        let chunks =
+            docling_chunks("doc-1", &doc, ChunkerKind::Hierarchical, None, 0).expect("chunk");
+        assert!(chunks.len() >= 2);
+        let setup = chunks
+            .iter()
+            .find(|c| c.text.contains("Install"))
+            .expect("setup chunk");
+        // Embedded text is the contextualized rendering (heading path + body).
+        assert_eq!(setup.text, "Guide\nSetup\nInstall the tools.");
+        assert_eq!(setup.doc_id, "doc-1");
+        assert_eq!(setup.metadata["headings"][1], "Setup");
+        assert!(setup.metadata["doc_items"][0]
+            .as_str()
+            .unwrap()
+            .starts_with("#/"));
+        // Ordinals are the chunk sequence.
+        assert!(chunks.windows(2).all(|w| w[0].ordinal + 1 == w[1].ordinal));
+    }
+
+    #[test]
+    fn hybrid_without_tokenizer_is_a_config_error() {
+        let doc = convert("# A\n\ntext\n");
+        assert!(docling_chunks("d", &doc, ChunkerKind::Hybrid, None, 256).is_err());
+    }
+
+    #[test]
+    fn window_kind_is_rejected() {
+        let doc = convert("# A\n\ntext\n");
+        assert!(docling_chunks("d", &doc, ChunkerKind::Window, None, 0).is_err());
     }
 }

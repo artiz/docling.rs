@@ -45,7 +45,8 @@ snapshot baseline. See [`MIGRATION.md`](./MIGRATION.md) and
 
 [`crates/docling-rag`](./crates/docling-rag) builds a pluggable
 Retrieval-Augmented-Generation layer on top of the converter: it turns documents
-into Markdown, chunks them (configurable size / overlap), embeds the chunks, and
+into Markdown, chunks them (streaming sliding window, or docling's
+hierarchical/hybrid chunkers via `RAG_CHUNKER`), embeds the chunks, and
 stores them in a vector database for semantic search. Every external dependency is
 a swappable trait — embedders (**Ollama**/Gemini/local-ONNX), vector stores
 (**SQLite+sqlite-vec**/PostgreSQL+pgvector), LLM (**OpenRouter**, DeepSeek-V3 by default),
@@ -148,7 +149,11 @@ heading path. `HybridChunker` refines them with a tokenizer: splits oversized
 chunks (at item boundaries, then with docling's `semchunk` algorithm inside
 text; tables line-by-line), and merges undersized same-heading neighbours. The
 HuggingFace tokenizer (MiniLM etc.) sits behind the `chunking` cargo feature;
-`--to chunks` dumps both chunkers' records from the CLI. Conformance vs
+`--to chunks` dumps both chunkers' records from the CLI. The chunkers are also
+exposed in the [Node bindings](./crates/docling-node) (`chunkFile` /
+`chunkDocument` + async variants), the
+[Python bindings](./crates/docling-py) (`docling_rs.chunking`), and the
+[RAG subsystem](./crates/docling-rag) (`RAG_CHUNKER=hierarchical|hybrid`). Conformance vs
 docling's chunkers over the 83-doc corpus (`scripts/conformance/
 chunks_conformance.sh`): **hierarchical 91% / hybrid 87% identical chunk
 records** (text + headings), 77 and 74 of 83 documents fully exact.
