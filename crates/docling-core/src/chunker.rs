@@ -886,7 +886,7 @@ fn inline_segments_tagged(md: &str) -> Vec<(String, bool)> {
     while i < n {
         let rest: String = chars[i..].iter().collect();
         // A hyperlink span (not an image): the whole `[text](url)` is one item.
-        // The URL may itself contain balanced parentheses (`/wiki/Duck_(film)`),
+        // The URL may itself contain balanced parentheses (`/Duck_(film)`),
         // so the closing `)` is found by paren depth, not first match.
         if chars[i] == '[' && !rest.starts_with("[](") {
             // The label may itself contain balanced brackets (`[[ 1 ]](#ref)`

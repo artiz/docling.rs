@@ -261,10 +261,10 @@ fn walk_block(
                         collect_element(cref, base, None, &mut inline);
                     }
                 } else if has_descendant(cref, "img") {
-                    // An inline wrapper (`<span typeof="mw:File"><a><img></a></span>`,
-                    // Wikipedia's indicator/edit icons): docling's `img` is in its
-                    // block-tag set, so the wrapper is block-walked and the image
-                    // emits a Picture captioned with its `alt` text.
+                    // An inline wrapper around an image (`<span><a><img></a></span>`):
+                    // docling's `img` is in its block-tag set, so the wrapper is
+                    // block-walked and the image emits a Picture captioned with its
+                    // `alt` text.
                     flush_inline(&mut inline, nodes);
                     walk_block(cref, nodes, list_level, base, images);
                 } else {
@@ -650,10 +650,9 @@ fn append_li_blocks<'a>(
             "dl" => nested.push(("dl", child)),
             "p" | "div" | "section" | "blockquote" => append_li_blocks(child, text, nested),
             _ => {
-                // Images wrapped in inline markup (`<span typeof="mw:File">
-                // <a><img></a></span>`, Wikipedia's sister-project icons): the
-                // wrapper's text is collected inline elsewhere; only its images
-                // surface here, like a direct `<img>` child.
+                // Images wrapped in inline markup (`<span><a><img></a></span>`):
+                // the wrapper's text is collected inline elsewhere; only its
+                // images surface here, like a direct `<img>` child.
                 if has_descendant(child, "img") {
                     for img in child.select(cached_selector!("img")) {
                         fold_img(text, img);
@@ -1474,8 +1473,8 @@ fn figure_caption(fig: ElementRef) -> Option<String> {
         // A figure caption is plain text (formatting/links are stripped), but
         // docling's `to_single_text_element` builds it per source text node:
         // each fragment is stripped and the fragments are joined with single
-        // spaces — so tag boundaries always yield a space ("Male mallard ." for
-        // `Male <a>mallard</a>.`, "[ 49 ]" for a cite's `[`/`49`/`]` spans).
+        // spaces — so tag boundaries always yield a space ("a b ." for
+        // `a <a>b</a>.`, "[ 49 ]" for a cite's `[`/`49`/`]` spans).
         let mut parts: Vec<String> = Vec::new();
         for t in cap.text() {
             let frag = normalize_ws(t);
