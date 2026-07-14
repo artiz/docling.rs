@@ -23,6 +23,39 @@ use docling::{ConversionStatus, SourceDocument};
 // `except ConversionError`). Re-exported from the Python package.
 pyo3::create_exception!(_native, ConversionError, PyException);
 
+/// Run `work` on a background thread while this (Python) thread waits with the
+/// GIL released, polling `Python::check_signals` so Ctrl-C raises
+/// `KeyboardInterrupt` promptly instead of stalling until the native call
+/// returns. On interrupt the worker is left to finish detached and its result
+/// is dropped; a conversion already in flight cannot be cancelled mid-parse.
+fn run_interruptible<T, F>(py: Python<'_>, work: F) -> PyResult<T>
+where
+    T: Send + 'static,
+    F: FnOnce() -> PyResult<T> + Send + 'static,
+{
+    use std::sync::mpsc::{channel, RecvTimeoutError};
+    use std::sync::Mutex;
+    use std::time::Duration;
+
+    let (tx, rx) = channel();
+    // Mutex only to make the receiver Sync for `allow_threads`; never contended.
+    let rx = Mutex::new(rx);
+    std::thread::spawn(move || {
+        let _ = tx.send(work());
+    });
+    loop {
+        let received =
+            py.allow_threads(|| rx.lock().unwrap().recv_timeout(Duration::from_millis(100)));
+        match received {
+            Ok(result) => return result,
+            Err(RecvTimeoutError::Timeout) => py.check_signals()?,
+            Err(RecvTimeoutError::Disconnected) => {
+                return Err(ConversionError::new_err("conversion worker panicked"))
+            }
+        }
+    }
+}
+
 /// The Rust processor's result: a conversion status, the input name, and the
 /// document as docling-core's JSON wire format. The Python layer validates the
 /// JSON into a genuine `DoclingDocument`.
@@ -44,8 +77,9 @@ struct PyDocumentConverter {
     inner: docling::DocumentConverter,
     /// A persistent, primed PDF pipeline once `initialize_pipeline` runs — so
     /// PDFs reuse its warm models across `convert` calls instead of reloading
-    /// them each time (the transient path `inner` takes otherwise).
-    pdf_pipeline: std::sync::Mutex<Option<docling::Pipeline>>,
+    /// them each time (the transient path `inner` takes otherwise). `Arc` so
+    /// the interruptible worker threads can own a handle to it.
+    pdf_pipeline: std::sync::Arc<std::sync::Mutex<Option<docling::Pipeline>>>,
     no_ocr: bool,
     no_table_former: bool,
 }
@@ -97,7 +131,7 @@ impl PyDocumentConverter {
                 .no_ocr(!do_ocr)
                 .no_table_former(!do_table_structure)
                 .use_web_browser(use_web_browser),
-            pdf_pipeline: std::sync::Mutex::new(None),
+            pdf_pipeline: std::sync::Arc::new(std::sync::Mutex::new(None)),
             no_ocr: !do_ocr,
             no_table_former: !do_table_structure,
         })
@@ -117,21 +151,28 @@ impl PyDocumentConverter {
         if !is_ml {
             return Ok(());
         }
-        let mut slot = self.pdf_pipeline.lock().unwrap();
-        if slot.is_none() {
-            let mut pipeline = docling::Pipeline::new()
-                .map_err(|e| ConversionError::new_err(e.to_string()))?
-                .no_table_former(self.no_table_former)
-                .no_ocr(self.no_ocr);
-            py.allow_threads(|| pipeline.warm_up())
-                .map_err(|e| ConversionError::new_err(e.to_string()))?;
-            *slot = Some(pipeline);
-        }
-        Ok(())
+        let slot = std::sync::Arc::clone(&self.pdf_pipeline);
+        let no_table_former = self.no_table_former;
+        let no_ocr = self.no_ocr;
+        run_interruptible(py, move || {
+            let mut slot = slot.lock().unwrap();
+            if slot.is_none() {
+                let mut pipeline = docling::Pipeline::new()
+                    .map_err(|e| ConversionError::new_err(e.to_string()))?
+                    .no_table_former(no_table_former)
+                    .no_ocr(no_ocr);
+                pipeline
+                    .warm_up()
+                    .map_err(|e| ConversionError::new_err(e.to_string()))?;
+                *slot = Some(pipeline);
+            }
+            Ok(())
+        })
     }
 
     /// Convert a document from a filesystem path (str / os.PathLike).
-    /// Releases the GIL for the (potentially long) conversion.
+    /// Runs the (potentially long) conversion off the Python thread with the
+    /// GIL released, so Ctrl-C interrupts it.
     fn convert(&self, py: Python<'_>, source: PathLike) -> PyResult<PyNativeResult> {
         let src = SourceDocument::from_file(&source.0)
             .map_err(|e| ConversionError::new_err(e.to_string()))?;
@@ -163,23 +204,30 @@ impl PyDocumentConverter {
     /// pipeline when `initialize_pipeline` has primed it (otherwise the transient
     /// `inner` path, which reloads models per call).
     fn convert_source(&self, py: Python<'_>, src: SourceDocument) -> PyResult<PyNativeResult> {
-        if src.format == docling::InputFormat::Pdf {
-            let mut slot = self.pdf_pipeline.lock().unwrap();
-            if let Some(pipeline) = slot.as_mut() {
-                let doc = py
-                    .allow_threads(|| pipeline.convert(&src.bytes, None, &src.name))
+        if src.format == docling::InputFormat::Pdf && self.pdf_pipeline.lock().unwrap().is_some() {
+            let slot = std::sync::Arc::clone(&self.pdf_pipeline);
+            return run_interruptible(py, move || {
+                let mut slot = slot.lock().unwrap();
+                let pipeline = slot
+                    .as_mut()
+                    .ok_or_else(|| ConversionError::new_err("PDF pipeline not initialized"))?;
+                let doc = pipeline
+                    .convert(&src.bytes, None, &src.name)
                     .map_err(|e| ConversionError::new_err(e.to_string()))?;
-                return Ok(PyNativeResult {
+                Ok(PyNativeResult {
                     status: "success".to_string(),
                     input_name: src.name,
                     document_json: doc.export_to_json(),
-                });
-            }
+                })
+            });
         }
-        let result = py
-            .allow_threads(|| self.inner.convert(src))
-            .map_err(|e| ConversionError::new_err(e.to_string()))?;
-        Ok(native_result(result))
+        let converter = self.inner.clone();
+        run_interruptible(py, move || {
+            let result = converter
+                .convert(src)
+                .map_err(|e| ConversionError::new_err(e.to_string()))?;
+            Ok(native_result(result))
+        })
     }
 }
 
@@ -242,7 +290,8 @@ fn native_result(r: docling::ConversionResult) -> PyNativeResult {
 /// path `scripts/install/download_dependencies.sh` populates) when `None`.
 /// Returns a JSON array of records `{text, headings, doc_items, contextualize}`
 /// — the Python layer (`docling_rs.chunking`) turns them into docling-shaped
-/// chunk objects. Releases the GIL for the parse + chunking.
+/// chunk objects. Runs the parse + chunking off the Python thread with the
+/// GIL released, so Ctrl-C interrupts it.
 #[pyfunction]
 #[pyo3(signature = (document_json, hybrid = false, tokenizer = None, max_tokens = 256, merge_peers = true))]
 fn chunk_document(
@@ -253,7 +302,7 @@ fn chunk_document(
     max_tokens: usize,
     merge_peers: bool,
 ) -> PyResult<String> {
-    py.allow_threads(move || {
+    run_interruptible(py, move || {
         use docling::chunker::{contextualize, HierarchicalChunker, HybridChunker};
         let source = SourceDocument::from_bytes(
             "document",
