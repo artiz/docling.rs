@@ -95,12 +95,12 @@ This page is always in light mode.
 
 From Wikibooks, open books for an open world
 
-| Chicken Tikka   | Chicken Tikka   |
-|-----------------|-----------------|
-|                 |                 |
-| Servings        | 4               |
-| Time            | 30 minutes      |
-| Difficulty      |                 |
+| Chicken Tikka                            | Chicken Tikka        |
+|------------------------------------------|----------------------|
+| The cooked Chicken Tikka  <!-- image --> |                      |
+| Servings                                 | 4                    |
+| Time                                     | 30 minutes           |
+| Difficulty                               | Easy  <!-- image --> |
 
 [Cookbook](https://en.wikibooks.org/wiki/Cookbook:Table_of_Contents) | [Recipes](https://en.wikibooks.org/wiki/Cookbook:Recipes) | [Ingredients](https://en.wikibooks.org/wiki/Cookbook:Ingredients) | [Equipment](https://en.wikibooks.org/wiki/Cookbook:Equipment) | [Techniques](https://en.wikibooks.org/wiki/Cookbook:Cooking_Techniques) | [Cookbook Disambiguation Pages](https://en.wikibooks.org/wiki/Category:Cookbook_disambiguation_pages) | [Recipes](https://en.wikibooks.org/wiki/Category:Recipes) | [Meat recipes](https://en.wikibooks.org/wiki/Cookbook:Meat_Recipes) | [Cuisine of India](https://en.wikibooks.org/wiki/Cookbook:Cuisine_of_India)
 
@@ -178,16 +178,6 @@ Hidden categories:
 
 - [Recipes with images](https://en.wikibooks.org/wiki/Category:Recipes_with_images)
 - [Featured recipes](https://en.wikibooks.org/wiki/Category:Featured_recipes)
-- This page was last edited on 3 February 2026, at 02:39.
-- Text is available under the [Creative Commons Attribution-ShareAlike License](https://creativecommons.org/licenses/by-sa/4.0/) ; additional terms may apply. By using this site, you agree to the [Terms of Use](https://foundation.wikimedia.org/wiki/Special:MyLanguage/Policy:Terms_of_Use) and [Privacy Policy.](https://foundation.wikimedia.org/wiki/Special:MyLanguage/Policy:Privacy_policy)
-- [Privacy policy](https://foundation.wikimedia.org/wiki/Special:MyLanguage/Policy:Privacy_policy)
-- [About Wikibooks](https://en.wikibooks.org/wiki/Wikibooks:Welcome)
-- [Disclaimers](https://en.wikibooks.org/wiki/Wikibooks:General_disclaimer)
-- [Code of Conduct](https://foundation.wikimedia.org/wiki/Special:MyLanguage/Policy:Universal_Code_of_Conduct)
-- [Developers](https://developer.wikimedia.org/)
-- [Statistics](https://stats.wikimedia.org/#/en.wikibooks.org)
-- [Cookie statement](https://foundation.wikimedia.org/wiki/Special:MyLanguage/Policy:Cookie_statement)
-- [Mobile view](https://en.wikibooks.org/w/index.php?title=Cookbook:Chicken_Tikka&mobileaction=toggle_view_mobile)
 
 Search
 

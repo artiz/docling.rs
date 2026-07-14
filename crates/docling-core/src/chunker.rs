@@ -346,8 +346,21 @@ impl Walker<'_> {
                 // An item that carries both inline spans and a nested list is an
                 // empty list item wrapping an inline group in docling's model:
                 // its marker and each inline span are separate doc items.
+                // docling represents a list item whose content is not pure
+                // inline text (it carries a nested list or child pictures) as
+                // an empty item wrapping an inline group: its marker and each
+                // inline span become separate doc items.
+                // docling represents a list item whose content is not pure
+                // inline text (it carries a nested list or its own images) as
+                // an empty item wrapping an inline group: its marker and each
+                // inline span become separate doc items. The chunker's
+                // image placeholder is empty, so the markers are stripped from
+                // the text before segmentation.
+                let has_pics = text.contains("<!-- image -->");
+                let text = strip_image_markers(text);
+                let text = text.as_str();
                 let segments = inline_segments(text);
-                if has_nested && segments.len() > 1 && text.contains("](") {
+                if (has_nested || has_pics) && segments.len() > 1 && text.contains("](") {
                     out.push(ChunkItem {
                         self_ref: item_ref.clone(),
                         kind: ChunkItemKind::Text,
@@ -665,9 +678,28 @@ fn render_list(items: &[Node]) -> String {
         } else {
             "-".to_string()
         };
-        lines.push(format!("{indent}{marker} {}", unescape_text(text)));
+        lines.push(format!(
+            "{indent}{marker} {}",
+            unescape_text(&strip_image_markers(text))
+        ));
     }
     lines.join("\n")
+}
+
+/// Strip the Markdown image placeholders a list item's own images fold into
+/// its text (the chunking serializer's `image_placeholder` is empty, so
+/// docling's chunk text carries no marker), collapsing the newlines that
+/// carried them.
+fn strip_image_markers(text: &str) -> String {
+    if !text.contains("<!-- image -->") {
+        return text.to_string();
+    }
+    let cleaned: Vec<&str> = text
+        .split('\n')
+        .map(str::trim_end)
+        .filter(|l| *l != "<!-- image -->")
+        .collect();
+    cleaned.join("\n").trim_end().to_string()
 }
 
 /// docling-core's `_humanize_text`: underscores to spaces, first letter
@@ -876,9 +908,40 @@ fn inline_segments_tagged(md: &str) -> Vec<(String, bool)> {
     while i < n {
         let rest: String = chars[i..].iter().collect();
         // A hyperlink span (not an image): the whole `[text](url)` is one item.
+        // The URL may itself contain balanced parentheses (`/Duck_(film)`),
+        // so the closing `)` is found by paren depth, not first match.
         if chars[i] == '[' && !rest.starts_with("[](") {
-            if let Some(close) = find(i + 1, "](") {
-                if let Some(endp) = find(close + 2, ")") {
+            // The label may itself contain balanced brackets (`[[ 1 ]](#ref)`
+            // has label `[ 1 ]`), but an *unbalanced* `[` means this bracket is
+            // plain text preceding a real link (`[ [*note*](url) ]`).
+            let balanced = |c: usize| {
+                let mut d = 0i32;
+                for &ch in &chars[i + 1..c] {
+                    match ch {
+                        '[' => d += 1,
+                        ']' => d -= 1,
+                        _ => {}
+                    }
+                }
+                d == 0
+            };
+            if let Some(close) = find(i + 1, "](").filter(|&c| balanced(c)) {
+                let mut depth = 0usize;
+                let mut url_end = None;
+                for (k, &c) in chars.iter().enumerate().skip(close + 2) {
+                    match c {
+                        '(' => depth += 1,
+                        ')' => {
+                            if depth == 0 {
+                                url_end = Some(k);
+                                break;
+                            }
+                            depth -= 1;
+                        }
+                        _ => {}
+                    }
+                }
+                if let Some(endp) = url_end {
                     flush(&mut out, &mut plain, true, after_span);
                     out.push((
                         unescape_text(&chars[i..=endp].iter().collect::<String>()),
@@ -897,7 +960,11 @@ fn inline_segments_tagged(md: &str) -> Vec<(String, bool)> {
             if rest.starts_with(marker) {
                 let mlen = marker.chars().count();
                 if let Some(end) = find(i + mlen, marker) {
-                    if end > i + mlen {
+                    // A whitespace-only span (`* *` from a literal asterisk in
+                    // running text next to a real italic) is not a docling run:
+                    // treat the marker as plain text.
+                    let inner_blank = chars[i + mlen..end].iter().all(|c| c.is_whitespace());
+                    if end > i + mlen && !inner_blank {
                         flush(&mut out, &mut plain, true, after_span);
                         if marker == "`" {
                             let inner: String = chars[i + 1..end].iter().collect();
@@ -958,22 +1025,26 @@ fn split_plain_by_runs(segment: &str, runs: &[crate::InlineRun]) -> Option<Vec<S
     if target.is_empty() {
         return None;
     }
-    let unmarked: Vec<&str> = runs
+    let plainish =
+        |r: &crate::InlineRun| !r.bold && !r.italic && !r.strike && !r.code && !r.formula;
+    let fully_plain =
+        |r: &crate::InlineRun| plainish(r) && !r.underline && r.script == crate::Script::Baseline;
+    let unmarked: Vec<(&str, bool)> = runs
         .iter()
-        .filter(|r| !r.bold && !r.italic && !r.strike && !r.code && !r.formula)
-        .map(|r| r.text.as_str())
+        .filter(|r| plainish(r))
+        .map(|r| (r.text.as_str(), fully_plain(r)))
         .collect();
     for start in 0..unmarked.len() {
         let mut rest = target;
-        let mut taken: Vec<String> = Vec::new();
-        for t in &unmarked[start..] {
+        let mut taken: Vec<(String, bool)> = Vec::new();
+        for (t, fully) in &unmarked[start..] {
             let t = t.trim();
             if t.is_empty() {
                 continue;
             }
             match rest.strip_prefix(t) {
                 Some(r) => {
-                    taken.push(unescape_text(t));
+                    taken.push((unescape_text(t), *fully));
                     rest = r.trim_start();
                     if rest.is_empty() {
                         break;
@@ -983,7 +1054,24 @@ fn split_plain_by_runs(segment: &str, runs: &[crate::InlineRun]) -> Option<Vec<S
             }
         }
         if rest.is_empty() && taken.len() >= 2 {
-            return Some(taken);
+            // Consecutive fully-plain pieces (no underline / sub / sup) are one
+            // annotation in docling's model — `simplify_text_elements` merges
+            // them joined with a space, so they never split between themselves.
+            // Only an underline / sub / sup run is a genuine boundary.
+            let mut merged: Vec<(String, bool)> = Vec::new();
+            for (t, fully) in taken {
+                match merged.last_mut() {
+                    Some((last, true)) if fully => {
+                        last.push(' ');
+                        last.push_str(&t);
+                    }
+                    _ => merged.push((t, fully)),
+                }
+            }
+            if merged.len() >= 2 {
+                return Some(merged.into_iter().map(|(t, _)| t).collect());
+            }
+            return None;
         }
     }
     None

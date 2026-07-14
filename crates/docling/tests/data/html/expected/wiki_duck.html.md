@@ -222,6 +222,10 @@ move to sidebar
 
 hide
 
+Page semi-protected
+
+<!-- image -->
+
 From Wikipedia, the free encyclopedia
 
 (Redirected from [Duckling](/w/index.php?title=Duckling&redirect=no) )
@@ -230,20 +234,20 @@ This article is about the bird. For duck as a food, see [Duck as food](/wiki/Duc
 
 "Duckling" redirects here. For other uses, see [Duckling (disambiguation)](/wiki/Duckling_(disambiguation)) .
 
-| Duck                                                   | Duck                                                   |
-|--------------------------------------------------------|--------------------------------------------------------|
-|                                                        |                                                        |
-| [Bufflehead](/wiki/Bufflehead) ( *Bucephala albeola* ) | [Bufflehead](/wiki/Bufflehead) ( *Bucephala albeola* ) |
-| [Scientific classification](/wiki/Taxonomy_(biology))  | [Scientific classification](/wiki/Taxonomy_(biology))  |
-| Domain:                                                | [Eukaryota](/wiki/Eukaryote)                           |
-| Kingdom:                                               | [Animalia](/wiki/Animal)                               |
-| Phylum:                                                | [Chordata](/wiki/Chordate)                             |
-| Class:                                                 | [Aves](/wiki/Bird)                                     |
-| Order:                                                 | [Anseriformes](/wiki/Anseriformes)                     |
-| Superfamily:                                           | [Anatoidea](/wiki/Anatoidea)                           |
-| Family:                                                | [Anatidae](/wiki/Anatidae)                             |
-| Subfamilies                                            | Subfamilies                                            |
-| See text                                               | See text                                               |
+| Duck                                                                                            | Duck                               |
+|-------------------------------------------------------------------------------------------------|------------------------------------|
+| <!-- image -->                                                                                  |                                    |
+| [Bufflehead](/wiki/Bufflehead) ( *Bucephala albeola* )                                          |                                    |
+| [Scientific classification](/wiki/Taxonomy_(biology))  Edit this classification  <!-- image --> |                                    |
+| Domain:                                                                                         | [Eukaryota](/wiki/Eukaryote)       |
+| Kingdom:                                                                                        | [Animalia](/wiki/Animal)           |
+| Phylum:                                                                                         | [Chordata](/wiki/Chordate)         |
+| Class:                                                                                          | [Aves](/wiki/Bird)                 |
+| Order:                                                                                          | [Anseriformes](/wiki/Anseriformes) |
+| Superfamily:                                                                                    | [Anatoidea](/wiki/Anatoidea)       |
+| Family:                                                                                         | [Anatidae](/wiki/Anatidae)         |
+| Subfamilies                                                                                     | Subfamilies                        |
+| See text                                                                                        | See text                           |
 
 **Duck** is the common name for numerous species of [waterfowl](/wiki/Waterfowl) in the [family](/wiki/Family_(biology)) [Anatidae](/wiki/Anatidae) . Ducks are generally smaller and shorter-necked than [swans](/wiki/Swan) and [geese](/wiki/Goose) , which are members of the same family. Divided among several subfamilies, they are a [form taxon](/wiki/Form_taxon) ; they do not represent a [monophyletic group](/wiki/Monophyletic_group) (the group of all descendants of a single common ancestral species), since swans and geese are not considered ducks. Ducks are mostly [aquatic birds](/wiki/Aquatic_bird) , and may be found in both fresh water and sea water.
 
@@ -263,11 +267,11 @@ A duckling is a young duck in downy plumage [[ 1 ]](#cite_note-1) or baby duck, 
 
 A male is called a [drake](https://en.wiktionary.org/wiki/drake) and the female is called a duck, or in [ornithology](/wiki/Ornithology) a hen. [[ 3 ]](#cite_note-3) [[ 4 ]](#cite_note-4)
 
-Male mallard.
+Male mallard .
 
 <!-- image -->
 
-Wood ducks.
+Wood ducks .
 
 <!-- image -->
 
@@ -297,13 +301,13 @@ The drakes of northern species often have extravagant [plumage](/wiki/Plumage) ,
 
 See also: [List of Anseriformes by population](/wiki/List_of_Anseriformes_by_population)
 
-Flying steamer ducks in Ushuaia, Argentina
+Flying steamer ducks in Ushuaia , Argentina
 
 <!-- image -->
 
 Ducks have a [cosmopolitan distribution](/wiki/Cosmopolitan_distribution) , and are found on every continent except Antarctica. [[ 5 ]](#cite_note-FOOTNOTECarboneras1992536-5) Several species manage to live on subantarctic islands, including [South Georgia](/wiki/South_Georgia_and_the_South_Sandwich_Islands) and the [Auckland Islands](/wiki/Auckland_Islands) . [[ 20 ]](#cite_note-FOOTNOTEShirihai2008239,_245-20) Ducks have reached a number of isolated oceanic islands, including the [Hawaiian Islands](/wiki/Hawaiian_Islands) , [Micronesia](/wiki/Micronesia) and the [Galápagos Islands](/wiki/Gal%C3%A1pagos_Islands) , where they are often [vagrants](/wiki/Glossary_of_bird_terms#vagrants) and less often [residents](/wiki/Glossary_of_bird_terms#residents) . [[ 21 ]](#cite_note-FOOTNOTEPrattBrunerBerrett198798–107-21) [[ 22 ]](#cite_note-FOOTNOTEFitterFitterHosking200052–3-22) A handful are [endemic](/wiki/Endemic) to such far-flung islands. [[ 21 ]](#cite_note-FOOTNOTEPrattBrunerBerrett198798–107-21)
 
-Female mallard in Cornwall, England
+Female mallard in Cornwall , England
 
 <!-- image -->
 
@@ -314,10 +318,6 @@ Some duck species, mainly those breeding in the temperate and Arctic Northern He
 ### Feeding
 
 Pecten along the bill
-
-<!-- image -->
-
-Mallard duckling preening
 
 <!-- image -->
 
@@ -371,7 +371,7 @@ In many areas, wild ducks (including ducks farmed and released into the wild) ar
 
 Main article: [Domestic duck](/wiki/Domestic_duck)
 
-Indian Runner ducks, a common breed of domestic ducks
+Indian Runner ducks , a common breed of domestic ducks
 
 <!-- image -->
 
@@ -379,7 +379,7 @@ Ducks have many economic uses, being farmed for their meat, eggs, and feathers (
 
 ### Heraldry
 
-Three black-colored ducks in the coat of arms of Maaninka[49]
+Three black-colored ducks in the coat of arms of Maaninka [ 49 ]
 
 <!-- image -->
 
@@ -394,6 +394,8 @@ The 1992 Disney film [*The Mighty Ducks*](/wiki/The_Mighty_Ducks_(film)) , starr
 ## See also
 
 - [Birds portal](/wiki/Portal:Birds)
+<!-- image -->
+
 - [Domestic duck](/wiki/Domestic_duck)
 - [Duck as food](/wiki/Duck_as_food)
 - [Duck test](/wiki/Duck_test)
@@ -489,19 +491,26 @@ The 1992 Disney film [*The Mighty Ducks*](/wiki/The_Mighty_Ducks_(film)) , starr
 **Duck** at Wikipedia's [sister projects](/wiki/Wikipedia:Wikimedia_sister_projects)
 
 - [Definitions](https://en.wiktionary.org/wiki/duck) from Wiktionary
+<!-- image -->
 - [Media](https://commons.wikimedia.org/wiki/Anatidae) from Commons
+<!-- image -->
 - [Quotations](https://en.wikiquote.org/wiki/Birds) from Wikiquote
+<!-- image -->
 - [Recipes](https://en.wikibooks.org/wiki/Cookbook:Duck) from Wikibooks
+<!-- image -->
 - [Taxa](https://species.wikimedia.org/wiki/Anatidae) from Wikispecies
+<!-- image -->
 - [Data](https://www.wikidata.org/wiki/Q3736439) from Wikidata
+<!-- image -->
+
 - [list of books](https://web.archive.org/web/20060613210555/http://seaducks.org/subjects/MIGRATION%20AND%20FLIGHT.htm) (useful looking abstracts)
 - [Ducks on postage stamps](http://www.stampsbook.org/subject/Duck.html) [Archived](https://web.archive.org/web/20130513022903/http://www.stampsbook.org/subject/Duck.html) 2013-05-13 at the [Wayback Machine](/wiki/Wayback_Machine)
 - [*Ducks at a Distance, by Rob Hines*](https://gutenberg.org/ebooks/18884) at [Project Gutenberg](/wiki/Project_Gutenberg) - A modern illustrated guide to identification of US waterfowl
 
-| [Authority control databases](/wiki/Help:Authority_control)   | [Authority control databases](/wiki/Help:Authority_control)                                                                                                                                                                                                                                                                                                                                                                                              |
-|---------------------------------------------------------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| National                                                      | - [United States](https://id.loc.gov/authorities/sh85039879) - [France](https://catalogue.bnf.fr/ark:/12148/cb119761481) - [BnF data](https://data.bnf.fr/ark:/12148/cb119761481) - [Japan](https://id.ndl.go.jp/auth/ndlna/00564819) - [Latvia](https://kopkatalogs.lv/F?func=direct&local_base=lnc10&doc_number=000090751&P_CON_LNG=ENG) - [Israel](http://olduli.nli.org.il/F/?func=find-b&local_base=NLX10&find_code=UID&request=987007565486205171) |
-| Other                                                         | - [IdRef](https://www.idref.fr/027796124)                                                                                                                                                                                                                                                                                                                                                                                                                |
+| [Authority control databases](/wiki/Help:Authority_control)  Edit this at Wikidata  <!-- image -->   |                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+|------------------------------------------------------------------------------------------------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| National                                                                                             | - [United States](https://id.loc.gov/authorities/sh85039879) - [France](https://catalogue.bnf.fr/ark:/12148/cb119761481) - [BnF data](https://data.bnf.fr/ark:/12148/cb119761481) - [Japan](https://id.ndl.go.jp/auth/ndlna/00564819) - [Latvia](https://kopkatalogs.lv/F?func=direct&local_base=lnc10&doc_number=000090751&P_CON_LNG=ENG) - [Israel](http://olduli.nli.org.il/F/?func=find-b&local_base=NLX10&find_code=UID&request=987007565486205171) |
+| Other                                                                                                | - [IdRef](https://www.idref.fr/027796124)                                                                                                                                                                                                                                                                                                                                                                                                                |
 
 Retrieved from " [https://en.wikipedia.org/w/index.php?title=Duck&amp;oldid=1246843351](https://en.wikipedia.org/w/index.php?title=Duck&oldid=1246843351) "
 
@@ -539,14 +548,3 @@ Hidden categories:
 - [Webarchive template wayback links](/wiki/Category:Webarchive_template_wayback_links)
 - [Articles with Project Gutenberg links](/wiki/Category:Articles_with_Project_Gutenberg_links)
 - [Articles containing video clips](/wiki/Category:Articles_containing_video_clips)
-- This page was last edited on 21 September 2024, at 12:11 (UTC) .
-- Text is available under the [Creative Commons Attribution-ShareAlike License 4.0](//en.wikipedia.org/wiki/Wikipedia:Text_of_the_Creative_Commons_Attribution-ShareAlike_4.0_International_License) ; additional terms may apply. By using this site, you agree to the [Terms of Use](//foundation.wikimedia.org/wiki/Special:MyLanguage/Policy:Terms_of_Use) and [Privacy Policy](//foundation.wikimedia.org/wiki/Special:MyLanguage/Policy:Privacy_policy) . Wikipedia® is a registered trademark of the [Wikimedia Foundation, Inc.](//wikimediafoundation.org/) , a non-profit organization.
-- [Privacy policy](https://foundation.wikimedia.org/wiki/Special:MyLanguage/Policy:Privacy_policy)
-- [About Wikipedia](/wiki/Wikipedia:About)
-- [Disclaimers](/wiki/Wikipedia:General_disclaimer)
-- [Contact Wikipedia](//en.wikipedia.org/wiki/Wikipedia:Contact_us)
-- [Code of Conduct](https://foundation.wikimedia.org/wiki/Special:MyLanguage/Policy:Universal_Code_of_Conduct)
-- [Developers](https://developer.wikimedia.org/)
-- [Statistics](https://stats.wikimedia.org/#/en.wikipedia.org)
-- [Cookie statement](https://foundation.wikimedia.org/wiki/Special:MyLanguage/Policy:Cookie_statement)
-- [Mobile view](//en.m.wikipedia.org/w/index.php?title=Duck&mobileaction=toggle_view_mobile)

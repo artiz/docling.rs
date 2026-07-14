@@ -82,7 +82,7 @@ PyPI; run via `scripts/conformance/conformance.sh <fmt>`), not the committed gro
 |---|---|---|
 | Markdown | `markdown.rs` (pulldown-cmark) | **10/10 exact** |
 | CSV | `csv.rs` (`csv` crate) | **9/9 exact** |
-| HTML | `html.rs` (scraper/html5ever) | **31/32 exact** (the last needs the page's external CSS at render time — §5) |
+| HTML | `html.rs` (scraper/html5ever) | **32/32 exact** (`wiki_duck` included — rich table cells, caption run spacing, indicator images, `<footer>` furniture all match docling 2.112) |
 | AsciiDoc | `asciidoc.rs` (regex) | **4/4 exact** |
 | DeepSeek-OCR Markdown | `deepseek.rs` | **3/3 exact** (auto-detected VLM-token variant) |
 | XLSX | `xlsx.rs` (calamine) | **9/9 exact** (incl. chart captions/classification/data grids) |
@@ -90,7 +90,7 @@ PyPI; run via `scripts/conformance/conformance.sh <fmt>`), not the committed gro
 | DOCX | `docx.rs` (roxmltree) | **26/26 exact** |
 | WebVTT | `webvtt.rs` | **4/4 exact** |
 | Email (.eml) | `email.rs` (mail-parser) | **2/2 exact** |
-| EPUB | `epub.rs` → HTML backend | **0/1** — the single fixture is 39 diff lines (heading-italic nesting + colophon inline-link layout, the HTML inline residual) |
+| EPUB | `epub.rs` → HTML backend | **0/1** — the single fixture is 4 diff lines (heading-italic nesting + a bold-run join, the HTML inline residual) |
 | ODF (odt/ods/odp) | `odf.rs` | **6/6 exact** on the native files — slide-title/name headings, shape text, speaker-notes drop, chart classification + data tables, merged-cell semantics (plain repeat vs rich dedup), and docling's run-tail quirk |
 | JATS | `jats.rs` (roxmltree) | **3/4 exact**; the eLife plain-text route diverges (252 diff lines) |
 | USPTO | `uspto.rs` | **1/5 exact (2/5 whitespace-normalized)** on the sources live docling converts — it errors on the other 5 (those are validated byte-exact via `.dclx`), and its APS-text *Markdown* export is empty where ours emits the text dump (the `.dclx` matches exactly — §5) |
@@ -158,8 +158,8 @@ headings + contextualization — the payload an embedding model sees):
 
 | Chunker | Identical chunk records | Fully-exact documents |
 |---|---|---|
-| Hierarchical | **511 / 562 (91%)** | 77 / 83 |
-| Hybrid (MiniLM tokenizer, 256 tokens) | **270 / 312 (87%)** | 74 / 83 |
+| Hierarchical | **555 / 562 (98.8%)** | 79 / 83 |
+| Hybrid (MiniLM tokenizer, 256 tokens) | **300 / 312 (96.2%)** | 76 / 83 |
 
 The port reproduces docling's semantics end-to-end: heading-path metadata with
 level shadowing, triplet table serialization over `export_to_dataframe`
@@ -172,15 +172,13 @@ byte-compatible with `transformers` (HF `tokenizers` with MiniLM's fixed-length
 padding disabled).
 
 On the large-document benchmark (`wiki_duck.html`, 89 hierarchical / 115 hybrid
-groundtruth chunks) **84% / 77% of docling's chunk records are reproduced
-identically** (order-aligned). The residual — here and in the corpus-wide
-numbers — is not chunker logic but known HTML-backend model gaps vs docling
-2.112 (rich table cells serialized with inline markup and span de-duplication,
-figure-caption run spacing, `<br>`-split text items); the same documents also
-account for the one non-exact HTML file in the Markdown table above. Chasing
-docling 2.112's checkbox inputs, fragmented-anchor folding and `<button>`
-blocks for the chunker also lifted the HTML `.dclx` similarity: 87% mean
-(was 84%).
+groundtruth chunks) **100% / 100% of docling's chunk records are reproduced
+identically** (order-aligned) — the former HTML-backend model gaps (rich table
+cells with inline markup and span de-duplication, figure-caption run spacing,
+indicator images, `<br>` annotation-boundary handling) are closed. Corpus-wide:
+hierarchical 98.8%, hybrid 96.2% record-identical. The chunker-era
+work (checkbox inputs, fragmented-anchor folding, `<button>` blocks) plus the
+#81 parity fixes also lifted the HTML `.dclx` similarity: 88% mean (was 84%).
 
 ## 3. Output formats
 
@@ -362,17 +360,17 @@ deliberate scope boundary or a cosmetic, single-fixture polish gap.
 
 **Minor known gaps (cosmetic, tracked per-fixture):**
 
-- **`wiki_duck` offline rendering.** The HTML subsystem itself is complete
-  (31/32 exact): key-value form regions, docling-faithful inline-image
-  handling, inline visibility suppression, deep nested-table cell flattening
-  with docling's exact spacing (which turned out to be BeautifulSoup whitespace
-  semantics, not rendered geometry — pure Rust, no browser needed), and —
-  behind the optional `web-browser` feature / `--use-web-browser` flag —
-  CSS-cascade visibility suppression via Rust-driven Chromium. The one fixture
-  still short of exact is `wiki_duck`, whose collapsed menus are hidden by
-  external, host-relative stylesheets: resolving them requires those
-  stylesheets to be fetchable at render time (`--use-web-browser` with network
-  access), which a fully-offline conversion inherently cannot do.
+- ~~**`wiki_duck` offline rendering.**~~ **Closed** — the HTML corpus is now
+  32/32 Markdown-exact against live docling 2.112, `wiki_duck` included. What
+  finished it (issue #81): rich table cells serialized with inline markup and
+  docling's `visited`-set span de-duplication, `to_single_text_element`
+  figure-caption run spacing, `mw:File` indicator images (alt caption +
+  placeholder), `<footer>` → furniture layer, and `<br>`
+  annotation-boundary handling. The HTML subsystem also covers key-value form
+  regions, inline visibility suppression, deep nested-table cell flattening
+  with BeautifulSoup whitespace semantics, and — behind the optional
+  `web-browser` feature / `--use-web-browser` flag — CSS-cascade visibility
+  suppression via Rust-driven Chromium.
 
 
 ---
