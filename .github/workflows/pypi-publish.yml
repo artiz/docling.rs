@@ -58,21 +58,23 @@ jobs:
         with:
           ref: ${{ inputs.tag || github.ref }}
 
-      # Version override: patch [project].version in pyproject.toml before the
-      # sdist is built so every wheel (built from the sdist) inherits it. No
-      # override → keep the version already declared in the file.
+      # Version resolution mirrors npm-publish.yml: explicit `version` input,
+      # else the release `tag`, else the workspace version from the root
+      # Cargo.toml (NOT pyproject.toml — the version committed there is a
+      # local-build fallback that release.sh never bumps). The resolved version
+      # is always patched into [project].version before the sdist is built so
+      # every wheel (built from the sdist) inherits it.
       - name: Resolve version
         shell: bash
         working-directory: crates/docling-py
         run: |
           v="${{ inputs.version }}"
           if [ -z "$v" ] && [ -n "${{ inputs.tag }}" ]; then v="${{ inputs.tag }}"; v="${v#v}"; fi
-          if [ -n "$v" ]; then
-            sed -i.bak -E "0,/^version = \".*\"/s//version = \"$v\"/" pyproject.toml && rm -f pyproject.toml.bak
-            echo "Building docling-rs $v"
-          else
-            echo "Building docling-rs $(grep -m1 '^version = ' pyproject.toml | sed -E 's/.*"([^"]+)".*/\1/') (from pyproject.toml)"
+          if [ -z "$v" ]; then
+            v="$(grep -m1 '^version = ' ../../Cargo.toml | sed -E 's/.*"([^"]+)".*/\1/')"
           fi
+          sed -i.bak -E "0,/^version = \".*\"/s//version = \"$v\"/" pyproject.toml && rm -f pyproject.toml.bak
+          echo "Building docling-rs $v"
 
       - uses: actions/setup-python@v5
         with:
