@@ -20,7 +20,10 @@ Differences from docling's ``docling.chunking``:
 * ``HybridChunker(tokenizer=...)`` takes a **path to a HuggingFace
   ``tokenizer.json``** (e.g. ``sentence-transformers/all-MiniLM-L6-v2``'s),
   not a tokenizer object — the Rust side loads it with the ``tokenizers``
-  crate, so no Python ``transformers`` install is needed.
+  crate, so no Python ``transformers`` install is needed. When omitted it
+  falls back to ``models/chunk/tokenizer.json``, the MiniLM tokenizer
+  ``scripts/install/download_dependencies.sh`` fetches alongside the ML
+  models.
 * ``chunk.meta.doc_items`` holds the items' JSON-pointer refs (``"#/texts/12"``)
   rather than resolved item objects.
 
@@ -36,6 +39,9 @@ import json
 from dataclasses import dataclass, field
 from typing import Any, Iterator, List, Optional
 
+from pathlib import Path
+
+from . import models
 from ._native import chunk_document as _chunk_document
 
 __all__ = ["DocMeta", "DocChunk", "HierarchicalChunker", "HybridChunker"]
@@ -76,8 +82,12 @@ def _document_json(dl_doc: Any) -> str:
     )
 
 
-def _run(dl_doc: Any, tokenizer: Optional[str], max_tokens: int, merge_peers: bool) -> Iterator[DocChunk]:
-    records = json.loads(_chunk_document(_document_json(dl_doc), tokenizer, max_tokens, merge_peers))
+def _run(
+    dl_doc: Any, hybrid: bool, tokenizer: Optional[str], max_tokens: int, merge_peers: bool
+) -> Iterator[DocChunk]:
+    records = json.loads(
+        _chunk_document(_document_json(dl_doc), hybrid, tokenizer, max_tokens, merge_peers)
+    )
     for r in records:
         yield DocChunk(
             text=r["text"],
@@ -98,22 +108,27 @@ class HierarchicalChunker(_BaseChunker):
     metadata."""
 
     def chunk(self, dl_doc: Any) -> Iterator[DocChunk]:
-        return _run(dl_doc, None, 0, True)
+        return _run(dl_doc, False, None, 0, True)
 
 
 class HybridChunker(_BaseChunker):
     """docling's tokenization-aware chunker: hierarchical chunks split against
     a token budget and undersized same-heading neighbours merged.
 
-    :param tokenizer: path to a HuggingFace ``tokenizer.json``.
+    :param tokenizer: path to a HuggingFace ``tokenizer.json``. Defaults to
+        ``models/chunk/tokenizer.json`` (all-MiniLM-L6-v2's, as fetched by
+        ``scripts/install/download_dependencies.sh``); raises at ``chunk()``
+        time if neither is available.
     :param max_tokens: token budget per chunk (docling's default for the
         MiniLM embedding model is 256).
     :param merge_peers: merge undersized peer chunks with identical headings
         (docling's default ``True``).
     """
 
-    def __init__(self, tokenizer: str, max_tokens: int = 256, merge_peers: bool = True):
-        if not isinstance(tokenizer, str):
+    def __init__(
+        self, tokenizer: Optional[str] = None, max_tokens: int = 256, merge_peers: bool = True
+    ):
+        if tokenizer is not None and not isinstance(tokenizer, str):
             raise TypeError(
                 "HybridChunker(tokenizer=...) takes a path to a HuggingFace "
                 "tokenizer.json (docling_rs loads it natively)"
@@ -123,4 +138,12 @@ class HybridChunker(_BaseChunker):
         self.merge_peers = merge_peers
 
     def chunk(self, dl_doc: Any) -> Iterator[DocChunk]:
-        return _run(dl_doc, self.tokenizer, self.max_tokens, self.merge_peers)
+        tokenizer = self.tokenizer
+        if tokenizer is None and not Path("models/chunk/tokenizer.json").exists():
+            # The native resolver checks ./models/chunk/tokenizer.json; when
+            # that's absent, fall back to the package cache populated by
+            # docling_rs.download_models().
+            cached = models.cache_dir() / "models/chunk/tokenizer.json"
+            if cached.exists():
+                tokenizer = str(cached)
+        return _run(dl_doc, True, tokenizer, self.max_tokens, self.merge_peers)

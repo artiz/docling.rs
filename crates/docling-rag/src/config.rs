@@ -270,10 +270,15 @@ impl RagConfig {
         if !(0.0..0.95).contains(&self.chunk_overlap) {
             return Err(RagError::config("RAG_CHUNK_OVERLAP must be in [0.0, 0.95)"));
         }
-        if self.chunker == ChunkerKind::Hybrid && self.chunk_tokenizer.is_none() {
-            return Err(RagError::config(
-                "RAG_CHUNKER=hybrid needs RAG_CHUNK_TOKENIZER (path to a HuggingFace tokenizer.json)",
-            ));
+        if self.chunker == ChunkerKind::Hybrid
+            && self.chunk_tokenizer.is_none()
+            && !std::path::Path::new(docling::chunker::DEFAULT_TOKENIZER_PATH).exists()
+        {
+            return Err(RagError::config(format!(
+                "RAG_CHUNKER=hybrid needs a HuggingFace tokenizer.json: set RAG_CHUNK_TOKENIZER \
+                 or run scripts/install/download_dependencies.sh (populates {})",
+                docling::chunker::DEFAULT_TOKENIZER_PATH
+            )));
         }
         if self.top_k == 0 {
             return Err(RagError::config("RAG_TOP_K must be > 0"));

@@ -99,9 +99,13 @@ for await (const chunk of streamFileMarkdown('paper.pdf')) {
 docling's chunkers over a converted document and return embedding-ready
 records. The default is the structure-driven **hierarchical** chunker (one
 chunk per document item — whole lists, triplet-serialized tables — with its
-heading path); pass `chunker: 'hybrid'` plus a HuggingFace `tokenizer.json`
-to refine against a token budget (split oversized chunks, merge undersized
-same-heading neighbours), matching docling's `HybridChunker`.
+heading path); pass `chunker: 'hybrid'` to refine against a token budget
+(split oversized chunks, merge undersized same-heading neighbours), matching
+docling's `HybridChunker`. The hybrid token counts come from a HuggingFace
+`tokenizer.json`: pass a path via `tokenizer`, or omit it to use
+`models/chunk/tokenizer.json` (all-MiniLM-L6-v2's — fetched by
+`scripts/download_dependencies.sh` alongside the ML models, resolved through
+the same install-home logic).
 
 ```js
 import { chunkFileAsync, Pipeline, chunkDocumentAsync } from 'docling.rs'

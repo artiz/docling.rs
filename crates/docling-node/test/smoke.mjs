@@ -118,10 +118,11 @@ async function main() {
     assert.ok(sync.some((c) => c.text.includes('Install')))
   })
 
-  await check('hybrid chunker demands a tokenizer', () => {
+  await check('hybrid without any tokenizer errors with the download hint', () => {
+    // No explicit path and no models/chunk/tokenizer.json in this test cwd.
     assert.throws(
       () => chunk({ name: 'g.md', data: Buffer.from(CHUNK_MD) }, { chunker: 'hybrid' }),
-      /tokenizer/,
+      /download_dependencies|tokenizer/,
     )
   })
 
@@ -145,6 +146,28 @@ async function main() {
       )
       assert.ok(hybrid.length > hier.length, `expected split: hybrid ${hybrid.length} vs hierarchical ${hier.length}`)
       assert.deepEqual(hybrid[0].headings, ['Doc'])
+    })
+    await check('hybrid picks up models/chunk/tokenizer.json by default', async () => {
+      const { mkdirSync, copyFileSync, mkdtempSync: mktemp } = await import('node:fs')
+      const { tmpdir: osTmp } = await import('node:os')
+      const { join: joinPath } = await import('node:path')
+      const home = mktemp(joinPath(osTmp(), 'fw-chunk-'))
+      mkdirSync(joinPath(home, 'models', 'chunk'), { recursive: true })
+      copyFileSync(TOKENIZER, joinPath(home, 'models', 'chunk', 'tokenizer.json'))
+      const prevCwd = process.cwd()
+      process.chdir(home) // deps.js resolves the install home from the cwd
+      try {
+        const chunks = chunk(
+          { name: 'g.md', data: Buffer.from(CHUNK_MD) },
+          { chunker: 'hybrid', maxTokens: 64 },
+        )
+        // Undersized same-heading peers merge: Setup's paragraph + list
+        // become one chunk, so hybrid yields fewer chunks than hierarchical.
+        assert.ok(chunks.length >= 2)
+        assert.ok(chunks.some((c) => c.text.includes('Install') && c.text.includes('clone')))
+      } finally {
+        process.chdir(prevCwd)
+      }
     })
   } else {
     console.log('  --  tokenizer.json not found; skipping hybrid end-to-end check')

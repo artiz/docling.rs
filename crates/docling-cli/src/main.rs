@@ -275,8 +275,10 @@ fn bench_warm_conversion(
 }
 
 /// Serialize the chunk records `--to chunks` prints: the hierarchical chunker's
-/// output always, plus the hybrid chunker's when a tokenizer is configured via
-/// `DOCLING_CHUNK_TOKENIZER` (requires the `chunking` build feature).
+/// output always, plus the hybrid chunker's when a tokenizer is available —
+/// `DOCLING_CHUNK_TOKENIZER`, or `models/chunk/tokenizer.json` as populated by
+/// `scripts/install/download_dependencies.sh` (requires the `chunking` build
+/// feature).
 fn chunks_json(document: &docling::DoclingDocument) -> String {
     use docling::chunker::{contextualize, DocChunk, HierarchicalChunker};
 
@@ -301,7 +303,9 @@ fn chunks_json(document: &docling::DoclingDocument) -> String {
     let mut out = serde_json::json!({ "hierarchical": records(&hierarchical) });
 
     #[cfg(feature = "chunking")]
-    if let Ok(tok_path) = std::env::var("DOCLING_CHUNK_TOKENIZER") {
+    if let Ok(tok_path) = std::env::var("DOCLING_CHUNK_TOKENIZER").or_else(|_| {
+        docling::chunker::resolve_tokenizer_path(None).map_err(|_| std::env::VarError::NotPresent)
+    }) {
         let max_tokens = std::env::var("DOCLING_CHUNK_MAX_TOKENS")
             .ok()
             .and_then(|v| v.parse().ok())

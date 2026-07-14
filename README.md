@@ -164,8 +164,12 @@ serialized tables — `row, column = value` — picture captions), each carrying
 heading path. `HybridChunker` refines them with a tokenizer: splits oversized
 chunks (at item boundaries, then with docling's `semchunk` algorithm inside
 text; tables line-by-line), and merges undersized same-heading neighbours. The
-HuggingFace tokenizer (MiniLM etc.) sits behind the `chunking` cargo feature;
-`--to chunks` dumps both chunkers' records from the CLI. The chunkers are also
+HuggingFace tokenizer (MiniLM etc.) sits behind the `chunking` cargo feature
+(on by default in the CLI); `--to chunks` dumps both chunkers' records.
+`scripts/install/download_dependencies.sh` fetches MiniLM's tokenizer to
+`models/chunk/tokenizer.json`, which every surface picks up automatically when
+no explicit tokenizer path is given (`DOCLING_CHUNK_TOKENIZER` overrides it
+for the CLI). The chunkers are also
 exposed in the [Node bindings](./crates/docling-node) (`chunkFile` /
 `chunkDocument` + async variants), the
 [Python bindings](./crates/docling-py) (`docling_rs.chunking`), and the

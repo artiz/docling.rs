@@ -98,10 +98,12 @@ page conversion with embedding. `hierarchical` and `hybrid` run docling's
 structure-aware chunkers (`docling::chunker`) over the document tree instead —
 one chunk per document item with its heading path, tables triplet-serialized;
 `hybrid` additionally splits/merges against a real token budget
-(`RAG_CHUNK_SIZE` tokens counted by the HuggingFace `tokenizer.json` at
-`RAG_CHUNK_TOKENIZER` — point it at your embedding model's tokenizer). These
-two are buffered (the whole document converts before chunking); the heading
-path and source item refs land in each chunk's metadata.
+(`RAG_CHUNK_SIZE` tokens counted by a HuggingFace `tokenizer.json` —
+`RAG_CHUNK_TOKENIZER`, or `models/chunk/tokenizer.json` as fetched by
+`scripts/install/download_dependencies.sh`). These two are buffered (the whole
+document converts before chunking), have no overlap concept (`RAG_CHUNK_OVERLAP`
+applies to `window` only, matching docling's own chunkers), and put the heading
+path and source item refs in each chunk's metadata.
 
 Documents (metadata) and chunks (text + embedding) are stored in **two separate
 tables**.

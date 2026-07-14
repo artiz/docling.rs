@@ -46,6 +46,17 @@ _OPTIONAL = {
     "encoder.onnx.data": "models/tableformer/encoder.onnx.data",
     "decoder.onnx.data": "models/tableformer/decoder.onnx.data",
     "bbox.onnx.data": "models/tableformer/bbox.onnx.data",
+    # The hybrid chunker's default tokenizer (all-MiniLM-L6-v2's, ~0.5 MB);
+    # falls back to Hugging Face below when the release doesn't host it.
+    "chunk_tokenizer.json": "models/chunk/tokenizer.json",
+}
+
+# Straight-from-upstream fallback for assets older release tags don't host:
+# cache path -> upstream URL.
+_FALLBACK_URLS = {
+    "models/chunk/tokenizer.json": (
+        "https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2/resolve/main/tokenizer.json"
+    ),
 }
 # pdfium rasterizer (Linux x64, matching what the release hosts).
 _PDFIUM = {"libpdfium.so": ".pdfium/lib/libpdfium.so"}
@@ -91,7 +102,9 @@ def download_models(dest: "str | Path | None" = None, progress: bool = True) -> 
     for name, rel in {**_REQUIRED, **_PDFIUM}.items():
         _fetch(f"{BASE_URL}/{name}", root / rel, optional=False, progress=progress)
     for name, rel in _OPTIONAL.items():
-        _fetch(f"{BASE_URL}/{name}", root / rel, optional=True, progress=progress)
+        if not _fetch(f"{BASE_URL}/{name}", root / rel, optional=True, progress=progress):
+            if fallback := _FALLBACK_URLS.get(rel):
+                _fetch(fallback, root / rel, optional=True, progress=progress)
     return root
 
 

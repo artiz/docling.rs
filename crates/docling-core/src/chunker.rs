@@ -1593,6 +1593,30 @@ fn split_after_preceder(text: &str, preceder: &str) -> Option<(String, Vec<Strin
 mod hf {
     use super::ChunkTokenizer;
 
+    /// Where `scripts/install/download_dependencies.sh` puts the hybrid
+    /// chunker's default tokenizer (all-MiniLM-L6-v2's `tokenizer.json`),
+    /// relative to the process's working directory — the same convention as
+    /// the `models/` ONNX files.
+    pub const DEFAULT_TOKENIZER_PATH: &str = "models/chunk/tokenizer.json";
+
+    /// Resolve the tokenizer path for the hybrid chunker: an explicit path
+    /// wins; otherwise fall back to [`DEFAULT_TOKENIZER_PATH`] when it exists
+    /// on disk. Errors with the download instructions when neither is
+    /// available.
+    pub fn resolve_tokenizer_path(explicit: Option<&str>) -> Result<String, String> {
+        if let Some(p) = explicit {
+            return Ok(p.to_string());
+        }
+        if std::path::Path::new(DEFAULT_TOKENIZER_PATH).exists() {
+            return Ok(DEFAULT_TOKENIZER_PATH.to_string());
+        }
+        Err(format!(
+            "the hybrid chunker needs a HuggingFace tokenizer.json: none passed and \
+             {DEFAULT_TOKENIZER_PATH} does not exist — run \
+             scripts/install/download_dependencies.sh (or pass an explicit path)"
+        ))
+    }
+
     /// [`ChunkTokenizer`] backed by a HuggingFace `tokenizer.json` — the Rust
     /// analogue of docling's `HuggingFaceTokenizer` (whose default is
     /// `sentence-transformers/all-MiniLM-L6-v2` with `max_tokens` 256).
@@ -1602,6 +1626,13 @@ mod hf {
     }
 
     impl HuggingFaceTokenizer {
+        /// Load the tokenizer from an explicit path, or from
+        /// [`DEFAULT_TOKENIZER_PATH`] when `path` is `None` (see
+        /// [`resolve_tokenizer_path`]).
+        pub fn resolve(path: Option<&str>, max_tokens: usize) -> Result<Self, String> {
+            Self::from_file(resolve_tokenizer_path(path)?, max_tokens)
+        }
+
         /// Load a `tokenizer.json`. `max_tokens` is the chunk budget (docling
         /// resolves it from the model's `sentence_bert_config.json`; for the
         /// default MiniLM model that is 256).
@@ -1635,7 +1666,7 @@ mod hf {
 }
 
 #[cfg(feature = "chunking")]
-pub use hf::HuggingFaceTokenizer;
+pub use hf::{resolve_tokenizer_path, HuggingFaceTokenizer, DEFAULT_TOKENIZER_PATH};
 
 #[cfg(test)]
 mod tests {

@@ -16,6 +16,11 @@ name = "docling-rs"
 path = "src/main.rs"
 
 [features]
+# Tokenization-aware chunking is on by default so `--to chunks` emits the
+# hybrid records out of the box once download_dependencies.sh has fetched
+# models/chunk/tokenizer.json (the hierarchical records need no tokenizer and
+# are always available). `--no-default-features` drops the tokenizer dep.
+default = ["chunking"]
 # Pass through to the library's optional headless-browser HTML pre-render, so
 # `cargo run -p docling-cli --features web-browser -- --use-web-browser …`
 # activates it. Off by default (keeps the default binary browser-dependency-free).

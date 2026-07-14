@@ -128,7 +128,10 @@ for chunk in chunker.chunk(doc):                       # tokenization-aware
 
 Two deltas from docling: `HybridChunker(tokenizer=...)` takes a **path to a
 HuggingFace `tokenizer.json`** (loaded natively — no `transformers` install),
-and `chunk.meta.doc_items` holds the items' JSON-pointer refs. Since
+and `chunk.meta.doc_items` holds the items' JSON-pointer refs. With no
+`tokenizer` argument it falls back to MiniLM's tokenizer at
+`models/chunk/tokenizer.json` (the download script's location) or the package
+cache — `docling_rs.download_models()` fetches it with the other assets. Since
 `result.document` is a genuine `docling_core` `DoclingDocument`, docling's own
 Python chunkers (`pip install "docling-core[chunking]"`) also keep working on
 it — the native classes are the faster, dependency-free path.

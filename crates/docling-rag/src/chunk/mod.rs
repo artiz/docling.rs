@@ -30,9 +30,9 @@ pub fn docling_chunks(
     let chunks = match kind {
         ChunkerKind::Hierarchical => HierarchicalChunker.chunk(document),
         ChunkerKind::Hybrid => {
-            let path = tokenizer
-                .ok_or_else(|| RagError::config("RAG_CHUNKER=hybrid needs RAG_CHUNK_TOKENIZER"))?;
-            let tok = docling::chunker::HuggingFaceTokenizer::from_file(path, max_tokens)
+            // RAG_CHUNK_TOKENIZER, or the download script's default location
+            // (models/chunk/tokenizer.json) when unset.
+            let tok = docling::chunker::HuggingFaceTokenizer::resolve(tokenizer, max_tokens)
                 .map_err(RagError::config)?;
             HybridChunker::new(tok).chunk(document)
         }
@@ -464,6 +464,11 @@ mod docling_chunker_tests {
 
     #[test]
     fn hybrid_without_tokenizer_is_a_config_error() {
+        // With no explicit path the resolver falls back to the download
+        // script's default location — only its absence is an error.
+        if std::path::Path::new(docling::chunker::DEFAULT_TOKENIZER_PATH).exists() {
+            return;
+        }
         let doc = convert("# A\n\ntext\n");
         assert!(docling_chunks("d", &doc, ChunkerKind::Hybrid, None, 256).is_err());
     }

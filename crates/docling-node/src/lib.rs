@@ -847,7 +847,9 @@ pub struct ChunkOptions {
     /// requires `tokenizer`.
     pub chunker: Option<String>,
     /// Path to a HuggingFace `tokenizer.json` (e.g. all-MiniLM-L6-v2's) for the
-    /// hybrid chunker's token counts.
+    /// hybrid chunker's token counts. When omitted, falls back to
+    /// `models/chunk/tokenizer.json` (populated by
+    /// `scripts/install/download_dependencies.sh`).
     pub tokenizer: Option<String>,
     /// The hybrid chunker's token budget per chunk. Default `256` (docling's
     /// default for the MiniLM embedding model).
@@ -894,12 +896,6 @@ fn build_chunk_config(options: Option<ChunkOptions>) -> Result<ChunkConfig> {
             ))
         }
     };
-    if hybrid && o.tokenizer.is_none() {
-        return Err(Error::new(
-            Status::InvalidArg,
-            "the hybrid chunker needs `tokenizer` (path to a HuggingFace tokenizer.json)",
-        ));
-    }
     Ok(ChunkConfig {
         hybrid,
         tokenizer: o.tokenizer,
@@ -912,8 +908,10 @@ fn build_chunk_config(options: Option<ChunkOptions>) -> Result<ChunkConfig> {
 fn run_chunker(doc: &DoclingDocument, cfg: &ChunkConfig) -> Result<Vec<Chunk>> {
     use docling::chunker::{contextualize, HierarchicalChunker, HybridChunker};
     let chunks = if cfg.hybrid {
-        let tok = docling::chunker::HuggingFaceTokenizer::from_file(
-            cfg.tokenizer.as_deref().expect("validated in config"),
+        // Explicit path, or models/chunk/tokenizer.json (the download script's
+        // default location); a clear error otherwise.
+        let tok = docling::chunker::HuggingFaceTokenizer::resolve(
+            cfg.tokenizer.as_deref(),
             cfg.max_tokens,
         )
         .map_err(convert_err)?;

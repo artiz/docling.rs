@@ -87,8 +87,11 @@ jobs:
         continue-on-error: true
         run: python scripts/install/quantize_models.py tableformer-decoder
 
-      # --- pdfium + OCR (re-hosted third-party binaries, not exports) -----
-      - name: Fetch pdfium + OCR assets
+      # --- pdfium + OCR + chunk tokenizer (re-hosted third-party assets) ---
+      # The tokenizer is all-MiniLM-L6-v2's tokenizer.json (Apache-2.0), the
+      # default docling's HybridChunker counts tokens with; re-hosted so the
+      # hybrid chunker works out of the box after download_dependencies.sh.
+      - name: Fetch pdfium + OCR + chunk tokenizer assets
         run: |
           mkdir -p third-party
           curl -fsSL -o /tmp/pdfium.tgz \
@@ -98,6 +101,8 @@ jobs:
             "https://huggingface.co/SWHL/RapidOCR/resolve/main/PP-OCRv3/ch_PP-OCRv3_rec_infer.onnx"
           curl -fsSL -o third-party/ppocr_keys_v1.txt \
             "https://raw.githubusercontent.com/PaddlePaddle/PaddleOCR/main/ppocr/utils/ppocr_keys_v1.txt"
+          curl -fsSL -o third-party/chunk_tokenizer.json \
+            "https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2/resolve/main/tokenizer.json"
 
       # --- stage + publish -------------------------------------------------
       # GitHub release assets can't contain "/", so tableformer/*.onnx is
@@ -118,6 +123,7 @@ jobs:
           stage third-party/lib/libpdfium.so libpdfium.so
           stage third-party/ocr_rec.onnx ocr_rec.onnx
           stage third-party/ppocr_keys_v1.txt ppocr_keys_v1.txt
+          stage third-party/chunk_tokenizer.json chunk_tokenizer.json
           stage models/layout_heron.onnx layout_heron.onnx
           stage models/layout_heron_int8.onnx layout_heron_int8.onnx
           stage models/tableformer/encoder.onnx encoder.onnx

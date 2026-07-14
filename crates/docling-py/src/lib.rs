@@ -235,17 +235,20 @@ fn native_result(r: docling::ConversionResult) -> PyNativeResult {
 /// `HierarchicalChunker` / `HybridChunker` ported to `docling::chunker`).
 ///
 /// `document_json` is docling-core's JSON wire format (what
-/// `DoclingDocument.export_to_dict()` serializes to). With `tokenizer = None`
-/// the hierarchical chunker runs; with a path to a HuggingFace
-/// `tokenizer.json` the hybrid chunker refines against a `max_tokens` budget.
+/// `DoclingDocument.export_to_dict()` serializes to). With `hybrid = False`
+/// the hierarchical chunker runs; with `hybrid = True` the hybrid chunker
+/// refines against a `max_tokens` budget, counting tokens with the HuggingFace
+/// `tokenizer.json` at `tokenizer` — or at `models/chunk/tokenizer.json` (the
+/// path `scripts/install/download_dependencies.sh` populates) when `None`.
 /// Returns a JSON array of records `{text, headings, doc_items, contextualize}`
 /// — the Python layer (`docling_rs.chunking`) turns them into docling-shaped
 /// chunk objects. Releases the GIL for the parse + chunking.
 #[pyfunction]
-#[pyo3(signature = (document_json, tokenizer = None, max_tokens = 256, merge_peers = true))]
+#[pyo3(signature = (document_json, hybrid = false, tokenizer = None, max_tokens = 256, merge_peers = true))]
 fn chunk_document(
     py: Python<'_>,
     document_json: String,
+    hybrid: bool,
     tokenizer: Option<String>,
     max_tokens: usize,
     merge_peers: bool,
@@ -260,15 +263,15 @@ fn chunk_document(
         let result = docling::DocumentConverter::new()
             .convert(source)
             .map_err(|e| ConversionError::new_err(e.to_string()))?;
-        let chunks = match tokenizer {
-            Some(path) => {
-                let tok = docling::chunker::HuggingFaceTokenizer::from_file(&path, max_tokens)
+        let chunks = if hybrid {
+            let tok =
+                docling::chunker::HuggingFaceTokenizer::resolve(tokenizer.as_deref(), max_tokens)
                     .map_err(ConversionError::new_err)?;
-                HybridChunker::new(tok)
-                    .with_merge_peers(merge_peers)
-                    .chunk(&result.document)
-            }
-            None => HierarchicalChunker.chunk(&result.document),
+            HybridChunker::new(tok)
+                .with_merge_peers(merge_peers)
+                .chunk(&result.document)
+        } else {
+            HierarchicalChunker.chunk(&result.document)
         };
         let records: Vec<serde_json::Value> = chunks
             .iter()

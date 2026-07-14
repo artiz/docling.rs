@@ -60,9 +60,21 @@ def test_hybrid_splits_against_the_token_budget():
     assert chunker.contextualize(hybrid[0]).startswith("Doc\n")
 
 
-def test_hybrid_requires_a_tokenizer_path():
+def test_hybrid_rejects_non_path_tokenizers():
     with pytest.raises(TypeError):
-        HybridChunker(tokenizer=None)
+        HybridChunker(tokenizer=123)
+
+
+@pytest.mark.skipif(not TOKENIZER.exists(), reason="MiniLM tokenizer.json not checked out")
+def test_hybrid_default_tokenizer_path(tmp_path, monkeypatch):
+    # HybridChunker() with no tokenizer resolves models/chunk/tokenizer.json —
+    # the location scripts/install/download_dependencies.sh populates.
+    doc_json = _document().export_to_dict()
+    (tmp_path / "models/chunk").mkdir(parents=True)
+    (tmp_path / "models/chunk/tokenizer.json").write_bytes(TOKENIZER.read_bytes())
+    monkeypatch.chdir(tmp_path)
+    chunks = list(HybridChunker(max_tokens=64).chunk(doc_json))
+    assert chunks and any("Install" in c.text for c in chunks)
 
 
 def test_bad_tokenizer_path_raises_conversion_error():
