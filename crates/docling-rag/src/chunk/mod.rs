@@ -124,13 +124,6 @@ impl Chunker {
         }
     }
 
-    /// Number of words carried from one chunk into the next.
-    fn overlap_words(&self, budget: usize) -> usize {
-        let o = (budget as f32 * self.overlap).round() as usize;
-        // Keep at least one word of movement so windowing always makes progress.
-        o.min(budget.saturating_sub(1))
-    }
-
     /// Report a word count back in the configured unit (for `Chunk::token_count`).
     fn to_units(&self, words: usize) -> i64 {
         match self.unit {
