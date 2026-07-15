@@ -507,13 +507,20 @@ fn pdf_worker_count() -> usize {
 /// #73). Workers drain the work channel opportunistically up to this size —
 /// whatever is already rendered gets batched, so batching never *waits* for
 /// pages and adds no latency when rendering is the bottleneck.
+///
+/// Default: 4 on 8+ cores, 1 (per-page) below. Measured on a 4-core box the
+/// batch only adds cache pressure and costs pipeline overlap (2 workers × 2
+/// threads: 8.1 s/conv at batch=1 vs 9.3 s at batch=4 on the 9-page
+/// 2206.01062 fixture); the single-session amortization it buys needs the
+/// wider thread budget of a many-core machine. Output is bit-identical at
+/// every batch size, so this is purely a throughput knob.
 /// `DOCLING_RS_PDF_LAYOUT_BATCH` overrides; `1` restores per-page inference.
 fn pdf_layout_batch() -> usize {
     std::env::var("DOCLING_RS_PDF_LAYOUT_BATCH")
         .ok()
         .and_then(|v| v.parse::<usize>().ok())
         .filter(|&n| n > 0)
-        .unwrap_or(4)
+        .unwrap_or_else(|| if intra_threads() >= 8 { 4 } else { 1 })
 }
 
 /// Minimum page count before a PDF is worth the parallel worker pool. Below this,
@@ -716,8 +723,9 @@ impl Pipeline {
         let render_image = !self.no_ocr;
         let layout_batch = pdf_layout_batch();
         // Bound sized so every worker can accumulate a full layout batch while
-        // rendering stays ahead; still a hard cap on resident page bitmaps.
-        let (work_tx, work_rx) = sync_channel::<(usize, PdfPage)>(n_workers * layout_batch);
+        // rendering stays ahead (and never below the pre-#73 render-ahead of
+        // two pages per worker); still a hard cap on resident page bitmaps.
+        let (work_tx, work_rx) = sync_channel::<(usize, PdfPage)>(n_workers * layout_batch.max(2));
         let work_rx: Arc<Mutex<Receiver<(usize, PdfPage)>>> = Arc::new(Mutex::new(work_rx));
         let results: Arc<Mutex<Vec<(usize, PageOut)>>> = Arc::new(Mutex::new(Vec::new()));
         let first_err: Arc<Mutex<Option<PdfError>>> = Arc::new(Mutex::new(None));
@@ -873,8 +881,9 @@ impl Pipeline {
         let render_image = !self.no_ocr;
         let layout_batch = pdf_layout_batch();
         // Bound sized so every worker can accumulate a full layout batch while
-        // rendering stays ahead; still a hard cap on resident page bitmaps.
-        let (work_tx, work_rx) = sync_channel::<(usize, PdfPage)>(n_workers * layout_batch);
+        // rendering stays ahead (and never below the pre-#73 render-ahead of
+        // two pages per worker); still a hard cap on resident page bitmaps.
+        let (work_tx, work_rx) = sync_channel::<(usize, PdfPage)>(n_workers * layout_batch.max(2));
         let work_rx: Arc<Mutex<Receiver<(usize, PdfPage)>>> = Arc::new(Mutex::new(work_rx));
         // Workers and the renderer report here; the calling thread drains it in
         // page order. Bounded so workers block (bounding resident bitmaps) when the
