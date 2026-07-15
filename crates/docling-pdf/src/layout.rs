@@ -73,6 +73,11 @@ pub fn label_threshold(label: &str) -> f32 {
 
 pub struct LayoutModel {
     session: Session,
+    /// Set when a multi-page inference fails — e.g. a locally built pre-#73
+    /// static graph (fixed batch=1) via `DOCLING_LAYOUT_ONNX` or a stale
+    /// `layout_heron_int8.onnx`. Batched calls then fall back to per-page runs
+    /// instead of failing the conversion.
+    batch_unsupported: bool,
 }
 
 impl LayoutModel {
@@ -100,7 +105,10 @@ impl LayoutModel {
             .map_err(|e| format!("layout: intra_threads: {e}"))?
             .commit_from_file(&path)
             .map_err(|e| format!("layout: load {path}: {e}"))?;
-        Ok(Self { session })
+        Ok(Self {
+            session,
+            batch_unsupported: false,
+        })
     }
 
     /// Detect layout regions on a page image. `page_w`/`page_h` are the page size
@@ -126,6 +134,37 @@ impl LayoutModel {
         &mut self,
         pages: &[(&RgbImage, f32, f32)],
     ) -> Result<Vec<Vec<Region>>, String> {
+        if pages.len() > 1 && self.batch_unsupported {
+            return self.predict_singly(pages);
+        }
+        match self.run_batch(pages) {
+            Err(e) if pages.len() > 1 => {
+                // A graph without the dynamic batch dim (pre-#73 export) fails
+                // only for batch > 1 — remember and recover per page.
+                eprintln!(
+                    "docling-pdf: layout model rejected a {}-page batch ({e}); \
+                     falling back to per-page inference — re-export with \
+                     scripts/install/export_layout.py for batched layout",
+                    pages.len()
+                );
+                self.batch_unsupported = true;
+                self.predict_singly(pages)
+            }
+            other => other,
+        }
+    }
+
+    fn predict_singly(
+        &mut self,
+        pages: &[(&RgbImage, f32, f32)],
+    ) -> Result<Vec<Vec<Region>>, String> {
+        pages
+            .iter()
+            .map(|p| Ok(self.run_batch(&[*p])?.pop().expect("one result")))
+            .collect()
+    }
+
+    fn run_batch(&mut self, pages: &[(&RgbImage, f32, f32)]) -> Result<Vec<Vec<Region>>, String> {
         if pages.is_empty() {
             return Ok(Vec::new());
         }
