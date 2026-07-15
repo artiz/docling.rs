@@ -25,6 +25,7 @@
 #   models/ppocr_keys_v1.txt
 #   models/tableformer/encoder.onnx (+ .data, if the export needs it)
 #   models/tableformer/decoder.onnx (+ .data, if the export needs it)
+#   models/tableformer/decoder_kv.onnx (+ .data; preferred when hosted)
 #   models/tableformer/bbox.onnx (+ .data, if the export needs it)
 #   models/asr/{encoder_model,decoder_model}.onnx + vocab.json   (Whisper tiny,
 #     from Hugging Face; skip with --no-asr)
@@ -123,6 +124,11 @@ fetch "$BASE_URL/encoder.onnx" models/tableformer/encoder.onnx
 fetch_optional "$BASE_URL/encoder.onnx.data" models/tableformer/encoder.onnx.data
 fetch "$BASE_URL/decoder.onnx" models/tableformer/decoder.onnx
 fetch_optional "$BASE_URL/decoder.onnx.data" models/tableformer/decoder.onnx.data
+# True-KV-cache decoder variant — preferred by the Rust loop when present
+# (~13-17% faster table-structure decode, byte-identical output). Optional:
+# older release tags don't host it, and the legacy decoder above still works.
+fetch_optional "$BASE_URL/decoder_kv.onnx" models/tableformer/decoder_kv.onnx
+fetch_optional "$BASE_URL/decoder_kv.onnx.data" models/tableformer/decoder_kv.onnx.data
 fetch "$BASE_URL/bbox.onnx" models/tableformer/bbox.onnx
 fetch_optional "$BASE_URL/bbox.onnx.data" models/tableformer/bbox.onnx.data
 
@@ -191,6 +197,8 @@ if [ "$WITH_INT8" = true ]; then
   # forces the fp32 models at runtime.
   fetch_optional "$BASE_URL/layout_heron_int8.onnx" models/layout_heron_int8.onnx
   fetch_optional "$BASE_URL/decoder_int8.onnx" models/tableformer/decoder_int8.onnx
+  fetch_optional "$BASE_URL/decoder_kv_int8.onnx" models/tableformer/decoder_kv_int8.onnx
+  fetch_optional "$BASE_URL/decoder_kv_int8.onnx.data" models/tableformer/decoder_kv_int8.onnx.data
   if [ -f models/layout_heron_int8.onnx ]; then
     echo "int8 models present — used by default (DOCLING_RS_FP32=1 forces full precision)"
   else
