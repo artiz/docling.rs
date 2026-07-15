@@ -108,24 +108,26 @@ impl TableFormer {
             .unwrap_or_else(|_| crate::resolve_asset("models/tableformer/encoder.onnx"));
         // Decoder preference (explicit override wins): INT8 variants first
         // unless DOCLING_RS_FP32 opts out; within a precision the true-KV-cache
-        // export (`decoder_kv*`, one token per step) ranks behind the legacy
-        // layer-output-cache graph it matches byte-for-byte — measured parity on
-        // corpus-sized tables (ORT batches the legacy graph's prefix
-        // re-projection efficiently), so the smaller legacy file stays the
-        // default and `decoder_kv*` serves very-large-table workloads, where its
-        // O(past) step cost wins.
+        // export (`decoder_kv*`, one token per step, O(past) step cost) ranks
+        // ahead of the legacy layer-output-cache graph it matches byte-for-byte
+        // (91/91 snapshot corpus exact with either). Re-measured warm on the
+        // corpus fixtures: the KV graph is ~13% faster on ordinary tables
+        // (2206.01062) and ~17% on the huge-table page (2305.03393v1-pg9),
+        // for +36 MB on disk — table-heavy single-page PDFs are exactly where
+        // the pipeline is tightest against Python docling, so speed wins the
+        // default and the legacy file stays as the smaller fallback.
         let dec = std::env::var("DOCLING_TABLEFORMER_DECODER").unwrap_or_else(|_| {
             let candidates: &[&str] = if crate::fp32_forced() {
                 &[
-                    "models/tableformer/decoder.onnx",
                     "models/tableformer/decoder_kv.onnx",
+                    "models/tableformer/decoder.onnx",
                 ]
             } else {
                 &[
-                    "models/tableformer/decoder_int8.onnx",
                     "models/tableformer/decoder_kv_int8.onnx",
-                    "models/tableformer/decoder.onnx",
+                    "models/tableformer/decoder_int8.onnx",
                     "models/tableformer/decoder_kv.onnx",
+                    "models/tableformer/decoder.onnx",
                 ]
             };
             candidates

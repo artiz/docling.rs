@@ -443,9 +443,11 @@ Ordered by expected impact ÷ risk. Items 1–3 attack the 85–95%.
      executes the legacy graph's full-prefix re-projection as one efficient
      batched GEMM, so the O(n²) FLOPs don't become O(n²) wall time until
      tables get much larger. The Rust loop auto-detects either graph (input
-     names) and prefers the smaller legacy file by default; point
-     `DOCLING_TABLEFORMER_DECODER` at `decoder_kv(_int8).onnx` for
-     very-large-table workloads.
+     names) and now prefers `decoder_kv(_int8).onnx` by default — re-measured
+     warm it is ~13% faster on ordinary corpus tables and ~17% on the
+     huge-table page (2305.03393v1-pg9), byte-identical output (91/91), for
+     +36 MB on disk; point `DOCLING_TABLEFORMER_DECODER` at the legacy
+     `decoder(_int8).onnx` to trade the speed back for the smaller file.
 3. ~~**Layout batching for the parallel path**: the pool currently runs batch-1
    inference per page.~~ **Done (issue #73)**: each pool worker drains the work
    channel opportunistically (whatever is already rendered, up to
