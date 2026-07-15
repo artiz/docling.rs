@@ -1,0 +1,12 @@
+# Keep the build context small: the image build needs only Cargo.toml/Cargo.lock,
+# crates/, scripts/install/*.py and the calibration corpora under tests/*/sources.
+target/
+models/
+.pdfium/
+.venv*/
+.git/
+node_modules/
+tests/snapshots/
+bindings/
+docs/
+*.log
