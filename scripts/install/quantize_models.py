@@ -135,10 +135,13 @@ def quantize_tableformer_decoder():
     import onnx
     from onnxruntime.quantization import QuantType, quantize_dynamic
 
-    # Quantize the legacy layer-output-cache decoder and, when the export
-    # produced it, the true-KV-cache variant (decoder_kv.onnx — preferred by
-    # the Rust loop for very-large-table workloads).
-    for stem in ("decoder", "decoder_kv"):
+    # Quantize the legacy layer-output-cache decoder only. The #97 hoisted-KV
+    # decoder_kv.onnx is deliberately NOT quantized: weights-only INT8 of that
+    # graph drifts the heavy-table fixtures off the fp32 snapshots (redp5110's
+    # TOC decode flips even with per-channel scales; 2206 flips per-tensor),
+    # and the measured gain over its fp32 file was only ~2.5% — the Rust loop
+    # prefers the byte-exact fp32 decoder_kv instead.
+    for stem in ("decoder",):
         src = f"{MODELS}/tableformer/{stem}.onnx"
         if not os.path.exists(src):
             continue
@@ -152,7 +155,10 @@ def quantize_tableformer_decoder():
         onnx.save(m, tmp, save_as_external_data=True, location=f"{stem}_clean.onnx.data")
         print(f"tableformer-decoder: dynamic INT8 quantization ({stem})...", flush=True)
         quantize_dynamic(
-            tmp, dst, weight_type=QuantType.QInt8, extra_options={"MatMulConstBOnly": True}
+            tmp,
+            dst,
+            weight_type=QuantType.QInt8,
+            extra_options={"MatMulConstBOnly": True},
         )
         os.remove(tmp)
         os.remove(f"{tmp}.data")

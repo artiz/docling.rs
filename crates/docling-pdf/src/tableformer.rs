@@ -140,10 +140,14 @@ impl TableFormer {
                     "models/tableformer/decoder.onnx",
                 ]
             } else {
+                // decoder_kv ranks ABOVE decoder_int8: the #97 hoisted fp32 KV
+                // graph is faster than the quantized legacy graph on every
+                // machine measured, and it is byte-exact (its own int8 variant
+                // is not produced — see quantize_models.py).
                 &[
                     "models/tableformer/decoder_kv_int8.onnx",
-                    "models/tableformer/decoder_int8.onnx",
                     "models/tableformer/decoder_kv.onnx",
+                    "models/tableformer/decoder_int8.onnx",
                     "models/tableformer/decoder.onnx",
                 ]
             };
@@ -270,7 +274,9 @@ impl TableFormer {
         cache: &mut DecodeCache,
         empty: &EmptyCache,
     ) -> Result<(i64, Vec<f32>), String> {
-        crate::timing::timed("tf.decode_step", || self.decode_step_inner(tags, enc, cache, empty))
+        crate::timing::timed("tf.decode_step", || {
+            self.decode_step_inner(tags, enc, cache, empty)
+        })
     }
 
     fn decode_step_inner(
