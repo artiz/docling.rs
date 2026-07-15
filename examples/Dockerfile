@@ -43,18 +43,12 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends curl ca-certificates tar \
     && rm -rf /var/lib/apt/lists/*
 
-# torch (CPU) + the docling model packages used by the export scripts, plus
-# the quantization/calibration deps (pypdfium2, pillow, sympy).
-# torch <2.13: its TorchScript exporter starts constant-folding the sincos
-# position embedding itself, which breaks export_layout.py's fold-and-splice
-# (it finds no pos-embed subgraph) and would change the folded constant's
-# provenance vs the corpus-validated export. Keep the version the published
-# models were exported with until the script (and conformance) move together.
-RUN pip install --no-cache-dir "torch<2.13" --index-url https://download.pytorch.org/whl/cpu \
-    && pip install --no-cache-dir --extra-index-url https://download.pytorch.org/whl/cpu \
-        "transformers>=4.45,<5" "onnx>=1.16,<2" \
-        docling-ibm-models onnxscript onnxruntime huggingface_hub \
-        sympy pypdfium2 pillow numpy
+# Install order matters and mirrors the (proven) publish-models workflow:
+# the layout export needs transformers 5.x module names for its pos-embed
+# fold-and-splice, while docling-ibm-models pins transformers <5 — so the
+# layout model is exported BEFORE the TableFormer deps downgrade transformers.
+RUN pip install --no-cache-dir --extra-index-url https://download.pytorch.org/whl/cpu \
+        torch "transformers>=5" "onnx>=1.16,<2"
 
 WORKDIR /build
 COPY scripts/install ./scripts/install
@@ -62,9 +56,17 @@ COPY scripts/install ./scripts/install
 COPY tests/data/pdf/sources ./tests/data/pdf/sources
 COPY tests/data/scanned/sources ./tests/data/scanned/sources
 
+# RT-DETR layout detector -> models/layout_heron.onnx
 RUN mkdir -p /opt/models/chunk /opt/pdfium \
-    # RT-DETR layout detector -> models/layout_heron.onnx
-    && python scripts/install/export_layout.py /opt/models/layout_heron.onnx \
+    && python scripts/install/export_layout.py /opt/models/layout_heron.onnx
+
+# TableFormer export + quantization/calibration deps (downgrades transformers
+# to 4.x — the remaining exports don't import it).
+RUN pip install --no-cache-dir --extra-index-url https://download.pytorch.org/whl/cpu \
+        docling-ibm-models onnxscript onnxruntime huggingface_hub \
+        sympy pypdfium2 pillow numpy
+
+RUN true \
     # TableFormer encoder/decoder/bbox. Exports both decoder generations: the
     # #97 hoisted-KV step graph (decoder_kv.onnx — per-layer cross-attention
     # K/V hoisted into the encoder, byte-exact vs docling and the fastest
