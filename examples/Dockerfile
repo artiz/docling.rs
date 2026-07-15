@@ -64,7 +64,7 @@ RUN mkdir -p /opt/models/chunk /opt/pdfium \
 # to 4.x — the remaining exports don't import it).
 RUN pip install --no-cache-dir --extra-index-url https://download.pytorch.org/whl/cpu \
         docling-ibm-models onnxscript onnxruntime huggingface_hub \
-        sympy pypdfium2 pillow numpy
+        opencv-python-headless sympy pypdfium2 pillow numpy
 
 RUN true \
     # TableFormer encoder/decoder/bbox. Exports both decoder generations: the
