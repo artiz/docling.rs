@@ -5,3 +5,7 @@
 tests/data/**             linguist-vendored
 tests/snapshots/**        linguist-generated
 crates/*/tests/data/**    linguist-vendored
+
+# cmd resolves goto/call :labels only reliably with CRLF line endings; ship the
+# Windows script byte-exact and keep git (any autocrlf setting) from touching it.
+*.bat -text

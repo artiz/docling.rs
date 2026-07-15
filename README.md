@@ -433,6 +433,10 @@ scripts/install/download_dependencies.sh
 curl -fsSL https://raw.githubusercontent.com/docling-project/docling.rs/master/scripts/install/download_dependencies.sh | sh
 ```
 
+On **native Windows** (no WSL) use `scripts\install\download_dependencies.bat`
+instead — same models plus `pdfium.dll` — and see
+[docs/WINDOWS.md](./docs/WINDOWS.md) for the MSVC build walkthrough.
+
 | Asset | Destination |
 | --- | --- |
 | pdfium (Linux x64) | `.pdfium/lib/libpdfium.so` |
