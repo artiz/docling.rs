@@ -13,7 +13,9 @@ set -euo pipefail
 cd "$(dirname "$0")/../.."
 
 # Dependency order: a crate must be published before anything that depends on it.
-CRATES=(docling-core docling-pdf docling-asr docling docling-cli)
+# docling-serve and docling-rag depend on docling; docling-serve must precede
+# docling-cli (whose optional `serve` feature depends on it).
+CRATES=(docling-core docling-pdf docling-asr docling docling-serve docling-rag docling-cli)
 
 UA="docling.rs-ci (https://github.com/docling-project/docling.rs)"
 
