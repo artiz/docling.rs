@@ -30,6 +30,10 @@
   button:disabled { opacity: .5; cursor: wait; }
   .out { margin-top: 1rem; }
   .out pre { max-height: 24rem; overflow: auto; white-space: pre-wrap; }
+  .gallery { display: flex; flex-wrap: wrap; gap: .6rem; margin-top: .8rem; }
+  .gallery figure { margin: 0; }
+  .gallery img { max-width: 14rem; max-height: 11rem; border: 1px solid var(--line); border-radius: 6px; background: #fff; }
+  .gallery figcaption { font-size: .75rem; color: var(--muted); text-align: center; }
   .err { color: #d1242f; }
   .hint { color: var(--muted); font-size: .85rem; }
 </style>
@@ -57,6 +61,7 @@ convert documents to Markdown, docling JSON, DocLang archives, or chunk records.
       </select>
     </label>
     <label><input type="checkbox" id="strict"> strict Markdown</label>
+    <label><input type="checkbox" id="embed" checked> embed images</label>
     <label><input type="checkbox" id="no_ocr"> no OCR</label>
     <label><input type="checkbox" id="no_table_former"> no TableFormer</label>
     <button id="go">Convert</button>
@@ -65,6 +70,7 @@ convert documents to Markdown, docling JSON, DocLang archives, or chunk records.
   (tens of seconds), repeats are fast. Markdown responses stream in as they convert.</div>
   <div class="out">
     <pre id="result" style="display:none"></pre>
+    <div class="gallery" id="gallery"></div>
   </div>
 </div>
 
@@ -110,14 +116,41 @@ for (const radio of document.querySelectorAll('input[name=mode]')) {
     $('url').style.display = file ? 'none' : '';
   });
 }
+// Pull embedded pictures (data URIs) out of the Markdown / docling JSON,
+// show them as a gallery under the text, and shorten the base64 blobs in
+// the text panel so it stays readable. Markdown embeds only with the
+// "embed images" box checked (images=embedded); JSON always embeds.
+function renderImages(text, to) {
+  if (to !== 'md' && to !== 'json') return;
+  const uris = [...text.matchAll(/data:image\/[a-z.+-]+;base64,[A-Za-z0-9+\/=]+/g)].map((m) => m[0]);
+  if (!uris.length) return;
+  const gallery = $('gallery');
+  uris.forEach((uri, i) => {
+    const figure = document.createElement('figure');
+    const img = document.createElement('img');
+    img.src = uri;
+    img.alt = `picture ${i + 1}`;
+    const caption = document.createElement('figcaption');
+    caption.textContent = `picture ${i + 1}`;
+    figure.append(img, caption);
+    gallery.append(figure);
+  });
+  $('result').textContent = text.replace(
+    /(data:image\/[a-z.+-]+;base64,)[A-Za-z0-9+\/=]{48,}/g,
+    (_, prefix) => prefix + '…',
+  );
+}
+
 $('go').addEventListener('click', async () => {
   const out = $('result');
   out.style.display = '';
   out.classList.remove('err');
+  $('gallery').replaceChildren();
   const to = $('to').value;
   const opts = {
     to,
     strict: $('strict').checked,
+    images: $('embed').checked ? 'embedded' : 'placeholder',
     no_ocr: $('no_ocr').checked,
     no_table_former: $('no_table_former').checked,
   };
@@ -173,6 +206,7 @@ $('go').addEventListener('click', async () => {
     if (to === 'json' || to === 'chunks') {
       try { out.textContent = JSON.stringify(JSON.parse(out.textContent), null, 2); } catch {}
     }
+    renderImages(out.textContent, to);
   } catch (e) {
     out.classList.add('err');
     out.textContent = String(e);
