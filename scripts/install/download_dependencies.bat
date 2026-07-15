@@ -49,16 +49,20 @@ if not exist .pdfium\lib mkdir .pdfium\lib
 echo fetching docling.rs ML dependencies from %BASE_URL%
 
 rem --- pdfium (native DLL, not re-hosted in the models release) --------------
-if exist .pdfium\lib\pdfium.dll if %FORCE%==0 (
-  echo   = .pdfium\lib\pdfium.dll ^(already present^)
-) else (
-  echo   ^> .pdfium\lib\pdfium.dll
-  curl -fsSL -o "%TEMP%\pdfium-win-x64.tgz" "%PDFIUM_URL%" || goto :fail
-  tar -xzf "%TEMP%\pdfium-win-x64.tgz" -C .pdfium bin/pdfium.dll || goto :fail
-  move /y .pdfium\bin\pdfium.dll .pdfium\lib\pdfium.dll >nul
-  rmdir .pdfium\bin 2>nul
-  del "%TEMP%\pdfium-win-x64.tgz" 2>nul
-)
+rem No "if exist A if COND (...) else (...)" here: in cmd the else binds to the
+rem INNER if, so when the file is missing neither branch runs at all.
+if %FORCE%==1 goto :pdfium_dl
+if not exist .pdfium\lib\pdfium.dll goto :pdfium_dl
+echo   = .pdfium\lib\pdfium.dll (already present)
+goto :pdfium_done
+:pdfium_dl
+echo   ^> .pdfium\lib\pdfium.dll
+curl -fsSL -o "%TEMP%\pdfium-win-x64.tgz" "%PDFIUM_URL%" || goto :fail
+tar -xzf "%TEMP%\pdfium-win-x64.tgz" -C .pdfium bin/pdfium.dll || goto :fail
+move /y .pdfium\bin\pdfium.dll .pdfium\lib\pdfium.dll >nul
+rmdir .pdfium\bin 2>nul
+del "%TEMP%\pdfium-win-x64.tgz" 2>nul
+:pdfium_done
 
 rem --- required models --------------------------------------------------------
 call :fetch "%BASE_URL%/layout_heron.onnx"              models\layout_heron.onnx           || goto :fail
@@ -68,7 +72,7 @@ call :fetch "%BASE_URL%/encoder.onnx"                   models\tableformer\encod
 call :fetch_opt "%BASE_URL%/encoder.onnx.data"          models\tableformer\encoder.onnx.data
 call :fetch "%BASE_URL%/decoder.onnx"                   models\tableformer\decoder.onnx    || goto :fail
 call :fetch_opt "%BASE_URL%/decoder.onnx.data"          models\tableformer\decoder.onnx.data
-rem True-KV-cache decoder — preferred by the Rust loop when present.
+rem True-KV-cache decoder - preferred by the Rust loop when present.
 call :fetch_opt "%BASE_URL%/decoder_kv.onnx"            models\tableformer\decoder_kv.onnx
 call :fetch_opt "%BASE_URL%/decoder_kv.onnx.data"       models\tableformer\decoder_kv.onnx.data
 call :fetch "%BASE_URL%/bbox.onnx"                      models\tableformer\bbox.onnx       || goto :fail
@@ -91,30 +95,32 @@ if %WITH_INT8%==1 (
   call :fetch_opt "%BASE_URL%/decoder_int8.onnx"        models\tableformer\decoder_int8.onnx
   call :fetch_opt "%BASE_URL%/decoder_kv_int8.onnx"     models\tableformer\decoder_kv_int8.onnx
   call :fetch_opt "%BASE_URL%/decoder_kv_int8.onnx.data" models\tableformer\decoder_kv_int8.onnx.data
-  if exist models\layout_heron_int8.onnx echo int8 models present — used by default ^(DOCLING_RS_FP32=1 forces full precision^)
+  if exist models\layout_heron_int8.onnx echo int8 models present - used by default (DOCLING_RS_FP32=1 forces full precision)
 )
 
-echo done — models\ and .pdfium\lib populated in %CD%
+echo done - models\ and .pdfium\lib populated in %CD%
 exit /b 0
 
 :fetch
-if exist "%~2" if %FORCE%==0 (
-  echo   = %~2 ^(already present^)
-  exit /b 0
-)
+if %FORCE%==1 goto :fetch_dl
+if not exist "%~2" goto :fetch_dl
+echo   = %~2 (already present)
+exit /b 0
+:fetch_dl
 echo   ^> %~2
 curl -fsSL -o "%~2" "%~1"
 exit /b %errorlevel%
 
 :fetch_opt
-if exist "%~2" if %FORCE%==0 (
-  echo   = %~2 ^(already present^)
-  exit /b 0
-)
+if %FORCE%==1 goto :fetch_opt_dl
+if not exist "%~2" goto :fetch_opt_dl
+echo   = %~2 (already present)
+exit /b 0
+:fetch_opt_dl
 curl -fsSL -o "%~2" "%~1" >nul 2>nul
 if %errorlevel%==0 (echo   ^> %~2) else (del "%~2" 2>nul)
 exit /b 0
 
 :fail
-echo error: download failed — check network access and %BASE_URL%
+echo error: download failed - check network access and %BASE_URL%
 exit /b 1
