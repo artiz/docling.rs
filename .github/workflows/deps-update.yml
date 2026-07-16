@@ -1,0 +1,98 @@
+# Weekly `cargo update` PR — the other half of committing Cargo.lock
+# (blog.rust-lang.org/2023/08/29/committing-lockfiles): the committed lock pins
+# every build, and this job keeps that pin from fossilizing. It refreshes both
+# lockfiles (the root workspace and the docling-py bindings workspace), tests
+# the workspace against the latest compatible dependency versions right here
+# (the post's "run cargo update as part of a scheduled CI job"), and opens a
+# PR with the diff. CI on that PR (fmt/clippy, test --locked, msrv) is the
+# merge gate — a dependency that breaks the build or raises the MSRV floor
+# shows up red on the PR instead of as a release-day surprise.
+name: deps
+
+on:
+  schedule:
+    - cron: "17 4 * * 1" # Mondays 04:17 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: write # push the deps/cargo-update branch
+  pull-requests: write # open/refresh the update PR
+
+jobs:
+  cargo-update:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # Push with the admin PAT when it's configured: branches pushed with
+          # the default GITHUB_TOKEN don't trigger workflows, so the update PR
+          # would sit there with no CI verdict.
+          token: ${{ secrets.RELEASE_PAT || github.token }}
+
+      - name: Install Rust (stable)
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+            target
+          key: ${{ runner.os }}-cargo-deps-update-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-cargo-deps-update-
+
+      - name: cargo update (both workspaces)
+        id: update
+        run: |
+          { cargo update
+            cargo update --manifest-path crates/docling-py/Cargo.toml
+          } 2>&1 | tee /tmp/update.log
+          if git diff --quiet -- Cargo.lock crates/docling-py/Cargo.lock; then
+            echo "Lockfiles already at the latest compatible versions."
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      # Test against the fresh resolution in-job, not only on the PR: this red
+      # is the scheduled "latest deps broke us" alarm even if the PR's own CI
+      # never runs (e.g. RELEASE_PAT missing).
+      - name: Test with updated dependencies
+        if: steps.update.outputs.changed == 'true'
+        run: cargo test --workspace --locked
+
+      - name: Open / refresh the update PR
+        if: steps.update.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_PAT || github.token }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -B deps/cargo-update
+          git add Cargo.lock crates/docling-py/Cargo.lock
+          git commit -m "chore(deps): weekly cargo update"
+          git push --force -u origin deps/cargo-update
+          {
+            echo "Scheduled \`cargo update\` of both committed lockfiles;"
+            echo "the workspace test suite passed against the new resolution."
+            echo
+            echo "<details><summary>cargo update log</summary>"
+            echo
+            echo '```'
+            head -c 60000 /tmp/update.log
+            echo '```'
+            echo
+            echo "</details>"
+          } > /tmp/pr-body.md
+          # One rolling PR: force-pushing the branch refreshes an open PR in
+          # place; create only when none is open.
+          if [ -z "$(gh pr list --head deps/cargo-update --state open --json number --jq '.[].number')" ]; then
+            gh pr create \
+              --title "chore(deps): weekly cargo update" \
+              --body-file /tmp/pr-body.md
+          else
+            gh pr edit deps/cargo-update --body-file /tmp/pr-body.md
+          fi

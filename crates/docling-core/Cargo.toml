@@ -9,7 +9,9 @@ homepage.workspace = true
 readme.workspace = true
 keywords.workspace = true
 categories.workspace = true
-rust-version.workspace = true
+# Lower floor than the workspace (no ort/pdfium here): bounded by the
+# edition-2024 deps in the lock (indexmap via serde_json/preserve_order).
+rust-version = "1.85"
 
 [dependencies]
 # serde_json builds the docling-core-compatible DoclingDocument JSON wire format

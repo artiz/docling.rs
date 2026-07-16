@@ -9,8 +9,7 @@ homepage.workspace = true
 readme.workspace = true
 keywords.workspace = true
 categories.workspace = true
-# pdfium-render / ort need a newer compiler than the std-only crates' MSRV.
-rust-version = "1.82"
+rust-version.workspace = true
 
 [dependencies]
 docling-core = { path = "../docling-core", version = "0.40.3" }

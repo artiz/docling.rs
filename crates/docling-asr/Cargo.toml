@@ -9,8 +9,7 @@ homepage.workspace = true
 readme.workspace = true
 keywords.workspace = true
 categories.workspace = true
-# ort needs a newer compiler than the std-only crates' MSRV (same as docling-pdf).
-rust-version = "1.85"
+rust-version.workspace = true
 
 [dependencies]
 docling-core = { path = "../docling-core", version = "0.40.3" }
