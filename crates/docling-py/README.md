@@ -32,7 +32,7 @@ docling is required for the declarative path.
 
 ## Try it locally
 
-Needs a Rust toolchain (1.82+) and Python ≥ 3.9.
+Needs a Rust toolchain (1.88+, the workspace MSRV) and Python ≥ 3.9.
 
 ```bash
 cd crates/docling-py
@@ -73,12 +73,13 @@ PY
 | `document.export_to_markdown(...)` | same | docling-core's own method — all of docling's params (`image_placeholder`, `page_break_placeholder`, …) apply |
 | `document.export_to_dict()` / `export_to_json()` / `export_to_doctags()` | same | docling-core's own serializers over the wire format |
 | `document.save_as_markdown(p)` / `save_as_json(p)` / chunkers | same | anything `docling_core` offers on a `DoclingDocument` works, since it *is* one |
-| `docling_rs.download_models()` | `docling-tools models download` | idempotent; `~/.cache/docling.rs` or `$DOCLING_RS_CACHE_DIR`; INT8 models fetched when hosted and preferred automatically (`DOCLING_RS_FP32=1` opts out) |
+| `docling_rs.download_models()` | `docling-tools models download` | idempotent; `~/.cache/docling.rs` or `$DOCLING_RS_CACHE_DIR`; INT8 models fetched when hosted and preferred automatically (`DOCLING_RS_FP32=1` opts out); `force=True` re-downloads a stale cache after a model re-publish |
 
-Model/env resolution order: explicit `DOCLING_*` env vars → the cache dir set
-by `ensure_env()` (called by the constructor) → the process CWD (`models/`,
-`.pdfium/`, matching the CLI). pdfium is Linux x64 from the release; on other
-platforms set `PDFIUM_DYNAMIC_LIB_PATH` to a local build.
+Model/env resolution order: explicit `DOCLING_*` env vars → the process CWD
+(`models/`, `.pdfium/`, matching the CLI — so a repo checkout uses its own
+exports) → the cache dir set by `ensure_env()` (called by the constructor).
+pdfium is Linux x64 from the release; on other platforms set
+`PDFIUM_DYNAMIC_LIB_PATH` to a local build.
 
 ## Configuration (docling-shaped)
 
@@ -108,7 +109,11 @@ accepted for API compatibility but do not change the pipeline. `InputFormat`,
 `DocumentStream` and `ImageRefMode` are re-exported too (the last straight from
 `docling_core`, for `export_to_markdown(image_mode=…)`). A GPU
 `accelerator_options.device` (`CUDA`/`MPS`) is accepted but warns and falls back
-to CPU — the engine runs ONNX Runtime on the CPU execution provider.
+to CPU: the prebuilt PyPI wheels ship ONNX Runtime with the CPU execution
+provider only. The engine itself supports CUDA / TensorRT / DirectML / CoreML
+behind cargo features (issue #74) — build the wheel from source with e.g.
+`maturin build --features cuda` and select the provider per process with
+`DOCLING_RS_EP=cuda` (see the workspace README).
 
 ## Chunking
 
@@ -187,8 +192,10 @@ Errors (a bad tokenizer path, malformed document JSON) surface on the first
 
 ## Not covered (yet)
 
-VLM/enrichment pipelines, GPU accelerator devices (the engine is ONNX Runtime on
-CPU), and per-format *backend* selection. The document carries rendered text for
+The full-VLM conversion pipeline (SmolDocling) and per-format *backend*
+selection. GPU inference is engine-side only: compiled in via cargo features
+(#74) and selected with `DOCLING_RS_EP`, not via `accelerator_options.device`,
+and absent from the prebuilt CPU wheels. The document carries rendered text for
 inline formatting rather than structured `formatting` fields — see
 `docs/MIGRATION.md` §4 for the documented divergences.
 
@@ -207,54 +214,11 @@ gh workflow run pypi-publish.yml -f version=0.16.0
 ```
 
 No secrets: it publishes via PyPI **Trusted Publishing** (OIDC), like
-docling-core — no API token is stored or rotated. This requires a **one-time
-setup on PyPI by the project owner** (below); re-runs are idempotent
-(`skip-existing`). macOS wheels are omitted (no hosted runners here); macOS users
-install the sdist, which compiles from source. The ONNX runtime is bundled in the
-wheel; pdfium is fetched at runtime by `download_models()`.
-
-### First-time PyPI setup (project owner)
-
-Trusted Publishing lets this repo's workflow upload to PyPI without any password
-or API token — GitHub mints a short-lived OIDC token per run and PyPI verifies it
-against a *trusted publisher* you register once. Until that publisher exists, the
-`publish` job fails with `invalid-publisher: valid token, but no corresponding
-publisher`.
-
-Because the `docling-rs` project does not exist on PyPI yet, register a **pending
-publisher** (it both authorizes the workflow and lets the first run create the
-project):
-
-1. Sign in to PyPI as the account that will own `docling-rs`, then open
-   **<https://pypi.org/manage/account/publishing/>**.
-2. Under **“Add a new pending publisher”**, choose **GitHub** and fill in
-   **exactly** these values:
-
-   | Field | Value |
-   |---|---|
-   | PyPI Project Name | `docling-rs` |
-   | Owner | `docling-project` |
-   | Repository name | `docling.rs` |
-   | Workflow name | `pypi-publish.yml` |
-   | Environment name | `pypi` |
-
-3. Click **Add**. Then re-run the **pypi publish** workflow (Actions tab → Run
-   workflow) — the `publish` job will now succeed and create the project on its
-   first upload.
-
-Notes:
-- The Git branch does not matter: PyPI matches on repository + workflow +
-  environment, not the branch, so publishing works from any branch once the
-  publisher is registered.
-- **Environment name must be `pypi`** — it has to match the `environment: pypi`
-  the `publish` job runs in.
-- After the first successful publish the project exists; the *pending* publisher
-  automatically becomes a regular trusted publisher (manage it later at
-  *Project → Manage → Publishing*). To rotate/add publishers there, use the same
-  five values above.
-- To rehearse without touching production PyPI, register the equivalent pending
-  publisher on **TestPyPI** (<https://test.pypi.org/manage/account/publishing/>)
-  and point the workflow's upload at `https://test.pypi.org/legacy/`.
+docling-core — no API token is stored or rotated (the trusted publisher is
+registered on PyPI; manage it at *Project → Manage → Publishing*). Re-runs are
+idempotent (`skip-existing`). macOS wheels are omitted (no hosted runners here);
+macOS users install the sdist, which compiles from source. The ONNX runtime is
+bundled in the wheel; pdfium is fetched at runtime by `download_models()`.
 
 ### Test the release build locally
 
