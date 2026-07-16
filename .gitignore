@@ -3,6 +3,9 @@
 # Stray CLI conversion outputs (`docling-rs --to dclx <file>` writes next to CWD)
 /*.dclx
 
+# ONNX Runtime profiler output (written to CWD when session profiling is on)
+onnxruntime_profile_*.json
+
 # Secrets — never commit (holds CARGO_REGISTRY_TOKEN)
 .env
 .env.*
