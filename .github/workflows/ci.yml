@@ -166,7 +166,7 @@ jobs:
         run: cargo check -p docling-cli --features "${{ matrix.features }}"
 
       - name: Test docling-pdf EP selection with GPU features
-        run: cargo test -p docling-pdf --lib --features "${{ matrix.features }}" ep::
+        run: 'cargo test -p docling-pdf --lib --features "${{ matrix.features }}" ep::'
 
   publish:
     name: release & publish
