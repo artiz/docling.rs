@@ -174,6 +174,45 @@ jobs:
       - name: Test docling-pdf EP selection with GPU features
         run: 'cargo test -p docling-pdf --lib --features "${{ matrix.features }}" ep::'
 
+  # The declarative converters compile for the browser (#79): check the
+  # feature-sliced `docling` on wasm32, build the wasm-bindgen crate, and log
+  # the gzipped module size (the number docs/README quote — ~1.8 MB).
+  wasm:
+    name: wasm32 (declarative converters)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install Rust (stable + wasm32 target)
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+          rustup target add wasm32-unknown-unknown
+
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+            target
+          key: ${{ runner.os }}-cargo-wasm-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-cargo-wasm-
+
+      - name: Check docling (no default features) on wasm32
+        run: cargo check -p docling --no-default-features --target wasm32-unknown-unknown --locked
+
+      - name: Build docling-wasm (release)
+        run: cargo build -p docling-wasm --target wasm32-unknown-unknown --release --locked
+
+      - name: Host-side tests
+        run: cargo test -p docling-wasm --locked
+
+      - name: Module size
+        run: |
+          wasm=target/wasm32-unknown-unknown/release/docling_wasm.wasm
+          gzip -9 -c "$wasm" | wc -c | xargs -I{} echo "docling_wasm.wasm: $(stat -c%s "$wasm") bytes raw, {} bytes gzipped"
+
   publish:
     name: release & publish
     needs: [lint, test]

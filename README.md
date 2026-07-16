@@ -98,6 +98,18 @@ builds from [`crates/docling-serve/Dockerfile`](./crates/docling-serve/Dockerfil
 URL inputs make the server fetch outbound (SSRF surface): it binds loopback by
 default — front it with a policy proxy or pass `--no-url-fetch`.
 
+## In the browser — `docling-wasm`
+
+The declarative converters (everything except the PDF/image/audio ML
+pipelines) compile to `wasm32-unknown-unknown`:
+[`crates/docling-wasm`](./crates/docling-wasm) exposes
+`convert(bytes, filename, to)` → Markdown / docling JSON / DocLang via
+`wasm-bindgen`, so DOCX/HTML/XLSX/PPTX/EPUB/… convert **fully client-side** —
+no server, ~1.8 MB gzipped module, no models to download. Python docling has
+no equivalent. The crate ships a drop-a-file demo page; the `docling` library
+crate itself grew the feature slices behind this (`pdf` / `asr` /
+`fetch-images`, all in the default set — a plain `cargo build` is unchanged).
+
 ## The API
 
 ```rust

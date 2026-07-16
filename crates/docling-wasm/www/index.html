@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>docling.rs — in-browser document conversion (wasm)</title>
+  <style>
+    :root { color-scheme: light dark; font-family: system-ui, sans-serif; }
+    body { max-width: 60rem; margin: 2rem auto; padding: 0 1rem; }
+    h1 { font-size: 1.4rem; }
+    #drop {
+      border: 2px dashed #888; border-radius: 8px; padding: 2.5rem 1rem;
+      text-align: center; cursor: pointer; margin: 1rem 0;
+    }
+    #drop.hover { border-color: #4a90d9; background: rgba(74, 144, 217, 0.08); }
+    .row { display: flex; gap: 1rem; align-items: center; flex-wrap: wrap; }
+    #out {
+      width: 100%; min-height: 20rem; white-space: pre-wrap; overflow: auto;
+      border: 1px solid #8884; border-radius: 6px; padding: 0.8rem;
+      font-family: ui-monospace, monospace; font-size: 0.85rem;
+    }
+    #meta { color: #888; font-size: 0.85rem; }
+  </style>
+</head>
+<body>
+  <h1>docling.rs → wasm: convert documents in your browser</h1>
+  <p>
+    DOCX / HTML / Markdown / XLSX / PPTX / CSV / EPUB / ODF / LaTeX / … are
+    converted to Markdown or docling JSON <strong>entirely client-side</strong>
+    — the file never leaves this page. PDF/image/audio need the native ML
+    pipeline and are not part of the wasm build.
+  </p>
+  <div class="row">
+    <label>Output:
+      <select id="to">
+        <option value="md" selected>Markdown</option>
+        <option value="json">docling JSON</option>
+        <option value="doclang">DocLang XML</option>
+      </select>
+    </label>
+    <span id="meta">loading module…</span>
+  </div>
+  <div id="drop">Drop a document here, or click to pick a file</div>
+  <input type="file" id="pick" hidden>
+  <pre id="out"></pre>
+
+  <script type="module">
+    import init, { convert, supported_extensions, version } from "./pkg/docling_wasm.js";
+
+    const meta = document.getElementById("meta");
+    const out = document.getElementById("out");
+    const drop = document.getElementById("drop");
+    const pick = document.getElementById("pick");
+    const to = document.getElementById("to");
+
+    await init();
+    const exts = JSON.parse(supported_extensions());
+    pick.accept = exts.map((e) => "." + e).join(",");
+    meta.textContent = `docling.rs ${version()} · ${exts.length} extensions`;
+
+    let last = null; // {bytes, name}
+    async function run(file) {
+      last = { bytes: new Uint8Array(await file.arrayBuffer()), name: file.name };
+      render();
+    }
+    function render() {
+      if (!last) return;
+      const t0 = performance.now();
+      try {
+        out.textContent = convert(last.bytes, last.name, to.value);
+        meta.textContent = `${last.name} → ${to.value} in ${(performance.now() - t0).toFixed(1)} ms`;
+      } catch (e) {
+        out.textContent = String(e);
+      }
+    }
+
+    to.onchange = render;
+    drop.onclick = () => pick.click();
+    pick.onchange = () => pick.files[0] && run(pick.files[0]);
+    drop.ondragover = (e) => { e.preventDefault(); drop.classList.add("hover"); };
+    drop.ondragleave = () => drop.classList.remove("hover");
+    drop.ondrop = (e) => {
+      e.preventDefault();
+      drop.classList.remove("hover");
+      e.dataTransfer.files[0] && run(e.dataTransfer.files[0]);
+    };
+
+    // Hook for automated tests: window.doclingConvert(bytes, name, to)
+    window.doclingConvert = (bytes, name, fmt) => convert(new Uint8Array(bytes), name, fmt);
+    window.doclingReady = true;
+  </script>
+</body>
+</html>

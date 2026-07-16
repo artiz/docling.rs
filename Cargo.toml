@@ -24,6 +24,8 @@ members = [
     "crates/docling-rag",
     # HTTP conversion API (docling-serve analogue): axum server over the converter.
     "crates/docling-serve",
+    # wasm32 build of the declarative converters (browser/edge, issue #79).
+    "crates/docling-wasm",
 ]
 
 [workspace.package]

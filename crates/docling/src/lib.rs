@@ -30,6 +30,7 @@ mod error;
 mod format;
 mod result;
 mod source;
+#[cfg(feature = "pdf")]
 mod stream;
 
 pub mod backend;
@@ -39,6 +40,7 @@ pub use error::ConversionError;
 pub use format::InputFormat;
 pub use result::{ConversionResult, ConversionStatus};
 pub use source::SourceDocument;
+#[cfg(feature = "pdf")]
 pub use stream::MarkdownStream;
 
 // Re-export the core model so callers only need the one crate, and so
@@ -50,4 +52,19 @@ pub use docling_core::{
 
 // The reusable PDF/image pipeline (models loaded once, reused across documents),
 // for callers that convert many files or want a warm, startup-excluded measurement.
+#[cfg(feature = "pdf")]
 pub use docling_pdf::{EnrichmentOptions, Pipeline};
+
+/// Stand-in for `docling_pdf::EnrichmentOptions` when the `pdf` feature is
+/// off: the `DocumentConverter` builder methods keep compiling (and stay
+/// inert — the formats these flags affect are rejected at convert time).
+#[cfg(not(feature = "pdf"))]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub struct EnrichmentOptions {
+    /// Classify each picture with DocumentFigureClassifier (26 classes).
+    pub picture_classification: bool,
+    /// Rewrite code blocks (and detect their language) with CodeFormulaV2.
+    pub code: bool,
+    /// Decode display formulas to LaTeX with CodeFormulaV2.
+    pub formula: bool,
+}
