@@ -18,8 +18,7 @@ license.workspace = true
 repository.workspace = true
 homepage.workspace = true
 readme = "README.md"
-# ort (via docling-pdf) needs a newer compiler than the std-only crates.
-rust-version = "1.82"
+rust-version.workspace = true
 # Not a crates.io library — the deliverable is the npm package.
 publish = false
 

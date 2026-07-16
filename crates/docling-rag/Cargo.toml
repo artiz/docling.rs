@@ -9,9 +9,7 @@ homepage.workspace = true
 readme = "README.md"
 keywords = ["rag", "embeddings", "semantic-search", "vector", "docling"]
 categories = ["text-processing", "database"]
-# MSRV is raised over the workspace default by tokio/sqlx/reqwest; kept in step
-# with docling-pdf (ort) which already needs a recent toolchain.
-rust-version = "1.82"
+rust-version.workspace = true
 
 [[bin]]
 name = "docling-rag"

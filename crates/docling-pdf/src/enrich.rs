@@ -449,14 +449,14 @@ fn rescale_to_max_len(w0: u32, h0: u32, max_len: u32) -> (u32, u32) {
     let (w, h) = if w0 >= h0 {
         let w = max_len;
         let mut h = (w as f64 / aspect) as u32;
-        if h % 2 != 0 {
+        if !h.is_multiple_of(2) {
             h += 1;
         }
         (w, h)
     } else {
         let h = max_len;
         let mut w = (h as f64 * aspect) as u32;
-        if w % 2 != 0 {
+        if !w.is_multiple_of(2) {
             w += 1;
         }
         (w, h)

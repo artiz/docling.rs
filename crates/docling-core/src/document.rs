@@ -284,7 +284,7 @@ impl InlineRun {
 /// Markdown/JSON render the group's `md_text`, so their output is identical to
 /// emitting a `Paragraph` — the structured runs are DocLang-only.
 pub fn inline_paragraph_node(md_text: String, runs: Vec<InlineRun>, unwrapped: bool) -> Node {
-    let single_plain = runs.len() <= 1 && runs.first().map_or(true, |r| r.is_plain());
+    let single_plain = runs.len() <= 1 && runs.first().is_none_or(|r| r.is_plain());
     if single_plain {
         Node::Paragraph { text: md_text }
     } else {

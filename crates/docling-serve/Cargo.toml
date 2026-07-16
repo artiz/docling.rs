@@ -5,9 +5,7 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
-# MSRV raised over the workspace default by tokio/axum; kept in step with
-# docling-rag (the other async island).
-rust-version = "1.85"
+rust-version.workspace = true
 
 [features]
 default = ["chunking"]

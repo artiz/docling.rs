@@ -35,7 +35,12 @@ homepage = "https://github.com/docling-project/docling.rs"
 readme = "README.md"
 keywords = ["docling", "document", "pdf", "markdown", "converter"]
 categories = ["text-processing", "parser-implementations"]
-rust-version = "1.74"
+# Honest floor for the crates that carry the PDF/ASR pipeline: the ort
+# 2.0.0-rc.12 dependency requires rustc 1.88. docling-core
+# overrides this with its own lower floor. CI's `msrv` job validates both
+# against the committed Cargo.lock — bump here when a dependency update PR
+# turns that job red and the new floor is acceptable.
+rust-version = "1.88"
 
 [profile.release]
 lto = "thin"

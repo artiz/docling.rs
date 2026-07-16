@@ -998,7 +998,7 @@ fn dump_records(text: &str) -> Vec<(String, bool)> {
         can_open: bool,
         can_close: bool,
     }
-    let is_ws = |c: Option<char>| c.map_or(true, |c| c.is_whitespace());
+    let is_ws = |c: Option<char>| c.is_none_or(|c| c.is_whitespace());
     let is_punct =
         |c: Option<char>| c.is_some_and(|c| "!\"#$%&'()*+,-./:;<=>?@[\\]^_`{|}~".contains(c));
 
@@ -1697,7 +1697,7 @@ fn emit_list_item_content(out: &mut Out, depth: i32, text: &str, has_nested: boo
     // rendered on their own lines. Re-parse the Markdown markers into runs and
     // mirror that layout.
     let runs = inline_runs_from_markdown(text);
-    let single_plain = runs.len() <= 1 && runs.first().map_or(true, |r| r.is_plain());
+    let single_plain = runs.len() <= 1 && runs.first().is_none_or(|r| r.is_plain());
     if single_plain {
         if has_nested {
             emit_text_element(out, depth, "text", "text", text, None);
