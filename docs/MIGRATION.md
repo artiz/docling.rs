@@ -26,7 +26,7 @@ phased plan is kept at the end as history.)
 | **What** | A Rust port of docling's converter, backends, and discriminative PDF/ASR pipelines; same `convert → DoclingDocument → export_to_markdown()/json()` shape, single static binary, no Python/torch at runtime |
 | **Conformance** | Declarative formats byte-for-byte vs *live* PyPI docling (most 100%, see §2); `.dclx` DocLang output ≈94% mean vs docling's own `.dclx`, OOXML all byte-exact (§2); PDF ML path 5/14 fixtures byte-exact, rest close; every optimization is gated on this not regressing |
 | **Performance** | PDF ML pipeline **4.3× faster warm / 4.7× end-to-end** than Python docling at 2.3–2.6× less peak RAM (INT8 + SIMD, conformance-validated); declarative formats 20–60× warm, ~60× less RAM; XLSX sheets / PPTX slides additionally fan out over rayon (~2–3× on many-sheet/slide files, conformance byte-identical); details + methodology in [`PDF_CONFORMANCE.md`](./PDF_CONFORMANCE.md) |
-| **Models** | docling's own checkpoints (layout heron, TableFormer, PP-OCRv3, Whisper tiny), format-converted to ONNX by `scripts/export_*.py` — no retraining; INT8 variants are calibrated post-training quantizations (`scripts/install/quantize_models.py`) |
+| **Models** | docling's own checkpoints (layout heron, TableFormer, PP-OCRv3, Whisper tiny), format-converted to ONNX by `scripts/install/export_*.py` — no retraining; INT8 variants are calibrated post-training quantizations (`scripts/install/quantize_models.py`) |
 | **Tracking upstream** | See [§9](#9-keeping-up-with-upstream-docling): conformance is measured against the *latest published* docling on demand, so an upstream release that changes output surfaces as a concrete per-fixture diff |
 | **Not ported (by design)** | VLM full-page pipelines (§5); inline formatting is baked into text rather than structured fields (§4). The optional enrichment models (picture classification, code, formulas) **are** ported — opt-in `do_picture_classification` / `do_code_enrichment` / `do_formula_enrichment`, ONNX like the rest of the stack |
 
@@ -48,14 +48,15 @@ The layers mirror docling's:
 ```text
 crates/
 ├── docling-core/   # DoclingDocument, Node model, markdown.rs, json.rs, base64.rs, labels.rs
-├── docling.rs/        # DocumentConverter, source/format detection, backend/*.rs, ooxml.rs
+├── docling/        # DocumentConverter, source/format detection, backend/*.rs, ooxml.rs
 ├── docling-pdf/    # pdfium_backend, layout (RT-DETR/ONNX), ocr (PP-OCRv3/ONNX), assemble, mets
 ├── docling-asr/    # audio decode (symphonia), mel.rs, whisper.rs (ONNX), tokenizer.rs
 ├── docling-cli/    # `--strict`, `--to md|json`, `--images placeholder|embedded|referenced`
 ├── docling-node/   # Node.js/Bun N-API bindings (napi-rs), published to npm as `docling.rs`
 ├── docling-py/     # PyO3 bindings (maturin), published to PyPI as `docling-rs` (strangler-fig over docling-core)
 ├── docling-rag/    # RAG layer on top of the converter (chunking, embeddings, vector search, REST API)
-└── docling-serve/  # HTTP conversion API (docling-serve analogue): POST /v1/convert over a warm pipeline
+├── docling-serve/  # HTTP conversion API (docling-serve analogue): POST /v1/convert over a warm pipeline
+└── docling-wasm/   # WebAssembly bindings: declarative converters + text-layer PDF in the browser
 ```
 
 The public API is unchanged from day one:
@@ -131,7 +132,7 @@ line-diffed, similarity `= 100·(1 − difflines / max_lines)`. **≈94% mean ov
 | CSV / AsciiDoc / Email | **100%** | JATS | 95% |
 | XLSX | **100%** | Markdown | 92% |
 | DOCX / PPTX | **100%** | LaTeX | 91% |
-| USPTO | 98% | HTML | 84% |
+| USPTO | 98% | HTML | 88% |
 | ODF | 95% | WebVTT | 81% |
 
 This effort was tracked as
@@ -383,6 +384,11 @@ deliberate scope boundary or a cosmetic, single-fixture polish gap.
   (SQLite+sqlite-vec / PostgreSQL+pgvector), LLM, sources and queues, plus an
   eval harness and a REST API. See the crate README.
 - **`docling-node`** — Node.js/Bun N-API bindings (npm package).
+- **`docling-wasm`** — WebAssembly bindings: the declarative converters (and
+  digital PDFs via the opt-in `pdf-text` text-layer feature — the same
+  extraction as `--no-ocr`, no pdfium/ONNX) run fully client-side in the
+  browser, ~1.9 MB gzipped; scanned PDFs return a "needs OCR" error. Python
+  docling has no equivalent. See the crate README.
 - **`docling-py`** — PyO3 bindings (PyPI package `docling-rs`): a strangler-fig
   drop-in for docling's Python API where the Rust engine is the document
   processor and `result.document` is a genuine `docling_core` `DoclingDocument`,
