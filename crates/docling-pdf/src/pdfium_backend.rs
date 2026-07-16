@@ -9,7 +9,9 @@
 //! loop is driven through the raw `PdfiumLibraryBindings` FFI on a second handle
 //! to the same bytes (no fork; stays publishable).
 
+#[cfg(feature = "ml")]
 use image::RgbImage;
+#[cfg(feature = "ml")]
 use pdfium_render::prelude::*;
 
 /// A run of text with its bounding box, in PDF points with a **top-left** origin
@@ -44,6 +46,7 @@ pub struct PdfPage {
     /// Per-word cells (one per word, not joined into lines) for TableFormer cell
     /// matching.
     pub word_cells: Vec<TextCell>,
+    #[cfg(feature = "ml")]
     pub image: RgbImage,
     /// Hyperlink annotations on the page (rect in top-left page coords + target
     /// URI), restricted to web/mail/tel schemes. Used only by strict Markdown.
@@ -61,6 +64,7 @@ pub struct LinkAnnot {
     pub uri: String,
 }
 
+#[cfg(feature = "ml")]
 /// A parsed PDF: per-page text cells and page images.
 pub struct PdfDocument {
     pub pages: Vec<PdfPage>,
@@ -94,6 +98,7 @@ pub(crate) fn use_parser_code() -> bool {
     std::env::var("DOCLING_PDFIUM_WORDS").is_err() && std::env::var("DOCLING_PDFIUM_TEXT").is_err()
 }
 
+#[cfg(feature = "ml")]
 /// Try binding pdfium from a directory (or a literal library file path):
 /// `<dir>/<platform library name>` first, else `<dir>` itself as the file.
 fn try_bind_dir(path: &str) -> Option<Box<dyn pdfium_render::prelude::PdfiumLibraryBindings>> {
@@ -104,6 +109,7 @@ fn try_bind_dir(path: &str) -> Option<Box<dyn pdfium_render::prelude::PdfiumLibr
     Pdfium::bind_to_library(path).ok()
 }
 
+#[cfg(feature = "ml")]
 /// Bind to the pdfium dynamic library. Honors `PDFIUM_DYNAMIC_LIB_PATH` (a
 /// directory or file) first; else falls back to `.pdfium/lib` relative to the
 /// current directory (the layout `scripts/install/download_dependencies.sh` and
@@ -125,6 +131,7 @@ fn bind() -> Result<Pdfium, PdfiumError> {
     Pdfium::bind_to_system_library().map(Pdfium::new)
 }
 
+#[cfg(feature = "ml")]
 impl PdfDocument {
     /// Parse a PDF from bytes, optionally decrypting with `password`.
     ///
@@ -144,6 +151,7 @@ impl PdfDocument {
     }
 }
 
+#[cfg(feature = "ml")]
 /// Per-page prose line cells from the pure-Rust text parser. This is the
 /// **default** text layer (it matches docling-parse's char geometry and is a
 /// strict improvement on byte-conformance — e.g. it recovers the Arabic
@@ -160,6 +168,7 @@ fn rust_parser_cells(bytes: &[u8]) -> Option<Vec<crate::textparse::PageParserCel
     }))
 }
 
+#[cfg(feature = "ml")]
 /// Number of pages in a PDF, without rendering any of them — used to decide
 /// whether a document is worth spinning up the parallel worker pool.
 pub fn page_count(bytes: &[u8], password: Option<&str>) -> Result<usize, PdfiumError> {
@@ -168,6 +177,7 @@ pub fn page_count(bytes: &[u8], password: Option<&str>) -> Result<usize, PdfiumE
     Ok(doc.pages().len() as usize)
 }
 
+#[cfg(feature = "ml")]
 /// Render + extract pages one at a time, handing each (owned) [`PdfPage`] to `f`.
 /// Only one page bitmap is resident at a time — a rendered page is ~5 MB, so a
 /// large PDF would otherwise hold gigabytes of bitmaps at once. `f` receives the
@@ -205,6 +215,7 @@ where
     Ok(())
 }
 
+#[cfg(feature = "ml")]
 fn extract_page(
     page: &pdfium_render::prelude::PdfPage<'_>,
     ffi: &FfiText<'_>,
@@ -284,6 +295,7 @@ fn extract_page(
     })
 }
 
+#[cfg(feature = "ml")]
 /// The supersample→target downscale via `fast_image_resize` (SIMD convolution;
 /// the same a=-0.5 Catmull-Rom kernel as `image::imageops::resize(...,
 /// CatmullRom)` and PIL BICUBIC — see the render comment above). Set
@@ -324,6 +336,7 @@ fn fast_downscale(big: &RgbImage, dw: u32, dh: u32) -> RgbImage {
     image::imageops::resize(big, dw, dh, image::imageops::FilterType::CatmullRom)
 }
 
+#[cfg(feature = "ml")]
 /// Collect web/mail/tel hyperlink annotations on a page, mapping each link's
 /// rectangle into top-left page coordinates (like [`TextCell`]). `file://` and
 /// in-document destinations are skipped — only externally meaningful targets are
@@ -357,6 +370,7 @@ fn extract_links(page: &pdfium_render::prelude::PdfPage<'_>, page_h: f32) -> Vec
     out
 }
 
+#[cfg(feature = "ml")]
 /// Fallback line cells from pdfium-render's style segments (one cell per
 /// segment). Used only when the raw-FFI text page can't be loaded.
 fn segment_cells(text: &PdfPageText, page_h: f32) -> Vec<TextCell> {
@@ -379,6 +393,7 @@ fn segment_cells(text: &PdfPageText, page_h: f32) -> Vec<TextCell> {
         .collect()
 }
 
+#[cfg(feature = "ml")]
 /// A second, raw-FFI handle on the same PDF used to drive the character loop
 /// (`FPDFText_GetUnicode`/`GetCharBox`) that pdfium-render's safe API doesn't
 /// expose. Closes the document on drop.
@@ -407,6 +422,7 @@ pub(crate) struct Glyph {
     pub(crate) font: u64,
 }
 
+#[cfg(feature = "ml")]
 impl<'a> FfiText<'a> {
     fn load(bindings: &'a dyn PdfiumLibraryBindings, bytes: &[u8], password: Option<&str>) -> Self {
         let doc = bindings.FPDF_LoadMemDocument(bytes, password);
@@ -452,6 +468,7 @@ impl<'a> FfiText<'a> {
     }
 }
 
+#[cfg(feature = "ml")]
 impl Drop for FfiText<'_> {
     fn drop(&mut self) {
         if !self.doc.is_null() {
@@ -460,6 +477,7 @@ impl Drop for FfiText<'_> {
     }
 }
 
+#[cfg(feature = "ml")]
 /// Read every glyph (codepoint + native box) from the text page, in document
 /// order. A space glyph is kept as a word-boundary marker (NaN box, char `' '`);
 /// pdfium emits these on most lines and they pin word splits exactly. Hard line
@@ -493,6 +511,7 @@ pub fn debug_glyphs(bytes: &[u8], index: i32) -> Vec<(char, f32, f32)> {
     out
 }
 
+#[cfg(feature = "ml")]
 /// One text object on a page, for the hidden-layer diagnostic.
 #[derive(Debug, Clone)]
 pub struct DebugTextObject {
@@ -508,6 +527,7 @@ pub struct DebugTextObject {
     pub text: String,
 }
 
+#[cfg(feature = "ml")]
 /// Diagnostic: every text object on page `index`, each tagged visible/invisible
 /// (via the object-level [`FPDFTextObj_GetTextRenderMode`], which — unlike the
 /// per-character render-mode API — is available on the default pdfium binding).
@@ -574,6 +594,7 @@ pub fn debug_text_objects(bytes: &[u8], index: i32) -> Vec<DebugTextObject> {
     out
 }
 
+#[cfg(feature = "ml")]
 /// Hash a glyph's PDF font name + flags, for `enforce_same_font`. 0 if unavailable.
 fn font_hash(b: &dyn PdfiumLibraryBindings, tp: FPDF_TEXTPAGE, i: i32) -> u64 {
     use std::hash::{Hash, Hasher};
@@ -596,12 +617,14 @@ fn font_hash(b: &dyn PdfiumLibraryBindings, tp: FPDF_TEXTPAGE, i: i32) -> u64 {
     h.finish()
 }
 
+#[cfg(feature = "ml")]
 /// pdfium text render mode 3: the glyph is drawn with neither fill nor stroke —
 /// an invisible glyph. Web-to-PDF exporters put a hidden plain-text copy of
 /// syntax-highlighted code (and other "copy"/accessibility layers) in this mode,
 /// which the char-level text API then extracts as a duplicate of the visible text.
 const INVISIBLE_RENDER_MODE: i32 = 3;
 
+#[cfg(feature = "ml")]
 fn glyphs(b: &dyn PdfiumLibraryBindings, tp: FPDF_TEXTPAGE, fetch_font: bool) -> Vec<Glyph> {
     let n = b.FPDFText_CountChars(tp);
     let mut out = Vec::with_capacity(n.max(0) as usize);

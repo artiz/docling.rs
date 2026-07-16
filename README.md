@@ -98,6 +98,23 @@ builds from [`crates/docling-serve/Dockerfile`](./crates/docling-serve/Dockerfil
 URL inputs make the server fetch outbound (SSRF surface): it binds loopback by
 default — front it with a policy proxy or pass `--no-url-fetch`.
 
+## In the browser — `docling-wasm`
+
+The declarative converters (everything except the PDF/image/audio ML
+pipelines) compile to `wasm32-unknown-unknown`:
+[`crates/docling-wasm`](./crates/docling-wasm) exposes
+`convert(bytes, filename, to)` → Markdown / docling JSON / DocLang via
+`wasm-bindgen`, so DOCX/HTML/XLSX/PPTX/EPUB/… convert **fully client-side** —
+no server, ~1.9 MB gzipped module, no models to download — something Python
+docling has no equivalent for. Digital PDFs convert too: the opt-in
+`pdf-text` feature runs docling-pdf's pure-Rust text-layer parser (the same
+extraction as `--no-ocr`: flat paragraphs, no headings/tables/pictures),
+while scanned PDFs get a clear "needs OCR" error instead of an empty
+document. The crate ships a drop-a-file demo page under
+[`www/`](./crates/docling-wasm/www). Native builds are untouched: the
+feature slices behind this (`pdf` / `asr` / `fetch-images`) all stay in the
+`docling` default set, so a plain `cargo build` is unchanged.
+
 ## The API
 
 ```rust
@@ -770,6 +787,7 @@ on a 1913-page document — see [`docs/PDF_CONFORMANCE.md`](./docs/PDF_CONFORMAN
 | `docling-cli` | command-line interface | `docling.cli` |
 | `docling-node` | Node.js / Bun N-API bindings | https://www.npmjs.com/package/docling.rs |
 | `docling-py` | Python bindings | https://pypi.org/project/docling-rs |
+| `docling-wasm` | WebAssembly bindings (declarative converters + PDF text layer in the browser) | — |
 | `docling-rag` | RAG layer: chunking, embeddings, vector search, REST API | — |
 
 ## License

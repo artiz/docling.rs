@@ -9,30 +9,50 @@
 //! and the deterministic text/reading-order assembly ([`assemble`]). The layout,
 //! table-structure and OCR ONNX stages land behind [`Pipeline`] next.
 
+// Without `ml` only the text-layer path runs; the shared assembly/label
+// helpers it doesn't exercise stay compiled for API stability (the full
+// build still flags genuinely dead code).
+#![cfg_attr(not(feature = "ml"), allow(dead_code))]
+
 mod assemble;
 mod dp_lines;
+#[cfg(feature = "ml")]
 pub mod enrich;
+#[cfg(feature = "ml")]
 pub(crate) mod ep;
 pub mod layout;
+#[cfg(feature = "ml")]
 mod mets;
+#[cfg(feature = "ml")]
 mod ocr;
 pub mod pdfium_backend;
 mod reading_order;
+#[cfg(feature = "ml")]
 pub mod resample;
+#[cfg(feature = "ml")]
 pub mod tableformer;
 pub mod textparse;
+#[cfg(feature = "ml")]
 mod tf_match;
 pub mod timing;
 
+#[cfg(feature = "ml")]
 use std::collections::BTreeMap;
 use std::fmt;
+#[cfg(feature = "ml")]
 use std::sync::mpsc::{sync_channel, Receiver};
+#[cfg(feature = "ml")]
 use std::sync::{Arc, Mutex};
 
-use docling_core::{DoclingDocument, Node};
+use docling_core::DoclingDocument;
+#[cfg(feature = "ml")]
+use docling_core::Node;
 
+#[cfg(feature = "ml")]
 pub use mets::{convert_mets_gbs, convert_mets_gbs_with_options};
-pub use pdfium_backend::{PdfDocument, PdfPage, TextCell};
+#[cfg(feature = "ml")]
+pub use pdfium_backend::PdfDocument;
+pub use pdfium_backend::{PdfPage, TextCell};
 
 /// Errors from the PDF backend. Detailed and surfaced (never silently skipped).
 #[derive(Debug)]
@@ -57,14 +77,41 @@ impl fmt::Display for PdfError {
 
 impl std::error::Error for PdfError {}
 
+#[cfg(feature = "ml")]
 impl From<pdfium_render::prelude::PdfiumError> for PdfError {
     fn from(e: pdfium_render::prelude::PdfiumError) -> Self {
         PdfError::Pdfium(e.to_string())
     }
 }
 
+/// Convert a PDF's **embedded text layer only** — no pdfium, no ONNX, no
+/// threads: the pure-Rust content-stream parser ([`textparse`]) feeds the same
+/// orphan-region assembly the `no_ocr` pipeline flag uses, so text-layer PDFs
+/// come out identical to `--no-ocr` (flat, line-grouped paragraphs in reading
+/// order; no headings/lists/tables/pictures, and no hyperlink recovery).
+///
+/// This is the only conversion entry compiled without the `ml` feature (it is
+/// what a wasm32 build runs). A scanned/image-only PDF (no embedded text
+/// layer) yields an empty document rather than an error, same as `no_ocr` —
+/// callers can detect that and fall back to an OCR-capable build.
+pub fn convert_text_layer(bytes: &[u8], name: &str) -> Result<DoclingDocument, PdfError> {
+    let mut doc = DoclingDocument::new(name);
+    for page in textparse::pdf_text_pages(bytes) {
+        let mut regions = Vec::new();
+        assemble::add_orphan_regions(&mut regions, &page.cells);
+        let table_rows = vec![None; regions.len()];
+        let enrich_out = vec![None; regions.len()];
+        let (nodes, links) = assemble::assemble_page(&page, regions, &table_rows, &enrich_out);
+        doc.nodes.extend(nodes);
+        doc.links.extend(links);
+    }
+    assemble::merge_continuations(&mut doc.nodes);
+    Ok(doc)
+}
+
 /// Threads ONNX inference may use, capped by `DOCLING_RS_PDF_THREADS` if set.
 /// Defaults to the available parallelism (ort otherwise picks a low number).
+#[cfg(feature = "ml")]
 pub(crate) fn intra_threads() -> usize {
     if let Some(n) = std::env::var("DOCLING_RS_PDF_THREADS")
         .ok()
@@ -78,6 +125,7 @@ pub(crate) fn intra_threads() -> usize {
         .unwrap_or(1)
 }
 
+#[cfg(feature = "ml")]
 /// True when `DOCLING_RS_FP32` (any value but `0`) forces the full-precision
 /// models even where an INT8 variant sits next to the fp32 default.
 pub(crate) fn fp32_forced() -> bool {
@@ -86,6 +134,7 @@ pub(crate) fn fp32_forced() -> bool {
         .unwrap_or(false)
 }
 
+#[cfg(feature = "ml")]
 /// Should the int8 model defaults be skipped in favor of fp32? Either the
 /// user said so (`DOCLING_RS_FP32`), or a GPU execution provider is selected
 /// (#74) — the int8 exports are QDQ graphs calibrated for CPU kernels and
@@ -95,6 +144,7 @@ pub(crate) fn prefer_fp32() -> bool {
     fp32_forced() || ep::prefers_fp32()
 }
 
+#[cfg(feature = "ml")]
 /// Resolve a default (CWD-relative) asset path. If it doesn't exist relative
 /// to the current directory, try next to the executable and one level above
 /// it (following symlinks — the layout `scripts/install/install.sh` produces:
@@ -122,6 +172,7 @@ pub(crate) fn resolve_asset(rel: &str) -> String {
     rel.to_string()
 }
 
+#[cfg(feature = "ml")]
 /// Resolve a model path: an explicit env override always wins; otherwise the
 /// INT8 variant of the default path when it exists on disk (the quantized
 /// models are conformance-validated — see docs/PDF_CONFORMANCE.md — and load/run
@@ -140,10 +191,12 @@ pub(crate) fn model_path(env: &str, fp32_default: &str, int8_default: &str) -> S
     resolve_asset(fp32_default)
 }
 
+#[cfg(feature = "ml")]
 /// One page's assembled output: typed nodes plus the page's hyperlinks, kept
 /// separate so pages processed out of order can be stitched back in page order.
 type PageOut = (Vec<Node>, Vec<(String, String)>);
 
+#[cfg(feature = "ml")]
 /// The pool-wide TableFormer slot: one instance shared by every worker, loaded
 /// lazily on the first table region any worker sees. Tables appear on a
 /// minority of pages, so per-worker copies mostly multiplied ~0.4 GB of
@@ -161,8 +214,10 @@ enum TfSlot {
     Ready(tableformer::TableFormer),
 }
 
+#[cfg(feature = "ml")]
 type SharedTables = Arc<Mutex<TfSlot>>;
 
+#[cfg(feature = "ml")]
 /// The same lazy shared-slot pattern for the (rarer still) enrichment models:
 /// one instance per pipeline, loaded on the first region that needs it.
 enum EnrichSlot<T> {
@@ -172,9 +227,12 @@ enum EnrichSlot<T> {
     Ready(T),
 }
 
+#[cfg(feature = "ml")]
 type SharedClassifier = Arc<Mutex<EnrichSlot<enrich::PictureClassifier>>>;
+#[cfg(feature = "ml")]
 type SharedCodeFormula = Arc<Mutex<EnrichSlot<enrich::CodeFormula>>>;
 
+#[cfg(feature = "ml")]
 /// The opt-in enrichment passes, mirroring docling's `PdfPipelineOptions`
 /// flags (`do_picture_classification`, `do_code_enrichment`,
 /// `do_formula_enrichment`). All off by default.
@@ -188,12 +246,14 @@ pub struct EnrichmentOptions {
     pub formula: bool,
 }
 
+#[cfg(feature = "ml")]
 impl EnrichmentOptions {
     fn any(&self) -> bool {
         self.picture_classification || self.code || self.formula
     }
 }
 
+#[cfg(feature = "ml")]
 /// A self-contained set of the per-page models (layout, OCR). Each parallel
 /// page-worker owns its own `Worker` so inference runs concurrently without
 /// sharing an ONNX session (`ort`'s `Session::run` is `&mut self`); only the
@@ -213,6 +273,7 @@ struct Worker {
     no_ocr: bool,
 }
 
+#[cfg(feature = "ml")]
 impl Worker {
     fn load(
         intra: usize,
@@ -479,6 +540,7 @@ impl Worker {
     }
 }
 
+#[cfg(feature = "ml")]
 /// Per-worker ONNX intra-op threads. The layout model is memory-bandwidth bound,
 /// so on a typical machine two threads per worker (sharing one in-cache copy of
 /// the weights) extracts more throughput than one fat model or many single-thread
@@ -498,6 +560,7 @@ fn pdf_intra() -> usize {
     }
 }
 
+#[cfg(feature = "ml")]
 /// How many page-workers to spin up for a multi-page PDF. `DOCLING_RS_PDF_WORKERS`
 /// overrides; otherwise size the pool so `workers × intra ≈ cores`, capped at 4 so
 /// a worst-case pool holds a bounded amount of model memory (~0.4 GB per worker)
@@ -513,6 +576,7 @@ fn pdf_worker_count() -> usize {
     (intra_threads() / pdf_intra()).clamp(1, 4)
 }
 
+#[cfg(feature = "ml")]
 /// Max pages a worker layout-detects with one batched inference call (issue
 /// #73). Workers drain the work channel opportunistically up to this size —
 /// whatever is already rendered gets batched, so batching never *waits* for
@@ -533,6 +597,7 @@ fn pdf_layout_batch() -> usize {
         .unwrap_or_else(|| if intra_threads() >= 8 { 4 } else { 1 })
 }
 
+#[cfg(feature = "ml")]
 /// Minimum page count before a PDF is worth the parallel worker pool. Below this,
 /// the serial primary (running its model on every core) is faster than fanning out
 /// — the helper pool's one-time model-load cost only pays off once enough pages
@@ -545,6 +610,7 @@ fn pdf_parallel_min() -> usize {
         .unwrap_or(6)
 }
 
+#[cfg(feature = "ml")]
 /// A reusable PDF pipeline. The **primary** worker runs its models on every core,
 /// so a single-page / small / image / METS input is converted at full intra-op
 /// speed with no pool to load. A document with enough pages instead fans out
@@ -574,6 +640,7 @@ pub struct Pipeline {
     enrich: EnrichmentOptions,
 }
 
+#[cfg(feature = "ml")]
 impl Pipeline {
     /// Construct the pipeline. Models load lazily on first use (full-intra primary
     /// for serial inputs, the helper pool for multi-page PDFs), so nothing is
@@ -1065,6 +1132,7 @@ impl Pipeline {
     }
 }
 
+#[cfg(feature = "ml")]
 /// Convenience one-shot conversion (loads the pipeline per call). Errors are
 /// detailed and surfaced (never silently skipped).
 pub fn convert(
@@ -1082,6 +1150,7 @@ pub fn convert(
     )
 }
 
+#[cfg(feature = "ml")]
 /// Like [`convert`], but optionally skips loading/running TableFormer (see
 /// [`Pipeline::no_table_former`]) and/or layout+OCR+TableFormer entirely (see
 /// [`Pipeline::no_ocr`]), and/or enables the enrichment passes (see
@@ -1101,11 +1170,13 @@ pub fn convert_with_options(
         .convert(bytes, password, name)
 }
 
+#[cfg(feature = "ml")]
 /// Convenience one-shot image conversion (loads the pipeline per call).
 pub fn convert_image(bytes: &[u8], name: &str) -> Result<DoclingDocument, PdfError> {
     convert_image_with_options(bytes, name, false, false, EnrichmentOptions::default())
 }
 
+#[cfg(feature = "ml")]
 /// Like [`convert_image`], but optionally skips loading/running TableFormer (see
 /// [`Pipeline::no_table_former`]) and/or layout+OCR+TableFormer entirely (see
 /// [`Pipeline::no_ocr`]), and/or enables the enrichment passes.
@@ -1123,12 +1194,14 @@ pub fn convert_image_with_options(
         .convert_image(bytes, name)
 }
 
+#[cfg(feature = "ml")]
 /// Convert pre-segmented pages (image + already-known text cells, e.g. METS/hOCR
 /// scans) through the shared layout + assembly pipeline.
 pub fn convert_pages(pages: Vec<PdfPage>, name: &str) -> Result<DoclingDocument, PdfError> {
     convert_pages_with_options(pages, name, false, false, EnrichmentOptions::default())
 }
 
+#[cfg(feature = "ml")]
 /// Like [`convert_pages`], but optionally skips loading/running TableFormer (see
 /// [`Pipeline::no_table_former`]) and/or layout+OCR+TableFormer entirely (see
 /// [`Pipeline::no_ocr`]), and/or enables the enrichment passes.
@@ -1146,6 +1219,7 @@ pub fn convert_pages_with_options(
         .process_pages(pages, name)
 }
 
+#[cfg(feature = "ml")]
 #[cfg(test)]
 mod send_check {
     /// The Node bindings (`docling-node`) run a shared [`super::Pipeline`] on

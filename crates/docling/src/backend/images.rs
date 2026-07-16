@@ -21,6 +21,7 @@ use std::path::{Path, PathBuf};
 use docling_core::PictureImage;
 
 /// Cap on a single fetched/decoded image, to bound memory on hostile input.
+#[cfg(feature = "fetch-images")]
 const MAX_IMAGE_BYTES: u64 = 32 * 1024 * 1024;
 
 /// Resolves an `<img src>` to the image bytes behind it, or `None` if it can't
@@ -117,6 +118,7 @@ fn from_data_uri(uri: &str) -> Option<PictureImage> {
 
 /// Fetch a remote image over HTTP(S). The mimetype comes from `Content-Type`
 /// when it's an `image/*`, else it's guessed from the URL's extension.
+#[cfg(feature = "fetch-images")]
 fn fetch_remote(url: &str) -> Option<PictureImage> {
     let mut resp = ureq::get(url).call().ok()?;
     let content_type = resp
@@ -255,4 +257,11 @@ mod tests {
             .resolve(&format!("data:image/png;base64,{}", encode(RED_PNG)))
             .is_some());
     }
+}
+
+/// Compiled without the `fetch-images` feature (no HTTP client — e.g. the
+/// wasm32 build): remote images stay placeholders, same as a fetch failure.
+#[cfg(not(feature = "fetch-images"))]
+fn fetch_remote(_url: &str) -> Option<PictureImage> {
+    None
 }

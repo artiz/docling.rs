@@ -22,6 +22,16 @@ concurrency:
 
 env:
   CARGO_TERM_COLOR: always
+  # Keep target/ small enough to cache and restore: no incremental artifacts
+  # (useless for one-shot CI builds, gigabytes on disk) and no debuginfo in
+  # dev/test binaries (the bulk of a debug target; tests behave the same,
+  # backtraces just lose line numbers). Without this the cached target/ grew
+  # past 6 GB compressed (~20 GB unpacked) and cache *restore* started dying
+  # with ENOSPC on the runner disk — which is also why every cache key below
+  # carries a `v2` generation: the old oversized entries must never match.
+  CARGO_INCREMENTAL: "0"
+  CARGO_PROFILE_DEV_DEBUG: "0"
+  CARGO_PROFILE_TEST_DEBUG: "0"
   # Rust version for the style/lint gates. Pinned on purpose: rustfmt and clippy
   # change their output/lints between releases, so a floating `stable` would let
   # a new toolchain fail CI on otherwise-unrelated commits. Bump this manually
@@ -50,14 +60,27 @@ jobs:
             ~/.cargo/registry/cache
             ~/.cargo/git/db
             target
-          key: ${{ runner.os }}-cargo-lint-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: ${{ runner.os }}-cargo-lint-
+          key: ${{ runner.os }}-cargo-v2-lint-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-cargo-v2-lint-
 
       - name: Format
         run: cargo fmt --all --check
 
       - name: Clippy
         run: cargo clippy --workspace --all-targets -- -D warnings
+
+      # actions/cache saves target/ in its post-step, i.e. after this runs:
+      # drop what is cheap to recreate (incremental data shouldn't exist with
+      # CARGO_INCREMENTAL=0; examples and final bin-crate executables relink
+      # in seconds — the compiled library deps are what's worth keeping), so
+      # the cache stays well under the runner's disk headroom.
+      - name: Trim target before cache save
+        if: always()
+        shell: bash
+        run: |
+          rm -rf target/debug/examples target/debug/incremental \
+                 target/release/examples target/release/incremental
+          find target/debug target/release -maxdepth 1 -type f ! -name '*.d' -size +5M -exec rm -f {} + 2>/dev/null || true
 
   test:
     name: test (stable)
@@ -78,8 +101,8 @@ jobs:
             ~/.cargo/registry/cache
             ~/.cargo/git/db
             target
-          key: ${{ runner.os }}-cargo-test-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: ${{ runner.os }}-cargo-test-
+          key: ${{ runner.os }}-cargo-v2-test-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-cargo-v2-test-
 
       # Pure-Rust unit tests + the output-regression suite. The PDF/image/METS
       # snapshot tests need pdfium + the ONNX models, so they are NOT run here —
@@ -88,6 +111,19 @@ jobs:
       # (a Cargo.toml change without its lock update fails here).
       - name: Test
         run: cargo test --workspace --locked
+
+      # actions/cache saves target/ in its post-step, i.e. after this runs:
+      # drop what is cheap to recreate (incremental data shouldn't exist with
+      # CARGO_INCREMENTAL=0; examples and final bin-crate executables relink
+      # in seconds — the compiled library deps are what's worth keeping), so
+      # the cache stays well under the runner's disk headroom.
+      - name: Trim target before cache save
+        if: always()
+        shell: bash
+        run: |
+          rm -rf target/debug/examples target/debug/incremental \
+                 target/release/examples target/release/incremental
+          find target/debug target/release -maxdepth 1 -type f ! -name '*.d' -size +5M -exec rm -f {} + 2>/dev/null || true
 
   # Validate the declared `rust-version` floors against the committed
   # Cargo.lock (rust-lang.org/2023/08/29/committing-lockfiles: a committed
@@ -115,14 +151,27 @@ jobs:
             ~/.cargo/registry/cache
             ~/.cargo/git/db
             target
-          key: ${{ runner.os }}-cargo-msrv-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: ${{ runner.os }}-cargo-msrv-
+          key: ${{ runner.os }}-cargo-v2-msrv-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-cargo-v2-msrv-
 
       - name: Check docling-core on ${{ env.MSRV_CORE }}
         run: cargo +${{ env.MSRV_CORE }} check -p docling-core --locked
 
       - name: Check workspace on ${{ env.MSRV_WORKSPACE }}
         run: cargo +${{ env.MSRV_WORKSPACE }} check --workspace --locked
+
+      # actions/cache saves target/ in its post-step, i.e. after this runs:
+      # drop what is cheap to recreate (incremental data shouldn't exist with
+      # CARGO_INCREMENTAL=0; examples and final bin-crate executables relink
+      # in seconds — the compiled library deps are what's worth keeping), so
+      # the cache stays well under the runner's disk headroom.
+      - name: Trim target before cache save
+        if: always()
+        shell: bash
+        run: |
+          rm -rf target/debug/examples target/debug/incremental \
+                 target/release/examples target/release/incremental
+          find target/debug target/release -maxdepth 1 -type f ! -name '*.d' -size +5M -exec rm -f {} + 2>/dev/null || true
 
   # Build-verify the GPU execution-provider features (#74) without GPU
   # runners: `cargo check` proves the feature plumbing and the EP registration
@@ -165,14 +214,82 @@ jobs:
             ~/.cargo/registry/cache
             ~/.cargo/git/db
             target
-          key: ${{ runner.os }}-cargo-ep-${{ matrix.slug }}-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: ${{ runner.os }}-cargo-ep-${{ matrix.slug }}-
+          key: ${{ runner.os }}-cargo-v2-ep-${{ matrix.slug }}-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-cargo-v2-ep-${{ matrix.slug }}-
 
       - name: Check docling-cli with GPU features
         run: cargo check -p docling-cli --features "${{ matrix.features }}"
 
       - name: Test docling-pdf EP selection with GPU features
         run: 'cargo test -p docling-pdf --lib --features "${{ matrix.features }}" ep::'
+
+      # actions/cache saves target/ in its post-step, i.e. after this runs:
+      # drop what is cheap to recreate (incremental data shouldn't exist with
+      # CARGO_INCREMENTAL=0; examples and final bin-crate executables relink
+      # in seconds — the compiled library deps are what's worth keeping), so
+      # the cache stays well under the runner's disk headroom.
+      - name: Trim target before cache save
+        if: always()
+        shell: bash
+        run: |
+          rm -rf target/debug/examples target/debug/incremental \
+                 target/release/examples target/release/incremental
+          find target/debug target/release -maxdepth 1 -type f ! -name '*.d' -size +5M -exec rm -f {} + 2>/dev/null || true
+
+  # The declarative converters compile for the browser (#79): check the
+  # feature-sliced `docling` on wasm32, build the wasm-bindgen crate, and log
+  # the gzipped module size (the number docs/README quote — ~1.9 MB).
+  wasm:
+    name: wasm32 (declarative converters)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install Rust (stable + wasm32 target)
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+          rustup target add wasm32-unknown-unknown
+
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+            target
+          key: ${{ runner.os }}-cargo-v2-wasm-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-cargo-v2-wasm-
+
+      - name: Check docling (no default features) on wasm32
+        run: cargo check -p docling --no-default-features --target wasm32-unknown-unknown --locked
+
+      - name: Check docling (pdf-text) on wasm32
+        run: cargo check -p docling --no-default-features --features pdf-text --target wasm32-unknown-unknown --locked
+
+      - name: Build docling-wasm (release)
+        run: cargo build -p docling-wasm --target wasm32-unknown-unknown --release --locked
+
+      - name: Host-side tests
+        run: cargo test -p docling-wasm --locked
+
+      - name: Module size
+        run: |
+          wasm=target/wasm32-unknown-unknown/release/docling_wasm.wasm
+          gzip -9 -c "$wasm" | wc -c | xargs -I{} echo "docling_wasm.wasm: $(stat -c%s "$wasm") bytes raw, {} bytes gzipped"
+
+      # actions/cache saves target/ in its post-step, i.e. after this runs:
+      # drop what is cheap to recreate (incremental data shouldn't exist with
+      # CARGO_INCREMENTAL=0; examples and final bin-crate executables relink
+      # in seconds — the compiled library deps are what's worth keeping), so
+      # the cache stays well under the runner's disk headroom.
+      - name: Trim target before cache save
+        if: always()
+        shell: bash
+        run: |
+          rm -rf target/debug/examples target/debug/incremental \
+                 target/release/examples target/release/incremental
+          find target/debug target/release -maxdepth 1 -type f ! -name '*.d' -size +5M -exec rm -f {} + 2>/dev/null || true
 
   publish:
     name: release & publish
@@ -203,8 +320,8 @@ jobs:
             ~/.cargo/registry/cache
             ~/.cargo/git/db
             target
-          key: ${{ runner.os }}-cargo-publish-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: ${{ runner.os }}-cargo-publish-
+          key: ${{ runner.os }}-cargo-v2-publish-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-cargo-v2-publish-
 
       # Decide the next version from conventional commits since the last tag (or
       # use force_version on a manual dispatch); if there is one, bump + commit +
@@ -237,3 +354,16 @@ jobs:
           else
             gh release create "$tag" --title "$tag" --notes-file "$notes" --verify-tag
           fi
+
+      # actions/cache saves target/ in its post-step, i.e. after this runs:
+      # drop what is cheap to recreate (incremental data shouldn't exist with
+      # CARGO_INCREMENTAL=0; examples and final bin-crate executables relink
+      # in seconds — the compiled library deps are what's worth keeping), so
+      # the cache stays well under the runner's disk headroom.
+      - name: Trim target before cache save
+        if: always()
+        shell: bash
+        run: |
+          rm -rf target/debug/examples target/debug/incremental \
+                 target/release/examples target/release/incremental
+          find target/debug target/release -maxdepth 1 -type f ! -name '*.d' -size +5M -exec rm -f {} + 2>/dev/null || true

@@ -6,6 +6,7 @@
 //! (two-column aware), and each becomes a typed node by its layout label.
 
 use docling_core::{Node, PictureClass, PictureImage, Table};
+#[cfg(feature = "ml")]
 use image::RgbImage;
 
 use crate::layout::Region;
@@ -1007,6 +1008,7 @@ pub enum Enrichment {
 /// `page.get_image(scale=…, cropbox=…)`, sourced from the existing
 /// [`crate::pdfium_backend::RENDER_SCALE`] render instead of a fresh pdfium
 /// pass (the page bitmap is already the exact docling render at scale 2).
+#[cfg(feature = "ml")]
 pub fn crop_region_scaled(page: &PdfPage, bbox: [f32; 4], target_scale: f32) -> Option<RgbImage> {
     let s = page.scale;
     let [l, t, r, b] = bbox;
@@ -1041,6 +1043,7 @@ pub fn crop_region_scaled(page: &PdfPage, bbox: [f32; 4], target_scale: f32) -> 
 /// Crop a layout region from the rendered page image and encode it as PNG (the
 /// figure bytes docling stores on a `PictureItem`). Region coordinates are page
 /// points; the image is rendered at `page.scale`.
+#[cfg(feature = "ml")]
 fn crop_region(page: &PdfPage, region: &Region) -> Option<PictureImage> {
     let s = page.scale;
     let (iw, ih) = (page.image.width(), page.image.height());
@@ -1300,11 +1303,17 @@ pub fn assemble_page(
                 Some(Enrichment::PictureClasses(classes)) => Some(classes.clone()),
                 _ => None,
             };
+            // Without the page render (text-layer-only build) a picture keeps
+            // its caption/classification but carries no cropped pixels.
+            #[cfg(feature = "ml")]
+            let image = crate::timing::timed("crop_region", || crop_region(page, region));
+            #[cfg(not(feature = "ml"))]
+            let image: Option<PictureImage> = None;
             nodes.push(located(
                 loc,
                 Node::Picture {
                     caption,
-                    image: crate::timing::timed("crop_region", || crop_region(page, region)),
+                    image,
                     classification,
                 },
             ));

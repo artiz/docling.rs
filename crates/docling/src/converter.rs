@@ -53,7 +53,9 @@ use crate::error::ConversionError;
 use crate::format::InputFormat;
 use crate::result::{ConversionResult, ConversionStatus};
 use crate::source::SourceDocument;
+#[cfg(feature = "pdf")]
 use crate::stream::MarkdownStream;
+#[cfg(feature = "pdf")]
 use docling_core::ImageMode;
 
 /// Routes a [`SourceDocument`] to the backend for its format and returns a
@@ -74,7 +76,7 @@ pub struct DocumentConverter {
     /// Opt-in PDF/image enrichment models (docling's
     /// `do_picture_classification` / `do_code_enrichment` /
     /// `do_formula_enrichment`).
-    enrich: docling_pdf::EnrichmentOptions,
+    enrich: crate::EnrichmentOptions,
 }
 
 impl DocumentConverter {
@@ -93,7 +95,7 @@ impl DocumentConverter {
             no_table_former: false,
             no_ocr: false,
             use_web_browser: false,
-            enrich: docling_pdf::EnrichmentOptions::default(),
+            enrich: crate::EnrichmentOptions::default(),
         }
     }
 
@@ -234,6 +236,7 @@ impl DocumentConverter {
     /// Streaming is Markdown-only — JSON needs the whole node tree, so there is no
     /// streaming JSON. The conversion runs on a background thread; dropping the
     /// returned [`MarkdownStream`] cancels it.
+    #[cfg(feature = "pdf")]
     pub fn convert_streaming(
         &self,
         source: SourceDocument,
@@ -249,6 +252,7 @@ impl DocumentConverter {
     /// here.
     ///
     /// [`DoclingDocument::export_to_markdown_with_images`]: docling_core::DoclingDocument::export_to_markdown_with_images
+    #[cfg(feature = "pdf")]
     pub fn convert_streaming_images(
         &self,
         source: SourceDocument,
@@ -360,6 +364,7 @@ impl DocumentConverter {
             InputFormat::XmlDoclang | InputFormat::Dclx => {
                 crate::backend::DoclangBackend.convert(&source)?
             }
+            #[cfg(feature = "pdf")]
             InputFormat::Pdf => docling_pdf::convert_with_options(
                 &source.bytes,
                 None,
@@ -369,6 +374,7 @@ impl DocumentConverter {
                 self.enrich,
             )
             .map_err(|e| ConversionError::Parse(e.to_string()))?,
+            #[cfg(feature = "pdf")]
             InputFormat::Image => docling_pdf::convert_image_with_options(
                 &source.bytes,
                 &source.name,
@@ -377,6 +383,7 @@ impl DocumentConverter {
                 self.enrich,
             )
             .map_err(|e| ConversionError::Parse(e.to_string()))?,
+            #[cfg(feature = "pdf")]
             InputFormat::MetsGbs => docling_pdf::convert_mets_gbs_with_options(
                 &source.bytes,
                 &source.name,
@@ -387,8 +394,50 @@ impl DocumentConverter {
             .map_err(|e| ConversionError::Parse(e.to_string()))?,
             // Audio → Whisper ASR (symphonia decode + ONNX inference); each
             // transcribed segment becomes a `[time: start-end] text` paragraph.
+            #[cfg(feature = "asr")]
             InputFormat::Audio => docling_asr::convert_audio(&source.bytes, &source.name)
                 .map_err(|e| ConversionError::Parse(e.to_string()))?,
+            // Without the full ML pipeline, `pdf-text` still converts a PDF's
+            // embedded text layer (pure Rust — the wasm32 path), equivalent to
+            // `--no-ocr`: flat paragraphs, no headings/tables/pictures. A
+            // scanned PDF has no text layer, so an empty document means "this
+            // needs OCR" — say so instead of returning nothing.
+            #[cfg(all(feature = "pdf-text", not(feature = "pdf")))]
+            InputFormat::Pdf => {
+                let doc = docling_pdf::convert_text_layer(&source.bytes, &source.name)
+                    .map_err(|e| ConversionError::Parse(e.to_string()))?;
+                if doc.nodes.is_empty() {
+                    return Err(ConversionError::Parse(
+                        "PDF has no embedded text layer (scanned/image-only?); OCR needs a \
+                         build with the `pdf` feature"
+                            .into(),
+                    ));
+                }
+                doc
+            }
+            // Compiled without the ML pipelines: the formats stay detectable,
+            // but converting them needs a build with the matching feature.
+            #[cfg(not(any(feature = "pdf", feature = "pdf-text")))]
+            InputFormat::Pdf => {
+                return Err(ConversionError::Parse(
+                    "Pdf conversion is not compiled in (rebuild with the `pdf` feature, or \
+                     `pdf-text` for text-layer-only extraction)"
+                        .into(),
+                ))
+            }
+            #[cfg(not(feature = "pdf"))]
+            InputFormat::Image | InputFormat::MetsGbs => {
+                return Err(ConversionError::Parse(format!(
+                    "{:?} conversion is not compiled in (rebuild with the `pdf` feature)",
+                    source.format
+                )))
+            }
+            #[cfg(not(feature = "asr"))]
+            InputFormat::Audio => {
+                return Err(ConversionError::Parse(
+                    "audio conversion is not compiled in (rebuild with the `asr` feature)".into(),
+                ))
+            }
         };
         // Carry the mode so `result.document.export_to_markdown()` reflects it.
         document.strict_markdown = self.strict;

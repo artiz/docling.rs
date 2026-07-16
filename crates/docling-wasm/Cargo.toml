@@ -1,0 +1,26 @@
+[package]
+name = "docling-wasm"
+description = "Browser/edge (wasm32) build of docling.rs's declarative converters: DOCX/HTML/MD/XLSX/PPTX/… → Markdown or docling JSON."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+keywords.workspace = true
+categories.workspace = true
+rust-version.workspace = true
+# Shipped as an npm package built by wasm-pack / wasm-bindgen, not on crates.io.
+publish = false
+
+[lib]
+# wasm-bindgen needs a cdylib; rlib keeps `cargo test` runnable on the host.
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+# The pure-Rust declarative slice only: no pdfium/ONNX (pdf, asr), no HTTP
+# client (fetch-images) — exactly the set that compiles for wasm32 (#79).
+docling = { path = "../docling", version = "0.41.2", default-features = false, features = ["pdf-text"] }
+serde_json = "1"
+wasm-bindgen = "0.2"
+# Panic messages land in the browser console instead of "unreachable executed".
+console_error_panic_hook = "0.1"
