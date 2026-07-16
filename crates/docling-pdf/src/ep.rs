@@ -26,7 +26,7 @@
 //! provider is selected ([`prefers_fp32`]): the int8 exports are QDQ graphs
 //! calibrated for CPU kernels — on GPU they only add de-quantize traffic and
 //! were never conformance-validated there, while fp32 is (see
-//! PDF_CONFORMANCE.md).
+//! docs/PDF_CONFORMANCE.md).
 
 use std::sync::OnceLock;
 

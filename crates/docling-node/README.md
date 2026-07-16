@@ -183,7 +183,7 @@ call are needed afterwards:
 > **layout + TableFormer are PyTorch→ONNX exports**
 > (`docling-project/docling-layout-heron`, Apache-2.0;
 > `docling-project/docling-models`, CDLA-Permissive-2.0/Apache-2.0 — see
-> [`MODELS_NOTICE.md`](../../MODELS_NOTICE.md) for full attribution), not
+> [`docs/MODELS_NOTICE.md`](../../docs/MODELS_NOTICE.md) for full attribution), not
 > docling.rs's own weights — docling.rs hosts the converted `.onnx` as a
 > GitHub Release purely so you don't need a local Python/torch toolchain.
 > pdfium and the OCR model are re-hosted, unmodified, from their own public

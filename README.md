@@ -9,7 +9,7 @@ documents into a unified `DoclingDocument` for downstream AI workflows.
 
 The format migration is **complete** — every document format in docling's
 pipeline is supported, validated byte-for-byte against live docling. See
-[`MIGRATION.md`](./MIGRATION.md) for the full architecture, the Python → Rust
+[`docs/MIGRATION.md`](./docs/MIGRATION.md) for the full architecture, the Python → Rust
 mapping, and per-format conformance.
 
 ## Status
@@ -27,7 +27,7 @@ lives in `docling-pdf`: a pure-Rust PDF text parser, pdfium for page
 rasterization, and an ONNX layout/TableFormer/OCR stack. TableFormer is ported
 to ONNX and run on every detected table region to recover its structure;
 geometric reconstruction from cell positions remains only as the fallback when
-the TableFormer graphs aren't present (see `PDF_CONFORMANCE.md`).
+the TableFormer graphs aren't present (see `docs/PDF_CONFORMANCE.md`).
 
 **Audio/ASR** (docling's Whisper pipeline) lives in `docling-asr`, and it is
 Rust all the way down: [`symphonia`](https://crates.io/crates/symphonia)
@@ -40,7 +40,7 @@ OpenAI's timestamp rules — docling's ASR defaults), and each segment becomes a
 
 Output is checked against upstream Python docling — declarative formats
 byte-for-byte against live docling, the ML pipeline against a deterministic
-snapshot baseline. See [`MIGRATION.md`](./MIGRATION.md) and
+snapshot baseline. See [`docs/MIGRATION.md`](./docs/MIGRATION.md) and
 `scripts/conformance/conformance.sh`.
 
 ## RAG subsystem
@@ -508,7 +508,7 @@ corpus) and dynamic INT8 of the TableFormer decoder. On CPUs with AVX-512
 VNNI they make layout inference — the dominant PDF cost — **~2.4× faster**
 (~1.4–1.8× end-to-end) at conformance validated as unchanged against the
 corpus groundtruth; the TableFormer output is byte-identical. See
-[`PDF_CONFORMANCE.md`](./PDF_CONFORMANCE.md) for the measurements.
+[`docs/PDF_CONFORMANCE.md`](./docs/PDF_CONFORMANCE.md) for the measurements.
 
 **The pipeline uses them automatically** whenever they sit next to the fp32
 files at the default paths (`download_dependencies.sh` fetches them by
@@ -575,7 +575,7 @@ console.log(content)
 
 The layout model and TableFormer are PyTorch→ONNX exports of docling-project's
 own models (Apache-2.0 / CDLA-Permissive-2.0 — see
-[`MODELS_NOTICE.md`](./MODELS_NOTICE.md) for full attribution); pdfium and the
+[`docs/MODELS_NOTICE.md`](./docs/MODELS_NOTICE.md) for full attribution); pdfium and the
 OCR model are re-hosted, unmodified, from their own public releases — all on
 one host for convenience.
 
@@ -673,7 +673,7 @@ scripts/test/performance.sh tests/data/html/sources/wiki_duck.html 10
 
 The comparison scripts install the latest published Python `docling` from PyPI
 into `.venv-compare` automatically on first run. See
-[`MIGRATION.md`](./MIGRATION.md) (§9, “Comparing against docling”).
+[`docs/MIGRATION.md`](./docs/MIGRATION.md) (§9, “Comparing against docling”).
 
 ## Install locally / in CI (one-liner)
 
@@ -729,7 +729,7 @@ reports peak RSS, CPU utilization, and conversion time. Ratios below are
 docling ÷ docling.rs — bigger means Rust wins by more. The PDF row is the
 **fp32** stack; the optional [INT8 models](#int8-models-faster-pdf-conversion-on-cpu)
 roughly double layout-inference speed on top of it (measured 1.83× end-to-end
-on a 1913-page document — see [`PDF_CONFORMANCE.md`](./PDF_CONFORMANCE.md)).
+on a 1913-page document — see [`docs/PDF_CONFORMANCE.md`](./docs/PDF_CONFORMANCE.md)).
 
 | File | Size | Peak-memory ratio | CPU ratio | Warm-conversion speedup |
 |---|---:|---:|---:|---:|

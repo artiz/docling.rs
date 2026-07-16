@@ -9,7 +9,7 @@
 //! inline code, links), key-value form regions (docling's `field_region`,
 //! detected from the `keyN` / `keyN_valueM` / `keyN_marker` `id`-convention),
 //! and inline visibility suppression (`hidden` / inline `display:none` /
-//! `visibility:hidden`). Out of scope for now and tracked in `MIGRATION.md`:
+//! `visibility:hidden`). Out of scope for now and tracked in `docs/MIGRATION.md`:
 //! browser rendering, rendered bounding boxes, stylesheet-driven (class/CSS
 //! cascade) visibility suppression, and the rich per-cell table provenance the
 //! Python backend computes.

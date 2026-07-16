@@ -8,7 +8,7 @@
 //!
 //! Phase 0 models a simplified, linear node tree that is enough to round-trip
 //! through Markdown. The faithful, `$ref`-based schema that matches
-//! docling-core's JSON wire format lands in Phase 1 (see `MIGRATION.md`).
+//! docling-core's JSON wire format lands in Phase 1 (see `docs/MIGRATION.md`).
 
 pub mod base64;
 pub mod chunker;

@@ -12,7 +12,7 @@
 # Convert a document (Markdown to stdout):
 #   docker run --rm -v "$PWD:/data" docling-rs /data/input.pdf
 #
-# Optimizations baked in by default (see PDF_CONFORMANCE.md for the measured
+# Optimizations baked in by default (see docs/PDF_CONFORMANCE.md for the measured
 # numbers; every one is byte-exact on the snapshot corpus):
 #   * layout INT8 — static Conv-only quantization calibrated on the repo's PDF
 #     corpus, ~2.4x faster layout inference (`--build-arg INT8=0` for fp32;

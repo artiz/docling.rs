@@ -7,7 +7,7 @@
 #   docling-asr   — the audio/ASR pipeline (symphonia decode + ONNX Whisper)
 #   docling-cli   — the `docling-rs` command-line binary
 #   docling-rag   — pluggable RAG (chunk/embed/store/search) over the converter
-# See MIGRATION.md for the Python → Rust mapping and what is / isn't ported.
+# See docs/MIGRATION.md for the Python → Rust mapping and what is / isn't ported.
 
 [workspace]
 resolver = "2"
