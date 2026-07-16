@@ -2,7 +2,7 @@
 //! ONNX by `scripts/install/export_tableformer.py`. The image encoder + tag-transformer
 //! encoder run once to a memory tensor; the decoder is then stepped
 //! autoregressively to emit an OTSL structure-token sequence (the same model
-//! docling runs). See PDF_CONFORMANCE.md.
+//! docling runs). See docs/PDF_CONFORMANCE.md.
 
 use crate::pdfium_backend::TextCell;
 use image::RgbImage;

@@ -3,7 +3,7 @@
 `docling.rs`'s PDF/image pipeline uses ONNX graphs that are **format
 conversions of docling-project's own PyTorch models**, not weights docling.rs
 trains or modifies. They're licensed separately from docling.rs's own MIT
-code (see [`LICENSE`](./LICENSE)) under their upstream terms:
+code (see [`LICENSE`](../LICENSE)) under their upstream terms:
 
 | Model | Source | License |
 |---|---|---|

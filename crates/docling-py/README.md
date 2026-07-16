@@ -3,7 +3,7 @@
 A **strangler-fig drop-in** for Python docling's common conversion path,
 backed by the Rust [docling.rs](https://github.com/docling-project/docling.rs) engine:
 same call shape, no torch, ~4× faster PDF conversion at a fraction of the
-memory (see [`PDF_CONFORMANCE.md`](../../PDF_CONFORMANCE.md)).
+memory (see [`docs/PDF_CONFORMANCE.md`](../../docs/PDF_CONFORMANCE.md)).
 
 ```python
 # was:  from docling.document_converter import DocumentConverter
@@ -190,7 +190,7 @@ Errors (a bad tokenizer path, malformed document JSON) surface on the first
 VLM/enrichment pipelines, GPU accelerator devices (the engine is ONNX Runtime on
 CPU), and per-format *backend* selection. The document carries rendered text for
 inline formatting rather than structured `formatting` fields — see
-`MIGRATION.md` §4 for the documented divergences.
+`docs/MIGRATION.md` §4 for the documented divergences.
 
 ## Publishing
 

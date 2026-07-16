@@ -12,7 +12,7 @@
 //
 // This module does NOT download anything — `scripts/download_dependencies.sh`
 // does that, fetching everything from this repo's GitHub Releases straight
-// into `./models` and `./.pdfium` (see MODELS_NOTICE.md for attribution: the
+// into `./models` and `./.pdfium` (see docs/MODELS_NOTICE.md for attribution: the
 // layout model and TableFormer are PyTorch→ONNX exports of docling-project's
 // own models, re-hosted here as a convenience). This module just resolves
 // where those files (or an explicit `DOCLING_*` / `PDFIUM_DYNAMIC_LIB_PATH`
@@ -163,7 +163,7 @@ function downloadGuide() {
     'without it). To use your own export/host instead, point the DOCLING_*',
     'env vars at it directly: DOCLING_LAYOUT_ONNX, DOCLING_OCR_REC_ONNX,',
     'DOCLING_OCR_DICT, DOCLING_TABLEFORMER_{ENCODER,DECODER,BBOX},',
-    'PDFIUM_DYNAMIC_LIB_PATH — see MODELS_NOTICE.md for licensing.',
+    'PDFIUM_DYNAMIC_LIB_PATH — see docs/MODELS_NOTICE.md for licensing.',
     '',
     'Declarative formats (md, html, docx, xlsx, …) need none of this — only',
     'PDF, image and METS conversion do.',

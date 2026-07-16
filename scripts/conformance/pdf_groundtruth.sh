@@ -3,7 +3,7 @@
 # Per-PDF byte-conformance of the Rust pipeline vs the committed docling
 # groundtruth (tests/data/pdf/groundtruth/*.md). Unlike conformance.sh this needs
 # no docling install — it diffs against the checked-in reference. Use it to track
-# how many groundtruth PDFs are byte-for-byte exact (see PDF_CONFORMANCE.md).
+# how many groundtruth PDFs are byte-for-byte exact (see docs/PDF_CONFORMANCE.md).
 #
 # Usage: scripts/conformance/pdf_groundtruth.sh
 

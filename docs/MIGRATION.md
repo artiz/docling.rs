@@ -650,7 +650,7 @@ and Python (`docling-py`, PyO3) interop bindings followed.
 ## The meat-grinder mascot 🦀
 
 The mascot — a duck feeding a document into a meat grinder
-([`docs/assets/logo.svg`](./docs/assets/logo.svg)) — captures what this does: a
+([`docs/assets/logo.svg`](./assets/logo.svg)) — captures what this does: a
 grinder is the machine you push anything through to get a single, uniform mince,
 which is exactly what happens to documents here — PDF, DOCX, HTML, XLSX … all
 come out as one `DoclingDocument`. And it's written in Rust, so Ferris the crab

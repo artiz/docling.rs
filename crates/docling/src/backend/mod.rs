@@ -5,7 +5,7 @@
 //! directly, without the page-level ML recognition pipeline.
 //!
 //! Paginated/ML backends (PDF, images) will get a richer trait in a later phase
-//! — see `MIGRATION.md`.
+//! — see `docs/MIGRATION.md`.
 
 use docling_core::DoclingDocument;
 

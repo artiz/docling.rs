@@ -5,7 +5,7 @@
 #
 # The layout model and TableFormer are PyTorch→ONNX *format conversions* of
 # docling-project's own models (Apache-2.0 / CDLA-Permissive-2.0 — see
-# MODELS_NOTICE.md); no weights are retrained here. The `*_int8` assets are
+# docs/MODELS_NOTICE.md); no weights are retrained here. The `*_int8` assets are
 # post-training quantizations of those same exports (scripts/install/quantize_models.py
 # — a numeric re-encoding of the weights, no retraining; conformance-validated
 # in PDF_PERFORMANCE.md). pdfium and the OCR model are re-hosted third-party
@@ -176,7 +176,7 @@ jobs:
             gh release create "$TAG" release-assets/* \
               --repo "${{ github.repository }}" \
               --title "docling.rs ML models ($TAG)" \
-              --notes-file MODELS_NOTICE.md
+              --notes-file docs/MODELS_NOTICE.md
           fi
 
       # --- prune stale assets ------------------------------------------------
