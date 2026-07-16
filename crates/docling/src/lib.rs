@@ -55,6 +55,15 @@ pub use docling_core::{
 #[cfg(feature = "pdf")]
 pub use docling_pdf::{EnrichmentOptions, Pipeline};
 
+/// Which PDF conversion this build compiled in: the full ML pipeline (`pdf`
+/// feature), the pure-Rust text-layer path (`pdf-text`, the wasm32 build), or
+/// neither. Compile-time facts, exported so downstream crates (whose own
+/// features can't see this crate's) can branch — e.g. docling-wasm's host
+/// tests, where workspace feature unification may pull `pdf` in.
+pub const PDF_ML_COMPILED: bool = cfg!(feature = "pdf");
+/// True when the `pdf-text` text-layer-only PDF path is compiled in.
+pub const PDF_TEXT_COMPILED: bool = cfg!(feature = "pdf-text");
+
 /// Stand-in for `docling_pdf::EnrichmentOptions` when the `pdf` feature is
 /// off: the `DocumentConverter` builder methods keep compiling (and stay
 /// inert — the formats these flags affect are rejected at convert time).

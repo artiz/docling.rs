@@ -25,10 +25,12 @@
 <body>
   <h1>docling.rs → wasm: convert documents in your browser</h1>
   <p>
-    DOCX / HTML / Markdown / XLSX / PPTX / CSV / EPUB / ODF / LaTeX / … are
-    converted to Markdown or docling JSON <strong>entirely client-side</strong>
-    — the file never leaves this page. PDF/image/audio need the native ML
-    pipeline and are not part of the wasm build.
+    DOCX / HTML / Markdown / XLSX / PPTX / CSV / EPUB / ODF / LaTeX /
+    digital PDF / … are converted to Markdown or docling JSON
+    <strong>entirely client-side</strong> — the file never leaves this page.
+    PDFs convert via their embedded text layer (flat paragraphs, like the
+    native <code>--no-ocr</code>); scanned PDFs, images and audio need the
+    native ML pipeline and are not part of the wasm build.
   </p>
   <div class="row">
     <label>Output:

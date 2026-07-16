@@ -3,9 +3,12 @@
 //! WebVTT, Email, MHTML, JATS, USPTO, XBRL, LaTeX, JSON, DocLang → Markdown or
 //! docling JSON — fully client-side, no server round-trip.
 //!
-//! Built on `docling` with `default-features = false`: the PDF/image/ASR ML
-//! pipelines (pdfium + ONNX Runtime) and the HTTP image fetcher are compiled
-//! out — those formats are rejected at convert time with a clear message.
+//! Built on `docling` with `default-features = false` plus `pdf-text`: a PDF's
+//! **embedded text layer** converts too (pure-Rust parser, same extraction as
+//! the native `--no-ocr` flag — flat paragraphs, no headings/tables/pictures).
+//! The ML pipelines (pdfium + ONNX Runtime) and the HTTP image fetcher are
+//! compiled out — scanned PDFs, images, and audio are rejected at convert time
+//! with a clear message.
 //!
 //! ```js
 //! import init, { convert } from "./pkg/docling_wasm.js";
@@ -53,17 +56,18 @@ pub fn convert(bytes: &[u8], filename: &str, to: Option<String>) -> Result<Strin
 }
 
 /// The file extensions this build can convert, as a JSON string array —
-/// handy for an `<input accept=…>` filter. The ML formats (pdf, images,
-/// audio, METS) are excluded: they are not compiled into the wasm build.
+/// handy for an `<input accept=…>` filter. PDF converts via its embedded
+/// text layer (`pdf-text`); the remaining ML formats (images, audio, METS)
+/// are excluded: they are not compiled into the wasm build.
 #[wasm_bindgen]
 pub fn supported_extensions() -> String {
-    // Keep in sync with `InputFormat::from_extension` minus the ML formats
-    // (pdf, images, audio, mets tarballs).
+    // Keep in sync with `InputFormat::from_extension` minus the ML-only
+    // formats (images, audio, mets tarballs).
     let exts = [
         "docx", "dotx", "docm", "dotm", "pptx", "potx", "ppsx", "pptm", "potm", "ppsm", "md",
         "txt", "text", "qmd", "rmd", "html", "htm", "xhtml", "xml", "nxml", "dclg", "dclx", "adoc",
         "asciidoc", "asc", "csv", "xlsx", "xlsm", "odt", "ott", "ods", "ots", "odp", "otp", "json",
-        "vtt", "tex", "latex", "eml", "epub", "mhtml", "mht",
+        "vtt", "tex", "latex", "eml", "epub", "mhtml", "mht", "pdf",
     ];
     serde_json::to_string(exts.as_slice()).expect("static array serializes")
 }
@@ -91,10 +95,45 @@ mod tests {
 
     #[test]
     fn ml_formats_rejected() {
-        let err = convert_impl(b"%PDF-1.4", "doc.pdf", None).unwrap_err();
+        // Images still need the full ML pipeline.
+        let err = convert_impl(&[0x89, b'P', b'N', b'G'], "scan.png", None).unwrap_err();
         assert!(
-            err.contains("pdf"),
-            "should point at the missing feature: {err}"
+            err.contains("unknown or unsupported") || err.contains("pdf"),
+            "should reject the ML-only format: {err}"
+        );
+    }
+
+    #[test]
+    fn pdf_text_layer_converts() {
+        // A text-layer PDF converts via the pure-Rust `pdf-text` path (the
+        // exact `--no-ocr` extraction: flat paragraphs in reading order).
+        // Under `cargo test --workspace`, feature unification swaps in the
+        // full ML pipeline (which needs pdfium + models) — this test is about
+        // the text-layer arm, so it only runs in the real wasm feature set.
+        if docling::PDF_ML_COMPILED {
+            return;
+        }
+        let bytes = std::fs::read(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../tests/data/pdf/sources/code_and_formula.pdf"
+        ))
+        .expect("corpus pdf");
+        let out = convert_impl(&bytes, "code_and_formula.pdf", None).unwrap();
+        assert!(!out.trim().is_empty(), "text layer should extract");
+    }
+
+    #[test]
+    fn scanned_pdf_reports_missing_text_layer() {
+        // A PDF with no embedded text (here: a stub with no content stream)
+        // should explain that OCR needs a native build, not return "".
+        // Text-layer-arm-only, same as `pdf_text_layer_converts`.
+        if docling::PDF_ML_COMPILED {
+            return;
+        }
+        let err = convert_impl(b"%PDF-1.4\n%%EOF", "scan.pdf", None).unwrap_err();
+        assert!(
+            err.contains("text layer") || err.contains("OCR"),
+            "should point at the missing text layer: {err}"
         );
     }
 
@@ -114,6 +153,7 @@ mod tests {
     fn extensions_json_parses() {
         let v: Vec<String> = serde_json::from_str(&supported_extensions()).unwrap();
         assert!(v.contains(&"docx".to_string()));
-        assert!(!v.contains(&"pdf".to_string()));
+        assert!(v.contains(&"pdf".to_string()), "pdf-text is compiled in");
+        assert!(!v.contains(&"png".to_string()));
     }
 }

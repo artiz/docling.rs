@@ -397,10 +397,36 @@ impl DocumentConverter {
             #[cfg(feature = "asr")]
             InputFormat::Audio => docling_asr::convert_audio(&source.bytes, &source.name)
                 .map_err(|e| ConversionError::Parse(e.to_string()))?,
+            // Without the full ML pipeline, `pdf-text` still converts a PDF's
+            // embedded text layer (pure Rust — the wasm32 path), equivalent to
+            // `--no-ocr`: flat paragraphs, no headings/tables/pictures. A
+            // scanned PDF has no text layer, so an empty document means "this
+            // needs OCR" — say so instead of returning nothing.
+            #[cfg(all(feature = "pdf-text", not(feature = "pdf")))]
+            InputFormat::Pdf => {
+                let doc = docling_pdf::convert_text_layer(&source.bytes, &source.name)
+                    .map_err(|e| ConversionError::Parse(e.to_string()))?;
+                if doc.nodes.is_empty() {
+                    return Err(ConversionError::Parse(
+                        "PDF has no embedded text layer (scanned/image-only?); OCR needs a \
+                         build with the `pdf` feature"
+                            .into(),
+                    ));
+                }
+                doc
+            }
             // Compiled without the ML pipelines: the formats stay detectable,
             // but converting them needs a build with the matching feature.
+            #[cfg(not(any(feature = "pdf", feature = "pdf-text")))]
+            InputFormat::Pdf => {
+                return Err(ConversionError::Parse(
+                    "Pdf conversion is not compiled in (rebuild with the `pdf` feature, or \
+                     `pdf-text` for text-layer-only extraction)"
+                        .into(),
+                ))
+            }
             #[cfg(not(feature = "pdf"))]
-            InputFormat::Pdf | InputFormat::Image | InputFormat::MetsGbs => {
+            InputFormat::Image | InputFormat::MetsGbs => {
                 return Err(ConversionError::Parse(format!(
                     "{:?} conversion is not compiled in (rebuild with the `pdf` feature)",
                     source.format

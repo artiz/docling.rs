@@ -730,6 +730,41 @@ pub fn pdf_all_cells(bytes: &[u8]) -> Vec<PageParserCells> {
         .collect()
 }
 
+/// Whole pages for the text-layer-only conversion ([`crate::convert_text_layer`]):
+/// the parser's prose/word/code cells plus page geometry, assembled into
+/// [`PdfPage`]s with no rendered image and no link annotations. Everything here
+/// is pure Rust (lopdf), so it compiles without the `ml` feature — including on
+/// wasm32. A page the parser can't read (no text layer) comes back with empty
+/// cells; there is no pdfium fallback on this path.
+pub fn pdf_text_pages(bytes: &[u8]) -> Vec<crate::pdfium_backend::PdfPage> {
+    let Ok(doc) = Document::load_mem(bytes) else {
+        return Vec::new();
+    };
+    let mut caches = DocCaches::default();
+    let mut pages: Vec<_> = doc.get_pages().into_iter().collect();
+    pages.sort_by_key(|(n, _)| *n);
+    pages
+        .into_iter()
+        .map(|(_, pid)| {
+            let (w, h) = page_size(&doc, pid);
+            let glyphs = page_glyphs_cached(&doc, pid, &mut caches);
+            let (prose, words) = crate::dp_lines::line_and_word_cells(&glyphs, h, true);
+            crate::pdfium_backend::PdfPage {
+                width: w,
+                height: h,
+                // Cells are native PDF points; there is no rendered bitmap.
+                scale: 1.0,
+                cells: prose,
+                code_cells: crate::pdfium_backend::code_cells_from_glyphs(&glyphs, h),
+                word_cells: words,
+                #[cfg(feature = "ml")]
+                image: image::RgbImage::new(1, 1),
+                links: Vec::new(),
+            }
+        })
+        .collect()
+}
+
 /// The text-state scalars inherited by a Form XObject when it is invoked via
 /// `Do` (the PDF graphics state includes the text parameters, but not the text
 /// matrices, which a form re-establishes inside its own `BT`/`ET`).

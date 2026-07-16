@@ -176,7 +176,7 @@ jobs:
 
   # The declarative converters compile for the browser (#79): check the
   # feature-sliced `docling` on wasm32, build the wasm-bindgen crate, and log
-  # the gzipped module size (the number docs/README quote — ~1.8 MB).
+  # the gzipped module size (the number docs/README quote — ~1.9 MB).
   wasm:
     name: wasm32 (declarative converters)
     runs-on: ubuntu-latest
@@ -201,6 +201,9 @@ jobs:
 
       - name: Check docling (no default features) on wasm32
         run: cargo check -p docling --no-default-features --target wasm32-unknown-unknown --locked
+
+      - name: Check docling (pdf-text) on wasm32
+        run: cargo check -p docling --no-default-features --features pdf-text --target wasm32-unknown-unknown --locked
 
       - name: Build docling-wasm (release)
         run: cargo build -p docling-wasm --target wasm32-unknown-unknown --release --locked

@@ -5,9 +5,13 @@
 //! `post_process_object_detection` (sigmoid → top-k over query×class →
 //! center-to-corners boxes scaled to the page).
 
+#[cfg(feature = "ml")]
 use image::imageops::FilterType;
+#[cfg(feature = "ml")]
 use image::RgbImage;
+#[cfg(feature = "ml")]
 use ort::session::Session;
+#[cfg(feature = "ml")]
 use ort::value::Tensor;
 
 /// The 17 canonical layout classes, indexed by the model's class id
@@ -43,10 +47,12 @@ pub struct Region {
     pub b: f32,
 }
 
+#[cfg(feature = "ml")]
 /// Base confidence threshold (docling-ibm-models `base_threshold`): the raw
 /// RT-DETR floor before docling's `LayoutPostprocessor` applies its stricter
 /// per-label thresholds ([`label_threshold`]).
 const THRESHOLD: f32 = 0.3;
+#[cfg(feature = "ml")]
 const SIDE: u32 = 640;
 
 /// Per-label confidence threshold, ported from docling's
@@ -71,6 +77,7 @@ pub fn label_threshold(label: &str) -> f32 {
     }
 }
 
+#[cfg(feature = "ml")]
 pub struct LayoutModel {
     session: Session,
     /// Set when a multi-page inference fails — e.g. a locally built pre-#73
@@ -80,6 +87,7 @@ pub struct LayoutModel {
     batch_unsupported: bool,
 }
 
+#[cfg(feature = "ml")]
 impl LayoutModel {
     /// Load the ONNX model from `DOCLING_LAYOUT_ONNX`. Without the override,
     /// prefers `models/layout_heron_int8.onnx` when present (the quantized
@@ -253,6 +261,7 @@ impl LayoutModel {
     }
 }
 
+#[cfg(feature = "ml")]
 fn sigmoid(x: f32) -> f32 {
     1.0 / (1.0 + (-x).exp())
 }

@@ -12,6 +12,22 @@ categories.workspace = true
 rust-version.workspace = true
 
 [features]
+default = ["ml"]
+# The full pipeline: pdfium page rendering + ONNX layout/OCR/TableFormer/
+# enrichment. Without it only the pure-Rust text-layer path remains
+# (`convert_text_layer` — lopdf content-stream parsing + the docling-parse
+# line sanitizer, the same extraction `--no-ocr` uses), which compiles for
+# wasm32-unknown-unknown.
+ml = [
+    "dep:pdfium-render",
+    "dep:ort",
+    "dep:image",
+    "dep:fast_image_resize",
+    "dep:tokenizers",
+    "dep:flate2",
+    "dep:tar",
+    "dep:regex",
+]
 # GPU execution providers (#74). Each feature makes `ort` link/download an
 # ONNX Runtime binary that contains that provider; which provider actually
 # runs is chosen at startup via DOCLING_RS_EP (default: cpu). CPU stays the
@@ -22,25 +38,25 @@ rust-version.workspace = true
 # are separate shared libraries (libonnxruntime_providers_*.so) that must sit
 # next to the binary at runtime — without the copy, registration fails with a
 # bare "cannot open shared object file" even on a machine with a working GPU.
-cuda = ["ort/cuda", "ort/copy-dylibs"]
-tensorrt = ["ort/tensorrt", "ort/copy-dylibs"]
-directml = ["ort/directml", "ort/copy-dylibs"]
-coreml = ["ort/coreml", "ort/copy-dylibs"]
+cuda = ["ml", "ort/cuda", "ort/copy-dylibs"]
+tensorrt = ["ml", "ort/tensorrt", "ort/copy-dylibs"]
+directml = ["ml", "ort/directml", "ort/copy-dylibs"]
+coreml = ["ml", "ort/coreml", "ort/copy-dylibs"]
 
 [dependencies]
 docling-core = { path = "../docling-core", version = "0.41.2" }
-pdfium-render = "0.8"
-ort = { version = "2.0.0-rc.12", default-features = false, features = ["std", "download-binaries", "tls-rustls"] }
-image = "0.25"
-flate2 = "1"
-tar = "0.4"
-regex = "1.11"
+pdfium-render = { version = "0.8", optional = true }
+ort = { version = "2.0.0-rc.12", default-features = false, features = ["std", "download-binaries", "tls-rustls"], optional = true }
+image = { version = "0.25", optional = true }
+flate2 = { version = "1", optional = true }
+tar = { version = "0.4", optional = true }
+regex = { version = "1.11", optional = true }
 lopdf = "0.34"
-fast_image_resize = "5.1.4"
+fast_image_resize = { version = "5.1.4", optional = true }
 # CodeFormula enrichment decodes its VLM output with the HF tokenizer
 # (models/code_formula/tokenizer.json) — same crate/features as docling-core's
 # chunking tokenizer.
-tokenizers = { version = "0.20", default-features = false, features = ["onig"] }
+tokenizers = { version = "0.20", default-features = false, features = ["onig"], optional = true }
 
 [lib]
 name = "docling_pdf"
