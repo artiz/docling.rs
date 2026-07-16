@@ -25,15 +25,24 @@ fn text_layer_matches_no_ocr() {
 
     let text_layer = docling_pdf::convert_text_layer(&bytes, "code_and_formula.pdf")
         .expect("text-layer conversion");
-    let no_ocr = docling_pdf::convert_with_options(
+    let no_ocr = match docling_pdf::convert_with_options(
         &bytes,
         None,
         "code_and_formula.pdf",
         true, // no_table_former (moot: no_ocr skips it anyway)
         true, // no_ocr — the path convert_text_layer mirrors
         docling_pdf::EnrichmentOptions::default(),
-    )
-    .expect("no_ocr conversion");
+    ) {
+        Ok(doc) => doc,
+        // The comparison baseline needs the pdfium shared library, which CI's
+        // model-free test job doesn't have — the equivalence claim is only
+        // checkable where a full local setup exists (scripts/dev/pdfium.sh).
+        Err(docling_pdf::PdfError::Pdfium(e)) if e.contains("LoadLibraryError") => {
+            eprintln!("skipping equivalence check: pdfium unavailable ({e})");
+            return;
+        }
+        Err(e) => panic!("no_ocr conversion: {e:?}"),
+    };
 
     let a = text_layer.export_to_markdown();
     assert!(!a.trim().is_empty(), "text layer should extract");

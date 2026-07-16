@@ -105,14 +105,15 @@ pipelines) compile to `wasm32-unknown-unknown`:
 [`crates/docling-wasm`](./crates/docling-wasm) exposes
 `convert(bytes, filename, to)` → Markdown / docling JSON / DocLang via
 `wasm-bindgen`, so DOCX/HTML/XLSX/PPTX/EPUB/… convert **fully client-side** —
-no server, ~1.9 MB gzipped module, no models to download. Digital PDFs
-convert too: the `pdf-text` feature runs docling-pdf's pure-Rust text-layer
-parser (the same extraction as `--no-ocr` — flat paragraphs, no
-headings/tables/pictures), while scanned PDFs get a clear "needs OCR" error.
-Python docling has no equivalent. The crate ships a drop-a-file demo page;
-the `docling` library crate itself grew the feature slices behind this
-(`pdf` / `asr` / `fetch-images`, all in the default set — a plain
-`cargo build` is unchanged — plus the opt-in `pdf-text`).
+no server, ~1.9 MB gzipped module, no models to download — something Python
+docling has no equivalent for. Digital PDFs convert too: the opt-in
+`pdf-text` feature runs docling-pdf's pure-Rust text-layer parser (the same
+extraction as `--no-ocr`: flat paragraphs, no headings/tables/pictures),
+while scanned PDFs get a clear "needs OCR" error instead of an empty
+document. The crate ships a drop-a-file demo page under
+[`www/`](./crates/docling-wasm/www). Native builds are untouched: the
+feature slices behind this (`pdf` / `asr` / `fetch-images`) all stay in the
+`docling` default set, so a plain `cargo build` is unchanged.
 
 ## The API
 
