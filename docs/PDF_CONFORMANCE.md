@@ -465,7 +465,11 @@ fp32 models, per the policy above).
 (`2203.01017v2`, the heaviest layout) differs by 2 markdown lines — fp32
 CUDA kernels are not bit-identical to fp32 CPU kernels, so a borderline
 detection can flip; groundtruth-distance parity is the standard here, and
-byte-parity on 21/22 exceeds it.
+byte-parity on 21/22 exceeds it. The entire 2-line diff is one label flip
+on one borderline region: the caption fragment
+`c. Structure predicted by TableFormer:` comes out as a `list_item`
+(`- c. …`) on CPU and as plain `text` on CUDA — same content, same
+position, one class score straddling the 0.3 threshold.
 
 **Corpus total (best-of-3): CPU 123.9 s · CUDA 95.2 s → 1.30×** — but the
 aggregate hides a clean size split:
