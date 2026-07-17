@@ -57,7 +57,9 @@ fi
 } | tee "$OUT/report.md"
 
 # --- timing + equivalence ---------------------------------------------------
-now_ms() { date +%s%3N; }
+# Monotonic clock: wall-clock (`date`) can step backwards under NTP sync
+# (observed on a laptop: a -29s "measurement"), /proc/uptime cannot.
+now_ms() { awk '{printf "%d", $1 * 1000}' /proc/uptime; }
 
 csv="$OUT/results.csv"
 echo "file,ep,cold_s,best_s" > "$csv"

@@ -426,7 +426,7 @@ produced **byte-identical corpus output** and ~10% faster table decode
 The decoder speed is *not* weight-bound — it is per-step overhead (see backlog
 item 2), which is why quantization helps so little there.
 
-### GPU execution providers (#74) — landed, awaiting GPU validation
+### GPU execution providers (#74) — validated on GPU (#108)
 
 The ONNX sessions (layout, TableFormer×3, OCR recognition, both enrichment
 models) accept alternative ONNX Runtime execution providers behind cargo
@@ -451,12 +451,71 @@ covers): default/`cpu`/`auto`/unknown/uncompiled-request configurations all
 produce byte-identical corpus output on a CPU-only build; on a
 `--features cuda` build with no usable CUDA, `auto` falls back to CPU with
 fp32 models selected (output byte-identical to `DOCLING_RS_FP32=1`) and
-`DOCLING_RS_EP=cuda` fails loudly at the first session load. **Still open —
-needs a real GPU:** speed measurements and a corpus conformance run
-(`scripts/conformance/pdf_conformance.sh` with `DOCLING_RS_EP=cuda`) —
-fp32 GPU kernels are not bit-identical to fp32 CPU kernels, so expect
-groundtruth-distance parity rather than byte-exactness, same standard as the
-other numeric changes above.
+`DOCLING_RS_EP=cuda` fails loudly at the first session load.
+
+#### Measured on real hardware (issue #108)
+
+`scripts/test/gpu_benchmark.sh` — every corpus PDF (+ the scanned set)
+under `cpu` and `cuda`, best of 3 cold CLI runs each, outputs
+byte-compared. Machine: **NVIDIA GeForce RTX 3080 Laptop (16 GB), driver
+566.07 · AMD Ryzen 9 5900HX, 16 logical cores** (both providers on the
+fp32 models, per the policy above).
+
+**Output equivalence:** 21 of 22 fixtures byte-identical to CPU; one
+(`2203.01017v2`, the heaviest layout) differs by 2 markdown lines — fp32
+CUDA kernels are not bit-identical to fp32 CPU kernels, so a borderline
+detection can flip; groundtruth-distance parity is the standard here, and
+byte-parity on 21/22 exceeds it.
+
+**Corpus total (best-of-3): CPU 123.9 s · CUDA 95.2 s → 1.30×** — but the
+aggregate hides a clean size split:
+
+| segment | speedup (best) |
+|---|---|
+| multi-page digital (9–39 pages: arXiv papers, redp5110) | **1.6–2.4×** (`2305.03393v1`: 14.6 s → 6.2 s) |
+| mid-size digital (4–5 pages) | 1.1–1.4× |
+| 1–2-page digital | 0.6–0.9× — CUDA EP init + host↔device traffic never amortizes |
+| scanned/OCR-heavy | 0.6–1.1× — dominated by pdfium render + OCR pre/post on CPU |
+
+Practical guidance: the break-even for a cold CLI run sits around 3–4
+pages. Below that, or for OCR-heavy scans, stay on CPU; for batches or
+services use the warm `Pipeline` / `docling-serve`, which pays EP
+initialization once per process instead of once per file and moves the
+break-even to roughly "any document with a table". One corpus-methodology
+caveat: the benchmark's first published run had one CPU row corrupted by an
+NTP clock step mid-run (a laptop syncing wall-clock backwards); the script
+now uses the monotonic clock, and that row is excluded from the totals
+above.
+
+<details>
+<summary>Per-file results (seconds, best of 3; cold = run 1 incl. model/EP init)</summary>
+
+| file | cpu cold | cpu best | cuda cold | cuda best | speedup (best) | output |
+|---|---|---|---|---|---|---|
+| 2203.01017v2 | 20.08 | 19.90 | 12.73 | 10.82 | 1.84x | 2 diff lines |
+| 2206.01062 | 18.21 | 15.06 | 9.84 | 9.52 | 1.58x | identical |
+| 2305.03393v1-pg9 | 3.62 | 3.62 | 4.45 | 4.23 | 0.85x | identical |
+| 2305.03393v1 | 16.30 | 14.65 | 8.11 | 6.17 | 2.37x | identical |
+| amt_handbook_sample | 2.27 | 1.79 | 3.53 | 2.89 | 0.62x | identical |
+| code_and_formula | 2.63 | 2.50 | 2.97 | 2.76 | 0.90x | identical |
+| multi_page | 4.94 | 4.55 | 3.29 | 3.22 | 1.41x | identical |
+| normal_4pages | 5.46 | 5.17 | 4.58 | 4.10 | 1.26x | identical |
+| picture_classification | 2.82 | 2.41 | 3.36 | 2.63 | 0.92x | identical |
+| redp5110_sampled | 19.00 | 16.88 | 9.80 | 7.97 | 2.12x | identical |
+| right_to_left_01 | 2.15 | 1.99 | 2.77 | 2.77 | 0.72x | identical |
+| right_to_left_02 | 2.14 | 2.14 | 3.39 | 2.83 | 0.76x | identical |
+| right_to_left_03 | 4.02 | 4.02 | 4.48 | 4.45 | 0.90x | identical |
+| skipped_1page | 3.83 | 3.72 | 3.47 | 2.75 | 1.35x | identical |
+| skipped_2pages | 4.15 | 3.48 | 3.25 | 3.19 | 1.09x | identical |
+| table_mislabeled_as_picture | 4.68 | 4.68 | 5.18 | 4.50 | 1.04x | identical |
+| nemotron_multipage | 5.17 | 5.17 | 6.82 | 5.39 | 0.96x | identical |
+| ocr_test | 2.34 | 2.34 | 3.52 | 3.14 | 0.75x | identical |
+| ocr_test_rotated_180 | 2.83 | 2.25 | 3.76 | 3.21 | 0.70x | identical |
+| ocr_test_rotated_270 | 2.52 | 2.52 | 4.38 | 4.04 | 0.62x | identical |
+| ocr_test_rotated_90 | — | — | 3.84 | 3.84 | — | identical (CPU timing lost to the clock step; excluded from totals) |
+| sample_with_rotation_mismatch | 6.00 | 5.09 | 5.95 | 4.60 | 1.11x | identical |
+
+</details>
 
 ### Ranked backlog of further ideas
 
