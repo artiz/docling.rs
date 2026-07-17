@@ -238,13 +238,26 @@ DOCLING_RS_EP=cuda python -c "import docling_rs; ..."   # or AcceleratorOptions(
 Runtime still defaults to CPU (`DOCLING_RS_EP=cuda|auto` opts in, exactly like
 the CLI), the fp32 models are preferred automatically on GPU, and **CUDA 12 +
 cuDNN 9 must be installed on the system** — the wheel ships the ONNX Runtime
-provider, not the CUDA toolkit. Measured end-to-end on an RTX 3080 Laptop:
-1.5–2.1× on multi-page digital PDFs, 8.7× on a 1913-page manual (see
+provider, not the CUDA toolkit. The wheel is tagged **`manylinux_2_38`**
+(glibc ≥ 2.38 at runtime, i.e. Ubuntu 24.04+ / Debian 13+): the CUDA ONNX
+Runtime static binaries carry glibc-2.38 symbols, so this floor is inherent —
+it is also why the CI job builds on plain `ubuntu-24.04` instead of the
+manylinux_2_28 container the CPU wheels use (linking there fails on
+`__isoc23_*`). Measured end-to-end on an RTX 3080 Laptop: 1.5–2.1× on
+multi-page digital PDFs, 8.7× on a 1913-page manual (see
 [`PDF_CONFORMANCE.md`](../../docs/PDF_CONFORMANCE.md#measured-on-real-hardware-issue-108)).
-Local build for testing: `maturin build --release --features cuda`
-(add `RUSTFLAGS='-C link-arg=-Wl,-rpath,$ORIGIN'` and copy
-`target/release/libonnxruntime_providers_{shared,cuda}.so` into
-`python/docling_rs/` first to mirror the CI wheel exactly).
+
+Local build mirroring the CI wheel (order matters — the provider libraries
+must exist *and* sit inside `python/docling_rs/` before the wheel is
+assembled, or the wheel silently ships without them):
+
+```bash
+cd crates/docling-py
+export RUSTFLAGS='-C link-arg=-Wl,-rpath,$ORIGIN'
+cargo build --release --features cuda            # ort fetches CUDA ONNX Runtime + drops the provider libs
+cp target/release/libonnxruntime_providers_{shared,cuda}.so python/docling_rs/
+maturin build --release --features cuda          # wheel now includes them (expect ~hundreds of MB)
+```
 
 PyPI setup (one-time): `docling-rs-cuda` is a separate PyPI project — register
 the same workflow as a trusted publisher there too, and if the wheel exceeds
