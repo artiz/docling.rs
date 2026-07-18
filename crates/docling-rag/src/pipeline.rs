@@ -110,6 +110,15 @@ impl Pipeline {
     /// meaningful even though the phases overlap on the wall clock.
     pub async fn ingest_ref(&self, r: &SourceRef) -> Result<IngestOutcome> {
         let bytes = self.source.fetch(r).await?;
+        self.ingest_bytes(r, bytes).await
+    }
+
+    /// Ingest a document from in-memory bytes — the same staged pipeline as
+    /// [`Self::ingest_ref`] minus the source fetch. Used by the REST API's
+    /// upload endpoint, where the bytes arrive in the request body; `r.uri`
+    /// still identifies the document (`upload:///<name>` by convention) for
+    /// dedup and stale-row cleanup.
+    pub async fn ingest_bytes(&self, r: &SourceRef, bytes: Vec<u8>) -> Result<IngestOutcome> {
         let hash = content_hash(&bytes);
         if self.store.find_document_by_hash(&hash).await?.is_some() {
             tracing::debug!(uri = %r.uri, "skipping unchanged document");

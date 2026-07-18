@@ -204,3 +204,108 @@ async fn ui_page_is_public_and_self_contained() {
         "no external assets"
     );
 }
+
+#[tokio::test]
+async fn upload_and_delete_document() {
+    let (base, client) = spawn_server().await;
+    let auth = ("X-Api-Key", "test-key");
+
+    // Upload needs auth like every /api route.
+    let r = client
+        .post(format!("{base}/api/documents?name=note.md"))
+        .body("# Note\n\nUploaded through the API.")
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r.status(), 401);
+
+    // Upload -> ingested with chunks; stats grow by one document.
+    let before: serde_json::Value = client
+        .get(format!("{base}/api/stats"))
+        .header(auth.0, auth.1)
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    let r: serde_json::Value = client
+        .post(format!("{base}/api/documents?name=note.md"))
+        .header(auth.0, auth.1)
+        .body("# Note\n\nUploaded through the API.")
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(r["outcome"], "ingested");
+    assert!(r["chunks"].as_u64().unwrap() >= 1);
+
+    // Same bytes again -> deduplicated.
+    let r: serde_json::Value = client
+        .post(format!("{base}/api/documents?name=note.md"))
+        .header(auth.0, auth.1)
+        .body("# Note\n\nUploaded through the API.")
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(r["outcome"], "skipped");
+
+    // Find the uploaded doc, delete it, stats return to the baseline.
+    let docs: serde_json::Value = client
+        .get(format!("{base}/api/documents"))
+        .header(auth.0, auth.1)
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    let id = docs["documents"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|d| d["source_uri"] == "upload:///note.md")
+        .unwrap()["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let r = client
+        .delete(format!("{base}/api/documents/{id}"))
+        .header(auth.0, auth.1)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r.status(), 200);
+    let after: serde_json::Value = client
+        .get(format!("{base}/api/stats"))
+        .header(auth.0, auth.1)
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(after["documents"], before["documents"]);
+
+    // Deleting again -> 404; empty upload name -> 400.
+    let r = client
+        .delete(format!("{base}/api/documents/{id}"))
+        .header(auth.0, auth.1)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r.status(), 404);
+    let r = client
+        .post(format!("{base}/api/documents?name="))
+        .header(auth.0, auth.1)
+        .body("x")
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r.status(), 400);
+}

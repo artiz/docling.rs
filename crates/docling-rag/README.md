@@ -58,10 +58,12 @@ only public routes.
 
 **Built-in web UI** — `GET /` serves a single self-contained page (embedded in
 the binary, no external assets): query box, retrieval-mode and top-k pickers,
-an LLM-answer toggle, scored results, and a live document/chunk counter from
-`/api/stats`. The API key is entered once and kept in the browser's
-`localStorage`; every request the page makes carries it as `X-Api-Key`. The
-page itself holds no data, which is why it can be public like `/health`.
+an LLM-answer toggle, scored results, a live document/chunk counter from
+`/api/stats`, and a documents panel — upload a file (converted, chunked and
+embedded through the full ingest pipeline) or delete one with its chunks. The
+API key is entered once and kept in the browser's `localStorage`; every
+request the page makes carries it as `X-Api-Key`. The page itself holds no
+data, which is why it can be public like `/health`.
 
 | Method | Path                  | Description                                     |
 |--------|-----------------------|-------------------------------------------------|
@@ -69,7 +71,9 @@ page itself holds no data, which is why it can be public like `/health`.
 | GET    | `/health`             | liveness probe (no auth)                        |
 | GET    | `/api/stats`          | document / chunk counts                         |
 | GET    | `/api/documents`      | all documents with metadata + processing metrics |
+| POST   | `/api/documents`      | `?name=file.pdf`, raw file bytes as the body → full ingest (convert, chunk, embed); dedups identical content |
 | GET    | `/api/documents/{id}` | one document by id                              |
+| DELETE | `/api/documents/{id}` | remove the document and all its chunks          |
 | GET    | `/api/search`         | `?q=…&mode=…&k=…` — mode: `vector`, `bm25`, `hybrid`, `multi-query`, `hyde` |
 | POST   | `/api/search`         | `{"query": "…", "mode": "hybrid", "top_k": 5, "answer": false}` |
 

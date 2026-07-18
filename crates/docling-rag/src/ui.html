@@ -54,6 +54,18 @@
   .hit pre { margin: 0; white-space: pre-wrap; word-break: break-word;
              font: 13.5px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; }
   details.token summary { cursor: pointer; font-size: 13px; color: var(--muted); }
+  details.docs summary { cursor: pointer; font-size: 13px; color: var(--muted); }
+  .doc { display: flex; align-items: center; gap: 10px; padding: 7px 0;
+         border-top: 1px solid var(--border); }
+  .doc:first-of-type { border-top: 0; }
+  .doc .title { flex: 1 1 auto; min-width: 0; overflow: hidden;
+                text-overflow: ellipsis; white-space: nowrap; }
+  .doc .src { font-size: 12px; color: var(--muted); overflow: hidden;
+              text-overflow: ellipsis; white-space: nowrap; max-width: 40%; }
+  .doc button { background: transparent; color: var(--bad); font-weight: 500;
+                padding: 2px 8px; border: 1px solid var(--border); }
+  #upload-row { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--border); }
+  #upload-note { font-size: 13px; color: var(--muted); }
 </style>
 </head>
 <body>
@@ -72,6 +84,18 @@
           <label for="token">Stored in this browser's localStorage; sent as <code>X-Api-Key</code></label>
           <input id="token" type="password" placeholder="RAG_API_KEYS entry" autocomplete="off">
         </div>
+      </div>
+    </details>
+  </div>
+
+  <div class="card">
+    <details class="docs" id="docs-box">
+      <summary>Documents</summary>
+      <div id="doc-list" style="margin-top:8px"></div>
+      <div class="row" id="upload-row">
+        <input id="file" type="file">
+        <button type="button" id="upload">Upload</button>
+        <span id="upload-note"></span>
       </div>
     </details>
   </div>
@@ -118,6 +142,7 @@ if (!$("token").value) $("token-box").open = true;
 $("token").addEventListener("input", () => {
   localStorage.setItem(TOKEN_KEY, $("token").value.trim());
   refreshStats();
+  refreshDocs();
 });
 
 function headers() {
@@ -154,6 +179,58 @@ async function refreshStats() {
     $("stats").textContent = `${s.documents} documents · ${s.chunks} chunks`;
   } catch { $("stats").textContent = ""; }
 }
+
+async function refreshDocs() {
+  const list = $("doc-list");
+  try {
+    const d = await api("/api/documents", { headers: headers() });
+    list.innerHTML = (d.documents || []).map((doc) =>
+      `<div class="doc" data-id="${esc(doc.id)}">` +
+      `<span class="title">${esc(doc.title)}</span>` +
+      `<span class="src">${esc(doc.source_uri)}</span>` +
+      `<button type="button" class="del">delete</button></div>`
+    ).join("") || `<span id="upload-note">No documents yet.</span>`;
+  } catch { list.innerHTML = ""; }
+}
+
+$("doc-list").addEventListener("click", async (ev) => {
+  const btn = ev.target.closest("button.del");
+  if (!btn) return;
+  const row = btn.closest(".doc");
+  const title = row.querySelector(".title").textContent;
+  if (!confirm(`Delete "${title}" and all its chunks?`)) return;
+  btn.disabled = true;
+  try {
+    await api(`/api/documents/${encodeURIComponent(row.dataset.id)}`, {
+      method: "DELETE", headers: headers(),
+    });
+    refreshDocs(); refreshStats();
+  } catch (e) {
+    btn.disabled = false;
+    $("error").textContent = String(e.message || e); $("error").hidden = false;
+  }
+});
+
+$("upload").addEventListener("click", async () => {
+  const file = $("file").files[0];
+  if (!file) { $("upload-note").textContent = "pick a file first"; return; }
+  $("upload").disabled = true;
+  $("upload-note").textContent = "converting + embedding…";
+  $("error").hidden = true;
+  try {
+    const r = await api(`/api/documents?name=${encodeURIComponent(file.name)}`, {
+      method: "POST", headers: headers(), body: file,
+    });
+    $("upload-note").textContent = r.outcome === "skipped"
+      ? "already stored (identical content)"
+      : `ingested — ${r.chunks} chunks`;
+    $("file").value = "";
+    refreshDocs(); refreshStats();
+  } catch (e) {
+    $("upload-note").textContent = "";
+    $("error").textContent = String(e.message || e); $("error").hidden = false;
+  } finally { $("upload").disabled = false; }
+});
 
 function esc(s) {
   return String(s).replace(/[&<>"]/g, (c) =>
@@ -195,6 +272,7 @@ $("form").addEventListener("submit", async (ev) => {
 
 refreshHealth();
 refreshStats();
+refreshDocs();
 </script>
 </body>
 </html>

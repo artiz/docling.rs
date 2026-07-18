@@ -12,7 +12,9 @@
 //! | GET    | `/health`             | liveness probe (public)                       |
 //! | GET    | `/api/stats`          | document / chunk counts                       |
 //! | GET    | `/api/documents`      | all documents with metadata + metrics         |
+//! | POST   | `/api/documents`      | `?name=file.pdf`, raw bytes body → ingest     |
 //! | GET    | `/api/documents/{id}` | one document by id                            |
+//! | DELETE | `/api/documents/{id}` | remove the document and all its chunks        |
 //! | GET    | `/api/search`         | `?q=…&mode=hybrid&k=5` (also accepts POST)    |
 //! | POST   | `/api/search`         | `{"query", "mode?", "top_k?", "answer?"}`     |
 //!
@@ -20,9 +22,10 @@
 //! `answer=true` the LLM synthesizes a grounded answer (needs `OPENROUTER_API_KEY`).
 
 use crate::model::RetrievalMode;
-use crate::pipeline::Pipeline;
+use crate::pipeline::{IngestOutcome, Pipeline};
+use crate::source::SourceRef;
 use crate::{RagError, Result};
-use axum::extract::{Path, Query, Request, State};
+use axum::extract::{DefaultBodyLimit, Path, Query, Request, State};
 use axum::http::{header, StatusCode};
 use axum::middleware::{self, Next};
 use axum::response::{Html, IntoResponse, Response};
@@ -53,9 +56,15 @@ pub fn router(pipeline: Pipeline, keys: Vec<String>) -> Result<Router> {
 
     let protected = Router::new()
         .route("/api/stats", get(stats))
-        .route("/api/documents", get(list_documents))
-        .route("/api/documents/{id}", get(get_document))
+        .route("/api/documents", get(list_documents).post(upload_document))
+        .route(
+            "/api/documents/{id}",
+            get(get_document).delete(delete_document),
+        )
         .route("/api/search", get(search_get).post(search_post))
+        // Uploads are raw document bytes; axum's 2 MB default would reject
+        // any real PDF. 256 MiB comfortably covers the corpus' heaviest docs.
+        .layer(DefaultBodyLimit::max(256 * 1024 * 1024))
         .layer(middleware::from_fn_with_state(state.clone(), auth));
 
     Ok(Router::new()
@@ -122,6 +131,82 @@ async fn list_documents(State(state): State<Arc<AppState>>) -> ApiResult {
         .await
         .map_err(internal)?;
     Ok(Json(json!({"documents": docs})).into_response())
+}
+
+/// Upload parameters: the file name (drives format detection) as `?name=`.
+#[derive(Debug, Deserialize)]
+struct UploadParams {
+    name: String,
+}
+
+/// `POST /api/documents?name=report.pdf` with the raw file bytes as the body:
+/// convert → chunk → embed → store, exactly the ingest pipeline. Responds
+/// with the outcome (`ingested` + chunk count, or `skipped` when an identical
+/// document is already stored).
+async fn upload_document(
+    State(state): State<Arc<AppState>>,
+    Query(params): Query<UploadParams>,
+    body: axum::body::Bytes,
+) -> ApiResult {
+    // Keep only the final path segment: the name is caller-supplied and only
+    // needed for format detection + display, never as a filesystem path.
+    let name = params
+        .name
+        .rsplit(['/', '\\'])
+        .next()
+        .unwrap_or_default()
+        .trim()
+        .to_string();
+    if name.is_empty() {
+        return Err(err(StatusCode::BAD_REQUEST, "name must not be empty"));
+    }
+    if body.is_empty() {
+        return Err(err(StatusCode::BAD_REQUEST, "empty body"));
+    }
+    let r = SourceRef {
+        uri: format!("upload:///{name}"),
+        name: name.clone(),
+        rel_path: name.clone(),
+    };
+    match state.pipeline.ingest_bytes(&r, body.to_vec()).await {
+        Ok(IngestOutcome::Ingested(chunks)) => Ok(Json(json!({
+            "outcome": "ingested",
+            "name": name,
+            "chunks": chunks,
+        }))
+        .into_response()),
+        Ok(IngestOutcome::Skipped) => Ok(Json(json!({
+            "outcome": "skipped",
+            "name": name,
+        }))
+        .into_response()),
+        // A document the converter rejects is the caller's input, not ours.
+        Err(e @ RagError::Conversion(_)) => Err(err(StatusCode::BAD_REQUEST, e)),
+        Err(other) => Err(internal(other)),
+    }
+}
+
+/// `DELETE /api/documents/{id}`: remove the document and all its chunks.
+async fn delete_document(State(state): State<Arc<AppState>>, Path(id): Path<String>) -> ApiResult {
+    let docs = state
+        .pipeline
+        .store()
+        .list_documents()
+        .await
+        .map_err(internal)?;
+    if !docs.iter().any(|d| d.id == id) {
+        return Err(err(
+            StatusCode::NOT_FOUND,
+            format!("no document with id '{id}'"),
+        ));
+    }
+    state
+        .pipeline
+        .store()
+        .delete_document(&id)
+        .await
+        .map_err(internal)?;
+    Ok(Json(json!({"deleted": id})).into_response())
 }
 
 async fn get_document(State(state): State<Arc<AppState>>, Path(id): Path<String>) -> ApiResult {
