@@ -52,17 +52,35 @@ must all come from the same model): `rm -rf data/ && cargo run -p docling-rag --
 
 `docling-rag serve` exposes the store over HTTP. Authentication uses a static
 API-key list from config (`RAG_API_KEYS`, comma-separated); send the key as
-`X-Api-Key: <key>` or `Authorization: Bearer <key>`. The server refuses to start
-with an empty key list; `GET /health` is the only public route.
+`X-Api-Key: <key>`, `Authorization: Bearer <key>`, or — for links a browser
+opens directly, where no header can be set — `?api_key=<key>`. The server
+refuses to start with an empty key list; `GET /` (the built-in UI) and
+`GET /health` are the only public routes.
+
+**Built-in web UI** — `GET /` serves a single self-contained page (embedded in
+the binary, no external assets): query box, retrieval-mode and top-k pickers,
+an LLM-answer toggle, scored results, a live document/chunk counter from
+`/api/stats`, and a documents panel — upload a file (converted, chunked and
+embedded through the full ingest pipeline, with optional enrichment toggles:
+picture classification, code and formula transcription — each needs its model
+files, see `download_dependencies.sh`), open a document's parsed Markdown in
+a new tab (the `md` link), or delete one with its chunks. The API key is
+entered once and kept in the browser's `localStorage`; every request the page
+makes carries it as `X-Api-Key`. The page itself holds no data, which is why
+it can be public like `/health`.
 
 | Method | Path                  | Description                                     |
 |--------|-----------------------|-------------------------------------------------|
+| GET    | `/`                   | built-in search UI (no auth; static HTML)       |
 | GET    | `/health`             | liveness probe (no auth)                        |
 | GET    | `/api/stats`          | document / chunk counts                         |
 | GET    | `/api/documents`      | all documents with metadata + processing metrics |
+| POST   | `/api/documents`      | `?name=file.pdf` (+ optional `enrich_pictures`/`enrich_code`/`enrich_formulas=true`), raw file bytes as the body → full ingest (convert, chunk, embed); dedups identical content |
 | GET    | `/api/documents/{id}` | one document by id                              |
+| GET    | `/api/documents/{id}/markdown` | the parsed Markdown as stored at ingest, served as `text/markdown` |
+| DELETE | `/api/documents/{id}` | remove the document and all its chunks          |
 | GET    | `/api/search`         | `?q=…&mode=…&k=…` — mode: `vector`, `bm25`, `hybrid`, `multi-query`, `hyde` |
-| POST   | `/api/search`         | `{"query": "…", "mode": "hybrid", "top_k": 5, "answer": false}` |
+| POST   | `/api/search`         | `{"query": "…", "mode": "hybrid", "top_k": 5, "answer": false, "extend": false}` |
 
 With `"answer": true` (or `?answer=true`) the LLM synthesizes a grounded answer
 from the retrieved chunks (needs `OPENROUTER_API_KEY`; `multi-query`/`hyde` modes
@@ -71,6 +89,11 @@ protocol, so any such endpoint works — e.g. a native DeepSeek key with
 `OPENROUTER_BASE_URL=https://api.deepseek.com` and `RAG_LLM_MODEL=deepseek-chat`
 (OpenRouter keys start with `sk-or-`; a `sk-…` DeepSeek key sent to openrouter.ai
 gets 401). Responses are JSON: `{query, mode, results: [{score, chunk}], answer?}`.
+With `"extend": true` each result additionally carries a `context` string —
+the hit widened with its ordinal neighbors (one chunk before, one after,
+same document; the UI's "extend context" checkbox). Purely presentational:
+scoring and the LLM answer still see the original chunks, and adjacent
+window chunks may repeat their configured overlap.
 
 ```bash
 curl -s -H 'X-Api-Key: dev-key' \
@@ -262,7 +285,26 @@ let hits = pipeline.query(RetrievalMode::Hybrid, "how does chunking work?", 5).a
 ## Cargo features
 
 `default = ["sqlite", "ollama"]`. Optional: `postgres`, `onnx-embed`,
-`remote-sources` (FTP/SFTP), `rabbitmq`, `redis`, `gemini`, `openrouter`.
+`remote-sources` (FTP/SFTP), `rabbitmq`, `redis`, `gemini`, `openrouter`,
+and the GPU execution providers `cuda` / `tensorrt` / `directml` / `coreml`.
+
+### GPU
+
+`--features cuda` puts the whole ingest-and-search path on the GPU where it
+counts: document conversion (the PDF/image ML pipeline — 1.5–8.7× measured,
+see `docs/PDF_CONFORMANCE.md`) and, when `onnx-embed` is also enabled, the
+local embedder's ONNX session — both route through the same `DOCLING_RS_EP`
+selection as the rest of the stack, so one switch covers everything and a
+build without a usable GPU falls back to CPU per session:
+
+```bash
+cargo build --release -p docling-rag --features cuda,onnx-embed
+DOCLING_RS_EP=cuda target/release/docling-rag ingest   # pin GPU (or auto/cpu)
+```
+
+HTTP embedders (Ollama/Gemini) are unaffected — their GPU usage is the
+serving side's business. Runtime requirements match the CLI's CUDA build:
+CUDA 12 + cuDNN 9, glibc ≥ 2.38 for the static ONNX Runtime link.
 
 The default feature set is fully self-contained and offline-testable
 (`cargo test -p docling-rag`) using the bundled SQLite store and the
@@ -274,9 +316,39 @@ implementations that require the corresponding service (Postgres, an AMQP broker
 Redis, an FTP/SSH server, an Ollama/Gemini endpoint, or local ONNX model files) to
 exercise end-to-end.
 
+## OCR language (`RAG_OCR_LANG`)
+
+Scanned/image-only PDF pages go through OCR. The default recognition model is
+`ch_PP-OCRv3` (multilingual, what docling conformance is measured with) — but
+its Latin-script word spacing is weak: English-only scans come out with glued
+words (`miscellaneousAImodelsplugins`) and I/l confusions. For English
+documents fetch the English model and switch:
+
+```bash
+scripts/install/download_dependencies.sh --ocr-en   # ~9 MB
+RAG_OCR_LANG=en docling-rag ingest
+```
+
+This maps onto docling-pdf's `DOCLING_OCR_REC_ONNX` / `DOCLING_OCR_DICT`
+(explicit env overrides win), so the same model swap works for any docling.rs
+binary, not just the RAG pipeline. Note: OCR only runs where a page has no
+extractable text layer — a born-digital PDF is unaffected by this setting.
+
 ## Local embedding model (ONNX)
 
-Build with `--features onnx-embed` and point `RAG_EMBED_ONNX_PATH` /
-`RAG_EMBED_TOKENIZER` at a sentence-embedding encoder exported to ONNX (e.g.
-`bge-m3`, 1024-d). The mean-pooled, L2-normalized last hidden state is used as the
-embedding — the same `ort` runtime the PDF pipeline already depends on.
+Build with `--features onnx-embed` and fetch the default model (bge-m3,
+1024-d, ~2.3 GB) into the `RAG_EMBED_ONNX_PATH` / `RAG_EMBED_TOKENIZER`
+default paths:
+
+```bash
+scripts/install/download_dependencies.sh --embed
+RAG_EMBED_PROVIDER=onnx docling-rag ingest
+```
+
+The embedder adapts to the graph it loads: it feeds only the inputs the model
+declares (`token_type_ids` is optional), and uses either an already-pooled
+sentence embedding (bge-m3's `dense_vecs`) or a raw encoder's
+`last_hidden_state` mean-pooled over the attention mask — L2-normalized either
+way. So any sentence-embedding encoder exported to ONNX works; point the two
+env vars at it. Same `ort` runtime the PDF pipeline already depends on, and
+with `--features cuda` the session runs on the GPU (`DOCLING_RS_EP`).

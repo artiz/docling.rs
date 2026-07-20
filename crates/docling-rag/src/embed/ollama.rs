@@ -56,8 +56,27 @@ impl Embedder for OllamaEmbedder {
                 input: texts,
             })
             .send()
-            .await?
-            .error_for_status()?;
+            .await?;
+        // Surface Ollama's error body — it names the actual problem (e.g.
+        // `model "bge-m3" not found, try pulling it first`, which arrives as
+        // a 404 just like an unknown endpoint would on a pre-0.2.6 server).
+        let status = resp.status();
+        if !status.is_success() {
+            let detail = resp.text().await.unwrap_or_default();
+            let hint = if status == reqwest::StatusCode::NOT_FOUND {
+                format!(
+                    " — if the model is missing run `ollama pull {}`; if the \
+                     endpoint is unknown, update Ollama (>= 0.2.6 for /api/embed)",
+                    self.model
+                )
+            } else {
+                String::new()
+            };
+            return Err(RagError::Embedding(format!(
+                "ollama {url}: HTTP {status}: {}{hint}",
+                detail.trim()
+            )));
+        }
         let body: EmbedResp = resp.json().await?;
         if body.embeddings.len() != texts.len() {
             return Err(RagError::Embedding(format!(

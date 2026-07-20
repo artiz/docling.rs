@@ -49,6 +49,29 @@ pub struct Answer {
     pub sources: Vec<Scored>,
 }
 
+/// Per-ingest conversion switches — docling's optional enrichment models
+/// (each needs its model files on disk; see download_dependencies.sh).
+/// Off by default: enrichment multiplies conversion time.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct ConvertOptions {
+    /// Classify pictures (chart/logo/…) — `models/picture_classifier.onnx`.
+    pub enrich_pictures: bool,
+    /// Transcribe code blocks with the CodeFormula VLM (`--enrich` download).
+    pub enrich_code: bool,
+    /// Transcribe formulas to LaTeX with the CodeFormula VLM.
+    pub enrich_formulas: bool,
+}
+
+impl ConvertOptions {
+    /// A converter with these enrichments enabled.
+    fn converter(self) -> DocumentConverter {
+        DocumentConverter::new()
+            .do_picture_classification(self.enrich_pictures)
+            .do_code_enrichment(self.enrich_code)
+            .do_formula_enrichment(self.enrich_formulas)
+    }
+}
+
 /// What the overlapped parse/chunk/embed stages produced for one document.
 /// Phase seconds are busy time (the stages overlap on the wall clock).
 struct StagedOutcome {
@@ -65,6 +88,18 @@ impl Pipeline {
     /// Build every component from config. The LLM client is created only if
     /// `OPENROUTER_API_KEY` is set (LLM-backed modes error otherwise).
     pub async fn from_config(cfg: &RagConfig) -> Result<Self> {
+        // RAG_OCR_LANG=en swaps the OCR recognition model for the English
+        // PP-OCRv3 export (download_dependencies.sh --ocr-en) via docling-pdf's
+        // model env vars — resolved once per process at first PDF use, and an
+        // explicit DOCLING_OCR_* override always wins over this mapping.
+        if cfg.ocr_lang == crate::config::OcrLang::En {
+            if std::env::var_os("DOCLING_OCR_REC_ONNX").is_none() {
+                std::env::set_var("DOCLING_OCR_REC_ONNX", "models/ocr_rec_en.onnx");
+            }
+            if std::env::var_os("DOCLING_OCR_DICT").is_none() {
+                std::env::set_var("DOCLING_OCR_DICT", "models/en_dict.txt");
+            }
+        }
         let source = source::from_config(cfg)?;
         let embedder = embed::from_config(cfg)?;
         let store = store::from_config(cfg).await?;
@@ -110,6 +145,26 @@ impl Pipeline {
     /// meaningful even though the phases overlap on the wall clock.
     pub async fn ingest_ref(&self, r: &SourceRef) -> Result<IngestOutcome> {
         let bytes = self.source.fetch(r).await?;
+        self.ingest_bytes(r, bytes).await
+    }
+
+    /// Ingest a document from in-memory bytes — the same staged pipeline as
+    /// [`Self::ingest_ref`] minus the source fetch. Used by the REST API's
+    /// upload endpoint, where the bytes arrive in the request body; `r.uri`
+    /// still identifies the document (`upload:///<name>` by convention) for
+    /// dedup and stale-row cleanup.
+    pub async fn ingest_bytes(&self, r: &SourceRef, bytes: Vec<u8>) -> Result<IngestOutcome> {
+        self.ingest_bytes_with(r, bytes, ConvertOptions::default())
+            .await
+    }
+
+    /// [`Self::ingest_bytes`] with explicit conversion options (enrichments).
+    pub async fn ingest_bytes_with(
+        &self,
+        r: &SourceRef,
+        bytes: Vec<u8>,
+        opts: ConvertOptions,
+    ) -> Result<IngestOutcome> {
         let hash = content_hash(&bytes);
         if self.store.find_document_by_hash(&hash).await?.is_some() {
             tracing::debug!(uri = %r.uri, "skipping unchanged document");
@@ -140,11 +195,13 @@ impl Pipeline {
         // partially-inserted chunks so a retry reprocesses from scratch instead
         // of being skipped by the hash dedup.
         let staged = match self.cfg.chunker {
-            crate::config::ChunkerKind::Window => self.ingest_streaming(r, &doc.id, bytes).await,
+            crate::config::ChunkerKind::Window => {
+                self.ingest_streaming(r, &doc.id, bytes, opts).await
+            }
             // docling's chunkers walk the finished document tree, so conversion
             // is whole-document — but the chunks stream into embedding as the
             // chunkers produce them.
-            _ => self.ingest_docling(r, &doc.id, bytes).await,
+            _ => self.ingest_docling(r, &doc.id, bytes, opts).await,
         };
         let out = match staged {
             Ok(out) => out,
@@ -201,7 +258,10 @@ impl Pipeline {
         );
         doc.title = title;
         doc.hash = hash; // success: replace the sentinel with the real hash
-        doc.metadata = serde_json::json!({ "source": r.uri, "metrics": m.to_json() });
+                         // The parsed Markdown rides along in the metadata so the API can serve
+                         // it back (GET /api/documents/{id}/markdown) without re-converting.
+        doc.metadata =
+            serde_json::json!({ "source": r.uri, "metrics": m.to_json(), "markdown": markdown });
         self.store.upsert_document(&doc).await?;
         Ok(IngestOutcome::Ingested(n))
     }
@@ -216,6 +276,7 @@ impl Pipeline {
         r: &SourceRef,
         doc_id: &str,
         bytes: Vec<u8>,
+        opts: ConvertOptions,
     ) -> Result<StagedOutcome> {
         let (chunk_tx, chunk_rx) = tokio::sync::mpsc::channel::<Vec<crate::model::Chunk>>(4);
         let embed_worker = self.spawn_embed_worker(chunk_rx);
@@ -233,7 +294,8 @@ impl Pipeline {
             let pages = metrics::count_pages(fmt, &bytes);
             let src = SourceDocument::from_bytes(name, fmt, bytes);
             let t = std::time::Instant::now();
-            let result = DocumentConverter::new()
+            let result = opts
+                .converter()
                 .convert(src)
                 .map_err(|e| RagError::Conversion(e.to_string()))?;
             let parse_secs = t.elapsed().as_secs_f64();
@@ -332,6 +394,7 @@ impl Pipeline {
         r: &SourceRef,
         doc_id: &str,
         bytes: Vec<u8>,
+        opts: ConvertOptions,
     ) -> Result<StagedOutcome> {
         // --- Stage 1: parser thread. Streams Markdown pieces as converted.
         // Bounded channel: a slow consumer applies backpressure to the converter.
@@ -343,7 +406,8 @@ impl Pipeline {
                 .ok_or_else(|| RagError::Conversion(format!("unsupported extension '.{ext}'")))?;
             let pages = metrics::count_pages(fmt, &bytes);
             let src = SourceDocument::from_bytes(name, fmt, bytes);
-            let mut stream = DocumentConverter::new()
+            let mut stream = opts
+                .converter()
                 .convert_streaming(src)
                 .map_err(|e| RagError::Conversion(e.to_string()))?;
             // parse_secs counts time inside the converter only, not time blocked

@@ -76,6 +76,15 @@ pub struct RagConfig {
     pub openrouter_base_url: String,
     pub llm_model: String,
 
+    // --- OCR ---
+    /// OCR recognition language (`RAG_OCR_LANG`): `ch` (default — the
+    /// conformance-validated PP-OCRv3 model, multilingual incl. Latin) or
+    /// `en` (English-only PP-OCRv3: much better Latin word spacing on
+    /// English scans; fetch it with `download_dependencies.sh --ocr-en`).
+    /// Maps onto docling-pdf's `DOCLING_OCR_REC_ONNX`/`DOCLING_OCR_DICT` —
+    /// explicit env overrides always win.
+    pub ocr_lang: OcrLang,
+
     // --- chunking ---
     pub chunker: ChunkerKind,
     pub chunk_size: usize,
@@ -112,6 +121,26 @@ pub struct RagConfig {
     /// Accepted API keys (comma-separated in `RAG_API_KEYS`). The server refuses
     /// to start with an empty list — auth is fail-closed.
     pub api_keys: Vec<String>,
+}
+
+/// OCR recognition language (`RAG_OCR_LANG`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OcrLang {
+    /// The default ch_PP-OCRv3 model (multilingual; what docling conformance
+    /// is measured with).
+    Ch,
+    /// en_PP-OCRv3 — English-only, better Latin word spacing.
+    En,
+}
+
+fn parse_ocr_lang(s: &str) -> Result<OcrLang> {
+    match s.trim().to_ascii_lowercase().as_str() {
+        "" | "ch" => Ok(OcrLang::Ch),
+        "en" => Ok(OcrLang::En),
+        other => Err(RagError::config(format!(
+            "RAG_OCR_LANG={other:?} is not supported (ch|en)"
+        ))),
+    }
 }
 
 /// Which chunker ingestion runs (`RAG_CHUNKER`).
@@ -154,6 +183,7 @@ impl Default for RagConfig {
             openrouter_api_key: None,
             openrouter_base_url: "https://openrouter.ai/api/v1".to_string(),
             llm_model: "deepseek/deepseek-chat".to_string(),
+            ocr_lang: OcrLang::Ch,
             chunker: ChunkerKind::Window,
             chunk_size: 300,
             chunk_overlap: 0.05,
@@ -212,6 +242,10 @@ impl RagConfig {
             openrouter_api_key: env_str("OPENROUTER_API_KEY"),
             openrouter_base_url: env_str("OPENROUTER_BASE_URL").unwrap_or(d.openrouter_base_url),
             llm_model: env_str("RAG_LLM_MODEL").unwrap_or(d.llm_model),
+            ocr_lang: match env_str("RAG_OCR_LANG") {
+                Some(s) => parse_ocr_lang(&s)?,
+                None => d.ocr_lang,
+            },
             chunker: match env_str("RAG_CHUNKER") {
                 Some(s) => parse_chunker_kind(&s)?,
                 None => d.chunker,
@@ -372,6 +406,14 @@ fn parse_queue_kind(s: &str) -> Result<QueueKind> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn ocr_lang_parses_and_rejects_unknown() {
+        assert_eq!(parse_ocr_lang("").unwrap(), OcrLang::Ch);
+        assert_eq!(parse_ocr_lang("ch").unwrap(), OcrLang::Ch);
+        assert_eq!(parse_ocr_lang(" EN ").unwrap(), OcrLang::En);
+        assert!(parse_ocr_lang("de").is_err());
+    }
 
     #[test]
     fn defaults_are_valid_and_match_spec() {
