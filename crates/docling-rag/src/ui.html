@@ -64,6 +64,9 @@
               text-overflow: ellipsis; white-space: nowrap; max-width: 40%; }
   .doc button { background: transparent; color: var(--bad); font-weight: 500;
                 padding: 2px 8px; border: 1px solid var(--border); }
+  .doc a.md { font-size: 12px; color: var(--accent); text-decoration: none;
+              padding: 2px 8px; border: 1px solid var(--border); border-radius: 7px; }
+  .doc a.md:hover { text-decoration: underline; }
   #upload-row { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--border); }
   #upload-note { font-size: 13px; color: var(--muted); }
 </style>
@@ -94,6 +97,15 @@
       <div id="doc-list" style="margin-top:8px"></div>
       <div class="row" id="upload-row">
         <input id="file" type="file">
+        <div class="check" title="Classify pictures (chart / logo / …); needs models/picture_classifier.onnx">
+          <input id="enrich-pictures" type="checkbox"><label for="enrich-pictures" style="margin:0">Enrich pictures</label>
+        </div>
+        <div class="check" title="Transcribe code blocks with the CodeFormula model; needs the --enrich download">
+          <input id="enrich-code" type="checkbox"><label for="enrich-code" style="margin:0">Enrich code</label>
+        </div>
+        <div class="check" title="Transcribe formulas to LaTeX with the CodeFormula model; needs the --enrich download">
+          <input id="enrich-formulas" type="checkbox"><label for="enrich-formulas" style="margin:0">Enrich formulas</label>
+        </div>
         <button type="button" id="upload">Upload</button>
         <span id="upload-note"></span>
       </div>
@@ -189,9 +201,15 @@ async function refreshDocs() {
     const d = await api("/api/documents", { headers: headers() });
     list.innerHTML = (d.documents || []).map((doc) => {
       const busy = String(doc.hash || "").startsWith("pending:");
+      // target=_blank can't send headers, so the md link authenticates with
+      // the stored key as ?api_key= (same key list, query-param form).
+      const mdHref = `/api/documents/${encodeURIComponent(doc.id)}/markdown` +
+        `?api_key=${encodeURIComponent(localStorage.getItem(TOKEN_KEY) || "")}`;
+      const md = (doc.metadata && doc.metadata.has_markdown)
+        ? `<a class="md" target="_blank" rel="noopener" href="${esc(mdHref)}">md</a>` : "";
       return `<div class="doc" data-id="${esc(doc.id)}">` +
       `<span class="title">${esc(doc.title)}${busy ? " ⏳ processing…" : ""}</span>` +
-      `<span class="src">${esc(doc.source_uri)}</span>` +
+      `<span class="src">${esc(doc.source_uri)}</span>` + md +
       `<button type="button" class="del">delete</button></div>`;
     }).join("") || `<span id="upload-note">No documents yet.</span>`;
   } catch { list.innerHTML = ""; }
@@ -256,7 +274,11 @@ $("upload").addEventListener("click", async () => {
   $("error").hidden = true;
   const progress = startUploadProgress(file.name);
   try {
-    const r = await api(`/api/documents?name=${encodeURIComponent(file.name)}`, {
+    let qs = `name=${encodeURIComponent(file.name)}`;
+    if ($("enrich-pictures").checked) qs += "&enrich_pictures=true";
+    if ($("enrich-code").checked) qs += "&enrich_code=true";
+    if ($("enrich-formulas").checked) qs += "&enrich_formulas=true";
+    const r = await api(`/api/documents?${qs}`, {
       method: "POST", headers: headers(), body: file,
     });
     $("upload-note").textContent = r.outcome === "skipped"

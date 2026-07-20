@@ -33,6 +33,9 @@ __pycache__/
 # Local docling scratch dir for this migration work
 /scratch-gt/
 
+# Benchmarks for GPU (not committed, large and reproducible)
+/bench-gpu/
+
 # docling-py is a standalone crate (own workspace) — its build dirs
 crates/docling-py/target/
 crates/docling-py/.venv/
@@ -41,4 +44,3 @@ crates/docling-py/python/docling_rs/*.so
 # docling's .dclx loader extracts each archive it reads next to the file
 tests/data/**/*_artifacts/
 tests/data/**/groundtruth_dclx/tests/
-bench-gpu/

@@ -328,6 +328,101 @@ async fn upload_and_delete_document() {
 }
 
 #[tokio::test]
+async fn markdown_view_and_query_param_auth() {
+    let (base, client) = spawn_server().await;
+    let auth = ("X-Api-Key", "test-key");
+
+    // Upload a doc whose parsed Markdown we can fetch back.
+    let r: serde_json::Value = client
+        .post(format!(
+            "{base}/api/documents?name=view.md&enrich_pictures=false"
+        ))
+        .header(auth.0, auth.1)
+        .body("# Viewable\n\nBody that should come back as markdown.")
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(r["outcome"], "ingested");
+    let id = r["id"].as_str().unwrap().to_string();
+
+    // List/get responses must NOT inline the stored markdown (it can be
+    // megabytes and the UI polls the list) — only a has_markdown flag.
+    let docs: serde_json::Value = client
+        .get(format!("{base}/api/documents"))
+        .header(auth.0, auth.1)
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    let row = docs["documents"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|d| d["id"] == id.as_str())
+        .unwrap();
+    assert!(row["metadata"].get("markdown").is_none());
+    assert_eq!(row["metadata"]["has_markdown"], true);
+
+    // The markdown endpoint serves it as text/markdown — with header auth…
+    let r = client
+        .get(format!("{base}/api/documents/{id}/markdown"))
+        .header(auth.0, auth.1)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r.status(), 200);
+    assert!(r
+        .headers()
+        .get("content-type")
+        .unwrap()
+        .to_str()
+        .unwrap()
+        .starts_with("text/markdown"));
+    let md = r.text().await.unwrap();
+    assert!(md.contains("Viewable"));
+
+    // …and with ?api_key= (what the UI's target=_blank link sends; a browser
+    // link can't set headers).
+    let r = client
+        .get(format!(
+            "{base}/api/documents/{id}/markdown?api_key=test-key"
+        ))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r.status(), 200);
+
+    // A wrong or missing query key is still rejected.
+    let r = client
+        .get(format!("{base}/api/documents/{id}/markdown?api_key=wrong"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r.status(), 401);
+    let r = client
+        .get(format!("{base}/api/documents/{id}/markdown"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r.status(), 401);
+
+    // Unknown id -> 404.
+    let r = client
+        .get(format!(
+            "{base}/api/documents/nope/markdown?api_key=test-key"
+        ))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r.status(), 404);
+}
+
+#[tokio::test]
 async fn extend_context_widens_hits_with_neighbors() {
     // Own server with a tiny chunk window so one document yields several
     // ordinal-adjacent chunks.
