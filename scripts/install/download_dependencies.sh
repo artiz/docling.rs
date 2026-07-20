@@ -43,6 +43,9 @@
 #     docling-rag's local ONNX embedder, ~2.3 GB — opt-in with --embed; from
 #     Hugging Face, matching the RAG_EMBED_ONNX_PATH/RAG_EMBED_TOKENIZER
 #     defaults)
+#   models/ocr_rec_en.onnx + en_dict.txt   (English PP-OCRv3 recognition,
+#     ~9 MB — opt-in with --ocr-en; better Latin word spacing than the
+#     default ch_ model on English-only scans)
 #
 # Also fetches the INT8-quantized CPU models when the release hosts them (see
 # docs/PDF_CONFORMANCE.md — ~2.4x faster layout inference at unchanged conformance):
@@ -76,6 +79,7 @@ WITH_INT8=true
 WITH_CHUNK=true
 WITH_ENRICH=false
 WITH_EMBED=false
+WITH_OCR_EN=false
 for arg in "$@"; do
   case "$arg" in
     --force) FORCE=true ;;
@@ -85,8 +89,9 @@ for arg in "$@"; do
     --no-chunk) WITH_CHUNK=false ;;
     --enrich) WITH_ENRICH=true ;;
     --embed) WITH_EMBED=true ;;
+    --ocr-en) WITH_OCR_EN=true ;;
     *)
-      echo "usage: download_dependencies.sh [--force] [--no-asr] [--no-int8] [--no-chunk] [--enrich] [--embed]" >&2
+      echo "usage: download_dependencies.sh [--force] [--no-asr] [--no-int8] [--no-chunk] [--enrich] [--embed] [--ocr-en]" >&2
       exit 2
       ;;
   esac
@@ -210,6 +215,16 @@ if [ "$WITH_EMBED" = true ]; then
   fetch "$EMBED_BASE_URL/model.onnx" models/embed/bge-m3.onnx
   fetch "$EMBED_BASE_URL/model.onnx.data" models/embed/model.onnx.data
   fetch "$EMBED_BASE_URL/tokenizer.json" models/embed/tokenizer.json
+fi
+
+if [ "$WITH_OCR_EN" = true ]; then
+  # English PP-OCRv3 recognition model (--ocr-en, ~9 MB): the default ch_
+  # model is what docling conformance is measured with, but its Latin-script
+  # word spacing is weak (glued words on English-only scans). Select at
+  # runtime with RAG_OCR_LANG=en (docling-rag) or, for any binary,
+  #   DOCLING_OCR_REC_ONNX=models/ocr_rec_en.onnx DOCLING_OCR_DICT=models/en_dict.txt
+  fetch "https://huggingface.co/SWHL/RapidOCR/resolve/main/PP-OCRv3/en_PP-OCRv3_rec_infer.onnx" models/ocr_rec_en.onnx
+  fetch "https://raw.githubusercontent.com/PaddlePaddle/PaddleOCR/main/ppocr/utils/en_dict.txt" models/en_dict.txt
 fi
 
 if [ "$WITH_INT8" = true ]; then

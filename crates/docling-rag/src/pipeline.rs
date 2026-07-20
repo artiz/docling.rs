@@ -65,6 +65,18 @@ impl Pipeline {
     /// Build every component from config. The LLM client is created only if
     /// `OPENROUTER_API_KEY` is set (LLM-backed modes error otherwise).
     pub async fn from_config(cfg: &RagConfig) -> Result<Self> {
+        // RAG_OCR_LANG=en swaps the OCR recognition model for the English
+        // PP-OCRv3 export (download_dependencies.sh --ocr-en) via docling-pdf's
+        // model env vars — resolved once per process at first PDF use, and an
+        // explicit DOCLING_OCR_* override always wins over this mapping.
+        if cfg.ocr_lang == crate::config::OcrLang::En {
+            if std::env::var_os("DOCLING_OCR_REC_ONNX").is_none() {
+                std::env::set_var("DOCLING_OCR_REC_ONNX", "models/ocr_rec_en.onnx");
+            }
+            if std::env::var_os("DOCLING_OCR_DICT").is_none() {
+                std::env::set_var("DOCLING_OCR_DICT", "models/en_dict.txt");
+            }
+        }
         let source = source::from_config(cfg)?;
         let embedder = embed::from_config(cfg)?;
         let store = store::from_config(cfg).await?;

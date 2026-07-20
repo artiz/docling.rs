@@ -306,6 +306,24 @@ implementations that require the corresponding service (Postgres, an AMQP broker
 Redis, an FTP/SSH server, an Ollama/Gemini endpoint, or local ONNX model files) to
 exercise end-to-end.
 
+## OCR language (`RAG_OCR_LANG`)
+
+Scanned/image-only PDF pages go through OCR. The default recognition model is
+`ch_PP-OCRv3` (multilingual, what docling conformance is measured with) — but
+its Latin-script word spacing is weak: English-only scans come out with glued
+words (`miscellaneousAImodelsplugins`) and I/l confusions. For English
+documents fetch the English model and switch:
+
+```bash
+scripts/install/download_dependencies.sh --ocr-en   # ~9 MB
+RAG_OCR_LANG=en docling-rag ingest
+```
+
+This maps onto docling-pdf's `DOCLING_OCR_REC_ONNX` / `DOCLING_OCR_DICT`
+(explicit env overrides win), so the same model swap works for any docling.rs
+binary, not just the RAG pipeline. Note: OCR only runs where a page has no
+extractable text layer — a born-digital PDF is unaffected by this setting.
+
 ## Local embedding model (ONNX)
 
 Build with `--features onnx-embed` and fetch the default model (bge-m3,
