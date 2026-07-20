@@ -38,14 +38,14 @@ where
     use std::time::Duration;
 
     let (tx, rx) = channel();
-    // Mutex only to make the receiver Sync for `allow_threads`; never contended.
+    // Mutex only to make the receiver Sync for `detach`; never contended.
     let rx = Mutex::new(rx);
     std::thread::spawn(move || {
         let _ = tx.send(work());
     });
     loop {
         let received =
-            py.allow_threads(|| rx.lock().unwrap().recv_timeout(Duration::from_millis(100)));
+            py.detach(|| rx.lock().unwrap().recv_timeout(Duration::from_millis(100)));
         match received {
             Ok(result) => return result,
             Err(RecvTimeoutError::Timeout) => py.check_signals()?,
@@ -348,7 +348,7 @@ impl PyChunkStream {
             Done,
         }
         loop {
-            let received = py.allow_threads(|| match self.rx.lock().unwrap().as_ref() {
+            let received = py.detach(|| match self.rx.lock().unwrap().as_ref() {
                 None => Recv::Done,
                 Some(rx) => match rx.recv_timeout(Duration::from_millis(100)) {
                     Ok(item) => Recv::Item(item),
@@ -489,13 +489,15 @@ fn chunk_document(
 /// str / pathlib.Path / anything os.PathLike → PathBuf.
 struct PathLike(std::path::PathBuf);
 
-impl<'py> FromPyObject<'py> for PathLike {
-    fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
+impl<'a, 'py> FromPyObject<'a, 'py> for PathLike {
+    type Error = PyErr;
+
+    fn extract(ob: pyo3::Borrowed<'a, 'py, PyAny>) -> PyResult<Self> {
         if let Ok(p) = ob.extract::<std::path::PathBuf>() {
             return Ok(PathLike(p));
         }
         let fspath = ob.py().import("os")?.getattr("fspath")?;
-        Ok(PathLike(fspath.call1((ob,))?.extract()?))
+        Ok(PathLike(fspath.call1((&*ob,))?.extract()?))
     }
 }
 
