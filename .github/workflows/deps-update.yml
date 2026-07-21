@@ -19,6 +19,53 @@ permissions:
   pull-requests: write # open/refresh the update PR
 
 jobs:
+  # Weekly known-CVE scan of the committed lockfiles. Runs unconditionally
+  # (not gated on a lockfile change): an advisory can be published against a
+  # version we already pin, so the value is auditing the *current* tree every
+  # week, independent of whether `cargo update` moved anything. A finding fails
+  # the job — the scheduled-run failure is the alarm, same philosophy as the
+  # in-job test below.
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install Rust (stable)
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/bin
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+          key: ${{ runner.os }}-cargo-audit-bin
+
+      - name: Install cargo-audit
+        # --locked: cargo-audit's own deps have raised the MSRV past stable's
+        # floor before; pin to its committed lockfile to install reliably.
+        run: cargo install cargo-audit --locked
+
+      - name: Audit both lockfiles
+        # Known-accepted advisories are ignored by ID so the job fails only on
+        # NEW findings (an unfiltered audit would go red every week on the
+        # residual and get tuned out). Keep this list in sync with the
+        # "Known residual" section of docs/SECURITY.md; drop an entry the week
+        # its upstream fix lands so a regression can't hide behind the ignore.
+        #   RUSTSEC-2026-0194 / -0195: quick-xml DoS, reachable only via
+        #     calamine's transitive 0.31 pin (XLSX). Our direct quick-xml is
+        #     >=0.41 (patched). Remove when calamine bumps quick-xml.
+        run: |
+          IGNORES="--ignore RUSTSEC-2026-0194 --ignore RUSTSEC-2026-0195"
+          echo "::group::root workspace"
+          cargo audit $IGNORES
+          echo "::endgroup::"
+          echo "::group::docling-py workspace"
+          cargo audit $IGNORES --file crates/docling-py/Cargo.lock
+          echo "::endgroup::"
+
   cargo-update:
     runs-on: ubuntu-latest
     steps:
