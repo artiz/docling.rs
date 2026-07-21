@@ -265,7 +265,7 @@ fn walk_block(
                     flush_inline(&mut inline, nodes);
                     nodes.push(Node::Picture {
                         caption: e.attr("alt").filter(|a| !a.is_empty()).map(str::to_string),
-                        image: e.attr("src").and_then(|s| images.resolve(s)),
+                        image: img_src(e).and_then(|s| images.resolve(&s)),
                         classification: None,
                     });
                 } else if name == "signature" || name == "stamp" {
@@ -1443,16 +1443,51 @@ fn image_wrapper(elem: ElementRef) -> Option<(Option<String>, Option<String>)> {
         .attr("alt")
         .filter(|a| !a.is_empty())
         .map(str::to_string);
-    let src = img.value().attr("src").map(str::to_string);
+    let src = img_src(img.value());
     Some((caption, src))
 }
 
-/// The `src` of a `<figure>`'s first `<img>`, for image extraction.
+/// The image URL of a `<figure>`'s first `<img>`, for image extraction.
 fn figure_img_src(fig: ElementRef) -> Option<String> {
     fig.select(cached_selector!("img"))
         .next()
-        .and_then(|img| img.value().attr("src"))
-        .map(str::to_string)
+        .and_then(|img| img_src(img.value()))
+}
+
+/// The real image URL of an `<img>`, accounting for lazy-loading: a normal
+/// `src` is authoritative, but many pages leave `src` empty or a placeholder
+/// and put the true URL in `data-src` (or a `srcset`), so fall back to those —
+/// otherwise every lazy-loaded image would extract nothing.
+fn img_src(el: &scraper::node::Element) -> Option<String> {
+    let attr = |k: &str| el.attr(k).map(str::trim).filter(|s| !s.is_empty());
+    // A non-placeholder src wins.
+    if let Some(s) = attr("src") {
+        if !s.starts_with("data:") {
+            return Some(s.to_string());
+        }
+    }
+    // Common lazy-load conventions.
+    for k in ["data-src", "data-original", "data-lazy-src", "data-lazy"] {
+        if let Some(s) = attr(k) {
+            return Some(s.to_string());
+        }
+    }
+    // srcset / data-srcset: take the first candidate's URL (before its
+    // descriptor, e.g. `foo.png 2x` / `foo.png 640w`).
+    for k in ["srcset", "data-srcset"] {
+        if let Some(s) = attr(k) {
+            if let Some(u) = s
+                .split(',')
+                .next()
+                .and_then(|c| c.split_whitespace().next())
+                .filter(|u| !u.is_empty())
+            {
+                return Some(u.to_string());
+            }
+        }
+    }
+    // Last resort: a `data:` src (a real inline image, no lazy target).
+    attr("src").map(str::to_string)
 }
 
 fn has_descendant(elem: ElementRef, name: &str) -> bool {
@@ -1867,7 +1902,7 @@ mod tests {
         assert!(matches!(plain.nodes[0], Node::Picture { image: None, .. }));
 
         // With a resolver the data: URI is decoded and embedded.
-        let doc = convert_html("t", &html, &FsImageResolver::new(None));
+        let doc = convert_html("t", &html, &FsImageResolver::new(None, None));
         match &doc.nodes[0] {
             Node::Picture {
                 image: Some(img),
@@ -1880,5 +1915,33 @@ mod tests {
             }
             other => panic!("expected an embedded image, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn lazy_loaded_img_src_falls_back_to_data_src_and_srcset() {
+        use super::img_src;
+        use scraper::Html;
+        let pick = |html: &str| {
+            let frag = Html::parse_fragment(html);
+            let img = frag.select(cached_selector!("img")).next().unwrap();
+            img_src(img.value())
+        };
+        // A real src wins.
+        assert_eq!(pick(r#"<img src="/a.png">"#).as_deref(), Some("/a.png"));
+        // No src → data-src (the magenta.at lazy-load shape).
+        assert_eq!(
+            pick(r#"<img data-src="/b.png" class="lazyload">"#).as_deref(),
+            Some("/b.png")
+        );
+        // A placeholder data: src with a lazy target → the lazy target.
+        assert_eq!(
+            pick(r#"<img src="data:image/gif;base64,R0lGOD" data-src="/c.png">"#).as_deref(),
+            Some("/c.png")
+        );
+        // srcset → first candidate URL, descriptor stripped.
+        assert_eq!(
+            pick(r#"<img srcset="/d-1x.png 1x, /d-2x.png 2x">"#).as_deref(),
+            Some("/d-1x.png")
+        );
     }
 }

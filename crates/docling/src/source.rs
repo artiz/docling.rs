@@ -19,6 +19,11 @@ pub struct SourceDocument {
     /// resolve relative `<img src>` paths when image fetching is enabled; `None`
     /// for in-memory sources.
     pub path: Option<PathBuf>,
+    /// The URL this document was fetched from, if any. Used to resolve
+    /// relative / protocol-relative `<img src>` against the page's origin when
+    /// image fetching is enabled (an HTML page fetched from the web references
+    /// its images by relative path). `None` for local / in-memory sources.
+    pub base_url: Option<String>,
 }
 
 impl SourceDocument {
@@ -46,6 +51,7 @@ impl SourceDocument {
             format,
             bytes,
             path: Some(path.to_path_buf()),
+            base_url: None,
         })
     }
 
@@ -56,7 +62,15 @@ impl SourceDocument {
             format,
             bytes,
             path: None,
+            base_url: None,
         }
+    }
+
+    /// Record the URL this document was fetched from (for resolving relative
+    /// `<img src>` against the page origin when image fetching is enabled).
+    pub fn with_base_url(mut self, url: impl Into<String>) -> Self {
+        self.base_url = Some(url.into());
+        self
     }
 
     /// The directory containing the source file, for resolving relative asset

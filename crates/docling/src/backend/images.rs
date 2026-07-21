@@ -41,16 +41,34 @@ impl ImageResolver for NoFetch {
 
 /// Filesystem/network resolver for standalone HTML. Handles `data:` URIs inline,
 /// reads local files relative to the source document's directory, and fetches
-/// remote `http(s)` URLs.
+/// remote `http(s)` URLs — including relative / protocol-relative `<img src>`
+/// resolved against the page's [`base_url`](Self::base_url) when the HTML was
+/// itself fetched from the web.
 pub(crate) struct FsImageResolver {
     base_dir: Option<PathBuf>,
+    base_url: Option<String>,
 }
 
 impl FsImageResolver {
-    /// `base_dir` is the source HTML file's directory, used to resolve relative
-    /// `src` paths; `None` (an in-memory source) disables relative-path reads.
-    pub(crate) fn new(base_dir: Option<PathBuf>) -> Self {
-        Self { base_dir }
+    /// `base_dir` is the source HTML file's directory (relative-path reads);
+    /// `base_url` is the URL the page was fetched from (relative `<img src>`
+    /// resolution). Either may be `None`.
+    pub(crate) fn new(base_dir: Option<PathBuf>, base_url: Option<String>) -> Self {
+        Self { base_dir, base_url }
+    }
+
+    /// Resolve `src` to an absolute `http(s)` URL when possible: an already-
+    /// absolute URL as-is, else relative / protocol-relative / absolute-path
+    /// joined against the page base URL. `None` when there is nothing remote to
+    /// fetch (no base URL for a relative src).
+    #[cfg(feature = "fetch-images")]
+    fn absolute_http_url(&self, src: &str) -> Option<String> {
+        if src.starts_with("http://") || src.starts_with("https://") {
+            return Some(src.to_string());
+        }
+        let base = self.base_url.as_deref()?;
+        let joined = url::Url::parse(base).ok()?.join(src).ok()?;
+        matches!(joined.scheme(), "http" | "https").then(|| joined.to_string())
     }
 }
 
@@ -63,8 +81,16 @@ impl ImageResolver for FsImageResolver {
         if src.starts_with("data:") {
             return from_data_uri(src);
         }
+        // Remote: an absolute URL, or a relative one resolved against the page
+        // base URL (a page fetched from the web references images by relative
+        // path). Only compiled with the HTTP client available.
+        #[cfg(feature = "fetch-images")]
+        if let Some(url) = self.absolute_http_url(src) {
+            return fetch_remote(&url);
+        }
+        #[cfg(not(feature = "fetch-images"))]
         if src.starts_with("http://") || src.starts_with("https://") {
-            return fetch_remote(src);
+            return None;
         }
         // A local path (possibly `file://`). Absolute paths are read directly;
         // relative ones only when we know the source's directory — never against
@@ -116,11 +142,78 @@ fn from_data_uri(uri: &str) -> Option<PictureImage> {
     build_picture(mime, data)
 }
 
+/// Whether a resolved IP points back at the local host or private
+/// infrastructure — the SSRF block-list (mirrors docling-serve's URL-fetch
+/// guard, so a document that points `<img src>` at an internal address can't
+/// reach it when image fetching runs on a server).
+#[cfg(feature = "fetch-images")]
+fn is_blocked_ip(ip: std::net::IpAddr) -> bool {
+    use std::net::IpAddr;
+    match ip {
+        IpAddr::V4(v4) => {
+            v4.is_loopback()
+                || v4.is_private()
+                || v4.is_link_local()
+                || v4.is_unspecified()
+                || v4.is_broadcast()
+                || v4.is_documentation()
+                || (v4.octets()[0] == 100 && (v4.octets()[1] & 0xc0) == 64)
+        }
+        IpAddr::V6(v6) => {
+            v6.is_loopback()
+                || v6.is_unspecified()
+                || (v6.segments()[0] & 0xfe00) == 0xfc00
+                || (v6.segments()[0] & 0xffc0) == 0xfe80
+                || v6
+                    .to_ipv4_mapped()
+                    .is_some_and(|v4| is_blocked_ip(IpAddr::V4(v4)))
+        }
+    }
+}
+
+/// `true` when the URL's host resolves to a blocked address and the operator
+/// hasn't opted out with `DOCLING_RS_ALLOW_PRIVATE_IP_FETCH` (the same flag
+/// docling-serve's URL fetch honors, for local/intranet development).
+#[cfg(feature = "fetch-images")]
+fn blocked_by_ssrf_guard(url: &str) -> bool {
+    use std::net::ToSocketAddrs;
+    let allow = std::env::var("DOCLING_RS_ALLOW_PRIVATE_IP_FETCH")
+        .map(|v| !v.is_empty() && v != "0" && !v.eq_ignore_ascii_case("false"))
+        .unwrap_or(false);
+    if allow {
+        return false;
+    }
+    let Ok(parsed) = url::Url::parse(url) else {
+        return true;
+    };
+    let Some(host) = parsed.host_str() else {
+        return true;
+    };
+    let port = parsed.port_or_known_default().unwrap_or(80);
+    match (host, port).to_socket_addrs() {
+        Ok(addrs) => addrs.map(|a| a.ip()).any(is_blocked_ip),
+        // Unresolvable host: nothing to fetch — treat as blocked (skip).
+        Err(_) => true,
+    }
+}
+
 /// Fetch a remote image over HTTP(S). The mimetype comes from `Content-Type`
 /// when it's an `image/*`, else it's guessed from the URL's extension.
+/// Bounded: an SSRF block-list, a connect/overall timeout, and a redirect cap
+/// keep one hostile or slow `<img src>` from hanging the whole conversion.
 #[cfg(feature = "fetch-images")]
 fn fetch_remote(url: &str) -> Option<PictureImage> {
-    let mut resp = ureq::get(url).call().ok()?;
+    use std::time::Duration;
+    if blocked_by_ssrf_guard(url) {
+        return None;
+    }
+    let agent: ureq::Agent = ureq::Agent::config_builder()
+        .timeout_connect(Some(Duration::from_secs(5)))
+        .timeout_global(Some(Duration::from_secs(20)))
+        .max_redirects(3)
+        .build()
+        .into();
+    let mut resp = agent.get(url).call().ok()?;
     let content_type = resp
         .headers()
         .get("content-type")
@@ -244,18 +337,44 @@ mod tests {
         // A real file at an absolute path is read.
         let p = std::env::temp_dir().join(format!("docling.rs_img_{}.png", std::process::id()));
         std::fs::write(&p, RED_PNG).unwrap();
-        let r = FsImageResolver::new(None);
+        let r = FsImageResolver::new(None, None);
         let img = r.resolve(p.to_str().unwrap()).expect("reads local file");
         assert_eq!((img.width, img.height), (1, 1));
         let _ = std::fs::remove_file(&p);
         // A relative path with no known base dir is refused (never reads from CWD).
-        assert!(FsImageResolver::new(None)
+        assert!(FsImageResolver::new(None, None)
             .resolve("nope/relative.png")
             .is_none());
         // data: URIs still work regardless of base dir.
         assert!(r
             .resolve(&format!("data:image/png;base64,{}", encode(RED_PNG)))
             .is_some());
+    }
+
+    #[cfg(feature = "fetch-images")]
+    #[test]
+    fn resolves_relative_and_protocol_relative_against_base_url() {
+        // The URL join the fetch path relies on, without touching the network.
+        let r = FsImageResolver::new(None, Some("https://ex.com/a/page.html".into()));
+        assert_eq!(
+            r.absolute_http_url("/img/x.png").as_deref(),
+            Some("https://ex.com/img/x.png")
+        );
+        assert_eq!(
+            r.absolute_http_url("y.png").as_deref(),
+            Some("https://ex.com/a/y.png")
+        );
+        assert_eq!(
+            r.absolute_http_url("//cdn.ex.com/z.png").as_deref(),
+            Some("https://cdn.ex.com/z.png")
+        );
+        assert_eq!(
+            r.absolute_http_url("https://other.com/w.png").as_deref(),
+            Some("https://other.com/w.png")
+        );
+        // No base URL: a relative src has nothing to resolve against.
+        let no_base = FsImageResolver::new(None, None);
+        assert!(no_base.absolute_http_url("/img/x.png").is_none());
     }
 }
 

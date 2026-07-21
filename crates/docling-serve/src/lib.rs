@@ -602,7 +602,9 @@ fn fetch_url(url: &str, file_name: Option<&str>) -> Result<SourceDocument, ApiEr
                 .filter(|s| !s.is_empty())
         })
         .unwrap_or_else(|| "document".to_string());
-    source_from_named_bytes_ct(&name, bytes, content_type.as_deref())
+    // Record the fetch URL as the document's base URL so relative `<img src>`
+    // on a fetched web page resolve against its origin when fetch_images is on.
+    Ok(source_from_named_bytes_ct(&name, bytes, content_type.as_deref())?.with_base_url(url))
 }
 
 /// Convert to a [`DoclingDocument`], routing PDF/image through the warm

@@ -29,7 +29,7 @@ pdf-text = ["dep:docling-pdf"]
 # Audio → Whisper ASR (symphonia + ONNX Runtime via docling-asr).
 asr = ["dep:docling-asr"]
 # Blocking HTTP fetch of remote <img src> images (DocumentConverter::fetch_images).
-fetch-images = ["dep:ureq"]
+fetch-images = ["dep:ureq", "dep:url"]
 # Optional headless-browser HTML pre-render (the `--use-web-browser` flag /
 # `DocumentConverter::use_web_browser`). Off by default so the standard build
 # stays pure-Rust with no browser/runtime dependency; enable with
@@ -71,6 +71,9 @@ serde_json = "1"
 # already pulls in (so the graph keeps a single ureq); it needs Rust 1.85, which
 # this crate already requires transitively via docling-pdf → ort.
 ureq = { version = "3", optional = true }
+# Resolve relative / protocol-relative <img src> against the page's base URL
+# when the HTML was fetched from the web (fetch_images). Gated with ureq.
+url = { version = "2", optional = true }
 zip = { version = "2.2", default-features = false, features = ["deflate"] }
 
 [[example]]

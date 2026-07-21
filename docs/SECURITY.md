@@ -53,6 +53,12 @@ extracted to disk, so there is no zip-slip path.
 - A crafted PDF/image that panics inside the pipeline no longer **poisons**
   the shared mutex — the lock recovers, so one bad document can't turn into a
   permanent outage of the endpoint.
+- **`fetch_images` (`<img src>` resolution for HTML/EPUB)** carries the same
+  SSRF guard: a remote image whose host resolves to a private/loopback/
+  link-local address is skipped, and each fetch has a connect/overall timeout
+  (5 s / 20 s) plus a redirect cap, so one slow or hostile image can't hang the
+  conversion (and thus the server). `DOCLING_RS_ALLOW_PRIVATE_IP_FETCH=1` opts
+  out for local/intranet image servers, same as the URL fetch above.
 - **No authentication.** Bind to loopback (the default) or place an
   authenticating/policy proxy in front before exposing it.
 
