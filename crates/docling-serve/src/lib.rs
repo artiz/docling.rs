@@ -7,6 +7,7 @@
 //! |--------|---------------|----------------------------------------------------|
 //! | GET    | `/`           | API docs + an interactive test form                |
 //! | POST   | `/v1/convert` | convert an upload (multipart) or a URL (JSON body) |
+//! | GET    | `/v1/config`  | server capabilities (`{"allow_url_fetch": bool}`)  |
 //! | GET    | `/health`     | liveness probe                                     |
 //! | GET    | `/ready`      | readiness probe (200 once models are warm)         |
 //!
@@ -20,7 +21,8 @@
 //! - `strict` — cleaner Markdown instead of docling-legacy output
 //! - `images` — `placeholder` (default) | `embedded` (Markdown only)
 //! - `no_ocr`, `no_table_former` — PDF/image pipeline switches
-//! - `fetch_images` — resolve external `<img src>` for HTML/EPUB
+//! - `fetch_images` — resolve external `<img src>` for HTML/EPUB (outbound
+//!   fetch, so honored only under `--allow-url-fetch`)
 //!
 //! Markdown converts through the streaming serializer and the response body
 //! streams page by page (chunked transfer); `json`/`dclx`/`chunks` buffer.
@@ -32,10 +34,14 @@
 //! (`--concurrency`); excess requests queue.
 //!
 //! Security: URL fetching makes the server issue outbound requests (SSRF
-//! surface) — bind to loopback (the default) or front with a policy proxy,
-//! and gate it with `--no-url-fetch` where the input should be uploads only.
+//! surface), so it is **off by default** — enable with `--allow-url-fetch`.
+//! Even when enabled, targets that resolve to a private/loopback/link-local
+//! address are refused and redirects are disabled. The server itself has no
+//! authentication: bind to loopback (the default) or front with a policy/auth
+//! proxy before exposing it.
 
 use std::io::Read;
+use std::net::ToSocketAddrs;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
@@ -64,7 +70,10 @@ pub struct ServeConfig {
     /// Load the PDF/image models at startup so `/ready` flips only when the
     /// first conversion would be fast. Off: models load lazily on first use.
     pub warmup: bool,
-    /// Allow `{"url": …}` inputs (outbound fetch — SSRF surface).
+    /// Allow `{"url": …}` inputs (outbound fetch — SSRF surface). Off by
+    /// default: even with the built-in private/loopback/link-local IP guard,
+    /// letting a caller name the fetch target is a deliberate exposure that a
+    /// deployment must opt into (`--allow-url-fetch`).
     pub allow_url_fetch: bool,
     /// Default `strict` for requests that don't set it.
     pub strict: bool,
@@ -77,7 +86,7 @@ impl Default for ServeConfig {
             concurrency: 2,
             max_body_bytes: 256 * 1024 * 1024,
             warmup: false,
-            allow_url_fetch: true,
+            allow_url_fetch: false,
             strict: false,
         }
     }
@@ -121,6 +130,7 @@ pub fn router(cfg: ServeConfig) -> Router {
         )
         .route("/health", get(|| async { Json(json!({"status": "ok"})) }))
         .route("/ready", get(ready))
+        .route("/v1/config", get(config))
         .route("/v1/convert", post(convert))
         .layer(DefaultBodyLimit::max(cfg.max_body_bytes))
         .with_state(state)
@@ -160,6 +170,13 @@ async fn shutdown_signal() {
         _ = term => {},
     }
     eprintln!("docling-serve: shutdown signal received, draining in-flight requests");
+}
+
+/// Capabilities the built-in UI adapts to. Currently just whether `{"url": …}`
+/// inputs are accepted (`--allow-url-fetch`) — the UI greys out the URL option
+/// and explains why when this is false, instead of letting the user hit a 422.
+async fn config(State(state): State<Arc<AppState>>) -> Response {
+    Json(json!({ "allow_url_fetch": state.cfg.allow_url_fetch })).into_response()
 }
 
 async fn ready(State(state): State<Arc<AppState>>) -> Response {
@@ -251,7 +268,9 @@ async fn convert(
             .map_err(|e| ApiError::Bad(format!("bad JSON body: {e}")))?;
         if !state.cfg.allow_url_fetch {
             return Err(ApiError::Unsupported(
-                "URL inputs are disabled (--no-url-fetch); upload the file instead".into(),
+                "URL inputs are disabled; start docling-serve with --allow-url-fetch \
+                 (SSRF surface — see docs/SECURITY.md), or upload the file instead"
+                    .into(),
             ));
         }
         let options = req.options.clone().merge_over(query);
@@ -398,12 +417,31 @@ async fn text_field(field: axum::extract::multipart::Field<'_>) -> Result<String
 
 /// Build a [`SourceDocument`] from a filename (extension → format) and bytes.
 fn source_from_named_bytes(file_name: &str, bytes: Vec<u8>) -> Result<SourceDocument, ApiError> {
+    source_from_named_bytes_ct(file_name, bytes, None)
+}
+
+/// As [`source_from_named_bytes`], with an optional response `Content-Type` used
+/// as a fallback when the name carries no usable extension — a URL like
+/// `…/help/example-domains` has no `.html`, but the server reports
+/// `text/html`, so it still converts.
+fn source_from_named_bytes_ct(
+    file_name: &str,
+    bytes: Vec<u8>,
+    content_type: Option<&str>,
+) -> Result<SourceDocument, ApiError> {
     let ext = std::path::Path::new(file_name)
         .extension()
-        .and_then(|e| e.to_str())
-        .ok_or_else(|| ApiError::Bad(format!("no extension on '{file_name}'")))?;
-    let format = InputFormat::from_extension(ext)
-        .ok_or_else(|| ApiError::Unsupported(format!("unrecognized extension '.{ext}'")))?;
+        .and_then(|e| e.to_str());
+    let format = ext
+        .and_then(InputFormat::from_extension)
+        .or_else(|| content_type.and_then(format_from_content_type))
+        .ok_or_else(|| match ext {
+            Some(e) => ApiError::Unsupported(format!("unrecognized extension '.{e}'")),
+            None => ApiError::Bad(format!(
+                "cannot determine the format of '{file_name}': no file extension \
+                 and no recognized Content-Type"
+            )),
+        })?;
     let stem = std::path::Path::new(file_name)
         .file_stem()
         .and_then(|s| s.to_str())
@@ -412,21 +450,150 @@ fn source_from_named_bytes(file_name: &str, bytes: Vec<u8>) -> Result<SourceDocu
     Ok(SourceDocument::from_bytes(stem, format, bytes))
 }
 
+/// Map an HTTP `Content-Type` (its media-type, parameters stripped) to an input
+/// format — the common web types docling can convert. Anything else returns
+/// `None` and the caller reports an unknown-format error.
+fn format_from_content_type(content_type: &str) -> Option<InputFormat> {
+    let mime = content_type
+        .split(';')
+        .next()
+        .unwrap_or("")
+        .trim()
+        .to_ascii_lowercase();
+    Some(match mime.as_str() {
+        "text/html" | "application/xhtml+xml" => InputFormat::Html,
+        "application/pdf" => InputFormat::Pdf,
+        "text/markdown" | "text/plain" => InputFormat::Md,
+        "text/csv" => InputFormat::Csv,
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document" => {
+            InputFormat::Docx
+        }
+        "application/vnd.openxmlformats-officedocument.presentationml.presentation" => {
+            InputFormat::Pptx
+        }
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" => InputFormat::Xlsx,
+        "application/epub+zip" => InputFormat::Epub,
+        "image/jpeg" | "image/png" | "image/tiff" | "image/bmp" | "image/webp" => {
+            InputFormat::Image
+        }
+        _ => return None,
+    })
+}
+
+/// Largest URL-fetch response accepted (256 MiB default). Unlike the
+/// request-body limit, `read_to_end` on a fetched response is otherwise
+/// unbounded — a hostile URL streaming an endless body would exhaust memory.
+/// Override with `DOCLING_RS_MAX_FETCH_BYTES`.
+fn max_fetch_bytes() -> u64 {
+    std::env::var("DOCLING_RS_MAX_FETCH_BYTES")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(256 * 1024 * 1024)
+}
+
+/// Escape hatch for local development: when `DOCLING_RS_ALLOW_PRIVATE_IP_FETCH`
+/// is set to a truthy value (anything but empty / `0` / `false`), the SSRF IP
+/// block-list is not enforced, so a URL like `http://localhost:8080/doc.pdf`
+/// can be fetched. Off by default — leave it unset in production.
+fn allow_private_ip_fetch() -> bool {
+    std::env::var("DOCLING_RS_ALLOW_PRIVATE_IP_FETCH")
+        .map(|v| !v.is_empty() && v != "0" && !v.eq_ignore_ascii_case("false"))
+        .unwrap_or(false)
+}
+
+/// Reject a resolved IP that points back into the local host or infrastructure.
+/// This is the core SSRF guard: without it, `{"url": "http://169.254.169.254/…"}`
+/// or `http://127.0.0.1:…` would let a caller reach cloud metadata and internal
+/// services from the server's network position.
+fn is_blocked_ip(ip: std::net::IpAddr) -> bool {
+    use std::net::IpAddr;
+    match ip {
+        IpAddr::V4(v4) => {
+            v4.is_loopback()
+                || v4.is_private()
+                || v4.is_link_local()
+                || v4.is_unspecified()
+                || v4.is_broadcast()
+                || v4.is_documentation()
+                // Carrier-grade NAT 100.64.0.0/10.
+                || (v4.octets()[0] == 100 && (v4.octets()[1] & 0xc0) == 64)
+        }
+        IpAddr::V6(v6) => {
+            v6.is_loopback()
+                || v6.is_unspecified()
+                // Unique-local fc00::/7 and link-local fe80::/10.
+                || (v6.segments()[0] & 0xfe00) == 0xfc00
+                || (v6.segments()[0] & 0xffc0) == 0xfe80
+                // IPv4-mapped (::ffff:a.b.c.d): re-check the embedded v4.
+                || v6
+                    .to_ipv4_mapped()
+                    .is_some_and(|v4| is_blocked_ip(IpAddr::V4(v4)))
+        }
+    }
+}
+
 /// Fetch a URL input (blocking; run on the blocking pool). The name comes
 /// from `file_name` or the URL path's last segment.
 fn fetch_url(url: &str, file_name: Option<&str>) -> Result<SourceDocument, ApiError> {
     if !url.starts_with("http://") && !url.starts_with("https://") {
         return Err(ApiError::Bad(format!("unsupported URL scheme in '{url}'")));
     }
-    let mut response = ureq::get(url)
+    // SSRF guard: resolve the host and reject if it maps to a private/loopback/
+    // link-local address, and forbid redirects (a public URL could 30x-bounce
+    // to an internal target, defeating this pre-check). This is a best-effort
+    // mitigation — a DNS-rebinding race between this resolution and ureq's own
+    // connect remains theoretically possible; the deployment-level control is
+    // to leave URL fetch disabled unless the network is trusted.
+    let parsed =
+        url::Url::parse(url).map_err(|e| ApiError::Bad(format!("bad URL '{url}': {e}")))?;
+    let host = parsed
+        .host_str()
+        .ok_or_else(|| ApiError::Bad(format!("no host in URL '{url}'")))?;
+    let port = parsed.port_or_known_default().unwrap_or(80);
+    let mut resolved = (host, port)
+        .to_socket_addrs()
+        .map_err(|e| ApiError::Bad(format!("cannot resolve {host}: {e}")))?
+        .peekable();
+    if resolved.peek().is_none() {
+        return Err(ApiError::Bad(format!("cannot resolve {host}")));
+    }
+    if !allow_private_ip_fetch() {
+        for addr in resolved {
+            if is_blocked_ip(addr.ip()) {
+                return Err(ApiError::Bad(format!(
+                    "refusing to fetch {url}: resolves to a private/loopback address \
+                     (set DOCLING_RS_ALLOW_PRIVATE_IP_FETCH=1 for local development)"
+                )));
+            }
+        }
+    }
+    let agent: ureq::Agent = ureq::Agent::config_builder()
+        .max_redirects(0)
+        .build()
+        .into();
+    let mut response = agent
+        .get(url)
         .call()
         .map_err(|e| ApiError::Bad(format!("fetching {url}: {e}")))?;
+    // Kept for format detection when the URL/name has no usable extension.
+    let content_type = response
+        .headers()
+        .get(header::CONTENT_TYPE)
+        .and_then(|v| v.to_str().ok())
+        .map(str::to_string);
+    let max_fetch = max_fetch_bytes();
     let mut bytes = Vec::new();
     response
         .body_mut()
         .as_reader()
+        .take(max_fetch + 1)
         .read_to_end(&mut bytes)
         .map_err(|e| ApiError::Bad(format!("reading {url}: {e}")))?;
+    if bytes.len() as u64 > max_fetch {
+        return Err(ApiError::Bad(format!(
+            "response from {url} exceeds {max_fetch} bytes"
+        )));
+    }
     let name = file_name
         .map(|s| s.to_string())
         .or_else(|| {
@@ -435,10 +602,10 @@ fn fetch_url(url: &str, file_name: Option<&str>) -> Result<SourceDocument, ApiEr
                 .map(|s| s.split(['?', '#']).next().unwrap_or(s).to_string())
                 .filter(|s| !s.is_empty())
         })
-        .ok_or_else(|| {
-            ApiError::Bad("cannot derive a file name from the URL; pass file_name".into())
-        })?;
-    source_from_named_bytes(&name, bytes)
+        .unwrap_or_else(|| "document".to_string());
+    // Record the fetch URL as the document's base URL so relative `<img src>`
+    // on a fetched web page resolve against its origin when fetch_images is on.
+    Ok(source_from_named_bytes_ct(&name, bytes, content_type.as_deref())?.with_base_url(url))
 }
 
 /// Convert to a [`DoclingDocument`], routing PDF/image through the warm
@@ -450,7 +617,17 @@ fn convert_document(
 ) -> Result<DoclingDocument, ApiError> {
     match source.format {
         InputFormat::Pdf | InputFormat::Image => {
-            let mut guard = state.pipeline.lock().unwrap();
+            // Recover from a poisoned lock instead of propagating the panic: a
+            // single crafted PDF/image that panics inside `convert` below drops
+            // the guard mid-unwind and poisons the mutex. Without this recovery
+            // every later request would panic on `.lock().unwrap()` too, turning
+            // one bad document into a permanent outage of this endpoint. The
+            // pipeline state is rebuilt/validated by `warm_pipeline`, so reusing
+            // it after a panic is safe.
+            let mut guard = state
+                .pipeline
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
             let pipeline = warm_pipeline(&mut guard, options)?;
             let doc = match source.format {
                 InputFormat::Pdf => pipeline.convert(&source.bytes, None, &source.name),
@@ -496,7 +673,12 @@ fn warm_pipeline<'a>(
 fn request_converter(state: &AppState, options: &ConvertOptions) -> DocumentConverter {
     DocumentConverter::new()
         .strict(options.strict.unwrap_or(state.cfg.strict))
-        .fetch_images(options.fetch_images.unwrap_or(false))
+        // `fetch_images` pulls external `<img src>` over the network — the same
+        // outbound-fetch / SSRF surface as URL inputs, so it lives behind the
+        // same `--allow-url-fetch` gate. Off by default, it's silently ignored
+        // rather than honored (the UI greys the box; an API caller just gets
+        // placeholder images instead of a surprise outbound fetch).
+        .fetch_images(state.cfg.allow_url_fetch && options.fetch_images.unwrap_or(false))
         .no_ocr(options.no_ocr.unwrap_or(false))
         .no_table_former(options.no_table_former.unwrap_or(false))
 }
@@ -576,7 +758,14 @@ async fn stream_markdown(
     let mut rx = rx;
     let first = rx.recv().await;
     match first {
-        None => Err(ApiError::Internal("converter produced no output".into())),
+        // No chunks means the document converted to empty Markdown (e.g. an
+        // HTML page with no extractable content) — a valid result, not a
+        // server error. Return an empty 200 body rather than a 500.
+        None => Ok((
+            [(header::CONTENT_TYPE, "text/markdown; charset=utf-8")],
+            Body::empty(),
+        )
+            .into_response()),
         Some(Err(e)) => Err(ApiError::Unsupported(e)),
         Some(Ok(first_chunk)) => {
             use tokio_stream::StreamExt;
@@ -598,5 +787,107 @@ async fn stream_markdown(
 fn api_error_message(e: ApiError) -> String {
     match e {
         ApiError::Bad(m) | ApiError::Unsupported(m) | ApiError::Internal(m) => m,
+    }
+}
+
+#[cfg(test)]
+mod ssrf_tests {
+    use super::is_blocked_ip;
+    use std::net::IpAddr;
+
+    fn ip(s: &str) -> IpAddr {
+        s.parse().unwrap()
+    }
+
+    #[test]
+    fn blocks_internal_targets() {
+        // Loopback, private ranges, link-local (incl. cloud metadata),
+        // unspecified, CGNAT, and the IPv4-mapped IPv6 forms must all be
+        // refused as SSRF targets.
+        for s in [
+            "127.0.0.1",
+            "127.5.5.5",
+            "10.0.0.1",
+            "172.16.0.1",
+            "192.168.1.1",
+            "169.254.169.254", // AWS/GCP metadata
+            "0.0.0.0",
+            "100.64.0.1", // carrier-grade NAT
+            "::1",
+            "fe80::1",          // link-local
+            "fc00::1",          // unique-local
+            "::ffff:127.0.0.1", // IPv4-mapped loopback
+            "::ffff:169.254.169.254",
+        ] {
+            assert!(is_blocked_ip(ip(s)), "{s} should be blocked");
+        }
+    }
+
+    #[test]
+    fn allows_public_targets() {
+        for s in [
+            "8.8.8.8",
+            "1.1.1.1",
+            "93.184.216.34",
+            "2606:4700:4700::1111",
+        ] {
+            assert!(!is_blocked_ip(ip(s)), "{s} should be allowed");
+        }
+    }
+
+    #[test]
+    fn url_fetch_off_by_default() {
+        assert!(!super::ServeConfig::default().allow_url_fetch);
+    }
+
+    #[test]
+    fn content_type_maps_to_format_when_extension_missing() {
+        use super::{source_from_named_bytes_ct, ApiError, InputFormat};
+        // `ApiError` has no `Debug`, so match rather than `.expect()`.
+        let fmt = |r: Result<super::SourceDocument, ApiError>| r.ok().map(|s| s.format);
+
+        // A URL with no extension (iana example) resolves via Content-Type.
+        assert_eq!(
+            fmt(source_from_named_bytes_ct(
+                "example-domains",
+                b"<html></html>".to_vec(),
+                Some("text/html; charset=utf-8"),
+            )),
+            Some(InputFormat::Html)
+        );
+        // A usable extension still wins over the Content-Type.
+        assert_eq!(
+            fmt(source_from_named_bytes_ct(
+                "a.pdf",
+                b"%PDF".to_vec(),
+                Some("text/html"),
+            )),
+            Some(InputFormat::Pdf)
+        );
+        // Neither an extension nor a known Content-Type → a 4xx (Bad), not a 500.
+        assert!(matches!(
+            source_from_named_bytes_ct("noext", b"x".to_vec(), Some("application/octet-stream")),
+            Err(ApiError::Bad(_))
+        ));
+    }
+
+    #[test]
+    fn private_ip_escape_hatch_defaults_off() {
+        // The env var gates only development use; unset it must read as false
+        // so the block-list is enforced by default. (Set within this test only,
+        // then cleared, to avoid leaking to sibling tests.)
+        std::env::remove_var("DOCLING_RS_ALLOW_PRIVATE_IP_FETCH");
+        assert!(!super::allow_private_ip_fetch());
+        for (val, want) in [
+            ("1", true),
+            ("true", true),
+            ("0", false),
+            ("false", false),
+            ("", false),
+        ] {
+            std::env::set_var("DOCLING_RS_ALLOW_PRIVATE_IP_FETCH", val);
+            assert_eq!(super::allow_private_ip_fetch(), want, "value {val:?}");
+        }
+        std::env::remove_var("DOCLING_RS_ALLOW_PRIVATE_IP_FETCH");
     }
 }

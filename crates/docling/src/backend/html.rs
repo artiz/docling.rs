@@ -74,7 +74,32 @@ pub(crate) fn append_fragment(html: &str, out: &mut Vec<Node>, images: &dyn Imag
     // Prefer <body>; fall back to the root element for fragments.
     let body = parsed.select(cached_selector!("body")).next();
     let root = body.unwrap_or_else(|| parsed.root_element());
-    walk_block(root, out, 0, Fmt::default(), images);
+    // The block/inline DOM walkers below recurse on nesting depth. A crafted
+    // document with tens of thousands of nested elements (trivial to author,
+    // also reachable through EPUB and Markdown-embedded HTML) would overflow
+    // the stack — an uncatchable abort, i.e. a remote DoS via docling-serve.
+    // Guard with a depth ceiling checked iteratively (so the check itself
+    // can't overflow); past it, fall back to the flattened text so the
+    // document still yields content without descending the pathological tree.
+    if within_depth_limit(root, MAX_DOM_DEPTH) {
+        // Warm remote-image fetches concurrently before the serial walk: a real
+        // web page carries dozens of `<img>`, and fetching them one-at-a-time
+        // during the walk dominates wall-clock. Collect every image src up front
+        // (the walk resolves the same strings, hitting the now-warm cache).
+        let srcs: Vec<String> = root
+            .select(cached_selector!("img"))
+            .filter_map(|img| img_src(img.value()))
+            .collect();
+        if !srcs.is_empty() {
+            images.prefetch(&srcs);
+        }
+        walk_block(root, out, 0, Fmt::default(), images);
+    } else {
+        let text = normalize_ws(&root.text().collect::<String>());
+        if !text.is_empty() {
+            out.push(Node::Paragraph { text });
+        }
+    }
     // docling's `infer_furniture`: content before the first body heading is site
     // chrome (navigation/menus/sidebars) → the `furniture` layer.
     mark_leading_furniture(&mut out[start..]);
@@ -190,6 +215,35 @@ fn is_block(name: &str) -> bool {
 /// found directly between block elements is buffered and flushed as paragraphs.
 /// `base` seeds the inline formatting — table cells pass `raw` so their text is
 /// not `&<>`/`_` escaped.
+/// Deepest DOM nesting the recursive walkers will descend. Real documents sit
+/// in the low tens; 2000 is far above anything legitimate while keeping the
+/// recursion well clear of the stack limit. Override with
+/// `DOCLING_RS_MAX_HTML_DEPTH`.
+const MAX_DOM_DEPTH: usize = 2000;
+
+fn max_dom_depth() -> usize {
+    std::env::var("DOCLING_RS_MAX_HTML_DEPTH")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(MAX_DOM_DEPTH)
+}
+
+/// Whether no node under `root` nests deeper than the limit. Iterative DFS —
+/// this check must not itself recurse (it runs on the same hostile tree).
+fn within_depth_limit(root: ElementRef, _default: usize) -> bool {
+    let limit = max_dom_depth();
+    let mut stack = vec![(*root, 1usize)];
+    while let Some((node, depth)) = stack.pop() {
+        if depth > limit {
+            return false;
+        }
+        for child in node.children() {
+            stack.push((child, depth + 1));
+        }
+    }
+    true
+}
+
 fn walk_block(
     elem: ElementRef,
     nodes: &mut Vec<Node>,
@@ -222,7 +276,7 @@ fn walk_block(
                     flush_inline(&mut inline, nodes);
                     nodes.push(Node::Picture {
                         caption: e.attr("alt").filter(|a| !a.is_empty()).map(str::to_string),
-                        image: e.attr("src").and_then(|s| images.resolve(s)),
+                        image: img_src(e).and_then(|s| images.resolve(&s)),
                         classification: None,
                     });
                 } else if name == "signature" || name == "stamp" {
@@ -1400,16 +1454,51 @@ fn image_wrapper(elem: ElementRef) -> Option<(Option<String>, Option<String>)> {
         .attr("alt")
         .filter(|a| !a.is_empty())
         .map(str::to_string);
-    let src = img.value().attr("src").map(str::to_string);
+    let src = img_src(img.value());
     Some((caption, src))
 }
 
-/// The `src` of a `<figure>`'s first `<img>`, for image extraction.
+/// The image URL of a `<figure>`'s first `<img>`, for image extraction.
 fn figure_img_src(fig: ElementRef) -> Option<String> {
     fig.select(cached_selector!("img"))
         .next()
-        .and_then(|img| img.value().attr("src"))
-        .map(str::to_string)
+        .and_then(|img| img_src(img.value()))
+}
+
+/// The real image URL of an `<img>`, accounting for lazy-loading: a normal
+/// `src` is authoritative, but many pages leave `src` empty or a placeholder
+/// and put the true URL in `data-src` (or a `srcset`), so fall back to those —
+/// otherwise every lazy-loaded image would extract nothing.
+fn img_src(el: &scraper::node::Element) -> Option<String> {
+    let attr = |k: &str| el.attr(k).map(str::trim).filter(|s| !s.is_empty());
+    // A non-placeholder src wins.
+    if let Some(s) = attr("src") {
+        if !s.starts_with("data:") {
+            return Some(s.to_string());
+        }
+    }
+    // Common lazy-load conventions.
+    for k in ["data-src", "data-original", "data-lazy-src", "data-lazy"] {
+        if let Some(s) = attr(k) {
+            return Some(s.to_string());
+        }
+    }
+    // srcset / data-srcset: take the first candidate's URL (before its
+    // descriptor, e.g. `foo.png 2x` / `foo.png 640w`).
+    for k in ["srcset", "data-srcset"] {
+        if let Some(s) = attr(k) {
+            if let Some(u) = s
+                .split(',')
+                .next()
+                .and_then(|c| c.split_whitespace().next())
+                .filter(|u| !u.is_empty())
+            {
+                return Some(u.to_string());
+            }
+        }
+    }
+    // Last resort: a `data:` src (a real inline image, no lazy target).
+    attr("src").map(str::to_string)
 }
 
 fn has_descendant(elem: ElementRef, name: &str) -> bool {
@@ -1618,6 +1707,36 @@ mod tests {
     }
 
     #[test]
+    fn deeply_nested_html_does_not_overflow_the_stack() {
+        // ~50k nested <div> would blow the recursive walker's stack (an
+        // uncatchable abort). The depth guard must fall back to flattened text
+        // instead of recursing. Uses the env override to keep the test cheap.
+        std::env::set_var("DOCLING_RS_MAX_HTML_DEPTH", "200");
+        let depth = 4_000;
+        let html = format!(
+            "<html><body>{}<p>deep text</p>{}</body></html>",
+            "<div>".repeat(depth),
+            "</div>".repeat(depth),
+        );
+        let doc = convert(&html); // must return, not abort
+        std::env::remove_var("DOCLING_RS_MAX_HTML_DEPTH");
+        assert!(
+            doc.export_to_markdown().contains("deep text"),
+            "flattened fallback should preserve the text content"
+        );
+    }
+
+    #[test]
+    fn shallow_html_still_walks_structurally() {
+        // A normal document stays under the limit and produces real structure,
+        // not the flattened fallback.
+        let doc = convert("<h1>Title</h1><ul><li>a</li><li>b</li></ul>");
+        let md = doc.export_to_markdown();
+        assert!(md.contains("# Title"));
+        assert!(md.contains("- a"));
+    }
+
+    #[test]
     fn headings_paragraphs_and_inline_formatting() {
         let doc = convert(
             "<h1>Title</h1><p>Hello <strong>bold</strong> and <em>italic</em> and \
@@ -1794,7 +1913,7 @@ mod tests {
         assert!(matches!(plain.nodes[0], Node::Picture { image: None, .. }));
 
         // With a resolver the data: URI is decoded and embedded.
-        let doc = convert_html("t", &html, &FsImageResolver::new(None));
+        let doc = convert_html("t", &html, &FsImageResolver::new(None, None));
         match &doc.nodes[0] {
             Node::Picture {
                 image: Some(img),
@@ -1807,5 +1926,33 @@ mod tests {
             }
             other => panic!("expected an embedded image, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn lazy_loaded_img_src_falls_back_to_data_src_and_srcset() {
+        use super::img_src;
+        use scraper::Html;
+        let pick = |html: &str| {
+            let frag = Html::parse_fragment(html);
+            let img = frag.select(cached_selector!("img")).next().unwrap();
+            img_src(img.value())
+        };
+        // A real src wins.
+        assert_eq!(pick(r#"<img src="/a.png">"#).as_deref(), Some("/a.png"));
+        // No src → data-src (the magenta.at lazy-load shape).
+        assert_eq!(
+            pick(r#"<img data-src="/b.png" class="lazyload">"#).as_deref(),
+            Some("/b.png")
+        );
+        // A placeholder data: src with a lazy target → the lazy target.
+        assert_eq!(
+            pick(r#"<img src="data:image/gif;base64,R0lGOD" data-src="/c.png">"#).as_deref(),
+            Some("/c.png")
+        );
+        // srcset → first candidate URL, descriptor stripped.
+        assert_eq!(
+            pick(r#"<img srcset="/d-1x.png 1x, /d-2x.png 2x">"#).as_deref(),
+            Some("/d-1x.png")
+        );
     }
 }

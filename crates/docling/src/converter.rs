@@ -324,6 +324,7 @@ impl DocumentConverter {
                 if self.fetch_images {
                     let resolver = crate::backend::FsImageResolver::new(
                         source.base_dir().map(|p| p.to_path_buf()),
+                        source.base_url.clone(),
                     );
                     crate::backend::convert_html(&source.name, &html, &resolver)
                 } else {
