@@ -200,6 +200,11 @@ pub(crate) fn model_path(env: &str, fp32_default: &str, int8_default: &str) -> S
 /// panic catch. The 256 MiB alloc / 30000-px caps below turn that into a
 /// recoverable decode error instead. `DOCLING_RS_MAX_IMAGE_PIXELS` overrides
 /// the per-side pixel cap for the rare legitimately-huge scan.
+///
+/// Gated on `ml`: the only callers (`convert_image`, the METS backend) are
+/// ML-only, and the `image` crate is an `ml`-feature dependency — the
+/// text-layer wasm build has neither.
+#[cfg(feature = "ml")]
 pub(crate) fn decode_image_limited(bytes: &[u8]) -> Result<image::RgbImage, PdfError> {
     let max_side: u32 = std::env::var("DOCLING_RS_MAX_IMAGE_PIXELS")
         .ok()
@@ -208,6 +213,7 @@ pub(crate) fn decode_image_limited(bytes: &[u8]) -> Result<image::RgbImage, PdfE
     decode_image_with_max_side(bytes, max_side)
 }
 
+#[cfg(feature = "ml")]
 fn decode_image_with_max_side(bytes: &[u8], max_side: u32) -> Result<image::RgbImage, PdfError> {
     use image::ImageReader;
     use std::io::Cursor;
@@ -1254,7 +1260,7 @@ pub fn convert_pages_with_options(
 }
 
 #[cfg(feature = "ml")]
-#[cfg(test)]
+#[cfg(all(test, feature = "ml"))]
 mod image_limit_tests {
     use super::decode_image_with_max_side;
 

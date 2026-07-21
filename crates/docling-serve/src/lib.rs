@@ -419,10 +419,26 @@ fn source_from_named_bytes(file_name: &str, bytes: Vec<u8>) -> Result<SourceDocu
     Ok(SourceDocument::from_bytes(stem, format, bytes))
 }
 
-/// Largest URL-fetch response accepted (256 MiB). Unlike the request-body
-/// limit, `read_to_end` on a fetched response is otherwise unbounded — a
-/// hostile URL streaming an endless body would exhaust memory.
-const MAX_FETCH_BYTES: u64 = 256 * 1024 * 1024;
+/// Largest URL-fetch response accepted (256 MiB default). Unlike the
+/// request-body limit, `read_to_end` on a fetched response is otherwise
+/// unbounded — a hostile URL streaming an endless body would exhaust memory.
+/// Override with `DOCLING_RS_MAX_FETCH_BYTES`.
+fn max_fetch_bytes() -> u64 {
+    std::env::var("DOCLING_RS_MAX_FETCH_BYTES")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(256 * 1024 * 1024)
+}
+
+/// Escape hatch for local development: when `DOCLING_RS_ALLOW_PRIVATE_IP_FETCH`
+/// is set to a truthy value (anything but empty / `0` / `false`), the SSRF IP
+/// block-list is not enforced, so a URL like `http://localhost:8080/doc.pdf`
+/// can be fetched. Off by default — leave it unset in production.
+fn allow_private_ip_fetch() -> bool {
+    std::env::var("DOCLING_RS_ALLOW_PRIVATE_IP_FETCH")
+        .map(|v| !v.is_empty() && v != "0" && !v.eq_ignore_ascii_case("false"))
+        .unwrap_or(false)
+}
 
 /// Reject a resolved IP that points back into the local host or infrastructure.
 /// This is the core SSRF guard: without it, `{"url": "http://169.254.169.254/…"}`
@@ -480,11 +496,14 @@ fn fetch_url(url: &str, file_name: Option<&str>) -> Result<SourceDocument, ApiEr
     if resolved.peek().is_none() {
         return Err(ApiError::Bad(format!("cannot resolve {host}")));
     }
-    for addr in resolved {
-        if is_blocked_ip(addr.ip()) {
-            return Err(ApiError::Bad(format!(
-                "refusing to fetch {url}: resolves to a private/loopback address"
-            )));
+    if !allow_private_ip_fetch() {
+        for addr in resolved {
+            if is_blocked_ip(addr.ip()) {
+                return Err(ApiError::Bad(format!(
+                    "refusing to fetch {url}: resolves to a private/loopback address \
+                     (set DOCLING_RS_ALLOW_PRIVATE_IP_FETCH=1 for local development)"
+                )));
+            }
         }
     }
     let agent: ureq::Agent = ureq::Agent::config_builder()
@@ -495,16 +514,17 @@ fn fetch_url(url: &str, file_name: Option<&str>) -> Result<SourceDocument, ApiEr
         .get(url)
         .call()
         .map_err(|e| ApiError::Bad(format!("fetching {url}: {e}")))?;
+    let max_fetch = max_fetch_bytes();
     let mut bytes = Vec::new();
     response
         .body_mut()
         .as_reader()
-        .take(MAX_FETCH_BYTES + 1)
+        .take(max_fetch + 1)
         .read_to_end(&mut bytes)
         .map_err(|e| ApiError::Bad(format!("reading {url}: {e}")))?;
-    if bytes.len() as u64 > MAX_FETCH_BYTES {
+    if bytes.len() as u64 > max_fetch {
         return Err(ApiError::Bad(format!(
-            "response from {url} exceeds {MAX_FETCH_BYTES} bytes"
+            "response from {url} exceeds {max_fetch} bytes"
         )));
     }
     let name = file_name
@@ -739,5 +759,25 @@ mod ssrf_tests {
     #[test]
     fn url_fetch_off_by_default() {
         assert!(!super::ServeConfig::default().allow_url_fetch);
+    }
+
+    #[test]
+    fn private_ip_escape_hatch_defaults_off() {
+        // The env var gates only development use; unset it must read as false
+        // so the block-list is enforced by default. (Set within this test only,
+        // then cleared, to avoid leaking to sibling tests.)
+        std::env::remove_var("DOCLING_RS_ALLOW_PRIVATE_IP_FETCH");
+        assert!(!super::allow_private_ip_fetch());
+        for (val, want) in [
+            ("1", true),
+            ("true", true),
+            ("0", false),
+            ("false", false),
+            ("", false),
+        ] {
+            std::env::set_var("DOCLING_RS_ALLOW_PRIVATE_IP_FETCH", val);
+            assert_eq!(super::allow_private_ip_fetch(), want, "value {val:?}");
+        }
+        std::env::remove_var("DOCLING_RS_ALLOW_PRIVATE_IP_FETCH");
     }
 }

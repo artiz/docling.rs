@@ -47,7 +47,9 @@ extracted to disk, so there is no zip-slip path.
   loopback / private / link-local / unique-local / CGNAT address (blocks
   `169.254.169.254` cloud metadata and internal services); HTTP redirects
   are disabled (no public→internal bounce); and the fetched response is size-
-  capped (256 MiB).
+  capped (256 MiB, `DOCLING_RS_MAX_FETCH_BYTES`). For local development,
+  `DOCLING_RS_ALLOW_PRIVATE_IP_FETCH=1` disables the IP block-list so a
+  `localhost` target can be fetched — leave it unset in production.
 - A crafted PDF/image that panics inside the pipeline no longer **poisons**
   the shared mutex — the lock recovers, so one bad document can't turn into a
   permanent outage of the endpoint.

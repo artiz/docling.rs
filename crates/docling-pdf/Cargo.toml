@@ -58,5 +58,12 @@ fast_image_resize = { version = "5.1.4", optional = true }
 # chunking tokenizer.
 tokenizers = { version = "0.20", default-features = false, features = ["onig"], optional = true }
 
+# lopdf 0.44 compiles its PDF-encryption support unconditionally, pulling in a
+# non-optional `getrandom`. On wasm32-unknown-unknown getrandom needs an
+# explicit backend, so enable lopdf's `wasm_js` feature there (JS crypto) —
+# the text-layer path never draws randomness, but the code must still compile.
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+lopdf = { version = "0.44", features = ["wasm_js"] }
+
 [lib]
 name = "docling_pdf"
