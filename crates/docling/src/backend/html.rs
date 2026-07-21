@@ -82,6 +82,17 @@ pub(crate) fn append_fragment(html: &str, out: &mut Vec<Node>, images: &dyn Imag
     // can't overflow); past it, fall back to the flattened text so the
     // document still yields content without descending the pathological tree.
     if within_depth_limit(root, MAX_DOM_DEPTH) {
+        // Warm remote-image fetches concurrently before the serial walk: a real
+        // web page carries dozens of `<img>`, and fetching them one-at-a-time
+        // during the walk dominates wall-clock. Collect every image src up front
+        // (the walk resolves the same strings, hitting the now-warm cache).
+        let srcs: Vec<String> = root
+            .select(cached_selector!("img"))
+            .filter_map(|img| img_src(img.value()))
+            .collect();
+        if !srcs.is_empty() {
+            images.prefetch(&srcs);
+        }
         walk_block(root, out, 0, Fmt::default(), images);
     } else {
         let text = normalize_ws(&root.text().collect::<String>());

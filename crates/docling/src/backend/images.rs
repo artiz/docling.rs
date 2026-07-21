@@ -17,6 +17,8 @@
 use std::collections::HashMap;
 use std::io::Cursor;
 use std::path::{Path, PathBuf};
+#[cfg(feature = "fetch-images")]
+use std::sync::Mutex;
 
 use docling_core::PictureImage;
 
@@ -28,6 +30,12 @@ const MAX_IMAGE_BYTES: u64 = 32 * 1024 * 1024;
 /// (unfetchable, unreadable, or an unsupported encoding).
 pub(crate) trait ImageResolver {
     fn resolve(&self, src: &str) -> Option<PictureImage>;
+
+    /// Warm any slow (network) resolutions for `srcs` concurrently, before the
+    /// serial document walk resolves them one by one. The default does nothing
+    /// (resolvers whose lookups are all in-memory gain nothing from it); the
+    /// remote-fetching [`FsImageResolver`] overrides it to fetch in parallel.
+    fn prefetch(&self, _srcs: &[String]) {}
 }
 
 /// The default: never extracts an image (every `<img>` stays a placeholder).
@@ -47,6 +55,13 @@ impl ImageResolver for NoFetch {
 pub(crate) struct FsImageResolver {
     base_dir: Option<PathBuf>,
     base_url: Option<String>,
+    /// Memoized remote fetches, keyed by the resolved absolute URL: fills as
+    /// [`prefetch`](Self::prefetch) warms it (concurrently) and as `resolve`
+    /// hits it (serially), so each distinct URL is fetched at most once even
+    /// when several relative `<img src>` resolve to it. `None` caches a miss so
+    /// a failed URL isn't retried.
+    #[cfg(feature = "fetch-images")]
+    cache: Mutex<HashMap<String, Option<PictureImage>>>,
 }
 
 impl FsImageResolver {
@@ -54,7 +69,12 @@ impl FsImageResolver {
     /// `base_url` is the URL the page was fetched from (relative `<img src>`
     /// resolution). Either may be `None`.
     pub(crate) fn new(base_dir: Option<PathBuf>, base_url: Option<String>) -> Self {
-        Self { base_dir, base_url }
+        Self {
+            base_dir,
+            base_url,
+            #[cfg(feature = "fetch-images")]
+            cache: Mutex::new(HashMap::new()),
+        }
     }
 
     /// Resolve `src` to an absolute `http(s)` URL when possible: an already-
@@ -70,6 +90,37 @@ impl FsImageResolver {
         let joined = url::Url::parse(base).ok()?.join(src).ok()?;
         matches!(joined.scheme(), "http" | "https").then(|| joined.to_string())
     }
+
+    /// Fetch `url` unless a prior fetch already cached it, memoizing the result
+    /// (hit or miss). Shared by the serial `resolve` path and the concurrent
+    /// `prefetch` workers — the lock is held only around the map lookup/insert,
+    /// never across the network call.
+    #[cfg(feature = "fetch-images")]
+    fn fetch_cached(&self, url: &str) -> Option<PictureImage> {
+        if let Some(hit) = self.cache.lock().unwrap().get(url) {
+            return hit.clone();
+        }
+        let img = fetch_remote(url);
+        self.cache
+            .lock()
+            .unwrap()
+            .insert(url.to_string(), img.clone());
+        img
+    }
+}
+
+/// How many remote images to fetch at once during [`FsImageResolver::prefetch`].
+/// Image fetching is I/O-bound (mostly waiting on the network), so the default
+/// runs well ahead of the core count; `DOCLING_RS_IMAGE_FETCH_CONCURRENCY`
+/// overrides it, clamped to a sane range.
+#[cfg(feature = "fetch-images")]
+fn image_fetch_concurrency() -> usize {
+    std::env::var("DOCLING_RS_IMAGE_FETCH_CONCURRENCY")
+        .ok()
+        .and_then(|v| v.trim().parse::<usize>().ok())
+        .filter(|&n| n > 0)
+        .unwrap_or(10)
+        .clamp(1, 64)
 }
 
 impl ImageResolver for FsImageResolver {
@@ -86,7 +137,7 @@ impl ImageResolver for FsImageResolver {
         // path). Only compiled with the HTTP client available.
         #[cfg(feature = "fetch-images")]
         if let Some(url) = self.absolute_http_url(src) {
-            return fetch_remote(&url);
+            return self.fetch_cached(&url);
         }
         #[cfg(not(feature = "fetch-images"))]
         if src.starts_with("http://") || src.starts_with("https://") {
@@ -104,6 +155,47 @@ impl ImageResolver for FsImageResolver {
         };
         let data = std::fs::read(&full).ok()?;
         super::ooxml::picture_image(full.to_str().unwrap_or(rel), data)
+    }
+
+    /// Fetch every distinct remote image among `srcs` concurrently, warming the
+    /// cache so the subsequent serial walk resolves them without blocking. Local
+    /// files and `data:` URIs are skipped (their `resolve` is already cheap).
+    #[cfg(feature = "fetch-images")]
+    fn prefetch(&self, srcs: &[String]) {
+        // Unique absolute URLs we haven't fetched yet, preserving nothing about
+        // order (fetches are independent).
+        let urls: Vec<String> = {
+            let cache = self.cache.lock().unwrap();
+            let mut seen = std::collections::HashSet::new();
+            srcs.iter()
+                .filter_map(|s| self.absolute_http_url(s.trim()))
+                .filter(|u| !cache.contains_key(u) && seen.insert(u.clone()))
+                .collect()
+        };
+        if urls.len() < 2 {
+            // 0 → nothing to do; 1 → the serial `resolve` fetches it just as
+            // fast without spinning up a worker.
+            return;
+        }
+        // I/O-bound work-stealing: N worker threads pull URLs off a shared
+        // index and fetch (each `fetch_cached` inserts into the cache under a
+        // brief lock). No new dependency, and concurrency is bounded regardless
+        // of how many images the page carries.
+        let workers = image_fetch_concurrency().min(urls.len());
+        let next = std::sync::atomic::AtomicUsize::new(0);
+        std::thread::scope(|scope| {
+            for _ in 0..workers {
+                scope.spawn(|| loop {
+                    let i = next.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                    match urls.get(i) {
+                        Some(url) => {
+                            let _ = self.fetch_cached(url);
+                        }
+                        None => break,
+                    }
+                });
+            }
+        });
     }
 }
 
@@ -375,6 +467,86 @@ mod tests {
         // No base URL: a relative src has nothing to resolve against.
         let no_base = FsImageResolver::new(None, None);
         assert!(no_base.absolute_http_url("/img/x.png").is_none());
+    }
+
+    #[cfg(feature = "fetch-images")]
+    #[test]
+    fn concurrency_env_is_parsed_and_clamped() {
+        use super::image_fetch_concurrency;
+        std::env::set_var("DOCLING_RS_IMAGE_FETCH_CONCURRENCY", "7");
+        assert_eq!(image_fetch_concurrency(), 7);
+        std::env::set_var("DOCLING_RS_IMAGE_FETCH_CONCURRENCY", "0");
+        assert_eq!(image_fetch_concurrency(), 10, "0 → default, never zero");
+        std::env::set_var("DOCLING_RS_IMAGE_FETCH_CONCURRENCY", "9999");
+        assert_eq!(image_fetch_concurrency(), 64, "clamped to the ceiling");
+        std::env::set_var("DOCLING_RS_IMAGE_FETCH_CONCURRENCY", "junk");
+        assert_eq!(image_fetch_concurrency(), 10);
+        std::env::remove_var("DOCLING_RS_IMAGE_FETCH_CONCURRENCY");
+    }
+
+    /// prefetch fetches each distinct remote image exactly once (concurrently),
+    /// caches the bytes, and dedupes repeats — proven against a tiny in-process
+    /// HTTP server that counts the requests it serves.
+    #[cfg(feature = "fetch-images")]
+    #[test]
+    fn prefetch_fetches_each_url_once_and_warms_the_cache() {
+        use std::io::{Read, Write};
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        use std::sync::Arc;
+
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap();
+        let hits = Arc::new(AtomicUsize::new(0));
+        let server_hits = Arc::clone(&hits);
+        // Serve RED_PNG to every GET, counting requests. Detached: the loop
+        // outlives the test and the process reaps it on exit.
+        std::thread::spawn(move || {
+            for stream in listener.incoming() {
+                let Ok(mut stream) = stream else { break };
+                let mut buf = [0u8; 1024];
+                let _ = stream.read(&mut buf); // consume the request line/headers
+                server_hits.fetch_add(1, Ordering::Relaxed);
+                let header = format!(
+                    "HTTP/1.1 200 OK\r\nContent-Type: image/png\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                    RED_PNG.len()
+                );
+                let _ = stream.write_all(header.as_bytes());
+                let _ = stream.write_all(RED_PNG);
+                let _ = stream.flush();
+            }
+        });
+
+        // 127.0.0.1 is on the SSRF block-list; opt in for the test.
+        std::env::set_var("DOCLING_RS_ALLOW_PRIVATE_IP_FETCH", "1");
+        let base = format!("http://{addr}/dir/page.html");
+        let r = FsImageResolver::new(None, Some(base));
+
+        // Two distinct images, one repeated — three srcs, two fetches.
+        r.prefetch(&[
+            "img1.png".to_string(),
+            "img2.png".to_string(),
+            "img1.png".to_string(),
+        ]);
+        assert_eq!(
+            hits.load(Ordering::Relaxed),
+            2,
+            "each distinct URL fetched once"
+        );
+
+        // The walk now resolves from the warm cache — no further requests.
+        let img = r.resolve("img1.png").expect("cached image resolves");
+        assert_eq!((img.width, img.height), (1, 1));
+        assert_eq!(
+            r.resolve("/dir/img2.png").map(|i| (i.width, i.height)),
+            Some((1, 1))
+        );
+        assert_eq!(
+            hits.load(Ordering::Relaxed),
+            2,
+            "resolve served from cache, no refetch"
+        );
+
+        std::env::remove_var("DOCLING_RS_ALLOW_PRIVATE_IP_FETCH");
     }
 }
 
