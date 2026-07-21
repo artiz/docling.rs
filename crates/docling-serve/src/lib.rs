@@ -21,7 +21,8 @@
 //! - `strict` — cleaner Markdown instead of docling-legacy output
 //! - `images` — `placeholder` (default) | `embedded` (Markdown only)
 //! - `no_ocr`, `no_table_former` — PDF/image pipeline switches
-//! - `fetch_images` — resolve external `<img src>` for HTML/EPUB
+//! - `fetch_images` — resolve external `<img src>` for HTML/EPUB (outbound
+//!   fetch, so honored only under `--allow-url-fetch`)
 //!
 //! Markdown converts through the streaming serializer and the response body
 //! streams page by page (chunked transfer); `json`/`dclx`/`chunks` buffer.
@@ -672,7 +673,12 @@ fn warm_pipeline<'a>(
 fn request_converter(state: &AppState, options: &ConvertOptions) -> DocumentConverter {
     DocumentConverter::new()
         .strict(options.strict.unwrap_or(state.cfg.strict))
-        .fetch_images(options.fetch_images.unwrap_or(false))
+        // `fetch_images` pulls external `<img src>` over the network — the same
+        // outbound-fetch / SSRF surface as URL inputs, so it lives behind the
+        // same `--allow-url-fetch` gate. Off by default, it's silently ignored
+        // rather than honored (the UI greys the box; an API caller just gets
+        // placeholder images instead of a surprise outbound fetch).
+        .fetch_images(state.cfg.allow_url_fetch && options.fetch_images.unwrap_or(false))
         .no_ocr(options.no_ocr.unwrap_or(false))
         .no_table_former(options.no_table_former.unwrap_or(false))
 }
