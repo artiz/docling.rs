@@ -48,6 +48,28 @@ video converts to its transcript alone; a video with *no* audio track converts
 to its frames alone. AVI is the one upstream video extension symphonia cannot
 demux; it fails with a message suggesting a remux.
 
+<details>
+<summary><b>Installing ffmpeg</b> (optional — only for video frame sampling)</summary>
+
+Any ffmpeg ≥ 4.x on `PATH` works; docling.rs shells out to the binary and
+parses its output, so no dev headers/libraries are needed.
+
+- **Debian/Ubuntu**: `sudo apt-get install ffmpeg`
+- **Fedora**: `sudo dnf install ffmpeg-free` (or `ffmpeg` from RPM Fusion)
+- **Alpine**: `apk add ffmpeg`
+- **macOS**: `brew install ffmpeg`
+- **Windows**: `winget install ffmpeg` (or `choco install ffmpeg`, or
+  `scoop install ffmpeg`). Installing from a downloaded zip
+  ([gyan.dev](https://www.gyan.dev/ffmpeg/builds/) /
+  [BtbN](https://github.com/BtbN/FFmpeg-Builds/releases)) also works — either
+  add the extracted `bin\` folder to `PATH`, or skip `PATH` entirely and point
+  `DOCLING_FFMPEG` at the exe:
+  `set DOCLING_FFMPEG=C:\tools\ffmpeg\bin\ffmpeg.exe`
+
+Check with `ffmpeg -version`. `DOCLING_FFMPEG` overrides the binary used on
+any OS; the docling-serve Docker image ships ffmpeg preinstalled.
+</details>
+
 Output is checked against upstream Python docling — declarative formats
 byte-for-byte against live docling, the ML pipeline against a deterministic
 snapshot baseline. See [`docs/MIGRATION.md`](./docs/MIGRATION.md) and
