@@ -38,9 +38,15 @@ OpenAI's timestamp rules — docling's ASR defaults), and each segment becomes a
 `[time: start-end] text` paragraph. `DOCLING_RS_ASR_LANG` picks the language
 (default `en`). **Video** inputs (`mp4`/`mov`/`mkv`/`webm`, docling's
 `InputFormat.VIDEO`) take the same path: symphonia demuxes the audio track
-(isomp4/Matroska readers) and the transcript becomes the document — frames are
-not sampled (that's Phase 2 of issue #138). AVI is the one upstream video
-extension symphonia cannot demux; it fails with a message suggesting a remux.
+(isomp4/Matroska readers) and the transcript becomes the document. When the
+`ffmpeg` **binary** is present (runtime detection — no build dependency;
+`DOCLING_FFMPEG` overrides the path), up to `--video-frames N` frames (default
+8) are also sampled — scene changes first, evenly spaced fallback — and
+interleave with the transcript as `[time: <ts>]`-captioned pictures, PNGs
+embedded in JSON/DCLX output. Without ffmpeg, or with `--video-frames 0`, a
+video converts to its transcript alone; a video with *no* audio track converts
+to its frames alone. AVI is the one upstream video extension symphonia cannot
+demux; it fails with a message suggesting a remux.
 
 Output is checked against upstream Python docling — declarative formats
 byte-for-byte against live docling, the ML pipeline against a deterministic

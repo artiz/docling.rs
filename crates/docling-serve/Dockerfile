@@ -22,7 +22,9 @@ RUN if [ "$FETCH_ASSETS" = "1" ]; then sh scripts/install/download_dependencies.
     else mkdir -p models .pdfium; fi
 
 FROM debian:bookworm-slim
-RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates \
+# ffmpeg powers video frame sampling (#138 Phase 2); without it a video input
+# still converts, transcript-only.
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates ffmpeg \
     && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 COPY --from=build /src/target/release/docling-serve /usr/local/bin/docling-serve

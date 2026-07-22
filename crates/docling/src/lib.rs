@@ -34,8 +34,10 @@ mod source;
 mod stream;
 
 pub mod backend;
+#[cfg(feature = "asr")]
+pub mod video;
 
-pub use converter::DocumentConverter;
+pub use converter::{DocumentConverter, DEFAULT_VIDEO_FRAMES};
 pub use error::ConversionError;
 pub use format::InputFormat;
 pub use result::{ConversionResult, ConversionStatus};

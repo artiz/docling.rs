@@ -61,6 +61,30 @@ pub fn convert_audio_with_model(
     name: &str,
     model: Option<&str>,
 ) -> Result<DoclingDocument, AsrError> {
+    let segments = transcribe_with_model(bytes, name, model)?;
+    let mut doc = DoclingDocument::new(name);
+    for seg in segments {
+        doc.nodes.push(Node::Paragraph {
+            text: format!(
+                "[time: {}-{}] {}",
+                fmt_seconds(seg.start),
+                fmt_seconds(seg.end),
+                seg.text
+            ),
+        });
+    }
+    Ok(doc)
+}
+
+/// [`convert_audio_with_model`] up to (and excluding) document assembly: the
+/// raw timed [`Segment`]s. The video pipeline (#138 Phase 2) uses this to
+/// interleave sampled frames with the transcript by timestamp before building
+/// the document.
+pub fn transcribe_with_model(
+    bytes: &[u8],
+    name: &str,
+    model: Option<&str>,
+) -> Result<Vec<Segment>, AsrError> {
     if !models_available_for(model) {
         let dir = match model {
             None | Some("whisper_tiny") | Some("") => "models/asr/".to_string(),
@@ -78,26 +102,13 @@ pub fn convert_audio_with_model(
     }
     let samples = audio::decode_to_mono_16k(bytes, name).map_err(AsrError)?;
     let mut transcriber = Transcriber::load_preset(model).map_err(AsrError)?;
-    let segments = transcriber.transcribe(&samples).map_err(AsrError)?;
-
-    let mut doc = DoclingDocument::new(name);
-    for seg in segments {
-        doc.nodes.push(Node::Paragraph {
-            text: format!(
-                "[time: {}-{}] {}",
-                fmt_seconds(seg.start),
-                fmt_seconds(seg.end),
-                seg.text
-            ),
-        });
-    }
-    Ok(doc)
+    transcriber.transcribe(&samples).map_err(AsrError)
 }
 
 /// Format seconds the way Python prints a rounded float (`0.0`, `7.5`, `7.72`)
 /// — docling interpolates the values into `[time: {start}-{end}]` with plain
 /// f-string formatting.
-fn fmt_seconds(v: f64) -> String {
+pub fn fmt_seconds(v: f64) -> String {
     let mut s = format!("{v}");
     if !s.contains('.') {
         s.push_str(".0");
