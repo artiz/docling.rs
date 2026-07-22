@@ -172,6 +172,7 @@ for preset in $ASR_PRESETS; do
     *) echo "unknown --asr-model '$preset' (available: whisper_tiny_en whisper_base_en whisper_small_en whisper_distil_small_en)" >&2; exit 2 ;;
   esac
   base="https://huggingface.co/onnx-community/$repo/resolve/main"
+  mkdir -p "models/asr/$preset"
   fetch "$base/onnx/encoder_model.onnx" "models/asr/$preset/encoder_model.onnx"
   fetch "$base/onnx/decoder_model.onnx" "models/asr/$preset/decoder_model.onnx"
   fetch "$base/vocab.json" "models/asr/$preset/vocab.json"
