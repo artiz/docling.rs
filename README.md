@@ -16,7 +16,7 @@ mapping, and per-format conformance.
 
 The public API works end to end across **Markdown, CSV, HTML, AsciiDoc, DOCX,
 PPTX, XLSX, legacy DOC/XLS/PPT, EPUB, ODF, WebVTT, Email, MHTML, JATS, USPTO,
-XBRL, LaTeX, JSON, PDF, images, METS and audio** — plus Markdown / docling-JSON output and image
+XBRL, LaTeX, JSON, PDF, images, METS, audio and video** — plus Markdown / docling-JSON output and image
 extraction. MHTML is a docling.rs-only extension (docling has no MHTML
 backend): saved-webpage `.mhtml`/`.mht` archives are parsed as a MIME message
 with [`mail-parser`](https://crates.io/crates/mail-parser) (which conforms to
@@ -31,12 +31,44 @@ the TableFormer graphs aren't present (see `docs/PDF_CONFORMANCE.md`).
 
 **Audio/ASR** (docling's Whisper pipeline) lives in `docling-asr`, and it is
 Rust all the way down: [`symphonia`](https://crates.io/crates/symphonia)
-demuxes/decodes the container in-process (wav, mp3, flac, ogg, aac, m4a — plus
-the audio track of mp4/mov; no ffmpeg), a ported log-mel front-end feeds a
+demuxes/decodes the container in-process (wav, mp3, flac, ogg, aac, m4a; no
+ffmpeg), a ported log-mel front-end feeds a
 **Whisper tiny** encoder/decoder exported to ONNX (run on `ort`, greedy with
 OpenAI's timestamp rules — docling's ASR defaults), and each segment becomes a
 `[time: start-end] text` paragraph. `DOCLING_RS_ASR_LANG` picks the language
-(default `en`). AVI is the one container symphonia cannot demux.
+(default `en`). **Video** inputs (`mp4`/`mov`/`mkv`/`webm`, docling's
+`InputFormat.VIDEO`) take the same path: symphonia demuxes the audio track
+(isomp4/Matroska readers) and the transcript becomes the document. When the
+`ffmpeg` **binary** is present (runtime detection — no build dependency;
+`DOCLING_FFMPEG` overrides the path), up to `--video-frames N` frames (default
+8) are also sampled — scene changes first, evenly spaced fallback — and
+interleave with the transcript as `[time: <ts>]`-captioned pictures, PNGs
+embedded in JSON/DCLX output. Without ffmpeg, or with `--video-frames 0`, a
+video converts to its transcript alone; a video with *no* audio track converts
+to its frames alone. AVI is the one upstream video extension symphonia cannot
+demux; it fails with a message suggesting a remux.
+
+<details>
+<summary><b>Installing ffmpeg</b> (optional — only for video frame sampling)</summary>
+
+Any ffmpeg ≥ 4.x on `PATH` works; docling.rs shells out to the binary and
+parses its output, so no dev headers/libraries are needed.
+
+- **Debian/Ubuntu**: `sudo apt-get install ffmpeg`
+- **Fedora**: `sudo dnf install ffmpeg-free` (or `ffmpeg` from RPM Fusion)
+- **Alpine**: `apk add ffmpeg`
+- **macOS**: `brew install ffmpeg`
+- **Windows**: `winget install ffmpeg` (or `choco install ffmpeg`, or
+  `scoop install ffmpeg`). Installing from a downloaded zip
+  ([gyan.dev](https://www.gyan.dev/ffmpeg/builds/) /
+  [BtbN](https://github.com/BtbN/FFmpeg-Builds/releases)) also works — either
+  add the extracted `bin\` folder to `PATH`, or skip `PATH` entirely and point
+  `DOCLING_FFMPEG` at the exe:
+  `set DOCLING_FFMPEG=C:\tools\ffmpeg\bin\ffmpeg.exe`
+
+Check with `ffmpeg -version`. `DOCLING_FFMPEG` overrides the binary used on
+any OS; the docling-serve Docker image ships ffmpeg preinstalled.
+</details>
 
 Output is checked against upstream Python docling — declarative formats
 byte-for-byte against live docling, the ML pipeline against a deterministic

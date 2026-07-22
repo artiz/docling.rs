@@ -1,9 +1,12 @@
 //! Audio decoding: any supported container/codec → 16 kHz mono `f32` samples.
 //!
 //! symphonia (pure Rust) demuxes and decodes every format docling's ASR accepts
-//! — wav/pcm, mp3, flac, ogg/vorbis, aac (adts), m4a/mp4 — replacing the ffmpeg
-//! dependency Python docling shells out to. Channels are averaged to mono and
-//! linearly resampled to Whisper's fixed 16 kHz input rate.
+//! — wav/pcm, mp3, flac, ogg/vorbis, aac (adts), m4a/mp4, plus the audio track
+//! of video containers (mp4/mov via isomp4, mkv/webm via the Matroska reader)
+//! — replacing the ffmpeg dependency Python docling shells out to. Channels are
+//! averaged to mono and linearly resampled to Whisper's fixed 16 kHz input
+//! rate. AVI is the one upstream video extension with no pure-Rust demuxer;
+//! it fails with a targeted message instead of a generic probe error.
 
 use symphonia::core::audio::AudioBufferRef;
 use symphonia::core::codecs::{DecoderOptions, CODEC_TYPE_NULL};
@@ -18,11 +21,25 @@ pub const SAMPLE_RATE: u32 = 16_000;
 /// Decode `bytes` (using the file extension in `name` as a format hint) into
 /// mono `f32` samples at 16 kHz.
 pub fn decode_to_mono_16k(bytes: &[u8], name: &str) -> Result<Vec<f32>, String> {
+    // symphonia has no AVI demuxer — its wav reader would reject the RIFF
+    // header with an opaque "riff form is not wave"; say what's wrong and what
+    // to do instead. Sniff the content (`RIFF....AVI `) rather than the name:
+    // callers often pass a bare stem with no extension.
+    let is_avi_bytes = bytes.len() >= 12 && &bytes[0..4] == b"RIFF" && &bytes[8..12] == b"AVI ";
+    let ext = name.rsplit('.').next().filter(|e| *e != name);
+    if is_avi_bytes || ext.is_some_and(|e| e.eq_ignore_ascii_case("avi")) {
+        return Err(
+            "asr: AVI containers are not supported (no pure-Rust demuxer) — remux the \
+             audio track into mp4/mkv/webm first (e.g. `ffmpeg -i in.avi -c copy out.mkv`)"
+                .to_string(),
+        );
+    }
+
     let cursor = std::io::Cursor::new(bytes.to_vec());
     let mss = MediaSourceStream::new(Box::new(cursor), Default::default());
 
     let mut hint = Hint::new();
-    if let Some(ext) = name.rsplit('.').next() {
+    if let Some(ext) = ext {
         hint.with_extension(ext);
     }
 
@@ -149,6 +166,63 @@ mod tests {
         assert_eq!(out.len(), 500);
         // Downsampling by 2 keeps every other sample (linear interp at exact points).
         assert!((out[10] - input[20]).abs() < 1e-6);
+    }
+
+    /// Decode a fixture from the shared audio test-data tree, asserting the
+    /// audio track demuxes to roughly 10 s of speech at 16 kHz.
+    fn decode_video_fixture(name: &str) {
+        let path = format!(
+            "{}/../../tests/data/audio/sources/{name}",
+            env!("CARGO_MANIFEST_DIR")
+        );
+        let bytes = std::fs::read(&path).unwrap_or_else(|e| panic!("read {path}: {e}"));
+        let samples = decode_to_mono_16k(&bytes, name).expect("audio track decodes");
+        let secs = samples.len() as f32 / SAMPLE_RATE as f32;
+        assert!(
+            (8.0..=12.0).contains(&secs),
+            "{name}: expected ~10s of audio, got {secs:.2}s"
+        );
+        assert!(
+            samples.iter().any(|&s| s.abs() > 0.01),
+            "{name}: decoded audio is silent"
+        );
+    }
+
+    // Video containers (#138 Phase 1): the audio track transcodes through the
+    // same path as plain audio files; video frames are skipped by the
+    // non-NULL-codec track selection.
+    #[test]
+    fn decodes_mp4_video_audio_track() {
+        decode_video_fixture("sample_10s_video-mp4.mp4");
+    }
+
+    #[test]
+    fn decodes_mov_video_audio_track() {
+        decode_video_fixture("sample_10s_video-quicktime.mov");
+    }
+
+    #[test]
+    fn decodes_mkv_video_audio_track() {
+        decode_video_fixture("sample_10s_video-mkv.mkv");
+    }
+
+    #[test]
+    fn decodes_webm_video_audio_track() {
+        decode_video_fixture("sample_10s_video-webm.webm");
+    }
+
+    #[test]
+    fn avi_gets_a_targeted_error() {
+        // By extension (even with unreadable bytes)…
+        let err = decode_to_mono_16k(&[0u8; 16], "clip.avi").unwrap_err();
+        assert!(err.contains("AVI"), "unexpected error: {err}");
+        assert!(err.contains("remux"), "unexpected error: {err}");
+        // …and by content sniff when the name is a bare stem (the converter
+        // passes `file_stem`, so the extension is not always available).
+        let mut riff = b"RIFF\x00\x00\x00\x00AVI LIST".to_vec();
+        riff.extend_from_slice(&[0u8; 32]);
+        let err = decode_to_mono_16k(&riff, "clip_video-avi").unwrap_err();
+        assert!(err.contains("AVI"), "unexpected error: {err}");
     }
 
     #[test]

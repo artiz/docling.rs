@@ -201,6 +201,9 @@ struct ConvertOptions {
     no_table_former: Option<bool>,
     fetch_images: Option<bool>,
     asr_model: Option<String>,
+    /// Max frames sampled from a video input (0 = transcript only; needs the
+    /// server to have the ffmpeg binary).
+    video_frames: Option<usize>,
 }
 
 impl ConvertOptions {
@@ -213,6 +216,7 @@ impl ConvertOptions {
             no_table_former: self.no_table_former.or(base.no_table_former),
             fetch_images: self.fetch_images.or(base.fetch_images),
             asr_model: self.asr_model.or(base.asr_model),
+            video_frames: self.video_frames.or(base.video_frames),
         }
     }
 }
@@ -393,6 +397,14 @@ async fn read_multipart(
                 }
             }
             "asr_model" => body_opts.asr_model = Some(text_field(field).await?),
+            "video_frames" => {
+                let v = text_field(field).await?;
+                body_opts.video_frames = Some(v.parse().map_err(|_| {
+                    ApiError::Bad(format!(
+                        "video_frames must be a non-negative integer, got {v:?}"
+                    ))
+                })?);
+            }
             "strict" | "no_ocr" | "no_table_former" | "fetch_images" => {
                 let v = text_field(field).await?;
                 let b = matches!(v.as_str(), "1" | "true" | "yes" | "on");
@@ -479,6 +491,11 @@ fn format_from_content_type(content_type: &str) -> Option<InputFormat> {
         "image/jpeg" | "image/png" | "image/tiff" | "image/bmp" | "image/webp" => {
             InputFormat::Image
         }
+        // Upstream's FormatToMimeType for AUDIO and VIDEO (docling v2.114).
+        "audio/wav" | "audio/x-wav" | "audio/mpeg" | "audio/mp3" | "audio/mp4" | "audio/m4a"
+        | "audio/aac" | "audio/ogg" | "audio/flac" | "audio/x-flac" => InputFormat::Audio,
+        "video/mp4" | "video/avi" | "video/x-msvideo" | "video/quicktime" | "video/x-matroska"
+        | "video/webm" => InputFormat::Video,
         _ => return None,
     })
 }
@@ -683,6 +700,11 @@ fn request_converter(state: &AppState, options: &ConvertOptions) -> DocumentConv
         // placeholder images instead of a surprise outbound fetch).
         .fetch_images(state.cfg.allow_url_fetch && options.fetch_images.unwrap_or(false))
         .asr_model(options.asr_model.clone())
+        .video_frames(
+            options
+                .video_frames
+                .unwrap_or(docling::DEFAULT_VIDEO_FRAMES),
+        )
         .no_ocr(options.no_ocr.unwrap_or(false))
         .no_table_former(options.no_table_former.unwrap_or(false))
 }

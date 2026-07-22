@@ -80,11 +80,19 @@ pub struct DocumentConverter {
     /// specs, PR #3741): English-only / Distil-Whisper variants under
     /// `models/asr/<preset>/`. `None` = the default Whisper tiny.
     asr_model: Option<String>,
+    /// Max sampled frames per video (#138 Phase 2). `None` = the default
+    /// ([`DEFAULT_VIDEO_FRAMES`]); `Some(0)` disables frame extraction.
+    video_frames: Option<usize>,
     /// Opt-in PDF/image enrichment models (docling's
     /// `do_picture_classification` / `do_code_enrichment` /
     /// `do_formula_enrichment`).
     enrich: crate::EnrichmentOptions,
 }
+
+/// Default cap on sampled frames per video. Scene changes rarely exceed this
+/// in short clips, and uniform fallback at 8 keeps JSON/DCLX output (which
+/// embeds the PNGs) within sane bounds.
+pub const DEFAULT_VIDEO_FRAMES: usize = 8;
 
 impl DocumentConverter {
     /// A converter that accepts every supported format.
@@ -103,8 +111,19 @@ impl DocumentConverter {
             no_ocr: false,
             use_web_browser: false,
             asr_model: None,
+            video_frames: None,
             enrich: crate::EnrichmentOptions::default(),
         }
+    }
+
+    /// Cap the number of frames sampled from a video (#138 Phase 2); `0`
+    /// disables frame extraction entirely (Phase 1 behavior: transcript only).
+    /// Defaults to [`DEFAULT_VIDEO_FRAMES`]. Frames are extracted with the
+    /// `ffmpeg` binary when present (`DOCLING_FFMPEG` overrides the path);
+    /// without it a video converts to its transcript alone.
+    pub fn video_frames(mut self, max: usize) -> Self {
+        self.video_frames = Some(max);
+        self
     }
 
     /// Select a named Whisper model preset for audio sources — the
@@ -425,7 +444,19 @@ impl DocumentConverter {
                 &source.name,
                 self.asr_model.as_deref(),
             )
-            .map_err(|e| ConversionError::with_source("audio", e))?,
+            .map_err(|e| ConversionError::with_source(source.format.as_str(), e))?,
+            // Video (#138): the audio track transcribes through the same ASR
+            // path (Phase 1), and — when the ffmpeg binary is available —
+            // sampled frames interleave with the transcript as timestamped
+            // pictures (Phase 2). Without ffmpeg: transcript only.
+            #[cfg(feature = "asr")]
+            InputFormat::Video => crate::video::convert_video(
+                &source.bytes,
+                &source.name,
+                self.asr_model.as_deref(),
+                self.video_frames.unwrap_or(DEFAULT_VIDEO_FRAMES),
+            )
+            .map_err(|e| ConversionError::with_source(source.format.as_str(), e))?,
             // Without the full ML pipeline, `pdf-text` still converts a PDF's
             // embedded text layer (pure Rust — the wasm32 path), equivalent to
             // `--no-ocr`: flat paragraphs, no headings/tables/pictures. A
@@ -462,10 +493,11 @@ impl DocumentConverter {
                 )))
             }
             #[cfg(not(feature = "asr"))]
-            InputFormat::Audio => {
-                return Err(ConversionError::Parse(
-                    "audio conversion is not compiled in (rebuild with the `asr` feature)".into(),
-                ))
+            InputFormat::Audio | InputFormat::Video => {
+                return Err(ConversionError::Parse(format!(
+                    "{} conversion is not compiled in (rebuild with the `asr` feature)",
+                    source.format.as_str()
+                )))
             }
         };
         // Carry the mode so `result.document.export_to_markdown()` reflects it.

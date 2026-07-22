@@ -3,7 +3,7 @@
 //! The docling.rs counterpart of `docling.cli.main`; `docling-rs serve`
 //! (with `--features serve`) starts the HTTP conversion API.
 //!
-//! Usage: docling-rs [--strict] [--to md|json] [--images MODE] [--fetch-images] [--no-stream] [--no-table-former] [--no-ocr] [--asr-model PRESET] [--use-web-browser] [--enrich-picture-classes] [--enrich-code] [--enrich-formula] <input-file>
+//! Usage: docling-rs [--strict] [--to md|json] [--images MODE] [--fetch-images] [--no-stream] [--no-table-former] [--no-ocr] [--asr-model PRESET] [--video-frames N] [--use-web-browser] [--enrich-picture-classes] [--enrich-code] [--enrich-formula] <input-file>
 //!   --to md|json       output format (default: md). `json` emits docling-core's
 //!                      native DoclingDocument JSON (export_to_dict).
 //!   --images MODE      picture handling for Markdown (mirrors docling's
@@ -24,6 +24,9 @@
 //!                      geometric reconstruction from cell positions. Faster
 //!                      (no model load, no per-table inference) at the cost of
 //!                      table fidelity — helps most in streaming mode.
+//!   --video-frames N   Max frames sampled from a video input as timestamped
+//!                      pictures (needs the ffmpeg binary; 0 = transcript
+//!                      only). Default 8.
 //!   --asr-model NAME   Whisper preset for audio inputs: whisper_tiny_en,
 //!                      whisper_base_en, whisper_small_en, whisper_distil_small_en
 //!                      (models under models/asr/<preset>/; fetch them with
@@ -79,6 +82,7 @@ fn main() -> ExitCode {
     let mut no_ocr = false;
     let mut use_web_browser = false;
     let mut asr_model: Option<String> = None;
+    let mut video_frames: Option<usize> = None;
     let mut enrich_picture_classes = false;
     let mut enrich_code = false;
     let mut enrich_formula = false;
@@ -103,6 +107,9 @@ fn main() -> ExitCode {
             // Distil-Whisper variants under models/asr/<preset>/; fetch with
             // download_dependencies.sh --asr-model=<preset>).
             "--asr-model" => asr_model = args.next(),
+            // Max frames sampled from a video input (needs the ffmpeg binary;
+            // 0 = transcript only). Default 8.
+            "--video-frames" => video_frames = args.next().and_then(|v| v.parse().ok()),
             "--images" => images = args.next().unwrap_or_default(),
             // Hidden benchmarking aid: load the PDF/image pipeline once, then time
             // N warm conversions (models already loaded), printing the avg seconds
@@ -172,7 +179,7 @@ fn main() -> ExitCode {
         };
     }
 
-    let converter = DocumentConverter::new()
+    let mut converter = DocumentConverter::new()
         .strict(strict)
         .asr_model(asr_model.clone())
         .fetch_images(fetch_images)
@@ -182,6 +189,9 @@ fn main() -> ExitCode {
         .do_picture_classification(enrich_picture_classes)
         .do_code_enrichment(enrich_code)
         .do_formula_enrichment(enrich_formula);
+    if let Some(max) = video_frames {
+        converter = converter.video_frames(max);
+    }
 
     // Stream Markdown by default: print each chunk as the converter produces it
     // (page by page for PDF). JSON needs the whole tree, and the referenced image

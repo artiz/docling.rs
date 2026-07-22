@@ -34,6 +34,9 @@ pub struct ConverterOptions {
     /// Named Whisper model preset for audio sources (English-only /
     /// Distil-Whisper variants under `models/asr/<preset>/`).
     pub asr_model: Option<String>,
+    /// Max frames sampled from a video input as timestamped pictures (needs
+    /// the ffmpeg binary at runtime; `0` = transcript only). Default 8.
+    pub video_frames: Option<u32>,
     /// Emit cleaner, more conformant Markdown (code-fence languages preserved,
     /// no inline-run spacing artifacts) instead of docling's byte-for-byte
     /// legacy output. Markdown only. Default `false`.
@@ -70,6 +73,8 @@ pub struct ConvertOptions {
     pub fetch_images: Option<bool>,
     /// Named Whisper model preset for audio sources.
     pub asr_model: Option<String>,
+    /// Max frames sampled from a video input (`0` = transcript only).
+    pub video_frames: Option<u32>,
     pub allowed_formats: Option<Vec<String>>,
     pub to: Option<String>,
     pub image_mode: Option<String>,
@@ -123,6 +128,7 @@ struct ConvertConfig {
     strict: bool,
     fetch_images: bool,
     asr_model: Option<String>,
+    video_frames: Option<usize>,
     allowed_formats: Option<Vec<InputFormat>>,
     to: OutputKind,
     image_mode: ImageMode,
@@ -166,16 +172,8 @@ impl RawResult {
     }
 }
 
-fn build_config(
-    strict: Option<bool>,
-    fetch_images: Option<bool>,
-    asr_model: Option<String>,
-    allowed_formats: Option<Vec<String>>,
-    to: Option<String>,
-    image_mode: Option<String>,
-    artifacts_dir: Option<String>,
-) -> Result<ConvertConfig> {
-    let allowed = match allowed_formats {
+fn build_config(o: ConvertOptions) -> Result<ConvertConfig> {
+    let allowed = match o.allowed_formats {
         Some(list) => Some(
             list.iter()
                 .map(|s| parse_format(s))
@@ -184,13 +182,14 @@ fn build_config(
         None => None,
     };
     Ok(ConvertConfig {
-        strict: strict.unwrap_or(false),
-        fetch_images: fetch_images.unwrap_or(false),
-        asr_model,
+        strict: o.strict.unwrap_or(false),
+        fetch_images: o.fetch_images.unwrap_or(false),
+        asr_model: o.asr_model,
+        video_frames: o.video_frames.map(|n| n as usize),
         allowed_formats: allowed,
-        to: parse_output_kind(to.as_deref())?,
-        image_mode: parse_image_mode(image_mode.as_deref())?,
-        artifacts_dir: artifacts_dir.unwrap_or_else(|| "artifacts".to_string()),
+        to: parse_output_kind(o.to.as_deref())?,
+        image_mode: parse_image_mode(o.image_mode.as_deref())?,
+        artifacts_dir: o.artifacts_dir.unwrap_or_else(|| "artifacts".to_string()),
     })
 }
 
@@ -199,9 +198,14 @@ fn build_converter(cfg: &ConvertConfig) -> RsConverter {
         Some(list) => RsConverter::with_allowed_formats(list.iter().copied()),
         None => RsConverter::new(),
     };
-    base.strict(cfg.strict)
+    let base = base
+        .strict(cfg.strict)
         .fetch_images(cfg.fetch_images)
-        .asr_model(cfg.asr_model.clone())
+        .asr_model(cfg.asr_model.clone());
+    match cfg.video_frames {
+        Some(max) => base.video_frames(max),
+        None => base,
+    }
 }
 
 /// Render an already-converted document to Markdown/JSON per the config. The
@@ -276,15 +280,7 @@ fn source_from_input(input: ConvertInput) -> Result<SourceDocument> {
 #[napi]
 pub fn convert_file(path: String, options: Option<ConvertOptions>) -> Result<ConvertResult> {
     let o = options.unwrap_or_default();
-    let cfg = build_config(
-        o.strict,
-        o.fetch_images,
-        o.asr_model,
-        o.allowed_formats,
-        o.to,
-        o.image_mode,
-        o.artifacts_dir,
-    )?;
+    let cfg = build_config(o)?;
     let source = SourceDocument::from_file(&path).map_err(convert_err)?;
     Ok(run_convert(source, &cfg)?.into_js())
 }
@@ -293,15 +289,7 @@ pub fn convert_file(path: String, options: Option<ConvertOptions>) -> Result<Con
 #[napi]
 pub fn convert(input: ConvertInput, options: Option<ConvertOptions>) -> Result<ConvertResult> {
     let o = options.unwrap_or_default();
-    let cfg = build_config(
-        o.strict,
-        o.fetch_images,
-        o.asr_model,
-        o.allowed_formats,
-        o.to,
-        o.image_mode,
-        o.artifacts_dir,
-    )?;
+    let cfg = build_config(o)?;
     let source = source_from_input(input)?;
     Ok(run_convert(source, &cfg)?.into_js())
 }
@@ -314,15 +302,7 @@ pub fn convert_file_async(
     options: Option<ConvertOptions>,
 ) -> Result<AsyncTask<ConvertFileTask>> {
     let o = options.unwrap_or_default();
-    let cfg = build_config(
-        o.strict,
-        o.fetch_images,
-        o.asr_model,
-        o.allowed_formats,
-        o.to,
-        o.image_mode,
-        o.artifacts_dir,
-    )?;
+    let cfg = build_config(o)?;
     Ok(AsyncTask::new(ConvertFileTask { path, cfg }))
 }
 
@@ -333,15 +313,7 @@ pub fn convert_async(
     options: Option<ConvertOptions>,
 ) -> Result<AsyncTask<ConvertBytesTask>> {
     let o = options.unwrap_or_default();
-    let cfg = build_config(
-        o.strict,
-        o.fetch_images,
-        o.asr_model,
-        o.allowed_formats,
-        o.to,
-        o.image_mode,
-        o.artifacts_dir,
-    )?;
+    let cfg = build_config(o)?;
     let source = source_from_input(input)?;
     Ok(AsyncTask::new(ConvertBytesTask {
         source: Some(source),
@@ -403,6 +375,7 @@ pub struct DocumentConverter {
     strict: bool,
     fetch_images: bool,
     asr_model: Option<String>,
+    video_frames: Option<usize>,
     allowed_formats: Option<Vec<InputFormat>>,
 }
 
@@ -423,6 +396,7 @@ impl DocumentConverter {
             strict: o.strict.unwrap_or(false),
             fetch_images: o.fetch_images.unwrap_or(false),
             asr_model: o.asr_model.clone(),
+            video_frames: o.video_frames.map(|n| n as usize),
             allowed_formats: allowed,
         })
     }
@@ -433,6 +407,7 @@ impl DocumentConverter {
             strict: self.strict,
             fetch_images: self.fetch_images,
             asr_model: self.asr_model.clone(),
+            video_frames: self.video_frames,
             allowed_formats: self.allowed_formats.clone(),
             to: parse_output_kind(out.to.as_deref())?,
             image_mode: parse_image_mode(out.image_mode.as_deref())?,
@@ -844,6 +819,7 @@ fn output_config(out: Option<OutputOptions>, strict: bool) -> Result<ConvertConf
         strict,
         fetch_images: false,
         asr_model: None,
+        video_frames: None,
         allowed_formats: None,
         to: parse_output_kind(out.to.as_deref())?,
         image_mode: parse_image_mode(out.image_mode.as_deref())?,
@@ -1198,6 +1174,9 @@ pub fn supported_formats() -> Vec<String> {
         "md",
         "csv",
         "xlsx",
+        "doc",
+        "xls",
+        "ppt",
         "odt",
         "ods",
         "odp",
@@ -1208,6 +1187,8 @@ pub fn supported_formats() -> Vec<String> {
         "json_docling",
         "xml_doclang",
         "dclx",
+        "audio",
+        "video",
         "vtt",
         "latex",
         "email",
@@ -1279,6 +1260,8 @@ fn parse_format(s: &str) -> Result<InputFormat> {
         "mets_gbs" => InputFormat::MetsGbs,
         "email" => InputFormat::Email,
         "latex" => InputFormat::Latex,
+        "audio" => InputFormat::Audio,
+        "video" => InputFormat::Video,
         _ => {
             return Err(Error::new(
                 Status::InvalidArg,

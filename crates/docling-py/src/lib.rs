@@ -113,6 +113,7 @@ impl PyDocumentConverter {
         do_code_enrichment = false,
         do_formula_enrichment = false,
         asr_model = None,
+        video_frames = None,
         allowed_formats = None,
     ))]
     #[allow(clippy::too_many_arguments)]
@@ -125,6 +126,7 @@ impl PyDocumentConverter {
         do_code_enrichment: bool,
         do_formula_enrichment: bool,
         asr_model: Option<String>,
+        video_frames: Option<usize>,
         allowed_formats: Option<Vec<String>>,
     ) -> PyResult<Self> {
         // `allowed_formats` (docling's converter arg) restricts which input
@@ -145,6 +147,12 @@ impl PyDocumentConverter {
             picture_classification: do_picture_classification,
             code: do_code_enrichment,
             formula: do_formula_enrichment,
+        };
+        // `video_frames` caps the frames sampled from a video input (0 =
+        // transcript only; extraction needs the ffmpeg binary at runtime).
+        let base = match video_frames {
+            Some(max) => base.video_frames(max),
+            None => base,
         };
         Ok(Self {
             inner: base
@@ -286,6 +294,7 @@ fn parse_format(name: &str) -> Option<docling::InputFormat> {
         "mets_gbs" => MetsGbs,
         "json_docling" => JsonDocling,
         "audio" => Audio,
+        "video" => Video,
         "vtt" => Vtt,
         "latex" => Latex,
         "email" => Email,

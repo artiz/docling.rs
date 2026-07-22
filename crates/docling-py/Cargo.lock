@@ -668,7 +668,7 @@ dependencies = [
 
 [[package]]
 name = "docling"
-version = "0.47.3"
+version = "0.49.0"
 dependencies = [
  "calamine",
  "csv",
@@ -691,7 +691,7 @@ dependencies = [
 
 [[package]]
 name = "docling-asr"
-version = "0.47.3"
+version = "0.49.0"
 dependencies = [
  "docling-core",
  "ort",
@@ -701,7 +701,7 @@ dependencies = [
 
 [[package]]
 name = "docling-core"
-version = "0.47.3"
+version = "0.49.0"
 dependencies = [
  "pulldown-cmark",
  "serde_json",
@@ -711,7 +711,7 @@ dependencies = [
 
 [[package]]
 name = "docling-pdf"
-version = "0.47.3"
+version = "0.49.0"
 dependencies = [
  "docling-core",
  "fast_image_resize",
@@ -2783,6 +2783,7 @@ dependencies = [
  "symphonia-codec-vorbis",
  "symphonia-core",
  "symphonia-format-isomp4",
+ "symphonia-format-mkv",
  "symphonia-format-ogg",
  "symphonia-format-riff",
  "symphonia-metadata",
@@ -2864,6 +2865,19 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "243739585d11f81daf8dac8d9f3d18cc7898f6c09a259675fc364b382c30e0a5"
 dependencies = [
  "encoding_rs",
+ "log",
+ "symphonia-core",
+ "symphonia-metadata",
+ "symphonia-utils-xiph",
+]
+
+[[package]]
+name = "symphonia-format-mkv"
+version = "0.5.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "122d786d2c43a49beb6f397551b4a050d8229eaa54c7ddf9ee4b98899b8742d0"
+dependencies = [
+ "lazy_static",
  "log",
  "symphonia-core",
  "symphonia-metadata",
