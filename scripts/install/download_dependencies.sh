@@ -75,6 +75,7 @@ EMBED_BASE_URL="${DOCLING_RS_EMBED_MODELS_URL:-https://huggingface.co/aapot/bge-
 
 FORCE=false
 WITH_ASR=true
+ASR_PRESETS=
 WITH_INT8=true
 WITH_CHUNK=true
 WITH_ENRICH=false
@@ -84,6 +85,7 @@ for arg in "$@"; do
   case "$arg" in
     --force) FORCE=true ;;
     --no-asr) WITH_ASR=false ;;
+    --asr-model=*) ASR_PRESETS="$ASR_PRESETS ${arg#--asr-model=}" ;;
     --int8) WITH_INT8=true ;; # accepted for compatibility; int8 is the default
     --no-int8) WITH_INT8=false ;;
     --no-chunk) WITH_CHUNK=false ;;
@@ -91,7 +93,8 @@ for arg in "$@"; do
     --embed) WITH_EMBED=true ;;
     --ocr-en) WITH_OCR_EN=true ;;
     *)
-      echo "usage: download_dependencies.sh [--force] [--no-asr] [--no-int8] [--no-chunk] [--enrich] [--embed] [--ocr-en]" >&2
+      echo "usage: download_dependencies.sh [--force] [--no-asr] [--asr-model=<preset>] [--no-int8] [--no-chunk] [--enrich] [--embed] [--ocr-en]" >&2
+      echo "  ASR presets: whisper_tiny_en whisper_base_en whisper_small_en whisper_distil_small_en" >&2
       exit 2
       ;;
   esac
@@ -148,13 +151,34 @@ fetch_optional "$BASE_URL/bbox.onnx.data" models/tableformer/bbox.onnx.data
 
 if [ "$WITH_ASR" = true ]; then
   # Whisper tiny for audio/ASR: encoder + (cache-less) decoder + vocabulary;
-  # added_tokens.json only feeds non-English language selection, so a missing
-  # asset there is not fatal.
+  # added_tokens.json feeds non-English language selection and the special-
+  # token layout, so a missing asset there is not fatal for the default model.
   fetch "$ASR_BASE_URL/onnx/encoder_model.onnx" models/asr/encoder_model.onnx
   fetch "$ASR_BASE_URL/onnx/decoder_model.onnx" models/asr/decoder_model.onnx
   fetch "$ASR_BASE_URL/vocab.json" models/asr/vocab.json
   fetch_optional "$ASR_BASE_URL/added_tokens.json" models/asr/added_tokens.json
 fi
+
+# Named ASR model presets (docling's English-only / Distil-Whisper specs,
+# limited to variants with public ONNX exports): each lands in its own
+# models/asr/<preset>/ directory, selected at run time with
+# DocumentConverter::asr_model / the serve `asr_model` option.
+for preset in $ASR_PRESETS; do
+  case "$preset" in
+    whisper_tiny_en) repo="whisper-tiny.en" ;;
+    whisper_base_en) repo="whisper-base.en" ;;
+    whisper_small_en) repo="whisper-small.en" ;;
+    whisper_distil_small_en) repo="distil-small.en" ;;
+    *) echo "unknown --asr-model '$preset' (available: whisper_tiny_en whisper_base_en whisper_small_en whisper_distil_small_en)" >&2; exit 2 ;;
+  esac
+  base="https://huggingface.co/onnx-community/$repo/resolve/main"
+  fetch "$base/onnx/encoder_model.onnx" "models/asr/$preset/encoder_model.onnx"
+  fetch "$base/onnx/decoder_model.onnx" "models/asr/$preset/decoder_model.onnx"
+  fetch "$base/vocab.json" "models/asr/$preset/vocab.json"
+  # English-only exports keep their special tokens here; required for the
+  # shifted token layout to resolve.
+  fetch "$base/added_tokens.json" "models/asr/$preset/added_tokens.json"
+done
 
 if [ "$WITH_CHUNK" = true ]; then
   # The hybrid chunker's default tokenizer (all-MiniLM-L6-v2's tokenizer.json,

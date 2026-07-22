@@ -200,6 +200,7 @@ struct ConvertOptions {
     no_ocr: Option<bool>,
     no_table_former: Option<bool>,
     fetch_images: Option<bool>,
+    asr_model: Option<String>,
 }
 
 impl ConvertOptions {
@@ -211,6 +212,7 @@ impl ConvertOptions {
             no_ocr: self.no_ocr.or(base.no_ocr),
             no_table_former: self.no_table_former.or(base.no_table_former),
             fetch_images: self.fetch_images.or(base.fetch_images),
+            asr_model: self.asr_model.or(base.asr_model),
         }
     }
 }
@@ -390,6 +392,7 @@ async fn read_multipart(
                     _ => body_opts.images = Some(v),
                 }
             }
+            "asr_model" => body_opts.asr_model = Some(text_field(field).await?),
             "strict" | "no_ocr" | "no_table_former" | "fetch_images" => {
                 let v = text_field(field).await?;
                 let b = matches!(v.as_str(), "1" | "true" | "yes" | "on");
@@ -679,6 +682,7 @@ fn request_converter(state: &AppState, options: &ConvertOptions) -> DocumentConv
         // rather than honored (the UI greys the box; an API caller just gets
         // placeholder images instead of a surprise outbound fetch).
         .fetch_images(state.cfg.allow_url_fetch && options.fetch_images.unwrap_or(false))
+        .asr_model(options.asr_model.clone())
         .no_ocr(options.no_ocr.unwrap_or(false))
         .no_table_former(options.no_table_former.unwrap_or(false))
 }
