@@ -286,6 +286,7 @@ fn parse_format(name: &str) -> Option<docling::InputFormat> {
         "mets_gbs" => MetsGbs,
         "json_docling" => JsonDocling,
         "audio" => Audio,
+        "video" => Video,
         "vtt" => Vtt,
         "latex" => Latex,
         "email" => Email,

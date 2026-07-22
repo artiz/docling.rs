@@ -479,6 +479,11 @@ fn format_from_content_type(content_type: &str) -> Option<InputFormat> {
         "image/jpeg" | "image/png" | "image/tiff" | "image/bmp" | "image/webp" => {
             InputFormat::Image
         }
+        // Upstream's FormatToMimeType for AUDIO and VIDEO (docling v2.114).
+        "audio/wav" | "audio/x-wav" | "audio/mpeg" | "audio/mp3" | "audio/mp4" | "audio/m4a"
+        | "audio/aac" | "audio/ogg" | "audio/flac" | "audio/x-flac" => InputFormat::Audio,
+        "video/mp4" | "video/avi" | "video/x-msvideo" | "video/quicktime" | "video/x-matroska"
+        | "video/webm" => InputFormat::Video,
         _ => return None,
     })
 }

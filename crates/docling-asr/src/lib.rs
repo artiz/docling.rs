@@ -2,7 +2,8 @@
 //! (native Whisper path, `temperature=0` greedy with timestamps).
 //!
 //! Everything runs in-process and in Rust: [`symphonia`] demuxes/decodes the
-//! audio container (wav/mp3/flac/ogg/aac/m4a — no ffmpeg), a ported log-mel
+//! audio container (wav/mp3/flac/ogg/aac/m4a, plus the audio track of
+//! mp4/mov/mkv/webm video — no ffmpeg), a ported log-mel
 //! front-end feeds a **Whisper** encoder/decoder exported to ONNX (run on
 //! [`ort`], like the PDF pipeline's layout/TableFormer/OCR models), and each
 //! transcribed segment becomes one text paragraph in the docling conversation

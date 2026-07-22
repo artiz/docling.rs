@@ -34,6 +34,10 @@ pub enum InputFormat {
     MetsGbs,
     JsonDocling,
     Audio,
+    /// Video containers (`.mp4`/`.avi`/`.mov`/`.mkv`/`.webm`) — Phase 1 of
+    /// issue #138 transcribes the audio track through the ASR pipeline
+    /// (mirrors docling's `InputFormat.VIDEO`, v2.114).
+    Video,
     Vtt,
     Latex,
     Email,
@@ -70,6 +74,7 @@ impl InputFormat {
             InputFormat::MetsGbs => "mets_gbs",
             InputFormat::JsonDocling => "json_docling",
             InputFormat::Audio => "audio",
+            InputFormat::Video => "video",
             InputFormat::Vtt => "vtt",
             InputFormat::Latex => "latex",
             InputFormat::Email => "email",
@@ -105,9 +110,10 @@ impl InputFormat {
             "ods" | "ots" => InputFormat::Ods,
             "odp" | "otp" => InputFormat::Odp,
             "json" => InputFormat::JsonDocling,
-            "wav" | "mp3" | "m4a" | "aac" | "ogg" | "flac" | "mp4" | "avi" | "mov" => {
-                InputFormat::Audio
-            }
+            "wav" | "mp3" | "m4a" | "aac" | "ogg" | "flac" => InputFormat::Audio,
+            // Upstream's FormatToExtensions[VIDEO] (docling v2.114, #3768):
+            // the audio track transcribes through the same ASR path.
+            "mp4" | "avi" | "mov" | "mkv" | "webm" => InputFormat::Video,
             "vtt" => InputFormat::Vtt,
             "tex" | "latex" => InputFormat::Latex,
             "eml" => InputFormat::Email,
@@ -117,5 +123,22 @@ impl InputFormat {
             "gz" | "targz" => InputFormat::MetsGbs,
             _ => return None,
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn audio_and_video_extensions_split_like_upstream() {
+        // docling v2.114 FormatToExtensions: AUDIO and VIDEO are disjoint.
+        for ext in ["wav", "mp3", "m4a", "aac", "ogg", "flac"] {
+            assert_eq!(InputFormat::from_extension(ext), Some(InputFormat::Audio));
+        }
+        for ext in ["mp4", "avi", "mov", "mkv", "webm", "MKV"] {
+            assert_eq!(InputFormat::from_extension(ext), Some(InputFormat::Video));
+        }
+        assert_eq!(InputFormat::Video.as_str(), "video");
     }
 }

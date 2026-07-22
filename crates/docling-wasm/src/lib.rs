@@ -62,7 +62,7 @@ pub fn convert(bytes: &[u8], filename: &str, to: Option<String>) -> Result<Strin
 #[wasm_bindgen]
 pub fn supported_extensions() -> String {
     // Keep in sync with `InputFormat::from_extension` minus the ML-only
-    // formats (images, audio, mets tarballs).
+    // formats (images, audio, video, mets tarballs).
     let exts = [
         "docx", "dotx", "docm", "dotm", "pptx", "potx", "ppsx", "pptm", "potm", "ppsm", "md",
         "txt", "text", "qmd", "rmd", "html", "htm", "xhtml", "xml", "nxml", "dclg", "dclx", "adoc",

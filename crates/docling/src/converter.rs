@@ -419,13 +419,15 @@ impl DocumentConverter {
             .map_err(|e| ConversionError::with_source("mets-gbs", e))?,
             // Audio → Whisper ASR (symphonia decode + ONNX inference); each
             // transcribed segment becomes a `[time: start-end] text` paragraph.
+            // Video containers (#138 Phase 1) take the same path — symphonia
+            // demuxes the audio track of mp4/mov/mkv/webm; frames are ignored.
             #[cfg(feature = "asr")]
-            InputFormat::Audio => docling_asr::convert_audio_with_model(
+            InputFormat::Audio | InputFormat::Video => docling_asr::convert_audio_with_model(
                 &source.bytes,
                 &source.name,
                 self.asr_model.as_deref(),
             )
-            .map_err(|e| ConversionError::with_source("audio", e))?,
+            .map_err(|e| ConversionError::with_source(source.format.as_str(), e))?,
             // Without the full ML pipeline, `pdf-text` still converts a PDF's
             // embedded text layer (pure Rust — the wasm32 path), equivalent to
             // `--no-ocr`: flat paragraphs, no headings/tables/pictures. A
@@ -462,10 +464,11 @@ impl DocumentConverter {
                 )))
             }
             #[cfg(not(feature = "asr"))]
-            InputFormat::Audio => {
-                return Err(ConversionError::Parse(
-                    "audio conversion is not compiled in (rebuild with the `asr` feature)".into(),
-                ))
+            InputFormat::Audio | InputFormat::Video => {
+                return Err(ConversionError::Parse(format!(
+                    "{} conversion is not compiled in (rebuild with the `asr` feature)",
+                    source.format.as_str()
+                )))
             }
         };
         // Carry the mode so `result.document.export_to_markdown()` reflects it.

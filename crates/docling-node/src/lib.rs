@@ -1198,6 +1198,9 @@ pub fn supported_formats() -> Vec<String> {
         "md",
         "csv",
         "xlsx",
+        "doc",
+        "xls",
+        "ppt",
         "odt",
         "ods",
         "odp",
@@ -1208,6 +1211,8 @@ pub fn supported_formats() -> Vec<String> {
         "json_docling",
         "xml_doclang",
         "dclx",
+        "audio",
+        "video",
         "vtt",
         "latex",
         "email",
@@ -1279,6 +1284,8 @@ fn parse_format(s: &str) -> Result<InputFormat> {
         "mets_gbs" => InputFormat::MetsGbs,
         "email" => InputFormat::Email,
         "latex" => InputFormat::Latex,
+        "audio" => InputFormat::Audio,
+        "video" => InputFormat::Video,
         _ => {
             return Err(Error::new(
                 Status::InvalidArg,
