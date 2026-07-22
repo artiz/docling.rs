@@ -112,6 +112,7 @@ impl PyDocumentConverter {
         do_picture_classification = false,
         do_code_enrichment = false,
         do_formula_enrichment = false,
+        asr_model = None,
         allowed_formats = None,
     ))]
     #[allow(clippy::too_many_arguments)]
@@ -123,6 +124,7 @@ impl PyDocumentConverter {
         do_picture_classification: bool,
         do_code_enrichment: bool,
         do_formula_enrichment: bool,
+        asr_model: Option<String>,
         allowed_formats: Option<Vec<String>>,
     ) -> PyResult<Self> {
         // `allowed_formats` (docling's converter arg) restricts which input
@@ -147,6 +149,7 @@ impl PyDocumentConverter {
         Ok(Self {
             inner: base
                 .fetch_images(fetch_images)
+                .asr_model(asr_model)
                 .no_ocr(!do_ocr)
                 .no_table_former(!do_table_structure)
                 .use_web_browser(use_web_browser)

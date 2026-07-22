@@ -31,6 +31,9 @@ use docling::{
 #[napi(object)]
 #[derive(Clone, Default)]
 pub struct ConverterOptions {
+    /// Named Whisper model preset for audio sources (English-only /
+    /// Distil-Whisper variants under `models/asr/<preset>/`).
+    pub asr_model: Option<String>,
     /// Emit cleaner, more conformant Markdown (code-fence languages preserved,
     /// no inline-run spacing artifacts) instead of docling's byte-for-byte
     /// legacy output. Markdown only. Default `false`.
@@ -65,6 +68,8 @@ pub struct OutputOptions {
 pub struct ConvertOptions {
     pub strict: Option<bool>,
     pub fetch_images: Option<bool>,
+    /// Named Whisper model preset for audio sources.
+    pub asr_model: Option<String>,
     pub allowed_formats: Option<Vec<String>>,
     pub to: Option<String>,
     pub image_mode: Option<String>,
@@ -117,6 +122,7 @@ pub struct ConvertResult {
 struct ConvertConfig {
     strict: bool,
     fetch_images: bool,
+    asr_model: Option<String>,
     allowed_formats: Option<Vec<InputFormat>>,
     to: OutputKind,
     image_mode: ImageMode,
@@ -163,6 +169,7 @@ impl RawResult {
 fn build_config(
     strict: Option<bool>,
     fetch_images: Option<bool>,
+    asr_model: Option<String>,
     allowed_formats: Option<Vec<String>>,
     to: Option<String>,
     image_mode: Option<String>,
@@ -179,6 +186,7 @@ fn build_config(
     Ok(ConvertConfig {
         strict: strict.unwrap_or(false),
         fetch_images: fetch_images.unwrap_or(false),
+        asr_model,
         allowed_formats: allowed,
         to: parse_output_kind(to.as_deref())?,
         image_mode: parse_image_mode(image_mode.as_deref())?,
@@ -191,7 +199,9 @@ fn build_converter(cfg: &ConvertConfig) -> RsConverter {
         Some(list) => RsConverter::with_allowed_formats(list.iter().copied()),
         None => RsConverter::new(),
     };
-    base.strict(cfg.strict).fetch_images(cfg.fetch_images)
+    base.strict(cfg.strict)
+        .fetch_images(cfg.fetch_images)
+        .asr_model(cfg.asr_model.clone())
 }
 
 /// Render an already-converted document to Markdown/JSON per the config. The
@@ -269,6 +279,7 @@ pub fn convert_file(path: String, options: Option<ConvertOptions>) -> Result<Con
     let cfg = build_config(
         o.strict,
         o.fetch_images,
+        o.asr_model,
         o.allowed_formats,
         o.to,
         o.image_mode,
@@ -285,6 +296,7 @@ pub fn convert(input: ConvertInput, options: Option<ConvertOptions>) -> Result<C
     let cfg = build_config(
         o.strict,
         o.fetch_images,
+        o.asr_model,
         o.allowed_formats,
         o.to,
         o.image_mode,
@@ -305,6 +317,7 @@ pub fn convert_file_async(
     let cfg = build_config(
         o.strict,
         o.fetch_images,
+        o.asr_model,
         o.allowed_formats,
         o.to,
         o.image_mode,
@@ -323,6 +336,7 @@ pub fn convert_async(
     let cfg = build_config(
         o.strict,
         o.fetch_images,
+        o.asr_model,
         o.allowed_formats,
         o.to,
         o.image_mode,
@@ -388,6 +402,7 @@ impl Task for ConvertBytesTask {
 pub struct DocumentConverter {
     strict: bool,
     fetch_images: bool,
+    asr_model: Option<String>,
     allowed_formats: Option<Vec<InputFormat>>,
 }
 
@@ -407,6 +422,7 @@ impl DocumentConverter {
         Ok(Self {
             strict: o.strict.unwrap_or(false),
             fetch_images: o.fetch_images.unwrap_or(false),
+            asr_model: o.asr_model.clone(),
             allowed_formats: allowed,
         })
     }
@@ -416,6 +432,7 @@ impl DocumentConverter {
         Ok(ConvertConfig {
             strict: self.strict,
             fetch_images: self.fetch_images,
+            asr_model: self.asr_model.clone(),
             allowed_formats: self.allowed_formats.clone(),
             to: parse_output_kind(out.to.as_deref())?,
             image_mode: parse_image_mode(out.image_mode.as_deref())?,
@@ -826,6 +843,7 @@ fn output_config(out: Option<OutputOptions>, strict: bool) -> Result<ConvertConf
     Ok(ConvertConfig {
         strict,
         fetch_images: false,
+        asr_model: None,
         allowed_formats: None,
         to: parse_output_kind(out.to.as_deref())?,
         image_mode: parse_image_mode(out.image_mode.as_deref())?,

@@ -14,13 +14,96 @@ use ort::value::{Tensor, TensorRef};
 use crate::mel::{log_mel_spectrogram, N_FRAMES, N_SAMPLES};
 use crate::tokenizer::Tokenizer;
 
-// Multilingual Whisper special tokens (vocab 51865).
+// Multilingual Whisper special tokens (vocab 51865) — the fallback when the
+// vocabulary can't be resolved. English-only exports shift every id down by
+// one (no language tokens), so the real ids come from the vocab at load time.
 const EOT: u32 = 50_257;
 const SOT: u32 = 50_258;
 const LANG_EN: u32 = 50_259;
 const TRANSCRIBE: u32 = 50_359;
 const NO_SPEECH: u32 = 50_362;
 const TS_BEGIN: u32 = 50_364;
+
+/// The model presets the loader accepts (docling PR #3741's English-only and
+/// Distil-Whisper additions, limited to the variants with public ONNX
+/// exports). Each maps to a `models/asr/<preset>/` directory; the unnamed
+/// default (Whisper tiny multilingual) stays at `models/asr/` itself.
+pub const PRESETS: &[&str] = &[
+    "whisper_tiny",
+    "whisper_tiny_en",
+    "whisper_base_en",
+    "whisper_small_en",
+    "whisper_distil_small_en",
+];
+
+/// The special-token ids of the loaded model, resolved from its vocabulary —
+/// English-only exports have no language tokens and every id past
+/// `<|endoftext|>` sits one lower than the multilingual layout.
+#[derive(Clone, Copy)]
+pub(crate) struct Specials {
+    pub eot: u32,
+    pub sot: u32,
+    /// `None` for English-only models (their prompt is just `<|startoftranscript|>`).
+    pub lang: Option<u32>,
+    pub transcribe: Option<u32>,
+    pub no_speech: u32,
+    pub ts_begin: u32,
+}
+
+impl Specials {
+    fn multilingual_default() -> Self {
+        Self {
+            eot: EOT,
+            sot: SOT,
+            lang: Some(language_token("models/asr/added_tokens.json")),
+            transcribe: Some(TRANSCRIBE),
+            no_speech: NO_SPEECH,
+            ts_begin: TS_BEGIN,
+        }
+    }
+
+    /// Resolve from the merged vocab + added-tokens map. Falls back to the
+    /// multilingual constants when the anchor tokens are missing.
+    ///
+    /// `english_only` comes from the preset name (`*_en`), not the vocabulary:
+    /// modern HF exports ship the full unified token set even for
+    /// English-only weights, so the presence of `<|en|>` proves nothing —
+    /// but prompting an English-only model with language/task tokens it was
+    /// never trained on yields empty transcripts. English-only models prompt
+    /// with `<|startoftranscript|>` alone (OpenAI's `sot_sequence`).
+    fn resolve(
+        map: &std::collections::HashMap<String, u32>,
+        added_tokens: &str,
+        english_only: bool,
+    ) -> Self {
+        let get = |name: &str| map.get(name).copied();
+        let (Some(eot), Some(sot), Some(ts_begin)) = (
+            get("<|endoftext|>"),
+            get("<|startoftranscript|>"),
+            get("<|0.00|>"),
+        ) else {
+            return Self::multilingual_default();
+        };
+        let (lang, transcribe) = if english_only {
+            (None, None)
+        } else {
+            (
+                get("<|en|>").map(|_| language_token(added_tokens)),
+                get("<|transcribe|>"),
+            )
+        };
+        Self {
+            eot,
+            sot,
+            lang,
+            transcribe,
+            no_speech: get("<|nospeech|>")
+                .or_else(|| get("<|nocaptions|>"))
+                .unwrap_or(ts_begin - 2),
+            ts_begin,
+        }
+    }
+}
 /// Space token (`Ġ`), suppressed as the first sampled token (`suppress_blank`).
 const SPACE: u32 = 220;
 /// Max new tokens per window (docling's `max_new_tokens=256` capped by
@@ -44,7 +127,7 @@ pub struct Transcriber {
     encoder: Session,
     decoder: Session,
     tokenizer: Tokenizer,
-    lang_token: u32,
+    specials: Specials,
     /// OpenAI's default `suppress_tokens="-1"` non-speech symbol set.
     suppress: Vec<u32>,
 }
@@ -73,12 +156,28 @@ fn model_path(var: &str, default: &str) -> std::path::PathBuf {
     default.to_string().into()
 }
 
+/// The model directory for a preset: the unnamed default lives at
+/// `models/asr/`, a named preset in its own `models/asr/<preset>/`
+/// subdirectory (matching `download_dependencies.sh --asr-model`).
+fn preset_dir(preset: Option<&str>) -> String {
+    match preset {
+        None | Some("whisper_tiny") | Some("") => "models/asr".to_string(),
+        Some(p) => format!("models/asr/{p}"),
+    }
+}
+
 /// Whether the Whisper model files are present (so callers can fail with a
 /// clear "models missing" message instead of an opaque load error).
 pub fn models_available() -> bool {
-    model_path("DOCLING_ASR_ENCODER", "models/asr/encoder_model.onnx").exists()
-        && model_path("DOCLING_ASR_DECODER", "models/asr/decoder_model.onnx").exists()
-        && model_path("DOCLING_ASR_VOCAB", "models/asr/vocab.json").exists()
+    models_available_for(None)
+}
+
+/// [`models_available`] for a specific preset directory.
+pub fn models_available_for(preset: Option<&str>) -> bool {
+    let dir = preset_dir(preset);
+    model_path("DOCLING_ASR_ENCODER", &format!("{dir}/encoder_model.onnx")).exists()
+        && model_path("DOCLING_ASR_DECODER", &format!("{dir}/decoder_model.onnx")).exists()
+        && model_path("DOCLING_ASR_VOCAB", &format!("{dir}/vocab.json")).exists()
 }
 
 impl Transcriber {
@@ -86,6 +185,24 @@ impl Transcriber {
     /// `DOCLING_ASR_{ENCODER,DECODER,VOCAB}`, defaulting to `models/asr/…`
     /// relative to the working directory (mirroring the PDF models).
     pub fn load() -> Result<Self, String> {
+        Self::load_preset(None)
+    }
+
+    /// [`load`](Self::load) for a named model preset (see [`PRESETS`]):
+    /// English-only and Distil-Whisper variants live in their own
+    /// `models/asr/<preset>/` directories, and their special-token ids are
+    /// resolved from the vocabulary (English-only exports carry no language
+    /// tokens and shift the id layout).
+    pub fn load_preset(preset: Option<&str>) -> Result<Self, String> {
+        if let Some(p) = preset {
+            if !p.is_empty() && !PRESETS.contains(&p) {
+                return Err(format!(
+                    "asr: unknown model preset '{p}' (available: {})",
+                    PRESETS.join(", ")
+                ));
+            }
+        }
+        let dir = preset_dir(preset);
         let session = |path: std::path::PathBuf| -> Result<Session, String> {
             Session::builder()
                 .map_err(|e| format!("asr: builder: {e}"))?
@@ -100,19 +217,38 @@ impl Transcriber {
         };
         let encoder = session(model_path(
             "DOCLING_ASR_ENCODER",
-            "models/asr/encoder_model.onnx",
+            &format!("{dir}/encoder_model.onnx"),
         ))?;
         let decoder = session(model_path(
             "DOCLING_ASR_DECODER",
-            "models/asr/decoder_model.onnx",
+            &format!("{dir}/decoder_model.onnx"),
         ))?;
-        let tokenizer = Tokenizer::load(&model_path("DOCLING_ASR_VOCAB", "models/asr/vocab.json"))?;
+        let vocab_path = model_path("DOCLING_ASR_VOCAB", &format!("{dir}/vocab.json"));
+        let tokenizer = Tokenizer::load(&vocab_path)?;
+        // Specials resolve from vocab.json merged with added_tokens.json
+        // (Whisper keeps the special tokens in the latter).
+        let added_path = format!("{dir}/added_tokens.json");
+        let mut merged: std::collections::HashMap<String, u32> =
+            std::fs::read_to_string(&vocab_path)
+                .ok()
+                .and_then(|raw| serde_json::from_str(&raw).ok())
+                .unwrap_or_default();
+        if let Ok(raw) =
+            std::fs::read_to_string(model_path("DOCLING_ASR_ADDED_TOKENS", &added_path))
+        {
+            if let Ok(extra) = serde_json::from_str::<std::collections::HashMap<String, u32>>(&raw)
+            {
+                merged.extend(extra);
+            }
+        }
+        let english_only = preset.is_some_and(|p| p.ends_with("_en"));
+        let specials = Specials::resolve(&merged, &added_path, english_only);
         let suppress = tokenizer.non_speech_tokens();
         Ok(Self {
             encoder,
             decoder,
             tokenizer,
-            lang_token: language_token(),
+            specials,
             suppress,
         })
     }
@@ -164,12 +300,14 @@ impl Transcriber {
         segment_duration: f64,
         segments: &mut Vec<Segment>,
     ) -> usize {
-        let is_ts = |t: u32| t >= TS_BEGIN;
-        let ts_sec = |t: u32| (t - TS_BEGIN) as f64 * TIME_PRECISION;
+        let ts_begin = self.specials.ts_begin;
+        let eot = self.specials.eot;
+        let is_ts = |t: u32| t >= ts_begin;
+        let ts_sec = |t: u32| (t - ts_begin) as f64 * TIME_PRECISION;
         let push = |segments: &mut Vec<Segment>, start: f64, end: f64, ids: &[u32]| {
             let text = self
                 .tokenizer
-                .decode(&ids.iter().cloned().filter(|&t| t < EOT).collect::<Vec<_>>());
+                .decode(&ids.iter().cloned().filter(|&t| t < eot).collect::<Vec<_>>());
             let text = text.trim();
             if !text.is_empty() {
                 segments.push(Segment {
@@ -214,7 +352,7 @@ impl Transcriber {
             // lone timestamp still bounds its duration.
             let ts_tokens: Vec<u32> = tokens.iter().cloned().filter(|&t| is_ts(t)).collect();
             let duration = match ts_tokens.last() {
-                Some(&t) if t > TS_BEGIN => ts_sec(t),
+                Some(&t) if t > ts_begin => ts_sec(t),
                 _ => segment_duration,
             };
             push(segments, time_offset, time_offset + duration, tokens);
@@ -237,7 +375,13 @@ impl Transcriber {
 
     /// Greedy decode of one 30-second window with OpenAI's timestamp rules.
     fn decode_window(&mut self, hidden: &(Vec<f32>, Vec<usize>)) -> Result<WindowOutput, String> {
-        let mut tokens: Vec<u32> = vec![SOT, self.lang_token, TRANSCRIBE];
+        // Multilingual prompt: <|sot|><|lang|><|transcribe|>. English-only
+        // exports have neither token — their prompt is just <|sot|>.
+        let mut tokens: Vec<u32> = vec![self.specials.sot];
+        if let (Some(lang), Some(task)) = (self.specials.lang, self.specials.transcribe) {
+            tokens.push(lang);
+            tokens.push(task);
+        }
         let prompt_len = tokens.len();
         let mut sampled: Vec<u32> = Vec::new();
         let mut sum_logprob = 0f64;
@@ -249,15 +393,15 @@ impl Transcriber {
             if step == 0 {
                 // p(no-speech) is read at the <|startoftranscript|> position.
                 let sot_row = &logits[..vocab];
-                no_speech_prob = softmax_prob(sot_row, NO_SPEECH as usize);
+                no_speech_prob = softmax_prob(sot_row, self.specials.no_speech as usize);
             }
             let mut row: Vec<f32> = logits[(tokens.len() - 1) * vocab..].to_vec();
-            apply_rules(&mut row, &sampled, step, &self.suppress);
+            apply_rules(&mut row, &sampled, step, &self.suppress, self.specials);
 
             // Greedy sample from the masked distribution; accumulate log-prob.
             let (next, logprob) = argmax_logprob(&row);
             sum_logprob += logprob;
-            if next == EOT {
+            if next == self.specials.eot {
                 break;
             }
             sampled.push(next);
@@ -316,14 +460,15 @@ fn window_mel(mel: &[f32], total_frames: usize, seek: usize) -> Vec<f32> {
 /// order: special-token + non-speech-symbol suppression, `suppress_blank`, the
 /// timestamp pairing/monotonicity rules, and the timestamp-probability-mass
 /// rule.
-fn apply_rules(row: &mut [f32], sampled: &[u32], step: usize, suppress: &[u32]) {
+fn apply_rules(row: &mut [f32], sampled: &[u32], step: usize, suppress: &[u32], sp: Specials) {
     let neg_inf = f32::NEG_INFINITY;
+    let (eot, ts_begin) = (sp.eot, sp.ts_begin);
     // Suppress every special token between EOT and the timestamps (SOT, task,
     // language, no-speech, no-timestamps, …) — none is ever valid output here.
     for v in row
         .iter_mut()
-        .take(TS_BEGIN as usize)
-        .skip(EOT as usize + 1)
+        .take(ts_begin as usize)
+        .skip(eot as usize + 1)
     {
         *v = neg_inf;
     }
@@ -336,21 +481,21 @@ fn apply_rules(row: &mut [f32], sampled: &[u32], step: usize, suppress: &[u32]) 
     if step == 0 {
         // suppress_blank: never start with a space or immediate end.
         row[SPACE as usize] = neg_inf;
-        row[EOT as usize] = neg_inf;
+        row[eot as usize] = neg_inf;
         // The first token must be a timestamp, capped at max_initial_timestamp.
-        for v in row.iter_mut().take(TS_BEGIN as usize) {
+        for v in row.iter_mut().take(ts_begin as usize) {
             *v = neg_inf;
         }
         for v in row
             .iter_mut()
-            .skip((TS_BEGIN + MAX_INITIAL_TS) as usize + 1)
+            .skip((ts_begin + MAX_INITIAL_TS) as usize + 1)
         {
             *v = neg_inf;
         }
         return;
     }
 
-    let is_ts = |t: u32| t >= TS_BEGIN;
+    let is_ts = |t: u32| t >= ts_begin;
     let last_was_ts = sampled.last().is_some_and(|&t| is_ts(t));
     let penultimate_was_ts = match sampled.len() {
         0 | 1 => true,
@@ -359,12 +504,12 @@ fn apply_rules(row: &mut [f32], sampled: &[u32], step: usize, suppress: &[u32]) 
     if last_was_ts {
         if penultimate_was_ts {
             // A completed pair: the next token has to be text (or EOT).
-            for v in row.iter_mut().skip(TS_BEGIN as usize) {
+            for v in row.iter_mut().skip(ts_begin as usize) {
                 *v = neg_inf;
             }
         } else {
             // An opening timestamp: only its closing timestamp (or EOT) may follow.
-            for v in row.iter_mut().take(EOT as usize) {
+            for v in row.iter_mut().take(eot as usize) {
                 *v = neg_inf;
             }
         }
@@ -376,7 +521,7 @@ fn apply_rules(row: &mut [f32], sampled: &[u32], step: usize, suppress: &[u32]) 
         } else {
             last_ts + 1
         };
-        for v in row.iter_mut().take(floor as usize).skip(TS_BEGIN as usize) {
+        for v in row.iter_mut().take(floor as usize).skip(ts_begin as usize) {
             *v = neg_inf;
         }
     }
@@ -384,13 +529,13 @@ fn apply_rules(row: &mut [f32], sampled: &[u32], step: usize, suppress: &[u32]) 
     // If the total probability mass on timestamps exceeds any single text
     // token, a timestamp must be sampled.
     let logprobs = log_softmax(row);
-    let ts_mass = logsumexp(&logprobs[TS_BEGIN as usize..]);
-    let max_text = logprobs[..TS_BEGIN as usize]
+    let ts_mass = logsumexp(&logprobs[ts_begin as usize..]);
+    let max_text = logprobs[..ts_begin as usize]
         .iter()
         .cloned()
         .fold(f64::NEG_INFINITY, f64::max);
     if ts_mass > max_text {
-        for v in row.iter_mut().take(TS_BEGIN as usize) {
+        for v in row.iter_mut().take(ts_begin as usize) {
             *v = neg_inf;
         }
     }
@@ -444,12 +589,12 @@ fn round2(v: f64) -> f64 {
 /// The `<|lang|>` prompt token. `DOCLING_RS_ASR_LANG` selects the language
 /// (default `en`); codes are resolved through `added_tokens.json` next to the
 /// vocabulary when present, so any Whisper language works without a table here.
-fn language_token() -> u32 {
+fn language_token(added_tokens_default: &str) -> u32 {
     let lang = std::env::var("DOCLING_RS_ASR_LANG").unwrap_or_else(|_| "en".into());
     if lang == "en" {
         return LANG_EN;
     }
-    let path = model_path("DOCLING_ASR_ADDED_TOKENS", "models/asr/added_tokens.json");
+    let path = model_path("DOCLING_ASR_ADDED_TOKENS", added_tokens_default);
     if let Ok(raw) = std::fs::read_to_string(&path) {
         if let Ok(map) = serde_json::from_str::<std::collections::HashMap<String, u32>>(&raw) {
             if let Some(&id) = map.get(&format!("<|{lang}|>")) {
@@ -467,9 +612,17 @@ mod tests {
     #[test]
     fn timestamp_rules_force_initial_timestamp_and_pairing() {
         let v = 51_865usize;
+        let sp = Specials {
+            eot: EOT,
+            sot: SOT,
+            lang: Some(LANG_EN),
+            transcribe: Some(TRANSCRIBE),
+            no_speech: NO_SPEECH,
+            ts_begin: TS_BEGIN,
+        };
         // Step 0: only timestamps within the first second survive.
         let mut row = vec![0f32; v];
-        apply_rules(&mut row, &[], 0, &[]);
+        apply_rules(&mut row, &[], 0, &[], sp);
         assert!(row[..TS_BEGIN as usize]
             .iter()
             .all(|&x| x == f32::NEG_INFINITY));
@@ -488,6 +641,7 @@ mod tests {
             &[TS_BEGIN, 1000, TS_BEGIN + 10, TS_BEGIN + 10],
             4,
             &[],
+            sp,
         );
         assert!(row[TS_BEGIN as usize..]
             .iter()
@@ -498,16 +652,74 @@ mod tests {
     #[test]
     fn lone_opening_timestamp_only_allows_closing_timestamp() {
         let v = 51_865usize;
+        let sp = Specials {
+            eot: EOT,
+            sot: SOT,
+            lang: Some(LANG_EN),
+            transcribe: Some(TRANSCRIBE),
+            no_speech: NO_SPEECH,
+            ts_begin: TS_BEGIN,
+        };
         let mut row = vec![0f32; v];
         // "<|5.00|> hello" then an opening ts <|7.00|>: text is masked, earlier
         // timestamps are masked (monotonicity), the closing timestamp — allowed
         // to repeat the opening one — survives. (On this uniform row the
         // timestamp-probability-mass rule also masks EOT, exactly as OpenAI's
         // `logits[:timestamp_begin] = -inf` does.)
-        apply_rules(&mut row, &[TS_BEGIN + 250, 1000, TS_BEGIN + 350], 3, &[]);
+        apply_rules(
+            &mut row,
+            &[TS_BEGIN + 250, 1000, TS_BEGIN + 350],
+            3,
+            &[],
+            sp,
+        );
         assert!(row[..EOT as usize].iter().all(|&x| x == f32::NEG_INFINITY));
         assert_eq!(row[(TS_BEGIN + 349) as usize], f32::NEG_INFINITY);
         assert!(row[(TS_BEGIN + 350) as usize].is_finite());
         assert!(row[(TS_BEGIN + 351) as usize].is_finite());
+    }
+
+    #[test]
+    fn unknown_preset_is_a_clear_error() {
+        let err = match Transcriber::load_preset(Some("whisper_mega")) {
+            Err(e) => e,
+            Ok(_) => panic!("unknown preset must fail"),
+        };
+        assert!(err.contains("unknown model preset"), "{err}");
+        assert!(err.contains("whisper_tiny_en"), "lists the options: {err}");
+    }
+
+    #[test]
+    fn preset_dirs_resolve() {
+        assert_eq!(preset_dir(None), "models/asr");
+        assert_eq!(preset_dir(Some("whisper_tiny")), "models/asr");
+        assert_eq!(
+            preset_dir(Some("whisper_tiny_en")),
+            "models/asr/whisper_tiny_en"
+        );
+    }
+
+    #[test]
+    fn specials_resolve_english_only_and_multilingual() {
+        // The modern HF export layout: unified token set at the English-only
+        // (shifted) ids — <|en|> exists either way, so the preset flag decides.
+        let mut map = std::collections::HashMap::new();
+        for (tok, id) in [
+            ("<|endoftext|>", 50_256u32),
+            ("<|startoftranscript|>", 50_257),
+            ("<|en|>", 50_258),
+            ("<|transcribe|>", 50_358),
+            ("<|nocaptions|>", 50_361),
+            ("<|0.00|>", 50_363),
+        ] {
+            map.insert(tok.to_string(), id);
+        }
+        let en = Specials::resolve(&map, "nonexistent.json", true);
+        assert_eq!((en.eot, en.sot, en.ts_begin), (50_256, 50_257, 50_363));
+        assert_eq!(en.lang, None, "English-only prompts with <|sot|> alone");
+        assert_eq!(en.no_speech, 50_361);
+        let multi = Specials::resolve(&map, "nonexistent.json", false);
+        assert_eq!(multi.lang, Some(LANG_EN));
+        assert_eq!(multi.transcribe, Some(50_358));
     }
 }

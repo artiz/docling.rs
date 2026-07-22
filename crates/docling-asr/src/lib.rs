@@ -27,7 +27,7 @@ use std::fmt;
 
 use docling_core::{DoclingDocument, Node};
 
-pub use whisper::{models_available, Segment, Transcriber};
+pub use whisper::{models_available, models_available_for, Segment, Transcriber, PRESETS};
 
 /// Errors from the ASR backend. Detailed and surfaced (never silently skipped).
 #[derive(Debug)]
@@ -48,16 +48,35 @@ impl std::error::Error for AsrError {}
 /// [`Transcriber`] directly to batch many files. Fails with a clear message
 /// when the model files are absent.
 pub fn convert_audio(bytes: &[u8], name: &str) -> Result<DoclingDocument, AsrError> {
-    if !models_available() {
-        return Err(AsrError(
-            "asr: Whisper model files not found under models/asr/ \
-             (run scripts/install/download_dependencies.sh, or set \
-             DOCLING_ASR_{ENCODER,DECODER,VOCAB})"
-                .into(),
-        ));
+    convert_audio_with_model(bytes, name, None)
+}
+
+/// [`convert_audio`] with a named Whisper model preset (see [`PRESETS`]):
+/// English-only and Distil-Whisper variants, each under its own
+/// `models/asr/<preset>/` directory (docling PR #3741's presets, limited to
+/// the variants with public ONNX exports).
+pub fn convert_audio_with_model(
+    bytes: &[u8],
+    name: &str,
+    model: Option<&str>,
+) -> Result<DoclingDocument, AsrError> {
+    if !models_available_for(model) {
+        let dir = match model {
+            None | Some("whisper_tiny") | Some("") => "models/asr/".to_string(),
+            Some(p) => format!("models/asr/{p}/"),
+        };
+        return Err(AsrError(format!(
+            "asr: Whisper model files not found under {dir} \
+             (run scripts/install/download_dependencies.sh{}, or set \
+             DOCLING_ASR_{{ENCODER,DECODER,VOCAB}})",
+            model
+                .filter(|m| !m.is_empty() && *m != "whisper_tiny")
+                .map(|m| format!(" --asr-model {m}"))
+                .unwrap_or_default()
+        )));
     }
     let samples = audio::decode_to_mono_16k(bytes, name).map_err(AsrError)?;
-    let mut transcriber = Transcriber::load().map_err(AsrError)?;
+    let mut transcriber = Transcriber::load_preset(model).map_err(AsrError)?;
     let segments = transcriber.transcribe(&samples).map_err(AsrError)?;
 
     let mut doc = DoclingDocument::new(name);

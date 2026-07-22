@@ -76,6 +76,10 @@ pub struct DocumentConverter {
     no_table_former: bool,
     no_ocr: bool,
     use_web_browser: bool,
+    /// Named Whisper model preset for audio sources (docling's ASR model
+    /// specs, PR #3741): English-only / Distil-Whisper variants under
+    /// `models/asr/<preset>/`. `None` = the default Whisper tiny.
+    asr_model: Option<String>,
     /// Opt-in PDF/image enrichment models (docling's
     /// `do_picture_classification` / `do_code_enrichment` /
     /// `do_formula_enrichment`).
@@ -98,8 +102,20 @@ impl DocumentConverter {
             no_table_former: false,
             no_ocr: false,
             use_web_browser: false,
+            asr_model: None,
             enrich: crate::EnrichmentOptions::default(),
         }
+    }
+
+    /// Select a named Whisper model preset for audio sources — the
+    /// English-only (`whisper_tiny_en`, `whisper_base_en`, `whisper_small_en`)
+    /// and Distil-Whisper (`whisper_distil_small_en`) variants of docling's
+    /// ASR model specs. `None` (default) uses Whisper tiny (multilingual)
+    /// from `models/asr/`; presets load from `models/asr/<preset>/` (fetch
+    /// them with `download_dependencies.sh --asr-model <preset>`).
+    pub fn asr_model(mut self, model: Option<String>) -> Self {
+        self.asr_model = model;
+        self
     }
 
     /// Select the Markdown export mode for documents this converter produces.
@@ -404,8 +420,12 @@ impl DocumentConverter {
             // Audio → Whisper ASR (symphonia decode + ONNX inference); each
             // transcribed segment becomes a `[time: start-end] text` paragraph.
             #[cfg(feature = "asr")]
-            InputFormat::Audio => docling_asr::convert_audio(&source.bytes, &source.name)
-                .map_err(|e| ConversionError::Parse(e.to_string()))?,
+            InputFormat::Audio => docling_asr::convert_audio_with_model(
+                &source.bytes,
+                &source.name,
+                self.asr_model.as_deref(),
+            )
+            .map_err(|e| ConversionError::Parse(e.to_string()))?,
             // Without the full ML pipeline, `pdf-text` still converts a PDF's
             // embedded text layer (pure Rust — the wasm32 path), equivalent to
             // `--no-ocr`: flat paragraphs, no headings/tables/pictures. A
