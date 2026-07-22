@@ -68,7 +68,7 @@ use docling_core::ImageMode;
 /// Phase 0 the format→backend dispatch is a direct match; the Python notion of
 /// per-format `FormatOption` (backend + pipeline + options) arrives with the
 /// PDF/ML pipeline in a later phase.
-#[derive(Debug, Default, Clone)]
+#[derive(Debug, Clone)]
 pub struct DocumentConverter {
     allowed_formats: Option<HashSet<InputFormat>>,
     strict: bool,
@@ -87,12 +87,62 @@ pub struct DocumentConverter {
     /// `do_picture_classification` / `do_code_enrichment` /
     /// `do_formula_enrichment`).
     enrich: crate::EnrichmentOptions,
+    /// 1-based inclusive PDF page window (#80). See [`Self::page_range`].
+    page_range: Option<(usize, usize)>,
+    /// Directory referenced-mode streaming writes images into (#80).
+    /// See [`Self::artifacts_dir`].
+    artifacts_dir: String,
 }
 
 /// Default cap on sampled frames per video. Scene changes rarely exceed this
 /// in short clips, and uniform fallback at 8 keeps JSON/DCLX output (which
 /// embeds the PNGs) within sane bounds.
 pub const DEFAULT_VIDEO_FRAMES: usize = 8;
+
+/// Parse a user-facing page-range string (issue #80's `--pages`): `"A-B"` for
+/// an inclusive 1-based window, or a single `"N"` for one page. Whitespace
+/// around the numbers is tolerated. Validation against the actual page count
+/// happens at convert time; this only checks the spelling (`first >= 1`,
+/// `first <= last`).
+pub fn parse_page_range(s: &str) -> Result<(usize, usize), String> {
+    let parse_one = |part: &str| {
+        part.trim()
+            .parse::<usize>()
+            .map_err(|_| format!("invalid page number '{}'", part.trim()))
+    };
+    let (first, last) = match s.split_once('-') {
+        Some((a, b)) => (parse_one(a)?, parse_one(b)?),
+        None => {
+            let n = parse_one(s)?;
+            (n, n)
+        }
+    };
+    if first == 0 {
+        return Err("pages are 1-based; the range starts at 1".into());
+    }
+    if last < first {
+        return Err(format!("range {first}-{last} is inverted (first <= last)"));
+    }
+    Ok((first, last))
+}
+
+impl Default for DocumentConverter {
+    fn default() -> Self {
+        Self {
+            allowed_formats: None,
+            strict: false,
+            fetch_images: false,
+            no_table_former: false,
+            no_ocr: false,
+            use_web_browser: false,
+            asr_model: None,
+            video_frames: None,
+            enrich: crate::EnrichmentOptions::default(),
+            page_range: None,
+            artifacts_dir: "artifacts".to_string(),
+        }
+    }
+}
 
 impl DocumentConverter {
     /// A converter that accepts every supported format.
@@ -105,15 +155,28 @@ impl DocumentConverter {
     pub fn with_allowed_formats(formats: impl IntoIterator<Item = InputFormat>) -> Self {
         Self {
             allowed_formats: Some(formats.into_iter().collect()),
-            strict: false,
-            fetch_images: false,
-            no_table_former: false,
-            no_ocr: false,
-            use_web_browser: false,
-            asr_model: None,
-            video_frames: None,
-            enrich: crate::EnrichmentOptions::default(),
+            ..Self::default()
         }
+    }
+
+    /// Convert only PDF pages `first..=last` (**1-based** inclusive, the page
+    /// numbers a viewer shows — issue #80's `--pages A-B`). Out-of-window pages
+    /// are skipped before rasterization, so converting 3 pages of a 500-page
+    /// PDF costs 3 pages. `last` clamps to the document; a window that selects
+    /// no pages at all errors at convert time. Non-PDF formats ignore the
+    /// window (they convert whole).
+    pub fn page_range(mut self, first: usize, last: usize) -> Self {
+        self.page_range = Some((first, last));
+        self
+    }
+
+    /// Where [`ImageMode::Referenced`] streaming writes image files, and the
+    /// link prefix used in the Markdown (default `artifacts`, matching the
+    /// buffered export's convention). Relative paths resolve against the
+    /// process working directory.
+    pub fn artifacts_dir(mut self, dir: impl Into<String>) -> Self {
+        self.artifacts_dir = dir.into();
+        self
     }
 
     /// Cap the number of frames sampled from a video (#138 Phase 2); `0`
@@ -283,40 +346,40 @@ impl DocumentConverter {
     }
 
     /// Like [`convert_streaming`](Self::convert_streaming) but with an explicit
-    /// picture [`ImageMode`]. Only [`ImageMode::Placeholder`] and
-    /// [`ImageMode::Embedded`] are streamable; [`ImageMode::Referenced`] writes
-    /// separate image files and needs the buffered
-    /// [`DoclingDocument::export_to_markdown_with_images`] path, so it is rejected
-    /// here.
+    /// picture [`ImageMode`].
     ///
-    /// [`DoclingDocument::export_to_markdown_with_images`]: docling_core::DoclingDocument::export_to_markdown_with_images
+    /// [`ImageMode::Referenced`] streams too (issue #80): each page's images
+    /// are written to [`artifacts_dir`](Self::artifacts_dir) *as the page's
+    /// Markdown is emitted* and dropped from memory, so an image-heavy PDF
+    /// holds ~one page of images at a time instead of all of them until
+    /// export. The chunks and files match the buffered
+    /// `export_to_markdown_with_images(ImageMode::Referenced, ..)` output.
     #[cfg(feature = "pdf")]
     pub fn convert_streaming_images(
         &self,
         source: SourceDocument,
         image_mode: ImageMode,
     ) -> Result<MarkdownStream, ConversionError> {
-        if image_mode == ImageMode::Referenced {
-            return Err(ConversionError::Streaming(
-                "referenced image mode writes image files; use convert(...).document.\
-                 export_to_markdown_with_images(ImageMode::Referenced, ..) instead"
-                    .into(),
-            ));
-        }
         if let Some(allowed) = &self.allowed_formats {
             if !allowed.contains(&source.format) {
                 return Err(ConversionError::UnsupportedFormat(source.format));
             }
         }
-        Ok(crate::stream::spawn(
-            self.clone(),
-            source,
-            image_mode,
-            self.strict,
-            self.no_table_former,
-            self.no_ocr,
-            self.enrich,
-        ))
+        Ok(crate::stream::spawn(self.clone(), source, image_mode))
+    }
+
+    /// Streaming internals ([`crate::stream`]) read the producer's settings
+    /// off the converter clone they receive.
+    #[cfg(feature = "pdf")]
+    pub(crate) fn stream_settings(&self) -> crate::stream::StreamSettings {
+        crate::stream::StreamSettings {
+            strict: self.strict,
+            no_table_former: self.no_table_former,
+            no_ocr: self.no_ocr,
+            enrich: self.enrich,
+            page_range: self.page_range,
+            artifacts_dir: self.artifacts_dir.clone(),
+        }
     }
 
     /// Convert a single source document.
@@ -416,6 +479,7 @@ impl DocumentConverter {
                 self.no_table_former,
                 self.no_ocr,
                 self.enrich,
+                self.page_range,
             )
             .map_err(|e| ConversionError::with_source("pdf", e))?,
             #[cfg(feature = "pdf")]
@@ -464,8 +528,12 @@ impl DocumentConverter {
             // needs OCR" — say so instead of returning nothing.
             #[cfg(all(feature = "pdf-text", not(feature = "pdf")))]
             InputFormat::Pdf => {
-                let doc = docling_pdf::convert_text_layer(&source.bytes, &source.name)
-                    .map_err(|e| ConversionError::with_source("pdf", e))?;
+                let doc = docling_pdf::convert_text_layer_pages(
+                    &source.bytes,
+                    &source.name,
+                    self.page_range,
+                )
+                .map_err(|e| ConversionError::with_source("pdf", e))?;
                 if doc.nodes.is_empty() {
                     return Err(ConversionError::Parse(
                         "PDF has no embedded text layer (scanned/image-only?); OCR needs a \

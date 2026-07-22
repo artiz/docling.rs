@@ -37,6 +37,9 @@ pub struct ConverterOptions {
     /// Max frames sampled from a video input as timestamped pictures (needs
     /// the ffmpeg binary at runtime; `0` = transcript only). Default 8.
     pub video_frames: Option<u32>,
+    /// Convert only this PDF page window: `"A-B"` or a single page `"N"`
+    /// (1-based inclusive — issue #80). Other formats ignore it.
+    pub pages: Option<String>,
     /// Emit cleaner, more conformant Markdown (code-fence languages preserved,
     /// no inline-run spacing artifacts) instead of docling's byte-for-byte
     /// legacy output. Markdown only. Default `false`.
@@ -75,6 +78,8 @@ pub struct ConvertOptions {
     pub asr_model: Option<String>,
     /// Max frames sampled from a video input (`0` = transcript only).
     pub video_frames: Option<u32>,
+    /// PDF page window `"A-B"` (or `"N"`), 1-based inclusive (#80).
+    pub pages: Option<String>,
     pub allowed_formats: Option<Vec<String>>,
     pub to: Option<String>,
     pub image_mode: Option<String>,
@@ -129,6 +134,7 @@ struct ConvertConfig {
     fetch_images: bool,
     asr_model: Option<String>,
     video_frames: Option<usize>,
+    page_range: Option<(usize, usize)>,
     allowed_formats: Option<Vec<InputFormat>>,
     to: OutputKind,
     image_mode: ImageMode,
@@ -186,11 +192,18 @@ fn build_config(o: ConvertOptions) -> Result<ConvertConfig> {
         fetch_images: o.fetch_images.unwrap_or(false),
         asr_model: o.asr_model,
         video_frames: o.video_frames.map(|n| n as usize),
+        page_range: parse_pages(o.pages.as_deref())?,
         allowed_formats: allowed,
         to: parse_output_kind(o.to.as_deref())?,
         image_mode: parse_image_mode(o.image_mode.as_deref())?,
         artifacts_dir: o.artifacts_dir.unwrap_or_else(|| "artifacts".to_string()),
     })
+}
+
+/// `"A-B"` / `"N"` → the converter's 1-based inclusive page window (#80).
+fn parse_pages(s: Option<&str>) -> Result<Option<(usize, usize)>> {
+    s.map(|v| docling::parse_page_range(v).map_err(|e| Error::from_reason(format!("pages: {e}"))))
+        .transpose()
 }
 
 fn build_converter(cfg: &ConvertConfig) -> RsConverter {
@@ -202,8 +215,12 @@ fn build_converter(cfg: &ConvertConfig) -> RsConverter {
         .strict(cfg.strict)
         .fetch_images(cfg.fetch_images)
         .asr_model(cfg.asr_model.clone());
-    match cfg.video_frames {
+    let base = match cfg.video_frames {
         Some(max) => base.video_frames(max),
+        None => base,
+    };
+    match cfg.page_range {
+        Some((first, last)) => base.page_range(first, last),
         None => base,
     }
 }
@@ -376,6 +393,7 @@ pub struct DocumentConverter {
     fetch_images: bool,
     asr_model: Option<String>,
     video_frames: Option<usize>,
+    page_range: Option<(usize, usize)>,
     allowed_formats: Option<Vec<InputFormat>>,
 }
 
@@ -397,6 +415,7 @@ impl DocumentConverter {
             fetch_images: o.fetch_images.unwrap_or(false),
             asr_model: o.asr_model.clone(),
             video_frames: o.video_frames.map(|n| n as usize),
+            page_range: parse_pages(o.pages.as_deref())?,
             allowed_formats: allowed,
         })
     }
@@ -408,6 +427,7 @@ impl DocumentConverter {
             fetch_images: self.fetch_images,
             asr_model: self.asr_model.clone(),
             video_frames: self.video_frames,
+            page_range: self.page_range,
             allowed_formats: self.allowed_formats.clone(),
             to: parse_output_kind(out.to.as_deref())?,
             image_mode: parse_image_mode(out.image_mode.as_deref())?,
@@ -820,6 +840,7 @@ fn output_config(out: Option<OutputOptions>, strict: bool) -> Result<ConvertConf
         fetch_images: false,
         asr_model: None,
         video_frames: None,
+        page_range: None,
         allowed_formats: None,
         to: parse_output_kind(out.to.as_deref())?,
         image_mode: parse_image_mode(out.image_mode.as_deref())?,

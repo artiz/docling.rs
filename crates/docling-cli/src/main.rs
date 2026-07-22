@@ -3,13 +3,19 @@
 //! The docling.rs counterpart of `docling.cli.main`; `docling-rs serve`
 //! (with `--features serve`) starts the HTTP conversion API.
 //!
-//! Usage: docling-rs [--strict] [--to md|json] [--images MODE] [--fetch-images] [--no-stream] [--no-table-former] [--no-ocr] [--asr-model PRESET] [--video-frames N] [--use-web-browser] [--enrich-picture-classes] [--enrich-code] [--enrich-formula] <input-file>
+//! Usage: docling-rs [--strict] [--to md|json] [--pages A-B] [--images MODE] [--fetch-images] [--no-stream] [--no-table-former] [--no-ocr] [--asr-model PRESET] [--video-frames N] [--use-web-browser] [--enrich-picture-classes] [--enrich-code] [--enrich-formula] <input-file>
 //!   --to md|json       output format (default: md). `json` emits docling-core's
 //!                      native DoclingDocument JSON (export_to_dict).
+//!   --pages A-B        convert only PDF pages A through B (1-based, inclusive;
+//!                      a single page number also works). Skipped pages are
+//!                      never rasterized, so a small window over a huge PDF is
+//!                      cheap. Non-PDF inputs ignore this.
 //!   --images MODE      picture handling for Markdown (mirrors docling's
 //!                      image_mode): placeholder (default) | embedded | referenced.
-//!                      `referenced` writes image files under ./artifacts/.
-//!                      JSON always embeds extracted images as data URIs.
+//!                      `referenced` writes image files under ./artifacts/ —
+//!                      streamed to disk page by page, so image-heavy PDFs stay
+//!                      memory-bounded. JSON always embeds extracted images as
+//!                      data URIs.
 //!   --fetch-images     for HTML/EPUB, resolve external <img src> (data: URIs,
 //!                      local files, http(s) URLs, EPUB archive entries) and embed
 //!                      the bytes. Off by default; fetches over the network.
@@ -87,6 +93,7 @@ fn main() -> ExitCode {
     let mut enrich_code = false;
     let mut enrich_formula = false;
     let mut bench_warm: Option<usize> = None;
+    let mut pages: Option<(usize, usize)> = None;
     let mut path: Option<String> = None;
     let mut args = std::env::args().skip(1);
     while let Some(arg) = args.next() {
@@ -111,6 +118,18 @@ fn main() -> ExitCode {
             // 0 = transcript only). Default 8.
             "--video-frames" => video_frames = args.next().and_then(|v| v.parse().ok()),
             "--images" => images = args.next().unwrap_or_default(),
+            // PDF page window, 1-based inclusive: `--pages 3-7` or `--pages 3`.
+            "--pages" => match args.next().as_deref().map(docling::parse_page_range) {
+                Some(Ok(range)) => pages = Some(range),
+                Some(Err(e)) => {
+                    eprintln!("error: --pages: {e}");
+                    return ExitCode::from(2);
+                }
+                None => {
+                    eprintln!("error: --pages needs a range like 1-10 (or a single page)");
+                    return ExitCode::from(2);
+                }
+            },
             // Hidden benchmarking aid: load the PDF/image pipeline once, then time
             // N warm conversions (models already loaded), printing the avg seconds
             // per conversion to stdout. This is the startup-excluded counterpart to
@@ -192,13 +211,17 @@ fn main() -> ExitCode {
     if let Some(max) = video_frames {
         converter = converter.video_frames(max);
     }
+    if let Some((first, last)) = pages {
+        converter = converter.page_range(first, last);
+    }
 
     // Stream Markdown by default: print each chunk as the converter produces it
-    // (page by page for PDF). JSON needs the whole tree, and the referenced image
-    // mode writes sidecar files, so both keep the buffered path. `--no-stream` opts
-    // back into buffering for the streamable cases too.
+    // (page by page for PDF). Referenced images stream too (#80): each page's
+    // files land under ./artifacts/ as that page is printed, so image bytes
+    // never accumulate. JSON needs the whole tree, so it keeps the buffered
+    // path. `--no-stream` opts back into buffering.
     let is_markdown = matches!(to.as_str(), "md" | "markdown");
-    if is_markdown && image_mode != ImageMode::Referenced && !no_stream {
+    if is_markdown && !no_stream {
         let stream = match converter.convert_streaming_images(source, image_mode) {
             Ok(s) => s,
             Err(e) => {
@@ -226,6 +249,9 @@ fn main() -> ExitCode {
         if let Err(e) = out.flush() {
             eprintln!("error: writing output: {e}");
             return ExitCode::FAILURE;
+        }
+        if image_mode == ImageMode::Referenced {
+            eprintln!("referenced images (if any) written to ./artifacts/ as pages completed");
         }
         return ExitCode::SUCCESS;
     }

@@ -97,8 +97,34 @@ impl From<pdfium_render::prelude::PdfiumError> for PdfError {
 /// layer) yields an empty document rather than an error, same as `no_ocr` —
 /// callers can detect that and fall back to an OCR-capable build.
 pub fn convert_text_layer(bytes: &[u8], name: &str) -> Result<DoclingDocument, PdfError> {
+    convert_text_layer_pages(bytes, name, None)
+}
+
+/// [`convert_text_layer`] restricted to a **1-based inclusive** page window
+/// (issue #80's `--pages`); `None` converts everything. The window is
+/// validated the same way as [`Pipeline::pages`]: `first <= last`, 1-based,
+/// and it must select at least one existing page.
+pub fn convert_text_layer_pages(
+    bytes: &[u8],
+    name: &str,
+    pages: Option<(usize, usize)>,
+) -> Result<DoclingDocument, PdfError> {
+    if let Some((first, last)) = pages {
+        if first == 0 || last < first {
+            return Err(PdfError::Pdfium(format!(
+                "invalid page range {first}-{last} (pages are 1-based, first <= last)"
+            )));
+        }
+    }
     let mut doc = DoclingDocument::new(name);
-    for page in textparse::pdf_text_pages(bytes) {
+    let mut total = 0usize;
+    for (i, page) in textparse::pdf_text_pages(bytes).into_iter().enumerate() {
+        total += 1;
+        if let Some((first, last)) = pages {
+            if i + 1 < first || i + 1 > last {
+                continue;
+            }
+        }
         let mut regions = Vec::new();
         assemble::add_orphan_regions(&mut regions, &page.cells);
         let table_rows = vec![None; regions.len()];
@@ -106,6 +132,13 @@ pub fn convert_text_layer(bytes: &[u8], name: &str) -> Result<DoclingDocument, P
         let (nodes, links) = assemble::assemble_page(&page, regions, &table_rows, &enrich_out);
         doc.nodes.extend(nodes);
         doc.links.extend(links);
+    }
+    if let Some((first, last)) = pages {
+        if first > total {
+            return Err(PdfError::Pdfium(format!(
+                "page range {first}-{last} is outside the document ({total} page(s))"
+            )));
+        }
     }
     assemble::merge_continuations(&mut doc.nodes);
     Ok(doc)
@@ -680,6 +713,8 @@ pub struct Pipeline {
     no_ocr: bool,
     /// Opt-in enrichment passes. See [`Pipeline::enrichments`].
     enrich: EnrichmentOptions,
+    /// 1-based inclusive page window to convert. See [`Pipeline::pages`].
+    page_range: Option<(usize, usize)>,
 }
 
 #[cfg(feature = "ml")]
@@ -699,7 +734,47 @@ impl Pipeline {
             no_table_former: false,
             no_ocr: false,
             enrich: EnrichmentOptions::default(),
+            page_range: None,
         })
+    }
+
+    /// Convert only pages `first..=last` (**1-based**, like the page numbers a
+    /// PDF viewer shows — issue #80's `--pages A-B`). Out-of-range pages are
+    /// skipped before rasterization, so the cost is proportional to the window,
+    /// not the document. `last` past the end of the document clamps; a window
+    /// that selects no pages at all (`first` beyond the last page) is an error
+    /// at convert time. `None` (the default) converts everything.
+    pub fn pages(mut self, range: Option<(usize, usize)>) -> Self {
+        self.page_range = range;
+        self
+    }
+
+    /// In-place variant of [`pages`](Self::pages) for a long-lived pipeline
+    /// (e.g. docling-serve's warm instance) that applies a per-request window
+    /// without rebuilding — unlike the model switches, the window is pure
+    /// configuration. Set it before every conversion; it stays until changed.
+    pub fn set_pages(&mut self, range: Option<(usize, usize)>) {
+        self.page_range = range;
+    }
+
+    /// Resolve the configured 1-based window against a page count into the
+    /// 0-based inclusive form the backend walks, validating it selects at
+    /// least one existing page.
+    fn resolve_range(&self, total: usize) -> Result<Option<(usize, usize)>, PdfError> {
+        let Some((first, last)) = self.page_range else {
+            return Ok(None);
+        };
+        if first == 0 || last < first {
+            return Err(PdfError::Pdfium(format!(
+                "invalid page range {first}-{last} (pages are 1-based, first <= last)"
+            )));
+        }
+        if first > total {
+            return Err(PdfError::Pdfium(format!(
+                "page range {first}-{last} is outside the document ({total} page(s))"
+            )));
+        }
+        Ok(Some((first - 1, last.min(total) - 1)))
     }
 
     /// Enable the opt-in enrichment passes (docling's
@@ -796,10 +871,14 @@ impl Pipeline {
         name: &str,
     ) -> Result<DoclingDocument, PdfError> {
         let pages = pdfium_backend::page_count(bytes, password)?;
-        let doc = if self.target_workers >= 2 && pages >= self.parallel_min {
-            self.convert_parallel(bytes, password, name)?
+        let range = self.resolve_range(pages)?;
+        // Serial vs parallel is decided by the pages actually converted: a
+        // 3-page window over a 500-page PDF should not pay the pool load.
+        let selected = range.map_or(pages, |(a, b)| b - a + 1);
+        let doc = if self.target_workers >= 2 && selected >= self.parallel_min {
+            self.convert_parallel(bytes, password, name, range)?
         } else {
-            self.convert_serial(bytes, password, name)?
+            self.convert_serial(bytes, password, name, range)?
         };
         timing::report();
         Ok(doc)
@@ -812,16 +891,23 @@ impl Pipeline {
         bytes: &[u8],
         password: Option<&str>,
         name: &str,
+        range: Option<(usize, usize)>,
     ) -> Result<DoclingDocument, PdfError> {
         let mut doc = DoclingDocument::new(name);
         let render_image = !self.no_ocr;
         let worker = self.primary()?;
-        pdfium_backend::for_each_page(bytes, password, render_image, |n, _total, mut page| {
-            let (nodes, links) = worker.process(n, &mut page)?;
-            doc.nodes.extend(nodes);
-            doc.links.extend(links);
-            Ok::<(), PdfError>(())
-        })?;
+        pdfium_backend::for_each_page(
+            bytes,
+            password,
+            render_image,
+            range,
+            |n, _total, mut page| {
+                let (nodes, links) = worker.process(n, &mut page)?;
+                doc.nodes.extend(nodes);
+                doc.links.extend(links);
+                Ok::<(), PdfError>(())
+            },
+        )?;
         assemble::merge_continuations(&mut doc.nodes);
         Ok(doc)
     }
@@ -836,6 +922,7 @@ impl Pipeline {
         bytes: &[u8],
         password: Option<&str>,
         name: &str,
+        range: Option<(usize, usize)>,
     ) -> Result<DoclingDocument, PdfError> {
         self.ensure_pool()?;
         let n_workers = self.pool.len();
@@ -893,12 +980,17 @@ impl Pipeline {
             // Render on this thread and feed the workers; backpressure blocks here
             // when the channel is full. Dropping `work_tx` afterwards signals the
             // workers (recv → Err) to finish.
-            let render =
-                pdfium_backend::for_each_page(bytes, password, render_image, |i, _total, page| {
+            let render = pdfium_backend::for_each_page(
+                bytes,
+                password,
+                render_image,
+                range,
+                |i, _total, page| {
                     work_tx
                         .send((i, page))
                         .map_err(|_| PdfError::Pdfium("page-worker channel closed".into()))
-                });
+                },
+            );
             drop(work_tx);
             if let Err(e) = render {
                 let mut slot = first_err.lock().unwrap();
@@ -950,10 +1042,12 @@ impl Pipeline {
     {
         let _ = name; // page nodes carry no name; the caller owns the document name.
         let pages = pdfium_backend::page_count(bytes, password)?;
-        let r = if self.target_workers >= 2 && pages >= self.parallel_min {
-            self.convert_streaming_parallel(bytes, password, emit)
+        let range = self.resolve_range(pages)?;
+        let selected = range.map_or(pages, |(a, b)| b - a + 1);
+        let r = if self.target_workers >= 2 && selected >= self.parallel_min {
+            self.convert_streaming_parallel(bytes, password, range, emit)
         } else {
-            self.convert_streaming_serial(bytes, password, emit)
+            self.convert_streaming_serial(bytes, password, range, emit)
         };
         timing::report();
         r
@@ -965,6 +1059,7 @@ impl Pipeline {
         &mut self,
         bytes: &[u8],
         password: Option<&str>,
+        range: Option<(usize, usize)>,
         mut emit: F,
     ) -> Result<(), PdfError>
     where
@@ -973,10 +1068,16 @@ impl Pipeline {
         let mut asm = assemble::StreamAssembler::new();
         let render_image = !self.no_ocr;
         let worker = self.primary()?;
-        pdfium_backend::for_each_page(bytes, password, render_image, |n, _total, mut page| {
-            let (nodes, links) = worker.process(n, &mut page)?;
-            emit(asm.push(nodes), links)
-        })?;
+        pdfium_backend::for_each_page(
+            bytes,
+            password,
+            render_image,
+            range,
+            |n, _total, mut page| {
+                let (nodes, links) = worker.process(n, &mut page)?;
+                emit(asm.push(nodes), links)
+            },
+        )?;
         emit(asm.finish(), Vec::new())
     }
 
@@ -990,6 +1091,7 @@ impl Pipeline {
         &mut self,
         bytes: &[u8],
         password: Option<&str>,
+        range: Option<(usize, usize)>,
         mut emit: F,
     ) -> Result<(), PdfError>
     where
@@ -1054,6 +1156,7 @@ impl Pipeline {
                         bytes,
                         password,
                         render_image,
+                        range,
                         |i, _total, page| {
                             work_tx
                                 .send((i, page))
@@ -1070,8 +1173,9 @@ impl Pipeline {
             drop(res_tx);
 
             // Collector (this thread): reorder into document order and emit.
+            // With a page window, indices start at the window's first page.
             let mut buffer: BTreeMap<usize, PageOut> = BTreeMap::new();
-            let mut next = 0usize;
+            let mut next = range.map_or(0, |(first, _)| first);
             for msg in res_rx.iter() {
                 match msg {
                     Err(e) => {
@@ -1187,6 +1291,7 @@ pub fn convert(
         false,
         false,
         EnrichmentOptions::default(),
+        None,
     )
 }
 
@@ -1202,11 +1307,13 @@ pub fn convert_with_options(
     no_table_former: bool,
     no_ocr: bool,
     enrich: EnrichmentOptions,
+    pages: Option<(usize, usize)>,
 ) -> Result<DoclingDocument, PdfError> {
     Pipeline::new()?
         .no_table_former(no_table_former)
         .no_ocr(no_ocr)
         .enrichments(enrich)
+        .pages(pages)
         .convert(bytes, password, name)
 }
 

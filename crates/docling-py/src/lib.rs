@@ -100,6 +100,8 @@ impl PyDocumentConverter {
     ///   decode formula LaTeX with the CodeFormulaV2 VLM (docling's flags of
     ///   the same names; need models/code_formula/).
     /// * `use_web_browser` — render HTML via headless Chrome before parsing.
+    /// * `page_range` — `(first, last)` 1-based inclusive PDF page window
+    ///   (docling's option of the same name, #80); other formats ignore it.
     ///
     /// Markdown flavour is chosen at export time by docling-core, so there is no
     /// `strict` knob here.
@@ -114,6 +116,7 @@ impl PyDocumentConverter {
         do_formula_enrichment = false,
         asr_model = None,
         video_frames = None,
+        page_range = None,
         allowed_formats = None,
     ))]
     #[allow(clippy::too_many_arguments)]
@@ -127,6 +130,7 @@ impl PyDocumentConverter {
         do_formula_enrichment: bool,
         asr_model: Option<String>,
         video_frames: Option<usize>,
+        page_range: Option<(usize, usize)>,
         allowed_formats: Option<Vec<String>>,
     ) -> PyResult<Self> {
         // `allowed_formats` (docling's converter arg) restricts which input
@@ -152,6 +156,12 @@ impl PyDocumentConverter {
         // transcript only; extraction needs the ffmpeg binary at runtime).
         let base = match video_frames {
             Some(max) => base.video_frames(max),
+            None => base,
+        };
+        // `page_range=(first, last)` converts only that 1-based inclusive PDF
+        // page window, docling's option of the same name (#80).
+        let base = match page_range {
+            Some((first, last)) => base.page_range(first, last),
             None => base,
         };
         Ok(Self {
