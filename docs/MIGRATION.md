@@ -5,6 +5,32 @@ Rust. This document is the **current status**: what is migrated, how it compares
 to upstream docling, and what is intentionally not done yet. (The original
 phased plan is kept at the end as history.)
 
+## The migration in numbers
+
+| | Lines of code | Files |
+|---|---|---|
+| Upstream Python: `docling` 2.114.0 (code wheel `docling-slim`) | 70,132 | 242 |
+| Upstream Python: `docling-core` 2.87.1 (document model, serializers, chunkers) | 30,888 | 103 |
+| **Upstream total** | **101,020** | **345** |
+| docling.rs — the port itself (`docling-core`, `docling`, `docling-pdf`, `docling-asr`, `docling-cli`) | 41,228 | — |
+| docling.rs — beyond upstream's packages (HTTP API, RAG, Python/Node/wasm bindings) | 10,538 | — |
+| **docling.rs total (`crates/*/**.rs`)** | **51,766** | **132** |
+
+Roughly **half the line count for the same behavior** — despite Rust carrying
+type/lifetime annotations Python doesn't — because the port reimplements from
+observed behavior rather than translating structure, and because byte-for-byte
+conformance testing against live docling (not code review) is what pins
+correctness. The Python side also leans on compiled dependencies that the Rust
+side had to re-port or re-integrate natively (docling-parse's C++ PDF text
+extraction became `textparse.rs`; HF `transformers` inference became hand-rolled
+ONNX pipelines), so the scope ratio understates the ported surface.
+
+**Timeline:** the first commit landed **2026-06-27**; the migration — every
+input format including PDF/ML, ASR and video, plus the serve/RAG/bindings
+extras — was done by **2026-07-23**: **26 days**, ~570 commits, migrated by
+[artiz](https://github.com/artiz) + Claude (Anthropic's Claude Code, doing the
+bulk of the porting under review).
+
 > **Status: the format migration is complete.** Every document format in
 > docling's pipeline is supported — including **audio/ASR** (Whisper via ONNX,
 > in `docling-asr`) — plus Markdown (legacy + a Rust-only *strict* mode),
