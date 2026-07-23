@@ -654,9 +654,11 @@ libraries next to the binary.
 
 The same features exist on every binding: the Python GPU wheel ships as
 [`docling-rs-cuda`](https://pypi.org/project/docling-rs-cuda/) on PyPI, the
-Node addon builds from source with `npm run build:cuda`
-(see `crates/docling-node/README.md`), and `docling-serve`/`docling-rag`
-take `--features cuda` like the CLI.
+Node addon ships as [`docling.rs-cuda`](https://www.npmjs.com/package/docling.rs-cuda)
+on npm (a small shim whose postinstall downloads the binaries from a GitHub
+release — or build from source with `npm run build:cuda`, see
+`crates/docling-node/README.md`), and `docling-serve`/`docling-rag` take
+`--features cuda` like the CLI.
 
 Measured (RTX 3080 Laptop vs Ryzen 9 5900HX, cold CLI runs): **1.5–2.1×**
 end-to-end on multi-page digital PDFs (`2305.03393v1`: 13.6 s → 7.0 s) and

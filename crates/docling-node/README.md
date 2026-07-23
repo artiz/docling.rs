@@ -47,9 +47,32 @@ npm run build        # release build → docling.rs.<platform>.node + native.js/
 
 ### GPU (CUDA)
 
-The npm binaries are CPU-only. For NVIDIA GPU inference in the PDF/image ML
-pipeline (issue #74 — same mechanism as the CLI and the `docling-rs-cuda`
-Python wheel), build the addon from source with the `cuda` feature:
+The regular `docling.rs` npm binaries are CPU-only. For NVIDIA GPU inference
+in the PDF/image ML pipeline (issue #74 — same mechanism as the CLI and the
+`docling-rs-cuda` Python wheel) there are two routes:
+
+**Install the [`docling.rs-cuda`](https://www.npmjs.com/package/docling.rs-cuda)
+package** (Linux x64). Same JS API; the npm tarball is a few KB and its
+`postinstall` downloads the CUDA addon + ONNX Runtime provider libraries from
+this repo's matching `npm-cuda-v<version>` GitHub release, verifying each
+file against the release's sha256 manifest (the binaries are far past npm's
+practical size limits — the same fetch-at-install model `onnxruntime-node`
+uses). Requires glibc ≥ 2.38 (Ubuntu 24.04+ era), CUDA 12 + cuDNN 9 at
+runtime, and `github.com` access at install time — or set
+`DOCLING_RS_NPM_CUDA_URL` to a mirror base URL / local directory with the
+same assets (air-gapped installs). To keep existing `require('docling.rs')`
+code unchanged, install it under an npm alias:
+
+```bash
+npm install docling.rs-cuda
+# or: npm install docling.rs@npm:docling.rs-cuda
+```
+
+The package is published by the `npm publish` workflow's `cuda` input
+(`.github/workflows/npm-publish.yml`), which also uploads the release assets
+(`crates/docling-node/cuda/` holds the shim sources).
+
+**Or build the addon from source** with the `cuda` feature:
 
 ```bash
 cd crates/docling-node
