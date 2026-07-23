@@ -142,9 +142,12 @@ fn apply_links_chunk(chunk: &str, queue: &mut Vec<(String, String)>) -> String {
 /// chunks (e.g. page by page, as the parallel PDF pipeline finishes pages) instead
 /// of building the whole string up front.
 ///
-/// Only [`ImageMode::Placeholder`] and [`ImageMode::Embedded`] are streamable:
-/// [`ImageMode::Referenced`] needs a side-channel for the image bytes, which only
-/// the buffered [`to_markdown_images`] provides.
+/// [`ImageMode::Placeholder`] and [`ImageMode::Embedded`] render inline.
+/// [`ImageMode::Referenced`] additionally hands each picture's bytes out through
+/// [`take_artifacts`](Self::take_artifacts) — construct with
+/// [`with_artifacts`](Self::with_artifacts) and drain after every push so the
+/// bytes can be written to disk as pages finish instead of accumulating for the
+/// whole document (issue #80's memory-bounded image handling).
 ///
 /// Each [`push`](Self::push) must contain whole blocks in reading order: a caller
 /// must not split a run of list items across two pushes (the run would render as
@@ -158,22 +161,55 @@ pub struct MarkdownStreamer {
     emitted_any: bool,
     /// Recovered links not yet placed (strict mode), consumed in document order.
     links: Vec<(String, String)>,
+    /// Referenced mode: the link prefix, the not-yet-drained `(path, bytes)`
+    /// artifacts, and the running image number (continues across pushes so the
+    /// stream matches the buffered serializer's `image_000000…` numbering).
+    artifacts_dir: String,
+    artifacts: Vec<(String, Vec<u8>)>,
+    pic_index: usize,
 }
 
 impl MarkdownStreamer {
     /// Create a streamer. `compact_tables` mirrors [`DoclingDocument::compact_tables`].
+    /// For [`ImageMode::Referenced`] use [`with_artifacts`](Self::with_artifacts).
     pub fn new(strict: bool, images: ImageMode, compact_tables: bool) -> Self {
         debug_assert!(
             images != ImageMode::Referenced,
-            "referenced image mode is not streamable; use to_markdown_images"
+            "referenced image mode needs an artifacts dir; use with_artifacts"
         );
+        Self::with_artifacts(strict, images, compact_tables, "artifacts")
+    }
+
+    /// Like [`new`](Self::new) but with the artifacts link prefix, allowing
+    /// [`ImageMode::Referenced`]: pictures render as
+    /// `![Image](<artifacts_dir>/image_NNNNNN.<ext>)` and each push's image
+    /// bytes wait in [`take_artifacts`](Self::take_artifacts) for the caller to
+    /// write. The concatenated chunks and the artifact list match the buffered
+    /// [`to_markdown_images`] byte-for-byte.
+    pub fn with_artifacts(
+        strict: bool,
+        images: ImageMode,
+        compact_tables: bool,
+        artifacts_dir: &str,
+    ) -> Self {
         Self {
             strict,
             images,
             compact_tables,
             emitted_any: false,
             links: Vec::new(),
+            artifacts_dir: artifacts_dir.to_string(),
+            artifacts: Vec::new(),
+            pic_index: 0,
         }
+    }
+
+    /// The `(relative path, bytes)` of images rendered by pushes since the last
+    /// drain ([`ImageMode::Referenced`] only — empty otherwise). Paths are
+    /// relative to the Markdown file, i.e. they start with the configured
+    /// artifacts dir.
+    pub fn take_artifacts(&mut self) -> Vec<(String, Vec<u8>)> {
+        std::mem::take(&mut self.artifacts)
     }
 
     /// Render one finalized batch of nodes (plus any links recovered from the same
@@ -186,14 +222,15 @@ impl MarkdownStreamer {
             strict: self.strict,
             compact_tables: self.compact_tables,
             images: self.images,
-            // Referenced mode is rejected at construction, so the artifact sink is
-            // never touched.
-            artifacts_dir: String::new(),
-            artifacts: Vec::new(),
-            pic_index: 0,
+            artifacts_dir: std::mem::take(&mut self.artifacts_dir),
+            artifacts: std::mem::take(&mut self.artifacts),
+            pic_index: self.pic_index,
         };
         let mut blocks: Vec<String> = Vec::new();
         render(nodes, &mut blocks, &mut ctx);
+        self.artifacts_dir = std::mem::take(&mut ctx.artifacts_dir);
+        self.artifacts = std::mem::take(&mut ctx.artifacts);
+        self.pic_index = ctx.pic_index;
         if blocks.is_empty() {
             return String::new();
         }
@@ -672,6 +709,7 @@ fn escape_cell(s: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::PictureImage;
 
     #[test]
     fn renders_headings_paragraphs_and_lists() {
@@ -802,9 +840,11 @@ mod tests {
         images: ImageMode,
         splits: &[usize],
     ) {
-        let want = to_markdown_images(doc, strict, images, "artifacts").0;
-        let mut streamer = MarkdownStreamer::new(strict, images, doc.compact_tables);
+        let (want, want_artifacts) = to_markdown_images(doc, strict, images, "artifacts");
+        let mut streamer =
+            MarkdownStreamer::with_artifacts(strict, images, doc.compact_tables, "artifacts");
         let mut got = String::new();
+        let mut got_artifacts = Vec::new();
         let mut start = 0;
         for &end in splits {
             // Links only matter in strict mode; feed them all with the first batch
@@ -815,6 +855,9 @@ mod tests {
                 &[]
             };
             got.push_str(&streamer.push(&doc.nodes[start..end], links));
+            // Referenced mode: drain per push, as a real caller writing files
+            // page by page would — numbering must continue across drains.
+            got_artifacts.extend(streamer.take_artifacts());
             start = end;
         }
         got.push_str(&streamer.push(
@@ -825,10 +868,15 @@ mod tests {
                 &[]
             },
         ));
+        got_artifacts.extend(streamer.take_artifacts());
         got.push_str(&streamer.finish());
         assert_eq!(
             got, want,
             "streamed output diverged (splits={splits:?}, strict={strict})"
+        );
+        assert_eq!(
+            got_artifacts, want_artifacts,
+            "streamed artifacts diverged (splits={splits:?}, strict={strict})"
         );
     }
 
@@ -874,16 +922,37 @@ mod tests {
         }));
         doc.push(Node::Picture {
             caption: Some("Fig 1".into()),
-            image: None,
+            image: Some(PictureImage {
+                mimetype: "image/png".into(),
+                width: 2,
+                height: 2,
+                data: b"png-one".to_vec(),
+            }),
             classification: None,
         });
         doc.add_paragraph("Last paragraph.");
+        // A second embedded picture, so referenced mode must keep numbering
+        // (`image_000001`) across chunk boundaries.
+        doc.push(Node::Picture {
+            caption: None,
+            image: Some(PictureImage {
+                mimetype: "image/png".into(),
+                width: 2,
+                height: 2,
+                data: b"png-two".to_vec(),
+            }),
+            classification: None,
+        });
 
         // A run of list items must never straddle a split, so try splits that fall
         // on safe block boundaries (the streaming PDF assembler guarantees this).
         for &strict in &[false, true] {
-            for &images in &[ImageMode::Placeholder, ImageMode::Embedded] {
-                for splits in [&[][..], &[1][..], &[2][..], &[4][..], &[1, 4, 6][..]] {
+            for &images in &[
+                ImageMode::Placeholder,
+                ImageMode::Embedded,
+                ImageMode::Referenced,
+            ] {
+                for splits in [&[][..], &[1][..], &[2][..], &[4][..], &[1, 4, 6, 7][..]] {
                     assert_stream_matches(&doc, strict, images, splits);
                 }
             }

@@ -190,11 +190,18 @@ pub fn page_count(bytes: &[u8], password: Option<&str>) -> Result<usize, PdfiumE
 /// is most of `no_ocr`'s speedup. `PdfPage::image` is a 1×1 placeholder when
 /// `false`; do not read it.
 ///
+/// `range` restricts the walk to a **0-based inclusive** page window (issue
+/// #80's `--pages`); out-of-window pages are skipped *before* text extraction
+/// and rasterization, so a 3-page window over a 500-page PDF costs three
+/// pages, not five hundred. `f` still receives the absolute page index, so
+/// downstream page numbering refers to the source document.
+///
 /// `E` is the caller's error type; pdfium errors convert into it via `From`.
 pub fn for_each_page<E, F>(
     bytes: &[u8],
     password: Option<&str>,
     render_image: bool,
+    range: Option<(usize, usize)>,
     mut f: F,
 ) -> Result<(), E>
 where
@@ -207,7 +214,11 @@ where
     let mut rust = rust_parser_cells(bytes);
     let pages = doc.pages();
     let total = pages.len() as usize;
+    let (first, last) = range.unwrap_or((0, total.saturating_sub(1)));
     for (i, page) in pages.iter().enumerate() {
+        if i < first || i > last {
+            continue;
+        }
         let rc = rust.as_mut().and_then(|v| v.get_mut(i).map(std::mem::take));
         let extracted = extract_page(&page, &ffi, i as i32, rc, render_image)?;
         f(i, total, extracted)?;

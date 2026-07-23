@@ -32,6 +32,7 @@ fn text_layer_matches_no_ocr() {
         true, // no_table_former (moot: no_ocr skips it anyway)
         true, // no_ocr — the path convert_text_layer mirrors
         docling_pdf::EnrichmentOptions::default(),
+        None,
     ) {
         Ok(doc) => doc,
         // The comparison baseline needs the pdfium shared library, which CI's

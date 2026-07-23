@@ -350,13 +350,21 @@ it cancels the work. Concatenating every chunk is **byte-identical** to the
 buffered `export_to_markdown()`.
 
 Streaming is Markdown-only — JSON serializes docling-core's reference-based tree
-and needs every node up front. Picture placeholders and `embedded` data-URI
-images stream; the `referenced` mode writes sidecar files, so it stays on the
-buffered `export_to_markdown_with_images` path. Use
-`convert_streaming_images(source, ImageMode::Embedded)` to pick the image mode.
+and needs every node up front. Every image mode streams
+(`convert_streaming_images(source, mode)` picks it): placeholders and `embedded`
+data URIs render inline, and `referenced` (issue #80) writes each page's image
+files under the converter's `artifacts_dir` **as that page's Markdown is
+emitted**, then drops the bytes — an image-heavy PDF holds ~one page of images
+in memory instead of all of them until export.
+
+`--pages A-B` (issue #80; also `Pipeline::pages` /
+`DocumentConverter::page_range`, `pages` in serve/Node, `page_range=` in
+Python) converts only that 1-based inclusive PDF page window. Out-of-window
+pages are skipped *before* rasterization, so 3 pages of a 500-page PDF cost 3
+pages; `B` past the end clamps, and a window that selects nothing is an error.
 
 The CLI streams Markdown by default (`--no-stream` opts back into buffering;
-`--to json` and `--images referenced` always buffer). `--no-table-former` skips
+`--to json` always buffers). `--no-table-former` skips
 loading/running the TableFormer table-structure model, falling back to simple
 geometric table reconstruction from cell positions — no model load, no
 per-table inference, which can noticeably speed up parsing (especially in
