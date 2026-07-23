@@ -488,15 +488,14 @@ fn doctags_to_doclang(fragment: &str) -> String {
         // A table caption in DocTags sits inside <otsl>; DocLang wants it as
         // a paragraph before the table. Capture the pair verbatim (dropping
         // nested tokens) and splice it in front of the <table> opener.
-        if !close && name == "caption" && table_open_at.is_some() {
+        if let Some(at) = table_open_at.filter(|_| !close && name == "caption") {
             let inner_end = fragment[i..].find("</caption>").map(|e| i + e);
             let (raw, next) = match inner_end {
                 Some(e) => (&fragment[i..e], e + "</caption>".len()),
                 None => (&fragment[i..], fragment.len()),
             };
-            let text: String = strip_tokens(raw);
+            let text = strip_tokens(raw);
             if !text.trim().is_empty() {
-                let at = table_open_at.unwrap();
                 out.insert_str(at, &format!("<text>{}</text>\n", text.trim()));
             }
             i = next;
