@@ -54,6 +54,7 @@ use docling_core::Node;
 pub use mets::{convert_mets_gbs, convert_mets_gbs_with_options};
 #[cfg(feature = "ml")]
 pub use ocr::OcrLang;
+#[cfg(feature = "ml")]
 pub use pdfium_backend::PdfDocument;
 pub use pdfium_backend::{PdfPage, TextCell};
 
