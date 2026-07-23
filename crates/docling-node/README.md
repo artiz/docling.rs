@@ -45,6 +45,28 @@ npm run build        # release build → docling.rs.<platform>.node + native.js/
 > touch it; only PDF/image conversion loads the ML models (downloaded on first
 > use, like the CLI).
 
+### GPU (CUDA)
+
+The npm binaries are CPU-only. For NVIDIA GPU inference in the PDF/image ML
+pipeline (issue #74 — same mechanism as the CLI and the `docling-rs-cuda`
+Python wheel), build the addon from source with the `cuda` feature:
+
+```bash
+cd crates/docling-node
+export RUSTFLAGS='-C link-arg=-Wl,-rpath,$ORIGIN'   # Linux: find provider libs next to the addon
+npm run build:cuda    # = napi build ... --features cuda; fetches the CUDA ONNX Runtime (large)
+cp ../../target/release/libonnxruntime_providers_{shared,cuda}.so .
+```
+
+The CUDA execution provider is two *separate* shared libraries that ONNX
+Runtime dlopens at session start; the `$ORIGIN` rpath makes it look next to
+the `.node` addon, so ship them alongside it (without them a CUDA build
+falls back to CPU with a warning). CUDA 12 + cuDNN 9 must be installed on the
+system. A GPU build defaults to `DOCLING_RS_EP=auto` — GPU when usable, CPU
+fallback; set `DOCLING_RS_EP=cuda` to fail loudly instead of falling back, or
+`DOCLING_RS_EP=cpu` to force CPU. `tensorrt` / `directml` (Windows) /
+`coreml` (macOS) features exist too, matching the Rust crates.
+
 ## Quick start
 
 ```js
