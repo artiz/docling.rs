@@ -383,9 +383,14 @@ fn strip_wrappers(response: &str) -> String {
 /// - `<loc_N>` and `<page_break>` tokens drop (the reader's geometry comes
 ///   from `<location>`, which VLM output doesn't carry);
 /// - `<otsl>` → `<table>`, `<section_header_level_K>` → `<heading
-///   level="K">`, `<title>` → `<heading level="1">`, `<paragraph>` →
-///   `<text>`, `<ordered_list>`/`<unordered_list>` → `<list>`,
-///   `<list_item>` → the `<ldiv/>` item marker DocLang lists use;
+///   level="K+1">` (docling parity: section level 1 renders `##`; plain `#`
+///   is the document title), `<title>` → `<heading level="1">`,
+///   `<paragraph>` → `<text>`, `<ordered_list>`/`<unordered_list>` →
+///   `<list>`, `<list_item>` → the `<ldiv/>` item marker DocLang lists use;
+/// - a `<caption>` inside `<otsl>` hoists to a `<text>` paragraph *before*
+///   the `<table>` (docling's reading order); a standalone `<caption>`
+///   becomes `<text>`; a `<picture>`'s caption stays where the picture
+///   parser expects it;
 /// - `<page_header>`/`<page_footer>` → `<text>` opening with a
 ///   `<layer value="furniture"/>` head, so headers/footers stay out of the
 ///   Markdown body exactly like the ML pipeline's furniture;
@@ -417,6 +422,11 @@ fn doctags_to_doclang(fragment: &str) -> String {
 
     let mut out = String::with_capacity(fragment.len());
     let mut i = 0;
+    // Lexical nesting state for caption hoisting: where the current
+    // `<table>` opened (to insert the hoisted caption before it), and
+    // whether we're inside a `<picture>` (whose caption is native DocLang).
+    let mut table_open_at: Option<usize> = None;
+    let mut picture_depth = 0usize;
     while i < bytes.len() {
         let c = bytes[i] as char;
         if c != '<' {
@@ -475,11 +485,36 @@ fn doctags_to_doclang(fragment: &str) -> String {
         let level = name
             .strip_prefix("section_header_level_")
             .and_then(|v| v.parse::<u8>().ok());
+        // A table caption in DocTags sits inside <otsl>; DocLang wants it as
+        // a paragraph before the table. Capture the pair verbatim (dropping
+        // nested tokens) and splice it in front of the <table> opener.
+        if !close && name == "caption" && table_open_at.is_some() {
+            let inner_end = fragment[i..].find("</caption>").map(|e| i + e);
+            let (raw, next) = match inner_end {
+                Some(e) => (&fragment[i..e], e + "</caption>".len()),
+                None => (&fragment[i..], fragment.len()),
+            };
+            let text: String = strip_tokens(raw);
+            if !text.trim().is_empty() {
+                let at = table_open_at.unwrap();
+                out.insert_str(at, &format!("<text>{}</text>\n", text.trim()));
+            }
+            i = next;
+            continue;
+        }
         if close {
             match name {
                 _ if level.is_some() => out.push_str("</heading>"),
                 "title" => out.push_str("</heading>"),
-                "otsl" => out.push_str("</table>"),
+                "otsl" => {
+                    table_open_at = None;
+                    out.push_str("</table>");
+                }
+                "picture" => {
+                    picture_depth = picture_depth.saturating_sub(1);
+                    out.push_str("</picture>");
+                }
+                "caption" if picture_depth == 0 => out.push_str("</text>"),
                 // An item's text runs until the next `<ldiv/>`; the closer is
                 // structural noise in DocLang.
                 "list_item" => {}
@@ -495,13 +530,27 @@ fn doctags_to_doclang(fragment: &str) -> String {
         }
         match name {
             _ if level.is_some() => {
+                // docling parity: section_header level K renders as heading
+                // K+1 in Markdown ("## 5.1 …"); "#" is the document title.
                 out.push_str(&format!(
                     "<heading level=\"{}\">",
-                    level.unwrap().clamp(1, 6)
+                    (level.unwrap().saturating_add(1)).clamp(2, 6)
                 ));
             }
             "title" => out.push_str("<heading level=\"1\">"),
-            "otsl" => out.push_str("<table>"),
+            "otsl" => {
+                table_open_at = Some(out.len());
+                out.push_str("<table>");
+            }
+            "picture" if closers.contains("picture") => {
+                picture_depth += 1;
+                out.push('<');
+                out.push_str(inner);
+                out.push('>');
+            }
+            "caption" if picture_depth == 0 && closers.contains("caption") => {
+                out.push_str("<text>")
+            }
             // DocLang list items are `<ldiv/>` markers followed by the item's
             // text, not wrapper elements.
             "list_item" => out.push_str("<ldiv/>"),
@@ -526,6 +575,28 @@ fn doctags_to_doclang(fragment: &str) -> String {
         }
     }
     out
+}
+
+/// Drop every `<...>` token from a captured span, keeping only its text —
+/// used for caption bodies, whose loc tokens carry no reader-usable geometry.
+fn strip_tokens(raw: &str) -> String {
+    let mut text = String::new();
+    let mut rest = raw;
+    // Skip the opening tag itself.
+    if let Some(gt) = rest.find('>') {
+        rest = &rest[gt + 1..];
+    }
+    while let Some(lt) = rest.find('<') {
+        text.push_str(&rest[..lt]);
+        match rest[lt..].find('>') {
+            Some(gt) => rest = &rest[lt + gt + 1..],
+            None => {
+                rest = "";
+            }
+        }
+    }
+    text.push_str(rest);
+    text
 }
 
 /// PNG-encode a rendered page (the wire format every OpenAI-compatible
@@ -579,7 +650,7 @@ mod tests {
 <section_header_level_1><loc_57><loc_70><loc_420><loc_78>Optimized Table Tokenization</section_header_level_1>\
 <text><loc_57><loc_84><loc_420><loc_98>Body with A &amp; B & C.</text>\
 <unordered_list><list_item><loc_60><loc_100><loc_420><loc_108>First item</list_item></unordered_list>\
-<otsl><loc_57><loc_120><loc_420><loc_160><ched>Col A<ched>Col B<nl><fcel>1<fcel>2<nl></otsl>\
+<otsl><loc_57><loc_120><loc_420><loc_160><caption><loc_57><loc_115><loc_420><loc_119>Table 1. HPO results.</caption><ched>Col A<ched>Col B<nl><fcel>1<fcel>2<nl></otsl>\
 <page_footer><loc_57><loc_280><loc_420><loc_288>7</page_footer><page_break></doctag>";
         let fragment = doclang_fragment(page);
         let xml = format!("<doclang version=\"0.7\">{fragment}</doclang>");
@@ -593,7 +664,15 @@ mod tests {
         )
         .expect("translated DocTags must parse");
         let md = doc.export_to_markdown();
-        assert!(md.contains("# Optimized Table Tokenization"), "md: {md:?}");
+        // Section level 1 → "##" (docling parity; bare "#" is the title).
+        assert!(md.contains("## Optimized Table Tokenization"), "md: {md:?}");
+        assert!(!md.contains("### Optimized"), "md: {md:?}");
+        // The in-otsl caption hoists to a paragraph before the table.
+        assert!(md.contains("Table 1. HPO results."), "md: {md:?}");
+        assert!(
+            md.find("Table 1. HPO results.").unwrap() < md.find("Col A").unwrap(),
+            "caption must precede the table: {md:?}"
+        );
         assert!(md.contains("Body with A & B & C."), "md: {md:?}");
         assert!(md.contains("- First item"), "md: {md:?}");
         assert!(md.contains("Col A |"), "md: {md:?}");
