@@ -51,7 +51,7 @@ const REC_MODELS = {
 // sidecar rides along via ort-web's externalData option (path = the location
 // stored in the .onnx). Fetched lazily — ~380 MB total — only when a table
 // profile is chosen.
-const TF_DIRS = ["./models/tableformer/", MODEL_BASE + "tableformer/"];
+const TF_DIRS = ["./models/tableformer/", MODEL_BASE];
 
 /// The stateful session the wasm TfSession interop expects (see
 /// src/tableformer.rs): `encode` runs the image encoder once and stashes the
