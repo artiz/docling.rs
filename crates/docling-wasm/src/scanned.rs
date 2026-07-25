@@ -115,7 +115,11 @@ impl ScannedConverter {
     /// Recognize a set of prepared line/word crops: width-batch them and run
     /// each batch through the JS recognition session, greedy-CTC-decoding the
     /// probabilities. Returns one string per input crop, in order.
-    async fn ocr_lines(&self, rec: &RecSession, lines: &[PrepLine]) -> Result<Vec<String>, JsError> {
+    async fn ocr_lines(
+        &self,
+        rec: &RecSession,
+        lines: &[PrepLine],
+    ) -> Result<Vec<String>, JsError> {
         let mut texts = vec![String::new(); lines.len()];
         for (w, chunk) in width_batches(lines) {
             let data = batch_input(w, &chunk, lines);
@@ -133,7 +137,11 @@ impl ScannedConverter {
                 return Err(JsError::new("rec session.run returned a short tensor"));
             }
             for (i, &ix) in chunk.iter().enumerate() {
-                texts[ix] = decode_row(&self.chars, &probs[i * t_len * nc..(i + 1) * t_len * nc], nc);
+                texts[ix] = decode_row(
+                    &self.chars,
+                    &probs[i * t_len * nc..(i + 1) * t_len * nc],
+                    nc,
+                );
             }
         }
         Ok(texts)
