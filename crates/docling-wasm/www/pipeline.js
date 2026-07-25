@@ -214,16 +214,17 @@ export function createOcr({ onStatus }) {
       // external data from the same base.
       let base = null;
       let model = null;
+      let lastErr = null;
       for (const b of TF_DIRS) {
         try {
           model = await fetchProgress(b + name + ".onnx", `tableformer ${name}`);
           base = b;
           break;
         } catch (e) {
-          /* try the next base */
+          lastErr = e; // keep the real cause (HTTP status, out-of-memory, …)
         }
       }
-      if (!model) throw new Error(`tableformer ${name}.onnx not found (local or HF)`);
+      if (!model) throw new Error(`tableformer ${name}.onnx failed: ${(lastErr && lastErr.message) || lastErr}`);
       const opts = { executionProviders: ["wasm"], logSeverityLevel: 3 };
       if (external) {
         const data = await fetchProgress(base + name + ".onnx.data", `tableformer ${name} data`);
