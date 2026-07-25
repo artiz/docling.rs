@@ -24,6 +24,9 @@ const ocr = createOcr({
 
 async function handle(m) {
   switch (m.type) {
+    case "set-models":
+      ocr.setProvidedModels(m.models);
+      return {};
     case "boot": {
       const kind = await ocr.boot();
       if (!kind) return { noLayout: true };

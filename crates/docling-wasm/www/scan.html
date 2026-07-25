@@ -84,11 +84,16 @@ curl -fsSL https://raw.githubusercontent.com/docling-project/docling.rs/master/s
       <option value="cyrillic">Cyrillic + Latin (cyrillic_PP-OCRv5)</option>
       <option value="ch">Chinese + Latin (ch_PP-OCRv3)</option>
     </select>
-    <label style="margin-left:1rem" title="Stage 3: real table structure via the TableFormer ONNX graphs, instead of the geometric reconstruction. Fetches ~380 MB of models (encoder/decoder/bbox) on first use, same-origin from ./models/tableformer/.">
+    <label style="margin-left:1rem" title="Stage 3: real table structure via the TableFormer ONNX graphs, instead of the geometric reconstruction.">
       <input type="checkbox" id="tf" disabled> TableFormer tables
-      <span style="color:#888">(+~380 MB models, PDFs)</span>
     </label>
     <span id="meta"></span>
+  </p>
+  <p style="font-size:0.85rem; color:#888">
+    Models from device (optional — skips the download):
+    <input type="file" id="models" multiple accept=".onnx,.data,.txt" disabled>
+    <br>pick <code>layout_heron_int8.onnx</code> and, for TableFormer, <code>encoder.onnx</code>,
+    <code>decoder_kv.onnx</code>(+<code>.data</code>), <code>bbox.onnx</code>(+<code>.data</code>).
   </p>
 
   <div id="diag" style="font: 0.8rem ui-monospace, monospace; color: #888; white-space: pre-wrap; margin: 0.3rem 0;"></div>
@@ -125,6 +130,7 @@ curl -fsSL https://raw.githubusercontent.com/docling-project/docling.rs/master/s
     const diagEl = document.getElementById("diag");
     const lang = document.getElementById("lang");
     const tf = document.getElementById("tf");
+    const modelsInput = document.getElementById("models");
     const drop = document.getElementById("drop");
     const pick = document.getElementById("pick");
 
@@ -143,12 +149,12 @@ curl -fsSL https://raw.githubusercontent.com/docling-project/docling.rs/master/s
     }
     function busy(msg) {
       document.body.classList.add("busy");
-      pick.disabled = lang.disabled = tf.disabled = true;
+      pick.disabled = lang.disabled = tf.disabled = modelsInput.disabled = true;
       status(msg, true);
     }
     function ready(msg) {
       document.body.classList.remove("busy");
-      pick.disabled = lang.disabled = tf.disabled = false;
+      pick.disabled = lang.disabled = tf.disabled = modelsInput.disabled = false;
       status(msg, false);
     }
     const onStatus = (msg, spinning) => {
@@ -192,6 +198,7 @@ curl -fsSL https://raw.githubusercontent.com/docling-project/docling.rs/master/s
         addPage: (rgba, w, h, scale) => rpc("doc-page", { rgba, w, h, scale }, [rgba]),
         docFinish: (name) => rpc("doc-finish", { name }).then((r) => r.md),
         convertImage: (bytes, name, l) => rpc("convert-image", { bytes, name, lang: l }, [bytes]).then((r) => r.md),
+        setModels: (models) => rpc("set-models", { models }, Object.values(models)),
       };
     }
     async function mainDriver() {
@@ -210,6 +217,7 @@ curl -fsSL https://raw.githubusercontent.com/docling-project/docling.rs/master/s
         addPage: (rgba, w, h, scale) => ocr.addPage(new Uint8Array(rgba), w, h, scale),
         docFinish: (name) => Promise.resolve(ocr.finishDoc(name)),
         convertImage: (bytes, name, l) => ocr.convertImage(bytes, name, l),
+        setModels: (models) => ocr.setProvidedModels(models),
       };
     }
 
@@ -277,6 +285,23 @@ curl -fsSL https://raw.githubusercontent.com/docling-project/docling.rs/master/s
         ready("ready — drop a scanned PDF or image");
       } catch (e) {
         ready(`${lang.value} model failed to load: ${e}`);
+      }
+    });
+
+    // Pick model files from the device: read each to an ArrayBuffer and hand
+    // them to the pipeline (transferred to the worker), so layout/TableFormer
+    // load from local files instead of fetching — no 380 MB download, and a
+    // single allocation per file (no fetch double-buffering).
+    modelsInput.addEventListener("change", async () => {
+      if (!drv || !modelsInput.files.length) return;
+      busy(`reading ${modelsInput.files.length} model file(s) …`);
+      try {
+        const map = {};
+        for (const f of modelsInput.files) map[f.name] = await f.arrayBuffer();
+        await drv.setModels(map);
+        ready(`models ready: ${Object.keys(map).join(", ")} — drop a scanned PDF or image`);
+      } catch (e) {
+        ready(`model file read failed: ${(e && e.message) || e}`);
       }
     });
 

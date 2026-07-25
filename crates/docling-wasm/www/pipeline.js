@@ -16,16 +16,11 @@ ort.env.wasm.numThreads = self.crossOriginIsolated
   : 1;
 export const THREADS = ort.env.wasm.numThreads;
 
-// Layout model candidates, tried in order. Local ./models/ first (populated by
-// download_dependencies.sh for local dev); then a CORS-enabled Hugging Face
-// mirror so the page works when served cross-origin — e.g. the hosted phone
-// demo on raw.githack — since GitHub Release assets carry no CORS header.
+// Model bases, tried in order after any user-provided file: local ./models/
+// first (download_dependencies.sh for local dev), then a CORS-enabled Hugging
+// Face mirror so the page works cross-origin (the hosted phone demo on
+// raw.githack) — GitHub Release assets carry no CORS header.
 const MODEL_BASE = "https://huggingface.co/pivozavrus/docling-rs-models/resolve/main/";
-const LAYOUT_PATHS = [
-  "./models/layout_heron_int8.onnx",
-  MODEL_BASE + "layout_heron_int8.onnx",
-  "./models/layout_heron.onnx",
-];
 
 const REC_MODELS = {
   en: {
@@ -104,6 +99,29 @@ class JsTfSession {
 export function createOcr({ onStatus }) {
   const status = (msg, spinning = true) => onStatus && onStatus(msg, spinning);
 
+  // Model files the user picked from the device (basename → ArrayBuffer),
+  // used instead of any network fetch — see scan.html's file picker. Reading a
+  // File to an ArrayBuffer is a single allocation, so it also sidesteps the
+  // double-buffering peak fetchProgress hits on the 225 MB encoder.
+  let provided = {};
+  function setProvidedModels(map) {
+    provided = map || {};
+  }
+  // Resolve a model by name: a user-provided file wins, else the first base
+  // that serves it. Returns { buf, base } (base is null for a provided file).
+  async function fetchModel(name, bases, label) {
+    if (provided[name]) return { buf: provided[name], base: null };
+    let lastErr = null;
+    for (const b of bases) {
+      try {
+        return { buf: await fetchProgress(b + name, label), base: b };
+      } catch (e) {
+        lastErr = e;
+      }
+    }
+    throw new Error(`${name} failed: ${(lastErr && lastErr.message) || lastErr}`);
+  }
+
   // fetch() with a live "x / y MB" progress line.
   async function fetchProgress(url, label) {
     const resp = await fetch(url, { cache: "force-cache" });
@@ -159,28 +177,32 @@ export function createOcr({ onStatus }) {
   let layout = null;
   let layoutKind = null;
   async function loadLayout() {
-    for (const path of LAYOUT_PATHS) {
+    for (const [name, kind] of [
+      ["layout_heron_int8.onnx", "int8"],
+      ["layout_heron.onnx", "fp32"],
+    ]) {
+      let buf;
       try {
-        const buf = await fetchProgress(path, "layout model (first load only)");
-        status("starting layout session …", true);
-        const session = await ort.InferenceSession.create(buf, {
-          executionProviders: ["wasm"],
-          logSeverityLevel: 3,
-        });
-        layoutKind = path.includes("int8") ? "int8" : "fp32";
-        layout = {
-          run: async (data) => {
-            const results = await session.run({
-              pixel_values: new ort.Tensor("float32", data, [1, 3, 640, 640]),
-            });
-            const t = (n) => ({ data: results[n].data, dims: Array.from(results[n].dims) });
-            return { logits: t("logits"), boxes: t("pred_boxes") };
-          },
-        };
-        return layoutKind;
+        ({ buf } = await fetchModel(name, ["./models/", MODEL_BASE], "layout model (first load only)"));
       } catch (e) {
-        // 404 / decode failure → try the next candidate.
+        continue; // not provided and not fetchable → try the next candidate
       }
+      status("starting layout session …", true);
+      const session = await ort.InferenceSession.create(buf, {
+        executionProviders: ["wasm"],
+        logSeverityLevel: 3,
+      });
+      layoutKind = kind;
+      layout = {
+        run: async (data) => {
+          const results = await session.run({
+            pixel_values: new ort.Tensor("float32", data, [1, 3, 640, 640]),
+          });
+          const t = (n) => ({ data: results[n].data, dims: Array.from(results[n].dims) });
+          return { logits: t("logits"), boxes: t("pred_boxes") };
+        },
+      };
+      return layoutKind;
     }
     return null;
   }
@@ -210,24 +232,16 @@ export function createOcr({ onStatus }) {
   async function ensureTf() {
     if (tf) return tf;
     const load = async (name, external) => {
-      // Find the first base (local, then HF) that serves the .onnx; take its
-      // external data from the same base.
-      let base = null;
-      let model = null;
-      let lastErr = null;
-      for (const b of TF_DIRS) {
-        try {
-          model = await fetchProgress(b + name + ".onnx", `tableformer ${name}`);
-          base = b;
-          break;
-        } catch (e) {
-          lastErr = e; // keep the real cause (HTTP status, out-of-memory, …)
-        }
-      }
-      if (!model) throw new Error(`tableformer ${name}.onnx failed: ${(lastErr && lastErr.message) || lastErr}`);
+      // A provided file wins; else the first base (local, then HF). External
+      // data comes from a provided file or the same base the .onnx came from.
+      const { buf: model, base } = await fetchModel(name + ".onnx", TF_DIRS, `tableformer ${name}`);
       const opts = { executionProviders: ["wasm"], logSeverityLevel: 3 };
       if (external) {
-        const data = await fetchProgress(base + name + ".onnx.data", `tableformer ${name} data`);
+        const { buf: data } = await fetchModel(
+          name + ".onnx.data",
+          base ? [base] : TF_DIRS,
+          `tableformer ${name} data`,
+        );
         opts.externalData = [{ path: name + ".onnx.data", data: new Uint8Array(data) }];
       }
       return ort.InferenceSession.create(model, opts);
@@ -268,7 +282,7 @@ export function createOcr({ onStatus }) {
   }
 
   return {
-    boot, warmup, recFor, startDoc, addPage, finishDoc, convertImage,
+    boot, warmup, recFor, startDoc, addPage, finishDoc, convertImage, setProvidedModels,
     get layoutKind() { return layoutKind; },
   };
 }
