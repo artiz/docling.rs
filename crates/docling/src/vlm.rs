@@ -184,11 +184,7 @@ pub fn convert_vlm(
         doc.name = source.name.clone();
         doc
     } else {
-        let body: Vec<String> = fragments.iter().map(|f| prose_fallback(f)).collect();
-        let xml = format!("<doclang version=\"0.7\">\n{}\n</doclang>", body.join("\n"));
-        let synthetic =
-            SourceDocument::from_bytes(&source.name, InputFormat::XmlDoclang, xml.into_bytes());
-        DoclangBackend.convert(&synthetic)?
+        parse_doclang_fragments(&source.name, &fragments)
     };
     if doc.nodes.is_empty() {
         // The request loop succeeded, so this is a content problem, not a
@@ -338,6 +334,30 @@ fn looks_like_doctags(fragment: &str) -> bool {
         || fragment.contains("<section_header_level_")
 }
 
+/// Assemble the non-DocTags fragments (proper DocLang XML, or the prose a model
+/// emits when it ignores the markup instruction) into a document.
+///
+/// The DocLang reader is a *strict* XML parser: a misbehaving model that leaves
+/// a `<heading>`/`<text>` unclosed or nests a stray root produces markup it
+/// rejects outright (`expected 'heading' tag, not 'doclang' …`), which — when
+/// propagated — fails the entire conversion on one bad page. The DocTags path
+/// never does that (#152: hostile model output, best-effort document out), so
+/// neither should this one: on a parse error, salvage the fragments through the
+/// tolerant DocTags parser, which degrades broken/unknown tags to text and
+/// never errors. Well-formed DocLang still takes the strict reader, keeping its
+/// heading levels and table structure.
+fn parse_doclang_fragments(name: &str, fragments: &[String]) -> DoclingDocument {
+    let body: Vec<String> = fragments.iter().map(|f| prose_fallback(f)).collect();
+    let xml = format!("<doclang version=\"0.7\">\n{}\n</doclang>", body.join("\n"));
+    let synthetic = SourceDocument::from_bytes(name, InputFormat::XmlDoclang, xml.into_bytes());
+    let mut doc = match DoclangBackend.convert(&synthetic) {
+        Ok(doc) => doc,
+        Err(_) => docling_core::doctags::parse_pages(fragments.iter().map(String::as_str)),
+    };
+    doc.name = name.to_string();
+    doc
+}
+
 /// DocLang-path fallback for a model that ignored the markup instruction
 /// entirely (plain prose / Markdown, no tags): one `<text>` per non-empty
 /// line, instead of silently dropping the page's content.
@@ -396,7 +416,32 @@ fn encode_png(image: &image::RgbImage) -> Result<Vec<u8>, String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{looks_like_doctags, prose_fallback, strip_wrappers};
+    use super::{looks_like_doctags, parse_doclang_fragments, prose_fallback, strip_wrappers};
+
+    /// A misbehaving model can emit malformed DocLang — here an unclosed
+    /// `<heading>` — that the strict XML reader rejects with
+    /// `expected 'heading' tag, not 'doclang'`. That hard error dropped the
+    /// whole `normal_4pages` fixture from the #153 corpus run; the fallback
+    /// must salvage the page's text instead of failing the conversion.
+    #[test]
+    fn malformed_doclang_degrades_instead_of_erroring() {
+        let frag = "<heading level=\"1\">Unclosed title\n<text>Body line.</text>".to_string();
+        let md = parse_doclang_fragments("normal_4pages.pdf", &[frag]).export_to_markdown();
+        // Best-effort salvage via the tolerant DocTags parser: the text that
+        // the strict reader would have thrown away with the whole page survives.
+        assert!(md.contains("Body line."), "md: {md:?}");
+        assert!(md.contains("Unclosed title"), "md: {md:?}");
+    }
+
+    /// Well-formed DocLang still takes the strict reader, which keeps the
+    /// heading *level* (the tolerant fallback would flatten it to text).
+    #[test]
+    fn wellformed_doclang_keeps_structure() {
+        let frag = "<heading level=\"2\">Sec</heading>\n<text>Para.</text>".to_string();
+        let md = parse_doclang_fragments("d.pdf", &[frag]).export_to_markdown();
+        assert!(md.contains("## Sec"), "md: {md:?}");
+        assert!(md.contains("Para."), "md: {md:?}");
+    }
 
     #[test]
     fn wrapper_stripping() {
