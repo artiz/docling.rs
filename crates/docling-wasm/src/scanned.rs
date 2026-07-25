@@ -35,6 +35,12 @@ use crate::tableformer::TfSession;
 
 #[wasm_bindgen]
 extern "C" {
+    #[wasm_bindgen(js_namespace = console, js_name = log)]
+    fn console_log(s: &str);
+}
+
+#[wasm_bindgen]
+extern "C" {
     /// The JS-side layout session: a wrapper around an `ort.InferenceSession`
     /// over the RT-DETR layout model exposing `run(data)` — feed the
     /// `(1, 3, 640, 640)` CHW float buffer, resolve to
@@ -144,6 +150,19 @@ impl ScannedConverter {
         }
         let regions = decode_layout(&logits, &boxes, q, c, page_w, page_h);
         let regions = refine_regions(regions, &[], page_w, page_h);
+
+        // Diagnostic: the region-label histogram, so it's visible (browser
+        // console) whether the layout model flagged any `table` region on this
+        // page — tables only render when it does (geometric or TableFormer).
+        {
+            let mut hist: std::collections::BTreeMap<&str, usize> =
+                std::collections::BTreeMap::new();
+            for r in &regions {
+                *hist.entry(r.label).or_default() += 1;
+            }
+            let summary: Vec<String> = hist.iter().map(|(l, n)| format!("{l}×{n}")).collect();
+            console_log(&format!("layout regions: {}", summary.join(", ")));
+        }
 
         // OCR the text regions (same gather/batch/decode as native ocr_page).
         let (bboxes, lines) = prep_region_lines(&img, &regions, scale);
