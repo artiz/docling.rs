@@ -45,11 +45,13 @@ const REC_MODELS = {
   },
 };
 
-// TableFormer graphs, loaded same-origin from ./models/tableformer/ (the same
-// files download_dependencies.sh fetches). The encoder is self-contained; the
-// decoder/bbox use ONNX external data, so their .onnx.data sidecar rides along
-// via ort-web's externalData option (path = the location stored in the .onnx).
-const TF_DIR = "./models/tableformer/";
+// TableFormer graphs: local ./models/tableformer/ first (download_dependencies.sh),
+// then the CORS Hugging Face mirror for the hosted demo. The encoder is
+// self-contained; the decoder/bbox use ONNX external data, so their .onnx.data
+// sidecar rides along via ort-web's externalData option (path = the location
+// stored in the .onnx). Fetched lazily — ~380 MB total — only when a table
+// profile is chosen.
+const TF_DIRS = ["./models/tableformer/", MODEL_BASE + "tableformer/"];
 
 /// The stateful session the wasm TfSession interop expects (see
 /// src/tableformer.rs): `encode` runs the image encoder once and stashes the
@@ -208,10 +210,23 @@ export function createOcr({ onStatus }) {
   async function ensureTf() {
     if (tf) return tf;
     const load = async (name, external) => {
-      const model = await fetchProgress(TF_DIR + name + ".onnx", `tableformer ${name}`);
+      // Find the first base (local, then HF) that serves the .onnx; take its
+      // external data from the same base.
+      let base = null;
+      let model = null;
+      for (const b of TF_DIRS) {
+        try {
+          model = await fetchProgress(b + name + ".onnx", `tableformer ${name}`);
+          base = b;
+          break;
+        } catch (e) {
+          /* try the next base */
+        }
+      }
+      if (!model) throw new Error(`tableformer ${name}.onnx not found (local or HF)`);
       const opts = { executionProviders: ["wasm"], logSeverityLevel: 3 };
       if (external) {
-        const data = await fetchProgress(TF_DIR + name + ".onnx.data", `tableformer ${name} data`);
+        const data = await fetchProgress(base + name + ".onnx.data", `tableformer ${name} data`);
         opts.externalData = [{ path: name + ".onnx.data", data: new Uint8Array(data) }];
       }
       return ort.InferenceSession.create(model, opts);
