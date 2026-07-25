@@ -16,9 +16,16 @@ ort.env.wasm.numThreads = self.crossOriginIsolated
   : 1;
 export const THREADS = ort.env.wasm.numThreads;
 
-// Same-origin candidates (release assets carry no CORS header — see scan.html's
-// setup note); int8 preferred, fp32 fallback.
-const LAYOUT_PATHS = ["./models/layout_heron_int8.onnx", "./models/layout_heron.onnx"];
+// Layout model candidates, tried in order. Local ./models/ first (populated by
+// download_dependencies.sh for local dev); then a CORS-enabled Hugging Face
+// mirror so the page works when served cross-origin — e.g. the hosted phone
+// demo on raw.githack — since GitHub Release assets carry no CORS header.
+const MODEL_BASE = "https://huggingface.co/pivozavrus/docling-rs-models/resolve/main/";
+const LAYOUT_PATHS = [
+  "./models/layout_heron_int8.onnx",
+  MODEL_BASE + "layout_heron_int8.onnx",
+  "./models/layout_heron.onnx",
+];
 
 const REC_MODELS = {
   en: {
