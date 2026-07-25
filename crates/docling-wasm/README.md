@@ -164,10 +164,15 @@ the image never leaves the page.
 - **int8.** The layout model is the conv-only static-INT8 export (~68 MB,
   ~2.4× faster than fp32 at unchanged conformance). The TableFormer **encoder
   is fp32 (~225 MB) and runs once per table region** — it dominates wall time
-  on mobile (a multi-table page can take minutes). An int8 encoder would be the
-  biggest lever; generate it with
-  [`scripts/install/quantize_models.py`](https://github.com/docling-project/docling.rs/blob/master/scripts/install/quantize_models.py)
-  and host it as `encoder_int8.onnx`.
+  on mobile (a multi-table page can take minutes). An int8 encoder is *not* the
+  easy win it looks like: it's a ResNet backbone (~20 Conv) feeding a 6-layer
+  transformer, and the transformer Gemms — not the convs — are the cost.
+  Measured on a native x86 build over 15 real table crops: conv-only static
+  QDQ keeps fidelity (enc_out/cross cosine ≥ 0.995) but is *not* faster than
+  ORT's fp32 conv kernels, and quantizing the attention MatMuls collapses
+  cross-attention fidelity to ~0.85 (garbled structure) for no speed gain. So
+  the encoder stays fp32; the real mobile levers are running heavy tables on a
+  desktop and batching multi-table pages (below), not weight quantization.
 - **Where to run heavy tables.** TableFormer's 380 MB of models and per-region
   encode make a desktop (more cores, more memory) far faster than a phone; the
   geometric table path (stage 2, no TableFormer) already captures all cell text
