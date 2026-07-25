@@ -14,6 +14,10 @@ import { createOcr, THREADS } from "./pipeline.js";
 
 const post = (type, extra) => self.postMessage({ type, ...extra });
 
+// On-page diagnostic sink the wasm calls (see src/scanned.rs) — forward to the
+// main thread, which renders it (a phone can't open the console).
+globalThis.__docling_diag = (msg) => post("diag", { msg });
+
 const ocr = createOcr({
   onStatus: (msg, spinning) => post("status", { msg, spinning }),
 });

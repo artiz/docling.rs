@@ -91,6 +91,7 @@ curl -fsSL https://raw.githubusercontent.com/docling-project/docling.rs/master/s
     <span id="meta"></span>
   </p>
 
+  <div id="diag" style="font: 0.8rem ui-monospace, monospace; color: #888; white-space: pre-wrap; margin: 0.3rem 0;"></div>
   <div id="out"></div>
 
   <script type="module">
@@ -121,10 +122,19 @@ curl -fsSL https://raw.githubusercontent.com/docling-project/docling.rs/master/s
 
     const meta = document.getElementById("meta");
     const out = document.getElementById("out");
+    const diagEl = document.getElementById("diag");
     const lang = document.getElementById("lang");
     const tf = document.getElementById("tf");
     const drop = document.getElementById("drop");
     const pick = document.getElementById("pick");
+
+    // On-page diagnostic sink (worker forwards the wasm's diag() here; a phone
+    // can't open the console). Also defined globally for the main-thread
+    // fallback, where the wasm calls it directly.
+    function showDiag(msg) {
+      diagEl.textContent += (diagEl.textContent ? "\n" : "") + msg;
+    }
+    globalThis.__docling_diag = showDiag;
 
     function status(msg, spinning) {
       meta.textContent = "";
@@ -160,6 +170,7 @@ curl -fsSL https://raw.githubusercontent.com/docling-project/docling.rs/master/s
       worker.onmessage = (e) => {
         const m = e.data;
         if (m.type === "status") return onStatus(m.msg, m.spinning);
+        if (m.type === "diag") return showDiag(m.msg);
         if (m.type === "up") return;
         const w = waiters.get(m.id);
         if (!w) return;
@@ -244,6 +255,7 @@ curl -fsSL https://raw.githubusercontent.com/docling-project/docling.rs/master/s
 
     async function handle(file) {
       out.textContent = "";
+      diagEl.textContent = "";
       busy(`converting ${file.name} …`);
       const started = performance.now();
       try {

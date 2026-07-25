@@ -35,8 +35,10 @@ use crate::tableformer::TfSession;
 
 #[wasm_bindgen]
 extern "C" {
-    #[wasm_bindgen(js_namespace = console, js_name = log)]
-    fn console_log(s: &str);
+    // On-page diagnostic sink (defined by the host — worker.js forwards it to
+    // the main thread, which shows it; console isn't reachable on a phone).
+    #[wasm_bindgen(js_name = __docling_diag)]
+    fn diag(s: &str);
 }
 
 #[wasm_bindgen]
@@ -161,7 +163,7 @@ impl ScannedConverter {
                 *hist.entry(r.label).or_default() += 1;
             }
             let summary: Vec<String> = hist.iter().map(|(l, n)| format!("{l}×{n}")).collect();
-            console_log(&format!("layout regions: {}", summary.join(", ")));
+            diag(&format!("layout regions: {}", summary.join(", ")));
         }
 
         // OCR the text regions (same gather/batch/decode as native ocr_page).
