@@ -22,8 +22,8 @@
 
 use docling_pdf::layout::{decode_layout, layout_input, SIDE};
 use docling_pdf::ocr_prep::{
-    batch_input, decode_row, dict_chars, normalize_polarity, prep_region_lines, width_batches,
-    REC_HEIGHT,
+    batch_input, decode_row, dict_chars, normalize_polarity, prep_region_lines, prep_table_words,
+    width_batches, PrepLine, REC_HEIGHT,
 };
 use docling_pdf::pdfium_backend::{PdfPage, TextCell};
 use docling_pdf::scanned::{assemble_page_with_tables, finish_document, refine_regions};
@@ -112,6 +112,33 @@ impl ScannedConverter {
 }
 
 impl ScannedConverter {
+    /// Recognize a set of prepared line/word crops: width-batch them and run
+    /// each batch through the JS recognition session, greedy-CTC-decoding the
+    /// probabilities. Returns one string per input crop, in order.
+    async fn ocr_lines(&self, rec: &RecSession, lines: &[PrepLine]) -> Result<Vec<String>, JsError> {
+        let mut texts = vec![String::new(); lines.len()];
+        for (w, chunk) in width_batches(lines) {
+            let data = batch_input(w, &chunk, lines);
+            let out = rec
+                .run(
+                    chunk.len() as u32,
+                    REC_HEIGHT,
+                    w as u32,
+                    js_sys::Float32Array::from(data.as_slice()),
+                )
+                .await
+                .map_err(|e| JsError::new(&format!("rec session.run: {e:?}")))?;
+            let (probs, t_len, nc) = tensor_parts(&out)?;
+            if probs.len() < chunk.len() * t_len * nc {
+                return Err(JsError::new("rec session.run returned a short tensor"));
+            }
+            for (i, &ix) in chunk.iter().enumerate() {
+                texts[ix] = decode_row(&self.chars, &probs[i * t_len * nc..(i + 1) * t_len * nc], nc);
+            }
+        }
+        Ok(texts)
+    }
+
     #[allow(clippy::too_many_arguments)]
     async fn add_page_impl(
         &mut self,
@@ -168,32 +195,24 @@ impl ScannedConverter {
 
         // OCR the text regions (same gather/batch/decode as native ocr_page).
         let (bboxes, lines) = prep_region_lines(&img, &regions, scale);
-        let mut texts = vec![String::new(); lines.len()];
-        for (w, chunk) in width_batches(&lines) {
-            let data = batch_input(w, &chunk, &lines);
-            let out = rec
-                .run(
-                    chunk.len() as u32,
-                    REC_HEIGHT,
-                    w as u32,
-                    js_sys::Float32Array::from(data.as_slice()),
-                )
-                .await
-                .map_err(|e| JsError::new(&format!("rec session.run: {e:?}")))?;
-            let (probs, t_len, nc) = tensor_parts(&out)?;
-            if probs.len() < chunk.len() * t_len * nc {
-                return Err(JsError::new("rec session.run returned a short tensor"));
-            }
-            for (i, &ix) in chunk.iter().enumerate() {
-                texts[ix] = decode_row(
-                    &self.chars,
-                    &probs[i * t_len * nc..(i + 1) * t_len * nc],
-                    nc,
-                );
-            }
-        }
+        let texts = self.ocr_lines(rec, &lines).await?;
         let mut cells = Vec::new();
         for ((l, t, r, b), text) in bboxes.into_iter().zip(texts) {
+            let text = text.trim().to_string();
+            if text.is_empty() {
+                continue;
+            }
+            cells.push(TextCell { text, l, t, r, b });
+        }
+
+        // Table interiors carry no words yet (prep_region_lines skips non-text
+        // labels, and the browser has no pdfium text layer). Recognize their
+        // word crops so the cell matcher — geometric or TableFormer — can fill
+        // the grid; assemble routes these cells into the table region, not into
+        // stray paragraphs.
+        let (tbboxes, tlines) = prep_table_words(&img, &regions, scale);
+        let ttexts = self.ocr_lines(rec, &tlines).await?;
+        for ((l, t, r, b), text) in tbboxes.into_iter().zip(ttexts) {
             let text = text.trim().to_string();
             if text.is_empty() {
                 continue;

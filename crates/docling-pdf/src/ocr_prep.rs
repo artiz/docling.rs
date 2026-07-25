@@ -212,6 +212,99 @@ pub fn prep_region_lines(
     (bboxes, lines)
 }
 
+/// Split a text line into word tokens by a vertical ink-projection profile:
+/// runs of ink columns separated by whitespace wider than ~0.6× the line
+/// height (an inter-word/-column gap, not an inter-character one). Returns tight
+/// `(l, 0, r, h)` boxes in line-crop pixels. The browser table path recognizes
+/// these individually so each word carries its own box for column matching —
+/// the native pipeline gets word boxes from the pdfium text layer instead.
+pub fn segment_words(line: &RgbImage) -> Vec<(u32, u32, u32, u32)> {
+    let (w, h) = line.dimensions();
+    if w == 0 || h == 0 {
+        return Vec::new();
+    }
+    let mean: f32 = line.pixels().map(luma).sum::<f32>() / (w * h) as f32;
+    let thresh = mean * 0.7;
+    let mut col_ink = vec![0u32; w as usize];
+    for y in 0..h {
+        for x in 0..w {
+            if luma(line.get_pixel(x, y)) < thresh {
+                col_ink[x as usize] += 1;
+            }
+        }
+    }
+    let min_gap = ((h as f32) * 0.6).max(4.0) as u32;
+    let mut words = Vec::new();
+    let mut start: Option<u32> = None;
+    let mut last_ink = 0u32;
+    let mut gap = 0u32;
+    for x in 0..w {
+        if col_ink[x as usize] > 0 {
+            if start.is_none() {
+                start = Some(x);
+            }
+            last_ink = x;
+            gap = 0;
+        } else if let Some(s) = start {
+            gap += 1;
+            if gap >= min_gap {
+                words.push((s, 0, last_ink + 1, h));
+                start = None;
+            }
+        }
+    }
+    if let Some(s) = start {
+        words.push((s, 0, last_ink + 1, h));
+    }
+    words
+}
+
+/// Gather word crops from a page's *table* regions (browser table path, #157
+/// stage 3): crop each table region, split it into lines, split each line into
+/// words ([`segment_words`]), prep each word for recognition, and keep the
+/// word's page-point bbox. Recognizing table interiors is what gives the cell
+/// matcher the word boxes it needs — the native pipeline reads those from
+/// pdfium's text layer, which the browser doesn't have. NOT used by native.
+pub fn prep_table_words(
+    img: &RgbImage,
+    regions: &[crate::layout::Region],
+    scale: f32,
+) -> (Vec<LineBox>, Vec<PrepLine>) {
+    let (iw, ih) = img.dimensions();
+    let mut bboxes = Vec::new();
+    let mut lines = Vec::new();
+    for region in regions {
+        if !crate::assemble::is_table_like(region.label) {
+            continue;
+        }
+        let l = (region.l * scale).max(0.0) as u32;
+        let t = (region.t * scale).max(0.0) as u32;
+        let r = ((region.r * scale).max(0.0) as u32).min(iw);
+        let b = ((region.b * scale).max(0.0) as u32).min(ih);
+        if r <= l || b <= t {
+            continue;
+        }
+        let crop = imageops::crop_imm(img, l, t, r - l, b - t).to_image();
+        for (lx, ly, rx, ry) in segment_lines(&crop) {
+            let line = imageops::crop_imm(&crop, lx, ly, rx - lx, ry - ly).to_image();
+            for (wx0, _, wx1, _) in segment_words(&line) {
+                let word = imageops::crop_imm(&line, wx0, 0, wx1 - wx0, ry - ly).to_image();
+                let Some(pl) = prep_line(&word) else {
+                    continue;
+                };
+                bboxes.push((
+                    (l + lx + wx0) as f32 / scale,
+                    (t + ly) as f32 / scale,
+                    (l + lx + wx1) as f32 / scale,
+                    (t + ry) as f32 / scale,
+                ));
+                lines.push(pl);
+            }
+        }
+    }
+    (bboxes, lines)
+}
+
 /// Normalize an image to the scan polarity every stage assumes — dark ink
 /// on light paper (the segmentation threshold and the recognition model's
 /// training data both bake it in): a predominantly dark page (mean luma
