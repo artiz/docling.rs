@@ -1043,7 +1043,7 @@ pub fn crop_region_scaled(page: &PdfPage, bbox: [f32; 4], target_scale: f32) -> 
 /// Crop a layout region from the rendered page image and encode it as PNG (the
 /// figure bytes docling stores on a `PictureItem`). Region coordinates are page
 /// points; the image is rendered at `page.scale`.
-#[cfg(feature = "ml")]
+#[cfg(feature = "ocr-prep")]
 fn crop_region(page: &PdfPage, region: &Region) -> Option<PictureImage> {
     let s = page.scale;
     let (iw, ih) = (page.image.width(), page.image.height());
@@ -1305,9 +1305,9 @@ pub fn assemble_page(
             };
             // Without the page render (text-layer-only build) a picture keeps
             // its caption/classification but carries no cropped pixels.
-            #[cfg(feature = "ml")]
+            #[cfg(feature = "ocr-prep")]
             let image = crate::timing::timed("crop_region", || crop_region(page, region));
-            #[cfg(not(feature = "ml"))]
+            #[cfg(not(feature = "ocr-prep"))]
             let image: Option<PictureImage> = None;
             nodes.push(located(
                 loc,
@@ -1656,6 +1656,49 @@ mod tests {
     use crate::layout::Region;
     use crate::pdfium_backend::{LinkAnnot, PdfPage, TextCell};
     use docling_core::Node;
+
+    /// A `picture` region is cropped out of the rendered page, whatever built
+    /// that page. The browser pipeline (#157) has no pdfium but does hand over
+    /// the rasterized bitmap through `from_cells_with_image`, so it must get
+    /// the same figure bytes the native path does — that is what makes
+    /// `images = "embedded"` inline real pixels instead of a placeholder.
+    #[cfg(feature = "ocr-prep")]
+    #[test]
+    fn picture_regions_are_cropped_from_a_host_supplied_page_image() {
+        let mut img = image::RgbImage::new(200, 200);
+        // Paint the figure area so the crop is distinguishable from the page.
+        for y in 100..160 {
+            for x in 20..120 {
+                img.put_pixel(x, y, image::Rgb([255, 0, 0]));
+            }
+        }
+        // scale 2.0: the region is in page points, the bitmap in pixels.
+        let page = PdfPage::from_cells_with_image(100.0, 100.0, 2.0, Vec::new(), img);
+        let region = Region {
+            label: "picture",
+            score: 0.9,
+            l: 10.0,
+            t: 50.0,
+            r: 60.0,
+            b: 80.0,
+        };
+        let (nodes, _) = super::assemble_page(&page, vec![region], &[None], &[None]);
+        // Layout-derived nodes carry provenance, so the picture arrives wrapped.
+        let image = nodes
+            .iter()
+            .find_map(|n| match n {
+                Node::Located { inner, .. } => match &**inner {
+                    Node::Picture { image, .. } => image.as_ref(),
+                    _ => None,
+                },
+                Node::Picture { image, .. } => image.as_ref(),
+                _ => None,
+            })
+            .expect("a picture node with cropped pixels");
+        assert_eq!(image.mimetype, "image/png");
+        assert_eq!((image.width, image.height), (100, 60), "region × scale");
+        assert!(!image.data.is_empty(), "PNG bytes were encoded");
+    }
 
     #[test]
     fn link_anchors_split_a_shared_word_cell_between_adjacent_links() {

@@ -269,16 +269,18 @@ export function createOcr({ onStatus }) {
       await cur.conv.add_page(rgba, w, h, scale, layout, cur.rec);
     }
   }
-  function finishDoc(name, to) {
-    const md = cur.conv.finish(name, to || "md");
+  function finishDoc(name, to, images) {
+    const md = cur.conv.finish(name, to || "md", images || "placeholder");
     cur = null;
     return md;
   }
 
   // Standalone image: the wasm side decodes it (no canvas needed).
-  async function convertImage(bytes, name, lang, to) {
+  async function convertImage(bytes, name, lang, to, images) {
     const { dict, rec } = await recFor(lang);
-    return convert_scanned_image(new Uint8Array(bytes), name, dict, layout, rec, to || "md");
+    return convert_scanned_image(
+      new Uint8Array(bytes), name, dict, layout, rec, to || "md", images || "placeholder",
+    );
   }
 
   return {

@@ -757,7 +757,7 @@ pub fn pdf_text_pages(bytes: &[u8]) -> Vec<crate::pdfium_backend::PdfPage> {
                 cells: prose,
                 code_cells: crate::pdfium_backend::code_cells_from_glyphs(&glyphs, h),
                 word_cells: words,
-                #[cfg(feature = "ml")]
+                #[cfg(feature = "ocr-prep")]
                 image: image::RgbImage::new(1, 1),
                 links: Vec::new(),
             }

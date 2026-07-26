@@ -231,9 +231,9 @@ curl -fsSL https://raw.githubusercontent.com/docling-project/docling.rs/master/s
         rec: (l) => rpc("rec", { lang: l }),
         docStart: (l, useTf) => rpc("doc-start", { lang: l, useTf }),
         addPage: (rgba, w, h, scale) => rpc("doc-page", { rgba, w, h, scale }, [rgba]),
-        docFinish: (name, fmt) => rpc("doc-finish", { name, to: fmt }).then((r) => r.md),
-        convertImage: (bytes, name, l, fmt) =>
-          rpc("convert-image", { bytes, name, lang: l, to: fmt }, [bytes]).then((r) => r.md),
+        docFinish: (name, fmt, img) => rpc("doc-finish", { name, to: fmt, images: img }).then((r) => r.md),
+        convertImage: (bytes, name, l, fmt, img) =>
+          rpc("convert-image", { bytes, name, lang: l, to: fmt, images: img }, [bytes]).then((r) => r.md),
         setModels: (m) => rpc("set-models", { models: m }, Object.values(m)),
       };
     }
@@ -253,8 +253,8 @@ curl -fsSL https://raw.githubusercontent.com/docling-project/docling.rs/master/s
         rec: async (l) => { await p.recFor(l); await p.warmup(l); return {}; },
         docStart: (l, useTf) => p.startDoc(l, useTf),
         addPage: (rgba, w, h, scale) => p.addPage(new Uint8Array(rgba), w, h, scale),
-        docFinish: (name, fmt) => Promise.resolve(p.finishDoc(name, fmt)),
-        convertImage: (bytes, name, l, fmt) => p.convertImage(bytes, name, l, fmt),
+        docFinish: (name, fmt, img) => Promise.resolve(p.finishDoc(name, fmt, img)),
+        convertImage: (bytes, name, l, fmt, img) => p.convertImage(bytes, name, l, fmt, img),
         setModels: (m) => p.setProvidedModels(m),
       };
     }
@@ -355,7 +355,7 @@ curl -fsSL https://raw.githubusercontent.com/docling-project/docling.rs/master/s
         await drv.addPage(cur.rgba, cur.w, cur.h, SCALE);
         elapsed += performance.now() - t;
       }
-      return drv.docFinish(name, to.value);
+      return drv.docFinish(name, to.value, images.value);
     }
 
     async function convertFile(bytes, name) {
@@ -363,7 +363,7 @@ curl -fsSL https://raw.githubusercontent.com/docling-project/docling.rs/master/s
       // OCR when there is none (that is exactly what a scanned PDF is).
       if (isImage(name)) {
         const drv = await ensureOcr();
-        return drv.convertImage(bytes.slice(0).buffer, name, lang.value, to.value);
+        return drv.convertImage(bytes.slice(0).buffer, name, lang.value, to.value, images.value);
       }
       try {
         return convert(bytes, name, to.value, images.value);

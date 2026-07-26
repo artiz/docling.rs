@@ -4,7 +4,9 @@
 //! reconstruction and reading-order assembly in Rust — the same code as the
 //! native pipeline (`docling_pdf::{layout, ocr_prep, scanned}`). TableFormer
 //! and the enrichment models are stage 3; table regions fall back to the
-//! geometric reconstruction the native `--no-table-former` flag uses.
+//! geometric reconstruction the native `--no-table-former` flag uses. Picture
+//! regions are cropped out of the page bitmap, like the native pipeline, so
+//! `images = "embedded"` inlines real figure bytes.
 //!
 //! Pages arrive as raw RGBA bitmaps: for a scanned PDF the host page renders
 //! them with pdf.js (`page.getViewport({scale: 2})` — 2 px per PDF point,
@@ -16,7 +18,7 @@
 //! for (const bitmap of pages) {
 //!   await conv.add_page(bitmap.data, bitmap.width, bitmap.height, 2.0, layout, rec);
 //! }
-//! const markdown = conv.finish("scan.pdf", "md");
+//! const markdown = conv.finish("scan.pdf", "md", "embedded");
 //! ```
 //! (`www/index.html` is the complete wiring.)
 
@@ -232,7 +234,10 @@ impl ScannedConverter {
             Vec::new() // assemble_page_with_tables resizes to all-None
         };
 
-        let page = PdfPage::from_cells(page_w, page_h, scale, cells);
+        // Hand the page bitmap over: assemble crops each `picture` region out
+        // of it, so the browser pipeline produces the same figure bytes the
+        // native one does (`images=embedded` then inlines them).
+        let page = PdfPage::from_cells_with_image(page_w, page_h, scale, cells, img);
         self.pages
             .push(assemble_page_with_tables(&page, regions, table_rows));
         Ok(())
@@ -248,20 +253,33 @@ impl ScannedConverter {
 
     /// Assemble the accumulated pages into the final document and render it
     /// as `"md"` (default), `"json"` or `"doclang"` — the same three the
-    /// declarative [`crate::convert`] entry point offers. Resets the converter.
-    pub fn finish(&mut self, name: &str, to: Option<String>) -> Result<String, JsError> {
+    /// declarative [`crate::convert`] entry point offers. `images` picks how
+    /// cropped figures render in Markdown (`"placeholder"` | `"embedded"`),
+    /// like [`crate::convert`]. Resets the converter.
+    pub fn finish(
+        &mut self,
+        name: &str,
+        to: Option<String>,
+        images: Option<String>,
+    ) -> Result<String, JsError> {
         let doc = finish_document(name, std::mem::take(&mut self.pages));
-        render(&doc, to.as_deref())
+        render(&doc, to.as_deref(), images.as_deref())
     }
 }
 
-/// Render an assembled document in one of the three output grammars. The OCR
-/// pipeline recovers no picture *pixels* (regions are recognized, not cropped
-/// out), so Markdown always uses docling's `<!-- image -->` placeholder — there
-/// is nothing to embed, unlike the declarative path's `images` option.
-fn render(doc: &docling_core::DoclingDocument, to: Option<&str>) -> Result<String, JsError> {
+/// Render an assembled document in one of the three output grammars, with the
+/// same `images` choice the declarative path offers — picture regions are
+/// cropped out of the rendered page, so `embedded` has real bytes to inline.
+fn render(
+    doc: &docling_core::DoclingDocument,
+    to: Option<&str>,
+    images: Option<&str>,
+) -> Result<String, JsError> {
     match to.unwrap_or("md") {
-        "md" | "markdown" => Ok(doc.export_to_markdown()),
+        "md" | "markdown" => {
+            let mode = crate::image_mode(images).map_err(|e| JsError::new(&e))?;
+            Ok(doc.export_to_markdown_with_images(mode, "artifacts").0)
+        }
         "json" => Ok(doc.export_to_json()),
         "doclang" => Ok(doc.export_to_doclang()),
         other => Err(JsError::new(&format!(
@@ -281,6 +299,7 @@ pub async fn convert_scanned_image(
     layout: &LayoutSession,
     rec: &RecSession,
     to: Option<String>,
+    images: Option<String>,
 ) -> Result<String, JsError> {
     let img = image::load_from_memory(bytes)
         .map_err(|e| JsError::new(&format!("decode image: {e}")))?
@@ -288,7 +307,7 @@ pub async fn convert_scanned_image(
     let (w, h) = img.dimensions();
     let mut conv = ScannedConverter::new(dict);
     conv.add_page(img.as_raw(), w, h, 1.0, layout, rec).await?;
-    conv.finish(name, to)
+    conv.finish(name, to, images)
 }
 
 // Silence the unused warning for SIDE re-export path (the JS side sizes its

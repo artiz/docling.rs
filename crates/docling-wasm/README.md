@@ -76,6 +76,10 @@ for (const page of pages) await ocr.addPage(page.rgba, page.w, page.h, 2.0);
 const doc = ocr.finishDoc(file.name, "md");
 ```
 
+Scanned pictures are cropped out of the rendered page just like the native
+pipeline, so `images: "embedded"` inlines real figure bytes on this path too
+(`ocr.finishDoc(name, "md", "embedded")`).
+
 Models resolve **device file → local `./models/` → Hugging Face**, so a page can
 ship with no models and still work: `ocr.setProvidedModels({ "layout_heron_int8.onnx": buf })`
 takes files the user picked, and anything not provided is fetched.

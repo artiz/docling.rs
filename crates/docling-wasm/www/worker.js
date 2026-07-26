@@ -8,8 +8,8 @@
 // RPC: every request carries an id; the reply is {type:"ok", id, ...data} or
 // {type:"error", id, msg}. Progress is a broadcast {type:"status", msg,
 // spinning}. Requests: set-models{models} | boot{lang} | rec{lang} |
-// doc-start{lang,useTf} | doc-page{rgba,w,h,scale} | doc-finish{name,to} |
-// convert-image{bytes,name,lang,to}.
+// doc-start{lang,useTf} | doc-page{rgba,w,h,scale} | doc-finish{name,to,images} |
+// convert-image{bytes,name,lang,to,images}.
 
 import { createOcr, THREADS } from "./pipeline.js";
 
@@ -42,9 +42,9 @@ async function handle(m) {
       await ocr.addPage(new Uint8Array(m.rgba), m.w, m.h, m.scale);
       return {};
     case "doc-finish":
-      return { md: ocr.finishDoc(m.name, m.to) };
+      return { md: ocr.finishDoc(m.name, m.to, m.images) };
     case "convert-image":
-      return { md: await ocr.convertImage(m.bytes, m.name, m.lang, m.to) };
+      return { md: await ocr.convertImage(m.bytes, m.name, m.lang, m.to, m.images) };
     default:
       throw new Error(`unknown request ${m.type}`);
   }
