@@ -169,6 +169,38 @@ fn vlm_parses_doctags_answers() {
     assert!(md.contains("| H"), "md: {md:?}");
 }
 
+/// Conformance lock for #153: the `picture_classification` corpus fixture
+/// scored 1.3% similarity in the live VLM run — a divergence that (per the
+/// harness's own note) is render/model variance, *not* a parser defect. Feed
+/// the model's exact DocTags for that document through `convert_vlm` and assert
+/// the Markdown matches docling's groundtruth byte-for-byte, so our side of the
+/// comparison stays provably correct (pictures + captions before the image
+/// placeholder, multi-page `<page_break>`, reading order). Image leg → no
+/// pdfium, runs everywhere.
+#[test]
+fn vlm_doctags_matches_groundtruth_picture_classification() {
+    let doctags = std::fs::read_to_string(
+        repo_root().join("tests/data/pdf/groundtruth/picture_classification.doctags.txt"),
+    )
+    .expect("doctags fixture");
+    let want = std::fs::read_to_string(
+        repo_root().join("tests/data/pdf/groundtruth/picture_classification.md"),
+    )
+    .expect("markdown groundtruth");
+    // The model emits one DocTags blob per document (root wrapper + internal
+    // <page_break>); the image leg is a single request → single answer.
+    let (endpoint, served, handle) = mock_openai(vec![doctags]);
+    let source = SourceDocument::from_bytes("page.png", InputFormat::Image, image_bytes());
+    let doc = convert_vlm(&source, &opts(endpoint)).expect("vlm conversion");
+    handle.join().expect("mock server");
+    assert_eq!(served.load(Ordering::SeqCst), 1);
+    assert_eq!(
+        doc.export_to_markdown().trim(),
+        want.trim(),
+        "VLM DocTags → Markdown must match docling's groundtruth for picture_classification"
+    );
+}
+
 #[test]
 fn vlm_rejects_non_visual_formats() {
     let source = SourceDocument::from_bytes("x.md", InputFormat::Md, b"# hi".to_vec());
