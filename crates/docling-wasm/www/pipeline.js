@@ -263,6 +263,10 @@ export function createOcr({ onStatus }) {
     cur = { conv: new ScannedConverter(dict), rec, tf: tfSess };
   }
   async function addPage(rgba, w, h, scale) {
+    // Guard the single in-flight document: without it a stray addPage/finish
+    // after (or before) the lifecycle reads `cur` as null and the host sees an
+    // opaque "Cannot read properties of null".
+    if (!cur) throw new Error("addPage called with no document open (startDoc first)");
     if (cur.tf) {
       await cur.conv.addPageTf(rgba, w, h, scale, layout, cur.rec, cur.tf);
     } else {
@@ -270,6 +274,7 @@ export function createOcr({ onStatus }) {
     }
   }
   function finishDoc(name, to, images) {
+    if (!cur) throw new Error("finishDoc called with no document open (startDoc first)");
     const md = cur.conv.finish(name, to || "md", images || "placeholder");
     cur = null;
     return md;

@@ -160,6 +160,11 @@ curl -fsSL https://raw.githubusercontent.com/docling-project/docling.rs/master/s
     const [meta, out, preview, drop, pick, to, images, render, lang, tf, modelsInput, ocrState] =
       ["meta", "out", "preview", "drop", "pick", "to", "images", "render", "lang", "tf", "models", "ocrState"].map($);
 
+    // Everything the user can touch, frozen for the whole of a conversion:
+    // a control left live lets a second run start on top of the first, and the
+    // two then fight over the pipeline's single in-flight document.
+    const CONTROLS = [pick, to, images, render, lang, tf, modelsInput];
+
     await init();
     const exts = JSON.parse(supported_extensions());
     pick.accept = [...exts, ...IMAGE_EXT].map((e) => "." + e).join(",");
@@ -173,12 +178,12 @@ curl -fsSL https://raw.githubusercontent.com/docling-project/docling.rs/master/s
     }
     function busy(msg) {
       document.body.classList.add("busy");
-      for (const el of [pick, to, images, lang, tf, modelsInput]) el.disabled = true;
+      for (const el of CONTROLS) el.disabled = true;
       status(msg, true);
     }
     function ready(msg) {
       document.body.classList.remove("busy");
-      for (const el of [pick, to, images, lang, tf, modelsInput]) el.disabled = false;
+      for (const el of CONTROLS) el.disabled = false;
       status(msg, false);
     }
 
@@ -320,7 +325,8 @@ curl -fsSL https://raw.githubusercontent.com/docling-project/docling.rs/master/s
     }
 
     // ---- conversion ------------------------------------------------------
-    let last = null; // {bytes, name} — re-rendered when an option changes
+    let last = null;      // {bytes, name} — reconverted when an option changes
+    let lastText = "";    // its rendered output, so previewing costs nothing
 
     function isImage(name) {
       return IMAGE_EXT.includes(name.toLowerCase().split(".").pop());
@@ -376,19 +382,28 @@ curl -fsSL https://raw.githubusercontent.com/docling-project/docling.rs/master/s
       }
     }
 
+    let running = false;
     async function run() {
-      if (!last) return;
+      // The controls are frozen during a run, but never rely on the UI alone:
+      // a stray re-entry would start a second document while the first is mid
+      // flight, and the OCR pipeline holds exactly one.
+      if (!last || running) return;
+      running = true;
       out.textContent = "";
       preview.style.display = "none";
       busy(`converting ${last.name} …`);
       const t0 = performance.now();
       try {
         const text = await convertFile(last.bytes, last.name);
-        show(text || "(nothing extracted)");
+        lastText = text || "(nothing extracted)";
+        show(lastText);
         ready(`${last.name} → ${to.value} in ${fmtTime(performance.now() - t0)}`);
       } catch (e) {
-        show(String((e && e.message) || e));
+        lastText = String((e && e.message) || e);
+        show(lastText);
         ready(`${last.name} — failed`);
+      } finally {
+        running = false;
       }
     }
 
@@ -449,7 +464,9 @@ curl -fsSL https://raw.githubusercontent.com/docling-project/docling.rs/master/s
       last = { bytes: new Uint8Array(await file.arrayBuffer()), name: file.name };
       run();
     }
-    to.onchange = images.onchange = render.onchange = run;
+    to.onchange = images.onchange = run;
+    // Previewing only re-renders what we already have — no reconversion.
+    render.onchange = () => lastText && show(lastText);
     // Switching the recognition language reloads that model; re-run if a
     // scanned document is already on screen.
     lang.onchange = async () => {
