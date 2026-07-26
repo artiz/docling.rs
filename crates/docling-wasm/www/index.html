@@ -3,92 +3,492 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>docling.rs — in-browser document conversion (wasm)</title>
+  <!-- Cross-origin isolation shim: lets ONNX Runtime Web use multi-threaded
+       wasm (SharedArrayBuffer) on a static host that cannot set COOP/COEP
+       headers. Must run before the module script; reloads once on first visit.
+       Harmless when the OCR models are never loaded. -->
+  <script src="coi.js"></script>
+  <title>docling.rs — document conversion in your browser (wasm)</title>
+  <!-- Inline, so a static host never 404s on /favicon.ico. -->
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><text y='14' font-size='14'>📄</text></svg>">
   <style>
     :root { color-scheme: light dark; font-family: system-ui, sans-serif; }
-    body { max-width: 60rem; margin: 2rem auto; padding: 0 1rem; }
-    h1 { font-size: 1.4rem; }
+    body { max-width: 62rem; margin: 2rem auto; padding: 0 1rem; }
+    h1 { font-size: 1.4rem; margin-bottom: 0.3rem; }
+    h2 { font-size: 1rem; margin: 1.4rem 0 0.5rem; }
+    .lede { color: #888; margin-top: 0; }
     #drop {
       border: 2px dashed #888; border-radius: 8px; padding: 2.5rem 1rem;
-      text-align: center; cursor: pointer; margin: 1rem 0;
+      text-align: center; cursor: pointer; margin: 1rem 0; transition: opacity .2s;
     }
-    #drop.hover { border-color: #4a90d9; background: rgba(74, 144, 217, 0.08); }
-    .row { display: flex; gap: 1rem; align-items: center; flex-wrap: wrap; }
+    #drop.hover { border-color: #4a90d9; background: rgba(74, 144, 217, .08); }
+    /* Busy (models loading / conversion running): controls freeze, the drop
+       zone dims and its border pulses until the work settles. */
+    body.busy #drop { opacity: .55; pointer-events: none; animation: working 1.2s ease-in-out infinite; }
+    body.busy select, body.busy input { opacity: .6; }
+    @keyframes working { 0%, 100% { border-color: #888; } 50% { border-color: #4a90d9; } }
+    .spinner {
+      display: inline-block; width: .85em; height: .85em; margin-right: .45em;
+      border: 2px solid rgba(74, 144, 217, .25); border-top-color: #4a90d9;
+      border-radius: 50%; vertical-align: -.1em; animation: spin .8s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .row { display: flex; gap: 1.2rem; align-items: center; flex-wrap: wrap; margin: .6rem 0; }
+    .row label { display: inline-flex; gap: .35rem; align-items: center; }
+    #meta { color: #888; font-size: .85rem; }
     #out {
-      width: 100%; min-height: 20rem; white-space: pre-wrap; overflow: auto;
-      border: 1px solid #8884; border-radius: 6px; padding: 0.8rem;
-      font-family: ui-monospace, monospace; font-size: 0.85rem;
+      width: 100%; min-height: 18rem; white-space: pre-wrap; overflow: auto;
+      border: 1px solid #8884; border-radius: 6px; padding: .8rem;
+      font-family: ui-monospace, monospace; font-size: .85rem;
     }
-    #meta { color: #888; font-size: 0.85rem; }
+    #preview { display: none; border: 1px solid #8884; border-radius: 6px; padding: .8rem; }
+    #preview img { max-width: 100%; }
+    details { margin: .8rem 0; }
+    summary { cursor: pointer; }
+    small, .hint { color: #888; font-size: .85rem; }
+    code { font-size: .9em; }
+    pre { overflow-x: auto; }
   </style>
 </head>
 <body>
-  <h1>docling.rs → wasm: convert documents in your browser</h1>
-  <p>
-    DOCX / HTML / Markdown / XLSX / PPTX / CSV / EPUB / ODF / LaTeX /
-    digital PDF / … are converted to Markdown or docling JSON
-    <strong>entirely client-side</strong> — the file never leaves this page.
-    PDFs convert via their embedded text layer (flat paragraphs, like the
-    native <code>--no-ocr</code>); scanned PDFs, images and audio need the
-    native ML pipeline and are not part of the wasm build.
+  <h1>docling.rs in your browser</h1>
+  <p class="lede">
+    Documents convert to Markdown, docling JSON or DocLang XML
+    <strong>entirely client-side</strong> — nothing is uploaded, no server is
+    involved. Everything below runs from this one page.
   </p>
+
+  <div id="drop">Drop a file here, or click to choose</div>
+  <input type="file" id="pick" hidden>
+
   <div class="row">
-    <label>Output:
+    <label>Output
       <select id="to">
         <option value="md" selected>Markdown</option>
         <option value="json">docling JSON</option>
         <option value="doclang">DocLang XML</option>
       </select>
     </label>
-    <span id="meta">loading module…</span>
+    <label title="How pictures render in Markdown — the same option docling-serve exposes.">Images
+      <select id="images">
+        <option value="placeholder" selected>placeholder</option>
+        <option value="embedded">embedded (base64)</option>
+      </select>
+    </label>
+    <label id="renderWrap" title="Render the Markdown as HTML instead of showing the source.">
+      <input type="checkbox" id="render"> preview
+    </label>
+    <span id="meta">starting…</span>
   </div>
-  <div id="drop">Drop a document here, or click to pick a file</div>
-  <input type="file" id="pick" hidden>
+
+  <div class="row" id="ocrRow">
+    <label title="Recognition model for scanned pages.">OCR language
+      <select id="lang">
+        <option value="en" selected>English</option>
+        <option value="cyrillic">Cyrillic + Latin</option>
+        <option value="ch">Chinese + Latin</option>
+      </select>
+    </label>
+    <label title="Real table structure from the TableFormer ONNX graphs instead of the geometric reconstruction. Needs the tableformer models (~380 MB) and is slow on phones.">
+      <input type="checkbox" id="tf"> TableFormer tables
+    </label>
+    <span class="hint" id="ocrState">scanned pages need models — see below</span>
+  </div>
+
+  <div id="preview"></div>
   <pre id="out"></pre>
 
+  <h2>What converts without any setup</h2>
+  <p class="hint">
+    DOCX, PPTX, XLSX, HTML, Markdown, CSV, AsciiDoc, EPUB, ODF, LaTeX, JATS,
+    email, MHTML, JSON, DocLang — and <strong>PDFs that carry a text layer</strong>
+    (the same extraction the native <code>--no-ocr</code> flag does). These need
+    no models and no network: the converters are compiled into the wasm module.
+  </p>
+
+  <h2>Scanned PDFs and images (optional models)</h2>
+  <p class="hint">
+    A scanned page has no text layer, so it needs the ML pipeline: RT-DETR
+    layout detection + PP-OCR recognition (+ TableFormer for tables), running on
+    <a href="https://onnxruntime.ai/docs/tutorials/web/">ONNX Runtime Web</a>
+    with all pre/post-processing in Rust/wasm — the same code as the native
+    pipeline. Provide the models any one of these three ways:
+  </p>
+  <ol class="hint">
+    <li>
+      <strong>From your device</strong> — pick the <code>.onnx</code> files:
+      <input type="file" id="models" multiple accept=".onnx,.data,.txt">
+      <br>Layout needs <code>layout_heron_int8.onnx</code>; TableFormer also needs
+      <code>encoder.onnx</code>, <code>decoder_kv.onnx</code>&nbsp;+&nbsp;<code>.data</code>,
+      <code>bbox.onnx</code>&nbsp;+&nbsp;<code>.data</code>. Each file is read
+      locally — no download, and it avoids the memory spike a 225&nbsp;MB fetch
+      causes on a phone.
+    </li>
+    <li>
+      <strong>From a <code>models/</code> folder next to this page</strong> —
+      served same-origin, fetched automatically:
+      <pre>cd crates/docling-wasm/www/
+curl -fsSL https://raw.githubusercontent.com/docling-project/docling.rs/master/scripts/install/download_dependencies.sh | sh</pre>
+    </li>
+    <li>
+      <strong>From Hugging Face</strong> — used automatically when neither of the
+      above has the file. (GitHub Release assets can't be fetched cross-origin:
+      they send no <code>Access-Control-Allow-Origin</code>.)
+    </li>
+  </ol>
+  <p class="hint">
+    Resolution order per file is <strong>device → local <code>models/</code> →
+    Hugging Face</strong>, so any mix works. The recognition model (~10&nbsp;MB)
+    streams from Hugging Face on demand; layout is ~68&nbsp;MB and TableFormer
+    ~380&nbsp;MB, so on mobile prefer picking files from the device.
+  </p>
+
   <script type="module">
+    // One page, two conversion paths:
+    //   * declarative + text-layer PDF  → `convert()`, synchronous, no models;
+    //   * scanned PDF / image           → the ONNX pipeline in a Web Worker.
+    // The OCR half is loaded lazily: a visitor who only converts a DOCX never
+    // pays for ORT, pdf.js or any model. pdf.js rasterization stays on THIS
+    // thread (in a worker it falls back to a "fake worker" that garbles the
+    // raster); only the wasm OCR runs in the worker, so the UI stays live.
     import init, { convert, supported_extensions, version } from "./pkg/docling_wasm.js";
 
-    const meta = document.getElementById("meta");
-    const out = document.getElementById("out");
-    const drop = document.getElementById("drop");
-    const pick = document.getElementById("pick");
-    const to = document.getElementById("to");
+    const SCALE = 2.0; // px per PDF point — the native pipeline's RENDER_SCALE
+    const IMAGE_EXT = ["png", "jpg", "jpeg", "tif", "tiff", "webp", "bmp"];
+
+    const $ = (id) => document.getElementById(id);
+    const [meta, out, preview, drop, pick, to, images, render, lang, tf, modelsInput, ocrState] =
+      ["meta", "out", "preview", "drop", "pick", "to", "images", "render", "lang", "tf", "models", "ocrState"].map($);
 
     await init();
     const exts = JSON.parse(supported_extensions());
-    pick.accept = exts.map((e) => "." + e).join(",");
-    meta.textContent = `docling.rs ${version()} · ${exts.length} extensions`;
+    pick.accept = [...exts, ...IMAGE_EXT].map((e) => "." + e).join(",");
+    ready(`docling.rs ${version()} — ready`);
 
-    let last = null; // {bytes, name}
-    async function run(file) {
-      last = { bytes: new Uint8Array(await file.arrayBuffer()), name: file.name };
-      render();
+    // ---- UI state -------------------------------------------------------
+    function status(msg, spinning) {
+      meta.textContent = "";
+      if (spinning) meta.append(Object.assign(document.createElement("span"), { className: "spinner" }));
+      meta.append(msg);
     }
-    function render() {
-      if (!last) return;
-      const t0 = performance.now();
+    function busy(msg) {
+      document.body.classList.add("busy");
+      for (const el of [pick, to, images, lang, tf, modelsInput]) el.disabled = true;
+      status(msg, true);
+    }
+    function ready(msg) {
+      document.body.classList.remove("busy");
+      for (const el of [pick, to, images, lang, tf, modelsInput]) el.disabled = false;
+      status(msg, false);
+    }
+
+    // ---- OCR pipeline (lazy) --------------------------------------------
+    // Loaded on the first scanned page or model pick. Prefers a Web Worker and
+    // falls back to running on this thread if workers are unavailable.
+    let ocr = null;      // driver, once booted
+    let ocrBooting = null;
+    let providedModels = null; // device files picked before the driver existed
+
+    // ONNX Runtime Web is the one thing the OCR path fetches from a CDN, so a
+    // failure there is the likeliest reason OCR won't start — say so plainly
+    // instead of surfacing a bare "Failed to fetch".
+    const ORT_HINT =
+      "could not load ONNX Runtime Web from the CDN — OCR needs it. Check the " +
+      "network (a blocker or an offline device will do this); everything else " +
+      "on this page works without it.";
+
+    function workerDriver() {
+      const worker = new Worker("./worker.js", { type: "module" });
+      let seq = 0;
+      const waiters = new Map();
+      worker.onmessage = (e) => {
+        const m = e.data;
+        if (m.type === "status") return document.body.classList.contains("busy") && status(m.msg, m.spinning);
+        if (m.type === "up" || m.type === "diag") return;
+        const w = waiters.get(m.id);
+        if (!w) return;
+        waiters.delete(m.id);
+        m.type === "error" ? w.reject(new Error(m.msg)) : w.resolve(m);
+      };
+      // A module worker whose imports fail (offline, blocked CDN, a strict
+      // extension) never answers — without this every pending call would hang
+      // forever and the page would sit on "loading …". Fail them loudly instead.
+      const die = (why) => {
+        for (const w of waiters.values()) w.reject(new Error(why));
+        waiters.clear();
+      };
+      worker.onerror = () => die(ORT_HINT);
+      worker.onmessageerror = () => die("the OCR worker sent a message this page could not read");
+      const rpc = (type, payload, transfer) =>
+        new Promise((resolve, reject) => {
+          const id = ++seq;
+          waiters.set(id, { resolve, reject });
+          worker.postMessage({ type, id, ...payload }, transfer || []);
+        });
+      return {
+        worker,
+        boot: (l) => rpc("boot", { lang: l }),
+        rec: (l) => rpc("rec", { lang: l }),
+        docStart: (l, useTf) => rpc("doc-start", { lang: l, useTf }),
+        addPage: (rgba, w, h, scale) => rpc("doc-page", { rgba, w, h, scale }, [rgba]),
+        docFinish: (name, fmt) => rpc("doc-finish", { name, to: fmt }).then((r) => r.md),
+        convertImage: (bytes, name, l, fmt) =>
+          rpc("convert-image", { bytes, name, lang: l, to: fmt }, [bytes]).then((r) => r.md),
+        setModels: (m) => rpc("set-models", { models: m }, Object.values(m)),
+      };
+    }
+    async function mainDriver() {
+      const { createOcr, THREADS } = await import("./pipeline.js").catch(() => {
+        throw new Error(ORT_HINT);
+      });
+      const p = createOcr({ onStatus: (m, s) => document.body.classList.contains("busy") && status(m, s) });
+      return {
+        boot: async (l) => {
+          const kind = await p.boot();
+          if (!kind) return { noLayout: true };
+          await p.recFor(l);
+          await p.warmup(l);
+          return { kind, threads: THREADS, main: true };
+        },
+        rec: async (l) => { await p.recFor(l); await p.warmup(l); return {}; },
+        docStart: (l, useTf) => p.startDoc(l, useTf),
+        addPage: (rgba, w, h, scale) => p.addPage(new Uint8Array(rgba), w, h, scale),
+        docFinish: (name, fmt) => Promise.resolve(p.finishDoc(name, fmt)),
+        convertImage: (bytes, name, l, fmt) => p.convertImage(bytes, name, l, fmt),
+        setModels: (m) => p.setProvidedModels(m),
+      };
+    }
+
+    // Bring the OCR pipeline up once; concurrent callers share the promise.
+    function ensureOcr() {
+      if (ocr) return Promise.resolve(ocr);
+      if (ocrBooting) return ocrBooting;
+      ocrBooting = (async () => {
+        status("loading the OCR pipeline …", true);
+        let drv;
+        try { drv = typeof Worker !== "undefined" ? workerDriver() : await mainDriver(); }
+        catch { drv = await mainDriver(); }
+        if (providedModels) await drv.setModels(providedModels);
+        let r;
+        try {
+          r = await drv.boot(lang.value);
+        } catch (e) {
+          // Worker died during boot (module load, CSP, …) — retry same-thread.
+          if (drv.worker) {
+            try { drv.worker.terminate(); } catch {}
+            drv = await mainDriver();
+            if (providedModels) await drv.setModels(providedModels);
+            r = await drv.boot(lang.value);
+          } else throw e;
+        }
+        if (r.noLayout) {
+          ocrBooting = null;
+          throw new Error(
+            "no layout model — pick the .onnx files from your device, or install them into ./models/ (see below)",
+          );
+        }
+        ocrState.textContent =
+          `OCR ready — ${r.kind} layout, ${r.threads} thread${r.threads > 1 ? "s" : ""}${r.main ? ", main thread" : ""}`;
+        ocr = drv;
+        return drv;
+      })();
+      ocrBooting.catch(() => { ocrBooting = null; });
+      return ocrBooting;
+    }
+
+    // ---- pdf.js (lazy) ---------------------------------------------------
+    // Pinned so the worker and the auxiliary asset URLs match the loaded build:
+    // pdf.js decodes JPEG2000/JBIG2 with separate wasm modules and CJK text with
+    // CMaps, and warns + drops page images when those base URLs are missing.
+    let pdfjsMod = null;
+    async function pdfjs() {
+      if (pdfjsMod) return pdfjsMod;
+      const V = "6.1.200";
+      const base = `https://cdn.jsdelivr.net/npm/pdfjs-dist@${V}/`;
+      const mod = await import(base + "build/pdf.min.mjs");
+      mod.GlobalWorkerOptions.workerSrc = base + "build/pdf.worker.min.mjs";
+      pdfjsMod = {
+        mod,
+        assets: {
+          wasmUrl: base + "wasm/",
+          cMapUrl: base + "cmaps/",
+          cMapPacked: true,
+          standardFontDataUrl: base + "standard_fonts/",
+        },
+      };
+      return pdfjsMod;
+    }
+
+    // ---- conversion ------------------------------------------------------
+    let last = null; // {bytes, name} — re-rendered when an option changes
+
+    function isImage(name) {
+      return IMAGE_EXT.includes(name.toLowerCase().split(".").pop());
+    }
+
+    // Scanned PDF: rasterize page p+1 while the worker converts page p, so the
+    // main-thread raster overlaps the worker-thread OCR.
+    async function convertScannedPdf(bytes, name) {
+      const drv = await ensureOcr();
+      const { mod, assets } = await pdfjs();
+      const pdf = await mod.getDocument({ data: bytes.slice(0), ...assets }).promise;
+      await drv.docStart(lang.value, tf.checked);
+      const canvas = document.createElement("canvas");
+      const ctx = canvas.getContext("2d", { willReadFrequently: true });
+      const rasterize = async (p) => {
+        const page = await pdf.getPage(p);
+        const viewport = page.getViewport({ scale: SCALE });
+        canvas.width = viewport.width;
+        canvas.height = viewport.height;
+        await page.render({ canvasContext: ctx, viewport }).promise;
+        const img = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        return { rgba: img.data.buffer, w: canvas.width, h: canvas.height };
+      };
+      let next = rasterize(1);
+      let elapsed = 0;
+      for (let p = 1; p <= pdf.numPages; p++) {
+        const avg = p > 1 ? ` — ${(elapsed / (p - 1) / 1000).toFixed(1)}s/page` : "";
+        status(`${name}: page ${p}/${pdf.numPages}${avg} …`, true);
+        const cur = await next;
+        if (p < pdf.numPages) next = rasterize(p + 1);
+        const t = performance.now();
+        await drv.addPage(cur.rgba, cur.w, cur.h, SCALE);
+        elapsed += performance.now() - t;
+      }
+      return drv.docFinish(name, to.value);
+    }
+
+    async function convertFile(bytes, name) {
+      // Images always need OCR; PDFs try the text layer first and fall back to
+      // OCR when there is none (that is exactly what a scanned PDF is).
+      if (isImage(name)) {
+        const drv = await ensureOcr();
+        return drv.convertImage(bytes.slice(0).buffer, name, lang.value, to.value);
+      }
       try {
-        out.textContent = convert(last.bytes, last.name, to.value);
-        meta.textContent = `${last.name} → ${to.value} in ${(performance.now() - t0).toFixed(1)} ms`;
+        return convert(bytes, name, to.value, images.value);
       } catch (e) {
-        out.textContent = String(e);
+        const msg = String((e && e.message) || e);
+        const scanned = name.toLowerCase().endsWith(".pdf") && /text layer|OCR/i.test(msg);
+        if (!scanned) throw e;
+        status(`${name}: no text layer — running OCR …`, true);
+        return convertScannedPdf(bytes, name);
       }
     }
 
-    to.onchange = render;
-    drop.onclick = () => pick.click();
-    pick.onchange = () => pick.files[0] && run(pick.files[0]);
-    drop.ondragover = (e) => { e.preventDefault(); drop.classList.add("hover"); };
-    drop.ondragleave = () => drop.classList.remove("hover");
-    drop.ondrop = (e) => {
-      e.preventDefault();
-      drop.classList.remove("hover");
-      e.dataTransfer.files[0] && run(e.dataTransfer.files[0]);
+    async function run() {
+      if (!last) return;
+      out.textContent = "";
+      preview.style.display = "none";
+      busy(`converting ${last.name} …`);
+      const t0 = performance.now();
+      try {
+        const text = await convertFile(last.bytes, last.name);
+        show(text || "(nothing extracted)");
+        ready(`${last.name} → ${to.value} in ${fmtTime(performance.now() - t0)}`);
+      } catch (e) {
+        show(String((e && e.message) || e));
+        ready(`${last.name} — failed`);
+      }
+    }
+
+    const fmtTime = (ms) => (ms < 1000 ? `${ms.toFixed(0)} ms` : `${(ms / 1000).toFixed(1)} s`);
+
+    // Markdown preview: a deliberately tiny renderer (headings, lists, tables,
+    // images, code). It exists to show that `images=embedded` really carries the
+    // pixels — not to be a Markdown implementation.
+    function show(text) {
+      const md = to.value === "md" && render.checked;
+      preview.style.display = md ? "block" : "none";
+      out.style.display = md ? "none" : "block";
+      if (md) preview.innerHTML = miniMarkdown(text);
+      else out.textContent = text;
+    }
+    function miniMarkdown(src) {
+      const esc = (s) => s.replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
+      const inline = (s) =>
+        esc(s)
+          .replace(/!\[([^\]]*)\]\(([^)]+)\)/g, '<img alt="$1" src="$2">')
+          .replace(/\[([^\]]*)\]\(([^)]+)\)/g, '<a href="$2">$1</a>')
+          .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
+          .replace(/`([^`]+)`/g, "<code>$1</code>");
+      const html = [];
+      for (const block of src.split(/\n{2,}/)) {
+        const b = block.trim();
+        if (!b) continue;
+        const h = b.match(/^(#{1,6})\s+(.*)$/s);
+        if (h) { html.push(`<h${h[1].length}>${inline(h[2])}</h${h[1].length}>`); continue; }
+        if (/^\|/.test(b)) {
+          const rows = b.split("\n").filter((r) => !/^\|[\s|:-]+\|$/.test(r));
+          html.push("<table border=1 cellspacing=0 cellpadding=4>" +
+            rows.map((r, i) => {
+              const cells = r.replace(/^\||\|$/g, "").split("|");
+              const tag = i ? "td" : "th";
+              return "<tr>" + cells.map((c) => `<${tag}>${inline(c.trim())}</${tag}>`).join("") + "</tr>";
+            }).join("") + "</table>");
+          continue;
+        }
+        if (/^([-*]|\d+\.)\s/.test(b)) {
+          const ordered = /^\d/.test(b);
+          const items = b.split("\n").map((l) => `<li>${inline(l.replace(/^([-*]|\d+\.)\s+/, ""))}</li>`).join("");
+          html.push(ordered ? `<ol>${items}</ol>` : `<ul>${items}</ul>`);
+          continue;
+        }
+        if (b.startsWith("<!-- image -->")) { html.push("<p><em>[image]</em></p>"); continue; }
+        html.push(`<p>${inline(b)}</p>`);
+      }
+      return html.join("\n");
+    }
+
+    // ---- events ----------------------------------------------------------
+    async function load(file) {
+      // Freeze the controls before the read, not after: a large file takes a
+      // visible moment to reach an ArrayBuffer, and a live UI in that window
+      // invites a second pick landing mid-conversion.
+      busy(`reading ${file.name} …`);
+      last = { bytes: new Uint8Array(await file.arrayBuffer()), name: file.name };
+      run();
+    }
+    to.onchange = images.onchange = render.onchange = run;
+    // Switching the recognition language reloads that model; re-run if a
+    // scanned document is already on screen.
+    lang.onchange = async () => {
+      if (!ocr) return;
+      busy(`loading the ${lang.value} recognition model …`);
+      try { await ocr.rec(lang.value); ready("OCR language ready"); }
+      catch (e) { ready(`could not load that model: ${(e && e.message) || e}`); }
+    };
+    tf.onchange = () => last && run();
+
+    // Device model files: read each to an ArrayBuffer and hand them to the
+    // pipeline (transferred to the worker) so models load with no download.
+    modelsInput.onchange = async () => {
+      if (!modelsInput.files.length) return;
+      busy(`reading ${modelsInput.files.length} model file(s) …`);
+      try {
+        const map = {};
+        for (const f of modelsInput.files) map[f.name] = await f.arrayBuffer();
+        providedModels = map;
+        if (ocr) await ocr.setModels(map);
+        else await ensureOcr();
+        ready(`models ready: ${Object.keys(map).join(", ")}`);
+      } catch (e) {
+        ready(`could not read those files: ${(e && e.message) || e}`);
+      }
     };
 
-    // Hook for automated tests: window.doclingConvert(bytes, name, to)
-    window.doclingConvert = (bytes, name, fmt) => convert(new Uint8Array(bytes), name, fmt);
+    drop.onclick = () => pick.click();
+    pick.onchange = () => pick.files[0] && load(pick.files[0]);
+    for (const ev of ["dragover", "dragleave", "drop"]) {
+      drop.addEventListener(ev, (e) => {
+        e.preventDefault();
+        drop.classList.toggle("hover", ev === "dragover");
+        if (ev === "drop" && e.dataTransfer.files[0]) load(e.dataTransfer.files[0]);
+      });
+    }
+
+    // Hook for automated tests: window.doclingConvert(bytes, name, to, images)
+    window.doclingConvert = (bytes, name, fmt, img) => convert(new Uint8Array(bytes), name, fmt, img);
     window.doclingReady = true;
   </script>
 </body>

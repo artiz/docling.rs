@@ -16,7 +16,7 @@
 //! const md = convert(new Uint8Array(await file.arrayBuffer()), file.name, "md");
 //! ```
 
-use docling::{DocumentConverter, InputFormat, SourceDocument};
+use docling::{DocumentConverter, ImageMode, InputFormat, SourceDocument};
 use wasm_bindgen::prelude::*;
 
 #[cfg(feature = "ocr")]
@@ -39,7 +39,12 @@ fn start() {
 
 /// The whole conversion body, host-testable (`JsError` can only be
 /// constructed on the wasm target, so the JS boundary stays a thin shim).
-fn convert_impl(bytes: &[u8], filename: &str, to: Option<&str>) -> Result<String, String> {
+fn convert_impl(
+    bytes: &[u8],
+    filename: &str,
+    to: Option<&str>,
+    images: Option<&str>,
+) -> Result<String, String> {
     let ext = filename.rsplit('.').next().unwrap_or_default();
     let format = InputFormat::from_extension(ext)
         .ok_or_else(|| format!("unknown or unsupported extension: {filename:?}"))?;
@@ -47,8 +52,15 @@ fn convert_impl(bytes: &[u8], filename: &str, to: Option<&str>) -> Result<String
     let result = DocumentConverter::new()
         .convert(source)
         .map_err(|e| e.to_string())?;
+    let image_mode = image_mode(images)?;
     match to.unwrap_or("md") {
-        "md" | "markdown" => Ok(result.document.export_to_markdown()),
+        // `Referenced` is deliberately unreachable here: it hands the caller
+        // loose image files to write next to the Markdown, which a page with no
+        // filesystem cannot do — the browser equivalent is `embedded`.
+        "md" | "markdown" => Ok(result
+            .document
+            .export_to_markdown_with_images(image_mode, "artifacts")
+            .0),
         "json" => Ok(result.document.export_to_json()),
         "doclang" => Ok(result.document.export_to_doclang()),
         other => Err(format!(
@@ -57,13 +69,36 @@ fn convert_impl(bytes: &[u8], filename: &str, to: Option<&str>) -> Result<String
     }
 }
 
+/// Picture rendering for Markdown output, mirroring docling-serve's `images`
+/// option: `placeholder` (docling's default `<!-- image -->`) or `embedded`
+/// (`![Image](data:…;base64,…)`, self-contained — the only way to carry pixels
+/// out of a page that cannot write files).
+fn image_mode(images: Option<&str>) -> Result<ImageMode, String> {
+    match images.unwrap_or("placeholder") {
+        "placeholder" => Ok(ImageMode::Placeholder),
+        "embedded" => Ok(ImageMode::Embedded),
+        other => Err(format!(
+            "unknown images={other:?} (expected \"placeholder\" or \"embedded\")"
+        )),
+    }
+}
+
 /// Convert a document (as bytes + filename, the extension drives format
 /// detection) to `to`: `"md"` (Markdown, default), `"json"` (docling-core's
 /// `DoclingDocument` wire format, schema 1.10.0) or `"doclang"` (docling's
 /// DocLang XML serialization).
+///
+/// `images` controls how pictures render in Markdown — `"placeholder"`
+/// (default) or `"embedded"` (base64 data URIs), the same option
+/// docling-serve exposes.
 #[wasm_bindgen]
-pub fn convert(bytes: &[u8], filename: &str, to: Option<String>) -> Result<String, JsError> {
-    convert_impl(bytes, filename, to.as_deref()).map_err(|e| JsError::new(&e))
+pub fn convert(
+    bytes: &[u8],
+    filename: &str,
+    to: Option<String>,
+    images: Option<String>,
+) -> Result<String, JsError> {
+    convert_impl(bytes, filename, to.as_deref(), images.as_deref()).map_err(|e| JsError::new(&e))
 }
 
 /// The file extensions this build can convert, as a JSON string array —
@@ -98,16 +133,16 @@ mod tests {
     #[test]
     fn markdown_roundtrip() {
         let md = b"# Title\n\nHello *world*\n";
-        let out = convert_impl(md, "note.md", None).unwrap();
+        let out = convert_impl(md, "note.md", None, None).unwrap();
         assert!(out.contains("# Title"));
-        let json = convert_impl(md, "note.md", Some("json")).unwrap();
+        let json = convert_impl(md, "note.md", Some("json"), None).unwrap();
         assert!(json.contains("\"schema_name\""));
     }
 
     #[test]
     fn ml_formats_rejected() {
         // Images still need the full ML pipeline.
-        let err = convert_impl(&[0x89, b'P', b'N', b'G'], "scan.png", None).unwrap_err();
+        let err = convert_impl(&[0x89, b'P', b'N', b'G'], "scan.png", None, None).unwrap_err();
         assert!(
             err.contains("unknown or unsupported") || err.contains("pdf"),
             "should reject the ML-only format: {err}"
@@ -129,7 +164,7 @@ mod tests {
             "/../../tests/data/pdf/sources/code_and_formula.pdf"
         ))
         .expect("corpus pdf");
-        let out = convert_impl(&bytes, "code_and_formula.pdf", None).unwrap();
+        let out = convert_impl(&bytes, "code_and_formula.pdf", None, None).unwrap();
         assert!(!out.trim().is_empty(), "text layer should extract");
     }
 
@@ -141,7 +176,7 @@ mod tests {
         if docling::PDF_ML_COMPILED {
             return;
         }
-        let err = convert_impl(b"%PDF-1.4\n%%EOF", "scan.pdf", None).unwrap_err();
+        let err = convert_impl(b"%PDF-1.4\n%%EOF", "scan.pdf", None, None).unwrap_err();
         assert!(
             err.contains("text layer") || err.contains("OCR"),
             "should point at the missing text layer: {err}"
@@ -156,8 +191,27 @@ mod tests {
             "/../docling/tests/data/docx/sources/docx_lists.docx"
         ))
         .expect("corpus docx");
-        let out = convert_impl(&bytes, "docx_lists.docx", None).unwrap();
+        let out = convert_impl(&bytes, "docx_lists.docx", None, None).unwrap();
         assert!(!out.trim().is_empty());
+    }
+
+    /// `images=embedded` inlines picture bytes as data URIs (docling-serve's
+    /// option, and the only way a page with no filesystem can carry pixels
+    /// out); the default stays docling's `<!-- image -->` placeholder.
+    #[test]
+    fn embedded_images_inline_as_data_uris() {
+        let bytes = std::fs::read(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../docling/tests/data/docx/sources/word_image_anchors.docx"
+        ))
+        .expect("corpus docx with images");
+        let placeholder = convert_impl(&bytes, "word_image_anchors.docx", None, None).unwrap();
+        assert!(placeholder.contains("<!-- image -->"), "{placeholder}");
+        let embedded =
+            convert_impl(&bytes, "word_image_anchors.docx", None, Some("embedded")).unwrap();
+        assert!(embedded.contains("](data:image/"), "expected a data URI");
+        let err = convert_impl(&bytes, "word_image_anchors.docx", None, Some("nope")).unwrap_err();
+        assert!(err.contains("unknown images="), "{err}");
     }
 
     #[test]

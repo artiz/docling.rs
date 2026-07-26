@@ -18,7 +18,7 @@
 //! }
 //! const markdown = conv.finish("scan.pdf", "md");
 //! ```
-//! (`www/scan.html` is the complete wiring.)
+//! (`www/index.html` is the complete wiring.)
 
 use docling_pdf::layout::{decode_layout, layout_input, SIDE};
 use docling_pdf::ocr_prep::{
@@ -32,14 +32,6 @@ use wasm_bindgen::prelude::*;
 
 use crate::ocr::{tensor_parts, RecSession};
 use crate::tableformer::TfSession;
-
-#[wasm_bindgen]
-extern "C" {
-    // On-page diagnostic sink (defined by the host — worker.js forwards it to
-    // the main thread, which shows it; console isn't reachable on a phone).
-    #[wasm_bindgen(js_name = __docling_diag)]
-    fn diag(s: &str);
-}
 
 #[wasm_bindgen]
 extern "C" {
@@ -188,19 +180,6 @@ impl ScannedConverter {
         let regions = decode_layout(&logits, &boxes, q, c, page_w, page_h);
         let regions = refine_regions(regions, &[], page_w, page_h);
 
-        // Diagnostic: the region-label histogram, so it's visible (browser
-        // console) whether the layout model flagged any `table` region on this
-        // page — tables only render when it does (geometric or TableFormer).
-        {
-            let mut hist: std::collections::BTreeMap<&str, usize> =
-                std::collections::BTreeMap::new();
-            for r in &regions {
-                *hist.entry(r.label).or_default() += 1;
-            }
-            let summary: Vec<String> = hist.iter().map(|(l, n)| format!("{l}×{n}")).collect();
-            diag(&format!("layout regions: {}", summary.join(", ")));
-        }
-
         // OCR the text regions (same gather/batch/decode as native ocr_page).
         let (bboxes, lines) = prep_region_lines(&img, &regions, scale);
         let texts = self.ocr_lines(rec, &lines).await?;
@@ -268,16 +247,26 @@ impl ScannedConverter {
     }
 
     /// Assemble the accumulated pages into the final document and render it
-    /// as `"md"` (default) or `"json"`. Resets the converter.
+    /// as `"md"` (default), `"json"` or `"doclang"` — the same three the
+    /// declarative [`crate::convert`] entry point offers. Resets the converter.
     pub fn finish(&mut self, name: &str, to: Option<String>) -> Result<String, JsError> {
         let doc = finish_document(name, std::mem::take(&mut self.pages));
-        match to.as_deref().unwrap_or("md") {
-            "md" | "markdown" => Ok(doc.export_to_markdown()),
-            "json" => Ok(doc.export_to_json()),
-            other => Err(JsError::new(&format!(
-                "unknown output format {other:?} (expected \"md\" or \"json\")"
-            ))),
-        }
+        render(&doc, to.as_deref())
+    }
+}
+
+/// Render an assembled document in one of the three output grammars. The OCR
+/// pipeline recovers no picture *pixels* (regions are recognized, not cropped
+/// out), so Markdown always uses docling's `<!-- image -->` placeholder — there
+/// is nothing to embed, unlike the declarative path's `images` option.
+fn render(doc: &docling_core::DoclingDocument, to: Option<&str>) -> Result<String, JsError> {
+    match to.unwrap_or("md") {
+        "md" | "markdown" => Ok(doc.export_to_markdown()),
+        "json" => Ok(doc.export_to_json()),
+        "doclang" => Ok(doc.export_to_doclang()),
+        other => Err(JsError::new(&format!(
+            "unknown output format {other:?} (expected \"md\", \"json\" or \"doclang\")"
+        ))),
     }
 }
 

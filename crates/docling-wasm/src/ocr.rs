@@ -27,7 +27,7 @@
 //!   },
 //! });
 //! ```
-//! (see `www/ocr.html` for the complete wiring, including output-name
+//! (see `www/index.html` for the complete wiring, including output-name
 //! discovery and model/dict caching.)
 
 use docling_core::{DoclingDocument, Node};

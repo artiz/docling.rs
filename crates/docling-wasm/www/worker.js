@@ -7,16 +7,13 @@
 //
 // RPC: every request carries an id; the reply is {type:"ok", id, ...data} or
 // {type:"error", id, msg}. Progress is a broadcast {type:"status", msg,
-// spinning}. Requests: boot{lang} | rec{lang} | doc-start{lang} |
-// doc-page{rgba,w,h,scale} | doc-finish{name} | convert-image{bytes,name,lang}.
+// spinning}. Requests: set-models{models} | boot{lang} | rec{lang} |
+// doc-start{lang,useTf} | doc-page{rgba,w,h,scale} | doc-finish{name,to} |
+// convert-image{bytes,name,lang,to}.
 
 import { createOcr, THREADS } from "./pipeline.js";
 
 const post = (type, extra) => self.postMessage({ type, ...extra });
-
-// On-page diagnostic sink the wasm calls (see src/scanned.rs) — forward to the
-// main thread, which renders it (a phone can't open the console).
-globalThis.__docling_diag = (msg) => post("diag", { msg });
 
 const ocr = createOcr({
   onStatus: (msg, spinning) => post("status", { msg, spinning }),
@@ -45,9 +42,9 @@ async function handle(m) {
       await ocr.addPage(new Uint8Array(m.rgba), m.w, m.h, m.scale);
       return {};
     case "doc-finish":
-      return { md: ocr.finishDoc(m.name) };
+      return { md: ocr.finishDoc(m.name, m.to) };
     case "convert-image":
-      return { md: await ocr.convertImage(m.bytes, m.name, m.lang) };
+      return { md: await ocr.convertImage(m.bytes, m.name, m.lang, m.to) };
     default:
       throw new Error(`unknown request ${m.type}`);
   }

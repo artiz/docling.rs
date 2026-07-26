@@ -100,7 +100,7 @@ export function createOcr({ onStatus }) {
   const status = (msg, spinning = true) => onStatus && onStatus(msg, spinning);
 
   // Model files the user picked from the device (basename → ArrayBuffer),
-  // used instead of any network fetch — see scan.html's file picker. Reading a
+  // used instead of any network fetch — see index.html's model picker. Reading a
   // File to an ArrayBuffer is a single allocation, so it also sidesteps the
   // double-buffering peak fetchProgress hits on the 225 MB encoder.
   let provided = {};
@@ -269,16 +269,16 @@ export function createOcr({ onStatus }) {
       await cur.conv.add_page(rgba, w, h, scale, layout, cur.rec);
     }
   }
-  function finishDoc(name) {
-    const md = cur.conv.finish(name, "md");
+  function finishDoc(name, to) {
+    const md = cur.conv.finish(name, to || "md");
     cur = null;
     return md;
   }
 
   // Standalone image: the wasm side decodes it (no canvas needed).
-  async function convertImage(bytes, name, lang) {
+  async function convertImage(bytes, name, lang, to) {
     const { dict, rec } = await recFor(lang);
-    return convert_scanned_image(new Uint8Array(bytes), name, dict, layout, rec, "md");
+    return convert_scanned_image(new Uint8Array(bytes), name, dict, layout, rec, to || "md");
   }
 
   return {

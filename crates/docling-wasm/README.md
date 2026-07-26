@@ -26,12 +26,59 @@ converters and the PDF text parser are pure Rust.
 ## API
 
 ```ts
-convert(bytes: Uint8Array, filename: string, to?: "md" | "json" | "doclang"): string
+convert(
+  bytes: Uint8Array,
+  filename: string,
+  to?: "md" | "json" | "doclang",          // default "md"
+  images?: "placeholder" | "embedded",     // default "placeholder", Markdown only
+): string
 supported_extensions(): string   // JSON array, e.g. for <input accept=…>
 version(): string
 ```
 
-The filename's extension drives format detection, same as the CLI.
+The filename's extension drives format detection, same as the CLI. `images`
+mirrors docling-serve's option: `placeholder` emits docling's `<!-- image -->`,
+`embedded` inlines the picture as a `data:` URI so the Markdown is
+self-contained (a page has no filesystem, so there is no `referenced` mode).
+
+### Convert a file the user picked
+
+```js
+import init, { convert } from "./pkg/docling_wasm.js";
+await init();
+
+const file = input.files[0];
+const bytes = new Uint8Array(await file.arrayBuffer());
+const markdown = convert(bytes, file.name, "md");
+const json     = convert(bytes, file.name, "json");
+const withPics = convert(bytes, file.name, "md", "embedded");
+```
+
+### Scanned pages (OCR)
+
+Scanned PDFs and images need the ML models; everything else runs with no
+network at all. The full wiring — model resolution, Web Worker, pdf.js
+rasterization — is [`www/index.html`](./www/index.html); the short version:
+
+```js
+import { createOcr } from "./pipeline.js";
+
+const ocr = createOcr({ onStatus: (msg) => console.log(msg) });
+await ocr.boot();                        // wasm + layout model
+
+// A standalone image is its own page.
+const md = await ocr.convertImage(await file.arrayBuffer(), file.name, "en", "md");
+
+// A scanned PDF: feed rasterized pages in order (2 px/point = the native
+// pipeline's RENDER_SCALE), then finish.
+await ocr.startDoc("en", /* TableFormer */ false);
+for (const page of pages) await ocr.addPage(page.rgba, page.w, page.h, 2.0);
+const doc = ocr.finishDoc(file.name, "md");
+```
+
+Models resolve **device file → local `./models/` → Hugging Face**, so a page can
+ship with no models and still work: `ocr.setProvidedModels({ "layout_heron_int8.onnx": buf })`
+takes files the user picked, and anything not provided is fetched.
 
 ## Build
 
@@ -49,14 +96,19 @@ wasm-bindgen --target web --out-dir crates/docling-wasm/www/pkg \
 
 ## Demo
 
-[`www/index.html`](./www/index.html) is a drop-a-file demo page over the
-module (output selector, conversion timing, automated-test hook). After the
-`wasm-bindgen` step above:
+[`www/index.html`](./www/index.html) is the whole thing on one page: drop a
+file, pick the output (Markdown / JSON / DocLang), pick how images render, and
+optionally turn on OCR for scanned pages. After the `wasm-bindgen` step above:
 
 ```bash
 python3 -m http.server -d crates/docling-wasm/www 8901
 # open http://127.0.0.1:8901/
 ```
+
+It is a plain static page — copy `www/` behind any web server (or into a mobile
+app's webview) and it works as-is. The OCR half loads lazily, so a visitor who
+only converts a DOCX never downloads ONNX Runtime, pdf.js or any model. PDFs
+try their text layer first and fall back to OCR only when there isn't one.
 
 Verified end-to-end in headless Chromium: Markdown/DOCX→md, DOCX→JSON, a
 corpus PDF→md through the text-layer path, and the scanned-PDF error path all
@@ -113,10 +165,9 @@ Stage 3 is the same but `conv.addPageTf(rgba, w, h, 2.0, layout, rec, tf)`,
 where `tf` is a stateful session over the three TableFormer graphs (the heavy
 cross-attention K/V and the growing decoder KV-cache stay on the JS side, so
 each decode step marshals only the last tag and gets back logits+hidden — see
-[`www/pipeline.js`](./www/pipeline.js)'s `JsTfSession`). The demos wire all of
-this up: [`www/ocr.html`](./www/ocr.html) (stage 1),
-[`www/scan.html`](./www/scan.html) (stages 2–3, pdf.js + a TableFormer toggle +
-a device model-file picker).
+[`www/pipeline.js`](./www/pipeline.js)'s `JsTfSession`).
+[`www/index.html`](./www/index.html) wires all three stages up behind the OCR
+language selector, the TableFormer toggle and the model picker.
 
 ## Run it on your phone
 
@@ -136,8 +187,8 @@ same-origin, from a CORS host, **or straight from files on your device**.
    Pages or githack.) Build the wasm `pkg/` first (see **Build** above).
 
 3. **Provide the models to the page**, either:
-   - **from your device** — tap the *"Models from device"* picker in
-     `scan.html` and select `layout_heron_int8.onnx` and, for TableFormer,
+   - **from your device** — tap the model picker under *"Scanned PDFs and
+     images"* and select `layout_heron_int8.onnx` and, for TableFormer,
      `encoder.onnx`, `decoder_kv.onnx` (+`.data`), `bbox.onnx` (+`.data`). Each
      file is read to an `ArrayBuffer` on the client and used directly — no
      download, and a single allocation per file (a 225 MB encoder over
