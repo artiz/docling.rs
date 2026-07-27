@@ -386,7 +386,15 @@ all, only the PDF's embedded text cells grouped into flat paragraphs by
 reading order (no headings/lists/tables/pictures). It's the fastest PDF path
 by a wide margin, but a scanned/image-only PDF (no embedded text layer) comes
 back empty rather than erroring, so a caller can detect that and re-convert
-without the flag.
+without the flag. `--force-full-page-ocr` is the opposite escape hatch
+(docling's `force_full_page_ocr`): OCR every page from its rendered image
+even when it carries a text layer — for layers that exist but lie (broken
+encodings, subset fonts with garbage mappings, a scanned form with a few
+typed-in field values). Ignored under `--no-ocr`, mirroring docling. The same
+switch is available on every surface: `force_full_page_ocr(bool)` on the
+library builder, a `force_full_page_ocr` option in docling-serve, the
+`force_full_page_ocr=` kwarg in Python, `forceFullPageOcr` in Node, and the
+"Force OCR" toggle in the wasm demo.
 
 ### VLM pipeline (remote endpoint)
 

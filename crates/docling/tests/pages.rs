@@ -140,3 +140,72 @@ fn referenced_images_stream_to_the_artifacts_dir() {
     }
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+/// The layout + OCR models the force-OCR test needs, beyond pdfium. Model
+/// resolution is CWD-relative (tests run from the crate dir) so, when the
+/// repo-root copies exist, point the env overrides at them; skips cleanly on
+/// a model-free checkout, same as the pdfium gate.
+fn ocr_models_ready() -> bool {
+    let m = repo_root().join("models");
+    let layout = ["layout_heron_int8.onnx", "layout_heron.onnx"]
+        .iter()
+        .map(|f| m.join(f))
+        .find(|p| p.exists());
+    let rec = ["ocr_rec_en.onnx", "ocr_rec.onnx"]
+        .iter()
+        .map(|f| m.join(f))
+        .find(|p| p.exists());
+    let dict = ["en_dict.txt", "ppocr_keys_v1.txt"]
+        .iter()
+        .map(|f| m.join(f))
+        .find(|p| p.exists());
+    match (layout, rec, dict) {
+        (Some(l), Some(r), Some(d)) => {
+            std::env::set_var("DOCLING_LAYOUT_ONNX", l);
+            std::env::set_var("DOCLING_OCR_REC_ONNX", r);
+            std::env::set_var("DOCLING_OCR_DICT", d);
+            true
+        }
+        _ => false,
+    }
+}
+
+/// `force_full_page_ocr` (docling's option of the same name) must actually
+/// discard the text layer: converting a digital PDF page with it produces
+/// OCR-recognized text, not the embedded cells. The fixture's text layer
+/// spells "JavaScript Code Example" — OCR of the rendered page reads the same
+/// heading, so the words prove the page converted *some* way; the differing
+/// glyph geometry (OCR boxes never byte-match the text layer's) proves it was
+/// not the text-layer path: the two outputs must differ.
+#[test]
+fn force_full_page_ocr_discards_the_text_layer() {
+    if !pdfium_ready() || !ocr_models_ready() {
+        eprintln!("skipping: pdfium or the OCR models are not present");
+        return;
+    }
+    let src = || {
+        SourceDocument::from_file(repo_root().join("tests/data/pdf/sources/code_and_formula.pdf"))
+            .expect("fixture")
+    };
+    let normal = DocumentConverter::new()
+        .page_range(1, 1)
+        .convert(src())
+        .expect("normal convert")
+        .document
+        .export_to_markdown();
+    let forced = DocumentConverter::new()
+        .page_range(1, 1)
+        .force_full_page_ocr(true)
+        .convert(src())
+        .expect("forced convert")
+        .document
+        .export_to_markdown();
+    assert!(
+        forced.contains("JavaScript"),
+        "OCR should still read the page's heading: {forced:?}"
+    );
+    assert_ne!(
+        normal, forced,
+        "forced output must come from OCR, not the embedded text layer"
+    );
+}

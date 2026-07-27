@@ -95,6 +95,9 @@
     <label title="Recover table structure with the TableFormer ONNX graphs. Needs the tableformer models (~380 MB). It runs only on tables whose free geometric reconstruction looks unreliable, so clean tables cost nothing extra.">
       <input type="checkbox" id="tf"> TableFormer tables
     </label>
+    <label title="OCR every PDF page from its rendered image, ignoring any embedded text layer — docling's force_full_page_ocr. For text layers that exist but lie: broken encodings, scanned forms with a few typed-in fields.">
+      <input type="checkbox" id="forceOcr"> Force OCR
+    </label>
     <span class="hint" id="ocrState">scanned pages need models — see below</span>
   </div>
 
@@ -160,13 +163,13 @@ curl -fsSL https://raw.githubusercontent.com/docling-project/docling.rs/master/s
     const IMAGE_EXT = ["png", "jpg", "jpeg", "tif", "tiff", "webp", "bmp"];
 
     const $ = (id) => document.getElementById(id);
-    const [meta, out, preview, drop, pick, to, images, render, structure, lang, tf, modelsInput, ocrState] =
-      ["meta", "out", "preview", "drop", "pick", "to", "images", "render", "structure", "lang", "tf", "models", "ocrState"].map($);
+    const [meta, out, preview, drop, pick, to, images, render, structure, lang, tf, forceOcr, modelsInput, ocrState] =
+      ["meta", "out", "preview", "drop", "pick", "to", "images", "render", "structure", "lang", "tf", "forceOcr", "models", "ocrState"].map($);
 
     // Everything the user can touch, frozen for the whole of a conversion:
     // a control left live lets a second run start on top of the first, and the
     // two then fight over the pipeline's single in-flight document.
-    const CONTROLS = [pick, to, images, render, structure, lang, tf, modelsInput];
+    const CONTROLS = [pick, to, images, render, structure, lang, tf, forceOcr, modelsInput];
 
     await init();
     const exts = JSON.parse(supported_extensions());
@@ -411,6 +414,12 @@ curl -fsSL https://raw.githubusercontent.com/docling-project/docling.rs/master/s
         return drv.convertImage(bytes.slice(0).buffer, name, lang.value, to.value, images.value);
       }
       const isPdf = name.toLowerCase().endsWith(".pdf");
+      // Force OCR: ignore whatever text layer the file claims to have —
+      // docling's force_full_page_ocr. The scanned pipeline IS that semantics
+      // in the browser (it never reads the text layer).
+      if (isPdf && forceOcr.checked) {
+        return convertScannedPdf(bytes, name);
+      }
       if (isPdf && structure.checked) {
         try {
           return await convertDigitalPdf(bytes, name);
@@ -526,7 +535,7 @@ curl -fsSL https://raw.githubusercontent.com/docling-project/docling.rs/master/s
       try { await ocr.rec(lang.value); ready("OCR language ready"); }
       catch (e) { ready(`could not load that model: ${(e && e.message) || e}`); }
     };
-    tf.onchange = () => last && run();
+    tf.onchange = forceOcr.onchange = () => last && run();
 
     // Device model files: read each to an ArrayBuffer and hand them to the
     // pipeline (transferred to the worker) so models load with no download.

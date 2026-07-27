@@ -91,6 +91,9 @@ impl PyDocumentConverter {
     /// Python side:
     /// * `fetch_images` — resolve remote/local `<img src>` for HTML/EPUB.
     /// * `do_ocr` — run OCR on scanned PDF/image pages (docling's `do_ocr`).
+    /// * `force_full_page_ocr` — OCR every PDF page even when it carries a
+    ///   text layer (docling's `force_full_page_ocr`); ignored when
+    ///   `do_ocr=False`.
     /// * `do_table_structure` — recover table structure with TableFormer
     ///   (docling's `do_table_structure`).
     /// * `do_picture_classification` — classify pictures with the
@@ -112,6 +115,7 @@ impl PyDocumentConverter {
     #[pyo3(signature = (
         fetch_images = false,
         do_ocr = true,
+        force_full_page_ocr = false,
         do_table_structure = true,
         use_web_browser = false,
         do_picture_classification = false,
@@ -127,6 +131,7 @@ impl PyDocumentConverter {
     fn new(
         fetch_images: bool,
         do_ocr: bool,
+        force_full_page_ocr: bool,
         do_table_structure: bool,
         use_web_browser: bool,
         do_picture_classification: bool,
@@ -186,6 +191,7 @@ impl PyDocumentConverter {
                 .fetch_images(fetch_images)
                 .asr_model(asr_model)
                 .no_ocr(!do_ocr)
+                .force_full_page_ocr(force_full_page_ocr)
                 .no_table_former(!do_table_structure)
                 .use_web_browser(use_web_browser)
                 .do_picture_classification(do_picture_classification)

@@ -371,6 +371,9 @@ struct Worker {
     /// Skip layout, OCR, and TableFormer; reconstruct text purely from the PDF's
     /// embedded text layer. See [`Pipeline::no_ocr`].
     no_ocr: bool,
+    /// Discard the embedded text layer and OCR every page. See
+    /// [`Pipeline::force_full_page_ocr`].
+    force_full_page_ocr: bool,
     /// Which recognition model [`Self::ocr`] loads. See [`Pipeline::ocr_lang`].
     ocr_lang: ocr::OcrLang,
 }
@@ -383,6 +386,7 @@ impl Worker {
         enrich_slots: (Option<SharedClassifier>, Option<SharedCodeFormula>),
         enrich: EnrichmentOptions,
         no_ocr: bool,
+        force_full_page_ocr: bool,
         ocr_lang: ocr::OcrLang,
     ) -> Result<Self, PdfError> {
         Ok(Self {
@@ -397,6 +401,7 @@ impl Worker {
             code_formula: enrich_slots.1,
             enrich,
             no_ocr,
+            force_full_page_ocr,
             ocr_lang,
         })
     }
@@ -405,6 +410,17 @@ impl Worker {
     /// into its nodes and links. Pure given the page (mutates only the worker's
     /// lazily-loaded OCR model), so it is safe to run concurrently across pages.
     fn process(&mut self, n: usize, page: &mut PdfPage) -> Result<PageOut, PdfError> {
+        // Force-OCR is exactly "pretend the text layer is not there": clear
+        // every cell kind the extractors produced before anything reads them,
+        // and the ordinary no-text-layer machinery below — full-page OCR,
+        // OCR-fed TableFormer matching — takes over unchanged. (`no_ocr` wins
+        // when both are set, mirroring docling, where `force_full_page_ocr`
+        // is a sub-option of `do_ocr`.)
+        if self.force_full_page_ocr && !self.no_ocr {
+            page.cells.clear();
+            page.code_cells.clear();
+            page.word_cells.clear();
+        }
         if self.no_ocr {
             // Fastest path: no layout/OCR/TableFormer inference at all. The PDF's
             // embedded text cells (if any) become flat, line-grouped paragraphs in
@@ -740,6 +756,9 @@ pub struct Pipeline {
     no_table_former: bool,
     /// Skip layout, OCR, and TableFormer entirely. See [`Pipeline::no_ocr`].
     no_ocr: bool,
+    /// OCR every page even when it carries a text layer. See
+    /// [`Pipeline::force_full_page_ocr`].
+    force_full_page_ocr: bool,
     /// Opt-in enrichment passes. See [`Pipeline::enrichments`].
     enrich: EnrichmentOptions,
     /// 1-based inclusive page window to convert. See [`Pipeline::pages`].
@@ -764,6 +783,7 @@ impl Pipeline {
             parallel_min: pdf_parallel_min(),
             no_table_former: false,
             no_ocr: false,
+            force_full_page_ocr: false,
             enrich: EnrichmentOptions::default(),
             page_range: None,
             ocr_lang: ocr::OcrLang::from_env(),
@@ -869,6 +889,17 @@ impl Pipeline {
         self
     }
 
+    /// OCR every page from its rendered image even when the page carries an
+    /// embedded text layer — docling's `force_full_page_ocr`. The escape hatch
+    /// for text layers that exist but lie: broken encodings, subset fonts with
+    /// garbage mappings, a scanned form with a few typed-in fields. Ignored
+    /// when [`no_ocr`](Self::no_ocr) is set, mirroring docling (there
+    /// `force_full_page_ocr` is a sub-option of `do_ocr`).
+    pub fn force_full_page_ocr(mut self, force: bool) -> Self {
+        self.force_full_page_ocr = force;
+        self
+    }
+
     /// The shared TableFormer slot handed to each worker, or `None` when the
     /// pipeline options skip TableFormer entirely.
     fn tables_slot(&self) -> Option<SharedTables> {
@@ -912,6 +943,7 @@ impl Pipeline {
                 self.enrich_slots(),
                 self.enrich,
                 self.no_ocr,
+                self.force_full_page_ocr,
                 self.ocr_lang,
             )?);
         }
@@ -1277,6 +1309,7 @@ impl Pipeline {
         }
         let intra = pdf_intra();
         let no_ocr = self.no_ocr;
+        let force = self.force_full_page_ocr;
         let ocr_lang = self.ocr_lang;
         let enrich = self.enrich;
         let tables = self.tables_slot();
@@ -1287,7 +1320,7 @@ impl Pipeline {
                     let tables = tables.clone();
                     let enrich_slots = enrich_slots.clone();
                     s.spawn(move || {
-                        Worker::load(intra, tables, enrich_slots, enrich, no_ocr, ocr_lang)
+                        Worker::load(intra, tables, enrich_slots, enrich, no_ocr, force, ocr_lang)
                     })
                 })
                 .collect();
@@ -1352,6 +1385,7 @@ pub fn convert(
         name,
         false,
         false,
+        false,
         EnrichmentOptions::default(),
         None,
         None,
@@ -1373,6 +1407,7 @@ pub fn convert_with_options(
     name: &str,
     no_table_former: bool,
     no_ocr: bool,
+    force_full_page_ocr: bool,
     enrich: EnrichmentOptions,
     pages: Option<(usize, usize)>,
     ocr_lang: Option<OcrLang>,
@@ -1380,6 +1415,7 @@ pub fn convert_with_options(
     Pipeline::new()?
         .no_table_former(no_table_former)
         .no_ocr(no_ocr)
+        .force_full_page_ocr(force_full_page_ocr)
         .enrichments(enrich)
         .pages(pages)
         .ocr_lang(ocr_lang)

@@ -75,6 +75,7 @@ pub struct DocumentConverter {
     fetch_images: bool,
     no_table_former: bool,
     no_ocr: bool,
+    force_full_page_ocr: bool,
     use_web_browser: bool,
     /// Named Whisper model preset for audio sources (docling's ASR model
     /// specs, PR #3741): English-only / Distil-Whisper variants under
@@ -137,6 +138,7 @@ impl Default for DocumentConverter {
             fetch_images: false,
             no_table_former: false,
             no_ocr: false,
+            force_full_page_ocr: false,
             use_web_browser: false,
             asr_model: None,
             video_frames: None,
@@ -284,6 +286,18 @@ impl DocumentConverter {
         self
     }
 
+    /// OCR every PDF page from its rendered image even when the page carries
+    /// an embedded text layer — docling's `force_full_page_ocr`. The escape
+    /// hatch for text layers that exist but lie (broken encodings, subset
+    /// fonts with garbage mappings, scanned forms with a few typed-in
+    /// fields). Off by default; ignored when [`no_ocr`](Self::no_ocr) is set,
+    /// mirroring docling, where it is a sub-option of `do_ocr`. Applies to
+    /// PDFs only — standalone images are always OCR'd.
+    pub fn force_full_page_ocr(mut self, force: bool) -> Self {
+        self.force_full_page_ocr = force;
+        self
+    }
+
     /// Classify each detected picture with the DocumentFigureClassifier model
     /// (docling's `do_picture_classification`). Off by default.
     ///
@@ -404,6 +418,7 @@ impl DocumentConverter {
             strict: self.strict,
             no_table_former: self.no_table_former,
             no_ocr: self.no_ocr,
+            force_full_page_ocr: self.force_full_page_ocr,
             enrich: self.enrich,
             page_range: self.page_range,
             ocr_lang: self.ocr_lang_choice(),
@@ -514,6 +529,7 @@ impl DocumentConverter {
                 &source.name,
                 self.no_table_former,
                 self.no_ocr,
+                self.force_full_page_ocr,
                 self.enrich,
                 self.page_range,
                 self.ocr_lang_choice(),

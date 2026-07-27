@@ -129,7 +129,9 @@ the page models (device picker or Hugging Face — see below).
 
 [`www/index.html`](./www/index.html) is the whole thing on one page: drop a
 file, pick the output (Markdown / JSON / DocLang), pick how images render, and
-optionally turn on OCR for scanned pages. To run it locally, after the
+optionally turn on OCR for scanned pages. A **Force OCR** toggle (docling's
+`force_full_page_ocr`) sends a PDF straight to the OCR pipeline, ignoring
+whatever text layer it claims to have — for layers that exist but lie. To run it locally, after the
 `wasm-bindgen` step above:
 
 ```bash
