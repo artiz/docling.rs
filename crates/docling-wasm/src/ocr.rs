@@ -109,8 +109,9 @@ pub async fn ocr_image(
     match to.as_deref().unwrap_or("md") {
         "md" | "markdown" => Ok(doc.export_to_markdown()),
         "json" => Ok(doc.export_to_json()),
+        "doclang" => Ok(doc.export_to_doclang()),
         other => Err(JsError::new(&format!(
-            "unknown output format {other:?} (expected \"md\" or \"json\")"
+            "unknown output format {other:?} (expected \"md\", \"json\" or \"doclang\")"
         ))),
     }
 }
