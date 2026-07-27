@@ -35,6 +35,7 @@ fn main() {
         Err(e) => {
             eprintln!("1. lopdf load: FAILED — {e}");
             eprintln!("   (the browser reports this as \"no embedded text layer\")");
+            probe_tail(&bytes);
         }
         Ok(doc) => {
             eprintln!(
@@ -78,5 +79,72 @@ fn main() {
             eprintln!("3. convert_text_layer: FAILED — {e}");
             std::process::exit(1);
         }
+    }
+}
+
+/// When the document will not load, show the cross-reference machinery the
+/// parser choked on: the last `startxref`, where it points, and what actually
+/// sits there. A classic `xref` table, an xref *stream* (`/Type /XRef`), bytes
+/// past the end of the file or plain garbage each point at a different repair,
+/// and this is enough to tell them apart without handing the PDF around.
+fn probe_tail(bytes: &[u8]) {
+    let find_last = |needle: &[u8]| {
+        bytes
+            .windows(needle.len())
+            .rposition(|w| w == needle)
+            .map(|i| (i, needle.len()))
+    };
+    let printable = |b: &[u8]| -> String {
+        b.iter()
+            .map(|&c| {
+                if (0x20..0x7f).contains(&c) {
+                    c as char
+                } else if c == b'\n' || c == b'\r' {
+                    '\u{23ce}'
+                } else {
+                    '.'
+                }
+            })
+            .collect()
+    };
+
+    eprintln!("   file: {} bytes", bytes.len());
+    eprintln!(
+        "   markers: trailer={} startxref={} xref={} /XRef={} %%EOF={}",
+        find_last(b"trailer").is_some(),
+        find_last(b"startxref").is_some(),
+        find_last(b"xref").is_some(),
+        find_last(b"/XRef").is_some(),
+        find_last(b"%%EOF").is_some(),
+    );
+
+    // Trailing bytes after the final %%EOF confuse a strict tail scan.
+    if let Some((i, len)) = find_last(b"%%EOF") {
+        let after = bytes.len() - (i + len);
+        eprintln!("   bytes after the last %%EOF: {after}");
+    }
+
+    let Some((sx, _)) = find_last(b"startxref") else {
+        eprintln!("   no startxref at all — the xref would have to be rebuilt by scanning objects");
+        return;
+    };
+    let tail = &bytes[sx..bytes.len().min(sx + 60)];
+    eprintln!("   last startxref block: {:?}", printable(tail));
+
+    // The number after `startxref` is the byte offset of the xref section.
+    let digits: String = tail
+        .iter()
+        .skip(b"startxref".len())
+        .skip_while(|c| c.is_ascii_whitespace())
+        .take_while(|c| c.is_ascii_digit())
+        .map(|&c| c as char)
+        .collect();
+    match digits.parse::<usize>() {
+        Ok(off) if off < bytes.len() => {
+            let end = bytes.len().min(off + 120);
+            eprintln!("   at offset {off} -> {:?}", printable(&bytes[off..end]));
+        }
+        Ok(off) => eprintln!("   startxref points to {off}, past the end of the file"),
+        Err(_) => eprintln!("   startxref carries no parseable offset"),
     }
 }
