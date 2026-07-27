@@ -81,7 +81,6 @@
     <label title="For PDFs that carry a text layer: also run the layout model, so headings, tables and pictures come out instead of flat paragraphs. The text still comes from the PDF (exact, no OCR), so it stays far faster than OCR — but it needs the layout model.">
       <input type="checkbox" id="structure"> PDF structure
     </label>
-    <span id="meta">starting…</span>
   </div>
 
   <div class="row" id="ocrRow">
@@ -99,6 +98,9 @@
       <input type="checkbox" id="forceOcr"> Force OCR
     </label>
     <span class="hint" id="ocrState">scanned pages need models — see below</span>
+  </div>
+  <div class="row">
+    <span id="meta">starting…</span>
   </div>
 
   <div id="preview"></div>
