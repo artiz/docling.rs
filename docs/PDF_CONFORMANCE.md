@@ -29,8 +29,8 @@ are no longer scored.)
 | 2305.03393v1 | 26 | title-page reading order + author-ID run spacing |
 | normal_4pages | 50 | reading order (heading numbering, footnote order) + recovered panel text |
 | right_to_left_03 | 60 | RTL bidi |
-| table_mislabeled_as_picture | 86 | layout over-detects tables (survey rendered as tables) |
-| 2206.01062 | 80 | TableFormer multi-row headers + title-page reading order |
+| table_mislabeled_as_picture | 80 | layout over-detects tables (survey rendered as tables) |
+| 2206.01062 | 76 | TableFormer multi-row headers + title-page reading order |
 | 2203.01017v2 | 132 | TableFormer structure + reading order |
 | redp5110_sampled | 196 | TOC OTSL structure (model-level); cover-page ordering |
 
@@ -64,6 +64,16 @@ on 2203/normal_4pages/redp5110 are real recovered words (e.g.
 normal_4pages' cover publisher block), not regressions; captioned figures
 (the corpus' document screenshots) and sparse-label charts keep their crops
 and their byte-exact output — `picture_classification` stays **exact**.
+
+The #165 orphan-claimer fix mirrors docling's regular/special cluster split:
+only regular clusters claim cells (`_find_unassigned_cells` walks
+`regular_clusters` alone), so a line that merely *straddles* a figure border
+no longer loses its cells to the picture's 0.2 claim — it becomes an orphan
+text region and is emitted, as docling does. Orphans that end up fully inside
+a picture or table are still re-dropped, matching docling's Markdown (a
+picture's children never reach `MarkdownPictureSerializer` output; a table's
+text renders through the grid). Took 2206 80→76 and table_mislabeled 86→80
+with every other fixture byte-identical.
 
 ## DocLang (`.dclx`) conformance
 

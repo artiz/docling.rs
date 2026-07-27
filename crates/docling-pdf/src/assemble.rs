@@ -121,12 +121,24 @@ pub fn resolve(regions: Vec<Region>) -> Vec<Region> {
 }
 
 /// Drop a regular region that is >80% contained in a surviving special region we
-/// render **as a single unit** — a picture, or a table/table-of-contents index —
-/// ported from docling's "Remove regular clusters that are included in wrappers"
-/// step: the special absorbs it as a child (a table cell, an in-figure label), so
-/// it must not also be emitted as its own paragraph/list-item. This stops the
-/// survey list-items from appearing both inside the detected table and again as
-/// bullets (`table_mislabeled_as_picture`).
+/// render **as a single unit** — a table/table-of-contents index — ported from
+/// docling's "Remove regular clusters that are included in wrappers" step: the
+/// special absorbs it as a child (a table cell), so it must not also be emitted
+/// as its own paragraph/list-item. This stops the survey list-items from
+/// appearing both inside the detected table and again as bullets
+/// (`table_mislabeled_as_picture`).
+///
+/// `picture` regions stay in the swallow set even after #165: docling keeps a
+/// picture's contained clusters as the `PictureItem`'s *children* in the
+/// document JSON (`ReadingOrderModel._add_child_elements`), but its
+/// `MarkdownPictureSerializer` prints only the caption and the image — the
+/// children never reach the Markdown (verified against the corpus groundtruth:
+/// `amt_handbook`'s in-figure callout labels are absent). Dropping the
+/// fully-contained regulars here reproduces exactly that. What #165 *does*
+/// change is upstream, in [`add_orphan_regions`]: pictures no longer claim
+/// cells, so a line only partially under a figure box (straddling its border,
+/// ≤80 % contained) now forms an orphan region that survives this drop — those
+/// words were silently erased before, and docling emits them.
 ///
 /// `form` / `key_value_region` wrappers are deliberately **excluded**: this
 /// pipeline does not render them as a structured block (they are skipped), so
@@ -315,10 +327,23 @@ pub fn add_orphan_regions(regions: &mut Vec<Region>, cells: &[TextCell]) {
     // intersection-over-self > 0.2; only cells below that for *every* region are
     // orphans. (Our text extraction uses a stricter 0.5, but matching docling's
     // 0.2 here avoids emitting cells it already placed in a neighbouring region.)
+    //
+    // Only *regular* clusters claim cells: docling's `_find_unassigned_cells`
+    // walks `regular_clusters` alone, so a cell under a `picture` or a wrapper
+    // (`table`/`document_index`/`form`/`key_value_region`) that no regular
+    // cluster covers still becomes an orphan text cluster (#165). The orphans
+    // that end up *fully* inside the special are re-dropped by
+    // [`drop_contained_regulars`] (docling's Markdown drops them the same way
+    // — a picture's children never reach its `MarkdownPictureSerializer`
+    // output, a table's text renders through the reconstructed grid). The
+    // observable fix is the border-straddlers: a line only partially under a
+    // figure box used to lose its cells to the picture's 0.2 claim and vanish
+    // — now it forms an orphan region and is emitted, as docling does.
     let assigned = |c: &TextCell| {
         let ca = area(c.l, c.t, c.r, c.b).max(1.0);
         regions
             .iter()
+            .filter(|r| r.label != "picture" && !is_wrapper(r.label))
             .any(|r| inter(r, c.l, c.t, c.r, c.b) / ca > 0.2)
     };
     // Collect orphan cells (non-empty, unassigned), in page order.
@@ -400,6 +425,11 @@ pub fn recover_text_panels(regions: &mut Vec<Region>, cells: &[TextCell]) {
         })
         .collect();
     let mut out: Vec<Region> = Vec::with_capacity(regions.len());
+    // Synthesized paragraphs and the demoted panels' boxes are kept separate
+    // from `out` until the end: the dedup filter below must not confuse a
+    // paragraph we just built with a pre-existing region inside the panel.
+    let mut demoted_paras: Vec<Region> = Vec::new();
+    let mut demoted_boxes: Vec<(f32, f32, f32, f32)> = Vec::new();
     for (i, r) in regions.drain(..).enumerate() {
         if r.label != "picture" || captioned[i] {
             out.push(r);
@@ -468,7 +498,7 @@ pub fn recover_text_panels(regions: &mut Vec<Region>, cells: &[TextCell]) {
                 }
                 _ => {
                     if let Some((pl, pt, pr, pb)) = para.take() {
-                        out.push(Region {
+                        demoted_paras.push(Region {
                             label: "text",
                             score: r.score,
                             l: pl,
@@ -482,7 +512,7 @@ pub fn recover_text_panels(regions: &mut Vec<Region>, cells: &[TextCell]) {
             }
         }
         if let Some((pl, pt, pr, pb)) = para {
-            out.push(Region {
+            demoted_paras.push(Region {
                 label: "text",
                 score: r.score,
                 l: pl,
@@ -491,7 +521,23 @@ pub fn recover_text_panels(regions: &mut Vec<Region>, cells: &[TextCell]) {
                 b: pb,
             });
         }
+        demoted_boxes.push((r.l, r.t, r.r, r.b));
     }
+    // The paragraphs are rebuilt from *all* of the panel's cells, so any
+    // surviving text region inside a demoted panel (an orphan cluster or a
+    // layout-detected fragment — pictures no longer swallow them, #165) would
+    // say the same words twice. Consume those; wrappers and pictures stay.
+    if !demoted_boxes.is_empty() {
+        out.retain(|r| {
+            r.label == "picture" || is_wrapper(r.label) || {
+                let ra = area(r.l, r.t, r.r, r.b).max(1.0);
+                !demoted_boxes
+                    .iter()
+                    .any(|&(l, t, rr, b)| inter(r, l, t, rr, b) / ra > 0.5)
+            }
+        });
+    }
+    out.extend(demoted_paras);
     *regions = out;
 }
 
@@ -1879,6 +1925,58 @@ mod tests {
     use crate::layout::Region;
     use crate::pdfium_backend::{LinkAnnot, PdfPage, TextCell};
     use docling_core::Node;
+
+    /// #165: a picture no longer claims cells at 0.2 intersection-over-self.
+    /// A line straddling the figure border (≤80 % contained) becomes an orphan
+    /// region and survives the contained-regulars drop — before the fix its
+    /// cells were silently erased. A line fully inside the picture is still
+    /// re-dropped, matching docling's Markdown (a picture's children never
+    /// reach its serializer's output).
+    #[test]
+    fn border_straddling_lines_survive_picture_interior_is_still_dropped() {
+        let pic = Region {
+            label: "picture",
+            score: 0.9,
+            l: 0.0,
+            t: 0.0,
+            r: 100.0,
+            b: 100.0,
+        };
+        // ~35 % of this cell overlaps the picture (l=90..120 of 0..100): above
+        // the old 0.2 claim (was swallowed), below full containment (survives).
+        let straddler = TextCell {
+            text: "axis label".into(),
+            l: 90.0,
+            t: 40.0,
+            r: 120.0,
+            b: 48.0,
+        };
+        let interior = TextCell {
+            text: "in-figure callout".into(),
+            l: 10.0,
+            t: 10.0,
+            r: 60.0,
+            b: 18.0,
+        };
+        let mut regions = vec![pic];
+        super::add_orphan_regions(&mut regions, &[straddler, interior]);
+        assert_eq!(
+            regions.iter().filter(|r| r.label == "text").count(),
+            2,
+            "both unclaimed lines become orphans"
+        );
+        super::drop_contained_regulars(&mut regions);
+        let texts: Vec<(f32, f32)> = regions
+            .iter()
+            .filter(|r| r.label == "text")
+            .map(|r| (r.l, r.r))
+            .collect();
+        assert_eq!(
+            texts,
+            [(90.0, 120.0)],
+            "the straddler is emitted, the fully-contained callout is not"
+        );
+    }
 
     /// A colored terms-and-conditions panel detected as `picture` demotes into
     /// per-paragraph `text` regions (the blank line between C.7 and C.8 splits

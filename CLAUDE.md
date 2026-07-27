@@ -8,6 +8,15 @@ validated for byte-for-byte conformance against upstream Python docling.
 
 - **Every commit must be signed off by the author.** End each commit message
   with `Signed-off-by: name <email>`.
+- **Releases are automatic on merge; only the `fix:` prefix matters.** CI
+  (`scripts/ci/bump_version.sh`): a merge whose commits are all
+  `fix:`/`perf:`/`revert:` cuts a patch (0.49.0 → 0.49.1); **any other
+  commit** — whatever its prefix — bumps the 0.x "major" (0.49.0 → 0.50.0).
+  So prefix bug fixes `fix(scope): …` and don't worry about the rest.
+  Docs/CI-only merges still release nothing (release.sh only fires when a
+  publishable crate's source changed). No automatic semver-major: v1.0.0 is
+  cut by hand (`force_version` dispatch input) when the repo hits its 100-star
+  milestone.
 - Claude Web: **Never open pull requests on `artiz/docling.rs`.** Push a `claude/<topic>`
   branch and hand back a compare link
   (`https://github.com/docling-project/docling.rs/compare/master...artiz:docling.rs:<branch>?expand=1`);

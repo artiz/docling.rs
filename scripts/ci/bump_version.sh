@@ -1,13 +1,22 @@
 #!/usr/bin/env bash
 #
-# Decide the next workspace version from the conventional-commit messages since
-# the last release tag, and print it to stdout. Prints NOTHING (exit 0) when no
-# release-worthy commit is found, so the caller can skip the release.
+# Decide the next workspace version from the commit messages since the last
+# release tag, and print it to stdout. Prints NOTHING (exit 0) when the range
+# is empty, so the caller can skip the release.
 #
-#   <type>!: …  or  "BREAKING CHANGE" in the body  -> major
-#   feat: …                                        -> minor
-#   fix:/perf:/revert: …                           -> patch
-#   docs/chore/ci/refactor/test/style/build/…      -> no release
+#   only fix:/perf:/revert: commits in the range   -> patch
+#   anything else                                  -> minor (the 0.x "major")
+#
+# Releases deliberately do NOT depend on conventional-commit prefixes: the
+# repo's de-facto style is bare area prefixes ("pdf: …", "wasm: …"), and
+# requiring feat:/fix: silently stopped every release after v0.49.0. Any
+# non-fix merge now bumps 0.49 -> 0.50; a docs/CI-only merge still releases
+# nothing because release.sh's source-change gate sees no publishable crate
+# source in the diff.
+#
+# There is intentionally NO automatic semver-major: v1.0.0 is a milestone the
+# maintainer cuts by hand (FORCE_VERSION=1.0.0 via the CI dispatch input) —
+# "когда 100 звёзд дадут". Until then everything stays 0.x.
 #
 # Pure: reads git history + the root Cargo.toml; writes nothing.
 # Usage: scripts/ci/bump_version.sh
@@ -23,15 +32,13 @@ else
   range="HEAD" # no release tag yet: consider the whole history
 fi
 
-# Subject + body of every non-merge commit in range.
-log="$(git log "$range" --no-merges --format='%s%n%b')"
+# Subjects decide the bump.
+subjects="$(git log "$range" --no-merges --format='%s')"
 
 bump=""
-if grep -qE '^[a-z]+(\([^)]*\))?!:' <<<"$log" || grep -q 'BREAKING CHANGE' <<<"$log"; then
-  bump="major"
-elif grep -qE '^feat(\([^)]*\))?:' <<<"$log"; then
+if grep -vE '^(fix|perf|revert)(\([^)]*\))?:' <<<"$subjects" | grep -q '[^[:space:]]'; then
   bump="minor"
-elif grep -qE '^(fix|perf|revert)(\([^)]*\))?:' <<<"$log"; then
+elif grep -q '[^[:space:]]' <<<"$subjects"; then
   bump="patch"
 fi
 
@@ -39,11 +46,6 @@ fi
 
 IFS=. read -r major minor patch <<<"$current"
 case "$bump" in
-major)
-  major=$((major + 1))
-  minor=0
-  patch=0
-  ;;
 minor)
   minor=$((minor + 1))
   patch=0

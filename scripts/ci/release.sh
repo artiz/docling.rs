@@ -1,11 +1,13 @@
 #!/usr/bin/env bash
 #
 # Master-only release step (run by .github/workflows/ci.yml after the lint/test
-# gates pass). Computes the next version from conventional commits; if there is
-# one, it bumps the workspace version, commits + tags it, pushes to master,
-# publishes the changed crates, and assembles the GitHub Release notes (a commit
-# list since the previous tag) for the workflow to publish. A clean no-op when no
-# release-worthy commit landed since the last tag.
+# gates pass). Computes the next version from the commits since the last tag
+# (scripts/ci/bump_version.sh: fix:/perf:/revert:-only range -> patch, anything
+# else -> the 0.x "major"; no automatic 1.0.0); if there is one, it bumps the
+# workspace version, commits + tags it, pushes to master, publishes the changed
+# crates, and assembles the GitHub Release notes (a commit list since the
+# previous tag) for the workflow to publish. A clean no-op when nothing landed
+# since the last tag.
 #
 # The release commit is pushed with RELEASE_PAT (an admin token, so it satisfies
 # the master branch ruleset) and carries `[skip ci]`, so it does not re-trigger CI.
@@ -20,16 +22,17 @@ cd "$(dirname "$0")/../.."
 
 new="${FORCE_VERSION:-$(scripts/ci/bump_version.sh)}"
 if [[ -z "$new" ]]; then
-  echo "No release-worthy commits since the last tag — nothing to release."
+  echo "No commits since the last tag — nothing to release."
   exit 0
 fi
 [[ -n "${FORCE_VERSION:-}" ]] && echo ">> forced release of v$new"
 
-# A release-worthy *message* is not enough: only cut a new crates.io version when
-# a *publishable* crate's actual source changed since the last tag. This stops a
-# docs / CI / Python-binding-only change (e.g. `feat(docs): …`, `feat(docling-py): …`)
-# from minting and publishing a new version of every crate with no code change.
-# FORCE_VERSION bypasses the gate (a deliberate manual (re)publish).
+# Commits alone are not enough: only cut a new crates.io version when a
+# *publishable* crate's actual source changed since the last tag. This is what
+# stops a docs / CI / demo / Python-binding-only merge (now that every non-fix
+# commit is release-worthy) from minting and publishing a new version of every
+# crate with no code change. FORCE_VERSION bypasses the gate (a deliberate
+# manual (re)publish).
 if [[ -z "${FORCE_VERSION:-}" ]]; then
   gate_prev_tag="$(git tag --list 'v*' --sort=-version:refname | head -n1)"
   gate_range="${gate_prev_tag:+$gate_prev_tag..}HEAD"
@@ -42,7 +45,7 @@ if [[ -z "${FORCE_VERSION:-}" ]]; then
     gate_paths+=("crates/$c/src" "crates/$c/Cargo.toml" "crates/$c/build.rs")
   done
   if [[ -z "$(git diff --name-only "$gate_range" -- "${gate_paths[@]}")" ]]; then
-    echo "Release-worthy commit found, but no publishable crate source changed" \
+    echo "Commits since the last tag, but no publishable crate source changed" \
       "since ${gate_prev_tag:-the start of history} — skipping release."
     exit 0
   fi
