@@ -100,9 +100,16 @@ wasm-bindgen --target web --out-dir crates/docling-wasm/www/pkg \
 
 ## Demo
 
+**Live: <https://docling-project.github.io/docling.rs/>** — deployed from
+`www/` by [`.github/workflows/pages.yml`](../../.github/workflows/pages.yml) on
+every push to `master`. No models are published with it, so the declarative
+converters and text-layer PDFs work straight away and OCR starts once you give
+the page models (device picker or Hugging Face — see below).
+
 [`www/index.html`](./www/index.html) is the whole thing on one page: drop a
 file, pick the output (Markdown / JSON / DocLang), pick how images render, and
-optionally turn on OCR for scanned pages. After the `wasm-bindgen` step above:
+optionally turn on OCR for scanned pages. To run it locally, after the
+`wasm-bindgen` step above:
 
 ```bash
 python3 -m http.server -d crates/docling-wasm/www 8901
@@ -136,7 +143,19 @@ wasm output matching native — drift can only come from the runtime kernels.
 |---|---|---|
 | **1** — `ocr_image` | OCR a single scanned **image** | PP-OCRv3 recognition (~10 MB) |
 | **2** — `ScannedConverter` / `convert_scanned_image` | Scanned **PDF/image** → Markdown: layout + OCR + reading order, tables via geometric reconstruction | + RT-DETR layout (`layout_heron_int8.onnx`, ~68 MB) |
-| **3** — `ScannedConverter.addPageTf` | Real **TableFormer** table structure instead of geometric | + `tableformer/{encoder,decoder_kv,bbox}.onnx` (~380 MB) |
+| **3** — `ScannedConverter.addPageTf` | Real **TableFormer** table structure, on the tables that need it | + `tableformer/{encoder,decoder_kv,bbox}.onnx` (~380 MB) |
+
+Stage 3 is *selective*. TableFormer's encoder runs once per table region and
+costs seconds, so each table is first reconstructed geometrically (free, from
+the OCR cell positions) and the model is invoked only when that grid looks
+unreliable — `docling_pdf::assemble::geometric_table_is_reliable`. The tell is
+how `reconstruct_table` derives columns: it clusters cell *left edges*, which is
+exact on a clean grid but splits one real column into several when entries are
+not left-aligned, leaving a wide, mostly-empty table. So a grid is trusted only
+when it is dense (≥60% of cells carry text) and has no column that just one row
+uses; anything else goes to TableFormer. Well-formed tables therefore cost
+nothing extra, and the pages that used to show spurious empty columns still get
+the model.
 
 Stage 1 recognition wrapper:
 

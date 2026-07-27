@@ -12,6 +12,13 @@ pipeline is supported, validated byte-for-byte against live docling. See
 [`docs/MIGRATION.md`](./docs/MIGRATION.md) for the full architecture, the Python → Rust
 mapping, and per-format conformance.
 
+**▶ [Try it in your browser](https://docling-project.github.io/docling.rs/)** —
+the whole converter compiled to wasm: drop a DOCX, PDF, XLSX, EPUB … and get
+Markdown, docling JSON or DocLang XML back. Nothing is uploaded; the page runs
+entirely on your device, phone included. Scanned pages can be OCR'd there too
+(layout + PP-OCR + TableFormer via ONNX Runtime Web) once you point it at the
+models. See [`crates/docling-wasm`](./crates/docling-wasm/README.md).
+
 Developed with **Claude Code** and _[TENET](https://github.com/artiz/tenet/tree/master)_ (minimalistic spec driven design framework).
 
 ## Status

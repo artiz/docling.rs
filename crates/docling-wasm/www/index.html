@@ -89,7 +89,7 @@
         <option value="ch">Chinese + Latin</option>
       </select>
     </label>
-    <label title="Real table structure from the TableFormer ONNX graphs instead of the geometric reconstruction. Needs the tableformer models (~380 MB) and is slow on phones.">
+    <label title="Recover table structure with the TableFormer ONNX graphs. Needs the tableformer models (~380 MB). It runs only on tables whose free geometric reconstruction looks unreliable, so clean tables cost nothing extra.">
       <input type="checkbox" id="tf"> TableFormer tables
     </label>
     <span class="hint" id="ocrState">scanned pages need models — see below</span>

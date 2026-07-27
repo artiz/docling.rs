@@ -22,6 +22,7 @@
 //! ```
 //! (`www/index.html` is the complete wiring.)
 
+use docling_pdf::assemble::{geometric_table_is_reliable, reconstruct_table};
 use docling_pdf::layout::{decode_layout, layout_input, SIDE};
 use docling_pdf::ocr_prep::{
     batch_input, decode_row, dict_chars, normalize_polarity, prep_region_lines, prep_table_words,
@@ -215,19 +216,24 @@ impl ScannedConverter {
         let table_rows = if let Some(tf) = tf {
             let mut rows = Vec::with_capacity(regions.len());
             for r in &regions {
-                if r.label == "table" {
-                    rows.push(
-                        crate::tableformer::predict_table_rows(
-                            tf,
-                            &img,
-                            [r.l, r.t, r.r, r.b],
-                            &cells,
-                        )
-                        .await,
-                    );
-                } else {
+                if r.label != "table" {
                     rows.push(None);
+                    continue;
                 }
+                // TableFormer costs seconds per region (the fp32 encoder runs
+                // once per table), so spend it only where it buys something:
+                // when the free geometric reconstruction already yields a dense,
+                // well-formed grid it is what TableFormer would agree with, and
+                // `None` tells assemble to keep it.
+                let geometric = reconstruct_table(r, &cells);
+                if geometric_table_is_reliable(&geometric) {
+                    rows.push(None);
+                    continue;
+                }
+                rows.push(
+                    crate::tableformer::predict_table_rows(tf, &img, [r.l, r.t, r.r, r.b], &cells)
+                        .await,
+                );
             }
             rows
         } else {
