@@ -667,6 +667,31 @@ pub fn content_diagnosis(bytes: &[u8]) -> String {
     out
 }
 
+/// Is this "text layer" a vestige rather than the document's text?
+///
+/// Scanned forms often carry a handful of typed-in strings — a date filled
+/// into three form fields, say — on top of pages that are otherwise images.
+/// Treating that as a real text layer is the worst of both worlds: the text
+/// path proudly extracts thirteen characters, and no OCR ever runs on the
+/// letter the pages actually show. The reported form did exactly this (3
+/// lines, 13 chars, 3 pages).
+///
+/// The rule is deliberately tight so genuinely sparse *digital* documents are
+/// not misrouted into OCR: only a document averaging at most one line per page
+/// **and** totalling fewer than 32 characters is called vestigial.
+pub fn text_layer_is_vestigial(pages: &[crate::pdfium_backend::PdfPage]) -> bool {
+    let lines: usize = pages.iter().map(|p| p.cells.len()).sum();
+    if lines == 0 {
+        return true;
+    }
+    let chars: usize = pages
+        .iter()
+        .flat_map(|p| &p.cells)
+        .map(|c| c.text.chars().count())
+        .sum();
+    lines <= pages.len() && chars < 32
+}
+
 /// Why the cross-reference repair did or did not fire, for the `text_layer`
 /// diagnostic. A PDF that will not load is indistinguishable from a scan in
 /// production (both convert to nothing), so the reason has to be askable.
@@ -1974,5 +1999,52 @@ mod overpainted {
         ];
         super::drop_overpainted_cells(&mut cells);
         assert_eq!(cells.len(), 4);
+    }
+}
+
+#[cfg(test)]
+mod vestigial_layer {
+    use crate::pdfium_backend::{PdfPage, TextCell};
+
+    fn page_with(texts: &[&str]) -> PdfPage {
+        let cells = texts
+            .iter()
+            .enumerate()
+            .map(|(i, t)| TextCell {
+                text: t.to_string(),
+                l: 10.0,
+                t: 10.0 + 12.0 * i as f32,
+                r: 90.0,
+                b: 20.0 + 12.0 * i as f32,
+            })
+            .collect();
+        PdfPage::from_cells(595.0, 842.0, 1.0, cells)
+    }
+
+    /// The reported scanned form: three typed-in field values ("03", "05",
+    /// "2025") over three image pages. That must read as *no usable layer*,
+    /// so the browser routes the document to OCR instead of extracting
+    /// thirteen characters and skipping the letter entirely.
+    #[test]
+    fn typed_in_form_fields_are_not_a_text_layer() {
+        let pages = vec![
+            page_with(&["03", "05", "2025"]),
+            page_with(&[]),
+            page_with(&[]),
+        ];
+        assert!(super::text_layer_is_vestigial(&pages));
+        assert!(super::text_layer_is_vestigial(&[page_with(&[])]));
+    }
+
+    /// A short but genuine digital document — one page, a few real lines —
+    /// keeps the fast text path.
+    #[test]
+    fn sparse_but_real_documents_pass() {
+        let one_pager = vec![page_with(&[
+            "Confidential briefing",
+            "Prepared for the board meeting",
+            "Do not distribute",
+        ])];
+        assert!(!super::text_layer_is_vestigial(&one_pager));
     }
 }

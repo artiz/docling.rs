@@ -135,7 +135,15 @@ pub fn convert_text_layer_pages(
     }
     let mut doc = DoclingDocument::new(name);
     let mut total = 0usize;
-    for (i, page) in textparse::pdf_text_pages(bytes).into_iter().enumerate() {
+    let parsed = textparse::pdf_text_pages(bytes);
+    // A vestigial layer (a few typed-in form fields over scanned pages) is not
+    // the document's text: return the empty document, which callers already
+    // report as "no text layer" — so an OCR-capable caller falls back to OCR
+    // instead of proudly extracting thirteen characters.
+    if textparse::text_layer_is_vestigial(&parsed) {
+        return Ok(doc);
+    }
+    for (i, page) in parsed.into_iter().enumerate() {
         total += 1;
         if let Some((first, last)) = pages {
             if i + 1 < first || i + 1 > last {
