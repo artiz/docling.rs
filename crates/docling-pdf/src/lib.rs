@@ -595,14 +595,9 @@ impl Worker {
         // (picture_classification stays byte-exact), so the recognized cells
         // there only ever serve the panel-demotion decision above.
         if ocred && !pic_cells.is_empty() {
-            let mut probe: Vec<layout::Region> = regions
-                .iter()
-                .filter(|r| r.label != "picture")
-                .cloned()
-                .collect();
-            let keep_from = probe.len();
-            assemble::add_orphan_regions(&mut probe, &pic_cells);
-            regions.extend(probe.drain(keep_from..));
+            // Pictures (and wrappers) no longer count as claimers (#165), so
+            // the plain orphan pass places the recognized lines directly.
+            assemble::add_orphan_regions(&mut regions, &pic_cells);
         } else if !ocred && !pic_cells.is_empty() {
             // Digital page, picture kept: its speculative OCR cells must not
             // linger in the text-cell set (they were appended at the tail).

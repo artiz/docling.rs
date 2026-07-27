@@ -245,14 +245,9 @@ impl DigitalConverter {
                     // Dense wide OCR text demotes the crop to paragraphs;
                     // sparse text keeps the picture and reads out beside it.
                     docling_pdf::assemble::recover_text_panels(&mut regions, &page.cells);
-                    let mut probe: Vec<Region> = regions
-                        .iter()
-                        .filter(|r| r.label != "picture")
-                        .cloned()
-                        .collect();
-                    let keep_from = probe.len();
-                    add_orphan_regions(&mut probe, &ocr_cells);
-                    regions.extend(probe.drain(keep_from..));
+                    // Pictures no longer count as claimers (#165), so the
+                    // plain orphan pass places the recognized lines directly.
+                    add_orphan_regions(&mut regions, &ocr_cells);
                 }
             }
         }

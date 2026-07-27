@@ -250,14 +250,9 @@ impl ScannedConverter {
                 // text (a chat screenshot's bubbles) keeps the picture and
                 // reads out beside it, as before.
                 docling_pdf::assemble::recover_text_panels(&mut regions, &cells);
-                let mut probe: Vec<docling_pdf::layout::Region> = regions
-                    .iter()
-                    .filter(|r| r.label != "picture")
-                    .cloned()
-                    .collect();
-                let keep_from = probe.len();
-                docling_pdf::assemble::add_orphan_regions(&mut probe, &pcells);
-                regions.extend(probe.drain(keep_from..));
+                // Pictures no longer count as claimers (#165), so the plain
+                // orphan pass places the recognized lines directly.
+                docling_pdf::assemble::add_orphan_regions(&mut regions, &pcells);
             }
         }
 
