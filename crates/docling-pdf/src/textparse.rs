@@ -634,6 +634,39 @@ fn page_size(doc: &Document, page_id: lopdf::ObjectId) -> (f32, f32) {
     (612.0, 792.0)
 }
 
+/// Localize where a page's text is lost, for the `text_layer` diagnostic.
+/// Extraction can come up empty at three different points — no content stream
+/// reached the parser, the stream did not decode into operators, or it ran but
+/// produced no glyphs (fonts/encodings) — and from the outside all three look
+/// the same. Report them per page.
+pub fn content_diagnosis(bytes: &[u8]) -> String {
+    let Some(doc) = load_document(bytes) else {
+        return "document does not load".into();
+    };
+    let mut pages: Vec<_> = doc.get_pages().into_iter().collect();
+    pages.sort_by_key(|(n, _)| *n);
+    let mut out = String::new();
+    let mut caches = DocCaches::default();
+    for (n, pid) in pages.into_iter().take(4) {
+        let content_bytes = doc.get_page_content(pid);
+        let ops = lopdf::content::Content::decode(&content_bytes)
+            .map(|c| c.operations.len())
+            .ok();
+        let res = page_res(&doc, pid);
+        let fonts = res.map(|r| fonts_from_res(&doc, r, &mut caches).len());
+        let glyphs = page_glyphs_cached(&doc, pid, &mut caches).len();
+        out.push_str(&format!(
+            "\n   page {n}: content {} B, ops {}, resources {}, fonts {}, glyphs {}",
+            content_bytes.len(),
+            ops.map_or("UNDECODABLE".to_string(), |n| n.to_string()),
+            if res.is_some() { "ok" } else { "MISSING" },
+            fonts.map_or("-".to_string(), |n| n.to_string()),
+            glyphs,
+        ));
+    }
+    out
+}
+
 /// Why the cross-reference repair did or did not fire, for the `text_layer`
 /// diagnostic. A PDF that will not load is indistinguishable from a scan in
 /// production (both convert to nothing), so the reason has to be askable.
@@ -665,10 +698,119 @@ pub fn xref_repair_status(bytes: &[u8]) -> String {
 /// has to prove itself — the padded bytes are used only if they load — so a
 /// mis-repair degrades to today's behaviour rather than to silent garbage.
 fn load_document(bytes: &[u8]) -> Option<Document> {
-    match Document::load_mem(bytes) {
-        Ok(doc) => Some(doc),
-        Err(_) => Document::load_mem(&pad_short_xref_entries(bytes).ok()?).ok(),
+    // Try progressively more repair, and accept a candidate only once the pages
+    // actually carry content — a document whose streams were dropped still
+    // "loads", so loading alone is not evidence the repair helped. A
+    // well-formed file returns on the first attempt and pays for nothing.
+    let mut fallback = None;
+    if let Some(doc) = best_effort_load(bytes, &mut fallback) {
+        return Some(doc);
     }
+    let xref_fixed = pad_short_xref_entries(bytes).ok();
+    if let Some(fixed) = &xref_fixed {
+        if let Some(doc) = best_effort_load(fixed, &mut fallback) {
+            return Some(doc);
+        }
+    }
+    // Both defects can coexist, and the second only becomes visible once the
+    // first is repaired, so build on whatever the previous step produced.
+    let lengths_fixed = fix_stream_lengths(xref_fixed.as_deref().unwrap_or(bytes));
+    if let Some(doc) = best_effort_load(&lengths_fixed, &mut fallback) {
+        return Some(doc);
+    }
+    fallback
+}
+
+/// Load `data`, returning it only when its pages carry content; a document that
+/// merely parses is remembered as the fallback for when nothing does better.
+fn best_effort_load(data: &[u8], fallback: &mut Option<Document>) -> Option<Document> {
+    match Document::load_mem(data) {
+        Ok(doc) if has_page_content(&doc) => Some(doc),
+        Ok(doc) => {
+            fallback.get_or_insert(doc);
+            None
+        }
+        Err(_) => None,
+    }
+}
+
+/// Does any page actually hand us a content stream? A document whose streams
+/// were dropped still parses — it simply has nothing to read — so this is what
+/// tells a successful repair from a pointless one.
+fn has_page_content(doc: &Document) -> bool {
+    doc.get_pages()
+        .into_values()
+        .take(4)
+        .any(|pid| !doc.get_page_content(pid).is_empty())
+}
+
+/// Correct `/Length` values that disagree with where `endstream` actually is.
+///
+/// The same generator that writes short xref entries also overstates its
+/// content-stream lengths by a byte or two. lopdf trusts `/Length`, reads past
+/// the data, fails to find `endstream` there and drops the stream — the object
+/// comes back as a bare dictionary, so the page has no content at all and the
+/// document looks like a scan. pdfium instead trusts `endstream`, which is what
+/// this does.
+///
+/// The rewrite is length-preserving: the corrected number is written over the
+/// old digits and padded with spaces, so every byte offset in the file — and
+/// therefore the whole cross-reference table — stays valid.
+fn fix_stream_lengths(bytes: &[u8]) -> Vec<u8> {
+    let mut out = bytes.to_vec();
+    let mut i = 0;
+    while let Some(rel) = find(&out[i..], b"stream") {
+        let kw = i + rel;
+        i = kw + 6;
+        // Skip `endstream` (the keyword we are measuring *to*).
+        if kw >= 3 && &out[kw - 3..kw] == b"end" {
+            continue;
+        }
+        // The stream data starts after the EOL that follows the keyword.
+        let mut data = kw + 6;
+        if out.get(data..data + 2) == Some(b"\r\n".as_slice()) {
+            data += 2;
+        } else if matches!(out.get(data), Some(b'\n' | b'\r')) {
+            data += 1;
+        }
+        let Some(end) = find(&out[data..], b"endstream").map(|r| data + r) else {
+            continue;
+        };
+        // `/Length <digits>` in the dictionary just before the keyword.
+        let dict_start = out[..kw].iter().rposition(|&c| c == b'<').unwrap_or(0);
+        let Some(lrel) = find(&out[dict_start..kw], b"/Length") else {
+            continue;
+        };
+        let mut d = dict_start + lrel + 7;
+        while matches!(out.get(d), Some(b' ')) {
+            d += 1;
+        }
+        let digits = out[d..].iter().take_while(|c| c.is_ascii_digit()).count();
+        if digits == 0 {
+            continue;
+        }
+        let declared: usize = match std::str::from_utf8(&out[d..d + digits])
+            .ok()
+            .and_then(|s| s.parse().ok())
+        {
+            Some(v) => v,
+            None => continue,
+        };
+        let actual = end - data;
+        // Only shrink, and only when the new value fits the space the old one
+        // occupied — growing the number would move every following byte.
+        let replacement = actual.to_string();
+        if actual == declared || replacement.len() > digits {
+            continue;
+        }
+        out[d..d + digits].fill(b' ');
+        out[d..d + replacement.len()].copy_from_slice(replacement.as_bytes());
+    }
+    out
+}
+
+fn find(haystack: &[u8], needle: &[u8]) -> Option<usize> {
+    haystack.windows(needle.len()).position(|w| w == needle)
 }
 
 /// Rewrite a classic cross-reference table's entries to the spec's 20 bytes,
@@ -1681,6 +1823,53 @@ mod xref_repair {
             from_good,
             "repair must match the good parse"
         );
+    }
+
+    /// The same generator overstates `/Length`, so lopdf reads past the data,
+    /// misses `endstream` and drops the stream — the object comes back as a
+    /// bare dictionary and the page has no content at all. Trust `endstream`
+    /// instead, and do it without moving a single byte.
+    #[test]
+    fn overstated_stream_length_still_yields_content() {
+        let good = pdf_with_xref(true);
+        // Inflate the content stream's /Length by one, exactly as the invoice
+        // that prompted this does.
+        let broken = {
+            let at = good
+                .windows(8)
+                .position(|w| w == b"/Length ")
+                .expect("a /Length")
+                + 8;
+            let digits = good[at..].iter().take_while(|c| c.is_ascii_digit()).count();
+            let n: usize = std::str::from_utf8(&good[at..at + digits])
+                .unwrap()
+                .parse()
+                .unwrap();
+            let inflated = (n + 1).to_string();
+            assert_eq!(inflated.len(), digits, "keep the digit count");
+            let mut b = good.clone();
+            b[at..at + digits].copy_from_slice(inflated.as_bytes());
+            b
+        };
+        assert_eq!(broken.len(), good.len(), "the defect must not move bytes");
+        // lopdf alone loses the stream: the page parses but carries no content.
+        let raw = lopdf::Document::load_mem(&broken).expect("still loads");
+        assert!(
+            raw.get_pages()
+                .into_values()
+                .all(|p| raw.get_page_content(p).is_empty()),
+            "lopdf should drop the stream — if it stops, drop this repair"
+        );
+        // Ours recovers the same text the well-formed file gives.
+        let text = |b: &[u8]| -> Vec<String> {
+            super::pdf_textlines(b)
+                .into_iter()
+                .flat_map(|(_, _, c)| c.into_iter().map(|c| c.text))
+                .collect()
+        };
+        let expected = text(&good);
+        assert!(!expected.is_empty(), "control must produce text");
+        assert_eq!(text(&broken), expected);
     }
 
     /// The repair only fires where padding cannot move an object: it declines a

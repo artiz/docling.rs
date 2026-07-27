@@ -57,6 +57,12 @@ fn main() {
     let pages = docling_pdf::textparse::pdf_textlines(&bytes);
     let cells: usize = pages.iter().map(|(_, _, c)| c.len()).sum();
     eprintln!("2. text lines: {cells} across {} page(s)", pages.len());
+    if cells == 0 {
+        eprintln!(
+            "   where it is lost:{}",
+            docling_pdf::textparse::content_diagnosis(&bytes)
+        );
+    }
     for (i, (_, _, c)) in pages.iter().enumerate().take(3) {
         if let Some(first) = c.iter().find(|c| !c.text.trim().is_empty()) {
             eprintln!("   page {}: first line {:?}", i + 1, first.text);
