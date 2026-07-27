@@ -25,7 +25,9 @@
 use docling_pdf::assemble::{geometric_table_is_reliable, reconstruct_table};
 use docling_pdf::layout::{decode_layout, layout_input};
 use docling_pdf::pdfium_backend::PdfPage;
-use docling_pdf::scanned::{assemble_page_with_tables, finish_document, refine_regions};
+use docling_pdf::scanned::{
+    assemble_page_with_tables, drop_duplicate_text_claims, finish_document, refine_regions,
+};
 use image::RgbImage;
 use wasm_bindgen::prelude::*;
 
@@ -162,6 +164,10 @@ impl DigitalConverter {
         // Refine against the *real* text cells: unlike the OCR path, orphan-text
         // recovery and the false-picture drop have something to work with here.
         let regions = refine_regions(regions, &page.cells, page_w, page_h);
+        // The pdf.js raster can tease overlapping text detections out of the
+        // model (a block plus its own parts), and every overlap reads the same
+        // cells twice — drop the re-readers.
+        let regions = drop_duplicate_text_claims(regions, &page.cells);
 
         // Attach the raster so picture regions crop out of it, and record what
         // it is scaled by (cells stay in points).
