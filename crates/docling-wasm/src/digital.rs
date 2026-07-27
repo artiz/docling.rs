@@ -14,25 +14,26 @@
 //! because headings, tables and pictures are all things the layout model finds.
 //!
 //! ```js
-//! const conv = new DigitalConverter(pdfBytes);   // throws when there is no text layer
+//! const conv = new DigitalConverter(pdfBytes, dictText); // throws when there is no text layer
 //! for (let i = 0; i < conv.page_count(); i++) {
 //!   // rasterize page i with pdf.js at 2 px/point, then:
-//!   await conv.add_page(i, rgba, w, h, 2.0, layout);
+//!   await conv.add_page(i, rgba, w, h, 2.0, layout, rec); // rec optional: OCRs embedded pictures
 //! }
 //! const markdown = conv.finish("bill.pdf", "md", "embedded");
 //! ```
 
-use docling_pdf::assemble::{geometric_table_is_reliable, reconstruct_table};
-use docling_pdf::layout::{decode_layout, layout_input};
-use docling_pdf::pdfium_backend::PdfPage;
+use docling_pdf::assemble::{add_orphan_regions, geometric_table_is_reliable, reconstruct_table};
+use docling_pdf::layout::{decode_layout, layout_input, Region};
+use docling_pdf::ocr_prep::{dict_chars, prep_region_lines};
+use docling_pdf::pdfium_backend::{PdfPage, TextCell};
 use docling_pdf::scanned::{
     assemble_page_with_tables, drop_duplicate_text_claims, finish_document, refine_regions,
 };
 use image::RgbImage;
 use wasm_bindgen::prelude::*;
 
-use crate::ocr::tensor_parts;
-use crate::scanned::{render, LayoutSession};
+use crate::ocr::{tensor_parts, RecSession};
+use crate::scanned::{ocr_lines, render, LayoutSession};
 use crate::tableformer::TfSession;
 
 /// A digital PDF being converted page by page. Construct it from the file's
@@ -42,6 +43,8 @@ use crate::tableformer::TfSession;
 pub struct DigitalConverter {
     /// One entry per page, carrying that page's text cells in PDF points.
     pages: Vec<PdfPage>,
+    /// Recognition dictionary, when the host wants embedded pictures OCR'd.
+    chars: Vec<String>,
     out: Vec<docling_pdf::scanned::AssembledPage>,
 }
 
@@ -49,8 +52,10 @@ pub struct DigitalConverter {
 impl DigitalConverter {
     /// Parse the PDF's text layer. Fails when there is none — the caller should
     /// fall back to the scanned pipeline, exactly as the demo page does.
+    /// `dict` (optional) is the recognition dictionary text; with it and a
+    /// `RecSession` on `add_page`, embedded raster pictures get OCR'd too.
     #[wasm_bindgen(constructor)]
-    pub fn new(bytes: &[u8]) -> Result<DigitalConverter, JsError> {
+    pub fn new(bytes: &[u8], dict: Option<String>) -> Result<DigitalConverter, JsError> {
         let pages = docling_pdf::textparse::pdf_text_pages(bytes);
         // Vestigial covers the all-empty case too — and the scanned form with a
         // typed-in date, whose three tiny strings must not masquerade as the
@@ -62,6 +67,7 @@ impl DigitalConverter {
         }
         Ok(Self {
             pages,
+            chars: dict.as_deref().map(dict_chars).unwrap_or_default(),
             out: Vec::new(),
         })
     }
@@ -71,9 +77,20 @@ impl DigitalConverter {
         self.pages.len()
     }
 
+    /// Install the recognition dictionary after construction — the host probes
+    /// the text layer first (the constructor throws on a scan) and only then
+    /// fetches the recognition model + dictionary.
+    #[wasm_bindgen(js_name = setDict)]
+    pub fn set_dict(&mut self, dict: &str) {
+        self.chars = dict_chars(dict);
+    }
+
     /// Convert page `index` (0-based) given its rendered bitmap: layout
     /// detection plus geometric tables. `scale` is the raster's pixels per PDF
-    /// point (2.0 for pdf.js `{scale: 2}`).
+    /// point (2.0 for pdf.js `{scale: 2}`). With `rec` (and a dictionary at
+    /// construction), embedded raster pictures that carry no text cells are
+    /// OCR'd — the text a digital page's images hide from its text layer.
+    #[allow(clippy::too_many_arguments)]
     pub async fn add_page(
         &mut self,
         index: usize,
@@ -82,8 +99,9 @@ impl DigitalConverter {
         px_h: u32,
         scale: f32,
         layout: &LayoutSession,
+        rec: Option<RecSession>,
     ) -> Result<(), JsError> {
-        self.add_page_impl(index, rgba, px_w, px_h, scale, layout, None)
+        self.add_page_impl(index, rgba, px_w, px_h, scale, layout, rec.as_ref(), None)
             .await
     }
 
@@ -100,9 +118,19 @@ impl DigitalConverter {
         scale: f32,
         layout: &LayoutSession,
         tf: &TfSession,
+        rec: Option<RecSession>,
     ) -> Result<(), JsError> {
-        self.add_page_impl(index, rgba, px_w, px_h, scale, layout, Some(tf))
-            .await
+        self.add_page_impl(
+            index,
+            rgba,
+            px_w,
+            px_h,
+            scale,
+            layout,
+            rec.as_ref(),
+            Some(tf),
+        )
+        .await
     }
 
     /// Assemble the converted pages into a document and render it as `"md"`
@@ -129,6 +157,7 @@ impl DigitalConverter {
         px_h: u32,
         scale: f32,
         layout: &LayoutSession,
+        rec: Option<&RecSession>,
         tf: Option<&TfSession>,
     ) -> Result<(), JsError> {
         if rgba.len() != (px_w as usize) * (px_h as usize) * 4 {
@@ -170,7 +199,55 @@ impl DigitalConverter {
         // The pdf.js raster can tease overlapping text detections out of the
         // model (a block plus its own parts), and every overlap reads the same
         // cells twice — drop the re-readers.
-        let regions = drop_duplicate_text_claims(regions, &page.cells);
+        let mut regions = drop_duplicate_text_claims(regions, &page.cells);
+
+        // Python docling OCRs the bitmap-covered areas of *every* page — even a
+        // digital one — once they exceed `bitmap_area_threshold` (5 % of the
+        // page). A picture region without a single text cell is exactly that: an
+        // embedded raster whose text the text layer cannot see (e.g. terms-and-
+        // conditions boxes exported as images). Recognize those crops and merge
+        // the lines in as text regions, the way docling's orphan-cell recovery
+        // turns unclaimed OCR cells into text clusters next to the picture.
+        if let Some(rec) = rec.filter(|_| !self.chars.is_empty()) {
+            let page_area = (page_w * page_h).max(1.0);
+            let has_text = |r: &Region| {
+                page.cells.iter().any(|c| {
+                    let ca = ((c.r - c.l) * (c.b - c.t)).max(1.0);
+                    let ix = (r.r.min(c.r) - r.l.max(c.l)).max(0.0);
+                    let iy = (r.b.min(c.b) - r.t.max(c.t)).max(0.0);
+                    !c.text.trim().is_empty() && ix * iy / ca > 0.5
+                })
+            };
+            let bare: Vec<Region> = regions
+                .iter()
+                .filter(|r| {
+                    r.label == "picture"
+                        && (r.r - r.l) * (r.b - r.t) / page_area >= 0.05
+                        && !has_text(r)
+                })
+                .map(|r| Region {
+                    label: "text",
+                    ..r.clone()
+                })
+                .collect();
+            if !bare.is_empty() {
+                let (bboxes, lines) = prep_region_lines(&img, &bare, scale);
+                let texts = ocr_lines(&self.chars, rec, &lines).await?;
+                let mut ocr_cells = Vec::new();
+                for ((l, t, r, b), text) in bboxes.into_iter().zip(texts) {
+                    let text = text.trim().to_string();
+                    if !text.is_empty() {
+                        ocr_cells.push(TextCell { text, l, t, r, b });
+                    }
+                }
+                if !ocr_cells.is_empty() {
+                    let mut recovered = Vec::new();
+                    add_orphan_regions(&mut recovered, &ocr_cells);
+                    regions.extend(recovered);
+                    page.cells.extend(ocr_cells);
+                }
+            }
+        }
 
         // Attach the raster so picture regions crop out of it, and record what
         // it is scaled by (cells stay in points).

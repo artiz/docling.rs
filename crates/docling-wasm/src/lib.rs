@@ -48,14 +48,19 @@ fn convert_impl(
     filename: &str,
     to: Option<&str>,
     images: Option<&str>,
+    max_pages: Option<u32>,
 ) -> Result<String, String> {
     let ext = filename.rsplit('.').next().unwrap_or_default();
     let format = InputFormat::from_extension(ext)
         .ok_or_else(|| format!("unknown or unsupported extension: {filename:?}"))?;
     let source = SourceDocument::from_bytes(filename.to_string(), format, bytes.to_vec());
-    let result = DocumentConverter::new()
-        .convert(source)
-        .map_err(|e| e.to_string())?;
+    let mut converter = DocumentConverter::new();
+    // "First N pages" (issue #80's window with first pinned to 1): only PDFs
+    // consume it; other formats convert whole, same as the CLI.
+    if let Some(n) = max_pages.filter(|&n| n > 0) {
+        converter = converter.page_range(1, n as usize);
+    }
+    let result = converter.convert(source).map_err(|e| e.to_string())?;
     let image_mode = image_mode(images)?;
     match to.unwrap_or("md") {
         // `Referenced` is deliberately unreachable here: it hands the caller
@@ -94,15 +99,18 @@ fn image_mode(images: Option<&str>) -> Result<ImageMode, String> {
 ///
 /// `images` controls how pictures render in Markdown — `"placeholder"`
 /// (default) or `"embedded"` (base64 data URIs), the same option
-/// docling-serve exposes.
+/// docling-serve exposes. `max_pages` converts only a PDF's first N pages
+/// (issue #80's window, first pinned to 1); other formats ignore it.
 #[wasm_bindgen]
 pub fn convert(
     bytes: &[u8],
     filename: &str,
     to: Option<String>,
     images: Option<String>,
+    max_pages: Option<u32>,
 ) -> Result<String, JsError> {
-    convert_impl(bytes, filename, to.as_deref(), images.as_deref()).map_err(|e| JsError::new(&e))
+    convert_impl(bytes, filename, to.as_deref(), images.as_deref(), max_pages)
+        .map_err(|e| JsError::new(&e))
 }
 
 /// The file extensions this build can convert, as a JSON string array —
@@ -137,16 +145,17 @@ mod tests {
     #[test]
     fn markdown_roundtrip() {
         let md = b"# Title\n\nHello *world*\n";
-        let out = convert_impl(md, "note.md", None, None).unwrap();
+        let out = convert_impl(md, "note.md", None, None, None).unwrap();
         assert!(out.contains("# Title"));
-        let json = convert_impl(md, "note.md", Some("json"), None).unwrap();
+        let json = convert_impl(md, "note.md", Some("json"), None, None).unwrap();
         assert!(json.contains("\"schema_name\""));
     }
 
     #[test]
     fn ml_formats_rejected() {
         // Images still need the full ML pipeline.
-        let err = convert_impl(&[0x89, b'P', b'N', b'G'], "scan.png", None, None).unwrap_err();
+        let err =
+            convert_impl(&[0x89, b'P', b'N', b'G'], "scan.png", None, None, None).unwrap_err();
         assert!(
             err.contains("unknown or unsupported") || err.contains("pdf"),
             "should reject the ML-only format: {err}"
@@ -168,7 +177,7 @@ mod tests {
             "/../../tests/data/pdf/sources/code_and_formula.pdf"
         ))
         .expect("corpus pdf");
-        let out = convert_impl(&bytes, "code_and_formula.pdf", None, None).unwrap();
+        let out = convert_impl(&bytes, "code_and_formula.pdf", None, None, None).unwrap();
         assert!(!out.trim().is_empty(), "text layer should extract");
     }
 
@@ -180,7 +189,7 @@ mod tests {
         if docling::PDF_ML_COMPILED {
             return;
         }
-        let err = convert_impl(b"%PDF-1.4\n%%EOF", "scan.pdf", None, None).unwrap_err();
+        let err = convert_impl(b"%PDF-1.4\n%%EOF", "scan.pdf", None, None, None).unwrap_err();
         assert!(
             err.contains("text layer") || err.contains("OCR"),
             "should point at the missing text layer: {err}"
@@ -195,7 +204,7 @@ mod tests {
             "/../docling/tests/data/docx/sources/docx_lists.docx"
         ))
         .expect("corpus docx");
-        let out = convert_impl(&bytes, "docx_lists.docx", None, None).unwrap();
+        let out = convert_impl(&bytes, "docx_lists.docx", None, None, None).unwrap();
         assert!(!out.trim().is_empty());
     }
 
@@ -209,12 +218,20 @@ mod tests {
             "/../docling/tests/data/docx/sources/word_image_anchors.docx"
         ))
         .expect("corpus docx with images");
-        let placeholder = convert_impl(&bytes, "word_image_anchors.docx", None, None).unwrap();
+        let placeholder =
+            convert_impl(&bytes, "word_image_anchors.docx", None, None, None).unwrap();
         assert!(placeholder.contains("<!-- image -->"), "{placeholder}");
-        let embedded =
-            convert_impl(&bytes, "word_image_anchors.docx", None, Some("embedded")).unwrap();
+        let embedded = convert_impl(
+            &bytes,
+            "word_image_anchors.docx",
+            None,
+            Some("embedded"),
+            None,
+        )
+        .unwrap();
         assert!(embedded.contains("](data:image/"), "expected a data URI");
-        let err = convert_impl(&bytes, "word_image_anchors.docx", None, Some("nope")).unwrap_err();
+        let err =
+            convert_impl(&bytes, "word_image_anchors.docx", None, Some("nope"), None).unwrap_err();
         assert!(err.contains("unknown images="), "{err}");
     }
 

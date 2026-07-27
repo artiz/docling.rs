@@ -106,40 +106,46 @@ impl ScannedConverter {
     }
 }
 
+/// Recognize a set of prepared line/word crops: width-batch them and run
+/// each batch through the JS recognition session, greedy-CTC-decoding the
+/// probabilities. Returns one string per input crop, in order. Shared by the
+/// scanned path (every text region) and the digital path (embedded raster
+/// pictures with no text cells — see `digital.rs`).
+pub(crate) async fn ocr_lines(
+    chars: &[String],
+    rec: &RecSession,
+    lines: &[PrepLine],
+) -> Result<Vec<String>, JsError> {
+    let mut texts = vec![String::new(); lines.len()];
+    for (w, chunk) in width_batches(lines) {
+        let data = batch_input(w, &chunk, lines);
+        let out = rec
+            .run(
+                chunk.len() as u32,
+                REC_HEIGHT,
+                w as u32,
+                js_sys::Float32Array::from(data.as_slice()),
+            )
+            .await
+            .map_err(|e| JsError::new(&format!("rec session.run: {e:?}")))?;
+        let (probs, t_len, nc) = tensor_parts(&out)?;
+        if probs.len() < chunk.len() * t_len * nc {
+            return Err(JsError::new("rec session.run returned a short tensor"));
+        }
+        for (i, &ix) in chunk.iter().enumerate() {
+            texts[ix] = decode_row(chars, &probs[i * t_len * nc..(i + 1) * t_len * nc], nc);
+        }
+    }
+    Ok(texts)
+}
+
 impl ScannedConverter {
-    /// Recognize a set of prepared line/word crops: width-batch them and run
-    /// each batch through the JS recognition session, greedy-CTC-decoding the
-    /// probabilities. Returns one string per input crop, in order.
     async fn ocr_lines(
         &self,
         rec: &RecSession,
         lines: &[PrepLine],
     ) -> Result<Vec<String>, JsError> {
-        let mut texts = vec![String::new(); lines.len()];
-        for (w, chunk) in width_batches(lines) {
-            let data = batch_input(w, &chunk, lines);
-            let out = rec
-                .run(
-                    chunk.len() as u32,
-                    REC_HEIGHT,
-                    w as u32,
-                    js_sys::Float32Array::from(data.as_slice()),
-                )
-                .await
-                .map_err(|e| JsError::new(&format!("rec session.run: {e:?}")))?;
-            let (probs, t_len, nc) = tensor_parts(&out)?;
-            if probs.len() < chunk.len() * t_len * nc {
-                return Err(JsError::new("rec session.run returned a short tensor"));
-            }
-            for (i, &ix) in chunk.iter().enumerate() {
-                texts[ix] = decode_row(
-                    &self.chars,
-                    &probs[i * t_len * nc..(i + 1) * t_len * nc],
-                    nc,
-                );
-            }
-        }
-        Ok(texts)
+        ocr_lines(&self.chars, rec, lines).await
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -181,7 +187,7 @@ impl ScannedConverter {
             return Err(JsError::new("layout boxes dims must be [1, q, 4]"));
         }
         let regions = decode_layout(&logits, &boxes, q, c, page_w, page_h);
-        let regions = refine_regions(regions, &[], page_w, page_h);
+        let mut regions = refine_regions(regions, &[], page_w, page_h);
 
         // OCR the text regions (same gather/batch/decode as native ocr_page).
         let (bboxes, lines) = prep_region_lines(&img, &regions, scale);
@@ -208,6 +214,42 @@ impl ScannedConverter {
                 continue;
             }
             cells.push(TextCell { text, l, t, r, b });
+        }
+
+        // Python docling OCRs the *whole* page — pictures included — and its
+        // orphan-cell recovery turns the cells no text cluster claims into text
+        // clusters beside the picture. Region-scoped OCR skips `picture`, so a
+        // figure that is really a text box (terms and conditions exported as an
+        // image, a screenshot inside a scan) lost its words. Recognize the big
+        // picture crops (docling's bitmap_area_threshold: ≥ 5 % of the page) and
+        // recover their lines the same way.
+        let bare: Vec<_> = regions
+            .iter()
+            .filter(|r| {
+                r.label == "picture"
+                    && (r.r - r.l) * (r.b - r.t) / (page_w * page_h).max(1.0) >= 0.05
+            })
+            .map(|r| docling_pdf::layout::Region {
+                label: "text",
+                ..r.clone()
+            })
+            .collect();
+        if !bare.is_empty() {
+            let (pbboxes, plines) = prep_region_lines(&img, &bare, scale);
+            let ptexts = self.ocr_lines(rec, &plines).await?;
+            let mut pcells = Vec::new();
+            for ((l, t, r, b), text) in pbboxes.into_iter().zip(ptexts) {
+                let text = text.trim().to_string();
+                if !text.is_empty() {
+                    pcells.push(TextCell { text, l, t, r, b });
+                }
+            }
+            if !pcells.is_empty() {
+                let mut recovered = Vec::new();
+                docling_pdf::assemble::add_orphan_regions(&mut recovered, &pcells);
+                regions.extend(recovered);
+                cells.extend(pcells);
+            }
         }
 
         // TableFormer (opt-in): resolve each table region's structure through

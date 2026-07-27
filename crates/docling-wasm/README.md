@@ -31,6 +31,7 @@ convert(
   filename: string,
   to?: "md" | "json" | "doclang",          // default "md"
   images?: "placeholder" | "embedded",     // default "placeholder", Markdown only
+  max_pages?: number,                      // convert only the first N PDF pages
 ): string
 supported_extensions(): string   // JSON array, e.g. for <input accept=…>
 version(): string
@@ -65,15 +66,23 @@ pipeline does, which OCRs a page only when it has no text cells.
 
 ```js
 const conv = new DigitalConverter(pdfBytes);   // throws when there is no text layer
+conv.setDict(dictText);                        // optional: enables picture OCR below
 for (let i = 0; i < conv.page_count(); i++) {
   // rasterize page i with pdf.js at 2 px/point, then:
-  await conv.add_page(i, rgba, w, h, 2.0, layout);
+  await conv.add_page(i, rgba, w, h, 2.0, layout, rec); // rec optional
 }
 const markdown = conv.finish("bill.pdf", "md", "embedded");
 ```
 
-`addPageTf(..., tf)` adds TableFormer, still only for the tables whose geometric
-reconstruction looks unreliable. No recognition model is fetched on this path.
+`addPageTf(..., tf, rec)` adds TableFormer, still only for the tables whose
+geometric reconstruction looks unreliable.
+
+With a dictionary (`setDict`, or the constructor's second argument) and a
+recognition session, embedded raster pictures that carry no text cells are
+OCR'd too — Python docling's `bitmap_area_threshold` behavior: a digital page's
+images (a terms-and-conditions box exported as a bitmap) hold text its text
+layer cannot see. Without them the path fetches no recognition model and keeps
+its old text-layer-only behavior.
 
 ### Scanned pages (OCR)
 
@@ -131,7 +140,10 @@ the page models (device picker or Hugging Face — see below).
 file, pick the output (Markdown / JSON / DocLang), pick how images render, and
 optionally turn on OCR for scanned pages. A **Force OCR** toggle (docling's
 `force_full_page_ocr`) sends a PDF straight to the OCR pipeline, ignoring
-whatever text layer it claims to have — for layers that exist but lie. To run it locally, after the
+whatever text layer it claims to have — for layers that exist but lie. A
+**Pages** field converts only the first N pages (empty = all), and **Stop**
+aborts a running conversion and clears the output — the OCR worker is
+terminated and boots afresh on the next file. To run it locally, after the
 `wasm-bindgen` step above:
 
 ```bash
