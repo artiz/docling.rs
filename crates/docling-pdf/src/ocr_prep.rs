@@ -435,3 +435,48 @@ mod tests {
         assert_eq!(decode_row(&chars, &probs, 4), "ab");
     }
 }
+
+#[cfg(test)]
+mod word_segmentation {
+    use image::{Rgb, RgbImage};
+
+    /// A white line carrying two ink blocks separated by `gap` pixels.
+    fn line_with_gap(h: u32, gap: u32) -> RgbImage {
+        let w = 30 + gap + 30 + 10;
+        let mut img = RgbImage::from_pixel(w, h, Rgb([255, 255, 255]));
+        for (x0, x1) in [(5u32, 35u32), (35 + gap, 65 + gap)] {
+            for x in x0..x1.min(w) {
+                for y in h / 4..(3 * h / 4) {
+                    img.put_pixel(x, y, Rgb([0, 0, 0]));
+                }
+            }
+        }
+        img
+    }
+
+    /// [`segment_words`] splits on a gap of `0.6 x line height`, which is the
+    /// property the rest of the browser table path inherits: an inter-word
+    /// space never splits, but a column gap wider than that does. Anything
+    /// narrower stays a single box — and a single box can only ever land in one
+    /// TableFormer cell, so this threshold is the floor on how tight a table's
+    /// columns may be before its cells merge.
+    #[test]
+    fn words_split_only_on_gaps_above_six_tenths_of_the_line_height() {
+        for h in [16u32, 24, 32, 40] {
+            let split_at = (1..=40u32)
+                .find(|&gap| super::segment_words(&line_with_gap(h, gap)).len() >= 2)
+                .expect("some gap splits");
+            let ratio = split_at as f32 / h as f32;
+            assert!(
+                (0.5..=0.65).contains(&ratio),
+                "h={h}: split at {split_at}px ({ratio:.2} x height)"
+            );
+            // Just below the threshold the two blocks are one word.
+            assert_eq!(
+                super::segment_words(&line_with_gap(h, split_at - 1)).len(),
+                1,
+                "h={h}: a narrower gap must not split"
+            );
+        }
+    }
+}
