@@ -27,12 +27,12 @@ are no longer scored.)
 | amt_handbook_sample | 2 *(ws-ok)* | docling's spurious fraction double space — ours is more faithful |
 | code_and_formula | 5 | code block reflowed to multiple lines + trailing newline |
 | 2305.03393v1 | 26 | title-page reading order + author-ID run spacing |
-| normal_4pages | 44 | reading order (heading numbering, footnote order) |
+| normal_4pages | 50 | reading order (heading numbering, footnote order) + recovered panel text |
 | right_to_left_03 | 60 | RTL bidi |
 | table_mislabeled_as_picture | 86 | layout over-detects tables (survey rendered as tables) |
 | 2206.01062 | 80 | TableFormer multi-row headers + title-page reading order |
-| 2203.01017v2 | 130 | TableFormer structure + reading order |
-| redp5110_sampled | 194 | TOC OTSL structure (model-level); cover-page ordering |
+| 2203.01017v2 | 132 | TableFormer structure + reading order |
+| redp5110_sampled | 196 | TOC OTSL structure (model-level); cover-page ordering |
 
 `amt` is the 6th under the whitespace-normalized metric: its only diff is
 docling's spurious double space before the `1⁄4` fraction, where our single-spaced
@@ -52,6 +52,18 @@ below. The #60 matching work (docling's `MatchingPostProcessor` ported to
 quote → `'` — and joining region cells in docling-parse index order
 instead of geometric bands) then took 2203 →130, 2206 92→80, 2305 28→26,
 normal_4pages 56→44, redp5110 →194, and table_mislabeled 88→86.
+
+The #157 **text-panel recovery** deliberately trades a few diff lines for
+recovered content: an *uncaptioned* `picture` that is really a text panel —
+dense, wide, multi-line words, whether from the digital text layer or from
+OCR of the crop (docling's `bitmap_area_threshold`: bitmap areas ≥ 5 % of
+the page get OCR'd on every page kind) — is demoted into per-paragraph text
+regions instead of shipping as pixels. docling drops that text entirely
+(cells assigned to a picture cluster are never serialized), so the +2/+6/+2
+on 2203/normal_4pages/redp5110 are real recovered words (e.g.
+normal_4pages' cover publisher block), not regressions; captioned figures
+(the corpus' document screenshots) and sparse-label charts keep their crops
+and their byte-exact output — `picture_classification` stays **exact**.
 
 ## DocLang (`.dclx`) conformance
 

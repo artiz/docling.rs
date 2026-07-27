@@ -263,14 +263,20 @@ export function createOcr({ onStatus }) {
     cur = { conv: new ScannedConverter(dict), rec, tf: tfSess };
   }
 
-  // A digital PDF (one with a text layer) needs the layout model but no
-  // recognition: the text comes out of the file, so this is both much faster
-  // and exact. Throws when there is no text layer — the host then falls back to
-  // startDoc. Returns the page count, since the parser already knows it.
-  async function startDigital(bytes, useTf) {
+  // A digital PDF (one with a text layer): the text comes out of the file, so
+  // this is both much faster and exact. The recognition model still loads —
+  // embedded raster pictures (a terms box exported as an image) carry text the
+  // text layer cannot see, and docling OCRs those areas on every page. Throws
+  // when there is no text layer — the host then falls back to startDoc.
+  // Returns the page count, since the parser already knows it.
+  async function startDigital(bytes, useTf, lang) {
+    // Probe the text layer first (the constructor throws on a scan, which the
+    // host retries through startDoc) — only then fetch the recognition model.
     const conv = new DigitalConverter(new Uint8Array(bytes));
+    const { dict, rec } = await recFor(lang || "en");
+    conv.setDict(dict);
     const tfSess = useTf ? await ensureTf() : null;
-    cur = { conv, tf: tfSess, digital: true };
+    cur = { conv, rec, tf: tfSess, digital: true };
     return conv.page_count();
   }
   async function addPage(rgba, w, h, scale, index) {
@@ -281,8 +287,8 @@ export function createOcr({ onStatus }) {
     if (cur.digital) {
       const args = [index, rgba, w, h, scale, layout];
       return cur.tf
-        ? cur.conv.addPageTf(...args, cur.tf)
-        : cur.conv.add_page(...args);
+        ? cur.conv.addPageTf(...args, cur.tf, cur.rec)
+        : cur.conv.add_page(...args, cur.rec);
     }
     if (cur.tf) {
       await cur.conv.addPageTf(rgba, w, h, scale, layout, cur.rec, cur.tf);

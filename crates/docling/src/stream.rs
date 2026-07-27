@@ -73,6 +73,7 @@ pub(crate) struct StreamSettings {
     pub strict: bool,
     pub no_table_former: bool,
     pub no_ocr: bool,
+    pub force_full_page_ocr: bool,
     pub enrich: docling_pdf::EnrichmentOptions,
     pub page_range: Option<(usize, usize)>,
     pub ocr_lang: Option<docling_pdf::OcrLang>,
@@ -139,6 +140,7 @@ fn run_pdf(
     let mut pipeline = match docling_pdf::Pipeline::new().map(|p| {
         p.no_table_former(settings.no_table_former)
             .no_ocr(settings.no_ocr)
+            .force_full_page_ocr(settings.force_full_page_ocr)
             .ocr_lang(settings.ocr_lang)
             .enrichments(settings.enrich)
             .pages(settings.page_range)

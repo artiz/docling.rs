@@ -12,24 +12,53 @@
   <!-- Inline, so a static host never 404s on /favicon.ico. -->
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><text y='14' font-size='14'>📄</text></svg>">
   <style>
-    :root { color-scheme: light dark; font-family: system-ui, sans-serif; }
-    body { max-width: 62rem; margin: 2rem auto; padding: 0 1rem; }
-    h1 { font-size: 1.4rem; margin-bottom: 0.3rem; }
+    :root {
+      color-scheme: light dark;
+      font-family: system-ui, sans-serif;
+      /* docling docs palette: deep blue foundation, bright blue accent */
+      --brand: #003778;
+      --accent: #0094ff;
+    }
+    body { margin: 0; }
+    /* Material-docs-style top bar, same deep blue in both color schemes. */
+    header {
+      background: var(--brand); color: #fff;
+      display: flex; align-items: center; gap: 0.8rem;
+      padding: 0.55rem 1.2rem;
+      box-shadow: 0 2px 6px rgba(0, 0, 0, 0.25);
+    }
+    header img { width: 38px; height: 38px; }
+    header .name { font-size: 1.15rem; font-weight: 600; }
+    header .tag { font-size: 0.8rem; opacity: 0.75; }
+    header a.gh {
+      margin-left: auto; color: #fff; text-decoration: none;
+      font-size: 0.85rem; border: 1px solid rgba(255, 255, 255, 0.4);
+      border-radius: 6px; padding: 0.25rem 0.7rem;
+    }
+    header a.gh:hover { background: rgba(255, 255, 255, 0.12); }
+    main { max-width: 62rem; margin: 1.4rem auto 2rem; padding: 0 1rem; }
     h2 { font-size: 1rem; margin: 1.4rem 0 0.5rem; }
     .lede { color: #888; margin-top: 0; }
+    a { color: var(--accent); }
+    button {
+      background: var(--accent); color: #fff; border: 0; border-radius: 6px;
+      padding: 0.3rem 0.9rem; font-size: 0.9rem; cursor: pointer;
+    }
+    button:disabled { opacity: 0.4; cursor: default; }
+    input[type="number"] { width: 4.5rem; }
     #drop {
       border: 2px dashed #888; border-radius: 8px; padding: 2.5rem 1rem;
       text-align: center; cursor: pointer; margin: 1rem 0; transition: opacity .2s;
     }
-    #drop.hover { border-color: #4a90d9; background: rgba(74, 144, 217, .08); }
+    #drop.hover { border-color: var(--accent); background: rgba(0, 148, 255, .07); }
     /* Busy (models loading / conversion running): controls freeze, the drop
        zone dims and its border pulses until the work settles. */
     body.busy #drop { opacity: .55; pointer-events: none; animation: working 1.2s ease-in-out infinite; }
     body.busy select, body.busy input { opacity: .6; }
-    @keyframes working { 0%, 100% { border-color: #888; } 50% { border-color: #4a90d9; } }
+    @keyframes working { 0%, 100% { border-color: #888; } 50% { border-color: var(--accent); } }
     .spinner {
       display: inline-block; width: .85em; height: .85em; margin-right: .45em;
-      border: 2px solid rgba(74, 144, 217, .25); border-top-color: #4a90d9;
+      border: 2px solid rgba(0, 148, 255, .25); border-top-color: var(--accent);
       border-radius: 50%; vertical-align: -.1em; animation: spin .8s linear infinite;
     }
     @keyframes spin { to { transform: rotate(360deg); } }
@@ -51,7 +80,15 @@
   </style>
 </head>
 <body>
-  <h1>docling.rs in your browser</h1>
+  <header>
+    <img src="logo.svg" alt="docling.rs logo">
+    <div>
+      <div class="name">docling.rs</div>
+      <div class="tag">document conversion in your browser</div>
+    </div>
+    <a class="gh" href="https://github.com/docling-project/docling.rs">GitHub</a>
+  </header>
+  <main>
   <p class="lede">
     Documents convert to Markdown, docling JSON or DocLang XML
     <strong>entirely client-side</strong> — nothing is uploaded, no server is
@@ -81,7 +118,9 @@
     <label title="For PDFs that carry a text layer: also run the layout model, so headings, tables and pictures come out instead of flat paragraphs. The text still comes from the PDF (exact, no OCR), so it stays far faster than OCR — but it needs the layout model.">
       <input type="checkbox" id="structure"> PDF structure
     </label>
-    <span id="meta">starting…</span>
+    <label title="Convert only a PDF's first N pages; empty = all pages.">Pages
+      <input type="number" id="maxPages" min="1" placeholder="all">
+    </label>
   </div>
 
   <div class="row" id="ocrRow">
@@ -95,7 +134,14 @@
     <label title="Recover table structure with the TableFormer ONNX graphs. Needs the tableformer models (~380 MB). It runs only on tables whose free geometric reconstruction looks unreliable, so clean tables cost nothing extra.">
       <input type="checkbox" id="tf"> TableFormer tables
     </label>
+    <label title="OCR every PDF page from its rendered image, ignoring any embedded text layer — docling's force_full_page_ocr. For text layers that exist but lie: broken encodings, scanned forms with a few typed-in fields.">
+      <input type="checkbox" id="forceOcr"> Force OCR
+    </label>
     <span class="hint" id="ocrState">scanned pages need models — see below</span>
+  </div>
+  <div class="row">
+    <button id="stop" disabled title="Abort the running conversion and clear the output.">Stop</button>
+    <span id="meta">starting…</span>
   </div>
 
   <div id="preview"></div>
@@ -160,13 +206,13 @@ curl -fsSL https://raw.githubusercontent.com/docling-project/docling.rs/master/s
     const IMAGE_EXT = ["png", "jpg", "jpeg", "tif", "tiff", "webp", "bmp"];
 
     const $ = (id) => document.getElementById(id);
-    const [meta, out, preview, drop, pick, to, images, render, structure, lang, tf, modelsInput, ocrState] =
-      ["meta", "out", "preview", "drop", "pick", "to", "images", "render", "structure", "lang", "tf", "models", "ocrState"].map($);
+    const [meta, out, preview, drop, pick, to, images, render, structure, maxPages, stop, lang, tf, forceOcr, modelsInput, ocrState] =
+      ["meta", "out", "preview", "drop", "pick", "to", "images", "render", "structure", "maxPages", "stop", "lang", "tf", "forceOcr", "models", "ocrState"].map($);
 
     // Everything the user can touch, frozen for the whole of a conversion:
     // a control left live lets a second run start on top of the first, and the
     // two then fight over the pipeline's single in-flight document.
-    const CONTROLS = [pick, to, images, render, structure, lang, tf, modelsInput];
+    const CONTROLS = [pick, to, images, render, structure, maxPages, lang, tf, forceOcr, modelsInput];
 
     await init();
     const exts = JSON.parse(supported_extensions());
@@ -182,11 +228,13 @@ curl -fsSL https://raw.githubusercontent.com/docling-project/docling.rs/master/s
     function busy(msg) {
       document.body.classList.add("busy");
       for (const el of CONTROLS) el.disabled = true;
+      stop.disabled = false;
       status(msg, true);
     }
     function ready(msg) {
       document.body.classList.remove("busy");
       for (const el of CONTROLS) el.disabled = false;
+      stop.disabled = true;
       status(msg, false);
     }
 
@@ -196,6 +244,8 @@ curl -fsSL https://raw.githubusercontent.com/docling-project/docling.rs/master/s
     let ocr = null;      // driver, once booted
     let ocrBooting = null;
     let providedModels = null; // device files picked before the driver existed
+    let cancelled = false;     // set by Stop; conversion loops give up on it
+    let liveWorkerDrv = null;  // whichever worker driver exists, even mid-boot
 
     // ONNX Runtime Web is the one thing the OCR path fetches from a CDN, so a
     // failure there is the likeliest reason OCR won't start — say so plainly
@@ -227,6 +277,13 @@ curl -fsSL https://raw.githubusercontent.com/docling-project/docling.rs/master/s
       };
       worker.onerror = () => die(ORT_HINT);
       worker.onmessageerror = () => die("the OCR worker sent a message this page could not read");
+      // Stop button: a Web Worker cannot be interrupted mid-inference, so a
+      // real stop is terminate — every pending call rejects with the sentinel
+      // the UI treats as "user asked", and the next conversion boots afresh.
+      const kill = () => {
+        try { worker.terminate(); } catch {}
+        die("stopped");
+      };
       const rpc = (type, payload, transfer) =>
         new Promise((resolve, reject) => {
           const id = ++seq;
@@ -235,11 +292,12 @@ curl -fsSL https://raw.githubusercontent.com/docling-project/docling.rs/master/s
         });
       return {
         worker,
+        kill,
         boot: (l, layoutOnly) => rpc("boot", { lang: l, layoutOnly }),
         rec: (l) => rpc("rec", { lang: l }),
         docStart: (l, useTf) => rpc("doc-start", { lang: l, useTf }),
-        docStartDigital: (bytes, useTf) =>
-          rpc("doc-start-digital", { bytes, useTf }, [bytes]).then((r) => r.pages),
+        docStartDigital: (bytes, useTf, l) =>
+          rpc("doc-start-digital", { bytes, useTf, lang: l }, [bytes]).then((r) => r.pages),
         addPage: (rgba, w, h, scale, index) =>
           rpc("doc-page", { rgba, w, h, scale, index }, [rgba]),
         docFinish: (name, fmt, img) => rpc("doc-finish", { name, to: fmt, images: img }).then((r) => r.md),
@@ -265,7 +323,7 @@ curl -fsSL https://raw.githubusercontent.com/docling-project/docling.rs/master/s
         },
         rec: async (l) => { await p.recFor(l); await p.warmup(l); return {}; },
         docStart: (l, useTf) => p.startDoc(l, useTf),
-        docStartDigital: (bytes, useTf) => p.startDigital(bytes, useTf),
+        docStartDigital: (bytes, useTf, l) => p.startDigital(bytes, useTf, l),
         addPage: (rgba, w, h, scale, index) =>
           p.addPage(new Uint8Array(rgba), w, h, scale, index),
         docFinish: (name, fmt, img) => Promise.resolve(p.finishDoc(name, fmt, img)),
@@ -283,6 +341,7 @@ curl -fsSL https://raw.githubusercontent.com/docling-project/docling.rs/master/s
         let drv;
         try { drv = typeof Worker !== "undefined" ? workerDriver() : await mainDriver(); }
         catch { drv = await mainDriver(); }
+        liveWorkerDrv = drv.kill ? drv : null;
         if (providedModels) await drv.setModels(providedModels);
         let r;
         try {
@@ -349,6 +408,7 @@ curl -fsSL https://raw.githubusercontent.com/docling-project/docling.rs/master/s
       const { mod, assets } = await pdfjs();
       const pdf = await mod.getDocument({ data: bytes.slice(0), ...assets }).promise;
       await drv.docStart(lang.value, tf.checked);
+      const total = Math.min(pdf.numPages, pageLimit() ?? Infinity);
       const canvas = document.createElement("canvas");
       const ctx = canvas.getContext("2d", { willReadFrequently: true });
       const rasterize = async (p) => {
@@ -362,11 +422,12 @@ curl -fsSL https://raw.githubusercontent.com/docling-project/docling.rs/master/s
       };
       let next = rasterize(1);
       let elapsed = 0;
-      for (let p = 1; p <= pdf.numPages; p++) {
+      for (let p = 1; p <= total; p++) {
+        if (cancelled) throw new Error("stopped");
         const avg = p > 1 ? ` — ${(elapsed / (p - 1) / 1000).toFixed(1)}s/page` : "";
-        status(`${name}: page ${p}/${pdf.numPages}${avg} …`, true);
+        status(`${name}: page ${p}/${total}${avg} …`, true);
         const cur = await next;
-        if (p < pdf.numPages) next = rasterize(p + 1);
+        if (p < total) next = rasterize(p + 1);
         const t = performance.now();
         await drv.addPage(cur.rgba, cur.w, cur.h, SCALE);
         elapsed += performance.now() - t;
@@ -378,7 +439,7 @@ curl -fsSL https://raw.githubusercontent.com/docling-project/docling.rs/master/s
     // recognition) and only the layout model runs over the rendered pages.
     async function convertDigitalPdf(bytes, name) {
       const drv = await ensureOcr(/* layoutOnly */ true);
-      const pages = await drv.docStartDigital(bytes.slice(0).buffer, tf.checked);
+      const pages = await drv.docStartDigital(bytes.slice(0).buffer, tf.checked, lang.value);
       const { mod, assets } = await pdfjs();
       const pdf = await mod.getDocument({ data: bytes.slice(0), ...assets }).promise;
       const canvas = document.createElement("canvas");
@@ -392,9 +453,10 @@ curl -fsSL https://raw.githubusercontent.com/docling-project/docling.rs/master/s
         const img = ctx.getImageData(0, 0, canvas.width, canvas.height);
         return { rgba: img.data.buffer, w: canvas.width, h: canvas.height };
       };
-      const n = Math.min(pages, pdf.numPages);
+      const n = Math.min(pages, pdf.numPages, pageLimit() ?? Infinity);
       let next = rasterize(1);
       for (let p = 1; p <= n; p++) {
+        if (cancelled) throw new Error("stopped");
         status(`${name}: page ${p}/${n} …`, true);
         const cur = await next;
         if (p < n) next = rasterize(p + 1);
@@ -411,6 +473,12 @@ curl -fsSL https://raw.githubusercontent.com/docling-project/docling.rs/master/s
         return drv.convertImage(bytes.slice(0).buffer, name, lang.value, to.value, images.value);
       }
       const isPdf = name.toLowerCase().endsWith(".pdf");
+      // Force OCR: ignore whatever text layer the file claims to have —
+      // docling's force_full_page_ocr. The scanned pipeline IS that semantics
+      // in the browser (it never reads the text layer).
+      if (isPdf && forceOcr.checked) {
+        return convertScannedPdf(bytes, name);
+      }
       if (isPdf && structure.checked) {
         try {
           return await convertDigitalPdf(bytes, name);
@@ -423,7 +491,7 @@ curl -fsSL https://raw.githubusercontent.com/docling-project/docling.rs/master/s
         }
       }
       try {
-        return convert(bytes, name, to.value, images.value);
+        return convert(bytes, name, to.value, images.value, pageLimit());
       } catch (e) {
         const msg = String((e && e.message) || e);
         const scanned = name.toLowerCase().endsWith(".pdf") && /text layer|OCR/i.test(msg);
@@ -440,6 +508,7 @@ curl -fsSL https://raw.githubusercontent.com/docling-project/docling.rs/master/s
       // flight, and the OCR pipeline holds exactly one.
       if (!last || running) return;
       running = true;
+      cancelled = false;
       out.textContent = "";
       preview.style.display = "none";
       busy(`converting ${last.name} …`);
@@ -450,15 +519,40 @@ curl -fsSL https://raw.githubusercontent.com/docling-project/docling.rs/master/s
         show(lastText);
         ready(`${last.name} → ${to.value} in ${fmtTime(performance.now() - t0)}`);
       } catch (e) {
-        lastText = String((e && e.message) || e);
-        show(lastText);
-        ready(`${last.name} — failed`);
+        const msg = String((e && e.message) || e);
+        if (cancelled || msg === "stopped") {
+          // Stop is a reset, not an error: blank output, ready controls.
+          lastText = "";
+          out.textContent = "";
+          preview.style.display = "none";
+          ready("stopped");
+        } else {
+          lastText = msg;
+          show(lastText);
+          ready(`${last.name} — failed`);
+        }
       } finally {
         running = false;
       }
     }
 
+    stop.onclick = () => {
+      cancelled = true;
+      // Terminating the worker is the only way to interrupt WASM mid-inference;
+      // the pipeline is gone with it, so the next run boots a fresh one.
+      if (liveWorkerDrv) liveWorkerDrv.kill();
+      ocr = null;
+      ocrBooting = null;
+      liveWorkerDrv = null;
+    };
+
     const fmtTime = (ms) => (ms < 1000 ? `${ms.toFixed(0)} ms` : `${(ms / 1000).toFixed(1)} s`);
+    // The Pages control: a positive integer caps how many pages convert;
+    // anything else means "all".
+    function pageLimit() {
+      const n = parseInt(maxPages.value, 10);
+      return Number.isFinite(n) && n > 0 ? n : undefined;
+    }
 
     // Markdown preview: a deliberately tiny renderer (headings, lists, tables,
     // images, code). It exists to show that `images=embedded` really carries the
@@ -515,7 +609,7 @@ curl -fsSL https://raw.githubusercontent.com/docling-project/docling.rs/master/s
       last = { bytes: new Uint8Array(await file.arrayBuffer()), name: file.name };
       run();
     }
-    to.onchange = images.onchange = structure.onchange = run;
+    to.onchange = images.onchange = structure.onchange = maxPages.onchange = run;
     // Previewing only re-renders what we already have — no reconversion.
     render.onchange = () => lastText && show(lastText);
     // Switching the recognition language reloads that model; re-run if a
@@ -526,7 +620,7 @@ curl -fsSL https://raw.githubusercontent.com/docling-project/docling.rs/master/s
       try { await ocr.rec(lang.value); ready("OCR language ready"); }
       catch (e) { ready(`could not load that model: ${(e && e.message) || e}`); }
     };
-    tf.onchange = () => last && run();
+    tf.onchange = forceOcr.onchange = () => last && run();
 
     // Device model files: read each to an ArrayBuffer and hand them to the
     // pipeline (transferred to the worker) so models load with no download.
@@ -559,5 +653,6 @@ curl -fsSL https://raw.githubusercontent.com/docling-project/docling.rs/master/s
     window.doclingConvert = (bytes, name, fmt, img) => convert(new Uint8Array(bytes), name, fmt, img);
     window.doclingReady = true;
   </script>
+  </main>
 </body>
 </html>

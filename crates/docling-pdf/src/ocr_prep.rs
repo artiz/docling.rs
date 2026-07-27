@@ -99,11 +99,36 @@ pub fn segment_lines(crop: &RgbImage) -> Vec<(u32, u32, u32, u32)> {
     let thresh = mean * 0.7; // ink = noticeably darker than the page average
     let min_ink = ((w as f32) * 0.005).max(1.0) as u32;
 
+    // A column inked in nearly every row is a vertical rule — a panel border, a
+    // table line — not text; left in the profile it bridges every inter-line
+    // gap and the whole crop collapses into one giant "line" (a framed
+    // terms-and-conditions box OCR'd as a single unreadable strip). Mask those
+    // columns out of the row profile; glyph columns never come close (a
+    // descender-to-ascender stack is still far from 90 % of the crop height).
+    let mut col_ink = vec![0u32; w as usize];
+    for y in 0..h {
+        for x in 0..w {
+            if luma(crop.get_pixel(x, y)) < thresh {
+                col_ink[x as usize] += 1;
+            }
+        }
+    }
+    // Borders are *thin*: when "always-inked" columns make up a noticeable
+    // share of the width it is not a frame but a polarity/threshold artifact
+    // (an inverted dark-mode page classifies its whole background as ink) —
+    // leave the profile alone and let polarity normalization handle it.
+    let rule_cols = col_ink
+        .iter()
+        .filter(|&&c| c as f32 > 0.9 * h as f32)
+        .count();
+    let mask_rules = (rule_cols as f32) < 0.15 * w as f32;
+    let rule = |x: u32| mask_rules && col_ink[x as usize] as f32 > 0.9 * h as f32;
+
     let mut profile = vec![0u32; h as usize];
     for y in 0..h {
         let mut row = 0u32;
         for x in 0..w {
-            if luma(crop.get_pixel(x, y)) < thresh {
+            if !rule(x) && luma(crop.get_pixel(x, y)) < thresh {
                 row += 1;
             }
         }
@@ -406,14 +431,16 @@ mod tests {
     #[test]
     fn dark_mode_pages_normalize_to_scan_polarity() {
         // The same two-bar page, inverted (light text on dark) — the raw
-        // segmentation misfires (it thresholds the dark *background* as ink);
+        // segmentation misfires (it thresholds the dark *background* as ink,
+        // so the "lines" it finds are the inter-bar gaps, not the bars);
         // polarity normalization recovers the true structure.
         let mut dark = page();
         for px in dark.pixels_mut() {
             px.0 = [255 - px.0[0], 255 - px.0[1], 255 - px.0[2]];
         }
-        assert_ne!(prep_page_lines(&dark).len(), 2);
+        assert_ne!(segment_lines(&dark), segment_lines(&page()));
         let fixed = normalize_polarity(dark);
+        assert_eq!(segment_lines(&fixed), segment_lines(&page()));
         assert_eq!(prep_page_lines(&fixed).len(), 2);
         // A light page passes through untouched.
         let light = page();

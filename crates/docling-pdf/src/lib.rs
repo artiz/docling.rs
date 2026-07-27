@@ -371,6 +371,9 @@ struct Worker {
     /// Skip layout, OCR, and TableFormer; reconstruct text purely from the PDF's
     /// embedded text layer. See [`Pipeline::no_ocr`].
     no_ocr: bool,
+    /// Discard the embedded text layer and OCR every page. See
+    /// [`Pipeline::force_full_page_ocr`].
+    force_full_page_ocr: bool,
     /// Which recognition model [`Self::ocr`] loads. See [`Pipeline::ocr_lang`].
     ocr_lang: ocr::OcrLang,
 }
@@ -383,6 +386,7 @@ impl Worker {
         enrich_slots: (Option<SharedClassifier>, Option<SharedCodeFormula>),
         enrich: EnrichmentOptions,
         no_ocr: bool,
+        force_full_page_ocr: bool,
         ocr_lang: ocr::OcrLang,
     ) -> Result<Self, PdfError> {
         Ok(Self {
@@ -397,6 +401,7 @@ impl Worker {
             code_formula: enrich_slots.1,
             enrich,
             no_ocr,
+            force_full_page_ocr,
             ocr_lang,
         })
     }
@@ -477,6 +482,19 @@ impl Worker {
         page: &mut PdfPage,
         regions: Vec<layout::Region>,
     ) -> Result<PageOut, PdfError> {
+        // Force-OCR is exactly "pretend the text layer is not there": clear
+        // every cell kind the extractors produced before anything reads them,
+        // and the ordinary no-text-layer machinery below — full-page OCR,
+        // OCR-fed TableFormer matching — takes over unchanged. (`no_ocr` wins
+        // when both are set, mirroring docling, where `force_full_page_ocr`
+        // is a sub-option of `do_ocr`; the no-ocr path never reaches here.)
+        // Done here rather than in `process` so the batched layout path
+        // (`process_batch` → `finish_page`) honors the flag too.
+        if self.force_full_page_ocr {
+            page.cells.clear();
+            page.code_cells.clear();
+            page.word_cells.clear();
+        }
         // docling's LayoutPostprocessor drops each detection below its label's
         // confidence threshold (stricter than the 0.3 base the predictor keeps),
         // before any overlap resolution. This removes the low-confidence tables /
@@ -494,7 +512,8 @@ impl Worker {
         // remove it so it isn't emitted twice (docling parity).
         assemble::drop_contained_regulars(&mut regions);
         // No text layer → recognise text from the page image via OCR.
-        if page.cells.is_empty() {
+        let ocred = page.cells.is_empty();
+        if ocred {
             if self.ocr.is_none() {
                 self.ocr = Some(ocr::OcrModel::load(self.ocr_lang).map_err(PdfError::Ocr)?);
             }
@@ -506,6 +525,101 @@ impl Worker {
             })
             .map_err(|e| PdfError::Ocr(format!("page {}: {e}", n + 1)))?;
             page.cells = cells;
+        }
+        // Region-scoped OCR skips `picture` interiors, and a digital page's
+        // text layer cannot see into an embedded raster either — so a figure
+        // that is really a text box (terms-and-conditions exported as an
+        // image) lost its words on every page kind. Python docling OCRs the
+        // bitmap-covered areas of *every* page — even digital ones — once they
+        // exceed `bitmap_area_threshold` (5 % of the page); the browser paths
+        // already do. Recognize the big text-less crops here too; the panel
+        // demotion / orphan recovery below place the lines.
+        let mut pic_cells: Vec<pdfium_backend::TextCell> = Vec::new();
+        {
+            let page_area = (page.width * page.height).max(1.0);
+            let has_text = |r: &layout::Region| {
+                page.cells.iter().any(|c| {
+                    let ca = ((c.r - c.l) * (c.b - c.t)).max(1.0);
+                    let ix = (r.r.min(c.r) - r.l.max(c.l)).max(0.0);
+                    let iy = (r.b.min(c.b) - r.t.max(c.t)).max(0.0);
+                    !c.text.trim().is_empty() && ix * iy / ca > 0.5
+                })
+            };
+            // A captioned picture can never demote to a text panel (see
+            // recover_text_panels), and on digital pages its speculative OCR
+            // would be discarded anyway — don't pay for it.
+            let captioned = |r: &layout::Region| {
+                regions.iter().any(|c| {
+                    c.label == "caption"
+                        && c.r.min(r.r) - c.l.max(r.l) > 0.0
+                        && ((c.t >= r.b && c.t - r.b <= 25.0) || (r.t >= c.b && r.t - c.b <= 25.0))
+                })
+            };
+            let bare: Vec<layout::Region> = regions
+                .iter()
+                .filter(|r| {
+                    r.label == "picture"
+                        && (r.r - r.l) * (r.b - r.t) / page_area >= 0.05
+                        && !has_text(r)
+                        && (ocred || !captioned(r))
+                })
+                .map(|r| layout::Region {
+                    label: "text",
+                    ..r.clone()
+                })
+                .collect();
+            if !bare.is_empty() {
+                if self.ocr.is_none() {
+                    self.ocr = Some(ocr::OcrModel::load(self.ocr_lang).map_err(PdfError::Ocr)?);
+                }
+                pic_cells = timing::timed("ocr.pictures", || {
+                    self.ocr
+                        .as_mut()
+                        .unwrap()
+                        .ocr_page(&page.image, &bare, page.scale)
+                })
+                .map_err(|e| PdfError::Ocr(format!("page {}: {e}", n + 1)))?;
+                page.cells.extend(pic_cells.iter().cloned());
+            }
+        }
+        let cells_before_pic_ocr = page.cells.len() - pic_cells.len();
+        // A "picture" that is really a colored text panel — dense, wide,
+        // multi-line — reads out as paragraphs instead of shipping as pixels;
+        // sparse in-picture text (a chart's labels) keeps the crop and is
+        // emitted beside it via orphan recovery.
+        assemble::recover_text_panels(&mut regions, &page.cells);
+        // On an OCR'd page, in-picture text that did NOT demote its picture is
+        // still emitted beside the kept crop (matching the browser scanned
+        // path). On a digital page it is not: docling's groundtruth keeps
+        // photos silent even when our OCR reads noise off them
+        // (picture_classification stays byte-exact), so the recognized cells
+        // there only ever serve the panel-demotion decision above.
+        if ocred && !pic_cells.is_empty() {
+            let mut probe: Vec<layout::Region> = regions
+                .iter()
+                .filter(|r| r.label != "picture")
+                .cloned()
+                .collect();
+            let keep_from = probe.len();
+            assemble::add_orphan_regions(&mut probe, &pic_cells);
+            regions.extend(probe.drain(keep_from..));
+        } else if !ocred && !pic_cells.is_empty() {
+            // Digital page, picture kept: its speculative OCR cells must not
+            // linger in the text-cell set (they were appended at the tail).
+            let kept: Vec<layout::Region> = regions
+                .iter()
+                .filter(|r| r.label == "picture")
+                .cloned()
+                .collect();
+            let tail = page.cells.split_off(cells_before_pic_ocr);
+            page.cells.extend(tail.into_iter().filter(|c| {
+                !kept.iter().any(|r| {
+                    let ca = ((c.r - c.l) * (c.b - c.t)).max(1.0);
+                    let ix = (r.r.min(c.r) - r.l.max(c.l)).max(0.0);
+                    let iy = (r.b.min(c.b) - r.t.max(c.t)).max(0.0);
+                    ix * iy / ca > 0.5
+                })
+            }));
         }
         // TableFormer structure per table region (else geometric fallback). The
         // shared slot is only locked (and lazily loaded) when the page actually
@@ -740,6 +854,9 @@ pub struct Pipeline {
     no_table_former: bool,
     /// Skip layout, OCR, and TableFormer entirely. See [`Pipeline::no_ocr`].
     no_ocr: bool,
+    /// OCR every page even when it carries a text layer. See
+    /// [`Pipeline::force_full_page_ocr`].
+    force_full_page_ocr: bool,
     /// Opt-in enrichment passes. See [`Pipeline::enrichments`].
     enrich: EnrichmentOptions,
     /// 1-based inclusive page window to convert. See [`Pipeline::pages`].
@@ -764,6 +881,7 @@ impl Pipeline {
             parallel_min: pdf_parallel_min(),
             no_table_former: false,
             no_ocr: false,
+            force_full_page_ocr: false,
             enrich: EnrichmentOptions::default(),
             page_range: None,
             ocr_lang: ocr::OcrLang::from_env(),
@@ -869,6 +987,17 @@ impl Pipeline {
         self
     }
 
+    /// OCR every page from its rendered image even when the page carries an
+    /// embedded text layer — docling's `force_full_page_ocr`. The escape hatch
+    /// for text layers that exist but lie: broken encodings, subset fonts with
+    /// garbage mappings, a scanned form with a few typed-in fields. Ignored
+    /// when [`no_ocr`](Self::no_ocr) is set, mirroring docling (there
+    /// `force_full_page_ocr` is a sub-option of `do_ocr`).
+    pub fn force_full_page_ocr(mut self, force: bool) -> Self {
+        self.force_full_page_ocr = force;
+        self
+    }
+
     /// The shared TableFormer slot handed to each worker, or `None` when the
     /// pipeline options skip TableFormer entirely.
     fn tables_slot(&self) -> Option<SharedTables> {
@@ -912,6 +1041,7 @@ impl Pipeline {
                 self.enrich_slots(),
                 self.enrich,
                 self.no_ocr,
+                self.force_full_page_ocr,
                 self.ocr_lang,
             )?);
         }
@@ -1277,6 +1407,7 @@ impl Pipeline {
         }
         let intra = pdf_intra();
         let no_ocr = self.no_ocr;
+        let force = self.force_full_page_ocr;
         let ocr_lang = self.ocr_lang;
         let enrich = self.enrich;
         let tables = self.tables_slot();
@@ -1287,7 +1418,7 @@ impl Pipeline {
                     let tables = tables.clone();
                     let enrich_slots = enrich_slots.clone();
                     s.spawn(move || {
-                        Worker::load(intra, tables, enrich_slots, enrich, no_ocr, ocr_lang)
+                        Worker::load(intra, tables, enrich_slots, enrich, no_ocr, force, ocr_lang)
                     })
                 })
                 .collect();
@@ -1352,6 +1483,7 @@ pub fn convert(
         name,
         false,
         false,
+        false,
         EnrichmentOptions::default(),
         None,
         None,
@@ -1373,6 +1505,7 @@ pub fn convert_with_options(
     name: &str,
     no_table_former: bool,
     no_ocr: bool,
+    force_full_page_ocr: bool,
     enrich: EnrichmentOptions,
     pages: Option<(usize, usize)>,
     ocr_lang: Option<OcrLang>,
@@ -1380,6 +1513,7 @@ pub fn convert_with_options(
     Pipeline::new()?
         .no_table_former(no_table_former)
         .no_ocr(no_ocr)
+        .force_full_page_ocr(force_full_page_ocr)
         .enrichments(enrich)
         .pages(pages)
         .ocr_lang(ocr_lang)

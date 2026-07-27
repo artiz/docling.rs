@@ -8,7 +8,7 @@
 // RPC: every request carries an id; the reply is {type:"ok", id, ...data} or
 // {type:"error", id, msg}. Progress is a broadcast {type:"status", msg,
 // spinning}. Requests: set-models{models} | boot{lang,layoutOnly} | rec{lang} |
-// doc-start{lang,useTf} | doc-start-digital{bytes,useTf} |
+// doc-start{lang,useTf} | doc-start-digital{bytes,useTf,lang} |
 // doc-page{rgba,w,h,scale,index} | doc-finish{name,to,images} |
 // convert-image{bytes,name,lang,to,images}.
 
@@ -44,7 +44,7 @@ async function handle(m) {
       await ocr.startDoc(m.lang, m.useTf);
       return {};
     case "doc-start-digital":
-      return { pages: await ocr.startDigital(m.bytes, m.useTf) };
+      return { pages: await ocr.startDigital(m.bytes, m.useTf, m.lang) };
     case "doc-page":
       await ocr.addPage(new Uint8Array(m.rgba), m.w, m.h, m.scale, m.index);
       return {};

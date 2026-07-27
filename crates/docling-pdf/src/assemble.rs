@@ -358,6 +358,143 @@ pub fn add_orphan_regions(regions: &mut Vec<Region>, cells: &[TextCell]) {
     regions.extend(merged);
 }
 
+/// Demote a `picture` region that is really a **text panel** — a paragraph block
+/// the layout model boxed as a figure because it is typeset on a colored
+/// background (terms-and-conditions callouts, quote boxes) — into ordinary
+/// `text` regions, one per paragraph, so its words are read instead of shipped
+/// as pixels. docling loses this text the same way (cells assigned to a picture
+/// cluster are never serialized); this is a deliberate improvement, not parity.
+///
+/// The gate is conservative so a genuine figure keeps its crop: the region must
+/// contain at least three text lines whose median width spans most of the panel
+/// (axis labels and chat bubbles are narrow and varied) and whose cells cover a
+/// substantial fraction of its area (a photo or chart with sparse labels does
+/// not). Paragraph boundaries are re-derived from the line pitch: a vertical gap
+/// clearly larger than the panel's own leading starts a new `text` region, so
+/// the panel doesn't collapse into one giant paragraph.
+///
+/// Works on any cell source — the digital text layer or OCR lines recognized
+/// from the picture crop — so the native and browser paths, with or without
+/// force-OCR, demote identically.
+pub fn recover_text_panels(regions: &mut Vec<Region>, cells: &[TextCell]) {
+    // A *captioned* picture is a genuine figure whatever it contains — the
+    // corpus is full of document screenshots ("Figure 3: …" above a page
+    // image) that are exactly as dense and wide as a text panel. Only an
+    // uncaptioned picture is a demotion candidate.
+    let captioned: Vec<bool> = regions
+        .iter()
+        .map(|r| {
+            r.label == "picture"
+                && regions.iter().any(|c| {
+                    c.label == "caption" && c.r.min(r.r) - c.l.max(r.l) > 0.0 && {
+                        let gap = if c.t >= r.b {
+                            c.t - r.b
+                        } else if r.t >= c.b {
+                            r.t - c.b
+                        } else {
+                            f32::MAX // vertically overlapping: not a caption
+                        };
+                        gap <= 25.0
+                    }
+                })
+        })
+        .collect();
+    let mut out: Vec<Region> = Vec::with_capacity(regions.len());
+    for (i, r) in regions.drain(..).enumerate() {
+        if r.label != "picture" || captioned[i] {
+            out.push(r);
+            continue;
+        }
+        let inside: Vec<&TextCell> = cells
+            .iter()
+            .filter(|c| {
+                !c.text.trim().is_empty() && {
+                    let ca = area(c.l, c.t, c.r, c.b).max(1.0);
+                    inter(&r, c.l, c.t, c.r, c.b) / ca > 0.5
+                }
+            })
+            .collect();
+        // Group the contained cells into lines by vertical overlap (the same
+        // rule region_text orders by), tracking each line's union box.
+        let mut lines: Vec<(f32, f32, f32, f32)> = Vec::new(); // (t, b, l, r)
+        for c in &inside {
+            let (ct, cb) = (c.t.min(c.b), c.t.max(c.b));
+            match lines.iter_mut().find(|(lt, lb, _, _)| {
+                let ov = cb.min(*lb) - ct.max(*lt);
+                ov > 0.5 * (cb - ct).min(*lb - *lt).max(1.0)
+            }) {
+                Some((lt, lb, ll, lr)) => {
+                    *lt = lt.min(ct);
+                    *lb = lb.max(cb);
+                    *ll = ll.min(c.l);
+                    *lr = lr.max(c.r);
+                }
+                None => lines.push((ct, cb, c.l, c.r)),
+            }
+        }
+        let panel_w = (r.r - r.l).max(1.0);
+        let coverage = inside.iter().map(|c| area(c.l, c.t, c.r, c.b)).sum::<f32>()
+            / area(r.l, r.t, r.r, r.b).max(1.0);
+        let mut widths: Vec<f32> = lines.iter().map(|(_, _, l, rr)| rr - l).collect();
+        widths.sort_by(f32::total_cmp);
+        let text_panel =
+            lines.len() >= 3 && coverage >= 0.2 && widths[widths.len() / 2] >= 0.45 * panel_w;
+        if !text_panel {
+            out.push(r);
+            continue;
+        }
+        lines.sort_by(|a, b| a.0.total_cmp(&b.0));
+        let mut heights: Vec<f32> = lines.iter().map(|(t, b, _, _)| b - t).collect();
+        heights.sort_by(f32::total_cmp);
+        let h = heights[heights.len() / 2].max(1.0);
+        let mut gaps: Vec<f32> = lines
+            .windows(2)
+            .map(|w| (w[1].0 - w[0].1).max(0.0))
+            .collect();
+        gaps.sort_by(f32::total_cmp);
+        let leading = if gaps.is_empty() {
+            0.0
+        } else {
+            gaps[gaps.len() / 2]
+        };
+        let brk = (1.8 * leading).max(0.75 * h);
+        let mut para: Option<(f32, f32, f32, f32)> = None; // (l, t, r, b) union
+        for (t, b, l, rr) in &lines {
+            match &mut para {
+                Some((pl, _, pr, pb)) if *t - *pb <= brk => {
+                    *pl = pl.min(*l);
+                    *pr = pr.max(*rr);
+                    *pb = pb.max(*b);
+                }
+                _ => {
+                    if let Some((pl, pt, pr, pb)) = para.take() {
+                        out.push(Region {
+                            label: "text",
+                            score: r.score,
+                            l: pl,
+                            t: pt,
+                            r: pr,
+                            b: pb,
+                        });
+                    }
+                    para = Some((*l, *t, *rr, *b));
+                }
+            }
+        }
+        if let Some((pl, pt, pr, pb)) = para {
+            out.push(Region {
+                label: "text",
+                score: r.score,
+                l: pl,
+                t: pt,
+                r: pr,
+                b: pb,
+            });
+        }
+    }
+    *regions = out;
+}
+
 /// Drop a `picture` detection that is a small, empty, low-confidence margin box on
 /// a **text page** — a false positive the RT-DETR layout sometimes emits (e.g.
 /// `right_to_left_02`'s phantom right-column picture, score 0.40); docling does not
@@ -729,10 +866,43 @@ fn region_text(region: &Region, cells: &[TextCell]) -> String {
     if dp {
         // docling orders a cluster's cells by their docling-parse cell index
         // (`LayoutPostprocessor._sort_cells`: `sorted(cells, key=c.index)`) —
-        // the sanitizer's output order, which our `cells` slice already is. A
-        // geometric band-sort loses that on off-baseline glyphs: 2206's inline
-        // math `>` sits ~2 pt above its line's band and drifted into the next
-        // one, `( > 10 pages)` → `( 10 pages) … complex > tables`.
+        // the sanitizer's output order, which our `cells` slice already is.
+        // That is *stream* order, and a generator that paints a line's bold
+        // runs after the surrounding regular text strands them out of place
+        // ("C.6. Zur Wahrung …" read "C. Zur Wahrung … 6."). Restore reading
+        // order geometrically — but group lines by vertical *overlap*, not a
+        // quantized band: 2206's inline math `>` sits ~2 pt above its line's
+        // band and a plain band-sort drifted it into the next line
+        // (`( > 10 pages)` → `( 10 pages) … complex > tables`); overlap
+        // grouping keeps it home. Sorts are stable, so cells sharing a line
+        // and an x-position keep their index order.
+        let mut lines: Vec<(f32, f32, Vec<&TextCell>)> = Vec::new();
+        for c in inside.drain(..) {
+            let (ct, cb) = (c.t.min(c.b), c.t.max(c.b));
+            let line = lines.iter_mut().find(|(lt, lb, _)| {
+                let ov = cb.min(*lb) - ct.max(*lt);
+                ov > 0.5 * (cb - ct).min(*lb - *lt).max(1.0)
+            });
+            match line {
+                Some((lt, lb, cs)) => {
+                    *lt = lt.min(ct);
+                    *lb = lb.max(cb);
+                    cs.push(c);
+                }
+                None => lines.push((ct, cb, vec![c])),
+            }
+        }
+        lines.sort_by(|a, b| a.0.total_cmp(&b.0));
+        for (_, _, mut cs) in lines {
+            cs.sort_by(|a, b| {
+                if rtl {
+                    b.l.total_cmp(&a.l)
+                } else {
+                    a.l.total_cmp(&b.l)
+                }
+            });
+            inside.extend(cs);
+        }
     } else {
         inside.sort_by_key(|c| {
             let x = (c.l * 10.0) as i64;
@@ -1709,6 +1879,132 @@ mod tests {
     use crate::layout::Region;
     use crate::pdfium_backend::{LinkAnnot, PdfPage, TextCell};
     use docling_core::Node;
+
+    /// A colored terms-and-conditions panel detected as `picture` demotes into
+    /// per-paragraph `text` regions (the blank line between C.7 and C.8 splits
+    /// them); a chart whose only text is a few narrow axis labels keeps its
+    /// crop untouched.
+    #[test]
+    fn text_panels_demote_to_paragraphs_but_charts_keep_their_crop() {
+        let cell = |text: &str, l: f32, t: f32, r: f32, b: f32| TextCell {
+            text: text.to_string(),
+            l,
+            t,
+            r,
+            b,
+        };
+        let panel = Region {
+            label: "picture",
+            score: 0.9,
+            l: 0.0,
+            t: 0.0,
+            r: 100.0,
+            b: 100.0,
+        };
+        // Three tight lines, a blank-line gap, two more: two paragraphs.
+        let cells = vec![
+            cell(
+                "C.7. Wenn Sie diesen Vertrag widerrufen,",
+                5.0,
+                10.0,
+                95.0,
+                18.0,
+            ),
+            cell(
+                "haben wir Ihnen alle Zahlungen, die wir",
+                5.0,
+                20.0,
+                95.0,
+                28.0,
+            ),
+            cell(
+                "von Ihnen erhalten haben, zurückzuzahlen.",
+                5.0,
+                30.0,
+                90.0,
+                38.0,
+            ),
+            cell(
+                "C.8. Wir können die Rückzahlung verweigern,",
+                5.0,
+                52.0,
+                95.0,
+                60.0,
+            ),
+            cell(
+                "bis wir die Waren wieder zurückerhalten haben.",
+                5.0,
+                62.0,
+                92.0,
+                70.0,
+            ),
+        ];
+        let mut regions = vec![panel.clone()];
+        super::recover_text_panels(&mut regions, &cells);
+        assert_eq!(
+            regions.iter().map(|r| r.label).collect::<Vec<_>>(),
+            ["text", "text"],
+            "dense panel must demote into one text region per paragraph"
+        );
+        assert!(regions[0].b < regions[1].t, "paragraphs split at the gap");
+        // Sparse narrow labels (a chart): picture survives.
+        let labels = vec![
+            cell("0", 5.0, 90.0, 8.0, 95.0),
+            cell("50", 5.0, 50.0, 10.0, 55.0),
+            cell("100", 5.0, 10.0, 12.0, 15.0),
+            cell("t, s", 45.0, 96.0, 55.0, 100.0),
+        ];
+        let mut regions = vec![panel];
+        super::recover_text_panels(&mut regions, &labels);
+        assert_eq!(
+            regions.iter().map(|r| r.label).collect::<Vec<_>>(),
+            ["picture"]
+        );
+    }
+
+    /// A generator that paints a line's bold runs *after* its regular text
+    /// hands the sanitizer the cells out of visual order ("C." | "Zur Wahrung
+    /// …" | "6." — the bold label number drawn last). docling's index order
+    /// would strand the bold token at the line's end ("… Mitteilung 6."); the
+    /// overlap-grouped line sort restores reading order, and an off-baseline
+    /// glyph (2206's inline `>` sits ~2 pt above its line) still belongs to
+    /// its own line rather than drifting into the next band.
+    #[test]
+    fn interleaved_font_runs_read_in_visual_order() {
+        let cell = |text: &str, l: f32, t: f32, r: f32, b: f32| TextCell {
+            text: text.to_string(),
+            l,
+            t,
+            r,
+            b,
+        };
+        let cells = vec![
+            cell("C.", 10.0, 100.0, 18.0, 110.0),
+            cell("Zur Wahrung der Widerrufsfrist", 30.0, 100.0, 150.0, 110.0),
+            cell("über die Ausübung", 10.0, 112.0, 90.0, 122.0),
+            cell("6.", 19.0, 100.0, 27.0, 110.0), // bold run, drawn last
+        ];
+        let region = Region {
+            label: "text",
+            score: 1.0,
+            l: 0.0,
+            t: 95.0,
+            r: 200.0,
+            b: 130.0,
+        };
+        assert_eq!(
+            super::region_text(&region, &cells),
+            "C. 6. Zur Wahrung der Widerrufsfrist über die Ausübung"
+        );
+        // Off-baseline glyph: raised but overlapping its line by more than half
+        // its height — stays on that line, ordered by x.
+        let raised = vec![
+            cell("(", 10.0, 100.0, 14.0, 110.0),
+            cell(">", 15.0, 97.0, 20.0, 104.0),
+            cell("10 pages)", 21.0, 100.0, 60.0, 110.0),
+        ];
+        assert_eq!(super::region_text(&region, &raised), "( > 10 pages)");
+    }
 
     /// The geometric-reliability gate, on the two shapes it has to tell apart.
     #[test]

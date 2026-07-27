@@ -29,8 +29,9 @@ fn text_layer_matches_no_ocr() {
         &bytes,
         None,
         "code_and_formula.pdf",
-        true, // no_table_former (moot: no_ocr skips it anyway)
-        true, // no_ocr — the path convert_text_layer mirrors
+        true,  // no_table_former (moot: no_ocr skips it anyway)
+        true,  // no_ocr — the path convert_text_layer mirrors
+        false, // force_full_page_ocr (ignored under no_ocr)
         docling_pdf::EnrichmentOptions::default(),
         None,
         None,

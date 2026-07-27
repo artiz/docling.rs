@@ -170,6 +170,48 @@ impl Cell {
     }
 }
 
+/// Axis-aligned bounds of a cell's quad, `(l, r, b, t)` in PDF points (y-up).
+fn bounds(c: &Cell) -> (f64, f64, f64, f64) {
+    let xs = [c.rx0, c.rx1, c.rx2, c.rx3];
+    let ys = [c.ry0, c.ry1, c.ry2, c.ry3];
+    let fold = |it: &[f64], f: fn(f64, f64) -> f64| it.iter().copied().reduce(f).unwrap();
+    (
+        fold(&xs, f64::min),
+        fold(&xs, f64::max),
+        fold(&ys, f64::min),
+        fold(&ys, f64::max),
+    )
+}
+
+/// Is another active cell painted inside the horizontal gap between `i` and
+/// `j`? The contraction walks cells in **stream** order, and a generator that
+/// draws a line's bold runs after its regular text leaves them as later cells
+/// — the space tolerance would then stitch `C.[ ]Zur Wahrung …` straight
+/// across the hole where the bold `6.` sits, and the stranded token ends up at
+/// the line's end ("… wenn Sie die Mitteilung 6."). An occupied gap is not a
+/// gap. Space-only cells never block (they *are* the gap), and the scan is
+/// skipped entirely for glyph-adjacent merges (no room for anything).
+fn gap_occupied(cells: &[Cell], i: usize, j: usize) -> bool {
+    let (al, ar, ab, at) = bounds(&cells[i]);
+    let (bl, br, bb, bt) = bounds(&cells[j]);
+    let (gl, gr) = if ar <= bl { (ar, bl) } else { (br, al) };
+    if gr - gl < 0.5 {
+        return false; // touching or overlapping — nothing fits in between
+    }
+    let (band_b, band_t) = (ab.min(bb), at.max(bt));
+    cells.iter().enumerate().any(|(k, c)| {
+        if k == i || k == j || !c.active || c.text.trim().is_empty() {
+            return false;
+        }
+        let (cl, cr, cb, ct) = bounds(c);
+        // Vertically on this line: most of the candidate inside the pair's band.
+        let overlap = (ct.min(band_t) - cb.max(band_b)).max(0.0);
+        overlap > 0.5 * (ct - cb).max(f64::EPSILON)
+            // Horizontally: real ink inside the gap interval.
+            && cr.min(gr) - cl.max(gl) > 0.1
+    })
+}
+
 /// `applicable_for_merge`: both active and same reading orientation. A different
 /// font normally blocks the merge (keeps a bold label and its value as separate
 /// line cells). On the clean-box parser path, **punctuation/space cells bridge
@@ -214,13 +256,16 @@ fn pass_ltr(cells: &mut [Cell], allow_reverse: bool, euclidean: bool) {
             let d0 = cells[i].avg_char_width() * MERGE;
             let d1 = cells[i].avg_char_width() * MERGE_WITH_SPACE;
             let adj_d1 = d0 + if i_lig || j_lig { H_TOL } else { 0.0 };
-            if cells[i].adjacent(&cells[j], d0, adj_d1) {
+            if cells[i].adjacent(&cells[j], d0, adj_d1) && !gap_occupied(cells, i, j) {
                 let other = cells[j].clone();
                 cells[i].merge_with(&other, d1, euclidean);
                 cells[i].lig_carry = is_ligature(&other.text);
                 cells[j].active = false;
                 j += 1; // i keeps absorbing the next cell to its right
-            } else if allow_reverse && cells[j].adjacent(&cells[i], d0, adj_d1) {
+            } else if allow_reverse
+                && cells[j].adjacent(&cells[i], d0, adj_d1)
+                && !gap_occupied(cells, j, i)
+            {
                 let other = cells[i].clone();
                 cells[j].merge_with(&other, d1, euclidean);
                 cells[j].lig_carry = is_ligature(&other.text);
@@ -251,7 +296,7 @@ fn pass_rtl(cells: &mut [Cell], euclidean: bool) {
         let d0 = cells[i].avg_char_width() * MERGE;
         let d1 = cells[i].avg_char_width() * MERGE_WITH_SPACE;
         let adj_d1 = d0 + if i_lig || j_lig { H_TOL } else { 0.0 };
-        if cells[j].adjacent(&cells[i], d0, adj_d1) {
+        if cells[j].adjacent(&cells[i], d0, adj_d1) && !gap_occupied(cells, j, i) {
             let other = cells[i].clone();
             cells[j].merge_with(&other, d1, euclidean);
             cells[j].lig_carry = is_ligature(&other.text);
