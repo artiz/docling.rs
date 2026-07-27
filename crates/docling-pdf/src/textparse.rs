@@ -1001,7 +1001,9 @@ pub fn pdf_text_pages(bytes: &[u8]) -> Vec<crate::pdfium_backend::PdfPage> {
         .map(|(_, pid)| {
             let (w, h) = page_size(&doc, pid);
             let glyphs = page_glyphs_cached(&doc, pid, &mut caches);
-            let (prose, words) = crate::dp_lines::line_and_word_cells(&glyphs, h, true);
+            let (mut prose, mut words) = crate::dp_lines::line_and_word_cells(&glyphs, h, true);
+            drop_overpainted_cells(&mut prose);
+            drop_overpainted_cells(&mut words);
             crate::pdfium_backend::PdfPage {
                 width: w,
                 height: h,
@@ -1016,6 +1018,49 @@ pub fn pdf_text_pages(bytes: &[u8]) -> Vec<crate::pdfium_backend::PdfPage> {
             }
         })
         .collect()
+}
+
+/// Drop line cells that are *painted over each other* — glyphs used as artwork.
+///
+/// Some generators draw their logo with a symbol font: on the reporting
+/// invoice, a `TeleLogo` Type1 paints the T-Mobile mark by stacking the glyphs
+/// encoded as `"` and `==` on top of one another, and the flat text-layer
+/// output opened with that garbage. Nothing in the font metadata gives it away
+/// (the *text* fonts in the same file are also flagged symbolic, and the logo
+/// font names its glyphs `quotedbl` &c.), but the geometry does: two cells with
+/// different text where one lies inside the other on the same line is
+/// physically impossible for prose — ink from two words never occupies the
+/// same box. Both cells of such a pair are paint, not text.
+///
+/// Containment (not mere overlap) keeps this narrow: adjacent words touch but
+/// never contain each other, and a same-text near-duplicate (double-draw faux
+/// bold) is left alone for the sanitizer's usual handling. Applied on the
+/// flat/browser path only — the ML pipeline's text layer is byte-pinned by the
+/// PDF corpus, and there the layout model already sinks logo marks into
+/// `picture` regions.
+fn drop_overpainted_cells(cells: &mut Vec<crate::pdfium_backend::TextCell>) {
+    let mut paint = vec![false; cells.len()];
+    for i in 0..cells.len() {
+        for j in 0..cells.len() {
+            if i == j || cells[i].text == cells[j].text {
+                continue;
+            }
+            let (a, b) = (&cells[i], &cells[j]);
+            // Same line band: the vertical overlap covers most of the shorter.
+            let vo = (a.b.min(b.b) - a.t.max(b.t)).max(0.0);
+            if vo < 0.6 * (a.b - a.t).min(b.b - b.t) {
+                continue;
+            }
+            // `a` horizontally inside `b` (with a small tolerance).
+            let ho = (a.r.min(b.r) - a.l.max(b.l)).max(0.0);
+            if ho >= 0.8 * (a.r - a.l) && (a.r - a.l) <= (b.r - b.l) {
+                paint[i] = true;
+                paint[j] = true;
+            }
+        }
+    }
+    let mut keep = paint.iter().map(|p| !p);
+    cells.retain(|_| keep.next().unwrap());
 }
 
 /// The text-state scalars inherited by a Form XObject when it is invoked via
@@ -1884,5 +1929,50 @@ mod xref_repair {
             declined.contains("object follows the xref"),
             "reason: {declined}"
         );
+    }
+}
+
+#[cfg(test)]
+mod overpainted {
+    use crate::pdfium_backend::TextCell;
+
+    fn cell(text: &str, l: f32, t: f32, r: f32, b: f32) -> TextCell {
+        TextCell {
+            text: text.into(),
+            l,
+            t,
+            r,
+            b,
+        }
+    }
+
+    /// The reporting invoice's logo: a `"` painted inside a `==` on one band —
+    /// artwork drawn with glyphs. Both cells go; the real text on the next
+    /// band stays.
+    #[test]
+    fn stacked_logo_glyphs_are_dropped() {
+        let mut cells = vec![
+            cell("\"", 72.7, 21.5, 86.4, 31.5),
+            cell("==", 59.4, 21.5, 99.6, 31.5),
+            cell("Herr", 65.2, 151.3, 81.7, 161.3),
+        ];
+        super::drop_overpainted_cells(&mut cells);
+        assert_eq!(cells.len(), 1, "cells: {cells:?}");
+        assert_eq!(cells[0].text, "Herr");
+    }
+
+    /// Adjacent words on a line touch but never contain each other — prose is
+    /// untouched, and so is a same-text near-duplicate (double-drawn faux
+    /// bold), which is not evidence of artwork.
+    #[test]
+    fn prose_and_double_draw_are_kept() {
+        let mut cells = vec![
+            cell("Telefon", 354.3, 133.2, 381.5, 143.2),
+            cell("0676/2000", 387.3, 133.2, 428.7, 143.2),
+            cell("Bold", 100.0, 50.0, 130.0, 60.0),
+            cell("Bold", 100.3, 50.0, 130.3, 60.0),
+        ];
+        super::drop_overpainted_cells(&mut cells);
+        assert_eq!(cells.len(), 4);
     }
 }
