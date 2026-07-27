@@ -52,9 +52,12 @@ impl DigitalConverter {
     #[wasm_bindgen(constructor)]
     pub fn new(bytes: &[u8]) -> Result<DigitalConverter, JsError> {
         let pages = docling_pdf::textparse::pdf_text_pages(bytes);
-        if pages.iter().all(|p| p.cells.is_empty()) {
+        // Vestigial covers the all-empty case too — and the scanned form with a
+        // typed-in date, whose three tiny strings must not masquerade as the
+        // document's text (the letter on those pages needs OCR).
+        if docling_pdf::textparse::text_layer_is_vestigial(&pages) {
             return Err(JsError::new(
-                "PDF has no embedded text layer (scanned/image-only?) — use the OCR pipeline",
+                "PDF has no usable embedded text layer (scanned/image-only?) — use the OCR pipeline",
             ));
         }
         Ok(Self {
