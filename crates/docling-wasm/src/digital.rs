@@ -241,10 +241,18 @@ impl DigitalConverter {
                     }
                 }
                 if !ocr_cells.is_empty() {
-                    let mut recovered = Vec::new();
-                    add_orphan_regions(&mut recovered, &ocr_cells);
-                    regions.extend(recovered);
-                    page.cells.extend(ocr_cells);
+                    page.cells.extend(ocr_cells.iter().cloned());
+                    // Dense wide OCR text demotes the crop to paragraphs;
+                    // sparse text keeps the picture and reads out beside it.
+                    docling_pdf::assemble::recover_text_panels(&mut regions, &page.cells);
+                    let mut probe: Vec<Region> = regions
+                        .iter()
+                        .filter(|r| r.label != "picture")
+                        .cloned()
+                        .collect();
+                    let keep_from = probe.len();
+                    add_orphan_regions(&mut probe, &ocr_cells);
+                    regions.extend(probe.drain(keep_from..));
                 }
             }
         }

@@ -30,6 +30,10 @@ pub fn refine_regions(
     crate::assemble::add_orphan_regions(&mut regions, cells);
     crate::assemble::drop_false_pictures(&mut regions, cells, page_w, page_h);
     crate::assemble::drop_contained_regulars(&mut regions);
+    // A "picture" that is really a colored text panel reads out as paragraphs
+    // instead of shipping as pixels (needs a text layer; pre-OCR this is a
+    // no-op and the OCR paths re-run it once cells exist).
+    crate::assemble::recover_text_panels(&mut regions, cells);
     regions
 }
 

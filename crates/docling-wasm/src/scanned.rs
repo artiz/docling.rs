@@ -245,10 +245,19 @@ impl ScannedConverter {
                 }
             }
             if !pcells.is_empty() {
-                let mut recovered = Vec::new();
-                docling_pdf::assemble::add_orphan_regions(&mut recovered, &pcells);
-                regions.extend(recovered);
-                cells.extend(pcells);
+                cells.extend(pcells.iter().cloned());
+                // Dense wide OCR text demotes the crop to paragraphs; sparse
+                // text (a chat screenshot's bubbles) keeps the picture and
+                // reads out beside it, as before.
+                docling_pdf::assemble::recover_text_panels(&mut regions, &cells);
+                let mut probe: Vec<docling_pdf::layout::Region> = regions
+                    .iter()
+                    .filter(|r| r.label != "picture")
+                    .cloned()
+                    .collect();
+                let keep_from = probe.len();
+                docling_pdf::assemble::add_orphan_regions(&mut probe, &pcells);
+                regions.extend(probe.drain(keep_from..));
             }
         }
 
