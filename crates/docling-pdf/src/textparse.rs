@@ -634,10 +634,92 @@ fn page_size(doc: &Document, page_id: lopdf::ObjectId) -> (f32, f32) {
     (612.0, 792.0)
 }
 
+/// Load a PDF, repairing the one malformation that otherwise costs us the whole
+/// document: **19-byte cross-reference entries**.
+///
+/// The spec fixes an xref entry at 20 bytes — `nnnnnnnnnn ggggg n` plus a
+/// *two*-byte EOL. Some generators (an Austrian telecom's invoices, for one)
+/// emit a bare LF instead, making each entry 19 bytes. lopdf rejects the file
+/// outright (`invalid file trailer`) where pdfium reads it happily, so a
+/// perfectly good text layer looked to the browser exactly like a scan and cost
+/// ten seconds of OCR.
+///
+/// Padding is only attempted when it cannot move anything the xref points at:
+/// a single `xref` section that begins after the last object. The repair then
+/// has to prove itself — the padded bytes are used only if they load — so a
+/// mis-repair degrades to today's behaviour rather than to silent garbage.
+fn load_document(bytes: &[u8]) -> Option<Document> {
+    match Document::load_mem(bytes) {
+        Ok(doc) => Some(doc),
+        Err(_) => Document::load_mem(&pad_short_xref_entries(bytes)?).ok(),
+    }
+}
+
+/// Rewrite a classic cross-reference table's entries to the spec's 20 bytes,
+/// or `None` when the file's shape makes that unsafe (see [`load_document`]).
+fn pad_short_xref_entries(bytes: &[u8]) -> Option<Vec<u8>> {
+    // Exactly one xref section, and it must start after every object, so that
+    // growing it shifts nothing the table's offsets refer to.
+    let is_boundary = |i: usize| i == 0 || matches!(bytes[i - 1], b'\n' | b'\r');
+    let mut starts = (0..bytes.len().saturating_sub(4))
+        .filter(|&i| &bytes[i..i + 4] == b"xref" && is_boundary(i));
+    let xref_at = starts.next()?;
+    if starts.next().is_some() {
+        return None;
+    }
+    if bytes.windows(3).rposition(|w| w == b"obj")? > xref_at {
+        return None;
+    }
+
+    let mut out = bytes[..xref_at].to_vec();
+    out.extend_from_slice(b"xref\n");
+    let mut i = xref_at + 4;
+    let skip_ws = |i: &mut usize| {
+        while matches!(bytes.get(*i), Some(b'\r' | b'\n' | b' ')) {
+            *i += 1;
+        }
+    };
+    loop {
+        skip_ws(&mut i);
+        // Either the next subsection header ("first count") or the trailer.
+        if bytes[i..].starts_with(b"trailer") {
+            out.extend_from_slice(&bytes[i..]);
+            return Some(out);
+        }
+        let header_end = i + bytes[i..].iter().position(|c| matches!(c, b'\n' | b'\r'))?;
+        let header = std::str::from_utf8(&bytes[i..header_end]).ok()?.trim();
+        let mut parts = header.split_whitespace();
+        let _first: u64 = parts.next()?.parse().ok()?;
+        let count: usize = parts.next()?.parse().ok()?;
+        if parts.next().is_some() || count == 0 {
+            return None;
+        }
+        out.extend_from_slice(header.as_bytes());
+        out.push(b'\n');
+        i = header_end;
+        for _ in 0..count {
+            skip_ws(&mut i);
+            // `nnnnnnnnnn ggggg n` — the 18 bytes before whatever EOL follows.
+            let entry = bytes.get(i..i + 18)?;
+            let well_formed = entry[..10].iter().all(u8::is_ascii_digit)
+                && entry[10] == b' '
+                && entry[11..16].iter().all(u8::is_ascii_digit)
+                && entry[16] == b' '
+                && matches!(entry[17], b'n' | b'f');
+            if !well_formed {
+                return None;
+            }
+            out.extend_from_slice(entry);
+            out.extend_from_slice(b" \n"); // the spec's 2-byte EOL -> 20 bytes
+            i += 18;
+        }
+    }
+}
+
 /// Debug: raw glyph stream `(ch, ll, lr, lb, lt)` (native coords) for page
 /// `index`, before the sanitizer. For comparing char cells to docling-parse.
 pub fn debug_glyphs(bytes: &[u8], index: usize) -> Vec<(char, f32, f32, f32, f32)> {
-    let Ok(doc) = Document::load_mem(bytes) else {
+    let Some(doc) = load_document(bytes) else {
         return Vec::new();
     };
     let mut pages: Vec<_> = doc.get_pages().into_iter().collect();
@@ -655,7 +737,7 @@ pub fn debug_glyphs(bytes: &[u8], index: usize) -> Vec<(char, f32, f32, f32, f32
 /// text parser + the docling-parse line sanitizer. Used by the pipeline and the
 /// `textparse_dump` example.
 pub fn pdf_textlines(bytes: &[u8]) -> Vec<(f32, f32, Vec<crate::pdfium_backend::TextCell>)> {
-    let Ok(doc) = Document::load_mem(bytes) else {
+    let Some(doc) = load_document(bytes) else {
         return Vec::new();
     };
     let mut caches = DocCaches::default();
@@ -677,7 +759,7 @@ pub fn pdf_textlines(bytes: &[u8]) -> Vec<(f32, f32, Vec<crate::pdfium_backend::
 /// compare parser word cells against docling-parse's `word_cells` oracle (roadmap
 /// item 6).
 pub fn pdf_words(bytes: &[u8]) -> Vec<(f32, f32, Vec<crate::pdfium_backend::TextCell>)> {
-    let Ok(doc) = Document::load_mem(bytes) else {
+    let Some(doc) = load_document(bytes) else {
         return Vec::new();
     };
     let mut caches = DocCaches::default();
@@ -709,7 +791,7 @@ pub struct PageParserCells {
 /// `code` splits only at the parser's own space glyphs (monospace keeps its
 /// source spacing). Used by the pipeline to retire pdfium's text path.
 pub fn pdf_all_cells(bytes: &[u8]) -> Vec<PageParserCells> {
-    let Ok(doc) = Document::load_mem(bytes) else {
+    let Some(doc) = load_document(bytes) else {
         return Vec::new();
     };
     let mut caches = DocCaches::default();
@@ -737,7 +819,7 @@ pub fn pdf_all_cells(bytes: &[u8]) -> Vec<PageParserCells> {
 /// wasm32. A page the parser can't read (no text layer) comes back with empty
 /// cells; there is no pdfium fallback on this path.
 pub fn pdf_text_pages(bytes: &[u8]) -> Vec<crate::pdfium_backend::PdfPage> {
-    let Ok(doc) = Document::load_mem(bytes) else {
+    let Some(doc) = load_document(bytes) else {
         return Vec::new();
     };
     let mut caches = DocCaches::default();
@@ -1488,4 +1570,97 @@ fn macroman_table() -> HashMap<u8, char> {
         m.insert(b, c);
     }
     m
+}
+
+#[cfg(test)]
+mod xref_repair {
+    /// Build a tiny one-page PDF whose cross-reference entries are either the
+    /// spec's 20 bytes (`two_byte_eol`) or the 19-byte form some generators
+    /// emit — everything else about the two files is identical.
+    fn pdf_with_xref(two_byte_eol: bool) -> Vec<u8> {
+        let content = b"BT /F1 12 Tf 72 700 Td (Invoice 922769430725) Tj ET\n";
+        let stream = format!("<</Length {}>>stream\n", content.len()).into_bytes();
+        let objs: Vec<Vec<u8>> = vec![
+            b"<</Type/Catalog/Pages 2 0 R>>".to_vec(),
+            b"<</Type/Pages/Kids[3 0 R]/Count 1>>".to_vec(),
+            b"<</Type/Page/Parent 2 0 R/MediaBox[0 0 595 842]/Contents 4 0 R\
+               /Resources<</Font<</F1 5 0 R>>>>>>"
+                .to_vec(),
+            [stream.as_slice(), content.as_slice(), b"endstream"].concat(),
+            b"<</Type/Font/Subtype/Type1/BaseFont/Helvetica>>".to_vec(),
+        ];
+
+        let mut out = b"%PDF-1.4\n".to_vec();
+        let mut offsets = Vec::new();
+        for (i, body) in objs.iter().enumerate() {
+            offsets.push(out.len());
+            out.extend_from_slice(format!("{} 0 obj", i + 1).as_bytes());
+            out.extend_from_slice(body);
+            out.extend_from_slice(b"endobj\n");
+        }
+        let xref_at = out.len();
+        let eol: &[u8] = if two_byte_eol { b" \n" } else { b"\n" };
+        out.extend_from_slice(format!("xref\n0 {}\n", objs.len() + 1).as_bytes());
+        out.extend_from_slice(b"0000000000 65535 f");
+        out.extend_from_slice(eol);
+        for off in &offsets {
+            out.extend_from_slice(format!("{off:010} 00000 n").as_bytes());
+            out.extend_from_slice(eol);
+        }
+        out.extend_from_slice(
+            format!("trailer<</Size {}/Root 1 0 R>>\n", objs.len() + 1).as_bytes(),
+        );
+        out.extend_from_slice(format!("startxref\n{xref_at}\n%%EOF\n").as_bytes());
+        out
+    }
+
+    /// A 19-byte cross-reference entry (a bare LF where the spec wants a
+    /// two-byte EOL) makes lopdf reject the whole file, so a readable text
+    /// layer used to look exactly like a scan — in the browser that meant ten
+    /// seconds of OCR for nothing. The repair must recover *the same* parse the
+    /// well-formed file gives.
+    #[test]
+    fn short_xref_entries_still_parse() {
+        let good = pdf_with_xref(true);
+        let broken = pdf_with_xref(false);
+        assert!(
+            broken.len() < good.len(),
+            "the broken file is the shorter one"
+        );
+        assert!(
+            lopdf::Document::load_mem(&good).is_ok(),
+            "the control file must load unaided"
+        );
+        assert!(
+            lopdf::Document::load_mem(&broken).is_err(),
+            "lopdf rejects 19-byte entries — if this ever passes, drop the repair"
+        );
+
+        let cells = |b: &[u8]| -> Vec<String> {
+            super::pdf_textlines(b)
+                .into_iter()
+                .flat_map(|(_, _, c)| c.into_iter().map(|c| c.text))
+                .collect()
+        };
+        let from_good = cells(&good);
+        assert!(
+            from_good.iter().any(|t| t.contains("922769430725")),
+            "control text: {from_good:?}"
+        );
+        assert_eq!(
+            cells(&broken),
+            from_good,
+            "repair must match the good parse"
+        );
+    }
+
+    /// The repair only fires where padding cannot move an object: it declines a
+    /// file whose xref precedes an object (an incremental update), rather than
+    /// shifting every offset the table records.
+    #[test]
+    fn repair_declines_when_padding_would_move_objects() {
+        let mut incremental = pdf_with_xref(false);
+        incremental.extend_from_slice(b"6 0 obj<</Type/Whatever>>endobj\n");
+        assert!(super::pad_short_xref_entries(&incremental).is_none());
+    }
 }
