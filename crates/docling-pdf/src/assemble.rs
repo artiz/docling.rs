@@ -729,10 +729,43 @@ fn region_text(region: &Region, cells: &[TextCell]) -> String {
     if dp {
         // docling orders a cluster's cells by their docling-parse cell index
         // (`LayoutPostprocessor._sort_cells`: `sorted(cells, key=c.index)`) —
-        // the sanitizer's output order, which our `cells` slice already is. A
-        // geometric band-sort loses that on off-baseline glyphs: 2206's inline
-        // math `>` sits ~2 pt above its line's band and drifted into the next
-        // one, `( > 10 pages)` → `( 10 pages) … complex > tables`.
+        // the sanitizer's output order, which our `cells` slice already is.
+        // That is *stream* order, and a generator that paints a line's bold
+        // runs after the surrounding regular text strands them out of place
+        // ("C.6. Zur Wahrung …" read "C. Zur Wahrung … 6."). Restore reading
+        // order geometrically — but group lines by vertical *overlap*, not a
+        // quantized band: 2206's inline math `>` sits ~2 pt above its line's
+        // band and a plain band-sort drifted it into the next line
+        // (`( > 10 pages)` → `( 10 pages) … complex > tables`); overlap
+        // grouping keeps it home. Sorts are stable, so cells sharing a line
+        // and an x-position keep their index order.
+        let mut lines: Vec<(f32, f32, Vec<&TextCell>)> = Vec::new();
+        for c in inside.drain(..) {
+            let (ct, cb) = (c.t.min(c.b), c.t.max(c.b));
+            let line = lines.iter_mut().find(|(lt, lb, _)| {
+                let ov = cb.min(*lb) - ct.max(*lt);
+                ov > 0.5 * (cb - ct).min(*lb - *lt).max(1.0)
+            });
+            match line {
+                Some((lt, lb, cs)) => {
+                    *lt = lt.min(ct);
+                    *lb = lb.max(cb);
+                    cs.push(c);
+                }
+                None => lines.push((ct, cb, vec![c])),
+            }
+        }
+        lines.sort_by(|a, b| a.0.total_cmp(&b.0));
+        for (_, _, mut cs) in lines {
+            cs.sort_by(|a, b| {
+                if rtl {
+                    b.l.total_cmp(&a.l)
+                } else {
+                    a.l.total_cmp(&b.l)
+                }
+            });
+            inside.extend(cs);
+        }
     } else {
         inside.sort_by_key(|c| {
             let x = (c.l * 10.0) as i64;
@@ -1709,6 +1742,50 @@ mod tests {
     use crate::layout::Region;
     use crate::pdfium_backend::{LinkAnnot, PdfPage, TextCell};
     use docling_core::Node;
+
+    /// A generator that paints a line's bold runs *after* its regular text
+    /// hands the sanitizer the cells out of visual order ("C." | "Zur Wahrung
+    /// …" | "6." — the bold label number drawn last). docling's index order
+    /// would strand the bold token at the line's end ("… Mitteilung 6."); the
+    /// overlap-grouped line sort restores reading order, and an off-baseline
+    /// glyph (2206's inline `>` sits ~2 pt above its line) still belongs to
+    /// its own line rather than drifting into the next band.
+    #[test]
+    fn interleaved_font_runs_read_in_visual_order() {
+        let cell = |text: &str, l: f32, t: f32, r: f32, b: f32| TextCell {
+            text: text.to_string(),
+            l,
+            t,
+            r,
+            b,
+        };
+        let cells = vec![
+            cell("C.", 10.0, 100.0, 18.0, 110.0),
+            cell("Zur Wahrung der Widerrufsfrist", 30.0, 100.0, 150.0, 110.0),
+            cell("über die Ausübung", 10.0, 112.0, 90.0, 122.0),
+            cell("6.", 19.0, 100.0, 27.0, 110.0), // bold run, drawn last
+        ];
+        let region = Region {
+            label: "text",
+            score: 1.0,
+            l: 0.0,
+            t: 95.0,
+            r: 200.0,
+            b: 130.0,
+        };
+        assert_eq!(
+            super::region_text(&region, &cells),
+            "C. 6. Zur Wahrung der Widerrufsfrist über die Ausübung"
+        );
+        // Off-baseline glyph: raised but overlapping its line by more than half
+        // its height — stays on that line, ordered by x.
+        let raised = vec![
+            cell("(", 10.0, 100.0, 14.0, 110.0),
+            cell(">", 15.0, 97.0, 20.0, 104.0),
+            cell("10 pages)", 21.0, 100.0, 60.0, 110.0),
+        ];
+        assert_eq!(super::region_text(&region, &raised), "( > 10 pages)");
+    }
 
     /// The geometric-reliability gate, on the two shapes it has to tell apart.
     #[test]
