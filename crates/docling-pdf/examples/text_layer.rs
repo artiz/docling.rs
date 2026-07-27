@@ -35,6 +35,10 @@ fn main() {
         Err(e) => {
             eprintln!("1. lopdf load: FAILED — {e}");
             eprintln!("   (the browser reports this as \"no embedded text layer\")");
+            eprintln!(
+                "   xref repair: {}",
+                docling_pdf::textparse::xref_repair_status(&bytes)
+            );
             probe_tail(&bytes);
         }
         Ok(doc) => {

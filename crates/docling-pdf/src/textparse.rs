@@ -634,6 +634,22 @@ fn page_size(doc: &Document, page_id: lopdf::ObjectId) -> (f32, f32) {
     (612.0, 792.0)
 }
 
+/// Why the cross-reference repair did or did not fire, for the `text_layer`
+/// diagnostic. A PDF that will not load is indistinguishable from a scan in
+/// production (both convert to nothing), so the reason has to be askable.
+pub fn xref_repair_status(bytes: &[u8]) -> String {
+    if Document::load_mem(bytes).is_ok() {
+        return "loads unaided; no repair needed".into();
+    }
+    match pad_short_xref_entries(bytes) {
+        Ok(fixed) => match Document::load_mem(&fixed) {
+            Ok(_) => "repaired: cross-reference entries padded to 20 bytes".into(),
+            Err(e) => format!("padded the entries, but it still will not load: {e}"),
+        },
+        Err(why) => format!("repair declined — {why}"),
+    }
+}
+
 /// Load a PDF, repairing the one malformation that otherwise costs us the whole
 /// document: **19-byte cross-reference entries**.
 ///
@@ -651,24 +667,30 @@ fn page_size(doc: &Document, page_id: lopdf::ObjectId) -> (f32, f32) {
 fn load_document(bytes: &[u8]) -> Option<Document> {
     match Document::load_mem(bytes) {
         Ok(doc) => Some(doc),
-        Err(_) => Document::load_mem(&pad_short_xref_entries(bytes)?).ok(),
+        Err(_) => Document::load_mem(&pad_short_xref_entries(bytes).ok()?).ok(),
     }
 }
 
 /// Rewrite a classic cross-reference table's entries to the spec's 20 bytes,
 /// or `None` when the file's shape makes that unsafe (see [`load_document`]).
-fn pad_short_xref_entries(bytes: &[u8]) -> Option<Vec<u8>> {
+fn pad_short_xref_entries(bytes: &[u8]) -> Result<Vec<u8>, &'static str> {
     // Exactly one xref section, and it must start after every object, so that
     // growing it shifts nothing the table's offsets refer to.
     let is_boundary = |i: usize| i == 0 || matches!(bytes[i - 1], b'\n' | b'\r');
     let mut starts = (0..bytes.len().saturating_sub(4))
         .filter(|&i| &bytes[i..i + 4] == b"xref" && is_boundary(i));
-    let xref_at = starts.next()?;
+    let xref_at = starts
+        .next()
+        .ok_or("no classic `xref` section (an xref stream?)")?;
     if starts.next().is_some() {
-        return None;
+        return Err("more than one xref section (incremental update)");
     }
-    if bytes.windows(3).rposition(|w| w == b"obj")? > xref_at {
-        return None;
+    let last_obj = bytes
+        .windows(3)
+        .rposition(|w| w == b"obj")
+        .ok_or("no objects found")?;
+    if last_obj > xref_at {
+        return Err("an object follows the xref — padding would move it");
     }
 
     let mut out = bytes[..xref_at].to_vec();
@@ -684,15 +706,22 @@ fn pad_short_xref_entries(bytes: &[u8]) -> Option<Vec<u8>> {
         // Either the next subsection header ("first count") or the trailer.
         if bytes[i..].starts_with(b"trailer") {
             out.extend_from_slice(&bytes[i..]);
-            return Some(out);
+            return Ok(out);
         }
-        let header_end = i + bytes[i..].iter().position(|c| matches!(c, b'\n' | b'\r'))?;
-        let header = std::str::from_utf8(&bytes[i..header_end]).ok()?.trim();
+        let header_end = i + bytes[i..]
+            .iter()
+            .position(|c| matches!(c, b'\n' | b'\r'))
+            .ok_or("subsection header runs off the end")?;
+        let header = std::str::from_utf8(&bytes[i..header_end])
+            .map_err(|_| "subsection header is not text")?
+            .trim();
         let mut parts = header.split_whitespace();
-        let _first: u64 = parts.next()?.parse().ok()?;
-        let count: usize = parts.next()?.parse().ok()?;
+        let count: usize = parts
+            .nth(1)
+            .and_then(|c| c.parse().ok())
+            .ok_or("unparseable subsection header")?;
         if parts.next().is_some() || count == 0 {
-            return None;
+            return Err("unexpected subsection header shape");
         }
         out.extend_from_slice(header.as_bytes());
         out.push(b'\n');
@@ -700,14 +729,14 @@ fn pad_short_xref_entries(bytes: &[u8]) -> Option<Vec<u8>> {
         for _ in 0..count {
             skip_ws(&mut i);
             // `nnnnnnnnnn ggggg n` — the 18 bytes before whatever EOL follows.
-            let entry = bytes.get(i..i + 18)?;
+            let entry = bytes.get(i..i + 18).ok_or("xref entry runs off the end")?;
             let well_formed = entry[..10].iter().all(u8::is_ascii_digit)
                 && entry[10] == b' '
                 && entry[11..16].iter().all(u8::is_ascii_digit)
                 && entry[16] == b' '
                 && matches!(entry[17], b'n' | b'f');
             if !well_formed {
-                return None;
+                return Err("xref entry is not `nnnnnnnnnn ggggg n`");
             }
             out.extend_from_slice(entry);
             out.extend_from_slice(b" \n"); // the spec's 2-byte EOL -> 20 bytes
@@ -1661,6 +1690,10 @@ mod xref_repair {
     fn repair_declines_when_padding_would_move_objects() {
         let mut incremental = pdf_with_xref(false);
         incremental.extend_from_slice(b"6 0 obj<</Type/Whatever>>endobj\n");
-        assert!(super::pad_short_xref_entries(&incremental).is_none());
+        let declined = super::pad_short_xref_entries(&incremental).unwrap_err();
+        assert!(
+            declined.contains("object follows the xref"),
+            "reason: {declined}"
+        );
     }
 }
