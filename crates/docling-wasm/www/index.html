@@ -78,6 +78,9 @@
     <label id="renderWrap" title="Render the Markdown as HTML instead of showing the source.">
       <input type="checkbox" id="render"> preview
     </label>
+    <label title="For PDFs that carry a text layer: also run the layout model, so headings, tables and pictures come out instead of flat paragraphs. The text still comes from the PDF (exact, no OCR), so it stays far faster than OCR — but it needs the layout model.">
+      <input type="checkbox" id="structure"> PDF structure
+    </label>
     <span id="meta">starting…</span>
   </div>
 
@@ -157,13 +160,13 @@ curl -fsSL https://raw.githubusercontent.com/docling-project/docling.rs/master/s
     const IMAGE_EXT = ["png", "jpg", "jpeg", "tif", "tiff", "webp", "bmp"];
 
     const $ = (id) => document.getElementById(id);
-    const [meta, out, preview, drop, pick, to, images, render, lang, tf, modelsInput, ocrState] =
-      ["meta", "out", "preview", "drop", "pick", "to", "images", "render", "lang", "tf", "models", "ocrState"].map($);
+    const [meta, out, preview, drop, pick, to, images, render, structure, lang, tf, modelsInput, ocrState] =
+      ["meta", "out", "preview", "drop", "pick", "to", "images", "render", "structure", "lang", "tf", "models", "ocrState"].map($);
 
     // Everything the user can touch, frozen for the whole of a conversion:
     // a control left live lets a second run start on top of the first, and the
     // two then fight over the pipeline's single in-flight document.
-    const CONTROLS = [pick, to, images, render, lang, tf, modelsInput];
+    const CONTROLS = [pick, to, images, render, structure, lang, tf, modelsInput];
 
     await init();
     const exts = JSON.parse(supported_extensions());
@@ -232,10 +235,13 @@ curl -fsSL https://raw.githubusercontent.com/docling-project/docling.rs/master/s
         });
       return {
         worker,
-        boot: (l) => rpc("boot", { lang: l }),
+        boot: (l, layoutOnly) => rpc("boot", { lang: l, layoutOnly }),
         rec: (l) => rpc("rec", { lang: l }),
         docStart: (l, useTf) => rpc("doc-start", { lang: l, useTf }),
-        addPage: (rgba, w, h, scale) => rpc("doc-page", { rgba, w, h, scale }, [rgba]),
+        docStartDigital: (bytes, useTf) =>
+          rpc("doc-start-digital", { bytes, useTf }, [bytes]).then((r) => r.pages),
+        addPage: (rgba, w, h, scale, index) =>
+          rpc("doc-page", { rgba, w, h, scale, index }, [rgba]),
         docFinish: (name, fmt, img) => rpc("doc-finish", { name, to: fmt, images: img }).then((r) => r.md),
         convertImage: (bytes, name, l, fmt, img) =>
           rpc("convert-image", { bytes, name, lang: l, to: fmt, images: img }, [bytes]).then((r) => r.md),
@@ -248,16 +254,20 @@ curl -fsSL https://raw.githubusercontent.com/docling-project/docling.rs/master/s
       });
       const p = createOcr({ onStatus: (m, s) => document.body.classList.contains("busy") && status(m, s) });
       return {
-        boot: async (l) => {
+        boot: async (l, layoutOnly) => {
           const kind = await p.boot();
           if (!kind) return { noLayout: true };
-          await p.recFor(l);
-          await p.warmup(l);
+          if (!layoutOnly) {
+            await p.recFor(l);
+            await p.warmup(l);
+          }
           return { kind, threads: THREADS, main: true };
         },
         rec: async (l) => { await p.recFor(l); await p.warmup(l); return {}; },
         docStart: (l, useTf) => p.startDoc(l, useTf),
-        addPage: (rgba, w, h, scale) => p.addPage(new Uint8Array(rgba), w, h, scale),
+        docStartDigital: (bytes, useTf) => p.startDigital(bytes, useTf),
+        addPage: (rgba, w, h, scale, index) =>
+          p.addPage(new Uint8Array(rgba), w, h, scale, index),
         docFinish: (name, fmt, img) => Promise.resolve(p.finishDoc(name, fmt, img)),
         convertImage: (bytes, name, l, fmt, img) => p.convertImage(bytes, name, l, fmt, img),
         setModels: (m) => p.setProvidedModels(m),
@@ -265,7 +275,7 @@ curl -fsSL https://raw.githubusercontent.com/docling-project/docling.rs/master/s
     }
 
     // Bring the OCR pipeline up once; concurrent callers share the promise.
-    function ensureOcr() {
+    function ensureOcr(layoutOnly = false) {
       if (ocr) return Promise.resolve(ocr);
       if (ocrBooting) return ocrBooting;
       ocrBooting = (async () => {
@@ -276,14 +286,14 @@ curl -fsSL https://raw.githubusercontent.com/docling-project/docling.rs/master/s
         if (providedModels) await drv.setModels(providedModels);
         let r;
         try {
-          r = await drv.boot(lang.value);
+          r = await drv.boot(lang.value, layoutOnly);
         } catch (e) {
           // Worker died during boot (module load, CSP, …) — retry same-thread.
           if (drv.worker) {
             try { drv.worker.terminate(); } catch {}
             drv = await mainDriver();
             if (providedModels) await drv.setModels(providedModels);
-            r = await drv.boot(lang.value);
+            r = await drv.boot(lang.value, layoutOnly);
           } else throw e;
         }
         if (r.noLayout) {
@@ -364,12 +374,53 @@ curl -fsSL https://raw.githubusercontent.com/docling-project/docling.rs/master/s
       return drv.docFinish(name, to.value, images.value);
     }
 
+    // A digital PDF with structure: the text comes from the file (exact, no
+    // recognition) and only the layout model runs over the rendered pages.
+    async function convertDigitalPdf(bytes, name) {
+      const drv = await ensureOcr(/* layoutOnly */ true);
+      const pages = await drv.docStartDigital(bytes.slice(0).buffer, tf.checked);
+      const { mod, assets } = await pdfjs();
+      const pdf = await mod.getDocument({ data: bytes.slice(0), ...assets }).promise;
+      const canvas = document.createElement("canvas");
+      const ctx = canvas.getContext("2d", { willReadFrequently: true });
+      const rasterize = async (p) => {
+        const page = await pdf.getPage(p);
+        const viewport = page.getViewport({ scale: SCALE });
+        canvas.width = viewport.width;
+        canvas.height = viewport.height;
+        await page.render({ canvasContext: ctx, viewport }).promise;
+        const img = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        return { rgba: img.data.buffer, w: canvas.width, h: canvas.height };
+      };
+      const n = Math.min(pages, pdf.numPages);
+      let next = rasterize(1);
+      for (let p = 1; p <= n; p++) {
+        status(`${name}: page ${p}/${n} …`, true);
+        const cur = await next;
+        if (p < n) next = rasterize(p + 1);
+        await drv.addPage(cur.rgba, cur.w, cur.h, SCALE, p - 1);
+      }
+      return drv.docFinish(name, to.value, images.value);
+    }
+
     async function convertFile(bytes, name) {
       // Images always need OCR; PDFs try the text layer first and fall back to
       // OCR when there is none (that is exactly what a scanned PDF is).
       if (isImage(name)) {
         const drv = await ensureOcr();
         return drv.convertImage(bytes.slice(0).buffer, name, lang.value, to.value, images.value);
+      }
+      const isPdf = name.toLowerCase().endsWith(".pdf");
+      if (isPdf && structure.checked) {
+        try {
+          return await convertDigitalPdf(bytes, name);
+        } catch (e) {
+          // No text layer → this is a scan after all; anything else (a missing
+          // layout model, say) is worth showing rather than silently OCRing.
+          if (!/text layer/i.test(String((e && e.message) || e))) throw e;
+          status(`${name}: no text layer — running OCR …`, true);
+          return convertScannedPdf(bytes, name);
+        }
       }
       try {
         return convert(bytes, name, to.value, images.value);
@@ -464,7 +515,7 @@ curl -fsSL https://raw.githubusercontent.com/docling-project/docling.rs/master/s
       last = { bytes: new Uint8Array(await file.arrayBuffer()), name: file.name };
       run();
     }
-    to.onchange = images.onchange = run;
+    to.onchange = images.onchange = structure.onchange = run;
     // Previewing only re-renders what we already have — no reconversion.
     render.onchange = () => lastText && show(lastText);
     // Switching the recognition language reloads that model; re-run if a

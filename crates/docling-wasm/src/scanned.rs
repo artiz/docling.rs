@@ -276,7 +276,7 @@ impl ScannedConverter {
 /// Render an assembled document in one of the three output grammars, with the
 /// same `images` choice the declarative path offers — picture regions are
 /// cropped out of the rendered page, so `embedded` has real bytes to inline.
-fn render(
+pub(crate) fn render(
     doc: &docling_core::DoclingDocument,
     to: Option<&str>,
     images: Option<&str>,

@@ -54,6 +54,27 @@ const json     = convert(bytes, file.name, "json");
 const withPics = convert(bytes, file.name, "md", "embedded");
 ```
 
+### Digital PDFs with structure (no OCR)
+
+A PDF that carries a text layer needs no recognition at all — but headings,
+tables and pictures are things the *layout* model finds, so the pure text-layer
+path (`convert`) can only emit flat paragraphs. `DigitalConverter` closes that
+gap: the text comes out of the file (exact, no recognition errors) and only the
+layout model runs over the rendered pages. It is the same thing the native
+pipeline does, which OCRs a page only when it has no text cells.
+
+```js
+const conv = new DigitalConverter(pdfBytes);   // throws when there is no text layer
+for (let i = 0; i < conv.page_count(); i++) {
+  // rasterize page i with pdf.js at 2 px/point, then:
+  await conv.add_page(i, rgba, w, h, 2.0, layout);
+}
+const markdown = conv.finish("bill.pdf", "md", "embedded");
+```
+
+`addPageTf(..., tf)` adds TableFormer, still only for the tables whose geometric
+reconstruction looks unreliable. No recognition model is fetched on this path.
+
 ### Scanned pages (OCR)
 
 Scanned PDFs and images need the ML models; everything else runs with no

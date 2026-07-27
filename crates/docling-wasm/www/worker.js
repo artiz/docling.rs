@@ -7,8 +7,9 @@
 //
 // RPC: every request carries an id; the reply is {type:"ok", id, ...data} or
 // {type:"error", id, msg}. Progress is a broadcast {type:"status", msg,
-// spinning}. Requests: set-models{models} | boot{lang} | rec{lang} |
-// doc-start{lang,useTf} | doc-page{rgba,w,h,scale} | doc-finish{name,to,images} |
+// spinning}. Requests: set-models{models} | boot{lang,layoutOnly} | rec{lang} |
+// doc-start{lang,useTf} | doc-start-digital{bytes,useTf} |
+// doc-page{rgba,w,h,scale,index} | doc-finish{name,to,images} |
 // convert-image{bytes,name,lang,to,images}.
 
 import { createOcr, THREADS } from "./pipeline.js";
@@ -27,8 +28,12 @@ async function handle(m) {
     case "boot": {
       const kind = await ocr.boot();
       if (!kind) return { noLayout: true };
-      await ocr.recFor(m.lang);
-      await ocr.warmup(m.lang);
+      // A digital PDF never recognises anything, so its boot skips the
+      // recognition model entirely; the scanned path loads it lazily anyway.
+      if (!m.layoutOnly) {
+        await ocr.recFor(m.lang);
+        await ocr.warmup(m.lang);
+      }
       return { kind, threads: THREADS };
     }
     case "rec":
@@ -38,8 +43,10 @@ async function handle(m) {
     case "doc-start":
       await ocr.startDoc(m.lang, m.useTf);
       return {};
+    case "doc-start-digital":
+      return { pages: await ocr.startDigital(m.bytes, m.useTf) };
     case "doc-page":
-      await ocr.addPage(new Uint8Array(m.rgba), m.w, m.h, m.scale);
+      await ocr.addPage(new Uint8Array(m.rgba), m.w, m.h, m.scale, m.index);
       return {};
     case "doc-finish":
       return { md: ocr.finishDoc(m.name, m.to, m.images) };

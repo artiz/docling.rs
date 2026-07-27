@@ -8,7 +8,7 @@
 // DOM-free: the only host concern is onStatus(msg, spinning) for progress.
 
 import * as ort from "https://cdn.jsdelivr.net/npm/onnxruntime-web/dist/ort.min.mjs";
-import init, { ScannedConverter, convert_scanned_image } from "./pkg/docling_wasm.js";
+import init, { DigitalConverter, ScannedConverter, convert_scanned_image } from "./pkg/docling_wasm.js";
 
 // Multi-threaded wasm when cross-origin isolated (coi.js); else one thread.
 ort.env.wasm.numThreads = self.crossOriginIsolated
@@ -262,11 +262,28 @@ export function createOcr({ onStatus }) {
     const tfSess = useTf ? await ensureTf() : null;
     cur = { conv: new ScannedConverter(dict), rec, tf: tfSess };
   }
-  async function addPage(rgba, w, h, scale) {
+
+  // A digital PDF (one with a text layer) needs the layout model but no
+  // recognition: the text comes out of the file, so this is both much faster
+  // and exact. Throws when there is no text layer — the host then falls back to
+  // startDoc. Returns the page count, since the parser already knows it.
+  async function startDigital(bytes, useTf) {
+    const conv = new DigitalConverter(new Uint8Array(bytes));
+    const tfSess = useTf ? await ensureTf() : null;
+    cur = { conv, tf: tfSess, digital: true };
+    return conv.page_count();
+  }
+  async function addPage(rgba, w, h, scale, index) {
     // Guard the single in-flight document: without it a stray addPage/finish
     // after (or before) the lifecycle reads `cur` as null and the host sees an
     // opaque "Cannot read properties of null".
     if (!cur) throw new Error("addPage called with no document open (startDoc first)");
+    if (cur.digital) {
+      const args = [index, rgba, w, h, scale, layout];
+      return cur.tf
+        ? cur.conv.addPageTf(...args, cur.tf)
+        : cur.conv.add_page(...args);
+    }
     if (cur.tf) {
       await cur.conv.addPageTf(rgba, w, h, scale, layout, cur.rec, cur.tf);
     } else {
@@ -289,7 +306,7 @@ export function createOcr({ onStatus }) {
   }
 
   return {
-    boot, warmup, recFor, startDoc, addPage, finishDoc, convertImage, setProvidedModels,
+    boot, warmup, recFor, startDoc, startDigital, addPage, finishDoc, convertImage, setProvidedModels,
     get layoutKind() { return layoutKind; },
   };
 }
