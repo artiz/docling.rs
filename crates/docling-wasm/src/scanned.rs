@@ -313,9 +313,58 @@ pub async fn convert_scanned_image(
     let (w, h) = img.dimensions();
     let mut conv = ScannedConverter::new(dict);
     conv.add_page(img.as_raw(), w, h, 1.0, layout, rec).await?;
+    // A UI screenshot (a chat window, an app view) reads as wall-to-wall
+    // `picture` to the document layout model, so region-scoped OCR never fires
+    // and the "conversion" is just the embedded bitmap. Degrade to what stage 1
+    // always did for plain images: line-segment the whole bitmap and recognize
+    // every line — text out beats a faithful picture of the text.
+    if !conv.pages.iter().any(|(nodes, _)| nodes_have_text(nodes)) {
+        return crate::ocr::ocr_image(bytes, dict, rec, to).await;
+    }
     conv.finish(name, to, images)
+}
+
+/// Does any node carry text? Pictures, page breaks and their `Located`
+/// wrappers do not; everything else (paragraphs, headings, tables, …) does.
+fn nodes_have_text(nodes: &[docling_core::Node]) -> bool {
+    use docling_core::Node;
+    nodes.iter().any(|n| match n {
+        Node::Located { inner, .. } => nodes_have_text(std::slice::from_ref(inner)),
+        Node::Picture { .. } | Node::PageBreak => false,
+        _ => true,
+    })
 }
 
 // Silence the unused warning for SIDE re-export path (the JS side sizes its
 // tensor from the buffer length, but the constant documents the contract).
 const _: u32 = SIDE;
+
+#[cfg(test)]
+mod picture_only {
+    use docling_core::Node;
+
+    /// The regression's shape: a chat screenshot assembles into pictures only
+    /// (wrapped in `Located`), which must read as "no text" so the image
+    /// converter falls back to whole-image line OCR. Any text-bearing node —
+    /// even next to pictures — keeps the layout result.
+    #[test]
+    fn picture_only_pages_read_as_textless() {
+        let pic = Node::Located {
+            location: [1, 2, 3, 4],
+            inner: Box::new(Node::Picture {
+                caption: None,
+                image: None,
+                classification: None,
+            }),
+        };
+        assert!(!super::nodes_have_text(std::slice::from_ref(&pic)));
+        assert!(!super::nodes_have_text(&[Node::PageBreak]));
+        let with_text = [
+            pic,
+            Node::Paragraph {
+                text: "hello".into(),
+            },
+        ];
+        assert!(super::nodes_have_text(&with_text));
+    }
+}
