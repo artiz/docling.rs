@@ -26,12 +26,84 @@ converters and the PDF text parser are pure Rust.
 ## API
 
 ```ts
-convert(bytes: Uint8Array, filename: string, to?: "md" | "json" | "doclang"): string
+convert(
+  bytes: Uint8Array,
+  filename: string,
+  to?: "md" | "json" | "doclang",          // default "md"
+  images?: "placeholder" | "embedded",     // default "placeholder", Markdown only
+): string
 supported_extensions(): string   // JSON array, e.g. for <input accept=…>
 version(): string
 ```
 
-The filename's extension drives format detection, same as the CLI.
+The filename's extension drives format detection, same as the CLI. `images`
+mirrors docling-serve's option: `placeholder` emits docling's `<!-- image -->`,
+`embedded` inlines the picture as a `data:` URI so the Markdown is
+self-contained (a page has no filesystem, so there is no `referenced` mode).
+
+### Convert a file the user picked
+
+```js
+import init, { convert } from "./pkg/docling_wasm.js";
+await init();
+
+const file = input.files[0];
+const bytes = new Uint8Array(await file.arrayBuffer());
+const markdown = convert(bytes, file.name, "md");
+const json     = convert(bytes, file.name, "json");
+const withPics = convert(bytes, file.name, "md", "embedded");
+```
+
+### Digital PDFs with structure (no OCR)
+
+A PDF that carries a text layer needs no recognition at all — but headings,
+tables and pictures are things the *layout* model finds, so the pure text-layer
+path (`convert`) can only emit flat paragraphs. `DigitalConverter` closes that
+gap: the text comes out of the file (exact, no recognition errors) and only the
+layout model runs over the rendered pages. It is the same thing the native
+pipeline does, which OCRs a page only when it has no text cells.
+
+```js
+const conv = new DigitalConverter(pdfBytes);   // throws when there is no text layer
+for (let i = 0; i < conv.page_count(); i++) {
+  // rasterize page i with pdf.js at 2 px/point, then:
+  await conv.add_page(i, rgba, w, h, 2.0, layout);
+}
+const markdown = conv.finish("bill.pdf", "md", "embedded");
+```
+
+`addPageTf(..., tf)` adds TableFormer, still only for the tables whose geometric
+reconstruction looks unreliable. No recognition model is fetched on this path.
+
+### Scanned pages (OCR)
+
+Scanned PDFs and images need the ML models; everything else runs with no
+network at all. The full wiring — model resolution, Web Worker, pdf.js
+rasterization — is [`www/index.html`](./www/index.html); the short version:
+
+```js
+import { createOcr } from "./pipeline.js";
+
+const ocr = createOcr({ onStatus: (msg) => console.log(msg) });
+await ocr.boot();                        // wasm + layout model
+
+// A standalone image is its own page.
+const md = await ocr.convertImage(await file.arrayBuffer(), file.name, "en", "md");
+
+// A scanned PDF: feed rasterized pages in order (2 px/point = the native
+// pipeline's RENDER_SCALE), then finish.
+await ocr.startDoc("en", /* TableFormer */ false);
+for (const page of pages) await ocr.addPage(page.rgba, page.w, page.h, 2.0);
+const doc = ocr.finishDoc(file.name, "md");
+```
+
+Scanned pictures are cropped out of the rendered page just like the native
+pipeline, so `images: "embedded"` inlines real figure bytes on this path too
+(`ocr.finishDoc(name, "md", "embedded")`).
+
+Models resolve **device file → local `./models/` → Hugging Face**, so a page can
+ship with no models and still work: `ocr.setProvidedModels({ "layout_heron_int8.onnx": buf })`
+takes files the user picked, and anything not provided is fetched.
 
 ## Build
 
@@ -49,14 +121,26 @@ wasm-bindgen --target web --out-dir crates/docling-wasm/www/pkg \
 
 ## Demo
 
-[`www/index.html`](./www/index.html) is a drop-a-file demo page over the
-module (output selector, conversion timing, automated-test hook). After the
+**Live: <https://docling-project.github.io/docling.rs/>** — deployed from
+`www/` by [`.github/workflows/pages.yml`](../../.github/workflows/pages.yml) on
+every push to `master`. No models are published with it, so the declarative
+converters and text-layer PDFs work straight away and OCR starts once you give
+the page models (device picker or Hugging Face — see below).
+
+[`www/index.html`](./www/index.html) is the whole thing on one page: drop a
+file, pick the output (Markdown / JSON / DocLang), pick how images render, and
+optionally turn on OCR for scanned pages. To run it locally, after the
 `wasm-bindgen` step above:
 
 ```bash
 python3 -m http.server -d crates/docling-wasm/www 8901
 # open http://127.0.0.1:8901/
 ```
+
+It is a plain static page — copy `www/` behind any web server (or into a mobile
+app's webview) and it works as-is. The OCR half loads lazily, so a visitor who
+only converts a DOCX never downloads ONNX Runtime, pdf.js or any model. PDFs
+try their text layer first and fall back to OCR only when there isn't one.
 
 Verified end-to-end in headless Chromium: Markdown/DOCX→md, DOCX→JSON, a
 corpus PDF→md through the text-layer path, and the scanned-PDF error path all
@@ -80,7 +164,19 @@ wasm output matching native — drift can only come from the runtime kernels.
 |---|---|---|
 | **1** — `ocr_image` | OCR a single scanned **image** | PP-OCRv3 recognition (~10 MB) |
 | **2** — `ScannedConverter` / `convert_scanned_image` | Scanned **PDF/image** → Markdown: layout + OCR + reading order, tables via geometric reconstruction | + RT-DETR layout (`layout_heron_int8.onnx`, ~68 MB) |
-| **3** — `ScannedConverter.addPageTf` | Real **TableFormer** table structure instead of geometric | + `tableformer/{encoder,decoder_kv,bbox}.onnx` (~380 MB) |
+| **3** — `ScannedConverter.addPageTf` | Real **TableFormer** table structure, on the tables that need it | + `tableformer/{encoder,decoder_kv,bbox}.onnx` (~380 MB) |
+
+Stage 3 is *selective*. TableFormer's encoder runs once per table region and
+costs seconds, so each table is first reconstructed geometrically (free, from
+the OCR cell positions) and the model is invoked only when that grid looks
+unreliable — `docling_pdf::assemble::geometric_table_is_reliable`. The tell is
+how `reconstruct_table` derives columns: it clusters cell *left edges*, which is
+exact on a clean grid but splits one real column into several when entries are
+not left-aligned, leaving a wide, mostly-empty table. So a grid is trusted only
+when it is dense (≥60% of cells carry text) and has no column that just one row
+uses; anything else goes to TableFormer. Well-formed tables therefore cost
+nothing extra, and the pages that used to show spurious empty columns still get
+the model.
 
 Stage 1 recognition wrapper:
 
@@ -113,10 +209,9 @@ Stage 3 is the same but `conv.addPageTf(rgba, w, h, 2.0, layout, rec, tf)`,
 where `tf` is a stateful session over the three TableFormer graphs (the heavy
 cross-attention K/V and the growing decoder KV-cache stay on the JS side, so
 each decode step marshals only the last tag and gets back logits+hidden — see
-[`www/pipeline.js`](./www/pipeline.js)'s `JsTfSession`). The demos wire all of
-this up: [`www/ocr.html`](./www/ocr.html) (stage 1),
-[`www/scan.html`](./www/scan.html) (stages 2–3, pdf.js + a TableFormer toggle +
-a device model-file picker).
+[`www/pipeline.js`](./www/pipeline.js)'s `JsTfSession`).
+[`www/index.html`](./www/index.html) wires all three stages up behind the OCR
+language selector, the TableFormer toggle and the model picker.
 
 ## Run it on your phone
 
@@ -136,8 +231,8 @@ same-origin, from a CORS host, **or straight from files on your device**.
    Pages or githack.) Build the wasm `pkg/` first (see **Build** above).
 
 3. **Provide the models to the page**, either:
-   - **from your device** — tap the *"Models from device"* picker in
-     `scan.html` and select `layout_heron_int8.onnx` and, for TableFormer,
+   - **from your device** — tap the model picker under *"Scanned PDFs and
+     images"* and select `layout_heron_int8.onnx` and, for TableFormer,
      `encoder.onnx`, `decoder_kv.onnx` (+`.data`), `bbox.onnx` (+`.data`). Each
      file is read to an `ArrayBuffer` on the client and used directly — no
      download, and a single allocation per file (a 225 MB encoder over

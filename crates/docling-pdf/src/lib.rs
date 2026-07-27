@@ -14,6 +14,11 @@
 // build still flags genuinely dead code).
 #![cfg_attr(not(feature = "ml"), allow(dead_code))]
 
+// Reading-order assembly. Public under `ocr-prep` so the browser pipeline can
+// reuse the geometric table reconstruction and its reliability gate (#157).
+#[cfg(feature = "ocr-prep")]
+pub mod assemble;
+#[cfg(not(feature = "ocr-prep"))]
 mod assemble;
 mod dp_lines;
 #[cfg(feature = "ml")]

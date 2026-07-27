@@ -1,0 +1,99 @@
+# Publish the in-browser demo (crates/docling-wasm/www) to GitHub Pages, so
+# docling.rs can be tried from any device without a checkout or a toolchain.
+#
+# The site is fully static: the wasm module is built here and copied in next to
+# the page. No models are published — they are large, and the page resolves them
+# at runtime (device file → same-origin ./models/ → Hugging Face), so the
+# declarative converters and text-layer PDFs work immediately and OCR works as
+# soon as the visitor supplies models.
+#
+# GitHub Pages cannot send COOP/COEP headers, which ONNX Runtime Web needs for
+# threads; www/coi.js installs a service worker that adds them, so the deployed
+# page still gets multi-threaded wasm.
+#
+# One-time setup in the repository: Settings → Pages → Build and deployment →
+# Source: "GitHub Actions".
+name: pages
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - "crates/docling-wasm/**"
+      - "crates/docling/**"
+      - "crates/docling-core/**"
+      - "crates/docling-pdf/**"
+      - ".github/workflows/pages.yml"
+  # Deploy on demand too (e.g. the first run, before any matching push).
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# One deployment at a time; let a running one finish so the site is never
+# left half-published.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: build the demo
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install Rust (stable + wasm32 target)
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+          rustup target add wasm32-unknown-unknown
+
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+            target
+          key: ${{ runner.os }}-cargo-v2-wasm-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-cargo-v2-wasm-
+
+      - name: Build docling-wasm (release)
+        run: cargo build -p docling-wasm --target wasm32-unknown-unknown --release --locked
+
+      - name: Generate the JS bindings
+        run: |
+          # Pin wasm-bindgen-cli to the wasm-bindgen version in Cargo.lock: a
+          # mismatch produces glue the module rejects at load time.
+          version=$(cargo metadata --format-version 1 --locked \
+            | python3 -c 'import json,sys; print(next(p["version"] for p in json.load(sys.stdin)["packages"] if p["name"]=="wasm-bindgen"))')
+          echo "wasm-bindgen $version"
+          cargo install wasm-bindgen-cli --version "$version" --locked
+          wasm-bindgen --target web --out-dir crates/docling-wasm/www/pkg \
+            target/wasm32-unknown-unknown/release/docling_wasm.wasm
+
+      - name: Assemble the site
+        run: |
+          mkdir -p site
+          cp -r crates/docling-wasm/www/. site/
+          # Jekyll would swallow paths that start with an underscore.
+          touch site/.nojekyll
+          ls -la site site/pkg
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+  deploy:
+    name: deploy
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

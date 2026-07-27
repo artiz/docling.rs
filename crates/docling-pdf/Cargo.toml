@@ -69,5 +69,10 @@ tokenizers = { version = "0.20", default-features = false, features = ["onig"], 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 lopdf = { version = "0.44", features = ["wasm_js"] }
 
+# The text-layer diagnostic example reaches for lopdf directly to tell a load
+# failure apart from "loaded, but no text came out".
+[dev-dependencies]
+lopdf = "0.44"
+
 [lib]
 name = "docling_pdf"

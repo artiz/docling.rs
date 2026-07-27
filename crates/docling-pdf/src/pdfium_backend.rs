@@ -9,7 +9,7 @@
 //! loop is driven through the raw `PdfiumLibraryBindings` FFI on a second handle
 //! to the same bytes (no fork; stays publishable).
 
-#[cfg(feature = "ml")]
+#[cfg(feature = "ocr-prep")]
 use image::RgbImage;
 #[cfg(feature = "ml")]
 use pdfium_render::prelude::*;
@@ -46,7 +46,11 @@ pub struct PdfPage {
     /// Per-word cells (one per word, not joined into lines) for TableFormer cell
     /// matching.
     pub word_cells: Vec<TextCell>,
-    #[cfg(feature = "ml")]
+    /// The rendered page bitmap. Present whenever pixels are available at all
+    /// (`ocr-prep` ⊂ `ml`): the native pipeline renders it with pdfium, the
+    /// browser pipeline receives it from the host canvas. Picture regions are
+    /// cropped out of it.
+    #[cfg(feature = "ocr-prep")]
     pub image: RgbImage,
     /// Hyperlink annotations on the page (rect in top-left page coords + target
     /// URI), restricted to web/mail/tel schemes. Used only by strict Markdown.
@@ -68,9 +72,26 @@ impl PdfPage {
             cells,
             code_cells: Vec::new(),
             word_cells: Vec::new(),
-            #[cfg(feature = "ml")]
+            #[cfg(feature = "ocr-prep")]
             image: RgbImage::new(0, 0),
             links: Vec::new(),
+        }
+    }
+
+    /// Same as [`from_cells`](Self::from_cells) but carrying the rendered page
+    /// bitmap, so picture regions can be cropped out of it (#157: the browser
+    /// pipeline gets the same figure bytes the native one does).
+    #[cfg(feature = "ocr-prep")]
+    pub fn from_cells_with_image(
+        width: f32,
+        height: f32,
+        scale: f32,
+        cells: Vec<TextCell>,
+        image: RgbImage,
+    ) -> Self {
+        Self {
+            image,
+            ..Self::from_cells(width, height, scale, cells)
         }
     }
 }

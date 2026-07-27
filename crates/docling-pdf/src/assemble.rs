@@ -895,7 +895,7 @@ fn code_region_text(region: &Region, cells: &[TextCell]) -> String {
 /// left edges), then place each cell. A model-free stand-in for TableFormer that
 /// recovers grid-aligned tables from the precise PDF text layer (it does not
 /// resolve row/column spans).
-fn reconstruct_table(region: &Region, cells: &[TextCell]) -> Vec<Vec<String>> {
+pub fn reconstruct_table(region: &Region, cells: &[TextCell]) -> Vec<Vec<String>> {
     let mut inside: Vec<&TextCell> = cells
         .iter()
         .filter(|c| {
@@ -964,6 +964,59 @@ fn reconstruct_table(region: &Region, cells: &[TextCell]) -> Vec<Vec<String>> {
     }
     grid
 }
+
+/// Does the geometric reconstruction of a table look trustworthy enough to use
+/// as-is, instead of paying for TableFormer?
+///
+/// [`reconstruct_table`] derives columns by clustering cell **left edges**. On a
+/// clean grid that is exact, but when a column's entries are not left-aligned
+/// (or the OCR boxes wobble) the clustering splits one real column into several,
+/// and the result is a wide, mostly-empty grid — the "spurious empty columns"
+/// failure TableFormer exists to fix.
+///
+/// Two symptoms separate the two cases, and both are properties of the grid
+/// alone (no model needed):
+/// * **density** — a real table is mostly full; a split-up one is mostly holes;
+/// * **thin columns** — a column carrying at most one entry across several rows
+///   is almost always a split artefact rather than a real column.
+///
+/// Deliberately conservative: it answers `true` only for grids that are plainly
+/// well-formed, so the expensive path stays the default whenever there is doubt.
+/// A caller that skips TableFormer on `true` trades no quality for the time.
+pub fn geometric_table_is_reliable(rows: &[Vec<String>]) -> bool {
+    let ncols = rows.iter().map(Vec::len).max().unwrap_or(0);
+    // Fewer than two columns is not a grid this heuristic can vouch for: it is
+    // exactly the shape a collapsed table takes, and TableFormer may recover
+    // real structure from it.
+    if rows.len() < 2 || ncols < 2 {
+        return false;
+    }
+    let filled = |c: &String| !c.trim().is_empty();
+    let total = rows.len() * ncols;
+    let full = rows.iter().flatten().filter(|c| filled(c)).count();
+    if (full as f32) < MIN_TABLE_FILL * total as f32 {
+        return false;
+    }
+    // A column used by at most one row, when there are rows enough to tell.
+    if rows.len() >= 3 {
+        for ci in 0..ncols {
+            let used = rows
+                .iter()
+                .filter(|r| r.get(ci).is_some_and(filled))
+                .count();
+            if used <= 1 {
+                return false;
+            }
+        }
+    }
+    true
+}
+
+/// Share of a geometric grid's cells that must carry text for it to be trusted
+/// without TableFormer. Chosen well above the density a left-edge split
+/// produces (those land nearer a third) and below what a genuine table with a
+/// few blank cells reaches.
+const MIN_TABLE_FILL: f32 = 0.6;
 
 /// The union bbox of the text cells assigned to a region (same >50%-overlap
 /// rule as [`region_text`]), or `None` when no cell lands in it. docling's
@@ -1043,7 +1096,7 @@ pub fn crop_region_scaled(page: &PdfPage, bbox: [f32; 4], target_scale: f32) -> 
 /// Crop a layout region from the rendered page image and encode it as PNG (the
 /// figure bytes docling stores on a `PictureItem`). Region coordinates are page
 /// points; the image is rendered at `page.scale`.
-#[cfg(feature = "ml")]
+#[cfg(feature = "ocr-prep")]
 fn crop_region(page: &PdfPage, region: &Region) -> Option<PictureImage> {
     let s = page.scale;
     let (iw, ih) = (page.image.width(), page.image.height());
@@ -1305,9 +1358,9 @@ pub fn assemble_page(
             };
             // Without the page render (text-layer-only build) a picture keeps
             // its caption/classification but carries no cropped pixels.
-            #[cfg(feature = "ml")]
+            #[cfg(feature = "ocr-prep")]
             let image = crate::timing::timed("crop_region", || crop_region(page, region));
-            #[cfg(not(feature = "ml"))]
+            #[cfg(not(feature = "ocr-prep"))]
             let image: Option<PictureImage> = None;
             nodes.push(located(
                 loc,
@@ -1656,6 +1709,89 @@ mod tests {
     use crate::layout::Region;
     use crate::pdfium_backend::{LinkAnnot, PdfPage, TextCell};
     use docling_core::Node;
+
+    /// The geometric-reliability gate, on the two shapes it has to tell apart.
+    #[test]
+    fn geometric_reliability_rejects_split_column_grids() {
+        let g = |rows: &[&[&str]]| -> Vec<Vec<String>> {
+            rows.iter()
+                .map(|r| r.iter().map(|c| c.to_string()).collect())
+                .collect()
+        };
+        // A genuine grid: dense, every column carrying entries. Nothing for
+        // TableFormer to improve, so geometry is used as-is.
+        assert!(super::geometric_table_is_reliable(&g(&[
+            &["Datum", "Leistung", "Anzahl", "Kosten"],
+            &["04.07", "Internet", "1", "40.30"],
+            &["04.07", "Telefon", "2", "8.06"],
+        ])));
+        // The left-edge split artefact (the shape a scanned invoice produced):
+        // one real label column plus values scattered across three sparse ones.
+        assert!(!super::geometric_table_is_reliable(&g(&[
+            &["www.magenta.at/faq", "", "", ""],
+            &["Serviceteam", "", "", ""],
+            &["Telefon", "0676/2000", "", ""],
+            &["Kundennummer", "", "", "1.21699482"],
+            &["Rechnungsnummer", "", "922769430725", ""],
+            &["Rechnungsdatum", "", "", "04.07.2025"],
+        ])));
+        // A column only one row ever uses is a split artefact even when the
+        // grid is otherwise dense.
+        assert!(!super::geometric_table_is_reliable(&g(&[
+            &["a", "b", ""],
+            &["c", "d", ""],
+            &["e", "f", "g"],
+        ])));
+        // Degenerate shapes are never vouched for — TableFormer may recover
+        // structure a collapsed reconstruction lost.
+        assert!(!super::geometric_table_is_reliable(&g(&[&[
+            "only one column"
+        ]])));
+        assert!(!super::geometric_table_is_reliable(&[]));
+    }
+
+    /// A `picture` region is cropped out of the rendered page, whatever built
+    /// that page. The browser pipeline (#157) has no pdfium but does hand over
+    /// the rasterized bitmap through `from_cells_with_image`, so it must get
+    /// the same figure bytes the native path does — that is what makes
+    /// `images = "embedded"` inline real pixels instead of a placeholder.
+    #[cfg(feature = "ocr-prep")]
+    #[test]
+    fn picture_regions_are_cropped_from_a_host_supplied_page_image() {
+        let mut img = image::RgbImage::new(200, 200);
+        // Paint the figure area so the crop is distinguishable from the page.
+        for y in 100..160 {
+            for x in 20..120 {
+                img.put_pixel(x, y, image::Rgb([255, 0, 0]));
+            }
+        }
+        // scale 2.0: the region is in page points, the bitmap in pixels.
+        let page = PdfPage::from_cells_with_image(100.0, 100.0, 2.0, Vec::new(), img);
+        let region = Region {
+            label: "picture",
+            score: 0.9,
+            l: 10.0,
+            t: 50.0,
+            r: 60.0,
+            b: 80.0,
+        };
+        let (nodes, _) = super::assemble_page(&page, vec![region], &[None], &[None]);
+        // Layout-derived nodes carry provenance, so the picture arrives wrapped.
+        let image = nodes
+            .iter()
+            .find_map(|n| match n {
+                Node::Located { inner, .. } => match &**inner {
+                    Node::Picture { image, .. } => image.as_ref(),
+                    _ => None,
+                },
+                Node::Picture { image, .. } => image.as_ref(),
+                _ => None,
+            })
+            .expect("a picture node with cropped pixels");
+        assert_eq!(image.mimetype, "image/png");
+        assert_eq!((image.width, image.height), (100, 60), "region × scale");
+        assert!(!image.data.is_empty(), "PNG bytes were encoded");
+    }
 
     #[test]
     fn link_anchors_split_a_shared_word_cell_between_adjacent_links() {

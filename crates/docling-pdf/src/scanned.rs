@@ -33,6 +33,69 @@ pub fn refine_regions(
     regions
 }
 
+/// Drop text regions that would read the same cells twice.
+///
+/// The layout model can emit overlapping detections — typically one region
+/// covering a whole block *and* smaller ones covering its parts, when the
+/// raster is noisier than the model likes (the browser's pdf.js render, where
+/// this was observed as a paragraph printed twice; pdfium's render of the same
+/// page did not trigger it). Assembly assigns each region the cells >50%
+/// inside it without consuming them, so every such overlap duplicates text.
+///
+/// The rule is deliberately narrow: a *text-like* region is dropped only when
+/// every cell it claims is also claimed by one *single* other region — i.e. it
+/// is a strict re-reader of part of a larger region. The larger region
+/// survives, which is also what the native raster produces on the observed
+/// page (one merged paragraph). Ties (two regions claiming identical sets)
+/// keep the higher-scoring one.
+pub fn drop_duplicate_text_claims(regions: Vec<Region>, cells: &[TextCell]) -> Vec<Region> {
+    let claimed: Vec<Vec<usize>> = regions
+        .iter()
+        .map(|r| {
+            cells
+                .iter()
+                .enumerate()
+                .filter(|(_, c)| {
+                    let ca = ((c.r - c.l) * (c.b - c.t)).max(1.0);
+                    let iw = (c.r.min(r.r) - c.l.max(r.l)).max(0.0);
+                    let ih = (c.b.min(r.b) - c.t.max(r.t)).max(0.0);
+                    iw * ih / ca > 0.5
+                })
+                .map(|(i, _)| i)
+                .collect()
+        })
+        .collect();
+    let text_like = |label: &str| matches!(label, "text" | "list_item" | "section_header");
+    let mut drop = vec![false; regions.len()];
+    for a in 0..regions.len() {
+        if !text_like(regions[a].label) || claimed[a].is_empty() {
+            continue;
+        }
+        for b in 0..regions.len() {
+            if a == b || drop[b] || !text_like(regions[b].label) {
+                continue;
+            }
+            let subset = claimed[a].iter().all(|i| claimed[b].contains(i));
+            if !subset {
+                continue;
+            }
+            // Identical sets: keep the higher score (stable on ties by index).
+            let identical = claimed[a].len() == claimed[b].len();
+            if identical && (regions[a].score, b) > (regions[b].score, a) {
+                continue;
+            }
+            drop[a] = true;
+            break;
+        }
+    }
+    regions
+        .into_iter()
+        .zip(drop)
+        .filter(|(_, d)| !d)
+        .map(|(r, _)| r)
+        .collect()
+}
+
 /// Assemble one refined page — geometric tables (no TableFormer), no
 /// enrichments — into its nodes and hyperlink pairs.
 pub fn assemble_page(page: &PdfPage, regions: Vec<Region>) -> AssembledPage {
@@ -64,4 +127,74 @@ pub fn finish_document(name: &str, pages: Vec<AssembledPage>) -> DoclingDocument
     }
     crate::assemble::merge_continuations(&mut doc.nodes);
     doc
+}
+
+#[cfg(test)]
+mod duplicate_claims {
+    use crate::layout::Region;
+    use crate::pdfium_backend::TextCell;
+
+    fn cell(l: f32, t: f32, r: f32, b: f32) -> TextCell {
+        TextCell {
+            text: "x".into(),
+            l,
+            t,
+            r,
+            b,
+        }
+    }
+    fn region(label: &'static str, score: f32, l: f32, t: f32, r: f32, b: f32) -> Region {
+        Region {
+            label,
+            score,
+            l,
+            t,
+            r,
+            b,
+        }
+    }
+
+    /// The observed browser failure: the model detects a block *and* its two
+    /// halves, so both halves re-read cells the block already claims and a
+    /// paragraph prints twice. The parts must go, the block must stay — that
+    /// matches what the native raster produced (one merged paragraph).
+    #[test]
+    fn part_regions_of_a_block_are_dropped() {
+        let cells = vec![cell(10.0, 10.0, 90.0, 20.0), cell(10.0, 30.0, 90.0, 40.0)];
+        let regions = vec![
+            region("text", 0.9, 5.0, 5.0, 95.0, 45.0),  // the block
+            region("text", 0.8, 5.0, 5.0, 95.0, 25.0),  // its top half
+            region("text", 0.8, 5.0, 25.0, 95.0, 45.0), // its bottom half
+        ];
+        let kept = super::drop_duplicate_text_claims(regions, &cells);
+        assert_eq!(kept.len(), 1, "kept: {kept:?}");
+        assert_eq!((kept[0].t, kept[0].b), (5.0, 45.0), "the block survives");
+    }
+
+    /// Disjoint regions — the normal page shape — are untouched, and so are
+    /// non-text labels even when they overlap text (a table region legitimately
+    /// contains the same cells its caption/text neighbours touch).
+    #[test]
+    fn disjoint_and_non_text_regions_are_kept() {
+        let cells = vec![cell(10.0, 10.0, 90.0, 20.0), cell(10.0, 50.0, 90.0, 60.0)];
+        let regions = vec![
+            region("text", 0.9, 5.0, 5.0, 95.0, 25.0),
+            region("text", 0.9, 5.0, 45.0, 95.0, 65.0),
+            region("table", 0.9, 5.0, 5.0, 95.0, 65.0), // overlaps both, not text
+        ];
+        assert_eq!(super::drop_duplicate_text_claims(regions, &cells).len(), 3);
+    }
+
+    /// Two identical claims keep exactly one — the higher score.
+    #[test]
+    fn identical_claims_keep_the_higher_score() {
+        let cells = vec![cell(10.0, 10.0, 90.0, 20.0)];
+        let regions = vec![
+            region("text", 0.7, 5.0, 5.0, 95.0, 25.0),
+            region("text", 0.9, 6.0, 6.0, 94.0, 24.0),
+        ];
+        let kept = super::drop_duplicate_text_claims(regions, &cells);
+        assert_eq!(kept.len(), 1);
+        assert_eq!(kept[0].score, 0.9);
+    }
 }

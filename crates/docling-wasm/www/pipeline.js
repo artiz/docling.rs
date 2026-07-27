@@ -8,7 +8,7 @@
 // DOM-free: the only host concern is onStatus(msg, spinning) for progress.
 
 import * as ort from "https://cdn.jsdelivr.net/npm/onnxruntime-web/dist/ort.min.mjs";
-import init, { ScannedConverter, convert_scanned_image } from "./pkg/docling_wasm.js";
+import init, { DigitalConverter, ScannedConverter, convert_scanned_image } from "./pkg/docling_wasm.js";
 
 // Multi-threaded wasm when cross-origin isolated (coi.js); else one thread.
 ort.env.wasm.numThreads = self.crossOriginIsolated
@@ -100,7 +100,7 @@ export function createOcr({ onStatus }) {
   const status = (msg, spinning = true) => onStatus && onStatus(msg, spinning);
 
   // Model files the user picked from the device (basename → ArrayBuffer),
-  // used instead of any network fetch — see scan.html's file picker. Reading a
+  // used instead of any network fetch — see index.html's model picker. Reading a
   // File to an ArrayBuffer is a single allocation, so it also sidesteps the
   // double-buffering peak fetchProgress hits on the 225 MB encoder.
   let provided = {};
@@ -262,27 +262,51 @@ export function createOcr({ onStatus }) {
     const tfSess = useTf ? await ensureTf() : null;
     cur = { conv: new ScannedConverter(dict), rec, tf: tfSess };
   }
-  async function addPage(rgba, w, h, scale) {
+
+  // A digital PDF (one with a text layer) needs the layout model but no
+  // recognition: the text comes out of the file, so this is both much faster
+  // and exact. Throws when there is no text layer — the host then falls back to
+  // startDoc. Returns the page count, since the parser already knows it.
+  async function startDigital(bytes, useTf) {
+    const conv = new DigitalConverter(new Uint8Array(bytes));
+    const tfSess = useTf ? await ensureTf() : null;
+    cur = { conv, tf: tfSess, digital: true };
+    return conv.page_count();
+  }
+  async function addPage(rgba, w, h, scale, index) {
+    // Guard the single in-flight document: without it a stray addPage/finish
+    // after (or before) the lifecycle reads `cur` as null and the host sees an
+    // opaque "Cannot read properties of null".
+    if (!cur) throw new Error("addPage called with no document open (startDoc first)");
+    if (cur.digital) {
+      const args = [index, rgba, w, h, scale, layout];
+      return cur.tf
+        ? cur.conv.addPageTf(...args, cur.tf)
+        : cur.conv.add_page(...args);
+    }
     if (cur.tf) {
       await cur.conv.addPageTf(rgba, w, h, scale, layout, cur.rec, cur.tf);
     } else {
       await cur.conv.add_page(rgba, w, h, scale, layout, cur.rec);
     }
   }
-  function finishDoc(name) {
-    const md = cur.conv.finish(name, "md");
+  function finishDoc(name, to, images) {
+    if (!cur) throw new Error("finishDoc called with no document open (startDoc first)");
+    const md = cur.conv.finish(name, to || "md", images || "placeholder");
     cur = null;
     return md;
   }
 
   // Standalone image: the wasm side decodes it (no canvas needed).
-  async function convertImage(bytes, name, lang) {
+  async function convertImage(bytes, name, lang, to, images) {
     const { dict, rec } = await recFor(lang);
-    return convert_scanned_image(new Uint8Array(bytes), name, dict, layout, rec, "md");
+    return convert_scanned_image(
+      new Uint8Array(bytes), name, dict, layout, rec, to || "md", images || "placeholder",
+    );
   }
 
   return {
-    boot, warmup, recFor, startDoc, addPage, finishDoc, convertImage, setProvidedModels,
+    boot, warmup, recFor, startDoc, startDigital, addPage, finishDoc, convertImage, setProvidedModels,
     get layoutKind() { return layoutKind; },
   };
 }

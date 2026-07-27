@@ -1,0 +1,207 @@
+//! Browser pipeline for **digital** PDFs — the ones that carry a text layer
+//! (#157). It is the scanned pipeline with the expensive half removed: the text
+//! comes from the PDF itself rather than from OCR, so only the layout model
+//! runs, and the result is both faster and exact (no recognition errors, no
+//! mangled umlauts).
+//!
+//! This is what the native pipeline does for a digital PDF — it OCRs a page
+//! only when `page.cells` is empty — so the same three steps happen here in the
+//! same order: layout detection, region refinement against the real text cells,
+//! then TableFormer (or the geometric fallback) per table region.
+//!
+//! Without it the browser had to choose between structure and fidelity: the
+//! pure text-layer path (`convert`) is milliseconds but emits flat paragraphs,
+//! because headings, tables and pictures are all things the layout model finds.
+//!
+//! ```js
+//! const conv = new DigitalConverter(pdfBytes);   // throws when there is no text layer
+//! for (let i = 0; i < conv.page_count(); i++) {
+//!   // rasterize page i with pdf.js at 2 px/point, then:
+//!   await conv.add_page(i, rgba, w, h, 2.0, layout);
+//! }
+//! const markdown = conv.finish("bill.pdf", "md", "embedded");
+//! ```
+
+use docling_pdf::assemble::{geometric_table_is_reliable, reconstruct_table};
+use docling_pdf::layout::{decode_layout, layout_input};
+use docling_pdf::pdfium_backend::PdfPage;
+use docling_pdf::scanned::{
+    assemble_page_with_tables, drop_duplicate_text_claims, finish_document, refine_regions,
+};
+use image::RgbImage;
+use wasm_bindgen::prelude::*;
+
+use crate::ocr::tensor_parts;
+use crate::scanned::{render, LayoutSession};
+use crate::tableformer::TfSession;
+
+/// A digital PDF being converted page by page. Construct it from the file's
+/// bytes (the text layer is parsed once, in Rust), then feed the rasterized
+/// pages in order.
+#[wasm_bindgen]
+pub struct DigitalConverter {
+    /// One entry per page, carrying that page's text cells in PDF points.
+    pages: Vec<PdfPage>,
+    out: Vec<docling_pdf::scanned::AssembledPage>,
+}
+
+#[wasm_bindgen]
+impl DigitalConverter {
+    /// Parse the PDF's text layer. Fails when there is none — the caller should
+    /// fall back to the scanned pipeline, exactly as the demo page does.
+    #[wasm_bindgen(constructor)]
+    pub fn new(bytes: &[u8]) -> Result<DigitalConverter, JsError> {
+        let pages = docling_pdf::textparse::pdf_text_pages(bytes);
+        if pages.iter().all(|p| p.cells.is_empty()) {
+            return Err(JsError::new(
+                "PDF has no embedded text layer (scanned/image-only?) — use the OCR pipeline",
+            ));
+        }
+        Ok(Self {
+            pages,
+            out: Vec::new(),
+        })
+    }
+
+    /// Pages the text parser found.
+    pub fn page_count(&self) -> usize {
+        self.pages.len()
+    }
+
+    /// Convert page `index` (0-based) given its rendered bitmap: layout
+    /// detection plus geometric tables. `scale` is the raster's pixels per PDF
+    /// point (2.0 for pdf.js `{scale: 2}`).
+    pub async fn add_page(
+        &mut self,
+        index: usize,
+        rgba: &[u8],
+        px_w: u32,
+        px_h: u32,
+        scale: f32,
+        layout: &LayoutSession,
+    ) -> Result<(), JsError> {
+        self.add_page_impl(index, rgba, px_w, px_h, scale, layout, None)
+            .await
+    }
+
+    /// [`add_page`](Self::add_page) with TableFormer for the table regions whose
+    /// geometric reconstruction looks unreliable.
+    #[wasm_bindgen(js_name = addPageTf)]
+    #[allow(clippy::too_many_arguments)]
+    pub async fn add_page_tf(
+        &mut self,
+        index: usize,
+        rgba: &[u8],
+        px_w: u32,
+        px_h: u32,
+        scale: f32,
+        layout: &LayoutSession,
+        tf: &TfSession,
+    ) -> Result<(), JsError> {
+        self.add_page_impl(index, rgba, px_w, px_h, scale, layout, Some(tf))
+            .await
+    }
+
+    /// Assemble the converted pages into a document and render it as `"md"`
+    /// (default), `"json"` or `"doclang"`, with `images` picking how pictures
+    /// render in Markdown. Resets the converter.
+    pub fn finish(
+        &mut self,
+        name: &str,
+        to: Option<String>,
+        images: Option<String>,
+    ) -> Result<String, JsError> {
+        let doc = finish_document(name, std::mem::take(&mut self.out));
+        render(&doc, to.as_deref(), images.as_deref())
+    }
+}
+
+impl DigitalConverter {
+    #[allow(clippy::too_many_arguments)]
+    async fn add_page_impl(
+        &mut self,
+        index: usize,
+        rgba: &[u8],
+        px_w: u32,
+        px_h: u32,
+        scale: f32,
+        layout: &LayoutSession,
+        tf: Option<&TfSession>,
+    ) -> Result<(), JsError> {
+        if rgba.len() != (px_w as usize) * (px_h as usize) * 4 {
+            return Err(JsError::new("rgba buffer size does not match dimensions"));
+        }
+        let mut page = self
+            .pages
+            .get(index)
+            .cloned()
+            .ok_or_else(|| JsError::new("page index is out of range"))?;
+
+        let mut img = RgbImage::new(px_w, px_h);
+        for (i, px) in img.pixels_mut().enumerate() {
+            px.0 = [rgba[i * 4], rgba[i * 4 + 1], rgba[i * 4 + 2]];
+        }
+
+        // Layout: Rust preprocessing → JS inference → Rust decoding. The page
+        // geometry comes from the text parser, not the bitmap, so a raster at
+        // any scale lines up with the cells (which are in PDF points).
+        let (page_w, page_h) = (page.width, page.height);
+        let input = layout_input(&img);
+        let out = layout
+            .run(js_sys::Float32Array::from(input.as_slice()))
+            .await
+            .map_err(|e| JsError::new(&format!("layout session.run: {e:?}")))?;
+        let get = |k: &str| {
+            js_sys::Reflect::get(&out, &JsValue::from_str(k))
+                .map_err(|_| JsError::new(&format!("layout result has no `{k}`")))
+        };
+        let (logits, q, c) = tensor_parts(&get("logits")?)?;
+        let (boxes, bq, four) = tensor_parts(&get("boxes")?)?;
+        if bq != q || four != 4 {
+            return Err(JsError::new("layout boxes dims must be [1, q, 4]"));
+        }
+        let regions = decode_layout(&logits, &boxes, q, c, page_w, page_h);
+        // Refine against the *real* text cells: unlike the OCR path, orphan-text
+        // recovery and the false-picture drop have something to work with here.
+        let regions = refine_regions(regions, &page.cells, page_w, page_h);
+        // The pdf.js raster can tease overlapping text detections out of the
+        // model (a block plus its own parts), and every overlap reads the same
+        // cells twice — drop the re-readers.
+        let regions = drop_duplicate_text_claims(regions, &page.cells);
+
+        // Attach the raster so picture regions crop out of it, and record what
+        // it is scaled by (cells stay in points).
+        page.image = img;
+        page.scale = scale;
+
+        let mut table_rows = Vec::with_capacity(regions.len());
+        for r in &regions {
+            if r.label != "table" {
+                table_rows.push(None);
+                continue;
+            }
+            // Same bargain as the scanned path: TableFormer costs seconds per
+            // region, so skip it wherever the free geometric reconstruction is
+            // already dense and well-formed.
+            let geometric = reconstruct_table(r, &page.cells);
+            match tf {
+                Some(tf) if !geometric_table_is_reliable(&geometric) => {
+                    table_rows.push(
+                        crate::tableformer::predict_table_rows(
+                            tf,
+                            &page.image,
+                            [r.l, r.t, r.r, r.b],
+                            &page.word_cells,
+                        )
+                        .await,
+                    );
+                }
+                _ => table_rows.push(None),
+            }
+        }
+
+        self.out
+            .push(assemble_page_with_tables(&page, regions, table_rows));
+        Ok(())
+    }
+}

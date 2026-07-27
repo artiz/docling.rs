@@ -7,16 +7,14 @@
 //
 // RPC: every request carries an id; the reply is {type:"ok", id, ...data} or
 // {type:"error", id, msg}. Progress is a broadcast {type:"status", msg,
-// spinning}. Requests: boot{lang} | rec{lang} | doc-start{lang} |
-// doc-page{rgba,w,h,scale} | doc-finish{name} | convert-image{bytes,name,lang}.
+// spinning}. Requests: set-models{models} | boot{lang,layoutOnly} | rec{lang} |
+// doc-start{lang,useTf} | doc-start-digital{bytes,useTf} |
+// doc-page{rgba,w,h,scale,index} | doc-finish{name,to,images} |
+// convert-image{bytes,name,lang,to,images}.
 
 import { createOcr, THREADS } from "./pipeline.js";
 
 const post = (type, extra) => self.postMessage({ type, ...extra });
-
-// On-page diagnostic sink the wasm calls (see src/scanned.rs) — forward to the
-// main thread, which renders it (a phone can't open the console).
-globalThis.__docling_diag = (msg) => post("diag", { msg });
 
 const ocr = createOcr({
   onStatus: (msg, spinning) => post("status", { msg, spinning }),
@@ -30,8 +28,12 @@ async function handle(m) {
     case "boot": {
       const kind = await ocr.boot();
       if (!kind) return { noLayout: true };
-      await ocr.recFor(m.lang);
-      await ocr.warmup(m.lang);
+      // A digital PDF never recognises anything, so its boot skips the
+      // recognition model entirely; the scanned path loads it lazily anyway.
+      if (!m.layoutOnly) {
+        await ocr.recFor(m.lang);
+        await ocr.warmup(m.lang);
+      }
       return { kind, threads: THREADS };
     }
     case "rec":
@@ -41,13 +43,15 @@ async function handle(m) {
     case "doc-start":
       await ocr.startDoc(m.lang, m.useTf);
       return {};
+    case "doc-start-digital":
+      return { pages: await ocr.startDigital(m.bytes, m.useTf) };
     case "doc-page":
-      await ocr.addPage(new Uint8Array(m.rgba), m.w, m.h, m.scale);
+      await ocr.addPage(new Uint8Array(m.rgba), m.w, m.h, m.scale, m.index);
       return {};
     case "doc-finish":
-      return { md: ocr.finishDoc(m.name) };
+      return { md: ocr.finishDoc(m.name, m.to, m.images) };
     case "convert-image":
-      return { md: await ocr.convertImage(m.bytes, m.name, m.lang) };
+      return { md: await ocr.convertImage(m.bytes, m.name, m.lang, m.to, m.images) };
     default:
       throw new Error(`unknown request ${m.type}`);
   }

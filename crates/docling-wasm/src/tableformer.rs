@@ -9,7 +9,7 @@
 //! encoder's constant cross-attention K/V and `enc_out`, and the growing
 //! decoder KV-cache, entirely on the JS side. Each decode step sends only the
 //! last tag (one int) and gets back `logits` + `hidden` (525 floats). See
-//! `www/scan.html` for the JS wiring (the `decoder_kv` graph: N_LAYERS=6,
+//! `www/index.html` for the JS wiring (the `decoder_kv` graph: N_LAYERS=6,
 //! KV_HEADS=8, head_dim=64, cross length 784).
 
 use docling_pdf::pdfium_backend::TextCell;

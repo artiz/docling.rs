@@ -4,7 +4,9 @@
 //! reconstruction and reading-order assembly in Rust — the same code as the
 //! native pipeline (`docling_pdf::{layout, ocr_prep, scanned}`). TableFormer
 //! and the enrichment models are stage 3; table regions fall back to the
-//! geometric reconstruction the native `--no-table-former` flag uses.
+//! geometric reconstruction the native `--no-table-former` flag uses. Picture
+//! regions are cropped out of the page bitmap, like the native pipeline, so
+//! `images = "embedded"` inlines real figure bytes.
 //!
 //! Pages arrive as raw RGBA bitmaps: for a scanned PDF the host page renders
 //! them with pdf.js (`page.getViewport({scale: 2})` — 2 px per PDF point,
@@ -16,10 +18,11 @@
 //! for (const bitmap of pages) {
 //!   await conv.add_page(bitmap.data, bitmap.width, bitmap.height, 2.0, layout, rec);
 //! }
-//! const markdown = conv.finish("scan.pdf", "md");
+//! const markdown = conv.finish("scan.pdf", "md", "embedded");
 //! ```
-//! (`www/scan.html` is the complete wiring.)
+//! (`www/index.html` is the complete wiring.)
 
+use docling_pdf::assemble::{geometric_table_is_reliable, reconstruct_table};
 use docling_pdf::layout::{decode_layout, layout_input, SIDE};
 use docling_pdf::ocr_prep::{
     batch_input, decode_row, dict_chars, normalize_polarity, prep_region_lines, prep_table_words,
@@ -32,14 +35,6 @@ use wasm_bindgen::prelude::*;
 
 use crate::ocr::{tensor_parts, RecSession};
 use crate::tableformer::TfSession;
-
-#[wasm_bindgen]
-extern "C" {
-    // On-page diagnostic sink (defined by the host — worker.js forwards it to
-    // the main thread, which shows it; console isn't reachable on a phone).
-    #[wasm_bindgen(js_name = __docling_diag)]
-    fn diag(s: &str);
-}
 
 #[wasm_bindgen]
 extern "C" {
@@ -188,19 +183,6 @@ impl ScannedConverter {
         let regions = decode_layout(&logits, &boxes, q, c, page_w, page_h);
         let regions = refine_regions(regions, &[], page_w, page_h);
 
-        // Diagnostic: the region-label histogram, so it's visible (browser
-        // console) whether the layout model flagged any `table` region on this
-        // page — tables only render when it does (geometric or TableFormer).
-        {
-            let mut hist: std::collections::BTreeMap<&str, usize> =
-                std::collections::BTreeMap::new();
-            for r in &regions {
-                *hist.entry(r.label).or_default() += 1;
-            }
-            let summary: Vec<String> = hist.iter().map(|(l, n)| format!("{l}×{n}")).collect();
-            diag(&format!("layout regions: {}", summary.join(", ")));
-        }
-
         // OCR the text regions (same gather/batch/decode as native ocr_page).
         let (bboxes, lines) = prep_region_lines(&img, &regions, scale);
         let texts = self.ocr_lines(rec, &lines).await?;
@@ -234,26 +216,34 @@ impl ScannedConverter {
         let table_rows = if let Some(tf) = tf {
             let mut rows = Vec::with_capacity(regions.len());
             for r in &regions {
-                if r.label == "table" {
-                    rows.push(
-                        crate::tableformer::predict_table_rows(
-                            tf,
-                            &img,
-                            [r.l, r.t, r.r, r.b],
-                            &cells,
-                        )
-                        .await,
-                    );
-                } else {
+                if r.label != "table" {
                     rows.push(None);
+                    continue;
                 }
+                // TableFormer costs seconds per region (the fp32 encoder runs
+                // once per table), so spend it only where it buys something:
+                // when the free geometric reconstruction already yields a dense,
+                // well-formed grid it is what TableFormer would agree with, and
+                // `None` tells assemble to keep it.
+                let geometric = reconstruct_table(r, &cells);
+                if geometric_table_is_reliable(&geometric) {
+                    rows.push(None);
+                    continue;
+                }
+                rows.push(
+                    crate::tableformer::predict_table_rows(tf, &img, [r.l, r.t, r.r, r.b], &cells)
+                        .await,
+                );
             }
             rows
         } else {
             Vec::new() // assemble_page_with_tables resizes to all-None
         };
 
-        let page = PdfPage::from_cells(page_w, page_h, scale, cells);
+        // Hand the page bitmap over: assemble crops each `picture` region out
+        // of it, so the browser pipeline produces the same figure bytes the
+        // native one does (`images=embedded` then inlines them).
+        let page = PdfPage::from_cells_with_image(page_w, page_h, scale, cells, img);
         self.pages
             .push(assemble_page_with_tables(&page, regions, table_rows));
         Ok(())
@@ -268,16 +258,39 @@ impl ScannedConverter {
     }
 
     /// Assemble the accumulated pages into the final document and render it
-    /// as `"md"` (default) or `"json"`. Resets the converter.
-    pub fn finish(&mut self, name: &str, to: Option<String>) -> Result<String, JsError> {
+    /// as `"md"` (default), `"json"` or `"doclang"` — the same three the
+    /// declarative [`crate::convert`] entry point offers. `images` picks how
+    /// cropped figures render in Markdown (`"placeholder"` | `"embedded"`),
+    /// like [`crate::convert`]. Resets the converter.
+    pub fn finish(
+        &mut self,
+        name: &str,
+        to: Option<String>,
+        images: Option<String>,
+    ) -> Result<String, JsError> {
         let doc = finish_document(name, std::mem::take(&mut self.pages));
-        match to.as_deref().unwrap_or("md") {
-            "md" | "markdown" => Ok(doc.export_to_markdown()),
-            "json" => Ok(doc.export_to_json()),
-            other => Err(JsError::new(&format!(
-                "unknown output format {other:?} (expected \"md\" or \"json\")"
-            ))),
+        render(&doc, to.as_deref(), images.as_deref())
+    }
+}
+
+/// Render an assembled document in one of the three output grammars, with the
+/// same `images` choice the declarative path offers — picture regions are
+/// cropped out of the rendered page, so `embedded` has real bytes to inline.
+pub(crate) fn render(
+    doc: &docling_core::DoclingDocument,
+    to: Option<&str>,
+    images: Option<&str>,
+) -> Result<String, JsError> {
+    match to.unwrap_or("md") {
+        "md" | "markdown" => {
+            let mode = crate::image_mode(images).map_err(|e| JsError::new(&e))?;
+            Ok(doc.export_to_markdown_with_images(mode, "artifacts").0)
         }
+        "json" => Ok(doc.export_to_json()),
+        "doclang" => Ok(doc.export_to_doclang()),
+        other => Err(JsError::new(&format!(
+            "unknown output format {other:?} (expected \"md\", \"json\" or \"doclang\")"
+        ))),
     }
 }
 
@@ -292,6 +305,7 @@ pub async fn convert_scanned_image(
     layout: &LayoutSession,
     rec: &RecSession,
     to: Option<String>,
+    images: Option<String>,
 ) -> Result<String, JsError> {
     let img = image::load_from_memory(bytes)
         .map_err(|e| JsError::new(&format!("decode image: {e}")))?
@@ -299,7 +313,7 @@ pub async fn convert_scanned_image(
     let (w, h) = img.dimensions();
     let mut conv = ScannedConverter::new(dict);
     conv.add_page(img.as_raw(), w, h, 1.0, layout, rec).await?;
-    conv.finish(name, to)
+    conv.finish(name, to, images)
 }
 
 // Silence the unused warning for SIDE re-export path (the JS side sizes its
