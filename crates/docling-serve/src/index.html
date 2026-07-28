@@ -170,7 +170,12 @@ function findDataImageSpans(text) {
     if (start === -1) break;
     const marker = text.indexOf(';base64,', start);
     const subtype = marker === -1 ? '' : text.slice(start + 11, marker);
-    if (marker === -1 || subtype.length > 20 || !/^[a-z.+-]+$/.test(subtype)) {
+    // `svg+xml` is excluded on purpose: an SVG is markup, and while a browser
+    // does not run scripts in one loaded through <img src>, the pipeline never
+    // emits SVG pictures anyway (crops are PNG) — so a data:image/svg+xml run
+    // in the output is not ours to render.
+    if (marker === -1 || subtype.length > 20 || !/^[a-z.+-]+$/.test(subtype)
+        || subtype === 'svg+xml') {
       from = start + 11;
       continue;
     }
@@ -263,18 +268,28 @@ $('go').addEventListener('click', async () => {
       return;
     }
     // Stream the body into the panel as it arrives (Markdown streams page by page).
+    // The text is accumulated in a variable and mirrored into the panel, never
+    // read back out of it: re-reading a multi-megabyte textContent per chunk is
+    // quadratic, and the gallery must render from the response we received
+    // rather than from DOM text (CodeQL js/xss-through-dom).
     out.textContent = '';
+    let body = '';
     const reader = response.body.getReader();
     const decoder = new TextDecoder();
     for (;;) {
       const { done, value } = await reader.read();
       if (done) break;
-      out.textContent += decoder.decode(value, { stream: true });
+      const chunk = decoder.decode(value, { stream: true });
+      body += chunk;
+      out.textContent += chunk;
     }
     if (to === 'json' || to === 'chunks') {
-      try { out.textContent = JSON.stringify(JSON.parse(out.textContent), null, 2); } catch {}
+      try {
+        body = JSON.stringify(JSON.parse(body), null, 2);
+        out.textContent = body;
+      } catch {}
     }
-    try { renderImages(out.textContent, to); } catch (e) { console.error('gallery:', e); }
+    try { renderImages(body, to); } catch (e) { console.error('gallery:', e); }
   } catch (e) {
     out.classList.add('err');
     out.textContent = String(e);

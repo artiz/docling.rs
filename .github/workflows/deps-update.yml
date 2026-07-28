@@ -14,9 +14,9 @@ on:
     - cron: "17 4 * * 1" # Mondays 04:17 UTC
   workflow_dispatch:
 
+# Least privilege by default; the `cargo-update` job raises what it needs.
 permissions:
-  contents: write # push the deps/cargo-update branch
-  pull-requests: write # open/refresh the update PR
+  contents: read
 
 jobs:
   # Weekly known-CVE scan of the committed lockfiles. Runs unconditionally
@@ -68,6 +68,9 @@ jobs:
 
   cargo-update:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write # push the deps/cargo-update branch
+      pull-requests: write # open/refresh the update PR
     steps:
       - uses: actions/checkout@v7
         with:

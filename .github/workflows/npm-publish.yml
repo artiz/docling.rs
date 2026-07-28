@@ -42,6 +42,12 @@ on:
         type: boolean
         default: false
 
+# Least privilege for GITHUB_TOKEN: publishing goes to npm with NPM_TOKEN, so
+# the token only needs the checkout. `publish-cuda`, which uploads binaries to
+# a GitHub release, raises it to `contents: write` on the job itself.
+permissions:
+  contents: read
+
 concurrency:
   group: npm-publish-${{ inputs.tag || github.ref }}
   cancel-in-progress: false

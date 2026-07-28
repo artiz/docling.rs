@@ -15,6 +15,12 @@ on:
         required: false
         default: ""
 
+# Least privilege for GITHUB_TOKEN: every job here only reads the checkout.
+# The one exception — `publish`, which pushes the release commit and tag —
+# raises it to `contents: write` on the job itself.
+permissions:
+  contents: read
+
 # Cancel superseded PR runs, but never interrupt a master run (it may publish).
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
