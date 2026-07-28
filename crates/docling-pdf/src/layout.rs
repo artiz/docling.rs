@@ -84,6 +84,18 @@ pub struct LayoutModel {
     /// `layout_heron_int8.onnx`. Batched calls then fall back to per-page runs
     /// instead of failing the conversion.
     batch_unsupported: bool,
+    /// The fp32 graph to escalate a suspicious page to, set only when the
+    /// *auto-selected* int8 graph loaded (an explicit `DOCLING_LAYOUT_ONNX` /
+    /// `DOCLING_RS_FP32` choice is respected). Int8 confidences sit close
+    /// enough to the 0.5 label thresholds that a different CPU's quantized
+    /// kernels (AVX-VNNI vs AVX2, CUDA's fallback mix) can flip a whole page's
+    /// detections — observed as a bill page whose tables all dissolved into
+    /// orphan lines on one machine while converting perfectly on another.
+    fp32_path: Option<String>,
+    /// Lazily-loaded session over `fp32_path` — most documents never pay for it.
+    fp32: Option<Session>,
+    /// Intra-op threads, kept for the lazy fp32 load.
+    intra: usize,
 }
 
 #[cfg(feature = "ml")]
@@ -107,20 +119,62 @@ impl LayoutModel {
         if crate::timing::enabled() {
             eprintln!("docling-pdf: layout model: {path}");
         }
+        // Escalation target for the quant-robustness guard: only when the
+        // int8 graph was picked automatically and the fp32 one is also there.
+        let fp32_path = if std::env::var("DOCLING_LAYOUT_ONNX").is_err() {
+            let fp32 = crate::resolve_asset("models/layout_heron.onnx");
+            (path != fp32 && std::path::Path::new(&fp32).exists()).then_some(fp32)
+        } else {
+            None
+        };
+        let session = Self::open_session(&path, intra)?;
+        Ok(Self {
+            session,
+            batch_unsupported: false,
+            fp32_path,
+            fp32: None,
+            intra,
+        })
+    }
+
+    fn open_session(path: &str, intra: usize) -> Result<Session, String> {
         let builder = Session::builder()
             .map_err(|e| format!("layout: builder: {e}"))?
             // Let inference use the available cores (ort otherwise defaults low);
             // a large PDF runs this model once per page.
             .with_intra_threads(intra)
             .map_err(|e| format!("layout: intra_threads: {e}"))?;
-        let session = crate::ep::apply(builder)
+        crate::ep::apply(builder)
             .map_err(|e| format!("layout: {e}"))?
-            .commit_from_file(&path)
-            .map_err(|e| format!("layout: load {path}: {e}"))?;
-        Ok(Self {
-            session,
-            batch_unsupported: false,
-        })
+            .commit_from_file(path)
+            .map_err(|e| format!("layout: load {path}: {e}"))
+    }
+
+    /// Re-run one page through the fp32 graph — the escape hatch for a page
+    /// whose int8 detections look implausible (see `fp32_path`). `Ok(None)`
+    /// when there is nothing to escalate to: fp32 already loaded, an explicit
+    /// model override, or no fp32 file on disk.
+    pub fn predict_fp32_fallback(
+        &mut self,
+        img: &RgbImage,
+        page_w: f32,
+        page_h: f32,
+    ) -> Result<Option<Vec<Region>>, String> {
+        let Some(path) = self.fp32_path.clone() else {
+            return Ok(None);
+        };
+        if self.fp32.is_none() {
+            if crate::timing::enabled() {
+                eprintln!("docling-pdf: loading fp32 layout fallback: {path}");
+            }
+            self.fp32 = Some(Self::open_session(&path, self.intra)?);
+        }
+        let session = self.fp32.as_mut().expect("just loaded");
+        Ok(Some(
+            Self::run_on(session, &[(img, page_w, page_h)])?
+                .pop()
+                .expect("one result per input page"),
+        ))
     }
 
     /// Detect layout regions on a page image. `page_w`/`page_h` are the page size
@@ -183,6 +237,13 @@ impl LayoutModel {
     }
 
     fn run_batch(&mut self, pages: &[(&RgbImage, f32, f32)]) -> Result<Vec<Vec<Region>>, String> {
+        Self::run_on(&mut self.session, pages)
+    }
+
+    fn run_on(
+        session: &mut Session,
+        pages: &[(&RgbImage, f32, f32)],
+    ) -> Result<Vec<Vec<Region>>, String> {
         if pages.is_empty() {
             return Ok(Vec::new());
         }
@@ -202,8 +263,7 @@ impl LayoutModel {
         }
         let input = Tensor::from_array(([batch, 3, SIDE as usize, SIDE as usize], data))
             .map_err(|e| format!("layout: input tensor: {e}"))?;
-        let outputs = self
-            .session
+        let outputs = session
             .run(ort::inputs!["pixel_values" => input])
             .map_err(|e| format!("layout: inference: {e}"))?;
         let (lshape, logits) = outputs["logits"]

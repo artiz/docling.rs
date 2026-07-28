@@ -316,6 +316,37 @@ fn dedup_nested_code(kept: &mut Vec<Region>) {
     kept.retain(|_| !*keep.next().unwrap());
 }
 
+/// Fraction of the page's non-empty text cells that some detected region
+/// claims (>0.2 intersection-over-self, docling's assignment rule). 1.0 for a
+/// page without text cells.
+///
+/// The int8-layout guard keys off this: a dense digital page whose detections
+/// cover almost none of its text is the signature of quantized confidences
+/// flipping under the 0.5 label thresholds on this CPU's kernels — not of a
+/// genuinely empty layout — and is worth re-running on the fp32 graph.
+pub fn layout_cell_coverage(regions: &[Region], cells: &[TextCell]) -> f32 {
+    let mut total = 0usize;
+    let mut covered = 0usize;
+    for c in cells {
+        if c.text.trim().is_empty() {
+            continue;
+        }
+        total += 1;
+        let ca = area(c.l, c.t, c.r, c.b).max(1.0);
+        if regions
+            .iter()
+            .any(|r| inter(r, c.l, c.t, c.r, c.b) / ca > 0.2)
+        {
+            covered += 1;
+        }
+    }
+    if total == 0 {
+        1.0
+    } else {
+        covered as f32 / total as f32
+    }
+}
+
 /// Append `text` regions for cells the layout left uncovered ("orphan cells"),
 /// the way docling's `LayoutPostprocessor` does (`create_orphan_clusters`): any
 /// non-empty cell that no kept region covers (>50% of the cell's area) becomes a
@@ -1925,6 +1956,38 @@ mod tests {
     use crate::layout::Region;
     use crate::pdfium_backend::{LinkAnnot, PdfPage, TextCell};
     use docling_core::Node;
+
+    /// The int8-layout guard's coverage metric: cells under detections count,
+    /// cells outside don't, whitespace cells are ignored, and a cell-less page
+    /// reads as fully covered (nothing to rescue).
+    #[test]
+    fn layout_cell_coverage_counts_claimed_text_cells() {
+        let cell = |text: &str, l: f32, t: f32| TextCell {
+            text: text.into(),
+            l,
+            t,
+            r: l + 40.0,
+            b: t + 10.0,
+        };
+        let region = Region {
+            label: "text",
+            score: 0.9,
+            l: 0.0,
+            t: 0.0,
+            r: 100.0,
+            b: 50.0,
+        };
+        let cells = vec![
+            cell("inside", 10.0, 10.0),
+            cell("also inside", 10.0, 30.0),
+            cell("outside", 10.0, 200.0),
+            cell("   ", 10.0, 210.0), // whitespace: not counted at all
+        ];
+        let cov = super::layout_cell_coverage(std::slice::from_ref(&region), &cells);
+        assert!((cov - 2.0 / 3.0).abs() < 1e-6, "got {cov}");
+        assert_eq!(super::layout_cell_coverage(&[], &[]), 1.0);
+        assert_eq!(super::layout_cell_coverage(&[], &cells), 0.0);
+    }
 
     /// #165: a picture no longer claims cells at 0.2 intersection-over-self.
     /// A line straddling the figure border (≤80 % contained) becomes an orphan

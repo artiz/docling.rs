@@ -23,6 +23,47 @@ const EMBED_DIM: usize = crate::tf_core::EMBED_DIM;
 /// decoder threads a `[N_LAYERS, past, 1, EMBED_DIM]` per-layer state cache.
 const N_LAYERS: usize = 6;
 
+/// Resolve the encoder / decoder / bbox files exactly as [`TableFormer::load`]
+/// will (shared with `model_inventory`, so diagnostics can never drift from
+/// what actually loads). Explicit `DOCLING_TABLEFORMER_*` overrides win; the
+/// decoder otherwise picks by preference — INT8 variants first unless
+/// `DOCLING_RS_FP32` opts out, and within a precision the true-KV-cache
+/// export (`decoder_kv*`, one token per step, O(past) step cost) ranks ahead
+/// of the legacy layer-output-cache graph it matches byte-for-byte (91/91
+/// snapshot corpus exact with either; the KV graph re-measured ~13–17% faster
+/// warm, so speed wins the default and the legacy file stays as the smaller
+/// fallback). `decoder_kv` ranks ABOVE `decoder_int8`: the #97 hoisted fp32
+/// KV graph is faster than the quantized legacy graph on every machine
+/// measured, and it is byte-exact (its own int8 variant is not produced — see
+/// quantize_models.py).
+pub fn resolved_paths() -> (String, String, String) {
+    let enc = std::env::var("DOCLING_TABLEFORMER_ENCODER")
+        .unwrap_or_else(|_| crate::resolve_asset("models/tableformer/encoder.onnx"));
+    let dec = std::env::var("DOCLING_TABLEFORMER_DECODER").unwrap_or_else(|_| {
+        let candidates: &[&str] = if crate::prefer_fp32() {
+            &[
+                "models/tableformer/decoder_kv.onnx",
+                "models/tableformer/decoder.onnx",
+            ]
+        } else {
+            &[
+                "models/tableformer/decoder_kv_int8.onnx",
+                "models/tableformer/decoder_kv.onnx",
+                "models/tableformer/decoder_int8.onnx",
+                "models/tableformer/decoder.onnx",
+            ]
+        };
+        candidates
+            .iter()
+            .map(|p| crate::resolve_asset(p))
+            .find(|p| std::path::Path::new(p).exists())
+            .unwrap_or_else(|| "models/tableformer/decoder.onnx".to_string())
+    });
+    let bbx = std::env::var("DOCLING_TABLEFORMER_BBOX")
+        .unwrap_or_else(|_| crate::resolve_asset("models/tableformer/bbox.onnx"));
+    (enc, dec, bbx)
+}
+
 pub struct TableFormer {
     encoder: Session,
     decoder: Session,
@@ -91,45 +132,11 @@ impl TableFormer {
     /// Like [`load`](Self::load) but with an explicit intra-op thread count, so a
     /// parallel page-worker pool can run each table model on fewer threads (the
     /// throughput comes from running pages concurrently, not from one fat model).
+    ///
+    /// See [`resolved_paths`] for the encoder/decoder/bbox file selection.
     pub fn load_with(intra: usize) -> Option<Self> {
-        let enc = std::env::var("DOCLING_TABLEFORMER_ENCODER")
-            .unwrap_or_else(|_| crate::resolve_asset("models/tableformer/encoder.onnx"));
-        // Decoder preference (explicit override wins): INT8 variants first
-        // unless DOCLING_RS_FP32 opts out; within a precision the true-KV-cache
-        // export (`decoder_kv*`, one token per step, O(past) step cost) ranks
-        // ahead of the legacy layer-output-cache graph it matches byte-for-byte
-        // (91/91 snapshot corpus exact with either). Re-measured warm on the
-        // corpus fixtures: the KV graph is ~13% faster on ordinary tables
-        // (2206.01062) and ~17% on the huge-table page (2305.03393v1-pg9),
-        // for +36 MB on disk — table-heavy single-page PDFs are exactly where
-        // the pipeline is tightest against Python docling, so speed wins the
-        // default and the legacy file stays as the smaller fallback.
-        let dec = std::env::var("DOCLING_TABLEFORMER_DECODER").unwrap_or_else(|_| {
-            let candidates: &[&str] = if crate::prefer_fp32() {
-                &[
-                    "models/tableformer/decoder_kv.onnx",
-                    "models/tableformer/decoder.onnx",
-                ]
-            } else {
-                // decoder_kv ranks ABOVE decoder_int8: the #97 hoisted fp32 KV
-                // graph is faster than the quantized legacy graph on every
-                // machine measured, and it is byte-exact (its own int8 variant
-                // is not produced — see quantize_models.py).
-                &[
-                    "models/tableformer/decoder_kv_int8.onnx",
-                    "models/tableformer/decoder_kv.onnx",
-                    "models/tableformer/decoder_int8.onnx",
-                    "models/tableformer/decoder.onnx",
-                ]
-            };
-            candidates
-                .iter()
-                .map(|p| crate::resolve_asset(p))
-                .find(|p| std::path::Path::new(p).exists())
-                .unwrap_or_else(|| "models/tableformer/decoder.onnx".to_string())
-        });
-        let bbx = std::env::var("DOCLING_TABLEFORMER_BBOX")
-            .unwrap_or_else(|_| crate::resolve_asset("models/tableformer/bbox.onnx"));
+        // (resolution shared with the model inventory — see resolved_paths)
+        let (enc, dec, bbx) = resolved_paths();
         if crate::timing::enabled() {
             eprintln!("docling-pdf: tableformer decoder: {dec}");
         }

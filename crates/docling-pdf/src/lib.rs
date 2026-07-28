@@ -232,12 +232,70 @@ pub(crate) fn resolve_asset(rel: &str) -> String {
     rel.to_string()
 }
 
+/// One resolved runtime asset — which file a stage would load right now,
+/// given the CWD, the env overrides and the int8/fp32 preference.
 #[cfg(feature = "ml")]
+#[derive(Debug, Clone)]
+pub struct ModelEntry {
+    /// Pipeline stage, e.g. `layout`, `tableformer.decoder`, `ocr.rec`.
+    pub stage: &'static str,
+    /// The resolved path (absolute or CWD-relative, as it will be opened).
+    pub path: String,
+    /// Whether the file exists right now.
+    pub found: bool,
+    /// File size in bytes (0 when missing) — enough to tell an int8 quant
+    /// from an fp32 graph, or a stale model from a re-published one, at a
+    /// glance without hashing gigabytes per request.
+    pub bytes: u64,
+}
+
+/// Resolve the whole runtime model set **without loading anything** — the
+/// exact selection each stage performs at load time (layout honors the
+/// int8/fp32 preference, TableFormer its decoder ranking, OCR the language
+/// pair), plus the pdfium library. docling-serve exposes this at
+/// `/v1/config` and logs it at startup, so "the server picked up different
+/// models" is one `curl` away instead of a mystery of dissolved tables.
+/// Resolution is CWD-relative with an exe-dir fallback, so the answer can
+/// legitimately differ between two working directories.
+#[cfg(feature = "ml")]
+pub fn model_inventory() -> Vec<ModelEntry> {
+    fn entry(stage: &'static str, path: String) -> ModelEntry {
+        let meta = std::fs::metadata(&path).ok();
+        ModelEntry {
+            stage,
+            found: meta.is_some(),
+            bytes: meta.map(|m| m.len()).unwrap_or(0),
+            path,
+        }
+    }
+    let (enc, dec, bbx) = tableformer::resolved_paths();
+    let (rec, dict) = ocr::resolve_rec_pair(ocr::OcrLang::from_env());
+    let pdfium =
+        std::env::var("PDFIUM_DYNAMIC_LIB_PATH").unwrap_or_else(|_| resolve_asset(".pdfium/lib"));
+    vec![
+        entry(
+            "layout",
+            model_path(
+                "DOCLING_LAYOUT_ONNX",
+                "models/layout_heron.onnx",
+                "models/layout_heron_int8.onnx",
+            ),
+        ),
+        entry("tableformer.encoder", enc),
+        entry("tableformer.decoder", dec),
+        entry("tableformer.bbox", bbx),
+        entry("ocr.rec", rec),
+        entry("ocr.dict", dict),
+        entry("pdfium", pdfium),
+    ]
+}
+
 /// Resolve a model path: an explicit env override always wins; otherwise the
 /// INT8 variant of the default path when it exists on disk (the quantized
 /// models are conformance-validated — see docs/PDF_CONFORMANCE.md — and load/run
 /// markedly faster on CPU), unless `DOCLING_RS_FP32` opts back into full
 /// precision; else the fp32 default.
+#[cfg(feature = "ml")]
 pub(crate) fn model_path(env: &str, fp32_default: &str, int8_default: &str) -> String {
     if let Ok(p) = std::env::var(env) {
         return p;
@@ -495,11 +553,54 @@ impl Worker {
             page.code_cells.clear();
             page.word_cells.clear();
         }
+        // Quant-robustness guard: the default int8 layout graph keeps its
+        // confidences near the 0.5 label thresholds, and a different CPU's
+        // quantized kernels can flip a whole page's detections under them —
+        // tables and paragraphs then dissolve into orphan one-liners while the
+        // same build converts the page perfectly elsewhere. When a dense
+        // digital page ends up with detections covering almost none of its
+        // text cells, re-run that one page on the fp32 graph (lazy-loaded,
+        // auto-int8 selection only) and keep whichever detections cover more.
+        let mut regions = regions;
+        if !page.cells.is_empty() {
+            let thresholded = |rs: &[layout::Region]| -> Vec<layout::Region> {
+                rs.iter()
+                    .filter(|r| r.score >= layout::label_threshold(r.label))
+                    .cloned()
+                    .collect()
+            };
+            let text_cells = page
+                .cells
+                .iter()
+                .filter(|c| !c.text.trim().is_empty())
+                .count();
+            let cov = assemble::layout_cell_coverage(&thresholded(&regions), &page.cells);
+            if text_cells >= 15 && cov < 0.5 {
+                let retry = self
+                    .layout
+                    .as_mut()
+                    .expect("layout model loaded unless no_ocr")
+                    .predict_fp32_fallback(&page.image, page.width, page.height)
+                    .map_err(|e| PdfError::Layout(format!("page {}: {e}", n + 1)))?;
+                if let Some(retry) = retry {
+                    let cov2 = assemble::layout_cell_coverage(&thresholded(&retry), &page.cells);
+                    if cov2 > cov {
+                        eprintln!(
+                            "docling-pdf: page {}: int8 layout covered {:.0}% of the text \
+                             cells; the fp32 retry covers {:.0}% — using it",
+                            n + 1,
+                            cov * 100.0,
+                            cov2 * 100.0
+                        );
+                        regions = retry;
+                    }
+                }
+            }
+        }
         // docling's LayoutPostprocessor drops each detection below its label's
         // confidence threshold (stricter than the 0.3 base the predictor keeps),
         // before any overlap resolution. This removes the low-confidence tables /
         // pictures / list-items that otherwise double-emit or mis-classify.
-        let mut regions = regions;
         regions.retain(|r| r.score >= layout::label_threshold(r.label));
         // Resolve overlapping detections once, before OCR.
         let mut regions = assemble::resolve(regions);

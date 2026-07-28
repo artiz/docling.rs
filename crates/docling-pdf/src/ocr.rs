@@ -71,7 +71,7 @@ impl OcrLang {
 /// pair with a warning rather than failing — the usual missing-optional-asset
 /// convention. Explicit `DOCLING_OCR_REC_ONNX` / `DOCLING_OCR_DICT` paths win
 /// over all of this; they are a pair, so set both together.
-fn resolve_rec_pair(lang: OcrLang) -> (String, String) {
+pub(crate) fn resolve_rec_pair(lang: OcrLang) -> (String, String) {
     const CH: (&str, &str) = ("models/ocr_rec.onnx", "models/ppocr_keys_v1.txt");
     const EN: (&str, &str) = ("models/ocr_rec_en.onnx", "models/en_dict.txt");
     let want_ch = lang == OcrLang::Ch;
