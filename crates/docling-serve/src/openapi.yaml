@@ -144,7 +144,22 @@ paths:
                   allow_url_fetch:
                     type: boolean
                     description: Whether URL inputs and `fetch_images` are enabled.
-                required: [allow_url_fetch]
+                  models:
+                    type: array
+                    description: >
+                      Which model file each ML pipeline stage would load right
+                      now (resolved live: CWD-relative with env overrides).
+                      When two servers convert the same PDF differently, diff
+                      this list first.
+                    items:
+                      type: object
+                      properties:
+                        stage: { type: string, examples: [layout, tableformer.decoder, ocr.rec, pdfium] }
+                        path: { type: string }
+                        found: { type: boolean }
+                        bytes: { type: integer, description: File size (0 when missing) — tells an int8 quant from an fp32 graph at a glance. }
+                      required: [stage, path, found, bytes]
+                required: [allow_url_fetch, models]
 
   /health:
     get:

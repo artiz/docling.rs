@@ -170,6 +170,21 @@ pub async fn serve(cfg: ServeConfig) -> Result<(), String> {
         .await
         .map_err(|e| format!("cannot bind {addr}: {e}"))?;
     eprintln!("docling-serve listening on http://{addr}");
+    // Log the resolved model set once at startup: when two deployments
+    // convert differently, this is the first thing to compare (also served
+    // live at /v1/config).
+    for m in docling::model_inventory() {
+        if m.found {
+            eprintln!(
+                "docling-serve: model {:<20} {} ({:.1} MB)",
+                m.stage,
+                m.path,
+                m.bytes as f64 / 1_048_576.0
+            );
+        } else {
+            eprintln!("docling-serve: model {:<20} {} (MISSING)", m.stage, m.path);
+        }
+    }
     axum::serve(listener, app)
         .with_graceful_shutdown(shutdown_signal())
         .await
@@ -201,7 +216,21 @@ async fn shutdown_signal() {
 /// inputs are accepted (`--allow-url-fetch`) — the UI greys out the URL option
 /// and explains why when this is false, instead of letting the user hit a 422.
 async fn config(State(state): State<Arc<AppState>>) -> Response {
-    Json(json!({ "allow_url_fetch": state.cfg.allow_url_fetch })).into_response()
+    Json(json!({
+        "allow_url_fetch": state.cfg.allow_url_fetch,
+        // Which model file each pipeline stage would load right now (resolved
+        // per request — CWD-relative with env overrides, so this is the truth,
+        // not a startup snapshot). "Two servers convert the same PDF
+        // differently" is almost always this list differing; the size column
+        // distinguishes an int8 quant from an fp32 graph at a glance.
+        "models": docling::model_inventory().into_iter().map(|m| json!({
+            "stage": m.stage,
+            "path": m.path,
+            "found": m.found,
+            "bytes": m.bytes,
+        })).collect::<Vec<_>>(),
+    }))
+    .into_response()
 }
 
 async fn ready(State(state): State<Arc<AppState>>) -> Response {
