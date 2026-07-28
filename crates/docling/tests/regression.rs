@@ -12,7 +12,7 @@
 //! Regenerate the fixtures after an *intentional* output change:
 //!
 //! ```bash
-//! DOCLING_RS_REGEN=1 cargo test -p docling.rs --test regression
+//! DOCLING_RS_REGEN=1 cargo test -p docling --test regression
 //! ```
 
 use std::fs;
