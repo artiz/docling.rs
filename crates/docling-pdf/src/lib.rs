@@ -232,12 +232,6 @@ pub(crate) fn resolve_asset(rel: &str) -> String {
     rel.to_string()
 }
 
-#[cfg(feature = "ml")]
-/// Resolve a model path: an explicit env override always wins; otherwise the
-/// INT8 variant of the default path when it exists on disk (the quantized
-/// models are conformance-validated — see docs/PDF_CONFORMANCE.md — and load/run
-/// markedly faster on CPU), unless `DOCLING_RS_FP32` opts back into full
-/// precision; else the fp32 default.
 /// One resolved runtime asset — which file a stage would load right now,
 /// given the CWD, the env overrides and the int8/fp32 preference.
 #[cfg(feature = "ml")]
@@ -296,6 +290,12 @@ pub fn model_inventory() -> Vec<ModelEntry> {
     ]
 }
 
+/// Resolve a model path: an explicit env override always wins; otherwise the
+/// INT8 variant of the default path when it exists on disk (the quantized
+/// models are conformance-validated — see docs/PDF_CONFORMANCE.md — and load/run
+/// markedly faster on CPU), unless `DOCLING_RS_FP32` opts back into full
+/// precision; else the fp32 default.
+#[cfg(feature = "ml")]
 pub(crate) fn model_path(env: &str, fp32_default: &str, int8_default: &str) -> String {
     if let Ok(p) = std::env::var(env) {
         return p;
