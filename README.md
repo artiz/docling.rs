@@ -152,8 +152,18 @@ pipelines) compile to `wasm32-unknown-unknown`:
 [`crates/docling-wasm`](./crates/docling-wasm) exposes
 `convert(bytes, filename, to)` → Markdown / docling JSON / DocLang via
 `wasm-bindgen`, so DOCX/HTML/XLSX/PPTX/EPUB/… convert **fully client-side** —
-no server, ~1.9 MB gzipped module, no models to download — something Python
-docling has no equivalent for. Digital PDFs convert too: the opt-in
+no server, ~3.4 MB gzipped module, no models to download — something Python
+docling has no equivalent for. Ready to use from npm:
+
+```bash
+npm i docling.rs-wasm
+```
+
+```js
+import { convert } from "docling.rs-wasm";          // bundlers
+// import init, { convert } from "docling.rs-wasm/web"; await init();  // no bundler
+const markdown = convert(bytes, file.name, "md");
+``` Digital PDFs convert too: the opt-in
 `pdf-text` feature runs docling-pdf's pure-Rust text-layer parser (the same
 extraction as `--no-ocr`: flat paragraphs, no headings/tables/pictures),
 while scanned PDFs get a clear "needs OCR" error instead of an empty
@@ -1007,7 +1017,7 @@ on a 1913-page document — see [`docs/PDF_CONFORMANCE.md`](./docs/PDF_CONFORMAN
 | `docling-serve` | HTTP conversion API over a warm pipeline | `docling-serve` |
 | `docling-node` | Node.js / Bun N-API bindings | https://www.npmjs.com/package/docling.rs |
 | `docling-py` | Python bindings | https://pypi.org/project/docling-rs |
-| `docling-wasm` | WebAssembly bindings (declarative converters + PDF text layer in the browser) | — |
+| `docling-wasm` | WebAssembly bindings (declarative converters + PDF text layer in the browser) | https://www.npmjs.com/package/docling.rs-wasm |
 | `docling-rag` | RAG layer: chunking, embeddings, vector search, REST API | — |
 
 ## License

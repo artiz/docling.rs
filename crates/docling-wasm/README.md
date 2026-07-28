@@ -18,10 +18,33 @@ images/audio/METS are rejected with a "rebuild with …" message. Remote
 `<img src>` images stay placeholders (no network in the module); embedded
 images work normally.
 
-**Size: ~5.6 MB raw, ~1.9 MB gzipped** (measured on this crate at 0.41.x,
-`--release` with the workspace's `lto = "thin"`; no `wasm-opt` pass — one
-typically shaves another 10–15%). No models are involved: the declarative
-converters and the PDF text parser are pure Rust.
+**Size: ~11 MB raw, ~3.4 MB gzipped** (measured at 0.49.x — the module now
+also carries the browser ML pipeline's pre/post-processing: layout decode, OCR
+prep, TableFormer core; `--release` with the workspace's `lto = "thin"`, no
+`wasm-opt` pass — one typically shaves another 10–15%). No models are involved
+for the declarative converters and the PDF text parser: pure Rust.
+
+## Install from npm
+
+```bash
+npm i docling.rs-wasm
+```
+
+```js
+// Bundlers (Vite, webpack 5 with experiments.asyncWebAssembly):
+import { convert } from "docling.rs-wasm";
+
+// No bundler (plain <script type="module">): the /web target + explicit init.
+import init, { convert } from "docling.rs-wasm/web";
+await init();
+```
+
+The package ships both wasm-bindgen targets — `bundler` (the default export)
+and `web` (self-initializing, fetches `docling_wasm_bg.wasm` next to the JS).
+It is assembled by `scripts/ci/build_wasm_pkg.sh` and published by the
+`npm publish` workflow alongside [`docling.rs`](https://www.npmjs.com/package/docling.rs)
+(the native Node bindings — prefer those on servers: full ML pipeline, no wasm
+limits).
 
 ## API
 
@@ -259,6 +282,64 @@ same-origin, from a CORS host, **or straight from files on your device**.
 Resolution order for every model is **device file → local `./models/` →
 `MODEL_BASE` (Hugging Face)**. Tables need no upload beyond the model files;
 the image never leaves the page.
+
+## Tauri and other desktop shells
+
+Two ways to put docling.rs in a desktop app, and they are not equivalent:
+
+**Native backend (recommended for Tauri).** A Tauri app's backend *is* Rust,
+so skip wasm entirely and depend on the real crates — the webview only renders
+the result. This gets the full native pipeline: pdfium rendering, the complete
+ML stack (RT-DETR + TableFormer + OCR + enrichment), GPU execution providers,
+multi-threading, memory-mapped models — none of which fit the wasm build.
+
+```toml
+# src-tauri/Cargo.toml
+[dependencies]
+docling = { version = "0.49" }        # full default features (ml pipeline)
+```
+
+```rust
+// src-tauri/src/lib.rs
+use docling::{DocumentConverter, SourceDocument};
+
+#[tauri::command]
+async fn convert_document(path: String) -> Result<String, String> {
+    // The ML pipeline is CPU-heavy — keep it off the event loop.
+    tauri::async_runtime::spawn_blocking(move || {
+        let source = SourceDocument::from_file(&path).map_err(|e| e.to_string())?;
+        let result = DocumentConverter::new()
+            .convert(source)
+            .map_err(|e| e.to_string())?;
+        Ok(result.document.export_to_markdown())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+```
+
+Ship the `models/` directory as a Tauri resource (or fetch on first run with
+`scripts/install/download_dependencies.sh`'s URLs) and point the resolver at
+it — model paths resolve CWD-relative with env overrides
+(`PDFIUM_DYNAMIC_LIB_PATH`, `DOCLING_LAYOUT_ONNX`, …), so set the resource dir
+as the working directory or export the variables before the first conversion.
+
+**Wasm in the webview.** `docling.rs-wasm` runs unchanged inside Tauri's (or
+Electron's) webview — worth it only when the same SPA must also ship as a
+plain web page and you want one code path. The wasm limits apply (declarative
+formats + PDF text layer; browser ML needs ONNX Runtime Web + models). One
+Tauri-specific note: multi-threaded ONNX Runtime Web needs COOP/COEP headers —
+on GitHub Pages the demo fakes them with a service worker (`www/coi.js`), but
+in Tauri you control the protocol, so serve the app with
+`Cross-Origin-Opener-Policy: same-origin` and
+`Cross-Origin-Embedder-Policy: require-corp` directly (e.g. via the
+`app.security.headers` config or a custom protocol handler) and drop the
+service-worker shim.
+
+**Electron.** Same fork: prefer the native
+[`docling.rs`](https://www.npmjs.com/package/docling.rs) N-API package in the
+main process (`ipcMain.handle("convert", …)`), keep `docling.rs-wasm` for
+renderer-only/sandboxed setups.
 
 ## Performance & threading
 

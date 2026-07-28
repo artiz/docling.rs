@@ -1,0 +1,50 @@
+{
+  "name": "docling.rs-wasm",
+  "version": "0.0.0",
+  "description": "In-browser document conversion: DOCX, HTML, XLSX, PPTX, EPUB, Markdown, … and the text layer of PDFs → Markdown / docling JSON / DocLang, fully client-side (docling.rs compiled to WebAssembly)",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/docling-project/docling.rs.git",
+    "directory": "crates/docling-wasm"
+  },
+  "homepage": "https://github.com/docling-project/docling.rs/tree/master/crates/docling-wasm#readme",
+  "keywords": [
+    "docling",
+    "document",
+    "conversion",
+    "markdown",
+    "pdf",
+    "docx",
+    "xlsx",
+    "pptx",
+    "wasm",
+    "webassembly",
+    "browser",
+    "ocr"
+  ],
+  "type": "module",
+  "main": "bundler/docling_wasm.js",
+  "types": "bundler/docling_wasm.d.ts",
+  "exports": {
+    ".": {
+      "types": "./bundler/docling_wasm.d.ts",
+      "default": "./bundler/docling_wasm.js"
+    },
+    "./web": {
+      "types": "./web/docling_wasm.d.ts",
+      "default": "./web/docling_wasm.js"
+    },
+    "./web/docling_wasm_bg.wasm": "./web/docling_wasm_bg.wasm",
+    "./bundler/docling_wasm_bg.wasm": "./bundler/docling_wasm_bg.wasm"
+  },
+  "sideEffects": [
+    "./bundler/docling_wasm.js"
+  ],
+  "files": [
+    "bundler",
+    "web",
+    "README.md",
+    "LICENSE"
+  ]
+}
