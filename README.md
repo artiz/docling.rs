@@ -1020,6 +1020,12 @@ on a 1913-page document — see [`docs/PDF_CONFORMANCE.md`](./docs/PDF_CONFORMAN
 | `docling-wasm` | WebAssembly bindings (declarative converters + PDF text layer in the browser) | https://www.npmjs.com/package/docling.rs-wasm |
 | `docling-rag` | RAG layer: chunking, embeddings, vector search, REST API | — |
 
+## Contributing
+
+Bug reports and pull requests are welcome — see
+[CONTRIBUTING.md](./CONTRIBUTING.md) for the build/test commands, the
+conformance workflow, and the conventions a change is expected to follow.
+
 ## License
 
 MIT, matching upstream docling.
