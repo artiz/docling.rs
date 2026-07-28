@@ -10,6 +10,8 @@
 //! | GET    | `/v1/config`  | server capabilities (`{"allow_url_fetch": bool}`)  |
 //! | GET    | `/health`     | liveness probe                                     |
 //! | GET    | `/ready`      | readiness probe (200 once models are warm)         |
+//! | GET    | `/openapi.yaml` | OpenAPI 3.1 description of the API               |
+//! | GET    | `/logo.svg`   | the playground's logo                              |
 //!
 //! `POST /v1/convert` accepts either `multipart/form-data` with a `file` part
 //! (the filename's extension selects the input format) or an
@@ -130,6 +132,26 @@ pub fn router(cfg: ServeConfig) -> Router {
         .route(
             "/",
             get(|| async { axum::response::Html(include_str!("index.html")) }),
+        )
+        // The page's logo and the machine-readable API description. Both are
+        // baked into the binary, so a server needs no static-file directory.
+        .route(
+            "/logo.svg",
+            get(|| async {
+                (
+                    [(header::CONTENT_TYPE, "image/svg+xml")],
+                    include_str!("logo.svg"),
+                )
+            }),
+        )
+        .route(
+            "/openapi.yaml",
+            get(|| async {
+                (
+                    [(header::CONTENT_TYPE, "application/yaml")],
+                    include_str!("openapi.yaml"),
+                )
+            }),
         )
         .route("/health", get(|| async { Json(json!({"status": "ok"})) }))
         .route("/ready", get(ready))

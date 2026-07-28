@@ -4,15 +4,37 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>docling-serve — HTTP conversion API</title>
+<link rel="icon" href="/logo.svg">
 <style>
-  :root { --fg: #1a1a1a; --muted: #6a6a6a; --line: #e2e2e2; --accent: #0969da; --bg: #ffffff; --panel: #f6f8fa; }
+  /* Same shell as the wasm demo page (crates/docling-wasm/www/index.html):
+     docling's deep-blue bar with the logo, a GitHub link on the right, and a
+     centered main column — one look across the project's two web surfaces. */
+  :root {
+    color-scheme: light dark;
+    --brand: #003778; --accent: #0094ff;
+    --fg: #1a1a1a; --muted: #6a6a6a; --line: #e2e2e2; --bg: #ffffff; --panel: #f6f8fa;
+  }
   @media (prefers-color-scheme: dark) {
-    :root { --fg: #e6e6e6; --muted: #9a9a9a; --line: #333; --accent: #58a6ff; --bg: #0d1117; --panel: #161b22; }
+    :root { --fg: #e6e6e6; --muted: #9a9a9a; --line: #333; --bg: #0d1117; --panel: #161b22; }
   }
   * { box-sizing: border-box; }
-  body { margin: 0 auto; max-width: 60rem; padding: 2rem 1.25rem 4rem; font: 16px/1.55 system-ui, sans-serif; color: var(--fg); background: var(--bg); }
-  h1 { font-size: 1.6rem; margin: 0 0 .25rem; }
-  h1 .duck { font-size: 1.3rem; }
+  body { margin: 0; font: 16px/1.55 system-ui, sans-serif; color: var(--fg); background: var(--bg); }
+  header {
+    background: var(--brand); color: #fff;
+    display: flex; align-items: center; gap: .8rem;
+    padding: .55rem 1.2rem; box-shadow: 0 2px 6px rgba(0, 0, 0, .25);
+  }
+  header img { width: 38px; height: 38px; }
+  header .name { font-size: 1.15rem; font-weight: 600; }
+  header .tag { font-size: .8rem; opacity: .75; }
+  header nav { margin-left: auto; display: flex; gap: .5rem; }
+  header nav a {
+    color: #fff; text-decoration: none; font-size: .85rem;
+    border: 1px solid rgba(255, 255, 255, .4); border-radius: 6px; padding: .25rem .7rem;
+  }
+  header nav a:hover { background: rgba(255, 255, 255, .12); }
+  main { max-width: 62rem; margin: 1.4rem auto; padding: 0 1rem 3rem; }
+  a { color: var(--accent); }
   h2 { font-size: 1.15rem; margin: 2.2rem 0 .6rem; border-bottom: 1px solid var(--line); padding-bottom: .3rem; }
   p.sub { color: var(--muted); margin: 0 0 1.5rem; }
   code, pre { font: 13px/1.5 ui-monospace, "SF Mono", Menlo, Consolas, monospace; }
@@ -27,6 +49,7 @@
   select, input[type=text] { padding: .35rem .5rem; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--fg); }
   input[type=text] { flex: 1; min-width: 16rem; }
   button { padding: .45rem 1.1rem; border: 0; border-radius: 6px; background: var(--accent); color: #fff; font-weight: 600; cursor: pointer; }
+  code a { color: inherit; }
   button:disabled { opacity: .5; cursor: wait; }
   .out { margin-top: 1rem; }
   .out pre { max-height: 24rem; overflow: auto; white-space: pre-wrap; }
@@ -39,9 +62,21 @@
 </style>
 </head>
 <body>
-<h1><span class="duck">🦆</span> docling-serve</h1>
-<p class="sub">HTTP conversion API over <a href="https://github.com/docling-project/docling.rs">docling.rs</a> —
-convert documents to Markdown, docling JSON, DocLang archives, or chunk records.</p>
+<header>
+  <img src="/logo.svg" alt="docling.rs logo">
+  <div>
+    <div class="name">docling-serve</div>
+    <div class="tag">HTTP conversion API</div>
+  </div>
+  <nav>
+    <a href="/openapi.yaml">OpenAPI</a>
+    <a href="https://github.com/docling-project/docling.rs">GitHub</a>
+  </nav>
+</header>
+<main>
+<p class="sub">Convert documents to Markdown, docling JSON, DocLang archives, or chunk records —
+over <a href="https://github.com/docling-project/docling.rs">docling.rs</a>, on this server.
+The API is described by <a href="/openapi.yaml"><code>/openapi.yaml</code></a> (OpenAPI 3.1).</p>
 
 <h2>Try it</h2>
 <div class="form">
@@ -95,6 +130,8 @@ convert documents to Markdown, docling JSON, DocLang archives, or chunk records.
   <tr><td><code>GET</code></td><td><code>/v1/config</code></td><td>Server capabilities — currently <code>{"allow_url_fetch": bool}</code>, which this page adapts to.</td></tr>
   <tr><td><code>GET</code></td><td><code>/health</code></td><td>Liveness probe.</td></tr>
   <tr><td><code>GET</code></td><td><code>/ready</code></td><td>Readiness probe — 503 until <code>--warmup</code> finishes loading the ML models.</td></tr>
+  <tr><td><code>GET</code></td><td><code><a href="/openapi.yaml">/openapi.yaml</a></code></td>
+      <td>OpenAPI 3.1 description of this server — point Swagger UI, Redoc, or a client generator at it.</td></tr>
 </table>
 
 <h2>Options</h2>
@@ -117,7 +154,10 @@ curl -F file=@sheet.xlsx  'localhost:5001/v1/convert?to=dclx' -OJ  # DocLang arc
 curl -F file=@page.html   'localhost:5001/v1/convert?to=chunks'    # chunk records
 curl -H 'content-type: application/json' \
      -d '{"url": "https://example.com/doc.pdf", "to": "md"}' \
-     localhost:5001/v1/convert                                     # convert a URL</pre>
+     localhost:5001/v1/convert                                     # convert a URL
+
+curl -O localhost:5001/openapi.yaml                                # the API description</pre>
+</main>
 
 <script>
 const $ = (id) => document.getElementById(id);

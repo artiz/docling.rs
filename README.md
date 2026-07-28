@@ -117,7 +117,9 @@ cold call on the test fixtures); a semaphore bounds concurrent conversions.
 Markdown responses stream (chunked transfer); `/health` + `/ready` suit
 container probes, and SIGTERM drains in-flight requests before exit.
 `GET /` serves API docs plus an interactive test form — upload or URL in,
-streamed result out, with extracted pictures rendered below the text:
+streamed result out, with extracted pictures rendered below the text — and
+`GET /openapi.yaml` describes the whole API (OpenAPI 3.1), so Swagger UI,
+Redoc or a client generator can be pointed straight at a running server:
 
 <p align="center">
   <img src="docs/assets/serve-form.png" alt="docling-serve test form: a converted image with the Markdown result and a gallery of extracted pictures" width="720">

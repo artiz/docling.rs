@@ -57,6 +57,54 @@ async fn health_is_ok() {
     assert!(body_string(response).await.contains("ok"));
 }
 
+/// The playground's two static assets: the logo the header renders and the
+/// OpenAPI description it links to. Both are baked into the binary, so a
+/// server needs no static-file directory — and the spec must stay parseable,
+/// since clients generate against it.
+#[tokio::test]
+async fn serves_its_logo_and_openapi_description() {
+    let response = app()
+        .oneshot(Request::get("/logo.svg").body(Body::empty()).unwrap())
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(
+        response.headers()[header::CONTENT_TYPE],
+        "image/svg+xml",
+        "the browser must render it, not download it"
+    );
+    assert!(body_string(response).await.contains("<svg"));
+
+    let response = app()
+        .oneshot(Request::get("/openapi.yaml").body(Body::empty()).unwrap())
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(response.headers()[header::CONTENT_TYPE], "application/yaml");
+    let spec = body_string(response).await;
+    // Every route the router answers is described, and every conversion option
+    // the API accepts appears — the spec drifting from `ConvertOptions` is the
+    // failure mode worth catching here.
+    for path in ["/v1/convert", "/v1/config", "/health", "/ready"] {
+        assert!(spec.contains(path), "{path} missing from openapi.yaml");
+    }
+    for opt in [
+        "to:",
+        "strict:",
+        "images:",
+        "no_ocr:",
+        "force_full_page_ocr:",
+        "no_table_former:",
+        "fetch_images:",
+        "pages:",
+        "ocr_lang:",
+        "asr_model:",
+        "video_frames:",
+    ] {
+        assert!(spec.contains(opt), "option {opt} missing from openapi.yaml");
+    }
+}
+
 #[tokio::test]
 async fn ready_without_warmup_is_immediate() {
     let response = app()

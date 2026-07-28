@@ -1,0 +1,313 @@
+# OpenAPI description of the docling-serve HTTP API. Served verbatim at
+# /openapi.yaml, so a running server always describes itself — keep it in sync
+# with `ConvertOptions` and the router in lib.rs.
+openapi: 3.1.0
+info:
+  title: docling-serve
+  description: |
+    HTTP conversion API over [docling.rs](https://github.com/docling-project/docling.rs):
+    documents (PDF, DOCX, XLSX, PPTX, HTML, EPUB, images, audio, video, …) to
+    Markdown, docling `DoclingDocument` JSON, DocLang (`.dclx`) archives, or
+    chunk records.
+
+    Options may be sent as query parameters, multipart text fields, or JSON
+    keys; a body value wins over the same option in the query string.
+  version: 1.0.0
+  license:
+    name: MIT
+    url: https://github.com/docling-project/docling.rs/blob/master/LICENSE
+externalDocs:
+  description: docling-serve README
+  url: https://github.com/docling-project/docling.rs/tree/master/crates/docling-serve
+servers:
+  - url: /
+    description: This server
+
+paths:
+  /v1/convert:
+    post:
+      summary: Convert a document
+      description: |
+        Upload a file (`multipart/form-data`) or point the server at a URL
+        (`application/json`). The input format is selected by the filename's
+        extension — the uploaded part's filename, `file_name`, or the last
+        segment of the URL path.
+
+        `to=md` streams the Markdown as it converts (chunked response);
+        `to=dclx` returns the archive as a download.
+      operationId: convert
+      parameters:
+        - { $ref: "#/components/parameters/to" }
+        - { $ref: "#/components/parameters/strict" }
+        - { $ref: "#/components/parameters/images" }
+        - { $ref: "#/components/parameters/no_ocr" }
+        - { $ref: "#/components/parameters/force_full_page_ocr" }
+        - { $ref: "#/components/parameters/no_table_former" }
+        - { $ref: "#/components/parameters/fetch_images" }
+        - { $ref: "#/components/parameters/pages" }
+        - { $ref: "#/components/parameters/ocr_lang" }
+        - { $ref: "#/components/parameters/asr_model" }
+        - { $ref: "#/components/parameters/video_frames" }
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file:
+                  type: string
+                  format: binary
+                  description: The document. Its filename selects the input format.
+                to: { $ref: "#/components/schemas/To" }
+                strict: { type: boolean }
+                images: { $ref: "#/components/schemas/Images" }
+                no_ocr: { type: boolean }
+                force_full_page_ocr: { type: boolean }
+                no_table_former: { type: boolean }
+                fetch_images: { type: boolean }
+                pages: { type: string, examples: ["2-5"] }
+                ocr_lang: { $ref: "#/components/schemas/OcrLang" }
+                asr_model: { type: string }
+                video_frames: { type: integer, minimum: 0 }
+          application/json:
+            schema:
+              allOf:
+                - type: object
+                  required: [url]
+                  properties:
+                    url:
+                      type: string
+                      format: uri
+                      description: >
+                        Source URL. Honored only when the server runs with
+                        `--allow-url-fetch`, otherwise the request is rejected.
+                    file_name:
+                      type: string
+                      description: Overrides the format-selecting name taken from the URL path.
+                - $ref: "#/components/schemas/Options"
+            examples:
+              markdown:
+                summary: URL to Markdown
+                value: { url: "https://example.com/doc.pdf", to: "md" }
+      responses:
+        "200":
+          description: The converted document.
+          content:
+            text/markdown:
+              schema: { type: string }
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: "#/components/schemas/DoclingDocument"
+                  - $ref: "#/components/schemas/Chunks"
+            application/vnd.openxmlformats-officedocument.doclang:
+              schema: { type: string, format: binary }
+          headers:
+            Content-Disposition:
+              description: Present for `to=dclx` (attachment filename).
+              schema: { type: string }
+        "400":
+          description: Bad request — unreadable input, invalid option, or a URL input on a server without `--allow-url-fetch`.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "413":
+          description: Payload larger than the server's `--max-body-bytes`.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "415":
+          description: Unsupported input format.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "500":
+          description: Conversion failed.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  /v1/config:
+    get:
+      summary: Server capabilities
+      operationId: getConfig
+      responses:
+        "200":
+          description: What this server allows; the built-in playground adapts to it.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  allow_url_fetch:
+                    type: boolean
+                    description: Whether URL inputs and `fetch_images` are enabled.
+                required: [allow_url_fetch]
+
+  /health:
+    get:
+      summary: Liveness probe
+      operationId: health
+      responses:
+        "200":
+          description: The process is up.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string, const: ok }
+
+  /ready:
+    get:
+      summary: Readiness probe
+      operationId: ready
+      description: 503 until `--warmup` finishes loading the ML models; 200 immediately when the server runs without it.
+      responses:
+        "200":
+          description: Ready to serve conversions.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string, const: ready }
+        "503":
+          description: Still loading models.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string, const: loading }
+
+  /openapi.yaml:
+    get:
+      summary: This document
+      operationId: openapi
+      responses:
+        "200":
+          description: The OpenAPI description of the running server.
+          content:
+            application/yaml:
+              schema: { type: string }
+
+components:
+  schemas:
+    To:
+      type: string
+      enum: [md, json, dclx, chunks]
+      default: md
+      description: |
+        `md` — Markdown, streamed as it converts.
+        `json` — docling `DoclingDocument` JSON.
+        `dclx` — DocLang OPC archive, returned as a download.
+        `chunks` — chunker records (hierarchical, plus hybrid when a tokenizer is installed).
+    Images:
+      type: string
+      enum: [placeholder, embedded]
+      default: placeholder
+      description: Markdown picture handling — `embedded` inlines base64 data URIs.
+    OcrLang:
+      type: string
+      enum: [en, ch]
+      default: en
+      description: OCR recognition language for scanned pages.
+    Options:
+      type: object
+      description: Conversion options, shared by every transport.
+      properties:
+        to: { $ref: "#/components/schemas/To" }
+        strict:
+          type: boolean
+          default: false
+          description: Cleaner strict Markdown dialect instead of byte-for-byte docling-legacy output.
+        images: { $ref: "#/components/schemas/Images" }
+        no_ocr:
+          type: boolean
+          default: false
+          description: PDF/image — skip layout/OCR/TableFormer; emit the embedded text layer only.
+        force_full_page_ocr:
+          type: boolean
+          default: false
+          description: PDF — OCR every page even when it carries a text layer.
+        no_table_former:
+          type: boolean
+          default: false
+          description: PDF/image — geometric table reconstruction instead of the TableFormer model.
+        fetch_images:
+          type: boolean
+          default: false
+          description: >
+            HTML/EPUB — resolve external `<img src>` and embed the bytes.
+            Outbound fetch; honored only with `--allow-url-fetch`.
+        pages:
+          type: string
+          pattern: '^\d+(-\d+)?$'
+          description: PDF page window, `A-B` or a single `N` (1-based, inclusive).
+          examples: ["2-5", "3"]
+        ocr_lang: { $ref: "#/components/schemas/OcrLang" }
+        asr_model:
+          type: string
+          description: Audio/video — Whisper preset directory under `models/asr/`.
+        video_frames:
+          type: integer
+          minimum: 0
+          description: Video — max frames sampled as pictures (0 = transcript only; needs ffmpeg on the server).
+    DoclingDocument:
+      type: object
+      description: >
+        docling-core's native document JSON (schema 1.10.0): a `body` tree of
+        `$ref`s into `texts` / `groups` / `tables` / `pictures`. Loads back into
+        Python docling-core via `DoclingDocument.load_from_json`.
+      properties:
+        schema_name: { type: string }
+        version: { type: string }
+        name: { type: string }
+        body: { type: object }
+        texts: { type: array, items: { type: object } }
+        groups: { type: array, items: { type: object } }
+        tables: { type: array, items: { type: object } }
+        pictures: { type: array, items: { type: object } }
+    Chunks:
+      type: object
+      description: Chunker output for `to=chunks`.
+      properties:
+        chunks:
+          type: array
+          items:
+            type: object
+            properties:
+              text: { type: string }
+              headings: { type: array, items: { type: string } }
+    Error:
+      type: object
+      properties:
+        error: { type: string }
+      required: [error]
+
+  parameters:
+    to:
+      { name: to, in: query, schema: { $ref: "#/components/schemas/To" } }
+    strict:
+      { name: strict, in: query, schema: { type: boolean } }
+    images:
+      { name: images, in: query, schema: { $ref: "#/components/schemas/Images" } }
+    no_ocr:
+      { name: no_ocr, in: query, schema: { type: boolean } }
+    force_full_page_ocr:
+      { name: force_full_page_ocr, in: query, schema: { type: boolean } }
+    no_table_former:
+      { name: no_table_former, in: query, schema: { type: boolean } }
+    fetch_images:
+      { name: fetch_images, in: query, schema: { type: boolean } }
+    pages:
+      { name: pages, in: query, schema: { type: string }, example: "2-5" }
+    ocr_lang:
+      { name: ocr_lang, in: query, schema: { $ref: "#/components/schemas/OcrLang" } }
+    asr_model:
+      { name: asr_model, in: query, schema: { type: string } }
+    video_frames:
+      { name: video_frames, in: query, schema: { type: integer, minimum: 0 } }
