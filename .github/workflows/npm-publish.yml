@@ -366,3 +366,89 @@ jobs:
         run: cd cuda/pkg && npm publish --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+  # docling.rs-wasm: the browser/WebAssembly package (no native matrix — one
+  # Linux runner compiles wasm32-unknown-unknown and publishes). Same
+  # ref-selection and idempotency as the main package: builds the checked-out
+  # workspace version, skips cleanly when that version is already on npm.
+  publish-wasm:
+    name: publish docling.rs-wasm
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: .
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+
+      - name: Install Rust (stable + wasm32 target)
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+          rustup target add wasm32-unknown-unknown
+
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+            ~/.cargo/bin
+            target
+          key: ${{ runner.os }}-cargo-v2-wasm-npm-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-cargo-v2-wasm-npm-
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: "https://registry.npmjs.org"
+
+      - name: Install wasm-bindgen-cli (pinned to Cargo.lock)
+        run: |
+          # A CLI/crate version mismatch produces glue the module rejects at
+          # load time — pin to the workspace's wasm-bindgen (same as pages.yml).
+          version=$(cargo metadata --format-version 1 --locked \
+            | python3 -c 'import json,sys; print(next(p["version"] for p in json.load(sys.stdin)["packages"] if p["name"]=="wasm-bindgen"))')
+          echo "wasm-bindgen $version"
+          command -v wasm-bindgen >/dev/null && [ "$(wasm-bindgen --version)" = "wasm-bindgen $version" ] \
+            || cargo install wasm-bindgen-cli --version "$version" --locked
+
+      - name: Build the package
+        run: bash scripts/ci/build_wasm_pkg.sh target/npm-wasm
+
+      # Skip cleanly if this version is already on npm (idempotent re-runs).
+      - name: Check if already published
+        id: wcheck
+        run: |
+          v="$(grep -m1 '^version = ' Cargo.toml | sed -E 's/.*"([^"]+)".*/\1/')"
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+          if npm view "docling.rs-wasm@$v" version >/dev/null 2>&1; then
+            echo "published=true" >> "$GITHUB_OUTPUT"
+            echo "docling.rs-wasm@$v is already on npm — skipping."
+          else
+            echo "published=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      # Load the module in Node off the packed tarball (exactly what npm will
+      # serve) and convert a real file before publishing anything.
+      - name: Validate the packed package
+        if: steps.wcheck.outputs.published == 'false'
+        run: |
+          (cd target/npm-wasm && npm pack >/dev/null)
+          mkdir -p /tmp/wasm-check && tar -xzf target/npm-wasm/*.tgz -C /tmp/wasm-check --strip-components=1
+          node --input-type=module -e '
+            import { readFileSync } from "node:fs";
+            const m = await import("/tmp/wasm-check/web/docling_wasm.js");
+            await m.default({ module_or_path: readFileSync("/tmp/wasm-check/web/docling_wasm_bg.wasm") });
+            const html = new TextEncoder().encode("<html><body><h1>T</h1><p>ok</p></body></html>");
+            const md = m.convert(html, "t.html", "md");
+            if (!md.includes("# T")) throw new Error("bad output: " + md);
+            console.log("docling.rs-wasm@" + m.version() + " converts: " + JSON.stringify(md));
+          '
+
+      - name: Publish
+        if: steps.wcheck.outputs.published == 'false'
+        run: cd target/npm-wasm && npm publish --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
