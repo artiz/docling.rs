@@ -882,6 +882,11 @@ fn emit_nodes(out: &mut Out, depth: i32, nodes: &[Node], i: &mut usize, level: u
                 out.push(depth, "<page_break/>".to_string());
                 *i += 1;
             }
+            // Page markers feed the JSON export only — DocLang stays unchanged
+            // (its geometry travels in the <location> tokens).
+            Node::PageInfo { .. } => {
+                *i += 1;
+            }
             Node::TextDump(text) => {
                 emit_text_dump(out, depth, text);
                 *i += 1;

@@ -125,7 +125,8 @@ pub fn assemble_page_with_tables(
 /// continuations merge exactly like the native pipeline's final pass.
 pub fn finish_document(name: &str, pages: Vec<AssembledPage>) -> DoclingDocument {
     let mut doc = DoclingDocument::new(name);
-    for (nodes, links) in pages {
+    for (i, (mut nodes, links)) in pages.into_iter().enumerate() {
+        crate::assemble::stamp_page_no(&mut nodes, i + 1);
         doc.nodes.extend(nodes);
         doc.links.extend(links);
     }

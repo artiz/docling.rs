@@ -640,6 +640,7 @@ impl Walker<'_> {
             Node::Furniture { .. }
             | Node::PageFurniture { .. }
             | Node::PageBreak
+            | Node::PageInfo { .. }
             | Node::DoclangOnly(_) => {}
             Node::ListItem { .. } => unreachable!("list items are chunked in runs"),
         }

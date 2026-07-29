@@ -376,7 +376,7 @@ fn nodes_have_text(nodes: &[docling_core::Node]) -> bool {
     use docling_core::Node;
     nodes.iter().any(|n| match n {
         Node::Located { inner, .. } => nodes_have_text(std::slice::from_ref(inner)),
-        Node::Picture { .. } | Node::PageBreak => false,
+        Node::Picture { .. } | Node::PageBreak | Node::PageInfo { .. } => false,
         _ => true,
     })
 }

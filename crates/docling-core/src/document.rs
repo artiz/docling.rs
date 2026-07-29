@@ -182,6 +182,22 @@ pub enum Node {
     /// `<page_break/>`; Markdown and JSON omit it (matching docling's default
     /// exports, which carry page breaks only in the document model).
     PageBreak,
+    /// An invisible page marker — the first node of every page the PDF paths
+    /// assemble: the 1-based page number and the page size in PDF points. It
+    /// carries exactly what the JSON export needs to populate docling's
+    /// `pages` map and to denormalize the 0–511 `<location>` grid back into
+    /// BOTTOMLEFT point bboxes for per-item `prov` (#171). Every other
+    /// serializer skips it, so Markdown / DocLang / DocTags output is
+    /// byte-for-byte unchanged.
+    PageInfo {
+        /// 1-based page number (0 = "not yet numbered": the assembler emits
+        /// the marker, the document-level collector stamps the real number).
+        page_no: usize,
+        /// Page width in PDF points.
+        width: f32,
+        /// Page height in PDF points.
+        height: f32,
+    },
     /// A node docling keeps in the document model (and DocLang) but leaves out
     /// of the Markdown and JSON exports — e.g. an ODF *presentation*'s pictures
     /// and charts, which appear in the `.dclx` body but not in its `.md`/`.json`.
