@@ -32,6 +32,7 @@ fn text_layer_matches_no_ocr() {
         true,  // no_table_former (moot: no_ocr skips it anyway)
         true,  // no_ocr — the path convert_text_layer mirrors
         false, // force_full_page_ocr (ignored under no_ocr)
+        false, // no_text_panels (moot: no_ocr never demotes)
         docling_pdf::EnrichmentOptions::default(),
         None,
         None,

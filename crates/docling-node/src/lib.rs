@@ -48,6 +48,10 @@ pub struct ConverterOptions {
     /// (docling's `force_full_page_ocr`) — for text layers that exist but lie.
     /// Default `false`.
     pub force_full_page_ocr: Option<bool>,
+    /// Keep every detected picture as a picture: disable the demotion of
+    /// uncaptioned dense-text "picture" regions into paragraphs (the escape
+    /// hatch for image-extraction workflows, #173). Default `false`.
+    pub no_text_panels: Option<bool>,
     /// Emit cleaner, more conformant Markdown (code-fence languages preserved,
     /// no inline-run spacing artifacts) instead of docling's byte-for-byte
     /// legacy output. Markdown only. Default `false`.
@@ -93,6 +97,9 @@ pub struct ConvertOptions {
     /// OCR every PDF page even when it carries a text layer (docling's
     /// `force_full_page_ocr`). Default `false`.
     pub force_full_page_ocr: Option<bool>,
+    /// Keep every detected picture as a picture: disable text-panel demotion
+    /// (#173). Default `false`.
+    pub no_text_panels: Option<bool>,
     pub allowed_formats: Option<Vec<String>>,
     pub to: Option<String>,
     pub image_mode: Option<String>,
@@ -150,6 +157,7 @@ struct ConvertConfig {
     page_range: Option<(usize, usize)>,
     ocr_lang: Option<String>,
     force_full_page_ocr: bool,
+    no_text_panels: bool,
     allowed_formats: Option<Vec<InputFormat>>,
     to: OutputKind,
     image_mode: ImageMode,
@@ -210,6 +218,7 @@ fn build_config(o: ConvertOptions) -> Result<ConvertConfig> {
         page_range: parse_pages(o.pages.as_deref())?,
         ocr_lang: parse_ocr_lang(o.ocr_lang)?,
         force_full_page_ocr: o.force_full_page_ocr.unwrap_or(false),
+        no_text_panels: o.no_text_panels.unwrap_or(false),
         allowed_formats: allowed,
         to: parse_output_kind(o.to.as_deref())?,
         image_mode: parse_image_mode(o.image_mode.as_deref())?,
@@ -241,6 +250,7 @@ fn build_converter(cfg: &ConvertConfig) -> RsConverter {
         .strict(cfg.strict)
         .fetch_images(cfg.fetch_images)
         .force_full_page_ocr(cfg.force_full_page_ocr)
+        .no_text_panels(cfg.no_text_panels)
         .asr_model(cfg.asr_model.clone());
     let base = match cfg.video_frames {
         Some(max) => base.video_frames(max),
@@ -427,6 +437,7 @@ pub struct DocumentConverter {
     page_range: Option<(usize, usize)>,
     ocr_lang: Option<String>,
     force_full_page_ocr: bool,
+    no_text_panels: bool,
     allowed_formats: Option<Vec<InputFormat>>,
 }
 
@@ -451,6 +462,7 @@ impl DocumentConverter {
             page_range: parse_pages(o.pages.as_deref())?,
             ocr_lang: parse_ocr_lang(o.ocr_lang.clone())?,
             force_full_page_ocr: o.force_full_page_ocr.unwrap_or(false),
+            no_text_panels: o.no_text_panels.unwrap_or(false),
             allowed_formats: allowed,
         })
     }
@@ -465,6 +477,7 @@ impl DocumentConverter {
             page_range: self.page_range,
             ocr_lang: self.ocr_lang.clone(),
             force_full_page_ocr: self.force_full_page_ocr,
+            no_text_panels: self.no_text_panels,
             allowed_formats: self.allowed_formats.clone(),
             to: parse_output_kind(out.to.as_deref())?,
             image_mode: parse_image_mode(out.image_mode.as_deref())?,
@@ -879,6 +892,7 @@ fn output_config(out: Option<OutputOptions>, strict: bool) -> Result<ConvertConf
         video_frames: None,
         page_range: None,
         force_full_page_ocr: false,
+        no_text_panels: false,
         ocr_lang: None,
         allowed_formats: None,
         to: parse_output_kind(out.to.as_deref())?,

@@ -139,7 +139,7 @@ curl -H 'content-type: application/json' \
 ```
 
 Options per request: `to=md|json|dclx|chunks`, `strict`, `images=placeholder|embedded`,
-`no_ocr`, `no_table_former`, `pages`, `ocr_lang`, `fetch_images` — as query parameters, multipart
+`no_ocr`, `no_table_former`, `no_text_panels`, `pages`, `ocr_lang`, `fetch_images` — as query parameters, multipart
 fields, or JSON keys (body wins). Server flags: `--addr`, `--concurrency`,
 `--max-body-mb`, `--warmup`, `--no-url-fetch`, `--strict`. A container image
 builds from [`crates/docling-serve/Dockerfile`](./crates/docling-serve/Dockerfile)
@@ -407,6 +407,16 @@ switch is available on every surface: `force_full_page_ocr(bool)` on the
 library builder, a `force_full_page_ocr` option in docling-serve, the
 `force_full_page_ocr=` kwarg in Python, `forceFullPageOcr` in Node, and the
 "Force OCR" toggle in the wasm demo.
+
+`--no-text-panels` keeps every detected picture as a picture: it disables the
+demotion of uncaptioned dense-text "picture" regions into paragraphs (the
+recovery that turns misdetected text panels back into text, issue #173).
+Turn it on for image-extraction workflows over scanned documents whose
+uncaptioned figures carry enough label text to look panel-like. Available on
+every surface: `no_text_panels(bool)` on the library builder, a
+`no_text_panels` option in docling-serve (with a "keep pictures" toggle in
+the playground), the `no_text_panels=` kwarg in Python, and `noTextPanels`
+in Node.
 
 ### VLM pipeline (remote endpoint)
 

@@ -72,6 +72,7 @@ impl Drop for MarkdownStream {
 pub(crate) struct StreamSettings {
     pub strict: bool,
     pub no_table_former: bool,
+    pub no_text_panels: bool,
     pub no_ocr: bool,
     pub force_full_page_ocr: bool,
     pub enrich: docling_pdf::EnrichmentOptions,
@@ -139,6 +140,7 @@ fn run_pdf(
     );
     let mut pipeline = match docling_pdf::Pipeline::new().map(|p| {
         p.no_table_former(settings.no_table_former)
+            .no_text_panels(settings.no_text_panels)
             .no_ocr(settings.no_ocr)
             .force_full_page_ocr(settings.force_full_page_ocr)
             .ocr_lang(settings.ocr_lang)
