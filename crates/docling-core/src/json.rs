@@ -126,7 +126,13 @@ pub fn to_json(doc: &DoclingDocument) -> Value {
         "tables": b.tables,
         "key_value_items": [],
         "form_items": [],
-        "pages": {},
+        "pages": b.pages.iter().map(|(n, w, h)| {
+            let r2 = |v: f64| (v * 100.0).round() / 100.0;
+            (n.to_string(), json!({
+                "size": { "width": r2(*w), "height": r2(*h) },
+                "page_no": n,
+            }))
+        }).collect::<serde_json::Map<String, Value>>(),
     });
 
     // docling only emits `field_regions` / `field_items` when a document has
@@ -154,9 +160,51 @@ struct Builder {
     pictures: Vec<Value>,
     field_regions: Vec<Value>,
     field_items: Vec<Value>,
+    /// Pages seen so far (`page_no`, width, height in points) — from the
+    /// [`Node::PageInfo`] markers the PDF paths emit; empty for every other
+    /// backend, which keeps their JSON byte-identical (`"pages": {}`, no prov).
+    pages: Vec<(usize, f64, f64)>,
+    /// The page the walk is currently on (0 before the first marker).
+    cur_page: usize,
+    cur_w: f64,
+    cur_h: f64,
+    /// The enclosing [`Node::Located`] wrapper's 0–511 grid box, waiting to be
+    /// consumed as the next item's provenance.
+    pending_loc: Option<[u16; 4]>,
 }
 
 impl Builder {
+    /// Consume the pending location (if any) into a docling `prov` array: the
+    /// 0-511 grid denormalized against the current page into BOTTOMLEFT
+    /// points, rounded to 2 decimals like docling's own export. `char_len` is
+    /// the item's text length in characters (0 for tables and pictures, whose
+    /// charspan docling emits as `[0, 0]`).
+    fn take_prov(&mut self, char_len: usize) -> Value {
+        let Some([x0, y0, x1, y1]) = self.pending_loc.take() else {
+            return json!([]);
+        };
+        let r2 = |v: f64| (v * 100.0).round() / 100.0;
+        json!([{
+            "page_no": self.cur_page,
+            "bbox": {
+                "l": r2(x0 as f64 * self.cur_w / 512.0),
+                "t": r2(self.cur_h - y0 as f64 * self.cur_h / 512.0),
+                "r": r2(x1 as f64 * self.cur_w / 512.0),
+                "b": r2(self.cur_h - y1 as f64 * self.cur_h / 512.0),
+                "coord_origin": "BOTTOMLEFT",
+            },
+            "charspan": [0, char_len],
+        }])
+    }
+
+    /// Adopt a node's own location field (tables, formulas, list items carry
+    /// one instead of a [`Node::Located`] wrapper) when no wrapper is pending.
+    fn adopt_loc(&mut self, loc: Option<[u16; 4]>) {
+        if self.pending_loc.is_none() && self.cur_page > 0 {
+            self.pending_loc = loc;
+        }
+    }
+
     fn add_node(&mut self, node: &Node, parent: &str) -> Option<String> {
         match node {
             Node::Heading { level: 1, text } => {
@@ -190,7 +238,14 @@ impl Builder {
             } => Some(self.add_code(text, language.as_deref(), orig.as_deref(), parent)),
             // A CodeFormula-decoded display formula: `text` carries the LaTeX,
             // `orig` the raw glyph extraction (docling's enriched shape).
-            Node::Formula { latex, orig, .. } => Some(self.add_formula_item(latex, orig, parent)),
+            Node::Formula {
+                latex,
+                orig,
+                location,
+            } => {
+                self.adopt_loc(*location);
+                Some(self.add_formula_item(latex, orig, parent))
+            }
             Node::Table(t) => Some(self.add_table(t, parent)),
             Node::Picture {
                 caption,
@@ -204,7 +259,10 @@ impl Builder {
             )),
             // A chart is a picture item in the JSON (its data table is
             // DocLang-only); no image payload.
-            Node::Chart { caption, .. } => {
+            Node::Chart {
+                caption, location, ..
+            } => {
+                self.adopt_loc(*location);
                 Some(self.add_picture(caption.as_deref(), None, None, parent))
             }
             // A DocLang-only node is omitted from the JSON body.
@@ -221,10 +279,35 @@ impl Builder {
             // Furniture is not emitted into the body/JSON (DocLang-only layer).
             Node::Furniture { .. } => None,
             Node::PageFurniture { .. } => None,
-            // Layout provenance is DocLang-only; emit the wrapped node.
-            Node::Located { inner, .. } => self.add_node(inner, parent),
+            // A location wrapper turns into the wrapped item's `prov` entry —
+            // but only on pages the PDF paths described with a PageInfo marker
+            // (other geometry-bearing backends, e.g. PPTX shapes, keep their
+            // pre-#171 provenance-less JSON until they emit markers too).
+            Node::Located { location, inner } => {
+                if self.cur_page > 0 {
+                    self.pending_loc = Some(*location);
+                }
+                let r = self.add_node(inner, parent);
+                self.pending_loc = None;
+                r
+            }
             // Page breaks are DocLang-only; docling omits them from the JSON body.
             Node::PageBreak => None,
+            // The page marker: record the page's number and size for the
+            // `pages` map, and denormalize every following location against it.
+            Node::PageInfo {
+                page_no,
+                width,
+                height,
+            } => {
+                self.cur_page = *page_no;
+                self.cur_w = *width as f64;
+                self.cur_h = *height as f64;
+                if *page_no > 0 {
+                    self.pages.push((*page_no, self.cur_w, self.cur_h));
+                }
+                None
+            }
             // Handled by `add_list` in `walk`.
             Node::ListItem { .. } => None,
         }
@@ -281,13 +364,14 @@ impl Builder {
     fn add_text(&mut self, label: &str, text: &str, parent: &str, extra: Value) -> String {
         let self_ref = format!("#/texts/{}", self.texts.len());
         let raw = unescape_text(text);
+        let prov = self.take_prov(raw.chars().count());
         let mut item = json!({
             "self_ref": self_ref,
             "parent": { "$ref": parent },
             "children": [],
             "content_layer": "body",
             "label": label,
-            "prov": [],
+            "prov": prov,
             "orig": raw,
             "text": raw,
         });
@@ -300,13 +384,14 @@ impl Builder {
     /// re-wraps it and never escapes it.
     fn add_formula(&mut self, latex: &str, parent: &str) -> String {
         let self_ref = format!("#/texts/{}", self.texts.len());
+        let prov = self.take_prov(latex.chars().count());
         self.texts.push(json!({
             "self_ref": self_ref,
             "parent": { "$ref": parent },
             "children": [],
             "content_layer": "body",
             "label": "formula",
-            "prov": [],
+            "prov": prov,
             "orig": latex,
             "text": latex,
         }));
@@ -318,13 +403,14 @@ impl Builder {
     /// the plain [`Self::add_formula`] above sets both to the same string).
     fn add_formula_item(&mut self, latex: &str, orig: &str, parent: &str) -> String {
         let self_ref = format!("#/texts/{}", self.texts.len());
+        let prov = self.take_prov(latex.chars().count());
         self.texts.push(json!({
             "self_ref": self_ref,
             "parent": { "$ref": parent },
             "children": [],
             "content_layer": "body",
             "label": "formula",
-            "prov": [],
+            "prov": prov,
             "orig": orig,
             "text": latex,
         }));
@@ -340,13 +426,14 @@ impl Builder {
     ) -> String {
         let self_ref = format!("#/texts/{}", self.texts.len());
         let raw = unescape_text(text);
+        let prov = self.take_prov(raw.chars().count());
         self.texts.push(json!({
             "self_ref": self_ref,
             "parent": { "$ref": parent },
             "children": [],
             "content_layer": "body",
             "label": "code",
-            "prov": [],
+            "prov": prov,
             // With code enrichment, `text` is the model's rewrite while `orig`
             // keeps the raw extraction; otherwise both are the same string.
             "orig": orig.map(unescape_text).unwrap_or_else(|| raw.clone()),
@@ -417,13 +504,16 @@ impl Builder {
             ordered,
             number,
             text,
+            location,
             ..
         } = node
         else {
             unreachable!()
         };
+        self.adopt_loc(*location);
         let self_ref = format!("#/texts/{}", self.texts.len());
         let raw = unescape_text(text);
+        let prov = self.take_prov(raw.chars().count());
         let marker = if *ordered {
             format!("{number}.")
         } else {
@@ -435,7 +525,7 @@ impl Builder {
             "children": [],
             "content_layer": "body",
             "label": "list_item",
-            "prov": [],
+            "prov": prov,
             "orig": raw,
             "text": raw,
             "enumerated": ordered,
@@ -446,6 +536,8 @@ impl Builder {
 
     fn add_table(&mut self, t: &Table, parent: &str) -> String {
         let self_ref = format!("#/tables/{}", self.tables.len());
+        self.adopt_loc(t.location);
+        let prov = self.take_prov(0);
         let num_rows = t.rows.len();
         let num_cols = t.rows.iter().map(Vec::len).max().unwrap_or(0);
         let mut grid = Vec::with_capacity(num_rows);
@@ -478,7 +570,7 @@ impl Builder {
             "children": [],
             "content_layer": "body",
             "label": "table",
-            "prov": [],
+            "prov": prov,
             "captions": [],
             "references": [],
             "footnotes": [],
@@ -501,6 +593,9 @@ impl Builder {
         parent: &str,
     ) -> String {
         let self_ref = format!("#/pictures/{}", self.pictures.len());
+        // Take the picture's own provenance before the caption text is added —
+        // the caption is a separate item and must not inherit the crop's box.
+        let prov = self.take_prov(0);
         let mut captions = Vec::new();
         if let Some(cap) = caption.filter(|c| !c.is_empty()) {
             // Emit the caption as a text item that the picture references.
@@ -542,7 +637,7 @@ impl Builder {
                     },
                 },
                 "label": "picture",
-                "prov": [],
+                "prov": prov.clone(),
                 "captions": captions,
                 "references": [],
                 "footnotes": [],
@@ -554,7 +649,7 @@ impl Builder {
                 "children": [],
                 "content_layer": "body",
                 "label": "picture",
-                "prov": [],
+                "prov": prov.clone(),
                 "captions": captions,
                 "references": [],
                 "footnotes": [],
@@ -721,6 +816,61 @@ mod tests {
             classification: None,
         });
         doc
+    }
+
+    /// #171: PageInfo markers become the `pages` map, and `Located` wrappers /
+    /// node-level locations become per-item `prov` — the 0–511 grid
+    /// denormalized against the page into BOTTOMLEFT points. Without markers
+    /// (every declarative backend) the JSON stays exactly as before: empty
+    /// `pages`, `prov: []` even for located nodes.
+    #[test]
+    fn page_markers_produce_pages_and_prov() {
+        let mut doc = DoclingDocument::new("t");
+        doc.push(Node::PageInfo {
+            page_no: 1,
+            width: 512.0,
+            height: 1024.0,
+        });
+        doc.push(Node::Located {
+            location: [128, 64, 256, 128], // quarter/eighth points of the grid
+            inner: Box::new(Node::Paragraph {
+                text: "hello".into(),
+            }),
+        });
+        doc.push(Node::Table(Table {
+            rows: vec![vec!["a".into()]],
+            location: Some([0, 0, 512, 512]),
+            ..Table::default()
+        }));
+        let v: Value = serde_json::from_str(&doc.export_to_json()).unwrap();
+        assert_eq!(v["pages"]["1"]["page_no"], 1);
+        assert_eq!(v["pages"]["1"]["size"]["width"], 512.0);
+        assert_eq!(v["pages"]["1"]["size"]["height"], 1024.0);
+        // 512-wide page: grid x scales 1:1; 1024-high: grid y doubles, then
+        // flips to the BOTTOMLEFT origin (t from grid-top 64 → 1024-128=896).
+        let prov = &v["texts"][0]["prov"][0];
+        assert_eq!(prov["page_no"], 1);
+        assert_eq!(prov["bbox"]["l"], 128.0);
+        assert_eq!(prov["bbox"]["t"], 896.0);
+        assert_eq!(prov["bbox"]["r"], 256.0);
+        assert_eq!(prov["bbox"]["b"], 768.0);
+        assert_eq!(prov["bbox"]["coord_origin"], "BOTTOMLEFT");
+        assert_eq!(prov["charspan"][1], 5);
+        // The table adopts its own location field; charspan is [0, 0].
+        let tprov = &v["tables"][0]["prov"][0];
+        assert_eq!(tprov["bbox"]["t"], 1024.0);
+        assert_eq!(tprov["bbox"]["b"], 0.0);
+        assert_eq!(tprov["charspan"][1], 0);
+
+        // No markers → the pre-#171 shape, byte for byte.
+        let mut plain = DoclingDocument::new("t");
+        plain.push(Node::Located {
+            location: [1, 2, 3, 4],
+            inner: Box::new(Node::Paragraph { text: "x".into() }),
+        });
+        let v: Value = serde_json::from_str(&plain.export_to_json()).unwrap();
+        assert_eq!(v["pages"], serde_json::json!({}));
+        assert_eq!(v["texts"][0]["prov"], serde_json::json!([]));
     }
 
     #[test]

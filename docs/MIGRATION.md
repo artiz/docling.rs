@@ -176,6 +176,16 @@ list items, code, and page-header/footer furniture), scored against a
 (TableFormer OTSL structure, layout classification — the closed-as-model-level
 blockers of `PDF_CONFORMANCE.md`), not serialization.
 
+The same geometry also reaches the **JSON export** (#171): PDF conversions
+populate docling's `pages` map (`{"1": {"size": {...}, "page_no": 1}}`) and
+per-item `prov` (`page_no` + BOTTOMLEFT-origin bbox in points + `charspan`),
+so `DoclingDocument.load_from_json(...)` in Python docling-core gets working
+bounding-box highlighting, page attribution and coordinate filtering — from
+the CLI, serve, and the Python/Node bindings alike. One caveat vs Python
+docling: coordinates round-trip through the DocLang 0–511 grid, so they carry
+a quantization of up to ~page-size/512 (≈1.6 pt on A4); `charspan` always
+starts at 0 (docling.rs does not track sub-item spans).
+
 ---
 
 ### Chunking conformance

@@ -154,7 +154,8 @@ pub fn convert_text_layer_pages(
         assemble::add_orphan_regions(&mut regions, &page.cells);
         let table_rows = vec![None; regions.len()];
         let enrich_out = vec![None; regions.len()];
-        let (nodes, links) = assemble::assemble_page(&page, regions, &table_rows, &enrich_out);
+        let (mut nodes, links) = assemble::assemble_page(&page, regions, &table_rows, &enrich_out);
+        assemble::stamp_page_no(&mut nodes, i + 1);
         doc.nodes.extend(nodes);
         doc.links.extend(links);
     }
@@ -1187,7 +1188,8 @@ impl Pipeline {
             render_image,
             range,
             |n, _total, mut page| {
-                let (nodes, links) = worker.process(n, &mut page)?;
+                let (mut nodes, links) = worker.process(n, &mut page)?;
+                assemble::stamp_page_no(&mut nodes, n + 1);
                 doc.nodes.extend(nodes);
                 doc.links.extend(links);
                 Ok::<(), PdfError>(())
@@ -1296,7 +1298,8 @@ impl Pipeline {
             .unwrap();
         results.sort_by_key(|(idx, _)| *idx);
         let mut doc = DoclingDocument::new(name);
-        for (_, (nodes, links)) in results {
+        for (idx, (mut nodes, links)) in results {
+            assemble::stamp_page_no(&mut nodes, idx + 1);
             doc.nodes.extend(nodes);
             doc.links.extend(links);
         }
@@ -1556,7 +1559,8 @@ impl Pipeline {
         let mut doc = DoclingDocument::new(name);
         let worker = self.primary()?;
         for (n, page) in pages.iter_mut().enumerate() {
-            let (nodes, links) = worker.process(n, page)?;
+            let (mut nodes, links) = worker.process(n, page)?;
+            assemble::stamp_page_no(&mut nodes, n + 1);
             doc.nodes.extend(nodes);
             doc.links.extend(links);
         }

@@ -478,6 +478,8 @@ fn render_one(node: &Node, blocks: &mut Vec<String>, ctx: &mut Ctx) {
         Node::Located { inner, .. } => render_one(inner, blocks, ctx),
         // Page breaks are DocLang-only; docling omits them from Markdown.
         Node::PageBreak => {}
+        // Page markers feed the JSON export only.
+        Node::PageInfo { .. } => {}
         // Handled by the run-merging branch in `render`.
         Node::ListItem { .. } => unreachable!("list items are rendered in runs"),
     }

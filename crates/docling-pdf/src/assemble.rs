@@ -1471,6 +1471,15 @@ fn located(loc: [u16; 4], inner: Node) -> Node {
     }
 }
 
+/// Stamp the real 1-based page number onto a page's leading marker (see
+/// [`assemble_page`], which emits it with `page_no: 0` because only the
+/// document-level collector knows the true index — `--pages` windows shift it).
+pub fn stamp_page_no(nodes: &mut [Node], page_no: usize) {
+    if let Some(Node::PageInfo { page_no: p, .. }) = nodes.first_mut() {
+        *p = page_no;
+    }
+}
+
 pub fn assemble_page(
     page: &PdfPage,
     regions: Vec<Region>,
@@ -1478,6 +1487,17 @@ pub fn assemble_page(
     enrichments: &[Option<Enrichment>],
 ) -> (Vec<Node>, Vec<(String, String)>) {
     let mut nodes: Vec<Node> = Vec::new();
+    // Every page opens with an invisible page marker carrying its size in
+    // points — what the JSON export needs to build docling's `pages` map and
+    // denormalize the 0–511 `<location>` grid into point bboxes (#171). The
+    // page *number* is stamped by the document-level collector (which knows
+    // the real 1-based index, `--pages` windows included); every serializer
+    // except JSON skips the marker, so Markdown/DocLang stay byte-identical.
+    nodes.push(Node::PageInfo {
+        page_no: 0,
+        width: page.width,
+        height: page.height,
+    });
     // Recover this page's hyperlinks (rendered only in strict Markdown).
     let links = resolve_link_anchors(page);
     // Pair each region with its precomputed TableFormer grid and enrichment
@@ -1825,7 +1845,7 @@ fn is_picture_node(n: &Node) -> bool {
 /// keeps the header/footer as a separate furniture layer).
 fn is_merge_trailer(n: &Node) -> bool {
     is_picture_node(n)
-        || matches!(n, Node::PageFurniture { .. })
+        || matches!(n, Node::PageFurniture { .. } | Node::PageInfo { .. })
         || as_paragraph(n).is_some_and(looks_like_caption)
 }
 
