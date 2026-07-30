@@ -13,7 +13,8 @@ use crate::layout::Region;
 // The ONNX-free half (line prep, batching, CTC decode) lives in `ocr_prep`
 // so the wasm build shares it verbatim (#79 phase 2).
 use crate::ocr_prep::{
-    batch_input, decode_row, dict_chars, prep_region_lines, width_batches, PrepLine, REC_HEIGHT,
+    batch_input, decode_row, dict_chars, prep_region_lines, prep_table_words, width_batches,
+    PrepLine, REC_HEIGHT,
 };
 use crate::pdfium_backend::TextCell;
 
@@ -181,6 +182,35 @@ impl OcrModel {
         }
 
         // Emit cells in page order, exactly as the sequential walk did.
+        let mut cells = Vec::new();
+        for ((l, t, r, b), text) in bboxes.into_iter().zip(texts) {
+            let text = text.trim().to_string();
+            if text.is_empty() {
+                continue;
+            }
+            cells.push(TextCell { text, l, t, r, b });
+        }
+        Ok(cells)
+    }
+
+    /// Recognize the *word* crops inside the page's table regions (mirroring
+    /// the browser scanned path): [`ocr_page`](Self::ocr_page) deliberately
+    /// skips table labels, so a scanned table would otherwise reach the cell
+    /// matcher with no words at all and dissolve (#173). Returns word-level
+    /// [`TextCell`]s in page points.
+    pub fn ocr_table_words(
+        &mut self,
+        img: &RgbImage,
+        regions: &[Region],
+        scale: f32,
+    ) -> Result<Vec<TextCell>, String> {
+        let (bboxes, lines) = prep_table_words(img, regions, scale);
+        let mut texts = vec![String::new(); lines.len()];
+        for (w, chunk) in width_batches(&lines) {
+            for (&i, text) in chunk.iter().zip(self.recognize_batch(w, &chunk, &lines)?) {
+                texts[i] = text;
+            }
+        }
         let mut cells = Vec::new();
         for ((l, t, r, b), text) in bboxes.into_iter().zip(texts) {
             let text = text.trim().to_string();

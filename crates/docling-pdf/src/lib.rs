@@ -608,6 +608,14 @@ impl Worker {
         // confidence threshold (stricter than the 0.3 base the predictor keeps),
         // before any overlap resolution. This removes the low-confidence tables /
         // pictures / list-items that otherwise double-emit or mis-classify.
+        if std::env::var("DOCLING_RS_DEBUG_REGIONS").is_ok() {
+            for r in &regions {
+                eprintln!(
+                    "DBG raw {} {:.2} [{:.0},{:.0},{:.0},{:.0}]",
+                    r.label, r.score, r.l, r.t, r.r, r.b
+                );
+            }
+        }
         regions.retain(|r| r.score >= layout::label_threshold(r.label));
         // Resolve overlapping detections once, before OCR.
         let mut regions = assemble::resolve(regions);
@@ -633,6 +641,24 @@ impl Worker {
             })
             .map_err(|e| PdfError::Ocr(format!("page {}: {e}", n + 1)))?;
             page.cells = cells;
+            // Table interiors carry no words yet: region-scoped OCR skips
+            // table labels, and a scanned page has no pdfium text layer — so
+            // TableFormer's cell matcher got an empty word list and the table
+            // dissolved (#173). Recognize the table regions' word crops
+            // (mirroring the browser scanned path): `word_cells` feeds the
+            // matcher, and the same cells join `cells` so the geometric
+            // fallback and the table's region text see them too.
+            if regions.iter().any(|r| assemble::is_table_like(r.label)) {
+                let words = timing::timed("ocr.table_words", || {
+                    self.ocr
+                        .as_mut()
+                        .unwrap()
+                        .ocr_table_words(&page.image, &regions, page.scale)
+                })
+                .map_err(|e| PdfError::Ocr(format!("page {}: {e}", n + 1)))?;
+                page.cells.extend(words.iter().cloned());
+                page.word_cells = words;
+            }
         }
         // Region-scoped OCR skips `picture` interiors, and a digital page's
         // text layer cannot see into an embedded raster either — so a figure
@@ -756,6 +782,27 @@ impl Worker {
                     }
                 });
             }
+        }
+        if std::env::var("DOCLING_RS_DEBUG_REGIONS").is_ok() {
+            for (i, r) in regions.iter().enumerate() {
+                eprintln!(
+                    "DBG final {} {:.2} [{:.0},{:.0},{:.0},{:.0}] rows={:?}",
+                    r.label,
+                    r.score,
+                    r.l,
+                    r.t,
+                    r.r,
+                    r.b,
+                    table_rows[i]
+                        .as_ref()
+                        .map(|t| (t.len(), t.first().map(|r| r.len())))
+                );
+            }
+            eprintln!(
+                "DBG cells={} words={}",
+                page.cells.len(),
+                page.word_cells.len()
+            );
         }
         // Enrichment passes (opt-in): DocumentPictureClassifier over picture
         // regions, CodeFormulaV2 over code/formula regions. Same shared-slot

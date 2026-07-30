@@ -289,7 +289,8 @@ pub fn segment_words(line: &RgbImage) -> Vec<(u32, u32, u32, u32)> {
 /// words ([`segment_words`]), prep each word for recognition, and keep the
 /// word's page-point bbox. Recognizing table interiors is what gives the cell
 /// matcher the word boxes it needs — the native pipeline reads those from
-/// pdfium's text layer, which the browser doesn't have. NOT used by native.
+/// pdfium's text layer on digital pages, and calls this on scanned ones
+/// (`OcrModel::ocr_table_words`, #173), same as the browser path.
 pub fn prep_table_words(
     img: &RgbImage,
     regions: &[crate::layout::Region],
