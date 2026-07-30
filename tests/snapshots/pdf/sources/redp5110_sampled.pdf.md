@@ -56,7 +56,7 @@ Implement roles and separation of duties ibm.com /redbooks Redpaper
 
 DB2 for i Center of Excellence
 
-Solution Brief IBM Systems Lab Services and Training
+IBM Systems Lab Services and Training Solution Brief
 
 <!-- image -->
 

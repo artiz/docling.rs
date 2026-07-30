@@ -433,12 +433,16 @@ struct Worker {
     /// Discard the embedded text layer and OCR every page. See
     /// [`Pipeline::force_full_page_ocr`].
     force_full_page_ocr: bool,
+    /// Keep text-panel pictures as pictures instead of demoting them to
+    /// paragraphs. See [`Pipeline::no_text_panels`].
+    no_text_panels: bool,
     /// Which recognition model [`Self::ocr`] loads. See [`Pipeline::ocr_lang`].
     ocr_lang: ocr::OcrLang,
 }
 
 #[cfg(feature = "ml")]
 impl Worker {
+    #[allow(clippy::too_many_arguments)] // mirrors the Pipeline's option set
     fn load(
         intra: usize,
         tables: Option<SharedTables>,
@@ -446,6 +450,7 @@ impl Worker {
         enrich: EnrichmentOptions,
         no_ocr: bool,
         force_full_page_ocr: bool,
+        no_text_panels: bool,
         ocr_lang: ocr::OcrLang,
     ) -> Result<Self, PdfError> {
         Ok(Self {
@@ -461,6 +466,7 @@ impl Worker {
             enrich,
             no_ocr,
             force_full_page_ocr,
+            no_text_panels,
             ocr_lang,
         })
     }
@@ -602,6 +608,14 @@ impl Worker {
         // confidence threshold (stricter than the 0.3 base the predictor keeps),
         // before any overlap resolution. This removes the low-confidence tables /
         // pictures / list-items that otherwise double-emit or mis-classify.
+        if std::env::var("DOCLING_RS_DEBUG_REGIONS").is_ok() {
+            for r in &regions {
+                eprintln!(
+                    "DBG raw {} {:.2} [{:.0},{:.0},{:.0},{:.0}]",
+                    r.label, r.score, r.l, r.t, r.r, r.b
+                );
+            }
+        }
         regions.retain(|r| r.score >= layout::label_threshold(r.label));
         // Resolve overlapping detections once, before OCR.
         let mut regions = assemble::resolve(regions);
@@ -627,6 +641,24 @@ impl Worker {
             })
             .map_err(|e| PdfError::Ocr(format!("page {}: {e}", n + 1)))?;
             page.cells = cells;
+            // Table interiors carry no words yet: region-scoped OCR skips
+            // table labels, and a scanned page has no pdfium text layer — so
+            // TableFormer's cell matcher got an empty word list and the table
+            // dissolved (#173). Recognize the table regions' word crops
+            // (mirroring the browser scanned path): `word_cells` feeds the
+            // matcher, and the same cells join `cells` so the geometric
+            // fallback and the table's region text see them too.
+            if regions.iter().any(|r| assemble::is_table_like(r.label)) {
+                let words = timing::timed("ocr.table_words", || {
+                    self.ocr
+                        .as_mut()
+                        .unwrap()
+                        .ocr_table_words(&page.image, &regions, page.scale)
+                })
+                .map_err(|e| PdfError::Ocr(format!("page {}: {e}", n + 1)))?;
+                page.cells.extend(words.iter().cloned());
+                page.word_cells = words;
+            }
         }
         // Region-scoped OCR skips `picture` interiors, and a digital page's
         // text layer cannot see into an embedded raster either — so a figure
@@ -688,8 +720,11 @@ impl Worker {
         // A "picture" that is really a colored text panel — dense, wide,
         // multi-line — reads out as paragraphs instead of shipping as pixels;
         // sparse in-picture text (a chart's labels) keeps the crop and is
-        // emitted beside it via orphan recovery.
-        assemble::recover_text_panels(&mut regions, &page.cells);
+        // emitted beside it via orphan recovery. `no_text_panels` (#173) opts
+        // out entirely for image-extraction workflows.
+        if !self.no_text_panels {
+            assemble::recover_text_panels(&mut regions, &page.cells);
+        }
         // On an OCR'd page, in-picture text that did NOT demote its picture is
         // still emitted beside the kept crop (matching the browser scanned
         // path). On a digital page it is not: docling's groundtruth keeps
@@ -747,6 +782,27 @@ impl Worker {
                     }
                 });
             }
+        }
+        if std::env::var("DOCLING_RS_DEBUG_REGIONS").is_ok() {
+            for (i, r) in regions.iter().enumerate() {
+                eprintln!(
+                    "DBG final {} {:.2} [{:.0},{:.0},{:.0},{:.0}] rows={:?}",
+                    r.label,
+                    r.score,
+                    r.l,
+                    r.t,
+                    r.r,
+                    r.b,
+                    table_rows[i]
+                        .as_ref()
+                        .map(|t| (t.len(), t.first().map(|r| r.len())))
+                );
+            }
+            eprintln!(
+                "DBG cells={} words={}",
+                page.cells.len(),
+                page.word_cells.len()
+            );
         }
         // Enrichment passes (opt-in): DocumentPictureClassifier over picture
         // regions, CodeFormulaV2 over code/formula regions. Same shared-slot
@@ -954,6 +1010,8 @@ pub struct Pipeline {
     /// OCR every page even when it carries a text layer. See
     /// [`Pipeline::force_full_page_ocr`].
     force_full_page_ocr: bool,
+    /// Never demote text-panel pictures. See [`Pipeline::no_text_panels`].
+    no_text_panels: bool,
     /// Opt-in enrichment passes. See [`Pipeline::enrichments`].
     enrich: EnrichmentOptions,
     /// 1-based inclusive page window to convert. See [`Pipeline::pages`].
@@ -979,6 +1037,7 @@ impl Pipeline {
             no_table_former: false,
             no_ocr: false,
             force_full_page_ocr: false,
+            no_text_panels: false,
             enrich: EnrichmentOptions::default(),
             page_range: None,
             ocr_lang: ocr::OcrLang::from_env(),
@@ -1071,6 +1130,18 @@ impl Pipeline {
         self
     }
 
+    /// Keep every detected `picture` region as a picture. By default an
+    /// *uncaptioned* picture that reads like a dense, uniform text panel (a
+    /// terms-and-conditions box exported as an image) is demoted into
+    /// paragraphs (#157); a chart the layout mislabels can still trip that
+    /// heuristic on scanned pages, and image-extraction workflows may simply
+    /// want every crop — this flag disables the demotion entirely (#173).
+    /// No effect on already-loaded workers; set before the first conversion.
+    pub fn no_text_panels(mut self, disable: bool) -> Self {
+        self.no_text_panels = disable;
+        self
+    }
+
     /// Skip layout detection, OCR, and TableFormer entirely — no model load, no
     /// inference of any kind. The PDF's embedded text cells are grouped by line
     /// and emitted as plain paragraphs in reading order: no headings, lists,
@@ -1139,6 +1210,7 @@ impl Pipeline {
                 self.enrich,
                 self.no_ocr,
                 self.force_full_page_ocr,
+                self.no_text_panels,
                 self.ocr_lang,
             )?);
         }
@@ -1507,6 +1579,7 @@ impl Pipeline {
         let intra = pdf_intra();
         let no_ocr = self.no_ocr;
         let force = self.force_full_page_ocr;
+        let ntp = self.no_text_panels;
         let ocr_lang = self.ocr_lang;
         let enrich = self.enrich;
         let tables = self.tables_slot();
@@ -1517,7 +1590,16 @@ impl Pipeline {
                     let tables = tables.clone();
                     let enrich_slots = enrich_slots.clone();
                     s.spawn(move || {
-                        Worker::load(intra, tables, enrich_slots, enrich, no_ocr, force, ocr_lang)
+                        Worker::load(
+                            intra,
+                            tables,
+                            enrich_slots,
+                            enrich,
+                            no_ocr,
+                            force,
+                            ntp,
+                            ocr_lang,
+                        )
                     })
                 })
                 .collect();
@@ -1584,6 +1666,7 @@ pub fn convert(
         false,
         false,
         false,
+        false,
         EnrichmentOptions::default(),
         None,
         None,
@@ -1606,6 +1689,7 @@ pub fn convert_with_options(
     no_table_former: bool,
     no_ocr: bool,
     force_full_page_ocr: bool,
+    no_text_panels: bool,
     enrich: EnrichmentOptions,
     pages: Option<(usize, usize)>,
     ocr_lang: Option<OcrLang>,
@@ -1614,6 +1698,7 @@ pub fn convert_with_options(
         .no_table_former(no_table_former)
         .no_ocr(no_ocr)
         .force_full_page_ocr(force_full_page_ocr)
+        .no_text_panels(no_text_panels)
         .enrichments(enrich)
         .pages(pages)
         .ocr_lang(ocr_lang)
@@ -1626,6 +1711,7 @@ pub fn convert_image(bytes: &[u8], name: &str) -> Result<DoclingDocument, PdfErr
     convert_image_with_options(
         bytes,
         name,
+        false,
         false,
         false,
         EnrichmentOptions::default(),
@@ -1642,12 +1728,14 @@ pub fn convert_image_with_options(
     name: &str,
     no_table_former: bool,
     no_ocr: bool,
+    no_text_panels: bool,
     enrich: EnrichmentOptions,
     ocr_lang: Option<OcrLang>,
 ) -> Result<DoclingDocument, PdfError> {
     Pipeline::new()?
         .no_table_former(no_table_former)
         .no_ocr(no_ocr)
+        .no_text_panels(no_text_panels)
         .enrichments(enrich)
         .ocr_lang(ocr_lang)
         .convert_image(bytes, name)
@@ -1657,7 +1745,14 @@ pub fn convert_image_with_options(
 /// Convert pre-segmented pages (image + already-known text cells, e.g. METS/hOCR
 /// scans) through the shared layout + assembly pipeline.
 pub fn convert_pages(pages: Vec<PdfPage>, name: &str) -> Result<DoclingDocument, PdfError> {
-    convert_pages_with_options(pages, name, false, false, EnrichmentOptions::default())
+    convert_pages_with_options(
+        pages,
+        name,
+        false,
+        false,
+        false,
+        EnrichmentOptions::default(),
+    )
 }
 
 #[cfg(feature = "ml")]
@@ -1669,10 +1764,12 @@ pub fn convert_pages_with_options(
     name: &str,
     no_table_former: bool,
     no_ocr: bool,
+    no_text_panels: bool,
     enrich: EnrichmentOptions,
 ) -> Result<DoclingDocument, PdfError> {
     Pipeline::new()?
         .no_table_former(no_table_former)
+        .no_text_panels(no_text_panels)
         .no_ocr(no_ocr)
         .enrichments(enrich)
         .process_pages(pages, name)

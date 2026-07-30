@@ -82,6 +82,7 @@ struct PyDocumentConverter {
     pdf_pipeline: std::sync::Arc<std::sync::Mutex<Option<docling::Pipeline>>>,
     no_ocr: bool,
     no_table_former: bool,
+    no_text_panels: bool,
     enrich: docling::EnrichmentOptions,
 }
 
@@ -96,6 +97,10 @@ impl PyDocumentConverter {
     ///   `do_ocr=False`.
     /// * `do_table_structure` — recover table structure with TableFormer
     ///   (docling's `do_table_structure`).
+    /// * `no_text_panels` — keep every detected picture as a picture: disable
+    ///   the demotion of uncaptioned dense-text "picture" regions into
+    ///   paragraphs (docling.rs-specific escape hatch for image-extraction
+    ///   workflows, #173).
     /// * `do_picture_classification` — classify pictures with the
     ///   DocumentFigureClassifier enrichment model (docling's flag of the same
     ///   name; needs models/picture_classifier.onnx).
@@ -117,6 +122,7 @@ impl PyDocumentConverter {
         do_ocr = true,
         force_full_page_ocr = false,
         do_table_structure = true,
+        no_text_panels = false,
         use_web_browser = false,
         do_picture_classification = false,
         do_code_enrichment = false,
@@ -133,6 +139,7 @@ impl PyDocumentConverter {
         do_ocr: bool,
         force_full_page_ocr: bool,
         do_table_structure: bool,
+        no_text_panels: bool,
         use_web_browser: bool,
         do_picture_classification: bool,
         do_code_enrichment: bool,
@@ -193,6 +200,7 @@ impl PyDocumentConverter {
                 .no_ocr(!do_ocr)
                 .force_full_page_ocr(force_full_page_ocr)
                 .no_table_former(!do_table_structure)
+                .no_text_panels(no_text_panels)
                 .use_web_browser(use_web_browser)
                 .do_picture_classification(do_picture_classification)
                 .do_code_enrichment(do_code_enrichment)
@@ -200,6 +208,7 @@ impl PyDocumentConverter {
             pdf_pipeline: std::sync::Arc::new(std::sync::Mutex::new(None)),
             no_ocr: !do_ocr,
             no_table_former: !do_table_structure,
+            no_text_panels,
             enrich,
         })
     }
@@ -221,6 +230,7 @@ impl PyDocumentConverter {
         let slot = std::sync::Arc::clone(&self.pdf_pipeline);
         let no_table_former = self.no_table_former;
         let no_ocr = self.no_ocr;
+        let no_text_panels = self.no_text_panels;
         let enrich = self.enrich;
         run_interruptible(py, move || {
             let mut slot = slot.lock().unwrap();
@@ -229,6 +239,7 @@ impl PyDocumentConverter {
                     .map_err(|e| ConversionError::new_err(e.to_string()))?
                     .no_table_former(no_table_former)
                     .no_ocr(no_ocr)
+                    .no_text_panels(no_text_panels)
                     .enrichments(enrich);
                 pipeline
                     .warm_up()

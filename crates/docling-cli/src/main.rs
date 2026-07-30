@@ -3,7 +3,7 @@
 //! The docling.rs counterpart of `docling.cli.main`; `docling-rs serve`
 //! (with `--features serve`) starts the HTTP conversion API.
 //!
-//! Usage: docling-rs [--strict] [--to md|json] [--pages A-B] [--images MODE] [--fetch-images] [--no-stream] [--no-table-former] [--no-ocr] [--force-full-page-ocr] [--ocr-lang en|ch] [--pipeline standard|vlm] [--vlm-endpoint URL] [--vlm-model NAME] [--asr-model PRESET] [--video-frames N] [--use-web-browser] [--enrich-picture-classes] [--enrich-code] [--enrich-formula] <input-file>
+//! Usage: docling-rs [--strict] [--to md|json] [--pages A-B] [--images MODE] [--fetch-images] [--no-stream] [--no-table-former] [--no-ocr] [--force-full-page-ocr] [--no-text-panels] [--ocr-lang en|ch] [--pipeline standard|vlm] [--vlm-endpoint URL] [--vlm-model NAME] [--asr-model PRESET] [--video-frames N] [--use-web-browser] [--enrich-picture-classes] [--enrich-code] [--enrich-formula] <input-file>
 //!   --to md|json       output format (default: md). `json` emits docling-core's
 //!                      native DoclingDocument JSON (export_to_dict).
 //!   --pages A-B        convert only PDF pages A through B (1-based, inclusive;
@@ -40,6 +40,10 @@
 //!   --force-full-page-ocr  OCR every PDF page even when it has a text layer
 //!                      (docling's force_full_page_ocr) — for layers that lie:
 //!                      broken encodings, forms with a few typed-in fields
+//!   --no-text-panels   keep every detected picture as a picture — disable the
+//!                      #157 demotion of uncaptioned text-panel pictures into
+//!                      paragraphs (the escape hatch for image-extraction
+//!                      workflows, #173)
 //!   --no-ocr           skip layout detection, OCR, and TableFormer entirely for
 //!                      PDF/image input — no model load or inference at all.
 //!                      Emits the embedded text layer as flat paragraphs in
@@ -90,6 +94,7 @@ fn main() -> ExitCode {
     let mut no_table_former = false;
     let mut no_ocr = false;
     let mut force_full_page_ocr = false;
+    let mut no_text_panels = false;
     let mut use_web_browser = false;
     let mut asr_model: Option<String> = None;
     let mut video_frames: Option<usize> = None;
@@ -112,6 +117,7 @@ fn main() -> ExitCode {
             "--no-table-former" => no_table_former = true,
             "--no-ocr" => no_ocr = true,
             "--force-full-page-ocr" => force_full_page_ocr = true,
+            "--no-text-panels" => no_text_panels = true,
             "--use-web-browser" => use_web_browser = true,
             // Opt-in enrichment models (docling CLI flag names): picture
             // classification, code rewrite + language, formula LaTeX.
@@ -207,7 +213,7 @@ fn main() -> ExitCode {
     };
 
     let Some(path) = path else {
-        eprintln!("usage: docling-rs [--strict] [--to md|json] [--images MODE] [--fetch-images] [--no-stream] [--no-table-former] [--no-ocr] [--force-full-page-ocr] [--ocr-lang en|ch] [--use-web-browser] <input-file>");
+        eprintln!("usage: docling-rs [--strict] [--to md|json] [--images MODE] [--fetch-images] [--no-stream] [--no-table-former] [--no-ocr] [--force-full-page-ocr] [--no-text-panels] [--ocr-lang en|ch] [--use-web-browser] <input-file>");
         return ExitCode::from(2);
     };
 
@@ -267,6 +273,7 @@ fn main() -> ExitCode {
         .no_table_former(no_table_former)
         .no_ocr(no_ocr)
         .force_full_page_ocr(force_full_page_ocr)
+        .no_text_panels(no_text_panels)
         .use_web_browser(use_web_browser)
         .do_picture_classification(enrich_picture_classes)
         .do_code_enrichment(enrich_code)

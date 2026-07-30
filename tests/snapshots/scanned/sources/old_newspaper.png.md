@@ -20,7 +20,7 @@ Hours Hours
 
 11A.M.to11P.M 11A.M.to11P.M
 
-11A.M.to11P.M Hours Hours 11A.M.to11P.M strengthen the teacher's knowledge and control of the langlage,
+Hours Hours 11A.M.to11P.M 11A.M.to11P.M strengthen the teacher's knowledge and control of the langlage,
 
 Lastweek marked the beginning of an intensive program in the French language,methods of teaching the language,and the culture of France.Faculty and Institute participants meet together instudysessionsallmorning and afternoon,Classes are conducted entirely in French, with the exception of courses in language analysis and method- ology.A demonstration class of first year students of French at the high school and junior high schoollevel is to be conducted by Pierre Simonian, the Institute's teacher in charge of demonstrationandmethodology.
 
@@ -32,9 +32,11 @@ ROCHESTER
 
 <!-- image -->
 
-<!-- image -->
+HILLS THEATRE Rochester 商 AUDREY HEPBURN·REX HARRISONSTANLEY HOLLOWAY
 
 <!-- image -->
+
+CEORECEKOTECHNICOLORSUERPANAVSIONOFROMWARNERBROS
 
 GETDUNLOPIMPORTQUALITY INTHEAMERICAN MADE GOLD SEAL FULL 4PLY (NOT2PLY)CONSTRUCTION NO THUMP WITHTYREX CORD NYLONALSOAVAILABLE） Certified Safe At A SUSTAINED 100 M.P.H. Wholesale Prices to O.U.Students &amp; Faculty on Passenger Car, Sports Car, Radial Ply &amp; Racing Tires
 
@@ -65,6 +67,8 @@ Prescriptions Cosmetics SundryItems Liquor,Beer,Wine
 <!-- image -->
 
 872E.Auburn,NearJohnR.Rochester UL2-5363
+
+CY
 
 <!-- image -->
 

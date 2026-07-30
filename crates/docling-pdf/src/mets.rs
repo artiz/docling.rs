@@ -25,6 +25,7 @@ pub fn convert_mets_gbs(bytes: &[u8], name: &str) -> Result<DoclingDocument, Pdf
         name,
         false,
         false,
+        false,
         crate::EnrichmentOptions::default(),
     )
 }
@@ -38,6 +39,7 @@ pub fn convert_mets_gbs_with_options(
     name: &str,
     no_table_former: bool,
     no_ocr: bool,
+    no_text_panels: bool,
     enrich: crate::EnrichmentOptions,
 ) -> Result<DoclingDocument, PdfError> {
     let mut html: BTreeMap<String, String> = BTreeMap::new();
@@ -99,7 +101,7 @@ pub fn convert_mets_gbs_with_options(
             "mets: no hOCR/TIFF page pairs found in archive".into(),
         ));
     }
-    convert_pages_with_options(pages, name, no_table_former, no_ocr, enrich)
+    convert_pages_with_options(pages, name, no_table_former, no_ocr, no_text_panels, enrich)
 }
 
 /// Parse an hOCR page: the `ocr_page` bbox gives the page geometry (cells are in

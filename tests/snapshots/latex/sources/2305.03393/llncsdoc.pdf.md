@@ -51,13 +51,13 @@ with
 
 ## 3.1 Title
 
-Please code the title of your contribution as follows: \title
+\title Please code the title of your contribution as follows:
 
 \title{&lt;Your contribution title&gt;}
 
 All words in titles should be capitalized except for conjunctions, prepositions (e.g. on, of, by, and, or, but, from, with, without, under), and definite/indefinite articles (the, a, an), unless they appear at the beginning. Formula letters are typeset as in the text. Long titles that run over multiple lines can be wrapped explicitly with \\ . Titles have no end punctuation.
 
-Acknowledgements should generally be placed in an unnumbered subsection at the end of the paper. If you still need to refer to a support or funding program in a note to the title, you can use the \thanks macro inside the title: \thanks
+Acknowledgements should generally be placed in an unnumbered subsection at the end of the paper. If you still need to refer to a support or funding program \thanks in a note to the title, you can use the \thanks macro inside the title:
 
 \title{&lt;Your contribution title&gt;\thanks{&lt;granted by x&gt;}}
 
@@ -69,21 +69,21 @@ If a long title does not fit in the single line of the running head, a warning i
 
 \titlerunning{&lt;Your abbreviated contribution title&gt;}
 
-An optional subtitle may also be added: \subtitle
+\subtitle An optional subtitle may also be added:
 
 \subtitle{&lt;subtitle of your contribution&gt;}
 
 ## 3.2 Author(s)
 
-The name(s) of the author(s) are specified by: \author
+\author The name(s) of the author(s) are specified by:
 
 \author{&lt;author(s) name(s)&gt;}
 
-If there is more than one author, please separate them by \and . This makes sure \and that correct punctuation is inserted according to the number of authors.
+\and If there is more than one author, please separate them by \and . This makes sure that correct punctuation is inserted according to the number of authors.
 
-Numbers referring to different addresses or affiliations should be attached to \inst each author with the \inst{&lt;number&gt;} command. If an author is affiliated with multiple institutions the numbers should be separated by a comma, for example \inst{2,3} .
+\inst Numbers referring to different addresses or affiliations should be attached to each author with the \inst{&lt;number&gt;} command. If an author is affiliated with multiple institutions the numbers should be separated by a comma, for example \inst{2,3} .
 
-ORCID identifiers can be included with \orcidID
+\orcidID ORCID identifiers can be included with
 
 \orcidID{&lt;ORCID identifier&gt;}
 
@@ -108,15 +108,15 @@ might add some clarity about the correct representation of author names, in the 
 
 ## 3.3 Affiliations
 
-Addresses of institutes, companies, etc. should be given in \institute . \institute
+\institute Addresses of institutes, companies, etc. should be given in \institute .
 
 \and Multiple affiliations are separated by \and , which automatically assures correct numbering:
 
-Inside \institute you can use \email
+\email Inside \institute you can use
 
 \email{&lt;email address&gt;}
 
-and \url
+\url and
 
 ```
        \institute{<name of an institute>
@@ -134,11 +134,11 @@ Please note that, if email addresses are given in your paper, they will also be 
 
 ## 3.4 Format the Header
 
-The command \maketitle formats the header of your paper. If you leave it out \maketitle the work done so far will produce no text.
+\maketitle The command \maketitle formats the header of your paper. If you leave it out the work done so far will produce no text.
 
 ## 3.5 Abstract and Keywords
 
-The abstract is coded as follows: abstract ( env. )
+abstract ( env. ) The abstract is coded as follows:
 
 ```
 \begin{abstract}
@@ -146,7 +146,7 @@ The abstract is coded as follows: abstract ( env. )
 \end{abstract}
 ```
 
-Keywords should be specified inside the abstract environment. Please capitalize \keywords \and the first letter of each keyword and again separate them with \and :
+\keywords Keywords should be specified inside the abstract environment. Please capitalize \and the first letter of each keyword and again separate them with \and :
 
 \keywords{First keyword \and Second keyword \and Third keyword}
 
@@ -184,7 +184,7 @@ Please note that all these characters are only available in math mode.
 
 ## 5.1 Predefined Theorem-Like Environments
 
-Several theorem-like environments are predefined in the llncs document class. corollary ( env. ) definition ( env. ) lemma ( env. ) The following environments have a bold run-in heading, while the following text is in italics:
+corollary ( env. ) Several theorem-like environments are predefined in the llncs document class. definition ( env. ) The following environments have a bold run-in heading, while the following text lemma ( env. ) is in italics:
 
 proposition
 
@@ -196,25 +196,25 @@ proposition
 \begin{theorem} <text> \end{theorem}
 ```
 
-Other theorem-like environments render the text in roman, while the run-in case ( env. ) conjecture ( env. ) heading is bold as well:
+case ( env. ) Other theorem-like environments render the text in roman, while the run-in conjecture ( env. ) heading is bold as well:
 
 ```
 exercise(env.) property(env.) question(env.) solution(env.) heading is bold as well: problem(env.) note(env.) \begin{case} <text> \end{case} \begin{conjecture} <text> \end{conjecture} \begin{example} <text> \end{example} \begin{exercise} <text> \end{exercise} \begin{note} <text> \end{note} \begin{problem} <text> \end{problem}
   remark(env.) \begin{property} <text> \end{property} \begin{question} <text> \end{question} \begin{remark} <text> \end{remark} \begin{solution} <text> \end{solution}
 ```
 
-Finally, there are also two unnumbered environments that have the run-in headclaim ( env. ) proof ( env. ) ing in italics and the text in upright roman.
+claim ( env. ) Finally, there are also two unnumbered environments that have the run-in headproof ( env. ) ing in italics and the text in upright roman.
 
 ```
 \begin{claim} <text> \end{claim}
 \begin{proof} <text> \end{proof}
 ```
 
-Proofs may contain an eye catching square, which can be inserted with \qed ) \qed before the environment ends.
+\qed Proofs may contain an eye catching square, which can be inserted with \qed ) before the environment ends.
 
 ## 5.2 User-Defined Theorem-Like Environments
 
-We have enhanced the standard \newtheorem command and slightly changed \spnewtheorem its syntax to get two new commands \spnewtheorem and \spnewtheorem* that now can be used to define additional environments. They require two additional arguments, namely the font style of the label and the font style of the text of the new environment:
+\spnewtheorem We have enhanced the standard \newtheorem command and slightly changed its syntax to get two new commands \spnewtheorem and \spnewtheorem* that now can be used to define additional environments. They require two additional arguments, namely the font style of the label and the font style of the text of the new environment:
 
 \spnewtheorem{&lt;env\_nam&gt;}[&lt;num\_like&gt;]{&lt;caption&gt;}{&lt;cap\_font&gt;}{&lt;body\_font&gt;}
 
@@ -267,7 +267,7 @@ the resulting text will be:
 
 splncs04.bst We encourage you to use Bib T E X for typesetting your references. For formatting the bibliography according to Springer's standard (for mathematics, physical sciences, and computer science), please use the bibliography style file splncs04.bst that comes with the llncs document class. You simply need to add \bibliographystyle{splncs04} to your document. DOIs should be provided in the doi field of your .bib database. Bib T E X will then automatically add them to your references. Please note that we do not provide an option to implement
 
-If you do not use Bib T E X, you can include a DOI with the \doi command: \doi
+\doi If you do not use Bib T E X, you can include a DOI with the \doi command:
 
 \doi{&lt;DOI&gt;}
 
@@ -277,7 +277,7 @@ The DOI will be expanded to the URL https://doi.org/&lt;DOI&gt; in accordance wi
 
 The llncs document class contains several class options that have become obsolete over the years. We only mention them for completeness:
 
-- The llncs document class changes the formatting of vectors coded with orivec \vec to boldface italics. If you absolutely need the original L A T E X design for vectors, i.e. an arrow above the related variable, you can restore it with the orivec option.
+- orivec - The llncs document class changes the formatting of vectors coded with \vec to boldface italics. If you absolutely need the original L A T E X design for vectors, i.e. an arrow above the related variable, you can restore it with the orivec option.
 
 envcountsame
 
@@ -288,4 +288,4 @@ envcountreset envcountsect openbib
 - All theorem-like environments are numbered per section, i.e. the related counters are reset to 1 in every section.
 - All theorem-like environments are numbered per section, and the section number added to the individual counter, i.e. Theorem 1.2, Lemma 2.2, etc.
 - This option produces the 'open' bibliography style, in which each block starts on a new line, and succeeding lines in a block are indented by \bibindent .
-- This option restores the original L A T E X definitions for the bibliography and oribibl the \cite mechanism that some Bib T E X applications rely on.
+- oribibl - This option restores the original L A T E X definitions for the bibliography and the \cite mechanism that some Bib T E X applications rely on.

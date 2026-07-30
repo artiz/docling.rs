@@ -74,6 +74,7 @@ pub struct DocumentConverter {
     strict: bool,
     fetch_images: bool,
     no_table_former: bool,
+    no_text_panels: bool,
     no_ocr: bool,
     force_full_page_ocr: bool,
     use_web_browser: bool,
@@ -137,6 +138,7 @@ impl Default for DocumentConverter {
             strict: false,
             fetch_images: false,
             no_table_former: false,
+            no_text_panels: false,
             no_ocr: false,
             force_full_page_ocr: false,
             use_web_browser: false,
@@ -269,6 +271,16 @@ impl DocumentConverter {
     /// with [`convert_streaming`](Self::convert_streaming).
     pub fn no_table_former(mut self, disable: bool) -> Self {
         self.no_table_former = disable;
+        self
+    }
+
+    /// PDF/image: keep every detected picture as a picture — disable the
+    /// text-panel demotion that turns an uncaptioned, dense text-panel
+    /// "picture" into paragraphs (#157). The escape hatch for
+    /// image-extraction workflows and for charts the heuristic might still
+    /// misjudge on scanned pages (#173).
+    pub fn no_text_panels(mut self, disable: bool) -> Self {
+        self.no_text_panels = disable;
         self
     }
 
@@ -417,6 +429,7 @@ impl DocumentConverter {
         crate::stream::StreamSettings {
             strict: self.strict,
             no_table_former: self.no_table_former,
+            no_text_panels: self.no_text_panels,
             no_ocr: self.no_ocr,
             force_full_page_ocr: self.force_full_page_ocr,
             enrich: self.enrich,
@@ -530,6 +543,7 @@ impl DocumentConverter {
                 self.no_table_former,
                 self.no_ocr,
                 self.force_full_page_ocr,
+                self.no_text_panels,
                 self.enrich,
                 self.page_range,
                 self.ocr_lang_choice(),
@@ -541,6 +555,7 @@ impl DocumentConverter {
                 &source.name,
                 self.no_table_former,
                 self.no_ocr,
+                self.no_text_panels,
                 self.enrich,
                 self.ocr_lang_choice(),
             )
@@ -551,6 +566,7 @@ impl DocumentConverter {
                 &source.name,
                 self.no_table_former,
                 self.no_ocr,
+                self.no_text_panels,
                 self.enrich,
             )
             .map_err(|e| ConversionError::with_source("mets-gbs", e))?,

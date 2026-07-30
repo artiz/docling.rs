@@ -493,13 +493,29 @@ pub fn recover_text_panels(regions: &mut Vec<Region>, cells: &[TextCell]) {
                 None => lines.push((ct, cb, c.l, c.r)),
             }
         }
+        if lines.len() < 3 {
+            out.push(r);
+            continue;
+        }
         let panel_w = (r.r - r.l).max(1.0);
         let coverage = inside.iter().map(|c| area(c.l, c.t, c.r, c.b)).sum::<f32>()
             / area(r.l, r.t, r.r, r.b).max(1.0);
         let mut widths: Vec<f32> = lines.iter().map(|(_, _, l, rr)| rr - l).collect();
         widths.sort_by(f32::total_cmp);
-        let text_panel =
-            lines.len() >= 3 && coverage >= 0.2 && widths[widths.len() / 2] >= 0.45 * panel_w;
+        // A figure's text is ragged: a title line, small axis/tick labels, and
+        // OCR boxes over the plot area come out at wildly different heights,
+        // whereas a real text panel is set in one face with constant leading.
+        // Require near-uniform line heights (median absolute deviation ≤ 35%
+        // of the median) so an uncaptioned chart keeps its crop even when its
+        // labels are dense enough to pass the coverage gate (#173) — garbled
+        // OCR of its bars is not content.
+        let mut heights: Vec<f32> = lines.iter().map(|(t, b, _, _)| b - t).collect();
+        heights.sort_by(f32::total_cmp);
+        let h_med = heights[heights.len() / 2].max(1.0);
+        let mut devs: Vec<f32> = heights.iter().map(|h| (h - h_med).abs()).collect();
+        devs.sort_by(f32::total_cmp);
+        let uniform = devs[devs.len() / 2] <= 0.35 * h_med;
+        let text_panel = coverage >= 0.2 && widths[widths.len() / 2] >= 0.45 * panel_w && uniform;
         if !text_panel {
             out.push(r);
             continue;
@@ -2140,6 +2156,47 @@ mod tests {
         assert_eq!(
             regions.iter().map(|r| r.label).collect::<Vec<_>>(),
             ["picture"]
+        );
+    }
+
+    /// An uncaptioned chart on a scanned page whose title, axis labels, and
+    /// OCR boxes over the plot area are dense and wide enough to pass the
+    /// coverage/width gates still keeps its crop: its line heights are ragged
+    /// (title face vs tick labels vs bar-area OCR), failing the uniform-leading
+    /// gate — a real text panel is set with constant leading (#173).
+    #[test]
+    fn dense_titled_chart_keeps_its_crop() {
+        let cell = |text: &str, l: f32, t: f32, r: f32, b: f32| TextCell {
+            text: text.to_string(),
+            l,
+            t,
+            r,
+            b,
+        };
+        let chart = Region {
+            label: "picture",
+            score: 0.9,
+            l: 0.0,
+            t: 0.0,
+            r: 100.0,
+            b: 100.0,
+        };
+        // Five wide lines at wildly different heights: a 12-pt title, 20-pt OCR
+        // boxes over the bars, 4–5-pt tick/axis labels. Coverage and median
+        // width both clear the panel thresholds.
+        let cells = vec![
+            cell("Underground Water Storage", 10.0, 5.0, 90.0, 17.0),
+            cell("aquifer recharge zone", 15.0, 30.0, 75.0, 50.0),
+            cell("confined | unconfined | perched", 12.0, 55.0, 80.0, 59.0),
+            cell("saturated thickness", 8.0, 70.0, 60.0, 90.0),
+            cell("distance from well, km", 20.0, 92.0, 85.0, 97.0),
+        ];
+        let mut regions = vec![chart];
+        super::recover_text_panels(&mut regions, &cells);
+        assert_eq!(
+            regions.iter().map(|r| r.label).collect::<Vec<_>>(),
+            ["picture"],
+            "ragged line heights mark a figure, not a text panel"
         );
     }
 
