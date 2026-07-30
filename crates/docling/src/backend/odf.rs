@@ -548,6 +548,15 @@ fn handle_block(
                 doc.push(Node::Table(table));
             }
         }
+        "section" => {
+            // docling walks a `<text:section>`'s children as ordinary body
+            // blocks (docling#3852 / #178) — headings, paragraphs, tables and
+            // lists inside a section were silently dropped before. Recursing
+            // through `walk_blocks` keeps list numbering continuing across the
+            // section's own consecutive lists (`_add_odf_children`) and
+            // handles nested sections.
+            walk_blocks(el.children().filter(XmlNode::is_element), styles, doc);
+        }
         _ => {}
     }
 }
@@ -957,6 +966,7 @@ fn parse_table(table: XmlNode, styles: &Styles) -> Option<Table> {
             col_header: Vec::new(),
         }),
         cell_blocks,
+        caption: None,
     })
 }
 
@@ -1223,6 +1233,7 @@ fn add_ods_sheet(table: XmlNode, doc: &mut DoclingDocument) {
                 location: None,
                 structure: None,
                 cell_blocks: None,
+                caption: None,
             }));
         }
     }
@@ -1473,6 +1484,33 @@ mod tests {
         assert!(f.bold && !f.italic, "bold inherited through P2→P1→Strong");
         let t = resolve_fmt(&styles, Some("T1"), Fmt::default());
         assert!(t.italic && !t.bold);
+    }
+
+    /// docling PR #3852 / #178: content inside a `<text:section>` (including a
+    /// nested section) is walked as ordinary body blocks, not dropped.
+    #[test]
+    fn section_content_is_walked() {
+        let xml = r#"<root xmlns:text="x" xmlns:table="t">
+            <text:p>Outside.</text:p>
+            <text:section text:name="S1">
+              <text:h text:outline-level="1">Inside heading</text:h>
+              <text:p>Inside paragraph.</text:p>
+              <text:section text:name="Nested">
+                <text:p>Nested paragraph.</text:p>
+              </text:section>
+            </text:section></root>"#;
+        let dom = Document::parse(xml).unwrap();
+        let styles = parse_styles(&dom, None);
+        let mut doc = DoclingDocument::new("s");
+        walk_text(dom.root_element(), &styles, &mut doc);
+        let md = doc.export_to_markdown();
+        assert!(md.contains("Outside."), "pre-section text:\n{md}");
+        assert!(md.contains("## Inside heading"), "section heading:\n{md}");
+        assert!(md.contains("Inside paragraph."), "section paragraph:\n{md}");
+        assert!(
+            md.contains("Nested paragraph."),
+            "nested section content:\n{md}"
+        );
     }
 
     #[test]

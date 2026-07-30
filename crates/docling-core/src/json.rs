@@ -538,6 +538,14 @@ impl Builder {
         let self_ref = format!("#/tables/{}", self.tables.len());
         self.adopt_loc(t.location);
         let prov = self.take_prov(0);
+        // The caption is a separate text item the table references (docling's
+        // `TableItem.captions`), added before the grid so its box isn't
+        // inherited by a later item.
+        let mut captions = Vec::new();
+        if let Some(cap) = t.caption.as_deref().filter(|c| !c.is_empty()) {
+            let cap_ref = self.add_text("caption", cap, &self_ref, json!({}));
+            captions.push(json!({ "$ref": cap_ref }));
+        }
         let num_rows = t.rows.len();
         let num_cols = t.rows.iter().map(Vec::len).max().unwrap_or(0);
         let mut grid = Vec::with_capacity(num_rows);
@@ -571,7 +579,7 @@ impl Builder {
             "content_layer": "body",
             "label": "table",
             "prov": prov,
-            "captions": [],
+            "captions": captions,
             "references": [],
             "footnotes": [],
             "data": {
@@ -948,6 +956,7 @@ mod tests {
             location: None,
             structure: None,
             cell_blocks: None,
+            caption: None,
         }));
 
         let v: Value = serde_json::from_str(&doc.export_to_json()).unwrap();

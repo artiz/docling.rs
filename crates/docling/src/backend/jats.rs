@@ -6,8 +6,9 @@
 //! figures (caption + picture), `<list>`/`<list-item>` bullet lists,
 //! `<ref-list>` references and `<element-citation>`/`<mixed-citation>` citations,
 //! `<fn-group>` footnotes, and `<disp-formula>` equations (`$$…$$`). Inline
-//! markup is flattened to text (docling does the same pending styled-run
-//! support).
+//! emphasis (`<italic>`/`<bold>`/…) and `<inline-formula>` are preserved as
+//! styled runs / `$…$` (docling PR #3726), and a `<table-wrap>`'s label+caption
+//! and header/span structure carry onto the table.
 
 use roxmltree::{Document, Node as XmlNode, ParsingOptions};
 
@@ -15,11 +16,76 @@ use crate::backend::markdown::escape_text;
 use crate::backend::DeclarativeBackend;
 use crate::error::ConversionError;
 use crate::source::SourceDocument;
-use docling_core::{DoclingDocument, Node, Table};
+use docling_core::{
+    inline_paragraph_node, DoclingDocument, InlineRun, Node, Script, Table, TableStructure,
+};
 
 pub struct JatsBackend;
 
 const SKIP_TEXT: &[&str] = &["term", "disp-formula", "inline-formula"];
+
+/// Inline emphasis accumulated from the enclosing JATS tags (docling PR #3726's
+/// `_JATS_FORMAT_TAG_MAP`): `<bold>`, `<italic>`, `<underline>`, `<strike>` and
+/// sub/superscript. Threaded down the walk and attached to each text run.
+#[derive(Clone, Copy, Default, PartialEq, Eq)]
+struct Fmt {
+    bold: bool,
+    italic: bool,
+    underline: bool,
+    strike: bool,
+    script: Script,
+}
+
+impl Fmt {
+    /// Apply the formatting a JATS emphasis tag adds (unknown tags pass through).
+    fn with_tag(self, tag: &str) -> Fmt {
+        match tag {
+            "bold" => Fmt { bold: true, ..self },
+            "italic" => Fmt {
+                italic: true,
+                ..self
+            },
+            "underline" => Fmt {
+                underline: true,
+                ..self
+            },
+            "strike" => Fmt {
+                strike: true,
+                ..self
+            },
+            "sub" => Fmt {
+                script: Script::Sub,
+                ..self
+            },
+            "sup" => Fmt {
+                script: Script::Super,
+                ..self
+            },
+            _ => self,
+        }
+    }
+
+    fn to_inline_run(self, text: &str) -> InlineRun {
+        InlineRun {
+            text: text.to_string(),
+            bold: self.bold,
+            italic: self.italic,
+            underline: self.underline,
+            strike: self.strike,
+            script: self.script,
+            code: false,
+            formula: false,
+        }
+    }
+}
+
+/// One inline run of a JATS paragraph: styled text, or an inline formula whose
+/// `text` is the LaTeX body (docling PR #3726's `InlineSegment`).
+struct Seg {
+    formula: bool,
+    text: String,
+    fmt: Fmt,
+}
 
 /// Tags that, inside a `<p>`, flush the accumulated paragraph text before they
 /// are handled — docling's `_walk_linear` `flush_tags`.
@@ -79,7 +145,7 @@ impl DeclarativeBackend for JatsBackend {
         let mut hlevel: i32 = 0;
         for tag in ["body", "back"] {
             if let Some(node) = dom.descendants().find(|n| n.has_tag_name(tag)) {
-                walk_linear(node, false, &mut hlevel, &mut doc);
+                walk_linear(node, false, Fmt::default(), &mut hlevel, &mut doc);
             }
         }
         Ok(doc)
@@ -393,34 +459,36 @@ fn add_citation(doc: &mut DoclingDocument, parent_is_list: bool, text: &str) {
 }
 
 /// Port of docling's `_walk_linear`: a depth-first walk that accumulates a
-/// paragraph's inline text while emitting block-level items (sections, lists,
-/// figures, tables, citations, footnotes, formulas) as it goes. Returns the text
-/// it could not emit (backpropagated to the enclosing paragraph).
+/// paragraph's inline runs (styled text + inline formulas) while emitting
+/// block-level items (sections, lists, figures, tables, citations, footnotes,
+/// formulas) as it goes. `fmt` is the emphasis inherited from the enclosing
+/// tags. Returns the runs it could not emit, backpropagated to the enclosing
+/// paragraph.
 fn walk_linear(
     node: XmlNode,
     parent_is_list: bool,
+    fmt: Fmt,
     hlevel: &mut i32,
     doc: &mut DoclingDocument,
-) -> String {
+) -> Vec<Seg> {
     let node_tag = node.tag_name().name();
-    let mut node_text = if node_tag != "term" {
-        node.text()
-            .map(|t| t.replace('\n', " "))
-            .unwrap_or_default()
-    } else {
-        String::new()
-    };
+    // An emphasis tag (`<italic>`, `<bold>`, …) contributes its formatting to
+    // every run beneath it (docling PR #3726); other tags leave it unchanged.
+    let current = fmt.with_tag(node_tag);
+    let mut segments: Vec<Seg> = Vec::new();
+    if node_tag != "term" {
+        if let Some(t) = node.text() {
+            append_run(&mut segments, &t.replace('\n', " "), current);
+        }
+    }
 
     for child in node.children().filter(XmlNode::is_element) {
         let mut stop_walk = false;
         let ctag = child.tag_name().name();
 
-        // Flush accumulated paragraph text before a block-level child.
-        if node_tag == "p" && !node_text.trim().is_empty() && FLUSH_TAGS.contains(&ctag) {
-            doc.push(Node::Paragraph {
-                text: escape_text(node_text.trim()),
-            });
-            node_text.clear();
+        // Flush accumulated inline runs before a block-level child.
+        if node_tag == "p" && FLUSH_TAGS.contains(&ctag) {
+            emit_inline(doc, std::mem::take(&mut segments));
         }
 
         // Whether the recursion below should treat `child` as a list parent.
@@ -493,17 +561,20 @@ fn walk_linear(
                 stop_walk = true;
             }
             "inline-formula" => {
+                // Inline formula: the `<tex-math>` stays inline (unlike a block
+                // `<disp-formula>`), carrying any enclosing emphasis (#3726).
+                extend_segments(&mut segments, walk_inline_formula(child, current));
                 stop_walk = true;
             }
             _ => {}
         }
 
         if !stop_walk {
-            let new_text = walk_linear(child, child_in_list, hlevel, doc);
-            // Don't fold a flushed block's text back into an enclosing paragraph.
+            let child_segments = walk_linear(child, child_in_list, current, hlevel, doc);
+            // Don't fold a flushed block's runs back into an enclosing paragraph.
             let parent_is_p = node.parent().map(|p| p.has_tag_name("p")).unwrap_or(false);
             if !(parent_is_p && FLUSH_TAGS.contains(&node_tag)) {
-                node_text.push_str(&new_text);
+                extend_segments(&mut segments, child_segments);
             }
             if opened_section {
                 *hlevel -= 1;
@@ -511,18 +582,152 @@ fn walk_linear(
         }
 
         if let Some(tail) = child.tail() {
-            node_text.push_str(&tail.replace('\n', " "));
+            append_run(&mut segments, &tail.replace('\n', " "), current);
         }
     }
 
-    if node_tag == "p" && !node_text.trim().is_empty() {
-        doc.push(Node::Paragraph {
-            text: escape_text(node_text.trim()),
-        });
-        String::new()
+    if node_tag == "p" {
+        emit_inline(doc, segments);
+        Vec::new()
     } else {
-        node_text
+        segments
     }
+}
+
+/// Walk an `<inline-formula>`: recognize its `<tex-math>` as a formula run and
+/// keep every other text run inline, carrying `fmt` (docling's
+/// `_walk_inline_formula`).
+fn walk_inline_formula(node: XmlNode, fmt: Fmt) -> Vec<Seg> {
+    let current = fmt.with_tag(node.tag_name().name());
+    let mut segments = Vec::new();
+    if let Some(t) = node.text() {
+        append_run(&mut segments, &t.replace('\n', " "), current);
+    }
+    for child in node.children().filter(XmlNode::is_element) {
+        if child.tag_name().name() == "tex-math" {
+            if let Some(formula) = extract_tex_math(child) {
+                segments.push(Seg {
+                    formula: true,
+                    text: formula,
+                    fmt: Fmt::default(),
+                });
+            }
+        } else {
+            extend_segments(&mut segments, walk_inline_formula(child, current));
+        }
+        if let Some(tail) = child.tail() {
+            append_run(&mut segments, &tail.replace('\n', " "), current);
+        }
+    }
+    segments
+}
+
+/// The formula body of a `<tex-math>` — the text between `$$…$$` or `$…$`
+/// delimiters, else the trimmed text (docling's `_extract_tex_math`).
+fn extract_tex_math(node: XmlNode) -> Option<String> {
+    let text = node.text()?.trim().to_string();
+    for delim in ["$$", "$"] {
+        if text.len() > 2 * delim.len() && text.starts_with(delim) && text.ends_with(delim) {
+            let inner = text[delim.len()..text.len() - delim.len()]
+                .trim()
+                .to_string();
+            return (!inner.is_empty()).then_some(inner);
+        }
+    }
+    (!text.is_empty()).then_some(text)
+}
+
+/// Append a text run, coalescing into the previous run when the formatting
+/// matches (docling's `_append_run`). `\n` was already normalized to a space by
+/// the caller.
+fn append_run(segments: &mut Vec<Seg>, text: &str, fmt: Fmt) {
+    if text.is_empty() {
+        return;
+    }
+    if let Some(last) = segments.last_mut() {
+        if !last.formula && last.fmt == fmt {
+            last.text.push_str(text);
+            return;
+        }
+    }
+    segments.push(Seg {
+        formula: false,
+        text: text.to_string(),
+        fmt,
+    });
+}
+
+/// Extend `segments` with `more`, coalescing adjacent equal-format text runs
+/// (docling's `_extend_segments`).
+fn extend_segments(segments: &mut Vec<Seg>, more: Vec<Seg>) {
+    for seg in more {
+        if seg.formula {
+            segments.push(seg);
+        } else {
+            append_run(segments, &seg.text, seg.fmt);
+        }
+    }
+}
+
+/// Emit inline runs as a paragraph, dropping blank runs and wrapping several
+/// runs in an inline group (docling's `_emit_inline` / `_strip_segments`). A
+/// formula run renders as `$…$` in Markdown and a `<formula>` in DocLang; a
+/// styled run carries its emphasis into DocLang while Markdown keeps the
+/// baked-in `*…*`/`**…**` markers.
+fn emit_inline(doc: &mut DoclingDocument, segments: Vec<Seg>) {
+    let stripped: Vec<Seg> = segments
+        .into_iter()
+        .filter_map(|s| {
+            let text = s.text.trim().to_string();
+            (!text.is_empty()).then_some(Seg { text, ..s })
+        })
+        .collect();
+    if stripped.is_empty() {
+        return;
+    }
+    // Markdown joins the runs with a single space (docling's inline-group
+    // serialization); each run carries its own emphasis / `$…$` markers.
+    let md_text = stripped
+        .iter()
+        .map(seg_markdown)
+        .collect::<Vec<_>>()
+        .join(" ");
+    let runs = stripped
+        .iter()
+        .map(|s| {
+            if s.formula {
+                InlineRun {
+                    text: s.text.clone(),
+                    formula: true,
+                    ..InlineRun::default()
+                }
+            } else {
+                s.fmt.to_inline_run(&s.text)
+            }
+        })
+        .collect();
+    // JATS inline groups serialize unwrapped in DocLang (docling adds them
+    // directly under the section/body, not inside a `<text>` wrapper).
+    doc.push(inline_paragraph_node(md_text, runs, true));
+}
+
+/// One run's Markdown: `$formula$`, or the escaped text wrapped in its emphasis
+/// markers (matching docling's serializer).
+fn seg_markdown(s: &Seg) -> String {
+    if s.formula {
+        return format!("${}$", s.text);
+    }
+    let mut out = escape_text(&s.text);
+    if s.fmt.bold {
+        out = format!("**{out}**");
+    }
+    if s.fmt.italic {
+        out = format!("*{out}*");
+    }
+    if s.fmt.strike {
+        out = format!("~~{out}~~");
+    }
+    out
 }
 
 /// A `<list-item>` at `level`: its text (from every child except nested
@@ -633,7 +838,7 @@ fn add_table(doc: &mut DoclingDocument, node: XmlNode) {
                 .and_then(|a| a.children().find(|c| c.has_tag_name("table")))
         });
     let Some(table_node) = content else { return };
-    let Some(table) = parse_jats_table(table_node) else {
+    let Some(mut table) = parse_jats_table(table_node) else {
         return;
     };
 
@@ -654,11 +859,10 @@ fn add_table(doc: &mut DoclingDocument, node: XmlNode) {
         ""
     };
     let cap_text = format!("{label}{sep}{caption}");
-    if !cap_text.is_empty() {
-        doc.push(Node::Paragraph {
-            text: escape_text(&cap_text),
-        });
-    }
+    // The label+caption becomes the table's own caption (docling attaches it to
+    // the `TableItem` rather than emitting a standalone paragraph before it).
+    // Stored escaped, matching the backend's text-node convention.
+    table.caption = (!cap_text.is_empty()).then(|| escape_text(&cap_text));
     doc.push(Node::Table(table));
 }
 
@@ -693,9 +897,17 @@ fn parse_jats_table(table: XmlNode) -> Option<Table> {
         return None;
     }
 
-    let mut grid: Vec<Vec<String>> = vec![vec![String::new(); num_cols]; rows_nodes.len()];
+    let nrows = rows_nodes.len();
+    let mut grid: Vec<Vec<String>> = vec![vec![String::new(); num_cols]; nrows];
     // Track which cells are already occupied by a rowspan from above.
-    let mut filled: Vec<Vec<bool>> = vec![vec![false; num_cols]; rows_nodes.len()];
+    let mut filled: Vec<Vec<bool>> = vec![vec![false; num_cols]; nrows];
+    // OTSL structure overlay (docling's cell classification): `<th>`/`<thead>`
+    // cells are column headers, and a span's continuation columns/rows are
+    // emitted as `<lcel/>`/`<ucel/>` in DocLang instead of the text-replicated
+    // cells Markdown/JSON still use.
+    let mut col_header: Vec<Vec<bool>> = vec![vec![false; num_cols]; nrows];
+    let mut col_continuation: Vec<Vec<bool>> = vec![vec![false; num_cols]; nrows];
+    let mut row_continuation: Vec<Vec<bool>> = vec![vec![false; num_cols]; nrows];
     for (ri, row) in rows_nodes.iter().enumerate() {
         let mut ci = 0usize;
         for cell in row
@@ -711,20 +923,47 @@ fn parse_jats_table(table: XmlNode) -> Option<Table> {
             let cs = col_span(cell);
             let rs = row_span(cell);
             let text = normalize(&get_text(cell));
-            for r in ri..(ri + rs).min(rows_nodes.len()) {
+            // A cell is a column header when it is a `<th>` or sits in a
+            // `<thead>` (docling's `column_header` flag).
+            let header =
+                cell.has_tag_name("th") || cell.ancestors().any(|a| a.has_tag_name("thead"));
+            for r in ri..(ri + rs).min(nrows) {
                 for c in ci..(ci + cs).min(num_cols) {
                     grid[r][c] = text.clone();
                     filled[r][c] = true;
+                    // The primary cell carries the text + header flag; the
+                    // cells it spans into are span continuations.
+                    if c > ci {
+                        col_continuation[r][c] = true;
+                    }
+                    if r > ri {
+                        row_continuation[r][c] = true;
+                    }
                 }
             }
+            col_header[ri][ci] = header;
             ci += cs;
         }
     }
+    let has_header = col_header.iter().flatten().any(|&h| h);
+    let has_span = col_continuation
+        .iter()
+        .chain(&row_continuation)
+        .flatten()
+        .any(|&s| s);
+    let structure = (has_header || has_span).then(|| TableStructure {
+        header_row: Vec::new(),
+        col_continuation,
+        row_continuation,
+        row_header: Vec::new(),
+        col_header,
+    });
     Some(Table {
         rows: grid,
         location: None,
-        structure: None,
+        structure,
         cell_blocks: None,
+        caption: None,
     })
 }
 
@@ -983,6 +1222,55 @@ mod tests {
         assert!(md.contains("| Name"), "table grid:\n{md}");
         assert!(md.contains("## References"), "refs heading:\n{md}");
         assert!(md.contains("- Doe J. A title. 2020."), "citation:\n{md}");
+    }
+
+    /// The table's label+caption attaches to the table (docling's
+    /// `TableItem.captions`): DocLang emits it as a `<caption>` inside
+    /// `<table>`, a `<thead>` cell is a `<ched/>`, and a `colspan` header's
+    /// extra columns are `<lcel/>` span continuations rather than repeated text.
+    #[test]
+    fn table_caption_and_span_structure() {
+        let xml = r#"<article><body><sec><title>S</title>
+            <table-wrap><label>Table 1</label><caption><p>Cap.</p></caption>
+              <table>
+                <thead><tr><th colspan="2">Group</th><th>N</th></tr></thead>
+                <tbody><tr><td>a</td><td>b</td><td>1</td></tr></tbody>
+              </table></table-wrap>
+          </sec></body></article>"#;
+        let src = SourceDocument::from_bytes("p", InputFormat::XmlJats, xml.as_bytes().to_vec());
+        let doc = JatsBackend.convert(&src).unwrap();
+        let dclx = doc.export_to_doclang();
+        assert!(
+            dclx.contains("<table>\n    <caption>Table 1 Cap.</caption>"),
+            "caption inside table:\n{dclx}"
+        );
+        // Header row: `Group` (ched) spanning two columns (+lcel), then `N` (ched).
+        assert!(
+            dclx.contains("<ched/>\n    Group\n    <lcel/>\n    <ched/>\n    N"),
+            "colspan header → ched + lcel:\n{dclx}"
+        );
+        // Markdown keeps the caption as a line before the grid and the span text.
+        let md = doc.export_to_markdown();
+        assert!(md.contains("Table 1 Cap."), "md caption:\n{md}");
+    }
+
+    /// docling PR #3726: `<italic>`/`<bold>` emphasis renders as Markdown
+    /// markers and an `<inline-formula>`'s `<tex-math>` stays inline as `$…$`;
+    /// docling's inline-group serialization joins the runs with single spaces.
+    #[test]
+    fn emphasis_and_inline_formula() {
+        let xml = r#"<article><body><sec><title>S</title>
+            <p>We combined <italic>B</italic>. <italic>malayi</italic> with a
+               <bold>strong</bold> effect and mass <inline-formula><tex-math>$m c^2$</tex-math></inline-formula> energy.</p>
+          </sec></body></article>"#;
+        let src = SourceDocument::from_bytes("p", InputFormat::XmlJats, xml.as_bytes().to_vec());
+        let md = JatsBackend.convert(&src).unwrap().export_to_markdown();
+        assert!(
+            md.contains(
+                "We combined *B* . *malayi* with a **strong** effect and mass $m c^2$ energy."
+            ),
+            "emphasis + inline formula:\n{md}"
+        );
     }
 
     /// docling PR #3619: a nested <list> inside a <list-item> keeps its

@@ -251,6 +251,7 @@ fn table_item(item: &Value, root: &Value, doc: &mut DoclingDocument) {
             location: None,
             structure: has_structure.then_some(structure),
             cell_blocks: None,
+            caption: None,
         }));
     }
     push_captions(item, root, doc);

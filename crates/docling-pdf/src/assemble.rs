@@ -1727,6 +1727,7 @@ pub fn assemble_page(
                         location: None,
                         structure: None,
                         cell_blocks: None,
+                        caption: None,
                     }),
                 ));
             }

@@ -689,6 +689,7 @@ fn parse_table(tbl: XmlNode) -> Option<Table> {
             col_header: Vec::new(),
         }),
         cell_blocks: None,
+        caption: None,
     })
 }
 

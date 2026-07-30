@@ -317,6 +317,7 @@ impl MarkdownBackend {
                 location: None,
                 structure: None,
                 cell_blocks: None,
+                caption: None,
             }));
         }
     }

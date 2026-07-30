@@ -1345,6 +1345,7 @@ fn parse_table_cells(
             ..Default::default()
         }),
         cell_blocks: None,
+        caption: None,
     })
 }
 

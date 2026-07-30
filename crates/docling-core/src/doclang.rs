@@ -589,6 +589,11 @@ fn push_location(out: &mut Out, depth: i32, loc: &[u16; 4]) {
 
 fn emit_table(out: &mut Out, depth: i32, table: &Table) {
     out.push(depth, "<table>".to_string());
+    if let Some(cap) = &table.caption {
+        // `caption` arrives already escaped (backend convention), so it is
+        // emitted verbatim as the table's first child.
+        out.push(depth + 1, format!("<caption>{cap}</caption>"));
+    }
     emit_table_rows(out, depth, table);
     out.push(depth, "</table>".to_string());
 }
