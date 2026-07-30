@@ -56,14 +56,16 @@ impl DeclarativeBackend for DocxBackend {
         let images = pkg.image_rels("word/document.xml", "word");
         let charts = chart_rels(&mut pkg, "word/document.xml");
 
-        let (style_names, style_nums) = parse_styles(&styles);
+        let sm = parse_styles(&styles);
         let num_levels = parse_numbering(&numbering);
 
         let dom =
             Document::parse(&document).map_err(|e| ConversionError::with_source("docx", e))?;
         let ctx = Ctx {
-            style_names: &style_names,
-            style_nums: &style_nums,
+            style_names: &sm.names,
+            style_nums: &sm.nums,
+            style_based: &sm.based,
+            style_fonts: &sm.fonts,
             num_levels: &num_levels,
             rels: &rels,
             images: &images,
@@ -183,6 +185,8 @@ fn emit_header_footer_part(pkg: &mut Package, part: &str, ctx: &Ctx, doc: &mut D
     let part_ctx = Ctx {
         style_names: ctx.style_names,
         style_nums: ctx.style_nums,
+        style_based: ctx.style_based,
+        style_fonts: ctx.style_fonts,
         num_levels: ctx.num_levels,
         rels: &rels,
         images: &images,
@@ -252,6 +256,8 @@ fn format_comment_date(raw: &str) -> String {
 struct Ctx<'a> {
     style_names: &'a HashMap<String, String>,
     style_nums: &'a HashMap<String, (String, i64)>, // styleId -> (numId, ilvl)
+    style_based: &'a HashMap<String, String>,       // styleId -> basedOn styleId
+    style_fonts: &'a HashMap<String, String>,       // styleId -> lowercased ascii font
     num_levels: &'a HashMap<(String, i64), NumLevel>, // (numId, ilvl) -> level props
     rels: &'a HashMap<String, String>,
     images: &'a HashMap<String, PictureImage>, // image relationship id -> extracted image
@@ -482,6 +488,34 @@ fn handle_paragraph_inner(
             state.seen_heading = true;
         }
         state.list_run_base = None;
+        return;
+    }
+
+    // A code paragraph — either its style marks it as code, or it is set in a
+    // monospaced font and reads like code (docling PR #3735). Merged into the
+    // preceding fenced block when it directly follows one.
+    let prev_is_code = matches!(doc.nodes.last(), Some(Node::Code { .. }));
+    if !rich && (is_code_style(style_id, ctx) || is_code_by_font(p, style_id, ctx, prev_is_code)) {
+        state.list_run_base = None;
+        // Keep leading indentation (code blocks are verbatim); trailing space
+        // is dropped, matching docling's `raw_paragraph_text.rstrip()`.
+        let code_text = plain_paragraph_text(p).trim_end().to_string();
+        if prev_is_code {
+            if let Some(Node::Code { text: prev, .. }) = doc.nodes.last_mut() {
+                if !code_text.is_empty() {
+                    prev.push('\n');
+                    prev.push_str(&code_text);
+                }
+                return;
+            }
+        }
+        if !code_text.is_empty() {
+            doc.push(Node::Code {
+                language: detect_code_language(&code_text),
+                text: code_text,
+                orig: None,
+            });
+        }
         return;
     }
 
@@ -1480,14 +1514,221 @@ fn plain_paragraph_text(p: XmlNode) -> String {
     out
 }
 
-/// From `styles.xml`: `styleId` → display name, and `styleId` → list numbering
-/// `(numId, ilvl)` for styles that define numbering (e.g. "List Bullet").
-type StyleMaps = (HashMap<String, String>, HashMap<String, (String, i64)>);
+/// Case-folded paragraph *style names* that mark a paragraph as code (docling PR
+/// #3735). Matched exactly — `"Listing"` and `"Source Reference"` must not match.
+const CODE_STYLE_NAMES: &[&str] = &[
+    "source code",
+    "code",
+    "code block",
+    "code listing",
+    "html preformatted",
+    "preformatted text",
+    "preformatted",
+    "verbatim",
+];
+
+/// Case-folded paragraph *style IDs* that mark a paragraph as code (the XML
+/// `w:styleId`, distinct from the human-readable name).
+const CODE_STYLE_IDS: &[&str] = &[
+    "sourcecode",
+    "code",
+    "codeblock",
+    "codelisting",
+    "htmlpreformatted",
+    "preformattedtext",
+    "preformatted",
+    "verbatim",
+];
+
+/// Case-folded font families treated as monospaced for the font-fallback signal.
+const MONOSPACE_FONTS: &[&str] = &[
+    "consolas",
+    "courier",
+    "courier new",
+    "lucida console",
+    "menlo",
+    "monaco",
+    "dejavu sans mono",
+    "andale mono",
+    "liberation mono",
+    "sf mono",
+];
+
+/// ASCII punctuation that distinguishes code from monospaced prose (docling's
+/// `_CODE_INDICATIVE_CHARS`). Parentheses/brackets/lone semicolons are excluded.
+const CODE_INDICATIVE_CHARS: &[char] = &['{', '}', ';', '=', '<', '>'];
+
+/// Defensive cap against a malformed/cyclic `basedOn` chain.
+const MAX_STYLE_DEPTH: usize = 10;
+
+/// Whether a style marks its paragraphs as code: the style itself or any
+/// ancestor in its `basedOn` chain carries a code style name/id (docling's
+/// `_is_code_style`).
+fn is_code_style(style_id: &str, ctx: &Ctx) -> bool {
+    let mut sid = style_id;
+    for _ in 0..MAX_STYLE_DEPTH {
+        if sid.is_empty() {
+            break;
+        }
+        let name = ctx.style_names.get(sid).map(|s| s.to_ascii_lowercase());
+        let id_l = sid.to_ascii_lowercase();
+        if name
+            .as_deref()
+            .is_some_and(|n| CODE_STYLE_NAMES.contains(&n))
+            || CODE_STYLE_IDS.contains(&id_l.as_str())
+        {
+            return true;
+        }
+        match ctx.style_based.get(sid) {
+            Some(parent) => sid = parent,
+            None => break,
+        }
+    }
+    false
+}
+
+/// The lowercased font a style resolves to, walking the `basedOn` chain (used
+/// when a run inherits its typeface). Empty when none applies.
+fn style_font(style_id: &str, ctx: &Ctx) -> String {
+    let mut sid = style_id;
+    for _ in 0..MAX_STYLE_DEPTH {
+        if sid.is_empty() {
+            break;
+        }
+        if let Some(f) = ctx.style_fonts.get(sid) {
+            return f.clone();
+        }
+        match ctx.style_based.get(sid) {
+            Some(parent) => sid = parent,
+            None => break,
+        }
+    }
+    String::new()
+}
+
+/// Whether a paragraph reads as code set in a monospaced font — the
+/// lower-precision fallback used when the style name doesn't already mark it as
+/// code (docling's `_is_code_by_font`): (nearly) every character must resolve to
+/// a monospaced font and the text must carry a code signal, or be an indented
+/// line continuing a code block.
+fn is_code_by_font(p: XmlNode, style_id: &str, ctx: &Ctx, prev_is_code: bool) -> bool {
+    // A caption/figure/table/label style is never code.
+    let style_lc = ctx
+        .style_names
+        .get(style_id)
+        .map(|s| s.to_ascii_lowercase())
+        .unwrap_or_default();
+    if ["caption", "figure", "table", "label"]
+        .iter()
+        .any(|kw| style_lc.contains(kw))
+    {
+        return false;
+    }
+    let raw = plain_paragraph_text(p);
+    let stripped = raw.trim();
+    if stripped.is_empty() || cached_regex!(r"(?i)^(figure|table|listing)\s+\d").is_match(stripped)
+    {
+        return false;
+    }
+    // A code signal: an indicative char other than a lone `;`, a call/def shape,
+    // or an indented continuation of a preceding code block.
+    let strong: Vec<char> = stripped
+        .chars()
+        .filter(|c| CODE_INDICATIVE_CHARS.contains(c))
+        .collect();
+    let has_strong = strong.iter().any(|&c| c != ';');
+    let call = cached_regex!(r#"[A-Za-z_]\((?:\s*\)|[^)]*[\d,._='"][^)]*\))"#).is_match(stripped);
+    let def = cached_regex!(
+        r"(?m)^[ \t]*(?:async\s+)?(?:def|class|if|elif|while|for|with|except|finally|try|catch|switch|function|func|fn|sub|proc)\s+\S[^\n]*:[ \t]*$"
+    )
+    .is_match(stripped);
+    let has_code_char = has_strong || call || def;
+    let is_continuation = prev_is_code && raw.chars().next().is_some_and(|c| c.is_whitespace());
+    if !has_code_char && !is_continuation {
+        return false;
+    }
+    // Never reclassify a list item.
+    if num_pr(p).is_some() {
+        return false;
+    }
+    // (Nearly) every character must be monospaced.
+    let sf = style_font(style_id, ctx);
+    let (mono, total) = monospaced_char_counts(p, &sf);
+    if total == 0 || (mono as f32) / (total as f32) < 0.9 {
+        return false;
+    }
+    // A code-styled table cell is walked as rich content, not here.
+    !p.ancestors().any(|n| n.has_tag_name("tc"))
+}
+
+/// Count monospaced vs total non-space characters across a paragraph's runs
+/// (including runs nested in hyperlinks/insertions), resolving an inherited
+/// typeface to `style_font` (docling's `_monospaced_char_counts`).
+fn monospaced_char_counts(p: XmlNode, style_font: &str) -> (usize, usize) {
+    let (mut mono, mut total) = (0usize, 0usize);
+    for r in p.descendants().filter(|n| n.has_tag_name("r")) {
+        let text: String = r
+            .descendants()
+            .filter(|n| n.has_tag_name("t"))
+            .filter_map(|n| n.text())
+            .collect();
+        let len = text.trim().chars().count();
+        if len == 0 {
+            continue;
+        }
+        total += len;
+        let font = r
+            .descendants()
+            .find(|n| n.has_tag_name("rFonts"))
+            .and_then(|n| attr(n, "ascii"))
+            .map(|f| f.to_ascii_lowercase())
+            .unwrap_or_else(|| style_font.to_string());
+        if MONOSPACE_FONTS.contains(&font.as_str()) {
+            mono += len;
+        }
+    }
+    (mono, total)
+}
+
+/// Best-effort code language for a fenced block (docling's `detect_code_language`,
+/// the conservative markers used for DOCX). Returns `None` (→ `unknown`) unless a
+/// distinctive marker is present.
+fn detect_code_language(text: &str) -> Option<String> {
+    let lang = |l: &str| Some(l.to_string());
+    if cached_regex!(r"(?m)^[ \t]*(?:def|elif)\b|\b__name__\b|^[ \t]*from\s+\S+\s+import\b")
+        .is_match(text)
+    {
+        return lang("Python");
+    }
+    if cached_regex!(r"(?i)^[ \t]*(select|insert|update|delete|create|alter|drop)\b").is_match(text)
+        && cached_regex!(r"(?i)\b(from|into|table|where|values|set)\b").is_match(text)
+    {
+        return lang("SQL");
+    }
+    None
+}
+
+/// From `styles.xml`: `styleId` → display name / list numbering `(numId, ilvl)` /
+/// basedOn parent styleId / lowercased ascii font — everything the block walk and
+/// the code-block detector (docling PR #3735) read about a paragraph style.
+struct StyleMaps {
+    names: HashMap<String, String>,
+    nums: HashMap<String, (String, i64)>,
+    based: HashMap<String, String>,
+    fonts: HashMap<String, String>,
+}
 fn parse_styles(styles_xml: &str) -> StyleMaps {
     let mut names = HashMap::new();
     let mut nums = HashMap::new();
+    let mut based = HashMap::new();
+    let mut fonts = HashMap::new();
     let Ok(dom) = Document::parse(styles_xml) else {
-        return (names, nums);
+        return StyleMaps {
+            names,
+            nums,
+            based,
+            fonts,
+        };
     };
     for style in dom.descendants().filter(|n| n.has_tag_name("style")) {
         let Some(id) = attr(style, "styleId") else {
@@ -1503,8 +1744,29 @@ fn parse_styles(styles_xml: &str) -> StyleMaps {
         if let Some(num) = num_pr(style) {
             nums.insert(id.to_string(), num);
         }
+        // basedOn chain and the style's own font — used by the code-block
+        // detector (docling PR #3735) to walk a style's inheritance.
+        if let Some(b) = style
+            .children()
+            .find(|n| n.has_tag_name("basedOn"))
+            .and_then(|n| attr(n, "val"))
+        {
+            based.insert(id.to_string(), b.to_string());
+        }
+        if let Some(font) = style
+            .descendants()
+            .find(|n| n.has_tag_name("rFonts"))
+            .and_then(|n| attr(n, "ascii"))
+        {
+            fonts.insert(id.to_string(), font.to_ascii_lowercase());
+        }
     }
-    (names, nums)
+    StyleMaps {
+        names,
+        nums,
+        based,
+        fonts,
+    }
 }
 
 /// One numbering level's properties (resolved `num` → `abstractNum` → `lvl`).
