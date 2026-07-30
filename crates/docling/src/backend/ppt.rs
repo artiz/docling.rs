@@ -570,6 +570,7 @@ fn grid_table(cells: &[(Anchor, ShapeText)]) -> Option<Table> {
         location: None,
         structure,
         cell_blocks: None,
+        caption: None,
     })
 }
 

@@ -966,6 +966,7 @@ fn parse_table(table: XmlNode, styles: &Styles) -> Option<Table> {
             col_header: Vec::new(),
         }),
         cell_blocks,
+        caption: None,
     })
 }
 
@@ -1232,6 +1233,7 @@ fn add_ods_sheet(table: XmlNode, doc: &mut DoclingDocument) {
                 location: None,
                 structure: None,
                 cell_blocks: None,
+                caption: None,
             }));
         }
     }

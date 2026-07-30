@@ -6,8 +6,9 @@
 //! figures (caption + picture), `<list>`/`<list-item>` bullet lists,
 //! `<ref-list>` references and `<element-citation>`/`<mixed-citation>` citations,
 //! `<fn-group>` footnotes, and `<disp-formula>` equations (`$$…$$`). Inline
-//! markup is flattened to text (docling does the same pending styled-run
-//! support).
+//! emphasis (`<italic>`/`<bold>`/…) and `<inline-formula>` are preserved as
+//! styled runs / `$…$` (docling PR #3726), and a `<table-wrap>`'s label+caption
+//! and header/span structure carry onto the table.
 
 use roxmltree::{Document, Node as XmlNode, ParsingOptions};
 
@@ -15,7 +16,9 @@ use crate::backend::markdown::escape_text;
 use crate::backend::DeclarativeBackend;
 use crate::error::ConversionError;
 use crate::source::SourceDocument;
-use docling_core::{inline_paragraph_node, DoclingDocument, InlineRun, Node, Script, Table};
+use docling_core::{
+    inline_paragraph_node, DoclingDocument, InlineRun, Node, Script, Table, TableStructure,
+};
 
 pub struct JatsBackend;
 
@@ -835,7 +838,7 @@ fn add_table(doc: &mut DoclingDocument, node: XmlNode) {
                 .and_then(|a| a.children().find(|c| c.has_tag_name("table")))
         });
     let Some(table_node) = content else { return };
-    let Some(table) = parse_jats_table(table_node) else {
+    let Some(mut table) = parse_jats_table(table_node) else {
         return;
     };
 
@@ -856,11 +859,10 @@ fn add_table(doc: &mut DoclingDocument, node: XmlNode) {
         ""
     };
     let cap_text = format!("{label}{sep}{caption}");
-    if !cap_text.is_empty() {
-        doc.push(Node::Paragraph {
-            text: escape_text(&cap_text),
-        });
-    }
+    // The label+caption becomes the table's own caption (docling attaches it to
+    // the `TableItem` rather than emitting a standalone paragraph before it).
+    // Stored escaped, matching the backend's text-node convention.
+    table.caption = (!cap_text.is_empty()).then(|| escape_text(&cap_text));
     doc.push(Node::Table(table));
 }
 
@@ -895,9 +897,17 @@ fn parse_jats_table(table: XmlNode) -> Option<Table> {
         return None;
     }
 
-    let mut grid: Vec<Vec<String>> = vec![vec![String::new(); num_cols]; rows_nodes.len()];
+    let nrows = rows_nodes.len();
+    let mut grid: Vec<Vec<String>> = vec![vec![String::new(); num_cols]; nrows];
     // Track which cells are already occupied by a rowspan from above.
-    let mut filled: Vec<Vec<bool>> = vec![vec![false; num_cols]; rows_nodes.len()];
+    let mut filled: Vec<Vec<bool>> = vec![vec![false; num_cols]; nrows];
+    // OTSL structure overlay (docling's cell classification): `<th>`/`<thead>`
+    // cells are column headers, and a span's continuation columns/rows are
+    // emitted as `<lcel/>`/`<ucel/>` in DocLang instead of the text-replicated
+    // cells Markdown/JSON still use.
+    let mut col_header: Vec<Vec<bool>> = vec![vec![false; num_cols]; nrows];
+    let mut col_continuation: Vec<Vec<bool>> = vec![vec![false; num_cols]; nrows];
+    let mut row_continuation: Vec<Vec<bool>> = vec![vec![false; num_cols]; nrows];
     for (ri, row) in rows_nodes.iter().enumerate() {
         let mut ci = 0usize;
         for cell in row
@@ -913,20 +923,47 @@ fn parse_jats_table(table: XmlNode) -> Option<Table> {
             let cs = col_span(cell);
             let rs = row_span(cell);
             let text = normalize(&get_text(cell));
-            for r in ri..(ri + rs).min(rows_nodes.len()) {
+            // A cell is a column header when it is a `<th>` or sits in a
+            // `<thead>` (docling's `column_header` flag).
+            let header =
+                cell.has_tag_name("th") || cell.ancestors().any(|a| a.has_tag_name("thead"));
+            for r in ri..(ri + rs).min(nrows) {
                 for c in ci..(ci + cs).min(num_cols) {
                     grid[r][c] = text.clone();
                     filled[r][c] = true;
+                    // The primary cell carries the text + header flag; the
+                    // cells it spans into are span continuations.
+                    if c > ci {
+                        col_continuation[r][c] = true;
+                    }
+                    if r > ri {
+                        row_continuation[r][c] = true;
+                    }
                 }
             }
+            col_header[ri][ci] = header;
             ci += cs;
         }
     }
+    let has_header = col_header.iter().flatten().any(|&h| h);
+    let has_span = col_continuation
+        .iter()
+        .chain(&row_continuation)
+        .flatten()
+        .any(|&s| s);
+    let structure = (has_header || has_span).then(|| TableStructure {
+        header_row: Vec::new(),
+        col_continuation,
+        row_continuation,
+        row_header: Vec::new(),
+        col_header,
+    });
     Some(Table {
         rows: grid,
         location: None,
-        structure: None,
+        structure,
         cell_blocks: None,
+        caption: None,
     })
 }
 
@@ -1185,6 +1222,36 @@ mod tests {
         assert!(md.contains("| Name"), "table grid:\n{md}");
         assert!(md.contains("## References"), "refs heading:\n{md}");
         assert!(md.contains("- Doe J. A title. 2020."), "citation:\n{md}");
+    }
+
+    /// The table's label+caption attaches to the table (docling's
+    /// `TableItem.captions`): DocLang emits it as a `<caption>` inside
+    /// `<table>`, a `<thead>` cell is a `<ched/>`, and a `colspan` header's
+    /// extra columns are `<lcel/>` span continuations rather than repeated text.
+    #[test]
+    fn table_caption_and_span_structure() {
+        let xml = r#"<article><body><sec><title>S</title>
+            <table-wrap><label>Table 1</label><caption><p>Cap.</p></caption>
+              <table>
+                <thead><tr><th colspan="2">Group</th><th>N</th></tr></thead>
+                <tbody><tr><td>a</td><td>b</td><td>1</td></tr></tbody>
+              </table></table-wrap>
+          </sec></body></article>"#;
+        let src = SourceDocument::from_bytes("p", InputFormat::XmlJats, xml.as_bytes().to_vec());
+        let doc = JatsBackend.convert(&src).unwrap();
+        let dclx = doc.export_to_doclang();
+        assert!(
+            dclx.contains("<table>\n    <caption>Table 1 Cap.</caption>"),
+            "caption inside table:\n{dclx}"
+        );
+        // Header row: `Group` (ched) spanning two columns (+lcel), then `N` (ched).
+        assert!(
+            dclx.contains("<ched/>\n    Group\n    <lcel/>\n    <ched/>\n    N"),
+            "colspan header → ched + lcel:\n{dclx}"
+        );
+        // Markdown keeps the caption as a line before the grid and the span text.
+        let md = doc.export_to_markdown();
+        assert!(md.contains("Table 1 Cap."), "md caption:\n{md}");
     }
 
     /// docling PR #3726: `<italic>`/`<bold>` emphasis renders as Markdown

@@ -1345,6 +1345,7 @@ fn parse_table_with(tbl: XmlNode, ctx: &Ctx, nested: bool) -> Option<Table> {
         location: None,
         structure,
         cell_blocks: any_rich.then_some(blocks),
+        caption: None,
     })
 }
 

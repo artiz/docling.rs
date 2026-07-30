@@ -57,9 +57,6 @@
         "$ref": "#/pictures/0"
       },
       {
-        "$ref": "#/texts/13"
-      },
-      {
         "$ref": "#/tables/0"
       },
       {
@@ -127,9 +124,6 @@
       },
       {
         "$ref": "#/texts/35"
-      },
-      {
-        "$ref": "#/texts/36"
       },
       {
         "$ref": "#/tables/1"
@@ -711,11 +705,11 @@
     {
       "self_ref": "#/texts/13",
       "parent": {
-        "$ref": "#/body"
+        "$ref": "#/tables/0"
       },
       "children": [],
       "content_layer": "body",
-      "label": "text",
+      "label": "caption",
       "prov": [],
       "orig": "Table 1. KRAB-ZFP genes clusters in the mouse genome that were investigated in this study. * Number of protein-coding KRAB-ZFP genes identified in a previously published screen (Imbeault et al., 2017) and the ChIP-seq data column indicates the number of KRAB-ZFPs for which ChIP-seq was performed in this study.",
       "text": "Table 1. KRAB-ZFP genes clusters in the mouse genome that were investigated in this study. * Number of protein-coding KRAB-ZFP genes identified in a previously published screen (Imbeault et al., 2017) and the ChIP-seq data column indicates the number of KRAB-ZFPs for which ChIP-seq was performed in this study."
@@ -992,11 +986,11 @@
     {
       "self_ref": "#/texts/36",
       "parent": {
-        "$ref": "#/body"
+        "$ref": "#/tables/1"
       },
       "children": [],
       "content_layer": "body",
-      "label": "text",
+      "label": "caption",
       "prov": [],
       "orig": "Key resources table",
       "text": "Key resources table"
@@ -2594,7 +2588,11 @@
       "content_layer": "body",
       "label": "table",
       "prov": [],
-      "captions": [],
+      "captions": [
+        {
+          "$ref": "#/texts/13"
+        }
+      ],
       "references": [],
       "footnotes": [],
       "data": {
@@ -3804,7 +3802,11 @@
       "content_layer": "body",
       "label": "table",
       "prov": [],
-      "captions": [],
+      "captions": [
+        {
+          "$ref": "#/texts/36"
+        }
+      ],
       "references": [],
       "footnotes": [],
       "data": {

@@ -410,6 +410,13 @@ fn render_one(node: &Node, blocks: &mut Vec<String>, ctx: &mut Ctx) {
         // (the un-enriched pipeline emits a placeholder paragraph instead).
         Node::Formula { latex, .. } => blocks.push(format!("$${latex}$$")),
         Node::Table(table) => {
+            // docling renders a table's caption as a text line before the grid.
+            // `caption` is already escaped (backend convention), like a paragraph.
+            if let Some(cap) = &table.caption {
+                if !cap.is_empty() {
+                    blocks.push(strict_text(cap, ctx.strict));
+                }
+            }
             let rendered = render_table(table, ctx.compact_tables);
             if !rendered.is_empty() {
                 blocks.push(rendered);
@@ -792,6 +799,7 @@ mod tests {
             location: None,
             structure: None,
             cell_blocks: None,
+            caption: None,
         }));
         let md = doc.export_to_markdown();
         assert_eq!(md, "| a | b |\n| - | - |\n| 1 | 2 |\n");
@@ -805,6 +813,7 @@ mod tests {
             location: None,
             structure: None,
             cell_blocks: None,
+            caption: None,
         }));
         let md = doc.export_to_markdown();
         // Numeric data columns are right-aligned; columns padded to header+2.
@@ -921,6 +930,7 @@ mod tests {
             location: None,
             structure: None,
             cell_blocks: None,
+            caption: None,
         }));
         doc.push(Node::Picture {
             caption: Some("Fig 1".into()),

@@ -1120,6 +1120,7 @@ impl NodeBuilder {
             location: None,
             structure: None,
             cell_blocks: None,
+            caption: None,
         }));
         self.last_ilfo = None;
         self.run_base = None;

@@ -378,6 +378,12 @@ pub struct Table {
     /// and render `rows`, so their output is unchanged. `None` (or an empty
     /// `Vec` for a given cell) → the flat text is used everywhere.
     pub cell_blocks: Option<Vec<Vec<Vec<Node>>>>,
+    /// Optional caption (docling's `TableItem.captions`): the JATS
+    /// `<table-wrap>` label+caption, an HTML `<caption>`, etc. Markdown renders
+    /// it as a text line *before* the grid; JSON emits a caption text item the
+    /// table references; DocLang emits a `<caption>` as the table's first child.
+    /// `None` → the table has no caption.
+    pub caption: Option<String>,
 }
 
 /// OTSL structure overlay for a [`Table`], parallel to [`Table::rows`].
