@@ -594,7 +594,13 @@ fn parse_table(table: XmlNode) -> Option<Table> {
                     Some(e) => (e, 0),
                     None => (ientry as i64 + 2, 1),
                 };
-                if end > cell_offst.len() as i64 || start < 1 {
+                // A malformed span (an index outside the declared columns) marks
+                // the row as broken rather than indexing past `cell_offst` —
+                // docling#3822 / #179. `start` needs the upper bound too: it is
+                // the `namest` attribute, so `namest="9"` on a 2-column tgroup
+                // used to panic here instead of degrading the row.
+                let n_offst = cell_offst.len() as i64;
+                if start < 1 || start > n_offst || end > n_offst {
                     wrong_nbr_cols = true;
                     break;
                 }
@@ -1025,6 +1031,54 @@ mod tests {
             joined.contains("<fcel/> a <fcel/> b <fcel/> c <nl/>"),
             "data row wrong:\n{dclx}"
         );
+    }
+
+    /// #179 / docling#3822: a CALS `namest`/`nameend` pointing past the declared
+    /// columns must degrade the row, never index out of bounds. The malformed
+    /// row is dropped (its cells are cleared, so it reads empty) while a
+    /// well-formed sibling table still parses.
+    #[test]
+    fn cals_table_out_of_range_span_degrades() {
+        let malformed = r#"<us-patent-application><description><p><tables><table>
+            <tgroup cols="2">
+              <colspec colname="1" colwidth="40pt"/>
+              <colspec colname="2" colwidth="40pt"/>
+              <tbody>
+                <row><entry namest="9">a</entry></row>
+                <row><entry>x</entry><entry>y</entry></row>
+              </tbody>
+            </tgroup>
+          </table></tables></p></description></us-patent-application>"#;
+        let src =
+            SourceDocument::from_bytes("p", InputFormat::XmlUspto, malformed.as_bytes().to_vec());
+        let md = UsptoBackend.convert(&src).unwrap().export_to_markdown();
+        // The good row survives; the malformed one contributed no cell text.
+        assert!(md.contains("| x"), "well-formed row lost:\n{md}");
+        assert!(!md.contains("a"), "out-of-range cell must not land:\n{md}");
+
+        // `nameend` past the columns, and a reversed span, degrade the same way.
+        for span in [
+            r#"namest="1" nameend="9""#,
+            r#"namest="2" nameend="1""#,
+            r#"namest="0""#,
+        ] {
+            let xml = format!(
+                r#"<us-patent-application><description><p><tables><table>
+                <tgroup cols="2">
+                  <colspec colname="1" colwidth="40pt"/>
+                  <colspec colname="2" colwidth="40pt"/>
+                  <tbody>
+                    <row><entry {span}>bad</entry></row>
+                    <row><entry>x</entry><entry>y</entry></row>
+                  </tbody>
+                </tgroup>
+              </table></tables></p></description></us-patent-application>"#
+            );
+            let src = SourceDocument::from_bytes("p", InputFormat::XmlUspto, xml.into_bytes());
+            let md = UsptoBackend.convert(&src).unwrap().export_to_markdown();
+            assert!(md.contains("| x"), "span {span:?} lost the good row:\n{md}");
+            assert!(!md.contains("bad"), "span {span:?} emitted a cell:\n{md}");
+        }
     }
 
     #[test]
