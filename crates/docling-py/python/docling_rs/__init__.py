@@ -146,6 +146,7 @@ class DocumentConverter:
         allowed_formats: Optional[Iterable[InputFormat]] = None,
         do_ocr: bool = True,
         do_table_structure: bool = True,
+        force_full_page_ocr: bool = False,
         do_picture_classification: bool = False,
         do_code_enrichment: bool = False,
         do_formula_enrichment: bool = False,
@@ -161,6 +162,13 @@ class DocumentConverter:
         if pipeline is not None:
             do_ocr = pipeline.do_ocr
             do_table_structure = pipeline.do_table_structure
+            # docling proper carries the flag on ocr_options; accept both the
+            # direct field and docling-shaped ocr_options.force_full_page_ocr.
+            force_full_page_ocr = getattr(
+                pipeline, "force_full_page_ocr", force_full_page_ocr
+            ) or getattr(
+                getattr(pipeline, "ocr_options", None), "force_full_page_ocr", False
+            )
             do_picture_classification = getattr(
                 pipeline, "do_picture_classification", do_picture_classification
             )
@@ -214,6 +222,7 @@ class DocumentConverter:
         self._inner = _NativeDocumentConverter(
             fetch_images=fetch_images,
             do_ocr=do_ocr,
+            force_full_page_ocr=force_full_page_ocr,
             do_table_structure=do_table_structure,
             use_web_browser=use_web_browser,
             do_picture_classification=do_picture_classification,

@@ -42,6 +42,9 @@ mod reading_order;
 pub mod resample;
 #[cfg(feature = "ocr-prep")]
 pub mod scanned;
+// Built-in standard-14 font metrics for the pure-Rust text parser (#187) —
+// no feature gate: the wasm/pdf-text path needs them like the native one.
+mod std14;
 #[cfg(feature = "ml")]
 pub mod tableformer;
 pub mod textparse;

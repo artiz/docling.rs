@@ -96,6 +96,8 @@ class PdfPipelineOptions:
     """docling's ``PdfPipelineOptions``.
 
     Acted on by the Rust engine: ``do_ocr``, ``do_table_structure``,
+    ``force_full_page_ocr`` (docling keeps it on ``ocr_options``; accepted here
+    directly too — #187's escape hatch for undecodable text layers),
     ``do_picture_classification`` / ``do_code_enrichment`` /
     ``do_formula_enrichment`` (the opt-in enrichment models) and
     ``accelerator_options.num_threads``. The remaining fields are accepted so
@@ -105,6 +107,7 @@ class PdfPipelineOptions:
 
     do_ocr: bool = True
     do_table_structure: bool = True
+    force_full_page_ocr: bool = False
     do_picture_classification: bool = False
     do_code_enrichment: bool = False
     do_formula_enrichment: bool = False
