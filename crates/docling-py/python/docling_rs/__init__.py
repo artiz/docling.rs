@@ -135,6 +135,9 @@ class DocumentConverter:
     * ``use_web_browser`` — render HTML via headless Chrome before parsing.
     * ``allowed_formats`` — restrict conversion to these :class:`InputFormat`\\ s
       (docling's converter arg); a source of any other format raises.
+    * ``asr_lang`` — transcription language for audio/video: a Whisper code
+      (``"en"``, ``"de"``, …) or ``"auto"`` (default) to detect it from the
+      first 30 seconds (docling 2.116 parity).
     * ``artifacts_path`` — override the model cache dir (docling's
       ``artifacts_path``); defaults to ``~/.cache/docling.rs``.
     """
@@ -153,6 +156,7 @@ class DocumentConverter:
         fetch_images: bool = False,
         use_web_browser: bool = False,
         ocr_lang: Optional[str] = None,
+        asr_lang: Optional[str] = None,
         artifacts_path=None,
     ):
         ensure_env(artifacts_path)
@@ -229,6 +233,7 @@ class DocumentConverter:
             do_code_enrichment=do_code_enrichment,
             do_formula_enrichment=do_formula_enrichment,
             ocr_lang=ocr_lang,
+            asr_lang=asr_lang,
             allowed_formats=(
                 [InputFormat(f).value for f in allowed_formats]
                 if allowed_formats is not None

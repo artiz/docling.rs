@@ -55,7 +55,7 @@ impl Specials {
         Self {
             eot: EOT,
             sot: SOT,
-            lang: Some(language_token("models/asr/added_tokens.json")),
+            lang: Some(LANG_EN),
             transcribe: Some(TRANSCRIBE),
             no_speech: NO_SPEECH,
             ts_begin: TS_BEGIN,
@@ -63,7 +63,10 @@ impl Specials {
     }
 
     /// Resolve from the merged vocab + added-tokens map. Falls back to the
-    /// multilingual constants when the anchor tokens are missing.
+    /// multilingual constants when the anchor tokens are missing. `lang`
+    /// resolves to the model's `<|en|>` id — the baseline the loader then
+    /// overrides from `DOCLING_RS_ASR_LANG` / the `asr_lang` option, or
+    /// replaces per file when the language is auto-detected.
     ///
     /// `english_only` comes from the preset name (`*_en`), not the vocabulary:
     /// modern HF exports ship the full unified token set even for
@@ -71,11 +74,7 @@ impl Specials {
     /// but prompting an English-only model with language/task tokens it was
     /// never trained on yields empty transcripts. English-only models prompt
     /// with `<|startoftranscript|>` alone (OpenAI's `sot_sequence`).
-    fn resolve(
-        map: &std::collections::HashMap<String, u32>,
-        added_tokens: &str,
-        english_only: bool,
-    ) -> Self {
+    fn resolve(map: &std::collections::HashMap<String, u32>, english_only: bool) -> Self {
         let get = |name: &str| map.get(name).copied();
         let (Some(eot), Some(sot), Some(ts_begin)) = (
             get("<|endoftext|>"),
@@ -87,10 +86,7 @@ impl Specials {
         let (lang, transcribe) = if english_only {
             (None, None)
         } else {
-            (
-                get("<|en|>").map(|_| language_token(added_tokens)),
-                get("<|transcribe|>"),
-            )
+            (get("<|en|>"), get("<|transcribe|>"))
         };
         Self {
             eot,
@@ -130,6 +126,16 @@ pub struct Transcriber {
     specials: Specials,
     /// OpenAI's default `suppress_tokens="-1"` non-speech symbol set.
     suppress: Vec<u32>,
+    /// The vocabulary's language tokens as `(id, code)`, sorted by id — the
+    /// candidate set for auto-detection. Empty for English-only presets.
+    lang_tokens: Vec<(u32, String)>,
+    /// Pick the language from the first window's decoder probabilities
+    /// (Whisper's `language=None` default; docling 2.116 parity). Explicit
+    /// `DOCLING_RS_ASR_LANG` / [`set_language`](Self::set_language) turn it off.
+    auto_lang: bool,
+    /// Code the last auto-detection resolved to (`None` until a detection ran
+    /// or when the language is pinned explicitly).
+    detected: Option<String>,
 }
 
 fn model_path(var: &str, default: &str) -> std::path::PathBuf {
@@ -242,7 +248,32 @@ impl Transcriber {
             }
         }
         let english_only = preset.is_some_and(|p| p.ends_with("_en"));
-        let specials = Specials::resolve(&merged, &added_path, english_only);
+        let mut specials = Specials::resolve(&merged, english_only);
+        let lang_tokens = if english_only {
+            Vec::new()
+        } else {
+            collect_lang_tokens(&merged)
+        };
+        // Language selection (docling 2.116 / Whisper `language=None` parity):
+        // auto-detect by default, an explicit `DOCLING_RS_ASR_LANG` wins. The
+        // `asr_lang` option overrides both via `set_language` after load.
+        let mut auto_lang = false;
+        if specials.lang.is_some() {
+            match std::env::var("DOCLING_RS_ASR_LANG") {
+                Err(_) => auto_lang = true,
+                Ok(v) if v.is_empty() || v == "auto" => auto_lang = true,
+                Ok(v) => {
+                    if let Some(id) = lookup_lang(&lang_tokens, &v) {
+                        specials.lang = Some(id);
+                    } else if v != "en" {
+                        eprintln!(
+                            "docling.rs: asr: unknown DOCLING_RS_ASR_LANG '{v}'; \
+                             falling back to 'en'"
+                        );
+                    }
+                }
+            }
+        }
         let suppress = tokenizer.non_speech_tokens();
         Ok(Self {
             encoder,
@@ -250,7 +281,65 @@ impl Transcriber {
             tokenizer,
             specials,
             suppress,
+            lang_tokens,
+            auto_lang,
+            detected: None,
         })
+    }
+
+    /// Select the transcription language: a Whisper code (`en`, `de`, `zh`, …)
+    /// or `auto` to re-enable detection. Takes precedence over
+    /// `DOCLING_RS_ASR_LANG`. English-only presets have no language tokens —
+    /// a non-`en` request there warns and is ignored (degradation over
+    /// failure, like a missing enrichment model); an unknown code on a
+    /// multilingual model is a hard error so typos don't silently transcribe
+    /// the wrong language.
+    pub fn set_language(&mut self, lang: &str) -> Result<(), String> {
+        if lang == "auto" {
+            self.auto_lang = self.specials.lang.is_some();
+            return Ok(());
+        }
+        if self.specials.lang.is_none() {
+            if lang != "en" {
+                eprintln!(
+                    "docling.rs: asr: language '{lang}' requested but the loaded preset is \
+                     English-only; transcribing as English"
+                );
+            }
+            return Ok(());
+        }
+        match lookup_lang(&self.lang_tokens, lang) {
+            Some(id) => {
+                self.specials.lang = Some(id);
+                self.auto_lang = false;
+                Ok(())
+            }
+            None => Err(format!(
+                "asr: unknown language '{lang}' (a Whisper code like 'en', 'de', 'zh', or 'auto')"
+            )),
+        }
+    }
+
+    /// Whisper's `detect_language`: one decoder step on
+    /// `<|startoftranscript|>` alone, softmax restricted to the language
+    /// tokens (decoding.py masks everything else to `-inf`), argmax. Sets the
+    /// prompt's language token for the rest of the file.
+    fn detect_language(&mut self, hidden: &(Vec<f32>, Vec<usize>)) -> Result<(), String> {
+        let logits = self.decoder_logits(&[self.specials.sot], hidden)?;
+        let Some((id, code, p)) = pick_language(&logits, &self.lang_tokens) else {
+            return Ok(()); // no language tokens resolved: keep the en baseline
+        };
+        self.specials.lang = Some(id);
+        self.detected = Some(code.to_string());
+        eprintln!("docling.rs: asr: detected language '{code}' (p={p:.2})");
+        Ok(())
+    }
+
+    /// The code the last auto-detection resolved to — `None` before any
+    /// [`transcribe`](Self::transcribe) call, when the language is pinned
+    /// explicitly, or on English-only presets (which never detect).
+    pub fn detected_language(&self) -> Option<&str> {
+        self.detected.as_deref()
     }
 
     /// Transcribe 16 kHz mono samples into timed segments, windowing the audio
@@ -264,9 +353,16 @@ impl Transcriber {
 
         let mut segments = Vec::new();
         let mut seek = 0usize;
+        let mut lang_pending = self.auto_lang;
         while seek < content_frames.max(1) {
             let window = window_mel(&mel, total_frames, seek);
             let hidden = self.encode(&window)?;
+            // Detect once, on the first window (transcribe.py's
+            // `language=None` path), reusing its encoder output.
+            if lang_pending {
+                self.detect_language(&hidden)?;
+                lang_pending = false;
+            }
             let out = self.decode_window(&hidden)?;
 
             let time_offset = seek as f64 / FRAMES_PER_SECOND;
@@ -586,23 +682,50 @@ fn round2(v: f64) -> f64 {
     (v * 100.0).round() / 100.0
 }
 
-/// The `<|lang|>` prompt token. `DOCLING_RS_ASR_LANG` selects the language
-/// (default `en`); codes are resolved through `added_tokens.json` next to the
-/// vocabulary when present, so any Whisper language works without a table here.
-fn language_token(added_tokens_default: &str) -> u32 {
-    let lang = std::env::var("DOCLING_RS_ASR_LANG").unwrap_or_else(|_| "en".into());
-    if lang == "en" {
-        return LANG_EN;
-    }
-    let path = model_path("DOCLING_ASR_ADDED_TOKENS", added_tokens_default);
-    if let Ok(raw) = std::fs::read_to_string(&path) {
-        if let Ok(map) = serde_json::from_str::<std::collections::HashMap<String, u32>>(&raw) {
-            if let Some(&id) = map.get(&format!("<|{lang}|>")) {
-                return id;
-            }
-        }
-    }
-    LANG_EN
+/// The vocabulary's language tokens: every `<|xx|>` / `<|xxx|>` whose inner
+/// name is 2–3 lowercase ASCII letters. In Whisper vocabularies exactly the
+/// language codes match that shape (`<|transcribe|>`, `<|nospeech|>`,
+/// `<|0.00|>`, … are all longer or non-alphabetic), so no code table is
+/// needed and any Whisper language works.
+fn collect_lang_tokens(map: &std::collections::HashMap<String, u32>) -> Vec<(u32, String)> {
+    let mut tokens: Vec<(u32, String)> = map
+        .iter()
+        .filter_map(|(name, &id)| {
+            let inner = name.strip_prefix("<|")?.strip_suffix("|>")?;
+            ((2..=3).contains(&inner.len()) && inner.bytes().all(|b| b.is_ascii_lowercase()))
+                .then(|| (id, inner.to_string()))
+        })
+        .collect();
+    tokens.sort_unstable();
+    tokens
+}
+
+/// The token id for a language code, from the collected language tokens.
+fn lookup_lang(lang_tokens: &[(u32, String)], code: &str) -> Option<u32> {
+    lang_tokens
+        .iter()
+        .find(|(_, c)| c == code)
+        .map(|&(id, _)| id)
+}
+
+/// Argmax + probability over the language tokens of one logits row —
+/// Whisper's `detect_language` masks every non-language token to `-inf`
+/// before the softmax, which is exactly a softmax restricted to this set.
+fn pick_language<'a>(row: &[f32], lang_tokens: &'a [(u32, String)]) -> Option<(u32, &'a str, f64)> {
+    let candidates: Vec<(u32, &str)> = lang_tokens
+        .iter()
+        .filter(|&&(id, _)| (id as usize) < row.len())
+        .map(|(id, c)| (*id, c.as_str()))
+        .collect();
+    let &(best_id, best_code) = candidates
+        .iter()
+        .max_by(|a, b| row[a.0 as usize].total_cmp(&row[b.0 as usize]))?;
+    let max = row[best_id as usize] as f64;
+    let sum: f64 = candidates
+        .iter()
+        .map(|&(id, _)| (row[id as usize] as f64 - max).exp())
+        .sum();
+    Some((best_id, best_code, 1.0 / sum))
 }
 
 #[cfg(test)]
@@ -714,12 +837,58 @@ mod tests {
         ] {
             map.insert(tok.to_string(), id);
         }
-        let en = Specials::resolve(&map, "nonexistent.json", true);
+        let en = Specials::resolve(&map, true);
         assert_eq!((en.eot, en.sot, en.ts_begin), (50_256, 50_257, 50_363));
         assert_eq!(en.lang, None, "English-only prompts with <|sot|> alone");
         assert_eq!(en.no_speech, 50_361);
-        let multi = Specials::resolve(&map, "nonexistent.json", false);
-        assert_eq!(multi.lang, Some(LANG_EN));
+        let multi = Specials::resolve(&map, false);
+        assert_eq!(multi.lang, Some(50_258), "the model's own <|en|> id");
         assert_eq!(multi.transcribe, Some(50_358));
+    }
+
+    #[test]
+    fn language_tokens_collect_and_resolve() {
+        let mut map = std::collections::HashMap::new();
+        for (tok, id) in [
+            ("<|en|>", 50_259u32),
+            ("<|de|>", 50_261),
+            ("<|yue|>", 50_358),
+            // Non-language specials that must NOT be picked up.
+            ("<|transcribe|>", 50_359),
+            ("<|nospeech|>", 50_362),
+            ("<|0.00|>", 50_364),
+            ("<|startoftranscript|>", 50_258),
+            ("hello", 1_000),
+        ] {
+            map.insert(tok.to_string(), id);
+        }
+        let tokens = collect_lang_tokens(&map);
+        assert_eq!(
+            tokens,
+            vec![
+                (50_259, "en".to_string()),
+                (50_261, "de".to_string()),
+                (50_358, "yue".to_string()),
+            ]
+        );
+        assert_eq!(lookup_lang(&tokens, "de"), Some(50_261));
+        assert_eq!(lookup_lang(&tokens, "xx"), None);
+    }
+
+    #[test]
+    fn pick_language_softmaxes_over_language_tokens_only() {
+        let tokens = vec![(10u32, "en".to_string()), (11, "de".to_string())];
+        let mut row = vec![0f32; 20];
+        row[10] = 1.0;
+        row[11] = 3.0;
+        row[15] = 100.0; // a non-language logit must not influence the pick
+        let (id, code, p) = pick_language(&row, &tokens).expect("has candidates");
+        assert_eq!((id, code), (11, "de"));
+        // softmax over {1.0, 3.0}: e^2 / (1 + e^2)
+        let expected = (2f64).exp() / (1.0 + (2f64).exp());
+        assert!((p - expected).abs() < 1e-9, "p={p}");
+        // Out-of-range ids are skipped rather than panicking.
+        let far = vec![(999u32, "xx".to_string())];
+        assert!(pick_language(&row, &far).is_none());
     }
 }

@@ -259,6 +259,10 @@ struct ConvertOptions {
     no_text_panels: Option<bool>,
     fetch_images: Option<bool>,
     asr_model: Option<String>,
+    /// ASR transcription language for audio/video input: a Whisper code
+    /// (`en`, `de`, …) or `auto` (default) — detected from the first
+    /// 30 seconds. Unknown codes fail the conversion with a clear error.
+    asr_lang: Option<String>,
     /// Max frames sampled from a video input (0 = transcript only; needs the
     /// server to have the ffmpeg binary).
     video_frames: Option<usize>,
@@ -280,6 +284,7 @@ impl ConvertOptions {
             no_text_panels: self.no_text_panels.or(base.no_text_panels),
             fetch_images: self.fetch_images.or(base.fetch_images),
             asr_model: self.asr_model.or(base.asr_model),
+            asr_lang: self.asr_lang.or(base.asr_lang),
             video_frames: self.video_frames.or(base.video_frames),
             pages: self.pages.or(base.pages),
             ocr_lang: self.ocr_lang.or(base.ocr_lang),
@@ -463,6 +468,7 @@ async fn read_multipart(
                 }
             }
             "asr_model" => body_opts.asr_model = Some(text_field(field).await?),
+            "asr_lang" => body_opts.asr_lang = Some(text_field(field).await?),
             "pages" => body_opts.pages = Some(text_field(field).await?),
             "ocr_lang" => body_opts.ocr_lang = Some(text_field(field).await?),
             "video_frames" => {
@@ -793,6 +799,7 @@ fn request_converter(
         // placeholder images instead of a surprise outbound fetch).
         .fetch_images(state.cfg.allow_url_fetch && options.fetch_images.unwrap_or(false))
         .asr_model(options.asr_model.clone())
+        .asr_lang(options.asr_lang.clone())
         .video_frames(
             options
                 .video_frames

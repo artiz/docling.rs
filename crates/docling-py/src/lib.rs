@@ -113,6 +113,9 @@ impl PyDocumentConverter {
     /// * `ocr_lang` — OCR recognition language for scanned pages: `"en"`
     ///   (default; proper Latin word spacing) or `"ch"` (the multilingual
     ///   docling-conformance model).
+    /// * `asr_lang` — transcription language for audio/video: a Whisper code
+    ///   (`"en"`, `"de"`, …) or `"auto"` (default) to detect it from the
+    ///   first 30 seconds (docling 2.116 parity).
     ///
     /// Markdown flavour is chosen at export time by docling-core, so there is no
     /// `strict` knob here.
@@ -128,6 +131,7 @@ impl PyDocumentConverter {
         do_code_enrichment = false,
         do_formula_enrichment = false,
         asr_model = None,
+        asr_lang = None,
         video_frames = None,
         page_range = None,
         ocr_lang = None,
@@ -145,6 +149,7 @@ impl PyDocumentConverter {
         do_code_enrichment: bool,
         do_formula_enrichment: bool,
         asr_model: Option<String>,
+        asr_lang: Option<String>,
         video_frames: Option<usize>,
         page_range: Option<(usize, usize)>,
         ocr_lang: Option<String>,
@@ -197,6 +202,7 @@ impl PyDocumentConverter {
             inner: base
                 .fetch_images(fetch_images)
                 .asr_model(asr_model)
+                .asr_lang(asr_lang)
                 .no_ocr(!do_ocr)
                 .force_full_page_ocr(force_full_page_ocr)
                 .no_table_former(!do_table_structure)

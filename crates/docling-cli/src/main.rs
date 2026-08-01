@@ -3,7 +3,7 @@
 //! The docling.rs counterpart of `docling.cli.main`; `docling-rs serve`
 //! (with `--features serve`) starts the HTTP conversion API.
 //!
-//! Usage: docling-rs [--strict] [--to md|json] [--pages A-B] [--images MODE] [--fetch-images] [--no-stream] [--no-table-former] [--no-ocr] [--force-full-page-ocr] [--no-text-panels] [--ocr-lang en|ch] [--pipeline standard|vlm] [--vlm-endpoint URL] [--vlm-model NAME] [--asr-model PRESET] [--video-frames N] [--use-web-browser] [--enrich-picture-classes] [--enrich-code] [--enrich-formula] <input-file>
+//! Usage: docling-rs [--strict] [--to md|json] [--pages A-B] [--images MODE] [--fetch-images] [--no-stream] [--no-table-former] [--no-ocr] [--force-full-page-ocr] [--no-text-panels] [--ocr-lang en|ch] [--pipeline standard|vlm] [--vlm-endpoint URL] [--vlm-model NAME] [--asr-model PRESET] [--asr-lang CODE] [--video-frames N] [--use-web-browser] [--enrich-picture-classes] [--enrich-code] [--enrich-formula] <input-file>
 //!   --to md|json       output format (default: md). `json` emits docling-core's
 //!                      native DoclingDocument JSON (export_to_dict).
 //!   --pages A-B        convert only PDF pages A through B (1-based, inclusive;
@@ -37,6 +37,10 @@
 //!                      whisper_base_en, whisper_small_en, whisper_distil_small_en
 //!                      (models under models/asr/<preset>/; fetch them with
 //!                      download_dependencies.sh --asr-model=<preset>)
+//!   --asr-lang CODE    transcription language for audio/video input: a Whisper
+//!                      code (en, de, zh, ...) or auto (the default) to detect
+//!                      it from the first 30 seconds. English-only presets
+//!                      always transcribe English.
 //!   --force-full-page-ocr  OCR every PDF page even when it has a text layer
 //!                      (docling's force_full_page_ocr) — for layers that lie:
 //!                      broken encodings, forms with a few typed-in fields
@@ -97,6 +101,7 @@ fn main() -> ExitCode {
     let mut no_text_panels = false;
     let mut use_web_browser = false;
     let mut asr_model: Option<String> = None;
+    let mut asr_lang: Option<String> = None;
     let mut video_frames: Option<usize> = None;
     let mut enrich_picture_classes = false;
     let mut enrich_code = false;
@@ -129,6 +134,9 @@ fn main() -> ExitCode {
             // Distil-Whisper variants under models/asr/<preset>/; fetch with
             // download_dependencies.sh --asr-model=<preset>).
             "--asr-model" => asr_model = args.next(),
+            // Transcription language (or "auto"); validated against the model's
+            // vocabulary at conversion time.
+            "--asr-lang" => asr_lang = args.next(),
             // Max frames sampled from a video input (needs the ffmpeg binary;
             // 0 = transcript only). Default 8.
             "--video-frames" => video_frames = args.next().and_then(|v| v.parse().ok()),
@@ -269,6 +277,7 @@ fn main() -> ExitCode {
     let mut converter = DocumentConverter::new()
         .strict(strict)
         .asr_model(asr_model.clone())
+        .asr_lang(asr_lang.clone())
         .fetch_images(fetch_images)
         .no_table_former(no_table_former)
         .no_ocr(no_ocr)
