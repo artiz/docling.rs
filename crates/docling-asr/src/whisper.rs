@@ -133,6 +133,9 @@ pub struct Transcriber {
     /// (Whisper's `language=None` default; docling 2.116 parity). Explicit
     /// `DOCLING_RS_ASR_LANG` / [`set_language`](Self::set_language) turn it off.
     auto_lang: bool,
+    /// Code the last auto-detection resolved to (`None` until a detection ran
+    /// or when the language is pinned explicitly).
+    detected: Option<String>,
 }
 
 fn model_path(var: &str, default: &str) -> std::path::PathBuf {
@@ -280,6 +283,7 @@ impl Transcriber {
             suppress,
             lang_tokens,
             auto_lang,
+            detected: None,
         })
     }
 
@@ -326,8 +330,16 @@ impl Transcriber {
             return Ok(()); // no language tokens resolved: keep the en baseline
         };
         self.specials.lang = Some(id);
+        self.detected = Some(code.to_string());
         eprintln!("docling.rs: asr: detected language '{code}' (p={p:.2})");
         Ok(())
+    }
+
+    /// The code the last auto-detection resolved to — `None` before any
+    /// [`transcribe`](Self::transcribe) call, when the language is pinned
+    /// explicitly, or on English-only presets (which never detect).
+    pub fn detected_language(&self) -> Option<&str> {
+        self.detected.as_deref()
     }
 
     /// Transcribe 16 kHz mono samples into timed segments, windowing the audio

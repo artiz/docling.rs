@@ -157,26 +157,39 @@ mod tests {
         assert_eq!(fmt_seconds(30.0), "30.0");
     }
 
+    /// Whether the Whisper models are reachable, pointing `DOCLING_ASR_*` at
+    /// the workspace-root `models/asr/` (model resolution is CWD-relative and
+    /// tests run from the crate dir).
+    fn asr_models_ready() -> bool {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../models/asr");
+        if !root.join("encoder_model.onnx").exists() {
+            return false;
+        }
+        std::env::set_var("DOCLING_ASR_ENCODER", root.join("encoder_model.onnx"));
+        std::env::set_var("DOCLING_ASR_DECODER", root.join("decoder_model.onnx"));
+        std::env::set_var("DOCLING_ASR_VOCAB", root.join("vocab.json"));
+        std::env::set_var("DOCLING_ASR_ADDED_TOKENS", root.join("added_tokens.json"));
+        true
+    }
+
+    fn fixture_bytes(name: &str) -> Vec<u8> {
+        let path = format!(
+            "{}/../../tests/data/audio/sources/{name}",
+            env!("CARGO_MANIFEST_DIR")
+        );
+        std::fs::read(&path).unwrap_or_else(|e| panic!("read {path}: {e}"))
+    }
+
     /// #180 e2e (model-gated): on English speech, auto-detection picks `en`
     /// and the transcript is byte-identical to an explicit `en` request; an
     /// unknown language code is a clear error, not a silent fallback.
     #[test]
     fn auto_detected_language_matches_explicit_english() {
-        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../models/asr");
-        if !root.join("encoder_model.onnx").exists() {
+        if !asr_models_ready() {
             eprintln!("skipping: Whisper models missing under models/asr/");
             return;
         }
-        // Model resolution is CWD-relative and tests run from the crate dir.
-        std::env::set_var("DOCLING_ASR_ENCODER", root.join("encoder_model.onnx"));
-        std::env::set_var("DOCLING_ASR_DECODER", root.join("decoder_model.onnx"));
-        std::env::set_var("DOCLING_ASR_VOCAB", root.join("vocab.json"));
-        std::env::set_var("DOCLING_ASR_ADDED_TOKENS", root.join("added_tokens.json"));
-        let path = format!(
-            "{}/../../tests/data/audio/sources/sample_10s.mp3",
-            env!("CARGO_MANIFEST_DIR")
-        );
-        let bytes = std::fs::read(&path).unwrap_or_else(|e| panic!("read {path}: {e}"));
+        let bytes = fixture_bytes("sample_10s.mp3");
 
         let auto = transcribe_with_options(&bytes, "sample_10s.mp3", None, Some("auto"))
             .expect("auto-detect transcribes");
@@ -196,5 +209,28 @@ mod tests {
         assert!(err.contains("unknown language 'xx'"), "{err}");
         t.set_language("de").expect("known code is accepted");
         t.set_language("auto").expect("auto is accepted");
+    }
+
+    /// #180 e2e (model-gated): non-English speech resolves to the right
+    /// language token — Russian over Ogg Vorbis, German over MP3 — and the
+    /// transcript comes back non-empty in that language.
+    #[test]
+    fn auto_detects_russian_and_german() {
+        if !asr_models_ready() {
+            eprintln!("skipping: Whisper models missing under models/asr/");
+            return;
+        }
+        for (fixture, expect) in [("sample_13s_ru.ogg", "ru"), ("sample_14s_de.mp3", "de")] {
+            let bytes = fixture_bytes(fixture);
+            let samples = audio::decode_to_mono_16k(&bytes, fixture).expect("fixture decodes");
+            let mut t = Transcriber::load_preset(None).expect("models load");
+            t.set_language("auto").expect("auto is accepted");
+            let segments = t.transcribe(&samples).expect("transcribes");
+            assert_eq!(t.detected_language(), Some(expect), "{fixture}");
+            assert!(
+                segments.iter().any(|s| !s.text.trim().is_empty()),
+                "{fixture}: transcript must not be empty"
+            );
+        }
     }
 }
