@@ -48,6 +48,7 @@ paths:
         - { $ref: "#/components/parameters/pages" }
         - { $ref: "#/components/parameters/ocr_lang" }
         - { $ref: "#/components/parameters/asr_model" }
+        - { $ref: "#/components/parameters/asr_lang" }
         - { $ref: "#/components/parameters/video_frames" }
       requestBody:
         required: true
@@ -72,6 +73,7 @@ paths:
                 pages: { type: string, examples: ["2-5"] }
                 ocr_lang: { $ref: "#/components/schemas/OcrLang" }
                 asr_model: { type: string }
+                asr_lang: { type: string, examples: ["auto", "en", "de"] }
                 video_frames: { type: integer, minimum: 0 }
           application/json:
             schema:
@@ -276,6 +278,13 @@ components:
         asr_model:
           type: string
           description: Audio/video — Whisper preset directory under `models/asr/`.
+        asr_lang:
+          type: string
+          description: >-
+            Audio/video — transcription language: a Whisper code (`en`, `de`,
+            `zh`, …) or `auto` (default) to detect it from the first 30
+            seconds. English-only presets always transcribe English.
+          examples: ["auto", "en", "de"]
         video_frames:
           type: integer
           minimum: 0
@@ -335,5 +344,7 @@ components:
       { name: ocr_lang, in: query, schema: { $ref: "#/components/schemas/OcrLang" } }
     asr_model:
       { name: asr_model, in: query, schema: { type: string } }
+    asr_lang:
+      { name: asr_lang, in: query, schema: { type: string } }
     video_frames:
       { name: video_frames, in: query, schema: { type: integer, minimum: 0 } }

@@ -82,6 +82,7 @@ pub struct DocumentConverter {
     /// specs, PR #3741): English-only / Distil-Whisper variants under
     /// `models/asr/<preset>/`. `None` = the default Whisper tiny.
     asr_model: Option<String>,
+    asr_lang: Option<String>,
     /// Max sampled frames per video (#138 Phase 2). `None` = the default
     /// ([`DEFAULT_VIDEO_FRAMES`]); `Some(0)` disables frame extraction.
     video_frames: Option<usize>,
@@ -143,6 +144,7 @@ impl Default for DocumentConverter {
             force_full_page_ocr: false,
             use_web_browser: false,
             asr_model: None,
+            asr_lang: None,
             video_frames: None,
             enrich: crate::EnrichmentOptions::default(),
             page_range: None,
@@ -229,6 +231,16 @@ impl DocumentConverter {
     /// them with `download_dependencies.sh --asr-model <preset>`).
     pub fn asr_model(mut self, model: Option<String>) -> Self {
         self.asr_model = model;
+        self
+    }
+
+    /// Select the ASR transcription language for audio/video sources: a
+    /// Whisper code (`en`, `de`, `zh`, …) or `auto`. `None` (default) falls
+    /// back to `DOCLING_RS_ASR_LANG`, and — when that is unset too — to
+    /// per-file auto-detection from the first 30-second window (docling
+    /// 2.116 parity). English-only presets always transcribe English.
+    pub fn asr_lang(mut self, lang: Option<String>) -> Self {
+        self.asr_lang = lang;
         self
     }
 
@@ -573,10 +585,11 @@ impl DocumentConverter {
             // Audio → Whisper ASR (symphonia decode + ONNX inference); each
             // transcribed segment becomes a `[time: start-end] text` paragraph.
             #[cfg(feature = "asr")]
-            InputFormat::Audio => docling_asr::convert_audio_with_model(
+            InputFormat::Audio => docling_asr::convert_audio_with_options(
                 &source.bytes,
                 &source.name,
                 self.asr_model.as_deref(),
+                self.asr_lang.as_deref(),
             )
             .map_err(|e| ConversionError::with_source(source.format.as_str(), e))?,
             // Video (#138): the audio track transcribes through the same ASR
@@ -588,6 +601,7 @@ impl DocumentConverter {
                 &source.bytes,
                 &source.name,
                 self.asr_model.as_deref(),
+                self.asr_lang.as_deref(),
                 self.video_frames.unwrap_or(DEFAULT_VIDEO_FRAMES),
             )
             .map_err(|e| ConversionError::with_source(source.format.as_str(), e))?,

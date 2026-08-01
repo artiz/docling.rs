@@ -47,8 +47,11 @@ demuxes/decodes the container in-process (wav, mp3, flac, ogg, aac, m4a; no
 ffmpeg), a ported log-mel front-end feeds a
 **Whisper tiny** encoder/decoder exported to ONNX (run on `ort`, greedy with
 OpenAI's timestamp rules — docling's ASR defaults), and each segment becomes a
-`[time: start-end] text` paragraph. `DOCLING_RS_ASR_LANG` picks the language
-(default `en`). **Video** inputs (`mp4`/`mov`/`mkv`/`webm`, docling's
+`[time: start-end] text` paragraph. The transcription language is
+auto-detected from the first 30 seconds (docling 2.116 parity); pin it with
+`--asr-lang <code>` (a Whisper code like `en`, `de`, `zh`; `auto` re-enables
+detection), the `asr_lang` option on the other surfaces, or the
+`DOCLING_RS_ASR_LANG` environment variable. **Video** inputs (`mp4`/`mov`/`mkv`/`webm`, docling's
 `InputFormat.VIDEO`) take the same path: symphonia demuxes the audio track
 (isomp4/Matroska readers) and the transcript becomes the document. When the
 `ffmpeg` **binary** is present (runtime detection — no build dependency;
@@ -621,6 +624,11 @@ the Node/Python bindings:
 ```bash
 docling-rs --asr-model whisper_tiny_en recording.mp3
 ```
+
+The multilingual default auto-detects the language per file (`asr_lang`
+pins it: `--asr-lang de`, `asr_lang=de` on serve, `asrLang` / `asr_lang` in
+the bindings). English-only presets skip detection and always transcribe
+English.
 
 ### Enrichment models (picture classification, code, formulas)
 

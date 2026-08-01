@@ -34,6 +34,9 @@ pub struct ConverterOptions {
     /// Named Whisper model preset for audio sources (English-only /
     /// Distil-Whisper variants under `models/asr/<preset>/`).
     pub asr_model: Option<String>,
+    /// ASR transcription language for audio/video: a Whisper code (`"en"`,
+    /// `"de"`, …) or `"auto"` (default) — detected from the first 30 seconds.
+    pub asr_lang: Option<String>,
     /// Max frames sampled from a video input as timestamped pictures (needs
     /// the ffmpeg binary at runtime; `0` = transcript only). Default 8.
     pub video_frames: Option<u32>,
@@ -88,6 +91,9 @@ pub struct ConvertOptions {
     pub fetch_images: Option<bool>,
     /// Named Whisper model preset for audio sources.
     pub asr_model: Option<String>,
+    /// ASR transcription language for audio/video: a Whisper code (`"en"`,
+    /// `"de"`, …) or `"auto"` (default) — detected from the first 30 seconds.
+    pub asr_lang: Option<String>,
     /// Max frames sampled from a video input (`0` = transcript only).
     pub video_frames: Option<u32>,
     /// PDF page window `"A-B"` (or `"N"`), 1-based inclusive (#80).
@@ -153,6 +159,7 @@ struct ConvertConfig {
     strict: bool,
     fetch_images: bool,
     asr_model: Option<String>,
+    asr_lang: Option<String>,
     video_frames: Option<usize>,
     page_range: Option<(usize, usize)>,
     ocr_lang: Option<String>,
@@ -214,6 +221,7 @@ fn build_config(o: ConvertOptions) -> Result<ConvertConfig> {
         strict: o.strict.unwrap_or(false),
         fetch_images: o.fetch_images.unwrap_or(false),
         asr_model: o.asr_model,
+        asr_lang: o.asr_lang,
         video_frames: o.video_frames.map(|n| n as usize),
         page_range: parse_pages(o.pages.as_deref())?,
         ocr_lang: parse_ocr_lang(o.ocr_lang)?,
@@ -251,7 +259,8 @@ fn build_converter(cfg: &ConvertConfig) -> RsConverter {
         .fetch_images(cfg.fetch_images)
         .force_full_page_ocr(cfg.force_full_page_ocr)
         .no_text_panels(cfg.no_text_panels)
-        .asr_model(cfg.asr_model.clone());
+        .asr_model(cfg.asr_model.clone())
+        .asr_lang(cfg.asr_lang.clone());
     let base = match cfg.video_frames {
         Some(max) => base.video_frames(max),
         None => base,
@@ -433,6 +442,7 @@ pub struct DocumentConverter {
     strict: bool,
     fetch_images: bool,
     asr_model: Option<String>,
+    asr_lang: Option<String>,
     video_frames: Option<usize>,
     page_range: Option<(usize, usize)>,
     ocr_lang: Option<String>,
@@ -458,6 +468,7 @@ impl DocumentConverter {
             strict: o.strict.unwrap_or(false),
             fetch_images: o.fetch_images.unwrap_or(false),
             asr_model: o.asr_model.clone(),
+            asr_lang: o.asr_lang.clone(),
             video_frames: o.video_frames.map(|n| n as usize),
             page_range: parse_pages(o.pages.as_deref())?,
             ocr_lang: parse_ocr_lang(o.ocr_lang.clone())?,
@@ -473,6 +484,7 @@ impl DocumentConverter {
             strict: self.strict,
             fetch_images: self.fetch_images,
             asr_model: self.asr_model.clone(),
+            asr_lang: self.asr_lang.clone(),
             video_frames: self.video_frames,
             page_range: self.page_range,
             ocr_lang: self.ocr_lang.clone(),
@@ -889,6 +901,7 @@ fn output_config(out: Option<OutputOptions>, strict: bool) -> Result<ConvertConf
         strict,
         fetch_images: false,
         asr_model: None,
+        asr_lang: None,
         video_frames: None,
         page_range: None,
         force_full_page_ocr: false,

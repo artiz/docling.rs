@@ -37,6 +37,7 @@ pub fn convert_video(
     bytes: &[u8],
     name: &str,
     asr_model: Option<&str>,
+    asr_lang: Option<&str>,
     max_frames: usize,
 ) -> Result<DoclingDocument, String> {
     let frames = if max_frames > 0 && ffmpeg_available() {
@@ -50,7 +51,7 @@ pub fn convert_video(
     } else {
         Vec::new()
     };
-    let segments = match docling_asr::transcribe_with_model(bytes, name, asr_model) {
+    let segments = match docling_asr::transcribe_with_options(bytes, name, asr_model, asr_lang) {
         Ok(segments) => segments,
         Err(e) if !frames.is_empty() && e.0.contains("no decodable audio track") => Vec::new(),
         Err(e) => return Err(e.0),
@@ -376,7 +377,8 @@ mod tests {
             eprintln!("skipping: needs ffmpeg and the Whisper models");
             return;
         }
-        let doc = convert_video(&fixture("sample_10s_video-mkv.mkv"), "s.mkv", None, 4).unwrap();
+        let doc =
+            convert_video(&fixture("sample_10s_video-mkv.mkv"), "s.mkv", None, None, 4).unwrap();
         let mut pictures = 0;
         let mut paragraphs = 0;
         for node in &doc.nodes {
@@ -422,7 +424,8 @@ mod tests {
             .status()
             .unwrap();
         assert!(status.success());
-        let doc = convert_video(&std::fs::read(&out).unwrap(), "noaudio.mkv", None, 4).unwrap();
+        let doc =
+            convert_video(&std::fs::read(&out).unwrap(), "noaudio.mkv", None, None, 4).unwrap();
         assert!(!doc.nodes.is_empty());
         assert!(doc.nodes.iter().all(|n| matches!(n, Node::Picture { .. })));
     }
