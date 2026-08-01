@@ -200,7 +200,7 @@ fn parse_font(doc: &Document, name: &[u8], fdict: &Dictionary) -> Font {
         .map(|data| parse_tounicode(&data))
         .unwrap_or_default();
 
-    let (widths, default_width) = if two_byte {
+    let (mut widths, mut default_width) = if two_byte {
         cid_widths(doc, fdict)
     } else {
         simple_widths(doc, fdict)
@@ -211,6 +211,28 @@ fn parse_font(doc: &Document, name: &[u8], fdict: &Dictionary) -> Font {
     } else {
         Some(simple_encoding_table(doc, fdict))
     };
+
+    // A standard-14 font referenced without an embedded program usually ships
+    // no `/Widths` and no `/FontDescriptor` either (ReportLab's default, #187).
+    // Every advance then resolved to 0, the cells collapsed to zero width, and
+    // the page's whole text layer was silently dropped — while pdfium, with
+    // its built-in metrics, reads the same file fine. Fill the widths from the
+    // built-in Adobe Core 14 AFM tables via the font's own code→char decode
+    // (base encoding + `/Differences`), so an explicit `/Widths` always wins.
+    if !two_byte && widths.is_empty() && default_width == 0.0 {
+        if let Some(std14) = base_font_name(fdict).and_then(|n| crate::std14::widths_for(&n)) {
+            if let Some(enc) = &simple_encoding {
+                for (&code, &ch) in enc {
+                    if let Some(w) = std14.width(ch) {
+                        widths.insert(u32::from(code), w);
+                    }
+                }
+            }
+            // Codes the table misses still advance a typical width instead of
+            // stacking at x=0 (the failure mode this whole branch fixes).
+            default_width = 500.0;
+        }
+    }
     let fallback_names = if two_byte {
         HashMap::new()
     } else {
@@ -391,6 +413,16 @@ fn font_ascent_descent(doc: &Document, fdict: &Dictionary, two_byte: bool) -> (f
         return (750.0, -250.0);
     }
     (asc, desc)
+}
+
+/// The `/BaseFont` name with any `ABCDEF+` subset prefix stripped (#187).
+fn base_font_name(fdict: &Dictionary) -> Option<Vec<u8>> {
+    let name = fdict.get(b"BaseFont").ok()?.as_name().ok()?;
+    let stripped = match name.iter().position(|&b| b == b'+') {
+        Some(i) if i == 6 => &name[i + 1..],
+        _ => name,
+    };
+    Some(stripped.to_vec())
 }
 
 /// Simple-font widths: `/FirstChar` + `/Widths` array, `/MissingWidth` default.
@@ -1954,6 +1986,131 @@ mod xref_repair {
             declined.contains("object follows the xref"),
             "reason: {declined}"
         );
+    }
+}
+
+/// #187: standard-14 fonts referenced without an embedded program (and thus
+/// usually without `/Widths` or a `/FontDescriptor`) must decode with the
+/// built-in Adobe Core 14 metrics instead of collapsing every cell to zero
+/// width — the failure mode where a valid text layer was silently dropped
+/// while pdfium read the same file fine.
+#[cfg(test)]
+mod base14_fonts {
+    /// A one-page PDF whose single `Tj` uses `fontdict` (no embedded program).
+    fn pdf_with_font(fontdict: &[u8], text: &[u8]) -> Vec<u8> {
+        let content = [b"BT /F1 12 Tf 72 700 Td (".as_slice(), text, b") Tj ET\n"].concat();
+        let stream = format!("<</Length {}>>stream\n", content.len()).into_bytes();
+        let objs: Vec<Vec<u8>> = vec![
+            b"<</Type/Catalog/Pages 2 0 R>>".to_vec(),
+            b"<</Type/Pages/Kids[3 0 R]/Count 1>>".to_vec(),
+            b"<</Type/Page/Parent 2 0 R/MediaBox[0 0 595 842]/Contents 4 0 R\
+               /Resources<</Font<</F1 5 0 R>>>>>>"
+                .to_vec(),
+            [stream.as_slice(), content.as_slice(), b"endstream"].concat(),
+            fontdict.to_vec(),
+        ];
+        let mut out = b"%PDF-1.4\n".to_vec();
+        let mut offsets = Vec::new();
+        for (i, body) in objs.iter().enumerate() {
+            offsets.push(out.len());
+            out.extend_from_slice(format!("{} 0 obj", i + 1).as_bytes());
+            out.extend_from_slice(body);
+            out.extend_from_slice(b"endobj\n");
+        }
+        let xref_at = out.len();
+        out.extend_from_slice(format!("xref\n0 {}\n", objs.len() + 1).as_bytes());
+        out.extend_from_slice(b"0000000000 65535 f \n");
+        for off in &offsets {
+            out.extend_from_slice(format!("{off:010} 00000 n \n").as_bytes());
+        }
+        out.extend_from_slice(
+            format!("trailer<</Size {}/Root 1 0 R>>\n", objs.len() + 1).as_bytes(),
+        );
+        out.extend_from_slice(format!("startxref\n{xref_at}\n%%EOF\n").as_bytes());
+        out
+    }
+
+    /// The parsed cells of the only page.
+    fn cells(pdf: &[u8]) -> Vec<crate::pdfium_backend::TextCell> {
+        super::pdf_textlines(pdf)
+            .into_iter()
+            .flat_map(|(_, _, c)| c)
+            .collect()
+    }
+
+    /// Every standard-14 alias/style decodes with real (positive-width) boxes.
+    #[test]
+    fn standard14_faces_get_builtin_widths() {
+        for fontdict in [
+            // ReportLab's default: base-14 Helvetica, WinAnsi, nothing else.
+            b"<</Type/Font/Subtype/Type1/BaseFont/Helvetica/Encoding/WinAnsiEncoding>>".as_slice(),
+            // No /Encoding at all (StandardEncoding-ish default).
+            b"<</Type/Font/Subtype/Type1/BaseFont/Times-BoldItalic>>",
+            // Substitution aliases + a subset prefix.
+            b"<</Type/Font/Subtype/TrueType/BaseFont/Arial,Bold>>",
+            b"<</Type/Font/Subtype/Type1/BaseFont/ABCDEF+Courier-Oblique>>",
+        ] {
+            let pdf = pdf_with_font(fontdict, b"Words have width now");
+            let cs = cells(&pdf);
+            let text: String = cs
+                .iter()
+                .map(|c| c.text.as_str())
+                .collect::<Vec<_>>()
+                .join(" ");
+            assert!(
+                text.contains("Words have width now"),
+                "{}: text lost: {text:?}",
+                String::from_utf8_lossy(fontdict)
+            );
+            assert!(
+                cs.iter().all(|c| c.r > c.l),
+                "{}: zero-width cells: {cs:?}",
+                String::from_utf8_lossy(fontdict)
+            );
+        }
+    }
+
+    /// An explicit `/Widths` array always wins over the built-in metrics, and a
+    /// non-standard face without `/Widths` stays as before (no invented boxes).
+    #[test]
+    fn explicit_widths_win_and_unknown_faces_are_untouched() {
+        // Helvetica with explicit 100/1000-em widths: the word's box must be
+        // ~4×100 units at 12pt = 4.8pt wide — far narrower than the ~2.7×
+        // wider built-in Helvetica advances would make it.
+        let explicit = pdf_with_font(
+            b"<</Type/Font/Subtype/Type1/BaseFont/Helvetica/FirstChar 65\
+               /Widths[100 100 100 100]/Encoding/WinAnsiEncoding>>",
+            b"ABBA",
+        );
+        let builtin = pdf_with_font(
+            b"<</Type/Font/Subtype/Type1/BaseFont/Helvetica/Encoding/WinAnsiEncoding>>",
+            b"ABBA",
+        );
+        let w = |pdf: &[u8]| {
+            let cs = cells(pdf);
+            assert_eq!(cs.len(), 1, "one word cell: {cs:?}");
+            cs[0].r - cs[0].l
+        };
+        let (we, wb) = (w(&explicit), w(&builtin));
+        assert!(
+            (we - 4.8).abs() < 0.1,
+            "explicit widths must win: got {we}, want 4×100×12/1000"
+        );
+        assert!(
+            wb > 2.0 * we,
+            "built-in Helvetica is much wider: {wb} vs {we}"
+        );
+
+        // An unknown face with no /Widths: still parses (text kept), but no
+        // built-in table applies — the old zero-width behavior is preserved
+        // rather than inventing Helvetica metrics for an arbitrary font.
+        let unknown = pdf_with_font(
+            b"<</Type/Font/Subtype/Type1/BaseFont/FancyCorp-Display>>",
+            b"Mystery",
+        );
+        let cs = cells(&unknown);
+        let text: String = cs.iter().map(|c| c.text.as_str()).collect();
+        assert!(text.contains("Mystery"), "text still decodes: {cs:?}");
     }
 }
 
