@@ -5,8 +5,15 @@
 //! of video containers (mp4/mov via isomp4, mkv/webm via the Matroska reader)
 //! — replacing the ffmpeg dependency Python docling shells out to. Channels are
 //! averaged to mono and linearly resampled to Whisper's fixed 16 kHz input
-//! rate. AVI is the one upstream video extension with no pure-Rust demuxer;
-//! it fails with a targeted message instead of a generic probe error.
+//! rate.
+//!
+//! What symphonia can't handle in-process — Ogg **Opus** (no stable pure-Rust
+//! decoder; the default codec of Telegram/WhatsApp voice messages) and **AVI**
+//! containers (no demuxer) — falls back to the `ffmpeg` **binary** when one is
+//! present (#190): runtime detection only, never a build dependency, same
+//! pattern as video frame extraction (`DOCLING_FFMPEG` overrides the path).
+//! Without ffmpeg the original targeted error is extended with an install
+//! hint.
 
 use symphonia::core::audio::AudioBufferRef;
 use symphonia::core::codecs::{DecoderOptions, CODEC_TYPE_NULL};
@@ -19,20 +26,36 @@ use symphonia::core::probe::Hint;
 pub const SAMPLE_RATE: u32 = 16_000;
 
 /// Decode `bytes` (using the file extension in `name` as a format hint) into
-/// mono `f32` samples at 16 kHz.
+/// mono `f32` samples at 16 kHz. In-process symphonia first; whatever it
+/// can't decode (Opus, AVI) goes through the optional ffmpeg fallback.
 pub fn decode_to_mono_16k(bytes: &[u8], name: &str) -> Result<Vec<f32>, String> {
+    let err = match decode_symphonia(bytes, name) {
+        Ok(samples) => return Ok(samples),
+        Err(e) => e,
+    };
+    match ffmpeg_binary() {
+        Some(ffmpeg) => {
+            eprintln!("docling.rs: asr: {err}; retrying with the ffmpeg fallback");
+            decode_via_ffmpeg(&ffmpeg, bytes)
+                .map_err(|fe| format!("{err}; ffmpeg fallback failed: {fe}"))
+        }
+        None => Err(format!(
+            "{err} — install ffmpeg (or point DOCLING_FFMPEG at it) to enable the \
+             fallback decoder for this input"
+        )),
+    }
+}
+
+/// The in-process pure-Rust decode path.
+fn decode_symphonia(bytes: &[u8], name: &str) -> Result<Vec<f32>, String> {
     // symphonia has no AVI demuxer — its wav reader would reject the RIFF
-    // header with an opaque "riff form is not wave"; say what's wrong and what
-    // to do instead. Sniff the content (`RIFF....AVI `) rather than the name:
-    // callers often pass a bare stem with no extension.
+    // header with an opaque "riff form is not wave"; say what's wrong instead.
+    // Sniff the content (`RIFF....AVI `) rather than the name: callers often
+    // pass a bare stem with no extension.
     let is_avi_bytes = bytes.len() >= 12 && &bytes[0..4] == b"RIFF" && &bytes[8..12] == b"AVI ";
     let ext = name.rsplit('.').next().filter(|e| *e != name);
     if is_avi_bytes || ext.is_some_and(|e| e.eq_ignore_ascii_case("avi")) {
-        return Err(
-            "asr: AVI containers are not supported (no pure-Rust demuxer) — remux the \
-             audio track into mp4/mkv/webm first (e.g. `ffmpeg -i in.avi -c copy out.mkv`)"
-                .to_string(),
-        );
+        return Err("asr: AVI containers are not supported (no pure-Rust demuxer)".to_string());
     }
 
     let cursor = std::io::Cursor::new(bytes.to_vec());
@@ -94,6 +117,75 @@ pub fn decode_to_mono_16k(bytes: &[u8], name: &str) -> Result<Vec<f32>, String> 
         return Err("asr: audio stream decoded to zero samples".to_string());
     }
     Ok(resample_linear(&mono, src_rate, SAMPLE_RATE))
+}
+
+/// The runnable ffmpeg binary, if any: `DOCLING_FFMPEG` if set, else `ffmpeg`
+/// from `PATH` — probed per call, mirroring video-frame extraction.
+fn ffmpeg_binary() -> Option<std::path::PathBuf> {
+    let bin = std::env::var("DOCLING_FFMPEG").unwrap_or_else(|_| "ffmpeg".to_string());
+    std::process::Command::new(&bin)
+        .arg("-version")
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status()
+        .ok()
+        .filter(|s| s.success())
+        .map(|_| bin.into())
+}
+
+/// Decode arbitrary audio/video bytes to 16 kHz mono via the ffmpeg binary
+/// (`-f s16le -ac 1 -ar 16000` on stdout), piping the input through stdin so
+/// nothing touches the filesystem. stdin is fed from a separate thread while
+/// stdout is drained here — writing 100 MB into a full pipe would deadlock a
+/// single-threaded copy.
+fn decode_via_ffmpeg(ffmpeg: &std::path::Path, bytes: &[u8]) -> Result<Vec<f32>, String> {
+    use std::io::Read as _;
+    use std::io::Write as _;
+    use std::process::{Command, Stdio};
+
+    let mut child = Command::new(ffmpeg)
+        .args(["-hide_banner", "-loglevel", "error", "-i", "pipe:0"])
+        .args(["-f", "s16le", "-ac", "1", "-ar", "16000", "pipe:1"])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|e| format!("spawning {}: {e}", ffmpeg.display()))?;
+
+    let mut stdin = child.stdin.take().expect("stdin piped");
+    let input = bytes.to_vec();
+    // The write end fails with EPIPE when ffmpeg rejects the input early;
+    // that's fine — the exit status below carries the real diagnostic.
+    let writer = std::thread::spawn(move || {
+        let _ = stdin.write_all(&input);
+    });
+
+    let mut pcm = Vec::new();
+    child
+        .stdout
+        .take()
+        .expect("stdout piped")
+        .read_to_end(&mut pcm)
+        .map_err(|e| format!("reading ffmpeg output: {e}"))?;
+    let mut diag = String::new();
+    if let Some(mut stderr) = child.stderr.take() {
+        let _ = stderr.read_to_string(&mut diag);
+    }
+    let status = child
+        .wait()
+        .map_err(|e| format!("waiting for ffmpeg: {e}"))?;
+    let _ = writer.join();
+
+    if !status.success() {
+        return Err(format!("ffmpeg exited with {status}: {}", diag.trim()));
+    }
+    if pcm.len() < 2 {
+        return Err("ffmpeg produced no audio".to_string());
+    }
+    Ok(pcm
+        .chunks_exact(2)
+        .map(|c| i16::from_le_bytes([c[0], c[1]]) as f32 / 32_768.0)
+        .collect())
 }
 
 /// Average all channels of a decoded buffer into `out` as `f32`.
@@ -169,8 +261,9 @@ mod tests {
     }
 
     /// Decode a fixture from the shared audio test-data tree, asserting the
-    /// audio track demuxes to roughly 10 s of speech at 16 kHz.
-    fn decode_video_fixture(name: &str) {
+    /// audio track demuxes to a duration in `[lo, hi]` seconds of non-silent
+    /// speech at 16 kHz.
+    fn decode_fixture_expect(name: &str, lo: f32, hi: f32) {
         let path = format!(
             "{}/../../tests/data/audio/sources/{name}",
             env!("CARGO_MANIFEST_DIR")
@@ -179,13 +272,17 @@ mod tests {
         let samples = decode_to_mono_16k(&bytes, name).expect("audio track decodes");
         let secs = samples.len() as f32 / SAMPLE_RATE as f32;
         assert!(
-            (8.0..=12.0).contains(&secs),
-            "{name}: expected ~10s of audio, got {secs:.2}s"
+            (lo..=hi).contains(&secs),
+            "{name}: expected {lo}-{hi}s of audio, got {secs:.2}s"
         );
         assert!(
             samples.iter().any(|&s| s.abs() > 0.01),
             "{name}: decoded audio is silent"
         );
+    }
+
+    fn decode_video_fixture(name: &str) {
+        decode_fixture_expect(name, 8.0, 12.0);
     }
 
     // Video containers (#138 Phase 1): the audio track transcodes through the
@@ -213,16 +310,39 @@ mod tests {
 
     #[test]
     fn avi_gets_a_targeted_error() {
+        // Garbage AVI bytes fail either way: without ffmpeg the targeted
+        // symphonia-gap message (plus install hint), with ffmpeg the fallback
+        // rejects the malformed input — "AVI" names the problem in both.
         // By extension (even with unreadable bytes)…
         let err = decode_to_mono_16k(&[0u8; 16], "clip.avi").unwrap_err();
         assert!(err.contains("AVI"), "unexpected error: {err}");
-        assert!(err.contains("remux"), "unexpected error: {err}");
         // …and by content sniff when the name is a bare stem (the converter
         // passes `file_stem`, so the extension is not always available).
         let mut riff = b"RIFF\x00\x00\x00\x00AVI LIST".to_vec();
         riff.extend_from_slice(&[0u8; 32]);
         let err = decode_to_mono_16k(&riff, "clip_video-avi").unwrap_err();
         assert!(err.contains("AVI"), "unexpected error: {err}");
+    }
+
+    // #190: what symphonia can't decode goes through the ffmpeg binary when
+    // one is present — Ogg Opus (no pure-Rust decoder)…
+    #[test]
+    fn opus_decodes_via_ffmpeg_fallback() {
+        if ffmpeg_binary().is_none() {
+            eprintln!("skipping: ffmpeg not available");
+            return;
+        }
+        decode_fixture_expect("sample_12s_ru_opus.ogg", 11.0, 14.0);
+    }
+
+    // …and whole AVI containers (no pure-Rust demuxer).
+    #[test]
+    fn avi_decodes_via_ffmpeg_fallback() {
+        if ffmpeg_binary().is_none() {
+            eprintln!("skipping: ffmpeg not available");
+            return;
+        }
+        decode_fixture_expect("sample_10s_video-avi.avi", 8.0, 12.0);
     }
 
     #[test]
