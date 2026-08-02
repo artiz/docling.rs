@@ -60,8 +60,10 @@ detection), the `asr_lang` option on the other surfaces, or the
 interleave with the transcript as `[time: <ts>]`-captioned pictures, PNGs
 embedded in JSON/DCLX output. Without ffmpeg, or with `--video-frames 0`, a
 video converts to its transcript alone; a video with *no* audio track converts
-to its frames alone. AVI is the one upstream video extension symphonia cannot
-demux; it fails with a message suggesting a remux.
+to its frames alone. What symphonia can't decode in-process — Ogg **Opus**
+(the codec of Telegram/WhatsApp voice messages) and **AVI** containers —
+falls back to the same optional ffmpeg binary when present; without ffmpeg
+those inputs fail with a targeted message and an install hint.
 
 <details>
 <summary><b>Installing ffmpeg</b> (optional — only for video frame sampling)</summary>
