@@ -220,7 +220,7 @@ mod tests {
             eprintln!("skipping: Whisper models missing under models/asr/");
             return;
         }
-        for (fixture, expect) in [("sample_13s_ru.ogg", "ru"), ("sample_14s_de.mp3", "de")] {
+        for (fixture, expect) in [("sample_12s_ru.ogg", "ru"), ("sample_14s_de.mp3", "de")] {
             let bytes = fixture_bytes(fixture);
             let samples = audio::decode_to_mono_16k(&bytes, fixture).expect("fixture decodes");
             let mut t = Transcriber::load_preset(None).expect("models load");
