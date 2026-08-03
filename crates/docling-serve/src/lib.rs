@@ -7,6 +7,9 @@
 //! |--------|---------------|----------------------------------------------------|
 //! | GET    | `/`           | API docs + an interactive test form                |
 //! | POST   | `/v1/convert` | convert an upload (multipart) or a URL (JSON body) |
+//! | POST   | `/v1/convert/async` | same request, returns a task id (#182)       |
+//! | GET    | `/v1/status/{id}` | async job status (pending/started/success/failure) |
+//! | GET    | `/v1/result/{id}` | async job result (the sync response, stored)   |
 //! | GET    | `/v1/config`  | server capabilities (`{"allow_url_fetch": bool}`)  |
 //! | GET    | `/health`     | liveness probe                                     |
 //! | GET    | `/ready`      | readiness probe (200 once models are warm)         |
@@ -14,8 +17,10 @@
 //! | GET    | `/logo.svg`   | the playground's logo                              |
 //!
 //! `POST /v1/convert` accepts either `multipart/form-data` with a `file` part
-//! (the filename's extension selects the input format) or an
-//! `application/json` body `{"url": "https://…", "file_name"?: "override.pdf"}`.
+//! (the filename's extension selects the input format; **several file parts
+//! make a batch**, #182 — the response is then a JSON `results` array with
+//! per-item status) or an `application/json` body
+//! `{"url": "https://…", "file_name"?: "override.pdf"}`.
 //! Options ride along as multipart text parts, JSON fields, or query
 //! parameters (body wins over query):
 //!
@@ -30,7 +35,22 @@
 //!   fetch, so honored only under `--allow-url-fetch`)
 //!
 //! Markdown converts through the streaming serializer and the response body
-//! streams page by page (chunked transfer); `json`/`dclx`/`chunks` buffer.
+//! streams page by page (chunked transfer); `json`/`dclx`/`chunks` (and every
+//! batch/async result) buffer.
+//!
+//! Responses carry the conversion-confidence report (#183) when the PDF/image
+//! ML pipeline ran: an `X-Docling-Confidence` header with the document-level
+//! summary (grades + scores, docling's `ConfidenceReport` semantics) on every
+//! output format, and a top-level `"confidence"` key with the per-page
+//! breakdown appended to `to=json` bodies. Declarative conversions have no ML
+//! stages and carry neither.
+//!
+//! `POST /v1/convert/async` (#182) accepts exactly the `/v1/convert` request
+//! and answers `202 {"task_id": …}` immediately; the job queues on the same
+//! concurrency semaphore (reusing the warm pipeline) and the result is
+//! fetched with `GET /v1/result/{id}` once `GET /v1/status/{id}` reports
+//! `success`. Results are held for `--result-ttl` seconds; at most
+//! `--queue-size` jobs may be queued/unfetched at once (429 beyond that).
 //!
 //! One warm [`Pipeline`] (layout/OCR/TableFormer sessions) is shared across
 //! requests behind a mutex — PDF/image conversions serialize on it instead of
@@ -82,6 +102,13 @@ pub struct ServeConfig {
     pub allow_url_fetch: bool,
     /// Default `strict` for requests that don't set it.
     pub strict: bool,
+    /// Maximum async jobs (#182) waiting or running at once; further
+    /// `POST /v1/convert/async` submissions are refused with 429. Bounds the
+    /// memory held by queued request bytes.
+    pub queue_size: usize,
+    /// How long a finished async job's result stays fetchable before it is
+    /// evicted (idle results are the other thing holding memory).
+    pub result_ttl_secs: u64,
 }
 
 impl Default for ServeConfig {
@@ -93,6 +120,8 @@ impl Default for ServeConfig {
             warmup: false,
             allow_url_fetch: false,
             strict: false,
+            queue_size: 16,
+            result_ttl_secs: 600,
         }
     }
 }
@@ -104,6 +133,8 @@ struct AppState {
     /// Bounds total in-flight conversions (`Arc` so a permit can move into
     /// a streaming response's worker and outlive the handler).
     permits: Arc<Semaphore>,
+    /// Async conversion jobs (#182), keyed by task id.
+    jobs: Mutex<std::collections::HashMap<String, Job>>,
     ready: AtomicBool,
     cfg: ServeConfig,
 }
@@ -113,6 +144,7 @@ pub fn router(cfg: ServeConfig) -> Router {
     let state = Arc::new(AppState {
         pipeline: Mutex::new(None),
         permits: Arc::new(Semaphore::new(cfg.concurrency.max(1))),
+        jobs: Mutex::new(std::collections::HashMap::new()),
         ready: AtomicBool::new(!cfg.warmup),
         cfg: cfg.clone(),
     });
@@ -157,6 +189,9 @@ pub fn router(cfg: ServeConfig) -> Router {
         .route("/ready", get(ready))
         .route("/v1/config", get(config))
         .route("/v1/convert", post(convert))
+        .route("/v1/convert/async", post(convert_async))
+        .route("/v1/status/{id}", get(job_status))
+        .route("/v1/result/{id}", get(job_result))
         .layer(DefaultBodyLimit::max(cfg.max_body_bytes))
         .with_state(state)
 }
@@ -307,36 +342,54 @@ enum ApiError {
     Bad(String),
     Unsupported(String),
     Internal(String),
+    /// The async job queue is full (#182) — retry later.
+    Busy(String),
+}
+
+/// The HTTP status + message an [`ApiError`] answers with (also stored on a
+/// failed async job so `/v1/result/{id}` reproduces the sync status).
+fn api_error_parts(e: ApiError) -> (StatusCode, String) {
+    match e {
+        ApiError::Bad(m) => (StatusCode::BAD_REQUEST, m),
+        ApiError::Unsupported(m) => (StatusCode::UNPROCESSABLE_ENTITY, m),
+        ApiError::Internal(m) => (StatusCode::INTERNAL_SERVER_ERROR, m),
+        ApiError::Busy(m) => (StatusCode::TOO_MANY_REQUESTS, m),
+    }
 }
 
 impl IntoResponse for ApiError {
     fn into_response(self) -> Response {
-        let (status, msg) = match self {
-            ApiError::Bad(m) => (StatusCode::BAD_REQUEST, m),
-            ApiError::Unsupported(m) => (StatusCode::UNPROCESSABLE_ENTITY, m),
-            ApiError::Internal(m) => (StatusCode::INTERNAL_SERVER_ERROR, m),
-        };
+        let (status, msg) = api_error_parts(self);
         (status, Json(json!({"error": msg}))).into_response()
     }
 }
 
-async fn convert(
-    State(state): State<Arc<AppState>>,
-    Query(query): Query<ConvertOptions>,
+/// One parsed upload: the source, or the filename with why it couldn't become
+/// one (a batch converts around a bad item; a single-file request propagates
+/// the error as its response).
+type SourceItem = Result<SourceDocument, (String, ApiError)>;
+
+/// Parse a conversion request body — `multipart/form-data` uploads (one or
+/// more `file` parts, #182 batch) or an `application/json` `{"url": …}` — into
+/// sources plus the merged options. Shared by the sync and async endpoints so
+/// both accept exactly the same requests (and reject bad ones synchronously).
+async fn parse_convert_request(
+    state: &Arc<AppState>,
+    query: ConvertOptions,
     headers: HeaderMap,
     body: axum::extract::Request,
-) -> Result<Response, ApiError> {
+) -> Result<(Vec<SourceItem>, ConvertOptions), ApiError> {
     let content_type = headers
         .get(header::CONTENT_TYPE)
         .and_then(|v| v.to_str().ok())
         .unwrap_or("")
         .to_ascii_lowercase();
 
-    let (source, options) = if content_type.starts_with("multipart/form-data") {
+    if content_type.starts_with("multipart/form-data") {
         let multipart = Multipart::from_request(body, &())
             .await
             .map_err(|e| ApiError::Bad(format!("bad multipart body: {e}")))?;
-        read_multipart(multipart, query).await?
+        read_multipart(multipart, query).await
     } else if content_type.starts_with("application/json") {
         let bytes = axum::body::to_bytes(body.into_body(), state.cfg.max_body_bytes)
             .await
@@ -356,13 +409,17 @@ async fn convert(
         let source = tokio::task::spawn_blocking(move || fetch_url(&url, name.as_deref()))
             .await
             .map_err(|e| ApiError::Internal(format!("fetch task: {e}")))??;
-        (source, options)
+        Ok((vec![Ok(source)], options))
     } else {
-        return Err(ApiError::Bad(
+        Err(ApiError::Bad(
             "expected multipart/form-data (file upload) or application/json ({\"url\": …})".into(),
-        ));
-    };
+        ))
+    }
+}
 
+/// Validate the `to` / `images` options (shared by sync and async so an async
+/// submission fails fast instead of parking a doomed job in the queue).
+fn validate_output(options: &ConvertOptions) -> Result<(String, ImageMode), ApiError> {
     let to = options.to.clone().unwrap_or_else(|| "md".into());
     if !matches!(to.as_str(), "md" | "markdown" | "json" | "dclx" | "chunks") {
         return Err(ApiError::Bad(format!(
@@ -378,6 +435,17 @@ async fn convert(
             )))
         }
     };
+    Ok((to, image_mode))
+}
+
+async fn convert(
+    State(state): State<Arc<AppState>>,
+    Query(query): Query<ConvertOptions>,
+    headers: HeaderMap,
+    body: axum::extract::Request,
+) -> Result<Response, ApiError> {
+    let (sources, options) = parse_convert_request(&state, query, headers, body).await?;
+    let (to, image_mode) = validate_output(&options)?;
 
     // Bound total in-flight conversions; excess requests queue here. The
     // permit is owned so the streaming path can hold it until the response
@@ -389,58 +457,450 @@ async fn convert(
         .await
         .map_err(|e| ApiError::Internal(format!("semaphore: {e}")))?;
 
+    // A single Markdown conversion streams; everything else (other formats,
+    // #182 batches — which need per-item framing) buffers.
     let is_markdown = matches!(to.as_str(), "md" | "markdown");
-    if is_markdown {
+    if is_markdown && sources.len() == 1 {
+        let source = sources
+            .into_iter()
+            .next()
+            .expect("checked len")
+            .map_err(|(_, e)| e)?;
         return stream_markdown(state.clone(), source, options, image_mode, permit).await;
     }
-    let _permit = permit;
 
-    // Buffered outputs: convert on a blocking thread, then serialize.
     let st = state.clone();
-    let name = source.name.clone();
-    let document = tokio::task::spawn_blocking(move || convert_document(&st, source, &options))
-        .await
-        .map_err(|e| ApiError::Internal(format!("convert task: {e}")))??;
+    let stored = tokio::task::spawn_blocking(move || {
+        run_conversion(&st, sources, &options, &to, image_mode)
+    })
+    .await
+    .map_err(|e| ApiError::Internal(format!("convert task: {e}")))?;
+    drop(permit);
+    Ok(stored?.into_response())
+}
 
-    Ok(match to.as_str() {
-        "json" => (
-            [(header::CONTENT_TYPE, "application/json")],
-            document.export_to_json(),
+/// One async conversion job (#182).
+struct Job {
+    state: JobState,
+    /// When the job left the queue (finished or failed) — drives TTL eviction.
+    done_at: Option<std::time::Instant>,
+}
+
+enum JobState {
+    /// Waiting for a conversion slot (the shared semaphore).
+    Pending,
+    Started,
+    Success(StoredResponse),
+    /// The HTTP status the sync endpoint would have answered with, plus the
+    /// error message.
+    Failure(StatusCode, String),
+}
+
+impl JobState {
+    fn as_str(&self) -> &'static str {
+        match self {
+            Self::Pending => "pending",
+            Self::Started => "started",
+            Self::Success(_) => "success",
+            Self::Failure(..) => "failure",
+        }
+    }
+}
+
+/// Evict finished jobs whose result has outlived the TTL. Called from the job
+/// endpoints — no background sweeper thread needed, since memory only ever
+/// accumulates through those same endpoints' submissions.
+fn purge_expired(jobs: &mut std::collections::HashMap<String, Job>, ttl_secs: u64) {
+    let ttl = std::time::Duration::from_secs(ttl_secs);
+    jobs.retain(|_, job| job.done_at.is_none_or(|done| done.elapsed() < ttl));
+}
+
+/// An unguessable task id. The result endpoint is unauthenticated (like the
+/// rest of the API), so the id doubles as the fetch capability: 128 bits from
+/// two independently random-seeded `RandomState` hashers — not a substitute
+/// for real authentication (front the server with one), but not enumerable
+/// either.
+fn task_id() -> String {
+    use std::hash::{BuildHasher, Hasher};
+    let mut h1 = std::collections::hash_map::RandomState::new().build_hasher();
+    let mut h2 = std::collections::hash_map::RandomState::new().build_hasher();
+    h1.write_u64(0);
+    h2.write_u64(1);
+    format!("{:016x}{:016x}", h1.finish(), h2.finish())
+}
+
+/// `POST /v1/convert/async` (#182): accept the same request as `/v1/convert`,
+/// but return a task id immediately instead of holding the connection for the
+/// duration of the conversion. The job queues on the same semaphore as sync
+/// requests (reusing the warm pipeline); poll `GET /v1/status/{id}` and fetch
+/// `GET /v1/result/{id}`.
+async fn convert_async(
+    State(state): State<Arc<AppState>>,
+    Query(query): Query<ConvertOptions>,
+    headers: HeaderMap,
+    body: axum::extract::Request,
+) -> Result<Response, ApiError> {
+    let (mut sources, options) = parse_convert_request(&state, query, headers, body).await?;
+    let (to, image_mode) = validate_output(&options)?;
+    // A single unconvertible upload fails the submission itself (a batch
+    // converts around bad items) — same surface as the sync endpoint, and no
+    // doomed job occupies the queue.
+    if sources.len() == 1 && sources[0].is_err() {
+        let (_, e) = sources.remove(0).expect_err("checked is_err");
+        return Err(e);
+    }
+
+    let id = task_id();
+    {
+        let mut jobs = state.jobs.lock().unwrap();
+        purge_expired(&mut jobs, state.cfg.result_ttl_secs);
+        // The bound counts jobs still holding request/result memory — queued,
+        // running, or finished-but-unfetched — so a burst can't grow the map
+        // (and the upload bytes it holds) without limit.
+        if jobs.len() >= state.cfg.queue_size {
+            return Err(ApiError::Busy(format!(
+                "job queue is full ({} jobs); retry after fetching or expiring results",
+                jobs.len()
+            )));
+        }
+        jobs.insert(
+            id.clone(),
+            Job {
+                state: JobState::Pending,
+                done_at: None,
+            },
+        );
+    }
+
+    let st = state.clone();
+    let job_id = id.clone();
+    tokio::spawn(async move {
+        // Queue on the shared conversion semaphore. Closed-semaphore errors
+        // only happen at shutdown; the job then just stays pending until the
+        // process exits.
+        let Ok(permit) = st.permits.clone().acquire_owned().await else {
+            return;
+        };
+        if let Some(job) = st.jobs.lock().unwrap().get_mut(&job_id) {
+            job.state = JobState::Started;
+        } else {
+            return; // evicted while queued (TTL abuse would need days)
+        }
+        let stx = st.clone();
+        let opts = options;
+        let outcome = tokio::task::spawn_blocking(move || {
+            run_conversion(&stx, sources, &opts, &to, image_mode)
+        })
+        .await
+        .map_err(|e| ApiError::Internal(format!("convert task: {e}")))
+        .and_then(|r| r);
+        drop(permit);
+        if let Some(job) = st.jobs.lock().unwrap().get_mut(&job_id) {
+            job.state = match outcome {
+                Ok(stored) => JobState::Success(stored),
+                Err(e) => {
+                    let (status, msg) = api_error_parts(e);
+                    JobState::Failure(status, msg)
+                }
+            };
+            job.done_at = Some(std::time::Instant::now());
+        }
+    });
+
+    Ok((
+        StatusCode::ACCEPTED,
+        Json(json!({ "task_id": id, "task_status": "pending" })),
+    )
+        .into_response())
+}
+
+/// `GET /v1/status/{id}` (#182).
+async fn job_status(
+    State(state): State<Arc<AppState>>,
+    axum::extract::Path(id): axum::extract::Path<String>,
+) -> Response {
+    let mut jobs = state.jobs.lock().unwrap();
+    purge_expired(&mut jobs, state.cfg.result_ttl_secs);
+    match jobs.get(&id) {
+        None => (
+            StatusCode::NOT_FOUND,
+            Json(json!({"error": "unknown task id (never submitted, or its result expired)"})),
         )
             .into_response(),
-        "chunks" => {
-            let mut warnings: Vec<String> = Vec::new();
-            let mut records = docling::chunks::chunk_records(&document, &mut |m| warnings.push(m));
-            if !warnings.is_empty() {
-                records["warnings"] = json!(warnings);
+        Some(job) => {
+            let mut body = json!({ "task_id": id, "task_status": job.state.as_str() });
+            if let JobState::Failure(_, msg) = &job.state {
+                body["error"] = json!(msg);
             }
-            Json(records).into_response()
+            Json(body).into_response()
         }
-        "dclx" => {
-            let bytes = docling::dclx::to_dclx_bytes(&document);
-            (
-                [
-                    (header::CONTENT_TYPE, "application/octet-stream".to_string()),
-                    (
-                        header::CONTENT_DISPOSITION,
-                        format!("attachment; filename=\"{name}.dclx\""),
-                    ),
-                ],
-                bytes,
+    }
+}
+
+/// `GET /v1/result/{id}` (#182): the conversion output with the same content
+/// type / headers the sync endpoint would have used. Not ready yet → 202 with
+/// the status body; failed → the sync endpoint's error status; unknown or
+/// expired → 404. The result stays fetchable until the TTL evicts it.
+async fn job_result(
+    State(state): State<Arc<AppState>>,
+    axum::extract::Path(id): axum::extract::Path<String>,
+) -> Response {
+    let mut jobs = state.jobs.lock().unwrap();
+    purge_expired(&mut jobs, state.cfg.result_ttl_secs);
+    match jobs.get(&id) {
+        None => (
+            StatusCode::NOT_FOUND,
+            Json(json!({"error": "unknown task id (never submitted, or its result expired)"})),
+        )
+            .into_response(),
+        Some(job) => match &job.state {
+            JobState::Pending | JobState::Started => (
+                StatusCode::ACCEPTED,
+                Json(json!({ "task_id": id, "task_status": job.state.as_str() })),
             )
-                .into_response()
+                .into_response(),
+            JobState::Failure(status, msg) => {
+                (*status, Json(json!({"error": msg}))).into_response()
+            }
+            // Clone rather than remove: the result stays re-fetchable until
+            // the TTL evicts it (a client retrying a dropped response must not
+            // find a 404).
+            JobState::Success(stored) => StoredResponse {
+                content_type: stored.content_type,
+                disposition: stored.disposition.clone(),
+                confidence: stored.confidence.clone(),
+                body: stored.body.clone(),
+            }
+            .into_response(),
+        },
+    }
+}
+
+/// A fully materialized conversion response — what a buffered sync request
+/// answers with, and what an async job (#182) stores until the client fetches
+/// `/v1/result/{id}`.
+struct StoredResponse {
+    content_type: &'static str,
+    /// `Content-Disposition` for downloads (dclx).
+    disposition: Option<String>,
+    /// The `X-Docling-Confidence` summary (#183), when the pipeline made one.
+    confidence: Option<header::HeaderValue>,
+    body: Vec<u8>,
+}
+
+impl StoredResponse {
+    fn into_response(self) -> Response {
+        let mut response = ([(header::CONTENT_TYPE, self.content_type)], self.body).into_response();
+        if let Some(d) = self.disposition {
+            if let Ok(v) = header::HeaderValue::from_str(&d) {
+                response
+                    .headers_mut()
+                    .insert(header::CONTENT_DISPOSITION, v);
+            }
         }
-        _ => unreachable!("validated above"),
+        if let Some(v) = self.confidence {
+            response.headers_mut().insert("x-docling-confidence", v);
+        }
+        response
+    }
+}
+
+/// Convert one or more sources on the current (blocking) thread and serialize
+/// the result. A single source renders as the plain output format; multiple
+/// sources (#182 batch) render as a JSON results array with per-item status,
+/// so one bad file fails its item, not the whole batch.
+fn run_conversion(
+    state: &AppState,
+    sources: Vec<SourceItem>,
+    options: &ConvertOptions,
+    to: &str,
+    image_mode: ImageMode,
+) -> Result<StoredResponse, ApiError> {
+    if sources.len() == 1 {
+        let source = sources
+            .into_iter()
+            .next()
+            .expect("checked len")
+            .map_err(|(_, e)| e)?;
+        let name = source.name.clone();
+        let document = convert_document(state, source, options)?;
+        return Ok(render_stored(
+            state, to, image_mode, &name, &document, options,
+        ));
+    }
+    let items: Vec<serde_json::Value> = sources
+        .into_iter()
+        .map(|item| {
+            let source = match item {
+                Ok(source) => source,
+                Err((name, e)) => {
+                    return json!({
+                        "name": name,
+                        "status": "failure",
+                        "error": api_error_message(e),
+                    })
+                }
+            };
+            let name = source.name.clone();
+            match convert_document(state, source, options) {
+                Ok(document) => batch_item(state, to, image_mode, &name, &document, options),
+                Err(e) => json!({
+                    "name": name,
+                    "status": "failure",
+                    "error": api_error_message(e),
+                }),
+            }
+        })
+        .collect();
+    Ok(StoredResponse {
+        content_type: "application/json",
+        disposition: None,
+        confidence: None,
+        body: serde_json::to_vec_pretty(&json!({ "results": items }))
+            .expect("batch JSON serializes"),
     })
 }
 
-/// Read the multipart request: a `file` part (bytes + filename) plus optional
-/// text parts mirroring the query options.
+/// Serialize a converted document for a buffered (non-streaming) response.
+/// Responses carry the conversion-confidence report (#183) when the ML
+/// pipeline produced one: as an `X-Docling-Confidence` summary header
+/// everywhere, and as a top-level `"confidence"` key (with the per-page
+/// breakdown) appended to the `json` body — the document keys themselves are
+/// untouched, so the body still parses as a docling-JSON document.
+fn render_stored(
+    state: &AppState,
+    to: &str,
+    image_mode: ImageMode,
+    name: &str,
+    document: &DoclingDocument,
+    options: &ConvertOptions,
+) -> StoredResponse {
+    let confidence = confidence_header(document);
+    match to {
+        "md" | "markdown" => StoredResponse {
+            content_type: "text/markdown; charset=utf-8",
+            disposition: None,
+            confidence,
+            body: markdown_string(state, document, image_mode, options).into_bytes(),
+        },
+        "json" => {
+            let mut value = document.export_to_json_value();
+            if let Some(report) = &document.confidence {
+                value["confidence"] = report.to_json();
+            }
+            StoredResponse {
+                content_type: "application/json",
+                disposition: None,
+                confidence,
+                body: serde_json::to_vec_pretty(&value).expect("document JSON serializes"),
+            }
+        }
+        "chunks" => {
+            let mut warnings: Vec<String> = Vec::new();
+            let mut records = docling::chunks::chunk_records(document, &mut |m| warnings.push(m));
+            if !warnings.is_empty() {
+                records["warnings"] = json!(warnings);
+            }
+            StoredResponse {
+                content_type: "application/json",
+                disposition: None,
+                confidence,
+                body: serde_json::to_vec(&records).expect("chunk records serialize"),
+            }
+        }
+        "dclx" => StoredResponse {
+            content_type: "application/octet-stream",
+            disposition: Some(format!("attachment; filename=\"{name}.dclx\"")),
+            confidence,
+            body: docling::dclx::to_dclx_bytes(document),
+        },
+        _ => unreachable!("validated above"),
+    }
+}
+
+/// One batch item (#182) as JSON. Text outputs inline as strings, the
+/// docling-JSON document as an object, binary dclx as base64; the confidence
+/// summary (#183) rides along as a sibling key where it isn't already inside
+/// the document JSON.
+fn batch_item(
+    state: &AppState,
+    to: &str,
+    image_mode: ImageMode,
+    name: &str,
+    document: &DoclingDocument,
+    options: &ConvertOptions,
+) -> serde_json::Value {
+    let mut item = json!({ "name": name, "status": "success" });
+    match to {
+        "md" | "markdown" => {
+            item["md"] = json!(markdown_string(state, document, image_mode, options));
+        }
+        "json" => {
+            let mut value = document.export_to_json_value();
+            if let Some(report) = &document.confidence {
+                value["confidence"] = report.to_json();
+            }
+            item["document"] = value;
+        }
+        "chunks" => {
+            let mut warnings: Vec<String> = Vec::new();
+            let mut records = docling::chunks::chunk_records(document, &mut |m| warnings.push(m));
+            if !warnings.is_empty() {
+                records["warnings"] = json!(warnings);
+            }
+            item["chunks"] = records;
+        }
+        "dclx" => {
+            item["dclx_base64"] = json!(docling::base64::encode(&docling::dclx::to_dclx_bytes(
+                document
+            )));
+        }
+        _ => unreachable!("validated above"),
+    }
+    if to != "json" {
+        if let Some(report) = &document.confidence {
+            item["confidence"] = report.summary_json();
+        }
+    }
+    item
+}
+
+/// Buffered Markdown export honoring the request's `strict` / `images`
+/// options — the non-streaming counterpart of `stream_markdown`'s serializer
+/// calls (batch items and async results can't stream).
+fn markdown_string(
+    state: &AppState,
+    document: &DoclingDocument,
+    image_mode: ImageMode,
+    options: &ConvertOptions,
+) -> String {
+    let mut doc = document.clone();
+    doc.strict_markdown = options.strict.unwrap_or(state.cfg.strict);
+    match image_mode {
+        ImageMode::Placeholder => doc.export_to_markdown(),
+        _ => {
+            doc.export_to_markdown_with_images(image_mode, "artifacts")
+                .0
+        }
+    }
+}
+
+/// The document-level confidence summary as a header value (compact JSON, no
+/// per-page breakdown — headers should stay small). `None` when the
+/// conversion had no ML stages (declarative formats).
+fn confidence_header(document: &DoclingDocument) -> Option<header::HeaderValue> {
+    let report = document.confidence.as_ref()?;
+    header::HeaderValue::from_str(&report.summary_json().to_string()).ok()
+}
+
+/// Read the multipart request: one or more `file` parts (bytes + filename —
+/// several files make a #182 batch; `files` is accepted as an alias) plus
+/// optional text parts mirroring the query options.
 async fn read_multipart(
     mut multipart: Multipart,
     query: ConvertOptions,
-) -> Result<(SourceDocument, ConvertOptions), ApiError> {
-    let mut file: Option<(String, Vec<u8>)> = None;
+) -> Result<(Vec<SourceItem>, ConvertOptions), ApiError> {
+    let mut files: Vec<(String, Vec<u8>)> = Vec::new();
     let mut body_opts = ConvertOptions::default();
     while let Some(field) = multipart
         .next_field()
@@ -449,7 +909,7 @@ async fn read_multipart(
     {
         let name = field.name().unwrap_or("").to_string();
         match name.as_str() {
-            "file" => {
+            "file" | "files" => {
                 let file_name = field
                     .file_name()
                     .map(|s| s.to_string())
@@ -458,7 +918,7 @@ async fn read_multipart(
                     .bytes()
                     .await
                     .map_err(|e| ApiError::Bad(format!("reading upload: {e}")))?;
-                file = Some((file_name, bytes.to_vec()));
+                files.push((file_name, bytes.to_vec()));
             }
             "to" | "images" => {
                 let v = text_field(field).await?;
@@ -499,9 +959,18 @@ async fn read_multipart(
             _ => {} // unknown parts are ignored
         }
     }
-    let (file_name, bytes) = file.ok_or_else(|| ApiError::Bad("missing 'file' part".into()))?;
-    let source = source_from_named_bytes(&file_name, bytes)?;
-    Ok((source, body_opts.merge_over(query)))
+    if files.is_empty() {
+        return Err(ApiError::Bad("missing 'file' part".into()));
+    }
+    // Per-file errors (unknown extension) are deferred: a single-file request
+    // propagates them as its response, a batch fails only that item.
+    let sources = files
+        .into_iter()
+        .map(|(file_name, bytes)| {
+            source_from_named_bytes(&file_name, bytes).map_err(|e| (file_name, e))
+        })
+        .collect();
+    Ok((sources, body_opts.merge_over(query)))
 }
 
 async fn text_field(field: axum::extract::multipart::Field<'_>) -> Result<String, ApiError> {
@@ -839,12 +1308,16 @@ async fn stream_markdown(
     image_mode: ImageMode,
     permit: tokio::sync::OwnedSemaphorePermit,
 ) -> Result<Response, ApiError> {
-    let (tx, rx) = tokio::sync::mpsc::channel::<Result<String, String>>(8);
+    // A chunk is its text plus (first chunk of a pipeline conversion only) the
+    // confidence summary header — computable only after conversion, which is
+    // exactly when the PDF/image branch sends its single chunk.
+    type Chunk = (String, Option<header::HeaderValue>);
+    let (tx, rx) = tokio::sync::mpsc::channel::<Result<Chunk, String>>(8);
     let st = state.clone();
     tokio::task::spawn_blocking(move || {
         // Held until this worker (and thus the response body) is done.
         let _permit = permit;
-        let send = |item: Result<String, String>| {
+        let send = |item: Result<Chunk, String>| {
             // The receiver disappearing means the client went away — stop.
             tx.blocking_send(item).is_ok()
         };
@@ -866,7 +1339,7 @@ async fn stream_markdown(
                                     .0
                             }
                         };
-                        send(Ok(md));
+                        send(Ok((md, confidence_header(&doc))));
                     }
                     Err(e) => {
                         send(Err(api_error_message(e)));
@@ -886,7 +1359,7 @@ async fn stream_markdown(
                         for chunk in stream {
                             match chunk {
                                 Ok(s) => {
-                                    if !send(Ok(s)) {
+                                    if !send(Ok((s, None))) {
                                         return;
                                     }
                                 }
@@ -919,27 +1392,31 @@ async fn stream_markdown(
         )
             .into_response()),
         Some(Err(e)) => Err(ApiError::Unsupported(e)),
-        Some(Ok(first_chunk)) => {
+        Some(Ok((first_chunk, confidence))) => {
             use tokio_stream::StreamExt;
             let rest = tokio_stream::wrappers::ReceiverStream::new(rx);
-            let stream = tokio_stream::once(Ok(first_chunk)).chain(rest).map(|item| {
-                item.map(String::into_bytes).map_err(|e| {
-                    std::io::Error::other(format!("conversion failed mid-stream: {e}"))
-                })
-            });
-            Ok((
+            let stream = tokio_stream::once(Ok((first_chunk, None)))
+                .chain(rest)
+                .map(|item| {
+                    item.map(|(text, _)| text.into_bytes()).map_err(|e| {
+                        std::io::Error::other(format!("conversion failed mid-stream: {e}"))
+                    })
+                });
+            let mut response = (
                 [(header::CONTENT_TYPE, "text/markdown; charset=utf-8")],
                 Body::from_stream(stream),
             )
-                .into_response())
+                .into_response();
+            if let Some(value) = confidence {
+                response.headers_mut().insert("x-docling-confidence", value);
+            }
+            Ok(response)
         }
     }
 }
 
 fn api_error_message(e: ApiError) -> String {
-    match e {
-        ApiError::Bad(m) | ApiError::Unsupported(m) | ApiError::Internal(m) => m,
-    }
+    api_error_parts(e).1
 }
 
 #[cfg(test)]

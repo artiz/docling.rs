@@ -1,6 +1,7 @@
 //! `docling-serve` — standalone binary for the HTTP conversion API.
 //!
 //! Usage: docling-serve [--addr HOST:PORT] [--concurrency N] [--max-body-mb N]
+//!                      [--queue-size N] [--result-ttl SECS]
 //!                      [--warmup] [--allow-url-fetch] [--strict]
 //!
 //!   --addr HOST:PORT  bind address (default: 127.0.0.1:5001). Bind 0.0.0.0
@@ -8,6 +9,10 @@
 //!   --concurrency N   max conversions in flight; excess requests queue
 //!                     (default: 2)
 //!   --max-body-mb N   request body cap for uploads, in MiB (default: 256)
+//!   --queue-size N    max async jobs (#182) queued/unfetched at once; further
+//!                     submissions get 429 (default: 16)
+//!   --result-ttl SECS how long a finished async job's result stays fetchable
+//!                     (default: 600)
 //!   --warmup          load the PDF/image models at startup; /ready returns
 //!                     503 until they are loaded
 //!   --allow-url-fetch accept {"url": …} inputs (outbound fetch — SSRF surface;
@@ -37,6 +42,14 @@ fn main() -> ExitCode {
             "--max-body-mb" => match args.next().and_then(|v| v.parse::<usize>().ok()) {
                 Some(v) if v >= 1 => cfg.max_body_bytes = v * 1024 * 1024,
                 _ => return usage("--max-body-mb needs a positive integer"),
+            },
+            "--queue-size" => match args.next().and_then(|v| v.parse().ok()) {
+                Some(v) if v >= 1 => cfg.queue_size = v,
+                _ => return usage("--queue-size needs a positive integer"),
+            },
+            "--result-ttl" => match args.next().and_then(|v| v.parse().ok()) {
+                Some(v) if v >= 1 => cfg.result_ttl_secs = v,
+                _ => return usage("--result-ttl needs a positive number of seconds"),
             },
             "--warmup" => cfg.warmup = true,
             "--allow-url-fetch" => cfg.allow_url_fetch = true,
@@ -70,7 +83,7 @@ fn usage(err: &str) -> ExitCode {
         eprintln!("error: {err}");
     }
     eprintln!(
-        "usage: docling-serve [--addr HOST:PORT] [--concurrency N] [--max-body-mb N] [--warmup] [--no-url-fetch] [--strict]"
+        "usage: docling-serve [--addr HOST:PORT] [--concurrency N] [--max-body-mb N] [--queue-size N] [--result-ttl SECS] [--warmup] [--allow-url-fetch] [--strict]"
     );
     if err.is_empty() {
         ExitCode::SUCCESS

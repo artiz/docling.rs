@@ -83,7 +83,7 @@ The API is described by <a href="/openapi.yaml"><code>/openapi.yaml</code></a> (
   <div class="row">
     <label><input type="radio" name="mode" value="file" checked> Upload</label>
     <label id="url-mode"><input type="radio" name="mode" value="url"> URL</label>
-    <input type="file" id="file">
+    <input type="file" id="file" multiple>
     <input type="text" id="url" placeholder="https://example.com/document.pdf" style="display:none">
   </div>
   <div class="hint" id="url-disabled-note" style="display:none">
@@ -114,8 +114,10 @@ The API is described by <a href="/openapi.yaml"><code>/openapi.yaml</code></a> (
     (it's an outbound-fetch / SSRF surface, so off by default; see docs/SECURITY.md).
   </div>
   <div class="hint">PDF/image inputs run the ML pipeline — the first conversion loads the models
-  (tens of seconds), repeats are fast. Markdown responses stream in as they convert.</div>
+  (tens of seconds), repeats are fast. Markdown responses stream in as they convert.
+  Picking <em>several</em> files converts them as one batch (JSON results array).</div>
   <div class="out">
+    <div class="hint" id="confidence" style="display:none"></div>
     <pre id="result" style="display:none"></pre>
     <div class="gallery" id="gallery"></div>
   </div>
@@ -126,8 +128,19 @@ The API is described by <a href="/openapi.yaml"><code>/openapi.yaml</code></a> (
   <tr><th>Method</th><th>Path</th><th>Description</th></tr>
   <tr><td><code>POST</code></td><td><code>/v1/convert</code></td>
       <td>Convert an upload (<code>multipart/form-data</code>, a <code>file</code> part — the filename's
-      extension selects the input format) or a URL (<code>application/json</code>:
-      <code>{"url": …, "file_name"?: …}</code>).</td></tr>
+      extension selects the input format; several <code>file</code> parts convert as a batch and
+      answer a JSON <code>results</code> array) or a URL (<code>application/json</code>:
+      <code>{"url": …, "file_name"?: …}</code>). PDF/image responses carry an
+      <code>X-Docling-Confidence</code> summary header; <code>to=json</code> bodies embed the full
+      per-page confidence report.</td></tr>
+  <tr><td><code>POST</code></td><td><code>/v1/convert/async</code></td>
+      <td>The same request, answered immediately with <code>{"task_id": …}</code> — the job queues on
+      the server's concurrency bound and reuses the warm pipeline.</td></tr>
+  <tr><td><code>GET</code></td><td><code>/v1/status/{id}</code></td>
+      <td>Async job status: <code>pending</code> | <code>started</code> | <code>success</code> | <code>failure</code>.</td></tr>
+  <tr><td><code>GET</code></td><td><code>/v1/result/{id}</code></td>
+      <td>Async job result — the same response the sync endpoint would have sent; kept until the
+      result TTL (default 10&nbsp;min) evicts it.</td></tr>
   <tr><td><code>GET</code></td><td><code>/v1/config</code></td><td>Server capabilities — currently <code>{"allow_url_fetch": bool}</code>, which this page adapts to.</td></tr>
   <tr><td><code>GET</code></td><td><code>/health</code></td><td>Liveness probe.</td></tr>
   <tr><td><code>GET</code></td><td><code>/ready</code></td><td>Readiness probe — 503 until <code>--warmup</code> finishes loading the ML models.</td></tr>
@@ -158,6 +171,13 @@ curl -F file=@page.html   'localhost:5001/v1/convert?to=chunks'    # chunk recor
 curl -H 'content-type: application/json' \
      -d '{"url": "https://example.com/doc.pdf", "to": "md"}' \
      localhost:5001/v1/convert                                     # convert a URL
+
+curl -F file=@a.pdf -F file=@b.docx \
+     'localhost:5001/v1/convert?to=md'                             # batch → JSON results array
+
+id=$(curl -F file=@big.pdf localhost:5001/v1/convert/async | jq -r .task_id)
+curl localhost:5001/v1/status/$id                                  # pending|started|success|failure
+curl localhost:5001/v1/result/$id                                  # the output, once done
 
 curl -O localhost:5001/openapi.yaml                                # the API description</pre>
 </main>
@@ -261,6 +281,7 @@ $('go').addEventListener('click', async () => {
   out.style.display = '';
   out.classList.remove('err');
   $('gallery').replaceChildren();
+  $('confidence').style.display = 'none';
   const to = $('to').value;
   const opts = {
     to,
@@ -273,10 +294,10 @@ $('go').addEventListener('click', async () => {
   };
   let request;
   if (document.querySelector('input[name=mode]:checked').value === 'file') {
-    const file = $('file').files[0];
-    if (!file) { out.textContent = 'Pick a file first.'; return; }
+    const files = $('file').files;
+    if (!files.length) { out.textContent = 'Pick a file first.'; return; }
     const form = new FormData();
-    form.append('file', file);
+    for (const file of files) form.append('file', file); // several = one batch (#182)
     for (const [k, v] of Object.entries(opts)) form.append(k, String(v));
     request = fetch('/v1/convert', { method: 'POST', body: form });
   } else {
@@ -298,6 +319,17 @@ $('go').addEventListener('click', async () => {
       try { out.textContent = `HTTP ${response.status}: ${JSON.parse(body).error}`; }
       catch { out.textContent = `HTTP ${response.status}: ${body}`; }
       return;
+    }
+    // Surface the conversion-confidence summary (#183) when the ML pipeline
+    // produced one — grades tell at a glance whether the output is trustable.
+    const conf = response.headers.get('x-docling-confidence');
+    if (conf) {
+      try {
+        const c = JSON.parse(conf);
+        $('confidence').textContent =
+          `confidence: ${c.mean_grade} (mean ${Number(c.mean_score).toFixed(3)}, low ${c.low_grade})`;
+        $('confidence').style.display = '';
+      } catch { /* unparseable header — skip the banner */ }
     }
     if (to === 'dclx') {
       const blob = await response.blob();
@@ -327,7 +359,9 @@ $('go').addEventListener('click', async () => {
       body += chunk;
       out.textContent += chunk;
     }
-    if (to === 'json' || to === 'chunks') {
+    // Batch responses are JSON whatever `to` says — go by the content type.
+    const isJson = (response.headers.get('content-type') || '').includes('application/json');
+    if (isJson || to === 'json' || to === 'chunks') {
       try {
         body = JSON.stringify(JSON.parse(body), null, 2);
         out.textContent = body;

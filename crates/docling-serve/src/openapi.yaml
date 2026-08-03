@@ -35,6 +35,17 @@ paths:
 
         `to=md` streams the Markdown as it converts (chunked response);
         `to=dclx` returns the archive as a download.
+
+        **Batch**: several `file` parts in one multipart request convert as a
+        batch — the response is then `{"results": [...]}` with per-item
+        status (one bad file fails its item, not the batch), regardless of
+        `to`; binary dclx output is base64 in `dclx_base64`.
+
+        **Confidence** (PDF/image ML conversions): every response carries an
+        `X-Docling-Confidence` header with the document-level summary, and
+        `to=json` bodies additionally embed the full report (per-page
+        breakdown) under a top-level `confidence` key. Declarative
+        conversions have no ML stages and omit both.
       operationId: convert
       parameters:
         - { $ref: "#/components/parameters/to" }
@@ -112,6 +123,12 @@ paths:
             Content-Disposition:
               description: Present for `to=dclx` (attachment filename).
               schema: { type: string }
+            X-Docling-Confidence:
+              description: >
+                Document-level conversion-confidence summary (compact JSON —
+                the `ConfidenceReport` without its `pages` breakdown).
+                Present when the PDF/image ML pipeline ran.
+              schema: { type: string }
         "400":
           description: Bad request — unreadable input, invalid option, or a URL input on a server without `--allow-url-fetch`.
           content:
@@ -129,6 +146,82 @@ paths:
               schema: { $ref: "#/components/schemas/Error" }
         "500":
           description: Conversion failed.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  /v1/convert/async:
+    post:
+      summary: Submit an async conversion job
+      description: |
+        Accepts exactly the `POST /v1/convert` request (including batches) but
+        answers immediately with a task id instead of holding the connection
+        for the duration of the conversion — submit → poll
+        `GET /v1/status/{id}` → fetch `GET /v1/result/{id}`. Jobs queue on
+        the same concurrency bound as sync requests and reuse the warm model
+        pipeline. At most `--queue-size` jobs may be queued or unfetched at
+        once; results are evicted `--result-ttl` seconds after completion.
+      operationId: convertAsync
+      responses:
+        "202":
+          description: The job was accepted and queued.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TaskStatus" }
+        "400":
+          description: Bad request (validated synchronously, nothing is queued).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "429":
+          description: The job queue is full — retry after results are fetched or expire.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  /v1/status/{id}:
+    get:
+      summary: Async job status
+      operationId: jobStatus
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: The job's current state (`error` is set on failure).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TaskStatus" }
+        "404":
+          description: Unknown task id — never submitted, or its result already expired.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  /v1/result/{id}:
+    get:
+      summary: Async job result
+      description: >
+        The finished conversion, with the same body, content type, and headers
+        the sync endpoint would have answered with (batches: the JSON results
+        array). Stays fetchable until the TTL evicts it.
+      operationId: jobResult
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: The converted output (see `POST /v1/convert` responses).
+        "202":
+          description: Not finished yet — the status body is returned instead.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TaskStatus" }
+        "404":
+          description: Unknown task id — never submitted, or its result expired.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "422":
+          description: The conversion failed; the stored error is returned.
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Error" }
@@ -315,6 +408,36 @@ components:
             properties:
               text: { type: string }
               headings: { type: array, items: { type: string } }
+    TaskStatus:
+      type: object
+      description: An async conversion job's state.
+      properties:
+        task_id: { type: string }
+        task_status:
+          type: string
+          enum: [pending, started, success, failure]
+        error:
+          type: string
+          description: Present when `task_status` is `failure`.
+      required: [task_id, task_status]
+    ConfidenceReport:
+      type: object
+      description: >
+        Conversion-confidence scores (docling `ConfidenceReport` semantics):
+        each score is 0–1 or null when its stage didn't run; grades bucket the
+        aggregate (`poor` < 0.5 ≤ `fair` < 0.8 ≤ `good` < 0.9 ≤ `excellent`,
+        `unspecified` when nothing scored). `pages` is keyed by the real
+        1-based page number and carries the same fields per page.
+      properties:
+        layout_score: { type: [number, "null"], description: Mean confidence of the kept layout regions. }
+        ocr_score: { type: [number, "null"], description: Mean recognition confidence of OCR'd cells. }
+        parse_score: { type: [number, "null"], description: 10th-percentile text-layer extraction quality. }
+        table_score: { type: [number, "null"], description: Reserved (never set — matches Python docling). }
+        mean_score: { type: [number, "null"] }
+        low_score: { type: [number, "null"] }
+        mean_grade: { type: string, enum: [poor, fair, good, excellent, unspecified] }
+        low_grade: { type: string, enum: [poor, fair, good, excellent, unspecified] }
+        pages: { type: object, additionalProperties: { type: object } }
     Error:
       type: object
       properties:

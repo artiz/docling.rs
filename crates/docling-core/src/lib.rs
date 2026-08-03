@@ -12,6 +12,7 @@
 
 pub mod base64;
 pub mod chunker;
+pub mod confidence;
 mod doclang;
 pub mod doctags;
 mod document;
@@ -19,6 +20,7 @@ mod json;
 mod labels;
 mod markdown;
 
+pub use confidence::{ConfidenceReport, PageConfidence, QualityGrade};
 pub use doclang::inline_runs_from_markdown;
 pub use document::{
     inline_paragraph_node, ContentLayer, DoclingDocument, FieldItem, InlineRun, ListItemDclx, Node,
