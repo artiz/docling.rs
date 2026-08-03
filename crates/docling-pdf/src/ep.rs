@@ -148,34 +148,40 @@ pub(crate) fn prefers_fp32() -> bool {
 /// The dispatch list for the current choice. `None` means "register nothing"
 /// (CPU — leave the builder untouched, the pre-#74 code path).
 fn dispatches() -> Option<Vec<ExecutionProviderDispatch>> {
-    // The `ort::ep::*` structs exist regardless of cargo features (features
-    // gate the ONNX Runtime *binary*, not the Rust API), so no cfg-gating is
-    // needed here: `choice()` already guarantees a named provider is compiled.
+    // Since ort 2.0.0-rc.13 the `ort::ep::*` structs are themselves gated
+    // behind their cargo features (rc.12 exposed them unconditionally), so
+    // every construction site needs a cfg gate. `choice()` still guarantees a
+    // named provider is only ever *selected* when compiled in — the
+    // fallthrough arm below is unreachable at runtime and exists to keep the
+    // match exhaustive in builds without that feature.
     let d = match choice() {
         Ep::Cpu => return None,
+        #[cfg(feature = "cuda")]
         Ep::Cuda => vec![ort::ep::CUDA::default().build().error_on_failure()],
+        #[cfg(feature = "tensorrt")]
         Ep::TensorRt => vec![ort::ep::TensorRT::default().build().error_on_failure()],
+        #[cfg(feature = "directml")]
         Ep::DirectMl => vec![ort::ep::DirectML::default().build().error_on_failure()],
+        #[cfg(feature = "coreml")]
         Ep::CoreMl => vec![ort::ep::CoreML::default().build().error_on_failure()],
         Ep::Auto => {
-            let mut v = Vec::new();
-            if cfg!(feature = "tensorrt") {
-                v.push(ort::ep::TensorRT::default().build());
-            }
-            if cfg!(feature = "cuda") {
-                v.push(ort::ep::CUDA::default().build());
-            }
-            if cfg!(feature = "coreml") {
-                v.push(ort::ep::CoreML::default().build());
-            }
-            if cfg!(feature = "directml") {
-                v.push(ort::ep::DirectML::default().build());
-            }
+            #[allow(unused_mut)]
+            let mut v: Vec<ExecutionProviderDispatch> = Vec::new();
+            #[cfg(feature = "tensorrt")]
+            v.push(ort::ep::TensorRT::default().build());
+            #[cfg(feature = "cuda")]
+            v.push(ort::ep::CUDA::default().build());
+            #[cfg(feature = "coreml")]
+            v.push(ort::ep::CoreML::default().build());
+            #[cfg(feature = "directml")]
+            v.push(ort::ep::DirectML::default().build());
             if v.is_empty() {
                 return None; // CPU-only build: auto ≡ cpu
             }
             v
         }
+        #[allow(unreachable_patterns)]
+        ep => unreachable!("choice() returned {ep:?} without its cargo feature"),
     };
     Some(d)
 }
