@@ -30,6 +30,12 @@ pub struct DoclingDocument {
     /// (legacy/docling output is left byte-for-byte unchanged). The PDF backend
     /// populates this from pdfium link annotations; other backends leave it empty.
     pub links: Vec<(String, String)>,
+    /// Conversion-confidence report (#183), populated by the PDF/image ML
+    /// pipeline; `None` for declarative conversions. Deliberately **not**
+    /// part of any document export (docling keeps it on the conversion
+    /// result, outside the document schema) — docling-serve surfaces it in
+    /// the HTTP response instead.
+    pub confidence: Option<crate::confidence::ConfidenceReport>,
 }
 
 /// A single piece of document content.
@@ -420,6 +426,7 @@ impl DoclingDocument {
             strict_markdown: false,
             compact_tables: false,
             links: Vec::new(),
+            confidence: None,
         }
     }
 
@@ -464,8 +471,15 @@ impl DoclingDocument {
     /// `DoclingDocument.export_to_dict()` / `save_as_json()`. The output loads
     /// back into Python docling-core and round-trips to the same Markdown.
     pub fn export_to_json(&self) -> String {
-        serde_json::to_string_pretty(&crate::json::to_json(self))
+        serde_json::to_string_pretty(&self.export_to_json_value())
             .expect("DoclingDocument JSON is always serializable")
+    }
+
+    /// The same JSON wire format as [`Self::export_to_json`], as a
+    /// `serde_json::Value` — for callers that append response-level extras
+    /// (docling-serve adds the confidence report, #183) before serializing.
+    pub fn export_to_json_value(&self) -> serde_json::Value {
+        crate::json::to_json(self)
     }
 
     /// Serialize to DocLang XML (`<doclang version="0.7">…`), the markup that

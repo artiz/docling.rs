@@ -209,3 +209,69 @@ fn force_full_page_ocr_discards_the_text_layer() {
         "forced output must come from OCR, not the embedded text layer"
     );
 }
+
+/// #183: the PDF pipeline attaches a per-page confidence report to the
+/// converted document. On a digital page the layout model scores real
+/// clusters (well above the 0.3 label floor), the text layer parses cleanly
+/// (parse_score ≈ 1.0), and nothing came from OCR — so ocr_score stays unset
+/// and table_score is always unset (docling never assigns it either).
+#[test]
+fn pdf_pipeline_reports_confidence() {
+    if !pdfium_ready() || !ocr_models_ready() {
+        eprintln!("skipping: pdfium or the OCR models are not present");
+        return;
+    }
+    let src =
+        SourceDocument::from_file(repo_root().join("tests/data/pdf/sources/2305.03393v1-pg9.pdf"))
+            .expect("single-page fixture");
+    let doc = DocumentConverter::new()
+        .convert(src)
+        .expect("convert")
+        .document;
+    let report = doc.confidence.as_ref().expect("pipeline sets confidence");
+    assert_eq!(report.pages.len(), 1, "one page, one entry");
+    let page = report.pages.get(&1).expect("keyed by 1-based page number");
+    let layout = page.layout_score.expect("layout ran");
+    assert!((0.3..=1.0).contains(&layout), "layout_score {layout}");
+    let parse = page.parse_score.expect("text layer present");
+    assert!(parse > 0.9, "clean digital text layer, got {parse}");
+    assert_eq!(page.ocr_score, None, "digital page: nothing OCR'd");
+    assert_eq!(page.table_score, None, "never assigned (docling parity)");
+    // Aggregates exist and grade sanely.
+    let mean = report.mean_score().expect("scores present");
+    assert!((0.3..=1.0).contains(&mean), "mean_score {mean}");
+    assert_ne!(
+        report.mean_grade().as_str(),
+        "unspecified",
+        "scored conversion must grade"
+    );
+    // The report is a response-level extra, not part of the document schema:
+    // the JSON export must stay byte-identical to a confidence-free document.
+    assert!(
+        !doc.export_to_json().contains("confidence"),
+        "confidence must not leak into the docling-JSON export"
+    );
+}
+
+/// #183 on the no-OCR text-layer path: parse quality still scores (the cells
+/// are the same extraction the pipeline sees), layout is the orphan-rescue
+/// set (cell confidence 1.0), and OCR never ran. Needs pdfium only.
+#[test]
+fn no_ocr_conversion_reports_parse_confidence() {
+    if !pdfium_ready() {
+        eprintln!("skipping: pdfium library not found");
+        return;
+    }
+    let doc = DocumentConverter::new()
+        .no_ocr(true)
+        .page_range(1, 2)
+        .convert(pdf_source())
+        .expect("convert")
+        .document;
+    let report = doc.confidence.as_ref().expect("pipeline sets confidence");
+    assert_eq!(report.pages.len(), 2, "one entry per converted page");
+    assert!(report.pages.contains_key(&1) && report.pages.contains_key(&2));
+    let parse = report.parse_score().expect("text layer parsed");
+    assert!(parse > 0.5, "clean text layer, got {parse}");
+    assert_eq!(report.ocr_score(), None, "no OCR on the no_ocr path");
+}

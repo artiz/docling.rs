@@ -35,6 +35,8 @@ mod ocr;
 #[cfg(feature = "ocr-prep")]
 pub mod ocr_prep;
 pub mod pdfium_backend;
+#[cfg(feature = "ml")]
+pub mod quality;
 mod reading_order;
 // Pure-Rust region resampling (page→1024px box-average, crop→448 bilinear) —
 // available to the browser TableFormer path (#157 stage 3), not just `ml`.
@@ -354,9 +356,14 @@ fn decode_image_with_max_side(bytes: &[u8], max_side: u32) -> Result<image::RgbI
 }
 
 #[cfg(feature = "ml")]
-/// One page's assembled output: typed nodes plus the page's hyperlinks, kept
-/// separate so pages processed out of order can be stitched back in page order.
-type PageOut = (Vec<Node>, Vec<(String, String)>);
+/// One page's assembled output: typed nodes plus the page's hyperlinks (kept
+/// separate so pages processed out of order can be stitched back in page
+/// order) and its confidence scores (#183).
+type PageOut = (
+    Vec<Node>,
+    Vec<(String, String)>,
+    docling_core::confidence::PageConfidence,
+);
 
 #[cfg(feature = "ml")]
 /// The pool-wide TableFormer slot: one instance shared by every worker, loaded
@@ -485,13 +492,16 @@ impl Worker {
             // rescues text the detector missed — here it rescues *all* of it.
             // Pages with no embedded text layer (scanned/image-only) yield nothing;
             // convert those without `no_ocr`.
+            let parse = quality::parse_score(&page.cells);
             let mut regions = Vec::new();
             assemble::add_orphan_regions(&mut regions, &page.cells);
             let table_rows = vec![None; regions.len()];
             let enrich_out = vec![None; regions.len()];
-            return Ok(timing::timed("assemble_page", || {
+            let conf = quality::page_confidence(parse, &regions, &[]);
+            let (nodes, links) = timing::timed("assemble_page", || {
                 assemble::assemble_page(page, regions, &table_rows, &enrich_out)
-            }));
+            });
+            return Ok((nodes, links, conf));
         }
         let regions = timing::timed("layout.predict", || {
             self.layout
@@ -558,6 +568,12 @@ impl Worker {
         // is a sub-option of `do_ocr`; the no-ocr path never reaches here.)
         // Done here rather than in `process` so the batched layout path
         // (`process_batch` → `finish_page`) honors the flag too.
+        // Parse quality is scored on the extracted text layer before force-OCR
+        // discards it (docling's page-preprocessing stage runs before OCR too,
+        // so its parse_score also reflects the original text layer).
+        let parse = quality::parse_score(&page.cells);
+        // Recognition confidences of every OCR'd cell on this page → ocr_score.
+        let mut ocr_confs: Vec<f32> = Vec::new();
         if self.force_full_page_ocr {
             page.cells.clear();
             page.code_cells.clear();
@@ -643,7 +659,8 @@ impl Worker {
                     .ocr_page(&page.image, &regions, page.scale)
             })
             .map_err(|e| PdfError::Ocr(format!("page {}: {e}", n + 1)))?;
-            page.cells = cells;
+            ocr_confs.extend(cells.iter().map(|(_, conf)| conf));
+            page.cells = cells.into_iter().map(|(cell, _)| cell).collect();
             // Table interiors carry no words yet: region-scoped OCR skips
             // table labels, and a scanned page has no pdfium text layer — so
             // TableFormer's cell matcher got an empty word list and the table
@@ -659,6 +676,8 @@ impl Worker {
                         .ocr_table_words(&page.image, &regions, page.scale)
                 })
                 .map_err(|e| PdfError::Ocr(format!("page {}: {e}", n + 1)))?;
+                ocr_confs.extend(words.iter().map(|(_, conf)| conf));
+                let words: Vec<_> = words.into_iter().map(|(cell, _)| cell).collect();
                 page.cells.extend(words.iter().cloned());
                 page.word_cells = words;
             }
@@ -709,13 +728,20 @@ impl Worker {
                 if self.ocr.is_none() {
                     self.ocr = Some(ocr::OcrModel::load(self.ocr_lang).map_err(PdfError::Ocr)?);
                 }
-                pic_cells = timing::timed("ocr.pictures", || {
+                let scored = timing::timed("ocr.pictures", || {
                     self.ocr
                         .as_mut()
                         .unwrap()
                         .ocr_page(&page.image, &bare, page.scale)
                 })
                 .map_err(|e| PdfError::Ocr(format!("page {}: {e}", n + 1)))?;
+                // Speculative in-picture OCR counts toward ocr_score only on
+                // OCR'd pages, where the recognized lines actually join the
+                // output; on a digital page they may be discarded below.
+                if ocred {
+                    ocr_confs.extend(scored.iter().map(|(_, conf)| conf));
+                }
+                pic_cells = scored.into_iter().map(|(cell, _)| cell).collect();
                 page.cells.extend(pic_cells.iter().cloned());
             }
         }
@@ -908,9 +934,13 @@ impl Worker {
                 });
             }
         }
-        Ok(timing::timed("assemble_page", || {
+        // Score the final region set (docling assigns layout_score over the
+        // postprocessed clusters — the same set assemble_page consumes).
+        let conf = quality::page_confidence(parse, &regions, &ocr_confs);
+        let (nodes, links) = timing::timed("assemble_page", || {
             assemble::assemble_page(page, regions, &table_rows, &enrich_out)
-        }))
+        });
+        Ok((nodes, links, conf))
     }
 }
 
@@ -1255,6 +1285,7 @@ impl Pipeline {
         range: Option<(usize, usize)>,
     ) -> Result<DoclingDocument, PdfError> {
         let mut doc = DoclingDocument::new(name);
+        let mut confs = std::collections::BTreeMap::new();
         let render_image = !self.no_ocr;
         let worker = self.primary()?;
         pdfium_backend::for_each_page(
@@ -1263,14 +1294,16 @@ impl Pipeline {
             render_image,
             range,
             |n, _total, mut page| {
-                let (mut nodes, links) = worker.process(n, &mut page)?;
+                let (mut nodes, links, conf) = worker.process(n, &mut page)?;
                 assemble::stamp_page_no(&mut nodes, n + 1);
                 doc.nodes.extend(nodes);
                 doc.links.extend(links);
+                confs.insert(n + 1, conf);
                 Ok::<(), PdfError>(())
             },
         )?;
         assemble::merge_continuations(&mut doc.nodes);
+        doc.confidence = Some(docling_core::ConfidenceReport::from_pages(confs));
         Ok(doc)
     }
 
@@ -1373,12 +1406,15 @@ impl Pipeline {
             .unwrap();
         results.sort_by_key(|(idx, _)| *idx);
         let mut doc = DoclingDocument::new(name);
-        for (idx, (mut nodes, links)) in results {
+        let mut confs = std::collections::BTreeMap::new();
+        for (idx, (mut nodes, links, conf)) in results {
             assemble::stamp_page_no(&mut nodes, idx + 1);
             doc.nodes.extend(nodes);
             doc.links.extend(links);
+            confs.insert(idx + 1, conf);
         }
         assemble::merge_continuations(&mut doc.nodes);
+        doc.confidence = Some(docling_core::ConfidenceReport::from_pages(confs));
         Ok(doc)
     }
 
@@ -1437,7 +1473,10 @@ impl Pipeline {
             render_image,
             range,
             |n, _total, mut page| {
-                let (nodes, links) = worker.process(n, &mut page)?;
+                // Confidence is dropped on the streaming path: the report is
+                // only complete once every page has run, which defeats
+                // page-by-page emission — buffered `convert` carries it.
+                let (nodes, links, _conf) = worker.process(n, &mut page)?;
                 emit(asm.push(nodes), links)
             },
         )?;
@@ -1551,7 +1590,7 @@ impl Pipeline {
                         if first_err.is_some() {
                             continue; // keep draining so the threads can exit
                         }
-                        while let Some((nodes, links)) = buffer.remove(&next) {
+                        while let Some((nodes, links, _conf)) = buffer.remove(&next) {
                             if let Err(e) = emit(asm.push(nodes), links) {
                                 first_err = Some(e);
                                 break;
@@ -1642,14 +1681,17 @@ impl Pipeline {
         name: &str,
     ) -> Result<DoclingDocument, PdfError> {
         let mut doc = DoclingDocument::new(name);
+        let mut confs = std::collections::BTreeMap::new();
         let worker = self.primary()?;
         for (n, page) in pages.iter_mut().enumerate() {
-            let (mut nodes, links) = worker.process(n, page)?;
+            let (mut nodes, links, conf) = worker.process(n, page)?;
             assemble::stamp_page_no(&mut nodes, n + 1);
             doc.nodes.extend(nodes);
             doc.links.extend(links);
+            confs.insert(n + 1, conf);
         }
         assemble::merge_continuations(&mut doc.nodes);
+        doc.confidence = Some(docling_core::ConfidenceReport::from_pages(confs));
         Ok(doc)
     }
 }

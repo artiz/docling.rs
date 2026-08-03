@@ -81,7 +81,7 @@ crates/
 ├── docling-node/   # Node.js/Bun N-API bindings (napi-rs), published to npm as `docling.rs`
 ├── docling-py/     # PyO3 bindings (maturin), published to PyPI as `docling-rs` (strangler-fig over docling-core)
 ├── docling-rag/    # RAG layer on top of the converter (chunking, embeddings, vector search, REST API)
-├── docling-serve/  # HTTP conversion API (docling-serve analogue): POST /v1/convert over a warm pipeline
+├── docling-serve/  # HTTP conversion API (docling-serve analogue): sync + async/batch /v1/convert over a warm pipeline
 └── docling-wasm/   # WebAssembly bindings: declarative converters + text-layer PDF in the browser
 ```
 
@@ -343,6 +343,15 @@ These are deliberate or unavoidable divergences, not bugs.
    (CSS-cascade) visibility suppression needs a rendered page, available behind
    the optional `web-browser` feature / `--use-web-browser` flag (Rust-driven
    Chromium) — see §5.
+
+9. **Confidence pages are keyed 1-based.** The PDF/image pipeline attaches a
+   docling-`ConfidenceReport`-shaped report (same grade thresholds, same
+   nanmean/nanquantile aggregation; `table_score` unset like upstream) that
+   docling-serve surfaces per response (v1.25 parity). Its `pages` map is
+   keyed by the **real 1-based page number** — consistent with the JSON
+   export's `pages` map and `--pages` windows — where Python docling keys by
+   its 0-based internal page index. Unset scores serialize as `null`, not
+   `NaN`.
 
 ---
 

@@ -13,7 +13,7 @@ use crate::layout::Region;
 // The ONNX-free half (line prep, batching, CTC decode) lives in `ocr_prep`
 // so the wasm build shares it verbatim (#79 phase 2).
 use crate::ocr_prep::{
-    batch_input, decode_row, dict_chars, prep_region_lines, prep_table_words, width_batches,
+    batch_input, decode_row_scored, dict_chars, prep_region_lines, prep_table_words, width_batches,
     PrepLine, REC_HEIGHT,
 };
 use crate::pdfium_backend::TextCell;
@@ -135,7 +135,7 @@ impl OcrModel {
         w: usize,
         chunk: &[usize],
         lines: &[PrepLine],
-    ) -> Result<Vec<String>, String> {
+    ) -> Result<Vec<(String, f32)>, String> {
         let n = chunk.len();
         let data = batch_input(w, chunk, lines);
         let input = Tensor::from_array(([n, 3, REC_HEIGHT as usize, w], data))
@@ -151,7 +151,7 @@ impl OcrModel {
         let nc = shape[2] as usize;
         Ok((0..n)
             .map(|i| {
-                decode_row(
+                decode_row_scored(
                     &self.chars,
                     &probs[i * t_len * nc..(i + 1) * t_len * nc],
                     nc,
@@ -161,20 +161,22 @@ impl OcrModel {
     }
 
     /// OCR a page: produce text cells (page points) for every line found inside
-    /// the text regions. `scale` is image-px per page-point.
+    /// the text regions, each paired with its recognition confidence (mean
+    /// emitted-character probability — feeds the page `ocr_score`, #183).
+    /// `scale` is image-px per page-point.
     pub fn ocr_page(
         &mut self,
         img: &RgbImage,
         regions: &[Region],
         scale: f32,
-    ) -> Result<Vec<TextCell>, String> {
+    ) -> Result<Vec<(TextCell, f32)>, String> {
         // Gather every line crop on the page first (shared with the browser
         // path), so equal-width lines can share a recognition run regardless
         // of which region they came from.
         let (bboxes, lines) = prep_region_lines(img, regions, scale);
 
         // Deterministic width-batching (shared with the wasm path).
-        let mut texts = vec![String::new(); lines.len()];
+        let mut texts = vec![(String::new(), 0.0f32); lines.len()];
         for (w, chunk) in width_batches(&lines) {
             for (&i, text) in chunk.iter().zip(self.recognize_batch(w, &chunk, &lines)?) {
                 texts[i] = text;
@@ -183,12 +185,12 @@ impl OcrModel {
 
         // Emit cells in page order, exactly as the sequential walk did.
         let mut cells = Vec::new();
-        for ((l, t, r, b), text) in bboxes.into_iter().zip(texts) {
+        for ((l, t, r, b), (text, conf)) in bboxes.into_iter().zip(texts) {
             let text = text.trim().to_string();
             if text.is_empty() {
                 continue;
             }
-            cells.push(TextCell { text, l, t, r, b });
+            cells.push((TextCell { text, l, t, r, b }, conf));
         }
         Ok(cells)
     }
@@ -203,21 +205,21 @@ impl OcrModel {
         img: &RgbImage,
         regions: &[Region],
         scale: f32,
-    ) -> Result<Vec<TextCell>, String> {
+    ) -> Result<Vec<(TextCell, f32)>, String> {
         let (bboxes, lines) = prep_table_words(img, regions, scale);
-        let mut texts = vec![String::new(); lines.len()];
+        let mut texts = vec![(String::new(), 0.0f32); lines.len()];
         for (w, chunk) in width_batches(&lines) {
             for (&i, text) in chunk.iter().zip(self.recognize_batch(w, &chunk, &lines)?) {
                 texts[i] = text;
             }
         }
         let mut cells = Vec::new();
-        for ((l, t, r, b), text) in bboxes.into_iter().zip(texts) {
+        for ((l, t, r, b), (text, conf)) in bboxes.into_iter().zip(texts) {
             let text = text.trim().to_string();
             if text.is_empty() {
                 continue;
             }
-            cells.push(TextCell { text, l, t, r, b });
+            cells.push((TextCell { text, l, t, r, b }, conf));
         }
         Ok(cells)
     }

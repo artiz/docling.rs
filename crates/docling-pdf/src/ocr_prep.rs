@@ -63,8 +63,18 @@ pub fn dict_chars(dict: &str) -> Vec<String> {
 
 /// Greedy CTC decode of one row's `(T, C)` probabilities.
 pub fn decode_row(chars: &[String], probs: &[f32], nc: usize) -> String {
+    decode_row_scored(chars, probs, nc).0
+}
+
+/// [`decode_row`] plus the line's recognition confidence: the mean probability
+/// of the emitted characters (PaddleOCR's per-line score — what docling's
+/// `TextCell.confidence` carries for OCR cells, feeding the `ocr_score`
+/// confidence aggregate, #183). `0.0` when nothing decodes.
+pub fn decode_row_scored(chars: &[String], probs: &[f32], nc: usize) -> (String, f32) {
     let mut out = String::new();
     let mut prev = 0usize;
+    let mut conf_sum = 0.0f32;
+    let mut conf_n = 0usize;
     for row in probs.chunks_exact(nc) {
         let mut best = 0usize;
         let mut bestv = row[0];
@@ -77,11 +87,18 @@ pub fn decode_row(chars: &[String], probs: &[f32], nc: usize) -> String {
         if best != prev && best != 0 {
             if let Some(ch) = chars.get(best) {
                 out.push_str(ch);
+                conf_sum += bestv;
+                conf_n += 1;
             }
         }
         prev = best;
     }
-    out
+    let conf = if conf_n == 0 {
+        0.0
+    } else {
+        conf_sum / conf_n as f32
+    };
+    (out, conf)
 }
 
 pub(crate) fn luma(p: &Rgb<u8>) -> f32 {

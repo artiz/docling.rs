@@ -141,12 +141,29 @@ curl -F file=@page.html   'localhost:5001/v1/convert?to=chunks'  # chunk records
 curl -H 'content-type: application/json' \
      -d '{"url": "https://example.com/doc.pdf", "to": "md"}' \
      localhost:5001/v1/convert                                   # fetch a URL
+
+curl -F file=@a.pdf -F file=@b.docx localhost:5001/v1/convert    # batch → JSON results array
+
+id=$(curl -F file=@big.pdf localhost:5001/v1/convert/async | jq -r .task_id)
+curl localhost:5001/v1/status/$id                                # pending|started|success|failure
+curl localhost:5001/v1/result/$id                                # the output, once done
 ```
+
+Long conversions don't have to hold the connection: `POST /v1/convert/async`
+accepts the same request and returns a task id immediately — poll
+`/v1/status/{id}`, fetch `/v1/result/{id}` (kept `--result-ttl` seconds,
+default 10 min; at most `--queue-size` jobs queue at once). Several `file`
+parts in one request convert as a batch with per-item status. PDF/image
+responses carry a conversion-confidence report (docling-serve v1.25 parity):
+an `X-Docling-Confidence` summary header (grades `poor`/`fair`/`good`/
+`excellent` + layout/OCR/parse scores) on every format, and the full per-page
+report under a top-level `confidence` key in `to=json` bodies.
 
 Options per request: `to=md|json|dclx|chunks`, `strict`, `images=placeholder|embedded`,
 `no_ocr`, `no_table_former`, `no_text_panels`, `pages`, `ocr_lang`, `fetch_images` — as query parameters, multipart
 fields, or JSON keys (body wins). Server flags: `--addr`, `--concurrency`,
-`--max-body-mb`, `--warmup`, `--no-url-fetch`, `--strict`. A container image
+`--max-body-mb`, `--queue-size`, `--result-ttl`, `--warmup`, `--no-url-fetch`,
+`--strict`. A container image
 builds from [`crates/docling-serve/Dockerfile`](./crates/docling-serve/Dockerfile)
 (models + pdfium baked in, or mounted with `--build-arg FETCH_ASSETS=0`).
 URL inputs make the server fetch outbound (SSRF surface): it binds loopback by

@@ -432,7 +432,16 @@ fn run_serve(args: Vec<String>) -> ExitCode {
                 Some(v) if v >= 1 => cfg.max_body_bytes = v * 1024 * 1024,
                 _ => return serve_usage("--max-body-mb needs a positive integer"),
             },
+            "--queue-size" => match it.next().and_then(|v| v.parse().ok()) {
+                Some(v) if v >= 1 => cfg.queue_size = v,
+                _ => return serve_usage("--queue-size needs a positive integer"),
+            },
+            "--result-ttl" => match it.next().and_then(|v| v.parse().ok()) {
+                Some(v) if v >= 1 => cfg.result_ttl_secs = v,
+                _ => return serve_usage("--result-ttl needs a positive number of seconds"),
+            },
             "--warmup" => cfg.warmup = true,
+            "--allow-url-fetch" => cfg.allow_url_fetch = true,
             "--no-url-fetch" => cfg.allow_url_fetch = false,
             "--strict" => cfg.strict = true,
             other => return serve_usage(&format!("unknown argument '{other}'")),
@@ -457,7 +466,7 @@ fn run_serve(args: Vec<String>) -> ExitCode {
 #[cfg(feature = "serve")]
 fn serve_usage(err: &str) -> ExitCode {
     eprintln!("error: {err}");
-    eprintln!("usage: docling-rs serve [--addr HOST:PORT] [--concurrency N] [--max-body-mb N] [--warmup] [--no-url-fetch] [--strict]");
+    eprintln!("usage: docling-rs serve [--addr HOST:PORT] [--concurrency N] [--max-body-mb N] [--queue-size N] [--result-ttl SECS] [--warmup] [--allow-url-fetch] [--strict]");
     ExitCode::from(2)
 }
 

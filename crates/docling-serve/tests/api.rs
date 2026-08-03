@@ -85,8 +85,20 @@ async fn serves_its_logo_and_openapi_description() {
     // Every route the router answers is described, and every conversion option
     // the API accepts appears — the spec drifting from `ConvertOptions` is the
     // failure mode worth catching here.
-    for path in ["/v1/convert", "/v1/config", "/health", "/ready"] {
+    for path in [
+        "/v1/convert",
+        "/v1/convert/async",
+        "/v1/status/{id}",
+        "/v1/result/{id}",
+        "/v1/config",
+        "/health",
+        "/ready",
+    ] {
         assert!(spec.contains(path), "{path} missing from openapi.yaml");
+    }
+    // The #182/#183 additions stay described.
+    for schema in ["TaskStatus", "ConfidenceReport", "X-Docling-Confidence"] {
+        assert!(spec.contains(schema), "{schema} missing from openapi.yaml");
     }
     for opt in [
         "to:",
@@ -321,6 +333,194 @@ async fn fetch_images_is_gated_behind_allow_url_fetch() {
         out.contains("data:image/"),
         "gate on must embed the fetched image"
     );
+}
+
+/// A multipart body with several `file` parts — a #182 batch.
+fn multipart_files(files: &[(&str, &[u8])], fields: &[(&str, &str)]) -> (String, Vec<u8>) {
+    let boundary = "docling-serve-test-boundary";
+    let mut body = Vec::new();
+    for (file_name, content) in files {
+        body.extend_from_slice(
+            format!(
+                "--{boundary}\r\nContent-Disposition: form-data; name=\"file\"; filename=\"{file_name}\"\r\nContent-Type: application/octet-stream\r\n\r\n"
+            )
+            .as_bytes(),
+        );
+        body.extend_from_slice(content);
+        body.extend_from_slice(b"\r\n");
+    }
+    for (k, v) in fields {
+        body.extend_from_slice(
+            format!("--{boundary}\r\nContent-Disposition: form-data; name=\"{k}\"\r\n\r\n{v}\r\n")
+                .as_bytes(),
+        );
+    }
+    body.extend_from_slice(format!("--{boundary}--\r\n").as_bytes());
+    (format!("multipart/form-data; boundary={boundary}"), body)
+}
+
+/// Several `file` parts in one request convert as a batch (#182): the
+/// response is a JSON results array with per-item status — and one bad file
+/// fails only its own item.
+#[tokio::test]
+async fn batch_upload_returns_results_array() {
+    let (ct, body) = multipart_files(
+        &[
+            ("a.md", b"# A\n"),
+            ("b.csv", b"x,y\n1,2\n"),
+            ("broken.xyz", b"?"),
+        ],
+        &[("to", "md")],
+    );
+    let response = app().oneshot(convert_request(&ct, body, "")).await.unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let v: serde_json::Value = serde_json::from_str(&body_string(response).await).unwrap();
+    let results = v["results"].as_array().expect("results array");
+    assert_eq!(results.len(), 3);
+    assert_eq!(results[0]["status"], "success");
+    assert!(results[0]["md"].as_str().unwrap().contains("# A"));
+    assert_eq!(results[1]["status"], "success");
+    assert_eq!(results[2]["status"], "failure");
+    assert!(results[2]["error"].as_str().unwrap().contains("xyz"));
+}
+
+/// Async job lifecycle (#182): submit returns a task id, status reaches
+/// `success`, and the result endpoint replays the sync response (here: the
+/// converted Markdown). Unknown ids 404.
+#[tokio::test]
+async fn async_job_roundtrip() {
+    let app = app();
+    let (ct, body) = multipart("note.md", b"# Async\n\nhello.\n", &[]);
+    let response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/v1/convert/async")
+                .header(header::CONTENT_TYPE, ct)
+                .body(Body::from(body))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::ACCEPTED);
+    let v: serde_json::Value = serde_json::from_str(&body_string(response).await).unwrap();
+    let id = v["task_id"].as_str().expect("task id").to_string();
+    assert_eq!(v["task_status"], "pending");
+
+    // Poll until the job finishes (a declarative conversion takes milliseconds;
+    // the deadline only bounds a hung test).
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+    loop {
+        let response = app
+            .clone()
+            .oneshot(
+                Request::get(format!("/v1/status/{id}"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let v: serde_json::Value = serde_json::from_str(&body_string(response).await).unwrap();
+        match v["task_status"].as_str().unwrap() {
+            "success" => break,
+            "failure" => panic!("job failed: {v}"),
+            _ if std::time::Instant::now() > deadline => panic!("job never finished"),
+            _ => tokio::time::sleep(std::time::Duration::from_millis(10)).await,
+        }
+    }
+
+    let response = app
+        .clone()
+        .oneshot(
+            Request::get(format!("/v1/result/{id}"))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(
+        response.headers()[header::CONTENT_TYPE],
+        "text/markdown; charset=utf-8"
+    );
+    let md = body_string(response).await;
+    assert!(md.contains("# Async"), "unexpected result body: {md}");
+
+    // The result stays fetchable (until the TTL): a retried GET must not 404.
+    let response = app
+        .clone()
+        .oneshot(
+            Request::get(format!("/v1/result/{id}"))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+
+    let response = app
+        .oneshot(
+            Request::get("/v1/status/no-such-task")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::NOT_FOUND);
+}
+
+/// A bad async submission fails synchronously (nothing queues) and a full
+/// queue answers 429 instead of growing without bound.
+#[tokio::test]
+async fn async_rejects_bad_requests_and_full_queue() {
+    let (ct, body) = multipart("x.md", b"x", &[("to", "pdf")]);
+    let response = app()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/v1/convert/async")
+                .header(header::CONTENT_TYPE, ct)
+                .body(Body::from(body))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+
+    // queue_size 0 admits nothing — the first submission is already refused.
+    let cfg = ServeConfig {
+        queue_size: 0,
+        ..ServeConfig::default()
+    };
+    let (ct, body) = multipart("x.md", b"# x\n", &[]);
+    let response = router(cfg)
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/v1/convert/async")
+                .header(header::CONTENT_TYPE, ct)
+                .body(Body::from(body))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::TOO_MANY_REQUESTS);
+}
+
+/// Declarative conversions have no ML stages, so no confidence surfaces
+/// (#183): no `X-Docling-Confidence` header, no `confidence` key in JSON.
+/// (The positive case — real scores from the PDF pipeline — is covered by the
+/// docling-pdf tests; here the router-level suite stays model-free.)
+#[tokio::test]
+async fn declarative_conversions_carry_no_confidence() {
+    let (ct, body) = multipart("t.csv", b"a,b\n1,2\n", &[("to", "json")]);
+    let response = app().oneshot(convert_request(&ct, body, "")).await.unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    assert!(response.headers().get("x-docling-confidence").is_none());
+    let v: serde_json::Value = serde_json::from_str(&body_string(response).await).unwrap();
+    assert!(v.get("confidence").is_none());
 }
 
 #[tokio::test]
