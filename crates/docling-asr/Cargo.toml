@@ -14,7 +14,7 @@ rust-version.workspace = true
 [dependencies]
 docling-core = { path = "../docling-core", version = "0.52.6" }
 # Same ort as docling-pdf so the workspace keeps a single ONNX runtime.
-ort = { version = "2.0.0-rc.12", default-features = false, features = ["std", "download-binaries", "tls-rustls"] }
+ort = { version = "2.0.0-rc.13", default-features = false, features = ["std", "download-binaries", "tls-rustls"] }
 serde_json = "1"
 # Pure-Rust audio demuxing/decoding for every container docling's ASR accepts:
 # wav (pcm), mp3, flac, ogg/vorbis, aac (adts), m4a/mp4 (isomp4+aac).
