@@ -354,10 +354,17 @@ pub fn layout_cell_coverage(regions: &[Region], cells: &[TextCell]) -> f32 {
 /// label) is still emitted instead of silently dropped. Adjacent orphan cells on a
 /// line are merged so a missed paragraph doesn't shatter into one block per line.
 pub fn add_orphan_regions(regions: &mut Vec<Region>, cells: &[TextCell]) {
-    // docling assigns a cell to its best-overlapping cluster at
-    // intersection-over-self > 0.2; only cells below that for *every* region are
-    // orphans. (Our text extraction uses a stricter 0.5, but matching docling's
-    // 0.2 here avoids emitting cells it already placed in a neighbouring region.)
+    // docling assigns each cell to its single best-overlapping cluster at
+    // intersection-over-self > 0.2 and serializes exactly the assigned cells.
+    // Our serializer (`region_text`) instead takes cells at > 0.5 — so a cell
+    // whose best overlap lands in (0.2, 0.5] would be "claimed" under
+    // docling's threshold yet serialized by *no* region, and its text would
+    // silently vanish (right_to_left_03's standalone `20300` value, whose
+    // detector box covers just under half of the cell). The claim test here
+    // therefore mirrors the serializer's own criterion: a cell counts as
+    // assigned only if some region will actually emit it, so every non-empty
+    // text cell either serializes inside a region or becomes an orphan —
+    // text completeness by construction.
     //
     // Only *regular* clusters claim cells: docling's `_find_unassigned_cells`
     // walks `regular_clusters` alone, so a cell under a `picture` or a wrapper
@@ -375,7 +382,7 @@ pub fn add_orphan_regions(regions: &mut Vec<Region>, cells: &[TextCell]) {
         regions
             .iter()
             .filter(|r| r.label != "picture" && !is_wrapper(r.label))
-            .any(|r| inter(r, c.l, c.t, c.r, c.b) / ca > 0.2)
+            .any(|r| inter(r, c.l, c.t, c.r, c.b) / ca > 0.5)
     };
     // Collect orphan cells (non-empty, unassigned), in page order.
     let mut orphans: Vec<&TextCell> = cells
@@ -650,12 +657,7 @@ fn is_page_number(region: &Region, cells: &[TextCell], page_h: f32) -> bool {
 fn is_skipped(label: &str) -> bool {
     matches!(
         label,
-        "page_header"
-            | "page_footer"
-            | "checkbox_selected"
-            | "checkbox_unselected"
-            | "form"
-            | "key_value_region"
+        "page_header" | "page_footer" | "form" | "key_value_region"
     )
 }
 
@@ -1716,6 +1718,14 @@ pub fn assemble_page(
             continue;
         }
         match region.label {
+            // docling assembles checkboxes as TEXT_ELEM items (the region's
+            // cells are the option label, e.g. right_to_left_03's بلی/خير)
+            // and its Markdown serializer renders them as task-list lines
+            // (`- [x] …`) — mirrored by [`Node::CheckboxItem`].
+            "checkbox_selected" | "checkbox_unselected" => nodes.push(Node::CheckboxItem {
+                checked: region.label == "checkbox_selected",
+                text: md_escape(&text),
+            }),
             // docling renders both the document title and section headers as
             // `##` (it never emits a top-level `#` for PDFs), so match that.
             "title" | "section_header" => nodes.push(located(

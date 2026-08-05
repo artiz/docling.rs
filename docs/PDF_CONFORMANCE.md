@@ -28,7 +28,7 @@ are no longer scored.)
 | code_and_formula | **exact** | — (flat legacy code, line-preserving `pretty` in strict) |
 | 2305.03393v1 | 26 | title-page reading order + author-ID run spacing |
 | normal_4pages | 50 | reading order (heading numbering, footnote order) + recovered panel text |
-| right_to_left_03 | 60 | RTL bidi |
+| right_to_left_03 | 62 | RTL bidi + wrapper (form) children order |
 | table_mislabeled_as_picture | 80 | layout over-detects tables (survey rendered as tables) |
 | 2206.01062 | 72 | TableFormer multi-row headers + title-page reading order |
 | 2203.01017v2 | 132 | TableFormer structure + reading order |
@@ -101,6 +101,23 @@ table-cell structure (2203's ANOVA grid, redp5110's authority-matrix rows —
 TableFormer), picture-child divergence (2305's HTML/OTSL figure axis labels),
 RTL/checkbox forms (right_to_left_03), and docling-parse artifacts we
 deliberately don't reproduce (`/tildelow`, `/.notdef` glyph-name leaks).
+
+The audit exposed one systematic hole, now closed: docling assigns each cell
+to its best cluster at > 0.2 overlap and serializes the assigned cells, while
+our serializer takes cells at > 0.5 — a cell whose best overlap fell in
+(0.2, 0.5] was "claimed" but emitted by nobody (right_to_left_03's standalone
+`20300`, several Korean labels on the skipped_1/2page scans). The orphan
+pass's claim test now mirrors the serializer's criterion, so **every
+non-empty text cell either serializes inside a region or becomes an orphan**
+— completeness by construction. Checkbox regions
+(`checkbox_selected`/`unselected`) are also no longer skipped: they assemble
+as docling's task-list items (`- [x] بلی`). right_to_left_03's remaining diff
+is ordering, not content — docling wraps that page's fields in `form`
+containers whose children serialize in docling-parse cell order, while we
+emit the same items in geometric reading order; the full wrapper-children
+port (and the bidi run order of `-2-5`-style headings) stays on the
+model-level blocker list, together with the title-page cluster splits of
+2305/2206 (heron letterbox-vs-stretch preprocessing difference).
 
 ## DocLang (`.dclx`) conformance
 

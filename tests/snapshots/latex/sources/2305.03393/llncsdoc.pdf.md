@@ -175,11 +175,17 @@ proposition
 \begin{corollary} <text> \end{corollary} \begin{definition} <text> \end{definition} \begin{lemma} <text> \end{lemma} \begin{proposition} <text> \end{proposition} \begin{theorem} <text> \end{theorem}
 ```
 
+( env. )
+
 case ( env. ) Other theorem-like environments render the text in roman, while the run-in conjecture ( env. ) heading is bold as well:
+
+example
 
 ```
 exercise(env.) property(env.) question(env.) solution(env.) heading is bold as well: problem(env.) note(env.) \begin{case} <text> \end{case} \begin{conjecture} <text> \end{conjecture} \begin{example} <text> \end{example} \begin{exercise} <text> \end{exercise} \begin{note} <text> \end{note} \begin{problem} <text> \end{problem} remark(env.) \begin{property} <text> \end{property} \begin{question} <text> \end{question} \begin{remark} <text> \end{remark} \begin{solution} <text> \end{solution}
 ```
+
+( env. )
 
 claim ( env. ) Finally, there are also two unnumbered environments that have the run-in headproof ( env. ) ing in italics and the text in upright roman.
 
