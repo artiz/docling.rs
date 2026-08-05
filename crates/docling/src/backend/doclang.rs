@@ -113,6 +113,7 @@ fn walk_body(parent: XmlNode, out: &mut Vec<Node>) {
                     language,
                     text: code_text(el),
                     orig: None,
+                    pretty: None,
                 });
             }
             "list" => parse_list(el, 0, out),

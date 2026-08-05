@@ -779,11 +779,7 @@ fn emit_nodes(out: &mut Out, depth: i32, nodes: &[Node], i: &mut usize, level: u
                 out.push(depth, "</text>".to_string());
                 *i += 1;
             }
-            Node::Code {
-                language,
-                text,
-                orig: _,
-            } => {
+            Node::Code { language, text, .. } => {
                 emit_code(out, depth, language.as_deref(), text, None);
                 *i += 1;
             }
@@ -1771,6 +1767,7 @@ mod tests {
             language: language.map(String::from),
             text: text.into(),
             orig: None,
+            pretty: None,
         }])
     }
 

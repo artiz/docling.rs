@@ -398,13 +398,24 @@ fn render_one(node: &Node, blocks: &mut Vec<String>, ctx: &mut Ctx) {
             let mark = if *checked { "- [x] " } else { "- [ ] " };
             blocks.push(strict_text(&format!("{mark}{text}"), ctx.strict));
         }
-        Node::Code { language, text, .. } => {
+        Node::Code {
+            language,
+            text,
+            pretty,
+            ..
+        } => {
             // Legacy docling never emits a language on the fence; strict keeps it.
             let lang = match language {
                 Some(l) if ctx.strict => l.as_str(),
                 _ => "",
             };
-            blocks.push(format!("```{lang}\n{text}\n```"));
+            // Strict prefers the line-preserving rendering when the backend
+            // supplied one (PDF); legacy stays on docling's flat `text`.
+            let body = match pretty {
+                Some(p) if ctx.strict => p.as_str(),
+                _ => text.as_str(),
+            };
+            blocks.push(format!("```{lang}\n{body}\n```"));
         }
         // A CodeFormula-decoded display formula renders as docling's `$$…$$`
         // (the un-enriched pipeline emits a placeholder paragraph instead).
@@ -924,6 +935,7 @@ mod tests {
             language: Some("rust".into()),
             text: "let x = 1;".into(),
             orig: None,
+            pretty: None,
         });
         doc.push(Node::Table(Table {
             rows: vec![vec!["a".into(), "b".into()], vec!["1".into(), "2".into()]],

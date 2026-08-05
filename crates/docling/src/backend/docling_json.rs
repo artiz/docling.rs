@@ -117,6 +117,7 @@ fn text_item(item: &Value, level: u8, doc: &mut DoclingDocument) {
                 .map(String::from),
             text,
             orig: None,
+            pretty: None,
         }),
         "list_item" => doc.push(Node::ListItem {
             ordered: item["enumerated"].as_bool().unwrap_or(false),

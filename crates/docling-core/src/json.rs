@@ -235,6 +235,7 @@ impl Builder {
                 language,
                 text,
                 orig,
+                ..
             } => Some(self.add_code(text, language.as_deref(), orig.as_deref(), parent)),
             // A CodeFormula-decoded display formula: `text` carries the LaTeX,
             // `orig` the raw glyph extraction (docling's enriched shape).

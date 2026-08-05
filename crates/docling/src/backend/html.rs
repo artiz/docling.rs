@@ -379,6 +379,7 @@ fn handle_block(
                     language: None,
                     text: code,
                     orig: None,
+                    pretty: None,
                 });
             } else {
                 let (text, runs) = render_inline(elem, base);
@@ -402,6 +403,7 @@ fn handle_block(
                     language,
                     text,
                     orig: None,
+                    pretty: None,
                 });
             }
         }
@@ -1881,6 +1883,7 @@ mod tests {
                 language: Some("rust".into()),
                 text: "let x = 1;".into(),
                 orig: None,
+                pretty: None,
             }]
         );
     }

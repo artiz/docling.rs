@@ -514,6 +514,7 @@ fn handle_paragraph_inner(
                 language: detect_code_language(&code_text),
                 text: code_text,
                 orig: None,
+                pretty: None,
             });
         }
         return;
