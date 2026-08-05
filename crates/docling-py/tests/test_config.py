@@ -185,3 +185,30 @@ def test_initialize_pipeline_noop_for_non_ml_format():
     # still works afterwards.
     conv.initialize_pipeline(InputFormat.MD)
     assert conv.convert(HTML).status == "success"
+
+
+def test_no_text_panels_reaches_the_native_converter():
+    """#197: the facade must accept ``no_text_panels`` — both as a direct
+    kwarg and via docling-shaped ``PdfPipelineOptions`` — and still convert
+    (declarative path; the flag only alters the ML pipeline, so constructing
+    without a TypeError and forwarding to the native converter is the bug
+    surface)."""
+    from docling_rs import (
+        DocumentConverter,
+        InputFormat,
+        PdfFormatOption,
+        PdfPipelineOptions,
+    )
+
+    for converter in (
+        DocumentConverter(no_text_panels=True),
+        DocumentConverter(
+            format_options={
+                InputFormat.PDF: PdfFormatOption(
+                    pipeline_options=PdfPipelineOptions(no_text_panels=True)
+                )
+            }
+        ),
+    ):
+        result = converter.convert(HTML)
+        assert "homepage" in result.document.export_to_markdown().lower()

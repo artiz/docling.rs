@@ -99,7 +99,10 @@ class PdfPipelineOptions:
     ``force_full_page_ocr`` (docling keeps it on ``ocr_options``; accepted here
     directly too — #187's escape hatch for undecodable text layers),
     ``do_picture_classification`` / ``do_code_enrichment`` /
-    ``do_formula_enrichment`` (the opt-in enrichment models) and
+    ``do_formula_enrichment`` (the opt-in enrichment models),
+    ``no_text_panels`` (a docling.rs extension, #173/#174: keep every detected
+    picture as a picture instead of demoting uncaptioned dense-text panels to
+    paragraphs) and
     ``accelerator_options.num_threads``. The remaining fields are accepted so
     docling code constructs unchanged, but do not alter the pipeline (images are
     always extracted; the export image mode is chosen by docling-core at
@@ -108,6 +111,7 @@ class PdfPipelineOptions:
     do_ocr: bool = True
     do_table_structure: bool = True
     force_full_page_ocr: bool = False
+    no_text_panels: bool = False
     do_picture_classification: bool = False
     do_code_enrichment: bool = False
     do_formula_enrichment: bool = False

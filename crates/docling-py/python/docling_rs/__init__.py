@@ -131,6 +131,9 @@ class DocumentConverter:
       ``do_table_structure`` and ``accelerator_options.num_threads`` take effect.
     * ``do_ocr`` / ``do_table_structure`` — a shorthand for the same, used when no
       ``format_options`` is given.
+    * ``no_text_panels`` — PDF/image: keep every detected picture as a picture
+      (disable the demotion of uncaptioned dense-text "picture" regions into
+      paragraphs — the image-extraction escape hatch, #174).
     * ``fetch_images`` — resolve remote/local ``<img src>`` for HTML/EPUB.
     * ``use_web_browser`` — render HTML via headless Chrome before parsing.
     * ``allowed_formats`` — restrict conversion to these :class:`InputFormat`\\ s
@@ -150,6 +153,7 @@ class DocumentConverter:
         do_ocr: bool = True,
         do_table_structure: bool = True,
         force_full_page_ocr: bool = False,
+        no_text_panels: bool = False,
         do_picture_classification: bool = False,
         do_code_enrichment: bool = False,
         do_formula_enrichment: bool = False,
@@ -173,6 +177,7 @@ class DocumentConverter:
             ) or getattr(
                 getattr(pipeline, "ocr_options", None), "force_full_page_ocr", False
             )
+            no_text_panels = getattr(pipeline, "no_text_panels", no_text_panels)
             do_picture_classification = getattr(
                 pipeline, "do_picture_classification", do_picture_classification
             )
@@ -227,6 +232,7 @@ class DocumentConverter:
             fetch_images=fetch_images,
             do_ocr=do_ocr,
             force_full_page_ocr=force_full_page_ocr,
+            no_text_panels=no_text_panels,
             do_table_structure=do_table_structure,
             use_web_browser=use_web_browser,
             do_picture_classification=do_picture_classification,
