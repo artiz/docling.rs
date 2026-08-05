@@ -29,7 +29,7 @@ fn main() {
     let mut tf = TableFormer::load().expect("tableformer models missing");
     for (pi, page) in doc.pages.iter().enumerate() {
         let regions = layout
-            .predict(&page.image, page.width, page.height)
+            .predict(docling_pdf::layout_src(page), page.width, page.height)
             .expect("layout");
         // docling resizes the whole page to 1024px height (cv2.INTER_AREA), then
         // crops the table bbox out of *that*. Replicate exactly.

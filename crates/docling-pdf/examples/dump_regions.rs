@@ -9,7 +9,7 @@ fn main() {
     let mut layout = LayoutModel::load().expect("layout");
     for (pi, page) in doc.pages.iter().enumerate() {
         let regions = layout
-            .predict(&page.image, page.width, page.height)
+            .predict(docling_pdf::layout_src(page), page.width, page.height)
             .expect("layout");
         for r in &regions {
             // crude text: cells whose center is inside the region

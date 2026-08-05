@@ -425,8 +425,10 @@ impl EnrichmentOptions {
 #[cfg(feature = "ml")]
 /// The layout model's input for a page: the docling-exact scale-1.0 page
 /// image when the renderer produced one, else the legacy stretch of the 2×
-/// bitmap (browser / METS paths) — see [`layout::LayoutSrc`].
-fn layout_src(page: &PdfPage) -> layout::LayoutSrc<'_> {
+/// bitmap (browser / METS paths) — see [`layout::LayoutSrc`]. Public so the
+/// diagnostic examples feed [`layout::LayoutModel::predict`] the same input
+/// the pipeline does.
+pub fn layout_src(page: &PdfPage) -> layout::LayoutSrc<'_> {
     match &page.image_layout {
         Some(img) => layout::LayoutSrc::PageImage(img),
         None => layout::LayoutSrc::Raw(&page.image),
