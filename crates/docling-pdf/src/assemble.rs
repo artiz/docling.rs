@@ -354,10 +354,17 @@ pub fn layout_cell_coverage(regions: &[Region], cells: &[TextCell]) -> f32 {
 /// label) is still emitted instead of silently dropped. Adjacent orphan cells on a
 /// line are merged so a missed paragraph doesn't shatter into one block per line.
 pub fn add_orphan_regions(regions: &mut Vec<Region>, cells: &[TextCell]) {
-    // docling assigns a cell to its best-overlapping cluster at
-    // intersection-over-self > 0.2; only cells below that for *every* region are
-    // orphans. (Our text extraction uses a stricter 0.5, but matching docling's
-    // 0.2 here avoids emitting cells it already placed in a neighbouring region.)
+    // docling assigns each cell to its single best-overlapping cluster at
+    // intersection-over-self > 0.2 and serializes exactly the assigned cells.
+    // Our serializer (`region_text`) instead takes cells at > 0.5 — so a cell
+    // whose best overlap lands in (0.2, 0.5] would be "claimed" under
+    // docling's threshold yet serialized by *no* region, and its text would
+    // silently vanish (right_to_left_03's standalone `20300` value, whose
+    // detector box covers just under half of the cell). The claim test here
+    // therefore mirrors the serializer's own criterion: a cell counts as
+    // assigned only if some region will actually emit it, so every non-empty
+    // text cell either serializes inside a region or becomes an orphan —
+    // text completeness by construction.
     //
     // Only *regular* clusters claim cells: docling's `_find_unassigned_cells`
     // walks `regular_clusters` alone, so a cell under a `picture` or a wrapper
@@ -375,7 +382,7 @@ pub fn add_orphan_regions(regions: &mut Vec<Region>, cells: &[TextCell]) {
         regions
             .iter()
             .filter(|r| r.label != "picture" && !is_wrapper(r.label))
-            .any(|r| inter(r, c.l, c.t, c.r, c.b) / ca > 0.2)
+            .any(|r| inter(r, c.l, c.t, c.r, c.b) / ca > 0.5)
     };
     // Collect orphan cells (non-empty, unassigned), in page order.
     let mut orphans: Vec<&TextCell> = cells
@@ -650,12 +657,7 @@ fn is_page_number(region: &Region, cells: &[TextCell], page_h: f32) -> bool {
 fn is_skipped(label: &str) -> bool {
     matches!(
         label,
-        "page_header"
-            | "page_footer"
-            | "checkbox_selected"
-            | "checkbox_unselected"
-            | "form"
-            | "key_value_region"
+        "page_header" | "page_footer" | "form" | "key_value_region"
     )
 }
 
@@ -819,6 +821,59 @@ fn fix_arabic_lam_alef(s: &str) -> String {
         out.push(c);
     }
     out.into_iter().collect()
+}
+
+/// docling's `PageAssembleModel._match_hyperlink`: the URI whose link
+/// annotations cover at least half of the region's box, or `None`. Coverage is
+/// intersection-over-region-area, **accumulated per URI** — a URL that wraps
+/// across lines carries several annotation rects that sum toward the same
+/// target. Ties resolve to the first-seen URI (Python's `max` over dict
+/// insertion order); the winner still needs `>= 0.5`
+/// (`_HYPERLINK_COVERAGE_THRESHOLD`).
+pub(crate) fn region_hyperlink(
+    region: &Region,
+    links: &[crate::pdfium_backend::LinkAnnot],
+) -> Option<String> {
+    if links.is_empty() {
+        return None;
+    }
+    let area = (region.r - region.l).max(0.0) * (region.b - region.t).max(0.0);
+    if area <= 0.0 {
+        return None;
+    }
+    let mut coverage: Vec<(&str, f32)> = Vec::new();
+    for link in links {
+        let ix = (region.r.min(link.r) - region.l.max(link.l)).max(0.0);
+        let iy = (region.b.min(link.b) - region.t.max(link.t)).max(0.0);
+        let c = ix * iy / area;
+        match coverage.iter_mut().find(|(uri, _)| *uri == link.uri) {
+            Some((_, acc)) => *acc += c,
+            None => coverage.push((&link.uri, c)),
+        }
+    }
+    let mut best: Option<(&str, f32)> = None;
+    for (uri, c) in coverage {
+        // Strictly greater keeps the first-seen URI on ties, like Python's max.
+        if best.is_none_or(|(_, bc)| c > bc) {
+            best = Some((uri, c));
+        }
+    }
+    let (uri, c) = best?;
+    (c >= 0.5).then(|| normalize_uri(uri))
+}
+
+/// The pydantic-`AnyUrl` normalization docling's hyperlink value passes
+/// through on its way to the serializer: a URL with an authority but no path
+/// gains a trailing `/` (`https://arxiv.org` → `https://arxiv.org/`). Other
+/// AnyUrl canonicalizations (scheme/host lowercasing, percent-encoding) don't
+/// occur in PDF link annotations in practice, so they are not reproduced.
+fn normalize_uri(uri: &str) -> String {
+    if let Some((_, rest)) = uri.split_once("://") {
+        if !rest.is_empty() && !rest.contains(['/', '?', '#']) {
+            return format!("{uri}/");
+        }
+    }
+    uri.to_string()
 }
 
 /// Resolve each page hyperlink to the visible text it covers, as `(anchor, uri)`
@@ -1514,8 +1569,10 @@ pub fn assemble_page(
         width: page.width,
         height: page.height,
     });
-    // Recover this page's hyperlinks (rendered only in strict Markdown).
-    let links = resolve_link_anchors(page);
+    // Recover this page's hyperlinks (anchor-precise pairs for strict
+    // Markdown; whole-item docling-parity links are baked below and their
+    // pairs dropped from this list so strict output doesn't double-wrap).
+    let mut links = resolve_link_anchors(page);
     // Pair each region with its precomputed TableFormer grid and enrichment
     // (indexed by original order) and order by reading order together, so they
     // stay aligned.
@@ -1661,6 +1718,14 @@ pub fn assemble_page(
             continue;
         }
         match region.label {
+            // docling assembles checkboxes as TEXT_ELEM items (the region's
+            // cells are the option label, e.g. right_to_left_03's بلی/خير)
+            // and its Markdown serializer renders them as task-list lines
+            // (`- [x] …`) — mirrored by [`Node::CheckboxItem`].
+            "checkbox_selected" | "checkbox_unselected" => nodes.push(Node::CheckboxItem {
+                checked: region.label == "checkbox_selected",
+                text: md_escape(&text),
+            }),
             // docling renders both the document title and section headers as
             // `##` (it never emits a top-level `#` for PDFs), so match that.
             "title" | "section_header" => nodes.push(located(
@@ -1763,27 +1828,32 @@ pub fn assemble_page(
                 // docling's shape — its parser has no line-preserving code
                 // path, so its `orig` is the same code with the lines joined
                 // by single spaces (indentation collapsed).
+                // docling's parser has no line-preserving code path — its code
+                // items carry the lines joined by single spaces. That flat
+                // form is what every byte-conformance surface serializes
+                // (legacy Markdown, JSON, DocLang); the line-preserving
+                // extraction rides in `pretty` for strict Markdown only.
+                let flat = code
+                    .lines()
+                    .map(str::trim)
+                    .filter(|l| !l.is_empty())
+                    .collect::<Vec<_>>()
+                    .join(" ");
                 let node = match &enrichments[i] {
                     Some(Enrichment::Code {
                         language,
                         text: enriched,
-                    }) => {
-                        let flat = code
-                            .lines()
-                            .map(str::trim)
-                            .filter(|l| !l.is_empty())
-                            .collect::<Vec<_>>()
-                            .join(" ");
-                        Node::Code {
-                            language: language.clone(),
-                            text: enriched.clone(),
-                            orig: Some(flat),
-                        }
-                    }
+                    }) => Node::Code {
+                        language: language.clone(),
+                        text: enriched.clone(),
+                        orig: Some(flat),
+                        pretty: None,
+                    },
                     _ => Node::Code {
                         language: None,
-                        text: code,
+                        text: flat,
                         orig: None,
+                        pretty: Some(code),
                     },
                 };
                 nodes.push(located(loc, node));
@@ -1796,12 +1866,42 @@ pub fn assemble_page(
                 }
             }
             // text, caption, footnote → paragraph
-            _ => nodes.push(located(
-                loc,
-                Node::Paragraph {
-                    text: md_escape(&text),
-                },
-            )),
+            _ => {
+                // docling parity (`PageAssembleModel._match_hyperlink`): when
+                // link annotations cover ≥ half of the region's box, the
+                // hyperlink attaches to the item and the legacy Markdown
+                // serializer wraps its full text — 2206.01062's footnote URLs
+                // render as `[1 https://…](https://…)`. Sparse in-paragraph
+                // citation links stay below the 0.5 coverage threshold and
+                // remain plain text, exactly like docling.
+                //
+                // Scope: **footnote regions only.** Upstream's page_assemble
+                // matches every TEXT_ELEM label, but published docling
+                // observably carries the hyperlink into the document only for
+                // footnote items — in both committed groundtruth generations
+                // (docling-JSON and Markdown, independent runs) the fully
+                // covered plain-text DOI line of 2206.01062 page 1 has
+                // `hyperlink: None` while the equally covered footnotes carry
+                // theirs. The corpus is the conformance reference, so match
+                // the observed behavior; widen the label set if a future
+                // groundtruth refresh starts linking plain text too.
+                let escaped = md_escape(&text);
+                let hyperlink = (region.label == "footnote")
+                    .then(|| region_hyperlink(region, &page.links))
+                    .flatten();
+                let text = match hyperlink {
+                    Some(uri) => {
+                        // The strict-mode anchor pairs this item covers are
+                        // superseded by the baked whole-item link.
+                        links.retain(|(anchor, href)| {
+                            !(href == &uri && region_texts[i].contains(anchor.as_str()))
+                        });
+                        format!("[{escaped}]({uri})")
+                    }
+                    None => escaped,
+                };
+                nodes.push(located(loc, Node::Paragraph { text }))
+            }
         }
     }
     (nodes, links)

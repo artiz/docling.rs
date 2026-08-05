@@ -133,6 +133,7 @@ impl MarkdownBackend {
                                     language: None,
                                     text,
                                     orig: None,
+                                    pretty: None,
                                 });
                             }
                         }
@@ -193,6 +194,7 @@ impl MarkdownBackend {
                             language,
                             text,
                             orig: None,
+                            pretty: None,
                         });
                     }
                 }
@@ -668,6 +670,7 @@ mod tests {
                 language: None,
                 text: "& <".into(),
                 orig: None,
+                pretty: None,
             }]
         );
     }

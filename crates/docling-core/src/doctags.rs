@@ -315,6 +315,7 @@ fn parse_blocks(toks: &[Tok], i: &mut usize, out: &mut Vec<Node>, list_level: u8
                                     language,
                                     text,
                                     orig: None,
+                                    pretty: None,
                                 },
                                 loc,
                             ));

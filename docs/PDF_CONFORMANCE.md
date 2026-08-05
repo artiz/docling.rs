@@ -13,7 +13,7 @@ The groundtruth is regenerated from **live published docling**, so it agrees wit
 
 ## Current state
 
-**5 / 14 strict** · **6 / 14 whitespace-normalized.** (The two Korean
+**6 / 14 strict** · **7 / 14 whitespace-normalized.** (The two Korean
 image-only pages `skipped_1page`/`skipped_2pages` carry no text groundtruth and
 are no longer scored.)
 
@@ -25,14 +25,14 @@ are no longer scored.)
 | right_to_left_01 | **exact** | — (RTL period attachment) |
 | right_to_left_02 | **exact** | — (kashida dedup + page-number layout) |
 | amt_handbook_sample | 2 *(ws-ok)* | docling's spurious fraction double space — ours is more faithful |
-| code_and_formula | 5 | code block reflowed to multiple lines + trailing newline |
+| code_and_formula | **exact** | — (flat legacy code, line-preserving `pretty` in strict) |
 | 2305.03393v1 | 26 | title-page reading order + author-ID run spacing |
 | normal_4pages | 50 | reading order (heading numbering, footnote order) + recovered panel text |
-| right_to_left_03 | 60 | RTL bidi |
+| right_to_left_03 | 62 | RTL bidi + wrapper (form) children order |
 | table_mislabeled_as_picture | 80 | layout over-detects tables (survey rendered as tables) |
-| 2206.01062 | 76 | TableFormer multi-row headers + title-page reading order |
+| 2206.01062 | 72 | TableFormer multi-row headers + title-page reading order |
 | 2203.01017v2 | 132 | TableFormer structure + reading order |
-| redp5110_sampled | 196 | TOC OTSL structure (model-level); cover-page ordering |
+| redp5110_sampled | 172 | TOC OTSL structure (model-level); cover-page ordering |
 
 `amt` is the 6th under the whitespace-normalized metric: its only diff is
 docling's spurious double space before the `1⁄4` fraction, where our single-spaced
@@ -74,6 +74,50 @@ a picture or table are still re-dropped, matching docling's Markdown (a
 picture's children never reach `MarkdownPictureSerializer` output; a table's
 text renders through the grid). Took 2206 80→76 and table_mislabeled 86→80
 with every other fixture byte-identical.
+
+The **footnote-hyperlink** port (docling's `PageAssembleModel._match_hyperlink`:
+the URI whose annotation rects cover ≥ 0.5 of the region box, accumulated per
+URI, pydantic-`AnyUrl` trailing-slash normalization) renders 2206's footnote
+URLs as docling's `[1 https://…](https://…)` whole-item links. Scope is
+footnote-labeled regions only: upstream's assemble stage matches every text
+label, but both committed groundtruth generations observably carry the
+hyperlink into the document **only for footnote items** (2206 page 1's fully
+covered plain-text DOI line has `hyperlink: null` in docling's own JSON while
+the equally covered footnotes keep theirs), and the corpus is the reference.
+Took 2206 76→72.
+
+**Code blocks flattened in legacy** (docling parity): docling's parser has no
+line-preserving code path — its code items carry the lines joined by single
+spaces — so `text` now holds that flat form on every byte-conformance surface
+(legacy Markdown, JSON, DocLang, chunks) and the line-preserving extraction
+moved to the new `pretty` field, which **strict** Markdown prefers. Took
+code_and_formula 5→**exact** and redp5110 196→172 (its SQL listings); the
+strict output is unchanged.
+
+A **word-completeness audit** (character-level diff of normalized output vs
+groundtruth, reorderings filtered out) confirms the extraction itself is
+whole: 10 / 14 fixtures lose *zero* groundtruth words; the remaining gaps are
+table-cell structure (2203's ANOVA grid, redp5110's authority-matrix rows —
+TableFormer), picture-child divergence (2305's HTML/OTSL figure axis labels),
+RTL/checkbox forms (right_to_left_03), and docling-parse artifacts we
+deliberately don't reproduce (`/tildelow`, `/.notdef` glyph-name leaks).
+
+The audit exposed one systematic hole, now closed: docling assigns each cell
+to its best cluster at > 0.2 overlap and serializes the assigned cells, while
+our serializer takes cells at > 0.5 — a cell whose best overlap fell in
+(0.2, 0.5] was "claimed" but emitted by nobody (right_to_left_03's standalone
+`20300`, several Korean labels on the skipped_1/2page scans). The orphan
+pass's claim test now mirrors the serializer's criterion, so **every
+non-empty text cell either serializes inside a region or becomes an orphan**
+— completeness by construction. Checkbox regions
+(`checkbox_selected`/`unselected`) are also no longer skipped: they assemble
+as docling's task-list items (`- [x] بلی`). right_to_left_03's remaining diff
+is ordering, not content — docling wraps that page's fields in `form`
+containers whose children serialize in docling-parse cell order, while we
+emit the same items in geometric reading order; the full wrapper-children
+port (and the bidi run order of `-2-5`-style headings) stays on the
+model-level blocker list, together with the title-page cluster splits of
+2305/2206 (heron letterbox-vs-stretch preprocessing difference).
 
 ## DocLang (`.dclx`) conformance
 

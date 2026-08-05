@@ -98,6 +98,13 @@ pub enum Node {
         /// rewrote `text`: docling keeps the raw extraction in the JSON `orig`
         /// field while `text` carries the model output. `None` → `orig == text`.
         orig: Option<String>,
+        /// A line-preserving rendering, when the backend can reconstruct one
+        /// but docling's own output for the format cannot. The PDF pipeline
+        /// sets it (docling-parse joins code lines with single spaces, so
+        /// `text` carries that flat docling-parity form): **strict** Markdown
+        /// prefers `pretty`, every byte-conformance surface (legacy Markdown,
+        /// JSON, DocLang, chunks) serializes `text`.
+        pretty: Option<String>,
     },
     /// A table. The first row is treated as the header.
     Table(Table),
