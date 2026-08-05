@@ -2,10 +2,6 @@
 
 <!-- image -->
 
-Time
-
-<!-- image -->
-
 ➔
 
 <!-- image -->

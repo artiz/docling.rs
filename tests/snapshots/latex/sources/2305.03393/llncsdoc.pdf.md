@@ -22,18 +22,8 @@ For a more detailed description of how to prepare your text, illustrations, and 
 
 The llncs class is invoked by replacing article by llncs in the first line of your L A T E X document:
 
-\documentclass{llncs}
-
-If your file is already coded with L A T E X, you can easily adapt it to the llncs document class by replacing
-
-\documentclass{article}
-
-with
-
-\documentclass{llncs}
-
 ```
-\begin{document} <Your contribution> \end{document} If your file is already coded with LATEX, you can easily adapt it to the llncs document class by replacing \documentclass{article} with \documentclass{llncs}
+\documentclass{llncs} \begin{document} <Your contribution> \end{document} If your file is already coded with LATEX, you can easily adapt it to the llncs document class by replacing \documentclass{article} with \documentclass{llncs}
 ```
 
 \fnmsep
@@ -66,7 +56,7 @@ If a long title does not fit in the single line of the running head, a warning i
 
 \subtitle{&lt;subtitle of your contribution&gt;}
 
-## 3.2 Author(s)
+3.2 Author(s)
 
 \author The name(s) of the author(s) are specified by:
 
@@ -105,8 +95,6 @@ might add some clarity about the correct representation of author names, in the 
 \and Multiple affiliations are separated by \and , which automatically assures correct numbering:
 
 \email Inside \institute you can use
-
-\email{&lt;email address&gt;}
 
 \url and
 
@@ -163,6 +151,8 @@ If you need blackboard bold characters, i.e. for sets of numbers, please load th
 
 Please note that all these characters are only available in math mode.
 
+## \spnewtheorem
+
 ## 5 Theorems, Definitions, and Proofs
 
 ## 5.1 Predefined Theorem-Like Environments
@@ -197,7 +187,7 @@ claim ( env. ) Finally, there are also two unnumbered environments that have the
 
 ## 5.2 User-Defined Theorem-Like Environments
 
-\spnewtheorem We have enhanced the standard \newtheorem command and slightly changed its syntax to get two new commands \spnewtheorem and \spnewtheorem* that now can be used to define additional environments. They require two additional arguments, namely the font style of the label and the font style of the text of the new environment:
+We have enhanced the standard \newtheorem command and slightly changed its syntax to get two new commands \spnewtheorem and \spnewtheorem* that now can be used to define additional environments. They require two additional arguments, namely the font style of the label and the font style of the text of the new environment:
 
 \spnewtheorem{&lt;env\_nam&gt;}[&lt;num\_like&gt;]{&lt;caption&gt;}{&lt;cap\_font&gt;}{&lt;body\_font&gt;}
 
@@ -209,19 +199,23 @@ For example,
 \spnewtheorem{<env_nam>}[<num_like>]{<caption>}{<cap_font>}{<body_font>} For example, \spnewtheorem{maintheorem}[theorem]{Main Theorem}{\bfseries}{\itshape}
 ```
 
-\spnewtheorem*
+## \spnewtheorem*
 
 citeauthoryear will create a main theorem environment that is numbered together with the predefined theorem . The sharing of the default counter ( [theorem] ) is desired. If you omit the optional second argument of \spnewtheorem , a separate counter for your new environment is used throughout your document.
 
 In combination with the (obsolete) class option envcountsect (see. Sect. 7), the \spnewtheorem command also supports the syntax:
 
-\spnewtheorem{&lt;env\_nam&gt;}{&lt;caption&gt;}[&lt;within&gt;]{&lt;cap\_font&gt;}{&lt;body\_font&gt;}
+```
+\spnewtheorem{<env_nam>}{<caption>}[<within>]{<cap_font>}{<body_font>}
+```
 
 With the parameter &lt;within&gt; , you can control the sectioning element that resets the theorem counters. If you specify, for example, subsection , the newly defined environment is numbered subsectionwise.
 
 If you wish to add an unnumbered environment, please use the syntax
 
-\spnewtheorem*{&lt;env\_nam&gt;}{&lt;caption&gt;}{&lt;cap\_font&gt;}{&lt;body\_font&gt;}
+```
+\spnewtheorem*{<env_nam>}{<caption>}{<cap_font>}{<body_font>}
+```
 
 ## 6 References
 
@@ -231,9 +225,15 @@ There are three options for citing references:
 - labels, i.e. [CE1], [AB1,XY2],
 - author/year system, (Smith et al. 2000), (Miller 1999a, 12; Brown 2018).
 
+```
+- arabic numbers, i.e. [1], [3-5], [4-6,9], - labels, i.e. [CE1], [AB1,XY2], - author/year system,(Smith et al. 2000),(Miller 1999a, 12; Brown 2018).
+```
+
 We prefer citations with arabic numbers, i.e. the usage of \bibitem without an optional parameter. If you want to use the author/year system, you can use the class option citeauthoryear , i.e.
 
+```
 \documentclass[citeauthoryear]{llncs}
+```
 
 Please note that this option does not automatically change your citations to the author/year style. It basically redefines the \bibitem command to take the publication year as an optional parameter that is displayed instead of an arabic number. Author name(s) and, if necessary, parentheses are to be typed manually. If your reference reads
 
@@ -253,15 +253,11 @@ The DOI will be expanded to the URL https://doi.org/&lt;DOI&gt; in accordance wi
 
 The llncs document class contains several class options that have become obsolete over the years. We only mention them for completeness:
 
-- orivec - The llncs document class changes the formatting of vectors coded with \vec to boldface italics. If you absolutely need the original L A T E X design for vectors, i.e. an arrow above the related variable, you can restore it with the orivec option.
-
-envcountsame
-
+- The llncs document class changes the formatting of vectors coded with \vec to boldface italics. If you absolutely need the original L A T E X design for vectors, i.e. an arrow above the related variable, you can restore it with the orivec option.
 - All theorem-like environments share one counter, i.e. Theorem 1, Lemma 2, Corollary 3, etc.
-
-envcountreset envcountsect openbib
-
 - All theorem-like environments are numbered per section, i.e. the related counters are reset to 1 in every section.
 - All theorem-like environments are numbered per section, and the section number added to the individual counter, i.e. Theorem 1.2, Lemma 2.2, etc.
 - This option produces the 'open' bibliography style, in which each block starts on a new line, and succeeding lines in a block are indented by \bibindent .
-- oribibl - This option restores the original L A T E X definitions for the bibliography and the \cite mechanism that some Bib T E X applications rely on.
+- This option restores the original L A T E X definitions for the bibliography and the \cite mechanism that some Bib T E X applications rely on.
+
+orivec envcountsame envcountreset envcountsect openbib oribibl

@@ -1,9 +1,3 @@
-<!-- image -->
-
-<!-- image -->
-
-<!-- image -->
-
-Dog
+*on.
 
 <!-- image -->

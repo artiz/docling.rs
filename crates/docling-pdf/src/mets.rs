@@ -93,6 +93,7 @@ pub fn convert_mets_gbs_with_options(
             code_cells: Vec::new(),
             word_cells: Vec::new(),
             image,
+            image_layout: None,
             links: Vec::new(),
         });
     }

@@ -1,5 +1,3 @@
-## Linear
-
 Linear
 
-<!-- image -->
+Linear

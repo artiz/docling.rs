@@ -1,68 +1,61 @@
-Ms PiaRutschmann Marktgasse28 9400Rorschach
+Ms Pia Rutschmann Marktgasse 28 9400Rorschach
 
-DearMs.Rutschmann,
+Dear Ms.Rutschmann
 
-Wearebillingyouasfollowsforcompletionoftheassignedactivities
+We are billing you as follows for completion of the assigned activities:
 
-## Bino.3139
+## Billno.3139
 
-| Item Description 1 Gardenwork   | Item Description 1 Gardenwork   |
-|---------------------------------|---------------------------------|
+Thank you for the assignment.Please pay the bill amount within 30 days.
 
-Yourssincerely
+Yours sincerely
 
-RobertSchneider
+Robert Schneider
 
 ## Receipt
 
-Account/Payableto CH5800791123000889012 RobertSchneiderAG RueduLac1268 2501Bie
+Account/Payableto CH5800791123000889012 Robert Schneider AG Rue du Lac1268 2501Bie
 
-Payableby PiaRutschmann Marktgasse28 9400Rorschach
+Payable by Pia Rutschmann Marktgasse 28 9400Rorschach
 
 Currency Amount
 
 CHF
 
-3.949.75
+3949.75
 
-Acceptancepoint
+Acceptance point
 
-## Fictitiousexampleforillustrationpurposes
+## Fictitious example for illustration purposes
 
-Paymentpart
+Payment part
 
 <!-- image -->
 
 Currency Amount
 
-CHE
+CHF
 
 3949.75
 
-RobertSchneiderAG RueduLac1268 2501Bie
+Robert Schneider AG Rue du Lac1268 2501Bie
 
 Telefon
 
-059/9876540
+059/987 6540
 
 Mobil
 
-E-Mail
+079/987 6543
 
-079/9876543
+E-Mail robert@rschneider.ch
 
-robert@rschneider.ch
-
-Internet:
-
-www.rschneider.ch
-
-Date
+Internet www.rschneider.ch Date
 
 01.07.2020
 
-Account/Payableto CH5800791123000889012 RobertSchneiderAG RueduLac1268 2501Bie
+Account/Payable to CH5800791123000889012 Robert Schneider AG Rue du Lac 1268 2501Biel
 
-Additionalinformation BillNo.3139forgardenworkanddisposalof cuttings
+Additionalinformation Bill No.3139 for garden work and disposal of cuttings
 
-Payableby PiaRutschmann Marktgasse28 9400Rorschach
+Payable by Pia Rutschmann Marktgasse 28 9400 Rorschach
