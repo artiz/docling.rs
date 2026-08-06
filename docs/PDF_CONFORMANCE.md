@@ -31,8 +31,8 @@ are no longer scored.)
 | table_mislabeled_as_picture | 54 | layout over-detects tables (survey rendered as tables) |
 | right_to_left_03 | 60 | RTL bidi + wrapper (form) children order |
 | redp5110_sampled | 73 | TOC row structure tails + cover-page ordering |
-| 2203.01017v2 | 86 | TeX math-glyph decode + caption order (+6 is the recovered in-picture table: same grid as docling, different OCR engine noise) |
-| 2206.01062 | 90 | author-block merge chains + one int8-borderline header rowspan |
+| 2203.01017v2 | 74 | caption order + reference-accent spacing (in-picture table recovered: same grid as docling, different OCR engine noise) |
+| 2206.01062 | 82 | author-block cluster splits (model-borderline) + one int8-borderline header rowspan |
 
 `amt` is the 6th under the whitespace-normalized metric: its only diff is
 docling's spurious double space before the `1⁄4` fraction, where our single-spaced
@@ -138,6 +138,23 @@ table screenshot also gains its grid). The remaining 2206 table diff is a
 single top-left header rowspan the int8 TableFormer resolves as two cells
 where docling's fp32 run predicts one 2-row span — span decoding itself is
 exercised by neighboring tables; that one token is quantization-borderline.
+
+**TeX math glyphs decode by their built-in encodings.** The standard TeX
+math fonts (`CMSY*`, `CMMI*`) ship no PDF `/Encoding`, no ToUnicode, and a
+CFF program this parser does not read — their codes fell through to
+StandardEncoding and rendered as the wrong ASCII: 2203's `{ahn,…}` author
+line read `f ahn,… g`, `→` read `!`, `∈` read `2`, `|T|` read `jTj`.
+A static table of the fixed TeX layouts (TeXbook Appendix F), keyed off the
+base font name and applied only when the font dict has no `/Encoding` at
+all, restores docling-parse's decode (it reads the same mapping out of the
+font program). Took 2203 86→74. Cross-page **paragraph continuations** also
+align with docling's `predict_merges`: the head test now accepts a trailing
+comma (`.+[a-z,\-\u00AD]`, ASCII-lowercase only — a lone `μ` or an
+uppercase OCR fragment no longer stitches), and tables joined the skip
+set (docling's skip-labels), so 2206's "…In phase four," resumes across a
+caption+table+figure page break. Took 2206 90→82; the remaining author-block
+chain differences trace to model-borderline cluster splits (docling's run
+splits a name block ours detects whole), not the merge rules.
 
 The **footnote-hyperlink** port (docling's `PageAssembleModel._match_hyperlink`:
 the URI whose annotation rects cover ≥ 0.5 of the region box, accumulated per

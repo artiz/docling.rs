@@ -1812,6 +1812,21 @@ pub fn assemble_page(
         })
         .collect();
     let boxes: Vec<(f32, f32, f32, f32)> = regions.iter().map(|r| (r.l, r.t, r.r, r.b)).collect();
+    if std::env::var("DOCLING_RS_DEBUG_MERGES").is_ok() {
+        for (i, r) in regions.iter().enumerate() {
+            eprintln!(
+                "MRG {i:2} {} text={} skip={} [{:.0},{:.0},{:.0},{:.0}] {:?}",
+                r.label,
+                is_text[i],
+                is_skip[i],
+                r.l,
+                r.t,
+                r.r,
+                r.b,
+                region_texts[i].chars().take(40).collect::<String>()
+            );
+        }
+    }
     let mut merge_suffix: Vec<String> = vec![String::new(); regions.len()];
     for (head, children) in
         crate::reading_order::predict_merges(&boxes, &region_texts, &is_text, &is_skip)
@@ -2096,9 +2111,16 @@ fn looks_like_caption(text: &str) -> bool {
 /// paragraph — when it ends mid-word (a letter) or with a wrap hyphen/dash.
 /// docling joins `vocab-` + `ulary` → `vocab- ulary`.
 fn paragraph_is_open(text: &str) -> bool {
-    text.trim_end().chars().next_back().is_some_and(|c| {
-        c.is_alphabetic() || matches!(c, '-' | '\u{2010}' | '\u{2013}' | '\u{2014}')
-    })
+    // docling's merge head test (`.+([a-z,\-\u00AD])\s*`): at least two chars,
+    // ending in an ASCII lowercase letter, a comma, a hyphen, or a soft
+    // hyphen. The comma matters: 2206's "…In phase four," resumes across the
+    // page break. Uppercase/non-Latin endings do not merge, exactly as
+    // upstream (the dash family is already `-` here — clean_text normalized).
+    let t = text.trim_end();
+    t.chars().count() >= 2
+        && t.chars()
+            .next_back()
+            .is_some_and(|c| matches!(c, 'a'..='z' | ',' | '-' | '\u{ad}'))
 }
 
 /// The paragraph text inside a node, looking through a [`Node::Located`]
@@ -2124,13 +2146,18 @@ fn is_picture_node(n: &Node) -> bool {
     }
 }
 
-/// A node a forward paragraph merge looks straight past: a figure the text wraps
-/// around, or a page header/footer that falls between the two fragments of a
-/// paragraph continuing across a page break (docling merges the body text and
-/// keeps the header/footer as a separate furniture layer).
+/// A node a forward paragraph merge looks straight past: a figure or *table*
+/// the text wraps around, or a page header/footer that falls between the two
+/// fragments of a paragraph continuing across a page break (docling's merge
+/// skip-labels: page_header, page_footer, table, picture, caption, footnote —
+/// 2206's "…In phase four," resumes after a full caption+table+figure block).
 fn is_merge_trailer(n: &Node) -> bool {
     is_picture_node(n)
-        || matches!(n, Node::PageFurniture { .. } | Node::PageInfo { .. })
+        || matches!(
+            n,
+            Node::PageFurniture { .. } | Node::PageInfo { .. } | Node::Table(_)
+        )
+        || matches!(n, Node::Located { inner, .. } if matches!(inner.as_ref(), Node::Table(_)))
         || as_paragraph(n).is_some_and(looks_like_caption)
 }
 
@@ -2171,6 +2198,11 @@ pub(crate) fn merge_continuations(nodes: &mut Vec<Node>) {
         while nodes.get(j).is_some_and(is_merge_trailer) {
             j += 1;
         }
+        // docling's continuation regex allows either case, but its merge runs
+        // over the pre-assembly element stream; at node level an uppercase
+        // start is overwhelmingly a new sentence/heading fragment (allowing it
+        // swallowed 2305's formula blocks and redp's chapter openers), so the
+        // continuation stays lowercase-start here.
         let cont = nodes.get(j).and_then(as_paragraph).is_some_and(|b| {
             b.trim_start()
                 .chars()
