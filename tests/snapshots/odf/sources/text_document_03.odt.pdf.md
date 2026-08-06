@@ -8,7 +8,7 @@
 
 ## Table with nested table
 
-Before table
+## Before table
 
 | Column A               | Column A               | Column A               | Column B                              | Column B                              | Column B                              |
 |------------------------|------------------------|------------------------|---------------------------------------|---------------------------------------|---------------------------------------|
@@ -49,11 +49,11 @@ After table with bold , underline, strikethrough, and italic formatting
 
 ## Multiple columns with lists
 
-| • R1C1 item 1   | • R1C2 item 1   |
-|-----------------|-----------------|
-| • R1C1 item 2   | • R1C2 item 2   |
-| • R2C1 item 1   | • R2C2 item 1   |
-| • R2C1 item 2   | • R2C2 item 2   |
+| • R1C1 item 1 R1C1 item 2   | • R1C2 item 1 • R1C2 item 2   |
+|-----------------------------|-------------------------------|
+| •                           |                               |
+| • R2C1 item 1               | • R2C2 item 1                 |
+| • R2C1 item 2               | • R2C2 item 2                 |
 
 ## Mixed content - list and regular text in different cells
 

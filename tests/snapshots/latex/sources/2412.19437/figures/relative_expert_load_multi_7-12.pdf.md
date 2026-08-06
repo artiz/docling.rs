@@ -10,6 +10,6 @@
 
 10
 
-## Aux-Loss-Based Layer 7
+Aux-Loss-Based Layer 7
 
 <!-- image -->

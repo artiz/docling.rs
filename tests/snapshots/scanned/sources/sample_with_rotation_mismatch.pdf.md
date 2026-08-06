@@ -12,7 +12,7 @@ Dr.P.N.Cundall, Mining Surveys Ltd., Holroyd Road, Reading, Berks.
 
 Dear Pete,
 
-Permit me to introduce you to the faciiity of facsimile transmlsson.
+Permit me to introduce you to the faciiity of facsimile transmlssion.
 
 In facsimile aphotocell is caused toperform a raster scanover the subject copy. The variations of print density on the document cause the photocell to generate an analogous electrical video signal. This signal is used to modulate a carrier, which is transmitted to a remote destinationover aradioorcablecommunicationslink.
 

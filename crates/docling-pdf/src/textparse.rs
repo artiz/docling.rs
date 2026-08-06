@@ -1062,6 +1062,8 @@ pub fn pdf_text_pages(bytes: &[u8]) -> Vec<crate::pdfium_backend::PdfPage> {
             drop_overpainted_cells(&mut prose);
             drop_overpainted_cells(&mut words);
             crate::pdfium_backend::PdfPage {
+                #[cfg(feature = "ocr-prep")]
+                image_layout: None,
                 width: w,
                 height: h,
                 // Cells are native PDF points; there is no rendered bitmap.

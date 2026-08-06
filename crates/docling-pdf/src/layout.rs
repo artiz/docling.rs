@@ -8,8 +8,6 @@
 #[cfg(feature = "ml")]
 use image::imageops::FilterType;
 #[cfg(feature = "ml")]
-use image::RgbImage;
-#[cfg(feature = "ml")]
 use ort::session::Session;
 #[cfg(feature = "ml")]
 use ort::value::Tensor;
@@ -45,6 +43,26 @@ pub struct Region {
     pub t: f32,
     pub r: f32,
     pub b: f32,
+}
+
+/// What a layout inference call receives per page — which resize kernel packs
+/// the 640×640 model input depends on it (docling parity, #58-branch):
+///
+/// docling's layout stage runs on `page.get_image(scale=1.0)` — the
+/// point-sized page image (pdfium at 1.5×, PIL-BICUBIC down) — which its
+/// RT-DETR processor then stretches to 640×640 with **PIL BILINEAR**
+/// (`preprocessor_config.json`: `do_pad: false`, `resample: 2`; no letterbox,
+/// no normalize beyond `/255`). [`PageImage`](LayoutSrc::PageImage) is that
+/// image and goes through the byte-exact PIL kernel. [`Raw`](LayoutSrc::Raw)
+/// is any other bitmap (the browser path's canvas render, METS/TIFF page
+/// scans) and keeps the legacy Triangle stretch.
+#[cfg(feature = "ocr-prep")]
+#[derive(Clone, Copy)]
+pub enum LayoutSrc<'a> {
+    /// The scale-1.0 page image (`PdfPage::image_layout`), docling-exact.
+    PageImage(&'a image::RgbImage),
+    /// Any other page bitmap — legacy stretch.
+    Raw(&'a image::RgbImage),
 }
 
 /// Base confidence threshold (docling-ibm-models `base_threshold`): the raw
@@ -156,7 +174,7 @@ impl LayoutModel {
     /// model override, or no fp32 file on disk.
     pub fn predict_fp32_fallback(
         &mut self,
-        img: &RgbImage,
+        img: LayoutSrc<'_>,
         page_w: f32,
         page_h: f32,
     ) -> Result<Option<Vec<Region>>, String> {
@@ -181,7 +199,7 @@ impl LayoutModel {
     /// in points; returned boxes are in those coordinates.
     pub fn predict(
         &mut self,
-        img: &RgbImage,
+        img: LayoutSrc<'_>,
         page_w: f32,
         page_h: f32,
     ) -> Result<Vec<Region>, String> {
@@ -198,7 +216,7 @@ impl LayoutModel {
     /// and identical to calling [`predict`](Self::predict) per page.
     pub fn predict_batch(
         &mut self,
-        pages: &[(&RgbImage, f32, f32)],
+        pages: &[(LayoutSrc<'_>, f32, f32)],
     ) -> Result<Vec<Vec<Region>>, String> {
         if pages.len() > 1 && self.batch_unsupported {
             return self.predict_singly(pages);
@@ -228,7 +246,7 @@ impl LayoutModel {
 
     fn predict_singly(
         &mut self,
-        pages: &[(&RgbImage, f32, f32)],
+        pages: &[(LayoutSrc<'_>, f32, f32)],
     ) -> Result<Vec<Vec<Region>>, String> {
         pages
             .iter()
@@ -236,24 +254,40 @@ impl LayoutModel {
             .collect()
     }
 
-    fn run_batch(&mut self, pages: &[(&RgbImage, f32, f32)]) -> Result<Vec<Vec<Region>>, String> {
+    fn run_batch(
+        &mut self,
+        pages: &[(LayoutSrc<'_>, f32, f32)],
+    ) -> Result<Vec<Vec<Region>>, String> {
         Self::run_on(&mut self.session, pages)
     }
 
     fn run_on(
         session: &mut Session,
-        pages: &[(&RgbImage, f32, f32)],
+        pages: &[(LayoutSrc<'_>, f32, f32)],
     ) -> Result<Vec<Vec<Region>>, String> {
         if pages.is_empty() {
             return Ok(Vec::new());
         }
         // Resize each page to 640×640 (RT-DETR ignores aspect ratio), rescale to
-        // [0,1], lay out as NCHW.
+        // [0,1], lay out as NCHW. The kernel depends on the source (see
+        // [`LayoutSrc`]): the docling-exact page image goes through Pillow's
+        // BILINEAR (the RT-DETR processor's kernel, byte-for-byte), raw
+        // bitmaps keep the legacy Triangle stretch.
         let n = (SIDE * SIDE) as usize;
         let batch = pages.len();
         let mut data = vec![0f32; batch * 3 * n];
-        for (p, (img, _, _)) in pages.iter().enumerate() {
-            let resized = image::imageops::resize(*img, SIDE, SIDE, FilterType::Triangle);
+        for (p, (src, _, _)) in pages.iter().enumerate() {
+            let resized = match src {
+                LayoutSrc::PageImage(img) => crate::resample::pil_resize(
+                    img,
+                    SIDE,
+                    SIDE,
+                    crate::resample::PilFilter::Bilinear,
+                ),
+                LayoutSrc::Raw(img) => {
+                    image::imageops::resize(*img, SIDE, SIDE, FilterType::Triangle)
+                }
+            };
             let page_off = p * 3 * n;
             for (i, px) in resized.pixels().enumerate() {
                 data[page_off + i] = px[0] as f32 / 255.0;

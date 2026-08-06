@@ -11,7 +11,7 @@ fn main() {
     let mut model = LayoutModel::load().expect("load layout model");
     for (i, page) in doc.pages.iter().enumerate().take(1) {
         let regions = model
-            .predict(&page.image, page.width, page.height)
+            .predict(docling_pdf::layout_src(page), page.width, page.height)
             .expect("predict");
         println!(
             "page {} ({:.0}x{:.0}): {} regions",

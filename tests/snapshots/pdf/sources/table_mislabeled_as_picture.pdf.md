@@ -29,7 +29,9 @@
 
 Yes, at regional (district) level
 
--  Yes, at the local (municipal) level
+- Yes, at the local (municipal) level
+
+
 
 
 
@@ -43,19 +45,23 @@ No
 -  Don't know
 -  There are no university-based student law clinics
 
-| If your country allows legal aid services through university-based student law clinics, what type of legal aid services is a student authorized to undertake? (Please select all that apply)   |
-|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-|  There is no limitation; they have the same authority as lawyers                                                                                                                              |
-|  They can represent people in administrative or civil law hearings                                                                                                                            |
-|  They can provide primary legal aid (legal advice)                                                                                                                                            |
-|  They can prepare legal documents                                                                                                                                                             |
-|  They can represent people in court in civil and criminal matters                                                                                                                             |
-|  They have the same authority as lawyers in criminal cases of low to mid gravity                                                                                                              |
-|  They can provide a full range of legal services in criminal cases regardless of gravity                                                                                                      |
-|  They can conduct mediation                                                                                                                                                                   |
-|  They are authorized to provide only those services that a faculty member or practic- ing lawyer supervises                                                                                   |
-|  Don’t know                                                                                                                                                                                   |
-|  Other (Please specify) _____________________________________________________                                                                                                                 |
+27. If your country allows legal aid services through university-based student law clinics, what type of legal aid services is a student authorized to undertake? (Please select all that apply)
+
+-  There is no limitation; they have the same authority as lawyers
+-  They can represent people in administrative or civil law hearings
+-  They can provide primary legal aid (legal advice)
+-  They can prepare legal documents
+-  They can represent people in court in civil and criminal matters
+-  They have the same authority as lawyers in criminal cases of low to mid gravity
+-  They can provide a full range of legal services in criminal cases regardless of gravity
+
+ They can conduct mediation
+
+-  They are authorized to provide only those services that a faculty member or practicing lawyer supervises
+
+ Don't know
+
+ Other (Please specify) \_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_
 
 28. Are specialized legal aid services provided focusing on specific disadvantaged population groups? If yes, please indicate to whom these services are provided, and whether they are provided by State-funded legal aid, civil society organizations, or both.
 

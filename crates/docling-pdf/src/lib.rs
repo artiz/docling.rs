@@ -423,6 +423,19 @@ impl EnrichmentOptions {
 }
 
 #[cfg(feature = "ml")]
+/// The layout model's input for a page: the docling-exact scale-1.0 page
+/// image when the renderer produced one, else the legacy stretch of the 2×
+/// bitmap (browser / METS paths) — see [`layout::LayoutSrc`]. Public so the
+/// diagnostic examples feed [`layout::LayoutModel::predict`] the same input
+/// the pipeline does.
+pub fn layout_src(page: &PdfPage) -> layout::LayoutSrc<'_> {
+    match &page.image_layout {
+        Some(img) => layout::LayoutSrc::PageImage(img),
+        None => layout::LayoutSrc::Raw(&page.image),
+    }
+}
+
+#[cfg(feature = "ml")]
 /// A self-contained set of the per-page models (layout, OCR). Each parallel
 /// page-worker owns its own `Worker` so inference runs concurrently without
 /// sharing an ONNX session (`ort`'s `Session::run` is `&mut self`); only the
@@ -507,7 +520,7 @@ impl Worker {
             self.layout
                 .as_mut()
                 .expect("layout model loaded unless no_ocr")
-                .predict(&page.image, page.width, page.height)
+                .predict(layout_src(page), page.width, page.height)
         })
         .map_err(|e| PdfError::Layout(format!("page {}: {e}", n + 1)))?;
         self.finish_page(n, page, regions)
@@ -528,9 +541,9 @@ impl Worker {
                 })
                 .collect();
         }
-        let inputs: Vec<(&image::RgbImage, f32, f32)> = items
+        let inputs: Vec<(layout::LayoutSrc<'_>, f32, f32)> = items
             .iter()
-            .map(|(_, page)| (&page.image, page.width, page.height))
+            .map(|(_, page)| (layout_src(page), page.width, page.height))
             .collect();
         let batched = timing::timed("layout.predict", || {
             self.layout
@@ -606,7 +619,7 @@ impl Worker {
                     .layout
                     .as_mut()
                     .expect("layout model loaded unless no_ocr")
-                    .predict_fp32_fallback(&page.image, page.width, page.height)
+                    .predict_fp32_fallback(layout_src(page), page.width, page.height)
                     .map_err(|e| PdfError::Layout(format!("page {}: {e}", n + 1)))?;
                 if let Some(retry) = retry {
                     let cov2 = assemble::layout_cell_coverage(&thresholded(&retry), &page.cells);
@@ -636,6 +649,10 @@ impl Worker {
             }
         }
         regions.retain(|r| r.score >= layout::label_threshold(r.label));
+        // docling's same-label picture dedup runs on the thresholded
+        // detections, before overlap resolution: a figure proposed both whole
+        // and as sub-panels collapses to one box (see `dedup_pictures`).
+        assemble::dedup_pictures(&mut regions);
         // Resolve overlapping detections once, before OCR.
         let mut regions = assemble::resolve(regions);
         // Emit text the detector missed as orphan text regions (docling parity).
@@ -1674,6 +1691,9 @@ impl Pipeline {
             cells: Vec::new(),
             code_cells: Vec::new(),
             word_cells: Vec::new(),
+            // A standalone image *is* its own scale-1.0 page image, so the
+            // layout model sees it through the docling-exact PIL kernel.
+            image_layout: Some(image.clone()),
             image,
             links: Vec::new(),
         };

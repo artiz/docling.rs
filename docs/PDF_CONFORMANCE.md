@@ -26,13 +26,13 @@ are no longer scored.)
 | right_to_left_02 | **exact** | — (kashida dedup + page-number layout) |
 | amt_handbook_sample | 2 *(ws-ok)* | docling's spurious fraction double space — ours is more faithful |
 | code_and_formula | **exact** | — (flat legacy code, line-preserving `pretty` in strict) |
-| 2305.03393v1 | 26 | title-page reading order + author-ID run spacing |
-| normal_4pages | 50 | reading order (heading numbering, footnote order) + recovered panel text |
-| right_to_left_03 | 62 | RTL bidi + wrapper (form) children order |
-| table_mislabeled_as_picture | 80 | layout over-detects tables (survey rendered as tables) |
-| 2206.01062 | 72 | TableFormer multi-row headers + title-page reading order |
-| 2203.01017v2 | 132 | TableFormer structure + reading order |
-| redp5110_sampled | 172 | TOC OTSL structure (model-level); cover-page ordering |
+| 2305.03393v1 | 24 | title-page reading order + author-ID run spacing |
+| normal_4pages | 44 | reading order (heading numbering, footnote order) + recovered panel text |
+| right_to_left_03 | 60 | RTL bidi + wrapper (form) children order |
+| table_mislabeled_as_picture | 76 | layout over-detects tables (survey rendered as tables) |
+| 2206.01062 | 92 | TableFormer multi-row headers + author-block merge chains |
+| 2203.01017v2 | 84 | TableFormer structure + reading order |
+| redp5110_sampled | 166 | TOC OTSL structure (model-level); cover-page ordering |
 
 `amt` is the 6th under the whitespace-normalized metric: its only diff is
 docling's spurious double space before the `1⁄4` fraction, where our single-spaced
@@ -130,7 +130,33 @@ containers whose children serialize in docling-parse cell order, while we
 emit the same items in geometric reading order; the full wrapper-children
 port (and the bidi run order of `-2-5`-style headings) stays on the
 model-level blocker list, together with the title-page cluster splits of
-2305/2206 (heron letterbox-vs-stretch preprocessing difference).
+2305/2206 (residual heron score noise — see the docling-exact layout input
+below).
+
+The **docling-exact layout input** closed most of the preprocessing gap: the
+layout model now runs on the same image docling's stage feeds it — a
+dedicated `get_page_image(scale=1.0)` render (pdfium at 1.5×, sized with
+pypdfium2's `ceil`, then PIL-BICUBIC down to point size) stretched to
+640×640 with **PIL BILINEAR**, both kernels ported byte-exactly from
+Pillow's fixed-point `Resample.c` (`resample.rs::pil_resize`, verified
+against genuine Pillow reference hashes; `preprocessor_config.json` says
+`do_pad: false` — the heron processor stretches, it does not letterbox).
+Previously the model saw a Triangle stretch of the 2× OCR bitmap —
+resampling 1224→640 and 612→640 are different regimes, and heron's
+borderline scores follow the pixels. Riding along: docling's same-label
+**picture dedup** (`_remove_overlapping_clusters`, IoU/containment > 0.8
+groups, larger box wins within 0.3 confidence), which collapses a figure
+detected both whole and as sub-panels into the whole-figure box (2206's
+four-thumbnail Figure 1). Net −48 diff lines corpus-wide: 2203 132→84,
+normal_4pages 50→44, redp5110 172→166, table_mislabeled 80→76, 2305 26→24,
+rtl_03 62→60; 2206 went 72→92 — its author-block clusters shifted at the
+model's noise floor (ort-vs-torch fp32 numerics) and the reading-order
+merge chains land differently. Every exact fixture stayed exact. The
+browser (canvas) and METS/TIFF paths keep the legacy stretch (no pdfium
+renderer there); the int8 default graph was calibrated on the old input
+distribution — the fp32 low-coverage guard absorbs the borderline pages,
+and the quant can be recalibrated with `scripts/install/quantize_models.py`
+at the next model release.
 
 ## DocLang (`.dclx`) conformance
 

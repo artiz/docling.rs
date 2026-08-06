@@ -70,6 +70,119 @@ fn greedy(mut regions: Vec<Region>) -> Vec<Region> {
 /// index (the redp5110 TOC that was otherwise replaced by a picture box). A
 /// cross-type pass first drops a picture that nearly coincides with a table
 /// (`_handle_cross_type_overlaps`), keeping the structured table.
+/// docling's `_remove_overlapping_clusters("picture")`: same-label picture
+/// detections whose boxes heavily overlap (IoU > 0.8, or either box > 80 %
+/// contained in the other) form one group, and a single survivor is kept per
+/// group. Survivor selection ports `_should_prefer_cluster` /
+/// `_select_best_cluster_from_group` with the picture params
+/// (`area_threshold` 2.0, `conf_threshold` 0.3): a candidate is rejected only
+/// when a rival is both comparable in size (candidate ≤ 2× its area) and
+/// clearly more confident (> 0.3); among the survivors the *larger* box wins
+/// unless it is > 0.3 less confident. Net effect on the corpus: a figure the
+/// detector proposes both whole and as its sub-panels (2206's four-thumbnail
+/// Figure 1) collapses to the whole-figure box, exactly like docling.
+pub(crate) fn dedup_pictures(regions: &mut Vec<Region>) {
+    let idx: Vec<usize> = (0..regions.len())
+        .filter(|&i| regions[i].label == "picture")
+        .collect();
+    if idx.len() < 2 {
+        return;
+    }
+    // Union-find over the picture subset.
+    let mut parent: Vec<usize> = (0..idx.len()).collect();
+    fn find(parent: &mut [usize], i: usize) -> usize {
+        let mut root = i;
+        while parent[root] != root {
+            root = parent[root];
+        }
+        let mut cur = i;
+        while parent[cur] != root {
+            let next = parent[cur];
+            parent[cur] = root;
+            cur = next;
+        }
+        root
+    }
+    let boxed = |r: &Region| (r.l, r.t, r.r, r.b);
+    for a in 0..idx.len() {
+        for b in (a + 1)..idx.len() {
+            let (ra, rb) = (&regions[idx[a]], &regions[idx[b]]);
+            let (al, at, ar, ab_) = boxed(ra);
+            let (bl, bt, br, bb) = boxed(rb);
+            let ix = (ar.min(br) - al.max(bl)).max(0.0);
+            let iy = (ab_.min(bb) - at.max(bt)).max(0.0);
+            let inter = ix * iy;
+            let aa = area(al, at, ar, ab_).max(f32::EPSILON);
+            let ba = area(bl, bt, br, bb).max(f32::EPSILON);
+            let iou = inter / (aa + ba - inter).max(f32::EPSILON);
+            if iou > 0.8 || inter / aa > 0.8 || inter / ba > 0.8 {
+                let (pa, pb) = (find(&mut parent, a), find(&mut parent, b));
+                if pa != pb {
+                    parent[pa] = pb;
+                }
+            }
+        }
+    }
+    // Per group, run docling's pairwise preference + larger-wins selection.
+    let mut groups: std::collections::HashMap<usize, Vec<usize>> = std::collections::HashMap::new();
+    for i in 0..idx.len() {
+        let root = find(&mut parent, i);
+        groups.entry(root).or_default().push(i);
+    }
+    let mut drop = vec![false; regions.len()];
+    for group in groups.values() {
+        if group.len() < 2 {
+            continue;
+        }
+        const AREA_THRESHOLD: f32 = 2.0;
+        const CONF_THRESHOLD: f32 = 0.3;
+        let area_of = |i: usize| {
+            let r = &regions[idx[i]];
+            area(r.l, r.t, r.r, r.b).max(f32::EPSILON)
+        };
+        let mut best: Option<usize> = None;
+        for &cand in group {
+            let passes = group.iter().all(|&other| {
+                if other == cand {
+                    return true;
+                }
+                let area_ratio = area_of(cand) / area_of(other);
+                let conf_diff = regions[idx[other]].score - regions[idx[cand]].score;
+                !(area_ratio <= AREA_THRESHOLD && conf_diff > CONF_THRESHOLD)
+            });
+            if passes {
+                best = Some(match best {
+                    None => cand,
+                    Some(cur) => {
+                        if area_of(cand) > area_of(cur)
+                            && regions[idx[cur]].score - regions[idx[cand]].score <= CONF_THRESHOLD
+                        {
+                            cand
+                        } else {
+                            cur
+                        }
+                    }
+                });
+            }
+        }
+        // Every candidate rejected can't happen with docling's rule (rejection
+        // needs a strictly better rival); guard with highest score anyway.
+        let keep = best.unwrap_or_else(|| {
+            *group
+                .iter()
+                .max_by(|&&a, &&b| regions[idx[a]].score.total_cmp(&regions[idx[b]].score))
+                .expect("non-empty group")
+        });
+        for &i in group {
+            if i != keep {
+                drop[idx[i]] = true;
+            }
+        }
+    }
+    let mut keep_iter = drop.into_iter();
+    regions.retain(|_| !keep_iter.next().expect("aligned"));
+}
+
 pub fn resolve(regions: Vec<Region>) -> Vec<Region> {
     // Cross-type: a region proposed as BOTH a picture and a table survives twice
     // (the two buckets de-overlap independently). Keep the structured table and
@@ -2456,6 +2569,7 @@ mod tests {
                 114.0,
             )],
             image: image::RgbImage::new(1, 1),
+            image_layout: None,
             links: vec![
                 annot(100.0, 180.0, "https://l"),
                 annot(200.0, 260.0, "https://g"),

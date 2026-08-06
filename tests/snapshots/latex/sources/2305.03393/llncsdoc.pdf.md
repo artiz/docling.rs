@@ -24,14 +24,6 @@ The llncs class is invoked by replacing article by llncs in the first line of yo
 
 \documentclass{llncs}
 
-If your file is already coded with L A T E X, you can easily adapt it to the llncs document class by replacing
-
-\documentclass{article}
-
-with
-
-\documentclass{llncs}
-
 ```
 \begin{document} <Your contribution> \end{document} If your file is already coded with LATEX, you can easily adapt it to the llncs document class by replacing \documentclass{article} with \documentclass{llncs}
 ```
@@ -110,6 +102,8 @@ might add some clarity about the correct representation of author names, in the 
 
 \url and
 
+\url{&lt;url&gt;}
+
 ```
 \institute{<name of an institute> \and <name of the next institute> \and <name of the next institute>} Inside \institute you can use\email \email{<email address>} and\url \url{<url>}
 ```
@@ -163,6 +157,8 @@ If you need blackboard bold characters, i.e. for sets of numbers, please load th
 
 Please note that all these characters are only available in math mode.
 
+## \spnewtheorem
+
 ## 5 Theorems, Definitions, and Proofs
 
 ## 5.1 Predefined Theorem-Like Environments
@@ -197,7 +193,7 @@ claim ( env. ) Finally, there are also two unnumbered environments that have the
 
 ## 5.2 User-Defined Theorem-Like Environments
 
-\spnewtheorem We have enhanced the standard \newtheorem command and slightly changed its syntax to get two new commands \spnewtheorem and \spnewtheorem* that now can be used to define additional environments. They require two additional arguments, namely the font style of the label and the font style of the text of the new environment:
+We have enhanced the standard \newtheorem command and slightly changed its syntax to get two new commands \spnewtheorem and \spnewtheorem* that now can be used to define additional environments. They require two additional arguments, namely the font style of the label and the font style of the text of the new environment:
 
 \spnewtheorem{&lt;env\_nam&gt;}[&lt;num\_like&gt;]{&lt;caption&gt;}{&lt;cap\_font&gt;}{&lt;body\_font&gt;}
 
@@ -215,7 +211,9 @@ citeauthoryear will create a main theorem environment that is numbered together 
 
 In combination with the (obsolete) class option envcountsect (see. Sect. 7), the \spnewtheorem command also supports the syntax:
 
-\spnewtheorem{&lt;env\_nam&gt;}{&lt;caption&gt;}[&lt;within&gt;]{&lt;cap\_font&gt;}{&lt;body\_font&gt;}
+```
+\spnewtheorem{<env_nam>}{<caption>}[<within>]{<cap_font>}{<body_font>}
+```
 
 With the parameter &lt;within&gt; , you can control the sectioning element that resets the theorem counters. If you specify, for example, subsection , the newly defined environment is numbered subsectionwise.
 
@@ -259,9 +257,9 @@ envcountsame
 
 - All theorem-like environments share one counter, i.e. Theorem 1, Lemma 2, Corollary 3, etc.
 
-envcountreset envcountsect openbib
+envcountreset envcountsect openbib oribibl
 
 - All theorem-like environments are numbered per section, i.e. the related counters are reset to 1 in every section.
 - All theorem-like environments are numbered per section, and the section number added to the individual counter, i.e. Theorem 1.2, Lemma 2.2, etc.
 - This option produces the 'open' bibliography style, in which each block starts on a new line, and succeeding lines in a block are indented by \bibindent .
-- oribibl - This option restores the original L A T E X definitions for the bibliography and the \cite mechanism that some Bib T E X applications rely on.
+- This option restores the original L A T E X definitions for the bibliography and the \cite mechanism that some Bib T E X applications rely on.

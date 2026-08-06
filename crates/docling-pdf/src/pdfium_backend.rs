@@ -52,6 +52,14 @@ pub struct PdfPage {
     /// cropped out of it.
     #[cfg(feature = "ocr-prep")]
     pub image: RgbImage,
+    /// The **scale-1.0** page image the layout model runs on (docling parity:
+    /// its layout stage calls `page.get_image(scale=1.0)` — pdfium at 1.5×,
+    /// PIL-BICUBIC down to point size — a *different* image from the 2×
+    /// OCR/crop bitmap above, and a different resampling regime than
+    /// stretching that bitmap). `None` on paths without a pdfium renderer
+    /// (browser, METS/TIFF), which fall back to stretching [`Self::image`].
+    #[cfg(feature = "ocr-prep")]
+    pub image_layout: Option<RgbImage>,
     /// Hyperlink annotations on the page (rect in top-left page coords + target
     /// URI), restricted to web/mail/tel schemes. Used only by strict Markdown.
     pub links: Vec<LinkAnnot>,
@@ -74,6 +82,8 @@ impl PdfPage {
             word_cells: Vec::new(),
             #[cfg(feature = "ocr-prep")]
             image: RgbImage::new(0, 0),
+            #[cfg(feature = "ocr-prep")]
+            image_layout: None,
             links: Vec::new(),
         }
     }
@@ -336,11 +346,36 @@ fn extract_page(
     } else {
         RgbImage::new(1, 1)
     };
+    // The layout model's input image, built exactly like docling's
+    // `get_page_image(scale=1.0)`: a pdfium render at 1.5× (pypdfium2 sizes
+    // with `ceil`), PIL-BICUBIC down to the point-size image (PIL `resize`'s
+    // default kernel; Python `round` = ties-to-even). Distinct from the 2×
+    // bitmap above — resampling 1224→640 and 612→640 are different regimes,
+    // and the heron model's borderline scores follow the pixels.
+    let image_layout = if render_image {
+        let tw = f64::from(width * 1.5).ceil().max(1.0) as i32;
+        let th = f64::from(height * 1.5).ceil().max(1.0) as i32;
+        let cfg = PdfRenderConfig::new()
+            .set_target_width(tw)
+            .set_target_height(th);
+        let big = crate::timing::timed("pdfium.render_layout", || {
+            page.render_with_config(&cfg)
+                .map(|b| b.as_image().into_rgb8())
+        })?;
+        let dw = f64::from(width).round_ties_even().max(1.0) as u32;
+        let dh = f64::from(height).round_ties_even().max(1.0) as u32;
+        Some(crate::timing::timed("image.resize_layout", || {
+            crate::resample::pil_resize(&big, dw, dh, crate::resample::PilFilter::Bicubic)
+        }))
+    } else {
+        None
+    };
 
     Ok(PdfPage {
         width,
         height,
         scale: RENDER_SCALE,
+        image_layout,
         cells,
         code_cells,
         word_cells,

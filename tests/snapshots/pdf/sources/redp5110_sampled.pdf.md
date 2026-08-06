@@ -4,8 +4,6 @@ Front cover
 
 ## Row and Column Access Control Support in IBM DB2 for i
 
-Implement roles and separation of duties ibm.com /redbooks Redpaper
-
 <!-- image -->
 
 ## Contents
@@ -344,9 +342,7 @@ Now that you have created the row permission and the two column masks, RCAC must
 
 Example 3-10   Activating RCAC on the EMPLOYEES table
 
-```
-/* Active Row Access Control(permissions) */ /* Active Column Access Control(masks) */ ALTER TABLE HR_SCHEMA.EMPLOYEES ACTIVATE ROW ACCESS CONTROL ACTIVATE COLUMN ACCESS CONTROL;
-```
+<!-- image -->
 
 2. Look at the definition of the EMPLOYEE table, as shown in Figure 3-11. To do this, from the main navigation pane of System i Navigator, click Schemas  HR\_SCHEMA  Tables , right-click the EMPLOYEES table, and click Definition .
 

@@ -3,7 +3,3 @@
 <!-- image -->
 
 <!-- image -->
-
-Dog
-
-<!-- image -->
