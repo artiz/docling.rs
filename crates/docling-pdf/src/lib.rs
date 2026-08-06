@@ -748,22 +748,29 @@ impl Worker {
         let cells_before_pic_ocr = page.cells.len() - pic_cells.len();
         // A "picture" that is really a colored text panel — dense, wide,
         // multi-line — reads out as paragraphs instead of shipping as pixels;
-        // sparse in-picture text (a chart's labels) keeps the crop and is
-        // emitted beside it via orphan recovery. `no_text_panels` (#173) opts
-        // out entirely for image-extraction workflows.
+        // sparse in-picture text (a chart's labels) keeps the crop and stays
+        // inside it as the picture's silent children (docling parity, #200).
+        // `no_text_panels` (#173) opts out entirely for image-extraction
+        // workflows.
         if !self.no_text_panels {
             assemble::recover_text_panels(&mut regions, &page.cells);
         }
-        // On an OCR'd page, in-picture text that did NOT demote its picture is
-        // still emitted beside the kept crop (matching the browser scanned
-        // path). On a digital page it is not: docling's groundtruth keeps
-        // photos silent even when our OCR reads noise off them
-        // (picture_classification stays byte-exact), so the recognized cells
-        // there only ever serve the panel-demotion decision above.
+        // On an OCR'd page, in-picture text that did NOT demote its picture
+        // mostly stays silent, exactly as in docling: its postprocess step
+        // "Remove regular clusters that are included in wrappers" walks
+        // SPECIAL_TYPES — which includes PICTURE — so an orphan text cluster
+        // >80 % contained in a kept picture becomes that picture's child and
+        // never reaches the serializer. Only border-straddlers (≤80 %
+        // containment) survive as text. Emitting *everything* here used to
+        // splice a chart's OCR'd axis ticks into the body text right next to
+        // the image chunk (#200) — so the orphan pass places the recognized
+        // lines, then the same containment drop that handled the first wave
+        // re-runs to swallow the in-picture ones.
         if ocred && !pic_cells.is_empty() {
             // Pictures (and wrappers) no longer count as claimers (#165), so
             // the plain orphan pass places the recognized lines directly.
             assemble::add_orphan_regions(&mut regions, &pic_cells);
+            assemble::drop_contained_regulars(&mut regions);
         } else if !ocred && !pic_cells.is_empty() {
             // Digital page, picture kept: its speculative OCR cells must not
             // linger in the text-cell set (they were appended at the tail).
