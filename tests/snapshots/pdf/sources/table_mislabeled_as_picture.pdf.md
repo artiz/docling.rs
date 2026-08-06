@@ -3,23 +3,19 @@
 -  They supervise, coach or mentor private practitioners who take legal aid cases
 -  They conduct or organize training sessions for staff lawyers/paralegals
 -  They conduct or organize training sessions for all providers of legal aid, including both staff and private lawyers/paralegals
-
- Other (Please specify) \_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_
-
+-  Other (Please specify) \_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_
 -  Not applicable, there is no institutional legal aid provider
 
 23. If your country has an institutional legal aid provider (e.g. public defender), what is the maximum caseload per lawyer at one time?
 
-\_\_\_\_\_\_\_ at the national (federal) level
-
+- \_\_\_\_\_\_\_ at the national (federal) level
 - \_\_\_\_\_\_\_ at the regional (district) level
 - \_\_\_\_\_\_\_ at the local (municipal) level
 -  -There is no such limitation
 
 24. If your country has an institutional legal aid provider (e.g. public defender), do the staff lawyers coordinate to uniformly challenge common violations of national and international due process rights and human rights?
 
- Yes, at the national (federal) level
-
+-  Yes, at the national (federal) level
 -  Yes, at regional (district) level
 -  Yes, at the local (municipal) level
 
@@ -27,19 +23,17 @@
 
 25. If your country has an institutional legal aid provider (e.g. public defender), does it have specialized providers and/or units for representing child victims, child witnesses or suspected and accused children?
 
-
+-  Yes, at the national (federal) level
 
 
-
-
-
-
-
-Yes, at the national (federal) level
 
 Yes, at regional (district) level
 
-Yes, at the local (municipal) level
+- Yes, at the local (municipal) level
+
+
+
+
 
 No
 
@@ -48,26 +42,18 @@ No
 -  Yes, there are specific guidelines for non-lawyers providing legal aid services
 -  Yes, there are specific guidelines on faculty/student ratios
 -  No, it is up to the discretion of each university
-
- Don't know
-
+-  Don't know
 -  There are no university-based student law clinics
 
 27. If your country allows legal aid services through university-based student law clinics, what type of legal aid services is a student authorized to undertake? (Please select all that apply)
 
- There is no limitation; they have the same authority as lawyers
-
- They can represent people in administrative or civil law hearings
-
- They can provide primary legal aid (legal advice)
-
- They can prepare legal documents
-
+-  There is no limitation; they have the same authority as lawyers
+-  They can represent people in administrative or civil law hearings
+-  They can provide primary legal aid (legal advice)
+-  They can prepare legal documents
 -  They can represent people in court in civil and criminal matters
-
- They have the same authority as lawyers in criminal cases of low to mid gravity
-
- They can provide a full range of legal services in criminal cases regardless of gravity
+-  They have the same authority as lawyers in criminal cases of low to mid gravity
+-  They can provide a full range of legal services in criminal cases regardless of gravity
 
  They can conduct mediation
 

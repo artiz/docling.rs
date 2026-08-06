@@ -1,1 +1,1 @@
-00 + @ CC 0 :0 30 1 RA 50 @7 06 S2 Q 0 60
+od te nn na sm 88 sd ek da M bd p0

@@ -2,6 +2,12 @@
 
 <!-- image -->
 
+<!-- image -->
+
+Communication
+
+<!-- image -->
+
 ➔
 
 <!-- image -->

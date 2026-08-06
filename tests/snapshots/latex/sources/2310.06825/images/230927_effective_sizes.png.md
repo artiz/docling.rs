@@ -1,49 +1,11 @@
-1 O1 2
+70772 -O　LLaMA 2OLLaMA 2 65Mistral70+Mistra
 
-OLLaMA 2 OLLaMA 2
+% 60- -----------1g68. 550 S M66 50R
 
-65Mistralo701Mistra
+451i Effective LLaMA64-
 
-U
+71334707133470 Model size (billion parameters). 681 Model size (billion parameters) 70-O- LLaMA 2-O- LLaMA 2 65Mistral 66Mistra O 6064
 
-U 60 68
+55062 K 50------0 !......0 60 45o3ov
 
-55
-
-S 8 66
-
-5O
-
-45d: Effective LLaMA64
-
-71334707133470
-
-Model size (billion parameters)o 68 Model size (billion parameters)
-
-70 O LLaMA 2O LLaMA 2
-
-65Mistral 66Mistra
-
-U
-
-OC
-
-U
-
-60 64-
-
-0
-
-55 62
-
-C 50-
-
-O 60
-
-4509
-
-71334707133470
-
-Model size (billion parameters) Model size (billion parameters)
-
-<!-- image -->
+71334707133470 Model size (billion parameters) Model size (billion parameters)
