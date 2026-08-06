@@ -806,6 +806,54 @@ impl Worker {
                 })
             }));
         }
+        // A text-less *table* detected inside a picture on a digital page — a
+        // screenshot of a table (2203's Figure 10) — has no text layer and no
+        // scanned-path OCR to feed it, so its grid used to serialize empty and
+        // the whole element vanished. docling OCRs bitmap-covered areas on
+        // every page kind and its table cluster collects those cells; mirror
+        // the scanned path for exactly these tables: recognize word crops and
+        // feed them to the TableFormer matcher and the cell set.
+        if !ocred {
+            let has_text = |t: &layout::Region| {
+                page.cells.iter().any(|c| {
+                    let ca = ((c.r - c.l) * (c.b - c.t)).max(1.0);
+                    let ix = (t.r.min(c.r) - t.l.max(c.l)).max(0.0);
+                    let iy = (t.b.min(c.b) - t.t.max(c.t)).max(0.0);
+                    !c.text.trim().is_empty() && ix * iy / ca > 0.5
+                })
+            };
+            let in_picture = |t: &layout::Region| {
+                regions.iter().any(|r| {
+                    r.label == "picture" && {
+                        let ta = ((t.r - t.l) * (t.b - t.t)).max(1.0);
+                        let ix = (r.r.min(t.r) - r.l.max(t.l)).max(0.0);
+                        let iy = (r.b.min(t.b) - r.t.max(t.t)).max(0.0);
+                        ix * iy / ta > 0.5
+                    }
+                })
+            };
+            let pic_tables: Vec<layout::Region> = regions
+                .iter()
+                .filter(|t| assemble::is_table_like(t.label) && !has_text(t) && in_picture(t))
+                .cloned()
+                .collect();
+            if !pic_tables.is_empty() {
+                if self.ocr.is_none() {
+                    self.ocr = Some(ocr::OcrModel::load(self.ocr_lang).map_err(PdfError::Ocr)?);
+                }
+                let words = timing::timed("ocr.table_words", || {
+                    self.ocr
+                        .as_mut()
+                        .unwrap()
+                        .ocr_table_words(&page.image, &pic_tables, page.scale)
+                })
+                .map_err(|e| PdfError::Ocr(format!("page {}: {e}", n + 1)))?;
+                ocr_confs.extend(words.iter().map(|(_, conf)| conf));
+                let words: Vec<_> = words.into_iter().map(|(cell, _)| cell).collect();
+                page.cells.extend(words.iter().cloned());
+                page.word_cells.extend(words);
+            }
+        }
         // TableFormer structure per table region (else geometric fallback). The
         // shared slot is only locked (and lazily loaded) when the page actually
         // has a table, so table-free documents never pay for TableFormer at all.

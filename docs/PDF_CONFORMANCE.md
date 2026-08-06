@@ -31,8 +31,8 @@ are no longer scored.)
 | table_mislabeled_as_picture | 54 | layout over-detects tables (survey rendered as tables) |
 | right_to_left_03 | 60 | RTL bidi + wrapper (form) children order |
 | redp5110_sampled | 73 | TOC row structure tails + cover-page ordering |
-| 2203.01017v2 | 80 | TableFormer structure + reading order |
-| 2206.01062 | 90 | TableFormer multi-row headers + author-block merge chains |
+| 2203.01017v2 | 86 | TeX math-glyph decode + caption order (+6 is the recovered in-picture table: same grid as docling, different OCR engine noise) |
+| 2206.01062 | 90 | author-block merge chains + one int8-borderline header rowspan |
 
 `amt` is the 6th under the whitespace-normalized metric: its only diff is
 docling's spurious double space before the `1⁄4` fraction, where our single-spaced
@@ -121,6 +121,23 @@ while a full Latin space's gap exceeds the gate and keeps words apart.
 Table-heavy fixtures moved wholesale: redp5110 164→73 (the TOC "OTSL
 model-level blocker" was largely tokenization), table_mislabeled 72→54,
 normal_4pages 32→20, everything else byte-identical.
+
+**Tables inside pictures serialize now.** 2203's Figure 10 is a *screenshot*
+of a table: layout detects a `table` cluster inside the `picture`, TableFormer
+reads its grid — but the region had no text layer, its speculative in-picture
+OCR lines were discarded on digital pages, and the empty-text gate dropped the
+whole element. docling OCRs bitmap-covered areas on every page kind and its
+table cluster collects those cells. Mirroring the scanned path for exactly
+these tables (text-less, >50 % under a picture, on a digital page): the table
+region's word crops are recognized and feed the TableFormer matcher and the
+cell set, so the grid serializes with text. The recovered ANOVA grid matches
+docling's structure cell-for-cell; the cell *strings* differ where both
+engines read noise (PP-OCR vs EasyOCR), which costs 2203 +6 diff lines —
+a deliberate completeness-over-metric trade (an ODF presentation fixture's
+table screenshot also gains its grid). The remaining 2206 table diff is a
+single top-left header rowspan the int8 TableFormer resolves as two cells
+where docling's fp32 run predicts one 2-row span — span decoding itself is
+exercised by neighboring tables; that one token is quantization-borderline.
 
 The **footnote-hyperlink** port (docling's `PageAssembleModel._match_hyperlink`:
 the URI whose annotation rects cover ≥ 0.5 of the region box, accumulated per
