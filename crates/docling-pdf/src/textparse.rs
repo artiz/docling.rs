@@ -1595,6 +1595,14 @@ fn simple_encoding_table(doc: &Document, fdict: &Dictionary) -> HashMap<u8, char
     };
     let mut m = if base_name == b"MacRomanEncoding" {
         macroman_table()
+    } else if base_name.is_empty() {
+        // No PDF /Encoding at all: the font's *built-in* encoding applies. For
+        // the standard TeX math fonts that is their fixed TeX layout — falling
+        // back to StandardEncoding read CMSY's braces as `f`/`g`, `→` as `!`,
+        // `∈` as `2` (2203's `{ahn,…}` author line). The font program (often
+        // CFF, which this parser does not read) carries the same mapping;
+        // docling-parse decodes it from there.
+        tex_math_builtin(fdict).unwrap_or_else(winansi_table)
     } else {
         winansi_table()
     };
@@ -1617,6 +1625,50 @@ fn simple_encoding_table(doc: &Document, fdict: &Dictionary) -> HashMap<u8, char
         }
     }
     m
+}
+
+/// The fixed built-in encodings of the standard TeX math fonts (TeXbook
+/// Appendix F), keyed off the base font name: `CMSY*` (symbols; `CMBSY` is its
+/// bold) and `CMMI*` (math italic). These fonts ship no PDF `/Encoding` and no
+/// ToUnicode, and their program is usually CFF — without this table the codes
+/// fell through to StandardEncoding and rendered as the wrong ASCII.
+fn tex_math_builtin(fdict: &Dictionary) -> Option<HashMap<u8, char>> {
+    const CMSY: [char; 128] = [
+        '−', '·', '×', '∗', '÷', '⋄', '±', '∓', '⊕', '⊖', '⊗', '⊘', '⊙', '◯', '∘', '•', '≍', '≡',
+        '⊆', '⊇', '≤', '≥', '≼', '≽', '∼', '≈', '⊂', '⊃', '≪', '≫', '≺', '≻', '←', '→', '↑', '↓',
+        '↔', '↗', '↘', '≃', '⇐', '⇒', '⇑', '⇓', '⇔', '↖', '↙', '∝', '′', '∞', '∈', '∋', '△', '▽',
+        '\u{338}', '↦', '∀', '∃', '¬', '∅', 'ℜ', 'ℑ', '⊤', '⊥', 'ℵ', 'A', 'B', 'C', 'D', 'E', 'F',
+        'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X',
+        'Y', 'Z', '∪', '∩', '⊎', '∧', '∨', '⊢', '⊣', '⌊', '⌋', '⌈', '⌉', '{', '}', '⟨', '⟩', '|',
+        '∥', '↕', '⇕', '\\', '≀', '√', '∐', '∇', '∫', '⊔', '⊓', '⊑', '⊒', '§', '†', '‡', '¶', '♣',
+        '♢', '♡', '♠',
+    ];
+    const CMMI: [char; 128] = [
+        'Γ', 'Δ', 'Θ', 'Λ', 'Ξ', 'Π', 'Σ', 'Υ', 'Φ', 'Ψ', 'Ω', 'α', 'β', 'γ', 'δ', 'ε', 'ζ', 'η',
+        'θ', 'ι', 'κ', 'λ', 'μ', 'ν', 'ξ', 'π', 'ρ', 'σ', 'τ', 'υ', 'φ', 'χ', 'ψ', 'ω', 'ϵ', 'ϑ',
+        'ϖ', 'ϱ', 'ς', 'ϕ', '↼', '↽', '⇀', '⇁', '↩', '↪', '▷', '◁', '0', '1', '2', '3', '4', '5',
+        '6', '7', '8', '9', '.', ',', '<', '/', '>', '⋆', '∂', 'A', 'B', 'C', 'D', 'E', 'F', 'G',
+        'H', 'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y',
+        'Z', '♭', '♮', '♯', '⌣', '⌢', 'ℓ', 'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k',
+        'l', 'm', 'n', 'o', 'p', 'q', 'r', 's', 't', 'u', 'v', 'w', 'x', 'y', 'z', 'ı', 'ȷ', '℘',
+        '\u{20d7}', '⁀',
+    ];
+    let name = base_font_name(fdict)?;
+    let up = name.to_ascii_uppercase();
+    let table: &[char; 128] = if up.starts_with(b"CMSY") || up.starts_with(b"CMBSY") {
+        &CMSY
+    } else if up.starts_with(b"CMMI") {
+        &CMMI
+    } else {
+        return None;
+    };
+    Some(
+        table
+            .iter()
+            .enumerate()
+            .map(|(i, &c)| (i as u8, c))
+            .collect(),
+    )
 }
 
 /// Resolve an Adobe glyph name to Unicode: `uniXXXX`, single ASCII letters, the

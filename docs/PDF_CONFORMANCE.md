@@ -26,13 +26,13 @@ are no longer scored.)
 | right_to_left_02 | **exact** | — (kashida dedup + page-number layout) |
 | amt_handbook_sample | 2 *(ws-ok)* | docling's spurious fraction double space — ours is more faithful |
 | code_and_formula | **exact** | — (flat legacy code, line-preserving `pretty` in strict) |
-| 2305.03393v1 | 24 | title-page reading order + author-ID run spacing |
-| normal_4pages | 44 | reading order (heading numbering, footnote order) + recovered panel text |
+| 2305.03393v1 | 14 | author-block cluster split + in-figure label clusters (model-level) |
+| normal_4pages | 20 | two-column line interleave + section-1 numeral claim |
+| table_mislabeled_as_picture | 54 | layout over-detects tables (survey rendered as tables) |
 | right_to_left_03 | 60 | RTL bidi + wrapper (form) children order |
-| table_mislabeled_as_picture | 76 | layout over-detects tables (survey rendered as tables) |
-| 2206.01062 | 92 | TableFormer multi-row headers + author-block merge chains |
-| 2203.01017v2 | 84 | TableFormer structure + reading order |
-| redp5110_sampled | 166 | TOC OTSL structure (model-level); cover-page ordering |
+| redp5110_sampled | 73 | TOC row structure tails + cover-page ordering |
+| 2203.01017v2 | 74 | caption order + reference-accent spacing (in-picture table recovered: same grid as docling, different OCR engine noise) |
+| 2206.01062 | 82 | author-block cluster splits (model-borderline) + one int8-borderline header rowspan |
 
 `amt` is the 6th under the whitespace-normalized metric: its only diff is
 docling's spurious double space before the `1⁄4` fraction, where our single-spaced
@@ -87,6 +87,74 @@ so only border-straddlers (≤ 80 % containment) surface as text, on scanned
 pages exactly as on digital ones. The digital corpus is untouched (6/14
 strict, same per-file diffs); 17 scanned/image snapshots shed their leaked
 figure-internal text (axis ticks, diagram labels — net −59 lines).
+
+The **cell order & join** are now docling's own, end to end. Serialization
+order is pure docling-parse index (`_sort_cells`) — the geometric line
+re-sort it replaces measured strictly worse on the corpus: normal_4pages'
+big section numerals paint *after* their heading text, so only index order
+yields docling's `## 들어가며 1`. The join is `PageAssembleModel.sanitize_text`
+ported verbatim: a space after every line except one ending in `-`, which
+fuses a wrapped word (alnum on both sides — the dash is dropped) or glues
+verbatim when the dash stands alone — 2305's superscript ORCIDs render as
+docling's `[0000 -0002 -3723 -6960]`, and its OTSL list keeps the raw en-dash
+bullet in the text (`- -"C" cell a new table cell …`; the assembler no longer
+strips a leading dash, only the symbol-font bullets docling-parse itself
+drops). On top of that, cell assignment is exclusive (`_assign_cells_to_clusters`):
+each non-empty cell goes to the single best-overlapping regular region at
+> 0.2 intersection-over-self, so a cell under two overlapping boxes emits
+once ("Hours Hours" duplicates gone), the orphan pass claims at the same
+threshold (the old > 0.5 mirror and its (0.2, 0.5] completeness hole are
+structurally closed), and normal_4pages' cover publisher block now lands in
+its furniture cluster exactly as docling files it. Together: 2305 24→14,
+normal_4pages 44→32, 2203 84→80, 2206 92→90, redp5110 166→164,
+table_mislabeled 76→72 — −48 lines, nothing worse.
+
+**Word cells are docling-parse's own `create_word_cells`** — a second
+contraction over the shared char cells under the word factors
+(`word_space_width_factor_for_merge` 0.33 for the adjacency gate, 2 × 0.33
+for the never-firing space threshold), with space glyphs acting as pure
+word-boundary barriers dropped from the run up front. The words TableFormer
+matches against therefore tokenize exactly as docling's: a thin CJK space
+whose neighbors overlap contracts into one spaceless word (docling's
+`1군감염병`, where splitting at every line-space manufactured `1군 감염병`),
+while a full Latin space's gap exceeds the gate and keeps words apart.
+Table-heavy fixtures moved wholesale: redp5110 164→73 (the TOC "OTSL
+model-level blocker" was largely tokenization), table_mislabeled 72→54,
+normal_4pages 32→20, everything else byte-identical.
+
+**Tables inside pictures serialize now.** 2203's Figure 10 is a *screenshot*
+of a table: layout detects a `table` cluster inside the `picture`, TableFormer
+reads its grid — but the region had no text layer, its speculative in-picture
+OCR lines were discarded on digital pages, and the empty-text gate dropped the
+whole element. docling OCRs bitmap-covered areas on every page kind and its
+table cluster collects those cells. Mirroring the scanned path for exactly
+these tables (text-less, >50 % under a picture, on a digital page): the table
+region's word crops are recognized and feed the TableFormer matcher and the
+cell set, so the grid serializes with text. The recovered ANOVA grid matches
+docling's structure cell-for-cell; the cell *strings* differ where both
+engines read noise (PP-OCR vs EasyOCR), which costs 2203 +6 diff lines —
+a deliberate completeness-over-metric trade (an ODF presentation fixture's
+table screenshot also gains its grid). The remaining 2206 table diff is a
+single top-left header rowspan the int8 TableFormer resolves as two cells
+where docling's fp32 run predicts one 2-row span — span decoding itself is
+exercised by neighboring tables; that one token is quantization-borderline.
+
+**TeX math glyphs decode by their built-in encodings.** The standard TeX
+math fonts (`CMSY*`, `CMMI*`) ship no PDF `/Encoding`, no ToUnicode, and a
+CFF program this parser does not read — their codes fell through to
+StandardEncoding and rendered as the wrong ASCII: 2203's `{ahn,…}` author
+line read `f ahn,… g`, `→` read `!`, `∈` read `2`, `|T|` read `jTj`.
+A static table of the fixed TeX layouts (TeXbook Appendix F), keyed off the
+base font name and applied only when the font dict has no `/Encoding` at
+all, restores docling-parse's decode (it reads the same mapping out of the
+font program). Took 2203 86→74. Cross-page **paragraph continuations** also
+align with docling's `predict_merges`: the head test now accepts a trailing
+comma (`.+[a-z,\-\u00AD]`, ASCII-lowercase only — a lone `μ` or an
+uppercase OCR fragment no longer stitches), and tables joined the skip
+set (docling's skip-labels), so 2206's "…In phase four," resumes across a
+caption+table+figure page break. Took 2206 90→82; the remaining author-block
+chain differences trace to model-borderline cluster splits (docling's run
+splits a name block ours detects whole), not the merge rules.
 
 The **footnote-hyperlink** port (docling's `PageAssembleModel._match_hyperlink`:
 the URI whose annotation rects cover ≥ 0.5 of the region box, accumulated per

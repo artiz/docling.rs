@@ -16,6 +16,15 @@ use crate::pdfium_backend::{Glyph, TextCell};
 // config.h: the factors that actually bind for line cells.
 const MERGE: f64 = 1.0; // line_space_width_factor_for_merge (adjacency gate)
 const MERGE_WITH_SPACE: f64 = 0.33; // line_space_width_factor_for_merge_with_space
+
+// create_word_cells: words contract under their own, tighter factors — the
+// adjacency gate is word_space_width_factor_for_merge (0.33) and the space
+// threshold is twice that (2.0 * 0.33), which the 0.33 gate can never exceed,
+// so a word cell never contains an inserted space. Space glyphs are pure
+// word-boundary barriers: they are dropped from the word run up front, so a
+// thin CJK space's neighbors may still contract into one spaceless word.
+const WORD_MERGE: f64 = 0.33; // word_space_width_factor_for_merge
+const WORD_MERGE_WITH_SPACE: f64 = 2.0 * WORD_MERGE;
 const H_TOL: f64 = 1.0; // horizontal_cell_tolerance (ligature eps_d1 relaxation)
 
 #[derive(Clone)]
@@ -33,62 +42,6 @@ struct Cell {
     active: bool,
     lig_carry: bool, // last_merged_cell_was_ligature
     font: u64,       // hash of the PDF font name+flags (for enforce_same_font)
-    /// Sub-word segments accumulated during contraction, in final logical order.
-    /// A word boundary is recorded wherever `merge_with` inserts a separator space
-    /// (`delta < gap`); within a boundary the glyphs share one segment. Flattening
-    /// these across all cells yields docling-parse's `word_cells` (item 6). The
-    /// line path ignores this; only [`word_cells`] reads it.
-    words: Vec<WordSeg>,
-}
-
-/// One word's accumulated text and native-coordinate bounding box (y up).
-#[derive(Clone)]
-struct WordSeg {
-    text: String,
-    l: f64,
-    b: f64,
-    r: f64,
-    t: f64,
-}
-
-impl WordSeg {
-    fn from_glyph(text: String, l: f64, b: f64, r: f64, t: f64) -> Self {
-        WordSeg { text, l, b, r, t }
-    }
-    /// Absorb `o` into this segment (same word): union the box, append text.
-    fn absorb(&mut self, o: &WordSeg) {
-        self.text.push_str(&o.text);
-        self.l = self.l.min(o.l);
-        self.b = self.b.min(o.b);
-        self.r = self.r.max(o.r);
-        self.t = self.t.max(o.t);
-    }
-    /// Extend the box to cover a single glyph (ligature recompose into one word).
-    fn extend(&mut self, l: f64, b: f64, r: f64, t: f64) {
-        self.l = self.l.min(l);
-        self.b = self.b.min(b);
-        self.r = self.r.max(r);
-        self.t = self.t.max(t);
-    }
-}
-
-/// Concatenate two word runs (in final logical order). With a separator space
-/// the runs stay distinct (a word boundary); without one, `left`'s last word and
-/// `right`'s first word are the same word and merge. Mirrors `merge_with`'s
-/// space decision so word grouping tracks the line contraction exactly.
-fn merge_word_runs(mut left: Vec<WordSeg>, mut right: Vec<WordSeg>, space: bool) -> Vec<WordSeg> {
-    if left.is_empty() {
-        return right;
-    }
-    if right.is_empty() {
-        return left;
-    }
-    if !space {
-        let first = right.remove(0);
-        left.last_mut().unwrap().absorb(&first);
-    }
-    left.extend(right);
-    left
 }
 
 impl Cell {
@@ -149,18 +102,12 @@ impl Cell {
             }
             self.text = format!("{}{}", other.text, self.text);
             self.ltr = false;
-            // RTL: `other` is logically first, so its words precede self's. The
-            // junction is between other's last word and self's first.
-            self.words =
-                merge_word_runs(other.words.clone(), std::mem::take(&mut self.words), space);
         } else {
             if space {
                 self.text.push(' ');
             }
             self.text.push_str(&other.text);
             self.ltr = true;
-            self.words =
-                merge_word_runs(std::mem::take(&mut self.words), other.words.clone(), space);
         }
         // Extend the right edge to `other`.
         self.rx1 = other.rx1;
@@ -217,8 +164,14 @@ fn gap_occupied(cells: &[Cell], i: usize, j: usize) -> bool {
 /// line cells). On the clean-box parser path, **punctuation/space cells bridge
 /// fonts** so a sentence period set in a separate punctuation font joins its word
 /// instead of fragmenting (`العمل .` → `العمل.`); letters still enforce the font.
-fn applicable(a: &Cell, b: &Cell, parser: bool) -> bool {
+fn applicable(a: &Cell, b: &Cell, parser: bool, block_spaces: bool) -> bool {
     if !a.active || !b.active {
+        return false;
+    }
+    // Word mode (`block_spaces`): a space glyph is a hard word-boundary barrier
+    // that never merges in either direction; the space cells themselves are
+    // erased after the contraction (`create_word_cells`).
+    if block_spaces && (is_all_space(&a.text) || is_all_space(&b.text)) {
         return false;
     }
     // A lone punctuation glyph (not a space) set in a separate punctuation font
@@ -241,20 +194,20 @@ fn applicable(a: &Cell, b: &Cell, parser: bool) -> bool {
 }
 
 /// Left-to-right pass: `i` ascending accumulates cells to its right.
-fn pass_ltr(cells: &mut [Cell], allow_reverse: bool, euclidean: bool) {
+fn pass_ltr(cells: &mut [Cell], allow_reverse: bool, euclidean: bool, p: Factors) {
     for i in 0..cells.len() {
         if !cells[i].active {
             continue;
         }
         let mut j = i + 1;
         while j < cells.len() {
-            if !applicable(&cells[i], &cells[j], euclidean) {
+            if !applicable(&cells[i], &cells[j], euclidean, p.block_spaces) {
                 break;
             }
             let i_lig = is_ligature(&cells[i].text) || cells[i].lig_carry;
             let j_lig = is_ligature(&cells[j].text) || cells[j].lig_carry;
-            let d0 = cells[i].avg_char_width() * MERGE;
-            let d1 = cells[i].avg_char_width() * MERGE_WITH_SPACE;
+            let d0 = cells[i].avg_char_width() * p.merge;
+            let d1 = cells[i].avg_char_width() * p.merge_with_space;
             let adj_d1 = d0 + if i_lig || j_lig { H_TOL } else { 0.0 };
             if cells[i].adjacent(&cells[j], d0, adj_d1) && !gap_occupied(cells, i, j) {
                 let other = cells[j].clone();
@@ -280,7 +233,7 @@ fn pass_ltr(cells: &mut [Cell], allow_reverse: bool, euclidean: bool) {
 
 /// Right-to-left pass: `i` descending; its immediate left neighbour `i-1`
 /// absorbs it (then the outer loop continues leftward through the absorber).
-fn pass_rtl(cells: &mut [Cell], euclidean: bool) {
+fn pass_rtl(cells: &mut [Cell], euclidean: bool, p: Factors) {
     let n = cells.len();
     for k in 0..n {
         let i = n - 1 - k;
@@ -288,13 +241,13 @@ fn pass_rtl(cells: &mut [Cell], euclidean: bool) {
             continue;
         }
         let j = i - 1;
-        if !applicable(&cells[i], &cells[j], euclidean) {
+        if !applicable(&cells[i], &cells[j], euclidean, p.block_spaces) {
             continue;
         }
         let i_lig = is_ligature(&cells[i].text) || cells[i].lig_carry;
         let j_lig = is_ligature(&cells[j].text) || cells[j].lig_carry;
-        let d0 = cells[i].avg_char_width() * MERGE;
-        let d1 = cells[i].avg_char_width() * MERGE_WITH_SPACE;
+        let d0 = cells[i].avg_char_width() * p.merge;
+        let d1 = cells[i].avg_char_width() * p.merge_with_space;
         let adj_d1 = d0 + if i_lig || j_lig { H_TOL } else { 0.0 };
         if cells[j].adjacent(&cells[i], d0, adj_d1) && !gap_occupied(cells, j, i) {
             let other = cells[i].clone();
@@ -305,12 +258,37 @@ fn pass_rtl(cells: &mut [Cell], euclidean: bool) {
     }
 }
 
-fn contract(cells: &mut Vec<Cell>, euclidean: bool) {
-    pass_ltr(cells, false, euclidean);
+/// The contraction's tuning: the adjacency-gate and space-insertion factors
+/// (per `sanitize_bbox`'s callers) plus the word mode's space barrier.
+#[derive(Clone, Copy)]
+struct Factors {
+    merge: f64,
+    merge_with_space: f64,
+    block_spaces: bool,
+}
+
+const LINE_FACTORS: Factors = Factors {
+    merge: MERGE,
+    merge_with_space: MERGE_WITH_SPACE,
+    block_spaces: false,
+};
+const WORD_FACTORS: Factors = Factors {
+    merge: WORD_MERGE,
+    merge_with_space: WORD_MERGE_WITH_SPACE,
+    block_spaces: true,
+};
+
+/// True when the cell's text is entirely whitespace (`utils::string::is_space`).
+fn is_all_space(s: &str) -> bool {
+    !s.is_empty() && s.chars().all(char::is_whitespace)
+}
+
+fn contract(cells: &mut Vec<Cell>, euclidean: bool, p: Factors) {
+    pass_ltr(cells, false, euclidean, p);
     cells.retain(|c| c.active);
-    pass_rtl(cells, euclidean);
+    pass_rtl(cells, euclidean, p);
     cells.retain(|c| c.active);
-    pass_ltr(cells, true, euclidean);
+    pass_ltr(cells, true, euclidean, p);
     cells.retain(|c| c.active);
 }
 
@@ -350,23 +328,12 @@ fn build_cells(glyphs: &[Glyph], euclidean: bool) -> Vec<Cell> {
                 }
                 last.text.push(g.ch);
                 last.ltr = !is_right_to_left(&last.text);
-                if let Some(w) = last.words.last_mut() {
-                    w.text.push(g.ch);
-                    w.extend(g.ll as f64, g.lb as f64, g.lr as f64, g.lt as f64);
-                }
                 continue;
             }
         }
         let text = g.ch.to_string();
         let ltr = !is_right_to_left(&text);
         cells.push(Cell {
-            words: vec![WordSeg::from_glyph(
-                text.clone(),
-                g.ll as f64,
-                g.lb as f64,
-                g.lr as f64,
-                g.lt as f64,
-            )],
             text,
             rx0: g.ll as f64,
             ry0: g.lb as f64,
@@ -390,56 +357,58 @@ pub(crate) fn line_cells(glyphs: &[Glyph], page_h: f32, euclidean: bool) -> Vec<
     line_and_word_cells(glyphs, page_h, euclidean).0
 }
 
-/// Build **word** cells from a page's glyph stream via the same contraction as
-/// [`line_cells`]: each line splits into its constituent words at exactly the
-/// points where the contraction inserted a separator space. This reproduces
-/// docling-parse's `word_cells` (the per-word tokens TableFormer matches against
-/// table-grid cells), letting the pipeline drop pdfium's text path entirely
-/// (roadmap item 6). Empty words (overprint-cleared) are skipped.
+/// Build **word** cells from a page's glyph stream via docling-parse's
+/// `create_word_cells`: a second contraction over the same char cells under the
+/// word factors — adjacency gate 0.33 (vs the line's 1.0), so a gap wide enough
+/// to become a line-internal space still merges glyphs into one spaceless word
+/// when it stays under the gate (tight-set Korean: line `1군 감염병`, word
+/// `1군감염병`); real space glyphs are hard barriers and are erased afterwards.
+/// These are the per-word tokens TableFormer matches table-grid cells against.
 pub(crate) fn word_cells(glyphs: &[Glyph], page_h: f32, euclidean: bool) -> Vec<TextCell> {
     line_and_word_cells(glyphs, page_h, euclidean).1
 }
 
-/// Build the line cells **and** the word cells from one shared contraction — the
-/// build+contract pass is the expensive step and is identical for both views, so
-/// callers that need both (the default text layer) pay it once. Line cells come
-/// from each contracted cell's text/box; word cells from its recorded word
-/// segments.
+/// Build the line cells **and** the word cells from one shared glyph build:
+/// the char cells are constructed once and contracted twice, under the line
+/// factors and the word factors respectively — exactly docling-parse's
+/// `create_line_cells` + `create_word_cells` pair.
 pub(crate) fn line_and_word_cells(
     glyphs: &[Glyph],
     page_h: f32,
     euclidean: bool,
 ) -> (Vec<TextCell>, Vec<TextCell>) {
-    let mut cells = build_cells(glyphs, euclidean);
-    contract(&mut cells, euclidean);
-    let mut words = Vec::new();
-    let lines = cells
+    let built = build_cells(glyphs, euclidean);
+    let to_text_cell = |c: Cell| {
+        let l = c.rx0.min(c.rx1).min(c.rx2).min(c.rx3) as f32;
+        let r = c.rx0.max(c.rx1).max(c.rx2).max(c.rx3) as f32;
+        let top = c.ry0.max(c.ry1).max(c.ry2).max(c.ry3) as f32;
+        let bot = c.ry0.min(c.ry1).min(c.ry2).min(c.ry3) as f32;
+        TextCell {
+            text: c.text,
+            l,
+            t: page_h - top,
+            r,
+            b: page_h - bot,
+        }
+    };
+    // Word run: the space glyphs act as pure word-boundary barriers and never
+    // survive into a word cell — with them out of the stream, two glyphs that
+    // *overlap* across a thin CJK space (`군`…`감`, 1.5 pt apart under a 2.5 pt
+    // gate) contract into one spaceless word (`1군감염병`), while a full Latin
+    // space's gap (~0.5 em) exceeds the 0.33 gate and keeps words apart.
+    let mut word_run: Vec<Cell> = built
+        .iter()
+        .filter(|c| !is_all_space(&c.text))
+        .cloned()
+        .collect();
+    let mut cells = built;
+    contract(&mut cells, euclidean, LINE_FACTORS);
+    let lines: Vec<TextCell> = cells.into_iter().map(to_text_cell).collect();
+    contract(&mut word_run, euclidean, WORD_FACTORS);
+    let words: Vec<TextCell> = word_run
         .into_iter()
-        .map(|c| {
-            for w in c.words {
-                if w.text.trim().is_empty() {
-                    continue;
-                }
-                words.push(TextCell {
-                    text: w.text,
-                    l: w.l as f32,
-                    t: page_h - w.t as f32,
-                    r: w.r as f32,
-                    b: page_h - w.b as f32,
-                });
-            }
-            let l = c.rx0.min(c.rx1).min(c.rx2).min(c.rx3) as f32;
-            let r = c.rx0.max(c.rx1).max(c.rx2).max(c.rx3) as f32;
-            let top = c.ry0.max(c.ry1).max(c.ry2).max(c.ry3) as f32;
-            let bot = c.ry0.min(c.ry1).min(c.ry2).min(c.ry3) as f32;
-            TextCell {
-                text: c.text,
-                l,
-                t: page_h - top,
-                r,
-                b: page_h - bot,
-            }
-        })
+        .filter(|c| !c.text.trim().is_empty())
+        .map(to_text_cell)
         .collect();
     (lines, words)
 }
