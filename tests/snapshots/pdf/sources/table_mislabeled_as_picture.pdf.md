@@ -65,12 +65,12 @@ No
 
 (Please select all that apply)
 
-|    |                                                | State funded legal aid   | CSOs   |
-|----|------------------------------------------------|--------------------------|--------|
-| y  | Persons with disabilities                      | *                        | *      |
-| y  | Children                                       | *                        | *      |
-| y  | Women                                          | *                        | *      |
-| y  | The elderly                                    | *                        | *      |
-| y  | Migrants                                       | *                        | *      |
-| y  | Refugees, asylum seekers, or stateless persons | *                        | *      |
-| y  | Internally displaced persons                   | *                        | *      |
+|    |                                              | State funded legal aid   | CSOs   |
+|----|----------------------------------------------|--------------------------|--------|
+| y  | Persons with disabilities                    | *                        | *      |
+| y  | Children                                     | *                        | *      |
+| y  | Women                                        | *                        | *      |
+| y  | The elderly                                  | *                        | *      |
+| y  | Migrants                                     | *                        | *      |
+| y  | Refugees,asylum seekers,or stateless persons | *                        | *      |
+| y  | Internally displaced persons                 | *                        | *      |

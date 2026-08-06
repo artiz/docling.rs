@@ -27,12 +27,12 @@ are no longer scored.)
 | amt_handbook_sample | 2 *(ws-ok)* | docling's spurious fraction double space — ours is more faithful |
 | code_and_formula | **exact** | — (flat legacy code, line-preserving `pretty` in strict) |
 | 2305.03393v1 | 14 | author-block cluster split + in-figure label clusters (model-level) |
-| normal_4pages | 32 | TableFormer cell-text spacing + two-column line interleave |
+| normal_4pages | 20 | two-column line interleave + section-1 numeral claim |
+| table_mislabeled_as_picture | 54 | layout over-detects tables (survey rendered as tables) |
 | right_to_left_03 | 60 | RTL bidi + wrapper (form) children order |
-| table_mislabeled_as_picture | 72 | layout over-detects tables (survey rendered as tables) |
-| 2206.01062 | 90 | TableFormer multi-row headers + author-block merge chains |
+| redp5110_sampled | 73 | TOC row structure tails + cover-page ordering |
 | 2203.01017v2 | 80 | TableFormer structure + reading order |
-| redp5110_sampled | 164 | TOC OTSL structure (model-level); cover-page ordering |
+| 2206.01062 | 90 | TableFormer multi-row headers + author-block merge chains |
 
 `amt` is the 6th under the whitespace-normalized metric: its only diff is
 docling's spurious double space before the `1⁄4` fraction, where our single-spaced
@@ -108,6 +108,19 @@ structurally closed), and normal_4pages' cover publisher block now lands in
 its furniture cluster exactly as docling files it. Together: 2305 24→14,
 normal_4pages 44→32, 2203 84→80, 2206 92→90, redp5110 166→164,
 table_mislabeled 76→72 — −48 lines, nothing worse.
+
+**Word cells are docling-parse's own `create_word_cells`** — a second
+contraction over the shared char cells under the word factors
+(`word_space_width_factor_for_merge` 0.33 for the adjacency gate, 2 × 0.33
+for the never-firing space threshold), with space glyphs acting as pure
+word-boundary barriers dropped from the run up front. The words TableFormer
+matches against therefore tokenize exactly as docling's: a thin CJK space
+whose neighbors overlap contracts into one spaceless word (docling's
+`1군감염병`, where splitting at every line-space manufactured `1군 감염병`),
+while a full Latin space's gap exceeds the gate and keeps words apart.
+Table-heavy fixtures moved wholesale: redp5110 164→73 (the TOC "OTSL
+model-level blocker" was largely tokenization), table_mislabeled 72→54,
+normal_4pages 32→20, everything else byte-identical.
 
 The **footnote-hyperlink** port (docling's `PageAssembleModel._match_hyperlink`:
 the URI whose annotation rects cover ≥ 0.5 of the region box, accumulated per
