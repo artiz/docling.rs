@@ -68,8 +68,6 @@ Prescriptions Cosmetics SundryItems Liquor,Beer,Wine
 
 872E.Auburn,NearJohnR.Rochester UL2-5363
 
-CY
-
 <!-- image -->
 
 <!-- image -->

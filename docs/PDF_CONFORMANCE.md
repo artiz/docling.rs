@@ -75,6 +75,19 @@ picture's children never reach `MarkdownPictureSerializer` output; a table's
 text renders through the grid). Took 2206 80→76 and table_mislabeled 86→80
 with every other fixture byte-identical.
 
+The #200 fix closes the scanned-page gap in that same rule: on OCR'd pages
+the speculative in-picture OCR (the pass that feeds text-panel demotion)
+emitted *all* of its recognized lines beside a kept picture, so a chart's
+axis-tick strings spliced into the body text right next to the image — where
+docling's postprocess "Remove regular clusters that are included in wrappers"
+walks `SPECIAL_TYPES` (picture included) and silently absorbs any orphan
+> 80 % contained in the picture as its child. The same containment drop that
+already handled the first orphan wave now re-runs after the in-picture wave,
+so only border-straddlers (≤ 80 % containment) surface as text, on scanned
+pages exactly as on digital ones. The digital corpus is untouched (6/14
+strict, same per-file diffs); 17 scanned/image snapshots shed their leaked
+figure-internal text (axis ticks, diagram labels — net −59 lines).
+
 The **footnote-hyperlink** port (docling's `PageAssembleModel._match_hyperlink`:
 the URI whose annotation rects cover ≥ 0.5 of the region box, accumulated per
 URI, pydantic-`AnyUrl` trailing-slash normalization) renders 2206's footnote

@@ -2,10 +2,6 @@
 
 Projectreadinessindicatoractualplacementstrackedagainstthe baselinescheduleforthereportingperiod(cubicmetres).
 
-JanFebMarAprMayJunJul
-
-Reporting month
-
 Table1.Pour volume by month (m3)
 
 <!-- image -->

@@ -1,17 +1,13 @@
-The cat sat on the The cat sat on the windowsize
-
 Vanilla Attention
 
 <!-- image -->
 
 10000 京
 
-Tokens
-
-Effective Context Length
+Sliding Window Attention
 
 <!-- image -->
 
-Sliding Window Attention
+Effective Context Length
 
 <!-- image -->

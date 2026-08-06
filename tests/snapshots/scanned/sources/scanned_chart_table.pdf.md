@@ -2,10 +2,6 @@
 
 Estimatedrecoverablevolume,cubickilometres
 
-M.
-
-OgallalaGuaraniNubianMurrayKarooIndusVolga aguifer
-
 <!-- image -->
 
 | Aquifersystem   |   Volumekm3 |   Depthm |   Recharge% |
