@@ -2,7 +2,7 @@ Vanilla Attention
 
 <!-- image -->
 
-1000 京 11000 11100
+1000 11000 11100 京
 
 Sliding Window Attention
 

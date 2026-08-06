@@ -468,16 +468,13 @@ pub fn layout_cell_coverage(regions: &[Region], cells: &[TextCell]) -> f32 {
 /// line are merged so a missed paragraph doesn't shatter into one block per line.
 pub fn add_orphan_regions(regions: &mut Vec<Region>, cells: &[TextCell]) {
     // docling assigns each cell to its single best-overlapping cluster at
-    // intersection-over-self > 0.2 and serializes exactly the assigned cells.
-    // Our serializer (`region_text`) instead takes cells at > 0.5 — so a cell
-    // whose best overlap lands in (0.2, 0.5] would be "claimed" under
-    // docling's threshold yet serialized by *no* region, and its text would
-    // silently vanish (right_to_left_03's standalone `20300` value, whose
-    // detector box covers just under half of the cell). The claim test here
-    // therefore mirrors the serializer's own criterion: a cell counts as
-    // assigned only if some region will actually emit it, so every non-empty
-    // text cell either serializes inside a region or becomes an orphan —
-    // text completeness by construction.
+    // intersection-over-self > 0.2 and serializes exactly the assigned cells —
+    // and since [`region_texts_exclusive`] now emits under that very rule, the
+    // claim test here matches it: any cell over 0.2 will actually render in
+    // its best region, everything else becomes an orphan. Completeness by
+    // construction, with no (0.2, 0.5] hole (the old > 0.5 serializer needed
+    // the claim test raised to > 0.5 to keep right_to_left_03's `20300` from
+    // vanishing; the exclusive port closes that structurally).
     //
     // Only *regular* clusters claim cells: docling's `_find_unassigned_cells`
     // walks `regular_clusters` alone, so a cell under a `picture` or a wrapper
@@ -495,7 +492,7 @@ pub fn add_orphan_regions(regions: &mut Vec<Region>, cells: &[TextCell]) {
         regions
             .iter()
             .filter(|r| r.label != "picture" && !is_wrapper(r.label))
-            .any(|r| inter(r, c.l, c.t, c.r, c.b) / ca > 0.5)
+            .any(|r| inter(r, c.l, c.t, c.r, c.b) / ca > 0.2)
     };
     // Collect orphan cells (non-empty, unassigned), in page order.
     let mut orphans: Vec<&TextCell> = cells
@@ -1095,13 +1092,69 @@ fn cell_text_in_rect(c: &TextCell, l: f32, r: f32) -> String {
 
 /// Cells assigned to a region (best container), in reading order, joined.
 fn region_text(region: &Region, cells: &[TextCell]) -> String {
-    let mut inside: Vec<&TextCell> = cells
+    let inside: Vec<&TextCell> = cells
         .iter()
         .filter(|c| {
             let ca = area(c.l, c.t, c.r, c.b).max(1.0);
             inter(region, c.l, c.t, c.r, c.b) / ca > 0.5
         })
         .collect();
+    cells_text(inside)
+}
+
+/// docling's exclusive cell assignment (`_assign_cells_to_clusters`): every
+/// non-empty cell goes to the single best-overlapping *regular* region at
+/// intersection-over-self > 0.2, and each region serializes exactly its
+/// assigned cells. A cell under two overlapping boxes is emitted once (by the
+/// better-covering one), and a cell only partially under its region — e.g.
+/// normal_4pages' big section numeral, ~30 % inside the heading box — still
+/// joins it (`## 들어가며 1`) instead of leaking as an orphan. Pictures and
+/// wrappers never claim (docling walks regular clusters only); ties go to the
+/// first region, like docling's strict `>` best-overlap scan.
+pub fn region_texts_exclusive(regions: &[Region], cells: &[TextCell]) -> Vec<String> {
+    let claimer: Vec<bool> = regions
+        .iter()
+        .map(|r| r.label != "picture" && !is_wrapper(r.label))
+        .collect();
+    let mut owned: Vec<Vec<&TextCell>> = vec![Vec::new(); regions.len()];
+    for c in cells {
+        if c.text.trim().is_empty() {
+            continue;
+        }
+        let ca = area(c.l, c.t, c.r, c.b).max(1.0);
+        let mut best: Option<(usize, f32)> = None;
+        for (i, r) in regions.iter().enumerate() {
+            if !claimer[i] {
+                continue;
+            }
+            let ov = inter(r, c.l, c.t, c.r, c.b) / ca;
+            if ov > 0.2 && best.is_none_or(|(_, b)| ov > b) {
+                best = Some((i, ov));
+            }
+        }
+        if let Some((i, _)) = best {
+            owned[i].push(c);
+        }
+    }
+    // Non-claimers (tables/wrappers/pictures) keep the inclusive > 0.5 text:
+    // docling fills a special cluster's cells from its contained children, and
+    // downstream table assembly gates on that text being non-empty.
+    regions
+        .iter()
+        .zip(owned)
+        .map(|(r, cs)| {
+            if r.label != "picture" && !is_wrapper(r.label) {
+                cells_text(cs)
+            } else {
+                region_text(r, cells)
+            }
+        })
+        .collect()
+}
+
+/// Join a prefiltered cell list into the region's text (docling's
+/// `sanitize_text` on the docling-parse path, gap-aware band join on legacy).
+fn cells_text(mut inside: Vec<&TextCell>) -> String {
     // Quantize the top coordinate into ~line bands so cells on the same line
     // sort in reading order; this is a strict total order (a raw fuzzy comparator
     // is not transitive and makes Rust's sort panic). For a right-to-left
@@ -1126,106 +1179,104 @@ fn region_text(region: &Region, cells: &[TextCell]) -> String {
     let dp = crate::pdfium_backend::use_dp_lines();
     if dp {
         // docling orders a cluster's cells by their docling-parse cell index
-        // (`LayoutPostprocessor._sort_cells`: `sorted(cells, key=c.index)`) —
-        // the sanitizer's output order, which our `cells` slice already is.
-        // That is *stream* order, and a generator that paints a line's bold
-        // runs after the surrounding regular text strands them out of place
-        // ("C.6. Zur Wahrung …" read "C. Zur Wahrung … 6."). Restore reading
-        // order geometrically — but group lines by vertical *overlap*, not a
-        // quantized band: 2206's inline math `>` sits ~2 pt above its line's
-        // band and a plain band-sort drifted it into the next line
-        // (`( > 10 pages)` → `( 10 pages) … complex > tables`); overlap
-        // grouping keeps it home. Sorts are stable, so cells sharing a line
-        // and an x-position keep their index order.
-        let mut lines: Vec<(f32, f32, Vec<&TextCell>)> = Vec::new();
-        for c in inside.drain(..) {
-            let (ct, cb) = (c.t.min(c.b), c.t.max(c.b));
-            let line = lines.iter_mut().find(|(lt, lb, _)| {
-                let ov = cb.min(*lb) - ct.max(*lt);
-                ov > 0.5 * (cb - ct).min(*lb - *lt).max(1.0)
-            });
-            match line {
-                Some((lt, lb, cs)) => {
-                    *lt = lt.min(ct);
-                    *lb = lb.max(cb);
-                    cs.push(c);
-                }
-                None => lines.push((ct, cb, vec![c])),
-            }
-        }
-        lines.sort_by(|a, b| a.0.total_cmp(&b.0));
-        for (_, _, mut cs) in lines {
-            cs.sort_by(|a, b| {
-                if rtl {
-                    b.l.total_cmp(&a.l)
-                } else {
-                    a.l.total_cmp(&b.l)
-                }
-            });
-            inside.extend(cs);
-        }
+        // alone (`LayoutPostprocessor._sort_cells`: `sorted(cells, key=c.index)`)
+        // — the sanitizer's output order, which our `cells` slice already is.
+        // No geometric re-sort: normal_4pages' big section numerals paint
+        // *after* their heading text, and docling's `## 들어가며 1` (numeral
+        // last) only falls out of pure index order — a band sort dragged the
+        // numeral to the front. The overlap-grouped line restore this replaced
+        // measured strictly worse on the corpus (it fixed nothing the index
+        // order broke, and broke the numerals).
     } else {
         inside.sort_by_key(|c| {
             let x = (c.l * 10.0) as i64;
             ((c.t / band).round() as i64, if rtl { -x } else { x })
         });
     }
-    // Join cells in reading order. With the docling-parse sanitizer the cells are
-    // already correctly spaced words/lines, so adjacent cells join with a single
-    // space (docling joins its line cells with a space) — matching e.g. a bold
-    // label and its value, `LABEL` | `: value` → `LABEL : value`. The legacy
-    // reconstruction instead joins same-band cells with a space only across a real
-    // gap, because it can split a word into abutting segments (`الت`|`ي` → `التي`).
-    let mut joined = String::new();
-    let mut prev: Option<&&TextCell> = None;
-    for c in &inside {
-        let t = c.text.trim();
-        // Skip whitespace-only cells (e.g. a justified line's trailing space glyph
-        // at a wrap): the join already inserts a separator, so an empty cell would
-        // double it (`all-metal  construction`).
-        if t.is_empty() {
-            continue;
-        }
-        if let Some(p) = prev {
-            let same_band = ((p.t / band).round() as i64) == ((c.t / band).round() as i64);
-            let h = (c.b - c.t).abs().max((p.b - p.t).abs()).max(1.0);
-            let gap = if rtl { p.l - c.r } else { c.l - p.r };
-            // Dehyphenate a wrapped word: a line ending in a hyphen/dash followed
-            // by a continuation joins without the dash or a space (`platforms—` +
-            // `reflects` → `platformsreflects`). The dash is still raw here
-            // (clean_text normalizes em/en dashes later), so match them all.
-            let ends_dash = matches!(
-                joined.chars().last(),
-                Some('-' | '\u{2010}' | '\u{2013}' | '\u{2014}')
-            );
-            let before = joined.chars().nth_back(1); // char before the dash
-            let next = t.chars().next();
-            let alpha_dehyph = before.is_some_and(|c| c.is_alphabetic())
-                && next.is_some_and(|n| {
-                    // Ordinary hyphenation (lowercase continuation), or a CamelCase
-                    // compound name wrapped at the hyphen — a lowercase letter before
-                    // the dash continuing with an uppercase one (`PubTab-Net` →
-                    // `PubTabNet`, `Table-Former` → `TableFormer`). Excludes runs like
-                    // `MS-COCO` (uppercase before the dash) and `PubTables-1M` (digit).
-                    n.is_lowercase()
-                        || (n.is_uppercase() && before.is_some_and(|b| b.is_lowercase()))
-                });
-            // A number range wrapped at its hyphen (`pp. 545-` + `561` → `545561`):
-            // docling drops the line-wrap hyphen between two digit runs. A same-line
-            // range (`1162-1167`) never reaches this continuation path, so it keeps
-            // its hyphen.
-            let num_dehyph = before.is_some_and(|c| c.is_ascii_digit())
-                && next.is_some_and(|n| n.is_ascii_digit());
-            let dehyph = dp && ends_dash && (alpha_dehyph || num_dehyph);
-            if dehyph {
-                joined.pop();
-            } else if dp || !same_band || gap > h * 0.25 {
-                joined.push(' ');
+    let joined = if dp {
+        // docling's `PageAssembleModel.sanitize_text`, ported verbatim over the
+        // parse-index-ordered lines: append a separating space to a line —
+        // unless it ends with `-`. A dash-ending line whose last word and the
+        // next line's first word are both alphanumeric is a wrapped word: the
+        // dash is dropped and the lines fuse (`platforms-` + `reflects` →
+        // `platformsreflects`, `pp. 545-` + `561` → `545561`). Any other
+        // dash-ending line — e.g. the *bare* `-` cell a superscript ORCID or an
+        // inline `–` bullet splits off (its word list is empty, so the fuse
+        // test fails) — keeps its dash and still takes no trailing space:
+        // `[0000` `-` `0002` joins as docling's `[0000 -0002`, and the OTSL
+        // list's `-` + `"C" cell -` + `a new table cell` collapses to
+        // `-"C" cell a new table cell`. Our cells still carry the raw dash
+        // family (docling-parse normalizes to `-` before this; clean_text does
+        // it after), so the endswith test matches them all.
+        let texts: Vec<&str> = inside
+            .iter()
+            .map(|c| c.text.trim())
+            // Skip whitespace-only cells (a justified line's trailing space
+            // glyph): an empty line would double the separator.
+            .filter(|t| !t.is_empty())
+            .collect();
+        let last_word_alnum = |s: &str| {
+            s.split(|c: char| !(c.is_alphanumeric() || c == '_'))
+                .rfind(|w| !w.is_empty())
+                .is_some_and(|w| w.chars().all(char::is_alphanumeric))
+        };
+        let first_word_alnum = |s: &str| {
+            s.split(|c: char| !(c.is_alphanumeric() || c == '_'))
+                .find(|w| !w.is_empty())
+                .is_some_and(|w| w.chars().all(char::is_alphanumeric))
+        };
+        let mut out = String::new();
+        for (i, t) in texts.iter().enumerate() {
+            if i > 0 {
+                let prev = texts[i - 1];
+                let dashish = matches!(
+                    prev.chars().last(),
+                    Some(
+                        '-' | '\u{2010}'
+                            | '\u{2011}'
+                            | '\u{2012}'
+                            | '\u{2013}'
+                            | '\u{2014}'
+                            | '\u{2015}'
+                            | '\u{2212}'
+                    )
+                );
+                if dashish {
+                    if last_word_alnum(prev) && first_word_alnum(t) {
+                        out.pop(); // wrapped word: fuse without the dash
+                    }
+                    // dash-ending line never takes a separating space
+                } else {
+                    out.push(' ');
+                }
             }
+            out.push_str(t);
         }
-        joined.push_str(t);
-        prev = Some(c);
-    }
+        out
+    } else {
+        // Legacy reconstruction: join same-band cells with a space only across a
+        // real gap, because it can split a word into abutting segments
+        // (`الت`|`ي` → `التي`).
+        let mut out = String::new();
+        let mut prev: Option<&&TextCell> = None;
+        for c in &inside {
+            let t = c.text.trim();
+            if t.is_empty() {
+                continue;
+            }
+            if let Some(p) = prev {
+                let same_band = ((p.t / band).round() as i64) == ((c.t / band).round() as i64);
+                let h = (c.b - c.t).abs().max((p.b - p.t).abs()).max(1.0);
+                let gap = if rtl { p.l - c.r } else { c.l - p.r };
+                if !same_band || gap > h * 0.25 {
+                    out.push(' ');
+                }
+            }
+            out.push_str(t);
+            prev = Some(c);
+        }
+        out
+    };
     clean_text(&joined)
 }
 
@@ -1740,10 +1791,10 @@ pub fn assemble_page(
     // the intra-page half of docling's reading-order merges (cross-page/vertical
     // continuations stay with [`merge_continuations`]). Already-consumed regions
     // (paired captions, code labels) are excluded.
-    let region_texts: Vec<String> = regions
-        .iter()
-        .map(|r| region_text(r, &page.cells))
-        .collect();
+    // Exclusive docling cell assignment: computed once for the ordered region
+    // list and reused for every serialization below, so a cell can never render
+    // in two regions.
+    let region_texts: Vec<String> = region_texts_exclusive(&regions, &page.cells);
     let is_text: Vec<bool> = regions
         .iter()
         .enumerate()
@@ -1785,7 +1836,7 @@ pub fn assemble_page(
         // (`<page_header>`/`<page_footer>` with a layer + location + text) at
         // their reading-order position, not as body — emit them, don't skip.
         if matches!(region.label, "page_header" | "page_footer") {
-            let text = region_text(region, &page.cells);
+            let text = region_texts[i].clone();
             if !text.is_empty() {
                 nodes.push(Node::PageFurniture {
                     footer: region.label == "page_footer",
@@ -1803,7 +1854,7 @@ pub fn assemble_page(
         if region.label == "picture" {
             // The figure pixels are cropped from the page render for image export.
             let caption = caption_for[i]
-                .map(|ci| region_text(&regions[ci], &page.cells))
+                .map(|ci| region_texts[ci].clone())
                 .filter(|t| !t.is_empty());
             let classification = match &enrichments[i] {
                 Some(Enrichment::PictureClasses(classes)) => Some(classes.clone()),
@@ -1825,7 +1876,7 @@ pub fn assemble_page(
             ));
             continue;
         }
-        let mut text = region_text(region, &page.cells);
+        let mut text = region_texts[i].clone();
         text.push_str(&merge_suffix[i]);
         if text.is_empty() {
             continue;
@@ -1851,9 +1902,13 @@ pub fn assemble_page(
             // docling drops the rendered bullet glyph; the Markdown serializer
             // adds its own `- ` marker. An item whose text opens with an `N.`
             // enumeration marker is an ordered item (rendered `N. text`).
+            // A leading dash stays: it is an ordinary text glyph that
+            // docling-parse keeps, and docling's items carry it into the
+            // Markdown (2305's OTSL list renders `- -"C" cell …`) — only the
+            // symbol-font bullets docling-parse filters out are stripped.
             "list_item" => {
                 let stripped = text
-                    .trim_start_matches(['•', '◦', '▪', '·', '*', '-'])
+                    .trim_start_matches(['•', '◦', '▪', '·', '*'])
                     .trim_start()
                     .to_string();
                 if let Some((number, rest)) = parse_ordered_marker(&stripped) {
@@ -1972,7 +2027,7 @@ pub fn assemble_page(
                 nodes.push(located(loc, node));
                 // docling emits the `Listing N:` caption after the code block.
                 if let Some(ci) = code_caption_for[i] {
-                    let cap = region_text(&regions[ci], &page.cells);
+                    let cap = region_texts[ci].clone();
                     if !cap.is_empty() {
                         nodes.push(Node::Paragraph { text: cap });
                     }
@@ -2414,15 +2469,17 @@ mod tests {
         );
     }
 
-    /// A generator that paints a line's bold runs *after* its regular text
-    /// hands the sanitizer the cells out of visual order ("C." | "Zur Wahrung
-    /// …" | "6." — the bold label number drawn last). docling's index order
-    /// would strand the bold token at the line's end ("… Mitteilung 6."); the
-    /// overlap-grouped line sort restores reading order, and an off-baseline
-    /// glyph (2206's inline `>` sits ~2 pt above its line) still belongs to
-    /// its own line rather than drifting into the next band.
+    /// docling serializes a cluster's cells in docling-parse index order
+    /// (`_sort_cells`) and joins them with `PageAssembleModel.sanitize_text`:
+    /// a space after every line except one ending in `-`, which either fuses a
+    /// wrapped word (alnum on both sides — dash dropped) or glues verbatim (a
+    /// bare `-` cell: `[0000` `-` `0002` → `[0000 -0002`, the 2305 ORCID line;
+    /// `-` + `"C" cell -` + `a new table cell` → `-"C" cell a new table cell`,
+    /// its OTSL list). Verified against the corpus: pure index order beats any
+    /// geometric re-sort (normal_4pages' heading numerals paint after their
+    /// text and belong last: `## 들어가며 1`).
     #[test]
-    fn interleaved_font_runs_read_in_visual_order() {
+    fn cells_join_in_index_order_with_sanitize_text_rules() {
         let cell = |text: &str, l: f32, t: f32, r: f32, b: f32| TextCell {
             text: text.to_string(),
             l,
@@ -2430,12 +2487,6 @@ mod tests {
             r,
             b,
         };
-        let cells = vec![
-            cell("C.", 10.0, 100.0, 18.0, 110.0),
-            cell("Zur Wahrung der Widerrufsfrist", 30.0, 100.0, 150.0, 110.0),
-            cell("über die Ausübung", 10.0, 112.0, 90.0, 122.0),
-            cell("6.", 19.0, 100.0, 27.0, 110.0), // bold run, drawn last
-        ];
         let region = Region {
             label: "text",
             score: 1.0,
@@ -2444,18 +2495,41 @@ mod tests {
             r: 200.0,
             b: 130.0,
         };
-        assert_eq!(
-            super::region_text(&region, &cells),
-            "C. 6. Zur Wahrung der Widerrufsfrist über die Ausübung"
-        );
-        // Off-baseline glyph: raised but overlapping its line by more than half
-        // its height — stays on that line, ordered by x.
-        let raised = vec![
-            cell("(", 10.0, 100.0, 14.0, 110.0),
-            cell(">", 15.0, 97.0, 20.0, 104.0),
-            cell("10 pages)", 21.0, 100.0, 60.0, 110.0),
+        // ORCID superscript: bare dash cells keep the dash, take no space after.
+        let orcid = vec![
+            cell("[0000", 10.0, 100.0, 30.0, 110.0),
+            cell("−", 30.0, 100.0, 34.0, 110.0),
+            cell("0002", 34.0, 100.0, 50.0, 110.0),
+            cell("−", 50.0, 100.0, 54.0, 110.0),
+            cell("6960]", 54.0, 100.0, 70.0, 110.0),
         ];
-        assert_eq!(super::region_text(&region, &raised), "( > 10 pages)");
+        assert_eq!(super::region_text(&region, &orcid), "[0000 -0002 -6960]");
+        // Wrapped word: dash dropped, lines fused (both boundary words alnum).
+        let wrapped = vec![
+            cell("platforms-", 10.0, 100.0, 60.0, 110.0),
+            cell("reflects the design", 10.0, 112.0, 90.0, 122.0),
+        ];
+        assert_eq!(
+            super::region_text(&region, &wrapped),
+            "platformsreflects the design"
+        );
+        // Dash-ending line before a quote-opening one: not alnum-adjacent, so
+        // the dash stays and the lines glue (2305's OTSL list bullets).
+        let otsl = vec![
+            cell("–", 10.0, 100.0, 14.0, 110.0),
+            cell("\"C\" cell -", 16.0, 100.0, 60.0, 110.0),
+            cell("a new table cell", 10.0, 112.0, 80.0, 122.0),
+        ];
+        assert_eq!(
+            super::region_text(&region, &otsl),
+            "-\"C\" cell a new table cell"
+        );
+        // Index order is authoritative — no geometric re-sort.
+        let numeral = vec![
+            cell("들어가며", 30.0, 100.0, 80.0, 110.0),
+            cell("1", 10.0, 98.0, 25.0, 112.0), // big numeral painted last
+        ];
+        assert_eq!(super::region_text(&region, &numeral), "들어가며 1");
     }
 
     /// The geometric-reliability gate, on the two shapes it has to tell apart.

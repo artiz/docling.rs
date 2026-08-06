@@ -29,9 +29,7 @@
 
 Yes, at regional (district) level
 
-- Yes, at the local (municipal) level
-
-
+-  Yes, at the local (municipal) level
 
 
 

@@ -16,7 +16,7 @@ FIESTAS
 
 SPLITS
 
-Hours Hours
+Hours
 
 11A.M.to11P.M 11A.M.to11P.M strengthen the teacher's knowledge and control of the langlage,
 
@@ -48,7 +48,7 @@ Winner of 8Academy Awards
 
 TECHNICOLOR SUPER PANAVISION 7OFROMWARNER BRO
 
-Hours Hours 11A.M.to11P.M 11A.M.to11P.M
+Hours
 
 GETDUNLOPIMPORTQUALITY INTHEAMERICAN MADE GOLD SEAL FULL 4PLY (NOT2PLY)CONSTRUCTION NO THUMP WITHTYREX CORD NYLONALSOAVAILABLE） Certified Safe At A SUSTAINED 100 M.P.H. Wholesale Prices to O.U.Students &amp; Faculty on Passenger Car, Sports Car, Radial Ply &amp; Racing Tires
 
