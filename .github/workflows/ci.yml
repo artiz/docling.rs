@@ -59,7 +59,7 @@ jobs:
           rustup toolchain install ${{ env.LINT_TOOLCHAIN }} --profile minimal --component rustfmt --component clippy
           rustup default ${{ env.LINT_TOOLCHAIN }}
 
-      - uses: actions/cache@v4
+      - uses: actions/cache@v6
         with:
           path: |
             ~/.cargo/registry/index
@@ -100,7 +100,7 @@ jobs:
           rustup toolchain install stable --profile minimal
           rustup default stable
 
-      - uses: actions/cache@v4
+      - uses: actions/cache@v6
         with:
           path: |
             ~/.cargo/registry/index
@@ -150,7 +150,7 @@ jobs:
       - name: Install Rust ${{ env.MSRV_CORE }} + ${{ env.MSRV_WORKSPACE }}
         run: rustup toolchain install ${{ env.MSRV_CORE }} ${{ env.MSRV_WORKSPACE }} --profile minimal
 
-      - uses: actions/cache@v4
+      - uses: actions/cache@v6
         with:
           path: |
             ~/.cargo/registry/index
@@ -213,7 +213,7 @@ jobs:
           rustup toolchain install stable --profile minimal
           rustup default stable
 
-      - uses: actions/cache@v4
+      - uses: actions/cache@v6
         with:
           path: |
             ~/.cargo/registry/index
@@ -262,7 +262,7 @@ jobs:
           rustup default stable
           rustup target add wasm32-unknown-unknown
 
-      - uses: actions/cache@v4
+      - uses: actions/cache@v6
         with:
           path: |
             ~/.cargo/registry/index
@@ -324,7 +324,7 @@ jobs:
           rustup toolchain install stable --profile minimal
           rustup default stable
 
-      - uses: actions/cache@v4
+      - uses: actions/cache@v6
         with:
           path: |
             ~/.cargo/registry/index
