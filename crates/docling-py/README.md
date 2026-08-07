@@ -117,7 +117,7 @@ cd crates/docling-py
 # 1. Build + install into the CURRENT virtualenv (create one first):
 python -m venv .venv && source .venv/bin/activate
 pip install maturin
-maturin develop --release          # compiles the Rust engine, installs `docling.rs`
+maturin develop --release          # compiles the Rust engine, installs `docling-rs`
 
 # 2. One-time model download (~700 MB → ~/.cache/docling.rs), pure Python —
 #    fetched from the repo's models-v1 GitHub release, like docling fetches
@@ -139,7 +139,7 @@ PY
 
 | docling.rs | docling counterpart | notes |
 |---|---|---|
-| `DocumentConverter(format_options=None, *, allowed_formats=None, do_ocr=True, do_table_structure=True, do_picture_classification=False, do_code_enrichment=False, do_formula_enrichment=False, fetch_images=False, use_web_browser=False, artifacts_path=None)` | `DocumentConverter(allowed_formats=…, format_options=…)` | Pass `{InputFormat.PDF: PdfFormatOption(pipeline_options=PdfPipelineOptions(…))}` or the shorthand kwargs; `allowed_formats` restricts conversion; `artifacts_path` overrides the model cache dir. |
+| `DocumentConverter(format_options=None, *, allowed_formats=None, do_ocr=True, do_table_structure=True, force_full_page_ocr=False, no_text_panels=False, do_picture_classification=False, do_code_enrichment=False, do_formula_enrichment=False, fetch_images=False, use_web_browser=False, artifacts_path=None, ocr_lang=None, asr_lang=None)` | `DocumentConverter(allowed_formats=…, format_options=…)` | Pass `{InputFormat.PDF: PdfFormatOption(pipeline_options=PdfPipelineOptions(…))}` or the shorthand kwargs; `allowed_formats` restricts conversion; `artifacts_path` overrides the model cache dir. |
 | `.convert(path \| DocumentStream) -> ConversionResult` | `.convert(source)` | str / `pathlib.Path` / `DocumentStream`. Releases the GIL during conversion. |
 | `.convert_all(sources, raises_on_error=True) -> Iterator[ConversionResult]` | same | lazily converts many sources; `raises_on_error=False` yields a `failure` result instead of raising |
 | `.initialize_pipeline(format=None)` | same | pre-loads the PDF/image ML models so the first conversion isn't slow and later PDFs reuse the warm pipeline (no-op for non-ML formats; needs the models available) |

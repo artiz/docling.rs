@@ -110,7 +110,7 @@ curl -s -H 'X-Api-Key: dev-key' \
 | Embeddings   | `Embedder`       | **Ollama** (default, bge-m3, 1024-d), Gemini, local ONNX, hash |
 | Vector store | `VectorStore`    | **SQLite + sqlite-vec** (default), PostgreSQL + pgvector, in-memory |
 | Retrieval    | `Retriever`      | vector, BM25, **Hybrid** (RRF), Multi-Query fusion, HyDE       |
-| LLM          | `ChatModel`      | OpenRouter (default model DeepSeek-V3)                          |
+| LLM          | `ChatModel`      | OpenRouter (default model `deepseek/deepseek-chat`)                          |
 | Sources      | `DocumentSource` | **folder** (default), FTP, SFTP                                 |
 | Queues       | `MessageQueue`   | **in-process** (default), RabbitMQ, Redis pub/sub              |
 

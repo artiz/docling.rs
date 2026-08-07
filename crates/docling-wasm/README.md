@@ -58,6 +58,11 @@ convert(
 ): string
 supported_extensions(): string   // JSON array, e.g. for <input accept=…>
 version(): string
+
+// With the default-on `ocr` feature (see the browser-OCR sections below):
+new DigitalConverter()                       // reusable digital-PDF converter
+ocr_image(...)                               // recognize one raster image
+new ScannedConverter() / convert_scanned_image(...)  // scanned-page pipeline
 ```
 
 The filename's extension drives format detection, same as the CLI. `images`
@@ -296,7 +301,7 @@ multi-threading, memory-mapped models — none of which fit the wasm build.
 ```toml
 # src-tauri/Cargo.toml
 [dependencies]
-docling = { version = "0.49" }        # full default features (ml pipeline)
+docling = { version = "0.53" }        # full default features (ml pipeline)
 ```
 
 ```rust

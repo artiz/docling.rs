@@ -19,9 +19,8 @@
 //! (including the KV-cached TableFormer decoder) into a slim, Python-free runtime
 //! image — see the "Deploy in a container" section of the README.
 //!
-//! See `docs/MIGRATION.md` for the architecture, the Python → Rust mapping, and the
-//! phased plan. Phase 0 ships the converter plumbing plus Markdown and CSV
-//! backends; PDF/DOCX/HTML and the ML pipeline land in later phases.
+//! See `docs/MIGRATION.md` for the architecture, format-by-format parity
+//! status, and how conformance against Python docling is measured.
 
 pub mod chunks;
 mod converter;

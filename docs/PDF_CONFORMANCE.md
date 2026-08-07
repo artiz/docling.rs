@@ -2,8 +2,11 @@
 
 How close the Rust PDF pipeline gets to docling's **default** Markdown, measured
 byte-for-byte against the committed groundtruth (`tests/data/pdf/groundtruth/*.md`).
-The groundtruth is regenerated from **live published docling**, so it agrees with
-`scripts/conformance/conformance.sh pdf`.
+The groundtruth is regenerated from **live published docling**. The numbers in
+this document are measured with `scripts/conformance/pdf_groundtruth.sh`,
+which pins the conformance model set (fp32 layout/OCR env overrides below);
+`scripts/conformance/conformance.sh pdf` runs the *default* (int8, English-OCR)
+models over every source PDF, so its totals differ from this table.
 
 > Measure locally with `scripts/conformance/pdf_groundtruth.sh` (diffs the checked-in
 > reference; no docling install needed) or `scripts/conformance/conformance.sh pdf` (installs
@@ -34,7 +37,7 @@ are no longer scored.)
 | 2203.01017v2 | 74 | caption order + reference-accent spacing (in-picture table recovered: same grid as docling, different OCR engine noise) |
 | 2206.01062 | 82 | author-block cluster splits (model-borderline) + one int8-borderline header rowspan |
 
-`amt` is the 6th under the whitespace-normalized metric: its only diff is
+`amt` is the 7th under the whitespace-normalized metric: its only diff is
 docling's spurious double space before the `1⁄4` fraction, where our single-spaced
 output is the more faithful rendering. The remaining non-exact PDFs are heavy
 multi-column / table docs whose gaps are model-level (TableFormer structure,
@@ -43,9 +46,10 @@ layout classification, title-page reading order), not text-layer.
 The heavy table docs improved with the docling-parse **word-cell** grouping
 feeding TableFormer and the #61 layout/reading-order postprocessor
 (2305.03393v1 93→30, 2203.01017v2 209→161, 2206.01062 198→92): the parser's
-per-word cells reproduce docling-parse's `word_cells` byte-for-byte, so
-cell-to-grid matching tracks docling more closely. See "Text reconstruction"
-below. The #60 matching work (docling's `MatchingPostProcessor` ported to
+per-word cells reproduced docling-parse's `word_cells` closely enough that
+cell-to-grid matching tracked docling much better (the word grouping was later
+replaced wholesale by the `create_word_cells` port described below). See
+"Text reconstruction" below. The #60 matching work (docling's `MatchingPostProcessor` ported to
 `tf_match.rs`, plus docling's exact table-crop rounding chain) took
 2203 157→150 and redp5110 204→202 with every other fixture unchanged; the
 #62 text fixes (docling-parse's quote-normalization table — every curly
@@ -183,9 +187,11 @@ TableFormer), picture-child divergence (2305's HTML/OTSL figure axis labels),
 RTL/checkbox forms (right_to_left_03), and docling-parse artifacts we
 deliberately don't reproduce (`/tildelow`, `/.notdef` glyph-name leaks).
 
-The audit exposed one systematic hole, now closed: docling assigns each cell
-to its best cluster at > 0.2 overlap and serializes the assigned cells, while
-our serializer takes cells at > 0.5 — a cell whose best overlap fell in
+The audit exposed one systematic hole, closed at the time by raising the
+orphan claim to mirror the then-> 0.5 serializer (and later closed
+*structurally* by the exclusive > 0.2 assignment above): docling assigns each
+cell to its best cluster at > 0.2 overlap and serializes the assigned cells,
+while our serializer took cells at > 0.5 — a cell whose best overlap fell in
 (0.2, 0.5] was "claimed" but emitted by nobody (right_to_left_03's standalone
 `20300`, several Korean labels on the skipped_1/2page scans). The orphan
 pass's claim test now mirrors the serializer's criterion, so **every
@@ -387,12 +393,13 @@ ligature recomposition, and loose-box geometry. On the clean parser boxes it use
 the Euclidean corner gap (matching docling); on pdfium's loose boxes it keeps the
 signed horizontal gap.
 
-The same contraction also produces **word cells** (`dp_lines::word_cells`): a word
-is a maximal run of glyphs the contraction merges *without* inserting a separator
-space, so the per-word segments split at exactly the `delta < gap` points — which
-reproduces docling-parse's `word_cells` byte-for-byte (377/377 on 2305-pg9). These
-are the per-word tokens TableFormer matches against table-grid cells, replacing
-pdfium's word cells (roadmap item 6). **Code cells** come from the parser too,
+**Word cells** come from a second contraction over the same char cells
+(`create_word_cells`, see the word-cell section above): the word factors
+(adjacency gate 0.33, space threshold 2 × 0.33) with space glyphs dropped up
+front as pure word-boundary barriers — verified against the installed
+docling-parse oracle (redp5110 pages byte-exact). These are the per-word
+tokens TableFormer matches against table-grid cells, replacing pdfium's word
+cells (roadmap item 6). **Code cells** come from the parser too,
 via a gap-based grouping (`Grouping::CodeGap`): the parser emits no space glyphs
 (a source space is a positioning gap), so a word breaks wherever the inter-glyph
 gap exceeds ~0.25× the line height, with no punctuation glue — `et al. 2000`
@@ -427,7 +434,8 @@ model-level (or by-design) residual each issue closed with:
    from live docling on the hard crops (redp5110's TOC predicts `ched` where
    docling gets `fcel`; multi-row headers / spans on 2206, 2203), so one
    cell-structure diff still cascades through the padded columns into many row
-   diffs (2206's ~92 table-row diffs trace to ~4 structure diffs). A parity
+   diffs (at the time, 2206's ~92 table-row diffs traced to ~4 structure
+   diffs; today its one remaining table diff is a single header rowspan). A parity
    harness (`DOCLING_RS_TF_MATCH_DUMP=dir` + `scripts/test/tf_match_reference.py`-style
    replay through docling's Python post-processor) confirmed the ported matcher
    reproduces the reference on identical inputs, isolating the residual to the
@@ -443,14 +451,18 @@ model-level (or by-design) residual each issue closed with:
    table-of-contents index), the picture-vs-table cross-type rule
    (`_handle_cross_type_overlaps`), and dropping a regular region absorbed by a
    table/index/picture so it isn't emitted twice. With this, table_mislabeled's
-   survey is no longer over-detected as tables (108 → 88 vs groundtruth), and
+   survey over-detection dropped sharply at the time (108 → 88 vs groundtruth;
+   54 today — over-detection remains its dominant blocker), and
    redp5110's table-of-contents is now classified and rendered as a **table**
    (`document_index`) instead of a picture. The TOC table's remaining diff is a
-   TableFormer dot-leader column-matching gap, tracked with the other
+   TableFormer dot-leader column-matching gap — later found to be largely
+   word-cell tokenization (the create_word_cells port took redp5110 164→73)
+   — tracked with the other
    table-structure work in
    [#60](https://github.com/docling-project/docling.rs/issues/60). *(The
-   groundtruth byte counts in the table above predate this change; regenerate the
-   committed snapshots with the `models-v1` models to refresh them.)*
+   per-fixture byte counts quoted in this item are from its era; the committed
+   snapshots and the Current-state table above are regenerated with every
+   parity change.)*
 3. **Complex title-page reading order**
    ([#62](https://github.com/docling-project/docling.rs/issues/62)). Author-block
    / abstract interleaving on the academic papers (band reading-order handles the
@@ -546,7 +558,8 @@ Two conclusions drive everything below:
 
 The worker-pool topology heuristic in `lib.rs` (`workers × intra ≈ cores`,
 default 2×2 on 4 cores) was re-validated: 2×2 beat both 4×1 and 1×4 on the
-16-page document (11.6 s vs 12.2 s vs 15.6 s).
+16-page document (11.6 s vs 12.2 s vs 15.6 s; separate run from the INT8
+table below, hence the ±0.1 s vs its 11.5 s).
 
 ### Validated win: INT8 quantization (quality-checked)
 
@@ -566,11 +579,17 @@ Calibrated on 42 real corpus pages preprocessed exactly like
 `layout.rs::predict`. Only the HGNetv2 backbone convolutions are quantized;
 the transformer decoder and detection-head MatMuls stay fp32.
 
-| Configuration | layout.predict (16-page doc) | end-to-end wall | model size |
+| Configuration | layout.predict (16-page doc)¹ | end-to-end wall | model size |
 |---|---:|---:|---:|
 | fp32 baseline | 17.2 s | 16.6 s | 172 MB |
 | **INT8 conv-only** | **7.2 s (2.4×)** | 11.5 s (1.45×) | 68 MB |
-| + INT8 TableFormer decoder | — | **12.3 s → see note** | — |
+| + INT8 TableFormer decoder | — | 12.3 s² | — |
+
+¹ `layout.predict` is summed across the parallel page workers, so it can
+exceed the end-to-end wall.
+² Separate run; within run-to-run noise of the 11.5 s conv-only wall — the
+INT8 decoder's own win is per-table (~10 % faster tables, byte-identical;
+see its section below), not end-to-end on this document.
 
 On text-dominated documents (layout = 80% of time) the end-to-end gain
 approaches ~1.7–2×; on table-heavy ones it is ~1.4×.
@@ -592,7 +611,8 @@ degradation. With layout halved, `image.resize` becomes the next stage
 (24.8% of the INT8 run), which is why backlog item 4 matters more after
 quantization.
 
-**Quality gate.** Markdown diffed across the full PDF+scanned corpus (23 files):
+**Quality gate** (measured at INT8-selection time over the then-23-file
+PDF+scanned corpus):
 
 - Conv-only INT8: 12/23 byte-identical to fp32; remaining diffs are small
   region-classification flips. Against the committed groundtruth the summed
@@ -757,7 +777,7 @@ Ordered by expected impact ÷ risk. Items 1–3 attack the 85–95%.
      them in place. Per-step decode fell 17 → 10 ms and `tableformer.structure`
      1.40 → 0.91 s on the huge-table page (2305.03393v1-pg9, fp32); the
      remaining step cost is real compute (28 small projection/FFN GEMMs).
-     Output stays byte-identical (91/91 snapshot corpus; the export
+     Output stays byte-identical (the full snapshot corpus, 94 outputs; the export
      self-verifies a 64-step argmax-identical rollout vs the legacy graph).
      Export subtlety: the example inputs must carry `past>0` or
      `torch.export` specializes `pe[cache.shape[3]]` to `pe[0]` and decode
@@ -777,9 +797,9 @@ Ordered by expected impact ÷ risk. Items 1–3 attack the 85–95%.
    from the torch-folded constant (enough to flip borderline detections
    corpus-wide — groundtruth exact matches dropped 5/14 → 0/14 before the
    fix), so the exporter folds the static graph's position-embedding subgraph
-   offline and splices the constant into the dynamic graph. Verified:
-   groundtruth parity restored (5/14 exact, 6/14 normalized), and batch=1 ==
-   batch=4 **bit-identical** across the whole corpus.
+   offline and splices the constant into the dynamic graph. Verified at the
+   time: groundtruth parity restored (then 5/14 exact, 6/14 normalized), and
+   batch=1 == batch=4 **bit-identical** across the whole corpus.
 4. **The 3×→2× page downscale** (~15% of a text-heavy conversion, ~25% after
    INT8): ~~replace the scalar `image`-crate CatmullRom with a SIMD
    convolution.~~ **Done on this branch:** `fast_image_resize` with the same
@@ -800,15 +820,16 @@ Ordered by expected impact ÷ risk. Items 1–3 attack the 85–95%.
      name, which feeds the docling-parse font hash). Identical output across
      the corpus; 3–10% off the `textparse` stage on the test fixtures (their
      ToUnicode CMaps are small — CJK/form-heavy documents benefit far more).
-   - ~~`line_cells` + `word_cells` run the identical build+contract twice per
-     page; one pass can emit both.~~ **Done on this branch**
-     (`dp_lines::line_and_word_cells`): ~1.25× faster `--no-ocr` conversion,
-     identical output.
+   - ~~`line_cells` + `word_cells` re-built the char cells twice per page.~~
+     **Done** (`dp_lines::line_and_word_cells`): the glyph build is shared;
+     the line and word views each run their own contraction (docling-parse's
+     `create_line_cells` / `create_word_cells` pair — deliberately two
+     passes, since the factors differ).
    - `decode_code`/`decompose_ligatures` allocate a `String` per glyph
-     (`textparse.rs:94-145`); decompose once at font-parse time and return
+     (`textparse.rs`); decompose once at font-parse time and return
      borrowed `&str`.
-   - RTL merge is O(n²) (string prepend + `Vec::remove(0)`,
-     `dp_lines.rs:87-155`); accumulate reversed and flip once per line.
+   - RTL merge is O(n²) (string prepend in `merge_with`, `dp_lines.rs`);
+     accumulate reversed and flip once per line.
 6. ~~**OCR line batching** (`ocr.rs::recognize`): lines are recognized one at
    a time on one thread (deliberately, for CTC determinism). Batching
    same-width buckets keeps determinism per line.~~ **Done on this branch**
