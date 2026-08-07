@@ -12,9 +12,9 @@ phased plan is kept at the end as history.)
 | Upstream Python: `docling` 2.114.0 (code wheel `docling-slim`) | 70,132 | 242 |
 | Upstream Python: `docling-core` 2.87.1 (document model, serializers, chunkers) | 30,888 | 103 |
 | **Upstream total** | **101,020** | **345** |
-| docling.rs — the port itself (`docling-core`, `docling`, `docling-pdf`, `docling-asr`, `docling-cli`) | 41,228 | — |
-| docling.rs — beyond upstream's packages (HTTP API, RAG, Python/Node/wasm bindings) | 10,538 | — |
-| **docling.rs total (`crates/*/**.rs`)** | **51,766** | **132** |
+| docling.rs — the port itself (`docling-core`, `docling`, `docling-pdf`, `docling-asr`, `docling-cli`) | 47,456 | — |
+| docling.rs — beyond upstream's packages (HTTP API, RAG, Python/Node/wasm bindings) | 11,327 | — |
+| **docling.rs total (`crates/*/src/**.rs`)** | **58,783** | **121** |
 
 Roughly **half the line count for the same behavior** — despite Rust carrying
 type/lifetime annotations Python doesn't — because the port reimplements from
@@ -27,7 +27,8 @@ ONNX pipelines), so the scope ratio understates the ported surface.
 
 **Timeline:** the first commit landed **2026-06-27**; the migration — every
 input format including PDF/ML, ASR and video, plus the serve/RAG/bindings
-extras — was done by **2026-07-23**: **26 days**, ~570 commits, migrated by
+extras — was done by **2026-07-23**: **26 days**, ~600 commits (development continues
+past that point — serve async API, confidence scores, PDF-parity work), migrated by
 [artiz](https://github.com/artiz) + Claude (Anthropic's Claude Code, doing the
 bulk of the porting under review).
 
@@ -42,7 +43,7 @@ bulk of the porting under review).
 > layout/TableFormer/OCR + a port of docling-parse's line sanitizer) and is also
 > measured byte-for-byte against live docling — **6 / 14 PDF fixtures exact, 7 / 14
 > whitespace-normalized** (see `PDF_CONFORMANCE.md`), with a snapshot baseline
-> guarding against regressions. `cargo test` is green (unit tests + a 133-source
+> guarding against regressions. `cargo test` is green (unit tests + a 159-source
 > output-regression suite).
 
 **At a glance** (for a first-time reader from the docling side):
@@ -52,7 +53,7 @@ bulk of the porting under review).
 | **What** | A Rust port of docling's converter, backends, and discriminative PDF/ASR pipelines; same `convert → DoclingDocument → export_to_markdown()/json()` shape, single static binary, no Python/torch at runtime |
 | **Conformance** | Declarative formats byte-for-byte vs *live* PyPI docling (most 100%, see §2); `.dclx` DocLang output ≈94% mean vs docling's own `.dclx`, OOXML all byte-exact (§2); PDF ML path 6/14 fixtures byte-exact, rest close; every optimization is gated on this not regressing |
 | **Performance** | PDF ML pipeline **4.3× faster warm / 4.7× end-to-end** than Python docling at 2.3–2.6× less peak RAM (INT8 + SIMD, conformance-validated); declarative formats 20–60× warm, ~60× less RAM; XLSX sheets / PPTX slides additionally fan out over rayon (~2–3× on many-sheet/slide files, conformance byte-identical); details + methodology in [`PDF_CONFORMANCE.md`](./PDF_CONFORMANCE.md) |
-| **Models** | docling's own checkpoints (layout heron, TableFormer, PP-OCRv3, Whisper tiny), format-converted to ONNX by `scripts/install/export_*.py` — no retraining; INT8 variants are calibrated post-training quantizations (`scripts/install/quantize_models.py`) |
+| **Models** | docling's own checkpoints, no retraining: layout heron and TableFormer are format-converted to ONNX by `scripts/install/export_layout.py` / `export_tableformer.py` (CodeFormula by `export_code_formula.py`); PP-OCRv3 and Whisper tiny ship as their upstream ONNX exports; INT8 variants are calibrated post-training quantizations (`scripts/install/quantize_models.py`) |
 | **Tracking upstream** | See [§9](#9-keeping-up-with-upstream-docling): conformance is measured against the *latest published* docling on demand, so an upstream release that changes output surfaces as a concrete per-fixture diff |
 | **Not ported (by design)** | local in-process VLM full-page inference (§5 — the remote OpenAI-compatible VLM pipeline **is** ported, #77); inline formatting is baked into text rather than structured fields (§4). The optional enrichment models (picture classification, code, formulas) **are** ported — opt-in `do_picture_classification` / `do_code_enrichment` / `do_formula_enrichment`, ONNX like the rest of the stack |
 
@@ -69,15 +70,17 @@ The layers mirror docling's:
 | **Backends** | `docling/backend/*` | `docling.rs` — `backend/*` (one per format) |
 | **PDF/ML pipeline** | `docling/pipeline/*`, `docling/models/*` | `docling-pdf` — pdfium + ONNX layout/OCR + assembly |
 | **Audio/ASR pipeline** | `docling/pipeline/asr_pipeline.py` | `docling-asr` — symphonia decode + log-mel + ONNX Whisper |
+| **Chunking** | `docling-core` chunkers (`HierarchicalChunker`/`HybridChunker`) | `docling-core::chunker`, re-exported as `docling::chunker` |
 | **CLI** | `docling/cli` | `docling-cli` |
+| **Beyond upstream's packages** | docling-serve (separate repo) | `docling-serve` (HTTP API), `docling-rag`, Python/Node/wasm bindings, GPU execution providers (`cuda`/`tensorrt`/`directml`/`coreml` features, `DOCLING_RS_EP`) |
 
 ```text
 crates/
-├── docling-core/   # DoclingDocument, Node model, markdown.rs, json.rs, base64.rs, labels.rs
+├── docling-core/   # DoclingDocument, Node model, markdown/json/doclang/doctags serializers, chunker.rs, confidence.rs
 ├── docling/        # DocumentConverter, source/format detection, backend/*.rs, ooxml.rs
 ├── docling-pdf/    # pdfium_backend, layout (RT-DETR/ONNX), ocr (PP-OCRv3/ONNX), assemble, mets
 ├── docling-asr/    # audio decode (symphonia), mel.rs, whisper.rs (ONNX), tokenizer.rs
-├── docling-cli/    # `--strict`, `--to md|json`, `--images placeholder|embedded|referenced`
+├── docling-cli/    # `--strict`, `--to md|json|dclx|chunks`, `--images …`, `--pages`, `--ocr-lang`, serve subcommand
 ├── docling-node/   # Node.js/Bun N-API bindings (napi-rs), published to npm as `docling.rs`
 ├── docling-py/     # PyO3 bindings (maturin), published to PyPI as `docling-rs` (strangler-fig over docling-core)
 ├── docling-rag/    # RAG layer on top of the converter (chunking, embeddings, vector search, REST API)
@@ -113,22 +116,23 @@ PyPI; run via `scripts/conformance/conformance.sh <fmt>`), not the committed gro
 | HTML | `html.rs` (scraper/html5ever) | **32/32 exact** (`wiki_duck` included — rich table cells, caption run spacing, indicator images, `<footer>` furniture all match docling 2.112) |
 | AsciiDoc | `asciidoc.rs` (regex) | **4/4 exact** |
 | DeepSeek-OCR Markdown | `deepseek.rs` | **3/3 exact** (auto-detected VLM-token variant) |
-| XLSX | `xlsx.rs` (calamine) | **9/9 exact** (incl. chart captions/classification/data grids) |
-| PPTX | `pptx.rs` (roxmltree) | **7/7 exact** |
-| DOCX | `docx.rs` (roxmltree) | **26/26 exact** |
+| XLSX | `xlsx.rs` (calamine) | **10/10 exact** (incl. chart captions/classification/data grids) |
+| PPTX | `pptx.rs` (roxmltree) | **8/8 exact** |
+| DOCX | `docx.rs` (roxmltree) | **27/27 exact** |
 | DOC (Word 97–2004) | `doc.rs` (native [MS-DOC]: CFB + piece table + PAPX/CHPX/STSH + Escher) | byte-identical Markdown to the DOCX backend on fixtures converted to `.doc` (headings, ordered/bullet lists, tables, bold/italic, and embedded pictures — inline PICF + floating shapes with decoded PNG/JPEG bytes); docling reaches these only by shelling out to LibreOffice (PR 3804) |
 | XLS (Excel 97–2004) | `xls.rs` (calamine BIFF8 + the XLSX region detection) | byte-identical to the XLSX backend on converted fixtures |
 | PPT (PowerPoint 97–2003) | `ppt.rs` (native [MS-PPT] + OfficeArt shape walker) | **byte-identical to the PPTX backend** on the sample fixture: tables reconstructed from shape-group geometry (spans included), bullet lists (StyleTextProp) and numbered lists (PP9 autonumber), titles, z-order |
 | WebVTT | `webvtt.rs` | **4/4 exact** |
 | Email (.eml) | `email.rs` (mail-parser) | **2/2 exact** |
 | EPUB | `epub.rs` → HTML backend | **0/1** — the single fixture is 4 diff lines (heading-italic nesting + a bold-run join, the HTML inline residual) |
-| ODF (odt/ods/odp) | `odf.rs` | **6/6 exact** on the native files — slide-title/name headings, shape text, speaker-notes drop, chart classification + data tables, merged-cell semantics (plain repeat vs rich dedup), and docling's run-tail quirk |
+| ODF (odt/ods/odp) | `odf.rs` | **7/7 exact** on the native files — slide-title/name headings, shape text, speaker-notes drop, chart classification + data tables, merged-cell semantics (plain repeat vs rich dedup), and docling's run-tail quirk |
 | JATS | `jats.rs` (roxmltree) | **3/4 exact**; the eLife plain-text route diverges (252 diff lines) |
 | USPTO | `uspto.rs` | **1/5 exact (2/5 whitespace-normalized)** on the sources live docling converts — it errors on the other 5 (those are validated byte-exact via `.dclx`), and its APS-text *Markdown* export is empty where ours emits the text dump (the `.dclx` matches exactly — §5) |
 | XBRL | `xbrl.rs` | arelle-free core (dei facts → title, `*TextBlock` → HTML); *vs committed groundtruth* 0/2 (30 / 346 diff lines) — live docling needs arelle, which the conformance venv doesn't ship |
-| JSON-docling | `docling_json.rs` (serde_json) | reads docling's native JSON; ~51/145 round-trip exact |
+| JSON-docling | `docling_json.rs` (serde_json) | reads docling's native JSON back into the `Node` model ($ref body tree, formatting, list nesting, table grids) |
 | DocLang (`.dclg`/`.dclx`) | `doclang.rs` (roxmltree) | **15/15 exact** vs live docling reading the same archives back (`tests/data/doclang`); the inverse of the `.dclx` output serializer, incl. docling's round-trip losses (list-item formatting, hyperlink targets) |
-| LaTeX | `latex.rs` (scanner) | simple `.tex` ≈ live (0/2 exact, but within 2 / 9 diff lines); multi-file arxiv out of scope |
+| DocTags (`.doctags`/`.dt`) | `docling-core::doctags` | reads the SmolDocling/granite-docling token stream back into a `DoclingDocument` (#152) |
+| LaTeX | `latex.rs` (scanner) | simple `.tex` ≈ live (0/2 exact, but within 2 / 9 diff lines); multi-file arXiv projects convert too — 6 projects carry committed groundtruth and snapshot pinning (`tests/snapshots/latex`) |
 | MHTML (.mhtml/.mht) | `mhtml.rs` (mail-parser) → HTML backend | **docling.rs extension — no docling backend to compare against**; embedded images resolved by `Content-Location`/`cid:` |
 
 Shared OOXML infrastructure (`ooxml.rs`): a `zip` reader, `.rels` parsing, part
@@ -154,7 +158,7 @@ close — see `PDF_CONFORMANCE.md`. A deterministic snapshot baseline
 The `.dclx` DocLang output (§3) is scored against docling's own `.dclx` archives
 with `scripts/conformance/dclx_conformance.sh` — the extracted `document.xml`
 line-diffed, similarity `= 100·(1 − difflines / max_lines)`. **≈94% mean over the
-134-fixture non-PDF corpus** (issue #32 target: ≥90%), per source format:
+136-fixture non-PDF corpus** (issue #32 target: ≥90%), per source format:
 
 | Format | `.dclx` similarity | Format | `.dclx` similarity |
 |---|---|---|---|
@@ -237,7 +241,7 @@ work (checkbox inputs, fragmented-anchor folding, `<button>` blocks) plus the
   tables (`<ched>`/`<fcel>`/`<lcel>`…) with per-cell `<location>`, code, formulas,
   pictures and furniture. Conformance is scored against docling's own `.dclx`
   archives (`scripts/conformance/dclx_conformance.sh`): **≈94% mean similarity over
-  the 134-fixture non-PDF corpus** (issue #32's ≥90% target) — every OOXML fixture
+  the 136-fixture non-PDF corpus** (issue #32's ≥90% target) — every OOXML fixture
   (docx/pptx/xlsx) plus csv/asciidoc/email byte-exact, uspto/jats in the
   mid-to-high 90s, md/odf/latex low 90s, html/webvtt in the 80s (full table
   in §2). The format-by-format work was
@@ -253,7 +257,8 @@ work (checkbox inputs, fragmented-anchor folding, `<button>` blocks) plus the
 - **JSON** rebuilds docling's full `body`-tree-of-`$ref`s model from the `Node`
   tree (texts/groups/tables/pictures, labels, list grouping, table grids,
   formula/code items, picture `ImageRef`s). It loads back into Python
-  docling-core and **~91% round-trips** byte-identically to the direct Markdown.
+  docling-core and **~91% round-tripped** byte-identically to the direct
+  Markdown when measured at the JSON-export milestone.
 - **Image extraction** is wired for PDF/image (figure-region crops) and DOCX/PPTX
   (embedded blobs) by default, and — opt-in via
   `DocumentConverter::fetch_images` (`--fetch-images`) — for HTML/EPUB `<img src>`:
@@ -394,7 +399,7 @@ deliberate scope boundary or a cosmetic, single-fixture polish gap.
   placeholder is identical without rendering), pictures are emitted for
   heading/list/checkbox paragraphs too, and the textbox de-duplication matches
   docling's per-paragraph scope — `drawingml` and `textbox` are exact,
-  **DOCX is 26/26**.
+  **DOCX is 27/27**.
 
 - **Legacy APS-text patents.** USPTO covers the modern `v4x` XML, the 2001-era
   `pap-v15` applications (`pa`) and `PATDOC`/ST.32 grants (`pg`) with their CALS
@@ -403,7 +408,7 @@ deliberate scope boundary or a cosmetic, single-fixture polish gap.
   that serialization byte-exactly — the `.dclx` is a perfect match
   ([issue #44](https://github.com/docling-project/docling.rs/issues/44), done).
 
-- **ODF presentation frames** — done, **6/6 native files exact**: `.odp`
+- **ODF presentation frames** — done, **all native files exact**: `.odp`
   slides get their title frame (or slide name) as the title, free shape text,
   chart pictures with classification ("Bar chart") + data tables, and the
   speaker-notes drop; `.odt` merged cells repeat their text like docling's
@@ -455,12 +460,17 @@ deliberate scope boundary or a cosmetic, single-fixture polish gap.
   regression suite** (`crates/docling/tests/regression.rs`): every
   declarative source under `crates/docling/tests/data/<fmt>/sources/` is
   converted to legacy Markdown, strict Markdown and docling JSON and compared to
-  committed fixtures (133 sources × 3). `DOCLING_RS_REGEN=1` refreshes them.
+  committed fixtures (159 sources × 3). `DOCLING_RS_REGEN=1` refreshes them.
   The JSON fixtures double as a docling-core load check.
 - **Snapshot harness** — `scripts/conformance/pdf_conformance.sh` regenerates and diffs the
-  PDF/image/METS baseline (needs pdfium + the ONNX models; **91/91 exact**).
+  PDF/image/METS baseline (needs pdfium + the ONNX models; **94 outputs, all
+  matching the committed baseline**).
 - **Conformance** — `scripts/conformance/conformance.sh <fmt>` scores a format against the
   latest published docling (installed from PyPI; how-to in §9).
+- **VLM / DocLang extras** — `scripts/conformance/vlm_conformance.sh` (VLM
+  pipeline vs Python docling's `VlmPipeline`) and
+  `scripts/conformance/dclx_pdf_tol_sweep.sh` (geometry-tolerance sweep for
+  the PDF `.dclx` diff).
 - **Differential / perf** — `scripts/conformance/compare.sh`, `scripts/test/performance.sh`.
   The PDF pipeline's profiling data, the INT8/SIMD optimization results
   (4.3× warm vs Python docling on the ML pipeline), and the remaining
@@ -474,7 +484,8 @@ CI on unrelated commits; tests run on current `stable`. On master it then runs
 `scripts/ci/release.sh`: it derives the next version from the conventional-commit
 messages since the last `v*` tag (`feat:` → minor, `fix:`/`perf:` → patch, a
 `type!:`/`BREAKING CHANGE` → major; docs/chore/ci/etc → no release), bumps the
-workspace version, commits + tags it (with `[skip ci]`, via `GITHUB_TOKEN`, so it
+workspace version, commits + tags it (with `[skip ci]`, via the `RELEASE_PAT`
+admin token — needed to satisfy the master ruleset — so it
 doesn't loop), and publishes the crates with `scripts/ci/ci_publish.sh` in
 dependency order — skipping any version already on crates.io.
 
@@ -513,11 +524,11 @@ process instead of a guess:
    `.github/workflows/publish-models.yml` republishes the model release
    (bump the tag when the export itself changes).
 3. **Re-gate.** `scripts/conformance/pdf_conformance.sh` (deterministic snapshot baseline)
-   plus the 133-source regression suite in `cargo test` confirm nothing else
+   plus the 159-source regression suite in `cargo test` confirm nothing else
    moved. The committed PDF groundtruth is regenerated from live docling
    (`scripts/conformance/pdf_groundtruth.sh`) whenever upstream output legitimately
    changes, so "exact" always means *exact against current docling*.
-4. **New formats/features** follow the same recipe the existing 20 formats
+4. **New formats/features** follow the same recipe the existing 30 formats
    did: a backend module + fixtures + conformance scoring, tracked in §2.
 
 ### Running the comparison yourself

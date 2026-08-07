@@ -31,7 +31,7 @@ Decoupled from the crates.io release.
 
 This package lives in the docling.rs Cargo workspace and can also build the
 addon from Rust source — needed for local development or an unsupported
-platform. You need a Rust toolchain (1.82+) and Node.js 14+ (or Bun).
+platform. You need a Rust toolchain (1.88+) and Node.js 14+ (or Bun).
 
 ```bash
 cd crates/docling-node
@@ -339,6 +339,17 @@ then `convert` / `convertFile` / `convertFileAsync` / `convertAsync` /
 - `fetchImages`: for HTML/EPUB, resolve and embed external `<img src>`. Off by
   default; fetches http(s) URLs over the network — enable only for trusted input.
 - `allowedFormats`: restrict the converter to these format ids/extensions.
+- `pages`: convert only this PDF page window, `"A-B"` or `"N"` (1-based inclusive).
+- `ocrLang`: OCR recognition language for scanned pages, `"en"` (default) or
+  `"ch"` (the multilingual docling-conformance model).
+- `forceFullPageOcr`: OCR every PDF page even when it carries a text layer
+  (docling's `force_full_page_ocr`).
+- `noTextPanels`: keep every detected picture as a picture — disable the
+  demotion of uncaptioned dense-text "picture" regions into paragraphs (#173).
+- `asrModel` / `asrLang`: Whisper model preset and transcription language
+  (`"auto"` default) for audio/video sources.
+- `videoFrames`: max frames sampled from a video input as timestamped pictures
+  (`0` = transcript only; default 8, needs ffmpeg at runtime).
 
 ### `ConvertResult`
 

@@ -43,7 +43,7 @@ validated for byte-for-byte conformance against upstream Python docling.
 | `crates/docling-asr` | Whisper ASR: symphonia decode (audio + video containers) → log-mel → ONNX encoder/decoder |
 | `crates/docling-cli` | `docling-rs` binary (also `serve` subcommand behind `--features serve`) |
 | `crates/docling-serve` | axum HTTP conversion API (+ Dockerfile with ffmpeg) |
-| `crates/docling-py` / `docling-node` / `docling-wasm` | pyo3 / napi-rs / wasm-bindgen bindings — **excluded from the workspace default-members; py and wasm build from their own directories** |
+| `crates/docling-py` / `docling-node` / `docling-wasm` | pyo3 / napi-rs / wasm-bindgen bindings — **node and wasm are ordinary workspace members; only docling-py sits outside the workspace and builds from its own directory (maturin)** |
 | `crates/docling-rag` | RAG subsystem (embedder, store, web UI) |
 
 ## Build & test
@@ -52,9 +52,9 @@ validated for byte-for-byte conformance against upstream Python docling.
 cargo test --lib --tests -p docling-core -p docling -p docling-asr -p docling-serve -p docling-pdf
 cargo clippy --lib --tests --bins <same -p list>   # keep it warning-free
 cargo fmt --all
-cargo check -p docling --no-default-features        # pdf-text/wasm path
-(cd crates/docling-py && cargo check)               # pyo3 binding
-(cd crates/docling-wasm && cargo check)             # wasm binding
+cargo check -p docling --no-default-features --features pdf-text \
+  --target wasm32-unknown-unknown --locked           # the wasm CI gate
+(cd crates/docling-py && cargo check)               # pyo3 binding (outside the workspace)
 ```
 
 - Prefer `--lib --tests` over bare `cargo test`: it skips example binaries,
@@ -108,6 +108,7 @@ cargo check -p docling --no-default-features        # pdf-text/wasm path
 - Docs live in `README.md` (user-facing) + `docs/MIGRATION.md` (parity table
   with real conformance numbers) — update both with behavior changes;
   `docs/PDF_CONFORMANCE.md` for pipeline/model changes.
-- Rust 1.96, edition 2021, `cargo fmt` + clippy clean; comments explain *why*
+- MSRV 1.88 (1.85 for docling-core), edition 2021; CI lints on the 1.96
+  toolchain — `cargo fmt` + clippy clean; comments explain *why*
   (docling parity, perf tradeoffs), matching the existing dense doc-comment
   style.

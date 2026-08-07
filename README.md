@@ -100,7 +100,7 @@ into Markdown, chunks them (streaming sliding window, or docling's
 hierarchical/hybrid chunkers via `RAG_CHUNKER`), embeds the chunks, and
 stores them in a vector database for semantic search. Every external dependency is
 a swappable trait — embedders (**Ollama**/Gemini/local-ONNX), vector stores
-(**SQLite+sqlite-vec**/PostgreSQL+pgvector), LLM (**OpenRouter**, DeepSeek-V3 by default),
+(**SQLite+sqlite-vec**/PostgreSQL+pgvector), LLM (**OpenRouter**, `deepseek/deepseek-chat` by default),
 document sources (**folder**/FTP/SFTP), and message queues
 (**in-process**/RabbitMQ/Redis). It ships Hybrid, Multi-Query fusion and HyDE
 retrieval plus an evaluation harness to compare configurations and an
@@ -140,7 +140,7 @@ curl -F file=@sheet.xlsx  'localhost:5001/v1/convert?to=dclx' -O # DocLang archi
 curl -F file=@page.html   'localhost:5001/v1/convert?to=chunks'  # chunk records
 curl -H 'content-type: application/json' \
      -d '{"url": "https://example.com/doc.pdf", "to": "md"}' \
-     localhost:5001/v1/convert                                   # fetch a URL
+     localhost:5001/v1/convert     # fetch a URL (needs --allow-url-fetch)
 
 curl -F file=@a.pdf -F file=@b.docx localhost:5001/v1/convert    # batch → JSON results array
 
@@ -160,14 +160,18 @@ an `X-Docling-Confidence` summary header (grades `poor`/`fair`/`good`/
 report under a top-level `confidence` key in `to=json` bodies.
 
 Options per request: `to=md|json|dclx|chunks`, `strict`, `images=placeholder|embedded`,
-`no_ocr`, `no_table_former`, `no_text_panels`, `pages`, `ocr_lang`, `fetch_images` — as query parameters, multipart
-fields, or JSON keys (body wins). Server flags: `--addr`, `--concurrency`,
-`--max-body-mb`, `--queue-size`, `--result-ttl`, `--warmup`, `--no-url-fetch`,
-`--strict`. A container image
+`no_ocr`, `no_table_former`, `no_text_panels`, `force_full_page_ocr`, `pages`,
+`ocr_lang`, `asr_model`, `asr_lang`, `video_frames`, `fetch_images` — as query
+parameters, multipart fields, or JSON keys (body wins). Server flags: `--addr`,
+`--concurrency`, `--max-body-mb`, `--queue-size`, `--result-ttl`, `--warmup`,
+`--allow-url-fetch`, `--no-url-fetch`, `--strict`. A container image
 builds from [`crates/docling-serve/Dockerfile`](./crates/docling-serve/Dockerfile)
 (models + pdfium baked in, or mounted with `--build-arg FETCH_ASSETS=0`).
-URL inputs make the server fetch outbound (SSRF surface): it binds loopback by
-default — front it with a policy proxy or pass `--no-url-fetch`.
+URL inputs are **off by default** (SSRF surface): pass `--allow-url-fetch` to
+enable them; the fetcher blocks private-IP targets
+(`DOCLING_RS_ALLOW_PRIVATE_IP_FETCH=1` opts out) and caps the download size
+(`DOCLING_RS_MAX_FETCH_BYTES`). The server binds loopback by default — front
+it with a policy proxy for anything wider.
 
 ## In the browser — `docling-wasm`
 
@@ -176,8 +180,9 @@ pipelines) compile to `wasm32-unknown-unknown`:
 [`crates/docling-wasm`](./crates/docling-wasm) exposes
 `convert(bytes, filename, to)` → Markdown / docling JSON / DocLang via
 `wasm-bindgen`, so DOCX/HTML/XLSX/PPTX/EPUB/… convert **fully client-side** —
-no server, ~3.4 MB gzipped module, no models to download — something Python
-docling has no equivalent for. Ready to use from npm:
+no server, ~3.4 MB gzipped module, no models to download for the declarative
+formats (the default-on browser-OCR feature does fetch its ONNX models) —
+something Python docling has no equivalent for. Ready to use from npm:
 
 ```bash
 npm i docling.rs-wasm
@@ -187,9 +192,9 @@ npm i docling.rs-wasm
 import { convert } from "docling.rs-wasm";          // bundlers
 // import init, { convert } from "docling.rs-wasm/web"; await init();  // no bundler
 const markdown = convert(bytes, file.name, "md");
-``` Digital PDFs convert too: the opt-in
-`pdf-text` feature runs docling-pdf's pure-Rust text-layer parser (the same
-extraction as `--no-ocr`: flat paragraphs, no headings/tables/pictures),
+``` Digital PDFs convert too: the wasm build always compiles docling-pdf's
+pure-Rust text-layer parser (the `pdf-text` feature of the `docling` crate;
+the same extraction as `--no-ocr`: flat paragraphs, no headings/tables/pictures),
 while scanned PDFs get a clear "needs OCR" error instead of an empty
 document. The crate ships a drop-a-file demo page under
 [`www/`](./crates/docling-wasm/www). Native builds are untouched: the
@@ -275,7 +280,7 @@ corpus:
 use docling::chunker::{contextualize, HierarchicalChunker, HybridChunker, HuggingFaceTokenizer};
 
 let chunks = HierarchicalChunker.chunk(&result.document);          // structure-driven
-let tok = HuggingFaceTokenizer::from_file("models/tokenizer.json", 256)?; // feature "chunking", models should downloaded
+let tok = HuggingFaceTokenizer::from_file("models/chunk/tokenizer.json", 256)?; // feature "chunking"; fetched by download_dependencies.sh
 for chunk in HybridChunker::new(tok).chunk(&result.document) {
     let embed_me = contextualize(&chunk); // heading path + chunk text
 }
@@ -307,12 +312,12 @@ HuggingFace tokenizer (MiniLM etc.) sits behind the `chunking` cargo feature
 (on by default in the CLI); `--to chunks` dumps both chunkers' records.
 `scripts/install/download_dependencies.sh` fetches MiniLM's tokenizer to
 `models/chunk/tokenizer.json`, which every surface picks up automatically when
-no explicit tokenizer path is given (`DOCLING_CHUNK_TOKENIZER` overrides it
-for the CLI). The chunkers are also
+no explicit tokenizer path is given (`DOCLING_CHUNK_TOKENIZER` overrides the
+path and `DOCLING_CHUNK_MAX_TOKENS` the 256-token budget for the CLI). The chunkers are also
 exposed in the [Node bindings](./crates/docling-node) (`chunkFile` /
 `chunkDocument` + async variants), the
 [Python bindings](./crates/docling-py) (`docling_rs.chunking`), and the
-[RAG subsystem](./crates/docling-rag) (`RAG_CHUNKER=hierarchical|hybrid`). Conformance vs
+[RAG subsystem](./crates/docling-rag) (`RAG_CHUNKER=window|hierarchical|hybrid`, `window` default). Conformance vs
 docling's chunkers over the 83-doc corpus (`scripts/conformance/
 chunks_conformance.sh`): **hierarchical 98.8% / hybrid 96.2% identical chunk
 records** (text + headings), 79 and 76 of 83 documents fully exact.
@@ -608,7 +613,8 @@ instead — same models plus `pdfium.dll` — and see
 | CodeFormulaV2 (code/formula enrichment, ~1.3 GB; fetch with `--enrich`) | `models/code_formula/{vision,embed,decoder_kv}.onnx`, `models/code_formula/tokenizer.json` |
 
 Idempotent — safe to re-run; it skips files already on disk. Pass `--force` to
-re-fetch everything, or set `$DOCLING_RS_MODELS_URL` to fetch from a
+re-fetch everything, `--no-chunk` to skip the chunker tokenizer, `--embed` to
+also fetch the RAG embedder, or set `$DOCLING_RS_MODELS_URL` to fetch from a
 different host (your own export, an internal mirror, …); the Whisper assets
 come from Hugging Face (`$DOCLING_RS_ASR_MODELS_URL` overrides, or point
 `DOCLING_ASR_{ENCODER,DECODER,VOCAB}` at explicit files). pdfium is Linux x64
@@ -851,8 +857,15 @@ one host for convenience.
 
 To point at files you exported or placed elsewhere instead, set the env vars
 directly: `DOCLING_LAYOUT_ONNX`, `DOCLING_OCR_REC_ONNX`, `DOCLING_OCR_DICT`,
-`DOCLING_TABLEFORMER_{ENCODER,DECODER,BBOX}`, `PDFIUM_DYNAMIC_LIB_PATH` — an
-env var always wins over the `./models` / `./.pdfium` default.
+`DOCLING_TABLEFORMER_{ENCODER,DECODER,BBOX}`, `DOCLING_CODE_FORMULA_DIR`
+(enrichment models), `PDFIUM_DYNAMIC_LIB_PATH` — an
+env var always wins over the `./models` / `./.pdfium` default. Other
+process-wide knobs: `DOCLING_RS_PDF_THREADS` (total thread budget;
+`_WORKERS`/`_INTRA` below split it), `DOCLING_RS_TIMING=1` (per-stage
+timings on stderr), `DOCLING_RS_MAX_IMAGE_PIXELS` (image-input decompression
+cap), `DOCLING_RS_MAX_HTML_DEPTH`, `DOCLING_RS_MAX_PART_BYTES` (HTML/OOXML
+parser limits), `DOCLING_RS_IMAGE_FETCH_CONCURRENCY` (parallel `--fetch-images`
+downloads), `DOCLING_RS_VLM_EXTRA_BODY` (extra JSON merged into VLM requests).
 
 OCR recognition defaults to the **English** PP-OCRv3 model: the multilingual
 `ch_` model reads Latin text with broken word spacing (`Refactorexisting
@@ -910,7 +923,7 @@ export DOCLING_OCR_DICT="$(pwd)/models/ppocr_keys_v1.txt"
 export DOCLING_TABLEFORMER_ENCODER="$(pwd)/models/tableformer/encoder.onnx"
 export DOCLING_TABLEFORMER_DECODER="$(pwd)/models/tableformer/decoder.onnx"
 export DOCLING_TABLEFORMER_BBOX="$(pwd)/models/tableformer/bbox.onnx"
-bash scripts/conformance/pdf_conformance.sh     # regenerate + diff the snapshot baseline (91/91)
+bash scripts/conformance/pdf_conformance.sh     # regenerate + diff the snapshot baseline (94 outputs)
 ```
 
 ## Try it

@@ -3,7 +3,7 @@
 //! Mirrors `docling.datamodel.base_models.InputFormat` and its
 //! `FormatToExtensions` map.
 
-/// A document format supported (or planned) by docling.rs backends.
+/// A document format supported by docling.rs backends.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum InputFormat {
     Docx,
@@ -90,7 +90,7 @@ impl InputFormat {
     /// Best-effort format detection from a file extension (case-insensitive).
     ///
     /// Ambiguous extensions (notably bare `xml`) resolve to a single default
-    /// here; real disambiguation needs content sniffing, which Phase 1 adds.
+    /// here; the converter's content sniffing does the real disambiguation.
     pub fn from_extension(ext: &str) -> Option<Self> {
         Some(match ext.to_ascii_lowercase().as_str() {
             "docx" | "dotx" | "docm" | "dotm" => InputFormat::Docx,
