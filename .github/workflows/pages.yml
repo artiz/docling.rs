@@ -51,7 +51,7 @@ jobs:
           rustup default stable
           rustup target add wasm32-unknown-unknown
 
-      - uses: actions/cache@v4
+      - uses: actions/cache@v6
         with:
           path: |
             ~/.cargo/registry/index
@@ -83,7 +83,7 @@ jobs:
           touch site/.nojekyll
           ls -la site site/pkg
 
-      - uses: actions/upload-pages-artifact@v3
+      - uses: actions/upload-pages-artifact@v5
         with:
           path: site
 
@@ -96,4 +96,4 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - id: deployment
-        uses: actions/deploy-pages@v4
+        uses: actions/deploy-pages@v5

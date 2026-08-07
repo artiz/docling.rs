@@ -59,7 +59,7 @@ jobs:
     name: sdist
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: ${{ inputs.tag || github.ref }}
 
@@ -81,7 +81,7 @@ jobs:
           sed -i.bak -E "0,/^version = \".*\"/s//version = \"$v\"/" pyproject.toml && rm -f pyproject.toml.bak
           echo "Building docling-rs $v"
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.11"
 
@@ -94,7 +94,7 @@ jobs:
           python -m pip install "maturin>=1.5,<2"
           maturin sdist -m crates/docling-py/Cargo.toml --out dist
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: sdist
           path: dist/*.tar.gz
@@ -119,7 +119,7 @@ jobs:
           # this environment. macOS users install the sdist (builds from source).
     steps:
       - name: Download sdist
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: sdist
           path: sdist
@@ -132,7 +132,7 @@ jobs:
           tar -xzf sdist/*.tar.gz -C pkg --strip-components=1
 
       - name: Build wheels
-        uses: pypa/cibuildwheel@v2.21.3
+        uses: pypa/cibuildwheel@v4.2.0
         with:
           package-dir: pkg
           output-dir: wheelhouse
@@ -151,7 +151,7 @@ jobs:
           CIBW_BEFORE_ALL_LINUX: "curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain stable"
           CIBW_ENVIRONMENT_LINUX: 'PATH="$HOME/.cargo/bin:$PATH"'
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: wheel-${{ matrix.arch }}
           path: wheelhouse/*.whl
@@ -183,7 +183,7 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - name: Download sdist
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: sdist
           path: sdist
@@ -236,7 +236,7 @@ jobs:
           sys.exit(f"provider libs missing from {wheel}: {missing}" if missing else 0)
           EOF
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: wheel-cuda
           path: wheelhouse/*.whl
@@ -260,7 +260,7 @@ jobs:
     steps:
       # All wheels + the sdist → a single dist/ for the upload.
       - name: Download artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           path: dist
           merge-multiple: true
