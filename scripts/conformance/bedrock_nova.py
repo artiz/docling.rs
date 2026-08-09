@@ -34,7 +34,7 @@ SOURCES = ROOT / "tests/data/pdf/sources"
 GROUNDTRUTH = ROOT / "tests/data/pdf/groundtruth"
 CLI = ROOT / "target/release/docling-rs"
 
-MODEL_ID = os.environ.get("AWS_BEDROCK_MODEL_ID", "eu.amazon.nova-micro-v1:0")
+MODEL_ID = os.environ.get("AWS_BEDROCK_MODEL_ID", "eu.amazon.nova-lite-v1:0")
 MAX_TOKENS = int(os.environ.get("AWS_BEDROCK_MAX_TOKENS", "5000"))
 PROMPT = os.environ.get(
     "AWS_BEDROCK_PROMPT",
