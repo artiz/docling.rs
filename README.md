@@ -502,6 +502,31 @@ saved page that links external stylesheets needs those fetchable (with a base
 host). Without the feature, `--use-web-browser` is a clear error rather than a
 silent no-op.
 
+## Batch conversion — `--input` / `--output`
+
+One warm process converts a whole tree of documents (#205): `--input` takes a
+glob (quote it — the shell must not expand it), `--output` a directory, and
+the structure below the pattern's static prefix is preserved:
+
+```bash
+docling-rs --input '/data/reports/**/*.pdf' --output ./converted --to json
+# /data/reports/2024/q1/a.pdf  ->  ./converted/2024/q1/a.json
+```
+
+The PDF/image ML pipeline loads its models **once** and every matched file
+reuses the warm sessions — the same amortization `docling-rs serve` does
+across requests, without running a server. Extensions follow `--to` (`.md`,
+`.json`, `.dclx`, `.chunks.json`), `--images referenced` writes each
+document's pictures into a sibling `<stem>_artifacts/` directory, and every
+other flag (`--strict`, `--pages`, `--ocr-lang`, `--pipeline vlm`, enrichment,
+…) applies to the whole batch. `--jobs N` converts declarative formats in
+parallel (PDF/image files share the one warm pipeline, which already
+parallelizes internally per document). Output paths print to stdout one per
+line for scripting; progress and errors go to stderr, a failing file is
+skipped rather than aborting the batch, and the exit code is non-zero if
+anything failed. `--output` with a single positional file works too (a batch
+of one).
+
 ## Node.js / Bun bindings
 
 docling.rs ships as an npm package, [**`docling.rs`**](https://www.npmjs.com/package/docling.rs)
