@@ -61,6 +61,12 @@ pub use docling_core::{
 pub use docling_pdf::{
     model_inventory, page_count as pdf_page_count, EnrichmentOptions, ModelEntry, OcrLang, Pipeline,
 };
+// The pure-Rust text-layer extraction (no pdfium, no models) — compiled with
+// either PDF feature. The CLI uses it as the `--no-ocr` fallback when the
+// runtime assets are missing (launch blocker: a bare `cargo install` ships
+// neither pdfium nor the models).
+#[cfg(any(feature = "pdf", feature = "pdf-text"))]
+pub use docling_pdf::convert_text_layer_pages as pdf_text_layer_pages;
 
 /// Which PDF conversion this build compiled in: the full ML pipeline (`pdf`
 /// feature), the pure-Rust text-layer path (`pdf-text`, the wasm32 build), or

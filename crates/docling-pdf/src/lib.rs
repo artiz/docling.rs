@@ -104,6 +104,27 @@ impl std::error::Error for PdfError {}
 #[cfg(feature = "ml")]
 impl From<pdfium_render::prelude::PdfiumError> for PdfError {
     fn from(e: pdfium_render::prelude::PdfiumError) -> Self {
+        // A failed dlopen means pdfium was never installed — the #1 first-run
+        // failure after a bare `cargo install` (which ships no runtime
+        // assets). Say what to do instead of leaking the raw loader error.
+        if matches!(e, pdfium_render::prelude::PdfiumError::LoadLibraryError(_)) {
+            // The loader error pretty-prints over several lines; compact it.
+            let detail = e
+                .to_string()
+                .split_whitespace()
+                .collect::<Vec<_>>()
+                .join(" ");
+            return PdfError::Pdfium(format!(
+                "the pdfium library is not installed. PDF/image conversion needs \
+                 pdfium + the ONNX models: fetch both with \
+                 scripts/install/download_dependencies.sh from a docling.rs \
+                 checkout (https://github.com/docling-project/docling.rs), or \
+                 point PDFIUM_DYNAMIC_LIB_PATH at a directory containing the \
+                 pdfium library. A digital PDF's embedded text layer converts \
+                 without either in no-OCR mode (CLI: --no-ocr). Declarative \
+                 formats (DOCX, HTML, Markdown, …) never need them. [{detail}]"
+            ));
+        }
         PdfError::Pdfium(e.to_string())
     }
 }

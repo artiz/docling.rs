@@ -71,7 +71,10 @@
 //!                      reading order (no headings/lists/tables/pictures). The
 //!                      fastest option, but a scanned/image-only PDF (no
 //!                      embedded text layer) yields no text — convert those
-//!                      without this flag.
+//!                      without this flag. Also works when pdfium/the models
+//!                      aren't installed at all (e.g. a bare `cargo install`):
+//!                      a digital PDF falls back to the pure-Rust text-layer
+//!                      extraction.
 //!   --use-web-browser  pre-render HTML/MHTML/EPUB in the system Chromium (driven
 //!                      from Rust) so stylesheet-driven `display:none` elements
 //!                      (e.g. a collapsed nav menu) are dropped before parsing.
@@ -344,6 +347,7 @@ fn main() -> ExitCode {
             return ExitCode::FAILURE;
         }
     };
+    let is_pdf = source.format == InputFormat::Pdf;
 
     if let Some(runs) = bench_warm {
         return match bench_warm_conversion(&source, runs, no_table_former, no_ocr) {
@@ -419,12 +423,18 @@ fn main() -> ExitCode {
         let stream = match converter.convert_streaming_images(source, image_mode) {
             Ok(s) => s,
             Err(e) => {
+                if let Some(doc) =
+                    pdf_no_ocr_fallback(&e.to_string(), is_pdf, no_ocr, strict, &path, pages)
+                {
+                    return output_document(doc, &to, image_mode, &path);
+                }
                 eprintln!("error: {e}");
                 return ExitCode::FAILURE;
             }
         };
         let stdout = io::stdout();
         let mut out = io::BufWriter::new(stdout.lock());
+        let mut wrote_any = false;
         for chunk in stream {
             match chunk {
                 Ok(s) => {
@@ -432,9 +442,25 @@ fn main() -> ExitCode {
                         eprintln!("error: writing output: {e}");
                         return ExitCode::FAILURE;
                     }
+                    wrote_any = wrote_any || !s.is_empty();
                 }
                 Err(e) => {
                     let _ = out.flush();
+                    // The ML pipeline binds pdfium lazily, so the missing-assets
+                    // error can surface here — but only fall back while nothing
+                    // has been printed, to never emit a document twice.
+                    if !wrote_any {
+                        if let Some(doc) = pdf_no_ocr_fallback(
+                            &e.to_string(),
+                            is_pdf,
+                            no_ocr,
+                            strict,
+                            &path,
+                            pages,
+                        ) {
+                            return output_document(doc, &to, image_mode, &path);
+                        }
+                    }
                     eprintln!("error: {e}");
                     return ExitCode::FAILURE;
                 }
@@ -453,11 +479,53 @@ fn main() -> ExitCode {
     let document = match converter.convert(source) {
         Ok(result) => result.document,
         Err(e) => {
+            if let Some(doc) =
+                pdf_no_ocr_fallback(&e.to_string(), is_pdf, no_ocr, strict, &path, pages)
+            {
+                return output_document(doc, &to, image_mode, &path);
+            }
             eprintln!("error: {e}");
             return ExitCode::FAILURE;
         }
     };
     output_document(document, &to, image_mode, &path)
+}
+
+/// Launch-blocker fallback: a bare `cargo install docling-cli` ships neither
+/// pdfium nor the ONNX models, so the first PDF a new user tries dies at
+/// pipeline startup. Under `--no-ocr` the pure-Rust text-layer path needs no
+/// runtime assets at all — when the failure is exactly "assets missing"
+/// (matched on the markers docling-pdf's enriched errors carry), convert the
+/// embedded text layer instead of failing. Any other error, or a run without
+/// `--no-ocr`, returns `None` and the (actionable) error prints as usual.
+fn pdf_no_ocr_fallback(
+    err: &str,
+    is_pdf: bool,
+    no_ocr: bool,
+    strict: bool,
+    path: &str,
+    pages: Option<(usize, usize)>,
+) -> Option<docling::DoclingDocument> {
+    let assets_missing =
+        err.contains("pdfium library is not installed") || err.contains("model not found at");
+    if !is_pdf || !no_ocr || !assets_missing {
+        return None;
+    }
+    let bytes = std::fs::read(path).ok()?;
+    let name = Path::new(path).file_name()?.to_string_lossy().into_owned();
+    match docling::pdf_text_layer_pages(&bytes, &name, pages) {
+        Ok(mut doc) if !doc.nodes.is_empty() => {
+            eprintln!(
+                "warning: pdfium/models unavailable — --no-ocr extracted the embedded text \
+                 layer only (run scripts/install/download_dependencies.sh for the full pipeline)"
+            );
+            doc.strict_markdown = strict;
+            Some(doc)
+        }
+        // A scanned PDF has no text layer; the original error explains the
+        // missing assets better than an empty document would.
+        _ => None,
+    }
 }
 
 /// The buffered output tail shared by the standard (non-streaming) and VLM
@@ -758,6 +826,19 @@ fn run_batch(
                                     "fatal: the requested execution provider is \
                                      unavailable — aborting the batch (fix the \
                                      DOCLING_RS_EP runtime libraries or unset it)"
+                                );
+                            }
+                            // Missing pdfium/models fails every PDF/image the
+                            // same way — one report is enough (the error above
+                            // already says how to install the assets).
+                            if e.contains("pdfium library is not installed")
+                                || e.contains("model not found at")
+                            {
+                                abort.store(true, Ordering::Relaxed);
+                                eprintln!(
+                                    "fatal: the PDF runtime assets are missing — \
+                                     aborting the batch (every PDF/image would \
+                                     fail identically)"
                                 );
                             }
                         }

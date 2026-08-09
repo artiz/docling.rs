@@ -1,6 +1,6 @@
 ---
 name: Bug report
-about: Create a report to help us improve
+about: Something converts wrong, errors out, or crashes
 title: ''
 labels: ''
 assignees: ''
@@ -8,23 +8,32 @@ type: Bug
 
 ---
 
-**Description**
-A clear and concise description of what the bug is.
+**What happened**
+A clear description of the bug. If the output is wrong (vs Python docling or
+vs expectations), a snippet of *got* vs *expected* is ideal.
 
-**Steps to reproduce** (optional)
+**Command / code**
 
-1. Go to '...'
-2. Click on '....'
-3. Scroll down to '....'
-4. See error
+```bash
+docling-rs --to md input.pdf
+```
 
-**Expected behavior**  (optional)
-A clear and concise description of what you expected to happen.
+**Input document**
+Attach the file if you can (drag & drop; zip it if GitHub rejects the
+extension) — most conversion bugs are input-specific and reproduce instantly
+with the file. If it's confidential, say so; the format + a rough description
+(scanned/digital, language, produced by which app) still helps.
 
-**Screenshots**  (optional)
-If applicable, add screenshots to help explain your problem.
+**Full error output**
+
+```text
+paste stderr here
+```
 
 **Environment**
- - Desktop OS: [e.g. iOS]/Device: [e.g. iPhone6] + OS: [e.g. iOS8.1]
- - Browser [e.g. chrome, safari]
- - Version [e.g. 22]
+
+- docling.rs version: `docling-rs --version` / crate / npm / PyPI version
+- Installed via: `install.sh` | prebuilt binary | `cargo install` | npm | pip | Docker | source
+- OS / arch: e.g. Ubuntu 24.04 x86_64, macOS 15 arm64, Windows 11
+- For PDF/image issues: are the models + pdfium downloaded
+  (`scripts/install/download_dependencies.sh`)? GPU (`DOCLING_RS_EP`) or CPU?
