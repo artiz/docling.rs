@@ -1434,6 +1434,7 @@ version = "0.54.1"
 dependencies = [
  "docling",
  "docling-serve",
+ "glob",
  "serde_json",
  "tokio",
 ]
@@ -1984,6 +1985,12 @@ dependencies = [
  "color_quant",
  "weezl 0.1.12",
 ]
+
+[[package]]
+name = "glob"
+version = "0.3.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e4eba85ea1d0a966a983acd07deee566e67395d2d96b6fb39e62b5a833f1eb0b"
 
 [[package]]
 name = "half"

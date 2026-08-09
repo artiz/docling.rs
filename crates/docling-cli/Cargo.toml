@@ -43,6 +43,7 @@ coreml = ["docling/coreml"]
 
 [dependencies]
 docling = { path = "../docling", version = "0.54.1" }
+glob = "0.3"
 docling-serve = { path = "../docling-serve", version = "0.54.1", optional = true, default-features = false }
 serde_json = "1"
 tokio = { version = "1", features = ["rt-multi-thread"], optional = true }
