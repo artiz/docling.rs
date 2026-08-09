@@ -289,6 +289,20 @@ sane runtimes; numbers land here once the corpus run happens. Known accepted
 asymmetry: each side renders pages at its own scale, so some drift is
 render-induced rather than parser-induced — triage before attributing.
 
+## Bedrock LLM comparison (speed + fuzzy conformance)
+
+`scripts/conformance/bedrock_conformance.sh` benchmarks docling.rs against an
+Amazon Bedrock model (Nova by default) prompted to extract each corpus PDF as
+Markdown: docling.rs runs one warm CLI batch (set `DOCLING_RS_EP=cuda` for a
+GPU run), Bedrock gets a timed Converse call per PDF, and both outputs score
+against the committed groundtruth with a normalized line-similarity
+percentage (byte-exactness is meaningless for an LLM, so both sides get the
+same fuzzy metric). Needs boto3 plus `AWS_BEDROCK_REGION` /
+`AWS_BEDROCK_ACCESS_KEY_ID` / `AWS_BEDROCK_SECRET_ACCESS_KEY` in the env; the
+model, token cap and prompt are overridable (see the script header — note
+Nova Micro is text-only per AWS docs, so PDF input may require
+`AWS_BEDROCK_MODEL_ID=eu.amazon.nova-lite-v1:0`).
+
 ## Enrichment models (opt-in)
 
 docling's optional enrichment stages are ported behind the same flags

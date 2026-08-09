@@ -708,9 +708,15 @@ fn run_batch(
     jobs: usize,
     cfg: &BatchCfg,
 ) -> ExitCode {
-    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
     let next = AtomicUsize::new(0);
     let failed = AtomicUsize::new(0);
+    let succeeded = AtomicUsize::new(0);
+    // Fail fast on a broken execution provider: an explicit DOCLING_RS_EP
+    // whose runtime libraries are missing fails *every* PDF/image identically
+    // — the first such error aborts the rest of the batch instead of
+    // repeating itself per file.
+    let abort = AtomicBool::new(false);
     let pipe: std::sync::Mutex<Option<Pipeline>> = std::sync::Mutex::new(None);
     let workers = jobs.min(files.len()).max(1);
     std::thread::scope(|scope| {
@@ -720,6 +726,9 @@ fn run_batch(
                 // worker keeps the loop borrow-free.
                 let converter = batch_converter(cfg);
                 loop {
+                    if abort.load(Ordering::Relaxed) {
+                        break;
+                    }
                     let i = next.fetch_add(1, Ordering::Relaxed);
                     let Some(file) = files.get(i) else { break };
                     match batch_convert_one(file, base, output, cfg, &converter, &pipe) {
@@ -738,10 +747,19 @@ fn run_batch(
                                 ),
                             }
                             println!("{}", out.display());
+                            succeeded.fetch_add(1, Ordering::Relaxed);
                         }
                         Err(e) => {
                             failed.fetch_add(1, Ordering::Relaxed);
                             eprintln!("error: {}: {e}", file.display());
+                            if e.contains("execution provider") {
+                                abort.store(true, Ordering::Relaxed);
+                                eprintln!(
+                                    "fatal: the requested execution provider is \
+                                     unavailable — aborting the batch (fix the \
+                                     DOCLING_RS_EP runtime libraries or unset it)"
+                                );
+                            }
                         }
                     }
                 }
@@ -749,7 +767,13 @@ fn run_batch(
         }
     });
     let nf = failed.load(Ordering::Relaxed);
-    eprintln!("batch: {} converted, {} failed", files.len() - nf, nf);
+    let ok = succeeded.load(Ordering::Relaxed);
+    let skipped = files.len() - ok - nf;
+    if skipped > 0 {
+        eprintln!("batch: {ok} converted, {nf} failed, {skipped} skipped");
+    } else {
+        eprintln!("batch: {ok} converted, {nf} failed");
+    }
     if nf > 0 {
         ExitCode::FAILURE
     } else {
