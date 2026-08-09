@@ -82,7 +82,9 @@ cargo check -p docling --no-default-features --features pdf-text \
   dep), `DOCLING_RS_PDF_WORKERS/_THREADS/_INTRA`, `DOCLING_RS_FP32`,
   `DOCLING_RS_EP` (GPU execution providers), `DOCLING_RS_ASR_LANG`,
   `DOCLING_RS_OCR_LANG` (en default; `ch` = the docling-conformance OCR
-  model, which conformance scripts pin themselves), `DOCLING_CHUNK_TOKENIZER`.
+  model, which conformance scripts pin themselves), `DOCLING_CHUNK_TOKENIZER`,
+  `DOCLING_RS_DEBUG` (re-enables quiet pipeline diagnostics, e.g. the
+  int8→fp32 layout-retry notice).
 
 ## Conformance & fixtures
 

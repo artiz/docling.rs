@@ -303,6 +303,22 @@ model, token cap and prompt are overridable (see the script header — note
 Nova Micro is text-only per AWS docs, so PDF input may require
 `AWS_BEDROCK_MODEL_ID=eu.amazon.nova-lite-v1:0`).
 
+Measured baseline (2026-08, `eu.amazon.nova-lite-v1:0` in eu-central-1,
+docling.rs on CPU with the conformance model pins) over the 14
+groundtruth-scored PDFs:
+
+| | total | per doc | mean similarity | converted |
+|---|---|---|---|---|
+| docling.rs (cpu) | 59.8 s | 4.3 s | **90.3 %** | 14/14 |
+| nova-lite | 273.0 s | 21.0 s | 12.5 % | 13/14 |
+
+Per file docling.rs scores 50.8–100 % (the low end is the same
+`right_to_left_03` / `table_mislabeled_as_picture` tail the strict metric
+tracks); Nova Lite tops out at 47.2 % (`multi_page`), returns 0 % on the RTL
+fixtures, and one document failed with a `ModelErrorException` retry-please
+error. A GPU run (`DOCLING_RS_EP=cuda`) shrinks the docling.rs column
+roughly another order of magnitude (~0.1 s/page on a consumer RTX 3080).
+
 ## Enrichment models (opt-in)
 
 docling's optional enrichment stages are ported behind the same flags
@@ -676,7 +692,10 @@ covers): default/`cpu`/`auto`/unknown/uncompiled-request configurations all
 produce byte-identical corpus output on a CPU-only build; on a
 `--features cuda` build with no usable CUDA, `auto` falls back to CPU with
 fp32 models selected (output byte-identical to `DOCLING_RS_FP32=1`) and
-`DOCLING_RS_EP=cuda` fails loudly at the first session load.
+`DOCLING_RS_EP=cuda` fails loudly at the first session load. In CLI batch
+mode (`--input`/`--output`) that first failure aborts the whole batch —
+every remaining PDF would fail identically, so they are reported as
+`skipped` instead of producing one error line per file.
 
 #### Measured on real hardware (issue #108)
 

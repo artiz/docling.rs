@@ -526,9 +526,13 @@ line for scripting; progress goes to stderr — a `start: <file> (N pages)`
 line per document, a dot every 10 finished pages, and an
 `ok: … (12.8s, 800 ms/page)` line when it completes. A failing file is
 skipped rather than aborting the batch, and the exit code is non-zero if
-anything failed. `--output` with a single positional file works too (a batch
-of one). Pipeline diagnostics (e.g. the int8→fp32 layout-retry notice) are
-quiet by default; `DOCLING_RS_DEBUG=1` turns them back on.
+anything failed — with one deliberate exception: an execution-provider
+failure (an explicit `DOCLING_RS_EP` whose runtime libraries are missing)
+would fail every remaining PDF identically, so the first one aborts the
+whole batch (`fatal: …`, remaining files reported as `skipped`). `--output`
+with a single positional file works too (a batch of one). Pipeline
+diagnostics (e.g. the int8→fp32 layout-retry notice) are quiet by default;
+`DOCLING_RS_DEBUG=1` turns them back on.
 
 ## Node.js / Bun bindings
 
