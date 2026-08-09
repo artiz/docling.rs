@@ -26,7 +26,21 @@ Developed with **Claude Code** and _[TENET](https://github.com/artiz/tenet/tree/
 The public API works end to end across **Markdown, CSV, HTML, AsciiDoc, DOCX,
 PPTX, XLSX, legacy DOC/XLS/PPT, EPUB, ODF, WebVTT, Email, MHTML, JATS, USPTO,
 XBRL, LaTeX, JSON, PDF, images, METS, audio and video** — plus Markdown / docling-JSON output and image
-extraction. Raw **DocTags** (`.doctags`/`.dt` — the token markup docling's VLMs emit) reads
+extraction. The full extension map (`InputFormat::from_extension`, mirroring
+docling's `FormatToExtensions`):
+
+| Category | Extensions |
+|---|---|
+| Text & markup | `.md` `.txt` `.text` `.qmd` `.rmd` · AsciiDoc `.adoc` `.asciidoc` `.asc` · HTML `.html` `.htm` `.xhtml` · MHTML `.mhtml` `.mht` · LaTeX `.tex` `.latex` |
+| Word processing | DOCX `.docx` `.docm` `.dotx` `.dotm` · Word 97–2004 `.doc` `.dot` · OpenDocument `.odt` `.ott` · EPUB `.epub` |
+| Presentations | PPTX `.pptx` `.pptm` `.potx` `.potm` `.ppsx` `.ppsm` · PowerPoint 97–2003 `.ppt` `.pot` `.pps` · OpenDocument `.odp` `.otp` |
+| Spreadsheets | XLSX `.xlsx` `.xlsm` · Excel 97–2004 `.xls` `.xlt` · OpenDocument `.ods` `.ots` · CSV `.csv` |
+| XML dialects | JATS / USPTO / XBRL (`.xml` `.nxml`, content-sniffed) · DocLang `.dclg` |
+| PDF & images | `.pdf` · `.png` `.jpg` `.jpeg` `.tif` `.tiff` `.bmp` `.webp` · METS/GBS scan packages `.tar.gz` |
+| docling native | docling JSON `.json` · DocTags `.doctags` `.dt` · DCLX `.dclx` |
+| Email & subtitles | `.eml` · WebVTT `.vtt` |
+| Audio | `.wav` `.mp3` `.m4a` `.aac` `.ogg` `.flac` |
+| Video | `.mp4` `.avi` `.mov` `.mkv` `.webm` | Raw **DocTags** (`.doctags`/`.dt` — the token markup docling's VLMs emit) reads
 in through `docling-core`'s tolerant DocTags parser (#152), the same one the
 VLM pipeline uses for model responses.
 MHTML is a docling.rs-only extension (docling has no MHTML
