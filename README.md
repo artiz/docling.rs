@@ -522,10 +522,13 @@ other flag (`--strict`, `--pages`, `--ocr-lang`, `--pipeline vlm`, enrichment,
 …) applies to the whole batch. `--jobs N` converts declarative formats in
 parallel (PDF/image files share the one warm pipeline, which already
 parallelizes internally per document). Output paths print to stdout one per
-line for scripting; progress and errors go to stderr, a failing file is
+line for scripting; progress goes to stderr — a `start: <file> (N pages)`
+line per document, a dot every 10 finished pages, and an
+`ok: … (12.8s, 800 ms/page)` line when it completes. A failing file is
 skipped rather than aborting the batch, and the exit code is non-zero if
 anything failed. `--output` with a single positional file works too (a batch
-of one).
+of one). Pipeline diagnostics (e.g. the int8→fp32 layout-retry notice) are
+quiet by default; `DOCLING_RS_DEBUG=1` turns them back on.
 
 ## Node.js / Bun bindings
 

@@ -58,7 +58,9 @@ pub use docling_core::{
 // The reusable PDF/image pipeline (models loaded once, reused across documents),
 // for callers that convert many files or want a warm, startup-excluded measurement.
 #[cfg(feature = "pdf")]
-pub use docling_pdf::{model_inventory, EnrichmentOptions, ModelEntry, OcrLang, Pipeline};
+pub use docling_pdf::{
+    model_inventory, page_count as pdf_page_count, EnrichmentOptions, ModelEntry, OcrLang, Pipeline,
+};
 
 /// Which PDF conversion this build compiled in: the full ML pipeline (`pdf`
 /// feature), the pure-Rust text-layer path (`pdf-text`, the wasm32 build), or

@@ -624,13 +624,17 @@ impl Worker {
                 if let Some(retry) = retry {
                     let cov2 = assemble::layout_cell_coverage(&thresholded(&retry), &page.cells);
                     if cov2 > cov {
-                        eprintln!(
-                            "docling-pdf: page {}: int8 layout covered {:.0}% of the text \
-                             cells; the fp32 retry covers {:.0}% — using it",
-                            n + 1,
-                            cov * 100.0,
-                            cov2 * 100.0
-                        );
+                        // Diagnostic, not user-facing: visible with
+                        // DOCLING_RS_DEBUG=1 (batch runs stay clean).
+                        if std::env::var("DOCLING_RS_DEBUG").is_ok() {
+                            eprintln!(
+                                "docling-pdf: page {}: int8 layout covered {:.0}% of the text \
+                                 cells; the fp32 retry covers {:.0}% — using it",
+                                n + 1,
+                                cov * 100.0,
+                                cov2 * 100.0
+                            );
+                        }
                         regions = retry;
                     }
                 }
@@ -1123,6 +1127,10 @@ pub struct Pipeline {
     page_range: Option<(usize, usize)>,
     /// OCR recognition language. See [`Pipeline::ocr_lang`].
     ocr_lang: ocr::OcrLang,
+    /// Optional per-page progress hook `(done, selected_total)`, invoked after
+    /// each page finishes on both the serial and parallel buffered paths. Set
+    /// by the CLI batch mode for dot-progress; `None` costs nothing.
+    progress: Option<Arc<dyn Fn(usize, usize) + Send + Sync>>,
 }
 
 #[cfg(feature = "ml")]
@@ -1146,7 +1154,16 @@ impl Pipeline {
             enrich: EnrichmentOptions::default(),
             page_range: None,
             ocr_lang: ocr::OcrLang::from_env(),
+            progress: None,
         })
+    }
+
+    /// Install (or clear) the per-page progress hook: called with
+    /// `(pages_done, pages_selected)` after each page completes during
+    /// [`convert`](Self::convert). Shared with the parallel workers, so the
+    /// callback must be cheap and thread-safe.
+    pub fn set_progress(&mut self, cb: Option<Arc<dyn Fn(usize, usize) + Send + Sync>>) {
+        self.progress = cb;
     }
 
     /// Convert only pages `first..=last` (**1-based**, like the page numbers a
@@ -1339,9 +1356,9 @@ impl Pipeline {
         // 3-page window over a 500-page PDF should not pay the pool load.
         let selected = range.map_or(pages, |(a, b)| b - a + 1);
         let doc = if self.target_workers >= 2 && selected >= self.parallel_min {
-            self.convert_parallel(bytes, password, name, range)?
+            self.convert_parallel(bytes, password, name, range, selected)?
         } else {
-            self.convert_serial(bytes, password, name, range)?
+            self.convert_serial(bytes, password, name, range, selected)?
         };
         timing::report();
         Ok(doc)
@@ -1355,10 +1372,13 @@ impl Pipeline {
         password: Option<&str>,
         name: &str,
         range: Option<(usize, usize)>,
+        selected: usize,
     ) -> Result<DoclingDocument, PdfError> {
         let mut doc = DoclingDocument::new(name);
         let mut confs = std::collections::BTreeMap::new();
         let render_image = !self.no_ocr;
+        let progress = self.progress.clone();
+        let mut done = 0usize;
         let worker = self.primary()?;
         pdfium_backend::for_each_page(
             bytes,
@@ -1371,6 +1391,10 @@ impl Pipeline {
                 doc.nodes.extend(nodes);
                 doc.links.extend(links);
                 confs.insert(n + 1, conf);
+                if let Some(cb) = &progress {
+                    done += 1;
+                    cb(done, selected);
+                }
                 Ok::<(), PdfError>(())
             },
         )?;
@@ -1390,8 +1414,11 @@ impl Pipeline {
         password: Option<&str>,
         name: &str,
         range: Option<(usize, usize)>,
+        selected: usize,
     ) -> Result<DoclingDocument, PdfError> {
         self.ensure_pool()?;
+        let progress = self.progress.clone();
+        let pages_done = std::sync::atomic::AtomicUsize::new(0);
         let n_workers = self.pool.len();
         let render_image = !self.no_ocr;
         let layout_batch = pdf_layout_batch();
@@ -1410,6 +1437,8 @@ impl Pipeline {
                 let work_rx = Arc::clone(&work_rx);
                 let results = Arc::clone(&results);
                 let first_err = Arc::clone(&first_err);
+                let progress = progress.clone();
+                let pages_done = &pages_done;
                 s.spawn(move || loop {
                     // Hold the receiver lock only for the recv (plus a non-blocking
                     // drain up to the layout batch size); release before the (long)
@@ -1433,7 +1462,15 @@ impl Pipeline {
                     let outs = worker.process_batch(&mut batch);
                     for ((idx, _), out) in batch.iter().zip(outs) {
                         match out {
-                            Ok(out) => results.lock().unwrap().push((*idx, out)),
+                            Ok(out) => {
+                                results.lock().unwrap().push((*idx, out));
+                                if let Some(cb) = &progress {
+                                    let d = pages_done
+                                        .fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+                                        + 1;
+                                    cb(d, selected);
+                                }
+                            }
                             Err(e) => {
                                 let mut slot = first_err.lock().unwrap();
                                 if slot.is_none() {
@@ -1769,6 +1806,13 @@ impl Pipeline {
         doc.confidence = Some(docling_core::ConfidenceReport::from_pages(confs));
         Ok(doc)
     }
+}
+
+/// Number of pages in a PDF, without converting anything — what the CLI batch
+/// mode prints in its per-document start line.
+#[cfg(feature = "ml")]
+pub fn page_count(bytes: &[u8], password: Option<&str>) -> Result<usize, PdfError> {
+    Ok(pdfium_backend::page_count(bytes, password)?)
 }
 
 #[cfg(feature = "ml")]

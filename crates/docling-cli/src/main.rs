@@ -593,6 +593,18 @@ fn batch_pipeline<'a>(
             Some(_) => Some(docling::OcrLang::En),
             None => None,
         });
+        // Dot-progress on stderr: one dot per 10 finished pages, newline when
+        // the document completes (only if any dots were printed).
+        p.set_progress(Some(std::sync::Arc::new(|done: usize, total: usize| {
+            use std::io::Write;
+            if done.is_multiple_of(10) {
+                eprint!(".");
+                let _ = std::io::stderr().flush();
+            }
+            if done == total && total >= 10 {
+                eprintln!();
+            }
+        })));
         *slot = Some(p);
     }
     Ok(slot.as_mut().expect("just filled"))
@@ -606,8 +618,24 @@ fn batch_convert_one(
     cfg: &BatchCfg,
     converter: &DocumentConverter,
     pipe: &std::sync::Mutex<Option<Pipeline>>,
-) -> Result<std::path::PathBuf, String> {
+) -> Result<(std::path::PathBuf, f64, Option<usize>), String> {
     let source = SourceDocument::from_file(file).map_err(|e| e.to_string())?;
+    // Announce the document up front — with its page count for PDFs, so long
+    // conversions are attributable while the dots tick.
+    let pages = (source.format == InputFormat::Pdf)
+        .then(|| docling::pdf_page_count(&source.bytes, None).ok())
+        .flatten()
+        .map(|n| match cfg.pages {
+            // A --pages window converts only its slice of the document.
+            Some((first, last)) => (last.min(n) + 1).saturating_sub(first).min(n),
+            None => n,
+        });
+    match pages {
+        Some(1) => eprintln!("start: {} (1 page)", file.display()),
+        Some(n) => eprintln!("start: {} ({n} pages)", file.display()),
+        None => eprintln!("start: {}", file.display()),
+    }
+    let started = std::time::Instant::now();
     let mut document = if let Some(vlm) = &cfg.vlm {
         docling::vlm::convert_vlm(&source, vlm).map_err(|e| e.to_string())?
     } else if matches!(source.format, InputFormat::Pdf | InputFormat::Image) {
@@ -666,7 +694,7 @@ fn batch_convert_one(
             }
         }
     }
-    Ok(out)
+    Ok((out, started.elapsed().as_secs_f64(), pages))
 }
 
 /// Convert every matched file, `--jobs` workers wide. Output paths print to
@@ -695,8 +723,20 @@ fn run_batch(
                     let i = next.fetch_add(1, Ordering::Relaxed);
                     let Some(file) = files.get(i) else { break };
                     match batch_convert_one(file, base, output, cfg, &converter, &pipe) {
-                        Ok(out) => {
-                            eprintln!("ok: {} -> {}", file.display(), out.display());
+                        Ok((out, secs, pages)) => {
+                            match pages {
+                                Some(n) if n > 0 => eprintln!(
+                                    "ok: {} -> {} ({secs:.1}s, {:.0} ms/page)",
+                                    file.display(),
+                                    out.display(),
+                                    secs * 1000.0 / n as f64
+                                ),
+                                _ => eprintln!(
+                                    "ok: {} -> {} ({secs:.1}s)",
+                                    file.display(),
+                                    out.display()
+                                ),
+                            }
                             println!("{}", out.display());
                         }
                         Err(e) => {
