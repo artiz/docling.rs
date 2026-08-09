@@ -124,8 +124,8 @@ pub fn supported_extensions() -> String {
     let exts = [
         "docx", "dotx", "docm", "dotm", "pptx", "potx", "ppsx", "pptm", "potm", "ppsm", "md",
         "txt", "text", "qmd", "rmd", "html", "htm", "xhtml", "xml", "nxml", "dclg", "dclx", "adoc",
-        "asciidoc", "asc", "csv", "xlsx", "xlsm", "odt", "ott", "ods", "ots", "odp", "otp", "json",
-        "vtt", "tex", "latex", "eml", "epub", "mhtml", "mht", "pdf",
+        "asciidoc", "asc", "csv", "tsv", "xlsx", "xlsm", "xlsb", "odt", "ott", "ods", "ots", "odp",
+        "otp", "json", "vtt", "tex", "latex", "eml", "epub", "mhtml", "mht", "pdf",
     ];
     serde_json::to_string(exts.as_slice()).expect("static array serializes")
 }
