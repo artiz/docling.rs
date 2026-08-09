@@ -10,6 +10,9 @@
 #   scripts/install/install.sh
 #
 # What it does:
+#   0. Tries the prebuilt CLI binary from the latest GitHub Release first
+#      (Linux x64/arm64) — no toolchain, no build. Falls back to source on any
+#      mismatch; DOCLING_RS_FROM_SOURCE=1 skips the fast path.
 #   1. Checks for a Rust toolchain (>= 1.82 for the PDF crate); installs one
 #      via rustup (non-interactive) if `cargo` is missing.
 #   2. Builds the CLI in release mode (`cargo build --release -p docling-cli`).
@@ -50,28 +53,62 @@ if [ ! -w "$(dirname "$PREFIX")" ] || { [ -e "$PREFIX" ] && [ ! -w "$PREFIX" ]; 
   SUDO="sudo"
 fi
 
-# --- 1. Rust toolchain -------------------------------------------------------
-if ! command -v cargo >/dev/null 2>&1; then
-  # Respect an existing rustup installation that just isn't on PATH yet.
-  if [ -f "$HOME/.cargo/env" ]; then
+# --- 0. Prebuilt binary (fast path) -------------------------------------------
+# GitHub Releases carry prebuilt CLI binaries (.github/workflows/cli-binaries.yml)
+# for Linux x64/arm64 and Windows x64 — downloading one skips the Rust toolchain
+# and the multi-minute source build entirely. Any failure (no matching asset,
+# old release, no network to the API) quietly falls back to building from
+# source. DOCLING_RS_FROM_SOURCE=1 forces the source build.
+PREBUILT_BIN=""
+if [ "${DOCLING_RS_FROM_SOURCE:-0}" != "1" ] && [ "$(uname -s)" = "Linux" ]; then
+  case "$(uname -m)" in
+    x86_64) TARGET="x86_64-unknown-linux-gnu" ;;
+    aarch64 | arm64) TARGET="aarch64-unknown-linux-gnu" ;;
+    *) TARGET="" ;;
+  esac
+  if [ -n "$TARGET" ]; then
+    TAG="$(curl -fsSL "https://api.github.com/repos/docling-project/docling.rs/releases/latest" 2>/dev/null \
+      | sed -n 's/.*"tag_name": *"\([^"]*\)".*/\1/p' | head -n1 || true)"
+    if [ -n "${TAG:-}" ]; then
+      ASSET="$REPO_URL/releases/download/$TAG/docling-rs-$TAG-$TARGET.tar.gz"
+      PB_DIR="$(mktemp -d)"
+      if curl -fsSL "$ASSET" 2>/dev/null | tar -xz -C "$PB_DIR" 2>/dev/null \
+        && [ -x "$PB_DIR/docling-rs" ]; then
+        PREBUILT_BIN="$PB_DIR/docling-rs"
+        say "using the prebuilt $TAG binary for $TARGET (set DOCLING_RS_FROM_SOURCE=1 to build instead)"
+      else
+        say "no prebuilt binary for $TAG/$TARGET — building from source"
+      fi
+    fi
+  fi
+fi
+
+if [ -z "$PREBUILT_BIN" ]; then
+  # --- 1. Rust toolchain -----------------------------------------------------
+  if ! command -v cargo >/dev/null 2>&1; then
+    # Respect an existing rustup installation that just isn't on PATH yet.
+    if [ -f "$HOME/.cargo/env" ]; then
+      # shellcheck disable=SC1091
+      . "$HOME/.cargo/env"
+    fi
+  fi
+  if ! command -v cargo >/dev/null 2>&1; then
+    say "Rust toolchain not found — installing via rustup (stable, non-interactive)"
+    curl --proto '=https' --tlsv1.2 -fsSL https://sh.rustup.rs | sh -s -- -y --profile minimal
     # shellcheck disable=SC1091
     . "$HOME/.cargo/env"
   fi
+  command -v cc >/dev/null 2>&1 || command -v gcc >/dev/null 2>&1 || command -v clang >/dev/null 2>&1 \
+    || die "no C compiler (cc/gcc/clang) — install build-essential / clang first"
+  say "using $(cargo --version)"
 fi
-if ! command -v cargo >/dev/null 2>&1; then
-  say "Rust toolchain not found — installing via rustup (stable, non-interactive)"
-  curl --proto '=https' --tlsv1.2 -fsSL https://sh.rustup.rs | sh -s -- -y --profile minimal
-  # shellcheck disable=SC1091
-  . "$HOME/.cargo/env"
-fi
-command -v cc >/dev/null 2>&1 || command -v gcc >/dev/null 2>&1 || command -v clang >/dev/null 2>&1 \
-  || die "no C compiler (cc/gcc/clang) — install build-essential / clang first"
-say "using $(cargo --version)"
 
 # --- 2. Sources: use the checkout we're in, else clone ------------------------
+# Needed even with a prebuilt binary: download_dependencies.sh (models + pdfium)
+# runs from the source tree.
 if [ -f Cargo.toml ] && [ -d crates/docling-cli ]; then
   SRC_DIR="$(pwd)"
-  say "building from existing checkout: $SRC_DIR"
+  say "using existing checkout: $SRC_DIR"
 else
   SRC_DIR="$(mktemp -d)/docling.rs"
   say "cloning $REPO_URL ($REF) to $SRC_DIR"
@@ -84,14 +121,16 @@ else
   cd "$SRC_DIR"
 fi
 
-# --- 3. Build ------------------------------------------------------------------
-say "building the CLI (release)"
-cargo build --release -p docling-cli
+# --- 3. Build (skipped when a prebuilt binary was downloaded) -------------------
+if [ -z "$PREBUILT_BIN" ]; then
+  say "building the CLI (release)"
+  cargo build --release -p docling-cli
+fi
 
 # --- 4. Install tree -----------------------------------------------------------
 say "installing to $PREFIX"
 $SUDO mkdir -p "$PREFIX/bin"
-$SUDO cp target/release/docling-rs "$PREFIX/bin/docling-rs"
+$SUDO cp "${PREBUILT_BIN:-target/release/docling-rs}" "$PREFIX/bin/docling-rs"
 
 # Models + pdfium land inside the prefix; download_dependencies.sh fetches into
 # the *current* directory, so run it from there. It is idempotent (skips files

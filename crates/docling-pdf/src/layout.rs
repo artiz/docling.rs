@@ -156,6 +156,19 @@ impl LayoutModel {
     }
 
     fn open_session(path: &str, intra: usize) -> Result<Session, String> {
+        // The layout model is the pipeline's first hard model dependency; a
+        // missing file here almost always means the models were never
+        // downloaded (`cargo install` ships none) — say what to do.
+        if !std::path::Path::new(path).exists() {
+            return Err(format!(
+                "layout: model not found at {path} — PDF/image conversion needs \
+                 the ONNX models: fetch them with \
+                 scripts/install/download_dependencies.sh from a docling.rs \
+                 checkout (https://github.com/docling-project/docling.rs), or \
+                 set DOCLING_LAYOUT_ONNX. A digital PDF's embedded text layer \
+                 converts without models in no-OCR mode (CLI: --no-ocr)"
+            ));
+        }
         let builder = Session::builder()
             .map_err(|e| format!("layout: builder: {e}"))?
             // Let inference use the available cores (ort otherwise defaults low);

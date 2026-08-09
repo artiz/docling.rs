@@ -1,0 +1,118 @@
+# Prebuilt `docling-rs` CLI binaries attached to each GitHub Release.
+# `cargo install docling-cli` means several minutes of compiling on the user's
+# machine; a downloadable binary is the first thing launch-day visitors look
+# for. Runs automatically when ci.yml publishes a release (the release is
+# created with RELEASE_PAT, so the `release: published` event fires for this
+# workflow), or on manual dispatch for an existing tag.
+#
+# macOS prebuilds are omitted for the same reason as in npm-publish.yml:
+# GitHub-hosted macOS runners are blocked in this environment, and darwin
+# can't be cross-compiled from Linux (needs the Apple SDK) — macOS users
+# `cargo install docling-cli` or build from source. To re-add when macOS
+# runners become available:
+#   - { target: aarch64-apple-darwin, host: macos-14 }
+#   - { target: x86_64-apple-darwin,  host: macos-14 }
+#
+# The binaries are the *default* build (CPU; ONNX Runtime statically linked by
+# ort's download-binaries, same as every other build of this workspace). The
+# runtime assets (pdfium + models) stay a separate download —
+# scripts/install/download_dependencies.sh — exactly as with a cargo install;
+# the CLI prints that instruction when they are missing.
+
+name: cli-binaries
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing release tag to build binaries for (e.g. v0.55.0). The assets upload to that release."
+        required: true
+
+permissions:
+  contents: write # gh release upload
+
+jobs:
+  build:
+    name: build ${{ matrix.target }}
+    runs-on: ${{ matrix.host }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-gnu
+            host: ubuntu-22.04
+          # Native ARM64 Linux runner — avoids cross-compiling the ONNX/ort build.
+          - target: aarch64-unknown-linux-gnu
+            host: ubuntu-24.04-arm
+          - target: x86_64-pc-windows-msvc
+            host: windows-latest
+    env:
+      TAG: ${{ github.event.release.tag_name || inputs.tag }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.release.tag_name || inputs.tag }}
+
+      # rustup is preinstalled on GitHub-hosted runners; the org allowlists only
+      # GitHub-owned / vetted actions, so no marketplace toolchain action.
+      - name: Install Rust (stable)
+        shell: bash
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+          rustup target add ${{ matrix.target }}
+
+      - uses: actions/cache@v6
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+            target
+          key: ${{ runner.os }}-cargo-cli-${{ matrix.target }}-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-cargo-cli-${{ matrix.target }}-
+
+      - name: Build
+        shell: bash
+        run: cargo build --release --locked -p docling-cli --target ${{ matrix.target }}
+
+      - name: Package (unix)
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          bin="target/${{ matrix.target }}/release/docling-rs"
+          strip "$bin"
+          tar -czf "docling-rs-$TAG-${{ matrix.target }}.tar.gz" -C "$(dirname "$bin")" docling-rs
+
+      - name: Package (windows)
+        if: runner.os == 'Windows'
+        shell: bash
+        run: 7z a "docling-rs-$TAG-${{ matrix.target }}.zip" "./target/${{ matrix.target }}/release/docling-rs.exe"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: cli-${{ matrix.target }}
+          path: docling-rs-*
+          if-no-files-found: error
+
+  upload:
+    name: attach to release
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@v7
+        with:
+          pattern: cli-*
+          path: assets
+          merge-multiple: true
+
+      # Idempotent: --clobber replaces same-named assets on a re-run.
+      - name: Upload to the GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.event.release.tag_name || inputs.tag }}
+        run: gh release upload "$TAG" assets/* --repo "${{ github.repository }}" --clobber

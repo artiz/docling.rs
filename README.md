@@ -7,6 +7,12 @@
 A Rust port of [docling](https://github.com/docling-project/docling): convert
 documents into a unified `DoclingDocument` for downstream AI workflows.
 
+**Fast and small:** one static binary, no Python/PyTorch at runtime. The PDF
+ML pipeline runs **4.3× faster** than Python docling at **2.3–2.6× less peak
+RAM**; declarative formats (DOCX/HTML/XLSX/…) convert **20–60× faster** at
+**~60× less memory** — methodology and per-fixture numbers in
+[`docs/PDF_CONFORMANCE.md`](./docs/PDF_CONFORMANCE.md).
+
 The format migration is **complete** — every document format in docling's
 pipeline is supported, validated byte-for-byte against live docling. See
 [`docs/MIGRATION.md`](./docs/MIGRATION.md) for the full architecture, the Python → Rust
@@ -1021,16 +1027,20 @@ into `.venv-compare` automatically on first run. See
 
 ## Install locally / in CI (one-liner)
 
-`scripts/install/install.sh` builds the CLI from source and installs a self-contained
-tree — for a dev box or a pipeline step:
+`scripts/install/install.sh` installs a self-contained tree — for a dev box or
+a pipeline step:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/docling-project/docling.rs/master/scripts/install/install.sh | bash
 docling-rs your.pdf > out.md
 ```
 
-It checks for a Rust toolchain (installs one via rustup if `cargo` is
-missing), runs `cargo build --release -p docling-cli`, installs the
+It grabs the **prebuilt CLI binary** from the latest
+[GitHub Release](https://github.com/docling-project/docling.rs/releases)
+(Linux x64/arm64; `DOCLING_RS_FROM_SOURCE=1` opts out) and only falls back to
+building from source when no matching asset exists — in that case it checks
+for a Rust toolchain (installs one via rustup if `cargo` is missing) and runs
+`cargo build --release -p docling-cli`. Either way it installs the
 binary + all models + pdfium under `/usr/local/docling.rs`, symlinks
 `/usr/local/bin/docling-rs`, and writes `/etc/profile.d/docling-rs.sh` with
 the `DOCLING_*`/`PDFIUM_*` exports. The env file is a convenience for other
