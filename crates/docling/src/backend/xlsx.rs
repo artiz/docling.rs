@@ -48,6 +48,14 @@ pub struct XlsxBackend;
 
 impl DeclarativeBackend for XlsxBackend {
     fn convert(&self, source: &SourceDocument) -> Result<DoclingDocument, ConversionError> {
+        // Binary workbook (`.xlsb`, issue #210): the same ZIP envelope with
+        // binary parts instead of OPC XML — detected by the workbook part
+        // (extensions lie) and handed to the slim calamine-`Xlsb` path.
+        if Package::open(&source.bytes)
+            .is_some_and(|mut pkg| pkg.read_bytes("xl/workbook.bin").is_some())
+        {
+            return convert_xlsb(source);
+        }
         let cursor = Cursor::new(source.bytes.clone());
         let mut workbook: Xlsx<_> =
             Xlsx::new(cursor).map_err(|e| ConversionError::with_source("xlsx", e))?;
@@ -232,6 +240,93 @@ impl DeclarativeBackend for XlsxBackend {
         }
         Ok(doc)
     }
+}
+
+/// Binary workbook (`.xlsb`, issue #210). calamine's `Xlsb` reader serves
+/// sheet metadata and cell ranges through the same `Reader` trait as `Xlsx`,
+/// so table discovery, value formatting, provenance, hidden-sheet layering
+/// and the page-break convention reuse the xlsx machinery. What the binary
+/// format does not expose through calamine — drawings, charts, comments,
+/// merged regions — degrades to absent rather than failing the conversion.
+fn convert_xlsb(source: &SourceDocument) -> Result<DoclingDocument, ConversionError> {
+    let cursor = Cursor::new(source.bytes.clone());
+    let mut workbook: calamine::Xlsb<_> =
+        calamine::Xlsb::new(cursor).map_err(|e| ConversionError::with_source("xlsb", e))?;
+    let metas: Vec<(String, calamine::SheetType, calamine::SheetVisible)> = workbook
+        .sheets_metadata()
+        .iter()
+        .map(|s| (s.name.clone(), s.typ, s.visible))
+        .collect();
+
+    let mut doc = DoclingDocument::new(&source.name);
+    let mut prev_sheet_had_items = false;
+    for (name, typ, visible) in &metas {
+        if !matches!(typ, calamine::SheetType::WorkSheet) {
+            continue;
+        }
+        let Ok(range) = workbook.worksheet_range(name) else {
+            continue;
+        };
+        let (rs_r, rs_c) = range.start().unwrap_or((0, 0));
+        let (or, oc) = (rs_r as usize, rs_c as usize);
+        let (height, width) = range.get_size();
+        let merge_of = HashMap::new();
+        let mut items: Vec<((usize, usize, usize, usize), Node)> = Vec::new();
+        for t in find_tables(&range, &merge_of, height, width) {
+            if let Some(label) = t.label {
+                items.push((
+                    (
+                        oc + t.min_c,
+                        or + t.min_r.saturating_sub(1),
+                        oc + t.max_c + 1,
+                        or + t.min_r,
+                    ),
+                    Node::Paragraph { text: label },
+                ));
+            }
+            items.push((
+                (
+                    oc + t.min_c,
+                    or + t.min_r,
+                    oc + t.max_c + 1,
+                    or + t.max_r + 1,
+                ),
+                Node::Table(t.table),
+            ));
+        }
+        if items.is_empty() {
+            continue;
+        }
+        items.sort_by_key(|((_, t, _, _), _)| *t);
+        let page_w = items.iter().map(|((_, _, r, _), _)| *r).max().unwrap_or(1);
+        let page_h = items.iter().map(|((_, _, _, b), _)| *b).max().unwrap_or(1);
+        let hidden = !matches!(visible, calamine::SheetVisible::Visible);
+        for ((l, t, r, b), mut node) in items {
+            if let Node::Table(table) = &mut node {
+                table.location = Some([
+                    location_value(l, page_w),
+                    location_value(t, page_h),
+                    location_value(r, page_w),
+                    location_value(b, page_h),
+                ]);
+            }
+            let node = if hidden {
+                Node::Furniture {
+                    layer: docling_core::ContentLayer::Invisible,
+                    inner: Box::new(node),
+                }
+            } else {
+                node
+            };
+            doc.push(node);
+        }
+        // Same trailing page-break convention as the xlsx path above.
+        if prev_sheet_had_items {
+            doc.push(Node::PageBreak);
+        }
+        prev_sheet_had_items = true;
+    }
+    Ok(doc)
 }
 
 /// Everything one sheet worker needs, bundled to stay under rayon's closure
@@ -744,5 +839,38 @@ mod tests {
                 t.rows
             );
         }
+    }
+
+    /// Binary workbook (issue #210): the visible sheet's table converts with
+    /// openpyxl-style values, the hidden sheet's lands in the invisible
+    /// furniture layer, and the second sheet trails a page break.
+    #[test]
+    fn xlsb_tables_and_hidden_sheet() {
+        let path = format!(
+            "{}/tests/data/xlsx/sources/xlsb-tables.xlsb",
+            env!("CARGO_MANIFEST_DIR")
+        );
+        let bytes = std::fs::read(&path).expect("fixture exists");
+        let src = SourceDocument::from_bytes("x.xlsb", InputFormat::Xlsx, bytes);
+        let doc = XlsxBackend.convert(&src).expect("converts");
+        let Some(Node::Table(sales)) = doc.nodes.iter().find(|n| matches!(n, Node::Table(_)))
+        else {
+            panic!("no visible table in {:?}", doc.nodes);
+        };
+        assert_eq!(sales.rows[0], vec!["region", "q1", "q2"]);
+        assert_eq!(sales.rows[1], vec!["EMEA", "100", "110.5"]);
+        let hidden = doc.nodes.iter().any(|n| {
+            matches!(
+                n,
+                Node::Furniture { layer: docling_core::ContentLayer::Invisible, inner }
+                    if matches!(**inner, Node::Table(_))
+            )
+        });
+        assert!(
+            hidden,
+            "hidden sheet's table in the invisible layer: {:?}",
+            doc.nodes
+        );
+        assert!(doc.nodes.iter().any(|n| matches!(n, Node::PageBreak)));
     }
 }

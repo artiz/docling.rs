@@ -102,10 +102,17 @@ impl InputFormat {
             "dclg" => InputFormat::XmlDoclang,
             "doctags" | "dt" => InputFormat::DocTags,
             "dclx" => InputFormat::Dclx,
-            "jpg" | "jpeg" | "png" | "tif" | "tiff" | "bmp" | "webp" => InputFormat::Image,
+            // `.gif` decodes through the same content-sniffing `image` path as
+            // the rest (first frame of an animation), issue #208.
+            "jpg" | "jpeg" | "png" | "tif" | "tiff" | "bmp" | "webp" | "gif" => InputFormat::Image,
             "adoc" | "asciidoc" | "asc" => InputFormat::Asciidoc,
-            "csv" => InputFormat::Csv,
-            "xlsx" | "xlsm" => InputFormat::Xlsx,
+            // `.tsv` rides the CSV backend, whose delimiter sniffing already
+            // prefers the tab when it dominates the first line (#208).
+            "csv" | "tsv" => InputFormat::Csv,
+            // `.xlsb` (binary Excel 2007+) parses through the same calamine
+            // engine as xlsx — the backend detects the binary workbook part
+            // and switches readers, issue #210.
+            "xlsx" | "xlsm" | "xlsb" => InputFormat::Xlsx,
             // Legacy binary Office (Word/Excel/PowerPoint 97–2003), issue #127.
             // Extension sets mirror docling's FormatToExtensions.
             "doc" | "dot" => InputFormat::Doc,
@@ -115,10 +122,16 @@ impl InputFormat {
             "ods" | "ots" => InputFormat::Ods,
             "odp" | "otp" => InputFormat::Odp,
             "json" => InputFormat::JsonDocling,
-            "wav" | "mp3" | "m4a" | "aac" | "ogg" | "flac" => InputFormat::Audio,
+            // `.mpga` *is* MPEG audio (an mp3 stream) — symphonia probes the
+            // codec from the bytes, the extension is just the alias (#208).
+            "wav" | "mp3" | "mpga" | "m4a" | "aac" | "ogg" | "flac" => InputFormat::Audio,
             // Upstream's FormatToExtensions[VIDEO] (docling v2.114, #3768):
             // the audio track transcribes through the same ASR path.
-            "mp4" | "avi" | "mov" | "mkv" | "webm" => InputFormat::Video,
+            // `.mpeg`/`.mpg` (#208): MPEG-PS has no symphonia demuxer, so both
+            // the audio track and the sampled frames come from the ffmpeg
+            // fallback; an audio-only `.mpeg` still decodes in-process (the
+            // probe is content-based) and converts to its transcript.
+            "mp4" | "avi" | "mov" | "mkv" | "webm" | "mpeg" | "mpg" => InputFormat::Video,
             "vtt" => InputFormat::Vtt,
             "tex" | "latex" => InputFormat::Latex,
             "eml" => InputFormat::Email,
@@ -137,13 +150,22 @@ mod tests {
 
     #[test]
     fn audio_and_video_extensions_split_like_upstream() {
-        // docling v2.114 FormatToExtensions: AUDIO and VIDEO are disjoint.
-        for ext in ["wav", "mp3", "m4a", "aac", "ogg", "flac"] {
+        // docling v2.114 FormatToExtensions: AUDIO and VIDEO are disjoint
+        // (docling.rs adds the MPEG aliases on top, #208).
+        for ext in ["wav", "mp3", "mpga", "m4a", "aac", "ogg", "flac"] {
             assert_eq!(InputFormat::from_extension(ext), Some(InputFormat::Audio));
         }
-        for ext in ["mp4", "avi", "mov", "mkv", "webm", "MKV"] {
+        for ext in ["mp4", "avi", "mov", "mkv", "webm", "MKV", "mpeg", "mpg"] {
             assert_eq!(InputFormat::from_extension(ext), Some(InputFormat::Video));
         }
         assert_eq!(InputFormat::Video.as_str(), "video");
+    }
+
+    #[test]
+    fn extension_aliases_route_to_existing_backends() {
+        // #208/#210: aliases whose decoding machinery predated the mapping.
+        assert_eq!(InputFormat::from_extension("tsv"), Some(InputFormat::Csv));
+        assert_eq!(InputFormat::from_extension("gif"), Some(InputFormat::Image));
+        assert_eq!(InputFormat::from_extension("xlsb"), Some(InputFormat::Xlsx));
     }
 }
