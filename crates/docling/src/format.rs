@@ -51,6 +51,10 @@ pub enum InputFormat {
     /// Rich Text Format (`.rtf`) — a docling.rs extension (#209); docling
     /// converts RTF only by shelling out to LibreOffice.
     Rtf,
+    /// Microsoft Visio (`.vsdx`, `.vsdm`) — a docling.rs extension (#214);
+    /// docling has no Visio reader. Pages become sections, shape text flows
+    /// in reading order, connectors become a relations table.
+    Visio,
 }
 
 impl InputFormat {
@@ -88,6 +92,7 @@ impl InputFormat {
             InputFormat::Epub => "epub",
             InputFormat::Mhtml => "mhtml",
             InputFormat::Rtf => "rtf",
+            InputFormat::Visio => "visio",
         }
     }
 
@@ -142,6 +147,7 @@ impl InputFormat {
             "epub" => InputFormat::Epub,
             "mhtml" | "mht" => InputFormat::Mhtml,
             "rtf" => InputFormat::Rtf,
+            "vsdx" | "vsdm" => InputFormat::Visio,
             // METS/Google Books scan packages ship as `*.tar.gz`.
             "gz" | "targz" => InputFormat::MetsGbs,
             _ => return None,
