@@ -1074,6 +1074,7 @@ pub fn pdf_text_pages(bytes: &[u8]) -> Vec<crate::pdfium_backend::PdfPage> {
                 #[cfg(feature = "ocr-prep")]
                 image: image::RgbImage::new(1, 1),
                 links: Vec::new(),
+                rotation: 0,
             }
         })
         .collect()

@@ -1802,6 +1802,7 @@ impl Pipeline {
             image_layout: Some(image.clone()),
             image,
             links: Vec::new(),
+            rotation: 0,
         };
         self.process_pages(vec![page], name)
     }
