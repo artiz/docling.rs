@@ -34,6 +34,8 @@ mod mets;
 mod ocr;
 #[cfg(feature = "ocr-prep")]
 pub mod ocr_prep;
+#[cfg(feature = "ml")]
+mod orient;
 pub mod pdfium_backend;
 #[cfg(feature = "ml")]
 pub mod quality;
@@ -537,6 +539,7 @@ impl Worker {
             });
             return Ok((nodes, links, conf));
         }
+        self.normalize_orientation(n, page)?;
         let regions = timing::timed("layout.predict", || {
             self.layout
                 .as_mut()
@@ -545,6 +548,40 @@ impl Worker {
         })
         .map_err(|e| PdfError::Layout(format!("page {}: {e}", n + 1)))?;
         self.finish_page(n, page, regions)
+    }
+
+    /// Content-based orientation normalization (#225), before any inference:
+    /// a physically rotated scan (sideways phone photo, landscape-fed sheet)
+    /// has `/Rotate 0`, so the metadata pass in `extract_page` never fires and
+    /// layout+OCR would read a sideways raster. Only pages with no text layer
+    /// at all are probed (a digital page's raster is upright by construction,
+    /// and its cells — not its pixels — carry the text); the detected angle
+    /// composes with any `/Rotate` normalization through the same
+    /// [`PdfPage::unrotate`] + display-space assembly mapping. Detection is
+    /// evidence-gated and degrades to a no-op — see [`orient`].
+    fn normalize_orientation(&mut self, n: usize, page: &mut PdfPage) -> Result<(), PdfError> {
+        let scanned =
+            page.cells.is_empty() && page.word_cells.is_empty() && page.code_cells.is_empty();
+        if self.no_ocr || !scanned || page.image.width() <= 1 || !orient::enabled() {
+            return Ok(());
+        }
+        if self.ocr.is_none() {
+            self.ocr = Some(ocr::OcrModel::load(self.ocr_lang).map_err(PdfError::Ocr)?);
+        }
+        let deg = timing::timed("orient.detect", || {
+            orient::detect(&page.image, self.ocr.as_mut().unwrap())
+        });
+        if deg != 0 {
+            if std::env::var("DOCLING_RS_DEBUG").is_ok() {
+                eprintln!(
+                    "docling-pdf: page {}: content rotated {deg}° in the raster; \
+                     un-rotating before layout/OCR",
+                    n + 1
+                );
+            }
+            page.unrotate(deg);
+        }
+        Ok(())
     }
 
     /// Layout-detect a whole batch of pages with one inference call (issue #73),
@@ -561,6 +598,20 @@ impl Worker {
                     self.process(n, page)
                 })
                 .collect();
+        }
+        // Orientation-normalize every scanned page before the shared layout
+        // call — the batched inference must see upright bitmaps too (#225).
+        for (n, page) in items.iter_mut() {
+            let n = *n;
+            if let Err(e) = self.normalize_orientation(n, page) {
+                // Model-load failure — every page in the batch needs the same
+                // model, so they all fail alike (mirrors the layout-error arm).
+                let msg = e.to_string();
+                return items
+                    .iter()
+                    .map(|_| Err(PdfError::Ocr(msg.clone())))
+                    .collect();
+            }
         }
         let inputs: Vec<(layout::LayoutSrc<'_>, f32, f32)> = items
             .iter()
