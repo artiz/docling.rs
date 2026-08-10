@@ -565,6 +565,28 @@ impl DocumentConverter {
                 self.ocr_lang_choice(),
             )
             .map_err(|e| ConversionError::with_source("pdf", e))?,
+            // SVG (#212), the ML route: rasterize (resvg, white-backed PNG at
+            // ~2048px long side) and ride the image pipeline. `--no-ocr` short-
+            // circuits to direct <text> extraction instead — the SVG carries
+            // its text natively, so skipping OCR must not mean losing it.
+            #[cfg(feature = "pdf")]
+            InputFormat::Svg if !self.no_ocr => {
+                let png = crate::backend::svg::rasterize_png(&source.bytes)?;
+                docling_pdf::convert_image_with_options(
+                    &png,
+                    &source.name,
+                    self.no_table_former,
+                    false,
+                    self.no_text_panels,
+                    self.enrich,
+                    self.ocr_lang_choice(),
+                )
+                .map_err(|e| ConversionError::with_source("svg", e))?
+            }
+            // SVG without the ML pipeline (pdf-text / wasm builds) or with
+            // --no-ocr: pure-Rust <text> extraction, flat paragraphs in
+            // reading order (the pdf / pdf-text split, applied to SVG).
+            InputFormat::Svg => crate::backend::SvgBackend.convert(&source)?,
             #[cfg(feature = "pdf")]
             InputFormat::Image => docling_pdf::convert_image_with_options(
                 &source.bytes,

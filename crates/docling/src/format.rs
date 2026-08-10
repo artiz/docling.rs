@@ -55,6 +55,11 @@ pub enum InputFormat {
     /// docling has no Visio reader. Pages become sections, shape text flows
     /// in reading order, connectors become a relations table.
     Visio,
+    /// SVG (`.svg`) — a docling.rs extension (#212); docling does not accept
+    /// SVG input. Mirrors the pdf / pdf-text split: the ML build rasterizes
+    /// (resvg) and rides the image pipeline; without ML — or under `--no-ocr`
+    /// — `<text>` elements are extracted directly into flat paragraphs.
+    Svg,
 }
 
 impl InputFormat {
@@ -93,6 +98,7 @@ impl InputFormat {
             InputFormat::Mhtml => "mhtml",
             InputFormat::Rtf => "rtf",
             InputFormat::Visio => "visio",
+            InputFormat::Svg => "svg",
         }
     }
 
@@ -148,6 +154,7 @@ impl InputFormat {
             "mhtml" | "mht" => InputFormat::Mhtml,
             "rtf" => InputFormat::Rtf,
             "vsdx" | "vsdm" => InputFormat::Visio,
+            "svg" => InputFormat::Svg,
             // METS/Google Books scan packages ship as `*.tar.gz`.
             "gz" | "targz" => InputFormat::MetsGbs,
             _ => return None,

@@ -1041,6 +1041,9 @@ fn format_from_content_type(content_type: &str) -> Option<InputFormat> {
         "image/jpeg" | "image/png" | "image/tiff" | "image/bmp" | "image/webp" => {
             InputFormat::Image
         }
+        // SVG (#212) is its own format, not Image: the ML build rasterizes it
+        // first, and OCR-less builds extract its <text> elements instead.
+        "image/svg+xml" => InputFormat::Svg,
         // Upstream's FormatToMimeType for AUDIO and VIDEO (docling v2.114).
         "audio/wav" | "audio/x-wav" | "audio/mpeg" | "audio/mp3" | "audio/mp4" | "audio/m4a"
         | "audio/aac" | "audio/ogg" | "audio/flac" | "audio/x-flac" => InputFormat::Audio,
