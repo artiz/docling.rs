@@ -74,8 +74,18 @@ if [ "${DOCLING_RS_FROM_SOURCE:-0}" != "1" ] && [ "$(uname -s)" = "Linux" ]; the
       PB_DIR="$(mktemp -d)"
       if curl -fsSL "$ASSET" 2>/dev/null | tar -xz -C "$PB_DIR" 2>/dev/null \
         && [ -x "$PB_DIR/docling-rs" ]; then
-        PREBUILT_BIN="$PB_DIR/docling-rs"
-        say "using the prebuilt $TAG binary for $TARGET (set DOCLING_RS_FROM_SOURCE=1 to build instead)"
+        # Verify the binary actually runs *on this system* before trusting it:
+        # the release binaries link ort's static onnxruntime, which needs
+        # glibc >= 2.38 — on an older distro the dynamic loader rejects it.
+        # No-args is the cheapest full load: the CLI prints usage and exits 2.
+        rc=0
+        "$PB_DIR/docling-rs" >/dev/null 2>&1 || rc=$?
+        if [ "$rc" = "2" ]; then
+          PREBUILT_BIN="$PB_DIR/docling-rs"
+          say "using the prebuilt $TAG binary for $TARGET (set DOCLING_RS_FROM_SOURCE=1 to build instead)"
+        else
+          say "the prebuilt $TAG binary does not run here (glibc older than 2.38?) — building from source"
+        fi
       else
         say "no prebuilt binary for $TAG/$TARGET — building from source"
       fi
