@@ -63,6 +63,16 @@ pub struct PdfPage {
     /// Hyperlink annotations on the page (rect in top-left page coords + target
     /// URI), restricted to web/mail/tel schemes. Used only by strict Markdown.
     pub links: Vec<LinkAnnot>,
+    /// The page's `/Rotate` value (0/90/180/270) when it was normalized away
+    /// before inference: a scanned page with `/Rotate` displays its raster
+    /// rotated, which turns OCR into garbage — so extraction un-rotates the
+    /// bitmaps (and swaps `width`/`height`) and records the display rotation
+    /// here. Assembly rotates the finished geometry *back* by this many
+    /// degrees clockwise, so emitted locations and the page size stay in
+    /// display space (matching docling and every PDF viewer). Always 0 for
+    /// text-layer pages (their cells live in display space already) and on
+    /// paths without a pdfium renderer.
+    pub rotation: u16,
 }
 
 impl PdfPage {
@@ -85,6 +95,7 @@ impl PdfPage {
             #[cfg(feature = "ocr-prep")]
             image_layout: None,
             links: Vec::new(),
+            rotation: 0,
         }
     }
 
@@ -371,6 +382,57 @@ fn extract_page(
         None
     };
 
+    let mut links = extract_links(page, height);
+
+    // `/Rotate` normalization for scanned pages: pdfium renders the page as a
+    // viewer displays it — `/Rotate` applied — so a rotated scan hands layout
+    // and OCR a sideways/upside-down raster and the recognition output is
+    // garbage. A page with a text layer needs none of this (its cells carry
+    // the geometry; the models never see its pixels decide text), so the
+    // normalization is gated to pages with no cells at all — exactly the set
+    // the OCR path fires on. The bitmaps are un-rotated to upright (lossless
+    // 90° steps), `width`/`height` swap to the upright box, and the display
+    // rotation is recorded so assembly can rotate the finished geometry back
+    // into display space (docling reports rotated pages in display coords).
+    let rotation = match page.rotation() {
+        Ok(PdfPageRenderRotation::Degrees90) => 90u16,
+        Ok(PdfPageRenderRotation::Degrees180) => 180,
+        Ok(PdfPageRenderRotation::Degrees270) => 270,
+        _ => 0,
+    };
+    let scanned = cells.is_empty() && word_cells.is_empty() && code_cells.is_empty();
+    let (width, height, image, image_layout, rotation) = if rotation != 0 && scanned && render_image
+    {
+        // Display = upright rotated `rotation`° clockwise, so upright =
+        // display rotated the complementary amount clockwise.
+        use image::imageops::{rotate180, rotate270, rotate90};
+        let un = |img: &RgbImage| match rotation {
+            90 => rotate270(img),
+            180 => rotate180(img),
+            _ => rotate90(img),
+        };
+        let image = un(&image);
+        let image_layout = image_layout.as_ref().map(&un);
+        // Link rects follow the raster from display into upright space (the
+        // inverse of the geometry rotation assembly applies at the end).
+        for l in &mut links {
+            let (nl, nt, nr, nb) = match rotation {
+                90 => (l.t, width - l.r, l.b, width - l.l),
+                180 => (width - l.r, height - l.b, width - l.l, height - l.t),
+                _ => (height - l.b, l.l, height - l.t, l.r),
+            };
+            (l.l, l.t, l.r, l.b) = (nl, nt, nr, nb);
+        }
+        let (w, h) = if rotation == 180 {
+            (width, height)
+        } else {
+            (height, width)
+        };
+        (w, h, image, image_layout, rotation)
+    } else {
+        (width, height, image, image_layout, 0)
+    };
+
     Ok(PdfPage {
         width,
         height,
@@ -380,7 +442,8 @@ fn extract_page(
         code_cells,
         word_cells,
         image,
-        links: extract_links(page, height),
+        links,
+        rotation,
     })
 }
 

@@ -2087,7 +2087,71 @@ pub fn assemble_page(
             }
         }
     }
+    // A `/Rotate`-normalized scanned page (see `pdfium_backend`) was assembled
+    // in upright space; rotate the finished geometry back so locations and the
+    // page size are display-space, like docling and every viewer report them.
+    if page.rotation != 0 {
+        rotate_nodes_to_display(&mut nodes, page.rotation);
+    }
     (nodes, links)
+}
+
+/// Rotate one 0–511 location bbox 90° clockwise on the grid (top-left origin):
+/// `(x, y) → (511 - y, x)`.
+fn rot_loc_cw(l: [u16; 4]) -> [u16; 4] {
+    [511 - l[3], l[0], 511 - l[1], l[2]]
+}
+
+/// Map upright-space geometry back to display space for a page whose `/Rotate`
+/// was normalized away before inference: every `<location>` rotates `rot`°
+/// clockwise on the 0–511 grid (the grid is per-axis normalized, so no page
+/// dims are needed), and the `PageInfo` size returns to the display box. Node
+/// text and order are untouched — reading order was decided upright, which is
+/// the whole point.
+fn rotate_nodes_to_display(nodes: &mut [Node], rot: u16) {
+    let quarter_turns = (rot / 90) as usize;
+    let rot_loc = |l: &mut [u16; 4]| {
+        for _ in 0..quarter_turns {
+            *l = rot_loc_cw(*l);
+        }
+    };
+    fn walk(node: &mut Node, rot_loc: &impl Fn(&mut [u16; 4]), swap_dims: bool) {
+        match node {
+            Node::PageInfo { width, height, .. } => {
+                if swap_dims {
+                    std::mem::swap(width, height);
+                }
+            }
+            Node::Located { location, inner } => {
+                rot_loc(location);
+                walk(inner, rot_loc, swap_dims);
+            }
+            Node::Furniture { inner, .. } => walk(inner, rot_loc, swap_dims),
+            Node::Group { children, .. } => {
+                for c in children {
+                    walk(c, rot_loc, swap_dims);
+                }
+            }
+            Node::ListItem { location, .. }
+            | Node::Formula { location, .. }
+            | Node::Chart { location, .. } => {
+                if let Some(l) = location {
+                    rot_loc(l);
+                }
+            }
+            Node::PageFurniture { location, .. } => rot_loc(location),
+            Node::Table(t) => {
+                if let Some(l) = &mut t.location {
+                    rot_loc(l);
+                }
+            }
+            _ => {}
+        }
+    }
+    let swap_dims = quarter_turns % 2 == 1;
+    for node in nodes {
+        walk(node, &rot_loc, swap_dims);
+    }
 }
 
 /// Merge paragraph fragments split across a column or page break. docling joins a
@@ -2681,6 +2745,7 @@ mod tests {
                 annot(200.0, 260.0, "https://g"),
                 annot(290.0, 360.0, "https://c"),
             ],
+            rotation: 0,
         };
         assert_eq!(
             resolve_link_anchors(&page),

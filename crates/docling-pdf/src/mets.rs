@@ -95,6 +95,7 @@ pub fn convert_mets_gbs_with_options(
             image,
             image_layout: None,
             links: Vec::new(),
+            rotation: 0,
         });
     }
     if pages.is_empty() {
