@@ -41,8 +41,15 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          # ubuntu-24.04, not 22.04: ort's prebuilt static onnxruntime is built
+          # against glibc 2.38+ (__isoc23_strtol*) and GCC-13 libstdc++
+          # (_M_replace_cold) — linking on 22.04 fails with undefined symbols.
+          # Consequence: the shipped binary needs glibc >= 2.38 at runtime
+          # (Ubuntu 24.04+, Debian 13+, Fedora 39+); older distros build from
+          # source (install.sh verifies the downloaded binary runs and falls
+          # back automatically).
           - target: x86_64-unknown-linux-gnu
-            host: ubuntu-22.04
+            host: ubuntu-24.04
           # Native ARM64 Linux runner — avoids cross-compiling the ONNX/ort build.
           - target: aarch64-unknown-linux-gnu
             host: ubuntu-24.04-arm
