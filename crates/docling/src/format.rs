@@ -48,6 +48,9 @@ pub enum InputFormat {
     /// MIME HTML archive (`.mhtml`/`.mht`) — a docling.rs extension; docling
     /// has no MHTML backend.
     Mhtml,
+    /// Rich Text Format (`.rtf`) — a docling.rs extension (#209); docling
+    /// converts RTF only by shelling out to LibreOffice.
+    Rtf,
 }
 
 impl InputFormat {
@@ -84,6 +87,7 @@ impl InputFormat {
             InputFormat::Email => "email",
             InputFormat::Epub => "epub",
             InputFormat::Mhtml => "mhtml",
+            InputFormat::Rtf => "rtf",
         }
     }
 
@@ -137,6 +141,7 @@ impl InputFormat {
             "eml" => InputFormat::Email,
             "epub" => InputFormat::Epub,
             "mhtml" | "mht" => InputFormat::Mhtml,
+            "rtf" => InputFormat::Rtf,
             // METS/Google Books scan packages ship as `*.tar.gz`.
             "gz" | "targz" => InputFormat::MetsGbs,
             _ => return None,

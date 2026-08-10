@@ -30,7 +30,7 @@ Developed with **Claude Code** and _[TENET](https://github.com/artiz/tenet/tree/
 ## Status
 
 The public API works end to end across **Markdown, CSV, HTML, AsciiDoc, DOCX,
-PPTX, XLSX, legacy DOC/XLS/PPT, EPUB, ODF, WebVTT, Email, MHTML, JATS, USPTO,
+PPTX, XLSX, legacy DOC/XLS/PPT, EPUB, ODF, RTF, WebVTT, Email, MHTML, JATS, USPTO,
 XBRL, LaTeX, JSON, PDF, images, METS, audio and video** — plus Markdown / docling-JSON output and image
 extraction. The full extension map (`InputFormat::from_extension`, mirroring
 docling's `FormatToExtensions`):
@@ -38,7 +38,7 @@ docling's `FormatToExtensions`):
 | Category | Extensions |
 |---|---|
 | Text & markup | `.md` `.txt` `.text` `.qmd` `.rmd` · AsciiDoc `.adoc` `.asciidoc` `.asc` · HTML `.html` `.htm` `.xhtml` · MHTML `.mhtml` `.mht` · LaTeX `.tex` `.latex` |
-| Word processing | DOCX `.docx` `.docm` `.dotx` `.dotm` · Word 97–2004 `.doc` `.dot` · OpenDocument `.odt` `.ott` · EPUB `.epub` |
+| Word processing | DOCX `.docx` `.docm` `.dotx` `.dotm` · Word 97–2004 `.doc` `.dot` · OpenDocument `.odt` `.ott` · EPUB `.epub` · RTF `.rtf` |
 | Presentations | PPTX `.pptx` `.pptm` `.potx` `.potm` `.ppsx` `.ppsm` · PowerPoint 97–2003 `.ppt` `.pot` `.pps` · OpenDocument `.odp` `.otp` |
 | Spreadsheets | XLSX `.xlsx` `.xlsm` · binary XLSB `.xlsb` · Excel 97–2004 `.xls` `.xlt` · OpenDocument `.ods` `.ots` · CSV `.csv` `.tsv` |
 | XML dialects | JATS / USPTO / XBRL (`.xml` `.nxml`, content-sniffed) · DocLang `.dclg` |
