@@ -4,12 +4,14 @@
 //! (with `--features serve`) starts the HTTP conversion API.
 //!
 //! Usage: docling-rs [--strict] [--to md|json] [--pages A-B] [--images MODE] [--input GLOB --output DIR [--jobs N]] [--fetch-images] [--no-stream] [--no-table-former] [--no-ocr] [--force-full-page-ocr] [--no-text-panels] [--ocr-lang en|ch] [--pipeline standard|vlm] [--vlm-endpoint URL] [--vlm-model NAME] [--asr-model PRESET] [--asr-lang CODE] [--video-frames N] [--use-web-browser] [--enrich-picture-classes] [--enrich-code] [--enrich-formula] <input-file>
-//!   --input GLOB       batch mode (#205): convert every file the glob matches
+//!   --input GLOB|DIR   batch mode (#205): convert every file the glob matches
 //!                      (`--input '/data/reports/**/*.pdf'` — quote it so the
 //!                      shell doesn't expand it) instead of one positional file.
-//!                      One warm process converts them all: the PDF/image ML
-//!                      pipeline loads its models once and is reused for every
-//!                      file, like docling-serve's warm pipeline.
+//!                      A plain directory sweeps it recursively, taking every
+//!                      file with a convertible extension. One warm process
+//!                      converts them all: the PDF/image ML pipeline loads its
+//!                      models once and is reused for every file, like
+//!                      docling-serve's warm pipeline.
 //!   --output DIR       where batch results land. The directory structure below
 //!                      the pattern's static prefix is preserved (`a/b/x.pdf`
 //!                      under `--input '/data/**/*.pdf'` becomes
@@ -558,6 +560,38 @@ struct BatchCfg {
 /// `--input '/data/reports/**/*.pdf'` mirrors the tree under `/data/reports`
 /// into `--output`.
 fn expand_glob(pattern: &str) -> Result<(Vec<std::path::PathBuf>, std::path::PathBuf), String> {
+    // A plain directory is the most natural thing to hand a flag named
+    // `--input`: sweep it recursively, keeping only files whose extension maps
+    // to a known input format (a stray `.log`/`.DS_Store` must not fail the
+    // batch). A glob stays verbatim — the user chose the files explicitly.
+    let dir = Path::new(pattern);
+    if dir.is_dir() {
+        let mut files: Vec<std::path::PathBuf> = Vec::new();
+        let mut stack = vec![dir.to_path_buf()];
+        while let Some(d) = stack.pop() {
+            let entries =
+                std::fs::read_dir(&d).map_err(|e| format!("--input '{}': {e}", d.display()))?;
+            for entry in entries {
+                let p = entry.map_err(|e| format!("--input: {e}"))?.path();
+                if p.is_dir() {
+                    stack.push(p);
+                } else if p
+                    .extension()
+                    .and_then(|e| e.to_str())
+                    .is_some_and(|e| docling::InputFormat::from_extension(e).is_some())
+                {
+                    files.push(p);
+                }
+            }
+        }
+        if files.is_empty() {
+            return Err(format!(
+                "--input '{pattern}' contains no files with a convertible extension"
+            ));
+        }
+        files.sort();
+        return Ok((files, dir.to_path_buf()));
+    }
     let base = glob_base(pattern);
     let mut files: Vec<std::path::PathBuf> = Vec::new();
     for entry in glob::glob(pattern).map_err(|e| format!("--input: {e}"))? {
@@ -894,6 +928,9 @@ fn output_document(
             eprintln!("error: dclx: {e}");
             return ExitCode::FAILURE;
         }
+        // Humans read stderr ("where did my file go?"); stdout stays the bare
+        // path for scripts.
+        eprintln!("dclx: archive written to {}", out.display());
         println!("{}", out.display());
         return ExitCode::SUCCESS;
     }

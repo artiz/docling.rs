@@ -458,6 +458,18 @@ library builder, a `force_full_page_ocr` option in docling-serve, the
 `--no-text-panels` keeps every detected picture as a picture: it disables the
 demotion of uncaptioned dense-text "picture" regions into paragraphs (the
 recovery that turns misdetected text panels back into text, issue #173).
+
+Scanned pages with a `/Rotate` flag (a scan that came in sideways or
+upside-down — the most common defect of real-world scans) are normalized
+before layout/OCR: the raster is un-rotated to upright for inference and the
+output geometry is mapped back to display coordinates, so all four
+orientations of the same scan OCR identically. Note on the OCR default:
+`--ocr-lang en` (the default) uses an English PP-OCRv3 recognition model with
+good Latin word spacing; the docling conformance corpus, however, was
+generated with the multilingual `ch_` model — if you're comparing output
+against Python docling byte-for-byte, run with `--ocr-lang ch`
+(`DOCLING_RS_OCR_LANG=ch`). On ordinary scans `en` reads better; on the
+conformance fixtures `ch` matches the groundtruth exactly.
 Turn it on for image-extraction workflows over scanned documents whose
 uncaptioned figures carry enough label text to look panel-like. Available on
 every surface: `no_text_panels(bool)` on the library builder, a
@@ -525,12 +537,15 @@ silent no-op.
 ## Batch conversion — `--input` / `--output`
 
 One warm process converts a whole tree of documents (#205): `--input` takes a
-glob (quote it — the shell must not expand it), `--output` a directory, and
-the structure below the pattern's static prefix is preserved:
+glob (quote it — the shell must not expand it) or a plain directory, `--output`
+a directory, and the structure below the pattern's static prefix is preserved:
 
 ```bash
 docling-rs --input '/data/reports/**/*.pdf' --output ./converted --to json
 # /data/reports/2024/q1/a.pdf  ->  ./converted/2024/q1/a.json
+docling-rs --input /data/reports --output ./converted
+# a directory sweeps recursively, taking every file with a convertible
+# extension (stray .log/.tmp files are ignored instead of failing the batch)
 ```
 
 The PDF/image ML pipeline loads its models **once** and every matched file
