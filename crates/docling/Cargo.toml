@@ -22,7 +22,9 @@ exclude = ["tests", "benches"]
 # compiles for wasm32-unknown-unknown (issue #79, see crates/docling-wasm).
 default = ["pdf", "asr", "fetch-images", "vlm"]
 # PDF/image/METS-GBS ML pipeline (pdfium + ONNX Runtime via docling-pdf).
-pdf = ["dep:docling-pdf", "docling-pdf/ml"]
+# resvg rides along so SVG input (#212) can rasterize into the same image
+# pipeline; the non-ML SVG path (direct <text> extraction) needs no deps.
+pdf = ["dep:docling-pdf", "docling-pdf/ml", "dep:resvg"]
 # Text-layer-only PDF conversion (docling-pdf's pure-Rust parser, no pdfium/
 # ONNX) — the wasm32 PDF path. Subsumed by `pdf`, which converts everything.
 pdf-text = ["dep:docling-pdf"]
@@ -68,6 +70,12 @@ quick-xml = "0.41"
 # slides) — see the profile in the module docs of `backend/xlsx.rs`.
 rayon = "1.10"
 regex = "1.11"
+# SVG → PNG rasterization for the image ML pipeline (#212). Pure Rust
+# (usvg + tiny-skia); gated behind `pdf` since without ML the raster has
+# no consumer — the wasm/pdf-text SVG path extracts <text> directly.
+# Pinned to 0.47: 0.48's font stack (font-types 0.12.2+) requires rustc
+# 1.89, above this workspace's 1.88 MSRV.
+resvg = { version = "0.47", optional = true }
 roxmltree = "0.20"
 scraper = "0.27.0"
 serde_json = "1"
