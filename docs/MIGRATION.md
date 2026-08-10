@@ -135,6 +135,7 @@ PyPI; run via `scripts/conformance/conformance.sh <fmt>`), not the committed gro
 | DocTags (`.doctags`/`.dt`) | `docling-core::doctags` | reads the SmolDocling/granite-docling token stream back into a `DoclingDocument` (#152) |
 | LaTeX | `latex.rs` (scanner) | simple `.tex` ≈ live (0/2 exact, but within 2 / 9 diff lines); multi-file arXiv projects convert too — 6 projects carry committed groundtruth and snapshot pinning (`tests/snapshots/latex`) |
 | MHTML (.mhtml/.mht) | `mhtml.rs` (mail-parser) → HTML backend | **docling.rs extension — no docling backend to compare against**; embedded images resolved by `Content-Location`/`cid:` |
+| RTF (.rtf) | `rtf.rs` (hand-rolled control-word tokenizer, #209) | **docling.rs extension — docling reaches RTF only via LibreOffice**; paragraphs + bold/italic/strike runs, stylesheet/outline headings, `\listtext` lists, `\trowd` tables, embedded PNG/JPEG pictures, cp1250/1251/1252 + `\uN` unicode; validated against LibreOffice-generated RTF of the DOCX fixtures |
 
 Shared OOXML infrastructure (`ooxml.rs`): a `zip` reader, `.rels` parsing, part
 content-type resolution, and image extraction — reused by DOCX/PPTX/XLSX/EPUB.

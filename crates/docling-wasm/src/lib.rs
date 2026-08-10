@@ -1,7 +1,7 @@
 //! Browser/edge (wasm32) bindings for docling.rs's **declarative** converters
 //! (issue #79): DOCX, HTML, Markdown, XLSX, PPTX, CSV, AsciiDoc, EPUB, ODF,
-//! WebVTT, Email, MHTML, JATS, USPTO, XBRL, LaTeX, JSON, DocLang → Markdown or
-//! docling JSON — fully client-side, no server round-trip.
+//! RTF, WebVTT, Email, MHTML, JATS, USPTO, XBRL, LaTeX, JSON, DocLang →
+//! Markdown or docling JSON — fully client-side, no server round-trip.
 //!
 //! Built on `docling` with `default-features = false` plus `pdf-text`: a PDF's
 //! **embedded text layer** converts too (pure-Rust parser, same extraction as
@@ -125,7 +125,7 @@ pub fn supported_extensions() -> String {
         "docx", "dotx", "docm", "dotm", "pptx", "potx", "ppsx", "pptm", "potm", "ppsm", "md",
         "txt", "text", "qmd", "rmd", "html", "htm", "xhtml", "xml", "nxml", "dclg", "dclx", "adoc",
         "asciidoc", "asc", "csv", "tsv", "xlsx", "xlsm", "xlsb", "odt", "ott", "ods", "ots", "odp",
-        "otp", "json", "vtt", "tex", "latex", "eml", "epub", "mhtml", "mht", "pdf",
+        "otp", "json", "vtt", "tex", "latex", "eml", "epub", "mhtml", "mht", "rtf", "pdf",
     ];
     serde_json::to_string(exts.as_slice()).expect("static array serializes")
 }
