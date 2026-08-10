@@ -90,10 +90,11 @@
       },
       "children": [],
       "content_layer": "body",
-      "label": "title",
+      "label": "section_header",
       "prov": [],
       "orig": "**Invoice #14**",
-      "text": "**Invoice #14**"
+      "text": "**Invoice #14**",
+      "level": 1
     },
     {
       "self_ref": "#/texts/1",
@@ -118,7 +119,7 @@
       "prov": [],
       "orig": "Line items",
       "text": "Line items",
-      "level": 1
+      "level": 2
     },
     {
       "self_ref": "#/texts/3",
@@ -185,8 +186,8 @@
       "content_layer": "body",
       "label": "text",
       "prov": [],
-      "orig": "A field: docling.rs inline.",
-      "text": "A field: docling.rs inline."
+      "orig": "A field: [docling.rs](https://docling.rs) inline.",
+      "text": "A field: [docling.rs](https://docling.rs) inline."
     },
     {
       "self_ref": "#/texts/8",

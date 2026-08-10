@@ -78,8 +78,10 @@ struct Run {
 }
 
 /// The pending `\listtext`/`\pntext` marker for the paragraph being built:
-/// `(ordered, display number, raw marker)`.
-type ListMarker = (bool, u64, String);
+/// `(ordered, display number, marker, multilevel prefix)`. A multilevel
+/// number ("1.1.") renders as a bullet with the prefix baked into the text —
+/// the DOCX backend's docling convention.
+type ListMarker = (bool, u64, String, Option<String>);
 
 struct Parser<'a> {
     bytes: &'a [u8],
@@ -92,9 +94,26 @@ struct Parser<'a> {
     runs: Vec<Run>,
     list_marker: Option<ListMarker>,
     prev_was_list: bool,
-    /// The table being assembled: completed rows + the current row's cells.
-    rows: Vec<Vec<String>>,
+    /// The table being assembled: completed rows (cells + their defs) and
+    /// the current row's cells.
+    rows: Vec<(Vec<String>, Vec<CellDef>)>,
     cells: Vec<String>,
+    /// Per-cell definitions from the row prelude (`\cellx` closes one):
+    /// right boundary in twips + merge-continuation flags. LibreOffice
+    /// expresses horizontal merges as one *wide* cell, so the boundary grid
+    /// is what recovers the column structure; Word-style `\clmrg` flags are
+    /// carried too.
+    cell_defs: Vec<CellDef>,
+    pending_hmerge: bool,
+    pending_vmerge: bool,
+}
+
+/// One `\cellx` definition from a row prelude.
+#[derive(Clone, Copy)]
+struct CellDef {
+    right: i64,
+    hcont: bool,
+    vcont: bool,
 }
 
 impl<'a> Parser<'a> {
@@ -114,6 +133,9 @@ impl<'a> Parser<'a> {
             prev_was_list: false,
             rows: Vec::new(),
             cells: Vec::new(),
+            cell_defs: Vec::new(),
+            pending_hmerge: false,
+            pending_vmerge: false,
         }
     }
 
@@ -248,9 +270,38 @@ impl<'a> Parser<'a> {
                 self.state.ilvl = 0;
             }
             "intbl" => self.state.in_table = true,
+            // Row prelude: \trowd starts the cell definitions, each \cellx
+            // closes one carrying any pending merge-continuation flags.
+            "trowd" => {
+                self.cell_defs.clear();
+                self.pending_hmerge = false;
+                self.pending_vmerge = false;
+            }
+            "clmrg" => self.pending_hmerge = true,
+            "clvmrg" => self.pending_vmerge = true,
+            "cellx" => {
+                self.cell_defs.push(CellDef {
+                    right: param.unwrap_or(0),
+                    hcont: self.pending_hmerge,
+                    vcont: self.pending_vmerge,
+                });
+                self.pending_hmerge = false;
+                self.pending_vmerge = false;
+            }
             "par" => self.flush_paragraph(doc),
             "line" => self.push_char('\n'),
             "tab" => self.push_char('\t'),
+            // Typographic entities Word/LibreOffice write as control words.
+            "emdash" => self.push_char('\u{2014}'),
+            "endash" => self.push_char('\u{2013}'),
+            "bullet" => self.push_char('\u{2022}'),
+            "lquote" => self.push_char('\u{2018}'),
+            "rquote" => self.push_char('\u{2019}'),
+            "ldblquote" => self.push_char('\u{201C}'),
+            "rdblquote" => self.push_char('\u{201D}'),
+            "enspace" | "emspace" | "qmspace" => self.push_char(' '),
+            "zwnj" => self.push_char('\u{200C}'),
+            "zwj" => self.push_char('\u{200D}'),
             "page" => {
                 self.flush_paragraph(doc);
                 self.flush_table(doc);
@@ -266,8 +317,16 @@ impl<'a> Parser<'a> {
             | "footnote" | "ftnsep" | "ftnsepc" => {
                 self.state.skip = true;
             }
-            // A field's instruction is machinery; its \fldrslt is the rendered
-            // text and reads as ordinary content.
+            // Text inside a shape (`{\shp{\*\shpinst …{\shptxt …}}}`) is body
+            // content — re-enable it inside the otherwise-skipped shape
+            // destination, the way docling renders DOCX textboxes.
+            "shptxt" => self.state.skip = false,
+            // A field: HYPERLINK instructions become `[result](url)` (the
+            // docling DOCX convention); any other field keeps its \fldrslt
+            // (the last rendered result) and drops the instruction.
+            "field" => self.read_field(),
+            // Fallbacks for a bare \fldinst/\fldrslt outside a \field group
+            // (malformed writers): machinery skipped, result kept.
             "fldinst" => self.state.skip = true,
             "fldrslt" => self.state.skip = false,
             // The list-marker compatibility text: capture it to type the
@@ -462,6 +521,73 @@ impl<'a> Parser<'a> {
         });
     }
 
+    /// Consume the whole `{\field …}` group (its `{` already handled by the
+    /// main loop): a HYPERLINK instruction wraps the rendered `\fldrslt` as a
+    /// Markdown link; other instructions (PAGEREF, TOC, …) keep the result
+    /// text alone. The result is inline RTF, so it runs through a nested
+    /// parser — formatting inside the link stays baked (`[**docs**](url)`).
+    fn read_field(&mut self) {
+        let start = self.pos;
+        let mut depth = 0usize;
+        while let Some(b) = self.next_byte() {
+            match b {
+                b'{' => depth += 1,
+                b'}' => {
+                    if depth == 0 {
+                        self.pos -= 1; // main loop pops the field group
+                        break;
+                    }
+                    depth -= 1;
+                }
+                b'\\' => {
+                    // Escaped braces must not distort the depth count.
+                    if matches!(self.peek(), Some(b'{') | Some(b'}') | Some(b'\\')) {
+                        self.pos += 1;
+                    }
+                }
+                _ => {}
+            }
+        }
+        let raw: String = self.bytes[start..self.pos]
+            .iter()
+            .map(|&b| b as char)
+            .collect();
+        let Some(inner) = extract_group(&raw, "fldrslt") else {
+            return;
+        };
+        let mut tmp = DoclingDocument::new("field");
+        let wrapped = format!("{{\\rtf1 {inner}}}");
+        let mut nested = Parser::new(&wrapped);
+        nested.codepage = self.codepage;
+        nested.run(&mut tmp);
+        let result = tmp
+            .nodes
+            .iter()
+            .filter_map(|n| match n {
+                Node::Paragraph { text } | Node::Heading { text, .. } => Some(text.as_str()),
+                _ => None,
+            })
+            .collect::<Vec<_>>()
+            .join(" ");
+        if result.is_empty() {
+            return;
+        }
+        // Inside a table cell docling renders a hyperlink as its plain text
+        // (the DOCX backend's cell convention); body text gets the Markdown
+        // link.
+        let text = match field_instruction_url(&raw) {
+            Some(url) if !self.state.in_table => format!("[{result}]({url})"),
+            _ => result,
+        };
+        // The nested parser already baked the formatting — append verbatim.
+        self.runs.push(Run {
+            text,
+            bold: false,
+            italic: false,
+            strike: false,
+        });
+    }
+
     fn push_char(&mut self, ch: char) {
         if self.state.skip {
             return;
@@ -521,9 +647,11 @@ impl<'a> Parser<'a> {
     }
 
     fn end_row(&mut self) {
-        if !self.cells.is_empty() {
-            self.rows.push(std::mem::take(&mut self.cells));
+        if self.cells.is_empty() {
+            return;
         }
+        let cells = std::mem::take(&mut self.cells);
+        self.rows.push((cells, self.cell_defs.clone()));
     }
 
     fn flush_table(&mut self, doc: &mut DoclingDocument) {
@@ -531,7 +659,65 @@ impl<'a> Parser<'a> {
         if self.rows.is_empty() {
             return;
         }
-        let mut rows = std::mem::take(&mut self.rows);
+        let raw = std::mem::take(&mut self.rows);
+        // Column grid = the union of every row's cell boundaries; a cell
+        // whose span covers several grid columns replicates its text into
+        // each (docling's merged-cell convention). Rows whose defs don't
+        // line up with their cells (malformed writer) stay as-is.
+        let mut bounds: Vec<i64> = raw
+            .iter()
+            .flat_map(|(_, defs)| defs.iter().map(|d| d.right))
+            .collect();
+        bounds.sort_unstable();
+        bounds.dedup();
+        let mut rows: Vec<Vec<String>> = Vec::with_capacity(raw.len());
+        let mut vconts: Vec<Vec<bool>> = Vec::with_capacity(raw.len());
+        for (cells, defs) in &raw {
+            if defs.len() != cells.len() || bounds.is_empty() {
+                rows.push(cells.clone());
+                vconts.push(vec![false; cells.len()]);
+                continue;
+            }
+            let mut expanded = Vec::with_capacity(bounds.len());
+            let mut vc = Vec::with_capacity(bounds.len());
+            let mut prev = i64::MIN;
+            for (cell, def) in cells.iter().zip(defs) {
+                let span = bounds
+                    .iter()
+                    .filter(|&&b| b > prev && b <= def.right)
+                    .count()
+                    .max(1);
+                for _ in 0..span {
+                    expanded.push(cell.clone());
+                    vc.push(def.vcont);
+                }
+                prev = def.right;
+            }
+            rows.push(expanded);
+            vconts.push(vc);
+        }
+        // Word-style vertical merges (\clvmrg): an empty continuation cell
+        // takes the text of the cell above it.
+        for r in 1..rows.len() {
+            for c in 0..rows[r].len() {
+                if vconts[r].get(c).copied().unwrap_or(false) && rows[r][c].is_empty() {
+                    if let Some(above) = rows.get(r - 1).and_then(|row| row.get(c)) {
+                        rows[r][c] = above.clone();
+                    }
+                }
+            }
+        }
+        // Word-style horizontal continuations (\clmrg) replicate leftward.
+        for ((_, defs), row) in raw.iter().zip(rows.iter_mut()) {
+            if defs.len() != row.len() {
+                continue;
+            }
+            for c in 1..row.len() {
+                if defs[c].hcont && row[c].is_empty() {
+                    row[c] = row[c - 1].clone();
+                }
+            }
+        }
         let width = rows.iter().map(Vec::len).max().unwrap_or(0);
         for row in &mut rows {
             row.resize(width, String::new());
@@ -558,13 +744,16 @@ impl<'a> Parser<'a> {
         let marker = self.list_marker.take();
         let text = self.take_text();
         if text.is_empty() {
-            self.prev_was_list = false;
+            // An empty paragraph (spacing) must not split a list in two —
+            // dropping it silently keeps `first_in_list` accurate.
             return;
         }
+        // docling's DOCX convention: Title renders as `#`, Heading N as
+        // `#`×(N+1) — outline level 0 *is* Heading 1, so it maps to 2.
         let heading = self
             .state
             .outline
-            .map(|o| o + 1)
+            .map(|o| o + 2)
             .or_else(|| {
                 let style = self.state.style?;
                 self.heading_styles
@@ -578,9 +767,13 @@ impl<'a> Parser<'a> {
             self.prev_was_list = false;
             return;
         }
-        if let Some((ordered, number, marker)) = marker {
+        if let Some((ordered, number, marker, prefix)) = marker {
             let first_in_list = !self.prev_was_list;
             let level = self.state.ilvl;
+            let text = match &prefix {
+                Some(p) => format!("{p} {text}"),
+                None => text,
+            };
             if ordered {
                 doc.push(Node::ListItem {
                     ordered,
@@ -616,22 +809,102 @@ impl<'a> Parser<'a> {
     }
 }
 
-/// "heading 1" … "heading 9" (case-insensitive) → level.
+/// Markdown heading level from a style name, matching the DOCX backend's
+/// docling mapping: Title → `#` (1), Subtitle → `##`, "heading N" → N+1.
 fn heading_level(style_name: &str) -> Option<u8> {
     let name = style_name.trim().to_ascii_lowercase();
+    match name.as_str() {
+        "title" => return Some(1),
+        "subtitle" => return Some(2),
+        _ => {}
+    }
     let rest = name.strip_prefix("heading ")?;
-    rest.parse::<u8>().ok().filter(|n| (1..=9).contains(n))
+    rest.parse::<u8>()
+        .ok()
+        .filter(|n| (1..=9).contains(n))
+        .map(|n| n + 1)
 }
 
-/// Type a `\listtext` marker: `1.` / `12)` → ordered with that number,
-/// anything else (`·`, `-`, `o`, Symbol-font bullets) → bullet.
-fn classify_marker(marker: &str) -> (bool, u64, String) {
-    let m = marker.trim().trim_end_matches(['.', ')']);
-    if let Ok(n) = m.parse::<u64>() {
-        (true, n, format!("{n}."))
-    } else {
-        (false, 0, String::new())
+/// The inner source of the first `{\<dest> …}` /  `{\*\<dest> …}` group inside
+/// a raw field group, brace-balanced.
+fn extract_group(raw: &str, dest: &str) -> Option<String> {
+    let needle = format!("\\{dest}");
+    let at = raw.find(&needle)?;
+    let rest = &raw[at + needle.len()..];
+    let mut depth = 0i32;
+    let mut out = String::new();
+    let mut chars = rest.chars().peekable();
+    while let Some(ch) = chars.next() {
+        match ch {
+            '\\' if matches!(chars.peek(), Some('{') | Some('}') | Some('\\')) => {
+                out.push(ch);
+                out.push(chars.next().unwrap());
+            }
+            '{' => {
+                depth += 1;
+                out.push(ch);
+            }
+            '}' => {
+                if depth == 0 {
+                    break;
+                }
+                depth -= 1;
+                out.push(ch);
+            }
+            _ => out.push(ch),
+        }
     }
+    Some(out)
+}
+
+/// The URL of a `HYPERLINK "…"` field instruction, if that is what the field
+/// is (`\l` local anchors and non-HYPERLINK instructions → `None`).
+fn field_instruction_url(raw: &str) -> Option<String> {
+    let inst = extract_group(raw, "fldinst")?;
+    // Plain text of the instruction: control words stripped, groups flattened.
+    let mut text = String::new();
+    let mut chars = inst.chars().peekable();
+    while let Some(c) = chars.next() {
+        match c {
+            '\\' => {
+                while chars
+                    .peek()
+                    .is_some_and(|c| c.is_ascii_alphanumeric() || *c == '-')
+                {
+                    chars.next();
+                }
+                if chars.peek() == Some(&' ') {
+                    chars.next();
+                }
+            }
+            '{' | '}' => {}
+            _ => text.push(c),
+        }
+    }
+    let rest = text.trim().strip_prefix("HYPERLINK")?.trim();
+    let url = if let Some(stripped) = rest.strip_prefix('"') {
+        stripped.split('"').next()?.to_string()
+    } else {
+        rest.split_whitespace().next()?.to_string()
+    };
+    (!url.is_empty() && !url.starts_with("\\l")).then_some(url)
+}
+
+/// Type a `\listtext` marker: `1.` / `12)` → ordered with that number;
+/// a multilevel number (`1.1.`) → bullet with the number kept as a text
+/// prefix (the DOCX backend's docling convention); anything else (`·`, `-`,
+/// `o`, Symbol-font bullets) → plain bullet.
+fn classify_marker(marker: &str) -> ListMarker {
+    let trimmed = marker.trim();
+    let m = trimmed.trim_end_matches(['.', ')']);
+    if let Ok(n) = m.parse::<u64>() {
+        return (true, n, format!("{n}."), None);
+    }
+    if !m.is_empty() && m.split('.').all(|p| p.parse::<u64>().is_ok()) {
+        // "1.1" / "2.3.4" (with or without the trailing dot).
+        return (false, 0, String::new(), Some(format!("{m}.")));
+    }
+    (false, 0, String::new(), None)
 }
 
 /// One byte → char through the document codepage. ASCII is universal; the
@@ -751,15 +1024,17 @@ mod tests {
         let doc = convert(
             r"{\rtf1\ansi{\stylesheet{\s0 Normal;}{\s1\b heading 1;}}\pard\s1\b Title\b0\par \pard\outlinelevel1 Sub\par \pard Body\par}",
         );
+        // docling's mapping: "heading 1" renders as ## (level 2), outline
+        // level 1 (= Heading 2) as ### (level 3).
         assert_eq!(
             doc.nodes,
             vec![
                 Node::Heading {
-                    level: 1,
+                    level: 2,
                     text: "**Title**".into()
                 },
                 Node::Heading {
-                    level: 2,
+                    level: 3,
                     text: "Sub".into()
                 },
                 Node::Paragraph {
@@ -840,7 +1115,7 @@ mod tests {
         assert_eq!(
             doc.nodes,
             vec![Node::Paragraph {
-                text: "docling.rs rules".into()
+                text: "[docling.rs](http://x) rules".into()
             }]
         );
     }

@@ -1,8 +1,8 @@
-# **Invoice #14**
+## **Invoice #14**
 
 Plain text with **bold**, *italic* and ~~gone~~ runs, café and Привет.
 
-## Line items
+### Line items
 
 - Consulting
 - Support retainer
@@ -14,6 +14,6 @@ Plain text with **bold**, *italic* and ~~gone~~ runs, café and Привет.
 |--------|-------|-------------|
 | Widget |     2 |       10.50 |
 
-A field: docling.rs inline.
+A field: [docling.rs](https://docling.rs) inline.
 
 After the page break.
