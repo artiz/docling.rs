@@ -1,7 +1,7 @@
 # docling.rs
 
 <p align="center">
-  <img src="docs/assets/logo.svg" alt="docling.rs — a duck feeding a document into a meat grinder" width="240">
+  <img src="https://raw.githubusercontent.com/docling-project/docling.rs/refs/heads/master/docs/assets/logo.svg" alt="docling.rs — a duck feeding a document into a meat grinder" width="240">
 </p>
 
 A Rust port of [docling](https://github.com/docling-project/docling): convert
