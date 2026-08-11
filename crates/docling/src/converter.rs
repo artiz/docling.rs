@@ -587,6 +587,10 @@ impl DocumentConverter {
             // --no-ocr: pure-Rust <text> extraction, flat paragraphs in
             // reading order (the pdf / pdf-text split, applied to SVG).
             InputFormat::Svg => crate::backend::SvgBackend.convert(&source)?,
+            // Apple iWork (#213): pure-Rust IWA text extraction, all builds.
+            InputFormat::Pages | InputFormat::Numbers | InputFormat::Keynote => {
+                crate::backend::IworkBackend.convert(&source)?
+            }
             #[cfg(feature = "pdf")]
             InputFormat::Image => docling_pdf::convert_image_with_options(
                 &source.bytes,

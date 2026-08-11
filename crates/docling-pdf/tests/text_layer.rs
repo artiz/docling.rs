@@ -112,3 +112,18 @@ fn scanned_pdf_yields_empty_document() {
     let doc = docling_pdf::convert_text_layer(b"%PDF-1.4\n%%EOF", "scan.pdf").expect("no error");
     assert!(doc.nodes.is_empty());
 }
+
+/// #211: HEIC is detected by content, and without the `heif` feature the
+/// error names the fix instead of a generic decode failure. Runs before any
+/// model loads, so it needs no assets. (With the feature on, the same bytes
+/// fail in libheif instead — a 12-byte file is not a real container.)
+#[test]
+fn heif_without_feature_reports_clearly() {
+    let stub = b"\x00\x00\x00\x18ftypheic\0\0\0\0";
+    let err = docling_pdf::convert_image(stub, "photo.heic").unwrap_err();
+    let msg = err.to_string();
+    #[cfg(not(feature = "heif"))]
+    assert!(msg.contains("--features heif"), "unexpected error: {msg}");
+    #[cfg(feature = "heif")]
+    assert!(msg.contains("heif"), "unexpected error: {msg}");
+}

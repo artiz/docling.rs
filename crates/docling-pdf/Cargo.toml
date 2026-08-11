@@ -21,6 +21,11 @@ default = ["ml"]
 # The ONNX-free OCR pre/post half (`ocr_prep`) alone — what the wasm build
 # (#79 phase 2) pulls: pure Rust + the `image` crate, no ort/pdfium.
 ocr-prep = ["dep:image"]
+# HEIC/HEIF image input (#211): decode via the system libheif (native
+# dependency — libde265 for HEVC), off by default so plain and wasm builds
+# stay pure Rust. Without it a .heic input fails with a targeted
+# "rebuild with --features heif" message.
+heif = ["dep:libheif-rs"]
 ml = [
     "ocr-prep",
     "dep:pdfium-render",
@@ -48,6 +53,10 @@ directml = ["ml", "ort/directml", "ort/copy-dylibs"]
 coreml = ["ml", "ort/coreml", "ort/copy-dylibs"]
 
 [dependencies]
+# ~1.0: keeps libheif-sys on the 2.x line, which links libheif 1.16–1.17 —
+# what current LTS distros ship (Ubuntu 24.04 = 1.17). Newer libheif-rs
+# requires libheif >= 1.18 and can be selected once baselines move.
+libheif-rs = { version = "~1.0", default-features = false, optional = true }
 docling-core = { path = "../docling-core", version = "1.0.1" }
 pdfium-render = { version = "0.8", optional = true }
 ort = { version = "2.0.0-rc.13", default-features = false, features = ["std", "download-binaries", "tls-rustls"], optional = true }
@@ -58,7 +67,7 @@ regex = { version = "1.11", optional = true }
 lopdf = "0.44"
 fast_image_resize = { version = "5.1.4", optional = true }
 # CodeFormula enrichment decodes its VLM output with the HF tokenizer
-# (models/code_formula/tokenizer.json) — same crate/features as docling-core's
+# (.models/code_formula/tokenizer.json) — same crate/features as docling-core's
 # chunking tokenizer.
 tokenizers = { version = "0.20", default-features = false, features = ["onig"], optional = true }
 

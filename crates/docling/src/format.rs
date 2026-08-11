@@ -60,6 +60,13 @@ pub enum InputFormat {
     /// (resvg) and rides the image pipeline; without ML — or under `--no-ocr`
     /// — `<text>` elements are extracted directly into flat paragraphs.
     Svg,
+    /// Apple Pages (`.pages`) — a docling.rs extension (#213); docling has
+    /// no iWork reader. Modern (2013+) IWA packages, text-level extraction.
+    Pages,
+    /// Apple Numbers (`.numbers`), same IWA machinery as [`Self::Pages`].
+    Numbers,
+    /// Apple Keynote (`.key`), same IWA machinery as [`Self::Pages`].
+    Keynote,
 }
 
 impl InputFormat {
@@ -99,6 +106,9 @@ impl InputFormat {
             InputFormat::Rtf => "rtf",
             InputFormat::Visio => "visio",
             InputFormat::Svg => "svg",
+            InputFormat::Pages => "pages",
+            InputFormat::Numbers => "numbers",
+            InputFormat::Keynote => "key",
         }
     }
 
@@ -119,7 +129,9 @@ impl InputFormat {
             "dclx" => InputFormat::Dclx,
             // `.gif` decodes through the same content-sniffing `image` path as
             // the rest (first frame of an animation), issue #208.
-            "jpg" | "jpeg" | "png" | "tif" | "tiff" | "bmp" | "webp" | "gif" => InputFormat::Image,
+            "jpg" | "jpeg" | "png" | "tif" | "tiff" | "bmp" | "webp" | "gif" | "heic" | "heif" => {
+                InputFormat::Image
+            }
             "adoc" | "asciidoc" | "asc" => InputFormat::Asciidoc,
             // `.tsv` rides the CSV backend, whose delimiter sniffing already
             // prefers the tab when it dominates the first line (#208).
@@ -155,6 +167,11 @@ impl InputFormat {
             "rtf" => InputFormat::Rtf,
             "vsdx" | "vsdm" => InputFormat::Visio,
             "svg" => InputFormat::Svg,
+            // Apple iWork (#213). `.heic`/`.heif` route to Image above and
+            // decode behind the opt-in `heif` cargo feature.
+            "pages" => InputFormat::Pages,
+            "numbers" => InputFormat::Numbers,
+            "key" => InputFormat::Keynote,
             // METS/Google Books scan packages ship as `*.tar.gz`.
             "gz" | "targz" => InputFormat::MetsGbs,
             _ => return None,
