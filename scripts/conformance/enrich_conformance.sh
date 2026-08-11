@@ -52,7 +52,7 @@ fi
 
 # INT8 decoder leg (runs only when the quantized decoder sits on disk, i.e.
 # what a default `download_dependencies.sh --enrich` install executes).
-if [ -f models/code_formula/decoder_kv_int8.onnx ]; then
+if [ -f .models/code_formula/decoder_kv_int8.onnx ]; then
   echo "== code_and_formula.pdf (int8 decoder)"
   "$BIN" --no-stream --enrich-code --enrich-formula \
     tests/data/pdf/sources/code_and_formula.pdf > "$TMP/cf8.md"

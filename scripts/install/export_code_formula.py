@@ -35,7 +35,7 @@ Needs a Python env with torch + transformers (>=4.46 for Idefics3) + onnx:
     pip install torch transformers onnx pillow
 
 Usage:
-    python scripts/install/export_code_formula.py [out_dir]   # default models/code_formula
+    python scripts/install/export_code_formula.py [out_dir]   # default .models/code_formula
 """
 
 import math
@@ -50,7 +50,7 @@ import torch.nn.functional as F
 warnings.filterwarnings("ignore")
 
 REPO = "docling-project/CodeFormulaV2"
-OUT = sys.argv[1] if len(sys.argv) > 1 else "models/code_formula"
+OUT = sys.argv[1] if len(sys.argv) > 1 else ".models/code_formula"
 os.makedirs(OUT, exist_ok=True)
 
 print(f"loading {REPO} ...", flush=True)

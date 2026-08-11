@@ -3,7 +3,7 @@
 #
 # The site is fully static: the wasm module is built here and copied in next to
 # the page. No models are published — they are large, and the page resolves them
-# at runtime (device file → same-origin ./models/ → Hugging Face), so the
+# at runtime (device file → same-origin ./.models/ → Hugging Face), so the
 # declarative converters and text-layer PDFs work immediately and OCR works as
 # soon as the visitor supplies models.
 #

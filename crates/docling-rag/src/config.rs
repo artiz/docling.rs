@@ -176,8 +176,8 @@ impl Default for RagConfig {
             ollama_base_url: "http://localhost:11434".to_string(),
             gemini_api_key: None,
             gemini_model: "gemini-embedding-001".to_string(),
-            embed_onnx_path: "models/embed/bge-m3.onnx".to_string(),
-            embed_tokenizer_path: "models/embed/tokenizer.json".to_string(),
+            embed_onnx_path: ".models/embed/bge-m3.onnx".to_string(),
+            embed_tokenizer_path: ".models/embed/tokenizer.json".to_string(),
             openrouter_api_key: None,
             openrouter_base_url: "https://openrouter.ai/api/v1".to_string(),
             llm_model: "deepseek/deepseek-chat".to_string(),
@@ -319,12 +319,7 @@ impl RagConfig {
     }
 }
 
-fn env_str(key: &str) -> Option<String> {
-    match std::env::var(key) {
-        Ok(v) if !v.trim().is_empty() => Some(v.trim().to_string()),
-        _ => None,
-    }
-}
+use docling_core::env::nonempty as env_str;
 
 fn env_parse<T>(key: &str, default: T) -> Result<T>
 where

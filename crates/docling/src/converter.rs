@@ -80,7 +80,7 @@ pub struct DocumentConverter {
     use_web_browser: bool,
     /// Named Whisper model preset for audio sources (docling's ASR model
     /// specs, PR #3741): English-only / Distil-Whisper variants under
-    /// `models/asr/<preset>/`. `None` = the default Whisper tiny.
+    /// `.models/asr/<preset>/`. `None` = the default Whisper tiny.
     asr_model: Option<String>,
     asr_lang: Option<String>,
     /// Max sampled frames per video (#138 Phase 2). `None` = the default
@@ -227,7 +227,7 @@ impl DocumentConverter {
     /// English-only (`whisper_tiny_en`, `whisper_base_en`, `whisper_small_en`)
     /// and Distil-Whisper (`whisper_distil_small_en`) variants of docling's
     /// ASR model specs. `None` (default) uses Whisper tiny (multilingual)
-    /// from `models/asr/`; presets load from `models/asr/<preset>/` (fetch
+    /// from `.models/asr/`; presets load from `.models/asr/<preset>/` (fetch
     /// them with `download_dependencies.sh --asr-model <preset>`).
     pub fn asr_model(mut self, model: Option<String>) -> Self {
         self.asr_model = model;
@@ -328,7 +328,7 @@ impl DocumentConverter {
     /// The full 26-class prediction distribution (bar_chart, logo, signature,
     /// …) lands on the picture item and is serialized into the docling JSON as
     /// the `classification` annotation plus the `meta.classification` field.
-    /// Markdown output is unaffected. Needs `models/picture_classifier.onnx`
+    /// Markdown output is unaffected. Needs `.models/picture_classifier.onnx`
     /// (fetched by `scripts/install/download_dependencies.sh`); a missing
     /// model warns once and skips classification.
     pub fn do_picture_classification(mut self, enable: bool) -> Self {
@@ -341,7 +341,7 @@ impl DocumentConverter {
     ///
     /// The model re-reads the code crop at ~120 dpi, emits the clean source
     /// text (line breaks included) and identifies the language, which lands in
-    /// the JSON `code_language` field. Needs the `models/code_formula/` graphs
+    /// the JSON `code_language` field. Needs the `.models/code_formula/` graphs
     /// (fetched by `scripts/install/download_dependencies.sh`); a missing
     /// model warns once and leaves the block as extracted.
     pub fn do_code_enrichment(mut self, enable: bool) -> Self {

@@ -1058,20 +1058,15 @@ fn format_from_content_type(content_type: &str) -> Option<InputFormat> {
 /// unbounded — a hostile URL streaming an endless body would exhaust memory.
 /// Override with `DOCLING_RS_MAX_FETCH_BYTES`.
 fn max_fetch_bytes() -> u64 {
-    std::env::var("DOCLING_RS_MAX_FETCH_BYTES")
-        .ok()
-        .and_then(|v| v.parse().ok())
-        .unwrap_or(256 * 1024 * 1024)
+    docling_core::env::parse("DOCLING_RS_MAX_FETCH_BYTES").unwrap_or(256 * 1024 * 1024)
 }
 
 /// Escape hatch for local development: when `DOCLING_RS_ALLOW_PRIVATE_IP_FETCH`
-/// is set to a truthy value (anything but empty / `0` / `false`), the SSRF IP
-/// block-list is not enforced, so a URL like `http://localhost:8080/doc.pdf`
-/// can be fetched. Off by default — leave it unset in production.
+/// is set to a truthy value, the SSRF IP block-list is not enforced, so a URL
+/// like `http://localhost:8080/doc.pdf` can be fetched. Off by default —
+/// leave it unset in production.
 fn allow_private_ip_fetch() -> bool {
-    std::env::var("DOCLING_RS_ALLOW_PRIVATE_IP_FETCH")
-        .map(|v| !v.is_empty() && v != "0" && !v.eq_ignore_ascii_case("false"))
-        .unwrap_or(false)
+    docling_core::env::flag("DOCLING_RS_ALLOW_PRIVATE_IP_FETCH")
 }
 
 /// Reject a resolved IP that points back into the local host or infrastructure.

@@ -15,7 +15,7 @@ known residual items.
   local-file disclosure, or path traversal.
 - **Out of scope / operational:** an attacker who can already write to the
   process working directory or set its environment (they can plant a
-  malicious `models/*.onnx` or `.pdfium/lib` that the loader would pick up —
+  malicious `.models/*.onnx` or `.pdfium/lib` that the loader would pick up —
   run with a fixed, non-writable CWD and absolute `DOCLING_*` model paths).
   The `web-browser` feature runs system Chromium **unsandboxed** on the input
   HTML and is off by default; enable it only for content you accept that risk

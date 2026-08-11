@@ -10,12 +10,14 @@
 //! through Markdown. The faithful, `$ref`-based schema that matches
 //! docling-core's JSON wire format lands in Phase 1 (see `docs/MIGRATION.md`).
 
+pub mod assets;
 pub mod base64;
 pub mod chunker;
 pub mod confidence;
 mod doclang;
 pub mod doctags;
 mod document;
+pub mod env;
 mod json;
 mod labels;
 mod markdown;

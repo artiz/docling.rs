@@ -118,7 +118,7 @@ export interface DependencyStatus {
   ocr: boolean
   /** TableFormer encoder/decoder/bbox present. */
   tableformer: boolean
-  /** Hybrid-chunker tokenizer (models/chunk/tokenizer.json) present. */
+  /** Hybrid-chunker tokenizer (.models/chunk/tokenizer.json) present. */
   chunkTokenizer: boolean
   /** True when the minimum for PDF (pdfium + layout) is present. */
   ready: boolean

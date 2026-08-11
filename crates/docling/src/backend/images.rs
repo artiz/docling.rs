@@ -119,9 +119,7 @@ impl FsImageResolver {
 /// overrides it, clamped to a sane range.
 #[cfg(feature = "fetch-images")]
 fn image_fetch_concurrency() -> usize {
-    std::env::var("DOCLING_RS_IMAGE_FETCH_CONCURRENCY")
-        .ok()
-        .and_then(|v| v.trim().parse::<usize>().ok())
+    docling_core::env::parse::<usize>("DOCLING_RS_IMAGE_FETCH_CONCURRENCY")
         .filter(|&n| n > 0)
         .unwrap_or(10)
         .clamp(1, 64)
@@ -273,10 +271,7 @@ fn is_blocked_ip(ip: std::net::IpAddr) -> bool {
 #[cfg(feature = "fetch-images")]
 fn blocked_by_ssrf_guard(url: &str) -> bool {
     use std::net::ToSocketAddrs;
-    let allow = std::env::var("DOCLING_RS_ALLOW_PRIVATE_IP_FETCH")
-        .map(|v| !v.is_empty() && v != "0" && !v.eq_ignore_ascii_case("false"))
-        .unwrap_or(false);
-    if allow {
+    if docling_core::env::flag("DOCLING_RS_ALLOW_PRIVATE_IP_FETCH") {
         return false;
     }
     let Ok(parsed) = url::Url::parse(url) else {

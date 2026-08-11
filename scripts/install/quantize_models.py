@@ -40,8 +40,8 @@ Usage (from the repo root, models fetched by scripts/install/download_dependenci
 
 Then point the pipeline at the quantized files:
 
-    export DOCLING_LAYOUT_ONNX=$PWD/models/layout_heron_int8.onnx
-    export DOCLING_TABLEFORMER_DECODER=$PWD/models/tableformer/decoder_int8.onnx
+    export DOCLING_LAYOUT_ONNX=$PWD/.models/layout_heron_int8.onnx
+    export DOCLING_TABLEFORMER_DECODER=$PWD/.models/tableformer/decoder_int8.onnx
 
 Re-run scripts/conformance/pdf_conformance.sh (or diff Markdown against
 tests/data/pdf/groundtruth) after re-quantizing to re-verify quality.
@@ -54,10 +54,10 @@ import sys
 import numpy as np
 
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-# Where the fp32 models live and the int8 outputs go (a checkout's models/ by
+# Where the fp32 models live and the int8 outputs go (a checkout's .models/ by
 # default); DOCLING_RS_MODELS_DIR relocates it (e.g. /opt/models in a Docker
 # models stage).
-MODELS = os.environ.get("DOCLING_RS_MODELS_DIR", f"{REPO}/models")
+MODELS = os.environ.get("DOCLING_RS_MODELS_DIR", f"{REPO}/.models")
 # DOCLING_RS_CALIBRATION_DIR: a directory scanned recursively for calibration
 # *.pdf files; defaults to the repo's PDF + scanned corpus (the set the
 # published quality numbers were measured with).

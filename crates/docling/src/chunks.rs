@@ -1,7 +1,7 @@
 //! Chunk-record JSON export shared by the CLI (`--to chunks`) and the HTTP
 //! server (`to=chunks`): the hierarchical chunker's records always, plus the
 //! hybrid chunker's when a tokenizer is available — `DOCLING_CHUNK_TOKENIZER`,
-//! or `models/chunk/tokenizer.json` as populated by
+//! or `.models/chunk/tokenizer.json` as populated by
 //! `scripts/install/download_dependencies.sh` (requires the `chunking` build
 //! feature; `DOCLING_CHUNK_MAX_TOKENS` overrides the default budget of 256).
 
@@ -37,14 +37,10 @@ pub fn chunk_records(
     let mut out = serde_json::json!({ "hierarchical": records(&hierarchical) });
 
     #[cfg(feature = "chunking")]
-    if let Ok(tok_path) = std::env::var("DOCLING_CHUNK_TOKENIZER").or_else(|_| {
-        docling_core::chunker::resolve_tokenizer_path(None)
-            .map_err(|_| std::env::VarError::NotPresent)
-    }) {
-        let max_tokens = std::env::var("DOCLING_CHUNK_MAX_TOKENS")
-            .ok()
-            .and_then(|v| v.parse().ok())
-            .unwrap_or(256);
+    if let Some(tok_path) = docling_core::env::nonempty("DOCLING_CHUNK_TOKENIZER")
+        .or_else(|| docling_core::chunker::resolve_tokenizer_path(None).ok())
+    {
+        let max_tokens = docling_core::env::parse("DOCLING_CHUNK_MAX_TOKENS").unwrap_or(256);
         match docling_core::chunker::HuggingFaceTokenizer::from_file(&tok_path, max_tokens) {
             Ok(tok) => {
                 let hybrid = docling_core::chunker::HybridChunker::new(tok).chunk(document);

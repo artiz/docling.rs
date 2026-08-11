@@ -118,13 +118,9 @@ fn repo_root() -> PathBuf {
 /// this also moves the process to the repo root, like `scanned.rs`.
 fn models_ready() -> bool {
     let root = repo_root();
-    [
-        "models/layout_heron.onnx",
-        "models/ocr_rec_en.onnx",
-        "models/en_dict.txt",
-    ]
-    .iter()
-    .all(|m| root.join(m).exists())
+    ["layout_heron.onnx", "ocr_rec_en.onnx", "en_dict.txt"]
+        .iter()
+        .all(|m| root.join(".models").join(m).exists())
         && std::env::set_current_dir(&root).is_ok()
 }
 

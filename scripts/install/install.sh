@@ -18,7 +18,7 @@
 #   2. Builds the CLI in release mode (`cargo build --release -p docling-cli`).
 #   3. Installs to $DOCLING_RS_PREFIX (default /usr/local/docling.rs):
 #        bin/docling-rs          the CLI (ONNX Runtime statically linked)
-#        models/…, .pdfium/…      fetched by scripts/install/download_dependencies.sh
+#        .models/…, .pdfium/…      fetched by scripts/install/download_dependencies.sh
 #      and symlinks it as /usr/local/bin/docling-rs.
 #   4. Writes /etc/profile.d/docling-rs.sh exporting the DOCLING_*/PDFIUM_*
 #      paths. This is belt-and-braces only: the binary also resolves models
@@ -161,7 +161,7 @@ if [ -L "$BIN_DIR/docling.rs" ] && [ "$(readlink "$BIN_DIR/docling.rs")" = "$PRE
 fi
 
 # --- 5. Environment (optional convenience) --------------------------------------
-# The binary resolves models/.pdfium next to its own location through the
+# The binary resolves .models/.pdfium next to its own location through the
 # symlink, so these exports are not required for `docling-rs` itself — they
 # help other tools (scripts, the Node bindings) find the same assets.
 if [ -d /etc/profile.d ] && [ -n "$SUDO" -o -w /etc/profile.d ]; then
@@ -171,10 +171,10 @@ if [ -d /etc/profile.d ] && [ -n "$SUDO" -o -w /etc/profile.d ]; then
 # itself (it resolves these relative to its own binary), provided for other
 # consumers of the same model tree.
 export PDFIUM_DYNAMIC_LIB_PATH="$PREFIX/.pdfium/lib"
-export DOCLING_OCR_REC_ONNX="$PREFIX/models/ocr_rec.onnx"
-export DOCLING_OCR_DICT="$PREFIX/models/ppocr_keys_v1.txt"
-export DOCLING_TABLEFORMER_ENCODER="$PREFIX/models/tableformer/encoder.onnx"
-export DOCLING_TABLEFORMER_BBOX="$PREFIX/models/tableformer/bbox.onnx"
+export DOCLING_OCR_REC_ONNX="$PREFIX/.models/ocr_rec.onnx"
+export DOCLING_OCR_DICT="$PREFIX/.models/ppocr_keys_v1.txt"
+export DOCLING_TABLEFORMER_ENCODER="$PREFIX/.models/tableformer/encoder.onnx"
+export DOCLING_TABLEFORMER_BBOX="$PREFIX/.models/tableformer/bbox.onnx"
 EOF
 fi
 
@@ -186,4 +186,4 @@ printf '# docling.rs\n\ninstalled.\n' > "$TMP_MD"
 rm -f "$TMP_MD"
 
 say "done. Try:  docling-rs your.pdf > out.md"
-say "layout: $PREFIX  (binary, models/, .pdfium/); uninstall: rm -rf $PREFIX $BIN_DIR/docling-rs /etc/profile.d/docling-rs.sh"
+say "layout: $PREFIX  (binary, .models/, .pdfium/); uninstall: rm -rf $PREFIX $BIN_DIR/docling-rs /etc/profile.d/docling-rs.sh"

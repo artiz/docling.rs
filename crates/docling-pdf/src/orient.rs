@@ -34,11 +34,12 @@ use image::RgbImage;
 use crate::layout::Region;
 use crate::ocr::OcrModel;
 use crate::ocr_prep::{prep_region_lines, PrepLine};
+use docling_core::debug_log;
 
 /// Whether the detection pass runs (`DOCLING_RS_OCR_ORIENTATION`, default
 /// `auto`; `off`/`0`/`false` disable, anything else warns and stays auto).
 pub(crate) fn enabled() -> bool {
-    let raw = std::env::var("DOCLING_RS_OCR_ORIENTATION").unwrap_or_default();
+    let raw = docling_core::env::nonempty("DOCLING_RS_OCR_ORIENTATION").unwrap_or_default();
     let v = raw.trim().to_ascii_lowercase();
     match v.as_str() {
         "" | "auto" | "on" | "1" | "true" => true,
@@ -122,11 +123,8 @@ fn probe(img: &RgbImage, ocr: &mut OcrModel) -> Result<Score, String> {
 /// Any internal failure returns 0 — the page converts as-is, exactly as it
 /// would have without this pass.
 pub(crate) fn detect(img: &RgbImage, ocr: &mut OcrModel) -> u16 {
-    let debug = std::env::var("DOCLING_RS_DEBUG").is_ok();
     let fail = |e: String| {
-        if std::env::var("DOCLING_RS_DEBUG").is_ok() {
-            eprintln!("docling-pdf: orientation probe failed ({e}); assuming upright");
-        }
+        debug_log!("docling-pdf: orientation probe failed ({e}); assuming upright");
         0
     };
     let s0 = match probe(img, ocr) {
@@ -134,13 +132,11 @@ pub(crate) fn detect(img: &RgbImage, ocr: &mut OcrModel) -> u16 {
         Err(e) => return fail(e),
     };
     if s0.chars >= UPRIGHT_CHARS && s0.mean_conf() >= UPRIGHT_CONF {
-        if debug {
-            eprintln!(
-                "docling-pdf: orientation 0° reads {} chars at {:.2} — upright, no probes",
-                s0.chars,
-                s0.mean_conf()
-            );
-        }
+        debug_log!(
+            "docling-pdf: orientation 0° reads {} chars at {:.2} — upright, no probes",
+            s0.chars,
+            s0.mean_conf()
+        );
         return 0;
     }
     // Hypothesis "content is rotated `deg`° clockwise" ⇒ test the bitmap
@@ -150,14 +146,12 @@ pub(crate) fn detect(img: &RgbImage, ocr: &mut OcrModel) -> u16 {
         (180, rotate180(img)),
         (270, rotate90(img)),
     ];
-    if debug {
-        eprintln!(
-            "docling-pdf: orientation 0°: {} chars at {:.2} (weighted {:.1})",
-            s0.chars,
-            s0.mean_conf(),
-            s0.weighted
-        );
-    }
+    debug_log!(
+        "docling-pdf: orientation 0°: {} chars at {:.2} (weighted {:.1})",
+        s0.chars,
+        s0.mean_conf(),
+        s0.weighted
+    );
     let (mut best_deg, mut best) = (
         0u16,
         Score {
@@ -170,14 +164,12 @@ pub(crate) fn detect(img: &RgbImage, ocr: &mut OcrModel) -> u16 {
             Ok(s) => s,
             Err(e) => return fail(e),
         };
-        if debug {
-            eprintln!(
-                "docling-pdf: orientation {deg}°: {} chars at {:.2} (weighted {:.1})",
-                s.chars,
-                s.mean_conf(),
-                s.weighted
-            );
-        }
+        debug_log!(
+            "docling-pdf: orientation {deg}°: {} chars at {:.2} (weighted {:.1})",
+            s.chars,
+            s.mean_conf(),
+            s.weighted
+        );
         if s.weighted > best.weighted {
             (best_deg, best) = (*deg, s);
         }

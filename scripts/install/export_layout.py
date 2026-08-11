@@ -16,7 +16,7 @@ Needs a Python env with torch + transformers + onnx:
     pip install torch transformers onnx
 
 Usage:
-    python scripts/install/export_layout.py models/layout_heron.onnx
+    python scripts/install/export_layout.py .models/layout_heron.onnx
 """
 
 import os
@@ -121,7 +121,7 @@ def splice_pos_embed(dynamic_path, pe_name, pe_value, out):
 
 
 def main() -> None:
-    out = sys.argv[1] if len(sys.argv) > 1 else "models/layout_heron.onnx"
+    out = sys.argv[1] if len(sys.argv) > 1 else ".models/layout_heron.onnx"
     out_dir = os.path.dirname(out)
     if out_dir:
         os.makedirs(out_dir, exist_ok=True)

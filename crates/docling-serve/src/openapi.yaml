@@ -370,7 +370,7 @@ components:
         ocr_lang: { $ref: "#/components/schemas/OcrLang" }
         asr_model:
           type: string
-          description: Audio/video — Whisper preset directory under `models/asr/`.
+          description: Audio/video — Whisper preset directory under `.models/asr/`.
         asr_lang:
           type: string
           description: >-

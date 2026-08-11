@@ -66,7 +66,7 @@ pub fn docling_chunks_with(
         ChunkerKind::Hierarchical => HierarchicalChunker.chunk_with(document, &mut map_sink),
         ChunkerKind::Hybrid => {
             // RAG_CHUNK_TOKENIZER, or the download script's default location
-            // (models/chunk/tokenizer.json) when unset.
+            // (.models/chunk/tokenizer.json) when unset.
             let tok = docling::chunker::HuggingFaceTokenizer::resolve(tokenizer, max_tokens)
                 .map_err(RagError::config)?;
             HybridChunker::new(tok).chunk_with(document, &mut map_sink)

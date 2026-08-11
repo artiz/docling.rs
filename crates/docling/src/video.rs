@@ -115,7 +115,7 @@ pub struct VideoFrame {
 /// The ffmpeg invocation to use: `DOCLING_FFMPEG` if set, else `ffmpeg` from
 /// `PATH`.
 fn ffmpeg_bin() -> String {
-    std::env::var("DOCLING_FFMPEG").unwrap_or_else(|_| "ffmpeg".to_string())
+    docling_core::env::nonempty("DOCLING_FFMPEG").unwrap_or_else(|| "ffmpeg".to_string())
 }
 
 /// Whether the ffmpeg binary is runnable. Checked once per call site — the
@@ -358,10 +358,10 @@ mod tests {
     }
 
     /// Whether Whisper-tiny is reachable, pointing `DOCLING_ASR_*` at the
-    /// workspace-root `models/asr/` when running from the crate dir (model
+    /// workspace-root `.models/asr/` when running from the crate dir (model
     /// resolution is CWD-relative).
     fn asr_models_ready() -> bool {
-        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../models/asr");
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../.models/asr");
         if root.join("encoder_model.onnx").exists() {
             std::env::set_var("DOCLING_ASR_ENCODER", root.join("encoder_model.onnx"));
             std::env::set_var("DOCLING_ASR_DECODER", root.join("decoder_model.onnx"));

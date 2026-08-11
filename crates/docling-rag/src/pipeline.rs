@@ -54,7 +54,7 @@ pub struct Answer {
 /// Off by default: enrichment multiplies conversion time.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct ConvertOptions {
-    /// Classify pictures (chart/logo/…) — `models/picture_classifier.onnx`.
+    /// Classify pictures (chart/logo/…) — `.models/picture_classifier.onnx`.
     pub enrich_pictures: bool,
     /// Transcribe code blocks with the CodeFormula VLM (`--enrich` download).
     pub enrich_code: bool,
@@ -93,7 +93,7 @@ impl Pipeline {
         // resolved once per process at first PDF use; explicit
         // DOCLING_RS_OCR_LANG / DOCLING_OCR_* env always wins.
         if cfg.ocr_lang == crate::config::OcrLang::Ch
-            && std::env::var_os("DOCLING_RS_OCR_LANG").is_none()
+            && docling_core::env::nonempty("DOCLING_RS_OCR_LANG").is_none()
         {
             std::env::set_var("DOCLING_RS_OCR_LANG", "ch");
         }

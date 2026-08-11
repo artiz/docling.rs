@@ -119,8 +119,8 @@ pub struct LayoutModel {
 #[cfg(feature = "ml")]
 impl LayoutModel {
     /// Load the ONNX model from `DOCLING_LAYOUT_ONNX`. Without the override,
-    /// prefers `models/layout_heron_int8.onnx` when present (the quantized
-    /// default; `DOCLING_RS_FP32=1` opts out), else `models/layout_heron.onnx`.
+    /// prefers `.models/layout_heron_int8.onnx` when present (the quantized
+    /// default; `DOCLING_RS_FP32=1` opts out), else `.models/layout_heron.onnx`.
     pub fn load() -> Result<Self, String> {
         Self::load_with(crate::intra_threads())
     }
@@ -131,16 +131,16 @@ impl LayoutModel {
     pub fn load_with(intra: usize) -> Result<Self, String> {
         let path = crate::model_path(
             "DOCLING_LAYOUT_ONNX",
-            "models/layout_heron.onnx",
-            "models/layout_heron_int8.onnx",
+            ".models/layout_heron.onnx",
+            ".models/layout_heron_int8.onnx",
         );
         if crate::timing::enabled() {
             eprintln!("docling-pdf: layout model: {path}");
         }
         // Escalation target for the quant-robustness guard: only when the
         // int8 graph was picked automatically and the fp32 one is also there.
-        let fp32_path = if std::env::var("DOCLING_LAYOUT_ONNX").is_err() {
-            let fp32 = crate::resolve_asset("models/layout_heron.onnx");
+        let fp32_path = if docling_core::env::nonempty("DOCLING_LAYOUT_ONNX").is_none() {
+            let fp32 = crate::resolve_asset(".models/layout_heron.onnx");
             (path != fp32 && std::path::Path::new(&fp32).exists()).then_some(fp32)
         } else {
             None

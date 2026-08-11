@@ -146,7 +146,7 @@ fn referenced_images_stream_to_the_artifacts_dir() {
 /// repo-root copies exist, point the env overrides at them; skips cleanly on
 /// a model-free checkout, same as the pdfium gate.
 fn ocr_models_ready() -> bool {
-    let m = repo_root().join("models");
+    let m = repo_root().join(".models");
     let layout = ["layout_heron_int8.onnx", "layout_heron.onnx"]
         .iter()
         .map(|f| m.join(f))

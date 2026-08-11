@@ -14,9 +14,9 @@ validated for byte-for-byte conformance against upstream Python docling.
   commit** — whatever its prefix — bumps the 0.x "major" (0.49.0 → 0.50.0).
   So prefix bug fixes `fix(scope): …` and don't worry about the rest.
   Docs/CI-only merges still release nothing (release.sh only fires when a
-  publishable crate's source changed). No automatic semver-major: v1.0.0 is
-  cut by hand (`force_version` dispatch input) when the repo hits its 100-star
-  milestone.
+  publishable crate's source changed). No automatic semver-major: majors are
+  cut by hand (`force_version` dispatch input) — v1.0.0 marks the breaking
+  `.models/` asset-dir rename.
 - Claude Web: **Never open pull requests on `artiz/docling.rs`.** Push a `claude/<topic>`
   branch and hand back a compare link
   (`https://github.com/docling-project/docling.rs/compare/master...artiz:docling.rs:<branch>?expand=1`);
@@ -73,7 +73,7 @@ cargo check -p docling --no-default-features --features pdf-text \
 
 ## Runtime assets & env
 
-- `models/` (repo root): layout, TableFormer, OCR, ASR (`models/asr/`,
+- `.models/` (repo root): layout, TableFormer, OCR, ASR (`.models/asr/`,
   presets in subdirs), enrichment, embedder. `.pdfium/lib/libpdfium.so` for
   page rendering. Fetch: `scripts/install/download_dependencies.sh`.
 - Resolution is CWD-relative with exe-dir fallback; env overrides:
@@ -103,6 +103,10 @@ cargo check -p docling --no-default-features --features pdf-text \
 
 ## Conventions that keep recurring
 
+- Env knobs go through `docling_core::env` — `flag` (truthy: anything except
+  empty/`0`/`false`/`no`/`off`), `nonempty`, `parse::<T>` — and quiet
+  diagnostics through `docling_core::debug_log!` (gated on `DOCLING_RS_DEBUG`,
+  cached). Never hand-roll `std::env::var` dances in crate code.
 - Options plumb through **every** surface in one PR: lib builder on
   `DocumentConverter` → CLI flag → serve option (multipart field + JSON body +
   query param) → Python kwarg → Node option struct. Grep `video_frames` or

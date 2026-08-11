@@ -19,7 +19,7 @@ COPY . .
 ARG FETCH_ASSETS=1
 RUN cargo build --release -p docling-serve --locked
 RUN if [ "$FETCH_ASSETS" = "1" ]; then sh scripts/install/download_dependencies.sh; \
-    else mkdir -p models .pdfium; fi
+    else mkdir -p .models .pdfium; fi
 
 FROM debian:bookworm-slim
 # ffmpeg powers video frame sampling (#138 Phase 2); without it a video input
@@ -28,8 +28,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates
     && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 COPY --from=build /src/target/release/docling-serve /usr/local/bin/docling-serve
-# Assets resolve relative to the working directory (`models/`, `.pdfium/lib`).
-COPY --from=build /src/models ./models
+# Assets resolve relative to the working directory (`.models/`, `.pdfium/lib`).
+COPY --from=build /src/.models ./.models
 COPY --from=build /src/.pdfium ./.pdfium
 ENV PDFIUM_DYNAMIC_LIB_PATH=/app/.pdfium/lib
 EXPOSE 5001

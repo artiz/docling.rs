@@ -47,6 +47,7 @@ redis = ["dep:redis", "dep:futures-lite"]
 # to exact pins automatically (its sed matches any quoted version here).
 # `chunking` enables the HF-tokenizer-backed HybridChunker (RAG_CHUNKER=hybrid).
 docling = { path = "../docling", version = "0.62.0", features = ["chunking"] }
+docling-core = { path = "../docling-core", version = "0.62.0" }
 # Direct dep only for pdfium_backend::page_count (PDF page metrics); already in
 # the graph via docling.rs, so this adds no compile cost.
 docling-pdf = { path = "../docling-pdf", version = "0.62.0" }

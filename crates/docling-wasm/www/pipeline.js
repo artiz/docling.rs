@@ -16,8 +16,8 @@ ort.env.wasm.numThreads = self.crossOriginIsolated
   : 1;
 export const THREADS = ort.env.wasm.numThreads;
 
-// Model bases, tried in order after any user-provided file: local ./models/
-// first (download_dependencies.sh for local dev), then a CORS-enabled Hugging
+// Model bases, tried in order after any user-provided file: local ./.models/
+// (download_dependencies.sh for local dev), then a CORS-enabled Hugging
 // Face mirror so the page works cross-origin (the hosted phone demo on
 // raw.githack) — GitHub Release assets carry no CORS header.
 const MODEL_BASE = "https://huggingface.co/pivozavrus/docling-rs-models/resolve/main/";
@@ -40,13 +40,13 @@ const REC_MODELS = {
   },
 };
 
-// TableFormer graphs: local ./models/tableformer/ first (download_dependencies.sh),
+// TableFormer graphs: local ./.models/tableformer/ first (download_dependencies.sh),
 // then the CORS Hugging Face mirror for the hosted demo. The encoder is
 // self-contained; the decoder/bbox use ONNX external data, so their .onnx.data
 // sidecar rides along via ort-web's externalData option (path = the location
 // stored in the .onnx). Fetched lazily — ~380 MB total — only when a table
 // profile is chosen.
-const TF_DIRS = ["./models/tableformer/", MODEL_BASE];
+const TF_DIRS = ["./.models/tableformer/", MODEL_BASE];
 
 /// The stateful session the wasm TfSession interop expects (see
 /// src/tableformer.rs): `encode` runs the image encoder once and stashes the
@@ -183,7 +183,7 @@ export function createOcr({ onStatus }) {
     ]) {
       let buf;
       try {
-        ({ buf } = await fetchModel(name, ["./models/", MODEL_BASE], "layout model (first load only)"));
+        ({ buf } = await fetchModel(name, ["./.models/", MODEL_BASE], "layout model (first load only)"));
       } catch (e) {
         continue; // not provided and not fetchable → try the next candidate
       }

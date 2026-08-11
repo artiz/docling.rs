@@ -70,9 +70,9 @@ fn scanned_page_extracts_table_and_keeps_chart() {
     }
     for needed in [
         ".pdfium/lib/libpdfium.so",
-        "models/layout_heron_int8.onnx",
-        "models/ocr_rec_en.onnx",
-        "models/tableformer/encoder.onnx",
+        ".models/layout_heron_int8.onnx",
+        ".models/ocr_rec_en.onnx",
+        ".models/tableformer/encoder.onnx",
     ] {
         if !root.join(needed).exists() {
             eprintln!("skipping scanned-table e2e: {needed} not found");

@@ -387,7 +387,7 @@ pub fn table_rows(
 /// `DOCLING_RS_TF_SIMPLE_MATCH=1` reverts to the pre-#60 best-overlap word
 /// assignment (A/B escape hatch for the docling matching post-processor).
 fn simple_match() -> bool {
-    std::env::var("DOCLING_RS_TF_SIMPLE_MATCH").is_ok_and(|v| !v.is_empty() && v != "0")
+    docling_core::env::flag("DOCLING_RS_TF_SIMPLE_MATCH")
 }
 
 /// docling glues `@` to whatever follows it (`mAP @0.5`, an email): the PDF's
@@ -458,10 +458,8 @@ fn docling_match_rows(
     // Debug (native only): dump the matcher inputs as JSON lines for a
     // side-by-side run against docling's Python post-processor.
     #[cfg(feature = "ml")]
-    if let Ok(dir) = std::env::var("DOCLING_RS_TF_MATCH_DUMP") {
-        if !dir.is_empty() {
-            dump_match_inputs(&dir, &tf_cells, &scaled_words);
-        }
+    if let Some(dir) = docling_core::env::nonempty("DOCLING_RS_TF_MATCH_DUMP") {
+        dump_match_inputs(&dir, &tf_cells, &scaled_words);
     }
 
     let (cells_wo, final_matches) =

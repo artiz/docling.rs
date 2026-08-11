@@ -15,7 +15,7 @@
 //!
 //! Model files (`encoder_model.onnx`, `decoder_model.onnx`, `vocab.json`, and
 //! optionally `added_tokens.json` for non-English language selection) live in
-//! `models/asr/` (override with `DOCLING_ASR_{ENCODER,DECODER,VOCAB}`) —
+//! `.models/asr/` (override with `DOCLING_ASR_{ENCODER,DECODER,VOCAB}`) —
 //! `scripts/install/download_dependencies.sh` fetches Whisper *tiny*, docling's ASR
 //! default. The transcription language is auto-detected per file from the
 //! first 30-second window (docling 2.116 parity); `DOCLING_RS_ASR_LANG` or
@@ -56,7 +56,7 @@ pub fn convert_audio(bytes: &[u8], name: &str) -> Result<DoclingDocument, AsrErr
 
 /// [`convert_audio`] with a named Whisper model preset (see [`PRESETS`]):
 /// English-only and Distil-Whisper variants, each under its own
-/// `models/asr/<preset>/` directory (docling PR #3741's presets, limited to
+/// `.models/asr/<preset>/` directory (docling PR #3741's presets, limited to
 /// the variants with public ONNX exports).
 pub fn convert_audio_with_model(
     bytes: &[u8],
@@ -113,8 +113,8 @@ pub fn transcribe_with_options(
 ) -> Result<Vec<Segment>, AsrError> {
     if !models_available_for(model) {
         let dir = match model {
-            None | Some("whisper_tiny") | Some("") => "models/asr/".to_string(),
-            Some(p) => format!("models/asr/{p}/"),
+            None | Some("whisper_tiny") | Some("") => ".models/asr/".to_string(),
+            Some(p) => format!(".models/asr/{p}/"),
         };
         return Err(AsrError(format!(
             "asr: Whisper model files not found under {dir} \
@@ -158,10 +158,10 @@ mod tests {
     }
 
     /// Whether the Whisper models are reachable, pointing `DOCLING_ASR_*` at
-    /// the workspace-root `models/asr/` (model resolution is CWD-relative and
+    /// the workspace-root `.models/asr/` (model resolution is CWD-relative and
     /// tests run from the crate dir).
     fn asr_models_ready() -> bool {
-        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../models/asr");
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../.models/asr");
         if !root.join("encoder_model.onnx").exists() {
             return false;
         }
@@ -186,7 +186,7 @@ mod tests {
     #[test]
     fn auto_detected_language_matches_explicit_english() {
         if !asr_models_ready() {
-            eprintln!("skipping: Whisper models missing under models/asr/");
+            eprintln!("skipping: Whisper models missing under .models/asr/");
             return;
         }
         let bytes = fixture_bytes("sample_10s.mp3");
@@ -217,7 +217,7 @@ mod tests {
     #[test]
     fn auto_detects_russian_and_german() {
         if !asr_models_ready() {
-            eprintln!("skipping: Whisper models missing under models/asr/");
+            eprintln!("skipping: Whisper models missing under .models/asr/");
             return;
         }
         for (fixture, expect) in [("sample_12s_ru.ogg", "ru"), ("sample_14s_de.mp3", "de")] {
