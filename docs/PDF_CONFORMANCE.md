@@ -366,6 +366,29 @@ to ONNX in `tableformer.rs`) on a cv2-exact preprocessed crop (`resample.rs`); t
 structure + matched cell text reproduce docling's padded GitHub tables (2305-pg9
 is cell-for-cell exact).
 
+**Rotated scans.** Two normalization passes run before any inference, both only
+on pages with no text layer (exactly the OCR set), both mapped back to
+display-space geometry at assembly via `PdfPage::rotation`:
+
+1. **`/Rotate` metadata** (`pdfium_backend::extract_page`): pdfium renders the
+   page as displayed, so a declared rotation is un-rotated losslessly and
+   `width`/`height` swap. Pinned by `crates/docling/tests/scanned.rs` — all
+   four `/Rotate` orientations of `ocr_test.pdf` OCR byte-identically.
+2. **Content-based orientation** (`orient.rs`, #225): a physically rotated
+   raster (`/Rotate 0` — sideways phone photo, landscape-fed sheet) is probed
+   with the recognizer itself, the classic OSD trick: segment the page with
+   the same projection segmentation OCR uses, recognize up to 6 of the widest
+   line crops under each 90° hypothesis, score by Σ(confidence × chars). An
+   upright page early-exits after one probe round (≥20 chars at ≥0.90 mean
+   confidence); a rotated hypothesis must read real text (≥8 chars at ≥0.55)
+   *and* beat upright by 1.2× to win — thin evidence (blank/line-art pages)
+   is a no-op, and any probe failure degrades to "assume upright". Scores are
+   deterministic (single-threaded rec, fixed probe selection), so snapshots
+   hold. `DOCLING_RS_OCR_ORIENTATION=off` disables the pass;
+   `DOCLING_RS_DEBUG=1` prints per-hypothesis scores. Pinned by the
+   `ocr_test_raster*` fixtures (the same lossless raster physically rotated
+   inside the page): all four convert byte-identically.
+
 ### Performance / parallelism
 
 Profiling a 14-page document (`DOCLING_RS_TIMING=1` prints an env-gated per-stage

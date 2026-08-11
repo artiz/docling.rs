@@ -115,6 +115,48 @@ impl PdfPage {
             ..Self::from_cells(width, height, scale, cells)
         }
     }
+
+    /// Un-rotate the page's bitmaps by `deg` (clockwise 90° steps) and record
+    /// the compensating display rotation, composing with any rotation already
+    /// recorded: the raster becomes upright for inference while assembly
+    /// still maps the finished geometry back into display space. Handles both
+    /// `/Rotate` normalization (extraction) and content-detected orientation
+    /// (#225) — the two compose additively (axis-aligned 90° rotations
+    /// commute through the dimension swaps). Link rectangles follow the
+    /// raster; `width`/`height` swap on odd quarter-turns.
+    #[cfg(feature = "ocr-prep")]
+    pub(crate) fn unrotate(&mut self, deg: u16) {
+        if deg == 0 {
+            return;
+        }
+        use image::imageops::{rotate180, rotate270, rotate90};
+        // Display = upright rotated `deg`° clockwise, so upright = display
+        // rotated the complementary amount clockwise.
+        let un = |img: &RgbImage| match deg {
+            90 => rotate270(img),
+            180 => rotate180(img),
+            _ => rotate90(img),
+        };
+        if self.image.width() > 1 {
+            self.image = un(&self.image);
+        }
+        self.image_layout = self.image_layout.as_ref().map(&un);
+        let (width, height) = (self.width, self.height);
+        // Link rects follow the raster from display into upright space (the
+        // inverse of the geometry rotation assembly applies at the end).
+        for l in &mut self.links {
+            let (nl, nt, nr, nb) = match deg {
+                90 => (l.t, width - l.r, l.b, width - l.l),
+                180 => (width - l.r, height - l.b, width - l.l, height - l.t),
+                _ => (height - l.b, l.l, height - l.t, l.r),
+            };
+            (l.l, l.t, l.r, l.b) = (nl, nt, nr, nb);
+        }
+        if deg != 180 {
+            (self.width, self.height) = (height, width);
+        }
+        self.rotation = (self.rotation + deg) % 360;
+    }
 }
 
 /// A PDF link annotation: its rectangle (top-left page coordinates, matching
@@ -382,7 +424,7 @@ fn extract_page(
         None
     };
 
-    let mut links = extract_links(page, height);
+    let links = extract_links(page, height);
 
     // `/Rotate` normalization for scanned pages: pdfium renders the page as a
     // viewer displays it — `/Rotate` applied — so a rotated scan hands layout
@@ -401,39 +443,7 @@ fn extract_page(
         _ => 0,
     };
     let scanned = cells.is_empty() && word_cells.is_empty() && code_cells.is_empty();
-    let (width, height, image, image_layout, rotation) = if rotation != 0 && scanned && render_image
-    {
-        // Display = upright rotated `rotation`° clockwise, so upright =
-        // display rotated the complementary amount clockwise.
-        use image::imageops::{rotate180, rotate270, rotate90};
-        let un = |img: &RgbImage| match rotation {
-            90 => rotate270(img),
-            180 => rotate180(img),
-            _ => rotate90(img),
-        };
-        let image = un(&image);
-        let image_layout = image_layout.as_ref().map(&un);
-        // Link rects follow the raster from display into upright space (the
-        // inverse of the geometry rotation assembly applies at the end).
-        for l in &mut links {
-            let (nl, nt, nr, nb) = match rotation {
-                90 => (l.t, width - l.r, l.b, width - l.l),
-                180 => (width - l.r, height - l.b, width - l.l, height - l.t),
-                _ => (height - l.b, l.l, height - l.t, l.r),
-            };
-            (l.l, l.t, l.r, l.b) = (nl, nt, nr, nb);
-        }
-        let (w, h) = if rotation == 180 {
-            (width, height)
-        } else {
-            (height, width)
-        };
-        (w, h, image, image_layout, rotation)
-    } else {
-        (width, height, image, image_layout, 0)
-    };
-
-    Ok(PdfPage {
+    let mut page = PdfPage {
         width,
         height,
         scale: RENDER_SCALE,
@@ -443,8 +453,12 @@ fn extract_page(
         word_cells,
         image,
         links,
-        rotation,
-    })
+        rotation: 0,
+    };
+    if rotation != 0 && scanned && render_image {
+        page.unrotate(rotation);
+    }
+    Ok(page)
 }
 
 #[cfg(feature = "ml")]

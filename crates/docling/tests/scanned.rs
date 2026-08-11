@@ -72,3 +72,39 @@ fn scanned_fixtures_match_groundtruth() {
         );
     }
 }
+
+/// Content-based orientation detection (#225): the `ocr_test_raster*`
+/// fixtures embed the *same* lossless raster physically rotated inside the
+/// page (`/Rotate 0` on all of them — the metadata pass never fires), so the
+/// only way to read them is to detect the orientation from the pixels. All
+/// four must OCR byte-identically to the shared groundtruth: pixel-exact 90°
+/// un-rotation means the recognizer sees the same bitmap every time.
+#[test]
+fn raster_rotated_fixtures_match_groundtruth() {
+    if !ml_stack_ready() {
+        eprintln!("skipping: pdfium/models not found");
+        return;
+    }
+    let converter = DocumentConverter::new().ocr_lang("ch");
+    let want = std::fs::read_to_string("tests/data/scanned/groundtruth/ocr_test_raster.md")
+        .expect("groundtruth");
+    for stem in [
+        "ocr_test_raster",
+        "ocr_test_raster_rot_90",
+        "ocr_test_raster_rot_180",
+        "ocr_test_raster_rot_270",
+    ] {
+        let source = SourceDocument::from_file(format!("tests/data/scanned/sources/{stem}.pdf"))
+            .expect("raster fixture");
+        let got = converter
+            .convert(source)
+            .expect("raster conversion")
+            .document
+            .export_to_markdown();
+        assert_eq!(
+            got.trim_end(),
+            want.trim_end(),
+            "orientation detection failed to normalize {stem}.pdf"
+        );
+    }
+}

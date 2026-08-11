@@ -464,7 +464,14 @@ Scanned pages with a `/Rotate` flag (a scan that came in sideways or
 upside-down — the most common defect of real-world scans) are normalized
 before layout/OCR: the raster is un-rotated to upright for inference and the
 output geometry is mapped back to display coordinates, so all four
-orientations of the same scan OCR identically. Note on the OCR default:
+orientations of the same scan OCR identically. Pages rotated *physically in
+the raster* (a sideways phone photo, a landscape-fed sheet — `/Rotate 0`, so
+the flag says nothing) are caught too: the recognizer probes a handful of
+line crops under each 90° hypothesis and un-rotates when a rotated reading
+clearly beats the upright one, page by page, before any inference. The pass
+runs only on pages with no text layer, degrades to a no-op when the evidence
+is thin, and can be disabled with `DOCLING_RS_OCR_ORIENTATION=off`.
+Note on the OCR default:
 `--ocr-lang en` (the default) uses an English PP-OCRv3 recognition model with
 good Latin word spacing; the docling conformance corpus, however, was
 generated with the multilingual `ch_` model — if you're comparing output

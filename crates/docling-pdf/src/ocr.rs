@@ -160,6 +160,22 @@ impl OcrModel {
             .collect())
     }
 
+    /// Recognize `lines` and reduce to orientation-probe evidence: the
+    /// confidence-weighted character count `Σ(conf × chars)` plus the raw
+    /// character total (#225). Same deterministic width-batching as page OCR.
+    pub(crate) fn score_lines(&mut self, lines: &[PrepLine]) -> Result<(f32, usize), String> {
+        let mut weighted = 0.0f32;
+        let mut chars = 0usize;
+        for (w, chunk) in width_batches(lines) {
+            for (text, conf) in self.recognize_batch(w, &chunk, lines)? {
+                let n = text.trim().chars().count();
+                weighted += conf * n as f32;
+                chars += n;
+            }
+        }
+        Ok((weighted, chars))
+    }
+
     /// OCR a page: produce text cells (page points) for every line found inside
     /// the text regions, each paired with its recognition confidence (mean
     /// emitted-character probability — feeds the page `ocr_score`, #183).
