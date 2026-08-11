@@ -38,29 +38,29 @@ const N_LAYERS: usize = 6;
 /// quantize_models.py).
 pub fn resolved_paths() -> (String, String, String) {
     let enc = docling_core::env::nonempty("DOCLING_TABLEFORMER_ENCODER")
-        .unwrap_or_else(|| crate::resolve_asset("models/tableformer/encoder.onnx"));
+        .unwrap_or_else(|| crate::resolve_asset(".models/tableformer/encoder.onnx"));
     let dec = docling_core::env::nonempty("DOCLING_TABLEFORMER_DECODER").unwrap_or_else(|| {
         let candidates: &[&str] = if crate::prefer_fp32() {
             &[
-                "models/tableformer/decoder_kv.onnx",
-                "models/tableformer/decoder.onnx",
+                ".models/tableformer/decoder_kv.onnx",
+                ".models/tableformer/decoder.onnx",
             ]
         } else {
             &[
-                "models/tableformer/decoder_kv_int8.onnx",
-                "models/tableformer/decoder_kv.onnx",
-                "models/tableformer/decoder_int8.onnx",
-                "models/tableformer/decoder.onnx",
+                ".models/tableformer/decoder_kv_int8.onnx",
+                ".models/tableformer/decoder_kv.onnx",
+                ".models/tableformer/decoder_int8.onnx",
+                ".models/tableformer/decoder.onnx",
             ]
         };
         candidates
             .iter()
             .map(|p| crate::resolve_asset(p))
             .find(|p| std::path::Path::new(p).exists())
-            .unwrap_or_else(|| "models/tableformer/decoder.onnx".to_string())
+            .unwrap_or_else(|| ".models/tableformer/decoder.onnx".to_string())
     });
     let bbx = docling_core::env::nonempty("DOCLING_TABLEFORMER_BBOX")
-        .unwrap_or_else(|| crate::resolve_asset("models/tableformer/bbox.onnx"));
+        .unwrap_or_else(|| crate::resolve_asset(".models/tableformer/bbox.onnx"));
     (enc, dec, bbx)
 }
 
@@ -123,7 +123,7 @@ struct EncodeOut {
 
 impl TableFormer {
     /// Load the exported encoder/decoder/bbox ONNX graphs (env overrides, else
-    /// `models/tableformer/{encoder,decoder,bbox}.onnx`). Returns `None` if any is
+    /// `.models/tableformer/{encoder,decoder,bbox}.onnx`). Returns `None` if any is
     /// absent, so the pipeline falls back to geometric reconstruction.
     pub fn load() -> Option<Self> {
         Self::load_with(crate::intra_threads())
@@ -492,7 +492,7 @@ impl TableFormer {
 
 /// Note once per process that TableFormer's ONNX graphs weren't found, so tables
 /// fall back to geometric reconstruction. The default paths are relative
-/// (`models/tableformer/*.onnx`), which only resolves when the process's current
+/// (`.models/tableformer/*.onnx`), which only resolves when the process's current
 /// directory happens to be the repo root — a very easy miss for anything else
 /// (an embedding app, a binding invoked from a different working directory, …),
 /// and previously failed with no signal at all.

@@ -32,7 +32,7 @@ Differences from docling's ``docling.chunking``:
   ``tokenizer.json``** (e.g. ``sentence-transformers/all-MiniLM-L6-v2``'s),
   not a tokenizer object — the Rust side loads it with the ``tokenizers``
   crate, so no Python ``transformers`` install is needed. When omitted it
-  falls back to ``models/chunk/tokenizer.json``, the MiniLM tokenizer
+  falls back to ``.models/chunk/tokenizer.json``, the MiniLM tokenizer
   ``scripts/install/download_dependencies.sh`` fetches alongside the ML
   models.
 * ``chunk.meta.doc_items`` holds the items' JSON-pointer refs (``"#/texts/12"``)
@@ -155,7 +155,7 @@ class HybridChunker(_BaseChunker):
     a token budget and undersized same-heading neighbours merged.
 
     :param tokenizer: path to a HuggingFace ``tokenizer.json``. Defaults to
-        ``models/chunk/tokenizer.json`` (all-MiniLM-L6-v2's, as fetched by
+        ``.models/chunk/tokenizer.json`` (all-MiniLM-L6-v2's, as fetched by
         ``scripts/install/download_dependencies.sh``); raises at ``chunk()``
         time if neither is available.
     :param max_tokens: token budget per chunk (docling's default for the
@@ -178,10 +178,11 @@ class HybridChunker(_BaseChunker):
 
     def chunk(self, dl_doc: Any) -> Iterator[DocChunk]:
         tokenizer = self.tokenizer
-        if tokenizer is None and not Path("models/chunk/tokenizer.json").exists():
-            # The native resolver checks ./models/chunk/tokenizer.json; when
-            # that's absent, fall back to the package cache populated by
-            # docling_rs.download_models().
+        local = (".models/chunk/tokenizer.json", "models/chunk/tokenizer.json")
+        if tokenizer is None and not any(Path(rel).exists() for rel in local):
+            # The native resolver checks ./.models/chunk/tokenizer.json (and
+            # the pre-rename ./models/ location); when both are absent, fall
+            # back to the package cache populated by docling_rs.download_models().
             cached = models.cache_dir() / "models/chunk/tokenizer.json"
             if cached.exists():
                 tokenizer = str(cached)

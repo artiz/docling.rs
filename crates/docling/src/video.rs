@@ -358,10 +358,15 @@ mod tests {
     }
 
     /// Whether Whisper-tiny is reachable, pointing `DOCLING_ASR_*` at the
-    /// workspace-root `models/asr/` when running from the crate dir (model
+    /// workspace-root `.models/asr/` when running from the crate dir (model
     /// resolution is CWD-relative).
     fn asr_models_ready() -> bool {
-        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../models/asr");
+        let ws = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        // New-style `.models/` first, pre-rename `models/` as fallback.
+        let root = [ws.join(".models/asr"), ws.join("models/asr")]
+            .into_iter()
+            .find(|p| p.join("encoder_model.onnx").exists())
+            .unwrap_or_else(|| ws.join(".models/asr"));
         if root.join("encoder_model.onnx").exists() {
             std::env::set_var("DOCLING_ASR_ENCODER", root.join("encoder_model.onnx"));
             std::env::set_var("DOCLING_ASR_DECODER", root.join("decoder_model.onnx"));

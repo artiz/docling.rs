@@ -6,13 +6,13 @@
 // code):
 //
 //   - libpdfium            (PDF text extraction + page rasterization) — required for PDF
-//   - RT-DETR layout model (models/layout_heron.onnx)                 — required for PDF & image
-//   - PP-OCR rec + dict    (models/ocr_rec.onnx, ppocr_keys_v1.txt)   — used for pages with no text layer
-//   - TableFormer          (models/tableformer/{encoder,decoder,bbox}.onnx) — optional; geometric fallback otherwise
+//   - RT-DETR layout model (.models/layout_heron.onnx)                 — required for PDF & image
+//   - PP-OCR rec + dict    (.models/ocr_rec.onnx, ppocr_keys_v1.txt)   — used for pages with no text layer
+//   - TableFormer          (.models/tableformer/{encoder,decoder,bbox}.onnx) — optional; geometric fallback otherwise
 //
 // This module does NOT download anything — `scripts/install/download_dependencies.sh`
 // does that, fetching everything from this repo's GitHub Releases straight
-// into `./models` and `./.pdfium` (see docs/MODELS_NOTICE.md for attribution: the
+// into `./.models` and `./.pdfium` (see docs/MODELS_NOTICE.md for attribution: the
 // layout model and TableFormer are PyTorch→ONNX exports of docling-project's
 // own models, re-hosted here as a convenience). This module just resolves
 // where those files (or an explicit `DOCLING_*` / `PDFIUM_DYNAMIC_LIB_PATH`
@@ -48,24 +48,28 @@ function pdfiumLibName() {
 /**
  * Resolve the install home directory (absolute), and which `pdfium/`-vs-
  * `.pdfium/` layout it uses. Precedence: an explicit `dir` > `$DOCLING_RS_HOME`
- * > the current directory, *if* it already has a local `models/` or `.pdfium/`
+ * > the current directory, *if* it already has a local `.models/` or `.pdfium/`
  * (the layout `scripts/install/download_dependencies.sh` and `scripts/install/pdf_setup.sh`
  * both produce, and the one the native Rust pipeline's own env-var-less
- * defaults already resolve — `models/layout_heron.onnx`, `.pdfium/lib/…` —
+ * defaults already resolve — `.models/layout_heron.onnx`, `.pdfium/lib/…` —
  * relative to *its* CWD) > `~/.cache/docling.rs`. This lets a plain
  * `convertFileAsync(...)` call succeed with zero setup (no env vars) whenever
  * the app is run from a directory that already has the dependencies
  * downloaded next to it.
  */
 function homeDir(dir) {
-  if (dir) return { home: path.resolve(dir), dotPdfium: false }
-  if (process.env.DOCLING_RS_HOME) return { home: path.resolve(process.env.DOCLING_RS_HOME), dotPdfium: false }
+  if (dir) return { home: path.resolve(dir), dotPdfium: false, dotModels: false }
+  if (process.env.DOCLING_RS_HOME)
+    return { home: path.resolve(process.env.DOCLING_RS_HOME), dotPdfium: false, dotModels: false }
   const cwd = process.cwd()
+  // A checkout's local layout: `.models/` (or the pre-rename `models/`).
+  const dotModels = fs.existsSync(path.join(cwd, '.models'))
   const hasLocal =
+    dotModels ||
     fs.existsSync(path.join(cwd, 'models', 'layout_heron.onnx')) ||
     fs.existsSync(path.join(cwd, '.pdfium', 'lib', pdfiumLibName()))
-  if (hasLocal) return { home: cwd, dotPdfium: true }
-  return { home: path.join(os.homedir(), '.cache', 'docling.rs'), dotPdfium: false }
+  if (hasLocal) return { home: cwd, dotPdfium: true, dotModels }
+  return { home: path.join(os.homedir(), '.cache', 'docling.rs'), dotPdfium: false, dotModels: false }
 }
 
 /**
@@ -74,8 +78,8 @@ function homeDir(dir) {
  * is honored), else the path under the install home directory.
  */
 function resolvePaths(dir) {
-  const { home, dotPdfium } = homeDir(dir)
-  const models = path.join(home, 'models')
+  const { home, dotPdfium, dotModels } = homeDir(dir)
+  const models = path.join(home, dotModels ? '.models' : 'models')
 
   const pdfiumLibDir =
     process.env.PDFIUM_DYNAMIC_LIB_PATH || path.join(home, dotPdfium ? '.pdfium' : 'pdfium', 'lib')
@@ -99,7 +103,7 @@ function resolvePaths(dir) {
 
 /**
  * The hybrid chunker's default tokenizer (all-MiniLM-L6-v2's tokenizer.json,
- * fetched by `scripts/install/download_dependencies.sh` into `models/chunk/`), resolved
+ * fetched by `scripts/install/download_dependencies.sh` into `.models/chunk/`), resolved
  * through the same install-home logic as the ML models. Returns `null` when not
  * installed — the native side then reports a clear error with the download hint.
  */
@@ -150,7 +154,7 @@ function downloadGuide() {
   return [
     'Run this once from your app\'s directory (fetches pdfium + the ONNX',
     'models — layout, OCR, TableFormer — from this repo\'s GitHub Releases',
-    'straight into ./models and ./.pdfium, which this package looks for by',
+    'straight into ./.models and ./.pdfium, which this package looks for by',
     'default; no env vars needed afterwards):',
     '',
     '  curl -fsSL https://raw.githubusercontent.com/docling-project/docling.rs/master/scripts/install/download_dependencies.sh | sh',

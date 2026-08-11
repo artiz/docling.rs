@@ -26,11 +26,11 @@ pub struct OcrModel {
 
 /// OCR recognition language: which PP-OCRv3 model + dictionary pair runs.
 ///
-/// The default is **English** (`models/ocr_rec_en.onnx` + `models/en_dict.txt`):
+/// The default is **English** (`.models/ocr_rec_en.onnx` + `.models/en_dict.txt`):
 /// the multilingual `ch_` model reads Latin scripts with badly degraded word
 /// spacing (glued words on ordinary English scans), which is the common
-/// real-world case. `Ch` selects the `ch_` pair (`models/ocr_rec.onnx` +
-/// `models/ppocr_keys_v1.txt`) — that is what upstream docling conformance is
+/// real-world case. `Ch` selects the `ch_` pair (`.models/ocr_rec.onnx` +
+/// `.models/ppocr_keys_v1.txt`) — that is what upstream docling conformance is
 /// measured with, and `scripts/conformance/pdf_*.sh` pin it explicitly (by
 /// path, which wins over this selector).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -72,8 +72,8 @@ impl OcrLang {
 /// convention. Explicit `DOCLING_OCR_REC_ONNX` / `DOCLING_OCR_DICT` paths win
 /// over all of this; they are a pair, so set both together.
 pub(crate) fn resolve_rec_pair(lang: OcrLang) -> (String, String) {
-    const CH: (&str, &str) = ("models/ocr_rec.onnx", "models/ppocr_keys_v1.txt");
-    const EN: (&str, &str) = ("models/ocr_rec_en.onnx", "models/en_dict.txt");
+    const CH: (&str, &str) = (".models/ocr_rec.onnx", ".models/ppocr_keys_v1.txt");
+    const EN: (&str, &str) = (".models/ocr_rec_en.onnx", ".models/en_dict.txt");
     let want_ch = lang == OcrLang::Ch;
     let pick = if want_ch { CH } else { EN };
     let (mut rec, mut dict) = (crate::resolve_asset(pick.0), crate::resolve_asset(pick.1));

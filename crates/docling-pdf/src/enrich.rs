@@ -78,13 +78,13 @@ pub struct PictureClassifier {
 
 impl PictureClassifier {
     /// Load from `DOCLING_PICTURE_CLASSIFIER_ONNX` /
-    /// `models/picture_classifier(_int8).onnx`. `None` when the graph is
+    /// `.models/picture_classifier(_int8).onnx`. `None` when the graph is
     /// absent — the caller warns once and skips classification.
     pub fn load_with(intra: usize) -> Option<Self> {
         let path = crate::model_path(
             "DOCLING_PICTURE_CLASSIFIER_ONNX",
-            "models/picture_classifier.onnx",
-            "models/picture_classifier_int8.onnx",
+            ".models/picture_classifier.onnx",
+            ".models/picture_classifier_int8.onnx",
         );
         if !std::path::Path::new(&path).exists() {
             eprintln!(
@@ -187,11 +187,11 @@ pub struct CodeFormula {
 
 impl CodeFormula {
     /// Load the three graphs + tokenizer from `DOCLING_CODE_FORMULA_DIR`
-    /// (default `models/code_formula/`). `None` when absent, with a one-time
+    /// (default `.models/code_formula/`). `None` when absent, with a one-time
     /// warning from the caller's slot.
     pub fn load_with(intra: usize) -> Option<Self> {
         let dir = docling_core::env::nonempty("DOCLING_CODE_FORMULA_DIR")
-            .unwrap_or_else(|| crate::resolve_asset("models/code_formula"));
+            .unwrap_or_else(|| crate::resolve_asset(".models/code_formula"));
         let file = |name: &str| format!("{dir}/{name}");
         // INT8 variants take priority when present, like the other models.
         let graph = |base: &str| {

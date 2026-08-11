@@ -54,7 +54,7 @@
 //!                      only). Default 8.
 //!   --asr-model NAME   Whisper preset for audio inputs: whisper_tiny_en,
 //!                      whisper_base_en, whisper_small_en, whisper_distil_small_en
-//!                      (models under models/asr/<preset>/; fetch them with
+//!                      (models under .models/asr/<preset>/; fetch them with
 //!                      download_dependencies.sh --asr-model=<preset>)
 //!   --asr-lang CODE    transcription language for audio/video input: a Whisper
 //!                      code (en, de, zh, ...) or auto (the default) to detect
@@ -86,10 +86,10 @@
 //!                      DocumentFigureClassifier model; the 26-class prediction
 //!                      distribution lands in the JSON picture item (docling's
 //!                      do_picture_classification). Needs
-//!                      models/picture_classifier.onnx.
+//!                      .models/picture_classifier.onnx.
 //!   --enrich-code      rewrite detected code blocks (and detect their language)
 //!                      with the CodeFormulaV2 VLM (docling's do_code_enrichment).
-//!                      Needs models/code_formula/. Slow on CPU: an autoregressive
+//!                      Needs .models/code_formula/. Slow on CPU: an autoregressive
 //!                      generation per code block.
 //!   --enrich-formula   decode display formulas to LaTeX with CodeFormulaV2
 //!                      (docling's do_formula_enrichment); Markdown then renders
@@ -177,7 +177,7 @@ fn main() -> ExitCode {
             },
             "--to" => to = args.next().unwrap_or_default(),
             // Named Whisper preset for audio inputs (English-only /
-            // Distil-Whisper variants under models/asr/<preset>/; fetch with
+            // Distil-Whisper variants under .models/asr/<preset>/; fetch with
             // download_dependencies.sh --asr-model=<preset>).
             "--asr-model" => asr_model = args.next(),
             // Transcription language (or "auto"); validated against the model's

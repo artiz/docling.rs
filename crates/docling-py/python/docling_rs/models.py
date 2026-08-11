@@ -15,11 +15,14 @@ Usage::
 
 ``DocumentConverter`` calls :func:`ensure_env` automatically, so after the
 one-time download no configuration is needed at all. Local assets outrank the
-cache: when a matching ``models/`` / ``.pdfium/`` asset exists in the working
-directory (e.g. a repo checkout with its own exports), the env var is left
-unset and the native pipeline resolves the local path itself, exactly like
-the Rust CLI. Re-published release assets are picked up with
-``download_models(force=True)`` — the cache has no version stamp.
+cache: when a matching ``.models/`` (or pre-rename ``models/``) / ``.pdfium/``
+asset exists in the working directory (e.g. a repo checkout with its own
+exports), the env var is left unset and the native pipeline resolves the
+local path itself, exactly like the Rust CLI. Re-published release assets are
+picked up with ``download_models(force=True)`` — the cache has no version
+stamp. (The cache's *internal* layout keeps the historical ``models/``
+folder name — it lives under the docling-owned cache root, so nothing
+collides, and existing caches stay valid.)
 """
 
 from __future__ import annotations
@@ -154,8 +157,9 @@ def _point_at(var: str, local: "list[str]", cached: Path) -> None:
 
     Two things outrank the cache: an env var the caller already set, and a
     matching asset in the working directory (any of the ``local`` relative
-    paths) — the native pipeline resolves those CWD paths itself when the env
-    var stays unset, exactly like the Rust CLI run from a checkout. The env
+    paths, checked under ``.models/`` and the pre-rename ``models/`` alike) —
+    the native pipeline resolves those CWD paths itself when the env var
+    stays unset, exactly like the Rust CLI run from a checkout. The env
     is also left untouched when ``cached`` doesn't exist."""
     if var in os.environ:
         return
@@ -165,10 +169,21 @@ def _point_at(var: str, local: "list[str]", cached: Path) -> None:
         os.environ[var] = str(cached)
 
 
+def _local(rels: "list[str]") -> "list[str]":
+    """Working-directory candidates for cache-relative ``models/…`` paths:
+    the ``.models/`` location first, the pre-rename ``models/`` second."""
+    out = []
+    for rel in rels:
+        assert rel.startswith("models/"), rel
+        out += [f".{rel}", rel]
+    return out
+
+
 def ensure_env(dest: "str | Path | None" = None) -> Path:
     """Point the native pipeline at the cached assets via the ``DOCLING_*`` /
     ``PDFIUM_*`` env vars. Local assets win: a variable is only filled when it
-    is not already set AND no matching ``models/`` / ``.pdfium/`` asset exists
+    is not already set AND no matching ``.models/`` (or pre-rename
+    ``models/``) / ``.pdfium/`` asset exists
     in the working directory (the native code resolves those itself, so a repo
     checkout keeps using its own exports). Prefers the INT8 models when
     present, matching the Rust pipeline's default; ``DOCLING_RS_FP32=1`` opts
@@ -185,7 +200,7 @@ def ensure_env(dest: "str | Path | None" = None) -> Path:
     layout = m / "layout_heron_int8.onnx"
     if fp32 or not layout.exists():
         layout = m / "layout_heron.onnx"
-    _point_at("DOCLING_LAYOUT_ONNX", layout_chain, layout)
+    _point_at("DOCLING_LAYOUT_ONNX", _local(layout_chain), layout)
 
     # TableFormer decoder preference, mirroring the Rust pipeline's default
     # chain (tableformer.rs): the #97 hoisted-KV graph ranks ahead of the
@@ -202,7 +217,7 @@ def ensure_env(dest: "str | Path | None" = None) -> Path:
             "tableformer/decoder.onnx",
         ]
     decoder = next((p for rel in chain if (p := m / rel).exists()), m / "tableformer/decoder.onnx")
-    _point_at("DOCLING_TABLEFORMER_DECODER", [f"models/{rel}" for rel in chain], decoder)
+    _point_at("DOCLING_TABLEFORMER_DECODER", _local([f"models/{rel}" for rel in chain]), decoder)
 
     classifier_chain = ["models/picture_classifier.onnx"]
     if not fp32:
@@ -210,23 +225,23 @@ def ensure_env(dest: "str | Path | None" = None) -> Path:
     classifier = m / "picture_classifier_int8.onnx"
     if fp32 or not classifier.exists():
         classifier = m / "picture_classifier.onnx"
-    _point_at("DOCLING_PICTURE_CLASSIFIER_ONNX", classifier_chain, classifier)
+    _point_at("DOCLING_PICTURE_CLASSIFIER_ONNX", _local(classifier_chain), classifier)
 
-    _point_at("DOCLING_OCR_REC_ONNX", ["models/ocr_rec.onnx"], m / "ocr_rec.onnx")
-    _point_at("DOCLING_OCR_DICT", ["models/ppocr_keys_v1.txt"], m / "ppocr_keys_v1.txt")
+    _point_at("DOCLING_OCR_REC_ONNX", _local(["models/ocr_rec.onnx"]), m / "ocr_rec.onnx")
+    _point_at("DOCLING_OCR_DICT", _local(["models/ppocr_keys_v1.txt"]), m / "ppocr_keys_v1.txt")
     _point_at(
         "DOCLING_TABLEFORMER_ENCODER",
-        ["models/tableformer/encoder.onnx"],
+        _local(["models/tableformer/encoder.onnx"]),
         m / "tableformer/encoder.onnx",
     )
     _point_at(
         "DOCLING_TABLEFORMER_BBOX",
-        ["models/tableformer/bbox.onnx"],
+        _local(["models/tableformer/bbox.onnx"]),
         m / "tableformer/bbox.onnx",
     )
     _point_at(
         "DOCLING_CODE_FORMULA_DIR",
-        ["models/code_formula"],
+        _local(["models/code_formula"]),
         m / "code_formula",
     )
     _point_at("PDFIUM_DYNAMIC_LIB_PATH", [".pdfium/lib"], root / ".pdfium/lib")

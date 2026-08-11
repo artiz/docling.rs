@@ -32,13 +32,10 @@ fn ml_stack_ready() -> bool {
     {
         return false;
     }
-    let models_ready = [
-        "models/layout_heron.onnx",
-        "models/ocr_rec.onnx",
-        "models/ppocr_keys_v1.txt",
-    ]
-    .iter()
-    .all(|m| root.join(m).exists());
+    // `.models/` first, the pre-rename `models/` as fallback.
+    let models_ready = ["layout_heron.onnx", "ocr_rec.onnx", "ppocr_keys_v1.txt"]
+        .iter()
+        .all(|m| root.join(".models").join(m).exists() || root.join("models").join(m).exists());
     models_ready && std::env::set_current_dir(&root).is_ok()
 }
 

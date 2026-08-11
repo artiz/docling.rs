@@ -64,7 +64,7 @@ _args = sys.argv[1:]
 ART = _args[0] if _args and os.path.isfile(os.path.join(_args[0], "tm_config.json")) else None
 if ART:
     _args = _args[1:]
-OUT = _args[0] if _args else "models/tableformer"
+OUT = _args[0] if _args else ".models/tableformer"
 if ART is None:
     ART = resolve_artifacts()
 print(f"tableformer artifacts: {ART}")

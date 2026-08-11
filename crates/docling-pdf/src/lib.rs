@@ -232,31 +232,12 @@ pub(crate) fn prefer_fp32() -> bool {
 }
 
 #[cfg(feature = "ml")]
-/// Resolve a default (CWD-relative) asset path. If it doesn't exist relative
-/// to the current directory, try next to the executable and one level above
-/// it (following symlinks — the layout `scripts/install/install.sh` produces:
-/// `/usr/local/bin/docling-rs` → `/usr/local/docling.rs/bin/docling-rs`
-/// with `models/` and `.pdfium/` in `/usr/local/docling.rs`). Lets an
-/// installed binary run from any working directory with no env vars; explicit
-/// env overrides never reach this. Returns `rel` unchanged when nothing
-/// exists anywhere, so callers' error messages keep the familiar path.
+/// Resolve a default (CWD-relative) asset path — the shared chain in
+/// [`docling_core::assets`]: CWD, then next to the executable and one level
+/// above it (the `scripts/install/install.sh` layout), with a legacy
+/// `models/` read-fallback for paths under `.models/`.
 pub(crate) fn resolve_asset(rel: &str) -> String {
-    if std::path::Path::new(rel).exists() {
-        return rel.to_string();
-    }
-    if let Some(dir) = std::env::current_exe()
-        .ok()
-        .and_then(|p| p.canonicalize().ok())
-        .and_then(|p| p.parent().map(std::path::Path::to_path_buf))
-    {
-        for base in [Some(dir.as_path()), dir.parent()].into_iter().flatten() {
-            let p = base.join(rel);
-            if p.exists() {
-                return p.to_string_lossy().into_owned();
-            }
-        }
-    }
-    rel.to_string()
+    docling_core::assets::resolve(rel)
 }
 
 /// One resolved runtime asset — which file a stage would load right now,
@@ -304,8 +285,8 @@ pub fn model_inventory() -> Vec<ModelEntry> {
             "layout",
             model_path(
                 "DOCLING_LAYOUT_ONNX",
-                "models/layout_heron.onnx",
-                "models/layout_heron_int8.onnx",
+                ".models/layout_heron.onnx",
+                ".models/layout_heron_int8.onnx",
             ),
         ),
         entry("tableformer.encoder", enc),

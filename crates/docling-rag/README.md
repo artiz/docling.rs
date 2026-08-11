@@ -186,7 +186,7 @@ docling-rag query "how does hybrid search work?" --answer
 docling-rag eval --dataset crates/docling-rag/tests/data/eval_dataset.json
 
 # run an unlabelled QA benchmark through the full RAG+LLM loop (see "eval" below)
-docling-rag answers --questions rag/questions.json
+docling-rag answers --questions tests/rag/questions.json
 
 # remove incomplete document records left by interrupted ingests
 docling-rag prune
@@ -225,7 +225,7 @@ docling-rag eval --dataset crates/docling-rag/tests/data/eval_dataset.json
 
 # 2. assemble it from the ingested corpus: the .md mirror written by
 #    RAG_DOCUMENTS_OUTPUT plus a questions file
-docling-rag eval --from-md-dir ./data --questions rag/questions.json \
+docling-rag eval --from-md-dir ./data --questions tests/rag/questions.json \
     --sizes 200,300,500 --overlaps 0,0.05,0.1 --top-k 5   # optional matrix override
 ```
 
@@ -246,7 +246,7 @@ through `answers` instead:
 ```bash
 # Full RAG + LLM loop against the *ingested store* for unlabelled questions:
 # prints each answer with its source count and latency (add --json for machines).
-docling-rag answers --questions rag/questions.json --mode hybrid -k 5
+docling-rag answers --questions tests/rag/questions.json --mode hybrid -k 5
 ```
 
 `answers` needs `OPENROUTER_API_KEY` and an ingested store; it does not score

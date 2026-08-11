@@ -301,7 +301,7 @@ corpus:
 use docling::chunker::{contextualize, HierarchicalChunker, HybridChunker, HuggingFaceTokenizer};
 
 let chunks = HierarchicalChunker.chunk(&result.document);          // structure-driven
-let tok = HuggingFaceTokenizer::from_file("models/chunk/tokenizer.json", 256)?; // feature "chunking"; fetched by download_dependencies.sh
+let tok = HuggingFaceTokenizer::from_file(".models/chunk/tokenizer.json", 256)?; // feature "chunking"; fetched by download_dependencies.sh
 for chunk in HybridChunker::new(tok).chunk(&result.document) {
     let embed_me = contextualize(&chunk); // heading path + chunk text
 }
@@ -332,7 +332,7 @@ text; tables line-by-line), and merges undersized same-heading neighbours. The
 HuggingFace tokenizer (MiniLM etc.) sits behind the `chunking` cargo feature
 (on by default in the CLI); `--to chunks` dumps both chunkers' records.
 `scripts/install/download_dependencies.sh` fetches MiniLM's tokenizer to
-`models/chunk/tokenizer.json`, which every surface picks up automatically when
+`.models/chunk/tokenizer.json`, which every surface picks up automatically when
 no explicit tokenizer path is given (`DOCLING_CHUNK_TOKENIZER` overrides the
 path and `DOCLING_CHUNK_MAX_TOKENS` the 256-token budget for the CLI). The chunkers are also
 exposed in the [Node bindings](./crates/docling-node) (`chunkFile` /
@@ -677,15 +677,15 @@ instead — same models plus `pdfium.dll` — and see
 | Asset | Destination |
 | --- | --- |
 | pdfium (Linux x64) | `.pdfium/lib/libpdfium.so` |
-| RT-DETR layout | `models/layout_heron.onnx` |
-| PP-OCRv3 rec + dictionary, English (the runtime default) | `models/ocr_rec_en.onnx`, `models/en_dict.txt` |
-| PP-OCRv3 rec + dictionary, multilingual `ch_` (`DOCLING_RS_OCR_LANG=ch`; the docling-conformance model — weak Latin word spacing) | `models/ocr_rec.onnx`, `models/ppocr_keys_v1.txt` |
-| TableFormer (optional) | `models/tableformer/{encoder,decoder,bbox}.onnx` (+ `.data` sidecars where the export needs them) |
-| Whisper tiny (audio/ASR; skip with `--no-asr`) | `models/asr/{encoder_model,decoder_model}.onnx`, `models/asr/vocab.json` (+ `added_tokens.json` for language selection) |
-| Whisper presets (optional; `--asr-model=<preset>`, repeatable) | `models/asr/<preset>/…` — English-only (`whisper_tiny_en`, `whisper_base_en`, `whisper_small_en`) and Distil-Whisper (`whisper_distil_small_en`) exports, fetched from Hugging Face |
-| INT8 CPU models (fetched by default; skip with `--no-int8`) | `models/layout_heron_int8.onnx`, `models/tableformer/decoder_int8.onnx` (+ `models/code_formula/decoder_kv_int8.onnx` with `--enrich`) |
-| DocumentFigureClassifier (picture classification) | `models/picture_classifier.onnx` |
-| CodeFormulaV2 (code/formula enrichment, ~1.3 GB; fetch with `--enrich`) | `models/code_formula/{vision,embed,decoder_kv}.onnx`, `models/code_formula/tokenizer.json` |
+| RT-DETR layout | `.models/layout_heron.onnx` |
+| PP-OCRv3 rec + dictionary, English (the runtime default) | `.models/ocr_rec_en.onnx`, `.models/en_dict.txt` |
+| PP-OCRv3 rec + dictionary, multilingual `ch_` (`DOCLING_RS_OCR_LANG=ch`; the docling-conformance model — weak Latin word spacing) | `.models/ocr_rec.onnx`, `.models/ppocr_keys_v1.txt` |
+| TableFormer (optional) | `.models/tableformer/{encoder,decoder,bbox}.onnx` (+ `.data` sidecars where the export needs them) |
+| Whisper tiny (audio/ASR; skip with `--no-asr`) | `.models/asr/{encoder_model,decoder_model}.onnx`, `.models/asr/vocab.json` (+ `added_tokens.json` for language selection) |
+| Whisper presets (optional; `--asr-model=<preset>`, repeatable) | `.models/asr/<preset>/…` — English-only (`whisper_tiny_en`, `whisper_base_en`, `whisper_small_en`) and Distil-Whisper (`whisper_distil_small_en`) exports, fetched from Hugging Face |
+| INT8 CPU models (fetched by default; skip with `--no-int8`) | `.models/layout_heron_int8.onnx`, `.models/tableformer/decoder_int8.onnx` (+ `.models/code_formula/decoder_kv_int8.onnx` with `--enrich`) |
+| DocumentFigureClassifier (picture classification) | `.models/picture_classifier.onnx` |
+| CodeFormulaV2 (code/formula enrichment, ~1.3 GB; fetch with `--enrich`) | `.models/code_formula/{vision,embed,decoder_kv}.onnx`, `.models/code_formula/tokenizer.json` |
 
 Idempotent — safe to re-run; it skips files already on disk. Pass `--force` to
 re-fetch everything, `--no-chunk` to skip the chunker tokenizer, `--embed` to
@@ -699,7 +699,7 @@ only for now — other platforms, or building the models from source, need
 #### Whisper models for audio/ASR
 
 The default run already fetches **Whisper tiny** (multilingual) into
-`models/asr/` — nothing extra is needed for audio inputs:
+`.models/asr/` — nothing extra is needed for audio inputs:
 
 ```bash
 scripts/install/download_dependencies.sh          # includes Whisper tiny
@@ -708,7 +708,7 @@ scripts/install/download_dependencies.sh --no-asr # …or skip the ~150 MB ASR m
 
 Named **model presets** (docling's English-only / Distil-Whisper ASR specs,
 the variants with public ONNX exports) are fetched on top with a repeatable
-`--asr-model=` flag, each into its own `models/asr/<preset>/` directory:
+`--asr-model=` flag, each into its own `.models/asr/<preset>/` directory:
 
 ```bash
 scripts/install/download_dependencies.sh --asr-model=whisper_tiny_en
@@ -983,8 +983,8 @@ covered by a separate **deterministic snapshot** harness rather than `cargo test
 bash scripts/install/pdf_setup.sh           # one-time: fetch pdfium + export the ONNX models
                                     # (layout + TableFormer; needs a torch/docling Python)
 # Updating an existing checkout after a model-format change (e.g. the cached
-# TableFormer decoder): `rm -rf models/tableformer && bash scripts/install/pdf_setup.sh`,
-# or re-run `python scripts/install/export_tableformer.py models/tableformer` directly.
+# TableFormer decoder): `rm -rf .models/tableformer && bash scripts/install/pdf_setup.sh`,
+# or re-run `python scripts/install/export_tableformer.py .models/tableformer` directly.
 
 export PDFIUM_DYNAMIC_LIB_PATH="$(pwd)/.pdfium/lib"
 export DOCLING_LAYOUT_ONNX="$(pwd)/models/layout_heron.onnx"
@@ -1067,7 +1067,7 @@ for a Rust toolchain (installs one via rustup if `cargo` is missing) and runs
 binary + all models + pdfium under `/usr/local/docling.rs`, symlinks
 `/usr/local/bin/docling-rs`, and writes `/etc/profile.d/docling-rs.sh` with
 the `DOCLING_*`/`PDFIUM_*` exports. The env file is a convenience for other
-consumers of the model tree — the CLI itself resolves `models/` and
+consumers of the model tree — the CLI itself resolves `.models/` and
 `.pdfium/` **relative to its own (symlink-resolved) location**, so the
 command works from any directory with no environment at all. ONNX Runtime is
 statically linked; nothing else lands outside the prefix.

@@ -228,7 +228,7 @@ fn bind() -> Result<Pdfium, PdfiumError> {
         }
     }
     // No env var (or it didn't resolve): fall back to `.pdfium/lib` relative to
-    // the current directory — mirroring `layout.rs`/`ocr.rs`'s `models/…`
+    // the current directory — mirroring `layout.rs`/`ocr.rs`'s `.models/…`
     // defaults — the layout `scripts/install/download_dependencies.sh` (and
     // `scripts/install/pdf_setup.sh`) produce, so a checkout with the dependencies
     // downloaded next to it needs no env var at all.

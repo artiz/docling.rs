@@ -103,10 +103,10 @@ impl PyDocumentConverter {
     ///   workflows, #173).
     /// * `do_picture_classification` — classify pictures with the
     ///   DocumentFigureClassifier enrichment model (docling's flag of the same
-    ///   name; needs models/picture_classifier.onnx).
+    ///   name; needs .models/picture_classifier.onnx).
     /// * `do_code_enrichment` / `do_formula_enrichment` — rewrite code blocks /
     ///   decode formula LaTeX with the CodeFormulaV2 VLM (docling's flags of
-    ///   the same names; need models/code_formula/).
+    ///   the same names; need .models/code_formula/).
     /// * `use_web_browser` — render HTML via headless Chrome before parsing.
     /// * `page_range` — `(first, last)` 1-based inclusive PDF page window
     ///   (docling's option of the same name, #80); other formats ignore it.
@@ -454,7 +454,7 @@ impl Drop for PyChunkStream {
 /// `DoclingDocument.export_to_dict()` serializes to). `chunker` selects the
 /// mode: `"hierarchical"` (structure-driven), `"hybrid"` (refines against a
 /// token budget, counting tokens with the HuggingFace `tokenizer.json` at
-/// `tokenizer` — or at `models/chunk/tokenizer.json`, the path
+/// `tokenizer` — or at `.models/chunk/tokenizer.json`, the path
 /// `scripts/install/download_dependencies.sh` populates, when `None`), or
 /// `"window"` (the document's Markdown cut into heading-bounded sections and
 /// windowed with `overlap` fractional overlap — docling-rag's window chunker).

@@ -26,8 +26,8 @@ const TS_BEGIN: u32 = 50_364;
 
 /// The model presets the loader accepts (docling PR #3741's English-only and
 /// Distil-Whisper additions, limited to the variants with public ONNX
-/// exports). Each maps to a `models/asr/<preset>/` directory; the unnamed
-/// default (Whisper tiny multilingual) stays at `models/asr/` itself.
+/// exports). Each maps to a `.models/asr/<preset>/` directory; the unnamed
+/// default (Whisper tiny multilingual) stays at `.models/asr/` itself.
 pub const PRESETS: &[&str] = &[
     "whisper_tiny",
     "whisper_tiny_en",
@@ -142,33 +142,18 @@ fn model_path(var: &str, default: &str) -> std::path::PathBuf {
     if let Some(p) = docling_core::env::nonempty(var) {
         return p.into();
     }
-    // Default is CWD-relative; fall back to the executable's directory and one
-    // level above it (the `scripts/install/install.sh` layout, reached through the
-    // /usr/local/bin symlink), mirroring docling-pdf's asset resolution.
-    if !std::path::Path::new(default).exists() {
-        if let Some(dir) = std::env::current_exe()
-            .ok()
-            .and_then(|p| p.canonicalize().ok())
-            .and_then(|p| p.parent().map(std::path::Path::to_path_buf))
-        {
-            for base in [Some(dir.as_path()), dir.parent()].into_iter().flatten() {
-                let p = base.join(default);
-                if p.exists() {
-                    return p;
-                }
-            }
-        }
-    }
-    default.to_string().into()
+    // CWD-relative with exe-dir and legacy `models/` fallbacks — the shared
+    // asset-resolution chain (see `docling_core::assets`).
+    docling_core::assets::resolve(default).into()
 }
 
 /// The model directory for a preset: the unnamed default lives at
-/// `models/asr/`, a named preset in its own `models/asr/<preset>/`
+/// `.models/asr/`, a named preset in its own `.models/asr/<preset>/`
 /// subdirectory (matching `download_dependencies.sh --asr-model`).
 fn preset_dir(preset: Option<&str>) -> String {
     match preset {
-        None | Some("whisper_tiny") | Some("") => "models/asr".to_string(),
-        Some(p) => format!("models/asr/{p}"),
+        None | Some("whisper_tiny") | Some("") => ".models/asr".to_string(),
+        Some(p) => format!(".models/asr/{p}"),
     }
 }
 
@@ -188,7 +173,7 @@ pub fn models_available_for(preset: Option<&str>) -> bool {
 
 impl Transcriber {
     /// Load the encoder/decoder ONNX graphs and the vocabulary. Paths come from
-    /// `DOCLING_ASR_{ENCODER,DECODER,VOCAB}`, defaulting to `models/asr/…`
+    /// `DOCLING_ASR_{ENCODER,DECODER,VOCAB}`, defaulting to `.models/asr/…`
     /// relative to the working directory (mirroring the PDF models).
     pub fn load() -> Result<Self, String> {
         Self::load_preset(None)
@@ -196,7 +181,7 @@ impl Transcriber {
 
     /// [`load`](Self::load) for a named model preset (see [`PRESETS`]):
     /// English-only and Distil-Whisper variants live in their own
-    /// `models/asr/<preset>/` directories, and their special-token ids are
+    /// `.models/asr/<preset>/` directories, and their special-token ids are
     /// resolved from the vocabulary (English-only exports carry no language
     /// tokens and shift the id layout).
     pub fn load_preset(preset: Option<&str>) -> Result<Self, String> {
@@ -814,11 +799,11 @@ mod tests {
 
     #[test]
     fn preset_dirs_resolve() {
-        assert_eq!(preset_dir(None), "models/asr");
-        assert_eq!(preset_dir(Some("whisper_tiny")), "models/asr");
+        assert_eq!(preset_dir(None), ".models/asr");
+        assert_eq!(preset_dir(Some("whisper_tiny")), ".models/asr");
         assert_eq!(
             preset_dir(Some("whisper_tiny_en")),
-            "models/asr/whisper_tiny_en"
+            ".models/asr/whisper_tiny_en"
         );
     }
 

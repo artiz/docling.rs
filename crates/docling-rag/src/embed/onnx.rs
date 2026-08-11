@@ -44,7 +44,7 @@ impl OnnxEmbedder {
         let mut builder = docling_pdf::ep::apply(builder)
             .map_err(|e| RagError::Embedding(format!("embedder {e}")))?;
         let session = builder
-            .commit_from_file(&cfg.embed_onnx_path)
+            .commit_from_file(docling_core::assets::resolve(&cfg.embed_onnx_path))
             .map_err(|e| RagError::Embedding(format!("loading ONNX model: {e}")))?;
         let needs_token_type_ids = session
             .inputs()
@@ -59,8 +59,9 @@ impl OnnxEmbedder {
             .or(output_names.first().copied())
             .ok_or_else(|| RagError::Embedding("embedding model has no outputs".into()))?
             .to_string();
-        let tokenizer = Tokenizer::from_file(&cfg.embed_tokenizer_path)
-            .map_err(|e| RagError::Embedding(format!("loading tokenizer: {e}")))?;
+        let tokenizer =
+            Tokenizer::from_file(docling_core::assets::resolve(&cfg.embed_tokenizer_path))
+                .map_err(|e| RagError::Embedding(format!("loading tokenizer: {e}")))?;
         Ok(OnnxEmbedder {
             session: Arc::new(Mutex::new(session)),
             tokenizer: Arc::new(tokenizer),

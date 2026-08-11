@@ -138,7 +138,7 @@ Scanned pictures are cropped out of the rendered page just like the native
 pipeline, so `images: "embedded"` inlines real figure bytes on this path too
 (`ocr.finishDoc(name, "md", "embedded")`).
 
-Models resolve **device file → local `./models/` → Hugging Face**, so a page can
+Models resolve **device file → local `./.models/` (or pre-rename `./models/`) → Hugging Face**, so a page can
 ship with no models and still work: `ocr.setProvidedModels({ "layout_heron_int8.onnx": buf })`
 takes files the user picked, and anything not provided is fetched.
 
@@ -264,7 +264,7 @@ same-origin, from a CORS host, **or straight from files on your device**.
    ```bash
    curl -fsSL https://raw.githubusercontent.com/docling-project/docling.rs/master/scripts/install/download_dependencies.sh | sh
    ```
-   This writes `models/` (layout, OCR, TableFormer, …).
+   This writes `.models/` (layout, OCR, TableFormer, …).
 
 2. **Serve the page** from any static host that sends the right MIME types —
    GitHub Pages, `raw.githack.com`, or a local `python3 -m http.server -d
@@ -284,7 +284,7 @@ same-origin, from a CORS host, **or straight from files on your device**.
      `MODEL_BASE` in `pipeline.js` at yours. The recognition model already
      streams from Hugging Face.
 
-Resolution order for every model is **device file → local `./models/` →
+Resolution order for every model is **device file → local `./.models/` (or pre-rename `./models/`) →
 `MODEL_BASE` (Hugging Face)**. Tables need no upload beyond the model files;
 the image never leaves the page.
 
@@ -323,7 +323,7 @@ async fn convert_document(path: String) -> Result<String, String> {
 }
 ```
 
-Ship the `models/` directory as a Tauri resource (or fetch on first run with
+Ship the `.models/` directory as a Tauri resource (or fetch on first run with
 `scripts/install/download_dependencies.sh`'s URLs) and point the resolver at
 it — model paths resolve CWD-relative with env overrides
 (`PDFIUM_DYNAMIC_LIB_PATH`, `DOCLING_LAYOUT_ONNX`, …), so set the resource dir

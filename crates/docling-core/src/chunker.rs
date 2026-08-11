@@ -1760,8 +1760,8 @@ mod hf {
     /// Where `scripts/install/download_dependencies.sh` puts the hybrid
     /// chunker's default tokenizer (all-MiniLM-L6-v2's `tokenizer.json`),
     /// relative to the process's working directory — the same convention as
-    /// the `models/` ONNX files.
-    pub const DEFAULT_TOKENIZER_PATH: &str = "models/chunk/tokenizer.json";
+    /// the `.models/` ONNX files.
+    pub const DEFAULT_TOKENIZER_PATH: &str = ".models/chunk/tokenizer.json";
 
     /// Resolve the tokenizer path for the hybrid chunker: an explicit path
     /// wins; otherwise fall back to [`DEFAULT_TOKENIZER_PATH`] when it exists
@@ -1771,8 +1771,9 @@ mod hf {
         if let Some(p) = explicit {
             return Ok(p.to_string());
         }
-        if std::path::Path::new(DEFAULT_TOKENIZER_PATH).exists() {
-            return Ok(DEFAULT_TOKENIZER_PATH.to_string());
+        let resolved = crate::assets::resolve(DEFAULT_TOKENIZER_PATH);
+        if std::path::Path::new(&resolved).exists() {
+            return Ok(resolved);
         }
         Err(format!(
             "the hybrid chunker needs a HuggingFace tokenizer.json: none passed and \

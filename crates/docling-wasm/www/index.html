@@ -174,7 +174,7 @@
       causes on a phone.
     </li>
     <li>
-      <strong>From a <code>models/</code> folder next to this page</strong> —
+      <strong>From a <code>.models/</code> folder next to this page</strong> —
       served same-origin, fetched automatically:
       <pre>cd crates/docling-wasm/www/
 curl -fsSL https://raw.githubusercontent.com/docling-project/docling.rs/master/scripts/install/download_dependencies.sh | sh</pre>
@@ -186,7 +186,7 @@ curl -fsSL https://raw.githubusercontent.com/docling-project/docling.rs/master/s
     </li>
   </ol>
   <p class="hint">
-    Resolution order per file is <strong>device → local <code>models/</code> →
+    Resolution order per file is <strong>device → local <code>.models/</code> →
     Hugging Face</strong>, so any mix works. The recognition model (~10&nbsp;MB)
     streams from Hugging Face on demand; layout is ~68&nbsp;MB and TableFormer
     ~380&nbsp;MB, so on mobile prefer picking files from the device.
@@ -358,7 +358,7 @@ curl -fsSL https://raw.githubusercontent.com/docling-project/docling.rs/master/s
         if (r.noLayout) {
           ocrBooting = null;
           throw new Error(
-            "no layout model — pick the .onnx files from your device, or install them into ./models/ (see below)",
+            "no layout model — pick the .onnx files from your device, or install them into ./.models/ (see below)",
           );
         }
         ocrState.textContent =

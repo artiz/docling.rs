@@ -10,6 +10,7 @@ onnxruntime_profile_*.json
 crates/docling-wasm/www/pkg/
 # ML models the scan demo fetches same-origin (download_dependencies.sh, run in www/)
 crates/docling-wasm/www/models/
+crates/docling-wasm/www/.models/
 
 # Secrets — never commit (holds CARGO_REGISTRY_TOKEN)
 .env
@@ -26,7 +27,10 @@ crates/docling-wasm/www/models/
 # Downloaded native libs / models (not committed)
 .pdfium/
 *.onnx
-models/
+.models/
+# Pre-rename model dir (root only, so a future `models` source dir elsewhere
+# is not shadowed); old checkouts keep a clean `git status`.
+/models/
 
 # Python bytecode cache from the comparison scripts
 __pycache__/

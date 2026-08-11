@@ -1,7 +1,7 @@
 //! Chunk-record JSON export shared by the CLI (`--to chunks`) and the HTTP
 //! server (`to=chunks`): the hierarchical chunker's records always, plus the
 //! hybrid chunker's when a tokenizer is available — `DOCLING_CHUNK_TOKENIZER`,
-//! or `models/chunk/tokenizer.json` as populated by
+//! or `.models/chunk/tokenizer.json` as populated by
 //! `scripts/install/download_dependencies.sh` (requires the `chunking` build
 //! feature; `DOCLING_CHUNK_MAX_TOKENS` overrides the default budget of 256).
 

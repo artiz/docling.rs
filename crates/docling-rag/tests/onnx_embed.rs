@@ -12,12 +12,16 @@ use docling_rag::{embed, math, RagConfig};
 #[tokio::test]
 async fn bge_m3_embeds_and_ranks_by_meaning() {
     let repo = concat!(env!("CARGO_MANIFEST_DIR"), "/../..");
-    let model = format!("{repo}/models/embed/bge-m3.onnx");
-    let tokenizer = format!("{repo}/models/embed/tokenizer.json");
-    if !std::path::Path::new(&model).exists() {
-        eprintln!("skipping: {model} not present (run download_dependencies.sh --embed)");
+    // `.models/` first, the pre-rename `models/` as fallback.
+    let dir = [".models", "models"]
+        .into_iter()
+        .find(|d| std::path::Path::new(&format!("{repo}/{d}/embed/bge-m3.onnx")).exists());
+    let Some(dir) = dir else {
+        eprintln!("skipping: {repo}/.models/embed/bge-m3.onnx not present (run download_dependencies.sh --embed)");
         return;
-    }
+    };
+    let model = format!("{repo}/{dir}/embed/bge-m3.onnx");
+    let tokenizer = format!("{repo}/{dir}/embed/tokenizer.json");
 
     let cfg = RagConfig {
         embed_provider: EmbedProvider::Onnx,

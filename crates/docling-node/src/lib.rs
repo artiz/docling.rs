@@ -32,7 +32,7 @@ use docling::{
 #[derive(Clone, Default)]
 pub struct ConverterOptions {
     /// Named Whisper model preset for audio sources (English-only /
-    /// Distil-Whisper variants under `models/asr/<preset>/`).
+    /// Distil-Whisper variants under `.models/asr/<preset>/`).
     pub asr_model: Option<String>,
     /// ASR transcription language for audio/video: a Whisper code (`"en"`,
     /// `"de"`, …) or `"auto"` (default) — detected from the first 30 seconds.
@@ -929,7 +929,7 @@ pub struct ChunkOptions {
     pub chunker: Option<String>,
     /// Path to a HuggingFace `tokenizer.json` (e.g. all-MiniLM-L6-v2's) for the
     /// hybrid chunker's token counts. When omitted, falls back to
-    /// `models/chunk/tokenizer.json` (populated by
+    /// `.models/chunk/tokenizer.json` (populated by
     /// `scripts/install/download_dependencies.sh`).
     pub tokenizer: Option<String>,
     /// The hybrid chunker's token budget per chunk. Default `256` (docling's
@@ -1012,7 +1012,7 @@ fn run_chunker_with(
         })
     };
     if cfg.hybrid {
-        // Explicit path, or models/chunk/tokenizer.json (the download script's
+        // Explicit path, or .models/chunk/tokenizer.json (the download script's
         // default location); a clear error otherwise.
         let tok = docling::chunker::HuggingFaceTokenizer::resolve(
             cfg.tokenizer.as_deref(),

@@ -73,7 +73,8 @@ cargo check -p docling --no-default-features --features pdf-text \
 
 ## Runtime assets & env
 
-- `models/` (repo root): layout, TableFormer, OCR, ASR (`models/asr/`,
+- `.models/` (repo root; the pre-rename `models/` still resolves as a read
+  fallback): layout, TableFormer, OCR, ASR (`.models/asr/`,
   presets in subdirs), enrichment, embedder. `.pdfium/lib/libpdfium.so` for
   page rendering. Fetch: `scripts/install/download_dependencies.sh`.
 - Resolution is CWD-relative with exe-dir fallback; env overrides:

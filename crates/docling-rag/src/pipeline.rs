@@ -54,7 +54,7 @@ pub struct Answer {
 /// Off by default: enrichment multiplies conversion time.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct ConvertOptions {
-    /// Classify pictures (chart/logo/…) — `models/picture_classifier.onnx`.
+    /// Classify pictures (chart/logo/…) — `.models/picture_classifier.onnx`.
     pub enrich_pictures: bool,
     /// Transcribe code blocks with the CodeFormula VLM (`--enrich` download).
     pub enrich_code: bool,

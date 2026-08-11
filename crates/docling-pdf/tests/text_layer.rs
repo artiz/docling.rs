@@ -70,11 +70,16 @@ fn scanned_page_extracts_table_and_keeps_chart() {
     }
     for needed in [
         ".pdfium/lib/libpdfium.so",
-        "models/layout_heron_int8.onnx",
-        "models/ocr_rec_en.onnx",
-        "models/tableformer/encoder.onnx",
+        ".models/layout_heron_int8.onnx",
+        ".models/ocr_rec_en.onnx",
+        ".models/tableformer/encoder.onnx",
     ] {
-        if !root.join(needed).exists() {
+        // `.models/` first, the pre-rename `models/` as fallback (same chain
+        // the pipeline's own asset resolution walks).
+        let legacy = needed
+            .strip_prefix('.')
+            .filter(|_| needed.starts_with(".models/"));
+        if !root.join(needed).exists() && !legacy.is_some_and(|l| root.join(l).exists()) {
             eprintln!("skipping scanned-table e2e: {needed} not found");
             return;
         }
