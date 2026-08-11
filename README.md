@@ -815,6 +815,11 @@ cargo build --release -p docling-cli --features cuda      # NVIDIA CUDA (Linux/W
 #                                     --features coreml   # CoreML (macOS)
 ```
 
+Each provider only exists on its OS (ort ships no CoreML build for Linux, no
+DirectML outside Windows, no CUDA for macOS) — an impossible pairing now
+fails at compile time with a message naming the alternatives, instead of a
+linker error at the end of the build.
+
 A GPU build defaults to `auto`: it converts on the GPU when one is usable
 and falls back to CPU when not — you chose a GPU build, so it uses the GPU.
 `DOCLING_RS_EP` overrides:

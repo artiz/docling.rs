@@ -68,6 +68,30 @@ use std::sync::mpsc::{sync_channel, Receiver};
 #[cfg(feature = "ml")]
 use std::sync::{Arc, Mutex};
 
+// An execution provider only exists on its OS, and ort's prebuilt ONNX
+// Runtime binaries follow suit — requesting an impossible pairing otherwise
+// surfaces as a cryptic ort-sys linker error ("no builds available that
+// satisfy the requested feature set"). Catch it at type-check time with an
+// actionable message instead.
+#[cfg(all(feature = "coreml", not(target_vendor = "apple")))]
+compile_error!(
+    "the `coreml` execution provider exists only on Apple targets (macOS/iOS). \
+     On Linux use `--features cuda` or `--features tensorrt` (NVIDIA), on \
+     Windows also `--features directml`, or build without EP features for CPU."
+);
+#[cfg(all(feature = "directml", not(target_os = "windows")))]
+compile_error!(
+    "the `directml` execution provider exists only on Windows. On Linux use \
+     `--features cuda` or `--features tensorrt` (NVIDIA), on macOS \
+     `--features coreml`, or build without EP features for CPU."
+);
+#[cfg(all(any(feature = "cuda", feature = "tensorrt"), target_vendor = "apple"))]
+compile_error!(
+    "the `cuda`/`tensorrt` execution providers have no Apple builds (no NVIDIA \
+     support on macOS). Use `--features coreml` there, or build without EP \
+     features for CPU."
+);
+
 use docling_core::DoclingDocument;
 // The env-knob helpers only gate ML-pipeline diagnostics and tuning; the
 // pure text-layer (wasm) build has no call sites.
