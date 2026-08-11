@@ -37,6 +37,11 @@ impl Package {
             .map(|zip| Self { zip })
     }
 
+    /// The package's member paths, in central-directory order.
+    pub fn names(&self) -> impl Iterator<Item = &str> {
+        self.zip.file_names()
+    }
+
     /// Read a part to a string, or `None` if it is absent or not valid UTF-8.
     pub fn read(&mut self, path: &str) -> Option<String> {
         let bytes = self.read_bytes(path)?;

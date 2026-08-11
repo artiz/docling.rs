@@ -16,6 +16,8 @@ rust-version.workspace = true
 exclude = ["tests", "benches"]
 
 [features]
+# HEIC/HEIF image input (#211): forwards to docling-pdf's libheif decode.
+heif = ["pdf", "docling-pdf/heif"]
 # The default build is the full converter. The ML pipelines and the HTTP
 # client are feature-sliced so `--no-default-features` leaves the pure-Rust
 # declarative converters (DOCX/HTML/MD/XLSX/PPTX/… → md/json) — a set that
@@ -88,6 +90,9 @@ ureq = { version = "3", optional = true }
 # when the HTML was fetched from the web (fetch_images). Gated with ureq.
 url = { version = "2", optional = true }
 zip = { version = "2.2", default-features = false, features = ["deflate"] }
+# Raw-block Snappy decode for Apple iWork's IWA members (#213); pure Rust, so
+# the backend rides along in every build including wasm.
+snap = "1"
 
 [[example]]
 name = "convert"
