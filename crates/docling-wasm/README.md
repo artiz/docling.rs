@@ -138,7 +138,7 @@ Scanned pictures are cropped out of the rendered page just like the native
 pipeline, so `images: "embedded"` inlines real figure bytes on this path too
 (`ocr.finishDoc(name, "md", "embedded")`).
 
-Models resolve **device file → local `./.models/` (or pre-rename `./models/`) → Hugging Face**, so a page can
+Models resolve **device file → local `./.models/` → Hugging Face**, so a page can
 ship with no models and still work: `ocr.setProvidedModels({ "layout_heron_int8.onnx": buf })`
 takes files the user picked, and anything not provided is fetched.
 
@@ -284,7 +284,7 @@ same-origin, from a CORS host, **or straight from files on your device**.
      `MODEL_BASE` in `pipeline.js` at yours. The recognition model already
      streams from Hugging Face.
 
-Resolution order for every model is **device file → local `./.models/` (or pre-rename `./models/`) →
+Resolution order for every model is **device file → local `./.models/` →
 `MODEL_BASE` (Hugging Face)**. Tables need no upload beyond the model files;
 the image never leaves the page.
 

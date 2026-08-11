@@ -161,14 +161,10 @@ mod tests {
     /// the workspace-root `.models/asr/` (model resolution is CWD-relative and
     /// tests run from the crate dir).
     fn asr_models_ready() -> bool {
-        let ws = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
-        // New-style `.models/` first, pre-rename `models/` as fallback.
-        let Some(root) = [ws.join(".models/asr"), ws.join("models/asr")]
-            .into_iter()
-            .find(|p| p.join("encoder_model.onnx").exists())
-        else {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../.models/asr");
+        if !root.join("encoder_model.onnx").exists() {
             return false;
-        };
+        }
         std::env::set_var("DOCLING_ASR_ENCODER", root.join("encoder_model.onnx"));
         std::env::set_var("DOCLING_ASR_DECODER", root.join("decoder_model.onnx"));
         std::env::set_var("DOCLING_ASR_VOCAB", root.join("vocab.json"));

@@ -57,11 +57,7 @@ REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)
 # Where the fp32 models live and the int8 outputs go (a checkout's .models/ by
 # default); DOCLING_RS_MODELS_DIR relocates it (e.g. /opt/models in a Docker
 # models stage).
-# `.models/` first, the pre-rename `models/` as fallback.
-MODELS = os.environ.get("DOCLING_RS_MODELS_DIR") or next(
-    (d for d in (f"{REPO}/.models", f"{REPO}/models") if os.path.isdir(d)),
-    f"{REPO}/.models",
-)
+MODELS = os.environ.get("DOCLING_RS_MODELS_DIR", f"{REPO}/.models")
 # DOCLING_RS_CALIBRATION_DIR: a directory scanned recursively for calibration
 # *.pdf files; defaults to the repo's PDF + scanned corpus (the set the
 # published quality numbers were measured with).

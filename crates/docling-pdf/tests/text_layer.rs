@@ -74,12 +74,7 @@ fn scanned_page_extracts_table_and_keeps_chart() {
         ".models/ocr_rec_en.onnx",
         ".models/tableformer/encoder.onnx",
     ] {
-        // `.models/` first, the pre-rename `models/` as fallback (same chain
-        // the pipeline's own asset resolution walks).
-        let legacy = needed
-            .strip_prefix('.')
-            .filter(|_| needed.starts_with(".models/"));
-        if !root.join(needed).exists() && !legacy.is_some_and(|l| root.join(l).exists()) {
+        if !root.join(needed).exists() {
             eprintln!("skipping scanned-table e2e: {needed} not found");
             return;
         }

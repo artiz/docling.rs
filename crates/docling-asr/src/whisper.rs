@@ -142,8 +142,8 @@ fn model_path(var: &str, default: &str) -> std::path::PathBuf {
     if let Some(p) = docling_core::env::nonempty(var) {
         return p.into();
     }
-    // CWD-relative with exe-dir and legacy `models/` fallbacks — the shared
-    // asset-resolution chain (see `docling_core::assets`).
+    // CWD-relative with an exe-dir fallback — the shared asset-resolution
+    // chain (see `docling_core::assets`).
     docling_core::assets::resolve(default).into()
 }
 

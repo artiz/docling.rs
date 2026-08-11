@@ -117,11 +117,10 @@ fn repo_root() -> PathBuf {
 /// decodes through the `image` crate). Model resolution is CWD-relative, so
 /// this also moves the process to the repo root, like `scanned.rs`.
 fn models_ready() -> bool {
-    // `.models/` first, the pre-rename `models/` as fallback.
     let root = repo_root();
     ["layout_heron.onnx", "ocr_rec_en.onnx", "en_dict.txt"]
         .iter()
-        .all(|m| root.join(".models").join(m).exists() || root.join("models").join(m).exists())
+        .all(|m| root.join(".models").join(m).exists())
         && std::env::set_current_dir(&root).is_ok()
 }
 

@@ -178,11 +178,10 @@ class HybridChunker(_BaseChunker):
 
     def chunk(self, dl_doc: Any) -> Iterator[DocChunk]:
         tokenizer = self.tokenizer
-        local = (".models/chunk/tokenizer.json", "models/chunk/tokenizer.json")
-        if tokenizer is None and not any(Path(rel).exists() for rel in local):
-            # The native resolver checks ./.models/chunk/tokenizer.json (and
-            # the pre-rename ./models/ location); when both are absent, fall
-            # back to the package cache populated by docling_rs.download_models().
+        if tokenizer is None and not Path(".models/chunk/tokenizer.json").exists():
+            # The native resolver checks ./.models/chunk/tokenizer.json; when
+            # that's absent, fall back to the package cache populated by
+            # docling_rs.download_models().
             cached = models.cache_dir() / "models/chunk/tokenizer.json"
             if cached.exists():
                 tokenizer = str(cached)

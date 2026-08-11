@@ -62,12 +62,10 @@ function homeDir(dir) {
   if (process.env.DOCLING_RS_HOME)
     return { home: path.resolve(process.env.DOCLING_RS_HOME), dotPdfium: false, dotModels: false }
   const cwd = process.cwd()
-  // A checkout's local layout: `.models/` (or the pre-rename `models/`).
+  // A checkout's local layout (`.models/`, `.pdfium/`), vs the shared
+  // ~/.cache/docling.rs home whose internal layout keeps the plain names.
   const dotModels = fs.existsSync(path.join(cwd, '.models'))
-  const hasLocal =
-    dotModels ||
-    fs.existsSync(path.join(cwd, 'models', 'layout_heron.onnx')) ||
-    fs.existsSync(path.join(cwd, '.pdfium', 'lib', pdfiumLibName()))
+  const hasLocal = dotModels || fs.existsSync(path.join(cwd, '.pdfium', 'lib', pdfiumLibName()))
   if (hasLocal) return { home: cwd, dotPdfium: true, dotModels }
   return { home: path.join(os.homedir(), '.cache', 'docling.rs'), dotPdfium: false, dotModels: false }
 }

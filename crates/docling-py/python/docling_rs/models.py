@@ -15,14 +15,13 @@ Usage::
 
 ``DocumentConverter`` calls :func:`ensure_env` automatically, so after the
 one-time download no configuration is needed at all. Local assets outrank the
-cache: when a matching ``.models/`` (or pre-rename ``models/``) / ``.pdfium/``
-asset exists in the working directory (e.g. a repo checkout with its own
-exports), the env var is left unset and the native pipeline resolves the
-local path itself, exactly like the Rust CLI. Re-published release assets are
-picked up with ``download_models(force=True)`` — the cache has no version
-stamp. (The cache's *internal* layout keeps the historical ``models/``
-folder name — it lives under the docling-owned cache root, so nothing
-collides, and existing caches stay valid.)
+cache: when a matching ``.models/`` / ``.pdfium/`` asset exists in the
+working directory (e.g. a repo checkout with its own exports), the env var is
+left unset and the native pipeline resolves the local path itself, exactly
+like the Rust CLI. Re-published release assets are picked up with
+``download_models(force=True)`` — the cache has no version stamp. (The
+cache's *internal* layout keeps the plain ``models/`` folder name — it lives
+under the docling-owned cache root, so nothing collides.)
 """
 
 from __future__ import annotations
@@ -157,9 +156,8 @@ def _point_at(var: str, local: "list[str]", cached: Path) -> None:
 
     Two things outrank the cache: an env var the caller already set, and a
     matching asset in the working directory (any of the ``local`` relative
-    paths, checked under ``.models/`` and the pre-rename ``models/`` alike) —
-    the native pipeline resolves those CWD paths itself when the env var
-    stays unset, exactly like the Rust CLI run from a checkout. The env
+    paths) — the native pipeline resolves those CWD paths itself when the env
+    var stays unset, exactly like the Rust CLI run from a checkout. The env
     is also left untouched when ``cached`` doesn't exist."""
     if var in os.environ:
         return
@@ -170,21 +168,18 @@ def _point_at(var: str, local: "list[str]", cached: Path) -> None:
 
 
 def _local(rels: "list[str]") -> "list[str]":
-    """Working-directory candidates for cache-relative ``models/…`` paths:
-    the ``.models/`` location first, the pre-rename ``models/`` second."""
-    out = []
+    """Working-directory candidates for cache-relative ``models/…`` paths —
+    the checkout keeps them under ``.models/``."""
     for rel in rels:
         assert rel.startswith("models/"), rel
-        out += [f".{rel}", rel]
-    return out
+    return [f".{rel}" for rel in rels]
 
 
 def ensure_env(dest: "str | Path | None" = None) -> Path:
     """Point the native pipeline at the cached assets via the ``DOCLING_*`` /
     ``PDFIUM_*`` env vars. Local assets win: a variable is only filled when it
-    is not already set AND no matching ``.models/`` (or pre-rename
-    ``models/``) / ``.pdfium/`` asset exists
-    in the working directory (the native code resolves those itself, so a repo
+    is not already set AND no matching ``.models/`` / ``.pdfium/`` asset
+    exists in the working directory (the native code resolves those itself, so a repo
     checkout keeps using its own exports). Prefers the INT8 models when
     present, matching the Rust pipeline's default; ``DOCLING_RS_FP32=1`` opts
     out. Safe to call when nothing is downloaded yet — missing files simply

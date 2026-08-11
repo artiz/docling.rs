@@ -28,9 +28,6 @@ crates/docling-wasm/www/.models/
 .pdfium/
 *.onnx
 .models/
-# Pre-rename model dir (root only, so a future `models` source dir elsewhere
-# is not shadowed); old checkouts keep a clean `git status`.
-/models/
 
 # Python bytecode cache from the comparison scripts
 __pycache__/
