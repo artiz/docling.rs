@@ -94,13 +94,11 @@ fn render_file(path: &Path) -> Result<String, String> {
 /// `headless_chrome` autodetect a system install.
 fn locate_chrome() -> Option<PathBuf> {
     for var in ["DOCLING_RS_CHROME", "CHROME"] {
-        if let Ok(p) = std::env::var(var) {
-            if !p.is_empty() {
-                return Some(PathBuf::from(p));
-            }
+        if let Some(p) = docling_core::env::nonempty(var) {
+            return Some(PathBuf::from(p));
         }
     }
-    if let Ok(dir) = std::env::var("PLAYWRIGHT_BROWSERS_PATH") {
+    if let Some(dir) = docling_core::env::nonempty("PLAYWRIGHT_BROWSERS_PATH") {
         let p = PathBuf::from(dir).join("chromium");
         if p.exists() {
             return Some(p);

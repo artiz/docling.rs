@@ -122,7 +122,7 @@ fn decode_symphonia(bytes: &[u8], name: &str) -> Result<Vec<f32>, String> {
 /// The runnable ffmpeg binary, if any: `DOCLING_FFMPEG` if set, else `ffmpeg`
 /// from `PATH` — probed per call, mirroring video-frame extraction.
 fn ffmpeg_binary() -> Option<std::path::PathBuf> {
-    let bin = std::env::var("DOCLING_FFMPEG").unwrap_or_else(|_| "ffmpeg".to_string());
+    let bin = docling_core::env::nonempty("DOCLING_FFMPEG").unwrap_or_else(|| "ffmpeg".to_string());
     std::process::Command::new(&bin)
         .arg("-version")
         .stdout(std::process::Stdio::null())

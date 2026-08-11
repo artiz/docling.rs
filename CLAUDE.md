@@ -103,6 +103,10 @@ cargo check -p docling --no-default-features --features pdf-text \
 
 ## Conventions that keep recurring
 
+- Env knobs go through `docling_core::env` — `flag` (truthy: anything except
+  empty/`0`/`false`/`no`/`off`), `nonempty`, `parse::<T>` — and quiet
+  diagnostics through `docling_core::debug_log!` (gated on `DOCLING_RS_DEBUG`,
+  cached). Never hand-roll `std::env::var` dances in crate code.
 - Options plumb through **every** surface in one PR: lib builder on
   `DocumentConverter` → CLI flag → serve option (multipart field + JSON body +
   query param) → Python kwarg → Node option struct. Grep `video_frames` or

@@ -11,7 +11,7 @@ use std::time::Instant;
 
 pub(crate) fn enabled() -> bool {
     static ON: OnceLock<bool> = OnceLock::new();
-    *ON.get_or_init(|| std::env::var("DOCLING_RS_TIMING").is_ok())
+    *ON.get_or_init(|| docling_core::env::flag("DOCLING_RS_TIMING"))
 }
 
 fn store() -> &'static Mutex<BTreeMap<&'static str, (u128, u64)>> {

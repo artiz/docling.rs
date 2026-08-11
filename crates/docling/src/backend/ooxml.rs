@@ -17,10 +17,7 @@ use zip::ZipArchive;
 /// stay far below this; the limit only exists to stop a decompression-bomb
 /// part from exhausting memory. Override with `DOCLING_RS_MAX_PART_BYTES`.
 pub(crate) fn max_part_bytes() -> u64 {
-    std::env::var("DOCLING_RS_MAX_PART_BYTES")
-        .ok()
-        .and_then(|v| v.parse().ok())
-        .unwrap_or(512 * 1024 * 1024)
+    docling_core::env::parse("DOCLING_RS_MAX_PART_BYTES").unwrap_or(512 * 1024 * 1024)
 }
 
 /// A read-only view over the parts of an OOXML package.

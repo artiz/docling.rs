@@ -222,10 +222,7 @@ fn is_block(name: &str) -> bool {
 const MAX_DOM_DEPTH: usize = 2000;
 
 fn max_dom_depth() -> usize {
-    std::env::var("DOCLING_RS_MAX_HTML_DEPTH")
-        .ok()
-        .and_then(|v| v.parse().ok())
-        .unwrap_or(MAX_DOM_DEPTH)
+    docling_core::env::parse("DOCLING_RS_MAX_HTML_DEPTH").unwrap_or(MAX_DOM_DEPTH)
 }
 
 /// Whether no node under `root` nests deeper than the limit. Iterative DFS —

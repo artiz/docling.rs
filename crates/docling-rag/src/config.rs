@@ -319,12 +319,7 @@ impl RagConfig {
     }
 }
 
-fn env_str(key: &str) -> Option<String> {
-    match std::env::var(key) {
-        Ok(v) if !v.trim().is_empty() => Some(v.trim().to_string()),
-        _ => None,
-    }
-}
+use docling_core::env::nonempty as env_str;
 
 fn env_parse<T>(key: &str, default: T) -> Result<T>
 where

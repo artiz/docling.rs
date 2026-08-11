@@ -16,6 +16,7 @@ pub mod confidence;
 mod doclang;
 pub mod doctags;
 mod document;
+pub mod env;
 mod json;
 mod labels;
 mod markdown;

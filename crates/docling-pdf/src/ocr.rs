@@ -56,10 +56,9 @@ impl OcrLang {
     /// The process-level choice from `DOCLING_RS_OCR_LANG` (empty/unset → the
     /// English default; unknown values warn and use English).
     pub fn from_env() -> Self {
-        let raw = std::env::var("DOCLING_RS_OCR_LANG").unwrap_or_default();
-        if raw.trim().is_empty() {
+        let Some(raw) = docling_core::env::nonempty("DOCLING_RS_OCR_LANG") else {
             return Self::default();
-        }
+        };
         Self::parse(&raw).unwrap_or_else(|| {
             eprintln!("docling-pdf: DOCLING_RS_OCR_LANG={raw:?} is not en|ch; using en");
             Self::default()
@@ -90,8 +89,8 @@ pub(crate) fn resolve_rec_pair(lang: OcrLang) -> (String, String) {
         }
     }
     (
-        std::env::var("DOCLING_OCR_REC_ONNX").unwrap_or(rec),
-        std::env::var("DOCLING_OCR_DICT").unwrap_or(dict),
+        docling_core::env::nonempty("DOCLING_OCR_REC_ONNX").unwrap_or(rec),
+        docling_core::env::nonempty("DOCLING_OCR_DICT").unwrap_or(dict),
     )
 }
 

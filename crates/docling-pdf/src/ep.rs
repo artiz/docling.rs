@@ -102,10 +102,9 @@ fn default_choice() -> Ep {
 pub(crate) fn choice() -> Ep {
     static CHOICE: OnceLock<Ep> = OnceLock::new();
     *CHOICE.get_or_init(|| {
-        let raw = std::env::var("DOCLING_RS_EP").unwrap_or_default();
-        if raw.trim().is_empty() {
+        let Some(raw) = docling_core::env::nonempty("DOCLING_RS_EP") else {
             return default_choice();
-        }
+        };
         let Some(ep) = parse(&raw) else {
             eprintln!(
                 "docling-pdf: DOCLING_RS_EP={raw:?} names no known execution provider \

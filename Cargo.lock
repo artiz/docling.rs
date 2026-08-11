@@ -1511,6 +1511,7 @@ dependencies = [
  "axum",
  "clap",
  "docling",
+ "docling-core",
  "docling-pdf",
  "dotenvy",
  "futures-lite 2.6.1",
@@ -1542,6 +1543,7 @@ version = "0.62.0"
 dependencies = [
  "axum",
  "docling",
+ "docling-core",
  "http-body-util",
  "serde",
  "serde_json",

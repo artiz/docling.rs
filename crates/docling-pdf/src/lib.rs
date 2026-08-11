@@ -69,8 +69,12 @@ use std::sync::mpsc::{sync_channel, Receiver};
 use std::sync::{Arc, Mutex};
 
 use docling_core::DoclingDocument;
+// The env-knob helpers only gate ML-pipeline diagnostics and tuning; the
+// pure text-layer (wasm) build has no call sites.
 #[cfg(feature = "ml")]
 use docling_core::Node;
+#[cfg(feature = "ml")]
+use docling_core::{debug_log, env};
 
 #[cfg(feature = "ml")]
 pub use mets::{convert_mets_gbs, convert_mets_gbs_with_options};
@@ -202,11 +206,7 @@ pub fn convert_text_layer_pages(
 /// Defaults to the available parallelism (ort otherwise picks a low number).
 #[cfg(feature = "ml")]
 pub(crate) fn intra_threads() -> usize {
-    if let Some(n) = std::env::var("DOCLING_RS_PDF_THREADS")
-        .ok()
-        .and_then(|v| v.parse::<usize>().ok())
-        .filter(|&n| n > 0)
-    {
+    if let Some(n) = env::parse::<usize>("DOCLING_RS_PDF_THREADS").filter(|&n| n > 0) {
         return n;
     }
     std::thread::available_parallelism()
@@ -215,12 +215,10 @@ pub(crate) fn intra_threads() -> usize {
 }
 
 #[cfg(feature = "ml")]
-/// True when `DOCLING_RS_FP32` (any value but `0`) forces the full-precision
-/// models even where an INT8 variant sits next to the fp32 default.
+/// True when `DOCLING_RS_FP32` forces the full-precision models even where
+/// an INT8 variant sits next to the fp32 default.
 pub(crate) fn fp32_forced() -> bool {
-    std::env::var("DOCLING_RS_FP32")
-        .map(|v| v != "0")
-        .unwrap_or(false)
+    env::flag("DOCLING_RS_FP32")
 }
 
 #[cfg(feature = "ml")]
@@ -300,7 +298,7 @@ pub fn model_inventory() -> Vec<ModelEntry> {
     let (enc, dec, bbx) = tableformer::resolved_paths();
     let (rec, dict) = ocr::resolve_rec_pair(ocr::OcrLang::from_env());
     let pdfium =
-        std::env::var("PDFIUM_DYNAMIC_LIB_PATH").unwrap_or_else(|_| resolve_asset(".pdfium/lib"));
+        env::nonempty("PDFIUM_DYNAMIC_LIB_PATH").unwrap_or_else(|| resolve_asset(".pdfium/lib"));
     vec![
         entry(
             "layout",
@@ -325,8 +323,8 @@ pub fn model_inventory() -> Vec<ModelEntry> {
 /// markedly faster on CPU), unless `DOCLING_RS_FP32` opts back into full
 /// precision; else the fp32 default.
 #[cfg(feature = "ml")]
-pub(crate) fn model_path(env: &str, fp32_default: &str, int8_default: &str) -> String {
-    if let Ok(p) = std::env::var(env) {
+pub(crate) fn model_path(key: &str, fp32_default: &str, int8_default: &str) -> String {
+    if let Some(p) = env::nonempty(key) {
         return p;
     }
     if !prefer_fp32() {
@@ -351,10 +349,7 @@ pub(crate) fn model_path(env: &str, fp32_default: &str, int8_default: &str) -> S
 /// text-layer wasm build has neither.
 #[cfg(feature = "ml")]
 pub(crate) fn decode_image_limited(bytes: &[u8]) -> Result<image::RgbImage, PdfError> {
-    let max_side: u32 = std::env::var("DOCLING_RS_MAX_IMAGE_PIXELS")
-        .ok()
-        .and_then(|v| v.parse().ok())
-        .unwrap_or(30_000);
+    let max_side: u32 = env::parse("DOCLING_RS_MAX_IMAGE_PIXELS").unwrap_or(30_000);
     decode_image_with_max_side(bytes, max_side)
 }
 
@@ -572,13 +567,11 @@ impl Worker {
             orient::detect(&page.image, self.ocr.as_mut().unwrap())
         });
         if deg != 0 {
-            if std::env::var("DOCLING_RS_DEBUG").is_ok() {
-                eprintln!(
-                    "docling-pdf: page {}: content rotated {deg}° in the raster; \
-                     un-rotating before layout/OCR",
-                    n + 1
-                );
-            }
+            debug_log!(
+                "docling-pdf: page {}: content rotated {deg}° in the raster; \
+                 un-rotating before layout/OCR",
+                n + 1
+            );
             page.unrotate(deg);
         }
         Ok(())
@@ -696,17 +689,13 @@ impl Worker {
                 if let Some(retry) = retry {
                     let cov2 = assemble::layout_cell_coverage(&thresholded(&retry), &page.cells);
                     if cov2 > cov {
-                        // Diagnostic, not user-facing: visible with
-                        // DOCLING_RS_DEBUG=1 (batch runs stay clean).
-                        if std::env::var("DOCLING_RS_DEBUG").is_ok() {
-                            eprintln!(
-                                "docling-pdf: page {}: int8 layout covered {:.0}% of the text \
-                                 cells; the fp32 retry covers {:.0}% — using it",
-                                n + 1,
-                                cov * 100.0,
-                                cov2 * 100.0
-                            );
-                        }
+                        debug_log!(
+                            "docling-pdf: page {}: int8 layout covered {:.0}% of the text \
+                             cells; the fp32 retry covers {:.0}% — using it",
+                            n + 1,
+                            cov * 100.0,
+                            cov2 * 100.0
+                        );
                         regions = retry;
                     }
                 }
@@ -716,7 +705,7 @@ impl Worker {
         // confidence threshold (stricter than the 0.3 base the predictor keeps),
         // before any overlap resolution. This removes the low-confidence tables /
         // pictures / list-items that otherwise double-emit or mis-classify.
-        if std::env::var("DOCLING_RS_DEBUG_REGIONS").is_ok() {
+        if env::flag("DOCLING_RS_DEBUG_REGIONS") {
             for r in &regions {
                 eprintln!(
                     "DBG raw {} {:.2} [{:.0},{:.0},{:.0},{:.0}]",
@@ -960,7 +949,7 @@ impl Worker {
                 });
             }
         }
-        if std::env::var("DOCLING_RS_DEBUG_REGIONS").is_ok() {
+        if env::flag("DOCLING_RS_DEBUG_REGIONS") {
             for (i, r) in regions.iter().enumerate() {
                 eprintln!(
                     "DBG final {} {:.2} [{:.0},{:.0},{:.0},{:.0}] rows={:?}",
@@ -1098,11 +1087,7 @@ impl Worker {
 /// the weights) extracts more throughput than one fat model or many single-thread
 /// workers. `DOCLING_RS_PDF_INTRA` overrides for per-machine tuning.
 fn pdf_intra() -> usize {
-    if let Some(n) = std::env::var("DOCLING_RS_PDF_INTRA")
-        .ok()
-        .and_then(|v| v.parse::<usize>().ok())
-        .filter(|&n| n > 0)
-    {
+    if let Some(n) = env::parse::<usize>("DOCLING_RS_PDF_INTRA").filter(|&n| n > 0) {
         return n;
     }
     if intra_threads() >= 2 {
@@ -1118,11 +1103,7 @@ fn pdf_intra() -> usize {
 /// a worst-case pool holds a bounded amount of model memory (~0.4 GB per worker)
 /// and does not oversaturate the memory bus with model-weight traffic.
 fn pdf_worker_count() -> usize {
-    if let Some(n) = std::env::var("DOCLING_RS_PDF_WORKERS")
-        .ok()
-        .and_then(|v| v.parse::<usize>().ok())
-        .filter(|&n| n > 0)
-    {
+    if let Some(n) = env::parse::<usize>("DOCLING_RS_PDF_WORKERS").filter(|&n| n > 0) {
         return n;
     }
     (intra_threads() / pdf_intra()).clamp(1, 4)
@@ -1142,9 +1123,7 @@ fn pdf_worker_count() -> usize {
 /// every batch size, so this is purely a throughput knob.
 /// `DOCLING_RS_PDF_LAYOUT_BATCH` overrides; `1` restores per-page inference.
 fn pdf_layout_batch() -> usize {
-    std::env::var("DOCLING_RS_PDF_LAYOUT_BATCH")
-        .ok()
-        .and_then(|v| v.parse::<usize>().ok())
+    env::parse::<usize>("DOCLING_RS_PDF_LAYOUT_BATCH")
         .filter(|&n| n > 0)
         .unwrap_or_else(|| if intra_threads() >= 8 { 4 } else { 1 })
 }
@@ -1155,9 +1134,7 @@ fn pdf_layout_batch() -> usize {
 /// — the helper pool's one-time model-load cost only pays off once enough pages
 /// share it. `DOCLING_RS_PDF_PARALLEL_MIN` overrides.
 fn pdf_parallel_min() -> usize {
-    std::env::var("DOCLING_RS_PDF_PARALLEL_MIN")
-        .ok()
-        .and_then(|v| v.parse::<usize>().ok())
+    env::parse::<usize>("DOCLING_RS_PDF_PARALLEL_MIN")
         .filter(|&n| n > 0)
         .unwrap_or(6)
 }

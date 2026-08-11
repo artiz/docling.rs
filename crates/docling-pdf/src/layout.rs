@@ -139,7 +139,7 @@ impl LayoutModel {
         }
         // Escalation target for the quant-robustness guard: only when the
         // int8 graph was picked automatically and the fp32 one is also there.
-        let fp32_path = if std::env::var("DOCLING_LAYOUT_ONNX").is_err() {
+        let fp32_path = if docling_core::env::nonempty("DOCLING_LAYOUT_ONNX").is_none() {
             let fp32 = crate::resolve_asset("models/layout_heron.onnx");
             (path != fp32 && std::path::Path::new(&fp32).exists()).then_some(fp32)
         } else {

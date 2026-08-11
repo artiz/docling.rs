@@ -65,7 +65,7 @@ impl VlmOptions {
         endpoint: Option<String>,
         model: Option<String>,
     ) -> Result<Self, ConversionError> {
-        let env = |k: &str| std::env::var(k).ok().filter(|v| !v.trim().is_empty());
+        let env = docling_core::env::nonempty;
         let endpoint = endpoint
             .or_else(|| env("DOCLING_RS_VLM_ENDPOINT"))
             .ok_or_else(|| {
@@ -243,7 +243,7 @@ fn request_page(agent: &ureq::Agent, opts: &VlmOptions, image: &[u8]) -> Result<
     // doesn't cover. The motivating case: vLLM's "skip_special_tokens": false,
     // without which servers detokenize away granite-docling's DocTags
     // structure tokens and only loc tokens + bare text survive.
-    if let Ok(extra) = std::env::var("DOCLING_RS_VLM_EXTRA_BODY") {
+    if let Some(extra) = docling_core::env::nonempty("DOCLING_RS_VLM_EXTRA_BODY") {
         match serde_json::from_str::<serde_json::Value>(&extra) {
             Ok(serde_json::Value::Object(map)) => {
                 for (k, v) in map {
@@ -306,7 +306,7 @@ fn request_page(agent: &ureq::Agent, opts: &VlmOptions, image: &[u8]) -> Result<
                     .as_str()
                     .map(str::to_string)
                     .ok_or_else(|| format!("{url}: no choices[0].message.content in response"));
-                if std::env::var_os("DOCLING_RS_VLM_DEBUG").is_some() {
+                if docling_core::env::flag("DOCLING_RS_VLM_DEBUG") {
                     match &content {
                         Ok(c) => {
                             eprintln!("vlm: raw model response ({} chars):\n{c}\n---", c.len())

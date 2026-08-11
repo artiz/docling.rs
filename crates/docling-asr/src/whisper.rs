@@ -139,7 +139,7 @@ pub struct Transcriber {
 }
 
 fn model_path(var: &str, default: &str) -> std::path::PathBuf {
-    if let Ok(p) = std::env::var(var) {
+    if let Some(p) = docling_core::env::nonempty(var) {
         return p.into();
     }
     // Default is CWD-relative; fall back to the executable's directory and one
@@ -259,10 +259,10 @@ impl Transcriber {
         // `asr_lang` option overrides both via `set_language` after load.
         let mut auto_lang = false;
         if specials.lang.is_some() {
-            match std::env::var("DOCLING_RS_ASR_LANG") {
-                Err(_) => auto_lang = true,
-                Ok(v) if v.is_empty() || v == "auto" => auto_lang = true,
-                Ok(v) => {
+            match docling_core::env::nonempty("DOCLING_RS_ASR_LANG") {
+                None => auto_lang = true,
+                Some(v) if v == "auto" => auto_lang = true,
+                Some(v) => {
                     if let Some(id) = lookup_lang(&lang_tokens, &v) {
                         specials.lang = Some(id);
                     } else if v != "en" {

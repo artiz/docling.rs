@@ -190,8 +190,8 @@ impl CodeFormula {
     /// (default `models/code_formula/`). `None` when absent, with a one-time
     /// warning from the caller's slot.
     pub fn load_with(intra: usize) -> Option<Self> {
-        let dir = std::env::var("DOCLING_CODE_FORMULA_DIR")
-            .unwrap_or_else(|_| crate::resolve_asset("models/code_formula"));
+        let dir = docling_core::env::nonempty("DOCLING_CODE_FORMULA_DIR")
+            .unwrap_or_else(|| crate::resolve_asset("models/code_formula"));
         let file = |name: &str| format!("{dir}/{name}");
         // INT8 variants take priority when present, like the other models.
         let graph = |base: &str| {
@@ -237,7 +237,7 @@ impl CodeFormula {
     pub fn predict(&mut self, crop: &RgbImage, kind: CodeFormulaKind) -> Result<String, String> {
         // Debug aid: dump each crop the VLM sees (compare against docling's
         // `prepare_element` output when chasing a generation divergence).
-        if let Ok(dir) = std::env::var("DOCLING_RS_ENRICH_DEBUG") {
+        if let Some(dir) = docling_core::env::nonempty("DOCLING_RS_ENRICH_DEBUG") {
             use std::sync::atomic::{AtomicUsize, Ordering};
             static N: AtomicUsize = AtomicUsize::new(0);
             let n = N.fetch_add(1, Ordering::Relaxed);

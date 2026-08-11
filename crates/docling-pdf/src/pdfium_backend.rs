@@ -180,7 +180,7 @@ pub struct PdfDocument {
 /// reconstruction — the default. Set `DOCLING_LEGACY_LINES` to fall back to the
 /// older gap-heuristic `lines_from_glyphs`.
 pub(crate) fn use_dp_lines() -> bool {
-    std::env::var("DOCLING_LEGACY_LINES").is_err()
+    !docling_core::env::flag("DOCLING_LEGACY_LINES")
 }
 
 /// Whether to source **word** cells from the pure-Rust parser (roadmap item 6),
@@ -190,7 +190,8 @@ pub(crate) fn use_dp_lines() -> bool {
 /// multi-column fixtures. Set `DOCLING_PDFIUM_WORDS` to keep pdfium's word cells,
 /// or `DOCLING_PDFIUM_TEXT` to fall back to pdfium for all text.
 pub(crate) fn use_parser_words() -> bool {
-    std::env::var("DOCLING_PDFIUM_WORDS").is_err() && std::env::var("DOCLING_PDFIUM_TEXT").is_err()
+    !docling_core::env::flag("DOCLING_PDFIUM_WORDS")
+        && !docling_core::env::flag("DOCLING_PDFIUM_TEXT")
 }
 
 /// Whether to source **code** cells from the parser too (the default) — the last
@@ -201,7 +202,7 @@ pub(crate) fn use_parser_words() -> bool {
 /// (`functionadd`). Reverts to pdfium with `DOCLING_PDFIUM_WORDS` (alongside word
 /// cells) or `DOCLING_PDFIUM_TEXT` (all text).
 pub(crate) fn use_parser_code() -> bool {
-    std::env::var("DOCLING_PDFIUM_WORDS").is_err() && std::env::var("DOCLING_PDFIUM_TEXT").is_err()
+    use_parser_words()
 }
 
 #[cfg(feature = "ml")]
@@ -221,7 +222,7 @@ fn try_bind_dir(path: &str) -> Option<Box<dyn pdfium_render::prelude::PdfiumLibr
 /// current directory (the layout `scripts/install/download_dependencies.sh` and
 /// `scripts/install/pdf_setup.sh` both produce); else the system library.
 fn bind() -> Result<Pdfium, PdfiumError> {
-    if let Ok(path) = std::env::var("PDFIUM_DYNAMIC_LIB_PATH") {
+    if let Some(path) = docling_core::env::nonempty("PDFIUM_DYNAMIC_LIB_PATH") {
         if let Some(b) = try_bind_dir(&path) {
             return Ok(Pdfium::new(b));
         }
@@ -266,7 +267,7 @@ impl PdfDocument {
 /// PDF (or a page) has no parseable text layer; the caller keeps pdfium's cells
 /// in that case, so scanned/edge-case pages are unaffected.
 fn rust_parser_cells(bytes: &[u8]) -> Option<Vec<crate::textparse::PageParserCells>> {
-    if std::env::var("DOCLING_PDFIUM_TEXT").is_ok() {
+    if docling_core::env::flag("DOCLING_PDFIUM_TEXT") {
         return None;
     }
     Some(crate::timing::timed("textparse", || {
@@ -470,11 +471,7 @@ fn extract_page(
 fn fast_downscale(big: &RgbImage, dw: u32, dh: u32) -> RgbImage {
     use fast_image_resize as fir;
     static SLOW: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    let slow = *SLOW.get_or_init(|| {
-        std::env::var("DOCLING_RS_SLOW_RESIZE")
-            .map(|v| v != "0")
-            .unwrap_or(false)
-    });
+    let slow = *SLOW.get_or_init(|| docling_core::env::flag("DOCLING_RS_SLOW_RESIZE"));
     if !slow {
         if let Some(out) = (|| {
             let src = fir::images::ImageRef::new(

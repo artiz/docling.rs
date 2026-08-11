@@ -37,9 +37,9 @@ const N_LAYERS: usize = 6;
 /// measured, and it is byte-exact (its own int8 variant is not produced — see
 /// quantize_models.py).
 pub fn resolved_paths() -> (String, String, String) {
-    let enc = std::env::var("DOCLING_TABLEFORMER_ENCODER")
-        .unwrap_or_else(|_| crate::resolve_asset("models/tableformer/encoder.onnx"));
-    let dec = std::env::var("DOCLING_TABLEFORMER_DECODER").unwrap_or_else(|_| {
+    let enc = docling_core::env::nonempty("DOCLING_TABLEFORMER_ENCODER")
+        .unwrap_or_else(|| crate::resolve_asset("models/tableformer/encoder.onnx"));
+    let dec = docling_core::env::nonempty("DOCLING_TABLEFORMER_DECODER").unwrap_or_else(|| {
         let candidates: &[&str] = if crate::prefer_fp32() {
             &[
                 "models/tableformer/decoder_kv.onnx",
@@ -59,8 +59,8 @@ pub fn resolved_paths() -> (String, String, String) {
             .find(|p| std::path::Path::new(p).exists())
             .unwrap_or_else(|| "models/tableformer/decoder.onnx".to_string())
     });
-    let bbx = std::env::var("DOCLING_TABLEFORMER_BBOX")
-        .unwrap_or_else(|_| crate::resolve_asset("models/tableformer/bbox.onnx"));
+    let bbx = docling_core::env::nonempty("DOCLING_TABLEFORMER_BBOX")
+        .unwrap_or_else(|| crate::resolve_asset("models/tableformer/bbox.onnx"));
     (enc, dec, bbx)
 }
 

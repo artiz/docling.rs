@@ -1812,7 +1812,7 @@ pub fn assemble_page(
         })
         .collect();
     let boxes: Vec<(f32, f32, f32, f32)> = regions.iter().map(|r| (r.l, r.t, r.r, r.b)).collect();
-    if std::env::var("DOCLING_RS_DEBUG_MERGES").is_ok() {
+    if docling_core::env::flag("DOCLING_RS_DEBUG_MERGES") {
         for (i, r) in regions.iter().enumerate() {
             eprintln!(
                 "MRG {i:2} {} text={} skip={} [{:.0},{:.0},{:.0},{:.0}] {:?}",
