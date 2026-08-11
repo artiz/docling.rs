@@ -498,8 +498,11 @@ fn render_one(node: &Node, blocks: &mut Vec<String>, ctx: &mut Ctx) {
         Node::PageBreak => {}
         // Page markers feed the JSON export only.
         Node::PageInfo { .. } => {}
-        // Handled by the run-merging branch in `render`.
-        Node::ListItem { .. } => unreachable!("list items are rendered in runs"),
+        // Runs of adjacent list items are merged by `render`; a stray single
+        // item (a hand-built document, or a `Located` wrapper around one)
+        // still renders as its own one-item list instead of panicking —
+        // `nodes` is public API, so every representable tree must serialize.
+        Node::ListItem { .. } => render_list_run(std::slice::from_ref(node), blocks, ctx.strict),
     }
 }
 

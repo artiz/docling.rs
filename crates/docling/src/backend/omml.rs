@@ -186,7 +186,7 @@ fn do_bar(e: XmlNode) -> String {
         Some("bot") => "\\underline{%s}",
         _ => "\\overline{%s}",
     };
-    p.text.clone() + &apply_pct(tmpl, &inner)
+    p.text + &apply_pct(tmpl, &inner)
 }
 
 fn do_groupchr(e: XmlNode) -> String {

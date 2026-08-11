@@ -1,13 +1,9 @@
 //! Runtime-asset path resolution shared by every crate.
 //!
 //! All optional runtime assets (ONNX models, OCR dictionaries, the chunker
-//! tokenizer) live under one directory, [`MODELS_DIR`] (`.models/`) —
-//! dot-prefixed like `.pdfium/`, so the plain `models` name stays free for
-//! source code. Resolution is CWD-relative with an executable-directory
-//! fallback.
-
-/// The runtime-asset directory, relative to the working directory.
-pub const MODELS_DIR: &str = ".models";
+//! tokenizer) live under one directory, `.models/` — dot-prefixed like
+//! `.pdfium/`, so the plain `models` name stays free for source code.
+//! Resolution is CWD-relative with an executable-directory fallback.
 
 /// Resolve a default (CWD-relative) asset path. If it doesn't exist relative
 /// to the current directory, try next to the executable and one level above

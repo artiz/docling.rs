@@ -46,7 +46,7 @@ pub fn chunk_records(
                 let hybrid = docling_core::chunker::HybridChunker::new(tok).chunk(document);
                 out["hybrid"] = records(&hybrid);
             }
-            Err(e) => warn(e.to_string()),
+            Err(e) => warn(e),
         }
     }
     #[cfg(not(feature = "chunking"))]

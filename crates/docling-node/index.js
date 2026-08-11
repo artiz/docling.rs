@@ -93,7 +93,7 @@ async function convertAsync(input, options) {
 
 // For the hybrid chunker with no explicit tokenizer, resolve the default one
 // (.models/chunk/tokenizer.json) through the same install-home logic as the ML
-// models — so DOCLING_RS_HOME / ~/.cache installs work, not only ./models. The
+// models — so DOCLING_RS_HOME / ~/.cache installs work, not only ./.models. The
 // native side keeps its own CWD-relative fallback as a backstop.
 function withDefaultTokenizer(options) {
   if (!options || options.tokenizer) return options

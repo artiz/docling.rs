@@ -46,8 +46,8 @@ function pdfiumLibName() {
 }
 
 /**
- * Resolve the install home directory (absolute), and which `pdfium/`-vs-
- * `.pdfium/` layout it uses. Precedence: an explicit `dir` > `$DOCLING_RS_HOME`
+ * Resolve the install home directory (absolute), and which models layout it
+ * uses. Precedence: an explicit `dir` > `$DOCLING_RS_HOME`
  * > the current directory, *if* it already has a local `.models/` or `.pdfium/`
  * (the layout `scripts/install/download_dependencies.sh` and `scripts/install/pdf_setup.sh`
  * both produce, and the one the native Rust pipeline's own env-var-less
@@ -57,17 +57,30 @@ function pdfiumLibName() {
  * the app is run from a directory that already has the dependencies
  * downloaded next to it.
  */
+// Which models layout a home directory uses: `.models/` (what
+// download_dependencies.sh writes into a checkout / app dir) or the plain
+// `models/` internal to the shared ~/.cache/docling.rs home that docling-py's
+// download_models() populates. Probed per directory, so an explicit `dir` /
+// $DOCLING_RS_HOME pointing at either layout resolves. pdfium is `.pdfium/`
+// everywhere — the download script and the Python cache agree on that name.
+function dotModelsIn(home) {
+  return fs.existsSync(path.join(home, '.models'))
+}
+
 function homeDir(dir) {
-  if (dir) return { home: path.resolve(dir), dotPdfium: false, dotModels: false }
-  if (process.env.DOCLING_RS_HOME)
-    return { home: path.resolve(process.env.DOCLING_RS_HOME), dotPdfium: false, dotModels: false }
+  if (dir) {
+    const home = path.resolve(dir)
+    return { home, dotModels: dotModelsIn(home) }
+  }
+  if (process.env.DOCLING_RS_HOME) {
+    const home = path.resolve(process.env.DOCLING_RS_HOME)
+    return { home, dotModels: dotModelsIn(home) }
+  }
   const cwd = process.cwd()
-  // A checkout's local layout (`.models/`, `.pdfium/`), vs the shared
-  // ~/.cache/docling.rs home whose internal layout keeps the plain names.
-  const dotModels = fs.existsSync(path.join(cwd, '.models'))
-  const hasLocal = dotModels || fs.existsSync(path.join(cwd, '.pdfium', 'lib', pdfiumLibName()))
-  if (hasLocal) return { home: cwd, dotPdfium: true, dotModels }
-  return { home: path.join(os.homedir(), '.cache', 'docling.rs'), dotPdfium: false, dotModels: false }
+  if (dotModelsIn(cwd) || fs.existsSync(path.join(cwd, '.pdfium', 'lib', pdfiumLibName()))) {
+    return { home: cwd, dotModels: dotModelsIn(cwd) }
+  }
+  return { home: path.join(os.homedir(), '.cache', 'docling.rs'), dotModels: false }
 }
 
 /**
@@ -76,11 +89,10 @@ function homeDir(dir) {
  * is honored), else the path under the install home directory.
  */
 function resolvePaths(dir) {
-  const { home, dotPdfium, dotModels } = homeDir(dir)
+  const { home, dotModels } = homeDir(dir)
   const models = path.join(home, dotModels ? '.models' : 'models')
 
-  const pdfiumLibDir =
-    process.env.PDFIUM_DYNAMIC_LIB_PATH || path.join(home, dotPdfium ? '.pdfium' : 'pdfium', 'lib')
+  const pdfiumLibDir = process.env.PDFIUM_DYNAMIC_LIB_PATH || path.join(home, '.pdfium', 'lib')
   return {
     home,
     models,

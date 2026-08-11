@@ -1333,11 +1333,11 @@ fn emit_furniture(out: &mut Out, depth: i32, layer: ContentLayer, inner: &Node) 
                 match inline_runs(c).into_iter().next() {
                     Some(Run::Link { anchor, uri }) => {
                         out.push(depth + 2, format!("<href uri=\"{}\"/>", attr_escape(&uri)));
-                        out.push(depth + 2, token.clone());
+                        out.push(depth + 2, token);
                         out.push(depth + 2, escape_text(&anchor));
                     }
                     _ => {
-                        out.push(depth + 2, token.clone());
+                        out.push(depth + 2, token);
                         out.push(depth + 2, escape_text(c));
                     }
                 }
