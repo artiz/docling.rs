@@ -437,7 +437,13 @@ fn parse_colwidth(s: &str) -> f64 {
         .chars()
         .filter(|c| c.is_ascii_digit() || *c == '.' || *c == '-')
         .collect();
-    cleaned.parse::<f64>().unwrap_or(0.0)
+    // Clamp non-finite results (a few hundred digits parses to ±inf, and
+    // inf-summed offsets breed NaN) — hostile input must not poison the sort.
+    cleaned
+        .parse::<f64>()
+        .ok()
+        .filter(|w| w.is_finite())
+        .unwrap_or(0.0)
 }
 
 /// Python `str.isnumeric()` for the ASCII digit case we care about.
@@ -450,7 +456,7 @@ fn as_index(s: &str) -> Option<i64> {
 }
 
 fn sorted_unique(mut v: Vec<f64>) -> Vec<f64> {
-    v.sort_by(|a, b| a.partial_cmp(b).unwrap());
+    v.sort_by(f64::total_cmp);
     v.dedup();
     v
 }
@@ -490,7 +496,7 @@ fn create_tg_range(tgs: &[Vec<f64>]) -> Option<Vec<Vec<i64>>> {
     }
     offset_w0 = sorted_unique(offset_w0);
     let mut combined: Vec<f64> = min_off.iter().chain(offset_w0.iter()).copied().collect();
-    combined.sort_by(|a, b| a.partial_cmp(b).unwrap());
+    combined.sort_by(f64::total_cmp);
     min_off = combined;
 
     // Map each tgroup's columns onto the unified grid.

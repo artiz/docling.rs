@@ -642,7 +642,9 @@ impl Walker<'_> {
             | Node::PageBreak
             | Node::PageInfo { .. }
             | Node::DoclangOnly(_) => {}
-            Node::ListItem { .. } => unreachable!("list items are chunked in runs"),
+            // Runs are grouped by `walk`; a stray single item (hand-built
+            // document, `Located` wrapper) still chunks instead of panicking.
+            Node::ListItem { .. } => self.sibling_lists(std::slice::from_ref(node)),
         }
     }
 }

@@ -234,8 +234,7 @@ pub(crate) fn prefer_fp32() -> bool {
 #[cfg(feature = "ml")]
 /// Resolve a default (CWD-relative) asset path — the shared chain in
 /// [`docling_core::assets`]: CWD, then next to the executable and one level
-/// above it (the `scripts/install/install.sh` layout), with a legacy
-/// `models/` read-fallback for paths under `.models/`.
+/// above it (the `scripts/install/install.sh` layout).
 pub(crate) fn resolve_asset(rel: &str) -> String {
     docling_core::assets::resolve(rel)
 }

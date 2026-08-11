@@ -186,7 +186,8 @@ def ensure_env(dest: "str | Path | None" = None) -> Path:
     leave the env untouched (and the converter will fail with its usual clear
     "model not found" message)."""
     root = Path(dest) if dest else cache_dir()
-    fp32 = os.environ.get("DOCLING_RS_FP32", "0") not in ("", "0")
+    # Same truthiness vocabulary as Rust's docling_core::env::flag.
+    fp32 = os.environ.get("DOCLING_RS_FP32", "").strip().lower() not in ("", "0", "false", "no", "off")
     m = root / "models"
 
     layout_chain = ["models/layout_heron.onnx"]

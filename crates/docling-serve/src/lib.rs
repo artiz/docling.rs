@@ -1135,8 +1135,13 @@ fn fetch_url(url: &str, file_name: Option<&str>) -> Result<SourceDocument, ApiEr
             }
         }
     }
+    // Bounded in time as well as size: without timeouts a slow-drip URL pins
+    // one spawn_blocking worker indefinitely, and a handful of them starves
+    // the pool. Generous global cap — legitimate fetches may be ~256 MiB.
     let agent: ureq::Agent = ureq::Agent::config_builder()
         .max_redirects(0)
+        .timeout_connect(Some(std::time::Duration::from_secs(10)))
+        .timeout_global(Some(std::time::Duration::from_secs(300)))
         .build()
         .into();
     let mut response = agent
