@@ -259,7 +259,7 @@ impl ScannedConverter {
         // TableFormer (opt-in): resolve each table region's structure through
         // the ONNX graphs + shared matcher; other regions stay `None` (geometric
         // fallback). The lite path passes no session → all geometric.
-        let table_rows = if let Some(tf) = tf {
+        let table_rows: Vec<Option<docling_pdf::tf_core::TableGrid>> = if let Some(tf) = tf {
             let mut rows = Vec::with_capacity(regions.len());
             for r in &regions {
                 if r.label != "table" {

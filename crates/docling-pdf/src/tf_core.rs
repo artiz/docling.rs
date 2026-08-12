@@ -11,6 +11,7 @@
 //! owned-value KV-cache fast path; it calls into here for the parts that don't
 //! touch the runtime.
 
+pub use crate::assemble::TableGrid;
 use image::RgbImage;
 
 /// The encoder's fixed square input side.
@@ -292,11 +293,7 @@ use crate::tf_match::{PdfWord, TfCell};
 /// are in the 448 image (normalized cxcywh). Shared by the native pipeline
 /// (after `predict_table_structure`) and the browser path (after the ort-web
 /// decode loop) — identical from here on. `None` when nothing matched.
-pub fn table_rows(
-    cells: &[TableCell],
-    region: [f32; 4],
-    words: &[TextCell],
-) -> Option<Vec<Vec<String>>> {
+pub fn table_rows(cells: &[TableCell], region: [f32; 4], words: &[TextCell]) -> Option<TableGrid> {
     // Words that belong to the table: non-empty text, ≥80 % of the word's area
     // inside the table region (docling's `get_cells_in_bbox` ios test). Ids stay
     // the page-level word indices so text joins in stream order.
@@ -364,6 +361,7 @@ pub fn table_rows(
         return None;
     }
     let mut grid = vec![vec![String::new(); num_cols]; num_rows];
+    let mut geo = vec![vec![None; num_cols]; num_rows];
     for (ci, c) in cells.iter().enumerate() {
         // Keep words in text-stream order (their word index), matching docling's
         // cell text assembly — geometric re-sorting scrambles wrapped cells.
@@ -380,8 +378,16 @@ pub fn table_rows(
                 *cell = text.clone();
             }
         }
+        for row in geo.iter_mut().skip(c.row).take(c.rowspan) {
+            for slot in row.iter_mut().skip(c.col).take(c.colspan) {
+                *slot = Some(boxes[ci]);
+            }
+        }
     }
-    Some(grid)
+    Some(TableGrid {
+        rows: grid,
+        boxes: geo,
+    })
 }
 
 /// `DOCLING_RS_TF_SIMPLE_MATCH=1` reverts to the pre-#60 best-overlap word
@@ -410,7 +416,7 @@ fn docling_match_rows(
     region: [f32; 4],
     table_words: &[PdfWord],
     words: &[TextCell],
-) -> Option<Vec<Vec<String>>> {
+) -> Option<TableGrid> {
     const SCALE: f64 = 2.0; // docling's table-structure page scale
     let sl = (region[0] as f64).round_ties_even() * SCALE;
     let st = (region[1] as f64).round_ties_even() * SCALE;
@@ -473,6 +479,9 @@ fn docling_match_rows(
         row_span: usize,
         col_span: usize,
         word_ids: Vec<usize>,
+        /// The matched table cell's bbox, back in page points (the matcher
+        /// runs in docling's ×2 space).
+        bbox: [f32; 4],
     }
     let mut merged: Vec<Merged> = Vec::new();
     let mut key_ix: std::collections::HashMap<(usize, usize), usize> =
@@ -494,6 +503,12 @@ fn docling_match_rows(
                     row_span: cell.rowspan_val.max(1),
                     col_span: cell.colspan_val.max(1),
                     word_ids: vec![pdf_id],
+                    bbox: [
+                        (cell.bbox[0] / 2.0) as f32,
+                        (cell.bbox[1] / 2.0) as f32,
+                        (cell.bbox[2] / 2.0) as f32,
+                        (cell.bbox[3] / 2.0) as f32,
+                    ],
                 });
             }
         }
@@ -523,6 +538,7 @@ fn docling_match_rows(
     }
 
     let mut grid = vec![vec![String::new(); num_cols]; num_rows];
+    let mut geo = vec![vec![None; num_cols]; num_rows];
     for m in &merged {
         let text = m
             .word_ids
@@ -536,8 +552,16 @@ fn docling_match_rows(
                 *cell = text.clone();
             }
         }
+        for row in geo.iter_mut().skip(m.start_row).take(m.row_span) {
+            for slot in row.iter_mut().skip(m.start_col).take(m.col_span) {
+                *slot = Some(m.bbox);
+            }
+        }
     }
-    Some(grid)
+    Some(TableGrid {
+        rows: grid,
+        boxes: geo,
+    })
 }
 
 /// Append one JSON line per table into `<dir>/tf_match_dump.jsonl` with the

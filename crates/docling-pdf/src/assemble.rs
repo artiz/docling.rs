@@ -1715,10 +1715,22 @@ pub fn stamp_page_no(nodes: &mut [Node], page_no: usize) {
     }
 }
 
+/// A dense table grid plus per-cell geometry, aligned position-for-position:
+/// `boxes[r][c]` is cell `(r, c)`'s `[l, t, r, b]` in page points (top-left
+/// origin); a spanned cell repeats its anchor's box over the covered
+/// positions. Produced by the TableFormer paths (`tf_core`), consumed here
+/// into [`docling_core::Table::cell_boxes`] (#238). Lives in this always-
+/// compiled module so the pure-text (wasm `pdf-text`) build sees the type.
+#[derive(Clone, Debug)]
+pub struct TableGrid {
+    pub rows: Vec<Vec<String>>,
+    pub boxes: Vec<Vec<Option<[f32; 4]>>>,
+}
+
 pub fn assemble_page(
     page: &PdfPage,
     regions: Vec<Region>,
-    table_rows: &[Option<Vec<Vec<String>>>],
+    table_rows: &[Option<TableGrid>],
     enrichments: &[Option<Enrichment>],
 ) -> (Vec<Node>, Vec<(String, String)>) {
     let mut nodes: Vec<Node> = Vec::new();
@@ -1740,7 +1752,7 @@ pub fn assemble_page(
     // Pair each region with its precomputed TableFormer grid and enrichment
     // (indexed by original order) and order by reading order together, so they
     // stay aligned.
-    type RegionItem = (Region, Option<Vec<Vec<String>>>, Option<Enrichment>);
+    type RegionItem = (Region, Option<TableGrid>, Option<Enrichment>);
     let mut items: Vec<RegionItem> = regions
         .into_iter()
         .enumerate()
@@ -1758,8 +1770,7 @@ pub fn assemble_page(
     // else keeps its order; no-op on pages without such a region.
     let page_h = page.height;
     items.sort_by_key(|(r, _, _)| !is_page_number(r, &page.cells, page_h));
-    let table_rows: Vec<Option<Vec<Vec<String>>>> =
-        items.iter().map(|(_, t, _)| t.clone()).collect();
+    let table_rows: Vec<Option<TableGrid>> = items.iter().map(|(_, t, _)| t.clone()).collect();
     let enrichments: Vec<Option<Enrichment>> = items.iter().map(|(_, _, e)| e.clone()).collect();
     let regions: Vec<Region> = items.into_iter().map(|(r, _, _)| r).collect();
     // docling emits a figure's caption *before* the image marker. Pair each
@@ -1960,14 +1971,21 @@ pub fn assemble_page(
             // when available; otherwise geometric grid reconstruction; finally a
             // single cell.
             "table" | "document_index" => {
-                let rows = table_rows[i].clone().unwrap_or_else(|| {
-                    let rows = reconstruct_table(region, &page.cells);
-                    if rows.iter().any(|r| r.len() > 1) {
-                        rows
-                    } else {
-                        vec![vec![text.clone()]]
+                // TableFormer grids carry per-cell page-point boxes into the
+                // public post-extraction API (#238); the geometric fallback
+                // has no per-cell geometry.
+                let (rows, cell_boxes) = match table_rows[i].clone() {
+                    Some(grid) => (grid.rows, Some(grid.boxes)),
+                    None => {
+                        let rows = reconstruct_table(region, &page.cells);
+                        let rows = if rows.iter().any(|r| r.len() > 1) {
+                            rows
+                        } else {
+                            vec![vec![text.clone()]]
+                        };
+                        (rows, None)
                     }
-                });
+                };
                 nodes.push(located(
                     loc,
                     Node::Table(Table {
@@ -1975,6 +1993,7 @@ pub fn assemble_page(
                         location: None,
                         structure: None,
                         cell_blocks: None,
+                        cell_boxes,
                         caption: None,
                     }),
                 ));

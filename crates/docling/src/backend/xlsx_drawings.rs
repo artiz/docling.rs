@@ -277,6 +277,7 @@ pub fn chart_table_from_columns(
             col_header: Vec::new(),
         }),
         cell_blocks: None,
+        cell_boxes: None,
         caption: None,
     })
 }

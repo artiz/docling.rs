@@ -397,6 +397,107 @@ pub struct Table {
     /// table references; DocLang emits a `<caption>` as the table's first child.
     /// `None` → the table has no caption.
     pub caption: Option<String>,
+    /// Optional per-cell bounding boxes, same shape as [`Self::rows`]: `[l, t,
+    /// r, b]` in page points with a **top-left** origin (the PDF pipeline's
+    /// native space). Set by the ML pipeline's TableFormer paths — a spanned
+    /// cell repeats its anchor's box across the covered grid positions — and
+    /// `None` for backends without page geometry (declarative formats, the
+    /// geometric table fallback). This is API-level provenance for
+    /// post-extraction repair workflows (#238: locate a cell by box, fix its
+    /// OCR text, re-export); no serializer reads it, so wire outputs are
+    /// unchanged by its presence.
+    pub cell_boxes: Option<Vec<Vec<Option<[f32; 4]>>>>,
+}
+
+impl Table {
+    /// A cell's text, `None` outside the grid.
+    pub fn cell_text(&self, row: usize, col: usize) -> Option<&str> {
+        self.rows.get(row)?.get(col).map(String::as_str)
+    }
+
+    /// Replace a cell's text; `false` (and no change) outside the grid. The
+    /// grid is the single source of truth for every serializer, so the new
+    /// text flows into Markdown/JSON/DocLang exports as-is. Note that a
+    /// spanned cell's text is *replicated* across its covered positions —
+    /// repairing a span means updating each covered position.
+    pub fn set_cell_text(&mut self, row: usize, col: usize, text: impl Into<String>) -> bool {
+        match self.rows.get_mut(row).and_then(|r| r.get_mut(col)) {
+            Some(cell) => {
+                *cell = text.into();
+                true
+            }
+            None => false,
+        }
+    }
+
+    /// A cell's bounding box (`[l, t, r, b]`, page points, top-left origin);
+    /// `None` when the backend recorded no geometry or the position is
+    /// outside the grid.
+    pub fn cell_bbox(&self, row: usize, col: usize) -> Option<[f32; 4]> {
+        *self.cell_boxes.as_ref()?.get(row)?.get(col)?
+    }
+
+    /// Set (or replace) a cell's bounding box; `false` outside the text grid.
+    /// A geometry grid is materialized on first use, shaped like
+    /// [`Self::rows`].
+    pub fn set_cell_bbox(&mut self, row: usize, col: usize, bbox: [f32; 4]) -> bool {
+        if self.rows.get(row).and_then(|r| r.get(col)).is_none() {
+            return false;
+        }
+        let boxes = self
+            .cell_boxes
+            .get_or_insert_with(|| self.rows.iter().map(|r| vec![None; r.len()]).collect());
+        // Keep the geometry grid in shape with the text grid even if rows
+        // were edited since it was materialized.
+        while boxes.len() < row + 1 {
+            boxes.push(Vec::new());
+        }
+        let brow = &mut boxes[row];
+        while brow.len() < col + 1 {
+            brow.push(None);
+        }
+        brow[col] = Some(bbox);
+        true
+    }
+
+    /// The grid position whose recorded box overlaps `bbox` best (largest
+    /// intersection-over-union), ties resolved in reading order. `None` when
+    /// nothing overlaps or the table carries no geometry. This is the lookup
+    /// half of the repair workflow: find the cell an external OCR box refers
+    /// to, then [`Self::set_cell_text`] it.
+    pub fn find_cell_by_bbox(&self, bbox: [f32; 4]) -> Option<(usize, usize)> {
+        let boxes = self.cell_boxes.as_ref()?;
+        let area = |b: &[f32; 4]| ((b[2] - b[0]) * (b[3] - b[1])).max(0.0);
+        let mut best: Option<(f32, (usize, usize))> = None;
+        for (r, row) in boxes.iter().enumerate() {
+            for (c, cell) in row.iter().enumerate() {
+                let Some(cb) = cell else { continue };
+                let iw = (bbox[2].min(cb[2]) - bbox[0].max(cb[0])).max(0.0);
+                let ih = (bbox[3].min(cb[3]) - bbox[1].max(cb[1])).max(0.0);
+                let inter = iw * ih;
+                if inter <= 0.0 {
+                    continue;
+                }
+                let iou = inter / (area(&bbox) + area(cb) - inter).max(f32::EPSILON);
+                if best.is_none_or(|(b, _)| iou > b) {
+                    best = Some((iou, (r, c)));
+                }
+            }
+        }
+        best.map(|(_, pos)| pos)
+    }
+
+    /// Locate the cell overlapping `bbox` best and replace its text — the
+    /// one-call form of the OCR-repair loop. Returns the updated position.
+    pub fn update_cell_by_bbox(
+        &mut self,
+        bbox: [f32; 4],
+        text: impl Into<String>,
+    ) -> Option<(usize, usize)> {
+        let (row, col) = self.find_cell_by_bbox(bbox)?;
+        self.set_cell_text(row, col, text);
+        Some((row, col))
+    }
 }
 
 /// OTSL structure overlay for a [`Table`], parallel to [`Table::rows`].
@@ -438,6 +539,37 @@ impl DoclingDocument {
     }
 
     /// Append a node.
+    /// The document's top-level tables in reading order — the read half of
+    /// the post-extraction table API (#238). [`Node::Located`] wrappers (the
+    /// PDF pipeline attaches layout provenance that way) are looked through;
+    /// tables nested inside rich table cells (`Table::cell_blocks`) are not
+    /// traversed.
+    pub fn tables(&self) -> impl Iterator<Item = &Table> {
+        fn unwrap_table(n: &Node) -> Option<&Table> {
+            match n {
+                Node::Table(t) => Some(t),
+                Node::Located { inner, .. } => unwrap_table(inner),
+                _ => None,
+            }
+        }
+        self.nodes.iter().filter_map(unwrap_table)
+    }
+
+    /// Mutable access to the document's top-level tables, for repair
+    /// workflows (#238): locate a cell via [`Table::find_cell_by_bbox`], fix
+    /// its text with [`Table::set_cell_text`], then re-export — every
+    /// serializer reads the same grid.
+    pub fn tables_mut(&mut self) -> impl Iterator<Item = &mut Table> {
+        fn unwrap_table(n: &mut Node) -> Option<&mut Table> {
+            match n {
+                Node::Table(t) => Some(t),
+                Node::Located { inner, .. } => unwrap_table(inner),
+                _ => None,
+            }
+        }
+        self.nodes.iter_mut().filter_map(unwrap_table)
+    }
+
     pub fn push(&mut self, node: Node) {
         self.nodes.push(node);
     }
@@ -508,5 +640,71 @@ impl DoclingDocument {
         artifacts_dir: &str,
     ) -> (String, Vec<(String, Vec<u8>)>) {
         to_markdown_images(self, self.strict_markdown, image_mode, artifacts_dir)
+    }
+}
+
+#[cfg(test)]
+mod table_api_tests {
+    use super::*;
+
+    fn table() -> Table {
+        Table {
+            rows: vec![
+                vec!["Year".into(), "Ducks".into()],
+                vec!["2019".into(), "120".into()],
+            ],
+            cell_boxes: Some(vec![
+                vec![Some([0.0, 0.0, 50.0, 10.0]), Some([50.0, 0.0, 100.0, 10.0])],
+                vec![
+                    Some([0.0, 10.0, 50.0, 20.0]),
+                    Some([50.0, 10.0, 100.0, 20.0]),
+                ],
+            ]),
+            ..Default::default()
+        }
+    }
+
+    /// The OCR-repair loop (#238): locate a cell by an external box (best
+    /// IoU), replace its text, and see the fix in the export — the grid is
+    /// the single source of truth for every serializer.
+    #[test]
+    fn bbox_lookup_and_repair_flow_into_exports() {
+        let mut doc = DoclingDocument::new("t");
+        doc.push(Node::Table(table()));
+        assert_eq!(doc.tables().count(), 1);
+
+        let t = doc.tables_mut().next().unwrap();
+        // A slightly-off OCR box still lands on the (1,1) cell.
+        assert_eq!(t.find_cell_by_bbox([52.0, 11.0, 98.0, 19.0]), Some((1, 1)));
+        assert_eq!(
+            t.update_cell_by_bbox([52.0, 11.0, 98.0, 19.0], "125"),
+            Some((1, 1))
+        );
+        assert_eq!(t.cell_text(1, 1), Some("125"));
+        assert!(doc.export_to_markdown().contains("125"));
+
+        // No overlap → no match, nothing changed.
+        let t = doc.tables_mut().next().unwrap();
+        assert_eq!(t.find_cell_by_bbox([500.0, 500.0, 600.0, 600.0]), None);
+    }
+
+    #[test]
+    fn cell_accessors_bound_check_and_geometry_materializes() {
+        let mut t = table();
+        assert_eq!(t.cell_text(0, 0), Some("Year"));
+        assert_eq!(t.cell_text(5, 0), None);
+        assert!(!t.set_cell_text(0, 9, "x"), "outside the grid");
+        assert_eq!(t.cell_bbox(1, 0), Some([0.0, 10.0, 50.0, 20.0]));
+
+        // A geometry-less table materializes its box grid on first set.
+        let mut plain = Table {
+            rows: vec![vec!["a".into(), "b".into()]],
+            ..Default::default()
+        };
+        assert_eq!(plain.cell_bbox(0, 1), None);
+        assert!(!plain.set_cell_bbox(0, 5, [0.0; 4]), "outside the grid");
+        assert!(plain.set_cell_bbox(0, 1, [1.0, 2.0, 3.0, 4.0]));
+        assert_eq!(plain.cell_bbox(0, 1), Some([1.0, 2.0, 3.0, 4.0]));
+        assert_eq!(plain.find_cell_by_bbox([1.5, 2.5, 2.5, 3.5]), Some((0, 1)));
     }
 }

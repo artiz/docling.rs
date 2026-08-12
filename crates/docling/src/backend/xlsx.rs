@@ -759,6 +759,7 @@ pub(crate) fn find_tables(
                     location: None,
                     structure,
                     cell_blocks: None,
+                    cell_boxes: None,
                     caption: None,
                 },
                 label,

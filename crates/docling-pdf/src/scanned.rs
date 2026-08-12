@@ -114,7 +114,7 @@ pub fn assemble_page(page: &PdfPage, regions: Vec<Region>) -> AssembledPage {
 pub fn assemble_page_with_tables(
     page: &PdfPage,
     regions: Vec<Region>,
-    mut table_rows: Vec<Option<Vec<Vec<String>>>>,
+    mut table_rows: Vec<Option<crate::tf_core::TableGrid>>,
 ) -> AssembledPage {
     table_rows.resize(regions.len(), None);
     let enrich = vec![None; regions.len()];

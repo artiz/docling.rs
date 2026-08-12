@@ -257,7 +257,8 @@ impl DigitalConverter {
         page.image = img;
         page.scale = scale;
 
-        let mut table_rows = Vec::with_capacity(regions.len());
+        let mut table_rows: Vec<Option<docling_pdf::tf_core::TableGrid>> =
+            Vec::with_capacity(regions.len());
         for r in &regions {
             if r.label != "table" {
                 table_rows.push(None);

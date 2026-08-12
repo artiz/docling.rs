@@ -239,6 +239,33 @@ println!("{}", result.document.export_to_markdown()); // Markdown
 println!("{}", result.document.export_to_json());     // docling DoclingDocument JSON
 ```
 
+### Post-extraction table editing
+
+Tables converted by the PDF ML pipeline carry per-cell geometry
+(`Table::cell_boxes` — `[l, t, r, b]` page points, top-left origin, spans
+repeating their anchor's box), and `DoclingDocument` exposes the tables for
+in-place repair (#238) — recover missing OCR text, fix a misread cell, then
+re-export; every serializer reads the same grid:
+
+```rust
+let mut document = converter.convert(source).unwrap().document;
+for table in document.tables_mut() {
+    // Locate the cell an external OCR box refers to (best IoU) and fix it…
+    if let Some((row, col)) = table.find_cell_by_bbox([310.0, 224.0, 351.0, 231.0]) {
+        table.set_cell_text(row, col, "corrected");
+    }
+    // …or in one call:
+    table.update_cell_by_bbox([310.0, 224.0, 351.0, 231.0], "corrected");
+}
+println!("{}", document.export_to_markdown()); // repairs included
+```
+
+`rows`, `structure` and `cell_boxes` are public fields, so full reconstruction
+(inserting rows, rebuilding a borderless table from corrected OCR) is ordinary
+`Vec` surgery; `set_cell_bbox` materializes the geometry grid on demand.
+Declarative backends (DOCX/HTML/…) have no page geometry — their tables stay
+`cell_boxes: None` and are still editable by `(row, col)`.
+
 ### JSON output
 
 `export_to_json()` emits docling-core's native `DoclingDocument` wire format

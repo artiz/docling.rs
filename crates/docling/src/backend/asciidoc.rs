@@ -239,6 +239,7 @@ impl Parser {
                 location: None,
                 structure: None,
                 cell_blocks: None,
+                cell_boxes: None,
                 caption: None,
             }));
         }

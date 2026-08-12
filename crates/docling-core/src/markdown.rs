@@ -813,6 +813,7 @@ mod tests {
             location: None,
             structure: None,
             cell_blocks: None,
+            cell_boxes: None,
             caption: None,
         }));
         let md = doc.export_to_markdown();
@@ -827,6 +828,7 @@ mod tests {
             location: None,
             structure: None,
             cell_blocks: None,
+            cell_boxes: None,
             caption: None,
         }));
         let md = doc.export_to_markdown();
@@ -945,6 +947,7 @@ mod tests {
             location: None,
             structure: None,
             cell_blocks: None,
+            cell_boxes: None,
             caption: None,
         }));
         doc.push(Node::Picture {

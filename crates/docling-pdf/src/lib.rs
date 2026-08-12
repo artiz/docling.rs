@@ -987,7 +987,7 @@ impl Worker {
         // TableFormer structure per table region (else geometric fallback). The
         // shared slot is only locked (and lazily loaded) when the page actually
         // has a table, so table-free documents never pay for TableFormer at all.
-        let mut table_rows: Vec<Option<Vec<Vec<String>>>> = vec![None; regions.len()];
+        let mut table_rows: Vec<Option<tf_core::TableGrid>> = vec![None; regions.len()];
         if let Some(slot) = self.tables.as_ref() {
             if regions.iter().any(|r| assemble::is_table_like(r.label)) {
                 timing::timed("tableformer", || {
@@ -1026,7 +1026,7 @@ impl Worker {
                     r.b,
                     table_rows[i]
                         .as_ref()
-                        .map(|t| (t.len(), t.first().map(|r| r.len())))
+                        .map(|t| (t.rows.len(), t.rows.first().map(|r| r.len())))
                 );
             }
             eprintln!(
