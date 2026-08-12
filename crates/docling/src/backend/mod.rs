@@ -22,6 +22,7 @@ macro_rules! cached_regex {
     }};
 }
 
+mod abw;
 mod asciidoc;
 #[cfg(feature = "web-browser")]
 pub(crate) mod browser;
@@ -63,6 +64,7 @@ mod xls;
 mod xlsx;
 mod xlsx_drawings;
 
+pub use abw::AbwBackend;
 pub use asciidoc::AsciiDocBackend;
 pub use csv::CsvBackend;
 pub use deepseek::{is_deepseek_markdown, DeepSeekBackend};

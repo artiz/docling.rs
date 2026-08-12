@@ -3,11 +3,11 @@
 use std::collections::HashSet;
 
 use crate::backend::{
-    is_deepseek_markdown, AsciiDocBackend, CsvBackend, DeclarativeBackend, DeepSeekBackend,
-    DocBackend, DoclingJsonBackend, DocxBackend, EbcdicBackend, EmailBackend, EpubBackend,
-    InterchangeBackend, JatsBackend, LatexBackend, LotusBackend, MarkdownBackend, MhtmlBackend,
-    OdfBackend, PptBackend, PptxBackend, RtfBackend, StarOffice5Backend, UsptoBackend,
-    VisioBackend, WebVttBackend, XbrlBackend, XlsBackend, XlsxBackend,
+    is_deepseek_markdown, AbwBackend, AsciiDocBackend, CsvBackend, DeclarativeBackend,
+    DeepSeekBackend, DocBackend, DoclingJsonBackend, DocxBackend, EbcdicBackend, EmailBackend,
+    EpubBackend, InterchangeBackend, JatsBackend, LatexBackend, LotusBackend, MarkdownBackend,
+    MhtmlBackend, OdfBackend, PptBackend, PptxBackend, RtfBackend, StarOffice5Backend,
+    UsptoBackend, VisioBackend, WebVttBackend, XbrlBackend, XlsBackend, XlsxBackend,
 };
 
 /// Whether `text` begins with an XML prolog — an `<?xml …?>` declaration or a
@@ -672,6 +672,8 @@ impl DocumentConverter {
             // LibreOffice; here it parses natively (hand-rolled tokenizer).
             InputFormat::Rtf => RtfBackend.convert(&source)?,
             InputFormat::Visio => VisioBackend.convert(&source)?,
+            // AbiWord (#216): docling.rs extension, native AWML parse.
+            InputFormat::Abiword => AbwBackend.convert(&source)?,
             // StarOffice 5 binaries (#215): docling.rs extension, native CFB
             // parse (docling would go through LibreOffice).
             InputFormat::StarOffice5 => StarOffice5Backend.convert(&source)?,

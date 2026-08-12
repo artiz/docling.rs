@@ -1429,6 +1429,7 @@ dependencies = [
  "docling-asr",
  "docling-core",
  "docling-pdf",
+ "flate2",
  "headless_chrome",
  "image",
  "mail-parser",

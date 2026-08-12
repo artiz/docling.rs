@@ -923,7 +923,7 @@ pub(crate) fn decode_byte(b: u8, codepage: u32) -> char {
 }
 
 /// PNG IHDR / JPEG SOF dimensions, best-effort (`None` → 0×0 metadata).
-fn image_size(mimetype: &str, data: &[u8]) -> Option<(u32, u32)> {
+pub(crate) fn image_size(mimetype: &str, data: &[u8]) -> Option<(u32, u32)> {
     match mimetype {
         "image/png" => {
             if data.len() < 24 || &data[..8] != b"\x89PNG\r\n\x1a\n" {
