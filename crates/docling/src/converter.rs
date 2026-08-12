@@ -6,7 +6,8 @@ use crate::backend::{
     is_deepseek_markdown, AsciiDocBackend, CsvBackend, DeclarativeBackend, DeepSeekBackend,
     DocBackend, DoclingJsonBackend, DocxBackend, EmailBackend, EpubBackend, JatsBackend,
     LatexBackend, MarkdownBackend, MhtmlBackend, OdfBackend, PptBackend, PptxBackend, RtfBackend,
-    UsptoBackend, VisioBackend, WebVttBackend, XbrlBackend, XlsBackend, XlsxBackend,
+    StarOffice5Backend, UsptoBackend, VisioBackend, WebVttBackend, XbrlBackend, XlsBackend,
+    XlsxBackend,
 };
 
 /// Whether `text` begins with an XML prolog — an `<?xml …?>` declaration or a
@@ -508,6 +509,9 @@ impl DocumentConverter {
             // LibreOffice; here it parses natively (hand-rolled tokenizer).
             InputFormat::Rtf => RtfBackend.convert(&source)?,
             InputFormat::Visio => VisioBackend.convert(&source)?,
+            // StarOffice 5 binaries (#215): docling.rs extension, native CFB
+            // parse (docling would go through LibreOffice).
+            InputFormat::StarOffice5 => StarOffice5Backend.convert(&source)?,
             InputFormat::Docx => DocxBackend.convert(&source)?,
             // Legacy binary Office (issue #127): parsed natively — docling
             // proper converts these through LibreOffice first (PR #3804).

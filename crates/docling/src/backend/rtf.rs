@@ -909,7 +909,7 @@ fn classify_marker(marker: &str) -> ListMarker {
 
 /// One byte → char through the document codepage. ASCII is universal; the
 /// supported high-byte pages are Windows-1252 (default), -1250 and -1251.
-fn decode_byte(b: u8, codepage: u32) -> char {
+pub(crate) fn decode_byte(b: u8, codepage: u32) -> char {
     if b < 0x80 {
         return b as char;
     }

@@ -67,6 +67,12 @@ pub enum InputFormat {
     Numbers,
     /// Apple Keynote (`.key`), same IWA machinery as [`Self::Pages`].
     Keynote,
+    /// StarOffice 5 binaries (`.sdw`/`.sda`/`.sdd`/`.vor`) — a docling.rs
+    /// extension (#215); CFB containers parsed natively (text-level
+    /// extraction). The document kind comes from the stream inside, so a
+    /// `.vor` template of any application dispatches by content. StarCalc
+    /// (`.sdc`) is a follow-up.
+    StarOffice5,
 }
 
 impl InputFormat {
@@ -109,6 +115,7 @@ impl InputFormat {
             InputFormat::Pages => "pages",
             InputFormat::Numbers => "numbers",
             InputFormat::Keynote => "key",
+            InputFormat::StarOffice5 => "staroffice5",
         }
     }
 
@@ -178,6 +185,11 @@ impl InputFormat {
             "pages" => InputFormat::Pages,
             "numbers" => InputFormat::Numbers,
             "key" => InputFormat::Keynote,
+            // StarOffice 5 binaries (#215): .vor templates dispatch by the
+            // CFB stream inside (writer/draw/impress share the container).
+            // .sdc routes here too so StarCalc gets its targeted
+            // "save as .ods" error instead of an unknown-extension one.
+            "sdw" | "sda" | "sdd" | "sdc" | "vor" => InputFormat::StarOffice5,
             // METS/Google Books scan packages ship as `*.tar.gz`.
             "gz" | "targz" => InputFormat::MetsGbs,
             _ => return None,
