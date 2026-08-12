@@ -1,0 +1,170 @@
+TABLE
+0,1
+"csv-comma"
+VECTORS
+0,12
+""
+TUPLES
+0,6
+""
+DATA
+0,0
+""
+-1,0
+BOT
+1,0
+"Index"
+1,0
+"Customer Id"
+1,0
+"First Name"
+1,0
+"Last Name"
+1,0
+"Company"
+1,0
+"City"
+1,0
+"Country"
+1,0
+"Phone 1"
+1,0
+"Phone 2"
+1,0
+"Email"
+1,0
+"Subscription Date"
+1,0
+"Website"
+-1,0
+BOT
+0,1
+V
+1,0
+"DD37Cf93aecA6Dc"
+1,0
+"Sheryl"
+1,0
+"Baxter"
+1,0
+"Rasmussen Group"
+1,0
+"East Leonard"
+1,0
+"Chile"
+1,0
+"229.077.5154"
+1,0
+"397.884.0519x718"
+1,0
+"zunigavanessa@smith.info"
+0,2020-08-24
+V
+1,0
+"http://www.stephenson.com/"
+-1,0
+BOT
+0,2
+V
+1,0
+"1Ef7b82A4CAAD10"
+1,0
+"Preston"
+1,0
+"Lozano, Dr"
+1,0
+"Vega-Gentry"
+1,0
+"East Jimmychester"
+1,0
+"Djibouti"
+0,5153435776
+V
+1,0
+"686-620-1820x944"
+1,0
+"vmata@colon.com"
+0,2021-04-23
+V
+1,0
+"http://www.hobbs.com/"
+-1,0
+BOT
+0,3
+V
+1,0
+"6F94879bDAfE5a6"
+1,0
+"Roy"
+1,0
+"Berry"
+1,0
+"Murillo-Perry"
+1,0
+"Isabelborough"
+1,0
+"Antigua and Barbuda"
+1,0
+"+1-539-402-0259"
+1,0
+"(496)978-3969x58947"
+1,0
+"beckycarr@hogan.com"
+0,2020-03-25
+V
+1,0
+"http://www.lawrence.com/"
+-1,0
+BOT
+0,4
+V
+1,0
+"5Cef8BFA16c5e3c"
+1,0
+"Linda"
+1,0
+"Olsen"
+1,0
+"Dominguez, Mcmillan and Donovan"
+1,0
+"Bensonview"
+1,0
+"Dominican Republic"
+1,0
+"001-808-617-6467x12895"
+1,0
+"+1-813-324-8756"
+1,0
+"stanleyblackwell@benson.org"
+0,2020-06-02
+V
+1,0
+"http://www.good-lyons.com/"
+-1,0
+BOT
+0,5
+V
+1,0
+"053d585Ab6b3159"
+1,0
+"Joanna"
+1,0
+"Bender"
+1,0
+"Martin, Lang and Andrade"
+1,0
+"West Priscilla"
+1,0
+"Slovakia (Slovak Republic)"
+1,0
+"001-234-203-0635x76146"
+1,0
+"001-199-446-3860x3486"
+1,0
+"colinalvarado@miles.net"
+0,2021-04-17
+V
+1,0
+"https://goodwin-ingram.com/"
+-1,0
+EOD

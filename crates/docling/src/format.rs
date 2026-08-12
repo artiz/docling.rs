@@ -67,6 +67,15 @@ pub enum InputFormat {
     Numbers,
     /// Apple Keynote (`.key`), same IWA machinery as [`Self::Pages`].
     Keynote,
+    /// dBase table (`.dbf`) — a docling.rs extension (#216); the field
+    /// descriptors become the header row, records the data rows.
+    Dbf,
+    /// Data Interchange Format (`.dif`) — a docling.rs extension (#216);
+    /// sheet snapshot, split into data regions like an ODS sheet.
+    Dif,
+    /// SYLK (`.slk`/`.sylk`) — a docling.rs extension (#216); same
+    /// sheet-region conversion as DIF.
+    Sylk,
     /// StarOffice 5 binaries (`.sdw`/`.sda`/`.sdd`/`.vor`) — a docling.rs
     /// extension (#215); CFB containers parsed natively (text-level
     /// extraction). The document kind comes from the stream inside, so a
@@ -115,6 +124,9 @@ impl InputFormat {
             InputFormat::Pages => "pages",
             InputFormat::Numbers => "numbers",
             InputFormat::Keynote => "key",
+            InputFormat::Dbf => "dbf",
+            InputFormat::Dif => "dif",
+            InputFormat::Sylk => "sylk",
             InputFormat::StarOffice5 => "staroffice5",
         }
     }
@@ -185,6 +197,11 @@ impl InputFormat {
             "pages" => InputFormat::Pages,
             "numbers" => InputFormat::Numbers,
             "key" => InputFormat::Keynote,
+            // Legacy spreadsheet-interchange relics (#216): all three parse
+            // natively and content-sniff inside one backend.
+            "dbf" => InputFormat::Dbf,
+            "dif" => InputFormat::Dif,
+            "slk" | "sylk" => InputFormat::Sylk,
             // StarOffice 5 binaries (#215): .vor templates dispatch by the
             // CFB stream inside (writer/draw/impress share the container).
             // .sdc routes here too so StarCalc gets its targeted
