@@ -4,6 +4,23 @@
 //! styles. Paragraph styles map to Title/Subtitle/Heading; `<text:h>` maps to a
 //! heading by outline level; runs (`<text:span>`) carry bold/italic/strike/sub-
 //! superscript resolved through the style parent chain; lists nest by depth.
+//!
+//! Two sibling envelopes ride the same parser (#215, docling.rs extensions —
+//! docling reaches either only through LibreOffice):
+//!
+//! - **Flat ODF** (`.fodt`/`.fods`/`.fodp`): the same document XML uncompressed
+//!   in a single `<office:document>` file — styles live in the same DOM and
+//!   embedded charts are inline `<draw:object>` children instead of package
+//!   parts.
+//! - **StarOffice / OpenOffice 1.x XML** (`.sxw`/`.sxi`/`.sxc`, templates
+//!   `.stw`/`.sti`/`.stc`, master `.sxg`): the ODF predecessor schema. The
+//!   element vocabulary is nearly identical under different namespace URIs —
+//!   and this parser matches local names only — so support is a mapping layer:
+//!   `<office:body>` is the content container itself (no `office:text` /
+//!   `office:presentation` wrapper), lists are `<text:ordered-list>` /
+//!   `<text:unordered-list>`, tabs are `<text:tab-stop>`, headings carry
+//!   `text:level`, and strike/underline sit on `style:text-crossing-out` /
+//!   `style:text-underline`.
 
 use std::collections::{HashMap, HashSet, VecDeque};
 
@@ -94,33 +111,76 @@ struct Styles {
 
 impl DeclarativeBackend for OdfBackend {
     fn convert(&self, source: &SourceDocument) -> Result<DoclingDocument, ConversionError> {
-        let mut pkg = Package::open(&source.bytes)
-            .ok_or_else(|| ConversionError::Parse("odf: not a zip".into()))?;
-        let content = pkg
-            .read("content.xml")
-            .ok_or_else(|| ConversionError::Parse("odf: no content.xml".into()))?;
-        let styles_xml = pkg.read("styles.xml").unwrap_or_default();
+        let mut pkg = Package::open(&source.bytes);
+        let (content, styles_xml) = match pkg.as_mut() {
+            Some(pkg) => (
+                pkg.read("content.xml")
+                    .ok_or_else(|| ConversionError::Parse("odf: no content.xml".into()))?,
+                pkg.read("styles.xml").unwrap_or_default(),
+            ),
+            // Flat ODF (#215): the whole document is one uncompressed XML file;
+            // `office:styles` lives in the same DOM, so there is no styles part.
+            None => (source.text()?.to_string(), String::new()),
+        };
 
         let content_dom =
             Document::parse(&content).map_err(|e| ConversionError::with_source("odf", e))?;
+        if pkg.is_none() {
+            let root = content_dom.root_element().tag_name().name();
+            if root != "document" && root != "document-content" {
+                return Err(ConversionError::Parse(
+                    "odf: not a zip package or flat office XML".into(),
+                ));
+            }
+        }
         let styles_dom = Document::parse(&styles_xml).ok();
         let mut styles = parse_styles(&content_dom, styles_dom.as_ref());
-        styles.charts = load_charts(&mut pkg, &content_dom, &styles);
+        if let Some(pkg) = pkg.as_mut() {
+            styles.charts = load_charts(pkg, &content_dom, &styles);
+        }
 
         let mut doc = DoclingDocument::new(&source.name);
-        let Some(body) = content_dom.descendants().find(|n| n.has_tag_name("body")) else {
+        // `<office:body>` is always a direct child of the root. A descendants()
+        // scan would trip on flat ODF, where the in-DOM styles can contain a
+        // `<table:body>` template element earlier in document order.
+        let Some(body) = content_dom
+            .root_element()
+            .children()
+            .find(|n| n.has_tag_name("body"))
+        else {
             return Ok(doc);
         };
+        let mut wrapped = false;
         for office in body.children().filter(XmlNode::is_element) {
             match office.tag_name().name() {
                 "text" => walk_text(office, &styles, &mut doc),
                 "spreadsheet" => walk_spreadsheet(office, &styles, &mut doc),
                 "presentation" => walk_presentation(office, &styles, &mut doc),
-                _ => {}
+                _ => continue,
+            }
+            wrapped = true;
+        }
+        if !wrapped {
+            // OpenOffice 1.x (#215): `<office:body>` *is* the content container.
+            // The document kind comes from the root's `office:class`; a body
+            // holding `<draw:page>`s is a presentation regardless.
+            let class = attr(content_dom.root_element(), "class");
+            if class == Some("presentation") || body.children().any(|c| c.has_tag_name("page")) {
+                walk_presentation(body, &styles, &mut doc);
+            } else if class == Some("spreadsheet") {
+                walk_spreadsheet(body, &styles, &mut doc);
+            } else {
+                walk_text(body, &styles, &mut doc);
             }
         }
         Ok(doc)
     }
+}
+
+/// Whether an element is a list container: ODF's `<text:list>` or OpenOffice
+/// 1.x's `<text:ordered-list>` / `<text:unordered-list>` (#215).
+fn is_list_tag(name: &str) -> bool {
+    matches!(name, "list" | "ordered-list" | "unordered-list")
 }
 
 // ---------------------------------------------------------------- styles
@@ -244,11 +304,21 @@ fn style_info(s: XmlNode) -> StyleInfo {
         display_name: attr(s, "display-name").map(str::to_string),
         ..Default::default()
     };
-    if let Some(tp) = s.children().find(|c| c.has_tag_name("text-properties")) {
+    // OO1.x (#215) folds everything into one `<style:properties>` element.
+    if let Some(tp) = s
+        .children()
+        .find(|c| c.has_tag_name("text-properties") || c.has_tag_name("properties"))
+    {
         info.bold = attr(tp, "font-weight").map(is_bold);
         info.italic = attr(tp, "font-style").map(|v| v == "italic" || v == "oblique");
-        info.strike = attr(tp, "text-line-through-style").map(|v| v != "none");
-        info.underline = attr(tp, "text-underline-style").map(|v| v != "none");
+        // OO1.x (#215) names these `style:text-crossing-out` /
+        // `style:text-underline` (values like `single`; `none` clears).
+        info.strike = attr(tp, "text-line-through-style")
+            .or_else(|| attr(tp, "text-crossing-out"))
+            .map(|v| v != "none");
+        info.underline = attr(tp, "text-underline-style")
+            .or_else(|| attr(tp, "text-underline"))
+            .map(|v| v != "none");
         info.script = attr(tp, "text-position").map(|v| {
             if v.starts_with("super") {
                 2
@@ -367,7 +437,8 @@ fn collect_runs(el: XmlNode, styles: &Styles, base: Fmt, out: &mut Vec<Run>) {
                     text: "\n".into(),
                     fmt: base,
                 }),
-                "tab" => {
+                // `tab-stop` is OO1.x's spelling of `<text:tab>` (#215).
+                "tab" | "tab-stop" => {
                     out.push(Run {
                         text: "\t".into(),
                         fmt: base,
@@ -383,6 +454,13 @@ fn collect_runs(el: XmlNode, styles: &Styles, base: Fmt, out: &mut Vec<Run>) {
                     });
                     seen_element = true;
                 }
+                // A `<draw:object>` in flat ODF (#215) embeds a whole
+                // `<office:document>` inline — its meta/settings/body text is
+                // not this paragraph's text. The packaged form keeps objects in
+                // separate parts (an empty `<draw:object xlink:href=…/>` here),
+                // so skipping the subtree makes both envelopes read the same.
+                // `<office:binary-data>` is an inline image's base64 payload.
+                "object" | "binary-data" => {}
                 // docling's `_odf_text_runs` recurses into every child, so an
                 // image's `<svg:desc>`/`<svg:title>` text is picked up too.
                 _ => {
@@ -484,7 +562,7 @@ fn walk_blocks<'a, 'i: 'a>(
 ) {
     let mut prev_state: Option<ListCont> = None;
     for el in els {
-        if el.tag_name().name() == "list" {
+        if is_list_tag(el.tag_name().name()) {
             prev_state = add_odf_list(el, styles, doc, 0, 1, false, prev_state.take());
         } else {
             prev_state = None;
@@ -504,7 +582,9 @@ fn handle_block(
     match el.tag_name().name() {
         "h" => {
             emit_paragraph_images(el, styles, doc);
+            // OO1.x headings carry `text:level` instead of `text:outline-level`.
             let level = attr(el, "outline-level")
+                .or_else(|| attr(el, "level"))
                 .and_then(|v| v.parse::<i64>().ok())
                 .unwrap_or(1)
                 .max(1);
@@ -540,7 +620,7 @@ fn handle_block(
                 doc.push(inline_paragraph_node(text, runs_to_inline(runs), false));
             }
         }
-        "list" => {
+        n if is_list_tag(n) => {
             add_odf_list(el, styles, doc, list_level, 1, false, None);
         }
         "table" => {
@@ -562,10 +642,23 @@ fn handle_block(
 }
 
 /// Emit the graphics anchored in a paragraph: each `<draw:frame>` yields one
-/// node.
+/// node. OO1.x anchors `<draw:image>` directly — without a frame wrapper —
+/// so frameless bitmaps yield a picture each too (#215).
 fn emit_paragraph_images(el: XmlNode, styles: &Styles, doc: &mut DoclingDocument) {
     for frame in el.descendants().filter(|n| n.has_tag_name("frame")) {
         emit_frame_graphic(frame, styles, doc);
+    }
+    for img in el
+        .descendants()
+        .filter(|n| n.has_tag_name("image") && !n.ancestors().any(|a| a.has_tag_name("frame")))
+    {
+        if image_can_be_bitmap(img, attr(img, "href").unwrap_or("")) {
+            doc.push(Node::Picture {
+                caption: None,
+                image: None,
+                classification: None,
+            });
+        }
     }
 }
 
@@ -577,10 +670,15 @@ fn emit_paragraph_images(el: XmlNode, styles: &Styles, doc: &mut DoclingDocument
 fn emit_frame_graphic(frame: XmlNode, styles: &Styles, doc: &mut DoclingDocument) -> bool {
     if let Some(obj) = frame.children().find(|c| c.has_tag_name("object")) {
         let name = attr(obj, "href").unwrap_or("").trim_start_matches("./");
-        if let Some(info) = styles.charts.get(name) {
+        let info = styles
+            .charts
+            .get(name)
+            .cloned()
+            .or_else(|| inline_chart(obj, styles));
+        if let Some(info) = info {
             doc.push(Node::Chart {
-                kind: info.kind.clone(),
-                table: info.table.clone(),
+                kind: info.kind,
+                table: info.table,
                 caption: None,
                 location: None,
             });
@@ -603,6 +701,25 @@ fn emit_frame_graphic(frame: XmlNode, styles: &Styles, doc: &mut DoclingDocument
         return true;
     }
     false
+}
+
+/// A chart embedded *inline* in a `<draw:object>` — how flat ODF (#215) ships
+/// what a packaged file stores as a separate object part: the object wraps a
+/// whole `<office:document>` whose `<chart:chart>` and data `<table:table>`
+/// sit right in the content DOM.
+fn inline_chart(obj: XmlNode, styles: &Styles) -> Option<ChartInfo> {
+    let chart = obj.descendants().find(|n| n.has_tag_name("chart"))?;
+    let kind = attr(chart, "class")
+        .and_then(chart_kind)
+        .or_else(|| {
+            obj.descendants()
+                .filter(|n| n.has_tag_name("series"))
+                .find_map(|n| attr(n, "class").and_then(chart_kind))
+        })
+        .unwrap_or("other_chart")
+        .to_string();
+    let table_node = obj.descendants().find(|n| n.has_tag_name("table"))?;
+    parse_table(table_node, styles).map(|table| ChartInfo { kind, table })
 }
 
 /// Continuation state carried across sibling `<text:list>` elements — docling's
@@ -635,7 +752,7 @@ fn odf_item_content<'a, 'i>(
     let mut nested: Vec<XmlNode> = Vec::new();
     for child in item.children().filter(XmlNode::is_element) {
         match child.tag_name().name() {
-            "list" => nested.push(child),
+            n if is_list_tag(n) => nested.push(child),
             "p" | "h" => {
                 let mut runs = Vec::new();
                 collect_runs(child, styles, Fmt::default(), &mut runs);
@@ -684,13 +801,19 @@ fn list_starts_with_empty_nested(list: XmlNode, styles: &Styles) -> bool {
 }
 
 /// A list level's rendering (bullet vs numbered) from the list's own style, else
-/// the inherited `fallback` — docling's `_odf_list_level_is_enumerated`.
+/// the inherited `fallback` — docling's `_odf_list_level_is_enumerated`. The
+/// OO1.x tags decide for themselves (#215): `<text:ordered-list>` is numbered,
+/// `<text:unordered-list>` is bulleted, whatever the inherited fallback says.
 fn level_is_enumerated(styles: &Styles, list: XmlNode, level: i64, fallback: bool) -> bool {
     attr(list, "style-name")
         .and_then(|name| styles.lists.get(name))
         .and_then(|levels| levels.get(&level))
         .map(|lv| lv.numbered)
-        .unwrap_or(fallback)
+        .unwrap_or_else(|| match list.tag_name().name() {
+            "ordered-list" => true,
+            "unordered-list" => false,
+            _ => fallback,
+        })
 }
 
 /// A list level's `start-value` (default 1).
@@ -1024,7 +1147,7 @@ fn is_rich_cell(tc: XmlNode, styles: &Styles) -> bool {
     let mut non_empty_paragraphs = 0;
     for child in tc.children().filter(XmlNode::is_element) {
         match child.tag_name().name() {
-            "list" if list_has_renderable(child, styles) => return true,
+            n if is_list_tag(n) && list_has_renderable(child, styles) => return true,
             "h" if !clean_lines(&para_plain_text(child)).is_empty() => return true,
             "table" if table_has_content(child) => return true,
             "p" => {
@@ -1080,11 +1203,14 @@ fn para_plain_into(el: XmlNode, out: &mut String) {
         } else if child.is_element() {
             match child.tag_name().name() {
                 "line-break" => out.push('\n'),
-                "tab" => out.push('\t'),
+                "tab" | "tab-stop" => out.push('\t'),
                 "s" => {
                     let n: usize = attr(child, "c").and_then(|v| v.parse().ok()).unwrap_or(1);
                     out.push_str(&" ".repeat(n));
                 }
+                // Inline embedded documents and image payloads (flat ODF) are
+                // not paragraph text.
+                "object" | "binary-data" => {}
                 _ => para_plain_into(child, out),
             }
         }
@@ -1099,7 +1225,7 @@ fn rich_cell_markdown(tc: XmlNode, styles: &Styles) -> String {
     let mut prev_state: Option<ListCont> = None;
     for child in tc.children().filter(XmlNode::is_element) {
         match child.tag_name().name() {
-            "list" => {
+            n if is_list_tag(n) => {
                 prev_state = add_odf_list(child, styles, &mut sub, 0, 1, false, prev_state.take());
             }
             "table" => {
@@ -1293,9 +1419,29 @@ fn walk_presentation(pres: XmlNode, styles: &Styles, doc: &mut DoclingDocument) 
 /// docling's `_odf_image_can_be_bitmap`: an explicit `draw:mime-type` decides
 /// (raster `image/*` only); otherwise the href's suffix — vector/preview
 /// formats (`.svm`, `.svg`, `.emf`, `.wmf`, `.pdf`) never yield a picture.
+/// A flat-ODF image with no href at all (#215) carries its payload inline as
+/// `<office:binary-data>`, so the decoded magic bytes decide instead — that is
+/// how the SVM previews flat files keep alongside their real bitmaps stay out.
 fn image_can_be_bitmap(img: XmlNode, href: &str) -> bool {
     if let Some(mime) = attr(img, "mime-type") {
         return mime.starts_with("image/") && mime != "image/svg+xml";
+    }
+    if href.is_empty() {
+        if let Some(data) = img
+            .children()
+            .find(|c| c.has_tag_name("binary-data"))
+            .and_then(|d| d.text())
+        {
+            let head: String = data
+                .chars()
+                .filter(|c| !c.is_whitespace())
+                .take(16)
+                .collect();
+            return docling_core::base64::decode(&head)
+                .map(|bytes| is_raster_magic(&bytes))
+                .unwrap_or(false);
+        }
+        return false;
     }
     let name = href.rsplit('/').next().unwrap_or(href);
     let suffix = match name.rsplit_once('.') {
@@ -1306,6 +1452,19 @@ fn image_can_be_bitmap(img: XmlNode, href: &str) -> bool {
         suffix.as_str(),
         "" | "bmp" | "gif" | "jpeg" | "jpg" | "png" | "tif" | "tiff" | "webp"
     )
+}
+
+/// The magic bytes of the raster formats a picture placeholder is worth:
+/// PNG, JPEG, GIF, BMP, TIFF or WebP. Vector previews (SVM starts `VCLMTF`)
+/// and anything unrecognized are not bitmaps.
+fn is_raster_magic(b: &[u8]) -> bool {
+    b.starts_with(&[0x89, b'P', b'N', b'G'])
+        || b.starts_with(&[0xFF, 0xD8, 0xFF])
+        || b.starts_with(b"GIF8")
+        || b.starts_with(b"BM")
+        || b.starts_with(&[b'I', b'I', 0x2A, 0x00])
+        || b.starts_with(&[b'M', b'M', 0x00, 0x2A])
+        || (b.starts_with(b"RIFF") && b.get(8..12) == Some(b"WEBP"))
 }
 
 /// Any non-blank text anywhere under the element (docling's
@@ -1375,27 +1534,41 @@ fn walk_slide_frame(frame: XmlNode, styles: &Styles, doc: &mut DoclingDocument, 
     let mut chart_count = 0usize;
     if let Some(obj) = frame.children().find(|c| c.has_tag_name("object")) {
         let name = attr(obj, "href").unwrap_or("").trim_start_matches("./");
-        if let Some(info) = styles.charts.get(name) {
+        let info = styles
+            .charts
+            .get(name)
+            .cloned()
+            .or_else(|| inline_chart(obj, styles));
+        if let Some(info) = info {
             doc.push(Node::Chart {
-                kind: info.kind.clone(),
-                table: info.table.clone(),
+                kind: info.kind,
+                table: info.table,
                 caption: None,
                 location: None,
             });
             chart_count += 1;
         }
     }
-    for tbl in frame.descendants().filter(|n| n.has_tag_name("table")) {
+    // An inline chart's data table lives under the `<draw:object>` (flat ODF)
+    // — already rendered as the chart above, so skip it here.
+    for tbl in frame
+        .descendants()
+        .filter(|n| n.has_tag_name("table") && !n.ancestors().any(|a| a.has_tag_name("object")))
+    {
         if let Some(t) = parse_table(tbl, styles) {
             doc.push(Node::Table(t));
         }
     }
     for img in frame.descendants().filter(|n| n.has_tag_name("image")) {
         let href = attr(img, "href").unwrap_or("");
+        // The chart's preview bitmap — an `ObjectReplacements/` part, or (flat
+        // ODF) an hrefless sibling holding inline `<office:binary-data>` —
+        // never doubles as a picture once the chart itself is emitted.
         if chart_count > 0
-            && href
-                .trim_start_matches("./")
-                .starts_with("ObjectReplacements/")
+            && (href.is_empty()
+                || href
+                    .trim_start_matches("./")
+                    .starts_with("ObjectReplacements/"))
         {
             continue;
         }
@@ -1448,7 +1621,7 @@ fn walk_textbox_children<'a, 'i: 'a>(
                     doc.push(inline_paragraph_node(text, runs_to_inline(runs), false));
                 }
             }
-            "list" => {
+            n if is_list_tag(n) => {
                 prev_state = add_odf_list(el, styles, doc, 0, 1, false, prev_state.take());
             }
             _ => {}
@@ -1620,6 +1793,148 @@ mod tests {
         assert_eq!(t.rows[0][0], "List:  - a - b");
         // Plain cell: single paragraph, no Markdown markers.
         assert_eq!(t.rows[0][1], "plain bold");
+    }
+
+    /// OO1.x (#215): `<text:ordered-list>`/`<text:unordered-list>` map to list
+    /// groups (the ordered tag numbering by itself, without a list style),
+    /// `<text:tab-stop>` expands like `<text:tab>`, and `<text:h text:level>`
+    /// maps like `text:outline-level`.
+    #[test]
+    fn oo1x_lists_tabs_and_heading_levels_map() {
+        let xml = r#"<root xmlns:text="x">
+            <text:h text:level="2">Section</text:h>
+            <text:p>a<text:tab-stop/><text:span>b</text:span></text:p>
+            <text:ordered-list>
+              <text:list-item><text:p>one</text:p>
+                <text:unordered-list>
+                  <text:list-item><text:p>sub</text:p></text:list-item>
+                </text:unordered-list></text:list-item>
+              <text:list-item><text:p>two</text:p></text:list-item>
+            </text:ordered-list></root>"#;
+        let dom = Document::parse(xml).unwrap();
+        let styles = parse_styles(&dom, None);
+        let mut doc = DoclingDocument::new("s");
+        walk_text(dom.root_element(), &styles, &mut doc);
+        let md = doc.export_to_markdown();
+        assert!(md.contains("### Section"), "text:level heading:\n{md}");
+        assert!(md.contains("a\tb"), "tab-stop expands:\n{md}");
+        assert!(md.contains("1. one"), "ordered-list numbers:\n{md}");
+        assert!(md.contains("- sub"), "nested unordered-list bullets:\n{md}");
+        assert!(md.contains("2. two"), "numbering continues:\n{md}");
+    }
+
+    /// OO1.x styles fold formatting into `<style:properties>` and name strike /
+    /// underline `text-crossing-out` / `text-underline`.
+    #[test]
+    fn oo1x_style_properties_element_and_attribute_names() {
+        let xml = r#"<root xmlns:style="s" xmlns:fo="f">
+            <style:style style:name="T1" style:family="text">
+              <style:properties fo:font-weight="bold"
+                 style:text-crossing-out="single-line"
+                 style:text-underline="single"/></style:style></root>"#;
+        let dom = Document::parse(xml).unwrap();
+        let styles = parse_styles(&dom, None);
+        let f = resolve_fmt(&styles, Some("T1"), Fmt::default());
+        assert!(f.bold && f.strike && f.underline);
+    }
+
+    /// An OO1.x document has no `office:text` wrapper — `office:body` is the
+    /// content container, dispatched by the root's `office:class` (#215). The
+    /// flat (non-zip) path parses the same bytes directly.
+    #[test]
+    fn oo1x_body_without_wrapper_converts() {
+        let xml = r#"<office:document-content xmlns:office="o" xmlns:text="x"
+              office:class="text" office:version="1.0">
+            <office:body><text:p>Aus der Registratur.</text:p></office:body>
+            </office:document-content>"#;
+        let source =
+            SourceDocument::from_bytes("reg.sxw", crate::InputFormat::Odt, xml.as_bytes().to_vec());
+        let doc = OdfBackend.convert(&source).unwrap();
+        assert!(doc.export_to_markdown().contains("Aus der Registratur."));
+    }
+
+    /// Flat ODF (#215): a single-file `<office:document>` converts without a
+    /// zip envelope, and the in-DOM `<table:body>` style template earlier in
+    /// document order does not shadow `<office:body>`.
+    #[test]
+    fn flat_odf_single_file_converts() {
+        let xml = r#"<office:document xmlns:office="o" xmlns:text="x" xmlns:table="t">
+            <office:automatic-styles><table:body/></office:automatic-styles>
+            <office:body><office:text>
+              <text:h text:outline-level="1">Flat</text:h>
+              <text:p>No zip here.</text:p>
+            </office:text></office:body></office:document>"#;
+        let source = SourceDocument::from_bytes(
+            "flat.fodt",
+            crate::InputFormat::Odt,
+            xml.as_bytes().to_vec(),
+        );
+        let doc = OdfBackend.convert(&source).unwrap();
+        let md = doc.export_to_markdown();
+        assert!(md.contains("## Flat"), "{md}");
+        assert!(md.contains("No zip here."), "{md}");
+    }
+
+    /// Flat ODF embeds chart objects inline: the `<draw:object>` wraps a whole
+    /// chart document whose data table renders as the chart's grid — and the
+    /// hrefless SVM preview image next to it stays out.
+    #[test]
+    fn flat_inline_chart_object_renders_as_chart() {
+        let xml = r#"<root xmlns:draw="d" xmlns:chart="c" xmlns:table="t" xmlns:text="x" xmlns:office="o">
+          <draw:frame><draw:object>
+            <office:document>
+              <chart:chart chart:class="chart:bar">
+                <table:table>
+                  <table:table-row>
+                    <table:table-cell office:value-type="string"><text:p>Row 1</text:p></table:table-cell>
+                    <table:table-cell office:value-type="float"><text:p>9.1</text:p></table:table-cell>
+                  </table:table-row>
+                </table:table>
+              </chart:chart>
+            </office:document>
+          </draw:object>
+          <draw:image><office:binary-data>VkNMTVRGAQAx</office:binary-data></draw:image>
+          </draw:frame></root>"#;
+        let dom = Document::parse(xml).unwrap();
+        let styles = parse_styles(&dom, None);
+        let mut doc = DoclingDocument::new("c");
+        let frame = dom.descendants().find(|n| n.has_tag_name("frame")).unwrap();
+        walk_slide_frame(frame, &styles, &mut doc, false);
+        let charts: Vec<_> = doc
+            .nodes
+            .iter()
+            .filter(|n| matches!(n, Node::Chart { .. }))
+            .collect();
+        assert_eq!(charts.len(), 1, "inline object renders as one chart");
+        assert!(
+            matches!(charts[0], Node::Chart { kind, .. } if kind == "bar_chart"),
+            "chart:class maps"
+        );
+        assert!(
+            !doc.nodes.iter().any(|n| matches!(n, Node::Picture { .. })),
+            "SVM preview is not a picture"
+        );
+        assert!(
+            !doc.nodes.iter().any(|n| matches!(n, Node::Table(_))),
+            "the chart's data table is not doubled as a standalone table"
+        );
+    }
+
+    /// An hrefless inline image is a picture only when its base64 payload
+    /// decodes to a raster magic (PNG here); SVM/unknown payloads are not.
+    #[test]
+    fn inline_binary_image_magic_gates_pictures() {
+        let xml = r#"<root xmlns:draw="d" xmlns:office="o">
+            <draw:image draw:name="png"><office:binary-data>iVBORw0KGgoA</office:binary-data></draw:image>
+            <draw:image draw:name="svm"><office:binary-data>VkNMTVRGAQAx</office:binary-data></draw:image>
+          </root>"#;
+        let dom = Document::parse(xml).unwrap();
+        let imgs: Vec<XmlNode> = dom
+            .descendants()
+            .filter(|n| n.has_tag_name("image"))
+            .collect();
+        assert!(image_can_be_bitmap(imgs[0], ""), "PNG magic");
+        assert!(!image_can_be_bitmap(imgs[1], ""), "SVM magic");
     }
 
     #[test]

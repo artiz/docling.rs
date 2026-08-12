@@ -145,9 +145,15 @@ impl InputFormat {
             "doc" | "dot" => InputFormat::Doc,
             "xls" | "xlt" => InputFormat::Xls,
             "ppt" | "pot" | "pps" => InputFormat::Ppt,
-            "odt" | "ott" => InputFormat::Odt,
-            "ods" | "ots" => InputFormat::Ods,
-            "odp" | "otp" => InputFormat::Odp,
+            // StarOffice / OpenOffice 1.x XML and flat ODF (#215, docling.rs
+            // extensions): the shared ODF backend parses the older namespace
+            // vocabulary through a local-name mapping layer, and the flat
+            // variants are the same XML uncompressed in a single file.
+            // Templates (`.stw`/`.sti`/`.stc`) and the Writer master document
+            // (`.sxg`) ride the same parsers as their document counterparts.
+            "odt" | "ott" | "sxw" | "stw" | "sxg" | "fodt" => InputFormat::Odt,
+            "ods" | "ots" | "sxc" | "stc" | "fods" => InputFormat::Ods,
+            "odp" | "otp" | "sxi" | "sti" | "fodp" => InputFormat::Odp,
             "json" => InputFormat::JsonDocling,
             // `.mpga` *is* MPEG audio (an mp3 stream) — symphonia probes the
             // codec from the bytes, the extension is just the alias (#208).
