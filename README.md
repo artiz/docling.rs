@@ -1137,37 +1137,39 @@ The image converts PDFs/images fully offline; the model export (torch +
 through both engines (published Python `docling` vs the Rust release binary) and
 reports peak RSS, CPU utilization, and conversion time. Ratios below are
 docling ÷ docling.rs — bigger means Rust wins by more. The PDF row is the
-**fp32** stack; the optional [INT8 models](#int8-models-faster-pdf-conversion-on-cpu)
-roughly double layout-inference speed on top of it (measured 1.83× end-to-end
-on a 1913-page document — see [`docs/PDF_CONFORMANCE.md`](./docs/PDF_CONFORMANCE.md)).
+**default stack** ([INT8 layout](#int8-models-faster-pdf-conversion-on-cpu) +
+KV-cached TableFormer decoder); with `DOCLING_RS_FP32=1` (full-precision
+models) the same fixture measures 5.2× less memory, a 6.2× warm speedup and
+19.8× end-to-end — see [`docs/PDF_CONFORMANCE.md`](./docs/PDF_CONFORMANCE.md).
 
 | File | Size | Peak-memory ratio | CPU ratio | Warm-conversion speedup |
 |---|---:|---:|---:|---:|
-| `picture_classification.pdf` (PDF) | 208 KB | **2.3× less** | 1.0× | 2.3× |
-| `docx_rich_tables_01.docx` (DOCX) | 3.1 MB | **41× less** | 2.7× | 21× |
-| `wiki_duck.html` (HTML) | 240 KB | **57× less** | 3.2× | 46× |
-| `elife-56337.nxml` (JATS XML) | 180 KB | **61× less** | 2.9× | 10× |
-| `xlsx_04_inflated.xlsx` (XLSX) | 168 KB | **59× less** | 2.9× | 12× |
-| `powerpoint_with_image.pptx` (PPTX) | 80 KB | **57× less** | 2.8× | 4.4× |
-| `wiki.md` (Markdown) | 8 KB | **58× less** | 2.9× | 1.3× |
-| `csv-comma.csv` (CSV) | 4 KB | **66× less** | 2.9× | 0.6× † |
+| `picture_classification.pdf` (PDF) | 208 KB | **6.5× less** | 0.8× | 10.6× |
+| `docx_rich_tables_01.docx` (DOCX) | 3.1 MB | **39× less** | 1.2× | 19× |
+| `wiki_duck.html` (HTML) | 240 KB | **57× less** | 1.3× | 47× |
+| `elife-56337.nxml` (JATS XML) | 180 KB | **59× less** | 1.2× | 10× |
+| `xlsx_04_inflated.xlsx` (XLSX) | 168 KB | **51× less** | 0.9× | 18× |
+| `powerpoint_with_image.pptx` (PPTX) | 80 KB | **55× less** | 1.2× | 3.1× |
+| `wiki.md` (Markdown) | 8 KB | **57× less** | 1.2× | 1.2× |
+| `csv-comma.csv` (CSV) | 4 KB | **64× less** | 1.2× | 0.6× † |
 
 - **Peak memory** is where Rust wins decisively: a declarative conversion holds a
   few MB versus docling's ~750 MB (it imports torch even for non-ML formats). The
   PDF runs the full ML pipeline in both engines (torch vs ONNX), so the gap there
-  is 2.3× rather than 50×+, but Rust still peaks at 0.77 GB vs docling's 1.75 GB —
-  and the PDF converts **4.1× faster end-to-end** (docling re-pays its torch
+  is 6.5× rather than 50×+, but Rust peaks at 0.37 GB vs docling's 2.4 GB —
+  and the PDF converts **28.5× faster end-to-end** (docling re-pays its torch
   import + model load on every invocation).
-- **CPU**: docling spreads across 2.7–3.2 cores for declarative work that Rust does
-  on a single core (~100%); on the PDF both go multi-core (~330% each here).
+- **CPU**: recent docling releases run declarative work at ~1.2 cores against
+  Rust's single core; on the PDF Rust goes wider (~160%) while finishing an
+  order of magnitude sooner.
 - **Warm-conversion speedup** isolates the parse/convert work — it times docling
   *in-process* (excluding its ~3 s interpreter + import startup) against the Rust
-  whole-process figure. Rust wins on substantial inputs (HTML 46×, DOCX 21×); the
-  end-to-end figure, which re-pays docling's startup every invocation, is **377–
-  1190× faster** for the declarative formats.
+  whole-process figure. Rust wins on substantial inputs (HTML 47×, DOCX 19×); the
+  end-to-end figure, which re-pays docling's startup every invocation, is **300–
+  870× faster** for the declarative formats.
 - † For trivial inputs (a 4 KB CSV) the conversion itself is microseconds, so Rust's
   own process startup dominates its number while warm-Python excludes startup — the
-  warm metric understates Rust there. End-to-end, the CSV is **1190× faster** in Rust.
+  warm metric understates Rust there. End-to-end, the CSV is **870× faster** in Rust.
 
 ## Layout
 
