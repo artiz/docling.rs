@@ -335,6 +335,7 @@ fn render_page(
             location: None,
             structure: None,
             cell_blocks: None,
+            cell_boxes: None,
             caption: None,
         }));
     }
@@ -669,6 +670,7 @@ mod tests {
                     location: None,
                     structure: None,
                     cell_blocks: None,
+                    cell_boxes: None,
                     caption: None,
                 }),
             ]

@@ -453,7 +453,7 @@ impl TableFormer {
         page_image: &RgbImage,
         region: [f32; 4],
         words: &[TextCell],
-    ) -> Option<Vec<Vec<String>>> {
+    ) -> Option<crate::tf_core::TableGrid> {
         // page → 1024px height (cv2.INTER_AREA), then crop the table bbox.
         // docling's coordinate chain, rounding included: the cluster bbox is
         // rounded to integer page points *first* (`round(cluster.bbox.l) *

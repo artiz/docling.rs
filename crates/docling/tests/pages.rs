@@ -275,3 +275,68 @@ fn no_ocr_conversion_reports_parse_confidence() {
     assert!(parse > 0.5, "clean text layer, got {parse}");
     assert_eq!(report.ocr_score(), None, "no OCR on the no_ocr path");
 }
+
+/// TableFormer models present too (encoder/decoder/bbox next to the layout
+/// model) — the cell-geometry test needs the ML table path, not the
+/// geometric fallback.
+fn tableformer_ready() -> bool {
+    let tf = repo_root().join(".models/tableformer");
+    let dec = ["decoder_kv.onnx", "decoder_int8.onnx", "decoder.onnx"]
+        .iter()
+        .map(|f| tf.join(f))
+        .find(|p| p.exists());
+    match dec {
+        Some(d) if tf.join("encoder.onnx").exists() && tf.join("bbox.onnx").exists() => {
+            std::env::set_var("DOCLING_TABLEFORMER_ENCODER", tf.join("encoder.onnx"));
+            std::env::set_var("DOCLING_TABLEFORMER_DECODER", d);
+            std::env::set_var("DOCLING_TABLEFORMER_BBOX", tf.join("bbox.onnx"));
+            true
+        }
+        _ => false,
+    }
+}
+
+/// #238: the ML table path records per-cell page-point boxes on the public
+/// `Table`, and the bbox-driven repair API round-trips: locate a cell by its
+/// own recorded box, replace the text, see it in the re-export.
+#[test]
+fn table_cells_carry_boxes_and_support_bbox_repair() {
+    if !pdfium_ready() || !ocr_models_ready() || !tableformer_ready() {
+        eprintln!("skipping: pdfium or the ML models are not present");
+        return;
+    }
+    let src =
+        SourceDocument::from_file(repo_root().join("tests/data/pdf/sources/2305.03393v1-pg9.pdf"))
+            .expect("table fixture");
+    let mut document = DocumentConverter::new()
+        .convert(src)
+        .expect("convert")
+        .document;
+
+    let table = document
+        .tables_mut()
+        .find(|t| t.cell_boxes.is_some())
+        .expect("the fixture's table goes through TableFormer and carries geometry");
+    let (r, c, bbox) = (0..table.rows.len())
+        .flat_map(|r| (0..table.rows[r].len()).map(move |c| (r, c)))
+        .find_map(|(r, c)| {
+            (!table.cell_text(r, c).unwrap_or_default().is_empty())
+                .then(|| table.cell_bbox(r, c).map(|b| (r, c, b)))
+                .flatten()
+        })
+        .expect("a non-empty cell with geometry");
+    // Boxes are page points, top-left origin: a sane, non-degenerate rect.
+    assert!(
+        bbox[2] > bbox[0] && bbox[3] > bbox[1],
+        "degenerate {bbox:?}"
+    );
+    assert_eq!(table.find_cell_by_bbox(bbox), Some((r, c)));
+    assert_eq!(
+        table.update_cell_by_bbox(bbox, "REPAIRED-238"),
+        Some((r, c))
+    );
+    assert!(
+        document.export_to_markdown().contains("REPAIRED-238"),
+        "repair flows into the export"
+    );
+}

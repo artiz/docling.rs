@@ -308,6 +308,7 @@ fn convert_dbf(d: &[u8], doc: &mut DoclingDocument) -> Result<(), ConversionErro
         location: None,
         structure: None,
         cell_blocks: None,
+        cell_boxes: None,
         caption: None,
     }));
     Ok(())

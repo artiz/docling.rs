@@ -117,7 +117,7 @@ pub(crate) async fn predict_table_rows(
     page_image: &RgbImage,
     region: [f32; 4],
     words: &[TextCell],
-) -> Option<Vec<Vec<String>>> {
+) -> Option<docling_pdf::tf_core::TableGrid> {
     // page → 1024px height (cv2.INTER_AREA), then crop the table bbox — docling's
     // coordinate chain with the same rounding the native path reproduces.
     let sf = 1024.0 / page_image.height() as f32;
