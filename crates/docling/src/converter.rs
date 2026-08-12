@@ -4,10 +4,10 @@ use std::collections::HashSet;
 
 use crate::backend::{
     is_deepseek_markdown, AsciiDocBackend, CsvBackend, DeclarativeBackend, DeepSeekBackend,
-    DocBackend, DoclingJsonBackend, DocxBackend, EmailBackend, EpubBackend, JatsBackend,
-    LatexBackend, MarkdownBackend, MhtmlBackend, OdfBackend, PptBackend, PptxBackend, RtfBackend,
-    StarOffice5Backend, UsptoBackend, VisioBackend, WebVttBackend, XbrlBackend, XlsBackend,
-    XlsxBackend,
+    DocBackend, DoclingJsonBackend, DocxBackend, EmailBackend, EpubBackend, InterchangeBackend,
+    JatsBackend, LatexBackend, MarkdownBackend, MhtmlBackend, OdfBackend, PptBackend, PptxBackend,
+    RtfBackend, StarOffice5Backend, UsptoBackend, VisioBackend, WebVttBackend, XbrlBackend,
+    XlsBackend, XlsxBackend,
 };
 
 /// Whether `text` begins with an XML prolog — an `<?xml …?>` declaration or a
@@ -512,6 +512,11 @@ impl DocumentConverter {
             // StarOffice 5 binaries (#215): docling.rs extension, native CFB
             // parse (docling would go through LibreOffice).
             InputFormat::StarOffice5 => StarOffice5Backend.convert(&source)?,
+            // DIF/SYLK/dBase (#216): docling.rs extensions, one content-sniffing
+            // backend for the three table relics.
+            InputFormat::Dbf | InputFormat::Dif | InputFormat::Sylk => {
+                InterchangeBackend.convert(&source)?
+            }
             InputFormat::Docx => DocxBackend.convert(&source)?,
             // Legacy binary Office (issue #127): parsed natively — docling
             // proper converts these through LibreOffice first (PR #3804).

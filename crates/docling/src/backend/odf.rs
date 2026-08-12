@@ -1305,6 +1305,17 @@ fn add_ods_sheet(table: XmlNode, doc: &mut DoclingDocument) {
         }
         row_idx += rrep;
     }
+    emit_sheet_regions(&cells, doc);
+}
+
+/// Split a sparse cell grid into its disconnected data regions and emit each
+/// as a table — the flood-fill core of [`add_ods_sheet`], shared with the
+/// spreadsheet-interchange backends (DIF/SYLK/dBase, #216) so a `.dif` saved
+/// from a sheet converts to the same tables as the `.ods` it came from.
+pub(crate) fn emit_sheet_regions(
+    cells: &HashMap<(usize, usize), String>,
+    doc: &mut DoclingDocument,
+) {
     if cells.is_empty() {
         return;
     }
