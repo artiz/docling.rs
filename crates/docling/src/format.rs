@@ -67,6 +67,12 @@ pub enum InputFormat {
     Numbers,
     /// Apple Keynote (`.key`), same IWA machinery as [`Self::Pages`].
     Keynote,
+    /// StarOffice 5 binaries (`.sdw`/`.sda`/`.sdd`/`.vor`) — a docling.rs
+    /// extension (#215); CFB containers parsed natively (text-level
+    /// extraction). The document kind comes from the stream inside, so a
+    /// `.vor` template of any application dispatches by content. StarCalc
+    /// (`.sdc`) is a follow-up.
+    StarOffice5,
 }
 
 impl InputFormat {
@@ -109,6 +115,7 @@ impl InputFormat {
             InputFormat::Pages => "pages",
             InputFormat::Numbers => "numbers",
             InputFormat::Keynote => "key",
+            InputFormat::StarOffice5 => "staroffice5",
         }
     }
 
@@ -145,9 +152,15 @@ impl InputFormat {
             "doc" | "dot" => InputFormat::Doc,
             "xls" | "xlt" => InputFormat::Xls,
             "ppt" | "pot" | "pps" => InputFormat::Ppt,
-            "odt" | "ott" => InputFormat::Odt,
-            "ods" | "ots" => InputFormat::Ods,
-            "odp" | "otp" => InputFormat::Odp,
+            // StarOffice / OpenOffice 1.x XML and flat ODF (#215, docling.rs
+            // extensions): the shared ODF backend parses the older namespace
+            // vocabulary through a local-name mapping layer, and the flat
+            // variants are the same XML uncompressed in a single file.
+            // Templates (`.stw`/`.sti`/`.stc`) and the Writer master document
+            // (`.sxg`) ride the same parsers as their document counterparts.
+            "odt" | "ott" | "sxw" | "stw" | "sxg" | "fodt" => InputFormat::Odt,
+            "ods" | "ots" | "sxc" | "stc" | "fods" => InputFormat::Ods,
+            "odp" | "otp" | "sxi" | "sti" | "fodp" => InputFormat::Odp,
             "json" => InputFormat::JsonDocling,
             // `.mpga` *is* MPEG audio (an mp3 stream) — symphonia probes the
             // codec from the bytes, the extension is just the alias (#208).
@@ -172,6 +185,11 @@ impl InputFormat {
             "pages" => InputFormat::Pages,
             "numbers" => InputFormat::Numbers,
             "key" => InputFormat::Keynote,
+            // StarOffice 5 binaries (#215): .vor templates dispatch by the
+            // CFB stream inside (writer/draw/impress share the container).
+            // .sdc routes here too so StarCalc gets its targeted
+            // "save as .ods" error instead of an unknown-extension one.
+            "sdw" | "sda" | "sdd" | "sdc" | "vor" => InputFormat::StarOffice5,
             // METS/Google Books scan packages ship as `*.tar.gz`.
             "gz" | "targz" => InputFormat::MetsGbs,
             _ => return None,
