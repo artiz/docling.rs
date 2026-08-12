@@ -1,9 +1,11 @@
-# Prebuilt `docling-rs` CLI binaries attached to each GitHub Release.
+# Prebuilt `docling-rs` CLI binaries — and the `docling-ffi` C ABI library
+# (#193, cdylib + docling.h) — attached to each GitHub Release.
 # `cargo install docling-cli` means several minutes of compiling on the user's
 # machine; a downloadable binary is the first thing launch-day visitors look
-# for. Runs automatically when ci.yml publishes a release (the release is
-# created with RELEASE_PAT, so the `release: published` event fires for this
-# workflow), or on manual dispatch for an existing tag.
+# for, and FFI embedders (C#/Go/Java/Swift) get a lib + header instead of a
+# full clone-and-build. Runs automatically when ci.yml publishes a release
+# (the release is created with RELEASE_PAT, so the `release: published` event
+# fires for this workflow), or on manual dispatch for an existing tag.
 #
 # macOS prebuilds are omitted for the same reason as in npm-publish.yml:
 # GitHub-hosted macOS runners are blocked in this environment, and darwin
@@ -83,7 +85,11 @@ jobs:
 
       - name: Build
         shell: bash
-        run: cargo build --release --locked -p docling-cli --target ${{ matrix.target }}
+        run: |
+          cargo build --release --locked -p docling-cli --target ${{ matrix.target }}
+          # The C ABI shared library (#193) rides the same job: the docling
+          # dependency tree is already compiled, only the thin FFI layer adds.
+          cargo build --release --locked -p docling-ffi --target ${{ matrix.target }}
 
       - name: Package (unix)
         if: runner.os != 'Windows'
@@ -92,17 +98,33 @@ jobs:
           bin="target/${{ matrix.target }}/release/docling-rs"
           strip "$bin"
           tar -czf "docling-rs-$TAG-${{ matrix.target }}.tar.gz" -C "$(dirname "$bin")" docling-rs
+          # FFI: the cdylib + the committed cbindgen header. The staticlib is
+          # not shipped (it inlines the whole ONNX runtime; static embedders
+          # build from source).
+          lib="target/${{ matrix.target }}/release/libdocling_ffi.so"
+          strip "$lib"
+          staging=$(mktemp -d)
+          cp "$lib" crates/docling-ffi/include/docling.h "$staging/"
+          tar -czf "docling-ffi-$TAG-${{ matrix.target }}.tar.gz" -C "$staging" libdocling_ffi.so docling.h
 
       - name: Package (windows)
         if: runner.os == 'Windows'
         shell: bash
-        run: 7z a "docling-rs-$TAG-${{ matrix.target }}.zip" "./target/${{ matrix.target }}/release/docling-rs.exe"
+        run: |
+          7z a "docling-rs-$TAG-${{ matrix.target }}.zip" "./target/${{ matrix.target }}/release/docling-rs.exe"
+          # dll + MSVC import library + header.
+          7z a "docling-ffi-$TAG-${{ matrix.target }}.zip" \
+            "./target/${{ matrix.target }}/release/docling_ffi.dll" \
+            "./target/${{ matrix.target }}/release/docling_ffi.dll.lib" \
+            "./crates/docling-ffi/include/docling.h"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v7
         with:
           name: cli-${{ matrix.target }}
-          path: docling-rs-*
+          path: |
+            docling-rs-*
+            docling-ffi-*
           if-no-files-found: error
 
   upload:

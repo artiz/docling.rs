@@ -52,7 +52,24 @@ mirror [docling-serve](../docling-serve)'s request options:
 Unknown keys fail the conversion with a clear message — a typo never
 silently does nothing.
 
-## Building & linking
+## Getting the library
+
+**Prebuilt (no Rust toolchain needed):** every
+[GitHub Release](https://github.com/docling-project/docling.rs/releases)
+ships `docling-ffi-<tag>-<target>.tar.gz` / `.zip` with the shared library
+and `docling.h`:
+
+| Asset target | Contents | Notes |
+|---|---|---|
+| `x86_64-unknown-linux-gnu` | `libdocling_ffi.so` + `docling.h` | needs glibc ≥ 2.38 (Ubuntu 24.04+, Debian 13+, Fedora 39+) |
+| `aarch64-unknown-linux-gnu` | `libdocling_ffi.so` + `docling.h` | same glibc floor |
+| `x86_64-pc-windows-msvc` | `docling_ffi.dll` + `docling_ffi.dll.lib` + `docling.h` | |
+
+macOS and older-glibc Linux build from source (GitHub-hosted macOS runners
+are unavailable to this repo's CI). The static library is also
+source-build-only — it inlines the whole ONNX runtime.
+
+**From source:**
 
 ```bash
 cargo build --release -p docling-ffi
@@ -71,6 +88,169 @@ see the [workspace README](../../README.md#getting-the-ml-models). GPU
 execution providers are the same pass-through features as everywhere else:
 `cargo build -p docling-ffi --features cuda` (then `DOCLING_RS_EP` picks the
 provider at startup).
+
+## Language quickstarts
+
+The pattern is identical everywhere: load `docling_ffi`, call
+`docling_convert`, check `docling_result_error`, read
+`docling_result_output` (+ `_len` for binary `dclx`), free. Put the shared
+library on the loader path (`LD_LIBRARY_PATH` / `PATH` / `@rpath`, or next
+to the executable).
+
+### C# / .NET
+
+```csharp
+using System.Runtime.InteropServices;
+using System.Text;
+
+static class Docling
+{
+    const string Lib = "docling_ffi"; // resolves libdocling_ffi.so / docling_ffi.dll / libdocling_ffi.dylib
+
+    [DllImport(Lib)]
+    static extern IntPtr docling_convert(byte[] bytes, nuint len,
+        [MarshalAs(UnmanagedType.LPUTF8Str)] string filename,
+        [MarshalAs(UnmanagedType.LPUTF8Str)] string? optionsJson);
+    [DllImport(Lib)] static extern IntPtr docling_result_output(IntPtr r);
+    [DllImport(Lib)] static extern nuint docling_result_output_len(IntPtr r);
+    [DllImport(Lib)] static extern IntPtr docling_result_error(IntPtr r);
+    [DllImport(Lib)] static extern void docling_result_free(IntPtr r);
+
+    public static byte[] Convert(byte[] bytes, string filename, string? optionsJson = null)
+    {
+        var r = docling_convert(bytes, (nuint)bytes.Length, filename, optionsJson);
+        try
+        {
+            var err = docling_result_error(r);
+            if (err != IntPtr.Zero) throw new InvalidOperationException(Marshal.PtrToStringUTF8(err));
+            var output = new byte[(int)docling_result_output_len(r)];
+            Marshal.Copy(docling_result_output(r), output, 0, output.Length);
+            return output;
+        }
+        finally { docling_result_free(r); }
+    }
+}
+
+// var md = Encoding.UTF8.GetString(Docling.Convert(File.ReadAllBytes("report.docx"),
+//                                                  "report.docx", "{\"to\":\"md\"}"));
+```
+
+### Go (cgo)
+
+```go
+package docling
+
+// Unpack the release archive so include/docling.h and lib/libdocling_ffi.so
+// sit next to this file.
+
+/*
+#cgo CFLAGS: -I${SRCDIR}/include
+#cgo LDFLAGS: -L${SRCDIR}/lib -ldocling_ffi
+#include <stdlib.h>
+#include "docling.h"
+*/
+import "C"
+
+import (
+	"errors"
+	"unsafe"
+)
+
+func Convert(data []byte, filename, optionsJSON string) ([]byte, error) {
+	cName := C.CString(filename)
+	defer C.free(unsafe.Pointer(cName))
+	cOpts := C.CString(optionsJSON)
+	defer C.free(unsafe.Pointer(cOpts))
+	var ptr *C.uint8_t
+	if len(data) > 0 {
+		ptr = (*C.uint8_t)(unsafe.Pointer(&data[0]))
+	}
+	r := C.docling_convert(ptr, C.uintptr_t(len(data)), cName, cOpts)
+	defer C.docling_result_free(r)
+	if msg := C.docling_result_error(r); msg != nil {
+		return nil, errors.New(C.GoString(msg))
+	}
+	out := C.docling_result_output(r)
+	return C.GoBytes(unsafe.Pointer(out), C.int(C.docling_result_output_len(r))), nil
+}
+```
+
+### Java
+
+With [JNA](https://github.com/java-native-access/jna) (any JDK):
+
+```java
+import com.sun.jna.*;
+
+public interface Docling extends Library {
+    Docling INSTANCE = Native.load("docling_ffi", Docling.class);
+
+    Pointer docling_convert(byte[] bytes, long len, String filename, String optionsJson);
+    Pointer docling_result_output(Pointer r);
+    long docling_result_output_len(Pointer r);
+    Pointer docling_result_error(Pointer r);
+    void docling_result_free(Pointer r);
+}
+
+// byte[] bytes = Files.readAllBytes(Path.of("report.docx"));
+// Pointer r = Docling.INSTANCE.docling_convert(bytes, bytes.length, "report.docx", "{\"to\":\"md\"}");
+// try {
+//     Pointer err = Docling.INSTANCE.docling_result_error(r);
+//     if (err != null) throw new RuntimeException(err.getString(0));
+//     byte[] out = Docling.INSTANCE.docling_result_output(r)
+//             .getByteArray(0, (int) Docling.INSTANCE.docling_result_output_len(r));
+//     System.out.write(out);
+// } finally { Docling.INSTANCE.docling_result_free(r); }
+```
+
+On JDK 22+ the dependency-free alternative is the FFM API: run
+[`jextract`](https://jdk.java.net/jextract/) over `include/docling.h`
+(`jextract --library docling_ffi include/docling.h`) and call the generated
+`docling_h` bindings from an `Arena`.
+
+### Swift
+
+Wrap the header as a system-library module (build from source on macOS —
+see above). `Sources/CDocling/module.modulemap`:
+
+```
+module CDocling {
+    header "include/docling.h"
+    link "docling_ffi"
+    export *
+}
+```
+
+`Package.swift` targets:
+
+```swift
+.systemLibrary(name: "CDocling", path: "Sources/CDocling"),
+.executableTarget(name: "App", dependencies: ["CDocling"],
+                  linkerSettings: [.unsafeFlags(["-L/path/to/docling.rs/target/release"])]),
+```
+
+Usage:
+
+```swift
+import CDocling
+import Foundation
+
+func convert(_ data: Data, filename: String, options: String? = nil) throws -> Data {
+    let r = data.withUnsafeBytes { buf in
+        docling_convert(buf.bindMemory(to: UInt8.self).baseAddress,
+                        buf.count, filename, options)
+    }
+    defer { docling_result_free(r) }
+    if let err = docling_result_error(r) {
+        throw NSError(domain: "docling", code: 1,
+                      userInfo: [NSLocalizedDescriptionKey: String(cString: err)])
+    }
+    return Data(bytes: docling_result_output(r)!, count: docling_result_output_len(r))
+}
+
+// let md = String(decoding: try convert(try Data(contentsOf: url), filename: "report.docx",
+//                                       options: #"{"to":"md"}"#), as: UTF8.self)
+```
 
 ## Regenerating the header
 

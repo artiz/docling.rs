@@ -670,8 +670,13 @@ if (!docling_result_error(r))
 docling_result_free(r);
 ```
 
-See [`crates/docling-ffi/README.md`](./crates/docling-ffi/README.md) for the
-options table, build/link steps, and header regeneration.
+Prebuilt libraries ship with every
+[GitHub Release](https://github.com/docling-project/docling.rs/releases)
+(`docling-ffi-<tag>-<target>` — Linux x86_64/aarch64 and Windows x64, library
+plus header), so embedders don't need a Rust toolchain or a clone. See
+[`crates/docling-ffi/README.md`](./crates/docling-ffi/README.md) for the
+options table, build/link steps, quickstarts for C#/.NET, Go, Java and
+Swift, and header regeneration.
 
 ## Getting the ML models
 
