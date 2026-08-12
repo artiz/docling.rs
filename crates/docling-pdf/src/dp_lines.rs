@@ -42,6 +42,19 @@ struct Cell {
     active: bool,
     lig_carry: bool, // last_merged_cell_was_ligature
     font: u64,       // hash of the PDF font name+flags (for enforce_same_font)
+    // Cached invariants of `text` / the quad, maintained by `build_cells` and
+    // `merge_with`. The contraction is quadratic in merge attempts, and
+    // recomputing these per attempt (trim/char-count/ligature scans over the
+    // *growing* line text, min/max over the quad) dominated large-page
+    // parsing — the caches turn every attempt into flag reads.
+    blank: bool,   // text.trim().is_empty()
+    lig: bool,     // is_ligature(&text)
+    fb: bool,      // any char in U+FB00..=U+FB06 (the range half of is_ligature)
+    nchars: usize, // text.chars().count()
+    b_l: f64,      // bounds(): axis-aligned quad extremes
+    b_r: f64,
+    b_b: f64,
+    b_t: f64,
 }
 
 impl Cell {
@@ -52,9 +65,8 @@ impl Cell {
 
     /// Running mean glyph advance over the whole accumulated cell.
     fn avg_char_width(&self) -> f64 {
-        let n = self.text.chars().count();
-        if n > 0 {
-            self.length() / n as f64
+        if self.nchars > 0 {
+            self.length() / self.nchars as f64
         } else {
             0.0
         }
@@ -114,11 +126,36 @@ impl Cell {
         self.ry1 = other.ry1;
         self.rx2 = other.rx2;
         self.ry2 = other.ry2;
+        // Cache upkeep. Blankness and the ligature char-range scan distribute
+        // over concatenation (the inserted separator is whitespace and not in
+        // the range); the equality patterns ("ff", "fi", …) do NOT — "fi" is a
+        // ligature cell, "fiction" is not — so a short merged text recomputes
+        // exactly and a longer one (which no equality pattern can match) falls
+        // back to the distributed range flag alone.
+        self.blank = self.blank && other.blank;
+        self.nchars += other.nchars + usize::from(space);
+        self.fb = self.fb || other.fb;
+        self.lig = if self.text.len() <= 3 {
+            is_ligature(&self.text)
+        } else {
+            self.fb
+        };
+        let (l, r, b, t) = quad_bounds(self);
+        self.b_l = l;
+        self.b_r = r;
+        self.b_b = b;
+        self.b_t = t;
     }
 }
 
-/// Axis-aligned bounds of a cell's quad, `(l, r, b, t)` in PDF points (y-up).
+/// Axis-aligned bounds of a cell's quad, `(l, r, b, t)` in PDF points (y-up),
+/// from the cache `merge_with` maintains.
 fn bounds(c: &Cell) -> (f64, f64, f64, f64) {
+    (c.b_l, c.b_r, c.b_b, c.b_t)
+}
+
+/// The cached bounds' source of truth: min/max over the quad corners.
+fn quad_bounds(c: &Cell) -> (f64, f64, f64, f64) {
     let xs = [c.rx0, c.rx1, c.rx2, c.rx3];
     let ys = [c.ry0, c.ry1, c.ry2, c.ry3];
     let fold = |it: &[f64], f: fn(f64, f64) -> f64| it.iter().copied().reduce(f).unwrap();
@@ -147,7 +184,7 @@ fn gap_occupied(cells: &[Cell], i: usize, j: usize) -> bool {
     }
     let (band_b, band_t) = (ab.min(bb), at.max(bt));
     cells.iter().enumerate().any(|(k, c)| {
-        if k == i || k == j || !c.active || c.text.trim().is_empty() {
+        if k == i || k == j || !c.active || c.blank {
             return false;
         }
         let (cl, cr, cb, ct) = bounds(c);
@@ -186,7 +223,7 @@ fn applicable(a: &Cell, b: &Cell, parser: bool, block_spaces: bool) -> bool {
     };
     let punct_bridge =
         parser && ((lone_punct(&a.text) && !b.ltr) || (lone_punct(&b.text) && !a.ltr));
-    let font_neutral = is_ligature(&a.text) || is_ligature(&b.text) || punct_bridge;
+    let font_neutral = a.lig || b.lig || punct_bridge;
     if a.font != 0 && b.font != 0 && a.font != b.font && !font_neutral {
         return false;
     }
@@ -204,15 +241,15 @@ fn pass_ltr(cells: &mut [Cell], allow_reverse: bool, euclidean: bool, p: Factors
             if !applicable(&cells[i], &cells[j], euclidean, p.block_spaces) {
                 break;
             }
-            let i_lig = is_ligature(&cells[i].text) || cells[i].lig_carry;
-            let j_lig = is_ligature(&cells[j].text) || cells[j].lig_carry;
+            let i_lig = cells[i].lig || cells[i].lig_carry;
+            let j_lig = cells[j].lig || cells[j].lig_carry;
             let d0 = cells[i].avg_char_width() * p.merge;
             let d1 = cells[i].avg_char_width() * p.merge_with_space;
             let adj_d1 = d0 + if i_lig || j_lig { H_TOL } else { 0.0 };
             if cells[i].adjacent(&cells[j], d0, adj_d1) && !gap_occupied(cells, i, j) {
                 let other = cells[j].clone();
                 cells[i].merge_with(&other, d1, euclidean);
-                cells[i].lig_carry = is_ligature(&other.text);
+                cells[i].lig_carry = other.lig;
                 cells[j].active = false;
                 j += 1; // i keeps absorbing the next cell to its right
             } else if allow_reverse
@@ -221,7 +258,7 @@ fn pass_ltr(cells: &mut [Cell], allow_reverse: bool, euclidean: bool, p: Factors
             {
                 let other = cells[i].clone();
                 cells[j].merge_with(&other, d1, euclidean);
-                cells[j].lig_carry = is_ligature(&other.text);
+                cells[j].lig_carry = other.lig;
                 cells[i].active = false;
                 break; // i is consumed
             } else {
@@ -244,15 +281,15 @@ fn pass_rtl(cells: &mut [Cell], euclidean: bool, p: Factors) {
         if !applicable(&cells[i], &cells[j], euclidean, p.block_spaces) {
             continue;
         }
-        let i_lig = is_ligature(&cells[i].text) || cells[i].lig_carry;
-        let j_lig = is_ligature(&cells[j].text) || cells[j].lig_carry;
+        let i_lig = cells[i].lig || cells[i].lig_carry;
+        let j_lig = cells[j].lig || cells[j].lig_carry;
         let d0 = cells[i].avg_char_width() * p.merge;
         let d1 = cells[i].avg_char_width() * p.merge_with_space;
         let adj_d1 = d0 + if i_lig || j_lig { H_TOL } else { 0.0 };
         if cells[j].adjacent(&cells[i], d0, adj_d1) && !gap_occupied(cells, j, i) {
             let other = cells[i].clone();
             cells[j].merge_with(&other, d1, euclidean);
-            cells[j].lig_carry = is_ligature(&other.text);
+            cells[j].lig_carry = other.lig;
             cells[i].active = false;
         }
     }
@@ -328,11 +365,19 @@ fn build_cells(glyphs: &[Glyph], euclidean: bool) -> Vec<Cell> {
                 }
                 last.text.push(g.ch);
                 last.ltr = !is_right_to_left(&last.text);
+                last.blank = last.blank && g.ch.is_whitespace();
+                last.nchars += 1;
+                // Recomposed ligature cells stay tiny; recomputing is exact.
+                last.fb = last.fb || (0xFB00..=0xFB06).contains(&(g.ch as u32));
+                last.lig = is_ligature(&last.text);
                 continue;
             }
         }
         let text = g.ch.to_string();
         let ltr = !is_right_to_left(&text);
+        let blank = g.ch.is_whitespace();
+        let lig = is_ligature(&text);
+        let fb = (0xFB00..=0xFB06).contains(&(g.ch as u32));
         cells.push(Cell {
             text,
             rx0: g.ll as f64,
@@ -347,6 +392,14 @@ fn build_cells(glyphs: &[Glyph], euclidean: bool) -> Vec<Cell> {
             active: true,
             lig_carry: false,
             font: g.font,
+            blank,
+            lig,
+            fb,
+            nchars: 1,
+            b_l: (g.ll as f64).min(g.lr as f64),
+            b_r: (g.ll as f64).max(g.lr as f64),
+            b_b: (g.lb as f64).min(g.lt as f64),
+            b_t: (g.lb as f64).max(g.lt as f64),
         });
     }
     cells
