@@ -1479,6 +1479,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "docling-ffi"
+version = "1.2.0"
+dependencies = [
+ "docling",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "docling-node"
 version = "1.2.0"
 dependencies = [

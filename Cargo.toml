@@ -31,6 +31,8 @@ members = [
     "crates/docling-serve",
     # wasm32 build of the declarative converters (browser/edge, issue #79).
     "crates/docling-wasm",
+    # Minimal C ABI for embedders (issue #193): cdylib + staticlib + cbindgen header.
+    "crates/docling-ffi",
 ]
 
 [workspace.package]
