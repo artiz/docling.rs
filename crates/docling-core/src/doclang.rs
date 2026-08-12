@@ -121,40 +121,46 @@ enum Run {
 fn inline_runs(text: &str) -> Vec<Run> {
     let mut runs = Vec::new();
     let mut plain = String::new();
-    let bytes: Vec<char> = text.chars().collect();
-    let n = bytes.len();
+    let chars: Vec<char> = text.chars().collect();
+    let n = chars.len();
     let mut i = 0;
-    let find = |open: usize, pat: &str| -> Option<usize> {
-        let hay: String = bytes[open..].iter().collect();
-        hay.find(pat).map(|p| open + hay[..p].chars().count())
+    // All scanning stays on the char slice: materializing the tail as a
+    // String per position (the previous shape) made this scanner O(n²) and
+    // dominated whole-document DocLang serialization.
+    let find = |open: usize, pat: &[char]| -> Option<usize> {
+        chars
+            .get(open..)?
+            .windows(pat.len())
+            .position(|w| w == pat)
+            .map(|p| open + p)
     };
+    let starts = |at: usize, pat: &[char]| chars[at..].starts_with(pat);
     while i < n {
-        let rest: String = bytes[i..].iter().collect();
         let take = |runs: &mut Vec<Run>, plain: &mut String, r: Run| {
             if !plain.is_empty() {
                 runs.push(Run::Plain(std::mem::take(plain)));
             }
             runs.push(r);
         };
-        if rest.starts_with("***") {
-            if let Some(end) = find(i + 3, "***") {
-                let inner: String = bytes[i + 3..end].iter().collect();
+        if starts(i, &['*', '*', '*']) {
+            if let Some(end) = find(i + 3, &['*', '*', '*']) {
+                let inner: String = chars[i + 3..end].iter().collect();
                 take(&mut runs, &mut plain, Run::BoldItalic(inner));
                 i = end + 3;
                 continue;
             }
         }
-        if rest.starts_with("**") {
-            if let Some(end) = find(i + 2, "**") {
-                let inner: String = bytes[i + 2..end].iter().collect();
+        if starts(i, &['*', '*']) {
+            if let Some(end) = find(i + 2, &['*', '*']) {
+                let inner: String = chars[i + 2..end].iter().collect();
                 take(&mut runs, &mut plain, Run::Bold(inner));
                 i = end + 2;
                 continue;
             }
         }
-        if rest.starts_with('*') && !rest.starts_with("**") {
-            if let Some(end) = find(i + 1, "*") {
-                let inner: String = bytes[i + 1..end].iter().collect();
+        if chars[i] == '*' && !starts(i, &['*', '*']) {
+            if let Some(end) = find(i + 1, &['*']) {
+                let inner: String = chars[i + 1..end].iter().collect();
                 if !inner.is_empty() {
                     take(&mut runs, &mut plain, Run::Italic(inner));
                     i = end + 1;
@@ -162,26 +168,26 @@ fn inline_runs(text: &str) -> Vec<Run> {
                 }
             }
         }
-        if rest.starts_with('`') {
-            if let Some(end) = find(i + 1, "`") {
-                let inner: String = bytes[i + 1..end].iter().collect();
+        if chars[i] == '`' {
+            if let Some(end) = find(i + 1, &['`']) {
+                let inner: String = chars[i + 1..end].iter().collect();
                 take(&mut runs, &mut plain, Run::Code(inner));
                 i = end + 1;
                 continue;
             }
         }
-        if rest.starts_with('[') {
-            if let (Some(close), true) = (find(i + 1, "]("), true) {
-                if let Some(endp) = find(close + 2, ")") {
-                    let anchor: String = bytes[i + 1..close].iter().collect();
-                    let uri: String = bytes[close + 2..endp].iter().collect();
+        if chars[i] == '[' {
+            if let Some(close) = find(i + 1, &[']', '(']) {
+                if let Some(endp) = find(close + 2, &[')']) {
+                    let anchor: String = chars[i + 1..close].iter().collect();
+                    let uri: String = chars[close + 2..endp].iter().collect();
                     take(&mut runs, &mut plain, Run::Link { anchor, uri });
                     i = endp + 1;
                     continue;
                 }
             }
         }
-        plain.push(bytes[i]);
+        plain.push(chars[i]);
         i += 1;
     }
     if !plain.is_empty() {
@@ -226,16 +232,21 @@ fn parse_md_runs(chars: &[char], style: InlineRun, out: &mut Vec<InlineRun>) {
     let n = chars.len();
     let mut i = 0;
     let mut plain = String::new();
-    let find = |open: usize, pat: &str| -> Option<usize> {
-        let hay: String = chars[open..].iter().collect();
-        hay.find(pat).map(|p| open + hay[..p].chars().count())
+    // Char-slice scanning throughout — the tail-String-per-position shape
+    // this replaces was O(n²) over every serialized text node.
+    let find = |open: usize, pat: &[char]| -> Option<usize> {
+        chars
+            .get(open..)?
+            .windows(pat.len())
+            .position(|w| w == pat)
+            .map(|p| open + p)
     };
+    let starts = |at: usize, pat: &[char]| chars[at..].starts_with(pat);
     let sub = |a: usize, b: usize| -> Vec<char> { chars[a..b].to_vec() };
     while i < n {
-        let rest: String = chars[i..].iter().collect();
         // Longest markers first so `**`/`***` aren't mis-split.
-        if rest.starts_with("***") {
-            if let Some(end) = find(i + 3, "***") {
+        if starts(i, &['*', '*', '*']) {
+            if let Some(end) = find(i + 3, &['*', '*', '*']) {
                 flush_md_plain(&mut plain, &style, out);
                 parse_md_runs(
                     &sub(i + 3, end),
@@ -250,8 +261,8 @@ fn parse_md_runs(chars: &[char], style: InlineRun, out: &mut Vec<InlineRun>) {
                 continue;
             }
         }
-        if rest.starts_with("**") {
-            if let Some(end) = find(i + 2, "**") {
+        if starts(i, &['*', '*']) {
+            if let Some(end) = find(i + 2, &['*', '*']) {
                 flush_md_plain(&mut plain, &style, out);
                 parse_md_runs(
                     &sub(i + 2, end),
@@ -265,8 +276,8 @@ fn parse_md_runs(chars: &[char], style: InlineRun, out: &mut Vec<InlineRun>) {
                 continue;
             }
         }
-        if rest.starts_with('*') {
-            if let Some(end) = find(i + 1, "*") {
+        if chars[i] == '*' {
+            if let Some(end) = find(i + 1, &['*']) {
                 if end > i + 1 {
                     flush_md_plain(&mut plain, &style, out);
                     parse_md_runs(
@@ -282,8 +293,8 @@ fn parse_md_runs(chars: &[char], style: InlineRun, out: &mut Vec<InlineRun>) {
                 }
             }
         }
-        if rest.starts_with("~~") {
-            if let Some(end) = find(i + 2, "~~") {
+        if starts(i, &['~', '~']) {
+            if let Some(end) = find(i + 2, &['~', '~']) {
                 flush_md_plain(&mut plain, &style, out);
                 parse_md_runs(
                     &sub(i + 2, end),
@@ -297,8 +308,8 @@ fn parse_md_runs(chars: &[char], style: InlineRun, out: &mut Vec<InlineRun>) {
                 continue;
             }
         }
-        if rest.starts_with('`') {
-            if let Some(end) = find(i + 1, "`") {
+        if chars[i] == '`' {
+            if let Some(end) = find(i + 1, &['`']) {
                 flush_md_plain(&mut plain, &style, out);
                 let inner: String = sub(i + 1, end).iter().collect();
                 let inner = inner.trim();
@@ -313,9 +324,9 @@ fn parse_md_runs(chars: &[char], style: InlineRun, out: &mut Vec<InlineRun>) {
                 continue;
             }
         }
-        if rest.starts_with('[') {
-            if let Some(close) = find(i + 1, "](") {
-                if let Some(endp) = find(close + 2, ")") {
+        if chars[i] == '[' {
+            if let Some(close) = find(i + 1, &[']', '(']) {
+                if let Some(endp) = find(close + 2, &[')']) {
                     flush_md_plain(&mut plain, &style, out);
                     // Inline scope drops the href; the anchor keeps its styling.
                     parse_md_runs(&sub(i + 1, close), style.clone(), out);

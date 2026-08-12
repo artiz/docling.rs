@@ -31,35 +31,43 @@ pub fn inter_area(src: &RgbImage, dw: u32, dh: u32) -> RgbImage {
     let hw = area_weights(sw, dwu, sw as f64 / dw as f64);
     let vw = area_weights(sh, dhu, sh as f64 / dh as f64);
 
+    // Cache-friendly passes over the raw RGB buffer. The per-pixel addition
+    // order is exactly the loop-nest transpose of the naive form, so the f64
+    // accumulation — and thus the rounded output — stays bit-identical (the
+    // pixel-exactness contract above).
+    let raw = src.as_raw();
     let mut tmp = vec![[0f64; 3]; sh * dwu]; // (sh × dw)
     for y in 0..sh {
-        let row = y * dwu;
-        for (dx, ws) in hw.iter().enumerate() {
-            let mut acc = [0f64; 3];
+        let src_row = &raw[y * sw * 3..(y + 1) * sw * 3];
+        let dst_row = &mut tmp[y * dwu..(y + 1) * dwu];
+        for (acc, ws) in dst_row.iter_mut().zip(hw.iter()) {
             for &(si, w) in ws {
-                let p = src.get_pixel(si as u32, y as u32);
+                let p = &src_row[si * 3..si * 3 + 3];
                 acc[0] += p[0] as f64 * w;
                 acc[1] += p[1] as f64 * w;
                 acc[2] += p[2] as f64 * w;
             }
-            tmp[row + dx] = acc;
         }
     }
     let mut out = RgbImage::new(dw, dh);
+    let mut acc_row = vec![[0f64; 3]; dwu];
     for (dy, ws) in vw.iter().enumerate() {
-        for dx in 0..dwu {
-            let mut acc = [0f64; 3];
-            for &(si, w) in ws {
-                let t = tmp[si * dwu + dx];
+        acc_row.fill([0f64; 3]);
+        // Row-sequential accumulation: each source row streams once instead
+        // of striding column-wise through `tmp`.
+        for &(si, w) in ws {
+            let row = &tmp[si * dwu..(si + 1) * dwu];
+            for (acc, t) in acc_row.iter_mut().zip(row) {
                 acc[0] += t[0] * w;
                 acc[1] += t[1] * w;
                 acc[2] += t[2] * w;
             }
-            out.put_pixel(
-                dx as u32,
-                dy as u32,
-                Rgb([round_u8(acc[0]), round_u8(acc[1]), round_u8(acc[2])]),
-            );
+        }
+        let out_row = &mut (*out)[dy * dwu * 3..(dy + 1) * dwu * 3];
+        for (px, acc) in out_row.chunks_exact_mut(3).zip(&acc_row) {
+            px[0] = round_u8(acc[0]);
+            px[1] = round_u8(acc[1]);
+            px[2] = round_u8(acc[2]);
         }
     }
     out
