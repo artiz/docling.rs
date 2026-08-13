@@ -42,6 +42,30 @@ pub fn convert_mets_gbs_with_options(
     no_text_panels: bool,
     enrich: crate::EnrichmentOptions,
 ) -> Result<DoclingDocument, PdfError> {
+    convert_pages_with_options(
+        mets_pages(bytes)?,
+        name,
+        no_table_former,
+        no_ocr,
+        no_text_panels,
+        enrich,
+    )
+}
+
+/// Like [`convert_mets_gbs_with_options`], but driving a caller-configured
+/// [`crate::Pipeline`] — the growth path for pipeline options (#244's
+/// `skip_ocr` and whatever comes next) without another signature change.
+pub fn convert_mets_gbs_with_pipeline(
+    bytes: &[u8],
+    name: &str,
+    pipeline: &mut crate::Pipeline,
+) -> Result<DoclingDocument, PdfError> {
+    pipeline.process_pages(mets_pages(bytes)?, name)
+}
+
+/// Parse a METS-GBS archive (tar.gz of per-page hOCR + TIFF) into pipeline
+/// pages, in page order.
+fn mets_pages(bytes: &[u8]) -> Result<Vec<PdfPage>, PdfError> {
     let mut html: BTreeMap<String, String> = BTreeMap::new();
     let mut tiff: BTreeMap<String, Vec<u8>> = BTreeMap::new();
 
@@ -103,7 +127,7 @@ pub fn convert_mets_gbs_with_options(
             "mets: no hOCR/TIFF page pairs found in archive".into(),
         ));
     }
-    convert_pages_with_options(pages, name, no_table_former, no_ocr, no_text_panels, enrich)
+    Ok(pages)
 }
 
 /// Parse an hOCR page: the `ocr_page` bbox gives the page geometry (cells are in

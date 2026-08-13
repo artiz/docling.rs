@@ -127,6 +127,7 @@ async fn serves_its_logo_and_openapi_description() {
         "strict:",
         "images:",
         "no_ocr:",
+        "skip_ocr:",
         "force_full_page_ocr:",
         "no_table_former:",
         "fetch_images:",

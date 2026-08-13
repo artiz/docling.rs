@@ -77,6 +77,7 @@ pub struct DocumentConverter {
     no_table_former: bool,
     no_text_panels: bool,
     no_ocr: bool,
+    skip_ocr: bool,
     force_full_page_ocr: bool,
     use_web_browser: bool,
     /// Named Whisper model preset for audio sources (docling's ASR model
@@ -142,6 +143,7 @@ impl Default for DocumentConverter {
             no_table_former: false,
             no_text_panels: false,
             no_ocr: false,
+            skip_ocr: false,
             force_full_page_ocr: false,
             use_web_browser: false,
             asr_model: None,
@@ -190,6 +192,21 @@ impl DocumentConverter {
     pub fn ocr_lang(mut self, lang: impl Into<String>) -> Self {
         self.ocr_lang = Some(lang.into());
         self
+    }
+
+    /// The configured ML pipeline for one conversion (models load per call —
+    /// callers that convert many files hold a warm [`docling_pdf::Pipeline`]
+    /// themselves). Grew out of docling-pdf's `convert_with_options` free
+    /// functions, whose fixed signatures couldn't take #244's `skip_ocr`.
+    #[cfg(feature = "pdf")]
+    fn ml_pipeline(&self) -> Result<docling_pdf::Pipeline, docling_pdf::PdfError> {
+        Ok(docling_pdf::Pipeline::new()?
+            .no_table_former(self.no_table_former)
+            .no_ocr(self.no_ocr)
+            .skip_ocr(self.skip_ocr)
+            .no_text_panels(self.no_text_panels)
+            .enrichments(self.enrich)
+            .ocr_lang(self.ocr_lang_choice()))
     }
 
     /// The parsed [`Self::ocr_lang`] choice for the ML call sites; a value
@@ -308,6 +325,23 @@ impl DocumentConverter {
     /// without this flag. Implies [`no_table_former`](Self::no_table_former).
     pub fn no_ocr(mut self, disable: bool) -> Self {
         self.no_ocr = disable;
+        self
+    }
+
+    /// Never run OCR, but keep layout detection and TableFormer — docling's
+    /// independent `do_ocr=False` (#244), the counterpart of
+    /// [`no_table_former`](Self::no_table_former). Unlike
+    /// [`no_ocr`](Self::no_ocr) (the skip-everything fast path), structured
+    /// output — headings, tables, pictures, reading order — is preserved; only
+    /// text that exists solely as pixels is lost (scanned pages come back with
+    /// empty regions, and the speculative OCR of large embedded images never
+    /// runs). The OCR model is never loaded, and independently of this flag a
+    /// *missing* OCR model now degrades to the same behavior with a warning
+    /// instead of failing the conversion. SVG inputs route to direct
+    /// `<text>` extraction (their text is native — skipping OCR must not lose
+    /// it), like `no_ocr`.
+    pub fn skip_ocr(mut self, disable: bool) -> Self {
+        self.skip_ocr = disable;
         self
     }
 
@@ -444,6 +478,7 @@ impl DocumentConverter {
             no_table_former: self.no_table_former,
             no_text_panels: self.no_text_panels,
             no_ocr: self.no_ocr,
+            skip_ocr: self.skip_ocr,
             force_full_page_ocr: self.force_full_page_ocr,
             enrich: self.enrich,
             page_range: self.page_range,
@@ -564,66 +599,47 @@ impl DocumentConverter {
                 doc
             }
             #[cfg(feature = "pdf")]
-            InputFormat::Pdf => docling_pdf::convert_with_options(
-                &source.bytes,
-                None,
-                &source.name,
-                self.no_table_former,
-                self.no_ocr,
-                self.force_full_page_ocr,
-                self.no_text_panels,
-                self.enrich,
-                self.page_range,
-                self.ocr_lang_choice(),
-            )
-            .map_err(|e| ConversionError::with_source("pdf", e))?,
+            InputFormat::Pdf => self
+                .ml_pipeline()
+                .map(|p| {
+                    p.force_full_page_ocr(self.force_full_page_ocr)
+                        .pages(self.page_range)
+                })
+                .and_then(|mut p| p.convert(&source.bytes, None, &source.name))
+                .map_err(|e| ConversionError::with_source("pdf", e))?,
             // SVG (#212), the ML route: rasterize (resvg, white-backed PNG at
             // ~2048px long side) and ride the image pipeline. `--no-ocr` short-
             // circuits to direct <text> extraction instead — the SVG carries
             // its text natively, so skipping OCR must not mean losing it.
             #[cfg(feature = "pdf")]
-            InputFormat::Svg if !self.no_ocr => {
+            InputFormat::Svg if !self.no_ocr && !self.skip_ocr => {
                 let png = crate::backend::svg::rasterize_png(&source.bytes)?;
-                docling_pdf::convert_image_with_options(
-                    &png,
-                    &source.name,
-                    self.no_table_former,
-                    false,
-                    self.no_text_panels,
-                    self.enrich,
-                    self.ocr_lang_choice(),
-                )
-                .map_err(|e| ConversionError::with_source("svg", e))?
+                self.ml_pipeline()
+                    .and_then(|mut p| p.convert_image(&png, &source.name))
+                    .map_err(|e| ConversionError::with_source("svg", e))?
             }
             // SVG without the ML pipeline (pdf-text / wasm builds) or with
-            // --no-ocr: pure-Rust <text> extraction, flat paragraphs in
-            // reading order (the pdf / pdf-text split, applied to SVG).
+            // --no-ocr / --skip-ocr: pure-Rust <text> extraction, flat
+            // paragraphs in reading order (the pdf / pdf-text split, applied
+            // to SVG) — the SVG carries its text natively, so skipping OCR
+            // must not mean losing it.
             InputFormat::Svg => crate::backend::SvgBackend.convert(&source)?,
             // Apple iWork (#213): pure-Rust IWA text extraction, all builds.
             InputFormat::Pages | InputFormat::Numbers | InputFormat::Keynote => {
                 crate::backend::IworkBackend.convert(&source)?
             }
             #[cfg(feature = "pdf")]
-            InputFormat::Image => docling_pdf::convert_image_with_options(
-                &source.bytes,
-                &source.name,
-                self.no_table_former,
-                self.no_ocr,
-                self.no_text_panels,
-                self.enrich,
-                self.ocr_lang_choice(),
-            )
-            .map_err(|e| ConversionError::with_source("image", e))?,
+            InputFormat::Image => self
+                .ml_pipeline()
+                .and_then(|mut p| p.convert_image(&source.bytes, &source.name))
+                .map_err(|e| ConversionError::with_source("image", e))?,
             #[cfg(feature = "pdf")]
-            InputFormat::MetsGbs => docling_pdf::convert_mets_gbs_with_options(
-                &source.bytes,
-                &source.name,
-                self.no_table_former,
-                self.no_ocr,
-                self.no_text_panels,
-                self.enrich,
-            )
-            .map_err(|e| ConversionError::with_source("mets-gbs", e))?,
+            InputFormat::MetsGbs => self
+                .ml_pipeline()
+                .and_then(|mut p| {
+                    docling_pdf::convert_mets_gbs_with_pipeline(&source.bytes, &source.name, &mut p)
+                })
+                .map_err(|e| ConversionError::with_source("mets-gbs", e))?,
             // Audio → Whisper ASR (symphonia decode + ONNX inference); each
             // transcribed segment becomes a `[time: start-end] text` paragraph.
             #[cfg(feature = "asr")]

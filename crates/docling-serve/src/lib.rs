@@ -33,7 +33,10 @@
 //!   0.1–4.0, default 2.0 (= 144 dpi, the ML pipeline's own render scale)
 //! - `strict` — cleaner Markdown instead of docling-legacy output
 //! - `images` — `placeholder` (default) | `embedded` (Markdown only)
-//! - `no_ocr`, `no_table_former`, `force_full_page_ocr`, `no_text_panels` — PDF/image pipeline switches
+//! - `no_ocr`, `skip_ocr`, `no_table_former`, `force_full_page_ocr`,
+//!   `no_text_panels` — PDF/image pipeline switches (`skip_ocr`, #244: keep
+//!   layout + TableFormer, never OCR — docling's independent `do_ocr=False`;
+//!   `no_ocr` skips the whole ML stack)
 //! - `pages` — PDF page window `A-B` / `N` (1-based inclusive, #80)
 //! - `ocr_lang` — OCR recognition language for scanned pages: `en` (default)
 //!   | `ch` (the multilingual docling-conformance model)
@@ -293,6 +296,9 @@ struct ConvertOptions {
     strict: Option<bool>,
     images: Option<String>,
     no_ocr: Option<bool>,
+    /// Keep layout + TableFormer, never OCR (#244) — docling's independent
+    /// `do_ocr=False`. `no_ocr` (the whole-stack skip) wins when both are set.
+    skip_ocr: Option<bool>,
     force_full_page_ocr: Option<bool>,
     no_table_former: Option<bool>,
     /// Keep text-panel pictures as pictures (#173): disable the #157 demotion
@@ -323,6 +329,7 @@ impl ConvertOptions {
             strict: self.strict.or(base.strict),
             images: self.images.or(base.images),
             no_ocr: self.no_ocr.or(base.no_ocr),
+            skip_ocr: self.skip_ocr.or(base.skip_ocr),
             force_full_page_ocr: self.force_full_page_ocr.or(base.force_full_page_ocr),
             no_table_former: self.no_table_former.or(base.no_table_former),
             no_text_panels: self.no_text_panels.or(base.no_text_panels),
@@ -1062,6 +1069,7 @@ async fn read_multipart(
             }
             "strict"
             | "no_ocr"
+            | "skip_ocr"
             | "no_table_former"
             | "force_full_page_ocr"
             | "no_text_panels"
@@ -1071,6 +1079,7 @@ async fn read_multipart(
                 match name.as_str() {
                     "strict" => body_opts.strict = Some(b),
                     "no_ocr" => body_opts.no_ocr = Some(b),
+                    "skip_ocr" => body_opts.skip_ocr = Some(b),
                     "force_full_page_ocr" => body_opts.force_full_page_ocr = Some(b),
                     "no_table_former" => body_opts.no_table_former = Some(b),
                     "no_text_panels" => body_opts.no_text_panels = Some(b),
@@ -1362,12 +1371,14 @@ fn warm_pipeline<'a>(
     options: &ConvertOptions,
 ) -> Result<&'a mut Pipeline, ApiError> {
     let no_ocr = options.no_ocr.unwrap_or(false);
+    let skip_ocr = options.skip_ocr.unwrap_or(false);
     let no_tf = options.no_table_former.unwrap_or(false);
     let ntp = options.no_text_panels.unwrap_or(false);
-    if no_ocr || no_tf || ntp {
+    if no_ocr || skip_ocr || no_tf || ntp {
         let p = Pipeline::new()
             .map_err(|e| ApiError::Internal(e.to_string()))?
             .no_ocr(no_ocr)
+            .skip_ocr(skip_ocr)
             .no_table_former(no_tf)
             .no_text_panels(ntp);
         *slot = Some(p);
@@ -1399,6 +1410,7 @@ fn request_converter(
                 .unwrap_or(docling::DEFAULT_VIDEO_FRAMES),
         )
         .no_ocr(options.no_ocr.unwrap_or(false))
+        .skip_ocr(options.skip_ocr.unwrap_or(false))
         .force_full_page_ocr(options.force_full_page_ocr.unwrap_or(false))
         .no_table_former(options.no_table_former.unwrap_or(false))
         .no_text_panels(options.no_text_panels.unwrap_or(false));

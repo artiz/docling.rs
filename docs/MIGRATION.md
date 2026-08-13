@@ -378,6 +378,17 @@ These are deliberate or unavoidable divergences, not bugs.
     counterpart is `--to images` + `--scale`, writing `<stem>_page_NNNN.png`
     files (no cap — the pages land on the caller's own disk).
 
+11. **`do_ocr` and `do_table_structure` are independent** (#244), as in
+    docling: `skip_ocr` (`--skip-ocr`, serve/Node `skip_ocr`, Python
+    `do_ocr=False`) keeps layout detection and TableFormer but never loads or
+    runs OCR — pixel-only text comes back empty instead of erroring. The
+    Python binding's `do_ocr=False` previously skipped the whole ML stack
+    (layout and tables included), which docling's `do_ocr` never meant; that
+    fast path is now the docling.rs-only `text_layer_only=True` kwarg
+    (`--no-ocr` / `no_ocr` elsewhere). A missing OCR model also degrades to
+    the `skip_ocr` behavior with a one-time warning — docling errors there —
+    matching the repo-wide degradation-over-failure convention.
+
 ---
 
 ## 5. Not migrated / out of scope

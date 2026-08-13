@@ -101,7 +101,7 @@ use docling_core::Node;
 use docling_core::{debug_log, env};
 
 #[cfg(feature = "ml")]
-pub use mets::{convert_mets_gbs, convert_mets_gbs_with_options};
+pub use mets::{convert_mets_gbs, convert_mets_gbs_with_options, convert_mets_gbs_with_pipeline};
 #[cfg(feature = "ml")]
 pub use ocr::OcrLang;
 #[cfg(feature = "ml")]
@@ -529,7 +529,7 @@ pub fn layout_src(page: &PdfPage) -> layout::LayoutSrc<'_> {
 struct Worker {
     /// `None` when `no_ocr` skips layout entirely — no model load, no inference.
     layout: Option<layout::LayoutModel>,
-    ocr: Option<ocr::OcrModel>,
+    ocr: OcrSlot,
     /// Shared TableFormer slot; `None` when `no_table_former`/`no_ocr` skip it.
     tables: Option<SharedTables>,
     /// Shared enrichment slots; `None` unless the corresponding flag is on.
@@ -545,8 +545,22 @@ struct Worker {
     /// Keep text-panel pictures as pictures instead of demoting them to
     /// paragraphs. See [`Pipeline::no_text_panels`].
     no_text_panels: bool,
+    /// Never run OCR, but keep layout + TableFormer (#244) — docling's
+    /// `do_ocr=False`. See [`Pipeline::skip_ocr`].
+    skip_ocr: bool,
     /// Which recognition model [`Self::ocr`] loads. See [`Pipeline::ocr_lang`].
     ocr_lang: ocr::OcrLang,
+}
+
+#[cfg(feature = "ml")]
+/// The worker's lazily-loaded OCR recognition model. `Missing` records a
+/// failed load (#244: degradation over failure — a deployment without the OCR
+/// model still gets layout + TableFormer, and OCR-dependent regions stay
+/// empty) so the load isn't retried per page.
+enum OcrSlot {
+    Unloaded,
+    Ready(ocr::OcrModel),
+    Missing,
 }
 
 #[cfg(feature = "ml")]
@@ -558,6 +572,7 @@ impl Worker {
         enrich_slots: (Option<SharedClassifier>, Option<SharedCodeFormula>),
         enrich: EnrichmentOptions,
         no_ocr: bool,
+        skip_ocr: bool,
         force_full_page_ocr: bool,
         no_text_panels: bool,
         ocr_lang: ocr::OcrLang,
@@ -568,15 +583,49 @@ impl Worker {
             } else {
                 Some(layout::LayoutModel::load_with(intra).map_err(PdfError::Layout)?)
             },
-            ocr: None,
+            ocr: OcrSlot::Unloaded,
             tables,
             classifier: enrich_slots.0,
             code_formula: enrich_slots.1,
             enrich,
             no_ocr,
+            skip_ocr,
             force_full_page_ocr,
             no_text_panels,
             ocr_lang,
+        })
+    }
+
+    /// The OCR model, or `None` when this conversion must not (or cannot) OCR:
+    /// `skip_ocr` short-circuits, and a failed model load degrades to `None`
+    /// with a one-time warning instead of failing the conversion (#244) —
+    /// unless `force_full_page_ocr` demanded OCR explicitly, where a missing
+    /// model stays a hard error (the text layer was deliberately discarded, so
+    /// degrading would silently emit an empty document).
+    fn ocr_model(&mut self) -> Result<Option<&mut ocr::OcrModel>, PdfError> {
+        if self.skip_ocr {
+            return Ok(None);
+        }
+        if matches!(self.ocr, OcrSlot::Unloaded) {
+            match ocr::OcrModel::load(self.ocr_lang) {
+                Ok(model) => self.ocr = OcrSlot::Ready(model),
+                Err(e) if self.force_full_page_ocr => return Err(PdfError::Ocr(e)),
+                Err(e) => {
+                    static WARNED: std::sync::Once = std::sync::Once::new();
+                    WARNED.call_once(|| {
+                        eprintln!(
+                            "warning: OCR model unavailable ({e}); continuing without OCR — \
+                             scanned pages and text inside images will come back empty \
+                             (run scripts/install/download_dependencies.sh for the model)"
+                        );
+                    });
+                    self.ocr = OcrSlot::Missing;
+                }
+            }
+        }
+        Ok(match &mut self.ocr {
+            OcrSlot::Ready(model) => Some(model),
+            _ => None,
         })
     }
 
@@ -625,15 +674,16 @@ impl Worker {
     fn normalize_orientation(&mut self, n: usize, page: &mut PdfPage) -> Result<(), PdfError> {
         let scanned =
             page.cells.is_empty() && page.word_cells.is_empty() && page.code_cells.is_empty();
-        if self.no_ocr || !scanned || page.image.width() <= 1 || !orient::enabled() {
+        if self.no_ocr || self.skip_ocr || !scanned || page.image.width() <= 1 || !orient::enabled()
+        {
             return Ok(());
         }
-        if self.ocr.is_none() {
-            self.ocr = Some(ocr::OcrModel::load(self.ocr_lang).map_err(PdfError::Ocr)?);
-        }
-        let deg = timing::timed("orient.detect", || {
-            orient::detect(&page.image, self.ocr.as_mut().unwrap())
-        });
+        // The probe reads text through the OCR model; without one (missing —
+        // #244 degradation) the page stays as rendered.
+        let Some(ocr) = self.ocr_model()? else {
+            return Ok(());
+        };
+        let deg = timing::timed("orient.detect", || orient::detect(&page.image, ocr));
         if deg != 0 {
             debug_log!(
                 "docling-pdf: page {}: content rotated {deg}° in the raster; \
@@ -799,37 +849,33 @@ impl Worker {
         // No text layer → recognise text from the page image via OCR.
         let ocred = page.cells.is_empty();
         if ocred {
-            if self.ocr.is_none() {
-                self.ocr = Some(ocr::OcrModel::load(self.ocr_lang).map_err(PdfError::Ocr)?);
-            }
-            let cells = timing::timed("ocr.page", || {
-                self.ocr
-                    .as_mut()
-                    .unwrap()
-                    .ocr_page(&page.image, &regions, page.scale)
-            })
-            .map_err(|e| PdfError::Ocr(format!("page {}: {e}", n + 1)))?;
-            ocr_confs.extend(cells.iter().map(|(_, conf)| conf));
-            page.cells = cells.into_iter().map(|(cell, _)| cell).collect();
-            // Table interiors carry no words yet: region-scoped OCR skips
-            // table labels, and a scanned page has no pdfium text layer — so
-            // TableFormer's cell matcher got an empty word list and the table
-            // dissolved (#173). Recognize the table regions' word crops
-            // (mirroring the browser scanned path): `word_cells` feeds the
-            // matcher, and the same cells join `cells` so the geometric
-            // fallback and the table's region text see them too.
-            if regions.iter().any(|r| assemble::is_table_like(r.label)) {
-                let words = timing::timed("ocr.table_words", || {
-                    self.ocr
-                        .as_mut()
-                        .unwrap()
-                        .ocr_table_words(&page.image, &regions, page.scale)
+            // `None` = `skip_ocr` or a missing model (#244): the page keeps
+            // its layout regions (and TableFormer structure below) with no
+            // recognized text, instead of failing the conversion.
+            if let Some(ocr) = self.ocr_model()? {
+                let cells = timing::timed("ocr.page", || {
+                    ocr.ocr_page(&page.image, &regions, page.scale)
                 })
                 .map_err(|e| PdfError::Ocr(format!("page {}: {e}", n + 1)))?;
-                ocr_confs.extend(words.iter().map(|(_, conf)| conf));
-                let words: Vec<_> = words.into_iter().map(|(cell, _)| cell).collect();
-                page.cells.extend(words.iter().cloned());
-                page.word_cells = words;
+                ocr_confs.extend(cells.iter().map(|(_, conf)| conf));
+                page.cells = cells.into_iter().map(|(cell, _)| cell).collect();
+                // Table interiors carry no words yet: region-scoped OCR skips
+                // table labels, and a scanned page has no pdfium text layer — so
+                // TableFormer's cell matcher got an empty word list and the table
+                // dissolved (#173). Recognize the table regions' word crops
+                // (mirroring the browser scanned path): `word_cells` feeds the
+                // matcher, and the same cells join `cells` so the geometric
+                // fallback and the table's region text see them too.
+                if regions.iter().any(|r| assemble::is_table_like(r.label)) {
+                    let words = timing::timed("ocr.table_words", || {
+                        ocr.ocr_table_words(&page.image, &regions, page.scale)
+                    })
+                    .map_err(|e| PdfError::Ocr(format!("page {}: {e}", n + 1)))?;
+                    ocr_confs.extend(words.iter().map(|(_, conf)| conf));
+                    let words: Vec<_> = words.into_iter().map(|(cell, _)| cell).collect();
+                    page.cells.extend(words.iter().cloned());
+                    page.word_cells = words;
+                }
             }
         }
         // Region-scoped OCR skips `picture` interiors, and a digital page's
@@ -874,15 +920,11 @@ impl Worker {
                     ..r.clone()
                 })
                 .collect();
-            if !bare.is_empty() {
-                if self.ocr.is_none() {
-                    self.ocr = Some(ocr::OcrModel::load(self.ocr_lang).map_err(PdfError::Ocr)?);
-                }
+            // Speculative OCR (#244): with `skip_ocr` or no model, big bare
+            // pictures simply stay pictures.
+            if let (false, Some(ocr)) = (bare.is_empty(), self.ocr_model()?) {
                 let scored = timing::timed("ocr.pictures", || {
-                    self.ocr
-                        .as_mut()
-                        .unwrap()
-                        .ocr_page(&page.image, &bare, page.scale)
+                    ocr.ocr_page(&page.image, &bare, page.scale)
                 })
                 .map_err(|e| PdfError::Ocr(format!("page {}: {e}", n + 1)))?;
                 // Speculative in-picture OCR counts toward ocr_score only on
@@ -970,15 +1012,11 @@ impl Worker {
                 .filter(|t| assemble::is_table_like(t.label) && !has_text(t) && in_picture(t))
                 .cloned()
                 .collect();
-            if !pic_tables.is_empty() {
-                if self.ocr.is_none() {
-                    self.ocr = Some(ocr::OcrModel::load(self.ocr_lang).map_err(PdfError::Ocr)?);
-                }
+            // Same degradation as above: without OCR the in-picture table
+            // keeps its structure (TableFormer is geometry-driven) minus text.
+            if let (false, Some(ocr)) = (pic_tables.is_empty(), self.ocr_model()?) {
                 let words = timing::timed("ocr.table_words", || {
-                    self.ocr
-                        .as_mut()
-                        .unwrap()
-                        .ocr_table_words(&page.image, &pic_tables, page.scale)
+                    ocr.ocr_table_words(&page.image, &pic_tables, page.scale)
                 })
                 .map_err(|e| PdfError::Ocr(format!("page {}: {e}", n + 1)))?;
                 ocr_confs.extend(words.iter().map(|(_, conf)| conf));
@@ -1233,6 +1271,8 @@ pub struct Pipeline {
     no_table_former: bool,
     /// Skip layout, OCR, and TableFormer entirely. See [`Pipeline::no_ocr`].
     no_ocr: bool,
+    /// Keep layout + TableFormer, never OCR (#244). See [`Pipeline::skip_ocr`].
+    skip_ocr: bool,
     /// OCR every page even when it carries a text layer. See
     /// [`Pipeline::force_full_page_ocr`].
     force_full_page_ocr: bool,
@@ -1266,6 +1306,7 @@ impl Pipeline {
             parallel_min: pdf_parallel_min(),
             no_table_former: false,
             no_ocr: false,
+            skip_ocr: false,
             force_full_page_ocr: false,
             no_text_panels: false,
             enrich: EnrichmentOptions::default(),
@@ -1323,7 +1364,7 @@ impl Pipeline {
         for worker in self.primary.iter_mut().chain(self.pool.iter_mut()) {
             if worker.ocr_lang != lang {
                 worker.ocr_lang = lang;
-                worker.ocr = None;
+                worker.ocr = OcrSlot::Unloaded;
             }
         }
     }
@@ -1394,6 +1435,22 @@ impl Pipeline {
         self
     }
 
+    /// Never run OCR, but keep layout detection and TableFormer — docling's
+    /// independent `do_ocr=False` (#244), the counterpart of
+    /// [`no_table_former`](Self::no_table_former). Unlike
+    /// [`no_ocr`](Self::no_ocr) (which skips the whole ML stack), structured
+    /// output — headings, tables, pictures, reading order — is preserved;
+    /// only text that exists solely as pixels is lost: scanned pages come
+    /// back with their regions empty, and the speculative OCR of large
+    /// embedded images never runs. The OCR model is never loaded. Ignored
+    /// when `no_ocr` is set (there is no OCR to skip);
+    /// takes precedence over [`force_full_page_ocr`](Self::force_full_page_ocr),
+    /// mirroring docling where forcing is a sub-option of `do_ocr`.
+    pub fn skip_ocr(mut self, disable: bool) -> Self {
+        self.skip_ocr = disable;
+        self
+    }
+
     /// OCR every page from its rendered image even when the page carries an
     /// embedded text layer — docling's `force_full_page_ocr`. The escape hatch
     /// for text layers that exist but lie: broken encodings, subset fonts with
@@ -1448,6 +1505,7 @@ impl Pipeline {
                 self.enrich_slots(),
                 self.enrich,
                 self.no_ocr,
+                self.skip_ocr,
                 self.force_full_page_ocr,
                 self.no_text_panels,
                 self.ocr_lang,
@@ -1846,6 +1904,7 @@ impl Pipeline {
         }
         let intra = pdf_intra();
         let no_ocr = self.no_ocr;
+        let skip_ocr = self.skip_ocr;
         let force = self.force_full_page_ocr;
         let ntp = self.no_text_panels;
         let ocr_lang = self.ocr_lang;
@@ -1864,6 +1923,7 @@ impl Pipeline {
                             enrich_slots,
                             enrich,
                             no_ocr,
+                            skip_ocr,
                             force,
                             ntp,
                             ocr_lang,
@@ -1905,7 +1965,9 @@ impl Pipeline {
 
     /// Run layout (+ OCR for cell-less pages) and assemble each already-rendered
     /// page (image / METS inputs, which are small and already materialised).
-    fn process_pages(
+    /// Public so [`mets::convert_mets_gbs_with_pipeline`] can drive a
+    /// caller-configured pipeline (#244).
+    pub fn process_pages(
         &mut self,
         mut pages: Vec<PdfPage>,
         name: &str,

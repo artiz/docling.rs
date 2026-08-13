@@ -74,6 +74,7 @@ pub(crate) struct StreamSettings {
     pub no_table_former: bool,
     pub no_text_panels: bool,
     pub no_ocr: bool,
+    pub skip_ocr: bool,
     pub force_full_page_ocr: bool,
     pub enrich: docling_pdf::EnrichmentOptions,
     pub page_range: Option<(usize, usize)>,
@@ -142,6 +143,7 @@ fn run_pdf(
         p.no_table_former(settings.no_table_former)
             .no_text_panels(settings.no_text_panels)
             .no_ocr(settings.no_ocr)
+            .skip_ocr(settings.skip_ocr)
             .force_full_page_ocr(settings.force_full_page_ocr)
             .ocr_lang(settings.ocr_lang)
             .enrichments(settings.enrich)
