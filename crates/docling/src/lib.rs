@@ -59,7 +59,8 @@ pub use docling_core::{
 // for callers that convert many files or want a warm, startup-excluded measurement.
 #[cfg(feature = "pdf")]
 pub use docling_pdf::{
-    model_inventory, page_count as pdf_page_count, EnrichmentOptions, ModelEntry, OcrLang, Pipeline,
+    model_inventory, page_count as pdf_page_count, render_pages as render_pdf_pages,
+    EnrichmentOptions, ModelEntry, OcrLang, Pipeline, RenderedPage,
 };
 // The pure-Rust text-layer extraction (no pdfium, no models) — compiled with
 // either PDF feature. The CLI uses it as the `--no-ocr` fallback when the

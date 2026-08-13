@@ -98,6 +98,7 @@ The API is described by <a href="/openapi.yaml"><code>/openapi.yaml</code></a> (
         <option value="json">docling JSON</option>
         <option value="chunks">chunk records</option>
         <option value="dclx">DocLang archive (.dclx)</option>
+        <option value="images">page images (PDF → PNG)</option>
       </select>
     </label>
     <label><input type="checkbox" id="strict"> strict Markdown</label>
@@ -152,8 +153,8 @@ The API is described by <a href="/openapi.yaml"><code>/openapi.yaml</code></a> (
 <p>As query parameters, multipart text fields, or JSON keys (body wins over query):</p>
 <table>
   <tr><th>Option</th><th>Values</th><th>Description</th></tr>
-  <tr><td><code>to</code></td><td><code>md</code> (default) | <code>json</code> | <code>dclx</code> | <code>chunks</code></td>
-      <td>Markdown (streamed) · docling <code>DoclingDocument</code> JSON · DocLang OPC archive (download) · chunker records (hierarchical + hybrid when a tokenizer is installed).</td></tr>
+  <tr><td><code>to</code></td><td><code>md</code> (default) | <code>json</code> | <code>dclx</code> | <code>chunks</code> | <code>images</code></td>
+      <td>Markdown (streamed) · docling <code>DoclingDocument</code> JSON · DocLang OPC archive (download) · chunker records (hierarchical + hybrid when a tokenizer is installed) · per-page PNG renders of a PDF (no conversion; combines with <code>pages</code>, capped at 100 pages per request by default).</td></tr>
   <tr><td><code>strict</code></td><td><code>true</code>/<code>false</code></td><td>Cleaner strict Markdown dialect instead of byte-for-byte docling-legacy output.</td></tr>
   <tr><td><code>images</code></td><td><code>placeholder</code> (default) | <code>embedded</code></td><td>Markdown picture handling (embedded = base64 data URIs).</td></tr>
   <tr><td><code>no_ocr</code></td><td><code>true</code>/<code>false</code></td><td>PDF/image: skip layout/OCR/TableFormer entirely; emit the embedded text layer only.</td></tr>
@@ -161,6 +162,7 @@ The API is described by <a href="/openapi.yaml"><code>/openapi.yaml</code></a> (
   <tr><td><code>no_text_panels</code></td><td><code>true</code>/<code>false</code></td><td>PDF/image: keep every detected picture as a picture — disable the demotion of uncaptioned dense-text "picture" regions into paragraphs.</td></tr>
   <tr><td><code>fetch_images</code></td><td><code>true</code>/<code>false</code></td><td>HTML/EPUB: resolve external <code>&lt;img src&gt;</code> and embed the bytes. Outbound fetch — honored only when the server runs with <code>--allow-url-fetch</code>, otherwise ignored.</td></tr>
   <tr><td><code>asr_lang</code></td><td><code>auto</code> (default) | a Whisper code (<code>en</code>, <code>de</code>, <code>zh</code>, …)</td><td>Audio/video: transcription language; <code>auto</code> detects it from the first 30 seconds. English-only presets always transcribe English.</td></tr>
+  <tr><td><code>scale</code></td><td><code>0.1</code>–<code>4.0</code> (default <code>2.0</code>)</td><td><code>to=images</code>: render scale in pixels per PDF point — 2.0 = 144&nbsp;dpi, the ML pipeline's own render scale.</td></tr>
 </table>
 
 <h2>Examples</h2>
@@ -330,6 +332,38 @@ $('go').addEventListener('click', async () => {
           `confidence: ${c.mean_grade} (mean ${Number(c.mean_score).toFixed(3)}, low ${c.low_grade})`;
         $('confidence').style.display = '';
       } catch { /* unparseable header — skip the banner */ }
+    }
+    if (to === 'images') {
+      // #243: per-page PNG renders — show them as the gallery instead of text.
+      const data = JSON.parse(await response.text());
+      const gallery = $('gallery');
+      let shown = 0;
+      const errors = [];
+      const addPages = (name, pages) => {
+        for (const p of pages || []) {
+          const figure = document.createElement('figure');
+          const img = document.createElement('img');
+          img.src = 'data:image/png;base64,' + p.png_base64;
+          img.alt = `page ${p.page}`;
+          const caption = document.createElement('figcaption');
+          caption.textContent =
+            `${name ? name + ' — ' : ''}page ${p.page} (${p.width}×${p.height})`;
+          figure.append(img, caption);
+          gallery.append(figure);
+          shown++;
+        }
+      };
+      if (data.results) { // batch: per-item status
+        for (const r of data.results) {
+          if (r.status === 'success') addPages(r.name, r.pages);
+          else errors.push(`${r.name}: ${r.error}`);
+        }
+      } else {
+        addPages('', data.pages);
+      }
+      out.textContent = `${shown} page(s) rendered.`
+        + (errors.length ? '\n' + errors.join('\n') : '');
+      return;
     }
     if (to === 'dclx') {
       const blob = await response.blob();

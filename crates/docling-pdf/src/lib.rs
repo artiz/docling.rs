@@ -107,6 +107,9 @@ pub use ocr::OcrLang;
 #[cfg(feature = "ml")]
 pub use pdfium_backend::PdfDocument;
 pub use pdfium_backend::{PdfPage, TextCell};
+// Plain page rasterization (#243) — pdfium only, no models.
+#[cfg(feature = "ml")]
+pub use pdfium_backend::{render_pages, RenderedPage};
 
 /// Errors from the PDF backend. Detailed and surfaced (never silently skipped).
 #[derive(Debug)]

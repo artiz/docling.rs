@@ -162,6 +162,7 @@ curl -F file=@paper.pdf localhost:5001/v1/convert                # Markdown
 curl -F file=@report.docx 'localhost:5001/v1/convert?to=json'    # docling JSON
 curl -F file=@sheet.xlsx  'localhost:5001/v1/convert?to=dclx' -O # DocLang archive
 curl -F file=@page.html   'localhost:5001/v1/convert?to=chunks'  # chunk records
+curl -F file=@paper.pdf   'localhost:5001/v1/convert?to=images&pages=1-3'  # pages → PNG (base64 JSON)
 curl -H 'content-type: application/json' \
      -d '{"url": "https://example.com/doc.pdf", "to": "md"}' \
      localhost:5001/v1/convert     # fetch a URL (needs --allow-url-fetch)
@@ -183,9 +184,15 @@ an `X-Docling-Confidence` summary header (grades `poor`/`fair`/`good`/
 `excellent` + layout/OCR/parse scores) on every format, and the full per-page
 report under a top-level `confidence` key in `to=json` bodies.
 
-Options per request: `to=md|json|dclx|chunks`, `strict`, `images=placeholder|embedded`,
+`to=images` skips conversion entirely and rasterizes a PDF's pages to PNG
+through pdfium — `{"pages": [{"page", "width", "height", "png_base64"}]}` —
+honoring `pages=A-B` and a `scale` of 0.1–4.0 pixels per PDF point (default
+2.0 = 144 dpi). Capped at 100 pages per request
+(`DOCLING_RS_MAX_RASTER_PAGES`); narrow big documents with `pages`.
+
+Options per request: `to=md|json|dclx|chunks|images`, `strict`, `images=placeholder|embedded`,
 `no_ocr`, `no_table_former`, `no_text_panels`, `force_full_page_ocr`, `pages`,
-`ocr_lang`, `asr_model`, `asr_lang`, `video_frames`, `fetch_images` — as query
+`ocr_lang`, `scale`, `asr_model`, `asr_lang`, `video_frames`, `fetch_images` — as query
 parameters, multipart fields, or JSON keys (body wins). Server flags: `--addr`,
 `--concurrency`, `--max-body-mb`, `--queue-size`, `--result-ttl`, `--warmup`,
 `--allow-url-fetch`, `--no-url-fetch`, `--strict`. A container image

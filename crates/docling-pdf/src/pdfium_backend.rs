@@ -333,6 +333,90 @@ where
     Ok(())
 }
 
+/// One rasterized page from [`render_pages`] (#243): the absolute 1-based page
+/// number in the source document, the pixel dimensions, and the PNG bytes.
+#[cfg(feature = "ml")]
+#[derive(Debug, Clone)]
+pub struct RenderedPage {
+    pub page_no: usize,
+    pub width: u32,
+    pub height: u32,
+    pub png: Vec<u8>,
+}
+
+#[cfg(feature = "ml")]
+/// Rasterize a PDF's pages to PNG (#243) — the lean path behind serve's
+/// `to=images`: pdfium render only, no text extraction, no models, and only
+/// one page bitmap resident at a time (each is PNG-encoded and dropped before
+/// the next renders). `scale` is pixels per PDF point — 2.0 matches the
+/// pipeline's [`RENDER_SCALE`] (144 dpi). Unlike the pipeline's render there
+/// is no 1.5× supersample + downsample pass: that dance exists only because
+/// TableFormer is pixel-pinned to docling's bitmaps, and nothing downstream
+/// of this output is — a single render is nearly twice as fast.
+///
+/// `range` is a **1-based** inclusive page window (issue #80's `pages`
+/// semantics: the end clamps to the document, a start past the end errors).
+///
+/// pdfium is not thread-safe — callers must serialize this against any other
+/// pdfium use (docling-serve holds its pipeline mutex around this call for
+/// exactly that reason).
+pub fn render_pages(
+    bytes: &[u8],
+    password: Option<&str>,
+    range: Option<(usize, usize)>,
+    scale: f32,
+) -> Result<Vec<RenderedPage>, crate::PdfError> {
+    let pdfium = bind()?;
+    let doc = pdfium.load_pdf_from_byte_slice(bytes, password)?;
+    let pages = doc.pages();
+    let total = pages.len() as usize;
+    let (first, last) = match range {
+        None => (0, total.saturating_sub(1)),
+        Some((first, last)) => {
+            if first == 0 || last < first {
+                return Err(crate::PdfError::Pdfium(format!(
+                    "invalid page range {first}-{last} (pages are 1-based, first <= last)"
+                )));
+            }
+            if first > total {
+                return Err(crate::PdfError::Pdfium(format!(
+                    "page range {first}-{last} is outside the document ({total} page(s))"
+                )));
+            }
+            (first - 1, last.min(total) - 1)
+        }
+    };
+    let mut out = Vec::with_capacity(last.saturating_sub(first) + 1);
+    for (i, page) in pages.iter().enumerate() {
+        if i < first || i > last {
+            continue;
+        }
+        // pdfium applies /Rotate itself, so the bitmap is the page as a viewer
+        // shows it — no orientation handling needed (the pipeline's scanned-page
+        // un-rotation is an OCR-conformance concern, not a display one).
+        let tw = (page.width().value * scale).round().max(1.0) as i32;
+        let th = (page.height().value * scale).round().max(1.0) as i32;
+        let cfg = PdfRenderConfig::new()
+            .set_target_width(tw)
+            .set_target_height(th);
+        let bitmap = crate::timing::timed("pdfium.rasterize", || {
+            page.render_with_config(&cfg)
+                .map(|b| b.as_image().into_rgb8())
+        })?;
+        let mut png = Vec::new();
+        bitmap
+            .write_to(&mut std::io::Cursor::new(&mut png), image::ImageFormat::Png)
+            .map_err(|e| crate::PdfError::Pdfium(format!("PNG-encoding page {}: {e}", i + 1)))?;
+        out.push(RenderedPage {
+            page_no: i + 1,
+            width: bitmap.width(),
+            height: bitmap.height(),
+            png,
+        });
+    }
+    Ok(out)
+}
+
 #[cfg(feature = "ml")]
 fn extract_page(
     page: &pdfium_render::prelude::PdfPage<'_>,

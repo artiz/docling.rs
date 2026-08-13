@@ -369,6 +369,13 @@ These are deliberate or unavoidable divergences, not bugs.
    its 0-based internal page index. Unset scores serialize as `null`, not
    `NaN`.
 
+10. **Page rasterization over HTTP** (#243). `to=images` on docling-serve's
+    `/v1/convert` (sync, async, batch) renders a PDF's pages to PNG through
+    pdfium without running any conversion — the per-page base64 JSON covers
+    the PDF-to-image use case Python docling-serve served; `pages=A-B`
+    windows and `scale` (pixels per PDF point, default 2.0 = 144 dpi) apply,
+    capped at `DOCLING_RS_MAX_RASTER_PAGES` (100) pages per request.
+
 ---
 
 ## 5. Not migrated / out of scope
