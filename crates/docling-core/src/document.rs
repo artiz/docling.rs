@@ -472,6 +472,60 @@ impl Table {
         true
     }
 
+    /// Derive first-class cells (#240) from the dense grid plus the
+    /// [`TableStructure`] overlay — how declarative tables (DOCX/XLSX merged
+    /// regions, HTML `th`/spans, ODF covered cells, USPTO CALS) get real
+    /// `TableCell` records without page geometry. Anchors are the positions
+    /// not marked as span continuations; extents scan the continuation grids
+    /// right/down (matching the DocLang `lcel`/`ucel` reading). Header roles
+    /// come from the per-cell `col_header`/`row_header` grids when present,
+    /// else the `header_row` band, else docling's declarative default (row 0
+    /// is the header). Without any overlay every position is a 1×1 cell.
+    pub fn derive_cells(&self) -> Vec<TableCell> {
+        let s = self.structure.as_ref();
+        let flag = |grid: Option<&Vec<Vec<bool>>>, r: usize, c: usize| {
+            grid.and_then(|g| g.get(r))
+                .and_then(|row| row.get(c))
+                .copied()
+                .unwrap_or(false)
+        };
+        let col_cont = |r: usize, c: usize| flag(s.map(|s| &s.col_continuation), r, c);
+        let row_cont = |r: usize, c: usize| flag(s.map(|s| &s.row_continuation), r, c);
+        let is_col_header = |r: usize, c: usize| match s {
+            Some(st) if !st.col_header.is_empty() => flag(Some(&st.col_header), r, c),
+            Some(st) if !st.header_row.is_empty() => st.header_row.get(r).copied().unwrap_or(false),
+            _ => r == 0,
+        };
+        let mut cells = Vec::new();
+        for (r, row) in self.rows.iter().enumerate() {
+            for (c, text) in row.iter().enumerate() {
+                if col_cont(r, c) || row_cont(r, c) {
+                    continue; // covered by a span anchor
+                }
+                let mut col_span = 1;
+                while c + col_span < row.len() && col_cont(r, c + col_span) {
+                    col_span += 1;
+                }
+                let mut row_span = 1;
+                while r + row_span < self.rows.len() && row_cont(r + row_span, c) {
+                    row_span += 1;
+                }
+                cells.push(TableCell {
+                    text: text.clone(),
+                    bbox: None,
+                    start_row: r,
+                    start_col: c,
+                    row_span,
+                    col_span,
+                    column_header: is_col_header(r, c),
+                    row_header: flag(s.map(|s| &s.row_header), r, c),
+                    row_section: false,
+                });
+            }
+        }
+        cells
+    }
+
     /// The first-class cell covering a grid position, if any.
     pub fn cell_at(&self, row: usize, col: usize) -> Option<&TableCell> {
         self.cells.as_ref()?.iter().find(|c| {
@@ -755,6 +809,44 @@ mod table_api_tests {
             ]),
             ..Default::default()
         }
+    }
+
+    /// Declarative tables derive first-class cells from the structure
+    /// overlay: continuation grids become span extents, `col_header` (or the
+    /// row-0 fallback) becomes the header role — the XLSX/DOCX/HTML merge
+    /// path into real `TableCell`s (#240).
+    #[test]
+    fn derive_cells_reads_spans_and_headers_from_structure() {
+        let t = Table {
+            rows: vec![
+                vec!["Wide".into(), "Wide".into(), "C".into()],
+                vec!["a".into(), "b".into(), "c".into()],
+            ],
+            structure: Some(TableStructure {
+                header_row: vec![true, false],
+                col_continuation: vec![vec![false, true, false], vec![false; 3]],
+                row_continuation: vec![vec![false; 3], vec![false; 3]],
+                row_header: Vec::new(),
+                col_header: Vec::new(),
+            }),
+            ..Default::default()
+        };
+        let cells = t.derive_cells();
+        assert_eq!(cells.len(), 5, "two anchors in row 0, three in row 1");
+        let wide = &cells[0];
+        assert_eq!((wide.col_span, wide.row_span), (2, 1));
+        assert!(wide.column_header, "header_row band");
+        assert!(cells.iter().skip(2).all(|c| !c.column_header));
+
+        // Without any overlay: every position 1x1, row 0 the header
+        // (docling's declarative default — the old JSON synthesis).
+        let plain = Table {
+            rows: vec![vec!["h".into()], vec!["x".into()]],
+            ..Default::default()
+        };
+        let cells = plain.derive_cells();
+        assert_eq!(cells.len(), 2);
+        assert!(cells[0].column_header && !cells[1].column_header);
     }
 
     /// A spanning cell updates once: the record text and every covered grid

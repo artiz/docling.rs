@@ -267,8 +267,11 @@ Updating a spanning cell through any covered position updates the whole cell
 (record + every covered grid slot). `rows`, `structure` and `cells` are public
 fields, so full reconstruction (inserting rows, rebuilding a borderless table
 from corrected OCR) is ordinary `Vec` surgery; `set_cell_bbox` materializes
-1×1 cells on demand. Declarative backends (DOCX/HTML/…) have no page geometry
-— their tables stay `cells: None` and are still editable by `(row, col)`.
+1×1 cells on demand. Declarative tables get their cells derived
+from the parsed structure — real spans for DOCX/XLSX merged regions, ODF
+covered cells and HTML `rowspan`/`colspan`, `th`-driven header roles — just
+without page geometry (`bbox: None`), so a spreadsheet repair loop works the
+same way.
 
 ### JSON output
 

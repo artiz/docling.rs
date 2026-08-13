@@ -5951,7 +5951,7 @@
             "start_col_offset_idx": 0,
             "end_col_offset_idx": 1,
             "text": "",
-            "column_header": false,
+            "column_header": true,
             "row_header": false,
             "row_section": false,
             "fillable": false
@@ -5964,7 +5964,7 @@
             "start_col_offset_idx": 1,
             "end_col_offset_idx": 2,
             "text": "Full Model",
-            "column_header": false,
+            "column_header": true,
             "row_header": false,
             "row_section": false,
             "fillable": false
@@ -5977,7 +5977,7 @@
             "start_col_offset_idx": 2,
             "end_col_offset_idx": 3,
             "text": "Without Cameroon districts",
-            "column_header": false,
+            "column_header": true,
             "row_header": false,
             "row_section": false,
             "fillable": false
@@ -5990,7 +5990,7 @@
             "start_col_offset_idx": 3,
             "end_col_offset_idx": 4,
             "text": "Only districts in Africa",
-            "column_header": false,
+            "column_header": true,
             "row_header": false,
             "row_section": false,
             "fillable": false
@@ -6003,7 +6003,7 @@
             "start_col_offset_idx": 4,
             "end_col_offset_idx": 5,
             "text": "Only W. bancrofti parasite districts",
-            "column_header": false,
+            "column_header": true,
             "row_header": false,
             "row_section": false,
             "fillable": false
@@ -6016,7 +6016,7 @@
             "start_col_offset_idx": 5,
             "end_col_offset_idx": 6,
             "text": "Only Anopheles vector districts",
-            "column_header": false,
+            "column_header": true,
             "row_header": false,
             "row_section": false,
             "fillable": false
@@ -6816,7 +6816,7 @@
               "start_col_offset_idx": 0,
               "end_col_offset_idx": 1,
               "text": "",
-              "column_header": false,
+              "column_header": true,
               "row_header": false,
               "row_section": false,
               "fillable": false
@@ -6829,7 +6829,7 @@
               "start_col_offset_idx": 1,
               "end_col_offset_idx": 2,
               "text": "Full Model",
-              "column_header": false,
+              "column_header": true,
               "row_header": false,
               "row_section": false,
               "fillable": false
@@ -6842,7 +6842,7 @@
               "start_col_offset_idx": 2,
               "end_col_offset_idx": 3,
               "text": "Without Cameroon districts",
-              "column_header": false,
+              "column_header": true,
               "row_header": false,
               "row_section": false,
               "fillable": false
@@ -6855,7 +6855,7 @@
               "start_col_offset_idx": 3,
               "end_col_offset_idx": 4,
               "text": "Only districts in Africa",
-              "column_header": false,
+              "column_header": true,
               "row_header": false,
               "row_section": false,
               "fillable": false
@@ -6868,7 +6868,7 @@
               "start_col_offset_idx": 4,
               "end_col_offset_idx": 5,
               "text": "Only W. bancrofti parasite districts",
-              "column_header": false,
+              "column_header": true,
               "row_header": false,
               "row_section": false,
               "fillable": false
@@ -6881,7 +6881,7 @@
               "start_col_offset_idx": 5,
               "end_col_offset_idx": 6,
               "text": "Only Anopheles vector districts",
-              "column_header": false,
+              "column_header": true,
               "row_header": false,
               "row_section": false,
               "fillable": false

@@ -730,23 +730,10 @@
         "table_cells": [
           {
             "row_span": 1,
-            "col_span": 1,
+            "col_span": 2,
             "start_row_offset_idx": 0,
             "end_row_offset_idx": 1,
             "start_col_offset_idx": 0,
-            "end_col_offset_idx": 1,
-            "text": "Action",
-            "column_header": true,
-            "row_header": false,
-            "row_section": false,
-            "fillable": false
-          },
-          {
-            "row_span": 1,
-            "col_span": 1,
-            "start_row_offset_idx": 0,
-            "end_row_offset_idx": 1,
-            "start_col_offset_idx": 1,
             "end_col_offset_idx": 2,
             "text": "Action",
             "column_header": true,
@@ -839,11 +826,11 @@
           [
             {
               "row_span": 1,
-              "col_span": 1,
+              "col_span": 2,
               "start_row_offset_idx": 0,
               "end_row_offset_idx": 1,
               "start_col_offset_idx": 0,
-              "end_col_offset_idx": 1,
+              "end_col_offset_idx": 2,
               "text": "Action",
               "column_header": true,
               "row_header": false,
@@ -852,10 +839,10 @@
             },
             {
               "row_span": 1,
-              "col_span": 1,
+              "col_span": 2,
               "start_row_offset_idx": 0,
               "end_row_offset_idx": 1,
-              "start_col_offset_idx": 1,
+              "start_col_offset_idx": 0,
               "end_col_offset_idx": 2,
               "text": "Action",
               "column_header": true,

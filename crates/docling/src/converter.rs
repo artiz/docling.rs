@@ -693,6 +693,17 @@ impl DocumentConverter {
         };
         // Carry the mode so `result.document.export_to_markdown()` reflects it.
         document.strict_markdown = self.strict;
+        // First-class cells for every table (#240): backends with page
+        // geometry (the PDF TableFormer paths) set them; everything else —
+        // declarative tables included — derives them from the grid plus the
+        // structure overlay (real spans for DOCX/XLSX merges, HTML `th`
+        // headers, ODF covered cells; 1×1 records otherwise), so the repair
+        // API and the JSON `table_cells` are populated uniformly.
+        for table in document.tables_mut() {
+            if table.cells.is_none() {
+                table.cells = Some(table.derive_cells());
+            }
+        }
 
         Ok(ConversionResult {
             document,
