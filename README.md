@@ -324,6 +324,16 @@ From the CLI, `--to dclx` writes `<input-stem>.dclx` next to the CWD:
 cargo run -p docling-cli -- --to dclx crates/docling/sample.html   # -> sample.dclx
 ```
 
+`--to images` (#243) is the CLI counterpart of serve's rasterization: it skips
+conversion and writes a PDF's pages as `<stem>_page_NNNN.png` files (CWD, or
+`--output DIR` in batch mode), honoring `--pages A-B` (absolute page numbers
+survive the window) and `--scale` (0.1–4.0 px per PDF point, default 2.0 =
+144 dpi):
+
+```sh
+docling-rs --to images --pages 2-3 --scale 1.5 paper.pdf  # -> paper_page_0002.png, paper_page_0003.png
+```
+
 Conformance against docling's own `.dclx` output is tracked by
 `scripts/conformance/gen_dclx.py` (generates the groundtruth) and
 `scripts/conformance/dclx_conformance.sh` (line-diffs the extracted

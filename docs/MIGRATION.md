@@ -374,7 +374,9 @@ These are deliberate or unavoidable divergences, not bugs.
     pdfium without running any conversion — the per-page base64 JSON covers
     the PDF-to-image use case Python docling-serve served; `pages=A-B`
     windows and `scale` (pixels per PDF point, default 2.0 = 144 dpi) apply,
-    capped at `DOCLING_RS_MAX_RASTER_PAGES` (100) pages per request.
+    capped at `DOCLING_RS_MAX_RASTER_PAGES` (100) pages per request. The CLI
+    counterpart is `--to images` + `--scale`, writing `<stem>_page_NNNN.png`
+    files (no cap — the pages land on the caller's own disk).
 
 ---
 
