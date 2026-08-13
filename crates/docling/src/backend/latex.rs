@@ -298,7 +298,7 @@ fn emit_table(inner: &str, doc: &mut DoclingDocument) {
             location: None,
             structure: None,
             cell_blocks: None,
-            cell_boxes: None,
+            cells: None,
             caption: None,
         }));
     }

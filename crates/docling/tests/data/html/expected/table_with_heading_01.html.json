@@ -82,7 +82,7 @@
             "start_col_offset_idx": 0,
             "end_col_offset_idx": 1,
             "text": "A",
-            "column_header": true,
+            "column_header": false,
             "row_header": false,
             "row_section": false,
             "fillable": false
@@ -95,7 +95,7 @@
             "start_col_offset_idx": 1,
             "end_col_offset_idx": 2,
             "text": "B",
-            "column_header": true,
+            "column_header": false,
             "row_header": false,
             "row_section": false,
             "fillable": false
@@ -139,7 +139,7 @@
               "start_col_offset_idx": 0,
               "end_col_offset_idx": 1,
               "text": "A",
-              "column_header": true,
+              "column_header": false,
               "row_header": false,
               "row_section": false,
               "fillable": false
@@ -152,7 +152,7 @@
               "start_col_offset_idx": 1,
               "end_col_offset_idx": 2,
               "text": "B",
-              "column_header": true,
+              "column_header": false,
               "row_header": false,
               "row_section": false,
               "fillable": false

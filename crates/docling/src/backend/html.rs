@@ -1279,6 +1279,11 @@ fn parse_table_cells(
     // cell-level `column_header` (drives `<ched/>` and the chunker's dataframe
     // header detection).
     let mut th_grid: Vec<Vec<bool>> = vec![vec![false; num_cols]; num_rows];
+    // Span continuations (#240): a covered position continues its anchor
+    // horizontally / vertically — the source of real `TableCell` spans and
+    // the DocLang `lcel`/`ucel` tokens.
+    let mut col_cont: Vec<Vec<bool>> = vec![vec![false; num_cols]; num_rows];
+    let mut row_cont: Vec<Vec<bool>> = vec![vec![false; num_cols]; num_rows];
     let mut row_idx: isize = -1;
     let mut start_row_span: usize = 0;
     for tr in &trs {
@@ -1325,6 +1330,8 @@ fn parse_table_cells(
                         });
                         anchor_filled = true;
                         th_grid[gr][gc] = is_th;
+                        col_cont[gr][gc] = dc > 0;
+                        row_cont[gr][gc] = r > start_row_span;
                     }
                 }
             }
@@ -1341,10 +1348,12 @@ fn parse_table_cells(
         location: None,
         structure: Some(docling_core::TableStructure {
             col_header: th_grid,
+            col_continuation: col_cont,
+            row_continuation: row_cont,
             ..Default::default()
         }),
         cell_blocks: None,
-        cell_boxes: None,
+        cells: None,
         caption: None,
     })
 }

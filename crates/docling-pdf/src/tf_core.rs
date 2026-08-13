@@ -361,7 +361,7 @@ pub fn table_rows(cells: &[TableCell], region: [f32; 4], words: &[TextCell]) -> 
         return None;
     }
     let mut grid = vec![vec![String::new(); num_cols]; num_rows];
-    let mut geo = vec![vec![None; num_cols]; num_rows];
+    let mut out_cells = Vec::with_capacity(cells.len());
     for (ci, c) in cells.iter().enumerate() {
         // Keep words in text-stream order (their word index), matching docling's
         // cell text assembly — geometric re-sorting scrambles wrapped cells.
@@ -378,16 +378,33 @@ pub fn table_rows(cells: &[TableCell], region: [f32; 4], words: &[TextCell]) -> 
                 *cell = text.clone();
             }
         }
-        for row in geo.iter_mut().skip(c.row).take(c.rowspan) {
-            for slot in row.iter_mut().skip(c.col).take(c.colspan) {
-                *slot = Some(boxes[ci]);
-            }
-        }
+        out_cells.push(first_class_cell(text, Some(boxes[ci]), c, c.tag));
     }
     Some(TableGrid {
         rows: grid,
-        boxes: geo,
+        cells: out_cells,
     })
+}
+
+/// A public first-class cell (#240) from a predicted OTSL cell: the span
+/// rectangle comes from the grid layout, the header roles from the OTSL tag.
+fn first_class_cell(
+    text: String,
+    bbox: Option<[f32; 4]>,
+    c: &TableCell,
+    tag: i64,
+) -> docling_core::TableCell {
+    docling_core::TableCell {
+        text,
+        bbox,
+        start_row: c.row,
+        start_col: c.col,
+        row_span: c.rowspan.max(1),
+        col_span: c.colspan.max(1),
+        column_header: tag == CHED,
+        row_header: tag == RHED,
+        row_section: tag == SROW,
+    }
 }
 
 /// `DOCLING_RS_TF_SIMPLE_MATCH=1` reverts to the pre-#60 best-overlap word
@@ -482,6 +499,8 @@ fn docling_match_rows(
         /// The matched table cell's bbox, back in page points (the matcher
         /// runs in docling's ×2 space).
         bbox: [f32; 4],
+        /// The predicted cell's OTSL tag (header roles for #240).
+        tag: i64,
     }
     let mut merged: Vec<Merged> = Vec::new();
     let mut key_ix: std::collections::HashMap<(usize, usize), usize> =
@@ -509,6 +528,7 @@ fn docling_match_rows(
                         (cell.bbox[2] / 2.0) as f32,
                         (cell.bbox[3] / 2.0) as f32,
                     ],
+                    tag: cells.get(cell.cell_id).map_or(FCEL, |c| c.tag),
                 });
             }
         }
@@ -538,7 +558,7 @@ fn docling_match_rows(
     }
 
     let mut grid = vec![vec![String::new(); num_cols]; num_rows];
-    let mut geo = vec![vec![None; num_cols]; num_rows];
+    let mut out_cells = Vec::with_capacity(merged.len());
     for m in &merged {
         let text = m
             .word_ids
@@ -552,15 +572,21 @@ fn docling_match_rows(
                 *cell = text.clone();
             }
         }
-        for row in geo.iter_mut().skip(m.start_row).take(m.row_span) {
-            for slot in row.iter_mut().skip(m.start_col).take(m.col_span) {
-                *slot = Some(m.bbox);
-            }
-        }
+        out_cells.push(docling_core::TableCell {
+            text,
+            bbox: Some(m.bbox),
+            start_row: m.start_row,
+            start_col: m.start_col,
+            row_span: m.row_span,
+            col_span: m.col_span,
+            column_header: m.tag == CHED,
+            row_header: m.tag == RHED,
+            row_section: m.tag == SROW,
+        });
     }
     Some(TableGrid {
         rows: grid,
-        boxes: geo,
+        cells: out_cells,
     })
 }
 

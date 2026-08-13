@@ -551,27 +551,91 @@ impl Builder {
         let num_cols = t.rows.iter().map(Vec::len).max().unwrap_or(0);
         let mut grid = Vec::with_capacity(num_rows);
         let mut cells = Vec::new();
-        for (r, row) in t.rows.iter().enumerate() {
-            let mut grid_row = Vec::with_capacity(num_cols);
-            for c in 0..num_cols {
-                let text = row.get(c).map(|s| unescape_text(s)).unwrap_or_default();
-                let cell = json!({
-                    "row_span": 1,
-                    "col_span": 1,
-                    "start_row_offset_idx": r,
-                    "end_row_offset_idx": r + 1,
-                    "start_col_offset_idx": c,
-                    "end_col_offset_idx": c + 1,
-                    "text": text,
-                    "column_header": r == 0,
-                    "row_header": false,
-                    "row_section": false,
+        if let Some(first_class) = t.cells.as_ref().filter(|c| !c.is_empty()) {
+            // First-class cells (#240): serialize the real records — bbox
+            // (page points, top-left origin, docling's TableCell shape),
+            // span offsets and header roles — and repeat each spanning
+            // cell's entry across its covered grid positions, exactly like
+            // docling's `TableData.grid`.
+            let cell_json = |c: &crate::TableCell| {
+                let mut v = json!({
+                    "row_span": c.row_span,
+                    "col_span": c.col_span,
+                    "start_row_offset_idx": c.start_row,
+                    "end_row_offset_idx": c.start_row + c.row_span,
+                    "start_col_offset_idx": c.start_col,
+                    "end_col_offset_idx": c.start_col + c.col_span,
+                    "text": unescape_text(&c.text),
+                    "column_header": c.column_header,
+                    "row_header": c.row_header,
+                    "row_section": c.row_section,
                     "fillable": false,
                 });
-                grid_row.push(cell.clone());
-                cells.push(cell);
+                if let Some(b) = c.bbox {
+                    v["bbox"] = json!({
+                        "l": b[0], "t": b[1], "r": b[2], "b": b[3],
+                        "coord_origin": "TOPLEFT",
+                    });
+                }
+                v
+            };
+            let mut by_pos: std::collections::HashMap<(usize, usize), serde_json::Value> =
+                std::collections::HashMap::new();
+            for c in first_class {
+                let v = cell_json(c);
+                cells.push(v.clone());
+                for r in c.start_row..(c.start_row + c.row_span).min(num_rows) {
+                    for k in c.start_col..(c.start_col + c.col_span).min(num_cols) {
+                        by_pos.insert((r, k), v.clone());
+                    }
+                }
             }
-            grid.push(grid_row);
+            for r in 0..num_rows {
+                let mut grid_row = Vec::with_capacity(num_cols);
+                for c in 0..num_cols {
+                    // A position no cell covers (a hole in the prediction)
+                    // falls back to an empty 1×1 entry.
+                    grid_row.push(by_pos.get(&(r, c)).cloned().unwrap_or_else(|| {
+                        json!({
+                            "row_span": 1,
+                            "col_span": 1,
+                            "start_row_offset_idx": r,
+                            "end_row_offset_idx": r + 1,
+                            "start_col_offset_idx": c,
+                            "end_col_offset_idx": c + 1,
+                            "text": "",
+                            "column_header": false,
+                            "row_header": false,
+                            "row_section": false,
+                            "fillable": false,
+                        })
+                    }));
+                }
+                grid.push(grid_row);
+            }
+        } else {
+            for (r, row) in t.rows.iter().enumerate() {
+                let mut grid_row = Vec::with_capacity(num_cols);
+                for c in 0..num_cols {
+                    let text = row.get(c).map(|s| unescape_text(s)).unwrap_or_default();
+                    let cell = json!({
+                        "row_span": 1,
+                        "col_span": 1,
+                        "start_row_offset_idx": r,
+                        "end_row_offset_idx": r + 1,
+                        "start_col_offset_idx": c,
+                        "end_col_offset_idx": c + 1,
+                        "text": text,
+                        "column_header": r == 0,
+                        "row_header": false,
+                        "row_section": false,
+                        "fillable": false,
+                    });
+                    grid_row.push(cell.clone());
+                    cells.push(cell);
+                }
+                grid.push(grid_row);
+            }
         }
         self.tables.push(json!({
             "self_ref": self_ref,
@@ -957,7 +1021,7 @@ mod tests {
             location: None,
             structure: None,
             cell_blocks: None,
-            cell_boxes: None,
+            cells: None,
             caption: None,
         }));
 

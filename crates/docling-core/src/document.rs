@@ -367,6 +367,30 @@ impl PictureImage {
     }
 }
 
+/// One table cell as a first-class object (#240) — the Rust counterpart of
+/// docling's `TableCell`: its text, page geometry, grid rectangle and header
+/// roles. Produced by the PDF TableFormer paths from the predicted OTSL
+/// structure; `bbox` is `[l, t, r, b]` in page points with a top-left origin.
+#[derive(Debug, Clone, PartialEq)]
+pub struct TableCell {
+    pub text: String,
+    /// `[l, t, r, b]`, page points, top-left origin; `None` without geometry.
+    pub bbox: Option<[f32; 4]>,
+    /// Anchor grid position (0-based row/column offsets).
+    pub start_row: usize,
+    pub start_col: usize,
+    /// Span extents (≥ 1); the covered grid positions repeat the cell's text
+    /// in [`Table::rows`].
+    pub row_span: usize,
+    pub col_span: usize,
+    /// OTSL `ched` — a column-header cell.
+    pub column_header: bool,
+    /// OTSL `rhed` — a row-header cell.
+    pub row_header: bool,
+    /// OTSL `srow` — a section-row cell.
+    pub row_section: bool,
+}
+
 /// A simple row-major table. By default `rows[0]` is the header row; a
 /// [`TableStructure`] overlay overrides that and adds column spans.
 #[derive(Debug, Clone, PartialEq, Default)]
@@ -401,94 +425,199 @@ pub struct Table {
     /// r, b]` in page points with a **top-left** origin (the PDF pipeline's
     /// native space). Set by the ML pipeline's TableFormer paths — a spanned
     /// cell repeats its anchor's box across the covered grid positions — and
-    /// `None` for backends without page geometry (declarative formats, the
-    /// geometric table fallback). This is API-level provenance for
-    /// post-extraction repair workflows (#238: locate a cell by box, fix its
-    /// OCR text, re-export); no serializer reads it, so wire outputs are
-    /// unchanged by its presence.
-    pub cell_boxes: Option<Vec<Vec<Option<[f32; 4]>>>>,
+    /// First-class cells (#240): the authoritative per-cell records —
+    /// text, page geometry, spans and header roles — when the backend
+    /// produces them (the PDF TableFormer paths do; declarative backends
+    /// leave `None`). [`Self::rows`] stays the dense text grid every
+    /// serializer renders (a spanning cell's text is replicated across its
+    /// covered positions there); JSON serializes these cells verbatim when
+    /// present, and the DocLang structure overlay is derived from them.
+    pub cells: Option<Vec<TableCell>>,
 }
 
 impl Table {
-    /// A cell's text, `None` outside the grid.
+    /// A cell's text at a grid position, `None` outside the grid.
     pub fn cell_text(&self, row: usize, col: usize) -> Option<&str> {
         self.rows.get(row)?.get(col).map(String::as_str)
     }
 
-    /// Replace a cell's text; `false` (and no change) outside the grid. The
-    /// grid is the single source of truth for every serializer, so the new
-    /// text flows into Markdown/JSON/DocLang exports as-is. Note that a
-    /// spanned cell's text is *replicated* across its covered positions —
-    /// repairing a span means updating each covered position.
+    /// Replace the text at a grid position; `false` (and no change) outside
+    /// the grid. When a first-class cell covers the position, the whole
+    /// cell is updated: its record text and every grid position its span
+    /// covers, so the repair shows once in Markdown, not once per covered
+    /// column.
     pub fn set_cell_text(&mut self, row: usize, col: usize, text: impl Into<String>) -> bool {
-        match self.rows.get_mut(row).and_then(|r| r.get_mut(col)) {
-            Some(cell) => {
-                *cell = text.into();
-                true
-            }
-            None => false,
+        if self.rows.get(row).and_then(|r| r.get(col)).is_none() {
+            return false;
         }
+        let text = text.into();
+        let covering = self.cells.as_mut().and_then(|cells| {
+            cells.iter_mut().find(|c| {
+                (c.start_row..c.start_row + c.row_span).contains(&row)
+                    && (c.start_col..c.start_col + c.col_span).contains(&col)
+            })
+        });
+        if let Some(cell) = covering {
+            cell.text = text.clone();
+            let (r0, r1) = (cell.start_row, cell.start_row + cell.row_span);
+            let (c0, c1) = (cell.start_col, cell.start_col + cell.col_span);
+            for r in self.rows.iter_mut().take(r1).skip(r0) {
+                for slot in r.iter_mut().take(c1).skip(c0) {
+                    *slot = text.clone();
+                }
+            }
+        } else {
+            self.rows[row][col] = text;
+        }
+        true
+    }
+
+    /// Derive first-class cells (#240) from the dense grid plus the
+    /// [`TableStructure`] overlay — how declarative tables (DOCX/XLSX merged
+    /// regions, HTML `th`/spans, ODF covered cells, USPTO CALS) get real
+    /// `TableCell` records without page geometry. Anchors are the positions
+    /// not marked as span continuations; extents scan the continuation grids
+    /// right/down (matching the DocLang `lcel`/`ucel` reading). Header roles
+    /// come from the per-cell `col_header`/`row_header` grids when present,
+    /// else the `header_row` band, else docling's declarative default (row 0
+    /// is the header). Without any overlay every position is a 1×1 cell.
+    pub fn derive_cells(&self) -> Vec<TableCell> {
+        let s = self.structure.as_ref();
+        let flag = |grid: Option<&Vec<Vec<bool>>>, r: usize, c: usize| {
+            grid.and_then(|g| g.get(r))
+                .and_then(|row| row.get(c))
+                .copied()
+                .unwrap_or(false)
+        };
+        let col_cont = |r: usize, c: usize| flag(s.map(|s| &s.col_continuation), r, c);
+        let row_cont = |r: usize, c: usize| flag(s.map(|s| &s.row_continuation), r, c);
+        let is_col_header = |r: usize, c: usize| match s {
+            Some(st) if !st.col_header.is_empty() => flag(Some(&st.col_header), r, c),
+            Some(st) if !st.header_row.is_empty() => st.header_row.get(r).copied().unwrap_or(false),
+            _ => r == 0,
+        };
+        let mut cells = Vec::new();
+        for (r, row) in self.rows.iter().enumerate() {
+            for (c, text) in row.iter().enumerate() {
+                if col_cont(r, c) || row_cont(r, c) {
+                    continue; // covered by a span anchor
+                }
+                let mut col_span = 1;
+                while c + col_span < row.len() && col_cont(r, c + col_span) {
+                    col_span += 1;
+                }
+                let mut row_span = 1;
+                while r + row_span < self.rows.len() && row_cont(r + row_span, c) {
+                    row_span += 1;
+                }
+                cells.push(TableCell {
+                    text: text.clone(),
+                    bbox: None,
+                    start_row: r,
+                    start_col: c,
+                    row_span,
+                    col_span,
+                    column_header: is_col_header(r, c),
+                    row_header: flag(s.map(|s| &s.row_header), r, c),
+                    row_section: false,
+                });
+            }
+        }
+        cells
+    }
+
+    /// The first-class cell covering a grid position, if any.
+    pub fn cell_at(&self, row: usize, col: usize) -> Option<&TableCell> {
+        self.cells.as_ref()?.iter().find(|c| {
+            (c.start_row..c.start_row + c.row_span).contains(&row)
+                && (c.start_col..c.start_col + c.col_span).contains(&col)
+        })
     }
 
     /// A cell's bounding box (`[l, t, r, b]`, page points, top-left origin);
-    /// `None` when the backend recorded no geometry or the position is
-    /// outside the grid.
+    /// `None` when no cell with geometry covers the position.
     pub fn cell_bbox(&self, row: usize, col: usize) -> Option<[f32; 4]> {
-        *self.cell_boxes.as_ref()?.get(row)?.get(col)?
+        self.cell_at(row, col)?.bbox
     }
 
-    /// Set (or replace) a cell's bounding box; `false` outside the text grid.
-    /// A geometry grid is materialized on first use, shaped like
-    /// [`Self::rows`].
+    /// Set (or replace) the bounding box of the cell covering a grid
+    /// position; `false` outside the text grid. A table without first-class
+    /// cells materializes them first (one 1×1 cell per grid position, texts
+    /// from the grid), so declarative tables can be annotated too.
     pub fn set_cell_bbox(&mut self, row: usize, col: usize, bbox: [f32; 4]) -> bool {
         if self.rows.get(row).and_then(|r| r.get(col)).is_none() {
             return false;
         }
-        let boxes = self
-            .cell_boxes
-            .get_or_insert_with(|| self.rows.iter().map(|r| vec![None; r.len()]).collect());
-        // Keep the geometry grid in shape with the text grid even if rows
-        // were edited since it was materialized.
-        while boxes.len() < row + 1 {
-            boxes.push(Vec::new());
+        let rows = &self.rows;
+        let cells = self.cells.get_or_insert_with(|| {
+            rows.iter()
+                .enumerate()
+                .flat_map(|(r, cols)| {
+                    cols.iter().enumerate().map(move |(c, text)| TableCell {
+                        text: text.clone(),
+                        bbox: None,
+                        start_row: r,
+                        start_col: c,
+                        row_span: 1,
+                        col_span: 1,
+                        column_header: false,
+                        row_header: false,
+                        row_section: false,
+                    })
+                })
+                .collect()
+        });
+        match cells.iter_mut().find(|c| {
+            (c.start_row..c.start_row + c.row_span).contains(&row)
+                && (c.start_col..c.start_col + c.col_span).contains(&col)
+        }) {
+            Some(cell) => {
+                cell.bbox = Some(bbox);
+                true
+            }
+            None => {
+                cells.push(TableCell {
+                    text: self.rows[row][col].clone(),
+                    bbox: Some(bbox),
+                    start_row: row,
+                    start_col: col,
+                    row_span: 1,
+                    col_span: 1,
+                    column_header: false,
+                    row_header: false,
+                    row_section: false,
+                });
+                true
+            }
         }
-        let brow = &mut boxes[row];
-        while brow.len() < col + 1 {
-            brow.push(None);
-        }
-        brow[col] = Some(bbox);
-        true
     }
 
-    /// The grid position whose recorded box overlaps `bbox` best (largest
-    /// intersection-over-union), ties resolved in reading order. `None` when
-    /// nothing overlaps or the table carries no geometry. This is the lookup
-    /// half of the repair workflow: find the cell an external OCR box refers
-    /// to, then [`Self::set_cell_text`] it.
+    /// The anchor position of the cell whose box overlaps `bbox` best
+    /// (largest intersection-over-union), ties resolved in cell order.
+    /// `None` when nothing overlaps or the table carries no geometry. This
+    /// is the lookup half of the repair workflow: find the cell an external
+    /// OCR box refers to, then [`Self::set_cell_text`] it.
     pub fn find_cell_by_bbox(&self, bbox: [f32; 4]) -> Option<(usize, usize)> {
-        let boxes = self.cell_boxes.as_ref()?;
         let area = |b: &[f32; 4]| ((b[2] - b[0]) * (b[3] - b[1])).max(0.0);
         let mut best: Option<(f32, (usize, usize))> = None;
-        for (r, row) in boxes.iter().enumerate() {
-            for (c, cell) in row.iter().enumerate() {
-                let Some(cb) = cell else { continue };
-                let iw = (bbox[2].min(cb[2]) - bbox[0].max(cb[0])).max(0.0);
-                let ih = (bbox[3].min(cb[3]) - bbox[1].max(cb[1])).max(0.0);
-                let inter = iw * ih;
-                if inter <= 0.0 {
-                    continue;
-                }
-                let iou = inter / (area(&bbox) + area(cb) - inter).max(f32::EPSILON);
-                if best.is_none_or(|(b, _)| iou > b) {
-                    best = Some((iou, (r, c)));
-                }
+        for cell in self.cells.as_deref()?.iter() {
+            let Some(cb) = cell.bbox else { continue };
+            let iw = (bbox[2].min(cb[2]) - bbox[0].max(cb[0])).max(0.0);
+            let ih = (bbox[3].min(cb[3]) - bbox[1].max(cb[1])).max(0.0);
+            let inter = iw * ih;
+            if inter <= 0.0 {
+                continue;
+            }
+            let iou = inter / (area(&bbox) + area(&cb) - inter).max(f32::EPSILON);
+            if best.is_none_or(|(b, _)| iou > b) {
+                best = Some((iou, (cell.start_row, cell.start_col)));
             }
         }
         best.map(|(_, pos)| pos)
     }
 
     /// Locate the cell overlapping `bbox` best and replace its text — the
-    /// one-call form of the OCR-repair loop. Returns the updated position.
+    /// one-call form of the OCR-repair loop. Returns the updated anchor.
     pub fn update_cell_by_bbox(
         &mut self,
         bbox: [f32; 4],
@@ -647,21 +776,102 @@ impl DoclingDocument {
 mod table_api_tests {
     use super::*;
 
+    fn cell(
+        text: &str,
+        bbox: [f32; 4],
+        (start_row, start_col): (usize, usize),
+        (row_span, col_span): (usize, usize),
+    ) -> TableCell {
+        TableCell {
+            text: text.into(),
+            bbox: Some(bbox),
+            start_row,
+            start_col,
+            row_span,
+            col_span,
+            column_header: false,
+            row_header: false,
+            row_section: false,
+        }
+    }
+
     fn table() -> Table {
         Table {
             rows: vec![
                 vec!["Year".into(), "Ducks".into()],
                 vec!["2019".into(), "120".into()],
             ],
-            cell_boxes: Some(vec![
-                vec![Some([0.0, 0.0, 50.0, 10.0]), Some([50.0, 0.0, 100.0, 10.0])],
-                vec![
-                    Some([0.0, 10.0, 50.0, 20.0]),
-                    Some([50.0, 10.0, 100.0, 20.0]),
-                ],
+            cells: Some(vec![
+                cell("Year", [0.0, 0.0, 50.0, 10.0], (0, 0), (1, 1)),
+                cell("Ducks", [50.0, 0.0, 100.0, 10.0], (0, 1), (1, 1)),
+                cell("2019", [0.0, 10.0, 50.0, 20.0], (1, 0), (1, 1)),
+                cell("120", [50.0, 10.0, 100.0, 20.0], (1, 1), (1, 1)),
             ]),
             ..Default::default()
         }
+    }
+
+    /// Declarative tables derive first-class cells from the structure
+    /// overlay: continuation grids become span extents, `col_header` (or the
+    /// row-0 fallback) becomes the header role — the XLSX/DOCX/HTML merge
+    /// path into real `TableCell`s (#240).
+    #[test]
+    fn derive_cells_reads_spans_and_headers_from_structure() {
+        let t = Table {
+            rows: vec![
+                vec!["Wide".into(), "Wide".into(), "C".into()],
+                vec!["a".into(), "b".into(), "c".into()],
+            ],
+            structure: Some(TableStructure {
+                header_row: vec![true, false],
+                col_continuation: vec![vec![false, true, false], vec![false; 3]],
+                row_continuation: vec![vec![false; 3], vec![false; 3]],
+                row_header: Vec::new(),
+                col_header: Vec::new(),
+            }),
+            ..Default::default()
+        };
+        let cells = t.derive_cells();
+        assert_eq!(cells.len(), 5, "two anchors in row 0, three in row 1");
+        let wide = &cells[0];
+        assert_eq!((wide.col_span, wide.row_span), (2, 1));
+        assert!(wide.column_header, "header_row band");
+        assert!(cells.iter().skip(2).all(|c| !c.column_header));
+
+        // Without any overlay: every position 1x1, row 0 the header
+        // (docling's declarative default — the old JSON synthesis).
+        let plain = Table {
+            rows: vec![vec!["h".into()], vec!["x".into()]],
+            ..Default::default()
+        };
+        let cells = plain.derive_cells();
+        assert_eq!(cells.len(), 2);
+        assert!(cells[0].column_header && !cells[1].column_header);
+    }
+
+    /// A spanning cell updates once: the record text and every covered grid
+    /// position — a repair shows once in Markdown, not once per column.
+    #[test]
+    fn span_repair_updates_the_whole_cell() {
+        let mut t = Table {
+            rows: vec![
+                vec!["Wide".into(), "Wide".into(), "C".into()],
+                vec!["a".into(), "b".into(), "c".into()],
+            ],
+            cells: Some(vec![
+                cell("Wide", [0.0, 0.0, 100.0, 10.0], (0, 0), (1, 2)),
+                cell("C", [100.0, 0.0, 150.0, 10.0], (0, 2), (1, 1)),
+            ]),
+            ..Default::default()
+        };
+        // Update through the covered (non-anchor) position.
+        assert!(t.set_cell_text(0, 1, "Fixed"));
+        assert_eq!(
+            t.rows[0],
+            vec!["Fixed".to_string(), "Fixed".into(), "C".into()]
+        );
+        assert_eq!(t.cell_at(0, 1).unwrap().text, "Fixed");
+        assert_eq!(t.cell_at(0, 1).unwrap().col_span, 2);
     }
 
     /// The OCR-repair loop (#238): locate a cell by an external box (best
