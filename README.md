@@ -191,7 +191,7 @@ honoring `pages=A-B` and a `scale` of 0.1–4.0 pixels per PDF point (default
 (`DOCLING_RS_MAX_RASTER_PAGES`); narrow big documents with `pages`.
 
 Options per request: `to=md|json|dclx|chunks|images`, `strict`, `images=placeholder|embedded`,
-`no_ocr`, `no_table_former`, `no_text_panels`, `force_full_page_ocr`, `pages`,
+`no_ocr`, `skip_ocr`, `no_table_former`, `no_text_panels`, `force_full_page_ocr`, `pages`,
 `ocr_lang`, `scale`, `asr_model`, `asr_lang`, `video_frames`, `fetch_images` — as query
 parameters, multipart fields, or JSON keys (body wins). Server flags: `--addr`,
 `--concurrency`, `--max-body-mb`, `--queue-size`, `--result-ttl`, `--warmup`,
@@ -500,7 +500,17 @@ all, only the PDF's embedded text cells grouped into flat paragraphs by
 reading order (no headings/lists/tables/pictures). It's the fastest PDF path
 by a wide margin, but a scanned/image-only PDF (no embedded text layer) comes
 back empty rather than erroring, so a caller can detect that and re-convert
-without the flag. `--force-full-page-ocr` is the opposite escape hatch
+without the flag. `--skip-ocr` (#244) sits between the two: it keeps layout
+detection and TableFormer but never runs (or loads) OCR — docling's
+independent `do_ocr=False`, the counterpart of `--no-table-former`. Structured
+output — headings, tables, pictures, reading order — survives; only text that
+exists solely as pixels is lost (scanned pages come back with empty regions,
+and the speculative OCR of large embedded images never runs). Independently of
+the flag, a *missing* OCR model now warns and degrades to the same behavior
+instead of failing the conversion (`skip_ocr` in serve/Node,
+`do_ocr=False` in Python — which now matches docling exactly; the old
+skip-everything meaning moved to the Python-only `text_layer_only=True`).
+`--force-full-page-ocr` is the opposite escape hatch
 (docling's `force_full_page_ocr`): OCR every page from its rendered image
 even when it carries a text layer — for layers that exist but lie (broken
 encodings, subset fonts with garbage mappings, a scanned form with a few

@@ -81,6 +81,7 @@ struct PyDocumentConverter {
     /// the interruptible worker threads can own a handle to it.
     pdf_pipeline: std::sync::Arc<std::sync::Mutex<Option<docling::Pipeline>>>,
     no_ocr: bool,
+    skip_ocr: bool,
     no_table_former: bool,
     no_text_panels: bool,
     enrich: docling::EnrichmentOptions,
@@ -92,6 +93,10 @@ impl PyDocumentConverter {
     /// Python side:
     /// * `fetch_images` — resolve remote/local `<img src>` for HTML/EPUB.
     /// * `do_ocr` — run OCR on scanned PDF/image pages (docling's `do_ocr`).
+    ///   `do_ocr=False` now matches docling exactly (#244): layout detection
+    ///   and TableFormer still run, only OCR is skipped — previously it
+    ///   disabled the whole ML stack (that fast path is the docling.rs-only
+    ///   `text_layer_only=True`).
     /// * `force_full_page_ocr` — OCR every PDF page even when it carries a
     ///   text layer (docling's `force_full_page_ocr`); ignored when
     ///   `do_ocr=False`.
@@ -136,6 +141,7 @@ impl PyDocumentConverter {
         page_range = None,
         ocr_lang = None,
         allowed_formats = None,
+        text_layer_only = false,
     ))]
     #[allow(clippy::too_many_arguments)]
     fn new(
@@ -154,6 +160,7 @@ impl PyDocumentConverter {
         page_range: Option<(usize, usize)>,
         ocr_lang: Option<String>,
         allowed_formats: Option<Vec<String>>,
+        text_layer_only: bool,
     ) -> PyResult<Self> {
         // `allowed_formats` (docling's converter arg) restricts which input
         // formats convert; an unknown name is an error so typos surface early.
@@ -203,7 +210,8 @@ impl PyDocumentConverter {
                 .fetch_images(fetch_images)
                 .asr_model(asr_model)
                 .asr_lang(asr_lang)
-                .no_ocr(!do_ocr)
+                .no_ocr(text_layer_only)
+                .skip_ocr(!do_ocr)
                 .force_full_page_ocr(force_full_page_ocr)
                 .no_table_former(!do_table_structure)
                 .no_text_panels(no_text_panels)
@@ -212,7 +220,8 @@ impl PyDocumentConverter {
                 .do_code_enrichment(do_code_enrichment)
                 .do_formula_enrichment(do_formula_enrichment),
             pdf_pipeline: std::sync::Arc::new(std::sync::Mutex::new(None)),
-            no_ocr: !do_ocr,
+            no_ocr: text_layer_only,
+            skip_ocr: !do_ocr,
             no_table_former: !do_table_structure,
             no_text_panels,
             enrich,
@@ -236,6 +245,7 @@ impl PyDocumentConverter {
         let slot = std::sync::Arc::clone(&self.pdf_pipeline);
         let no_table_former = self.no_table_former;
         let no_ocr = self.no_ocr;
+        let skip_ocr = self.skip_ocr;
         let no_text_panels = self.no_text_panels;
         let enrich = self.enrich;
         run_interruptible(py, move || {
@@ -245,6 +255,7 @@ impl PyDocumentConverter {
                     .map_err(|e| ConversionError::new_err(e.to_string()))?
                     .no_table_former(no_table_former)
                     .no_ocr(no_ocr)
+                    .skip_ocr(skip_ocr)
                     .no_text_panels(no_text_panels)
                     .enrichments(enrich);
                 pipeline

@@ -3,7 +3,11 @@
 //! The docling.rs counterpart of `docling.cli.main`; `docling-rs serve`
 //! (with `--features serve`) starts the HTTP conversion API.
 //!
-//! Usage: docling-rs [--strict] [--to md|json|dclx|chunks|images] [--pages A-B] [--scale X] [--images MODE] [--input GLOB --output DIR [--jobs N]] [--fetch-images] [--no-stream] [--no-table-former] [--no-ocr] [--force-full-page-ocr] [--no-text-panels] [--ocr-lang en|ch] [--pipeline standard|vlm] [--vlm-endpoint URL] [--vlm-model NAME] [--asr-model PRESET] [--asr-lang CODE] [--video-frames N] [--use-web-browser] [--enrich-picture-classes] [--enrich-code] [--enrich-formula] <input-file>
+//! `--skip-ocr` (#244) keeps layout + TableFormer but never runs OCR
+//! (docling's independent `do_ocr=False`); `--no-ocr` remains the
+//! skip-everything fast path.
+//!
+//! Usage: docling-rs [--strict] [--to md|json|dclx|chunks|images] [--pages A-B] [--scale X] [--images MODE] [--input GLOB --output DIR [--jobs N]] [--fetch-images] [--no-stream] [--no-table-former] [--no-ocr] [--skip-ocr] [--force-full-page-ocr] [--no-text-panels] [--ocr-lang en|ch] [--pipeline standard|vlm] [--vlm-endpoint URL] [--vlm-model NAME] [--asr-model PRESET] [--asr-lang CODE] [--video-frames N] [--use-web-browser] [--enrich-picture-classes] [--enrich-code] [--enrich-formula] <input-file>
 //!   --input GLOB|DIR   batch mode (#205): convert every file the glob matches
 //!                      (`--input '/data/reports/**/*.pdf'` — quote it so the
 //!                      shell doesn't expand it) instead of one positional file.
@@ -124,6 +128,7 @@ fn main() -> ExitCode {
     let mut no_stream = false;
     let mut no_table_former = false;
     let mut no_ocr = false;
+    let mut skip_ocr = false;
     let mut force_full_page_ocr = false;
     let mut no_text_panels = false;
     let mut use_web_browser = false;
@@ -152,6 +157,10 @@ fn main() -> ExitCode {
             "--no-stream" => no_stream = true,
             "--no-table-former" => no_table_former = true,
             "--no-ocr" => no_ocr = true,
+            // #244: keep layout + TableFormer, never OCR (docling's
+            // independent do_ocr=False) — unlike --no-ocr, which skips the
+            // whole ML stack.
+            "--skip-ocr" => skip_ocr = true,
             "--force-full-page-ocr" => force_full_page_ocr = true,
             "--no-text-panels" => no_text_panels = true,
             "--use-web-browser" => use_web_browser = true,
@@ -341,6 +350,7 @@ fn main() -> ExitCode {
             fetch_images,
             no_table_former,
             no_ocr,
+            skip_ocr,
             force_full_page_ocr,
             no_text_panels,
             use_web_browser,
@@ -359,7 +369,7 @@ fn main() -> ExitCode {
     }
 
     let Some(path) = path else {
-        eprintln!("usage: docling-rs [--strict] [--to md|json|dclx|chunks|images] [--scale X] [--images MODE] [--input GLOB --output DIR [--jobs N]] [--fetch-images] [--no-stream] [--no-table-former] [--no-ocr] [--force-full-page-ocr] [--no-text-panels] [--ocr-lang en|ch] [--use-web-browser] <input-file>");
+        eprintln!("usage: docling-rs [--strict] [--to md|json|dclx|chunks|images] [--scale X] [--images MODE] [--input GLOB --output DIR [--jobs N]] [--fetch-images] [--no-stream] [--no-table-former] [--no-ocr] [--skip-ocr] [--force-full-page-ocr] [--no-text-panels] [--ocr-lang en|ch] [--use-web-browser] <input-file>");
         return ExitCode::from(2);
     };
 
@@ -448,6 +458,7 @@ fn main() -> ExitCode {
         .asr_lang(asr_lang.clone())
         .fetch_images(fetch_images)
         .no_table_former(no_table_former)
+        .skip_ocr(skip_ocr)
         .no_ocr(no_ocr)
         .force_full_page_ocr(force_full_page_ocr)
         .no_text_panels(no_text_panels)
@@ -590,6 +601,7 @@ struct BatchCfg {
     fetch_images: bool,
     no_table_former: bool,
     no_ocr: bool,
+    skip_ocr: bool,
     force_full_page_ocr: bool,
     no_text_panels: bool,
     use_web_browser: bool,
@@ -735,6 +747,7 @@ fn batch_pipeline<'a>(
             .map_err(|e| e.to_string())?
             .no_table_former(cfg.no_table_former)
             .no_ocr(cfg.no_ocr)
+            .skip_ocr(cfg.skip_ocr)
             .force_full_page_ocr(cfg.force_full_page_ocr)
             .no_text_panels(cfg.no_text_panels)
             .enrichments(docling::EnrichmentOptions {

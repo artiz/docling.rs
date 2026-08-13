@@ -54,6 +54,7 @@ paths:
         - { $ref: "#/components/parameters/strict" }
         - { $ref: "#/components/parameters/images" }
         - { $ref: "#/components/parameters/no_ocr" }
+        - { $ref: "#/components/parameters/skip_ocr" }
         - { $ref: "#/components/parameters/force_full_page_ocr" }
         - { $ref: "#/components/parameters/no_table_former" }
         - { $ref: "#/components/parameters/no_text_panels" }
@@ -352,6 +353,14 @@ components:
           default: false
           description: Cleaner strict Markdown dialect instead of byte-for-byte docling-legacy output.
         images: { $ref: "#/components/schemas/Images" }
+        skip_ocr:
+          type: boolean
+          default: false
+          description: >
+            PDF/image — keep layout detection and TableFormer but never run OCR
+            (docling's independent `do_ocr=False`, #244): structure survives,
+            text that exists only as pixels comes back empty. `no_ocr` (the
+            whole-stack skip) wins when both are set.
         no_ocr:
           type: boolean
           default: false
@@ -469,6 +478,8 @@ components:
       { name: images, in: query, schema: { $ref: "#/components/schemas/Images" } }
     no_ocr:
       { name: no_ocr, in: query, schema: { type: boolean } }
+    skip_ocr:
+      { name: skip_ocr, in: query, schema: { type: boolean } }
     force_full_page_ocr:
       { name: force_full_page_ocr, in: query, schema: { type: boolean } }
     no_table_former:

@@ -47,6 +47,11 @@ pub struct ConverterOptions {
     /// proper Latin word spacing) or `"ch"` (the multilingual
     /// docling-conformance model). Formats that never OCR ignore it.
     pub ocr_lang: Option<String>,
+    /// Keep layout + TableFormer, never OCR (#244) — docling's independent
+    /// `do_ocr=False`. Structured output survives; text that exists only as
+    /// pixels (scanned pages, text inside images) comes back empty.
+    /// Default `false`.
+    pub skip_ocr: Option<bool>,
     /// OCR every PDF page even when it carries an embedded text layer
     /// (docling's `force_full_page_ocr`) — for text layers that exist but lie.
     /// Default `false`.
@@ -100,6 +105,11 @@ pub struct ConvertOptions {
     pub pages: Option<String>,
     /// OCR recognition language for scanned pages: `"en"` (default) | `"ch"`.
     pub ocr_lang: Option<String>,
+    /// Keep layout + TableFormer, never OCR (#244) — docling's independent
+    /// `do_ocr=False`. Structured output survives; text that exists only as
+    /// pixels (scanned pages, text inside images) comes back empty.
+    /// Default `false`.
+    pub skip_ocr: Option<bool>,
     /// OCR every PDF page even when it carries a text layer (docling's
     /// `force_full_page_ocr`). Default `false`.
     pub force_full_page_ocr: Option<bool>,
@@ -163,6 +173,7 @@ struct ConvertConfig {
     video_frames: Option<usize>,
     page_range: Option<(usize, usize)>,
     ocr_lang: Option<String>,
+    skip_ocr: bool,
     force_full_page_ocr: bool,
     no_text_panels: bool,
     allowed_formats: Option<Vec<InputFormat>>,
@@ -225,6 +236,7 @@ fn build_config(o: ConvertOptions) -> Result<ConvertConfig> {
         video_frames: o.video_frames.map(|n| n as usize),
         page_range: parse_pages(o.pages.as_deref())?,
         ocr_lang: parse_ocr_lang(o.ocr_lang)?,
+        skip_ocr: o.skip_ocr.unwrap_or(false),
         force_full_page_ocr: o.force_full_page_ocr.unwrap_or(false),
         no_text_panels: o.no_text_panels.unwrap_or(false),
         allowed_formats: allowed,
@@ -257,6 +269,7 @@ fn build_converter(cfg: &ConvertConfig) -> RsConverter {
     let base = base
         .strict(cfg.strict)
         .fetch_images(cfg.fetch_images)
+        .skip_ocr(cfg.skip_ocr)
         .force_full_page_ocr(cfg.force_full_page_ocr)
         .no_text_panels(cfg.no_text_panels)
         .asr_model(cfg.asr_model.clone())
@@ -446,6 +459,7 @@ pub struct DocumentConverter {
     video_frames: Option<usize>,
     page_range: Option<(usize, usize)>,
     ocr_lang: Option<String>,
+    skip_ocr: bool,
     force_full_page_ocr: bool,
     no_text_panels: bool,
     allowed_formats: Option<Vec<InputFormat>>,
@@ -472,6 +486,7 @@ impl DocumentConverter {
             video_frames: o.video_frames.map(|n| n as usize),
             page_range: parse_pages(o.pages.as_deref())?,
             ocr_lang: parse_ocr_lang(o.ocr_lang.clone())?,
+            skip_ocr: o.skip_ocr.unwrap_or(false),
             force_full_page_ocr: o.force_full_page_ocr.unwrap_or(false),
             no_text_panels: o.no_text_panels.unwrap_or(false),
             allowed_formats: allowed,
@@ -488,6 +503,7 @@ impl DocumentConverter {
             video_frames: self.video_frames,
             page_range: self.page_range,
             ocr_lang: self.ocr_lang.clone(),
+            skip_ocr: self.skip_ocr,
             force_full_page_ocr: self.force_full_page_ocr,
             no_text_panels: self.no_text_panels,
             allowed_formats: self.allowed_formats.clone(),
@@ -904,6 +920,7 @@ fn output_config(out: Option<OutputOptions>, strict: bool) -> Result<ConvertConf
         asr_lang: None,
         video_frames: None,
         page_range: None,
+        skip_ocr: false,
         force_full_page_ocr: false,
         no_text_panels: false,
         ocr_lang: None,

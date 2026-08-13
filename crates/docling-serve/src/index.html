@@ -105,6 +105,7 @@ The API is described by <a href="/openapi.yaml"><code>/openapi.yaml</code></a> (
     <label><input type="checkbox" id="embed" checked> embed images</label>
     <label id="fetch-images-label" title="HTML/EPUB: resolve external <img src> and embed the bytes (outbound fetch)"><input type="checkbox" id="fetch_images"> fetch images</label>
     <label><input type="checkbox" id="no_ocr"> no OCR</label>
+    <label title="Keep layout + TableFormer, never OCR (docling's do_ocr=False): structure survives, pixel-only text comes back empty"><input type="checkbox" id="skip_ocr"> skip OCR</label>
     <label><input type="checkbox" id="no_table_former"> no TableFormer</label>
     <label title="Keep every detected picture as a picture (disable text-panel demotion)"><input type="checkbox" id="no_text_panels"> keep pictures</label>
     <button id="go">Convert</button>
@@ -158,6 +159,7 @@ The API is described by <a href="/openapi.yaml"><code>/openapi.yaml</code></a> (
   <tr><td><code>strict</code></td><td><code>true</code>/<code>false</code></td><td>Cleaner strict Markdown dialect instead of byte-for-byte docling-legacy output.</td></tr>
   <tr><td><code>images</code></td><td><code>placeholder</code> (default) | <code>embedded</code></td><td>Markdown picture handling (embedded = base64 data URIs).</td></tr>
   <tr><td><code>no_ocr</code></td><td><code>true</code>/<code>false</code></td><td>PDF/image: skip layout/OCR/TableFormer entirely; emit the embedded text layer only.</td></tr>
+  <tr><td><code>skip_ocr</code></td><td><code>true</code>/<code>false</code></td><td>PDF/image: keep layout + TableFormer, never OCR (docling's independent <code>do_ocr=False</code>, #244) — structure survives, pixel-only text comes back empty. A missing OCR model now degrades to this instead of erroring.</td></tr>
   <tr><td><code>no_table_former</code></td><td><code>true</code>/<code>false</code></td><td>PDF/image: geometric table reconstruction instead of the TableFormer model.</td></tr>
   <tr><td><code>no_text_panels</code></td><td><code>true</code>/<code>false</code></td><td>PDF/image: keep every detected picture as a picture — disable the demotion of uncaptioned dense-text "picture" regions into paragraphs.</td></tr>
   <tr><td><code>fetch_images</code></td><td><code>true</code>/<code>false</code></td><td>HTML/EPUB: resolve external <code>&lt;img src&gt;</code> and embed the bytes. Outbound fetch — honored only when the server runs with <code>--allow-url-fetch</code>, otherwise ignored.</td></tr>
@@ -291,6 +293,7 @@ $('go').addEventListener('click', async () => {
     images: $('embed').checked ? 'embedded' : 'placeholder',
     fetch_images: $('fetch_images').checked,
     no_ocr: $('no_ocr').checked,
+    skip_ocr: $('skip_ocr').checked,
     no_table_former: $('no_table_former').checked,
     no_text_panels: $('no_text_panels').checked,
   };
