@@ -24,7 +24,13 @@
 //! Options ride along as multipart text parts, JSON fields, or query
 //! parameters (body wins over query):
 //!
-//! - `to` — `md` (default) | `json` | `dclx` | `chunks`
+//! - `to` — `md` (default) | `json` | `dclx` | `chunks` | `images` (#243:
+//!   rasterize a PDF's pages to PNG through pdfium — no conversion, no models;
+//!   the JSON response is `{"pages": [{"page", "width", "height",
+//!   "png_base64"}]}`, combines with `pages` for a window, capped at
+//!   `DOCLING_RS_MAX_RASTER_PAGES` pages per request, default 100)
+//! - `scale` — `to=images` render scale in pixels per PDF point:
+//!   0.1–4.0, default 2.0 (= 144 dpi, the ML pipeline's own render scale)
 //! - `strict` — cleaner Markdown instead of docling-legacy output
 //! - `images` — `placeholder` (default) | `embedded` (Markdown only)
 //! - `no_ocr`, `no_table_former`, `force_full_page_ocr`, `no_text_panels` — PDF/image pipeline switches
@@ -305,6 +311,9 @@ struct ConvertOptions {
     pages: Option<String>,
     /// OCR recognition language for scanned pages: `en` (default) | `ch`.
     ocr_lang: Option<String>,
+    /// `to=images` render scale in pixels per PDF point (#243): default 2.0
+    /// (144 dpi, the pipeline's own render scale), accepted range 0.1–4.0.
+    scale: Option<f32>,
 }
 
 impl ConvertOptions {
@@ -323,6 +332,7 @@ impl ConvertOptions {
             video_frames: self.video_frames.or(base.video_frames),
             pages: self.pages.or(base.pages),
             ocr_lang: self.ocr_lang.or(base.ocr_lang),
+            scale: self.scale.or(base.scale),
         }
     }
 }
@@ -421,9 +431,12 @@ async fn parse_convert_request(
 /// submission fails fast instead of parking a doomed job in the queue).
 fn validate_output(options: &ConvertOptions) -> Result<(String, ImageMode), ApiError> {
     let to = options.to.clone().unwrap_or_else(|| "md".into());
-    if !matches!(to.as_str(), "md" | "markdown" | "json" | "dclx" | "chunks") {
+    if !matches!(
+        to.as_str(),
+        "md" | "markdown" | "json" | "dclx" | "chunks" | "images"
+    ) {
         return Err(ApiError::Bad(format!(
-            "unknown to='{to}' (expected: md, json, dclx, chunks)"
+            "unknown to='{to}' (expected: md, json, dclx, chunks, images)"
         )));
     }
     let image_mode = match options.images.as_deref().unwrap_or("placeholder") {
@@ -722,6 +735,16 @@ fn run_conversion(
             .next()
             .expect("checked len")
             .map_err(|(_, e)| e)?;
+        if to == "images" {
+            let pages = rasterize_pages(state, &source, options)?;
+            return Ok(StoredResponse {
+                content_type: "application/json",
+                disposition: None,
+                confidence: None,
+                body: serde_json::to_vec_pretty(&json!({ "pages": pages }))
+                    .expect("page JSON serializes"),
+            });
+        }
         let name = source.name.clone();
         let document = convert_document(state, source, options)?;
         return Ok(render_stored(
@@ -742,6 +765,20 @@ fn run_conversion(
                 }
             };
             let name = source.name.clone();
+            if to == "images" {
+                return match rasterize_pages(state, &source, options) {
+                    Ok(pages) => json!({
+                        "name": name,
+                        "status": "success",
+                        "pages": pages,
+                    }),
+                    Err(e) => json!({
+                        "name": name,
+                        "status": "failure",
+                        "error": api_error_message(e),
+                    }),
+                };
+            }
             match convert_document(state, source, options) {
                 Ok(document) => batch_item(state, to, image_mode, &name, &document, options),
                 Err(e) => json!({
@@ -759,6 +796,83 @@ fn run_conversion(
         body: serde_json::to_vec_pretty(&json!({ "results": items }))
             .expect("batch JSON serializes"),
     })
+}
+
+/// Server-side cap on pages rasterized per `to=images` request (#243). A small
+/// upload can be a 1000-page PDF, and every rendered page is hundreds of KB of
+/// PNG held in the response (or an async job's stored result) — without a cap
+/// one request could balloon memory far past the body limit. Override with
+/// `DOCLING_RS_MAX_RASTER_PAGES`.
+fn max_raster_pages() -> usize {
+    docling_core::env::parse("DOCLING_RS_MAX_RASTER_PAGES").unwrap_or(100)
+}
+
+/// `to=images` (#243): rasterize a PDF's pages to PNG through pdfium — no
+/// models, no OCR — honoring the request's `pages` window and `scale`. Returns
+/// the response's `pages` array; base64 in JSON mirrors the batch `dclx_base64`
+/// precedent (and survives async job storage unchanged).
+fn rasterize_pages(
+    state: &AppState,
+    source: &SourceDocument,
+    options: &ConvertOptions,
+) -> Result<Vec<serde_json::Value>, ApiError> {
+    if source.format != InputFormat::Pdf {
+        return Err(ApiError::Unsupported(format!(
+            "to=images rasterizes PDF inputs only ('{}' is not a PDF); \
+             other formats convert with to=md|json|dclx|chunks",
+            source.name
+        )));
+    }
+    let scale = options.scale.unwrap_or(2.0);
+    if !(0.1..=4.0).contains(&scale) {
+        return Err(ApiError::Bad(format!(
+            "scale {scale} out of range (0.1–4.0 pixels per PDF point; 2.0 = 144 dpi)"
+        )));
+    }
+    let range = options
+        .pages
+        .as_deref()
+        .map(docling::parse_page_range)
+        .transpose()
+        .map_err(|e| ApiError::Bad(format!("pages: {e}")))?;
+    // Enforce the page cap before rendering anything. Count with the window
+    // applied — pages=A-B is exactly the documented way to rasterize a slice
+    // of a document that exceeds the cap.
+    let total = docling::pdf_page_count(&source.bytes, None)
+        .map_err(|e| ApiError::Unsupported(e.to_string()))?;
+    let selected = match range {
+        Some((first, last)) if first <= total => last.min(total) - first + 1,
+        Some(_) => 0, // out-of-document start — render_pages reports the error
+        None => total,
+    };
+    let cap = max_raster_pages();
+    if selected > cap {
+        return Err(ApiError::Bad(format!(
+            "{selected} pages exceed the rasterization cap of {cap}; narrow the request \
+             with pages=A-B (or raise DOCLING_RS_MAX_RASTER_PAGES on the server)"
+        )));
+    }
+    // pdfium is not thread-safe, and the warm pipeline's mutex is this
+    // process's "who owns pdfium" lock — hold it for the render even though no
+    // models run here, so a rasterization can't race a concurrent PDF/image
+    // conversion inside pdfium.
+    let _pdfium_owner = state
+        .pipeline
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let pages = docling::render_pdf_pages(&source.bytes, None, range, scale)
+        .map_err(|e| ApiError::Internal(e.to_string()))?;
+    Ok(pages
+        .iter()
+        .map(|p| {
+            json!({
+                "page": p.page_no,
+                "width": p.width,
+                "height": p.height,
+                "png_base64": docling::base64::encode(&p.png),
+            })
+        })
+        .collect())
 }
 
 /// Serialize a converted document for a buffered (non-streaming) response.
@@ -931,6 +1045,13 @@ async fn read_multipart(
             "asr_lang" => body_opts.asr_lang = Some(text_field(field).await?),
             "pages" => body_opts.pages = Some(text_field(field).await?),
             "ocr_lang" => body_opts.ocr_lang = Some(text_field(field).await?),
+            "scale" => {
+                let v = text_field(field).await?;
+                body_opts.scale =
+                    Some(v.parse().map_err(|_| {
+                        ApiError::Bad(format!("scale must be a number, got {v:?}"))
+                    })?);
+            }
             "video_frames" => {
                 let v = text_field(field).await?;
                 body_opts.video_frames = Some(v.parse().map_err(|_| {

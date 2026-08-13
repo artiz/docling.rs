@@ -47,6 +47,28 @@ fn convert_request(content_type: &str, body: Vec<u8>, query: &str) -> Request<Bo
         .unwrap()
 }
 
+/// Shared fixtures live at the repo root (see CLAUDE.md); tests run with CWD =
+/// the crate dir.
+fn repo_root() -> std::path::PathBuf {
+    std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..")
+}
+
+/// Skip-gate for tests that render PDFs: point pdfium resolution at the
+/// repo-root `.pdfium/lib` when present (same pattern as
+/// `crates/docling/tests/pages.rs`) — CI without the runtime assets stays
+/// green.
+fn pdfium_ready() -> bool {
+    let lib = repo_root().join(".pdfium/lib");
+    if lib.join("libpdfium.so").exists()
+        || lib.join("libpdfium.dylib").exists()
+        || lib.join("pdfium.dll").exists()
+    {
+        std::env::set_var("PDFIUM_DYNAMIC_LIB_PATH", &lib);
+        return true;
+    }
+    std::env::var("PDFIUM_DYNAMIC_LIB_PATH").is_ok()
+}
+
 #[tokio::test]
 async fn health_is_ok() {
     let response = app()
@@ -110,6 +132,7 @@ async fn serves_its_logo_and_openapi_description() {
         "fetch_images:",
         "pages:",
         "ocr_lang:",
+        "scale:",
         "asr_model:",
         "video_frames:",
     ] {
@@ -205,6 +228,53 @@ async fn bad_to_value_is_400() {
     let (ct, body) = multipart("x.md", b"x", &[("to", "pdf")]);
     let response = app().oneshot(convert_request(&ct, body, "")).await.unwrap();
     assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+}
+
+/// `to=images` (#243) is PDF-only — a non-PDF upload answers 422 before any
+/// pdfium work, so this runs in plain CI.
+#[tokio::test]
+async fn images_output_requires_a_pdf_input() {
+    let (ct, body) = multipart("x.md", b"# hi", &[("to", "images")]);
+    let response = app().oneshot(convert_request(&ct, body, "")).await.unwrap();
+    assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
+    assert!(body_string(response).await.contains("PDF inputs only"));
+}
+
+/// A `scale` outside 0.1–4.0 is rejected before pdfium is touched.
+#[tokio::test]
+async fn images_scale_is_validated() {
+    let (ct, body) = multipart("x.pdf", b"%PDF-1.4", &[("to", "images"), ("scale", "9")]);
+    let response = app().oneshot(convert_request(&ct, body, "")).await.unwrap();
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    assert!(body_string(response).await.contains("scale"));
+}
+
+/// End-to-end rasterization over a real one-page fixture — runs only where
+/// `.pdfium/lib` is installed (`pdfium_ready` gate).
+#[tokio::test]
+async fn rasterizes_pdf_pages_to_png() {
+    if !pdfium_ready() {
+        eprintln!("skipping: pdfium not installed");
+        return;
+    }
+    let pdf = std::fs::read(repo_root().join("tests/data/pdf/sources/base14_fonts.pdf")).unwrap();
+    let (ct, body) = multipart(
+        "base14_fonts.pdf",
+        &pdf,
+        &[("to", "images"), ("scale", "1")],
+    );
+    let response = app().oneshot(convert_request(&ct, body, "")).await.unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let json: serde_json::Value = serde_json::from_str(&body_string(response).await).unwrap();
+    let pages = json["pages"].as_array().expect("pages array");
+    assert_eq!(pages.len(), 1);
+    assert_eq!(pages[0]["page"], 1);
+    assert!(pages[0]["width"].as_u64().unwrap() > 0);
+    assert!(pages[0]["height"].as_u64().unwrap() > 0);
+    // The payload decodes to a real PNG (magic bytes).
+    let b64 = pages[0]["png_base64"].as_str().unwrap();
+    let bytes = docling::base64::decode(b64).expect("valid base64");
+    assert_eq!(&bytes[..8], b"\x89PNG\r\n\x1a\n");
 }
 
 #[tokio::test]

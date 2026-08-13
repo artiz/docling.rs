@@ -3,7 +3,7 @@
 //! The docling.rs counterpart of `docling.cli.main`; `docling-rs serve`
 //! (with `--features serve`) starts the HTTP conversion API.
 //!
-//! Usage: docling-rs [--strict] [--to md|json] [--pages A-B] [--images MODE] [--input GLOB --output DIR [--jobs N]] [--fetch-images] [--no-stream] [--no-table-former] [--no-ocr] [--force-full-page-ocr] [--no-text-panels] [--ocr-lang en|ch] [--pipeline standard|vlm] [--vlm-endpoint URL] [--vlm-model NAME] [--asr-model PRESET] [--asr-lang CODE] [--video-frames N] [--use-web-browser] [--enrich-picture-classes] [--enrich-code] [--enrich-formula] <input-file>
+//! Usage: docling-rs [--strict] [--to md|json|dclx|chunks|images] [--pages A-B] [--scale X] [--images MODE] [--input GLOB --output DIR [--jobs N]] [--fetch-images] [--no-stream] [--no-table-former] [--no-ocr] [--force-full-page-ocr] [--no-text-panels] [--ocr-lang en|ch] [--pipeline standard|vlm] [--vlm-endpoint URL] [--vlm-model NAME] [--asr-model PRESET] [--asr-lang CODE] [--video-frames N] [--use-web-browser] [--enrich-picture-classes] [--enrich-code] [--enrich-formula] <input-file>
 //!   --input GLOB|DIR   batch mode (#205): convert every file the glob matches
 //!                      (`--input '/data/reports/**/*.pdf'` — quote it so the
 //!                      shell doesn't expand it) instead of one positional file.
@@ -24,7 +24,12 @@
 //!                      in parallel; PDF/image files share the one warm ML
 //!                      pipeline (which parallelizes internally per document).
 //!   --to md|json       output format (default: md). `json` emits docling-core's
-//!                      native DoclingDocument JSON (export_to_dict).
+//!                      native DoclingDocument JSON (export_to_dict); `images`
+//!                      (#243) skips conversion and rasterizes a PDF's pages to
+//!                      `<stem>_page_NNNN.png` files (combines with `--pages`).
+//!   --scale X          `--to images` render scale in pixels per PDF point:
+//!                      0.1-4.0, default 2.0 (144 dpi, the ML pipeline's own
+//!                      render scale).
 //!   --pages A-B        convert only PDF pages A through B (1-based, inclusive;
 //!                      a single page number also works). Skipped pages are
 //!                      never rasterized, so a small window over a huge PDF is
@@ -130,6 +135,7 @@ fn main() -> ExitCode {
     let mut enrich_formula = false;
     let mut bench_warm: Option<usize> = None;
     let mut pages: Option<(usize, usize)> = None;
+    let mut scale: f32 = 2.0;
     let mut ocr_lang: Option<String> = None;
     let mut pipeline: Option<String> = None;
     let mut vlm_endpoint: Option<String> = None;
@@ -187,6 +193,17 @@ fn main() -> ExitCode {
             // 0 = transcript only). Default 8.
             "--video-frames" => video_frames = args.next().and_then(|v| v.parse().ok()),
             "--images" => images = args.next().unwrap_or_default(),
+            // `--to images` render scale, pixels per PDF point (#243).
+            "--scale" => match args.next().and_then(|v| v.parse::<f32>().ok()) {
+                Some(v) if (0.1..=4.0).contains(&v) => scale = v,
+                _ => {
+                    eprintln!(
+                        "error: --scale needs a number in 0.1-4.0 \
+                         (pixels per PDF point; default 2.0 = 144 dpi)"
+                    );
+                    return ExitCode::from(2);
+                }
+            },
             // PDF page window, 1-based inclusive: `--pages 3-7` or `--pages 3`.
             "--pages" => match args.next().as_deref().map(docling::parse_page_range) {
                 Some(Ok(range)) => pages = Some(range),
@@ -250,8 +267,11 @@ fn main() -> ExitCode {
         }
     }
 
-    if !matches!(to.as_str(), "md" | "markdown" | "json" | "dclx" | "chunks") {
-        eprintln!("error: unknown --to '{to}' (expected: md, json, dclx, chunks)");
+    if !matches!(
+        to.as_str(),
+        "md" | "markdown" | "json" | "dclx" | "chunks" | "images"
+    ) {
+        eprintln!("error: unknown --to '{to}' (expected: md, json, dclx, chunks, images)");
         return ExitCode::from(2);
     }
     let image_mode = match images.as_str() {
@@ -332,13 +352,14 @@ fn main() -> ExitCode {
             video_frames,
             pages,
             ocr_lang,
+            scale,
             vlm,
         };
         return run_batch(files, &base, Path::new(&outdir), jobs, &cfg);
     }
 
     let Some(path) = path else {
-        eprintln!("usage: docling-rs [--strict] [--to md|json|dclx|chunks] [--images MODE] [--input GLOB --output DIR [--jobs N]] [--fetch-images] [--no-stream] [--no-table-former] [--no-ocr] [--force-full-page-ocr] [--no-text-panels] [--ocr-lang en|ch] [--use-web-browser] <input-file>");
+        eprintln!("usage: docling-rs [--strict] [--to md|json|dclx|chunks|images] [--scale X] [--images MODE] [--input GLOB --output DIR [--jobs N]] [--fetch-images] [--no-stream] [--no-table-former] [--no-ocr] [--force-full-page-ocr] [--no-text-panels] [--ocr-lang en|ch] [--use-web-browser] <input-file>");
         return ExitCode::from(2);
     };
 
@@ -360,6 +381,35 @@ fn main() -> ExitCode {
                     "warm conversion: {:.4}s/doc over {runs} runs (startup excluded)",
                     avg
                 );
+                ExitCode::SUCCESS
+            }
+            Err(e) => {
+                eprintln!("error: {e}");
+                ExitCode::FAILURE
+            }
+        };
+    }
+
+    // `--to images` (#243): rasterization is pdfium-only — no conversion, no
+    // models, no pipeline (a `--pipeline vlm` selection has nothing to do and
+    // is ignored). Files land in the CWD like `--to dclx`'s archive.
+    if to == "images" {
+        if !is_pdf {
+            eprintln!("error: --to images rasterizes PDF inputs only ('{path}' is not a PDF)");
+            return ExitCode::from(2);
+        }
+        let stem = Path::new(&path)
+            .file_stem()
+            .map(|s| s.to_string_lossy().into_owned())
+            .unwrap_or_else(|| "document".into());
+        return match write_page_images(&source.bytes, pages, scale, Path::new(""), &stem) {
+            Ok(written) => {
+                // Humans read stderr; stdout stays the bare paths for scripts
+                // (the dclx convention).
+                eprintln!("images: {} page(s) written", written.len());
+                for p in &written {
+                    println!("{}", p.display());
+                }
                 ExitCode::SUCCESS
             }
             Err(e) => {
@@ -551,6 +601,8 @@ struct BatchCfg {
     video_frames: Option<usize>,
     pages: Option<(usize, usize)>,
     ocr_lang: Option<String>,
+    /// `--to images` render scale (pixels per PDF point, #243).
+    scale: f32,
     vlm: Option<docling::vlm::VlmOptions>,
 }
 
@@ -637,6 +689,7 @@ fn batch_out_path(file: &Path, base: &Path, output: &Path, to: &str) -> std::pat
         "json" => "json",
         "dclx" => "dclx",
         "chunks" => "chunks.json",
+        "images" => "png", // a stem carrier: pages land as `<stem>_page_NNNN.png`
         _ => "md",
     };
     output.join(rel).with_extension(ext)
@@ -712,6 +765,28 @@ fn batch_pipeline<'a>(
     Ok(slot.as_mut().expect("just filled"))
 }
 
+/// `--to images` (#243): rasterize a PDF to per-page PNGs,
+/// `<dir>/<stem>_page_NNNN.png` — absolute 1-based page numbers, so a
+/// `--pages` window keeps the source document's numbering. Returns the
+/// written paths in page order.
+fn write_page_images(
+    bytes: &[u8],
+    pages: Option<(usize, usize)>,
+    scale: f32,
+    dir: &Path,
+    stem: &str,
+) -> Result<Vec<std::path::PathBuf>, String> {
+    let rendered =
+        docling::render_pdf_pages(bytes, None, pages, scale).map_err(|e| e.to_string())?;
+    let mut written = Vec::with_capacity(rendered.len());
+    for page in &rendered {
+        let out = dir.join(format!("{stem}_page_{:04}.png", page.page_no));
+        std::fs::write(&out, &page.png).map_err(|e| format!("writing {}: {e}", out.display()))?;
+        written.push(out);
+    }
+    Ok(written)
+}
+
 /// Convert one batch file and write its output; returns the output path.
 fn batch_convert_one(
     file: &Path,
@@ -738,6 +813,30 @@ fn batch_convert_one(
         None => eprintln!("start: {}", file.display()),
     }
     let started = std::time::Instant::now();
+    if cfg.to == "images" {
+        // #243: rasterize instead of converting — PDF-only, like the serve
+        // endpoint. A non-PDF file fails its item, not the batch.
+        if source.format != InputFormat::Pdf {
+            return Err(format!(
+                "--to images rasterizes PDF inputs only ({} is not a PDF)",
+                file.display()
+            ));
+        }
+        let out = batch_out_path(file, base, output, &cfg.to);
+        let dir = out.parent().unwrap_or(Path::new("")).to_path_buf();
+        std::fs::create_dir_all(&dir).map_err(|e| format!("creating {}: {e}", dir.display()))?;
+        let stem = out
+            .file_stem()
+            .map(|s| s.to_string_lossy().into_owned())
+            .unwrap_or_else(|| "document".into());
+        // pdfium is not thread-safe: the shared pipeline mutex is this
+        // process's "who owns pdfium" lock, held here even though no models
+        // run — a render must not race a concurrent PDF conversion.
+        let _pdfium_owner = pipe.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+        let written = write_page_images(&source.bytes, cfg.pages, cfg.scale, &dir, &stem)?;
+        let shown = written.first().cloned().unwrap_or(out);
+        return Ok((shown, started.elapsed().as_secs_f64(), pages));
+    }
     let mut document = if let Some(vlm) = &cfg.vlm {
         docling::vlm::convert_vlm(&source, vlm).map_err(|e| e.to_string())?
     } else if matches!(source.format, InputFormat::Pdf | InputFormat::Image) {

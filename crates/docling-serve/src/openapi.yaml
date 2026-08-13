@@ -34,7 +34,9 @@ paths:
         segment of the URL path.
 
         `to=md` streams the Markdown as it converts (chunked response);
-        `to=dclx` returns the archive as a download.
+        `to=dclx` returns the archive as a download; `to=images` skips
+        conversion entirely and rasterizes a PDF's pages to PNG (base64 in
+        JSON), honoring `pages` and `scale`.
 
         **Batch**: several `file` parts in one multipart request convert as a
         batch — the response is then `{"results": [...]}` with per-item
@@ -57,6 +59,7 @@ paths:
         - { $ref: "#/components/parameters/no_text_panels" }
         - { $ref: "#/components/parameters/fetch_images" }
         - { $ref: "#/components/parameters/pages" }
+        - { $ref: "#/components/parameters/scale" }
         - { $ref: "#/components/parameters/ocr_lang" }
         - { $ref: "#/components/parameters/asr_model" }
         - { $ref: "#/components/parameters/asr_lang" }
@@ -310,13 +313,17 @@ components:
   schemas:
     To:
       type: string
-      enum: [md, json, dclx, chunks]
+      enum: [md, json, dclx, chunks, images]
       default: md
       description: |
         `md` — Markdown, streamed as it converts.
         `json` — docling `DoclingDocument` JSON.
         `dclx` — DocLang OPC archive, returned as a download.
         `chunks` — chunker records (hierarchical, plus hybrid when a tokenizer is installed).
+        `images` — PDF only: per-page PNG renders as
+        `{"pages": [{"page", "width", "height", "png_base64"}]}` (no
+        conversion, no models; capped at `DOCLING_RS_MAX_RASTER_PAGES`
+        pages per request, default 100 — narrow with `pages=A-B`).
     Images:
       type: string
       enum: [placeholder, embedded]
@@ -327,6 +334,14 @@ components:
       enum: [en, ch]
       default: en
       description: OCR recognition language for scanned pages.
+    Scale:
+      type: number
+      minimum: 0.1
+      maximum: 4.0
+      default: 2.0
+      description: >-
+        `to=images` render scale in pixels per PDF point — 2.0 = 144 dpi,
+        the ML pipeline's own render scale.
     Options:
       type: object
       description: Conversion options, shared by every transport.
@@ -368,6 +383,7 @@ components:
           description: PDF page window, `A-B` or a single `N` (1-based, inclusive).
           examples: ["2-5", "3"]
         ocr_lang: { $ref: "#/components/schemas/OcrLang" }
+        scale: { $ref: "#/components/schemas/Scale" }
         asr_model:
           type: string
           description: Audio/video — Whisper preset directory under `.models/asr/`.
@@ -463,6 +479,8 @@ components:
       { name: fetch_images, in: query, schema: { type: boolean } }
     pages:
       { name: pages, in: query, schema: { type: string }, example: "2-5" }
+    scale:
+      { name: scale, in: query, schema: { $ref: "#/components/schemas/Scale" } }
     ocr_lang:
       { name: ocr_lang, in: query, schema: { $ref: "#/components/schemas/OcrLang" } }
     asr_model:
