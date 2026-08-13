@@ -13,7 +13,12 @@
 # network policy); URL fetching is enabled — front with a policy proxy or add
 # --no-url-fetch to CMD if the service should accept uploads only.
 
-FROM rust:1.96-bookworm AS build
+# trixie, not bookworm (#246): ort's prebuilt static onnxruntime is built
+# with GCC 13 and references GLIBCXX_3.4.31 — bookworm's libstdc++ (GCC 12)
+# tops out at 3.4.30, so the release link fails with undefined references.
+# The runtime stage below must stay on the same Debian release: the binary
+# links that libstdc++ (and trixie's glibc) dynamically.
+FROM rust:1.96-trixie AS build
 WORKDIR /src
 COPY . .
 ARG FETCH_ASSETS=1
@@ -21,7 +26,7 @@ RUN cargo build --release -p docling-serve --locked
 RUN if [ "$FETCH_ASSETS" = "1" ]; then sh scripts/install/download_dependencies.sh; \
     else mkdir -p .models .pdfium; fi
 
-FROM debian:bookworm-slim
+FROM debian:trixie-slim
 # ffmpeg powers video frame sampling (#138 Phase 2); without it a video input
 # still converts, transcript-only.
 RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates ffmpeg \
