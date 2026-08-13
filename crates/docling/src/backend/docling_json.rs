@@ -252,7 +252,7 @@ fn table_item(item: &Value, root: &Value, doc: &mut DoclingDocument) {
             location: None,
             structure: has_structure.then_some(structure),
             cell_blocks: None,
-            cell_boxes: None,
+            cells: None,
             caption: None,
         }));
     }

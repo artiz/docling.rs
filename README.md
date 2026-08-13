@@ -241,11 +241,14 @@ println!("{}", result.document.export_to_json());     // docling DoclingDocument
 
 ### Post-extraction table editing
 
-Tables converted by the PDF ML pipeline carry per-cell geometry
-(`Table::cell_boxes` — `[l, t, r, b]` page points, top-left origin, spans
-repeating their anchor's box), and `DoclingDocument` exposes the tables for
-in-place repair (#238) — recover missing OCR text, fix a misread cell, then
-re-export; every serializer reads the same grid:
+Tables converted by the PDF ML pipeline carry **first-class cells**
+(`Table::cells` — docling's `TableCell` shape: text, `[l, t, r, b]` page-point
+bbox with a top-left origin, span rectangle and header roles from the
+predicted structure, #240), serialized into the JSON export's `table_cells`
+(and therefore visible to the Python/Node bindings), with the DocLang span
+tokens (`<lcel/>`/`<ucel/>`/`<ched/>`) derived from them. `DoclingDocument`
+exposes the tables for in-place repair (#238) — recover missing OCR text, fix
+a misread cell, then re-export:
 
 ```rust
 let mut document = converter.convert(source).unwrap().document;
@@ -260,11 +263,12 @@ for table in document.tables_mut() {
 println!("{}", document.export_to_markdown()); // repairs included
 ```
 
-`rows`, `structure` and `cell_boxes` are public fields, so full reconstruction
-(inserting rows, rebuilding a borderless table from corrected OCR) is ordinary
-`Vec` surgery; `set_cell_bbox` materializes the geometry grid on demand.
-Declarative backends (DOCX/HTML/…) have no page geometry — their tables stay
-`cell_boxes: None` and are still editable by `(row, col)`.
+Updating a spanning cell through any covered position updates the whole cell
+(record + every covered grid slot). `rows`, `structure` and `cells` are public
+fields, so full reconstruction (inserting rows, rebuilding a borderless table
+from corrected OCR) is ordinary `Vec` surgery; `set_cell_bbox` materializes
+1×1 cells on demand. Declarative backends (DOCX/HTML/…) have no page geometry
+— their tables stay `cells: None` and are still editable by `(row, col)`.
 
 ### JSON output
 

@@ -1715,16 +1715,48 @@ pub fn stamp_page_no(nodes: &mut [Node], page_no: usize) {
     }
 }
 
-/// A dense table grid plus per-cell geometry, aligned position-for-position:
-/// `boxes[r][c]` is cell `(r, c)`'s `[l, t, r, b]` in page points (top-left
-/// origin); a spanned cell repeats its anchor's box over the covered
-/// positions. Produced by the TableFormer paths (`tf_core`), consumed here
-/// into [`docling_core::Table::cell_boxes`] (#238). Lives in this always-
-/// compiled module so the pure-text (wasm `pdf-text`) build sees the type.
+/// A dense table grid plus its first-class cells (#240): `rows` is the text
+/// grid every serializer renders (spans replicate their anchor's text);
+/// `cells` are the docling-parity per-cell records (text, page-point bbox,
+/// span rectangle, OTSL header roles). Produced by the TableFormer paths
+/// (`tf_core`); lives in this always-compiled module so the pure-text (wasm
+/// `pdf-text`) build sees the type.
 #[derive(Clone, Debug)]
 pub struct TableGrid {
     pub rows: Vec<Vec<String>>,
-    pub boxes: Vec<Vec<Option<[f32; 4]>>>,
+    pub cells: Vec<docling_core::TableCell>,
+}
+
+/// The DocLang structure overlay derived from first-class cells: span
+/// continuations (`lcel`/`ucel`/`xcel`) and per-cell header roles, so the
+/// PDF path's DCLX carries real spans instead of a flat grid.
+fn structure_from_cells(
+    cells: &[docling_core::TableCell],
+    nrows: usize,
+    ncols: usize,
+) -> docling_core::TableStructure {
+    let grid = || vec![vec![false; ncols]; nrows];
+    let mut col_cont = grid();
+    let mut row_cont = grid();
+    let mut row_header = grid();
+    let mut col_header = grid();
+    for c in cells {
+        for r in c.start_row..(c.start_row + c.row_span).min(nrows) {
+            for k in c.start_col..(c.start_col + c.col_span).min(ncols) {
+                col_cont[r][k] = k > c.start_col;
+                row_cont[r][k] = r > c.start_row;
+                row_header[r][k] = c.row_header;
+                col_header[r][k] = c.column_header;
+            }
+        }
+    }
+    docling_core::TableStructure {
+        header_row: Vec::new(),
+        col_continuation: col_cont,
+        row_continuation: row_cont,
+        row_header,
+        col_header,
+    }
 }
 
 pub fn assemble_page(
@@ -1971,11 +2003,18 @@ pub fn assemble_page(
             // when available; otherwise geometric grid reconstruction; finally a
             // single cell.
             "table" | "document_index" => {
-                // TableFormer grids carry per-cell page-point boxes into the
-                // public post-extraction API (#238); the geometric fallback
-                // has no per-cell geometry.
-                let (rows, cell_boxes) = match table_rows[i].clone() {
-                    Some(grid) => (grid.rows, Some(grid.boxes)),
+                // TableFormer grids carry first-class cells (#240: text +
+                // page-point bbox + span rectangle + OTSL header roles) into
+                // the public model, and the DocLang structure overlay derives
+                // from them so DCLX emits real span/header tokens. The
+                // geometric fallback has no per-cell records.
+                let (rows, cells, structure) = match table_rows[i].clone() {
+                    Some(grid) => {
+                        let nrows = grid.rows.len();
+                        let ncols = grid.rows.first().map_or(0, Vec::len);
+                        let structure = structure_from_cells(&grid.cells, nrows, ncols);
+                        (grid.rows, Some(grid.cells), Some(structure))
+                    }
                     None => {
                         let rows = reconstruct_table(region, &page.cells);
                         let rows = if rows.iter().any(|r| r.len() > 1) {
@@ -1983,7 +2022,7 @@ pub fn assemble_page(
                         } else {
                             vec![vec![text.clone()]]
                         };
-                        (rows, None)
+                        (rows, None, None)
                     }
                 };
                 nodes.push(located(
@@ -1991,9 +2030,9 @@ pub fn assemble_page(
                     Node::Table(Table {
                         rows,
                         location: None,
-                        structure: None,
+                        structure,
                         cell_blocks: None,
-                        cell_boxes,
+                        cells,
                         caption: None,
                     }),
                 ));

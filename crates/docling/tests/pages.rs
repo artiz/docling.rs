@@ -296,11 +296,13 @@ fn tableformer_ready() -> bool {
     }
 }
 
-/// #238: the ML table path records per-cell page-point boxes on the public
-/// `Table`, and the bbox-driven repair API round-trips: locate a cell by its
-/// own recorded box, replace the text, see it in the re-export.
+/// #238/#240: the ML table path emits first-class cells (text + page-point
+/// bbox + span rectangle + OTSL header roles) on the public `Table`; the
+/// JSON export serializes the real records (bbox + span offsets instead of
+/// the synthesized 1×1 grid); and the bbox-driven repair API round-trips
+/// into the re-export.
 #[test]
-fn table_cells_carry_boxes_and_support_bbox_repair() {
+fn table_cells_are_first_class_and_support_bbox_repair() {
     if !pdfium_ready() || !ocr_models_ready() || !tableformer_ready() {
         eprintln!("skipping: pdfium or the ML models are not present");
         return;
@@ -313,17 +315,31 @@ fn table_cells_carry_boxes_and_support_bbox_repair() {
         .expect("convert")
         .document;
 
+    // The JSON export carries the real cells: bboxes present.
+    let json = document.export_to_json();
+    assert!(
+        json.contains("\"coord_origin\": \"TOPLEFT\""),
+        "table cells serialize with bboxes"
+    );
+
     let table = document
         .tables_mut()
-        .find(|t| t.cell_boxes.is_some())
-        .expect("the fixture's table goes through TableFormer and carries geometry");
-    let (r, c, bbox) = (0..table.rows.len())
-        .flat_map(|r| (0..table.rows[r].len()).map(move |c| (r, c)))
-        .find_map(|(r, c)| {
-            (!table.cell_text(r, c).unwrap_or_default().is_empty())
-                .then(|| table.cell_bbox(r, c).map(|b| (r, c, b)))
-                .flatten()
-        })
+        .find(|t| t.cells.is_some())
+        .expect("the fixture's table goes through TableFormer and carries cells");
+    let cells = table.cells.as_ref().unwrap();
+    assert!(!cells.is_empty(), "first-class cells populated");
+    assert!(
+        cells.iter().all(|c| c.row_span >= 1 && c.col_span >= 1),
+        "sane spans"
+    );
+    assert!(
+        cells.iter().any(|c| c.bbox.is_some()),
+        "cells carry geometry"
+    );
+    let (r, c, bbox) = cells
+        .iter()
+        .find(|c| !c.text.is_empty() && c.bbox.is_some())
+        .map(|c| (c.start_row, c.start_col, c.bbox.unwrap()))
         .expect("a non-empty cell with geometry");
     // Boxes are page points, top-left origin: a sane, non-degenerate rect.
     assert!(

@@ -727,7 +727,7 @@ impl<'a> Parser<'a> {
             location: None,
             structure: None,
             cell_blocks: None,
-            cell_boxes: None,
+            cells: None,
             caption: None,
         }));
         self.prev_was_list = false;
