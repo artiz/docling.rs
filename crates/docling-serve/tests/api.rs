@@ -69,6 +69,45 @@ fn pdfium_ready() -> bool {
     std::env::var("PDFIUM_DYNAMIC_LIB_PATH").is_ok()
 }
 
+/// The layout/OCR/TableFormer model files, resolved from the repo-root
+/// `.models` into the env overrides (tests run with CWD = the crate dir, so
+/// CWD-relative resolution can't find them) — same pattern as
+/// `crates/docling/tests/pages.rs`.
+fn ml_models_ready() -> bool {
+    let m = repo_root().join(".models");
+    let layout = ["layout_heron_int8.onnx", "layout_heron.onnx"]
+        .iter()
+        .map(|f| m.join(f))
+        .find(|p| p.exists());
+    let rec = ["ocr_rec_en.onnx", "ocr_rec.onnx"]
+        .iter()
+        .map(|f| m.join(f))
+        .find(|p| p.exists());
+    let dict = ["en_dict.txt", "ppocr_keys_v1.txt"]
+        .iter()
+        .map(|f| m.join(f))
+        .find(|p| p.exists());
+    let tf = m.join("tableformer");
+    let dec = ["decoder_kv.onnx", "decoder_int8.onnx", "decoder.onnx"]
+        .iter()
+        .map(|f| tf.join(f))
+        .find(|p| p.exists());
+    match (layout, rec, dict, dec) {
+        (Some(l), Some(r), Some(di), Some(de))
+            if tf.join("encoder.onnx").exists() && tf.join("bbox.onnx").exists() =>
+        {
+            std::env::set_var("DOCLING_LAYOUT_ONNX", l);
+            std::env::set_var("DOCLING_OCR_REC_ONNX", r);
+            std::env::set_var("DOCLING_OCR_DICT", di);
+            std::env::set_var("DOCLING_TABLEFORMER_ENCODER", tf.join("encoder.onnx"));
+            std::env::set_var("DOCLING_TABLEFORMER_DECODER", de);
+            std::env::set_var("DOCLING_TABLEFORMER_BBOX", tf.join("bbox.onnx"));
+            true
+        }
+        _ => false,
+    }
+}
+
 #[tokio::test]
 async fn health_is_ok() {
     let response = app()
@@ -276,6 +315,41 @@ async fn rasterizes_pdf_pages_to_png() {
     let b64 = pages[0]["png_base64"].as_str().unwrap();
     let bytes = docling::base64::decode(b64).expect("valid base64");
     assert_eq!(&bytes[..8], b"\x89PNG\r\n\x1a\n");
+}
+
+/// #246 end-to-end: a `no_ocr=true` request must not degrade the shared warm
+/// pipeline for later default requests. The table fixture makes the difference
+/// decisive — the full pipeline emits a Markdown table (pipes), the no-OCR
+/// text-layer path emits flat paragraphs. Needs pdfium + the layout/OCR/
+/// TableFormer models, so it gates like the rasterization test.
+#[tokio::test]
+async fn no_ocr_request_does_not_stick_to_the_warm_pipeline() {
+    if !pdfium_ready() || !ml_models_ready() {
+        eprintln!("skipping: pdfium or the ML models are not present");
+        return;
+    }
+    let pdf =
+        std::fs::read(repo_root().join("tests/data/pdf/sources/2305.03393v1-pg9.pdf")).unwrap();
+    let app = app();
+    let run = |no_ocr: &'static str, app: axum::Router| {
+        let (ct, body) = multipart("t.pdf", &pdf, &[("to", "md"), ("no_ocr", no_ocr)]);
+        async move {
+            let response = app.oneshot(convert_request(&ct, body, "")).await.unwrap();
+            assert_eq!(response.status(), StatusCode::OK);
+            body_string(response).await
+        }
+    };
+    let full1 = run("false", app.clone()).await;
+    assert!(full1.contains('|'), "full pipeline must emit the table");
+    let reduced = run("true", app.clone()).await;
+    assert!(!reduced.contains('|'), "no_ocr path has no TableFormer");
+    // The bug: this third request reused the degraded pipeline and returned
+    // the flat no_ocr output until the server restarted.
+    let full2 = run("false", app).await;
+    assert_eq!(
+        full1, full2,
+        "default request after no_ocr must fully recover"
+    );
 }
 
 #[tokio::test]

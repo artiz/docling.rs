@@ -138,7 +138,7 @@ impl Default for ServeConfig {
 struct AppState {
     /// Warm ML pipeline (mutable ONNX sessions) — one PDF/image conversion at
     /// a time, but the models stay loaded across requests.
-    pipeline: Mutex<Option<Pipeline>>,
+    pipeline: Mutex<Option<(PipelineFlags, Pipeline)>>,
     /// Bounds total in-flight conversions (`Arc` so a permit can move into
     /// a streaming response's worker and outlive the handler).
     permits: Arc<Semaphore>,
@@ -162,7 +162,7 @@ pub fn router(cfg: ServeConfig) -> Router {
         // Blocking model load off the runtime; readiness flips when done.
         tokio::task::spawn_blocking(move || {
             match Pipeline::new() {
-                Ok(p) => *st.pipeline.lock().unwrap() = Some(p),
+                Ok(p) => *st.pipeline.lock().unwrap() = Some((PipelineFlags::default(), p)),
                 Err(e) => eprintln!("warmup: pipeline load failed: {e}"),
             }
             st.ready.store(true, Ordering::Release);
@@ -1362,30 +1362,53 @@ fn convert_document(
     }
 }
 
-/// The lazily-loaded warm pipeline. Pipeline switches (`no_ocr`,
-/// `no_table_former`) are per-instance, so a request that changes them
-/// rebuilds the pipeline (model sessions reload); steady-state traffic with
-/// stable options keeps the warm one.
+/// The pipeline switches a warm instance was built with, remembered alongside
+/// it (#246): the switches are per-instance state a [`Pipeline`] doesn't
+/// expose back, and without the record a flagged request permanently degraded
+/// the cached instance — a later default request found the slot filled and
+/// reused the reduced pipeline, silently returning flat no-OCR output until
+/// the server restarted.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+struct PipelineFlags {
+    no_ocr: bool,
+    skip_ocr: bool,
+    no_table_former: bool,
+    no_text_panels: bool,
+}
+
+impl PipelineFlags {
+    fn of(options: &ConvertOptions) -> Self {
+        Self {
+            no_ocr: options.no_ocr.unwrap_or(false),
+            skip_ocr: options.skip_ocr.unwrap_or(false),
+            no_table_former: options.no_table_former.unwrap_or(false),
+            no_text_panels: options.no_text_panels.unwrap_or(false),
+        }
+    }
+}
+
+/// The lazily-loaded warm pipeline. Pipeline switches (`no_ocr`, `skip_ocr`,
+/// `no_table_former`, `no_text_panels`) are per-instance, so the pipeline is
+/// rebuilt exactly when the request's switches differ from the cached
+/// instance's — including back to the default (#246; the old code only
+/// rebuilt *toward* reduced configurations, so a degraded instance stuck).
+/// Steady-state traffic with stable options — flagged or not — keeps the warm
+/// one.
 fn warm_pipeline<'a>(
-    slot: &'a mut Option<Pipeline>,
+    slot: &'a mut Option<(PipelineFlags, Pipeline)>,
     options: &ConvertOptions,
 ) -> Result<&'a mut Pipeline, ApiError> {
-    let no_ocr = options.no_ocr.unwrap_or(false);
-    let skip_ocr = options.skip_ocr.unwrap_or(false);
-    let no_tf = options.no_table_former.unwrap_or(false);
-    let ntp = options.no_text_panels.unwrap_or(false);
-    if no_ocr || skip_ocr || no_tf || ntp {
+    let flags = PipelineFlags::of(options);
+    if slot.as_ref().map(|(built, _)| *built) != Some(flags) {
         let p = Pipeline::new()
             .map_err(|e| ApiError::Internal(e.to_string()))?
-            .no_ocr(no_ocr)
-            .skip_ocr(skip_ocr)
-            .no_table_former(no_tf)
-            .no_text_panels(ntp);
-        *slot = Some(p);
-    } else if slot.is_none() {
-        *slot = Some(Pipeline::new().map_err(|e| ApiError::Internal(e.to_string()))?);
+            .no_ocr(flags.no_ocr)
+            .skip_ocr(flags.skip_ocr)
+            .no_table_former(flags.no_table_former)
+            .no_text_panels(flags.no_text_panels);
+        *slot = Some((flags, p));
     }
-    Ok(slot.as_mut().expect("just filled"))
+    Ok(&mut slot.as_mut().expect("just filled").1)
 }
 
 /// Per-request declarative converter (construction is cheap — it's
@@ -1553,6 +1576,37 @@ async fn stream_markdown(
 
 fn api_error_message(e: ApiError) -> String {
     api_error_parts(e).1
+}
+
+#[cfg(test)]
+mod pipeline_flag_tests {
+    use super::{warm_pipeline, ConvertOptions, PipelineFlags};
+
+    /// #246: the cached pipeline must be rebuilt whenever the request's
+    /// switches differ from the ones it was built with — in BOTH directions.
+    /// The old code only rebuilt toward reduced configurations, so a
+    /// `no_ocr=true` request permanently degraded the shared instance for
+    /// every later default request. (`Pipeline::new()` loads no models —
+    /// they're lazy — so this runs in plain CI.)
+    #[test]
+    fn warm_pipeline_rebuilds_in_both_directions() {
+        let mut slot = None;
+        let default_opts = ConvertOptions::default();
+        let no_ocr_opts = ConvertOptions {
+            no_ocr: Some(true),
+            ..ConvertOptions::default()
+        };
+        assert!(warm_pipeline(&mut slot, &no_ocr_opts).is_ok());
+        assert_eq!(slot.as_ref().unwrap().0, PipelineFlags::of(&no_ocr_opts));
+        // Back to default: the degraded instance must not be reused.
+        assert!(warm_pipeline(&mut slot, &default_opts).is_ok());
+        assert_eq!(slot.as_ref().unwrap().0, PipelineFlags::default());
+        // And a repeat with unchanged flags keeps the warm instance (no
+        // needless model reload): the stored flags stay identical, which is
+        // the rebuild guard itself.
+        assert!(warm_pipeline(&mut slot, &default_opts).is_ok());
+        assert_eq!(slot.as_ref().unwrap().0, PipelineFlags::default());
+    }
 }
 
 #[cfg(test)]
