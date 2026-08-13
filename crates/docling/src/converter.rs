@@ -5,9 +5,9 @@ use std::collections::HashSet;
 use crate::backend::{
     is_deepseek_markdown, AsciiDocBackend, CsvBackend, DeclarativeBackend, DeepSeekBackend,
     DocBackend, DoclingJsonBackend, DocxBackend, EmailBackend, EpubBackend, InterchangeBackend,
-    JatsBackend, LatexBackend, MarkdownBackend, MhtmlBackend, OdfBackend, PptBackend, PptxBackend,
-    RtfBackend, StarOffice5Backend, UsptoBackend, VisioBackend, WebVttBackend, XbrlBackend,
-    XlsBackend, XlsxBackend,
+    JatsBackend, LatexBackend, LotusBackend, MarkdownBackend, MhtmlBackend, OdfBackend, PptBackend,
+    PptxBackend, RtfBackend, StarOffice5Backend, UsptoBackend, VisioBackend, WebVttBackend,
+    XbrlBackend, XlsBackend, XlsxBackend,
 };
 
 /// Whether `text` begins with an XML prolog — an `<?xml …?>` declaration or a
@@ -517,6 +517,9 @@ impl DocumentConverter {
             InputFormat::Dbf | InputFormat::Dif | InputFormat::Sylk => {
                 InterchangeBackend.convert(&source)?
             }
+            // Lotus/Quattro/Works record streams (#216): one BOF-sniffing
+            // backend for the whole DOS-era family.
+            InputFormat::Lotus => LotusBackend.convert(&source)?,
             InputFormat::Docx => DocxBackend.convert(&source)?,
             // Legacy binary Office (issue #127): parsed natively — docling
             // proper converts these through LibreOffice first (PR #3804).

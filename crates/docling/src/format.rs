@@ -76,6 +76,11 @@ pub enum InputFormat {
     /// SYLK (`.slk`/`.sylk`) — a docling.rs extension (#216); same
     /// sheet-region conversion as DIF.
     Sylk,
+    /// Lotus 1-2-3 / Symphony / MS Works spreadsheets (`.wk1`–`.wk4`,
+    /// `.wks`, `.wrk`, `.123`) — a docling.rs extension (#216); the DOS-era
+    /// record streams, content-sniffed on the BOF record and split into data
+    /// regions like an ODS sheet.
+    Lotus,
     /// StarOffice 5 binaries (`.sdw`/`.sda`/`.sdd`/`.vor`) — a docling.rs
     /// extension (#215); CFB containers parsed natively (text-level
     /// extraction). The document kind comes from the stream inside, so a
@@ -127,6 +132,7 @@ impl InputFormat {
             InputFormat::Dbf => "dbf",
             InputFormat::Dif => "dif",
             InputFormat::Sylk => "sylk",
+            InputFormat::Lotus => "lotus",
             InputFormat::StarOffice5 => "staroffice5",
         }
     }
@@ -202,6 +208,9 @@ impl InputFormat {
             "dbf" => InputFormat::Dbf,
             "dif" => InputFormat::Dif,
             "slk" | "sylk" => InputFormat::Sylk,
+            // The Lotus family (#216): .wks is ambiguous (1-2-3 rel 1A and
+            // MS Works v3 both used it) — the backend sniffs the BOF.
+            "wk1" | "wk2" | "wk3" | "wk4" | "wks" | "wrk" | "123" => InputFormat::Lotus,
             // StarOffice 5 binaries (#215): .vor templates dispatch by the
             // CFB stream inside (writer/draw/impress share the container).
             // .sdc routes here too so StarCalc gets its targeted
