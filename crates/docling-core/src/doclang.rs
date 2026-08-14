@@ -1509,6 +1509,10 @@ fn emit_list(out: &mut Out, depth: i32, nodes: &[Node], i: &mut usize, level: u8
     out.push(depth, open.to_string());
     let start = *i;
     let mut prev_number: Option<u64> = None;
+    // Previous item was a multilevel projection (overlay ordered, flat bullet):
+    // Word numbers it and its parent-level successor within one list, so the
+    // ordered-continuity break must not fire across it (docling#3902).
+    let mut prev_projected = false;
     while *i < nodes.len() {
         match &nodes[*i] {
             Node::ListItem {
@@ -1533,11 +1537,14 @@ fn emit_list(out: &mut Out, depth: i32, nodes: &[Node], i: &mut usize, level: u8
                 if *i != start
                     && (*first_in_list
                         || eff_ordered != ordered
-                        || (ordered && Some(*number) != prev_number.map(|n| n + 1)))
+                        || (ordered
+                            && !prev_projected
+                            && Some(*number) != prev_number.map(|n| n + 1)))
                 {
                     break;
                 }
                 prev_number = Some(*number);
+                prev_projected = eff_ordered && !*o;
                 // docling wraps a list item's content in `<text>` when a nested
                 // list follows it *anywhere* inside the same `<list>` — its
                 // `_list_item_has_segment_siblings` scans the parent group's

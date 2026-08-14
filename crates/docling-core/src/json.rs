@@ -800,12 +800,17 @@ impl Builder {
         let base = level_of(&run[0]);
         let mut seg = 0;
         let mut prev: Option<(bool, u64)> = None;
+        // Previous base-level item was a multilevel projection (overlay
+        // ordered, flat bullet): its parent-level successor continues the same
+        // Word list, so neither heuristic may split there (docling#3902).
+        let mut prev_projected = false;
         for k in 0..run.len() {
             let Node::ListItem {
                 ordered,
                 number,
                 first_in_list,
                 level,
+                dclx,
                 ..
             } = &run[k]
             else {
@@ -814,15 +819,20 @@ impl Builder {
             if *level != base {
                 continue; // nested item — handled inside add_list
             }
+            let eff_ordered = dclx.as_ref().map_or(*ordered, |d| d.ordered);
             if k > seg {
                 if let Some((po, pn)) = prev {
-                    if *first_in_list || po != *ordered || (*ordered && *number != pn + 1) {
+                    let same_word_list = prev_projected && eff_ordered;
+                    if *first_in_list
+                        || (!same_word_list && (po != *ordered || (*ordered && *number != pn + 1)))
+                    {
                         out.push(json!({ "$ref": self.add_list(&run[seg..k], parent) }));
                         seg = k;
                     }
                 }
             }
             prev = Some((*ordered, *number));
+            prev_projected = eff_ordered && !*ordered;
         }
         out.push(json!({ "$ref": self.add_list(&run[seg..], parent) }));
     }

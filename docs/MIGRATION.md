@@ -119,7 +119,7 @@ PyPI; run via `scripts/conformance/conformance.sh <fmt>`), not the committed gro
 | XLSX | `xlsx.rs` (calamine) | **10/10 exact** (incl. chart captions/classification/data grids) |
 | XLSB (binary Excel 2007+) | `xlsx.rs` → calamine's `Xlsb` reader (#210) | **docling.rs extension — upstream has no XLSB backend**; tables, hidden-sheet layering and page breaks match the XLSX path; drawings/charts/comments/merges aren't exposed by the binary reader |
 | PPTX | `pptx.rs` (roxmltree) | **8/8 exact** |
-| DOCX | `docx.rs` (roxmltree) | **27/27 exact** |
+| DOCX | `docx.rs` (roxmltree) | **30/30 exact** (docling 2.118 parity, #248: all sections' headers/footers as furniture incl. first-page + regular pairs, resumed ordered-list numbering per `numId`, body text after a blank spacer stays inside the list group) |
 | DOC (Word 97–2004) | `doc.rs` (native [MS-DOC]: CFB + piece table + PAPX/CHPX/STSH + Escher) | byte-identical Markdown to the DOCX backend on fixtures converted to `.doc` (headings, ordered/bullet lists, tables, bold/italic, and embedded pictures — inline PICF + floating shapes with decoded PNG/JPEG bytes); docling reaches these only by shelling out to LibreOffice (PR 3804) |
 | XLS (Excel 97–2004) | `xls.rs` (calamine BIFF8 + the XLSX region detection) | byte-identical to the XLSX backend on converted fixtures |
 | PPT (PowerPoint 97–2003) | `ppt.rs` (native [MS-PPT] + OfficeArt shape walker) | **byte-identical to the PPTX backend** on the sample fixture: tables reconstructed from shape-group geometry (spans included), bullet lists (StyleTextProp) and numbered lists (PP9 autonumber), titles, z-order |

@@ -321,6 +321,15 @@ fn render_list_run(items: &[Node], blocks: &mut Vec<String>, strict: bool) {
     // Per level, the previous item's (ordered, number) so we can detect a new
     // sibling list.
     let mut prev: Vec<Option<(bool, u64)>> = Vec::new();
+    // Whether the previous top-level item was a multilevel projection — an
+    // ordered `1.2.`-style item rendered as a Markdown bullet (docx's DocLang
+    // overlay says ordered, the flat field says bullet). Word numbers such an
+    // item and its parent-level successor within one list (same `numId`), and
+    // docling keeps them in one group — so the kind-flip / number-continuity
+    // breaks below must not fire across it (docling#3902's
+    // docx_list_blank_spacer: `- 1.2. Sub two` directly followed by
+    // `2. Second section`, no blank line).
+    let mut prev_projected = false;
 
     for item in items {
         let Node::ListItem {
@@ -331,7 +340,7 @@ fn render_list_run(items: &[Node], blocks: &mut Vec<String>, strict: bool) {
             level,
             marker: _,
             location: _,
-            dclx: _,
+            dclx,
             href: _,
             layer,
         } = item
@@ -356,15 +365,22 @@ fn render_list_run(items: &[Node], blocks: &mut Vec<String>, strict: bool) {
         // backend flagged a fresh list (e.g. Markdown's bullet changing `-`→`*`).
         // Only at the top level: nested sibling groups are children of a list
         // item, and docling joins an item's children without blank lines.
+        let eff_ordered = dclx.as_ref().map_or(*ordered, |d| d.ordered);
         if level == 0 {
             if let Some((prev_ordered, prev_number)) = prev[level] {
+                // A projected predecessor suppresses both heuristics for an
+                // ordered successor: the flat kind flip is an artifact of the
+                // bullet projection, and the numbering continues the deeper
+                // sequence (`1.2.` → `2.`), not this level's.
+                let same_word_list = prev_projected && eff_ordered;
                 let new_list = *first_in_list
-                    || prev_ordered != *ordered
-                    || (*ordered && *number != prev_number + 1);
+                    || (!same_word_list
+                        && (prev_ordered != *ordered || (*ordered && *number != prev_number + 1)));
                 if new_list {
                     lines.push(String::new());
                 }
             }
+            prev_projected = eff_ordered && !*ordered;
         }
 
         let indent = "    ".repeat(level);
