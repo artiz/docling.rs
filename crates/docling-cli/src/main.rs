@@ -117,6 +117,16 @@ fn main() -> ExitCode {
     {
         let mut args = std::env::args().skip(1);
         if args.next().as_deref() == Some("serve") {
+            // #263: a long-lived server defaults the ONNX CPU arena OFF — measured
+            // here, a warm server's retained RSS drops ~3x (2.0 GB -> 0.7 GB after
+            // large-PDF requests) at no measurable latency cost, and stops ratcheting
+            // with every new page shape. Explicit DOCLING_RS_NO_ARENA=0 restores the
+            // arena. Set before any session loads; the process is single-threaded
+            // this early.
+            if std::env::var_os("DOCLING_RS_NO_ARENA").is_none() {
+                std::env::set_var("DOCLING_RS_NO_ARENA", "1");
+            }
+
             return run_serve(args.collect());
         }
     }
@@ -1122,6 +1132,12 @@ fn run_serve(args: Vec<String>) -> ExitCode {
             "--result-ttl" => match it.next().and_then(|v| v.parse().ok()) {
                 Some(v) if v >= 1 => cfg.result_ttl_secs = v,
                 _ => return serve_usage("--result-ttl needs a positive number of seconds"),
+            },
+            // #263: memory ceiling for admission control. 0 disables; unset =
+            // auto-detect the container's cgroup limit.
+            "--max-memory-mb" => match it.next().and_then(|v| v.parse().ok()) {
+                Some(v) => cfg.max_memory_mb = Some(v),
+                None => return serve_usage("--max-memory-mb needs a number (0 disables)"),
             },
             "--warmup" => cfg.warmup = true,
             "--allow-url-fetch" => cfg.allow_url_fetch = true,

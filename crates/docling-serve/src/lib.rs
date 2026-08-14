@@ -72,6 +72,20 @@
 //! concurrently. A semaphore bounds total in-flight conversions
 //! (`--concurrency`); excess requests queue.
 //!
+//! Resource controls (#262/#263): thread pools size to the **cgroup-aware**
+//! CPU budget (a container's CPU quota clamps them; `DOCLING_RS_TF_INTRA`
+//! additionally narrows the shared TableFormer session). The server binary
+//! defaults `DOCLING_RS_NO_ARENA=1` — ONNX Runtime's CPU arena grows with
+//! every new page shape and never returns memory; without it (plus a
+//! `malloc_trim` after each conversion) a warm server's retained RSS measured
+//! ~3× lower and stopped ratcheting, at no observed latency cost. A memory
+//! **ceiling** (`--max-memory-mb` / `DOCLING_RS_MAX_MEMORY_MB`, else the
+//! container's cgroup limit; `0` disables) drives admission control: once
+//! process RSS crosses the watermark (85%, `DOCLING_RS_MEMORY_WATERMARK_PCT`)
+//! new conversions answer **503 + Retry-After** instead of being accepted and
+//! OOM-killing the whole server; `/v1/config` reports `max_memory_mb` and the
+//! live `rss_mb`.
+//!
 //! Security: URL fetching makes the server issue outbound requests (SSRF
 //! surface), so it is **off by default** — enable with `--allow-url-fetch`.
 //! Even when enabled, targets that resolve to a private/loopback/link-local
@@ -123,6 +137,13 @@ pub struct ServeConfig {
     /// How long a finished async job's result stays fetchable before it is
     /// evicted (idle results are the other thing holding memory).
     pub result_ttl_secs: u64,
+    /// Memory ceiling in MB for admission control (#263). `None` = detect the
+    /// container's cgroup limit at startup; `Some(0)` disables the ceiling.
+    /// Once the process RSS crosses the watermark (85% of the ceiling by
+    /// default; `DOCLING_RS_MEMORY_WATERMARK_PCT` overrides), new conversions
+    /// answer 503 instead of being accepted and OOM-killing the whole server
+    /// (exit 137 takes every in-flight request with it).
+    pub max_memory_mb: Option<u64>,
 }
 
 impl Default for ServeConfig {
@@ -136,6 +157,7 @@ impl Default for ServeConfig {
             strict: false,
             queue_size: 16,
             result_ttl_secs: 600,
+            max_memory_mb: None,
         }
     }
 }
@@ -150,16 +172,52 @@ struct AppState {
     /// Async conversion jobs (#182), keyed by task id.
     jobs: Mutex<std::collections::HashMap<String, Job>>,
     ready: AtomicBool,
+    /// The resolved memory ceiling (#263): the configured value, else the
+    /// container's cgroup limit, else none. `0` disables.
+    memory_ceiling_mb: Option<u64>,
     cfg: ServeConfig,
+}
+
+impl AppState {
+    /// Admission control (#263): `Some(refusal)` when the process RSS sits
+    /// above the watermark of the memory ceiling — the request should get a
+    /// 503 *now* rather than push the whole server into the kernel's OOM
+    /// killer. In-flight conversions keep running; the server recovers as
+    /// soon as memory is released (or, with the ONNX arena retaining it, as
+    /// soon as `DOCLING_RS_NO_ARENA` deployments free theirs).
+    fn overloaded(&self) -> Option<String> {
+        let ceiling = self.memory_ceiling_mb.filter(|&c| c > 0)?;
+        let rss = docling_core::env::rss_mb()?;
+        let pct = docling_core::env::parse::<u64>("DOCLING_RS_MEMORY_WATERMARK_PCT")
+            .filter(|p| (1..=100).contains(p))
+            .unwrap_or(85);
+        let watermark = ceiling * pct / 100;
+        (rss >= watermark).then(|| {
+            format!(
+                "server memory is at {rss} MB of the {ceiling} MB ceiling \
+                 (watermark {watermark} MB) — retry once in-flight conversions finish"
+            )
+        })
+    }
 }
 
 /// Build the router (exposed separately from [`serve`] for tests).
 pub fn router(cfg: ServeConfig) -> Router {
+    // Ceiling resolution (#263): explicit flag > DOCLING_RS_MAX_MEMORY_MB >
+    // the container's own cgroup limit > none. 0 anywhere disables.
+    let memory_ceiling_mb = cfg
+        .max_memory_mb
+        .or_else(|| docling_core::env::parse::<u64>("DOCLING_RS_MAX_MEMORY_MB"))
+        .or_else(docling_core::env::cgroup_memory_limit_mb);
+    if let Some(c) = memory_ceiling_mb.filter(|&c| c > 0) {
+        eprintln!("docling-serve: memory ceiling {c} MB (admission control, #263)");
+    }
     let state = Arc::new(AppState {
         pipeline: Mutex::new(None),
         permits: Arc::new(Semaphore::new(cfg.concurrency.max(1))),
         jobs: Mutex::new(std::collections::HashMap::new()),
         ready: AtomicBool::new(!cfg.warmup),
+        memory_ceiling_mb,
         cfg: cfg.clone(),
     });
     if cfg.warmup {
@@ -267,6 +325,10 @@ async fn shutdown_signal() {
 async fn config(State(state): State<Arc<AppState>>) -> Response {
     Json(json!({
         "allow_url_fetch": state.cfg.allow_url_fetch,
+        // #263: the resolved memory ceiling (0/absent = none) and live RSS —
+        // what admission control compares.
+        "max_memory_mb": state.memory_ceiling_mb,
+        "rss_mb": docling_core::env::rss_mb(),
         // Which model file each pipeline stage would load right now (resolved
         // per request — CWD-relative with env overrides, so this is the truth,
         // not a startup snapshot). "Two servers convert the same PDF
@@ -374,6 +436,8 @@ enum ApiError {
     Internal(String),
     /// The async job queue is full (#182) — retry later.
     Busy(String),
+    /// The memory ceiling's watermark is crossed (#263) — 503, retry later.
+    Overloaded(String),
 }
 
 /// The HTTP status + message an [`ApiError`] answers with (also stored on a
@@ -384,13 +448,22 @@ fn api_error_parts(e: ApiError) -> (StatusCode, String) {
         ApiError::Unsupported(m) => (StatusCode::UNPROCESSABLE_ENTITY, m),
         ApiError::Internal(m) => (StatusCode::INTERNAL_SERVER_ERROR, m),
         ApiError::Busy(m) => (StatusCode::TOO_MANY_REQUESTS, m),
+        ApiError::Overloaded(m) => (StatusCode::SERVICE_UNAVAILABLE, m),
     }
 }
 
 impl IntoResponse for ApiError {
     fn into_response(self) -> Response {
+        let overloaded = matches!(self, ApiError::Overloaded(_));
         let (status, msg) = api_error_parts(self);
-        (status, Json(json!({"error": msg}))).into_response()
+        let mut response = (status, Json(json!({"error": msg}))).into_response();
+        if overloaded {
+            // A hint for well-behaved clients; conversions run seconds, not ms.
+            response
+                .headers_mut()
+                .insert("retry-after", header::HeaderValue::from_static("5"));
+        }
+        response
     }
 }
 
@@ -479,6 +552,10 @@ async fn convert(
 ) -> Result<Response, ApiError> {
     let (sources, options) = parse_convert_request(&state, query, headers, body).await?;
     let (to, image_mode) = validate_output(&options)?;
+    // Admission control (#263): shed load before taking a conversion slot.
+    if let Some(msg) = state.overloaded() {
+        return Err(ApiError::Overloaded(msg));
+    }
 
     // Bound total in-flight conversions; excess requests queue here. The
     // permit is owned so the streaming path can hold it until the response
@@ -504,7 +581,9 @@ async fn convert(
 
     let st = state.clone();
     let stored = tokio::task::spawn_blocking(move || {
-        run_conversion(&st, sources, &options, &to, image_mode)
+        let out = run_conversion(&st, sources, &options, &to, image_mode);
+        trim_heap();
+        out
     })
     .await
     .map_err(|e| ApiError::Internal(format!("convert task: {e}")))?;
@@ -575,6 +654,11 @@ async fn convert_async(
 ) -> Result<Response, ApiError> {
     let (mut sources, options) = parse_convert_request(&state, query, headers, body).await?;
     let (to, image_mode) = validate_output(&options)?;
+    // Admission control (#263) applies to async submissions too — a queued
+    // job holds its upload bytes and will run into the same ceiling.
+    if let Some(msg) = state.overloaded() {
+        return Err(ApiError::Overloaded(msg));
+    }
     // A single unconvertible upload fails the submission itself (a batch
     // converts around bad items) — same surface as the sync endpoint, and no
     // doomed job occupies the queue.
@@ -622,7 +706,9 @@ async fn convert_async(
         let stx = st.clone();
         let opts = options;
         let outcome = tokio::task::spawn_blocking(move || {
-            run_conversion(&stx, sources, &opts, &to, image_mode)
+            let out = run_conversion(&stx, sources, &opts, &to, image_mode);
+            trim_heap();
+            out
         })
         .await
         .map_err(|e| ApiError::Internal(format!("convert task: {e}")))
@@ -816,6 +902,21 @@ fn run_conversion(
         body: serde_json::to_vec_pretty(&json!({ "results": items }))
             .expect("batch JSON serializes"),
     })
+}
+
+/// Return freed heap to the OS after a conversion (#263). A PDF conversion
+/// churns hundreds of MB of page bitmaps through glibc's allocator, which
+/// keeps the freed arenas mapped — measured here, a warm server sat at
+/// ~2 GB RSS after one big conversion with the actual live data a fraction
+/// of that. `malloc_trim` walks the arenas and gives the free pages back;
+/// admission control (and the operator's dashboards) then see the truth.
+/// glibc-Linux only — a no-op elsewhere (musl/mac allocators don't have the
+/// retention pattern to the same degree, and no trim call to offer).
+fn trim_heap() {
+    #[cfg(all(target_os = "linux", target_env = "gnu"))]
+    unsafe {
+        libc::malloc_trim(0);
+    }
 }
 
 /// Server-side cap on pages rasterized per `to=images` request (#243). A small
@@ -1494,6 +1595,14 @@ async fn stream_markdown(
     tokio::task::spawn_blocking(move || {
         // Held until this worker (and thus the response body) is done.
         let _permit = permit;
+        // Freed page bitmaps go back to the OS when this worker finishes.
+        struct TrimOnDrop;
+        impl Drop for TrimOnDrop {
+            fn drop(&mut self) {
+                trim_heap();
+            }
+        }
+        let _trim = TrimOnDrop;
         let send = |item: Result<Chunk, String>| {
             // The receiver disappearing means the client went away — stop.
             tx.blocking_send(item).is_ok()

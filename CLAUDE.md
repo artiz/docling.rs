@@ -79,7 +79,10 @@ cargo check -p docling --no-default-features --features pdf-text \
 - Resolution is CWD-relative with exe-dir fallback; env overrides:
   `PDFIUM_DYNAMIC_LIB_PATH`, `DOCLING_ASR_{ENCODER,DECODER,VOCAB}`,
   `DOCLING_FFMPEG` (video frames — ffmpeg is a runtime binary, never a build
-  dep), `DOCLING_RS_PDF_WORKERS/_THREADS/_INTRA`, `DOCLING_RS_FP32`,
+  dep), `DOCLING_RS_PDF_WORKERS/_THREADS/_INTRA`, `DOCLING_RS_TF_INTRA` (#262),
+  `DOCLING_RS_NO_ARENA` (#263; serve defaults it on),
+  `DOCLING_RS_MAX_MEMORY_MB` + `DOCLING_RS_MEMORY_WATERMARK_PCT` (serve
+  admission control), `DOCLING_RS_FP32`,
   `DOCLING_RS_EP` (GPU execution providers), `DOCLING_RS_ASR_LANG`,
   `DOCLING_RS_OCR_LANG` (en default; `ch` = the docling-conformance OCR
   model, which conformance scripts pin themselves),

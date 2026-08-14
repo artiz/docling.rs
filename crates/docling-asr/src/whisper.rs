@@ -198,9 +198,8 @@ impl Transcriber {
             Session::builder()
                 .map_err(|e| format!("asr: builder: {e}"))?
                 .with_intra_threads(
-                    std::thread::available_parallelism()
-                        .map(|n| n.get())
-                        .unwrap_or(1),
+                    // Quota-aware (#262): a cgroup CPU limit clamps the pool.
+                    docling_core::env::cpu_budget(),
                 )
                 .map_err(|e| format!("asr: threads: {e}"))?
                 .commit_from_file(&path)

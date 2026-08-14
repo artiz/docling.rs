@@ -25,6 +25,9 @@ coreml = ["docling/coreml"]
 axum = { version = "0.8", features = ["multipart"] }
 docling = { path = "../docling", version = "1.11.0" }
 docling-core = { path = "../docling-core", version = "1.11.0" }
+# malloc_trim after conversions (#263): glibc's allocator otherwise keeps
+# freed page-bitmap heap mapped forever, ratcheting a warm server's RSS.
+libc = "0.2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "net", "signal"] }

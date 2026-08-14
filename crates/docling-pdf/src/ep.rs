@@ -188,9 +188,34 @@ fn dispatches() -> Option<Vec<ExecutionProviderDispatch>> {
 /// Register the selected execution providers on a session builder. Called by
 /// every session in this crate; a no-op (and infallible) in the default
 /// CPU configuration.
+/// Session memory options (#263): with `DOCLING_RS_NO_ARENA` set, the CPU
+/// execution provider registers with its memory arena disabled
+/// (`DisableCpuMemArena`) and initializers stay out of arena allocations.
+/// ONNX Runtime's CPU arena grows a slab for every new tensor shape it sees
+/// — a PDF's pages all differ, so a warm server's arena ratchets up with the
+/// largest documents it ever served and never returns a byte; without it,
+/// activations free after each run (and `malloc_trim` hands them back to the
+/// OS) at a few percent inference cost. Off by default — batch CLI runs
+/// prefer the arena's speed. Called at the *end* of [`apply`], so an explicit
+/// GPU execution provider (registered first) keeps priority.
+fn memory_opts(builder: SessionBuilder) -> Result<SessionBuilder, String> {
+    if !docling_core::env::flag("DOCLING_RS_NO_ARENA") {
+        return Ok(builder);
+    }
+    use ort::ep::{cpu::CPU, ExecutionProvider as _};
+    let cpu = CPU::default().with_arena_allocator(false);
+    let mut builder = builder
+        .with_config_entry("session.use_device_allocator_for_initializers", "1")
+        .map_err(|e| format!("allocator config: {e}"))?;
+    cpu.register(&mut builder)
+        .map_err(|e| format!("cpu ep: {e}"))?;
+    Ok(builder)
+}
+
 pub fn apply(builder: SessionBuilder) -> Result<SessionBuilder, String> {
     let Some(eps) = dispatches() else {
-        return Ok(builder);
+        // No GPU EP selected: the CPU fallback still honors the arena knob.
+        return memory_opts(builder);
     };
     static LOGGED: OnceLock<()> = OnceLock::new();
     LOGGED.get_or_init(|| {
@@ -198,9 +223,11 @@ pub fn apply(builder: SessionBuilder) -> Result<SessionBuilder, String> {
             eprintln!("docling-pdf: execution providers: {eps:?}");
         }
     });
-    builder
+    let builder = builder
         .with_execution_providers(eps)
-        .map_err(|e| format!("execution provider registration: {e}"))
+        .map_err(|e| format!("execution provider registration: {e}"))?;
+    // After the GPU EPs, so they keep registration priority.
+    memory_opts(builder)
 }
 
 #[cfg(test)]
