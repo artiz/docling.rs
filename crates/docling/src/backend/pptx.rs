@@ -129,7 +129,7 @@ fn convert_slide(
     let slide = Document::parse(&xml).ok()?;
     let mut content = DoclingDocument::new("slide");
     if let Some(tree) = descendant(slide.root_element(), "spTree") {
-        for shape in tree.children().filter(XmlNode::is_element) {
+        for shape in shapes_by_position(tree, &phmap) {
             handle_shape(
                 shape,
                 &valid_imgs,
@@ -301,6 +301,59 @@ fn slide_rids(presentation: &str) -> Vec<String> {
 }
 
 #[allow(clippy::too_many_arguments)]
+/// Order a shape collection in visual reading order (docling#3393's
+/// `_iter_shapes_by_position`): resolve each shape's top/left (its own
+/// `<a:xfrm>`, else the inherited placeholder geometry — python-pptx's
+/// `shape.top`), sort by top (stable, so ties keep z-order), band shapes whose
+/// top sits within 0.05" (45720 EMU) of the *previous* shape's top into one
+/// row — adjacency is chained, so a contiguous band can span several
+/// tolerance steps — and sort each row left-to-right. Shapes with no
+/// resolvable geometry sort last in their original order (upstream's
+/// `fallback_position`).
+fn shapes_by_position<'a>(tree: XmlNode<'a, 'a>, phmap: &PhMap) -> Vec<XmlNode<'a, 'a>> {
+    const ROW_TOLERANCE_EMU: i64 = 45720; // 0.05 inch
+
+    struct Info<'a> {
+        index: usize,
+        node: XmlNode<'a, 'a>,
+        top: i64,
+        left: i64,
+    }
+    let mut infos: Vec<Info<'a>> = tree
+        .children()
+        .filter(|n| matches!(n.tag_name().name(), "sp" | "grpSp" | "pic" | "graphicFrame"))
+        .enumerate()
+        .map(|(index, node)| {
+            let geom = xfrm_geom(node).or_else(|| inherited_geom(node, phmap));
+            let (left, top) = geom.map_or((i64::MAX, i64::MAX), |g| (g[0], g[1]));
+            Info {
+                index,
+                node,
+                top,
+                left,
+            }
+        })
+        .collect();
+    infos.sort_by_key(|s| (s.top, s.index));
+
+    let mut out = Vec::with_capacity(infos.len());
+    let mut row: Vec<Info<'a>> = Vec::new();
+    let mut prev_top: Option<i64> = None;
+    fn flush<'a>(row: &mut Vec<Info<'a>>, out: &mut Vec<XmlNode<'a, 'a>>) {
+        row.sort_by_key(|s| (s.left, s.index));
+        out.extend(row.drain(..).map(|s| s.node));
+    }
+    for info in infos {
+        if prev_top.is_some_and(|p| info.top - p > ROW_TOLERANCE_EMU) {
+            flush(&mut row, &mut out);
+        }
+        prev_top = Some(info.top);
+        row.push(info);
+    }
+    flush(&mut row, &mut out);
+    out
+}
+
 fn handle_shape(
     shape: XmlNode,
     valid_imgs: &HashSet<String>,
@@ -312,7 +365,11 @@ fn handle_shape(
 ) {
     match shape.tag_name().name() {
         "grpSp" => {
-            for child in shape.children().filter(XmlNode::is_element) {
+            // Group children re-sort in visual order too (docling#3393); their
+            // coordinates share the group's child space, so relative order is
+            // well-defined. Groups carry no placeholder geometry — the phmap
+            // lookup just never fires for them.
+            for child in shapes_by_position(shape, phmap) {
                 handle_shape(child, valid_imgs, images, charts, slide_size, phmap, doc);
             }
         }
