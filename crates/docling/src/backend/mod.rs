@@ -43,6 +43,7 @@ mod latex;
 mod lotus;
 mod markdown;
 mod mhtml;
+mod msg;
 mod odf;
 mod officeart;
 mod omml;

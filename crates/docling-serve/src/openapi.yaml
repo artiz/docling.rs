@@ -59,6 +59,7 @@ paths:
         - { $ref: "#/components/parameters/no_table_former" }
         - { $ref: "#/components/parameters/no_text_panels" }
         - { $ref: "#/components/parameters/fetch_images" }
+        - { $ref: "#/components/parameters/list_attachments" }
         - { $ref: "#/components/parameters/pages" }
         - { $ref: "#/components/parameters/scale" }
         - { $ref: "#/components/parameters/ocr_lang" }
@@ -380,6 +381,12 @@ components:
             PDF/image — keep every detected picture as a picture: disable the
             demotion of uncaptioned dense-text "picture" regions into
             paragraphs (the escape hatch for image-extraction workflows).
+        list_attachments:
+          type: boolean
+          default: false
+          description: >
+            Email (.eml/.msg) — append an Attachments section listing names and
+            content types; the attachments' bytes are never embedded.
         fetch_images:
           type: boolean
           default: false
@@ -488,6 +495,8 @@ components:
       { name: no_text_panels, in: query, schema: { type: boolean } }
     fetch_images:
       { name: fetch_images, in: query, schema: { type: boolean } }
+    list_attachments:
+      { name: list_attachments, in: query, schema: { type: boolean } }
     pages:
       { name: pages, in: query, schema: { type: string }, example: "2-5" }
     scale:

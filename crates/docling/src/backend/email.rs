@@ -1,9 +1,15 @@
-//! Email (`.eml`) backend — a port of docling's `EmailDocumentBackend`.
+//! Email (`.eml` / Outlook `.msg`) backend — a port of docling's
+//! `EmailDocumentBackend` (#251 for `.msg`, docling#3873).
 //!
 //! The subject becomes the document title; `From:`/`To:`/`Date:` headers become
 //! text paragraphs; the body (preferring `text/plain`) is split into paragraphs
 //! on blank lines. All emitted text is HTML/underscore-escaped like docling-core
-//! (so `<a@b>` renders as `&lt;a@b&gt;`).
+//! (so `<a@b>` renders as `&lt;a@b&gt;`). A CFB-magic input is an Outlook
+//! `.msg`: it projects onto RFC 822 (see [`super::msg`]) and flows through the
+//! **same** parse below, so `.msg` and `.eml` output match by construction —
+//! docling's own architecture for the format. `list_attachments` (opt-in,
+//! docling's `EmailBackendOptions.list_attachments`) appends an `Attachments`
+//! section listing names and content types; payload bytes are never embedded.
 
 use mail_parser::{Address, Message, MessageParser};
 
@@ -13,12 +19,22 @@ use crate::error::ConversionError;
 use crate::source::SourceDocument;
 use docling_core::{DoclingDocument, Node};
 
-pub struct EmailBackend;
+pub struct EmailBackend {
+    /// Append an `Attachments` section (names + content types, never the
+    /// payload) — docling's opt-in `list_attachments`.
+    pub list_attachments: bool,
+}
 
 impl DeclarativeBackend for EmailBackend {
     fn convert(&self, source: &SourceDocument) -> Result<DoclingDocument, ConversionError> {
+        // Outlook .msg (CFB magic): project to RFC 822 first; the projection
+        // also carries the attachment labels straight from MAPI.
+        let projected = crate::backend::cfb::CompoundFile::detect(&source.bytes)
+            .then(|| super::msg::project(&source.bytes))
+            .flatten();
+        let raw: &[u8] = projected.as_ref().map_or(&source.bytes, |p| &p.rfc822);
         let msg = MessageParser::default()
-            .parse(&source.bytes)
+            .parse(raw)
             .ok_or_else(|| ConversionError::Parse("email: could not parse message".into()))?;
         let mut doc = DoclingDocument::new(&source.name);
 
@@ -37,8 +53,11 @@ impl DeclarativeBackend for EmailBackend {
             }
         }
         if let Some(date) = msg.date() {
+            // Python docling formats via datetime.isoformat(), which spells
+            // UTC as "+00:00" — mail-parser's RFC 3339 uses "Z". Align.
+            let date = date.to_rfc3339().replace('Z', "+00:00");
             doc.push(Node::Paragraph {
-                text: escape_text(&format!("Date: {}", date.to_rfc3339())),
+                text: escape_text(&format!("Date: {date}")),
             });
         }
         for para in body_paragraphs(&msg) {
@@ -46,8 +65,63 @@ impl DeclarativeBackend for EmailBackend {
                 text: escape_text(&para),
             });
         }
+        if self.list_attachments {
+            let labels = match &projected {
+                Some(p) => p.attachment_labels.clone(),
+                None => eml_attachment_labels(&msg),
+            };
+            if !labels.is_empty() {
+                // docling adds the heading at level 2 under the title → "###".
+                doc.push(Node::Heading {
+                    level: 3,
+                    text: "Attachments".into(),
+                });
+                for label in labels {
+                    doc.push(Node::ListItem {
+                        ordered: false,
+                        number: 1,
+                        first_in_list: false,
+                        text: escape_text(&label),
+                        level: 0,
+                        marker: None,
+                        location: None,
+                        dclx: None,
+                        href: None,
+                        layer: None,
+                    });
+                }
+            }
+        }
         Ok(doc)
     }
+}
+
+/// Attachment display labels for a parsed `.eml`: `name (type/subtype)`,
+/// falling back to `attachment-N` for nameless parts — docling's
+/// `_get_attachment_labels`.
+fn eml_attachment_labels(msg: &Message) -> Vec<String> {
+    use mail_parser::MimeHeaders;
+    msg.attachments()
+        .enumerate()
+        .map(|(i, part)| {
+            let name = part
+                .attachment_name()
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+                .map(str::to_string)
+                .unwrap_or_else(|| format!("attachment-{}", i + 1));
+            match part.content_type() {
+                Some(ct) => {
+                    let mime = match ct.subtype() {
+                        Some(sub) => format!("{}/{sub}", ct.ctype()),
+                        None => ct.ctype().to_string(),
+                    };
+                    format!("{name} ({mime})")
+                }
+                None => name,
+            }
+        })
+        .collect()
 }
 
 /// `"Name <email>"` per address (or bare `email`), joined with `", "`.
@@ -110,11 +184,49 @@ mod tests {
         let eml = "From: Alice <a@x.com>\r\nTo: Bob <b@y.com>\r\nSubject: Hi\r\n\
                    Content-Type: text/plain\r\n\r\nLine one.\r\n\r\nLine two.\r\n";
         let src = SourceDocument::from_bytes("m", InputFormat::Email, eml.as_bytes().to_vec());
-        let md = EmailBackend.convert(&src).unwrap().export_to_markdown();
+        let md = EmailBackend {
+            list_attachments: false,
+        }
+        .convert(&src)
+        .unwrap()
+        .export_to_markdown();
         // angle brackets HTML-escaped; body split into separate paragraphs.
         assert_eq!(
             md.trim(),
             "# Hi\n\nFrom: Alice &lt;a@x.com&gt;\n\nTo: Bob &lt;b@y.com&gt;\n\nLine one.\n\nLine two."
         );
+    }
+
+    /// #251: `list_attachments` appends the section with `name (type)` labels
+    /// for `.eml` too — the docling label format, payload never embedded.
+    #[test]
+    fn eml_list_attachments_appends_labels() {
+        let eml = concat!(
+            "From: A <a@x.com>\r\n",
+            "To: B <b@y.com>\r\n",
+            "Subject: S\r\n",
+            "MIME-Version: 1.0\r\n",
+            "Content-Type: multipart/mixed; boundary=\"bb\"\r\n\r\n",
+            "--bb\r\nContent-Type: text/plain\r\n\r\nBody.\r\n",
+            "--bb\r\nContent-Type: text/plain\r\n",
+            "Content-Disposition: attachment; filename=\"note.txt\"\r\n\r\n",
+            "hi\r\n--bb--\r\n",
+        );
+        let src = SourceDocument::from_bytes("m", crate::InputFormat::Email, eml.into());
+        let md = EmailBackend {
+            list_attachments: true,
+        }
+        .convert(&src)
+        .unwrap()
+        .export_to_markdown();
+        assert!(md.contains("### Attachments"), "{md}");
+        assert!(md.contains("- note.txt (text/plain)"), "{md}");
+        let md_off = EmailBackend {
+            list_attachments: false,
+        }
+        .convert(&src)
+        .unwrap()
+        .export_to_markdown();
+        assert!(!md_off.contains("Attachments"), "{md_off}");
     }
 }

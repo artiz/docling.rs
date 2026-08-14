@@ -7,7 +7,7 @@
 //! (docling's independent `do_ocr=False`); `--no-ocr` remains the
 //! skip-everything fast path.
 //!
-//! Usage: docling-rs [--strict] [--to md|json|dclx|chunks|images] [--pages A-B] [--scale X] [--images MODE] [--input GLOB --output DIR [--jobs N]] [--fetch-images] [--no-stream] [--no-table-former] [--no-ocr] [--skip-ocr] [--force-full-page-ocr] [--no-text-panels] [--ocr-lang en|ch] [--pipeline standard|vlm] [--vlm-endpoint URL] [--vlm-model NAME] [--asr-model PRESET] [--asr-lang CODE] [--video-frames N] [--use-web-browser] [--enrich-picture-classes] [--enrich-code] [--enrich-formula] <input-file>
+//! Usage: docling-rs [--strict] [--to md|json|dclx|chunks|images] [--pages A-B] [--scale X] [--images MODE] [--input GLOB --output DIR [--jobs N]] [--fetch-images] [--list-attachments] [--no-stream] [--no-table-former] [--no-ocr] [--skip-ocr] [--force-full-page-ocr] [--no-text-panels] [--ocr-lang en|ch] [--pipeline standard|vlm] [--vlm-endpoint URL] [--vlm-model NAME] [--asr-model PRESET] [--asr-lang CODE] [--video-frames N] [--use-web-browser] [--enrich-picture-classes] [--enrich-code] [--enrich-formula] <input-file>
 //!   --input GLOB|DIR   batch mode (#205): convert every file the glob matches
 //!                      (`--input '/data/reports/**/*.pdf'` — quote it so the
 //!                      shell doesn't expand it) instead of one positional file.
@@ -125,6 +125,7 @@ fn main() -> ExitCode {
     let mut to = "md".to_string();
     let mut images = "placeholder".to_string();
     let mut fetch_images = false;
+    let mut list_attachments = false;
     let mut no_stream = false;
     let mut no_table_former = false;
     let mut no_ocr = false;
@@ -154,6 +155,9 @@ fn main() -> ExitCode {
         match arg.as_str() {
             "--strict" => strict = true,
             "--fetch-images" => fetch_images = true,
+            // #251: append an Attachments section to converted emails
+            // (.eml/.msg) — names and content types only.
+            "--list-attachments" => list_attachments = true,
             "--no-stream" => no_stream = true,
             "--no-table-former" => no_table_former = true,
             "--no-ocr" => no_ocr = true,
@@ -348,6 +352,7 @@ fn main() -> ExitCode {
             image_mode,
             strict,
             fetch_images,
+            list_attachments,
             no_table_former,
             no_ocr,
             skip_ocr,
@@ -369,7 +374,7 @@ fn main() -> ExitCode {
     }
 
     let Some(path) = path else {
-        eprintln!("usage: docling-rs [--strict] [--to md|json|dclx|chunks|images] [--scale X] [--images MODE] [--input GLOB --output DIR [--jobs N]] [--fetch-images] [--no-stream] [--no-table-former] [--no-ocr] [--skip-ocr] [--force-full-page-ocr] [--no-text-panels] [--ocr-lang en|ch] [--use-web-browser] <input-file>");
+        eprintln!("usage: docling-rs [--strict] [--to md|json|dclx|chunks|images] [--scale X] [--images MODE] [--input GLOB --output DIR [--jobs N]] [--fetch-images] [--list-attachments] [--no-stream] [--no-table-former] [--no-ocr] [--skip-ocr] [--force-full-page-ocr] [--no-text-panels] [--ocr-lang en|ch] [--use-web-browser] <input-file>");
         return ExitCode::from(2);
     };
 
@@ -457,6 +462,7 @@ fn main() -> ExitCode {
         .asr_model(asr_model.clone())
         .asr_lang(asr_lang.clone())
         .fetch_images(fetch_images)
+        .list_attachments(list_attachments)
         .no_table_former(no_table_former)
         .skip_ocr(skip_ocr)
         .no_ocr(no_ocr)
@@ -599,6 +605,7 @@ struct BatchCfg {
     image_mode: ImageMode,
     strict: bool,
     fetch_images: bool,
+    list_attachments: bool,
     no_table_former: bool,
     no_ocr: bool,
     skip_ocr: bool,
@@ -714,6 +721,7 @@ fn batch_converter(cfg: &BatchCfg) -> DocumentConverter {
         .asr_model(cfg.asr_model.clone())
         .asr_lang(cfg.asr_lang.clone())
         .fetch_images(cfg.fetch_images)
+        .list_attachments(cfg.list_attachments)
         .no_table_former(cfg.no_table_former)
         .no_ocr(cfg.no_ocr)
         .force_full_page_ocr(cfg.force_full_page_ocr)
