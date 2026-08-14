@@ -21,10 +21,10 @@
         "$ref": "#/texts/0"
       },
       {
-        "$ref": "#/texts/1"
+        "$ref": "#/tables/0"
       },
       {
-        "$ref": "#/tables/0"
+        "$ref": "#/texts/1"
       },
       {
         "$ref": "#/texts/2"
@@ -33,10 +33,10 @@
         "$ref": "#/texts/3"
       },
       {
-        "$ref": "#/groups/0"
+        "$ref": "#/texts/4"
       },
       {
-        "$ref": "#/texts/7"
+        "$ref": "#/groups/0"
       },
       {
         "$ref": "#/groups/1"
@@ -72,13 +72,13 @@
       },
       "children": [
         {
-          "$ref": "#/texts/4"
-        },
-        {
           "$ref": "#/texts/5"
         },
         {
           "$ref": "#/texts/6"
+        },
+        {
+          "$ref": "#/texts/7"
         }
       ],
       "content_layer": "body",
@@ -232,11 +232,23 @@
       "content_layer": "body",
       "label": "text",
       "prov": [],
+      "orig": "A rectangle shape with this text inside.",
+      "text": "A rectangle shape with this text inside."
+    },
+    {
+      "self_ref": "#/texts/4",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
       "orig": "Let’s introduce a list",
       "text": "Let’s introduce a list"
     },
     {
-      "self_ref": "#/texts/4",
+      "self_ref": "#/texts/5",
       "parent": {
         "$ref": "#/groups/0"
       },
@@ -250,7 +262,7 @@
       "marker": "-"
     },
     {
-      "self_ref": "#/texts/5",
+      "self_ref": "#/texts/6",
       "parent": {
         "$ref": "#/groups/0"
       },
@@ -264,7 +276,7 @@
       "marker": "-"
     },
     {
-      "self_ref": "#/texts/6",
+      "self_ref": "#/texts/7",
       "parent": {
         "$ref": "#/groups/0"
       },
@@ -276,18 +288,6 @@
       "text": "And baz things",
       "enumerated": false,
       "marker": "-"
-    },
-    {
-      "self_ref": "#/texts/7",
-      "parent": {
-        "$ref": "#/body"
-      },
-      "children": [],
-      "content_layer": "body",
-      "label": "text",
-      "prov": [],
-      "orig": "A rectangle shape with this text inside.",
-      "text": "A rectangle shape with this text inside."
     },
     {
       "self_ref": "#/texts/8",
