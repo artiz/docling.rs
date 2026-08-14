@@ -2334,9 +2334,19 @@ pub(crate) fn merge_continuations(nodes: &mut Vec<Node>) {
         if cont {
             let a = as_paragraph(&nodes[i]).unwrap().trim_end().to_string();
             let b = as_paragraph(&nodes[j]).unwrap().trim_start().to_string();
+            // A soft hyphen -- or a hard hyphen followed by a lowercase
+            // continuation (guaranteed lowercase by the `cont` gate above) --
+            // is a word split across the break: strip it and join without a
+            // space, docling#3888 ("vocab-" + "ulary" -> "vocabulary");
+            // docling's older serializer kept the artifact ("vocab- ulary").
+            // Everything else joins with the space, as before.
+            let merged = match a.strip_suffix('\u{ad}').or_else(|| a.strip_suffix('-')) {
+                Some(stem) => format!("{stem}{b}"),
+                None => format!("{a} {b}"),
+            };
             // Keep node i's provenance wrapper; docling's merged paragraph keeps
             // the first fragment's geometry as its primary location.
-            nodes[i] = reparagraph(&nodes[i], format!("{a} {b}"));
+            nodes[i] = reparagraph(&nodes[i], merged);
             nodes.remove(j);
             // Re-check i: the merged paragraph may continue further.
         } else {
@@ -2497,6 +2507,27 @@ mod tests {
             texts,
             [(90.0, 120.0)],
             "the straddler is emitted, the fully-contained callout is not"
+        );
+    }
+
+    /// docling#3906's concern, pinned on our side: a picture detected fully
+    /// inside a table region must survive the containment drop (upstream now
+    /// attaches it to the table's cell; we keep it as a body sibling — either
+    /// way it must not vanish). The text region inside the same table is the
+    /// control: regulars are the ones the drop swallows.
+    #[test]
+    fn picture_inside_a_table_region_survives_the_containment_drop() {
+        let mut regions = vec![
+            region("table", 0.9, 0.0, 0.0, 200.0, 200.0),
+            region("picture", 0.9, 20.0, 20.0, 120.0, 120.0),
+            region("text", 0.9, 20.0, 140.0, 180.0, 180.0),
+        ];
+        super::drop_contained_regulars(&mut regions);
+        let labels: Vec<&str> = regions.iter().map(|r| r.label).collect();
+        assert_eq!(
+            labels,
+            ["table", "picture"],
+            "the in-table picture stays; the in-table regular is the special's child"
         );
     }
 
