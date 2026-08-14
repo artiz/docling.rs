@@ -193,6 +193,9 @@ impl InputFormat {
             "vtt" => InputFormat::Vtt,
             "tex" | "latex" => InputFormat::Latex,
             "eml" => InputFormat::Email,
+            // Outlook .msg (#251): a CFB container of MAPI streams; the email
+            // backend sniffs the magic and projects it onto RFC 822.
+            "msg" => InputFormat::Email,
             "epub" => InputFormat::Epub,
             "mhtml" | "mht" => InputFormat::Mhtml,
             "rtf" => InputFormat::Rtf,

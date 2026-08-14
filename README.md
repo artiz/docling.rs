@@ -46,7 +46,7 @@ docling's `FormatToExtensions`):
 | XML dialects | JATS / USPTO / XBRL (`.xml` `.nxml`, content-sniffed) · DocLang `.dclg` |
 | PDF & images | `.pdf` · `.png` `.jpg` `.jpeg` `.tif` `.tiff` `.bmp` `.webp` `.gif` · HEIC/HEIF `.heic` `.heif` (opt-in `--features heif`, links the system libheif — #211) · METS/GBS scan packages `.tar.gz` |
 | docling native | docling JSON `.json` · DocTags `.doctags` `.dt` · DCLX `.dclx` |
-| Email & subtitles | `.eml` · WebVTT `.vtt` |
+| Email & subtitles | `.eml` · Outlook `.msg` (CFB/MAPI, projected onto RFC 822 — same output as the equivalent `.eml`; optional `list_attachments` appends attachment names + content types) · WebVTT `.vtt` |
 | Audio | `.wav` `.mp3` `.mpga` `.m4a` `.aac` `.ogg` `.flac` |
 | Video | `.mp4` `.avi` `.mov` `.mkv` `.webm` `.mpeg` `.mpg` |
 

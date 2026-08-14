@@ -42,6 +42,8 @@
 //!   | `ch` (the multilingual docling-conformance model)
 //! - `fetch_images` — resolve external `<img src>` for HTML/EPUB (outbound
 //!   fetch, so honored only under `--allow-url-fetch`)
+//! - `list_attachments` — email (.eml/.msg): append an Attachments section
+//!   with names and content types (#251; payload bytes are never embedded)
 //!
 //! Markdown converts through the streaming serializer and the response body
 //! streams page by page (chunked transfer); `json`/`dclx`/`chunks` (and every
@@ -305,6 +307,9 @@ struct ConvertOptions {
     /// of uncaptioned dense-text "picture" regions into paragraphs.
     no_text_panels: Option<bool>,
     fetch_images: Option<bool>,
+    /// Email (.eml/.msg): append an Attachments section — names and content
+    /// types only, never the payload (#251).
+    list_attachments: Option<bool>,
     asr_model: Option<String>,
     /// ASR transcription language for audio/video input: a Whisper code
     /// (`en`, `de`, …) or `auto` (default) — detected from the first
@@ -334,6 +339,7 @@ impl ConvertOptions {
             no_table_former: self.no_table_former.or(base.no_table_former),
             no_text_panels: self.no_text_panels.or(base.no_text_panels),
             fetch_images: self.fetch_images.or(base.fetch_images),
+            list_attachments: self.list_attachments.or(base.list_attachments),
             asr_model: self.asr_model.or(base.asr_model),
             asr_lang: self.asr_lang.or(base.asr_lang),
             video_frames: self.video_frames.or(base.video_frames),
@@ -1073,7 +1079,8 @@ async fn read_multipart(
             | "no_table_former"
             | "force_full_page_ocr"
             | "no_text_panels"
-            | "fetch_images" => {
+            | "fetch_images"
+            | "list_attachments" => {
                 let v = text_field(field).await?;
                 let b = matches!(v.as_str(), "1" | "true" | "yes" | "on");
                 match name.as_str() {
@@ -1083,6 +1090,7 @@ async fn read_multipart(
                     "force_full_page_ocr" => body_opts.force_full_page_ocr = Some(b),
                     "no_table_former" => body_opts.no_table_former = Some(b),
                     "no_text_panels" => body_opts.no_text_panels = Some(b),
+                    "list_attachments" => body_opts.list_attachments = Some(b),
                     _ => body_opts.fetch_images = Some(b),
                 }
             }
@@ -1425,6 +1433,7 @@ fn request_converter(
         // rather than honored (the UI greys the box; an API caller just gets
         // placeholder images instead of a surprise outbound fetch).
         .fetch_images(state.cfg.allow_url_fetch && options.fetch_images.unwrap_or(false))
+        .list_attachments(options.list_attachments.unwrap_or(false))
         .asr_model(options.asr_model.clone())
         .asr_lang(options.asr_lang.clone())
         .video_frames(

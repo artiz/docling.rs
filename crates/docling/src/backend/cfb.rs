@@ -20,13 +20,20 @@ const HEADER_MAGIC: [u8; 8] = [0xD0, 0xCF, 0x11, 0xE0, 0xA1, 0xB1, 0x1A, 0xE1];
 const ENDOFCHAIN: u32 = 0xFFFF_FFFE;
 const FREESECT: u32 = 0xFFFF_FFFF;
 /// Sector numbers ≥ this are special markers (DIFSECT/FATSECT/…), never data.
+const NOSTREAM: u32 = 0xFFFF_FFFF;
 const MAXREGSECT: u32 = 0xFFFF_FFFA;
 
 /// One directory entry we care about: a named stream (or storage).
 struct DirEntry {
     name: String,
-    /// 1 = storage, 2 = stream, 5 = root.
     object_type: u8,
+    /// Left/right siblings and first child in the directory's red-black
+    /// tree, as entry indices (`NOSTREAM` = none). Office streams are looked
+    /// up flat by name, but .msg storages repeat stream names per
+    /// recipient/attachment, so those walk the tree.
+    left: u32,
+    right: u32,
+    child: u32,
     start_sector: u32,
     size: u64,
 }
@@ -106,6 +113,17 @@ impl<'a> CompoundFile<'a> {
         for chunk in dir_bytes.chunks_exact(128) {
             let name_len = u16_at(chunk, 64)? as usize; // bytes incl. terminator
             if !(2..=64).contains(&name_len) {
+                // Keep a placeholder so sibling/child ids (which are indices
+                // into this table) stay aligned — .msg storage walks need them.
+                entries.push(DirEntry {
+                    name: String::new(),
+                    object_type: 0,
+                    left: NOSTREAM,
+                    right: NOSTREAM,
+                    child: NOSTREAM,
+                    start_sector: 0,
+                    size: 0,
+                });
                 continue;
             }
             let name: String = chunk[..name_len - 2]
@@ -116,6 +134,9 @@ impl<'a> CompoundFile<'a> {
             entries.push(DirEntry {
                 name,
                 object_type: chunk[66],
+                left: u32_at(chunk, 68)?,
+                right: u32_at(chunk, 72)?,
+                child: u32_at(chunk, 76)?,
                 start_sector: u32_at(chunk, 116)?,
                 size: u32_at(chunk, 120)? as u64 | ((u32_at(chunk, 124)? as u64) << 32),
             });
@@ -149,10 +170,63 @@ impl<'a> CompoundFile<'a> {
     /// the Office streams we need live in the root storage and carry unique
     /// names). `None` for a missing stream or one over the per-part budget.
     pub(crate) fn stream(&self, name: &str) -> Option<Vec<u8>> {
-        let entry = self
+        let idx = self
             .entries
             .iter()
-            .find(|e| e.object_type == 2 && e.name == name)?;
+            .position(|e| e.object_type == 2 && e.name == name)?;
+        self.stream_by_index(idx)
+    }
+
+    /// The entry indices of a storage's children (`None` = the root storage),
+    /// collected by exhaustively walking the sibling tree and sorted by index
+    /// — directory order, which for .msg matches the writer's creation order
+    /// (`__attach_…_#00000000` before `#00000001`).
+    pub(crate) fn children_of(&self, parent: Option<usize>) -> Vec<usize> {
+        let start = match parent {
+            Some(i) => self.entries.get(i).map(|e| e.child),
+            None => self
+                .entries
+                .iter()
+                .find(|e| e.object_type == 5)
+                .map(|e| e.child),
+        };
+        let mut out = Vec::new();
+        let mut stack = vec![start.unwrap_or(NOSTREAM)];
+        while let Some(id) = stack.pop() {
+            let Some(e) = self.entries.get(id as usize) else {
+                continue;
+            };
+            // Bounded: each index is pushed at most once from its parent link,
+            // and a malformed cycle is cut by the visited check.
+            if out.contains(&(id as usize)) {
+                continue;
+            }
+            out.push(id as usize);
+            stack.push(e.left);
+            stack.push(e.right);
+        }
+        out.sort_unstable();
+        out
+    }
+
+    /// A directory entry's name (empty for placeholder/invalid entries).
+    pub(crate) fn entry_name(&self, idx: usize) -> &str {
+        self.entries.get(idx).map_or("", |e| e.name.as_str())
+    }
+
+    /// Whether entry `idx` is a storage (a directory, e.g. one .msg
+    /// recipient/attachment).
+    pub(crate) fn is_storage(&self, idx: usize) -> bool {
+        self.entries.get(idx).is_some_and(|e| e.object_type == 1)
+    }
+
+    /// Extract a stream's bytes by directory-entry index. `None` for a
+    /// non-stream entry or one over the per-part budget.
+    pub(crate) fn stream_by_index(&self, idx: usize) -> Option<Vec<u8>> {
+        let entry = self.entries.get(idx)?;
+        if entry.object_type != 2 {
+            return None;
+        }
         if entry.size > ooxml::max_part_bytes() {
             return None;
         }

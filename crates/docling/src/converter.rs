@@ -74,6 +74,7 @@ pub struct DocumentConverter {
     allowed_formats: Option<HashSet<InputFormat>>,
     strict: bool,
     fetch_images: bool,
+    list_attachments: bool,
     no_table_former: bool,
     no_text_panels: bool,
     no_ocr: bool,
@@ -140,6 +141,7 @@ impl Default for DocumentConverter {
             allowed_formats: None,
             strict: false,
             fetch_images: false,
+            list_attachments: false,
             no_table_former: false,
             no_text_panels: false,
             no_ocr: false,
@@ -287,6 +289,15 @@ impl DocumentConverter {
     /// you trust (it can otherwise be used to make the process issue requests).
     pub fn fetch_images(mut self, fetch: bool) -> Self {
         self.fetch_images = fetch;
+        self
+    }
+
+    /// Append an `Attachments` section to converted emails (`.eml` / `.msg`):
+    /// one list item per attachment, `name (content/type)` — names and types
+    /// only, the payload is never embedded. docling's opt-in
+    /// `EmailBackendOptions.list_attachments` (#251); off by default.
+    pub fn list_attachments(mut self, list: bool) -> Self {
+        self.list_attachments = list;
         self
     }
 
@@ -562,7 +573,10 @@ impl DocumentConverter {
             InputFormat::Ppt => PptBackend.convert(&source)?,
             InputFormat::Doc => DocBackend.convert(&source)?,
             InputFormat::Vtt => WebVttBackend.convert(&source)?,
-            InputFormat::Email => EmailBackend.convert(&source)?,
+            InputFormat::Email => EmailBackend {
+                list_attachments: self.list_attachments,
+            }
+            .convert(&source)?,
             InputFormat::Mhtml => MhtmlBackend {
                 use_web_browser: self.use_web_browser,
             }

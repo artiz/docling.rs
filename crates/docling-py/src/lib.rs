@@ -142,6 +142,7 @@ impl PyDocumentConverter {
         ocr_lang = None,
         allowed_formats = None,
         text_layer_only = false,
+        list_attachments = false,
     ))]
     #[allow(clippy::too_many_arguments)]
     fn new(
@@ -161,6 +162,7 @@ impl PyDocumentConverter {
         ocr_lang: Option<String>,
         allowed_formats: Option<Vec<String>>,
         text_layer_only: bool,
+        list_attachments: bool,
     ) -> PyResult<Self> {
         // `allowed_formats` (docling's converter arg) restricts which input
         // formats convert; an unknown name is an error so typos surface early.
@@ -208,6 +210,7 @@ impl PyDocumentConverter {
         Ok(Self {
             inner: base
                 .fetch_images(fetch_images)
+                .list_attachments(list_attachments)
                 .asr_model(asr_model)
                 .asr_lang(asr_lang)
                 .no_ocr(text_layer_only)

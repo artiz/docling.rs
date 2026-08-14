@@ -47,6 +47,9 @@ pub struct ConverterOptions {
     /// proper Latin word spacing) or `"ch"` (the multilingual
     /// docling-conformance model). Formats that never OCR ignore it.
     pub ocr_lang: Option<String>,
+    /// Email (.eml/.msg): append an Attachments section — names and content
+    /// types only, never the payload (#251). Default `false`.
+    pub list_attachments: Option<bool>,
     /// Keep layout + TableFormer, never OCR (#244) — docling's independent
     /// `do_ocr=False`. Structured output survives; text that exists only as
     /// pixels (scanned pages, text inside images) comes back empty.
@@ -105,6 +108,9 @@ pub struct ConvertOptions {
     pub pages: Option<String>,
     /// OCR recognition language for scanned pages: `"en"` (default) | `"ch"`.
     pub ocr_lang: Option<String>,
+    /// Email (.eml/.msg): append an Attachments section — names and content
+    /// types only, never the payload (#251). Default `false`.
+    pub list_attachments: Option<bool>,
     /// Keep layout + TableFormer, never OCR (#244) — docling's independent
     /// `do_ocr=False`. Structured output survives; text that exists only as
     /// pixels (scanned pages, text inside images) comes back empty.
@@ -173,6 +179,7 @@ struct ConvertConfig {
     video_frames: Option<usize>,
     page_range: Option<(usize, usize)>,
     ocr_lang: Option<String>,
+    list_attachments: bool,
     skip_ocr: bool,
     force_full_page_ocr: bool,
     no_text_panels: bool,
@@ -236,6 +243,7 @@ fn build_config(o: ConvertOptions) -> Result<ConvertConfig> {
         video_frames: o.video_frames.map(|n| n as usize),
         page_range: parse_pages(o.pages.as_deref())?,
         ocr_lang: parse_ocr_lang(o.ocr_lang)?,
+        list_attachments: o.list_attachments.unwrap_or(false),
         skip_ocr: o.skip_ocr.unwrap_or(false),
         force_full_page_ocr: o.force_full_page_ocr.unwrap_or(false),
         no_text_panels: o.no_text_panels.unwrap_or(false),
@@ -269,6 +277,7 @@ fn build_converter(cfg: &ConvertConfig) -> RsConverter {
     let base = base
         .strict(cfg.strict)
         .fetch_images(cfg.fetch_images)
+        .list_attachments(cfg.list_attachments)
         .skip_ocr(cfg.skip_ocr)
         .force_full_page_ocr(cfg.force_full_page_ocr)
         .no_text_panels(cfg.no_text_panels)
@@ -459,6 +468,7 @@ pub struct DocumentConverter {
     video_frames: Option<usize>,
     page_range: Option<(usize, usize)>,
     ocr_lang: Option<String>,
+    list_attachments: bool,
     skip_ocr: bool,
     force_full_page_ocr: bool,
     no_text_panels: bool,
@@ -486,6 +496,7 @@ impl DocumentConverter {
             video_frames: o.video_frames.map(|n| n as usize),
             page_range: parse_pages(o.pages.as_deref())?,
             ocr_lang: parse_ocr_lang(o.ocr_lang.clone())?,
+            list_attachments: o.list_attachments.unwrap_or(false),
             skip_ocr: o.skip_ocr.unwrap_or(false),
             force_full_page_ocr: o.force_full_page_ocr.unwrap_or(false),
             no_text_panels: o.no_text_panels.unwrap_or(false),
@@ -503,6 +514,7 @@ impl DocumentConverter {
             video_frames: self.video_frames,
             page_range: self.page_range,
             ocr_lang: self.ocr_lang.clone(),
+            list_attachments: self.list_attachments,
             skip_ocr: self.skip_ocr,
             force_full_page_ocr: self.force_full_page_ocr,
             no_text_panels: self.no_text_panels,
@@ -920,6 +932,7 @@ fn output_config(out: Option<OutputOptions>, strict: bool) -> Result<ConvertConf
         asr_lang: None,
         video_frames: None,
         page_range: None,
+        list_attachments: false,
         skip_ocr: false,
         force_full_page_ocr: false,
         no_text_panels: false,

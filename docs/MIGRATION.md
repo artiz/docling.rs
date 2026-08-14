@@ -124,7 +124,7 @@ PyPI; run via `scripts/conformance/conformance.sh <fmt>`), not the committed gro
 | XLS (Excel 97–2004) | `xls.rs` (calamine BIFF8 + the XLSX region detection) | byte-identical to the XLSX backend on converted fixtures |
 | PPT (PowerPoint 97–2003) | `ppt.rs` (native [MS-PPT] + OfficeArt shape walker) | **byte-identical to the PPTX backend** on the sample fixture: tables reconstructed from shape-group geometry (spans included), bullet lists (StyleTextProp) and numbered lists (PP9 autonumber), titles, z-order |
 | WebVTT | `webvtt.rs` | **4/4 exact** |
-| Email (.eml) | `email.rs` (mail-parser) | **2/2 exact** |
+| Email (.eml, .msg) | `email.rs` (mail-parser) + `msg.rs` (native CFB/MAPI → RFC 822 projection, #251 — docling reaches .msg via python-oxmsg) | **4/4 exact** incl. both .msg fixtures and the opt-in `list_attachments` section (docling 2.119's `EmailBackendOptions.list_attachments`, plumbed as lib builder / CLI `--list-attachments` / serve `list_attachments` / py kwarg / Node `listAttachments`); `.eml` `Date:` now spells UTC as `+00:00` like Python's `isoformat()` (was `Z`) |
 | EPUB | `epub.rs` → HTML backend | **0/1** — the single fixture is 4 diff lines (heading-italic nesting + a bold-run join, the HTML inline residual) |
 | ODF (odt/ods/odp) | `odf.rs` | **7/7 exact** on the native files — slide-title/name headings, shape text, speaker-notes drop, chart classification + data tables, merged-cell semantics (plain repeat vs rich dedup), and docling's run-tail quirk |
 | JATS | `jats.rs` (roxmltree) | **3/4 exact**; the eLife plain-text route diverges (252 diff lines) |
