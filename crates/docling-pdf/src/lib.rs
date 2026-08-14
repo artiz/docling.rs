@@ -236,9 +236,22 @@ pub(crate) fn intra_threads() -> usize {
     if let Some(n) = env::parse::<usize>("DOCLING_RS_PDF_THREADS").filter(|&n| n > 0) {
         return n;
     }
-    std::thread::available_parallelism()
-        .map(|n| n.get())
-        .unwrap_or(1)
+    env::cpu_budget()
+}
+
+#[cfg(feature = "ml")]
+/// TableFormer's intra-op width (#262): `DOCLING_RS_TF_INTRA` explicitly,
+/// else the shared [`intra_threads`] budget. The shared TF session used to
+/// take the raw host width on top of the already-sized worker pools —
+/// under a cgroup CPU limit that oversubscription showed up as constant
+/// throttling and ~66% higher peak memory (each intra thread carries its own
+/// arena slab); the reporter's 4-CPU/8-core case dropped from 2.2 GB to
+/// 1.3 GB peak by capping this pool.
+pub(crate) fn tf_intra() -> usize {
+    if let Some(n) = env::parse::<usize>("DOCLING_RS_TF_INTRA").filter(|&n| n > 0) {
+        return n;
+    }
+    intra_threads()
 }
 
 #[cfg(feature = "ml")]
@@ -1034,9 +1047,12 @@ impl Worker {
                 timing::timed("tableformer", || {
                     let mut guard = slot.lock().unwrap();
                     if matches!(*guard, TfSlot::Unloaded) {
-                        // Full intra-op width: tables serialise on this mutex, so
-                        // the one instance gets the whole thread budget.
-                        *guard = match tableformer::TableFormer::load_with(intra_threads()) {
+                        // Tables serialise on this mutex, so the one instance
+                        // gets the shared thread budget (quota-aware, #262) —
+                        // DOCLING_RS_TF_INTRA narrows it further where the
+                        // memory-per-thread tradeoff matters more than table
+                        // latency.
+                        *guard = match tableformer::TableFormer::load_with(tf_intra()) {
                             Some(tf) => TfSlot::Ready(tf),
                             None => TfSlot::Missing,
                         };

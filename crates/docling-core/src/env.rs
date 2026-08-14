@@ -74,6 +74,103 @@ macro_rules! debug_log {
     };
 }
 
+/// The CPU budget thread-pool sizing should derive from: host parallelism
+/// clamped by the container's cgroup CPU quota (#262).
+/// `available_parallelism` is quota-aware on common setups, but container
+/// runtimes exist where it still reports the host cores (docling.rs#262's
+/// 8 threads under a 4-CPU limit), so the quota files are read directly as an
+/// extra clamp — a limited container must never size pools past its throttle
+/// ceiling. On non-Linux (and wasm) the quota reads simply fail and the host
+/// count stands.
+pub fn cpu_budget() -> usize {
+    let host = std::thread::available_parallelism()
+        .map(|n| n.get())
+        .unwrap_or(1);
+    match cgroup_cpu_quota() {
+        Some(q) => host.min(q).max(1),
+        None => host,
+    }
+}
+
+/// CPUs allowed by the cgroup CPU quota, rounded up (a 2.5-CPU limit gets 3
+/// threads); `None` when unlimited or undeterminable. Reads cgroup v2
+/// (`cpu.max`) and cgroup v1 (`cpu.cfs_quota_us` / `cpu.cfs_period_us`).
+fn cgroup_cpu_quota() -> Option<usize> {
+    if let Ok(s) = std::fs::read_to_string("/sys/fs/cgroup/cpu.max") {
+        return parse_cpu_max(&s);
+    }
+    for dir in ["/sys/fs/cgroup/cpu", "/sys/fs/cgroup/cpu,cpuacct"] {
+        if let (Ok(quota), Ok(period)) = (
+            std::fs::read_to_string(format!("{dir}/cpu.cfs_quota_us")),
+            std::fs::read_to_string(format!("{dir}/cpu.cfs_period_us")),
+        ) {
+            return parse_cfs(&quota, &period);
+        }
+    }
+    None
+}
+
+/// cgroup v2 `cpu.max` ("max 100000" = unlimited, "400000 100000" = 4 CPUs).
+fn parse_cpu_max(s: &str) -> Option<usize> {
+    let mut it = s.split_whitespace();
+    let quota = it.next()?;
+    if quota == "max" {
+        return None;
+    }
+    let quota: u64 = quota.parse().ok()?;
+    let period: u64 = it.next()?.parse().ok()?;
+    if period == 0 || quota == 0 {
+        return None;
+    }
+    Some(quota.div_ceil(period) as usize)
+}
+
+/// cgroup v1 CFS quota/period (quota -1 = unlimited).
+fn parse_cfs(quota: &str, period: &str) -> Option<usize> {
+    let quota: i64 = quota.trim().parse().ok()?;
+    if quota <= 0 {
+        return None;
+    }
+    let period: i64 = period.trim().parse().ok()?;
+    if period <= 0 {
+        return None;
+    }
+    Some((quota as u64).div_ceil(period as u64) as usize)
+}
+
+/// The container's memory limit in MB from the cgroup files (v2 `memory.max`,
+/// v1 `memory.limit_in_bytes`), `None` when unlimited — both spell "no limit"
+/// as either the literal `max` or an enormous sentinel (>= 2^60 bytes).
+pub fn cgroup_memory_limit_mb() -> Option<u64> {
+    for path in [
+        "/sys/fs/cgroup/memory.max",
+        "/sys/fs/cgroup/memory/memory.limit_in_bytes",
+    ] {
+        if let Ok(s) = std::fs::read_to_string(path) {
+            let s = s.trim();
+            if s == "max" {
+                return None;
+            }
+            let bytes: u64 = s.parse().ok()?;
+            if bytes >= 1 << 60 {
+                return None;
+            }
+            return Some(bytes / (1024 * 1024));
+        }
+    }
+    None
+}
+
+/// This process's resident set size in MB (`/proc/self/status` `VmRSS`);
+/// `None` off Linux. The number admission control (#263) compares against the
+/// memory ceiling.
+pub fn rss_mb() -> Option<u64> {
+    let status = std::fs::read_to_string("/proc/self/status").ok()?;
+    let line = status.lines().find(|l| l.starts_with("VmRSS:"))?;
+    let kb: u64 = line.split_whitespace().nth(1)?.parse().ok()?;
+    Some(kb / 1024)
+}
+
 #[cfg(test)]
 mod tests {
     // Env mutation is process-global and the test harness is parallel, so
@@ -100,6 +197,27 @@ mod tests {
         std::env::set_var("DOCLING_TEST_NONEMPTY_BLANK", "   ");
         assert_eq!(nonempty("DOCLING_TEST_NONEMPTY_BLANK"), None);
         assert_eq!(nonempty("DOCLING_TEST_NONEMPTY_UNSET"), None);
+    }
+
+    #[test]
+    fn cpu_quota_parsers_cover_both_cgroup_versions() {
+        // v2: unlimited, exact, and fractional (rounds up).
+        assert_eq!(super::parse_cpu_max("max 100000\n"), None);
+        assert_eq!(super::parse_cpu_max("400000 100000"), Some(4));
+        assert_eq!(super::parse_cpu_max("250000 100000"), Some(3));
+        assert_eq!(super::parse_cpu_max("garbage"), None);
+        // v1: -1 = unlimited; fractional rounds up.
+        assert_eq!(super::parse_cfs("-1\n", "100000\n"), None);
+        assert_eq!(super::parse_cfs("400000", "100000"), Some(4));
+        assert_eq!(super::parse_cfs("150000", "100000"), Some(2));
+        assert_eq!(super::parse_cfs("x", "100000"), None);
+    }
+
+    #[test]
+    fn rss_reads_on_linux() {
+        // A running test process certainly has a nonzero RSS on Linux.
+        #[cfg(target_os = "linux")]
+        assert!(super::rss_mb().unwrap() > 0);
     }
 
     #[test]

@@ -354,6 +354,63 @@ async fn no_ocr_request_does_not_stick_to_the_warm_pipeline() {
     );
 }
 
+/// #263: with the RSS already past the watermark of a tiny ceiling, both
+/// endpoints shed the request with 503 + Retry-After instead of accepting
+/// work that would push the process into the OOM killer. (The test process's
+/// real RSS is far above a 1 MB ceiling on any platform where rss_mb()
+/// reads, so no mocking is needed; off-Linux the check is inert and the
+/// request converts — skip there.)
+#[tokio::test]
+async fn memory_ceiling_sheds_requests_with_503() {
+    if docling_core::env::rss_mb().is_none() {
+        eprintln!("skipping: no RSS reading on this platform");
+        return;
+    }
+    let cfg = ServeConfig {
+        max_memory_mb: Some(1),
+        ..ServeConfig::default()
+    };
+    let app = router(cfg);
+    let (ct, body) = multipart("x.md", b"# hi", &[]);
+    let response = app
+        .clone()
+        .oneshot(convert_request(&ct, body, ""))
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+    assert_eq!(response.headers()["retry-after"], "5");
+    assert!(body_string(response).await.contains("ceiling"));
+    // Async submissions are shed the same way.
+    let (ct, body) = multipart("x.md", b"# hi", &[]);
+    let response = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/v1/convert/async")
+                .header(header::CONTENT_TYPE, ct)
+                .body(Body::from(body))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+}
+
+/// A ceiling of 0 (explicitly disabled) admits everything.
+#[tokio::test]
+async fn memory_ceiling_zero_disables_admission_control() {
+    let cfg = ServeConfig {
+        max_memory_mb: Some(0),
+        ..ServeConfig::default()
+    };
+    let (ct, body) = multipart("note.md", b"# T", &[]);
+    let response = router(cfg)
+        .oneshot(convert_request(&ct, body, ""))
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+}
+
 #[tokio::test]
 async fn url_fetch_can_be_disabled() {
     let cfg = ServeConfig {

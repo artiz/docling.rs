@@ -196,7 +196,16 @@ Options per request: `to=md|json|dclx|chunks|images`, `strict`, `images=placehol
 `ocr_lang`, `scale`, `asr_model`, `asr_lang`, `video_frames`, `fetch_images` — as query
 parameters, multipart fields, or JSON keys (body wins). Server flags: `--addr`,
 `--concurrency`, `--max-body-mb`, `--queue-size`, `--result-ttl`, `--warmup`,
-`--allow-url-fetch`, `--no-url-fetch`, `--strict`. A container image
+`--allow-url-fetch`, `--no-url-fetch`, `--strict`, `--max-memory-mb` (#263:
+memory ceiling for admission control — explicit, or `DOCLING_RS_MAX_MEMORY_MB`,
+else the container's cgroup limit; once RSS crosses 85% of it — tunable via
+`DOCLING_RS_MEMORY_WATERMARK_PCT` — new conversions get 503 + Retry-After
+instead of OOM-killing the process; `0` disables). Thread pools are
+**cgroup-quota-aware** (#262; `DOCLING_RS_TF_INTRA` further narrows the shared
+TableFormer session — the reporter's 4-CPU case dropped ~40% peak memory), and
+the server defaults `DOCLING_RS_NO_ARENA=1`: with the ONNX CPU arena off plus
+heap trimming, warm retained RSS measured ~3× lower (2.0 GB → 0.7 GB) at no
+latency cost — set `DOCLING_RS_NO_ARENA=0` to restore the arena. A container image
 builds from [`crates/docling-serve/Dockerfile`](./crates/docling-serve/Dockerfile)
 (models + pdfium baked in, or mounted with `--build-arg FETCH_ASSETS=0`).
 URL inputs are **off by default** (SSRF surface): pass `--allow-url-fetch` to
