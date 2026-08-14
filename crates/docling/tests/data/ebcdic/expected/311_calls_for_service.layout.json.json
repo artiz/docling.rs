@@ -1,0 +1,31 @@
+{
+  "schema_name": "DoclingDocument",
+  "version": "1.10.0",
+  "name": "311_calls_for_service.layout",
+  "origin": {
+    "mimetype": "text/plain",
+    "binary_hash": 4767848279744637574,
+    "filename": "311_calls_for_service.layout"
+  },
+  "furniture": {
+    "self_ref": "#/furniture",
+    "children": [],
+    "content_layer": "furniture",
+    "name": "_root_",
+    "label": "unspecified"
+  },
+  "body": {
+    "self_ref": "#/body",
+    "children": [],
+    "content_layer": "body",
+    "name": "_root_",
+    "label": "unspecified"
+  },
+  "groups": [],
+  "texts": [],
+  "pictures": [],
+  "tables": [],
+  "key_value_items": [],
+  "form_items": [],
+  "pages": {}
+}

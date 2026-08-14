@@ -143,6 +143,7 @@ impl PyDocumentConverter {
         allowed_formats = None,
         text_layer_only = false,
         list_attachments = false,
+        ebcdic_layout = None,
     ))]
     #[allow(clippy::too_many_arguments)]
     fn new(
@@ -163,6 +164,7 @@ impl PyDocumentConverter {
         allowed_formats: Option<Vec<String>>,
         text_layer_only: bool,
         list_attachments: bool,
+        ebcdic_layout: Option<String>,
     ) -> PyResult<Self> {
         // `allowed_formats` (docling's converter arg) restricts which input
         // formats convert; an unknown name is an error so typos surface early.
@@ -211,6 +213,7 @@ impl PyDocumentConverter {
             inner: base
                 .fetch_images(fetch_images)
                 .list_attachments(list_attachments)
+                .ebcdic_layout_opt(ebcdic_layout)
                 .asr_model(asr_model)
                 .asr_lang(asr_lang)
                 .no_ocr(text_layer_only)

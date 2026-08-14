@@ -42,6 +42,8 @@ pub enum InputFormat {
     /// (mirrors docling's `InputFormat.VIDEO`, v2.114).
     Video,
     Vtt,
+    /// EBCDIC mainframe data + JSON copybook layout (#252, docling 2.118).
+    Ebcdic,
     Latex,
     Email,
     Epub,
@@ -119,6 +121,7 @@ impl InputFormat {
             InputFormat::Audio => "audio",
             InputFormat::Video => "video",
             InputFormat::Vtt => "vtt",
+            InputFormat::Ebcdic => "ebc",
             InputFormat::Latex => "latex",
             InputFormat::Email => "email",
             InputFormat::Epub => "epub",
@@ -193,6 +196,7 @@ impl InputFormat {
             "vtt" => InputFormat::Vtt,
             "tex" | "latex" => InputFormat::Latex,
             "eml" => InputFormat::Email,
+            "ebc" | "ebcdic" => InputFormat::Ebcdic,
             // Outlook .msg (#251): a CFB container of MAPI streams; the email
             // backend sniffs the magic and projects it onto RFC 822.
             "msg" => InputFormat::Email,
