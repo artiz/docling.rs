@@ -37,6 +37,13 @@ are no longer scored.)
 | 2203.01017v2 | 74 | caption order + reference-accent spacing (in-picture table recovered: same grid as docling, different OCR engine noise) |
 | 2206.01062 | 82 | author-block cluster splits (model-borderline) + one int8-borderline header rowspan |
 
+The per-fixture numbers above predate docling 2.118's reading-order
+dehyphenation (docling#3888, ported in #250): both sides now join a
+hard-hyphenated lowercase continuation across a column/page break without the
+`word- continuation` artifact, so re-measuring against docling ≥ 2.118 shifts
+the text-merge component of these diffs (2203/2305 snapshots and the mirrored
+groundtruth already reflect it).
+
 `amt` is the 7th under the whitespace-normalized metric: its only diff is
 docling's spurious double space before the `1⁄4` fraction, where our single-spaced
 output is the more faithful rendering. The remaining non-exact PDFs are heavy
