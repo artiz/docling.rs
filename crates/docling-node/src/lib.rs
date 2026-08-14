@@ -50,6 +50,9 @@ pub struct ConverterOptions {
     /// Email (.eml/.msg): append an Attachments section — names and content
     /// types only, never the payload (#251). Default `false`.
     pub list_attachments: Option<bool>,
+    /// EBCDIC (#252): copybook layout as inline `EbcdicLayout` JSON or a
+    /// file path; defaults to the `<stem>.layout.json` sidecar.
+    pub ebcdic_layout: Option<String>,
     /// Keep layout + TableFormer, never OCR (#244) — docling's independent
     /// `do_ocr=False`. Structured output survives; text that exists only as
     /// pixels (scanned pages, text inside images) comes back empty.
@@ -111,6 +114,9 @@ pub struct ConvertOptions {
     /// Email (.eml/.msg): append an Attachments section — names and content
     /// types only, never the payload (#251). Default `false`.
     pub list_attachments: Option<bool>,
+    /// EBCDIC (#252): copybook layout as inline `EbcdicLayout` JSON or a
+    /// file path; defaults to the `<stem>.layout.json` sidecar.
+    pub ebcdic_layout: Option<String>,
     /// Keep layout + TableFormer, never OCR (#244) — docling's independent
     /// `do_ocr=False`. Structured output survives; text that exists only as
     /// pixels (scanned pages, text inside images) comes back empty.
@@ -180,6 +186,7 @@ struct ConvertConfig {
     page_range: Option<(usize, usize)>,
     ocr_lang: Option<String>,
     list_attachments: bool,
+    ebcdic_layout: Option<String>,
     skip_ocr: bool,
     force_full_page_ocr: bool,
     no_text_panels: bool,
@@ -244,6 +251,7 @@ fn build_config(o: ConvertOptions) -> Result<ConvertConfig> {
         page_range: parse_pages(o.pages.as_deref())?,
         ocr_lang: parse_ocr_lang(o.ocr_lang)?,
         list_attachments: o.list_attachments.unwrap_or(false),
+        ebcdic_layout: o.ebcdic_layout,
         skip_ocr: o.skip_ocr.unwrap_or(false),
         force_full_page_ocr: o.force_full_page_ocr.unwrap_or(false),
         no_text_panels: o.no_text_panels.unwrap_or(false),
@@ -278,6 +286,7 @@ fn build_converter(cfg: &ConvertConfig) -> RsConverter {
         .strict(cfg.strict)
         .fetch_images(cfg.fetch_images)
         .list_attachments(cfg.list_attachments)
+        .ebcdic_layout_opt(cfg.ebcdic_layout.clone())
         .skip_ocr(cfg.skip_ocr)
         .force_full_page_ocr(cfg.force_full_page_ocr)
         .no_text_panels(cfg.no_text_panels)
@@ -469,6 +478,7 @@ pub struct DocumentConverter {
     page_range: Option<(usize, usize)>,
     ocr_lang: Option<String>,
     list_attachments: bool,
+    ebcdic_layout: Option<String>,
     skip_ocr: bool,
     force_full_page_ocr: bool,
     no_text_panels: bool,
@@ -497,6 +507,7 @@ impl DocumentConverter {
             page_range: parse_pages(o.pages.as_deref())?,
             ocr_lang: parse_ocr_lang(o.ocr_lang.clone())?,
             list_attachments: o.list_attachments.unwrap_or(false),
+            ebcdic_layout: o.ebcdic_layout.clone(),
             skip_ocr: o.skip_ocr.unwrap_or(false),
             force_full_page_ocr: o.force_full_page_ocr.unwrap_or(false),
             no_text_panels: o.no_text_panels.unwrap_or(false),
@@ -515,6 +526,7 @@ impl DocumentConverter {
             page_range: self.page_range,
             ocr_lang: self.ocr_lang.clone(),
             list_attachments: self.list_attachments,
+            ebcdic_layout: self.ebcdic_layout.clone(),
             skip_ocr: self.skip_ocr,
             force_full_page_ocr: self.force_full_page_ocr,
             no_text_panels: self.no_text_panels,
@@ -933,6 +945,7 @@ fn output_config(out: Option<OutputOptions>, strict: bool) -> Result<ConvertConf
         video_frames: None,
         page_range: None,
         list_attachments: false,
+        ebcdic_layout: None,
         skip_ocr: false,
         force_full_page_ocr: false,
         no_text_panels: false,

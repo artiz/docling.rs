@@ -60,6 +60,7 @@ paths:
         - { $ref: "#/components/parameters/no_text_panels" }
         - { $ref: "#/components/parameters/fetch_images" }
         - { $ref: "#/components/parameters/list_attachments" }
+        - { $ref: "#/components/parameters/ebcdic_layout" }
         - { $ref: "#/components/parameters/pages" }
         - { $ref: "#/components/parameters/scale" }
         - { $ref: "#/components/parameters/ocr_lang" }
@@ -381,6 +382,12 @@ components:
             PDF/image — keep every detected picture as a picture: disable the
             demotion of uncaptioned dense-text "picture" regions into
             paragraphs (the escape hatch for image-extraction workflows).
+        ebcdic_layout:
+          type: string
+          description: >
+            EBCDIC (.ebc) — the copybook layout as inline `EbcdicLayout` JSON
+            (docling's schema). Mandatory for the format: the record bytes are
+            meaningless without their copybook.
         list_attachments:
           type: boolean
           default: false
@@ -497,6 +504,8 @@ components:
       { name: fetch_images, in: query, schema: { type: boolean } }
     list_attachments:
       { name: list_attachments, in: query, schema: { type: boolean } }
+    ebcdic_layout:
+      { name: ebcdic_layout, in: query, schema: { type: string } }
     pages:
       { name: pages, in: query, schema: { type: string }, example: "2-5" }
     scale:

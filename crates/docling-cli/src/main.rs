@@ -7,7 +7,7 @@
 //! (docling's independent `do_ocr=False`); `--no-ocr` remains the
 //! skip-everything fast path.
 //!
-//! Usage: docling-rs [--strict] [--to md|json|dclx|chunks|images] [--pages A-B] [--scale X] [--images MODE] [--input GLOB --output DIR [--jobs N]] [--fetch-images] [--list-attachments] [--no-stream] [--no-table-former] [--no-ocr] [--skip-ocr] [--force-full-page-ocr] [--no-text-panels] [--ocr-lang en|ch] [--pipeline standard|vlm] [--vlm-endpoint URL] [--vlm-model NAME] [--asr-model PRESET] [--asr-lang CODE] [--video-frames N] [--use-web-browser] [--enrich-picture-classes] [--enrich-code] [--enrich-formula] <input-file>
+//! Usage: docling-rs [--strict] [--to md|json|dclx|chunks|images] [--pages A-B] [--scale X] [--images MODE] [--input GLOB --output DIR [--jobs N]] [--fetch-images] [--list-attachments] [--ebcdic-layout JSON|PATH] [--no-stream] [--no-table-former] [--no-ocr] [--skip-ocr] [--force-full-page-ocr] [--no-text-panels] [--ocr-lang en|ch] [--pipeline standard|vlm] [--vlm-endpoint URL] [--vlm-model NAME] [--asr-model PRESET] [--asr-lang CODE] [--video-frames N] [--use-web-browser] [--enrich-picture-classes] [--enrich-code] [--enrich-formula] <input-file>
 //!   --input GLOB|DIR   batch mode (#205): convert every file the glob matches
 //!                      (`--input '/data/reports/**/*.pdf'` — quote it so the
 //!                      shell doesn't expand it) instead of one positional file.
@@ -126,6 +126,7 @@ fn main() -> ExitCode {
     let mut images = "placeholder".to_string();
     let mut fetch_images = false;
     let mut list_attachments = false;
+    let mut ebcdic_layout: Option<String> = None;
     let mut no_stream = false;
     let mut no_table_former = false;
     let mut no_ocr = false;
@@ -158,6 +159,15 @@ fn main() -> ExitCode {
             // #251: append an Attachments section to converted emails
             // (.eml/.msg) — names and content types only.
             "--list-attachments" => list_attachments = true,
+            // #252: EBCDIC copybook layout — inline JSON or a file path
+            // (default: the <stem>.layout.json sidecar next to the source).
+            "--ebcdic-layout" => match args.next() {
+                Some(v) => ebcdic_layout = Some(v),
+                None => {
+                    eprintln!("error: --ebcdic-layout needs a JSON string or file path");
+                    return ExitCode::from(2);
+                }
+            },
             "--no-stream" => no_stream = true,
             "--no-table-former" => no_table_former = true,
             "--no-ocr" => no_ocr = true,
@@ -353,6 +363,7 @@ fn main() -> ExitCode {
             strict,
             fetch_images,
             list_attachments,
+            ebcdic_layout,
             no_table_former,
             no_ocr,
             skip_ocr,
@@ -374,7 +385,7 @@ fn main() -> ExitCode {
     }
 
     let Some(path) = path else {
-        eprintln!("usage: docling-rs [--strict] [--to md|json|dclx|chunks|images] [--scale X] [--images MODE] [--input GLOB --output DIR [--jobs N]] [--fetch-images] [--list-attachments] [--no-stream] [--no-table-former] [--no-ocr] [--skip-ocr] [--force-full-page-ocr] [--no-text-panels] [--ocr-lang en|ch] [--use-web-browser] <input-file>");
+        eprintln!("usage: docling-rs [--strict] [--to md|json|dclx|chunks|images] [--scale X] [--images MODE] [--input GLOB --output DIR [--jobs N]] [--fetch-images] [--list-attachments] [--ebcdic-layout JSON|PATH] [--no-stream] [--no-table-former] [--no-ocr] [--skip-ocr] [--force-full-page-ocr] [--no-text-panels] [--ocr-lang en|ch] [--use-web-browser] <input-file>");
         return ExitCode::from(2);
     };
 
@@ -463,6 +474,7 @@ fn main() -> ExitCode {
         .asr_lang(asr_lang.clone())
         .fetch_images(fetch_images)
         .list_attachments(list_attachments)
+        .ebcdic_layout_opt(ebcdic_layout.clone())
         .no_table_former(no_table_former)
         .skip_ocr(skip_ocr)
         .no_ocr(no_ocr)
@@ -606,6 +618,7 @@ struct BatchCfg {
     strict: bool,
     fetch_images: bool,
     list_attachments: bool,
+    ebcdic_layout: Option<String>,
     no_table_former: bool,
     no_ocr: bool,
     skip_ocr: bool,
@@ -722,6 +735,7 @@ fn batch_converter(cfg: &BatchCfg) -> DocumentConverter {
         .asr_lang(cfg.asr_lang.clone())
         .fetch_images(cfg.fetch_images)
         .list_attachments(cfg.list_attachments)
+        .ebcdic_layout_opt(cfg.ebcdic_layout.clone())
         .no_table_former(cfg.no_table_former)
         .no_ocr(cfg.no_ocr)
         .force_full_page_ocr(cfg.force_full_page_ocr)

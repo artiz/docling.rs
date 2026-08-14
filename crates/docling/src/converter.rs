@@ -4,10 +4,10 @@ use std::collections::HashSet;
 
 use crate::backend::{
     is_deepseek_markdown, AsciiDocBackend, CsvBackend, DeclarativeBackend, DeepSeekBackend,
-    DocBackend, DoclingJsonBackend, DocxBackend, EmailBackend, EpubBackend, InterchangeBackend,
-    JatsBackend, LatexBackend, LotusBackend, MarkdownBackend, MhtmlBackend, OdfBackend, PptBackend,
-    PptxBackend, RtfBackend, StarOffice5Backend, UsptoBackend, VisioBackend, WebVttBackend,
-    XbrlBackend, XlsBackend, XlsxBackend,
+    DocBackend, DoclingJsonBackend, DocxBackend, EbcdicBackend, EmailBackend, EpubBackend,
+    InterchangeBackend, JatsBackend, LatexBackend, LotusBackend, MarkdownBackend, MhtmlBackend,
+    OdfBackend, PptBackend, PptxBackend, RtfBackend, StarOffice5Backend, UsptoBackend,
+    VisioBackend, WebVttBackend, XbrlBackend, XlsBackend, XlsxBackend,
 };
 
 /// Whether `text` begins with an XML prolog — an `<?xml …?>` declaration or a
@@ -75,6 +75,9 @@ pub struct DocumentConverter {
     strict: bool,
     fetch_images: bool,
     list_attachments: bool,
+    /// EBCDIC copybook layout (#252): inline JSON or a file path. `None`
+    /// falls back to the `<stem>.layout.json` sidecar.
+    ebcdic_layout: Option<String>,
     no_table_former: bool,
     no_text_panels: bool,
     no_ocr: bool,
@@ -142,6 +145,7 @@ impl Default for DocumentConverter {
             strict: false,
             fetch_images: false,
             list_attachments: false,
+            ebcdic_layout: None,
             no_table_former: false,
             no_text_panels: false,
             no_ocr: false,
@@ -298,6 +302,24 @@ impl DocumentConverter {
     /// `EmailBackendOptions.list_attachments` (#251); off by default.
     pub fn list_attachments(mut self, list: bool) -> Self {
         self.list_attachments = list;
+        self
+    }
+
+    /// The copybook layout for EBCDIC sources (#252): docling's
+    /// `EbcdicLayout` JSON, inline (a string starting with `{`) or as a file
+    /// path. Without it, a path-loaded source looks for a
+    /// `<stem>.layout.json` sidecar; converting EBCDIC with neither is an
+    /// error — the bytes are meaningless without their copybook.
+    pub fn ebcdic_layout(mut self, layout: impl Into<String>) -> Self {
+        self.ebcdic_layout = Some(layout.into());
+        self
+    }
+
+    /// Option-typed variant of [`ebcdic_layout`](Self::ebcdic_layout) for
+    /// call sites plumbing an optional flag through (`None` keeps the
+    /// sidecar fallback).
+    pub fn ebcdic_layout_opt(mut self, layout: Option<String>) -> Self {
+        self.ebcdic_layout = layout;
         self
     }
 
@@ -573,6 +595,10 @@ impl DocumentConverter {
             InputFormat::Ppt => PptBackend.convert(&source)?,
             InputFormat::Doc => DocBackend.convert(&source)?,
             InputFormat::Vtt => WebVttBackend.convert(&source)?,
+            InputFormat::Ebcdic => EbcdicBackend {
+                layout: self.ebcdic_layout.clone(),
+            }
+            .convert(&source)?,
             InputFormat::Email => EmailBackend {
                 list_attachments: self.list_attachments,
             }

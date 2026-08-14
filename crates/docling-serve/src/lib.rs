@@ -44,6 +44,9 @@
 //!   fetch, so honored only under `--allow-url-fetch`)
 //! - `list_attachments` — email (.eml/.msg): append an Attachments section
 //!   with names and content types (#251; payload bytes are never embedded)
+//! - `ebcdic_layout` — EBCDIC (#252): the copybook layout as inline
+//!   `EbcdicLayout` JSON (mandatory for the format — the bytes are
+//!   meaningless without it)
 //!
 //! Markdown converts through the streaming serializer and the response body
 //! streams page by page (chunked transfer); `json`/`dclx`/`chunks` (and every
@@ -310,6 +313,9 @@ struct ConvertOptions {
     /// Email (.eml/.msg): append an Attachments section — names and content
     /// types only, never the payload (#251).
     list_attachments: Option<bool>,
+    /// EBCDIC copybook layout (#252): inline `EbcdicLayout` JSON (uploads
+    /// have no filesystem, so the JSON itself rides in the request).
+    ebcdic_layout: Option<String>,
     asr_model: Option<String>,
     /// ASR transcription language for audio/video input: a Whisper code
     /// (`en`, `de`, …) or `auto` (default) — detected from the first
@@ -340,6 +346,7 @@ impl ConvertOptions {
             no_text_panels: self.no_text_panels.or(base.no_text_panels),
             fetch_images: self.fetch_images.or(base.fetch_images),
             list_attachments: self.list_attachments.or(base.list_attachments),
+            ebcdic_layout: self.ebcdic_layout.or(base.ebcdic_layout),
             asr_model: self.asr_model.or(base.asr_model),
             asr_lang: self.asr_lang.or(base.asr_lang),
             video_frames: self.video_frames.or(base.video_frames),
@@ -1058,6 +1065,7 @@ async fn read_multipart(
             "asr_lang" => body_opts.asr_lang = Some(text_field(field).await?),
             "pages" => body_opts.pages = Some(text_field(field).await?),
             "ocr_lang" => body_opts.ocr_lang = Some(text_field(field).await?),
+            "ebcdic_layout" => body_opts.ebcdic_layout = Some(text_field(field).await?),
             "scale" => {
                 let v = text_field(field).await?;
                 body_opts.scale =
@@ -1434,6 +1442,7 @@ fn request_converter(
         // placeholder images instead of a surprise outbound fetch).
         .fetch_images(state.cfg.allow_url_fetch && options.fetch_images.unwrap_or(false))
         .list_attachments(options.list_attachments.unwrap_or(false))
+        .ebcdic_layout_opt(options.ebcdic_layout.clone())
         .asr_model(options.asr_model.clone())
         .asr_lang(options.asr_lang.clone())
         .video_frames(

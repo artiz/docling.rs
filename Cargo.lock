@@ -1439,6 +1439,7 @@ dependencies = [
  "resvg",
  "roxmltree 0.20.0",
  "scraper",
+ "serde",
  "serde_json",
  "snap",
  "tempfile",

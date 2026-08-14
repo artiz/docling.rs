@@ -171,6 +171,7 @@ async fn serves_its_logo_and_openapi_description() {
         "no_table_former:",
         "fetch_images:",
         "list_attachments:",
+        "ebcdic_layout:",
         "pages:",
         "ocr_lang:",
         "scale:",
