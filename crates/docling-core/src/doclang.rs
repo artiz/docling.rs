@@ -69,6 +69,27 @@ impl Out {
 
 /// Reverse the Markdown-oriented escaping backends bake into node text
 /// (`&amp;`/`&lt;`/`&gt;` and `\_`), recovering the raw text DocLang serializes:
+/// XML-1.0-illegal characters (C0 controls minus tab/LF/CR, U+FFFE/U+FFFF)
+/// replaced with a visible `[U+XXXX]` marker, docling-core#687's rendering.
+/// Surrogates cannot occur in a Rust `str`, so the Python pattern's surrogate
+/// range has no counterpart here. Borrows when nothing needs replacing (the
+/// overwhelmingly common case).
+fn sanitize_xml_illegal(text: &str) -> std::borrow::Cow<'_, str> {
+    let illegal = |c: char| matches!(c, '\u{00}'..='\u{08}' | '\u{0B}' | '\u{0C}' | '\u{0E}'..='\u{1F}' | '\u{FFFE}' | '\u{FFFF}');
+    if !text.contains(illegal) {
+        return std::borrow::Cow::Borrowed(text);
+    }
+    let mut out = String::with_capacity(text.len() + 8);
+    for c in text.chars() {
+        if illegal(c) {
+            out.push_str(&format!("[U+{:04X}]", c as u32));
+        } else {
+            out.push(c);
+        }
+    }
+    std::borrow::Cow::Owned(out)
+}
+
 /// `<`/`>`/`&` go into a CDATA section verbatim, `_` stays literal.
 fn unescape_stored(text: &str) -> Cow<'_, str> {
     if !text.contains('&') && !text.contains('\\') {
@@ -84,13 +105,20 @@ fn unescape_stored(text: &str) -> Cow<'_, str> {
 
 /// AUTO escape: any of `"' &<>` in the text → CDATA; leading/trailing
 /// whitespace or a newline → additionally wrapped in `<content>`.
+/// Robustness (docling-core 2.88/2.89 parity, #253): XML-1.0-illegal
+/// characters are replaced with a visible `[U+XXXX]` marker before anything
+/// else (docling-core#687 — a stray control byte must not make the archive
+/// unparseable), and a literal `]]>` inside the text splits across adjacent
+/// CDATA sections (docling-core#689 — a CDATA section cannot contain its own
+/// closing delimiter).
 fn escape_text(text: &str) -> String {
     let raw = unescape_stored(text);
-    let text = raw.as_ref();
+    let text = sanitize_xml_illegal(raw.as_ref());
+    let text = text.as_ref();
     let needs_cdata = text.contains(['"', '\'', '&', '<', '>']);
     let needs_content = text != text.trim() || text.contains('\n');
     let mut t = if needs_cdata {
-        format!("<![CDATA[{text}]]>")
+        format!("<![CDATA[{}]]>", text.replace("]]>", "]]]]><![CDATA[>"))
     } else {
         text.to_string()
     };
@@ -758,7 +786,9 @@ fn emit_nodes(out: &mut Out, depth: i32, nodes: &[Node], i: &mut usize, level: u
                 let open = if *level <= 1 {
                     "heading".to_string()
                 } else {
-                    format!("heading level=\"{level}\"")
+                    // Clamp to the heading vocabulary (docling-core#688): deep
+                    // section headers serialize as level 6 instead of raising.
+                    format!("heading level=\"{}\"", (*level).min(6))
                 };
                 emit_text_element(out, depth, &open, "heading", text, None);
                 *i += 1;
@@ -1274,7 +1304,9 @@ fn emit_furniture(out: &mut Out, depth: i32, layer: ContentLayer, inner: &Node) 
             let open = if *level <= 1 {
                 "heading".to_string()
             } else {
-                format!("heading level=\"{level}\"")
+                // Clamp to the heading vocabulary (docling-core#688): deep
+                // section headers serialize as level 6 instead of raising.
+                format!("heading level=\"{}\"", (*level).min(6))
             };
             out.push(depth, format!("<{open}>"));
             out.push(depth + 1, token);
@@ -1459,7 +1491,9 @@ fn emit_located(out: &mut Out, depth: i32, location: &[u16; 4], inner: &Node) {
             let open = if *level <= 1 {
                 "heading".to_string()
             } else {
-                format!("heading level=\"{level}\"")
+                // Clamp to the heading vocabulary (docling-core#688): deep
+                // section headers serialize as level 6 instead of raising.
+                format!("heading level=\"{}\"", (*level).min(6))
             };
             emit_text_element(out, depth, &open, "heading", text, Some(location));
         }
@@ -1761,6 +1795,55 @@ fn emit_field_region(out: &mut Out, depth: i32, items: &[FieldItem]) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// docling-core#687 (#253): XML-1.0-illegal characters render as visible
+    /// `[U+XXXX]` markers so the archive stays parseable; tab/LF/CR are legal
+    /// and pass through.
+    #[test]
+    fn xml_illegal_characters_become_visible_markers() {
+        let doclang = export_to_doclang(&[Node::Paragraph {
+            text: "Before break\u{0B}After\u{FFFF} tab\tok".into(),
+        }]);
+        assert!(
+            doclang.contains("Before break[U+000B]After[U+FFFF] tab\tok"),
+            "got:\n{doclang}"
+        );
+    }
+
+    /// docling-core#689 (#253): a literal `]]>` inside CDATA-escaped text
+    /// splits across adjacent CDATA sections, preserving the exact characters
+    /// instead of producing unparseable XML.
+    #[test]
+    fn cdata_closing_delimiter_splits_sections() {
+        let doclang = export_to_doclang(&[Node::Paragraph {
+            text: "a]]>b & c".into(),
+        }]);
+        assert!(
+            doclang.contains("<![CDATA[a]]]]><![CDATA[>b & c]]>"),
+            "got:\n{doclang}"
+        );
+    }
+
+    /// docling-core#688 (#253): heading levels past the vocabulary clamp to 6
+    /// instead of emitting an out-of-range token.
+    #[test]
+    fn deep_heading_levels_clamp_to_six() {
+        let doclang = export_to_doclang(&[
+            Node::Heading {
+                level: 6,
+                text: "Deep".into(),
+            },
+            Node::Heading {
+                level: 42,
+                text: "Deeper".into(),
+            },
+        ]);
+        assert!(doclang.contains("<heading level=\"6\">Deep</heading>"));
+        assert!(
+            doclang.contains("<heading level=\"6\">Deeper</heading>"),
+            "got:\n{doclang}"
+        );
+    }
 
     #[test]
     fn located_heading_emits_location_tokens_in_block_form() {
