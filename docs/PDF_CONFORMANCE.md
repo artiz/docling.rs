@@ -34,7 +34,7 @@ are no longer scored.)
 | table_mislabeled_as_picture | 54 | layout over-detects tables (survey rendered as tables) |
 | right_to_left_03 | 60 | RTL bidi + wrapper (form) children order |
 | redp5110_sampled | 73 | TOC row structure tails + cover-page ordering |
-| 2203.01017v2 | 74 | caption order + reference-accent spacing (in-picture table recovered: same grid as docling, different OCR engine noise) |
+| 2203.01017v2 | 66 | reference-accent spacing + author-block splits (in-picture table recovered: same grid as docling, different OCR engine noise) |
 | 2206.01062 | 82 | author-block cluster splits (model-borderline) + one int8-borderline header rowspan |
 
 The per-fixture numbers above predate docling 2.118's reading-order
@@ -98,6 +98,24 @@ so only border-straddlers (≤ 80 % containment) surface as text, on scanned
 pages exactly as on digital ones. The digital corpus is untouched (6/14
 strict, same per-file diffs); 17 scanned/image snapshots shed their leaked
 figure-internal text (axis ticks, diagram labels — net −59 lines).
+
+The #265 **table-caption attachment** ports the table arm of docling's
+`ReadingOrderPredictor._find_to_captions`: a `caption` region binds to the
+table (or `document_index`) **immediately adjacent to it in reading order** —
+above-caption and below-caption both, but only when exactly one side holds a
+table/picture/code element, and never across intervening text. Adjacency, not
+geometry, is the load-bearing choice: a flush-left `Table N:` label pairs with
+a centered grid it doesn't horizontally overlap, while a geometrically-nearby
+caption in the other column of a two-column page never pairs across the
+gutter (a distance-based draft did exactly that mispairing on 2203's page 7).
+The paired caption is consumed from its own reading-order slot and rides on
+the table node — Markdown prints it above the grid, JSON emits docling's
+`TableItem.captions` `$ref`, DocLang its `<caption>`. Caption text is now
+also markdown-escaped on all three arms (table/picture/code), matching
+docling's `export_to_markdown` post-process — redp5110's `TAX\_ID` and
+2203's `&lt; td &gt;` figure caption were silently unescaped before. Took
+2203 80→66 and redp5110 75→73, nothing worse; picture pairing (below-caption,
+h-overlap-gated) is untouched.
 
 The **cell order & join** are now docling's own, end to end. Serialization
 order is pure docling-parse index (`_sort_cells`) — the geometric line

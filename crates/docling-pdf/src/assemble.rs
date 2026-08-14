@@ -1670,6 +1670,55 @@ fn pair_code_captions(regions: &[Region]) -> Vec<Option<usize>> {
     pairs
 }
 
+/// Pair each `table`/`document_index` region with its `caption` (#265) the way
+/// docling's `ReadingOrderPredictor._find_to_captions` does: by **reading-order
+/// adjacency**, not geometry. A caption claims the media element
+/// (table/picture/code) immediately next to it in the ordered region sequence,
+/// and only when exactly one side holds one — a caption sandwiched between two
+/// media elements stays unattached, and a text paragraph between caption and
+/// table breaks the bond. This is what lets a flush-left "Table 3: …" label
+/// bind a centered grid it doesn't horizontally overlap, while a caption in
+/// the neighbouring column of a two-column page — geometrically close — never
+/// pairs across the gutter. Runs after the picture and code pairings (the
+/// picture/code arms of the same upstream matcher), so a caption they claimed
+/// stays claimed. docling attaches these as `TableItem.captions` refs; the
+/// paired caption is consumed from its own reading-order slot and rides on the
+/// table node instead.
+fn pair_table_captions(regions: &[Region], taken: &mut [bool]) -> Vec<Option<usize>> {
+    let is_media = |label: &str| is_table_like(label) || matches!(label, "picture" | "code");
+    let mut pairs: Vec<Option<usize>> = vec![None; regions.len()];
+    for ci in 0..regions.len() {
+        if regions[ci].label != "caption" || taken[ci] {
+            continue;
+        }
+        // Furniture (headers/footers, form chrome) is not part of docling's
+        // body-element sequence, so it neither bonds nor blocks.
+        let prev = regions[..ci].iter().rposition(|r| !is_skipped(r.label));
+        let next = regions[ci + 1..]
+            .iter()
+            .position(|r| !is_skipped(r.label))
+            .map(|off| ci + 1 + off);
+        let prev_media = prev.is_some_and(|j| is_media(regions[j].label));
+        let next_media = next.is_some_and(|j| is_media(regions[j].label));
+        let target = match (prev_media, next_media) {
+            (true, false) => prev,
+            (false, true) => next,
+            // Ambiguous (media on both sides) or no media at all: leave the
+            // caption in its own reading-order slot, as docling does.
+            _ => None,
+        };
+        if let Some(ti) = target {
+            // A first claim wins (a table with captions above *and* below
+            // keeps the earlier one — docling's nearest-first tiebreak).
+            if is_table_like(regions[ti].label) && pairs[ti].is_none() {
+                pairs[ti] = Some(ci);
+                taken[ci] = true;
+            }
+        }
+    }
+    pairs
+}
+
 /// Assemble one page from its (already overlap-resolved) layout regions and
 /// text cells.
 /// Normalize a layout region (page points, top-left origin) to DocLang's 0–511
@@ -1817,6 +1866,12 @@ pub fn assemble_page(
     for ci in code_caption_for.iter().flatten() {
         consumed[*ci] = true;
     }
+    // Table captions (#265) claim from what the picture/code pairings left.
+    let mut caption_taken = consumed.clone();
+    let table_caption_for = pair_table_captions(&regions, &mut caption_taken);
+    for ci in table_caption_for.iter().flatten() {
+        consumed[*ci] = true;
+    }
     // A code block's language label (`XML`, `C#`, …) is chrome, not content — the
     // detector emits it as its own region above the code; consume it.
     for (i, is_label) in code_language_labels(&regions, &page.cells)
@@ -1911,8 +1966,10 @@ pub fn assemble_page(
         let loc = norm_loc(region, page.width, page_h);
         if region.label == "picture" {
             // The figure pixels are cropped from the page render for image export.
+            // Captions are prose: markdown-escaped like a paragraph (the JSON
+            // export unescapes back to the raw text, matching docling).
             let caption = caption_for[i]
-                .map(|ci| region_texts[ci].clone())
+                .map(|ci| md_escape(&region_texts[ci]))
                 .filter(|t| !t.is_empty());
             let classification = match &enrichments[i] {
                 Some(Enrichment::PictureClasses(classes)) => Some(classes.clone()),
@@ -2025,6 +2082,12 @@ pub fn assemble_page(
                         (rows, None, None)
                     }
                 };
+                // The paired caption (#265) rides on the table — docling's
+                // TableItem.captions ref; Markdown prints it above the grid,
+                // the JSON export emits the $ref, DocLang the <caption>.
+                let caption = table_caption_for[i]
+                    .map(|ci| md_escape(&region_texts[ci]))
+                    .filter(|t| !t.is_empty());
                 nodes.push(located(
                     loc,
                     Node::Table(Table {
@@ -2033,7 +2096,7 @@ pub fn assemble_page(
                         structure,
                         cell_blocks: None,
                         cells,
-                        caption: None,
+                        caption,
                     }),
                 ));
             }
@@ -2100,7 +2163,7 @@ pub fn assemble_page(
                 nodes.push(located(loc, node));
                 // docling emits the `Listing N:` caption after the code block.
                 if let Some(ci) = code_caption_for[i] {
-                    let cap = region_texts[ci].clone();
+                    let cap = md_escape(&region_texts[ci]);
                     if !cap.is_empty() {
                         nodes.push(Node::Paragraph { text: cap });
                     }
@@ -2529,6 +2592,45 @@ mod tests {
             ["table", "picture"],
             "the in-table picture stays; the in-table regular is the special's child"
         );
+    }
+
+    /// Table–caption pairing (#265) is reading-order adjacency, docling's
+    /// `_find_to_captions`: a caption binds the table directly next to it in
+    /// the region sequence — above-caption and below-caption both work, and
+    /// geometry is irrelevant (a same-page caption in the other column of a
+    /// two-column layout is *not* adjacent, however close its box is). A
+    /// caption with media on both sides, or separated from the table by a
+    /// text paragraph, stays unattached.
+    #[test]
+    fn table_captions_pair_by_reading_order_adjacency() {
+        // caption → table (above-caption), then table → caption (below-caption),
+        // then a caption fenced off by a paragraph, then one between two tables.
+        let regions = vec![
+            region("text", 0.9, 0.0, 0.0, 100.0, 10.0), // 0 body text
+            region("caption", 0.9, 0.0, 12.0, 60.0, 20.0), // 1 above-caption
+            region("table", 0.9, 20.0, 22.0, 90.0, 60.0), // 2 ← pairs with 1
+            region("table", 0.9, 0.0, 70.0, 100.0, 110.0), // 3 ← pairs with 4
+            region("caption", 0.9, 0.0, 112.0, 60.0, 120.0), // 4 below-caption
+            region("text", 0.9, 0.0, 130.0, 100.0, 140.0), // 5 body text
+            region("caption", 0.9, 0.0, 142.0, 60.0, 150.0), // 6 fenced by 5/7
+            region("text", 0.9, 0.0, 152.0, 100.0, 162.0), // 7 body text
+            region("table", 0.9, 0.0, 170.0, 100.0, 200.0), // 8 unpaired
+            region("caption", 0.9, 0.0, 202.0, 60.0, 210.0), // 9 ambiguous
+            region("table", 0.9, 0.0, 212.0, 100.0, 240.0), // 10 unpaired
+        ];
+        let mut taken = vec![false; regions.len()];
+        let pairs = super::pair_table_captions(&regions, &mut taken);
+        assert_eq!(pairs[2], Some(1), "caption directly above its table pairs");
+        assert_eq!(pairs[3], Some(4), "caption directly below its table pairs");
+        assert_eq!(
+            pairs[8], None,
+            "a text paragraph between caption and table breaks the bond"
+        );
+        assert_eq!(
+            pairs[10], None,
+            "a caption between two tables is ambiguous and stays loose"
+        );
+        assert!(taken[1] && taken[4] && !taken[6] && !taken[9]);
     }
 
     /// A colored terms-and-conditions panel detected as `picture` demotes into
