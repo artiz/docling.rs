@@ -170,7 +170,14 @@ close — see `PDF_CONFORMANCE.md`. A deterministic snapshot baseline
 The `.dclx` DocLang output (§3) is scored against docling's own `.dclx` archives
 with `scripts/conformance/dclx_conformance.sh` — the extracted `document.xml`
 line-diffed, similarity `= 100·(1 − difflines / max_lines)`. **≈94% mean over the
-136-fixture non-PDF corpus** (issue #32 target: ≥90%), per source format:
+136-fixture non-PDF corpus** (issue #32 target: ≥90%), per source format.
+Robustness tracks docling-core 2.88/2.89 (#253): XML-illegal control
+characters serialize as visible `[U+XXXX]` markers, a literal `]]>` splits
+across CDATA sections, and deep section headers clamp to heading level 6
+instead of emitting out-of-range tokens — all round-trip pinned; the reader
+side of docling-core#689/#695 (tag-shaped literals in OTSL cells) never
+applied here, since the single-pass roxmltree reader doesn't re-parse text
+fragments as XML.
 
 | Format | `.dclx` similarity | Format | `.dclx` similarity |
 |---|---|---|---|
