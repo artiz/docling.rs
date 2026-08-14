@@ -99,12 +99,15 @@ impl DeclarativeBackend for DocxBackend {
     }
 }
 
-/// Append section headers/footers as furniture (docling's `_add_header_footer`).
-/// Sections are the `<w:sectPr>` elements in document order; header/footer
-/// references inherit from earlier sections per type (python-docx's
-/// linked-to-previous). The first section always contributes its parts; a later
-/// section only when it sets `<w:titlePg/>`, which selects the `first`-page
-/// references for both.
+/// Append section headers/footers as furniture (docling's `_add_header_footer`,
+/// docling#3843 shape). Sections are the `<w:sectPr>` elements in document
+/// order; header/footer references inherit from earlier sections per type
+/// (python-docx's linked-to-previous — the carry-forward map below). **Every**
+/// section is visited; a part already emitted for an earlier section (the
+/// inheritance case) is skipped by part name so it isn't duplicated. A section
+/// with `<w:titlePg/>` contributes both its first-page **and** its regular
+/// header/footer, since both are actually used — headers first, then footers,
+/// first-page before regular within each.
 fn add_header_footer(pkg: &mut Package, body: XmlNode, ctx: &Ctx, doc: &mut DoclingDocument) {
     let doc_rels = ctx.rels;
     let sect_prs: Vec<XmlNode> = body
@@ -112,7 +115,8 @@ fn add_header_footer(pkg: &mut Package, body: XmlNode, ctx: &Ctx, doc: &mut Docl
         .filter(|n| n.has_tag_name("sectPr"))
         .collect();
     let mut effective: HashMap<(&str, String), String> = HashMap::new();
-    for (sec_idx, sect) in sect_prs.iter().enumerate() {
+    let mut emitted: std::collections::HashSet<String> = std::collections::HashSet::new();
+    for sect in sect_prs.iter() {
         for r in sect.children().filter(XmlNode::is_element) {
             let kind = match r.tag_name().name() {
                 "headerReference" => "hdr",
@@ -129,18 +133,24 @@ fn add_header_footer(pkg: &mut Package, body: XmlNode, ctx: &Ctx, doc: &mut Docl
                 && attr(n, "val") != Some("false")
                 && attr(n, "val") != Some("0")
         });
-        if sec_idx > 0 && !title_pg {
-            continue;
-        }
-        let ty = if title_pg { "first" } else { "default" };
         for kind in ["hdr", "ftr"] {
-            let Some(rid) = effective.get(&(kind, ty.to_string())) else {
-                continue;
+            let types: &[&str] = if title_pg {
+                &["first", "default"]
+            } else {
+                &["default"]
             };
-            let Some(part) = doc_rels.get(rid) else {
-                continue;
-            };
-            emit_header_footer_part(pkg, part, ctx, doc);
+            for ty in types {
+                let Some(rid) = effective.get(&(kind, ty.to_string())) else {
+                    continue;
+                };
+                let Some(part) = doc_rels.get(rid) else {
+                    continue;
+                };
+                if !emitted.insert(part.clone()) {
+                    continue;
+                }
+                emit_header_footer_part(pkg, part, ctx, doc);
+            }
         }
     }
 }
