@@ -10,7 +10,7 @@ Dieses Dokument stammt aus einer OpenOffice.org 1.x Registratur und wurde ohne K
 
 Signatur:	A-1997-042
 
-Fassung:	zweite
+Fassung:	zweite  Durchsicht
 
 1. Eingang prüfen
 2. Signatur vergeben

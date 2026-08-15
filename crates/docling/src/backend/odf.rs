@@ -402,21 +402,16 @@ struct Run {
 
 /// Collect runs from a paragraph/heading element (recursing spans).
 fn collect_runs(el: XmlNode, styles: &Styles, base: Fmt, out: &mut Vec<Run>) {
-    // docling's `_odf_text_runs` reads only `element.text` — the lxml *head*
-    // text before the first element child — plus the children's own runs.
-    // Text that trails a child element (its lxml `tail`) survives only when
-    // the child itself yields nothing (an empty inline marker like
-    // `<text:soft-page-break/>` falls back to `text_recursive`, which is its
-    // tail) or when the child is a `<text:line-break/>` (whose run is built
-    // from `text_recursive` too). A tail after a content-bearing child is
-    // dropped: "with <span>bold</span>, and <span>italic</span> formatting"
-    // loses the ", and" and " formatting" fragments.
-    let mut seen_element = false;
+    // docling's `_odf_text_runs` since docling#3850 (2.115, ported for #255):
+    // the lxml *head* text, then each child's runs, then the child's `tail`
+    // text in the parent's formatting. Before that fix a tail after any
+    // content-bearing child was dropped ("with <span>bold</span>, and
+    // <span>italic</span> formatting" lost ", and" and " formatting"); the
+    // groundtruth now keeps every fragment. In roxmltree the head and the
+    // tails are simply the element's text-node children, so collecting every
+    // text node in document order reproduces the fixed reading exactly.
     for child in el.children() {
         if child.is_text() {
-            if seen_element {
-                continue;
-            }
             if let Some(t) = child.text() {
                 out.push(Run {
                     text: t.to_string(),
@@ -427,24 +422,17 @@ fn collect_runs(el: XmlNode, styles: &Styles, base: Fmt, out: &mut Vec<Run>) {
             match child.tag_name().name() {
                 "span" => {
                     let fmt = resolve_fmt(styles, attr(child, "style-name"), base);
-                    let before = out.len();
                     collect_runs(child, styles, fmt, out);
-                    seen_element |= out.len() > before || child.children().any(|c| c.is_element());
                 }
-                // The line-break run is `text_recursive`-based, so its tail
-                // rides along — the following text node stays collected.
                 "line-break" => out.push(Run {
                     text: "\n".into(),
                     fmt: base,
                 }),
                 // `tab-stop` is OO1.x's spelling of `<text:tab>` (#215).
-                "tab" | "tab-stop" => {
-                    out.push(Run {
-                        text: "\t".into(),
-                        fmt: base,
-                    });
-                    seen_element = true;
-                }
+                "tab" | "tab-stop" => out.push(Run {
+                    text: "\t".into(),
+                    fmt: base,
+                }),
                 "s" => {
                     // <text:s text:c="n"> = n spaces (default 1)
                     let n: usize = attr(child, "c").and_then(|v| v.parse().ok()).unwrap_or(1);
@@ -452,7 +440,6 @@ fn collect_runs(el: XmlNode, styles: &Styles, base: Fmt, out: &mut Vec<Run>) {
                         text: " ".repeat(n),
                         fmt: base,
                     });
-                    seen_element = true;
                 }
                 // A `<draw:object>` in flat ODF (#215) embeds a whole
                 // `<office:document>` inline — its meta/settings/body text is
@@ -463,11 +450,7 @@ fn collect_runs(el: XmlNode, styles: &Styles, base: Fmt, out: &mut Vec<Run>) {
                 "object" | "binary-data" => {}
                 // docling's `_odf_text_runs` recurses into every child, so an
                 // image's `<svg:desc>`/`<svg:title>` text is picked up too.
-                _ => {
-                    let before = out.len();
-                    collect_runs(child, styles, base, out);
-                    seen_element |= out.len() > before || child.children().any(|c| c.is_element());
-                }
+                _ => collect_runs(child, styles, base, out),
             }
         }
     }
@@ -1670,6 +1653,67 @@ mod tests {
         assert!(f.bold && !f.italic, "bold inherited through P2→P1→Strong");
         let t = resolve_fmt(&styles, Some("T1"), Fmt::default());
         assert!(t.italic && !t.bold);
+    }
+
+    /// docling PR #3850 / #255: text trailing an inline child (its lxml
+    /// `tail`) is kept — "with <span>bold</span>, and <span>italic</span>
+    /// formatting" used to lose ", and" and " formatting", and a tail after a
+    /// `<text:tab>` was dropped entirely.
+    #[test]
+    fn text_after_inline_elements_survives() {
+        let xml = r#"<root xmlns:text="x">
+            <text:p>with <text:span>bold</text:span>, and <text:span>italic</text:span> formatting</text:p>
+            <text:p>Fassung:<text:tab/>zweite  Durchsicht</text:p></root>"#;
+        let dom = Document::parse(xml).unwrap();
+        let styles = parse_styles(&dom, None);
+        let mut doc = DoclingDocument::new("t");
+        walk_text(dom.root_element(), &styles, &mut doc);
+        let md = doc.export_to_markdown();
+        // The unstyled spans merge with their tails into one run, so no
+        // space-join artifacts here; the styled corpus fixture keeps them
+        // (`**bold** ,  underline , …`) and is pinned by the regression suite.
+        assert!(
+            md.contains("with bold, and italic formatting"),
+            "tails around spans survive:\n{md}"
+        );
+        assert!(
+            md.contains("zweite  Durchsicht"),
+            "tail after a tab survives:\n{md}"
+        );
+    }
+
+    /// docling PR #3876 / #255: a `<draw:object>` whose package part is
+    /// missing must be skipped, never abort the conversion — text around it
+    /// still converts, and no phantom chart/picture is emitted.
+    #[test]
+    fn dangling_embedded_object_is_skipped() {
+        let content = r#"<office:document-content xmlns:office="urn:o" xmlns:text="x"
+              xmlns:draw="d" xmlns:xlink="l">
+            <office:body><office:text>
+              <text:p>Before the dangling object.</text:p>
+              <text:p><draw:frame draw:name="dangling">
+                <draw:object xlink:href="./Object 1"/></draw:frame></text:p>
+              <text:p>After the dangling object.</text:p>
+            </office:text></office:body></office:document-content>"#;
+        let mut zip = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
+        let opts = zip::write::SimpleFileOptions::default();
+        use std::io::Write;
+        zip.start_file("mimetype", opts).unwrap();
+        zip.write_all(b"application/vnd.oasis.opendocument.text")
+            .unwrap();
+        zip.start_file("content.xml", opts).unwrap();
+        zip.write_all(content.as_bytes()).unwrap();
+        let bytes = zip.finish().unwrap().into_inner();
+
+        let source =
+            crate::SourceDocument::from_bytes("dangling.odt", crate::InputFormat::Odt, bytes);
+        let doc = OdfBackend
+            .convert(&source)
+            .expect("conversion must not abort");
+        let md = doc.export_to_markdown();
+        assert!(md.contains("Before the dangling object."), "{md}");
+        assert!(md.contains("After the dangling object."), "{md}");
+        assert!(!md.contains("<!-- image -->"), "no phantom picture:\n{md}");
     }
 
     /// docling PR #3852 / #178: content inside a `<text:section>` (including a
