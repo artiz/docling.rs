@@ -47,6 +47,15 @@ pub struct ConverterOptions {
     /// proper Latin word spacing) or `"ch"` (the multilingual
     /// docling-conformance model). Formats that never OCR ignore it.
     pub ocr_lang: Option<String>,
+    /// Which regions feed the OCR (docling's `OcrMode`, #254): `"default"` |
+    /// `"full_page"` | `"layout_regions"` | `"pdf_aware_layout_regions"`.
+    /// `full_page`/`layout_regions` discard the text layer like
+    /// `forceFullPageOcr`.
+    pub ocr_mode: Option<String>,
+    /// OCR render scale in px per PDF point (docling's `OcrOptions.scale`,
+    /// #254); unset reads the pipeline's own 2.0 px/pt render (docling's
+    /// default is 3 = 216 dpi).
+    pub ocr_scale: Option<f64>,
     /// Email (.eml/.msg): append an Attachments section — names and content
     /// types only, never the payload (#251). Default `false`.
     pub list_attachments: Option<bool>,
@@ -111,6 +120,12 @@ pub struct ConvertOptions {
     pub pages: Option<String>,
     /// OCR recognition language for scanned pages: `"en"` (default) | `"ch"`.
     pub ocr_lang: Option<String>,
+    /// Which regions feed the OCR (docling's `OcrMode`, #254): `"default"` |
+    /// `"full_page"` | `"layout_regions"` | `"pdf_aware_layout_regions"`.
+    pub ocr_mode: Option<String>,
+    /// OCR render scale in px per PDF point (docling's `OcrOptions.scale`,
+    /// #254); unset reads the pipeline's own 2.0 px/pt render.
+    pub ocr_scale: Option<f64>,
     /// Email (.eml/.msg): append an Attachments section — names and content
     /// types only, never the payload (#251). Default `false`.
     pub list_attachments: Option<bool>,
@@ -185,6 +200,8 @@ struct ConvertConfig {
     video_frames: Option<usize>,
     page_range: Option<(usize, usize)>,
     ocr_lang: Option<String>,
+    ocr_mode: Option<String>,
+    ocr_scale: Option<f32>,
     list_attachments: bool,
     ebcdic_layout: Option<String>,
     skip_ocr: bool,
@@ -250,6 +267,8 @@ fn build_config(o: ConvertOptions) -> Result<ConvertConfig> {
         video_frames: o.video_frames.map(|n| n as usize),
         page_range: parse_pages(o.pages.as_deref())?,
         ocr_lang: parse_ocr_lang(o.ocr_lang)?,
+        ocr_mode: parse_ocr_mode(o.ocr_mode)?,
+        ocr_scale: parse_ocr_scale(o.ocr_scale)?,
         list_attachments: o.list_attachments.unwrap_or(false),
         ebcdic_layout: o.ebcdic_layout,
         skip_ocr: o.skip_ocr.unwrap_or(false),
@@ -267,6 +286,28 @@ fn parse_ocr_lang(s: Option<String>) -> Result<Option<String>> {
     match s {
         Some(v) if docling::OcrLang::parse(&v).is_some() => Ok(Some(v)),
         Some(v) => Err(Error::from_reason(format!("ocrLang {v:?} is not en|ch"))),
+        None => Ok(None),
+    }
+}
+
+/// Validate an `ocrMode` option (#254); an unknown id is an error.
+fn parse_ocr_mode(s: Option<String>) -> Result<Option<String>> {
+    match s {
+        Some(v) if docling::OcrMode::parse(&v).is_some() => Ok(Some(v)),
+        Some(v) => Err(Error::from_reason(format!(
+            "ocrMode {v:?} is not default|full_page|layout_regions|pdf_aware_layout_regions"
+        ))),
+        None => Ok(None),
+    }
+}
+
+/// Validate an `ocrScale` option (#254); non-positive values are an error.
+fn parse_ocr_scale(s: Option<f64>) -> Result<Option<f32>> {
+    match s {
+        Some(v) if v.is_finite() && v > 0.0 => Ok(Some(v as f32)),
+        Some(v) => Err(Error::from_reason(format!(
+            "ocrScale must be a positive number, got {v}"
+        ))),
         None => Ok(None),
     }
 }
@@ -300,8 +341,16 @@ fn build_converter(cfg: &ConvertConfig) -> RsConverter {
         Some((first, last)) => base.page_range(first, last),
         None => base,
     };
-    match &cfg.ocr_lang {
+    let base = match &cfg.ocr_lang {
         Some(lang) => base.ocr_lang(lang.clone()),
+        None => base,
+    };
+    let base = match &cfg.ocr_mode {
+        Some(mode) => base.ocr_mode(mode.clone()),
+        None => base,
+    };
+    match cfg.ocr_scale {
+        Some(s) => base.ocr_scale(s),
         None => base,
     }
 }
@@ -477,6 +526,8 @@ pub struct DocumentConverter {
     video_frames: Option<usize>,
     page_range: Option<(usize, usize)>,
     ocr_lang: Option<String>,
+    ocr_mode: Option<String>,
+    ocr_scale: Option<f32>,
     list_attachments: bool,
     ebcdic_layout: Option<String>,
     skip_ocr: bool,
@@ -506,6 +557,8 @@ impl DocumentConverter {
             video_frames: o.video_frames.map(|n| n as usize),
             page_range: parse_pages(o.pages.as_deref())?,
             ocr_lang: parse_ocr_lang(o.ocr_lang.clone())?,
+            ocr_mode: parse_ocr_mode(o.ocr_mode.clone())?,
+            ocr_scale: parse_ocr_scale(o.ocr_scale)?,
             list_attachments: o.list_attachments.unwrap_or(false),
             ebcdic_layout: o.ebcdic_layout.clone(),
             skip_ocr: o.skip_ocr.unwrap_or(false),
@@ -525,6 +578,8 @@ impl DocumentConverter {
             video_frames: self.video_frames,
             page_range: self.page_range,
             ocr_lang: self.ocr_lang.clone(),
+            ocr_mode: self.ocr_mode.clone(),
+            ocr_scale: self.ocr_scale,
             list_attachments: self.list_attachments,
             ebcdic_layout: self.ebcdic_layout.clone(),
             skip_ocr: self.skip_ocr,
@@ -950,6 +1005,8 @@ fn output_config(out: Option<OutputOptions>, strict: bool) -> Result<ConvertConf
         force_full_page_ocr: false,
         no_text_panels: false,
         ocr_lang: None,
+        ocr_mode: None,
+        ocr_scale: None,
         allowed_formats: None,
         to: parse_output_kind(out.to.as_deref())?,
         image_mode: parse_image_mode(out.image_mode.as_deref())?,

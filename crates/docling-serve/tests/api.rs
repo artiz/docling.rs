@@ -174,6 +174,8 @@ async fn serves_its_logo_and_openapi_description() {
         "ebcdic_layout:",
         "pages:",
         "ocr_lang:",
+        "ocr_mode:",
+        "ocr_scale:",
         "scale:",
         "asr_model:",
         "video_frames:",
@@ -280,6 +282,31 @@ async fn images_output_requires_a_pdf_input() {
     let response = app().oneshot(convert_request(&ct, body, "")).await.unwrap();
     assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
     assert!(body_string(response).await.contains("PDF inputs only"));
+}
+
+/// #254: an unknown `ocr_mode` and a non-positive `ocr_scale` are rejected up
+/// front (400), before any model work — the shared converter builder
+/// validates them, so a plain-CI markdown upload exercises it.
+#[tokio::test]
+async fn ocr_mode_and_scale_are_validated() {
+    let (ct, body) = multipart("x.md", b"# hi", &[("ocr_mode", "easyocr")]);
+    let response = app().oneshot(convert_request(&ct, body, "")).await.unwrap();
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    assert!(body_string(response).await.contains("ocr_mode"));
+
+    let (ct, body) = multipart("x.md", b"# hi", &[("ocr_scale", "0")]);
+    let response = app().oneshot(convert_request(&ct, body, "")).await.unwrap();
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    assert!(body_string(response).await.contains("ocr_scale"));
+
+    // Valid values pass straight through on a non-OCR format.
+    let (ct, body) = multipart(
+        "x.md",
+        b"# hi",
+        &[("ocr_mode", "full_page"), ("ocr_scale", "3")],
+    );
+    let response = app().oneshot(convert_request(&ct, body, "")).await.unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
 }
 
 /// A `scale` outside 0.1–4.0 is rejected before pdfium is touched.

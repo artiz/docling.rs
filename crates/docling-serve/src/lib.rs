@@ -40,6 +40,13 @@
 //! - `pages` — PDF page window `A-B` / `N` (1-based inclusive, #80)
 //! - `ocr_lang` — OCR recognition language for scanned pages: `en` (default)
 //!   | `ch` (the multilingual docling-conformance model)
+//! - `ocr_mode` — which regions feed the OCR (docling's `OcrMode`, #254):
+//!   `default` | `full_page` | `layout_regions` | `pdf_aware_layout_regions`
+//!   (`full_page`/`layout_regions` discard the text layer like
+//!   `force_full_page_ocr`)
+//! - `ocr_scale` — OCR render scale in px per PDF point (docling's
+//!   `OcrOptions.scale`, #254); unset reads the pipeline's own 2.0 px/pt
+//!   render, docling's default is 3 (216 dpi)
 //! - `fetch_images` — resolve external `<img src>` for HTML/EPUB (outbound
 //!   fetch, so honored only under `--allow-url-fetch`)
 //! - `list_attachments` — email (.eml/.msg): append an Attachments section
@@ -390,6 +397,12 @@ struct ConvertOptions {
     pages: Option<String>,
     /// OCR recognition language for scanned pages: `en` (default) | `ch`.
     ocr_lang: Option<String>,
+    /// Which regions feed the OCR (docling's `OcrMode`, #254): `default` |
+    /// `full_page` | `layout_regions` | `pdf_aware_layout_regions`.
+    ocr_mode: Option<String>,
+    /// OCR render scale in px per PDF point (docling's `OcrOptions.scale`,
+    /// #254); unset reads the pipeline's own 2.0 px/pt render.
+    ocr_scale: Option<f32>,
     /// `to=images` render scale in pixels per PDF point (#243): default 2.0
     /// (144 dpi, the pipeline's own render scale), accepted range 0.1–4.0.
     scale: Option<f32>,
@@ -414,6 +427,8 @@ impl ConvertOptions {
             video_frames: self.video_frames.or(base.video_frames),
             pages: self.pages.or(base.pages),
             ocr_lang: self.ocr_lang.or(base.ocr_lang),
+            ocr_mode: self.ocr_mode.or(base.ocr_mode),
+            ocr_scale: self.ocr_scale.or(base.ocr_scale),
             scale: self.scale.or(base.scale),
         }
     }
@@ -541,6 +556,11 @@ fn validate_output(options: &ConvertOptions) -> Result<(String, ImageMode), ApiE
             )))
         }
     };
+    // OCR mode/scale (#254) validate here too — before the conversion starts —
+    // because the streaming path flattens later errors into a mid-stream 422,
+    // and a bad option deserves a plain 400 up front.
+    parse_ocr_mode(options.ocr_mode.as_deref())?;
+    parse_ocr_scale(options.ocr_scale)?;
     Ok((to, image_mode))
 }
 
@@ -1166,6 +1186,13 @@ async fn read_multipart(
             "asr_lang" => body_opts.asr_lang = Some(text_field(field).await?),
             "pages" => body_opts.pages = Some(text_field(field).await?),
             "ocr_lang" => body_opts.ocr_lang = Some(text_field(field).await?),
+            "ocr_mode" => body_opts.ocr_mode = Some(text_field(field).await?),
+            "ocr_scale" => {
+                let v = text_field(field).await?;
+                body_opts.ocr_scale = Some(v.parse().map_err(|_| {
+                    ApiError::Bad(format!("ocr_scale must be a number, got {v:?}"))
+                })?);
+            }
             "ebcdic_layout" => body_opts.ebcdic_layout = Some(text_field(field).await?),
             "scale" => {
                 let v = text_field(field).await?;
@@ -1462,6 +1489,14 @@ fn convert_document(
             // OCR language likewise applies per request; only a worker whose
             // cached recognition model mismatches actually reloads anything.
             pipeline.set_ocr_lang(parse_ocr_lang(options.ocr_lang.as_deref())?);
+            // Forcing, mode and scale (#254) are pure per-worker configuration
+            // — set unconditionally like the page window. (This also makes
+            // `force_full_page_ocr` effective on the warm path at all: it was
+            // only ever applied to the declarative converter before, which
+            // PDFs never route through.)
+            pipeline.set_force_full_page_ocr(options.force_full_page_ocr.unwrap_or(false));
+            pipeline.set_ocr_mode(parse_ocr_mode(options.ocr_mode.as_deref())?);
+            pipeline.set_ocr_scale(parse_ocr_scale(options.ocr_scale)?);
             let doc = match source.format {
                 InputFormat::Pdf => pipeline.convert(&source.bytes, None, &source.name),
                 _ => pipeline.convert_image(&source.bytes, &source.name),
@@ -1564,7 +1599,40 @@ fn request_converter(
     if parse_ocr_lang(options.ocr_lang.as_deref())?.is_some() {
         converter = converter.ocr_lang(options.ocr_lang.clone().expect("checked above"));
     }
+    // #254: the converter path reaches the ML pipeline too (rasterized SVG),
+    // so mode/scale plumb here as well — validated up front like ocr_lang.
+    if parse_ocr_mode(options.ocr_mode.as_deref())?.is_some() {
+        converter = converter.ocr_mode(options.ocr_mode.clone().expect("checked above"));
+    }
+    if let Some(s) = parse_ocr_scale(options.ocr_scale)? {
+        converter = converter.ocr_scale(s);
+    }
     Ok(converter)
+}
+
+/// Validate a request's `ocr_mode` (#254; None passes through — the engine
+/// default).
+fn parse_ocr_mode(raw: Option<&str>) -> Result<Option<docling::OcrMode>, ApiError> {
+    raw.map(|v| {
+        docling::OcrMode::parse(v).ok_or_else(|| {
+            ApiError::Bad(format!(
+                "ocr_mode {v:?} is not \
+                 default|full_page|layout_regions|pdf_aware_layout_regions"
+            ))
+        })
+    })
+    .transpose()
+}
+
+/// Validate a request's `ocr_scale` (#254; None passes through — the engine
+/// default).
+fn parse_ocr_scale(raw: Option<f32>) -> Result<Option<f32>, ApiError> {
+    match raw {
+        Some(s) if !(s.is_finite() && s > 0.0) => Err(ApiError::Bad(format!(
+            "ocr_scale must be a positive number, got {s}"
+        ))),
+        other => Ok(other),
+    }
 }
 
 /// Validate a request's `ocr_lang` (None passes through — the engine default).

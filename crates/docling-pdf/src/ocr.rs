@@ -66,6 +66,90 @@ impl OcrLang {
     }
 }
 
+/// Which document regions feed the OCR — docling 2.116's `OcrMode` (#254,
+/// upstream docling#3710). Upstream restructured its pipeline so OCR runs
+/// *after* layout, on layout regions filtered by the PDF text layer — the
+/// architecture this port has always had — and named the strategies:
+///
+/// - `PdfAwareLayoutRegions` (upstream's **default**): OCR only layout regions
+///   the embedded text layer can't cover. Exactly the standard path here —
+///   scanned pages OCR their regions, digital pages OCR only text-less bitmap
+///   areas.
+/// - `FullPage` / `LayoutRegions`: ignore the PDF text layer and OCR
+///   everything. Both map onto the [`force_full_page_ocr`] machinery (discard
+///   the text layer, OCR every layout region): the upstream distinction —
+///   whole-page vs per-region *detector* input — has no analogue in this
+///   engine, whose PP-OCR recognizer always consumes per-region line crops.
+///
+/// [`force_full_page_ocr`]: crate::Pipeline::force_full_page_ocr
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum OcrMode {
+    /// Upstream's `default`: currently wired to `PdfAwareLayoutRegions`.
+    #[default]
+    Default,
+    /// OCR the full page, text layer ignored (docling's `full_page`; the
+    /// mode-shaped spelling of `force_full_page_ocr`).
+    FullPage,
+    /// OCR every layout region, text layer ignored (docling's
+    /// `layout_regions`).
+    LayoutRegions,
+    /// OCR layout regions the text layer can't cover (docling's
+    /// `pdf_aware_layout_regions` — the default behavior).
+    PdfAwareLayoutRegions,
+}
+
+impl OcrMode {
+    /// Parse docling's mode ids. `None` for anything else — callers surface
+    /// their own error/warning.
+    pub fn parse(s: &str) -> Option<Self> {
+        match s.trim().to_ascii_lowercase().as_str() {
+            "default" => Some(Self::Default),
+            "full_page" => Some(Self::FullPage),
+            "layout_regions" => Some(Self::LayoutRegions),
+            "pdf_aware_layout_regions" => Some(Self::PdfAwareLayoutRegions),
+            _ => None,
+        }
+    }
+
+    /// The process-level choice from `DOCLING_RS_OCR_MODE` (empty/unset → the
+    /// default; unknown values warn and use the default).
+    pub fn from_env() -> Self {
+        let Some(raw) = docling_core::env::nonempty("DOCLING_RS_OCR_MODE") else {
+            return Self::default();
+        };
+        Self::parse(&raw).unwrap_or_else(|| {
+            eprintln!(
+                "docling-pdf: DOCLING_RS_OCR_MODE={raw:?} is not \
+                 default|full_page|layout_regions|pdf_aware_layout_regions; using default"
+            );
+            Self::default()
+        })
+    }
+
+    /// Whether this mode discards the embedded text layer — the engine truth
+    /// both non-default modes reduce to.
+    pub fn forces_full_page(self) -> bool {
+        matches!(self, Self::FullPage | Self::LayoutRegions)
+    }
+}
+
+/// The process-level OCR render scale from `DOCLING_RS_OCR_SCALE` (#254,
+/// upstream docling#3877's `OcrOptions.scale`): pixels per PDF point fed to
+/// the recognizer. Unset/empty → `None` (OCR reads the pipeline's own page
+/// render, 2.0 px/pt); non-positive or unparsable values warn and are ignored.
+pub fn scale_from_env() -> Option<f32> {
+    let raw = docling_core::env::nonempty("DOCLING_RS_OCR_SCALE")?;
+    match raw.parse::<f32>() {
+        Ok(s) if s > 0.0 && s.is_finite() => Some(s),
+        _ => {
+            eprintln!(
+                "docling-pdf: DOCLING_RS_OCR_SCALE={raw:?} is not a positive number; ignored"
+            );
+            None
+        }
+    }
+}
+
 /// Resolve the recognition model + dictionary pair for `lang`. An English
 /// default that isn't on disk (older model checkouts) degrades to the `ch_`
 /// pair with a warning rather than failing — the usual missing-optional-asset
@@ -237,5 +321,33 @@ impl OcrModel {
             cells.push((TextCell { text, l, t, r, b }, conf));
         }
         Ok(cells)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// #254: docling's four `OcrMode` ids parse; `full_page`/`layout_regions`
+    /// reduce to the force-full-page machinery, the default/pdf-aware pair to
+    /// the standard text-layer-aware path. Unknown ids parse to nothing.
+    #[test]
+    fn ocr_mode_ids_parse_and_map_to_forcing() {
+        for (id, mode, forces) in [
+            ("default", OcrMode::Default, false),
+            ("full_page", OcrMode::FullPage, true),
+            ("layout_regions", OcrMode::LayoutRegions, true),
+            (
+                "pdf_aware_layout_regions",
+                OcrMode::PdfAwareLayoutRegions,
+                false,
+            ),
+        ] {
+            assert_eq!(OcrMode::parse(id), Some(mode));
+            assert_eq!(mode.forces_full_page(), forces, "{id}");
+        }
+        assert_eq!(OcrMode::parse(" Full_Page "), Some(OcrMode::FullPage));
+        assert_eq!(OcrMode::parse("easyocr"), None);
+        assert_eq!(OcrMode::parse(""), None);
     }
 }
