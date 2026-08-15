@@ -85,6 +85,14 @@ struct PyDocumentConverter {
     no_table_former: bool,
     no_text_panels: bool,
     enrich: docling::EnrichmentOptions,
+    /// OCR knobs the warm pipeline needs at `initialize_pipeline` time (the
+    /// transient `inner` path reads them off the converter instead). Parsed /
+    /// validated in `new`, so they hold engine values, not raw strings.
+    force_full_page_ocr: bool,
+    ocr_lang: Option<docling::OcrLang>,
+    ocr_mode: Option<docling::OcrMode>,
+    ocr_scale: Option<f32>,
+    page_range: Option<(usize, usize)>,
 }
 
 #[pymethods]
@@ -118,6 +126,13 @@ impl PyDocumentConverter {
     /// * `ocr_lang` — OCR recognition language for scanned pages: `"en"`
     ///   (default; proper Latin word spacing) or `"ch"` (the multilingual
     ///   docling-conformance model).
+    /// * `ocr_mode` — which regions feed the OCR (docling's `OcrMode`, #254):
+    ///   `"default"` | `"full_page"` | `"layout_regions"` |
+    ///   `"pdf_aware_layout_regions"`. `full_page`/`layout_regions` discard
+    ///   the text layer like `force_full_page_ocr`.
+    /// * `ocr_scale` — OCR render scale in px per PDF point (docling's
+    ///   `OcrOptions.scale`, #254); `None` reads the pipeline's own 2.0 px/pt
+    ///   render (docling's default is 3 = 216 dpi).
     /// * `asr_lang` — transcription language for audio/video: a Whisper code
     ///   (`"en"`, `"de"`, …) or `"auto"` (default) to detect it from the
     ///   first 30 seconds (docling 2.116 parity).
@@ -140,6 +155,8 @@ impl PyDocumentConverter {
         video_frames = None,
         page_range = None,
         ocr_lang = None,
+        ocr_mode = None,
+        ocr_scale = None,
         allowed_formats = None,
         text_layer_only = false,
         list_attachments = false,
@@ -161,6 +178,8 @@ impl PyDocumentConverter {
         video_frames: Option<usize>,
         page_range: Option<(usize, usize)>,
         ocr_lang: Option<String>,
+        ocr_mode: Option<String>,
+        ocr_scale: Option<f32>,
         allowed_formats: Option<Vec<String>>,
         text_layer_only: bool,
         list_attachments: bool,
@@ -197,16 +216,41 @@ impl PyDocumentConverter {
             Some((first, last)) => base.page_range(first, last),
             None => base,
         };
-        // `ocr_lang` — validated here so a typo raises instead of degrading.
-        let base = match ocr_lang {
-            Some(lang) => {
-                if docling::OcrLang::parse(&lang).is_none() {
-                    return Err(PyValueError::new_err(format!(
-                        "ocr_lang {lang:?} is not \"en\"|\"ch\""
-                    )));
-                }
-                base.ocr_lang(lang)
+        // `ocr_lang` / `ocr_mode` / `ocr_scale` (#254) — validated here so a
+        // typo raises instead of degrading; the parsed values also prime the
+        // warm pipeline in `initialize_pipeline`.
+        let ocr_lang_choice = match &ocr_lang {
+            Some(lang) => Some(docling::OcrLang::parse(lang).ok_or_else(|| {
+                PyValueError::new_err(format!("ocr_lang {lang:?} is not \"en\"|\"ch\""))
+            })?),
+            None => None,
+        };
+        let ocr_mode_choice = match &ocr_mode {
+            Some(mode) => Some(docling::OcrMode::parse(mode).ok_or_else(|| {
+                PyValueError::new_err(format!(
+                    "ocr_mode {mode:?} is not \"default\"|\"full_page\"|\
+                     \"layout_regions\"|\"pdf_aware_layout_regions\""
+                ))
+            })?),
+            None => None,
+        };
+        if let Some(s) = ocr_scale {
+            if !(s.is_finite() && s > 0.0) {
+                return Err(PyValueError::new_err(format!(
+                    "ocr_scale must be a positive number, got {s}"
+                )));
             }
+        }
+        let base = match ocr_lang {
+            Some(lang) => base.ocr_lang(lang),
+            None => base,
+        };
+        let base = match ocr_mode {
+            Some(mode) => base.ocr_mode(mode),
+            None => base,
+        };
+        let base = match ocr_scale {
+            Some(s) => base.ocr_scale(s),
             None => base,
         };
         Ok(Self {
@@ -231,6 +275,11 @@ impl PyDocumentConverter {
             no_table_former: !do_table_structure,
             no_text_panels,
             enrich,
+            force_full_page_ocr,
+            ocr_lang: ocr_lang_choice,
+            ocr_mode: ocr_mode_choice,
+            ocr_scale,
+            page_range,
         })
     }
 
@@ -254,6 +303,11 @@ impl PyDocumentConverter {
         let skip_ocr = self.skip_ocr;
         let no_text_panels = self.no_text_panels;
         let enrich = self.enrich;
+        let force_full_page_ocr = self.force_full_page_ocr;
+        let ocr_lang = self.ocr_lang;
+        let ocr_mode = self.ocr_mode;
+        let ocr_scale = self.ocr_scale;
+        let page_range = self.page_range;
         run_interruptible(py, move || {
             let mut slot = slot.lock().unwrap();
             if slot.is_none() {
@@ -263,6 +317,14 @@ impl PyDocumentConverter {
                     .no_ocr(no_ocr)
                     .skip_ocr(skip_ocr)
                     .no_text_panels(no_text_panels)
+                    // The warm path used to drop the converter's OCR knobs and
+                    // page window on the floor (#254) — prime it with the full
+                    // option set the transient path honors.
+                    .force_full_page_ocr(force_full_page_ocr)
+                    .ocr_lang(ocr_lang)
+                    .ocr_mode(ocr_mode)
+                    .ocr_scale(ocr_scale)
+                    .pages(page_range)
                     .enrichments(enrich);
                 pipeline
                     .warm_up()

@@ -64,6 +64,8 @@ paths:
         - { $ref: "#/components/parameters/pages" }
         - { $ref: "#/components/parameters/scale" }
         - { $ref: "#/components/parameters/ocr_lang" }
+        - { $ref: "#/components/parameters/ocr_mode" }
+        - { $ref: "#/components/parameters/ocr_scale" }
         - { $ref: "#/components/parameters/asr_model" }
         - { $ref: "#/components/parameters/asr_lang" }
         - { $ref: "#/components/parameters/video_frames" }
@@ -89,6 +91,8 @@ paths:
                 fetch_images: { type: boolean }
                 pages: { type: string, examples: ["2-5"] }
                 ocr_lang: { $ref: "#/components/schemas/OcrLang" }
+                ocr_mode: { $ref: "#/components/schemas/OcrMode" }
+                ocr_scale: { $ref: "#/components/schemas/OcrScale" }
                 asr_model: { type: string }
                 asr_lang: { type: string, examples: ["auto", "en", "de"] }
                 video_frames: { type: integer, minimum: 0 }
@@ -337,6 +341,22 @@ components:
       enum: [en, ch]
       default: en
       description: OCR recognition language for scanned pages.
+    OcrMode:
+      type: string
+      enum: [default, full_page, layout_regions, pdf_aware_layout_regions]
+      default: default
+      description: >-
+        Which regions feed the OCR (docling's `OcrMode`) —
+        `full_page`/`layout_regions` discard the embedded text layer like
+        `force_full_page_ocr`; `pdf_aware_layout_regions` (= `default`) is the
+        standard text-layer-aware behavior.
+    OcrScale:
+      type: number
+      exclusiveMinimum: 0
+      description: >-
+        OCR render scale in pixels per PDF point (docling's
+        `OcrOptions.scale`). Unset reads the pipeline's own 2.0 px/pt render;
+        docling's default is 3 (216 dpi).
     Scale:
       type: number
       minimum: 0.1
@@ -406,6 +426,8 @@ components:
           description: PDF page window, `A-B` or a single `N` (1-based, inclusive).
           examples: ["2-5", "3"]
         ocr_lang: { $ref: "#/components/schemas/OcrLang" }
+        ocr_mode: { $ref: "#/components/schemas/OcrMode" }
+        ocr_scale: { $ref: "#/components/schemas/OcrScale" }
         scale: { $ref: "#/components/schemas/Scale" }
         asr_model:
           type: string
@@ -512,6 +534,10 @@ components:
       { name: scale, in: query, schema: { $ref: "#/components/schemas/Scale" } }
     ocr_lang:
       { name: ocr_lang, in: query, schema: { $ref: "#/components/schemas/OcrLang" } }
+    ocr_mode:
+      { name: ocr_mode, in: query, schema: { $ref: "#/components/schemas/OcrMode" } }
+    ocr_scale:
+      { name: ocr_scale, in: query, schema: { $ref: "#/components/schemas/OcrScale" } }
     asr_model:
       { name: asr_model, in: query, schema: { type: string } }
     asr_lang:

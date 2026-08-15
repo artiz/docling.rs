@@ -193,7 +193,7 @@ honoring `pages=A-B` and a `scale` of 0.1–4.0 pixels per PDF point (default
 
 Options per request: `to=md|json|dclx|chunks|images`, `strict`, `images=placeholder|embedded`,
 `no_ocr`, `skip_ocr`, `no_table_former`, `no_text_panels`, `force_full_page_ocr`, `pages`,
-`ocr_lang`, `scale`, `asr_model`, `asr_lang`, `video_frames`, `fetch_images` — as query
+`ocr_lang`, `ocr_mode`, `ocr_scale`, `scale`, `asr_model`, `asr_lang`, `video_frames`, `fetch_images` — as query
 parameters, multipart fields, or JSON keys (body wins). Server flags: `--addr`,
 `--concurrency`, `--max-body-mb`, `--queue-size`, `--result-ttl`, `--warmup`,
 `--allow-url-fetch`, `--no-url-fetch`, `--strict`, `--max-memory-mb` (#263:
@@ -552,6 +552,26 @@ generated with the multilingual `ch_` model — if you're comparing output
 against Python docling byte-for-byte, run with `--ocr-lang ch`
 (`DOCLING_RS_OCR_LANG=ch`). On ordinary scans `en` reads better; on the
 conformance fixtures `ch` matches the groundtruth exactly.
+
+Two more OCR knobs mirror docling 2.116+ options (#254), on every surface
+(CLI flag, `DocumentConverter`/`Pipeline` builder, serve option, Python
+kwarg, Node option):
+
+- `--ocr-mode default|full_page|layout_regions|pdf_aware_layout_regions`
+  (`DOCLING_RS_OCR_MODE`) — docling's `OcrMode`, i.e. which regions feed the
+  OCR. The default (= `pdf_aware_layout_regions`) is the text-layer-aware
+  behavior this pipeline has always had; `full_page` and `layout_regions`
+  both discard the embedded text layer, exactly like `--force-full-page-ocr`
+  (the upstream distinction between them — whole-page vs per-region
+  *detector* input — has no analogue here, since the PP-OCR recognizer
+  always reads per-region line crops).
+- `--ocr-scale X` (`DOCLING_RS_OCR_SCALE`) — docling's `OcrOptions.scale`:
+  the resolution OCR reads, in pixels per PDF point. Unset, OCR reads the
+  pipeline's own 2.0 px/pt (144 dpi) page render — the pinned conformance
+  baseline; a different value resamples that render for the OCR input only
+  (layout and TableFormer pixels are untouched). docling's default is 3
+  (216 dpi); lower it when the source raster is already high-resolution and
+  upscaling degrades recognition.
 Turn it on for image-extraction workflows over scanned documents whose
 uncaptioned figures carry enough label text to look panel-like. Available on
 every surface: `no_text_panels(bool)` on the library builder, a

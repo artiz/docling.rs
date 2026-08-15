@@ -7,7 +7,7 @@
 //! (docling's independent `do_ocr=False`); `--no-ocr` remains the
 //! skip-everything fast path.
 //!
-//! Usage: docling-rs [--strict] [--to md|json|dclx|chunks|images] [--pages A-B] [--scale X] [--images MODE] [--input GLOB --output DIR [--jobs N]] [--fetch-images] [--list-attachments] [--ebcdic-layout JSON|PATH] [--no-stream] [--no-table-former] [--no-ocr] [--skip-ocr] [--force-full-page-ocr] [--no-text-panels] [--ocr-lang en|ch] [--pipeline standard|vlm] [--vlm-endpoint URL] [--vlm-model NAME] [--asr-model PRESET] [--asr-lang CODE] [--video-frames N] [--use-web-browser] [--enrich-picture-classes] [--enrich-code] [--enrich-formula] <input-file>
+//! Usage: docling-rs [--strict] [--to md|json|dclx|chunks|images] [--pages A-B] [--scale X] [--images MODE] [--input GLOB --output DIR [--jobs N]] [--fetch-images] [--list-attachments] [--ebcdic-layout JSON|PATH] [--no-stream] [--no-table-former] [--no-ocr] [--skip-ocr] [--force-full-page-ocr] [--no-text-panels] [--ocr-lang en|ch] [--ocr-mode MODE] [--ocr-scale X] [--pipeline standard|vlm] [--vlm-endpoint URL] [--vlm-model NAME] [--asr-model PRESET] [--asr-lang CODE] [--video-frames N] [--use-web-browser] [--enrich-picture-classes] [--enrich-code] [--enrich-formula] <input-file>
 //!   --input GLOB|DIR   batch mode (#205): convert every file the glob matches
 //!                      (`--input '/data/reports/**/*.pdf'` — quote it so the
 //!                      shell doesn't expand it) instead of one positional file.
@@ -154,6 +154,8 @@ fn main() -> ExitCode {
     let mut pages: Option<(usize, usize)> = None;
     let mut scale: f32 = 2.0;
     let mut ocr_lang: Option<String> = None;
+    let mut ocr_mode: Option<String> = None;
+    let mut ocr_scale: Option<f32> = None;
     let mut pipeline: Option<String> = None;
     let mut vlm_endpoint: Option<String> = None;
     let mut vlm_model: Option<String> = None;
@@ -260,6 +262,45 @@ fn main() -> ExitCode {
                 }
                 None => {
                     eprintln!("error: --ocr-lang needs a value (en|ch)");
+                    return ExitCode::from(2);
+                }
+            },
+            // Which regions feed the OCR (docling's OcrMode, #254):
+            // full_page/layout_regions discard the text layer like
+            // --force-full-page-ocr; pdf_aware_layout_regions (= default) is
+            // the standard text-layer-aware behavior.
+            "--ocr-mode" => match args.next() {
+                Some(v)
+                    if matches!(
+                        v.trim(),
+                        "default" | "full_page" | "layout_regions" | "pdf_aware_layout_regions"
+                    ) =>
+                {
+                    ocr_mode = Some(v)
+                }
+                Some(v) => {
+                    eprintln!(
+                        "error: --ocr-mode {v:?} is not \
+                         default|full_page|layout_regions|pdf_aware_layout_regions"
+                    );
+                    return ExitCode::from(2);
+                }
+                None => {
+                    eprintln!("error: --ocr-mode needs a value");
+                    return ExitCode::from(2);
+                }
+            },
+            // OCR render scale in px per PDF point (docling's
+            // OcrOptions.scale, #254): unset reads the pipeline's own 2.0
+            // px/pt render; docling's default is 3 (216 dpi).
+            "--ocr-scale" => match args.next().map(|v| v.trim().parse::<f32>()) {
+                Some(Ok(s)) if s > 0.0 && s.is_finite() => ocr_scale = Some(s),
+                Some(_) => {
+                    eprintln!("error: --ocr-scale needs a positive number");
+                    return ExitCode::from(2);
+                }
+                None => {
+                    eprintln!("error: --ocr-scale needs a value");
                     return ExitCode::from(2);
                 }
             },
@@ -388,6 +429,8 @@ fn main() -> ExitCode {
             video_frames,
             pages,
             ocr_lang,
+            ocr_mode,
+            ocr_scale,
             scale,
             vlm,
         };
@@ -395,7 +438,7 @@ fn main() -> ExitCode {
     }
 
     let Some(path) = path else {
-        eprintln!("usage: docling-rs [--strict] [--to md|json|dclx|chunks|images] [--scale X] [--images MODE] [--input GLOB --output DIR [--jobs N]] [--fetch-images] [--list-attachments] [--ebcdic-layout JSON|PATH] [--no-stream] [--no-table-former] [--no-ocr] [--skip-ocr] [--force-full-page-ocr] [--no-text-panels] [--ocr-lang en|ch] [--use-web-browser] <input-file>");
+        eprintln!("usage: docling-rs [--strict] [--to md|json|dclx|chunks|images] [--scale X] [--images MODE] [--input GLOB --output DIR [--jobs N]] [--fetch-images] [--list-attachments] [--ebcdic-layout JSON|PATH] [--no-stream] [--no-table-former] [--no-ocr] [--skip-ocr] [--force-full-page-ocr] [--no-text-panels] [--ocr-lang en|ch] [--ocr-mode MODE] [--ocr-scale X] [--use-web-browser] <input-file>");
         return ExitCode::from(2);
     };
 
@@ -502,6 +545,12 @@ fn main() -> ExitCode {
     }
     if let Some(lang) = &ocr_lang {
         converter = converter.ocr_lang(lang.clone());
+    }
+    if let Some(mode) = &ocr_mode {
+        converter = converter.ocr_mode(mode.clone());
+    }
+    if let Some(s) = ocr_scale {
+        converter = converter.ocr_scale(s);
     }
 
     // Stream Markdown by default: print each chunk as the converter produces it
@@ -643,6 +692,10 @@ struct BatchCfg {
     video_frames: Option<usize>,
     pages: Option<(usize, usize)>,
     ocr_lang: Option<String>,
+    /// Which regions feed the OCR (docling's `OcrMode`, #254).
+    ocr_mode: Option<String>,
+    /// OCR render scale in px/pt (docling's `OcrOptions.scale`, #254).
+    ocr_scale: Option<f32>,
     /// `--to images` render scale (pixels per PDF point, #243).
     scale: f32,
     vlm: Option<docling::vlm::VlmOptions>,
@@ -763,6 +816,12 @@ fn batch_converter(cfg: &BatchCfg) -> DocumentConverter {
     if let Some(lang) = &cfg.ocr_lang {
         converter = converter.ocr_lang(lang.clone());
     }
+    if let Some(mode) = &cfg.ocr_mode {
+        converter = converter.ocr_mode(mode.clone());
+    }
+    if let Some(s) = cfg.ocr_scale {
+        converter = converter.ocr_scale(s);
+    }
     converter
 }
 
@@ -782,6 +841,8 @@ fn batch_pipeline<'a>(
             .skip_ocr(cfg.skip_ocr)
             .force_full_page_ocr(cfg.force_full_page_ocr)
             .no_text_panels(cfg.no_text_panels)
+            .ocr_mode(cfg.ocr_mode.as_deref().and_then(docling::OcrMode::parse))
+            .ocr_scale(cfg.ocr_scale)
             .enrichments(docling::EnrichmentOptions {
                 picture_classification: cfg.enrich_picture_classes,
                 code: cfg.enrich_code,

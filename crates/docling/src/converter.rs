@@ -83,6 +83,10 @@ pub struct DocumentConverter {
     no_ocr: bool,
     skip_ocr: bool,
     force_full_page_ocr: bool,
+    /// OCR mode id (docling's `OcrMode`, #254); parsed at the ML call sites.
+    ocr_mode: Option<String>,
+    /// OCR render scale in px/pt (#254); validated at the ML call sites.
+    ocr_scale: Option<f32>,
     use_web_browser: bool,
     /// Named Whisper model preset for audio sources (docling's ASR model
     /// specs, PR #3741): English-only / Distil-Whisper variants under
@@ -151,6 +155,8 @@ impl Default for DocumentConverter {
             no_ocr: false,
             skip_ocr: false,
             force_full_page_ocr: false,
+            ocr_mode: None,
+            ocr_scale: None,
             use_web_browser: false,
             asr_model: None,
             asr_lang: None,
@@ -212,7 +218,9 @@ impl DocumentConverter {
             .skip_ocr(self.skip_ocr)
             .no_text_panels(self.no_text_panels)
             .enrichments(self.enrich)
-            .ocr_lang(self.ocr_lang_choice()))
+            .ocr_lang(self.ocr_lang_choice())
+            .ocr_mode(self.ocr_mode_choice())
+            .ocr_scale(self.ocr_scale_choice()))
     }
 
     /// The parsed [`Self::ocr_lang`] choice for the ML call sites; a value
@@ -226,6 +234,33 @@ impl DocumentConverter {
             eprintln!("docling: ocr_lang {raw:?} is not en|ch; using the default");
         }
         parsed
+    }
+
+    /// The parsed [`Self::ocr_mode`] choice (#254), with the same
+    /// warn-and-default degradation as [`ocr_lang_choice`](Self::ocr_lang_choice).
+    #[cfg(feature = "pdf")]
+    fn ocr_mode_choice(&self) -> Option<docling_pdf::OcrMode> {
+        let raw = self.ocr_mode.as_deref()?;
+        let parsed = docling_pdf::OcrMode::parse(raw);
+        if parsed.is_none() {
+            eprintln!(
+                "docling: ocr_mode {raw:?} is not \
+                 default|full_page|layout_regions|pdf_aware_layout_regions; using the default"
+            );
+        }
+        parsed
+    }
+
+    /// The validated [`Self::ocr_scale`] (#254): non-positive/non-finite
+    /// values warn and fall back to the engine default.
+    #[cfg(feature = "pdf")]
+    fn ocr_scale_choice(&self) -> Option<f32> {
+        let s = self.ocr_scale?;
+        if !(s.is_finite() && s > 0.0) {
+            eprintln!("docling: ocr_scale {s} is not a positive number; using the default");
+            return None;
+        }
+        Some(s)
     }
 
     /// Where [`ImageMode::Referenced`] streaming writes image files, and the
@@ -390,6 +425,30 @@ impl DocumentConverter {
         self
     }
 
+    /// Which document regions feed the OCR — docling's `OcrMode` (#254):
+    /// `default`, `full_page`, `layout_regions`, or
+    /// `pdf_aware_layout_regions`. The default is the text-layer-aware
+    /// behavior (docling's `pdf_aware_layout_regions`);
+    /// `full_page`/`layout_regions` discard the text layer like
+    /// [`force_full_page_ocr`](Self::force_full_page_ocr) — see
+    /// [`docling_pdf::OcrMode`] for the mapping. An unknown value warns at
+    /// conversion time and uses the default. PDF/image ML pipeline only.
+    pub fn ocr_mode(mut self, mode: impl Into<String>) -> Self {
+        self.ocr_mode = Some(mode.into());
+        self
+    }
+
+    /// OCR render scale in pixels per PDF point — docling's
+    /// `OcrOptions.scale` (#254; docling's default 3 = 216 dpi). Unset feeds
+    /// the recognizer the pipeline's own 2.0 px/pt page render; a different
+    /// value resamples that render for the OCR input only, leaving layout and
+    /// TableFormer pixels untouched. Non-positive values warn at conversion
+    /// time and are ignored. PDF/image ML pipeline only.
+    pub fn ocr_scale(mut self, scale: f32) -> Self {
+        self.ocr_scale = Some(scale);
+        self
+    }
+
     /// Classify each detected picture with the DocumentFigureClassifier model
     /// (docling's `do_picture_classification`). Off by default.
     ///
@@ -516,6 +575,8 @@ impl DocumentConverter {
             enrich: self.enrich,
             page_range: self.page_range,
             ocr_lang: self.ocr_lang_choice(),
+            ocr_mode: self.ocr_mode_choice(),
+            ocr_scale: self.ocr_scale_choice(),
             artifacts_dir: self.artifacts_dir.clone(),
         }
     }

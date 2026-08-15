@@ -86,6 +86,10 @@ cargo check -p docling --no-default-features --features pdf-text \
   `DOCLING_RS_EP` (GPU execution providers), `DOCLING_RS_ASR_LANG`,
   `DOCLING_RS_OCR_LANG` (en default; `ch` = the docling-conformance OCR
   model, which conformance scripts pin themselves),
+  `DOCLING_RS_OCR_MODE` (#254; docling's `OcrMode` —
+  `full_page`/`layout_regions` force-discard the text layer),
+  `DOCLING_RS_OCR_SCALE` (#254; OCR input px/pt — resampled from the 2.0
+  render; docling's default is 3),
   `DOCLING_RS_OCR_ORIENTATION` (auto default; `off` disables content-based
   un-rotation of raster-rotated scans, #225), `DOCLING_CHUNK_TOKENIZER`,
   `DOCLING_RS_DEBUG` (re-enables quiet pipeline diagnostics, e.g. the

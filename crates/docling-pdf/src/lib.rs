@@ -103,7 +103,7 @@ use docling_core::{debug_log, env};
 #[cfg(feature = "ml")]
 pub use mets::{convert_mets_gbs, convert_mets_gbs_with_options, convert_mets_gbs_with_pipeline};
 #[cfg(feature = "ml")]
-pub use ocr::OcrLang;
+pub use ocr::{OcrLang, OcrMode};
 #[cfg(feature = "ml")]
 pub use pdfium_backend::PdfDocument;
 pub use pdfium_backend::{PdfPage, TextCell};
@@ -535,6 +535,36 @@ pub fn layout_src(page: &PdfPage) -> layout::LayoutSrc<'_> {
 }
 
 #[cfg(feature = "ml")]
+/// The bitmap + px/pt scale the OCR reads (#254, docling#3877's
+/// `OcrOptions.scale`): the page's own render unless `ocr_scale` asks for a
+/// different resolution, where a PIL-bicubic resample of that render is built
+/// once per page (cached in `cache`) and shared by every OCR pass. Resampling
+/// — rather than a second native pdfium render — keeps one code path across
+/// PDF, image, and hOCR inputs and leaves the layout/TableFormer pixels (and
+/// with them the conformance baseline) untouched; the 144-dpi base render is
+/// itself supersampled down from 216 dpi, so an upscaled OCR view loses
+/// little against a native render.
+fn ocr_input<'a>(
+    cache: &'a mut Option<image::RgbImage>,
+    image: &'a image::RgbImage,
+    scale: f32,
+    ocr_scale: Option<f32>,
+) -> (&'a image::RgbImage, f32) {
+    match ocr_scale {
+        Some(s) if (s - scale).abs() > 1e-3 && image.width() > 1 => {
+            let f = s / scale;
+            let img = cache.get_or_insert_with(|| {
+                let dw = ((image.width() as f32 * f).round() as u32).max(1);
+                let dh = ((image.height() as f32 * f).round() as u32).max(1);
+                resample::pil_resize(image, dw, dh, resample::PilFilter::Bicubic)
+            });
+            (img, s)
+        }
+        _ => (image, scale),
+    }
+}
+
+#[cfg(feature = "ml")]
 /// A self-contained set of the per-page models (layout, OCR). Each parallel
 /// page-worker owns its own `Worker` so inference runs concurrently without
 /// sharing an ONNX session (`ort`'s `Session::run` is `&mut self`); only the
@@ -563,6 +593,8 @@ struct Worker {
     skip_ocr: bool,
     /// Which recognition model [`Self::ocr`] loads. See [`Pipeline::ocr_lang`].
     ocr_lang: ocr::OcrLang,
+    /// OCR render scale override (px/pt, #254). See [`Pipeline::ocr_scale`].
+    ocr_scale: Option<f32>,
 }
 
 #[cfg(feature = "ml")]
@@ -589,6 +621,7 @@ impl Worker {
         force_full_page_ocr: bool,
         no_text_panels: bool,
         ocr_lang: ocr::OcrLang,
+        ocr_scale: Option<f32>,
     ) -> Result<Self, PdfError> {
         Ok(Self {
             layout: if no_ocr {
@@ -606,6 +639,7 @@ impl Worker {
             force_full_page_ocr,
             no_text_panels,
             ocr_lang,
+            ocr_scale,
         })
     }
 
@@ -783,6 +817,12 @@ impl Worker {
         let parse = quality::parse_score(&page.cells);
         // Recognition confidences of every OCR'd cell on this page → ocr_score.
         let mut ocr_confs: Vec<f32> = Vec::new();
+        // The bitmap the OCR reads (#254): with `ocr_scale` set, a resample of
+        // the page render at the requested px/pt, built lazily on the first
+        // OCR use so non-OCR pages never pay for it. Copied out of `self` up
+        // front — the OCR sites hold `self.ocr_model()`'s mutable borrow.
+        let ocr_scale = self.ocr_scale;
+        let mut ocr_view: Option<image::RgbImage> = None;
         if self.force_full_page_ocr {
             page.cells.clear();
             page.code_cells.clear();
@@ -866,10 +906,9 @@ impl Worker {
             // its layout regions (and TableFormer structure below) with no
             // recognized text, instead of failing the conversion.
             if let Some(ocr) = self.ocr_model()? {
-                let cells = timing::timed("ocr.page", || {
-                    ocr.ocr_page(&page.image, &regions, page.scale)
-                })
-                .map_err(|e| PdfError::Ocr(format!("page {}: {e}", n + 1)))?;
+                let (img, scl) = ocr_input(&mut ocr_view, &page.image, page.scale, ocr_scale);
+                let cells = timing::timed("ocr.page", || ocr.ocr_page(img, &regions, scl))
+                    .map_err(|e| PdfError::Ocr(format!("page {}: {e}", n + 1)))?;
                 ocr_confs.extend(cells.iter().map(|(_, conf)| conf));
                 page.cells = cells.into_iter().map(|(cell, _)| cell).collect();
                 // Table interiors carry no words yet: region-scoped OCR skips
@@ -880,8 +919,9 @@ impl Worker {
                 // matcher, and the same cells join `cells` so the geometric
                 // fallback and the table's region text see them too.
                 if regions.iter().any(|r| assemble::is_table_like(r.label)) {
+                    let (img, scl) = ocr_input(&mut ocr_view, &page.image, page.scale, ocr_scale);
                     let words = timing::timed("ocr.table_words", || {
-                        ocr.ocr_table_words(&page.image, &regions, page.scale)
+                        ocr.ocr_table_words(img, &regions, scl)
                     })
                     .map_err(|e| PdfError::Ocr(format!("page {}: {e}", n + 1)))?;
                     ocr_confs.extend(words.iter().map(|(_, conf)| conf));
@@ -936,10 +976,9 @@ impl Worker {
             // Speculative OCR (#244): with `skip_ocr` or no model, big bare
             // pictures simply stay pictures.
             if let (false, Some(ocr)) = (bare.is_empty(), self.ocr_model()?) {
-                let scored = timing::timed("ocr.pictures", || {
-                    ocr.ocr_page(&page.image, &bare, page.scale)
-                })
-                .map_err(|e| PdfError::Ocr(format!("page {}: {e}", n + 1)))?;
+                let (img, scl) = ocr_input(&mut ocr_view, &page.image, page.scale, ocr_scale);
+                let scored = timing::timed("ocr.pictures", || ocr.ocr_page(img, &bare, scl))
+                    .map_err(|e| PdfError::Ocr(format!("page {}: {e}", n + 1)))?;
                 // Speculative in-picture OCR counts toward ocr_score only on
                 // OCR'd pages, where the recognized lines actually join the
                 // output; on a digital page they may be discarded below.
@@ -1028,8 +1067,9 @@ impl Worker {
             // Same degradation as above: without OCR the in-picture table
             // keeps its structure (TableFormer is geometry-driven) minus text.
             if let (false, Some(ocr)) = (pic_tables.is_empty(), self.ocr_model()?) {
+                let (img, scl) = ocr_input(&mut ocr_view, &page.image, page.scale, ocr_scale);
                 let words = timing::timed("ocr.table_words", || {
-                    ocr.ocr_table_words(&page.image, &pic_tables, page.scale)
+                    ocr.ocr_table_words(img, &pic_tables, scl)
                 })
                 .map_err(|e| PdfError::Ocr(format!("page {}: {e}", n + 1)))?;
                 ocr_confs.extend(words.iter().map(|(_, conf)| conf));
@@ -1300,6 +1340,10 @@ pub struct Pipeline {
     page_range: Option<(usize, usize)>,
     /// OCR recognition language. See [`Pipeline::ocr_lang`].
     ocr_lang: ocr::OcrLang,
+    /// Which regions feed the OCR (#254). See [`Pipeline::ocr_mode`].
+    ocr_mode: ocr::OcrMode,
+    /// OCR render scale override in px/pt (#254). See [`Pipeline::ocr_scale`].
+    ocr_scale: Option<f32>,
     /// Optional per-page progress hook `(done, selected_total)`, invoked after
     /// each page finishes on both the serial and parallel buffered paths. Set
     /// by the CLI batch mode for dot-progress; `None` costs nothing.
@@ -1328,6 +1372,8 @@ impl Pipeline {
             enrich: EnrichmentOptions::default(),
             page_range: None,
             ocr_lang: ocr::OcrLang::from_env(),
+            ocr_mode: ocr::OcrMode::from_env(),
+            ocr_scale: ocr::scale_from_env(),
             progress: None,
         })
     }
@@ -1478,6 +1524,71 @@ impl Pipeline {
         self
     }
 
+    /// Which document regions feed the OCR — docling's `OcrMode` (#254). The
+    /// default (`default` = `pdf_aware_layout_regions`) is the standard
+    /// text-layer-aware behavior; `full_page`/`layout_regions` discard the
+    /// text layer like [`force_full_page_ocr`](Self::force_full_page_ocr)
+    /// (see [`ocr::OcrMode`] for why both map onto it). Whichever of the flag
+    /// and the mode demands forcing wins, mirroring docling's
+    /// `force_full_page_ocr` → `mode=full_page` bridge. `None` keeps the
+    /// process default (`DOCLING_RS_OCR_MODE`, else `default`).
+    pub fn ocr_mode(mut self, mode: Option<ocr::OcrMode>) -> Self {
+        self.ocr_mode = mode.unwrap_or_else(ocr::OcrMode::from_env);
+        self
+    }
+
+    /// In-place variants of [`force_full_page_ocr`](Self::force_full_page_ocr),
+    /// [`ocr_mode`](Self::ocr_mode) and [`ocr_scale`](Self::ocr_scale) for a
+    /// long-lived pipeline (docling-serve's warm instance): all three are pure
+    /// per-worker configuration — no model reloads — so they apply per request
+    /// like [`set_pages`](Self::set_pages). Set them before every conversion so
+    /// no request inherits a previous one's choice.
+    pub fn set_force_full_page_ocr(&mut self, force: bool) {
+        self.force_full_page_ocr = force;
+        self.sync_ocr_config();
+    }
+
+    /// See [`set_force_full_page_ocr`](Self::set_force_full_page_ocr).
+    pub fn set_ocr_mode(&mut self, mode: Option<ocr::OcrMode>) {
+        self.ocr_mode = mode.unwrap_or_else(ocr::OcrMode::from_env);
+        self.sync_ocr_config();
+    }
+
+    /// See [`set_force_full_page_ocr`](Self::set_force_full_page_ocr).
+    pub fn set_ocr_scale(&mut self, scale: Option<f32>) {
+        self.ocr_scale = scale
+            .filter(|s| s.is_finite() && *s > 0.0)
+            .or_else(ocr::scale_from_env);
+        self.sync_ocr_config();
+    }
+
+    /// Push the current OCR forcing/scale choice onto already-loaded workers
+    /// (new workers read it at [`Worker::load`]).
+    fn sync_ocr_config(&mut self) {
+        let force = self.force_full_page_ocr || self.ocr_mode.forces_full_page();
+        let scale = self.ocr_scale;
+        for worker in self.primary.iter_mut().chain(self.pool.iter_mut()) {
+            worker.force_full_page_ocr = force;
+            worker.ocr_scale = scale;
+        }
+    }
+
+    /// OCR render scale in pixels per PDF point — docling's `OcrOptions.scale`
+    /// (#254, upstream docling#3877; their default 3 = 216 dpi). `None`
+    /// (default: `DOCLING_RS_OCR_SCALE`, else unset) feeds the recognizer the
+    /// pipeline's own page render (2.0 px/pt = 144 dpi); a different value
+    /// resamples that render for the OCR input only — layout and TableFormer
+    /// keep their pinned-resolution pixels, so the conformance baseline never
+    /// moves. Lower it when the source raster is already high-resolution and
+    /// upscaling degrades recognition; raise it toward docling's 216 dpi for
+    /// parity experiments. Non-positive values are ignored.
+    pub fn ocr_scale(mut self, scale: Option<f32>) -> Self {
+        self.ocr_scale = scale
+            .filter(|s| s.is_finite() && *s > 0.0)
+            .or_else(ocr::scale_from_env);
+        self
+    }
+
     /// The shared TableFormer slot handed to each worker, or `None` when the
     /// pipeline options skip TableFormer entirely.
     fn tables_slot(&self) -> Option<SharedTables> {
@@ -1522,9 +1633,13 @@ impl Pipeline {
                 self.enrich,
                 self.no_ocr,
                 self.skip_ocr,
-                self.force_full_page_ocr,
+                // The mode-shaped spelling (#254) and the flag are one engine
+                // truth: whichever demands forcing wins, mirroring docling's
+                // `force_full_page_ocr` → `mode=full_page` bridge.
+                self.force_full_page_ocr || self.ocr_mode.forces_full_page(),
                 self.no_text_panels,
                 self.ocr_lang,
+                self.ocr_scale,
             )?);
         }
         Ok(self.primary.as_mut().unwrap())
@@ -1921,9 +2036,10 @@ impl Pipeline {
         let intra = pdf_intra();
         let no_ocr = self.no_ocr;
         let skip_ocr = self.skip_ocr;
-        let force = self.force_full_page_ocr;
+        let force = self.force_full_page_ocr || self.ocr_mode.forces_full_page();
         let ntp = self.no_text_panels;
         let ocr_lang = self.ocr_lang;
+        let ocr_scale = self.ocr_scale;
         let enrich = self.enrich;
         let tables = self.tables_slot();
         let enrich_slots = self.enrich_slots();
@@ -1943,6 +2059,7 @@ impl Pipeline {
                             force,
                             ntp,
                             ocr_lang,
+                            ocr_scale,
                         )
                     })
                 })
@@ -2194,5 +2311,36 @@ mod send_check {
     #[test]
     fn pipeline_is_send() {
         assert_send::<super::Pipeline>();
+    }
+}
+
+#[cfg(all(test, feature = "ml"))]
+mod ocr_input_tests {
+    /// #254: without an `ocr_scale` (or with one equal to the render scale)
+    /// the OCR reads the page render untouched and the cache stays cold; a
+    /// different scale builds one resampled view, reuses it across calls, and
+    /// reports the requested px/pt so cell geometry divides back to points.
+    #[test]
+    fn ocr_input_resamples_only_on_a_real_scale_change() {
+        let img = image::RgbImage::new(200, 100);
+        let mut cache = None;
+        let (v, s) = super::ocr_input(&mut cache, &img, 2.0, None);
+        assert!(std::ptr::eq(v, &img) && s == 2.0 && cache.is_none());
+        let (v, s) = super::ocr_input(&mut cache, &img, 2.0, Some(2.0));
+        assert!(std::ptr::eq(v, &img) && s == 2.0 && cache.is_none());
+
+        let (v, s) = super::ocr_input(&mut cache, &img, 2.0, Some(3.0));
+        assert_eq!((v.width(), v.height(), s), (300, 150, 3.0));
+        let first = cache.as_ref().map(|c| c as *const image::RgbImage);
+        let (v, _) = super::ocr_input(&mut cache, &img, 2.0, Some(3.0));
+        assert_eq!(
+            Some(v as *const image::RgbImage),
+            first,
+            "cached, not rebuilt"
+        );
+
+        let mut down = None;
+        let (v, s) = super::ocr_input(&mut down, &img, 2.0, Some(1.0));
+        assert_eq!((v.width(), v.height(), s), (100, 50, 1.0));
     }
 }

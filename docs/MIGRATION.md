@@ -397,6 +397,20 @@ These are deliberate or unavoidable divergences, not bugs.
     the `skip_ocr` behavior with a one-time warning — docling errors there —
     matching the repo-wide degradation-over-failure convention.
 
+12. **`OcrMode` and `OcrOptions.scale`** (docling 2.116/2.117, #254) are
+    mirrored on every surface as `ocr_mode` (`--ocr-mode`,
+    `DOCLING_RS_OCR_MODE`) and `ocr_scale` (`--ocr-scale`,
+    `DOCLING_RS_OCR_SCALE`). `pdf_aware_layout_regions` — upstream's new
+    default, OCR gated by layout regions and the PDF text layer — is the
+    architecture this port always had, so the default behavior is already
+    aligned; `full_page` and `layout_regions` both map onto the
+    `force_full_page_ocr` machinery (the whole-page vs per-region *detector*
+    distinction has no analogue in the det-free PP-OCR recognizer here).
+    `ocr_scale` resamples the OCR input from the pipeline's 2.0 px/pt page
+    render instead of re-rendering (docling renders natively at
+    `72 × scale` dpi, default 3); unset keeps the pinned 144 dpi baseline,
+    so conformance snapshots never move.
+
 ---
 
 ## 5. Not migrated / out of scope
