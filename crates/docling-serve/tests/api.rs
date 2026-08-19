@@ -170,6 +170,8 @@ async fn serves_its_logo_and_openapi_description() {
         "force_full_page_ocr:",
         "no_table_former:",
         "fetch_images:",
+        "skip_empty_cells:",
+        "compact_tables:",
         "list_attachments:",
         "ebcdic_layout:",
         "pages:",

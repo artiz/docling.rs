@@ -59,6 +59,12 @@ pub struct ConverterOptions {
     /// Email (.eml/.msg): append an Attachments section — names and content
     /// types only, never the payload (#251). Default `false`.
     pub list_attachments: Option<bool>,
+    /// Omit empty cells from sparse XLSX/XLS table grids (#271; docling.rs
+    /// extension). Default `false`.
+    pub skip_empty_cells: Option<bool>,
+    /// Unpadded `| a | b |` Markdown tables, all formats (#271; docling.rs
+    /// extension). Default `false`.
+    pub compact_tables: Option<bool>,
     /// EBCDIC (#252): copybook layout as inline `EbcdicLayout` JSON or a
     /// file path; defaults to the `<stem>.layout.json` sidecar.
     pub ebcdic_layout: Option<String>,
@@ -129,6 +135,11 @@ pub struct ConvertOptions {
     /// Email (.eml/.msg): append an Attachments section — names and content
     /// types only, never the payload (#251). Default `false`.
     pub list_attachments: Option<bool>,
+    /// Omit empty cells from sparse XLSX/XLS table grids (#271). Default
+    /// `false`.
+    pub skip_empty_cells: Option<bool>,
+    /// Unpadded Markdown tables (#271). Default `false`.
+    pub compact_tables: Option<bool>,
     /// EBCDIC (#252): copybook layout as inline `EbcdicLayout` JSON or a
     /// file path; defaults to the `<stem>.layout.json` sidecar.
     pub ebcdic_layout: Option<String>,
@@ -203,6 +214,8 @@ struct ConvertConfig {
     ocr_mode: Option<String>,
     ocr_scale: Option<f32>,
     list_attachments: bool,
+    skip_empty_cells: bool,
+    compact_tables: bool,
     ebcdic_layout: Option<String>,
     skip_ocr: bool,
     force_full_page_ocr: bool,
@@ -270,6 +283,8 @@ fn build_config(o: ConvertOptions) -> Result<ConvertConfig> {
         ocr_mode: parse_ocr_mode(o.ocr_mode)?,
         ocr_scale: parse_ocr_scale(o.ocr_scale)?,
         list_attachments: o.list_attachments.unwrap_or(false),
+        skip_empty_cells: o.skip_empty_cells.unwrap_or(false),
+        compact_tables: o.compact_tables.unwrap_or(false),
         ebcdic_layout: o.ebcdic_layout,
         skip_ocr: o.skip_ocr.unwrap_or(false),
         force_full_page_ocr: o.force_full_page_ocr.unwrap_or(false),
@@ -327,6 +342,8 @@ fn build_converter(cfg: &ConvertConfig) -> RsConverter {
         .strict(cfg.strict)
         .fetch_images(cfg.fetch_images)
         .list_attachments(cfg.list_attachments)
+        .skip_empty_cells(cfg.skip_empty_cells)
+        .compact_tables(cfg.compact_tables)
         .ebcdic_layout_opt(cfg.ebcdic_layout.clone())
         .skip_ocr(cfg.skip_ocr)
         .force_full_page_ocr(cfg.force_full_page_ocr)
@@ -529,6 +546,8 @@ pub struct DocumentConverter {
     ocr_mode: Option<String>,
     ocr_scale: Option<f32>,
     list_attachments: bool,
+    skip_empty_cells: bool,
+    compact_tables: bool,
     ebcdic_layout: Option<String>,
     skip_ocr: bool,
     force_full_page_ocr: bool,
@@ -560,6 +579,8 @@ impl DocumentConverter {
             ocr_mode: parse_ocr_mode(o.ocr_mode.clone())?,
             ocr_scale: parse_ocr_scale(o.ocr_scale)?,
             list_attachments: o.list_attachments.unwrap_or(false),
+            skip_empty_cells: o.skip_empty_cells.unwrap_or(false),
+            compact_tables: o.compact_tables.unwrap_or(false),
             ebcdic_layout: o.ebcdic_layout.clone(),
             skip_ocr: o.skip_ocr.unwrap_or(false),
             force_full_page_ocr: o.force_full_page_ocr.unwrap_or(false),
@@ -581,6 +602,8 @@ impl DocumentConverter {
             ocr_mode: self.ocr_mode.clone(),
             ocr_scale: self.ocr_scale,
             list_attachments: self.list_attachments,
+            skip_empty_cells: self.skip_empty_cells,
+            compact_tables: self.compact_tables,
             ebcdic_layout: self.ebcdic_layout.clone(),
             skip_ocr: self.skip_ocr,
             force_full_page_ocr: self.force_full_page_ocr,
@@ -1000,6 +1023,8 @@ fn output_config(out: Option<OutputOptions>, strict: bool) -> Result<ConvertConf
         video_frames: None,
         page_range: None,
         list_attachments: false,
+        skip_empty_cells: false,
+        compact_tables: false,
         ebcdic_layout: None,
         skip_ocr: false,
         force_full_page_ocr: false,

@@ -21,7 +21,12 @@ use crate::backend::DeclarativeBackend;
 use crate::error::ConversionError;
 use crate::source::SourceDocument;
 
-pub struct XlsBackend;
+#[derive(Default)]
+pub struct XlsBackend {
+    /// Omit empty cells from sparse-sheet table grids (#271, opt-in) — see
+    /// [`find_tables`].
+    pub skip_empty: bool,
+}
 
 impl DeclarativeBackend for XlsBackend {
     fn convert(&self, source: &SourceDocument) -> Result<DoclingDocument, ConversionError> {
@@ -69,7 +74,7 @@ impl DeclarativeBackend for XlsBackend {
             let (or, oc) = (rs_r as usize, rs_c as usize);
 
             let mut items: Vec<((usize, usize, usize, usize), Node)> = Vec::new();
-            for t in find_tables(&range, &merge_of, height, width) {
+            for t in find_tables(&range, &merge_of, height, width, self.skip_empty) {
                 if let Some(label) = t.label {
                     items.push((
                         (
@@ -142,7 +147,7 @@ mod tests {
 
     #[test]
     fn parses_xls_tables_like_the_xlsx_twin() {
-        let doc = XlsBackend
+        let doc = XlsBackend::default()
             .convert(&fixture("xlsx_01.xls"))
             .expect("converts");
         let tables: Vec<_> = doc
@@ -156,6 +161,6 @@ mod tests {
     #[test]
     fn garbage_is_an_error_not_a_panic() {
         let src = SourceDocument::from_bytes("x.xls", InputFormat::Xls, vec![0u8; 64]);
-        assert!(XlsBackend.convert(&src).is_err());
+        assert!(XlsBackend::default().convert(&src).is_err());
     }
 }

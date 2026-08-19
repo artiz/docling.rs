@@ -75,6 +75,12 @@ pub struct DocumentConverter {
     strict: bool,
     fetch_images: bool,
     list_attachments: bool,
+    /// Omit empty cells from sparse spreadsheet table grids (#271, XLSX/XLS
+    /// family; opt-in docling.rs extension).
+    skip_empty_cells: bool,
+    /// Emit Markdown tables in the compact `| a | b |` form instead of the
+    /// width-padded GitHub serializer (#271, opt-in docling.rs extension).
+    compact_tables: bool,
     /// EBCDIC copybook layout (#252): inline JSON or a file path. `None`
     /// falls back to the `<stem>.layout.json` sidecar.
     ebcdic_layout: Option<String>,
@@ -149,6 +155,8 @@ impl Default for DocumentConverter {
             strict: false,
             fetch_images: false,
             list_attachments: false,
+            skip_empty_cells: false,
+            compact_tables: false,
             ebcdic_layout: None,
             no_table_former: false,
             no_text_panels: false,
@@ -337,6 +345,29 @@ impl DocumentConverter {
     /// `EmailBackendOptions.list_attachments` (#251); off by default.
     pub fn list_attachments(mut self, list: bool) -> Self {
         self.list_attachments = list;
+        self
+    }
+
+    /// Omit empty cells from sparse spreadsheet table grids (#271; XLSX/XLS
+    /// family, opt-in — a docling.rs extension, docling materialises the full
+    /// bounding box). A ragged region's box is mostly padding on sparse
+    /// sheets (~7× output inflation); with this on, each row keeps only its
+    /// occupied cells (merge-covered continuations included) and a table
+    /// that loses cells drops its span/structure overlay. Off by default —
+    /// default output stays byte-for-byte docling.
+    pub fn skip_empty_cells(mut self, skip: bool) -> Self {
+        self.skip_empty_cells = skip;
+        self
+    }
+
+    /// Emit Markdown tables in the compact `| a | b |` / `| - | - |` form
+    /// instead of docling-core's width-padded GitHub serializer (#271, all
+    /// formats; opt-in — a docling.rs extension). On sparse spreadsheets the
+    /// padding dominates the output size; compact rendering keeps the grid
+    /// semantics and drops only whitespace. Off by default — default output
+    /// stays byte-for-byte docling.
+    pub fn compact_tables(mut self, compact: bool) -> Self {
+        self.compact_tables = compact;
         self
     }
 
@@ -632,7 +663,10 @@ impl DocumentConverter {
                 }
             }
             InputFormat::Asciidoc => AsciiDocBackend.convert(&source)?,
-            InputFormat::Xlsx => XlsxBackend.convert(&source)?,
+            InputFormat::Xlsx => XlsxBackend {
+                skip_empty: self.skip_empty_cells,
+            }
+            .convert(&source)?,
             InputFormat::Pptx => PptxBackend.convert(&source)?,
             // RTF (#209): a docling.rs extension — docling reaches RTF only via
             // LibreOffice; here it parses natively (hand-rolled tokenizer).
@@ -652,7 +686,10 @@ impl DocumentConverter {
             InputFormat::Docx => DocxBackend.convert(&source)?,
             // Legacy binary Office (issue #127): parsed natively — docling
             // proper converts these through LibreOffice first (PR #3804).
-            InputFormat::Xls => XlsBackend.convert(&source)?,
+            InputFormat::Xls => XlsBackend {
+                skip_empty: self.skip_empty_cells,
+            }
+            .convert(&source)?,
             InputFormat::Ppt => PptBackend.convert(&source)?,
             InputFormat::Doc => DocBackend.convert(&source)?,
             InputFormat::Vtt => WebVttBackend.convert(&source)?,
@@ -813,6 +850,11 @@ impl DocumentConverter {
         };
         // Carry the mode so `result.document.export_to_markdown()` reflects it.
         document.strict_markdown = self.strict;
+        // Compact tables (#271) is additive: the PDF backend already turns it
+        // on for its own corpus; never turn it back off here.
+        if self.compact_tables {
+            document.compact_tables = true;
+        }
         // First-class cells for every table (#240): backends with page
         // geometry (the PDF TableFormer paths) set them; everything else —
         // declarative tables included — derives them from the grid plus the

@@ -133,6 +133,11 @@ impl PyDocumentConverter {
     /// * `ocr_scale` — OCR render scale in px per PDF point (docling's
     ///   `OcrOptions.scale`, #254); `None` reads the pipeline's own 2.0 px/pt
     ///   render (docling's default is 3 = 216 dpi).
+    /// * `skip_empty_cells` — omit empty cells from sparse XLSX/XLS table
+    ///   grids instead of materialising each region's full bounding box
+    ///   (#271; docling.rs extension, off by default).
+    /// * `compact_tables` — unpadded `| a | b |` Markdown tables, all
+    ///   formats (#271; docling.rs extension, off by default).
     /// * `asr_lang` — transcription language for audio/video: a Whisper code
     ///   (`"en"`, `"de"`, …) or `"auto"` (default) to detect it from the
     ///   first 30 seconds (docling 2.116 parity).
@@ -160,6 +165,8 @@ impl PyDocumentConverter {
         allowed_formats = None,
         text_layer_only = false,
         list_attachments = false,
+        skip_empty_cells = false,
+        compact_tables = false,
         ebcdic_layout = None,
     ))]
     #[allow(clippy::too_many_arguments)]
@@ -183,6 +190,8 @@ impl PyDocumentConverter {
         allowed_formats: Option<Vec<String>>,
         text_layer_only: bool,
         list_attachments: bool,
+        skip_empty_cells: bool,
+        compact_tables: bool,
         ebcdic_layout: Option<String>,
     ) -> PyResult<Self> {
         // `allowed_formats` (docling's converter arg) restricts which input
@@ -257,6 +266,8 @@ impl PyDocumentConverter {
             inner: base
                 .fetch_images(fetch_images)
                 .list_attachments(list_attachments)
+                .skip_empty_cells(skip_empty_cells)
+                .compact_tables(compact_tables)
                 .ebcdic_layout_opt(ebcdic_layout)
                 .asr_model(asr_model)
                 .asr_lang(asr_lang)

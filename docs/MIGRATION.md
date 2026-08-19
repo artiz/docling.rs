@@ -397,7 +397,14 @@ These are deliberate or unavoidable divergences, not bugs.
     the `skip_ocr` behavior with a one-time warning — docling errors there —
     matching the repo-wide degradation-over-failure convention.
 
-12. **`OcrMode` and `OcrOptions.scale`** (docling 2.116/2.117, #254) are
+12. **Sparse spreadsheets can skip empty cells** (#271, docling.rs-only
+    options, both off by default): `skip_empty_cells` omits empty positions
+    from each XLSX/XLS table row instead of materialising every region's
+    full bounding box (docling pads the box too — its own #3328 tracks the
+    RAM cost), and `compact_tables` renders Markdown tables unpadded for
+    every format. Default output stays byte-for-byte docling.
+
+13. **`OcrMode` and `OcrOptions.scale`** (docling 2.116/2.117, #254) are
     mirrored on every surface as `ocr_mode` (`--ocr-mode`,
     `DOCLING_RS_OCR_MODE`) and `ocr_scale` (`--ocr-scale`,
     `DOCLING_RS_OCR_SCALE`). `pdf_aware_layout_regions` — upstream's new
