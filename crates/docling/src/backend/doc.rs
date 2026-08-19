@@ -225,6 +225,10 @@ struct ParaProps {
     ilfo: u16,
     /// List nesting level (`sprmPIlvl`), 0-based.
     ilvl: u8,
+    /// Outline level (`sprmPOutLvl`, 0–8 = heading levels 1–9; 9 = body
+    /// text). Read off *style* PAPX UPXes only — mirroring docling, which
+    /// consults the style definition, never the paragraph's direct formatting.
+    outline: Option<u8>,
 }
 
 /// Look up the PAPX for the paragraph containing byte offset `fc`:
@@ -321,22 +325,42 @@ fn apply_pap_sprms(mut sprms: &[u8], props: &mut ParaProps) {
             0x2417 => props.ttp = sprms[0] != 0,      // sprmPFTtp
             0x460B => props.ilfo = u16::from_le_bytes([sprms[0], sprms[1]]), // sprmPIlfo
             0x260A => props.ilvl = sprms[0],          // sprmPIlvl
+            0x2640 => props.outline = Some(sprms[0]), // sprmPOutLvl
             _ => {}
         }
         sprms = &sprms[operand_len..];
     }
 }
 
-/// Parse the STSH into `istd → sti` (built-in style identifier). `sti` 1–9 are
-/// the Heading 1–9 styles.
-fn parse_stsh(stsh: &[u8]) -> Vec<u16> {
+/// One paragraph style's identity from the STSH: the built-in style id (`sti`
+/// 1–9 are the Heading 1–9 styles, 62 is Title, 0x0FFE/0x0FFF user/none) and
+/// the style's own outline level (`sprmPOutLvl` in its PAPX UPX, 0–8 for
+/// heading levels 1–9) — OOXML/.doc's language-independent heading marker.
+/// A LibreOffice-converted legacy document names its heading styles in the
+/// document language with `sti` "user", so the outline level is the only
+/// signal left (docling#3961 / #270).
+#[derive(Clone, Copy)]
+struct StyleDef {
+    sti: u16,
+    outline: Option<u8>,
+}
+
+/// Parse the STSH into `istd → StyleDef`.
+fn parse_stsh(stsh: &[u8]) -> Vec<StyleDef> {
+    let none = StyleDef {
+        sti: 0x0FFF,
+        outline: None,
+    };
     let Some(cb_stshi) = u16_at(stsh, 0) else {
         return Vec::new();
     };
     let Some(cstd) = u16_at(stsh, 2) else {
         return Vec::new();
     };
-    let mut stis = Vec::with_capacity(cstd as usize);
+    // STSHI: cstd, then cbSTDBaseInFile — the size of each STD's fixed part,
+    // which is where the style name (and after it, the UPX array) starts.
+    let cb_std_base = u16_at(stsh, 4).unwrap_or(10) as usize;
+    let mut styles = Vec::with_capacity(cstd as usize);
     let mut pos = 2 + cb_stshi as usize;
     for _ in 0..cstd {
         let Some(cb_std) = u16_at(stsh, pos) else {
@@ -344,17 +368,36 @@ fn parse_stsh(stsh: &[u8]) -> Vec<u16> {
         };
         pos += 2;
         // Empty slot: cbStd == 0.
-        let sti = if cb_std >= 2 {
-            u16_at(stsh, pos).map(|w| w & 0x0FFF).unwrap_or(0x0FFF)
-        } else {
-            0x0FFF
-        };
-        stis.push(sti);
+        let mut def = none;
+        if cb_std >= 2 {
+            let std = stsh.get(pos..pos + cb_std as usize).unwrap_or(&[]);
+            def.sti = u16_at(std, 0).map(|w| w & 0x0FFF).unwrap_or(0x0FFF);
+            let sgc = u16_at(std, 2).map(|w| w & 0x0F).unwrap_or(0);
+            // Paragraph styles (sgc 1) carry a PAPX UPX first: after the
+            // fixed STDF part comes the 2-byte-counted UTF-16 name (plus its
+            // null), then the 2-byte-aligned UPX array — UPX[0] is `istd +
+            // grpprl`, the same sprm stream the paragraph walker reads.
+            if sgc == 1 {
+                if let Some(cch) = u16_at(std, cb_std_base) {
+                    let mut upx = cb_std_base + 2 + (cch as usize + 1) * 2;
+                    upx += upx & 1;
+                    if let Some(cb_upx) = u16_at(std, upx) {
+                        let g = std.get(upx + 2..upx + 2 + cb_upx as usize).unwrap_or(&[]);
+                        if g.len() >= 2 {
+                            let mut props = ParaProps::default();
+                            apply_pap_sprms(&g[2..], &mut props);
+                            def.outline = props.outline;
+                        }
+                    }
+                }
+            }
+        }
+        styles.push(def);
         pos += cb_std as usize;
         // LPStd entries are 2-byte aligned.
         pos += pos & 1;
     }
-    stis
+    styles
 }
 
 /// Character formatting of one run (the subset the Markdown output shows),
@@ -885,7 +928,7 @@ impl ParaAccum {
         &mut self,
         mark: char,
         props: ParaProps,
-        stis: &[u16],
+        stis: &[StyleDef],
         builder: &mut NodeBuilder,
         doc: &mut DoclingDocument,
     ) {
@@ -936,7 +979,7 @@ impl NodeBuilder {
         pictures: Vec<(bool, Option<PictureImage>)>,
         mark: char,
         props: ParaProps,
-        stis: &[u16],
+        stis: &[StyleDef],
         doc: &mut DoclingDocument,
     ) {
         if props.ttp {
@@ -990,11 +1033,30 @@ impl NodeBuilder {
             .filter(|(before, _)| !before)
             .map(|(_, image)| image)
             .collect();
-        let sti = stis.get(props.istd as usize).copied().unwrap_or(0x0FFF);
-        if (1..=9).contains(&sti) || sti == 62 {
+        let style = stis.get(props.istd as usize).copied().unwrap_or(StyleDef {
+            sti: 0x0FFF,
+            outline: None,
+        });
+        let sti = style.sti;
+        // A style that is not one of the built-in Heading/Title styles can
+        // still be a heading through its outline level (docling#3961 / #270):
+        // LibreOffice-converted legacy documents carry localized user styles
+        // ("Επικεφαλίδα 2") whose only heading marker is `sprmPOutLvl`. 0-8
+        // are heading levels 1-9; 9 is the "body text" sentinel.
+        let outline_heading = (!(1..=9).contains(&sti) && sti != 62)
+            .then_some(style.outline)
+            .flatten()
+            .filter(|l| *l <= 8);
+        if (1..=9).contains(&sti) || sti == 62 || outline_heading.is_some() {
             // Mirrors the DOCX backend: docling renders "heading N" at
             // Markdown level N+1 and Title (sti 62) at level 1.
-            let level = if sti == 62 { 1 } else { sti as u8 + 1 };
+            let level = if sti == 62 {
+                1
+            } else if let Some(l) = outline_heading {
+                l + 2
+            } else {
+                sti as u8 + 1
+            };
             // Headings render without run markers (the style carries the look).
             doc.push(Node::Heading { level, text: plain });
             self.last_ilfo = None;

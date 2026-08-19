@@ -1,0 +1,141 @@
+{
+  "schema_name": "DoclingDocument",
+  "version": "1.10.0",
+  "name": "greek_heading_styles",
+  "origin": {
+    "mimetype": "text/plain",
+    "binary_hash": 7718070104851965753,
+    "filename": "greek_heading_styles"
+  },
+  "furniture": {
+    "self_ref": "#/furniture",
+    "children": [],
+    "content_layer": "furniture",
+    "name": "_root_",
+    "label": "unspecified"
+  },
+  "body": {
+    "self_ref": "#/body",
+    "children": [
+      {
+        "$ref": "#/texts/0"
+      },
+      {
+        "$ref": "#/texts/1"
+      },
+      {
+        "$ref": "#/texts/2"
+      },
+      {
+        "$ref": "#/texts/3"
+      },
+      {
+        "$ref": "#/texts/4"
+      },
+      {
+        "$ref": "#/texts/5"
+      },
+      {
+        "$ref": "#/texts/6"
+      }
+    ],
+    "content_layer": "body",
+    "name": "_root_",
+    "label": "unspecified"
+  },
+  "groups": [],
+  "texts": [
+    {
+      "self_ref": "#/texts/0",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "title",
+      "prov": [],
+      "orig": "Überschriften in nicht‑englischer Sprache",
+      "text": "Überschriften in nicht‑englischer Sprache"
+    },
+    {
+      "self_ref": "#/texts/1",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "section_header",
+      "prov": [],
+      "orig": "Problem mit lokalisierten Dokumenten",
+      "text": "Problem mit lokalisierten Dokumenten",
+      "level": 2
+    },
+    {
+      "self_ref": "#/texts/2",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "Jedes Dokument, dessen Überschriftenstile in einer anderen Sprache benannt sind, wird so verarbeitet, als hätte es überhaupt keine Überschriften. Besonders hart trifft es alte .doc‑Dateien, die von LibreOffice konvertiert wurden, weil LibreOffice den lokalisierten Stil‑ID schreibt.",
+      "text": "Jedes Dokument, dessen Überschriftenstile in einer anderen Sprache benannt sind, wird so verarbeitet, als hätte es überhaupt keine Überschriften. Besonders hart trifft es alte .doc‑Dateien, die von LibreOffice konvertiert wurden, weil LibreOffice den lokalisierten Stil‑ID schreibt."
+    },
+    {
+      "self_ref": "#/texts/3",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "section_header",
+      "prov": [],
+      "orig": "Vorgeschlagene Änderung",
+      "text": "Vorgeschlagene Änderung",
+      "level": 2
+    },
+    {
+      "self_ref": "#/texts/4",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "Verwenden Sie ein Standardniveau, sobald sowohl die Namensbasierten Prüfungen als auch den Code‑Stil‑Prüfungen den Absatz abgelehnt haben.",
+      "text": "Verwenden Sie ein Standardniveau, sobald sowohl die Namensbasierten Prüfungen als auch den Code‑Stil‑Prüfungen den Absatz abgelehnt haben."
+    },
+    {
+      "self_ref": "#/texts/5",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "section_header",
+      "prov": [],
+      "orig": "Verifizierung",
+      "text": "Verifizierung",
+      "level": 2
+    },
+    {
+      "self_ref": "#/texts/6",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "Lokaler Lauf gegen den eingesetzten DOCX‑Korpus.",
+      "text": "Lokaler Lauf gegen den eingesetzten DOCX‑Korpus."
+    }
+  ],
+  "pictures": [],
+  "tables": [],
+  "key_value_items": [],
+  "form_items": [],
+  "pages": {}
+}
