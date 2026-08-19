@@ -66,6 +66,7 @@ impl DeclarativeBackend for DocxBackend {
             style_nums: &sm.nums,
             style_based: &sm.based,
             style_fonts: &sm.fonts,
+            style_outline: &sm.outlines,
             num_levels: &num_levels,
             rels: &rels,
             images: &images,
@@ -197,6 +198,7 @@ fn emit_header_footer_part(pkg: &mut Package, part: &str, ctx: &Ctx, doc: &mut D
         style_nums: ctx.style_nums,
         style_based: ctx.style_based,
         style_fonts: ctx.style_fonts,
+        style_outline: ctx.style_outline,
         num_levels: ctx.num_levels,
         rels: &rels,
         images: &images,
@@ -268,6 +270,7 @@ struct Ctx<'a> {
     style_nums: &'a HashMap<String, (String, i64)>, // styleId -> (numId, ilvl)
     style_based: &'a HashMap<String, String>,       // styleId -> basedOn styleId
     style_fonts: &'a HashMap<String, String>,       // styleId -> lowercased ascii font
+    style_outline: &'a HashMap<String, u8>,         // styleId -> 1-indexed outlineLvl
     num_levels: &'a HashMap<(String, i64), NumLevel>, // (numId, ilvl) -> level props
     rels: &'a HashMap<String, String>,
     images: &'a HashMap<String, PictureImage>, // image relationship id -> extracted image
@@ -486,7 +489,30 @@ fn handle_paragraph_inner(
 
     // A heading style wins over a list: a numbered heading gets a computed
     // number prefix (`## 1 Section 1`) rather than becoming a list item.
-    if let Some(level) = heading_level(&style_name) {
+    // Heading detection has two independent signals (docling#3961, #270): the
+    // style *name* carries the level for the usual English styles, while
+    // `w:outlineLvl` is OOXML's own language-independent marker — what Word's
+    // navigation pane and generated TOCs read. The outline level is
+    // authoritative when the style is a named heading, and it alone promotes a
+    // localized or custom style ("Nadpis1", "Rubrik 1") the English name check
+    // can't see. A Title style keeps its own branch (level 1) either way, and
+    // outlineLvl 9 is OOXML's "body text" sentinel, not a heading.
+    let named = heading_level(&style_name);
+    let outline = ctx
+        .style_outline
+        .get(style_id)
+        .copied()
+        .filter(|l| (1..=9).contains(l));
+    let level = match (named, outline) {
+        (Some(1), _) => Some(1), // Title
+        (Some(_), Some(out)) => Some(out + 1),
+        (named, Some(out)) if !is_title_style(style_id, &style_name, ctx) => {
+            debug_assert!(named.is_none());
+            Some(out + 1)
+        }
+        (named, _) => named,
+    };
+    if let Some(level) = level {
         if !text.is_empty() {
             let text = if numbering.is_some() {
                 let docling_level = level.saturating_sub(1).max(1);
@@ -1600,6 +1626,21 @@ fn is_code_style(style_id: &str, ctx: &Ctx) -> bool {
     false
 }
 
+/// Whether the style reads as a *title* style — the substring check docling's
+/// `_is_title_style` applies to the style id, the (possibly localized) display
+/// name, and their `basedOn` counterparts (docling#3961, #270). A title-ish
+/// style ("Title", "Subtitle") is never promoted to a heading by its
+/// `w:outlineLvl`; it keeps reaching its own branch.
+fn is_title_style(style_id: &str, style_name: &str, ctx: &Ctx) -> bool {
+    let has_title = |s: &str| s.to_ascii_lowercase().contains("title");
+    if has_title(style_id) || has_title(style_name) {
+        return true;
+    }
+    ctx.style_based.get(style_id).is_some_and(|base| {
+        has_title(base) || ctx.style_names.get(base).is_some_and(|n| has_title(n))
+    })
+}
+
 /// The lowercased font a style resolves to, walking the `basedOn` chain (used
 /// when a run inherits its typeface). Empty when none applies.
 fn style_font(style_id: &str, ctx: &Ctx) -> String {
@@ -1729,18 +1770,26 @@ struct StyleMaps {
     nums: HashMap<String, (String, i64)>,
     based: HashMap<String, String>,
     fonts: HashMap<String, String>,
+    /// styleId → the style's own `w:pPr/w:outlineLvl` as a 1-indexed docling
+    /// heading level (OOXML stores 0–8 for levels 1–9; 9 is the "body text"
+    /// sentinel and maps to 10 here — filtered at the use site). The style's
+    /// *own* definition only, no `basedOn` inheritance — mirroring docling's
+    /// `_get_outline_level_from_style` (docling#3961, #270).
+    outlines: HashMap<String, u8>,
 }
 fn parse_styles(styles_xml: &str) -> StyleMaps {
     let mut names = HashMap::new();
     let mut nums = HashMap::new();
     let mut based = HashMap::new();
     let mut fonts = HashMap::new();
+    let mut outlines = HashMap::new();
     let Ok(dom) = Document::parse(styles_xml) else {
         return StyleMaps {
             names,
             nums,
             based,
             fonts,
+            outlines,
         };
     };
     for style in dom.descendants().filter(|n| n.has_tag_name("style")) {
@@ -1773,12 +1822,21 @@ fn parse_styles(styles_xml: &str) -> StyleMaps {
         {
             fonts.insert(id.to_string(), font.to_ascii_lowercase());
         }
+        if let Some(lvl) = style
+            .descendants()
+            .find(|n| n.has_tag_name("outlineLvl"))
+            .and_then(|n| attr(n, "val"))
+            .and_then(|v| v.parse::<u8>().ok())
+        {
+            outlines.insert(id.to_string(), lvl.saturating_add(1));
+        }
     }
     StyleMaps {
         names,
         nums,
         based,
         fonts,
+        outlines,
     }
 }
 
