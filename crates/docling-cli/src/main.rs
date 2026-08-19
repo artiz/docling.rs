@@ -7,7 +7,7 @@
 //! (docling's independent `do_ocr=False`); `--no-ocr` remains the
 //! skip-everything fast path.
 //!
-//! Usage: docling-rs [--strict] [--to md|json|dclx|chunks|images] [--pages A-B] [--scale X] [--images MODE] [--input GLOB --output DIR [--jobs N]] [--fetch-images] [--list-attachments] [--ebcdic-layout JSON|PATH] [--no-stream] [--no-table-former] [--no-ocr] [--skip-ocr] [--force-full-page-ocr] [--no-text-panels] [--ocr-lang en|ch] [--ocr-mode MODE] [--ocr-scale X] [--pipeline standard|vlm] [--vlm-endpoint URL] [--vlm-model NAME] [--asr-model PRESET] [--asr-lang CODE] [--video-frames N] [--use-web-browser] [--enrich-picture-classes] [--enrich-code] [--enrich-formula] <input-file>
+//! Usage: docling-rs [--strict] [--to md|json|dclx|chunks|images] [--pages A-B] [--scale X] [--images MODE] [--input GLOB --output DIR [--jobs N]] [--fetch-images] [--list-attachments] [--skip-empty-cells] [--compact-tables] [--ebcdic-layout JSON|PATH] [--no-stream] [--no-table-former] [--no-ocr] [--skip-ocr] [--force-full-page-ocr] [--no-text-panels] [--ocr-lang en|ch] [--ocr-mode MODE] [--ocr-scale X] [--pipeline standard|vlm] [--vlm-endpoint URL] [--vlm-model NAME] [--asr-model PRESET] [--asr-lang CODE] [--video-frames N] [--use-web-browser] [--enrich-picture-classes] [--enrich-code] [--enrich-formula] <input-file>
 //!   --input GLOB|DIR   batch mode (#205): convert every file the glob matches
 //!                      (`--input '/data/reports/**/*.pdf'` — quote it so the
 //!                      shell doesn't expand it) instead of one positional file.
@@ -136,6 +136,8 @@ fn main() -> ExitCode {
     let mut images = "placeholder".to_string();
     let mut fetch_images = false;
     let mut list_attachments = false;
+    let mut skip_empty_cells = false;
+    let mut compact_tables = false;
     let mut ebcdic_layout: Option<String> = None;
     let mut no_stream = false;
     let mut no_table_former = false;
@@ -171,6 +173,11 @@ fn main() -> ExitCode {
             // #251: append an Attachments section to converted emails
             // (.eml/.msg) — names and content types only.
             "--list-attachments" => list_attachments = true,
+            // Sparse-spreadsheet compaction (#271, docling.rs extensions):
+            // omit empty cells from XLSX/XLS table grids, and/or render all
+            // Markdown tables compact (no width padding).
+            "--skip-empty-cells" => skip_empty_cells = true,
+            "--compact-tables" => compact_tables = true,
             // #252: EBCDIC copybook layout — inline JSON or a file path
             // (default: the <stem>.layout.json sidecar next to the source).
             "--ebcdic-layout" => match args.next() {
@@ -414,6 +421,8 @@ fn main() -> ExitCode {
             strict,
             fetch_images,
             list_attachments,
+            skip_empty_cells,
+            compact_tables,
             ebcdic_layout,
             no_table_former,
             no_ocr,
@@ -438,7 +447,7 @@ fn main() -> ExitCode {
     }
 
     let Some(path) = path else {
-        eprintln!("usage: docling-rs [--strict] [--to md|json|dclx|chunks|images] [--scale X] [--images MODE] [--input GLOB --output DIR [--jobs N]] [--fetch-images] [--list-attachments] [--ebcdic-layout JSON|PATH] [--no-stream] [--no-table-former] [--no-ocr] [--skip-ocr] [--force-full-page-ocr] [--no-text-panels] [--ocr-lang en|ch] [--ocr-mode MODE] [--ocr-scale X] [--use-web-browser] <input-file>");
+        eprintln!("usage: docling-rs [--strict] [--to md|json|dclx|chunks|images] [--scale X] [--images MODE] [--input GLOB --output DIR [--jobs N]] [--fetch-images] [--list-attachments] [--skip-empty-cells] [--compact-tables] [--ebcdic-layout JSON|PATH] [--no-stream] [--no-table-former] [--no-ocr] [--skip-ocr] [--force-full-page-ocr] [--no-text-panels] [--ocr-lang en|ch] [--ocr-mode MODE] [--ocr-scale X] [--use-web-browser] <input-file>");
         return ExitCode::from(2);
     };
 
@@ -527,6 +536,8 @@ fn main() -> ExitCode {
         .asr_lang(asr_lang.clone())
         .fetch_images(fetch_images)
         .list_attachments(list_attachments)
+        .skip_empty_cells(skip_empty_cells)
+        .compact_tables(compact_tables)
         .ebcdic_layout_opt(ebcdic_layout.clone())
         .no_table_former(no_table_former)
         .skip_ocr(skip_ocr)
@@ -677,6 +688,10 @@ struct BatchCfg {
     strict: bool,
     fetch_images: bool,
     list_attachments: bool,
+    /// Omit empty cells from sparse spreadsheet grids (#271).
+    skip_empty_cells: bool,
+    /// Compact (unpadded) Markdown tables (#271).
+    compact_tables: bool,
     ebcdic_layout: Option<String>,
     no_table_former: bool,
     no_ocr: bool,
@@ -798,6 +813,8 @@ fn batch_converter(cfg: &BatchCfg) -> DocumentConverter {
         .asr_lang(cfg.asr_lang.clone())
         .fetch_images(cfg.fetch_images)
         .list_attachments(cfg.list_attachments)
+        .skip_empty_cells(cfg.skip_empty_cells)
+        .compact_tables(cfg.compact_tables)
         .ebcdic_layout_opt(cfg.ebcdic_layout.clone())
         .no_table_former(cfg.no_table_former)
         .no_ocr(cfg.no_ocr)

@@ -59,6 +59,8 @@ paths:
         - { $ref: "#/components/parameters/no_table_former" }
         - { $ref: "#/components/parameters/no_text_panels" }
         - { $ref: "#/components/parameters/fetch_images" }
+        - { $ref: "#/components/parameters/skip_empty_cells" }
+        - { $ref: "#/components/parameters/compact_tables" }
         - { $ref: "#/components/parameters/list_attachments" }
         - { $ref: "#/components/parameters/ebcdic_layout" }
         - { $ref: "#/components/parameters/pages" }
@@ -89,6 +91,8 @@ paths:
                 no_table_former: { type: boolean }
                 no_text_panels: { type: boolean }
                 fetch_images: { type: boolean }
+                skip_empty_cells: { type: boolean }
+                compact_tables: { type: boolean }
                 pages: { type: string, examples: ["2-5"] }
                 ocr_lang: { $ref: "#/components/schemas/OcrLang" }
                 ocr_mode: { $ref: "#/components/schemas/OcrMode" }
@@ -420,6 +424,19 @@ components:
           description: >
             HTML/EPUB — resolve external `<img src>` and embed the bytes.
             Outbound fetch; honored only with `--allow-url-fetch`.
+        skip_empty_cells:
+          type: boolean
+          default: false
+          description: >
+            XLSX/XLS — omit empty cells from sparse-sheet table grids instead
+            of materialising each region's full bounding box (docling.rs
+            extension; a table that loses cells drops its span overlay).
+        compact_tables:
+          type: boolean
+          default: false
+          description: >
+            Render Markdown tables in the compact `| a | b |` form instead of
+            the width-padded GitHub style (docling.rs extension, all formats).
         pages:
           type: string
           pattern: '^\d+(-\d+)?$'
@@ -524,6 +541,10 @@ components:
       { name: no_text_panels, in: query, schema: { type: boolean } }
     fetch_images:
       { name: fetch_images, in: query, schema: { type: boolean } }
+    skip_empty_cells:
+      { name: skip_empty_cells, in: query, schema: { type: boolean } }
+    compact_tables:
+      { name: compact_tables, in: query, schema: { type: boolean } }
     list_attachments:
       { name: list_attachments, in: query, schema: { type: boolean } }
     ebcdic_layout:

@@ -49,6 +49,10 @@
 //!   render, docling's default is 3 (216 dpi)
 //! - `fetch_images` — resolve external `<img src>` for HTML/EPUB (outbound
 //!   fetch, so honored only under `--allow-url-fetch`)
+//! - `skip_empty_cells` — omit empty cells from sparse XLSX/XLS table grids
+//!   (#271; docling.rs extension, off by default)
+//! - `compact_tables` — unpadded `| a | b |` Markdown tables, all formats
+//!   (#271; docling.rs extension, off by default)
 //! - `list_attachments` — email (.eml/.msg): append an Attachments section
 //!   with names and content types (#251; payload bytes are never embedded)
 //! - `ebcdic_layout` — EBCDIC (#252): the copybook layout as inline
@@ -382,6 +386,11 @@ struct ConvertOptions {
     /// Email (.eml/.msg): append an Attachments section — names and content
     /// types only, never the payload (#251).
     list_attachments: Option<bool>,
+    /// Omit empty cells from sparse XLSX/XLS table grids (#271, opt-in
+    /// docling.rs extension).
+    skip_empty_cells: Option<bool>,
+    /// Compact (unpadded) Markdown tables (#271, opt-in docling.rs extension).
+    compact_tables: Option<bool>,
     /// EBCDIC copybook layout (#252): inline `EbcdicLayout` JSON (uploads
     /// have no filesystem, so the JSON itself rides in the request).
     ebcdic_layout: Option<String>,
@@ -421,6 +430,8 @@ impl ConvertOptions {
             no_text_panels: self.no_text_panels.or(base.no_text_panels),
             fetch_images: self.fetch_images.or(base.fetch_images),
             list_attachments: self.list_attachments.or(base.list_attachments),
+            skip_empty_cells: self.skip_empty_cells.or(base.skip_empty_cells),
+            compact_tables: self.compact_tables.or(base.compact_tables),
             ebcdic_layout: self.ebcdic_layout.or(base.ebcdic_layout),
             asr_model: self.asr_model.or(base.asr_model),
             asr_lang: self.asr_lang.or(base.asr_lang),
@@ -1216,7 +1227,9 @@ async fn read_multipart(
             | "force_full_page_ocr"
             | "no_text_panels"
             | "fetch_images"
-            | "list_attachments" => {
+            | "list_attachments"
+            | "skip_empty_cells"
+            | "compact_tables" => {
                 let v = text_field(field).await?;
                 let b = matches!(v.as_str(), "1" | "true" | "yes" | "on");
                 match name.as_str() {
@@ -1227,6 +1240,8 @@ async fn read_multipart(
                     "no_table_former" => body_opts.no_table_former = Some(b),
                     "no_text_panels" => body_opts.no_text_panels = Some(b),
                     "list_attachments" => body_opts.list_attachments = Some(b),
+                    "skip_empty_cells" => body_opts.skip_empty_cells = Some(b),
+                    "compact_tables" => body_opts.compact_tables = Some(b),
                     _ => body_opts.fetch_images = Some(b),
                 }
             }
@@ -1578,6 +1593,8 @@ fn request_converter(
         // placeholder images instead of a surprise outbound fetch).
         .fetch_images(state.cfg.allow_url_fetch && options.fetch_images.unwrap_or(false))
         .list_attachments(options.list_attachments.unwrap_or(false))
+        .skip_empty_cells(options.skip_empty_cells.unwrap_or(false))
+        .compact_tables(options.compact_tables.unwrap_or(false))
         .ebcdic_layout_opt(options.ebcdic_layout.clone())
         .asr_model(options.asr_model.clone())
         .asr_lang(options.asr_lang.clone())

@@ -192,6 +192,7 @@ honoring `pages=A-B` and a `scale` of 0.1–4.0 pixels per PDF point (default
 (`DOCLING_RS_MAX_RASTER_PAGES`); narrow big documents with `pages`.
 
 Options per request: `to=md|json|dclx|chunks|images`, `strict`, `images=placeholder|embedded`,
+`skip_empty_cells`, `compact_tables`,
 `no_ocr`, `skip_ocr`, `no_table_former`, `no_text_panels`, `force_full_page_ocr`, `pages`,
 `ocr_lang`, `ocr_mode`, `ocr_scale`, `scale`, `asr_model`, `asr_lang`, `video_frames`, `fetch_images` — as query
 parameters, multipart fields, or JSON keys (body wins). Server flags: `--addr`,
@@ -578,6 +579,21 @@ every surface: `no_text_panels(bool)` on the library builder, a
 `no_text_panels` option in docling-serve (with a "keep pictures" toggle in
 the playground), the `no_text_panels=` kwarg in Python, and `noTextPanels`
 in Node.
+
+Two sparse-spreadsheet knobs (#271, docling.rs extensions, off by default —
+default output stays byte-for-byte docling), on every surface (CLI flag,
+`DocumentConverter` builder, serve option, Python kwarg, Node option):
+
+- `--skip-empty-cells` — XLSX/XLS family: omit empty cells from each table
+  row instead of materialising the full bounding box of every detected
+  region. A ragged region's box is mostly padding on sparse sheets (a
+  reported 2.7 MB workbook inflated ~7× over its content); a table that
+  loses cells this way drops its merged-span overlay, and dense sheets are
+  untouched.
+- `--compact-tables` — all formats: render Markdown tables in the compact
+  `| a | b |` form instead of the width-padded GitHub style. Grid semantics
+  are unchanged — only inter-cell padding is dropped, which is what
+  dominates the output size on sparse sheets.
 
 ### VLM pipeline (remote endpoint)
 

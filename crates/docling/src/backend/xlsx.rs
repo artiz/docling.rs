@@ -44,7 +44,12 @@ fn sheet_merges<R: std::io::Read + std::io::Seek>(wb: &mut Xlsx<R>, name: &str) 
         .collect()
 }
 
-pub struct XlsxBackend;
+#[derive(Default)]
+pub struct XlsxBackend {
+    /// Omit empty cells from sparse-sheet table grids (#271, opt-in) — see
+    /// [`find_tables`].
+    pub skip_empty: bool,
+}
 
 impl DeclarativeBackend for XlsxBackend {
     fn convert(&self, source: &SourceDocument) -> Result<DoclingDocument, ConversionError> {
@@ -54,7 +59,7 @@ impl DeclarativeBackend for XlsxBackend {
         if Package::open(&source.bytes)
             .is_some_and(|mut pkg| pkg.read_bytes("xl/workbook.bin").is_some())
         {
-            return convert_xlsb(source);
+            return convert_xlsb(source, self.skip_empty);
         }
         let cursor = Cursor::new(source.bytes.clone());
         let mut workbook: Xlsx<_> =
@@ -165,6 +170,7 @@ impl DeclarativeBackend for XlsxBackend {
                     ranges: &ranges,
                     persons: &persons,
                     resolve_ref: &resolve_ref,
+                    skip_empty: self.skip_empty,
                 })
             })
             .collect();
@@ -248,7 +254,10 @@ impl DeclarativeBackend for XlsxBackend {
 /// and the page-break convention reuse the xlsx machinery. What the binary
 /// format does not expose through calamine — drawings, charts, comments,
 /// merged regions — degrades to absent rather than failing the conversion.
-fn convert_xlsb(source: &SourceDocument) -> Result<DoclingDocument, ConversionError> {
+fn convert_xlsb(
+    source: &SourceDocument,
+    skip_empty: bool,
+) -> Result<DoclingDocument, ConversionError> {
     let cursor = Cursor::new(source.bytes.clone());
     let mut workbook: calamine::Xlsb<_> =
         calamine::Xlsb::new(cursor).map_err(|e| ConversionError::with_source("xlsb", e))?;
@@ -272,7 +281,7 @@ fn convert_xlsb(source: &SourceDocument) -> Result<DoclingDocument, ConversionEr
         let (height, width) = range.get_size();
         let merge_of = HashMap::new();
         let mut items: Vec<((usize, usize, usize, usize), Node)> = Vec::new();
-        for t in find_tables(&range, &merge_of, height, width) {
+        for t in find_tables(&range, &merge_of, height, width, skip_empty) {
             if let Some(label) = t.label {
                 items.push((
                     (
@@ -341,6 +350,7 @@ struct SheetCtx<'a, F: Fn(&str, &str) -> Vec<String> + Sync> {
     ranges: &'a HashMap<String, (Range<Data>, Merges)>,
     persons: &'a HashMap<String, String>,
     resolve_ref: &'a F,
+    skip_empty: bool,
 }
 
 /// Assemble one sheet's `(bbox, node)` items and its comment lines — the
@@ -357,6 +367,7 @@ fn sheet_items<F: Fn(&str, &str) -> Vec<String> + Sync>(ctx: SheetCtx<'_, F>) ->
         ranges,
         persons,
         resolve_ref,
+        skip_empty,
     } = ctx;
     let mut comments: Vec<String> = Vec::new();
     // (bbox in cell units, node) items for this sheet/page.
@@ -380,7 +391,7 @@ fn sheet_items<F: Fn(&str, &str) -> Vec<String> + Sync>(ctx: SheetCtx<'_, F>) ->
             // docling's bboxes are in *absolute* cell indices; calamine's
             // range is clipped to its first non-empty row/column.
             let (or, oc) = (rs_r as usize, rs_c as usize);
-            for t in find_tables(range, &merge_of, height, width) {
+            for t in find_tables(range, &merge_of, height, width, skip_empty) {
                 if let Some(label) = t.label {
                     // The label row sits directly above the table's region.
                     items.push((
@@ -618,11 +629,21 @@ pub(crate) struct FoundTable {
 
 /// docling's default `gap_tolerance = 0`), in row-major discovery order. A cell
 /// covered by a merge counts as content even if its own value is empty.
+///
+/// `skip_empty` (#271, opt-in — docling materialises the full box too): omit
+/// empty, non-merge-covered positions from each row instead of padding the
+/// region's bounding box. A ragged/diagonal region's box is mostly padding —
+/// a sparse sheet inflated ~7× over its content — and every flood-fill row
+/// holds at least one content cell, so whole rows never vanish. Rows keep
+/// their surviving cells in column order; a table that loses cells this way
+/// also drops its span/structure overlay (the grid positions no longer line
+/// up), while a dense region is byte-identical to the default path.
 pub(crate) fn find_tables(
     range: &Range<Data>,
     merge_of: &HashMap<(usize, usize), (usize, usize)>,
     height: usize,
     width: usize,
+    skip_empty: bool,
 ) -> Vec<FoundTable> {
     let has_content = |r: usize, c: usize| -> bool {
         merge_of.contains_key(&(r, c))
@@ -707,9 +728,22 @@ pub(crate) fn find_tables(
                 }
             }
 
-            // Materialise the region's bounding box; gaps become empty cells.
+            // Materialise the region's bounding box; gaps become empty cells —
+            // or, with `skip_empty`, only the occupied positions per row.
+            let mut omitted = false;
             let rows: Vec<Vec<String>> = (min_r..=max_r)
-                .map(|gr| (min_c..=max_c).map(|gc| cell_text(gr, gc)).collect())
+                .map(|gr| {
+                    (min_c..=max_c)
+                        .filter(|&gc| {
+                            if skip_empty && !has_content(gr, gc) {
+                                omitted = true;
+                                return false;
+                            }
+                            true
+                        })
+                        .map(|gc| cell_text(gr, gc))
+                        .collect()
+                })
                 .collect();
             // Merge spans as OTSL continuations (docling's table cells carry
             // row/col spans from the merged regions): a covered cell continues
@@ -740,7 +774,7 @@ pub(crate) fn find_tables(
                     }
                 }
             }
-            let structure = any_span.then(|| {
+            let structure = (any_span && !omitted).then(|| {
                 let mut header_row = vec![false; nrows];
                 if let Some(h) = header_row.first_mut() {
                     *h = true;
@@ -809,6 +843,69 @@ mod tests {
     use crate::backend::DeclarativeBackend;
     use crate::{InputFormat, SourceDocument};
 
+    /// #271: `skip_empty` omits empty positions from each row of a ragged
+    /// region instead of padding its bounding box; a dense region (or the
+    /// default mode) is untouched, and a table that lost cells drops its
+    /// span/structure overlay.
+    #[test]
+    fn skip_empty_compacts_ragged_regions() {
+        // A 3×3 "staircase": (0,0)-(0,1), (1,1), (2,1)-(2,2) — connected via
+        // column 1, bounding box 3×3 with 4 empty positions.
+        let mut range: Range<Data> = Range::new((0, 0), (2, 2));
+        range.set_value((0, 0), Data::String("a".into()));
+        range.set_value((0, 1), Data::String("b".into()));
+        range.set_value((1, 1), Data::String("c".into()));
+        range.set_value((2, 1), Data::String("d".into()));
+        range.set_value((2, 2), Data::String("e".into()));
+        let merges = HashMap::new();
+
+        let padded = find_tables(&range, &merges, 3, 3, false);
+        assert_eq!(
+            padded[0].table.rows,
+            vec![vec!["a", "b", ""], vec!["", "c", ""], vec!["", "d", "e"]],
+            "default: the full bounding box materialises"
+        );
+
+        let compact = find_tables(&range, &merges, 3, 3, true);
+        assert_eq!(
+            compact[0].table.rows,
+            vec![vec!["a", "b"], vec!["c"], vec!["d", "e"]],
+            "skip_empty: rows keep only their occupied cells"
+        );
+        // Provenance keeps the true region box either way.
+        assert_eq!(
+            (
+                compact[0].min_r,
+                compact[0].min_c,
+                compact[0].max_r,
+                compact[0].max_c
+            ),
+            (0, 0, 2, 2)
+        );
+
+        // A merge-covered position counts as content (span continuation text
+        // repeats), and a dense region keeps its structure overlay untouched.
+        // (Vertical merge in column 0 — a full-width merge above a header row
+        // would trip the #3727 section-label split instead.)
+        let mut merged: HashMap<(usize, usize), (usize, usize)> = HashMap::new();
+        merged.insert((0, 0), (0, 0));
+        merged.insert((1, 0), (0, 0));
+        let mut range2: Range<Data> = Range::new((0, 0), (1, 1));
+        range2.set_value((0, 0), Data::String("tall".into()));
+        range2.set_value((0, 1), Data::String("a".into()));
+        range2.set_value((1, 1), Data::String("b".into()));
+        let dense = find_tables(&range2, &merged, 2, 2, true);
+        assert_eq!(
+            dense[0].table.rows,
+            vec![vec!["tall", "a"], vec!["tall", "b"]],
+            "nothing to omit: identical to the default grid"
+        );
+        assert!(
+            dense[0].table.structure.is_some(),
+            "dense region keeps its span overlay under skip_empty"
+        );
+    }
+
     /// docling PR #3727: a merged full-width cell directly above a real
     /// header row is a section label — a paragraph before the table, not a
     /// swallowed header.
@@ -820,7 +917,7 @@ mod tests {
         );
         let bytes = std::fs::read(&path).expect("fixture exists");
         let src = SourceDocument::from_bytes("x.xlsx", InputFormat::Xlsx, bytes);
-        let doc = XlsxBackend.convert(&src).expect("converts");
+        let doc = XlsxBackend::default().convert(&src).expect("converts");
         let para = doc
             .nodes
             .iter()
@@ -853,7 +950,7 @@ mod tests {
         );
         let bytes = std::fs::read(&path).expect("fixture exists");
         let src = SourceDocument::from_bytes("x.xlsb", InputFormat::Xlsx, bytes);
-        let doc = XlsxBackend.convert(&src).expect("converts");
+        let doc = XlsxBackend::default().convert(&src).expect("converts");
         let Some(Node::Table(sales)) = doc.nodes.iter().find(|n| matches!(n, Node::Table(_)))
         else {
             panic!("no visible table in {:?}", doc.nodes);
