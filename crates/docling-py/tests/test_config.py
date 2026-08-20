@@ -212,3 +212,57 @@ def test_no_text_panels_reaches_the_native_converter():
     ):
         result = converter.convert(HTML)
         assert "homepage" in result.document.export_to_markdown().lower()
+
+
+def test_sparse_sheet_kwargs_forward_to_engine():
+    """#274: the wrapper forwards skip_empty_cells / compact_tables to the
+    native converter (they were native-only in v1.14.0). skip_empty_cells is
+    structural, so it must show up in the docling-core document the wrapper
+    hands back: fewer table cells on a gappy sheet."""
+    from docling_rs import DocumentConverter
+
+    xlsx = REPO / "tests/data/xlsx/sources/xlsx_07_gap_tolerance_.xlsx"
+
+    def cell_count(converter):
+        doc = converter.convert(xlsx).document
+        return sum(len(t.data.table_cells) for t in doc.tables)
+
+    dense = cell_count(DocumentConverter())
+    sparse = cell_count(
+        DocumentConverter(skip_empty_cells=True, compact_tables=True)
+    )
+    assert sparse < dense
+
+
+def test_ocr_kwargs_forward_and_validate():
+    """#274 follow-through for #254: ocr_mode / ocr_scale reach the native
+    converter (which validates them), directly and docling-shaped via
+    ocr_options.mode / .scale."""
+    from types import SimpleNamespace
+
+    from docling_rs import DocumentConverter, InputFormat, PdfFormatOption
+
+    # Valid values construct; the native layer rejects bad ones — the error
+    # surfacing at all is proof of forwarding.
+    DocumentConverter(ocr_mode="full_page", ocr_scale=3.0)
+    with pytest.raises(Exception):
+        DocumentConverter(ocr_mode="not_a_mode")
+    with pytest.raises(Exception):
+        DocumentConverter(ocr_scale=-1.0)
+
+    # docling-shaped: OcrOptions.mode may be an enum (collapses to .value).
+    shaped = SimpleNamespace(
+        do_ocr=True,
+        do_table_structure=True,
+        ocr_options=SimpleNamespace(
+            mode=SimpleNamespace(value="layout_regions"), scale=2.5, lang=[]
+        ),
+    )
+    DocumentConverter(
+        format_options={InputFormat.PDF: PdfFormatOption(pipeline_options=shaped)}
+    )
+    shaped.ocr_options.mode = "bogus"
+    with pytest.raises(Exception):
+        DocumentConverter(
+            format_options={InputFormat.PDF: PdfFormatOption(pipeline_options=shaped)}
+        )
