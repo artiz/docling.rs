@@ -490,14 +490,15 @@ fn handle_paragraph_inner(
     // A heading style wins over a list: a numbered heading gets a computed
     // number prefix (`## 1 Section 1`) rather than becoming a list item.
     // Heading detection has two independent signals (docling#3961, #270): the
-    // style *name* carries the level for the usual English styles, while
-    // `w:outlineLvl` is OOXML's own language-independent marker — what Word's
-    // navigation pane and generated TOCs read. The outline level is
-    // authoritative when the style is a named heading, and it alone promotes a
-    // localized or custom style ("Nadpis1", "Rubrik 1") the English name check
-    // can't see. A Title style keeps its own branch (level 1) either way, and
-    // outlineLvl 9 is OOXML's "body text" sentinel, not a heading.
-    let named = heading_level(&style_name);
+    // style *name* — id, display name, and their `basedOn` counterparts —
+    // carries the level for heading-named styles, while `w:outlineLvl` is
+    // OOXML's own language-independent marker — what Word's navigation pane
+    // and generated TOCs read. The outline level is authoritative when the
+    // style is a named heading, and it alone promotes a localized or custom
+    // style ("Nadpis1", "Rubrik 1") the name check can't see. A Title style
+    // keeps its own branch (level 1) either way, and outlineLvl 9 is OOXML's
+    // "body text" sentinel, not a heading.
+    let named = named_heading_level(style_id, &style_name, ctx);
     let outline = ctx
         .style_outline
         .get(style_id)
@@ -861,15 +862,77 @@ fn numbered_heading_text(headers: &mut HashMap<u8, u64>, level: u8, text: &str) 
     out
 }
 
-/// Markdown heading level from a style name. docling renders a heading at level
-/// `N` as `#`×(N+1), and a Title as `#`; so "heading 1" → `##`, Title → `#`.
-fn heading_level(style_name: &str) -> Option<u8> {
-    let lower = style_name.to_ascii_lowercase();
-    if lower == "title" {
+/// Markdown heading level from a paragraph style, by name — the name path of
+/// docling's `_get_label_and_level` (#270 tail: custom styles without
+/// `w:outlineLvl`). The style *id*, its display name, and their one-hop
+/// `basedOn` counterparts are checked in that order for a "heading" substring
+/// (docling's `is_heading`), and the FIRST label containing it decides alone —
+/// upstream returns straight out of `_get_heading_and_level`, so later labels
+/// never rescue an unparseable one. That is what promotes a custom style whose
+/// only heading marker is its ancestry ("MyStyle" based on "Heading 2") or its
+/// id ("Heading1" with a localized display name and no outline level).
+///
+/// docling renders a heading at level `N` as `#`×(N+1) and a Title as `#`; so
+/// "heading 1" → `##`, an exact "title" name → `#`.
+fn named_heading_level(style_id: &str, style_name: &str, ctx: &Ctx) -> Option<u8> {
+    if style_name.eq_ignore_ascii_case("title") {
         return Some(1);
     }
-    let rest = lower.strip_prefix("heading")?.trim();
-    rest.parse::<u8>().ok().map(|n| n.saturating_add(1))
+    let base = ctx.style_based.get(style_id).map(String::as_str);
+    let labels = [
+        Some(style_id),
+        Some(style_name),
+        base,
+        base.and_then(|b| ctx.style_names.get(b))
+            .map(String::as_str),
+    ];
+    for label in labels.into_iter().flatten() {
+        if label.to_ascii_lowercase().contains("heading") {
+            return heading_label_level(label);
+        }
+    }
+    None
+}
+
+/// docling's `_get_heading_and_level` + `_split_text_and_number` on one label,
+/// as a Markdown level (docling level + 1):
+///
+/// - `<text><digits>` (the whole label) or `<digits><text>` (rest ignored)
+///   where the text part trims to "heading" case-insensitively → that level,
+///   clamped to ≥1 (upstream's custom-"Heading 0" rule);
+/// - no such digit split → a heading only when the label carries a capital-H
+///   "Heading" (upstream re-checks `"Heading" in p_style_id` on the returned
+///   label, case-sensitively — so the raw id "HeadingCustom" qualifies but a
+///   display name "my heading" does not), at docling's level-less default of 1
+///   (`_add_heading(curr_level=None)` adds at `add_level = 1`);
+/// - a split whose text part isn't "heading" (e.g. "My Heading 2") → not a
+///   heading by name (upstream's `("", 0)` branch).
+fn heading_label_level(label: &str) -> Option<u8> {
+    let is_digit = |c: char| c.is_ascii_digit();
+    let split = match label.find(is_digit) {
+        Some(0) => {
+            let digits_end = label.find(|c| !is_digit(c)).unwrap_or(label.len());
+            let text_end = label[digits_end..]
+                .find(is_digit)
+                .map_or(label.len(), |i| digits_end + i);
+            (text_end > digits_end).then(|| (&label[digits_end..text_end], &label[..digits_end]))
+        }
+        Some(first) if label[first..].chars().all(is_digit) => {
+            Some((&label[..first], &label[first..]))
+        }
+        Some(_) => None,
+        None => None,
+    };
+    match split {
+        Some((text, digits)) if text.trim().eq_ignore_ascii_case("heading") => {
+            let level = digits.parse::<u8>().unwrap_or(u8::MAX - 1).max(1);
+            Some(level.saturating_add(1))
+        }
+        Some(_) => None,
+        // No digit split: level-less heading iff the label itself says
+        // "Heading" with a capital H.
+        None => label.contains("Heading").then_some(2),
+    }
 }
 
 /// `(numId, ilvl)` for an element carrying explicit list numbering. A `numId`
@@ -1978,4 +2041,29 @@ fn build_enum_marker(
     }
     let parts: Vec<String> = (0..=ilvl).map(|lvl| counter_at(lvl).to_string()).collect();
     parts.join(".") + "."
+}
+
+#[cfg(test)]
+mod tests {
+    use super::heading_label_level;
+
+    /// The `_get_heading_and_level` + `_split_text_and_number` lattice on a
+    /// single label (#270 tail); levels are Markdown levels (docling + 1).
+    #[test]
+    fn heading_label_parsing_matches_docling() {
+        // <text><digits> over the whole label, text trimming to "heading".
+        assert_eq!(heading_label_level("Heading1"), Some(2));
+        assert_eq!(heading_label_level("heading 3"), Some(4));
+        // <digits><text>, the rest ignored (upstream's `^(\d+)(\D+)` alt).
+        assert_eq!(heading_label_level("2Heading"), Some(3));
+        // Custom "Heading 0" clamps to level 1 (md ##).
+        assert_eq!(heading_label_level("Heading 0"), Some(2));
+        // A longer text part is not "heading": upstream's ("", 0) branch.
+        assert_eq!(heading_label_level("My Heading 2"), None);
+        // No digit split: heading only with a capital-H "Heading" in the raw
+        // label (matches upstream's case-sensitive `"Heading" in p_style_id`).
+        assert_eq!(heading_label_level("HeadingCustom"), Some(2));
+        assert_eq!(heading_label_level("Heading 1a2"), Some(2));
+        assert_eq!(heading_label_level("my heading"), None);
+    }
 }
