@@ -136,6 +136,18 @@ class DocumentConverter:
       paragraphs — the image-extraction escape hatch, #174).
     * ``fetch_images`` — resolve remote/local ``<img src>`` for HTML/EPUB.
     * ``use_web_browser`` — render HTML via headless Chrome before parsing.
+    * ``ocr_mode`` / ``ocr_scale`` — docling 2.116's ``OcrMode`` (which regions
+      feed the OCR; ``"full_page"``/``"layout_regions"`` discard the embedded
+      text layer) and ``OcrOptions.scale`` (OCR input resolution in px per PDF
+      point), #254. Also accepted docling-shaped, via
+      ``pipeline_options.ocr_options.mode`` / ``.scale``.
+    * ``skip_empty_cells`` / ``compact_tables`` — sparse-spreadsheet output
+      controls (docling.rs extensions, #271): omit empty cells from XLSX/XLS
+      table rows; render Markdown tables unpadded (all formats). Note
+      ``compact_tables`` shapes the *engine's* Markdown serializer only —
+      this wrapper's ``document.export_to_markdown()`` runs upstream Python
+      docling-core, whose padded table style is untouched;
+      ``skip_empty_cells`` is structural and carries through everywhere.
     * ``allowed_formats`` — restrict conversion to these :class:`InputFormat`\\ s
       (docling's converter arg); a source of any other format raises.
     * ``asr_lang`` — transcription language for audio/video: a Whisper code
@@ -160,6 +172,10 @@ class DocumentConverter:
         fetch_images: bool = False,
         use_web_browser: bool = False,
         ocr_lang: Optional[str] = None,
+        ocr_mode: Optional[str] = None,
+        ocr_scale: Optional[float] = None,
+        skip_empty_cells: bool = False,
+        compact_tables: bool = False,
         asr_lang: Optional[str] = None,
         artifacts_path=None,
     ):
@@ -192,6 +208,15 @@ class DocumentConverter:
             # anything that isn't recognisably English/Chinese is ignored with
             # a warning (the engine default — English — applies).
             ocr_opts = getattr(pipeline, "ocr_options", None)
+            # docling 2.116's OcrMode / OcrOptions.scale (#254). An enum mode
+            # collapses to its string value; the direct kwargs stay the
+            # fallback, matching the pipeline-overrides-shorthand rule above.
+            mode = getattr(ocr_opts, "mode", None)
+            if mode is not None:
+                ocr_mode = getattr(mode, "value", mode)
+            scale = getattr(ocr_opts, "scale", None)
+            if scale is not None:
+                ocr_scale = float(scale)
             langs = list(getattr(ocr_opts, "lang", None) or [])
             if langs:
                 head = str(langs[0]).lower()
@@ -239,6 +264,10 @@ class DocumentConverter:
             do_code_enrichment=do_code_enrichment,
             do_formula_enrichment=do_formula_enrichment,
             ocr_lang=ocr_lang,
+            ocr_mode=ocr_mode,
+            ocr_scale=ocr_scale,
+            skip_empty_cells=skip_empty_cells,
+            compact_tables=compact_tables,
             asr_lang=asr_lang,
             allowed_formats=(
                 [InputFormat(f).value for f in allowed_formats]
