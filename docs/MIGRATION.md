@@ -119,7 +119,7 @@ PyPI; run via `scripts/conformance/conformance.sh <fmt>`), not the committed gro
 | XLSX | `xlsx.rs` (calamine) | **10/10 exact** (incl. chart captions/classification/data grids) |
 | XLSB (binary Excel 2007+) | `xlsx.rs` → calamine's `Xlsb` reader (#210) | **docling.rs extension — upstream has no XLSB backend**; tables, hidden-sheet layering and page breaks match the XLSX path; drawings/charts/comments/merges aren't exposed by the binary reader |
 | PPTX | `pptx.rs` (roxmltree) | **8/8 exact** (docling 2.118 parity, #249: slide shapes convert in visual reading order — top-sorted, 0.05"-tolerance row banding, left-to-right within a row — instead of XML/z-order, at slide level and inside groups) |
-| DOCX | `docx.rs` (roxmltree) | **30/30 exact** (docling 2.120 parity; #248: all sections' headers/footers as furniture incl. first-page + regular pairs, resumed ordered-list numbering per `numId`, body text after a blank spacer stays inside the list group; #270 / docling#3961: headings detected by the style's `w:outlineLvl` — localized/custom heading styles ("Nadpis1", "Rubrik 1") promote by OOXML's own language-independent marker, outlineLvl 9 stays body text, Title/Subtitle-ish styles keep their own branch) |
+| DOCX | `docx.rs` (roxmltree) | **30/30 exact** (docling 2.120 parity; #248: all sections' headers/footers as furniture incl. first-page + regular pairs, resumed ordered-list numbering per `numId`, body text after a blank spacer stays inside the list group; #270 / docling#3961: headings detected by the style's `w:outlineLvl` — localized/custom heading styles ("Nadpis1", "Rubrik 1") promote by OOXML's own language-independent marker, outlineLvl 9 stays body text, Title/Subtitle-ish styles keep their own branch; the name check also covers the style *id* and one-hop `basedOn` id/name, so a custom style based on "Heading 2" or an English "Heading1" id under a localized display name promotes without any outline level — direct formatting with no style at all stays body text, as in docling) |
 | DOC (Word 97–2004) | `doc.rs` (native [MS-DOC]: CFB + piece table + PAPX/CHPX/STSH + Escher) | byte-identical Markdown to the DOCX backend on fixtures converted to `.doc` (headings, ordered/bullet lists, tables, bold/italic, and embedded pictures — inline PICF + floating shapes with decoded PNG/JPEG bytes); docling reaches these only by shelling out to LibreOffice (PR 3804); styles that are not the built-in Heading 1–9/Title still promote to headings through their `sprmPOutLvl` (#270 — a LibreOffice-written legacy file names its heading styles in the document language with a "user" sti, leaving the outline level as the only marker) |
 | XLS (Excel 97–2004) | `xls.rs` (calamine BIFF8 + the XLSX region detection) | byte-identical to the XLSX backend on converted fixtures |
 | PPT (PowerPoint 97–2003) | `ppt.rs` (native [MS-PPT] + OfficeArt shape walker) | **byte-identical to the PPTX backend** on the sample fixture: tables reconstructed from shape-group geometry (spans included), bullet lists (StyleTextProp) and numbered lists (PP9 autonumber), titles, z-order |
@@ -400,8 +400,9 @@ These are deliberate or unavoidable divergences, not bugs.
 12. **Sparse spreadsheets can skip empty cells** (#271, docling.rs-only
     options, both off by default): `skip_empty_cells` omits empty positions
     from each XLSX/XLS table row instead of materialising every region's
-    full bounding box (docling pads the box too — its own #3328 tracks the
-    RAM cost), and `compact_tables` renders Markdown tables unpadded for
+    full bounding box (docling pads the box too; the related upstream #3328
+    tracks the RAM cost of its one-TableCell-per-cell materialisation on
+    large sheets), and `compact_tables` renders Markdown tables unpadded for
     every format. Default output stays byte-for-byte docling.
 
 13. **`OcrMode` and `OcrOptions.scale`** (docling 2.116/2.117, #254) are
