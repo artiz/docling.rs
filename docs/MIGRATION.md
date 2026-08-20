@@ -400,8 +400,9 @@ These are deliberate or unavoidable divergences, not bugs.
 12. **Sparse spreadsheets can skip empty cells** (#271, docling.rs-only
     options, both off by default): `skip_empty_cells` omits empty positions
     from each XLSX/XLS table row instead of materialising every region's
-    full bounding box (docling pads the box too — its own #3328 tracks the
-    RAM cost), and `compact_tables` renders Markdown tables unpadded for
+    full bounding box (docling pads the box too; the related upstream #3328
+    tracks the RAM cost of its one-TableCell-per-cell materialisation on
+    large sheets), and `compact_tables` renders Markdown tables unpadded for
     every format. Default output stays byte-for-byte docling.
 
 13. **`OcrMode` and `OcrOptions.scale`** (docling 2.116/2.117, #254) are
