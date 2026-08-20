@@ -127,7 +127,7 @@ PyPI; run via `scripts/conformance/conformance.sh <fmt>`), not the committed gro
 | EBCDIC (.ebc) | `ebcdic.rs` (native decode tables + copybook layouts, #252) | **3/3 exact** vs live docling 2.119 on the mirrored `ebcdic-parser`-derived corpus — incl. the four-schema packed-decimal sample and `Decimal`-spec rendering (`0.0000`, `0E-7`); layout via `ebcdic_layout` option (all surfaces) or the `<stem>.layout.json` sidecar (docling.rs convenience; upstream requires explicit backend options) |
 | Email (.eml, .msg) | `email.rs` (mail-parser) + `msg.rs` (native CFB/MAPI → RFC 822 projection, #251 — docling reaches .msg via python-oxmsg) | **4/4 exact** incl. both .msg fixtures and the opt-in `list_attachments` section (docling 2.119's `EmailBackendOptions.list_attachments`, plumbed as lib builder / CLI `--list-attachments` / serve `list_attachments` / py kwarg / Node `listAttachments`); `.eml` `Date:` now spells UTC as `+00:00` like Python's `isoformat()` (was `Z`) |
 | EPUB | `epub.rs` → HTML backend | **0/1** — the single fixture is 4 diff lines (heading-italic nesting + a bold-run join, the HTML inline residual) |
-| ODF (odt/ods/odp) | `odf.rs` | **7/7 exact** on the native files — slide-title/name headings, shape text, speaker-notes drop, chart classification + data tables, merged-cell semantics (plain repeat vs rich dedup), and docling's run-tail quirk |
+| ODF (odt/ods/odp) | `odf.rs` | **7/7 exact** on the native files — slide-title/name headings, shape text, speaker-notes drop, chart classification + data tables, merged-cell semantics (plain repeat vs rich dedup), and text after inline elements (docling 2.115's tail fix, #255 — the old run-tail dropping quirk is gone on both sides); sections walked (docling#3852), dangling `draw:object`s skipped (docling#3876) |
 | JATS | `jats.rs` (roxmltree) | **3/4 exact**; the eLife plain-text route diverges (252 diff lines) |
 | USPTO | `uspto.rs` | **1/5 exact (2/5 whitespace-normalized)** on the sources live docling converts — it errors on the other 5 (those are validated byte-exact via `.dclx`), and its APS-text *Markdown* export is empty where ours emits the text dump (the `.dclx` matches exactly — §5) |
 | XBRL | `xbrl.rs` | arelle-free core (dei facts → title, `*TextBlock` → HTML); *vs committed groundtruth* 0/2 (30 / 346 diff lines) — live docling needs arelle, which the conformance venv doesn't ship |
@@ -185,7 +185,7 @@ fragments as XML.
 | XLSX | **100%** | Markdown | 92% |
 | DOCX / PPTX | **100%** | LaTeX | 91% |
 | USPTO | 98% | HTML | 88% |
-| ODF | 95% | WebVTT | 81% |
+| ODF | 96% | WebVTT | 81% |
 
 This effort was tracked as
 [issue #32](https://github.com/docling-project/docling.rs/issues/32) — **closed,
