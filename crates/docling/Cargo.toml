@@ -92,6 +92,8 @@ ureq = { version = "3", optional = true }
 # when the HTML was fetched from the web (fetch_images). Gated with ureq.
 url = { version = "2", optional = true }
 zip = { version = "2.2", default-features = false, features = ["deflate"] }
+# AbiWord .zabw / gzip-compressed .abw (#216); already in the tree via zip.
+flate2 = "1"
 # Raw-block Snappy decode for Apple iWork's IWA members (#213); pure Rust, so
 # the backend rides along in every build including wasm.
 snap = "1"

@@ -126,9 +126,9 @@ pub fn supported_extensions() -> String {
         "txt", "text", "qmd", "rmd", "html", "htm", "xhtml", "xml", "nxml", "dclg", "dclx", "adoc",
         "asciidoc", "asc", "csv", "tsv", "xlsx", "xlsm", "xlsb", "odt", "ott", "ods", "ots", "odp",
         "otp", "sxw", "stw", "sxg", "sxc", "stc", "sxi", "sti", "fodt", "fods", "fodp", "json",
-        "sdw", "sda", "sdd", "vor", "dbf", "dif", "slk", "sylk", "wk1", "wk2", "wk3", "wk4", "wks",
-        "wrk", "123", "vtt", "tex", "latex", "eml", "epub", "mhtml", "mht", "rtf", "vsdx", "vsdm",
-        "pdf",
+        "sdw", "sda", "sdd", "vor", "abw", "zabw", "awt", "dbf", "dif", "slk", "sylk", "wk1",
+        "wk2", "wk3", "wk4", "wks", "wrk", "123", "vtt", "tex", "latex", "eml", "epub", "mhtml",
+        "mht", "rtf", "vsdx", "vsdm", "pdf",
     ];
     serde_json::to_string(exts.as_slice()).expect("static array serializes")
 }

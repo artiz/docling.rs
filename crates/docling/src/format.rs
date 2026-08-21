@@ -69,6 +69,9 @@ pub enum InputFormat {
     Numbers,
     /// Apple Keynote (`.key`), same IWA machinery as [`Self::Pages`].
     Keynote,
+    /// AbiWord (`.abw`/`.zabw`/`.awt`) — a docling.rs extension (#216);
+    /// AWML XML (gzip-wrapped for `.zabw`), parsed natively.
+    Abiword,
     /// dBase table (`.dbf`) — a docling.rs extension (#216); the field
     /// descriptors become the header row, records the data rows.
     Dbf,
@@ -132,6 +135,7 @@ impl InputFormat {
             InputFormat::Pages => "pages",
             InputFormat::Numbers => "numbers",
             InputFormat::Keynote => "key",
+            InputFormat::Abiword => "abiword",
             InputFormat::Dbf => "dbf",
             InputFormat::Dif => "dif",
             InputFormat::Sylk => "sylk",
@@ -210,6 +214,9 @@ impl InputFormat {
             "pages" => InputFormat::Pages,
             "numbers" => InputFormat::Numbers,
             "key" => InputFormat::Keynote,
+            // AbiWord (#216): AWML XML; .zabw is the same file gzip-wrapped,
+            // .awt the template flavor.
+            "abw" | "zabw" | "awt" => InputFormat::Abiword,
             // Legacy spreadsheet-interchange relics (#216): all three parse
             // natively and content-sniff inside one backend.
             "dbf" => InputFormat::Dbf,

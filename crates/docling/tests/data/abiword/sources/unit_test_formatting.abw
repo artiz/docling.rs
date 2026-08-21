@@ -1,0 +1,111 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE abiword PUBLIC "-//ABISOURCE//DTD AWML 1.0 Strict//EN" "http://www.abisource.com/awml.dtd">
+<abiword template="false" xmlns:ct="http://www.abisource.com/changetracking.dtd" xmlns:fo="http://www.w3.org/1999/XSL/Format" xmlns:math="http://www.w3.org/1998/Math/MathML" xid-max="47" xmlns:dc="http://purl.org/dc/elements/1.1/" fileformat="1.1" xmlns:svg="http://www.w3.org/2000/svg" xmlns:awml="http://www.abisource.com/awml.dtd" xmlns="http://www.abisource.com/awml.dtd" xmlns:xlink="http://www.w3.org/1999/xlink" version="3.0.5" xml:space="preserve" props="dom-dir:ltr; document-footnote-restart-section:0; document-endnote-type:numeric; document-endnote-place-enddoc:1; document-endnote-initial:1; lang:en-US; document-endnote-restart-section:0; document-footnote-restart-page:0; document-footnote-type:numeric; document-footnote-initial:1; document-endnote-place-endsection:0">
+<!-- ======================================================================== -->
+<!-- This file is an AbiWord document.                                        -->
+<!-- AbiWord is a free, Open Source word processor.                           -->
+<!-- More information about AbiWord is available at http://www.abisource.com/ -->
+<!-- You should not edit this file by hand.                                   -->
+<!-- ======================================================================== -->
+
+<metadata>
+<m key="abiword.generator">AbiWord</m>
+<m key="dc.format">application/x-abiword</m>
+</metadata>
+<rdf>
+</rdf>
+<history version="1" edit-time="0" last-saved="1786564402" uid="797aa8c0-9687-11f1-8738-de87b0655072">
+<version id="1" started="1786564402" uid="797dcfd2-9687-11f1-8738-de87b0655072" auto="0" top-xid="47"/>
+</history>
+<styles>
+<s type="P" name="List Paragraph" basedon="_Normal" props="margin-left:36.000000pt"/>
+<s type="P" name="_Normal" basedon="Normal"/>
+<s type="P" name="Normal" basedon="Normal" followedby="Current Settings" props="lang:ar-SA; font-size:12.000000pt; font-family:Times New Roman"/>
+<s type="P" name="header" basedon="_Normal" props="tabstops:3.150000in/C0,6.300000in/R0"/>
+<s type="P" name="footer" basedon="_Normal" props="tabstops:3.150000in/C0,6.300000in/R0"/>
+<s type="C" name="Default Paragraph Font" basedon="Normal"/>
+<s type="C" name="FollowedHyperlink" basedon="Default Paragraph Font" props="text-decoration:underline; color:96607D"/>
+<s type="C" name="Footer Char" basedon="Default Paragraph Font"/>
+<s type="C" name="Header Char" basedon="Default Paragraph Font"/>
+<s type="C" name="Heading 1 Char" basedon="Default Paragraph Font" props="font-size:20.000000pt; font-family:Times New Roman; color:0F4761"/>
+<s type="C" name="Heading 2 Char" basedon="Default Paragraph Font" props="font-size:16.000000pt; font-family:Times New Roman; color:0F4761"/>
+<s type="C" name="Heading 3 Char" basedon="Default Paragraph Font" props="font-size:14.000000pt; font-family:Times New Roman; color:0F4761"/>
+<s type="C" name="Heading 4 Char" basedon="Default Paragraph Font" props="font-family:Times New Roman; color:0F4761; font-style:italic"/>
+<s type="C" name="Heading 5 Char" basedon="Default Paragraph Font" props="font-family:Times New Roman; color:0F4761"/>
+<s type="C" name="Heading 6 Char" basedon="Default Paragraph Font" props="font-family:Times New Roman; color:595959; font-style:italic"/>
+<s type="C" name="Heading 7 Char" basedon="Default Paragraph Font" props="font-family:Times New Roman; color:595959"/>
+<s type="C" name="Heading 8 Char" basedon="Default Paragraph Font" props="font-family:Times New Roman; color:272727; font-style:italic"/>
+<s type="C" name="Heading 9 Char" basedon="Default Paragraph Font" props="font-family:Times New Roman; color:272727"/>
+<s type="C" name="Hyperlink" basedon="Default Paragraph Font" props="text-decoration:underline; color:467886"/>
+<s type="C" name="Intense Emphasis" basedon="Default Paragraph Font" props="font-style:italic; color:0F4761"/>
+<s type="P" name="Intense Quote" basedon="_Normal" followedby="_Normal" props="margin-top:18.000000pt; margin-left:43.200000pt; margin-bottom:18.000000pt; color:0F4761; text-align:center; margin-right:43.200000pt; font-style:italic"/>
+<s type="C" name="Intense Quote Char" basedon="Default Paragraph Font" props="font-style:italic; color:0F4761"/>
+<s type="C" name="Intense Reference" basedon="Default Paragraph Font" props="font-weight:bold; color:0F4761"/>
+<s type="P" name="No List" basedon="Normal"/>
+<s type="P" name="Normal Table" basedon="Normal"/>
+<s type="P" name="Quote" basedon="_Normal" followedby="_Normal" props="text-align:center; margin-top:8.000000pt; margin-bottom:8.000000pt; color:404040; font-style:italic"/>
+<s type="C" name="Quote Char" basedon="Default Paragraph Font" props="font-style:italic; color:404040"/>
+<s type="C" name="Strong" basedon="Default Paragraph Font" props="font-weight:bold"/>
+<s type="P" name="Subtitle" basedon="_Normal" followedby="_Normal" props="font-size:14.000000pt; margin-bottom:8.000000pt; font-family:Times New Roman; color:595959"/>
+<s type="C" name="Subtitle Char" basedon="Default Paragraph Font" props="font-size:14.000000pt; font-family:Times New Roman; color:595959"/>
+<s type="C" name="Subtle Emphasis" basedon="Default Paragraph Font" props="font-style:italic; color:404040"/>
+<s type="P" name="Title" basedon="_Normal" followedby="_Normal" props="font-size:28.000000pt; margin-bottom:4.000000pt; font-family:Times New Roman"/>
+<s type="C" name="Title Char" basedon="Default Paragraph Font" props="font-family:Times New Roman; font-size:28.000000pt"/>
+<s type="C" name="Unresolved Mention" basedon="Default Paragraph Font" props="color:605E5C; bgcolor:E1DFDD"/>
+<s type="P" name="heading 1" basedon="_Normal" followedby="_Normal" props="margin-top:18.000000pt; font-size:20.000000pt; margin-bottom:4.000000pt; font-family:Times New Roman; color:0F4761"/>
+<s type="P" name="heading 2" basedon="_Normal" followedby="_Normal" props="margin-top:8.000000pt; font-size:16.000000pt; margin-bottom:4.000000pt; font-family:Times New Roman; color:0F4761"/>
+<s type="P" name="heading 3" basedon="_Normal" followedby="_Normal" props="margin-top:8.000000pt; font-size:14.000000pt; margin-bottom:4.000000pt; font-family:Times New Roman; color:0F4761"/>
+<s type="P" name="heading 4" basedon="_Normal" followedby="_Normal" props="margin-top:4.000000pt; margin-bottom:2.000000pt; font-family:Times New Roman; color:0F4761; font-style:italic"/>
+<s type="P" name="heading 5" basedon="_Normal" followedby="_Normal" props="margin-top:4.000000pt; margin-bottom:2.000000pt; font-family:Times New Roman; color:0F4761"/>
+<s type="P" name="heading 6" basedon="_Normal" followedby="_Normal" props="margin-top:2.000000pt; font-family:Times New Roman; color:595959; font-style:italic"/>
+<s type="P" name="heading 7" basedon="_Normal" followedby="_Normal" props="margin-top:2.000000pt; font-family:Times New Roman; color:595959"/>
+<s type="P" name="heading 8" basedon="_Normal" followedby="_Normal" props="font-family:Times New Roman; color:272727; font-style:italic"/>
+<s type="P" name="heading 9" basedon="_Normal" followedby="_Normal" props="font-family:Times New Roman; color:272727"/>
+</styles>
+<pagesize pagetype="A4" orientation="portrait" width="210.000000" height="297.000000" units="mm" page-scale="1.000000"/>
+<section header="1" header-even="0" footer="4" footer-even="3" footer-first="5" header-first="2" xid="1" props="page-margin-right:0.984028in; column-line:off; page-margin-left:0.984028in; columns:1; page-margin-top:0.984028in; page-margin-bottom:0.984028in">
+<p xid="2"><c props="font-style:italic; lang:en-US">italic</c></p>
+<p xid="3"><c props="font-weight:bold; lang:en-US">bold</c></p>
+<p xid="4"><c props="text-decoration:underline; lang:en-US">underline</c></p>
+<p xid="5"><a xlink:href="https://github.com/DS4SD/docling" xid="6"><c props="lang:en-US">hyperlink</c></a></p>
+<p xid="8"><a xlink:href="https://github.com/DS4SD/docling" xid="9"><c props="lang:en-US; font-weight:bold; font-style:italic">italic and bold hyperlink</c></a></p>
+<p xid="11"><c props="lang:en-US">Normal </c><c props="font-style:italic; lang:en-US">italic</c><c props="lang:en-US"> </c><c props="font-weight:bold; lang:en-US">bold</c><c props="lang:en-US"> </c><c props="text-decoration:underline; lang:en-US">underline</c><c props="lang:en-US"> and </c><a xlink:href="https://github.com/DS4SD/docling" xid="12"><c props="lang:en-US">hyperlink</c></a><c props="lang:en-US"> on the same line</c></p>
+<p xid="14"><c></c></p>
+<p level="0" listid="100" parentid="0" style="List Paragraph" xid="15" props="text-indent:-18.000000pt; field-font:NULL; margin-left:36.000000pt"><field level="0" listid="100" parentid="0" style="List Paragraph" type="list_label" xid="16" props="text-indent:-18.000000pt; field-font:NULL; margin-left:36.000000pt"></field><c level="0" listid="100" parentid="0" style="List Paragraph" type="list_label" props="text-indent:-18.000000pt; field-font:NULL; margin-left:36.000000pt">	</c><c props="font-style:italic; lang:en-US">Italic bullet 1</c></p>
+<p level="0" listid="100" parentid="0" style="List Paragraph" xid="17" props="text-indent:-18.000000pt; field-font:NULL; margin-left:36.000000pt"><field level="0" listid="100" parentid="0" style="List Paragraph" type="list_label" xid="18" props="text-indent:-18.000000pt; field-font:NULL; margin-left:36.000000pt"></field><c level="0" listid="100" parentid="0" style="List Paragraph" type="list_label" props="text-indent:-18.000000pt; field-font:NULL; margin-left:36.000000pt">	</c><c props="font-weight:bold; lang:en-US">Bold bullet 2</c></p>
+<p level="0" listid="100" parentid="0" style="List Paragraph" xid="19" props="text-indent:-18.000000pt; field-font:NULL; margin-left:36.000000pt"><field level="0" listid="100" parentid="0" style="List Paragraph" type="list_label" xid="20" props="text-indent:-18.000000pt; field-font:NULL; margin-left:36.000000pt"></field><c level="0" listid="100" parentid="0" style="List Paragraph" type="list_label" props="text-indent:-18.000000pt; field-font:NULL; margin-left:36.000000pt">	</c><c props="text-decoration:underline; lang:en-US">Underline bullet 3</c></p>
+<p level="0" listid="100" parentid="0" style="List Paragraph" xid="21" props="text-indent:-18.000000pt; field-font:NULL; margin-left:36.000000pt"><field level="0" listid="100" parentid="0" style="List Paragraph" type="list_label" xid="22" props="text-indent:-18.000000pt; field-font:NULL; margin-left:36.000000pt"></field><c level="0" listid="100" parentid="0" style="List Paragraph" type="list_label" props="text-indent:-18.000000pt; field-font:NULL; margin-left:36.000000pt">	</c><c props="lang:en-US">Some </c><c props="font-style:italic; lang:en-US">italic</c><c props="lang:en-US"> </c><c props="font-weight:bold; lang:en-US">bold</c><c props="lang:en-US"> </c><c props="text-decoration:underline; lang:en-US">underline</c></p>
+<p level="1" listid="101" parentid="100" style="List Paragraph" xid="23" props="text-indent:-18.000000pt; field-font:NULL; margin-left:72.000000pt"><field level="1" listid="101" parentid="100" style="List Paragraph" type="list_label" xid="24" props="text-indent:-18.000000pt; field-font:NULL; margin-left:72.000000pt"></field><c level="1" listid="101" parentid="100" style="List Paragraph" type="list_label" props="text-indent:-18.000000pt; field-font:NULL; margin-left:72.000000pt">	</c><c props="lang:en-US">Nested </c><c props="font-style:italic; lang:en-US">italic</c><c props="lang:en-US"> </c><c props="font-weight:bold; lang:en-US">bold</c></p>
+<p xid="25"><c></c></p>
+</section>
+<section xid="26" props="page-margin-right:0.984028in; column-line:off; page-margin-left:0.984028in; columns:1; page-margin-top:0.984028in; page-margin-bottom:0.984028in">
+<p xid="27"><pbr/></p>
+<p xid="28"><c props="lang:en-US; color:#000000; font-style:normal">The second page of the document with same header and footer</c></p>
+<p xid="29"><c></c></p>
+</section>
+<section xid="30" props="page-margin-right:0.984028in; column-line:off; page-margin-left:0.984028in; columns:1; page-margin-top:0.984028in; page-margin-bottom:0.984028in">
+<p xid="31"><pbr/></p>
+<p xid="32"><c props="lang:en-US; color:#000000; font-style:normal">The third page of the document with different header and footer</c></p>
+</section>
+<section type="header-even" id="0" xid="33">
+<p style="header" xid="34"><c></c></p>
+</section>
+<section type="header" id="1" xid="35">
+<p style="header" xid="36">This is a header</p>
+</section>
+<section type="header-first" id="2" xid="37">
+<p style="header" xid="38"><c props="lang:en-US">Another </c><c props="font-weight:bold; lang:en-US">header</c><c props="lang:en-US"> in bold</c></p>
+<p style="header" xid="39"><c props="lang:en-US">With 2 paragraphs</c></p>
+</section>
+<section type="footer-even" id="3" xid="40">
+<p style="footer" xid="41"><c></c></p>
+</section>
+<section type="footer" id="4" xid="42">
+<p style="footer" xid="43">This is a footer</p>
+</section>
+<section type="footer-first" id="5" xid="44">
+<p style="footer" xid="45"><c props="lang:en-US">Another footer</c></p>
+<p style="footer" xid="46"><c props="lang:en-US">With</c></p>
+<p style="footer" xid="47"><c props="lang:en-US">3 paragraphs and a picture	</c></p>
+</section>
+</abiword>

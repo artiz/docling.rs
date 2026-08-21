@@ -1,0 +1,334 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE abiword PUBLIC "-//ABISOURCE//DTD AWML 1.0 Strict//EN" "http://www.abisource.com/awml.dtd">
+<abiword template="false" xmlns:ct="http://www.abisource.com/changetracking.dtd" xmlns:fo="http://www.w3.org/1999/XSL/Format" xmlns:math="http://www.w3.org/1998/Math/MathML" xid-max="185" xmlns:dc="http://purl.org/dc/elements/1.1/" fileformat="1.1" xmlns:svg="http://www.w3.org/2000/svg" xmlns:awml="http://www.abisource.com/awml.dtd" xmlns="http://www.abisource.com/awml.dtd" xmlns:xlink="http://www.w3.org/1999/xlink" version="3.0.5" xml:space="preserve" props="dom-dir:ltr; document-footnote-restart-section:0; document-endnote-type:numeric; document-endnote-place-enddoc:1; document-endnote-initial:1; lang:en-US; document-endnote-restart-section:0; document-footnote-restart-page:0; document-footnote-type:numeric; document-footnote-initial:1; document-endnote-place-endsection:0">
+<!-- ======================================================================== -->
+<!-- This file is an AbiWord document.                                        -->
+<!-- AbiWord is a free, Open Source word processor.                           -->
+<!-- More information about AbiWord is available at http://www.abisource.com/ -->
+<!-- You should not edit this file by hand.                                   -->
+<!-- ======================================================================== -->
+
+<metadata>
+<m key="abiword.generator">AbiWord</m>
+<m key="dc.format">application/x-abiword</m>
+</metadata>
+<rdf>
+</rdf>
+<history version="1" edit-time="0" last-saved="1786564402" uid="79673dee-9687-11f1-8738-de87b0655072">
+<version id="1" started="1786564402" uid="796a13f2-9687-11f1-8738-de87b0655072" auto="0" top-xid="185"/>
+</history>
+<styles>
+<s type="P" name="heading 1" basedon="_Normal" followedby="_Normal" props="margin-top:18.000000pt; font-size:20.000000pt; margin-bottom:4.000000pt; font-family:Times New Roman; color:0F4761"/>
+<s type="P" name="_Normal" basedon="Normal"/>
+<s type="P" name="Normal" basedon="Normal" followedby="Current Settings" props="lang:ar-SA; font-size:12.000000pt; margin-bottom:8.000000pt; font-family:Times New Roman; line-height:1.158333"/>
+<s type="C" name="Default Paragraph Font" basedon="Normal"/>
+<s type="P" name="Grid Table 1 Light Accent 1" basedon="Normal Table" props="right-thickness:0.500000pt; top-color:45B0E1; bot-style:1; bot-thickness:1.500000pt; left-thickness:0.500000pt; right-color:83CAEB; left-color:83CAEB; line-height:1.000000; left-style:1; margin-bottom:0.000000pt; bot-color:45B0E1; top-thickness:0.250000pt; right-style:1; top-style:1"/>
+<s type="P" name="Grid Table 4" basedon="Normal Table" props="right-color:000000; left-color:000000; bot-style:1; bot-thickness:0.500000pt; left-thickness:0.500000pt; background-color:CCCCCC; right-thickness:0.500000pt; top-color:000000; line-height:1.000000; left-style:1; margin-bottom:0.000000pt; bot-color:000000; top-thickness:0.500000pt; right-style:1; top-style:1"/>
+<s type="C" name="Heading 1 Char" basedon="Default Paragraph Font" props="font-size:20.000000pt; font-family:Times New Roman; color:0F4761"/>
+<s type="C" name="Heading 2 Char" basedon="Default Paragraph Font" props="font-size:16.000000pt; font-family:Times New Roman; color:0F4761"/>
+<s type="C" name="Heading 3 Char" basedon="Default Paragraph Font" props="font-size:14.000000pt; font-family:Times New Roman; color:0F4761"/>
+<s type="C" name="Heading 4 Char" basedon="Default Paragraph Font" props="font-family:Times New Roman; color:0F4761; font-style:italic"/>
+<s type="C" name="Heading 5 Char" basedon="Default Paragraph Font" props="font-family:Times New Roman; color:0F4761"/>
+<s type="C" name="Heading 6 Char" basedon="Default Paragraph Font" props="font-family:Times New Roman; color:595959; font-style:italic"/>
+<s type="C" name="Heading 7 Char" basedon="Default Paragraph Font" props="font-family:Times New Roman; color:595959"/>
+<s type="C" name="Heading 8 Char" basedon="Default Paragraph Font" props="font-family:Times New Roman; color:272727; font-style:italic"/>
+<s type="C" name="Heading 9 Char" basedon="Default Paragraph Font" props="font-family:Times New Roman; color:272727"/>
+<s type="C" name="Intense Emphasis" basedon="Default Paragraph Font" props="font-style:italic; color:0F4761"/>
+<s type="P" name="Intense Quote" basedon="_Normal" followedby="_Normal" props="margin-top:18.000000pt; margin-left:43.200000pt; margin-bottom:18.000000pt; color:0F4761; text-align:center; margin-right:43.200000pt; font-style:italic"/>
+<s type="C" name="Intense Quote Char" basedon="Default Paragraph Font" props="font-style:italic; color:0F4761"/>
+<s type="C" name="Intense Reference" basedon="Default Paragraph Font" props="font-weight:bold; color:0F4761"/>
+<s type="P" name="List Paragraph" basedon="_Normal" props="margin-left:36.000000pt"/>
+<s type="P" name="No List" basedon="Normal"/>
+<s type="P" name="Normal Table" basedon="Normal"/>
+<s type="P" name="Quote" basedon="_Normal" followedby="_Normal" props="text-align:center; margin-top:8.000000pt; color:404040; font-style:italic"/>
+<s type="C" name="Quote Char" basedon="Default Paragraph Font" props="font-style:italic; color:404040"/>
+<s type="P" name="Subtitle" basedon="_Normal" followedby="_Normal" props="font-size:14.000000pt; font-family:Times New Roman; color:595959"/>
+<s type="C" name="Subtitle Char" basedon="Default Paragraph Font" props="font-size:14.000000pt; font-family:Times New Roman; color:595959"/>
+<s type="P" name="Table Grid" basedon="Normal Table" props="bot-style:1; top-style:1; margin-bottom:0.000000pt; left-thickness:0.500000pt; right-style:1; right-thickness:0.500000pt; line-height:1.000000; top-thickness:0.500000pt; left-style:1; bot-thickness:0.500000pt"/>
+<s type="P" name="Title" basedon="_Normal" followedby="_Normal" props="line-height:1.000000; margin-bottom:4.000000pt; font-family:Times New Roman; font-size:28.000000pt"/>
+<s type="C" name="Title Char" basedon="Default Paragraph Font" props="font-family:Times New Roman; font-size:28.000000pt"/>
+<s type="P" name="heading 2" basedon="_Normal" followedby="_Normal" props="margin-top:8.000000pt; font-size:16.000000pt; margin-bottom:4.000000pt; font-family:Times New Roman; color:0F4761"/>
+<s type="P" name="heading 3" basedon="_Normal" followedby="_Normal" props="margin-top:8.000000pt; font-size:14.000000pt; margin-bottom:4.000000pt; font-family:Times New Roman; color:0F4761"/>
+<s type="P" name="heading 4" basedon="_Normal" followedby="_Normal" props="margin-top:4.000000pt; margin-bottom:2.000000pt; font-family:Times New Roman; color:0F4761; font-style:italic"/>
+<s type="P" name="heading 5" basedon="_Normal" followedby="_Normal" props="margin-top:4.000000pt; margin-bottom:2.000000pt; font-family:Times New Roman; color:0F4761"/>
+<s type="P" name="heading 6" basedon="_Normal" followedby="_Normal" props="margin-top:2.000000pt; margin-bottom:0.000000pt; font-family:Times New Roman; color:595959; font-style:italic"/>
+<s type="P" name="heading 7" basedon="_Normal" followedby="_Normal" props="margin-top:2.000000pt; margin-bottom:0.000000pt; font-family:Times New Roman; color:595959"/>
+<s type="P" name="heading 8" basedon="_Normal" followedby="_Normal" props="margin-bottom:0.000000pt; font-family:Times New Roman; color:272727; font-style:italic"/>
+<s type="P" name="heading 9" basedon="_Normal" followedby="_Normal" props="margin-bottom:0.000000pt; font-family:Times New Roman; color:272727"/>
+</styles>
+<pagesize pagetype="Letter" orientation="portrait" width="8.500000" height="11.000000" units="in" page-scale="1.000000"/>
+<section xid="1" props="page-margin-right:1.000000in; column-line:off; page-margin-left:1.000000in; columns:1; page-margin-top:1.000000in; page-margin-bottom:1.000000in">
+<p style="heading 1" xid="2">Test with tables</p>
+<p xid="3">A uniform table</p>
+<table xid="4" props="right-color:83CAEB; left-color:83CAEB; bot-style:1; top-thickness:0.250000pt; bot-thickness:1.500000pt; table-column-props:155.800000pt/155.850000pt/155.850000pt/; left-thickness:0.500000pt; right-thickness:0.500000pt; top-color:45B0E1; top-style:1; margin-bottom:0.000000pt; bot-color:45B0E1; line-height:1.000000; right-style:1; left-style:1">
+<cell xid="5" props="right-thickness:0.500000pt; left-color:83CAEB; bot-style:1; top-thickness:0.250000pt; bot-thickness:1.500000pt; table-column-props:155.800000pt/155.850000pt/155.850000pt/; left-thickness:0.500000pt; right-style:1; right-color:83CAEB; top-color:45B0E1; bot-color:45B0E1; left-attach:0; top-style:1; margin-bottom:0.000000pt; right-attach:1; left-style:1; line-height:1.000000; bot-attach:1; top-attach:0">
+<p xid="6">Header 0.0</p>
+</cell>
+<cell xid="7" props="right-thickness:0.500000pt; left-color:83CAEB; bot-style:1; top-thickness:0.250000pt; bot-thickness:1.500000pt; table-column-props:155.800000pt/155.850000pt/155.850000pt/; left-thickness:0.500000pt; right-style:1; right-color:83CAEB; top-color:45B0E1; bot-color:45B0E1; left-attach:1; top-style:1; margin-bottom:0.000000pt; right-attach:2; left-style:1; line-height:1.000000; bot-attach:1; top-attach:0">
+<p xid="8">Header 0.1</p>
+</cell>
+<cell xid="9" props="right-thickness:0.500000pt; left-color:83CAEB; bot-style:1; top-thickness:0.250000pt; bot-thickness:1.500000pt; table-column-props:155.800000pt/155.850000pt/155.850000pt/; left-thickness:0.500000pt; right-style:1; right-color:83CAEB; top-color:45B0E1; bot-color:45B0E1; left-attach:2; top-style:1; margin-bottom:0.000000pt; right-attach:3; left-style:1; line-height:1.000000; bot-attach:1; top-attach:0">
+<p xid="10">Header 0.2</p>
+</cell>
+<cell xid="11" props="right-thickness:0.500000pt; left-color:83CAEB; bot-style:1; top-thickness:0.250000pt; bot-thickness:1.500000pt; table-column-props:155.800000pt/155.850000pt/155.850000pt/; left-thickness:0.500000pt; right-style:1; right-color:83CAEB; top-color:45B0E1; bot-color:45B0E1; left-attach:0; top-style:1; margin-bottom:0.000000pt; right-attach:1; left-style:1; line-height:1.000000; bot-attach:2; top-attach:1">
+<p xid="12"><c props="font-weight:normal">Cell 1.0</c></p>
+</cell>
+<cell xid="13" props="right-thickness:0.500000pt; left-color:83CAEB; bot-style:1; top-thickness:0.250000pt; bot-thickness:1.500000pt; table-column-props:155.800000pt/155.850000pt/155.850000pt/; left-thickness:0.500000pt; right-style:1; right-color:83CAEB; top-color:45B0E1; bot-color:45B0E1; left-attach:1; top-style:1; margin-bottom:0.000000pt; right-attach:2; left-style:1; line-height:1.000000; bot-attach:2; top-attach:1">
+<p xid="14">Cell 1.1</p>
+</cell>
+<cell xid="15" props="right-thickness:0.500000pt; left-color:83CAEB; bot-style:1; top-thickness:0.250000pt; bot-thickness:1.500000pt; table-column-props:155.800000pt/155.850000pt/155.850000pt/; left-thickness:0.500000pt; right-style:1; right-color:83CAEB; top-color:45B0E1; bot-color:45B0E1; left-attach:2; top-style:1; margin-bottom:0.000000pt; right-attach:3; left-style:1; line-height:1.000000; bot-attach:2; top-attach:1">
+<p xid="16">Cell 1.2</p>
+</cell>
+<cell xid="17" props="right-thickness:0.500000pt; left-color:83CAEB; bot-style:1; top-thickness:0.250000pt; bot-thickness:1.500000pt; table-column-props:155.800000pt/155.850000pt/155.850000pt/; left-thickness:0.500000pt; right-style:1; right-color:83CAEB; top-color:45B0E1; bot-color:45B0E1; left-attach:0; top-style:1; margin-bottom:0.000000pt; right-attach:1; left-style:1; line-height:1.000000; bot-attach:3; top-attach:2">
+<p xid="18"><c props="font-weight:normal">Cell 2.0</c></p>
+</cell>
+<cell xid="19" props="right-thickness:0.500000pt; left-color:83CAEB; bot-style:1; top-thickness:0.250000pt; bot-thickness:1.500000pt; table-column-props:155.800000pt/155.850000pt/155.850000pt/; left-thickness:0.500000pt; right-style:1; right-color:83CAEB; top-color:45B0E1; bot-color:45B0E1; left-attach:1; top-style:1; margin-bottom:0.000000pt; right-attach:2; left-style:1; line-height:1.000000; bot-attach:3; top-attach:2">
+<p xid="20">Cell 2.1</p>
+</cell>
+<cell xid="21" props="right-thickness:0.500000pt; left-color:83CAEB; bot-style:1; top-thickness:0.250000pt; bot-thickness:1.500000pt; table-column-props:155.800000pt/155.850000pt/155.850000pt/; left-thickness:0.500000pt; right-style:1; right-color:83CAEB; top-color:45B0E1; bot-color:45B0E1; left-attach:2; top-style:1; margin-bottom:0.000000pt; right-attach:3; left-style:1; line-height:1.000000; bot-attach:3; top-attach:2">
+<p xid="22">Cell 2.2</p>
+</cell>
+</table>
+<p xid="23"><c></c></p>
+<p xid="24">A non-uniform table with horizontal spans</p>
+<table xid="25" props="right-color:83CAEB; left-color:83CAEB; bot-style:1; top-thickness:0.250000pt; bot-thickness:1.500000pt; table-column-props:155.800000pt/155.850000pt/155.850000pt/; left-thickness:0.500000pt; right-thickness:0.500000pt; top-color:45B0E1; top-style:1; margin-bottom:0.000000pt; bot-color:45B0E1; line-height:1.000000; right-style:1; left-style:1">
+<cell xid="26" props="right-thickness:0.500000pt; left-color:83CAEB; bot-style:1; top-thickness:0.250000pt; bot-thickness:1.500000pt; table-column-props:155.800000pt/155.850000pt/155.850000pt/; left-thickness:0.500000pt; right-style:1; right-color:83CAEB; top-color:45B0E1; bot-color:45B0E1; left-attach:0; top-style:1; margin-bottom:0.000000pt; right-attach:1; left-style:1; line-height:1.000000; bot-attach:1; top-attach:0">
+<p xid="27">Header 0.0</p>
+</cell>
+<cell xid="28" props="right-thickness:0.500000pt; left-color:83CAEB; bot-style:1; top-thickness:0.250000pt; bot-thickness:1.500000pt; table-column-props:155.800000pt/155.850000pt/155.850000pt/; left-thickness:0.500000pt; right-style:1; right-color:83CAEB; top-color:45B0E1; bot-color:45B0E1; left-attach:1; top-style:1; margin-bottom:0.000000pt; right-attach:2; left-style:1; line-height:1.000000; bot-attach:1; top-attach:0">
+<p xid="29">Header 0.1</p>
+</cell>
+<cell xid="30" props="right-thickness:0.500000pt; left-color:83CAEB; bot-style:1; top-thickness:0.250000pt; bot-thickness:1.500000pt; table-column-props:155.800000pt/155.850000pt/155.850000pt/; left-thickness:0.500000pt; right-style:1; right-color:83CAEB; top-color:45B0E1; bot-color:45B0E1; left-attach:2; top-style:1; margin-bottom:0.000000pt; right-attach:3; left-style:1; line-height:1.000000; bot-attach:1; top-attach:0">
+<p xid="31">Header 0.2</p>
+</cell>
+<cell xid="32" props="right-thickness:0.500000pt; left-color:83CAEB; bot-style:1; top-thickness:0.250000pt; bot-thickness:1.500000pt; table-column-props:155.800000pt/155.850000pt/155.850000pt/; left-thickness:0.500000pt; right-style:1; right-color:83CAEB; top-color:45B0E1; bot-color:45B0E1; left-attach:0; top-style:1; margin-bottom:0.000000pt; right-attach:1; left-style:1; line-height:1.000000; bot-attach:2; top-attach:1">
+<p xid="33"><c props="font-weight:normal">Cell 1.0</c></p>
+</cell>
+<cell xid="34" props="right-thickness:0.500000pt; left-color:83CAEB; bot-style:1; top-thickness:0.250000pt; bot-thickness:1.500000pt; table-column-props:155.800000pt/155.850000pt/155.850000pt/; left-thickness:0.500000pt; right-style:1; right-color:83CAEB; top-color:45B0E1; bot-color:45B0E1; left-attach:1; top-style:1; margin-bottom:0.000000pt; right-attach:3; left-style:1; line-height:1.000000; bot-attach:2; top-attach:1">
+<p xid="35">Merged Cell 1.1 1.2</p>
+</cell>
+<cell xid="36" props="right-thickness:0.500000pt; left-color:83CAEB; bot-style:1; top-thickness:0.250000pt; bot-thickness:1.500000pt; table-column-props:155.800000pt/155.850000pt/155.850000pt/; left-thickness:0.500000pt; right-style:1; right-color:83CAEB; top-color:45B0E1; bot-color:45B0E1; left-attach:0; top-style:1; margin-bottom:0.000000pt; right-attach:1; left-style:1; line-height:1.000000; bot-attach:3; top-attach:2">
+<p xid="37"><c props="font-weight:normal">Cell 2.0</c></p>
+</cell>
+<cell xid="38" props="right-thickness:0.500000pt; left-color:83CAEB; bot-style:1; top-thickness:0.250000pt; bot-thickness:1.500000pt; table-column-props:155.800000pt/155.850000pt/155.850000pt/; left-thickness:0.500000pt; right-style:1; right-color:83CAEB; top-color:45B0E1; bot-color:45B0E1; left-attach:1; top-style:1; margin-bottom:0.000000pt; right-attach:3; left-style:1; line-height:1.000000; bot-attach:3; top-attach:2">
+<p xid="39">Merged Cell 2.1 2.2</p>
+</cell>
+</table>
+<p xid="40"><c></c></p>
+<p xid="41">A non-uniform table with horizontal spans in inner columns</p>
+<table xid="42" props="right-color:83CAEB; left-color:83CAEB; bot-style:1; top-thickness:0.250000pt; bot-thickness:1.500000pt; table-column-props:120.250000pt/120.250000pt/120.250000pt/106.750000pt/; left-thickness:0.500000pt; right-thickness:0.500000pt; top-color:45B0E1; top-style:1; margin-bottom:0.000000pt; bot-color:45B0E1; line-height:1.000000; right-style:1; left-style:1">
+<cell xid="43" props="right-thickness:0.500000pt; left-color:83CAEB; bot-style:1; top-thickness:0.250000pt; bot-thickness:1.500000pt; table-column-props:120.250000pt/120.250000pt/120.250000pt/106.750000pt/; left-thickness:0.500000pt; right-style:1; right-color:83CAEB; top-color:45B0E1; bot-color:45B0E1; left-attach:0; top-style:1; margin-bottom:0.000000pt; right-attach:1; left-style:1; line-height:1.000000; bot-attach:1; top-attach:0">
+<p xid="44">Header 0.0</p>
+</cell>
+<cell xid="45" props="right-thickness:0.500000pt; left-color:83CAEB; bot-style:1; top-thickness:0.250000pt; bot-thickness:1.500000pt; table-column-props:120.250000pt/120.250000pt/120.250000pt/106.750000pt/; left-thickness:0.500000pt; right-style:1; right-color:83CAEB; top-color:45B0E1; bot-color:45B0E1; left-attach:1; top-style:1; margin-bottom:0.000000pt; right-attach:2; left-style:1; line-height:1.000000; bot-attach:1; top-attach:0">
+<p xid="46">Header 0.1</p>
+</cell>
+<cell xid="47" props="right-thickness:0.500000pt; left-color:83CAEB; bot-style:1; top-thickness:0.250000pt; bot-thickness:1.500000pt; table-column-props:120.250000pt/120.250000pt/120.250000pt/106.750000pt/; left-thickness:0.500000pt; right-style:1; right-color:83CAEB; top-color:45B0E1; bot-color:45B0E1; left-attach:2; top-style:1; margin-bottom:0.000000pt; right-attach:3; left-style:1; line-height:1.000000; bot-attach:1; top-attach:0">
+<p xid="48">Header 0.2</p>
+</cell>
+<cell xid="49" props="right-thickness:0.500000pt; left-color:83CAEB; bot-style:1; top-thickness:0.250000pt; bot-thickness:1.500000pt; table-column-props:120.250000pt/120.250000pt/120.250000pt/106.750000pt/; left-thickness:0.500000pt; right-style:1; right-color:83CAEB; top-color:45B0E1; bot-color:45B0E1; left-attach:3; top-style:1; margin-bottom:0.000000pt; right-attach:4; left-style:1; line-height:1.000000; bot-attach:1; top-attach:0">
+<p xid="50">Header 0.3</p>
+</cell>
+<cell xid="51" props="right-thickness:0.500000pt; left-color:83CAEB; bot-style:1; top-thickness:0.250000pt; bot-thickness:1.500000pt; table-column-props:120.250000pt/120.250000pt/120.250000pt/106.750000pt/; left-thickness:0.500000pt; right-style:1; right-color:83CAEB; top-color:45B0E1; bot-color:45B0E1; left-attach:0; top-style:1; margin-bottom:0.000000pt; right-attach:1; left-style:1; line-height:1.000000; bot-attach:2; top-attach:1">
+<p xid="52"><c props="font-weight:normal">Cell 1.0</c></p>
+</cell>
+<cell xid="53" props="right-thickness:0.500000pt; left-color:83CAEB; bot-style:1; top-thickness:0.250000pt; bot-thickness:1.500000pt; table-column-props:120.250000pt/120.250000pt/120.250000pt/106.750000pt/; left-thickness:0.500000pt; right-style:1; right-color:83CAEB; top-color:45B0E1; bot-color:45B0E1; left-attach:1; top-style:1; margin-bottom:0.000000pt; right-attach:3; left-style:1; line-height:1.000000; bot-attach:2; top-attach:1">
+<p xid="54">Merged Cell 1.1 1.2</p>
+</cell>
+<cell xid="55" props="right-thickness:0.500000pt; left-color:83CAEB; bot-style:1; top-thickness:0.250000pt; bot-thickness:1.500000pt; table-column-props:120.250000pt/120.250000pt/120.250000pt/106.750000pt/; left-thickness:0.500000pt; right-style:1; right-color:83CAEB; top-color:45B0E1; bot-color:45B0E1; left-attach:3; top-style:1; margin-bottom:0.000000pt; right-attach:4; left-style:1; line-height:1.000000; bot-attach:2; top-attach:1">
+<p xid="56">Cell 1.3</p>
+</cell>
+<cell xid="57" props="right-thickness:0.500000pt; left-color:83CAEB; bot-style:1; top-thickness:0.250000pt; bot-thickness:1.500000pt; table-column-props:120.250000pt/120.250000pt/120.250000pt/106.750000pt/; left-thickness:0.500000pt; right-style:1; right-color:83CAEB; top-color:45B0E1; bot-color:45B0E1; left-attach:0; top-style:1; margin-bottom:0.000000pt; right-attach:1; left-style:1; line-height:1.000000; bot-attach:3; top-attach:2">
+<p xid="58"><c props="font-weight:normal">Cell 2.0</c></p>
+</cell>
+<cell xid="59" props="right-thickness:0.500000pt; left-color:83CAEB; bot-style:1; top-thickness:0.250000pt; bot-thickness:1.500000pt; table-column-props:120.250000pt/120.250000pt/120.250000pt/106.750000pt/; left-thickness:0.500000pt; right-style:1; right-color:83CAEB; top-color:45B0E1; bot-color:45B0E1; left-attach:1; top-style:1; margin-bottom:0.000000pt; right-attach:3; left-style:1; line-height:1.000000; bot-attach:3; top-attach:2">
+<p xid="60">Merged Cell 2.1 2.2</p>
+</cell>
+<cell xid="61" props="right-thickness:0.500000pt; left-color:83CAEB; bot-style:1; top-thickness:0.250000pt; bot-thickness:1.500000pt; table-column-props:120.250000pt/120.250000pt/120.250000pt/106.750000pt/; left-thickness:0.500000pt; right-style:1; right-color:83CAEB; top-color:45B0E1; bot-color:45B0E1; left-attach:3; top-style:1; margin-bottom:0.000000pt; right-attach:4; left-style:1; line-height:1.000000; bot-attach:3; top-attach:2">
+<p xid="62">Cell 2.3</p>
+</cell>
+</table>
+<p xid="63"><c></c></p>
+<p xid="64">A non-uniform table with vertical spans</p>
+<table xid="65" props="table-row-heights:13.900000pt/; right-color:83CAEB; left-color:83CAEB; bot-style:1; top-thickness:0.250000pt; bot-thickness:1.500000pt; table-column-props:155.800000pt/155.850000pt/155.850000pt/; left-thickness:0.500000pt; right-thickness:0.500000pt; top-color:45B0E1; top-style:1; margin-bottom:0.000000pt; bot-color:45B0E1; line-height:1.000000; right-style:1; left-style:1">
+<cell xid="66" props="right-thickness:0.500000pt; left-color:83CAEB; bot-style:1; top-thickness:0.250000pt; bot-thickness:1.500000pt; table-column-props:155.800000pt/155.850000pt/155.850000pt/; left-thickness:0.500000pt; right-style:1; right-color:83CAEB; top-color:45B0E1; bot-color:45B0E1; left-attach:0; top-style:1; margin-bottom:0.000000pt; right-attach:1; left-style:1; line-height:1.000000; bot-attach:1; top-attach:0">
+<p xid="67">Header 0.0</p>
+</cell>
+<cell xid="68" props="right-thickness:0.500000pt; left-color:83CAEB; bot-style:1; top-thickness:0.250000pt; bot-thickness:1.500000pt; table-column-props:155.800000pt/155.850000pt/155.850000pt/; left-thickness:0.500000pt; right-style:1; right-color:83CAEB; top-color:45B0E1; bot-color:45B0E1; left-attach:1; top-style:1; margin-bottom:0.000000pt; right-attach:2; left-style:1; line-height:1.000000; bot-attach:1; top-attach:0">
+<p xid="69">Header 0.1</p>
+</cell>
+<cell xid="70" props="right-thickness:0.500000pt; left-color:83CAEB; bot-style:1; top-thickness:0.250000pt; bot-thickness:1.500000pt; table-column-props:155.800000pt/155.850000pt/155.850000pt/; left-thickness:0.500000pt; right-style:1; right-color:83CAEB; top-color:45B0E1; bot-color:45B0E1; left-attach:2; top-style:1; margin-bottom:0.000000pt; right-attach:3; left-style:1; line-height:1.000000; bot-attach:1; top-attach:0">
+<p xid="71">Header 0.2</p>
+</cell>
+<cell xid="72" props="right-thickness:0.500000pt; left-color:83CAEB; bot-style:1; top-thickness:0.250000pt; bot-thickness:1.500000pt; table-column-props:155.800000pt/155.850000pt/155.850000pt/; left-thickness:0.500000pt; right-style:1; right-color:83CAEB; top-color:45B0E1; bot-color:45B0E1; left-attach:0; top-style:1; margin-bottom:0.000000pt; right-attach:1; left-style:1; line-height:1.000000; bot-attach:2; top-attach:1">
+<p xid="73"><c props="font-weight:normal">Cell 1.0</c></p>
+</cell>
+<cell xid="74" props="right-thickness:0.500000pt; left-color:83CAEB; bot-style:1; top-thickness:0.250000pt; bot-thickness:1.500000pt; table-column-props:155.800000pt/155.850000pt/155.850000pt/; left-thickness:0.500000pt; right-style:1; right-color:83CAEB; top-color:45B0E1; bot-color:45B0E1; left-attach:1; top-style:1; margin-bottom:0.000000pt; right-attach:2; left-style:1; line-height:1.000000; bot-attach:3; top-attach:1">
+<p xid="75">Merged Cell 1.1 2.1</p>
+</cell>
+<cell xid="76" props="right-thickness:0.500000pt; left-color:83CAEB; bot-style:1; top-thickness:0.250000pt; bot-thickness:1.500000pt; table-column-props:155.800000pt/155.850000pt/155.850000pt/; left-thickness:0.500000pt; right-style:1; right-color:83CAEB; top-color:45B0E1; bot-color:45B0E1; left-attach:2; top-style:1; margin-bottom:0.000000pt; right-attach:3; left-style:1; line-height:1.000000; bot-attach:2; top-attach:1">
+<p xid="77">Cell 1.2</p>
+</cell>
+<cell xid="78" props="right-thickness:0.500000pt; left-color:83CAEB; bot-style:1; top-thickness:0.250000pt; bot-thickness:1.500000pt; table-column-props:155.800000pt/155.850000pt/155.850000pt/; left-thickness:0.500000pt; right-style:1; right-color:83CAEB; top-color:45B0E1; bot-color:45B0E1; left-attach:0; top-style:1; margin-bottom:0.000000pt; right-attach:1; left-style:1; line-height:1.000000; bot-attach:3; top-attach:2">
+<p xid="79"><c props="font-weight:normal">Cell 2.0</c></p>
+</cell>
+<cell xid="80" props="right-thickness:0.500000pt; left-color:83CAEB; bot-style:1; top-thickness:0.250000pt; bot-thickness:1.500000pt; table-column-props:155.800000pt/155.850000pt/155.850000pt/; left-thickness:0.500000pt; right-style:1; right-color:83CAEB; top-color:45B0E1; bot-color:45B0E1; left-attach:2; top-style:1; margin-bottom:0.000000pt; right-attach:3; left-style:1; line-height:1.000000; bot-attach:3; top-attach:2">
+<p xid="81">Cell 2.2</p>
+</cell>
+<cell xid="82" props="right-thickness:0.500000pt; left-color:83CAEB; bot-style:1; top-thickness:0.250000pt; bot-thickness:1.500000pt; table-column-props:155.800000pt/155.850000pt/155.850000pt/; left-thickness:0.500000pt; right-style:1; right-color:83CAEB; top-color:45B0E1; bot-color:45B0E1; left-attach:0; top-style:1; margin-bottom:0.000000pt; right-attach:1; left-style:1; line-height:1.000000; bot-attach:4; top-attach:3">
+<p xid="83"><c props="font-weight:normal">Cell 3.0</c></p>
+</cell>
+<cell xid="84" props="right-thickness:0.500000pt; left-color:83CAEB; bot-style:1; top-thickness:0.250000pt; bot-thickness:1.500000pt; table-column-props:155.800000pt/155.850000pt/155.850000pt/; left-thickness:0.500000pt; right-style:1; right-color:83CAEB; top-color:45B0E1; bot-color:45B0E1; left-attach:1; top-style:1; margin-bottom:0.000000pt; right-attach:2; left-style:1; line-height:1.000000; bot-attach:5; top-attach:3">
+<p xid="85">Merged Cell 3.1 4.1</p>
+</cell>
+<cell xid="86" props="right-thickness:0.500000pt; left-color:83CAEB; bot-style:1; top-thickness:0.250000pt; bot-thickness:1.500000pt; table-column-props:155.800000pt/155.850000pt/155.850000pt/; left-thickness:0.500000pt; right-style:1; right-color:83CAEB; top-color:45B0E1; bot-color:45B0E1; left-attach:2; top-style:1; margin-bottom:0.000000pt; right-attach:3; left-style:1; line-height:1.000000; bot-attach:4; top-attach:3">
+<p xid="87">Cell 3.2</p>
+</cell>
+<cell xid="88" props="right-attach:1; table-row-heights:13.900000pt/; top-attach:4; bot-style:1; bot-thickness:1.500000pt; table-column-props:155.800000pt/155.850000pt/155.850000pt/; left-style:1; left-thickness:0.500000pt; top-thickness:0.250000pt; margin-bottom:0.000000pt; right-thickness:0.500000pt; left-color:83CAEB; right-color:83CAEB; top-style:1; line-height:1.000000; bot-color:45B0E1; top-color:45B0E1; bot-attach:5; left-attach:0; right-style:1">
+<p xid="89"><c props="font-weight:normal">Cell 4.0</c></p>
+</cell>
+<cell xid="90" props="right-attach:3; table-row-heights:13.900000pt/; top-attach:4; bot-style:1; bot-thickness:1.500000pt; table-column-props:155.800000pt/155.850000pt/155.850000pt/; left-style:1; left-thickness:0.500000pt; top-thickness:0.250000pt; margin-bottom:0.000000pt; right-thickness:0.500000pt; left-color:83CAEB; right-color:83CAEB; top-style:1; line-height:1.000000; bot-color:45B0E1; top-color:45B0E1; bot-attach:5; left-attach:2; right-style:1">
+<p xid="91">Cell 4.2</p>
+</cell>
+</table>
+<p xid="92"><c></c></p>
+<p xid="93">A non-uniform table with all kinds of spans and empty cells</p>
+<table xid="94" props="table-row-heights:13.900000pt/; right-color:83CAEB; left-color:83CAEB; bot-style:1; top-thickness:0.250000pt; bot-thickness:1.500000pt; table-column-props:101.750000pt/101.750000pt/101.700000pt/81.150000pt/81.150000pt/; left-thickness:0.500000pt; right-thickness:0.500000pt; top-color:45B0E1; top-style:1; margin-bottom:0.000000pt; bot-color:45B0E1; line-height:1.000000; right-style:1; left-style:1">
+<cell xid="95" props="right-thickness:0.500000pt; left-color:83CAEB; bot-style:1; top-thickness:0.250000pt; bot-thickness:1.500000pt; table-column-props:101.750000pt/101.750000pt/101.700000pt/81.150000pt/81.150000pt/; left-thickness:0.500000pt; right-style:1; right-color:83CAEB; top-color:45B0E1; bot-color:45B0E1; left-attach:0; top-style:1; margin-bottom:0.000000pt; right-attach:1; left-style:1; line-height:1.000000; bot-attach:1; top-attach:0">
+<p xid="96">Header 0.0</p>
+</cell>
+<cell xid="97" props="right-thickness:0.500000pt; left-color:83CAEB; bot-style:1; top-thickness:0.250000pt; bot-thickness:1.500000pt; table-column-props:101.750000pt/101.750000pt/101.700000pt/81.150000pt/81.150000pt/; left-thickness:0.500000pt; right-style:1; right-color:83CAEB; top-color:45B0E1; bot-color:45B0E1; left-attach:1; top-style:1; margin-bottom:0.000000pt; right-attach:2; left-style:1; line-height:1.000000; bot-attach:1; top-attach:0">
+<p xid="98">Header 0.1</p>
+</cell>
+<cell xid="99" props="right-thickness:0.500000pt; left-color:83CAEB; bot-style:1; top-thickness:0.250000pt; bot-thickness:1.500000pt; table-column-props:101.750000pt/101.750000pt/101.700000pt/81.150000pt/81.150000pt/; left-thickness:0.500000pt; right-style:1; right-color:83CAEB; top-color:45B0E1; bot-color:45B0E1; left-attach:2; top-style:1; margin-bottom:0.000000pt; right-attach:3; left-style:1; line-height:1.000000; bot-attach:1; top-attach:0">
+<p xid="100">Header 0.2</p>
+</cell>
+<cell xid="101" props="right-thickness:0.500000pt; left-color:83CAEB; bot-style:1; top-thickness:0.250000pt; bot-thickness:1.500000pt; table-column-props:101.750000pt/101.750000pt/101.700000pt/81.150000pt/81.150000pt/; left-thickness:0.500000pt; right-style:1; right-color:83CAEB; top-color:45B0E1; bot-color:45B0E1; left-attach:3; top-style:1; margin-bottom:0.000000pt; right-attach:4; left-style:1; line-height:1.000000; bot-attach:1; top-attach:0">
+<p xid="102"><c></c></p>
+</cell>
+<cell xid="103" props="right-thickness:0.500000pt; left-color:83CAEB; bot-style:1; top-thickness:0.250000pt; bot-thickness:1.500000pt; table-column-props:101.750000pt/101.750000pt/101.700000pt/81.150000pt/81.150000pt/; left-thickness:0.500000pt; right-style:1; right-color:83CAEB; top-color:45B0E1; bot-color:45B0E1; left-attach:4; top-style:1; margin-bottom:0.000000pt; right-attach:5; left-style:1; line-height:1.000000; bot-attach:1; top-attach:0">
+<p xid="104"><c></c></p>
+</cell>
+<cell xid="105" props="right-thickness:0.500000pt; left-color:83CAEB; bot-style:1; top-thickness:0.250000pt; bot-thickness:1.500000pt; table-column-props:101.750000pt/101.750000pt/101.700000pt/81.150000pt/81.150000pt/; left-thickness:0.500000pt; right-style:1; right-color:83CAEB; top-color:45B0E1; bot-color:45B0E1; left-attach:0; top-style:1; margin-bottom:0.000000pt; right-attach:1; left-style:1; line-height:1.000000; bot-attach:2; top-attach:1">
+<p xid="106"><c props="font-weight:normal">Cell 1.0</c></p>
+</cell>
+<cell xid="107" props="right-thickness:0.500000pt; left-color:83CAEB; bot-style:1; top-thickness:0.250000pt; bot-thickness:1.500000pt; table-column-props:101.750000pt/101.750000pt/101.700000pt/81.150000pt/81.150000pt/; left-thickness:0.500000pt; right-style:1; right-color:83CAEB; top-color:45B0E1; bot-color:45B0E1; left-attach:1; top-style:1; margin-bottom:0.000000pt; right-attach:2; left-style:1; line-height:1.000000; bot-attach:3; top-attach:1">
+<p xid="108">Merged Cell 1.1 2.1</p>
+</cell>
+<cell xid="109" props="right-thickness:0.500000pt; left-color:83CAEB; bot-style:1; top-thickness:0.250000pt; bot-thickness:1.500000pt; table-column-props:101.750000pt/101.750000pt/101.700000pt/81.150000pt/81.150000pt/; left-thickness:0.500000pt; right-style:1; right-color:83CAEB; top-color:45B0E1; bot-color:45B0E1; left-attach:2; top-style:1; margin-bottom:0.000000pt; right-attach:3; left-style:1; line-height:1.000000; bot-attach:2; top-attach:1">
+<p xid="110">Cell 1.2</p>
+</cell>
+<cell xid="111" props="right-thickness:0.500000pt; left-color:83CAEB; bot-style:1; top-thickness:0.250000pt; bot-thickness:1.500000pt; table-column-props:101.750000pt/101.750000pt/101.700000pt/81.150000pt/81.150000pt/; left-thickness:0.500000pt; right-style:1; right-color:83CAEB; top-color:45B0E1; bot-color:45B0E1; left-attach:3; top-style:1; margin-bottom:0.000000pt; right-attach:4; left-style:1; line-height:1.000000; bot-attach:2; top-attach:1">
+<p xid="112"><c></c></p>
+</cell>
+<cell xid="113" props="right-thickness:0.500000pt; left-color:83CAEB; bot-style:1; top-thickness:0.250000pt; bot-thickness:1.500000pt; table-column-props:101.750000pt/101.750000pt/101.700000pt/81.150000pt/81.150000pt/; left-thickness:0.500000pt; right-style:1; right-color:83CAEB; top-color:45B0E1; bot-color:45B0E1; left-attach:4; top-style:1; margin-bottom:0.000000pt; right-attach:5; left-style:1; line-height:1.000000; bot-attach:2; top-attach:1">
+<p xid="114"><c></c></p>
+</cell>
+<cell xid="115" props="right-thickness:0.500000pt; left-color:83CAEB; bot-style:1; top-thickness:0.250000pt; bot-thickness:1.500000pt; table-column-props:101.750000pt/101.750000pt/101.700000pt/81.150000pt/81.150000pt/; left-thickness:0.500000pt; right-style:1; right-color:83CAEB; top-color:45B0E1; bot-color:45B0E1; left-attach:0; top-style:1; margin-bottom:0.000000pt; right-attach:1; left-style:1; line-height:1.000000; bot-attach:3; top-attach:2">
+<p xid="116"><c props="font-weight:normal">Cell 2.0</c></p>
+</cell>
+<cell xid="117" props="right-thickness:0.500000pt; left-color:83CAEB; bot-style:1; top-thickness:0.250000pt; bot-thickness:1.500000pt; table-column-props:101.750000pt/101.750000pt/101.700000pt/81.150000pt/81.150000pt/; left-thickness:0.500000pt; right-style:1; right-color:83CAEB; top-color:45B0E1; bot-color:45B0E1; left-attach:2; top-style:1; margin-bottom:0.000000pt; right-attach:3; left-style:1; line-height:1.000000; bot-attach:3; top-attach:2">
+<p xid="118">Cell 2.2</p>
+</cell>
+<cell xid="119" props="right-thickness:0.500000pt; left-color:83CAEB; bot-style:1; top-thickness:0.250000pt; bot-thickness:1.500000pt; table-column-props:101.750000pt/101.750000pt/101.700000pt/81.150000pt/81.150000pt/; left-thickness:0.500000pt; right-style:1; right-color:83CAEB; top-color:45B0E1; bot-color:45B0E1; left-attach:3; top-style:1; margin-bottom:0.000000pt; right-attach:4; left-style:1; line-height:1.000000; bot-attach:3; top-attach:2">
+<p xid="120"><c></c></p>
+</cell>
+<cell xid="121" props="right-thickness:0.500000pt; left-color:83CAEB; bot-style:1; top-thickness:0.250000pt; bot-thickness:1.500000pt; table-column-props:101.750000pt/101.750000pt/101.700000pt/81.150000pt/81.150000pt/; left-thickness:0.500000pt; right-style:1; right-color:83CAEB; top-color:45B0E1; bot-color:45B0E1; left-attach:4; top-style:1; margin-bottom:0.000000pt; right-attach:5; left-style:1; line-height:1.000000; bot-attach:3; top-attach:2">
+<p xid="122"><c></c></p>
+</cell>
+<cell xid="123" props="right-thickness:0.500000pt; left-color:83CAEB; bot-style:1; top-thickness:0.250000pt; bot-thickness:1.500000pt; table-column-props:101.750000pt/101.750000pt/101.700000pt/81.150000pt/81.150000pt/; left-thickness:0.500000pt; right-style:1; right-color:83CAEB; top-color:45B0E1; bot-color:45B0E1; left-attach:0; top-style:1; margin-bottom:0.000000pt; right-attach:1; left-style:1; line-height:1.000000; bot-attach:4; top-attach:3">
+<p xid="124"><c props="font-weight:normal">Cell 3.0</c></p>
+</cell>
+<cell xid="125" props="right-thickness:0.500000pt; left-color:83CAEB; bot-style:1; top-thickness:0.250000pt; bot-thickness:1.500000pt; table-column-props:101.750000pt/101.750000pt/101.700000pt/81.150000pt/81.150000pt/; left-thickness:0.500000pt; right-style:1; right-color:83CAEB; top-color:45B0E1; bot-color:45B0E1; left-attach:1; top-style:1; margin-bottom:0.000000pt; right-attach:2; left-style:1; line-height:1.000000; bot-attach:5; top-attach:3">
+<p xid="126">Merged Cell 3.1 4.1</p>
+</cell>
+<cell xid="127" props="right-thickness:0.500000pt; left-color:83CAEB; bot-style:1; top-thickness:0.250000pt; bot-thickness:1.500000pt; table-column-props:101.750000pt/101.750000pt/101.700000pt/81.150000pt/81.150000pt/; left-thickness:0.500000pt; right-style:1; right-color:83CAEB; top-color:45B0E1; bot-color:45B0E1; left-attach:2; top-style:1; margin-bottom:0.000000pt; right-attach:3; left-style:1; line-height:1.000000; bot-attach:4; top-attach:3">
+<p xid="128">Cell 3.2</p>
+</cell>
+<cell xid="129" props="right-thickness:0.500000pt; left-color:83CAEB; bot-style:1; top-thickness:0.250000pt; bot-thickness:1.500000pt; table-column-props:101.750000pt/101.750000pt/101.700000pt/81.150000pt/81.150000pt/; left-thickness:0.500000pt; right-style:1; right-color:83CAEB; top-color:45B0E1; bot-color:45B0E1; left-attach:3; top-style:1; margin-bottom:0.000000pt; right-attach:4; left-style:1; line-height:1.000000; bot-attach:6; top-attach:3">
+<p xid="130"><c></c></p>
+</cell>
+<cell xid="131" props="right-thickness:0.500000pt; left-color:83CAEB; bot-style:1; top-thickness:0.250000pt; bot-thickness:1.500000pt; table-column-props:101.750000pt/101.750000pt/101.700000pt/81.150000pt/81.150000pt/; left-thickness:0.500000pt; right-style:1; right-color:83CAEB; top-color:45B0E1; bot-color:45B0E1; left-attach:4; top-style:1; margin-bottom:0.000000pt; right-attach:5; left-style:1; line-height:1.000000; bot-attach:4; top-attach:3">
+<p xid="132"><c></c></p>
+</cell>
+<cell xid="133" props="right-attach:1; table-row-heights:13.900000pt/; top-attach:4; bot-style:1; bot-thickness:1.500000pt; table-column-props:101.750000pt/101.750000pt/101.700000pt/81.150000pt/81.150000pt/; left-style:1; left-thickness:0.500000pt; top-thickness:0.250000pt; margin-bottom:0.000000pt; right-thickness:0.500000pt; left-color:83CAEB; right-color:83CAEB; top-style:1; line-height:1.000000; bot-color:45B0E1; top-color:45B0E1; bot-attach:5; left-attach:0; right-style:1">
+<p xid="134"><c props="font-weight:normal">Cell 4.0</c></p>
+</cell>
+<cell xid="135" props="right-attach:3; table-row-heights:13.900000pt/; top-attach:4; bot-style:1; bot-thickness:1.500000pt; table-column-props:101.750000pt/101.750000pt/101.700000pt/81.150000pt/81.150000pt/; left-style:1; left-thickness:0.500000pt; top-thickness:0.250000pt; margin-bottom:0.000000pt; right-thickness:0.500000pt; left-color:83CAEB; right-color:83CAEB; top-style:1; line-height:1.000000; bot-color:45B0E1; top-color:45B0E1; bot-attach:5; left-attach:2; right-style:1">
+<p xid="136">Cell 4.2</p>
+</cell>
+<cell xid="137" props="right-attach:5; table-row-heights:13.900000pt/; top-attach:4; bot-style:1; bot-thickness:1.500000pt; table-column-props:101.750000pt/101.750000pt/101.700000pt/81.150000pt/81.150000pt/; left-style:1; left-thickness:0.500000pt; top-thickness:0.250000pt; margin-bottom:0.000000pt; right-thickness:0.500000pt; left-color:83CAEB; right-color:83CAEB; top-style:1; line-height:1.000000; bot-color:45B0E1; top-color:45B0E1; bot-attach:6; left-attach:4; right-style:1">
+<p xid="138">Merged Cell 4.4 5.4</p>
+</cell>
+<cell xid="139" props="right-attach:1; table-row-heights:13.900000pt/; top-attach:5; bot-style:1; bot-thickness:1.500000pt; table-column-props:101.750000pt/101.750000pt/101.700000pt/81.150000pt/81.150000pt/; left-style:1; left-thickness:0.500000pt; top-thickness:0.250000pt; margin-bottom:0.000000pt; right-thickness:0.500000pt; left-color:83CAEB; right-color:83CAEB; top-style:1; line-height:1.000000; bot-color:45B0E1; top-color:45B0E1; bot-attach:6; left-attach:0; right-style:1">
+<p xid="140"><c></c></p>
+</cell>
+<cell xid="141" props="right-attach:2; table-row-heights:13.900000pt/; top-attach:5; bot-style:1; bot-thickness:1.500000pt; table-column-props:101.750000pt/101.750000pt/101.700000pt/81.150000pt/81.150000pt/; left-style:1; left-thickness:0.500000pt; top-thickness:0.250000pt; margin-bottom:0.000000pt; right-thickness:0.500000pt; left-color:83CAEB; right-color:83CAEB; top-style:1; line-height:1.000000; bot-color:45B0E1; top-color:45B0E1; bot-attach:6; left-attach:1; right-style:1">
+<p xid="142"><c></c></p>
+</cell>
+<cell xid="143" props="right-attach:3; table-row-heights:13.900000pt/; top-attach:5; bot-style:1; bot-thickness:1.500000pt; table-column-props:101.750000pt/101.750000pt/101.700000pt/81.150000pt/81.150000pt/; left-style:1; left-thickness:0.500000pt; top-thickness:0.250000pt; margin-bottom:0.000000pt; right-thickness:0.500000pt; left-color:83CAEB; right-color:83CAEB; top-style:1; line-height:1.000000; bot-color:45B0E1; top-color:45B0E1; bot-attach:6; left-attach:2; right-style:1">
+<p xid="144"><c></c></p>
+</cell>
+<cell xid="145" props="right-attach:1; table-row-heights:13.900000pt/; top-attach:6; bot-style:1; bot-thickness:1.500000pt; table-column-props:101.750000pt/101.750000pt/101.700000pt/81.150000pt/81.150000pt/; left-style:1; left-thickness:0.500000pt; top-thickness:0.250000pt; margin-bottom:0.000000pt; right-thickness:0.500000pt; left-color:83CAEB; right-color:83CAEB; top-style:1; line-height:1.000000; bot-color:45B0E1; top-color:45B0E1; bot-attach:7; left-attach:0; right-style:1">
+<p xid="146"><c></c></p>
+</cell>
+<cell xid="147" props="right-attach:2; table-row-heights:13.900000pt/; top-attach:6; bot-style:1; bot-thickness:1.500000pt; table-column-props:101.750000pt/101.750000pt/101.700000pt/81.150000pt/81.150000pt/; left-style:1; left-thickness:0.500000pt; top-thickness:0.250000pt; margin-bottom:0.000000pt; right-thickness:0.500000pt; left-color:83CAEB; right-color:83CAEB; top-style:1; line-height:1.000000; bot-color:45B0E1; top-color:45B0E1; bot-attach:7; left-attach:1; right-style:1">
+<p xid="148"><c></c></p>
+</cell>
+<cell xid="149" props="right-attach:3; table-row-heights:13.900000pt/; top-attach:6; bot-style:1; bot-thickness:1.500000pt; table-column-props:101.750000pt/101.750000pt/101.700000pt/81.150000pt/81.150000pt/; left-style:1; left-thickness:0.500000pt; top-thickness:0.250000pt; margin-bottom:0.000000pt; right-thickness:0.500000pt; left-color:83CAEB; right-color:83CAEB; top-style:1; line-height:1.000000; bot-color:45B0E1; top-color:45B0E1; bot-attach:7; left-attach:2; right-style:1">
+<p xid="150"><c></c></p>
+</cell>
+<cell xid="151" props="right-attach:4; table-row-heights:13.900000pt/; top-attach:6; bot-style:1; bot-thickness:1.500000pt; table-column-props:101.750000pt/101.750000pt/101.700000pt/81.150000pt/81.150000pt/; left-style:1; left-thickness:0.500000pt; top-thickness:0.250000pt; margin-bottom:0.000000pt; right-thickness:0.500000pt; left-color:83CAEB; right-color:83CAEB; top-style:1; line-height:1.000000; bot-color:45B0E1; top-color:45B0E1; bot-attach:7; left-attach:3; right-style:1">
+<p xid="152"><c></c></p>
+</cell>
+<cell xid="153" props="right-attach:5; table-row-heights:13.900000pt/; top-attach:6; bot-style:1; bot-thickness:1.500000pt; table-column-props:101.750000pt/101.750000pt/101.700000pt/81.150000pt/81.150000pt/; left-style:1; left-thickness:0.500000pt; top-thickness:0.250000pt; margin-bottom:0.000000pt; right-thickness:0.500000pt; left-color:83CAEB; right-color:83CAEB; top-style:1; line-height:1.000000; bot-color:45B0E1; top-color:45B0E1; bot-attach:7; left-attach:4; right-style:1">
+<p xid="154"><c></c></p>
+</cell>
+<cell xid="155" props="right-attach:5; table-row-heights:13.900000pt/; top-attach:7; bot-style:1; bot-thickness:1.500000pt; table-column-props:101.750000pt/101.750000pt/101.700000pt/81.150000pt/81.150000pt/; left-style:1; left-thickness:0.500000pt; top-thickness:0.250000pt; margin-bottom:0.000000pt; right-thickness:0.500000pt; left-color:83CAEB; right-color:83CAEB; top-style:1; line-height:1.000000; bot-color:45B0E1; top-color:45B0E1; bot-attach:8; left-attach:0; right-style:1">
+<p xid="156"><c></c></p>
+</cell>
+<cell xid="157" props="right-attach:1; table-row-heights:13.900000pt/; top-attach:8; bot-style:1; bot-thickness:1.500000pt; table-column-props:101.750000pt/101.750000pt/101.700000pt/81.150000pt/81.150000pt/; left-style:1; left-thickness:0.500000pt; top-thickness:0.250000pt; margin-bottom:0.000000pt; right-thickness:0.500000pt; left-color:83CAEB; right-color:83CAEB; top-style:1; line-height:1.000000; bot-color:45B0E1; top-color:45B0E1; bot-attach:9; left-attach:0; right-style:1">
+<p xid="158"><c></c></p>
+</cell>
+<cell xid="159" props="right-attach:2; table-row-heights:13.900000pt/; top-attach:8; bot-style:1; bot-thickness:1.500000pt; table-column-props:101.750000pt/101.750000pt/101.700000pt/81.150000pt/81.150000pt/; left-style:1; left-thickness:0.500000pt; top-thickness:0.250000pt; margin-bottom:0.000000pt; right-thickness:0.500000pt; left-color:83CAEB; right-color:83CAEB; top-style:1; line-height:1.000000; bot-color:45B0E1; top-color:45B0E1; bot-attach:9; left-attach:1; right-style:1">
+<p xid="160"><c></c></p>
+</cell>
+<cell xid="161" props="right-attach:3; table-row-heights:13.900000pt/; top-attach:8; bot-style:1; bot-thickness:1.500000pt; table-column-props:101.750000pt/101.750000pt/101.700000pt/81.150000pt/81.150000pt/; left-style:1; left-thickness:0.500000pt; top-thickness:0.250000pt; margin-bottom:0.000000pt; right-thickness:0.500000pt; left-color:83CAEB; right-color:83CAEB; top-style:1; line-height:1.000000; bot-color:45B0E1; top-color:45B0E1; bot-attach:9; left-attach:2; right-style:1">
+<p xid="162"><c></c></p>
+</cell>
+<cell xid="163" props="right-attach:4; table-row-heights:13.900000pt/; top-attach:8; bot-style:1; bot-thickness:1.500000pt; table-column-props:101.750000pt/101.750000pt/101.700000pt/81.150000pt/81.150000pt/; left-style:1; left-thickness:0.500000pt; top-thickness:0.250000pt; margin-bottom:0.000000pt; right-thickness:0.500000pt; left-color:83CAEB; right-color:83CAEB; top-style:1; line-height:1.000000; bot-color:45B0E1; top-color:45B0E1; bot-attach:9; left-attach:3; right-style:1">
+<p xid="164"><c></c></p>
+</cell>
+<cell xid="165" props="right-attach:5; table-row-heights:13.900000pt/; top-attach:8; bot-style:1; bot-thickness:1.500000pt; table-column-props:101.750000pt/101.750000pt/101.700000pt/81.150000pt/81.150000pt/; left-style:1; left-thickness:0.500000pt; top-thickness:0.250000pt; margin-bottom:0.000000pt; right-thickness:0.500000pt; left-color:83CAEB; right-color:83CAEB; top-style:1; line-height:1.000000; bot-color:45B0E1; top-color:45B0E1; bot-attach:9; left-attach:4; right-style:1">
+<p xid="166">Cell 8.4</p>
+</cell>
+</table>
+<p xid="167"><c></c></p>
+<p xid="168"><c></c></p>
+<p xid="169">A non-uniform table with a row starting late</p>
+<table xid="170" props="right-color:83CAEB; left-color:83CAEB; bot-style:1; top-thickness:0.250000pt; bot-thickness:1.500000pt; table-column-props:234.000000pt/234.000000pt/; left-thickness:0.500000pt; right-thickness:0.500000pt; top-color:45B0E1; top-style:1; margin-bottom:0.000000pt; bot-color:45B0E1; line-height:1.000000; right-style:1; left-style:1">
+<cell xid="171" props="right-thickness:0.500000pt; left-color:83CAEB; bot-style:1; top-thickness:0.250000pt; bot-thickness:1.500000pt; table-column-props:234.000000pt/234.000000pt/; left-thickness:0.500000pt; right-style:1; right-color:83CAEB; top-color:45B0E1; bot-color:45B0E1; left-attach:0; top-style:1; margin-bottom:0.000000pt; right-attach:1; left-style:1; line-height:1.000000; bot-attach:1; top-attach:0">
+<p xid="172">Header 0.0</p>
+</cell>
+<cell xid="173" props="right-thickness:0.500000pt; left-color:83CAEB; bot-style:1; top-thickness:0.250000pt; bot-thickness:1.500000pt; table-column-props:234.000000pt/234.000000pt/; left-thickness:0.500000pt; right-style:1; right-color:83CAEB; top-color:45B0E1; bot-color:45B0E1; left-attach:1; top-style:1; margin-bottom:0.000000pt; right-attach:2; left-style:1; line-height:1.000000; bot-attach:1; top-attach:0">
+<p xid="174">Header 0.1</p>
+</cell>
+<cell xid="175" props="right-thickness:0.500000pt; left-color:83CAEB; bot-style:1; top-thickness:0.250000pt; bot-thickness:1.500000pt; table-column-props:234.000000pt/234.000000pt/; left-thickness:0.500000pt; right-style:1; right-color:83CAEB; top-color:45B0E1; bot-color:45B0E1; left-attach:0; top-style:1; margin-bottom:0.000000pt; right-attach:1; left-style:1; line-height:1.000000; bot-attach:2; top-attach:1">
+<p xid="176">Cell 1.1</p>
+</cell>
+</table>
+<p xid="177">A non-uniform table with a vertical span over a row starting late</p>
+<table xid="178" props="right-color:83CAEB; left-color:83CAEB; bot-style:1; top-thickness:0.250000pt; bot-thickness:1.500000pt; table-column-props:156.000000pt/156.000000pt/156.000000pt/; left-thickness:0.500000pt; right-thickness:0.500000pt; top-color:45B0E1; top-style:1; margin-bottom:0.000000pt; bot-color:45B0E1; line-height:1.000000; right-style:1; left-style:1">
+<cell xid="179" props="right-thickness:0.500000pt; left-color:83CAEB; bot-style:1; top-thickness:0.250000pt; bot-thickness:1.500000pt; table-column-props:156.000000pt/156.000000pt/156.000000pt/; left-thickness:0.500000pt; right-style:1; right-color:83CAEB; top-color:45B0E1; bot-color:45B0E1; left-attach:0; top-style:1; margin-bottom:0.000000pt; right-attach:1; left-style:1; line-height:1.000000; bot-attach:2; top-attach:0">
+<p xid="180">Header 0.0</p>
+</cell>
+<cell xid="181" props="right-thickness:0.500000pt; left-color:83CAEB; bot-style:1; top-thickness:0.250000pt; bot-thickness:1.500000pt; table-column-props:156.000000pt/156.000000pt/156.000000pt/; left-thickness:0.500000pt; right-style:1; right-color:83CAEB; top-color:45B0E1; bot-color:45B0E1; left-attach:1; top-style:1; margin-bottom:0.000000pt; right-attach:2; left-style:1; line-height:1.000000; bot-attach:1; top-attach:0">
+<p xid="182">Header 0.1</p>
+</cell>
+<cell xid="183" props="right-thickness:0.500000pt; left-color:83CAEB; bot-style:1; top-thickness:0.250000pt; bot-thickness:1.500000pt; table-column-props:156.000000pt/156.000000pt/156.000000pt/; left-thickness:0.500000pt; right-style:1; right-color:83CAEB; top-color:45B0E1; bot-color:45B0E1; left-attach:2; top-style:1; margin-bottom:0.000000pt; right-attach:3; left-style:1; line-height:1.000000; bot-attach:1; top-attach:0">
+<p xid="184">Merged Cell 0.2 1.2</p>
+</cell>
+</table>
+<p xid="185"></p>
+</section>
+</abiword>
