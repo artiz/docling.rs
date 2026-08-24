@@ -420,6 +420,22 @@ These are deliberate or unavoidable divergences, not bugs.
     `72 × scale` dpi, default 3); unset keeps the pinned 144 dpi baseline,
     so conformance snapshots never move.
 
+14. **Per-request chunking configuration** (docling 2.117–2.119
+    service-datamodel, #256): `to=chunks` accepts `chunker`
+    (`hierarchical`|`hybrid`, docling's `ChunkerType`; unset returns both),
+    `chunk_tokenizer` (a server-local *relative* `tokenizer.json` path —
+    absolute paths and `..` are rejected, unlike upstream's
+    fetch-any-HF-model semantics), `chunk_max_tokens` and
+    `chunk_merge_peers` on serve, with matching `--chunker`/`--chunk-*` CLI
+    flags; the `DOCLING_CHUNK_*` env knobs remain the operator defaults. An
+    explicit `chunker=hybrid` without a usable tokenizer fails loudly (400)
+    instead of the legacy silent skip. Out of the same sync window but *not*
+    ported: upstream's `do_pdf_heading_hierarchy` (`HeadingHierarchyModel`
+    — PDF section-header levels from bookmarks/numbering/font style; our
+    PDF path emits docling's pre-2.117 flat `##` levels, so the option has
+    nothing to switch yet) and `dclx` in the `ArtifactRef` union (only
+    meaningful once the sources/targets wire shape lands — #139).
+
 ---
 
 ## 5. Not migrated / out of scope

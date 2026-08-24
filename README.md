@@ -194,7 +194,9 @@ honoring `pages=A-B` and a `scale` of 0.1–4.0 pixels per PDF point (default
 Options per request: `to=md|json|dclx|chunks|images`, `strict`, `images=placeholder|embedded`,
 `skip_empty_cells`, `compact_tables`,
 `no_ocr`, `skip_ocr`, `no_table_former`, `no_text_panels`, `force_full_page_ocr`, `pages`,
-`ocr_lang`, `ocr_mode`, `ocr_scale`, `scale`, `asr_model`, `asr_lang`, `video_frames`, `fetch_images` — as query
+`ocr_lang`, `ocr_mode`, `ocr_scale`, `scale`, `asr_model`, `asr_lang`, `video_frames`, `fetch_images`,
+`chunker=hierarchical|hybrid`, `chunk_tokenizer`, `chunk_max_tokens`, `chunk_merge_peers` (#256:
+per-request `to=chunks` configuration; the tokenizer is a server-local relative path) — as query
 parameters, multipart fields, or JSON keys (body wins). Server flags: `--addr`,
 `--concurrency`, `--max-body-mb`, `--queue-size`, `--result-ttl`, `--warmup`,
 `--allow-url-fetch`, `--no-url-fetch`, `--strict`, `--max-memory-mb` (#263:
@@ -399,7 +401,10 @@ HuggingFace tokenizer (MiniLM etc.) sits behind the `chunking` cargo feature
 `scripts/install/download_dependencies.sh` fetches MiniLM's tokenizer to
 `.models/chunk/tokenizer.json`, which every surface picks up automatically when
 no explicit tokenizer path is given (`DOCLING_CHUNK_TOKENIZER` overrides the
-path and `DOCLING_CHUNK_MAX_TOKENS` the 256-token budget for the CLI). The chunkers are also
+path and `DOCLING_CHUNK_MAX_TOKENS` the 256-token budget; per-run overrides:
+`--chunker hierarchical|hybrid`, `--chunk-tokenizer`, `--chunk-max-tokens`,
+`--no-chunk-merge-peers` on the CLI and the matching serve request fields,
+#256). The chunkers are also
 exposed in the [Node bindings](./crates/docling-node) (`chunkFile` /
 `chunkDocument` + async variants), the
 [Python bindings](./crates/docling-py) (`docling_rs.chunking`), and the

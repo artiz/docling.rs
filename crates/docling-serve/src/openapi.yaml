@@ -71,6 +71,10 @@ paths:
         - { $ref: "#/components/parameters/asr_model" }
         - { $ref: "#/components/parameters/asr_lang" }
         - { $ref: "#/components/parameters/video_frames" }
+        - { $ref: "#/components/parameters/chunker" }
+        - { $ref: "#/components/parameters/chunk_tokenizer" }
+        - { $ref: "#/components/parameters/chunk_max_tokens" }
+        - { $ref: "#/components/parameters/chunk_merge_peers" }
       requestBody:
         required: true
         content:
@@ -100,6 +104,10 @@ paths:
                 asr_model: { type: string }
                 asr_lang: { type: string, examples: ["auto", "en", "de"] }
                 video_frames: { type: integer, minimum: 0 }
+                chunker: { $ref: "#/components/schemas/Chunker" }
+                chunk_tokenizer: { type: string }
+                chunk_max_tokens: { type: integer, minimum: 1 }
+                chunk_merge_peers: { type: boolean }
           application/json:
             schema:
               allOf:
@@ -460,6 +468,28 @@ components:
           type: integer
           minimum: 0
           description: Video — max frames sampled as pictures (0 = transcript only; needs ffmpeg on the server).
+        chunker: { $ref: "#/components/schemas/Chunker" }
+        chunk_tokenizer:
+          type: string
+          description: >
+            `to=chunks` — hybrid tokenizer: a server-local *relative* path to a
+            HuggingFace `tokenizer.json` (absolute paths and `..` are
+            rejected). Default: the server's `DOCLING_CHUNK_TOKENIZER`, else
+            `.models/chunk/tokenizer.json`.
+        chunk_max_tokens:
+          type: integer
+          minimum: 1
+          default: 256
+          description: >
+            `to=chunks` — hybrid chunk budget in tokens (docling's
+            `max_tokens`; server default overridable via
+            `DOCLING_CHUNK_MAX_TOKENS`).
+        chunk_merge_peers:
+          type: boolean
+          default: true
+          description: >
+            `to=chunks` — merge undersized successive hybrid chunks with the
+            same headings (docling's `merge_peers`).
     DoclingDocument:
       type: object
       description: >
@@ -475,6 +505,14 @@ components:
         groups: { type: array, items: { type: object } }
         tables: { type: array, items: { type: object } }
         pictures: { type: array, items: { type: object } }
+    Chunker:
+      type: string
+      enum: [hierarchical, hybrid]
+      description: >
+        `to=chunks` — return only this chunker's records (docling's
+        `ChunkerType`, #256). Unset returns both: `hierarchical` always,
+        `hybrid` when a tokenizer is available. An explicit `hybrid` without a
+        usable tokenizer is a 400.
     Chunks:
       type: object
       description: Chunker output for `to=chunks`.
@@ -565,3 +603,11 @@ components:
       { name: asr_lang, in: query, schema: { type: string } }
     video_frames:
       { name: video_frames, in: query, schema: { type: integer, minimum: 0 } }
+    chunker:
+      { name: chunker, in: query, schema: { $ref: "#/components/schemas/Chunker" } }
+    chunk_tokenizer:
+      { name: chunk_tokenizer, in: query, schema: { type: string } }
+    chunk_max_tokens:
+      { name: chunk_max_tokens, in: query, schema: { type: integer, minimum: 1 } }
+    chunk_merge_peers:
+      { name: chunk_merge_peers, in: query, schema: { type: boolean } }
