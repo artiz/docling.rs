@@ -58,6 +58,14 @@
 //! - `ebcdic_layout` — EBCDIC (#252): the copybook layout as inline
 //!   `EbcdicLayout` JSON (mandatory for the format — the bytes are
 //!   meaningless without it)
+//! - `chunker`, `chunk_tokenizer`, `chunk_max_tokens`, `chunk_merge_peers` —
+//!   per-request `to=chunks` configuration (#256, mirroring docling's
+//!   service-datamodel `ChunkerType`/`HybridChunkerOptions`): pick one
+//!   chunker (`hierarchical` | `hybrid`; unset returns both), a server-local
+//!   relative `tokenizer.json` path, the hybrid token budget (default 256 /
+//!   `DOCLING_CHUNK_MAX_TOKENS`) and peer-merging (default true). An
+//!   explicitly requested `chunker=hybrid` without a usable tokenizer is a
+//!   400 instead of the legacy silent skip
 //!
 //! Markdown converts through the streaming serializer and the response body
 //! streams page by page (chunked transfer); `json`/`dclx`/`chunks` (and every
@@ -415,6 +423,22 @@ struct ConvertOptions {
     /// `to=images` render scale in pixels per PDF point (#243): default 2.0
     /// (144 dpi, the pipeline's own render scale), accepted range 0.1–4.0.
     scale: Option<f32>,
+    /// Which chunker `to=chunks` returns (#256, docling's `ChunkerType`):
+    /// `hierarchical` | `hybrid`; unset keeps the legacy both-chunkers shape
+    /// (hierarchical always, hybrid best-effort).
+    chunker: Option<String>,
+    /// Hybrid tokenizer for `to=chunks` (#256): a server-local *relative*
+    /// path to a HuggingFace `tokenizer.json` (absolute paths and `..` are
+    /// rejected — requests select among tokenizers the operator deployed,
+    /// they don't read arbitrary server files). Default:
+    /// `DOCLING_CHUNK_TOKENIZER`, else `.models/chunk/tokenizer.json`.
+    chunk_tokenizer: Option<String>,
+    /// Hybrid chunk budget for `to=chunks` (#256, docling's `max_tokens`);
+    /// default `DOCLING_CHUNK_MAX_TOKENS`, else 256.
+    chunk_max_tokens: Option<usize>,
+    /// Hybrid peer-merging for `to=chunks` (docling's `merge_peers`, default
+    /// true, #256).
+    chunk_merge_peers: Option<bool>,
 }
 
 impl ConvertOptions {
@@ -441,6 +465,10 @@ impl ConvertOptions {
             ocr_mode: self.ocr_mode.or(base.ocr_mode),
             ocr_scale: self.ocr_scale.or(base.ocr_scale),
             scale: self.scale.or(base.scale),
+            chunker: self.chunker.or(base.chunker),
+            chunk_tokenizer: self.chunk_tokenizer.or(base.chunk_tokenizer),
+            chunk_max_tokens: self.chunk_max_tokens.or(base.chunk_max_tokens),
+            chunk_merge_peers: self.chunk_merge_peers.or(base.chunk_merge_peers),
         }
     }
 }
@@ -572,7 +600,44 @@ fn validate_output(options: &ConvertOptions) -> Result<(String, ImageMode), ApiE
     // and a bad option deserves a plain 400 up front.
     parse_ocr_mode(options.ocr_mode.as_deref())?;
     parse_ocr_scale(options.ocr_scale)?;
+    parse_chunk_options(options)?;
     Ok((to, image_mode))
+}
+
+/// Validate and build the per-request chunking configuration (#256). The
+/// tokenizer must be a server-local *relative* path with no `..` components:
+/// requests pick among tokenizers the operator deployed next to the server,
+/// they don't read arbitrary files (the unrestricted knob is the operator-set
+/// `DOCLING_CHUNK_TOKENIZER` env).
+fn parse_chunk_options(
+    options: &ConvertOptions,
+) -> Result<docling::chunks::ChunkOptions, ApiError> {
+    let chunker = options
+        .chunker
+        .as_deref()
+        .map(docling::chunks::ChunkerKind::parse)
+        .transpose()
+        .map_err(ApiError::Bad)?;
+    if let Some(p) = options.chunk_tokenizer.as_deref() {
+        let path = std::path::Path::new(p);
+        let unsafe_component = path.components().any(|c| {
+            !matches!(
+                c,
+                std::path::Component::Normal(_) | std::path::Component::CurDir
+            )
+        });
+        if unsafe_component || p.is_empty() {
+            return Err(ApiError::Bad(format!(
+                "chunk_tokenizer must be a relative path without '..' components, got {p:?}"
+            )));
+        }
+    }
+    Ok(docling::chunks::ChunkOptions {
+        chunker,
+        tokenizer: options.chunk_tokenizer.clone(),
+        max_tokens: options.chunk_max_tokens,
+        merge_peers: options.chunk_merge_peers,
+    })
 }
 
 async fn convert(
@@ -884,9 +949,7 @@ fn run_conversion(
         }
         let name = source.name.clone();
         let document = convert_document(state, source, options)?;
-        return Ok(render_stored(
-            state, to, image_mode, &name, &document, options,
-        ));
+        return render_stored(state, to, image_mode, &name, &document, options);
     }
     let items: Vec<serde_json::Value> = sources
         .into_iter()
@@ -1040,9 +1103,9 @@ fn render_stored(
     name: &str,
     document: &DoclingDocument,
     options: &ConvertOptions,
-) -> StoredResponse {
+) -> Result<StoredResponse, ApiError> {
     let confidence = confidence_header(document);
-    match to {
+    Ok(match to {
         "md" | "markdown" => StoredResponse {
             content_type: "text/markdown; charset=utf-8",
             disposition: None,
@@ -1062,8 +1125,13 @@ fn render_stored(
             }
         }
         "chunks" => {
+            let chunk_opts = parse_chunk_options(options)?;
             let mut warnings: Vec<String> = Vec::new();
-            let mut records = docling::chunks::chunk_records(document, &mut |m| warnings.push(m));
+            let mut records =
+                docling::chunks::chunk_records_with(document, &chunk_opts, &mut |m| {
+                    warnings.push(m)
+                })
+                .map_err(ApiError::Bad)?;
             if !warnings.is_empty() {
                 records["warnings"] = json!(warnings);
             }
@@ -1081,7 +1149,7 @@ fn render_stored(
             body: docling::dclx::to_dclx_bytes(document),
         },
         _ => unreachable!("validated above"),
-    }
+    })
 }
 
 /// One batch item (#182) as JSON. Text outputs inline as strings, the
@@ -1109,12 +1177,28 @@ fn batch_item(
             item["document"] = value;
         }
         "chunks" => {
+            // A per-request chunking config that can't be honored fails this
+            // item (batch semantics: other items still convert).
             let mut warnings: Vec<String> = Vec::new();
-            let mut records = docling::chunks::chunk_records(document, &mut |m| warnings.push(m));
-            if !warnings.is_empty() {
-                records["warnings"] = json!(warnings);
+            match parse_chunk_options(options).map(|o| {
+                docling::chunks::chunk_records_with(document, &o, &mut |m| warnings.push(m))
+            }) {
+                Ok(Ok(mut records)) => {
+                    if !warnings.is_empty() {
+                        records["warnings"] = json!(warnings);
+                    }
+                    item["chunks"] = records;
+                }
+                Ok(Err(e)) => {
+                    item["status"] = json!("failure");
+                    item["error"] = json!(e);
+                }
+                Err(e) => {
+                    let (_, msg) = api_error_parts(e);
+                    item["status"] = json!("failure");
+                    item["error"] = json!(msg);
+                }
             }
-            item["chunks"] = records;
         }
         "dclx" => {
             item["dclx_base64"] = json!(docling::base64::encode(&docling::dclx::to_dclx_bytes(
@@ -1205,6 +1289,16 @@ async fn read_multipart(
                 })?);
             }
             "ebcdic_layout" => body_opts.ebcdic_layout = Some(text_field(field).await?),
+            "chunker" => body_opts.chunker = Some(text_field(field).await?),
+            "chunk_tokenizer" => body_opts.chunk_tokenizer = Some(text_field(field).await?),
+            "chunk_max_tokens" => {
+                let v = text_field(field).await?;
+                body_opts.chunk_max_tokens = Some(v.parse().map_err(|_| {
+                    ApiError::Bad(format!(
+                        "chunk_max_tokens must be a positive integer, got {v:?}"
+                    ))
+                })?);
+            }
             "scale" => {
                 let v = text_field(field).await?;
                 body_opts.scale =
@@ -1229,7 +1323,8 @@ async fn read_multipart(
             | "fetch_images"
             | "list_attachments"
             | "skip_empty_cells"
-            | "compact_tables" => {
+            | "compact_tables"
+            | "chunk_merge_peers" => {
                 let v = text_field(field).await?;
                 let b = matches!(v.as_str(), "1" | "true" | "yes" | "on");
                 match name.as_str() {
@@ -1242,6 +1337,7 @@ async fn read_multipart(
                     "list_attachments" => body_opts.list_attachments = Some(b),
                     "skip_empty_cells" => body_opts.skip_empty_cells = Some(b),
                     "compact_tables" => body_opts.compact_tables = Some(b),
+                    "chunk_merge_peers" => body_opts.chunk_merge_peers = Some(b),
                     _ => body_opts.fetch_images = Some(b),
                 }
             }

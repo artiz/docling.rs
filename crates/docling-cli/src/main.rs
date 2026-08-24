@@ -7,7 +7,7 @@
 //! (docling's independent `do_ocr=False`); `--no-ocr` remains the
 //! skip-everything fast path.
 //!
-//! Usage: docling-rs [--strict] [--to md|json|dclx|chunks|images] [--pages A-B] [--scale X] [--images MODE] [--input GLOB --output DIR [--jobs N]] [--fetch-images] [--list-attachments] [--skip-empty-cells] [--compact-tables] [--ebcdic-layout JSON|PATH] [--no-stream] [--no-table-former] [--no-ocr] [--skip-ocr] [--force-full-page-ocr] [--no-text-panels] [--ocr-lang en|ch] [--ocr-mode MODE] [--ocr-scale X] [--pipeline standard|vlm] [--vlm-endpoint URL] [--vlm-model NAME] [--asr-model PRESET] [--asr-lang CODE] [--video-frames N] [--use-web-browser] [--enrich-picture-classes] [--enrich-code] [--enrich-formula] <input-file>
+//! Usage: docling-rs [--strict] [--to md|json|dclx|chunks|images] [--pages A-B] [--scale X] [--images MODE] [--input GLOB --output DIR [--jobs N]] [--fetch-images] [--list-attachments] [--skip-empty-cells] [--compact-tables] [--ebcdic-layout JSON|PATH] [--no-stream] [--no-table-former] [--no-ocr] [--skip-ocr] [--force-full-page-ocr] [--no-text-panels] [--ocr-lang en|ch] [--ocr-mode MODE] [--ocr-scale X] [--chunker hierarchical|hybrid] [--chunk-tokenizer PATH] [--chunk-max-tokens N] [--no-chunk-merge-peers] [--pipeline standard|vlm] [--vlm-endpoint URL] [--vlm-model NAME] [--asr-model PRESET] [--asr-lang CODE] [--video-frames N] [--use-web-browser] [--enrich-picture-classes] [--enrich-code] [--enrich-formula] <input-file>
 //!   --input GLOB|DIR   batch mode (#205): convert every file the glob matches
 //!                      (`--input '/data/reports/**/*.pdf'` — quote it so the
 //!                      shell doesn't expand it) instead of one positional file.
@@ -108,6 +108,7 @@ use std::io::{self, Write};
 use std::path::Path;
 use std::process::ExitCode;
 
+use docling::chunks::{ChunkOptions, ChunkerKind};
 use docling::{DocumentConverter, ImageMode, InputFormat, Pipeline, SourceDocument};
 
 fn main() -> ExitCode {
@@ -158,6 +159,7 @@ fn main() -> ExitCode {
     let mut ocr_lang: Option<String> = None;
     let mut ocr_mode: Option<String> = None;
     let mut ocr_scale: Option<f32> = None;
+    let mut chunk_opts = docling::chunks::ChunkOptions::default();
     let mut pipeline: Option<String> = None;
     let mut vlm_endpoint: Option<String> = None;
     let mut vlm_model: Option<String> = None;
@@ -311,6 +313,35 @@ fn main() -> ExitCode {
                     return ExitCode::from(2);
                 }
             },
+            // Per-run `--to chunks` configuration (#256, mirrors the serve
+            // fields / docling's service-datamodel `HybridChunkerOptions`);
+            // the DOCLING_CHUNK_* env knobs stay the defaults.
+            "--chunker" => match args.next().as_deref().map(ChunkerKind::parse) {
+                Some(Ok(k)) => chunk_opts.chunker = Some(k),
+                Some(Err(e)) => {
+                    eprintln!("error: --chunker: {e}");
+                    return ExitCode::from(2);
+                }
+                None => {
+                    eprintln!("error: --chunker needs a value (hierarchical|hybrid)");
+                    return ExitCode::from(2);
+                }
+            },
+            "--chunk-tokenizer" => match args.next() {
+                Some(v) => chunk_opts.tokenizer = Some(v),
+                None => {
+                    eprintln!("error: --chunk-tokenizer needs a tokenizer.json path");
+                    return ExitCode::from(2);
+                }
+            },
+            "--chunk-max-tokens" => match args.next().map(|v| v.trim().parse::<usize>()) {
+                Some(Ok(n)) if n > 0 => chunk_opts.max_tokens = Some(n),
+                _ => {
+                    eprintln!("error: --chunk-max-tokens needs a positive integer");
+                    return ExitCode::from(2);
+                }
+            },
+            "--no-chunk-merge-peers" => chunk_opts.merge_peers = Some(false),
             // Pipeline selection (#77): `standard` (default, the ML stack) or
             // `vlm` — render pages and convert them through a remote
             // OpenAI-compatible vision endpoint returning DocLang.
@@ -441,13 +472,14 @@ fn main() -> ExitCode {
             ocr_mode,
             ocr_scale,
             scale,
+            chunk: chunk_opts.clone(),
             vlm,
         };
         return run_batch(files, &base, Path::new(&outdir), jobs, &cfg);
     }
 
     let Some(path) = path else {
-        eprintln!("usage: docling-rs [--strict] [--to md|json|dclx|chunks|images] [--scale X] [--images MODE] [--input GLOB --output DIR [--jobs N]] [--fetch-images] [--list-attachments] [--skip-empty-cells] [--compact-tables] [--ebcdic-layout JSON|PATH] [--no-stream] [--no-table-former] [--no-ocr] [--skip-ocr] [--force-full-page-ocr] [--no-text-panels] [--ocr-lang en|ch] [--ocr-mode MODE] [--ocr-scale X] [--use-web-browser] <input-file>");
+        eprintln!("usage: docling-rs [--strict] [--to md|json|dclx|chunks|images] [--scale X] [--images MODE] [--input GLOB --output DIR [--jobs N]] [--fetch-images] [--list-attachments] [--skip-empty-cells] [--compact-tables] [--ebcdic-layout JSON|PATH] [--no-stream] [--no-table-former] [--no-ocr] [--skip-ocr] [--force-full-page-ocr] [--no-text-panels] [--ocr-lang en|ch] [--ocr-mode MODE] [--ocr-scale X] [--chunker hierarchical|hybrid] [--chunk-tokenizer PATH] [--chunk-max-tokens N] [--no-chunk-merge-peers] [--use-web-browser] <input-file>");
         return ExitCode::from(2);
     };
 
@@ -527,7 +559,7 @@ fn main() -> ExitCode {
             }
         };
         document.strict_markdown = strict;
-        return output_document(document, &to, image_mode, &path);
+        return output_document(document, &to, image_mode, &path, &chunk_opts);
     }
 
     let mut converter = DocumentConverter::new()
@@ -577,7 +609,7 @@ fn main() -> ExitCode {
                 if let Some(doc) =
                     pdf_no_ocr_fallback(&e.to_string(), is_pdf, no_ocr, strict, &path, pages)
                 {
-                    return output_document(doc, &to, image_mode, &path);
+                    return output_document(doc, &to, image_mode, &path, &chunk_opts);
                 }
                 eprintln!("error: {e}");
                 return ExitCode::FAILURE;
@@ -609,7 +641,7 @@ fn main() -> ExitCode {
                             &path,
                             pages,
                         ) {
-                            return output_document(doc, &to, image_mode, &path);
+                            return output_document(doc, &to, image_mode, &path, &chunk_opts);
                         }
                     }
                     eprintln!("error: {e}");
@@ -633,13 +665,13 @@ fn main() -> ExitCode {
             if let Some(doc) =
                 pdf_no_ocr_fallback(&e.to_string(), is_pdf, no_ocr, strict, &path, pages)
             {
-                return output_document(doc, &to, image_mode, &path);
+                return output_document(doc, &to, image_mode, &path, &chunk_opts);
             }
             eprintln!("error: {e}");
             return ExitCode::FAILURE;
         }
     };
-    output_document(document, &to, image_mode, &path)
+    output_document(document, &to, image_mode, &path, &chunk_opts)
 }
 
 /// Launch-blocker fallback: a bare `cargo install docling-cli` ships neither
@@ -713,6 +745,8 @@ struct BatchCfg {
     ocr_scale: Option<f32>,
     /// `--to images` render scale (pixels per PDF point, #243).
     scale: f32,
+    /// Per-run `--to chunks` configuration (#256).
+    chunk: ChunkOptions,
     vlm: Option<docling::vlm::VlmOptions>,
 }
 
@@ -988,7 +1022,7 @@ fn batch_convert_one(
     match cfg.to.as_str() {
         "json" => std::fs::write(&out, document.export_to_json())
             .map_err(|e| format!("writing {}: {e}", out.display()))?,
-        "chunks" => std::fs::write(&out, chunks_json(&document))
+        "chunks" => std::fs::write(&out, chunks_json(&document, &cfg.chunk)?)
             .map_err(|e| format!("writing {}: {e}", out.display()))?,
         "dclx" => docling::dclx::save_as_dclx(&document, &out).map_err(|e| e.to_string())?,
         _ => {
@@ -1123,6 +1157,7 @@ fn output_document(
     to: &str,
     image_mode: ImageMode,
     path: &str,
+    chunk: &ChunkOptions,
 ) -> ExitCode {
     if to == "json" {
         println!("{}", document.export_to_json());
@@ -1133,8 +1168,15 @@ fn output_document(
         // Chunking conformance/debug dump: a JSON object with the hierarchical
         // chunk records and, when a tokenizer is configured, the hybrid ones.
         // `DOCLING_CHUNK_TOKENIZER` points at a HuggingFace tokenizer.json
-        // (`DOCLING_CHUNK_MAX_TOKENS` overrides the default budget of 256).
-        print!("{}", chunks_json(&document));
+        // (`DOCLING_CHUNK_MAX_TOKENS` overrides the default budget of 256);
+        // `--chunker`/`--chunk-*` override per run (#256).
+        match chunks_json(&document, chunk) {
+            Ok(json) => print!("{json}"),
+            Err(e) => {
+                eprintln!("error: chunks: {e}");
+                return ExitCode::FAILURE;
+            }
+        }
         return ExitCode::SUCCESS;
     }
 
@@ -1299,14 +1341,19 @@ fn bench_warm_conversion(
 }
 
 /// Serialize the chunk records `--to chunks` prints (see
-/// [`docling::chunks::chunk_records`] for the tokenizer resolution rules).
-fn chunks_json(document: &docling::DoclingDocument) -> String {
+/// [`docling::chunks::chunk_records_with`] for the tokenizer resolution
+/// rules). Errors only when an explicitly requested configuration can't be
+/// honored (`--chunker hybrid` without a usable tokenizer).
+fn chunks_json(
+    document: &docling::DoclingDocument,
+    chunk: &ChunkOptions,
+) -> Result<String, String> {
     let mut warn = |msg: String| eprintln!("warning: {msg}");
-    let out = docling::chunks::chunk_records(document, &mut warn);
-    format!(
+    let out = docling::chunks::chunk_records_with(document, chunk, &mut warn)?;
+    Ok(format!(
         "{}\n",
         serde_json::to_string_pretty(&out).expect("chunks are serializable")
-    )
+    ))
 }
 
 #[cfg(test)]

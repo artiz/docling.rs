@@ -766,3 +766,66 @@ async fn index_serves_docs_and_form() {
     let body = body_string(response).await;
     assert!(body.contains("/v1/convert") && body.contains("<form") || body.contains("Convert"));
 }
+
+#[tokio::test]
+async fn chunker_hierarchical_returns_only_that_chunker() {
+    // #256: an explicit chunker selects a single record set.
+    let (ct, body) = multipart(
+        "t.csv",
+        b"a,b\n1,2\n",
+        &[("to", "chunks"), ("chunker", "hierarchical")],
+    );
+    let response = app().oneshot(convert_request(&ct, body, "")).await.unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let v: serde_json::Value = serde_json::from_str(&body_string(response).await).unwrap();
+    assert!(v.get("hierarchical").is_some());
+    assert!(v.get("hybrid").is_none(), "hierarchical only: {v}");
+}
+
+#[tokio::test]
+async fn unknown_chunker_is_a_400() {
+    let (ct, body) = multipart(
+        "t.csv",
+        b"a,b\n1,2\n",
+        &[("to", "chunks"), ("chunker", "nope")],
+    );
+    let response = app().oneshot(convert_request(&ct, body, "")).await.unwrap();
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+}
+
+#[tokio::test]
+async fn chunk_tokenizer_path_escape_is_a_400() {
+    // #256: the request-side tokenizer must stay a server-local relative
+    // path — traversal is rejected before any conversion work.
+    for bad in ["../secrets/tok.json", "/etc/passwd"] {
+        let (ct, body) = multipart(
+            "t.csv",
+            b"a,b\n1,2\n",
+            &[("to", "chunks"), ("chunk_tokenizer", bad)],
+        );
+        let response = app().oneshot(convert_request(&ct, body, "")).await.unwrap();
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST, "for {bad:?}");
+    }
+}
+
+#[tokio::test]
+async fn explicit_hybrid_without_tokenizer_is_a_400() {
+    // Legacy both-chunkers mode silently skips hybrid when no tokenizer is
+    // installed; asking for hybrid outright must fail loudly instead. (The
+    // test env has no .models/chunk/tokenizer.json and no
+    // DOCLING_CHUNK_TOKENIZER; if one is installed, the request succeeds —
+    // accept both, but never a silent hierarchical-only 200.)
+    let (ct, body) = multipart(
+        "t.csv",
+        b"a,b\n1,2\n",
+        &[("to", "chunks"), ("chunker", "hybrid")],
+    );
+    let response = app().oneshot(convert_request(&ct, body, "")).await.unwrap();
+    if response.status() == StatusCode::OK {
+        let v: serde_json::Value = serde_json::from_str(&body_string(response).await).unwrap();
+        assert!(v.get("hybrid").is_some(), "hybrid requested: {v}");
+        assert!(v.get("hierarchical").is_none());
+    } else {
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    }
+}
