@@ -56,8 +56,10 @@
 # doesn't host the int8 assets (older tag), a note explains how to produce
 # them locally with scripts/install/quantize_models.py.
 #
-# pdfium is Linux x64 only for now, matching what's hosted in the release; for
-# other platforms (or to build the models from source) see scripts/install/pdf_setup.sh.
+# pdfium: the models release hosts the pinned Linux x64 libpdfium.so
+# (the conformance build); on Linux arm64 the bblanchon prebuilt of the
+# same release line is fetched instead (#281). Other platforms (or building
+# the models from source): see scripts/install/pdf_setup.sh.
 #
 # Idempotent: skips files already on disk. Pass --force to re-fetch everything.
 set -eu
@@ -139,7 +141,35 @@ fetch_optional() { # <url> <dest> — ignore a missing/failed asset (sidecar fil
 }
 
 echo "fetching docling.rs ML dependencies from $BASE_URL"
-fetch "$BASE_URL/libpdfium.so" .pdfium/lib/libpdfium.so
+# pdfium by machine architecture (#281): x64 takes the release's pinned
+# conformance build; arm64 falls back to the bblanchon prebuilt (same source
+# the pinned x64 lib was built from). The tarball unpacks lib/libpdfium.so
+# into .pdfium/ directly.
+case "$(uname -m)" in
+  x86_64 | amd64)
+    fetch "$BASE_URL/libpdfium.so" .pdfium/lib/libpdfium.so
+    ;;
+  aarch64 | arm64)
+    if [ "$FORCE" = false ] && [ -f .pdfium/lib/libpdfium.so ]; then
+      echo "  = .pdfium/lib/libpdfium.so (already present)"
+    else
+      echo "  (arm64: pdfium from the bblanchon prebuilt — the pinned x64 build doesn't apply)"
+      # shellcheck disable=SC2086
+      if curl -fsSL $CURL_TIMEOUTS -o .pdfium/pdfium.tgz \
+          "https://github.com/bblanchon/pdfium-binaries/releases/latest/download/pdfium-linux-arm64.tgz" 2>/dev/null; then
+        tar xzf .pdfium/pdfium.tgz -C .pdfium lib/libpdfium.so
+        rm -f .pdfium/pdfium.tgz
+        echo "  > .pdfium/lib/libpdfium.so"
+      else
+        rm -f .pdfium/pdfium.tgz
+        echo "  ! pdfium-linux-arm64.tgz not fetched (offline?) — PDF rasterization stays unavailable"
+      fi
+    fi
+    ;;
+  *)
+    echo "  (skipping pdfium: unsupported arch $(uname -m) — see scripts/install/pdf_setup.sh)"
+    ;;
+esac
 fetch "$BASE_URL/layout_heron.onnx" .models/layout_heron.onnx
 fetch "$BASE_URL/ocr_rec.onnx" .models/ocr_rec.onnx
 fetch "$BASE_URL/ppocr_keys_v1.txt" .models/ppocr_keys_v1.txt

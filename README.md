@@ -1241,7 +1241,15 @@ docker run --rm -v "$PWD:/data" docling-rs /data/input.pdf --to json
 ```
 
 The image converts PDFs/images fully offline; the model export (torch +
-`docling-ibm-models`) happens only at build time, never at runtime.
+`docling-ibm-models`) happens only at build time, never at runtime. Both
+`linux/amd64` and `linux/arm64` build (#281) — the pdfium prebuilt follows
+BuildKit's `TARGETARCH`, and `scripts/install/download_dependencies.sh`
+likewise picks the pdfium for the machine it runs on (pinned x64 from the
+models release; the bblanchon `arm64` prebuilt elsewhere):
+
+```bash
+docker buildx build --platform linux/arm64 -f examples/Dockerfile -t docling-rs .
+```
 
 ## Performance
 

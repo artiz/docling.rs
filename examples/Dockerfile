@@ -9,6 +9,10 @@
 #
 # Build from the repository root:
 #   docker build -f examples/Dockerfile -t docling-rs .
+# Multi-arch (#281): the pdfium prebuilt is selected by BuildKit's TARGETARCH
+# (amd64 and arm64 are supported; everything else in the image is
+# arch-neutral or built from source), e.g. on/for an ARM64 host:
+#   docker buildx build --platform linux/arm64 -f examples/Dockerfile -t docling-rs .
 # Convert a document (Markdown to stdout):
 #   docker run --rm -v "$PWD:/data" docling-rs /data/input.pdf
 #
@@ -68,6 +72,12 @@ RUN pip install --no-cache-dir --extra-index-url https://download.pytorch.org/wh
         docling-ibm-models onnxscript onnxruntime huggingface_hub \
         opencv-python-headless sympy pypdfium2 pillow numpy
 
+# TARGETARCH is set by BuildKit/buildx from --platform (amd64, arm64, …); a
+# classic single-arch build leaves it empty, so fall back to the stage's own
+# dpkg architecture. Maps onto pdfium-binaries' naming (amd64 -> x64), which
+# is the only arch-specific asset in this stage — the ONNX models and
+# tokenizer are architecture-neutral (#281).
+ARG TARGETARCH
 RUN true \
     # TableFormer encoder/decoder/bbox. Exports both decoder generations: the
     # #97 hoisted-KV step graph (decoder_kv.onnx — per-layer cross-attention
@@ -87,9 +97,14 @@ RUN true \
     # all-MiniLM-L6-v2 tokenizer — the hybrid chunker works out of the box
     && curl -fsSL -o /opt/models/chunk/tokenizer.json \
         "https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2/resolve/main/tokenizer.json" \
-    # pdfium prebuilt (page rasterization only)
+    # pdfium prebuilt (page rasterization only), arch-selected (#281)
+    && case "${TARGETARCH:-$(dpkg --print-architecture)}" in \
+        amd64) PDFIUM_ARCH=x64 ;; \
+        arm64) PDFIUM_ARCH=arm64 ;; \
+        *) echo "unsupported TARGETARCH '${TARGETARCH}' (amd64|arm64)" >&2; exit 1 ;; \
+    esac \
     && curl -fsSL -o /tmp/pdfium.tgz \
-        "https://github.com/bblanchon/pdfium-binaries/releases/latest/download/pdfium-linux-x64.tgz" \
+        "https://github.com/bblanchon/pdfium-binaries/releases/latest/download/pdfium-linux-${PDFIUM_ARCH}.tgz" \
     && tar xzf /tmp/pdfium.tgz -C /opt/pdfium \
     && rm /tmp/pdfium.tgz \
     && rm -rf /root/.cache/huggingface
@@ -123,8 +138,9 @@ RUN apt-get update \
 
 WORKDIR /app
 
-# TARGET_CPU: empty (default) = portable x86-64 image; "x86-64-v3" = require
-# AVX2 (2013+ CPUs, most cloud fleets); "native" = tune for the build host
+# TARGET_CPU: empty (default) = portable image for the build platform
+# (x86-64 or arm64); "x86-64-v3" = require AVX2 (2013+ CPUs, most cloud
+# fleets — x86-64 builds only); "native" = tune for the build host
 # (only for images that run where they're built). Affects the Rust-side image
 # processing hot paths (resize, normalization); ONNX Runtime ships its own
 # runtime CPU dispatch either way.

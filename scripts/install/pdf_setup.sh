@@ -18,7 +18,19 @@ set -euo pipefail
 cd "$(dirname "$0")/../.."   # docling.rs/
 mkdir -p .pdfium .models
 
-PLATFORM="${PDFIUM_PLATFORM:-linux-x64}"
+# pdfium-binaries platform: auto-detected from the host (#281);
+# $PDFIUM_PLATFORM overrides (e.g. a cross-arch fetch).
+detect_platform() {
+  case "$(uname -s)" in
+    Darwin) os=mac ;;
+    *) os=linux ;;
+  esac
+  case "$(uname -m)" in
+    aarch64 | arm64) echo "$os-arm64" ;;
+    *) echo "$os-x64" ;;
+  esac
+}
+PLATFORM="${PDFIUM_PLATFORM:-$(detect_platform)}"
 if [ ! -f .pdfium/lib/libpdfium.so ]; then
   echo "→ libpdfium ($PLATFORM)"
   curl -sSL -o /tmp/pdfium.tgz \
