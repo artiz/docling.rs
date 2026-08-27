@@ -76,8 +76,11 @@ cargo check -p docling --no-default-features --features pdf-text \
 - `.models/` (repo root): layout, TableFormer, OCR, ASR (`.models/asr/`,
   presets in subdirs), enrichment, embedder. `.pdfium/lib/libpdfium.so` for
   page rendering. Fetch: `scripts/install/download_dependencies.sh`.
-- Resolution is CWD-relative with exe-dir fallback; env overrides:
-  `PDFIUM_DYNAMIC_LIB_PATH`, `DOCLING_ASR_{ENCODER,DECODER,VOCAB}`,
+- Resolution is CWD-relative, then `$DOCLING_RS_MODELS_DIR` for `.models/…`
+  paths (#285 — whole-dir override keeping the engine's own selection logic,
+  e.g. the OCR en/ch pair; the py bindings point it at their cache), then
+  exe-dir fallback; env overrides: `PDFIUM_DYNAMIC_LIB_PATH`,
+  `DOCLING_ASR_{ENCODER,DECODER,VOCAB}`,
   `DOCLING_FFMPEG` (video frames — ffmpeg is a runtime binary, never a build
   dep), `DOCLING_RS_PDF_WORKERS/_THREADS/_INTRA`, `DOCLING_RS_TF_INTRA` (#262),
   `DOCLING_RS_NO_ARENA` (#263; serve defaults it on),
