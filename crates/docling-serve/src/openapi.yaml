@@ -112,22 +112,45 @@ paths:
             schema:
               allOf:
                 - type: object
-                  required: [url]
                   properties:
                     url:
                       type: string
                       format: uri
                       description: >
-                        Source URL. Honored only when the server runs with
+                        Source URL shorthand (mutually exclusive with `sources`).
+                        Honored only when the server runs with
                         `--allow-url-fetch`, otherwise the request is rejected.
                     file_name:
                       type: string
                       description: Overrides the format-selecting name taken from the URL path.
+                    sources:
+                      type: array
+                      minItems: 1
+                      items: { $ref: "#/components/schemas/SourceSpec" }
+                      description: >
+                        docling service-datamodel sources (#139) — mutually
+                        exclusive with `url`. `http` and the cloud kinds need
+                        `--allow-url-fetch`; cloud kinds additionally need a
+                        server built with the `cloud` cargo feature.
+                    target:
+                      $ref: "#/components/schemas/TargetSpec"
                 - $ref: "#/components/schemas/Options"
             examples:
               markdown:
                 summary: URL to Markdown
                 value: { url: "https://example.com/doc.pdf", to: "md" }
+              s3_pipeline:
+                summary: Convert an S3 prefix into another S3 prefix (#139)
+                value:
+                  sources:
+                    - { kind: s3, endpoint: "s3.us-east-2.amazonaws.com",
+                        access_key: "…", secret_key: "…", bucket: "in",
+                        key_prefix: "reports/", max_num_elements: 25 }
+                  target:
+                    { kind: s3, endpoint: "s3.us-east-2.amazonaws.com",
+                      access_key: "…", secret_key: "…", bucket: "out",
+                      key_prefix: "converted/" }
+                  to: "json"
       responses:
         "200":
           description: The converted document.
@@ -505,6 +528,37 @@ components:
         groups: { type: array, items: { type: object } }
         tables: { type: array, items: { type: object } }
         pictures: { type: array, items: { type: object } }
+    SourceSpec:
+      type: object
+      required: [kind]
+      description: >
+        docling `kind`-tagged source (#139). `file`: {base64_string, filename}.
+        `http`: {url, headers?}. `s3`: {endpoint, access_key, secret_key,
+        bucket, key_prefix?, verify_ssl?, max_num_elements?}. `azure_blob`:
+        {account_name, container, connection_string, blob_prefix?,
+        max_num_elements?}. `google_cloud_storage`: {bucket, key_prefix?,
+        project?, service_account_key?, max_num_elements?}. Field names mirror
+        docling's service-datamodel models; credentials ride in the request
+        (trusted-client + TLS assumption, as upstream).
+      properties:
+        kind:
+          type: string
+          enum: [file, http, s3, azure_blob, google_cloud_storage]
+      additionalProperties: true
+    TargetSpec:
+      type: object
+      required: [kind]
+      description: >
+        docling `kind`-tagged output target (#139): `inbody` (default — the
+        response body) or a cloud store with the same coordinate fields as the
+        matching source kind; each converted document uploads as
+        `<stem>.<ext>` under the prefix and the response is a
+        `RemoteTargetResult` acknowledgment with per-item outcomes.
+      properties:
+        kind:
+          type: string
+          enum: [inbody, s3, azure_blob, google_cloud_storage]
+      additionalProperties: true
     Chunker:
       type: string
       enum: [hierarchical, hybrid]

@@ -217,6 +217,15 @@ enable them; the fetcher blocks private-IP targets
 (`DOCLING_RS_MAX_FETCH_BYTES`). The server binds loopback by default — front
 it with a policy proxy for anything wider.
 
+The JSON body also takes docling's service-datamodel `sources`/`target` shape
+(#139): `kind`-tagged `file` (base64) and `http` (URL + headers) sources, and —
+with the opt-in `cloud` cargo feature (feature-gated `object_store`) — `s3`,
+`azure_blob` and `google_cloud_storage` sources and output targets, coordinate
+fields mirroring upstream's models. A cloud target uploads each converted
+output as `<stem>.<ext>` under the prefix and answers with a
+`RemoteTargetResult` acknowledgment; everything outbound sits behind
+`--allow-url-fetch`. See the `s3_pipeline` example in `/openapi.yaml`.
+
 ## In the browser — `docling-wasm`
 
 The declarative converters (everything except the PDF/image/audio ML
