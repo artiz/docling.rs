@@ -266,3 +266,65 @@ def test_ocr_kwargs_forward_and_validate():
         DocumentConverter(
             format_options={InputFormat.PDF: PdfFormatOption(pipeline_options=shaped)}
         )
+
+
+def test_ensure_env_leaves_ocr_lang_selectable(tmp_path, monkeypatch):
+    """#285: ensure_env must NOT pin DOCLING_OCR_REC_ONNX/DOCLING_OCR_DICT —
+    those per-file overrides beat the engine's en/ch pair selection and made
+    the ocr_lang kwarg silently inert. The cache is handed over as
+    DOCLING_RS_MODELS_DIR instead, and download_models() knows the English
+    pair."""
+    from docling_rs import models as m
+
+    # A fake cache with the layout the downloader produces.
+    cache = tmp_path / "cache"
+    for rel in (
+        "models/ocr_rec.onnx",
+        "models/ppocr_keys_v1.txt",
+        "models/ocr_rec_en.onnx",
+        "models/en_dict.txt",
+    ):
+        p = cache / rel
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_bytes(b"stub")
+
+    # Run from a directory without a local .models/ (a checkout's own assets
+    # outrank the cache by design and would short-circuit the test).
+    monkeypatch.chdir(tmp_path)
+    for var in ("DOCLING_RS_MODELS_DIR", "DOCLING_OCR_REC_ONNX", "DOCLING_OCR_DICT"):
+        monkeypatch.delenv(var, raising=False)
+
+    m.ensure_env(cache)
+
+    import os
+
+    assert os.environ.get("DOCLING_RS_MODELS_DIR") == str(cache / "models")
+    assert "DOCLING_OCR_REC_ONNX" not in os.environ
+    assert "DOCLING_OCR_DICT" not in os.environ
+
+    # The download manifest carries the English pair (with upstream
+    # fallbacks for release tags that don't host it).
+    assert m._OPTIONAL["ocr_rec_en.onnx"] == "models/ocr_rec_en.onnx"
+    assert m._OPTIONAL["en_dict.txt"] == "models/en_dict.txt"
+    assert "models/ocr_rec_en.onnx" in m._FALLBACK_URLS
+    assert "models/en_dict.txt" in m._FALLBACK_URLS
+
+
+def test_ensure_env_still_respects_explicit_ocr_pins(tmp_path, monkeypatch):
+    """The per-file vars remain the pin-any-model hatch (#285 workaround 2):
+    ensure_env never overwrites caller-set values."""
+    from docling_rs import models as m
+
+    cache = tmp_path / "cache"
+    (cache / "models").mkdir(parents=True)
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("DOCLING_OCR_REC_ONNX", "/custom/rec.onnx")
+    monkeypatch.setenv("DOCLING_OCR_DICT", "/custom/dict.txt")
+    monkeypatch.delenv("DOCLING_RS_MODELS_DIR", raising=False)
+
+    m.ensure_env(cache)
+
+    import os
+
+    assert os.environ["DOCLING_OCR_REC_ONNX"] == "/custom/rec.onnx"
+    assert os.environ["DOCLING_OCR_DICT"] == "/custom/dict.txt"

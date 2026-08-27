@@ -1107,7 +1107,12 @@ option, Python `ocr_lang=` kwarg (also mapped from docling-shaped
 docling conformance is measured against, and the conformance scripts pin it
 themselves; explicit `DOCLING_OCR_REC_ONNX`+`DOCLING_OCR_DICT` (a pair — set
 both) override the language switch entirely. An install without the English
-model falls back to `ch_` with a warning.
+model falls back to `ch_` with a warning. Because those per-file pins beat
+the switch, the Python bindings' `ensure_env()` hands the cache over as
+`DOCLING_RS_MODELS_DIR` (a whole-directory override in the asset resolver)
+instead of pinning the pair, and `download_models()` fetches both language
+pairs — so the `ocr_lang=` kwarg works on the documented setup path (#285;
+re-run `download_models()` on an older cache to pick up the English pair).
 
 ## Testing
 

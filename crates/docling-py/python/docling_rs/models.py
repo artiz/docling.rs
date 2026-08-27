@@ -48,6 +48,13 @@ _REQUIRED = {
 # Fetched when the release hosts them; a 404 is fine (older tag, optional
 # sidecars, INT8 variants — the pipeline falls back to fp32 gracefully).
 _OPTIONAL = {
+    # The English PP-OCRv3 recognition pair — the engine's ocr_lang="en"
+    # *default* (#285; the ch_ pair above stays the docling-conformance
+    # model, selected with ocr_lang="ch"). The release may not host them;
+    # the fallbacks below fetch straight from upstream, mirroring
+    # scripts/install/download_dependencies.sh.
+    "ocr_rec_en.onnx": "models/ocr_rec_en.onnx",
+    "en_dict.txt": "models/en_dict.txt",
     "layout_heron_int8.onnx": "models/layout_heron_int8.onnx",
     "decoder_int8.onnx": "models/tableformer/decoder_int8.onnx",
     # The #97 hoisted-KV TableFormer decoder — byte-exact vs the legacy graph
@@ -81,6 +88,12 @@ _ENRICH_FP32_DECODER = ("cf_decoder_kv.onnx", "models/code_formula/decoder_kv.on
 # Straight-from-upstream fallback for assets older release tags don't host:
 # cache path -> upstream URL.
 _FALLBACK_URLS = {
+    "models/ocr_rec_en.onnx": (
+        "https://huggingface.co/SWHL/RapidOCR/resolve/main/PP-OCRv3/en_PP-OCRv3_rec_infer.onnx"
+    ),
+    "models/en_dict.txt": (
+        "https://raw.githubusercontent.com/PaddlePaddle/PaddleOCR/main/ppocr/utils/en_dict.txt"
+    ),
     "models/chunk/tokenizer.json": (
         "https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2/resolve/main/tokenizer.json"
     ),
@@ -182,10 +195,13 @@ def ensure_env(dest: "str | Path | None" = None) -> Path:
     exists in the working directory (the native code resolves those itself, so a repo
     checkout keeps using its own exports). Prefers the INT8 models when
     present, matching the Rust pipeline's default; ``DOCLING_RS_FP32=1`` opts
-    out. Safe to call when nothing is downloaded yet — missing files simply
-    leave the env untouched (and the converter will fail with its usual clear
-    "model not found" message)."""
-    root = Path(dest) if dest else cache_dir()
+    out. OCR is handed over as ``DOCLING_RS_MODELS_DIR`` (the cache's models
+    directory) rather than per-file pins, so the ``ocr_lang`` kwarg keeps
+    selecting the en/ch recognition pair (#285). Safe to call when nothing is
+    downloaded yet — missing files simply leave the env untouched (and the
+    converter will fail with its usual clear "model not found" message)."""
+    # Absolute paths in the env: a later os.chdir() must not orphan them.
+    root = (Path(dest) if dest else cache_dir()).expanduser().resolve()
     # Same truthiness vocabulary as Rust's docling_core::env::flag.
     fp32 = os.environ.get("DOCLING_RS_FP32", "").strip().lower() not in ("", "0", "false", "no", "off")
     m = root / "models"
@@ -223,8 +239,14 @@ def ensure_env(dest: "str | Path | None" = None) -> Path:
         classifier = m / "picture_classifier.onnx"
     _point_at("DOCLING_PICTURE_CLASSIFIER_ONNX", _local(classifier_chain), classifier)
 
-    _point_at("DOCLING_OCR_REC_ONNX", _local(["models/ocr_rec.onnx"]), m / "ocr_rec.onnx")
-    _point_at("DOCLING_OCR_DICT", _local(["models/ppocr_keys_v1.txt"]), m / "ppocr_keys_v1.txt")
+    # OCR is deliberately NOT pinned per file (#285): DOCLING_OCR_REC_ONNX /
+    # DOCLING_OCR_DICT override the engine's en/ch pair selection outright,
+    # which made the ocr_lang kwarg silently inert. Handing over the models
+    # *directory* instead lets the engine resolve the pair for the requested
+    # language itself (missing English pair → its usual warn-and-fall-back
+    # to ch_; re-run download_models() to fetch it). The per-file vars stay
+    # honored when the caller sets them — that is the pin-any-model hatch.
+    _point_at("DOCLING_RS_MODELS_DIR", [".models"], m)
     _point_at(
         "DOCLING_TABLEFORMER_ENCODER",
         _local(["models/tableformer/encoder.onnx"]),
