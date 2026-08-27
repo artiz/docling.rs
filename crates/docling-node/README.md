@@ -220,7 +220,7 @@ call are needed afterwards:
 
 | Asset | Destination |
 | --- | --- |
-| **pdfium** | `.pdfium/lib/libpdfium.so` |
+| **pdfium** | `.pdfium/lib/libpdfium.so` (`libpdfium.dylib` on macOS) |
 | **layout** (`layout_heron.onnx`) | `models/layout_heron.onnx` |
 | **OCR** rec model + dictionary | `models/ocr_rec.onnx`, `models/ppocr_keys_v1.txt` |
 | **TableFormer** | `models/tableformer/{encoder,decoder,bbox}.onnx` |

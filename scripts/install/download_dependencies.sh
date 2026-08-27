@@ -19,7 +19,7 @@
 #
 # Downloads (from https://github.com/docling-project/docling.rs/releases, tag
 # models-v1 by default — override the base with $DOCLING_RS_MODELS_URL):
-#   .pdfium/lib/libpdfium.so                      (Linux x64)
+#   .pdfium/lib/libpdfium.so (libpdfium.dylib on macOS)
 #   .models/layout_heron.onnx
 #   .models/ocr_rec_en.onnx + .models/en_dict.txt   (English PP-OCRv3
 #     recognition — the runtime default; from upstream PP-OCRv3 hosting)
@@ -57,9 +57,10 @@
 # them locally with scripts/install/quantize_models.py.
 #
 # pdfium: the models release hosts the pinned Linux x64 libpdfium.so
-# (the conformance build); on Linux arm64 the bblanchon prebuilt of the
-# same release line is fetched instead (#281). Other platforms (or building
-# the models from source): see scripts/install/pdf_setup.sh.
+# (the conformance build); every other supported platform — Linux arm64 and
+# macOS arm64/x64 — takes the bblanchon prebuilt of the same release line
+# instead (#281). Building the models from source: see
+# scripts/install/pdf_setup.sh.
 #
 # Idempotent: skips files already on disk. Pass --force to re-fetch everything.
 set -eu
@@ -141,35 +142,42 @@ fetch_optional() { # <url> <dest> — ignore a missing/failed asset (sidecar fil
 }
 
 echo "fetching docling.rs ML dependencies from $BASE_URL"
-# pdfium by machine architecture (#281): x64 takes the release's pinned
-# conformance build; arm64 falls back to the bblanchon prebuilt (same source
-# the pinned x64 lib was built from). The tarball unpacks lib/libpdfium.so
-# into .pdfium/ directly.
-case "$(uname -m)" in
-  x86_64 | amd64)
-    fetch "$BASE_URL/libpdfium.so" .pdfium/lib/libpdfium.so
-    ;;
-  aarch64 | arm64)
-    if [ "$FORCE" = false ] && [ -f .pdfium/lib/libpdfium.so ]; then
-      echo "  = .pdfium/lib/libpdfium.so (already present)"
-    else
-      echo "  (arm64: pdfium from the bblanchon prebuilt — the pinned x64 build doesn't apply)"
-      # shellcheck disable=SC2086
-      if curl -fsSL $CURL_TIMEOUTS -o .pdfium/pdfium.tgz \
-          "https://github.com/bblanchon/pdfium-binaries/releases/latest/download/pdfium-linux-arm64.tgz" 2>/dev/null; then
-        tar xzf .pdfium/pdfium.tgz -C .pdfium lib/libpdfium.so
-        rm -f .pdfium/pdfium.tgz
-        echo "  > .pdfium/lib/libpdfium.so"
-      else
-        rm -f .pdfium/pdfium.tgz
-        echo "  ! pdfium-linux-arm64.tgz not fetched (offline?) — PDF rasterization stays unavailable"
-      fi
-    fi
-    ;;
-  *)
-    echo "  (skipping pdfium: unsupported arch $(uname -m) — see scripts/install/pdf_setup.sh)"
-    ;;
+# pdfium by host platform (#281): Linux x64 takes the release's pinned
+# conformance build; every other platform falls back to the matching bblanchon
+# prebuilt (the same source the pinned x64 lib was built from). Selecting on
+# `uname -m` alone sent macOS down the arm64 branch and installed a *Linux*
+# ELF .so, which dlopen then never found — pdfium-render asks for the
+# platform library name, `libpdfium.dylib` on Darwin — so both the guard and
+# the tar member track $PDFIUM_LIB rather than a hardcoded .so.
+case "$(uname -s)" in
+  Darwin) PDFIUM_OS=mac; PDFIUM_LIB=libpdfium.dylib ;;
+  *) PDFIUM_OS=linux; PDFIUM_LIB=libpdfium.so ;;
 esac
+case "$(uname -m)" in
+  x86_64 | amd64) PDFIUM_ARCH=x64 ;;
+  aarch64 | arm64) PDFIUM_ARCH=arm64 ;;
+  *) PDFIUM_ARCH= ;;
+esac
+
+if [ -z "$PDFIUM_ARCH" ]; then
+  echo "  (skipping pdfium: unsupported arch $(uname -m) — see scripts/install/pdf_setup.sh)"
+elif [ "$PDFIUM_OS" = linux ] && [ "$PDFIUM_ARCH" = x64 ]; then
+  fetch "$BASE_URL/libpdfium.so" .pdfium/lib/libpdfium.so
+elif [ "$FORCE" = false ] && [ -f ".pdfium/lib/$PDFIUM_LIB" ]; then
+  echo "  = .pdfium/lib/$PDFIUM_LIB (already present)"
+else
+  echo "  ($PDFIUM_OS-$PDFIUM_ARCH: pdfium from the bblanchon prebuilt — the pinned Linux x64 build doesn't apply)"
+  # shellcheck disable=SC2086
+  if curl -fsSL $CURL_TIMEOUTS -o .pdfium/pdfium.tgz \
+      "https://github.com/bblanchon/pdfium-binaries/releases/latest/download/pdfium-$PDFIUM_OS-$PDFIUM_ARCH.tgz" 2>/dev/null; then
+    tar xzf .pdfium/pdfium.tgz -C .pdfium "lib/$PDFIUM_LIB"
+    rm -f .pdfium/pdfium.tgz
+    echo "  > .pdfium/lib/$PDFIUM_LIB"
+  else
+    rm -f .pdfium/pdfium.tgz
+    echo "  ! pdfium-$PDFIUM_OS-$PDFIUM_ARCH.tgz not fetched (offline?) — PDF rasterization stays unavailable"
+  fi
+fi
 fetch "$BASE_URL/layout_heron.onnx" .models/layout_heron.onnx
 fetch "$BASE_URL/ocr_rec.onnx" .models/ocr_rec.onnx
 fetch "$BASE_URL/ppocr_keys_v1.txt" .models/ppocr_keys_v1.txt
