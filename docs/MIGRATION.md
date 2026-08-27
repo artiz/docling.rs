@@ -436,6 +436,23 @@ These are deliberate or unavoidable divergences, not bugs.
     nothing to switch yet) and `dclx` in the `ArtifactRef` union (only
     meaningful once the sources/targets wire shape lands — #139).
 
+15. **Cloud source/target passthrough** (#139, upstream docling#3795 /
+    docling-jobkit): the serve JSON body accepts docling's
+    service-datamodel `sources`/`target` shape — `kind`-tagged `file`
+    (base64) and `http` (URL + headers) sources always, and `s3` /
+    `azure_blob` / `google_cloud_storage` sources *and* targets behind the
+    opt-in `cloud` cargo feature (a feature-gated `object_store`
+    dependency, so the default build keeps its single-HTTP-stack graph).
+    Coordinate field names mirror upstream's `*Coordinates` models;
+    a cloud target uploads each converted output as `<stem>.<ext>` under
+    the prefix and answers with upstream's `RemoteTargetResult` kind plus
+    per-item outcomes. All outbound kinds sit behind `--allow-url-fetch`.
+    Not covered, as upstream-jobkit-specific or OAuth-bound:
+    `google_drive`, `zip`, `put`, `presigned_url` (and with the last of
+    those, the `ArtifactRef` union — still parked). Without the feature the
+    cloud kinds parse and answer a clear rebuild-with-`--features cloud`
+    error.
+
 ---
 
 ## 5. Not migrated / out of scope

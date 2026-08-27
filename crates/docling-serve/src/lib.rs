@@ -67,6 +67,16 @@
 //!   explicitly requested `chunker=hybrid` without a usable tokenizer is a
 //!   400 instead of the legacy silent skip
 //!
+//! A JSON body may also use docling's service-datamodel `sources`/`target`
+//! shape instead of the `{"url": …}` shorthand (#139, see `passthrough.rs`):
+//! `kind`-tagged sources (`file` base64 uploads, `http` URLs with headers,
+//! and — behind the `cloud` cargo feature — `s3` / `azure_blob` /
+//! `google_cloud_storage` prefixes) plus an optional `kind`-tagged output
+//! `target` (`inbody` default, or the same cloud stores: each converted
+//! output uploads as `<stem>.<ext>` under the prefix and the response is a
+//! `RemoteTargetResult` acknowledgment). Everything outbound — `http` and
+//! cloud alike — sits behind `--allow-url-fetch`.
+//!
 //! Markdown converts through the streaming serializer and the response body
 //! streams page by page (chunked transfer); `json`/`dclx`/`chunks` (and every
 //! batch/async result) buffer.
@@ -129,6 +139,8 @@ use docling::{
 use serde::Deserialize;
 use serde_json::json;
 use tokio::sync::Semaphore;
+
+mod passthrough;
 
 /// Server configuration (see the binary's `--help` for the flag spellings).
 #[derive(Clone, Debug)]
@@ -473,13 +485,21 @@ impl ConvertOptions {
     }
 }
 
-/// JSON body for URL inputs.
-#[derive(Debug, Deserialize)]
+/// JSON body: the legacy `{"url": …}` shorthand, or docling's
+/// service-datamodel `sources`/`target` shape (#139) — exactly one of `url`
+/// and `sources` must be present.
+#[derive(Deserialize)]
 struct UrlRequest {
-    url: String,
+    url: Option<String>,
     /// Overrides the name (and thus format-selecting extension) taken from
-    /// the URL path's last segment.
+    /// the URL path's last segment (`url` shorthand only).
     file_name: Option<String>,
+    /// docling `kind`-tagged source items: `file`, `http`, `s3`,
+    /// `azure_blob`, `google_cloud_storage` (#139).
+    sources: Option<Vec<passthrough::SourceSpec>>,
+    /// docling `kind`-tagged output target; default `inbody` (the response
+    /// body, exactly as without a target).
+    target: Option<passthrough::TargetSpec>,
     #[serde(flatten)]
     options: ConvertOptions,
 }
@@ -527,15 +547,24 @@ impl IntoResponse for ApiError {
 type SourceItem = Result<SourceDocument, (String, ApiError)>;
 
 /// Parse a conversion request body — `multipart/form-data` uploads (one or
-/// more `file` parts, #182 batch) or an `application/json` `{"url": …}` — into
-/// sources plus the merged options. Shared by the sync and async endpoints so
-/// both accept exactly the same requests (and reject bad ones synchronously).
+/// more `file` parts, #182 batch) or an `application/json` body (`{"url": …}`
+/// or docling's `sources`/`target` shape, #139) — into sources, the merged
+/// options and the optional cloud output target. Shared by the sync and
+/// async endpoints so both accept exactly the same requests (and reject bad
+/// ones synchronously).
 async fn parse_convert_request(
     state: &Arc<AppState>,
     query: ConvertOptions,
     headers: HeaderMap,
     body: axum::extract::Request,
-) -> Result<(Vec<SourceItem>, ConvertOptions), ApiError> {
+) -> Result<
+    (
+        Vec<SourceItem>,
+        ConvertOptions,
+        Option<passthrough::CloudCoords>,
+    ),
+    ApiError,
+> {
     let content_type = headers
         .get(header::CONTENT_TYPE)
         .and_then(|v| v.to_str().ok())
@@ -546,32 +575,132 @@ async fn parse_convert_request(
         let multipart = Multipart::from_request(body, &())
             .await
             .map_err(|e| ApiError::Bad(format!("bad multipart body: {e}")))?;
-        read_multipart(multipart, query).await
+        let (sources, options) = read_multipart(multipart, query).await?;
+        Ok((sources, options, None))
     } else if content_type.starts_with("application/json") {
         let bytes = axum::body::to_bytes(body.into_body(), state.cfg.max_body_bytes)
             .await
             .map_err(|e| ApiError::Bad(format!("bad body: {e}")))?;
         let req: UrlRequest = serde_json::from_slice(&bytes)
             .map_err(|e| ApiError::Bad(format!("bad JSON body: {e}")))?;
-        if !state.cfg.allow_url_fetch {
-            return Err(ApiError::Unsupported(
-                "URL inputs are disabled; start docling-serve with --allow-url-fetch \
-                 (SSRF surface — see docs/SECURITY.md), or upload the file instead"
-                    .into(),
-            ));
-        }
         let options = req.options.clone().merge_over(query);
-        let url = req.url.clone();
-        let name = req.file_name.clone();
-        let source = tokio::task::spawn_blocking(move || fetch_url(&url, name.as_deref()))
-            .await
-            .map_err(|e| ApiError::Internal(format!("fetch task: {e}")))??;
-        Ok((vec![Ok(source)], options))
+        let target = match req.target {
+            None | Some(passthrough::TargetSpec::Inbody) => None,
+            Some(spec) => {
+                require_outbound(state, "cloud targets")?;
+                Some(match spec {
+                    passthrough::TargetSpec::S3(c) => passthrough::CloudCoords::S3(c),
+                    passthrough::TargetSpec::AzureBlob(c) => passthrough::CloudCoords::Azure(c),
+                    passthrough::TargetSpec::GoogleCloudStorage(c) => {
+                        passthrough::CloudCoords::Gcs(c)
+                    }
+                    passthrough::TargetSpec::Inbody => unreachable!("matched above"),
+                })
+            }
+        };
+        let sources = match (req.url, req.sources) {
+            (Some(url), None) => {
+                require_outbound(state, "URL inputs")?;
+                let name = req.file_name.clone();
+                let source =
+                    tokio::task::spawn_blocking(move || fetch_url(&url, name.as_deref(), &[]))
+                        .await
+                        .map_err(|e| ApiError::Internal(format!("fetch task: {e}")))??;
+                vec![Ok(source)]
+            }
+            (None, Some(specs)) => parse_source_specs(state, specs).await?,
+            (Some(_), Some(_)) => {
+                return Err(ApiError::Bad(
+                    "pass either \"url\" or \"sources\", not both".into(),
+                ))
+            }
+            (None, None) => {
+                return Err(ApiError::Bad(
+                    "JSON body needs \"url\" or a non-empty \"sources\" array".into(),
+                ))
+            }
+        };
+        Ok((sources, options, target))
     } else {
         Err(ApiError::Bad(
             "expected multipart/form-data (file upload) or application/json ({\"url\": …})".into(),
         ))
     }
+}
+
+/// Outbound access (URL fetch, cloud stores) is one opt-in: the server-wide
+/// `--allow-url-fetch` flag (SSRF surface — docs/SECURITY.md).
+fn require_outbound(state: &Arc<AppState>, what: &str) -> Result<(), ApiError> {
+    if state.cfg.allow_url_fetch {
+        Ok(())
+    } else {
+        Err(ApiError::Unsupported(format!(
+            "{what} are disabled; start docling-serve with --allow-url-fetch \
+             (SSRF surface — see docs/SECURITY.md), or upload the file instead"
+        )))
+    }
+}
+
+/// Materialize docling-shaped `sources[]` items (#139) into [`SourceItem`]s.
+/// A bad `file` item fails only itself (batch semantics, like a bad upload);
+/// an unreachable store or URL fails the request — there is nothing partial
+/// to convert.
+async fn parse_source_specs(
+    state: &Arc<AppState>,
+    specs: Vec<passthrough::SourceSpec>,
+) -> Result<Vec<SourceItem>, ApiError> {
+    if specs.is_empty() {
+        return Err(ApiError::Bad("\"sources\" must not be empty".into()));
+    }
+    let mut items: Vec<SourceItem> = Vec::new();
+    for spec in specs {
+        match spec {
+            passthrough::SourceSpec::File {
+                base64_string,
+                filename,
+            } => {
+                let item = match docling::base64::decode(base64_string.trim()) {
+                    Some(bytes) => {
+                        source_from_named_bytes(&filename, bytes).map_err(|e| (filename.clone(), e))
+                    }
+                    None => Err((
+                        filename.clone(),
+                        ApiError::Bad(format!("file source {filename:?}: bad base64")),
+                    )),
+                };
+                items.push(item);
+            }
+            passthrough::SourceSpec::Http { url, headers } => {
+                require_outbound(state, "URL inputs")?;
+                let header_vec: Vec<(String, String)> = headers.into_iter().collect();
+                let source =
+                    tokio::task::spawn_blocking(move || fetch_url(&url, None, &header_vec))
+                        .await
+                        .map_err(|e| ApiError::Internal(format!("fetch task: {e}")))??;
+                items.push(Ok(source));
+            }
+            spec @ (passthrough::SourceSpec::S3(_)
+            | passthrough::SourceSpec::AzureBlob(_)
+            | passthrough::SourceSpec::GoogleCloudStorage(_)) => {
+                require_outbound(state, "cloud sources")?;
+                let coords = match spec {
+                    passthrough::SourceSpec::S3(c) => passthrough::CloudCoords::S3(c),
+                    passthrough::SourceSpec::AzureBlob(c) => passthrough::CloudCoords::Azure(c),
+                    passthrough::SourceSpec::GoogleCloudStorage(c) => {
+                        passthrough::CloudCoords::Gcs(c)
+                    }
+                    _ => unreachable!("matched above"),
+                };
+                let fetched = passthrough::fetch_sources(&coords)
+                    .await
+                    .map_err(ApiError::Bad)?;
+                for (name, bytes) in fetched {
+                    items.push(source_from_named_bytes(&name, bytes).map_err(|e| (name, e)));
+                }
+            }
+        }
+    }
+    Ok(items)
 }
 
 /// Validate the `to` / `images` options (shared by sync and async so an async
@@ -646,8 +775,9 @@ async fn convert(
     headers: HeaderMap,
     body: axum::extract::Request,
 ) -> Result<Response, ApiError> {
-    let (sources, options) = parse_convert_request(&state, query, headers, body).await?;
+    let (sources, options, target) = parse_convert_request(&state, query, headers, body).await?;
     let (to, image_mode) = validate_output(&options)?;
+    validate_target(&to, target.as_ref())?;
     // Admission control (#263): shed load before taking a conversion slot.
     if let Some(msg) = state.overloaded() {
         return Err(ApiError::Overloaded(msg));
@@ -664,9 +794,10 @@ async fn convert(
         .map_err(|e| ApiError::Internal(format!("semaphore: {e}")))?;
 
     // A single Markdown conversion streams; everything else (other formats,
-    // #182 batches — which need per-item framing) buffers.
+    // #182 batches — which need per-item framing, and cloud targets — whose
+    // outputs leave through the store, #139) buffers.
     let is_markdown = matches!(to.as_str(), "md" | "markdown");
-    if is_markdown && sources.len() == 1 {
+    if is_markdown && sources.len() == 1 && target.is_none() {
         let source = sources
             .into_iter()
             .next()
@@ -676,8 +807,17 @@ async fn convert(
     }
 
     let st = state.clone();
+    let rt = tokio::runtime::Handle::current();
     let stored = tokio::task::spawn_blocking(move || {
-        let out = run_conversion(&st, sources, &options, &to, image_mode);
+        let out = run_conversion(
+            &st,
+            sources,
+            &options,
+            &to,
+            image_mode,
+            target.as_ref(),
+            &rt,
+        );
         trim_heap();
         out
     })
@@ -685,6 +825,17 @@ async fn convert(
     .map_err(|e| ApiError::Internal(format!("convert task: {e}")))?;
     drop(permit);
     Ok(stored?.into_response())
+}
+
+/// A cloud target combines with every buffered output format except
+/// `to=images` (page PNGs are a debugging aid, not a pipeline artifact).
+fn validate_target(to: &str, target: Option<&passthrough::CloudCoords>) -> Result<(), ApiError> {
+    if target.is_some() && to == "images" {
+        return Err(ApiError::Bad(
+            "to=images does not combine with a cloud target".into(),
+        ));
+    }
+    Ok(())
 }
 
 /// One async conversion job (#182).
@@ -748,8 +899,10 @@ async fn convert_async(
     headers: HeaderMap,
     body: axum::extract::Request,
 ) -> Result<Response, ApiError> {
-    let (mut sources, options) = parse_convert_request(&state, query, headers, body).await?;
+    let (mut sources, options, target) =
+        parse_convert_request(&state, query, headers, body).await?;
     let (to, image_mode) = validate_output(&options)?;
+    validate_target(&to, target.as_ref())?;
     // Admission control (#263) applies to async submissions too — a queued
     // job holds its upload bytes and will run into the same ceiling.
     if let Some(msg) = state.overloaded() {
@@ -801,8 +954,9 @@ async fn convert_async(
         }
         let stx = st.clone();
         let opts = options;
+        let rt = tokio::runtime::Handle::current();
         let outcome = tokio::task::spawn_blocking(move || {
-            let out = run_conversion(&stx, sources, &opts, &to, image_mode);
+            let out = run_conversion(&stx, sources, &opts, &to, image_mode, target.as_ref(), &rt);
             trim_heap();
             out
         })
@@ -923,14 +1077,24 @@ impl StoredResponse {
 /// Convert one or more sources on the current (blocking) thread and serialize
 /// the result. A single source renders as the plain output format; multiple
 /// sources (#182 batch) render as a JSON results array with per-item status,
-/// so one bad file fails its item, not the whole batch.
+/// so one bad file fails its item, not the whole batch. With a cloud
+/// `target` (#139) every rendered output is uploaded instead and the
+/// response is a `RemoteTargetResult` acknowledgment (uploads run on the
+/// runtime `rt` — `Handle::block_on` is the sanctioned bridge from a
+/// blocking worker).
+#[allow(clippy::too_many_arguments)]
 fn run_conversion(
     state: &AppState,
     sources: Vec<SourceItem>,
     options: &ConvertOptions,
     to: &str,
     image_mode: ImageMode,
+    target: Option<&passthrough::CloudCoords>,
+    rt: &tokio::runtime::Handle,
 ) -> Result<StoredResponse, ApiError> {
+    if let Some(coords) = target {
+        return run_conversion_to_target(state, sources, options, to, image_mode, coords, rt);
+    }
     if sources.len() == 1 {
         let source = sources
             .into_iter()
@@ -995,6 +1159,87 @@ fn run_conversion(
         confidence: None,
         body: serde_json::to_vec_pretty(&json!({ "results": items }))
             .expect("batch JSON serializes"),
+    })
+}
+
+/// The #139 cloud-target path: convert each source, upload its rendered
+/// output as `<stem>.<ext>` under the target's prefix, answer with docling's
+/// `RemoteTargetResult` kind plus per-item detail. Batch semantics
+/// throughout — a failing item (conversion or upload) fails only itself.
+fn run_conversion_to_target(
+    state: &AppState,
+    sources: Vec<SourceItem>,
+    options: &ConvertOptions,
+    to: &str,
+    image_mode: ImageMode,
+    coords: &passthrough::CloudCoords,
+    rt: &tokio::runtime::Handle,
+) -> Result<StoredResponse, ApiError> {
+    let ext = match to {
+        "md" | "markdown" => "md",
+        "json" => "json",
+        "chunks" => "chunks.json",
+        "dclx" => "dclx",
+        _ => unreachable!("validated above"),
+    };
+    let mut used: std::collections::HashSet<String> = std::collections::HashSet::new();
+    let items: Vec<serde_json::Value> = sources
+        .into_iter()
+        .map(|item| {
+            let source = match item {
+                Ok(source) => source,
+                Err((name, e)) => {
+                    return json!({
+                        "name": name,
+                        "status": "failure",
+                        "error": api_error_message(e),
+                    })
+                }
+            };
+            let name = source.name.clone();
+            let rendered = convert_document(state, source, options)
+                .and_then(|doc| render_stored(state, to, image_mode, &name, &doc, options));
+            let stored = match rendered {
+                Ok(stored) => stored,
+                Err(e) => {
+                    return json!({
+                        "name": name,
+                        "status": "failure",
+                        "error": api_error_message(e),
+                    })
+                }
+            };
+            // `<stem>.<ext>` mirrors the CLI batch naming; a duplicate stem
+            // in one request gets `-2`, `-3`, … instead of overwriting.
+            let stem = std::path::Path::new(&name)
+                .file_stem()
+                .map(|s| s.to_string_lossy().into_owned())
+                .unwrap_or_else(|| "document".into());
+            let mut key = format!("{stem}.{ext}");
+            let mut n = 1;
+            while !used.insert(key.clone()) {
+                n += 1;
+                key = format!("{stem}-{n}.{ext}");
+            }
+            match rt.block_on(passthrough::put_object(coords, &key, stored.body)) {
+                Ok(()) => json!({ "name": name, "status": "success", "key": key }),
+                Err(e) => json!({ "name": name, "status": "failure", "error": e }),
+            }
+        })
+        .collect();
+    Ok(StoredResponse {
+        content_type: "application/json",
+        disposition: None,
+        confidence: None,
+        // Upstream's RemoteTargetResult is the bare kind ("no content, the
+        // result has been pushed to a remote target"); the credential-free
+        // target display and per-item outcomes ride along as extra keys.
+        body: serde_json::to_vec_pretty(&json!({
+            "kind": "RemoteTargetResult",
+            "target": coords.display(),
+            "results": items,
+        }))
+        .expect("target ack serializes"),
     })
 }
 
@@ -1487,7 +1732,11 @@ fn is_blocked_ip(ip: std::net::IpAddr) -> bool {
 
 /// Fetch a URL input (blocking; run on the blocking pool). The name comes
 /// from `file_name` or the URL path's last segment.
-fn fetch_url(url: &str, file_name: Option<&str>) -> Result<SourceDocument, ApiError> {
+fn fetch_url(
+    url: &str,
+    file_name: Option<&str>,
+    headers: &[(String, String)],
+) -> Result<SourceDocument, ApiError> {
     if !url.starts_with("http://") && !url.starts_with("https://") {
         return Err(ApiError::Bad(format!("unsupported URL scheme in '{url}'")));
     }
@@ -1529,8 +1778,13 @@ fn fetch_url(url: &str, file_name: Option<&str>) -> Result<SourceDocument, ApiEr
         .timeout_global(Some(std::time::Duration::from_secs(300)))
         .build()
         .into();
-    let mut response = agent
-        .get(url)
+    // Request headers ride along verbatim (docling's `HttpSource.headers`,
+    // #139 — auth tokens for protected origins).
+    let mut request = agent.get(url);
+    for (k, v) in headers {
+        request = request.header(k, v);
+    }
+    let mut response = request
         .call()
         .map_err(|e| ApiError::Bad(format!("fetching {url}: {e}")))?;
     // Kept for format detection when the URL/name has no usable extension.
