@@ -68,24 +68,27 @@ async function* chunkStream(start) {
 
 // --- guarded one-shot functions --------------------------------------------
 
+// The guard takes `options` so `pipeline: 'vlm'` can drop the ONNX-model
+// requirement (#77) — see assertMlReady in deps.js. The chunk* functions below
+// take ChunkOptions, which carry no `pipeline`, and always use the ML pipeline.
 function convertFile(path, options) {
-  assertMlReady(mlFormatOf(path))
+  assertMlReady(mlFormatOf(path), undefined, options)
   return native.convertFile(path, options)
 }
 
 function convert(input, options) {
-  assertMlReady(mlFormatOf(input && input.name, input && input.format))
+  assertMlReady(mlFormatOf(input && input.name, input && input.format), undefined, options)
   return native.convert(input, options)
 }
 
 // async so a guard failure surfaces as a rejected promise, not a sync throw.
 async function convertFileAsync(path, options) {
-  assertMlReady(mlFormatOf(path))
+  assertMlReady(mlFormatOf(path), undefined, options)
   return native.convertFileAsync(path, options)
 }
 
 async function convertAsync(input, options) {
-  assertMlReady(mlFormatOf(input && input.name, input && input.format))
+  assertMlReady(mlFormatOf(input && input.name, input && input.format), undefined, options)
   return native.convertAsync(input, options)
 }
 
@@ -135,31 +138,41 @@ async function chunkDocumentAsync(documentJson, options) {
 
 class DocumentConverter {
   constructor(options) {
+    // Only the pipeline name, not the options object: the guard needs nothing
+    // else, and holding the caller's object would both retain `vlmApiKey` on an
+    // enumerable property (any logger that serializes the instance would print
+    // the token) and let a later mutation of that object desync the guard from
+    // the config the native side already resolved.
+    this._pipeline = options && options.pipeline
     this._inner = new native.DocumentConverter(options)
   }
 
   convertFile(path, options) {
-    assertMlReady(mlFormatOf(path))
+    assertMlReady(mlFormatOf(path), undefined, { pipeline: this._pipeline })
     return this._inner.convertFile(path, options)
   }
 
   convert(input, options) {
-    assertMlReady(mlFormatOf(input && input.name, input && input.format))
+    assertMlReady(mlFormatOf(input && input.name, input && input.format), undefined, {
+      pipeline: this._pipeline,
+    })
     return this._inner.convert(input, options)
   }
 
   async convertFileAsync(path, options) {
-    assertMlReady(mlFormatOf(path))
+    assertMlReady(mlFormatOf(path), undefined, { pipeline: this._pipeline })
     return this._inner.convertFileAsync(path, options)
   }
 
   async convertAsync(input, options) {
-    assertMlReady(mlFormatOf(input && input.name, input && input.format))
+    assertMlReady(mlFormatOf(input && input.name, input && input.format), undefined, {
+      pipeline: this._pipeline,
+    })
     return this._inner.convertAsync(input, options)
   }
 
   convertFileStreaming(path, callback, options) {
-    assertMlReady(mlFormatOf(path))
+    assertMlReady(mlFormatOf(path), undefined, { pipeline: this._pipeline })
     return this._inner.convertFileStreaming(path, callback, options)
   }
 }
@@ -230,9 +243,20 @@ class Pipeline {
  * @returns {AsyncGenerator<string, void, unknown>}
  */
 async function* streamFileMarkdown(filePath, options = {}) {
-  assertMlReady(mlFormatOf(filePath))
-  const { strict, fetchImages, allowedFormats, imageMode, artifactsDir } = options
-  const converter = new native.DocumentConverter({ strict, fetchImages, allowedFormats })
+  assertMlReady(mlFormatOf(filePath), undefined, options)
+  const { imageMode, artifactsDir } = options
+  // The whole object, not a hand-copied allowlist: napi reads the
+  // `ConverterOptions` fields it knows and ignores the rest (`imageMode`,
+  // `artifactsDir`), so every converter knob reaches the stream instead of the
+  // three that used to be copied by hand. `pages` above all — under
+  // `pipeline: 'vlm'` it decides how many pages are rasterized and POSTed to a
+  // metered endpoint, and dropping it would quietly send the whole document.
+  //
+  // Under `pipeline: 'vlm'` there is nothing to stream — the endpoint answers a
+  // whole page per request — so the document arrives as a single chunk. The
+  // contract holds either way: concatenating the chunks reproduces the buffered
+  // `convertFile(...).content` byte-for-byte.
+  const converter = new native.DocumentConverter(options)
   yield* chunkStream((callback) =>
     converter.convertFileStreaming(filePath, callback, { imageMode, artifactsDir }),
   )

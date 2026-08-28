@@ -626,11 +626,20 @@ docling-rs --pipeline vlm \
   paper.pdf
 ```
 
+The same pipeline is exposed by the **Node bindings** as
+`pipeline: 'vlm'` with `vlmEndpoint` / `vlmModel` / `vlmApiKey` / `vlmPrompt` /
+`vlmMaxTokens` (see [Node.js / Bun bindings](#nodejs--bun-bindings)); it is not
+plumbed through serve or the Python bindings yet.
+
 `--vlm-endpoint` takes the server's `/v1` base or the full
-`…/chat/completions` URL; `DOCLING_RS_VLM_ENDPOINT` / `DOCLING_RS_VLM_MODEL` /
-`DOCLING_RS_VLM_PROMPT` / `DOCLING_RS_VLM_API_KEY` (Bearer token) are the env
-equivalents. `--pages A-B` composes (only the window's pages are rendered and
-sent), and `--to md|json|dclx|chunks` plus `--strict` work as usual. Transient
+`…/chat/completions` URL. `DOCLING_RS_VLM_ENDPOINT` / `DOCLING_RS_VLM_MODEL`
+are the env equivalents of the two flags, and `DOCLING_RS_VLM_PROMPT` /
+`DOCLING_RS_VLM_API_KEY` (Bearer token) are the only way to set those two from
+the CLI — Node exposes them as options too. Selecting the pipeline is always
+explicit: the environment supplies values, it never switches the pipeline on,
+so a stale `DOCLING_RS_VLM_ENDPOINT` can't reroute an ordinary PDF conversion
+over the network. `--pages A-B` composes (only the window's pages are rendered
+and sent), and `--to md|json|dclx|chunks` plus `--strict` work as usual. Transient
 endpoint failures (timeouts, 408/429, 5xx) retry with exponential backoff;
 a page that still fails fails the conversion — no silently dropped pages.
 Output quality is entirely the model's: conversion of the PDF corpus against
@@ -709,8 +718,9 @@ docling.rs ships as an npm package, [**`docling.rs`**](https://www.npmjs.com/pac
 that loads in both Node.js and Bun (Bun implements N-API — same binary, no
 rebuild), exposing the converter with the same knobs as the Rust API: Markdown /
 docling JSON output, `strict` mode, image modes, allowed-format restriction,
-`fetchImages`, sync + async (`Promise`) calls, and a `streamFileMarkdown` async
-generator.
+`fetchImages`, the [remote VLM pipeline](#vlm-pipeline-remote-endpoint)
+(`pipeline: 'vlm'`), sync + async (`Promise`) calls, and a `streamFileMarkdown`
+async generator.
 
 Install — no Rust toolchain needed, the prebuilt binary for your platform (Linux
 x64/arm64, Windows x64) is pulled in automatically:
@@ -734,7 +744,9 @@ const json = await convertFileAsync('report.docx', { to: 'json' })
 Declarative formats (Markdown, HTML, DOCX, XLSX, …) work out of the box. The
 PDF/image pipeline needs pdfium + the ONNX models (not bundled), so it throws
 until you fetch them with `scripts/install/download_dependencies.sh` — see
-[Getting the ML models](#getting-the-ml-models) below.
+[Getting the ML models](#getting-the-ml-models) below. `pipeline: 'vlm'` is the
+exception: it loads no ONNX models, so it needs pdfium alone (and nothing for
+image input).
 
 A reusable `Pipeline` keeps those models warm across many PDFs.
 
