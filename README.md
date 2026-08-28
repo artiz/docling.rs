@@ -950,9 +950,9 @@ defaults to INT8; build with `--build-arg INT8=0` for pure fp32.)
 
 ### GPU execution providers (optional, off by default)
 
-The ONNX stages (layout, TableFormer, OCR, enrichment) run on CPU by default.
-GPU execution providers compile in behind cargo features — the standard build
-keeps zero GPU dependencies:
+The ONNX stages (layout, TableFormer, OCR, enrichment, Whisper, the RAG
+embedder) run on CPU by default. GPU execution providers compile in behind
+cargo features — the standard build keeps zero GPU dependencies:
 
 ```bash
 cargo build --release -p docling-cli --features cuda      # NVIDIA CUDA (Linux/Windows)

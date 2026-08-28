@@ -1464,6 +1464,7 @@ name = "docling-asr"
 version = "1.18.1"
 dependencies = [
  "docling-core",
+ "docling-onnx",
  "ort",
  "serde_json",
  "symphonia",
@@ -1510,10 +1511,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "docling-onnx"
+version = "1.18.1"
+dependencies = [
+ "docling-core",
+ "ort",
+]
+
+[[package]]
 name = "docling-pdf"
 version = "1.18.1"
 dependencies = [
  "docling-core",
+ "docling-onnx",
  "fast_image_resize",
  "flate2",
  "image",
@@ -1535,6 +1545,7 @@ dependencies = [
  "clap",
  "docling",
  "docling-core",
+ "docling-onnx",
  "docling-pdf",
  "dotenvy",
  "futures-lite 2.6.1",

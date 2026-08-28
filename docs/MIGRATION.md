@@ -80,6 +80,7 @@ crates/
 ├── docling/        # DocumentConverter, source/format detection, backend/*.rs, ooxml.rs
 ├── docling-pdf/    # pdfium_backend, layout (RT-DETR/ONNX), ocr (PP-OCRv3/ONNX), assemble, mets
 ├── docling-asr/    # audio decode (symphonia), mel.rs, whisper.rs (ONNX), tokenizer.rs
+├── docling-onnx/   # shared ONNX Runtime EP selection (DOCLING_RS_EP, cuda/tensorrt/directml/coreml features)
 ├── docling-cli/    # `--strict`, `--to md|json|dclx|chunks`, `--images …`, `--pages`, `--ocr-lang`, serve subcommand
 ├── docling-node/   # Node.js/Bun N-API bindings (napi-rs), published to npm as `docling.rs`
 ├── docling-py/     # PyO3 bindings (maturin), published to PyPI as `docling-rs` (strangler-fig over docling-core)

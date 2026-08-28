@@ -165,7 +165,7 @@ impl TableFormer {
                 .map_err(|e| e.to_string())?
                 .with_memory_pattern(mem_pattern)
                 .map_err(|e| e.to_string())?;
-            crate::ep::apply(builder)?
+            docling_onnx::apply(builder)?
                 .commit_from_file(path)
                 .map_err(|e| format!("tableformer load {path}: {e}"))
         };

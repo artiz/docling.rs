@@ -47,12 +47,13 @@ vlm = ["pdf", "dep:ureq"]
 web-browser = ["dep:headless_chrome", "dep:tempfile"]
 # Tokenization-aware chunking (docling-core's HybridChunker + HF tokenizer).
 chunking = ["docling-core/chunking"]
-# GPU execution providers for the PDF/image ML pipeline (#74) — pass-through
-# to docling-pdf; select at runtime with DOCLING_RS_EP (default: cpu).
-cuda = ["pdf", "docling-pdf/cuda"]
-tensorrt = ["pdf", "docling-pdf/tensorrt"]
-directml = ["pdf", "docling-pdf/directml"]
-coreml = ["pdf", "docling-pdf/coreml"]
+# GPU execution providers for the ML pipelines (#74 PDF; #288 ASR) —
+# pass-through to docling-pdf and docling-asr; select at runtime with
+# DOCLING_RS_EP (default: cpu).
+cuda = ["pdf", "docling-pdf/cuda", "docling-asr?/cuda"]
+tensorrt = ["pdf", "docling-pdf/tensorrt", "docling-asr?/tensorrt"]
+directml = ["pdf", "docling-pdf/directml", "docling-asr?/directml"]
+coreml = ["pdf", "docling-pdf/coreml", "docling-asr?/coreml"]
 
 [dependencies]
 calamine = { version = "0.26", features = ["dates"] }

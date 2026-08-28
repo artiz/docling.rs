@@ -1,4 +1,8 @@
-//! Execution-provider selection for the ONNX sessions (#74).
+//! Execution-provider selection for the ONNX sessions (#74, #288).
+//!
+//! Shared by every crate that owns `ort` sessions (docling-pdf's layout/
+//! TableFormer/OCR/enrichment models, docling-asr's Whisper encoder/decoder,
+//! docling-rag's embedder) so a single env var switches the whole process.
 //!
 //! CPU is the default and the only provider in a default build — the GPU
 //! providers exist behind cargo features (`cuda`, `tensorrt`, `directml`,
@@ -23,13 +27,10 @@
 //!   list — ultimately to CPU — at session creation. The "try GPU if there is
 //!   one" mode for images built once and deployed on mixed fleets.
 //!
-//! Every session in this crate (layout, TableFormer×3, OCR recognition, both
-//! enrichment models) routes through [`apply`], so one env var switches the
-//! whole pipeline. The int8 model defaults are skipped whenever a GPU
-//! provider is selected ([`prefers_fp32`]): the int8 exports are QDQ graphs
-//! calibrated for CPU kernels — on GPU they only add de-quantize traffic and
-//! were never conformance-validated there, while fp32 is (see
-//! docs/PDF_CONFORMANCE.md).
+//! The int8 model defaults in docling-pdf are skipped whenever a GPU provider
+//! is selected ([`prefers_fp32`]): the int8 exports are QDQ graphs calibrated
+//! for CPU kernels — on GPU they only add de-quantize traffic and were never
+//! conformance-validated there, while fp32 is (see docs/PDF_CONFORMANCE.md).
 
 use std::sync::OnceLock;
 
@@ -40,7 +41,7 @@ use ort::session::builder::SessionBuilder;
 /// *selected* (returned by [`choice`]) when their cargo feature is compiled
 /// in; [`parse`] itself is feature-blind so it can be unit-tested everywhere.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub(crate) enum Ep {
+pub enum Ep {
     Cpu,
     Cuda,
     TensorRt,
@@ -52,7 +53,7 @@ pub(crate) enum Ep {
 
 /// Parse a `DOCLING_RS_EP` value. `None` for values that name no known
 /// provider (the caller warns and stays on CPU).
-pub(crate) fn parse(v: &str) -> Option<Ep> {
+pub fn parse(v: &str) -> Option<Ep> {
     match v.trim().to_ascii_lowercase().as_str() {
         "" | "cpu" => Some(Ep::Cpu),
         "cuda" => Some(Ep::Cuda),
@@ -99,7 +100,7 @@ fn default_choice() -> Ep {
 /// The effective provider choice for this process, resolved once. Invalid or
 /// not-compiled-in requests degrade to CPU with a single stderr warning —
 /// same convention as a missing model file.
-pub(crate) fn choice() -> Ep {
+pub fn choice() -> Ep {
     static CHOICE: OnceLock<Ep> = OnceLock::new();
     *CHOICE.get_or_init(|| {
         let Some(raw) = docling_core::env::nonempty("DOCLING_RS_EP") else {
@@ -107,14 +108,14 @@ pub(crate) fn choice() -> Ep {
         };
         let Some(ep) = parse(&raw) else {
             eprintln!(
-                "docling-pdf: DOCLING_RS_EP={raw:?} names no known execution provider \
+                "docling-rs: DOCLING_RS_EP={raw:?} names no known execution provider \
                  (cpu|cuda|tensorrt|directml|coreml|auto); using CPU"
             );
             return Ep::Cpu;
         };
         if !compiled(ep) {
             eprintln!(
-                "docling-pdf: DOCLING_RS_EP={raw:?} requested, but this binary was built \
+                "docling-rs: DOCLING_RS_EP={raw:?} requested, but this binary was built \
                  without that provider — rebuild with `--features {}`; using CPU",
                 match ep {
                     Ep::Cuda => "cuda",
@@ -136,7 +137,10 @@ pub(crate) fn choice() -> Ep {
 /// only known per-session, and a CPU fall-back running fp32 is merely the
 /// pre-int8 speed, while a GPU running the CPU-calibrated int8 graph is a
 /// conformance risk.
-pub(crate) fn prefers_fp32() -> bool {
+///
+/// A no-op for ASR: the Whisper exports ship without int8 variants, so there
+/// is no model selection for this to influence on that path.
+pub fn prefers_fp32() -> bool {
     match choice() {
         Ep::Cpu => false,
         Ep::Cuda | Ep::TensorRt | Ep::DirectMl | Ep::CoreMl => true,
@@ -186,8 +190,26 @@ fn dispatches() -> Option<Vec<ExecutionProviderDispatch>> {
 }
 
 /// Register the selected execution providers on a session builder. Called by
-/// every session in this crate; a no-op (and infallible) in the default
-/// CPU configuration.
+/// every ONNX session in the workspace; a no-op (and infallible) in the
+/// default CPU configuration.
+pub fn apply(builder: SessionBuilder) -> Result<SessionBuilder, String> {
+    let Some(eps) = dispatches() else {
+        // No GPU EP selected: the CPU fallback still honors the arena knob.
+        return memory_opts(builder);
+    };
+    static LOGGED: OnceLock<()> = OnceLock::new();
+    LOGGED.get_or_init(|| {
+        if docling_core::env::flag("DOCLING_RS_TIMING") {
+            eprintln!("docling-rs: execution providers: {eps:?}");
+        }
+    });
+    let builder = builder
+        .with_execution_providers(eps)
+        .map_err(|e| format!("execution provider registration: {e}"))?;
+    // After the GPU EPs, so they keep registration priority.
+    memory_opts(builder)
+}
+
 /// Session memory options (#263): with `DOCLING_RS_NO_ARENA` set, the CPU
 /// execution provider registers with its memory arena disabled
 /// (`DisableCpuMemArena`) and initializers stay out of arena allocations.
@@ -210,24 +232,6 @@ fn memory_opts(builder: SessionBuilder) -> Result<SessionBuilder, String> {
     cpu.register(&mut builder)
         .map_err(|e| format!("cpu ep: {e}"))?;
     Ok(builder)
-}
-
-pub fn apply(builder: SessionBuilder) -> Result<SessionBuilder, String> {
-    let Some(eps) = dispatches() else {
-        // No GPU EP selected: the CPU fallback still honors the arena knob.
-        return memory_opts(builder);
-    };
-    static LOGGED: OnceLock<()> = OnceLock::new();
-    LOGGED.get_or_init(|| {
-        if crate::timing::enabled() {
-            eprintln!("docling-pdf: execution providers: {eps:?}");
-        }
-    });
-    let builder = builder
-        .with_execution_providers(eps)
-        .map_err(|e| format!("execution provider registration: {e}"))?;
-    // After the GPU EPs, so they keep registration priority.
-    memory_opts(builder)
 }
 
 #[cfg(test)]

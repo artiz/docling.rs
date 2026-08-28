@@ -21,6 +21,7 @@ members = [
     "crates/docling",
     "crates/docling-asr",
     "crates/docling-cli",
+    "crates/docling-onnx",
     "crates/docling-pdf",
     # Node.js / Bun N-API bindings (published to npm, not crates.io).
     "crates/docling-node",
