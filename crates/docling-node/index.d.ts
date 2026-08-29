@@ -28,13 +28,17 @@ export { supportedFormats, formatFromName } from './native'
 /** Callback form used by the native streaming API (prefer {@link streamFileMarkdown}). */
 export type StreamCallback = (err: Error | null, chunk: string | undefined | null) => void
 
-/** Convert a file on disk (format detected from the extension). Throws for PDF/image/METS if deps aren't installed. */
+/**
+ * Convert a file on disk (format detected from the extension). Throws for
+ * PDF/image/METS if deps aren't installed — except under `pipeline: 'vlm'`,
+ * which loads no ONNX models and needs only pdfium (nothing for image input).
+ */
 export declare function convertFile(path: string, options?: ConvertOptions | null): ConvertResult
-/** Convert in-memory bytes. Throws for PDF/image/METS if deps aren't installed. */
+/** Convert in-memory bytes. Throws for PDF/image/METS if deps aren't installed (see {@link convertFile}). */
 export declare function convert(input: ConvertInput, options?: ConvertOptions | null): ConvertResult
-/** Async (Promise) file conversion, off the event loop. Rejects for PDF/image/METS if deps aren't installed. */
+/** Async (Promise) file conversion, off the event loop. Rejects for PDF/image/METS if deps aren't installed (see {@link convertFile}). */
 export declare function convertFileAsync(path: string, options?: ConvertOptions | null): Promise<ConvertResult>
-/** Async (Promise) bytes conversion, off the event loop. */
+/** Async (Promise) bytes conversion, off the event loop. Rejects for PDF/image/METS if deps aren't installed (see {@link convertFile}). */
 export declare function convertAsync(input: ConvertInput, options?: ConvertOptions | null): Promise<ConvertResult>
 
 /**
@@ -58,7 +62,10 @@ export declare function chunkDocument(documentJson: string, options?: ChunkOptio
 /** Async (Promise) {@link chunkDocument}. */
 export declare function chunkDocumentAsync(documentJson: string, options?: ChunkOptions | null): Promise<Array<Chunk>>
 
-/** A reusable converter holding config (strict / fetchImages / allowedFormats). */
+/**
+ * A reusable converter holding config (strict / fetchImages / allowedFormats,
+ * and the `pipeline` / `vlm*` selection).
+ */
 export declare class DocumentConverter {
   constructor(options?: ConverterOptions | null)
   convertFile(path: string, options?: OutputOptions | null): ConvertResult
@@ -82,6 +89,9 @@ export interface PipelineStreamOptions {
  * The `*Async` variants run the conversion off the event loop; overlapping
  * calls on one instance queue (the models are mutable sessions), so batch
  * throughput comes from keeping the models warm, not from parallel calls.
+ *
+ * `pipeline: 'vlm'` is rejected here: it loads no models, so there is nothing
+ * to keep warm. Use {@link DocumentConverter} or {@link convertFile} for it.
  */
 export declare class Pipeline {
   constructor(options?: ConverterOptions | null)
@@ -120,7 +130,11 @@ export interface DependencyStatus {
   tableformer: boolean
   /** Hybrid-chunker tokenizer (.models/chunk/tokenizer.json) present. */
   chunkTokenizer: boolean
-  /** True when the minimum for PDF (pdfium + layout) is present. */
+  /**
+   * True when the minimum for PDF (pdfium + layout) is present — that is, for
+   * the *standard* pipeline. `pipeline: 'vlm'` needs `pdfium` alone (and
+   * nothing at all for image input), so it can convert with `ready: false`.
+   */
   ready: boolean
   /** Human-readable list of the missing required assets. */
   missing: string[]
@@ -135,11 +149,13 @@ export declare function checkDependencies(options?: { dir?: string }): Dependenc
 
 // --- streaming --------------------------------------------------------------
 
-/** Options for {@link streamFileMarkdown} (converter config + streamable output). */
-export interface StreamOptions {
-  strict?: boolean
-  fetchImages?: boolean
-  allowedFormats?: string[]
+/**
+ * Options for {@link streamFileMarkdown}: every converter knob (including
+ * `pipeline` / `vlm*` and `pages`) plus the streamable output modes. Extending
+ * `ConverterOptions` rather than restating fields keeps this from drifting as
+ * the native option set grows — the implementation forwards the whole object.
+ */
+export interface StreamOptions extends ConverterOptions {
   imageMode?: 'placeholder' | 'embedded'
   artifactsDir?: string
 }
@@ -148,6 +164,10 @@ export interface StreamOptions {
  * Stream a file's Markdown in chunks, in document order, as conversion
  * progresses — the win for PDF, whose pages convert in parallel. Concatenating
  * the chunks reproduces the buffered `convertFile(path).content` byte-for-byte.
+ *
+ * Under `pipeline: 'vlm'` nothing streams — the endpoint answers a whole page
+ * per request — so the document arrives as a single chunk. The concatenation
+ * contract above still holds.
  */
 export declare function streamFileMarkdown(
   filePath: string,

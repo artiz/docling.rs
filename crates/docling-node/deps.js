@@ -31,6 +31,10 @@ const path = require('path')
 // Formats whose conversion requires the ML models + native libs above.
 const ML_FORMATS = new Set(['pdf', 'image', 'mets_gbs'])
 
+// Of those, the ones the remote VLM pipeline can convert (#77) — `convert_vlm`
+// handles PDF and image only.
+const VLM_FORMATS = new Set(['pdf', 'image'])
+
 // pdfium's shared-library filename, by platform.
 function pdfiumLibName() {
   switch (process.platform) {
@@ -180,7 +184,10 @@ function downloadGuide() {
     'PDFIUM_DYNAMIC_LIB_PATH — see docs/MODELS_NOTICE.md for licensing.',
     '',
     'Declarative formats (md, html, docx, xlsx, …) need none of this — only',
-    'PDF, image and METS conversion do.',
+    'PDF, image and METS conversion do. The remote VLM pipeline needs no ONNX',
+    "models either — pdfium alone, to rasterize PDF pages, and not even that",
+    "for image input — but it is a convert* option (pipeline: 'vlm'); the",
+    'chunk* functions have no VLM path and always need the models.',
   ].join('\n')
 }
 
@@ -189,17 +196,41 @@ function downloadGuide() {
  * dependencies aren't installed. Called before ML conversions; also wires up
  * the `DOCLING_*` / `PDFIUM_DYNAMIC_LIB_PATH` env vars for whatever is present,
  * so a checkout with `scripts/install/download_dependencies.sh` already run just works.
+ *
+ * `options` are the caller's convert options, read only for `pipeline` (#77):
+ * under `pipeline: 'vlm'` a remote endpoint replaces the ONNX stack, so the
+ * layout model is not required — but pdfium still is, because PDF pages are
+ * rasterized locally before being sent. A standalone image is already its own
+ * page and needs neither, so `image` + VLM requires nothing on disk.
  */
-function assertMlReady(format, dir) {
+function assertMlReady(format, dir, options) {
   if (!ML_FORMATS.has(format)) return
+  const pipeline = options && options.pipeline
+  // Validated here, not left to the native side: this guard runs first, so an
+  // unrecognized name would otherwise fall through to the strict ONNX
+  // requirement — telling someone who typed 'VLM' to download hundreds of
+  // megabytes of models to fix a capitalization slip.
+  if (pipeline != null && pipeline !== 'standard' && pipeline !== 'vlm') {
+    throw new Error(`unknown pipeline '${pipeline}' (expected: standard, vlm)`)
+  }
+  const vlm = pipeline === 'vlm'
+  // METS-GBS is an ML format with no VLM path at all, so relaxing the model
+  // requirement for it would only send the user off to fetch a pdfium that
+  // cannot help. Say what's actually wrong instead.
+  if (vlm && !VLM_FORMATS.has(format)) {
+    throw new Error(
+      `the 'vlm' pipeline converts PDF and image inputs; '${format}' needs the standard pipeline.`,
+    )
+  }
   const p = resolvePaths(dir)
   exportEnv(p)
   const status = checkDependencies({ dir })
   // Image needs layout (+OCR), but not pdfium; PDF/METS need both.
   const needPdfium = format !== 'image'
-  const missing = [!status.layout && 'layout_heron.onnx', needPdfium && !status.pdfium && 'pdfium'].filter(
-    Boolean,
-  )
+  const missing = [
+    !vlm && !status.layout && 'layout_heron.onnx',
+    needPdfium && !status.pdfium && 'pdfium',
+  ].filter(Boolean)
   if (missing.length === 0) return
   throw new Error(
     `Converting '${format}' requires the PDF/ML dependencies, which are not installed: ` +

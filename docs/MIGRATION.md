@@ -469,7 +469,9 @@ deliberate scope boundary or a cosmetic, single-fixture polish gap.
   --vlm-model NAME` renders pages via pdfium, converts them through any
   OpenAI-compatible vision endpoint (LM Studio / Ollama / vLLM / hosted) and
   parses the returned DocLang with the existing reader — see the README's
-  "VLM pipeline" section. (**Audio/ASR is now done** — see §2; Opus and AVI,
+  "VLM pipeline" section. Also on the Node bindings as `pipeline: 'vlm'`
+  (`vlmEndpoint` / `vlmModel` / `vlmApiKey` / `vlmPrompt` / `vlmMaxTokens`);
+  serve and the Python bindings don't carry it yet. (**Audio/ASR is now done** — see §2; Opus and AVI,
   which symphonia cannot decode, use the optional ffmpeg fallback. The **enrichment
   models are now done** too: DocumentFigureClassifier-v2.5 for
   `do_picture_classification` and CodeFormulaV2 — an Idefics3-class VLM,
@@ -537,7 +539,9 @@ deliberate scope boundary or a cosmetic, single-fixture polish gap.
   with swappable embedders (Ollama/Gemini/local ONNX), stores
   (SQLite+sqlite-vec / PostgreSQL+pgvector), LLM, sources and queues, plus an
   eval harness and a REST API. See the crate README.
-- **`docling-node`** — Node.js/Bun N-API bindings (npm package).
+- **`docling-node`** — Node.js/Bun N-API bindings (npm package): the full
+  converter surface plus the chunkers, Markdown/chunk streaming, a warm
+  `Pipeline` for many PDFs, and the remote VLM pipeline (`pipeline: 'vlm'`).
 - **`docling-wasm`** — WebAssembly bindings: the declarative converters (and
   digital PDFs via the opt-in `pdf-text` text-layer feature — the same
   extraction as `--no-ocr`, no pdfium/ONNX) run fully client-side in the
