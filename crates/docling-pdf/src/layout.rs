@@ -175,7 +175,7 @@ impl LayoutModel {
             // a large PDF runs this model once per page.
             .with_intra_threads(intra)
             .map_err(|e| format!("layout: intra_threads: {e}"))?;
-        crate::ep::apply(builder)
+        docling_onnx::apply(builder)
             .map_err(|e| format!("layout: {e}"))?
             .commit_from_file(path)
             .map_err(|e| format!("layout: load {path}: {e}"))

@@ -24,9 +24,11 @@ mod dp_lines;
 #[cfg(feature = "ml")]
 pub mod enrich;
 // Public so sibling crates (e.g. docling-rag's ONNX embedder) can route their
-// own `ort` sessions through the same `DOCLING_RS_EP` selection.
+// own `ort` sessions through the same `DOCLING_RS_EP` selection. Kept as a
+// re-export after the logic moved to the shared `docling-onnx` crate —
+// `docling_pdf::ep::…` remains the stable path downstream crates code against.
 #[cfg(feature = "ml")]
-pub mod ep;
+pub use docling_onnx as ep;
 pub mod layout;
 #[cfg(feature = "ml")]
 mod mets;
@@ -268,7 +270,7 @@ pub(crate) fn fp32_forced() -> bool {
 /// only conformance-validated there. An explicit `DOCLING_*_ONNX` path
 /// override still wins over this at every call site.
 pub(crate) fn prefer_fp32() -> bool {
-    fp32_forced() || ep::prefers_fp32()
+    fp32_forced() || docling_onnx::prefers_fp32()
 }
 
 #[cfg(feature = "ml")]
