@@ -317,6 +317,15 @@ const res = await convertFileAsync('paper.pdf', {
 the environment supplies values, it never switches the pipeline on, so a stale
 `DOCLING_RS_VLM_ENDPOINT` can't silently route your PDFs over the network.
 
+> **The `vlm*` options are only read under `pipeline: 'vlm'`.** Passing
+> `vlmEndpoint` / `vlmModel` without it is not an error and does not switch
+> pipelines: the options are ignored and the conversion runs through the
+> standard ONNX pipeline — the same way the CLI parses a stray
+> `--vlm-endpoint` given without `--pipeline vlm` and drops it. An option
+> configures the VLM; `pipeline` alone selects it. So if a call is loading the
+> ML models (or failing on missing ones) when you expected the endpoint to be
+> contacted, the missing piece is `pipeline: 'vlm'`.
+
 `pages: 'A-B'` composes (only those pages are rendered and sent), `strict`,
 `compactTables`, `allowedFormats` and `to: 'json'` work as usual, and
 `streamFileMarkdown` yields the document as a single chunk — a VLM answers a
@@ -408,7 +417,8 @@ constructor; output options (`to`, `imageMode`, `artifactsDir`) are per call.
   (`0` = transcript only; default 8, needs ffmpeg at runtime).
 - `pipeline`: `"standard"` (default) or `"vlm"` — convert PDF/image pages
   through a remote vision endpoint instead of the ONNX stack (#77). See
-  [VLM pipeline](#vlm-pipeline-remote-endpoint).
+  [VLM pipeline](#vlm-pipeline-remote-endpoint). The five `vlm*` options below
+  take effect **only** under `"vlm"`; without it they are silently ignored.
 - `vlmEndpoint`: the server's `/v1` base or the full `…/chat/completions` URL.
   Falls back to `DOCLING_RS_VLM_ENDPOINT`; required for `pipeline: 'vlm'`.
 - `vlmModel`: model name as the server knows it. Falls back to

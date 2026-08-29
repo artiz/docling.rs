@@ -338,6 +338,37 @@ async function main() {
     assert.throws(() => new Pipeline({ pipeline: 'vlm' }), /loads no models/)
   })
 
+  // The ignore is deliberate, not an oversight: an option configures the VLM,
+  // only `pipeline` selects it — the same rule as the CLI, which parses a
+  // stray `--vlm-endpoint` without `--pipeline vlm` and drops it. Pinned from
+  // the caller's side (the `resolve_vlm` unit test pins the resolution side):
+  // with an endpoint that *would* answer, nothing reaches it. Markdown input
+  // keeps the check environment-independent — the standard path converts it
+  // with no models on disk.
+  await check("vlm* options without pipeline: 'vlm' are ignored, not an error", async () => {
+    const mock = await mockVlm('<text>never asked</text>')
+    try {
+      for (const pipeline of [undefined, 'standard']) {
+        const res = await convertAsync(
+          { name: 'notes.md', data: Buffer.from(MD) },
+          {
+            pipeline,
+            vlmEndpoint: mock.url,
+            vlmModel: 'granite-docling',
+            vlmApiKey: 'sekret',
+            vlmPrompt: 'Describe this page.',
+            vlmMaxTokens: 512,
+          },
+        )
+        assert.equal(res.status, 'success')
+        assert.match(res.content, /# Title/)
+        assert.equal(mock.served, 0, `pipeline ${pipeline} must not contact the VLM`)
+      }
+    } finally {
+      mock.close()
+    }
+  })
+
   await check('Pipeline rejects an unknown pipeline name too', () => {
     assert.throws(() => new Pipeline({ pipeline: 'magic' }), /unknown pipeline/)
   })
