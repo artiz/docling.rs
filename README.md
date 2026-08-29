@@ -638,7 +638,10 @@ are the env equivalents of the two flags, and `DOCLING_RS_VLM_PROMPT` /
 the CLI — Node exposes them as options too. Selecting the pipeline is always
 explicit: the environment supplies values, it never switches the pipeline on,
 so a stale `DOCLING_RS_VLM_ENDPOINT` can't reroute an ordinary PDF conversion
-over the network. `--pages A-B` composes (only the window's pages are rendered
+over the network. The `--vlm-*` flags are inert on their own for the same
+reason — without `--pipeline vlm` they are parsed and ignored, never a pipeline
+switch of their own — and the Node bindings ignore stray `vlm*` options
+identically. `--pages A-B` composes (only the window's pages are rendered
 and sent), and `--to md|json|dclx|chunks` plus `--strict` work as usual. Transient
 endpoint failures (timeouts, 408/429, 5xx) retry with exponential backoff;
 a page that still fails fails the conversion — no silently dropped pages.

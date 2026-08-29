@@ -91,6 +91,12 @@ pub struct ConverterOptions {
     /// below are fallbacks, never triggers. A stale `DOCLING_RS_VLM_ENDPOINT`
     /// left in the environment must not silently route every PDF over the
     /// network.
+    ///
+    /// By the same rule the `vlm_*` options below are read **only** under
+    /// `"vlm"`. Passing them with the standard pipeline is not an error and
+    /// does not switch pipelines — they are ignored, exactly as the CLI drops
+    /// a stray `--vlm-endpoint` given without `--pipeline vlm`. They configure
+    /// the VLM; `pipeline` alone selects it.
     pub pipeline: Option<String>,
     /// VLM server: the base `/v1` URL or the full `…/chat/completions` one —
     /// the suffix is appended when missing. Falls back to
@@ -183,7 +189,9 @@ pub struct ConvertOptions {
     pub no_text_panels: Option<bool>,
     /// `"standard"` (default) or `"vlm"` (#77): convert PDF/image pages
     /// through a remote OpenAI-compatible vision endpoint instead of the ONNX
-    /// stack. See [`ConverterOptions::pipeline`] for the full contract.
+    /// stack. The `vlm_*` options below take effect only under `"vlm"` and are
+    /// ignored otherwise. See [`ConverterOptions::pipeline`] for the full
+    /// contract.
     pub pipeline: Option<String>,
     /// VLM server, base `/v1` or full `…/chat/completions` URL. Falls back to
     /// `$DOCLING_RS_VLM_ENDPOINT`.
@@ -365,6 +373,13 @@ fn build_config(o: ConvertOptions) -> Result<ConvertConfig> {
 /// Resolution happens at option-parsing time, not at conversion time, so a
 /// missing endpoint fails fast on the call (or on the `DocumentConverter`
 /// constructor) instead of after a file has been read.
+///
+/// The standard branch drops the `vlm_*` arguments instead of rejecting them:
+/// an option configures the VLM, only `pipeline` selects it, and that is one
+/// rule shared with the CLI — which parses `--vlm-endpoint` / `--vlm-model`
+/// and ignores them without `--pipeline vlm`. Pinned by
+/// `standard_pipeline_ignores_vlm_options` below and by the Node-side smoke
+/// check, so the ignore stays a decision rather than resurfacing as a bug.
 fn resolve_vlm(
     pipeline: Option<&str>,
     endpoint: Option<String>,
@@ -380,6 +395,7 @@ fn resolve_vlm(
     // the env fallback rather than resolve to an empty endpoint.
     let set = |s: Option<String>| s.filter(|v| !v.trim().is_empty());
     match pipeline {
+        // Intentionally without inspecting the `vlm_*` arguments: see above.
         None | Some("standard") => Ok(None),
         Some("vlm") => {
             let (endpoint, model) = (set(endpoint), set(model));
@@ -1749,12 +1765,30 @@ mod tests {
     // gate for them: `cargo test --workspace` runs these, whereas the Node
     // smoke test needs a built addon and no workflow invokes it.
 
+    /// The standard pipeline builds no VLM options — and stays that way with
+    /// *every* `vlm_*` argument set, rather than failing the call. The ignore
+    /// is CLI parity (a stray `--vlm-endpoint` is parsed and dropped there
+    /// too); pinning it here keeps it a decision instead of a regression
+    /// someone files later. Its caller-side twin is the "vlm* options without
+    /// pipeline: 'vlm' are ignored" check in `test/smoke.mjs`.
     #[test]
-    fn standard_pipeline_needs_no_vlm_options() {
+    fn standard_pipeline_ignores_vlm_options() {
         for p in [None, Some("standard")] {
             let got =
                 resolve_vlm(p, None, None, None, None, None, None).expect("standard pipeline");
             assert!(got.is_none(), "pipeline {p:?} must not build VLM options");
+
+            let got = resolve_vlm(
+                p,
+                Some("http://127.0.0.1:1/v1".into()),
+                Some("granite-docling".into()),
+                Some("sekret".into()),
+                Some("Describe this page.".into()),
+                Some(512),
+                Some((2, 4)),
+            )
+            .expect("vlm options must not fail the standard pipeline");
+            assert!(got.is_none(), "pipeline {p:?} must ignore the vlm options");
         }
     }
 
