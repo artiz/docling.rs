@@ -1,0 +1,24 @@
+{
+	"name": "docling-rs",
+	"image": "mcr.microsoft.com/devcontainers/rust:2-1-trixie",
+	"features": {
+		"ghcr.io/devcontainers/features/github-cli:1": {
+			"installDirectlyFromGitHubRelease": true,
+			"version": "latest"
+		},
+		"ghcr.io/devcontainers/features/node:2": {
+			"nodeGypDependencies": true,
+			"version": "lts",
+			"npmVersion": "lts",
+			"pnpmVersion": "none",
+			"nvmVersion": "latest"
+		}
+	},
+	"customizations": {
+		"vscode": {
+			"extensions": [
+				"anthropic.claude-code"
+			]
+		}
+	}
+}
