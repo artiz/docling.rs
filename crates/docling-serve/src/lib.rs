@@ -35,7 +35,7 @@
 //! - `strict` — cleaner Markdown instead of docling-legacy output
 //! - `images` — `placeholder` (default) | `embedded` (Markdown only)
 //! - `no_ocr`, `skip_ocr`, `no_table_former`, `force_full_page_ocr`,
-//!   `no_text_panels` — PDF/image pipeline switches (`skip_ocr`, #244: keep
+//!   `no_text_panels`, `heading_hierarchy` — PDF/image pipeline switches (`skip_ocr`, #244: keep
 //!   layout + TableFormer, never OCR — docling's independent `do_ocr=False`;
 //!   `no_ocr` skips the whole ML stack)
 //! - `pages` — PDF page window `A-B` / `N` (1-based inclusive, #80)
@@ -414,6 +414,10 @@ struct ConvertOptions {
     /// Keep text-panel pictures as pictures (#173): disable the #157 demotion
     /// of uncaptioned dense-text "picture" regions into paragraphs.
     no_text_panels: Option<bool>,
+    /// Infer PDF/image section-header levels after assembly (#302, docling's
+    /// `HeadingHierarchyModel`: bookmarks > numbering > font style). Off by
+    /// default — headings then keep the flat level the pipeline emits.
+    heading_hierarchy: Option<bool>,
     fetch_images: Option<bool>,
     /// Email (.eml/.msg): append an Attachments section — names and content
     /// types only, never the payload (#251).
@@ -476,6 +480,7 @@ impl ConvertOptions {
             force_full_page_ocr: self.force_full_page_ocr.or(base.force_full_page_ocr),
             no_table_former: self.no_table_former.or(base.no_table_former),
             no_text_panels: self.no_text_panels.or(base.no_text_panels),
+            heading_hierarchy: self.heading_hierarchy.or(base.heading_hierarchy),
             fetch_images: self.fetch_images.or(base.fetch_images),
             list_attachments: self.list_attachments.or(base.list_attachments),
             skip_empty_cells: self.skip_empty_cells.or(base.skip_empty_cells),
@@ -1577,6 +1582,7 @@ async fn read_multipart(
             | "no_table_former"
             | "force_full_page_ocr"
             | "no_text_panels"
+            | "heading_hierarchy"
             | "fetch_images"
             | "list_attachments"
             | "skip_empty_cells"
@@ -1591,6 +1597,7 @@ async fn read_multipart(
                     "force_full_page_ocr" => body_opts.force_full_page_ocr = Some(b),
                     "no_table_former" => body_opts.no_table_former = Some(b),
                     "no_text_panels" => body_opts.no_text_panels = Some(b),
+                    "heading_hierarchy" => body_opts.heading_hierarchy = Some(b),
                     "list_attachments" => body_opts.list_attachments = Some(b),
                     "skip_empty_cells" => body_opts.skip_empty_cells = Some(b),
                     "compact_tables" => body_opts.compact_tables = Some(b),
@@ -1888,6 +1895,11 @@ fn convert_document_inner(
             pipeline.set_force_full_page_ocr(options.force_full_page_ocr.unwrap_or(false));
             pipeline.set_ocr_mode(parse_ocr_mode(options.ocr_mode.as_deref())?);
             pipeline.set_ocr_scale(parse_ocr_scale(options.ocr_scale)?);
+            // #302: pure per-request post-processing configuration, set
+            // unconditionally like the page window.
+            pipeline.set_heading_hierarchy(docling::HeadingHierarchyOptions::enabled(
+                options.heading_hierarchy.unwrap_or(false),
+            ));
             let doc = match source.format {
                 InputFormat::Pdf => pipeline.convert(&source.bytes, None, &source.name),
                 _ => pipeline.convert_image(&source.bytes, &source.name),
@@ -1983,7 +1995,8 @@ fn request_converter(
         .skip_ocr(options.skip_ocr.unwrap_or(false))
         .force_full_page_ocr(options.force_full_page_ocr.unwrap_or(false))
         .no_table_former(options.no_table_former.unwrap_or(false))
-        .no_text_panels(options.no_text_panels.unwrap_or(false));
+        .no_text_panels(options.no_text_panels.unwrap_or(false))
+        .heading_hierarchy(options.heading_hierarchy.unwrap_or(false));
     if let Some(pages) = &options.pages {
         let (first, last) =
             docling::parse_page_range(pages).map_err(|e| ApiError::Bad(format!("pages: {e}")))?;

@@ -98,7 +98,12 @@ pub(crate) fn spawn(
     let handle = std::thread::spawn(move || match source.format {
         // PDF is the format with internal page-level parallelism, so it gets the
         // true streaming path: emit each page's Markdown in order as it completes.
-        InputFormat::Pdf => run_pdf(converter.stream_settings(), &source, image_mode, &tx),
+        // Exception: the heading-hierarchy stage (#302) rewrites levels across
+        // the *whole* assembled document, so those conversions run buffered
+        // (one chunk) — streamed output stays byte-identical to buffered.
+        InputFormat::Pdf if !converter.heading_hierarchy_enabled() => {
+            run_pdf(converter.stream_settings(), &source, image_mode, &tx)
+        }
         // Every other backend builds the whole `DoclingDocument` synchronously, so
         // there is no latency to stream away; serialize it through the same chunk
         // API for a uniform interface (one chunk plus the trailing newline).

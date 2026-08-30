@@ -7,7 +7,7 @@
 //! (docling's independent `do_ocr=False`); `--no-ocr` remains the
 //! skip-everything fast path.
 //!
-//! Usage: docling-rs [--strict] [--to md|json|dclx|chunks|images] [--pages A-B] [--scale X] [--images MODE] [--input GLOB --output DIR [--jobs N]] [--fetch-images] [--list-attachments] [--skip-empty-cells] [--compact-tables] [--ebcdic-layout JSON|PATH] [--no-stream] [--no-table-former] [--no-ocr] [--skip-ocr] [--force-full-page-ocr] [--no-text-panels] [--ocr-lang en|ch] [--ocr-mode MODE] [--ocr-scale X] [--chunker hierarchical|hybrid] [--chunk-tokenizer PATH] [--chunk-max-tokens N] [--no-chunk-merge-peers] [--pipeline standard|vlm] [--vlm-endpoint URL] [--vlm-model NAME] [--asr-model PRESET] [--asr-lang CODE] [--video-frames N] [--use-web-browser] [--enrich-picture-classes] [--enrich-code] [--enrich-formula] <input-file>
+//! Usage: docling-rs [--strict] [--to md|json|dclx|chunks|images] [--pages A-B] [--scale X] [--images MODE] [--input GLOB --output DIR [--jobs N]] [--fetch-images] [--list-attachments] [--skip-empty-cells] [--compact-tables] [--ebcdic-layout JSON|PATH] [--no-stream] [--no-table-former] [--no-ocr] [--skip-ocr] [--force-full-page-ocr] [--no-text-panels] [--heading-hierarchy] [--ocr-lang en|ch] [--ocr-mode MODE] [--ocr-scale X] [--chunker hierarchical|hybrid] [--chunk-tokenizer PATH] [--chunk-max-tokens N] [--no-chunk-merge-peers] [--pipeline standard|vlm] [--vlm-endpoint URL] [--vlm-model NAME] [--asr-model PRESET] [--asr-lang CODE] [--video-frames N] [--use-web-browser] [--enrich-picture-classes] [--enrich-code] [--enrich-formula] <input-file>
 //!   --input GLOB|DIR   batch mode (#205): convert every file the glob matches
 //!                      (`--input '/data/reports/**/*.pdf'` — quote it so the
 //!                      shell doesn't expand it) instead of one positional file.
@@ -76,6 +76,11 @@
 //!                      #157 demotion of uncaptioned text-panel pictures into
 //!                      paragraphs (the escape hatch for image-extraction
 //!                      workflows, #173)
+//!   --heading-hierarchy  infer PDF/image section-header levels after assembly
+//!                      (#302, docling's HeadingHierarchyModel): PDF bookmarks
+//!                      are authoritative, legal/outline numbering covers the
+//!                      rest, font style breaks the ties. Off by default —
+//!                      headings then keep the flat level docling emits
 //!   --no-ocr           skip layout detection, OCR, and TableFormer entirely for
 //!                      PDF/image input — no model load or inference at all.
 //!                      Emits the embedded text layer as flat paragraphs in
@@ -146,6 +151,7 @@ fn main() -> ExitCode {
     let mut skip_ocr = false;
     let mut force_full_page_ocr = false;
     let mut no_text_panels = false;
+    let mut heading_hierarchy = false;
     let mut use_web_browser = false;
     let mut asr_model: Option<String> = None;
     let mut asr_lang: Option<String> = None;
@@ -198,6 +204,7 @@ fn main() -> ExitCode {
             "--skip-ocr" => skip_ocr = true,
             "--force-full-page-ocr" => force_full_page_ocr = true,
             "--no-text-panels" => no_text_panels = true,
+            "--heading-hierarchy" => heading_hierarchy = true,
             "--use-web-browser" => use_web_browser = true,
             // Opt-in enrichment models (docling CLI flag names): picture
             // classification, code rewrite + language, formula LaTeX.
@@ -460,6 +467,7 @@ fn main() -> ExitCode {
             skip_ocr,
             force_full_page_ocr,
             no_text_panels,
+            heading_hierarchy,
             use_web_browser,
             enrich_picture_classes,
             enrich_code,
@@ -479,7 +487,7 @@ fn main() -> ExitCode {
     }
 
     let Some(path) = path else {
-        eprintln!("usage: docling-rs [--strict] [--to md|json|dclx|chunks|images] [--scale X] [--images MODE] [--input GLOB --output DIR [--jobs N]] [--fetch-images] [--list-attachments] [--skip-empty-cells] [--compact-tables] [--ebcdic-layout JSON|PATH] [--no-stream] [--no-table-former] [--no-ocr] [--skip-ocr] [--force-full-page-ocr] [--no-text-panels] [--ocr-lang en|ch] [--ocr-mode MODE] [--ocr-scale X] [--chunker hierarchical|hybrid] [--chunk-tokenizer PATH] [--chunk-max-tokens N] [--no-chunk-merge-peers] [--use-web-browser] <input-file>");
+        eprintln!("usage: docling-rs [--strict] [--to md|json|dclx|chunks|images] [--scale X] [--images MODE] [--input GLOB --output DIR [--jobs N]] [--fetch-images] [--list-attachments] [--skip-empty-cells] [--compact-tables] [--ebcdic-layout JSON|PATH] [--no-stream] [--no-table-former] [--no-ocr] [--skip-ocr] [--force-full-page-ocr] [--no-text-panels] [--heading-hierarchy] [--ocr-lang en|ch] [--ocr-mode MODE] [--ocr-scale X] [--chunker hierarchical|hybrid] [--chunk-tokenizer PATH] [--chunk-max-tokens N] [--no-chunk-merge-peers] [--use-web-browser] <input-file>");
         return ExitCode::from(2);
     };
 
@@ -576,6 +584,7 @@ fn main() -> ExitCode {
         .no_ocr(no_ocr)
         .force_full_page_ocr(force_full_page_ocr)
         .no_text_panels(no_text_panels)
+        .heading_hierarchy(heading_hierarchy)
         .use_web_browser(use_web_browser)
         .do_picture_classification(enrich_picture_classes)
         .do_code_enrichment(enrich_code)
@@ -730,6 +739,7 @@ struct BatchCfg {
     skip_ocr: bool,
     force_full_page_ocr: bool,
     no_text_panels: bool,
+    heading_hierarchy: bool,
     use_web_browser: bool,
     enrich_picture_classes: bool,
     enrich_code: bool,
@@ -854,6 +864,7 @@ fn batch_converter(cfg: &BatchCfg) -> DocumentConverter {
         .no_ocr(cfg.no_ocr)
         .force_full_page_ocr(cfg.force_full_page_ocr)
         .no_text_panels(cfg.no_text_panels)
+        .heading_hierarchy(cfg.heading_hierarchy)
         .use_web_browser(cfg.use_web_browser)
         .do_picture_classification(cfg.enrich_picture_classes)
         .do_code_enrichment(cfg.enrich_code)
@@ -892,6 +903,9 @@ fn batch_pipeline<'a>(
             .skip_ocr(cfg.skip_ocr)
             .force_full_page_ocr(cfg.force_full_page_ocr)
             .no_text_panels(cfg.no_text_panels)
+            .heading_hierarchy(docling::HeadingHierarchyOptions::enabled(
+                cfg.heading_hierarchy,
+            ))
             .ocr_mode(cfg.ocr_mode.as_deref().and_then(docling::OcrMode::parse))
             .ocr_scale(cfg.ocr_scale)
             .enrichments(docling::EnrichmentOptions {

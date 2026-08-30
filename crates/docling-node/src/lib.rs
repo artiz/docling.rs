@@ -81,6 +81,11 @@ pub struct ConverterOptions {
     /// uncaptioned dense-text "picture" regions into paragraphs (the escape
     /// hatch for image-extraction workflows, #173). Default `false`.
     pub no_text_panels: Option<bool>,
+    /// Infer PDF/image section-header levels after assembly (docling's
+    /// `HeadingHierarchyModel`, #302): PDF bookmarks are authoritative, then
+    /// legal/outline numbering, then font style. Default `false` — headings
+    /// then keep the flat detected level.
+    pub heading_hierarchy: Option<bool>,
     /// `"standard"` (default) or `"vlm"` (#77): replace the whole ONNX stack —
     /// layout, OCR, TableFormer — with a remote OpenAI-compatible vision
     /// endpoint, which converts each rendered page on its own. PDF and image
@@ -187,6 +192,9 @@ pub struct ConvertOptions {
     /// Keep every detected picture as a picture: disable text-panel demotion
     /// (#173). Default `false`.
     pub no_text_panels: Option<bool>,
+    /// Infer PDF/image section-header levels after assembly (#302). Default
+    /// `false`.
+    pub heading_hierarchy: Option<bool>,
     /// `"standard"` (default) or `"vlm"` (#77): convert PDF/image pages
     /// through a remote OpenAI-compatible vision endpoint instead of the ONNX
     /// stack. The `vlm_*` options below take effect only under `"vlm"` and are
@@ -271,6 +279,7 @@ struct ConvertConfig {
     skip_ocr: bool,
     force_full_page_ocr: bool,
     no_text_panels: bool,
+    heading_hierarchy: bool,
     /// `Some` only for `pipeline: "vlm"` (#77), already resolved against the
     /// `DOCLING_RS_VLM_*` environment. Its presence *is* the pipeline switch:
     /// [`run_convert`] short-circuits the whole ML stack when it is set.
@@ -345,6 +354,7 @@ fn build_config(o: ConvertOptions) -> Result<ConvertConfig> {
         skip_ocr: o.skip_ocr.unwrap_or(false),
         force_full_page_ocr: o.force_full_page_ocr.unwrap_or(false),
         no_text_panels: o.no_text_panels.unwrap_or(false),
+        heading_hierarchy: o.heading_hierarchy.unwrap_or(false),
         vlm: resolve_vlm(
             o.pipeline.as_deref(),
             o.vlm_endpoint,
@@ -490,6 +500,7 @@ fn build_converter(cfg: &ConvertConfig) -> RsConverter {
         .skip_ocr(cfg.skip_ocr)
         .force_full_page_ocr(cfg.force_full_page_ocr)
         .no_text_panels(cfg.no_text_panels)
+        .heading_hierarchy(cfg.heading_hierarchy)
         .asr_model(cfg.asr_model.clone())
         .asr_lang(cfg.asr_lang.clone());
     let base = match cfg.video_frames {
@@ -728,6 +739,7 @@ pub struct DocumentConverter {
     skip_ocr: bool,
     force_full_page_ocr: bool,
     no_text_panels: bool,
+    heading_hierarchy: bool,
     // Resolved once in the constructor and cloned per call: a converter is
     // configuration, so a missing endpoint should surface at `new`, and the
     // `DOCLING_RS_VLM_*` environment should be read at the same moment every
@@ -767,6 +779,7 @@ impl DocumentConverter {
             skip_ocr: o.skip_ocr.unwrap_or(false),
             force_full_page_ocr: o.force_full_page_ocr.unwrap_or(false),
             no_text_panels: o.no_text_panels.unwrap_or(false),
+            heading_hierarchy: o.heading_hierarchy.unwrap_or(false),
             vlm: resolve_vlm(
                 o.pipeline.as_deref(),
                 o.vlm_endpoint.clone(),
@@ -799,6 +812,7 @@ impl DocumentConverter {
             skip_ocr: self.skip_ocr,
             force_full_page_ocr: self.force_full_page_ocr,
             no_text_panels: self.no_text_panels,
+            heading_hierarchy: self.heading_hierarchy,
             vlm: self.vlm.clone(),
             allowed_formats: self.allowed_formats.clone(),
             to: parse_output_kind(out.to.as_deref())?,
@@ -1283,6 +1297,7 @@ fn output_config(out: Option<OutputOptions>, strict: bool) -> Result<ConvertConf
         skip_ocr: false,
         force_full_page_ocr: false,
         no_text_panels: false,
+        heading_hierarchy: false,
         // The warm `Pipeline` is the ONNX-models class; `Pipeline::new` rejects
         // `pipeline: "vlm"` outright, so nothing reaches here with one set.
         vlm: None,

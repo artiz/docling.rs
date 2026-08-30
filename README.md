@@ -193,7 +193,7 @@ honoring `pages=A-B` and a `scale` of 0.1–4.0 pixels per PDF point (default
 
 Options per request: `to=md|json|dclx|chunks|images`, `strict`, `images=placeholder|embedded`,
 `skip_empty_cells`, `compact_tables`,
-`no_ocr`, `skip_ocr`, `no_table_former`, `no_text_panels`, `force_full_page_ocr`, `pages`,
+`no_ocr`, `skip_ocr`, `no_table_former`, `no_text_panels`, `heading_hierarchy`, `force_full_page_ocr`, `pages`,
 `ocr_lang`, `ocr_mode`, `ocr_scale`, `scale`, `asr_model`, `asr_lang`, `video_frames`, `fetch_images`,
 `chunker=hierarchical|hybrid`, `chunk_tokenizer`, `chunk_max_tokens`, `chunk_merge_peers` (#256:
 per-request `to=chunks` configuration; the tokenizer is a server-local relative path) — as query
@@ -603,6 +603,23 @@ every surface: `no_text_panels(bool)` on the library builder, a
 `no_text_panels` option in docling-serve (with a "keep pictures" toggle in
 the playground), the `no_text_panels=` kwarg in Python, and `noTextPanels`
 in Node.
+
+`--heading-hierarchy` (#302, docling's `HeadingHierarchyModel`) infers PDF/image
+section-header *levels* after assembly. The layout model only flags regions as
+headings, so by default every PDF heading lands at the same depth; with the
+flag on, levels come from — in precedence order — the **PDF outline**
+(bookmarks, fuzzily matched by title + page; a confidently matched heading
+takes the bookmark's depth, and a bookmark-matched *list item* is promoted to
+a heading), **legal/outline numbering** (`PART I → 1. → 1.1 → (a) → (i)`), and
+**font style** (size with near-equal measurement merging, then weight, slant
+and letter case from the embedded font names). Headings with no applicable
+signal keep their level; nothing else about the document changes. Off by
+default (docling parity — the docling groundtruth is produced with the stage
+disabled). On every surface: `heading_hierarchy(bool)` on the library builder
+(full `HeadingHierarchyOptions` on the `Pipeline`), a `heading_hierarchy`
+serve option, the `heading_hierarchy=` kwarg in Python (also docling-shaped
+via `PdfPipelineOptions.heading_hierarchy_options.enabled`), and
+`headingHierarchy` in Node.
 
 Two sparse-spreadsheet knobs (#271, docling.rs extensions, off by default —
 default output stays byte-for-byte docling), on every surface (CLI flag,

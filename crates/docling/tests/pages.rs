@@ -356,3 +356,69 @@ fn table_cells_are_first_class_and_support_bbox_repair() {
         "repair flows into the export"
     );
 }
+
+/// The heading-hierarchy stage (#302, docling's `HeadingHierarchyModel`) must
+/// (a) leave output byte-identical when off — the default — and (b) actually
+/// differentiate heading levels when on. The DocLayNet paper carries a real
+/// PDF outline, so its major sections take bookmark level 1 (rendered `##`)
+/// while unbookmarked front-matter headings fall to the style signal and land
+/// deeper. The fixture pages are digital (no OCR runs), so the test needs
+/// pdfium + the layout model.
+#[test]
+fn heading_hierarchy_differentiates_levels_when_enabled() {
+    if !pdfium_ready() || !ocr_models_ready() {
+        eprintln!("skipping: pdfium/layout assets not found");
+        return;
+    }
+    let base = DocumentConverter::new()
+        .page_range(1, 2)
+        .convert(pdf_source())
+        .expect("baseline convert")
+        .document
+        .export_to_markdown();
+    let leveled = DocumentConverter::new()
+        .page_range(1, 2)
+        .heading_hierarchy(true)
+        .convert(pdf_source())
+        .expect("heading-hierarchy convert")
+        .document
+        .export_to_markdown();
+
+    let levels = |md: &str| -> Vec<usize> {
+        md.lines()
+            .filter(|l| l.starts_with('#'))
+            .map(|l| l.chars().take_while(|&c| c == '#').count())
+            .collect()
+    };
+    // Off (the default): the flat legacy output — every heading at `##`.
+    let base_levels = levels(&base);
+    assert!(!base_levels.is_empty(), "fixture pages carry headings");
+    assert!(
+        base_levels.iter().all(|&d| d == 2),
+        "default output keeps the flat ## levels: {base_levels:?}"
+    );
+    // On: bookmarks/style must produce at least two distinct depths, and the
+    // heading *text* must be untouched (the stage only rewrites levels).
+    let on_levels = levels(&leveled);
+    assert_eq!(on_levels.len(), base_levels.len(), "no headings added/lost");
+    assert!(
+        on_levels
+            .iter()
+            .collect::<std::collections::HashSet<_>>()
+            .len()
+            >= 2,
+        "expected differentiated levels, got {on_levels:?}"
+    );
+    let strip = |md: &str| -> Vec<String> {
+        md.lines()
+            .filter(|l| l.starts_with('#'))
+            .map(|l| l.trim_start_matches('#').trim().to_string())
+            .collect()
+    };
+    assert_eq!(strip(&base), strip(&leveled), "heading text unchanged");
+    // The bookmarked "1 INTRODUCTION" sits at the outline's top level (##).
+    assert!(
+        leveled.lines().any(|l| l == "## 1 INTRODUCTION"),
+        "bookmark-matched heading takes outline level 1"
+    );
+}

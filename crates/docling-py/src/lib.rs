@@ -84,6 +84,7 @@ struct PyDocumentConverter {
     skip_ocr: bool,
     no_table_former: bool,
     no_text_panels: bool,
+    heading_hierarchy: bool,
     enrich: docling::EnrichmentOptions,
     /// OCR knobs the warm pipeline needs at `initialize_pipeline` time (the
     /// transient `inner` path reads them off the converter instead). Parsed /
@@ -114,6 +115,10 @@ impl PyDocumentConverter {
     ///   the demotion of uncaptioned dense-text "picture" regions into
     ///   paragraphs (docling.rs-specific escape hatch for image-extraction
     ///   workflows, #173).
+    /// * `heading_hierarchy` — infer PDF/image section-header levels after
+    ///   assembly (docling's `HeadingHierarchyModel`, #302): PDF bookmarks
+    ///   are authoritative, then legal/outline numbering, then font style.
+    ///   Off by default; headings then keep the flat detected level.
     /// * `do_picture_classification` — classify pictures with the
     ///   DocumentFigureClassifier enrichment model (docling's flag of the same
     ///   name; needs .models/picture_classifier.onnx).
@@ -151,6 +156,7 @@ impl PyDocumentConverter {
         force_full_page_ocr = false,
         do_table_structure = true,
         no_text_panels = false,
+        heading_hierarchy = false,
         use_web_browser = false,
         do_picture_classification = false,
         do_code_enrichment = false,
@@ -176,6 +182,7 @@ impl PyDocumentConverter {
         force_full_page_ocr: bool,
         do_table_structure: bool,
         no_text_panels: bool,
+        heading_hierarchy: bool,
         use_web_browser: bool,
         do_picture_classification: bool,
         do_code_enrichment: bool,
@@ -276,6 +283,7 @@ impl PyDocumentConverter {
                 .force_full_page_ocr(force_full_page_ocr)
                 .no_table_former(!do_table_structure)
                 .no_text_panels(no_text_panels)
+                .heading_hierarchy(heading_hierarchy)
                 .use_web_browser(use_web_browser)
                 .do_picture_classification(do_picture_classification)
                 .do_code_enrichment(do_code_enrichment)
@@ -285,6 +293,7 @@ impl PyDocumentConverter {
             skip_ocr: !do_ocr,
             no_table_former: !do_table_structure,
             no_text_panels,
+            heading_hierarchy,
             enrich,
             force_full_page_ocr,
             ocr_lang: ocr_lang_choice,
@@ -313,6 +322,7 @@ impl PyDocumentConverter {
         let no_ocr = self.no_ocr;
         let skip_ocr = self.skip_ocr;
         let no_text_panels = self.no_text_panels;
+        let heading_hierarchy = self.heading_hierarchy;
         let enrich = self.enrich;
         let force_full_page_ocr = self.force_full_page_ocr;
         let ocr_lang = self.ocr_lang;
@@ -328,6 +338,9 @@ impl PyDocumentConverter {
                     .no_ocr(no_ocr)
                     .skip_ocr(skip_ocr)
                     .no_text_panels(no_text_panels)
+                    .heading_hierarchy(docling::HeadingHierarchyOptions::enabled(
+                        heading_hierarchy,
+                    ))
                     // The warm path used to drop the converter's OCR knobs and
                     // page window on the floor (#254) — prime it with the full
                     // option set the transient path honors.

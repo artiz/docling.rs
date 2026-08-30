@@ -411,6 +411,10 @@ constructor; output options (`to`, `imageMode`, `artifactsDir`) are per call.
   (docling's `force_full_page_ocr`).
 - `noTextPanels`: keep every detected picture as a picture — disable the
   demotion of uncaptioned dense-text "picture" regions into paragraphs (#173).
+- `headingHierarchy`: infer PDF/image section-header levels after assembly
+  (docling's `HeadingHierarchyModel`, #302): PDF bookmarks are authoritative,
+  then legal/outline numbering, then font style. Off by default — headings
+  then keep the flat detected level.
 - `asrModel` / `asrLang`: Whisper model preset and transcription language
   (`"auto"` default) for audio/video sources.
 - `videoFrames`: max frames sampled from a video input as timestamped pictures
