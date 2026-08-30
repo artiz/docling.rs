@@ -75,8 +75,9 @@ cargo check -p docling --no-default-features --features pdf-text \
 ## Runtime assets & env
 
 - `.models/` (repo root): layout, TableFormer, OCR, ASR (`.models/asr/`,
-  presets in subdirs), enrichment, embedder. `.pdfium/lib/libpdfium.so` for
-  page rendering. Fetch: `scripts/install/download_dependencies.sh`.
+  presets in subdirs), enrichment, embedder. `.pdfium/lib/libpdfium.so`
+  (`libpdfium.dylib` on macOS, #298/#299) for page rendering. Fetch:
+  `scripts/install/download_dependencies.sh`.
 - Resolution is CWD-relative, then `$DOCLING_RS_MODELS_DIR` for `.models/…`
   paths (#285 — whole-dir override keeping the engine's own selection logic,
   e.g. the OCR en/ch pair; the py bindings point it at their cache), then
