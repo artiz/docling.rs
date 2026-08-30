@@ -101,8 +101,42 @@ _FALLBACK_URLS = {
         "https://huggingface.co/docling-project/DocumentFigureClassifier-v2.5/resolve/main/model.onnx"
     ),
 }
-# pdfium rasterizer (Linux x64, matching what the release hosts).
-_PDFIUM = {"libpdfium.so": ".pdfium/lib/libpdfium.so"}
+# pdfium rasterizer, selected by host platform (#299 — the mirror of the
+# shell installers' #298 fix): Linux x64 takes the release's pinned
+# conformance build; Linux arm64 and macOS arm64/x64 take the matching
+# bblanchon prebuilt (the source the pinned build comes from), whose tarball
+# ships `lib/libpdfium.so` / `lib/libpdfium.dylib`. Anything else skips with
+# a note — a wrong-platform binary that "installs fine" and fails at dlopen
+# time is exactly the failure mode this exists to avoid.
+_PDFIUM_TGZ_BASE = "https://github.com/bblanchon/pdfium-binaries/releases/latest/download"
+
+
+def _pdfium_plan(system: "str | None" = None, machine: "str | None" = None):
+    """The pdfium install plan for a host: ``("release", lib)`` (pinned asset
+    from the models release), ``("tarball", url, lib)`` (bblanchon prebuilt),
+    or ``None`` (unsupported — skip). Parameters exist for tests; they default
+    to the running host."""
+    import platform as _platform
+
+    system = system if system is not None else _platform.system()
+    machine = (machine if machine is not None else _platform.machine()).lower()
+    arch = {"x86_64": "x64", "amd64": "x64", "aarch64": "arm64", "arm64": "arm64"}.get(machine)
+    if arch is None:
+        return None
+    if system == "Darwin":
+        return ("tarball", f"{_PDFIUM_TGZ_BASE}/pdfium-mac-{arch}.tgz", "libpdfium.dylib")
+    if system == "Linux" and arch == "x64":
+        return ("release", "libpdfium.so")
+    if system == "Linux":
+        return ("tarball", f"{_PDFIUM_TGZ_BASE}/pdfium-linux-{arch}.tgz", "libpdfium.so")
+    return None
+
+
+def _pdfium_lib_name() -> str:
+    """The platform pdfium library filename (what pdfium-render dlopens);
+    ``libpdfium.so`` for unsupported hosts so path displays stay sensible."""
+    plan = _pdfium_plan()
+    return plan[-1] if plan else "libpdfium.so"
 
 
 def cache_dir() -> Path:
@@ -148,8 +182,9 @@ def download_models(
     root = Path(dest) if dest else cache_dir()
     if progress:
         print(f"docling.rs: fetching models to {root}", file=sys.stderr, flush=True)
-    for name, rel in {**_REQUIRED, **_PDFIUM}.items():
+    for name, rel in _REQUIRED.items():
         _fetch(f"{BASE_URL}/{name}", root / rel, optional=False, progress=progress, force=force)
+    _fetch_pdfium(root, progress=progress, force=force)
     for name, rel in {**_OPTIONAL, **_ENRICH}.items():
         if not _fetch(
             f"{BASE_URL}/{name}", root / rel, optional=True, progress=progress, force=force
@@ -162,6 +197,56 @@ def download_models(
     if not (root / _ENRICH["cf_decoder_kv_int8.onnx"]).exists():
         _fetch(f"{BASE_URL}/{name}", root / rel, optional=True, progress=progress, force=force)
     return root
+
+
+def _fetch_pdfium(root: Path, progress: bool, force: bool) -> None:
+    """Install the *platform's* pdfium into ``<root>/.pdfium/lib`` (#299).
+
+    Linux x64 downloads the pinned release ``libpdfium.so`` like any other
+    required asset; the tarball platforms extract just their ``lib/<name>``
+    member (stdlib ``tarfile``). Idempotent like ``_fetch``; an unsupported
+    host prints a note and skips instead of installing a binary that could
+    never load."""
+    plan = _pdfium_plan()
+    if plan is None:
+        import platform as _platform
+
+        print(
+            f"docling.rs: skipping pdfium ({_platform.system()}/{_platform.machine()} has no "
+            "prebuilt); PDF/image rasterization needs PDFIUM_DYNAMIC_LIB_PATH",
+            file=sys.stderr,
+            flush=True,
+        )
+        return
+    if plan[0] == "release":
+        _fetch(
+            f"{BASE_URL}/{plan[1]}",
+            root / ".pdfium/lib" / plan[1],
+            optional=False,
+            progress=progress,
+            force=force,
+        )
+        return
+    _, url, lib = plan
+    dest = root / ".pdfium/lib" / lib
+    if dest.exists() and not force:
+        return
+    import io
+    import tarfile
+
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    if progress:
+        print(f"  > {dest}", file=sys.stderr, flush=True)
+    with urllib.request.urlopen(url) as r:
+        data = r.read()
+    with tarfile.open(fileobj=io.BytesIO(data), mode="r:gz") as tar:
+        member = tar.extractfile(f"lib/{lib}")
+        if member is None:
+            raise RuntimeError(f"{url}: tarball has no lib/{lib}")
+        tmp = dest.with_suffix(dest.suffix + ".download")
+        with open(tmp, "wb") as f:
+            f.write(member.read())
+        tmp.rename(dest)
 
 
 def _point_at(var: str, local: "list[str]", cached: Path) -> None:
@@ -262,5 +347,14 @@ def ensure_env(dest: "str | Path | None" = None) -> Path:
         _local(["models/code_formula"]),
         m / "code_formula",
     )
-    _point_at("PDFIUM_DYNAMIC_LIB_PATH", [".pdfium/lib"], root / ".pdfium/lib")
+    # The env var names the *directory*, but what must exist in it is the
+    # *platform's* library (#299 — `libpdfium.dylib` on macOS): checking the
+    # bare directory kept pointing macOS at a cache holding only a stale
+    # Linux `.so`, which pdfium-render then never found.
+    if (
+        "PDFIUM_DYNAMIC_LIB_PATH" not in os.environ
+        and not Path(".pdfium/lib").exists()
+        and (root / ".pdfium/lib" / _pdfium_lib_name()).exists()
+    ):
+        os.environ["PDFIUM_DYNAMIC_LIB_PATH"] = str(root / ".pdfium/lib")
     return root

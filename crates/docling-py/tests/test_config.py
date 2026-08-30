@@ -328,3 +328,96 @@ def test_ensure_env_still_respects_explicit_ocr_pins(tmp_path, monkeypatch):
 
     assert os.environ["DOCLING_OCR_REC_ONNX"] == "/custom/rec.onnx"
     assert os.environ["DOCLING_OCR_DICT"] == "/custom/dict.txt"
+
+
+def test_pdfium_plan_selects_by_platform():
+    """#299: pdfium is selected by host platform, mirroring #298's shell fix —
+    Linux x64 keeps the pinned release build, everything else takes the
+    matching bblanchon prebuilt with the *platform's* library name, unknown
+    hosts skip."""
+    from docling_rs import models as m
+
+    assert m._pdfium_plan("Linux", "x86_64") == ("release", "libpdfium.so")
+    assert m._pdfium_plan("Linux", "amd64") == ("release", "libpdfium.so")
+    assert m._pdfium_plan("Linux", "aarch64") == (
+        "tarball",
+        f"{m._PDFIUM_TGZ_BASE}/pdfium-linux-arm64.tgz",
+        "libpdfium.so",
+    )
+    assert m._pdfium_plan("Darwin", "arm64") == (
+        "tarball",
+        f"{m._PDFIUM_TGZ_BASE}/pdfium-mac-arm64.tgz",
+        "libpdfium.dylib",
+    )
+    assert m._pdfium_plan("Darwin", "x86_64") == (
+        "tarball",
+        f"{m._PDFIUM_TGZ_BASE}/pdfium-mac-x64.tgz",
+        "libpdfium.dylib",
+    )
+    assert m._pdfium_plan("Linux", "riscv64") is None
+    assert m._pdfium_plan("Windows", "AMD64") is None
+
+
+def test_fetch_pdfium_extracts_the_platform_member(tmp_path, monkeypatch):
+    """The tarball path extracts exactly `lib/<platform lib>` into the cache
+    (#299) — exercised with an in-memory tgz and a mocked Darwin host, so no
+    network and no real platform dependence."""
+    import io
+    import tarfile
+
+    from docling_rs import models as m
+
+    payload = b"mach-o bytes"
+    buf = io.BytesIO()
+    with tarfile.open(fileobj=buf, mode="w:gz") as tar:
+        info = tarfile.TarInfo("lib/libpdfium.dylib")
+        info.size = len(payload)
+        tar.addfile(info, io.BytesIO(payload))
+
+    class FakeResponse(io.BytesIO):
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+    monkeypatch.setattr(
+        m, "_pdfium_plan", lambda *a: ("tarball", "https://example.invalid/p.tgz", "libpdfium.dylib")
+    )
+    monkeypatch.setattr(
+        m.urllib.request, "urlopen", lambda url: FakeResponse(buf.getvalue())
+    )
+    m._fetch_pdfium(tmp_path, progress=False, force=False)
+    dest = tmp_path / ".pdfium/lib/libpdfium.dylib"
+    assert dest.read_bytes() == payload
+
+    # Idempotent: a second run must not re-download (urlopen would explode).
+    monkeypatch.setattr(m.urllib.request, "urlopen", None)
+    m._fetch_pdfium(tmp_path, progress=False, force=False)
+
+
+def test_ensure_env_requires_the_platform_pdfium_lib(tmp_path, monkeypatch):
+    """#299: PDFIUM_DYNAMIC_LIB_PATH is only exported when the cache holds the
+    *platform's* library — a cache with just a wrong-platform binary is
+    treated as not installed instead of being handed to dlopen."""
+    import os
+
+    from docling_rs import models as m
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv("PDFIUM_DYNAMIC_LIB_PATH", raising=False)
+
+    cache = tmp_path / "cache"
+    libdir = cache / ".pdfium/lib"
+    libdir.mkdir(parents=True)
+
+    # Wrong-platform library only (a dylib on this Linux host): stays unset.
+    wrong = "libpdfium.dylib" if m._pdfium_lib_name() == "libpdfium.so" else "libpdfium.so"
+    (libdir / wrong).write_bytes(b"x")
+    m.ensure_env(cache)
+    assert "PDFIUM_DYNAMIC_LIB_PATH" not in os.environ
+
+    # The platform's library appears: the directory is exported.
+    (libdir / m._pdfium_lib_name()).write_bytes(b"x")
+    m.ensure_env(cache)
+    assert os.environ["PDFIUM_DYNAMIC_LIB_PATH"] == str(libdir)
