@@ -226,6 +226,16 @@ output as `<stem>.<ext>` under the prefix and answers with a
 `RemoteTargetResult` acknowledgment; everything outbound sits behind
 `--allow-url-fetch`. See the `s3_pipeline` example in `/openapi.yaml`.
 
+Observability (#297, mirroring Python docling-serve's posture — metrics on by
+default, traces opt-in): every request logs through `tracing` (`RUST_LOG`
+filters, default `info`), and `GET /metrics` serves Prometheus text —
+request counts by status class, an in-flight gauge, a request-latency
+histogram, and per-outcome conversion counts (`/metrics`, `/health` and
+`/ready` probes excluded). Building with the opt-in `otel` cargo feature and
+setting `OTEL_EXPORTER_OTLP_ENDPOINT` additionally ships the request spans
+over OTLP/gRPC (`OTEL_SERVICE_NAME` defaults to `docling-serve`); without the
+env var the feature is inert.
+
 ## In the browser — `docling-wasm`
 
 The declarative converters (everything except the PDF/image/audio ML

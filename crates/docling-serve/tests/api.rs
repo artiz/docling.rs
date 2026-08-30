@@ -953,3 +953,73 @@ async fn explicit_inbody_target_answers_in_the_body() {
     let v: serde_json::Value = serde_json::from_str(&body_string(response).await).unwrap();
     assert_eq!(v["schema_name"], "DoclingDocument");
 }
+
+/// Scrape `/metrics` and read one metric line's value by its exact prefix
+/// (name + labels).
+async fn metric_value(line_prefix: &str) -> f64 {
+    let response = app()
+        .oneshot(Request::get("/metrics").body(Body::empty()).unwrap())
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let text = body_string(response).await;
+    text.lines()
+        .find(|l| l.starts_with(line_prefix))
+        .unwrap_or_else(|| panic!("no metric line starts with {line_prefix:?} in:\n{text}"))
+        .rsplit(' ')
+        .next()
+        .unwrap()
+        .parse()
+        .unwrap()
+}
+
+#[tokio::test]
+async fn metrics_endpoint_serves_prometheus_text() {
+    let response = app()
+        .oneshot(Request::get("/metrics").body(Body::empty()).unwrap())
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(
+        response.headers()[header::CONTENT_TYPE],
+        "text/plain; version=0.0.4; charset=utf-8"
+    );
+    let text = body_string(response).await;
+    for needle in [
+        "# TYPE docling_serve_requests_total counter",
+        "# TYPE docling_serve_requests_in_flight gauge",
+        "# TYPE docling_serve_request_duration_seconds histogram",
+        "docling_serve_request_duration_seconds_bucket{le=\"+Inf\"}",
+        "# TYPE docling_serve_conversions_total counter",
+        "docling_serve_conversions_total{outcome=\"success\"}",
+        "docling_serve_conversions_total{outcome=\"failure\"}",
+    ] {
+        assert!(text.contains(needle), "missing {needle:?} in:\n{text}");
+    }
+}
+
+/// The registry is process-global and tests run in parallel, so this asserts
+/// monotonic growth caused by its own requests rather than absolute values.
+#[tokio::test]
+async fn requests_and_conversions_are_counted() {
+    let requests_before = metric_value("docling_serve_requests_total{class=\"2xx\"}").await;
+    let ok_before = metric_value("docling_serve_conversions_total{outcome=\"success\"}").await;
+    let failed_before = metric_value("docling_serve_conversions_total{outcome=\"failure\"}").await;
+
+    // `to=json` buffers through `convert_document`, so both counters have
+    // moved by the time the response exists (no streaming race).
+    let (ct, body) = multipart("a.csv", b"a,b\n1,2\n", &[("to", "json")]);
+    let response = app().oneshot(convert_request(&ct, body, "")).await.unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    // An unconvertible upload counts as a failed conversion.
+    let (ct, body) = multipart("broken.docx", b"not a zip", &[("to", "json")]);
+    let response = app().oneshot(convert_request(&ct, body, "")).await.unwrap();
+    assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
+
+    let requests_after = metric_value("docling_serve_requests_total{class=\"2xx\"}").await;
+    let ok_after = metric_value("docling_serve_conversions_total{outcome=\"success\"}").await;
+    let failed_after = metric_value("docling_serve_conversions_total{outcome=\"failure\"}").await;
+    assert!(requests_after >= requests_before + 1.0);
+    assert!(ok_after >= ok_before + 1.0);
+    assert!(failed_after >= failed_before + 1.0);
+}
