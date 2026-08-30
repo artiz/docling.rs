@@ -340,6 +340,22 @@ paths:
                 properties:
                   status: { type: string, const: loading }
 
+  /metrics:
+    get:
+      summary: Prometheus metrics
+      operationId: metrics
+      description: >
+        Prometheus text exposition (version 0.0.4) of request counts by status
+        class, an in-flight gauge, a request-latency histogram, and per-outcome
+        conversion counts. Scrapes of `/metrics`, `/health` and `/ready` are
+        excluded from the request metrics.
+      responses:
+        "200":
+          description: Current metric values.
+          content:
+            text/plain:
+              schema: { type: string }
+
   /openapi.yaml:
     get:
       summary: This document

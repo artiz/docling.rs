@@ -454,6 +454,22 @@ These are deliberate or unavoidable divergences, not bugs.
     cloud kinds parse and answer a clear rebuild-with-`--features cloud`
     error.
 
+16. **Serve observability** (#297, Python docling-serve's OTel
+    integration): the same *posture* — Prometheus-style metrics on by
+    default, OTLP traces opt-in, `/metrics`+`/health`+`/ready` excluded
+    from request telemetry, `OTEL_SERVICE_NAME` defaulting to
+    `docling-serve` — but not the same mechanism. Requests log through
+    `tracing` (`RUST_LOG`, default `info`); `GET /metrics` serves
+    hand-rolled dependency-free counters (requests by status class,
+    in-flight gauge, latency histogram with buckets stretched to
+    minutes-long ML conversions, conversions by outcome) instead of
+    Python's OTel-SDK `PrometheusMetricReader`, so metric *names* differ
+    from a Python deployment's. OTLP/gRPC span export sits behind the
+    opt-in `otel` cargo feature and activates only when
+    `OTEL_EXPORTER_OTLP_ENDPOINT` is set. Not covered: OTLP *metric* and
+    *log* export (Prometheus scrape and stderr logs stand in), and
+    Python's `OTEL_*` sampler knobs.
+
 ---
 
 ## 5. Not migrated / out of scope

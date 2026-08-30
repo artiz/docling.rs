@@ -13,6 +13,7 @@
 //! | GET    | `/v1/config`  | server capabilities (`{"allow_url_fetch": bool}`)  |
 //! | GET    | `/health`     | liveness probe                                     |
 //! | GET    | `/ready`      | readiness probe (200 once models are warm)         |
+//! | GET    | `/metrics`    | Prometheus metrics (#297, see [`o11y`])            |
 //! | GET    | `/openapi.yaml` | OpenAPI 3.1 description of the API               |
 //! | GET    | `/logo.svg`   | the playground's logo                              |
 //!
@@ -140,6 +141,7 @@ use serde::Deserialize;
 use serde_json::json;
 use tokio::sync::Semaphore;
 
+pub mod o11y;
 mod passthrough;
 
 /// Server configuration (see the binary's `--help` for the flag spellings).
@@ -290,18 +292,25 @@ pub fn router(cfg: ServeConfig) -> Router {
         )
         .route("/health", get(|| async { Json(json!({"status": "ok"})) }))
         .route("/ready", get(ready))
+        .route("/metrics", get(o11y::metrics_endpoint))
         .route("/v1/config", get(config))
         .route("/v1/convert", post(convert))
         .route("/v1/convert/async", post(convert_async))
         .route("/v1/status/{id}", get(job_status))
         .route("/v1/result/{id}", get(job_result))
         .layer(DefaultBodyLimit::max(cfg.max_body_bytes))
+        // Request span/log + metrics (#297) — outermost, so it times the whole
+        // request including body-limit rejections.
+        .layer(axum::middleware::from_fn(o11y::track))
         .with_state(state)
 }
 
 /// Bind and serve until SIGINT/SIGTERM; in-flight requests finish (graceful
 /// shutdown).
 pub async fn serve(cfg: ServeConfig) -> Result<(), String> {
+    // Logging/tracing first (#297): startup diagnostics below already flow
+    // through a configured subscriber this way.
+    o11y::init();
     let addr = cfg.addr.clone();
     let app = router(cfg);
     let listener = tokio::net::TcpListener::bind(&addr)
@@ -323,10 +332,13 @@ pub async fn serve(cfg: ServeConfig) -> Result<(), String> {
             eprintln!("docling-serve: model {:<20} {} (MISSING)", m.stage, m.path);
         }
     }
-    axum::serve(listener, app)
+    let result = axum::serve(listener, app)
         .with_graceful_shutdown(shutdown_signal())
         .await
-        .map_err(|e| format!("server error: {e}"))
+        .map_err(|e| format!("server error: {e}"));
+    // Flush batched OTLP spans (#297) — a no-op unless export is active.
+    o11y::shutdown();
+    result
 }
 
 async fn shutdown_signal() {
@@ -1821,8 +1833,22 @@ fn fetch_url(
 }
 
 /// Convert to a [`DoclingDocument`], routing PDF/image through the warm
-/// pipeline and everything else through the declarative converter.
+/// pipeline and everything else through the declarative converter. Every
+/// buffered conversion — sync, batch item, async job, cloud target — funnels
+/// through here, which makes it the one place the per-outcome conversion
+/// metric is recorded (#297; the declarative *streaming* path bypasses this
+/// and records at stream end).
 fn convert_document(
+    state: &AppState,
+    source: SourceDocument,
+    options: &ConvertOptions,
+) -> Result<DoclingDocument, ApiError> {
+    let result = convert_document_inner(state, source, options);
+    o11y::record_conversion(result.is_ok());
+    result
+}
+
+fn convert_document_inner(
     state: &AppState,
     source: SourceDocument,
     options: &ConvertOptions,
@@ -2075,6 +2101,11 @@ async fn stream_markdown(
                         return;
                     }
                 };
+                // The streaming path bypasses `convert_document`, so the
+                // conversion metric (#297) is recorded here: success once the
+                // stream drains, failure on a conversion error (a client that
+                // disconnects mid-stream abandons the conversion and counts as
+                // neither).
                 match converter.convert_streaming_images(source, image_mode) {
                     Ok(stream) => {
                         for chunk in stream {
@@ -2085,13 +2116,16 @@ async fn stream_markdown(
                                     }
                                 }
                                 Err(e) => {
+                                    o11y::record_conversion(false);
                                     send(Err(e.to_string()));
                                     return;
                                 }
                             }
                         }
+                        o11y::record_conversion(true);
                     }
                     Err(e) => {
+                        o11y::record_conversion(false);
                         send(Err(e.to_string()));
                     }
                 }
