@@ -4,7 +4,7 @@
 #   scripts/install/pdf_setup.sh
 #
 # Downloads:
-#   - libpdfium (bblanchon prebuilt) -> .pdfium/lib/libpdfium.so
+#   - libpdfium (bblanchon prebuilt) -> .pdfium/lib/libpdfium.{so,dylib}
 #   - PP-OCRv3 recognition model     -> .models/ocr_rec.onnx
 #   - PP-OCR character dictionary     -> .models/ppocr_keys_v1.txt
 # And exports two ONNX model sets (need a Python with torch+onnx; set $PYTHON,
@@ -31,7 +31,13 @@ detect_platform() {
   esac
 }
 PLATFORM="${PDFIUM_PLATFORM:-$(detect_platform)}"
-if [ ! -f .pdfium/lib/libpdfium.so ]; then
+# The mac tarballs ship libpdfium.dylib, never a .so — guarding on the .so
+# re-downloaded on every run and left the correctly fetched dylib unnoticed.
+case "$PLATFORM" in
+  mac-*) PDFIUM_LIB=libpdfium.dylib ;;
+  *) PDFIUM_LIB=libpdfium.so ;;
+esac
+if [ ! -f ".pdfium/lib/$PDFIUM_LIB" ]; then
   echo "→ libpdfium ($PLATFORM)"
   curl -sSL -o /tmp/pdfium.tgz \
     "https://github.com/bblanchon/pdfium-binaries/releases/latest/download/pdfium-${PLATFORM}.tgz"

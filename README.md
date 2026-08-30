@@ -840,7 +840,7 @@ instead — same models plus `pdfium.dll` — and see
 
 | Asset | Destination |
 | --- | --- |
-| pdfium (Linux x64) | `.pdfium/lib/libpdfium.so` |
+| pdfium (Linux x64/arm64, macOS arm64/x64) | `.pdfium/lib/libpdfium.so` (`libpdfium.dylib` on macOS) |
 | RT-DETR layout | `.models/layout_heron.onnx` |
 | PP-OCRv3 rec + dictionary, English (the runtime default) | `.models/ocr_rec_en.onnx`, `.models/en_dict.txt` |
 | PP-OCRv3 rec + dictionary, multilingual `ch_` (`DOCLING_RS_OCR_LANG=ch`; the docling-conformance model — weak Latin word spacing) | `.models/ocr_rec.onnx`, `.models/ppocr_keys_v1.txt` |
