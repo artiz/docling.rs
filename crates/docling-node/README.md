@@ -43,7 +43,8 @@ npm run build        # release build → docling.rs.<platform>.node + native.js/
 > The addon statically links the ONNX runtime used by the PDF/image pipeline, so
 > the built `.node` is large. Declarative formats (Markdown, HTML, DOCX, …) don't
 > touch it; only PDF/image conversion loads the ML models (downloaded on first
-> use, like the CLI).
+> use, like the CLI) — and not even that under `pipeline: 'vlm'`, which converts
+> through a remote endpoint.
 
 ### GPU (CUDA)
 
@@ -202,6 +203,10 @@ addon — pdfium plus the ONNX models (layout, OCR, TableFormer). Converting a
 PDF/image/METS input **throws** until they're on disk. Fetch them with a
 one-liner from your app's directory (where you'll `npm install docling.rs`):
 
+> The exception is [`pipeline: 'vlm'`](#vlm-pipeline-remote-endpoint), which
+> replaces the ONNX stack with a remote endpoint: it needs **pdfium only** (to
+> rasterize PDF pages), and nothing at all for image input.
+
 ```bash
 curl -fsSL https://raw.githubusercontent.com/docling-project/docling.rs/master/scripts/install/download_dependencies.sh | sh
 ```
@@ -249,6 +254,9 @@ call are needed afterwards:
 checkDependencies() // { home, pdfium, layout, ocr, tableformer, chunkTokenizer, ready, missing }
 ```
 
+`ready` describes the **standard** pipeline (`pdfium && layout`); a VLM-only
+install has `ready: false` and still converts.
+
 ### Reusing a warm `Pipeline` (many PDFs)
 
 The one-shot `convertFile` / `convertFileAsync` rebuild the pipeline — reloading
@@ -276,6 +284,63 @@ order as pages finish. Conversions on one instance run one at a time (the
 models are mutable sessions) — overlapping `*Async` calls queue in submission
 order, so batch throughput comes from keeping the models warm, not from
 parallel calls.
+
+`Pipeline` rejects `pipeline: 'vlm'`: that pipeline loads no models, so there
+is nothing to keep warm — use `convertFileAsync` or `DocumentConverter`.
+
+### VLM pipeline (remote endpoint)
+
+`pipeline: 'vlm'` (issue #77) replaces the whole ONNX stack — layout, OCR,
+TableFormer — with a **Vision Language Model**. Each PDF page is rendered with
+pdfium and sent to any OpenAI-compatible vision endpoint (LM Studio, Ollama,
+vLLM, or a hosted service) with docling's page-conversion prompt; the returned
+DocLang/DocTags markup is parsed by the same reader the CLI uses. No ONNX model
+is loaded, so a VLM-only install needs pdfium alone — and nothing at all for
+image input.
+
+```js
+import { convertFileAsync } from 'docling.rs'
+
+const res = await convertFileAsync('paper.pdf', {
+  to: 'markdown',
+  pipeline: 'vlm',
+  vlmEndpoint: 'http://localhost:11434/v1', // or the full …/chat/completions URL
+  vlmModel: 'granite-docling',
+  vlmApiKey: process.env.VLM_API_KEY,       // local servers need none
+})
+```
+
+`vlmEndpoint` / `vlmModel` fall back to `DOCLING_RS_VLM_ENDPOINT` /
+`DOCLING_RS_VLM_MODEL`, `vlmApiKey` and `vlmPrompt` to
+`DOCLING_RS_VLM_API_KEY` / `DOCLING_RS_VLM_PROMPT`, matching the CLI's
+`--pipeline vlm`. Selecting `pipeline: 'vlm'` explicitly is always required —
+the environment supplies values, it never switches the pipeline on, so a stale
+`DOCLING_RS_VLM_ENDPOINT` can't silently route your PDFs over the network.
+
+> **The `vlm*` options are only read under `pipeline: 'vlm'`.** Passing
+> `vlmEndpoint` / `vlmModel` without it is not an error and does not switch
+> pipelines: the options are ignored and the conversion runs through the
+> standard ONNX pipeline — the same way the CLI parses a stray
+> `--vlm-endpoint` given without `--pipeline vlm` and drops it. An option
+> configures the VLM; `pipeline` alone selects it. So if a call is loading the
+> ML models (or failing on missing ones) when you expected the endpoint to be
+> contacted, the missing piece is `pipeline: 'vlm'`.
+
+`pages: 'A-B'` composes (only those pages are rendered and sent), `strict`,
+`compactTables`, `allowedFormats` and `to: 'json'` work as usual, and
+`streamFileMarkdown` yields the document as a single chunk — a VLM answers a
+whole page per request, so there is nothing earlier to emit. PDF and image are
+the only accepted inputs; any other format is rejected rather than silently
+falling back to the standard pipeline.
+
+The `chunk*` functions have **no** VLM path — `ChunkOptions` carries no
+`pipeline`, and they always convert through the ONNX stack. To chunk a
+VLM-converted document, convert to JSON first and chunk that:
+
+```js
+const { content } = await convertFileAsync('paper.pdf', { to: 'json', pipeline: 'vlm', … })
+const chunks = chunkDocument(content, { chunker: 'hybrid' })
+```
 
 ### Images
 
@@ -326,8 +391,8 @@ then `convertFile` / `convert` / `convertFileAsync` / `convertAsync` /
 `DocumentConverter` is the reusable form: `new DocumentConverter(converterOptions)`
 then `convert` / `convertFile` / `convertFileAsync` / `convertAsync` /
 `convertFileStreaming`. Converter config (`strict`, `fetchImages`,
-`allowedFormats`) is set once on the constructor; output options (`to`,
-`imageMode`, `artifactsDir`) are per call.
+`allowedFormats`, `pipeline` + the `vlm*` options) is set once on the
+constructor; output options (`to`, `imageMode`, `artifactsDir`) are per call.
 
 ### Options
 
@@ -350,6 +415,19 @@ then `convert` / `convertFile` / `convertFileAsync` / `convertAsync` /
   (`"auto"` default) for audio/video sources.
 - `videoFrames`: max frames sampled from a video input as timestamped pictures
   (`0` = transcript only; default 8, needs ffmpeg at runtime).
+- `pipeline`: `"standard"` (default) or `"vlm"` — convert PDF/image pages
+  through a remote vision endpoint instead of the ONNX stack (#77). See
+  [VLM pipeline](#vlm-pipeline-remote-endpoint). The five `vlm*` options below
+  take effect **only** under `"vlm"`; without it they are silently ignored.
+- `vlmEndpoint`: the server's `/v1` base or the full `…/chat/completions` URL.
+  Falls back to `DOCLING_RS_VLM_ENDPOINT`; required for `pipeline: 'vlm'`.
+- `vlmModel`: model name as the server knows it. Falls back to
+  `DOCLING_RS_VLM_MODEL`; required for `pipeline: 'vlm'`.
+- `vlmApiKey`: Bearer token; local servers need none. Falls back to
+  `DOCLING_RS_VLM_API_KEY`.
+- `vlmPrompt`: overrides docling's per-page instruction. Falls back to
+  `DOCLING_RS_VLM_PROMPT`.
+- `vlmMaxTokens`: `max_tokens` per page completion (default `8192`).
 
 ### `ConvertResult`
 

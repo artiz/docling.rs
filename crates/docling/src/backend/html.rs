@@ -301,23 +301,35 @@ fn walk_block(
                             image: src.as_deref().and_then(|s| images.resolve(s)),
                             classification: None,
                         });
-                    } else if has_descendant(cref, "img") {
-                        // An anchor with an image among other content: docling
-                        // treats `img` as a block tag, so the wrapper is walked
-                        // block-wise (its text becomes text items, the image a
-                        // Picture with the `alt` caption).
+                    } else if has_descendant(cref, "img") || contains_block(cref) {
+                        // An anchor with an image among other content (docling
+                        // treats `img` as a block tag), or one hiding real block
+                        // structure (#284 — an *unclosed* `<a name=…>` legally
+                        // swallows every following block under HTML5 parsing):
+                        // the wrapper is walked block-wise, so nested tables and
+                        // lists come out as their own items instead of
+                        // flattening into inline text. (The anchor's own href —
+                        // if any — is not threaded through, matching the
+                        // image-wrapper branch.)
                         flush_inline(&mut inline, nodes);
                         walk_block(cref, nodes, list_level, base, images);
                     } else {
                         collect_element(cref, base, None, &mut inline);
                     }
-                } else if has_descendant(cref, "img") {
-                    // An inline wrapper around an image (`<span><a><img></a></span>`):
-                    // docling's `img` is in its block-tag set, so the wrapper is
-                    // block-walked and the image emits a Picture captioned with its
-                    // `alt` text.
+                } else if has_descendant(cref, "img") || contains_block(cref) {
+                    // An inline wrapper around an image (`<span><a><img></a></span>`
+                    // — docling's `img` is in its block-tag set), or an inline
+                    // element hiding block structure (#284: html5ever follows the
+                    // HTML5 tree-construction spec, so an unclosed `<b>`/`<font>`
+                    // keeps every subsequent block as its child — Python
+                    // docling's parser recovers by reparenting, and parity means
+                    // walking such a wrapper block-wise). The inline formatting
+                    // element's own formatting (`<b>` → bold) still reaches its
+                    // *inline* children through the seeded base — the nested
+                    // blocks themselves render as the reparenting recovery
+                    // would leave them.
                     flush_inline(&mut inline, nodes);
-                    walk_block(cref, nodes, list_level, base, images);
+                    walk_block(cref, nodes, list_level, tag_fmt(name, base), images);
                 } else {
                     collect_element(cref, base, None, &mut inline);
                 }
@@ -973,6 +985,72 @@ fn collect_runs(elem: ElementRef, fmt: Fmt, hyperlink: Option<&str>, runs: &mut 
             }
             _ => {}
         }
+    }
+}
+
+/// Whether an inline element hides *structured* block content (#284). html5ever
+/// follows the HTML5 tree-construction spec, under which an *unclosed* inline
+/// tag (`<a name=…>`, `<b>`, `<font>` — endemic in HTML from older authoring
+/// tools) legally keeps every subsequent block element as its child; walked
+/// as inline content, a swallowed `<table>` flattens into text with its
+/// structure silently gone. Callers block-walk such a wrapper instead.
+///
+/// Deliberately only the blocks whose structure cannot survive inline
+/// flattening — tables, lists, headings, code blocks, figures. Pure text
+/// containers (`div`, `p`, `section`) do NOT trigger: a well-formed
+/// `<a href><div>text</div></a>` keeps rendering as a link around the
+/// flattened text (hyperlink_04 in the corpus), exactly as before.
+fn contains_block(elem: ElementRef) -> bool {
+    elem.descendants().skip(1).any(|n| {
+        n.value().as_element().is_some_and(|e| {
+            matches!(
+                e.name(),
+                "table"
+                    | "ul"
+                    | "ol"
+                    | "dl"
+                    | "pre"
+                    | "figure"
+                    | "blockquote"
+                    | "h1"
+                    | "h2"
+                    | "h3"
+                    | "h4"
+                    | "h5"
+                    | "h6"
+            )
+        })
+    })
+}
+
+/// The inline formatting an element applies to its children — the same tag
+/// set [`collect_element`] matches, for callers that block-walk an inline
+/// wrapper (#284) and still owe the wrapper's formatting to its inline text.
+fn tag_fmt(name: &str, base: Fmt) -> Fmt {
+    match name {
+        "b" | "strong" => Fmt { bold: true, ..base },
+        "i" | "em" | "var" => Fmt {
+            italic: true,
+            ..base
+        },
+        "s" | "del" | "strike" => Fmt {
+            strike: true,
+            ..base
+        },
+        "code" | "kbd" | "samp" => Fmt { code: true, ..base },
+        "u" | "ins" => Fmt {
+            underline: true,
+            ..base
+        },
+        "sub" => Fmt {
+            script: Script::Sub,
+            ..base
+        },
+        "sup" => Fmt {
+            script: Script::Super,
+            ..base
+        },
+        _ => base,
     }
 }
 
@@ -1714,6 +1792,44 @@ mod tests {
     fn convert(html: &str) -> DoclingDocument {
         let src = SourceDocument::from_bytes("t", InputFormat::Html, html.as_bytes().to_vec());
         HtmlBackend.convert(&src).unwrap()
+    }
+
+    /// #284: an *unclosed* inline tag (here `<a name>` + `<b>`) legally
+    /// swallows every subsequent block under HTML5 parsing; the walker must
+    /// still emit the swallowed table/list as structure, not flatten them
+    /// into inline text.
+    #[test]
+    fn unclosed_inline_tag_does_not_swallow_tables() {
+        let doc = convert(
+            r#"<html><body><a name="x"><b>T</b><br>
+               <table><tr><td>A</td><td>B</td></tr><tr><td>1</td><td>2</td></tr></table></body></html>"#,
+        );
+        let tables = doc
+            .nodes
+            .iter()
+            .filter(|n| matches!(n, Node::Table(_)))
+            .count();
+        assert_eq!(tables, 1, "the swallowed table must surface as a table");
+        let md = doc.export_to_markdown();
+        assert!(
+            md.contains("**T**"),
+            "the <b> text keeps its formatting: {md}"
+        );
+        assert!(md.contains("|-----"), "table structure survives: {md}");
+    }
+
+    /// The counterpart guard: a *well-formed* anchor around a pure text
+    /// container keeps rendering as a link (hyperlink_04 semantics) — only
+    /// structured blocks (tables, lists, headings…) trigger the block walk.
+    #[test]
+    fn anchor_around_a_div_stays_a_link() {
+        let doc =
+            convert(r#"<html><body><a href="/start.html"><div>Some text.</div></a></body></html>"#);
+        let md = doc.export_to_markdown();
+        assert!(
+            md.contains("[Some text.](/start.html)"),
+            "text-only block content stays inside the link: {md}"
+        );
     }
 
     #[test]

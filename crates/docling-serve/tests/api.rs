@@ -829,3 +829,127 @@ async fn explicit_hybrid_without_tokenizer_is_a_400() {
         assert_eq!(response.status(), StatusCode::BAD_REQUEST);
     }
 }
+
+// --- #139: docling sources/target passthrough ------------------------------
+
+fn json_convert(body: &str, allow_fetch: bool) -> Request<Body> {
+    let _ = allow_fetch;
+    convert_request("application/json", body.as_bytes().to_vec(), "")
+}
+
+#[tokio::test]
+async fn file_sources_convert_without_any_gate() {
+    // kind=file is base64 in the body — no outbound access, no gate.
+    let b64 = docling_b64("a,b\n1,2\n");
+    let body = format!(
+        r#"{{"sources": [
+            {{"kind": "file", "base64_string": "{b64}", "filename": "one.csv"}},
+            {{"kind": "file", "base64_string": "{b64}", "filename": "two.csv"}}
+        ], "to": "json"}}"#
+    );
+    let response = app().oneshot(json_convert(&body, false)).await.unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let v: serde_json::Value = serde_json::from_str(&body_string(response).await).unwrap();
+    let results = v["results"].as_array().expect("batch shape");
+    assert_eq!(results.len(), 2);
+    assert!(results.iter().all(|r| r["status"] == "success"), "{v}");
+}
+
+fn docling_b64(text: &str) -> String {
+    // Tiny local base64 (no test dep): RFC 4648 standard alphabet.
+    const A: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let bytes = text.as_bytes();
+    let mut out = String::new();
+    for chunk in bytes.chunks(3) {
+        let b = [
+            chunk[0],
+            *chunk.get(1).unwrap_or(&0),
+            *chunk.get(2).unwrap_or(&0),
+        ];
+        let n = u32::from_be_bytes([0, b[0], b[1], b[2]]);
+        out.push(A[(n >> 18) as usize & 63] as char);
+        out.push(A[(n >> 12) as usize & 63] as char);
+        out.push(if chunk.len() > 1 {
+            A[(n >> 6) as usize & 63] as char
+        } else {
+            '='
+        });
+        out.push(if chunk.len() > 2 {
+            A[n as usize & 63] as char
+        } else {
+            '='
+        });
+    }
+    out
+}
+
+#[tokio::test]
+async fn url_and_sources_together_is_a_400() {
+    let b64 = docling_b64("x");
+    let body = format!(
+        r#"{{"url": "https://example.com/a.md",
+            "sources": [{{"kind": "file", "base64_string": "{b64}", "filename": "a.csv"}}]}}"#
+    );
+    let response = app().oneshot(json_convert(&body, false)).await.unwrap();
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+}
+
+#[tokio::test]
+async fn unknown_source_kind_is_a_400() {
+    let body = r#"{"sources": [{"kind": "google_drive", "document_id": "x"}]}"#;
+    let response = app().oneshot(json_convert(body, false)).await.unwrap();
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    let msg = body_string(response).await;
+    assert!(
+        msg.contains("unknown variant") && msg.contains("google_cloud_storage"),
+        "should list the supported kinds: {msg}"
+    );
+}
+
+#[tokio::test]
+async fn cloud_source_and_target_are_gated_behind_allow_url_fetch() {
+    // Both directions of cloud passthrough sit behind --allow-url-fetch.
+    let s3 = r#"{"kind": "s3", "endpoint": "s3.us-east-2.amazonaws.com",
+                 "access_key": "k", "secret_key": "s", "bucket": "b"}"#;
+    let body = format!(r#"{{"sources": [{s3}]}}"#);
+    let response = app().oneshot(json_convert(&body, false)).await.unwrap();
+    assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
+
+    let b64 = docling_b64("a,b\n1,2\n");
+    let body = format!(
+        r#"{{"sources": [{{"kind": "file", "base64_string": "{b64}", "filename": "a.csv"}}],
+            "target": {s3}}}"#
+    );
+    let response = app().oneshot(json_convert(&body, false)).await.unwrap();
+    assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
+}
+
+#[cfg(not(feature = "cloud"))]
+#[tokio::test]
+async fn cloud_kind_without_the_feature_names_the_rebuild() {
+    // Gate open, feature absent: the error must say how to get the feature,
+    // not fail as a mystery.
+    let cfg = ServeConfig {
+        allow_url_fetch: true,
+        ..ServeConfig::default()
+    };
+    let body = r#"{"sources": [{"kind": "s3", "endpoint": "s3.us-east-2.amazonaws.com",
+                   "access_key": "k", "secret_key": "s", "bucket": "b"}]}"#;
+    let response = router(cfg).oneshot(json_convert(body, true)).await.unwrap();
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    let msg = body_string(response).await;
+    assert!(msg.contains("--features cloud"), "{msg}");
+}
+
+#[tokio::test]
+async fn explicit_inbody_target_answers_in_the_body() {
+    let b64 = docling_b64("a,b\n1,2\n");
+    let body = format!(
+        r#"{{"sources": [{{"kind": "file", "base64_string": "{b64}", "filename": "a.csv"}}],
+            "target": {{"kind": "inbody"}}, "to": "json"}}"#
+    );
+    let response = app().oneshot(json_convert(&body, false)).await.unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let v: serde_json::Value = serde_json::from_str(&body_string(response).await).unwrap();
+    assert_eq!(v["schema_name"], "DoclingDocument");
+}

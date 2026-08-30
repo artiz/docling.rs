@@ -80,6 +80,7 @@ crates/
 ├── docling/        # DocumentConverter, source/format detection, backend/*.rs, ooxml.rs
 ├── docling-pdf/    # pdfium_backend, layout (RT-DETR/ONNX), ocr (PP-OCRv3/ONNX), assemble, mets
 ├── docling-asr/    # audio decode (symphonia), mel.rs, whisper.rs (ONNX), tokenizer.rs
+├── docling-onnx/   # shared ONNX Runtime EP selection (DOCLING_RS_EP, cuda/tensorrt/directml/coreml features)
 ├── docling-cli/    # `--strict`, `--to md|json|dclx|chunks`, `--images …`, `--pages`, `--ocr-lang`, serve subcommand
 ├── docling-node/   # Node.js/Bun N-API bindings (napi-rs), published to npm as `docling.rs`
 ├── docling-py/     # PyO3 bindings (maturin), published to PyPI as `docling-rs` (strangler-fig over docling-core)
@@ -113,7 +114,7 @@ PyPI; run via `scripts/conformance/conformance.sh <fmt>`), not the committed gro
 |---|---|---|
 | Markdown | `markdown.rs` (pulldown-cmark) | **10/10 exact** |
 | CSV | `csv.rs` (`csv` crate) | **9/9 exact**; `.tsv` routes here too (#208 — the delimiter sniffing already covers tabs; a docling.rs extension, upstream accepts only `.csv`) |
-| HTML | `html.rs` (scraper/html5ever) | **32/32 exact** (`wiki_duck` included — rich table cells, caption run spacing, indicator images, `<footer>` furniture all match docling 2.112) |
+| HTML | `html.rs` (scraper/html5ever) | **32/32 exact** (`wiki_duck` included — rich table cells, caption run spacing, indicator images, `<footer>` furniture all match docling 2.112); #284: an *unclosed* inline tag (`<a name=…>`, `<b>`, `<font>` — endemic in legacy authoring-tool HTML) legally swallows subsequent blocks under html5ever's spec parsing, where Python's parser recovers by reparenting — inline wrappers hiding structured blocks (tables, lists, headings, code, figures) are now block-walked so the structure surfaces; pure text containers under a well-formed `<a href>` keep rendering as links |
 | AsciiDoc | `asciidoc.rs` (regex) | **4/4 exact** |
 | DeepSeek-OCR Markdown | `deepseek.rs` | **3/3 exact** (auto-detected VLM-token variant) |
 | XLSX | `xlsx.rs` (calamine) | **10/10 exact** (incl. chart captions/classification/data grids) |
@@ -436,6 +437,23 @@ These are deliberate or unavoidable divergences, not bugs.
     nothing to switch yet) and `dclx` in the `ArtifactRef` union (only
     meaningful once the sources/targets wire shape lands — #139).
 
+15. **Cloud source/target passthrough** (#139, upstream docling#3795 /
+    docling-jobkit): the serve JSON body accepts docling's
+    service-datamodel `sources`/`target` shape — `kind`-tagged `file`
+    (base64) and `http` (URL + headers) sources always, and `s3` /
+    `azure_blob` / `google_cloud_storage` sources *and* targets behind the
+    opt-in `cloud` cargo feature (a feature-gated `object_store`
+    dependency, so the default build keeps its single-HTTP-stack graph).
+    Coordinate field names mirror upstream's `*Coordinates` models;
+    a cloud target uploads each converted output as `<stem>.<ext>` under
+    the prefix and answers with upstream's `RemoteTargetResult` kind plus
+    per-item outcomes. All outbound kinds sit behind `--allow-url-fetch`.
+    Not covered, as upstream-jobkit-specific or OAuth-bound:
+    `google_drive`, `zip`, `put`, `presigned_url` (and with the last of
+    those, the `ArtifactRef` union — still parked). Without the feature the
+    cloud kinds parse and answer a clear rebuild-with-`--features cloud`
+    error.
+
 ---
 
 ## 5. Not migrated / out of scope
@@ -451,7 +469,9 @@ deliberate scope boundary or a cosmetic, single-fixture polish gap.
   --vlm-model NAME` renders pages via pdfium, converts them through any
   OpenAI-compatible vision endpoint (LM Studio / Ollama / vLLM / hosted) and
   parses the returned DocLang with the existing reader — see the README's
-  "VLM pipeline" section. (**Audio/ASR is now done** — see §2; Opus and AVI,
+  "VLM pipeline" section. Also on the Node bindings as `pipeline: 'vlm'`
+  (`vlmEndpoint` / `vlmModel` / `vlmApiKey` / `vlmPrompt` / `vlmMaxTokens`);
+  serve and the Python bindings don't carry it yet. (**Audio/ASR is now done** — see §2; Opus and AVI,
   which symphonia cannot decode, use the optional ffmpeg fallback. The **enrichment
   models are now done** too: DocumentFigureClassifier-v2.5 for
   `do_picture_classification` and CodeFormulaV2 — an Idefics3-class VLM,
@@ -519,7 +539,9 @@ deliberate scope boundary or a cosmetic, single-fixture polish gap.
   with swappable embedders (Ollama/Gemini/local ONNX), stores
   (SQLite+sqlite-vec / PostgreSQL+pgvector), LLM, sources and queues, plus an
   eval harness and a REST API. See the crate README.
-- **`docling-node`** — Node.js/Bun N-API bindings (npm package).
+- **`docling-node`** — Node.js/Bun N-API bindings (npm package): the full
+  converter surface plus the chunkers, Markdown/chunk streaming, a warm
+  `Pipeline` for many PDFs, and the remote VLM pipeline (`pipeline: 'vlm'`).
 - **`docling-wasm`** — WebAssembly bindings: the declarative converters (and
   digital PDFs via the opt-in `pdf-text` text-layer feature — the same
   extraction as `--no-ocr`, no pdfium/ONNX) run fully client-side in the

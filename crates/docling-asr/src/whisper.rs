@@ -195,13 +195,18 @@ impl Transcriber {
         }
         let dir = preset_dir(preset);
         let session = |path: std::path::PathBuf| -> Result<Session, String> {
-            Session::builder()
+            let builder = Session::builder()
                 .map_err(|e| format!("asr: builder: {e}"))?
                 .with_intra_threads(
                     // Quota-aware (#262): a cgroup CPU limit clamps the pool.
                     docling_core::env::cpu_budget(),
                 )
-                .map_err(|e| format!("asr: threads: {e}"))?
+                .map_err(|e| format!("asr: threads: {e}"))?;
+            // Same DOCLING_RS_EP switch as the PDF pipeline - a GPU
+            // build runs both Whisper sessions on the accelerator.
+            let mut builder = docling_onnx::apply(builder)
+                .map_err(|e| format!("asr: execution providers: {e}"))?;
+            builder
                 .commit_from_file(&path)
                 .map_err(|e| format!("asr: loading {}: {e}", path.display()))
         };

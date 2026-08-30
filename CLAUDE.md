@@ -36,10 +36,11 @@ validated for byte-for-byte conformance against upstream Python docling.
 ## Workspace map
 
 | Crate | What it is |
-|---|---|
+| --- | --- |
 | `crates/docling-core` | `DoclingDocument` model, Markdown/JSON/DCLX serializers, `MarkdownStreamer`, chunkers |
 | `crates/docling` | `DocumentConverter` (format routing), declarative backends (`src/backend/`), streaming (`src/stream.rs`), video (`src/video.rs`) |
 | `crates/docling-pdf` | ML pipeline: pdfium + RT-DETR layout + TableFormer + PP-OCRv3 + enrichment (`ml` feature); pure-Rust text-layer path compiles for wasm without it |
+| `crates/docling-onnx` | Shared ONNX Runtime execution-provider selection (`DOCLING_RS_EP`, `cuda`/`tensorrt`/`directml`/`coreml` features) for docling-pdf/docling-asr/docling-rag |
 | `crates/docling-asr` | Whisper ASR: symphonia decode (audio + video containers) → log-mel → ONNX encoder/decoder |
 | `crates/docling-cli` | `docling-rs` binary (also `serve` subcommand behind `--features serve`) |
 | `crates/docling-serve` | axum HTTP conversion API (+ Dockerfile with ffmpeg) |
@@ -76,8 +77,11 @@ cargo check -p docling --no-default-features --features pdf-text \
 - `.models/` (repo root): layout, TableFormer, OCR, ASR (`.models/asr/`,
   presets in subdirs), enrichment, embedder. `.pdfium/lib/libpdfium.so` for
   page rendering. Fetch: `scripts/install/download_dependencies.sh`.
-- Resolution is CWD-relative with exe-dir fallback; env overrides:
-  `PDFIUM_DYNAMIC_LIB_PATH`, `DOCLING_ASR_{ENCODER,DECODER,VOCAB}`,
+- Resolution is CWD-relative, then `$DOCLING_RS_MODELS_DIR` for `.models/…`
+  paths (#285 — whole-dir override keeping the engine's own selection logic,
+  e.g. the OCR en/ch pair; the py bindings point it at their cache), then
+  exe-dir fallback; env overrides: `PDFIUM_DYNAMIC_LIB_PATH`,
+  `DOCLING_ASR_{ENCODER,DECODER,VOCAB}`,
   `DOCLING_FFMPEG` (video frames — ffmpeg is a runtime binary, never a build
   dep), `DOCLING_RS_PDF_WORKERS/_THREADS/_INTRA`, `DOCLING_RS_TF_INTRA` (#262),
   `DOCLING_RS_NO_ARENA` (#263; serve defaults it on),

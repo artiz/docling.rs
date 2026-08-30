@@ -94,7 +94,7 @@ impl PictureClassifier {
             return None;
         }
         let builder = Session::builder().ok()?.with_intra_threads(intra).ok()?;
-        let session = crate::ep::apply(builder)
+        let session = docling_onnx::apply(builder)
             .map_err(|e| eprintln!("docling-pdf: picture classifier: {e}"))
             .ok()?
             .commit_from_file(&path)
@@ -213,7 +213,7 @@ impl CodeFormula {
         }
         let load = |p: String| {
             let builder = Session::builder().ok()?.with_intra_threads(intra).ok()?;
-            crate::ep::apply(builder)
+            docling_onnx::apply(builder)
                 .map_err(|e| eprintln!("docling-pdf: CodeFormula: {e}"))
                 .ok()?
                 .commit_from_file(&p)

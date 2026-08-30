@@ -21,6 +21,7 @@ members = [
     "crates/docling",
     "crates/docling-asr",
     "crates/docling-cli",
+    "crates/docling-onnx",
     "crates/docling-pdf",
     # Node.js / Bun N-API bindings (published to npm, not crates.io).
     "crates/docling-node",
@@ -36,7 +37,7 @@ members = [
 ]
 
 [workspace.package]
-version = "1.16.0"
+version = "1.19.0"
 edition = "2021"
 license = "MIT"
 repository = "https://github.com/docling-project/docling.rs"

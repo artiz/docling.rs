@@ -217,6 +217,15 @@ enable them; the fetcher blocks private-IP targets
 (`DOCLING_RS_MAX_FETCH_BYTES`). The server binds loopback by default — front
 it with a policy proxy for anything wider.
 
+The JSON body also takes docling's service-datamodel `sources`/`target` shape
+(#139): `kind`-tagged `file` (base64) and `http` (URL + headers) sources, and —
+with the opt-in `cloud` cargo feature (feature-gated `object_store`) — `s3`,
+`azure_blob` and `google_cloud_storage` sources and output targets, coordinate
+fields mirroring upstream's models. A cloud target uploads each converted
+output as `<stem>.<ext>` under the prefix and answers with a
+`RemoteTargetResult` acknowledgment; everything outbound sits behind
+`--allow-url-fetch`. See the `s3_pipeline` example in `/openapi.yaml`.
+
 ## In the browser — `docling-wasm`
 
 The declarative converters (everything except the PDF/image/audio ML
@@ -617,11 +626,23 @@ docling-rs --pipeline vlm \
   paper.pdf
 ```
 
+The same pipeline is exposed by the **Node bindings** as
+`pipeline: 'vlm'` with `vlmEndpoint` / `vlmModel` / `vlmApiKey` / `vlmPrompt` /
+`vlmMaxTokens` (see [Node.js / Bun bindings](#nodejs--bun-bindings)); it is not
+plumbed through serve or the Python bindings yet.
+
 `--vlm-endpoint` takes the server's `/v1` base or the full
-`…/chat/completions` URL; `DOCLING_RS_VLM_ENDPOINT` / `DOCLING_RS_VLM_MODEL` /
-`DOCLING_RS_VLM_PROMPT` / `DOCLING_RS_VLM_API_KEY` (Bearer token) are the env
-equivalents. `--pages A-B` composes (only the window's pages are rendered and
-sent), and `--to md|json|dclx|chunks` plus `--strict` work as usual. Transient
+`…/chat/completions` URL. `DOCLING_RS_VLM_ENDPOINT` / `DOCLING_RS_VLM_MODEL`
+are the env equivalents of the two flags, and `DOCLING_RS_VLM_PROMPT` /
+`DOCLING_RS_VLM_API_KEY` (Bearer token) are the only way to set those two from
+the CLI — Node exposes them as options too. Selecting the pipeline is always
+explicit: the environment supplies values, it never switches the pipeline on,
+so a stale `DOCLING_RS_VLM_ENDPOINT` can't reroute an ordinary PDF conversion
+over the network. The `--vlm-*` flags are inert on their own for the same
+reason — without `--pipeline vlm` they are parsed and ignored, never a pipeline
+switch of their own — and the Node bindings ignore stray `vlm*` options
+identically. `--pages A-B` composes (only the window's pages are rendered
+and sent), and `--to md|json|dclx|chunks` plus `--strict` work as usual. Transient
 endpoint failures (timeouts, 408/429, 5xx) retry with exponential backoff;
 a page that still fails fails the conversion — no silently dropped pages.
 Output quality is entirely the model's: conversion of the PDF corpus against
@@ -700,8 +721,9 @@ docling.rs ships as an npm package, [**`docling.rs`**](https://www.npmjs.com/pac
 that loads in both Node.js and Bun (Bun implements N-API — same binary, no
 rebuild), exposing the converter with the same knobs as the Rust API: Markdown /
 docling JSON output, `strict` mode, image modes, allowed-format restriction,
-`fetchImages`, sync + async (`Promise`) calls, and a `streamFileMarkdown` async
-generator.
+`fetchImages`, the [remote VLM pipeline](#vlm-pipeline-remote-endpoint)
+(`pipeline: 'vlm'`), sync + async (`Promise`) calls, and a `streamFileMarkdown`
+async generator.
 
 Install — no Rust toolchain needed, the prebuilt binary for your platform (Linux
 x64/arm64, Windows x64) is pulled in automatically:
@@ -725,7 +747,9 @@ const json = await convertFileAsync('report.docx', { to: 'json' })
 Declarative formats (Markdown, HTML, DOCX, XLSX, …) work out of the box. The
 PDF/image pipeline needs pdfium + the ONNX models (not bundled), so it throws
 until you fetch them with `scripts/install/download_dependencies.sh` — see
-[Getting the ML models](#getting-the-ml-models) below.
+[Getting the ML models](#getting-the-ml-models) below. `pipeline: 'vlm'` is the
+exception: it loads no ONNX models, so it needs pdfium alone (and nothing for
+image input).
 
 A reusable `Pipeline` keeps those models warm across many PDFs.
 
@@ -941,9 +965,9 @@ defaults to INT8; build with `--build-arg INT8=0` for pure fp32.)
 
 ### GPU execution providers (optional, off by default)
 
-The ONNX stages (layout, TableFormer, OCR, enrichment) run on CPU by default.
-GPU execution providers compile in behind cargo features — the standard build
-keeps zero GPU dependencies:
+The ONNX stages (layout, TableFormer, OCR, enrichment, Whisper, the RAG
+embedder) run on CPU by default. GPU execution providers compile in behind
+cargo features — the standard build keeps zero GPU dependencies:
 
 ```bash
 cargo build --release -p docling-cli --features cuda      # NVIDIA CUDA (Linux/Windows)
@@ -1098,7 +1122,12 @@ option, Python `ocr_lang=` kwarg (also mapped from docling-shaped
 docling conformance is measured against, and the conformance scripts pin it
 themselves; explicit `DOCLING_OCR_REC_ONNX`+`DOCLING_OCR_DICT` (a pair — set
 both) override the language switch entirely. An install without the English
-model falls back to `ch_` with a warning.
+model falls back to `ch_` with a warning. Because those per-file pins beat
+the switch, the Python bindings' `ensure_env()` hands the cache over as
+`DOCLING_RS_MODELS_DIR` (a whole-directory override in the asset resolver)
+instead of pinning the pair, and `download_models()` fetches both language
+pairs — so the `ocr_lang=` kwarg works on the documented setup path (#285;
+re-run `download_models()` on an older cache to pick up the English pair).
 
 ## Testing
 

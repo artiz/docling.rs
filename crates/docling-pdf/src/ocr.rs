@@ -193,7 +193,7 @@ impl OcrModel {
             .map_err(|e| format!("ocr: builder: {e}"))?
             .with_intra_threads(1)
             .map_err(|e| format!("ocr: intra_threads: {e}"))?;
-        let rec = crate::ep::apply(builder)
+        let rec = docling_onnx::apply(builder)
             .map_err(|e| format!("ocr: {e}"))?
             .commit_from_file(&rec_path)
             .map_err(|e| format!("ocr: load {rec_path}: {e}"))?;
