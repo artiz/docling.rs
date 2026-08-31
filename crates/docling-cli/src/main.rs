@@ -7,7 +7,7 @@
 //! (docling's independent `do_ocr=False`); `--no-ocr` remains the
 //! skip-everything fast path.
 //!
-//! Usage: docling-rs [--strict] [--to md|json|dclx|chunks|images] [--pages A-B] [--scale X] [--images MODE] [--input GLOB --output DIR [--jobs N]] [--fetch-images] [--list-attachments] [--skip-empty-cells] [--compact-tables] [--ebcdic-layout JSON|PATH] [--no-stream] [--no-table-former] [--no-ocr] [--skip-ocr] [--force-full-page-ocr] [--no-text-panels] [--heading-hierarchy] [--ocr-lang en|ch] [--ocr-mode MODE] [--ocr-scale X] [--chunker hierarchical|hybrid] [--chunk-tokenizer PATH] [--chunk-max-tokens N] [--no-chunk-merge-peers] [--pipeline standard|vlm] [--vlm-endpoint URL] [--vlm-model NAME] [--asr-model PRESET] [--asr-lang CODE] [--video-frames N] [--use-web-browser] [--enrich-picture-classes] [--enrich-code] [--enrich-formula] <input-file>
+//! Usage: docling-rs [--strict] [--to md|json|dclx|chunks|images] [--pages A-B] [--scale X] [--images MODE] [--input GLOB --output DIR [--jobs N]] [--fetch-images] [--list-attachments] [--skip-empty-cells] [--compact-tables] [--ebcdic-layout JSON|PATH] [--no-stream] [--no-table-former] [--no-ocr] [--skip-ocr] [--force-full-page-ocr] [--no-text-panels] [--heading-hierarchy] [--ocr-lang en|ch] [--ocr-mode MODE] [--ocr-scale X] [--chunker hierarchical|hybrid] [--chunk-tokenizer PATH] [--chunk-max-tokens N] [--no-chunk-merge-peers] [--pipeline standard|vlm] [--vlm-endpoint URL] [--vlm-model NAME] [--vlm-api-key TOKEN] [--vlm-prompt TEXT] [--vlm-max-tokens N] [--asr-model PRESET] [--asr-lang CODE] [--video-frames N] [--use-web-browser] [--enrich-picture-classes] [--enrich-code] [--enrich-formula] <input-file>
 //!   --input GLOB|DIR   batch mode (#205): convert every file the glob matches
 //!                      (`--input '/data/reports/**/*.pdf'` — quote it so the
 //!                      shell doesn't expand it) instead of one positional file.
@@ -169,6 +169,9 @@ fn main() -> ExitCode {
     let mut pipeline: Option<String> = None;
     let mut vlm_endpoint: Option<String> = None;
     let mut vlm_model: Option<String> = None;
+    let mut vlm_api_key: Option<String> = None;
+    let mut vlm_prompt: Option<String> = None;
+    let mut vlm_max_tokens: Option<usize> = None;
     let mut path: Option<String> = None;
     let mut input: Option<String> = None;
     let mut output: Option<String> = None;
@@ -365,6 +368,21 @@ fn main() -> ExitCode {
             },
             "--vlm-endpoint" => vlm_endpoint = args.next(),
             "--vlm-model" => vlm_model = args.next(),
+            // #312: the remaining VlmOptions knobs, for parity with the Node/
+            // Python bindings and serve (previously env-only, or — for
+            // max_tokens — not settable at all). Inert without --pipeline vlm,
+            // like every other --vlm-* flag.
+            "--vlm-api-key" => vlm_api_key = args.next(),
+            "--vlm-prompt" => vlm_prompt = args.next(),
+            "--vlm-max-tokens" => match args.next().map(|v| v.trim().parse::<usize>()) {
+                // 0 would have every page come back empty and surface as a
+                // model error — reject it here, like the other bindings do.
+                Some(Ok(n)) if n > 0 => vlm_max_tokens = Some(n),
+                _ => {
+                    eprintln!("error: --vlm-max-tokens needs a positive integer");
+                    return ExitCode::from(2);
+                }
+            },
             // Hidden benchmarking aid: load the PDF/image pipeline once, then time
             // N warm conversions (models already loaded), printing the avg seconds
             // per conversion to stdout. This is the startup-excluded counterpart to
@@ -440,11 +458,15 @@ fn main() -> ExitCode {
             (vec![file], base)
         };
         let vlm = if pipeline.as_deref() == Some("vlm") {
-            match docling::vlm::VlmOptions::resolve(vlm_endpoint, vlm_model) {
-                Ok(mut o) => {
-                    o.page_range = pages;
-                    Some(o)
-                }
+            match resolve_vlm_flags(
+                vlm_endpoint,
+                vlm_model,
+                vlm_api_key,
+                vlm_prompt,
+                vlm_max_tokens,
+                pages,
+            ) {
+                Ok(o) => Some(o),
                 Err(e) => {
                     eprintln!("error: {e}");
                     return ExitCode::from(2);
@@ -551,14 +573,20 @@ fn main() -> ExitCode {
     // then fall through to the regular output selection (md/json/dclx/chunks
     // all work; there is no page-streaming, the endpoint is the bottleneck).
     if pipeline.as_deref() == Some("vlm") {
-        let mut opts = match docling::vlm::VlmOptions::resolve(vlm_endpoint, vlm_model) {
+        let opts = match resolve_vlm_flags(
+            vlm_endpoint,
+            vlm_model,
+            vlm_api_key,
+            vlm_prompt,
+            vlm_max_tokens,
+            pages,
+        ) {
             Ok(o) => o,
             Err(e) => {
                 eprintln!("error: {e}");
                 return ExitCode::from(2);
             }
         };
-        opts.page_range = pages;
         let mut document = match docling::vlm::convert_vlm(&source, &opts) {
             Ok(doc) => doc,
             Err(e) => {
@@ -718,6 +746,36 @@ fn pdf_no_ocr_fallback(
         // missing assets better than an empty document would.
         _ => None,
     }
+}
+
+/// Resolve `--pipeline vlm`'s options from the flags (#77, #312): endpoint
+/// and model fall back to `DOCLING_RS_VLM_ENDPOINT` / `DOCLING_RS_VLM_MODEL`,
+/// and `--vlm-api-key` / `--vlm-prompt` / `--vlm-max-tokens` override their
+/// env-or-default values when given (max_tokens is validated > 0 at parse).
+/// Blank values count as unset, matching the env helpers and the other
+/// bindings; `--pages` composes exactly as with the ML pipeline.
+fn resolve_vlm_flags(
+    endpoint: Option<String>,
+    model: Option<String>,
+    api_key: Option<String>,
+    prompt: Option<String>,
+    max_tokens: Option<usize>,
+    page_range: Option<(usize, usize)>,
+) -> Result<docling::vlm::VlmOptions, String> {
+    let set = |s: Option<String>| s.filter(|v| !v.trim().is_empty());
+    let mut o =
+        docling::vlm::VlmOptions::resolve(set(endpoint), set(model)).map_err(|e| e.to_string())?;
+    if let Some(k) = set(api_key) {
+        o.api_key = Some(k);
+    }
+    if let Some(p) = set(prompt) {
+        o.prompt = Some(p);
+    }
+    if let Some(n) = max_tokens {
+        o.max_tokens = n;
+    }
+    o.page_range = page_range;
+    Ok(o)
 }
 
 /// The buffered output tail shared by the standard (non-streaming) and VLM

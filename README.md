@@ -693,10 +693,10 @@ A VLM failure (unreachable endpoint, non-200, unparseable answer) fails that
 request with a clear error; the server itself is unaffected.
 
 `--vlm-endpoint` takes the server's `/v1` base or the full
-`…/chat/completions` URL. `DOCLING_RS_VLM_ENDPOINT` / `DOCLING_RS_VLM_MODEL`
-are the env equivalents of the two flags, and `DOCLING_RS_VLM_PROMPT` /
-`DOCLING_RS_VLM_API_KEY` (Bearer token) are the only way to set those two from
-the CLI — Node exposes them as options too. Selecting the pipeline is always
+`…/chat/completions` URL. `--vlm-api-key TOKEN` (Bearer), `--vlm-prompt TEXT`
+and `--vlm-max-tokens N` (default 8192) tune the rest (#312);
+`DOCLING_RS_VLM_ENDPOINT` / `DOCLING_RS_VLM_MODEL` / `DOCLING_RS_VLM_API_KEY` /
+`DOCLING_RS_VLM_PROMPT` are the env fallbacks for the corresponding flags. Selecting the pipeline is always
 explicit: the environment supplies values, it never switches the pipeline on,
 so a stale `DOCLING_RS_VLM_ENDPOINT` can't reroute an ordinary PDF conversion
 over the network. The `--vlm-*` flags are inert on their own for the same
