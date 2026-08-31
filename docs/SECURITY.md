@@ -63,6 +63,14 @@ extracted to disk, so there is no zip-slip path.
   conversion (and thus the server). `DOCLING_RS_ALLOW_PRIVATE_IP_FETCH=1` opts
   out of the IP block-list for local/intranet image servers, same as the URL
   fetch above.
+- **`pipeline=vlm` with a request-supplied `vlm_endpoint`** (#304) points
+  the server's outbound traffic (page images included) wherever the caller
+  says, so it sits behind the **same `--allow-url-fetch` gate** and the same
+  resolve-and-refuse private-address check as URL inputs. The safer
+  deployment is the operator-pinned mode: set `DOCLING_RS_VLM_ENDPOINT` /
+  `DOCLING_RS_VLM_MODEL` on the server and let requests send only
+  `pipeline=vlm` — the pinned endpoint is the operator's own choice, so it
+  may be local (e.g. an Ollama on loopback) and needs no gate.
 - **No authentication.** Bind to loopback (the default) or place an
   authenticating/policy proxy in front before exposing it.
 

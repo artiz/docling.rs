@@ -196,7 +196,12 @@ Options per request: `to=md|json|dclx|chunks|images`, `strict`, `images=placehol
 `no_ocr`, `skip_ocr`, `no_table_former`, `no_text_panels`, `heading_hierarchy`, `force_full_page_ocr`, `pages`,
 `ocr_lang`, `ocr_mode`, `ocr_scale`, `scale`, `asr_model`, `asr_lang`, `video_frames`, `fetch_images`,
 `chunker=hierarchical|hybrid`, `chunk_tokenizer`, `chunk_max_tokens`, `chunk_merge_peers` (#256:
-per-request `to=chunks` configuration; the tokenizer is a server-local relative path) — as query
+per-request `to=chunks` configuration; the tokenizer is a server-local relative path),
+`pipeline=standard|vlm` + `vlm_endpoint`, `vlm_model`, `vlm_api_key`, `vlm_prompt`,
+`vlm_max_tokens` (#304: the remote [VLM pipeline](#vlm-pipeline-remote-endpoint); a
+request-supplied `vlm_endpoint` needs `--allow-url-fetch` and passes the same SSRF
+check as URL inputs — pin it server-side via `DOCLING_RS_VLM_*` instead for the safer
+operator-controlled mode) — as query
 parameters, multipart fields, or JSON keys (body wins). Server flags: `--addr`,
 `--concurrency`, `--max-body-mb`, `--queue-size`, `--result-ttl`, `--warmup`,
 `--allow-url-fetch`, `--no-url-fetch`, `--strict`, `--max-memory-mb` (#263:
@@ -655,8 +660,37 @@ docling-rs --pipeline vlm \
 
 The same pipeline is exposed by the **Node bindings** as
 `pipeline: 'vlm'` with `vlmEndpoint` / `vlmModel` / `vlmApiKey` / `vlmPrompt` /
-`vlmMaxTokens` (see [Node.js / Bun bindings](#nodejs--bun-bindings)); it is not
-plumbed through serve or the Python bindings yet.
+`vlmMaxTokens` (see [Node.js / Bun bindings](#nodejs--bun-bindings)), by the
+**Python bindings** as constructor kwargs with the same snake_case names
+(#304; a bad configuration raises `ValueError` at construction):
+
+```python
+from docling_rs import DocumentConverter
+
+conv = DocumentConverter(pipeline="vlm",
+                         vlm_endpoint="http://localhost:11434/v1",
+                         vlm_model="granite-docling")
+doc = conv.convert("paper.pdf").document
+```
+
+and by **`docling-rs serve`** as the per-request options
+`pipeline=vlm` + `vlm_endpoint` / `vlm_model` / `vlm_api_key` / `vlm_prompt` /
+`vlm_max_tokens` (#304). On serve, a *request-supplied* `vlm_endpoint` is
+outbound traffic steered by the caller, so it requires `--allow-url-fetch` and
+passes the same SSRF resolution check as URL inputs (private/loopback
+endpoints are refused; `DOCLING_RS_ALLOW_PRIVATE_IP_FETCH=1` for local
+development). The safer default is the **operator-pinned mode**: set
+`DOCLING_RS_VLM_ENDPOINT` / `DOCLING_RS_VLM_MODEL` (and optionally
+`_API_KEY` / `_PROMPT`) on the server and have requests send just
+`pipeline=vlm` — callers pick the pipeline, the operator picks where it talks
+to, and no gate is needed:
+
+```bash
+curl -F file=@paper.pdf 'localhost:8000/v1/convert?pipeline=vlm'
+```
+
+A VLM failure (unreachable endpoint, non-200, unparseable answer) fails that
+request with a clear error; the server itself is unaffected.
 
 `--vlm-endpoint` takes the server's `/v1` base or the full
 `…/chat/completions` URL. `DOCLING_RS_VLM_ENDPOINT` / `DOCLING_RS_VLM_MODEL`

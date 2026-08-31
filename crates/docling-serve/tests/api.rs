@@ -1023,3 +1023,208 @@ async fn requests_and_conversions_are_counted() {
     assert!(ok_after >= ok_before + 1.0);
     assert!(failed_after >= failed_before + 1.0);
 }
+
+// --- #304: remote VLM pipeline ---------------------------------------------
+
+/// 1×1 red PNG (the same bytes as the fetch_images test) — the VLM image leg
+/// needs no pdfium and no models, so these tests run in plain CI.
+const VLM_PNG: &[u8] = &[
+    0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44, 0x52,
+    0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x08, 0x02, 0x00, 0x00, 0x00, 0x90, 0x77, 0x53,
+    0xde, 0x00, 0x00, 0x00, 0x0c, 0x49, 0x44, 0x41, 0x54, 0x08, 0xd7, 0x63, 0xf8, 0xcf, 0xc0, 0x00,
+    0x00, 0x00, 0x03, 0x00, 0x01, 0x6e, 0x2c, 0xdc, 0x33, 0x00, 0x00, 0x00, 0x00, 0x49, 0x45, 0x4e,
+    0x44, 0xae, 0x42, 0x60, 0x82,
+];
+
+/// A one-shot OpenAI-compatible stub (the counterpart of
+/// `crates/docling/tests/vlm.rs::mock_openai`): serves `answer` as
+/// `choices[0].message.content` and records that it was hit.
+fn mock_vlm(
+    answer: &str,
+) -> (
+    String,
+    std::sync::Arc<std::sync::atomic::AtomicUsize>,
+    std::thread::JoinHandle<()>,
+) {
+    use std::io::{Read, Write};
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::Arc;
+
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let addr = listener.local_addr().unwrap();
+    let served = Arc::new(AtomicUsize::new(0));
+    let count = Arc::clone(&served);
+    let answer = answer.to_string();
+    let handle = std::thread::spawn(move || {
+        let (mut conn, _) = listener.accept().expect("accept");
+        // Read until the full body arrived (Content-Length framing).
+        let mut buf = Vec::new();
+        let mut tmp = [0u8; 4096];
+        loop {
+            let n = conn.read(&mut tmp).expect("read request");
+            buf.extend_from_slice(&tmp[..n]);
+            if let Some(head_end) = buf.windows(4).position(|w| w == b"\r\n\r\n") {
+                let head = String::from_utf8_lossy(&buf[..head_end]).to_ascii_lowercase();
+                let need: usize = head
+                    .lines()
+                    .find_map(|l| l.strip_prefix("content-length:"))
+                    .and_then(|v| v.trim().parse().ok())
+                    .expect("content-length");
+                if buf.len() >= head_end + 4 + need {
+                    break;
+                }
+            }
+        }
+        let body = String::from_utf8_lossy(&buf).into_owned();
+        assert!(body.contains("\"model\":\"mock-docling\""), "model missing");
+        let payload = serde_json::json!({
+            "choices": [{ "message": { "role": "assistant", "content": answer } }]
+        })
+        .to_string();
+        let resp = format!(
+            "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{payload}",
+            payload.len()
+        );
+        conn.write_all(resp.as_bytes()).expect("write response");
+        count.fetch_add(1, Ordering::SeqCst);
+    });
+    (format!("http://{addr}/v1"), served, handle)
+}
+
+#[tokio::test]
+async fn vlm_pipeline_converts_via_the_operator_pinned_endpoint() {
+    // Pinned mode (#304's safer default): the endpoint comes from the
+    // server's DOCLING_RS_VLM_* environment, so the request needs neither a
+    // vlm_endpoint nor --allow-url-fetch — and a loopback model server (the
+    // common deployment) is the operator's own choice, exempt from the SSRF
+    // block-list. The other VLM tests below pass explicit endpoints, so these
+    // process-global vars can't steer them even while set.
+    let (endpoint, served, handle) = mock_vlm("Hello from the VLM");
+    std::env::set_var("DOCLING_RS_VLM_ENDPOINT", &endpoint);
+    let fields = [("pipeline", "vlm"), ("vlm_model", "mock-docling")];
+    let (ct, body) = multipart("page.png", VLM_PNG, &fields);
+    let response = app().oneshot(convert_request(&ct, body, "")).await.unwrap();
+    let status = response.status();
+    let out = body_string(response).await;
+    std::env::remove_var("DOCLING_RS_VLM_ENDPOINT");
+    assert_eq!(status, StatusCode::OK, "{out}");
+    assert!(out.contains("Hello from the VLM"), "markdown: {out}");
+    assert_eq!(served.load(std::sync::atomic::Ordering::SeqCst), 1);
+    handle.join().unwrap();
+}
+
+#[tokio::test]
+async fn vlm_rejects_non_visual_formats_instead_of_converting_them() {
+    // pipeline=vlm on a Markdown upload must surface the VLM's format error,
+    // not silently run the standard conversion the caller didn't ask for —
+    // including on the to=md streaming path this request takes. The endpoint
+    // is never contacted (the format check precedes any HTTP), so a public
+    // literal that passes the SSRF block-list suffices — and keeps this test
+    // off the env vars the pinned test above toggles.
+    let fields = [
+        ("pipeline", "vlm"),
+        ("vlm_endpoint", "http://8.8.8.8:9/v1"),
+        ("vlm_model", "m"),
+    ];
+    let cfg = ServeConfig {
+        allow_url_fetch: true,
+        ..ServeConfig::default()
+    };
+    let (ct, body) = multipart("d.md", b"# hi", &fields);
+    let response = router(cfg)
+        .oneshot(convert_request(&ct, body, ""))
+        .await
+        .unwrap();
+    let status = response.status();
+    let out = body_string(response).await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{out}");
+    assert!(out.contains("vlm pipeline converts PDF and image"), "{out}");
+}
+
+#[tokio::test]
+async fn request_supplied_vlm_endpoint_needs_allow_url_fetch() {
+    // Secure default: without --allow-url-fetch a caller must not point the
+    // server's outbound traffic anywhere — 422 before anything is contacted.
+    let fields = [
+        ("pipeline", "vlm"),
+        ("vlm_endpoint", "http://127.0.0.1:9/v1"),
+        ("vlm_model", "m"),
+    ];
+    let (ct, body) = multipart("page.png", VLM_PNG, &fields);
+    let response = app().oneshot(convert_request(&ct, body, "")).await.unwrap();
+    assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
+    let out = body_string(response).await;
+    assert!(out.contains("--allow-url-fetch"), "{out}");
+    assert!(out.contains("DOCLING_RS_VLM_ENDPOINT"), "{out}");
+}
+
+#[tokio::test]
+async fn vlm_endpoint_resolving_to_private_address_is_rejected() {
+    // Even with the gate open, a request endpoint may not reach back into the
+    // server's own network (same block-list as URL inputs).
+    let cfg = ServeConfig {
+        allow_url_fetch: true,
+        ..ServeConfig::default()
+    };
+    let fields = [
+        ("pipeline", "vlm"),
+        ("vlm_endpoint", "http://127.0.0.1:9/v1"),
+        ("vlm_model", "m"),
+    ];
+    let (ct, body) = multipart("page.png", VLM_PNG, &fields);
+    let response = router(cfg)
+        .oneshot(convert_request(&ct, body, ""))
+        .await
+        .unwrap();
+    let out = body_string(response).await;
+    assert!(out.contains("private/loopback"), "{out}");
+}
+
+#[tokio::test]
+async fn unknown_pipeline_is_a_400_and_fails_async_submissions_fast() {
+    // Query-param spelling on the sync endpoint…
+    let (ct, body) = multipart("d.md", b"# hi", &[]);
+    let response = app()
+        .oneshot(convert_request(&ct, body, "?pipeline=magic"))
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    assert!(body_string(response).await.contains("unknown pipeline"));
+
+    // …and the async endpoint validates synchronously: nothing is queued.
+    let (ct, body) = multipart("d.md", b"# hi", &[("pipeline", "magic")]);
+    let response = app()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/v1/convert/async")
+                .header(header::CONTENT_TYPE, ct)
+                .body(Body::from(body))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+}
+
+#[tokio::test]
+async fn vlm_options_ride_the_json_body_and_zero_max_tokens_is_a_400() {
+    // JSON-body spelling (the serde flatten path) — validated before any
+    // conversion or outbound traffic.
+    let b64 = docling_b64("a,b\n1,2\n");
+    let body = format!(
+        r#"{{"sources": [{{"kind": "file", "base64_string": "{b64}", "filename": "t.csv"}}],
+            "pipeline": "vlm", "vlm_endpoint": "http://example.com/v1",
+            "vlm_model": "m", "vlm_max_tokens": 0}}"#
+    );
+    let cfg = ServeConfig {
+        allow_url_fetch: true,
+        ..ServeConfig::default()
+    };
+    let response = router(cfg)
+        .oneshot(json_convert(&body, true))
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    assert!(body_string(response).await.contains("vlm_max_tokens"));
+}

@@ -44,8 +44,7 @@ where
         let _ = tx.send(work());
     });
     loop {
-        let received =
-            py.detach(|| rx.lock().unwrap().recv_timeout(Duration::from_millis(100)));
+        let received = py.detach(|| rx.lock().unwrap().recv_timeout(Duration::from_millis(100)));
         match received {
             Ok(result) => return result,
             Err(RecvTimeoutError::Timeout) => py.check_signals()?,
@@ -94,6 +93,10 @@ struct PyDocumentConverter {
     ocr_mode: Option<docling::OcrMode>,
     ocr_scale: Option<f32>,
     page_range: Option<(usize, usize)>,
+    /// `pipeline="vlm"` (#304): resolved once in `new` (a bad configuration
+    /// raises there, not mid-conversion); `convert` then routes PDF/image
+    /// through the remote VLM instead of the local ML stack.
+    vlm: Option<docling::vlm::VlmOptions>,
 }
 
 #[pymethods]
@@ -146,6 +149,14 @@ impl PyDocumentConverter {
     /// * `asr_lang` — transcription language for audio/video: a Whisper code
     ///   (`"en"`, `"de"`, …) or `"auto"` (default) to detect it from the
     ///   first 30 seconds (docling 2.116 parity).
+    /// * `pipeline` — `"standard"` (default) or `"vlm"` (#304): convert PDF /
+    ///   image inputs by sending each page to a remote OpenAI-compatible
+    ///   vision model instead of the local ML stack. The `vlm_*` kwargs
+    ///   mirror the Node bindings' options and fall back to the
+    ///   `DOCLING_RS_VLM_*` environment (`vlm_endpoint`, `vlm_model` — both
+    ///   required; `vlm_api_key`, `vlm_prompt`; `vlm_max_tokens` defaults to
+    ///   8192). With `pipeline="standard"` the `vlm_*` kwargs are ignored,
+    ///   not rejected.
     ///
     /// Markdown flavour is chosen at export time by docling-core, so there is no
     /// `strict` knob here.
@@ -174,6 +185,12 @@ impl PyDocumentConverter {
         skip_empty_cells = false,
         compact_tables = false,
         ebcdic_layout = None,
+        pipeline = None,
+        vlm_endpoint = None,
+        vlm_model = None,
+        vlm_api_key = None,
+        vlm_prompt = None,
+        vlm_max_tokens = None,
     ))]
     #[allow(clippy::too_many_arguments)]
     fn new(
@@ -200,7 +217,22 @@ impl PyDocumentConverter {
         skip_empty_cells: bool,
         compact_tables: bool,
         ebcdic_layout: Option<String>,
+        pipeline: Option<String>,
+        vlm_endpoint: Option<String>,
+        vlm_model: Option<String>,
+        vlm_api_key: Option<String>,
+        vlm_prompt: Option<String>,
+        vlm_max_tokens: Option<usize>,
     ) -> PyResult<Self> {
+        let vlm = resolve_vlm(
+            pipeline.as_deref(),
+            vlm_endpoint,
+            vlm_model,
+            vlm_api_key,
+            vlm_prompt,
+            vlm_max_tokens,
+            page_range,
+        )?;
         // `allowed_formats` (docling's converter arg) restricts which input
         // formats convert; an unknown name is an error so typos surface early.
         let base = match allowed_formats {
@@ -300,6 +332,7 @@ impl PyDocumentConverter {
             ocr_mode: ocr_mode_choice,
             ocr_scale,
             page_range,
+            vlm,
         })
     }
 
@@ -314,7 +347,9 @@ impl PyDocumentConverter {
             Some(f) => matches!(f, "pdf" | "image"),
             None => true,
         };
-        if !is_ml {
+        // `pipeline="vlm"` loads no local models — warming would pay the ML
+        // model-load cost for a pipeline that never runs (#304).
+        if !is_ml || self.vlm.is_some() {
             return Ok(());
         }
         let slot = std::sync::Arc::clone(&self.pdf_pipeline);
@@ -338,9 +373,7 @@ impl PyDocumentConverter {
                     .no_ocr(no_ocr)
                     .skip_ocr(skip_ocr)
                     .no_text_panels(no_text_panels)
-                    .heading_hierarchy(docling::HeadingHierarchyOptions::enabled(
-                        heading_hierarchy,
-                    ))
+                    .heading_hierarchy(docling::HeadingHierarchyOptions::enabled(heading_hierarchy))
                     // The warm path used to drop the converter's OCR knobs and
                     // page window on the floor (#254) — prime it with the full
                     // option set the transient path honors.
@@ -393,6 +426,21 @@ impl PyDocumentConverter {
     /// pipeline when `initialize_pipeline` has primed it (otherwise the transient
     /// `inner` path, which reloads models per call).
     fn convert_source(&self, py: Python<'_>, src: SourceDocument) -> PyResult<PyNativeResult> {
+        // `pipeline="vlm"` (#304) is a sibling path: the remote model does the
+        // reading, so neither the warm pipeline nor the declarative converter
+        // applies. A conversion failure raises `ConversionError`, docling's
+        // catchable exception — never a crash.
+        if let Some(vlm) = self.vlm.clone() {
+            return run_interruptible(py, move || {
+                let doc = docling::vlm::convert_vlm(&src, &vlm)
+                    .map_err(|e| ConversionError::new_err(e.to_string()))?;
+                Ok(PyNativeResult {
+                    status: "success".to_string(),
+                    input_name: src.name,
+                    document_json: doc.export_to_json(),
+                })
+            });
+        }
         if src.format == docling::InputFormat::Pdf && self.pdf_pipeline.lock().unwrap().is_some() {
             let slot = std::sync::Arc::clone(&self.pdf_pipeline);
             return run_interruptible(py, move || {
@@ -417,6 +465,64 @@ impl PyDocumentConverter {
                 .map_err(|e| ConversionError::new_err(e.to_string()))?;
             Ok(native_result(result))
         })
+    }
+}
+
+/// Resolve the `pipeline` / `vlm_*` kwargs (#304) into
+/// [`docling::vlm::VlmOptions`], or `None` for the standard pipeline — the
+/// same contract as the Node bindings' `resolve_vlm`: `pipeline` absent or
+/// `"standard"` intentionally ignores stray `vlm_*` kwargs, blank strings
+/// count as unset (reaching the `DOCLING_RS_VLM_*` env fallbacks), and a bad
+/// configuration is a `ValueError` at construction, not a mid-conversion
+/// failure.
+fn resolve_vlm(
+    pipeline: Option<&str>,
+    endpoint: Option<String>,
+    model: Option<String>,
+    api_key: Option<String>,
+    prompt: Option<String>,
+    max_tokens: Option<usize>,
+    page_range: Option<(usize, usize)>,
+) -> PyResult<Option<docling::vlm::VlmOptions>> {
+    let set = |s: Option<String>| s.filter(|v| !v.trim().is_empty());
+    match pipeline {
+        None | Some("standard") => Ok(None),
+        Some("vlm") => {
+            let mut v =
+                docling::vlm::VlmOptions::resolve(set(endpoint), set(model)).map_err(|e| {
+                    // The library's message names the CLI flags; this
+                    // surface's spelling is the kwargs.
+                    PyValueError::new_err(
+                        e.to_string()
+                            .replace("pass --vlm-endpoint", "pass vlm_endpoint")
+                            .replace("pass --vlm-model", "pass vlm_model"),
+                    )
+                })?;
+            if let Some(p) = set(prompt) {
+                v.prompt = Some(p);
+            }
+            if let Some(k) = set(api_key) {
+                v.api_key = Some(k);
+            }
+            // Validated like the Node bindings' `vlmMaxTokens`: 0 would have
+            // every page come back empty and surface as a model error.
+            match max_tokens {
+                Some(0) => {
+                    return Err(PyValueError::new_err(
+                        "vlm_max_tokens must be greater than 0",
+                    ))
+                }
+                Some(n) => v.max_tokens = n,
+                None => {}
+            }
+            // `page_range` composes with the VLM exactly as with the ML
+            // pipeline — only the selected pages are rendered and sent.
+            v.page_range = page_range;
+            Ok(Some(v))
+        }
+        Some(other) => Err(PyValueError::new_err(format!(
+            "unknown pipeline {other:?} (expected: standard, vlm)"
+        ))),
     }
 }
 
