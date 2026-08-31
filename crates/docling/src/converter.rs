@@ -93,6 +93,10 @@ pub struct DocumentConverter {
     ocr_mode: Option<String>,
     /// OCR render scale in px/pt (#254); validated at the ML call sites.
     ocr_scale: Option<f32>,
+    /// Infer PDF/image section-header levels after assembly (#302, docling's
+    /// `HeadingHierarchyModel`): bookmarks > numbering > font style. Off by
+    /// default — heading levels then stay exactly as detected.
+    heading_hierarchy: bool,
     use_web_browser: bool,
     /// Named Whisper model preset for audio sources (docling's ASR model
     /// specs, PR #3741): English-only / Distil-Whisper variants under
@@ -165,6 +169,7 @@ impl Default for DocumentConverter {
             force_full_page_ocr: false,
             ocr_mode: None,
             ocr_scale: None,
+            heading_hierarchy: false,
             use_web_browser: false,
             asr_model: None,
             asr_lang: None,
@@ -228,7 +233,10 @@ impl DocumentConverter {
             .enrichments(self.enrich)
             .ocr_lang(self.ocr_lang_choice())
             .ocr_mode(self.ocr_mode_choice())
-            .ocr_scale(self.ocr_scale_choice()))
+            .ocr_scale(self.ocr_scale_choice())
+            .heading_hierarchy(docling_pdf::HeadingHierarchyOptions::enabled(
+                self.heading_hierarchy,
+            )))
     }
 
     /// The parsed [`Self::ocr_lang`] choice for the ML call sites; a value
@@ -413,6 +421,18 @@ impl DocumentConverter {
         self
     }
 
+    /// Infer PDF/image section-header levels after assembly (#302, docling's
+    /// `HeadingHierarchyModel` with its default options): the PDF outline
+    /// (bookmarks) is authoritative, legal/outline numbering covers headings
+    /// without a bookmark match, and font size/weight/slant/case rank the
+    /// rest. Off by default (docling parity): every detected heading then
+    /// keeps the flat level the assembler emits. Non-PDF/image formats
+    /// ignore it (their backends carry real heading levels already).
+    pub fn heading_hierarchy(mut self, enable: bool) -> Self {
+        self.heading_hierarchy = enable;
+        self
+    }
+
     /// Skip layout detection, OCR, and TableFormer entirely for PDF/image/METS
     /// sources — no model load, no inference of any kind.
     ///
@@ -590,6 +610,15 @@ impl DocumentConverter {
             }
         }
         Ok(crate::stream::spawn(self.clone(), source, image_mode))
+    }
+
+    /// Whether the heading-hierarchy stage (#302) is enabled — the streaming
+    /// front-end buffers PDF conversions when it is (the stage needs the whole
+    /// assembled document, and streamed output must stay byte-identical to
+    /// buffered output).
+    #[cfg(feature = "pdf")]
+    pub(crate) fn heading_hierarchy_enabled(&self) -> bool {
+        self.heading_hierarchy
     }
 
     /// Streaming internals ([`crate::stream`]) read the producer's settings

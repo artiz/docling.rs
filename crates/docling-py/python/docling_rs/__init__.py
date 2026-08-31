@@ -47,6 +47,7 @@ from .options import (
     AcceleratorDevice,
     AcceleratorOptions,
     DocumentStream,
+    HeadingHierarchyOptions,
     InputFormat,
     PdfFormatOption,
     PdfPipelineOptions,
@@ -134,6 +135,10 @@ class DocumentConverter:
     * ``no_text_panels`` — PDF/image: keep every detected picture as a picture
       (disable the demotion of uncaptioned dense-text "picture" regions into
       paragraphs — the image-extraction escape hatch, #174).
+    * ``heading_hierarchy`` — PDF/image: infer section-header levels after
+      assembly (docling's ``HeadingHierarchyModel``, #302 — bookmarks >
+      numbering > font style). Also accepted docling-shaped, via
+      ``pipeline_options.heading_hierarchy_options.enabled``.
     * ``fetch_images`` — resolve remote/local ``<img src>`` for HTML/EPUB.
     * ``use_web_browser`` — render HTML via headless Chrome before parsing.
     * ``ocr_mode`` / ``ocr_scale`` — docling 2.116's ``OcrMode`` (which regions
@@ -166,6 +171,7 @@ class DocumentConverter:
         do_table_structure: bool = True,
         force_full_page_ocr: bool = False,
         no_text_panels: bool = False,
+        heading_hierarchy: bool = False,
         do_picture_classification: bool = False,
         do_code_enrichment: bool = False,
         do_formula_enrichment: bool = False,
@@ -194,6 +200,9 @@ class DocumentConverter:
                 getattr(pipeline, "ocr_options", None), "force_full_page_ocr", False
             )
             no_text_panels = getattr(pipeline, "no_text_panels", no_text_panels)
+            hh = getattr(pipeline, "heading_hierarchy_options", None)
+            if hh is not None:
+                heading_hierarchy = bool(getattr(hh, "enabled", heading_hierarchy))
             do_picture_classification = getattr(
                 pipeline, "do_picture_classification", do_picture_classification
             )
@@ -258,6 +267,7 @@ class DocumentConverter:
             do_ocr=do_ocr,
             force_full_page_ocr=force_full_page_ocr,
             no_text_panels=no_text_panels,
+            heading_hierarchy=heading_hierarchy,
             do_table_structure=do_table_structure,
             use_web_browser=use_web_browser,
             do_picture_classification=do_picture_classification,

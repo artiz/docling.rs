@@ -58,6 +58,7 @@ paths:
         - { $ref: "#/components/parameters/force_full_page_ocr" }
         - { $ref: "#/components/parameters/no_table_former" }
         - { $ref: "#/components/parameters/no_text_panels" }
+        - { $ref: "#/components/parameters/heading_hierarchy" }
         - { $ref: "#/components/parameters/fetch_images" }
         - { $ref: "#/components/parameters/skip_empty_cells" }
         - { $ref: "#/components/parameters/compact_tables" }
@@ -94,6 +95,7 @@ paths:
                 force_full_page_ocr: { type: boolean }
                 no_table_former: { type: boolean }
                 no_text_panels: { type: boolean }
+                heading_hierarchy: { type: boolean }
                 fetch_images: { type: boolean }
                 skip_empty_cells: { type: boolean }
                 compact_tables: { type: boolean }
@@ -453,6 +455,14 @@ components:
             PDF/image — keep every detected picture as a picture: disable the
             demotion of uncaptioned dense-text "picture" regions into
             paragraphs (the escape hatch for image-extraction workflows).
+        heading_hierarchy:
+          type: boolean
+          default: false
+          description: >
+            PDF/image — infer section-header levels after assembly (docling's
+            HeadingHierarchyModel): PDF bookmarks are authoritative, then
+            legal/outline numbering, then font style. Off by default; headings
+            then keep the flat level the pipeline emits.
         ebcdic_layout:
           type: string
           description: >
@@ -647,6 +657,8 @@ components:
       { name: no_table_former, in: query, schema: { type: boolean } }
     no_text_panels:
       { name: no_text_panels, in: query, schema: { type: boolean } }
+    heading_hierarchy:
+      { name: heading_hierarchy, in: query, schema: { type: boolean } }
     fetch_images:
       { name: fetch_images, in: query, schema: { type: boolean } }
     skip_empty_cells:

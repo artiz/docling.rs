@@ -92,6 +92,26 @@ class TableStructureOptions:
 
 
 @dataclass
+class HeadingHierarchyOptions:
+    """docling's ``HeadingHierarchyOptions`` (#302): infer PDF/image
+    section-header levels after assembly — PDF bookmarks are authoritative,
+    legal/outline numbering covers headings without a bookmark match, font
+    style ranks the rest. The Rust engine acts on ``enabled``; the remaining
+    fields are accepted so docling code constructs unchanged (the engine runs
+    docling's default sub-options)."""
+
+    enabled: bool = False
+    use_bookmarks: bool = True
+    use_numbering: bool = True
+    use_style: bool = True
+    use_font_style: bool = True
+    style_size_tolerance: float = 0.05
+    max_level: int = 6
+    bookmark_match_threshold: float = 0.8
+    numbering_schemes: Optional[list] = None
+
+
+@dataclass
 class PdfPipelineOptions:
     """docling's ``PdfPipelineOptions``.
 
@@ -112,6 +132,9 @@ class PdfPipelineOptions:
     do_table_structure: bool = True
     force_full_page_ocr: bool = False
     no_text_panels: bool = False
+    heading_hierarchy_options: HeadingHierarchyOptions = field(
+        default_factory=HeadingHierarchyOptions
+    )
     do_picture_classification: bool = False
     do_code_enrichment: bool = False
     do_formula_enrichment: bool = False

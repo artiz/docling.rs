@@ -865,6 +865,107 @@ fn font_hash(b: &dyn PdfiumLibraryBindings, tp: FPDF_TEXTPAGE, i: i32) -> u64 {
 }
 
 #[cfg(feature = "ml")]
+/// A glyph's PDF font name (NUL-trimmed), or empty if unavailable.
+fn font_name_bytes(b: &dyn PdfiumLibraryBindings, tp: FPDF_TEXTPAGE, i: i32) -> Vec<u8> {
+    let mut flags: std::os::raw::c_int = 0;
+    let len = b.FPDFText_GetFontInfo(tp, i, std::ptr::null_mut(), 0, &mut flags);
+    if len == 0 {
+        return Vec::new();
+    }
+    let mut buf = vec![0u8; len as usize];
+    b.FPDFText_GetFontInfo(
+        tp,
+        i,
+        buf.as_mut_ptr() as *mut std::os::raw::c_void,
+        len,
+        &mut flags,
+    );
+    while buf.last() == Some(&0) {
+        buf.pop();
+    }
+    buf
+}
+
+#[cfg(feature = "ml")]
+/// Read the text layer's glyph boxes and font styles for the given **1-based**
+/// pages — the heading-hierarchy stage's style signal (#302). A separate,
+/// on-demand pass over the text pages (no rendering), so the extraction
+/// pipeline itself stays byte-identical whether or not the stage runs; pages
+/// without a text layer (scans) simply yield no glyphs and the stage falls
+/// back to its other signals. Boxes are the *loose* char boxes (font ascent +
+/// descent — the font-size proxy), converted to top-left origin.
+pub(crate) fn glyph_styles(
+    bytes: &[u8],
+    password: Option<&str>,
+    pages: &[usize],
+) -> std::collections::HashMap<usize, Vec<crate::heading_hierarchy::GlyphStyle>> {
+    use crate::heading_hierarchy::GlyphStyle;
+    let mut out = std::collections::HashMap::new();
+    let Ok(pdfium) = bind() else {
+        return out;
+    };
+    let ffi = FfiText::load(pdfium.bindings(), bytes, password);
+    if ffi.doc.is_null() {
+        return out;
+    }
+    let b = ffi.bindings;
+    // Each distinct font name parses once per document.
+    let mut cache: std::collections::HashMap<Vec<u8>, crate::font_style::FontStyle> =
+        std::collections::HashMap::new();
+    for &page_no in pages {
+        if page_no == 0 {
+            continue;
+        }
+        let page = b.FPDF_LoadPage(ffi.doc, (page_no - 1) as i32);
+        if page.is_null() {
+            continue;
+        }
+        let page_h = b.FPDF_GetPageHeightF(page);
+        let tp = b.FPDFText_LoadPage(page);
+        if !tp.is_null() {
+            let n = b.FPDFText_CountChars(tp);
+            let mut styles = Vec::with_capacity(n.max(0) as usize);
+            for i in 0..n {
+                let ch = match char::from_u32(b.FPDFText_GetUnicode(tp, i)) {
+                    Some(c) => c,
+                    None => continue,
+                };
+                if ch.is_whitespace() {
+                    continue;
+                }
+                let mut lr = FS_RECTF {
+                    left: 0.0,
+                    top: 0.0,
+                    right: 0.0,
+                    bottom: 0.0,
+                };
+                if b.FPDFText_GetLooseCharBox(tp, i, &mut lr) == 0 {
+                    continue;
+                }
+                let name = font_name_bytes(b, tp, i);
+                let style = *cache.entry(name).or_insert_with_key(|n| {
+                    crate::font_style::parse_font_style(&String::from_utf8_lossy(n))
+                });
+                styles.push(GlyphStyle {
+                    l: lr.left,
+                    t: page_h - lr.top,
+                    r: lr.right,
+                    b: page_h - lr.bottom,
+                    height: lr.top - lr.bottom,
+                    weight_cls: crate::font_style::weight_class(style.weight),
+                    italic: style.italic,
+                    styled: style.known,
+                });
+            }
+            b.FPDFText_ClosePage(tp);
+            out.insert(page_no, styles);
+        }
+        b.FPDF_ClosePage(page);
+    }
+    out
+}
+
+#[cfg(feature = "ml")]
 /// pdfium text render mode 3: the glyph is drawn with neither fill nor stroke —
 /// an invisible glyph. Web-to-PDF exporters put a hidden plain-text copy of
 /// syntax-highlighted code (and other "copy"/accessibility layers) in this mode,

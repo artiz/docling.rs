@@ -391,6 +391,16 @@ to ONNX in `tableformer.rs`) on a cv2-exact preprocessed crop (`resample.rs`); t
 structure + matched cell text reproduce docling's padded GitHub tables (2305-pg9
 is cell-for-cell exact).
 
+**Heading levels (#302, opt-in).** With `--heading-hierarchy` (off by default —
+everything in this document is measured with it off), a post-assembly stage
+ports docling's `HeadingHierarchyModel`: section-header levels are assigned
+from the PDF outline (bookmarks, fuzzily matched by title + page; a matched
+list item is promoted to a heading), else legal/outline numbering, else font
+style (glyph-height clustering + the conservative font-name weight/slant
+parser). It runs on the assembled node stream (`heading_hierarchy.rs`,
+`outline.rs`, `font_style.rs` in docling-pdf) and rewrites only heading
+levels, so the default-off output — and every snapshot below — is untouched.
+
 **Rotated scans.** Two normalization passes run before any inference, both only
 on pages with no text layer (exactly the OCR set), both mapped back to
 display-space geometry at assembly via `PdfPage::rotation`:

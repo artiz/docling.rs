@@ -29,6 +29,11 @@ pub mod enrich;
 // `docling_pdf::ep::…` remains the stable path downstream crates code against.
 #[cfg(feature = "ml")]
 pub use docling_onnx as ep;
+// Heading-hierarchy stage (#302): PDF font-name style parsing, outline
+// extraction (pure lopdf), and the level-assignment pass. No feature gate on
+// the logic itself — only the glyph style pass needs pdfium (`ml`).
+mod font_style;
+mod heading_hierarchy;
 pub mod layout;
 #[cfg(feature = "ml")]
 mod mets;
@@ -38,6 +43,7 @@ mod ocr;
 pub mod ocr_prep;
 #[cfg(feature = "ml")]
 mod orient;
+pub mod outline;
 pub mod pdfium_backend;
 #[cfg(feature = "ml")]
 pub mod quality;
@@ -102,6 +108,7 @@ use docling_core::Node;
 #[cfg(feature = "ml")]
 use docling_core::{debug_log, env};
 
+pub use heading_hierarchy::HeadingHierarchyOptions;
 #[cfg(feature = "ml")]
 pub use mets::{convert_mets_gbs, convert_mets_gbs_with_options, convert_mets_gbs_with_pipeline};
 #[cfg(feature = "ml")]
@@ -1346,6 +1353,8 @@ pub struct Pipeline {
     ocr_mode: ocr::OcrMode,
     /// OCR render scale override in px/pt (#254). See [`Pipeline::ocr_scale`].
     ocr_scale: Option<f32>,
+    /// Heading-level inference (#302). See [`Pipeline::heading_hierarchy`].
+    heading_hierarchy: HeadingHierarchyOptions,
     /// Optional per-page progress hook `(done, selected_total)`, invoked after
     /// each page finishes on both the serial and parallel buffered paths. Set
     /// by the CLI batch mode for dot-progress; `None` costs nothing.
@@ -1376,8 +1385,56 @@ impl Pipeline {
             ocr_lang: ocr::OcrLang::from_env(),
             ocr_mode: ocr::OcrMode::from_env(),
             ocr_scale: ocr::scale_from_env(),
+            heading_hierarchy: HeadingHierarchyOptions::default(),
             progress: None,
         })
+    }
+
+    /// Infer section-header levels after assembly (#302, docling's
+    /// `HeadingHierarchyModel`): PDF bookmarks > legal/outline numbering >
+    /// font style, off by default — see [`HeadingHierarchyOptions`]. Pure
+    /// post-processing configuration; for a warm pipeline use
+    /// [`set_heading_hierarchy`](Self::set_heading_hierarchy).
+    pub fn heading_hierarchy(mut self, opts: HeadingHierarchyOptions) -> Self {
+        self.heading_hierarchy = opts;
+        self
+    }
+
+    /// In-place variant of [`heading_hierarchy`](Self::heading_hierarchy) for
+    /// a long-lived pipeline (docling-serve's warm instance) — like
+    /// [`set_pages`](Self::set_pages), set it before every conversion so no
+    /// request inherits a previous one's choice.
+    pub fn set_heading_hierarchy(&mut self, opts: HeadingHierarchyOptions) {
+        self.heading_hierarchy = opts;
+    }
+
+    /// Run the enabled heading-hierarchy stage (#302) on an assembled
+    /// document: gather the outline (bookmarks) and the per-page glyph styles
+    /// on demand, then assign levels in place. `bytes` is `None` on paths
+    /// with no PDF behind them (standalone images, METS) — those degrade to
+    /// the numbering signal, exactly like docling without parsed pages.
+    fn apply_heading_hierarchy(
+        &self,
+        nodes: &mut [Node],
+        bytes: Option<&[u8]>,
+        password: Option<&str>,
+    ) {
+        let opts = &self.heading_hierarchy;
+        if !opts.enabled {
+            return;
+        }
+        let outline = match bytes {
+            Some(bytes) if opts.use_bookmarks => outline::extract_outline(bytes),
+            _ => Vec::new(),
+        };
+        let styles = match bytes {
+            Some(bytes) if opts.use_style => {
+                let pages = heading_hierarchy::heading_pages(nodes);
+                pdfium_backend::glyph_styles(bytes, password, &pages)
+            }
+            _ => Default::default(),
+        };
+        heading_hierarchy::apply(nodes, &outline, &styles, opts);
     }
 
     /// Install (or clear) the per-page progress hook: called with
@@ -1707,6 +1764,7 @@ impl Pipeline {
             },
         )?;
         assemble::merge_continuations(&mut doc.nodes);
+        self.apply_heading_hierarchy(&mut doc.nodes, Some(bytes), password);
         doc.confidence = Some(docling_core::ConfidenceReport::from_pages(confs));
         Ok(doc)
     }
@@ -1831,6 +1889,7 @@ impl Pipeline {
             confs.insert(idx + 1, conf);
         }
         assemble::merge_continuations(&mut doc.nodes);
+        self.apply_heading_hierarchy(&mut doc.nodes, Some(bytes), password);
         doc.confidence = Some(docling_core::ConfidenceReport::from_pages(confs));
         Ok(doc)
     }
@@ -2118,6 +2177,10 @@ impl Pipeline {
             confs.insert(n + 1, conf);
         }
         assemble::merge_continuations(&mut doc.nodes);
+        // No PDF behind these pages (images, METS): the heading-hierarchy
+        // stage degrades to the numbering signal — exactly docling without
+        // an outline or parsed pages.
+        self.apply_heading_hierarchy(&mut doc.nodes, None, None);
         doc.confidence = Some(docling_core::ConfidenceReport::from_pages(confs));
         Ok(doc)
     }

@@ -470,6 +470,22 @@ These are deliberate or unavoidable divergences, not bugs.
     *log* export (Prometheus scrape and stderr logs stand in), and
     Python's `OTEL_*` sampler knobs.
 
+17. **PDF heading levels** (#302, docling's `HeadingHierarchyModel`): the
+    heading-hierarchy stage is ported — bookmarks (a pure-lopdf outline
+    reader: titles, depths, XYZ/FitH/FitBH/FitR destinations) > legal/outline
+    numbering (the full marker grammar incl. ambiguous single-letter
+    Roman/alpha resolution) > font style (a hand-rolled port of docling's
+    conservative font-name parser plus size clustering), with docling's
+    fuzzy bookmark matcher (a `difflib.SequenceMatcher.ratio` port) and
+    list-item promotion. Off by default on every surface, like upstream —
+    all conformance numbers are measured with it off. Deliberate
+    divergences: style aggregates over text-layer *glyphs* rather than
+    parsed line cells (same signal, finer granularity), OCR-only headings
+    carry no style signal (docling reads OCR cell heights), and enabling
+    the stage buffers a streaming Markdown conversion into one chunk (the
+    stage needs the whole assembled document; streamed output stays
+    byte-identical to buffered).
+
 ---
 
 ## 5. Not migrated / out of scope
