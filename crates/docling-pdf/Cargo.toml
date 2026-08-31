@@ -65,6 +65,14 @@ flate2 = { version = "1", optional = true }
 tar = { version = "0.4", optional = true }
 regex = { version = "1.11", optional = true }
 lopdf = "0.44"
+# Not used directly — a minimum-version floor for lopdf's under-declared
+# requirement: lopdf 0.44 calls time's `BorrowedFormatItem::StringLiteral`
+# (added in time 0.3.48) while declaring only `time = "0.3"`. The MSRV-aware
+# resolver (.cargo/config.toml) caps versions at docling-core's 1.85 floor
+# and would otherwise select time 0.3.45, which doesn't compile lopdf. Drop
+# when lopdf raises its own minimum. (time 0.3.48+ wants rustc 1.88 — the
+# workspace MSRV; it never enters docling-core's 1.85-only tree.)
+time = { version = "0.3.48", default-features = false }
 fast_image_resize = { version = "5.1.4", optional = true }
 # CodeFormula enrichment decodes its VLM output with the HF tokenizer
 # (.models/code_formula/tokenizer.json) — same crate/features as docling-core's
