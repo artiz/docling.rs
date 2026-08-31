@@ -11,7 +11,13 @@
 
 use std::collections::{HashMap, HashSet};
 
+use docling_core::debug_log;
 use lopdf::{Dictionary, Document, Object, ObjectId};
+
+/// Defensive cap on extracted entries: outlines beyond this are generated
+/// pathology (real documents carry hundreds, rarely thousands), and the walk
+/// degrades to a truncated list rather than unbounded memory/time.
+const MAX_OUTLINE_ITEMS: usize = 10_000;
 
 /// A single PDF bookmark / table-of-contents entry.
 #[derive(Clone, Debug)]
@@ -60,7 +66,11 @@ pub fn extract_outline(bytes: &[u8]) -> Vec<OutlineItem> {
     let mut visited: HashSet<ObjectId> = HashSet::new();
     let mut stack: Vec<(ObjectId, usize)> = vec![(first, 0)];
     while let Some((id, level)) = stack.pop() {
-        if !visited.insert(id) || items.len() >= 10_000 {
+        if items.len() >= MAX_OUTLINE_ITEMS {
+            debug_log!("docling-pdf: outline truncated at {MAX_OUTLINE_ITEMS} entries");
+            break;
+        }
+        if !visited.insert(id) {
             continue;
         }
         let Some(node) = doc.get_object(id).ok().and_then(|o| o.as_dict().ok()) else {
