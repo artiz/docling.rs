@@ -695,7 +695,7 @@ dependencies = [
 
 [[package]]
 name = "docling"
-version = "1.16.0"
+version = "1.20.0"
 dependencies = [
  "calamine",
  "csv",
@@ -722,9 +722,10 @@ dependencies = [
 
 [[package]]
 name = "docling-asr"
-version = "1.16.0"
+version = "1.20.0"
 dependencies = [
  "docling-core",
+ "docling-onnx",
  "ort",
  "serde_json",
  "symphonia",
@@ -732,7 +733,7 @@ dependencies = [
 
 [[package]]
 name = "docling-core"
-version = "1.16.0"
+version = "1.20.0"
 dependencies = [
  "pulldown-cmark",
  "serde_json",
@@ -741,10 +742,19 @@ dependencies = [
 ]
 
 [[package]]
-name = "docling-pdf"
-version = "1.16.0"
+name = "docling-onnx"
+version = "1.20.0"
 dependencies = [
  "docling-core",
+ "ort",
+]
+
+[[package]]
+name = "docling-pdf"
+version = "1.20.0"
+dependencies = [
+ "docling-core",
+ "docling-onnx",
  "fast_image_resize",
  "flate2",
  "image",
@@ -753,6 +763,7 @@ dependencies = [
  "pdfium-render",
  "regex",
  "tar",
+ "time",
  "tokenizers",
 ]
 
