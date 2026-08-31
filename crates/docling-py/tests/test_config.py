@@ -421,3 +421,113 @@ def test_ensure_env_requires_the_platform_pdfium_lib(tmp_path, monkeypatch):
     (libdir / m._pdfium_lib_name()).write_bytes(b"x")
     m.ensure_env(cache)
     assert os.environ["PDFIUM_DYNAMIC_LIB_PATH"] == str(libdir)
+
+
+# --- #304: remote VLM pipeline ----------------------------------------------
+
+# 1x1 red PNG: the VLM image leg needs no pdfium and no models.
+_PNG = bytes(
+    [
+        0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00, 0x00, 0x0D,
+        0x49, 0x48, 0x44, 0x52, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01,
+        0x08, 0x02, 0x00, 0x00, 0x00, 0x90, 0x77, 0x53, 0xDE, 0x00, 0x00, 0x00,
+        0x0C, 0x49, 0x44, 0x41, 0x54, 0x08, 0xD7, 0x63, 0xF8, 0xCF, 0xC0, 0x00,
+        0x00, 0x00, 0x03, 0x00, 0x01, 0x6E, 0x2C, 0xDC, 0x33, 0x00, 0x00, 0x00,
+        0x00, 0x49, 0x45, 0x4E, 0x44, 0xAE, 0x42, 0x60, 0x82,
+    ]
+)
+
+
+def test_vlm_requires_an_endpoint_at_construction(monkeypatch):
+    from docling_rs import DocumentConverter
+
+    monkeypatch.delenv("DOCLING_RS_VLM_ENDPOINT", raising=False)
+    with pytest.raises(ValueError, match="vlm_endpoint"):
+        DocumentConverter(pipeline="vlm")
+
+
+def test_unknown_pipeline_is_a_value_error():
+    from docling_rs import DocumentConverter
+
+    with pytest.raises(ValueError, match="unknown pipeline"):
+        DocumentConverter(pipeline="magic")
+
+
+def test_vlm_max_tokens_zero_is_a_value_error():
+    from docling_rs import DocumentConverter
+
+    with pytest.raises(ValueError, match="vlm_max_tokens"):
+        DocumentConverter(
+            pipeline="vlm",
+            vlm_endpoint="http://localhost:11434/v1",
+            vlm_model="granite-docling",
+            vlm_max_tokens=0,
+        )
+
+
+def test_standard_pipeline_ignores_stray_vlm_kwargs(tmp_path):
+    """The Node bindings' contract: without pipeline="vlm" the vlm_* kwargs
+    are ignored, not rejected — and conversions stay fully local."""
+    from docling_rs import DocumentConverter
+
+    conv = DocumentConverter(
+        vlm_endpoint="http://localhost:1/v1", vlm_model="nope"
+    )
+    doc = tmp_path / "d.md"
+    doc.write_text("# hi\n")
+    result = conv.convert(doc)
+    assert "hi" in result.document.export_to_markdown()
+
+
+def test_vlm_converts_an_image_through_a_stub_endpoint(tmp_path):
+    """End-to-end over a local OpenAI-compatible stub (the counterpart of
+    crates/docling/tests/vlm.rs::mock_openai): a PNG page goes out, the
+    stub's answer comes back as the document text."""
+    import json
+    import threading
+    from http.server import BaseHTTPRequestHandler, HTTPServer
+
+    from docling_rs import DocumentConverter
+
+    seen = {}
+
+    class Stub(BaseHTTPRequestHandler):
+        def do_POST(self):
+            body = self.rfile.read(int(self.headers["Content-Length"]))
+            seen["path"] = self.path
+            seen["body"] = json.loads(body)
+            payload = json.dumps(
+                {"choices": [{"message": {"role": "assistant",
+                                          "content": "Hello from the VLM"}}]}
+            ).encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(payload)))
+            self.end_headers()
+            self.wfile.write(payload)
+
+        def log_message(self, *args):  # keep pytest output clean
+            pass
+
+    server = HTTPServer(("127.0.0.1", 0), Stub)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        conv = DocumentConverter(
+            pipeline="vlm",
+            vlm_endpoint=f"http://127.0.0.1:{server.server_port}/v1",
+            vlm_model="mock-docling",
+            vlm_api_key="sk-test",
+            vlm_max_tokens=512,
+        )
+        png = tmp_path / "page.png"
+        png.write_bytes(_PNG)
+        result = conv.convert(png)
+    finally:
+        server.shutdown()
+        thread.join()
+
+    assert "Hello from the VLM" in result.document.export_to_markdown()
+    assert seen["path"] == "/v1/chat/completions"
+    assert seen["body"]["model"] == "mock-docling"
+    assert seen["body"]["max_tokens"] == 512

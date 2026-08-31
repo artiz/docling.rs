@@ -139,7 +139,7 @@ PY
 
 | docling.rs | docling counterpart | notes |
 |---|---|---|
-| `DocumentConverter(format_options=None, *, allowed_formats=None, do_ocr=True, do_table_structure=True, force_full_page_ocr=False, no_text_panels=False, heading_hierarchy=False, do_picture_classification=False, do_code_enrichment=False, do_formula_enrichment=False, fetch_images=False, use_web_browser=False, artifacts_path=None, ocr_lang=None, asr_lang=None)` | `DocumentConverter(allowed_formats=…, format_options=…)` | Pass `{InputFormat.PDF: PdfFormatOption(pipeline_options=PdfPipelineOptions(…))}` or the shorthand kwargs; `allowed_formats` restricts conversion; `artifacts_path` overrides the model cache dir. |
+| `DocumentConverter(format_options=None, *, allowed_formats=None, do_ocr=True, do_table_structure=True, force_full_page_ocr=False, no_text_panels=False, heading_hierarchy=False, do_picture_classification=False, do_code_enrichment=False, do_formula_enrichment=False, fetch_images=False, use_web_browser=False, artifacts_path=None, ocr_lang=None, asr_lang=None, pipeline=None, vlm_endpoint=None, vlm_model=None, vlm_api_key=None, vlm_prompt=None, vlm_max_tokens=None)` | `DocumentConverter(allowed_formats=…, format_options=…)` | Pass `{InputFormat.PDF: PdfFormatOption(pipeline_options=PdfPipelineOptions(…))}` or the shorthand kwargs; `allowed_formats` restricts conversion; `artifacts_path` overrides the model cache dir. |
 | `.convert(path \| DocumentStream) -> ConversionResult` | `.convert(source)` | str / `pathlib.Path` / `DocumentStream`. Releases the GIL during conversion. |
 | `.convert_all(sources, raises_on_error=True) -> Iterator[ConversionResult]` | same | lazily converts many sources; `raises_on_error=False` yields a `failure` result instead of raising |
 | `.initialize_pipeline(format=None)` | same | pre-loads the PDF/image ML models so the first conversion isn't slow and later PDFs reuse the warm pipeline (no-op for non-ML formats; needs the models available) |
@@ -275,8 +275,14 @@ Errors (a bad tokenizer path, malformed document JSON) surface on the first
 
 ## Not covered (yet)
 
-The full-VLM conversion pipeline (SmolDocling) and per-format *backend*
-selection. GPU inference is engine-side only: compiled in via cargo features
+The *local in-process* full-VLM conversion pipeline (SmolDocling) and
+per-format *backend* selection. The **remote** VLM pipeline (#304) *is*
+covered: `DocumentConverter(pipeline="vlm", vlm_endpoint=…, vlm_model=…)`
+(plus optional `vlm_api_key` / `vlm_prompt` / `vlm_max_tokens`, all falling
+back to the `DOCLING_RS_VLM_*` environment) sends each PDF page / image to
+any OpenAI-compatible vision endpoint instead of running the local ML stack —
+no models needed; a bad configuration raises `ValueError` at construction and
+a failed conversion raises the catchable `ConversionError`. GPU inference is engine-side only: compiled in via cargo features
 (#74) and selected with `DOCLING_RS_EP`, not via `accelerator_options.device`,
 and absent from the prebuilt CPU wheels. The document carries rendered text for
 inline formatting rather than structured `formatting` fields — see

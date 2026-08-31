@@ -467,6 +467,26 @@ struct ConvertOptions {
     /// Hybrid peer-merging for `to=chunks` (docling's `merge_peers`, default
     /// true, #256).
     chunk_merge_peers: Option<bool>,
+    /// Conversion pipeline (#304): `standard` (default) or `vlm` — every PDF
+    /// page / image goes to a remote OpenAI-compatible vision model instead of
+    /// the local ML stack. With `standard` the `vlm_*` options below are
+    /// ignored, not rejected (the Node bindings' contract).
+    pipeline: Option<String>,
+    /// VLM endpoint for `pipeline=vlm`. A request-supplied endpoint is an
+    /// outbound-URL/SSRF surface: it needs `--allow-url-fetch` and passes the
+    /// same private-address check as URL inputs. Unset falls back to the
+    /// operator-pinned `DOCLING_RS_VLM_ENDPOINT` — the safer default: callers
+    /// pick the pipeline, the operator picks where it talks to.
+    vlm_endpoint: Option<String>,
+    /// VLM model name; falls back to `DOCLING_RS_VLM_MODEL`.
+    vlm_model: Option<String>,
+    /// Bearer token for the endpoint; falls back to `DOCLING_RS_VLM_API_KEY`.
+    vlm_api_key: Option<String>,
+    /// Per-page instruction; falls back to `DOCLING_RS_VLM_PROMPT`, else
+    /// docling's DocLang-eliciting default prompt.
+    vlm_prompt: Option<String>,
+    /// `max_tokens` per completion (default 8192).
+    vlm_max_tokens: Option<usize>,
 }
 
 impl ConvertOptions {
@@ -498,6 +518,12 @@ impl ConvertOptions {
             chunk_tokenizer: self.chunk_tokenizer.or(base.chunk_tokenizer),
             chunk_max_tokens: self.chunk_max_tokens.or(base.chunk_max_tokens),
             chunk_merge_peers: self.chunk_merge_peers.or(base.chunk_merge_peers),
+            pipeline: self.pipeline.or(base.pipeline),
+            vlm_endpoint: self.vlm_endpoint.or(base.vlm_endpoint),
+            vlm_model: self.vlm_model.or(base.vlm_model),
+            vlm_api_key: self.vlm_api_key.or(base.vlm_api_key),
+            vlm_prompt: self.vlm_prompt.or(base.vlm_prompt),
+            vlm_max_tokens: self.vlm_max_tokens.or(base.vlm_max_tokens),
         }
     }
 }
@@ -794,6 +820,9 @@ async fn convert(
 ) -> Result<Response, ApiError> {
     let (sources, options, target) = parse_convert_request(&state, query, headers, body).await?;
     let (to, image_mode) = validate_output(&options)?;
+    // #304: bad pipeline/vlm options are a 400/422 up front (no DNS here —
+    // the endpoint's SSRF resolution check runs on the blocking pool).
+    resolve_vlm_options(&state, &options, false)?;
     validate_target(&to, target.as_ref())?;
     // Admission control (#263): shed load before taking a conversion slot.
     if let Some(msg) = state.overloaded() {
@@ -919,6 +948,8 @@ async fn convert_async(
     let (mut sources, options, target) =
         parse_convert_request(&state, query, headers, body).await?;
     let (to, image_mode) = validate_output(&options)?;
+    // #304: fail an async submission fast instead of parking a doomed job.
+    resolve_vlm_options(&state, &options, false)?;
     validate_target(&to, target.as_ref())?;
     // Admission control (#263) applies to async submissions too — a queued
     // job holds its upload bytes and will run into the same ceiling.
@@ -1551,6 +1582,19 @@ async fn read_multipart(
                 })?);
             }
             "ebcdic_layout" => body_opts.ebcdic_layout = Some(text_field(field).await?),
+            "pipeline" => body_opts.pipeline = Some(text_field(field).await?),
+            "vlm_endpoint" => body_opts.vlm_endpoint = Some(text_field(field).await?),
+            "vlm_model" => body_opts.vlm_model = Some(text_field(field).await?),
+            "vlm_api_key" => body_opts.vlm_api_key = Some(text_field(field).await?),
+            "vlm_prompt" => body_opts.vlm_prompt = Some(text_field(field).await?),
+            "vlm_max_tokens" => {
+                let v = text_field(field).await?;
+                body_opts.vlm_max_tokens = Some(v.parse().map_err(|_| {
+                    ApiError::Bad(format!(
+                        "vlm_max_tokens must be a positive integer, got {v:?}"
+                    ))
+                })?);
+            }
             "chunker" => body_opts.chunker = Some(text_field(field).await?),
             "chunk_tokenizer" => body_opts.chunk_tokenizer = Some(text_field(field).await?),
             "chunk_max_tokens" => {
@@ -1749,22 +1793,19 @@ fn is_blocked_ip(ip: std::net::IpAddr) -> bool {
     }
 }
 
-/// Fetch a URL input (blocking; run on the blocking pool). The name comes
-/// from `file_name` or the URL path's last segment.
-fn fetch_url(
-    url: &str,
-    file_name: Option<&str>,
-    headers: &[(String, String)],
-) -> Result<SourceDocument, ApiError> {
+/// SSRF pre-check shared by every request-supplied outbound URL — URL inputs
+/// and the `vlm_endpoint` request option (#304): http(s) scheme only, then
+/// resolve the host and reject if it maps to a private/loopback/link-local
+/// address (fetches additionally forbid redirects — a public URL could
+/// 30x-bounce to an internal target, defeating this pre-check). This is a
+/// best-effort mitigation — a DNS-rebinding race between this resolution and
+/// the eventual connect remains theoretically possible; the deployment-level
+/// control is to leave URL fetch disabled unless the network is trusted.
+/// Blocking (DNS) — call on the blocking pool.
+fn check_outbound_url(url: &str) -> Result<(), ApiError> {
     if !url.starts_with("http://") && !url.starts_with("https://") {
         return Err(ApiError::Bad(format!("unsupported URL scheme in '{url}'")));
     }
-    // SSRF guard: resolve the host and reject if it maps to a private/loopback/
-    // link-local address, and forbid redirects (a public URL could 30x-bounce
-    // to an internal target, defeating this pre-check). This is a best-effort
-    // mitigation — a DNS-rebinding race between this resolution and ureq's own
-    // connect remains theoretically possible; the deployment-level control is
-    // to leave URL fetch disabled unless the network is trusted.
     let parsed =
         url::Url::parse(url).map_err(|e| ApiError::Bad(format!("bad URL '{url}': {e}")))?;
     let host = parsed
@@ -1788,6 +1829,17 @@ fn fetch_url(
             }
         }
     }
+    Ok(())
+}
+
+/// Fetch a URL input (blocking; run on the blocking pool). The name comes
+/// from `file_name` or the URL path's last segment.
+fn fetch_url(
+    url: &str,
+    file_name: Option<&str>,
+    headers: &[(String, String)],
+) -> Result<SourceDocument, ApiError> {
+    check_outbound_url(url)?;
     // Bounded in time as well as size: without timeouts a slow-drip URL pins
     // one spawn_blocking worker indefinitely, and a handful of them starves
     // the pool. Generous global cap — legitimate fetches may be ~256 MiB.
@@ -1855,11 +1907,95 @@ fn convert_document(
     result
 }
 
+/// Resolve the request's `pipeline` / `vlm_*` options (#304) into
+/// [`docling::vlm::VlmOptions`], or `None` for the standard pipeline. The
+/// contract mirrors the Node bindings: `pipeline` absent or `standard`
+/// intentionally ignores stray `vlm_*` options; blank strings count as unset
+/// (reaching the `DOCLING_RS_VLM_*` env fallbacks, the operator-pinned mode).
+/// A request-supplied `vlm_endpoint` is the same outbound/SSRF surface as a
+/// URL input: it needs `--allow-url-fetch`, and — when `check_ip` (call it on
+/// the blocking pool: DNS) — the [`check_outbound_url`] resolution check.
+fn resolve_vlm_options(
+    state: &AppState,
+    options: &ConvertOptions,
+    check_ip: bool,
+) -> Result<Option<docling::vlm::VlmOptions>, ApiError> {
+    let set = |s: &Option<String>| s.clone().filter(|v| !v.trim().is_empty());
+    match options.pipeline.as_deref() {
+        None | Some("standard") => Ok(None),
+        Some("vlm") => {
+            let endpoint = set(&options.vlm_endpoint);
+            if let Some(url) = endpoint.as_deref() {
+                if !state.cfg.allow_url_fetch {
+                    return Err(ApiError::Unsupported(
+                        "request-supplied vlm_endpoint is disabled; start docling-serve \
+                         with --allow-url-fetch (SSRF surface — see docs/SECURITY.md), \
+                         or pin the endpoint server-side via DOCLING_RS_VLM_ENDPOINT"
+                            .into(),
+                    ));
+                }
+                if check_ip {
+                    check_outbound_url(url)?;
+                }
+            }
+            let mut v = docling::vlm::VlmOptions::resolve(endpoint, set(&options.vlm_model))
+                .map_err(|e| {
+                    // The library's message names the CLI flags; this surface's
+                    // spelling is the request options.
+                    ApiError::Bad(
+                        e.to_string()
+                            .replace("pass --vlm-endpoint", "pass vlm_endpoint")
+                            .replace("pass --vlm-model", "pass vlm_model"),
+                    )
+                })?;
+            if let Some(p) = set(&options.vlm_prompt) {
+                v.prompt = Some(p);
+            }
+            if let Some(k) = set(&options.vlm_api_key) {
+                v.api_key = Some(k);
+            }
+            // Validated like the Node bindings' `vlmMaxTokens`: 0 would have
+            // every page come back empty and surface as a model error.
+            match options.vlm_max_tokens {
+                Some(0) => {
+                    return Err(ApiError::Bad(
+                        "vlm_max_tokens must be greater than 0".into(),
+                    ))
+                }
+                Some(n) => v.max_tokens = n,
+                None => {}
+            }
+            // `pages` composes with the VLM exactly as with the ML pipeline —
+            // only the selected pages are rendered and sent.
+            v.page_range = options
+                .pages
+                .as_deref()
+                .map(docling::parse_page_range)
+                .transpose()
+                .map_err(|e| ApiError::Bad(format!("pages: {e}")))?;
+            Ok(Some(v))
+        }
+        Some(other) => Err(ApiError::Bad(format!(
+            "unknown pipeline '{other}' (expected: standard, vlm)"
+        ))),
+    }
+}
+
 fn convert_document_inner(
     state: &AppState,
     source: SourceDocument,
     options: &ConvertOptions,
 ) -> Result<DoclingDocument, ApiError> {
+    // #304: the VLM pipeline is a sibling path — the remote model does the
+    // reading, none of the local ML options apply. Resolved here (on the
+    // blocking pool, where the endpoint's DNS check belongs) so every
+    // buffered surface — sync, batch item, async job, cloud target — and the
+    // streaming path's buffered branch pick it up in one place. A VLM failure
+    // is a per-request error like any other, never a server crash.
+    if let Some(vlm) = resolve_vlm_options(state, options, true)? {
+        return docling::vlm::convert_vlm(&source, &vlm)
+            .map_err(|e| ApiError::Unsupported(e.to_string()));
+    }
     match source.format {
         InputFormat::Pdf | InputFormat::Image => {
             // Recover from a poisoned lock instead of propagating the panic: a
@@ -2081,66 +2217,69 @@ async fn stream_markdown(
             // The receiver disappearing means the client went away — stop.
             tx.blocking_send(item).is_ok()
         };
-        match source.format {
-            InputFormat::Pdf | InputFormat::Image => {
-                // Buffered document → streamed serialization is pointless for
-                // images (one step); PDFs stream page by page through the
-                // warm pipeline's converter equivalent: convert, then stream
-                // the serializer output. (True page-by-page pipeline
-                // streaming holds the model mutex anyway, so the wall-clock
-                // is the same; the client still gets incremental output.)
-                match convert_document(&st, source, &options) {
-                    Ok(mut doc) => {
-                        doc.strict_markdown = options.strict.unwrap_or(st.cfg.strict);
-                        let md = match image_mode {
-                            ImageMode::Placeholder => doc.export_to_markdown(),
-                            _ => {
-                                doc.export_to_markdown_with_images(image_mode, "artifacts")
-                                    .0
-                            }
-                        };
-                        send(Ok((md, confidence_header(&doc))));
-                    }
-                    Err(e) => {
-                        send(Err(api_error_message(e)));
-                    }
+        // #304: the VLM pipeline buffers whatever the input format — it is a
+        // per-page remote conversion, and its "wrong input format" rejection
+        // must reach the client instead of the declarative streamer running a
+        // standard conversion the caller didn't ask for.
+        let buffered = options.pipeline.as_deref() == Some("vlm")
+            || matches!(source.format, InputFormat::Pdf | InputFormat::Image);
+        if buffered {
+            // Buffered document → streamed serialization is pointless for
+            // images (one step); PDFs stream page by page through the
+            // warm pipeline's converter equivalent: convert, then stream
+            // the serializer output. (True page-by-page pipeline
+            // streaming holds the model mutex anyway, so the wall-clock
+            // is the same; the client still gets incremental output.)
+            match convert_document(&st, source, &options) {
+                Ok(mut doc) => {
+                    doc.strict_markdown = options.strict.unwrap_or(st.cfg.strict);
+                    let md = match image_mode {
+                        ImageMode::Placeholder => doc.export_to_markdown(),
+                        _ => {
+                            doc.export_to_markdown_with_images(image_mode, "artifacts")
+                                .0
+                        }
+                    };
+                    send(Ok((md, confidence_header(&doc))));
+                }
+                Err(e) => {
+                    send(Err(api_error_message(e)));
                 }
             }
-            _ => {
-                let converter = match request_converter(&st, &options) {
-                    Ok(c) => c,
-                    Err(e) => {
-                        send(Err(api_error_message(e)));
-                        return;
-                    }
-                };
-                // The streaming path bypasses `convert_document`, so the
-                // conversion metric (#297) is recorded here: success once the
-                // stream drains, failure on a conversion error (a client that
-                // disconnects mid-stream abandons the conversion and counts as
-                // neither).
-                match converter.convert_streaming_images(source, image_mode) {
-                    Ok(stream) => {
-                        for chunk in stream {
-                            match chunk {
-                                Ok(s) => {
-                                    if !send(Ok((s, None))) {
-                                        return;
-                                    }
-                                }
-                                Err(e) => {
-                                    o11y::record_conversion(false);
-                                    send(Err(e.to_string()));
+        } else {
+            let converter = match request_converter(&st, &options) {
+                Ok(c) => c,
+                Err(e) => {
+                    send(Err(api_error_message(e)));
+                    return;
+                }
+            };
+            // The streaming path bypasses `convert_document`, so the
+            // conversion metric (#297) is recorded here: success once the
+            // stream drains, failure on a conversion error (a client that
+            // disconnects mid-stream abandons the conversion and counts as
+            // neither).
+            match converter.convert_streaming_images(source, image_mode) {
+                Ok(stream) => {
+                    for chunk in stream {
+                        match chunk {
+                            Ok(s) => {
+                                if !send(Ok((s, None))) {
                                     return;
                                 }
                             }
+                            Err(e) => {
+                                o11y::record_conversion(false);
+                                send(Err(e.to_string()));
+                                return;
+                            }
                         }
-                        o11y::record_conversion(true);
                     }
-                    Err(e) => {
-                        o11y::record_conversion(false);
-                        send(Err(e.to_string()));
-                    }
+                    o11y::record_conversion(true);
+                }
+                Err(e) => {
+                    o11y::record_conversion(false);
+                    send(Err(e.to_string()));
                 }
             }
         }
@@ -2299,8 +2438,14 @@ mod ssrf_tests {
         ));
     }
 
+    /// Serializes the tests that touch process-global env vars — without it
+    /// the escape-hatch toggling below races the #304 VLM tests that depend
+    /// on those very vars being unset.
+    pub(super) static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
     #[test]
     fn private_ip_escape_hatch_defaults_off() {
+        let _env = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         // The env var gates only development use; unset it must read as false
         // so the block-list is enforced by default. (Set within this test only,
         // then cleared, to avoid leaking to sibling tests.)
@@ -2317,5 +2462,159 @@ mod ssrf_tests {
             assert_eq!(super::allow_private_ip_fetch(), want, "value {val:?}");
         }
         std::env::remove_var("DOCLING_RS_ALLOW_PRIVATE_IP_FETCH");
+    }
+}
+
+/// #304: the request-side VLM option resolution — the standard-pipeline
+/// ignore, the `--allow-url-fetch` gate on request-supplied endpoints, the
+/// SSRF resolution check, and the operator-pinned env fallback that skips it.
+#[cfg(test)]
+mod vlm_tests {
+    use super::{resolve_vlm_options, ApiError, AppState, ConvertOptions, ServeConfig};
+    use std::sync::atomic::AtomicBool;
+    use std::sync::{Arc, Mutex};
+    use tokio::sync::Semaphore;
+
+    fn state(allow_url_fetch: bool) -> AppState {
+        AppState {
+            pipeline: Mutex::new(None),
+            permits: Arc::new(Semaphore::new(1)),
+            jobs: Mutex::new(Default::default()),
+            ready: AtomicBool::new(true),
+            memory_ceiling_mb: None,
+            cfg: ServeConfig {
+                allow_url_fetch,
+                ..ServeConfig::default()
+            },
+        }
+    }
+
+    fn vlm_opts(endpoint: Option<&str>) -> ConvertOptions {
+        ConvertOptions {
+            pipeline: Some("vlm".into()),
+            vlm_endpoint: endpoint.map(str::to_string),
+            vlm_model: Some("m".into()),
+            ..ConvertOptions::default()
+        }
+    }
+
+    #[test]
+    fn standard_pipeline_ignores_stray_vlm_options() {
+        // Same contract as the Node bindings: no `pipeline=vlm`, no VLM — the
+        // stray options are ignored, not rejected, and nothing is resolved.
+        for pipeline in [None, Some("standard".to_string())] {
+            let options = ConvertOptions {
+                pipeline,
+                ..vlm_opts(Some("http://127.0.0.1:9/v1"))
+            };
+            let resolved = resolve_vlm_options(&state(false), &options, true);
+            assert!(matches!(resolved, Ok(None)));
+        }
+    }
+
+    #[test]
+    fn unknown_pipeline_is_rejected() {
+        let options = ConvertOptions {
+            pipeline: Some("magic".into()),
+            ..ConvertOptions::default()
+        };
+        match resolve_vlm_options(&state(true), &options, false) {
+            Err(ApiError::Bad(m)) => assert!(m.contains("unknown pipeline"), "{m}"),
+            _ => panic!("expected Bad"),
+        }
+    }
+
+    #[test]
+    fn request_endpoint_is_gated_behind_allow_url_fetch() {
+        // Without --allow-url-fetch a caller must not steer the server's
+        // outbound traffic; the operator-pinned env mode is the alternative.
+        match resolve_vlm_options(
+            &state(false),
+            &vlm_opts(Some("http://example.com/v1")),
+            false,
+        ) {
+            Err(ApiError::Unsupported(m)) => assert!(m.contains("--allow-url-fetch"), "{m}"),
+            _ => panic!("expected Unsupported"),
+        }
+    }
+
+    #[test]
+    fn request_endpoint_resolving_to_private_address_is_rejected() {
+        let _env = super::ssrf_tests::ENV_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        std::env::remove_var("DOCLING_RS_ALLOW_PRIVATE_IP_FETCH");
+        match resolve_vlm_options(&state(true), &vlm_opts(Some("http://127.0.0.1:9/v1")), true) {
+            Err(ApiError::Bad(m)) => assert!(m.contains("private/loopback"), "{m}"),
+            _ => panic!("expected Bad"),
+        }
+        // The handler-side (no-DNS) pass lets the same request through — the
+        // check belongs to the blocking conversion path.
+        assert!(resolve_vlm_options(
+            &state(true),
+            &vlm_opts(Some("http://127.0.0.1:9/v1")),
+            false
+        )
+        .is_ok());
+    }
+
+    #[test]
+    fn operator_pinned_endpoint_skips_the_gate_and_the_ip_check() {
+        let _env = super::ssrf_tests::ENV_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        // Pinned mode: the operator configured the endpoint, so a local model
+        // server (the common deployment) is fine and no gate applies.
+        std::env::set_var("DOCLING_RS_VLM_ENDPOINT", "http://127.0.0.1:11434/v1");
+        std::env::set_var("DOCLING_RS_VLM_MODEL", "granite-docling");
+        let resolved = resolve_vlm_options(&state(false), &vlm_opts(None), true);
+        std::env::remove_var("DOCLING_RS_VLM_ENDPOINT");
+        std::env::remove_var("DOCLING_RS_VLM_MODEL");
+        let v = resolved.ok().flatten().expect("pinned endpoint resolves");
+        assert_eq!(v.endpoint, "http://127.0.0.1:11434/v1");
+        // The request still picks the model when it says so (env was the
+        // fallback for the endpoint only here).
+        assert_eq!(v.model, "m");
+    }
+
+    #[test]
+    fn vlm_max_tokens_zero_is_rejected_and_options_land() {
+        let _env = super::ssrf_tests::ENV_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        std::env::remove_var("DOCLING_RS_VLM_ENDPOINT");
+        let mut options = vlm_opts(Some("http://example.com/v1"));
+        options.vlm_max_tokens = Some(0);
+        match resolve_vlm_options(&state(true), &options, false) {
+            Err(ApiError::Bad(m)) => assert!(m.contains("vlm_max_tokens"), "{m}"),
+            _ => panic!("expected Bad"),
+        }
+        // And without any endpoint at all, the error names this surface's
+        // option spelling, not the CLI flag.
+        let none = ConvertOptions {
+            pipeline: Some("vlm".into()),
+            ..ConvertOptions::default()
+        };
+        match resolve_vlm_options(&state(true), &none, false) {
+            Err(ApiError::Bad(m)) => {
+                assert!(m.contains("vlm_endpoint"), "{m}");
+                assert!(!m.contains("--vlm-endpoint"), "{m}");
+            }
+            _ => panic!("expected Bad"),
+        }
+        // The full option set reaches the resolved struct.
+        let mut options = vlm_opts(Some("http://example.com/v1"));
+        options.vlm_api_key = Some("sk-test".into());
+        options.vlm_prompt = Some("Read the page.".into());
+        options.vlm_max_tokens = Some(512);
+        options.pages = Some("2-5".into());
+        let v = resolve_vlm_options(&state(true), &options, false)
+            .ok()
+            .flatten()
+            .expect("resolves");
+        assert_eq!(v.api_key.as_deref(), Some("sk-test"));
+        assert_eq!(v.prompt.as_deref(), Some("Read the page."));
+        assert_eq!(v.max_tokens, 512);
+        assert_eq!(v.page_range, Some((2, 5)));
     }
 }

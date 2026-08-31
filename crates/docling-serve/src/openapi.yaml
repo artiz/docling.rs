@@ -76,6 +76,12 @@ paths:
         - { $ref: "#/components/parameters/chunk_tokenizer" }
         - { $ref: "#/components/parameters/chunk_max_tokens" }
         - { $ref: "#/components/parameters/chunk_merge_peers" }
+        - { $ref: "#/components/parameters/pipeline" }
+        - { $ref: "#/components/parameters/vlm_endpoint" }
+        - { $ref: "#/components/parameters/vlm_model" }
+        - { $ref: "#/components/parameters/vlm_api_key" }
+        - { $ref: "#/components/parameters/vlm_prompt" }
+        - { $ref: "#/components/parameters/vlm_max_tokens" }
       requestBody:
         required: true
         content:
@@ -110,6 +116,12 @@ paths:
                 chunk_tokenizer: { type: string }
                 chunk_max_tokens: { type: integer, minimum: 1 }
                 chunk_merge_peers: { type: boolean }
+                pipeline: { $ref: "#/components/schemas/Pipeline" }
+                vlm_endpoint: { type: string, format: uri }
+                vlm_model: { type: string }
+                vlm_api_key: { type: string }
+                vlm_prompt: { type: string }
+                vlm_max_tokens: { type: integer, minimum: 1 }
           application/json:
             schema:
               allOf:
@@ -539,6 +551,35 @@ components:
           description: >
             `to=chunks` — merge undersized successive hybrid chunks with the
             same headings (docling's `merge_peers`).
+        pipeline: { $ref: "#/components/schemas/Pipeline" }
+        vlm_endpoint:
+          type: string
+          format: uri
+          description: >
+            `pipeline=vlm` — the OpenAI-compatible endpoint (base `/v1` URL or
+            full `…/chat/completions`). Request-supplied values need
+            `--allow-url-fetch`; unset falls back to the server's
+            `DOCLING_RS_VLM_ENDPOINT`.
+        vlm_model:
+          type: string
+          description: >-
+            `pipeline=vlm` — model name as the endpoint knows it; falls back
+            to `DOCLING_RS_VLM_MODEL`.
+        vlm_api_key:
+          type: string
+          description: >-
+            `pipeline=vlm` — Bearer token; falls back to
+            `DOCLING_RS_VLM_API_KEY`.
+        vlm_prompt:
+          type: string
+          description: >-
+            `pipeline=vlm` — per-page instruction; falls back to
+            `DOCLING_RS_VLM_PROMPT`, else docling's DocLang-eliciting prompt.
+        vlm_max_tokens:
+          type: integer
+          minimum: 1
+          default: 8192
+          description: "`pipeline=vlm` — max_tokens per completion."
     DoclingDocument:
       type: object
       description: >
@@ -585,6 +626,18 @@ components:
           type: string
           enum: [inbody, s3, azure_blob, google_cloud_storage]
       additionalProperties: true
+    Pipeline:
+      type: string
+      enum: [standard, vlm]
+      default: standard
+      description: >
+        Conversion pipeline (#304). `vlm` sends every PDF page / image to a
+        remote OpenAI-compatible vision model instead of the local ML stack;
+        the `vlm_*` options apply (and fall back to the server's
+        `DOCLING_RS_VLM_*` environment — the operator-pinned mode). A
+        request-supplied `vlm_endpoint` needs `--allow-url-fetch` (SSRF
+        surface) and must not resolve to a private address. With `standard`
+        the `vlm_*` options are ignored.
     Chunker:
       type: string
       enum: [hierarchical, hybrid]
@@ -693,3 +746,15 @@ components:
       { name: chunk_max_tokens, in: query, schema: { type: integer, minimum: 1 } }
     chunk_merge_peers:
       { name: chunk_merge_peers, in: query, schema: { type: boolean } }
+    pipeline:
+      { name: pipeline, in: query, schema: { $ref: "#/components/schemas/Pipeline" } }
+    vlm_endpoint:
+      { name: vlm_endpoint, in: query, schema: { type: string, format: uri } }
+    vlm_model:
+      { name: vlm_model, in: query, schema: { type: string } }
+    vlm_api_key:
+      { name: vlm_api_key, in: query, schema: { type: string } }
+    vlm_prompt:
+      { name: vlm_prompt, in: query, schema: { type: string } }
+    vlm_max_tokens:
+      { name: vlm_max_tokens, in: query, schema: { type: integer, minimum: 1 } }

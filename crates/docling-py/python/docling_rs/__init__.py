@@ -158,6 +158,15 @@ class DocumentConverter:
     * ``asr_lang`` — transcription language for audio/video: a Whisper code
       (``"en"``, ``"de"``, …) or ``"auto"`` (default) to detect it from the
       first 30 seconds (docling 2.116 parity).
+    * ``pipeline`` — ``"standard"`` (default) or ``"vlm"`` (#304): convert
+      PDF / image inputs by sending each page to a remote OpenAI-compatible
+      vision model instead of the local ML stack (no models needed). The
+      ``vlm_*`` kwargs mirror the Node bindings' options and fall back to the
+      ``DOCLING_RS_VLM_*`` environment: ``vlm_endpoint`` and ``vlm_model``
+      are required (a missing one raises ``ValueError`` here, at
+      construction); ``vlm_api_key`` (Bearer token), ``vlm_prompt`` and
+      ``vlm_max_tokens`` (default 8192) are optional. With
+      ``pipeline="standard"`` the ``vlm_*`` kwargs are ignored, not rejected.
     * ``artifacts_path`` — override the model cache dir (docling's
       ``artifacts_path``); defaults to ``~/.cache/docling.rs``.
     """
@@ -183,40 +192,46 @@ class DocumentConverter:
         skip_empty_cells: bool = False,
         compact_tables: bool = False,
         asr_lang: Optional[str] = None,
+        pipeline: Optional[str] = None,
+        vlm_endpoint: Optional[str] = None,
+        vlm_model: Optional[str] = None,
+        vlm_api_key: Optional[str] = None,
+        vlm_prompt: Optional[str] = None,
+        vlm_max_tokens: Optional[int] = None,
         artifacts_path=None,
     ):
         ensure_env(artifacts_path)
 
         # A PDF/IMAGE PdfFormatOption overrides the shorthand kwargs.
-        pipeline = _pdf_pipeline_options(format_options)
-        if pipeline is not None:
-            do_ocr = pipeline.do_ocr
-            do_table_structure = pipeline.do_table_structure
+        pdf_opts = _pdf_pipeline_options(format_options)
+        if pdf_opts is not None:
+            do_ocr = pdf_opts.do_ocr
+            do_table_structure = pdf_opts.do_table_structure
             # docling proper carries the flag on ocr_options; accept both the
             # direct field and docling-shaped ocr_options.force_full_page_ocr.
             force_full_page_ocr = getattr(
-                pipeline, "force_full_page_ocr", force_full_page_ocr
+                pdf_opts, "force_full_page_ocr", force_full_page_ocr
             ) or getattr(
-                getattr(pipeline, "ocr_options", None), "force_full_page_ocr", False
+                getattr(pdf_opts, "ocr_options", None), "force_full_page_ocr", False
             )
-            no_text_panels = getattr(pipeline, "no_text_panels", no_text_panels)
-            hh = getattr(pipeline, "heading_hierarchy_options", None)
+            no_text_panels = getattr(pdf_opts, "no_text_panels", no_text_panels)
+            hh = getattr(pdf_opts, "heading_hierarchy_options", None)
             if hh is not None:
                 heading_hierarchy = bool(getattr(hh, "enabled", heading_hierarchy))
             do_picture_classification = getattr(
-                pipeline, "do_picture_classification", do_picture_classification
+                pdf_opts, "do_picture_classification", do_picture_classification
             )
             do_code_enrichment = getattr(
-                pipeline, "do_code_enrichment", do_code_enrichment
+                pdf_opts, "do_code_enrichment", do_code_enrichment
             )
             do_formula_enrichment = getattr(
-                pipeline, "do_formula_enrichment", do_formula_enrichment
+                pdf_opts, "do_formula_enrichment", do_formula_enrichment
             )
             # Map docling's ocr_options.lang (a list of language ids) onto the
             # engine's en/ch recognition-model switch. First entry wins;
             # anything that isn't recognisably English/Chinese is ignored with
             # a warning (the engine default — English — applies).
-            ocr_opts = getattr(pipeline, "ocr_options", None)
+            ocr_opts = getattr(pdf_opts, "ocr_options", None)
             # docling 2.116's OcrMode / OcrOptions.scale (#254). An enum mode
             # collapses to its string value; the direct kwargs stay the
             # fallback, matching the pipeline-overrides-shorthand rule above.
@@ -239,7 +254,7 @@ class DocumentConverter:
                         f"ocr_options.lang={langs!r} is ignored",
                         stacklevel=2,
                     )
-            acc = getattr(pipeline, "accelerator_options", None)
+            acc = getattr(pdf_opts, "accelerator_options", None)
             if acc is not None:
                 # Map docling's device to the engine's DOCLING_RS_EP (resolved
                 # once per process, so this must run before the first
@@ -279,6 +294,12 @@ class DocumentConverter:
             skip_empty_cells=skip_empty_cells,
             compact_tables=compact_tables,
             asr_lang=asr_lang,
+            pipeline=pipeline,
+            vlm_endpoint=vlm_endpoint,
+            vlm_model=vlm_model,
+            vlm_api_key=vlm_api_key,
+            vlm_prompt=vlm_prompt,
+            vlm_max_tokens=vlm_max_tokens,
             allowed_formats=(
                 [InputFormat(f).value for f in allowed_formats]
                 if allowed_formats is not None

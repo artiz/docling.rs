@@ -502,8 +502,11 @@ deliberate scope boundary or a cosmetic, single-fixture polish gap.
   OpenAI-compatible vision endpoint (LM Studio / Ollama / vLLM / hosted) and
   parses the returned DocLang with the existing reader — see the README's
   "VLM pipeline" section. Also on the Node bindings as `pipeline: 'vlm'`
-  (`vlmEndpoint` / `vlmModel` / `vlmApiKey` / `vlmPrompt` / `vlmMaxTokens`);
-  serve and the Python bindings don't carry it yet. (**Audio/ASR is now done** — see §2; Opus and AVI,
+  (`vlmEndpoint` / `vlmModel` / `vlmApiKey` / `vlmPrompt` / `vlmMaxTokens`),
+  on the Python bindings as the same-named constructor kwargs, and on serve
+  as `pipeline=vlm` + `vlm_*` request options (#304; a request-supplied
+  `vlm_endpoint` sits behind `--allow-url-fetch` + the SSRF check, or pin it
+  server-side via `DOCLING_RS_VLM_*`). (**Audio/ASR is now done** — see §2; Opus and AVI,
   which symphonia cannot decode, use the optional ffmpeg fallback. The **enrichment
   models are now done** too: DocumentFigureClassifier-v2.5 for
   `do_picture_classification` and CodeFormulaV2 — an Idefics3-class VLM,
