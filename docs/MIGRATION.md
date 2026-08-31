@@ -448,11 +448,16 @@ These are deliberate or unavoidable divergences, not bugs.
     a cloud target uploads each converted output as `<stem>.<ext>` under
     the prefix and answers with upstream's `RemoteTargetResult` kind plus
     per-item outcomes. All outbound kinds sit behind `--allow-url-fetch`.
-    Not covered, as upstream-jobkit-specific or OAuth-bound:
-    `google_drive`, `zip`, `put`, `presigned_url` (and with the last of
-    those, the `ArtifactRef` union — still parked). Without the feature the
-    cloud kinds parse and answer a clear rebuild-with-`--features cloud`
-    error.
+    The jobkit `zip` (one archive of the rendered outputs in the response
+    body — a batch download) and `put` (HTTP PUT each output to a
+    caller-minted, typically pre-signed, URL — behind `--allow-url-fetch` +
+    the SSRF check) targets are covered too (#303), with no
+    `object_store`/`cloud`-feature involvement. Not covered, as
+    upstream-jobkit-specific or OAuth-bound: `google_drive` and
+    `presigned_url` (and with the latter, the `ArtifactRef` union — still
+    parked; `put` with a caller-minted URL covers the pre-signed use case).
+    Without the feature the cloud kinds parse and answer a clear
+    rebuild-with-`--features cloud` error.
 
 16. **Serve observability** (#297, Python docling-serve's OTel
     integration): the same *posture* — Prometheus-style metrics on by

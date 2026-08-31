@@ -178,9 +178,11 @@ paths:
                   - $ref: "#/components/schemas/Chunks"
             application/vnd.openxmlformats-officedocument.doclang:
               schema: { type: string, format: binary }
+            application/zip:
+              schema: { type: string, format: binary }
           headers:
             Content-Disposition:
-              description: Present for `to=dclx` (attachment filename).
+              description: Present for `to=dclx` and `target: {kind: zip}` (attachment filename).
               schema: { type: string }
             X-Docling-Confidence:
               description: >
@@ -616,15 +618,21 @@ components:
       type: object
       required: [kind]
       description: >
-        docling `kind`-tagged output target (#139): `inbody` (default — the
-        response body) or a cloud store with the same coordinate fields as the
-        matching source kind; each converted document uploads as
-        `<stem>.<ext>` under the prefix and the response is a
-        `RemoteTargetResult` acknowledgment with per-item outcomes.
+        docling `kind`-tagged output target (#139, #303): `inbody` (default —
+        the response body); a cloud store with the same coordinate fields as
+        the matching source kind (each converted document uploads as
+        `<stem>.<ext>` under the prefix, response is a `RemoteTargetResult`
+        acknowledgment with per-item outcomes); `zip` (one `application/zip`
+        archive of the `<stem>.<ext>` rendered outputs in the response body —
+        no gate, nothing outbound; a failed batch item becomes a
+        `<stem>.<ext>.error.txt` entry); or `put`: {url} (HTTP PUT each
+        rendered output to that — typically pre-signed — URL; needs
+        `--allow-url-fetch`, same SSRF check as URL inputs, answers with the
+        `RemoteTargetResult` acknowledgment, query string redacted).
       properties:
         kind:
           type: string
-          enum: [inbody, s3, azure_blob, google_cloud_storage]
+          enum: [inbody, s3, azure_blob, google_cloud_storage, zip, put]
       additionalProperties: true
     Pipeline:
       type: string

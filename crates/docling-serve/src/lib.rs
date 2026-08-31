@@ -595,19 +595,23 @@ type SourceItem = Result<SourceDocument, (String, ApiError)>;
 /// options and the optional cloud output target. Shared by the sync and
 /// async endpoints so both accept exactly the same requests (and reject bad
 /// ones synchronously).
+/// A parsed non-`inbody` output target: where rendered outputs go instead of
+/// (or, for `Zip`, packaged inside) the response body.
+enum ResolvedTarget {
+    /// Cloud object store (#139: `s3` / `azure_blob` / `google_cloud_storage`).
+    Cloud(passthrough::CloudCoords),
+    /// One zip archive of the rendered outputs in the response body (#303).
+    Zip,
+    /// HTTP PUT each rendered output to this URL (#303).
+    Put(String),
+}
+
 async fn parse_convert_request(
     state: &Arc<AppState>,
     query: ConvertOptions,
     headers: HeaderMap,
     body: axum::extract::Request,
-) -> Result<
-    (
-        Vec<SourceItem>,
-        ConvertOptions,
-        Option<passthrough::CloudCoords>,
-    ),
-    ApiError,
-> {
+) -> Result<(Vec<SourceItem>, ConvertOptions, Option<ResolvedTarget>), ApiError> {
     let content_type = headers
         .get(header::CONTENT_TYPE)
         .and_then(|v| v.to_str().ok())
@@ -629,16 +633,28 @@ async fn parse_convert_request(
         let options = req.options.clone().merge_over(query);
         let target = match req.target {
             None | Some(passthrough::TargetSpec::Inbody) => None,
+            // #303: a zip archive answers in the response body — a download
+            // shape like to=dclx, nothing outbound, so no gate applies.
+            Some(passthrough::TargetSpec::Zip) => Some(ResolvedTarget::Zip),
+            // #303: PUT pushes outputs wherever the caller's URL says — the
+            // same outbound/SSRF surface as URL inputs, same gate (the URL's
+            // resolution check runs on the blocking pool, before any upload).
+            Some(passthrough::TargetSpec::Put(p)) => {
+                require_outbound(state, "put targets")?;
+                Some(ResolvedTarget::Put(p.url))
+            }
             Some(spec) => {
                 require_outbound(state, "cloud targets")?;
-                Some(match spec {
+                Some(ResolvedTarget::Cloud(match spec {
                     passthrough::TargetSpec::S3(c) => passthrough::CloudCoords::S3(c),
                     passthrough::TargetSpec::AzureBlob(c) => passthrough::CloudCoords::Azure(c),
                     passthrough::TargetSpec::GoogleCloudStorage(c) => {
                         passthrough::CloudCoords::Gcs(c)
                     }
-                    passthrough::TargetSpec::Inbody => unreachable!("matched above"),
-                })
+                    passthrough::TargetSpec::Inbody
+                    | passthrough::TargetSpec::Zip
+                    | passthrough::TargetSpec::Put(_) => unreachable!("matched above"),
+                }))
             }
         };
         let sources = match (req.url, req.sources) {
@@ -875,10 +891,10 @@ async fn convert(
 
 /// A cloud target combines with every buffered output format except
 /// `to=images` (page PNGs are a debugging aid, not a pipeline artifact).
-fn validate_target(to: &str, target: Option<&passthrough::CloudCoords>) -> Result<(), ApiError> {
+fn validate_target(to: &str, target: Option<&ResolvedTarget>) -> Result<(), ApiError> {
     if target.is_some() && to == "images" {
         return Err(ApiError::Bad(
-            "to=images does not combine with a cloud target".into(),
+            "to=images does not combine with an output target".into(),
         ));
     }
     Ok(())
@@ -1137,11 +1153,20 @@ fn run_conversion(
     options: &ConvertOptions,
     to: &str,
     image_mode: ImageMode,
-    target: Option<&passthrough::CloudCoords>,
+    target: Option<&ResolvedTarget>,
     rt: &tokio::runtime::Handle,
 ) -> Result<StoredResponse, ApiError> {
-    if let Some(coords) = target {
-        return run_conversion_to_target(state, sources, options, to, image_mode, coords, rt);
+    match target {
+        Some(ResolvedTarget::Cloud(coords)) => {
+            return run_conversion_to_target(state, sources, options, to, image_mode, coords, rt);
+        }
+        Some(ResolvedTarget::Zip) => {
+            return run_conversion_to_zip(state, sources, options, to, image_mode);
+        }
+        Some(ResolvedTarget::Put(url)) => {
+            return run_conversion_to_put(state, sources, options, to, image_mode, url);
+        }
+        None => {}
     }
     if sources.len() == 1 {
         let source = sources
@@ -1210,6 +1235,45 @@ fn run_conversion(
     })
 }
 
+/// The `<stem>.<ext>` output naming shared by the cloud, zip and put targets
+/// (#139/#303) — mirrors the CLI batch naming; a duplicate stem within one
+/// request gets `-2`, `-3`, … instead of overwriting/shadowing.
+struct OutputNames {
+    ext: &'static str,
+    used: std::collections::HashSet<String>,
+}
+
+impl OutputNames {
+    fn new(to: &str) -> Self {
+        let ext = match to {
+            "md" | "markdown" => "md",
+            "json" => "json",
+            "chunks" => "chunks.json",
+            "dclx" => "dclx",
+            _ => unreachable!("validated above"),
+        };
+        Self {
+            ext,
+            used: std::collections::HashSet::new(),
+        }
+    }
+
+    fn next(&mut self, source_name: &str) -> String {
+        let stem = std::path::Path::new(source_name)
+            .file_stem()
+            .map(|s| s.to_string_lossy().into_owned())
+            .unwrap_or_else(|| "document".into());
+        let ext = self.ext;
+        let mut key = format!("{stem}.{ext}");
+        let mut n = 1;
+        while !self.used.insert(key.clone()) {
+            n += 1;
+            key = format!("{stem}-{n}.{ext}");
+        }
+        key
+    }
+}
+
 /// The #139 cloud-target path: convert each source, upload its rendered
 /// output as `<stem>.<ext>` under the target's prefix, answer with docling's
 /// `RemoteTargetResult` kind plus per-item detail. Batch semantics
@@ -1223,14 +1287,7 @@ fn run_conversion_to_target(
     coords: &passthrough::CloudCoords,
     rt: &tokio::runtime::Handle,
 ) -> Result<StoredResponse, ApiError> {
-    let ext = match to {
-        "md" | "markdown" => "md",
-        "json" => "json",
-        "chunks" => "chunks.json",
-        "dclx" => "dclx",
-        _ => unreachable!("validated above"),
-    };
-    let mut used: std::collections::HashSet<String> = std::collections::HashSet::new();
+    let mut names = OutputNames::new(to);
     let items: Vec<serde_json::Value> = sources
         .into_iter()
         .map(|item| {
@@ -1257,18 +1314,7 @@ fn run_conversion_to_target(
                     })
                 }
             };
-            // `<stem>.<ext>` mirrors the CLI batch naming; a duplicate stem
-            // in one request gets `-2`, `-3`, … instead of overwriting.
-            let stem = std::path::Path::new(&name)
-                .file_stem()
-                .map(|s| s.to_string_lossy().into_owned())
-                .unwrap_or_else(|| "document".into());
-            let mut key = format!("{stem}.{ext}");
-            let mut n = 1;
-            while !used.insert(key.clone()) {
-                n += 1;
-                key = format!("{stem}-{n}.{ext}");
-            }
+            let key = names.next(&name);
             match rt.block_on(passthrough::put_object(coords, &key, stored.body)) {
                 Ok(()) => json!({ "name": name, "status": "success", "key": key }),
                 Err(e) => json!({ "name": name, "status": "failure", "error": e }),
@@ -1289,6 +1335,159 @@ fn run_conversion_to_target(
         }))
         .expect("target ack serializes"),
     })
+}
+
+/// The #303 `zip` target: convert every source, render as for `to`, answer
+/// with one deflated archive of `<stem>.<ext>` entries — jobkit's batch
+/// download, and the only target whose output stays in the response body.
+/// Batch semantics: a failing item becomes a `<stem>.<ext>.error.txt` entry
+/// carrying the message instead of sinking the whole archive; a single-source
+/// request propagates the error as its response, like the inbody path.
+fn run_conversion_to_zip(
+    state: &AppState,
+    sources: Vec<SourceItem>,
+    options: &ConvertOptions,
+    to: &str,
+    image_mode: ImageMode,
+) -> Result<StoredResponse, ApiError> {
+    let single = sources.len() == 1;
+    let mut names = OutputNames::new(to);
+    let mut entries: Vec<(String, Vec<u8>)> = Vec::new();
+    let mut archive_stem: Option<String> = None;
+    for item in sources {
+        let (name, rendered) = match item {
+            Ok(source) => {
+                let name = source.name.clone();
+                let rendered = convert_document(state, source, options)
+                    .and_then(|doc| render_stored(state, to, image_mode, &name, &doc, options));
+                (name, rendered.map(|stored| stored.body))
+            }
+            Err((name, e)) => (name, Err(e)),
+        };
+        let entry = names.next(&name);
+        if single {
+            archive_stem = entry.split('.').next().map(str::to_string);
+        }
+        match rendered {
+            Ok(body) => entries.push((entry, body)),
+            Err(e) if single => return Err(e),
+            Err(e) => entries.push((
+                format!("{entry}.error.txt"),
+                api_error_message(e).into_bytes(),
+            )),
+        }
+    }
+    let entry_refs: Vec<(&str, &[u8])> = entries
+        .iter()
+        .map(|(n, b)| (n.as_str(), b.as_slice()))
+        .collect();
+    // A single input names its archive after itself; a batch gets a generic
+    // name (there is no one stem to speak for it).
+    let file_name = archive_stem.map_or_else(|| "converted.zip".into(), |s| format!("{s}.zip"));
+    Ok(StoredResponse {
+        content_type: "application/zip",
+        disposition: Some(format!("attachment; filename=\"{file_name}\"")),
+        confidence: None,
+        body: docling::dclx::zip_bytes(entry_refs),
+    })
+}
+
+/// The #303 `put` target: HTTP PUT each rendered output to the caller's URL —
+/// the pre-signed S3/GCS/Azure upload shape, so credentials live in the URL
+/// the caller minted, never in the request body. The URL is caller-steered
+/// outbound traffic: gated behind `--allow-url-fetch` at parse time, checked
+/// against the SSRF block-list here (on the blocking pool — DNS), uploaded
+/// with redirects disabled so a public URL can't bounce into an internal
+/// target. Answers with the same `RemoteTargetResult` acknowledgment as the
+/// cloud targets; a failing item (conversion or upload) fails only itself.
+fn run_conversion_to_put(
+    state: &AppState,
+    sources: Vec<SourceItem>,
+    options: &ConvertOptions,
+    to: &str,
+    image_mode: ImageMode,
+    url: &str,
+) -> Result<StoredResponse, ApiError> {
+    check_outbound_url(url)?;
+    let agent: ureq::Agent = ureq::Agent::config_builder()
+        .max_redirects(0)
+        .timeout_connect(Some(std::time::Duration::from_secs(10)))
+        .timeout_global(Some(std::time::Duration::from_secs(300)))
+        .build()
+        .into();
+    let mut names = OutputNames::new(to);
+    let items: Vec<serde_json::Value> = sources
+        .into_iter()
+        .map(|item| {
+            let source = match item {
+                Ok(source) => source,
+                Err((name, e)) => {
+                    return json!({
+                        "name": name,
+                        "status": "failure",
+                        "error": api_error_message(e),
+                    })
+                }
+            };
+            let name = source.name.clone();
+            let rendered = convert_document(state, source, options)
+                .and_then(|doc| render_stored(state, to, image_mode, &name, &doc, options));
+            let stored = match rendered {
+                Ok(stored) => stored,
+                Err(e) => {
+                    return json!({
+                        "name": name,
+                        "status": "failure",
+                        "error": api_error_message(e),
+                    })
+                }
+            };
+            // Every output goes to the one URL, as upstream's PutTarget says
+            // — a pre-signed URL addresses a single object, so a batch here
+            // last-writer-wins; the ack's `key` names what each PUT carried.
+            let key = names.next(&name);
+            match agent
+                .put(url)
+                .header("content-type", stored.content_type)
+                .send(&stored.body[..])
+            {
+                Ok(_) => json!({ "name": name, "status": "success", "key": key }),
+                // ureq treats a non-2xx status as an error, which is exactly
+                // the per-item failure we want recorded.
+                Err(e) => json!({
+                    "name": name,
+                    "status": "failure",
+                    "error": format!("PUT: {e}"),
+                }),
+            }
+        })
+        .collect();
+    Ok(StoredResponse {
+        content_type: "application/json",
+        disposition: None,
+        confidence: None,
+        // The echoed target drops the query string: pre-signed URLs carry
+        // their signature there, and the ack may transit logs and proxies.
+        body: serde_json::to_vec_pretty(&json!({
+            "kind": "RemoteTargetResult",
+            "target": redact_url(url),
+            "results": items,
+        }))
+        .expect("target ack serializes"),
+    })
+}
+
+/// A URL safe to echo back: scheme://host/path, with the query string (where
+/// pre-signed URLs carry their signatures) and fragment dropped.
+fn redact_url(url: &str) -> String {
+    match url::Url::parse(url) {
+        Ok(mut u) => {
+            u.set_query(None);
+            u.set_fragment(None);
+            u.to_string()
+        }
+        Err(_) => url.to_string(),
+    }
 }
 
 /// Return freed heap to the OS after a conversion (#263). A PDF conversion

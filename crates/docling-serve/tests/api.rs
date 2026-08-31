@@ -483,11 +483,19 @@ async fn strict_field_changes_markdown_dialect() {
 /// same `--allow-url-fetch` as URL inputs: honored only when the flag is on,
 /// silently ignored otherwise. Proven against a local image server that counts
 /// the requests it receives — the gate must let *zero* through when off.
+/// Serializes the tests that toggle `DOCLING_RS_ALLOW_PRIVATE_IP_FETCH`
+/// (process-global): without it, one test's `remove_var` can strip the escape
+/// hatch out from under another's in-flight loopback fetch/PUT. Tokio's mutex
+/// because the guard is held across the tests' awaits.
+static ENV_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
 #[tokio::test]
 async fn fetch_images_is_gated_behind_allow_url_fetch() {
     use std::io::{Read, Write};
     use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::Arc;
+
+    let _env = ENV_LOCK.lock().await;
 
     // 1×1 red PNG — a real image so the resolved bytes decode and embed.
     const RED_PNG: &[u8] = &[
@@ -1227,4 +1235,207 @@ async fn vlm_options_ride_the_json_body_and_zero_max_tokens_is_a_400() {
         .unwrap();
     assert_eq!(response.status(), StatusCode::BAD_REQUEST);
     assert!(body_string(response).await.contains("vlm_max_tokens"));
+}
+
+// --- #303: zip and put output targets --------------------------------------
+
+#[tokio::test]
+async fn zip_target_answers_with_an_archive_of_rendered_outputs() {
+    // No gate: the archive stays in the response body, nothing goes outbound.
+    let b64 = docling_b64("a,b\n1,2\n");
+    let body = format!(
+        r#"{{"sources": [
+            {{"kind": "file", "base64_string": "{b64}", "filename": "one.csv"}},
+            {{"kind": "file", "base64_string": "{b64}", "filename": "two.csv"}},
+            {{"kind": "file", "base64_string": "{b64}", "filename": "two.csv"}}
+        ], "target": {{"kind": "zip"}}, "to": "md"}}"#
+    );
+    let response = app().oneshot(json_convert(&body, false)).await.unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let content_type = response
+        .headers()
+        .get(header::CONTENT_TYPE)
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("")
+        .to_string();
+    assert_eq!(content_type, "application/zip");
+    let disposition = response
+        .headers()
+        .get(header::CONTENT_DISPOSITION)
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("")
+        .to_string();
+    assert_eq!(disposition, "attachment; filename=\"converted.zip\"");
+    let bytes = response.into_body().collect().await.unwrap().to_bytes();
+    assert_eq!(&bytes[..2], b"PK", "zip magic");
+    // Entry names are stored verbatim in the local file headers; the
+    // duplicate stem gets the `-2` de-dup, same as the cloud targets.
+    let has = |needle: &[u8]| bytes.windows(needle.len()).any(|w| w == needle);
+    assert!(has(b"one.md"), "one.md entry missing");
+    assert!(has(b"two.md"), "two.md entry missing");
+    assert!(has(b"two-2.md"), "deduped two-2.md entry missing");
+}
+
+#[tokio::test]
+async fn zip_target_single_source_names_the_archive_and_propagates_errors() {
+    // A single input names its archive after itself…
+    let b64 = docling_b64("a,b\n1,2\n");
+    let body = format!(
+        r#"{{"sources": [{{"kind": "file", "base64_string": "{b64}", "filename": "sheet.csv"}}],
+            "target": {{"kind": "zip"}}, "to": "json"}}"#
+    );
+    let response = app().oneshot(json_convert(&body, false)).await.unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let disposition = response
+        .headers()
+        .get(header::CONTENT_DISPOSITION)
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("")
+        .to_string();
+    assert_eq!(disposition, "attachment; filename=\"sheet.zip\"");
+
+    // …and a single failing input propagates its error instead of answering
+    // with an archive of one error file (matching the inbody semantics).
+    let b64 = docling_b64("x");
+    let body = format!(
+        r#"{{"sources": [{{"kind": "file", "base64_string": "{b64}", "filename": "wat.unknown"}}],
+            "target": {{"kind": "zip"}}, "to": "md"}}"#
+    );
+    let response = app().oneshot(json_convert(&body, false)).await.unwrap();
+    assert!(response.status().is_client_error(), "{}", response.status());
+}
+
+#[tokio::test]
+async fn zip_target_batch_converts_around_a_bad_item() {
+    let b64 = docling_b64("a,b\n1,2\n");
+    let body = format!(
+        r#"{{"sources": [
+            {{"kind": "file", "base64_string": "{b64}", "filename": "good.csv"}},
+            {{"kind": "file", "base64_string": "{b64}", "filename": "bad.unknown"}}
+        ], "target": {{"kind": "zip"}}, "to": "md"}}"#
+    );
+    let response = app().oneshot(json_convert(&body, false)).await.unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let bytes = response.into_body().collect().await.unwrap().to_bytes();
+    let has = |needle: &[u8]| bytes.windows(needle.len()).any(|w| w == needle);
+    assert!(has(b"good.md"), "good entry missing");
+    assert!(has(b"bad.md.error.txt"), "error entry missing");
+}
+
+#[tokio::test]
+async fn zip_target_does_not_combine_with_to_images() {
+    let b64 = docling_b64("a,b\n");
+    let body = format!(
+        r#"{{"sources": [{{"kind": "file", "base64_string": "{b64}", "filename": "s.csv"}}],
+            "target": {{"kind": "zip"}}, "to": "images"}}"#
+    );
+    let response = app().oneshot(json_convert(&body, false)).await.unwrap();
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    assert!(body_string(response).await.contains("output target"));
+}
+
+#[tokio::test]
+async fn put_target_is_gated_behind_allow_url_fetch() {
+    let b64 = docling_b64("a,b\n");
+    let body = format!(
+        r#"{{"sources": [{{"kind": "file", "base64_string": "{b64}", "filename": "s.csv"}}],
+            "target": {{"kind": "put", "url": "http://127.0.0.1:9/up"}}, "to": "md"}}"#
+    );
+    let response = app().oneshot(json_convert(&body, false)).await.unwrap();
+    assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
+    assert!(body_string(response).await.contains("--allow-url-fetch"));
+}
+
+#[tokio::test]
+async fn put_target_uploads_each_output_and_acknowledges() {
+    use std::io::{Read, Write};
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::Arc;
+
+    let _env = ENV_LOCK.lock().await;
+
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let addr = listener.local_addr().unwrap();
+    let hits = Arc::new(AtomicUsize::new(0));
+    let server_hits = Arc::clone(&hits);
+    let handle = std::thread::spawn(move || {
+        for _ in 0..2 {
+            let (mut conn, _) = listener.accept().expect("accept");
+            let mut buf = Vec::new();
+            let mut tmp = [0u8; 4096];
+            loop {
+                let n = conn.read(&mut tmp).expect("read request");
+                buf.extend_from_slice(&tmp[..n]);
+                if let Some(head_end) = buf.windows(4).position(|w| w == b"\r\n\r\n") {
+                    let head = String::from_utf8_lossy(&buf[..head_end]).to_ascii_lowercase();
+                    let need: usize = head
+                        .lines()
+                        .find_map(|l| l.strip_prefix("content-length:"))
+                        .and_then(|v| v.trim().parse().ok())
+                        .expect("content-length");
+                    if buf.len() >= head_end + 4 + need {
+                        break;
+                    }
+                }
+            }
+            let head = String::from_utf8_lossy(&buf).into_owned();
+            assert!(head.starts_with("PUT /up?sig=abc "), "request line: {head}");
+            server_hits.fetch_add(1, Ordering::SeqCst);
+            let _ = conn
+                .write_all(b"HTTP/1.1 200 OK\r\ncontent-length: 0\r\nconnection: close\r\n\r\n");
+        }
+    });
+
+    std::env::set_var("DOCLING_RS_ALLOW_PRIVATE_IP_FETCH", "1");
+    let b64 = docling_b64("a,b\n1,2\n");
+    let body = format!(
+        r#"{{"sources": [
+            {{"kind": "file", "base64_string": "{b64}", "filename": "one.csv"}},
+            {{"kind": "file", "base64_string": "{b64}", "filename": "two.csv"}}
+        ], "target": {{"kind": "put", "url": "http://{addr}/up?sig=abc"}}, "to": "md"}}"#
+    );
+    let cfg = ServeConfig {
+        allow_url_fetch: true,
+        ..ServeConfig::default()
+    };
+    let response = router(cfg)
+        .oneshot(json_convert(&body, true))
+        .await
+        .unwrap();
+    let status = response.status();
+    let out = body_string(response).await;
+    std::env::remove_var("DOCLING_RS_ALLOW_PRIVATE_IP_FETCH");
+    assert_eq!(status, StatusCode::OK, "{out}");
+    let v: serde_json::Value = serde_json::from_str(&out).unwrap();
+    assert_eq!(v["kind"], "RemoteTargetResult");
+    // The signature-carrying query string must not be echoed back.
+    assert_eq!(v["target"], format!("http://{addr}/up"));
+    let results = v["results"].as_array().expect("results");
+    assert_eq!(results.len(), 2);
+    assert!(results.iter().all(|r| r["status"] == "success"), "{v}");
+    assert_eq!(results[0]["key"], "one.md");
+    assert_eq!(results[1]["key"], "two.md");
+    assert_eq!(hits.load(Ordering::SeqCst), 2);
+    handle.join().unwrap();
+}
+
+#[tokio::test]
+async fn put_target_refuses_a_private_address_without_the_escape_hatch() {
+    let _env = ENV_LOCK.lock().await;
+    std::env::remove_var("DOCLING_RS_ALLOW_PRIVATE_IP_FETCH");
+    let b64 = docling_b64("a,b\n");
+    let body = format!(
+        r#"{{"sources": [{{"kind": "file", "base64_string": "{b64}", "filename": "s.csv"}}],
+            "target": {{"kind": "put", "url": "http://127.0.0.1:9/up"}}, "to": "md"}}"#
+    );
+    let cfg = ServeConfig {
+        allow_url_fetch: true,
+        ..ServeConfig::default()
+    };
+    let response = router(cfg)
+        .oneshot(json_convert(&body, true))
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    assert!(body_string(response).await.contains("private/loopback"));
 }

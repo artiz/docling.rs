@@ -229,7 +229,15 @@ with the opt-in `cloud` cargo feature (feature-gated `object_store`) — `s3`,
 fields mirroring upstream's models. A cloud target uploads each converted
 output as `<stem>.<ext>` under the prefix and answers with a
 `RemoteTargetResult` acknowledgment; everything outbound sits behind
-`--allow-url-fetch`. See the `s3_pipeline` example in `/openapi.yaml`.
+`--allow-url-fetch`. The jobkit targets `zip` and `put` work too (#303, no
+`cloud` feature needed): `{"kind": "zip"}` answers with one `application/zip`
+archive of the `<stem>.<ext>` rendered outputs (a batch download — nothing
+outbound, no gate; a failed batch item becomes a `<stem>.<ext>.error.txt`
+entry), and `{"kind": "put", "url": …}` HTTP-PUTs each rendered output to the
+given — typically pre-signed — URL, so upload credentials live in the URL the
+caller minted, never in the request (behind `--allow-url-fetch`, with the same
+SSRF resolution check as URL inputs and redirects disabled). See the
+`s3_pipeline` example in `/openapi.yaml`.
 
 Observability (#297, mirroring Python docling-serve's posture — metrics on by
 default, traces opt-in): every request logs through `tracing` (`RUST_LOG`

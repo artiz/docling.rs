@@ -9,9 +9,15 @@
 //! `cloud` cargo feature; without it the kinds still *parse* and answer a
 //! clear "rebuild with --features cloud" error instead of a serde puzzle.
 //!
+//! The jobkit targets `zip` (one archive of the rendered outputs, in the
+//! response body) and `put` (HTTP PUT each output to a caller-supplied —
+//! typically pre-signed — URL) are covered too (#303), and need neither
+//! `object_store` nor the `cloud` feature.
+//!
 //! Deliberately not covered (documented in MIGRATION.md): `google_drive`
-//! (OAuth flows, no object_store backend), and the jobkit-only targets
-//! (`zip`, `put`, `presigned_url`) — an unknown `kind` is a 400 listing
+//! (OAuth flows, no object_store backend) and `presigned_url` (jobkit's
+//! ask-the-server-for-upload-URLs flow — `put` with a URL the caller minted
+//! covers the use case) — an unknown `kind` is a 400 listing
 //! the supported ones. Credentials ride in the request exactly as they do
 //! upstream: passthrough assumes a trusted client and TLS, and the whole
 //! surface sits behind `--allow-url-fetch` like every other outbound
@@ -101,8 +107,9 @@ pub enum SourceSpec {
     GoogleCloudStorage(GcsCoordinates),
 }
 
-/// The `target` — docling's `kind`-discriminated target union (the subset
-/// with an object-store backend, plus the `inbody` default).
+/// The `target` — docling's `kind`-discriminated target union: the `inbody`
+/// default, the object-store subset, and the jobkit `zip` / `put` kinds
+/// (#303).
 #[derive(Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum TargetSpec {
@@ -110,6 +117,20 @@ pub enum TargetSpec {
     S3(S3Coordinates),
     AzureBlob(AzureBlobCoordinates),
     GoogleCloudStorage(GcsCoordinates),
+    /// One zip archive of the rendered outputs, answered in the response
+    /// body (#303, jobkit's `ZipTarget`) — a batch download, not outbound.
+    Zip,
+    /// HTTP PUT each rendered output to `url` (#303, jobkit's `PutTarget`) —
+    /// the pre-signed S3/GCS/Azure upload shape: credentials live in the URL
+    /// the caller minted, never in the request body.
+    Put(PutTarget),
+}
+
+/// Upstream `PutTarget`: the one URL every rendered output is PUT to.
+#[derive(Deserialize, Clone)]
+#[serde(deny_unknown_fields)]
+pub struct PutTarget {
+    pub url: String,
 }
 
 /// A cloud store reference: coordinates + the key prefix reads list under
