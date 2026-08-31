@@ -1,0 +1,11 @@
+# MSRV-aware dependency resolution (stable since cargo 1.84): version
+# selection — including the weekly `cargo update` the deps workflow runs —
+# prefers the newest dependency versions whose `rust-version` fits the
+# workspace MSRV (1.88; 1.85 for docling-core), falling back to newer only
+# when nothing compatible exists. Without it the weekly update proposes locks
+# that fail CI's msrv job whenever a dependency raises its floor mid-series
+# (deps PR #305: aes 0.9.2 → 0.9.3 required rustc 1.89 while 0.9.2 still
+# fit). `--locked` builds are unaffected — this only steers what new
+# resolutions pick.
+[resolver]
+incompatible-rust-versions = "fallback"
