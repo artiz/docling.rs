@@ -696,7 +696,9 @@ request with a clear error; the server itself is unaffected.
 `…/chat/completions` URL. `--vlm-api-key TOKEN` (Bearer), `--vlm-prompt TEXT`
 and `--vlm-max-tokens N` (default 8192) tune the rest (#312);
 `DOCLING_RS_VLM_ENDPOINT` / `DOCLING_RS_VLM_MODEL` / `DOCLING_RS_VLM_API_KEY` /
-`DOCLING_RS_VLM_PROMPT` are the env fallbacks for the corresponding flags. Selecting the pipeline is always
+`DOCLING_RS_VLM_PROMPT` are the env fallbacks for the corresponding flags, and
+`DOCLING_RS_VLM_TIMEOUT` (seconds, default 600) raises the per-page request
+cap for slow — e.g. CPU-served — endpoints. Selecting the pipeline is always
 explicit: the environment supplies values, it never switches the pipeline on,
 so a stale `DOCLING_RS_VLM_ENDPOINT` can't reroute an ordinary PDF conversion
 over the network. The `--vlm-*` flags are inert on their own for the same

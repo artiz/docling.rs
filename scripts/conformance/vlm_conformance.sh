@@ -13,6 +13,8 @@
 #   DOCLING_RS_VLM_ENDPOINT=http://localhost:8000/v1  (default)
 #   DOCLING_RS_VLM_MODEL=granite-docling              (default)
 #   FIXTURES="a.pdf b.pdf"   restrict to specific corpus files (basenames)
+#   VLM_TIMEOUT=1800         per-page timeout, seconds, both sides (default
+#                            600 — too tight for a CPU-served endpoint, #311)
 #
 # Prereqs: the shim serving (see its header for the venv recipe), pdfium for
 # the Rust side, and Python docling with VLM extras for the reference side
@@ -29,6 +31,8 @@ OUT="target/vlm-conformance"
 PYBIN="${PYBIN:-.venv-compare/bin/python}"
 [ -x "$PYBIN" ] || PYBIN=python3
 export PDFIUM_DYNAMIC_LIB_PATH="${PDFIUM_DYNAMIC_LIB_PATH:-$(pwd)/.pdfium/lib}"
+# One knob caps a page request on both sides (the Rust client reads the env).
+export DOCLING_RS_VLM_TIMEOUT="${VLM_TIMEOUT:-600}"
 
 # Reachable? Any HTTP status will do (the shim only answers POST); only a
 # connection failure means "no server".

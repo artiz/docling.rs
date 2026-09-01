@@ -42,8 +42,17 @@ def load(model_id: str, force_cpu: bool):
     except ImportError:
         from transformers import AutoModelForVision2Seq as AutoVlm
 
-    device = "cpu" if force_cpu or not torch.cuda.is_available() else "cuda"
-    dtype = torch.bfloat16 if device == "cuda" else torch.float32
+    # cuda > mps > cpu: Apple-silicon torch ships MPS, and fp16 there turns
+    # #311's ~10-minute CPU pages into tens of seconds.
+    if force_cpu:
+        device = "cpu"
+    elif torch.cuda.is_available():
+        device = "cuda"
+    elif getattr(torch.backends, "mps", None) is not None and torch.backends.mps.is_available():
+        device = "mps"
+    else:
+        device = "cpu"
+    dtype = {"cuda": torch.bfloat16, "mps": torch.float16}.get(device, torch.float32)
     print(f"loading {model_id} on {device} ({dtype}) ...", flush=True)
     processor = AutoProcessor.from_pretrained(model_id)
     model = AutoVlm.from_pretrained(model_id, torch_dtype=dtype).to(device)

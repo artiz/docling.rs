@@ -205,10 +205,16 @@ fn pdf_err(e: docling_pdf::PdfError) -> ConversionError {
 }
 
 fn agent() -> ureq::Agent {
+    // A VLM can chew on a dense page for minutes — and a CPU-served endpoint
+    // for many more: #311's measurement clocked a routine page at 587 s on a
+    // desktop CPU, a hair under this default. `DOCLING_RS_VLM_TIMEOUT`
+    // (seconds) raises the per-request cap for such endpoints; retries make a
+    // too-small value expensive (4 attempts each grind to the cap while the
+    // server keeps generating for a client that already hung up).
+    let timeout = docling_core::env::parse("DOCLING_RS_VLM_TIMEOUT").unwrap_or(600);
     ureq::Agent::config_builder()
         .timeout_connect(Some(Duration::from_secs(10)))
-        // A VLM can chew on a dense page for minutes, especially on CPU.
-        .timeout_global(Some(Duration::from_secs(600)))
+        .timeout_global(Some(Duration::from_secs(timeout)))
         // Keep non-2xx as inspectable responses for the retry decision.
         .http_status_as_error(false)
         .build()
