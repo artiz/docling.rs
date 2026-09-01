@@ -1168,6 +1168,8 @@ async fn request_supplied_vlm_endpoint_needs_allow_url_fetch() {
 
 #[tokio::test]
 async fn vlm_endpoint_resolving_to_private_address_is_rejected() {
+    let _env = ENV_LOCK.lock().await;
+    std::env::remove_var("DOCLING_RS_ALLOW_PRIVATE_IP_FETCH");
     // Even with the gate open, a request endpoint may not reach back into the
     // server's own network (same block-list as URL inputs).
     let cfg = ServeConfig {
@@ -1348,12 +1350,10 @@ async fn put_target_is_gated_behind_allow_url_fetch() {
 
 #[tokio::test]
 async fn put_target_uploads_each_output_and_acknowledges() {
+    let _env = ENV_LOCK.lock().await;
     use std::io::{Read, Write};
     use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::Arc;
-
-    let _env = ENV_LOCK.lock().await;
-
     let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
     let addr = listener.local_addr().unwrap();
     let hits = Arc::new(AtomicUsize::new(0));
