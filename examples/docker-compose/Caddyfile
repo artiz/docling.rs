@@ -1,0 +1,35 @@
+{
+    email {$CADDY_EMAIL:admin@example.com}
+}
+
+{$DOMAIN:localhost} {
+    # Optional Basic Auth: uncomment to protect the API
+    # Generate password hash with: docker run --rm caddy caddy hash-password --plaintext "mypassword"
+    # basic_auth {
+    #     admin $2a$14$Zkx19XLiW6VYouLHR5NmfOFU0z2GTNmpkT/5qqR7hx4L096t1yj92
+    # }
+
+    # Enable gzip / zstd compression for responses
+    encode zstd gzip
+
+    # Reverse proxy to docling-serve container
+    reverse_proxy docling-serve:5001 {
+        header_up Host {host}
+        header_up X-Real-IP {remote_host}
+        header_up X-Forwarded-For {remote_host}
+        header_up X-Forwarded-Proto {scheme}
+
+        # Health check to backend
+        health_uri /health
+        health_interval 15s
+        health_timeout 5s
+    }
+
+    # Security headers
+    header {
+        Strict-Transport-Security "max-age=31536000; includeSubDomains"
+        X-Content-Type-Options "nosniff"
+        X-Frame-Options "DENY"
+        Referrer-Policy "strict-origin-when-cross-origin"
+    }
+}

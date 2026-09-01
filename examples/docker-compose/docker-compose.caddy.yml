@@ -1,0 +1,56 @@
+services:
+  docling-serve:
+    image: ${DOCLING_IMAGE:-ghcr.io/docling-project/docling-serve-rs:latest}
+    container_name: docling-serve
+    restart: unless-stopped
+    # Expose internally to the docker network only (Caddy fronts it)
+    expose:
+      - "5001"
+    environment:
+      - DOCLING_RS_NO_ARENA=1
+      - DOCLING_RS_MAX_MEMORY_MB=${DOCLING_RS_MAX_MEMORY_MB:-4096}
+      - DOCLING_RS_MEMORY_WATERMARK_PCT=${DOCLING_RS_MEMORY_WATERMARK_PCT:-85}
+      - RUST_LOG=${RUST_LOG:-info}
+    command:
+      - "docling-serve"
+      - "--addr"
+      - "0.0.0.0:5001"
+      - "--concurrency"
+      - "${CONCURRENCY:-2}"
+      - "--warmup"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5001/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          cpus: "${CPU_LIMIT:-4.0}"
+          memory: "${MEMORY_LIMIT:-4G}"
+        reservations:
+          cpus: "1.0"
+          memory: "1G"
+
+  caddy:
+    image: caddy:2-alpine
+    container_name: docling-caddy
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      - DOMAIN=${DOMAIN:-localhost}
+      - CADDY_EMAIL=${CADDY_EMAIL:-admin@example.com}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      docling-serve:
+        condition: service_healthy
+
+volumes:
+  caddy_data:
+  caddy_config:

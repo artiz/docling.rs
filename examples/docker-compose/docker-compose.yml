@@ -1,0 +1,41 @@
+services:
+  docling-serve:
+    image: ${DOCLING_IMAGE:-ghcr.io/docling-project/docling-serve-rs:latest}
+    container_name: docling-serve
+    restart: unless-stopped
+    ports:
+      - "${PORT:-5001}:5001"
+    environment:
+      # Disable ONNX Runtime CPU arena to avoid RSS heap ratcheting (#263)
+      - DOCLING_RS_NO_ARENA=1
+      # Memory ceiling for admission control (MB); returns 503 + Retry-After when near watermark
+      - DOCLING_RS_MAX_MEMORY_MB=${DOCLING_RS_MAX_MEMORY_MB:-4096}
+      - DOCLING_RS_MEMORY_WATERMARK_PCT=${DOCLING_RS_MEMORY_WATERMARK_PCT:-85}
+      # Structured logs level: trace | debug | info | warn | error
+      - RUST_LOG=${RUST_LOG:-info}
+    # CLI options:
+    #   --addr: 0.0.0.0:5001 binds inside the container
+    #   --concurrency: max simultaneous conversions in flight (default 2)
+    #   --warmup: pre-load ML models at container start so requests avoid cold-start latency
+    #   --allow-url-fetch: enable if accepting {"url": "..."} inputs (SSRF-guarded)
+    command:
+      - "docling-serve"
+      - "--addr"
+      - "0.0.0.0:5001"
+      - "--concurrency"
+      - "${CONCURRENCY:-2}"
+      - "--warmup"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5001/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          cpus: "${CPU_LIMIT:-4.0}"
+          memory: "${MEMORY_LIMIT:-4G}"
+        reservations:
+          cpus: "1.0"
+          memory: "1G"
