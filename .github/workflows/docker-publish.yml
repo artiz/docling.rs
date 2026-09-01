@@ -1,0 +1,214 @@
+# Build and publish the `docling-serve` container image to GitHub Container
+# Registry (ghcr.io).
+#
+# The image packages the pure-Rust `docling-serve` HTTP conversion API along with
+# its native runtime dependencies (ffmpeg, pdfium, and the ONNX models for
+# layout detection, TableFormer table structure, and PP-OCRv3 recognition) into
+# a slim, Python-free container image.
+#
+# Multi-arch: builds for both `linux/amd64` and `linux/arm64`.
+#
+# Triggers:
+#   - Release published: tags with semantic versions (vX.Y.Z, X.Y, X, latest)
+#   - Push to master: tags with `master` and `latest`
+#   - Manual dispatch: tag override or dry-run testing
+#   - Pull request (touching serve/converter paths): dry-run build on amd64 + smoke test
+
+name: docker-publish
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - "crates/docling-serve/**"
+      - "crates/docling/**"
+      - "crates/docling-core/**"
+      - "crates/docling-pdf/**"
+      - "crates/docling-onnx/**"
+      - "crates/docling-asr/**"
+      - "scripts/install/download_dependencies.sh"
+      - ".github/workflows/docker-publish.yml"
+      - "Cargo.toml"
+      - "Cargo.lock"
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Explicit image tag to publish (e.g. v1.24.0 or latest). Blank = derive from ref/release."
+        required: false
+        default: ""
+      platforms:
+        description: "Target platforms for the build."
+        required: false
+        default: "linux/amd64,linux/arm64"
+      publish:
+        description: "Publish images to GHCR (false = build & test only, no push)."
+        required: false
+        type: boolean
+        default: true
+  pull_request:
+    branches: [master]
+    paths:
+      - "crates/docling-serve/**"
+      - "crates/docling/**"
+      - "crates/docling-core/**"
+      - "crates/docling-pdf/**"
+      - "crates/docling-onnx/**"
+      - "crates/docling-asr/**"
+      - "scripts/install/download_dependencies.sh"
+      - ".github/workflows/docker-publish.yml"
+      - "Cargo.toml"
+      - "Cargo.lock"
+
+# Least privilege for GITHUB_TOKEN:
+# - `contents: read` to check out the repo
+# - `packages: write` to push the container image to GHCR
+# - `id-token: write` and `attestations: write` for build provenance attestations
+permissions:
+  contents: read
+  packages: write
+  id-token: write
+  attestations: write
+
+concurrency:
+  group: docker-publish-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  REGISTRY: ghcr.io
+  PRIMARY_IMAGE: ${{ github.repository_owner }}/docling-serve-rs
+  ALIAS_IMAGE: ${{ github.repository_owner }}/docling-rs
+jobs:
+  build-and-publish:
+    name: build & publish container image
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      # QEMU enables multi-arch emulation (linux/arm64 on x86 runner)
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+        with:
+          platforms: arm64,amd64
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata (tags, labels) for Docker
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: |
+            ${{ env.REGISTRY }}/${{ env.PRIMARY_IMAGE }}
+            ${{ env.REGISTRY }}/${{ env.ALIAS_IMAGE }}
+          flavor: |
+            latest=auto
+          tags: |
+            type=ref,event=branch
+            type=ref,event=pr
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=semver,pattern={{major}}
+            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/master' || github.event_name == 'release' }}
+            type=raw,value=${{ inputs.tag }},enable=${{ inputs.tag != '' }}
+          labels: |
+            org.opencontainers.image.title=docling-serve
+            org.opencontainers.image.description=High-performance document conversion API in Rust (PDF, DOCX, PPTX, XLSX, HTML, Audio)
+            org.opencontainers.image.licenses=MIT
+            org.opencontainers.image.vendor=docling-project
+
+      # Determine whether to push to the registry
+      - name: Determine push mode
+        id: push-mode
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            echo "push=false" >> "$GITHUB_OUTPUT"
+          elif [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ inputs.publish }}" = "false" ]; then
+            echo "push=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "push=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      # Build and export single-arch image locally for smoke testing
+      - name: Build local image for smoke test
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: crates/docling-serve/Dockerfile
+          load: true
+          tags: docling-serve:test
+          platforms: linux/amd64
+          cache-from: type=gha,scope=docling-serve
+          cache-to: type=gha,mode=max,scope=docling-serve
+
+      - name: Run container smoke test
+        run: |
+          echo "Starting docling-serve container..."
+          docker run -d --name docling-serve-test -p 5001:5001 docling-serve:test
+
+          echo "Waiting for service to report healthy..."
+          HEALTHY=false
+          for i in $(seq 1 30); do
+            RESPONSE=$(curl -s http://localhost:5001/health || true)
+            if echo "$RESPONSE" | grep -q '"status":"ok"'; then
+              echo "Service is healthy! Response: $RESPONSE"
+              HEALTHY=true
+              break
+            fi
+            echo "Waiting for healthcheck ($i/30)..."
+            sleep 2
+          done
+
+          if [ "$HEALTHY" != "true" ]; then
+            echo "Healthcheck failed! Container logs:"
+            docker logs docling-serve-test
+            docker rm -f docling-serve-test
+            exit 1
+          fi
+
+          echo "Verifying /v1/config endpoint..."
+          CONFIG=$(curl -sf http://localhost:5001/v1/config)
+          echo "Config: $CONFIG"
+
+          echo "Cleaning up smoke test container..."
+          docker rm -f docling-serve-test
+
+      # Build and push multi-arch image to GHCR
+      - name: Build and push multi-arch image
+        id: build-push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: crates/docling-serve/Dockerfile
+          platforms: ${{ github.event_name == 'pull_request' && 'linux/amd64' || (inputs.platforms || 'linux/amd64,linux/arm64') }}
+          push: ${{ steps.push-mode.outputs.push }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha,scope=docling-serve
+          cache-to: type=gha,mode=max,scope=docling-serve
+
+      # Attest build provenance for the published images (OIDC / Sigstore)
+      - name: Generate artifact attestation for docling-serve-rs
+        if: steps.push-mode.outputs.push == 'true'
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-name: ${{ env.REGISTRY }}/${{ env.PRIMARY_IMAGE }}
+          subject-digest: ${{ steps.build-push.outputs.digest }}
+          push-to-registry: true
+
+      - name: Generate artifact attestation for docling-rs
+        if: steps.push-mode.outputs.push == 'true'
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-name: ${{ env.REGISTRY }}/${{ env.ALIAS_IMAGE }}
+          subject-digest: ${{ steps.build-push.outputs.digest }}
+          push-to-registry: true
