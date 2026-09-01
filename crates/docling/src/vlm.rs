@@ -322,6 +322,19 @@ fn request_page(agent: &ureq::Agent, opts: &VlmOptions, image: &[u8]) -> Result<
                 }
                 return content;
             }
+            // Our own timeout is not retryable: the model is deterministic,
+            // so the same page grinds to the same timeout again — and against
+            // a single-threaded server the retry queues *behind* the orphaned
+            // generation it abandoned, multiplying the wasted wall-clock ×4
+            // (#311's GPU run: a 3300 s page vs. a 1800 s cap). Raise
+            // DOCLING_RS_VLM_TIMEOUT instead; the error says so.
+            Err(ureq::Error::Timeout(_)) => {
+                return Err(format!(
+                    "{url}: page request exceeded the {}s cap (DOCLING_RS_VLM_TIMEOUT raises \
+                     it; the server may still be finishing the abandoned generation)",
+                    docling_core::env::parse("DOCLING_RS_VLM_TIMEOUT").unwrap_or(600_u64)
+                ));
+            }
             Err(e) => {
                 last_err = format!("{url}: {e} (attempt {})", attempt + 1);
             }
