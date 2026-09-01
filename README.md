@@ -707,8 +707,12 @@ and sent), and `--to md|json|dclx|chunks` plus `--strict` work as usual. Transie
 endpoint failures (timeouts, 408/429, 5xx) retry with exponential backoff;
 a page that still fails fails the conversion — no silently dropped pages.
 Output quality is entirely the model's: conversion of the PDF corpus against
-docling's own VLM pipeline output hasn't been measured yet (it needs a live
-endpoint), so treat this as infrastructure, not a conformance claim.
+docling's own VLM pipeline output hasn't been measured yet — the
+`scripts/conformance/vlm_conformance.sh` harness is dry-run-validated
+end-to-end but needs a GPU-served endpoint for the actual corpus pass (CPU
+inference measures hours per page against the clients' 600 s timeouts; see
+docs/PDF_CONFORMANCE.md) — so treat this as infrastructure, not a
+conformance claim.
 
 ### Headless-browser HTML pre-render (optional)
 

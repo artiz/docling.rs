@@ -96,6 +96,11 @@ class Handler(BaseHTTPRequestHandler):
             self.send_error(400, "no image_url part")
             return
         started = time.time()
+        # Visible busy marker: the server is single-threaded, so while this
+        # request generates every later request (health probes included) just
+        # queues — and if the client times out and goes away, the generation
+        # still runs to completion before the next request is read.
+        print(f"page received ({len(image)} bytes), generating ...", flush=True)
         text = generate(
             self.processor,
             self.model,

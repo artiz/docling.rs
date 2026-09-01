@@ -23,15 +23,23 @@ cd "$(dirname "$0")/../.."   # docling.rs/
 ENDPOINT="${DOCLING_RS_VLM_ENDPOINT:-http://localhost:8000/v1}"
 MODEL="${DOCLING_RS_VLM_MODEL:-granite-docling}"
 OUT="target/vlm-conformance"
+# Prefer the venv setup-docling.sh creates — a bare `python3` almost never has
+# docling importable, and the old unconditional `python3` made the "run
+# setup-docling.sh" hint below a lie (the setup installs into .venv-compare).
+PYBIN="${PYBIN:-.venv-compare/bin/python}"
+[ -x "$PYBIN" ] || PYBIN=python3
 export PDFIUM_DYNAMIC_LIB_PATH="${PDFIUM_DYNAMIC_LIB_PATH:-$(pwd)/.pdfium/lib}"
 
 # Reachable? Any HTTP status will do (the shim only answers POST); only a
 # connection failure means "no server".
-if ! curl -s -o /dev/null --max-time 5 -X POST "$ENDPOINT/chat/completions" -d '{}'; then
+if ! curl -s -o /dev/null --max-time 15 -X POST "$ENDPOINT/chat/completions" -d '{}'; then
   echo "no VLM endpoint at $ENDPOINT — start scripts/dev/granite_vlm_server.py first" >&2
+  echo "(the shim is single-threaded: a page generation still in flight — e.g. an" >&2
+  echo " orphaned request whose client timed out — also fails this probe; wait for" >&2
+  echo " the shim's terminal to go quiet and retry)" >&2
   exit 1
 fi
-python3 -c "import docling" 2>/dev/null || {
+"$PYBIN" -c "import docling" 2>/dev/null || {
   echo "python docling not importable — run scripts/conformance/setup-docling.sh" >&2
   exit 1
 }
@@ -44,7 +52,7 @@ mkdir -p "$OUT/rust" "$OUT/python"
 # word). Model output is not byte-stable across renderers, so exactness is
 # reported separately.
 similarity() {
-  python3 - "$1" "$2" <<'EOF'
+  "$PYBIN" - "$1" "$2" <<'EOF'
 import difflib, re, sys
 def norm(p):
     text = open(p, encoding="utf-8").read()
@@ -83,7 +91,7 @@ for src in tests/data/pdf/sources/*.pdf; do
   fi
   if [ ! -s "$py_md" ]; then
     echo "[$name] python docling side converting ..." >&2
-    if python3 scripts/conformance/vlm_convert.py \
+    if "$PYBIN" scripts/conformance/vlm_convert.py --timeout "${VLM_TIMEOUT:-600}" \
       --endpoint "$ENDPOINT" --model "$MODEL" "$src" "$py_md.tmp"; then
       mv "$py_md.tmp" "$py_md"
     else
@@ -97,11 +105,11 @@ for src in tests/data/pdf/sources/*.pdf; do
   diff -q "$py_md" "$rust_md" >/dev/null 2>&1 && { is_exact="yes"; exact=$((exact + 1)); }
   printf "%-38s %8s %s\n" "$name" "$sim" "$is_exact"
   total=$((total + 1))
-  sum="$(python3 -c "print($sum + $sim)")"
+  sum="$("$PYBIN" -c "print($sum + $sim)")"
 done
 
 if [ "$total" -gt 0 ]; then
-  mean="$(python3 -c "print(f'{$sum / $total:.1f}')")"
+  mean="$("$PYBIN" -c "print(f'{$sum / $total:.1f}')")"
   echo "VLM corpus similarity (rust vs python docling, $MODEL): mean $mean% over $total fixtures, $exact byte-exact"
   echo "outputs kept in $OUT/ for triage"
 fi

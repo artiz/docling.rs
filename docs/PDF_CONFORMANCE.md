@@ -302,17 +302,36 @@ bounded by these, so raising it further is a model problem, not a serialization
 one: every laid-out block kind now carries provenance, so the ±2 figure sits at
 the geometry-ignored ceiling.
 
-## VLM pipeline conformance (#153 — measurement pending)
+## VLM pipeline conformance (#153/#311 — needs a GPU endpoint)
 
 The remote-VLM pipeline (#77, `--pipeline vlm`) has its own comparison
 harness: `scripts/conformance/vlm_conformance.sh` runs the PDF corpus through
 docling.rs *and* Python docling's `VlmPipeline`, both against the same
 endpoint (`scripts/dev/granite_vlm_server.py` — the only server class that
 keeps granite-docling's DocTags tokens intact), and reports per-fixture
-whitespace-normalized similarity plus byte-exactness. Requires a GPU for
-sane runtimes; numbers land here once the corpus run happens. Known accepted
+whitespace-normalized similarity plus byte-exactness. Known accepted
 asymmetry: each side renders pages at its own scale, so some drift is
 render-induced rather than parser-induced — triage before attributing.
+
+**A GPU for the shim is a hard requirement, not a convenience** — measured
+while dry-running the harness end-to-end for #311 (v1.23, 4-vCPU container,
+fp32 `transformers` CPU inference of granite-docling-258M): a routine
+academic page took **12 313 s (3.4 h) to generate 3 385 chars** (~0.1 tok/s;
+a near-empty page still decodes at ~0.5 tok/s), while both clients cap a
+page request at 600 s — the Rust agent's global timeout and
+`vlm_convert.py`'s default alike. On CPU every real page therefore times out
+client-side while the single-threaded shim grinds on as an orphan, blocking
+the next request. That dry run did validate everything up to the model —
+shim serving, both converters driving it, caching, scoring — and is what
+shaped the harness fixes (venv `python3`, output-dir creation,
+`--timeout`/`VLM_TIMEOUT`, the busy-shim probe hint). Numbers land here once
+someone runs the corpus against a GPU-served endpoint:
+
+```bash
+python scripts/dev/granite_vlm_server.py            # on a CUDA machine
+scripts/conformance/setup-docling.sh
+scripts/conformance/vlm_conformance.sh              # prints the table + mean
+```
 
 ## Bedrock LLM comparison (speed + fuzzy conformance)
 
