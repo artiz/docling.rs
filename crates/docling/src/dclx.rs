@@ -56,3 +56,21 @@ pub fn to_dclx_bytes(doc: &DoclingDocument) -> Vec<u8> {
 pub fn save_as_dclx(doc: &DoclingDocument, path: &std::path::Path) -> std::io::Result<()> {
     std::fs::write(path, to_dclx_bytes(doc))
 }
+
+/// Deflate arbitrary `(name, bytes)` entries into one zip archive — the
+/// generic sibling of [`to_dclx_bytes`], for callers that batch rendered
+/// outputs rather than OPC parts (docling-serve's `zip` output target, #303).
+pub fn zip_bytes<'a>(entries: impl IntoIterator<Item = (&'a str, &'a [u8])>) -> Vec<u8> {
+    let mut buf = std::io::Cursor::new(Vec::new());
+    {
+        let mut zip = zip::ZipWriter::new(&mut buf);
+        let opts =
+            SimpleFileOptions::default().compression_method(zip::CompressionMethod::Deflated);
+        for (name, bytes) in entries {
+            zip.start_file(name, opts).expect("zip start");
+            zip.write_all(bytes).expect("zip write");
+        }
+        zip.finish().expect("zip finish");
+    }
+    buf.into_inner()
+}

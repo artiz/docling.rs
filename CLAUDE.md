@@ -25,7 +25,9 @@ validated for byte-for-byte conformance against upstream Python docling.
 - One feature = one branch off fresh `origin/master`. Don't stack unrelated
   work.
 - Issue numbers (`#80`, `#138`, …) refer to `docling-project/docling.rs`
-  issues; reference them in commit messages (`Refs #NN`).
+  issues; reference them in commit messages — `Closes #NN` when the
+  change fully resolves the ticket (GitHub then auto-closes it on merge),
+  `Refs #NN` for partial/related work.
 - **Slack notifications** (when the Slack MCP connector is available): post to
   **#claude-code** (channel ID `C0BKAHN0BSM`) when (a) a question blocks the
   work and needs the maintainer's answer, (b) a long task finishes — include
