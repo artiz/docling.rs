@@ -213,15 +213,18 @@ instead of OOM-killing the process; `0` disables). Thread pools are
 TableFormer session — the reporter's 4-CPU case dropped ~40% peak memory), and
 the server defaults `DOCLING_RS_NO_ARENA=1`: with the ONNX CPU arena off plus
 heap trimming, warm retained RSS measured ~3× lower (2.0 GB → 0.7 GB) at no
-latency cost — set `DOCLING_RS_NO_ARENA=0` to restore the arena. A container image
-builds from [`crates/docling-serve/Dockerfile`](./crates/docling-serve/Dockerfile)
-(models + pdfium baked in, or mounted with `--build-arg FETCH_ASSETS=0`).
+latency cost — set `DOCLING_RS_NO_ARENA=0` to restore the arena. Prebuilt
+multi-arch images (`linux/amd64`, `linux/arm64`) publish to GHCR:
+`ghcr.io/docling-project/docling-serve-rs:latest` (built from
+[`crates/docling-serve/Dockerfile`](./crates/docling-serve/Dockerfile) with models
+and pdfium baked in, or mountable with `--build-arg FETCH_ASSETS=0`). Docker
+Compose setups are in [`examples/docker-compose/`](./examples/docker-compose/) and
+the full guide is in [`docs/DEPLOYMENT.md`](./docs/DEPLOYMENT.md).
 URL inputs are **off by default** (SSRF surface): pass `--allow-url-fetch` to
 enable them; the fetcher blocks private-IP targets
 (`DOCLING_RS_ALLOW_PRIVATE_IP_FETCH=1` opts out) and caps the download size
 (`DOCLING_RS_MAX_FETCH_BYTES`). The server binds loopback by default — front
 it with a policy proxy for anything wider.
-
 The JSON body also takes docling's service-datamodel `sources`/`target` shape
 (#139): `kind`-tagged `file` (base64) and `http` (URL + headers) sources, and —
 with the opt-in `cloud` cargo feature (feature-gated `object_store`) — `s3`,
@@ -1324,13 +1327,26 @@ fetches missing model files. Uninstall:
 
 ## Deploy in a container
 
-For a real-world service, bake the binary, native libs, and models into one image
-so the runtime needs no Python. [`examples/Dockerfile`](./examples/Dockerfile) is a
-3-stage build that does exactly this — a `models` stage exports the layout +
-**TableFormer** (KV-cached decoder) ONNX with torch and fetches the OCR model +
-pdfium, a `builder` stage compiles the CLI, and a slim `runtime` stage carries just
-the binary, `libonnxruntime`, pdfium, and the models, with the `DOCLING_*` env vars
-preset:
+Prebuilt container images for the HTTP conversion API are published to **GitHub
+Container Registry (GHCR)** for both `linux/amd64` and `linux/arm64`:
+
+```bash
+# Run docling-serve HTTP API (models baked in, zero Python runtime dependencies):
+docker run -p 5001:5001 ghcr.io/docling-project/docling-serve-rs:latest
+
+# Convert a document:
+curl -F file=@paper.pdf localhost:5001/v1/convert
+```
+
+Or run with Docker Compose from [`examples/docker-compose/`](./examples/docker-compose/):
+
+```bash
+cd examples/docker-compose
+docker compose up -d
+```
+
+For a self-contained CLI image with models exported from PyTorch, [`examples/Dockerfile`](./examples/Dockerfile)
+is a 3-stage build that bakes the binary, native libs, and models into a slim runtime stage:
 
 ```bash
 docker build -f examples/Dockerfile -t docling-rs .
@@ -1338,16 +1354,13 @@ docker run --rm -v "$PWD:/data" docling-rs /data/input.pdf          # Markdown t
 docker run --rm -v "$PWD:/data" docling-rs /data/input.pdf --to json
 ```
 
-The image converts PDFs/images fully offline; the model export (torch +
-`docling-ibm-models`) happens only at build time, never at runtime. Both
-`linux/amd64` and `linux/arm64` build (#281) — the pdfium prebuilt follows
+Both `linux/amd64` and `linux/arm64` build (#281) — the pdfium prebuilt follows
 BuildKit's `TARGETARCH`, and `scripts/install/download_dependencies.sh`
 likewise picks the pdfium for the machine it runs on (pinned x64 from the
-models release; the bblanchon `arm64` prebuilt elsewhere):
+models release; the bblanchon `arm64` prebuilt elsewhere).
 
-```bash
-docker buildx build --platform linux/arm64 -f examples/Dockerfile -t docling-rs .
-```
+See [`docs/DEPLOYMENT.md`](./docs/DEPLOYMENT.md) for full deployment documentation,
+resource limits, reverse proxy configs, and production tuning.
 
 ## Performance
 
