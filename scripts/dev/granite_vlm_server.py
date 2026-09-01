@@ -16,7 +16,7 @@ Usage:
     python scripts/dev/granite_vlm_server.py [--port 8000] [--model ID] [--cpu]
 
 Then:
-    docling-rs --pipeline vlm --vlm-endpoint http://localhost:8000/v1 \
+    docling-rs --pipeline vlm --vlm-endpoint http://127.0.0.1:8000/v1 \
                --vlm-model granite-docling <file.pdf>
 """
 

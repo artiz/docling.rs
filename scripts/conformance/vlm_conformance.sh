@@ -22,7 +22,10 @@
 set -euo pipefail
 cd "$(dirname "$0")/../.."   # docling.rs/
 
-ENDPOINT="${DOCLING_RS_VLM_ENDPOINT:-http://localhost:8000/v1}"
+# 127.0.0.1, not localhost: the shim binds IPv4 only, and a `localhost` that
+# resolves to ::1 first (or an http_proxy env that swallows it) fails the
+# probe against a perfectly healthy shim.
+ENDPOINT="${DOCLING_RS_VLM_ENDPOINT:-http://127.0.0.1:8000/v1}"
 MODEL="${DOCLING_RS_VLM_MODEL:-granite-docling}"
 OUT="target/vlm-conformance"
 # Prefer the venv setup-docling.sh creates — a bare `python3` almost never has
@@ -36,7 +39,7 @@ export DOCLING_RS_VLM_TIMEOUT="${VLM_TIMEOUT:-600}"
 
 # Reachable? Any HTTP status will do (the shim only answers POST); only a
 # connection failure means "no server".
-if ! curl -s -o /dev/null --max-time 15 -X POST "$ENDPOINT/chat/completions" -d '{}'; then
+if ! curl -s -o /dev/null --noproxy '*' --max-time 15 -X POST "$ENDPOINT/chat/completions" -d '{}'; then
   echo "no VLM endpoint at $ENDPOINT — start scripts/dev/granite_vlm_server.py first" >&2
   echo "(the shim is single-threaded: a page generation still in flight — e.g. an" >&2
   echo " orphaned request whose client timed out — also fails this probe; wait for" >&2
