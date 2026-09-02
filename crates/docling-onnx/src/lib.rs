@@ -6,7 +6,8 @@
 //!
 //! CPU is the default and the only provider in a default build — the GPU
 //! providers exist behind cargo features (`cuda`, `tensorrt`, `directml`,
-//! `coreml`) so the standard build keeps zero GPU dependencies. A feature only
+//! `coreml`; plus the CPU-class `xnnpack`, #324) so the standard build keeps
+//! zero GPU dependencies. A feature only
 //! *compiles* a provider in (it makes `ort` link/download an ONNX Runtime
 //! binary that contains that EP); which provider actually runs is chosen at
 //! startup from `DOCLING_RS_EP`:
@@ -15,17 +16,26 @@
 //!   a GPU build or installed the GPU wheel: use the GPU when one is usable,
 //!   fall back to CPU when not); plain CPU in a default build
 //! * `cpu` — force CPU, exactly the pre-#74 behavior
-//! * `cuda` / `tensorrt` (`trt`) / `directml` (`dml`) / `coreml` — that
-//!   provider, registered with error-on-failure: an *explicitly requested*
+//! * `cuda` / `tensorrt` (`trt`) / `directml` (`dml`) / `coreml` /
+//!   `xnnpack` — that provider, registered with error-on-failure: an *explicitly requested*
 //!   accelerator that can't initialize (missing driver, no device) fails the
 //!   session load loudly instead of silently degrading to a CPU run that
 //!   looks fine but is 10× slower than expected. Requesting a provider the
 //!   binary wasn't compiled with warns once and stays on CPU (there is
 //!   nothing to register at all in that case).
 //! * `auto` — every compiled-in provider is registered in performance order
-//!   (TensorRT, CUDA, CoreML, DirectML) and ONNX Runtime falls back down the
-//!   list — ultimately to CPU — at session creation. The "try GPU if there is
+//!   (TensorRT, CUDA, CoreML, DirectML, then XNNPACK) and ONNX Runtime falls
+//!   back down the list — ultimately to CPU — at session creation. The "try GPU if there is
 //!   one" mode for images built once and deployed on mixed fleets.
+//!
+//! CoreML registers with the `MLProgram` model format by default (#324):
+//! the ONNX Runtime default, `NeuralNetwork`, cannot place operators the
+//! layout model carries (`GridSample`, `ScatterND`, dynamic output shapes)
+//! and aborts inference on Apple silicon instead of falling back.
+//! `DOCLING_RS_COREML_FORMAT=neuralnetwork` restores the old format for
+//! pre-macOS-12 systems, and `DOCLING_RS_COREML_UNITS`
+//! (`all`|`cpu_and_gpu`|`cpu_and_ne`|`cpu_only`) narrows the compute units.
+//! `DOCLING_RS_XNNPACK_THREADS` sizes XNNPACK's own thread pool.
 //!
 //! The int8 model defaults in docling-pdf are skipped whenever a GPU provider
 //! is selected ([`prefers_fp32`]): the int8 exports are QDQ graphs calibrated
@@ -47,6 +57,9 @@ pub enum Ep {
     TensorRt,
     DirectMl,
     CoreMl,
+    /// CPU-class EP with ARM NEON / x86 SIMD kernels (#324) — an accelerator
+    /// for machines without a usable GPU provider, Apple silicon included.
+    Xnnpack,
     /// Register everything compiled in, let ONNX Runtime fall back.
     Auto,
 }
@@ -60,6 +73,7 @@ pub fn parse(v: &str) -> Option<Ep> {
         "tensorrt" | "trt" => Some(Ep::TensorRt),
         "directml" | "dml" => Some(Ep::DirectMl),
         "coreml" => Some(Ep::CoreMl),
+        "xnnpack" => Some(Ep::Xnnpack),
         "auto" => Some(Ep::Auto),
         _ => None,
     }
@@ -73,6 +87,7 @@ fn compiled(ep: Ep) -> bool {
         Ep::TensorRt => cfg!(feature = "tensorrt"),
         Ep::DirectMl => cfg!(feature = "directml"),
         Ep::CoreMl => cfg!(feature = "coreml"),
+        Ep::Xnnpack => cfg!(feature = "xnnpack"),
         Ep::Auto => true,
     }
 }
@@ -90,7 +105,9 @@ fn any_gpu_compiled() -> bool {
 /// falls back to CPU when not. A default build has nothing to register and
 /// stays on the exact pre-#74 CPU path.
 fn default_choice() -> Ep {
-    if any_gpu_compiled() {
+    // XNNPACK counts here (whoever built with it wants it used) but not in
+    // [`prefers_fp32`] — it runs the same CPU-calibrated graphs as the CPU EP.
+    if any_gpu_compiled() || cfg!(feature = "xnnpack") {
         Ep::Auto
     } else {
         Ep::Cpu
@@ -109,7 +126,7 @@ pub fn choice() -> Ep {
         let Some(ep) = parse(&raw) else {
             eprintln!(
                 "docling-rs: DOCLING_RS_EP={raw:?} names no known execution provider \
-                 (cpu|cuda|tensorrt|directml|coreml|auto); using CPU"
+                 (cpu|cuda|tensorrt|directml|coreml|xnnpack|auto); using CPU"
             );
             return Ep::Cpu;
         };
@@ -122,6 +139,7 @@ pub fn choice() -> Ep {
                     Ep::TensorRt => "tensorrt",
                     Ep::DirectMl => "directml",
                     Ep::CoreMl => "coreml",
+                    Ep::Xnnpack => "xnnpack",
                     Ep::Cpu | Ep::Auto => unreachable!("always compiled"),
                 }
             );
@@ -142,14 +160,81 @@ pub fn choice() -> Ep {
 /// is no model selection for this to influence on that path.
 pub fn prefers_fp32() -> bool {
     match choice() {
-        Ep::Cpu => false,
+        // XNNPACK is CPU-class: the int8 QDQ graphs were calibrated for CPU
+        // kernels and stay valid on it.
+        Ep::Cpu | Ep::Xnnpack => false,
         Ep::Cuda | Ep::TensorRt | Ep::DirectMl | Ep::CoreMl => true,
         Ep::Auto => any_gpu_compiled(),
     }
 }
 
+/// The CoreML provider, configured from the environment (#324). `MLProgram`
+/// is the default model format: ONNX Runtime's own default, `NeuralNetwork`,
+/// cannot place operators the layout model carries (`GridSample`,
+/// `ScatterND`, dynamic output shapes) and aborts inference with error -1 on
+/// Apple silicon instead of falling back. `MLProgram` needs macOS 12+ —
+/// older systems can restore the old format explicitly.
+#[cfg(feature = "coreml")]
+fn coreml_ep() -> ort::ep::CoreML {
+    use ort::ep::coreml::{ComputeUnits, ModelFormat};
+    static WARNED: OnceLock<()> = OnceLock::new();
+    let format = match docling_core::env::nonempty("DOCLING_RS_COREML_FORMAT")
+        .map(|v| v.to_ascii_lowercase())
+        .as_deref()
+    {
+        None | Some("mlprogram") => ModelFormat::MLProgram,
+        Some("neuralnetwork") => ModelFormat::NeuralNetwork,
+        Some(other) => {
+            let other = other.to_string();
+            WARNED.get_or_init(|| {
+                eprintln!(
+                    "docling-rs: DOCLING_RS_COREML_FORMAT={other:?} is not                      mlprogram|neuralnetwork; using mlprogram"
+                );
+            });
+            ModelFormat::MLProgram
+        }
+    };
+    let mut ep = ort::ep::CoreML::default().with_model_format(format);
+    if let Some(raw) = docling_core::env::nonempty("DOCLING_RS_COREML_UNITS") {
+        match raw.to_ascii_lowercase().as_str() {
+            "all" => ep = ep.with_compute_units(ComputeUnits::All),
+            "cpu_and_gpu" | "cpu_gpu" | "gpu" => {
+                ep = ep.with_compute_units(ComputeUnits::CPUAndGPU)
+            }
+            "cpu_and_ne" | "cpu_ane" | "ane" => {
+                ep = ep.with_compute_units(ComputeUnits::CPUAndNeuralEngine)
+            }
+            "cpu_only" | "cpu" => ep = ep.with_compute_units(ComputeUnits::CPUOnly),
+            other => {
+                let other = other.to_string();
+                WARNED.get_or_init(|| {
+                    eprintln!(
+                        "docling-rs: DOCLING_RS_COREML_UNITS={other:?} is not                          all|cpu_and_gpu|cpu_and_ne|cpu_only; leaving the default"
+                    );
+                });
+            }
+        }
+    }
+    ep
+}
+
+/// The XNNPACK provider (#324). It runs its own thread pool;
+/// `DOCLING_RS_XNNPACK_THREADS` sizes it, unset keeps ONNX Runtime's default.
+#[cfg(feature = "xnnpack")]
+fn xnnpack_ep() -> ort::ep::XNNPACK {
+    let mut ep = ort::ep::XNNPACK::default();
+    if let Some(n) = docling_core::env::parse::<usize>("DOCLING_RS_XNNPACK_THREADS")
+        .and_then(core::num::NonZeroUsize::new)
+    {
+        ep = ep.with_intra_op_num_threads(n);
+    }
+    ep
+}
+
 /// The dispatch list for the current choice. `None` means "register nothing"
 /// (CPU — leave the builder untouched, the pre-#74 code path).
+// The cfg-gated pushes read as sequential to clippy in single-feature builds.
+#[allow(clippy::vec_init_then_push)]
 fn dispatches() -> Option<Vec<ExecutionProviderDispatch>> {
     // Since ort 2.0.0-rc.13 the `ort::ep::*` structs are themselves gated
     // behind their cargo features (rc.12 exposed them unconditionally), so
@@ -166,7 +251,9 @@ fn dispatches() -> Option<Vec<ExecutionProviderDispatch>> {
         #[cfg(feature = "directml")]
         Ep::DirectMl => vec![ort::ep::DirectML::default().build().error_on_failure()],
         #[cfg(feature = "coreml")]
-        Ep::CoreMl => vec![ort::ep::CoreML::default().build().error_on_failure()],
+        Ep::CoreMl => vec![coreml_ep().build().error_on_failure()],
+        #[cfg(feature = "xnnpack")]
+        Ep::Xnnpack => vec![xnnpack_ep().build().error_on_failure()],
         Ep::Auto => {
             #[allow(unused_mut)]
             let mut v: Vec<ExecutionProviderDispatch> = Vec::new();
@@ -175,9 +262,13 @@ fn dispatches() -> Option<Vec<ExecutionProviderDispatch>> {
             #[cfg(feature = "cuda")]
             v.push(ort::ep::CUDA::default().build());
             #[cfg(feature = "coreml")]
-            v.push(ort::ep::CoreML::default().build());
+            v.push(coreml_ep().build());
             #[cfg(feature = "directml")]
             v.push(ort::ep::DirectML::default().build());
+            // Last, above only the implicit CPU fallback: a CPU-class
+            // accelerator must not shadow a usable GPU.
+            #[cfg(feature = "xnnpack")]
+            v.push(xnnpack_ep().build());
             if v.is_empty() {
                 return None; // CPU-only build: auto ≡ cpu
             }
@@ -249,6 +340,7 @@ mod tests {
         assert_eq!(parse("directml"), Some(Ep::DirectMl));
         assert_eq!(parse("dml"), Some(Ep::DirectMl));
         assert_eq!(parse("CoreML"), Some(Ep::CoreMl));
+        assert_eq!(parse("xnnpack"), Some(Ep::Xnnpack));
         assert_eq!(parse("auto"), Some(Ep::Auto));
     }
 
@@ -274,14 +366,16 @@ mod tests {
             feature = "cuda",
             feature = "tensorrt",
             feature = "directml",
-            feature = "coreml"
+            feature = "coreml",
+            feature = "xnnpack"
         ))]
         assert_eq!(default_choice(), Ep::Auto);
         #[cfg(not(any(
             feature = "cuda",
             feature = "tensorrt",
             feature = "directml",
-            feature = "coreml"
+            feature = "coreml",
+            feature = "xnnpack"
         )))]
         assert_eq!(default_choice(), Ep::Cpu);
     }

@@ -1054,6 +1054,8 @@ cargo build --release -p docling-cli --features cuda      # NVIDIA CUDA (Linux/W
 #                                     --features tensorrt # NVIDIA TensorRT (usually with cuda)
 #                                     --features directml # DirectML (Windows)
 #                                     --features coreml   # CoreML (macOS)
+#                                     --features xnnpack  # XNNPACK (CPU-class ARM NEON / x86 SIMD;
+#                                                         # needs a self-built ONNX Runtime, see below)
 ```
 
 Each provider only exists on its OS (ort ships no CoreML build for Linux, no
@@ -1073,7 +1075,21 @@ DOCLING_RS_EP=cpu  docling-rs input.pdf   # force CPU (the default-build behavio
 An explicitly named provider that can't initialize (no device, missing
 driver/toolkit libs) fails the conversion rather than silently running 10×
 slower on CPU; `auto` is the quiet-fallback mode for images deployed on mixed
-fleets. When a GPU provider is selected, the pipeline automatically prefers
+fleets.
+
+CoreML registers with the **`MLProgram`** model format by default (#324):
+ONNX Runtime's own default, `NeuralNetwork`, cannot place operators the
+layout model carries (`GridSample`, `ScatterND`, dynamic output shapes) and
+aborts inference on Apple silicon instead of falling back.
+`DOCLING_RS_COREML_FORMAT=neuralnetwork` restores the old format on
+pre-macOS-12 systems, and `DOCLING_RS_COREML_UNITS`
+(`all`|`cpu_and_gpu`|`cpu_and_ne`|`cpu_only`) narrows which compute units
+CoreML may use. The `xnnpack` feature adds the XNNPACK provider
+(`DOCLING_RS_EP=xnnpack`, thread pool sized by `DOCLING_RS_XNNPACK_THREADS`)
+— a CPU-class accelerator for machines without a usable GPU provider; note
+that pyke ships no prebuilt ONNX Runtime with the XNNPACK EP, so this
+feature requires linking a self-built ONNX Runtime (`ORT_LIB_LOCATION`,
+built with `--use_xnnpack`). When a GPU provider is selected, the pipeline automatically prefers
 the fp32 models over the int8 defaults — the int8 exports are calibrated for
 CPU kernels (an explicit `DOCLING_*_ONNX` path still wins). CUDA needs the
 CUDA 12 runtime + cuDNN 9 on the machine; the `ort` crate downloads the
