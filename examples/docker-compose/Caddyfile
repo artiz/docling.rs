@@ -19,8 +19,8 @@
         header_up X-Forwarded-For {remote_host}
         header_up X-Forwarded-Proto {scheme}
 
-        # Health check to backend
-        health_uri /health
+        # Health check to backend (probes readiness once models are warm)
+        health_uri /ready
         health_interval 15s
         health_timeout 5s
     }

@@ -38,7 +38,7 @@ COPY --from=build /src/.models ./.models
 COPY --from=build /src/.pdfium ./.pdfium
 ENV PDFIUM_DYNAMIC_LIB_PATH=/app/.pdfium/lib
 EXPOSE 5001
-HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
-    CMD curl -f http://localhost:5001/health || exit 1
+HEALTHCHECK --interval=15s --timeout=5s --start-period=45s --retries=3 \
+    CMD curl -f http://localhost:5001/ready || exit 1
 # Liveness: GET /health; readiness: GET /ready (503 until --warmup finishes).
 CMD ["docling-serve", "--addr", "0.0.0.0:5001", "--warmup"]
