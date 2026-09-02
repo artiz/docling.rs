@@ -1327,22 +1327,27 @@ fetches missing model files. Uninstall:
 
 ## Deploy in a container
 
-Prebuilt container images for the HTTP conversion API are published to **GitHub
-Container Registry (GHCR)** for both `linux/amd64` and `linux/arm64`:
+### Container Images
+
+The following container images are available on **GitHub Container Registry (GHCR)** for running **`docling-serve`** with all native dependencies, pdfium, ffmpeg, and ONNX models baked in (zero Python runtime dependencies):
+
+#### 📦 Distributed Images
+
+| Image | Description | Architectures |
+|---|---|---|
+| [`ghcr.io/docling-project/docling-serve-rs`](https://github.com/docling-project/docling.rs/pkgs/container/docling-serve-rs) | High-performance document conversion HTTP API with PDF, DOCX, PPTX, XLSX, HTML, images, and audio/video models pre-installed. | `linux/amd64`, `linux/arm64` |
+| [`ghcr.io/docling-project/docling-rs`](https://github.com/docling-project/docling.rs/pkgs/container/docling-rs) | Repository-name alias pointing to the same multi-arch container image. | `linux/amd64`, `linux/arm64` |
+
+> [!NOTE]
+> **Image Naming**: The `-rs` suffix (`docling-serve-rs` / `docling-rs`) differentiates this native Rust implementation from Python `docling-serve`.
 
 ```bash
 # Run docling-serve HTTP API (models baked in, zero Python runtime dependencies):
 docker run -p 127.0.0.1:5001:5001 ghcr.io/docling-project/docling-serve-rs:latest
 
-# The image is also available under the alias:
-# docker run -p 127.0.0.1:5001:5001 ghcr.io/docling-project/docling-rs:latest
-
 # Convert a document:
 curl -F file=@paper.pdf localhost:5001/v1/convert
 ```
-
-> **Image Naming**: The `-rs` suffix (`docling-serve-rs` / `docling-rs`) differentiates this native Rust implementation from Python `docling-serve`.
-
 ### Docker Compose
 
 Launch with [`examples/docker-compose/`](./examples/docker-compose/):

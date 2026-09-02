@@ -20,8 +20,7 @@ This directory provides ready-to-use Docker Compose configurations for running t
 
    ```bash
    curl http://localhost:5001/ready
-   # => OK
-   ```
+   # => {"status":"ready"}
 
 4. Convert a document:
 

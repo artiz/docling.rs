@@ -6,7 +6,17 @@ This guide covers running the [`docling-serve`](../crates/docling-serve) HTTP co
 
 ## Container Registry & Prebuilt Images
 
-Prebuilt multi-arch images are published automatically to the **GitHub Container Registry (GHCR)** on every release and master commit:
+The following container images are published on **GitHub Container Registry (GHCR)** on every release and master commit:
+
+#### 📦 Distributed Images
+
+| Image | Description | Architectures |
+|---|---|---|
+| [`ghcr.io/docling-project/docling-serve-rs`](https://github.com/docling-project/docling.rs/pkgs/container/docling-serve-rs) | High-performance document conversion HTTP API with PDF, DOCX, PPTX, XLSX, HTML, images, and audio/video models pre-installed (zero Python runtime dependencies). | `linux/amd64`, `linux/arm64` |
+| [`ghcr.io/docling-project/docling-rs`](https://github.com/docling-project/docling.rs/pkgs/container/docling-rs) | Repository-name alias pointing to the same multi-arch container image. | `linux/amd64`, `linux/arm64` |
+
+> [!NOTE]
+> **Image Naming**: The `-rs` suffix (`docling-serve-rs` / `docling-rs`) differentiates this high-performance native Rust implementation from the Python `docling-project/docling-serve` image repository on GHCR.
 
 ```bash
 # Pull the docling-serve HTTP API image (Rust engine):
@@ -15,8 +25,6 @@ docker pull ghcr.io/docling-project/docling-serve-rs:latest
 # The image is also available under the alias:
 docker pull ghcr.io/docling-project/docling-rs:latest
 ```
-
-> **Note on Image Naming**: The `-rs` suffix (`docling-serve-rs` / `docling-rs`) differentiates this high-performance native Rust implementation from the Python `docling-project/docling-serve` image repository on GHCR.
 
 ### Supported Architectures & Tags
 

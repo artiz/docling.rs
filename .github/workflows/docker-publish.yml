@@ -143,21 +143,16 @@ jobs:
           echo "Starting docling-serve container on ${{ matrix.platform }}..."
           docker run -d --name docling-serve-test -p 5001:5001 docling-serve:test
 
-          echo "Waiting for service to report healthy (/health & /ready)..."
+          echo "Waiting for service readiness (/ready)..."
           READY=false
-          for i in $(seq 1 30); do
-            HEALTH_RESP=$(curl -s http://localhost:5001/health || true)
-            READY_RESP=$(curl -s http://localhost:5001/ready || true)
-            if echo "$HEALTH_RESP" | grep -q '"status":"ok"'; then
-              echo "Liveness probe OK: $HEALTH_RESP"
-              if [ "$READY_RESP" = "OK" ] || echo "$READY_RESP" | grep -q 'OK'; then
-                echo "Readiness probe OK (models warm): $READY_RESP"
-                READY=true
-                break
-              fi
+          for i in $(seq 1 60); do
+            if curl -sf http://localhost:5001/ready | grep -q '"status":"ready"'; then
+              echo "Readiness probe OK (models warm)"
+              READY=true
+              break
             fi
-            echo "Waiting for container readiness ($i/30)..."
-            sleep 2
+            echo "Waiting for container readiness ($i/60)..."
+            sleep 5
           done
 
           if [ "$READY" != "true" ]; then
@@ -260,11 +255,15 @@ jobs:
         env:
           ALL_TAGS: ${{ steps.meta.outputs.tags }}
         run: |
+          first_tag=""
           tags=()
           while IFS= read -r tag; do
             [ -z "$tag" ] && continue
             if [[ "$tag" == *"${PRIMARY_IMAGE}"* ]]; then
               tags+=("-t" "$tag")
+              if [ -z "$first_tag" ]; then
+                first_tag="$tag"
+              fi
             fi
           done <<< "$ALL_TAGS"
 
@@ -275,7 +274,7 @@ jobs:
           done
 
           docker buildx imagetools create "${tags[@]}" "${sources[@]}"
-          digest=$(docker buildx imagetools inspect "${tags[1]}" --raw | sha256sum | awk '{print $1}')
+          digest=$(docker buildx imagetools inspect "$first_tag" --raw | sha256sum | awk '{print $1}')
           echo "digest=sha256:$digest" >> "$GITHUB_OUTPUT"
 
       - name: Create manifest list and push for alias image
@@ -283,11 +282,15 @@ jobs:
         env:
           ALL_TAGS: ${{ steps.meta.outputs.tags }}
         run: |
+          first_tag=""
           tags=()
           while IFS= read -r tag; do
             [ -z "$tag" ] && continue
             if [[ "$tag" == *"${ALIAS_IMAGE}"* ]]; then
               tags+=("-t" "$tag")
+              if [ -z "$first_tag" ]; then
+                first_tag="$tag"
+              fi
             fi
           done <<< "$ALL_TAGS"
 
@@ -298,7 +301,7 @@ jobs:
           done
 
           docker buildx imagetools create "${tags[@]}" "${sources[@]}"
-          digest=$(docker buildx imagetools inspect "${tags[1]}" --raw | sha256sum | awk '{print $1}')
+          digest=$(docker buildx imagetools inspect "$first_tag" --raw | sha256sum | awk '{print $1}')
           echo "digest=sha256:$digest" >> "$GITHUB_OUTPUT"
       - name: Generate artifact attestation for docling-serve-rs
         uses: actions/attest-build-provenance@v2
