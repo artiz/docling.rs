@@ -39,6 +39,12 @@ def main() -> int:
     ap.add_argument("--endpoint", required=True, help="…/v1 base or full …/chat/completions URL")
     ap.add_argument("--model", required=True)
     ap.add_argument("--max-tokens", type=int, default=8192)
+    ap.add_argument(
+        "--timeout",
+        type=int,
+        default=600,
+        help="per-page endpoint timeout, seconds (CPU-served endpoints need far more)",
+    )
     ap.add_argument("input")
     ap.add_argument("output", nargs="?")
     args = ap.parse_args()
@@ -51,7 +57,7 @@ def main() -> int:
         url=url,
         params={"model": args.model, "max_tokens": args.max_tokens, "temperature": 0},
         prompt="Convert this page to docling.",
-        timeout=600,
+        timeout=args.timeout,
         response_format=ResponseFormat.DOCTAGS,
     )
     pipeline_options = VlmPipelineOptions(vlm_options=vlm_options, enable_remote_services=True)
@@ -64,7 +70,11 @@ def main() -> int:
     )
     md = converter.convert(Path(args.input)).document.export_to_markdown()
     if args.output:
-        Path(args.output).write_text(md + ("\n" if not md.endswith("\n") else ""))
+        # A missing parent must not discard minutes of endpoint time (found
+        # the hard way: a whole page's generation lost to FileNotFoundError).
+        out = Path(args.output)
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_text(md + ("\n" if not md.endswith("\n") else ""))
     else:
         sys.stdout.write(md)
     return 0

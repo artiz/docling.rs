@@ -704,7 +704,9 @@ request with a clear error; the server itself is unaffected.
 `…/chat/completions` URL. `--vlm-api-key TOKEN` (Bearer), `--vlm-prompt TEXT`
 and `--vlm-max-tokens N` (default 8192) tune the rest (#312);
 `DOCLING_RS_VLM_ENDPOINT` / `DOCLING_RS_VLM_MODEL` / `DOCLING_RS_VLM_API_KEY` /
-`DOCLING_RS_VLM_PROMPT` are the env fallbacks for the corresponding flags. Selecting the pipeline is always
+`DOCLING_RS_VLM_PROMPT` are the env fallbacks for the corresponding flags, and
+`DOCLING_RS_VLM_TIMEOUT` (seconds, default 600) raises the per-page request
+cap for slow — e.g. CPU-served — endpoints. Selecting the pipeline is always
 explicit: the environment supplies values, it never switches the pipeline on,
 so a stale `DOCLING_RS_VLM_ENDPOINT` can't reroute an ordinary PDF conversion
 over the network. The `--vlm-*` flags are inert on their own for the same
@@ -714,9 +716,15 @@ identically. `--pages A-B` composes (only the window's pages are rendered
 and sent), and `--to md|json|dclx|chunks` plus `--strict` work as usual. Transient
 endpoint failures (timeouts, 408/429, 5xx) retry with exponential backoff;
 a page that still fails fails the conversion — no silently dropped pages.
-Output quality is entirely the model's: conversion of the PDF corpus against
-docling's own VLM pipeline output hasn't been measured yet (it needs a live
-endpoint), so treat this as infrastructure, not a conformance claim.
+Output quality is entirely the model's; what docling.rs adds is measured
+(#311): converting the PDF corpus through the same granite-docling endpoint
+from both docling.rs and Python docling's `VlmPipeline` scores **87.7% mean
+whitespace-normalized similarity over 18 fixtures, 3 byte-exact** — the gap
+is dominated by each side rendering pages at its own scale (144 vs 216 dpi),
+which greedy VLM decoding amplifies. Table and methodology:
+[docs/PDF_CONFORMANCE.md](./docs/PDF_CONFORMANCE.md); harness:
+`scripts/conformance/vlm_conformance.sh` (needs a GPU-served endpoint — CPU
+inference measures hours per page).
 
 ### Headless-browser HTML pre-render (optional)
 

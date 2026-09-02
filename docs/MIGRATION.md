@@ -511,7 +511,10 @@ deliberate scope boundary or a cosmetic, single-fixture polish gap.
   on the Python bindings as the same-named constructor kwargs, and on serve
   as `pipeline=vlm` + `vlm_*` request options (#304; a request-supplied
   `vlm_endpoint` sits behind `--allow-url-fetch` + the SSRF check, or pin it
-  server-side via `DOCLING_RS_VLM_*`). (**Audio/ASR is now done** — see §2; Opus and AVI,
+  server-side via `DOCLING_RS_VLM_*`). Measured against Python docling's
+  `VlmPipeline` on the same granite-docling endpoint: **87.7% mean
+  similarity over the 18-fixture PDF corpus, 3 byte-exact** (#311; drift is
+  mostly render-scale-induced — see PDF_CONFORMANCE.md). (**Audio/ASR is now done** — see §2; Opus and AVI,
   which symphonia cannot decode, use the optional ffmpeg fallback. The **enrichment
   models are now done** too: DocumentFigureClassifier-v2.5 for
   `do_picture_classification` and CodeFormulaV2 — an Idefics3-class VLM,
