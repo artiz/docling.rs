@@ -257,38 +257,49 @@ jobs:
 
       - name: Create manifest list and push for primary image
         id: merge-primary
+        env:
+          ALL_TAGS: ${{ steps.meta.outputs.tags }}
         run: |
           tags=()
-          for tag in ${{ steps.meta.outputs.tags }}; do
-            if [[ "$tag" == *"${{ env.PRIMARY_IMAGE }}"* ]]; then
+          while IFS= read -r tag; do
+            [ -z "$tag" ] && continue
+            if [[ "$tag" == *"${PRIMARY_IMAGE}"* ]]; then
               tags+=("-t" "$tag")
             fi
-          done
+          done <<< "$ALL_TAGS"
+
           sources=()
           for digest in /tmp/digests/*; do
-            sources+=("${{ env.REGISTRY }}/${{ env.PRIMARY_IMAGE }}@sha256:$(basename "$digest")")
+            [ -f "$digest" ] || continue
+            sources+=("${REGISTRY}/${PRIMARY_IMAGE}@sha256:$(basename "$digest")")
           done
+
           docker buildx imagetools create "${tags[@]}" "${sources[@]}"
           digest=$(docker buildx imagetools inspect "${tags[1]}" --raw | sha256sum | awk '{print $1}')
           echo "digest=sha256:$digest" >> "$GITHUB_OUTPUT"
 
       - name: Create manifest list and push for alias image
         id: merge-alias
+        env:
+          ALL_TAGS: ${{ steps.meta.outputs.tags }}
         run: |
           tags=()
-          for tag in ${{ steps.meta.outputs.tags }}; do
-            if [[ "$tag" == *"${{ env.ALIAS_IMAGE }}"* ]]; then
+          while IFS= read -r tag; do
+            [ -z "$tag" ] && continue
+            if [[ "$tag" == *"${ALIAS_IMAGE}"* ]]; then
               tags+=("-t" "$tag")
             fi
-          done
+          done <<< "$ALL_TAGS"
+
           sources=()
           for digest in /tmp/digests/*; do
-            sources+=("${{ env.REGISTRY }}/${{ env.ALIAS_IMAGE }}@sha256:$(basename "$digest")")
+            [ -f "$digest" ] || continue
+            sources+=("${REGISTRY}/${ALIAS_IMAGE}@sha256:$(basename "$digest")")
           done
+
           docker buildx imagetools create "${tags[@]}" "${sources[@]}"
           digest=$(docker buildx imagetools inspect "${tags[1]}" --raw | sha256sum | awk '{print $1}')
           echo "digest=sha256:$digest" >> "$GITHUB_OUTPUT"
-
       - name: Generate artifact attestation for docling-serve-rs
         uses: actions/attest-build-provenance@v2
         with:
