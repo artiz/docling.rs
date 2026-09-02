@@ -259,7 +259,7 @@ jobs:
           tags=()
           while IFS= read -r tag; do
             [ -z "$tag" ] && continue
-            if [[ "$tag" == *"${PRIMARY_IMAGE}"* ]]; then
+            if [[ "$tag" == "${REGISTRY}/${PRIMARY_IMAGE}:"* ]]; then
               tags+=("-t" "$tag")
               if [ -z "$first_tag" ]; then
                 first_tag="$tag"
@@ -286,7 +286,7 @@ jobs:
           tags=()
           while IFS= read -r tag; do
             [ -z "$tag" ] && continue
-            if [[ "$tag" == *"${ALIAS_IMAGE}"* ]]; then
+            if [[ "$tag" == "${REGISTRY}/${ALIAS_IMAGE}:"* ]]; then
               tags+=("-t" "$tag")
               if [ -z "$first_tag" ]; then
                 first_tag="$tag"
