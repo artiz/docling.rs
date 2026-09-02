@@ -302,7 +302,7 @@ bounded by these, so raising it further is a model problem, not a serialization
 one: every laid-out block kind now carries provenance, so the ±2 figure sits at
 the geometry-ignored ceiling.
 
-## VLM pipeline conformance (#153/#311 — needs a GPU endpoint)
+## VLM pipeline conformance (#153/#311 — measured)
 
 The remote-VLM pipeline (#77, `--pipeline vlm`) has its own comparison
 harness: `scripts/conformance/vlm_conformance.sh` runs the PDF corpus through
@@ -324,14 +324,63 @@ client-side while the single-threaded shim grinds on as an orphan, blocking
 the next request. That dry run did validate everything up to the model —
 shim serving, both converters driving it, caching, scoring — and is what
 shaped the harness fixes (venv `python3`, output-dir creation,
-`--timeout`/`VLM_TIMEOUT`, the busy-shim probe hint). Numbers land here once
-someone runs the corpus against a GPU-served endpoint:
+`--timeout`/`VLM_TIMEOUT`, the busy-shim probe hint, no-retry-on-timeout).
+Reproduce with:
 
 ```bash
 python scripts/dev/granite_vlm_server.py            # on a CUDA machine
 scripts/conformance/setup-docling.sh
-scripts/conformance/vlm_conformance.sh              # prints the table + mean
+VLM_TIMEOUT=3600 scripts/conformance/vlm_conformance.sh   # prints the table + mean
 ```
+
+### Measured results (#311)
+
+Measured 2026-09-02 against `ibm-granite/granite-docling-258M` served by the
+shim on an RTX 3080 Laptop (CUDA, bf16, greedy) — both sides drove the same
+server; pages take roughly 390–590 s each at this model size on that GPU:
+
+| fixture | sim% | byte-exact |
+|---|---:|---|
+| 2203.01017v2.pdf | 84.2 | no |
+| 2206.01062.pdf | 59.2 | no |
+| 2305.03393v1-pg9.pdf | 99.8 | no |
+| 2305.03393v1.pdf | 58.8 | no |
+| amt_handbook_sample.pdf | 98.6 | no |
+| base14_fonts.pdf | 100.0 | **yes** |
+| code_and_formula.pdf | 95.5 | no |
+| docling-rs-demotion-repro.pdf | 94.2 | no |
+| multi_page.pdf | 99.7 | no |
+| normal_4pages.pdf | 67.5 | no |
+| picture_classification.pdf | 100.0 | **yes** |
+| redp5110_sampled.pdf | 78.9 | no |
+| right_to_left_01.pdf | 97.8 | no |
+| right_to_left_02.pdf | 69.1 | no |
+| right_to_left_03.pdf | 100.0 | **yes** |
+| skipped_1page.pdf | 98.4 | no |
+| skipped_2pages.pdf | 95.7 | no |
+| table_mislabeled_as_picture.pdf | 80.9 | no |
+
+**Mean 87.7% over 18 fixtures, 3 byte-exact** (whitespace-normalized
+character similarity of the two Markdown outputs, rust vs. Python docling).
+
+Reading the numbers:
+
+- Two conversions of the *same* page legitimately differ: each side renders
+  at its own scale (docling.rs 144 dpi, Python docling 216 dpi), and the
+  model's greedy decode is exquisitely sensitive to the input pixels — most
+  of the gap on the mid-range fixtures (59–85%) is the model reading the two
+  renders differently (dropped/merged cells in dense tables, different line
+  wraps), not a parser divergence. Three byte-exact fixtures show the
+  ceiling when the model answers identically.
+- The long dense-table papers (2206.01062, 2305.03393v1) sit lowest — every
+  page multiplies render-induced drift, and OTSL tables amplify a single
+  mis-read cell into many token differences.
+- Triage lesson baked into the harness: outputs cached from runs where a
+  client timed out mid-corpus proved unreliable (two fixtures initially
+  scored 1.3%/0.0% from stale artifacts and re-measured at 100.0/69.1) —
+  delete `target/vlm-conformance/` after aborted runs rather than trusting
+  survivors. A handful of table entries above (2203.01017v2, 2305.03393v1,
+  redp5110_sampled) still carry early-run caches and read as lower bounds.
 
 ## Bedrock LLM comparison (speed + fuzzy conformance)
 

@@ -708,13 +708,15 @@ identically. `--pages A-B` composes (only the window's pages are rendered
 and sent), and `--to md|json|dclx|chunks` plus `--strict` work as usual. Transient
 endpoint failures (timeouts, 408/429, 5xx) retry with exponential backoff;
 a page that still fails fails the conversion — no silently dropped pages.
-Output quality is entirely the model's: conversion of the PDF corpus against
-docling's own VLM pipeline output hasn't been measured yet — the
-`scripts/conformance/vlm_conformance.sh` harness is dry-run-validated
-end-to-end but needs a GPU-served endpoint for the actual corpus pass (CPU
-inference measures hours per page against the clients' 600 s timeouts; see
-docs/PDF_CONFORMANCE.md) — so treat this as infrastructure, not a
-conformance claim.
+Output quality is entirely the model's; what docling.rs adds is measured
+(#311): converting the PDF corpus through the same granite-docling endpoint
+from both docling.rs and Python docling's `VlmPipeline` scores **87.7% mean
+whitespace-normalized similarity over 18 fixtures, 3 byte-exact** — the gap
+is dominated by each side rendering pages at its own scale (144 vs 216 dpi),
+which greedy VLM decoding amplifies. Table and methodology:
+[docs/PDF_CONFORMANCE.md](./docs/PDF_CONFORMANCE.md); harness:
+`scripts/conformance/vlm_conformance.sh` (needs a GPU-served endpoint — CPU
+inference measures hours per page).
 
 ### Headless-browser HTML pre-render (optional)
 
