@@ -4,7 +4,8 @@ services:
     container_name: docling-serve
     restart: unless-stopped
     ports:
-      - "${PORT:-5001}:5001"
+      # Bind to loopback interface only — front with a reverse proxy before exposing externally
+      - "127.0.0.1:${PORT:-5001}:5001"
     environment:
       # Disable ONNX Runtime CPU arena to avoid RSS heap ratcheting (#263)
       - DOCLING_RS_NO_ARENA=1

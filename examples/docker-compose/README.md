@@ -16,11 +16,11 @@ This directory provides ready-to-use Docker Compose configurations for running t
    docker compose up -d
    ```
 
-3. Verify the service is healthy:
+3. Verify the service is ready (models warm):
 
    ```bash
-   curl http://localhost:5001/health
-   # => {"status":"ok"}
+   curl http://localhost:5001/ready
+   # => OK
    ```
 
 4. Convert a document:
