@@ -1084,7 +1084,8 @@ aborts inference on Apple silicon instead of falling back.
 `DOCLING_RS_COREML_FORMAT=neuralnetwork` restores the old format on
 pre-macOS-12 systems, and `DOCLING_RS_COREML_UNITS`
 (`all`|`cpu_and_gpu`|`cpu_and_ne`|`cpu_only`) narrows which compute units
-CoreML may use. The `xnnpack` feature adds the XNNPACK provider
+CoreML may use, and `DOCLING_RS_COREML_STATIC_SHAPES=1` limits CoreML to
+static-shaped partitions for models that still misbehave. The `xnnpack` feature adds the XNNPACK provider
 (`DOCLING_RS_EP=xnnpack`, thread pool sized by `DOCLING_RS_XNNPACK_THREADS`)
 — a CPU-class accelerator for machines without a usable GPU provider; note
 that pyke ships no prebuilt ONNX Runtime with the XNNPACK EP, so this

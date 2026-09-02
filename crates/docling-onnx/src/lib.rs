@@ -195,6 +195,13 @@ fn coreml_ep() -> ort::ep::CoreML {
         }
     };
     let mut ep = ort::ep::CoreML::default().with_model_format(format);
+    // Only static-shaped partitions go to CoreML when set — the layout
+    // model's dynamic outputs are what trips the NeuralNetwork path, and
+    // this is the reporter-requested escape hatch for models that still
+    // misbehave under MLProgram.
+    if docling_core::env::flag("DOCLING_RS_COREML_STATIC_SHAPES") {
+        ep = ep.with_static_input_shapes(true);
+    }
     if let Some(raw) = docling_core::env::nonempty("DOCLING_RS_COREML_UNITS") {
         match raw.to_ascii_lowercase().as_str() {
             "all" => ep = ep.with_compute_units(ComputeUnits::All),
