@@ -1332,18 +1332,38 @@ Container Registry (GHCR)** for both `linux/amd64` and `linux/arm64`:
 
 ```bash
 # Run docling-serve HTTP API (models baked in, zero Python runtime dependencies):
-docker run -p 5001:5001 ghcr.io/docling-project/docling-serve-rs:latest
+docker run -p 127.0.0.1:5001:5001 ghcr.io/docling-project/docling-serve-rs:latest
+
+# The image is also available under the alias:
+# docker run -p 127.0.0.1:5001:5001 ghcr.io/docling-project/docling-rs:latest
 
 # Convert a document:
 curl -F file=@paper.pdf localhost:5001/v1/convert
 ```
 
-Or run with Docker Compose from [`examples/docker-compose/`](./examples/docker-compose/):
+> **Image Naming**: The `-rs` suffix (`docling-serve-rs` / `docling-rs`) differentiates this native Rust implementation from Python `docling-serve`.
+
+### Docker Compose
+
+Launch with [`examples/docker-compose/`](./examples/docker-compose/):
 
 ```bash
 cd examples/docker-compose
-docker compose up -d
+docker compose up -d                        # standalone service (127.0.0.1:5001)
+# or: docker compose -f docker-compose.caddy.yml up -d   # with Caddy TLS reverse proxy
 ```
+
+### Core Container Configuration
+
+| Variable / Option | Default | Description |
+|---|---|---|
+| `DOCLING_RS_NO_ARENA` | `1` | Disables ONNX Runtime CPU arena to prevent RSS heap ratcheting (#263) |
+| `DOCLING_RS_MAX_MEMORY_MB` | `0` (or cgroup) | Memory ceiling (MiB); returns 503 + Retry-After when near watermark |
+| `DOCLING_RS_MEMORY_WATERMARK_PCT` | `85` | Watermark % above which new requests get HTTP 503 |
+| `DOCLING_RS_TF_INTRA` | auto (#262) | Narrows ONNX intra-op thread count for TableFormer decoder sessions |
+| `--concurrency N` | `2` | Max simultaneous conversions in flight; excess requests queue |
+| `--warmup` | enabled in image | Pre-load models at startup; `/ready` returns 503 until warm |
+| `/health` vs `/ready` | — | `/health` = liveness (200 immediately); `/ready` = readiness (200 once warm) |
 
 For a self-contained CLI image with models exported from PyTorch, [`examples/Dockerfile`](./examples/Dockerfile)
 is a 3-stage build that bakes the binary, native libs, and models into a slim runtime stage:
@@ -1360,7 +1380,7 @@ likewise picks the pdfium for the machine it runs on (pinned x64 from the
 models release; the bblanchon `arm64` prebuilt elsewhere).
 
 See [`docs/DEPLOYMENT.md`](./docs/DEPLOYMENT.md) for full deployment documentation,
-resource limits, reverse proxy configs, and production tuning.
+Prometheus metrics, OpenTelemetry tracing, and production tuning.
 
 ## Performance
 
