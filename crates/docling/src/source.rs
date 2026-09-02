@@ -79,9 +79,15 @@ impl SourceDocument {
         self.path.as_deref().and_then(Path::parent)
     }
 
-    /// View the bytes as UTF-8 text, for text-based backends.
+    /// View the bytes as UTF-8 text, for text-based backends. A leading UTF-8
+    /// BOM is dropped (docling#4098/#4109, 2.123.1–2.124): Excel and Google
+    /// Sheets write one when exporting "CSV UTF-8", and kept it prefixes the
+    /// first cell/line — `# Title`/`= Title` stops being a heading, WebVTT's
+    /// signature check misses `WEBVTT`, JSON parsing rejects the document
+    /// outright. One strip here covers every text backend.
     pub fn text(&self) -> Result<&str, ConversionError> {
-        std::str::from_utf8(&self.bytes)
-            .map_err(|e| ConversionError::with_source("input is not valid UTF-8", e))
+        let text = std::str::from_utf8(&self.bytes)
+            .map_err(|e| ConversionError::with_source("input is not valid UTF-8", e))?;
+        Ok(text.strip_prefix('\u{feff}').unwrap_or(text))
     }
 }

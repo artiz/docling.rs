@@ -28,9 +28,128 @@ pub struct MarkdownBackend {
     pub strict: bool,
 }
 
+/// Is this trimmed line a GFM table delimiter row (`--- | :---:` …)? Every
+/// `|`-separated cell must be `-`s with optional edge colons, and at least one
+/// pipe must be present (a bare `---` is a thematic break / setext underline).
+fn is_delimiter_row(line: &str) -> bool {
+    let line = line.trim();
+    if !line.contains('|') {
+        return false;
+    }
+    line.trim_start_matches('|')
+        .trim_end_matches('|')
+        .split('|')
+        .all(|cell| {
+            let dashes = cell.trim().trim_start_matches(':').trim_end_matches(':');
+            !dashes.is_empty() && dashes.bytes().all(|b| b == b'-')
+        })
+}
+
+/// GFM leaves a table row's edge pipes optional, but pulldown-cmark only
+/// enters table mode on a leading one — a table written `Region | Q1` over a
+/// `--- | ---` delimiter row came out as plain text (docling 2.122 reads it,
+/// docling#3817). Detect that shape — a pipe-carrying line whose next line is
+/// a delimiter row with the same cell count — and normalize the whole block's
+/// edge pipes so pulldown parses it like the canonical spelling. Fenced code
+/// is left untouched, and input with no such table borrows unchanged.
+fn normalize_table_edge_pipes(text: &str) -> std::borrow::Cow<'_, str> {
+    let cell_count = |line: &str| {
+        line.trim()
+            .trim_start_matches('|')
+            .trim_end_matches('|')
+            .split('|')
+            .count()
+    };
+    let is_fence = |line: &str| {
+        let t = line.trim_start();
+        t.starts_with("```") || t.starts_with("~~~")
+    };
+
+    let lines: Vec<&str> = text.split('\n').collect();
+    let mut needs_fix = false;
+    {
+        let mut in_fence = false;
+        for w in lines.windows(2) {
+            let head = w[0].trim_end_matches('\r');
+            if is_fence(head) {
+                in_fence = !in_fence;
+                continue;
+            }
+            let delim = w[1].trim_end_matches('\r');
+            if !in_fence
+                && head.contains('|')
+                && !head.trim_start().starts_with('|')
+                && is_delimiter_row(delim)
+                && cell_count(head) == cell_count(delim)
+            {
+                needs_fix = true;
+                break;
+            }
+        }
+    }
+    if !needs_fix {
+        return std::borrow::Cow::Borrowed(text);
+    }
+
+    let mut out: Vec<String> = Vec::with_capacity(lines.len());
+    let mut in_fence = false;
+    let mut i = 0;
+    while i < lines.len() {
+        let head = lines[i].trim_end_matches('\r');
+        if is_fence(head) {
+            in_fence = !in_fence;
+            out.push(lines[i].to_string());
+            i += 1;
+            continue;
+        }
+        let is_table_start = !in_fence
+            && head.contains('|')
+            && !head.trim_start().starts_with('|')
+            && lines
+                .get(i + 1)
+                .is_some_and(|d| is_delimiter_row(d.trim_end_matches('\r')))
+            && cell_count(head) == cell_count(lines[i + 1].trim_end_matches('\r'));
+        if !is_table_start {
+            out.push(lines[i].to_string());
+            i += 1;
+            continue;
+        }
+        // The block runs while lines keep carrying pipes; each gets both edge
+        // pipes (rows already carrying one keep it).
+        while i < lines.len() {
+            let (body, cr) = match lines[i].strip_suffix('\r') {
+                Some(b) => (b, "\r"),
+                None => (lines[i], ""),
+            };
+            if !body.contains('|') || body.trim().is_empty() {
+                break;
+            }
+            let t = body.trim();
+            let mut fixed = String::with_capacity(t.len() + 4);
+            if !t.starts_with('|') {
+                fixed.push_str("| ");
+            }
+            fixed.push_str(t);
+            if !t.ends_with('|') {
+                fixed.push_str(" |");
+            }
+            fixed.push_str(cr);
+            out.push(fixed);
+            i += 1;
+        }
+    }
+    std::borrow::Cow::Owned(out.join("\n"))
+}
+
 impl DeclarativeBackend for MarkdownBackend {
     fn convert(&self, source: &SourceDocument) -> Result<DoclingDocument, ConversionError> {
-        let text = source.text()?;
+        // GFM makes a table row's edge pipes optional, but pulldown-cmark only
+        // recognizes a table whose header starts with one. docling 2.122
+        // (docling#3817) reads the pipe-less spelling; normalizing the edges
+        // up front lets pulldown parse the same tables. `text` stays borrowed
+        // (no allocation) when nothing needs normalizing — the common case.
+        let normalized = normalize_table_edge_pipes(source.text()?);
+        let text = normalized.as_ref();
         let mut opts = Options::empty();
         opts.insert(Options::ENABLE_TABLES);
         opts.insert(Options::ENABLE_STRIKETHROUGH);

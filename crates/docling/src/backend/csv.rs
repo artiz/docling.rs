@@ -52,20 +52,34 @@ impl DeclarativeBackend for CsvBackend {
 }
 
 /// Sniff the delimiter from the first line: the candidate (`, ; \t | :`) that
-/// occurs most often wins; comma is the default when none appear.
+/// occurs most often wins. When the first line carries none — a quoted field
+/// spanning several lines cuts it mid-quote (docling#3985, 2.123) — retry
+/// over the first 4 KiB, which closes the quote; comma remains the default
+/// when nothing matches at all. The first line stays authoritative otherwise:
+/// widening the sample unconditionally would change the delimiter picked for
+/// ragged files.
 fn detect_delimiter(text: &str) -> u8 {
     const CANDIDATES: [u8; 5] = [b',', b';', b'\t', b'|', b':'];
+    let count_best = |sample: &[u8]| {
+        let mut best = b',';
+        let mut best_count = 0usize;
+        for &c in &CANDIDATES {
+            let n = sample.iter().filter(|&&b| b == c).count();
+            if n > best_count {
+                best_count = n;
+                best = c;
+            }
+        }
+        (best, best_count)
+    };
     let first = text.lines().next().unwrap_or("");
-    let mut best = b',';
-    let mut best_count = 0usize;
-    for &c in &CANDIDATES {
-        let n = first.bytes().filter(|&b| b == c).count();
-        if n > best_count {
-            best_count = n;
-            best = c;
+    match count_best(first.as_bytes()) {
+        (best, n) if n > 0 => best,
+        _ => {
+            let bytes = text.as_bytes();
+            count_best(&bytes[..bytes.len().min(4096)]).0
         }
     }
-    best
 }
 
 #[cfg(test)]

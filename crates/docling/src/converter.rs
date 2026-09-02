@@ -32,8 +32,14 @@ fn looks_like_xml(text: &str) -> bool {
 
 /// Pick the concrete XML backend for a generic `.xml` source by sniffing its
 /// DOCTYPE / root element (the first part of the file).
-fn sniff_xml(text: &str) -> InputFormat {
-    let head = &text[..text.len().min(4000)];
+fn sniff_xml(bytes: &[u8]) -> InputFormat {
+    // Lossy over the raw head (docling#4038, 2.122): the window can cut a
+    // well-formed file mid-codepoint — a fixed-offset `&str` slice would
+    // panic on that char boundary — and an XML document may legitimately
+    // declare a non-UTF-8 encoding. Every marker matched below is ASCII, so
+    // replacement characters cannot change the outcome.
+    let head = String::from_utf8_lossy(&bytes[..bytes.len().min(4000)]);
+    let head = head.as_ref();
     // Case-insensitive: USPTO DOCTYPE/root casing varies in the wild (docling
     // PR #3801 — Grant Full Text v2.5 files were missed on casing).
     let lower = head.to_ascii_lowercase();
@@ -658,7 +664,7 @@ impl DocumentConverter {
             // A text/Markdown-typed file that is actually an XML document (e.g. a
             // JATS article saved with a `.txt` extension) routes to the XML
             // backends by content, mirroring docling's content-based detection.
-            InputFormat::Md if looks_like_xml(source.text()?) => match sniff_xml(source.text()?) {
+            InputFormat::Md if looks_like_xml(source.text()?) => match sniff_xml(&source.bytes) {
                 InputFormat::XmlUspto => UsptoBackend.convert(&source)?,
                 InputFormat::XmlXbrl => XbrlBackend.convert(&source)?,
                 // A JATS/other XML document saved as `.txt` is reconstructed
@@ -746,7 +752,7 @@ impl DocumentConverter {
             // A bare `.xml` defaults to XmlJats; sniff the content to route to the
             // right XML backend (docling distinguishes by DOCTYPE / root element).
             InputFormat::XmlJats | InputFormat::XmlUspto | InputFormat::XmlXbrl => {
-                match sniff_xml(source.text()?) {
+                match sniff_xml(&source.bytes) {
                     InputFormat::XmlUspto => UsptoBackend.convert(&source)?,
                     InputFormat::XmlXbrl => XbrlBackend.convert(&source)?,
                     _ => JatsBackend.convert(&source)?,
@@ -958,7 +964,7 @@ mod tests {
             "<?xml version=\"1.0\"?><US-PATENT-GRANT-V4/>",
         ] {
             assert_eq!(
-                super::sniff_xml(head),
+                super::sniff_xml(head.as_bytes()),
                 InputFormat::XmlUspto,
                 "head: {head}"
             );
