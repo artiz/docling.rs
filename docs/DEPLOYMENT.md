@@ -76,7 +76,8 @@ services:
     container_name: docling-serve
     restart: unless-stopped
     ports:
-      - "5001:5001"
+      # Bind to loopback interface only (127.0.0.1) for unauthenticated access
+      - "127.0.0.1:5001:5001"
     environment:
       - DOCLING_RS_NO_ARENA=1
       - DOCLING_RS_MAX_MEMORY_MB=4096
@@ -90,11 +91,11 @@ services:
       - "2"
       - "--warmup"
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:5001/health"]
-      interval: 30s
+      test: ["CMD", "curl", "-f", "http://localhost:5001/ready"]
+      interval: 15s
       timeout: 5s
-      retries: 3
-      start_period: 30s
+      retries: 5
+      start_period: 45s
     deploy:
       resources:
         limits:
@@ -149,7 +150,7 @@ docker compose -f docker-compose.caddy.yml up -d
 | `DOCLING_RS_MAX_MEMORY_MB` | `0` (or cgroup) | Memory ceiling for admission control in MiB |
 | `DOCLING_RS_MEMORY_WATERMARK_PCT` | `85` | Watermark % above which new requests get HTTP 503 Retry-After |
 | `DOCLING_RS_PDF_WORKERS` | CPU count | Worker pool size for concurrent PDF page processing |
-| `DOCLING_RS_TF_INTRA` | `1` | ONNX intra-op thread count for TableFormer decoder sessions |
+| `DOCLING_RS_TF_INTRA` | auto (#262) | Derived from cgroup CPU quota (#262); explicitly narrows ONNX intra-op threads for TableFormer decoder |
 | `DOCLING_RS_MAX_RASTER_PAGES` | `100` | Max page count for `to=images` PDF page rasterization |
 | `DOCLING_RS_MAX_FETCH_BYTES` | `268435456` (256MB) | Max response size for remote URL fetching |
 | `DOCLING_RS_OCR_LANG` | `en` | Default OCR language (`en` or `ch` multilingual) |
