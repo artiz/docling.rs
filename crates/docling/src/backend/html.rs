@@ -1348,6 +1348,14 @@ fn parse_table_cells(
             num_rows += 1;
         }
     }
+    // A table whose every row is a "row header" (e.g. one `<th rowspan>` and
+    // no body rows to span into) would count zero rows and vanish — upstream's
+    // out-of-bounds crash in the same shape (docling#3827, 2.122); it keeps
+    // the cells, so treat the rows as ordinary ones instead.
+    let all_row_headers = num_rows == 0 && !trs.is_empty();
+    if all_row_headers {
+        num_rows = trs.len();
+    }
     if num_rows == 0 || num_cols == 0 {
         return None;
     }
@@ -1366,7 +1374,7 @@ fn parse_table_cells(
     let mut start_row_span: usize = 0;
     for tr in &trs {
         let cells = row_cells(*tr);
-        let row_header = is_row_header(&cells);
+        let row_header = !all_row_headers && is_row_header(&cells);
         if row_header {
             start_row_span += 1;
         } else {

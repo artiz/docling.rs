@@ -112,8 +112,8 @@ PyPI; run via `scripts/conformance/conformance.sh <fmt>`), not the committed gro
 
 | Format | Backend | Status |
 |---|---|---|
-| Markdown | `markdown.rs` (pulldown-cmark) | **10/10 exact** |
-| CSV | `csv.rs` (`csv` crate) | **9/9 exact**; `.tsv` routes here too (#208 — the delimiter sniffing already covers tabs; a docling.rs extension, upstream accepts only `.csv`) |
+| Markdown | `markdown.rs` (pulldown-cmark) | **10/10 exact**; #319 (docling 2.122's docling#3817): tables written without edge pipes (`Region \| Q1` over `--- \| ---`) are normalized up front so pulldown parses them like the canonical spelling; a leading UTF-8 BOM no longer hides the first heading (docling#4109) |
+| CSV | `csv.rs` (`csv` crate) | **9/9 exact**; `.tsv` routes here too (#208 — the delimiter sniffing already covers tabs; a docling.rs extension, upstream accepts only `.csv`); #319: a quoted field spanning lines no longer defeats delimiter sniffing (4 KiB fallback sample, docling#3985) and an Excel-style leading BOM stays out of the first header cell (docling#4098) |
 | HTML | `html.rs` (scraper/html5ever) | **32/32 exact** (`wiki_duck` included — rich table cells, caption run spacing, indicator images, `<footer>` furniture all match docling 2.112); #284: an *unclosed* inline tag (`<a name=…>`, `<b>`, `<font>` — endemic in legacy authoring-tool HTML) legally swallows subsequent blocks under html5ever's spec parsing, where Python's parser recovers by reparenting — inline wrappers hiding structured blocks (tables, lists, headings, code, figures) are now block-walked so the structure surfaces; pure text containers under a well-formed `<a href>` keep rendering as links |
 | AsciiDoc | `asciidoc.rs` (regex) | **4/4 exact** |
 | DeepSeek-OCR Markdown | `deepseek.rs` | **3/3 exact** (auto-detected VLM-token variant) |
