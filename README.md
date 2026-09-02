@@ -109,7 +109,7 @@ parses its output, so no dev headers/libraries are needed.
   `set DOCLING_FFMPEG=C:\tools\ffmpeg\bin\ffmpeg.exe`
 
 Check with `ffmpeg -version`. `DOCLING_FFMPEG` overrides the binary used on
-any OS; the docling-serve Docker image ships ffmpeg preinstalled.
+any OS; the docling-rs-serve Docker image ships ffmpeg preinstalled.
 </details>
 
 Output is checked against upstream Python docling — declarative formats
@@ -152,7 +152,7 @@ streamed result out, with extracted pictures rendered below the text — and
 Redoc or a client generator can be pointed straight at a running server:
 
 <p align="center">
-  <img src="docs/assets/serve-form.png" alt="docling-serve test form: a converted image with the Markdown result and a gallery of extracted pictures" width="720">
+  <img src="docs/assets/serve-form.png" alt="docling-rs-serve test form: a converted image with the Markdown result and a gallery of extracted pictures" width="720">
 </p>
 
 ```bash
@@ -215,7 +215,7 @@ the server defaults `DOCLING_RS_NO_ARENA=1`: with the ONNX CPU arena off plus
 heap trimming, warm retained RSS measured ~3× lower (2.0 GB → 0.7 GB) at no
 latency cost — set `DOCLING_RS_NO_ARENA=0` to restore the arena. Prebuilt
 multi-arch images (`linux/amd64`, `linux/arm64`) publish to GHCR:
-`ghcr.io/docling-project/docling-serve-rs:latest` (built from
+`ghcr.io/docling-project/docling-rs-serve:latest` (built from
 [`crates/docling-serve/Dockerfile`](./crates/docling-serve/Dockerfile) with models
 and pdfium baked in, or mountable with `--build-arg FETCH_ASSETS=0`). Docker
 Compose setups are in [`examples/docker-compose/`](./examples/docker-compose/) and
@@ -249,7 +249,7 @@ request counts by status class, an in-flight gauge, a request-latency
 histogram, and per-outcome conversion counts (`/metrics`, `/health` and
 `/ready` probes excluded). Building with the opt-in `otel` cargo feature and
 setting `OTEL_EXPORTER_OTLP_ENDPOINT` additionally ships the request spans
-over OTLP/gRPC (`OTEL_SERVICE_NAME` defaults to `docling-serve`); without the
+over OTLP/gRPC (`OTEL_SERVICE_NAME` defaults to `docling-rs-serve`); without the
 env var the feature is inert.
 
 ## In the browser — `docling-wasm`
@@ -567,7 +567,7 @@ even when it carries a text layer — for layers that exist but lie (broken
 encodings, subset fonts with garbage mappings, a scanned form with a few
 typed-in field values). Ignored under `--no-ocr`, mirroring docling. The same
 switch is available on every surface: `force_full_page_ocr(bool)` on the
-library builder, a `force_full_page_ocr` option in docling-serve, the
+library builder, a `force_full_page_ocr` option in docling-rs-serve, the
 `force_full_page_ocr=` kwarg in Python, `forceFullPageOcr` in Node, and the
 "Force OCR" toggle in the wasm demo.
 
@@ -1329,25 +1329,23 @@ fetches missing model files. Uninstall:
 
 ### Container Images
 
-The following container images are available on **GitHub Container Registry (GHCR)** for running **`docling-serve`** with all native dependencies, pdfium, ffmpeg, and ONNX models baked in (zero Python runtime dependencies):
+The following container images are available on **GitHub Container Registry (GHCR)** for running **`docling-rs-serve`** with all native dependencies, pdfium, ffmpeg, and ONNX models baked in (zero Python runtime dependencies):
 
 #### 📦 Distributed Images
 
 | Image | Description | Architectures |
 |---|---|---|
-| [`ghcr.io/docling-project/docling-serve-rs`](https://github.com/docling-project/docling.rs/pkgs/container/docling-serve-rs) | High-performance document conversion HTTP API with PDF, DOCX, PPTX, XLSX, HTML, images, and audio/video models pre-installed. | `linux/amd64`, `linux/arm64` |
+| [`ghcr.io/docling-project/docling-rs-serve`](https://github.com/docling-project/docling.rs/pkgs/container/docling-rs-serve) | High-performance document conversion HTTP API with PDF, DOCX, PPTX, XLSX, HTML, images, and audio/video models pre-installed. | `linux/amd64`, `linux/arm64` |
 | [`ghcr.io/docling-project/docling-rs`](https://github.com/docling-project/docling.rs/pkgs/container/docling-rs) | Repository-name alias pointing to the same multi-arch container image. | `linux/amd64`, `linux/arm64` |
 
-> [!NOTE]
-> **Image Naming**: The `-rs` suffix (`docling-serve-rs` / `docling-rs`) differentiates this native Rust implementation from Python `docling-serve`.
-
 ```bash
-# Run docling-serve HTTP API (models baked in, zero Python runtime dependencies):
-docker run -p 127.0.0.1:5001:5001 ghcr.io/docling-project/docling-serve-rs:latest
+# Run docling-rs-serve HTTP API (models baked in, zero Python runtime dependencies):
+docker run -p 127.0.0.1:5001:5001 ghcr.io/docling-project/docling-rs-serve:latest
 
 # Convert a document:
 curl -F file=@paper.pdf localhost:5001/v1/convert
 ```
+
 ### Docker Compose
 
 Launch with [`examples/docker-compose/`](./examples/docker-compose/):
@@ -1436,7 +1434,7 @@ models) the same fixture measures 5.2× less memory, a 6.2× warm speedup and
 | `docling-pdf` | PDF/image ML pipeline (pdfium + ONNX layout/table/OCR) | `docling` PDF pipeline |
 | `docling-asr` | audio/ASR pipeline (symphonia + ONNX Whisper) | `docling` ASR pipeline |
 | `docling-cli` | command-line interface | `docling.cli` |
-| `docling-serve` | HTTP conversion API over a warm pipeline | `docling-serve` |
+| `docling-rs-serve` | HTTP conversion API over a warm pipeline | `docling-serve` |
 | `docling-node` | Node.js / Bun N-API bindings | https://www.npmjs.com/package/docling.rs |
 | `docling-py` | Python bindings | https://pypi.org/project/docling-rs |
 | `docling-wasm` | WebAssembly bindings (declarative converters + PDF text layer in the browser) | https://www.npmjs.com/package/docling.rs-wasm |

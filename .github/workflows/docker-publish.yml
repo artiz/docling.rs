@@ -1,4 +1,4 @@
-# Build and publish the `docling-serve` container image to GitHub Container
+# Build and publish the `docling-rs-serve` container image to GitHub Container
 # Registry (ghcr.io).
 #
 # The image packages the pure-Rust `docling-serve` HTTP conversion API along with
@@ -12,7 +12,7 @@
 # lists by the `merge` job.
 #
 # Published image names:
-#   - Primary: ghcr.io/docling-project/docling-serve-rs
+#   - Primary: ghcr.io/docling-project/docling-rs-serve
 #   - Alias:   ghcr.io/docling-project/docling-rs
 #
 # Triggers:
@@ -75,7 +75,7 @@ concurrency:
 
 env:
   REGISTRY: ghcr.io
-  PRIMARY_IMAGE: ${{ github.repository_owner }}/docling-serve-rs
+  PRIMARY_IMAGE: ${{ github.repository_owner }}/docling-rs-serve
   ALIAS_IMAGE: ${{ github.repository_owner }}/docling-rs
 
 jobs:
@@ -120,7 +120,7 @@ jobs:
             ${{ env.REGISTRY }}/${{ env.PRIMARY_IMAGE }}
             ${{ env.REGISTRY }}/${{ env.ALIAS_IMAGE }}
           labels: |
-            org.opencontainers.image.title=docling-serve
+            org.opencontainers.image.title=docling-rs-serve
             org.opencontainers.image.description=High-performance document conversion API in Rust (PDF, DOCX, PPTX, XLSX, HTML, Audio)
             org.opencontainers.image.licenses=MIT
             org.opencontainers.image.vendor=docling-project
@@ -132,16 +132,16 @@ jobs:
           context: .
           file: crates/docling-serve/Dockerfile
           load: true
-          tags: docling-serve:test
+          tags: docling-rs-serve:test
           platforms: ${{ matrix.platform }}
           labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha,scope=docling-serve-${{ matrix.platform_slug }}
-          cache-to: type=gha,mode=max,scope=docling-serve-${{ matrix.platform_slug }}
+          cache-from: type=gha,scope=docling-rs-serve-${{ matrix.platform_slug }}
+          cache-to: type=gha,mode=max,scope=docling-rs-serve-${{ matrix.platform_slug }}
 
       - name: Run container smoke test
         run: |
-          echo "Starting docling-serve container on ${{ matrix.platform }}..."
-          docker run -d --name docling-serve-test -p 5001:5001 docling-serve:test
+          echo "Starting docling-rs-serve container on ${{ matrix.platform }}..."
+          docker run -d --name docling-rs-serve-test -p 5001:5001 docling-rs-serve:test
 
           echo "Waiting for service readiness (/ready)..."
           READY=false
@@ -157,8 +157,8 @@ jobs:
 
           if [ "$READY" != "true" ]; then
             echo "Smoke test readiness check failed! Container logs:"
-            docker logs docling-serve-test
-            docker rm -f docling-serve-test
+            docker logs docling-rs-serve-test
+            docker rm -f docling-rs-serve-test
             exit 1
           fi
 
@@ -167,7 +167,7 @@ jobs:
           echo "Config: $CONFIG"
 
           echo "Cleaning up smoke test container..."
-          docker rm -f docling-serve-test
+          docker rm -f docling-rs-serve-test
 
       # Push single-arch image by digest to GHCR (skipped on PRs)
       - name: Build and push by digest
@@ -180,8 +180,8 @@ jobs:
           platforms: ${{ matrix.platform }}
           labels: ${{ steps.meta.outputs.labels }}
           outputs: type=image,"name=${{ env.REGISTRY }}/${{ env.PRIMARY_IMAGE }},${{ env.REGISTRY }}/${{ env.ALIAS_IMAGE }}",push-by-digest=true,name-canonical=true,push=true
-          cache-from: type=gha,scope=docling-serve-${{ matrix.platform_slug }}
-          cache-to: type=gha,mode=max,scope=docling-serve-${{ matrix.platform_slug }}
+          cache-from: type=gha,scope=docling-rs-serve-${{ matrix.platform_slug }}
+          cache-to: type=gha,mode=max,scope=docling-rs-serve-${{ matrix.platform_slug }}
 
       - name: Export digest
         if: github.event_name != 'pull_request' && (inputs.publish != false)
@@ -245,7 +245,7 @@ jobs:
             type=raw,value=latest,enable=${{ github.ref == 'refs/heads/master' || github.event_name == 'release' }}
             type=raw,value=${{ inputs.tag }},enable=${{ inputs.tag != '' }}
           labels: |
-            org.opencontainers.image.title=docling-serve
+            org.opencontainers.image.title=docling-rs-serve
             org.opencontainers.image.description=High-performance document conversion API in Rust (PDF, DOCX, PPTX, XLSX, HTML, Audio)
             org.opencontainers.image.licenses=MIT
             org.opencontainers.image.vendor=docling-project
@@ -303,7 +303,7 @@ jobs:
           docker buildx imagetools create "${tags[@]}" "${sources[@]}"
           digest=$(docker buildx imagetools inspect "$first_tag" --raw | sha256sum | awk '{print $1}')
           echo "digest=sha256:$digest" >> "$GITHUB_OUTPUT"
-      - name: Generate artifact attestation for docling-serve-rs
+      - name: Generate artifact attestation for docling-rs-serve
         uses: actions/attest-build-provenance@v2
         with:
           subject-name: ${{ env.REGISTRY }}/${{ env.PRIMARY_IMAGE }}
