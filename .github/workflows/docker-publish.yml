@@ -11,9 +11,10 @@
 # single-arch images are pushed by digest and assembled into multi-arch manifest
 # lists by the `merge` job.
 #
-# Published image names:
-#   - Primary: ghcr.io/docling-project/docling-rs-serve
-#   - Alias:   ghcr.io/docling-project/docling-rs
+# Published images (two targets of crates/docling-serve/Dockerfile, sharing the
+# dependency, runtime and asset layers):
+#   - ghcr.io/docling-project/docling-rs-serve — the HTTP conversion API
+#   - ghcr.io/docling-project/docling-rs       — the `docling-rs` CLI
 #
 # Triggers:
 #   - Release published: tags with semantic versions (vX.Y.Z, X.Y, X, latest)
@@ -75,8 +76,8 @@ concurrency:
 
 env:
   REGISTRY: ghcr.io
-  PRIMARY_IMAGE: ${{ github.repository_owner }}/docling-rs-serve
-  ALIAS_IMAGE: ${{ github.repository_owner }}/docling-rs
+  SERVE_IMAGE: ${{ github.repository_owner }}/docling-rs-serve
+  CLI_IMAGE: ${{ github.repository_owner }}/docling-rs
 
 jobs:
   build:
@@ -121,27 +122,60 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: |
-            ${{ env.REGISTRY }}/${{ env.PRIMARY_IMAGE }}
-            ${{ env.REGISTRY }}/${{ env.ALIAS_IMAGE }}
+          images: ${{ env.REGISTRY }}/${{ env.SERVE_IMAGE }}
           labels: |
             org.opencontainers.image.title=docling-rs-serve
             org.opencontainers.image.description=High-performance document conversion API in Rust (PDF, DOCX, PPTX, XLSX, HTML, Audio)
             org.opencontainers.image.licenses=MIT
             org.opencontainers.image.vendor=docling-project
 
-      # Build single-arch image locally and verify container readiness
-      - name: Build local image for smoke test
+      - name: Extract metadata labels for the CLI image
+        id: meta_cli
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.CLI_IMAGE }}
+          labels: |
+            org.opencontainers.image.title=docling-rs
+            org.opencontainers.image.description=docling-rs CLI — document conversion (PDF, DOCX, PPTX, XLSX, HTML, Audio) to Markdown / JSON / DCLX / LaTeX
+            org.opencontainers.image.licenses=MIT
+            org.opencontainers.image.vendor=docling-project
+
+      # Build both single-arch images locally and verify them. The two targets
+      # share every layer up to the final stage, so the second build is cheap.
+      - name: Build local serve image for smoke test
         uses: docker/build-push-action@v6
         with:
           context: .
           file: crates/docling-serve/Dockerfile
+          target: serve
           load: true
           tags: docling-rs-serve:test
           platforms: ${{ matrix.platform }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha,scope=docling-rs-serve-${{ matrix.platform_slug }}
           cache-to: type=gha,mode=max,scope=docling-rs-serve-${{ matrix.platform_slug }}
+
+      - name: Build local CLI image for smoke test
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: crates/docling-serve/Dockerfile
+          target: cli
+          load: true
+          tags: docling-rs:test
+          platforms: ${{ matrix.platform }}
+          labels: ${{ steps.meta_cli.outputs.labels }}
+          cache-from: type=gha,scope=docling-rs-serve-${{ matrix.platform_slug }}
+          cache-to: type=gha,mode=max,scope=docling-rs-serve-${{ matrix.platform_slug }}
+
+      - name: Run CLI smoke test
+        run: |
+          echo "Converting a Markdown fixture (no models involved)..."
+          docker run --rm -v "$PWD/tests/data/md/sources:/data:ro" docling-rs:test wiki.md --to md | head -n 3
+          echo "Converting a small PDF (models must resolve via DOCLING_RS_MODELS_DIR)..."
+          out=$(docker run --rm -v "$PWD/tests/data/pdf/sources:/data:ro" docling-rs:test base14_fonts.pdf --to latex)
+          echo "$out" | head -n 20
+          echo "$out" | grep -q '\\begin{document}' || { echo "CLI smoke test failed: no LaTeX document produced"; exit 1; }
 
       - name: Run container smoke test
         run: |
@@ -174,33 +208,60 @@ jobs:
           echo "Cleaning up smoke test container..."
           docker rm -f docling-rs-serve-test
 
-      # Push single-arch image by digest to GHCR (skipped on PRs)
-      - name: Build and push by digest
+      # Push the single-arch images by digest to GHCR (skipped on PRs); the
+      # merge job assembles the multi-arch manifest lists per image.
+      - name: Build and push serve image by digest
         id: build
         if: github.event_name != 'pull_request' && (github.event_name != 'workflow_dispatch' || inputs.publish)
         uses: docker/build-push-action@v6
         with:
           context: .
           file: crates/docling-serve/Dockerfile
+          target: serve
           platforms: ${{ matrix.platform }}
           labels: ${{ steps.meta.outputs.labels }}
-          outputs: type=image,"name=${{ env.REGISTRY }}/${{ env.PRIMARY_IMAGE }},${{ env.REGISTRY }}/${{ env.ALIAS_IMAGE }}",push-by-digest=true,name-canonical=true,push=true
+          outputs: type=image,name=${{ env.REGISTRY }}/${{ env.SERVE_IMAGE }},push-by-digest=true,name-canonical=true,push=true
           cache-from: type=gha,scope=docling-rs-serve-${{ matrix.platform_slug }}
           cache-to: type=gha,mode=max,scope=docling-rs-serve-${{ matrix.platform_slug }}
 
-      - name: Export digest
+      - name: Build and push CLI image by digest
+        id: build_cli
+        if: github.event_name != 'pull_request' && (github.event_name != 'workflow_dispatch' || inputs.publish)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: crates/docling-serve/Dockerfile
+          target: cli
+          platforms: ${{ matrix.platform }}
+          labels: ${{ steps.meta_cli.outputs.labels }}
+          outputs: type=image,name=${{ env.REGISTRY }}/${{ env.CLI_IMAGE }},push-by-digest=true,name-canonical=true,push=true
+          cache-from: type=gha,scope=docling-rs-serve-${{ matrix.platform_slug }}
+          cache-to: type=gha,mode=max,scope=docling-rs-serve-${{ matrix.platform_slug }}
+
+      - name: Export digests
         if: github.event_name != 'pull_request' && (github.event_name != 'workflow_dispatch' || inputs.publish)
         run: |
-          mkdir -p /tmp/digests
+          mkdir -p /tmp/digests/serve /tmp/digests/cli
           digest="${{ steps.build.outputs.digest }}"
-          touch "/tmp/digests/${digest#sha256:}"
+          touch "/tmp/digests/serve/${digest#sha256:}"
+          digest="${{ steps.build_cli.outputs.digest }}"
+          touch "/tmp/digests/cli/${digest#sha256:}"
 
-      - name: Upload digest
+      - name: Upload serve digest
         if: github.event_name != 'pull_request' && (github.event_name != 'workflow_dispatch' || inputs.publish)
         uses: actions/upload-artifact@v7
         with:
-          name: digests-${{ matrix.platform_slug }}
-          path: /tmp/digests/*
+          name: digests-serve-${{ matrix.platform_slug }}
+          path: /tmp/digests/serve/*
+          if-no-files-found: error
+          retention-days: 1
+
+      - name: Upload CLI digest
+        if: github.event_name != 'pull_request' && (github.event_name != 'workflow_dispatch' || inputs.publish)
+        uses: actions/upload-artifact@v7
+        with:
+          name: digests-cli-${{ matrix.platform_slug }}
+          path: /tmp/digests/cli/*
           if-no-files-found: error
           retention-days: 1
 
@@ -216,11 +277,18 @@ jobs:
       id-token: write
       attestations: write
     steps:
-      - name: Download digests
+      - name: Download serve digests
         uses: actions/download-artifact@v8
         with:
-          pattern: digests-*
-          path: /tmp/digests
+          pattern: digests-serve-*
+          path: /tmp/digests/serve
+          merge-multiple: true
+
+      - name: Download CLI digests
+        uses: actions/download-artifact@v8
+        with:
+          pattern: digests-cli-*
+          path: /tmp/digests/cli
           merge-multiple: true
 
       - name: Log in to GitHub Container Registry
@@ -238,8 +306,8 @@ jobs:
         uses: docker/metadata-action@v5
         with:
           images: |
-            ${{ env.REGISTRY }}/${{ env.PRIMARY_IMAGE }}
-            ${{ env.REGISTRY }}/${{ env.ALIAS_IMAGE }}
+            ${{ env.REGISTRY }}/${{ env.SERVE_IMAGE }}
+            ${{ env.REGISTRY }}/${{ env.CLI_IMAGE }}
           flavor: |
             latest=auto
           tags: |
@@ -255,8 +323,8 @@ jobs:
             org.opencontainers.image.licenses=MIT
             org.opencontainers.image.vendor=docling-project
 
-      - name: Create manifest list and push for primary image
-        id: merge-primary
+      - name: Create manifest list and push for the serve image
+        id: merge-serve
         env:
           ALL_TAGS: ${{ steps.meta.outputs.tags }}
         run: |
@@ -264,7 +332,7 @@ jobs:
           tags=()
           while IFS= read -r tag; do
             [ -z "$tag" ] && continue
-            if [[ "$tag" == "${REGISTRY}/${PRIMARY_IMAGE}:"* ]]; then
+            if [[ "$tag" == "${REGISTRY}/${SERVE_IMAGE}:"* ]]; then
               tags+=("-t" "$tag")
               if [ -z "$first_tag" ]; then
                 first_tag="$tag"
@@ -273,17 +341,17 @@ jobs:
           done <<< "$ALL_TAGS"
 
           sources=()
-          for digest in /tmp/digests/*; do
+          for digest in /tmp/digests/serve/*; do
             [ -f "$digest" ] || continue
-            sources+=("${REGISTRY}/${PRIMARY_IMAGE}@sha256:$(basename "$digest")")
+            sources+=("${REGISTRY}/${SERVE_IMAGE}@sha256:$(basename "$digest")")
           done
 
           docker buildx imagetools create "${tags[@]}" "${sources[@]}"
           digest=$(docker buildx imagetools inspect "$first_tag" --raw | sha256sum | awk '{print $1}')
           echo "digest=sha256:$digest" >> "$GITHUB_OUTPUT"
 
-      - name: Create manifest list and push for alias image
-        id: merge-alias
+      - name: Create manifest list and push for the CLI image
+        id: merge-cli
         env:
           ALL_TAGS: ${{ steps.meta.outputs.tags }}
         run: |
@@ -291,7 +359,7 @@ jobs:
           tags=()
           while IFS= read -r tag; do
             [ -z "$tag" ] && continue
-            if [[ "$tag" == "${REGISTRY}/${ALIAS_IMAGE}:"* ]]; then
+            if [[ "$tag" == "${REGISTRY}/${CLI_IMAGE}:"* ]]; then
               tags+=("-t" "$tag")
               if [ -z "$first_tag" ]; then
                 first_tag="$tag"
@@ -300,9 +368,9 @@ jobs:
           done <<< "$ALL_TAGS"
 
           sources=()
-          for digest in /tmp/digests/*; do
+          for digest in /tmp/digests/cli/*; do
             [ -f "$digest" ] || continue
-            sources+=("${REGISTRY}/${ALIAS_IMAGE}@sha256:$(basename "$digest")")
+            sources+=("${REGISTRY}/${CLI_IMAGE}@sha256:$(basename "$digest")")
           done
 
           docker buildx imagetools create "${tags[@]}" "${sources[@]}"
@@ -311,13 +379,13 @@ jobs:
       - name: Generate artifact attestation for docling-rs-serve
         uses: actions/attest-build-provenance@v2
         with:
-          subject-name: ${{ env.REGISTRY }}/${{ env.PRIMARY_IMAGE }}
-          subject-digest: ${{ steps.merge-primary.outputs.digest }}
+          subject-name: ${{ env.REGISTRY }}/${{ env.SERVE_IMAGE }}
+          subject-digest: ${{ steps.merge-serve.outputs.digest }}
           push-to-registry: true
 
       - name: Generate artifact attestation for docling-rs
         uses: actions/attest-build-provenance@v2
         with:
-          subject-name: ${{ env.REGISTRY }}/${{ env.ALIAS_IMAGE }}
-          subject-digest: ${{ steps.merge-alias.outputs.digest }}
+          subject-name: ${{ env.REGISTRY }}/${{ env.CLI_IMAGE }}
+          subject-digest: ${{ steps.merge-cli.outputs.digest }}
           push-to-registry: true
