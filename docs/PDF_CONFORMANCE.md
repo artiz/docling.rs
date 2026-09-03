@@ -44,6 +44,37 @@ hard-hyphenated lowercase continuation across a column/page break without the
 the text-merge component of these diffs (2203/2305 snapshots and the mirrored
 groundtruth already reflect it).
 
+### docling 2.118–2.123 assembly / post-processing parity (#321)
+
+Upstream refined several PDF post-processing rules between 2.118 and 2.123;
+all of them are ported, each as a deterministic snapshot update:
+
+| upstream | rule | where it lives here |
+|---|---|---|
+| docling#3888 (2.118) | reading-order merge: a hard hyphen before a lowercase continuation is a split word — join without the hyphen | `assemble::merge_continuations` (ported earlier, #250) |
+| docling#4052 (2.122) | line join: a line-final dash fuses the wrapped word only when *attached* to it (the character before it is alphanumeric); a detached dash — a separator, a bullet, the bare `-` cell an ORCID superscript splits off — is kept and the lines join with a space (`[0000 - 0002 - 3723`, previously `[0000 -0002 -3723`) | `assemble::cells_text` (the `sanitize_text` port) |
+| docling#4059 (2.122) | cross-type coincident pairs: a region the layout model proposes under two labels at a near-identical box (IoU > 0.8) with confidences within 0.1 keeps the richer label — `document_index` over `table`, a table-like over `picture`, a surviving structured element over a `form`/`key_value_region` container. The earlier port dropped every coincident picture regardless of confidence | `assemble::handle_cross_type_overlaps` |
+| docling#4064 (2.123) | `form` / `key_value_region` are containers: everything > 80 % inside (text, list items, and now tables and pictures) is a child, reading-ordered among itself and emitted as one block where the container sits in the page order; the container shrinks to its children's union for that ordering | `assemble::order_with_containers` |
+| docling#3906 (2.118.1) | a picture ≥ 80 % inside a TableFormer table is nested in the cell covering it (grid position inferred from median row/column centers when cell boxes overlap): the cell's Markdown reads `text  <!-- image -->` like docling's `RichTableCell`, the JSON `table_cells`/`grid` keep the plain text, DocLang gets the blocks (`Table::cell_blocks`), and the picture is no longer a standalone figure | `assemble::match_table_pictures` |
+| docling#4061 (2.122) | forced full-page OCR (`--force-full-page-ocr`, `ocr_mode=full_page|layout_regions`) skips the text-layer decode outright — the cells were cleared unread; on vector-dense pages the decode was most of the page cost | `pdfium_backend::for_each_page(extract_text = false)` |
+| docling#4008 (2.121) | digital pages with `/Rotate`: pdfium's text rects, the pure-Rust parser's glyphs and link annotation rects live in the unrotated frame while the page size and render are display-frame — every rect is now rotated into the display frame, so layout regions and cells line up again (a `/Rotate 90` copy of `base14_fonts.pdf` used to lose its heading to orphan text; it now yields docling's exact Markdown and matching geometry) | `pdfium_backend::to_display_frame` |
+
+Snapshot fallout of this batch (all reviewed against docling 2.124 output):
+the detached-dash joins (2203, 2206, 2305, redp5110, the METS/GBS book), the
+`right_to_left_03` form pages — whose key/value table now survives next to
+its form container (upstream keeps that table too; the older baseline had the
+form win the shared wrapper bucket and dissolve it into paragraphs) — and the
+container-grouped ordering on the QR-bill scan. The three rotated-scan
+baselines (`ocr_test_rotated_*`, `nemotron_multipage`) had been stale since
+July: they predate the `/Rotate` normalization and still carried the sideways
+OCR garbage; regenerated, they read the upright text like the groundtruth.
+
+Deliberate deviations: a picture inside a table that *pairs with a caption*
+stays a standalone figure (upstream nests it and the caption is lost); the
+form/key-value grouping affects ordering only — the children are emitted as
+top-level items, not wrapped in a `form_area` / `key_value_area` group node,
+so the JSON has no such group (the Markdown is identical either way).
+
 `amt` is the 7th under the whitespace-normalized metric: its only diff is
 docling's spurious double space before the `1⁄4` fraction, where our single-spaced
 output is the more faithful rendering. The remaining non-exact PDFs are heavy

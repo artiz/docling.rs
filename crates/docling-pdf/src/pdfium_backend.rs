@@ -252,7 +252,7 @@ impl PdfDocument {
         let mut pages = Vec::new();
         for (i, page) in doc.pages().iter().enumerate() {
             let rc = rust.as_mut().and_then(|v| v.get_mut(i).map(std::mem::take));
-            pages.push(extract_page(&page, &ffi, i as i32, rc, true)?);
+            pages.push(extract_page(&page, &ffi, i as i32, rc, true, true)?);
         }
         Ok(PdfDocument { pages })
     }
@@ -297,6 +297,10 @@ pub fn page_count(bytes: &[u8], password: Option<&str>) -> Result<usize, PdfiumE
 /// is most of `no_ocr`'s speedup. `PdfPage::image` is a 1×1 placeholder when
 /// `false`; do not read it.
 ///
+/// `extract_text` decodes the page's text layer (parser or pdfium cells); pass
+/// `false` when full-page OCR is forced and the cells would be discarded
+/// unread (docling#4061).
+///
 /// `range` restricts the walk to a **0-based inclusive** page window (issue
 /// #80's `--pages`); out-of-window pages are skipped *before* text extraction
 /// and rasterization, so a 3-page window over a 500-page PDF costs three
@@ -308,6 +312,7 @@ pub fn for_each_page<E, F>(
     bytes: &[u8],
     password: Option<&str>,
     render_image: bool,
+    extract_text: bool,
     range: Option<(usize, usize)>,
     mut f: F,
 ) -> Result<(), E>
@@ -318,7 +323,15 @@ where
     let pdfium = bind()?;
     let ffi = FfiText::load(pdfium.bindings(), bytes, password);
     let doc = pdfium.load_pdf_from_byte_slice(bytes, password)?;
-    let mut rust = rust_parser_cells(bytes);
+    // `extract_text = false` (full-page OCR forced, docling#4061 / 2.122):
+    // the text layer would be cleared unread, so neither the pure-Rust parser
+    // nor pdfium's text page is decoded at all — on vector-dense pages (CAD
+    // drawings as 100k+ path segments) that decode is most of the page cost.
+    let mut rust = if extract_text {
+        rust_parser_cells(bytes)
+    } else {
+        None
+    };
     let pages = doc.pages();
     let total = pages.len() as usize;
     let (first, last) = range.unwrap_or((0, total.saturating_sub(1)));
@@ -327,7 +340,7 @@ where
             continue;
         }
         let rc = rust.as_mut().and_then(|v| v.get_mut(i).map(std::mem::take));
-        let extracted = extract_page(&page, &ffi, i as i32, rc, render_image)?;
+        let extracted = extract_page(&page, &ffi, i as i32, rc, render_image, extract_text)?;
         f(i, total, extracted)?;
     }
     Ok(())
@@ -424,9 +437,26 @@ fn extract_page(
     index: i32,
     rust_cells: Option<crate::textparse::PageParserCells>,
     render_image: bool,
+    extract_text: bool,
 ) -> Result<PdfPage, PdfiumError> {
+    // pdfium reports the page size (and renders) in the *display* frame —
+    // `/Rotate` applied — while every text coordinate (its own text page, the
+    // pure-Rust parser's MediaBox-based glyphs, link annotation rects) lives
+    // in the unrotated frame (docling#4008, 2.121). Keep the unrotated box
+    // around for the y-flips and bring every rect into the display frame.
     let width = page.width().value;
     let height = page.height().value;
+    let rotation = match page.rotation() {
+        Ok(PdfPageRenderRotation::Degrees90) => 90u16,
+        Ok(PdfPageRenderRotation::Degrees180) => 180,
+        Ok(PdfPageRenderRotation::Degrees270) => 270,
+        _ => 0,
+    };
+    let (unrot_w, unrot_h) = if rotation == 90 || rotation == 270 {
+        (height, width)
+    } else {
+        (width, height)
+    };
 
     // Default: use the pure-Rust text parser instead of pdfium's text layer
     // (override with `DOCLING_PDFIUM_TEXT`). Prose line cells always come from the
@@ -435,9 +465,9 @@ fn extract_page(
     // TableFormer matches against — roadmap item 6). A page the parser couldn't
     // read (no text layer) keeps pdfium's cells.
     let rc = rust_cells.unwrap_or_default();
-    let need_pdfium_prose = rc.prose.is_empty();
-    let need_pdfium_words = !use_parser_words() || rc.words.is_empty();
-    let need_pdfium_code = !use_parser_code() || rc.code.is_empty();
+    let need_pdfium_prose = extract_text && rc.prose.is_empty();
+    let need_pdfium_words = extract_text && (!use_parser_words() || rc.words.is_empty());
+    let need_pdfium_code = extract_text && (!use_parser_code() || rc.code.is_empty());
 
     // The parser covers prose/words/code from one shared glyph pass, so on the
     // common (parser-succeeded) page all three are already satisfied and this
@@ -445,9 +475,9 @@ fn extract_page(
     let (mut cells, mut code_cells, mut word_cells) =
         if need_pdfium_prose || need_pdfium_words || need_pdfium_code {
             let (mut cells, code_cells, word_cells) =
-                crate::timing::timed("ffi.page_cells", || ffi.page_cells(index, height));
+                crate::timing::timed("ffi.page_cells", || ffi.page_cells(index, unrot_h));
             if cells.is_empty() {
-                cells = segment_cells(&page.text()?, height);
+                cells = segment_cells(&page.text()?, unrot_h);
             }
             (cells, code_cells, word_cells)
         } else {
@@ -461,6 +491,16 @@ fn extract_page(
     }
     if use_parser_code() && !rc.code.is_empty() {
         code_cells = rc.code;
+    }
+    if rotation != 0 {
+        for c in cells
+            .iter_mut()
+            .chain(word_cells.iter_mut())
+            .chain(code_cells.iter_mut())
+        {
+            let (l, t, r, b) = to_display_frame((c.l, c.t, c.r, c.b), rotation, unrot_w, unrot_h);
+            (c.l, c.t, c.r, c.b) = (l, t, r, b);
+        }
     }
 
     let image = if render_image {
@@ -509,7 +549,13 @@ fn extract_page(
         None
     };
 
-    let links = extract_links(page, height);
+    let mut links = extract_links(page, unrot_h);
+    if rotation != 0 {
+        for l in &mut links {
+            let (a, t, r, b) = to_display_frame((l.l, l.t, l.r, l.b), rotation, unrot_w, unrot_h);
+            (l.l, l.t, l.r, l.b) = (a, t, r, b);
+        }
+    }
 
     // `/Rotate` normalization for scanned pages: pdfium renders the page as a
     // viewer displays it — `/Rotate` applied — so a rotated scan hands layout
@@ -521,12 +567,6 @@ fn extract_page(
     // 90° steps), `width`/`height` swap to the upright box, and the display
     // rotation is recorded so assembly can rotate the finished geometry back
     // into display space (docling reports rotated pages in display coords).
-    let rotation = match page.rotation() {
-        Ok(PdfPageRenderRotation::Degrees90) => 90u16,
-        Ok(PdfPageRenderRotation::Degrees180) => 180,
-        Ok(PdfPageRenderRotation::Degrees270) => 270,
-        _ => 0,
-    };
     let scanned = cells.is_empty() && word_cells.is_empty() && code_cells.is_empty();
     let mut page = PdfPage {
         width,
@@ -615,6 +655,27 @@ fn extract_links(page: &pdfium_render::prelude::PdfPage<'_>, page_h: f32) -> Vec
         }
     }
     out
+}
+
+/// Map a top-left-origin rect from a page's unrotated (MediaBox) frame into its
+/// `/Rotate`d display frame — the counterpart of docling's pypdfium2
+/// `_rect_to_display_frame` (docling#4008) for our y-down coordinates.
+/// `unrot_w`/`unrot_h` are the unrotated page box; the display box is the same
+/// for 180° and swapped for 90°/270°.
+pub(crate) fn to_display_frame(
+    (l, t, r, b): (f32, f32, f32, f32),
+    rotation: u16,
+    unrot_w: f32,
+    unrot_h: f32,
+) -> (f32, f32, f32, f32) {
+    match rotation {
+        // Page turned 90° clockwise for display: the unrotated top edge becomes
+        // the display right edge, so x' runs from the old bottom edge up.
+        90 => (unrot_h - b, l, unrot_h - t, r),
+        180 => (unrot_w - r, unrot_h - b, unrot_w - l, unrot_h - t),
+        270 => (t, unrot_w - r, b, unrot_w - l),
+        _ => (l, t, r, b),
+    }
 }
 
 #[cfg(feature = "ml")]
@@ -1346,4 +1407,44 @@ fn push_line(
         r,
         b: page_h - b,
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::to_display_frame;
+
+    /// A 612×792 portrait page displayed under `/Rotate`: a rect near the
+    /// unrotated top-left lands where a viewer shows it (docling#4008).
+    #[test]
+    fn display_frame_follows_the_page_rotation() {
+        let r = (72.0, 63.0, 387.0, 74.0); // top-left origin, unrotated
+        assert_eq!(to_display_frame(r, 0, 612.0, 792.0), r);
+        // 90° clockwise: the page becomes 792×612; the old top edge is the
+        // display right edge, old left edge the display top.
+        assert_eq!(
+            to_display_frame(r, 90, 612.0, 792.0),
+            (718.0, 72.0, 729.0, 387.0)
+        );
+        // 180°: both axes mirror inside the same box.
+        assert_eq!(
+            to_display_frame(r, 180, 612.0, 792.0),
+            (225.0, 718.0, 540.0, 729.0)
+        );
+        // 270°: the old top edge is the display left edge, old right edge the
+        // display top.
+        assert_eq!(
+            to_display_frame(r, 270, 612.0, 792.0),
+            (63.0, 225.0, 74.0, 540.0)
+        );
+    }
+
+    #[test]
+    fn display_frame_rotations_compose_to_identity() {
+        let r = (10.0, 20.0, 110.0, 40.0);
+        // 90° then 270° from the intermediate (792×612) box round-trips.
+        let once = to_display_frame(r, 90, 612.0, 792.0);
+        assert_eq!(to_display_frame(once, 270, 792.0, 612.0), r);
+        let twice = to_display_frame(to_display_frame(r, 180, 612.0, 792.0), 180, 612.0, 792.0);
+        assert_eq!(twice, r);
+    }
 }

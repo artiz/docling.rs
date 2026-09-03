@@ -138,7 +138,8 @@ pub fn convert_vlm(
             let walk = docling_pdf::pdfium_backend::for_each_page::<docling_pdf::PdfError, _>(
                 &source.bytes,
                 None,
-                true, // render page images — they are the whole input here
+                true,  // render page images — they are the whole input here
+                false, // the text layer never reaches the model: skip its decode
                 range,
                 |i, _total, page| {
                     let step =

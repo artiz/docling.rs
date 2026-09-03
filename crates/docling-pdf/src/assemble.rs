@@ -183,28 +183,85 @@ pub(crate) fn dedup_pictures(regions: &mut Vec<Region>) {
     regions.retain(|_| !keep_iter.next().expect("aligned"));
 }
 
-pub fn resolve(regions: Vec<Region>) -> Vec<Region> {
-    // Cross-type: a region proposed as BOTH a picture and a table survives twice
-    // (the two buckets de-overlap independently). Keep the structured table and
-    // drop the coincident picture — IoU (not containment), so a genuine small
-    // figure fully inside a large table region is not removed.
-    let tables: Vec<(f32, f32, f32, f32)> = regions
-        .iter()
-        .filter(|r| r.label == "table")
-        .map(|r| (r.l, r.t, r.r, r.b))
-        .collect();
-    let mut regions = regions;
-    regions.retain(|r| {
-        if r.label != "picture" {
-            return true;
+/// `intersection_over_union` of two regions.
+fn iou(a: &Region, b: &Region) -> f32 {
+    let i = inter(a, b.l, b.t, b.r, b.b);
+    let u = area(a.l, a.t, a.r, a.b) + area(b.l, b.t, b.r, b.b) - i;
+    if u > 0.0 {
+        i / u
+    } else {
+        0.0
+    }
+}
+
+/// docling's `_resolve_coincident_pairs` (#4059, 2.122): for every (loser,
+/// winner) pair at a near-identical box (IoU > 0.8) whose confidences are
+/// within 0.1 (`loser.score - winner.score < 0.1`), the loser label is dropped
+/// so the label with the richer downstream semantic survives. Nothing else —
+/// containment, area — is considered; a clearly more confident loser stays.
+fn coincident_losers(regions: &[Region], losers: &[usize], winners: &[usize]) -> Vec<usize> {
+    let mut out = Vec::new();
+    for &li in losers {
+        for &wi in winners {
+            if iou(&regions[li], &regions[wi]) > 0.8 && regions[li].score - regions[wi].score < 0.1
+            {
+                out.push(li);
+                break;
+            }
         }
-        let ra = area(r.l, r.t, r.r, r.b).max(1.0);
-        !tables.iter().any(|&(l, t, rr, b)| {
-            let i = inter(r, l, t, rr, b);
-            let u = ra + area(l, t, rr, b) - i;
-            u > 0.0 && i / u > 0.8
-        })
-    });
+    }
+    out
+}
+
+/// docling's `_handle_cross_type_overlaps` (2.122/2.123 shape): the layout
+/// model can emit one grounded region under several labels, and the picture /
+/// table / container buckets are de-overlapped independently, so such a region
+/// survives twice. Elect a winner for the near-identical pairs:
+///
+/// | pair                                  | loser     | winner              |
+/// |---------------------------------------|-----------|---------------------|
+/// | TABLE vs DOCUMENT_INDEX               | table     | document_index      |
+/// | PICTURE vs TABLE / DOCUMENT_INDEX     | picture   | the table-like      |
+/// | FORM / KEY_VALUE_REGION vs *surviving* TABLE / DOCUMENT_INDEX / PICTURE | container | structured element |
+///
+/// IoU (not containment) so a genuine small figure inside a large table region
+/// is not removed; the confidence tolerance keeps a clearly more confident
+/// loser (an earlier port dropped every coincident picture regardless).
+fn handle_cross_type_overlaps(regions: Vec<Region>) -> Vec<Region> {
+    let by = |pred: &dyn Fn(&str) -> bool| -> Vec<usize> {
+        (0..regions.len())
+            .filter(|&i| pred(regions[i].label))
+            .collect()
+    };
+    let tables = by(&|l| l == "table");
+    let doc_indices = by(&|l| l == "document_index");
+    let pictures = by(&|l| l == "picture");
+    let containers = by(&|l| matches!(l, "form" | "key_value_region"));
+    let mut drop = vec![false; regions.len()];
+    for i in coincident_losers(&regions, &tables, &doc_indices) {
+        drop[i] = true;
+    }
+    let table_like: Vec<usize> = tables.iter().chain(&doc_indices).copied().collect();
+    for i in coincident_losers(&regions, &pictures, &table_like) {
+        drop[i] = true;
+    }
+    let structured: Vec<usize> = table_like
+        .iter()
+        .chain(&pictures)
+        .copied()
+        .filter(|&i| !drop[i])
+        .collect();
+    for i in coincident_losers(&regions, &containers, &structured) {
+        drop[i] = true;
+    }
+    let mut drop = drop.into_iter();
+    let mut regions = regions;
+    regions.retain(|_| !drop.next().expect("aligned"));
+    regions
+}
+
+pub fn resolve(regions: Vec<Region>) -> Vec<Region> {
+    let regions = handle_cross_type_overlaps(regions);
     // De-overlap each bucket on its own.
     let pictures = greedy(
         regions
@@ -213,10 +270,21 @@ pub fn resolve(regions: Vec<Region>) -> Vec<Region> {
             .cloned()
             .collect(),
     );
-    let wrappers = greedy(
+    // Tables and containers are separate buckets since docling 2.123
+    // (`TABLE_TYPES` vs `CONTAINER_TYPES`, docling#4064): a form drawn around a
+    // table no longer competes with it for survival — the table nests inside
+    // the container instead (`order_with_containers`).
+    let tables = greedy(
         regions
             .iter()
-            .filter(|r| is_wrapper(r.label))
+            .filter(|r| is_table_like(r.label))
+            .cloned()
+            .collect(),
+    );
+    let containers = greedy(
+        regions
+            .iter()
+            .filter(|r| matches!(r.label, "form" | "key_value_region"))
             .cloned()
             .collect(),
     );
@@ -229,7 +297,8 @@ pub fn resolve(regions: Vec<Region>) -> Vec<Region> {
     );
     dedup_nested_code(&mut kept);
     kept.extend(pictures);
-    kept.extend(wrappers);
+    kept.extend(tables);
+    kept.extend(containers);
     kept
 }
 
@@ -763,6 +832,93 @@ fn is_page_number(region: &Region, cells: &[TextCell], page_h: f32) -> bool {
         && (region.t < page_h * 0.12 || region.b > page_h * 0.88)
 }
 
+/// docling's `form` / `key_value_region` *containers* (2.123, docling#4064):
+/// every region sitting > 0.8 inside one — text, list items, and since #4064
+/// tables and pictures too — is that container's child. Children are
+/// reading-ordered among themselves and emitted as one block where the
+/// container falls in the page's top-level order (a `form_area` /
+/// `key_value_area` group upstream), instead of interleaving with the text
+/// around the form. A child inside several containers belongs to the smallest
+/// (then most confident, then first); a container with children shrinks to
+/// their union for the top-level ordering, like upstream's bbox adjustment.
+///
+/// The containers themselves are still not emitted (`is_skipped`), so the
+/// Markdown is exactly upstream's — a group prints only its children.
+fn order_with_containers<T: Clone>(
+    items: &mut Vec<T>,
+    page_w: f32,
+    page_h: f32,
+    reg: impl Fn(&T) -> &Region,
+) {
+    let is_container = |r: &Region| matches!(r.label, "form" | "key_value_region");
+    let containers: Vec<usize> = (0..items.len())
+        .filter(|&i| is_container(reg(&items[i])))
+        .collect();
+    if containers.is_empty() {
+        order_regions(items, page_w, page_h, reg);
+        return;
+    }
+    // Parent container per item (containers never nest in each other here —
+    // upstream assigns regulars and tables/pictures only).
+    let mut parent: Vec<Option<usize>> = vec![None; items.len()];
+    for i in 0..items.len() {
+        let r = reg(&items[i]);
+        if is_container(r) {
+            continue;
+        }
+        let ra = area(r.l, r.t, r.r, r.b).max(1.0);
+        let mut best: Option<(usize, f32, f32)> = None; // (idx, area, -score)
+        for &c in &containers {
+            let cr = reg(&items[c]);
+            if inter(r, cr.l, cr.t, cr.r, cr.b) / ra > 0.8 {
+                let key = (area(cr.l, cr.t, cr.r, cr.b), -cr.score);
+                if best.is_none_or(|(_, a, s)| key.0 < a || (key.0 == a && key.1 < s)) {
+                    best = Some((c, key.0, key.1));
+                }
+            }
+        }
+        parent[i] = best.map(|(c, _, _)| c);
+    }
+    // Top-level pass: non-children plus the containers, the latter shrunk to
+    // their children's union.
+    let mut top: Vec<(usize, Region)> = Vec::new();
+    for i in 0..items.len() {
+        if parent[i].is_some() {
+            continue;
+        }
+        let mut r = reg(&items[i]).clone();
+        if is_container(&r) {
+            let kids: Vec<&Region> = (0..items.len())
+                .filter(|&k| parent[k] == Some(i))
+                .map(|k| reg(&items[k]))
+                .collect();
+            if !kids.is_empty() {
+                r.l = kids.iter().map(|k| k.l).fold(f32::INFINITY, f32::min);
+                r.t = kids.iter().map(|k| k.t).fold(f32::INFINITY, f32::min);
+                r.r = kids.iter().map(|k| k.r).fold(f32::NEG_INFINITY, f32::max);
+                r.b = kids.iter().map(|k| k.b).fold(f32::NEG_INFINITY, f32::max);
+            }
+        }
+        top.push((i, r));
+    }
+    order_regions(&mut top, page_w, page_h, |it| &it.1);
+    let mut out: Vec<T> = Vec::with_capacity(items.len());
+    for (i, _) in top {
+        if is_container(reg(&items[i])) {
+            let mut kids: Vec<T> = (0..items.len())
+                .filter(|&k| parent[k] == Some(i))
+                .map(|k| items[k].clone())
+                .collect();
+            order_regions(&mut kids, page_w, page_h, &reg);
+            out.push(items[i].clone());
+            out.extend(kids);
+        } else {
+            out.push(items[i].clone());
+        }
+    }
+    *items = out;
+}
+
 /// Furniture / not-yet-emitted labels.
 fn is_skipped(label: &str) -> bool {
     matches!(
@@ -1241,11 +1397,18 @@ fn cells_text(mut inside: Vec<&TextCell>) -> String {
                             | '\u{2212}'
                     )
                 );
-                if dashish {
+                // docling#4052 (2.122): a dash only splits a word when it is
+                // *attached* to one — the character before it is alphanumeric.
+                // A dash that follows whitespace (a separator dash, a bullet
+                // marker, a wrapped `-prefixed` token, the bare `-` cell an
+                // ORCID splits off) is a literal character: it is kept and the
+                // lines join with the ordinary space.
+                let attached = prev.chars().rev().nth(1).is_some_and(char::is_alphanumeric);
+                if dashish && attached {
                     if last_word_alnum(prev) && first_word_alnum(t) {
                         out.pop(); // wrapped word: fuse without the dash
                     }
-                    // dash-ending line never takes a separating space
+                    // an attached dash never takes a separating space
                 } else {
                     out.push(' ');
                 }
@@ -1776,6 +1939,127 @@ pub struct TableGrid {
     pub cells: Vec<docling_core::TableCell>,
 }
 
+/// docling's `_RICH_CELL_PICTURE_COVERAGE_THRESHOLD`.
+const RICH_CELL_PICTURE_COVERAGE: f32 = 0.8;
+
+/// docling `ReadingOrderModel._match_table_pictures` (#3906, 2.118.1): every
+/// picture ≥ 80 % inside a TableFormer-structured table on the page is matched
+/// to the cell covering it, and returned per table as `cell index → pictures`.
+/// A picture that pairs with a caption stays a standalone figure (upstream
+/// would nest it and lose the caption; keeping the caption is the better
+/// failure). Tables without first-class cells (geometric fallback) have no cell
+/// boxes to match against and nest nothing.
+fn match_table_pictures(
+    regions: &[Region],
+    table_rows: &[Option<TableGrid>],
+    caption_for: &[Option<usize>],
+) -> std::collections::HashMap<usize, Vec<(usize, Vec<usize>)>> {
+    let mut out: std::collections::HashMap<usize, Vec<(usize, Vec<usize>)>> =
+        std::collections::HashMap::new();
+    for (p, pic) in regions.iter().enumerate() {
+        if pic.label != "picture" || caption_for.get(p).is_some_and(Option::is_some) {
+            continue;
+        }
+        let pa = area(pic.l, pic.t, pic.r, pic.b).max(1.0);
+        let mut best: Option<(f32, usize, usize)> = None; // (coverage, table, cell)
+        for (t, tbl) in regions.iter().enumerate() {
+            if !is_table_like(tbl.label) {
+                continue;
+            }
+            let Some(grid) = table_rows.get(t).and_then(Option::as_ref) else {
+                continue;
+            };
+            if inter(pic, tbl.l, tbl.t, tbl.r, tbl.b) / pa < RICH_CELL_PICTURE_COVERAGE {
+                continue;
+            }
+            if let Some((cov, cell)) = match_picture_to_cell(pic, &grid.cells) {
+                if best.is_none_or(|(b, _, _)| cov > b) {
+                    best = Some((cov, t, cell));
+                }
+            }
+        }
+        if let Some((_, t, cell)) = best {
+            let entry = out.entry(t).or_default();
+            match entry.iter_mut().find(|(c, _)| *c == cell) {
+                Some((_, pics)) => pics.push(p),
+                None => entry.push((cell, vec![p])),
+            }
+        }
+    }
+    out
+}
+
+/// docling `_match_picture_to_table_cell`: among the cells covering ≥ 80 % of
+/// the picture, prefer the one at the picture's inferred grid position (the
+/// row / column whose median cell center is nearest the picture's center —
+/// cell boxes can overlap across logical rows and columns), else the best
+/// coverage. Returns `(coverage, cell index)`.
+fn match_picture_to_cell(pic: &Region, cells: &[docling_core::TableCell]) -> Option<(f32, usize)> {
+    let pa = area(pic.l, pic.t, pic.r, pic.b).max(1.0);
+    let cover = |b: &[f32; 4]| inter(pic, b[0], b[1], b[2], b[3]) / pa;
+    let eligible: Vec<(f32, usize)> = cells
+        .iter()
+        .enumerate()
+        .filter_map(|(i, c)| {
+            let b = c.bbox.as_ref()?;
+            let cov = cover(b);
+            (cov >= RICH_CELL_PICTURE_COVERAGE).then_some((cov, i))
+        })
+        .collect();
+    if eligible.is_empty() {
+        return None;
+    }
+    let mut row_centers: std::collections::BTreeMap<usize, Vec<f32>> = Default::default();
+    let mut col_centers: std::collections::BTreeMap<usize, Vec<f32>> = Default::default();
+    for c in cells {
+        let Some(b) = c.bbox.as_ref() else { continue };
+        for r in c.start_row..c.start_row + c.row_span {
+            row_centers.entry(r).or_default().push((b[1] + b[3]) / 2.0);
+        }
+        for k in c.start_col..c.start_col + c.col_span {
+            col_centers.entry(k).or_default().push((b[0] + b[2]) / 2.0);
+        }
+    }
+    let median = |v: &mut Vec<f32>| -> f32 {
+        v.sort_by(f32::total_cmp);
+        let n = v.len();
+        if n % 2 == 1 {
+            v[n / 2]
+        } else {
+            (v[n / 2 - 1] + v[n / 2]) / 2.0
+        }
+    };
+    let (px, py) = ((pic.l + pic.r) / 2.0, (pic.t + pic.b) / 2.0);
+    let nearest = |centers: &mut std::collections::BTreeMap<usize, Vec<f32>>, target: f32| {
+        centers
+            .iter_mut()
+            .map(|(&i, v)| (i, (median(v) - target).abs()))
+            .min_by(|a, b| a.1.total_cmp(&b.1))
+            .map(|(i, _)| i)
+    };
+    let row = nearest(&mut row_centers, py);
+    let col = nearest(&mut col_centers, px);
+    let logical: Vec<(f32, usize)> = eligible
+        .iter()
+        .copied()
+        .filter(|&(_, i)| {
+            let c = &cells[i];
+            row.is_some_and(|r| c.start_row <= r && r < c.start_row + c.row_span)
+                && col.is_some_and(|k| c.start_col <= k && k < c.start_col + c.col_span)
+        })
+        .collect();
+    let pool = if logical.is_empty() {
+        &eligible
+    } else {
+        &logical
+    };
+    // Python's `max` over `(coverage, cell_index, cell)` tuples: highest
+    // coverage, ties to the higher index.
+    pool.iter()
+        .copied()
+        .max_by(|a, b| a.0.total_cmp(&b.0).then(a.1.cmp(&b.1)))
+}
+
 /// The DocLang structure overlay derived from first-class cells: span
 /// continuations (`lcel`/`ucel`/`xcel`) and per-cell header roles, so the
 /// PDF path's DCLX carries real spans instead of a flat grid.
@@ -1845,7 +2129,7 @@ pub fn assemble_page(
             )
         })
         .collect();
-    order_regions(&mut items, page.width, page.height, |it| &it.0);
+    order_with_containers(&mut items, page.width, page.height, |it| &it.0);
     // Float a margin page number to the front of reading order (docling parity:
     // right_to_left_02's bottom `11` is its first item). Stable, so everything
     // else keeps its order; no-op on pages without such a region.
@@ -1871,6 +2155,14 @@ pub fn assemble_page(
     let table_caption_for = pair_table_captions(&regions, &mut caption_taken);
     for ci in table_caption_for.iter().flatten() {
         consumed[*ci] = true;
+    }
+    // Pictures inside a table become rich-cell content (docling#3906, 2.118.1):
+    // the picture is nested in the cell it covers and not emitted standalone.
+    let rich_cell_pictures = match_table_pictures(&regions, &table_rows, &caption_for);
+    for (_, pics) in rich_cell_pictures.values().flatten() {
+        for &p in pics {
+            consumed[p] = true;
+        }
     }
     // A code block's language label (`XML`, `C#`, …) is chrome, not content — the
     // detector emits it as its own region above the code; consume it.
@@ -2065,7 +2357,7 @@ pub fn assemble_page(
                 // the public model, and the DocLang structure overlay derives
                 // from them so DCLX emits real span/header tokens. The
                 // geometric fallback has no per-cell records.
-                let (rows, cells, structure) = match table_rows[i].clone() {
+                let (mut rows, cells, structure) = match table_rows[i].clone() {
                     Some(grid) => {
                         let nrows = grid.rows.len();
                         let ncols = grid.rows.first().map_or(0, Vec::len);
@@ -2088,13 +2380,68 @@ pub fn assemble_page(
                 let caption = table_caption_for[i]
                     .map(|ci| md_escape(&region_texts[ci]))
                     .filter(|t| !t.is_empty());
+                // Rich cells (docling#3906): the covering cell's blocks are its
+                // text followed by the nested picture(s). docling's Markdown
+                // renders a `RichTableCell` through the serializer — the
+                // group's children joined by blank lines, newlines flattened
+                // to spaces — so the flat `rows` text becomes
+                // `text  <!-- image -->`; the first-class `cells` (the JSON
+                // `table_cells` / `grid`) keep the plain text, as upstream.
+                let mut cell_blocks: Option<Vec<Vec<Vec<Node>>>> = None;
+                if let (Some(by_cell), Some(fc)) = (rich_cell_pictures.get(&i), cells.as_ref()) {
+                    let nrows = rows.len();
+                    let ncols = rows.iter().map(Vec::len).max().unwrap_or(0);
+                    let mut blocks = vec![vec![Vec::<Node>::new(); ncols]; nrows];
+                    for (cell_idx, pics) in by_cell {
+                        let cell = &fc[*cell_idx];
+                        let (r, c) = (cell.start_row, cell.start_col);
+                        if r >= nrows || c >= ncols {
+                            continue;
+                        }
+                        let mut parts: Vec<String> = Vec::new();
+                        let mut cell_nodes: Vec<Node> = Vec::new();
+                        if !cell.text.trim().is_empty() {
+                            parts.push(cell.text.clone());
+                            cell_nodes.push(Node::Paragraph {
+                                text: cell.text.clone(),
+                            });
+                        }
+                        for &p in pics {
+                            parts.push("<!-- image -->".to_string());
+                            let classification = match &enrichments[p] {
+                                Some(Enrichment::PictureClasses(classes)) => Some(classes.clone()),
+                                _ => None,
+                            };
+                            #[cfg(feature = "ocr-prep")]
+                            let image = crop_region(page, &regions[p]);
+                            #[cfg(not(feature = "ocr-prep"))]
+                            let image: Option<PictureImage> = None;
+                            cell_nodes.push(located(
+                                norm_loc(&regions[p], page.width, page_h),
+                                Node::Picture {
+                                    caption: None,
+                                    image,
+                                    classification,
+                                },
+                            ));
+                        }
+                        let rendered = parts.join("  ");
+                        for rr in r..(r + cell.row_span).min(nrows) {
+                            for cc in c..(c + cell.col_span).min(ncols) {
+                                rows[rr][cc] = rendered.clone();
+                            }
+                        }
+                        blocks[r][c] = cell_nodes;
+                    }
+                    cell_blocks = Some(blocks);
+                }
                 nodes.push(located(
                     loc,
                     Node::Table(Table {
                         rows,
                         location: None,
                         structure,
-                        cell_blocks: None,
+                        cell_blocks,
                         cells,
                         caption,
                     }),
@@ -2483,7 +2830,7 @@ impl StreamAssembler {
 
 #[cfg(test)]
 mod tests {
-    use super::clean_text;
+    use super::{cells_text, clean_text};
     use super::{code_region_text, merge_continuations, resolve_link_anchors, StreamAssembler};
     use crate::layout::Region;
     use crate::pdfium_backend::{LinkAnnot, PdfPage, TextCell};
@@ -2782,7 +3129,9 @@ mod tests {
             r: 200.0,
             b: 130.0,
         };
-        // ORCID superscript: bare dash cells keep the dash, take no space after.
+        // ORCID superscript: a bare dash cell is a *detached* dash — kept, and
+        // since docling#4052 (2.122) it joins with the ordinary space on both
+        // sides (`[0000 -0002 -6960]` before that fix).
         let orcid = vec![
             cell("[0000", 10.0, 100.0, 30.0, 110.0),
             cell("−", 30.0, 100.0, 34.0, 110.0),
@@ -2790,7 +3139,7 @@ mod tests {
             cell("−", 50.0, 100.0, 54.0, 110.0),
             cell("6960]", 54.0, 100.0, 70.0, 110.0),
         ];
-        assert_eq!(super::region_text(&region, &orcid), "[0000 -0002 -6960]");
+        assert_eq!(super::region_text(&region, &orcid), "[0000 - 0002 - 6960]");
         // Wrapped word: dash dropped, lines fused (both boundary words alnum).
         let wrapped = vec![
             cell("platforms-", 10.0, 100.0, 60.0, 110.0),
@@ -2800,8 +3149,10 @@ mod tests {
             super::region_text(&region, &wrapped),
             "platformsreflects the design"
         );
-        // Dash-ending line before a quote-opening one: not alnum-adjacent, so
-        // the dash stays and the lines glue (2305's OTSL list bullets).
+        // Dash-ending lines that are *detached* dashes (a bare bullet cell, a
+        // `cell -` separator): the dash stays and the lines join with a space
+        // — docling#4052; before it they glued (`-"C" cell a new table cell`,
+        // 2305's OTSL list bullets).
         let otsl = vec![
             cell("–", 10.0, 100.0, 14.0, 110.0),
             cell("\"C\" cell -", 16.0, 100.0, 60.0, 110.0),
@@ -2809,7 +3160,7 @@ mod tests {
         ];
         assert_eq!(
             super::region_text(&region, &otsl),
-            "-\"C\" cell a new table cell"
+            "- \"C\" cell - a new table cell"
         );
         // Index order is authoritative — no geometric re-sort.
         let numeral = vec![
@@ -3176,6 +3527,146 @@ mod tests {
         // The dp default (the docling-parse sanitizer) preserves internal spacing
         // it placed deliberately; line breaks/tabs normalize to a space, ends trim.
         assert_eq!(clean_text("a   b\nc"), "a   b c");
+    }
+
+    /// docling#4064: a form's children are emitted together where the form
+    /// sits in the top-level order, not interleaved with surrounding text.
+    #[test]
+    fn form_children_stay_together_in_reading_order() {
+        let reg = |label: &'static str, l: f32, t: f32, r: f32, b: f32| Region {
+            label,
+            score: 0.9,
+            l,
+            t,
+            r,
+            b,
+        };
+        // Page: intro text, then a form spanning the left column with two
+        // fields and a table inside, while a right-column paragraph sits
+        // level with the form's first field (it would otherwise be read
+        // between the form's children).
+        let mut items = vec![
+            reg("text", 50.0, 50.0, 550.0, 70.0),    // 0 intro
+            reg("form", 50.0, 100.0, 300.0, 400.0),  // 1 container
+            reg("text", 60.0, 110.0, 290.0, 130.0),  // 2 field A (child)
+            reg("text", 320.0, 110.0, 550.0, 130.0), // 3 right column paragraph
+            reg("table", 60.0, 150.0, 290.0, 300.0), // 4 table (child)
+            reg("text", 60.0, 320.0, 290.0, 340.0),  // 5 field B (child)
+            reg("text", 50.0, 450.0, 550.0, 470.0),  // 6 outro
+        ];
+        super::order_with_containers(&mut items, 600.0, 800.0, |r| r);
+        let order: Vec<(&str, f32)> = items.iter().map(|r| (r.label, r.t)).collect();
+        // The form block (container, then its children top-down) is one unit.
+        let form_pos = order.iter().position(|(l, _)| *l == "form").unwrap();
+        assert_eq!(
+            &order[form_pos..form_pos + 4],
+            &[
+                ("form", 100.0),
+                ("text", 110.0),
+                ("table", 150.0),
+                ("text", 320.0)
+            ]
+        );
+        assert_eq!(order[0], ("text", 50.0));
+        assert_eq!(order[order.len() - 1], ("text", 450.0));
+        // Without a container the plain order interleaves by geometry.
+        let mut flat: Vec<Region> = items
+            .iter()
+            .filter(|r| r.label != "form")
+            .cloned()
+            .collect();
+        super::order_regions(&mut flat, 600.0, 800.0, |r| r);
+        assert_ne!(
+            flat.iter().map(|r| r.t).collect::<Vec<_>>(),
+            order
+                .iter()
+                .filter(|(l, _)| *l != "form")
+                .map(|(_, t)| *t)
+                .collect::<Vec<_>>()
+        );
+    }
+
+    /// docling#3906: a picture inside a table lands in the covering cell,
+    /// chosen by the picture's inferred grid position when cell boxes overlap.
+    #[test]
+    fn picture_matches_the_cell_at_its_grid_position() {
+        let cell = |r: usize, c: usize, bbox: [f32; 4]| docling_core::TableCell {
+            text: format!("r{r}c{c}"),
+            bbox: Some(bbox),
+            start_row: r,
+            start_col: c,
+            row_span: 1,
+            col_span: 1,
+            column_header: false,
+            row_header: false,
+            row_section: false,
+        };
+        // 2×2 grid; the (1,0) cell box is generous and also covers the picture.
+        let cells = vec![
+            cell(0, 0, [0.0, 0.0, 100.0, 50.0]),
+            cell(0, 1, [100.0, 0.0, 200.0, 50.0]),
+            cell(1, 0, [0.0, 50.0, 100.0, 100.0]),
+            cell(1, 1, [100.0, 50.0, 200.0, 100.0]),
+        ];
+        let pic = Region {
+            label: "picture",
+            score: 0.9,
+            l: 110.0,
+            t: 60.0,
+            r: 190.0,
+            b: 95.0,
+        };
+        assert_eq!(super::match_picture_to_cell(&pic, &cells), Some((1.0, 3)));
+        // A picture only half inside any cell is not nested.
+        let straddling = Region {
+            label: "picture",
+            score: 0.9,
+            l: 60.0,
+            t: 60.0,
+            r: 160.0,
+            b: 95.0,
+        };
+        assert_eq!(super::match_picture_to_cell(&straddling, &cells), None);
+    }
+
+    /// docling#4052 (2.122): a line-final dash fuses the wrapped word only
+    /// when attached to it; a detached dash is a literal and the lines join
+    /// with a space.
+    #[test]
+    fn line_final_hyphen_fuses_only_when_attached_to_a_word() {
+        let line = |text: &str, t: f32| TextCell {
+            text: text.to_string(),
+            l: 0.0,
+            t,
+            r: 100.0,
+            b: t + 10.0,
+        };
+        // `algo-` / `rithms`: attached hyphen, alnum on both sides → fused.
+        assert_eq!(
+            cells_text(vec![&line("algo-", 0.0), &line("rithms", 12.0)]),
+            "algorithms"
+        );
+        // `pp. 545-` / `561`: attached, digits count as alnum → `545561` (upstream).
+        assert_eq!(
+            cells_text(vec![&line("pp. 545-", 0.0), &line("561", 12.0)]),
+            "pp. 545561"
+        );
+        // A dash after whitespace — a separator or a lone `-` cell — is kept and
+        // the lines take the ordinary joining space.
+        assert_eq!(
+            cells_text(vec![&line("range -", 0.0), &line("wide", 12.0)]),
+            "range - wide"
+        );
+        assert_eq!(
+            cells_text(vec![&line("-", 0.0), &line("item", 12.0)]),
+            "- item"
+        );
+        // Attached but the next line opens with no word (`x-` / `...`): dash
+        // kept and, as before, no separating space.
+        assert_eq!(
+            cells_text(vec![&line("x-", 0.0), &line("...", 12.0)]),
+            "x-..."
+        );
     }
 
     #[test]
