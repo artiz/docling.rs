@@ -1,0 +1,78 @@
+\documentclass[11pt,a4paper]{article}
+
+\usepackage[utf8]{inputenc} % allow utf-8 input
+\usepackage[T1]{fontenc}    % use 8-bit T1 fonts
+\usepackage{hyperref}       % hyperlinks
+\usepackage{url}            % simple URL typesetting
+\usepackage{booktabs}       % professional-quality tables
+\usepackage{amsfonts}       % blackboard math symbols
+\usepackage{nicefrac}       % compact symbols for 1/2, etc.
+\usepackage{microtype}      % microtypography
+\usepackage{xcolor}         % colors
+\usepackage{graphicx}       % graphics
+\usepackage[normalem]{ulem} % strikethrough
+\title{Nesting}
+
+\begin{document}
+
+\maketitle
+
+A list featuring nesting:
+
+\begin{itemize}
+\item abc
+  \begin{itemize}
+\item abc123
+    \begin{itemize}
+\item abc1234
+      \begin{itemize}
+\item abc12345
+        \begin{itemize}
+\item a.
+\item b.
+        \end{itemize}
+      \end{itemize}
+\item abcd1234：
+      \begin{itemize}
+\item abcd12345：
+        \begin{itemize}
+\item a.
+\item b.
+        \end{itemize}
+      \end{itemize}
+    \end{itemize}
+  \end{itemize}
+\item def：
+  \begin{itemize}
+\item def1234：
+    \begin{itemize}
+\item def12345。
+    \end{itemize}
+  \end{itemize}
+\item after one empty line
+  \begin{itemize}
+\item foo
+  \end{itemize}
+\item afer two empty lines
+  \begin{itemize}
+\item bar
+  \end{itemize}
+\end{itemize}
+
+\begin{itemize}
+\item changing symbol
+\end{itemize}
+
+A nested HTML list:
+
+\begin{itemize}
+\item First item
+\item Second item with subitems:
+  \begin{itemize}
+\item Subitem 1
+\item Subitem 2
+  \end{itemize}
+\item Last list item
+\end{itemize}
+
+\end{document}

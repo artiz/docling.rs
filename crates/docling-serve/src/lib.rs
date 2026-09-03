@@ -25,7 +25,7 @@
 //! Options ride along as multipart text parts, JSON fields, or query
 //! parameters (body wins over query):
 //!
-//! - `to` — `md` (default) | `json` | `dclx` | `chunks` | `images` (#243:
+//! - `to` — `md` (default) | `json` | `dclx` | `chunks` | `latex` (#317) | `images` (#243:
 //!   rasterize a PDF's pages to PNG through pdfium — no conversion, no models;
 //!   the JSON response is `{"pages": [{"page", "width", "height",
 //!   "png_base64"}]}`, combines with `pages` for a window, capped at
@@ -768,10 +768,10 @@ fn validate_output(options: &ConvertOptions) -> Result<(String, ImageMode), ApiE
     let to = options.to.clone().unwrap_or_else(|| "md".into());
     if !matches!(
         to.as_str(),
-        "md" | "markdown" | "json" | "dclx" | "chunks" | "images"
+        "md" | "markdown" | "json" | "dclx" | "chunks" | "images" | "latex"
     ) {
         return Err(ApiError::Bad(format!(
-            "unknown to='{to}' (expected: md, json, dclx, chunks, images)"
+            "unknown to='{to}' (expected: md, json, dclx, chunks, images, latex)"
         )));
     }
     let image_mode = match options.images.as_deref().unwrap_or("placeholder") {
@@ -1250,6 +1250,7 @@ impl OutputNames {
             "json" => "json",
             "chunks" => "chunks.json",
             "dclx" => "dclx",
+            "latex" => "tex",
             _ => unreachable!("validated above"),
         };
         Self {
@@ -1640,6 +1641,13 @@ fn render_stored(
             confidence,
             body: docling::dclx::to_dclx_bytes(document),
         },
+        // #317: a text body like Markdown (no download disposition).
+        "latex" => StoredResponse {
+            content_type: "text/x-tex; charset=utf-8",
+            disposition: None,
+            confidence,
+            body: document.export_to_latex().into_bytes(),
+        },
         _ => unreachable!("validated above"),
     })
 }
@@ -1697,6 +1705,7 @@ fn batch_item(
                 document
             )));
         }
+        "latex" => item["latex"] = json!(document.export_to_latex()),
         _ => unreachable!("validated above"),
     }
     if to != "json" {

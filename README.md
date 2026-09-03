@@ -191,7 +191,7 @@ honoring `pages=A-B` and a `scale` of 0.1–4.0 pixels per PDF point (default
 2.0 = 144 dpi). Capped at 100 pages per request
 (`DOCLING_RS_MAX_RASTER_PAGES`); narrow big documents with `pages`.
 
-Options per request: `to=md|json|dclx|chunks|images`, `strict`, `images=placeholder|embedded`,
+Options per request: `to=md|json|dclx|chunks|latex|images`, `strict`, `images=placeholder|embedded`,
 `skip_empty_cells`, `compact_tables`,
 `no_ocr`, `skip_ocr`, `no_table_former`, `no_text_panels`, `heading_hierarchy`, `force_full_page_ocr`, `pages`,
 `ocr_lang`, `ocr_mode`, `ocr_scale`, `scale`, `asr_model`, `asr_lang`, `video_frames`, `fetch_images`,
@@ -386,6 +386,47 @@ Conformance against docling's own `.dclx` output is tracked by
 `scripts/conformance/gen_dclx.py` (generates the groundtruth) and
 `scripts/conformance/dclx_conformance.sh` (line-diffs the extracted
 `document.xml`).
+
+### LaTeX (`.tex`) output
+
+`export_to_latex()` renders a complete LaTeX document — docling 2.124's
+`--to latex` (#317), the Rust counterpart of docling-core's
+`LaTeXDocSerializer` with its default parameters: the `article` preamble and
+package list, a document title hoisted into `\title{}` + `\maketitle`,
+`\section`/`\subsection`/`\subsubsection` headings, `itemize`/`enumerate`
+lists (nested environments indented two spaces), `table`/`tabular` grids with
+`\hline` rules and captions (rich cells render their lists / nested tables
+inline), `figure` environments with a `% image` placeholder and the picture
+classification as a `% annotation` comment, `verbatim` code, `$$…$$` formulas,
+inline formatting as `\textbf{}` / `\textit{}` / `\sout{}` / `\texttt{}` /
+`\href{}{}` / `$…$`, and LaTeX escaping of every special character in text.
+
+Scored against Python docling's **own** `docling --to latex` output on the
+shared declarative corpus (md, docx, html, pptx, xlsx, asciidoc, csv, webvtt,
+jats): **89 of 116 fixtures byte-exact**, 94 once upstream's duplicated
+formatted list items / headings are normalized away (see below). The
+remaining differences are model gaps rather than serializer bugs: underline
+and sub/superscript have no Markdown form and stay plain text; HTML rich
+table cells (lists / nested tables inside a `<td>`) are flattened; a few
+list-grouping and furniture placements differ. The regression suite
+(`crates/docling/tests/regression.rs`) pins every fixture's `.tex`.
+
+```rust
+println!("{}", result.document.export_to_latex()); // \documentclass … \end{document}
+```
+
+`--to latex` on the CLI prints it (batch mode writes `<stem>.tex`), serve
+answers `to=latex` as `text/x-tex` (inline under `latex` in a batch), and the
+Node bindings take `to: 'latex'`. The Python bindings need nothing: their
+`result.document` *is* upstream docling-core's `DoclingDocument`, so
+`LaTeXDocSerializer(doc=result.document).serialize().text` applies directly.
+Two deliberate deviations: upstream raises on a heading deeper than
+`\subsubsection`, docling.rs degrades those to `\paragraph` /
+`\subparagraph` instead of failing the conversion; and upstream emits the
+text of a *formatted* list item or heading twice (inside `\item` /
+`\section{}` and again as its own paragraph —
+[docling-core#740](https://github.com/docling-project/docling-core/issues/740)),
+which docling.rs does not reproduce.
 
 DocLang also reads back **in**: `.dclg`/`.dclg.xml` (bare DocLang XML) and
 `.dclx` archives are input formats like any other —
@@ -775,7 +816,7 @@ docling-rs --input /data/reports --output ./converted
 The PDF/image ML pipeline loads its models **once** and every matched file
 reuses the warm sessions — the same amortization `docling-rs serve` does
 across requests, without running a server. Extensions follow `--to` (`.md`,
-`.json`, `.dclx`, `.chunks.json`), `--images referenced` writes each
+`.json`, `.dclx`, `.chunks.json`, `.tex`), `--images referenced` writes each
 document's pictures into a sibling `<stem>_artifacts/` directory, and every
 other flag (`--strict`, `--pages`, `--ocr-lang`, `--pipeline vlm`, enrichment,
 …) applies to the whole batch. `--jobs N` converts declarative formats in

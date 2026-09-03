@@ -1,0 +1,122 @@
+\documentclass[11pt,a4paper]{article}
+
+\usepackage[utf8]{inputenc} % allow utf-8 input
+\usepackage[T1]{fontenc}    % use 8-bit T1 fonts
+\usepackage{hyperref}       % hyperlinks
+\usepackage{url}            % simple URL typesetting
+\usepackage{booktabs}       % professional-quality tables
+\usepackage{amsfonts}       % blackboard math symbols
+\usepackage{nicefrac}       % compact symbols for 1/2, etc.
+\usepackage{microtype}      % microtypography
+\usepackage{xcolor}         % colors
+\usepackage{graphicx}       % graphics
+\usepackage[normalem]{ulem} % strikethrough
+
+\begin{document}
+
+\section{Test Document}
+
+Paragraph 2.1.1
+
+Paragraph 2.1.2
+
+\subsubsection{Test 1:}
+
+\begin{itemize}
+\item List item 1
+\item List item 2
+\item List item 3
+\end{itemize}
+
+\subsubsection{Test 2:}
+
+\begin{enumerate}
+\item List item a
+\item List item b
+\item List item c
+\end{enumerate}
+
+\subsubsection{Test 3:}
+
+\begin{itemize}
+\item List item 1
+\item List item 2
+  \begin{itemize}
+\item List item 1.1
+\item List item 1.2
+\item List item 1.3
+  \end{itemize}
+\item List item 3
+\end{itemize}
+
+\subsubsection{Test 4:}
+
+\begin{itemize}
+\item List item 1
+  \begin{itemize}
+\item List item 1.1
+  \end{itemize}
+\item List item 2
+\end{itemize}
+
+\subsubsection{Test 5:}
+
+\begin{itemize}
+\item List item 1
+  \begin{itemize}
+\item List item 1.1
+    \begin{itemize}
+\item List item 1.1.1
+    \end{itemize}
+  \end{itemize}
+\item List item 3
+\end{itemize}
+
+\subsubsection{Test 6:}
+
+\begin{itemize}
+\item List item 1
+\item List item 2
+  \begin{itemize}
+\item List item 1.1
+\item List item 1.2
+    \begin{itemize}
+\item List item 1.2.1
+    \end{itemize}
+  \end{itemize}
+\item List item 3
+\end{itemize}
+
+\subsubsection{Test 7:}
+
+\begin{enumerate}
+\item First item with numId 2
+\item Second item with numId 2
+\item Third item with numId 2
+\item Fourth item with numId 2
+\end{enumerate}
+
+\begin{enumerate}
+\item Single item of a new list
+\end{enumerate}
+
+\begin{enumerate}
+\item Single item of a new list
+\end{enumerate}
+
+\subsubsection{Style-based lists:}
+
+\textit{Docling should extract the list format when the formatting comes from the styles:}
+
+\begin{itemize}
+\item First item
+\item Second item
+\item Third item
+  \begin{itemize}
+\item \textit{Sub-item A}
+\item \textit{Sub-item B}
+  \end{itemize}
+\item \textit{Fourth item}
+\end{itemize}
+
+\end{document}

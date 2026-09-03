@@ -1,0 +1,62 @@
+\documentclass[11pt,a4paper]{article}
+
+\usepackage[utf8]{inputenc} % allow utf-8 input
+\usepackage[T1]{fontenc}    % use 8-bit T1 fonts
+\usepackage{hyperref}       % hyperlinks
+\usepackage{url}            % simple URL typesetting
+\usepackage{booktabs}       % professional-quality tables
+\usepackage{amsfonts}       % blackboard math symbols
+\usepackage{nicefrac}       % compact symbols for 1/2, etc.
+\usepackage{microtype}      % microtypography
+\usepackage{xcolor}         % colors
+\usepackage{graphicx}       % graphics
+\usepackage[normalem]{ulem} % strikethrough
+\title{Rich Table Cells in HTML}
+
+\begin{document}
+
+\maketitle
+
+\begin{table}[h]
+\begin{tabular}{|l|l|l|}
+\hline
+Name & Habitat & Comment \\ \hline
+Wood Duck &  & Often seen near ponds. \\ \hline
+Mallard & Ponds, lakes, rivers & Quack \\ \hline
+Goose (not a duck!) & Water \& wetlands & \textbf{Large} , \textit{loud} , noisy , \sout{small} \\ \hline
+Teal & - Pond - Marsh - Riverbank & 1. Fly south in winter 2. Build nest on ground \\ \hline
+\end{tabular}
+\end{table}
+
+\begin{table}[h]
+\begin{tabular}{|l|l|}
+\hline
+Genus & Species \\ \hline
+Aythya (Diving ducks) & Hawser, Common Pochard \\ \hline
+Lophonetta (Pintail group) & Fulvous Whistling Duck \\ \hline
+Oxyura (Benthic ducks) & Wigee, Banded Water-screw \\ \hline
+\end{tabular}
+\end{table}
+
+\begin{table}[h]
+\begin{tabular}{|l|l|}
+\hline
+Action & Action \\ \hline
+\textbf{Swim} & Gracefully glide on H 2 O surfaces. \\ \hline
+\textit{Fly} &  \\ \hline
+Quack & Type Sound Short "quak" Long "quaaaaaack" \\ \hline
+\end{tabular}
+\end{table}
+
+\begin{table}[h]
+\begin{tabular}{|l|l|l|}
+\hline
+Name & Description & Image \\ \hline
+Donald Duck & Cartoon character. & \href{https://en.wikipedia.org/wiki/Donald\_Duck\#/media/File:Donald\_Duck\_angry\_transparent\_background.png}{View PNG} \\ \hline
+White-headed duck & A small diving duck some 45 cm (18 in) long. & White-headed duck thumbnail  <!-- image --> \\ \hline
+Mandarin Duck & Known for its striking plumage. & \href{https://upload.wikimedia.org/wikipedia/commons/thumb/7/75/Mandarin\_duck\_\%28Aix\_galericulata\%29.jpg/250px-Mandarin\_duck\_\%28Aix\_galericulata\%29.jpg}{View Full-Size Image} \\ \hline
+Unknown Duck & No photo available. &  \\ \hline
+\end{tabular}
+\end{table}
+
+\end{document}

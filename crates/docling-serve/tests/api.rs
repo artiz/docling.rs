@@ -1439,3 +1439,57 @@ async fn put_target_refuses_a_private_address_without_the_escape_hatch() {
     assert_eq!(response.status(), StatusCode::BAD_REQUEST);
     assert!(body_string(response).await.contains("private/loopback"));
 }
+
+// --- #317: LaTeX output --------------------------------------------------
+
+#[tokio::test]
+async fn latex_output_is_a_complete_document() {
+    let (ct, body) = multipart(
+        "note.md",
+        b"# Title\n\nHello 100% & more.\n",
+        &[("to", "latex")],
+    );
+    let response = app().oneshot(convert_request(&ct, body, "")).await.unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(
+        response.headers()[header::CONTENT_TYPE],
+        "text/x-tex; charset=utf-8"
+    );
+    let out = body_string(response).await;
+    assert!(out.starts_with("\\documentclass"), "{out}");
+    assert!(out.contains("\\title{Title}"), "{out}");
+    assert!(out.contains("Hello 100\\% \\& more."), "escaping: {out}");
+    assert!(out.ends_with("\\end{document}"), "{out}");
+}
+
+#[tokio::test]
+async fn latex_batch_items_and_zip_target_carry_tex() {
+    // Batch: inline `latex` key per item.
+    let (ct, body) = multipart_files(
+        &[("a.md", b"# A\n"), ("b.md", b"# B\n")],
+        &[("to", "latex")],
+    );
+    let response = app().oneshot(convert_request(&ct, body, "")).await.unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let v: serde_json::Value = serde_json::from_str(&body_string(response).await).unwrap();
+    let results = v["results"].as_array().expect("batch shape");
+    assert_eq!(results.len(), 2);
+    assert!(
+        results[0]["latex"].as_str().unwrap().contains("\\title{A}"),
+        "{v}"
+    );
+
+    // Zip target: `<stem>.tex` entries (OutputNames knows the extension).
+    let b64 = docling_b64("a,b\n1,2\n");
+    let body = format!(
+        r#"{{"sources": [{{"kind": "file", "base64_string": "{b64}", "filename": "one.csv"}}],
+            "target": {{"kind": "zip"}}, "to": "latex"}}"#
+    );
+    let response = app().oneshot(json_convert(&body, false)).await.unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let bytes = response.into_body().collect().await.unwrap().to_bytes();
+    assert!(
+        bytes.windows(7).any(|w| w == b"one.tex"),
+        "tex entry missing"
+    );
+}

@@ -160,6 +160,7 @@ fn outputs_match_fixtures() {
             (".md", legacy.export_to_markdown()),
             (".strict.md", strict.export_to_markdown()),
             (".json", legacy.export_to_json()),
+            (".tex", legacy.export_to_latex()),
         ];
         for (suffix, got) in outputs {
             let path = expected_path(src, suffix);

@@ -1,0 +1,83 @@
+\documentclass[11pt,a4paper]{article}
+
+\usepackage[utf8]{inputenc} % allow utf-8 input
+\usepackage[T1]{fontenc}    % use 8-bit T1 fonts
+\usepackage{hyperref}       % hyperlinks
+\usepackage{url}            % simple URL typesetting
+\usepackage{booktabs}       % professional-quality tables
+\usepackage{amsfonts}       % blackboard math symbols
+\usepackage{nicefrac}       % compact symbols for 1/2, etc.
+\usepackage{microtype}      % microtypography
+\usepackage{xcolor}         % colors
+\usepackage{graphicx}       % graphics
+\usepackage[normalem]{ulem} % strikethrough
+\title{Test Table Slide}
+
+\begin{document}
+
+\maketitle
+
+With footnote
+
+\begin{table}[h]
+\begin{tabular}{|l|l|l|l|l|l|l|}
+\hline
+ & \begin{itemize} \item Class1 \end{itemize} & - Class1 & - Class1 & \begin{itemize} \item Class2 \end{itemize} & - Class2 & - Class2 \\ \hline
+ & \begin{itemize} \item A merged with B \end{itemize} & - A merged with B & \begin{itemize} \item C \end{itemize} & \begin{itemize} \item A \end{itemize} & \begin{itemize} \item B \end{itemize} & \begin{itemize} \item C \end{itemize} \\ \hline
+\begin{itemize} \item R1 \end{itemize} & \begin{itemize} \item True \end{itemize} & \begin{itemize} \item False \end{itemize} &  & \begin{itemize} \item False \end{itemize} & \begin{itemize} \item True \end{itemize} & \begin{itemize} \item True \end{itemize} \\ \hline
+\begin{itemize} \item R2 \end{itemize} &  &  & \begin{itemize} \item True \end{itemize} & \begin{itemize} \item False \end{itemize} &  &  \\ \hline
+\begin{itemize} \item R3 \end{itemize} & \begin{itemize} \item False \end{itemize} &  &  &  & \begin{itemize} \item False \end{itemize} &  \\ \hline
+- R3 &  & \begin{itemize} \item True \end{itemize} &  & \begin{itemize} \item True \end{itemize} &  &  \\ \hline
+\begin{itemize} \item R4 \end{itemize} &  &  & \begin{itemize} \item False \end{itemize} &  & \begin{itemize} \item False \end{itemize} &  \\ \hline
+- R4 &  & \begin{itemize} \item True \end{itemize} &  & \begin{itemize} \item True \end{itemize} & \begin{itemize} \item False \end{itemize} & \begin{itemize} \item False \end{itemize} \\ \hline
+- R4 & \begin{itemize} \item True \end{itemize} & \begin{itemize} \item False \end{itemize} & \begin{itemize} \item True \end{itemize} & \begin{itemize} \item False \end{itemize} & \begin{itemize} \item True \end{itemize} & \begin{itemize} \item False \end{itemize} \\ \hline
+\end{tabular}
+\end{table}
+
+\begin{enumerate}
+\item Let’s introduce a list
+\end{enumerate}
+
+\begin{itemize}
+\item With foo
+\item Bar
+\item And baz things
+\end{itemize}
+
+A rectangle shape with this text inside.
+
+\begin{enumerate}
+\item List item4
+\item List item5
+\item List item6
+\end{enumerate}
+
+\begin{itemize}
+\item I1
+\item I2
+\item I3
+\item I4
+\end{itemize}
+
+Some info:
+
+\begin{itemize}
+\item Item A
+\item Item B
+\end{itemize}
+
+Maybe a list?
+
+\begin{enumerate}
+\item List1
+\item List2
+\item List3
+\end{enumerate}
+
+\begin{itemize}
+\item l1
+\item l2
+\item l3
+\end{itemize}
+
+\end{document}

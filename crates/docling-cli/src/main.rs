@@ -7,7 +7,7 @@
 //! (docling's independent `do_ocr=False`); `--no-ocr` remains the
 //! skip-everything fast path.
 //!
-//! Usage: docling-rs [--strict] [--to md|json|dclx|chunks|images] [--pages A-B] [--scale X] [--images MODE] [--input GLOB --output DIR [--jobs N]] [--fetch-images] [--list-attachments] [--skip-empty-cells] [--compact-tables] [--ebcdic-layout JSON|PATH] [--no-stream] [--no-table-former] [--no-ocr] [--skip-ocr] [--force-full-page-ocr] [--no-text-panels] [--heading-hierarchy] [--ocr-lang en|ch] [--ocr-mode MODE] [--ocr-scale X] [--chunker hierarchical|hybrid] [--chunk-tokenizer PATH] [--chunk-max-tokens N] [--no-chunk-merge-peers] [--pipeline standard|vlm] [--vlm-endpoint URL] [--vlm-model NAME] [--vlm-api-key TOKEN] [--vlm-prompt TEXT] [--vlm-max-tokens N] [--asr-model PRESET] [--asr-lang CODE] [--video-frames N] [--use-web-browser] [--enrich-picture-classes] [--enrich-code] [--enrich-formula] <input-file>
+//! Usage: docling-rs [--strict] [--to md|json|dclx|chunks|images|latex] [--pages A-B] [--scale X] [--images MODE] [--input GLOB --output DIR [--jobs N]] [--fetch-images] [--list-attachments] [--skip-empty-cells] [--compact-tables] [--ebcdic-layout JSON|PATH] [--no-stream] [--no-table-former] [--no-ocr] [--skip-ocr] [--force-full-page-ocr] [--no-text-panels] [--heading-hierarchy] [--ocr-lang en|ch] [--ocr-mode MODE] [--ocr-scale X] [--chunker hierarchical|hybrid] [--chunk-tokenizer PATH] [--chunk-max-tokens N] [--no-chunk-merge-peers] [--pipeline standard|vlm] [--vlm-endpoint URL] [--vlm-model NAME] [--vlm-api-key TOKEN] [--vlm-prompt TEXT] [--vlm-max-tokens N] [--asr-model PRESET] [--asr-lang CODE] [--video-frames N] [--use-web-browser] [--enrich-picture-classes] [--enrich-code] [--enrich-formula] <input-file>
 //!   --input GLOB|DIR   batch mode (#205): convert every file the glob matches
 //!                      (`--input '/data/reports/**/*.pdf'` — quote it so the
 //!                      shell doesn't expand it) instead of one positional file.
@@ -406,9 +406,9 @@ fn main() -> ExitCode {
 
     if !matches!(
         to.as_str(),
-        "md" | "markdown" | "json" | "dclx" | "chunks" | "images"
+        "md" | "markdown" | "json" | "dclx" | "chunks" | "images" | "latex"
     ) {
-        eprintln!("error: unknown --to '{to}' (expected: md, json, dclx, chunks, images)");
+        eprintln!("error: unknown --to '{to}' (expected: md, json, dclx, chunks, images, latex)");
         return ExitCode::from(2);
     }
     let image_mode = match images.as_str() {
@@ -509,7 +509,7 @@ fn main() -> ExitCode {
     }
 
     let Some(path) = path else {
-        eprintln!("usage: docling-rs [--strict] [--to md|json|dclx|chunks|images] [--scale X] [--images MODE] [--input GLOB --output DIR [--jobs N]] [--fetch-images] [--list-attachments] [--skip-empty-cells] [--compact-tables] [--ebcdic-layout JSON|PATH] [--no-stream] [--no-table-former] [--no-ocr] [--skip-ocr] [--force-full-page-ocr] [--no-text-panels] [--heading-hierarchy] [--ocr-lang en|ch] [--ocr-mode MODE] [--ocr-scale X] [--chunker hierarchical|hybrid] [--chunk-tokenizer PATH] [--chunk-max-tokens N] [--no-chunk-merge-peers] [--use-web-browser] <input-file>");
+        eprintln!("usage: docling-rs [--strict] [--to md|json|dclx|chunks|images|latex] [--scale X] [--images MODE] [--input GLOB --output DIR [--jobs N]] [--fetch-images] [--list-attachments] [--skip-empty-cells] [--compact-tables] [--ebcdic-layout JSON|PATH] [--no-stream] [--no-table-former] [--no-ocr] [--skip-ocr] [--force-full-page-ocr] [--no-text-panels] [--heading-hierarchy] [--ocr-lang en|ch] [--ocr-mode MODE] [--ocr-scale X] [--chunker hierarchical|hybrid] [--chunk-tokenizer PATH] [--chunk-max-tokens N] [--no-chunk-merge-peers] [--use-web-browser] <input-file>");
         return ExitCode::from(2);
     };
 
@@ -901,6 +901,7 @@ fn batch_out_path(file: &Path, base: &Path, output: &Path, to: &str) -> std::pat
         "json" => "json",
         "dclx" => "dclx",
         "chunks" => "chunks.json",
+        "latex" => "tex",
         "images" => "png", // a stem carrier: pages land as `<stem>_page_NNNN.png`
         _ => "md",
     };
@@ -1096,6 +1097,9 @@ fn batch_convert_one(
             .map_err(|e| format!("writing {}: {e}", out.display()))?,
         "chunks" => std::fs::write(&out, chunks_json(&document, &cfg.chunk)?)
             .map_err(|e| format!("writing {}: {e}", out.display()))?,
+        // #317: the upstream CLI writes the serializer's text verbatim.
+        "latex" => std::fs::write(&out, document.export_to_latex())
+            .map_err(|e| format!("writing {}: {e}", out.display()))?,
         "dclx" => docling::dclx::save_as_dclx(&document, &out).map_err(|e| e.to_string())?,
         _ => {
             if cfg.image_mode == ImageMode::Placeholder {
@@ -1233,6 +1237,14 @@ fn output_document(
 ) -> ExitCode {
     if to == "json" {
         println!("{}", document.export_to_json());
+        return ExitCode::SUCCESS;
+    }
+
+    // #317: docling 2.124's `--to latex`. The serializer's text carries no
+    // trailing newline (upstream writes it verbatim to `<stem>.tex`); stdout
+    // gets one so a shell prompt doesn't land on `\end{document}`.
+    if to == "latex" {
+        println!("{}", document.export_to_latex());
         return ExitCode::SUCCESS;
     }
 
@@ -1462,6 +1474,7 @@ mod tests {
         );
         assert_eq!(out("/data/reports/x.pdf", "json"), Path::new("/out/x.json"));
         assert_eq!(out("/data/reports/x.pdf", "dclx"), Path::new("/out/x.dclx"));
+        assert_eq!(out("/data/reports/x.pdf", "latex"), Path::new("/out/x.tex"));
         assert_eq!(
             out("/data/reports/a/x.pdf", "chunks"),
             Path::new("/out/a/x.chunks.json")
