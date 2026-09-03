@@ -72,8 +72,9 @@ fn convert_impl(
             .0),
         "json" => Ok(result.document.export_to_json()),
         "doclang" => Ok(result.document.export_to_doclang()),
+        "latex" => Ok(result.document.export_to_latex()),
         other => Err(format!(
-            "unknown output format {other:?} (expected \"md\", \"json\" or \"doclang\")"
+            "unknown output format {other:?} (expected \"md\", \"json\", \"doclang\" or \"latex\")"
         )),
     }
 }
@@ -94,8 +95,9 @@ fn image_mode(images: Option<&str>) -> Result<ImageMode, String> {
 
 /// Convert a document (as bytes + filename, the extension drives format
 /// detection) to `to`: `"md"` (Markdown, default), `"json"` (docling-core's
-/// `DoclingDocument` wire format, schema 1.10.0) or `"doclang"` (docling's
-/// DocLang XML serialization).
+/// `DoclingDocument` wire format, schema 1.10.0), `"doclang"` (docling's
+/// DocLang XML serialization) or `"latex"` (docling 2.124's LaTeX document,
+/// #317).
 ///
 /// `images` controls how pictures render in Markdown — `"placeholder"`
 /// (default) or `"embedded"` (base64 data URIs), the same option

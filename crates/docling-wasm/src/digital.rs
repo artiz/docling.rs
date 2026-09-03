@@ -134,7 +134,7 @@ impl DigitalConverter {
     }
 
     /// Assemble the converted pages into a document and render it as `"md"`
-    /// (default), `"json"` or `"doclang"`, with `images` picking how pictures
+    /// (default), `"json"`, `"doclang"` or `"latex"`, with `images` picking how pictures
     /// render in Markdown. Resets the converter.
     pub fn finish(
         &mut self,

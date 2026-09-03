@@ -25,8 +25,8 @@ docling_result_free(r);
 ```
 
 - The result is never `NULL`; exactly one of output/error is set.
-- Output is NUL-terminated, so `to` = `md` / `json` reads as a plain C
-  string; `to` = `dclx` is a binary zip — always pair
+- Output is NUL-terminated, so `to` = `md` / `json` / `latex` reads as a plain
+  C string; `to` = `dclx` is a binary zip — always pair
   `docling_result_output()` with `docling_result_output_len()` there.
 - `filename` selects the input format by extension (same table as the CLI).
 - Every call is reentrant and panic-safe; each result is an independent
@@ -39,10 +39,13 @@ mirror [docling-serve](../docling-serve)'s request options:
 
 | Key | Values | Meaning |
 |---|---|---|
-| `to` | `md` (default) \| `json` \| `dclx` | Output format |
+| `to` | `md` (default) \| `json` \| `dclx` \| `latex` | Output format (`latex` = docling 2.124's LaTeX document, #317) |
 | `strict` | bool | Docling-faithful Markdown instead of the readable default |
 | `images` | `placeholder` (default) \| `embedded` | Pictures in Markdown: comment placeholder or base64 data URIs |
-| `no_ocr`, `force_full_page_ocr`, `no_table_former`, `no_text_panels` | bool | PDF/image pipeline switches |
+| `no_ocr`, `skip_ocr`, `force_full_page_ocr`, `no_table_former`, `no_text_panels`, `heading_hierarchy` | bool | PDF/image pipeline switches (`skip_ocr` #244: layout + TableFormer, never OCR; `heading_hierarchy` #302: infer section-header levels) |
+| `ocr_mode` | `default` \| `full_page` \| `layout_regions` \| `pdf_aware_layout_regions` | Which regions feed the OCR (docling's `OcrMode`, #254) |
+| `ocr_scale` | float | OCR render scale in px per PDF point (docling's default 3; unset reads the 2.0 px/pt pipeline render) |
+| `compact_tables`, `skip_empty_cells` | bool | Unpadded Markdown tables / drop empty cells from sparse spreadsheet grids (#271) |
 | `fetch_images` | bool | Resolve external `<img src>` for HTML/EPUB (the embedder owns its network policy) |
 | `asr_model`, `asr_lang` | string | Whisper preset / transcription language for audio & video |
 | `video_frames` | int | Max sampled video frames (0 = transcript only) |
