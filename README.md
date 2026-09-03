@@ -1474,21 +1474,25 @@ The following container images are available on **GitHub Container Registry (GHC
 
 | Image | Description | Architectures |
 |---|---|---|
-| [`ghcr.io/docling-project/docling-rs-serve`](https://github.com/docling-project/docling.rs/pkgs/container/docling-rs-serve) | High-performance document conversion HTTP API with PDF, DOCX, PPTX, XLSX, HTML, images, and audio/video models pre-installed. | `linux/amd64`, `linux/arm64` |
-| [`ghcr.io/docling-project/docling-rs`](https://github.com/docling-project/docling.rs/pkgs/container/docling-rs) | The `docling-rs` CLI with the same models baked in — batch conversion without installing Rust. Entrypoint `docling-rs`, working directory `/data`. | `linux/amd64`, `linux/arm64` |
+| [`ghcr.io/docling-project/docling-rs-serve`](https://github.com/docling-project/docling.rs/pkgs/container/docling-rs-serve) | High-performance document conversion HTTP API with PDF, DOCX, PPTX, XLSX, HTML, images, and audio/video models pre-installed (CPU). | `linux/amd64`, `linux/arm64` |
+| [`ghcr.io/docling-project/docling-rs`](https://github.com/docling-project/docling.rs/pkgs/container/docling-rs) | The `docling-rs` CLI with the same models baked in — batch conversion without installing Rust (CPU). Entrypoint `docling-rs`, working directory `/data`. | `linux/amd64`, `linux/arm64` |
+| [`ghcr.io/docling-project/docling-rs-serve-cuda`](https://github.com/docling-project/docling.rs/pkgs/container/docling-rs-serve-cuda) | NVIDIA CUDA 12 GPU-accelerated HTTP conversion API (CUDA 12 + cuDNN 9, Linux x86_64). Explicit version tags (`v1.28.0`, `master`), no `:latest`. | `linux/amd64` |
+| [`ghcr.io/docling-project/docling-rs-cuda`](https://github.com/docling-project/docling.rs/pkgs/container/docling-rs-cuda) | NVIDIA CUDA 12 GPU-accelerated `docling-rs` CLI. Explicit version tags (`v1.28.0`, `master`), no `:latest`. | `linux/amd64` |
 
 ```bash
-# Run docling-rs-serve HTTP API (models baked in, zero Python runtime dependencies):
+# Run docling-rs-serve HTTP API (CPU):
 docker run -p 127.0.0.1:5001:5001 ghcr.io/docling-project/docling-rs-serve:latest
+
+# Or run with NVIDIA GPU acceleration (--gpus all):
+docker run --gpus all -p 127.0.0.1:5001:5001 ghcr.io/docling-project/docling-rs-serve-cuda:master
 
 # Convert a document:
 curl -F file=@paper.pdf localhost:5001/v1/convert
 
 # Or use the CLI image on local files (mounted at /data):
 docker run --rm -v "$PWD:/data" ghcr.io/docling-project/docling-rs:latest paper.pdf --to md
-docker run --rm -v "$PWD:/data" ghcr.io/docling-project/docling-rs:latest --input docs --output converted --to latex
+docker run --gpus all --rm -v "$PWD:/data" ghcr.io/docling-project/docling-rs-cuda:master paper.pdf --to md
 ```
-
 ### Docker Compose
 
 Launch with [`examples/docker-compose/`](./examples/docker-compose/):

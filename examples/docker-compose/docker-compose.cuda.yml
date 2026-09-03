@@ -1,0 +1,56 @@
+# NVIDIA CUDA 12 GPU deployment for docling-serve
+#
+# Requires:
+#   - NVIDIA GPU (Turing / Ampere / Ada / Hopper / Blackwell)
+#   - NVIDIA Container Toolkit installed on host
+#   - Host driver >= 525 (CUDA 12 compatible)
+#
+# Run:
+#   docker compose -f docker-compose.cuda.yml up -d
+#
+# Note: Following upstream docling-serve CUDA tagging policy, the CUDA image does
+# not use floating :latest tags. Set DOCLING_CUDA_TAG to a specific version or master.
+
+services:
+  docling-serve-cuda:
+    image: ${DOCLING_CUDA_IMAGE:-ghcr.io/docling-project/docling-rs-serve-cuda}:${DOCLING_CUDA_TAG:-master}
+    container_name: docling-serve-cuda
+    restart: unless-stopped
+    ports:
+      # Bind to loopback interface only — front with a reverse proxy before exposing externally
+      - "127.0.0.1:${PORT:-5001}:5001"
+    environment:
+      # Automatically use GPU when available, fallback to CPU:
+      - DOCLING_RS_EP=auto
+      # Disable ONNX Runtime CPU arena to avoid RSS heap ratcheting (#263)
+      - DOCLING_RS_NO_ARENA=1
+      # Memory ceiling for admission control (MB); returns 503 + Retry-After when near watermark
+      - DOCLING_RS_MAX_MEMORY_MB=${DOCLING_RS_MAX_MEMORY_MB:-8192}
+      - DOCLING_RS_MEMORY_WATERMARK_PCT=${DOCLING_RS_MEMORY_WATERMARK_PCT:-85}
+      # Structured logs level: trace | debug | info | warn | error
+      - RUST_LOG=${RUST_LOG:-info}
+    command:
+      - "docling-serve"
+      - "--addr"
+      - "0.0.0.0:5001"
+      - "--concurrency"
+      - "${CONCURRENCY:-4}"
+      - "--warmup"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5001/ready"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 45s
+    deploy:
+      resources:
+        limits:
+          cpus: "${CPU_LIMIT:-8.0}"
+          memory: "${MEMORY_LIMIT:-8G}"
+        reservations:
+          cpus: "2.0"
+          memory: "2G"
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
