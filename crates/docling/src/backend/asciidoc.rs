@@ -123,6 +123,7 @@ impl Parser {
             let _ = caption; // alt text is not rendered by docling's markdown export
             self.deferred.push(Node::Picture {
                 caption: cap,
+                caption_href: None,
                 image: None,
                 classification: None,
             });

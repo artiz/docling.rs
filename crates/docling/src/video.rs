@@ -87,6 +87,7 @@ fn picture_node(frame: VideoFrame) -> Node {
     let (width, height) = png_size(&frame.png).unwrap_or((0, 0));
     Node::Picture {
         caption: Some(format!("[time: {}]", docling_asr::fmt_seconds(frame.ts))),
+        caption_href: None,
         image: Some(PictureImage {
             mimetype: "image/png".to_string(),
             width,

@@ -43,7 +43,8 @@
       "label": "caption",
       "prov": [],
       "orig": "Clickable Example",
-      "text": "Clickable Example"
+      "text": "Clickable Example",
+      "hyperlink": "https://www.example.com/"
     },
     {
       "self_ref": "#/texts/1",
@@ -67,7 +68,8 @@
       "label": "caption",
       "prov": [],
       "orig": "This is an example caption for the image.",
-      "text": "This is an example caption for the image."
+      "text": "This is an example caption for the image.",
+      "hyperlink": "#caption"
     }
   ],
   "pictures": [

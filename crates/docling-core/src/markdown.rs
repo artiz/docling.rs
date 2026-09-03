@@ -1097,6 +1097,7 @@ mod tests {
         }));
         doc.push(Node::Picture {
             caption: Some("Fig 1".into()),
+            caption_href: None,
             image: Some(PictureImage {
                 mimetype: "image/png".into(),
                 width: 2,
@@ -1110,6 +1111,7 @@ mod tests {
         // (`image_000001`) across chunk boundaries.
         doc.push(Node::Picture {
             caption: None,
+            caption_href: None,
             image: Some(PictureImage {
                 mimetype: "image/png".into(),
                 width: 2,

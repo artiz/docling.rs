@@ -151,6 +151,7 @@ fn emit(label: &str, content: &str, caption: Option<String>, doc: &mut DoclingDo
     match label {
         "figure" | "image" => doc.push(Node::Picture {
             caption,
+            caption_href: None,
             image: None,
             classification: None,
         }),

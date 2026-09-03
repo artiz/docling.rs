@@ -400,6 +400,7 @@ mod picture_only {
             location: [1, 2, 3, 4],
             inner: Box::new(Node::Picture {
                 caption: None,
+                caption_href: None,
                 image: None,
                 classification: None,
             }),

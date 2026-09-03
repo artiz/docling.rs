@@ -866,8 +866,20 @@ fn emit_nodes(out: &mut Out, depth: i32, nodes: &[Node], i: &mut usize, level: u
             }
             // Classifier predictions are JSON-only; DocLang keeps the plain
             // `<picture>` shape.
-            Node::Picture { caption, image, .. } => {
-                emit_picture(out, depth, caption.as_deref(), image.as_ref(), None);
+            Node::Picture {
+                caption,
+                caption_href,
+                image,
+                ..
+            } => {
+                emit_picture(
+                    out,
+                    depth,
+                    caption.as_deref(),
+                    caption_href.as_deref(),
+                    image.as_ref(),
+                    None,
+                );
                 *i += 1;
             }
             Node::Chart {
@@ -1409,6 +1421,7 @@ fn emit_picture(
     out: &mut Out,
     depth: i32,
     caption: Option<&str>,
+    caption_href: Option<&str>,
     image: Option<&crate::document::PictureImage>,
     location: Option<&[u16; 4]>,
 ) {
@@ -1436,15 +1449,23 @@ fn emit_picture(
         out.push(depth + 1, format!("<src uri=\"{}\"/>", attr_escape(&s)));
     }
     if let Some(c) = caption {
-        emit_caption(out, depth + 1, c);
+        emit_caption(out, depth + 1, c, caption_href);
     }
     out.push(depth, "</picture>".to_string());
 }
 
 /// A `<caption>` — inline when plain text, or block form with an `<href uri=…/>`
-/// head + anchor text when the caption is a single Markdown link (docling's
-/// linked image captions).
-fn emit_caption(out: &mut Out, depth: i32, text: &str) {
+/// head + caption text when the caption carries a hyperlink annotation
+/// (`href` — an `<a href>` wrapped the image, #328) or *is* a single Markdown
+/// link (docling's linked image captions).
+fn emit_caption(out: &mut Out, depth: i32, text: &str, href: Option<&str>) {
+    if let Some(uri) = href {
+        out.push(depth, "<caption>".to_string());
+        out.push(depth + 1, format!("<href uri=\"{}\"/>", attr_escape(uri)));
+        out.push(depth + 1, escape_text(text));
+        out.push(depth, "</caption>".to_string());
+        return;
+    }
     if let Some(Run::Link { anchor, uri }) = inline_runs(text).into_iter().next() {
         if inline_runs(text).len() == 1 {
             out.push(depth, "<caption>".to_string());
@@ -1500,11 +1521,17 @@ fn emit_located(out: &mut Out, depth: i32, location: &[u16; 4], inner: &Node) {
         Node::Paragraph { text } => {
             emit_text_element(out, depth, "text", "text", text, Some(location));
         }
-        Node::Picture { caption, image, .. } => {
+        Node::Picture {
+            caption,
+            caption_href,
+            image,
+            ..
+        } => {
             emit_picture(
                 out,
                 depth,
                 caption.as_deref(),
+                caption_href.as_deref(),
                 image.as_ref(),
                 Some(location),
             );

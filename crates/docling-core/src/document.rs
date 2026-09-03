@@ -112,6 +112,13 @@ pub enum Node {
     /// it) the embedded image itself.
     Picture {
         caption: Option<String>,
+        /// Hyperlink annotation on the caption (docling's caption text item
+        /// `hyperlink`): the HTML backend sets it when an `<a href>` wraps the
+        /// image whose `alt` became the caption. DocLang emits the block-form
+        /// `<caption>` with an `<href uri=…/>` head; JSON puts `hyperlink` on
+        /// the caption item; Markdown and LaTeX print the plain caption text,
+        /// as docling does.
+        caption_href: Option<String>,
         image: Option<PictureImage>,
         /// DocumentPictureClassifier predictions (all classes, descending
         /// confidence), when the picture-classification enrichment ran.

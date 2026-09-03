@@ -273,6 +273,7 @@ fn walk_block(
                     flush_inline(&mut inline, nodes);
                     nodes.push(Node::Picture {
                         caption: e.attr("alt").filter(|a| !a.is_empty()).map(str::to_string),
+                        caption_href: None,
                         image: img_src(e).and_then(|s| images.resolve(&s)),
                         classification: None,
                     });
@@ -281,6 +282,7 @@ fn walk_block(
                     flush_inline(&mut inline, nodes);
                     nodes.push(Node::Picture {
                         caption: None,
+                        caption_href: None,
                         image: None,
                         classification: None,
                     });
@@ -294,10 +296,19 @@ fn walk_block(
                     if let Some((caption, src)) = image_wrapper(cref) {
                         // An anchor wrapping only an image (`<a><img></a>`):
                         // docling pulls the image out as a Picture and drops the
-                        // wrapper.
+                        // wrapper — but the anchor's href survives as the
+                        // caption's hyperlink annotation (docling hangs it on
+                        // the caption text item; no caption, nowhere to hang).
                         flush_inline(&mut inline, nodes);
+                        let caption_href = caption
+                            .is_some()
+                            .then(|| e.attr("href"))
+                            .flatten()
+                            .filter(|h| !h.is_empty())
+                            .map(normalize_url);
                         nodes.push(Node::Picture {
                             caption,
+                            caption_href,
                             image: src.as_deref().and_then(|s| images.resolve(s)),
                             classification: None,
                         });
@@ -403,9 +414,12 @@ fn handle_block(
             let mut runs = RunBuf::default();
             collect_runs(elem, Fmt { code: true, ..base }, None, &mut runs);
             if runs.md.len() > 1 {
-                nodes.push(Node::Paragraph {
-                    text: runs.md.join(" "),
-                });
+                // Keep the structured runs, not just their Markdown join: each
+                // segment is a code run (docling emits `<code>See</code>
+                // <code>the docs</code>…`), and re-parsing the joined text
+                // would lose the code flag on a linked segment and split the
+                // separators into their own plain runs.
+                push_inline_paragraph(nodes, runs.md.join(" "), std::mem::take(&mut runs.rich));
             } else {
                 let (language, text) = extract_pre(elem);
                 nodes.push(Node::Code {
@@ -443,6 +457,10 @@ fn handle_block(
             if has_descendant(elem, "img") {
                 nodes.push(Node::Picture {
                     caption: figure_caption(elem),
+                    // docling annotates the caption item with the first link
+                    // *inside the figcaption* (`find_parent_annotation`); the
+                    // caption text itself stays plain.
+                    caption_href: figcaption_href(elem),
                     image: figure_img_src(elem).and_then(|s| images.resolve(&s)),
                     classification: None,
                 });
@@ -1237,7 +1255,7 @@ fn lang_from_class(class: &str) -> Option<String> {
 }
 
 fn parse_table(table: ElementRef) -> Option<Table> {
-    parse_table_cells(table, |cell| (render_cell(cell), is_rich_cell(cell)))
+    parse_table_cells(table, render_cell)
 }
 
 /// Flatten a table nested inside another table's cell, the way docling's
@@ -1252,7 +1270,8 @@ fn flatten_nested_table(table: ElementRef) -> String {
     parse_table_cells(table, |cell| {
         let mut out = String::new();
         subtree_text(cell, &mut out);
-        (out.trim().to_string(), false)
+        // Flattening feeds an enclosing cell's *text*; no block content.
+        (out.trim().to_string(), false, Vec::new())
     })
     .map(|t| {
         t.rows
@@ -1316,9 +1335,13 @@ fn subtree_text(elem: ElementRef, out: &mut String) {
     }
 }
 
+/// Build a table's grid from its `<tr>`s. `render_cell` yields each cell's
+/// flat Markdown text, whether the cell is *rich* (docling's `RichTableCell`),
+/// and — for a rich cell — its structured block content for
+/// [`Table::cell_blocks`] (empty otherwise).
 fn parse_table_cells(
     table: ElementRef,
-    render_cell: impl Fn(ElementRef) -> (String, bool),
+    render_cell: impl Fn(ElementRef) -> (String, bool, Vec<Node>),
 ) -> Option<Table> {
     // Collect this table's own rows without descending into nested tables (a
     // recursive `select` would pull a nested table's cells into the outer grid).
@@ -1374,6 +1397,11 @@ fn parse_table_cells(
     // the DocLang `lcel`/`ucel` tokens.
     let mut col_cont: Vec<Vec<bool>> = vec![vec![false; num_cols]; num_rows];
     let mut row_cont: Vec<Vec<bool>> = vec![vec![false; num_cols]; num_rows];
+    // Parallel per-cell block content for rich cells (#328), indexed like
+    // `grid`. Empty for plain cells; `None` on the table when no cell is rich,
+    // exactly as the docx/odf backends do.
+    let mut blocks: Vec<Vec<Vec<Node>>> = vec![vec![Vec::new(); num_cols]; num_rows];
+    let mut any_rich = false;
     let mut row_idx: isize = -1;
     let mut start_row_span: usize = 0;
     for tr in &trs {
@@ -1401,8 +1429,9 @@ fn parse_table_cells(
             while col < num_cols && base < num_rows && grid[base][col].is_some() {
                 col += 1;
             }
-            let (text, rich) = render_cell(cell);
+            let (text, rich, cell_nodes) = render_cell(cell);
             let is_th = cell.value().name() == "th" && all_th;
+            any_rich |= !cell_nodes.is_empty();
             let mut anchor_filled = false;
             for r in start_row_span..start_row_span + rowspan {
                 let gr = (row_idx + r as isize).max(0) as usize;
@@ -1418,6 +1447,13 @@ fn parse_table_cells(
                         } else {
                             text.clone()
                         });
+                        // The blocks live on the anchor slot only: a covered
+                        // position is a continuation token in DocLang and
+                        // repeats nothing, matching how a rich cell's *text*
+                        // is serialized once (the visited set blanks the rest).
+                        if !anchor_filled && !cell_nodes.is_empty() {
+                            blocks[gr][gc] = cell_nodes.clone();
+                        }
                         anchor_filled = true;
                         th_grid[gr][gc] = is_th;
                         col_cont[gr][gc] = dc > 0;
@@ -1442,7 +1478,7 @@ fn parse_table_cells(
             row_continuation: row_cont,
             ..Default::default()
         }),
-        cell_blocks: None,
+        cell_blocks: any_rich.then_some(blocks),
         cells: None,
         caption: None,
     })
@@ -1477,22 +1513,50 @@ fn span_attr(cell: ElementRef, name: &str) -> usize {
 /// when it carries structure; a single plain run is emitted as plain text.
 /// Either way inline text is left unescaped; the table serializer flattens
 /// newlines to spaces.
-fn render_cell(cell: ElementRef) -> String {
+/// One table cell: its flat Markdown text (what `rows` — and so Markdown and
+/// JSON — carry), whether it is *rich*, and a rich cell's structured blocks
+/// for [`Table::cell_blocks`] (#328).
+///
+/// The two are produced by *separate* walks on purpose. The text walk is `raw`
+/// (no Markdown escaping, nested tables flattened to their joined cell text) so
+/// the flat rendering stays byte-identical to docling's. The block walk is an
+/// ordinary one: a nested `<table>` stays a real [`Node::Table`], a list stays
+/// list items, a heading stays a heading — which is what the DocLang and LaTeX
+/// serializers render, matching upstream's `RichTableCell`.
+fn render_cell(cell: ElementRef) -> (String, bool, Vec<Node>) {
     let raw = Fmt {
         raw: true,
         ..Fmt::default()
     };
-    if is_rich_cell(cell) {
-        let mut nodes: Vec<Node> = Vec::new();
-        // Images inside table cells stay placeholders (they fold into cell text).
-        walk_block(cell, &mut nodes, 0, raw, &NoFetch);
-        let mut doc = DoclingDocument::new("");
-        doc.nodes = nodes;
-        // In-cell rendering: a heading inside the cell is plain text
-        // (docling-core#540).
-        doc.export_to_table_cell_markdown().trim().to_string()
-    } else {
-        render_inline_fmt(cell, raw)
+    if !is_rich_cell(cell) {
+        return (render_inline_fmt(cell, raw), false, Vec::new());
+    }
+    let mut nodes: Vec<Node> = Vec::new();
+    // Images inside table cells stay placeholders (they fold into cell text).
+    walk_block(cell, &mut nodes, 0, raw, &NoFetch);
+    let mut doc = DoclingDocument::new("");
+    doc.nodes = nodes;
+    // In-cell rendering: a heading inside the cell is plain text
+    // (docling-core#540).
+    let text = doc.export_to_table_cell_markdown().trim().to_string();
+
+    let mut blocks: Vec<Node> = Vec::new();
+    walk_block(cell, &mut blocks, 0, Fmt::default(), &NoFetch);
+    wrap_cell_inline_groups(&mut blocks);
+    (text, true, blocks)
+}
+
+/// Inside a table cell an inline group is always `<text>`-wrapped: docling
+/// serializes the cell's `InlineGroup` as its own text item. Only the *body*
+/// unwraps a group that follows a heading ([`push_inline_paragraph`]), and a
+/// heading inside a cell must not drag that rule in with it.
+fn wrap_cell_inline_groups(nodes: &mut [Node]) {
+    for node in nodes {
+        match node {
+            Node::InlineGroup { unwrapped, .. } => *unwrapped = false,
+            Node::Group { children, .. } => wrap_cell_inline_groups(children),
+            _ => {}
+        }
     }
 }
 
@@ -1558,6 +1622,18 @@ fn image_wrapper(elem: ElementRef) -> Option<(Option<String>, Option<String>)> {
         .map(str::to_string);
     let src = img_src(img.value());
     Some((caption, src))
+}
+
+/// The first `<a href>` inside a figure's `<figcaption>` — docling's caption
+/// hyperlink annotation (the caption text keeps the anchor text inline, the
+/// href rides on the caption item).
+fn figcaption_href(fig: ElementRef) -> Option<String> {
+    let figcaption = fig.select(cached_selector!("figcaption")).next()?;
+    figcaption
+        .select(cached_selector!("a"))
+        .find_map(|a| a.value().attr("href"))
+        .filter(|h| !h.is_empty())
+        .map(normalize_url)
 }
 
 /// The image URL of a `<figure>`'s first `<img>`, for image extraction.
@@ -1633,6 +1709,10 @@ fn cell_richness(cell: ElementRef) -> (usize, bool) {
                     let Some(cref) = ElementRef::wrap(child) else {
                         continue;
                     };
+                    // docling's `_FORMAT_TAG_MAP` (plus `<a>`, whose hyperlink
+                    // makes a lone run rich): underline and sub/superscript
+                    // count even though Markdown has no marker for them — the
+                    // formatting still reaches DocLang and LaTeX.
                     let marks = matches!(
                         e.name(),
                         "b" | "strong"
@@ -1642,6 +1722,10 @@ fn cell_richness(cell: ElementRef) -> (usize, bool) {
                             | "s"
                             | "del"
                             | "strike"
+                            | "u"
+                            | "ins"
+                            | "sub"
+                            | "sup"
                             | "code"
                             | "kbd"
                             | "samp"
@@ -1955,6 +2039,94 @@ mod tests {
             "newline flattened to space in markdown: {}",
             doc.export_to_markdown()
         );
+    }
+
+    /// #328: an `<a href>` wrapping an image (or a link inside a figcaption)
+    /// rides as the caption's hyperlink annotation; the caption text and the
+    /// Markdown stay plain, and a bare authority is normalized like AnyUrl.
+    #[test]
+    fn caption_hyperlinks_are_annotated() {
+        let doc = convert(
+            "<a href=\"https://www.example.com\"><img src=\"x.png\" alt=\"Clickable\"></a>             <figure><img src=\"y.png\" alt=\"Cap\">               <figcaption>An example <a href=\"#caption\">caption</a> here.</figcaption>             </figure>",
+        );
+        let hrefs: Vec<_> = doc
+            .nodes
+            .iter()
+            .filter_map(|n| match n {
+                Node::Picture {
+                    caption,
+                    caption_href,
+                    ..
+                } => Some((caption.clone(), caption_href.clone())),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(
+            hrefs,
+            vec![
+                (
+                    Some("Clickable".into()),
+                    Some("https://www.example.com/".into())
+                ),
+                (
+                    Some("An example caption here.".into()),
+                    Some("#caption".into())
+                ),
+            ]
+        );
+        assert_eq!(
+            doc.export_to_markdown(),
+            "Clickable\n\n<!-- image -->\n\nAn example caption here.\n\n<!-- image -->\n"
+        );
+    }
+
+    /// #328: a rich cell carries its structured blocks in `cell_blocks` —
+    /// a list stays list items, a heading stays a heading (Markdown text
+    /// unchanged: the flat `rows` grid still holds the flattened rendering).
+    #[test]
+    fn rich_cells_carry_cell_blocks() {
+        let doc = convert(
+            "<table>               <tr><td>plain</td><td><ul><li>a</li><li>b</li></ul></td></tr>               <tr><td><h2>A</h2><p>text</p></td><td>x</td></tr>             </table>",
+        );
+        let table = doc
+            .nodes
+            .iter()
+            .find_map(|n| match n {
+                Node::Table(t) => Some(t),
+                _ => None,
+            })
+            .expect("a table");
+        assert_eq!(table.rows[0][1], "- a\n- b");
+        assert_eq!(table.rows[1][0], "A\n\ntext");
+        let blocks = table.cell_blocks.as_ref().expect("rich cells present");
+        assert!(blocks[0][0].is_empty(), "plain cell stays block-less");
+        assert!(
+            matches!(
+                blocks[0][1].as_slice(),
+                [Node::ListItem { .. }, Node::ListItem { .. }]
+            ),
+            "list cell keeps its items: {:?}",
+            blocks[0][1]
+        );
+        assert!(
+            matches!(
+                blocks[1][0].as_slice(),
+                [Node::Heading { level: 2, .. }, Node::Paragraph { .. }]
+            ),
+            "heading cell keeps its structure: {:?}",
+            blocks[1][0]
+        );
+        // A table with no rich cell keeps `cell_blocks: None` (docx/odf rule).
+        let doc = convert("<table><tr><td>a</td><td>b</td></tr></table>");
+        let table = doc
+            .nodes
+            .iter()
+            .find_map(|n| match n {
+                Node::Table(t) => Some(t),
+                _ => None,
+            })
+            .unwrap();
+        assert!(table.cell_blocks.is_none());
     }
 
     #[test]

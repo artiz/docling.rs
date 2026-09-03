@@ -644,6 +644,7 @@ fn odf_picture(styles: &Styles, img: XmlNode) -> Option<Node> {
     let picture = |image: Option<PictureImage>| {
         Some(Node::Picture {
             caption: None,
+            caption_href: None,
             image,
             classification: None,
         })

@@ -2277,6 +2277,7 @@ pub fn assemble_page(
                 loc,
                 Node::Picture {
                     caption,
+                    caption_href: None,
                     image,
                     classification,
                 },
@@ -2420,6 +2421,7 @@ pub fn assemble_page(
                                 norm_loc(&regions[p], page.width, page_h),
                                 Node::Picture {
                                     caption: None,
+                                    caption_href: None,
                                     image,
                                     classification,
                                 },
@@ -3478,6 +3480,7 @@ mod tests {
             para("the wing type that is"),
             Node::Picture {
                 caption: None,
+                caption_href: None,
                 image: None,
                 classification: None,
             },
