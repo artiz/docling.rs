@@ -890,6 +890,7 @@ fn parse_picture(el: XmlNode) -> Node {
         .and_then(parse_layer);
     let picture = Node::Picture {
         caption,
+        caption_href: None,
         image: None,
         classification: None,
     };

@@ -620,6 +620,7 @@ fn parse_picture(toks: &[Tok], i: &mut usize, out: &mut Vec<Node>, close: &str) 
     out.push(located(
         Node::Picture {
             caption,
+            caption_href: None,
             image: None,
             classification: None,
         },

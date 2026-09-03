@@ -805,6 +805,7 @@ fn add_figure(doc: &mut DoclingDocument, node: XmlNode) {
     let fig_text = format!("{label}{sep}{caption}");
     doc.push(Node::Picture {
         caption: (!fig_text.is_empty()).then(|| escape_text(&fig_text)),
+        caption_href: None,
         image: None,
         classification: None,
     });

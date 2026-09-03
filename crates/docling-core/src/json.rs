@@ -250,10 +250,12 @@ impl Builder {
             Node::Table(t) => Some(self.add_table(t, parent)),
             Node::Picture {
                 caption,
+                caption_href,
                 image,
                 classification,
             } => Some(self.add_picture(
                 caption.as_deref(),
+                caption_href.as_deref(),
                 image.as_ref(),
                 classification.as_deref(),
                 parent,
@@ -264,7 +266,7 @@ impl Builder {
                 caption, location, ..
             } => {
                 self.adopt_loc(*location);
-                Some(self.add_picture(caption.as_deref(), None, None, parent))
+                Some(self.add_picture(caption.as_deref(), None, None, None, parent))
             }
             // A DocLang-only node is omitted from the JSON body.
             Node::DoclangOnly(_) => None,
@@ -667,6 +669,7 @@ impl Builder {
     fn add_picture(
         &mut self,
         caption: Option<&str>,
+        caption_href: Option<&str>,
         image: Option<&crate::PictureImage>,
         classification: Option<&[crate::PictureClass]>,
         parent: &str,
@@ -677,8 +680,14 @@ impl Builder {
         let prov = self.take_prov(0);
         let mut captions = Vec::new();
         if let Some(cap) = caption.filter(|c| !c.is_empty()) {
-            // Emit the caption as a text item that the picture references.
-            let cap_ref = self.add_text("caption", cap, &self_ref, json!({}));
+            // Emit the caption as a text item that the picture references. A
+            // wrapping `<a href>`'s link rides as docling's `hyperlink` field
+            // on the caption item (#328).
+            let extra = match caption_href {
+                Some(href) => json!({ "hyperlink": href }),
+                None => json!({}),
+            };
+            let cap_ref = self.add_text("caption", cap, &self_ref, extra);
             captions.push(json!({ "$ref": cap_ref }));
         }
         // DocumentPictureClassifier predictions land twice, exactly like
@@ -896,6 +905,7 @@ mod tests {
         let mut doc = DoclingDocument::new("t");
         doc.push(Node::Picture {
             caption: Some("Fig 1".into()),
+            caption_href: None,
             image: Some(PictureImage {
                 mimetype: "image/png".into(),
                 width: 4,

@@ -268,6 +268,7 @@ fn picture_item(item: &Value, root: &Value, doc: &mut DoclingDocument) {
     // docling renders the image marker first, then each caption as a paragraph.
     doc.push(Node::Picture {
         caption: None,
+        caption_href: None,
         image: None,
         classification: None,
     });

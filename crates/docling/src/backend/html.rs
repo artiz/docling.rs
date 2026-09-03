@@ -273,6 +273,7 @@ fn walk_block(
                     flush_inline(&mut inline, nodes);
                     nodes.push(Node::Picture {
                         caption: e.attr("alt").filter(|a| !a.is_empty()).map(str::to_string),
+                        caption_href: None,
                         image: img_src(e).and_then(|s| images.resolve(&s)),
                         classification: None,
                     });
@@ -281,6 +282,7 @@ fn walk_block(
                     flush_inline(&mut inline, nodes);
                     nodes.push(Node::Picture {
                         caption: None,
+                        caption_href: None,
                         image: None,
                         classification: None,
                     });
@@ -294,10 +296,19 @@ fn walk_block(
                     if let Some((caption, src)) = image_wrapper(cref) {
                         // An anchor wrapping only an image (`<a><img></a>`):
                         // docling pulls the image out as a Picture and drops the
-                        // wrapper.
+                        // wrapper — but the anchor's href survives as the
+                        // caption's hyperlink annotation (docling hangs it on
+                        // the caption text item; no caption, nowhere to hang).
                         flush_inline(&mut inline, nodes);
+                        let caption_href = caption
+                            .is_some()
+                            .then(|| e.attr("href"))
+                            .flatten()
+                            .filter(|h| !h.is_empty())
+                            .map(normalize_url);
                         nodes.push(Node::Picture {
                             caption,
+                            caption_href,
                             image: src.as_deref().and_then(|s| images.resolve(s)),
                             classification: None,
                         });
@@ -446,6 +457,10 @@ fn handle_block(
             if has_descendant(elem, "img") {
                 nodes.push(Node::Picture {
                     caption: figure_caption(elem),
+                    // docling annotates the caption item with the first link
+                    // *inside the figcaption* (`find_parent_annotation`); the
+                    // caption text itself stays plain.
+                    caption_href: figcaption_href(elem),
                     image: figure_img_src(elem).and_then(|s| images.resolve(&s)),
                     classification: None,
                 });
@@ -1609,6 +1624,18 @@ fn image_wrapper(elem: ElementRef) -> Option<(Option<String>, Option<String>)> {
     Some((caption, src))
 }
 
+/// The first `<a href>` inside a figure's `<figcaption>` — docling's caption
+/// hyperlink annotation (the caption text keeps the anchor text inline, the
+/// href rides on the caption item).
+fn figcaption_href(fig: ElementRef) -> Option<String> {
+    let figcaption = fig.select(cached_selector!("figcaption")).next()?;
+    figcaption
+        .select(cached_selector!("a"))
+        .find_map(|a| a.value().attr("href"))
+        .filter(|h| !h.is_empty())
+        .map(normalize_url)
+}
+
 /// The image URL of a `<figure>`'s first `<img>`, for image extraction.
 fn figure_img_src(fig: ElementRef) -> Option<String> {
     fig.select(cached_selector!("img"))
@@ -2011,6 +2038,45 @@ mod tests {
             doc.export_to_markdown().contains("P Q R a  b"),
             "newline flattened to space in markdown: {}",
             doc.export_to_markdown()
+        );
+    }
+
+    /// #328: an `<a href>` wrapping an image (or a link inside a figcaption)
+    /// rides as the caption's hyperlink annotation; the caption text and the
+    /// Markdown stay plain, and a bare authority is normalized like AnyUrl.
+    #[test]
+    fn caption_hyperlinks_are_annotated() {
+        let doc = convert(
+            "<a href=\"https://www.example.com\"><img src=\"x.png\" alt=\"Clickable\"></a>             <figure><img src=\"y.png\" alt=\"Cap\">               <figcaption>An example <a href=\"#caption\">caption</a> here.</figcaption>             </figure>",
+        );
+        let hrefs: Vec<_> = doc
+            .nodes
+            .iter()
+            .filter_map(|n| match n {
+                Node::Picture {
+                    caption,
+                    caption_href,
+                    ..
+                } => Some((caption.clone(), caption_href.clone())),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(
+            hrefs,
+            vec![
+                (
+                    Some("Clickable".into()),
+                    Some("https://www.example.com/".into())
+                ),
+                (
+                    Some("An example caption here.".into()),
+                    Some("#caption".into())
+                ),
+            ]
+        );
+        assert_eq!(
+            doc.export_to_markdown(),
+            "Clickable\n\n<!-- image -->\n\nAn example caption here.\n\n<!-- image -->\n"
         );
     }
 

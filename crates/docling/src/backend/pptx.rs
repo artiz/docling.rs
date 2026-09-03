@@ -423,6 +423,7 @@ fn handle_shape(
                     shape_location(shape, slide_size, phmap),
                     Node::Picture {
                         caption: None,
+                        caption_href: None,
                         image: images.get(&rid).cloned(),
                         classification: None,
                     },

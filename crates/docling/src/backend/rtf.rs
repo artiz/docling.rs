@@ -511,6 +511,7 @@ impl<'a> Parser<'a> {
         let (width, height) = image_size(mimetype, &data).unwrap_or((0, 0));
         doc.push(Node::Picture {
             caption: None,
+            caption_href: None,
             image: Some(PictureImage {
                 mimetype: mimetype.to_string(),
                 width,

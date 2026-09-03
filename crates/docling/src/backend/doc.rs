@@ -1010,6 +1010,7 @@ impl NodeBuilder {
 
         let picture_node = |image: Option<PictureImage>| Node::Picture {
             caption: None,
+            caption_href: None,
             image,
             classification: None,
         };

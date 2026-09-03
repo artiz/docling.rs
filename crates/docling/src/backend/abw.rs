@@ -164,6 +164,7 @@ fn emit_paragraph(
             });
         doc.push(Node::Picture {
             caption: None,
+            caption_href: None,
             image,
             classification: None,
         });

@@ -400,6 +400,7 @@ fn handle_paragraph_inner(
                 for image in drawing_images(tp, ctx, false) {
                     doc.push(Node::Picture {
                         caption: None,
+                        caption_href: None,
                         image,
                         classification: None,
                     });
@@ -419,6 +420,7 @@ fn handle_paragraph_inner(
     for image in drawing_images(p, ctx, true) {
         doc.push(Node::Picture {
             caption: None,
+            caption_href: None,
             image,
             classification: None,
         });

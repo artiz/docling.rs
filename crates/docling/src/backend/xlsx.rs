@@ -442,6 +442,7 @@ fn sheet_items<F: Fn(&str, &str) -> Vec<String> + Sync>(ctx: SheetCtx<'_, F>) ->
                             item.bbox,
                             Node::Picture {
                                 caption: None,
+                                caption_href: None,
                                 image: dimages.get(&rid).cloned(),
                                 classification: None,
                             },
