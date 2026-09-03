@@ -20,8 +20,8 @@
 \begin{tabular}{|l|l|}
 \hline
  Column A & Column B \\ \hline
-This is a list:  - A First - A Second - A Third & This is a formatted list:  - B **First** - B *Second* - B Third \\ \hline
-First Paragraph  Second Paragraph  Third paragraph before a numbered list  1. Number one 2. Number two 3. Number three & This is simple text with  **bold**  ,  \textasciitilde{}\textasciitilde{}strikethrough\textasciitilde{}\textasciitilde{}  and  *italic*  formatting with x  2  and H  2  O \\ \hline
+This is a list:  \begin{itemize} \item A First \item A Second \item A Third \end{itemize} & This is a formatted list:  \begin{itemize} \item B \textbf{First} \item B \textit{Second} \item B Third \end{itemize} \\ \hline
+First Paragraph  Second Paragraph  Third paragraph before a numbered list  \begin{enumerate} \item Number one \item Number two \item Number three \end{enumerate} & This is simple text with  \textbf{bold}  ,  \sout{strikethrough}  and  \textit{italic}  formatting with x  2  and H  2  O \\ \hline
 This is a paragraph  This is another paragraph &  \\ \hline
 \end{tabular}
 \end{table}
@@ -34,12 +34,12 @@ Before table
 \begin{tabular}{|l|l|}
 \hline
  Column A & Column B \\ \hline
-Simple cell upper left & Simple cell with  **bold**  and  *italic*  text \\ \hline
-A B C Cell 1 Cell 2 Cell 3 & Rich cell A nested table  A B C Cell 1 Cell 2 Cell 3 \\ \hline
+Simple cell upper left & Simple cell with  \textbf{bold}  and  \textit{italic}  text \\ \hline
+\begin{table}[h] \begin{tabular}{|l|l|l|} \hline A & B & C \\ \hline \textit{Cell 1} & Cell 2 & \textbf{Cell 3} \\ \hline \end{tabular} \end{table} & Rich cell A nested table  \begin{table}[h] \begin{tabular}{|l|l|l|} \hline A & B & C \\ \hline \sout{Cell 1} & \textit{\textbf{Cell 2}} & Cell 3 \\ \hline \end{tabular} \end{table} \\ \hline
 \end{tabular}
 \end{table}
 
-After table with **bold** , underline , \textasciitilde{}\textasciitilde{}strikethrough\textasciitilde{}\textasciitilde{} , and *italic* formatting
+After table with \textbf{bold} , underline , \sout{strikethrough} , and \textit{italic} formatting
 
 \subsection{Table with pictures}
 
@@ -47,8 +47,8 @@ After table with **bold** , underline , \textasciitilde{}\textasciitilde{}strike
 \begin{tabular}{|l|l|}
 \hline
 Column A & Column B \\ \hline
-Only text & <!-- image --> \\ \hline
-Text and picture  <!-- image --> &  \\ \hline
+Only text & \begin{figure}[h] % image \end{figure} \\ \hline
+Text and picture  \begin{figure}[h] % image \end{figure} &  \\ \hline
 \end{tabular}
 \end{table}
 
@@ -57,8 +57,8 @@ Text and picture  <!-- image --> &  \\ \hline
 \begin{table}[h]
 \begin{tabular}{|l|}
 \hline
-- Cell 1 item 1 - Cell 1 item 2 \\ \hline
-- Cell 2 item 1 - Cell 2 item 2 \\ \hline
+\begin{itemize} \item Cell 1 item 1 \item Cell 1 item 2 \end{itemize} \\ \hline
+\begin{itemize} \item Cell 2 item 1 \item Cell 2 item 2 \end{itemize} \\ \hline
 \end{tabular}
 \end{table}
 
@@ -67,8 +67,8 @@ Text and picture  <!-- image --> &  \\ \hline
 \begin{table}[h]
 \begin{tabular}{|l|}
 \hline
-- Cell 1 item 1 - Cell 1 item 2 \\ \hline
-- Cell 2 item 1 - Cell 2 item 2 \\ \hline
+\begin{itemize} \item Cell 1 item 1 \item Cell 1 item 2 \end{itemize} \\ \hline
+\begin{itemize} \item Cell 2 item 1 \item Cell 2 item 2 \end{itemize} \\ \hline
 \end{tabular}
 \end{table}
 
@@ -77,8 +77,8 @@ Text and picture  <!-- image --> &  \\ \hline
 \begin{table}[h]
 \begin{tabular}{|l|l|}
 \hline
-- R1C1 item 1 - R1C1 item 2 & - R1C2 item 1 - R1C2 item 2 \\ \hline
-- R2C1 item 1 - R2C1 item 2 & - R2C2 item 1 - R2C2 item 2 \\ \hline
+\begin{itemize} \item R1C1 item 1 \item R1C1 item 2 \end{itemize} & \begin{itemize} \item R1C2 item 1 \item R1C2 item 2 \end{itemize} \\ \hline
+\begin{itemize} \item R2C1 item 1 \item R2C1 item 2 \end{itemize} & \begin{itemize} \item R2C2 item 1 \item R2C2 item 2 \end{itemize} \\ \hline
 \end{tabular}
 \end{table}
 
@@ -87,7 +87,7 @@ Text and picture  <!-- image --> &  \\ \hline
 \begin{table}[h]
 \begin{tabular}{|l|}
 \hline
-- List item 1 - List item 2 \\ \hline
+\begin{itemize} \item List item 1 \item List item 2 \end{itemize} \\ \hline
 Regular text in second cell \\ \hline
 \end{tabular}
 \end{table}

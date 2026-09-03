@@ -17,11 +17,11 @@
 
 \maketitle
 
-The Pythagorean theorem can be written as an equation relating the lengths of the sides *a* , *b* and the hypotenuse *c* .
+The Pythagorean theorem can be written as an equation relating the lengths of the sides \textit{a} , \textit{b} and the hypotenuse \textit{c} .
 
-To use Docling, simply install `docling` from your package manager, e.g. pip: `pip install docling`
+To use Docling, simply install \texttt{docling} from your package manager, e.g. pip: \texttt{pip install docling}
 
-To convert individual documents with python, use `convert()` , for example:
+To convert individual documents with python, use \texttt{convert()} , for example:
 
 \begin{verbatim}
 from docling.document_converter import DocumentConverter
@@ -32,14 +32,14 @@ result = converter.convert(source)
 print(result.document.export_to_markdown())
 \end{verbatim}
 
-The program will output: `\#\# Docling Technical Report[...]`
+The program will output: \texttt{\\#\\# Docling Technical Report[...]}
 
 Prefetch the models:
 
 \begin{itemize}
-\item Use the `docling-tools models download` utility:
-\item Alternatively, models can be programmatically downloaded using `docling.utils.model\_downloader.download\_models()` .
-\item Also, you can use download-hf-repo parameter to download arbitrary models from HuggingFace by specifying repo id: `\$ docling-tools models download-hf-repo ds4sd/SmolDocling-256M-preview Downloading ds4sd/SmolDocling-256M-preview model from HuggingFace...`
+\item Use the \texttt{docling-tools models download} utility:
+\item Alternatively, models can be programmatically downloaded using \texttt{docling.utils.model_downloader.download_models()} .
+\item Also, you can use download-hf-repo parameter to download arbitrary models from HuggingFace by specifying repo id: \texttt{$ docling-tools models download-hf-repo ds4sd/SmolDocling-256M-preview Downloading ds4sd/SmolDocling-256M-preview model from HuggingFace...}
 \end{itemize}
 
 \end{document}

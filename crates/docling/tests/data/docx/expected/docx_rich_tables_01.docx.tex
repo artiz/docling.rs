@@ -14,7 +14,7 @@
 
 \begin{document}
 
-**Changes to the DOCLANG Core Spec**
+\textbf{Changes to the DOCLANG Core Spec}
 
 Last Updated: 2026-06-18
 
@@ -23,16 +23,16 @@ This document identifies the edits needed for a PAS submission to ISO via ISO/IE
 The transformation of this technical draft for ISO compliance involves two phases:
 
 \begin{itemize}
-\item **Phase 1** (Macro-Level Structural Realignment) fixes the document's main layout. It forces the strict standard clause order, removes forbidden company and author names, cuts out critiques of competing formats, and changes all casual requirement language or uppercase tokens into standard lowercase ISO verbal forms (shall, should, may).
-\item **Phase 2** (Micro-Level Editorial Optimization) cleans up the small details required by the ISO House Style. This fixes layout bugs like ha nging paragraphs, adds spaces to large numbers (e.g., 65 535), writes out printable web links for physical paper copies, uses proper math subscript formatting, and limits all typography to standard fonts so it passes the final publishing system.
+\item \textbf{Phase 1} (Macro-Level Structural Realignment) fixes the document's main layout. It forces the strict standard clause order, removes forbidden company and author names, cuts out critiques of competing formats, and changes all casual requirement language or uppercase tokens into standard lowercase ISO verbal forms (shall, should, may).
+\item \textbf{Phase 2} (Micro-Level Editorial Optimization) cleans up the small details required by the ISO House Style. This fixes layout bugs like ha nging paragraphs, adds spaces to large numbers (e.g., 65 535), writes out printable web links for physical paper copies, uses proper math subscript formatting, and limits all typography to standard fonts so it passes the final publishing system.
 \end{itemize}
 
-**Phase 1**
+\textbf{Phase 1}
 
 \begin{table}[h]
 \begin{tabular}{|l|l|l|}
 \hline
-**Feature** & **Action Needed** & **Comment/Links** \\ \hline
+\textbf{Feature} & \textbf{Action Needed} & \textbf{Comment/Links} \\ \hline
 Document Clause Ordering & Reorganize into the mandatory sequence:  • Foreword (Mandatory, unnumbered)  • Introduction (Optional, unnumbered)  • 1 Scope (Mandatory, Clause 1)  • 2 Normative references (Mandatory, Clause 2)  • 3 Terms and definitions (Mandatory, Clause 3)  • 4 Symbols and abbreviated terms (Mandatory, Clause 4)  • 5 Conformance (Mandatory, Clause 5)  • 6 Technical Clauses...  • Annex A (normative)  • Annex B/C (informative)  • Bibliography (Mandatory, absolute end) & The current draft improperly mixes introductory narrative, design principles, and examples before standard layout clauses are established. See ISO/IEC Directives, Part 2, Clause 6. \\ \hline
 Author \& Corporate Profiles & Completely remove the table listing individual names and company affiliations. & Personal names, corporate branding, logos, and affiliations are prohibited in the normative body of an ISO publication. See ISO/IEC Directives, Part 2, Clauses 4 and 12.5.2. \\ \hline
 Foreword Boilerplate & Replace the original foreword with the mandatory ISO/IEC JTC 1 PAS foreword text and retain only a neutral statement identifying the originating workshop. & ISO forewords follow prescribed wording and structure. See ISO/IEC Directives, Part 2, Clause 12. \\ \hline
@@ -59,12 +59,12 @@ Annex Reference Audit & Ensure Annexes A, B, and C are explicitly referenced fro
 \end{tabular}
 \end{table}
 
-**Phase 2**
+\textbf{Phase 2}
 
 \begin{table}[h]
 \begin{tabular}{|l|l|l|}
 \hline
-**Feature** & **Action Needed** & **Comment/Links** \\ \hline
+\textbf{Feature} & \textbf{Action Needed} & \textbf{Comment/Links} \\ \hline
 Cross-Reference Normalization & Replace Markdown anchors and informal references with ISO clause references. & References should use forms such as “see 7.3.2” or “see Annex A”. See ISO/IEC Directives, Part 2, Clause 10. \\ \hline
 Hanging Paragraph Subclauses & Insert “General” subclauses beneath major clauses before introducing subordinate subclauses. & Prevents hanging paragraphs and ambiguous clause structures. See ISO/IEC Directives, Part 2, Clause 22.3.3. \\ \hline
 Orphan Subclause Remediation & Ensure any clause containing a subclause .1 also contains a .2 or merge the subdivision back into the parent clause. & ISO numbering rules prohibit single-child subdivisions. See ISO/IEC Directives, Part 2, Clause 22.3.2. \\ \hline
