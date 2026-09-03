@@ -1,1 +1,1 @@
-od te nn na sm 88 sd ek da M bd p0
+Docling bundles PDF document conversion to JSON and Markdown in an easy self contained package

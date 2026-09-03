@@ -1,11 +1,13 @@
-70772 -O　LLaMA 2OLLaMA 2 65Mistral70+Mistra
+Knowledge (%)MMLU (%) 799927S99 oSoSoSoSoSo
 
-% 60- -----------1g68. 550 S M66 50R
+0 S.c-smevS.ce oo OO XO ee
 
-451i Effective LLaMA64-
+SS
 
-71334707133470 Model size (billion parameters). 681 Model size (billion parameters) 70-O- LLaMA 2-O- LLaMA 2 65Mistral 66Mistra O 6064
+OO Comprehension (%)Reasoning (%) 999999992 0z798980z
 
-55062 K 50------0 !......0 60 45o3ov
+0 S.cevS.cev 2-s oo oo N o ee
 
-71334707133470 Model size (billion parameters) Model size (billion parameters)
+Xo DD SS
+
+OO

@@ -1621,6 +1621,15 @@ impl Pipeline {
         self.sync_ocr_config();
     }
 
+    /// Whether page extraction should decode the text layer at all. Forced
+    /// full-page OCR (the flag or `ocr_mode=full_page|layout_regions`) clears
+    /// every extracted cell unread, so the decode is skipped outright —
+    /// docling#4061's `skip_cell_extraction` (2.122). `no_ocr` wins over the
+    /// forcing, as everywhere else: its fast path *is* the text layer.
+    fn extract_text_layer(&self) -> bool {
+        self.no_ocr || !(self.force_full_page_ocr || self.ocr_mode.forces_full_page())
+    }
+
     /// Push the current OCR forcing/scale choice onto already-loaded workers
     /// (new workers read it at [`Worker::load`]).
     fn sync_ocr_config(&mut self) {
@@ -1742,6 +1751,7 @@ impl Pipeline {
         let mut doc = DoclingDocument::new(name);
         let mut confs = std::collections::BTreeMap::new();
         let render_image = !self.no_ocr;
+        let extract_text = self.extract_text_layer();
         let progress = self.progress.clone();
         let mut done = 0usize;
         let worker = self.primary()?;
@@ -1749,6 +1759,7 @@ impl Pipeline {
             bytes,
             password,
             render_image,
+            extract_text,
             range,
             |n, _total, mut page| {
                 let (mut nodes, links, conf) = worker.process(n, &mut page)?;
@@ -1787,6 +1798,7 @@ impl Pipeline {
         let pages_done = std::sync::atomic::AtomicUsize::new(0);
         let n_workers = self.pool.len();
         let render_image = !self.no_ocr;
+        let extract_text = self.extract_text_layer();
         let layout_batch = pdf_layout_batch();
         // Bound sized so every worker can accumulate a full layout batch while
         // rendering stays ahead (and never below the pre-#73 render-ahead of
@@ -1854,6 +1866,7 @@ impl Pipeline {
                 bytes,
                 password,
                 render_image,
+                extract_text,
                 range,
                 |i, _total, page| {
                     work_tx
@@ -1942,11 +1955,13 @@ impl Pipeline {
     {
         let mut asm = assemble::StreamAssembler::new();
         let render_image = !self.no_ocr;
+        let extract_text = self.extract_text_layer();
         let worker = self.primary()?;
         pdfium_backend::for_each_page(
             bytes,
             password,
             render_image,
+            extract_text,
             range,
             |n, _total, mut page| {
                 // Confidence is dropped on the streaming path: the report is
@@ -1978,6 +1993,7 @@ impl Pipeline {
         self.ensure_pool()?;
         let n_workers = self.pool.len();
         let render_image = !self.no_ocr;
+        let extract_text = self.extract_text_layer();
         let layout_batch = pdf_layout_batch();
         // Bound sized so every worker can accumulate a full layout batch while
         // rendering stays ahead (and never below the pre-#73 render-ahead of
@@ -2034,6 +2050,7 @@ impl Pipeline {
                         bytes,
                         password,
                         render_image,
+                        extract_text,
                         range,
                         |i, _total, page| {
                             work_tx
