@@ -44,7 +44,12 @@ services:
       start_period: 45s
     deploy:
       resources:
+        limits:
+          cpus: "${CPU_LIMIT:-8.0}"
+          memory: "${MEMORY_LIMIT:-8G}"
         reservations:
+          cpus: "2.0"
+          memory: "2G"
           devices:
             - driver: nvidia
               count: all
