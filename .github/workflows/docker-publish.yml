@@ -1,25 +1,32 @@
-# Build and publish the `docling-rs-serve` container image to GitHub Container
-# Registry (ghcr.io).
+# Build and publish `docling-rs-serve` and `docling-rs` container images to
+# GitHub Container Registry (ghcr.io).
 #
-# The image packages the pure-Rust `docling-serve` HTTP conversion API along with
-# its native runtime dependencies (ffmpeg, pdfium, and the ONNX models for
-# layout detection, TableFormer table structure, and PP-OCRv3 recognition) into
-# a slim, Python-free container image.
+# The images package the pure-Rust `docling-serve` HTTP conversion API and the
+# `docling-rs` CLI along with their native runtime dependencies (ffmpeg,
+# pdfium, and the ONNX models for layout detection, TableFormer table
+# structure, and PP-OCRv3 recognition) into slim, Python-free container images.
 #
-# Multi-arch: builds natively on matrix runners — `ubuntu-latest` for linux/amd64
-# and `ubuntu-24.04-arm` for linux/arm64 — avoiding slow QEMU emulation. The
-# single-arch images are pushed by digest and assembled into multi-arch manifest
-# lists by the `merge` job.
+# Published image families:
+#   CPU (multi-arch: linux/amd64 + linux/arm64):
+#     - ghcr.io/docling-project/docling-rs-serve      — HTTP conversion API
+#     - ghcr.io/docling-project/docling-rs            — docling-rs CLI
+#   CUDA GPU (linux/amd64, CUDA 12 + cuDNN 9, --features cuda):
+#     - ghcr.io/docling-project/docling-rs-serve-cuda — CUDA HTTP conversion API
+#     - ghcr.io/docling-project/docling-rs-cuda       — CUDA docling-rs CLI
 #
-# Published images (two targets of crates/docling-serve/Dockerfile, sharing the
-# dependency, runtime and asset layers):
-#   - ghcr.io/docling-project/docling-rs-serve — the HTTP conversion API
-#   - ghcr.io/docling-project/docling-rs       — the `docling-rs` CLI
+# Multi-arch CPU builds run natively on matrix runners — `ubuntu-latest` for
+# linux/amd64 and `ubuntu-24.04-arm` for linux/arm64 — avoiding slow QEMU
+# emulation. Single-arch CPU images are pushed by digest and assembled into
+# multi-arch manifest lists by the `merge` job.
+#
+# CUDA images are built on `ubuntu-latest` (linux/amd64) and tagged with
+# explicit release versions and `master` (never floating `:latest`, matching
+# upstream docling-serve CUDA tagging policy).
 #
 # Triggers:
-#   - Release published: tags with semantic versions (vX.Y.Z, X.Y, X, latest)
-#   - Push to master: tags with `master` and `latest`
-#   - Manual dispatch: tag override or dry-run testing
+#   - Release published: tags with semantic versions (vX.Y.Z, X.Y, X, latest for CPU; vX.Y.Z, X.Y, X for CUDA)
+#   - Push to master: tags with `master` (and `latest` for CPU)
+#   - Manual dispatch: tag override or dry-run testing (with optional CUDA toggle)
 #   - Pull request: fast dry-run build on amd64 + smoke test (no push)
 
 name: docker-publish
@@ -43,11 +50,16 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: "Explicit image tag to publish (e.g. v1.24.0 or latest). Blank = derive from ref/release."
+        description: "Explicit image tag to publish (e.g. v1.28.0 or latest). Blank = derive from ref/release."
         required: false
         default: ""
       publish:
         description: "Publish images to GHCR (false = build & test only, no push)."
+        required: false
+        type: boolean
+        default: true
+      cuda:
+        description: "Also build and publish CUDA GPU images (docling-rs-serve-cuda / docling-rs-cuda)."
         required: false
         type: boolean
         default: true
@@ -78,10 +90,15 @@ env:
   REGISTRY: ghcr.io
   SERVE_IMAGE: ${{ github.repository_owner }}/docling-rs-serve
   CLI_IMAGE: ${{ github.repository_owner }}/docling-rs
+  SERVE_CUDA_IMAGE: ${{ github.repository_owner }}/docling-rs-serve-cuda
+  CLI_CUDA_IMAGE: ${{ github.repository_owner }}/docling-rs-cuda
 
 jobs:
-  build:
-    name: build ${{ matrix.platform }}
+  # ============================================================================
+  # 1. CPU Build Matrix (linux/amd64 on ubuntu-latest, linux/arm64 on ubuntu-24.04-arm)
+  # ============================================================================
+  build-cpu:
+    name: build CPU (${{ matrix.platform }})
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 60
     permissions:
@@ -105,12 +122,6 @@ jobs:
         uses: docker/setup-buildx-action@v3
 
       - name: Log in to GitHub Container Registry
-        # Only log in when pushing digests (push/release/dispatch). The
-        # dispatch guard matters: outside `workflow_dispatch` the `inputs`
-        # context is empty and `inputs.publish` is null, which GitHub's loose
-        # comparison coerces to 0 — so `inputs.publish != false` evaluated to
-        # *false* on push and release, silently skipping every publish step
-        # and the merge job (run #9 on master built both arches, pushed nothing).
         if: github.event_name != 'pull_request' && (github.event_name != 'workflow_dispatch' || inputs.publish)
         uses: docker/login-action@v3
         with:
@@ -118,8 +129,8 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Extract metadata labels for Docker
-        id: meta
+      - name: Extract metadata labels for CPU serve image
+        id: meta_serve
         uses: docker/metadata-action@v5
         with:
           images: ${{ env.REGISTRY }}/${{ env.SERVE_IMAGE }}
@@ -129,7 +140,7 @@ jobs:
             org.opencontainers.image.licenses=MIT
             org.opencontainers.image.vendor=docling-project
 
-      - name: Extract metadata labels for the CLI image
+      - name: Extract metadata labels for CPU CLI image
         id: meta_cli
         uses: docker/metadata-action@v5
         with:
@@ -140,9 +151,7 @@ jobs:
             org.opencontainers.image.licenses=MIT
             org.opencontainers.image.vendor=docling-project
 
-      # Build both single-arch images locally and verify them. The two targets
-      # share every layer up to the final stage, so the second build is cheap.
-      - name: Build local serve image for smoke test
+      - name: Build local CPU serve image for smoke test
         uses: docker/build-push-action@v6
         with:
           context: .
@@ -151,11 +160,11 @@ jobs:
           load: true
           tags: docling-rs-serve:test
           platforms: ${{ matrix.platform }}
-          labels: ${{ steps.meta.outputs.labels }}
+          labels: ${{ steps.meta_serve.outputs.labels }}
           cache-from: type=gha,scope=docling-rs-serve-${{ matrix.platform_slug }}
           cache-to: type=gha,mode=max,scope=docling-rs-serve-${{ matrix.platform_slug }}
 
-      - name: Build local CLI image for smoke test
+      - name: Build local CPU CLI image for smoke test
         uses: docker/build-push-action@v6
         with:
           context: .
@@ -208,10 +217,8 @@ jobs:
           echo "Cleaning up smoke test container..."
           docker rm -f docling-rs-serve-test
 
-      # Push the single-arch images by digest to GHCR (skipped on PRs); the
-      # merge job assembles the multi-arch manifest lists per image.
-      - name: Build and push serve image by digest
-        id: build
+      - name: Build and push CPU serve image by digest
+        id: build_serve
         if: github.event_name != 'pull_request' && (github.event_name != 'workflow_dispatch' || inputs.publish)
         uses: docker/build-push-action@v6
         with:
@@ -219,12 +226,12 @@ jobs:
           file: crates/docling-serve/Dockerfile
           target: serve
           platforms: ${{ matrix.platform }}
-          labels: ${{ steps.meta.outputs.labels }}
+          labels: ${{ steps.meta_serve.outputs.labels }}
           outputs: type=image,name=${{ env.REGISTRY }}/${{ env.SERVE_IMAGE }},push-by-digest=true,name-canonical=true,push=true
           cache-from: type=gha,scope=docling-rs-serve-${{ matrix.platform_slug }}
           cache-to: type=gha,mode=max,scope=docling-rs-serve-${{ matrix.platform_slug }}
 
-      - name: Build and push CLI image by digest
+      - name: Build and push CPU CLI image by digest
         id: build_cli
         if: github.event_name != 'pull_request' && (github.event_name != 'workflow_dispatch' || inputs.publish)
         uses: docker/build-push-action@v6
@@ -238,16 +245,16 @@ jobs:
           cache-from: type=gha,scope=docling-rs-serve-${{ matrix.platform_slug }}
           cache-to: type=gha,mode=max,scope=docling-rs-serve-${{ matrix.platform_slug }}
 
-      - name: Export digests
+      - name: Export CPU digests
         if: github.event_name != 'pull_request' && (github.event_name != 'workflow_dispatch' || inputs.publish)
         run: |
           mkdir -p /tmp/digests/serve /tmp/digests/cli
-          digest="${{ steps.build.outputs.digest }}"
+          digest="${{ steps.build_serve.outputs.digest }}"
           touch "/tmp/digests/serve/${digest#sha256:}"
           digest="${{ steps.build_cli.outputs.digest }}"
           touch "/tmp/digests/cli/${digest#sha256:}"
 
-      - name: Upload serve digest
+      - name: Upload CPU serve digest
         if: github.event_name != 'pull_request' && (github.event_name != 'workflow_dispatch' || inputs.publish)
         uses: actions/upload-artifact@v7
         with:
@@ -256,7 +263,7 @@ jobs:
           if-no-files-found: error
           retention-days: 1
 
-      - name: Upload CLI digest
+      - name: Upload CPU CLI digest
         if: github.event_name != 'pull_request' && (github.event_name != 'workflow_dispatch' || inputs.publish)
         uses: actions/upload-artifact@v7
         with:
@@ -265,11 +272,14 @@ jobs:
           if-no-files-found: error
           retention-days: 1
 
-  merge:
-    name: merge multi-arch manifests & publish
+  # ============================================================================
+  # 2. Merge CPU Multi-Arch Manifest Lists & Publish
+  # ============================================================================
+  merge-cpu:
+    name: merge CPU multi-arch manifests & publish
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    needs: build
+    needs: build-cpu
     if: github.event_name != 'pull_request' && (github.event_name != 'workflow_dispatch' || inputs.publish)
     permissions:
       contents: read
@@ -376,6 +386,7 @@ jobs:
           docker buildx imagetools create "${tags[@]}" "${sources[@]}"
           digest=$(docker buildx imagetools inspect "$first_tag" --raw | sha256sum | awk '{print $1}')
           echo "digest=sha256:$digest" >> "$GITHUB_OUTPUT"
+
       - name: Generate artifact attestation for docling-rs-serve
         uses: actions/attest-build-provenance@v2
         with:
@@ -388,4 +399,115 @@ jobs:
         with:
           subject-name: ${{ env.REGISTRY }}/${{ env.CLI_IMAGE }}
           subject-digest: ${{ steps.merge-cli.outputs.digest }}
+          push-to-registry: true
+
+  # ============================================================================
+  # 3. CUDA GPU Build & Publish (Linux x86_64, CUDA 12 + cuDNN 9, no :latest)
+  # ============================================================================
+  build-and-publish-cuda:
+    name: build & publish CUDA (linux/amd64)
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    # Gated on push to master, release published, or workflow_dispatch with cuda=true
+    if: |
+      github.event_name != 'pull_request' &&
+      (github.event_name != 'workflow_dispatch' || (inputs.publish && inputs.cuda))
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # CUDA images follow upstream tagging policy: explicit version tags and master, NO :latest.
+      - name: Extract metadata for CUDA serve image
+        id: meta_cuda_serve
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.SERVE_CUDA_IMAGE }}
+          flavor: |
+            latest=false
+          tags: |
+            type=ref,event=branch
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=semver,pattern={{major}}
+            type=raw,value=${{ inputs.tag }},enable=${{ inputs.tag != '' }}
+          labels: |
+            org.opencontainers.image.title=docling-rs-serve-cuda
+            org.opencontainers.image.description=CUDA 12 GPU document conversion API in Rust (PDF, DOCX, PPTX, XLSX, HTML, Audio)
+            org.opencontainers.image.licenses=MIT
+            org.opencontainers.image.vendor=docling-project
+
+      - name: Extract metadata for CUDA CLI image
+        id: meta_cuda_cli
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.CLI_CUDA_IMAGE }}
+          flavor: |
+            latest=false
+          tags: |
+            type=ref,event=branch
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=semver,pattern={{major}}
+            type=raw,value=${{ inputs.tag }},enable=${{ inputs.tag != '' }}
+          labels: |
+            org.opencontainers.image.title=docling-rs-cuda
+            org.opencontainers.image.description=docling-rs CLI (CUDA 12 GPU) — document conversion to Markdown / JSON / DCLX / LaTeX
+            org.opencontainers.image.licenses=MIT
+            org.opencontainers.image.vendor=docling-project
+
+      - name: Build and push CUDA serve image
+        id: build_cuda_serve
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: crates/docling-serve/Dockerfile
+          target: serve-cuda
+          platforms: linux/amd64
+          push: true
+          tags: ${{ steps.meta_cuda_serve.outputs.tags }}
+          labels: ${{ steps.meta_cuda_serve.outputs.labels }}
+          cache-from: type=gha,scope=docling-rs-serve-cuda-linux-amd64
+          cache-to: type=gha,mode=max,scope=docling-rs-serve-cuda-linux-amd64
+
+      - name: Build and push CUDA CLI image
+        id: build_cuda_cli
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: crates/docling-serve/Dockerfile
+          target: cli-cuda
+          platforms: linux/amd64
+          push: true
+          tags: ${{ steps.meta_cuda_cli.outputs.tags }}
+          labels: ${{ steps.meta_cuda_cli.outputs.labels }}
+          cache-from: type=gha,scope=docling-rs-serve-cuda-linux-amd64
+          cache-to: type=gha,mode=max,scope=docling-rs-serve-cuda-linux-amd64
+
+      - name: Generate artifact attestation for docling-rs-serve-cuda
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-name: ${{ env.REGISTRY }}/${{ env.SERVE_CUDA_IMAGE }}
+          subject-digest: ${{ steps.build_cuda_serve.outputs.digest }}
+          push-to-registry: true
+
+      - name: Generate artifact attestation for docling-rs-cuda
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-name: ${{ env.REGISTRY }}/${{ env.CLI_CUDA_IMAGE }}
+          subject-digest: ${{ steps.build_cuda_cli.outputs.digest }}
           push-to-registry: true
