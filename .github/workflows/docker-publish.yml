@@ -365,8 +365,24 @@ jobs:
           done
 
           docker buildx imagetools create "${tags[@]}" "${sources[@]}"
-          digest=$(docker buildx imagetools inspect "$first_tag" --raw | sha256sum | awk '{print $1}')
-          echo "digest=sha256:$digest" >> "$GITHUB_OUTPUT"
+          # Read the manifest-list digest back from the registry descriptor.
+          # The old `--raw | sha256sum` pipeline had no pipefail: when the
+          # freshly-created manifest wasn't readable yet (GHCR read-after-write
+          # lag), inspect failed silently and the hash of *empty stdin*
+          # (sha256:e3b0c4…) went to the attestation step, which then 404'd.
+          # Retry the read, take the digest field itself, and fail the step
+          # loudly if it still doesn't look like a digest.
+          digest=""
+          for attempt in 1 2 3 4 5; do
+            digest=$(docker buildx imagetools inspect "$first_tag" --format '{{json .Manifest}}' | jq -r '.digest // empty') && [ -n "$digest" ] && break
+            echo "manifest for $first_tag not readable yet (attempt $attempt); retrying..."
+            sleep $((attempt * 5))
+          done
+          if [[ ! "$digest" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+            echo "::error::could not read back the manifest digest for $first_tag (got: '$digest')"
+            exit 1
+          fi
+          echo "digest=$digest" >> "$GITHUB_OUTPUT"
 
       - name: Create manifest list and push for the CLI image
         id: merge-cli
@@ -392,8 +408,24 @@ jobs:
           done
 
           docker buildx imagetools create "${tags[@]}" "${sources[@]}"
-          digest=$(docker buildx imagetools inspect "$first_tag" --raw | sha256sum | awk '{print $1}')
-          echo "digest=sha256:$digest" >> "$GITHUB_OUTPUT"
+          # Read the manifest-list digest back from the registry descriptor.
+          # The old `--raw | sha256sum` pipeline had no pipefail: when the
+          # freshly-created manifest wasn't readable yet (GHCR read-after-write
+          # lag), inspect failed silently and the hash of *empty stdin*
+          # (sha256:e3b0c4…) went to the attestation step, which then 404'd.
+          # Retry the read, take the digest field itself, and fail the step
+          # loudly if it still doesn't look like a digest.
+          digest=""
+          for attempt in 1 2 3 4 5; do
+            digest=$(docker buildx imagetools inspect "$first_tag" --format '{{json .Manifest}}' | jq -r '.digest // empty') && [ -n "$digest" ] && break
+            echo "manifest for $first_tag not readable yet (attempt $attempt); retrying..."
+            sleep $((attempt * 5))
+          done
+          if [[ ! "$digest" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+            echo "::error::could not read back the manifest digest for $first_tag (got: '$digest')"
+            exit 1
+          fi
+          echo "digest=$digest" >> "$GITHUB_OUTPUT"
 
       - name: Generate artifact attestation for docling-rs-serve
         uses: actions/attest-build-provenance@v2
