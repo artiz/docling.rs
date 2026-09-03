@@ -12,18 +12,20 @@ The following container images are published on **GitHub Container Registry (GHC
 
 | Image | Description | Architectures |
 |---|---|---|
-| [`ghcr.io/docling-project/docling-serve-rs`](https://github.com/docling-project/docling.rs/pkgs/container/docling-serve-rs) | High-performance document conversion HTTP API with PDF, DOCX, PPTX, XLSX, HTML, images, and audio/video models pre-installed (zero Python runtime dependencies). | `linux/amd64`, `linux/arm64` |
-| [`ghcr.io/docling-project/docling-rs`](https://github.com/docling-project/docling.rs/pkgs/container/docling-rs) | Repository-name alias pointing to the same multi-arch container image. | `linux/amd64`, `linux/arm64` |
+| [`ghcr.io/docling-project/docling-rs-serve`](https://github.com/docling-project/docling.rs/pkgs/container/docling-rs-serve) | High-performance document conversion HTTP API with PDF, DOCX, PPTX, XLSX, HTML, images, and audio/video models pre-installed (zero Python runtime dependencies). | `linux/amd64`, `linux/arm64` |
+| [`ghcr.io/docling-project/docling-rs`](https://github.com/docling-project/docling.rs/pkgs/container/docling-rs) | The `docling-rs` CLI with the same models baked in: batch conversion of local files without installing Rust. Entrypoint `docling-rs`, working directory `/data`. | `linux/amd64`, `linux/arm64` |
 
 > [!NOTE]
-> **Image Naming**: The `-rs` suffix (`docling-serve-rs` / `docling-rs`) differentiates this high-performance native Rust implementation from the Python `docling-project/docling-serve` image repository on GHCR.
+> **Image Naming**: The `-rs` in `docling-rs-serve` / `docling-rs` differentiates this native Rust implementation from the Python `docling-project/docling-serve` image repository on GHCR. Both images are targets of the same [`Dockerfile`](../crates/docling-serve/Dockerfile) and share every layer but the final binary.
 
 ```bash
 # Pull the docling-serve HTTP API image (Rust engine):
-docker pull ghcr.io/docling-project/docling-serve-rs:latest
+docker pull ghcr.io/docling-project/docling-rs-serve:latest
 
-# The image is also available under the alias:
+# Pull the CLI image and convert files from the current directory:
 docker pull ghcr.io/docling-project/docling-rs:latest
+docker run --rm -v "$PWD:/data" ghcr.io/docling-project/docling-rs:latest report.pdf --to md
+docker run --rm -v "$PWD:/data" ghcr.io/docling-project/docling-rs:latest --input docs --output converted --to json
 ```
 
 ### Supported Architectures & Tags
@@ -53,7 +55,7 @@ docker run -d \
   --name docling-serve \
   -p 5001:5001 \
   --restart unless-stopped \
-  ghcr.io/docling-project/docling-serve-rs:latest
+  ghcr.io/docling-project/docling-rs-serve:latest
 ```
 
 Check health:
@@ -80,7 +82,7 @@ Preconfigured compose files are available in [`examples/docker-compose/`](../exa
 ```yaml
 services:
   docling-serve:
-    image: ghcr.io/docling-project/docling-serve-rs:latest
+    image: ghcr.io/docling-project/docling-rs-serve:latest
     container_name: docling-serve
     restart: unless-stopped
     ports:

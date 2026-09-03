@@ -1,6 +1,6 @@
 services:
   docling-serve:
-    image: ${DOCLING_IMAGE:-ghcr.io/docling-project/docling-serve-rs:latest}
+    image: ${DOCLING_IMAGE:-ghcr.io/docling-project/docling-rs-serve:latest}
     container_name: docling-serve
     restart: unless-stopped
     ports:

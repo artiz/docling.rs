@@ -215,9 +215,12 @@ the server defaults `DOCLING_RS_NO_ARENA=1`: with the ONNX CPU arena off plus
 heap trimming, warm retained RSS measured ~3× lower (2.0 GB → 0.7 GB) at no
 latency cost — set `DOCLING_RS_NO_ARENA=0` to restore the arena. Prebuilt
 multi-arch images (`linux/amd64`, `linux/arm64`) publish to GHCR:
-`ghcr.io/docling-project/docling-rs-serve:latest` (built from
-[`crates/docling-serve/Dockerfile`](./crates/docling-serve/Dockerfile) with models
-and pdfium baked in, or mountable with `--build-arg FETCH_ASSETS=0`). Docker
+`ghcr.io/docling-project/docling-rs-serve:latest` (the server) and
+`ghcr.io/docling-project/docling-rs:latest` (the CLI, `docker run --rm -v
+"$PWD:/data" ghcr.io/docling-project/docling-rs report.pdf --to md`), both
+built from [`crates/docling-serve/Dockerfile`](./crates/docling-serve/Dockerfile)
+with models and pdfium baked in (or mountable with `--build-arg
+FETCH_ASSETS=0`). Docker
 Compose setups are in [`examples/docker-compose/`](./examples/docker-compose/) and
 the full guide is in [`docs/DEPLOYMENT.md`](./docs/DEPLOYMENT.md).
 URL inputs are **off by default** (SSRF surface): pass `--allow-url-fetch` to
@@ -1378,14 +1381,14 @@ fetches missing model files. Uninstall:
 
 ### Container Images
 
-The following container images are available on **GitHub Container Registry (GHCR)** for running **`docling-rs-serve`** with all native dependencies, pdfium, ffmpeg, and ONNX models baked in (zero Python runtime dependencies):
+The following container images are available on **GitHub Container Registry (GHCR)**, with all native dependencies, pdfium, ffmpeg, and ONNX models baked in (zero Python runtime dependencies). Both are targets of the same Dockerfile and share their layers:
 
 #### 📦 Distributed Images
 
 | Image | Description | Architectures |
 |---|---|---|
 | [`ghcr.io/docling-project/docling-rs-serve`](https://github.com/docling-project/docling.rs/pkgs/container/docling-rs-serve) | High-performance document conversion HTTP API with PDF, DOCX, PPTX, XLSX, HTML, images, and audio/video models pre-installed. | `linux/amd64`, `linux/arm64` |
-| [`ghcr.io/docling-project/docling-rs`](https://github.com/docling-project/docling.rs/pkgs/container/docling-rs) | Repository-name alias pointing to the same multi-arch container image. | `linux/amd64`, `linux/arm64` |
+| [`ghcr.io/docling-project/docling-rs`](https://github.com/docling-project/docling.rs/pkgs/container/docling-rs) | The `docling-rs` CLI with the same models baked in — batch conversion without installing Rust. Entrypoint `docling-rs`, working directory `/data`. | `linux/amd64`, `linux/arm64` |
 
 ```bash
 # Run docling-rs-serve HTTP API (models baked in, zero Python runtime dependencies):
@@ -1393,6 +1396,10 @@ docker run -p 127.0.0.1:5001:5001 ghcr.io/docling-project/docling-rs-serve:lates
 
 # Convert a document:
 curl -F file=@paper.pdf localhost:5001/v1/convert
+
+# Or use the CLI image on local files (mounted at /data):
+docker run --rm -v "$PWD:/data" ghcr.io/docling-project/docling-rs:latest paper.pdf --to md
+docker run --rm -v "$PWD:/data" ghcr.io/docling-project/docling-rs:latest --input docs --output converted --to latex
 ```
 
 ### Docker Compose
