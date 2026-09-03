@@ -32,7 +32,8 @@ use crate::backend::DeclarativeBackend;
 use crate::error::ConversionError;
 use crate::source::SourceDocument;
 use docling_core::{
-    inline_paragraph_node, DoclingDocument, InlineRun, Node, Script, Table, TableStructure,
+    inline_paragraph_node, DoclingDocument, InlineRun, Node, PictureImage, Script, Table,
+    TableStructure,
 };
 
 pub struct OdfBackend;
@@ -107,10 +108,33 @@ struct Styles {
     /// Embedded chart objects by name (`Object 1` → chart). Empty for documents
     /// with no charts.
     charts: HashMap<String, ChartInfo>,
+    /// The package's part names (`Pictures/1000.png`, …); `None` for flat ODF,
+    /// where every image is inline `<office:binary-data>`. Decides whether a
+    /// `draw:image` `xlink:href` is an embedded picture or an *external*
+    /// reference (docling#4015, 2.120.3).
+    parts: Option<HashSet<String>>,
+    /// Whether external `http(s)` image references may be fetched — the
+    /// converter's `fetch_images` (docling's `enable_remote_fetch`). Local
+    /// filesystem paths are never read: a document-supplied path must not
+    /// turn into an arbitrary local-file read (the advisory behind #4015).
+    fetch_images: bool,
 }
 
 impl DeclarativeBackend for OdfBackend {
     fn convert(&self, source: &SourceDocument) -> Result<DoclingDocument, ConversionError> {
+        convert_odf(source, false)
+    }
+}
+
+/// Convert an ODF / OO1.x / flat-ODF document. `fetch_images` allows external
+/// `http(s)` `draw:image` references to be fetched (bounded, SSRF-guarded);
+/// off, an external image reference yields no picture at all — exactly
+/// docling's `ImageResourceLoader` with remote fetch disabled (#4015).
+pub(crate) fn convert_odf(
+    source: &SourceDocument,
+    fetch_images: bool,
+) -> Result<DoclingDocument, ConversionError> {
+    {
         let mut pkg = Package::open(&source.bytes);
         let (content, styles_xml) = match pkg.as_mut() {
             Some(pkg) => (
@@ -135,7 +159,9 @@ impl DeclarativeBackend for OdfBackend {
         }
         let styles_dom = Document::parse(&styles_xml).ok();
         let mut styles = parse_styles(&content_dom, styles_dom.as_ref());
+        styles.fetch_images = fetch_images;
         if let Some(pkg) = pkg.as_mut() {
+            styles.parts = Some(pkg.names().map(str::to_string).collect());
             styles.charts = load_charts(pkg, &content_dom, &styles);
         }
 
@@ -230,6 +256,8 @@ fn parse_styles(content: &Document, styles: Option<&Document>) -> Styles {
         map,
         lists,
         charts: HashMap::new(),
+        parts: None,
+        fetch_images: false,
     }
 }
 
@@ -398,10 +426,69 @@ fn paragraph_style_names(styles: &Styles, name: Option<&str>) -> Vec<String> {
 struct Run {
     text: String,
     fmt: Fmt,
+    /// The `<text:a xlink:href>` target the run sits under (docling#3949,
+    /// 2.120): rendered as a Markdown link around the run.
+    href: Option<String>,
+}
+
+/// docling's `_odf_hyperlink_from_href`: a parseable absolute URL is kept
+/// (normalized like pydantic's `AnyUrl` — a bare `scheme://host` gains its
+/// `/`), a relative target (`guide.odt#part`, `#part`) is kept as a path, and
+/// something that *looks* absolute (has a scheme) but does not parse
+/// (`http://[::1`, `http://`, `http:`) is dropped rather than guessed at.
+fn hyperlink_from_href(href: Option<&str>) -> Option<String> {
+    let href = href?.trim();
+    if href.is_empty() {
+        return None;
+    }
+    // `scheme:` — an ASCII letter, then letters/digits/`+.-`, then a colon.
+    let scheme_len = href.find(':').filter(|&k| {
+        let (first, rest) = href[..k].split_at(1);
+        k > 0
+            && first.chars().all(|c| c.is_ascii_alphabetic())
+            && rest
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || matches!(c, '+' | '.' | '-'))
+    });
+    let Some(k) = scheme_len else {
+        return Some(href.to_string()); // relative target: kept as a path
+    };
+    let scheme = href[..k].to_ascii_lowercase();
+    let rest = &href[k + 1..];
+    if rest.is_empty() {
+        return None; // `http:` — nothing after the scheme
+    }
+    let Some(authority) = rest.strip_prefix("//") else {
+        return Some(format!("{scheme}:{rest}")); // `mailto:…`, `tel:…`
+    };
+    let host_end = authority.find(['/', '?', '#']).unwrap_or(authority.len());
+    let (host, tail) = authority.split_at(host_end);
+    // An empty host (`http://`) or an unterminated IPv6 literal (`http://[::1`)
+    // is a malformed absolute URL: dropped, never guessed at.
+    if host.is_empty() || (host.starts_with('[') && !host.contains(']')) {
+        return None;
+    }
+    // pydantic's `AnyUrl` normalization: lower-cased scheme/host, and a bare
+    // authority gains its `/` path (`https://example.com` → `…com/`).
+    let slash = if tail.starts_with('/') { "" } else { "/" };
+    Some(format!(
+        "{scheme}://{}{slash}{tail}",
+        host.to_ascii_lowercase()
+    ))
 }
 
 /// Collect runs from a paragraph/heading element (recursing spans).
 fn collect_runs(el: XmlNode, styles: &Styles, base: Fmt, out: &mut Vec<Run>) {
+    collect_runs_linked(el, styles, base, None, out)
+}
+
+fn collect_runs_linked(
+    el: XmlNode,
+    styles: &Styles,
+    base: Fmt,
+    href: Option<&str>,
+    out: &mut Vec<Run>,
+) {
     // docling's `_odf_text_runs` since docling#3850 (2.115, ported for #255):
     // the lxml *head* text, then each child's runs, then the child's `tail`
     // text in the parent's formatting. Before that fix a tail after any
@@ -410,36 +497,36 @@ fn collect_runs(el: XmlNode, styles: &Styles, base: Fmt, out: &mut Vec<Run>) {
     // groundtruth now keeps every fragment. In roxmltree the head and the
     // tails are simply the element's text-node children, so collecting every
     // text node in document order reproduces the fixed reading exactly.
+    let run = |text: String, fmt: Fmt| Run {
+        text,
+        fmt,
+        href: href.map(str::to_string),
+    };
     for child in el.children() {
         if child.is_text() {
             if let Some(t) = child.text() {
-                out.push(Run {
-                    text: t.to_string(),
-                    fmt: base,
-                });
+                out.push(run(t.to_string(), base));
             }
         } else if child.is_element() {
             match child.tag_name().name() {
                 "span" => {
                     let fmt = resolve_fmt(styles, attr(child, "style-name"), base);
-                    collect_runs(child, styles, fmt, out);
+                    collect_runs_linked(child, styles, fmt, href, out);
                 }
-                "line-break" => out.push(Run {
-                    text: "\n".into(),
-                    fmt: base,
-                }),
+                // A hyperlink: its runs carry the target (docling#3949); a
+                // `<text:a>` without a usable href is transparent.
+                "a" => {
+                    let fmt = resolve_fmt(styles, attr(child, "style-name"), base);
+                    let link = hyperlink_from_href(attr(child, "href"));
+                    collect_runs_linked(child, styles, fmt, link.as_deref().or(href), out);
+                }
+                "line-break" => out.push(run("\n".into(), base)),
                 // `tab-stop` is OO1.x's spelling of `<text:tab>` (#215).
-                "tab" | "tab-stop" => out.push(Run {
-                    text: "\t".into(),
-                    fmt: base,
-                }),
+                "tab" | "tab-stop" => out.push(run("\t".into(), base)),
                 "s" => {
                     // <text:s text:c="n"> = n spaces (default 1)
                     let n: usize = attr(child, "c").and_then(|v| v.parse().ok()).unwrap_or(1);
-                    out.push(Run {
-                        text: " ".repeat(n),
-                        fmt: base,
-                    });
+                    out.push(run(" ".repeat(n), base));
                 }
                 // A `<draw:object>` in flat ODF (#215) embeds a whole
                 // `<office:document>` inline — its meta/settings/body text is
@@ -450,7 +537,7 @@ fn collect_runs(el: XmlNode, styles: &Styles, base: Fmt, out: &mut Vec<Run>) {
                 "object" | "binary-data" => {}
                 // docling's `_odf_text_runs` recurses into every child, so an
                 // image's `<svg:desc>`/`<svg:title>` text is picked up too.
-                _ => collect_runs(child, styles, base, out),
+                _ => collect_runs_linked(child, styles, base, href, out),
             }
         }
     }
@@ -459,20 +546,28 @@ fn collect_runs(el: XmlNode, styles: &Styles, base: Fmt, out: &mut Vec<Run>) {
 /// Merge adjacent same-format runs, serialize each (markers), join with spaces —
 /// docling-core's inline-group serialization (un-stripped, so spaces double up).
 fn runs_to_text(mut runs: Vec<Run>) -> String {
-    // merge adjacent same-fmt
+    // merge adjacent same-fmt (and same-link) runs
     let mut merged: Vec<Run> = Vec::new();
-    for r in runs.drain(..) {
+    for mut r in runs.drain(..) {
         if let Some(last) = merged.last_mut() {
-            if last.fmt == r.fmt {
+            if last.fmt == r.fmt && last.href == r.href {
                 last.text.push_str(&r.text);
                 continue;
+            }
+            // docling's `_normalize_odf_text_runs`: a hyperlink boundary is a
+            // hard edge — the whitespace right at it is stripped so it doesn't
+            // double up with the separator the inline serializer inserts
+            // (`Watch [the example talk](…) for context.`).
+            if last.href != r.href {
+                last.text = last.text.trim_end().to_string();
+                r.text = r.text.trim_start().to_string();
             }
         }
         merged.push(r);
     }
     merged
         .iter()
-        .map(|r| serialize_run(&r.text, r.fmt))
+        .map(|r| serialize_run(&r.text, r.fmt, r.href.as_deref()))
         .filter(|s| !s.is_empty())
         .collect::<Vec<_>>()
         .join(" ")
@@ -491,7 +586,7 @@ fn runs_to_inline(runs: Vec<Run>) -> Vec<InlineRun> {
     let mut merged: Vec<Run> = Vec::new();
     for r in runs {
         if let Some(last) = merged.last_mut() {
-            if last.fmt == r.fmt {
+            if last.fmt == r.fmt && last.href == r.href {
                 last.text.push_str(&r.text);
                 continue;
             }
@@ -511,7 +606,7 @@ fn runs_to_inline(runs: Vec<Run>) -> Vec<InlineRun> {
         .collect()
 }
 
-fn serialize_run(text: &str, fmt: Fmt) -> String {
+fn serialize_run(text: &str, fmt: Fmt, href: Option<&str>) -> String {
     if text.is_empty() {
         return String::new();
     }
@@ -525,7 +620,59 @@ fn serialize_run(text: &str, fmt: Fmt) -> String {
     if fmt.strike {
         s = format!("~~{s}~~");
     }
+    // docling-core's Markdown `serialize_hyperlink`, applied after formatting.
+    if let Some(href) = href {
+        s = format!("[{s}]({href})");
+    }
     s
+}
+
+/// The picture node for a `<draw:image>`, or `None` when docling emits no
+/// `PictureItem` for it (docling#4015, 2.120.3):
+///
+/// * an embedded part (`Pictures/…`, or inline `<office:binary-data>` in flat
+///   ODF) is a picture — the bytes stay unloaded here, as before;
+/// * an external `http(s)` reference is fetched (bounded, SSRF-guarded) only
+///   under `fetch_images`, and is a picture only when the fetch yields one;
+/// * anything else external — an absolute or relative filesystem path, an
+///   extension-less name — is never read and yields no picture.
+fn odf_picture(styles: &Styles, img: XmlNode) -> Option<Node> {
+    let href = attr(img, "href").unwrap_or("");
+    if !image_can_be_bitmap(img, href) {
+        return None;
+    }
+    let picture = |image: Option<PictureImage>| {
+        Some(Node::Picture {
+            caption: None,
+            image,
+            classification: None,
+        })
+    };
+    if href.is_empty() {
+        return picture(None); // flat ODF inline payload, magic-checked above
+    }
+    // `./Pictures/x.png` (ODF) and `#Pictures/x.png` (OO1.x's package-internal
+    // marker, #215) both name a part.
+    let name = href.trim_start_matches("./").trim_start_matches('#');
+    match &styles.parts {
+        Some(parts) if parts.contains(name) => return picture(None),
+        // Flat ODF has no parts: a non-empty href is external by definition.
+        _ => {}
+    }
+    if href.starts_with("http://") || href.starts_with("https://") {
+        if !styles.fetch_images {
+            return None;
+        }
+        #[cfg(feature = "fetch-images")]
+        {
+            return crate::backend::images::fetch_remote(href).and_then(|img| picture(Some(img)));
+        }
+        #[cfg(not(feature = "fetch-images"))]
+        {
+            return None;
+        }
+    }
+    None
 }
 
 // ---------------------------------------------------------------- text doc
@@ -635,12 +782,8 @@ fn emit_paragraph_images(el: XmlNode, styles: &Styles, doc: &mut DoclingDocument
         .descendants()
         .filter(|n| n.has_tag_name("image") && !n.ancestors().any(|a| a.has_tag_name("frame")))
     {
-        if image_can_be_bitmap(img, attr(img, "href").unwrap_or("")) {
-            doc.push(Node::Picture {
-                caption: None,
-                image: None,
-                classification: None,
-            });
+        if let Some(node) = odf_picture(styles, img) {
+            doc.push(node);
         }
     }
 }
@@ -668,19 +811,20 @@ fn emit_frame_graphic(frame: XmlNode, styles: &Styles, doc: &mut DoclingDocument
             return true;
         }
     }
-    let has_real_image = frame.children().any(|c| {
-        c.has_tag_name("image")
-            && !attr(c, "href")
-                .unwrap_or("")
-                .trim_start_matches("./")
-                .starts_with("ObjectReplacements/")
-    });
-    if has_real_image {
-        doc.push(Node::Picture {
-            caption: None,
-            image: None,
-            classification: None,
-        });
+    // The frame's alternate encodings (a PDF next to its PNG fallback) collapse
+    // into one picture: the first `draw:image` docling would accept.
+    let picture = frame
+        .children()
+        .filter(|c| {
+            c.has_tag_name("image")
+                && !attr(*c, "href")
+                    .unwrap_or("")
+                    .trim_start_matches("./")
+                    .starts_with("ObjectReplacements/")
+        })
+        .find_map(|img| odf_picture(styles, img));
+    if let Some(node) = picture {
+        doc.push(node);
         return true;
     }
     false
@@ -1444,9 +1588,11 @@ fn image_can_be_bitmap(img: XmlNode, href: &str) -> bool {
         Some((_, ext)) => ext.to_ascii_lowercase(),
         None => String::new(),
     };
+    // No empty suffix (docling#4015): an extension-less path is what system
+    // files look like (`/etc/passwd`), never a valid ODF image reference.
     matches!(
         suffix.as_str(),
-        "" | "bmp" | "gif" | "jpeg" | "jpg" | "png" | "tif" | "tiff" | "webp"
+        "bmp" | "gif" | "jpeg" | "jpg" | "png" | "tif" | "tiff" | "webp"
     )
 }
 
@@ -1568,14 +1714,9 @@ fn walk_slide_frame(frame: XmlNode, styles: &Styles, doc: &mut DoclingDocument, 
         {
             continue;
         }
-        if !image_can_be_bitmap(img, href) {
-            continue;
+        if let Some(node) = odf_picture(styles, img) {
+            doc.push(node);
         }
-        doc.push(Node::Picture {
-            caption: None,
-            image: None,
-            classification: None,
-        });
     }
     for tb in frame.descendants().filter(|n| n.has_tag_name("text-box")) {
         walk_textbox_children(
@@ -1680,6 +1821,123 @@ mod tests {
             md.contains("zweite  Durchsicht"),
             "tail after a tab survives:\n{md}"
         );
+    }
+
+    /// Build a minimal packaged ODT around one `content.xml` body fragment
+    /// (`<office:text>` children), optionally with extra parts.
+    fn odt_bytes(body: &str, parts: &[(&str, &[u8])]) -> Vec<u8> {
+        let content = format!(
+            r#"<office:document-content xmlns:office="urn:o" xmlns:text="x"
+              xmlns:draw="d" xmlns:xlink="l">
+            <office:body><office:text>{body}</office:text></office:body></office:document-content>"#
+        );
+        let mut zip = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
+        let opts = zip::write::SimpleFileOptions::default();
+        use std::io::Write;
+        zip.start_file("mimetype", opts).unwrap();
+        zip.write_all(b"application/vnd.oasis.opendocument.text")
+            .unwrap();
+        zip.start_file("content.xml", opts).unwrap();
+        zip.write_all(content.as_bytes()).unwrap();
+        for (name, data) in parts {
+            zip.start_file(*name, opts).unwrap();
+            zip.write_all(data).unwrap();
+        }
+        zip.finish().unwrap().into_inner()
+    }
+
+    fn odt_markdown(body: &str) -> String {
+        let source = crate::SourceDocument::from_bytes(
+            "t.odt",
+            crate::InputFormat::Odt,
+            odt_bytes(body, &[]),
+        );
+        OdfBackend
+            .convert(&source)
+            .expect("converts")
+            .export_to_markdown()
+            .trim()
+            .to_string()
+    }
+
+    /// docling#3949 (2.120): `<text:a>` runs carry their target into the
+    /// Markdown as a link; the whitespace at the link boundary is stripped so
+    /// it doesn't double up with the inline separator.
+    #[test]
+    fn odt_hyperlinks_render_as_markdown_links() {
+        assert_eq!(
+            odt_markdown(
+                r#"<text:p>Watch <text:a xlink:href="https://example.com/talk">the example talk</text:a><text:span> for context.</text:span></text:p>"#
+            ),
+            "Watch [the example talk](https://example.com/talk) for context."
+        );
+        // Headings and titles keep a linked run inside the block.
+        assert_eq!(
+            odt_markdown(
+                r##"<text:h text:outline-level="2">Read <text:a xlink:href="#details">details</text:a> now</text:h>"##
+            ),
+            "### Read [details](#details) now"
+        );
+        // A linked list item.
+        assert_eq!(
+            odt_markdown(
+                r#"<text:list><text:list-item><text:p><text:a xlink:href="list-target.odt#part">linked list item</text:a></text:p></text:list-item></text:list>"#
+            ),
+            "- [linked list item](list-target.odt#part)"
+        );
+    }
+
+    /// docling's `_odf_hyperlink_from_href`: blank / scheme-looking-but-invalid
+    /// targets yield no link, relative targets are kept, a missing `xlink:href`
+    /// leaves the anchor transparent.
+    #[test]
+    fn odt_hyperlink_targets_are_classified_like_docling() {
+        for (href, expected) in [
+            ("   ", "linked text"),
+            ("http://[::1", "linked text"),
+            ("http://", "linked text"),
+            ("http:", "linked text"),
+            ("guide.odt#part", "[linked text](guide.odt#part)"),
+            ("#part", "[linked text](#part)"),
+            ("https://example.com", "[linked text](https://example.com/)"),
+        ] {
+            assert_eq!(
+                odt_markdown(&format!(
+                    r#"<text:p><text:a xlink:href="{href}">linked text</text:a></text:p>"#
+                )),
+                expected,
+                "href {href:?}"
+            );
+        }
+        assert_eq!(
+            odt_markdown(r#"<text:p>Before <text:a>malformed link</text:a> after</text:p>"#),
+            "Before malformed link after"
+        );
+    }
+
+    /// docling#4015 (2.120.3): a `draw:image` whose `xlink:href` points outside
+    /// the package is never read from the filesystem and yields no picture —
+    /// with or without an extension — while an embedded part still does.
+    #[test]
+    fn odt_external_image_references_yield_no_picture() {
+        let frame = |href: &str| {
+            format!(
+                r#"<text:p><draw:frame><draw:image xlink:href="{href}"/></draw:frame></text:p>"#
+            )
+        };
+        assert_eq!(odt_markdown(&frame("/tmp/canary.png")), "");
+        assert_eq!(odt_markdown(&frame("/etc/passwd")), "");
+        assert_eq!(odt_markdown(&frame("../outside.png")), "");
+        // An http(s) reference is a fetch — off by default, so no picture.
+        assert_eq!(odt_markdown(&frame("https://example.com/x.png")), "");
+        // An embedded part is a picture, as before.
+        let source = crate::SourceDocument::from_bytes(
+            "t.odt",
+            crate::InputFormat::Odt,
+            odt_bytes(&frame("Pictures/1.png"), &[("Pictures/1.png", b"\x89PNG")]),
+        );
+        let md = OdfBackend.convert(&source).unwrap().export_to_markdown();
+        assert_eq!(md.trim(), "<!-- image -->");
     }
 
     /// docling PR #3876 / #255: a `<draw:object>` whose package part is

@@ -1,11 +1,11 @@
 {
   "schema_name": "DoclingDocument",
   "version": "1.10.0",
-  "name": "pptx_chart",
+  "name": "content_control_with_picture",
   "origin": {
     "mimetype": "text/plain",
-    "binary_hash": 3519634595890635990,
-    "filename": "pptx_chart"
+    "binary_hash": 16130766669545794392,
+    "filename": "content_control_with_picture"
   },
   "furniture": {
     "self_ref": "#/furniture",
@@ -18,16 +18,13 @@
     "self_ref": "#/body",
     "children": [
       {
-        "$ref": "#/texts/0"
-      },
-      {
         "$ref": "#/pictures/0"
       },
       {
-        "$ref": "#/texts/2"
+        "$ref": "#/texts/0"
       },
       {
-        "$ref": "#/pictures/1"
+        "$ref": "#/texts/1"
       }
     ],
     "content_layer": "body",
@@ -43,34 +40,22 @@
       },
       "children": [],
       "content_layer": "body",
-      "label": "title",
+      "label": "text",
       "prov": [],
-      "orig": "Quarterly Duck Survey",
-      "text": "Quarterly Duck Survey"
+      "orig": "COVER TITLE INSIDE SDT",
+      "text": "COVER TITLE INSIDE SDT"
     },
     {
       "self_ref": "#/texts/1",
-      "parent": {
-        "$ref": "#/pictures/0"
-      },
-      "children": [],
-      "content_layer": "body",
-      "label": "caption",
-      "prov": [],
-      "orig": "Wild Duck Observations by Year",
-      "text": "Wild Duck Observations by Year"
-    },
-    {
-      "self_ref": "#/texts/2",
       "parent": {
         "$ref": "#/body"
       },
       "children": [],
       "content_layer": "body",
-      "label": "title",
+      "label": "text",
       "prov": [],
-      "orig": "Quarterly revenue",
-      "text": "Quarterly revenue"
+      "orig": "BODY TEXT OUTSIDE SDT",
+      "text": "BODY TEXT OUTSIDE SDT"
     }
   ],
   "pictures": [
@@ -83,28 +68,19 @@
       "content_layer": "body",
       "label": "picture",
       "prov": [],
-      "captions": [
-        {
-          "$ref": "#/texts/1"
-        }
-      ],
-      "references": [],
-      "footnotes": [],
-      "annotations": []
-    },
-    {
-      "self_ref": "#/pictures/1",
-      "parent": {
-        "$ref": "#/body"
-      },
-      "children": [],
-      "content_layer": "body",
-      "label": "picture",
-      "prov": [],
       "captions": [],
       "references": [],
       "footnotes": [],
-      "annotations": []
+      "annotations": [],
+      "image": {
+        "mimetype": "image/png",
+        "dpi": 72,
+        "size": {
+          "width": 120,
+          "height": 120
+        },
+        "uri": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAHgAAAB4CAIAAAC2BqGFAAABIElEQVR4nO3SQQ0AIBADQUDI+ZeCLFSwrxkDTTbdd2bx3wk2ELrj0RGhI0JHhI4IHRE6InRE6IjQEaEjQkeEjggdEToidEToiNARoSNCR4SOCB0ROiJ0ROiI0BGhI0JHhI4IHRE6InRE6IjQEaEjQkeEjggdEToidEToiNARoSNCR4SOCB0ROiJ0ROiI0BGhI0JHhI4IHRE6InRE6IjQEaEjQkeEjggdEToidEToiNARoSNCR4SOCB0ROiJ0ROiI0BGhI0JHhI4IHRE6InRE6IjQEaEjQkeEjggdEToidEToiNARoSNCR4SOCB0ROiJ0ROiI0BGhI0JHhI4IHRE6InRE6IjQEaEjQkeEjggdEToidEToiNARoSNCR4SOCL0aD+WvAfRJaZyKAAAAAElFTkSuQmCC"
+      }
     }
   ],
   "tables": [],

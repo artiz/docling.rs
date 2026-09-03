@@ -85,6 +85,7 @@ pub use latex::LatexBackend;
 pub use lotus::LotusBackend;
 pub use markdown::MarkdownBackend;
 pub use mhtml::MhtmlBackend;
+pub(crate) use odf::convert_odf;
 pub use odf::OdfBackend;
 pub use ppt::PptBackend;
 pub use pptx::PptxBackend;

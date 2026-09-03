@@ -293,7 +293,7 @@ fn blocked_by_ssrf_guard(url: &str) -> bool {
 /// Bounded: an SSRF block-list, a connect/overall timeout, and a redirect cap
 /// keep one hostile or slow `<img src>` from hanging the whole conversion.
 #[cfg(feature = "fetch-images")]
-fn fetch_remote(url: &str) -> Option<PictureImage> {
+pub(crate) fn fetch_remote(url: &str) -> Option<PictureImage> {
     use std::time::Duration;
     if blocked_by_ssrf_guard(url) {
         return None;

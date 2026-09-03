@@ -82,6 +82,9 @@ pub fn parse_drawing(xml: &str) -> Vec<DrawingItem> {
 /// (caption), and the series with their workbook references.
 pub struct ChartSpec {
     pub kind: &'static str,
+    /// The plot-area element the kind was classified from (`barChart`,
+    /// `bar3DChart`, …) — PPTX needs it to tell the 3-D variants apart.
+    pub plot_tag: String,
     pub title: Option<String>,
     pub series: Vec<SeriesSpec>,
 }
@@ -124,6 +127,7 @@ pub fn parse_chart(xml: &str) -> Option<ChartSpec> {
         .children()
         .find(|n| n.tag_name().name().ends_with("Chart"))?;
     let kind = classification(chart_el.tag_name().name()).unwrap_or("other_chart");
+    let plot_tag = chart_el.tag_name().name().to_string();
 
     // Title: all `<a:t>` runs under `c:title`, concatenated.
     let title = dom
@@ -188,6 +192,7 @@ pub fn parse_chart(xml: &str) -> Option<ChartSpec> {
     }
     Some(ChartSpec {
         kind,
+        plot_tag,
         title,
         series,
     })
