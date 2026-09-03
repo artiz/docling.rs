@@ -517,10 +517,12 @@ jobs:
 
       - name: Run CUDA CLI smoke test (auto fallback to CPU on GPU-less runner)
         run: |
-          echo "Testing CLI execution with auto provider fallback..."
-          docker run --rm docling-rs-cuda:test --version
+          echo "Testing CLI execution with auto provider fallback on Markdown fixture..."
           docker run --rm -v "$PWD/tests/data/md/sources:/data:ro" docling-rs-cuda:test wiki.md --to md | head -n 3
-
+          echo "Testing CLI execution with models resolving..."
+          out=$(docker run --rm -v "$PWD/tests/data/pdf/sources:/data:ro" docling-rs-cuda:test base14_fonts.pdf --to latex)
+          echo "$out" | head -n 20
+          echo "$out" | grep -q '\\begin{document}' || { echo "CUDA CLI smoke test failed: no LaTeX document produced"; exit 1; }
       - name: Run CUDA serve smoke test (auto fallback to CPU on GPU-less runner)
         run: |
           echo "Starting docling-rs-serve-cuda container..."
