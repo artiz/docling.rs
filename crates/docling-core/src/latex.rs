@@ -842,6 +842,24 @@ mod tests {
     }
 
     #[test]
+    fn located_pdf_footnote_link_renders_href() {
+        // The PDF pipeline bakes a covered footnote's link as `[text](url)`
+        // inside a located paragraph.
+        let mut doc = DoclingDocument::new("t");
+        doc.nodes.push(Node::Located {
+            location: [0, 0, 10, 10],
+            inner: Box::new(Node::Paragraph {
+                text: "[www.magenta.at/faq](https://www.magenta.at/faq)".into(),
+            }),
+        });
+        assert!(
+            to_latex(&doc).contains("\\href{https://www.magenta.at/faq}{www.magenta.at/faq}"),
+            "{}",
+            to_latex(&doc)
+        );
+    }
+
+    #[test]
     fn hyperlinks() {
         assert_eq!(
             inline_md("Pull the [**repository**](https://github.com/x/y_z) ."),
