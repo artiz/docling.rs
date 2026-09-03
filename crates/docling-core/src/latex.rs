@@ -37,8 +37,8 @@
 //! `\subsubsection`; a conversion should not fail on an `<h5>`, so those
 //! degrade to `\paragraph` / `\subparagraph`. And upstream's serializer emits
 //! the text of a formatted list item or heading *twice* (once inside
-//! `\item` / `\section{}`, then again as the inline group's own paragraph — a
-//! docling-core bug); that duplication is not reproduced.
+//! `\item` / `\section{}`, then again as the inline group's own paragraph —
+//! docling-core#740); that duplication is not reproduced.
 
 use crate::document::{DoclingDocument, FieldItem, Node, Table};
 

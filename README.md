@@ -424,8 +424,9 @@ Two deliberate deviations: upstream raises on a heading deeper than
 `\subsubsection`, docling.rs degrades those to `\paragraph` /
 `\subparagraph` instead of failing the conversion; and upstream emits the
 text of a *formatted* list item or heading twice (inside `\item` /
-`\section{}` and again as its own paragraph — a docling-core bug), which
-docling.rs does not reproduce.
+`\section{}` and again as its own paragraph —
+[docling-core#740](https://github.com/docling-project/docling-core/issues/740)),
+which docling.rs does not reproduce.
 
 DocLang also reads back **in**: `.dclg`/`.dclg.xml` (bare DocLang XML) and
 `.dclx` archives are input formats like any other —
