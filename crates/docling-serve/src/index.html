@@ -74,7 +74,7 @@
   </nav>
 </header>
 <main>
-<p class="sub">Convert documents to Markdown, docling JSON, DocLang archives, or chunk records —
+<p class="sub">Convert documents to Markdown, docling JSON, DocLang archives, LaTeX, or chunk records —
 over <a href="https://github.com/docling-project/docling.rs">docling.rs</a>, on this server.
 The API is described by <a href="/openapi.yaml"><code>/openapi.yaml</code></a> (OpenAPI 3.1).</p>
 
@@ -98,6 +98,7 @@ The API is described by <a href="/openapi.yaml"><code>/openapi.yaml</code></a> (
         <option value="json">docling JSON</option>
         <option value="chunks">chunk records</option>
         <option value="dclx">DocLang archive (.dclx)</option>
+        <option value="latex">LaTeX (.tex)</option>
         <option value="images">page images (PDF → PNG)</option>
       </select>
     </label>
@@ -108,6 +109,36 @@ The API is described by <a href="/openapi.yaml"><code>/openapi.yaml</code></a> (
     <label title="Keep layout + TableFormer, never OCR (docling's do_ocr=False): structure survives, pixel-only text comes back empty"><input type="checkbox" id="skip_ocr"> skip OCR</label>
     <label><input type="checkbox" id="no_table_former"> no TableFormer</label>
     <label title="Keep every detected picture as a picture (disable text-panel demotion)"><input type="checkbox" id="no_text_panels"> keep pictures</label>
+    <label title="OCR every page from its render, ignoring the embedded text layer (docling's force_full_page_ocr)"><input type="checkbox" id="force_full_page_ocr"> force full-page OCR</label>
+    <label title="Infer section-header levels from font size / numbering (docling's HeadingHierarchyModel, #302)"><input type="checkbox" id="heading_hierarchy"> heading levels</label>
+    <label title="Unpadded | a | b | Markdown tables (#271)"><input type="checkbox" id="compact_tables"> compact tables</label>
+    <label title="Omit empty cells from sparse XLSX/XLS grids (#271)"><input type="checkbox" id="skip_empty_cells"> skip empty cells</label>
+  </div>
+  <div class="row">
+    <label title="PDF page window, 1-based inclusive: 3 or 2-5">Pages <input type="text" id="pages" size="6" placeholder="all"></label>
+    <label title="OCR recognition language for scanned pages">OCR language
+      <select id="ocr_lang"><option value="">en (default)</option><option value="ch">ch (multilingual)</option></select>
+    </label>
+    <label title="Which regions feed the OCR (docling's OcrMode, #254); full_page / layout_regions discard the text layer">OCR mode
+      <select id="ocr_mode"><option value="">default</option><option value="full_page">full_page</option><option value="layout_regions">layout_regions</option><option value="pdf_aware_layout_regions">pdf_aware_layout_regions</option></select>
+    </label>
+    <label title="OCR render scale in px per PDF point (docling's default 3 = 216 dpi; empty = the pipeline's 2.0 render)">OCR scale <input type="number" id="ocr_scale" step="0.5" min="0.5" max="6" size="4" placeholder="2.0"></label>
+    <label title="Whisper transcription language for audio/video (empty = auto)">ASR lang <input type="text" id="asr_lang" size="4" placeholder="auto"></label>
+    <label title="Max sampled video frames (0 = transcript only)">Video frames <input type="number" id="video_frames" min="0" size="3" placeholder="default"></label>
+  </div>
+  <div class="row">
+    <label title="PDF pipeline: the standard layout/TableFormer/OCR pipeline, or a remote vision-language model (docling's VlmPipeline over an OpenAI-compatible endpoint, #304)">Pipeline
+      <select id="pipeline"><option value="">standard</option><option value="vlm">vlm (remote endpoint)</option></select>
+    </label>
+    <span id="vlm_fields" style="display:none">
+      <input type="text" id="vlm_endpoint" size="28" placeholder="http://localhost:8000/v1 (endpoint)">
+      <input type="text" id="vlm_model" size="14" placeholder="model">
+      <input type="password" id="vlm_api_key" size="12" placeholder="api key">
+      <input type="text" id="vlm_prompt" size="18" placeholder="prompt (optional)">
+      <input type="number" id="vlm_max_tokens" size="6" min="1" placeholder="max tokens">
+    </span>
+  </div>
+  <div class="row">
     <button id="go">Convert</button>
   </div>
   <div class="hint" id="fetch-images-disabled-note" style="display:none">
@@ -154,7 +185,7 @@ The API is described by <a href="/openapi.yaml"><code>/openapi.yaml</code></a> (
 <p>As query parameters, multipart text fields, or JSON keys (body wins over query):</p>
 <table>
   <tr><th>Option</th><th>Values</th><th>Description</th></tr>
-  <tr><td><code>to</code></td><td><code>md</code> (default) | <code>json</code> | <code>dclx</code> | <code>chunks</code> | <code>images</code></td>
+  <tr><td><code>to</code></td><td><code>md</code> (default) | <code>json</code> | <code>dclx</code> | <code>chunks</code> | <code>latex</code> | <code>images</code></td>
       <td>Markdown (streamed) · docling <code>DoclingDocument</code> JSON · DocLang OPC archive (download) · chunker records (hierarchical + hybrid when a tokenizer is installed) · per-page PNG renders of a PDF (no conversion; combines with <code>pages</code>, capped at 100 pages per request by default).</td></tr>
   <tr><td><code>strict</code></td><td><code>true</code>/<code>false</code></td><td>Cleaner strict Markdown dialect instead of byte-for-byte docling-legacy output.</td></tr>
   <tr><td><code>images</code></td><td><code>placeholder</code> (default) | <code>embedded</code></td><td>Markdown picture handling (embedded = base64 data URIs).</td></tr>
@@ -167,6 +198,17 @@ The API is described by <a href="/openapi.yaml"><code>/openapi.yaml</code></a> (
   <tr><td><code>fetch_images</code></td><td><code>true</code>/<code>false</code></td><td>HTML/EPUB: resolve external <code>&lt;img src&gt;</code> and embed the bytes. Outbound fetch — honored only when the server runs with <code>--allow-url-fetch</code>, otherwise ignored.</td></tr>
   <tr><td><code>asr_lang</code></td><td><code>auto</code> (default) | a Whisper code (<code>en</code>, <code>de</code>, <code>zh</code>, …)</td><td>Audio/video: transcription language; <code>auto</code> detects it from the first 30 seconds. English-only presets always transcribe English.</td></tr>
   <tr><td><code>scale</code></td><td><code>0.1</code>–<code>4.0</code> (default <code>2.0</code>)</td><td><code>to=images</code>: render scale in pixels per PDF point — 2.0 = 144&nbsp;dpi, the ML pipeline's own render scale.</td></tr>
+  <tr><td><code>force_full_page_ocr</code></td><td><code>true</code>/<code>false</code></td><td>PDF/image: OCR every page from its render, ignoring the embedded text layer (docling's <code>force_full_page_ocr</code>).</td></tr>
+  <tr><td><code>heading_hierarchy</code></td><td><code>true</code>/<code>false</code></td><td>PDF/image: infer section-header levels (docling's HeadingHierarchyModel, #302) instead of flat <code>##</code> headings.</td></tr>
+  <tr><td><code>pages</code></td><td><code>A-B</code> | <code>N</code></td><td>PDF page window, 1-based inclusive (#80).</td></tr>
+  <tr><td><code>ocr_lang</code></td><td><code>en</code> (default) | <code>ch</code></td><td>OCR recognition language for scanned pages (<code>ch</code> = the multilingual docling-conformance model).</td></tr>
+  <tr><td><code>ocr_mode</code></td><td><code>default</code> | <code>full_page</code> | <code>layout_regions</code> | <code>pdf_aware_layout_regions</code></td><td>Which regions feed the OCR (docling's <code>OcrMode</code>, #254); <code>full_page</code>/<code>layout_regions</code> discard the text layer.</td></tr>
+  <tr><td><code>ocr_scale</code></td><td>float</td><td>OCR render scale in px per PDF point (docling's <code>OcrOptions.scale</code>, default 3 = 216&nbsp;dpi; unset reads the pipeline's own 2.0 render).</td></tr>
+  <tr><td><code>compact_tables</code>, <code>skip_empty_cells</code></td><td><code>true</code>/<code>false</code></td><td>Unpadded <code>| a | b |</code> Markdown tables; drop empty cells from sparse XLSX/XLS grids (#271, docling.rs extensions).</td></tr>
+  <tr><td><code>video_frames</code></td><td>int</td><td>Video: maximum sampled frames (0 = transcript only, #138).</td></tr>
+  <tr><td><code>pipeline</code></td><td><code>standard</code> (default) | <code>vlm</code></td><td>PDF/image: the layout/TableFormer/OCR pipeline, or docling's VlmPipeline over a remote OpenAI-compatible vision-language endpoint (#304).</td></tr>
+  <tr><td><code>vlm_endpoint</code>, <code>vlm_model</code>, <code>vlm_api_key</code>, <code>vlm_prompt</code>, <code>vlm_max_tokens</code></td><td>string / int</td><td><code>pipeline=vlm</code> settings (defaults from <code>DOCLING_RS_VLM_*</code>); the endpoint is an outbound fetch, so it is honored only under <code>--allow-url-fetch</code>.</td></tr>
+  <tr><td><code>chunker</code>, <code>chunk_tokenizer</code>, <code>chunk_max_tokens</code>, <code>chunk_merge_peers</code></td><td><code>hierarchical</code> | <code>hybrid</code> / path / int / bool</td><td><code>to=chunks</code>: pick one chunker (unset = both), a server-local <code>tokenizer.json</code>, the hybrid token budget and peer merging (#256).</td></tr>
 </table>
 
 <h2>Examples</h2>
@@ -282,6 +324,9 @@ function renderImages(text, to) {
   $('result').textContent = parts.join('');
 }
 
+$('pipeline').addEventListener('change', () => {
+  $('vlm_fields').style.display = $('pipeline').value === 'vlm' ? '' : 'none';
+});
 $('go').addEventListener('click', async () => {
   const out = $('result');
   out.style.display = '';
@@ -298,7 +343,18 @@ $('go').addEventListener('click', async () => {
     skip_ocr: $('skip_ocr').checked,
     no_table_former: $('no_table_former').checked,
     no_text_panels: $('no_text_panels').checked,
+    force_full_page_ocr: $('force_full_page_ocr').checked,
+    heading_hierarchy: $('heading_hierarchy').checked,
+    compact_tables: $('compact_tables').checked,
+    skip_empty_cells: $('skip_empty_cells').checked,
   };
+  // Free-form options ride along only when set, so the server keeps its
+  // defaults (and its validation messages) for everything left blank.
+  for (const id of ['pages', 'ocr_lang', 'ocr_mode', 'ocr_scale', 'asr_lang', 'video_frames',
+                    'pipeline', 'vlm_endpoint', 'vlm_model', 'vlm_api_key', 'vlm_prompt', 'vlm_max_tokens']) {
+    const v = $(id).value.trim();
+    if (v) opts[id] = v;
+  }
   let request;
   if (document.querySelector('input[name=mode]:checked').value === 'file') {
     const files = $('file').files;

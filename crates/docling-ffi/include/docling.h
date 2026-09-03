@@ -39,7 +39,7 @@ struct DoclingResult *docling_convert(const uint8_t *bytes,
                                       const char *options_json);
 
 // The converted output, or NULL when the conversion failed. NUL-terminated
-// (readable as a C string for `to` = `md` / `json`); for binary output
+// (readable as a C string for `to` = `md` / `json` / `latex`); for binary output
 // (`dclx`) pair it with [`docling_result_output_len`]. Owned by the result —
 // valid until [`docling_result_free`].
 //

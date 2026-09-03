@@ -4,6 +4,28 @@
   <img src="https://raw.githubusercontent.com/docling-project/docling.rs/refs/heads/master/docs/assets/logo.svg" alt="docling.rs — a duck feeding a document into a meat grinder" width="240">
 </p>
 
+<p align="center">
+  <a href="https://github.com/docling-project/docling.rs/actions/workflows/ci.yml"><img src="https://github.com/docling-project/docling.rs/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="https://docling-project.github.io/docling.rs/"><img src="https://img.shields.io/badge/demo-live-brightgreen" alt="Live browser demo"></a>
+  <a href="https://docs.rs/docling"><img src="https://img.shields.io/docsrs/docling?logo=docs.rs" alt="docs.rs"></a>
+  <a href="https://crates.io/crates/docling"><img src="https://img.shields.io/crates/v/docling?logo=rust&color=e6b04a" alt="crates.io version"></a>
+  <a href="https://crates.io/crates/docling"><img src="https://img.shields.io/crates/msrv/docling?logo=rust&label=rust" alt="Rust MSRV"></a>
+  <a href="https://crates.io/crates/docling"><img src="https://img.shields.io/crates/d/docling?label=crates.io%20downloads" alt="crates.io downloads"></a>
+  <br>
+  <a href="https://www.npmjs.com/package/docling.rs"><img src="https://img.shields.io/npm/v/docling.rs?logo=npm&logoColor=fff&label=npm%20docling.rs" alt="npm docling.rs"></a>
+  <a href="https://www.npmjs.com/package/docling.rs"><img src="https://img.shields.io/npm/dm/docling.rs?label=npm%20downloads" alt="npm downloads/month"></a>
+  <a href="https://www.npmjs.com/package/docling.rs-wasm"><img src="https://img.shields.io/npm/v/docling.rs-wasm?logo=webassembly&logoColor=fff&label=npm%20docling.rs-wasm" alt="npm docling.rs-wasm"></a>
+  <a href="https://pypi.org/project/docling-rs/"><img src="https://img.shields.io/pypi/v/docling-rs?logo=pypi&logoColor=fff" alt="PyPI version"></a>
+  <a href="https://pypi.org/project/docling-rs/"><img src="https://img.shields.io/pypi/pyversions/docling-rs" alt="Python versions"></a>
+  <a href="https://pepy.tech/projects/docling-rs"><img src="https://static.pepy.tech/badge/docling-rs/month" alt="PyPI downloads/month"></a>
+  <br>
+  <a href="https://github.com/docling-project/docling.rs/pkgs/container/docling-rs-serve"><img src="https://img.shields.io/badge/ghcr.io-docling--rs--serve-2496ED?logo=docker&logoColor=fff" alt="GHCR docling-rs-serve"></a>
+  <a href="https://github.com/docling-project/docling.rs/pkgs/container/docling-rs"><img src="https://img.shields.io/badge/ghcr.io-docling--rs-2496ED?logo=docker&logoColor=fff" alt="GHCR docling-rs (CLI)"></a>
+  <a href="https://github.com/docling-project/docling.rs/releases"><img src="https://img.shields.io/github/v/release/docling-project/docling.rs?label=release&logo=github" alt="GitHub release"></a>
+  <a href="https://opensource.org/licenses/MIT"><img src="https://img.shields.io/github/license/docling-project/docling.rs" alt="License MIT"></a>
+  <a href="https://lfaidata.foundation/projects/"><img src="https://img.shields.io/badge/LF%20AI%20%26%20Data-003778?logo=linuxfoundation&logoColor=fff&color=0094ff&labelColor=003778" alt="LF AI &amp; Data"></a>
+</p>
+
 A Rust port of [docling](https://github.com/docling-project/docling): convert
 documents into a unified `DoclingDocument` for downstream AI workflows.
 
@@ -20,7 +42,7 @@ mapping, and per-format conformance.
 
 **▶ [Try it in your browser](https://docling-project.github.io/docling.rs/)** —
 the whole converter compiled to wasm: drop a DOCX, PDF, XLSX, EPUB … and get
-Markdown, docling JSON or DocLang XML back. Nothing is uploaded; the page runs
+Markdown, docling JSON, DocLang XML or LaTeX back. Nothing is uploaded; the page runs
 entirely on your device, phone included. Scanned pages can be OCR'd there too
 (layout + PP-OCR + TableFormer via ONNX Runtime Web) once you point it at the
 models. See [`crates/docling-wasm`](./crates/docling-wasm/README.md).
@@ -260,7 +282,7 @@ env var the feature is inert.
 The declarative converters (everything except the PDF/image/audio ML
 pipelines) compile to `wasm32-unknown-unknown`:
 [`crates/docling-wasm`](./crates/docling-wasm) exposes
-`convert(bytes, filename, to)` → Markdown / docling JSON / DocLang via
+`convert(bytes, filename, to)` → Markdown / docling JSON / DocLang / LaTeX via
 `wasm-bindgen`, so DOCX/HTML/XLSX/PPTX/EPUB/… convert **fully client-side** —
 no server, ~3.4 MB gzipped module, no models to download for the declarative
 formats (the default-on browser-OCR feature does fetch its ONNX models) —
@@ -282,6 +304,71 @@ document. The crate ships a drop-a-file demo page under
 [`www/`](./crates/docling-wasm/www). Native builds are untouched: the
 feature slices behind this (`pdf` / `asr` / `fetch-images`) all stay in the
 `docling` default set, so a plain `cargo build` is unchanged.
+
+## Integration — using docling.rs from your language
+
+One engine, several front doors. Every surface takes the same options
+(`to`, `strict`, `images`, `no_ocr`, `ocr_mode`, `heading_hierarchy`,
+`pages`, …) and returns the same outputs (Markdown, docling JSON, DocLang
+`.dclx`, LaTeX, chunk records).
+
+| You write… | Use | Install | Details |
+|---|---|---|---|
+| Rust | the `docling` crate: `DocumentConverter` + `SourceDocument` | `cargo add docling` | [The API](#the-api) |
+| a shell / CI job | the `docling-rs` CLI (`--to md\|json\|dclx\|chunks\|latex\|images`, `--input`/`--output` batch mode) | `cargo install docling-cli` · [release binaries](https://github.com/docling-project/docling.rs/releases) · `ghcr.io/docling-project/docling-rs` | [Batch conversion](#batch-conversion--input----output), [Install](#install-locally--in-ci-one-liner) |
+| anything that speaks HTTP | `docling-serve`: `POST /v1/convert` (multipart or JSON), async jobs, OpenAPI 3.1 | `docker run -p 5001:5001 ghcr.io/docling-project/docling-rs-serve` · `cargo install docling-serve` | [HTTP conversion API](#http-conversion-api--docling-rs-serve), [docs/DEPLOYMENT.md](./docs/DEPLOYMENT.md) |
+| Node.js / Bun / Electron | `docling.rs` (N-API addon): `convertFile`, `convert`, streaming, chunking, warm `Pipeline` | `npm i docling.rs` (`docling.rs-cuda` for GPU) | [Node bindings](#nodejs--bun-bindings), [crate README](./crates/docling-node/README.md) |
+| Python | `docling-rs` — a drop-in for docling's `DocumentConverter` over the Rust engine | `pip install docling-rs` (`docling-rs-cuda` for GPU) | [Python bindings](#python-bindings), [migration guide](./crates/docling-py/README.md#migrating-from-python-docling) |
+| the browser / Tauri / a PWA | `docling.rs-wasm`: `convert(bytes, name, to)` fully client-side, optional in-browser OCR/layout | `npm i docling.rs-wasm` | [In the browser](#in-the-browser--docling-wasm), [crate README](./crates/docling-wasm/README.md) |
+| C, C++, C#/.NET, Go, Java, Swift, Zig, … | `docling-ffi`: `docling_convert(bytes, len, filename, options_json)` behind one `docling.h` | [release archives](https://github.com/docling-project/docling.rs/releases) `docling-ffi-<tag>-<target>` (library + header) | [C ABI](#c-abi-for-embedders--docling-ffi), [language quickstarts](./crates/docling-ffi/README.md#language-quickstarts) |
+| a RAG stack | `docling-rag`: chunk → embed → search, REST API and web UI | `cargo install docling-rag` | [RAG subsystem](#rag-subsystem) |
+
+Which one to pick: **Rust** when you're already in Cargo; **CLI** for scripts
+and batch jobs (the ML models load once per run); **serve** when several
+services or languages share one warm pipeline — models stay loaded, admission
+control keeps memory bounded, and every language has an HTTP client;
+**Node / Python** for in-process use from those runtimes with zero extra
+services; **wasm** when the document must not leave the user's machine;
+**FFI** for everything else that can call a C function. The ML assets
+(`.models/`, `.pdfium/`) are the same for all of them — see
+[Getting the ML models](#getting-the-ml-models); the Python and Node packages
+fetch them on first use, the container images ship them baked in.
+
+```bash
+# CLI
+docling-rs report.pdf --to md
+docling-rs --input ./docs --output ./out --to latex
+
+# HTTP
+curl -F file=@report.pdf 'localhost:5001/v1/convert?to=json&heading_hierarchy=true'
+```
+
+```js
+// Node.js / Bun
+import { convertFile } from 'docling.rs'
+const { content } = convertFile('report.pdf', { to: 'markdown' })
+```
+
+```python
+# Python — docling-shaped
+from docling_rs import DocumentConverter
+doc = DocumentConverter().convert("report.pdf").document
+print(doc.export_to_markdown())
+```
+
+```js
+// Browser (wasm) — nothing leaves the page
+import init, { convert } from "docling.rs-wasm/web";
+await init();
+const tex = convert(new Uint8Array(await file.arrayBuffer()), file.name, "latex");
+```
+
+```c
+/* C ABI — any language with FFI */
+DoclingResult *r = docling_convert(bytes, len, "report.docx", "{\"to\":\"json\"}");
+if (!docling_result_error(r)) fwrite(docling_result_output(r), 1, docling_result_output_len(r), stdout);
+docling_result_free(r);
+```
 
 ## The API
 
@@ -918,7 +1005,7 @@ imports stays unchanged).
 Embedding from C, C++, C#, Go, Java, Swift or anything else with FFI takes
 one shared (or static) library and one header:
 [`crates/docling-ffi`](./crates/docling-ffi) exposes a minimal `extern "C"`
-surface — `docling_convert()` in, Markdown / docling JSON / DCLX out, with
+surface — `docling_convert()` in, Markdown / docling JSON / DCLX / LaTeX out, with
 conversion options as a single JSON object mirroring docling-serve's request
 options. The [`include/docling.h`](./crates/docling-ffi/include/docling.h)
 header is generated by cbindgen and committed.
@@ -1489,11 +1576,13 @@ models) the same fixture measures 5.2× less memory, a 6.2× warm speedup and
 | `docling` | `DocumentConverter`, source loading, backends | `docling` |
 | `docling-pdf` | PDF/image ML pipeline (pdfium + ONNX layout/table/OCR) | `docling` PDF pipeline |
 | `docling-asr` | audio/ASR pipeline (symphonia + ONNX Whisper) | `docling` ASR pipeline |
-| `docling-cli` | command-line interface | `docling.cli` |
-| `docling-rs-serve` | HTTP conversion API over a warm pipeline | `docling-serve` |
+| `docling-onnx` | shared ONNX Runtime execution-provider selection (`DOCLING_RS_EP`; `cuda` / `tensorrt` / `directml` / `coreml` / `xnnpack` features) for the ML crates | — |
+| `docling-cli` | command-line interface (`docling-rs`, plus the `serve` subcommand behind `--features serve`) | `docling.cli` |
+| `docling-serve` | HTTP conversion API over a warm pipeline (`docling-serve` binary, `ghcr.io/docling-project/docling-rs-serve` image) | `docling-serve` |
+| `docling-ffi` | C ABI (`docling.h` + shared/static library) for C, C++, C#, Go, Java, Swift embedders | — |
 | `docling-node` | Node.js / Bun N-API bindings | https://www.npmjs.com/package/docling.rs |
-| `docling-py` | Python bindings | https://pypi.org/project/docling-rs |
-| `docling-wasm` | WebAssembly bindings (declarative converters + PDF text layer in the browser) | https://www.npmjs.com/package/docling.rs-wasm |
+| `docling-py` | Python bindings (strangler-fig drop-in over docling-core) | https://pypi.org/project/docling-rs |
+| `docling-wasm` | WebAssembly bindings (declarative converters + PDF text layer + browser OCR) | https://www.npmjs.com/package/docling.rs-wasm |
 | `docling-rag` | RAG layer: chunking, embeddings, vector search, REST API | — |
 
 ## Contributing

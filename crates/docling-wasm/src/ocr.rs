@@ -110,8 +110,9 @@ pub async fn ocr_image(
         "md" | "markdown" => Ok(doc.export_to_markdown()),
         "json" => Ok(doc.export_to_json()),
         "doclang" => Ok(doc.export_to_doclang()),
+        "latex" => Ok(doc.export_to_latex()),
         other => Err(JsError::new(&format!(
-            "unknown output format {other:?} (expected \"md\", \"json\" or \"doclang\")"
+            "unknown output format {other:?} (expected \"md\", \"json\", \"doclang\" or \"latex\")"
         ))),
     }
 }

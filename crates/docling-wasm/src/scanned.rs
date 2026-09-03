@@ -304,7 +304,7 @@ impl ScannedConverter {
     }
 
     /// Assemble the accumulated pages into the final document and render it
-    /// as `"md"` (default), `"json"` or `"doclang"` — the same three the
+    /// as `"md"` (default), `"json"`, `"doclang"` or `"latex"` — the same four the
     /// declarative [`crate::convert`] entry point offers. `images` picks how
     /// cropped figures render in Markdown (`"placeholder"` | `"embedded"`),
     /// like [`crate::convert`]. Resets the converter.
@@ -334,8 +334,9 @@ pub(crate) fn render(
         }
         "json" => Ok(doc.export_to_json()),
         "doclang" => Ok(doc.export_to_doclang()),
+        "latex" => Ok(doc.export_to_latex()),
         other => Err(JsError::new(&format!(
-            "unknown output format {other:?} (expected \"md\", \"json\" or \"doclang\")"
+            "unknown output format {other:?} (expected \"md\", \"json\", \"doclang\" or \"latex\")"
         ))),
     }
 }

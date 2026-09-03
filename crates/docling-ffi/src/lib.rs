@@ -41,7 +41,7 @@ use serde::Deserialize;
 #[derive(Default, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Options {
-    /// Output format: `md` (default) | `json` | `dclx`.
+    /// Output format: `md` (default) | `json` | `dclx` | `latex`.
     to: Option<String>,
     /// Strict (docling-faithful) Markdown instead of the readable default.
     strict: Option<bool>,
@@ -62,6 +62,21 @@ struct Options {
     pages: Option<String>,
     /// OCR recognition language for scanned pages: `en` (default) | `ch`.
     ocr_lang: Option<String>,
+    /// Keep layout + TableFormer, never OCR (docling's independent
+    /// `do_ocr=False`, #244).
+    skip_ocr: Option<bool>,
+    /// Infer section-header levels (docling's HeadingHierarchyModel, #302).
+    heading_hierarchy: Option<bool>,
+    /// Which regions feed the OCR (docling's `OcrMode`, #254): `default` |
+    /// `full_page` | `layout_regions` | `pdf_aware_layout_regions`.
+    ocr_mode: Option<String>,
+    /// OCR render scale in px per PDF point (docling's `OcrOptions.scale`,
+    /// #254); unset reads the pipeline's own 2.0 px/pt render.
+    ocr_scale: Option<f32>,
+    /// Unpadded `| a | b |` Markdown tables (#271, docling.rs extension).
+    compact_tables: Option<bool>,
+    /// Omit empty cells from sparse XLSX/XLS grids (#271, docling.rs extension).
+    skip_empty_cells: Option<bool>,
 }
 
 /// An opaque conversion result. Exactly one of output/error is set; the
@@ -106,7 +121,17 @@ fn convert_impl(bytes: &[u8], filename: &str, options_json: &str) -> Result<Vec<
         .no_ocr(options.no_ocr.unwrap_or(false))
         .force_full_page_ocr(options.force_full_page_ocr.unwrap_or(false))
         .no_table_former(options.no_table_former.unwrap_or(false))
-        .no_text_panels(options.no_text_panels.unwrap_or(false));
+        .no_text_panels(options.no_text_panels.unwrap_or(false))
+        .skip_ocr(options.skip_ocr.unwrap_or(false))
+        .heading_hierarchy(options.heading_hierarchy.unwrap_or(false))
+        .compact_tables(options.compact_tables.unwrap_or(false))
+        .skip_empty_cells(options.skip_empty_cells.unwrap_or(false));
+    if let Some(mode) = &options.ocr_mode {
+        converter = converter.ocr_mode(mode.clone());
+    }
+    if let Some(scale) = options.ocr_scale {
+        converter = converter.ocr_scale(scale);
+    }
     if let Some(pages) = &options.pages {
         let (first, last) = docling::parse_page_range(pages).map_err(|e| format!("pages: {e}"))?;
         converter = converter.page_range(first, last);
@@ -142,7 +167,10 @@ fn convert_impl(bytes: &[u8], filename: &str, options_json: &str) -> Result<Vec<
         // A binary OPC zip — read it through output + output_len, never as a
         // C string.
         "dclx" => Ok(docling::dclx::to_dclx_bytes(&document)),
-        other => Err(format!("unknown to={other:?} (expected: md, json, dclx)")),
+        "latex" => Ok(document.export_to_latex().into_bytes()),
+        other => Err(format!(
+            "unknown to={other:?} (expected: md, json, dclx, latex)"
+        )),
     }
 }
 
@@ -212,7 +240,7 @@ pub unsafe extern "C" fn docling_convert(
 }
 
 /// The converted output, or NULL when the conversion failed. NUL-terminated
-/// (readable as a C string for `to` = `md` / `json`); for binary output
+/// (readable as a C string for `to` = `md` / `json` / `latex`); for binary output
 /// (`dclx`) pair it with [`docling_result_output_len`]. Owned by the result —
 /// valid until [`docling_result_free`].
 ///
@@ -333,6 +361,11 @@ mod tests {
 
         // DCLX is a binary zip: starts with the PK local-file magic and the
         // length accessor is the only safe way to read it.
+        let r = convert(md, "note.md", r#"{"to":"latex"}"#);
+        let tex = output_string(r);
+        assert!(tex.starts_with("\\documentclass"), "{tex}");
+        assert!(tex.ends_with("\\end{document}"), "{tex}");
+        unsafe { docling_result_free(r) };
         let r = convert(md, "note.md", r#"{"to":"dclx"}"#);
         unsafe {
             assert!(docling_result_error(r).is_null());
