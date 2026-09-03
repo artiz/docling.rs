@@ -1,0 +1,140 @@
+\documentclass[11pt,a4paper]{article}
+
+\usepackage[utf8]{inputenc} % allow utf-8 input
+\usepackage[T1]{fontenc}    % use 8-bit T1 fonts
+\usepackage{hyperref}       % hyperlinks
+\usepackage{url}            % simple URL typesetting
+\usepackage{booktabs}       % professional-quality tables
+\usepackage{amsfonts}       % blackboard math symbols
+\usepackage{nicefrac}       % compact symbols for 1/2, etc.
+\usepackage{microtype}      % microtypography
+\usepackage{xcolor}         % colors
+\usepackage{graphicx}       % graphics
+\usepackage[normalem]{ulem} % strikethrough
+\title{2nd Sample Document Title}
+
+\begin{document}
+
+\maketitle
+
+This is an abstract.
+
+\section{Section 1: Testing nestedlists}
+
+\begin{itemize}
+\item First item
+  \begin{itemize}
+\item Nested item 1
+\item Nested item 2
+  \end{itemize}
+\item Second item
+  \begin{itemize}
+\item Nested ordered item 1
+\item Nested ordered item 2
+    \begin{itemize}
+\item Deeper nested unordered item
+    \end{itemize}
+  \end{itemize}
+\item Third item
+  \begin{itemize}
+\item Nested ordered item 1
+\item Nested ordered item 2
+    \begin{itemize}
+\item Deeper nested unordered item
+    \end{itemize}
+\item Nested ordered item 2
+  \end{itemize}
+\end{itemize}
+
+\section{Section 2}
+
+bla bla
+
+bla bla bla bli bla ble
+
+\section{Section 3: test image}
+
+\section{Section 4: test tables}
+
+\begin{table}[h]
+\begin{tabular}{|l|l|l|}
+\hline
+Header 1 & Header 2 &  \\ \hline
+Value 1 & Value 2 &  \\ \hline
+Value 3 & Value 4 &  \\ \hline
+\end{tabular}
+\end{table}
+
+Caption for the table 1
+
+\begin{table}[h]
+\begin{tabular}{|l|l|}
+\hline
+Header 1 & Header 2 \\ \hline
+Value 1 & Value 2 \\ \hline
+Value 3 & Value 4 \\ \hline
+\end{tabular}
+\end{table}
+
+Caption for the table 2
+
+\begin{table}[h]
+\begin{tabular}{|l|l|l|}
+\hline
+Column 1 Heading & Column 2 Heading & Column 3 Heading \\ \hline
+Cell 1 & Cell 2 & Cell 3 \\ \hline
+Cell 4 & Cell 5 colspan=2 & Cell spans two columns \\ \hline
+\end{tabular}
+\end{table}
+
+Caption for the table 3
+
+\begin{table}[h]
+\begin{tabular}{|l|l|l|}
+\hline
+Column 1 Heading & Column 2 Heading & Column 3 Heading \\ \hline
+Rowspan=2 & Cell 2 & Cell 3 \\ \hline
+ & Cell 5 & Cell 6 \\ \hline
+\end{tabular}
+\end{table}
+
+Caption for the table 4
+
+\begin{table}[h]
+\begin{tabular}{|l|l|l|l|}
+\hline
+Col 1 & Col 2 & Col 3 & Col 4 \\ \hline
+Rowspan=2.Colspan=2 & Cell spanning 2 rows and 2 columns & Col 3 & Col 4 \\ \hline
+ &  & Col 3 & Col 4 \\ \hline
+Col 1 & Col 2 & Col 3 & Col 4 \\ \hline
+\end{tabular}
+\end{table}
+
+Table 5 with multiple empty cells
+
+\begin{table}[h]
+\begin{tabular}{|l|l|l|l|}
+\hline
+Column 1 Heading & Column 2 Heading & Column 3 Heading &  \\ \hline
+Cell 1 &  & Cell 3 &  \\ \hline
+Cell 4 &  &  &  \\ \hline
+Cell 7 &  &  &  \\ \hline
+Cell 10 & Cell 11 & Cell 12 &  \\ \hline
+ & Cell 14 & Cell 15 &  \\ \hline
+ &  &  &  \\ \hline
+Cell 19 & Cell 20 & Cell 21 &  \\ \hline
+\end{tabular}
+\end{table}
+
+\subsubsection{SubSubSection 2.1.1}
+
+\begin{figure}[h]
+% image
+\end{figure}
+
+\begin{figure}[h]
+% image
+\caption{An example caption for the image}
+\end{figure}
+
+\end{document}

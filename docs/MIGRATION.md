@@ -81,7 +81,7 @@ crates/
 ├── docling-pdf/    # pdfium_backend, layout (RT-DETR/ONNX), ocr (PP-OCRv3/ONNX), assemble, mets
 ├── docling-asr/    # audio decode (symphonia), mel.rs, whisper.rs (ONNX), tokenizer.rs
 ├── docling-onnx/   # shared ONNX Runtime EP selection (DOCLING_RS_EP, cuda/tensorrt/directml/coreml features)
-├── docling-cli/    # `--strict`, `--to md|json|dclx|chunks`, `--images …`, `--pages`, `--ocr-lang`, serve subcommand
+├── docling-cli/    # `--strict`, `--to md|json|dclx|chunks|latex`, `--images …`, `--pages`, `--ocr-lang`, serve subcommand
 ├── docling-node/   # Node.js/Bun N-API bindings (napi-rs), published to npm as `docling.rs`
 ├── docling-py/     # PyO3 bindings (maturin), published to PyPI as `docling-rs` (strangler-fig over docling-core)
 ├── docling-rag/    # RAG layer on top of the converter (chunking, embeddings, vector search, REST API)
@@ -254,6 +254,7 @@ work (checkbox inputs, fragmented-anchor folding, `<button>` blocks) plus the
 | **Markdown (strict)** | `.strict(true)` / `--strict` | Rust-only cleaner mode — **no docling equivalent** |
 | **JSON** | `export_to_json()` / `--to json` | docling-core native wire format (schema 1.10.0) |
 | **DocLang (`.dclx`)** | `export_to_doclang()` · `docling::dclx::save_as_dclx()` / `--to dclx` | DocLang 0.7 XML (`<doclang>`), and the OPC archive docling 2.110's `save_as_doclang()` writes |
+| **LaTeX (`.tex`)** | `export_to_latex()` / `--to latex` (#317) | docling 2.124's `LaTeXDocSerializer` with default params, **byte-for-byte on all 207 declarative fixtures** (Python-serializer-generated `.tex` expectations in the regression suite); serve `to=latex`, Node `to: 'latex'`; Python bindings use upstream docling-core's serializer on the reconstructed document. Deviation: headings deeper than `\subsubsection` degrade to `\paragraph`/`\subparagraph` where upstream raises |
 | **Image extraction** | `export_to_markdown_with_images(mode, dir)` / `--images` | `placeholder` (default) · `embedded` (base64 data URI) · `referenced` (writes PNG files) |
 
 - **DocLang** reproduces docling-core's `DocLangDocSerializer` (`minidom.toprettyxml`

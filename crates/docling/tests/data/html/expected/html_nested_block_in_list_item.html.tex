@@ -1,0 +1,52 @@
+\documentclass[11pt,a4paper]{article}
+
+\usepackage[utf8]{inputenc} % allow utf-8 input
+\usepackage[T1]{fontenc}    % use 8-bit T1 fonts
+\usepackage{hyperref}       % hyperlinks
+\usepackage{url}            % simple URL typesetting
+\usepackage{booktabs}       % professional-quality tables
+\usepackage{amsfonts}       % blackboard math symbols
+\usepackage{nicefrac}       % compact symbols for 1/2, etc.
+\usepackage{microtype}      % microtypography
+\usepackage{xcolor}         % colors
+\usepackage{graphicx}       % graphics
+\usepackage[normalem]{ulem} % strikethrough
+
+\begin{document}
+
+\section{Ordered list with inline elements}
+
+\begin{enumerate}
+\item Step 1 text
+<!-- image -->
+  \begin{itemize}
+\item Note text
+  \end{itemize}
+\item Step 2 text
+<!-- image -->
+  \begin{itemize}
+\item Note text
+  \end{itemize}
+\item Step 3 text
+\item Step 4 text
+\end{enumerate}
+
+\section{Ordered list with paragraph blocks}
+
+\begin{enumerate}
+\item Item with **bold** text First paragraph block Second paragraph block
+\item Another item in `python` language
+\item Final item
+\end{enumerate}
+
+\section{Nested list in divs}
+
+\begin{itemize}
+\item Step instruction text
+  \begin{itemize}
+\item Nested detail 1
+\item Nested detail 2
+  \end{itemize}
+\end{itemize}
+
+\end{document}

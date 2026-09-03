@@ -1,0 +1,34 @@
+\documentclass[11pt,a4paper]{article}
+
+\usepackage[utf8]{inputenc} % allow utf-8 input
+\usepackage[T1]{fontenc}    % use 8-bit T1 fonts
+\usepackage{hyperref}       % hyperlinks
+\usepackage{url}            % simple URL typesetting
+\usepackage{booktabs}       % professional-quality tables
+\usepackage{amsfonts}       % blackboard math symbols
+\usepackage{nicefrac}       % compact symbols for 1/2, etc.
+\usepackage{microtype}      % microtypography
+\usepackage{xcolor}         % colors
+\usepackage{graphicx}       % graphics
+\usepackage[normalem]{ulem} % strikethrough
+
+\begin{document}
+
+Intro paragraph.
+
+\begin{table}[h]
+\begin{tabular}{|l|l|}
+\hline
+Name & Links \\ \hline
+Multi-link cell & See [Page A](https://example.com/a) and [Page B](https://example.com/b) for details. \\ \hline
+Plain cell & Just text \\ \hline
+Formatted cell & **Bold** and *italic* text \\ \hline
+Inline code cell & `inline\_fn()` \\ \hline
+Block code cell & ``` do\_thing() ``` \\ \hline
+Pre with link & `See` [`the docs`](https://example.com/docs) `first` \\ \hline
+\end{tabular}
+\end{table}
+
+Outro paragraph.
+
+\end{document}

@@ -20,6 +20,7 @@ mod document;
 pub mod env;
 mod json;
 mod labels;
+mod latex;
 mod markdown;
 
 pub use confidence::{ConfidenceReport, PageConfidence, QualityGrade};

@@ -1,0 +1,30 @@
+\documentclass[11pt,a4paper]{article}
+
+\usepackage[utf8]{inputenc} % allow utf-8 input
+\usepackage[T1]{fontenc}    % use 8-bit T1 fonts
+\usepackage{hyperref}       % hyperlinks
+\usepackage{url}            % simple URL typesetting
+\usepackage{booktabs}       % professional-quality tables
+\usepackage{amsfonts}       % blackboard math symbols
+\usepackage{nicefrac}       % compact symbols for 1/2, etc.
+\usepackage{microtype}      % microtypography
+\usepackage{xcolor}         % colors
+\usepackage{graphicx}       % graphics
+\usepackage[normalem]{ulem} % strikethrough
+
+\begin{document}
+
+\section{Issue 1: Fraction as superscript base not grouped}
+
+The equation below raises a fraction to the power 2.
+Expected LaTeX: \{\textbackslash{}frac\{(x-c)\}\{v\}\}\textasciicircum{}2
+Docling produces: \textbackslash{}frac\{(x-c)\}\{v\}\textasciicircum{}2
+
+When <m:sSup> has an <m:f> (fraction) as its base <m:e>, docling emits
+\textbackslash{}frac\{num\}\{den\}\textasciicircum{}2 without grouping braces. In LaTeX this is ambiguous:
+some renderers apply \textasciicircum{}2 only to the last token, not the whole fraction.
+The output should be \{\textbackslash{}frac\{(x-c)\}\{v\}\}\textasciicircum{}2 or \textbackslash{}left(\textbackslash{}frac\{(x-c)\}\{v\}\textbackslash{}right)\textasciicircum{}2.
+
+$${\frac{(x-c)}{v}}^{2}$$
+
+\end{document}

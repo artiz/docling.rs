@@ -7,8 +7,8 @@ info:
   description: |
     HTTP conversion API over [docling.rs](https://github.com/docling-project/docling.rs):
     documents (PDF, DOCX, XLSX, PPTX, HTML, EPUB, images, audio, video, …) to
-    Markdown, docling `DoclingDocument` JSON, DocLang (`.dclx`) archives, or
-    chunk records.
+    Markdown, docling `DoclingDocument` JSON, DocLang (`.dclx`) archives,
+    LaTeX, or chunk records.
 
     Options may be sent as query parameters, multipart text fields, or JSON
     keys; a body value wins over the same option in the query string.
@@ -178,6 +178,8 @@ paths:
                   - $ref: "#/components/schemas/Chunks"
             application/vnd.openxmlformats-officedocument.doclang:
               schema: { type: string, format: binary }
+            text/x-tex:
+              schema: { type: string }
             application/zip:
               schema: { type: string, format: binary }
           headers:
@@ -387,12 +389,14 @@ components:
   schemas:
     To:
       type: string
-      enum: [md, json, dclx, chunks, images]
+      enum: [md, json, dclx, chunks, latex, images]
       default: md
       description: |
         `md` — Markdown, streamed as it converts.
         `json` — docling `DoclingDocument` JSON.
         `dclx` — DocLang OPC archive, returned as a download.
+        `latex` — a complete LaTeX document (docling 2.124's `--to latex`,
+        #317), `text/x-tex`; in a batch, inline under `latex`.
         `chunks` — chunker records (hierarchical, plus hybrid when a tokenizer is installed).
         `images` — PDF only: per-page PNG renders as
         `{"pages": [{"page", "width", "height", "png_base64"}]}` (no

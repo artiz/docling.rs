@@ -1,0 +1,101 @@
+\documentclass[11pt,a4paper]{article}
+
+\usepackage[utf8]{inputenc} % allow utf-8 input
+\usepackage[T1]{fontenc}    % use 8-bit T1 fonts
+\usepackage{hyperref}       % hyperlinks
+\usepackage{url}            % simple URL typesetting
+\usepackage{booktabs}       % professional-quality tables
+\usepackage{amsfonts}       % blackboard math symbols
+\usepackage{nicefrac}       % compact symbols for 1/2, etc.
+\usepackage{microtype}      % microtypography
+\usepackage{xcolor}         % colors
+\usepackage{graphicx}       % graphics
+\usepackage[normalem]{ulem} % strikethrough
+
+\begin{document}
+
+\subsection{Table with rich cells}
+
+\begin{table}[h]
+\begin{tabular}{|l|l|}
+\hline
+Column A & Column B \\ \hline
+This is a list:  - A First - A Second - A Third & This is a formatted list:  - B **First** - B *Second* - B Third \\ \hline
+First Paragraph  Second Paragraph  Third paragraph before a numbered list  1. Number one 2. Number two 3. Number three & This is simple text with  **bold**  ,  \textasciitilde{}\textasciitilde{}strikethrough\textasciitilde{}\textasciitilde{}  and  *italic*  formatting with x  2  and H  2  O \\ \hline
+This is a paragraph  This is another paragraph &  \\ \hline
+\end{tabular}
+\end{table}
+
+\subsection{Table with nested table}
+
+Before table
+
+\begin{table}[h]
+\begin{tabular}{|l|l|}
+\hline
+Column A & Column B \\ \hline
+Simple cell upper left & Simple cell with  **bold**  and  *italic*  text \\ \hline
+A B C Cell 1 Cell 2 Cell 3 & Rich cell A nested table  A B C Cell 1 Cell 2 Cell 3 \\ \hline
+\end{tabular}
+\end{table}
+
+**bold**
+
+underline
+
+\textasciitilde{}\textasciitilde{}strikethrough\textasciitilde{}\textasciitilde{}
+
+*italic*
+
+\subsection{Table with pictures}
+
+\begin{table}[h]
+\begin{tabular}{|l|l|}
+\hline
+Column A & Column B \\ \hline
+Only text & <!-- image --> \\ \hline
+Text and picture  <!-- image --> &  \\ \hline
+\end{tabular}
+\end{table}
+
+\subsection{Lists with same numId in different cells}
+
+\begin{table}[h]
+\begin{tabular}{|l|}
+\hline
+- Cell 1 item 1 - Cell 1 item 2 \\ \hline
+- Cell 2 item 1 - Cell 2 item 2 \\ \hline
+\end{tabular}
+\end{table}
+
+\subsection{Lists with different numIds in different cells}
+
+\begin{table}[h]
+\begin{tabular}{|l|}
+\hline
+- Cell 1 item 1 - Cell 1 item 2 \\ \hline
+- Cell 2 item 1 - Cell 2 item 2 \\ \hline
+\end{tabular}
+\end{table}
+
+\subsection{Multiple columns with lists}
+
+\begin{table}[h]
+\begin{tabular}{|l|l|}
+\hline
+- R1C1 item 1 - R1C1 item 2 & - R1C2 item 1 - R1C2 item 2 \\ \hline
+- R2C1 item 1 - R2C1 item 2 & - R2C2 item 1 - R2C2 item 2 \\ \hline
+\end{tabular}
+\end{table}
+
+\subsection{Mixed content - list and regular text in different cells}
+
+\begin{table}[h]
+\begin{tabular}{|l|}
+\hline
+- List item 1 - List item 2 \\ \hline
+Regular text in second cell \\ \hline
+\end{tabular}
+\end{table}
+
+\end{document}

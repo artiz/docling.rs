@@ -750,6 +750,14 @@ impl DoclingDocument {
         crate::json::to_json(self)
     }
 
+    /// Serialize to a complete LaTeX document — the Rust counterpart of
+    /// docling-core's `LaTeXDocSerializer` with default parameters (docling
+    /// 2.124's `--to latex`, #317). No trailing newline, like the upstream
+    /// CLI's `<stem>.tex`.
+    pub fn export_to_latex(&self) -> String {
+        crate::latex::to_latex(self)
+    }
+
     /// Serialize to DocLang XML (`<doclang version="0.7">…`), the markup that
     /// lives inside a `.dclx` archive — the Rust counterpart of docling-core's
     /// `export_to_doclang()` with default parameters. No trailing newline; the

@@ -1,0 +1,59 @@
+\documentclass[11pt,a4paper]{article}
+
+\usepackage[utf8]{inputenc} % allow utf-8 input
+\usepackage[T1]{fontenc}    % use 8-bit T1 fonts
+\usepackage{hyperref}       % hyperlinks
+\usepackage{url}            % simple URL typesetting
+\usepackage{booktabs}       % professional-quality tables
+\usepackage{amsfonts}       % blackboard math symbols
+\usepackage{nicefrac}       % compact symbols for 1/2, etc.
+\usepackage{microtype}      % microtypography
+\usepackage{xcolor}         % colors
+\usepackage{graphicx}       % graphics
+\usepackage[normalem]{ulem} % strikethrough
+
+\begin{document}
+
+\section{Pivot table with with 1 row header}
+
+\begin{table}[h]
+\begin{tabular}{|l|l|l|l|}
+\hline
+Year & Month & Revenue & Cost \\ \hline
+2025 & January & \$134 & \$162 \\ \hline
+2025 & February & \$150 & \$155 \\ \hline
+2025 & March & \$160 & \$143 \\ \hline
+2025 & April & \$210 & \$150 \\ \hline
+2025 & May & \$280 & \$120 \\ \hline
+\end{tabular}
+\end{table}
+
+\section{Pivot table with 2 row headers}
+
+\begin{table}[h]
+\begin{tabular}{|l|l|l|l|l|}
+\hline
+Year & Quarter & Month & Revenue & Cost \\ \hline
+2025 & Q1 & January & \$134 & \$162 \\ \hline
+2025 & Q1 & February & \$150 & \$155 \\ \hline
+2025 & Q1 & March & \$160 & \$143 \\ \hline
+2025 & Q2 & April & \$210 & \$150 \\ \hline
+2025 & Q2 & May & \$280 & \$120 \\ \hline
+\end{tabular}
+\end{table}
+
+\section{Equivalent pivot table}
+
+\begin{table}[h]
+\begin{tabular}{|l|l|l|l|l|}
+\hline
+Year & Quarter & Month & Revenue & Cost \\ \hline
+2025 & Q1 & January & \$134 & \$162 \\ \hline
+2025 & Q1 & February & \$150 & \$155 \\ \hline
+2025 & Q1 & March & \$160 & \$143 \\ \hline
+2025 & Q2 & April & \$210 & \$150 \\ \hline
+2025 & Q2 & May & \$280 & \$120 \\ \hline
+\end{tabular}
+\end{table}
+
+\end{document}

@@ -1,0 +1,62 @@
+\documentclass[11pt,a4paper]{article}
+
+\usepackage[utf8]{inputenc} % allow utf-8 input
+\usepackage[T1]{fontenc}    % use 8-bit T1 fonts
+\usepackage{hyperref}       % hyperlinks
+\usepackage{url}            % simple URL typesetting
+\usepackage{booktabs}       % professional-quality tables
+\usepackage{amsfonts}       % blackboard math symbols
+\usepackage{nicefrac}       % compact symbols for 1/2, etc.
+\usepackage{microtype}      % microtypography
+\usepackage{xcolor}         % colors
+\usepackage{graphicx}       % graphics
+\usepackage[normalem]{ulem} % strikethrough
+
+\begin{document}
+
+\section{Code-detection fixture}
+
+\subsection{Case A - normal prose}
+
+This is an ordinary paragraph of prose describing how the parser works. It uses the default body font and must remain a plain text item.
+
+\subsection{Case B - prose with one inline monospaced word}
+
+Call the printf function to print formatted output to standard out.
+
+\subsection{Case C - paragraph in 'Source Code' style}
+
+\begin{verbatim}
+import sys
+print(sys.argv)
+\end{verbatim}
+
+\subsection{Case D - fully monospaced paragraph, no code style}
+
+\begin{verbatim}
+SELECT * FROM users WHERE active = 1;
+\end{verbatim}
+
+\subsection{Case E - multi-line monospaced block}
+
+\begin{verbatim}
+def fib(n):
+    a, b = 0, 1
+    for _ in range(n):
+        a, b = b, a + b
+    return a
+\end{verbatim}
+
+\subsection{Case F - 'Source Reference' style (substring trap)}
+
+See the original source for details.
+
+\subsection{Case G - 'Listing Number' style, no code chars (substring trap)}
+
+Listing 3.2
+
+\subsection{Case H - pure-Courier prose, no code-indicative characters}
+
+This memo is set in a typewriter face for a vintage look and feel throughout.
+
+\end{document}
