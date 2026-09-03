@@ -42,6 +42,30 @@ impl Package {
         self.zip.file_names()
     }
 
+    /// Whether any member cannot be read because it is encrypted — docling's
+    /// `is_encrypted` for iWork packages. Standard ZIP encryption sets bit 0
+    /// of the general-purpose flags; Pages does not use that: it leaves the
+    /// flag clear and writes a compression method outside the set ZIP defines
+    /// (stored, deflate, bzip2 = 12, lzma = 14), so both signals are needed.
+    /// Reads only the central directory — no member is decompressed.
+    #[allow(deprecated)] // `CompressionMethod::Unsupported` is how `zip` reports methods it lacks a codec for
+    pub fn any_encrypted(&mut self) -> bool {
+        use zip::CompressionMethod;
+        (0..self.zip.len()).any(|i| match self.zip.by_index_raw(i) {
+            Ok(file) => {
+                let readable = matches!(
+                    file.compression(),
+                    CompressionMethod::Stored
+                        | CompressionMethod::Deflated
+                        | CompressionMethod::Unsupported(12)
+                        | CompressionMethod::Unsupported(14)
+                );
+                file.encrypted() || !readable
+            }
+            Err(_) => false,
+        })
+    }
+
     /// Read a part to a string, or `None` if it is absent or not valid UTF-8.
     pub fn read(&mut self, path: &str) -> Option<String> {
         let bytes = self.read_bytes(path)?;
