@@ -2,7 +2,7 @@
 
 This directory provides ready-to-use Docker Compose configurations for running the **`docling-serve`** HTTP conversion service.
 
-## Quick Start (Standalone Service)
+## Quick Start (Standalone CPU Service)
 
 1. Copy `.env.example` to `.env` (optional, to customize settings):
 
@@ -21,6 +21,7 @@ This directory provides ready-to-use Docker Compose configurations for running t
    ```bash
    curl http://localhost:5001/ready
    # => {"status":"ready"}
+   ```
 
 4. Convert a document:
 
@@ -32,6 +33,24 @@ This directory provides ready-to-use Docker Compose configurations for running t
 
    ```bash
    docker compose down
+   ```
+
+---
+
+## NVIDIA CUDA GPU Deployment
+
+For hosts equipped with NVIDIA GPUs and the NVIDIA Container Toolkit:
+
+1. Launch with `docker-compose.cuda.yml`:
+
+   ```bash
+   docker compose -f docker-compose.cuda.yml up -d
+   ```
+
+2. Verify GPU detection in the container logs:
+
+   ```bash
+   docker compose -f docker-compose.cuda.yml logs
    ```
 
 ---
@@ -76,6 +95,7 @@ Key environment variables:
 | Variable | Default | Purpose |
 |---|---|---|
 | `CONCURRENCY` | `2` | Max simultaneous document conversions in flight |
+| `DOCLING_RS_EP` | `auto` | Execution provider (`auto`, `cuda`, `cpu`) |
 | `DOCLING_RS_MAX_MEMORY_MB` | `4096` | Process RSS ceiling before returning HTTP 503 (prevents OOM) |
 | `DOCLING_RS_NO_ARENA` | `1` | Disables ONNX Runtime CPU arena to keep memory compact |
 | `RUST_LOG` | `info` | Logging verbosity (`error`, `warn`, `info`, `debug`, `trace`) |
