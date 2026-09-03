@@ -493,7 +493,7 @@ inline formatting as `\textbf{}` / `\textit{}` / `\sout{}` / `\texttt{}` /
 
 Scored against Python docling's **own** `docling --to latex` output on the
 shared declarative corpus (md, docx, html, pptx, xlsx, asciidoc, csv, webvtt,
-jats): **89 of 116 fixtures byte-exact**, 94 once upstream's duplicated
+jats): **93 of 116 fixtures byte-exact**, 98 once upstream's duplicated
 formatted list items / headings are normalized away (see below). The
 remaining differences are model gaps rather than serializer bugs: underline
 and sub/superscript have no Markdown form and stay plain text; HTML rich

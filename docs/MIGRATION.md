@@ -51,7 +51,7 @@ bulk of the porting under review).
 | | |
 |---|---|
 | **What** | A Rust port of docling's converter, backends, and discriminative PDF/ASR pipelines; same `convert → DoclingDocument → export_to_markdown()/json()` shape, single static binary, no Python/torch at runtime |
-| **Conformance** | Declarative formats byte-for-byte vs *live* PyPI docling (most 100%, see §2); `.dclx` DocLang output ≈94% mean vs docling's own `.dclx`, OOXML all byte-exact (§2); PDF ML path 6/14 fixtures byte-exact, rest close; every optimization is gated on this not regressing |
+| **Conformance** | Declarative formats byte-for-byte vs *live* PyPI docling (most 100%, see §2); `.dclx` DocLang output ≈96% mean vs docling's own `.dclx`, OOXML all byte-exact (§2); PDF ML path 6/14 fixtures byte-exact, rest close; every optimization is gated on this not regressing |
 | **Performance** | PDF ML pipeline **4.3× faster warm / 4.7× end-to-end** than Python docling at 2.3–2.6× less peak RAM (INT8 + SIMD, conformance-validated); declarative formats 20–60× warm, ~60× less RAM; XLSX sheets / PPTX slides additionally fan out over rayon (~2–3× on many-sheet/slide files, conformance byte-identical); details + methodology in [`PDF_CONFORMANCE.md`](./PDF_CONFORMANCE.md) |
 | **Models** | docling's own checkpoints, no retraining: layout heron and TableFormer are format-converted to ONNX by `scripts/install/export_layout.py` / `export_tableformer.py` (CodeFormula by `export_code_formula.py`); PP-OCRv3 and Whisper tiny ship as their upstream ONNX exports; INT8 variants are calibrated post-training quantizations (`scripts/install/quantize_models.py`) |
 | **Tracking upstream** | See [§9](#9-keeping-up-with-upstream-docling): conformance is measured against the *latest published* docling on demand, so an upstream release that changes output surfaces as a concrete per-fixture diff |
@@ -171,8 +171,14 @@ close — see `PDF_CONFORMANCE.md`. A deterministic snapshot baseline
 
 The `.dclx` DocLang output (§3) is scored against docling's own `.dclx` archives
 with `scripts/conformance/dclx_conformance.sh` — the extracted `document.xml`
-line-diffed, similarity `= 100·(1 − difflines / max_lines)`. **≈94% mean over the
+line-diffed, similarity `= 100·(1 − difflines / max_lines)`. **≈96% mean over the
 136-fixture non-PDF corpus** (issue #32 target: ≥90%), per source format.
+HTML rich table cells (#328) carry their block content — lists, ordered lists,
+nested tables, headings, `<pre>` runs — as `Table::cell_blocks`, so the
+DocLang `<fcel/>` bodies match upstream's `RichTableCell` serialization
+(`table_03`–`table_06`, `table_with_heading_02`,
+`html_inline_group_in_table_cell` byte-exact; `html_rich_table_cells`' one
+residual is a picture-caption hyperlink, a model gap tracked separately).
 Robustness tracks docling-core 2.88/2.89 (#253): XML-illegal control
 characters serialize as visible `[U+XXXX]` markers, a literal `]]>` splits
 across CDATA sections, and deep section headers clamp to heading level 6
@@ -186,7 +192,7 @@ fragments as XML.
 | CSV / AsciiDoc / Email | **100%** | JATS | 95% |
 | XLSX | **100%** | Markdown | 92% |
 | DOCX / PPTX | **100%** | LaTeX | 91% |
-| USPTO | 98% | HTML | 88% |
+| USPTO | 98% | HTML | 96% |
 | ODF | 96% | WebVTT | 81% |
 
 This effort was tracked as
@@ -254,7 +260,7 @@ work (checkbox inputs, fragmented-anchor folding, `<button>` blocks) plus the
 | **Markdown (strict)** | `.strict(true)` / `--strict` | Rust-only cleaner mode — **no docling equivalent** |
 | **JSON** | `export_to_json()` / `--to json` | docling-core native wire format (schema 1.10.0) |
 | **DocLang (`.dclx`)** | `export_to_doclang()` · `docling::dclx::save_as_dclx()` / `--to dclx` | DocLang 0.7 XML (`<doclang>`), and the OPC archive docling 2.110's `save_as_doclang()` writes |
-| **LaTeX (`.tex`)** | `export_to_latex()` / `--to latex` (#317) | docling 2.124's `LaTeXDocSerializer` with default params, scored against upstream's own `docling --to latex`: **89/116 shared declarative fixtures byte-exact** (94 modulo upstream's duplicated formatted list items / headings); remaining gaps are underline / sub / superscript (no Markdown form), HTML rich table cells, a few list groupings. Serve `to=latex`, Node `to: 'latex'`; Python bindings use upstream docling-core's serializer on the reconstructed document. Deviations: headings deeper than `\subsubsection` degrade to `\paragraph`/`\subparagraph` where upstream raises; upstream's duplicated text for formatted items ([docling-core#740](https://github.com/docling-project/docling-core/issues/740)) is not reproduced |
+| **LaTeX (`.tex`)** | `export_to_latex()` / `--to latex` (#317) | docling 2.124's `LaTeXDocSerializer` with default params, scored against upstream's own `docling --to latex`: **93/116 shared declarative fixtures byte-exact** (98 modulo upstream's duplicated formatted list items / headings — #328's HTML `cell_blocks` made the rich-cell bucket exact: in-cell lists render as `\begin{itemize}`, nested tables as nested `tabular`s, in-cell headings as plain text); remaining gaps are underline / sub / superscript (no Markdown form) and a few list groupings. Serve `to=latex`, Node `to: 'latex'`; Python bindings use upstream docling-core's serializer on the reconstructed document. Deviations: headings deeper than `\subsubsection` degrade to `\paragraph`/`\subparagraph` where upstream raises; upstream's duplicated text for formatted items ([docling-core#740](https://github.com/docling-project/docling-core/issues/740)) is not reproduced |
 | **Image extraction** | `export_to_markdown_with_images(mode, dir)` / `--images` | `placeholder` (default) · `embedded` (base64 data URI) · `referenced` (writes PNG files) |
 
 - **DocLang** reproduces docling-core's `DocLangDocSerializer` (`minidom.toprettyxml`
@@ -262,10 +268,10 @@ work (checkbox inputs, fragmented-anchor folding, `<button>` blocks) plus the
   `<strikethrough>`/`<sub|superscript>`), lists with enumeration `<marker>`s, OTSL
   tables (`<ched>`/`<fcel>`/`<lcel>`…) with per-cell `<location>`, code, formulas,
   pictures and furniture. Conformance is scored against docling's own `.dclx`
-  archives (`scripts/conformance/dclx_conformance.sh`): **≈94% mean similarity over
+  archives (`scripts/conformance/dclx_conformance.sh`): **≈96% mean similarity over
   the 136-fixture non-PDF corpus** (issue #32's ≥90% target) — every OOXML fixture
   (docx/pptx/xlsx) plus csv/asciidoc/email byte-exact, uspto/jats in the
-  mid-to-high 90s, md/odf/latex low 90s, html/webvtt in the 80s (full table
+  mid-to-high 90s, html (#328 rich cells) 96%, md/odf/latex low 90s, webvtt in the 80s (full table
   in §2). The format-by-format work was
   tracked as [issue #32](https://github.com/docling-project/docling.rs/issues/32) and its
   children (#38–#41, #44) — all closed, targets met. This is an **output** format;
