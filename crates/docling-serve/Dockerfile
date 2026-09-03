@@ -69,19 +69,31 @@ COPY . .
 RUN cargo build --release -p docling-serve -p docling-cli --locked
 
 # ------------------------------------------------------------------------------
-# Stage: CUDA build (Linux x86_64, ort/cuda + copy-dylibs)
+# Stage: CUDA build (Linux x86_64, ort/cuda + copy-dylibs on Ubuntu 24.04 devel)
+#
+# Ubuntu 24.04 (glibc 2.39 + GCC 14) matches the runtime-cuda base below (#333),
+# avoiding glibc version mismatches between build and runtime environments.
 # ------------------------------------------------------------------------------
-FROM chef AS build-cuda
+FROM nvidia/cuda:12.6.2-cudnn-devel-ubuntu24.04 AS chef-cuda
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl build-essential pkg-config ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+ENV RUSTUP_HOME=/usr/local/rustup \
+    CARGO_HOME=/usr/local/cargo \
+    PATH=/usr/local/cargo/bin:$PATH
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain 1.96.0 --profile minimal \
+    && cargo install cargo-chef --locked
+WORKDIR /src
+
+FROM chef-cuda AS build-cuda
 COPY --from=planner /src/recipe.json recipe.json
 # Build dependency tree with --features cuda so ONNX Runtime with CUDA is fetched and cooked.
 RUN cargo chef cook --release -p docling-serve -p docling-cli --features cuda --locked --recipe-path recipe.json
 COPY . .
-# $ORIGIN rpath: dlopen finds libonnxruntime_providers_{shared,cuda}.so in /usr/local/lib or alongside binaries
-ENV RUSTFLAGS="-C link-arg=-Wl,-rpath,/usr/local/lib"
 RUN cargo build --release -p docling-serve -p docling-cli --features cuda --locked \
     && mkdir -p /src/cuda-dylibs \
+    && test $(find target/release -maxdepth 1 -name "libonnxruntime_providers_*.so" | wc -l) -ge 2 \
     && find target/release -maxdepth 1 -name "libonnxruntime_providers_*.so" -exec cp -av {} /src/cuda-dylibs/ \;
-
 # ------------------------------------------------------------------------------
 # Stage: assets (models + pdfium, shared across CPU and CUDA)
 # ------------------------------------------------------------------------------
