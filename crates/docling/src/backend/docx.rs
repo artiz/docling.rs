@@ -515,7 +515,16 @@ fn handle_paragraph_inner(
     };
     if let Some(level) = level {
         if !text.is_empty() {
-            let text = if numbering.is_some() {
+            // docling#3760 (`_is_numbered_heading`): the prefix is computed only
+            // when numbering.xml gives the heading's level a *visible* format —
+            // a `numFmt` of `none` (Word's "invisible numbering", used to keep
+            // a heading in the outline without a number) leaves the text as is.
+            let visibly_numbered = numbering.as_ref().is_some_and(|(num_id, ilvl)| {
+                ctx.num_levels
+                    .get(&(num_id.clone(), *ilvl))
+                    .is_some_and(|l| l.visible)
+            });
+            let text = if visibly_numbered {
                 let docling_level = level.saturating_sub(1).max(1);
                 numbered_heading_text(&mut state.numbered_headers, docling_level, &text)
             } else {
@@ -1549,7 +1558,9 @@ fn rich_cell_markdown(tc: XmlNode, ctx: &Ctx) -> String {
             _ => {}
         }
     }
-    sub.export_to_markdown().trim().to_string()
+    // In-cell rendering: a heading inside the cell is plain text
+    // (docling-core#540).
+    sub.export_to_table_cell_markdown().trim().to_string()
 }
 
 /// A rich cell's DocLang block content — the structured counterpart of
@@ -1907,9 +1918,26 @@ fn parse_styles(styles_xml: &str) -> StyleMaps {
 #[derive(Clone, Default)]
 struct NumLevel {
     numbered: bool,
+    /// Whether the level's `numFmt` renders a visible marker (docling's
+    /// `_VISIBLE_NUMBERING_FORMATS`, docling#3760): `decimal`, roman, letter,
+    /// `decimalZero`. `none` (and the exotic formats) is invisible — a heading
+    /// on such a level carries a `numPr` for outline structure only, so it
+    /// gets no computed `1.2` prefix.
+    visible: bool,
     start: i64,
     lvl_text: String,
 }
+
+/// OOXML `numFmt` values that produce a visible list/heading marker
+/// (docling's `_VISIBLE_NUMBERING_FORMATS`).
+const VISIBLE_NUMBERING_FORMATS: &[&str] = &[
+    "decimal",
+    "lowerRoman",
+    "upperRoman",
+    "lowerLetter",
+    "upperLetter",
+    "decimalZero",
+];
 
 /// Map `(numId, ilvl)` → its level properties, resolved through `numbering.xml`'s
 /// `num` → `abstractNum` → level (`numFmt`, `start`, `lvlText`).
@@ -1939,12 +1967,12 @@ fn parse_numbering(numbering_xml: &str) -> HashMap<(String, i64), NumLevel> {
         let mut levels = HashMap::new();
         for lvl in abs.children().filter(|n| n.has_tag_name("lvl")) {
             let ilvl: i64 = attr(lvl, "ilvl").and_then(|v| v.parse().ok()).unwrap_or(0);
-            let numbered = lvl
+            let num_fmt = lvl
                 .children()
                 .find(|n| n.has_tag_name("numFmt"))
-                .and_then(|n| attr(n, "val"))
-                .map(|v| v != "bullet")
-                .unwrap_or(true);
+                .and_then(|n| attr(n, "val"));
+            let numbered = num_fmt.map(|v| v != "bullet").unwrap_or(true);
+            let visible = num_fmt.is_some_and(|v| VISIBLE_NUMBERING_FORMATS.contains(&v));
             let start = lvl
                 .children()
                 .find(|n| n.has_tag_name("start"))
@@ -1961,6 +1989,7 @@ fn parse_numbering(numbering_xml: &str) -> HashMap<(String, i64), NumLevel> {
                 ilvl,
                 NumLevel {
                     numbered,
+                    visible,
                     start,
                     lvl_text,
                 },

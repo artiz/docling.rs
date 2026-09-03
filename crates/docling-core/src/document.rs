@@ -734,6 +734,15 @@ impl DoclingDocument {
         to_markdown(self, strict)
     }
 
+    /// Markdown for this document as the *content of a rich table cell*
+    /// (docling-core's `in_table_cell` serialization, docling-core#540):
+    /// headings render as plain text since Markdown tables can't hold them.
+    /// Backends build a sub-document per rich cell and flatten this into the
+    /// cell text; no trailing newline.
+    pub fn export_to_table_cell_markdown(&self) -> String {
+        crate::markdown::to_markdown_table_cell(self, self.strict_markdown)
+    }
+
     /// Serialize to docling-core's native JSON wire format (`DoclingDocument`
     /// schema), pretty-printed — the Rust equivalent of
     /// `DoclingDocument.export_to_dict()` / `save_as_json()`. The output loads

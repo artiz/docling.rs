@@ -25,6 +25,10 @@ struct Ctx {
     /// (relative path, bytes) for each referenced image — written by the caller.
     artifacts: Vec<(String, Vec<u8>)>,
     pic_index: usize,
+    /// Rendering the block content of a rich table cell (docling-core 2.94's
+    /// `in_table_cell`, docling-core#540): a heading has no valid Markdown
+    /// form inside a table, so it renders as plain text without `#` markers.
+    in_table_cell: bool,
 }
 
 /// Render a document to a Markdown string (pictures as placeholders).
@@ -52,6 +56,7 @@ pub fn to_markdown_images(
         artifacts_dir: artifacts_dir.to_string(),
         artifacts: Vec::new(),
         pic_index: 0,
+        in_table_cell: false,
     };
     let mut blocks: Vec<String> = Vec::new();
     render(&doc.nodes, &mut blocks, &mut ctx);
@@ -68,6 +73,29 @@ pub fn to_markdown_images(
         format!("{body}\n")
     };
     (md, ctx.artifacts)
+}
+
+/// Render the block content of a *rich table cell* to Markdown — what
+/// docling-core's table serializer does for a `RichTableCell`
+/// (`doc_serializer.serialize(item, in_table_cell=True)`): the cell's
+/// paragraphs, lists and flattened nested tables render as in a document, but a
+/// heading loses its `#` markers (docling-core#540 — the Markdown spec has no
+/// headings inside tables). Pictures stay placeholders. The caller flattens the
+/// result into its cell text; the table serializer later turns the newlines
+/// into spaces.
+pub fn to_markdown_table_cell(doc: &DoclingDocument, strict: bool) -> String {
+    let mut ctx = Ctx {
+        strict,
+        compact_tables: doc.compact_tables,
+        images: ImageMode::Placeholder,
+        artifacts_dir: String::new(),
+        artifacts: Vec::new(),
+        pic_index: 0,
+        in_table_cell: true,
+    };
+    let mut blocks: Vec<String> = Vec::new();
+    render(&doc.nodes, &mut blocks, &mut ctx);
+    blocks.join("\n\n")
 }
 
 /// Wrap each recovered link's anchor text in Markdown `[anchor](href)`. Anchors
@@ -225,6 +253,7 @@ impl MarkdownStreamer {
             artifacts_dir: std::mem::take(&mut self.artifacts_dir),
             artifacts: std::mem::take(&mut self.artifacts),
             pic_index: self.pic_index,
+            in_table_cell: false,
         };
         let mut blocks: Vec<String> = Vec::new();
         render(nodes, &mut blocks, &mut ctx);
@@ -277,6 +306,40 @@ fn strict_text(text: &str, strict: bool) -> String {
         .replace("( ", "(")
         .replace(" ]", "]")
         .replace("[ ", "[")
+}
+
+/// docling-core 2.92's `_md_line_breaks` (docling-core#721): a single `\n`
+/// inside an item's text becomes a GFM hard line break (`"  \n"`, two trailing
+/// spaces) so renderers honour it; a blank line (`\n\n`) is a paragraph break
+/// and stays as is — the document scope already joins blocks with `\n\n`.
+/// Applied to body text, list items and captions, never to code/formulas.
+fn md_line_breaks(text: &str) -> String {
+    if !text.contains('\n') {
+        return text.to_string();
+    }
+    text.split("\n\n")
+        .map(|para| para.replace('\n', "  \n"))
+        .collect::<Vec<_>>()
+        .join("\n\n")
+}
+
+/// Undo [`md_line_breaks`] on a rich table cell's flattened Markdown so the
+/// non-Markdown exports (JSON `text`, LaTeX cells) see the cell's raw line
+/// breaks, as docling's do — a rich cell's text is its Markdown serialization
+/// in our model, and the two trailing spaces are a Markdown-only marker.
+pub(crate) fn strip_hard_breaks(text: &str) -> String {
+    if text.contains("  \n") {
+        text.replace("  \n", "\n")
+    } else {
+        text.to_string()
+    }
+}
+
+/// docling-core's `_heading_line_breaks`: a GFM heading cannot span lines, so a
+/// newline inside heading text collapses to a space (`# Hello World`, not a
+/// broken `# Hello\nWorld`).
+fn heading_line_breaks(text: &str) -> String {
+    text.replace('\n', " ")
 }
 
 fn render(nodes: &[Node], blocks: &mut Vec<String>, ctx: &mut Ctx) {
@@ -389,7 +452,10 @@ fn render_list_run(items: &[Node], blocks: &mut Vec<String>, strict: bool) {
         } else {
             "-".to_string()
         };
-        lines.push(format!("{indent}{marker} {}", strict_text(text, strict)));
+        lines.push(format!(
+            "{indent}{marker} {}",
+            md_line_breaks(&strict_text(text, strict))
+        ));
         prev[level] = Some((*ordered, *number));
     }
 
@@ -403,16 +469,25 @@ fn render_list_run(items: &[Node], blocks: &mut Vec<String>, strict: bool) {
 fn render_one(node: &Node, blocks: &mut Vec<String>, ctx: &mut Ctx) {
     match node {
         Node::Heading { level, text } => {
-            let hashes = "#".repeat((*level).clamp(1, 6) as usize);
-            blocks.push(format!("{hashes} {}", strict_text(text, ctx.strict)));
+            let text = heading_line_breaks(&strict_text(text, ctx.strict));
+            if ctx.in_table_cell {
+                // docling-core#540: no `#` markers inside a table cell.
+                blocks.push(text);
+            } else {
+                let hashes = "#".repeat((*level).clamp(1, 6) as usize);
+                blocks.push(format!("{hashes} {text}"));
+            }
         }
         // An empty body paragraph (docling's blank-line text item) contributes
         // nothing to Markdown — only DocLang/JSON keep it.
         Node::Paragraph { text } if text.is_empty() => {}
-        Node::Paragraph { text } => blocks.push(strict_text(text, ctx.strict)),
+        Node::Paragraph { text } => blocks.push(md_line_breaks(&strict_text(text, ctx.strict))),
         Node::CheckboxItem { checked, text } => {
             let mark = if *checked { "- [x] " } else { "- [ ] " };
-            blocks.push(strict_text(&format!("{mark}{text}"), ctx.strict));
+            blocks.push(md_line_breaks(&strict_text(
+                &format!("{mark}{text}"),
+                ctx.strict,
+            )));
         }
         Node::Code {
             language,
@@ -441,7 +516,7 @@ fn render_one(node: &Node, blocks: &mut Vec<String>, ctx: &mut Ctx) {
             // `caption` is already escaped (backend convention), like a paragraph.
             if let Some(cap) = &table.caption {
                 if !cap.is_empty() {
-                    blocks.push(strict_text(cap, ctx.strict));
+                    blocks.push(md_line_breaks(&strict_text(cap, ctx.strict)));
                 }
             }
             let rendered = render_table(table, ctx.compact_tables);
@@ -453,7 +528,7 @@ fn render_one(node: &Node, blocks: &mut Vec<String>, ctx: &mut Ctx) {
         Node::Picture { caption, image, .. } => {
             if let Some(cap) = caption {
                 if !cap.is_empty() {
-                    blocks.push(cap.clone());
+                    blocks.push(md_line_breaks(cap));
                 }
             }
             blocks.push(picture_marker(image.as_ref(), ctx));
@@ -469,7 +544,7 @@ fn render_one(node: &Node, blocks: &mut Vec<String>, ctx: &mut Ctx) {
         } => {
             if let Some(cap) = caption {
                 if !cap.is_empty() {
-                    blocks.push(cap.clone());
+                    blocks.push(md_line_breaks(cap));
                 }
             }
             blocks.push(picture_marker(None, ctx));
@@ -483,21 +558,21 @@ fn render_one(node: &Node, blocks: &mut Vec<String>, ctx: &mut Ctx) {
         Node::DoclangOnly(_) => {}
         Node::Group { children, .. } => render(children, blocks, ctx),
         Node::FieldRegion { items } => {
-            // docling renders the region container (which carries no text of its
-            // own) as a `<!-- missing-text -->` marker, then each field item the
-            // same way, followed by that item's marker/key/value as separate
-            // paragraphs.
-            blocks.push(MISSING_TEXT.to_string());
+            // The region container and each field item carry no text of their
+            // own; docling-core 2.93 (#724) serializes them to nothing (older
+            // releases emitted a `<!-- missing-text -->` marker for each), so
+            // only an item's marker/key/value appear, as separate paragraphs.
             for item in items {
-                blocks.push(MISSING_TEXT.to_string());
                 for part in [&item.marker, &item.key, &item.value].into_iter().flatten() {
-                    blocks.push(strict_text(part, ctx.strict));
+                    blocks.push(md_line_breaks(&strict_text(part, ctx.strict)));
                 }
             }
         }
         // A rich inline group renders exactly like a paragraph of its Markdown
         // text — the structured runs are DocLang-only.
-        Node::InlineGroup { md_text, .. } => blocks.push(strict_text(md_text, ctx.strict)),
+        Node::InlineGroup { md_text, .. } => {
+            blocks.push(md_line_breaks(&strict_text(md_text, ctx.strict)))
+        }
         // A plain-text backend dump renders verbatim as a single block.
         Node::TextDump(text) => {
             if !text.is_empty() {
@@ -521,10 +596,6 @@ fn render_one(node: &Node, blocks: &mut Vec<String>, ctx: &mut Ctx) {
         Node::ListItem { .. } => render_list_run(std::slice::from_ref(node), blocks, ctx.strict),
     }
 }
-
-/// docling's placeholder for a structural node (a field region / item) that has
-/// no text of its own.
-const MISSING_TEXT: &str = "<!-- missing-text -->";
 
 /// The Markdown for a picture under the active [`ImageMode`]; Referenced mode also
 /// records the bytes in `ctx.artifacts` for the caller to write.
@@ -781,6 +852,64 @@ mod tests {
         });
         let md = doc.export_to_markdown();
         assert_eq!(md, "# Title\n\nHello world.\n\n- first\n- second\n");
+    }
+
+    /// docling-core 2.92 (#721): a single newline inside an item's text is a
+    /// GFM hard line break, a blank line stays a paragraph break, and a heading
+    /// collapses its newline to a space. Nested-table dumps stay verbatim.
+    #[test]
+    fn single_newlines_become_gfm_hard_line_breaks() {
+        let mut doc = DoclingDocument::new("t");
+        doc.push(Node::Heading {
+            level: 1,
+            text: "Hello\nWorld".into(),
+        });
+        doc.push(Node::Paragraph {
+            text: "line one\nline two\n\npara two".into(),
+        });
+        doc.push(Node::ListItem {
+            ordered: false,
+            number: 1,
+            first_in_list: true,
+            text: "item\ncontinued".into(),
+            level: 0,
+            marker: None,
+            location: None,
+            dclx: None,
+            href: None,
+            layer: None,
+        });
+        doc.push(Node::TextDump("A1 B1 \n\n\nC1".into()));
+        assert_eq!(
+            doc.export_to_markdown(),
+            "# Hello World\n\nline one  \nline two\n\npara two\n\n- item  \ncontinued\n\nA1 B1 \n\n\nC1\n"
+        );
+    }
+
+    /// docling-core#540: inside a rich table cell a heading is plain text;
+    /// docling-core#724: a field region renders only its items' key/value text.
+    #[test]
+    fn table_cell_mode_and_field_regions() {
+        let mut doc = DoclingDocument::new("t");
+        doc.push(Node::Heading {
+            level: 2,
+            text: "A  text".into(),
+        });
+        doc.push(Node::Paragraph {
+            text: "body".into(),
+        });
+        assert_eq!(to_markdown_table_cell(&doc, false), "A  text\n\nbody");
+        assert_eq!(doc.export_to_markdown(), "## A  text\n\nbody\n");
+
+        let mut doc = DoclingDocument::new("f");
+        doc.push(Node::FieldRegion {
+            items: vec![crate::FieldItem {
+                marker: None,
+                key: Some("Name:".into()),
+                value: Some("John Doe".into()),
+            }],
+        });
+        assert_eq!(doc.export_to_markdown(), "Name:\n\nJohn Doe\n");
     }
 
     #[test]

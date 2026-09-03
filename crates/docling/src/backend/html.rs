@@ -423,10 +423,14 @@ fn handle_block(
                 // cell's text is docling's raw `get_text` (source line breaks
                 // preserved as newlines), so a deeper nested table's structure
                 // survives as `\n` runs that the table serializer later flattens
-                // to spaces — reproducing docling's spacing byte-for-byte.
+                // to spaces — reproducing docling's spacing byte-for-byte. It is
+                // a *table* part, not a text item: docling-core 2.92's GFM
+                // hard-line-break rule (`\n` → `"  \n"`, docling-core#721)
+                // applies to text items only, so the flattened grid goes in
+                // verbatim rather than as a paragraph.
                 let text = flatten_nested_table(elem);
                 if !text.is_empty() {
-                    nodes.push(Node::Paragraph { text });
+                    nodes.push(Node::TextDump(text));
                 }
             } else if let Some(table) = parse_table(elem) {
                 nodes.push(Node::Table(table));
@@ -1484,7 +1488,9 @@ fn render_cell(cell: ElementRef) -> String {
         walk_block(cell, &mut nodes, 0, raw, &NoFetch);
         let mut doc = DoclingDocument::new("");
         doc.nodes = nodes;
-        doc.export_to_markdown().trim().to_string()
+        // In-cell rendering: a heading inside the cell is plain text
+        // (docling-core#540).
+        doc.export_to_table_cell_markdown().trim().to_string()
     } else {
         render_inline_fmt(cell, raw)
     }
@@ -1954,8 +1960,10 @@ mod tests {
     #[test]
     fn form_region_becomes_key_value_fields() {
         // A `form_region` container with the `keyN` / `keyN_marker` / `keyN_valueM`
-        // id-convention is a docling field region: region + each item render as a
-        // `<!-- missing-text -->` marker, then the item's marker/key/value texts.
+        // id-convention is a docling field region: the region and each item
+        // carry no text of their own (docling-core#724 dropped their former
+        // `<!-- missing-text -->` markers); only the item's marker/key/value
+        // texts render.
         let doc = convert(
             "<div class=\"form_region\">\
                <div class=\"field\">\
@@ -1972,9 +1980,7 @@ mod tests {
         );
         assert_eq!(
             doc.export_to_markdown(),
-            "<!-- missing-text -->\n\n\
-             <!-- missing-text -->\n\n1\n\nRestaurant\n\nDocling\n\n\
-             <!-- missing-text -->\n\n2\n\nTelephone\n\n123\n",
+            "1\n\nRestaurant\n\nDocling\n\n2\n\nTelephone\n\n123\n",
         );
         // A plain container without the id-convention stays ordinary text.
         let plain = convert("<div class=\"form_region\"><p>just text</p></div>");

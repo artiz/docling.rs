@@ -1367,8 +1367,10 @@ fn rich_cell_markdown(tc: XmlNode, styles: &Styles) -> String {
                         .cloned()
                         .collect::<Vec<_>>()
                         .join(" ");
+                    // A table part, not a text item: exempt from the GFM
+                    // hard-line-break rule (docling-core#721), hence verbatim.
                     if !text.is_empty() {
-                        sub.push(Node::Paragraph { text });
+                        sub.push(Node::TextDump(text));
                     }
                 }
             }
@@ -1379,10 +1381,11 @@ fn rich_cell_markdown(tc: XmlNode, styles: &Styles) -> String {
             _ => {}
         }
     }
-    sub.export_to_markdown()
-        .replace('\n', " ")
-        .trim()
-        .to_string()
+    // In-cell rendering: a heading inside the cell is plain text
+    // (docling-core#540). Line breaks stay: the Markdown table serializer
+    // flattens them to spaces (a hard break to three, as docling), while JSON
+    // keeps the cell's raw newlines.
+    sub.export_to_table_cell_markdown().trim().to_string()
 }
 
 // ---------------------------------------------------------------- spreadsheet
@@ -2104,8 +2107,9 @@ mod tests {
             <table:table-cell><text:p>plain <text:span>bold</text:span></text:p></table:table-cell>
           </table:table-row></table:table></root>"#;
         let t = table_of(xml);
-        // Rich cell: the list is rendered with markers and flattened into the cell.
-        assert_eq!(t.rows[0][0], "List:  - a - b");
+        // Rich cell: the list is rendered with markers; the block newlines stay in
+        // the cell text (the Markdown table serializer flattens them to spaces).
+        assert_eq!(t.rows[0][0], "List:\n\n- a\n- b");
         // Plain cell: single paragraph, no Markdown markers.
         assert_eq!(t.rows[0][1], "plain bold");
     }

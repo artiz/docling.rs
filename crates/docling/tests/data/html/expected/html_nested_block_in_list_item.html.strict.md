@@ -1,9 +1,9 @@
 ## Ordered list with inline elements
 
-1. Step 1 text
+1. Step 1 text  
 <!-- image -->
     - Note text
-2. Step 2 text
+2. Step 2 text  
 <!-- image -->
     - Note text
 3. Step 3 text

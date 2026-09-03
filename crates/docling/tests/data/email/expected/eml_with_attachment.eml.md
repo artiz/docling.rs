@@ -8,5 +8,5 @@ Hello Bob,
 
 This email contains an attachment.
 
-Best regards,
+Best regards,  
 Alice
