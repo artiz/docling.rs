@@ -1117,8 +1117,11 @@ async fn vlm_pipeline_converts_via_the_operator_pinned_endpoint() {
     std::env::remove_var("DOCLING_RS_VLM_ENDPOINT");
     assert_eq!(status, StatusCode::OK, "{out}");
     assert!(out.contains("Hello from the VLM"), "markdown: {out}");
-    assert_eq!(served.load(std::sync::atomic::Ordering::SeqCst), 1);
+    // Join before reading the counter: the stub bumps it *after* writing the
+    // response, so the client can observe the reply first — asserting before
+    // the join raced the mock thread (flaky `0 == 1`).
     handle.join().unwrap();
+    assert_eq!(served.load(std::sync::atomic::Ordering::SeqCst), 1);
 }
 
 #[tokio::test]
@@ -1415,8 +1418,10 @@ async fn put_target_uploads_each_output_and_acknowledges() {
     assert!(results.iter().all(|r| r["status"] == "success"), "{v}");
     assert_eq!(results[0]["key"], "one.md");
     assert_eq!(results[1]["key"], "two.md");
-    assert_eq!(hits.load(Ordering::SeqCst), 2);
+    // Same join-before-assert rule as the VLM stub: the counter is bumped
+    // after the response goes out.
     handle.join().unwrap();
+    assert_eq!(hits.load(Ordering::SeqCst), 2);
 }
 
 #[tokio::test]
