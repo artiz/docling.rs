@@ -29,7 +29,7 @@ RUN if [ "$FETCH_ASSETS" = "1" ]; then sh scripts/install/download_dependencies.
 FROM debian:trixie-slim
 # ffmpeg powers video frame sampling (#138 Phase 2); without it a video input
 # still converts, transcript-only.
-RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates ffmpeg \
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates ffmpeg curl \
     && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 COPY --from=build /src/target/release/docling-serve /usr/local/bin/docling-serve
@@ -38,5 +38,7 @@ COPY --from=build /src/.models ./.models
 COPY --from=build /src/.pdfium ./.pdfium
 ENV PDFIUM_DYNAMIC_LIB_PATH=/app/.pdfium/lib
 EXPOSE 5001
+HEALTHCHECK --interval=15s --timeout=5s --start-period=45s --retries=3 \
+    CMD curl -f http://localhost:5001/ready || exit 1
 # Liveness: GET /health; readiness: GET /ready (503 until --warmup finishes).
 CMD ["docling-serve", "--addr", "0.0.0.0:5001", "--warmup"]

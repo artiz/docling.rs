@@ -109,7 +109,7 @@ parses its output, so no dev headers/libraries are needed.
   `set DOCLING_FFMPEG=C:\tools\ffmpeg\bin\ffmpeg.exe`
 
 Check with `ffmpeg -version`. `DOCLING_FFMPEG` overrides the binary used on
-any OS; the docling-serve Docker image ships ffmpeg preinstalled.
+any OS; the docling-rs-serve Docker image ships ffmpeg preinstalled.
 </details>
 
 Output is checked against upstream Python docling — declarative formats
@@ -152,7 +152,7 @@ streamed result out, with extracted pictures rendered below the text — and
 Redoc or a client generator can be pointed straight at a running server:
 
 <p align="center">
-  <img src="docs/assets/serve-form.png" alt="docling-serve test form: a converted image with the Markdown result and a gallery of extracted pictures" width="720">
+  <img src="docs/assets/serve-form.png" alt="docling-rs-serve test form: a converted image with the Markdown result and a gallery of extracted pictures" width="720">
 </p>
 
 ```bash
@@ -213,15 +213,18 @@ instead of OOM-killing the process; `0` disables). Thread pools are
 TableFormer session — the reporter's 4-CPU case dropped ~40% peak memory), and
 the server defaults `DOCLING_RS_NO_ARENA=1`: with the ONNX CPU arena off plus
 heap trimming, warm retained RSS measured ~3× lower (2.0 GB → 0.7 GB) at no
-latency cost — set `DOCLING_RS_NO_ARENA=0` to restore the arena. A container image
-builds from [`crates/docling-serve/Dockerfile`](./crates/docling-serve/Dockerfile)
-(models + pdfium baked in, or mounted with `--build-arg FETCH_ASSETS=0`).
+latency cost — set `DOCLING_RS_NO_ARENA=0` to restore the arena. Prebuilt
+multi-arch images (`linux/amd64`, `linux/arm64`) publish to GHCR:
+`ghcr.io/docling-project/docling-rs-serve:latest` (built from
+[`crates/docling-serve/Dockerfile`](./crates/docling-serve/Dockerfile) with models
+and pdfium baked in, or mountable with `--build-arg FETCH_ASSETS=0`). Docker
+Compose setups are in [`examples/docker-compose/`](./examples/docker-compose/) and
+the full guide is in [`docs/DEPLOYMENT.md`](./docs/DEPLOYMENT.md).
 URL inputs are **off by default** (SSRF surface): pass `--allow-url-fetch` to
 enable them; the fetcher blocks private-IP targets
 (`DOCLING_RS_ALLOW_PRIVATE_IP_FETCH=1` opts out) and caps the download size
 (`DOCLING_RS_MAX_FETCH_BYTES`). The server binds loopback by default — front
 it with a policy proxy for anything wider.
-
 The JSON body also takes docling's service-datamodel `sources`/`target` shape
 (#139): `kind`-tagged `file` (base64) and `http` (URL + headers) sources, and —
 with the opt-in `cloud` cargo feature (feature-gated `object_store`) — `s3`,
@@ -246,7 +249,7 @@ request counts by status class, an in-flight gauge, a request-latency
 histogram, and per-outcome conversion counts (`/metrics`, `/health` and
 `/ready` probes excluded). Building with the opt-in `otel` cargo feature and
 setting `OTEL_EXPORTER_OTLP_ENDPOINT` additionally ships the request spans
-over OTLP/gRPC (`OTEL_SERVICE_NAME` defaults to `docling-serve`); without the
+over OTLP/gRPC (`OTEL_SERVICE_NAME` defaults to `docling-rs-serve`); without the
 env var the feature is inert.
 
 ## In the browser — `docling-wasm`
@@ -564,7 +567,7 @@ even when it carries a text layer — for layers that exist but lie (broken
 encodings, subset fonts with garbage mappings, a scanned form with a few
 typed-in field values). Ignored under `--no-ocr`, mirroring docling. The same
 switch is available on every surface: `force_full_page_ocr(bool)` on the
-library builder, a `force_full_page_ocr` option in docling-serve, the
+library builder, a `force_full_page_ocr` option in docling-rs-serve, the
 `force_full_page_ocr=` kwarg in Python, `forceFullPageOcr` in Node, and the
 "Force OCR" toggle in the wasm demo.
 
@@ -1332,13 +1335,49 @@ fetches missing model files. Uninstall:
 
 ## Deploy in a container
 
-For a real-world service, bake the binary, native libs, and models into one image
-so the runtime needs no Python. [`examples/Dockerfile`](./examples/Dockerfile) is a
-3-stage build that does exactly this — a `models` stage exports the layout +
-**TableFormer** (KV-cached decoder) ONNX with torch and fetches the OCR model +
-pdfium, a `builder` stage compiles the CLI, and a slim `runtime` stage carries just
-the binary, `libonnxruntime`, pdfium, and the models, with the `DOCLING_*` env vars
-preset:
+### Container Images
+
+The following container images are available on **GitHub Container Registry (GHCR)** for running **`docling-rs-serve`** with all native dependencies, pdfium, ffmpeg, and ONNX models baked in (zero Python runtime dependencies):
+
+#### 📦 Distributed Images
+
+| Image | Description | Architectures |
+|---|---|---|
+| [`ghcr.io/docling-project/docling-rs-serve`](https://github.com/docling-project/docling.rs/pkgs/container/docling-rs-serve) | High-performance document conversion HTTP API with PDF, DOCX, PPTX, XLSX, HTML, images, and audio/video models pre-installed. | `linux/amd64`, `linux/arm64` |
+| [`ghcr.io/docling-project/docling-rs`](https://github.com/docling-project/docling.rs/pkgs/container/docling-rs) | Repository-name alias pointing to the same multi-arch container image. | `linux/amd64`, `linux/arm64` |
+
+```bash
+# Run docling-rs-serve HTTP API (models baked in, zero Python runtime dependencies):
+docker run -p 127.0.0.1:5001:5001 ghcr.io/docling-project/docling-rs-serve:latest
+
+# Convert a document:
+curl -F file=@paper.pdf localhost:5001/v1/convert
+```
+
+### Docker Compose
+
+Launch with [`examples/docker-compose/`](./examples/docker-compose/):
+
+```bash
+cd examples/docker-compose
+docker compose up -d                        # standalone service (127.0.0.1:5001)
+# or: docker compose -f docker-compose.caddy.yml up -d   # with Caddy TLS reverse proxy
+```
+
+### Core Container Configuration
+
+| Variable / Option | Default | Description |
+|---|---|---|
+| `DOCLING_RS_NO_ARENA` | `1` | Disables ONNX Runtime CPU arena to prevent RSS heap ratcheting (#263) |
+| `DOCLING_RS_MAX_MEMORY_MB` | `0` (or cgroup) | Memory ceiling (MiB); returns 503 + Retry-After when near watermark |
+| `DOCLING_RS_MEMORY_WATERMARK_PCT` | `85` | Watermark % above which new requests get HTTP 503 |
+| `DOCLING_RS_TF_INTRA` | auto (#262) | Narrows ONNX intra-op thread count for TableFormer decoder sessions |
+| `--concurrency N` | `2` | Max simultaneous conversions in flight; excess requests queue |
+| `--warmup` | enabled in image | Pre-load models at startup; `/ready` returns 503 until warm |
+| `/health` vs `/ready` | — | `/health` = liveness (200 immediately); `/ready` = readiness (200 once warm) |
+
+For a self-contained CLI image with models exported from PyTorch, [`examples/Dockerfile`](./examples/Dockerfile)
+is a 3-stage build that bakes the binary, native libs, and models into a slim runtime stage:
 
 ```bash
 docker build -f examples/Dockerfile -t docling-rs .
@@ -1346,16 +1385,13 @@ docker run --rm -v "$PWD:/data" docling-rs /data/input.pdf          # Markdown t
 docker run --rm -v "$PWD:/data" docling-rs /data/input.pdf --to json
 ```
 
-The image converts PDFs/images fully offline; the model export (torch +
-`docling-ibm-models`) happens only at build time, never at runtime. Both
-`linux/amd64` and `linux/arm64` build (#281) — the pdfium prebuilt follows
+Both `linux/amd64` and `linux/arm64` build (#281) — the pdfium prebuilt follows
 BuildKit's `TARGETARCH`, and `scripts/install/download_dependencies.sh`
 likewise picks the pdfium for the machine it runs on (pinned x64 from the
-models release; the bblanchon `arm64` prebuilt elsewhere):
+models release; the bblanchon `arm64` prebuilt elsewhere).
 
-```bash
-docker buildx build --platform linux/arm64 -f examples/Dockerfile -t docling-rs .
-```
+See [`docs/DEPLOYMENT.md`](./docs/DEPLOYMENT.md) for full deployment documentation,
+Prometheus metrics, OpenTelemetry tracing, and production tuning.
 
 ## Performance
 
@@ -1406,7 +1442,7 @@ models) the same fixture measures 5.2× less memory, a 6.2× warm speedup and
 | `docling-pdf` | PDF/image ML pipeline (pdfium + ONNX layout/table/OCR) | `docling` PDF pipeline |
 | `docling-asr` | audio/ASR pipeline (symphonia + ONNX Whisper) | `docling` ASR pipeline |
 | `docling-cli` | command-line interface | `docling.cli` |
-| `docling-serve` | HTTP conversion API over a warm pipeline | `docling-serve` |
+| `docling-rs-serve` | HTTP conversion API over a warm pipeline | `docling-serve` |
 | `docling-node` | Node.js / Bun N-API bindings | https://www.npmjs.com/package/docling.rs |
 | `docling-py` | Python bindings | https://pypi.org/project/docling-rs |
 | `docling-wasm` | WebAssembly bindings (declarative converters + PDF text layer in the browser) | https://www.npmjs.com/package/docling.rs-wasm |

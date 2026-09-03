@@ -1,0 +1,318 @@
+# Build and publish the `docling-rs-serve` container image to GitHub Container
+# Registry (ghcr.io).
+#
+# The image packages the pure-Rust `docling-serve` HTTP conversion API along with
+# its native runtime dependencies (ffmpeg, pdfium, and the ONNX models for
+# layout detection, TableFormer table structure, and PP-OCRv3 recognition) into
+# a slim, Python-free container image.
+#
+# Multi-arch: builds natively on matrix runners — `ubuntu-latest` for linux/amd64
+# and `ubuntu-24.04-arm` for linux/arm64 — avoiding slow QEMU emulation. The
+# single-arch images are pushed by digest and assembled into multi-arch manifest
+# lists by the `merge` job.
+#
+# Published image names:
+#   - Primary: ghcr.io/docling-project/docling-rs-serve
+#   - Alias:   ghcr.io/docling-project/docling-rs
+#
+# Triggers:
+#   - Release published: tags with semantic versions (vX.Y.Z, X.Y, X, latest)
+#   - Push to master: tags with `master` and `latest`
+#   - Manual dispatch: tag override or dry-run testing
+#   - Pull request: fast dry-run build on amd64 + smoke test (no push)
+
+name: docker-publish
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - "crates/docling-serve/**"
+      - "crates/docling/**"
+      - "crates/docling-core/**"
+      - "crates/docling-pdf/**"
+      - "crates/docling-onnx/**"
+      - "crates/docling-asr/**"
+      - "scripts/install/download_dependencies.sh"
+      - ".github/workflows/docker-publish.yml"
+      - "Cargo.toml"
+      - "Cargo.lock"
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Explicit image tag to publish (e.g. v1.24.0 or latest). Blank = derive from ref/release."
+        required: false
+        default: ""
+      publish:
+        description: "Publish images to GHCR (false = build & test only, no push)."
+        required: false
+        type: boolean
+        default: true
+  pull_request:
+    branches: [master]
+    paths:
+      - "crates/docling-serve/**"
+      - "crates/docling/**"
+      - "crates/docling-core/**"
+      - "crates/docling-pdf/**"
+      - "crates/docling-onnx/**"
+      - "crates/docling-asr/**"
+      - "scripts/install/download_dependencies.sh"
+      - ".github/workflows/docker-publish.yml"
+      - "Cargo.toml"
+      - "Cargo.lock"
+
+# Least privilege at the workflow level: read checkout only.
+# Write permissions are granted explicitly at the job level.
+permissions:
+  contents: read
+
+concurrency:
+  group: docker-publish-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  REGISTRY: ghcr.io
+  PRIMARY_IMAGE: ${{ github.repository_owner }}/docling-rs-serve
+  ALIAS_IMAGE: ${{ github.repository_owner }}/docling-rs
+
+jobs:
+  build:
+    name: build ${{ matrix.platform }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linux/amd64
+            platform_slug: linux-amd64
+            runner: ubuntu-latest
+          - platform: linux/arm64
+            platform_slug: linux-arm64
+            runner: ubuntu-24.04-arm
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        # Only log in when pushing digests (push/release/dispatch)
+        if: github.event_name != 'pull_request' && (inputs.publish != false)
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata labels for Docker
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: |
+            ${{ env.REGISTRY }}/${{ env.PRIMARY_IMAGE }}
+            ${{ env.REGISTRY }}/${{ env.ALIAS_IMAGE }}
+          labels: |
+            org.opencontainers.image.title=docling-rs-serve
+            org.opencontainers.image.description=High-performance document conversion API in Rust (PDF, DOCX, PPTX, XLSX, HTML, Audio)
+            org.opencontainers.image.licenses=MIT
+            org.opencontainers.image.vendor=docling-project
+
+      # Build single-arch image locally and verify container readiness
+      - name: Build local image for smoke test
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: crates/docling-serve/Dockerfile
+          load: true
+          tags: docling-rs-serve:test
+          platforms: ${{ matrix.platform }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha,scope=docling-rs-serve-${{ matrix.platform_slug }}
+          cache-to: type=gha,mode=max,scope=docling-rs-serve-${{ matrix.platform_slug }}
+
+      - name: Run container smoke test
+        run: |
+          echo "Starting docling-rs-serve container on ${{ matrix.platform }}..."
+          docker run -d --name docling-rs-serve-test -p 5001:5001 docling-rs-serve:test
+
+          echo "Waiting for service readiness (/ready)..."
+          READY=false
+          for i in $(seq 1 60); do
+            if curl -sf http://localhost:5001/ready | grep -q '"status":"ready"'; then
+              echo "Readiness probe OK (models warm)"
+              READY=true
+              break
+            fi
+            echo "Waiting for container readiness ($i/60)..."
+            sleep 5
+          done
+
+          if [ "$READY" != "true" ]; then
+            echo "Smoke test readiness check failed! Container logs:"
+            docker logs docling-rs-serve-test
+            docker rm -f docling-rs-serve-test
+            exit 1
+          fi
+
+          echo "Verifying /v1/config endpoint..."
+          CONFIG=$(curl -sf http://localhost:5001/v1/config)
+          echo "Config: $CONFIG"
+
+          echo "Cleaning up smoke test container..."
+          docker rm -f docling-rs-serve-test
+
+      # Push single-arch image by digest to GHCR (skipped on PRs)
+      - name: Build and push by digest
+        id: build
+        if: github.event_name != 'pull_request' && (inputs.publish != false)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: crates/docling-serve/Dockerfile
+          platforms: ${{ matrix.platform }}
+          labels: ${{ steps.meta.outputs.labels }}
+          outputs: type=image,"name=${{ env.REGISTRY }}/${{ env.PRIMARY_IMAGE }},${{ env.REGISTRY }}/${{ env.ALIAS_IMAGE }}",push-by-digest=true,name-canonical=true,push=true
+          cache-from: type=gha,scope=docling-rs-serve-${{ matrix.platform_slug }}
+          cache-to: type=gha,mode=max,scope=docling-rs-serve-${{ matrix.platform_slug }}
+
+      - name: Export digest
+        if: github.event_name != 'pull_request' && (inputs.publish != false)
+        run: |
+          mkdir -p /tmp/digests
+          digest="${{ steps.build.outputs.digest }}"
+          touch "/tmp/digests/${digest#sha256:}"
+
+      - name: Upload digest
+        if: github.event_name != 'pull_request' && (inputs.publish != false)
+        uses: actions/upload-artifact@v7
+        with:
+          name: digests-${{ matrix.platform_slug }}
+          path: /tmp/digests/*
+          if-no-files-found: error
+          retention-days: 1
+
+  merge:
+    name: merge multi-arch manifests & publish
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    needs: build
+    if: github.event_name != 'pull_request' && (inputs.publish != false)
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
+    steps:
+      - name: Download digests
+        uses: actions/download-artifact@v8
+        with:
+          pattern: digests-*
+          path: /tmp/digests
+          merge-multiple: true
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Extract metadata (tags, labels) for Docker
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: |
+            ${{ env.REGISTRY }}/${{ env.PRIMARY_IMAGE }}
+            ${{ env.REGISTRY }}/${{ env.ALIAS_IMAGE }}
+          flavor: |
+            latest=auto
+          tags: |
+            type=ref,event=branch
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=semver,pattern={{major}}
+            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/master' || github.event_name == 'release' }}
+            type=raw,value=${{ inputs.tag }},enable=${{ inputs.tag != '' }}
+          labels: |
+            org.opencontainers.image.title=docling-rs-serve
+            org.opencontainers.image.description=High-performance document conversion API in Rust (PDF, DOCX, PPTX, XLSX, HTML, Audio)
+            org.opencontainers.image.licenses=MIT
+            org.opencontainers.image.vendor=docling-project
+
+      - name: Create manifest list and push for primary image
+        id: merge-primary
+        env:
+          ALL_TAGS: ${{ steps.meta.outputs.tags }}
+        run: |
+          first_tag=""
+          tags=()
+          while IFS= read -r tag; do
+            [ -z "$tag" ] && continue
+            if [[ "$tag" == "${REGISTRY}/${PRIMARY_IMAGE}:"* ]]; then
+              tags+=("-t" "$tag")
+              if [ -z "$first_tag" ]; then
+                first_tag="$tag"
+              fi
+            fi
+          done <<< "$ALL_TAGS"
+
+          sources=()
+          for digest in /tmp/digests/*; do
+            [ -f "$digest" ] || continue
+            sources+=("${REGISTRY}/${PRIMARY_IMAGE}@sha256:$(basename "$digest")")
+          done
+
+          docker buildx imagetools create "${tags[@]}" "${sources[@]}"
+          digest=$(docker buildx imagetools inspect "$first_tag" --raw | sha256sum | awk '{print $1}')
+          echo "digest=sha256:$digest" >> "$GITHUB_OUTPUT"
+
+      - name: Create manifest list and push for alias image
+        id: merge-alias
+        env:
+          ALL_TAGS: ${{ steps.meta.outputs.tags }}
+        run: |
+          first_tag=""
+          tags=()
+          while IFS= read -r tag; do
+            [ -z "$tag" ] && continue
+            if [[ "$tag" == "${REGISTRY}/${ALIAS_IMAGE}:"* ]]; then
+              tags+=("-t" "$tag")
+              if [ -z "$first_tag" ]; then
+                first_tag="$tag"
+              fi
+            fi
+          done <<< "$ALL_TAGS"
+
+          sources=()
+          for digest in /tmp/digests/*; do
+            [ -f "$digest" ] || continue
+            sources+=("${REGISTRY}/${ALIAS_IMAGE}@sha256:$(basename "$digest")")
+          done
+
+          docker buildx imagetools create "${tags[@]}" "${sources[@]}"
+          digest=$(docker buildx imagetools inspect "$first_tag" --raw | sha256sum | awk '{print $1}')
+          echo "digest=sha256:$digest" >> "$GITHUB_OUTPUT"
+      - name: Generate artifact attestation for docling-rs-serve
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-name: ${{ env.REGISTRY }}/${{ env.PRIMARY_IMAGE }}
+          subject-digest: ${{ steps.merge-primary.outputs.digest }}
+          push-to-registry: true
+
+      - name: Generate artifact attestation for docling-rs
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-name: ${{ env.REGISTRY }}/${{ env.ALIAS_IMAGE }}
+          subject-digest: ${{ steps.merge-alias.outputs.digest }}
+          push-to-registry: true
