@@ -1,1 +1,1 @@
-H W ep 9 ps 1s e. uu P1 po
+Docling bundles PDF document conversion to JSON and Markdown in an easy self contained package

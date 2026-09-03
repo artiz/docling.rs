@@ -2426,9 +2426,9 @@ pub fn assemble_page(
                             ));
                         }
                         let rendered = parts.join("  ");
-                        for rr in r..(r + cell.row_span).min(nrows) {
-                            for cc in c..(c + cell.col_span).min(ncols) {
-                                rows[rr][cc] = rendered.clone();
+                        for row in rows.iter_mut().skip(r).take(cell.row_span) {
+                            for slot in row.iter_mut().skip(c).take(cell.col_span) {
+                                *slot = rendered.clone();
                             }
                         }
                         blocks[r][c] = cell_nodes;

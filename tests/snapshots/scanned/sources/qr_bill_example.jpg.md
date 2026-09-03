@@ -19,9 +19,11 @@ Account/Payableto CH5800791123000889012 RobertSchneiderAG RueduLac1268 2501Bie
 
 Payableby PiaRutschmann Marktgasse28 9400Rorschach
 
-Currency Amount
+Currency
 
 CHF
+
+Amount
 
 3.949.75
 
@@ -33,9 +35,11 @@ Paymentpart
 
 <!-- image -->
 
-Currency Amount
+Currency
 
 CHE
+
+Amount
 
 3949.75
 
@@ -43,15 +47,13 @@ RobertSchneiderAG RueduLac1268 2501Bie
 
 Telefon
 
-059/9876540
-
 Mobil
 
-E-Mail
+059/9876540
 
 079/9876543
 
-robert@rschneider.ch
+E-Mail robert@rschneider.ch
 
 Internet:
 
