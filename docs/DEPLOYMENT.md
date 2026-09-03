@@ -12,9 +12,10 @@ The following container images are published on **GitHub Container Registry (GHC
 
 | Image | Description | Architectures |
 |---|---|---|
-| [`ghcr.io/docling-project/docling-rs-serve`](https://github.com/docling-project/docling.rs/pkgs/container/docling-rs-serve) | High-performance document conversion HTTP API with PDF, DOCX, PPTX, XLSX, HTML, images, and audio/video models pre-installed (zero Python runtime dependencies). | `linux/amd64`, `linux/arm64` |
-| [`ghcr.io/docling-project/docling-rs`](https://github.com/docling-project/docling.rs/pkgs/container/docling-rs) | The `docling-rs` CLI with the same models baked in: batch conversion of local files without installing Rust. Entrypoint `docling-rs`, working directory `/data`. | `linux/amd64`, `linux/arm64` |
-
+| [`ghcr.io/docling-project/docling-rs-serve`](https://github.com/docling-project/docling.rs/pkgs/container/docling-rs-serve) | High-performance document conversion HTTP API with PDF, DOCX, PPTX, XLSX, HTML, images, and audio/video models pre-installed (zero Python runtime dependencies, CPU). | `linux/amd64`, `linux/arm64` |
+| [`ghcr.io/docling-project/docling-rs`](https://github.com/docling-project/docling.rs/pkgs/container/docling-rs) | The `docling-rs` CLI with the same models baked in: batch conversion of local files without installing Rust (CPU). Entrypoint `docling-rs`, working directory `/data`. | `linux/amd64`, `linux/arm64` |
+| [`ghcr.io/docling-project/docling-rs-serve-cuda`](https://github.com/docling-project/docling.rs/pkgs/container/docling-rs-serve-cuda) | NVIDIA CUDA 12 GPU-accelerated HTTP conversion API (CUDA 12 + cuDNN 9, Linux x86_64). Explicit version tags (`v1.28.0`, `master`), no `:latest`. | `linux/amd64` |
+| [`ghcr.io/docling-project/docling-rs-cuda`](https://github.com/docling-project/docling.rs/pkgs/container/docling-rs-cuda) | NVIDIA CUDA 12 GPU-accelerated `docling-rs` CLI. Explicit version tags (`v1.28.0`, `master`), no `:latest`. | `linux/amd64` |
 > [!NOTE]
 > **Image Naming**: The `-rs` in `docling-rs-serve` / `docling-rs` differentiates this native Rust implementation from the Python `docling-project/docling-serve` image repository on GHCR. Both images are targets of the same [`Dockerfile`](../crates/docling-serve/Dockerfile) and share every layer but the final binary.
 
@@ -37,12 +38,15 @@ docker run --rm -v "$PWD:/data" ghcr.io/docling-project/docling-rs:latest --inpu
 
 #### Tagging Scheme
 
-- `latest`: Latest release or master build
-- `v1.24.0`, `1.24.0`: Exact release version
-- `1.24`, `1`: Floating major/minor tags
-- `master`: Bleeding-edge master branch build
-
-The default image has the full native ML pipeline baked in (ffmpeg, pdfium, and the ONNX models for RT-DETR layout detection, TableFormer table structure, PP-OCRv3 recognition, and chunk tokenization) with **zero Python dependencies at runtime**.
+- **CPU images (`docling-rs-serve`, `docling-rs`)**:
+  - `latest`: Latest release or master build
+  - `v1.28.0`, `1.28.0`: Exact release version
+  - `1.28`, `1`: Floating major/minor tags
+  - `master`: Bleeding-edge master branch build
+- **CUDA GPU images (`docling-rs-serve-cuda`, `docling-rs-cuda`)**:
+  - `v1.28.0`, `1.28.0`, `1.28`, `1`: Explicit release version tags
+  - `master`: Master branch build
+  - *(No floating `:latest` tag, following upstream docling-serve CUDA tagging policy)*
 
 ---
 
@@ -131,9 +135,16 @@ For production setups needing automatic TLS certificates, Basic Auth, or header 
 cd examples/docker-compose
 docker compose -f docker-compose.caddy.yml up -d
 ```
+### NVIDIA CUDA GPU Stack (`docker-compose.cuda.yml`)
+
+For hosts equipped with NVIDIA GPUs and the NVIDIA Container Toolkit:
+
+```bash
+cd examples/docker-compose
+docker compose -f docker-compose.cuda.yml up -d
+```
 
 ---
-
 ## Configuration & Environment Variables
 
 `docling-serve` is configured via CLI arguments and environment variables:
