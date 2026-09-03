@@ -105,8 +105,22 @@ fn convert_slide(
         let p = resolve(&dir, &r.target);
         if r.rel_type.ends_with("/chart") {
             if let Some(spec) = pkg.read(&p).as_deref().and_then(xlsx_drawings::parse_chart) {
-                if let Some(table) = xlsx_drawings::chart_table_from_caches(&spec) {
-                    charts.insert(r.id.clone(), (spec.kind.to_string(), spec.title, table));
+                // python-pptx has no plot class for the 3-D chart variants
+                // (`bar3DChart`, `line3DChart`, `pie3DChart`, …): upstream's
+                // `chart.chart_type` fails there, the classification falls
+                // back to `other_chart`, and since docling#3972 (2.120) the
+                // data extraction failure is caught and the chart carries no
+                // table. The Excel backend keeps its tagname map (3-D → the
+                // 2-D family), so the override lives here, not in the parser.
+                let three_d = spec.plot_tag.ends_with("3DChart");
+                let kind = if three_d { "other_chart" } else { spec.kind };
+                let table = if three_d {
+                    Some(docling_core::Table::default())
+                } else {
+                    xlsx_drawings::chart_table_from_caches(&spec)
+                };
+                if let Some(table) = table {
+                    charts.insert(r.id.clone(), (kind.to_string(), spec.title, table));
                 }
             }
             continue;
@@ -442,9 +456,12 @@ fn slide_size(presentation: &str) -> (i64, i64) {
 /// — takes the whole slide.
 fn shape_location(shape: XmlNode, (w, h): (i64, i64), phmap: &PhMap) -> [u16; 4] {
     let geom = xfrm_geom(shape).or_else(|| inherited_geom(shape, phmap));
+    // A shape at x = 0 EMU keeps its own box (docling#3990, 2.120): the old
+    // `if shape.left:` truthiness test treated a zero offset like a missing
+    // one and fell back to the whole slide.
     let (left, top, cw, ch) = match geom {
-        Some([x, y, cx, cy]) if x != 0 => (x, y, cx, cy),
-        _ => (0, 0, w, h),
+        Some([x, y, cx, cy]) => (x, y, cx, cy),
+        None => (0, 0, w, h),
     };
     let n = |v: i64, dim: i64| -> u16 {
         if dim == 0 {

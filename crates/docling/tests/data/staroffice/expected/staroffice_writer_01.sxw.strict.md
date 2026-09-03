@@ -26,5 +26,3 @@ Fassung:	zweite  Durchsicht
 | A-1997-042 | Ausgehende Post    |         7 |
 
 Anbei der eingescannte Stempel:
-
-<!-- image -->

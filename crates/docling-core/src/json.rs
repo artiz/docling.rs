@@ -565,7 +565,7 @@ impl Builder {
                     "end_row_offset_idx": c.start_row + c.row_span,
                     "start_col_offset_idx": c.start_col,
                     "end_col_offset_idx": c.start_col + c.col_span,
-                    "text": unescape_text(&c.text),
+                    "text": unescape_text(&crate::markdown::strip_hard_breaks(&c.text)),
                     "column_header": c.column_header,
                     "row_header": c.row_header,
                     "row_section": c.row_section,
@@ -617,7 +617,13 @@ impl Builder {
             for (r, row) in t.rows.iter().enumerate() {
                 let mut grid_row = Vec::with_capacity(num_cols);
                 for c in 0..num_cols {
-                    let text = row.get(c).map(|s| unescape_text(s)).unwrap_or_default();
+                    // A rich cell's flat text is its Markdown serialization; the
+                    // GFM hard-line-break marker (docling-core#721) is
+                    // Markdown-only, so JSON sees the raw line breaks.
+                    let text = row
+                        .get(c)
+                        .map(|s| unescape_text(&crate::markdown::strip_hard_breaks(s)))
+                        .unwrap_or_default();
                     let cell = json!({
                         "row_span": 1,
                         "col_span": 1,

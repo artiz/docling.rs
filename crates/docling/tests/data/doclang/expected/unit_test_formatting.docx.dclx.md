@@ -8,8 +8,8 @@ hyperlink
 
 italic and bold hyperlink
 
-Normal *italic* **bold** underline and
-hyperlink
+Normal *italic* **bold** underline and  
+hyperlink  
 on the same line
 
 - Italic bullet 1

@@ -22,6 +22,12 @@
       },
       {
         "$ref": "#/pictures/0"
+      },
+      {
+        "$ref": "#/texts/2"
+      },
+      {
+        "$ref": "#/pictures/1"
       }
     ],
     "content_layer": "body",
@@ -53,6 +59,18 @@
       "prov": [],
       "orig": "Wild Duck Observations by Year",
       "text": "Wild Duck Observations by Year"
+    },
+    {
+      "self_ref": "#/texts/2",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "title",
+      "prov": [],
+      "orig": "Quarterly revenue",
+      "text": "Quarterly revenue"
     }
   ],
   "pictures": [
@@ -70,6 +88,20 @@
           "$ref": "#/texts/1"
         }
       ],
+      "references": [],
+      "footnotes": [],
+      "annotations": []
+    },
+    {
+      "self_ref": "#/pictures/1",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "picture",
+      "prov": [],
+      "captions": [],
       "references": [],
       "footnotes": [],
       "annotations": []

@@ -6,8 +6,8 @@ use crate::backend::{
     is_deepseek_markdown, AbwBackend, AsciiDocBackend, CsvBackend, DeclarativeBackend,
     DeepSeekBackend, DocBackend, DoclingJsonBackend, DocxBackend, EbcdicBackend, EmailBackend,
     EpubBackend, InterchangeBackend, JatsBackend, LatexBackend, LotusBackend, MarkdownBackend,
-    MhtmlBackend, OdfBackend, PptBackend, PptxBackend, RtfBackend, StarOffice5Backend,
-    UsptoBackend, VisioBackend, WebVttBackend, XbrlBackend, XlsBackend, XlsxBackend,
+    MhtmlBackend, PptBackend, PptxBackend, RtfBackend, StarOffice5Backend, UsptoBackend,
+    VisioBackend, WebVttBackend, XbrlBackend, XlsBackend, XlsxBackend,
 };
 
 /// Whether `text` begins with an XML prolog — an `<?xml …?>` declaration or a
@@ -759,7 +759,7 @@ impl DocumentConverter {
                 }
             }
             InputFormat::Odt | InputFormat::Ods | InputFormat::Odp => {
-                OdfBackend.convert(&source)?
+                crate::backend::convert_odf(&source, self.fetch_images)?
             }
             // DocLang back in: bare XML (`.dclg`/`.dclg.xml`) or the OPC
             // archive `--to dclx` writes.

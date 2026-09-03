@@ -657,7 +657,9 @@ fn render_table(t: &Table) -> String {
 }
 
 fn cell_text(s: &str) -> String {
-    inline_cell(s).replace('\n', " ")
+    // A rich cell's flat text is its Markdown serialization; drop the GFM
+    // hard-line-break marker (docling-core#721) before flattening.
+    inline_cell(&crate::markdown::strip_hard_breaks(s)).replace('\n', " ")
 }
 
 // ---------------------------------------------------------------------------

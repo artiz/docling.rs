@@ -2,7 +2,7 @@
 
 Blockdiagramm
 
-Sekundärer
+Sekundärer  
 Speicher
 
 Eingabegerät
@@ -13,7 +13,7 @@ Ausgabegerät
 
 Steuereinheit
 
-Arithmetik- und
+Arithmetik- und  
 Logikeinheit
 
 | From            | To                           |

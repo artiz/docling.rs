@@ -49,9 +49,6 @@
       },
       {
         "$ref": "#/texts/13"
-      },
-      {
-        "$ref": "#/pictures/0"
       }
     ],
     "content_layer": "body",
@@ -285,22 +282,7 @@
       "text": "Anbei der eingescannte Stempel:"
     }
   ],
-  "pictures": [
-    {
-      "self_ref": "#/pictures/0",
-      "parent": {
-        "$ref": "#/body"
-      },
-      "children": [],
-      "content_layer": "body",
-      "label": "picture",
-      "prov": [],
-      "captions": [],
-      "references": [],
-      "footnotes": [],
-      "annotations": []
-    }
-  ],
+  "pictures": [],
   "tables": [
     {
       "self_ref": "#/tables/0",

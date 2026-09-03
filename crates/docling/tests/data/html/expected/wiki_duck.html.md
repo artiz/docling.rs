@@ -393,7 +393,7 @@ The 1992 Disney film [*The Mighty Ducks*](/wiki/The_Mighty_Ducks_(film)) , starr
 
 ## See also
 
-- [Birds portal](/wiki/Portal:Birds)
+- [Birds portal](/wiki/Portal:Birds)  
 <!-- image -->
 
 - [Domestic duck](/wiki/Domestic_duck)
@@ -490,17 +490,17 @@ The 1992 Disney film [*The Mighty Ducks*](/wiki/The_Mighty_Ducks_(film)) , starr
 
 **Duck** at Wikipedia's [sister projects](/wiki/Wikipedia:Wikimedia_sister_projects)
 
-- [Definitions](https://en.wiktionary.org/wiki/duck) from Wiktionary
+- [Definitions](https://en.wiktionary.org/wiki/duck) from Wiktionary  
 <!-- image -->
-- [Media](https://commons.wikimedia.org/wiki/Anatidae) from Commons
+- [Media](https://commons.wikimedia.org/wiki/Anatidae) from Commons  
 <!-- image -->
-- [Quotations](https://en.wikiquote.org/wiki/Birds) from Wikiquote
+- [Quotations](https://en.wikiquote.org/wiki/Birds) from Wikiquote  
 <!-- image -->
-- [Recipes](https://en.wikibooks.org/wiki/Cookbook:Duck) from Wikibooks
+- [Recipes](https://en.wikibooks.org/wiki/Cookbook:Duck) from Wikibooks  
 <!-- image -->
-- [Taxa](https://species.wikimedia.org/wiki/Anatidae) from Wikispecies
+- [Taxa](https://species.wikimedia.org/wiki/Anatidae) from Wikispecies  
 <!-- image -->
-- [Data](https://www.wikidata.org/wiki/Q3736439) from Wikidata
+- [Data](https://www.wikidata.org/wiki/Q3736439) from Wikidata  
 <!-- image -->
 
 - [list of books](https://web.archive.org/web/20060613210555/http://seaducks.org/subjects/MIGRATION%20AND%20FLIGHT.htm) (useful looking abstracts)
