@@ -16,6 +16,11 @@ cuda = ["docling-onnx/cuda"]
 tensorrt = ["docling-onnx/tensorrt"]
 directml = ["docling-onnx/directml"]
 coreml = ["docling-onnx/coreml"]
+# CPU-class XNNPACK (#324). Opt-in and out of every CI matrix by design: pyke
+# ships no prebuilt ONNX Runtime carrying this EP, so it links only against a
+# self-built runtime (`ORT_LIB_LOCATION`, onnxruntime built with
+# `--use_xnnpack`).
+xnnpack = ["docling-onnx/xnnpack"]
 
 [dependencies]
 docling-core = { path = "../docling-core", version = "1.33.1" }

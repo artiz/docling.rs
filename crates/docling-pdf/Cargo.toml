@@ -48,6 +48,9 @@ cuda = ["ml", "docling-onnx/cuda"]
 tensorrt = ["ml", "docling-onnx/tensorrt"]
 directml = ["ml", "docling-onnx/directml"]
 coreml = ["ml", "docling-onnx/coreml"]
+# CPU-class XNNPACK (#324) — see docling-onnx's note: self-built ONNX Runtime
+# only, never in a download-binaries CI matrix.
+xnnpack = ["ml", "docling-onnx/xnnpack"]
 
 [dependencies]
 # ~1.0: keeps libheif-sys on the 2.x line, which links libheif 1.16–1.17 —

@@ -54,6 +54,7 @@ cuda = ["pdf", "docling-pdf/cuda", "docling-asr?/cuda"]
 tensorrt = ["pdf", "docling-pdf/tensorrt", "docling-asr?/tensorrt"]
 directml = ["pdf", "docling-pdf/directml", "docling-asr?/directml"]
 coreml = ["pdf", "docling-pdf/coreml", "docling-asr?/coreml"]
+xnnpack = ["pdf", "docling-pdf/xnnpack", "docling-asr?/xnnpack"]
 
 [dependencies]
 calamine = { version = "0.26", features = ["dates"] }

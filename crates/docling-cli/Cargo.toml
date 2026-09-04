@@ -43,6 +43,10 @@ cuda = ["docling/cuda"]
 tensorrt = ["docling/tensorrt"]
 directml = ["docling/directml"]
 coreml = ["docling/coreml"]
+# CPU-class accelerator for machines without a usable GPU provider (#324).
+# Requires linking a self-built ONNX Runtime (`ORT_LIB_LOCATION`, built with
+# `--use_xnnpack`) — pyke ships no prebuilt runtime with this EP.
+xnnpack = ["docling/xnnpack"]
 
 [dependencies]
 docling = { path = "../docling", version = "1.33.1" }

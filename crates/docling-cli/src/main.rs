@@ -151,6 +151,9 @@ fn version_line() -> String {
     if cfg!(feature = "coreml") {
         features.push("coreml");
     }
+    if cfg!(feature = "xnnpack") {
+        features.push("xnnpack");
+    }
     let version = env!("CARGO_PKG_VERSION");
     if features.is_empty() {
         format!("docling-rs {version}")
