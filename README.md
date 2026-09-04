@@ -1082,10 +1082,18 @@ ONNX Runtime's own default, `NeuralNetwork`, cannot place operators the
 layout model carries (`GridSample`, `ScatterND`, dynamic output shapes) and
 aborts inference on Apple silicon instead of falling back.
 `DOCLING_RS_COREML_FORMAT=neuralnetwork` restores the old format on
-pre-macOS-12 systems, and `DOCLING_RS_COREML_UNITS`
-(`all`|`cpu_and_gpu`|`cpu_and_ne`|`cpu_only`) narrows which compute units
-CoreML may use, and `DOCLING_RS_COREML_STATIC_SHAPES=1` limits CoreML to
-static-shaped partitions for models that still misbehave. The `xnnpack` feature adds the XNNPACK provider
+pre-macOS-12 systems. Two safety defaults come from the issue's follow-up
+testing on an M4 Max: CoreML takes only **static-shaped partitions** by
+default (`DOCLING_RS_COREML_STATIC_SHAPES=0` opts back into dynamic
+placement) — with the stock dynamic-batch layout model, dynamic partitions
+under MLProgram fail an MPSGraph assertion as an uncatchable SIGABRT — and
+compute units default to **`cpu_and_gpu`** (`DOCLING_RS_COREML_UNITS`:
+`all`|`cpu_and_gpu`|`cpu_and_ne`|`cpu_only`): `all` may schedule the fp16
+Neural Engine, which silently corrupts this model's logits (measured
+max|Δlogits| = 6.5 with no error raised) and ran slower than the GPU path.
+Known residual: the deformable-attention `GridSample` can still return wrong
+boxes on CoreML even with static shapes — the durable fix is on the model
+export side (#339). The `xnnpack` feature adds the XNNPACK provider
 (`DOCLING_RS_EP=xnnpack`, thread pool sized by `DOCLING_RS_XNNPACK_THREADS`)
 — a CPU-class accelerator for machines without a usable GPU provider; note
 that pyke ships no prebuilt ONNX Runtime with the XNNPACK EP, so this

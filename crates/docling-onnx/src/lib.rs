@@ -33,8 +33,13 @@
 //! layout model carries (`GridSample`, `ScatterND`, dynamic output shapes)
 //! and aborts inference on Apple silicon instead of falling back.
 //! `DOCLING_RS_COREML_FORMAT=neuralnetwork` restores the old format for
-//! pre-macOS-12 systems, and `DOCLING_RS_COREML_UNITS`
-//! (`all`|`cpu_and_gpu`|`cpu_and_ne`|`cpu_only`) narrows the compute units.
+//! pre-macOS-12 systems. Two safety defaults ride along (issue-#324
+//! testing, M4 Max): only *static-shaped* partitions are handed to CoreML
+//! (`DOCLING_RS_COREML_STATIC_SHAPES=0` opts out) — dynamic partitions under
+//! MLProgram fail an MPSGraph assertion as an uncatchable SIGABRT — and
+//! compute units default to `cpu_and_gpu` rather than `all`
+//! (`DOCLING_RS_COREML_UNITS`: `all`|`cpu_and_gpu`|`cpu_and_ne`|`cpu_only`),
+//! since the fp16 Neural Engine silently corrupts this model's logits.
 //! `DOCLING_RS_XNNPACK_THREADS` sizes XNNPACK's own thread pool.
 //!
 //! The int8 model defaults in docling-pdf are skipped whenever a GPU provider
@@ -195,34 +200,47 @@ fn coreml_ep() -> ort::ep::CoreML {
         }
     };
     let mut ep = ort::ep::CoreML::default().with_model_format(format);
-    // Only static-shaped partitions go to CoreML when set — the layout
-    // model's dynamic outputs are what trips the NeuralNetwork path, and
-    // this is the reporter-requested escape hatch for models that still
-    // misbehave under MLProgram.
-    if docling_core::env::flag("DOCLING_RS_COREML_STATIC_SHAPES") {
+    // Static-shaped partitions only, ON by default (#324 follow-up): with the
+    // stock dynamic-batch layout model, MLProgram otherwise fails an MPSGraph
+    // assertion *inside* CoreML — a SIGABRT the process cannot catch, worse
+    // than the NeuralNetwork error it replaced (M4 Max, macOS 26 report).
+    // Keeping dynamic partitions off CoreML avoids it at the root;
+    // `DOCLING_RS_COREML_STATIC_SHAPES=0` opts back into dynamic placement
+    // for models known to be safe under it.
+    let static_shapes =
+        docling_core::env::nonempty("DOCLING_RS_COREML_STATIC_SHAPES").is_none_or(|v| {
+            !matches!(
+                v.to_ascii_lowercase().as_str(),
+                "0" | "false" | "no" | "off"
+            )
+        });
+    if static_shapes {
         ep = ep.with_static_input_shapes(true);
     }
-    if let Some(raw) = docling_core::env::nonempty("DOCLING_RS_COREML_UNITS") {
-        match raw.to_ascii_lowercase().as_str() {
-            "all" => ep = ep.with_compute_units(ComputeUnits::All),
-            "cpu_and_gpu" | "cpu_gpu" | "gpu" => {
-                ep = ep.with_compute_units(ComputeUnits::CPUAndGPU)
-            }
-            "cpu_and_ne" | "cpu_ane" | "ane" => {
-                ep = ep.with_compute_units(ComputeUnits::CPUAndNeuralEngine)
-            }
-            "cpu_only" | "cpu" => ep = ep.with_compute_units(ComputeUnits::CPUOnly),
-            other => {
-                let other = other.to_string();
-                WARNED.get_or_init(|| {
-                    eprintln!(
-                        "docling-rs: DOCLING_RS_COREML_UNITS={other:?} is not                          all|cpu_and_gpu|cpu_and_ne|cpu_only; leaving the default"
-                    );
-                });
-            }
+    // Compute units default to CPU+GPU, not ONNX Runtime's `ALL` (#324
+    // follow-up): `ALL` may place partitions on the fp16 Neural Engine, which
+    // silently corrupts this model's output (max|Δlogits| = 6.5 vs CPU, no
+    // error raised) and measured slower than the GPU path. `all`/`cpu_and_ne`
+    // remain available for models validated on the ANE.
+    let units = match docling_core::env::nonempty("DOCLING_RS_COREML_UNITS")
+        .map(|v| v.to_ascii_lowercase())
+        .as_deref()
+    {
+        None | Some("cpu_and_gpu" | "cpu_gpu" | "gpu") => ComputeUnits::CPUAndGPU,
+        Some("all") => ComputeUnits::All,
+        Some("cpu_and_ne" | "cpu_ane" | "ane") => ComputeUnits::CPUAndNeuralEngine,
+        Some("cpu_only" | "cpu") => ComputeUnits::CPUOnly,
+        Some(other) => {
+            let other = other.to_string();
+            WARNED.get_or_init(|| {
+                eprintln!(
+                    "docling-rs: DOCLING_RS_COREML_UNITS={other:?} is not                      all|cpu_and_gpu|cpu_and_ne|cpu_only; using cpu_and_gpu"
+                );
+            });
+            ComputeUnits::CPUAndGPU
         }
-    }
-    ep
+    };
+    ep.with_compute_units(units)
 }
 
 /// The XNNPACK provider (#324). It runs its own thread pool;
