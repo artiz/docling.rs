@@ -1238,7 +1238,17 @@ Neural Engine, which silently corrupts this model's logits (measured
 max|Δlogits| = 6.5 with no error raised) and ran slower than the GPU path.
 Known residual: the deformable-attention `GridSample` can still return wrong
 boxes on CoreML even with static shapes — the durable fix is on the model
-export side (#339). The `xnnpack` feature adds the XNNPACK provider
+export side (#339).
+
+**When CoreML pays off** (measured on an M4 Max, #324 follow-up): session
+creation costs **~2 s per worker and does not parallelize**, so the fixed
+setup only amortizes over long-lived processes (`docling-serve`) and large
+batches — a one-shot CLI conversion is typically a net **loss** vs. the CPU
+provider (~2× on a 130-page document) despite byte-identical output, with the
+crossover around a few hundred pages per process. A `coreml`/`auto` build
+prints this once at registration so the trade-off is visible when it is
+incurred; `DOCLING_RS_EP=cpu` opts a short run out without rebuilding.
+The `xnnpack` feature adds the XNNPACK provider
 (`DOCLING_RS_EP=xnnpack`, thread pool sized by `DOCLING_RS_XNNPACK_THREADS`)
 — a CPU-class accelerator for machines without a usable GPU provider; note
 that pyke ships no prebuilt ONNX Runtime with the XNNPACK EP, so this
