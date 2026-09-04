@@ -35,9 +35,10 @@ chunking = ["docling/chunking"]
 # binary is always available from its own crate).
 serve = ["dep:docling-serve", "dep:tokio"]
 # GPU execution providers for the PDF/image ML pipeline (#74) — pass-through
-# to docling → docling-pdf. Build e.g. `--features cuda`, then select the
-# provider at runtime: `DOCLING_RS_EP=cuda docling-rs input.pdf` (default
-# remains cpu even in a GPU build).
+# to docling → docling-pdf. Build e.g. `--features cuda`; such a build defaults
+# to `DOCLING_RS_EP=auto` (use the GPU when one is usable, fall back to CPU),
+# and the env var pins a specific provider — `DOCLING_RS_EP=cpu` opts back out.
+# `docling-rs --version` reports which of these the binary carries.
 cuda = ["docling/cuda"]
 tensorrt = ["docling/tensorrt"]
 directml = ["docling/directml"]
