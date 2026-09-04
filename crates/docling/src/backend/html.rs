@@ -8,8 +8,8 @@
 //! tables, code blocks, figures/images), inline formatting (bold, italic,
 //! inline code, links), key-value form regions (docling's `field_region`,
 //! detected from the `keyN` / `keyN_valueM` / `keyN_marker` `id`-convention),
-//! and inline visibility suppression (`hidden` / inline `display:none` /
-//! `visibility:hidden`). Out of scope for now and tracked in `docs/MIGRATION.md`:
+//! and invisible-element suppression (`hidden` / `aria-hidden` / inline
+//! `display:none` / `visibility:hidden`). Out of scope for now and tracked in `docs/MIGRATION.md`:
 //! browser rendering, rendered bounding boxes, stylesheet-driven (class/CSS
 //! cascade) visibility suppression, and the rich per-cell table provenance the
 //! Python backend computes.
@@ -139,17 +139,27 @@ fn mark_leading_furniture(nodes: &mut [Node]) {
     }
 }
 
-/// An element the page explicitly hides from rendering — the `hidden` attribute
-/// or an inline `display:none` / `visibility:hidden` style. A rendering engine
-/// (and docling's rendered output) drops these, so we suppress them too.
+/// An element the page explicitly hides from rendering — the `hidden` attribute,
+/// `aria-hidden`, or an inline `display:none` / `visibility:hidden` style. A
+/// rendering engine (and docling's rendered output) drops these, so we suppress
+/// them too.
 ///
-/// `aria-hidden="true"` is deliberately *not* treated as hidden: it removes an
-/// element from the accessibility tree but leaves it visually rendered, so a
-/// visual renderer keeps its text. Only inline styles are honored — a full CSS
-/// cascade (class/stylesheet-driven visibility, e.g. Wikipedia's collapsed
-/// menus) still needs a real browser and is out of scope.
+/// `aria-hidden` is docling's `_is_invisible_tag` rule, not a strictly visual
+/// one: the attribute only removes an element from the accessibility tree, but
+/// in practice it marks decorative duplicates (Wikipedia's `<img
+/// class="mw-logo-icon" aria-hidden="true">` beside the captioned wordmark), and
+/// docling drops them. `true`/`1`/`yes` count, as upstream. Only inline styles
+/// are honored beyond that — a full CSS cascade (class/stylesheet-driven
+/// visibility, e.g. Wikipedia's collapsed menus) still needs a real browser and
+/// is out of scope, as is docling's `_has_rendered_presence` zero-size check.
 fn is_hidden(e: &scraper::node::Element) -> bool {
     if e.attr("hidden").is_some() {
+        return true;
+    }
+    if e.attr("aria-hidden").is_some_and(|v| {
+        let v = v.trim();
+        v.eq_ignore_ascii_case("true") || v == "1" || v.eq_ignore_ascii_case("yes")
+    }) {
         return true;
     }
     e.attr("style").is_some_and(|style| {
@@ -319,11 +329,18 @@ fn walk_block(
                         // swallows every following block under HTML5 parsing):
                         // the wrapper is walked block-wise, so nested tables and
                         // lists come out as their own items instead of
-                        // flattening into inline text. (The anchor's own href —
-                        // if any — is not threaded through, matching the
-                        // image-wrapper branch.)
+                        // flattening into inline text. The anchor's href still
+                        // reaches the pictures it wraps (Wikipedia's logo link
+                        // holds a wordmark and a tagline image), exactly as in
+                        // the single-image branch above.
                         flush_inline(&mut inline, nodes);
+                        let start = nodes.len();
                         walk_block(cref, nodes, list_level, base, images);
+                        if let Some(href) =
+                            e.attr("href").filter(|h| !h.is_empty()).map(normalize_url)
+                        {
+                            annotate_picture_captions(&mut nodes[start..], &href);
+                        }
                     } else {
                         collect_element(cref, base, None, &mut inline);
                     }
@@ -1624,6 +1641,25 @@ fn image_wrapper(elem: ElementRef) -> Option<(Option<String>, Option<String>)> {
     Some((caption, src))
 }
 
+/// Hang an enclosing anchor's href on every captioned picture it wraps —
+/// docling's caption hyperlink annotation. A picture without a caption has
+/// nowhere to hang it, and one that already carries its own (a nested
+/// `<figcaption>` link) keeps it.
+fn annotate_picture_captions(nodes: &mut [Node], href: &str) {
+    for node in nodes {
+        if let Node::Picture {
+            caption: Some(_),
+            caption_href,
+            ..
+        } = node
+        {
+            if caption_href.is_none() {
+                *caption_href = Some(href.to_string());
+            }
+        }
+    }
+}
+
 /// The first `<a href>` inside a figure's `<figcaption>` — docling's caption
 /// hyperlink annotation (the caption text keeps the anchor text inline, the
 /// href rides on the caption item).
@@ -1995,7 +2031,46 @@ mod tests {
     }
 
     #[test]
-    fn hidden_inline_styles_are_suppressed_but_aria_hidden_is_kept() {
+    fn anchor_wrapping_several_images_hangs_its_href_on_each_caption() {
+        // Wikipedia's logo link holds a decorative icon plus a captioned
+        // wordmark and tagline; docling drops the aria-hidden icon and hangs
+        // the anchor's href on the remaining captions.
+        let doc = convert(
+            "<a href=\"/wiki/Main_Page\">\
+               <img src=\"icon.png\" alt=\"\" aria-hidden=\"true\">\
+               <img src=\"wordmark.svg\" alt=\"Wikipedia\">\
+               <img src=\"tagline.svg\" alt=\"The Free Encyclopedia\">\
+             </a>",
+        );
+        let captions: Vec<(Option<String>, Option<String>)> = doc
+            .nodes
+            .iter()
+            .filter_map(|n| match n {
+                Node::Picture {
+                    caption,
+                    caption_href,
+                    ..
+                } => Some((caption.clone(), caption_href.clone())),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(
+            captions,
+            vec![
+                (
+                    Some("Wikipedia".to_string()),
+                    Some("/wiki/Main_Page".to_string())
+                ),
+                (
+                    Some("The Free Encyclopedia".to_string()),
+                    Some("/wiki/Main_Page".to_string())
+                ),
+            ]
+        );
+    }
+
+    #[test]
+    fn hidden_elements_are_suppressed() {
         // display:none / visibility:hidden / the `hidden` attribute are not
         // rendered, so their text is dropped.
         let hidden = convert(
@@ -2005,9 +2080,15 @@ mod tests {
              <p hidden>gone3</p>",
         );
         assert_eq!(hidden.export_to_markdown(), "keep\n");
-        // aria-hidden leaves the element visually rendered, so its text stays.
-        let aria = convert("<p aria-hidden=\"true\">still shown</p>");
-        assert_eq!(aria.export_to_markdown(), "still shown\n");
+        // docling's `_is_invisible_tag` also drops aria-hidden subtrees — the
+        // decorative-duplicate case (Wikipedia's logo icon beside its wordmark).
+        let aria = convert(
+            "<p aria-hidden=\"true\">gone</p>\
+             <p aria-hidden=\"1\">gone2</p>\
+             <p aria-hidden=\"yes\">gone3</p>\
+             <p aria-hidden=\"false\">keep</p>",
+        );
+        assert_eq!(aria.export_to_markdown(), "keep\n");
     }
 
     #[test]

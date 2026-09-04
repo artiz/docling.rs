@@ -114,7 +114,7 @@ PyPI; run via `scripts/conformance/conformance.sh <fmt>`), not the committed gro
 |---|---|---|
 | Markdown | `markdown.rs` (pulldown-cmark) | **10/10 exact**; #319 (docling 2.122's docling#3817): tables written without edge pipes (`Region \| Q1` over `--- \| ---`) are normalized up front so pulldown parses them like the canonical spelling; a leading UTF-8 BOM no longer hides the first heading (docling#4109) |
 | CSV | `csv.rs` (`csv` crate) | **9/9 exact**; `.tsv` routes here too (#208 — the delimiter sniffing already covers tabs; a docling.rs extension, upstream accepts only `.csv`); #319: a quoted field spanning lines no longer defeats delimiter sniffing (4 KiB fallback sample, docling#3985) and an Excel-style leading BOM stays out of the first header cell (docling#4098) |
-| HTML | `html.rs` (scraper/html5ever) | **32/32 exact** (`wiki_duck` included — rich table cells, caption run spacing, indicator images, `<footer>` furniture all match docling 2.112); #284: an *unclosed* inline tag (`<a name=…>`, `<b>`, `<font>` — endemic in legacy authoring-tool HTML) legally swallows subsequent blocks under html5ever's spec parsing, where Python's parser recovers by reparenting — inline wrappers hiding structured blocks (tables, lists, headings, code, figures) are now block-walked so the structure surfaces; pure text containers under a well-formed `<a href>` keep rendering as links |
+| HTML | `html.rs` (scraper/html5ever) | **32/32 exact** (`wiki_duck` included — rich table cells, caption run spacing, indicator images, `<footer>` furniture all match docling 2.112); #284: an *unclosed* inline tag (`<a name=…>`, `<b>`, `<font>` — endemic in legacy authoring-tool HTML) legally swallows subsequent blocks under html5ever's spec parsing, where Python's parser recovers by reparenting — inline wrappers hiding structured blocks (tables, lists, headings, code, figures) are now block-walked so the structure surfaces; pure text containers under a well-formed `<a href>` keep rendering as links; `aria-hidden` subtrees are dropped like docling's `_is_invisible_tag` does (Wikipedia's decorative logo icon and its sticky-header duplicates), and an anchor wrapping several images hangs its href on each captioned picture |
 | AsciiDoc | `asciidoc.rs` (regex) | **4/4 exact** |
 | DeepSeek-OCR Markdown | `deepseek.rs` | **3/3 exact** (auto-detected VLM-token variant); Unlimited-OCR grounding output (#322 / docling#3944) normalizes into this shape and shares the parser |
 | Chandra layout HTML | `chandra.rs` (#322) | docling 2.123–2.125's `parse_chandra_html` semantics on our node model: `data-bbox`/`data-label` divs → headings, text, span-aware tables (Form-held tables included, docling#4135), lists, figures, formulas, code, page furniture; `<br>` is spacing (docling#4092); 0–1000 boxes → DocLang 0–511 `Located` provenance |
@@ -276,7 +276,13 @@ work (checkbox inputs, fragmented-anchor folding, `<button>` blocks) plus the
   the 136-fixture non-PDF corpus** (issue #32's ≥90% target) — every OOXML fixture
   (docx/pptx/xlsx) plus csv/asciidoc/email byte-exact, uspto/jats in the
   mid-to-high 90s, html (#328 rich cells + caption hyperlinks) 97%, md/odf/latex low 90s, webvtt in the 80s (full table
-  in §2). The format-by-format work was
+  in §2). `wiki_duck` — the one HTML fixture still short of exact — is at 88%:
+  furniture layer tokens, `<rtl>` direction markers, parenthesized link
+  destinations and `aria-hidden` chrome are now upstream's; what remains is
+  docling's `_list_item_has_segment_siblings` wrap rule (a list item takes a
+  `<text>` wrapper only when it *owns* a nested list or picture — even an empty
+  `<ul>` counts — where we wrap whenever any deeper item follows in the same
+  list), plus `<sup>` reference markers and the footer's inline groups. The format-by-format work was
   tracked as [issue #32](https://github.com/docling-project/docling.rs/issues/32) and its
   children (#38–#41, #44) — all closed, targets met. This is an **output** format;
   a DocLang *input* backend is still out of scope (§5). For **PDF**, where the

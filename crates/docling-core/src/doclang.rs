@@ -206,7 +206,7 @@ fn inline_runs(text: &str) -> Vec<Run> {
         }
         if chars[i] == '[' {
             if let Some(close) = find(i + 1, &[']', '(']) {
-                if let Some(endp) = find(close + 2, &[')']) {
+                if let Some(endp) = link_dest_end(&chars, close + 2) {
                     let anchor: String = chars[i + 1..close].iter().collect();
                     let uri: String = chars[close + 2..endp].iter().collect();
                     take(&mut runs, &mut plain, Run::Link { anchor, uri });
@@ -354,7 +354,7 @@ fn parse_md_runs(chars: &[char], style: InlineRun, out: &mut Vec<InlineRun>) {
         }
         if chars[i] == '[' {
             if let Some(close) = find(i + 1, &[']', '(']) {
-                if let Some(endp) = find(close + 2, &[')']) {
+                if let Some(endp) = link_dest_end(chars, close + 2) {
                     flush_md_plain(&mut plain, &style, out);
                     // Inline scope drops the href; the anchor keeps its styling.
                     parse_md_runs(&sub(i + 1, close), style.clone(), out);
@@ -367,6 +367,24 @@ fn parse_md_runs(chars: &[char], style: InlineRun, out: &mut Vec<InlineRun>) {
         i += 1;
     }
     flush_md_plain(&mut plain, &style, out);
+}
+
+/// The index of the `)` closing a `[anchor](destination)` link whose scan
+/// starts at `start` (the first destination char), or `None` when it is never
+/// closed. Parentheses inside the destination nest, per CommonMark: Wikipedia's
+/// interwiki links (`/wiki/Houad_(evn)`) are exactly this case, and stopping at
+/// the first `)` used to cut the URI in half and leak the tail into the text.
+fn link_dest_end(chars: &[char], start: usize) -> Option<usize> {
+    let mut depth = 0usize;
+    for (offset, c) in chars.get(start..)?.iter().enumerate() {
+        match c {
+            '(' => depth += 1,
+            ')' if depth == 0 => return Some(start + offset),
+            ')' => depth -= 1,
+            _ => {}
+        }
+    }
+    None
 }
 
 /// Attribute-value escaping for generated URIs/labels.
@@ -421,11 +439,15 @@ fn emit_text_element(
         }
     }
     if only_plain {
-        let body = escape_text(text);
-        // A `<content>` wrapper is an *element* child, so minidom renders the
-        // wrapper in block form; bare text / CDATA is a single text child and
-        // stays inline.
-        if body.starts_with("<content>") {
+        let mut body = escape_text(text);
+        // A right-to-left text carries docling-core's `<rtl>` marker.
+        if is_rtl(text) {
+            body = format!("<rtl>{body}</rtl>");
+        }
+        // A `<content>`/`<rtl>` wrapper is an *element* child, so minidom
+        // renders the wrapper in block form; bare text / CDATA is a single text
+        // child and stays inline.
+        if body.starts_with("<content>") || body.starts_with("<rtl>") {
             out.push(depth, format!("<{tag_open}>"));
             out.push(depth + 1, body);
             out.push(depth, format!("</{tag}>"));
@@ -473,9 +495,59 @@ fn emit_text_node(out: &mut Out, depth: i32, text: &str) {
     let e = escape_text(text);
     if e.starts_with("<![CDATA[") {
         out.push_glue(e);
+    } else if is_rtl(text) {
+        // docling's DocLang post-processing wraps a right-to-left text in
+        // `<rtl>` (docling-core's `serialize_rtl`), so a reader knows the run's
+        // direction without re-running the bidi algorithm.
+        out.push(depth, format!("<rtl>{e}</rtl>"));
     } else {
         out.push(depth, e);
     }
+}
+
+/// docling-core's `get_text_direction` == "rtl": the first character is a
+/// strong right-to-left one, or more than half of the characters are.
+///
+/// `is_strong_rtl` approximates Unicode's `R`/`AL` bidi classes by block rather
+/// than by a full character-database table — docling-core reaches them through
+/// Python's `unicodedata`, which has no equivalent in core (and pulling a
+/// Unicode-table crate into a wasm-compiled, MSRV-1.85 crate for one predicate
+/// is not worth it). Every assigned RTL script block is covered; the
+/// approximation only shows up on unassigned code points inside them.
+fn is_rtl(text: &str) -> bool {
+    let mut chars = text.chars();
+    let Some(first) = chars.next() else {
+        return false;
+    };
+    if is_strong_rtl(first) {
+        return true;
+    }
+    let total = 1 + chars.count();
+    let rtl = text.chars().filter(|c| is_strong_rtl(*c)).count();
+    rtl * 2 > total
+}
+
+/// True for the `R` and `AL` bidi classes (see [`is_rtl`]).
+fn is_strong_rtl(c: char) -> bool {
+    let c = c as u32;
+    // Arabic digits and the Arabic number signs are `AN`/`EN`, not `AL`, and
+    // sit inside the Arabic block — carve them out before the range test.
+    if matches!(c, 0x0600..=0x0605 | 0x0660..=0x0669 | 0x066B..=0x066C | 0x06DD | 0x06F0..=0x06F9) {
+        return false;
+    }
+    matches!(c,
+        0x0590..=0x05FF        // Hebrew (R)
+        | 0x0600..=0x07BF      // Arabic, Syriac, Arabic Supplement, Thaana (AL)
+        | 0x07C0..=0x085F      // NKo, Samaritan, Mandaic (R)
+        | 0x0860..=0x08FF      // Syriac Supplement, Arabic Extended-A/B (AL)
+        | 0x200F               // RIGHT-TO-LEFT MARK
+        | 0xFB1D..=0xFB4F      // Hebrew presentation forms (R)
+        | 0xFB50..=0xFDFF      // Arabic presentation forms-A (AL)
+        | 0xFE70..=0xFEFF      // Arabic presentation forms-B (AL)
+        | 0x10800..=0x10FFF    // historic RTL scripts (R)
+        | 0x1E800..=0x1EC6F    // Mende Kikakui, Adlam (R)
+        | 0x1EE00..=0x1EEFF    // Arabic mathematical alphabetic symbols (AL)
+    )
 }
 
 /// Map a docling `CodeLanguageLabel` value (as stored in [`Node::Code::language`]
@@ -1322,6 +1394,20 @@ fn emit_styled(out: &mut Out, depth: i32, tags: &[&str], inner: &str) {
     }
 }
 
+/// The `(anchor, uri)` of a text that is nothing but one `[anchor](uri)` link —
+/// the shape docling serializes with an `<href uri=…/>` head element instead of
+/// inline Markdown.
+fn lone_link(text: &str) -> Option<(String, String)> {
+    let mut runs = inline_runs(text);
+    if runs.len() != 1 {
+        return None;
+    }
+    match runs.pop() {
+        Some(Run::Link { anchor, uri }) => Some((anchor, uri)),
+        _ => None,
+    }
+}
+
 /// Render a [`Node::Furniture`] wrapper: the inner element with a
 /// `<layer value="{layer}"/>` head (which forces the block form). Headings (the
 /// HTML `<title>`, section chrome) and body text (docx comments, nav items) are
@@ -1344,8 +1430,36 @@ fn emit_furniture(out: &mut Out, depth: i32, layer: ContentLayer, inner: &Node) 
         }
         Node::Paragraph { text } => {
             out.push(depth, "<text>".to_string());
+            // A furniture item that is nothing but one link keeps the block
+            // `<href>` head the body path gives it (docling's hyperlink
+            // post-processing runs before the layer token is written, so the
+            // href comes first) — nav chrome like "Jump to content" is exactly
+            // this shape.
+            match lone_link(text) {
+                Some((anchor, uri)) => {
+                    out.push(depth + 1, format!("<href uri=\"{}\"/>", attr_escape(&uri)));
+                    out.push(depth + 1, token);
+                    if !anchor.trim().is_empty() {
+                        emit_runs(out, depth + 1, inline_runs(&anchor));
+                    }
+                }
+                None => {
+                    out.push(depth + 1, token);
+                    out.push(depth + 1, escape_text(text));
+                }
+            }
+            out.push(depth, "</text>".to_string());
+        }
+        // A furniture checkbox (a collapsed nav menu's toggle): the layer token
+        // precedes the `<checkbox>` head, like every other furniture element.
+        Node::CheckboxItem { checked, text } => {
+            let class = if *checked { "selected" } else { "unselected" };
+            out.push(depth, "<text>".to_string());
             out.push(depth + 1, token);
-            out.push(depth + 1, escape_text(text));
+            out.push(depth + 1, format!("<checkbox class=\"{class}\"/>"));
+            if !text.is_empty() {
+                out.push(depth + 1, escape_text(text));
+            }
             out.push(depth, "</text>".to_string());
         }
         // A located notes text (PPTX speaker notes: docling gives them a zero
@@ -1387,7 +1501,12 @@ fn emit_furniture(out: &mut Out, depth: i32, layer: ContentLayer, inner: &Node) 
         // pixels (docling's referenced-asset conversion skips furniture, so the
         // image stays a base64 data URI), then a caption that carries its own
         // `<href>`/`<layer>` head when the caption is a link.
-        Node::Picture { caption, image, .. } => {
+        Node::Picture {
+            caption,
+            caption_href,
+            image,
+            ..
+        } => {
             let caption = caption.as_deref().filter(|c| !c.trim().is_empty());
             out.push(depth, "<picture>".to_string());
             out.push(depth + 1, token.clone());
@@ -1402,13 +1521,20 @@ fn emit_furniture(out: &mut Out, depth: i32, layer: ContentLayer, inner: &Node) 
             }
             if let Some(c) = caption {
                 out.push(depth + 1, "<caption>".to_string());
-                match inline_runs(c).into_iter().next() {
-                    Some(Run::Link { anchor, uri }) => {
+                // The caption's link travels either as its own `caption_href`
+                // (the backends that keep the target out of the text) or inline
+                // in the caption Markdown; both render as an `<href>` head.
+                let link = caption_href
+                    .clone()
+                    .map(|uri| (c.to_string(), uri))
+                    .or_else(|| lone_link(c));
+                match link {
+                    Some((anchor, uri)) => {
                         out.push(depth + 2, format!("<href uri=\"{}\"/>", attr_escape(&uri)));
                         out.push(depth + 2, token);
                         out.push(depth + 2, escape_text(&anchor));
                     }
-                    _ => {
+                    None => {
                         out.push(depth + 2, token);
                         out.push(depth + 2, escape_text(c));
                     }
@@ -2025,6 +2151,88 @@ mod tests {
             out,
             "<doclang version=\"0.7\">\n  <heading>\n    <layer value=\"furniture\"/>\n    Anchor Links Test\n  </heading>\n</doclang>"
         );
+    }
+
+    #[test]
+    fn furniture_checkbox_keeps_its_layer() {
+        // A collapsed nav menu's toggle: the layer token precedes `<checkbox>`.
+        let out = export_to_doclang(&[Node::Furniture {
+            layer: ContentLayer::Furniture,
+            inner: Box::new(Node::CheckboxItem {
+                checked: false,
+                text: "Main menu".into(),
+            }),
+        }]);
+        assert_eq!(
+            out,
+            "<doclang version=\"0.7\">\n  <text>\n    <layer value=\"furniture\"/>\n    <checkbox class=\"unselected\"/>\n    Main menu\n  </text>\n</doclang>"
+        );
+    }
+
+    #[test]
+    fn furniture_text_that_is_one_link_gets_an_href_head() {
+        // docling's hyperlink post-processing runs before the layer token, so
+        // the `<href>` comes first — site chrome like "Jump to content".
+        let out = export_to_doclang(&[Node::Furniture {
+            layer: ContentLayer::Furniture,
+            inner: Box::new(Node::Paragraph {
+                text: "[Jump to content](#bodyContent)".into(),
+            }),
+        }]);
+        assert_eq!(
+            out,
+            "<doclang version=\"0.7\">\n  <text>\n    <href uri=\"#bodyContent\"/>\n    <layer value=\"furniture\"/>\n    Jump to content\n  </text>\n</doclang>"
+        );
+        // Text around the link is not the lone-link shape: layer token first.
+        let mixed = export_to_doclang(&[Node::Furniture {
+            layer: ContentLayer::Furniture,
+            inner: Box::new(Node::Paragraph {
+                text: "see [here](#x) now".into(),
+            }),
+        }]);
+        assert!(
+            mixed.contains("<layer value=\"furniture\"/>\n    see [here](#x) now"),
+            "{mixed}"
+        );
+    }
+
+    #[test]
+    fn link_destinations_balance_their_parentheses() {
+        // CommonMark nests parentheses in a bare destination — Wikipedia's
+        // interwiki links (`/wiki/Houad_(evn)`) are exactly this case, and
+        // stopping at the first `)` used to leak the tail into the text.
+        let out = export_to_doclang(&[Node::Paragraph {
+            text: "[Brezhoneg](https://br.wikipedia.org/wiki/Houad_(evn))".into(),
+        }]);
+        assert_eq!(
+            out,
+            "<doclang version=\"0.7\">\n  <text>\n    <href uri=\"https://br.wikipedia.org/wiki/Houad_(evn)\"/>\n    Brezhoneg\n  </text>\n</doclang>"
+        );
+    }
+
+    #[test]
+    fn right_to_left_text_is_wrapped_in_rtl() {
+        // docling-core's `serialize_rtl`: a text whose direction resolves to
+        // right-to-left carries the `<rtl>` marker.
+        let out = export_to_doclang(&[
+            Node::Paragraph {
+                text: "العربية".into(),
+            },
+            Node::Paragraph {
+                text: "Aragonés".into(),
+            },
+        ]);
+        assert_eq!(
+            out,
+            "<doclang version=\"0.7\">\n  <text>\n    <rtl>العربية</rtl>\n  </text>\n  <text>Aragonés</text>\n</doclang>"
+        );
+        // The rule is docling's: a strong-RTL first character, or an RTL
+        // majority. A Latin lead with a minority of Hebrew stays left-to-right.
+        assert!(is_rtl("עברית"));
+        assert!(!is_rtl("Hebrew: עב"));
+        assert!(!is_rtl(""));
+        // Arabic-Indic digits are `AN`/`EN`, not strong RTL.
+        assert!(!is_rtl("١٢٣"));
     }
 
     #[test]
