@@ -78,8 +78,37 @@ impl DeclarativeBackend for DocxBackend {
             return Ok(doc);
         };
         let mut state = ListState::default();
+        // Reviewer comments, by docx `w:id` in `word/comments.xml` order — the
+        // order they become `comment_section` groups below, which is the order
+        // `Node::Commented` indices refer to.
+        let comments = parse_comments(&mut pkg);
+        let comment_slot: HashMap<&str, usize> = comments
+            .iter()
+            .enumerate()
+            .map(|(i, (id, _))| (id.as_str(), i))
+            .collect();
+        // Comment ranges opened by an earlier block and not yet closed: a
+        // `w:commentRangeStart`/`End` pair may span paragraphs, and every
+        // paragraph inside the range is annotated.
+        let mut open: Vec<&str> = Vec::new();
         for node in body.children().filter(XmlNode::is_element) {
+            let slots = block_comment_slots(node, &comment_slot, &mut open);
+            let start = doc.nodes.len();
             process_block(node, &ctx, &mut state, &mut doc);
+            if !slots.is_empty() {
+                for item in doc.nodes[start..].iter_mut() {
+                    let inner = std::mem::replace(
+                        item,
+                        Node::Paragraph {
+                            text: String::new(),
+                        },
+                    );
+                    *item = Node::Commented {
+                        comments: slots.clone(),
+                        inner: Box::new(inner),
+                    };
+                }
+            }
         }
         // Section headers/footers follow the body as furniture-layer content
         // (docling's `_add_header_footer`): the first section always
@@ -87,13 +116,14 @@ impl DeclarativeBackend for DocxBackend {
         // page (`<w:titlePg/>`), which also switches both to the first-page
         // parts.
         add_header_footer(&mut pkg, body, &ctx, &mut doc);
-        // Reviewer comments (docling's `notes` layer) are appended after the body
-        // as furniture text; Markdown/JSON drop them, DocLang emits `<layer
-        // value="notes"/>` items.
-        for comment in parse_comments(&mut pkg) {
-            doc.nodes.push(Node::Furniture {
-                layer: docling_core::ContentLayer::Notes,
-                inner: Box::new(Node::Paragraph { text: comment }),
+        // Reviewer comments (docling's `notes` layer) are appended after the
+        // body as `comment_section` groups: Markdown/LaTeX drop them, JSON
+        // emits the group plus its notes text (and the `comments` back-refs on
+        // the annotated items), DocLang the flat `<layer value="notes"/>` item.
+        for (id, text) in comments {
+            doc.nodes.push(Node::CommentSection {
+                name: format!("comment-{id}"),
+                text,
             });
         }
         Ok(doc)
@@ -217,10 +247,10 @@ fn emit_header_footer_part(pkg: &mut Package, part: &str, ctx: &Ctx, doc: &mut D
     }
 }
 
-/// Parse `word/comments.xml` into docling's per-comment note strings:
-/// `[author: {author} ({initials}), time: {iso}]: {text}` (the author/initials
-/// parts drop out when absent). Empty when the part is missing.
-fn parse_comments(pkg: &mut Package) -> Vec<String> {
+/// Parse `word/comments.xml` into `(w:id, note)` pairs, the note being
+/// docling's `[author: {author} ({initials}), time: {iso}]: {text}` (the
+/// author/initials parts drop out when absent). Empty when the part is missing.
+fn parse_comments(pkg: &mut Package) -> Vec<(String, String)> {
     let Some(xml) = pkg.read("word/comments.xml") else {
         return Vec::new();
     };
@@ -244,9 +274,52 @@ fn parse_comments(pkg: &mut Package) -> Vec<String> {
         } else {
             format!("[author: {author} ({initials}), time: {date}]")
         };
-        out.push(format!("{head}: {text}"));
+        let id = attr(c, "id").unwrap_or("").to_string();
+        out.push((id, format!("{head}: {text}")));
     }
     out
+}
+
+/// The comment slots a body block is annotated by, in `comments.xml` order.
+/// A block carries a comment when it opens one (`w:commentRangeStart`),
+/// anchors one (`w:commentReference` — Word's single-run case, which needs no
+/// range), or sits inside a range opened by an earlier block. `open` carries
+/// that cross-block state and is updated for the ranges this block ends.
+fn block_comment_slots<'a>(
+    node: XmlNode<'a, 'a>,
+    slot_of: &HashMap<&str, usize>,
+    open: &mut Vec<&'a str>,
+) -> Vec<usize> {
+    let ids_with = |tag: &str| -> Vec<&'a str> {
+        node.descendants()
+            .filter(|n| n.has_tag_name(tag))
+            .filter_map(|n| attr(n, "id"))
+            .collect()
+    };
+    let started = ids_with("commentRangeStart");
+    let ended = ids_with("commentRangeEnd");
+    let referenced = ids_with("commentReference");
+
+    let mut ids: Vec<&str> = open.clone();
+    for id in started.iter().chain(referenced.iter()) {
+        if !ids.contains(id) {
+            ids.push(id);
+        }
+    }
+    for id in started {
+        if !ended.contains(&id) && !open.contains(&id) {
+            open.push(id);
+        }
+    }
+    open.retain(|id| !ended.contains(id));
+
+    let mut slots: Vec<usize> = ids
+        .iter()
+        .filter_map(|id| slot_of.get(id).copied())
+        .collect();
+    slots.sort_unstable();
+    slots.dedup();
+    slots
 }
 
 /// OOXML comment dates use e.g. `2026-01-04T05:48:07Z`; docling normalizes them
@@ -2076,7 +2149,39 @@ fn build_enum_marker(
 
 #[cfg(test)]
 mod tests {
-    use super::heading_label_level;
+    use super::{block_comment_slots, heading_label_level};
+    use std::collections::HashMap;
+
+    /// A comment range that opens in one paragraph and closes in a later one
+    /// annotates every paragraph in between; `w:commentReference` alone (Word's
+    /// range-less anchor) annotates just its own paragraph.
+    #[test]
+    fn comment_ranges_span_paragraphs() {
+        let xml = r#"<w:document xmlns:w="w">
+          <w:body>
+            <w:p><w:commentRangeStart w:id="0"/><w:r><w:t>a</w:t></w:r></w:p>
+            <w:p><w:r><w:t>b</w:t></w:r></w:p>
+            <w:p><w:commentRangeEnd w:id="0"/><w:commentReference w:id="0"/></w:p>
+            <w:p><w:r><w:t>d</w:t></w:r></w:p>
+            <w:p><w:commentReference w:id="1"/></w:p>
+          </w:body>
+        </w:document>"#;
+        let dom = roxmltree::Document::parse(xml).unwrap();
+        let body = dom.descendants().find(|n| n.has_tag_name("body")).unwrap();
+        let slot_of: HashMap<&str, usize> = [("0", 0), ("1", 1)].into_iter().collect();
+        let mut open = Vec::new();
+        let slots: Vec<Vec<usize>> = body
+            .children()
+            .filter(|n| n.is_element())
+            .map(|p| block_comment_slots(p, &slot_of, &mut open))
+            .collect();
+        assert_eq!(
+            slots,
+            vec![vec![0], vec![0], vec![0], Vec::new(), vec![1]],
+            "ranges must cover the paragraphs between start and end"
+        );
+        assert!(open.is_empty(), "the closed range must not stay open");
+    }
 
     /// The `_get_heading_and_level` + `_split_text_and_number` lattice on a
     /// single label (#270 tail); levels are Markdown levels (docling + 1).

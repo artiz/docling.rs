@@ -928,6 +928,23 @@ fn emit_nodes(out: &mut Out, depth: i32, nodes: &[Node], i: &mut usize, level: u
                 emit_furniture(out, depth, *layer, inner);
                 *i += 1;
             }
+            // A docx comment serializes exactly like any notes-layer text —
+            // upstream's DocLang carries no group for it, only the flat item.
+            Node::CommentSection { text, .. } => {
+                emit_furniture(
+                    out,
+                    depth,
+                    ContentLayer::Notes,
+                    &Node::Paragraph { text: text.clone() },
+                );
+                *i += 1;
+            }
+            // The annotation is a JSON-only cross-reference; DocLang emits the
+            // item itself.
+            Node::Commented { inner, .. } => {
+                emit_nodes(out, depth, std::slice::from_ref(inner), &mut 0, level);
+                *i += 1;
+            }
             Node::Located { location, inner } => {
                 emit_located(out, depth, location, inner);
                 *i += 1;

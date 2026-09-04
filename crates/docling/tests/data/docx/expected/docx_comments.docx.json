@@ -31,13 +31,65 @@
       },
       {
         "$ref": "#/texts/4"
+      },
+      {
+        "$ref": "#/groups/0"
+      },
+      {
+        "$ref": "#/groups/1"
+      },
+      {
+        "$ref": "#/groups/2"
       }
     ],
     "content_layer": "body",
     "name": "_root_",
     "label": "unspecified"
   },
-  "groups": [],
+  "groups": [
+    {
+      "self_ref": "#/groups/0",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [
+        {
+          "$ref": "#/texts/5"
+        }
+      ],
+      "content_layer": "notes",
+      "name": "comment-0",
+      "label": "comment_section"
+    },
+    {
+      "self_ref": "#/groups/1",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [
+        {
+          "$ref": "#/texts/6"
+        }
+      ],
+      "content_layer": "notes",
+      "name": "comment-1",
+      "label": "comment_section"
+    },
+    {
+      "self_ref": "#/groups/2",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [
+        {
+          "$ref": "#/texts/7"
+        }
+      ],
+      "content_layer": "notes",
+      "name": "comment-2",
+      "label": "comment_section"
+    }
+  ],
   "texts": [
     {
       "self_ref": "#/texts/0",
@@ -60,6 +112,11 @@
       "content_layer": "body",
       "label": "text",
       "prov": [],
+      "comments": [
+        {
+          "$ref": "#/groups/0"
+        }
+      ],
       "orig": "This is the first paragraph that has a comment attached to it.",
       "text": "This is the first paragraph that has a comment attached to it."
     },
@@ -72,6 +129,11 @@
       "content_layer": "body",
       "label": "text",
       "prov": [],
+      "comments": [
+        {
+          "$ref": "#/groups/1"
+        }
+      ],
       "orig": "This second paragraph also has a reviewer annotation.",
       "text": "This second paragraph also has a reviewer annotation."
     },
@@ -96,8 +158,49 @@
       "content_layer": "body",
       "label": "text",
       "prov": [],
+      "comments": [
+        {
+          "$ref": "#/groups/2"
+        }
+      ],
       "orig": "This paragraph has an anonymous comment.",
       "text": "This paragraph has an anonymous comment."
+    },
+    {
+      "self_ref": "#/texts/5",
+      "parent": {
+        "$ref": "#/groups/0"
+      },
+      "children": [],
+      "content_layer": "notes",
+      "label": "text",
+      "prov": [],
+      "orig": "[author: John Reviewer (JR), time: 2026-01-04T05:48:07.000+00:00]: This is a sample reviewer comment on the first paragraph.",
+      "text": "[author: John Reviewer (JR), time: 2026-01-04T05:48:07.000+00:00]: This is a sample reviewer comment on the first paragraph."
+    },
+    {
+      "self_ref": "#/texts/6",
+      "parent": {
+        "$ref": "#/groups/1"
+      },
+      "children": [],
+      "content_layer": "notes",
+      "label": "text",
+      "prov": [],
+      "orig": "[author: Jane Editor (JE), time: 2026-01-04T05:48:07.000+00:00]: Another comment by a different reviewer.",
+      "text": "[author: Jane Editor (JE), time: 2026-01-04T05:48:07.000+00:00]: Another comment by a different reviewer."
+    },
+    {
+      "self_ref": "#/texts/7",
+      "parent": {
+        "$ref": "#/groups/2"
+      },
+      "children": [],
+      "content_layer": "notes",
+      "label": "text",
+      "prov": [],
+      "orig": "[time: 2026-01-04T05:48:07.000+00:00]: Anonymous feedback on this paragraph.",
+      "text": "[time: 2026-01-04T05:48:07.000+00:00]: Anonymous feedback on this paragraph."
     }
   ],
   "pictures": [],
