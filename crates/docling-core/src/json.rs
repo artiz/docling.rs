@@ -96,6 +96,7 @@ pub(crate) fn code_language(lang: Option<&str>) -> &'static str {
 pub fn to_json(doc: &DoclingDocument) -> Value {
     let mut b = Builder::default();
     let body = b.walk_into(&doc.nodes, "#/body");
+    b.link_comments();
 
     let mut out = json!({
         "schema_name": "DoclingDocument",
@@ -171,6 +172,13 @@ struct Builder {
     /// The enclosing [`Node::Located`] wrapper's 0–511 grid box, waiting to be
     /// consumed as the next item's provenance.
     pending_loc: Option<[u16; 4]>,
+    /// Each [`Node::CommentSection`]'s group `$ref`, in document order — the
+    /// index a [`Node::Commented`] annotation refers to.
+    comment_groups: Vec<String>,
+    /// Annotated items awaiting their refs: comments are usually emitted
+    /// *after* the body they annotate (docx appends them), so the link is
+    /// patched in once the whole document has been walked.
+    pending_comments: Vec<(String, Vec<usize>)>,
 }
 
 impl Builder {
@@ -203,6 +211,68 @@ impl Builder {
         if self.pending_loc.is_none() && self.cur_page > 0 {
             self.pending_loc = loc;
         }
+    }
+
+    /// Resolve the [`Node::Commented`] annotations collected during the walk
+    /// into docling's `comments: [{"$ref": "#/groups/N"}]` key on the annotated
+    /// item. It has to run after the whole walk: docx appends its comment
+    /// bodies, so the groups they live in are usually allocated *later* than
+    /// the paragraphs pointing at them. docling emits the key between `prov`
+    /// and `orig`, so insert it in place rather than appending (serde_json runs
+    /// with `preserve_order`, i.e. key order is output order).
+    fn link_comments(&mut self) {
+        let refs: Vec<(String, Vec<Value>)> = std::mem::take(&mut self.pending_comments)
+            .into_iter()
+            .map(|(item, comments)| {
+                let refs = comments
+                    .iter()
+                    .filter_map(|i| self.comment_groups.get(*i))
+                    .map(|r| json!({ "$ref": r }))
+                    .collect();
+                (item, refs)
+            })
+            .collect();
+        for (item, comment_refs) in refs {
+            if comment_refs.is_empty() {
+                continue;
+            }
+            let Some(target) = self.item_mut(&item) else {
+                continue;
+            };
+            let Some(obj) = target.as_object_mut() else {
+                continue;
+            };
+            let tail: Vec<(String, Value)> = obj
+                .iter()
+                .skip_while(|(k, _)| k.as_str() != "prov")
+                .skip(1)
+                .map(|(k, v)| (k.clone(), v.clone()))
+                .collect();
+            for (k, _) in &tail {
+                obj.shift_remove(k);
+            }
+            obj.insert("comments".into(), Value::Array(comment_refs));
+            for (k, v) in tail {
+                obj.insert(k, v);
+            }
+        }
+    }
+
+    /// The stored JSON object a `#/texts/N`-style self-ref points at.
+    fn item_mut(&mut self, self_ref: &str) -> Option<&mut Value> {
+        let idx = ref_index(self_ref)?;
+        let bucket = if self_ref.starts_with("#/texts/") {
+            &mut self.texts
+        } else if self_ref.starts_with("#/tables/") {
+            &mut self.tables
+        } else if self_ref.starts_with("#/pictures/") {
+            &mut self.pictures
+        } else if self_ref.starts_with("#/groups/") {
+            &mut self.groups
+        } else {
+            return None;
+        };
+        bucket.get_mut(idx)
     }
 
     fn add_node(&mut self, node: &Node, parent: &str) -> Option<String> {
@@ -246,6 +316,34 @@ impl Builder {
             } => {
                 self.adopt_loc(*location);
                 Some(self.add_formula_item(latex, orig, parent))
+            }
+            // docling's notes-layer `comment_section` group holding the
+            // comment's text item; the annotated body items point at the group
+            // (not the text), which is how replies group under one comment.
+            Node::CommentSection { name, text } => {
+                let self_ref = format!("#/groups/{}", self.groups.len());
+                self.groups.push(Value::Null);
+                let child =
+                    self.add_text("text", text, &self_ref, json!({ "content_layer": "notes" }));
+                self.groups[group_index(&self_ref)] = json!({
+                    "self_ref": self_ref,
+                    "parent": { "$ref": parent },
+                    "children": [{ "$ref": child }],
+                    "content_layer": "notes",
+                    "name": name,
+                    "label": "comment_section",
+                });
+                self.comment_groups.push(self_ref.clone());
+                Some(self_ref)
+            }
+            // The annotation itself is a cross-reference: emit the item, then
+            // remember it so the group refs can be filled in at the end.
+            Node::Commented { comments, inner } => {
+                let item = self.add_node(inner, parent)?;
+                if !comments.is_empty() {
+                    self.pending_comments.push((item.clone(), comments.clone()));
+                }
+                Some(item)
             }
             Node::Table(t) => Some(self.add_table(t, parent)),
             Node::Picture {
@@ -1066,5 +1164,51 @@ mod tests {
         // table grid + header flag
         assert_eq!(v["tables"][0]["data"]["num_cols"], 2);
         assert_eq!(v["tables"][0]["data"]["grid"][0][0]["column_header"], true);
+    }
+    /// docx reviewer comments: a `comment_section` group on the notes layer
+    /// holding the note text, and a `comments` back-ref on the annotated item —
+    /// keyed between `prov` and `orig`, the slot docling emits it in.
+    #[test]
+    fn comment_sections_link_back_to_their_items() {
+        let doc = DoclingDocument {
+            name: "c".into(),
+            nodes: vec![
+                Node::Commented {
+                    comments: vec![0],
+                    inner: Box::new(Node::Paragraph {
+                        text: "annotated".into(),
+                    }),
+                },
+                Node::Paragraph {
+                    text: "plain".into(),
+                },
+                Node::CommentSection {
+                    name: "comment-7".into(),
+                    text: "[time: t]: note".into(),
+                },
+            ],
+            ..DoclingDocument::new("c")
+        };
+        let v = crate::json::to_json(&doc);
+        // The group is the comment section; its only child is the notes text.
+        assert_eq!(v["groups"][0]["label"], "comment_section");
+        assert_eq!(v["groups"][0]["name"], "comment-7");
+        assert_eq!(v["groups"][0]["content_layer"], "notes");
+        assert_eq!(v["groups"][0]["children"][0]["$ref"], "#/texts/2");
+        assert_eq!(v["texts"][2]["content_layer"], "notes");
+        // The annotated item points back at the group; the plain one has no key.
+        assert_eq!(v["texts"][0]["comments"][0]["$ref"], "#/groups/0");
+        assert!(v["texts"][1].get("comments").is_none());
+        // docling's key order: … prov, comments, orig, text.
+        let keys: Vec<&str> = v["texts"][0]
+            .as_object()
+            .unwrap()
+            .keys()
+            .map(String::as_str)
+            .collect();
+        assert_eq!(
+            &keys[keys.len() - 4..],
+            &["prov", "comments", "orig", "text"]
+        );
     }
 }

@@ -179,6 +179,21 @@ pub enum Node {
         layer: ContentLayer,
         inner: Box<Node>,
     },
+    /// One docx reviewer comment (`w:comment`): docling's notes-layer
+    /// `comment_section` group holding a single text item. `name` is docling's
+    /// `comment-{id}` — the *docx* comment id, not the ordinal. JSON emits the
+    /// group plus its notes-layer text; DocLang emits the flat
+    /// `<text><layer value="notes"/>…</text>` upstream writes (its DocLang
+    /// carries no group for comments); Markdown and LaTeX omit the notes layer.
+    CommentSection { name: String, text: String },
+    /// A body item annotated by docx reviewer comments: `comments` are indices
+    /// into the document's [`Node::CommentSection`] nodes, in document order.
+    /// JSON emits docling's `comments: [{"$ref": "#/groups/N"}]` on the item;
+    /// every other serializer renders `inner` unchanged.
+    Commented {
+        comments: Vec<usize>,
+        inner: Box<Node>,
+    },
     /// A node carrying layout provenance — the four DocLang `<location>` values
     /// (`x0,y0,x1,y1`, normalized to 0–511) docling attaches to elements from
     /// backends with real geometry (e.g. the slide shapes in PPTX). Markdown and
