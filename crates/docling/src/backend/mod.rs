@@ -27,6 +27,7 @@ mod asciidoc;
 #[cfg(feature = "web-browser")]
 pub(crate) mod browser;
 mod cfb;
+mod chandra;
 mod csv;
 mod deepseek;
 mod doc;
@@ -66,8 +67,15 @@ mod xlsx_drawings;
 
 pub use abw::AbwBackend;
 pub use asciidoc::AsciiDocBackend;
+pub use chandra::looks_like_chandra;
+#[cfg(feature = "vlm")]
+pub(crate) use chandra::parse_chandra_pages as chandra_pages;
 pub use csv::CsvBackend;
-pub use deepseek::{is_deepseek_markdown, DeepSeekBackend};
+pub use deepseek::{is_deepseek_markdown, is_unlimited_ocr_markdown, DeepSeekBackend};
+#[cfg(feature = "vlm")]
+pub(crate) use deepseek::{
+    normalize_unlimited_ocr as normalize_unlimited, parse_deepseek_text as deepseek_text,
+};
 pub use doc::DocBackend;
 pub use doclang::DoclangBackend;
 pub use docling_json::DoclingJsonBackend;

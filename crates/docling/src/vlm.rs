@@ -57,6 +57,63 @@ pub struct VlmOptions {
 /// docling's page-conversion instruction for its DocLang-emitting VLMs.
 pub const DEFAULT_VLM_PROMPT: &str = "Convert this page to docling.";
 
+/// Unlimited-OCR's official model-card prompt (docling#4037), kept verbatim:
+/// the model answers other phrasings — generic "convert to markdown" included —
+/// with an empty completion and finish_reason "stop".
+pub const UNLIMITED_OCR_PROMPT: &str = "<image>document parsing.";
+
+/// Chandra's layout prompt (docling's `CHANDRA_OCR_LAYOUT_PROMPT`), verbatim.
+pub const CHANDRA_PROMPT: &str = concat!(
+    "OCR this image to HTML, arranged as layout blocks. Each layout block should be ",
+    "a div with the data-bbox attribute representing the bounding box of the block in ",
+    "x0 y0 x1 y1 format. Bboxes are normalized 0-1000. The data-label attribute is ",
+    "the label for the block.\n\n",
+    "Use the following labels:\n",
+    "- Caption\n- Footnote\n- Equation-Block\n- List-Group\n- Page-Header\n",
+    "- Page-Footer\n- Image\n- Section-Header\n- Table\n- Text\n- Complex-Block\n",
+    "- Code-Block\n- Form\n- Table-Of-Contents\n- Figure\n- Chemical-Block\n",
+    "- Diagram\n- Bibliography\n- Blank-Page\n\n",
+    "Only use these tags ['math', 'br', 'i', 'b', 'u', 'del', 'sup', 'sub', 'table', 'tr', 'td', ",
+    "'p', 'th', 'div', 'pre', 'h1', 'h2', 'h3', 'h4', 'h5', 'ul', 'ol', 'li', ",
+    "'input', 'a', 'span', 'img', 'hr', 'tbody', 'small', 'caption', 'strong', ",
+    "'thead', 'big', 'code', 'chem'], ",
+    "and these attributes ['class', 'colspan', 'rowspan', 'display', 'checked', 'type', 'border', ",
+    "'value', 'style', 'href', 'alt', 'align', 'data-bbox', 'data-label'].\n\n",
+    "Guidelines:\n",
+    "* Inline math: Surround math with <math>...</math> tags. Math expressions ",
+    "should be rendered in KaTeX-compatible LaTeX. Use display for block math.\n",
+    "* Tables: Use colspan and rowspan attributes to match table structure.\n",
+    "* Formatting: Maintain consistent formatting with the image, including spacing, ",
+    "indentation, subscripts/superscripts, and special characters.\n",
+    "* Images: Include a description of any images in the alt attribute of an <img> tag. ",
+    "Do not fill out the src property. Describe in detail inside the div tag. ",
+    "Also convert charts to high fidelity data, and convert diagrams to mermaid.\n",
+    "* Forms: Mark checkboxes and radio buttons properly.\n",
+    "* Text: join lines together properly into paragraphs using <p>...</p> tags. ",
+    "Use <br> tags for line breaks within paragraphs, but only when absolutely ",
+    "necessary to maintain meaning.\n",
+    "* Chemistry: Use <chem>...</chem> tags for chemical formulas with reactive SMILES.\n",
+    "* Lists: Preserve indents and proper list markers.\n",
+    "* Use the simplest possible HTML structure that accurately represents the content ",
+    "of the block.\n",
+    "* Make sure the text is accurate and easy for a human to read and interpret. ",
+    "Reading order should be correct and natural."
+);
+
+/// The default prompt for a model, by name (#322): the known grammars ship
+/// their official prompts, everything else keeps the DocLang-eliciting
+/// default. `DOCLING_RS_VLM_PROMPT` / the `prompt` option override all of it.
+fn default_prompt_for(model: &str) -> &'static str {
+    let lower = model.to_ascii_lowercase();
+    if lower.contains("unlimited") {
+        UNLIMITED_OCR_PROMPT
+    } else if lower.contains("chandra") {
+        CHANDRA_PROMPT
+    } else {
+        DEFAULT_VLM_PROMPT
+    }
+}
+
 impl VlmOptions {
     /// Build options from explicit values, falling back to the
     /// `DOCLING_RS_VLM_*` environment. Endpoint and model are required —
@@ -180,7 +237,29 @@ pub fn convert_vlm(
     // reader path a `.dclg` file would. One DocTags-shaped page routes the
     // whole document: mixing grammars page-to-page is model misbehavior,
     // and the DocTags parser degrades to paragraphs on non-DocTags input.
-    let doc = if fragments.iter().any(|f| looks_like_doctags(f)) {
+    // The model-specific grammars go first (#322): their token shapes are
+    // unambiguous, and each parser shares the tolerance contract — hostile
+    // output degrades to text, never to an error.
+    let doc = if fragments
+        .iter()
+        .any(|f| crate::backend::looks_like_chandra(f))
+    {
+        // Chandra layout HTML (`<div data-bbox=… data-label=…>`).
+        crate::backend::chandra_pages(&source.name, &fragments)
+    } else if fragments.iter().any(|f| {
+        crate::backend::is_unlimited_ocr_markdown(f) || crate::backend::is_deepseek_markdown(f)
+    }) {
+        // Unlimited-OCR grounding output labels blocks the way DeepSeek-OCR
+        // does (docling#3944): normalize its `<|det|>label [x,y,x,y]<|/det|>`
+        // shape into the DeepSeek one and share that parser. Native
+        // DeepSeek-shaped responses take the same path directly.
+        let joined = fragments
+            .iter()
+            .map(|f| crate::backend::normalize_unlimited(f))
+            .collect::<Vec<_>>()
+            .join("\n");
+        crate::backend::deepseek_text(&source.name, &joined)
+    } else if fragments.iter().any(|f| looks_like_doctags(f)) {
         let mut doc = docling_core::doctags::parse_pages(fragments.iter().map(String::as_str));
         doc.name = source.name.clone();
         doc
@@ -192,7 +271,8 @@ pub fn convert_vlm(
         // transport one: the model answered with nothing our reader keeps.
         // An empty stdout with exit 0 buried that; say it loudly instead.
         return Err(ConversionError::Parse(
-            "vlm: the model's responses contained no parseable DocLang/DocTags blocks \
+            "vlm: the model's responses contained no parseable DocLang/DocTags/Chandra/\
+             grounding blocks \
              (set DOCLING_RS_VLM_DEBUG=1 to print raw responses; a generic VLM may need \
              a DOCLING_RS_VLM_PROMPT that describes the expected markup)"
                 .into(),
@@ -230,6 +310,10 @@ fn request_page(agent: &ureq::Agent, opts: &VlmOptions, image: &[u8]) -> Result<
         "data:image/png;base64,{}",
         docling_core::base64::encode(image)
     );
+    // Unlimited-OCR's grounding markers are special tokens: without this vLLM
+    // extension flag the server strips them from the completion and the page
+    // comes back as flat text (docling#3944's api_overrides).
+    let keep_special = opts.model.to_ascii_lowercase().contains("unlimited");
     let mut body = serde_json::json!({
         "model": opts.model,
         // Deterministic-ish output: sampling noise only hurts a structured
@@ -240,11 +324,14 @@ fn request_page(agent: &ureq::Agent, opts: &VlmOptions, image: &[u8]) -> Result<
             "role": "user",
             "content": [
                 { "type": "text",
-                  "text": opts.prompt.as_deref().unwrap_or(DEFAULT_VLM_PROMPT) },
+                  "text": opts.prompt.as_deref().unwrap_or(default_prompt_for(&opts.model)) },
                 { "type": "image_url", "image_url": { "url": data_uri } },
             ],
         }],
     });
+    if keep_special {
+        body["skip_special_tokens"] = serde_json::Value::Bool(false);
+    }
     // DOCLING_RS_VLM_EXTRA_BODY: a JSON object merged into the request at the
     // top level — the escape hatch for server-specific knobs the OpenAI shape
     // doesn't cover. The motivating case: vLLM's "skip_special_tokens": false,
@@ -436,6 +523,7 @@ fn encode_png(image: &image::RgbImage) -> Result<Vec<u8>, String> {
 
 #[cfg(test)]
 mod tests {
+    use super::{default_prompt_for, CHANDRA_PROMPT, DEFAULT_VLM_PROMPT, UNLIMITED_OCR_PROMPT};
     use super::{looks_like_doctags, parse_doclang_fragments, prose_fallback, strip_wrappers};
 
     /// A misbehaving model can emit malformed DocLang — here an unclosed
@@ -540,5 +628,19 @@ mod tests {
         );
         // Tagged content is left for the DocLang reader untouched.
         assert_eq!(prose_fallback("<text>hi</text>"), "<text>hi</text>");
+    }
+    /// #322: known model names get their official prompts; everything else
+    /// keeps the DocLang default.
+    #[test]
+    fn model_names_pick_their_official_prompts() {
+        assert_eq!(default_prompt_for("unlimited-ocr"), UNLIMITED_OCR_PROMPT);
+        assert_eq!(
+            default_prompt_for("baidu/Unlimited-OCR"),
+            UNLIMITED_OCR_PROMPT
+        );
+        assert_eq!(default_prompt_for("chandra-ocr-2"), CHANDRA_PROMPT);
+        assert_eq!(default_prompt_for("granite-docling"), DEFAULT_VLM_PROMPT);
+        assert!(CHANDRA_PROMPT.starts_with("OCR this image to HTML"));
+        assert_eq!(UNLIMITED_OCR_PROMPT, "<image>document parsing.");
     }
 }
