@@ -35,13 +35,54 @@ pub fn is_deepseek_markdown(text: &str) -> bool {
     text.lines().any(|l| annotation_re().is_match(l.trim()))
 }
 
+/// `<|det|>label [x1, y1, x2, y2]<|/det|>content` — the Unlimited-OCR
+/// grounding annotation (docling#3944). Same layout labels and boxes as
+/// DeepSeek-OCR, different token shape.
+fn unlimited_annotation_re() -> &'static Regex {
+    cached_regex!(r"<\|det\|>\s*([a-z_]+)\s*\[(\d+(?:\s*,\s*\d+){3})\]<\|/det\|>")
+}
+
+/// True when the text carries Unlimited-OCR grounding annotations (#322).
+pub fn is_unlimited_ocr_markdown(text: &str) -> bool {
+    unlimited_annotation_re().is_match(text)
+}
+
+/// docling's `normalize_unlimited_ocr_annotations`: rewrite the Unlimited-OCR
+/// grounding shape into the DeepSeek-OCR shape this parser reads —
+/// `<|ref|>label<|/ref|><|det|>[[…]]<|/det|>` with the annotation alone on its
+/// line (the content follows on the next). Text already in the DeepSeek shape
+/// passes through unchanged.
+#[cfg_attr(not(feature = "vlm"), allow(dead_code))] // VLM-dispatch-only
+pub(crate) fn normalize_unlimited_ocr(text: &str) -> String {
+    unlimited_annotation_re()
+        .replace_all(
+            text,
+            "<|ref|>$1<|/ref|><|det|>[[$2]]<|/det|>
+",
+        )
+        .into_owned()
+}
+
+/// Parse annotated-Markdown text (DeepSeek-OCR shape) into a document — the
+/// body of [`DeepSeekBackend::convert`], shared with the VLM pipeline (#322),
+/// which feeds it normalized Unlimited-OCR responses page by page.
+pub(crate) fn parse_deepseek_text(name: &str, text: &str) -> DoclingDocument {
+    let mut doc = DoclingDocument::new(name);
+    emit_deepseek(text, &mut doc);
+    doc
+}
+
 pub struct DeepSeekBackend;
 
 impl DeclarativeBackend for DeepSeekBackend {
     fn convert(&self, source: &SourceDocument) -> Result<DoclingDocument, ConversionError> {
         let text = source.text()?;
-        let mut doc = DoclingDocument::new(&source.name);
+        Ok(parse_deepseek_text(&source.name, text))
+    }
+}
 
+fn emit_deepseek(text: &str, doc: &mut DoclingDocument) {
+    {
         let lines: Vec<&str> = text.split('\n').collect();
         let annotations = collect_annotations(&lines);
 
@@ -64,10 +105,8 @@ impl DeclarativeBackend for DeepSeekBackend {
                 None
             };
 
-            emit(&ann.label, &ann.content, caption, &mut doc);
+            emit(&ann.label, &ann.content, caption, doc);
         }
-
-        Ok(doc)
     }
 }
 
@@ -202,4 +241,37 @@ fn caption_matches(elem: &str, caption: &str) -> bool {
         (elem, caption),
         ("table", "table_caption") | ("figure", "figure_caption") | ("image", "image_caption")
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// docling#3944's normalization: the Unlimited-OCR annotation moves into
+    /// the DeepSeek `<|ref|>` shape, alone on its line, content following.
+    #[test]
+    fn unlimited_annotations_normalize_to_deepseek_shape() {
+        let raw = "<|det|>title [52, 40, 816, 63]<|/det|>Reconciliation report No. 1481";
+        assert!(is_unlimited_ocr_markdown(raw));
+        assert_eq!(
+            normalize_unlimited_ocr(raw),
+            "<|ref|>title<|/ref|><|det|>[[52, 40, 816, 63]]<|/det|>\nReconciliation report No. 1481"
+        );
+        // Already-DeepSeek content passes through unchanged.
+        let ds = "<|ref|>text<|/ref|><|det|>[[1, 2, 3, 4]]<|/det|>\nBody.";
+        assert!(!is_unlimited_ocr_markdown(ds));
+        assert_eq!(normalize_unlimited_ocr(ds), ds);
+    }
+
+    /// End-to-end through the shared parser: labels land as document nodes.
+    #[test]
+    fn normalized_unlimited_output_parses_as_deepseek() {
+        let raw = "<|det|>title [52, 40, 816, 63]<|/det|>Report 1481\n\
+                   <|det|>text [52, 80, 816, 120]<|/det|>First paragraph.";
+        let doc = parse_deepseek_text("page", &normalize_unlimited_ocr(raw));
+        assert_eq!(
+            doc.export_to_markdown(),
+            "# Report 1481\n\nFirst paragraph.\n"
+        );
+    }
 }

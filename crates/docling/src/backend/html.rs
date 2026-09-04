@@ -1254,7 +1254,7 @@ fn lang_from_class(class: &str) -> Option<String> {
     })
 }
 
-fn parse_table(table: ElementRef) -> Option<Table> {
+pub(crate) fn parse_table(table: ElementRef) -> Option<Table> {
     parse_table_cells(table, render_cell)
 }
 

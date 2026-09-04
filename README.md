@@ -850,6 +850,20 @@ identically. `--pages A-B` composes (only the window's pages are rendered
 and sent), and `--to md|json|dclx|chunks` plus `--strict` work as usual. Transient
 endpoint failures (timeouts, 408/429, 5xx) retry with exponential backoff;
 a page that still fails fails the conversion — no silently dropped pages.
+
+Answer grammars are auto-detected per response (#322): **DocTags**
+(granite-docling-class models) and **DocLang XML** as before, plus
+**Chandra** layout HTML (`<div data-bbox=… data-label=…>` blocks — tables
+with spans, Form-held tables, lists, figures, page furniture; docling
+2.123–2.125 semantics incl. `<br>`-as-spacing), **Unlimited-OCR** grounding
+output (normalized into the DeepSeek-OCR annotation shape and parsed by
+that backend), and raw **DeepSeek-OCR** annotated Markdown. Plain prose
+still degrades to text — hostile model output never errors. Known models
+also get their official prompts by name when `--vlm-prompt` isn't given:
+`unlimited*` → the model-card `<image>document parsing.` (any other phrasing
+returns an empty completion) plus the `skip_special_tokens=false` request
+flag its grounding markers need; `chandra*` → docling's Chandra layout
+prompt; everything else keeps the DocLang-eliciting default.
 Output quality is entirely the model's; what docling.rs adds is measured
 (#311): converting the PDF corpus through the same granite-docling endpoint
 from both docling.rs and Python docling's `VlmPipeline` scores **87.7% mean

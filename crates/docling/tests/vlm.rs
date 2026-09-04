@@ -137,6 +137,44 @@ fn vlm_converts_pdf_pages_through_the_endpoint() {
     assert!(md.contains("Second body."), "markdown: {md:?}");
 }
 
+/// #322: a Chandra-grammar answer routes to the layout-HTML parser — blocks,
+/// furniture exclusion and the Form-table rule all through the wire path.
+#[test]
+fn vlm_parses_chandra_layout_html() {
+    let answer = concat!(
+        r#"<div data-bbox="10 10 990 40" data-label="Page-Header">Running header</div>"#,
+        r#"<div data-bbox="10 60 990 120" data-label="Section-Header"><h2>Results</h2></div>"#,
+        r#"<div data-bbox="10 140 990 200" data-label="Text"><p>Hello<br/>World</p></div>"#,
+        r#"<div data-bbox="10 220 990 400" data-label="Form"><table><tr><td>Name</td><td>Value</td></tr></table></div>"#,
+    );
+    let (endpoint, served, handle) = mock_openai(vec![answer.into()]);
+    let source = SourceDocument::from_bytes("page.png", InputFormat::Image, image_bytes());
+    let doc = convert_vlm(&source, &opts(endpoint)).expect("vlm conversion");
+    handle.join().expect("mock server");
+    assert_eq!(served.load(Ordering::SeqCst), 1);
+    let md = doc.export_to_markdown();
+    assert!(md.contains("## Results"), "markdown: {md:?}");
+    assert!(md.contains("Hello World"), "br spacing: {md:?}");
+    assert!(md.contains("| Name"), "form table: {md:?}");
+    assert!(!md.contains("Running header"), "furniture leaked: {md:?}");
+}
+
+/// #322: an Unlimited-OCR grounding answer normalizes into the DeepSeek-OCR
+/// shape and parses as labelled blocks.
+#[test]
+fn vlm_parses_unlimited_ocr_grounding() {
+    let answer = "<|det|>title [52, 40, 816, 63]<|/det|>Report 1481\n\
+                  <|det|>text [52, 80, 816, 120]<|/det|>First paragraph.";
+    let (endpoint, served, handle) = mock_openai(vec![answer.into()]);
+    let source = SourceDocument::from_bytes("page.png", InputFormat::Image, image_bytes());
+    let doc = convert_vlm(&source, &opts(endpoint)).expect("vlm conversion");
+    handle.join().expect("mock server");
+    assert_eq!(served.load(Ordering::SeqCst), 1);
+    let md = doc.export_to_markdown();
+    assert!(md.contains("# Report 1481"), "markdown: {md:?}");
+    assert!(md.contains("First paragraph."), "markdown: {md:?}");
+}
+
 #[test]
 fn vlm_converts_an_image_without_pdfium() {
     // An image input goes straight to the endpoint — no pdfium, no models —
