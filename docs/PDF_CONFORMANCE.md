@@ -538,7 +538,9 @@ image / METS inputs keep the serial path and load no helper models.
 
 The layout model is **memory-bandwidth bound** (even one model at four intra-op
 threads only reaches ~2.1× core utilisation), so the pool defaults to two intra-op
-threads per worker with `workers ≈ cores / 2` (capped at 4): two threads sharing one
+threads per worker with `workers ≈ cores / 2` (ceiling 16 — a memory bound of
+~0.4 GB of model sessions per worker, not a performance cap; #324 follow-up
+measured the old cap of 4 leaving ~1.2× on the table on a 16-core machine): two threads sharing one
 in-cache copy of the weights beats both one fat model and many single-thread workers.
 The speed-up scales with cores and memory bandwidth. Tune per machine with
 `DOCLING_RS_PDF_WORKERS` (pool size) and `DOCLING_RS_PDF_INTRA` (intra-op threads

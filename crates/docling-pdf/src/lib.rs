@@ -1270,14 +1270,22 @@ fn pdf_intra() -> usize {
 
 #[cfg(feature = "ml")]
 /// How many page-workers to spin up for a multi-page PDF. `DOCLING_RS_PDF_WORKERS`
-/// overrides; otherwise size the pool so `workers × intra ≈ cores`, capped at 4 so
-/// a worst-case pool holds a bounded amount of model memory (~0.4 GB per worker)
-/// and does not oversaturate the memory bus with model-weight traffic.
+/// overrides; otherwise size the pool so `workers × intra ≈ cores`.
+///
+/// The pool scales with the machine (#324 follow-up testing): the old hard cap
+/// of 4 left most of a many-core box idle — on a 16-core M4 Max, 10 workers
+/// measured ~1.2× over the capped pool (10.0 → 8.5 s on a 130-page document,
+/// byte-identical output). The ceiling of 16 is a memory bound, not a
+/// performance one: each worker holds its own layout/OCR sessions (~0.4 GB),
+/// so a worst-case pool stays under ~6.5 GB even on a ≥32-core host — and
+/// docling-serve's per-request pools sit behind its `DOCLING_RS_MAX_MEMORY_MB`
+/// admission control besides. Machines with 4 or fewer effective threads keep
+/// the exact old sizing (`threads / intra`, min 1).
 fn pdf_worker_count() -> usize {
     if let Some(n) = env::parse::<usize>("DOCLING_RS_PDF_WORKERS").filter(|&n| n > 0) {
         return n;
     }
-    (intra_threads() / pdf_intra()).clamp(1, 4)
+    (intra_threads() / pdf_intra()).clamp(1, 16)
 }
 
 #[cfg(feature = "ml")]

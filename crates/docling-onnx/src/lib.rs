@@ -318,6 +318,20 @@ pub fn apply(builder: SessionBuilder) -> Result<SessionBuilder, String> {
         if docling_core::env::flag("DOCLING_RS_TIMING") {
             eprintln!("docling-rs: execution providers: {eps:?}");
         }
+        // CoreML's cost profile is invisible otherwise (#324 follow-up
+        // testing): session creation runs ~2 s per worker, does not
+        // parallelize, and only amortizes over long-lived processes or large
+        // batches — a one-shot CLI conversion is typically *slower* than CPU,
+        // with correct output and nothing else to hint at why. Say so once at
+        // the moment the cost is incurred.
+        #[cfg(feature = "coreml")]
+        if matches!(choice(), Ep::CoreMl | Ep::Auto) {
+            eprintln!(
+                "docling-rs: CoreML registered; its session setup costs roughly 2 s per \
+                 worker and pays off for long-lived processes and large batches — for \
+                 short one-shot runs DOCLING_RS_EP=cpu is usually faster"
+            );
+        }
     });
     let builder = builder
         .with_execution_providers(eps)
