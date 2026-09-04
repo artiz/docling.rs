@@ -12,9 +12,13 @@
 # every master push. Run it from the Actions tab (or
 # `gh workflow run npm-publish.yml`, optionally `-f tag=v0.7.0`).
 #
-# Requires one repository secret: NPM_TOKEN — an npm automation token with
-# publish rights to `docling.rs` and the `docling.rs-*` platform packages
-# (including `docling.rs-cuda` when the cuda input is used).
+# Authentication is npm Trusted Publishing (OIDC): no NPM_TOKEN secret. Each
+# published package — `docling.rs`, every `docling.rs-<triple>` platform
+# package, `docling.rs-cuda`, `docling.rs-wasm` — must have this repository +
+# `npm-publish.yml` configured as its trusted publisher on npmjs.com. The
+# publish jobs request `id-token: write` and upgrade to npm >= 11.5.1 (the
+# first release that performs the OIDC exchange; the runner's bundled npm 10
+# silently falls back to tokens, which npm now rejects as E404).
 #
 # The optional `cuda` input additionally publishes `docling.rs-cuda`
 # (issue #74, Linux x64): the CUDA addon + ONNX Runtime provider libraries are
@@ -42,9 +46,9 @@ on:
         type: boolean
         default: false
 
-# Least privilege for GITHUB_TOKEN: publishing goes to npm with NPM_TOKEN, so
-# the token only needs the checkout. `publish-cuda`, which uploads binaries to
-# a GitHub release, raises it to `contents: write` on the job itself.
+# Least privilege for GITHUB_TOKEN: the workflow default is checkout-only.
+# The publish jobs add `id-token: write` (the npm OIDC exchange) on the job
+# itself, and `publish-cuda` also `contents: write` (gh release upload).
 permissions:
   contents: read
 
@@ -146,15 +150,26 @@ jobs:
     name: publish to npm
     needs: build
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write # npm trusted publishing (OIDC)
     steps:
       - uses: actions/checkout@v7
         with:
           ref: ${{ inputs.tag || github.ref }}
 
+      # No registry-url: setup-node would write an .npmrc that reads
+      # $NODE_AUTH_TOKEN, and trusted publishing sends no token — npm errors
+      # on the unset variable. The default registry is npmjs.org anyway.
       - uses: actions/setup-node@v7
         with:
           node-version: 20
-          registry-url: "https://registry.npmjs.org"
+
+      # The runner's bundled npm (10.x) predates trusted publishing; the OIDC
+      # exchange needs npm 11.5.1+. `napi prepublish` shells out to `npm
+      # publish` per platform package, so the global upgrade covers those too.
+      - name: Upgrade npm for trusted publishing
+        run: npm install -g npm@^11.5.1 && npm --version
 
       - name: Install napi CLI
         run: npm install
@@ -218,8 +233,6 @@ jobs:
       - name: Publish
         if: steps.check.outputs.published == 'false'
         run: npm publish --access public
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
   # docling.rs-cuda (issue #74): CUDA addon binaries → GitHub release, small
   # npm shim with a postinstall downloader → npm. Self-contained (doesn't need
@@ -238,6 +251,7 @@ jobs:
     runs-on: ubuntu-24.04
     permissions:
       contents: write # gh release create/upload
+      id-token: write # npm trusted publishing (OIDC)
     steps:
       - uses: actions/checkout@v7
         with:
@@ -258,10 +272,14 @@ jobs:
           key: ${{ runner.os }}-cargo-cuda-node-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: ${{ runner.os }}-cargo-cuda-node-
 
+      # No registry-url — see the publish job: trusted publishing sends no
+      # token, and setup-node's .npmrc would read an unset $NODE_AUTH_TOKEN.
       - uses: actions/setup-node@v7
         with:
           node-version: 20
-          registry-url: "https://registry.npmjs.org"
+
+      - name: Upgrade npm for trusted publishing
+        run: npm install -g npm@^11.5.1 && npm --version
 
       - name: Install napi CLI
         run: npm install
@@ -370,8 +388,6 @@ jobs:
       - name: Publish
         if: steps.check.outputs.published == 'false'
         run: cd cuda/pkg && npm publish --access public
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
   # docling.rs-wasm: the browser/WebAssembly package (no native matrix — one
   # Linux runner compiles wasm32-unknown-unknown and publishes). Same
@@ -380,6 +396,9 @@ jobs:
   publish-wasm:
     name: publish docling.rs-wasm
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write # npm trusted publishing (OIDC)
     defaults:
       run:
         working-directory: .
@@ -405,10 +424,14 @@ jobs:
           key: ${{ runner.os }}-cargo-v2-wasm-npm-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: ${{ runner.os }}-cargo-v2-wasm-npm-
 
+      # No registry-url — see the publish job: trusted publishing sends no
+      # token, and setup-node's .npmrc would read an unset $NODE_AUTH_TOKEN.
       - uses: actions/setup-node@v7
         with:
           node-version: 22
-          registry-url: "https://registry.npmjs.org"
+
+      - name: Upgrade npm for trusted publishing
+        run: npm install -g npm@^11.5.1 && npm --version
 
       - name: Install wasm-bindgen-cli (pinned to Cargo.lock)
         run: |
@@ -456,5 +479,3 @@ jobs:
       - name: Publish
         if: steps.wcheck.outputs.published == 'false'
         run: cd target/npm-wasm && npm publish --access public
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
