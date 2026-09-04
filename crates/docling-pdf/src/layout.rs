@@ -169,12 +169,26 @@ impl LayoutModel {
                  converts without models in no-OCR mode (CLI: --no-ocr)"
             ));
         }
-        let builder = Session::builder()
+        let mut builder = Session::builder()
             .map_err(|e| format!("layout: builder: {e}"))?
             // Let inference use the available cores (ort otherwise defaults low);
             // a large PDF runs this model once per page.
             .with_intra_threads(intra)
             .map_err(|e| format!("layout: intra_threads: {e}"))?;
+        // Per-page mode pins the model's dynamic `batch` axis to 1 (#339):
+        // the free dimension blocks ONNX Runtime's channels-last conv
+        // transform, so the graph runs NCHW `FusedConv` instead of
+        // `NhwcFusedConv` — the issue measured ~1.4× on Apple-silicon CPU
+        // for the same weights re-exported static. Overriding the dimension
+        // at session creation gets the static graph without a re-export; it
+        // also leaves the whole graph static-shaped, which is what the
+        // CoreML provider's static-partitions default (#324) wants. Batched
+        // mode keeps the axis free — those sessions must accept N pages.
+        if crate::pdf_layout_batch() == 1 {
+            builder = builder
+                .with_dimension_override("batch", 1)
+                .map_err(|e| format!("layout: dimension override: {e}"))?;
+        }
         docling_onnx::apply(builder)
             .map_err(|e| format!("layout: {e}"))?
             .commit_from_file(path)

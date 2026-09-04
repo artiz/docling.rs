@@ -1286,17 +1286,22 @@ fn pdf_worker_count() -> usize {
 /// whatever is already rendered gets batched, so batching never *waits* for
 /// pages and adds no latency when rendering is the bottleneck.
 ///
-/// Default: 4 on 8+ cores, 1 (per-page) below. Measured on a 4-core box the
-/// batch only adds cache pressure and costs pipeline overlap (2 workers × 2
-/// threads: 8.1 s/conv at batch=1 vs 9.3 s at batch=4 on the 9-page
-/// 2206.01062 fixture); the single-session amortization it buys needs the
-/// wider thread budget of a many-core machine. Output is bit-identical at
-/// every batch size, so this is purely a throughput knob.
-/// `DOCLING_RS_PDF_LAYOUT_BATCH` overrides; `1` restores per-page inference.
-fn pdf_layout_batch() -> usize {
+/// Default: per-page (1) on the CPU provider, 4 when a GPU provider is
+/// selected (#338). The old "4 on 8+ cores" CPU default was a hypothesis —
+/// that single-session amortization pays off with a wider thread budget —
+/// and every actual CPU measurement lands the other way: a 4-core x86 box
+/// runs the 9-page 2206.01062 fixture in 8.5 s/conv at batch=1 vs 9.3 s at
+/// batch=4 (re-measured for #338; the original 8.1 vs 9.3 agrees), and the
+/// issue-#338 report measured batch=1 ~2× faster on a 16-core M4 Max at
+/// every worker count — batching only adds cache pressure once workers
+/// saturate the cores. On a GPU the per-call dispatch overhead is real and
+/// batching amortizes it, so the GPU default stays. Output is bit-identical
+/// at every batch size, so this is purely a throughput knob.
+/// `DOCLING_RS_PDF_LAYOUT_BATCH` overrides either way; `1` = per-page.
+pub(crate) fn pdf_layout_batch() -> usize {
     env::parse::<usize>("DOCLING_RS_PDF_LAYOUT_BATCH")
         .filter(|&n| n > 0)
-        .unwrap_or_else(|| if intra_threads() >= 8 { 4 } else { 1 })
+        .unwrap_or_else(|| if docling_onnx::prefers_fp32() { 4 } else { 1 })
 }
 
 #[cfg(feature = "ml")]
