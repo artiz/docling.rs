@@ -180,11 +180,3 @@ Hidden categories:
 - [Featured recipes](https://en.wikibooks.org/wiki/Category:Featured_recipes)
 
 Search
-
-Search
-
-Cookbook:Chicken Tikka
-
-2 languages
-
-[Add topic](https://en.wikibooks.org/wiki/Cookbook:Chicken_Tikka#)

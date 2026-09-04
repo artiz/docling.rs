@@ -151,8 +151,20 @@ pub enum Node {
         /// DocLang `<location>` provenance for the picture element.
         location: Option<[u16; 4]>,
     },
-    /// A logical grouping of child nodes (e.g. a list, a section).
-    Group { label: String, children: Vec<Node> },
+    /// A logical grouping of child nodes (e.g. a list, a section, a spreadsheet
+    /// sheet). `name` is docling's group name when it differs from the label —
+    /// an xlsx sheet group is `label: "sheet"`, `name: Some("Sheet1")`. `layer`
+    /// puts the group *and* everything it contains on a non-body content layer
+    /// (a hidden sheet is `invisible`), which is how the serializers that only
+    /// render body content know to skip it; DocLang stamps each child with the
+    /// layer token, exactly as a [`Node::Furniture`] wrapper on each would.
+    /// DocLang has no group element, so a group is transparent there.
+    Group {
+        label: String,
+        name: Option<String>,
+        layer: Option<ContentLayer>,
+        children: Vec<Node>,
+    },
     /// A form key-value region (docling's `field_region`): a set of form fields,
     /// each pairing an optional marker, key, and value. Backends detect these
     /// from form structure (e.g. HTML's `keyN` / `keyN_valueM` / `keyN_marker`
@@ -179,16 +191,27 @@ pub enum Node {
         layer: ContentLayer,
         inner: Box<Node>,
     },
-    /// One docx reviewer comment (`w:comment`): docling's notes-layer
-    /// `comment_section` group holding a single text item. `name` is docling's
-    /// `comment-{id}` — the *docx* comment id, not the ordinal. JSON emits the
-    /// group plus its notes-layer text; DocLang emits the flat
+    /// One reviewer comment: docling's notes-layer `comment_section` group
+    /// holding a single text item. `name` is docling's own — `comment-{id}` for
+    /// a docx `w:comment`, `comment-{sheet}-{cell}` for a spreadsheet cell note.
+    /// JSON emits the group plus its notes-layer text; DocLang emits the flat
     /// `<text><layer value="notes"/>…</text>` upstream writes (its DocLang
     /// carries no group for comments); Markdown and LaTeX omit the notes layer.
-    CommentSection { name: String, text: String },
-    /// A body item annotated by docx reviewer comments: `comments` are indices
-    /// into the document's [`Node::CommentSection`] nodes, in document order.
-    /// JSON emits docling's `comments: [{"$ref": "#/groups/N"}]` on the item;
+    ///
+    /// `refs_note_text` picks what a [`Node::Commented`] annotation points at,
+    /// mirroring an upstream asymmetry: docling-core's `add_comment` appends the
+    /// **note text**'s ref to each target (which is what the xlsx backend gets),
+    /// while the docx backend overwrites that with the **group**'s ref so a
+    /// comment's replies group together.
+    CommentSection {
+        name: String,
+        text: String,
+        refs_note_text: bool,
+    },
+    /// A body item annotated by reviewer comments: `comments` are indices into
+    /// the document's [`Node::CommentSection`] nodes, in document order. JSON
+    /// emits docling's `comments: [{"$ref": …}]` on the item, each ref pointing
+    /// where the section says (see [`Node::CommentSection::refs_note_text`]);
     /// every other serializer renders `inner` unchanged.
     Commented {
         comments: Vec<usize>,

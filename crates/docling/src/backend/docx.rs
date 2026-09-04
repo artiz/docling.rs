@@ -124,6 +124,9 @@ impl DeclarativeBackend for DocxBackend {
             doc.nodes.push(Node::CommentSection {
                 name: format!("comment-{id}"),
                 text,
+                // The docx backend replaces `add_comment`'s text ref with the
+                // group's, so replies to one comment group together.
+                refs_note_text: false,
             });
         }
         Ok(doc)

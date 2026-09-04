@@ -18,63 +18,78 @@
     "self_ref": "#/body",
     "children": [
       {
-        "$ref": "#/tables/0"
-      },
-      {
-        "$ref": "#/tables/1"
-      },
-      {
-        "$ref": "#/tables/2"
-      },
-      {
-        "$ref": "#/tables/3"
-      },
-      {
-        "$ref": "#/tables/4"
-      },
-      {
-        "$ref": "#/tables/5"
-      },
-      {
-        "$ref": "#/tables/6"
-      },
-      {
-        "$ref": "#/tables/7"
-      },
-      {
-        "$ref": "#/tables/8"
-      },
-      {
-        "$ref": "#/tables/9"
-      },
-      {
-        "$ref": "#/tables/10"
-      },
-      {
-        "$ref": "#/tables/11"
-      },
-      {
-        "$ref": "#/tables/12"
-      },
-      {
-        "$ref": "#/tables/13"
-      },
-      {
-        "$ref": "#/tables/14"
+        "$ref": "#/groups/0"
       }
     ],
     "content_layer": "body",
     "name": "_root_",
     "label": "unspecified"
   },
-  "groups": [],
+  "groups": [
+    {
+      "self_ref": "#/groups/0",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [
+        {
+          "$ref": "#/tables/0"
+        },
+        {
+          "$ref": "#/tables/1"
+        },
+        {
+          "$ref": "#/tables/2"
+        },
+        {
+          "$ref": "#/tables/3"
+        },
+        {
+          "$ref": "#/tables/4"
+        },
+        {
+          "$ref": "#/tables/5"
+        },
+        {
+          "$ref": "#/tables/6"
+        },
+        {
+          "$ref": "#/tables/7"
+        },
+        {
+          "$ref": "#/tables/8"
+        },
+        {
+          "$ref": "#/tables/9"
+        },
+        {
+          "$ref": "#/tables/10"
+        },
+        {
+          "$ref": "#/tables/11"
+        },
+        {
+          "$ref": "#/tables/12"
+        },
+        {
+          "$ref": "#/tables/13"
+        },
+        {
+          "$ref": "#/tables/14"
+        }
+      ],
+      "content_layer": "body",
+      "name": "Page 1",
+      "label": "sheet"
+    }
+  ],
   "texts": [],
   "pictures": [],
   "tables": [
     {
       "self_ref": "#/tables/0",
       "parent": {
-        "$ref": "#/body"
+        "$ref": "#/groups/0"
       },
       "children": [],
       "content_layer": "body",
@@ -152,7 +167,7 @@
     {
       "self_ref": "#/tables/1",
       "parent": {
-        "$ref": "#/body"
+        "$ref": "#/groups/0"
       },
       "children": [],
       "content_layer": "body",
@@ -258,7 +273,7 @@
     {
       "self_ref": "#/tables/2",
       "parent": {
-        "$ref": "#/body"
+        "$ref": "#/groups/0"
       },
       "children": [],
       "content_layer": "body",
@@ -308,7 +323,7 @@
     {
       "self_ref": "#/tables/3",
       "parent": {
-        "$ref": "#/body"
+        "$ref": "#/groups/0"
       },
       "children": [],
       "content_layer": "body",
@@ -425,10 +440,36 @@
           },
           {
             "row_span": 1,
-            "col_span": 3,
+            "col_span": 1,
             "start_row_offset_idx": 1,
             "end_row_offset_idx": 2,
             "start_col_offset_idx": 0,
+            "end_col_offset_idx": 1,
+            "text": "13156456",
+            "column_header": false,
+            "row_header": false,
+            "row_section": false,
+            "fillable": false
+          },
+          {
+            "row_span": 1,
+            "col_span": 1,
+            "start_row_offset_idx": 1,
+            "end_row_offset_idx": 2,
+            "start_col_offset_idx": 1,
+            "end_col_offset_idx": 2,
+            "text": "13156456",
+            "column_header": false,
+            "row_header": false,
+            "row_section": false,
+            "fillable": false
+          },
+          {
+            "row_span": 1,
+            "col_span": 1,
+            "start_row_offset_idx": 1,
+            "end_row_offset_idx": 2,
+            "start_col_offset_idx": 2,
             "end_col_offset_idx": 3,
             "text": "13156456",
             "column_header": false,
@@ -438,10 +479,49 @@
           },
           {
             "row_span": 1,
-            "col_span": 4,
+            "col_span": 1,
             "start_row_offset_idx": 1,
             "end_row_offset_idx": 2,
             "start_col_offset_idx": 3,
+            "end_col_offset_idx": 4,
+            "text": "144564",
+            "column_header": false,
+            "row_header": false,
+            "row_section": false,
+            "fillable": false
+          },
+          {
+            "row_span": 1,
+            "col_span": 1,
+            "start_row_offset_idx": 1,
+            "end_row_offset_idx": 2,
+            "start_col_offset_idx": 4,
+            "end_col_offset_idx": 5,
+            "text": "144564",
+            "column_header": false,
+            "row_header": false,
+            "row_section": false,
+            "fillable": false
+          },
+          {
+            "row_span": 1,
+            "col_span": 1,
+            "start_row_offset_idx": 1,
+            "end_row_offset_idx": 2,
+            "start_col_offset_idx": 5,
+            "end_col_offset_idx": 6,
+            "text": "144564",
+            "column_header": false,
+            "row_header": false,
+            "row_section": false,
+            "fillable": false
+          },
+          {
+            "row_span": 1,
+            "col_span": 1,
+            "start_row_offset_idx": 1,
+            "end_row_offset_idx": 2,
+            "start_col_offset_idx": 6,
             "end_col_offset_idx": 7,
             "text": "144564",
             "column_header": false,
@@ -575,10 +655,36 @@
           [
             {
               "row_span": 1,
-              "col_span": 3,
+              "col_span": 1,
               "start_row_offset_idx": 1,
               "end_row_offset_idx": 2,
               "start_col_offset_idx": 0,
+              "end_col_offset_idx": 1,
+              "text": "13156456",
+              "column_header": false,
+              "row_header": false,
+              "row_section": false,
+              "fillable": false
+            },
+            {
+              "row_span": 1,
+              "col_span": 1,
+              "start_row_offset_idx": 1,
+              "end_row_offset_idx": 2,
+              "start_col_offset_idx": 1,
+              "end_col_offset_idx": 2,
+              "text": "13156456",
+              "column_header": false,
+              "row_header": false,
+              "row_section": false,
+              "fillable": false
+            },
+            {
+              "row_span": 1,
+              "col_span": 1,
+              "start_row_offset_idx": 1,
+              "end_row_offset_idx": 2,
+              "start_col_offset_idx": 2,
               "end_col_offset_idx": 3,
               "text": "13156456",
               "column_header": false,
@@ -588,37 +694,11 @@
             },
             {
               "row_span": 1,
-              "col_span": 3,
-              "start_row_offset_idx": 1,
-              "end_row_offset_idx": 2,
-              "start_col_offset_idx": 0,
-              "end_col_offset_idx": 3,
-              "text": "13156456",
-              "column_header": false,
-              "row_header": false,
-              "row_section": false,
-              "fillable": false
-            },
-            {
-              "row_span": 1,
-              "col_span": 3,
-              "start_row_offset_idx": 1,
-              "end_row_offset_idx": 2,
-              "start_col_offset_idx": 0,
-              "end_col_offset_idx": 3,
-              "text": "13156456",
-              "column_header": false,
-              "row_header": false,
-              "row_section": false,
-              "fillable": false
-            },
-            {
-              "row_span": 1,
-              "col_span": 4,
+              "col_span": 1,
               "start_row_offset_idx": 1,
               "end_row_offset_idx": 2,
               "start_col_offset_idx": 3,
-              "end_col_offset_idx": 7,
+              "end_col_offset_idx": 4,
               "text": "144564",
               "column_header": false,
               "row_header": false,
@@ -627,11 +707,11 @@
             },
             {
               "row_span": 1,
-              "col_span": 4,
+              "col_span": 1,
               "start_row_offset_idx": 1,
               "end_row_offset_idx": 2,
-              "start_col_offset_idx": 3,
-              "end_col_offset_idx": 7,
+              "start_col_offset_idx": 4,
+              "end_col_offset_idx": 5,
               "text": "144564",
               "column_header": false,
               "row_header": false,
@@ -640,11 +720,11 @@
             },
             {
               "row_span": 1,
-              "col_span": 4,
+              "col_span": 1,
               "start_row_offset_idx": 1,
               "end_row_offset_idx": 2,
-              "start_col_offset_idx": 3,
-              "end_col_offset_idx": 7,
+              "start_col_offset_idx": 5,
+              "end_col_offset_idx": 6,
               "text": "144564",
               "column_header": false,
               "row_header": false,
@@ -653,10 +733,10 @@
             },
             {
               "row_span": 1,
-              "col_span": 4,
+              "col_span": 1,
               "start_row_offset_idx": 1,
               "end_row_offset_idx": 2,
-              "start_col_offset_idx": 3,
+              "start_col_offset_idx": 6,
               "end_col_offset_idx": 7,
               "text": "144564",
               "column_header": false,
@@ -685,7 +765,7 @@
     {
       "self_ref": "#/tables/4",
       "parent": {
-        "$ref": "#/body"
+        "$ref": "#/groups/0"
       },
       "children": [],
       "content_layer": "body",
@@ -735,7 +815,7 @@
     {
       "self_ref": "#/tables/5",
       "parent": {
-        "$ref": "#/body"
+        "$ref": "#/groups/0"
       },
       "children": [],
       "content_layer": "body",
@@ -1345,7 +1425,7 @@
     {
       "self_ref": "#/tables/6",
       "parent": {
-        "$ref": "#/body"
+        "$ref": "#/groups/0"
       },
       "children": [],
       "content_layer": "body",
@@ -1535,7 +1615,7 @@
     {
       "self_ref": "#/tables/7",
       "parent": {
-        "$ref": "#/body"
+        "$ref": "#/groups/0"
       },
       "children": [],
       "content_layer": "body",
@@ -2193,7 +2273,7 @@
     {
       "self_ref": "#/tables/8",
       "parent": {
-        "$ref": "#/body"
+        "$ref": "#/groups/0"
       },
       "children": [],
       "content_layer": "body",
@@ -2299,7 +2379,7 @@
     {
       "self_ref": "#/tables/9",
       "parent": {
-        "$ref": "#/body"
+        "$ref": "#/groups/0"
       },
       "children": [],
       "content_layer": "body",
@@ -2561,7 +2641,7 @@
     {
       "self_ref": "#/tables/10",
       "parent": {
-        "$ref": "#/body"
+        "$ref": "#/groups/0"
       },
       "children": [],
       "content_layer": "body",
@@ -2695,7 +2775,7 @@
     {
       "self_ref": "#/tables/11",
       "parent": {
-        "$ref": "#/body"
+        "$ref": "#/groups/0"
       },
       "children": [],
       "content_layer": "body",
@@ -3037,7 +3117,7 @@
     {
       "self_ref": "#/tables/12",
       "parent": {
-        "$ref": "#/body"
+        "$ref": "#/groups/0"
       },
       "children": [],
       "content_layer": "body",
@@ -3087,7 +3167,7 @@
     {
       "self_ref": "#/tables/13",
       "parent": {
-        "$ref": "#/body"
+        "$ref": "#/groups/0"
       },
       "children": [],
       "content_layer": "body",
@@ -3215,7 +3295,7 @@
     {
       "self_ref": "#/tables/14",
       "parent": {
-        "$ref": "#/body"
+        "$ref": "#/groups/0"
       },
       "children": [],
       "content_layer": "body",
@@ -3228,10 +3308,62 @@
         "table_cells": [
           {
             "row_span": 1,
-            "col_span": 5,
+            "col_span": 1,
             "start_row_offset_idx": 0,
             "end_row_offset_idx": 1,
             "start_col_offset_idx": 0,
+            "end_col_offset_idx": 1,
+            "text": "Converted to 110VDC ",
+            "column_header": true,
+            "row_header": false,
+            "row_section": false,
+            "fillable": false
+          },
+          {
+            "row_span": 1,
+            "col_span": 1,
+            "start_row_offset_idx": 0,
+            "end_row_offset_idx": 1,
+            "start_col_offset_idx": 1,
+            "end_col_offset_idx": 2,
+            "text": "Converted to 110VDC ",
+            "column_header": true,
+            "row_header": false,
+            "row_section": false,
+            "fillable": false
+          },
+          {
+            "row_span": 1,
+            "col_span": 1,
+            "start_row_offset_idx": 0,
+            "end_row_offset_idx": 1,
+            "start_col_offset_idx": 2,
+            "end_col_offset_idx": 3,
+            "text": "Converted to 110VDC ",
+            "column_header": true,
+            "row_header": false,
+            "row_section": false,
+            "fillable": false
+          },
+          {
+            "row_span": 1,
+            "col_span": 1,
+            "start_row_offset_idx": 0,
+            "end_row_offset_idx": 1,
+            "start_col_offset_idx": 3,
+            "end_col_offset_idx": 4,
+            "text": "Converted to 110VDC ",
+            "column_header": true,
+            "row_header": false,
+            "row_section": false,
+            "fillable": false
+          },
+          {
+            "row_span": 1,
+            "col_span": 1,
+            "start_row_offset_idx": 0,
+            "end_row_offset_idx": 1,
+            "start_col_offset_idx": 4,
             "end_col_offset_idx": 5,
             "text": "Converted to 110VDC ",
             "column_header": true,
@@ -3241,10 +3373,62 @@
           },
           {
             "row_span": 1,
-            "col_span": 5,
+            "col_span": 1,
             "start_row_offset_idx": 1,
             "end_row_offset_idx": 2,
             "start_col_offset_idx": 0,
+            "end_col_offset_idx": 1,
+            "text": "Arc test (type test)",
+            "column_header": false,
+            "row_header": false,
+            "row_section": false,
+            "fillable": false
+          },
+          {
+            "row_span": 1,
+            "col_span": 1,
+            "start_row_offset_idx": 1,
+            "end_row_offset_idx": 2,
+            "start_col_offset_idx": 1,
+            "end_col_offset_idx": 2,
+            "text": "Arc test (type test)",
+            "column_header": false,
+            "row_header": false,
+            "row_section": false,
+            "fillable": false
+          },
+          {
+            "row_span": 1,
+            "col_span": 1,
+            "start_row_offset_idx": 1,
+            "end_row_offset_idx": 2,
+            "start_col_offset_idx": 2,
+            "end_col_offset_idx": 3,
+            "text": "Arc test (type test)",
+            "column_header": false,
+            "row_header": false,
+            "row_section": false,
+            "fillable": false
+          },
+          {
+            "row_span": 1,
+            "col_span": 1,
+            "start_row_offset_idx": 1,
+            "end_row_offset_idx": 2,
+            "start_col_offset_idx": 3,
+            "end_col_offset_idx": 4,
+            "text": "Arc test (type test)",
+            "column_header": false,
+            "row_header": false,
+            "row_section": false,
+            "fillable": false
+          },
+          {
+            "row_span": 1,
+            "col_span": 1,
+            "start_row_offset_idx": 1,
+            "end_row_offset_idx": 2,
+            "start_col_offset_idx": 4,
             "end_col_offset_idx": 5,
             "text": "Arc test (type test)",
             "column_header": false,
@@ -3254,10 +3438,62 @@
           },
           {
             "row_span": 1,
-            "col_span": 5,
+            "col_span": 1,
             "start_row_offset_idx": 2,
             "end_row_offset_idx": 3,
             "start_col_offset_idx": 0,
+            "end_col_offset_idx": 1,
+            "text": "",
+            "column_header": false,
+            "row_header": false,
+            "row_section": false,
+            "fillable": false
+          },
+          {
+            "row_span": 1,
+            "col_span": 1,
+            "start_row_offset_idx": 2,
+            "end_row_offset_idx": 3,
+            "start_col_offset_idx": 1,
+            "end_col_offset_idx": 2,
+            "text": "",
+            "column_header": false,
+            "row_header": false,
+            "row_section": false,
+            "fillable": false
+          },
+          {
+            "row_span": 1,
+            "col_span": 1,
+            "start_row_offset_idx": 2,
+            "end_row_offset_idx": 3,
+            "start_col_offset_idx": 2,
+            "end_col_offset_idx": 3,
+            "text": "",
+            "column_header": false,
+            "row_header": false,
+            "row_section": false,
+            "fillable": false
+          },
+          {
+            "row_span": 1,
+            "col_span": 1,
+            "start_row_offset_idx": 2,
+            "end_row_offset_idx": 3,
+            "start_col_offset_idx": 3,
+            "end_col_offset_idx": 4,
+            "text": "",
+            "column_header": false,
+            "row_header": false,
+            "row_section": false,
+            "fillable": false
+          },
+          {
+            "row_span": 1,
+            "col_span": 1,
+            "start_row_offset_idx": 2,
+            "end_row_offset_idx": 3,
+            "start_col_offset_idx": 4,
             "end_col_offset_idx": 5,
             "text": "",
             "column_header": false,
@@ -3272,11 +3508,11 @@
           [
             {
               "row_span": 1,
-              "col_span": 5,
+              "col_span": 1,
               "start_row_offset_idx": 0,
               "end_row_offset_idx": 1,
               "start_col_offset_idx": 0,
-              "end_col_offset_idx": 5,
+              "end_col_offset_idx": 1,
               "text": "Converted to 110VDC ",
               "column_header": true,
               "row_header": false,
@@ -3285,11 +3521,11 @@
             },
             {
               "row_span": 1,
-              "col_span": 5,
+              "col_span": 1,
               "start_row_offset_idx": 0,
               "end_row_offset_idx": 1,
-              "start_col_offset_idx": 0,
-              "end_col_offset_idx": 5,
+              "start_col_offset_idx": 1,
+              "end_col_offset_idx": 2,
               "text": "Converted to 110VDC ",
               "column_header": true,
               "row_header": false,
@@ -3298,11 +3534,11 @@
             },
             {
               "row_span": 1,
-              "col_span": 5,
+              "col_span": 1,
               "start_row_offset_idx": 0,
               "end_row_offset_idx": 1,
-              "start_col_offset_idx": 0,
-              "end_col_offset_idx": 5,
+              "start_col_offset_idx": 2,
+              "end_col_offset_idx": 3,
               "text": "Converted to 110VDC ",
               "column_header": true,
               "row_header": false,
@@ -3311,11 +3547,11 @@
             },
             {
               "row_span": 1,
-              "col_span": 5,
+              "col_span": 1,
               "start_row_offset_idx": 0,
               "end_row_offset_idx": 1,
-              "start_col_offset_idx": 0,
-              "end_col_offset_idx": 5,
+              "start_col_offset_idx": 3,
+              "end_col_offset_idx": 4,
               "text": "Converted to 110VDC ",
               "column_header": true,
               "row_header": false,
@@ -3324,10 +3560,10 @@
             },
             {
               "row_span": 1,
-              "col_span": 5,
+              "col_span": 1,
               "start_row_offset_idx": 0,
               "end_row_offset_idx": 1,
-              "start_col_offset_idx": 0,
+              "start_col_offset_idx": 4,
               "end_col_offset_idx": 5,
               "text": "Converted to 110VDC ",
               "column_header": true,
@@ -3339,11 +3575,11 @@
           [
             {
               "row_span": 1,
-              "col_span": 5,
+              "col_span": 1,
               "start_row_offset_idx": 1,
               "end_row_offset_idx": 2,
               "start_col_offset_idx": 0,
-              "end_col_offset_idx": 5,
+              "end_col_offset_idx": 1,
               "text": "Arc test (type test)",
               "column_header": false,
               "row_header": false,
@@ -3352,11 +3588,11 @@
             },
             {
               "row_span": 1,
-              "col_span": 5,
+              "col_span": 1,
               "start_row_offset_idx": 1,
               "end_row_offset_idx": 2,
-              "start_col_offset_idx": 0,
-              "end_col_offset_idx": 5,
+              "start_col_offset_idx": 1,
+              "end_col_offset_idx": 2,
               "text": "Arc test (type test)",
               "column_header": false,
               "row_header": false,
@@ -3365,11 +3601,11 @@
             },
             {
               "row_span": 1,
-              "col_span": 5,
+              "col_span": 1,
               "start_row_offset_idx": 1,
               "end_row_offset_idx": 2,
-              "start_col_offset_idx": 0,
-              "end_col_offset_idx": 5,
+              "start_col_offset_idx": 2,
+              "end_col_offset_idx": 3,
               "text": "Arc test (type test)",
               "column_header": false,
               "row_header": false,
@@ -3378,11 +3614,11 @@
             },
             {
               "row_span": 1,
-              "col_span": 5,
+              "col_span": 1,
               "start_row_offset_idx": 1,
               "end_row_offset_idx": 2,
-              "start_col_offset_idx": 0,
-              "end_col_offset_idx": 5,
+              "start_col_offset_idx": 3,
+              "end_col_offset_idx": 4,
               "text": "Arc test (type test)",
               "column_header": false,
               "row_header": false,
@@ -3391,10 +3627,10 @@
             },
             {
               "row_span": 1,
-              "col_span": 5,
+              "col_span": 1,
               "start_row_offset_idx": 1,
               "end_row_offset_idx": 2,
-              "start_col_offset_idx": 0,
+              "start_col_offset_idx": 4,
               "end_col_offset_idx": 5,
               "text": "Arc test (type test)",
               "column_header": false,
@@ -3406,11 +3642,11 @@
           [
             {
               "row_span": 1,
-              "col_span": 5,
+              "col_span": 1,
               "start_row_offset_idx": 2,
               "end_row_offset_idx": 3,
               "start_col_offset_idx": 0,
-              "end_col_offset_idx": 5,
+              "end_col_offset_idx": 1,
               "text": "",
               "column_header": false,
               "row_header": false,
@@ -3419,11 +3655,11 @@
             },
             {
               "row_span": 1,
-              "col_span": 5,
+              "col_span": 1,
               "start_row_offset_idx": 2,
               "end_row_offset_idx": 3,
-              "start_col_offset_idx": 0,
-              "end_col_offset_idx": 5,
+              "start_col_offset_idx": 1,
+              "end_col_offset_idx": 2,
               "text": "",
               "column_header": false,
               "row_header": false,
@@ -3432,11 +3668,11 @@
             },
             {
               "row_span": 1,
-              "col_span": 5,
+              "col_span": 1,
               "start_row_offset_idx": 2,
               "end_row_offset_idx": 3,
-              "start_col_offset_idx": 0,
-              "end_col_offset_idx": 5,
+              "start_col_offset_idx": 2,
+              "end_col_offset_idx": 3,
               "text": "",
               "column_header": false,
               "row_header": false,
@@ -3445,11 +3681,11 @@
             },
             {
               "row_span": 1,
-              "col_span": 5,
+              "col_span": 1,
               "start_row_offset_idx": 2,
               "end_row_offset_idx": 3,
-              "start_col_offset_idx": 0,
-              "end_col_offset_idx": 5,
+              "start_col_offset_idx": 3,
+              "end_col_offset_idx": 4,
               "text": "",
               "column_header": false,
               "row_header": false,
@@ -3458,10 +3694,10 @@
             },
             {
               "row_span": 1,
-              "col_span": 5,
+              "col_span": 1,
               "start_row_offset_idx": 2,
               "end_row_offset_idx": 3,
-              "start_col_offset_idx": 0,
+              "start_col_offset_idx": 4,
               "end_col_offset_idx": 5,
               "text": "",
               "column_header": false,

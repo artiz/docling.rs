@@ -202,18 +202,6 @@
       },
       {
         "$ref": "#/texts/154"
-      },
-      {
-        "$ref": "#/texts/155"
-      },
-      {
-        "$ref": "#/texts/156"
-      },
-      {
-        "$ref": "#/texts/157"
-      },
-      {
-        "$ref": "#/texts/158"
       }
     ],
     "content_layer": "body",
@@ -2940,54 +2928,6 @@
       "prov": [],
       "orig": "Search",
       "text": "Search"
-    },
-    {
-      "self_ref": "#/texts/155",
-      "parent": {
-        "$ref": "#/body"
-      },
-      "children": [],
-      "content_layer": "body",
-      "label": "text",
-      "prov": [],
-      "orig": "Search",
-      "text": "Search"
-    },
-    {
-      "self_ref": "#/texts/156",
-      "parent": {
-        "$ref": "#/body"
-      },
-      "children": [],
-      "content_layer": "body",
-      "label": "text",
-      "prov": [],
-      "orig": "Cookbook:Chicken Tikka",
-      "text": "Cookbook:Chicken Tikka"
-    },
-    {
-      "self_ref": "#/texts/157",
-      "parent": {
-        "$ref": "#/body"
-      },
-      "children": [],
-      "content_layer": "body",
-      "label": "text",
-      "prov": [],
-      "orig": "2 languages",
-      "text": "2 languages"
-    },
-    {
-      "self_ref": "#/texts/158",
-      "parent": {
-        "$ref": "#/body"
-      },
-      "children": [],
-      "content_layer": "body",
-      "label": "text",
-      "prov": [],
-      "orig": "[Add topic](https://en.wikibooks.org/wiki/Cookbook:Chicken_Tikka#)",
-      "text": "[Add topic](https://en.wikibooks.org/wiki/Cookbook:Chicken_Tikka#)"
     }
   ],
   "pictures": [],

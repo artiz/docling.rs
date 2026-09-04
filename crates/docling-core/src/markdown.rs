@@ -556,6 +556,9 @@ fn render_one(node: &Node, blocks: &mut Vec<String>, ctx: &mut Ctx) {
         }
         // A DocLang-only node is omitted from Markdown.
         Node::DoclangOnly(_) => {}
+        // A group on a non-body layer (a hidden spreadsheet sheet) renders
+        // nothing, like every other non-body item.
+        Node::Group { layer: Some(_), .. } => {}
         Node::Group { children, .. } => render(children, blocks, ctx),
         Node::FieldRegion { items } => {
             // The region container and each field item carry no text of their

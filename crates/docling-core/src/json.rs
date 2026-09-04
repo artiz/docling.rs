@@ -10,7 +10,7 @@
 
 use serde_json::{json, Value};
 
-use crate::document::{DoclingDocument, Node, Table};
+use crate::document::{ContentLayer, DoclingDocument, Node, Table};
 
 const SCHEMA_VERSION: &str = "1.10.0";
 
@@ -172,8 +172,9 @@ struct Builder {
     /// The enclosing [`Node::Located`] wrapper's 0–511 grid box, waiting to be
     /// consumed as the next item's provenance.
     pending_loc: Option<[u16; 4]>,
-    /// Each [`Node::CommentSection`]'s group `$ref`, in document order — the
-    /// index a [`Node::Commented`] annotation refers to.
+    /// What each [`Node::CommentSection`] is referenced by, in document order —
+    /// its group `$ref`, or its note text's when the section says so. The index
+    /// is what a [`Node::Commented`] annotation carries.
     comment_groups: Vec<String>,
     /// Annotated items awaiting their refs: comments are usually emitted
     /// *after* the body they annotate (docx appends them), so the link is
@@ -318,9 +319,15 @@ impl Builder {
                 Some(self.add_formula_item(latex, orig, parent))
             }
             // docling's notes-layer `comment_section` group holding the
-            // comment's text item; the annotated body items point at the group
-            // (not the text), which is how replies group under one comment.
-            Node::CommentSection { name, text } => {
+            // comment's text item. What the annotated items point at differs
+            // upstream: the docx backend links the group (so a comment's
+            // replies group together), everything going through
+            // docling-core's `add_comment` links the note text itself.
+            Node::CommentSection {
+                name,
+                text,
+                refs_note_text,
+            } => {
                 let self_ref = format!("#/groups/{}", self.groups.len());
                 self.groups.push(Value::Null);
                 let child =
@@ -333,7 +340,11 @@ impl Builder {
                     "name": name,
                     "label": "comment_section",
                 });
-                self.comment_groups.push(self_ref.clone());
+                self.comment_groups.push(if *refs_note_text {
+                    child
+                } else {
+                    self_ref.clone()
+                });
                 Some(self_ref)
             }
             // The annotation itself is a cross-reference: emit the item, then
@@ -368,7 +379,12 @@ impl Builder {
             }
             // A DocLang-only node is omitted from the JSON body.
             Node::DoclangOnly(_) => None,
-            Node::Group { label, children } => Some(self.add_group(label, children, parent)),
+            Node::Group {
+                label,
+                name,
+                layer,
+                children,
+            } => Some(self.add_group(label, name.as_deref(), *layer, children, parent)),
             Node::FieldRegion { items } => Some(self.add_field_region(items, parent)),
             // A rich inline group is a text item over its Markdown text; the
             // structured runs are DocLang-only, so the JSON matches a paragraph.
@@ -855,19 +871,49 @@ impl Builder {
         self_ref
     }
 
-    fn add_group(&mut self, label: &str, nodes: &[Node], parent: &str) -> String {
+    fn add_group(
+        &mut self,
+        label: &str,
+        name: Option<&str>,
+        layer: Option<ContentLayer>,
+        nodes: &[Node],
+        parent: &str,
+    ) -> String {
         let self_ref = format!("#/groups/{}", self.groups.len());
         self.groups.push(Value::Null);
+        // Everything the walk creates belongs to this group, so a non-body
+        // layer (a hidden sheet) is stamped on the whole subtree afterwards —
+        // docling puts the layer on the group *and* on every item under it.
+        let mark = (
+            self.texts.len(),
+            self.tables.len(),
+            self.pictures.len(),
+            self.groups.len(),
+        );
         let children = self.walk_into(nodes, &self_ref);
-        let name = if label == "inline" { "group" } else { label };
+        let name = name.unwrap_or(if label == "inline" { "group" } else { label });
+        let content_layer = layer.map_or("body", |l| l.value());
         self.groups[group_index(&self_ref)] = json!({
             "self_ref": self_ref,
             "parent": { "$ref": parent },
             "children": children,
-            "content_layer": "body",
+            "content_layer": content_layer,
             "name": name,
             "label": label,
         });
+        if layer.is_some() {
+            let (t, tb, p, g) = mark;
+            for item in self.texts[t..]
+                .iter_mut()
+                .chain(self.tables[tb..].iter_mut())
+                .chain(self.pictures[p..].iter_mut())
+                .chain(self.groups[g..].iter_mut())
+            {
+                if let Some(obj) = item.as_object_mut() {
+                    obj.insert("content_layer".into(), json!(content_layer));
+                }
+            }
+        }
         self_ref
     }
 
@@ -996,7 +1042,7 @@ fn fnv1a(s: &str) -> u64 {
 
 #[cfg(test)]
 mod tests {
-    use crate::{DoclingDocument, ImageMode, Node, PictureImage, Table};
+    use crate::{ContentLayer, DoclingDocument, ImageMode, Node, PictureImage, Table};
     use serde_json::Value;
 
     fn doc_with_image() -> DoclingDocument {
@@ -1165,6 +1211,73 @@ mod tests {
         assert_eq!(v["tables"][0]["data"]["num_cols"], 2);
         assert_eq!(v["tables"][0]["data"]["grid"][0][0]["column_header"], true);
     }
+    /// A named group on a non-body layer — docling's hidden spreadsheet sheet:
+    /// the group carries the sheet's name and the `invisible` layer, and every
+    /// item inside it carries the layer too.
+    #[test]
+    fn a_layered_group_stamps_its_whole_subtree() {
+        let doc = DoclingDocument {
+            name: "s".into(),
+            nodes: vec![
+                Node::Group {
+                    label: "sheet".into(),
+                    name: Some("Sheet1".into()),
+                    layer: None,
+                    children: vec![Node::Paragraph {
+                        text: "visible".into(),
+                    }],
+                },
+                Node::Group {
+                    label: "sheet".into(),
+                    name: Some("Sheet2".into()),
+                    layer: Some(ContentLayer::Invisible),
+                    children: vec![Node::Paragraph {
+                        text: "hidden".into(),
+                    }],
+                },
+            ],
+            ..DoclingDocument::new("s")
+        };
+        let v = crate::json::to_json(&doc);
+        assert_eq!(v["groups"][0]["label"], "sheet");
+        assert_eq!(v["groups"][0]["name"], "Sheet1");
+        assert_eq!(v["groups"][0]["content_layer"], "body");
+        assert_eq!(v["texts"][0]["content_layer"], "body");
+        assert_eq!(v["groups"][1]["name"], "Sheet2");
+        assert_eq!(v["groups"][1]["content_layer"], "invisible");
+        assert_eq!(v["texts"][1]["content_layer"], "invisible");
+        // The group's children are the items, and the body holds the groups.
+        assert_eq!(v["groups"][1]["children"][0]["$ref"], "#/texts/1");
+        assert_eq!(v["body"]["children"][1]["$ref"], "#/groups/1");
+    }
+
+    /// A comment section that links its note text rather than its group — the
+    /// spreadsheet shape, where docling-core's `add_comment` appends the text
+    /// item's ref to each target.
+    #[test]
+    fn a_comment_section_can_be_referenced_by_its_note_text() {
+        let doc = DoclingDocument {
+            name: "c".into(),
+            nodes: vec![
+                Node::Commented {
+                    comments: vec![0],
+                    inner: Box::new(Node::Paragraph {
+                        text: "annotated".into(),
+                    }),
+                },
+                Node::CommentSection {
+                    name: "comment-Sheet1-A1".into(),
+                    text: "[author: A]: note".into(),
+                    refs_note_text: true,
+                },
+            ],
+            ..DoclingDocument::new("c")
+        };
+        let v = crate::json::to_json(&doc);
+        assert_eq!(v["groups"][0]["name"], "comment-Sheet1-A1");
+        assert_eq!(v["texts"][0]["comments"][0]["$ref"], "#/texts/1");
+    }
+
     /// docx reviewer comments: a `comment_section` group on the notes layer
     /// holding the note text, and a `comments` back-ref on the annotated item —
     /// keyed between `prov` and `orig`, the slot docling emits it in.
@@ -1185,6 +1298,7 @@ mod tests {
                 Node::CommentSection {
                     name: "comment-7".into(),
                     text: "[time: t]: note".into(),
+                    refs_note_text: false,
                 },
             ],
             ..DoclingDocument::new("c")
