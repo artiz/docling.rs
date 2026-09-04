@@ -7,6 +7,10 @@
 //! (docling's independent `do_ocr=False`); `--no-ocr` remains the
 //! skip-everything fast path.
 //!
+//! `--help` prints the full flag list and `--version` the version plus the
+//! optional features the binary carries (execution providers, `serve`,
+//! chunking) — both answer without models present.
+//!
 //! Usage: docling-rs [--strict] [--to md|json|dclx|chunks|images|latex] [--pages A-B] [--scale X] [--images MODE] [--input GLOB --output DIR [--jobs N]] [--fetch-images] [--list-attachments] [--skip-empty-cells] [--compact-tables] [--ebcdic-layout JSON|PATH] [--no-stream] [--no-table-former] [--no-ocr] [--skip-ocr] [--force-full-page-ocr] [--no-text-panels] [--heading-hierarchy] [--ocr-lang en|ch] [--ocr-mode MODE] [--ocr-scale X] [--chunker hierarchical|hybrid] [--chunk-tokenizer PATH] [--chunk-max-tokens N] [--no-chunk-merge-peers] [--pipeline standard|vlm] [--vlm-endpoint URL] [--vlm-model NAME] [--vlm-api-key TOKEN] [--vlm-prompt TEXT] [--vlm-max-tokens N] [--asr-model PRESET] [--asr-lang CODE] [--video-frames N] [--use-web-browser] [--enrich-picture-classes] [--enrich-code] [--enrich-formula] <input-file>
 //!   --input GLOB|DIR   batch mode (#205): convert every file the glob matches
 //!                      (`--input '/data/reports/**/*.pdf'` — quote it so the
@@ -116,7 +120,138 @@ use std::process::ExitCode;
 use docling::chunks::{ChunkOptions, ChunkerKind};
 use docling::{DocumentConverter, ImageMode, InputFormat, Pipeline, SourceDocument};
 
+/// `--version` output: the crate version plus the optional features this
+/// binary was actually built with. The feature list is the useful half — the
+/// execution provider a build can select, whether `serve` is compiled in, and
+/// whether tokenizer-backed chunking is available all follow from it, and all
+/// three are routine support questions (#324 debugging started exactly here).
+fn version_line() -> String {
+    let mut features: Vec<&str> = Vec::new();
+    if cfg!(feature = "chunking") {
+        features.push("chunking");
+    }
+    if cfg!(feature = "serve") {
+        features.push("serve");
+    }
+    if cfg!(feature = "heif") {
+        features.push("heif");
+    }
+    if cfg!(feature = "web-browser") {
+        features.push("web-browser");
+    }
+    if cfg!(feature = "cuda") {
+        features.push("cuda");
+    }
+    if cfg!(feature = "tensorrt") {
+        features.push("tensorrt");
+    }
+    if cfg!(feature = "directml") {
+        features.push("directml");
+    }
+    if cfg!(feature = "coreml") {
+        features.push("coreml");
+    }
+    if cfg!(feature = "xnnpack") {
+        features.push("xnnpack");
+    }
+    let version = env!("CARGO_PKG_VERSION");
+    if features.is_empty() {
+        format!("docling-rs {version}")
+    } else {
+        format!("docling-rs {version} ({})", features.join(", "))
+    }
+}
+
+/// One-line synopsis — the `usage:` prefix an argument error prints.
+const USAGE: &str = "usage: docling-rs [OPTIONS] <input-file>\n       docling-rs --input GLOB|DIR --output DIR [OPTIONS]\n       docling-rs serve [SERVE OPTIONS]";
+
+/// `--help`: the synopsis plus every flag, grouped. Kept in sync with the
+/// module doc comment above, which carries the long-form rationale.
+const HELP: &str = "\
+Convert documents to Markdown, JSON, DocLang, LaTeX or chunks.
+
+OUTPUT
+  --to md|json|dclx|chunks|images|latex   output format (default: md)
+  --strict                cleaner, more conformant Markdown (Markdown only)
+  --images MODE           picture handling: placeholder (default) | embedded | referenced
+  --compact-tables        render Markdown tables without width padding
+  --no-stream             build the whole document before printing
+
+INPUT SELECTION
+  --input GLOB|DIR        batch mode: convert everything the glob/directory matches
+  --output DIR            where batch (or single-file) results are written
+  --jobs N                batch workers (default 1)
+  --pages A-B             convert only PDF pages A..B (1-based, inclusive)
+  --scale X               `--to images` render scale, px per PDF point (0.1-4.0, default 2.0)
+
+FORMAT OPTIONS
+  --fetch-images          resolve external <img src> for HTML/EPUB (network access)
+  --list-attachments      append an Attachments section for .eml/.msg
+  --skip-empty-cells      omit empty cells from XLSX/XLS grids
+  --ebcdic-layout JSON|PATH   EBCDIC copybook layout
+  --use-web-browser       pre-render HTML with a headless browser (feature `web-browser`)
+
+PDF / IMAGE PIPELINE
+  --no-table-former       skip the TableFormer model (geometric tables instead)
+  --no-ocr                skip OCR entirely (text-layer only)
+  --skip-ocr              keep layout + tables, never run OCR
+  --force-full-page-ocr   OCR the whole page, discarding the text layer
+  --no-text-panels        disable the text-panel heuristic
+  --heading-hierarchy     infer heading levels from font weight/slant/case
+  --ocr-lang en|ch        OCR recognition model (default: en)
+  --ocr-mode MODE         auto (default) | full_page | layout_regions
+  --ocr-scale X           OCR input scale in px per point
+  --enrich-picture-classes | --enrich-code | --enrich-formula
+                          optional enrichment models (off by default)
+
+CHUNKING (`--to chunks`)
+  --chunker hierarchical|hybrid
+  --chunk-tokenizer PATH  tokenizer.json for the hybrid chunker
+  --chunk-max-tokens N    chunk budget
+  --no-chunk-merge-peers  keep sibling chunks separate
+
+VLM PIPELINE
+  --pipeline standard|vlm
+  --vlm-endpoint URL | --vlm-model NAME | --vlm-api-key TOKEN
+  --vlm-prompt TEXT | --vlm-max-tokens N
+
+AUDIO / VIDEO
+  --asr-model PRESET      Whisper preset for audio/video transcription
+  --asr-lang CODE         force a transcription language
+  --video-frames N        sample N key frames from a video
+
+OTHER
+  -h, --help              print this help
+  -V, --version           print the version and compiled-in features
+
+Environment knobs (execution providers, model paths, worker counts) are
+documented in the README: https://github.com/docling-project/docling.rs";
+
 fn main() -> ExitCode {
+    // `--help` / `--version` before anything else: they must answer on a
+    // binary whose models are missing, and a smoke test that runs
+    // `docling-rs --version` should not be told to convert a file named
+    // `--version` (issue-#333's CUDA image test tripped over exactly that).
+    // `serve` keeps its own `--help`, so only scan the global position here.
+    {
+        let args: Vec<String> = std::env::args().skip(1).collect();
+        let is_serve = args.first().map(String::as_str) == Some("serve");
+        if !is_serve {
+            if args.iter().any(|a| a == "--version" || a == "-V") {
+                println!("{}", version_line());
+                return ExitCode::SUCCESS;
+            }
+            if args.iter().any(|a| a == "--help" || a == "-h") {
+                println!("{}", version_line());
+                println!();
+                println!("{USAGE}");
+                println!();
+                println!("{HELP}");
+                return ExitCode::SUCCESS;
+            }
+        }
+    }
+
     // `docling-rs serve …` — the HTTP conversion API (issue-#78 analogue of
     // docling-serve). Compiled in only with `--features serve`; the flags
     // after `serve` are the `docling-serve` binary's (see that crate).
@@ -395,9 +530,8 @@ fn main() -> ExitCode {
                 }
             }
             _ if arg.starts_with("--") => {
-                eprintln!(
-                    "error: unknown flag '{arg}' (enrichment flags: --enrich-picture-classes, --enrich-code, --enrich-formula)"
-                );
+                eprintln!("error: unknown flag '{arg}'");
+                eprintln!("run `docling-rs --help` for the full flag list");
                 return ExitCode::from(2);
             }
             _ => path = Some(arg),
@@ -509,7 +643,9 @@ fn main() -> ExitCode {
     }
 
     let Some(path) = path else {
-        eprintln!("usage: docling-rs [--strict] [--to md|json|dclx|chunks|images|latex] [--scale X] [--images MODE] [--input GLOB --output DIR [--jobs N]] [--fetch-images] [--list-attachments] [--skip-empty-cells] [--compact-tables] [--ebcdic-layout JSON|PATH] [--no-stream] [--no-table-former] [--no-ocr] [--skip-ocr] [--force-full-page-ocr] [--no-text-panels] [--heading-hierarchy] [--ocr-lang en|ch] [--ocr-mode MODE] [--ocr-scale X] [--chunker hierarchical|hybrid] [--chunk-tokenizer PATH] [--chunk-max-tokens N] [--no-chunk-merge-peers] [--use-web-browser] <input-file>");
+        eprintln!("error: no input file");
+        eprintln!("{USAGE}");
+        eprintln!("run `docling-rs --help` for the full flag list");
         return ExitCode::from(2);
     };
 

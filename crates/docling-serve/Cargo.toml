@@ -25,6 +25,8 @@ heif = ["docling/heif"]
 tensorrt = ["docling/tensorrt"]
 directml = ["docling/directml"]
 coreml = ["docling/coreml"]
+# CPU-class XNNPACK (#324): self-built ONNX Runtime only (ORT_LIB_LOCATION).
+xnnpack = ["docling/xnnpack"]
 # OpenTelemetry trace export (#297): request/conversion spans shipped over
 # OTLP when OTEL_EXPORTER_OTLP_ENDPOINT is set at runtime. Off by default —
 # the OTel SDK stack is heavy; structured tracing logs and the Prometheus

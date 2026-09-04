@@ -338,6 +338,7 @@ fetch them on first use, the container images ship them baked in.
 # CLI
 docling-rs report.pdf --to md
 docling-rs --input ./docs --output ./out --to latex
+docling-rs --help        # every flag; --version reports the compiled-in features
 
 # HTTP
 curl -F file=@report.pdf 'localhost:5001/v1/convert?to=json&heading_hierarchy=true'

@@ -36,6 +36,8 @@ cuda = ["docling/cuda", "docling-pdf/cuda"]
 tensorrt = ["docling/tensorrt", "docling-pdf/tensorrt"]
 directml = ["docling/directml", "docling-pdf/directml"]
 coreml = ["docling/coreml", "docling-pdf/coreml"]
+# CPU-class XNNPACK (#324): self-built ONNX Runtime only (ORT_LIB_LOCATION).
+xnnpack = ["docling/xnnpack", "docling-pdf/xnnpack"]
 remote-sources = ["dep:suppaftp", "dep:ssh2"]
 rabbitmq = ["dep:lapin", "dep:futures-lite"]
 redis = ["dep:redis", "dep:futures-lite"]

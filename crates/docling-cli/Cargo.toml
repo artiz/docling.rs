@@ -35,13 +35,18 @@ chunking = ["docling/chunking"]
 # binary is always available from its own crate).
 serve = ["dep:docling-serve", "dep:tokio"]
 # GPU execution providers for the PDF/image ML pipeline (#74) — pass-through
-# to docling → docling-pdf. Build e.g. `--features cuda`, then select the
-# provider at runtime: `DOCLING_RS_EP=cuda docling-rs input.pdf` (default
-# remains cpu even in a GPU build).
+# to docling → docling-pdf. Build e.g. `--features cuda`; such a build defaults
+# to `DOCLING_RS_EP=auto` (use the GPU when one is usable, fall back to CPU),
+# and the env var pins a specific provider — `DOCLING_RS_EP=cpu` opts back out.
+# `docling-rs --version` reports which of these the binary carries.
 cuda = ["docling/cuda"]
 tensorrt = ["docling/tensorrt"]
 directml = ["docling/directml"]
 coreml = ["docling/coreml"]
+# CPU-class accelerator for machines without a usable GPU provider (#324).
+# Requires linking a self-built ONNX Runtime (`ORT_LIB_LOCATION`, built with
+# `--use_xnnpack`) — pyke ships no prebuilt runtime with this EP.
+xnnpack = ["docling/xnnpack"]
 
 [dependencies]
 docling = { path = "../docling", version = "1.33.1" }
