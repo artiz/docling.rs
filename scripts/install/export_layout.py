@@ -1,4 +1,11 @@
 #!/usr/bin/env python3
+# NOTE (#339): the dynamic `batch` axis this script exports blocks ONNX
+# Runtime's channels-last conv transform on CPU (~1.4x on Apple silicon).
+# The runtime now pins the axis to 1 via a free-dimension override whenever
+# per-page layout inference is in effect (the CPU default, #338), which gets
+# the static graph without a re-export — so the dynamic export remains the
+# right artifact to ship (GPU batching still needs the free axis).
+
 """Export docling's RT-DETR layout model (heron) to ONNX for the Rust pipeline.
 
 The graph gets a **dynamic batch dimension** so the Rust worker can layout-detect

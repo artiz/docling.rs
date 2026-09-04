@@ -512,10 +512,14 @@ in-cache copy of the weights beats both one fat model and many single-thread wor
 The speed-up scales with cores and memory bandwidth. Tune per machine with
 `DOCLING_RS_PDF_WORKERS` (pool size) and `DOCLING_RS_PDF_INTRA` (intra-op threads
 per worker). Each worker layout-detects up to `DOCLING_RS_PDF_LAYOUT_BATCH`
-already-rendered pages per inference call (issue #73; default 4 on 8+ cores,
-1 below — measured on a 4-core box the batch costs pipeline overlap: 8.1 →
-9.3 s/conv on 2206.01062). Output is bit-identical at every batch size, so
-the knob is purely about throughput.
+already-rendered pages per inference call (issue #73; default: per-page on
+the CPU provider, 4 when a GPU provider is selected — #338: every CPU
+measurement favors per-page, 8.5 vs 9.3 s/conv on a 4-core x86 box and ~2×
+on a 16-core M4 Max, while GPU dispatch overhead still amortizes). In
+per-page mode the model's dynamic `batch` axis is pinned to 1 at session
+creation (#339): the free dimension blocks ONNX Runtime's channels-last conv
+transform (~1.4× on Apple-silicon CPU); x86 measured neutral. Output is
+bit-identical at every batch size, so the knob is purely about throughput.
 
 ### Text reconstruction: a pure-Rust PDF text parser (default)
 
@@ -946,7 +950,7 @@ Ordered by expected impact ÷ risk. Items 1–3 attack the 85–95%.
 3. ~~**Layout batching for the parallel path**: the pool currently runs batch-1
    inference per page.~~ **Done (issue #73)**: each pool worker drains the work
    channel opportunistically (whatever is already rendered, up to
-   `DOCLING_RS_PDF_LAYOUT_BATCH` — default 4 on 8+ cores, 1 below) and
+   `DOCLING_RS_PDF_LAYOUT_BATCH` — default per-page on CPU, 4 on GPU, #338) and
    layout-detects the batch with one inference call — batching never *waits* for pages, so it adds no
    latency when rendering is the bottleneck. Needs the dynamic-batch ONNX
    export (`scripts/install/export_layout.py`); an old fixed-batch graph
