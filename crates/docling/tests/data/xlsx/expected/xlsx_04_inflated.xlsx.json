@@ -18,38 +18,98 @@
     "self_ref": "#/body",
     "children": [
       {
-        "$ref": "#/tables/0"
+        "$ref": "#/groups/0"
       },
       {
-        "$ref": "#/tables/1"
+        "$ref": "#/groups/1"
       },
       {
-        "$ref": "#/tables/2"
+        "$ref": "#/groups/2"
       },
       {
-        "$ref": "#/pictures/0"
-      },
-      {
-        "$ref": "#/tables/3"
-      },
-      {
-        "$ref": "#/pictures/1"
-      },
-      {
-        "$ref": "#/tables/4"
-      },
-      {
-        "$ref": "#/tables/5"
-      },
-      {
-        "$ref": "#/pictures/2"
+        "$ref": "#/groups/3"
       }
     ],
     "content_layer": "body",
     "name": "_root_",
     "label": "unspecified"
   },
-  "groups": [],
+  "groups": [
+    {
+      "self_ref": "#/groups/0",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [
+        {
+          "$ref": "#/tables/0"
+        }
+      ],
+      "content_layer": "body",
+      "name": "Sheet1",
+      "label": "sheet"
+    },
+    {
+      "self_ref": "#/groups/1",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [
+        {
+          "$ref": "#/tables/1"
+        },
+        {
+          "$ref": "#/tables/2"
+        },
+        {
+          "$ref": "#/pictures/0"
+        },
+        {
+          "$ref": "#/tables/3"
+        },
+        {
+          "$ref": "#/pictures/1"
+        }
+      ],
+      "content_layer": "body",
+      "name": "Sheet2",
+      "label": "sheet"
+    },
+    {
+      "self_ref": "#/groups/2",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [
+        {
+          "$ref": "#/tables/4"
+        },
+        {
+          "$ref": "#/tables/5"
+        },
+        {
+          "$ref": "#/pictures/2"
+        }
+      ],
+      "content_layer": "body",
+      "name": "Sheet3",
+      "label": "sheet"
+    },
+    {
+      "self_ref": "#/groups/3",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [
+        {
+          "$ref": "#/tables/6"
+        }
+      ],
+      "content_layer": "invisible",
+      "name": "Sheet4",
+      "label": "sheet"
+    }
+  ],
   "texts": [
     {
       "self_ref": "#/texts/0",
@@ -80,7 +140,7 @@
     {
       "self_ref": "#/pictures/0",
       "parent": {
-        "$ref": "#/body"
+        "$ref": "#/groups/1"
       },
       "children": [],
       "content_layer": "body",
@@ -98,7 +158,7 @@
     {
       "self_ref": "#/pictures/1",
       "parent": {
-        "$ref": "#/body"
+        "$ref": "#/groups/1"
       },
       "children": [],
       "content_layer": "body",
@@ -116,7 +176,7 @@
     {
       "self_ref": "#/pictures/2",
       "parent": {
-        "$ref": "#/body"
+        "$ref": "#/groups/2"
       },
       "children": [],
       "content_layer": "body",
@@ -141,7 +201,7 @@
     {
       "self_ref": "#/tables/0",
       "parent": {
-        "$ref": "#/body"
+        "$ref": "#/groups/0"
       },
       "children": [],
       "content_layer": "body",
@@ -723,7 +783,7 @@
     {
       "self_ref": "#/tables/1",
       "parent": {
-        "$ref": "#/body"
+        "$ref": "#/groups/1"
       },
       "children": [],
       "content_layer": "body",
@@ -1699,7 +1759,7 @@
     {
       "self_ref": "#/tables/2",
       "parent": {
-        "$ref": "#/body"
+        "$ref": "#/groups/1"
       },
       "children": [],
       "content_layer": "body",
@@ -2121,7 +2181,7 @@
     {
       "self_ref": "#/tables/3",
       "parent": {
-        "$ref": "#/body"
+        "$ref": "#/groups/1"
       },
       "children": [],
       "content_layer": "body",
@@ -2543,7 +2603,7 @@
     {
       "self_ref": "#/tables/4",
       "parent": {
-        "$ref": "#/body"
+        "$ref": "#/groups/2"
       },
       "children": [],
       "content_layer": "body",
@@ -2555,10 +2615,10 @@
       "data": {
         "table_cells": [
           {
-            "row_span": 2,
+            "row_span": 1,
             "col_span": 1,
             "start_row_offset_idx": 0,
-            "end_row_offset_idx": 2,
+            "end_row_offset_idx": 1,
             "start_col_offset_idx": 0,
             "end_col_offset_idx": 1,
             "text": "first ",
@@ -2569,13 +2629,39 @@
           },
           {
             "row_span": 1,
-            "col_span": 2,
+            "col_span": 1,
             "start_row_offset_idx": 0,
             "end_row_offset_idx": 1,
             "start_col_offset_idx": 1,
+            "end_col_offset_idx": 2,
+            "text": "header",
+            "column_header": true,
+            "row_header": false,
+            "row_section": false,
+            "fillable": false
+          },
+          {
+            "row_span": 1,
+            "col_span": 1,
+            "start_row_offset_idx": 0,
+            "end_row_offset_idx": 1,
+            "start_col_offset_idx": 2,
             "end_col_offset_idx": 3,
             "text": "header",
             "column_header": true,
+            "row_header": false,
+            "row_section": false,
+            "fillable": false
+          },
+          {
+            "row_span": 1,
+            "col_span": 1,
+            "start_row_offset_idx": 1,
+            "end_row_offset_idx": 2,
+            "start_col_offset_idx": 0,
+            "end_col_offset_idx": 1,
+            "text": "first ",
+            "column_header": false,
             "row_header": false,
             "row_section": false,
             "fillable": false
@@ -2646,10 +2732,10 @@
             "fillable": false
           },
           {
-            "row_span": 2,
+            "row_span": 1,
             "col_span": 1,
             "start_row_offset_idx": 3,
-            "end_row_offset_idx": 5,
+            "end_row_offset_idx": 4,
             "start_col_offset_idx": 0,
             "end_col_offset_idx": 1,
             "text": "3",
@@ -2679,6 +2765,19 @@
             "start_col_offset_idx": 2,
             "end_col_offset_idx": 3,
             "text": "5",
+            "column_header": false,
+            "row_header": false,
+            "row_section": false,
+            "fillable": false
+          },
+          {
+            "row_span": 1,
+            "col_span": 1,
+            "start_row_offset_idx": 4,
+            "end_row_offset_idx": 5,
+            "start_col_offset_idx": 0,
+            "end_col_offset_idx": 1,
+            "text": "3",
             "column_header": false,
             "row_header": false,
             "row_section": false,
@@ -2724,11 +2823,24 @@
             "fillable": false
           },
           {
-            "row_span": 2,
-            "col_span": 2,
+            "row_span": 1,
+            "col_span": 1,
             "start_row_offset_idx": 5,
-            "end_row_offset_idx": 7,
+            "end_row_offset_idx": 6,
             "start_col_offset_idx": 1,
+            "end_col_offset_idx": 2,
+            "text": "9",
+            "column_header": false,
+            "row_header": false,
+            "row_section": false,
+            "fillable": false
+          },
+          {
+            "row_span": 1,
+            "col_span": 1,
+            "start_row_offset_idx": 5,
+            "end_row_offset_idx": 6,
+            "start_col_offset_idx": 2,
             "end_col_offset_idx": 3,
             "text": "9",
             "column_header": false,
@@ -2748,6 +2860,32 @@
             "row_header": false,
             "row_section": false,
             "fillable": false
+          },
+          {
+            "row_span": 1,
+            "col_span": 1,
+            "start_row_offset_idx": 6,
+            "end_row_offset_idx": 7,
+            "start_col_offset_idx": 1,
+            "end_col_offset_idx": 2,
+            "text": "9",
+            "column_header": false,
+            "row_header": false,
+            "row_section": false,
+            "fillable": false
+          },
+          {
+            "row_span": 1,
+            "col_span": 1,
+            "start_row_offset_idx": 6,
+            "end_row_offset_idx": 7,
+            "start_col_offset_idx": 2,
+            "end_col_offset_idx": 3,
+            "text": "9",
+            "column_header": false,
+            "row_header": false,
+            "row_section": false,
+            "fillable": false
           }
         ],
         "num_rows": 7,
@@ -2755,10 +2893,10 @@
         "grid": [
           [
             {
-              "row_span": 2,
+              "row_span": 1,
               "col_span": 1,
               "start_row_offset_idx": 0,
-              "end_row_offset_idx": 2,
+              "end_row_offset_idx": 1,
               "start_col_offset_idx": 0,
               "end_col_offset_idx": 1,
               "text": "first ",
@@ -2769,11 +2907,11 @@
             },
             {
               "row_span": 1,
-              "col_span": 2,
+              "col_span": 1,
               "start_row_offset_idx": 0,
               "end_row_offset_idx": 1,
               "start_col_offset_idx": 1,
-              "end_col_offset_idx": 3,
+              "end_col_offset_idx": 2,
               "text": "header",
               "column_header": true,
               "row_header": false,
@@ -2782,10 +2920,10 @@
             },
             {
               "row_span": 1,
-              "col_span": 2,
+              "col_span": 1,
               "start_row_offset_idx": 0,
               "end_row_offset_idx": 1,
-              "start_col_offset_idx": 1,
+              "start_col_offset_idx": 2,
               "end_col_offset_idx": 3,
               "text": "header",
               "column_header": true,
@@ -2796,14 +2934,14 @@
           ],
           [
             {
-              "row_span": 2,
+              "row_span": 1,
               "col_span": 1,
-              "start_row_offset_idx": 0,
+              "start_row_offset_idx": 1,
               "end_row_offset_idx": 2,
               "start_col_offset_idx": 0,
               "end_col_offset_idx": 1,
               "text": "first ",
-              "column_header": true,
+              "column_header": false,
               "row_header": false,
               "row_section": false,
               "fillable": false
@@ -2878,10 +3016,10 @@
           ],
           [
             {
-              "row_span": 2,
+              "row_span": 1,
               "col_span": 1,
               "start_row_offset_idx": 3,
-              "end_row_offset_idx": 5,
+              "end_row_offset_idx": 4,
               "start_col_offset_idx": 0,
               "end_col_offset_idx": 1,
               "text": "3",
@@ -2919,9 +3057,9 @@
           ],
           [
             {
-              "row_span": 2,
+              "row_span": 1,
               "col_span": 1,
-              "start_row_offset_idx": 3,
+              "start_row_offset_idx": 4,
               "end_row_offset_idx": 5,
               "start_col_offset_idx": 0,
               "end_col_offset_idx": 1,
@@ -2973,12 +3111,12 @@
               "fillable": false
             },
             {
-              "row_span": 2,
-              "col_span": 2,
+              "row_span": 1,
+              "col_span": 1,
               "start_row_offset_idx": 5,
-              "end_row_offset_idx": 7,
+              "end_row_offset_idx": 6,
               "start_col_offset_idx": 1,
-              "end_col_offset_idx": 3,
+              "end_col_offset_idx": 2,
               "text": "9",
               "column_header": false,
               "row_header": false,
@@ -2986,11 +3124,11 @@
               "fillable": false
             },
             {
-              "row_span": 2,
-              "col_span": 2,
+              "row_span": 1,
+              "col_span": 1,
               "start_row_offset_idx": 5,
-              "end_row_offset_idx": 7,
-              "start_col_offset_idx": 1,
+              "end_row_offset_idx": 6,
+              "start_col_offset_idx": 2,
               "end_col_offset_idx": 3,
               "text": "9",
               "column_header": false,
@@ -3014,12 +3152,12 @@
               "fillable": false
             },
             {
-              "row_span": 2,
-              "col_span": 2,
-              "start_row_offset_idx": 5,
+              "row_span": 1,
+              "col_span": 1,
+              "start_row_offset_idx": 6,
               "end_row_offset_idx": 7,
               "start_col_offset_idx": 1,
-              "end_col_offset_idx": 3,
+              "end_col_offset_idx": 2,
               "text": "9",
               "column_header": false,
               "row_header": false,
@@ -3027,11 +3165,11 @@
               "fillable": false
             },
             {
-              "row_span": 2,
-              "col_span": 2,
-              "start_row_offset_idx": 5,
+              "row_span": 1,
+              "col_span": 1,
+              "start_row_offset_idx": 6,
               "end_row_offset_idx": 7,
-              "start_col_offset_idx": 1,
+              "start_col_offset_idx": 2,
               "end_col_offset_idx": 3,
               "text": "9",
               "column_header": false,
@@ -3047,7 +3185,7 @@
     {
       "self_ref": "#/tables/5",
       "parent": {
-        "$ref": "#/body"
+        "$ref": "#/groups/2"
       },
       "children": [],
       "content_layer": "body",
@@ -3059,10 +3197,10 @@
       "data": {
         "table_cells": [
           {
-            "row_span": 2,
+            "row_span": 1,
             "col_span": 1,
             "start_row_offset_idx": 0,
-            "end_row_offset_idx": 2,
+            "end_row_offset_idx": 1,
             "start_col_offset_idx": 0,
             "end_col_offset_idx": 1,
             "text": "first (f)",
@@ -3073,13 +3211,39 @@
           },
           {
             "row_span": 1,
-            "col_span": 2,
+            "col_span": 1,
             "start_row_offset_idx": 0,
             "end_row_offset_idx": 1,
             "start_col_offset_idx": 1,
+            "end_col_offset_idx": 2,
+            "text": "header (f)",
+            "column_header": true,
+            "row_header": false,
+            "row_section": false,
+            "fillable": false
+          },
+          {
+            "row_span": 1,
+            "col_span": 1,
+            "start_row_offset_idx": 0,
+            "end_row_offset_idx": 1,
+            "start_col_offset_idx": 2,
             "end_col_offset_idx": 3,
             "text": "header (f)",
             "column_header": true,
+            "row_header": false,
+            "row_section": false,
+            "fillable": false
+          },
+          {
+            "row_span": 1,
+            "col_span": 1,
+            "start_row_offset_idx": 1,
+            "end_row_offset_idx": 2,
+            "start_col_offset_idx": 0,
+            "end_col_offset_idx": 1,
+            "text": "first (f)",
+            "column_header": false,
             "row_header": false,
             "row_section": false,
             "fillable": false
@@ -3150,10 +3314,10 @@
             "fillable": false
           },
           {
-            "row_span": 2,
+            "row_span": 1,
             "col_span": 1,
             "start_row_offset_idx": 3,
-            "end_row_offset_idx": 5,
+            "end_row_offset_idx": 4,
             "start_col_offset_idx": 0,
             "end_col_offset_idx": 1,
             "text": "3",
@@ -3183,6 +3347,19 @@
             "start_col_offset_idx": 2,
             "end_col_offset_idx": 3,
             "text": "5",
+            "column_header": false,
+            "row_header": false,
+            "row_section": false,
+            "fillable": false
+          },
+          {
+            "row_span": 1,
+            "col_span": 1,
+            "start_row_offset_idx": 4,
+            "end_row_offset_idx": 5,
+            "start_col_offset_idx": 0,
+            "end_col_offset_idx": 1,
+            "text": "3",
             "column_header": false,
             "row_header": false,
             "row_section": false,
@@ -3228,11 +3405,24 @@
             "fillable": false
           },
           {
-            "row_span": 2,
-            "col_span": 2,
+            "row_span": 1,
+            "col_span": 1,
             "start_row_offset_idx": 5,
-            "end_row_offset_idx": 7,
+            "end_row_offset_idx": 6,
             "start_col_offset_idx": 1,
+            "end_col_offset_idx": 2,
+            "text": "9",
+            "column_header": false,
+            "row_header": false,
+            "row_section": false,
+            "fillable": false
+          },
+          {
+            "row_span": 1,
+            "col_span": 1,
+            "start_row_offset_idx": 5,
+            "end_row_offset_idx": 6,
+            "start_col_offset_idx": 2,
             "end_col_offset_idx": 3,
             "text": "9",
             "column_header": false,
@@ -3252,6 +3442,32 @@
             "row_header": false,
             "row_section": false,
             "fillable": false
+          },
+          {
+            "row_span": 1,
+            "col_span": 1,
+            "start_row_offset_idx": 6,
+            "end_row_offset_idx": 7,
+            "start_col_offset_idx": 1,
+            "end_col_offset_idx": 2,
+            "text": "9",
+            "column_header": false,
+            "row_header": false,
+            "row_section": false,
+            "fillable": false
+          },
+          {
+            "row_span": 1,
+            "col_span": 1,
+            "start_row_offset_idx": 6,
+            "end_row_offset_idx": 7,
+            "start_col_offset_idx": 2,
+            "end_col_offset_idx": 3,
+            "text": "9",
+            "column_header": false,
+            "row_header": false,
+            "row_section": false,
+            "fillable": false
           }
         ],
         "num_rows": 7,
@@ -3259,10 +3475,10 @@
         "grid": [
           [
             {
-              "row_span": 2,
+              "row_span": 1,
               "col_span": 1,
               "start_row_offset_idx": 0,
-              "end_row_offset_idx": 2,
+              "end_row_offset_idx": 1,
               "start_col_offset_idx": 0,
               "end_col_offset_idx": 1,
               "text": "first (f)",
@@ -3273,11 +3489,11 @@
             },
             {
               "row_span": 1,
-              "col_span": 2,
+              "col_span": 1,
               "start_row_offset_idx": 0,
               "end_row_offset_idx": 1,
               "start_col_offset_idx": 1,
-              "end_col_offset_idx": 3,
+              "end_col_offset_idx": 2,
               "text": "header (f)",
               "column_header": true,
               "row_header": false,
@@ -3286,10 +3502,10 @@
             },
             {
               "row_span": 1,
-              "col_span": 2,
+              "col_span": 1,
               "start_row_offset_idx": 0,
               "end_row_offset_idx": 1,
-              "start_col_offset_idx": 1,
+              "start_col_offset_idx": 2,
               "end_col_offset_idx": 3,
               "text": "header (f)",
               "column_header": true,
@@ -3300,14 +3516,14 @@
           ],
           [
             {
-              "row_span": 2,
+              "row_span": 1,
               "col_span": 1,
-              "start_row_offset_idx": 0,
+              "start_row_offset_idx": 1,
               "end_row_offset_idx": 2,
               "start_col_offset_idx": 0,
               "end_col_offset_idx": 1,
               "text": "first (f)",
-              "column_header": true,
+              "column_header": false,
               "row_header": false,
               "row_section": false,
               "fillable": false
@@ -3382,10 +3598,10 @@
           ],
           [
             {
-              "row_span": 2,
+              "row_span": 1,
               "col_span": 1,
               "start_row_offset_idx": 3,
-              "end_row_offset_idx": 5,
+              "end_row_offset_idx": 4,
               "start_col_offset_idx": 0,
               "end_col_offset_idx": 1,
               "text": "3",
@@ -3423,9 +3639,9 @@
           ],
           [
             {
-              "row_span": 2,
+              "row_span": 1,
               "col_span": 1,
-              "start_row_offset_idx": 3,
+              "start_row_offset_idx": 4,
               "end_row_offset_idx": 5,
               "start_col_offset_idx": 0,
               "end_col_offset_idx": 1,
@@ -3477,12 +3693,12 @@
               "fillable": false
             },
             {
-              "row_span": 2,
-              "col_span": 2,
+              "row_span": 1,
+              "col_span": 1,
               "start_row_offset_idx": 5,
-              "end_row_offset_idx": 7,
+              "end_row_offset_idx": 6,
               "start_col_offset_idx": 1,
-              "end_col_offset_idx": 3,
+              "end_col_offset_idx": 2,
               "text": "9",
               "column_header": false,
               "row_header": false,
@@ -3490,11 +3706,11 @@
               "fillable": false
             },
             {
-              "row_span": 2,
-              "col_span": 2,
+              "row_span": 1,
+              "col_span": 1,
               "start_row_offset_idx": 5,
-              "end_row_offset_idx": 7,
-              "start_col_offset_idx": 1,
+              "end_row_offset_idx": 6,
+              "start_col_offset_idx": 2,
               "end_col_offset_idx": 3,
               "text": "9",
               "column_header": false,
@@ -3518,12 +3734,12 @@
               "fillable": false
             },
             {
-              "row_span": 2,
-              "col_span": 2,
-              "start_row_offset_idx": 5,
+              "row_span": 1,
+              "col_span": 1,
+              "start_row_offset_idx": 6,
               "end_row_offset_idx": 7,
               "start_col_offset_idx": 1,
-              "end_col_offset_idx": 3,
+              "end_col_offset_idx": 2,
               "text": "9",
               "column_header": false,
               "row_header": false,
@@ -3531,13 +3747,91 @@
               "fillable": false
             },
             {
-              "row_span": 2,
-              "col_span": 2,
-              "start_row_offset_idx": 5,
+              "row_span": 1,
+              "col_span": 1,
+              "start_row_offset_idx": 6,
               "end_row_offset_idx": 7,
-              "start_col_offset_idx": 1,
+              "start_col_offset_idx": 2,
               "end_col_offset_idx": 3,
               "text": "9",
+              "column_header": false,
+              "row_header": false,
+              "row_section": false,
+              "fillable": false
+            }
+          ]
+        ]
+      },
+      "annotations": []
+    },
+    {
+      "self_ref": "#/tables/6",
+      "parent": {
+        "$ref": "#/groups/3"
+      },
+      "children": [],
+      "content_layer": "invisible",
+      "label": "table",
+      "prov": [],
+      "captions": [],
+      "references": [],
+      "footnotes": [],
+      "data": {
+        "table_cells": [
+          {
+            "row_span": 1,
+            "col_span": 1,
+            "start_row_offset_idx": 0,
+            "end_row_offset_idx": 1,
+            "start_col_offset_idx": 0,
+            "end_col_offset_idx": 1,
+            "text": "header",
+            "column_header": true,
+            "row_header": false,
+            "row_section": false,
+            "fillable": false
+          },
+          {
+            "row_span": 1,
+            "col_span": 1,
+            "start_row_offset_idx": 1,
+            "end_row_offset_idx": 2,
+            "start_col_offset_idx": 0,
+            "end_col_offset_idx": 1,
+            "text": "1",
+            "column_header": false,
+            "row_header": false,
+            "row_section": false,
+            "fillable": false
+          }
+        ],
+        "num_rows": 2,
+        "num_cols": 1,
+        "grid": [
+          [
+            {
+              "row_span": 1,
+              "col_span": 1,
+              "start_row_offset_idx": 0,
+              "end_row_offset_idx": 1,
+              "start_col_offset_idx": 0,
+              "end_col_offset_idx": 1,
+              "text": "header",
+              "column_header": true,
+              "row_header": false,
+              "row_section": false,
+              "fillable": false
+            }
+          ],
+          [
+            {
+              "row_span": 1,
+              "col_span": 1,
+              "start_row_offset_idx": 1,
+              "end_row_offset_idx": 2,
+              "start_col_offset_idx": 0,
+              "end_col_offset_idx": 1,
+              "text": "1",
               "column_header": false,
               "row_header": false,
               "row_section": false,

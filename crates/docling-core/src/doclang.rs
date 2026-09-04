@@ -981,9 +981,23 @@ fn emit_nodes(out: &mut Out, depth: i32, nodes: &[Node], i: &mut usize, level: u
                 }
                 emit_list(out, depth, nodes, i, *l);
             }
-            Node::Group { children, .. } => {
-                let mut j = 0usize;
-                emit_nodes(out, depth, children, &mut j, 0);
+            // DocLang has no group element: a group's children render in place.
+            // A layered group (a hidden sheet) stamps its layer on each child,
+            // exactly as a `Node::Furniture` wrapper around each one would.
+            Node::Group {
+                children, layer, ..
+            } => {
+                match layer {
+                    Some(l) => {
+                        for child in children {
+                            emit_furniture(out, depth, *l, child);
+                        }
+                    }
+                    None => {
+                        let mut j = 0usize;
+                        emit_nodes(out, depth, children, &mut j, 0);
+                    }
+                }
                 *i += 1;
             }
             Node::FieldRegion { items } => {

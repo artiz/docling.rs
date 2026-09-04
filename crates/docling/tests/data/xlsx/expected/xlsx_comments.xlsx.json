@@ -18,32 +18,169 @@
     "self_ref": "#/body",
     "children": [
       {
-        "$ref": "#/tables/0"
+        "$ref": "#/groups/0"
       },
       {
-        "$ref": "#/tables/1"
+        "$ref": "#/groups/1"
       },
       {
-        "$ref": "#/tables/2"
+        "$ref": "#/groups/2"
+      },
+      {
+        "$ref": "#/groups/3"
+      },
+      {
+        "$ref": "#/groups/4"
       }
     ],
     "content_layer": "body",
     "name": "_root_",
     "label": "unspecified"
   },
-  "groups": [],
-  "texts": [],
+  "groups": [
+    {
+      "self_ref": "#/groups/0",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [
+        {
+          "$ref": "#/tables/0"
+        },
+        {
+          "$ref": "#/tables/1"
+        },
+        {
+          "$ref": "#/tables/2"
+        }
+      ],
+      "content_layer": "body",
+      "name": "Sheet1",
+      "label": "sheet"
+    },
+    {
+      "self_ref": "#/groups/1",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [
+        {
+          "$ref": "#/texts/0"
+        }
+      ],
+      "content_layer": "notes",
+      "name": "comment-Sheet1-A1",
+      "label": "comment_section"
+    },
+    {
+      "self_ref": "#/groups/2",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [
+        {
+          "$ref": "#/texts/1"
+        }
+      ],
+      "content_layer": "notes",
+      "name": "comment-Sheet1-B2",
+      "label": "comment_section"
+    },
+    {
+      "self_ref": "#/groups/3",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [
+        {
+          "$ref": "#/texts/2"
+        }
+      ],
+      "content_layer": "notes",
+      "name": "comment-Sheet1-F7",
+      "label": "comment_section"
+    },
+    {
+      "self_ref": "#/groups/4",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [
+        {
+          "$ref": "#/texts/3"
+        }
+      ],
+      "content_layer": "notes",
+      "name": "comment-Sheet1-G12",
+      "label": "comment_section"
+    }
+  ],
+  "texts": [
+    {
+      "self_ref": "#/texts/0",
+      "parent": {
+        "$ref": "#/groups/1"
+      },
+      "children": [],
+      "content_layer": "notes",
+      "label": "text",
+      "prov": [],
+      "orig": "[author: John Reviewer]: Why Python specifically?",
+      "text": "[author: John Reviewer]: Why Python specifically?"
+    },
+    {
+      "self_ref": "#/texts/1",
+      "parent": {
+        "$ref": "#/groups/2"
+      },
+      "children": [],
+      "content_layer": "notes",
+      "label": "text",
+      "prov": [],
+      "orig": "[author: Jane Editor]: Which libraries are you referring to?",
+      "text": "[author: Jane Editor]: Which libraries are you referring to?"
+    },
+    {
+      "self_ref": "#/texts/2",
+      "parent": {
+        "$ref": "#/groups/3"
+      },
+      "children": [],
+      "content_layer": "notes",
+      "label": "text",
+      "prov": [],
+      "orig": "[author: Marcus Sterling (MS), time: 2026-06-18T17:15:52.310]: I never thought it would be so low",
+      "text": "[author: Marcus Sterling (MS), time: 2026-06-18T17:15:52.310]: I never thought it would be so low"
+    },
+    {
+      "self_ref": "#/texts/3",
+      "parent": {
+        "$ref": "#/groups/4"
+      },
+      "children": [],
+      "content_layer": "notes",
+      "label": "text",
+      "prov": [],
+      "orig": "[author: Jane Smith (JS), time: 2026-06-18T17:12:57.350]: Maximum number of ducks",
+      "text": "[author: Jane Smith (JS), time: 2026-06-18T17:12:57.350]: Maximum number of ducks"
+    }
+  ],
   "pictures": [],
   "tables": [
     {
       "self_ref": "#/tables/0",
       "parent": {
-        "$ref": "#/body"
+        "$ref": "#/groups/0"
       },
       "children": [],
       "content_layer": "body",
       "label": "table",
       "prov": [],
+      "comments": [
+        {
+          "$ref": "#/texts/0"
+        }
+      ],
       "captions": [],
       "references": [],
       "footnotes": [],
@@ -88,12 +225,17 @@
     {
       "self_ref": "#/tables/1",
       "parent": {
-        "$ref": "#/body"
+        "$ref": "#/groups/0"
       },
       "children": [],
       "content_layer": "body",
       "label": "table",
       "prov": [],
+      "comments": [
+        {
+          "$ref": "#/texts/1"
+        }
+      ],
       "captions": [],
       "references": [],
       "footnotes": [],
@@ -138,12 +280,20 @@
     {
       "self_ref": "#/tables/2",
       "parent": {
-        "$ref": "#/body"
+        "$ref": "#/groups/0"
       },
       "children": [],
       "content_layer": "body",
       "label": "table",
       "prov": [],
+      "comments": [
+        {
+          "$ref": "#/texts/2"
+        },
+        {
+          "$ref": "#/texts/3"
+        }
+      ],
       "captions": [],
       "references": [],
       "footnotes": [],

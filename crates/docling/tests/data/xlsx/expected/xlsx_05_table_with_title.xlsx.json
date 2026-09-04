@@ -18,24 +18,39 @@
     "self_ref": "#/body",
     "children": [
       {
-        "$ref": "#/tables/0"
-      },
-      {
-        "$ref": "#/tables/1"
+        "$ref": "#/groups/0"
       }
     ],
     "content_layer": "body",
     "name": "_root_",
     "label": "unspecified"
   },
-  "groups": [],
+  "groups": [
+    {
+      "self_ref": "#/groups/0",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [
+        {
+          "$ref": "#/tables/0"
+        },
+        {
+          "$ref": "#/tables/1"
+        }
+      ],
+      "content_layer": "body",
+      "name": "Duck Observations",
+      "label": "sheet"
+    }
+  ],
   "texts": [],
   "pictures": [],
   "tables": [
     {
       "self_ref": "#/tables/0",
       "parent": {
-        "$ref": "#/body"
+        "$ref": "#/groups/0"
       },
       "children": [],
       "content_layer": "body",
@@ -85,7 +100,7 @@
     {
       "self_ref": "#/tables/1",
       "parent": {
-        "$ref": "#/body"
+        "$ref": "#/groups/0"
       },
       "children": [],
       "content_layer": "body",

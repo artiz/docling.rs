@@ -591,6 +591,9 @@ impl Walker<'_> {
                 };
                 self.emit(body, items);
             }
+            // A group on a non-body layer (a hidden spreadsheet sheet) carries
+            // no chunkable content, like every other non-body item.
+            Node::Group { layer: Some(_), .. } => {}
             Node::Group { children, .. } => {
                 // A generic group is a structural container: docling recurses
                 // into it rather than chunking it whole.
@@ -1147,6 +1150,7 @@ fn block_chunk_text(node: &Node) -> String {
         }
         Node::Heading { text, .. } => unescape_text(text),
         Node::Located { inner, .. } | Node::Commented { inner, .. } => block_chunk_text(inner),
+        Node::Group { layer: Some(_), .. } => String::new(),
         Node::Group { children, .. } => children
             .iter()
             .map(block_chunk_text)

@@ -502,7 +502,12 @@ fn render_one(node: &Node, list_level: usize, inline: bool, parts: &mut Vec<Stri
         // Upstream's fallback on a group joins its children with blank lines;
         // an `inline` group is docling's InlineGroup, joined with spaces in
         // inline scope.
-        Node::Group { label, children } => {
+        // A group on a non-body content layer (a hidden spreadsheet sheet) is
+        // not rendered, like every other non-body item.
+        Node::Group { layer: Some(_), .. } => {}
+        Node::Group {
+            label, children, ..
+        } => {
             if label == "inline" {
                 push(parts, render_nodes(children, list_level, true).join(" "));
             } else {
