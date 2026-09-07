@@ -9,7 +9,10 @@ pub mod ftp;
 pub mod sftp;
 
 use crate::config::SourceKind;
-use crate::{RagConfig, RagError, Result};
+/// Only the feature-disabled arms of `from_config` construct an error.
+#[cfg(not(feature = "remote-sources"))]
+use crate::RagError;
+use crate::{RagConfig, Result};
 use async_trait::async_trait;
 use std::sync::Arc;
 
