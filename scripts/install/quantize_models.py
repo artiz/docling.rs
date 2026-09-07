@@ -11,6 +11,8 @@ docs/PDF_CONFORMANCE.md for the measured speed/quality numbers):
   the 0.3 threshold and visibly degrades output (headers demoted to text,
   page-footers leaking in), while conv-only keeps groundtruth conformance at
   fp32 level. ~2.4x faster layout inference on AVX-512-VNNI CPUs, 172 -> 68 MB.
+  Weights are 7-bit (`reduce_range`), which costs nothing here and keeps the
+  model correct on CPUs *without* VNNI — see `check_weight_range`.
 
 * **tableformer-decoder** — dynamic INT8 (weights-only MatMul) of the
   legacy autoregressive tag decoder (~10% faster than its fp32 file,
@@ -130,12 +132,57 @@ def quantize_layout():
         activation_type=QuantType.QUInt8,
         weight_type=QuantType.QInt8,
         per_channel=True,
+        # 7-bit weights. u8s8 convolutions run through VPMADDUBSW on CPUs
+        # without VNNI, whose int16 pair accumulator saturates at 32767:
+        # full-range weights reach 255*127*2 = 64770 and silently clip, which
+        # is what wrecked a publish run (83 of 505 confident detections lost,
+        # two of them tables, on a runner this recipe passes on elsewhere).
+        # 7 bits caps the pair product at 255*64*2 = 32640 — below the
+        # saturation point, so the model behaves the same on every x86 CPU.
+        reduce_range=True,
         # Conv-only: the RT-DETR decoder/head MatMuls are threshold-sensitive.
         op_types_to_quantize=["Conv"],
     )
     os.remove(pre)
     print(f"layout: done -> {dst} ({os.path.getsize(dst) / 1e6:.1f} MB)")
+    check_weight_range(dst)
     validate_layout(src, dst)
+
+
+# u8 activations times 7-bit weights, two lanes per VPMADDUBSW int16 slot.
+SATURATION_SAFE_MAX = 64  # 255 * 64 * 2 = 32640 <= int16 max (32767)
+
+
+def check_weight_range(dst):
+    """Portability gate: every quantized weight must stay within 7 bits.
+
+    The accuracy gate below only proves the model right on the machine that
+    ran it — int8 convolutions take a different kernel per ISA, and the AVX2
+    one (no VNNI) accumulates u8*s8 products pairwise in int16. A full-range
+    weight saturates there, so a model that looks perfect on the quantizing
+    box can lose whole detections on a plain AVX2 CPU. This check is
+    hardware-independent: it reads the weights, so it fails on the publishing
+    machine rather than on a user's laptop."""
+    import onnx
+    from onnx import numpy_helper
+
+    over = []
+    for init in onnx.load(dst).graph.initializer:
+        arr = numpy_helper.to_array(init)
+        if arr.dtype == np.int8 and arr.size:
+            peak = int(np.abs(arr).max())
+            if peak > SATURATION_SAFE_MAX:
+                over.append((init.name, peak))
+    if over:
+        os.remove(dst)
+        worst = max(p for _, p in over)
+        sys.exit(
+            f"layout: {len(over)} weight tensor(s) exceed {SATURATION_SAFE_MAX}"
+            f" (worst |w| = {worst}, e.g. {over[0][0]}) — int16 saturation on"
+            f" non-VNNI CPUs would corrupt inference; {dst} deleted."
+            " Quantize with reduce_range=True."
+        )
+    print("layout: weights within 7 bits — no int16 saturation on any x86 CPU")
 
 
 # Mirror of layout.rs::LABELS — for the gate's reporting and the table check.
@@ -185,7 +232,11 @@ def validate_layout(src, dst):
     (a dropped table silently degrades to `<!-- image -->` downstream — the
     exact regression this gate exists to stop) and <= 2% for the rest.
     On failure the int8 file is DELETED so a publish run stages fp32 only
-    (download_dependencies.sh falls back gracefully — int8 is fetch_optional)."""
+    (download_dependencies.sh falls back gracefully — int8 is fetch_optional).
+
+    Machine-dependent by construction: it runs both graphs on *this* CPU, so
+    it catches quantization error but not ISA-specific kernel behaviour —
+    that is what check_weight_range covers."""
     import onnxruntime as ort
 
     for path, kind in ((src, "fp32"), (dst, "int8")):

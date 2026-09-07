@@ -75,9 +75,16 @@ jobs:
       # tables) and deletes its output on failure — so a bad quant simply
       # isn't staged and the release stays fp32-only for that model
       # (download_dependencies.sh treats every int8 asset as optional). The
-      # quant itself is deterministic given the fp32 input; what drifts
-      # between runs is the *export* upstream of it, which is exactly what
-      # the gate protects against. Deps pinned to the validated set. Two
+      # quant is deterministic given the fp32 input, and the export upstream
+      # of it is stable too (two exports of the same weights differ only by
+      # ~1e-7 in the constant-folded BatchNorm scales). What used to flip the
+      # gate between runs was the RUNNER'S CPU: it runs int8 inference, and
+      # the previous recipe's full-range weights saturated int16 in the AVX2
+      # kernel on runners without VNNI (83 of 505 detections lost there, 1
+      # on a VNNI box with the same input).
+      # quantize_models.py now emits 7-bit weights and checks that range
+      # hardware-independently, so the outcome no longer depends on which
+      # machine the job landed on. Deps pinned to the validated set. Two
       # separate steps so a TableFormer export failure doesn't block the
       # layout int8.
       - name: Install quantization deps
@@ -88,7 +95,13 @@ jobs:
       - name: Quantize layout model (static INT8, conv-only)
         if: steps.quant-deps.outcome == 'success'
         continue-on-error: true
-        run: python scripts/install/quantize_models.py layout
+        run: |
+          # The accuracy gate infers on this CPU, so record which int8 kernel
+          # it used — VNNI vs plain AVX2 is the first thing to check if the
+          # gate ever disagrees with a local run again.
+          grep -m1 '^model name' /proc/cpuinfo || true
+          echo "int8 ISA: $(grep -o -m1 'avx512_vnni\|avx_vnni\|avx2' /proc/cpuinfo | sort -u | tr '\n' ' ')"
+          python scripts/install/quantize_models.py layout
 
       - name: Quantize TableFormer decoder (dynamic INT8)
         if: steps.quant-deps.outcome == 'success' && steps.tf-export.outcome == 'success'

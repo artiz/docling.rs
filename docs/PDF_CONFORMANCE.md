@@ -820,6 +820,36 @@ PDF+scanned corpus):
   per-activation quantize ops outweigh the MatMul savings while the conv
   backbone stays fp32.
 
+##### 7-bit weights: the same model on every x86 CPU
+
+The quantizer emits **7-bit** weights (`reduce_range=True`). u8 activations
+times s8 weights go through `VPMADDUBSW` on CPUs without VNNI, and that
+instruction sums two products into one int16 slot: full-range weights reach
+255·127·2 = 64770 and saturate at 32767, so a model that measures perfectly on
+the machine that quantized it can drop whole regions on a plain AVX2 CPU.
+Not hypothetical — a publish run's agreement gate lost **83 of 505** confident
+detections (two of them tables) on a runner without VNNI, while the same recipe
+over a structurally identical export lost **1** on a VNNI box. 7 bits caps the
+pair product at 255·64·2 = 32640, below saturation.
+
+It costs nothing. Same VNNI machine, same corpus, 4 intra-op threads (the
+ratios are the point, not the absolute times — this is a shared container, not
+the benchmark box the table above was measured on):
+
+| layout_heron | agreement gate (505 confident fp32 detections) | 640×640 inference |
+|---|---:|---:|
+| fp32 | — | 548 ms |
+| INT8, full-range weights | 1 lost (0.20%) | 290 ms |
+| **INT8, 7-bit weights** | **0 lost (0.00%)** | **282 ms** |
+
+`quantize_models.py` checks the weight range right after quantizing
+(`check_weight_range`), before the accuracy gate. Reading weights is
+hardware-independent, so a recipe that reintroduces full-range weights fails on
+the publishing machine instead of on a user's laptop — the accuracy gate alone
+cannot catch this, since it only ever exercises the ISA it happens to run on.
+An int8 layout model fetched before this change is full-range: on a non-VNNI
+CPU, refetch after the next models publish, or set `DOCLING_RS_FP32=1`.
+
 #### TableFormer decoder: dynamic INT8 (~10% faster tables, byte-identical)
 
 The autoregressive tag decoder is MatMul-only; weights-only dynamic INT8
