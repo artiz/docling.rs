@@ -350,11 +350,12 @@ if [ "$WITH_INT8" = true ]; then
   else
     echo "layout int8 not hosted at $BASE_URL — the fp32 layout model will be used"
     echo "(correct output, ~2.4x slower layout stage on CPU; irrelevant for GPU builds,"
-    echo "which prefer fp32 anyway). The publish gate currently rejects the CI export's"
-    echo "int8 quantization, and quantizing the downloaded fp32 reproduces exactly that"
-    echo "rejected artifact — a good local int8 needs a layout model exported from"
-    echo "source first (scripts/install/pdf_setup.sh), then the self-validating"
+    echo "which prefer fp32 anyway). Publish runs left it unhosted while the quantizer's"
+    echo "gate kept rejecting the result — that was int16 saturation of full-range"
+    echo "weights on runners without VNNI, now fixed with 7-bit weights. Until the next"
+    echo "models publish, build one from the fp32 model this script just fetched:"
     echo "  python scripts/install/quantize_models.py layout"
+    echo "(it self-validates and keeps nothing that fails the gates)."
     echo "See docs/PDF_CONFORMANCE.md."
   fi
 fi
