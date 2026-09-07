@@ -18,6 +18,8 @@ setlocal enabledelayedexpansion
 set "BASE_URL=https://github.com/docling-project/docling.rs/releases/download/models-v1"
 if not "%DOCLING_RS_MODELS_URL%"=="" set "BASE_URL=%DOCLING_RS_MODELS_URL%"
 set "ASR_BASE_URL=https://huggingface.co/onnx-community/whisper-tiny/resolve/main"
+set "OCR_EN_URL=https://huggingface.co/SWHL/RapidOCR/resolve/main/PP-OCRv3/en_PP-OCRv3_rec_infer.onnx"
+set "EN_DICT_URL=https://raw.githubusercontent.com/PaddlePaddle/PaddleOCR/main/ppocr/utils/en_dict.txt"
 set "PDFIUM_URL=https://github.com/bblanchon/pdfium-binaries/releases/latest/download/pdfium-win-x64.tgz"
 
 set WITH_ASR=1
@@ -43,8 +45,11 @@ where curl >nul 2>nul || (echo error: curl.exe not found ^(ships with Windows 10
 
 rem Never hang forever on a dead mirror: cap the connect phase, abort a
 rem transfer stalled below 1 KiB/s for a minute, retry transient failures
-rem (docling proper added the same guard, issue #3784).
-set "CURL_TIMEOUTS=--connect-timeout 30 --speed-limit 1024 --speed-time 60 --retry 3 --retry-delay 2"
+rem (docling proper added the same guard, issue #3784). No --retry-delay: a
+rem fixed delay bunches every attempt into a few seconds, which is useless
+rem against the per-IP 429 the third-party hosts answer shared CI/office
+rem egress with - curl's default doubling spreads them out (as in the .sh).
+set "CURL_TIMEOUTS=--connect-timeout 30 --speed-limit 1024 --speed-time 60 --retry 5"
 
 if not exist .models\tableformer mkdir .models\tableformer
 if not exist .models\asr mkdir .models\asr
@@ -73,6 +78,15 @@ rem --- required models --------------------------------------------------------
 call :fetch "%BASE_URL%/layout_heron.onnx"              .models\layout_heron.onnx           || goto :fail
 call :fetch "%BASE_URL%/ocr_rec.onnx"                   .models\ocr_rec.onnx                || goto :fail
 call :fetch "%BASE_URL%/ppocr_keys_v1.txt"              .models\ppocr_keys_v1.txt           || goto :fail
+rem English PP-OCRv3 pair - the runtime *default* OCR model (the ch_ pair
+rem above is the conformance one). Release first, upstream second: the mirror
+rem only exists on tags published after it was added, and both hosts answer
+rem 429 under load. Optional either way - the pipeline degrades to the ch_
+rem model with a warning when the pair is missing.
+call :fetch_opt "%BASE_URL%/ocr_rec_en.onnx"            .models\ocr_rec_en.onnx
+if not exist .models\ocr_rec_en.onnx call :fetch_opt "%OCR_EN_URL%" .models\ocr_rec_en.onnx
+call :fetch_opt "%BASE_URL%/en_dict.txt"                .models\en_dict.txt
+if not exist .models\en_dict.txt call :fetch_opt "%EN_DICT_URL%" .models\en_dict.txt
 call :fetch "%BASE_URL%/encoder.onnx"                   .models\tableformer\encoder.onnx    || goto :fail
 call :fetch_opt "%BASE_URL%/encoder.onnx.data"          .models\tableformer\encoder.onnx.data
 call :fetch "%BASE_URL%/decoder.onnx"                   .models\tableformer\decoder.onnx    || goto :fail
@@ -87,12 +101,25 @@ call :fetch_opt "%BASE_URL%/picture_classifier.onnx"    .models\picture_classifi
 call :fetch_opt "%BASE_URL%/chunk_tokenizer.json"       .models\chunk\tokenizer.json
 
 rem --- ASR (Whisper tiny) -----------------------------------------------------
-if %WITH_ASR%==1 (
-  call :fetch "%ASR_BASE_URL%/onnx/encoder_model.onnx"  .models\asr\encoder_model.onnx      || goto :fail
-  call :fetch "%ASR_BASE_URL%/onnx/decoder_model.onnx"  .models\asr\decoder_model.onnx      || goto :fail
-  call :fetch "%ASR_BASE_URL%/vocab.json"               .models\asr\vocab.json              || goto :fail
-  call :fetch_opt "%ASR_BASE_URL%/added_tokens.json"    .models\asr\added_tokens.json
-)
+rem Release mirror (asr_*) first, Hugging Face second - same order as the .sh
+rem twin, so a rate-limited HF doesn't sink the install. A goto guard rather
+rem than an "if (...)" block, and each tier on its own line: cmd binds a "||"
+rem written after an "if" to the whole if-statement, so a skipped fallback
+rem would inherit a stale errorlevel and jump to :fail. The required files
+rem are guarded by their own "if not exist ... goto :fail" instead.
+if %WITH_ASR%==0 goto :asr_done
+call :fetch_opt "%BASE_URL%/asr_encoder_model.onnx"     .models\asr\encoder_model.onnx
+if not exist .models\asr\encoder_model.onnx call :fetch "%ASR_BASE_URL%/onnx/encoder_model.onnx" .models\asr\encoder_model.onnx
+if not exist .models\asr\encoder_model.onnx goto :fail
+call :fetch_opt "%BASE_URL%/asr_decoder_model.onnx"     .models\asr\decoder_model.onnx
+if not exist .models\asr\decoder_model.onnx call :fetch "%ASR_BASE_URL%/onnx/decoder_model.onnx" .models\asr\decoder_model.onnx
+if not exist .models\asr\decoder_model.onnx goto :fail
+call :fetch_opt "%BASE_URL%/asr_vocab.json"             .models\asr\vocab.json
+if not exist .models\asr\vocab.json call :fetch "%ASR_BASE_URL%/vocab.json" .models\asr\vocab.json
+if not exist .models\asr\vocab.json goto :fail
+call :fetch_opt "%BASE_URL%/asr_added_tokens.json"      .models\asr\added_tokens.json
+if not exist .models\asr\added_tokens.json call :fetch_opt "%ASR_BASE_URL%/added_tokens.json" .models\asr\added_tokens.json
+:asr_done
 
 rem --- INT8 variants (preferred automatically when present; DOCLING_RS_FP32=1 opts out)
 if %WITH_INT8%==1 (

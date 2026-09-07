@@ -10,7 +10,11 @@
 # — a numeric re-encoding of the weights, no retraining; conformance-validated
 # in PDF_PERFORMANCE.md). pdfium and the OCR model are re-hosted third-party
 # binaries, unmodified, from their own public releases — mirrored here only so
-# `download_dependencies.sh` needs one host instead of three.
+# `download_dependencies.sh` needs one host instead of three. Everything a
+# *default* install fetches is mirrored (both OCR pairs, Whisper tiny, the
+# chunk tokenizer, the picture classifier): third-party hosts answer 429 to
+# shared CI egress, which used to break container builds outright. Only the
+# opt-in extras (--asr-model presets, --embed) still come from upstream.
 #
 # Trigger: manual only (workflow_dispatch) — it installs torch and exports two
 # models, several GB and 10-20 minutes, not something to run on every push.
@@ -120,22 +124,45 @@ jobs:
       # The tokenizer is all-MiniLM-L6-v2's tokenizer.json (Apache-2.0), the
       # default docling's HybridChunker counts tokens with; re-hosted so the
       # hybrid chunker works out of the box after download_dependencies.sh.
-      - name: Fetch pdfium + OCR + chunk tokenizer assets
+      - name: Fetch pdfium + OCR + ASR + chunk tokenizer assets
         run: |
-          mkdir -p third-party
-          curl -fsSL -o /tmp/pdfium.tgz \
+          mkdir -p third-party third-party/asr
+          # Same backoff download_dependencies.sh uses: Hugging Face and
+          # raw.githubusercontent answer 429 to shared CI egress often enough
+          # to fail an unretried fetch.
+          RETRY="--retry 5 --connect-timeout 30"
+          curl -fsSL $RETRY -o /tmp/pdfium.tgz \
             "https://github.com/bblanchon/pdfium-binaries/releases/latest/download/pdfium-linux-x64.tgz"
           tar -xzf /tmp/pdfium.tgz -C third-party
-          curl -fsSL -o third-party/ocr_rec.onnx \
+          curl -fsSL $RETRY -o third-party/ocr_rec.onnx \
             "https://huggingface.co/SWHL/RapidOCR/resolve/main/PP-OCRv3/ch_PP-OCRv3_rec_infer.onnx"
-          curl -fsSL -o third-party/ppocr_keys_v1.txt \
+          curl -fsSL $RETRY -o third-party/ppocr_keys_v1.txt \
             "https://raw.githubusercontent.com/PaddlePaddle/PaddleOCR/main/ppocr/utils/ppocr_keys_v1.txt"
-          curl -fsSL -o third-party/chunk_tokenizer.json \
+          curl -fsSL $RETRY -o third-party/chunk_tokenizer.json \
             "https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2/resolve/main/tokenizer.json"
           # DocumentFigureClassifier-v2.5 (Apache-2.0) ships its ONNX graph
           # upstream — re-hosted as-is for --enrich-picture-classes.
-          curl -fsSL -o third-party/picture_classifier.onnx \
+          curl -fsSL $RETRY -o third-party/picture_classifier.onnx \
             "https://huggingface.co/docling-project/DocumentFigureClassifier-v2.5/resolve/main/model.onnx"
+          # English PP-OCRv3 recognition pair — the *runtime default* OCR
+          # model (the ch_ pair above is the conformance one). Unmirrored, it
+          # was the last required asset a container build pulled from Hugging
+          # Face, and a 429 there failed the image publish outright.
+          curl -fsSL $RETRY -o third-party/ocr_rec_en.onnx \
+            "https://huggingface.co/SWHL/RapidOCR/resolve/main/PP-OCRv3/en_PP-OCRv3_rec_infer.onnx"
+          curl -fsSL $RETRY -o third-party/en_dict.txt \
+            "https://raw.githubusercontent.com/PaddlePaddle/PaddleOCR/main/ppocr/utils/en_dict.txt"
+          # Whisper tiny (the ASR default, ~150 MB): same reasoning — a
+          # default install fetches it, so mirror it here and leave Hugging
+          # Face as download_dependencies.sh's fallback host.
+          for f in encoder_model decoder_model; do
+            curl -fsSL $RETRY -o "third-party/asr/$f.onnx" \
+              "https://huggingface.co/onnx-community/whisper-tiny/resolve/main/onnx/$f.onnx"
+          done
+          curl -fsSL $RETRY -o third-party/asr/vocab.json \
+            "https://huggingface.co/onnx-community/whisper-tiny/resolve/main/vocab.json"
+          curl -fsSL $RETRY -o third-party/asr/added_tokens.json \
+            "https://huggingface.co/onnx-community/whisper-tiny/resolve/main/added_tokens.json"
 
       # --- stage + publish -------------------------------------------------
       # GitHub release assets can't contain "/", so tableformer/*.onnx is
@@ -166,6 +193,15 @@ jobs:
           stage .models/tableformer/decoder_kv_int8.onnx decoder_kv_int8.onnx
           stage .models/tableformer/bbox.onnx bbox.onnx
           stage third-party/picture_classifier.onnx picture_classifier.onnx
+          stage third-party/ocr_rec_en.onnx ocr_rec_en.onnx
+          stage third-party/en_dict.txt en_dict.txt
+          # Whisper tiny flattens with an asr_ prefix (release assets are one
+          # flat namespace; download_dependencies.sh maps them back into
+          # .models/asr/).
+          stage third-party/asr/encoder_model.onnx asr_encoder_model.onnx
+          stage third-party/asr/decoder_model.onnx asr_decoder_model.onnx
+          stage third-party/asr/vocab.json asr_vocab.json
+          stage third-party/asr/added_tokens.json asr_added_tokens.json
           # CodeFormula graphs flatten with a cf_ prefix (release assets are
           # one flat namespace).
           stage .models/code_formula/vision.onnx cf_vision.onnx
