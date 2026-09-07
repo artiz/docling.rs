@@ -1080,9 +1080,12 @@ instead — same models plus `pdfium.dll` — and see
 Idempotent — safe to re-run; it skips files already on disk. Pass `--force` to
 re-fetch everything, `--no-chunk` to skip the chunker tokenizer, `--embed` to
 also fetch the RAG embedder, or set `$DOCLING_RS_MODELS_URL` to fetch from a
-different host (your own export, an internal mirror, …); the Whisper assets
-come from Hugging Face (`$DOCLING_RS_ASR_MODELS_URL` overrides, or point
-`DOCLING_ASR_{ENCODER,DECODER,VOCAB}` at explicit files). pdfium is Linux x64
+different host (your own export, an internal mirror, …). Everything a default
+install needs is served from that one host; where the release tag predates a
+mirrored asset the script falls back to its upstream home (Hugging Face for
+the Whisper and OCR models, PaddleOCR for the dictionaries) —
+`$DOCLING_RS_ASR_MODELS_URL` overrides the Whisper host outright, or point
+`DOCLING_ASR_{ENCODER,DECODER,VOCAB}` at explicit files. pdfium is Linux x64
 only for now — other platforms, or building the models from source, need
 [`scripts/install/pdf_setup.sh`](#testing) instead.
 

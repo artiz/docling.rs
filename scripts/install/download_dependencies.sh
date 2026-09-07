@@ -22,7 +22,8 @@
 #   .pdfium/lib/libpdfium.so (libpdfium.dylib on macOS)
 #   .models/layout_heron.onnx
 #   .models/ocr_rec_en.onnx + .models/en_dict.txt   (English PP-OCRv3
-#     recognition — the runtime default; from upstream PP-OCRv3 hosting)
+#     recognition — the runtime default; from the release when the tag mirrors
+#     it, else straight from upstream PP-OCRv3 hosting)
 #   .models/ocr_rec.onnx + .models/ppocr_keys_v1.txt (multilingual ch_ pair —
 #     what docling conformance is measured with; DOCLING_RS_OCR_LANG=ch)
 #   .models/tableformer/encoder.onnx (+ .data, if the export needs it)
@@ -30,7 +31,8 @@
 #   .models/tableformer/decoder_kv.onnx (+ .data; preferred when hosted)
 #   .models/tableformer/bbox.onnx (+ .data, if the export needs it)
 #   .models/asr/{encoder_model,decoder_model}.onnx + vocab.json   (Whisper tiny,
-#     from Hugging Face; skip with --no-asr)
+#     from the release when the tag mirrors it, else Hugging Face; skip with
+#     --no-asr)
 #   .models/chunk/tokenizer.json                   (all-MiniLM-L6-v2's tokenizer,
 #     the HybridChunker's default token counter; falls back to Hugging Face when
 #     the release doesn't host it; skip with --no-chunk)
@@ -66,11 +68,16 @@
 set -eu
 
 BASE_URL="${DOCLING_RS_MODELS_URL:-https://github.com/docling-project/docling.rs/releases/download/models-v1}"
-# Whisper tiny (docling's ASR default) for the audio pipeline, fetched straight
-# from the onnx-community export on Hugging Face (~150 MB). Override the base
-# with $DOCLING_RS_ASR_MODELS_URL (e.g. to re-host alongside the other models);
-# skip entirely with --no-asr.
+# Whisper tiny (docling's ASR default) for the audio pipeline: the
+# onnx-community export (~150 MB), mirrored into the models release as
+# asr_*, with Hugging Face as the fallback host. Override the base with
+# $DOCLING_RS_ASR_MODELS_URL (e.g. an internal re-host) — an explicit override
+# is used alone, without the release mirror. Skip entirely with --no-asr.
 ASR_BASE_URL="${DOCLING_RS_ASR_MODELS_URL:-https://huggingface.co/onnx-community/whisper-tiny/resolve/main}"
+ASR_MIRROR_URL="$BASE_URL"
+if [ -n "${DOCLING_RS_ASR_MODELS_URL:-}" ]; then
+  ASR_MIRROR_URL=
+fi
 # bge-m3 ONNX export for docling-rag's local embedder (--embed): community
 # export with a pooled `dense_vecs` output, fetched straight from HF.
 EMBED_BASE_URL="${DOCLING_RS_EMBED_MODELS_URL:-https://huggingface.co/aapot/bge-m3-onnx/resolve/main}"
@@ -115,7 +122,12 @@ fi
 # Never hang forever on a dead mirror: cap the connect phase, abort a transfer
 # that stalls below 1 KiB/s for a minute, and retry transient failures with
 # curl's built-in backoff (docling proper added the same guard, issue #3784).
-CURL_TIMEOUTS="--connect-timeout 30 --speed-limit 1024 --speed-time 60 --retry 3 --retry-delay 2"
+# No --retry-delay: a fixed delay pins every attempt to the same short wait —
+# the container build's four tries at 2s landed inside six seconds, which is
+# nothing against the per-IP 429 Hugging Face answers CI runners with. Curl's
+# default doubling (1s, 2s, 4s, …) spreads five attempts over half a minute
+# instead; a server-sent Retry-After still overrides either way.
+CURL_TIMEOUTS="--connect-timeout 30 --speed-limit 1024 --speed-time 60 --retry 5"
 
 fetch() { # <url> <dest>
   if [ "$FORCE" = false ] && [ -f "$2" ]; then
@@ -129,7 +141,8 @@ fetch() { # <url> <dest>
 }
 
 fetch_optional() { # <url> <dest> — ignore a missing/failed asset (sidecar files)
-  if [ "$FORCE" = false ] && [ -f "$2" ]; then
+  # An empty URL is a mirror that doesn't apply to this run (see fetch_mirrored).
+  if [ -z "$1" ] || { [ "$FORCE" = false ] && [ -f "$2" ]; }; then
     return 0
   fi
   # shellcheck disable=SC2086
@@ -139,6 +152,30 @@ fetch_optional() { # <url> <dest> — ignore a missing/failed asset (sidecar fil
   else
     rm -f "$2.download"
   fi
+}
+
+fetch_mirrored() { # <dest> <url>... — first URL that lands wins
+  dest=$1
+  shift
+  if [ "$FORCE" = false ] && [ -f "$dest" ]; then
+    echo "  = $dest (already present)"
+    return 0
+  fi
+  for url in "$@"; do
+    # An empty entry is a mirror that doesn't apply to this run (e.g. the
+    # release mirror when $DOCLING_RS_ASR_MODELS_URL overrides the host).
+    [ -n "$url" ] || continue
+    # shellcheck disable=SC2086
+    if curl -fsSL $CURL_TIMEOUTS -o "$dest.download" "$url"; then
+      mv "$dest.download" "$dest"
+      echo "  > $dest"
+      return 0
+    fi
+    rm -f "$dest.download"
+    echo "  ! $url unavailable — trying the next mirror" >&2
+  done
+  echo "error: could not fetch $dest from any mirror" >&2
+  return 1
 }
 
 echo "fetching docling.rs ML dependencies from $BASE_URL"
@@ -182,10 +219,16 @@ fetch "$BASE_URL/layout_heron.onnx" .models/layout_heron.onnx
 fetch "$BASE_URL/ocr_rec.onnx" .models/ocr_rec.onnx
 fetch "$BASE_URL/ppocr_keys_v1.txt" .models/ppocr_keys_v1.txt
 # English PP-OCRv3 recognition pair — the runtime default (the ch_ pair above
-# stays the conformance model, selected with DOCLING_RS_OCR_LANG=ch). Fetched
-# from upstream PP-OCRv3 hosting, not the models release.
-fetch "https://huggingface.co/SWHL/RapidOCR/resolve/main/PP-OCRv3/en_PP-OCRv3_rec_infer.onnx" .models/ocr_rec_en.onnx
-fetch "https://raw.githubusercontent.com/PaddlePaddle/PaddleOCR/main/ppocr/utils/en_dict.txt" .models/en_dict.txt
+# stays the conformance model, selected with DOCLING_RS_OCR_LANG=ch). The
+# release mirrors both (publish-models.yml re-hosts them unmodified); the
+# upstream hosts stay as the fallback for release tags that predate the
+# mirror.
+fetch_mirrored .models/ocr_rec_en.onnx \
+  "$BASE_URL/ocr_rec_en.onnx" \
+  "https://huggingface.co/SWHL/RapidOCR/resolve/main/PP-OCRv3/en_PP-OCRv3_rec_infer.onnx"
+fetch_mirrored .models/en_dict.txt \
+  "$BASE_URL/en_dict.txt" \
+  "https://raw.githubusercontent.com/PaddlePaddle/PaddleOCR/main/ppocr/utils/en_dict.txt"
 fetch "$BASE_URL/encoder.onnx" .models/tableformer/encoder.onnx
 fetch_optional "$BASE_URL/encoder.onnx.data" .models/tableformer/encoder.onnx.data
 fetch "$BASE_URL/decoder.onnx" .models/tableformer/decoder.onnx
@@ -202,9 +245,16 @@ if [ "$WITH_ASR" = true ]; then
   # Whisper tiny for audio/ASR: encoder + (cache-less) decoder + vocabulary;
   # added_tokens.json feeds non-English language selection and the special-
   # token layout, so a missing asset there is not fatal for the default model.
-  fetch "$ASR_BASE_URL/onnx/encoder_model.onnx" .models/asr/encoder_model.onnx
-  fetch "$ASR_BASE_URL/onnx/decoder_model.onnx" .models/asr/decoder_model.onnx
-  fetch "$ASR_BASE_URL/vocab.json" .models/asr/vocab.json
+  fetch_mirrored .models/asr/encoder_model.onnx \
+    "${ASR_MIRROR_URL:+$ASR_MIRROR_URL/asr_encoder_model.onnx}" \
+    "$ASR_BASE_URL/onnx/encoder_model.onnx"
+  fetch_mirrored .models/asr/decoder_model.onnx \
+    "${ASR_MIRROR_URL:+$ASR_MIRROR_URL/asr_decoder_model.onnx}" \
+    "$ASR_BASE_URL/onnx/decoder_model.onnx"
+  fetch_mirrored .models/asr/vocab.json \
+    "${ASR_MIRROR_URL:+$ASR_MIRROR_URL/asr_vocab.json}" \
+    "$ASR_BASE_URL/vocab.json"
+  fetch_optional "${ASR_MIRROR_URL:+$ASR_MIRROR_URL/asr_added_tokens.json}" .models/asr/added_tokens.json
   fetch_optional "$ASR_BASE_URL/added_tokens.json" .models/asr/added_tokens.json
 fi
 
@@ -237,11 +287,9 @@ if [ "$WITH_CHUNK" = true ]; then
   # given. Fetched from the release when hosted (newer tags), else straight
   # from Hugging Face.
   mkdir -p .models/chunk
-  fetch_optional "$BASE_URL/chunk_tokenizer.json" .models/chunk/tokenizer.json
-  if [ ! -f .models/chunk/tokenizer.json ]; then
-    fetch "https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2/resolve/main/tokenizer.json" \
-      .models/chunk/tokenizer.json
-  fi
+  fetch_mirrored .models/chunk/tokenizer.json \
+    "$BASE_URL/chunk_tokenizer.json" \
+    "https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2/resolve/main/tokenizer.json"
 fi
 
 # DocumentFigureClassifier (picture classification enrichment, ~17 MB): the
@@ -249,11 +297,9 @@ fi
 # fetched by default — from the release when hosted, else the upstream ONNX
 # straight from Hugging Face (docling-project/DocumentFigureClassifier-v2.5
 # ships the graph itself).
-fetch_optional "$BASE_URL/picture_classifier.onnx" .models/picture_classifier.onnx
-if [ ! -f .models/picture_classifier.onnx ]; then
-  fetch "https://huggingface.co/docling-project/DocumentFigureClassifier-v2.5/resolve/main/model.onnx" \
-    .models/picture_classifier.onnx
-fi
+fetch_mirrored .models/picture_classifier.onnx \
+  "$BASE_URL/picture_classifier.onnx" \
+  "https://huggingface.co/docling-project/DocumentFigureClassifier-v2.5/resolve/main/model.onnx"
 
 if [ "$WITH_ENRICH" = true ]; then
   # CodeFormulaV2 (code/formula enrichment, ~1.3 GB fp32): the
