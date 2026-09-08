@@ -992,10 +992,16 @@ impl Worker {
             };
         }
         if let TfSlot::Ready(tf) = guard {
+            // One 1024-px frame per page, shared by all of its tables.
+            let page1024 = tableformer::TableFormer::page_1024(&page.image);
             for (i, r) in regions.iter().enumerate() {
                 if assemble::is_table_like(r.label) {
-                    table_rows[i] =
-                        tf.predict_table_rows(&page.image, [r.l, r.t, r.r, r.b], &page.word_cells);
+                    table_rows[i] = tf.predict_table_rows_on(
+                        page.image.height(),
+                        &page1024,
+                        [r.l, r.t, r.r, r.b],
+                        &page.word_cells,
+                    );
                 }
             }
         }
