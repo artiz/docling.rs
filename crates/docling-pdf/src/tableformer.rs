@@ -209,11 +209,12 @@ impl TableFormer {
     /// decoder layer's cross-attention K/V (projected from the image memory once,
     /// shape `[N_LAYERS,1,H,S,head_dim]`) and `enc_out` for the bbox decoder.
     fn encode(&mut self, img: &RgbImage) -> Result<EncodeOut, String> {
-        let input = preprocess(img)?;
-        let mut enc_out = self
-            .encoder
-            .run(ort::inputs!["image" => input])
-            .map_err(|e| format!("tableformer: encode: {e}"))?;
+        let input = crate::timing::timed("tf.preprocess", || preprocess(img))?;
+        let mut enc_out = crate::timing::timed("tf.encoder", || {
+            self.encoder
+                .run(ort::inputs!["image" => input])
+                .map_err(|e| format!("tableformer: encode: {e}"))
+        })?;
         let mut per_layer = Vec::new();
         if self.style == DecoderStyle::KvHoisted {
             for prefix in ["cross_kt_", "cross_v_"] {
@@ -415,21 +416,25 @@ impl TableFormer {
         let mut book = BboxBook::new();
         let mut cache = DecodeCache::default();
         let empty = self.empty_cache()?;
-        while book.otsl.len() < MAX_STEPS {
-            let (raw, hidden) = self.decode_step(&book.tags, &enc, &mut cache, &empty)?;
-            if !book.step(raw, &hidden) {
-                break;
+        crate::timing::timed("tf.decode_loop", || -> Result<(), String> {
+            while book.otsl.len() < MAX_STEPS {
+                let (raw, hidden) = self.decode_step(&book.tags, &enc, &mut cache, &empty)?;
+                if !book.step(raw, &hidden) {
+                    break;
+                }
             }
-        }
+            Ok(())
+        })?;
         if book.n == 0 {
             return Ok(Vec::new());
         }
         let tag_h = Tensor::from_array(([book.n, EMBED_DIM], std::mem::take(&mut book.hiddens)))
             .map_err(|e| format!("tableformer: tag_h: {e}"))?;
-        let bout = self
-            .bbox
-            .run(ort::inputs!["enc_out" => &enc.eo, "tag_h" => tag_h])
-            .map_err(|e| format!("tableformer: bbox: {e}"))?;
+        let bout = crate::timing::timed("tf.bbox", || {
+            self.bbox
+                .run(ort::inputs!["enc_out" => &enc.eo, "tag_h" => tag_h])
+                .map_err(|e| format!("tableformer: bbox: {e}"))
+        })?;
         let (_, raw) = bout["boxes"]
             .try_extract_tensor::<f32>()
             .map_err(|e| format!("tableformer: boxes: {e}"))?;
