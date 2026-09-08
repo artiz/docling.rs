@@ -251,7 +251,7 @@ impl PdfDocument {
         let mut rust = rust_parser_cells(bytes);
         let mut pages = Vec::new();
         for (i, page) in doc.pages().iter().enumerate() {
-            let rc = rust.as_mut().and_then(|v| v.get_mut(i).map(std::mem::take));
+            let rc = rust.as_mut().map(|p| p.cells_timed(i));
             pages.push(extract_page(&page, &ffi, i as i32, rc, true, true)?);
         }
         Ok(PdfDocument { pages })
@@ -266,13 +266,23 @@ impl PdfDocument {
 /// to fall back to pdfium's text layer. The parser returns an empty page when a
 /// PDF (or a page) has no parseable text layer; the caller keeps pdfium's cells
 /// in that case, so scanned/edge-case pages are unaffected.
-fn rust_parser_cells(bytes: &[u8]) -> Option<Vec<crate::textparse::PageParserCells>> {
+fn rust_parser_cells(bytes: &[u8]) -> Option<crate::textparse::PageTextParser> {
     if docling_core::env::flag("DOCLING_PDFIUM_TEXT") {
         return None;
     }
-    Some(crate::timing::timed("textparse", || {
-        crate::textparse::pdf_all_cells(bytes)
-    }))
+    // Only the document load happens here; pages are parsed as the walk
+    // reaches them (`cells_timed`), so nothing is decoded for pages outside
+    // a `--pages` window and the parse overlaps the workers' inference.
+    crate::timing::timed("textparse.open", || {
+        crate::textparse::PageTextParser::open(bytes)
+    })
+}
+
+impl crate::textparse::PageTextParser {
+    /// [`cells`](Self::cells) under the `textparse` timing stage (per page).
+    fn cells_timed(&mut self, index: usize) -> crate::textparse::PageParserCells {
+        crate::timing::timed("textparse", || self.cells(index))
+    }
 }
 
 #[cfg(feature = "ml")]
@@ -339,7 +349,7 @@ where
         if i < first || i > last {
             continue;
         }
-        let rc = rust.as_mut().and_then(|v| v.get_mut(i).map(std::mem::take));
+        let rc = rust.as_mut().map(|p| p.cells_timed(i));
         let extracted = extract_page(&page, &ffi, i as i32, rc, render_image, extract_text)?;
         f(i, total, extracted)?;
     }

@@ -850,6 +850,76 @@ cannot catch this, since it only ever exercises the ISA it happens to run on.
 An int8 layout model fetched before this change is full-range: on a non-VNNI
 CPU, refetch after the next models publish, or set `DOCLING_RS_FP32=1`.
 
+##### BatchNorm folded before quantization (~1.4× faster int8 layout)
+
+A re-profile (Sep 2026, 4-core Xeon, ORT node profiler on the int8 graph)
+found ~40% of layout inference in fp32 elementwise ops that the fp32 path
+never executes: `Mul` 13%, `Add` 12%, `DequantizeLinear` 12%,
+`QuantizeLinear` 4%. The HGNetv2 export spells eval-mode BatchNorm as
+`Conv → Mul(1,C,1,1) → Add(1,C,1,1)`; in an fp32 session ONNX Runtime's
+ConvMulFusion/ConvAddFusion fold that into one FusedConv at load, but the
+QDQ quantizer wraps the Conv in Quantize/Dequantize pairs that block the
+fusion, so every one of the backbone's 110 normalizations ran as
+`DQ → Mul → Add → Q` over the full activation tensor. `quantize_models.py`
+now folds the 55 pairs into the conv weights and bias first
+(`fold_conv_affine`: `(W∗x)·s + t == (W·s)∗x + t`, exact up to the fp32
+rounding the runtime fusion performs as well) and the graph collapses to
+back-to-back QLinearConvs.
+
+Folding alone moved int8/fp32 agreement sideways (mean |Δscore| over the
+1045 above-threshold fp32 detections on the calibration pages 0.049 → 0.051),
+so the activation ranges now come from `CalibMovingAverage` — per-page
+min/max averaged instead of corpus-wide extremes, so one outlier page no
+longer sets the u8 grid for all. Entropy and percentile calibration were
+tried on the same graph and landed in between (0.046 / 0.043), on top of
+needing every activation sample in RAM (the 52-page set does not fit in
+15 GB). Same box, same corpus, single-thread ORT for the output diffs:
+
+| layout_heron_int8 recipe | 2 thr | 4 thr | mean \|Δscore\| vs fp32 | lost (of 1045) | Markdown diff-lines vs fp32 (24 docs) | vs groundtruth (17 docs) |
+|---|---:|---:|---:|---:|---:|---:|
+| previous (unfolded, MinMax) | 602 ms | 381 ms | 0.049 | 38 | 327 | 564 |
+| folded, MinMax | 453 ms | 289 ms | 0.051 | 48 | 345 | 576 |
+| **folded, MinMax moving average** | **424 ms** | **289 ms** | **0.037** | **28** | **290** | **563** |
+
+Groundtruth distance is unchanged (563 vs 564; fp32 itself sits at 411) and
+the int8 output moves 11% closer to fp32 — a speed win that is also a small
+fidelity win. Both gates pass (0/505 confident detections lost; weights
+within 7 bits). Pipeline effect, back-to-back cold CLI runs, default 2×2
+pool: the 60-page slice of the .NET reference 34.5–34.9 s → 26.9–27.3 s
+(−22%, together with the lazy text parse below); the table-heavy
+`2206.01062` 13.2–13.4 s → 11.9–12.6 s (TableFormer-bound, see below).
+
+##### Text layer parsed per page, not up front
+
+`for_each_page` used to run the pure-Rust text parser over *every* page of
+the document before rendering the first one: a 6.5 s serial prefix on the
+1913-page .NET reference that the page-worker pool sat idle through, and a
+`--pages` window still paid for all 1913 pages (14% of a 60-page slice's
+wall time). `PageTextParser` keeps the loaded document and the font/form
+caches and parses a page when the render walk reaches it — 0.58 s to open
+the document plus ~2.4 ms per selected page, overlapped with the workers'
+inference. Same glyph walk, same shared caches, same contraction per page:
+Markdown output is byte-identical over the PDF corpus, the scanned fixtures
+and the 60-page slice (single-thread ORT, old vs new binary).
+`DOCLING_RS_TIMING` now reports `textparse.open` plus a per-page `textparse`.
+
+Two further findings from the same profile, not yet acted on:
+
+- **Shared-TableFormer wait.** The `tableformer` stage wraps the lock on
+  the single shared instance, and on the 60-page slice ~9.5 s of it is one
+  worker blocked while the other decodes a table (stage 22.5 s vs
+  `tableformer.structure` 11.5 s + `inter_area` 1.5 s). On table-dense
+  documents this bounds the parallel speed-up; the fix is to defer such a
+  page (results are reassembled by index anyway) and keep pulling pages
+  instead of blocking. Pool topology is not the lever: 2×2, 4×1 and 3×1
+  all land within noise on this machine.
+- **Producer-thread work per page** — two pdfium renders (3× for OCR, 1.5×
+  for the docling-parity layout image) plus two downscales — is ~130 ms,
+  of which the scalar Pillow-exact bicubic (`image.resize_layout`, 30 ms)
+  is slower than the SIMD 3×→2× pass on a bigger image (21 ms). Not the
+  bottleneck at 4 cores (two workers consume ~2.8 pages/s, the producer
+  feeds ~7.7), but it caps a many-core pool at roughly 7–8 pages/s.
+
 #### TableFormer decoder: dynamic INT8 (~10% faster tables, byte-identical)
 
 The autoregressive tag decoder is MatMul-only; weights-only dynamic INT8

@@ -123,6 +123,8 @@ def quantize_layout():
     # ONNX-level inference quant_pre_process falls back to is enough for the
     # Conv-only QDQ pass.
     quant_pre_process(src, pre, skip_symbolic_shape=True)
+    folded = fold_conv_affine(pre)
+    print(f"layout: folded {folded} BatchNorm Mul/Add pairs into their Conv weights", flush=True)
     print("layout: static QDQ INT8 quantization (Conv only)...", flush=True)
     quantize_static(
         pre,
@@ -142,11 +144,115 @@ def quantize_layout():
         reduce_range=True,
         # Conv-only: the RT-DETR decoder/head MatMuls are threshold-sensitive.
         op_types_to_quantize=["Conv"],
+        # Activation ranges as the moving average of per-page min/max rather
+        # than the corpus-wide extremes: a single outlier page no longer sets
+        # the u8 grid for everyone. Measured against fp32 over the calibration
+        # pages (BN-folded graph, 1045 fp32 detections above the pipeline
+        # threshold): mean |score delta| 0.051 -> 0.037, detections lost
+        # 48 -> 28, p95 delta 0.19 -> 0.14 — also better than the previous
+        # unfolded recipe on every one of those (0.049 / 38 / 0.17). Entropy
+        # and percentile calibration were tried on the same graph and landed
+        # in between (0.046 / 0.043), on top of needing all activation samples
+        # in RAM, which the full 52-page set does not fit in 15 GB.
+        extra_options={"CalibMovingAverage": True},
     )
     os.remove(pre)
     print(f"layout: done -> {dst} ({os.path.getsize(dst) / 1e6:.1f} MB)")
     check_weight_range(dst)
     validate_layout(src, dst)
+
+
+def fold_conv_affine(path):
+    """Fold `Conv -> Mul(c) -> Add(c)` (BatchNorm in eval mode, as the HGNetv2
+    export spells it — per-channel constants of shape (1,C,1,1)) into the Conv's
+    weights and bias, in place. Returns the number of Conv nodes folded.
+
+    The fp32 session gets this for free: ONNX Runtime's ConvMulFusion /
+    ConvAddFusion turn the triple into one FusedConv at load, so fp32 inference
+    never executes the Mul/Add. The QDQ int8 graph does not: the quantizer
+    wraps the Conv in Quantize/Dequantize pairs, those block the fusion, and
+    every one of the backbone's 110 normalizations then runs as Dequantize ->
+    Mul -> Add -> Quantize — four fp32 passes over the full activation tensor
+    per conv, ~40% of int8 layout time on the ORT node profiler (Mul 13%, Add
+    12%, DequantizeLinear 12%, QuantizeLinear 4%). Folding first hands the
+    quantizer the same conv the fp32 path effectively runs, per-channel weight
+    scales absorb the BatchNorm scales, and the graph collapses to back-to-back
+    QLinearConvs. Algebra: (W*x)·s + t == (W·s)*x + t, exact up to fp32
+    rounding of W·s — which is what the fp32 fusion computes as well."""
+    import onnx
+    from onnx import numpy_helper
+
+    m = onnx.load(path)
+    g = m.graph
+    ini = {i.name: i for i in g.initializer}
+    consumers = {}
+    for n in g.node:
+        for x in n.input:
+            consumers.setdefault(x, []).append(n)
+
+    def affine_const(node, conv_out_channels):
+        # The non-activation input must be a per-channel constant.
+        for x in node.input:
+            if x in ini:
+                arr = numpy_helper.to_array(ini[x]).astype(np.float32)
+                if arr.size == conv_out_channels:
+                    return arr.reshape(-1)
+        return None
+
+    folded = 0
+    drop = set()
+    for conv in [n for n in g.node if n.op_type == "Conv"]:
+        if conv.input[1] not in ini:
+            continue
+        w = numpy_helper.to_array(ini[conv.input[1]]).astype(np.float32)
+        c_out = w.shape[0]
+        b = (
+            numpy_helper.to_array(ini[conv.input[2]]).astype(np.float32)
+            if len(conv.input) > 2 and conv.input[2] in ini
+            else np.zeros(c_out, dtype=np.float32)
+        )
+        scale = np.ones(c_out, dtype=np.float32)
+        shift = np.zeros(c_out, dtype=np.float32)
+        tail = conv
+        chain = []
+        # Walk a single-consumer Mul then Add (either alone also folds).
+        for op in ("Mul", "Add"):
+            nxt = consumers.get(tail.output[0], [])
+            if len(nxt) != 1 or nxt[0].op_type != op:
+                continue
+            k = affine_const(nxt[0], c_out)
+            if k is None:
+                break
+            if op == "Mul":
+                scale = scale * k
+                shift = shift * k
+            else:
+                shift = shift + k
+            chain.append(nxt[0])
+            tail = nxt[0]
+        if not chain:
+            continue
+        w_name = conv.input[1] + "_bnfold"
+        b_name = conv.input[1] + "_bnfold_bias"
+        g.initializer.append(
+            numpy_helper.from_array((w * scale.reshape(-1, 1, 1, 1)).astype(np.float32), w_name)
+        )
+        g.initializer.append(numpy_helper.from_array((b * scale + shift).astype(np.float32), b_name))
+        conv.input[1] = w_name
+        if len(conv.input) > 2:
+            conv.input[2] = b_name
+        else:
+            conv.input.append(b_name)
+        # The Conv now produces what the chain's last node produced.
+        conv.output[0] = tail.output[0]
+        drop.update(id(n) for n in chain)
+        folded += 1
+    if folded:
+        keep = [n for n in g.node if id(n) not in drop]
+        del g.node[:]
+        g.node.extend(keep)
+        onnx.save(m, path)
+    return folded
 
 
 # u8 activations times 7-bit weights, two lanes per VPMADDUBSW int16 slot.

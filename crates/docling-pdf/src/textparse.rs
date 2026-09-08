@@ -1014,30 +1014,66 @@ pub struct PageParserCells {
     pub code: Vec<crate::pdfium_backend::TextCell>,
 }
 
+/// The parser text layer, driven one page at a time: the document is loaded
+/// (and repaired, see [`load_document`]) once, the font/form caches persist
+/// across pages, and each page's glyphs are parsed only when asked for.
+///
+/// The eager whole-document walk this replaces ran *before* the first page
+/// was rendered, so on a long PDF it was a serial prefix the page-worker pool
+/// sat idle through — 6.2 s on the 1913-page .NET reference, in front of a
+/// pipeline that otherwise overlaps parsing with inference — and a `--pages`
+/// window still paid for every page in the file. Pulling pages on demand
+/// keeps the parse on the producer thread but interleaved with rendering,
+/// and skips unselected pages entirely. Output per page is unchanged: same
+/// glyph walk, same shared caches, same contraction.
+pub struct PageTextParser {
+    doc: Document,
+    caches: DocCaches,
+    /// Page object ids in document order (page 1 first).
+    pages: Vec<lopdf::ObjectId>,
+}
+
+impl PageTextParser {
+    /// Load the document; `None` when it has no parseable text layer at all
+    /// (the caller then keeps pdfium's cells, as before).
+    pub fn open(bytes: &[u8]) -> Option<Self> {
+        let doc = load_document(bytes)?;
+        let mut pages: Vec<_> = doc.get_pages().into_iter().collect();
+        pages.sort_by_key(|(n, _)| *n);
+        Some(Self {
+            doc,
+            caches: DocCaches::default(),
+            pages: pages.into_iter().map(|(_, pid)| pid).collect(),
+        })
+    }
+
+    /// Prose, word and code cells of the 0-based page `index` — empty for an
+    /// index the parser's page tree doesn't have (pdfium and lopdf can
+    /// disagree on a damaged file; the caller falls back to pdfium's text).
+    pub fn cells(&mut self, index: usize) -> PageParserCells {
+        let Some(&pid) = self.pages.get(index) else {
+            return PageParserCells::default();
+        };
+        let (_w, h) = page_size(&self.doc, pid);
+        let glyphs = page_glyphs_cached(&self.doc, pid, &mut self.caches);
+        let (prose, words) = crate::dp_lines::line_and_word_cells(&glyphs, h, true);
+        PageParserCells {
+            prose,
+            words,
+            code: crate::pdfium_backend::code_cells_from_glyphs(&glyphs, h),
+        }
+    }
+}
+
 /// Full parser text layer: prose + word + code cells per page, glyphs parsed once.
 /// `prose`/`words` come from the docling-parse contraction ([`crate::dp_lines`]);
 /// `code` splits only at the parser's own space glyphs (monospace keeps its
-/// source spacing). Used by the pipeline to retire pdfium's text path.
+/// source spacing). The eager form of [`PageTextParser`].
 pub fn pdf_all_cells(bytes: &[u8]) -> Vec<PageParserCells> {
-    let Some(doc) = load_document(bytes) else {
+    let Some(mut parser) = PageTextParser::open(bytes) else {
         return Vec::new();
     };
-    let mut caches = DocCaches::default();
-    let mut pages: Vec<_> = doc.get_pages().into_iter().collect();
-    pages.sort_by_key(|(n, _)| *n);
-    pages
-        .into_iter()
-        .map(|(_, pid)| {
-            let (_w, h) = page_size(&doc, pid);
-            let glyphs = page_glyphs_cached(&doc, pid, &mut caches);
-            let (prose, words) = crate::dp_lines::line_and_word_cells(&glyphs, h, true);
-            PageParserCells {
-                prose,
-                words,
-                code: crate::pdfium_backend::code_cells_from_glyphs(&glyphs, h),
-            }
-        })
-        .collect()
+    (0..parser.pages.len()).map(|i| parser.cells(i)).collect()
 }
 
 /// Whole pages for the text-layer-only conversion ([`crate::convert_text_layer`]):
