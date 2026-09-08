@@ -1110,6 +1110,35 @@ The dynamic-batch `decoder_kv.onnx` reaches users through the models
 release (`publish-models.yml` re-run); until then the shipped decoder simply
 takes the one-table-at-a-time path.
 
+#### Round five (Sep 2026): the page→1024 resample, and a cache that cannot be poisoned
+
+Two small items left over from round four's profile of master.
+
+- **`inter_area`** (the page → 1024 px `cv2.INTER_AREA` box filter every
+  table crop is cut from; `tableformer.inter_area`, ~0.16 s per table page
+  in the pool, 43 ms in isolation) kept its addition order — horizontal
+  taps in increasing source column, then vertical taps in increasing source
+  row, f64 — and changed only its shape: the shrunk source rows are now
+  computed on demand as the vertical pass reaches them and kept in a ring
+  of a few rows (a source row feeds at most two output rows) instead of a
+  30 MB `sh × dw` intermediate written and re-read, the horizontal taps run
+  over the contiguous byte span they cover, and the vertical pass is a flat
+  `f64` axpy. **43 → 18 ms** per page render (1224×1584 → 791×1024, one
+  thread); a test asserts the bytes equal the naive per-pixel form on six
+  geometries, and the 32-document corpus is byte-identical on the serial
+  path and the 2-worker pool.
+- **Graph cache guard** (`docling_onnx::commit`). ONNX Runtime serializes
+  the optimized graph as a side effect of session creation and does not
+  fail the session when that write comes up short: a full disk truncates
+  the file and the session still initializes from memory. The cache then
+  published the prefix, and every later process tried it, failed, removed
+  it and rebuilt — a ~50 s cold start for the TableFormer graphs, seen once
+  right after a disk-full episode in the round-four session. The commit
+  path now checks the file's protobuf skeleton before renaming it into the
+  cache (each top-level field's declared length must end within the file;
+  a truncation lands inside the multi-megabyte `graph` field), a handful of
+  reads and seeks, never a parse of the weights.
+
 #### TableFormer decoder: dynamic INT8 (~10% faster tables, byte-identical)
 
 The autoregressive tag decoder is MatMul-only; weights-only dynamic INT8
