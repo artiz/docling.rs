@@ -998,6 +998,54 @@ the 60-page slice is byte-identical with and without them, on the serial path
 Pool-path effect of this round, back-to-back runs: `2203.01017v2` 9.8 →
 8.0–8.1 s (its in-picture table OCR rides the lanes), `2206.01062` 9.1–9.8 →
 8.2–9.6 s, the 60-page slice 21.0–21.4 → 19.4–21.6 s.
+##### Round three (Sep 2026): inside a table
+
+Sub-stage timers (`tf.preprocess`, `tf.encoder`, `tf.decode_loop`,
+`tf.bbox`, alongside `tf.decode_step`) split the ~1 s per table on
+`2206.01062` (4 threads) into: decode loop 0.53 s (~107 steps, ~5 ms each),
+bbox head 0.26 s, encoder 0.20 s, page→1024 resample 0.11 s, preprocessing
+5 ms. Three exact fixes came out of that, one dead end, and one wall.
+
+- **The bbox head fought the memory-pattern planner.** Its `tag_h` input is
+  `[ncells, 512]` and every table has a different cell count, so ONNX
+  Runtime re-planned buffer reuse on every run — and on this graph the plan
+  is worse than none: 290 ms vs 54 ms for a 100-cell table, 560 vs 94 ms
+  for 200 cells (repeat runs, 4 threads; the decoder session already ran
+  without the planner for the same reason). Off now; the head still pays
+  first-shape allocation per table because every table *is* a new shape.
+- **One 1024-px frame per page.** The page→1024 INTER_AREA resample (a
+  full-page f64 box filter, 110–170 ms) ran once per *table*;
+  `TableFormer::page_1024` builds it once per page and every table crops
+  from it. `2203.01017v2`: 8 → 4 resamples.
+- **The decoder runs on one intra-op thread.** A step is 49 small GEMMs
+  over a single token: it streams the layer weights (~70 MB per step) rather
+  than computing, so threads only add synchronisation — isolated, 4.1 ms per
+  step on 1 thread vs 5.5 on 4 (4.9 vs 7.1 once the KV cache is 100+ long).
+  In the pool a table decode also stops taking every core from the other
+  workers' layout inference, and a single-thread session has a fixed
+  reduction order, so table structure no longer varies run-to-run on
+  near-tie tokens (the conformance scripts pinned one thread for exactly
+  that; the default matches them now). The encoder keeps the shared budget:
+  680 ms single-threaded vs 165 on four.
+- **Dead end: graph simplification.** The exported step graph has 449 nodes,
+  ~415 executed per step, 275 of them Reshape/Transpose/Squeeze/Unsqueeze/
+  Concat. `onnxsim` takes it to 383 nodes, bit-identical — and no faster
+  (5.2 → 5.2 ms): ONNX Runtime already folds what can be folded at load, and
+  the shape ops that remain are dispatch noise next to the GEMMs (42% of
+  node time).
+- **The wall.** What is left per table is the encoder's real compute (a
+  448×448 CNN + transformer pass, 165 ms on 4 threads) and the decoder's
+  weight streaming. Both move only with the model: INT8/fp16 weights for the
+  step (the dynamic-INT8 `decoder_kv` was already tried and rejected — it
+  flips near-tie tokens on redp5110's TOC), or batching several tables'
+  steps through one run so the weights stream once for all of them (needs a
+  dynamic-batch re-export and exact masking of the ragged KV caches). Neither
+  is byte-exact by construction, so neither is in this branch.
+
+Back-to-back, same machine, default pool: `2206.01062` 9.4–9.6 → 8.8 s,
+`2203.01017v2` 8.0–8.1 → 7.9 s, `2305.03393v1-pg9` (one 55-step table on
+one page) 2.4 s. Output is byte-identical to the round-two references on the
+serial path and on a 2-worker pool over the same 32 documents.
 
 #### TableFormer decoder: dynamic INT8 (~10% faster tables, byte-identical)
 

@@ -157,11 +157,30 @@ impl TableFormer {
         // its input shapes differ on every `run()` call. ONNX Runtime's memory
         // pattern optimizer assumes stable shapes to plan buffer reuse; disabling
         // it for this session avoids repeatedly re-validating/re-touching that
-        // plan (and the external-weights file) on each step.
-        let build = |path: &str, mem_pattern: bool| -> Result<Session, String> {
+        // plan (and the external-weights file) on each step. The bbox head has
+        // the same problem one level up: its `tag_h` input is `[ncells, 512]`
+        // and every table has a different cell count, so with the pattern
+        // planner on each run re-plans — and on this graph the plan is *worse*
+        // than none: 290 ms vs 54 ms for a 100-cell table, 560 vs 94 ms for
+        // 200 cells (ORT 1.22, 4 threads). It was 0.26 s per table on the
+        // corpus, more than the encoder.
+        //
+        // The decoder runs on ONE intra-op thread. A step is 49 small GEMMs
+        // over a single token — it streams the layer weights, it does not
+        // compute — so extra threads only add synchronisation: measured 4.1 ms
+        // per step on 1 thread vs 5.5 on 4 (7.1 vs 4.9 once the cache is 100+
+        // long). In the pool it also stops a table decode from taking all the
+        // cores away from the other workers' layout inference. And a
+        // single-thread session has a fixed reduction order, so table
+        // structure no longer varies run-to-run on near-tie tokens the way
+        // multi-threaded float sums let it (the conformance scripts pin one
+        // thread for exactly that reason; the default now matches them). The
+        // encoder keeps the shared budget: one 448×448 CNN + transformer pass
+        // per table, 680 ms single-threaded vs 165 on four.
+        let build = |path: &str, mem_pattern: bool, threads: usize| -> Result<Session, String> {
             let builder = Session::builder()
                 .map_err(|e| e.to_string())?
-                .with_intra_threads(intra)
+                .with_intra_threads(threads)
                 .map_err(|e| e.to_string())?
                 .with_memory_pattern(mem_pattern)
                 .map_err(|e| e.to_string())?;
@@ -173,7 +192,11 @@ impl TableFormer {
             docling_onnx::commit(docling_onnx::apply(builder)?, path, variant)
                 .map_err(|e| format!("tableformer load {path}: {e}"))
         };
-        match (build(&enc, true), build(&dec, false), build(&bbx, true)) {
+        match (
+            build(&enc, true, intra),
+            build(&dec, false, 1),
+            build(&bbx, false, intra),
+        ) {
             (Ok(encoder), Ok(decoder), Ok(bbox)) => {
                 let has = |n: &str| decoder.inputs().iter().any(|i| i.name() == n);
                 let style = if has("cross_kt_0") {
@@ -463,20 +486,41 @@ impl TableFormer {
         region: [f32; 4],
         words: &[TextCell],
     ) -> Option<crate::tf_core::TableGrid> {
-        // page → 1024px height (cv2.INTER_AREA), then crop the table bbox.
-        // docling's coordinate chain, rounding included: the cluster bbox is
-        // rounded to integer page points *first* (`round(cluster.bbox.l) *
-        // scale`, banker's rounding), scaled by 2 (its table-structure page
-        // scale), then by `1024 / <2x page-image height>`, and the crop indices
-        // round again. Rounding after scaling instead shifts some crops by a
-        // pixel — enough to change TableFormer's cell boxes on tall tables
-        // (redp5110's TOC).
+        let page1024 = Self::page_1024(page_image);
+        self.predict_table_rows_on(page_image.height(), &page1024, region, words)
+    }
+
+    /// The page rendered at 1024 px height (cv2.INTER_AREA), the frame every
+    /// table crop of that page is cut from. Computed once per page by the
+    /// pipeline and shared across its tables — the resample is a full-page
+    /// f64 box filter, 110–170 ms on the corpus pages, and it used to run
+    /// again for every table on the page.
+    pub fn page_1024(page_image: &RgbImage) -> RgbImage {
         let sf = 1024.0 / page_image.height() as f32;
         let pw = (page_image.width() as f32 * sf) as u32;
-        let page1024 = crate::timing::timed("tableformer.inter_area", || {
+        crate::timing::timed("tableformer.inter_area", || {
             crate::resample::inter_area(page_image, pw, 1024)
-        });
-        let k = 2.0 * 1024.0 / page_image.height() as f64;
+        })
+    }
+
+    /// [`predict_table_rows`](Self::predict_table_rows) with the page's
+    /// 1024-px frame already built ([`page_1024`](Self::page_1024));
+    /// `page_h` is the source page image's pixel height.
+    pub fn predict_table_rows_on(
+        &mut self,
+        page_h: u32,
+        page1024: &RgbImage,
+        region: [f32; 4],
+        words: &[TextCell],
+    ) -> Option<crate::tf_core::TableGrid> {
+        // Crop the table bbox out of the 1024px frame. docling's coordinate
+        // chain, rounding included: the cluster bbox is rounded to integer page
+        // points *first* (`round(cluster.bbox.l) * scale`, banker's rounding),
+        // scaled by 2 (its table-structure page scale), then by `1024 / <2x
+        // page-image height>`, and the crop indices round again. Rounding after
+        // scaling instead shifts some crops by a pixel — enough to change
+        // TableFormer's cell boxes on tall tables (redp5110's TOC).
+        let k = 2.0 * 1024.0 / page_h as f64;
         let px = |v: f32| (v as f64).round_ties_even() * k;
         let x = (px(region[0]).round_ties_even()).max(0.0) as u32;
         let y = (px(region[1]).round_ties_even()).max(0.0) as u32;
@@ -485,7 +529,7 @@ impl TableFormer {
         if x2 <= x || y2 <= y {
             return None;
         }
-        let crop = image::imageops::crop_imm(&page1024, x, y, x2 - x, y2 - y).to_image();
+        let crop = image::imageops::crop_imm(page1024, x, y, x2 - x, y2 - y).to_image();
         let cells = crate::timing::timed("tableformer.structure", || {
             self.predict_table_structure(&crop)
         })
