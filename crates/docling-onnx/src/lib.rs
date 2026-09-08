@@ -428,7 +428,22 @@ pub fn commit(builder: SessionBuilder, model_path: &str, variant: &str) -> Resul
         .and_then(plain);
     match built {
         Ok(session) => {
-            if std::fs::rename(&tmp, &cache).is_err() {
+            // ORT serializes the optimized graph as a side effect of session
+            // creation and does not fail the session when that write comes up
+            // short (a full disk truncates the file and the session still
+            // initializes from memory). Publishing such a prefix would poison
+            // the cache: every later process would try it, fail, remove it and
+            // rebuild — a ~50 s cold start for the TableFormer graphs, seen
+            // exactly once after a disk-full episode. So check the protobuf
+            // skeleton first: every top-level field's declared length must end
+            // within the file (a truncation cuts inside the graph field).
+            if !onnx_file_complete(&tmp) {
+                docling_core::debug_log!(
+                    "docling-onnx: graph cache write of {} incomplete (disk full?); not kept",
+                    cache.display()
+                );
+                let _ = std::fs::remove_file(&tmp);
+            } else if std::fs::rename(&tmp, &cache).is_err() {
                 let _ = std::fs::remove_file(&tmp);
             } else {
                 docling_core::debug_log!("docling-onnx: graph cache wrote {}", cache.display());
@@ -442,6 +457,69 @@ pub fn commit(builder: SessionBuilder, model_path: &str, variant: &str) -> Resul
             plain(builder)
         }
     }
+}
+
+/// Whether `path` holds a structurally complete protobuf message: walk the
+/// top-level fields of the serialized `ModelProto`, seeking over each
+/// length-delimited body, and require the walk to land exactly on EOF. A file
+/// cut short by a failed write (disk full) fails this — the truncation lands
+/// inside the multi-megabyte `graph` field, whose length prefix then promises
+/// more bytes than exist — while costing only a handful of reads, never a
+/// parse of the weights. Malformed wire types or zero length fail too.
+fn onnx_file_complete(path: &Path) -> bool {
+    use std::io::{Read, Seek, SeekFrom};
+    let Ok(mut f) = std::fs::File::open(path) else {
+        return false;
+    };
+    let Ok(len) = f.metadata().map(|m| m.len()) else {
+        return false;
+    };
+    if len == 0 {
+        return false;
+    }
+    let mut pos = 0u64;
+    let read_varint = |f: &mut std::fs::File, pos: &mut u64| -> Option<u64> {
+        let mut v = 0u64;
+        for shift in (0..64).step_by(7) {
+            let mut b = [0u8; 1];
+            f.read_exact(&mut b).ok()?;
+            *pos += 1;
+            v |= u64::from(b[0] & 0x7f) << shift;
+            if b[0] & 0x80 == 0 {
+                return Some(v);
+            }
+        }
+        None
+    };
+    while pos < len {
+        let Some(key) = read_varint(&mut f, &mut pos) else {
+            return false;
+        };
+        let skip = match key & 7 {
+            0 => {
+                // varint payload
+                if read_varint(&mut f, &mut pos).is_none() {
+                    return false;
+                }
+                0
+            }
+            1 => 8,
+            2 => match read_varint(&mut f, &mut pos) {
+                Some(n) => n,
+                None => return false,
+            },
+            5 => 4,
+            _ => return false,
+        };
+        if skip > len - pos {
+            return false;
+        }
+        if skip > 0 && f.seek(SeekFrom::Current(skip as i64)).is_err() {
+            return false;
+        }
+        pos += skip;
+    }
+    pos == len
 }
 
 /// Where the optimized graph for `model_path` + `variant` lives on this
@@ -573,5 +651,60 @@ mod tests {
             feature = "xnnpack"
         )))]
         assert_eq!(default_choice(), Ep::Cpu);
+    }
+}
+
+#[cfg(test)]
+mod cache_guard_tests {
+    use super::onnx_file_complete;
+
+    fn write(bytes: &[u8]) -> std::path::PathBuf {
+        static SEQ: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+        let p = std::env::temp_dir().join(format!(
+            "docling-onnx-guard-{}-{}.onnx",
+            std::process::id(),
+            SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+        ));
+        std::fs::write(&p, bytes).unwrap();
+        p
+    }
+
+    /// A ModelProto-shaped message: `ir_version = 7` (field 1, varint), then a
+    /// `graph` (field 7, length-delimited) of 300 bytes — long enough for a
+    /// two-byte length prefix like the real thing.
+    fn model_like() -> Vec<u8> {
+        let mut v = vec![0x08, 0x07, 0x3a, 0xac, 0x02];
+        v.extend(std::iter::repeat_n(0x55u8, 300));
+        v
+    }
+
+    #[test]
+    fn complete_file_passes_truncated_fails() {
+        let full = model_like();
+        assert!(onnx_file_complete(&write(&full)));
+        // cut inside the graph body — what a disk-full write leaves behind
+        assert!(!onnx_file_complete(&write(&full[..full.len() - 1])));
+        assert!(!onnx_file_complete(&write(&full[..40])));
+        // cut inside the length prefix itself
+        assert!(!onnx_file_complete(&write(&full[..4])));
+        assert!(!onnx_file_complete(&write(&[])));
+        // trailing garbage that is not a valid field key/wire type
+        let mut bad = full.clone();
+        bad.push(0x07);
+        assert!(!onnx_file_complete(&write(&bad)));
+    }
+
+    #[test]
+    fn real_optimized_graph_passes() {
+        // Any real ONNX file in the repo's model dir, when present.
+        for p in [
+            "../../.models/tableformer/bbox.onnx",
+            "../../.models/layout_heron_int8.onnx",
+        ] {
+            let p = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join(p);
+            if p.is_file() {
+                assert!(onnx_file_complete(&p), "{}", p.display());
+            }
+        }
     }
 }
