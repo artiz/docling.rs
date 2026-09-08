@@ -949,6 +949,56 @@ is 11–12 ms per page. The render thread's remaining per-page work — two
 pdfium renders plus the two downscales, ~110 ms — is not the bottleneck at
 4 cores but caps a many-core pool at roughly 9 pages/s.
 
+##### Round two (Sep 2026): the fixed costs
+
+With inference trimmed, a second profile of the merged stack looked at what a
+conversion pays regardless of page count. All four changes below are
+output-neutral: Markdown over the PDF corpus, the scanned/rotated fixtures and
+the 60-page slice is byte-identical with and without them, on the serial path
+(single-thread ORT) and on a 2-worker pool.
+
+- **The page window loaded every page.** `for_each_page` walked
+  `pages.iter()` from page 0 and skipped to `first`, so pdfium loaded and
+  closed every page before the window — ~0.7 ms each. A one-page `--no-ocr`
+  window over the 1913-page .NET reference took 3.1 s, of which the parser
+  accounted for 0.4 s; indexing the window with `pages.get(i)` brings it to
+  **0.85 s** (the full pipeline on that page: 4.1 → 2.1 s, `--pages 1-60`
+  no-ocr 2.7 → 1.0 s). The parser's teardown — 250 ms of lopdf objects on
+  that document — now happens on a detached thread (`textparse.close` still
+  reports it) instead of delaying the last page.
+- **Session creation is graph optimization.** Creating the int8 layout
+  session costs ~0.8 s (4 threads) and the TableFormer encoder ~1 s; each
+  process, each pool worker. ONNX Runtime can serialize the optimized graph
+  and load it with the optimizer off in ~0.15 s, running the identical
+  kernels. `docling_onnx::commit` keeps such a cache
+  (`$XDG_CACHE_HOME/docling-rs/graphs`, `DOCLING_RS_GRAPH_CACHE_DIR`,
+  `DOCLING_RS_NO_GRAPH_CACHE=1`), keyed on the model file, the session
+  options that shape the graph, the ONNX Runtime API version and the CPU's
+  SIMD features (the saved graph carries hardware-specific NCHWc kernels);
+  CPU provider only, and every failure on the cached path falls back to the
+  ordinary load. A one-page digital PDF: **1.26 → 0.68 s** wall (the first
+  run after a model or machine change pays ~0.16 s extra to write the cache).
+- **OCR ran on one core while three idled.** Recognition is pinned to a
+  single intra-op thread for determinism (multi-threaded float reductions
+  flip CTC argmaxes on low-confidence characters), and it is linear in line
+  width — ~0.17 ms per pixel column, no batching benefit, no new-shape
+  penalty (measured). Lines are independent, so `OcrModel` now holds one
+  single-thread session per lane (the worker's thread budget;
+  `DOCLING_RS_OCR_SESSIONS` overrides) and deals same-width batches across
+  them by index; each line still meets exactly the single-thread kernel
+  path. On `ocr_test.pdf`, 4 lanes: `ocr.rec` 374 → 188 ms, `orient.score`
+  429 → 225 ms, wall 1.62 → 1.33 s; `nemotron_multipage` 6.5 → 4.1 s.
+- **The orientation probe was a second OCR pass.** Sub-stage timers showed
+  `orient.detect` on a scan is ~95% recognition: it reads the six *widest*
+  lines, and on a small scan those are most of the page's text — the probe
+  (467 ms) cost more than `ocr.rec` for the whole page (393 ms). The lanes
+  halve it; the remaining lever is a smaller probe budget, not taken here
+  because it changes the evidence the decision is made on.
+
+Pool-path effect of this round, back-to-back runs: `2203.01017v2` 9.8 →
+8.0–8.1 s (its in-picture table OCR rides the lanes), `2206.01062` 9.1–9.8 →
+8.2–9.6 s, the 60-page slice 21.0–21.4 → 19.4–21.6 s.
+
 #### TableFormer decoder: dynamic INT8 (~10% faster tables, byte-identical)
 
 The autoregressive tag decoder is MatMul-only; weights-only dynamic INT8

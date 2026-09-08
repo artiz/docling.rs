@@ -105,7 +105,9 @@ fn probe(img: &RgbImage, ocr: &mut OcrModel) -> Result<Score, String> {
         r: img.width() as f32,
         b: img.height() as f32,
     };
-    let (_, mut lines) = prep_region_lines(img, std::slice::from_ref(&page), 1.0);
+    let (_, mut lines) = crate::timing::timed("orient.prep", || {
+        prep_region_lines(img, std::slice::from_ref(&page), 1.0)
+    });
     // Widest first — most characters per recognition run. Stable order (width,
     // then original index) keeps the selection deterministic.
     let mut order: Vec<usize> = (0..lines.len()).collect();
@@ -114,7 +116,7 @@ fn probe(img: &RgbImage, ocr: &mut OcrModel) -> Result<Score, String> {
     order.sort_unstable();
     // Extract by descending index so earlier indices stay valid.
     let probes: Vec<PrepLine> = order.iter().rev().map(|&i| lines.swap_remove(i)).collect();
-    let (weighted, chars) = ocr.score_lines(&probes)?;
+    let (weighted, chars) = crate::timing::timed("orient.score", || ocr.score_lines(&probes))?;
     Ok(Score { weighted, chars })
 }
 

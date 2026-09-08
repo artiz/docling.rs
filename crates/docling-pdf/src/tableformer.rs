@@ -165,8 +165,12 @@ impl TableFormer {
                 .map_err(|e| e.to_string())?
                 .with_memory_pattern(mem_pattern)
                 .map_err(|e| e.to_string())?;
-            docling_onnx::apply(builder)?
-                .commit_from_file(path)
+            let variant = if mem_pattern {
+                "mem_pattern"
+            } else {
+                "no_mem_pattern"
+            };
+            docling_onnx::commit(docling_onnx::apply(builder)?, path, variant)
                 .map_err(|e| format!("tableformer load {path}: {e}"))
         };
         match (build(&enc, true), build(&dec, false), build(&bbx, true)) {
