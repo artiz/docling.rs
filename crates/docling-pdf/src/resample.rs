@@ -3,7 +3,7 @@
 //! against cv2 on docling's own bitmaps (INTER_AREA max diff 1/255, INTER_LINEAR
 //! < 1e-4 in float).
 
-use image::{Rgb, RgbImage};
+use image::RgbImage;
 
 /// Per-output-pixel source spans + overlap weights for area resampling.
 fn area_weights(src: usize, dst: usize, scale: f64) -> Vec<Vec<(usize, f64)>> {
@@ -185,60 +185,72 @@ pub fn pil_resize(src: &RgbImage, dw: u32, dh: u32, filter: PilFilter) -> RgbIma
     let (sw, sh) = (src.width() as usize, src.height() as usize);
     let (dwu, dhu) = (dw as usize, dh as usize);
     let bias = 1i32 << (PIL_PRECISION_BITS - 1);
+    // Both passes work on the raw byte rows rather than through
+    // `get_pixel`/`put_pixel`: the per-pixel accessors bounds-check and
+    // re-index for every tap, and the vertical pass walked *columns*, so a
+    // 4-tap bicubic over a 900×1200 page render cost ~30 ms per page on the
+    // pipeline's single render thread — slower than the SIMD 3×→2× downscale
+    // of a larger image. The arithmetic is unchanged and purely integer
+    // (i32 accumulators, no rounding until `pil_clip8`), so any evaluation
+    // order gives the same bytes; the Pillow reference hashes below hold.
 
     // Horizontal pass (skipped when the width is unchanged, like Pillow).
     let hpass: RgbImage = if dwu != sw {
         let coeffs = pil_coeffs(sw, dwu, filter);
-        let mut out = RgbImage::new(dw, sh as u32);
-        for y in 0..sh {
-            for (xx, (xmin, k)) in coeffs.iter().enumerate() {
+        let src_raw = src.as_raw();
+        let (sstride, dstride) = (sw * 3, dwu * 3);
+        let mut out = vec![0u8; dstride * sh];
+        for (row, orow) in src_raw
+            .chunks_exact(sstride)
+            .zip(out.chunks_exact_mut(dstride))
+        {
+            for ((xmin, k), o) in coeffs.iter().zip(orow.chunks_exact_mut(3)) {
                 let mut acc = [bias; 3];
-                for (x, &w) in k.iter().enumerate() {
-                    let p = src.get_pixel((xmin + x) as u32, y as u32);
-                    acc[0] += i32::from(p[0]) * w;
-                    acc[1] += i32::from(p[1]) * w;
-                    acc[2] += i32::from(p[2]) * w;
+                let taps = &row[xmin * 3..(xmin + k.len()) * 3];
+                for (px, &w) in taps.chunks_exact(3).zip(k) {
+                    acc[0] += i32::from(px[0]) * w;
+                    acc[1] += i32::from(px[1]) * w;
+                    acc[2] += i32::from(px[2]) * w;
                 }
-                out.put_pixel(
-                    xx as u32,
-                    y as u32,
-                    Rgb([pil_clip8(acc[0]), pil_clip8(acc[1]), pil_clip8(acc[2])]),
-                );
+                o[0] = pil_clip8(acc[0]);
+                o[1] = pil_clip8(acc[1]);
+                o[2] = pil_clip8(acc[2]);
             }
         }
-        out
+        RgbImage::from_raw(dw, sh as u32, out).expect("hpass buffer sized dw×sh×3")
     } else {
         src.clone()
     };
 
-    // Vertical pass.
+    // Vertical pass: one i32 accumulator row, each source row added in as a
+    // whole (an axpy the compiler vectorizes), then clipped out.
     if dhu == sh {
         return hpass;
     }
     let coeffs = pil_coeffs(sh, dhu, filter);
-    let mut out = RgbImage::new(dw, dh);
-    for (yy, (ymin, k)) in coeffs.iter().enumerate() {
-        for x in 0..dwu {
-            let mut acc = [bias; 3];
-            for (y, &w) in k.iter().enumerate() {
-                let p = hpass.get_pixel(x as u32, (ymin + y) as u32);
-                acc[0] += i32::from(p[0]) * w;
-                acc[1] += i32::from(p[1]) * w;
-                acc[2] += i32::from(p[2]) * w;
+    let hraw = hpass.as_raw();
+    let stride = dwu * 3;
+    let mut out = vec![0u8; stride * dhu];
+    let mut acc = vec![0i32; stride];
+    for ((ymin, k), orow) in coeffs.iter().zip(out.chunks_exact_mut(stride)) {
+        acc.fill(bias);
+        for (y, &w) in k.iter().enumerate() {
+            let row = &hraw[(ymin + y) * stride..(ymin + y + 1) * stride];
+            for (a, &p) in acc.iter_mut().zip(row) {
+                *a += i32::from(p) * w;
             }
-            out.put_pixel(
-                x as u32,
-                yy as u32,
-                Rgb([pil_clip8(acc[0]), pil_clip8(acc[1]), pil_clip8(acc[2])]),
-            );
+        }
+        for (o, &a) in orow.iter_mut().zip(&acc) {
+            *o = pil_clip8(a);
         }
     }
-    out
+    RgbImage::from_raw(dw, dh, out).expect("vpass buffer sized dw×dh×3")
 }
 
 #[cfg(test)]
 mod pil_tests {
     use super::*;
+    use image::Rgb;
 
     /// Deterministic test image — the same LCG generates the Python-side
     /// reference (see the hash constants' provenance below).
