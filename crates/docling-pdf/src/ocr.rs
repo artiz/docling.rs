@@ -272,15 +272,19 @@ impl OcrModel {
         // Gather every line crop on the page first (shared with the browser
         // path), so equal-width lines can share a recognition run regardless
         // of which region they came from.
-        let (bboxes, lines) = prep_region_lines(img, regions, scale);
+        let (bboxes, lines) =
+            crate::timing::timed("ocr.prep", || prep_region_lines(img, regions, scale));
 
         // Deterministic width-batching (shared with the wasm path).
         let mut texts = vec![(String::new(), 0.0f32); lines.len()];
-        for (w, chunk) in width_batches(&lines) {
-            for (&i, text) in chunk.iter().zip(self.recognize_batch(w, &chunk, &lines)?) {
-                texts[i] = text;
+        crate::timing::timed("ocr.rec", || -> Result<(), String> {
+            for (w, chunk) in width_batches(&lines) {
+                for (&i, text) in chunk.iter().zip(self.recognize_batch(w, &chunk, &lines)?) {
+                    texts[i] = text;
+                }
             }
-        }
+            Ok(())
+        })?;
 
         // Emit cells in page order, exactly as the sequential walk did.
         let mut cells = Vec::new();
