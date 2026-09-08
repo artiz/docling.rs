@@ -702,6 +702,7 @@ better, byte-identical where the change is structural:
 | Single shared line/word contraction pass | `--no-ocr` conversion ~1.25× faster, identical output |
 | Per-document font + form caches in the text parser | 3–10% off `textparse` here; far more on CJK/form-heavy PDFs |
 | True-KV-cache decoder export (`decoder_kv.onnx`, optional) | parity at corpus table sizes; O(past)/step for very large tables |
+| Dynamic-batch `decoder_kv.onnx`: a page's tables decode in one lockstep loop | decode steps shared across tables; byte-identical (see round four below) |
 
 Cumulative head-to-head vs Python docling (measured on an 8-thread desktop,
 `scripts/test/performance.sh`): **4.3× faster warm conversion, 4.7× end-to-end,
@@ -1038,14 +1039,76 @@ bbox head 0.26 s, encoder 0.20 s, page→1024 resample 0.11 s, preprocessing
   weight streaming. Both move only with the model: INT8/fp16 weights for the
   step (the dynamic-INT8 `decoder_kv` was already tried and rejected — it
   flips near-tie tokens on redp5110's TOC), or batching several tables'
-  steps through one run so the weights stream once for all of them (needs a
-  dynamic-batch re-export and exact masking of the ragged KV caches). Neither
-  is byte-exact by construction, so neither is in this branch.
+  steps through one run so the weights stream once for all of them. The
+  first is not byte-exact by construction; the second turned out to be —
+  round four below.
 
 Back-to-back, same machine, default pool: `2206.01062` 9.4–9.6 → 8.8 s,
 `2203.01017v2` 8.0–8.1 → 7.9 s, `2305.03393v1-pg9` (one 55-step table on
 one page) 2.4 s. Output is byte-identical to the round-two references on the
 serial path and on a 2-worker pool over the same 32 documents.
+
+#### Round four (Sep 2026): a page's tables decode together
+
+The decode step streams ~70 MB of layer weights for one token, so the
+obvious lever left after round three was to push several tables' tokens
+through the same step. It needed a dynamic-batch `decoder_kv.onnx` and a
+loop that keeps the tables' KV caches aligned — and, unlike the earlier
+guess, no masking at all.
+
+- **The export** (`export_tableformer.py`, `DecodeKVHoistedBatched`): `tag`
+  is `[B,1]`, the caches `[L,B,H,past,hd]`, every cross tensor `[B,…]`; B=1
+  is the same graph, so the artifact stays a drop-in for a one-table loop.
+  Two things had to be exact. First, ORT must fuse the batched graph the
+  way it fuses the B=1 one: with a symbolic batch axis a 3-D activation
+  stays MatMul-then-Add (a different rounding of the bias, ~1e-6 in the
+  logits) while the B=1 graph gets MatMul+Add→Gemm through constant-shape
+  Reshapes, and a fully 2-D module loses the Add+LayerNorm→
+  SkipLayerNormalization fusion instead. The module therefore runs each
+  linear on an explicit 2-D view and keeps the residual stream 3-D — the
+  optimized graph then has the published one's kernel mix (49 Gemm, 18
+  SkipLayerNorm, 12 FusedMatMul), and B=1 reproduces the published
+  `decoder_kv.onnx` **bit for bit** over 3 random tables × 48 greedy steps.
+  Second, the script's batching gate asserts that two tables decoded in one
+  batch give, step by step, the logits and hidden states each gives alone
+  (row b of an `[B,K]·[K,N]` GEMM is the `[1,K]` result in MLAS).
+- **The loop** (`tableformer.rs::decode_batch`): every table of a page is
+  encoded, the per-layer cross tensors are stacked along the batch axis
+  (one ~20 MB copy per table per page), and one loop steps all of them. The
+  caches start at `past=0` for every row and grow in lockstep, so nothing
+  is padded or masked; a table that emits `<end>` keeps its row (fed `END`,
+  output ignored) until the last one finishes, and each table then runs its
+  own bbox head. Detected from the decoder's `tag` input having a symbolic
+  batch axis, so the older fixed-`[1,1]` export keeps decoding one table at
+  a time; a page with one table takes exactly that path; a failing batched
+  run falls back to it.
+- **What it buys, and what it can't.** Per-op profile of one step (1
+  thread, past=50): the 49 Gemm total **6.8 ms at B=1 and 6.8 ms at B=2** —
+  the weights do stream once for all rows — but each table brings its own
+  cross-attention: q·Kᵀ and softmax·V over 784 image positions × 6 layers
+  read ~19 MB of that table's `cross_kt`/`cross_v` per step (FusedMatMul
+  1.7 → 3.2 ms, MatMul 1.5 → 2.6 ms for B 1 → 2). So a step costs 10.5 ms
+  alone, 13.5 for two tables, 19.6 for four, 34 for eight: **−35% per table
+  at two tables per page, −55% at four**, and that is the bound — the
+  cross-attention reads are the model's, not the loop's.
+- **Measured** (`DOCLING_RS_TIMING=1`, same binary, published vs
+  dynamic-batch decoder): `2203.01017v2` (two tables on each of its pages)
+  decode loop 3.1 → 2.5 s (297 single steps → 178 shared ones), serial wall
+  25.2 → 24.6 s, default pool 10.0 → 9.4 s; `2206.01062` decode 5.6 →
+  4.7 s, pool 10.4 → 9.8 s; `redp5110_sampled` (one table per page) flat,
+  as it must be. Pool wall moves less than the decode does because the
+  deferral machinery of round two already overlaps a page's tables with
+  other pages' layout. Output byte-identical to the round-three references
+  on the serial path and on a 2-worker pool over the same 32 documents.
+- **Memory:** a page's tables are now all held encoded at once (per-layer
+  cross tensors ~19 MB each) plus their stacked copy, against which the
+  hoisted decoder's never-read stacked `cross_k`/`cross_v` (2×9.6 MB per
+  table) are dropped at encode time now instead of living for the table's
+  lifetime. Net on `2203.01017v2` (default pool): peak RSS 1.74 → 1.81 GB.
+
+The dynamic-batch `decoder_kv.onnx` reaches users through the models
+release (`publish-models.yml` re-run); until then the shipped decoder simply
+takes the one-table-at-a-time path.
 
 #### TableFormer decoder: dynamic INT8 (~10% faster tables, byte-identical)
 

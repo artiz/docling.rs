@@ -303,6 +303,72 @@ class DecodeKVHoisted(nn.Module):
         return tt._fc(last), last, out_cache_k, out_cache_v
 
 
+class DecodeKVHoistedBatched(nn.Module):
+    # DecodeKVHoisted over B tables at once: `tag` is [B,1], the caches
+    # [L,B,H,past,hd] and every cross tensor [B,...]. A decode step is 49
+    # small GEMMs over one token per table — it streams the layer weights
+    # rather than computing — so B tables per step cost about what one does;
+    # the Rust loop decodes all the tables of a page together (their caches
+    # grow in lockstep from past=0, so no padding or masking is ever needed:
+    # a finished table simply keeps its row until the last one ends). Per
+    # row this is exactly DecodeKVHoisted: the same ops with a leading batch
+    # axis instead of a hard-coded 1, and MLAS computes row b of an [B,K]·[K,N]
+    # GEMM bit-identically to the [1,K] case (checked below, step by step).
+    #
+    # Every linear runs on an explicit 2-D view ([B,e], `lin` below) while the
+    # residual stream stays 3-D ([B,1,e]). That reproduces the fusions ORT
+    # applies to the B=1 graph on its own — MatMul+Add→Gemm (which it only
+    # proves for a plain matrix; with a symbolic batch axis a 3-D activation
+    # stays MatMul then Add, a different rounding of the bias) and
+    # Add+LayerNorm→SkipLayerNormalization (which wants the 3-D shape). With
+    # the same kernels, B=1 reproduces the published `decoder_kv.onnx` bit
+    # for bit; the check below asserts it.
+    def forward(self, tag, cache_k, cache_v, *cross):
+        e = EMBED_DIM_
+        cross_kt, cross_v = cross[:N_LAYERS], cross[N_LAYERS:]
+        B = tag.shape[0]
+        pos = cache_k.shape[3]
+
+        def lin(x, w, bias):  # [B,1,K] → [B,1,N] through a 2-D Gemm
+            return F.linear(x.reshape(-1, x.shape[-1]), w, bias).reshape(B, 1, -1)
+
+        x = tt._embedding(tag)  # [B,1,e]
+        x = x + tt._positional_encoding.pe[pos]
+        out = x
+        new_ks, new_vs = [], []
+        for i, layer in enumerate(tt._decoder.layers):
+            sa = layer.self_attn
+            W, b = sa.in_proj_weight, sa.in_proj_bias
+            # [B,1,e] → [B,H,1,hd]; same element order as the B=1 module's
+            # reshape(1,H,hd).permute(1,0,2).unsqueeze(0).
+            q = lin(out, W[:e], b[:e]).reshape(B, N_HEADS, HEAD_DIM).unsqueeze(2)
+            k = lin(out, W[e : 2 * e], b[e : 2 * e]).reshape(B, N_HEADS, HEAD_DIM).unsqueeze(2)
+            v = lin(out, W[2 * e :], b[2 * e :]).reshape(B, N_HEADS, HEAD_DIM).unsqueeze(2)
+            new_ks.append(k)
+            new_vs.append(v)
+            kk = torch.cat([cache_k[i], k], dim=2)  # [B,H,past+1,hd]
+            vv = torch.cat([cache_v[i], v], dim=2)
+            t = F.scaled_dot_product_attention(q, kk, vv)  # [B,H,1,hd]
+            t = t.squeeze(2).reshape(B, 1, e)
+            t = lin(t, sa.out_proj.weight, sa.out_proj.bias)
+            tgt_last = layer.norm1(out + t)
+            mha = layer.multihead_attn
+            cq = lin(tgt_last, mha.in_proj_weight[:e], mha.in_proj_bias[:e])
+            cq = cq.reshape(B, N_HEADS, HEAD_DIM).unsqueeze(2)
+            scores = (cq * HEAD_DIM**-0.5) @ cross_kt[i]  # [B,H,1,S]
+            co = torch.softmax(scores, dim=-1) @ cross_v[i]  # [B,H,1,hd]
+            co = co.squeeze(2).reshape(B, 1, e)
+            t = lin(co, mha.out_proj.weight, mha.out_proj.bias)
+            tgt_last = layer.norm2(tgt_last + t)
+            t = lin(tgt_last, layer.linear1.weight, layer.linear1.bias)
+            t = lin(layer.activation(t), layer.linear2.weight, layer.linear2.bias)
+            out = layer.norm3(tgt_last + t)
+        out_cache_k = torch.cat([cache_k, torch.stack(new_ks, 0)], dim=3)
+        out_cache_v = torch.cat([cache_v, torch.stack(new_vs, 0)], dim=3)
+        last = out[:, 0]  # [B,e]
+        return tt._fc(last), last, out_cache_k, out_cache_v
+
+
 def check(name, a, b):
     import numpy as np
 
@@ -406,36 +472,83 @@ print(f"  64 steps argmax-identical, max|dlogits| = {max_dlogit:.2e}")
 
 tag1 = torch.tensor([[start]], dtype=torch.long)
 past_kv = Dim("past", min=0, max=1024)
+# The batch axis is dynamic too (the Rust loop decodes a page's tables
+# together); B=1 is the same graph, so the artifact stays a drop-in for a
+# loop that feeds one table at a time.
+batch = Dim("batch", min=1, max=64)
 cross_names = [f"cross_kt_{i}" for i in range(N_LAYERS)] + [
     f"cross_v_{i}" for i in range(N_LAYERS)
 ]
 # Export with the rollout's past=64 caches: a past=0 example lets the exporter
 # specialize `pe[cache_k.shape[3]]` to `pe[0]`, silently zeroing the positional
-# encoding for every later step (decode then never emits <end>).
+# encoding for every later step (decode then never emits <end>). The example
+# batch is 2 for the same reason — a size-1 example axis specializes to 1.
+tag2 = torch.tensor([[start], [start]], dtype=torch.long)
+kv_k2, kv_v2 = torch.cat([kv_k, kv_k], 1), torch.cat([kv_v, kv_v], 1)
+cross2 = [torch.cat([c, c], 0) for c in cross_per_layer]
 torch.onnx.export(
-    DecodeKVHoisted(), (tag1, kv_k, kv_v, *cross_per_layer),
+    DecodeKVHoistedBatched(), (tag2, kv_k2, kv_v2, *cross2),
     f"{OUT}/decoder_kv.onnx",
     input_names=["tag", "cache_k", "cache_v"] + cross_names,
     output_names=["logits", "hidden", "out_cache_k", "out_cache_v"],
     dynamo=True,
     dynamic_shapes=(
-        {},
-        {3: past_kv},
-        {3: past_kv},
-        tuple({} for _ in cross_names),
+        {0: batch},
+        {1: batch, 3: past_kv},
+        {1: batch, 3: past_kv},
+        tuple({0: batch} for _ in cross_names),
     ),
 )
-print("decoder_kv.onnx (hoisted true-KV-cache step):")
+print("decoder_kv.onnx (hoisted true-KV-cache step, dynamic batch):")
 empty_kv = torch.zeros((N_LAYERS, 1, nh, 0, HEAD_DIM))
 with torch.no_grad():
     kl, kh, kck, kcv = DecodeKVHoisted()(tag1, empty_kv, empty_kv, *cross_per_layer)
 feeds = {"tag": tag1.numpy(), "cache_k": empty_kv.numpy(), "cache_v": empty_kv.numpy()}
 feeds.update({n: t.numpy() for n, t in zip(cross_names, cross_per_layer)})
-ko = ort.InferenceSession(f"{OUT}/decoder_kv.onnx").run(None, feeds)
+kv_sess = ort.InferenceSession(f"{OUT}/decoder_kv.onnx")
+ko = kv_sess.run(None, feeds)
 check("logits", ko[0], kl.numpy())
 check("hidden", ko[1], kh.numpy())
 check("out_cache_k", ko[2], kck.numpy())
 check("out_cache_v", ko[3], kcv.numpy())
+
+# Batching gate: decoding two tables in one batch must reproduce, bit for bit,
+# what the same graph produces for each table alone — the Rust loop's output
+# may not depend on how many tables shared a step. Second table: a different
+# image through the encoder; 64 greedy steps each way.
+print("verifying batched decode == per-table decode (ORT, 64 steps, bit-exact):")
+img_b = torch.randn(1, 3, 448, 448)
+with torch.no_grad():
+    _, _, _, *cross_b = Encode()(img_b)
+enc_sess = ort.InferenceSession(f"{OUT}/encoder.onnx")
+mem_a = enc_sess.run(None, {"image": img.numpy()})[3:]
+mem_b = enc_sess.run(None, {"image": img_b.numpy()})[3:]
+import numpy as np  # noqa: E402
+
+
+def roll(mems, steps=64):
+    B = len(mems)
+    ck = np.zeros((N_LAYERS, B, nh, 0, HEAD_DIM), np.float32)
+    cv = ck.copy()
+    tag = np.full((B, 1), start, np.int64)
+    outs = []
+    for _ in range(steps):
+        f = {"tag": tag, "cache_k": ck, "cache_v": cv}
+        f.update({n: np.concatenate([m[j] for m in mems], 0) for j, n in enumerate(cross_names)})
+        lg, hd, ck, cv = kv_sess.run(None, f)
+        outs.append((lg.copy(), hd.copy()))
+        tag = lg.argmax(1)[:, None].astype(np.int64)
+    return outs
+
+
+solo = [roll([mem_a]), roll([mem_b])]
+both = roll([mem_a, mem_b])
+for step, (lg, hd) in enumerate(both):
+    for j in range(2):
+        assert np.array_equal(lg[j : j + 1], solo[j][step][0]) and np.array_equal(
+            hd[j : j + 1], solo[j][step][1]
+        ), f"step {step}, table {j}: batched decode differs from the solo decode"
+print("  64 steps × 2 tables bit-identical batched vs solo")
 
 # word map → tokens file for the Rust decode loop
 json.dump(

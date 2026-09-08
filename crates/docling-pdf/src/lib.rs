@@ -992,17 +992,21 @@ impl Worker {
             };
         }
         if let TfSlot::Ready(tf) = guard {
-            // One 1024-px frame per page, shared by all of its tables.
+            // One 1024-px frame per page, shared by all of its tables, and one
+            // call for all of them: with the dynamic-batch decoder their
+            // decode steps are shared (each step costs about the same for B
+            // tables as for one).
             let page1024 = tableformer::TableFormer::page_1024(&page.image);
-            for (i, r) in regions.iter().enumerate() {
-                if assemble::is_table_like(r.label) {
-                    table_rows[i] = tf.predict_table_rows_on(
-                        page.image.height(),
-                        &page1024,
-                        [r.l, r.t, r.r, r.b],
-                        &page.word_cells,
-                    );
-                }
+            let (idx, boxes): (Vec<usize>, Vec<[f32; 4]>) = regions
+                .iter()
+                .enumerate()
+                .filter(|(_, r)| assemble::is_table_like(r.label))
+                .map(|(i, r)| (i, [r.l, r.t, r.r, r.b]))
+                .unzip();
+            let rows =
+                tf.predict_tables_on(page.image.height(), &page1024, &boxes, &page.word_cells);
+            for (i, grid) in idx.into_iter().zip(rows) {
+                table_rows[i] = grid;
             }
         }
         table_rows
