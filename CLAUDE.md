@@ -88,6 +88,9 @@ cargo check -p docling --no-default-features --features pdf-text \
   `DOCLING_FFMPEG` (video frames — ffmpeg is a runtime binary, never a build
   dep), `DOCLING_RS_PDF_WORKERS/_THREADS/_INTRA`, `DOCLING_RS_TF_INTRA` (#262),
   `DOCLING_RS_NO_ARENA` (#263; serve defaults it on),
+  `DOCLING_RS_GRAPH_CACHE_DIR` / `DOCLING_RS_NO_GRAPH_CACHE` (ONNX Runtime
+  optimized-graph cache, CPU provider only), `DOCLING_RS_OCR_SESSIONS`
+  (parallel single-thread OCR lanes; byte-identical output),
   `DOCLING_RS_MAX_MEMORY_MB` + `DOCLING_RS_MEMORY_WATERMARK_PCT` (serve
   admission control), `DOCLING_RS_FP32`,
   `DOCLING_RS_EP` (GPU execution providers), `DOCLING_RS_ASR_LANG`,

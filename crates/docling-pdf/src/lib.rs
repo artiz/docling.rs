@@ -611,6 +611,10 @@ struct Worker {
     /// `None` when `no_ocr` skips layout entirely — no model load, no inference.
     layout: Option<layout::LayoutModel>,
     ocr: OcrSlot,
+    /// This worker's intra-op thread budget — also the OCR lane count (see
+    /// [`ocr::OcrModel::load_with`]): a pool worker with two threads runs two
+    /// single-thread recognisers, the primary as many as its cores.
+    intra: usize,
     /// Shared TableFormer slot; `None` when `no_table_former`/`no_ocr` skip it.
     tables: Option<SharedTables>,
     /// Shared enrichment slots; `None` unless the corresponding flag is on.
@@ -668,6 +672,7 @@ impl Worker {
                 Some(layout::LayoutModel::load_with(intra).map_err(PdfError::Layout)?)
             },
             ocr: OcrSlot::Unloaded,
+            intra,
             tables,
             classifier: enrich_slots.0,
             code_formula: enrich_slots.1,
@@ -692,7 +697,7 @@ impl Worker {
             return Ok(None);
         }
         if matches!(self.ocr, OcrSlot::Unloaded) {
-            match ocr::OcrModel::load(self.ocr_lang) {
+            match ocr::OcrModel::load_with(self.ocr_lang, self.intra) {
                 Ok(model) => self.ocr = OcrSlot::Ready(model),
                 Err(e) if self.force_full_page_ocr => return Err(PdfError::Ocr(e)),
                 Err(e) => {

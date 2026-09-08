@@ -19,7 +19,9 @@ use crate::ocr_prep::{
 use crate::pdfium_backend::TextCell;
 
 pub struct OcrModel {
-    rec: Session,
+    /// Single-threaded recognition sessions, one per parallel lane (see
+    /// [`Self::load_with`]); lines are dealt across them by batch index.
+    recs: Vec<Session>,
     /// CTC classes: index 0 = blank, 1..=6623 = dictionary, 6624 = space.
     chars: Vec<String>,
 }
@@ -178,31 +180,110 @@ pub(crate) fn resolve_rec_pair(lang: OcrLang) -> (String, String) {
     )
 }
 
+/// One recognised line: its text and mean emitted-character confidence.
+type Recognized = (String, f32);
+
 impl OcrModel {
     /// Load the recognition model and its character dictionary for `lang` —
     /// see [`resolve_rec_pair`] for the selection rules (explicit
-    /// `DOCLING_OCR_REC_ONNX`/`DOCLING_OCR_DICT` paths win).
-    pub fn load(lang: OcrLang) -> Result<Self, String> {
+    /// `DOCLING_OCR_REC_ONNX`/`DOCLING_OCR_DICT` paths win) — with `lanes`
+    /// recognition sessions.
+    ///
+    /// Each session is pinned to one intra-op thread: ORT's multi-threaded
+    /// float-reduction order varies across runs, which flips the CTC argmax on
+    /// low-confidence characters (e.g. noisy faxes) and makes the snapshot
+    /// output non-deterministic. Recognition is linear in line width (~0.17 ms
+    /// per pixel column on one core) and on a scanned page it, plus the
+    /// orientation probe that reads the six widest lines, is ~35% of the wall
+    /// time while the other cores idle. Lines are independent, so `lanes`
+    /// sessions recognise disjoint same-width batches concurrently — each
+    /// line still sees exactly the single-thread kernel path, results are
+    /// placed by index, and the output is byte-identical to one lane.
+    /// `DOCLING_RS_OCR_SESSIONS` overrides the caller's lane count.
+    pub fn load_with(lang: OcrLang, lanes: usize) -> Result<Self, String> {
         let (rec_path, dict_path) = resolve_rec_pair(lang);
-        // Single-threaded: ORT's multi-threaded float-reduction order varies
-        // across runs, which flips the CTC argmax on low-confidence characters
-        // (e.g. noisy faxes) and makes the snapshot output non-deterministic. The
-        // recognition inputs are tiny per-line crops, so the throughput cost is
-        // negligible.
-        let builder = Session::builder()
-            .map_err(|e| format!("ocr: builder: {e}"))?
-            .with_intra_threads(1)
-            .map_err(|e| format!("ocr: intra_threads: {e}"))?;
-        let rec = docling_onnx::apply(builder)
-            .map_err(|e| format!("ocr: {e}"))?
-            .commit_from_file(&rec_path)
-            .map_err(|e| format!("ocr: load {rec_path}: {e}"))?;
+        let lanes = docling_core::env::parse::<usize>("DOCLING_RS_OCR_SESSIONS")
+            .filter(|&n| n > 0)
+            .unwrap_or(lanes)
+            .clamp(1, 8);
+        let open = || -> Result<Session, String> {
+            let builder = Session::builder()
+                .map_err(|e| format!("ocr: builder: {e}"))?
+                .with_intra_threads(1)
+                .map_err(|e| format!("ocr: intra_threads: {e}"))?;
+            let builder = docling_onnx::apply(builder).map_err(|e| format!("ocr: {e}"))?;
+            docling_onnx::commit(builder, &rec_path, "rec")
+                .map_err(|e| format!("ocr: load {rec_path}: {e}"))
+        };
+        // The lanes are independent sessions over the same file — open them
+        // concurrently so extra lanes cost no extra start-up latency.
+        let recs: Vec<Session> = std::thread::scope(|s| {
+            let handles: Vec<_> = (0..lanes).map(|_| s.spawn(open)).collect();
+            handles
+                .into_iter()
+                .map(|h| {
+                    h.join()
+                        .map_err(|_| "ocr: session thread panicked".to_string())?
+                })
+                .collect::<Result<Vec<_>, String>>()
+        })?;
         let dict = std::fs::read_to_string(&dict_path)
             .map_err(|e| format!("ocr: read dict {dict_path}: {e}"))?;
         Ok(Self {
-            rec,
+            recs,
             chars: dict_chars(&dict),
         })
+    }
+
+    /// Recognise every width batch of `lines`, dealt round-robin across the
+    /// lanes, and return `(line index, (text, confidence))` in batch order —
+    /// the same order the sequential loop produced, whatever the scheduling.
+    fn recognize_all(&mut self, lines: &[PrepLine]) -> Result<Vec<(usize, Recognized)>, String> {
+        let batches = width_batches(lines);
+        let lanes = self.recs.len().min(batches.len()).max(1);
+        let chars = &self.chars;
+        // One result slot per batch keeps the merge order independent of
+        // which lane finished first.
+        let mut per_batch: Vec<Option<Result<Vec<Recognized>, String>>> =
+            (0..batches.len()).map(|_| None).collect();
+        if lanes <= 1 {
+            for (slot, (w, chunk)) in per_batch.iter_mut().zip(&batches) {
+                *slot = Some(recognize_batch(&mut self.recs[0], chars, *w, chunk, lines));
+            }
+        } else {
+            std::thread::scope(|s| {
+                let handles: Vec<_> = self
+                    .recs
+                    .iter_mut()
+                    .take(lanes)
+                    .enumerate()
+                    .map(|(lane, rec)| {
+                        let batches = &batches;
+                        s.spawn(move || {
+                            batches
+                                .iter()
+                                .enumerate()
+                                .filter(|(k, _)| k % lanes == lane)
+                                .map(|(k, (w, chunk))| {
+                                    (k, recognize_batch(rec, chars, *w, chunk, lines))
+                                })
+                                .collect::<Vec<_>>()
+                        })
+                    })
+                    .collect();
+                for h in handles {
+                    for (k, r) in h.join().expect("ocr lane panicked") {
+                        per_batch[k] = Some(r);
+                    }
+                }
+            });
+        }
+        let mut out = Vec::with_capacity(lines.len());
+        for ((_, chunk), slot) in batches.iter().zip(per_batch) {
+            let texts = slot.expect("every batch is assigned a lane")?;
+            out.extend(chunk.iter().copied().zip(texts));
+        }
+        Ok(out)
     }
 
     /// Recognise a batch of prepared *same-width* lines in one session run.
@@ -213,48 +294,18 @@ impl OcrModel {
     /// the scanned corpus), whereas width-padding leaks into the real
     /// timesteps through the model's global-attention blocks and measurably
     /// changes low-confidence characters.
-    fn recognize_batch(
-        &mut self,
-        w: usize,
-        chunk: &[usize],
-        lines: &[PrepLine],
-    ) -> Result<Vec<(String, f32)>, String> {
-        let n = chunk.len();
-        let data = batch_input(w, chunk, lines);
-        let input = Tensor::from_array(([n, 3, REC_HEIGHT as usize, w], data))
-            .map_err(|e| format!("ocr: input tensor: {e}"))?;
-        let outputs = self
-            .rec
-            .run(ort::inputs!["x" => input])
-            .map_err(|e| format!("ocr: rec inference: {e}"))?;
-        let (shape, probs) = outputs[0]
-            .try_extract_tensor::<f32>()
-            .map_err(|e| format!("ocr: extract rec: {e}"))?;
-        let t_len = shape[1] as usize;
-        let nc = shape[2] as usize;
-        Ok((0..n)
-            .map(|i| {
-                decode_row_scored(
-                    &self.chars,
-                    &probs[i * t_len * nc..(i + 1) * t_len * nc],
-                    nc,
-                )
-            })
-            .collect())
-    }
-
     /// Recognize `lines` and reduce to orientation-probe evidence: the
     /// confidence-weighted character count `Σ(conf × chars)` plus the raw
     /// character total (#225). Same deterministic width-batching as page OCR.
     pub(crate) fn score_lines(&mut self, lines: &[PrepLine]) -> Result<(f32, usize), String> {
+        // Same accumulation order as the sequential loop (batch order), so
+        // the f32 sum is bit-identical regardless of lane scheduling.
         let mut weighted = 0.0f32;
         let mut chars = 0usize;
-        for (w, chunk) in width_batches(lines) {
-            for (text, conf) in self.recognize_batch(w, &chunk, lines)? {
-                let n = text.trim().chars().count();
-                weighted += conf * n as f32;
-                chars += n;
-            }
+        for (_, (text, conf)) in self.recognize_all(lines)? {
+            let n = text.trim().chars().count();
+            weighted += conf * n as f32;
+            chars += n;
         }
         Ok((weighted, chars))
     }
@@ -275,13 +326,12 @@ impl OcrModel {
         let (bboxes, lines) =
             crate::timing::timed("ocr.prep", || prep_region_lines(img, regions, scale));
 
-        // Deterministic width-batching (shared with the wasm path).
+        // Deterministic width-batching (shared with the wasm path), dealt
+        // across the recognition lanes.
         let mut texts = vec![(String::new(), 0.0f32); lines.len()];
         crate::timing::timed("ocr.rec", || -> Result<(), String> {
-            for (w, chunk) in width_batches(&lines) {
-                for (&i, text) in chunk.iter().zip(self.recognize_batch(w, &chunk, &lines)?) {
-                    texts[i] = text;
-                }
+            for (i, text) in self.recognize_all(&lines)? {
+                texts[i] = text;
             }
             Ok(())
         })?;
@@ -311,10 +361,8 @@ impl OcrModel {
     ) -> Result<Vec<(TextCell, f32)>, String> {
         let (bboxes, lines) = prep_table_words(img, regions, scale);
         let mut texts = vec![(String::new(), 0.0f32); lines.len()];
-        for (w, chunk) in width_batches(&lines) {
-            for (&i, text) in chunk.iter().zip(self.recognize_batch(w, &chunk, &lines)?) {
-                texts[i] = text;
-            }
+        for (i, text) in self.recognize_all(&lines)? {
+            texts[i] = text;
         }
         let mut cells = Vec::new();
         for ((l, t, r, b), (text, conf)) in bboxes.into_iter().zip(texts) {
@@ -326,6 +374,37 @@ impl OcrModel {
         }
         Ok(cells)
     }
+}
+
+/// Recognise a batch of prepared *same-width* lines in one run of `rec`.
+///
+/// Only equal widths ever share a run: same-width batching is bit-identical
+/// to one-at-a-time recognition (each sample keeps its own data and per-sample
+/// kernel reduction order — verified empirically on the scanned corpus),
+/// whereas width-padding leaks into the real timesteps through the model's
+/// global-attention blocks and measurably changes low-confidence characters.
+fn recognize_batch(
+    rec: &mut Session,
+    chars: &[String],
+    w: usize,
+    chunk: &[usize],
+    lines: &[PrepLine],
+) -> Result<Vec<(String, f32)>, String> {
+    let n = chunk.len();
+    let data = batch_input(w, chunk, lines);
+    let input = Tensor::from_array(([n, 3, REC_HEIGHT as usize, w], data))
+        .map_err(|e| format!("ocr: input tensor: {e}"))?;
+    let outputs = rec
+        .run(ort::inputs!["x" => input])
+        .map_err(|e| format!("ocr: rec inference: {e}"))?;
+    let (shape, probs) = outputs[0]
+        .try_extract_tensor::<f32>()
+        .map_err(|e| format!("ocr: extract rec: {e}"))?;
+    let t_len = shape[1] as usize;
+    let nc = shape[2] as usize;
+    Ok((0..n)
+        .map(|i| decode_row_scored(chars, &probs[i * t_len * nc..(i + 1) * t_len * nc], nc))
+        .collect())
 }
 
 #[cfg(test)]

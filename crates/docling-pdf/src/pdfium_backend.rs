@@ -364,7 +364,14 @@ where
         let extracted = extract_page(&page, &ffi, i as i32, rc, render_image, extract_text)?;
         f(i, total, extracted)?;
     }
-    crate::timing::timed("textparse.close", || drop(rust));
+    // Tearing down the parsed document (hundreds of thousands of lopdf
+    // objects on a long PDF — 250 ms for the 1913-page .NET reference) is
+    // nobody's business but the allocator's: hand it to a detached thread so
+    // the last page's output isn't held up by it. `Arc`, not `Rc`, in the
+    // caches is what makes the parser `Send`.
+    if let Some(parser) = rust {
+        std::thread::spawn(move || crate::timing::timed("textparse.close", || drop(parser)));
+    }
     Ok(())
 }
 

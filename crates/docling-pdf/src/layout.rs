@@ -189,9 +189,14 @@ impl LayoutModel {
                 .with_dimension_override("batch", 1)
                 .map_err(|e| format!("layout: dimension override: {e}"))?;
         }
-        docling_onnx::apply(builder)
-            .map_err(|e| format!("layout: {e}"))?
-            .commit_from_file(path)
+        let builder = docling_onnx::apply(builder).map_err(|e| format!("layout: {e}"))?;
+        // The pinned batch axis changes the optimized graph — separate cache entry.
+        let variant = if crate::pdf_layout_batch() == 1 {
+            "batch=1"
+        } else {
+            "batch=dyn"
+        };
+        docling_onnx::commit(builder, path, variant)
             .map_err(|e| format!("layout: load {path}: {e}"))
     }
 

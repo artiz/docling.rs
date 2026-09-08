@@ -47,10 +47,12 @@
 //! for CPU kernels — on GPU they only add de-quantize traffic and were never
 //! conformance-validated there, while fp32 is (see docs/PDF_CONFORMANCE.md).
 
+use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 
 use ort::ep::ExecutionProviderDispatch;
-use ort::session::builder::SessionBuilder;
+use ort::session::builder::{GraphOptimizationLevel, SessionBuilder};
+use ort::session::Session;
 
 /// The parsed `DOCLING_RS_EP` choice. Named GPU variants are only ever
 /// *selected* (returned by [`choice`]) when their cargo feature is compiled
@@ -362,6 +364,160 @@ fn memory_opts(builder: SessionBuilder) -> Result<SessionBuilder, String> {
     cpu.register(&mut builder)
         .map_err(|e| format!("cpu ep: {e}"))?;
     Ok(builder)
+}
+
+/// Create the session for `model_path`, serving ONNX Runtime's *optimized*
+/// graph from an on-disk cache when this machine has built it before.
+///
+/// Session creation is dominated by graph optimization — for the int8 layout
+/// model ~0.8 s of the ~0.95 s (measured, 4 threads), for the TableFormer
+/// encoder ~1 s — and every process pays it again, per pool worker: on a
+/// one-page digital PDF that is more than half of the whole wall time. ONNX
+/// Runtime can serialize the optimized graph, and loading that with the
+/// optimizer disabled takes ~0.15 s and runs the identical graph (same
+/// kernels, same numerics — the corpus output is byte-identical). The cache
+/// is keyed on the model file (path, size, mtime), `variant` (session options
+/// that change the graph, e.g. a pinned batch dimension), the ONNX Runtime
+/// API version and the CPU's SIMD features, because the saved graph carries
+/// hardware-specific (NCHWc) kernels; a miss on any of those simply rebuilds.
+/// CPU provider only — a GPU EP partitions the graph differently. Location:
+/// `DOCLING_RS_GRAPH_CACHE_DIR`, else `$XDG_CACHE_HOME/docling-rs/graphs`,
+/// else `~/.cache/docling-rs/graphs`; `DOCLING_RS_NO_GRAPH_CACHE=1` opts out,
+/// as does an unwritable directory (the model then loads the ordinary way).
+/// Every failure on the cached path falls back to the ordinary load, so a
+/// stale or truncated entry costs one rebuild, never a wrong answer.
+pub fn commit(builder: SessionBuilder, model_path: &str, variant: &str) -> Result<Session, String> {
+    let plain = |mut b: SessionBuilder| b.commit_from_file(model_path).map_err(|e| e.to_string());
+    let Some(cache) = graph_cache_path(model_path, variant) else {
+        return plain(builder);
+    };
+    if cache.is_file() {
+        let hit = builder
+            .clone()
+            .with_optimization_level(GraphOptimizationLevel::Disable)
+            .map_err(|e| e.to_string())
+            .and_then(|mut b| b.commit_from_file(&cache).map_err(|e| e.to_string()));
+        match hit {
+            Ok(session) => {
+                docling_core::debug_log!("docling-onnx: graph cache hit {}", cache.display());
+                return Ok(session);
+            }
+            Err(e) => {
+                docling_core::debug_log!(
+                    "docling-onnx: graph cache entry {} unusable ({e}); rebuilding",
+                    cache.display()
+                );
+                let _ = std::fs::remove_file(&cache);
+            }
+        }
+    }
+    // Miss: build normally, asking ORT to serialize the optimized graph next
+    // to the final name, then publish it atomically. Two workers racing here
+    // both write their own temp file; whichever renames first wins, the other
+    // overwrites with identical content.
+    static SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let tmp = cache.with_extension(format!(
+        "{}.{}.tmp",
+        std::process::id(),
+        SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+    ));
+    let built = builder
+        .clone()
+        .with_optimized_model_path(&tmp)
+        .map_err(|e| e.to_string())
+        .and_then(plain);
+    match built {
+        Ok(session) => {
+            if std::fs::rename(&tmp, &cache).is_err() {
+                let _ = std::fs::remove_file(&tmp);
+            } else {
+                docling_core::debug_log!("docling-onnx: graph cache wrote {}", cache.display());
+            }
+            Ok(session)
+        }
+        Err(_) => {
+            // Serialization itself may be what failed (read-only dir, disk
+            // full): load without it before giving up.
+            let _ = std::fs::remove_file(&tmp);
+            plain(builder)
+        }
+    }
+}
+
+/// Where the optimized graph for `model_path` + `variant` lives on this
+/// machine, or `None` when caching is off (env, non-CPU provider, no usable
+/// directory, unreadable model file).
+fn graph_cache_path(model_path: &str, variant: &str) -> Option<PathBuf> {
+    use std::hash::{Hash, Hasher};
+    if docling_core::env::flag("DOCLING_RS_NO_GRAPH_CACHE") || choice() != Ep::Cpu {
+        return None;
+    }
+    let dir = graph_cache_dir()?;
+    let meta = std::fs::metadata(model_path).ok()?;
+    let canonical = std::fs::canonicalize(model_path).unwrap_or_else(|_| PathBuf::from(model_path));
+    let mut h = std::hash::DefaultHasher::new();
+    canonical.hash(&mut h);
+    meta.len().hash(&mut h);
+    if let Ok(m) = meta.modified() {
+        if let Ok(d) = m.duration_since(std::time::UNIX_EPOCH) {
+            d.as_nanos().hash(&mut h);
+        }
+    }
+    variant.hash(&mut h);
+    ort::MINOR_VERSION.hash(&mut h);
+    cpu_features().hash(&mut h);
+    let stem = Path::new(model_path)
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("model");
+    Some(dir.join(format!("{stem}-{:016x}.onnx", h.finish())))
+}
+
+fn graph_cache_dir() -> Option<PathBuf> {
+    static DIR: OnceLock<Option<PathBuf>> = OnceLock::new();
+    DIR.get_or_init(|| {
+        let dir = if let Some(d) = docling_core::env::nonempty("DOCLING_RS_GRAPH_CACHE_DIR") {
+            PathBuf::from(d)
+        } else if let Some(x) = docling_core::env::nonempty("XDG_CACHE_HOME") {
+            PathBuf::from(x).join("docling-rs").join("graphs")
+        } else if let Some(home) = docling_core::env::nonempty("HOME") {
+            PathBuf::from(home)
+                .join(".cache")
+                .join("docling-rs")
+                .join("graphs")
+        } else {
+            return None;
+        };
+        std::fs::create_dir_all(&dir).ok()?;
+        // Writable? A read-only cache (a baked container layer) still serves hits.
+        Some(dir)
+    })
+    .clone()
+}
+
+/// The SIMD feature set the saved graph was specialized for.
+fn cpu_features() -> String {
+    let mut s = String::from(std::env::consts::ARCH);
+    #[cfg(target_arch = "x86_64")]
+    {
+        for (name, on) in [
+            ("avx", std::arch::is_x86_feature_detected!("avx")),
+            ("avx2", std::arch::is_x86_feature_detected!("avx2")),
+            ("fma", std::arch::is_x86_feature_detected!("fma")),
+            ("avx512f", std::arch::is_x86_feature_detected!("avx512f")),
+            ("avx512bw", std::arch::is_x86_feature_detected!("avx512bw")),
+            (
+                "avx512vnni",
+                std::arch::is_x86_feature_detected!("avx512vnni"),
+            ),
+        ] {
+            if on {
+                s.push(' ');
+                s.push_str(name);
+            }
+        }
+    }
+    s
 }
 
 #[cfg(test)]
