@@ -12,7 +12,12 @@ docs/PDF_CONFORMANCE.md for the measured speed/quality numbers):
   page-footers leaking in), while conv-only keeps groundtruth conformance at
   fp32 level. ~2.4x faster layout inference on AVX-512-VNNI CPUs, 172 -> 68 MB.
   Weights are 7-bit (`reduce_range`), which costs nothing here and keeps the
-  model correct on CPUs *without* VNNI — see `check_weight_range`.
+  model correct on CPUs *without* VNNI — see `check_weight_range`. BatchNorm
+  is folded into the conv weights first (`fold_conv_affine`; the quantizer's
+  Q/DQ pairs otherwise block ONNX Runtime's runtime fusion and the backbone's
+  110 normalizations run as fp32 passes — ~40% of int8 layout time), the two
+  stem convs stay fp32 (`stem_convs`), and activation ranges come from a
+  per-page moving average (`CalibMovingAverage`).
 
 * **tableformer-decoder** — dynamic INT8 (weights-only MatMul) of the
   legacy autoregressive tag decoder (~10% faster than its fp32 file,
@@ -125,6 +130,8 @@ def quantize_layout():
     quant_pre_process(src, pre, skip_symbolic_shape=True)
     folded = fold_conv_affine(pre)
     print(f"layout: folded {folded} BatchNorm Mul/Add pairs into their Conv weights", flush=True)
+    stem = stem_convs(pre)
+    print(f"layout: keeping {len(stem)} stem convs in fp32", flush=True)
     print("layout: static QDQ INT8 quantization (Conv only)...", flush=True)
     quantize_static(
         pre,
@@ -144,6 +151,7 @@ def quantize_layout():
         reduce_range=True,
         # Conv-only: the RT-DETR decoder/head MatMuls are threshold-sensitive.
         op_types_to_quantize=["Conv"],
+        nodes_to_exclude=stem,
         # Activation ranges as the moving average of per-page min/max rather
         # than the corpus-wide extremes: a single outlier page no longer sets
         # the u8 grid for everyone. Measured against fp32 over the calibration
@@ -253,6 +261,29 @@ def fold_conv_affine(path):
         g.node.extend(keep)
         onnx.save(m, path)
     return folded
+
+
+def stem_convs(path):
+    """The two stem convolutions (`embedder.0`, `embedder.1`) stay fp32.
+
+    Quantization error concentrates at the front of the backbone: those two
+    convs see the raw 640×640 pixels and one ReLU later, at 320×320 the
+    largest activation maps in the graph, and their u8 rounding rides through
+    every later stage. Leaving just the two of them in fp32 takes the int8
+    model's mean |score delta| against fp32 over the calibration pages from
+    0.037 to 0.022 and the lost detections from 28 to 15 (p95 delta 0.14 ->
+    0.06) — nearly all of what keeping the whole stem (embedder.2 too) buys
+    (0.020 / 17) — for an inference cost inside the run-to-run noise on the
+    ORT bench (the third conv already halves the map, so it stays int8).
+    Matched by node name so the list follows the export."""
+    import onnx
+
+    return [
+        n.name
+        for n in onnx.load(path).graph.node
+        if n.op_type == "Conv"
+        and ("embedder.0/convolution" in n.name or "embedder.1/convolution" in n.name)
+    ]
 
 
 # u8 activations times 7-bit weights, two lanes per VPMADDUBSW int16 slot.
