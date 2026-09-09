@@ -6,8 +6,9 @@ use crate::backend::{
     is_deepseek_markdown, AbwBackend, AsciiDocBackend, CsvBackend, DeclarativeBackend,
     DeepSeekBackend, DocBackend, DoclingJsonBackend, DocxBackend, EbcdicBackend, EmailBackend,
     EpubBackend, InterchangeBackend, JatsBackend, LatexBackend, LotusBackend, MarkdownBackend,
-    MhtmlBackend, PptBackend, PptxBackend, RtfBackend, StarOffice5Backend, UsptoBackend,
-    VisioBackend, WebVttBackend, WpdBackend, WpsBackend, XbrlBackend, XlsBackend, XlsxBackend,
+    MhtmlBackend, PptBackend, PptxBackend, QuattroBackend, RtfBackend, StarOffice5Backend,
+    UsptoBackend, VisioBackend, WebVttBackend, WpdBackend, WpsBackend, XbrlBackend, XlsBackend,
+    XlsxBackend,
 };
 
 /// Whether `text` begins with an XML prolog — an `<?xml …?>` declaration or a
@@ -726,6 +727,9 @@ impl DocumentConverter {
             // Lotus/Quattro/Works record streams (#216): one BOF-sniffing
             // backend for the whole DOS-era family.
             InputFormat::Lotus => LotusBackend.convert(&source)?,
+            // Quattro Pro (#216): docling.rs extension, native parse after
+            // libwps (DOS/Windows record streams, QPW OLE zones).
+            InputFormat::QuattroPro => QuattroBackend.convert(&source)?,
             InputFormat::Docx => DocxBackend.convert(&source)?,
             // Legacy binary Office (issue #127): parsed natively — docling
             // proper converts these through LibreOffice first (PR #3804).
