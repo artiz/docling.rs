@@ -72,6 +72,11 @@ pub enum InputFormat {
     /// AbiWord (`.abw`/`.zabw`/`.awt`) — a docling.rs extension (#216);
     /// AWML XML (gzip-wrapped for `.zabw`), parsed natively.
     Abiword,
+    /// WordPerfect 5.x / 6.x+ documents (`.wpd`, `.wp`, `.wp5`, `.wp6`,
+    /// `.wpt`) — a docling.rs extension (#216); the `ÿWPC` byte stream is
+    /// parsed natively (docling reaches WordPerfect only via LibreOffice's
+    /// libwpd), text-level with bold/italic/underline runs.
+    WordPerfect,
     /// dBase table (`.dbf`) — a docling.rs extension (#216); the field
     /// descriptors become the header row, records the data rows.
     Dbf,
@@ -136,6 +141,7 @@ impl InputFormat {
             InputFormat::Numbers => "numbers",
             InputFormat::Keynote => "key",
             InputFormat::Abiword => "abiword",
+            InputFormat::WordPerfect => "wordperfect",
             InputFormat::Dbf => "dbf",
             InputFormat::Dif => "dif",
             InputFormat::Sylk => "sylk",
@@ -217,6 +223,11 @@ impl InputFormat {
             // AbiWord (#216): AWML XML; .zabw is the same file gzip-wrapped,
             // .awt the template flavor.
             "abw" | "zabw" | "awt" => InputFormat::Abiword,
+            // WordPerfect (#216): `.wp` was the DOS-era default (WP 5.x),
+            // `.wpd` the Windows one; `.wpt` is the template flavor. The
+            // backend reads the version from the prefix header, not the
+            // extension.
+            "wpd" | "wp" | "wp5" | "wp6" | "wpt" => InputFormat::WordPerfect,
             // Legacy spreadsheet-interchange relics (#216): all three parse
             // natively and content-sniff inside one backend.
             "dbf" => InputFormat::Dbf,

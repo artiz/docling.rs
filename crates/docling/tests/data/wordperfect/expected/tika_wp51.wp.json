@@ -1,0 +1,453 @@
+{
+  "schema_name": "DoclingDocument",
+  "version": "1.10.0",
+  "name": "tika_wp51",
+  "origin": {
+    "mimetype": "text/plain",
+    "binary_hash": 16347439228023257794,
+    "filename": "tika_wp51"
+  },
+  "furniture": {
+    "self_ref": "#/furniture",
+    "children": [],
+    "content_layer": "furniture",
+    "name": "_root_",
+    "label": "unspecified"
+  },
+  "body": {
+    "self_ref": "#/body",
+    "children": [
+      {
+        "$ref": "#/texts/0"
+      },
+      {
+        "$ref": "#/texts/1"
+      },
+      {
+        "$ref": "#/texts/2"
+      },
+      {
+        "$ref": "#/texts/3"
+      },
+      {
+        "$ref": "#/texts/4"
+      },
+      {
+        "$ref": "#/texts/5"
+      },
+      {
+        "$ref": "#/texts/6"
+      },
+      {
+        "$ref": "#/texts/7"
+      },
+      {
+        "$ref": "#/texts/8"
+      },
+      {
+        "$ref": "#/texts/9"
+      },
+      {
+        "$ref": "#/texts/10"
+      },
+      {
+        "$ref": "#/texts/11"
+      },
+      {
+        "$ref": "#/texts/12"
+      },
+      {
+        "$ref": "#/texts/13"
+      },
+      {
+        "$ref": "#/texts/14"
+      },
+      {
+        "$ref": "#/texts/15"
+      },
+      {
+        "$ref": "#/texts/16"
+      },
+      {
+        "$ref": "#/texts/17"
+      },
+      {
+        "$ref": "#/texts/18"
+      },
+      {
+        "$ref": "#/texts/19"
+      },
+      {
+        "$ref": "#/texts/20"
+      },
+      {
+        "$ref": "#/texts/21"
+      },
+      {
+        "$ref": "#/texts/22"
+      },
+      {
+        "$ref": "#/texts/23"
+      },
+      {
+        "$ref": "#/texts/24"
+      },
+      {
+        "$ref": "#/texts/25"
+      },
+      {
+        "$ref": "#/texts/26"
+      },
+      {
+        "$ref": "#/texts/27"
+      }
+    ],
+    "content_layer": "body",
+    "name": "_root_",
+    "label": "unspecified"
+  },
+  "groups": [],
+  "texts": [
+    {
+      "self_ref": "#/texts/0",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "**REPORT TITLE:**  Western Gulf of Alaska Petroleum Development Scenarios Transportation Systems Analysis.",
+      "text": "**REPORT TITLE:**  Western Gulf of Alaska Petroleum Development Scenarios Transportation Systems Analysis."
+    },
+    {
+      "self_ref": "#/texts/1",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "**STUDY TITLE:**  Western Gulf of Alaska, Transportation Systems Analysis (TR-37).",
+      "text": "**STUDY TITLE:**  Western Gulf of Alaska, Transportation Systems Analysis (TR-37)."
+    },
+    {
+      "self_ref": "#/texts/2",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "CONTRACT NUMBER(S): BLM: CT6-61; MMS: 14-12-0001-29002; Technical Report No. 37.",
+      "text": "CONTRACT NUMBER(S): BLM: CT6-61; MMS: 14-12-0001-29002; Technical Report No. 37."
+    },
+    {
+      "self_ref": "#/texts/3",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "SPONSORING OCS REGION: Alaska.",
+      "text": "SPONSORING OCS REGION: Alaska."
+    },
+    {
+      "self_ref": "#/texts/4",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "APPLICABLE PLANNING AREA(S): Gulf of Alaska.",
+      "text": "APPLICABLE PLANNING AREA(S): Gulf of Alaska."
+    },
+    {
+      "self_ref": "#/texts/5",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "FISCAL YEAR(S) OF PROJECT FUNDING: 1979.",
+      "text": "FISCAL YEAR(S) OF PROJECT FUNDING: 1979."
+    },
+    {
+      "self_ref": "#/texts/6",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "COMPLETION DATE OF REPORT: January 1980.",
+      "text": "COMPLETION DATE OF REPORT: January 1980."
+    },
+    {
+      "self_ref": "#/texts/7",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "COST(S): FY 1979: $41,679; CUMULATIVE PROJECT COST: $41,679.",
+      "text": "COST(S): FY 1979: $41,679; CUMULATIVE PROJECT COST: $41,679."
+    },
+    {
+      "self_ref": "#/texts/8",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "PROJECT MANAGER(S): P. Eakland.",
+      "text": "PROJECT MANAGER(S): P. Eakland."
+    },
+    {
+      "self_ref": "#/texts/9",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "AFFILIATION: Peter Eakland and Associates.",
+      "text": "AFFILIATION: Peter Eakland and Associates."
+    },
+    {
+      "self_ref": "#/texts/10",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "ADDRESS: 3960 Reka Drive #B-2, Anchorage, Alaska  99504.",
+      "text": "ADDRESS: 3960 Reka Drive #B-2, Anchorage, Alaska  99504."
+    },
+    {
+      "self_ref": "#/texts/11",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "PRINCIPAL INVESTIGATOR(S)*: P. Eakland, R. Joshi.",
+      "text": "PRINCIPAL INVESTIGATOR(S)*: P. Eakland, R. Joshi."
+    },
+    {
+      "self_ref": "#/texts/12",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "KEY WORDS: Gulf of Alaska; Alaska; transportation economics; lease sale; development; scenarios; impacts; transportation; air traffic; marine traffic; forecast; Seward; Kodiak; Anchorage; Alaska Region.",
+      "text": "KEY WORDS: Gulf of Alaska; Alaska; transportation economics; lease sale; development; scenarios; impacts; transportation; air traffic; marine traffic; forecast; Seward; Kodiak; Anchorage; Alaska Region."
+    },
+    {
+      "self_ref": "#/texts/13",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "ACCESS NUMBER: 29002",
+      "text": "ACCESS NUMBER: 29002"
+    },
+    {
+      "self_ref": "#/texts/14",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "**BACKGROUND:** Transportation was selected by the U.S. Department of the Interior, Bureau of Land Management (BLM, now the Minerals Management Service) as one of the principal study topics within the Alaska Outer Continental Shelf (OCS) Socioeconomic Studies Program.  The present study of transportation impacts was part of a multidisciplinary effort designed to analyze potential impacts of oil and gas development resulting from Lease Sale 46, proposed for the western Gulf of Alaska (southeast of Kodiak Island).",
+      "text": "**BACKGROUND:** Transportation was selected by the U.S. Department of the Interior, Bureau of Land Management (BLM, now the Minerals Management Service) as one of the principal study topics within the Alaska Outer Continental Shelf (OCS) Socioeconomic Studies Program.  The present study of transportation impacts was part of a multidisciplinary effort designed to analyze potential impacts of oil and gas development resulting from Lease Sale 46, proposed for the western Gulf of Alaska (southeast of Kodiak Island)."
+    },
+    {
+      "self_ref": "#/texts/15",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "**OBJECTIVES:** (1) To evaluate impacts on transportation facilities generated from Lease Sale 46 in the western Gulf of Alaska.",
+      "text": "**OBJECTIVES:** (1) To evaluate impacts on transportation facilities generated from Lease Sale 46 in the western Gulf of Alaska."
+    },
+    {
+      "self_ref": "#/texts/16",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "**DESCRIPTION:** The introductory chapter provides a statement of subject matter, a general discussion of transportation facilities and services, and an overview of the methodology used to generate transportation demands and associated impacts.  Chapter 2 contains a summary of existing regional and statewide transportation systems within the study area.  Chapter 3 contains an analysis of three base cases, which includes low, medium, and high scenarios of Beaufort Sea and northern Gulf of Alaska (Lease Sale 55) lease offerings.  Five OCS cases are discussed in Chapter 4.",
+      "text": "**DESCRIPTION:** The introductory chapter provides a statement of subject matter, a general discussion of transportation facilities and services, and an overview of the methodology used to generate transportation demands and associated impacts.  Chapter 2 contains a summary of existing regional and statewide transportation systems within the study area.  Chapter 3 contains an analysis of three base cases, which includes low, medium, and high scenarios of Beaufort Sea and northern Gulf of Alaska (Lease Sale 55) lease offerings.  Five OCS cases are discussed in Chapter 4."
+    },
+    {
+      "self_ref": "#/texts/17",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "**SIGNIFICANT CONCLUSIONS:** Adequacy of regional and local transportation systems within the study area varies by mode, location, and time of year.  Seasonal variations occur for all existing transportation systems serving Alaska.  In the marine transportation mode, carriers at present do not experience capacity problems, even during peak demands.  Impacts may occur in the mean or high base and OCS cases in Anchorage, Kodiak, and Seward.  In the air transportation mode, Anchorage area will have a runway capacity problem.  At Kodiak, increased jet traffic to Seattle has created a need for additional facilities.  At Seward, a basic permanent structure is needed to meet air service needs.  Deregulation of air carrier and freight service to Alaska has shown an increase in service level on major routes but a constraint on fare increases only on heavily Anchorage to Seattle nonstop flights.",
+      "text": "**SIGNIFICANT CONCLUSIONS:** Adequacy of regional and local transportation systems within the study area varies by mode, location, and time of year.  Seasonal variations occur for all existing transportation systems serving Alaska.  In the marine transportation mode, carriers at present do not experience capacity problems, even during peak demands.  Impacts may occur in the mean or high base and OCS cases in Anchorage, Kodiak, and Seward.  In the air transportation mode, Anchorage area will have a runway capacity problem.  At Kodiak, increased jet traffic to Seattle has created a need for additional facilities.  At Seward, a basic permanent structure is needed to meet air service needs.  Deregulation of air carrier and freight service to Alaska has shown an increase in service level on major routes but a constraint on fare increases only on heavily Anchorage to Seattle nonstop flights."
+    },
+    {
+      "self_ref": "#/texts/18",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "**STUDY RESULTS:** Existing condition of transportation systems in the study area varies by mode, location, and season.  Summer is the peak travel time when both air traffic and traffic on intercity roads increases.  For the marine mode, completion of the Trans-Alaskan Pipeline System (TAPS) created excess capacity and developed strong competition.  However, at present, carriers do not have capacity problems, even during peak demands.  For air traffic, Anchorage area needs to improve runway capacity.  One proposed solution is to divert training and general aviation activities to satellite airports.  Terminal facilities at all study area airports need improvement, including Anchorage, Kodiak, and Seward.  Deregulation of air service has initially resulted in the level of air service on major routes but constraint on fare increases only on heavily travelled Anchorage to Seattle nonstop flights.",
+      "text": "**STUDY RESULTS:** Existing condition of transportation systems in the study area varies by mode, location, and season.  Summer is the peak travel time when both air traffic and traffic on intercity roads increases.  For the marine mode, completion of the Trans-Alaskan Pipeline System (TAPS) created excess capacity and developed strong competition.  However, at present, carriers do not have capacity problems, even during peak demands.  For air traffic, Anchorage area needs to improve runway capacity.  One proposed solution is to divert training and general aviation activities to satellite airports.  Terminal facilities at all study area airports need improvement, including Anchorage, Kodiak, and Seward.  Deregulation of air service has initially resulted in the level of air service on major routes but constraint on fare increases only on heavily travelled Anchorage to Seattle nonstop flights."
+    },
+    {
+      "self_ref": "#/texts/19",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "In the mean base case, terminal impacts for the marine mode can be expected first at Kodiak and later at Anchorage.  Marine mode impacts at Seward depend upon northern Gulf of Alaska OCS transportation requirements.  For the air mode, the extent of impacts on landing facilities depends upon ability to divert training operations to feeder airports.  Passenger terminal expansion will occur in Anchorage and needs will exist in Kodiak as two new airlines will likely enter interstate service.  Air carriers will be impacted by Federal deregulation which attempts to provide greater competition.  Traffic will steadily increase on the main road leading to Seward Highway.  Congestion will occur frequently, and in 1987 the 30th highest hour can be expected to be at service level C (although service flow is stable, substantial reductions in operating speeds are possible).",
+      "text": "In the mean base case, terminal impacts for the marine mode can be expected first at Kodiak and later at Anchorage.  Marine mode impacts at Seward depend upon northern Gulf of Alaska OCS transportation requirements.  For the air mode, the extent of impacts on landing facilities depends upon ability to divert training operations to feeder airports.  Passenger terminal expansion will occur in Anchorage and needs will exist in Kodiak as two new airlines will likely enter interstate service.  Air carriers will be impacted by Federal deregulation which attempts to provide greater competition.  Traffic will steadily increase on the main road leading to Seward Highway.  Congestion will occur frequently, and in 1987 the 30th highest hour can be expected to be at service level C (although service flow is stable, substantial reductions in operating speeds are possible)."
+    },
+    {
+      "self_ref": "#/texts/20",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "In the low base case, steady population growth in Anchorage, even if development and production do not occur in preceding OCS lease sales, will justify need for improvements in marine, air and land facilities identified in the mean base case.  A demand shift of one to two years at most will occur.  The exception is Seward where lack of northern Gulf of Alaska development will reduce need for marine and air facility improvements.  Road needs will not change dramatically, as they are based primarily on recreational rather than local traffic.  Kodiak is assumed to be isolated from impacts of previous lease sales, although transshipments to Cordova in 1977 represented 6% of outbound freight tonnage from Kodiak.",
+      "text": "In the low base case, steady population growth in Anchorage, even if development and production do not occur in preceding OCS lease sales, will justify need for improvements in marine, air and land facilities identified in the mean base case.  A demand shift of one to two years at most will occur.  The exception is Seward where lack of northern Gulf of Alaska development will reduce need for marine and air facility improvements.  Road needs will not change dramatically, as they are based primarily on recreational rather than local traffic.  Kodiak is assumed to be isolated from impacts of previous lease sales, although transshipments to Cordova in 1977 represented 6% of outbound freight tonnage from Kodiak."
+    },
+    {
+      "self_ref": "#/texts/21",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "Compared to the mean base case, the high base case will cause an earlier need for port improvements in Anchorage and passenger facilities at Anchorage International Airport.  Timing of separate facilities in Seward to accommodate OCS development activities does not change but additional berths and land-side storage are required.  No impacts on scheduled carriers will occur in any mode.  Existing carriers providing incremental increases in service over the study period should be able to handle projected traffic demands.",
+      "text": "Compared to the mean base case, the high base case will cause an earlier need for port improvements in Anchorage and passenger facilities at Anchorage International Airport.  Timing of separate facilities in Seward to accommodate OCS development activities does not change but additional berths and land-side storage are required.  No impacts on scheduled carriers will occur in any mode.  Existing carriers providing incremental increases in service over the study period should be able to handle projected traffic demands."
+    },
+    {
+      "self_ref": "#/texts/22",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "Comparing the mean base case and the mean OCS-mean base case, for the marine mode, the only additional demand on facilities is accommodating direct OCS tonnage requirements at Seward and Kodiak.  Seward is assumed to have a support base constructed for serving development in the northern Gulf of Alaska and will not require improvement.  Existing facilities will be adequate during exploration.  Existing port facilities are nearing congestion in Kodiak, which makes support of exploration activities impractical.  A support base will be constructed in 1984 for development support, and a single berth will be adequate.  The mean OCS-mean base case will not change the timing of facility needs except perhaps where a larger air passenger terminal would be helpful.  The link receiving the highest percentage increase in traffic will be Kodiak-Seattle, but impacts should be slight since the three carriers currently have operating authority.  No significant impacts on the Alaska Railroad will occur in the mean OCS-mean base case.  Low employment in Kodiak and an absence of onshore processing facilities will limit road traffic generated by this scenario.",
+      "text": "Comparing the mean base case and the mean OCS-mean base case, for the marine mode, the only additional demand on facilities is accommodating direct OCS tonnage requirements at Seward and Kodiak.  Seward is assumed to have a support base constructed for serving development in the northern Gulf of Alaska and will not require improvement.  Existing facilities will be adequate during exploration.  Existing port facilities are nearing congestion in Kodiak, which makes support of exploration activities impractical.  A support base will be constructed in 1984 for development support, and a single berth will be adequate.  The mean OCS-mean base case will not change the timing of facility needs except perhaps where a larger air passenger terminal would be helpful.  The link receiving the highest percentage increase in traffic will be Kodiak-Seattle, but impacts should be slight since the three carriers currently have operating authority.  No significant impacts on the Alaska Railroad will occur in the mean OCS-mean base case.  Low employment in Kodiak and an absence of onshore processing facilities will limit road traffic generated by this scenario."
+    },
+    {
+      "self_ref": "#/texts/23",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "Due to the low development level in the western Gulf of Alaska scenario, differences between the low OCS-mean base case and mean OCS-mean base case cases are minor.  A slightly higher exploration level in the low OCS-mean base case produces a need for the equivalent of two supply boat berths from 1981 to 1983 at Seward, but the required service base size does not change.  Congestion potential occurs only during the exploration phase.  The upper limit for three flights per day using a 19-passenger aircraft from Seward is approached two years earlier than in the mean OCS-mean base case.  Absence of marine support activities in Kodiak eliminates the need for a support base.  During exploration, approximately 20 more enplanements per week on both the Kodiak-Anchorage and Kodiak-Seattle links is expected in the low OCS-mean base case.  No changes are expected for land modes.",
+      "text": "Due to the low development level in the western Gulf of Alaska scenario, differences between the low OCS-mean base case and mean OCS-mean base case cases are minor.  A slightly higher exploration level in the low OCS-mean base case produces a need for the equivalent of two supply boat berths from 1981 to 1983 at Seward, but the required service base size does not change.  Congestion potential occurs only during the exploration phase.  The upper limit for three flights per day using a 19-passenger aircraft from Seward is approached two years earlier than in the mean OCS-mean base case.  Absence of marine support activities in Kodiak eliminates the need for a support base.  During exploration, approximately 20 more enplanements per week on both the Kodiak-Anchorage and Kodiak-Seattle links is expected in the low OCS-mean base case.  No changes are expected for land modes."
+    },
+    {
+      "self_ref": "#/texts/24",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "Transportation demands that are regional in origin are virtually identical for the low OCS-low base case and low base case.  The slight bulge produced by western Gulf of Alaska exploration would not be expected to produce additional problems.  The possible exception is the requirement for the equivalent of an additional supply boat berth at Seward from 1981 to 1983.  Alternatives exist for moving both OCS and non-OCS freight to destinations should congestion become a problem.",
+      "text": "Transportation demands that are regional in origin are virtually identical for the low OCS-low base case and low base case.  The slight bulge produced by western Gulf of Alaska exploration would not be expected to produce additional problems.  The possible exception is the requirement for the equivalent of an additional supply boat berth at Seward from 1981 to 1983.  Alternatives exist for moving both OCS and non-OCS freight to destinations should congestion become a problem."
+    },
+    {
+      "self_ref": "#/texts/25",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "Comparing the high OCS-high base case and the high base case, relatively modest population increases caused by the high scenario will not add any additional impacts to regional transportation systems.  Direct OCS transportation demands increase need for supply boat berths at Seward beginning in 1982 and raise ultimate berth requirements from five in the base case to seven.  Local impacts for Seward and Kodiak are discussed in the high base case.",
+      "text": "Comparing the high OCS-high base case and the high base case, relatively modest population increases caused by the high scenario will not add any additional impacts to regional transportation systems.  Direct OCS transportation demands increase need for supply boat berths at Seward beginning in 1982 and raise ultimate berth requirements from five in the base case to seven.  Local impacts for Seward and Kodiak are discussed in the high base case."
+    },
+    {
+      "self_ref": "#/texts/26",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "**STUDY PRODUCT(S):** Eakland, P. and R. Joshi.  1980.  Western Gulf of Alaska Petroleum Development Scenarios Transportation Systems Analysis.  A final report by Peter Eakland and Associates for the U.S. Department of the Interior, Bureau of Land Management Alaska OCS Office, Anchorage, AK.  NTIS No. PB80-166630.  Social and Economic Studies Program Technical Report No. 37.  Contract No. 14-12-0001-29002.  xx + 274 pp. + app.",
+      "text": "**STUDY PRODUCT(S):** Eakland, P. and R. Joshi.  1980.  Western Gulf of Alaska Petroleum Development Scenarios Transportation Systems Analysis.  A final report by Peter Eakland and Associates for the U.S. Department of the Interior, Bureau of Land Management Alaska OCS Office, Anchorage, AK.  NTIS No. PB80-166630.  Social and Economic Studies Program Technical Report No. 37.  Contract No. 14-12-0001-29002.  xx + 274 pp. + app."
+    },
+    {
+      "self_ref": "#/texts/27",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "*P.I.'s affiliation may be different than that listed for Project Manager(s).",
+      "text": "*P.I.'s affiliation may be different than that listed for Project Manager(s)."
+    }
+  ],
+  "pictures": [],
+  "tables": [],
+  "key_value_items": [],
+  "form_items": [],
+  "pages": {}
+}
