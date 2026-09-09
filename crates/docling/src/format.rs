@@ -77,6 +77,10 @@ pub enum InputFormat {
     /// parsed natively (docling reaches WordPerfect only via LibreOffice's
     /// libwpd), text-level with bold/italic/underline runs.
     WordPerfect,
+    /// Microsoft Works word-processor documents (`.wps`) — a docling.rs
+    /// extension (#216); Works 2.x DOS / 3 / 4 (`WPS4`) and Works 2000 / 6–9
+    /// (`WPS8`, OLE `CONTENTS`) parsed natively after libwps' readers.
+    Works,
     /// dBase table (`.dbf`) — a docling.rs extension (#216); the field
     /// descriptors become the header row, records the data rows.
     Dbf,
@@ -142,6 +146,7 @@ impl InputFormat {
             InputFormat::Keynote => "key",
             InputFormat::Abiword => "abiword",
             InputFormat::WordPerfect => "wordperfect",
+            InputFormat::Works => "works",
             InputFormat::Dbf => "dbf",
             InputFormat::Dif => "dif",
             InputFormat::Sylk => "sylk",
@@ -228,6 +233,11 @@ impl InputFormat {
             // backend reads the version from the prefix header, not the
             // extension.
             "wpd" | "wp" | "wp5" | "wp6" | "wpt" => InputFormat::WordPerfect,
+            // Microsoft Works word processor (#216): the backend tells the
+            // generations apart by the stream (raw 2.x header, OLE MN0 for
+            // 3/4, OLE CONTENTS for 2000+); .wks/.wdb are the spreadsheet
+            // and database and route elsewhere.
+            "wps" => InputFormat::Works,
             // Legacy spreadsheet-interchange relics (#216): all three parse
             // natively and content-sniff inside one backend.
             "dbf" => InputFormat::Dbf,
