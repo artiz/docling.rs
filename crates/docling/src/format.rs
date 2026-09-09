@@ -90,6 +90,10 @@ pub enum InputFormat {
     /// SYLK (`.slk`/`.sylk`) — a docling.rs extension (#216); same
     /// sheet-region conversion as DIF.
     Sylk,
+    /// Quattro Pro spreadsheets (`.wq1`/`.wq2` DOS, `.wb1`–`.wb3` Windows,
+    /// `.qpw` 9–X9) — a docling.rs extension (#216) parsed natively after
+    /// libwps' readers.
+    QuattroPro,
     /// Lotus 1-2-3 / Symphony / MS Works spreadsheets (`.wk1`–`.wk4`,
     /// `.wks`, `.wrk`, `.123`) — a docling.rs extension (#216); the DOS-era
     /// record streams, content-sniffed on the BOF record and split into data
@@ -151,6 +155,7 @@ impl InputFormat {
             InputFormat::Dif => "dif",
             InputFormat::Sylk => "sylk",
             InputFormat::Lotus => "lotus",
+            InputFormat::QuattroPro => "quattro",
             InputFormat::StarOffice5 => "staroffice5",
         }
     }
@@ -246,6 +251,14 @@ impl InputFormat {
             // The Lotus family (#216): .wks is ambiguous (1-2-3 rel 1A and
             // MS Works v3 both used it) — the backend sniffs the BOF.
             "wk1" | "wk2" | "wk3" | "wk4" | "wks" | "wrk" | "123" => InputFormat::Lotus,
+            // Quattro Pro (#216): the cell records differ per generation, so
+            // the family has its own reader (the backend sniffs the BOF /
+            // OLE stream, not the extension).
+            "wq1" | "wq2" | "wb1" | "wb2" | "wb3" | "qpw" => InputFormat::QuattroPro,
+            // MS Works 6–9 spreadsheet (#216): a BIFF8 `Workbook` stream in
+            // an OLE container — Excel 97's own layout under another
+            // extension, so the XLS reader takes it.
+            "xlr" => InputFormat::Xls,
             // StarOffice 5 binaries (#215): .vor templates dispatch by the
             // CFB stream inside (writer/draw/impress share the container).
             // .sdc routes here too so StarCalc gets its targeted
