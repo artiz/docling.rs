@@ -121,6 +121,14 @@ impl Pipeline {
     }
 
     /// The resolved configuration this pipeline was built from.
+    /// Whether answer synthesis (and the LLM-backed query rewrites) is
+    /// available — an `OPENROUTER_API_KEY` was configured. The UI reads this
+    /// from `/health` to explain a missing answer instead of offering a
+    /// checkbox that can only fail.
+    pub fn has_llm(&self) -> bool {
+        self.chat.is_some()
+    }
+
     pub fn config(&self) -> &RagConfig {
         &self.cfg
     }

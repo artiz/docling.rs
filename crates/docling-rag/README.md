@@ -72,7 +72,7 @@ it can be public like `/health`.
 | Method | Path                  | Description                                     |
 |--------|-----------------------|-------------------------------------------------|
 | GET    | `/`                   | built-in search UI (no auth; static HTML)       |
-| GET    | `/health`             | liveness probe (no auth)                        |
+| GET    | `/health`             | liveness probe (no auth); `llm: true/false` + `llm_model` say whether answer synthesis is configured (`OPENROUTER_API_KEY`) — the UI greys out "LLM answer" with that reason when it is not |
 | GET    | `/api/stats`          | document / chunk counts                         |
 | GET    | `/api/documents`      | all documents with metadata + processing metrics |
 | POST   | `/api/documents`      | `?name=file.pdf` (+ optional `enrich_pictures`/`enrich_code`/`enrich_formulas=true`), raw file bytes as the body → full ingest (convert, chunk, embed); dedups identical content |
