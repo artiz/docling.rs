@@ -1,0 +1,63 @@
+{
+  "schema_name": "DoclingDocument",
+  "version": "1.10.0",
+  "name": "formatcorpus_wp61_win",
+  "origin": {
+    "mimetype": "text/plain",
+    "binary_hash": 10658865858064285272,
+    "filename": "formatcorpus_wp61_win"
+  },
+  "furniture": {
+    "self_ref": "#/furniture",
+    "children": [],
+    "content_layer": "furniture",
+    "name": "_root_",
+    "label": "unspecified"
+  },
+  "body": {
+    "self_ref": "#/body",
+    "children": [
+      {
+        "$ref": "#/texts/0"
+      },
+      {
+        "$ref": "#/texts/1"
+      }
+    ],
+    "content_layer": "body",
+    "name": "_root_",
+    "label": "unspecified"
+  },
+  "groups": [],
+  "texts": [
+    {
+      "self_ref": "#/texts/0",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "**Sluwe Sjaantje sloeg de slome slager**",
+      "text": "**Sluwe Sjaantje sloeg de slome slager**"
+    },
+    {
+      "self_ref": "#/texts/1",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "Sluwe Sjaantje sloeg de slome slager. Sluwe Sjaantje sloeg de slome slager. Sluwe Sjaantje sloeg de slome slager. Sluwe Sjaantje sloeg de slome slager. Sluwe Sjaantje sloeg de slome slager. Sluwe Sjaantje sloeg de slome slager. Sluwe Sjaantje sloeg de slome slager. Sluwe Sjaantje sloeg de slome slager. Sluwe Sjaantje sloeg de slome slager. Sluwe Sjaantje sloeg de slome slager. Sluwe Sjaantje sloeg de slome slager.",
+      "text": "Sluwe Sjaantje sloeg de slome slager. Sluwe Sjaantje sloeg de slome slager. Sluwe Sjaantje sloeg de slome slager. Sluwe Sjaantje sloeg de slome slager. Sluwe Sjaantje sloeg de slome slager. Sluwe Sjaantje sloeg de slome slager. Sluwe Sjaantje sloeg de slome slager. Sluwe Sjaantje sloeg de slome slager. Sluwe Sjaantje sloeg de slome slager. Sluwe Sjaantje sloeg de slome slager. Sluwe Sjaantje sloeg de slome slager."
+    }
+  ],
+  "pictures": [],
+  "tables": [],
+  "key_value_items": [],
+  "form_items": [],
+  "pages": {}
+}

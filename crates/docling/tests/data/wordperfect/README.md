@@ -7,6 +7,7 @@
 | `sources/tika_wp51.wp` | Apache Tika `testWordPerfect_5_1.wp` (govdocs1 758750.wp) | WP 5.1: bold attribute pairs, hard hyphens, variable-length groups |
 | `sources/libwpd_wp5.wp` | LibreOffice `writerperfect/qa/unit/data/writer/libwpd/pass/WP5.wp` (MPL-2.0) | WP 5.1 minimal document, hard page break |
 | `sources/libwpd_wp6.wpd` | LibreOffice `…/libwpd/pass/WP6.wpd` | WP 6.x minimal document (header text lives in prefix packets and is not extracted) |
+| `sources/formatcorpus_wp61_win.wpd` | Open Preservation `format-corpus` `office/wordprocessing/WordPerfect6/testWordPerfect_6_61.wpd` (CC0) | WP 6.1 for Windows: bold title, `0xD0` soft line ends, `0x88`/`0x8C` singles that are not breaks |
 | `invalid/fuzzed_prefix.wpd` | LibreOffice `…/libwpd/pass/CVE-2007-1735-1.wpd` | garbage prefix → "not a WordPerfect document" |
 | `invalid/wp_mac3.wpd` | LibreOffice `…/libwpd/pass/WP3.wpd` | WordPerfect for Macintosh 3.x (file type 44) → targeted refusal |
 

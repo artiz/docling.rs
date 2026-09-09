@@ -12,23 +12,35 @@
 //! - **WP 5.0/5.1** (major version 0): bytes 32–126 are ASCII, `0x0A` a hard
 //!   return, `0x0B`/`0x0D` soft page/line breaks, `0x0C` a hard page break;
 //!   `0x80`–`0xBF` single-byte functions (hard space `0xA0`, hard hyphens
-//!   `0xA9`–`0xAB`, deletable soft returns `0x90`–`0x95`, dormant hard return
-//!   `0x99`, hard return/soft page `0x8C`); `0xC0` an extended character
+//!   `0xA9`–`0xAB`, soft hyphens `0xAC`–`0xAE` (invisible), deletable and
+//!   invisible returns `0x90`–`0x95` (a space: the govdocs corpus wraps
+//!   lines with `0x90` mid-sentence), dormant hard return `0x99`, hard
+//!   return/soft page `0x8C`); `0xC0` an extended character
 //!   (`C0 char charset C0` into the WP character sets); `0xC1`–`0xCF`
 //!   fixed-length functions of a known size, among them attribute on/off
 //!   (`C3 attr C3` / `C4 attr C4`); `0xD0`–`0xFF` variable-length groups
-//!   (`code subgroup len16 … len16 subgroup code`, skipped by their length).
+//!   (`code subgroup len16 … len16 subgroup code`, skipped by their length)
+//!   except the table groups `0xDC`/`0xDD`, whose subgroups *begin* a cell
+//!   (with its column span), a row, or end the table.
 //! - **WP 6.x and later** (major version 2 — WP 6 through WordPerfect Office
 //!   X-series share it): bytes 1–32 are the default extended-international
 //!   characters, 33–126 ASCII; `0x80`–`0xCF` single-byte functions (soft
-//!   space `0x80`, hard space `0x81`, hard hyphen `0x84`, dormant hard return
-//!   `0x87`/`0x89`, hard end of line `0xCC` and its column/page variants,
-//!   table cell/row ends `0xC6`–`0xCB`); `0xD0`–`0xEF` variable-length groups
-//!   whose length counts from the code byte, the end-of-line group `0xD0`
-//!   carrying soft/hard line ends and table cell/row/off marks in its
-//!   subgroup; `0xF0` an extended character; `0xF1` the undo group (text
-//!   between an undo start and end is *deleted* text and is dropped here);
-//!   `0xF2`/`0xF3` attribute on/off; `0xF4`–`0xFE` fixed-length functions.
+//!   space `0x80`, hard space `0x81`, soft/auto hyphens `0x82`/`0x83`/`0x85`
+//!   — invisible in the text —, hard hyphen `0x84`, dormant hard return
+//!   `0x87`; `0xB4`–`0xB9` deletable hard ends, `0xBA`–`0xBC` deletable soft
+//!   ends — the formatter's own breaks at hyphenation points, no space —,
+//!   `0xBD`–`0xBF` table off, `0xC0`–`0xC5` table row, `0xC6` table cell,
+//!   `0xC7`–`0xCC` hard page/column/line ends, `0xCD`–`0xCF` soft line ends);
+//!   `0xD0`–`0xEF` variable-length groups whose length counts from the code
+//!   byte, the end-of-line group `0xD0` carrying the same soft/hard line
+//!   ends and table cell/row/off marks in its subgroup (plus the next cell's
+//!   spanning in its sub-records); `0xF0` an extended character; `0xF1` the
+//!   undo group (text between an undo start and end is *deleted* text and is
+//!   dropped here); `0xF2`/`0xF3` attribute on/off; `0xF4`–`0xFE`
+//!   fixed-length functions. Code semantics follow libwpd (the WP6 single-
+//!   byte table and EOL-group subgroups), checked against a WordPerfect 6.1
+//!   DOS thesis: the soft end-of-line `0xCF` in particular ends a *line*, not
+//!   a paragraph.
 //!
 //! Attributes 12/8/14/11/13/5/6 (bold, italic, underline, double underline,
 //! strikeout, superscript, subscript) become inline runs; the rest (sizes,
@@ -37,7 +49,9 @@
 //! Multinational 1 #9, WordPerfect's typographic apostrophe, is mapped to
 //! U+2019 rather than the combining comma the tables carry — in the DOS-era
 //! corpus it is the possessive apostrophe of ordinary prose). Table cells and
-//! rows collect into a [`Table`]; header/footer and footnote text (prefix
+//! rows collect into a [`Table`] — a cell spanning columns repeats its text
+//! across them docling-style, a cell bound to the one above it stays empty —
+//! and rows pad to the widest; header/footer and footnote text (prefix
 //! packets in 6.x, function payloads in 5.x) is not extracted. WP 4.2 and
 //! earlier (no prefix header), Macintosh 3.x (file type 44) and encrypted
 //! documents are refused with a targeted error.
@@ -156,10 +170,37 @@ struct Run {
     fmt: Fmt,
 }
 
+/// The table being collected. WP6 marks the *end* of a cell (the mark also
+/// carries the next cell's spanning), WP5 the *beginning* of one; both feed
+/// the same rows through [`Builder::push_cell`].
 #[derive(Default)]
 struct TableState {
     rows: Vec<Vec<String>>,
     row: Vec<String>,
+    /// WP5: a cell has been begun and not yet pushed.
+    open: bool,
+    /// The pending cell's column span (repeated text) …
+    span: usize,
+    /// … or whether it is bound to the cell above (rowspan continuation:
+    /// pushed empty so the columns stay aligned).
+    bound: bool,
+}
+
+/// A cell's spanning as the format encodes it: `(column span, bound from
+/// above)`.
+#[derive(Clone, Copy)]
+struct Span {
+    cols: usize,
+    bound: bool,
+}
+
+impl Default for Span {
+    fn default() -> Self {
+        Span {
+            cols: 1,
+            bound: false,
+        }
+    }
 }
 
 struct Builder {
@@ -248,35 +289,92 @@ impl Builder {
         }
     }
 
-    fn end_cell(&mut self) {
-        let text = runs_markdown(&std::mem::take(&mut self.runs));
-        self.table
-            .get_or_insert_with(TableState::default)
-            .row
-            .push(text);
+    /// Open a table if none is: text pending from before it is a paragraph.
+    fn table_mut(&mut self) -> &mut TableState {
+        if self.table.is_none() {
+            if let Some((md, runs)) = self.take_runs() {
+                self.doc.push(inline_paragraph_node(md, runs, false));
+            }
+            self.table = Some(TableState {
+                span: 1,
+                ..TableState::default()
+            });
+        }
+        self.table.as_mut().expect("table just opened")
     }
 
-    fn end_row(&mut self) {
-        let Some(t) = self.table.as_mut() else {
-            // A row end with no table open is a line end.
-            self.end_paragraph();
-            return;
-        };
-        if !self.runs.is_empty() {
-            let text = runs_markdown(&std::mem::take(&mut self.runs));
-            t.row.push(text);
+    /// The pending runs become the current cell (repeated over its column
+    /// span; empty when bound to the cell above), which then takes `next`'s
+    /// spanning for whatever follows.
+    fn push_cell(&mut self, next: Span) {
+        let text = runs_markdown(&std::mem::take(&mut self.runs));
+        let t = self.table_mut();
+        if t.bound {
+            t.row.push(String::new());
+        } else {
+            for _ in 0..t.span.max(1) {
+                t.row.push(text.clone());
+            }
         }
+        t.open = false;
+        t.span = next.cols;
+        t.bound = next.bound;
+    }
+
+    fn push_row(&mut self) {
+        let t = self.table_mut();
         if !t.row.is_empty() {
             let row = std::mem::take(&mut t.row);
             t.rows.push(row);
         }
     }
 
-    fn end_table(&mut self) {
+    /// WP6: the mark that ends a cell; `next` describes the cell it begins.
+    fn end_cell(&mut self, next: Span) {
+        self.push_cell(next);
+    }
+
+    /// WP6: the mark that ends a row (and its last cell); `next` describes
+    /// the first cell of the next row.
+    fn end_row(&mut self, next: Span) {
         if self.table.is_none() {
+            // A row end with no table open is a line end.
+            self.end_paragraph();
             return;
         }
-        self.end_row();
+        self.push_cell(next);
+        self.push_row();
+    }
+
+    /// WP5: a cell begins here (the previous one, if any, is complete).
+    fn begin_cell(&mut self, span: Span) {
+        if self.table_mut().open {
+            self.push_cell(span);
+        } else {
+            let t = self.table_mut();
+            t.span = span.cols;
+            t.bound = span.bound;
+        }
+        self.table_mut().open = true;
+    }
+
+    /// WP5: a row begins here.
+    fn begin_row(&mut self) {
+        if self.table_mut().open {
+            self.push_cell(Span::default());
+        }
+        self.push_row();
+    }
+
+    /// The table ends: whatever is pending is its last cell.
+    fn end_table(&mut self) {
+        let Some(t) = self.table.as_ref() else {
+            return;
+        };
+        if t.open || !self.runs.is_empty() {
+            self.push_cell(Span::default());
+        }
+        self.push_row();
         let Some(t) = self.table.take() else {
             return;
         };
@@ -372,11 +470,17 @@ fn parse_wp5(d: &[u8], b: &mut Builder) {
         i += 1;
         match c {
             0x0A | 0x0C | 0x8C | 0x99 => b.end_paragraph(),
+            // 0x90 is libwpd's "deletable return at EOL" (a paragraph end
+            // there); the govdocs 5.0 corpus wraps lines with it mid-sentence,
+            // so it stays a space like the invisible returns 0x93–0x95.
             0x0B | 0x0D | 0x90..=0x95 => b.soft_break(),
             0x09 => b.text("\t"),
             0x20..=0x7E => b.ch(c as char),
             0xA0 => b.ch('\u{a0}'),
             0xA9..=0xAB => b.ch('-'),
+            // soft hyphens (in line / at EOL / at EOP): shown only when the
+            // line broke there, so nothing in the text
+            0xAC..=0xAE => {}
             0xC0 => {
                 if let [val, set, ..] = d[i..] {
                     b.ch(wp_char(WpVersion::Wp5, set, val));
@@ -393,10 +497,26 @@ fn parse_wp5(d: &[u8], b: &mut Builder) {
             0xD0..=0xFF => {
                 // subgroup, then the length of everything after these four
                 // header bytes (payload + mirrored length/subgroup/code).
-                let Some(len) = d.get(i + 1..i + 3) else {
+                let Some(&[sub, l0, l1]) = d.get(i..i + 3) else {
                     break;
                 };
-                let len = u16::from_le_bytes([len[0], len[1]]) as usize;
+                let len = u16::from_le_bytes([l0, l1]) as usize;
+                let payload = &d[(i + 3).min(d.len())..(i + 3 + len).min(d.len())];
+                match (c, sub) {
+                    // Table EOL group: beginning of column (flags, column
+                    // number, column spanning with bit 7 = spanned from
+                    // above, row span, …), beginning of row, table off.
+                    (0xDC, 0) => {
+                        let spanning = payload.get(2).copied().unwrap_or(1);
+                        b.begin_cell(Span {
+                            cols: usize::from(spanning & 0x7F).max(1),
+                            bound: spanning & 0x80 != 0,
+                        });
+                    }
+                    (0xDC, 1) | (0xDD, 1) | (0xDD, 3) => b.begin_row(),
+                    (0xDC, 2) | (0xDD, 2) => b.end_table(),
+                    _ => {}
+                }
                 i += 3 + len;
             }
             _ => {}
@@ -423,8 +543,11 @@ fn parse_wp6(d: &[u8], b: &mut Builder) {
             0x21..=0x7E => b.ch(c as char),
             0x80 => b.text(" "),
             0x81 => b.ch('\u{a0}'),
-            0x84 | 0x85 => b.ch('-'),
-            0x87 | 0x89 => b.end_paragraph(),
+            // soft hyphen in line / at EOL, auto hyphen: shown only where
+            // the line broke, so nothing in the text
+            0x82 | 0x83 | 0x85 => {}
+            0x84 => b.ch('-'),
+            0x87 => b.end_paragraph(),
             // page-number display: skip to its closing pair
             0x8A => {
                 while i < d.len() && d[i] != 0x8B {
@@ -432,9 +555,18 @@ fn parse_wp6(d: &[u8], b: &mut Builder) {
                 }
                 i += 1;
             }
-            0xC6 => b.end_cell(),
-            0xC7..=0xCB => b.end_row(),
-            0xB4..=0xC5 | 0xCC..=0xCF => b.end_paragraph(),
+            // deletable hard EOP / EOC / EOL
+            0xB4..=0xB9 => b.end_paragraph(),
+            // deletable soft EOL (at EOC, at EOP): the formatter's own line
+            // break, at a hyphenation point — the word continues
+            0xBA..=0xBC => {}
+            0xBD..=0xBF => b.end_table(),
+            0xC0..=0xC5 => b.end_row(Span::default()),
+            0xC6 => b.end_cell(Span::default()),
+            // hard EOP / EOC / EOL
+            0xC7..=0xCC => b.end_paragraph(),
+            // soft EOL (at EOC, at EOP): the line wrapped
+            0xCD..=0xCF => b.soft_break(),
             0xD0..=0xEF => {
                 // subgroup, then the length of the whole group counted from
                 // the code byte.
@@ -442,10 +574,9 @@ fn parse_wp6(d: &[u8], b: &mut Builder) {
                     break;
                 };
                 let len = u16::from_le_bytes([l0, l1]) as usize;
+                let group = &d[(i - 1)..(i - 1 + len.max(4)).min(d.len())];
                 if c == 0xD0 {
-                    eol_group(sub, b);
-                } else if c == 0xD5 {
-                    b.soft_break();
+                    eol_group(sub, group, b);
                 } else if c == 0xE0 {
                     b.text("\t");
                 }
@@ -483,19 +614,85 @@ fn parse_wp6(d: &[u8], b: &mut Builder) {
     }
 }
 
-/// The WP6 end-of-line group's subgroups: soft line ends (the line wrapped)
-/// become a space, hard ones a paragraph end, and the table marks build the
-/// table — cell end, row end (with its end-of-column/page variants) and table
-/// off.
-fn eol_group(sub: u8, b: &mut Builder) {
+/// The WP6 end-of-line group (libwpd's `WP6EOLGroup`): soft line ends (the
+/// line wrapped) become a space, hard line/column/page ends a paragraph end,
+/// the deletable soft ends nothing (the formatter's breaks at hyphenation
+/// points), and the table marks build the table — cell, row (with its
+/// end-of-column/page variants) and table off. `group` is the whole group,
+/// from which the next cell's spanning sub-record is read.
+fn eol_group(sub: u8, group: &[u8], b: &mut Builder) {
     match sub {
-        0..=3 | 20..=22 => b.soft_break(),
-        10 => b.end_cell(),
-        11..=14 => b.end_row(),
-        15..=17 => b.end_table(),
-        4..=9 | 18 | 19 | 23..=28 => b.end_paragraph(),
+        0x01..=0x03 => b.soft_break(),
+        0x04..=0x09 => b.end_paragraph(),
+        0x0A => {
+            let next = eol_group_span(group);
+            b.end_cell(next);
+        }
+        0x0B..=0x10 => {
+            let next = eol_group_span(group);
+            b.end_row(next);
+        }
+        0x11..=0x13 => b.end_table(),
+        0x14..=0x16 => {}
+        0x17..=0x1C => b.end_paragraph(),
         _ => {}
     }
+}
+
+/// The spanning of the cell a WP6 EOL-group mark begins: the group is
+/// `code subgroup size16 flags [nPrefix prefixIDs…] sizeNonDeletable16
+/// sizeDeletable16 <deletable> <sub-records…>`, each sub-record an id byte
+/// with a fixed size (or a size word for the formula and 0x8E/0x8F records);
+/// record 133 carries `colSpan rowSpan`, column span ≥ 128 meaning the cell
+/// is bound to the one above. Anything malformed reads as a plain cell.
+fn eol_group_span(group: &[u8]) -> Span {
+    let mut span = Span::default();
+    let Some(&flags) = group.get(4) else {
+        return span;
+    };
+    let mut i = 5;
+    if flags & 0x80 != 0 {
+        let n = usize::from(*group.get(i).unwrap_or(&0));
+        i += 1 + 2 * n;
+    }
+    let Some(&[nd0, nd1]) = group.get(i..i + 2) else {
+        return span;
+    };
+    let non_deletable = usize::from(u16::from_le_bytes([nd0, nd1]));
+    i += 2;
+    let end = (i + non_deletable).min(group.len());
+    let Some(&[dd0, dd1]) = group.get(i..i + 2) else {
+        return span;
+    };
+    i += 2 + usize::from(u16::from_le_bytes([dd0, dd1]));
+    while i < end {
+        let id = group[i];
+        let size = match id {
+            128 => 5,
+            130 | 131 | 133 => 4,
+            132 => 9,
+            134 => 10,
+            135 | 136 => 6,
+            137 => 11,
+            139 | 140 => 3,
+            141 => 1,
+            129 | 0x8E | 0x8F => match group.get(i + 1..i + 3) {
+                Some(&[a, c]) => usize::from(u16::from_le_bytes([a, c])),
+                _ => return span,
+            },
+            _ => return span,
+        };
+        if id == 133 {
+            if let Some(&cols) = group.get(i + 1) {
+                span = Span {
+                    cols: usize::from(cols & 0x7F).max(1),
+                    bound: cols >= 128,
+                };
+            }
+        }
+        i += size.max(1);
+    }
+    span
 }
 
 // ---------------------------------------------------------------------------
@@ -1116,7 +1313,7 @@ mod tests {
     fn wp6_table_from_eol_group_cells() {
         let cell = |t: &[u8]| [t, &[0xD0, 10, 0x05, 0x00, 0xD0]].concat();
         let row_end = [0xD0u8, 11, 0x05, 0x00, 0xD0];
-        let table_off = [0xD0u8, 15, 0x05, 0x00, 0xD0];
+        let table_off = [0xD0u8, 17, 0x05, 0x00, 0xD0];
         let body = [
             b"Before".as_slice(),
             &[0xCC],
@@ -1137,6 +1334,95 @@ mod tests {
         assert_eq!(t.rows, vec![vec!["a", "b"], vec!["c", "d"]]);
         assert!(matches!(&doc.nodes[0], Node::Paragraph { text } if text == "Before"));
         assert!(matches!(&doc.nodes[2], Node::Paragraph { text } if text == "After"));
+    }
+
+    /// A WP6 EOL group with one spanning sub-record (id 133): `flags=0`, no
+    /// prefix IDs, non-deletable size, deletable size 0, then `133 cols rows 0`.
+    fn eol(sub: u8, cols: u8) -> Vec<u8> {
+        let body = [0x00u8, 0x06, 0x00, 0x00, 0x00, 133, cols, 1, 0];
+        let len = (4 + body.len() + 4) as u16;
+        let mut v = vec![0xD0, sub];
+        v.extend_from_slice(&len.to_le_bytes());
+        v.extend_from_slice(&body);
+        v.extend_from_slice(&len.to_le_bytes());
+        v.extend_from_slice(&[sub, 0xD0]);
+        v
+    }
+
+    #[test]
+    fn wp6_cell_spans_replicate_and_bound_cells_stay_empty() {
+        // Row 1: "a" then a cell spanning 2 columns "bc"; row 2: "d", then a
+        // cell bound to the one above (empty), then "e".
+        let body = [
+            b"a".as_slice(),
+            &eol(0x0A, 2),
+            b"bc",
+            &eol(0x0B, 1),
+            b"d",
+            &eol(0x0A, 0x81),
+            &eol(0x0A, 1),
+            b"e",
+            &eol(0x11, 1),
+        ]
+        .concat();
+        let doc = convert(wp6(&body)).unwrap();
+        let Node::Table(t) = &doc.nodes[0] else {
+            panic!("expected a table, got {:?}", doc.nodes[0]);
+        };
+        assert_eq!(t.rows, vec![vec!["a", "bc", "bc"], vec!["d", "", "e"]]);
+    }
+
+    #[test]
+    fn wp6_line_ends_after_libwpd() {
+        // soft EOL 0xCF wraps a line (space); auto hyphen 0x85 + deletable
+        // soft EOL 0xBC break a word (nothing); EOL-group 0x14 likewise; hard
+        // EOL 0xCC ends the paragraph; 0x88/0x8C are ignored.
+        let body = [
+            b"door".as_slice(),
+            &[0x85, 0xBC],
+            b"gaans",
+            &[0xCF],
+            b"op",
+            &[0x88, 0x80],
+            b"polygo",
+            &[0xD0, 0x14, 0x05, 0x00, 0xD0],
+            b"nen",
+            &[0xCC],
+            b"Next",
+        ]
+        .concat();
+        let doc = convert(wp6(&body)).unwrap();
+        assert_eq!(md(&doc), "doorgaans op polygonen\n\nNext\n");
+    }
+
+    #[test]
+    fn wp5_table_groups_begin_cells_and_rows() {
+        // [row][cell]"a"[cell]"b"[row][cell span 2]"c"[table off]"After"
+        let row = [0xDCu8, 1, 0x00, 0x00];
+        let cell = |spanning: u8| {
+            [
+                0xDC, 0, 0x0B, 0x00, 0x00, 0x00, spanning, 1, 0, 0, 0, 0, 0, 0, 0,
+            ]
+        };
+        let body = [
+            &row[..],
+            &cell(1),
+            b"a",
+            &cell(1),
+            b"b",
+            &row,
+            &cell(2),
+            b"c",
+            &[0xDC, 2, 0x00, 0x00],
+            b"After",
+        ]
+        .concat();
+        let doc = convert(wp5(&body)).unwrap();
+        let Node::Table(t) = &doc.nodes[0] else {
+            panic!("expected a table, got {:?}", doc.nodes[0]);
+        };
+        assert_eq!(t.rows, vec![vec!["a", "b"], vec!["c", "c"]]);
+        assert!(matches!(&doc.nodes[1], Node::Paragraph { text } if text == "After"));
     }
 
     #[test]
