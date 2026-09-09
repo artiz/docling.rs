@@ -10,7 +10,7 @@
 //! | Method | Path                  | Description                                   |
 //! |--------|-----------------------|-----------------------------------------------|
 //! | GET    | `/`                   | built-in search UI (public; static HTML)      |
-//! | GET    | `/health`             | liveness probe (public)                       |
+//! | GET    | `/health`             | liveness probe (public); `llm`: answers configured |
 //! | GET    | `/api/stats`          | document / chunk counts                       |
 //! | GET    | `/api/documents`      | all documents with metadata + metrics         |
 //! | POST   | `/api/documents`      | `?name=file.pdf` + enrich flags, raw bytes body → ingest |
@@ -75,9 +75,22 @@ pub fn router(pipeline: Pipeline, keys: Vec<String>) -> Result<Router> {
         // Public like /health — the page itself holds no data; every API call
         // it makes carries the key the user stored in localStorage.
         .route("/", get(|| async { Html(include_str!("ui.html")) }))
-        .route("/health", get(|| async { Json(json!({"status": "ok"})) }))
+        .route("/health", get(health))
         .merge(protected)
         .with_state(state))
+}
+
+/// Liveness probe, plus what the deployment can do: `llm` says whether
+/// answer synthesis is configured (`OPENROUTER_API_KEY`), so the UI can grey
+/// out "LLM answer" with the reason instead of surfacing a 400 after the
+/// fact. Holds no data, so it stays public like `/`.
+async fn health(State(state): State<Arc<AppState>>) -> Json<serde_json::Value> {
+    let llm = state.pipeline.has_llm();
+    Json(json!({
+        "status": "ok",
+        "llm": llm,
+        "llm_model": llm.then(|| state.pipeline.config().llm_model.clone()),
+    }))
 }
 
 /// Bind `addr` and serve until the process is stopped.

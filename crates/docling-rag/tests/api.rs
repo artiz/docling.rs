@@ -49,9 +49,16 @@ async fn spawn_server() -> (String, reqwest::Client) {
 async fn rest_api_end_to_end() {
     let (base, client) = spawn_server().await;
 
-    // /health is public.
+    // /health is public, and tells the UI whether answers are possible.
     let r = client.get(format!("{base}/health")).send().await.unwrap();
     assert_eq!(r.status(), 200);
+    let h: serde_json::Value = r.json().await.unwrap();
+    assert_eq!(h["status"], "ok");
+    assert!(
+        h["llm"].is_boolean(),
+        "health reports llm availability: {h}"
+    );
+    assert_eq!(h["llm_model"].is_null(), !h["llm"].as_bool().unwrap());
 
     // Everything under /api requires a key.
     let r = client

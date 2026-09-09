@@ -44,6 +44,8 @@
            color: var(--muted); padding-bottom: 8px; }
   #stats { font-size: 13px; color: var(--muted); }
   #error { color: var(--bad); font-size: 14px; margin-top: 12px; white-space: pre-wrap; }
+  .hint { color: var(--muted); font-size: 12px; }
+  input[type=checkbox]:disabled + label { color: var(--muted); }
   .answer { border-left: 3px solid var(--accent); }
   .answer h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .04em;
                color: var(--muted); margin: 0 0 6px; }
@@ -133,8 +135,9 @@
         <label for="k">Top-k</label>
         <input id="k" type="number" min="1" max="100" style="width:5.5em" placeholder="cfg">
       </div>
-      <div class="check">
+      <div class="check" id="answer-box">
         <input id="answer" type="checkbox"><label for="answer" style="margin:0">LLM answer</label>
+        <span id="llm-hint" class="hint" hidden></span>
       </div>
       <div class="check" title="Show each hit with one chunk before and one after it">
         <input id="extend" type="checkbox"><label for="extend" style="margin:0">extend context</label>
@@ -181,10 +184,26 @@ async function api(path, init) {
 async function refreshHealth() {
   const el = $("status");
   try {
-    await fetch("/health").then((r) => { if (!r.ok) throw 0; });
+    const h = await fetch("/health").then((r) => { if (!r.ok) throw 0; return r.json(); });
     el.className = "ok"; $("status-text").textContent = "online";
+    showLlm(h);
   } catch {
     el.className = "bad"; $("status-text").textContent = "offline";
+  }
+}
+
+// Answer synthesis needs an LLM on the server (OPENROUTER_API_KEY). Without
+// one the checkbox could only produce a 400 after the search, so say so up
+// front and keep it unchecked; with one, name the model in the tooltip.
+function showLlm(h) {
+  const box = $("answer"), hint = $("llm-hint");
+  if (h.llm) {
+    box.disabled = false; hint.hidden = true;
+    $("answer-box").title = `answers by ${h.llm_model || "the configured LLM"}`;
+  } else {
+    box.disabled = true; box.checked = false; hint.hidden = false;
+    hint.textContent = "no LLM configured — set OPENROUTER_API_KEY in .env to get answers";
+    $("answer-box").title = hint.textContent;
   }
 }
 
