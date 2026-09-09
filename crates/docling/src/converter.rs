@@ -7,7 +7,7 @@ use crate::backend::{
     DeepSeekBackend, DocBackend, DoclingJsonBackend, DocxBackend, EbcdicBackend, EmailBackend,
     EpubBackend, InterchangeBackend, JatsBackend, LatexBackend, LotusBackend, MarkdownBackend,
     MhtmlBackend, PptBackend, PptxBackend, RtfBackend, StarOffice5Backend, UsptoBackend,
-    VisioBackend, WebVttBackend, WpdBackend, XbrlBackend, XlsBackend, XlsxBackend,
+    VisioBackend, WebVttBackend, WpdBackend, WpsBackend, XbrlBackend, XlsBackend, XlsxBackend,
 };
 
 /// Whether `text` begins with an XML prolog — an `<?xml …?>` declaration or a
@@ -712,6 +712,9 @@ impl DocumentConverter {
             // WordPerfect 5.x/6.x+ (#216): docling.rs extension, native parse
             // of the ÿWPC function-code stream.
             InputFormat::WordPerfect => WpdBackend.convert(&source)?,
+            // Microsoft Works word processor (#216): docling.rs extension,
+            // native parse after libwps.
+            InputFormat::Works => WpsBackend.convert(&source)?,
             // StarOffice 5 binaries (#215): docling.rs extension, native CFB
             // parse (docling would go through LibreOffice).
             InputFormat::StarOffice5 => StarOffice5Backend.convert(&source)?,
