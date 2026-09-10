@@ -343,10 +343,12 @@ fn format_comment_date(raw: &str) -> String {
 
 struct Ctx<'a> {
     style_names: &'a HashMap<String, String>,
-    style_nums: &'a HashMap<String, (String, i64)>, // styleId -> (numId, ilvl)
-    style_based: &'a HashMap<String, String>,       // styleId -> basedOn styleId
-    style_fonts: &'a HashMap<String, String>,       // styleId -> lowercased ascii font
-    style_outline: &'a HashMap<String, u8>,         // styleId -> 1-indexed outlineLvl
+    /// styleId -> the style's *own* `numPr` parts (`numId`, `ilvl`), each
+    /// optional — resolved through `basedOn` by [`style_numbering`].
+    style_nums: &'a HashMap<String, (Option<String>, Option<i64>)>,
+    style_based: &'a HashMap<String, String>, // styleId -> basedOn styleId
+    style_fonts: &'a HashMap<String, String>, // styleId -> lowercased ascii font
+    style_outline: &'a HashMap<String, u8>,   // styleId -> 1-indexed outlineLvl
     num_levels: &'a HashMap<(String, i64), NumLevel>, // (numId, ilvl) -> level props
     rels: &'a HashMap<String, String>,
     images: &'a HashMap<String, PictureImage>, // image relationship id -> extracted image
@@ -562,7 +564,7 @@ fn handle_paragraph_inner(
     let numbering = if p.descendants().any(|n| n.has_tag_name("numPr")) {
         num_pr(p)
     } else {
-        ctx.style_nums.get(style_id).cloned()
+        style_numbering(style_id, ctx)
     };
 
     // A heading style wins over a list: a numbered heading gets a computed
@@ -1020,6 +1022,62 @@ fn heading_label_level(label: &str) -> Option<u8> {
         // "Heading" with a capital H.
         None => label.contains("Heading").then_some(2),
     }
+}
+
+/// The raw `numPr` parts of a style definition: its own `numId` and `ilvl`
+/// values, each optional (a stock `heading 2` carries only `ilvl`). `None`
+/// when the style has no `numPr` at all.
+fn num_pr_parts(style: XmlNode) -> Option<(Option<String>, Option<i64>)> {
+    let num_pr = style.descendants().find(|n| n.has_tag_name("numPr"))?;
+    let num_id = num_pr
+        .children()
+        .find(|n| n.has_tag_name("numId"))
+        .and_then(|n| attr(n, "val"))
+        .map(str::to_string);
+    let ilvl = num_pr
+        .children()
+        .find(|n| n.has_tag_name("ilvl"))
+        .and_then(|n| attr(n, "val"))
+        .and_then(|v| v.parse().ok());
+    Some((num_id, ilvl))
+}
+
+/// A style's `(numId, ilvl)` resolved through its `basedOn` chain — docling's
+/// `_style_numbering` (docling#3917). Word inherits numbering through the
+/// style hierarchy, and `numId` and `ilvl` inherit *independently*: Word's
+/// stock `heading 2` carries only `ilvl` and takes `numId` from `heading 1`,
+/// so reading one style element left it unnumbered while its siblings at
+/// other levels were numbered. The walk stops once both parts are known or
+/// after ten ancestors (a malformed/cyclic chain); a `numId` of 0 found on
+/// the way means "no list", like a paragraph's own `numId` 0; `ilvl`
+/// defaults to 0 when only `numId` was found.
+fn style_numbering(style_id: &str, ctx: &Ctx) -> Option<(String, i64)> {
+    let (mut num_id, mut ilvl): (Option<String>, Option<i64>) = (None, None);
+    let mut cur = Some(style_id.to_string());
+    let mut depth = 0;
+    while let Some(id) = cur {
+        if depth >= MAX_STYLE_INHERITANCE_DEPTH {
+            break;
+        }
+        if let Some((n, l)) = ctx.style_nums.get(&id) {
+            if num_id.is_none() {
+                num_id = n.clone();
+            }
+            if ilvl.is_none() {
+                ilvl = *l;
+            }
+        }
+        if num_id.is_some() && ilvl.is_some() {
+            break;
+        }
+        cur = ctx.style_based.get(&id).cloned();
+        depth += 1;
+    }
+    let num_id = num_id?;
+    if num_id == "0" {
+        return None;
+    }
+    Some((num_id, ilvl.unwrap_or(0)))
 }
 
 /// `(numId, ilvl)` for an element carrying explicit list numbering. A `numId`
@@ -1919,7 +1977,7 @@ fn detect_code_language(text: &str) -> Option<String> {
 /// the code-block detector (docling PR #3735) read about a paragraph style.
 struct StyleMaps {
     names: HashMap<String, String>,
-    nums: HashMap<String, (String, i64)>,
+    nums: HashMap<String, (Option<String>, Option<i64>)>,
     based: HashMap<String, String>,
     fonts: HashMap<String, String>,
     /// styleId → the style's own `w:pPr/w:outlineLvl` as a 1-indexed docling
@@ -1955,8 +2013,8 @@ fn parse_styles(styles_xml: &str) -> StyleMaps {
         {
             names.insert(id.to_string(), name.to_string());
         }
-        if let Some(num) = num_pr(style) {
-            nums.insert(id.to_string(), num);
+        if let Some(parts) = num_pr_parts(style) {
+            nums.insert(id.to_string(), parts);
         }
         // basedOn chain and the style's own font — used by the code-block
         // detector (docling PR #3735) to walk a style's inheritance.
@@ -2002,6 +2060,9 @@ struct NumLevel {
     /// on such a level carries a `numPr` for outline structure only, so it
     /// gets no computed `1.2` prefix.
     visible: bool,
+    /// The level's raw `numFmt` (`decimal`, `lowerLetter`, `upperRoman`, …);
+    /// `None` when the level declares none.
+    num_fmt: Option<String>,
     start: i64,
     lvl_text: String,
 }
@@ -2068,6 +2129,7 @@ fn parse_numbering(numbering_xml: &str) -> HashMap<(String, i64), NumLevel> {
                 NumLevel {
                     numbered,
                     visible,
+                    num_fmt: num_fmt.map(str::to_string),
                     start,
                     lvl_text,
                 },
@@ -2083,6 +2145,69 @@ fn parse_numbering(numbering_xml: &str) -> HashMap<(String, i64), NumLevel> {
         }
     }
     out
+}
+
+/// Cap on the `basedOn` walk when resolving a style's numbering — docling's
+/// `_MAX_STYLE_INHERITANCE_DEPTH`.
+const MAX_STYLE_INHERITANCE_DEPTH: usize = 10;
+
+/// Whether a `numFmt` is a visible format other than plain `decimal` — the
+/// letter / roman / `decimalZero` levels whose `lvlText` suffix (`%2)` → `a)`)
+/// must be kept and whose counters cannot be rendered as raw decimals
+/// (docling's `_NON_DECIMAL_NUMBERING_FORMATS`, docling#4087).
+fn is_non_decimal_format(num_fmt: Option<&str>) -> bool {
+    num_fmt.is_some_and(|f| f != "decimal" && VISIBLE_NUMBERING_FORMATS.contains(&f))
+}
+
+/// Render a list counter with an OOXML `numFmt` — docling's
+/// `_format_enum_counter`: `lowerLetter`/`upperLetter` run a…z, aa…zz (the
+/// letter repeated), roman numerals, `decimalZero` pads to two digits, and
+/// everything else (including no format) is the plain decimal.
+fn format_enum_counter(counter: i64, num_fmt: Option<&str>) -> String {
+    let letter = |v: i64| -> String {
+        if v <= 0 {
+            return v.to_string();
+        }
+        let c = (b'a' + ((v - 1) % 26) as u8) as char;
+        std::iter::repeat_n(c, ((v - 1) / 26 + 1) as usize).collect()
+    };
+    let roman = |v: i64| -> String {
+        if v <= 0 {
+            return v.to_string();
+        }
+        const NUMERALS: [(i64, &str); 13] = [
+            (1000, "M"),
+            (900, "CM"),
+            (500, "D"),
+            (400, "CD"),
+            (100, "C"),
+            (90, "XC"),
+            (50, "L"),
+            (40, "XL"),
+            (10, "X"),
+            (9, "IX"),
+            (5, "V"),
+            (4, "IV"),
+            (1, "I"),
+        ];
+        let mut rest = v;
+        let mut out = String::new();
+        for (amount, numeral) in NUMERALS {
+            while rest >= amount {
+                out.push_str(numeral);
+                rest -= amount;
+            }
+        }
+        out
+    };
+    match num_fmt {
+        Some("lowerLetter") => letter(counter),
+        Some("upperLetter") => letter(counter).to_ascii_uppercase(),
+        Some("lowerRoman") => roman(counter).to_ascii_lowercase(),
+        Some("upperRoman") => roman(counter),
+        Some("decimalZero") => format!("{counter:02}"),
+        _ => counter.to_string(),
+    }
 }
 
 /// The `start` value for `(numId, ilvl)`, defaulting to 1.
@@ -2115,8 +2240,12 @@ fn get_list_counter(
 
 /// Build a list item's marker from its `lvlText` template — docling's
 /// `_build_enum_marker`. A template with literal text (e.g. `Proposal %1:`) has
-/// its `%N` placeholders substituted; a bare numeric template (`%1.%2.`) falls
-/// back to the hierarchical `1.2.` form joining `counter[0..=ilvl]`.
+/// its `%N` placeholders substituted; so does one on a letter / roman /
+/// `decimalZero` level even when it holds only placeholders and punctuation
+/// (`%2)` → `a)`, docling#4087 — before that guard such levels fell through
+/// to `1.a.`). A bare numeric template (`%1.%2.`) on a decimal level falls
+/// back to the hierarchical `1.2.` form joining `counter[0..=ilvl]`; every
+/// counter is rendered with its own level's `numFmt`.
 fn build_enum_marker(
     counters: &HashMap<(String, i64), i64>,
     num_levels: &HashMap<(String, i64), NumLevel>,
@@ -2129,6 +2258,11 @@ fn build_enum_marker(
             .copied()
             .unwrap_or_else(|| level_start(num_levels, num_id, lvl))
     };
+    let fmt_at = |lvl: i64| -> Option<&str> {
+        num_levels
+            .get(&(num_id.to_string(), lvl))
+            .and_then(|l| l.num_fmt.as_deref())
+    };
     let lvl_text = num_levels
         .get(&(num_id.to_string(), ilvl))
         .map(|l| l.lvl_text.as_str())
@@ -2137,23 +2271,40 @@ fn build_enum_marker(
     if re_placeholder.is_match(lvl_text) {
         let stripped: String = re_placeholder.replace_all(lvl_text, "").into_owned();
         let stripped = stripped.trim_matches(|c: char| " .)(:[]".contains(c));
-        if !stripped.is_empty() {
+        if !stripped.is_empty() || is_non_decimal_format(fmt_at(ilvl)) {
             return re_placeholder
                 .replace_all(lvl_text, |caps: &regex::Captures| {
                     let lvl_idx: i64 = caps[1].parse::<i64>().unwrap_or(1) - 1;
-                    counter_at(lvl_idx).to_string()
+                    format_enum_counter(counter_at(lvl_idx), fmt_at(lvl_idx))
                 })
                 .into_owned();
         }
     }
-    let parts: Vec<String> = (0..=ilvl).map(|lvl| counter_at(lvl).to_string()).collect();
+    let parts: Vec<String> = (0..=ilvl)
+        .map(|lvl| format_enum_counter(counter_at(lvl), fmt_at(lvl)))
+        .collect();
     parts.join(".") + "."
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{block_comment_slots, heading_label_level};
+    use super::{block_comment_slots, format_enum_counter, heading_label_level};
     use std::collections::HashMap;
+
+    /// docling's `_format_enum_counter`: letters wrap by repetition (aa, bb),
+    /// roman numerals in either case, `decimalZero` pads to two digits.
+    #[test]
+    fn enum_counters_follow_num_fmt() {
+        assert_eq!(format_enum_counter(1, Some("lowerLetter")), "a");
+        assert_eq!(format_enum_counter(26, Some("lowerLetter")), "z");
+        assert_eq!(format_enum_counter(27, Some("upperLetter")), "AA");
+        assert_eq!(format_enum_counter(4, Some("lowerRoman")), "iv");
+        assert_eq!(format_enum_counter(1994, Some("upperRoman")), "MCMXCIV");
+        assert_eq!(format_enum_counter(7, Some("decimalZero")), "07");
+        assert_eq!(format_enum_counter(7, Some("decimal")), "7");
+        assert_eq!(format_enum_counter(7, None), "7");
+        assert_eq!(format_enum_counter(0, Some("lowerLetter")), "0");
+    }
 
     /// A comment range that opens in one paragraph and closes in a later one
     /// annotates every paragraph in between; `w:commentReference` alone (Word's
