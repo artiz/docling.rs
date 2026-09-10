@@ -79,6 +79,16 @@ fn walk(reference: &Value, root: &Value, level: u8, doc: &mut DoclingDocument) {
     let kind = ref_kind(reference);
     if kind.starts_with("#/texts/") {
         text_item(item, level, doc);
+        // docling nests a section's content under its heading (and a list
+        // item's sub-list under the item), so a text item's `children` are
+        // body content too — without this walk a document collapses to its
+        // first heading. Tables and pictures are not recursed: their children
+        // are rich-cell / caption items already rendered with the parent.
+        if let Some(children) = item["children"].as_array() {
+            for c in children {
+                walk(c, root, level, doc);
+            }
+        }
     } else if kind.starts_with("#/groups/") {
         group_item(item, root, level, doc);
     } else if kind.starts_with("#/tables/") {
@@ -291,6 +301,35 @@ fn push_captions(item: &Value, root: &Value, doc: &mut DoclingDocument) {
 mod tests {
     use super::*;
     use crate::format::InputFormat;
+
+    /// docling ≥ 2.5x nests body content under its `section_header`; the
+    /// nested items must be walked, not dropped with the heading's subtree.
+    #[test]
+    fn walks_children_nested_under_headings() {
+        let json = r##"{
+          "name": "n", "body": {"children": [{"$ref":"#/texts/0"}]},
+          "texts": [
+            {"self_ref":"#/texts/0","label":"section_header","level":1,"text":"Intro",
+             "children":[{"$ref":"#/texts/1"},{"$ref":"#/texts/2"}]},
+            {"self_ref":"#/texts/1","label":"text","text":"First para","children":[]},
+            {"self_ref":"#/texts/2","label":"section_header","level":2,"text":"Sub",
+             "children":[{"$ref":"#/texts/3"}]},
+            {"self_ref":"#/texts/3","label":"text","text":"Deep para","children":[]}
+          ],
+          "groups": [], "tables": [], "pictures": []
+        }"##;
+        let doc = DoclingJsonBackend
+            .convert(&SourceDocument::from_bytes(
+                "t.json",
+                InputFormat::JsonDocling,
+                json.as_bytes().to_vec(),
+            ))
+            .unwrap();
+        assert_eq!(
+            doc.export_to_markdown(),
+            "## Intro\n\nFirst para\n\n### Sub\n\nDeep para\n"
+        );
+    }
 
     #[test]
     fn walks_body_tree_with_formatting_and_lists() {
