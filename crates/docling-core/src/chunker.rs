@@ -480,6 +480,12 @@ impl Walker<'_> {
                 }
                 self.emit_inline(text, self_ref);
             }
+            // A standalone caption chunks like any text item (docling's chunker
+            // does not treat `caption` specially outside a table/picture).
+            Node::Caption { text, .. } => {
+                let self_ref = self.alloc.text();
+                self.emit_inline(text, self_ref);
+            }
             Node::CheckboxItem { checked, text } => {
                 let self_ref = self.alloc.text();
                 let mark = if *checked { "- [x] " } else { "- [ ] " };

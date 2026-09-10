@@ -452,10 +452,7 @@ fn render_list_run(items: &[Node], blocks: &mut Vec<String>, strict: bool) {
         } else {
             "-".to_string()
         };
-        lines.push(format!(
-            "{indent}{marker} {}",
-            md_line_breaks(&strict_text(text, strict))
-        ));
+        lines.push(format!("{indent}{marker} {}", list_item_text(text, strict)));
         prev[level] = Some((*ordered, *number));
     }
 
@@ -464,6 +461,39 @@ fn render_list_run(items: &[Node], blocks: &mut Vec<String>, strict: bool) {
     if !lines.is_empty() {
         blocks.push(lines.join("\n"));
     }
+}
+
+/// A list item's Markdown body. The GFM hard-line-break rule (docling-core#721)
+/// applies to the item's own text; pictures the HTML backend folded into the
+/// item (`"\n[alt\n]<!-- image -->"` per `<img>` inside the `<li>`) are
+/// docling's picture *children* of the item, which its serializer prints after
+/// the item line with plain newlines — so a folded tail keeps its newlines
+/// unmarked. The tail is recognised structurally: every line after the first is
+/// an image marker or an alt caption directly followed by one.
+fn list_item_text(text: &str, strict: bool) -> String {
+    let escaped = strict_text(text, strict);
+    if let Some((own, tail)) = escaped.split_once('\n') {
+        if is_folded_picture_tail(tail) {
+            return format!("{}\n{tail}", md_line_breaks(own));
+        }
+    }
+    md_line_breaks(&escaped)
+}
+
+fn is_folded_picture_tail(tail: &str) -> bool {
+    const MARKER: &str = "<!-- image -->";
+    let mut lines = tail.split('\n').peekable();
+    let mut any = false;
+    while let Some(line) = lines.next() {
+        if line == MARKER {
+            any = true;
+        } else if lines.next() == Some(MARKER) {
+            any = true; // an alt caption line, then its marker
+        } else {
+            return false;
+        }
+    }
+    any
 }
 
 fn render_one(node: &Node, blocks: &mut Vec<String>, ctx: &mut Ctx) {
@@ -482,6 +512,16 @@ fn render_one(node: &Node, blocks: &mut Vec<String>, ctx: &mut Ctx) {
         // nothing to Markdown — only DocLang/JSON keep it.
         Node::Paragraph { text } if text.is_empty() => {}
         Node::Paragraph { text } => blocks.push(md_line_breaks(&strict_text(text, ctx.strict))),
+        // A standalone caption item renders like a text item; its hyperlink
+        // annotation becomes a Markdown link around the whole caption.
+        Node::Caption { text, .. } if text.is_empty() => {}
+        Node::Caption { text, href } => {
+            let body = md_line_breaks(&strict_text(text, ctx.strict));
+            blocks.push(match href {
+                Some(url) => format!("[{body}]({url})"),
+                None => body,
+            });
+        }
         Node::CheckboxItem { checked, text } => {
             let mark = if *checked { "- [x] " } else { "- [ ] " };
             blocks.push(md_line_breaks(&strict_text(
@@ -976,6 +1016,25 @@ mod tests {
         assert_eq!(
             doc.export_to_markdown_with(true),
             "[AI &amp; ML](https://a/) here, and [issues](https://first/) here, then [issues](https://second/) there.\n"
+        );
+    }
+
+    /// Pictures the HTML backend folds into a list item print after the item
+    /// line with plain newlines; a `<br>` newline in the item's own text is
+    /// still a GFM hard line break.
+    #[test]
+    fn folded_list_item_pictures_keep_plain_newlines() {
+        assert_eq!(
+            list_item_text("Step\n<!-- image -->", false),
+            "Step\n<!-- image -->"
+        );
+        assert_eq!(
+            list_item_text("Step\nAlt text\n<!-- image -->\n<!-- image -->", false),
+            "Step\nAlt text\n<!-- image -->\n<!-- image -->"
+        );
+        assert_eq!(
+            list_item_text("line one\nline two", false),
+            "line one  \nline two"
         );
     }
 

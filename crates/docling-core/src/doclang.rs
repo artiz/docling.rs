@@ -880,6 +880,10 @@ fn emit_nodes(out: &mut Out, depth: i32, nodes: &[Node], i: &mut usize, level: u
                 }
                 *i += 1;
             }
+            Node::Caption { text, href } => {
+                emit_caption(out, depth, text, href.as_deref());
+                *i += 1;
+            }
             Node::CheckboxItem { checked, text } => {
                 // A `<text>` with a `<checkbox class="selected|unselected"/>` head
                 // element and the label text child (block form).

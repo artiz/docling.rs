@@ -85,6 +85,9 @@ struct Seg {
     formula: bool,
     text: String,
     fmt: Fmt,
+    /// External link target inherited from an enclosing `<ext-link>`
+    /// (docling#4029); runs coalesce only when formatting *and* link match.
+    hyperlink: Option<String>,
 }
 
 /// Tags that, inside a `<p>`, flush the accumulated paragraph text before they
@@ -145,7 +148,7 @@ impl DeclarativeBackend for JatsBackend {
         let mut hlevel: i32 = 0;
         for tag in ["body", "back"] {
             if let Some(node) = dom.descendants().find(|n| n.has_tag_name(tag)) {
-                walk_linear(node, false, Fmt::default(), &mut hlevel, &mut doc);
+                walk_linear(node, false, Fmt::default(), None, &mut hlevel, &mut doc);
             }
         }
         Ok(doc)
@@ -259,8 +262,26 @@ fn node_text(node: XmlNode) -> String {
     normalize(&s)
 }
 
+/// Collapse runs of ASCII whitespace to one space and trim the ends — what
+/// docling's `_get_text(...).strip()` amounts to on clean JATS sources. Only
+/// *ASCII* whitespace collapses: a no-break space (`A. S. de\u{a0}Castro` in
+/// a citation) is content docling keeps verbatim, and Rust's
+/// `split_whitespace` would eat it.
 fn normalize(s: &str) -> String {
-    s.split_whitespace().collect::<Vec<_>>().join(" ")
+    let mut out = String::with_capacity(s.len());
+    let mut pending_space = false;
+    for c in s.trim().chars() {
+        if c.is_ascii_whitespace() {
+            pending_space = true;
+        } else {
+            if pending_space && !out.is_empty() {
+                out.push(' ');
+            }
+            pending_space = false;
+            out.push(c);
+        }
+    }
+    out
 }
 
 fn parse_title(dom: &Document) -> Option<String> {
@@ -468,6 +489,7 @@ fn walk_linear(
     node: XmlNode,
     parent_is_list: bool,
     fmt: Fmt,
+    hyperlink: Option<&str>,
     hlevel: &mut i32,
     doc: &mut DoclingDocument,
 ) -> Vec<Seg> {
@@ -475,10 +497,16 @@ fn walk_linear(
     // An emphasis tag (`<italic>`, `<bold>`, …) contributes its formatting to
     // every run beneath it (docling PR #3726); other tags leave it unchanged.
     let current = fmt.with_tag(node_tag);
+    // An `<ext-link xlink:href>` makes every run beneath it a hyperlink
+    // (docling#4029); a blank href keeps the enclosing link, if any.
+    let own_link = (node_tag == "ext-link")
+        .then(|| ext_link_href(node))
+        .flatten();
+    let current_link: Option<&str> = own_link.as_deref().or(hyperlink);
     let mut segments: Vec<Seg> = Vec::new();
     if node_tag != "term" {
         if let Some(t) = node.text() {
-            append_run(&mut segments, &t.replace('\n', " "), current);
+            append_run(&mut segments, &t.replace('\n', " "), current, current_link);
         }
     }
 
@@ -563,14 +591,18 @@ fn walk_linear(
             "inline-formula" => {
                 // Inline formula: the `<tex-math>` stays inline (unlike a block
                 // `<disp-formula>`), carrying any enclosing emphasis (#3726).
-                extend_segments(&mut segments, walk_inline_formula(child, current));
+                extend_segments(
+                    &mut segments,
+                    walk_inline_formula(child, current, current_link),
+                );
                 stop_walk = true;
             }
             _ => {}
         }
 
         if !stop_walk {
-            let child_segments = walk_linear(child, child_in_list, current, hlevel, doc);
+            let child_segments =
+                walk_linear(child, child_in_list, current, current_link, hlevel, doc);
             // Don't fold a flushed block's runs back into an enclosing paragraph.
             let parent_is_p = node.parent().map(|p| p.has_tag_name("p")).unwrap_or(false);
             if !(parent_is_p && FLUSH_TAGS.contains(&node_tag)) {
@@ -582,7 +614,12 @@ fn walk_linear(
         }
 
         if let Some(tail) = child.tail() {
-            append_run(&mut segments, &tail.replace('\n', " "), current);
+            append_run(
+                &mut segments,
+                &tail.replace('\n', " "),
+                current,
+                current_link,
+            );
         }
     }
 
@@ -597,11 +634,11 @@ fn walk_linear(
 /// Walk an `<inline-formula>`: recognize its `<tex-math>` as a formula run and
 /// keep every other text run inline, carrying `fmt` (docling's
 /// `_walk_inline_formula`).
-fn walk_inline_formula(node: XmlNode, fmt: Fmt) -> Vec<Seg> {
+fn walk_inline_formula(node: XmlNode, fmt: Fmt, hyperlink: Option<&str>) -> Vec<Seg> {
     let current = fmt.with_tag(node.tag_name().name());
     let mut segments = Vec::new();
     if let Some(t) = node.text() {
-        append_run(&mut segments, &t.replace('\n', " "), current);
+        append_run(&mut segments, &t.replace('\n', " "), current, hyperlink);
     }
     for child in node.children().filter(XmlNode::is_element) {
         if child.tag_name().name() == "tex-math" {
@@ -610,16 +647,33 @@ fn walk_inline_formula(node: XmlNode, fmt: Fmt) -> Vec<Seg> {
                     formula: true,
                     text: formula,
                     fmt: Fmt::default(),
+                    hyperlink: hyperlink.map(str::to_string),
                 });
             }
         } else {
-            extend_segments(&mut segments, walk_inline_formula(child, current));
+            extend_segments(
+                &mut segments,
+                walk_inline_formula(child, current, hyperlink),
+            );
         }
         if let Some(tail) = child.tail() {
-            append_run(&mut segments, &tail.replace('\n', " "), current);
+            append_run(&mut segments, &tail.replace('\n', " "), current, hyperlink);
         }
     }
     segments
+}
+
+/// The `xlink:href` of an `<ext-link>` (any namespace prefix), trimmed;
+/// `None` when absent or blank. URLs are normalized the way pydantic's
+/// `AnyUrl` serializes them (docling stores the parsed URL), so a bare
+/// `https://host` gains its trailing slash.
+fn ext_link_href(node: XmlNode) -> Option<String> {
+    let href = node
+        .attributes()
+        .find(|a| a.name() == "href")
+        .map(|a| a.value().trim())
+        .filter(|v| !v.is_empty())?;
+    Some(crate::backend::html::normalize_url(href))
 }
 
 /// The formula body of a `<tex-math>` — the text between `$$…$$` or `$…$`
@@ -640,12 +694,12 @@ fn extract_tex_math(node: XmlNode) -> Option<String> {
 /// Append a text run, coalescing into the previous run when the formatting
 /// matches (docling's `_append_run`). `\n` was already normalized to a space by
 /// the caller.
-fn append_run(segments: &mut Vec<Seg>, text: &str, fmt: Fmt) {
+fn append_run(segments: &mut Vec<Seg>, text: &str, fmt: Fmt, hyperlink: Option<&str>) {
     if text.is_empty() {
         return;
     }
     if let Some(last) = segments.last_mut() {
-        if !last.formula && last.fmt == fmt {
+        if !last.formula && last.fmt == fmt && last.hyperlink.as_deref() == hyperlink {
             last.text.push_str(text);
             return;
         }
@@ -654,6 +708,7 @@ fn append_run(segments: &mut Vec<Seg>, text: &str, fmt: Fmt) {
         formula: false,
         text: text.to_string(),
         fmt,
+        hyperlink: hyperlink.map(str::to_string),
     });
 }
 
@@ -664,7 +719,7 @@ fn extend_segments(segments: &mut Vec<Seg>, more: Vec<Seg>) {
         if seg.formula {
             segments.push(seg);
         } else {
-            append_run(segments, &seg.text, seg.fmt);
+            append_run(segments, &seg.text, seg.fmt, seg.hyperlink.as_deref());
         }
     }
 }
@@ -727,6 +782,9 @@ fn seg_markdown(s: &Seg) -> String {
     if s.fmt.strike {
         out = format!("~~{out}~~");
     }
+    if let Some(url) = &s.hyperlink {
+        out = format!("[{out}]({url})");
+    }
     out
 }
 
@@ -775,12 +833,16 @@ fn add_list_item(doc: &mut DoclingDocument, item: XmlNode, level: u8) {
 }
 
 /// A `<disp-formula>`'s `<tex-math>` child (`…$$formula$$…`) → a `$$…$$` block.
+/// A block `<tex-math>` → a formula item holding the LaTeX body (docling's
+/// `_add_equation`: `add_text(label=FORMULA, text=formula)`). Emitted as
+/// [`Node::Formula`] so Markdown prints `$$…$$` verbatim — a multi-line body
+/// keeps its newlines, the GFM hard-line-break rule applies to text items only.
 fn add_equation(doc: &mut DoclingDocument, node: XmlNode) {
-    let Some(math) = node.text() else { return };
-    let parts: Vec<&str> = math.split("$$").collect();
-    if parts.len() == 3 {
-        doc.push(Node::Paragraph {
-            text: format!("$${}$$", parts[1]),
+    if let Some(formula) = extract_tex_math(node) {
+        doc.push(Node::Formula {
+            orig: formula.clone(),
+            latex: formula,
+            location: None,
         });
     }
 }
@@ -1181,6 +1243,47 @@ fn rstrip_dot_space(s: &mut String) {
 mod tests {
     use super::*;
     use crate::format::InputFormat;
+
+    /// docling#4029: `<ext-link xlink:href>` makes its runs hyperlinks —
+    /// rendered `[text](url)` and never coalesced with the unlinked text
+    /// around them; a no-break space in a citation survives; a block
+    /// `<tex-math>` is a formula item whose newlines stay unmarked.
+    #[test]
+    fn ext_links_nbsp_and_display_formulas() {
+        let xml = r#"<article xmlns:xlink="http://www.w3.org/1999/xlink"><front><article-meta>
+            <title-group><article-title>T</article-title></title-group>
+          </article-meta></front>
+          <body><sec><title>S</title>
+            <p>See RRID: <ext-link ext-link-type="uri" xlink:href="https://scicrunch.org/resolver/AB_1">AB_1</ext-link> here.</p>
+            <p>Plain <ext-link xlink:href="  ">blank</ext-link> link.</p>
+            <disp-formula><tex-math><![CDATA[$$\begin{eqnarray}
+a=b
+\end{eqnarray}$$]]></tex-math></disp-formula>
+          </sec></body>
+          <back><ref-list><title>References</title>
+            <ref><mixed-citation>A. S. de&#xa0;Castro, Phys. Lett. A. 346 (2005).</mixed-citation></ref>
+          </ref-list></back></article>"#;
+        let src = SourceDocument::from_bytes("p", InputFormat::XmlJats, xml.as_bytes().to_vec());
+        let doc = JatsBackend.convert(&src).unwrap();
+        let md = doc.export_to_markdown();
+        assert!(
+            md.contains("See RRID: [AB\\_1](https://scicrunch.org/resolver/AB_1) here."),
+            "{md}"
+        );
+        assert!(
+            md.contains("Plain blank link."),
+            "blank href → no link: {md}"
+        );
+        assert!(
+            md.contains("$$\\begin{eqnarray}\na=b\n\\end{eqnarray}$$"),
+            "{md}"
+        );
+        assert!(md.contains("A. S. de\u{a0}Castro"), "{md}");
+        assert!(doc
+            .nodes
+            .iter()
+            .any(|n| matches!(n, Node::Formula { latex, .. } if latex.starts_with("\\begin"))));
+    }
 
     #[test]
     fn metadata_and_sections() {

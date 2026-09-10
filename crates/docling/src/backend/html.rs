@@ -468,19 +468,86 @@ fn handle_block(
             }
         }
         "figure" => {
-            // docling's figure handler keys off the first `<img>`: a figure
-            // without one (e.g. a `<video>` thumb) emits nothing — not even its
-            // `<figcaption>`.
-            if has_descendant(elem, "img") {
-                nodes.push(Node::Picture {
-                    caption: figure_caption(elem),
-                    // docling annotates the caption item with the first link
-                    // *inside the figcaption* (`find_parent_annotation`); the
-                    // caption text itself stays plain.
-                    caption_href: figcaption_href(elem),
-                    image: figure_img_src(elem).and_then(|s| images.resolve(&s)),
-                    classification: None,
-                });
+            // docling#4050: every child except the `<figcaption>` is dispatched
+            // (an `<img>` becomes a picture, block tags go through the block
+            // handler, inline content accumulates as text), and the caption is
+            // resolved afterwards — every picture the figure produced takes the
+            // figcaption as its caption (docling's `_emit_image` looks up the
+            // enclosing figure's figcaption); when no picture came out, the
+            // figcaption becomes a caption item of its own, attached to the
+            // figure's first item when that is a table (`TableItem.captions`).
+            let start = nodes.len();
+            let cap_text = figcaption_text(elem);
+            let cap_href = figcaption_href(elem);
+            let mut inline = RunBuf::default();
+            for child in elem.children() {
+                match child.value() {
+                    HtmlNode::Text(text) => {
+                        let run = normalize_ws(text);
+                        if !run.is_empty() {
+                            inline.md.push(serialize_run(&run, base, None));
+                            inline.push_rich(base.to_inline_run(&run));
+                        }
+                    }
+                    HtmlNode::Element(e) => {
+                        let Some(cref) = ElementRef::wrap(child) else {
+                            continue;
+                        };
+                        let name = e.name();
+                        if name == "figcaption" || is_skipped(name) || is_hidden(e) {
+                            continue;
+                        }
+                        if name == "img" {
+                            flush_inline(&mut inline, nodes);
+                            nodes.push(Node::Picture {
+                                caption: e
+                                    .attr("alt")
+                                    .filter(|a| !a.is_empty())
+                                    .map(str::to_string),
+                                caption_href: None,
+                                image: img_src(e).and_then(|s| images.resolve(&s)),
+                                classification: None,
+                            });
+                        } else if is_block(name) {
+                            flush_inline(&mut inline, nodes);
+                            handle_block(cref, name, nodes, list_level, base, images);
+                        } else if has_descendant(cref, "img") || contains_block(cref) {
+                            flush_inline(&mut inline, nodes);
+                            walk_block(cref, nodes, list_level, tag_fmt(name, base), images);
+                        } else {
+                            collect_element(cref, base, None, &mut inline);
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            flush_inline(&mut inline, nodes);
+            let produced = &mut nodes[start..];
+            let mut any_picture = false;
+            for node in produced.iter_mut() {
+                if let Node::Picture {
+                    caption,
+                    caption_href,
+                    ..
+                } = node
+                {
+                    any_picture = true;
+                    if cap_text.is_some() {
+                        *caption = cap_text.clone();
+                        *caption_href = cap_href.clone();
+                    }
+                }
+            }
+            if !any_picture {
+                if let Some(text) = cap_text {
+                    match produced.first_mut() {
+                        Some(Node::Table(table)) => table.caption = Some(text),
+                        _ => nodes.push(Node::Caption {
+                            text,
+                            href: cap_href,
+                        }),
+                    }
+                }
             }
         }
         "hr" => {}
@@ -1212,7 +1279,7 @@ fn collect_element(elem: ElementRef, fmt: Fmt, hyperlink: Option<&str>, runs: &m
 /// Normalize an absolute `http(s)` URL the way docling's `pydantic.AnyUrl` does:
 /// a bare scheme + host (no path) gets a trailing slash. Other URLs (relative
 /// paths, fragments) are left as-is.
-fn normalize_url(href: &str) -> String {
+pub(crate) fn normalize_url(href: &str) -> String {
     if let Some(rest) = href
         .strip_prefix("https://")
         .or_else(|| href.strip_prefix("http://"))
@@ -1673,6 +1740,7 @@ fn figcaption_href(fig: ElementRef) -> Option<String> {
 }
 
 /// The image URL of a `<figure>`'s first `<img>`, for image extraction.
+#[allow(dead_code)]
 fn figure_img_src(fig: ElementRef) -> Option<String> {
     fig.select(cached_selector!("img"))
         .next()
@@ -1779,30 +1847,24 @@ fn cell_richness(cell: ElementRef) -> (usize, bool) {
     (count, markup)
 }
 
-fn figure_caption(fig: ElementRef) -> Option<String> {
-    if let Some(cap) = fig.select(cached_selector!("figcaption")).next() {
-        // A figure caption is plain text (formatting/links are stripped), but
-        // docling's `to_single_text_element` builds it per source text node:
-        // each fragment is stripped and the fragments are joined with single
-        // spaces — so tag boundaries always yield a space ("a b ." for
-        // `a <a>b</a>.`, "[ 49 ]" for a cite's `[`/`49`/`]` spans).
-        let mut parts: Vec<String> = Vec::new();
-        for t in cap.text() {
-            let frag = normalize_ws(t);
-            if !frag.is_empty() {
-                parts.push(frag);
-            }
-        }
-        let text = parts.join(" ");
-        if !text.is_empty() {
-            return Some(text);
+/// The plain text of a `<figure>`'s `<figcaption>` (docling's caption
+/// `to_single_text_element`); `None` without a figcaption or when it is blank.
+fn figcaption_text(fig: ElementRef) -> Option<String> {
+    let cap = fig.select(cached_selector!("figcaption")).next()?;
+    // A figure caption is plain text (formatting/links are stripped), but
+    // docling's `to_single_text_element` builds it per source text node:
+    // each fragment is stripped and the fragments are joined with single
+    // spaces — so tag boundaries always yield a space ("a b ." for
+    // `a <a>b</a>.`, "[ 49 ]" for a cite's `[`/`49`/`]` spans).
+    let mut parts: Vec<String> = Vec::new();
+    for t in cap.text() {
+        let frag = normalize_ws(t);
+        if !frag.is_empty() {
+            parts.push(frag);
         }
     }
-    fig.select(cached_selector!("img"))
-        .next()
-        .and_then(|img| img.value().attr("alt"))
-        .filter(|a| !a.is_empty())
-        .map(str::to_string)
+    let text = parts.join(" ");
+    (!text.is_empty()).then_some(text)
 }
 
 /// Sanitize typographic Unicode to ASCII (docling's HTML text cleanup) and
@@ -1926,6 +1988,48 @@ mod tests {
     fn convert(html: &str) -> DoclingDocument {
         let src = SourceDocument::from_bytes("t", InputFormat::Html, html.as_bytes().to_vec());
         HtmlBackend.convert(&src).unwrap()
+    }
+
+    /// docling#4050: a `<figure>` wrapping a table gets its `<figcaption>` as
+    /// the table's caption; one wrapping plain blocks emits the blocks and a
+    /// standalone caption item; one with an `<img>` keeps the picture caption.
+    #[test]
+    fn figures_dispatch_children_and_attach_captions() {
+        let doc = convert(
+            r#"<html><body>
+            <figure><table><tr><th>A</th><th>B</th></tr><tr><td>1</td><td>2</td></tr></table>
+              <figcaption>Table cap <a href="https://x.y/z">link</a></figcaption></figure>
+            <figure><p>Just text</p><figcaption><a href="/w/M">Mallard</a></figcaption></figure>
+            <figure><img src="a.png" alt="alt"><figcaption>Img cap</figcaption></figure>
+            </body></html>"#,
+        );
+        let mut tables = 0;
+        for n in &doc.nodes {
+            match n {
+                Node::Table(t) => {
+                    tables += 1;
+                    assert_eq!(t.caption.as_deref(), Some("Table cap link"));
+                }
+                Node::Picture { caption, .. } => {
+                    assert_eq!(caption.as_deref(), Some("Img cap"));
+                }
+                _ => {}
+            }
+        }
+        assert_eq!(tables, 1);
+        assert!(doc.nodes.iter().any(|n| matches!(
+            n,
+            Node::Caption { text, href: Some(h) } if text == "Mallard" && h == "/w/M"
+        )));
+        let md = doc.export_to_markdown();
+        assert!(
+            md.contains("Table cap link\n\n|   A |   B |"),
+            "caption precedes the grid: {md}"
+        );
+        assert!(
+            md.contains("Just text\n\n[Mallard](/w/M)\n\nImg cap\n\n<!-- image -->"),
+            "{md}"
+        );
     }
 
     /// #284: an *unclosed* inline tag (here `<a name>` + `<b>`) legally
