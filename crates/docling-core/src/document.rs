@@ -571,6 +571,57 @@ impl Table {
         cells
     }
 
+    /// The number of leading grid rows that form the column header —
+    /// docling-core's `_count_header_rows` (docling-core#723, 2.96) shared by
+    /// the Markdown serializer and the chunker's dataframe view: a row counts
+    /// only when a `column_header` cell *starts* on it (a header spanning
+    /// several rows is replicated into each row it covers, and counting those
+    /// would pull the data rows beneath it into the header block). Two
+    /// special cases: `1` when no cell carries the flag at all, so tables from
+    /// backends that never set it keep row 0 as the header; `0` when flags
+    /// exist but none starts on row 0 — then nothing is promotable and every
+    /// row stays in the body. Uses the first-class [`Self::cells`] when
+    /// present (the PDF pipeline's TableFormer flags), else the cells derived
+    /// from the structure overlay.
+    ///
+    /// One deliberate deviation: a row on which a *non-header* cell with text
+    /// also starts does not extend the header block. docling's HTML backend
+    /// flags every `<th>` as `column_header`, row headers included, so a pivot
+    /// table's `<th rowspan>2025</th>` makes upstream fold the first data row
+    /// into the header (`Year - 2025 | Month - January | …`); here that row
+    /// stays data. Rows made only of header cells (and empty corners) behave
+    /// exactly as upstream.
+    pub fn header_row_count(&self) -> usize {
+        if self.rows.is_empty() {
+            return 0;
+        }
+        let derived;
+        let cells: &[TableCell] = match &self.cells {
+            Some(c) if !c.is_empty() => c,
+            _ => {
+                derived = self.derive_cells();
+                &derived
+            }
+        };
+        if !cells.iter().any(|c| c.column_header) {
+            return 1;
+        }
+        (0..self.rows.len())
+            .take_while(|&r| {
+                let starts = cells.iter().filter(|c| c.start_row == r);
+                let mut any_header = false;
+                for c in starts {
+                    if c.column_header {
+                        any_header = true;
+                    } else if !c.text.trim().is_empty() {
+                        return false;
+                    }
+                }
+                any_header
+            })
+            .count()
+    }
+
     /// The first-class cell covering a grid position, if any.
     pub fn cell_at(&self, row: usize, col: usize) -> Option<&TableCell> {
         self.cells.as_ref()?.iter().find(|c| {

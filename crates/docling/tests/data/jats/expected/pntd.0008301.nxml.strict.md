@@ -128,18 +128,17 @@ Sensitivity analyses were conducted using the same model with different subsets 
 
 Table 2 Adjusted risk ratios for pre-TAS failure from log-binomial model sensitivity analysis.
 
-|                                             |                  | (1)                        | (2)                      | (3)                                  | (4)                             |
-|---------------------------------------------|------------------|----------------------------|--------------------------|--------------------------------------|---------------------------------|
-|                                             | Full Model       | Without Cameroon districts | Only districts in Africa | Only W. bancrofti parasite districts | Only Anopheles vector districts |
-| Number of Failures                          | 74               | 74                         | 44                       | 72                                   | 46                              |
-| Number of total districts                   | (N = 554)        | (N = 420)                  | (N = 407)                | (N = 518)                            | (N = 414)                       |
-| Covariate                                   | RR (95% CI)      | RR (95% CI)                | RR (95% CI)              | RR (95% CI)                          | RR (95% CI)                     |
-| Baseline prevalence > = 10% & used FTS test | 2.38 (0.96–5.90) | 1.23 (0.52–2.92)           | 14.52 (1.79–117.82)      | 2.61 (1.03–6.61)                     | 15.80 (1.95–127.67)             |
-| Baseline prevalence > = 10% & used ICT test | 0.80 (0.20–3.24) | 0.42 (0.11–1.68)           | 1.00 (0.00–0.00)         | 0.88 (0.21–3.60)                     | 1.00 (0.00–0.00)                |
-| +Used FTS test                              | 1.16 (0.52–2.59) | 2.40 (1.12–5.11)           | 0.15 (0.02–1.11)         | 1.03 (0.45–2.36)                     | 0.13 (0.02–0.96)                |
-| +Used ICT test                              | 0.92 (0.32–2.67) | 1.47 (0.51–4.21)           | 0.33 (0.04–2.54)         | 0.82 (0.28–2.43)                     | 0.27 (0.03–2.04)                |
-| +Baseline prevalence > = 10%                | 2.52 (1.37–4.64) | 2.42 (1.31–4.47)           | 2.03 (1.06–3.90)         | 2.30 (1.21–4.36)                     | 2.01 (1.07–3.77)                |
-| Elevation < 350m                            | 3.07 (1.95–4.83) | 2.21 (1.42–3.43)           | 4.68 (2.22–9.87)         | 3.04 (1.93–4.79)                     | 3.76 (1.92–7.37)                |
+|                                             | Full Model       | (1) - Without Cameroon districts   | (2) - Only districts in Africa   | (3) - Only W. bancrofti parasite districts   | (4) - Only Anopheles vector districts   |
+|---------------------------------------------|------------------|------------------------------------|----------------------------------|----------------------------------------------|-----------------------------------------|
+| Number of Failures                          | 74               | 74                                 | 44                               | 72                                           | 46                                      |
+| Number of total districts                   | (N = 554)        | (N = 420)                          | (N = 407)                        | (N = 518)                                    | (N = 414)                               |
+| Covariate                                   | RR (95% CI)      | RR (95% CI)                        | RR (95% CI)                      | RR (95% CI)                                  | RR (95% CI)                             |
+| Baseline prevalence > = 10% & used FTS test | 2.38 (0.96–5.90) | 1.23 (0.52–2.92)                   | 14.52 (1.79–117.82)              | 2.61 (1.03–6.61)                             | 15.80 (1.95–127.67)                     |
+| Baseline prevalence > = 10% & used ICT test | 0.80 (0.20–3.24) | 0.42 (0.11–1.68)                   | 1.00 (0.00–0.00)                 | 0.88 (0.21–3.60)                             | 1.00 (0.00–0.00)                        |
+| +Used FTS test                              | 1.16 (0.52–2.59) | 2.40 (1.12–5.11)                   | 0.15 (0.02–1.11)                 | 1.03 (0.45–2.36)                             | 0.13 (0.02–0.96)                        |
+| +Used ICT test                              | 0.92 (0.32–2.67) | 1.47 (0.51–4.21)                   | 0.33 (0.04–2.54)                 | 0.82 (0.28–2.43)                             | 0.27 (0.03–2.04)                        |
+| +Baseline prevalence > = 10%                | 2.52 (1.37–4.64) | 2.42 (1.31–4.47)                   | 2.03 (1.06–3.90)                 | 2.30 (1.21–4.36)                             | 2.01 (1.07–3.77)                        |
+| Elevation < 350m                            | 3.07 (1.95–4.83) | 2.21 (1.42–3.43)                   | 4.68 (2.22–9.87)                 | 3.04 (1.93–4.79)                             | 3.76 (1.92–7.37)                        |
 
 Overall 74 districts in the dataset failed pre-TAS. Fig 5 summarizes the likelihood of failure by variable combinations identified in the log-binomial model. For those districts with a baseline prevalence ≥10% that used a FTS diagnostic test and have an average elevation below 350 meters (Combination C01), 87% of the 23 districts failed. Of districts with high baseline that used an ICT diagnostic test and have a low average elevation (C02) 45% failed. Overall, combinations with high baseline and low elevation C01, C02, and C04 accounted for 51% of all the failures (38 of 74).
 

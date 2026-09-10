@@ -745,48 +745,24 @@ fn triplet_table_text(t: &Table) -> String {
             .unwrap_or("")
     };
 
-    // Whether a cell is a column-header cell, resolving span continuations to
-    // their origin (docling's grid replicates the spanning cell, so a header
-    // spilling into the next row makes that row a header row too).
-    let cell_is_header = |r: usize, c: usize| -> bool {
-        let (mut r, mut c) = (r, c);
-        loop {
-            match &t.structure {
-                Some(s) if !s.col_header.is_empty() => {
-                    return s
-                        .col_header
-                        .get(r)
-                        .and_then(|row| row.get(c))
-                        .copied()
-                        .unwrap_or(false)
-                }
-                Some(s) => {
-                    let cont = |g: &Vec<Vec<bool>>| {
-                        g.get(r)
-                            .and_then(|row| row.get(c))
-                            .copied()
-                            .unwrap_or(false)
-                    };
-                    if r > 0 && cont(&s.row_continuation) {
-                        r -= 1;
-                        continue;
-                    }
-                    if c > 0 && cont(&s.col_continuation) {
-                        c -= 1;
-                        continue;
-                    }
-                    return if s.header_row.is_empty() {
-                        r == 0
-                    } else {
-                        s.header_row.get(r).copied().unwrap_or(false)
-                    };
-                }
-                None => return r == 0,
+    // The header block is the leading run of rows on which a column-header
+    // cell *starts* (docling-core#756): the grid replicates a spanning header
+    // into every row it covers, and the rows beneath it are data, not more
+    // header. Unlike the Markdown serializer there is no "no flags -> row 0"
+    // fallback here: pandas then gets integer column names.
+    let num_headers = {
+        let derived;
+        let cells: &[crate::TableCell] = match &t.cells {
+            Some(c) if !c.is_empty() => c,
+            _ => {
+                derived = t.derive_cells();
+                &derived
             }
-        }
+        };
+        (0..num_rows)
+            .take_while(|&r| cells.iter().any(|c| c.column_header && c.start_row == r))
+            .count()
     };
-    let row_is_header = |r: usize| (0..num_cols).any(|c| cell_is_header(r, c));
-    let num_headers = (0..num_rows).take_while(|r| row_is_header(*r)).count();
 
     // Column names: header-row texts joined per column with '.', or the integer
     // positions when there are no header rows.

@@ -659,7 +659,9 @@ fn ext_for(mimetype: &str) -> &str {
 ///   the padded serializer.
 ///
 /// Each cell is first escaped (`\n` → space, `|` → `&#124;`) so it can't break the
-/// table. Row 0 is the header.
+/// table. The header row is the table's leading `column_header` block flattened
+/// to one row ([`Table::header_row_count`] + [`flatten_header_rows`],
+/// docling-core#723); alignment and widths are computed over the body rows.
 /// Whether a table cell counts as a number for column alignment, matching
 /// `tabulate`'s detection: an ordinary float/int (`f64`-parseable, covering
 /// `1e2`/`inf`/`+1.5`) **or** a thousands-separated number like `7,015`.
@@ -715,6 +717,29 @@ fn is_thousands_number(t: &str) -> bool {
     i == b.len()
 }
 
+/// The single GFM header row for a table: the leading header rows (see
+/// [`Table::header_row_count`]) flattened per column, texts joined with
+/// `" - "` after dropping consecutive duplicates — docling-core's
+/// `_flatten_header_rows` (docling-core#723). The duplicate rule is what
+/// keeps a row-spanning header from being joined to itself (the grid repeats
+/// its text into every row it covers); it is position-based, so two stacked
+/// levels sharing a label collapse too — GFM has one header row, and upstream
+/// accepts that loss. No header rows → one empty header cell per column.
+fn flatten_header_rows(header_rows: &[Vec<String>], num_cols: usize) -> Vec<String> {
+    (0..num_cols)
+        .map(|c| {
+            let mut parts: Vec<&str> = Vec::new();
+            for row in header_rows {
+                let text = row.get(c).map(String::as_str).unwrap_or("");
+                if !text.is_empty() && parts.last() != Some(&text) {
+                    parts.push(text);
+                }
+            }
+            parts.join(" - ")
+        })
+        .collect()
+}
+
 pub(crate) fn render_table(table: &Table, compact: bool) -> String {
     if table.rows.is_empty() {
         return String::new();
@@ -724,52 +749,52 @@ pub(crate) fn render_table(table: &Table, compact: bool) -> String {
         return String::new();
     }
 
-    // Escaped, rectangular grid (ragged rows padded with empty cells). `tabulate`
-    // strips data cells of surrounding whitespace but leaves the header row as-is.
-    let grid: Vec<Vec<String>> = table
-        .rows
-        .iter()
-        .enumerate()
-        .map(|(r, row)| {
-            (0..num_cols)
-                .map(|c| {
-                    let cell = escape_cell(row.get(c).map(String::as_str).unwrap_or(""));
-                    if r == 0 {
-                        cell
-                    } else {
-                        cell.trim().to_string()
-                    }
-                })
+    // Escaped, rectangular grid (ragged rows padded with empty cells). The
+    // header block is resolved to the one row GFM allows (docling-core#723);
+    // `tabulate` strips data cells of surrounding whitespace but leaves the
+    // header texts as-is.
+    let num_headers = table.header_row_count().min(table.rows.len());
+    let escaped = |r: usize| -> Vec<String> {
+        (0..num_cols)
+            .map(|c| escape_cell(table.rows[r].get(c).map(String::as_str).unwrap_or("")))
+            .collect()
+    };
+    let header_rows: Vec<Vec<String>> = (0..num_headers).map(escaped).collect();
+    let header = flatten_header_rows(&header_rows, num_cols);
+    let body: Vec<Vec<String>> = (num_headers..table.rows.len())
+        .map(|r| {
+            escaped(r)
+                .into_iter()
+                .map(|c| c.trim().to_string())
                 .collect()
         })
         .collect();
 
     if compact {
         // Compact: cells joined by " | ", no padding, single-dash separators.
-        let render_row = |r: usize| -> String { format!("| {} |", grid[r].join(" | ")) };
-        let mut lines = Vec::with_capacity(grid.len() + 1);
-        lines.push(render_row(0));
+        let render_row = |row: &[String]| -> String { format!("| {} |", row.join(" | ")) };
+        let mut lines = Vec::with_capacity(body.len() + 2);
+        lines.push(render_row(&header));
         let sep: Vec<&str> = (0..num_cols).map(|_| "-").collect();
         lines.push(format!("| {} |", sep.join(" | ")));
-        for r in 1..grid.len() {
-            lines.push(render_row(r));
+        for row in &body {
+            lines.push(render_row(row));
         }
         return lines.join("\n");
     }
 
     // Display width (Unicode scalar count — good enough for now).
     let dw = |s: &str| s.chars().count();
-    let data_rows = 1..grid.len();
 
-    // A column is right-aligned when at least one data cell is numeric and every
-    // non-empty data cell is numeric — matching `tabulate`'s column typing, where
+    // A column is right-aligned when at least one body cell is numeric and every
+    // non-empty body cell is numeric — matching `tabulate`'s column typing, where
     // empty cells are "missing" (ignored) and a number may carry thousands
     // separators (`7,015`), which a plain `f64` parse rejects.
     let right: Vec<bool> = (0..num_cols)
         .map(|c| {
             let mut any = false;
-            for r in data_rows.clone() {
-                let t = grid[r][c].trim();
+            for row in &body {
+                let t = row[c].trim();
                 if t.is_empty() {
                     continue;
                 }
@@ -782,12 +807,12 @@ pub(crate) fn render_table(table: &Table, compact: bool) -> String {
         })
         .collect();
 
-    // Column width = max(header_width + MIN_PADDING(2), max data-cell width).
+    // Column width = max(header_width + MIN_PADDING(2), max body-cell width).
     let width: Vec<usize> = (0..num_cols)
         .map(|c| {
-            let mut w = dw(&grid[0][c]) + 2;
-            for r in data_rows.clone() {
-                w = w.max(dw(&grid[r][c]));
+            let mut w = dw(&header[c]) + 2;
+            for row in &body {
+                w = w.max(dw(&row[c]));
             }
             w
         })
@@ -802,17 +827,17 @@ pub(crate) fn render_table(table: &Table, compact: bool) -> String {
         };
         format!(" {body} ")
     };
-    let render_row = |r: usize| -> String {
-        let cells: Vec<String> = (0..num_cols).map(|c| fmt_cell(&grid[r][c], c)).collect();
+    let render_row = |row: &[String]| -> String {
+        let cells: Vec<String> = (0..num_cols).map(|c| fmt_cell(&row[c], c)).collect();
         format!("|{}|", cells.join("|"))
     };
 
-    let mut lines = Vec::with_capacity(grid.len() + 1);
-    lines.push(render_row(0));
+    let mut lines = Vec::with_capacity(body.len() + 2);
+    lines.push(render_row(&header));
     let sep: Vec<String> = (0..num_cols).map(|c| "-".repeat(width[c] + 2)).collect();
     lines.push(format!("|{}|", sep.join("|")));
-    for r in data_rows {
-        lines.push(render_row(r));
+    for row in &body {
+        lines.push(render_row(row));
     }
     lines.join("\n")
 }
@@ -826,7 +851,7 @@ fn escape_cell(s: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::PictureImage;
+    use crate::{PictureImage, TableCell, TableStructure};
 
     #[test]
     fn renders_headings_paragraphs_and_lists() {
@@ -952,6 +977,142 @@ mod tests {
             doc.export_to_markdown_with(true),
             "[AI &amp; ML](https://a/) here, and [issues](https://first/) here, then [issues](https://second/) there.\n"
         );
+    }
+
+    /// docling-core#723: the header block is the leading run of rows on which a
+    /// `column_header` cell starts, flattened per column with " - ".
+    #[test]
+    fn stacked_header_rows_flatten_into_one() {
+        let mut t = Table {
+            rows: vec![
+                vec!["".into(), "% of Total".into(), "% of Total".into()],
+                vec!["class".into(), "Train".into(), "Test".into()],
+                vec!["Caption".into(), "2.04".into(), "1.77".into()],
+            ],
+            ..Default::default()
+        };
+        t.structure = Some(TableStructure {
+            header_row: vec![true, true, false],
+            col_continuation: vec![
+                vec![false, false, true],
+                vec![false, false, false],
+                vec![false, false, false],
+            ],
+            ..Default::default()
+        });
+        assert_eq!(t.header_row_count(), 2);
+        assert_eq!(
+            render_table(&t, true),
+            "| class | % of Total - Train | % of Total - Test |\n| - | - | - |\n| Caption | 2.04 | 1.77 |"
+        );
+        // padded: widths from the flattened header, alignment from body rows
+        assert_eq!(
+            render_table(&t, false),
+            "| class   |   % of Total - Train |   % of Total - Test |\n\
+             |---------|----------------------|---------------------|\n\
+             | Caption |                 2.04 |                1.77 |"
+        );
+    }
+
+    /// A header spanning two rows is repeated into the second row by the grid;
+    /// that row is not a header row unless another header cell starts there.
+    #[test]
+    fn vertically_spanning_header_does_not_extend_the_block() {
+        let mut t = Table {
+            rows: vec![
+                vec!["Name".into(), "Value".into()],
+                vec!["Name".into(), "1".into()],
+                vec!["x".into(), "2".into()],
+            ],
+            ..Default::default()
+        };
+        t.structure = Some(TableStructure {
+            col_header: vec![vec![true, true], vec![true, false], vec![false, false]],
+            row_continuation: vec![vec![false, false], vec![true, false], vec![false, false]],
+            ..Default::default()
+        });
+        assert_eq!(t.header_row_count(), 1);
+        assert_eq!(
+            render_table(&t, true),
+            "| Name | Value |\n| - | - |\n| Name | 1 |\n| x | 2 |"
+        );
+    }
+
+    /// Flags that begin on a later row promote nothing: every row stays in the
+    /// body under an empty header row (tabulate's `headers=["", ""]`).
+    #[test]
+    fn header_flags_not_on_row_zero_keep_all_rows_in_the_body() {
+        let mut t = Table {
+            rows: vec![
+                vec!["1".into(), "2".into()],
+                vec!["a".into(), "b".into()],
+                vec!["333".into(), "4".into()],
+            ],
+            ..Default::default()
+        };
+        t.structure = Some(TableStructure {
+            header_row: vec![false, true, false],
+            ..Default::default()
+        });
+        assert_eq!(t.header_row_count(), 0);
+        assert_eq!(
+            render_table(&t, false),
+            "|     |    |\n|-----|----|\n| 1   | 2  |\n| a   | b  |\n| 333 | 4  |"
+        );
+    }
+
+    /// A pivot table's row headers (`<th rowspan>`) are flagged `column_header`
+    /// by docling's HTML backend; a row where data cells start alongside them
+    /// stays in the body (deliberate deviation from docling-core#723, which
+    /// folds `2025 | January | $134` into the header row).
+    #[test]
+    fn row_headers_beside_data_cells_do_not_extend_the_header() {
+        let mut t = Table {
+            rows: vec![
+                vec!["Year".into(), "Month".into()],
+                vec!["2025".into(), "January".into()],
+                vec!["2025".into(), "February".into()],
+            ],
+            ..Default::default()
+        };
+        t.structure = Some(TableStructure {
+            col_header: vec![vec![true, true], vec![true, false], vec![true, false]],
+            row_continuation: vec![vec![false, false], vec![false, false], vec![true, false]],
+            ..Default::default()
+        });
+        assert_eq!(t.header_row_count(), 1);
+        assert_eq!(
+            render_table(&t, true),
+            "| Year | Month |\n| - | - |\n| 2025 | January |\n| 2025 | February |"
+        );
+    }
+
+    /// No `column_header` anywhere (first-class cells without flags) → row 0
+    /// stays the header, as before.
+    #[test]
+    fn unflagged_cells_keep_row_zero_as_header() {
+        let mut t = Table {
+            rows: vec![vec!["h".into()], vec!["d".into()]],
+            ..Default::default()
+        };
+        t.cells = Some(
+            [(0usize, "h"), (1, "d")]
+                .into_iter()
+                .map(|(r, text)| TableCell {
+                    text: text.into(),
+                    bbox: None,
+                    start_row: r,
+                    start_col: 0,
+                    row_span: 1,
+                    col_span: 1,
+                    column_header: false,
+                    row_header: false,
+                    row_section: false,
+                })
+                .collect(),
+        );
+        assert_eq!(t.header_row_count(), 1);
+        assert_eq!(render_table(&t, true), "| h |\n| - |\n| d |");
     }
 
     #[test]
