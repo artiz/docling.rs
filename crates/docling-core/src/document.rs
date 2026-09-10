@@ -590,7 +590,7 @@ impl Table {
     /// table's `<th rowspan>2025</th>` makes upstream fold the first data row
     /// into the header (`Year - 2025 | Month - January | …`); here that row
     /// stays data. Rows made only of header cells (and empty corners) behave
-    /// exactly as upstream.
+    /// exactly as upstream. Reported upstream as docling-core#765.
     pub fn header_row_count(&self) -> usize {
         if self.rows.is_empty() {
             return 0;
