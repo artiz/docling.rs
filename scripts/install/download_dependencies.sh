@@ -52,6 +52,7 @@
 # docs/PDF_CONFORMANCE.md — ~2.4x faster layout inference at unchanged conformance):
 #   .models/layout_heron_int8.onnx
 #   .models/tableformer/decoder_int8.onnx
+#   .models/tableformer/encoder_fp16.onnx   (fp16-weight repack, fp32 compute; #374)
 # The pipeline picks these up automatically when they sit next to the fp32
 # files (no env vars needed); set DOCLING_RS_FP32=1 at runtime to force full
 # precision, or skip fetching them entirely with --no-int8. If the release
@@ -345,6 +346,9 @@ if [ "$WITH_INT8" = true ]; then
   fetch_optional "$BASE_URL/decoder_int8.onnx" .models/tableformer/decoder_int8.onnx
   fetch_optional "$BASE_URL/decoder_kv_int8.onnx" .models/tableformer/decoder_kv_int8.onnx
   fetch_optional "$BASE_URL/decoder_kv_int8.onnx.data" .models/tableformer/decoder_kv_int8.onnx.data
+  # fp16-weight repack of the TableFormer encoder (#374): fp32 compute, half
+  # the download; preferred when present, DOCLING_RS_FP32=1 opts out.
+  fetch_optional "$BASE_URL/encoder_fp16.onnx" .models/tableformer/encoder_fp16.onnx
   if [ -f .models/layout_heron_int8.onnx ]; then
     echo "int8 models present — used by default (DOCLING_RS_FP32=1 forces full precision)"
   else

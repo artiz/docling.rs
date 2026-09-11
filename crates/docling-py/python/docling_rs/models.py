@@ -62,6 +62,9 @@ _OPTIONAL = {
     "decoder_kv.onnx": "models/tableformer/decoder_kv.onnx",
     "decoder_kv.onnx.data": "models/tableformer/decoder_kv.onnx.data",
     "decoder_kv_int8.onnx": "models/tableformer/decoder_kv_int8.onnx",
+    # fp16-weight repack of the TableFormer encoder (#374): fp32 compute,
+    # half the download; the Rust pipeline prefers it unless fp32 is forced.
+    "encoder_fp16.onnx": "models/tableformer/encoder_fp16.onnx",
     # DocumentFigureClassifier-v2.5 (~17 MB) for do_picture_classification;
     # missing file just skips the enrichment with a one-time warning.
     "picture_classifier.onnx": "models/picture_classifier.onnx",
@@ -332,11 +335,12 @@ def ensure_env(dest: "str | Path | None" = None) -> Path:
     # to ch_; re-run download_models() to fetch it). The per-file vars stay
     # honored when the caller sets them — that is the pin-any-model hatch.
     _point_at("DOCLING_RS_MODELS_DIR", [".models"], m)
-    _point_at(
-        "DOCLING_TABLEFORMER_ENCODER",
-        _local(["models/tableformer/encoder.onnx"]),
-        m / "tableformer/encoder.onnx",
-    )
+    # Encoder: the fp16-weight repack (#374 — fp32 compute, half the download)
+    # ranks ahead of the fp32 file unless full precision is forced, mirroring
+    # tableformer.rs.
+    enc_chain = ["tableformer/encoder.onnx"] if fp32 else ["tableformer/encoder_fp16.onnx", "tableformer/encoder.onnx"]
+    encoder = next((p for rel in enc_chain if (p := m / rel).exists()), m / "tableformer/encoder.onnx")
+    _point_at("DOCLING_TABLEFORMER_ENCODER", _local([f"models/{rel}" for rel in enc_chain]), encoder)
     _point_at(
         "DOCLING_TABLEFORMER_BBOX",
         _local(["models/tableformer/bbox.onnx"]),

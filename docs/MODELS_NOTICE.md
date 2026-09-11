@@ -10,7 +10,7 @@ tokenizer). All are licensed separately from docling.rs's own MIT code (see
 | Model | Source | License |
 |---|---|---|
 | RT-DETR layout model (`layout_heron.onnx`) | [`docling-project/docling-layout-heron`](https://huggingface.co/docling-project/docling-layout-heron) | Apache-2.0 |
-| TableFormer (`tableformer/{encoder,decoder,bbox}.onnx`) | [`docling-project/docling-models`](https://huggingface.co/docling-project/docling-models) (`model_artifacts/tableformer/accurate`) | CDLA-Permissive-2.0 / Apache-2.0 |
+| TableFormer (`tableformer/{encoder,decoder,bbox}.onnx`; `encoder_fp16.onnx` is the same export with fp16-stored weights, `*_int8` post-training quantizations) | [`docling-project/docling-models`](https://huggingface.co/docling-project/docling-models) (`model_artifacts/tableformer/accurate`) | CDLA-Permissive-2.0 / Apache-2.0 |
 | DocumentFigureClassifier (`picture_classifier.onnx`) | [`docling-project/DocumentFigureClassifier-v2.5`](https://huggingface.co/docling-project/DocumentFigureClassifier-v2.5) (upstream's own ONNX, re-hosted unmodified) | Apache-2.0 |
 | CodeFormulaV2 (`cf_{vision,embed,decoder_kv}.onnx` + `cf_tokenizer.json`; `cf_decoder_kv_int8.onnx` is a post-training quantization of the same export) | [`docling-project/CodeFormulaV2`](https://huggingface.co/docling-project/CodeFormulaV2) | Apache-2.0 |
 | PP-OCRv3 recognition model + dictionary, multilingual (`ocr_rec.onnx`, `ppocr_keys_v1.txt`) | [PaddleOCR](https://github.com/PaddlePaddle/PaddleOCR)'s `ch_PP-OCRv3_rec_infer`, taken as the ready ONNX conversion re-hosted by [`SWHL/RapidOCR`](https://huggingface.co/SWHL/RapidOCR) (unmodified) | Apache-2.0 |

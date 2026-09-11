@@ -92,9 +92,23 @@ function homeDir(dir) {
  * `PDFIUM_DYNAMIC_LIB_PATH` environment variable wins (so a local Python export
  * is honored), else the path under the install home directory.
  */
+// `DOCLING_RS_FP32` truthiness, docling_core::env::flag's rule (anything but
+// empty / 0 / false / no / off).
+function fp32Forced() {
+  const v = (process.env.DOCLING_RS_FP32 || '').trim().toLowerCase()
+  return !['', '0', 'false', 'no', 'off'].includes(v)
+}
+
+// The first existing candidate, else the last one (the fp32 default, whose
+// absence the readiness check then reports).
+function firstExisting(candidates) {
+  return candidates.find((p) => fs.existsSync(p)) || candidates[candidates.length - 1]
+}
+
 function resolvePaths(dir) {
   const { home, dotModels } = homeDir(dir)
   const models = path.join(home, dotModels ? '.models' : 'models')
+  const tf = (name) => path.join(models, 'tableformer', name)
 
   const pdfiumLibDir = process.env.PDFIUM_DYNAMIC_LIB_PATH || path.join(home, '.pdfium', 'lib')
   return {
@@ -105,8 +119,12 @@ function resolvePaths(dir) {
     layout: process.env.DOCLING_LAYOUT_ONNX || path.join(models, 'layout_heron.onnx'),
     ocrRec: process.env.DOCLING_OCR_REC_ONNX || path.join(models, 'ocr_rec.onnx'),
     ocrDict: process.env.DOCLING_OCR_DICT || path.join(models, 'ppocr_keys_v1.txt'),
+    // The fp16-weight encoder repack (#374; fp32 compute, half the download)
+    // ranks ahead of the fp32 file, like the Rust pipeline's own chain,
+    // unless full precision is forced.
     tfEncoder:
-      process.env.DOCLING_TABLEFORMER_ENCODER || path.join(models, 'tableformer', 'encoder.onnx'),
+      process.env.DOCLING_TABLEFORMER_ENCODER ||
+      firstExisting(fp32Forced() ? [tf('encoder.onnx')] : [tf('encoder_fp16.onnx'), tf('encoder.onnx')]),
     tfDecoder:
       process.env.DOCLING_TABLEFORMER_DECODER || path.join(models, 'tableformer', 'decoder.onnx'),
     tfBbox: process.env.DOCLING_TABLEFORMER_BBOX || path.join(models, 'tableformer', 'bbox.onnx'),

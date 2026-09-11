@@ -206,7 +206,7 @@ wasm output matching native — drift can only come from the runtime kernels.
 |---|---|---|
 | **1** — `ocr_image` | OCR a single scanned **image** | PP-OCRv3 recognition (~10 MB) |
 | **2** — `ScannedConverter` / `convert_scanned_image` | Scanned **PDF/image** → Markdown: layout + OCR + reading order, tables via geometric reconstruction | + RT-DETR layout (`layout_heron_int8.onnx`, ~68 MB) |
-| **3** — `ScannedConverter.addPageTf` | Real **TableFormer** table structure, on the tables that need it | + `tableformer/{encoder,decoder_kv,bbox}.onnx` (~380 MB) |
+| **3** — `ScannedConverter.addPageTf` | Real **TableFormer** table structure, on the tables that need it | + `tableformer/{encoder,decoder_kv,bbox}.onnx` (~260 MB; ~380 MB with the pre-#374 encoder) |
 
 Stage 3 is *selective*. TableFormer's encoder runs once per table region and
 costs seconds, so each table is first reconstructed geometrically (free, from
@@ -277,7 +277,7 @@ same-origin, from a CORS host, **or straight from files on your device**.
      images"* and select `layout_heron_int8.onnx` and, for TableFormer,
      `encoder.onnx`, `decoder_kv.onnx` (+`.data`), `bbox.onnx` (+`.data`). Each
      file is read to an `ArrayBuffer` on the client and used directly — no
-     download, and a single allocation per file (a 225 MB encoder over
+     download, and a single allocation per file (a 100+ MB encoder over
      `fetch` can OOM a mobile tab; a `File` read does not); or
    - **from a CORS mirror** — a Hugging Face model repo serves
      `Access-Control-Allow-Origin` (GitHub Release assets do not); point
@@ -358,7 +358,11 @@ renderer-only/sandboxed setups.
   browsers), and everything runs serially.
 - **int8.** The layout model is the conv-only static-INT8 export (~68 MB,
   ~2.4× faster than fp32 at unchanged conformance). The TableFormer **encoder
-  is fp32 (~225 MB) and runs once per table region** — it dominates wall time
+  is fp32 (~103 MB since #374 stripped the exporter's six baked zero
+  attention masks — the published 225 MB file was half `x + 0`; the stripped
+  graph is bit-identical; the native pipeline additionally prefers the 54 MB
+  `encoder_fp16.onnx` repack, byte-identical output on the snapshot corpus)
+  and runs once per table region** — it dominates wall time
   on mobile (a multi-table page can take minutes). An int8 encoder is *not* the
   easy win it looks like: it's a ResNet backbone (~20 Conv) feeding a 6-layer
   transformer, and the transformer Gemms — not the convs — are the cost.
@@ -368,7 +372,7 @@ renderer-only/sandboxed setups.
   cross-attention fidelity to ~0.85 (garbled structure) for no speed gain. So
   the encoder stays fp32; the real mobile levers are running heavy tables on a
   desktop and batching multi-table pages (below), not weight quantization.
-- **Where to run heavy tables.** TableFormer's 380 MB of models and per-region
+- **Where to run heavy tables.** TableFormer's ~260 MB of models and per-region
   encode make a desktop (more cores, more memory) far faster than a phone; the
   geometric table path (stage 2, no TableFormer) already captures all cell text
   and is the light option for mobile.

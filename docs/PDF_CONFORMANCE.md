@@ -767,6 +767,33 @@ models at the default paths, the pipeline loads them automatically.
 conformance/groundtruth scripts pin fp32 explicitly, so snapshots stay
 deterministic).
 
+#### TableFormer encoder: not quantized, but half its size (#374)
+
+The encoder is a ~20-Conv ResNet backbone feeding a 6-layer transformer, and
+the transformer Gemms — not the convs — are its cost. INT8 was measured and
+rejected: conv-only static QDQ keeps fidelity (enc_out / cross-K/V cosine
+≥ 0.995) but is not faster than ORT's fp32 conv kernels, and quantizing the
+attention MatMuls collapses cross-attention fidelity to ~0.85 (garbled table
+structure). What *was* wrong with the published 215 MiB `encoder.onnx` is
+exporter waste: the explicit all-false attention mask handed to the
+transformer encoder was materialized as a zero `[1,8,784,784]` fp32 constant
+(18.8 MiB) baked into each of the six layers — 112.6 MiB of `x + 0` around
+103 MiB of real weights (42.6 MiB Conv, 60 MiB MatMul/Gemm).
+`scripts/install/strip_zero_masks.py` (run by the export) removes those `Add`
+nodes; the stripped graph's outputs are bit-identical to the original's
+(onnxruntime, max |diff| = 0), so the republished encoder changes nothing but
+the download. On top of that, `encoder_fp16.onnx` (`quantize_models.py
+tableformer-encoder-fp16`) stores the same graph's weights as fp16 behind a
+`Cast` back to fp32 — ORT folds the cast at load, so compute, speed and
+memory are those of the fp32 encoder and only the file shrinks, 103 → 54 MB
+(4.2× below the original 226 MB). Fidelity gate on the 54 calibration inputs:
+cosine ≥ 0.999999, relative L2 error ≤ 1.5e-3 per output tensor; and over the
+full 101-file snapshot corpus the fp16 encoder's Markdown is **byte-identical**
+to the fp32 encoder's (same machine, same binary, `diff -rq` empty). It is
+therefore preferred when present, like the INT8 decoder; `DOCLING_RS_FP32=1`
+or an explicit `DOCLING_TABLEFORMER_ENCODER` keeps the fp32 file. INT8 for
+the encoder stays off the table.
+
 #### Layout: static QDQ INT8, **Conv ops only** (~2.4× faster layout)
 
 Calibrated on 42 real corpus pages preprocessed exactly like
