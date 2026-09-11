@@ -87,6 +87,7 @@ pub use ebcdic::EbcdicBackend;
 pub use email::EmailBackend;
 pub use epub::EpubBackend;
 pub(crate) use html::convert_html;
+pub(crate) use html::decode_html_bytes;
 pub use html::HtmlBackend;
 pub(crate) use images::{FsImageResolver, MapImageResolver, NoFetch};
 pub use interchange::InterchangeBackend;

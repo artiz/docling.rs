@@ -40,12 +40,74 @@ impl DeclarativeBackend for HtmlBackend {
         // The bare backend never fetches images (it's also how the Markdown
         // backend feeds in embedded raw HTML). Image fetching is wired through
         // the converter, which calls `convert_html` with a real resolver.
-        Ok(convert_html(&source.name, source.text()?, &NoFetch))
+        let html = decode_html_bytes(&source.bytes);
+        Ok(convert_html(&source.name, &html, &NoFetch))
     }
 }
 
 /// Convert an HTML document into a [`DoclingDocument`], resolving `<img>` sources
 /// through `images` (use [`NoFetch`] to leave every picture a placeholder).
+/// Decode raw HTML bytes the way docling reads them — BeautifulSoup's
+/// `UnicodeDammit` (#371): a byte-order mark wins; else the encoding the
+/// document declares (an XML declaration within the first 1024 bytes, else a
+/// `<meta charset>` / `http-equiv` charset within the first
+/// `max(2048, 5 % of the length)` bytes — bs4's search windows and regexes);
+/// else strict UTF-8; else windows-1252, which never fails. Each candidate is
+/// taken only when it decodes without error, as upstream does. The one step
+/// not reproduced is bs4's third-party detector (chardet / charset_normalizer),
+/// consulted between the declaration and the fallbacks: it is heuristic and
+/// version-dependent, and a UTF-8 or windows-1252 document — the realistic
+/// legacy inputs — never reaches it. Labels resolve through the WHATWG table
+/// (`encoding_rs`), so `iso-8859-1`/`latin1` decode as windows-1252 the way
+/// browsers do, where Python's codec would map 0x80–0x9F to C1 controls.
+pub(crate) fn decode_html_bytes(bytes: &[u8]) -> std::borrow::Cow<'_, str> {
+    use encoding_rs::{Encoding, WINDOWS_1252};
+    if let Some((enc, bom_len)) = Encoding::for_bom(bytes) {
+        if let Some(text) =
+            enc.decode_without_bom_handling_and_without_replacement(&bytes[bom_len..])
+        {
+            return text;
+        }
+    }
+    if let Some(label) = declared_encoding(bytes) {
+        if let Some(enc) = Encoding::for_label(label.as_bytes()) {
+            if let Some(text) = enc.decode_without_bom_handling_and_without_replacement(bytes) {
+                return text;
+            }
+        }
+    }
+    if let Ok(text) = std::str::from_utf8(bytes) {
+        return std::borrow::Cow::Borrowed(text);
+    }
+    WINDOWS_1252.decode_without_bom_handling(bytes).0
+}
+
+/// The encoding an HTML document declares, lowercased — bs4's
+/// `EncodingDetector.find_declared_encoding(is_html=True)`: the XML
+/// declaration's `encoding=` (searched in the first 1024 bytes), else the
+/// first `<meta … charset=…>` (searched in the first `max(2048, len/20)`
+/// bytes; the regex also covers `http-equiv` content-type declarations).
+fn declared_encoding(bytes: &[u8]) -> Option<String> {
+    use regex::bytes::Regex;
+    use std::sync::OnceLock;
+    static XML_RE: OnceLock<Regex> = OnceLock::new();
+    static META_RE: OnceLock<Regex> = OnceLock::new();
+    let xml_re = XML_RE.get_or_init(|| {
+        Regex::new(r#"(?i)^\s*<\?.*encoding=['"](.*?)['"].*\?>"#).expect("xml decl regex")
+    });
+    let meta_re = META_RE.get_or_init(|| {
+        Regex::new(r#"(?i)<\s*meta[^>]+charset\s*=\s*["']?([^>]*?)[ /;'">]"#).expect("meta regex")
+    });
+    let xml_end = bytes.len().min(1024);
+    let html_end = bytes.len().min(2048.max(bytes.len() / 20));
+    let found = xml_re
+        .captures(&bytes[..xml_end])
+        .or_else(|| meta_re.captures(&bytes[..html_end]))?;
+    let label = found.get(1)?.as_bytes();
+    let label = String::from_utf8_lossy(label).trim().to_ascii_lowercase();
+    (!label.is_empty()).then_some(label)
+}
+
 pub(crate) fn convert_html(name: &str, html: &str, images: &dyn ImageResolver) -> DoclingDocument {
     let mut doc = DoclingDocument::new(name);
     append_fragment(html, &mut doc.nodes, images);
@@ -1988,6 +2050,57 @@ mod tests {
     fn convert(html: &str) -> DoclingDocument {
         let src = SourceDocument::from_bytes("t", InputFormat::Html, html.as_bytes().to_vec());
         HtmlBackend.convert(&src).unwrap()
+    }
+
+    fn convert_bytes(html: &[u8]) -> DoclingDocument {
+        let src = SourceDocument::from_bytes("t", InputFormat::Html, html.to_vec());
+        HtmlBackend.convert(&src).unwrap()
+    }
+
+    /// #371: non-UTF-8 HTML decodes like docling's BeautifulSoup does —
+    /// windows-1252 fallback without a declaration, the declared `<meta
+    /// charset>` / `http-equiv` charset when present, a BOM first of all; a
+    /// declaration nobody knows falls through to UTF-8.
+    #[test]
+    fn non_utf8_html_decodes_like_beautifulsoup() {
+        let md = convert_bytes(b"<html><body><p>caf\xe9 \x93quoted\x94</p></body></html>")
+            .export_to_markdown();
+        // (the backend's text cleanup maps the curly quotes to ASCII, as docling's does)
+        assert!(md.contains("caf\u{e9} \"quoted\""), "{md}");
+
+        let md = convert_bytes(
+            b"<html><head><meta charset=\"windows-1251\"></head><body><p>\xcf\xf0\xe8\xe2\xe5\xf2</p></body></html>",
+        )
+        .export_to_markdown();
+        assert!(
+            md.contains("\u{41f}\u{440}\u{438}\u{432}\u{435}\u{442}"),
+            "{md}"
+        );
+
+        let md = convert_bytes(
+            b"<html><head><meta http-equiv=\"Content-Type\" content=\"text/html; charset=iso-8859-15\"></head><body><p>\xa4 5</p></body></html>",
+        )
+        .export_to_markdown();
+        assert!(md.contains("\u{20ac} 5"), "{md}");
+
+        let mut utf16 = vec![0xff, 0xfe];
+        for u in "<p>h\u{e9}</p>".encode_utf16() {
+            utf16.extend_from_slice(&u.to_le_bytes());
+        }
+        let md = convert_bytes(&utf16).export_to_markdown();
+        assert!(md.contains("h\u{e9}"), "{md}");
+
+        let md = convert_bytes(
+            "<html><head><meta charset=\"x-no-such-charset\"></head><body><p>na\u{ef}ve</p></body></html>"
+                .as_bytes(),
+        )
+        .export_to_markdown();
+        assert!(md.contains("na\u{ef}ve"), "{md}");
+
+        assert_eq!(
+            declared_encoding(b"<?xml version=\"1.0\" encoding=\"ISO-8859-2\"?><html/>").as_deref(),
+            Some("iso-8859-2")
+        );
     }
 
     /// docling#4050: a `<figure>` wrapping a table gets its `<figcaption>` as
