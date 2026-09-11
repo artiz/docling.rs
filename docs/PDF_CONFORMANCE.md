@@ -767,6 +767,26 @@ models at the default paths, the pipeline loads them automatically.
 conformance/groundtruth scripts pin fp32 explicitly, so snapshots stay
 deterministic).
 
+#### TableFormer encoder: not quantized, but half its size (#374)
+
+The encoder is a ~20-Conv ResNet backbone feeding a 6-layer transformer, and
+the transformer Gemms — not the convs — are its cost. INT8 was measured and
+rejected: conv-only static QDQ keeps fidelity (enc_out / cross-K/V cosine
+≥ 0.995) but is not faster than ORT's fp32 conv kernels, and quantizing the
+attention MatMuls collapses cross-attention fidelity to ~0.85 (garbled table
+structure). What *was* wrong with the published 215 MiB `encoder.onnx` is
+exporter waste: the explicit all-false attention mask handed to the
+transformer encoder was materialized as a zero `[1,8,784,784]` fp32 constant
+(18.8 MiB) baked into each of the six layers — 112.6 MiB of `x + 0` around
+103 MiB of real weights (42.6 MiB Conv, 60 MiB MatMul/Gemm).
+`scripts/install/strip_zero_masks.py` (run by the export) removes those `Add`
+nodes; the stripped graph's outputs are bit-identical to the original's
+(onnxruntime, max |diff| = 0), so the republished encoder changes nothing but
+the download. An fp16-weight / fp32-compute variant (~52 MiB, cosine 1.000000
+and max relative error 1.4e-3 against fp32 on synthetic input) is the next
+size lever if a package needs it; it would ship as a separate file behind the
+conformance gate, never as the default.
+
 #### Layout: static QDQ INT8, **Conv ops only** (~2.4× faster layout)
 
 Calibrated on 42 real corpus pages preprocessed exactly like

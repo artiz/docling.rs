@@ -9,7 +9,9 @@ We export three graphs and drive the loop from Rust:
   encoder.onnx : image[1,3,448,448]
                    -> cross_k/cross_v[L,1,H,784,head_dim], enc_out[1,28,28,512]
                  (the per-layer cross-attention K/V, projected from the image
-                  memory once so the decoder never re-projects it)
+                  memory once so the decoder never re-projects it; ~103 MiB
+                  once strip_zero_masks.py has dropped the exporter's baked
+                  zero attention masks, #374)
   decoder.onnx : tags[seq,1] + cross_k + cross_v + cache[L,past,1,512]
                    -> logits[1,V], hidden[1,512], out_cache[L,past+1,1,512]
                  (doubly-cached step: self-attn state cache + precomputed cross K/V;
@@ -390,6 +392,18 @@ torch.onnx.export(
     + [f"cross_v_{i}" for i in range(N_LAYERS)],
     opset_version=17, dynamo=False,
 )
+# The explicit all-false `mask` handed to `tt._encoder` (kept so the module
+# runs docling's own code path, not nn.TransformerEncoder's fused fast path)
+# is materialized by the legacy exporter as a float additive mask — a zero
+# [1,8,784,784] constant, 18.8 MiB, baked into every encoder layer: 112.6 MiB
+# of `x + 0` in a 215 MiB file whose real weights are 103 MiB (#374). Adding
+# zero is the identity, so the dead Adds are dropped here; the ORT check below
+# then verifies the stripped graph against the PyTorch outputs like before.
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from strip_zero_masks import strip_zero_mask_adds  # noqa: E402
+
+_removed, _freed = strip_zero_mask_adds(f"{OUT}/encoder.onnx")
+print(f"encoder.onnx: stripped {_removed} zero-mask Add nodes ({_freed / 2**20:.1f} MiB)")
 tags = torch.full((3, 1), start, dtype=torch.long)
 cache0 = torch.zeros((N_LAYERS, 2, 1, EMBED_DIM))  # trace with past>0 → symbolic
 with torch.no_grad():
