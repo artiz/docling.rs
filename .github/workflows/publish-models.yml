@@ -112,6 +112,15 @@ jobs:
         continue-on-error: true
         run: python scripts/install/quantize_models.py tableformer-decoder
 
+      # fp16-weight repack of the encoder (#374): a size lever, not a
+      # quantization — fp32 compute, ~half the download. Self-gated on the
+      # calibration pages (deletes its output on a fidelity miss, so the
+      # release simply ships without it).
+      - name: Repack TableFormer encoder (fp16 weights)
+        if: steps.quant-deps.outcome == 'success' && steps.tf-export.outcome == 'success'
+        continue-on-error: true
+        run: python scripts/install/quantize_models.py tableformer-encoder-fp16
+
       # --- CodeFormula VLM (optional — the enrichment models are opt-in) ---
       # CodeFormulaV2 (Idefics3/SmolVLM-class, Apache-2.0) exported to the
       # three-graph ONNX set the Rust `--enrich-code`/`--enrich-formula`
@@ -200,6 +209,7 @@ jobs:
           stage .models/layout_heron.onnx layout_heron.onnx
           stage .models/layout_heron_int8.onnx layout_heron_int8.onnx
           stage .models/tableformer/encoder.onnx encoder.onnx
+          stage .models/tableformer/encoder_fp16.onnx encoder_fp16.onnx
           stage .models/tableformer/decoder.onnx decoder.onnx
           stage .models/tableformer/decoder_int8.onnx decoder_int8.onnx
           stage .models/tableformer/decoder_kv.onnx decoder_kv.onnx

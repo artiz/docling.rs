@@ -37,8 +37,25 @@ const N_LAYERS: usize = 6;
 /// measured, and it is byte-exact (its own int8 variant is not produced — see
 /// quantize_models.py).
 pub fn resolved_paths() -> (String, String, String) {
-    let enc = docling_core::env::nonempty("DOCLING_TABLEFORMER_ENCODER")
-        .unwrap_or_else(|| crate::resolve_asset(".models/tableformer/encoder.onnx"));
+    // The encoder ranks its fp16-weight repack (`encoder_fp16.onnx`, #374 —
+    // the same graph with the weights stored as fp16 and cast back to fp32
+    // at load, ~half the download, fp32 compute) ahead of the fp32 file
+    // unless `DOCLING_RS_FP32` opts out; an explicit override wins.
+    let enc = docling_core::env::nonempty("DOCLING_TABLEFORMER_ENCODER").unwrap_or_else(|| {
+        let candidates: &[&str] = if crate::prefer_fp32() {
+            &[".models/tableformer/encoder.onnx"]
+        } else {
+            &[
+                ".models/tableformer/encoder_fp16.onnx",
+                ".models/tableformer/encoder.onnx",
+            ]
+        };
+        candidates
+            .iter()
+            .map(|p| crate::resolve_asset(p))
+            .find(|p| std::path::Path::new(p).exists())
+            .unwrap_or_else(|| crate::resolve_asset(".models/tableformer/encoder.onnx"))
+    });
     let dec = docling_core::env::nonempty("DOCLING_TABLEFORMER_DECODER").unwrap_or_else(|| {
         let candidates: &[&str] = if crate::prefer_fp32() {
             &[

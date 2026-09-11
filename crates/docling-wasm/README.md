@@ -360,7 +360,9 @@ renderer-only/sandboxed setups.
   ~2.4× faster than fp32 at unchanged conformance). The TableFormer **encoder
   is fp32 (~103 MB since #374 stripped the exporter's six baked zero
   attention masks — the published 225 MB file was half `x + 0`; the stripped
-  graph is bit-identical) and runs once per table region** — it dominates wall time
+  graph is bit-identical; the native pipeline additionally prefers the 54 MB
+  `encoder_fp16.onnx` repack, byte-identical output on the snapshot corpus)
+  and runs once per table region** — it dominates wall time
   on mobile (a multi-table page can take minutes). An int8 encoder is *not* the
   easy win it looks like: it's a ResNet backbone (~20 Conv) feeding a 6-layer
   transformer, and the transformer Gemms — not the convs — are the cost.

@@ -19,6 +19,15 @@ docs/PDF_CONFORMANCE.md for the measured speed/quality numbers):
   stem convs stay fp32 (`stem_convs`), and activation ranges come from a
   per-page moving average (`CalibMovingAverage`).
 
+* **tableformer-encoder-fp16** — the TableFormer encoder with its weights
+  stored as fp16 and cast back to fp32 at load (`encoder_fp16.onnx`, #374).
+  Compute stays fp32, so this is a *size* lever (~103 → ~52 MiB after the
+  export's zero attention masks are stripped), not a speed one; the only
+  numeric change is fp16 rounding of the weights. Self-validates against the
+  fp32 encoder on the calibration pages (cross-K/V and enc_out cosine ≥
+  0.9999, relative L2 error ≤ 0.5 %) and deletes its output on failure; the real
+  gate is the PDF snapshot corpus (`scripts/conformance/pdf_conformance.sh`
+  with `DOCLING_TABLEFORMER_ENCODER` pointed at it).
 * **tableformer-decoder** — dynamic INT8 (weights-only MatMul) of the
   legacy autoregressive tag decoder (~10% faster than its fp32 file,
   78 -> 50 MB). Byte-exactness is quantizer-environment-sensitive:
@@ -72,9 +81,10 @@ CALIB = os.environ.get("DOCLING_RS_CALIBRATION_DIR")
 SIDE = 640  # layout model input side (layout.rs)
 
 
-def calibration_pages():
+def calibration_pages(side=SIDE):
     """Render up to 3 pages of every calibration PDF the way layout.rs
-    preprocesses: pdfium at scale 2.0, resize to 640x640 bilinear, /255, CHW
+    preprocesses: pdfium at scale 2.0, resize to `side`×`side` bilinear (640
+    for the layout model, 448 for the TableFormer encoder), /255, CHW
     float32."""
     import pypdfium2 as pdfium
     from PIL import Image
@@ -94,7 +104,7 @@ def calibration_pages():
             continue
         for i in range(min(3, len(doc))):
             bmp = doc[i].render(scale=2.0)
-            img = bmp.to_pil().convert("RGB").resize((SIDE, SIDE), Image.BILINEAR)
+            img = bmp.to_pil().convert("RGB").resize((side, side), Image.BILINEAR)
             arr = np.asarray(img, dtype=np.float32) / 255.0
             yield np.transpose(arr, (2, 0, 1))[None, ...]
         doc.close()
@@ -460,6 +470,101 @@ def quantize_tableformer_decoder():
         print(f"tableformer-decoder: done -> {dst} ({os.path.getsize(dst) / 1e6:.1f} MB)")
 
 
+def repack_tableformer_encoder_fp16():
+    """`encoder.onnx` → `encoder_fp16.onnx`: every fp32 weight tensor of at
+    least 4096 elements is stored as fp16 behind a `Cast(to=FLOAT)`, so ORT
+    folds it back to fp32 at session creation and the graph computes exactly
+    as before — only the file (and the download) shrinks, ~2×. Small tensors
+    (biases, LayerNorm scales) stay fp32: they cost nothing and their rounding
+    would be pure noise. The exporter's baked zero attention masks are
+    stripped first (strip_zero_masks.py), so the result is small even from a
+    pre-#374 encoder."""
+    import onnx
+    import onnxruntime as ort
+    from onnx import helper, numpy_helper
+
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    from strip_zero_masks import strip_zero_mask_adds
+
+    src = f"{MODELS}/tableformer/encoder.onnx"
+    dst = f"{MODELS}/tableformer/encoder_fp16.onnx"
+    if not os.path.exists(src):
+        sys.exit(f"tableformer-encoder-fp16: {src} not found")
+    removed, freed = strip_zero_mask_adds(src, dst)
+    if removed:
+        print(f"tableformer-encoder-fp16: stripped {removed} zero-mask Add(s), {freed / 2**20:.1f} MiB", flush=True)
+
+    MIN_ELEMS = 4096
+    model = onnx.load(dst)
+    g = model.graph
+    converted = 0
+    nodes = []
+    for n in g.node:
+        if n.op_type == "Constant":
+            attr = next((a for a in n.attribute if a.name == "value"), None)
+            if attr is not None and attr.t.data_type == onnx.TensorProto.FLOAT:
+                arr = numpy_helper.to_array(attr.t)
+                if arr.size >= MIN_ELEMS:
+                    half = n.output[0] + "_fp16"
+                    nodes.append(helper.make_node("Constant", [], [half], value=numpy_helper.from_array(arr.astype(np.float16), half)))
+                    nodes.append(helper.make_node("Cast", [half], [n.output[0]], to=onnx.TensorProto.FLOAT))
+                    converted += arr.nbytes // 2
+                    continue
+        nodes.append(n)
+    casts = []
+    for t in list(g.initializer):
+        if t.data_type == onnx.TensorProto.FLOAT:
+            arr = numpy_helper.to_array(t)
+            if arr.size >= MIN_ELEMS:
+                half = t.name + "_fp16"
+                g.initializer.remove(t)
+                g.initializer.append(numpy_helper.from_array(arr.astype(np.float16), half))
+                casts.append(helper.make_node("Cast", [half], [t.name], to=onnx.TensorProto.FLOAT))
+                converted += arr.nbytes // 2
+    del g.node[:]
+    g.node.extend(casts + nodes)
+    onnx.checker.check_model(model)
+    onnx.save(model, dst)
+    print(
+        f"tableformer-encoder-fp16: {converted / 2**20:.1f} MiB of weights halved -> {dst} "
+        f"({os.path.getsize(dst) / 1e6:.1f} MB vs {os.path.getsize(src) / 1e6:.1f} MB)",
+        flush=True,
+    )
+
+    # Fidelity gate against the fp32 encoder: the calibration pages resized
+    # to the encoder's 448×448 input plus two synthetic inputs. Cosine and
+    # relative error over every output (cross K/V per layer, enc_out).
+    so = ort.SessionOptions()
+    so.intra_op_num_threads = max(1, (os.cpu_count() or 2) // 2)
+    ref = ort.InferenceSession(src, so, providers=["CPUExecutionProvider"])
+    out = ort.InferenceSession(dst, so, providers=["CPUExecutionProvider"])
+    rng = np.random.default_rng(0)
+    inputs = [rng.standard_normal((1, 3, 448, 448), dtype=np.float32) for _ in range(2)]
+    inputs += list(calibration_pages(side=448))
+    # Gate on the relative L2 error per output tensor (‖a−b‖/‖a‖, the metric
+    # that tracks how far the decoder's attention inputs moved) plus cosine;
+    # the worst single element is reported for information only — fp16
+    # rounding of one weight can move one element of a 3.2M-element tensor
+    # by ~1 % of its range without the tensor moving at all.
+    min_cos, max_rel_l2, max_elem = 1.0, 0.0, 0.0
+    for x in inputs:
+        for a, b in zip(ref.run(None, {"image": x}), out.run(None, {"image": x})):
+            a = a.ravel().astype(np.float64)
+            b = b.ravel().astype(np.float64)
+            na = np.linalg.norm(a) + 1e-30
+            min_cos = min(min_cos, float(a @ b / (na * (np.linalg.norm(b) + 1e-30))))
+            max_rel_l2 = max(max_rel_l2, float(np.linalg.norm(a - b) / na))
+            max_elem = max(max_elem, float(np.abs(a - b).max() / (np.abs(a).max() + 1e-30)))
+    print(
+        f"tableformer-encoder-fp16: {len(inputs)} inputs, min cosine {min_cos:.6f}, "
+        f"max relative L2 error {max_rel_l2:.3g}, worst element {max_elem:.3g} of the tensor's range",
+        flush=True,
+    )
+    if min_cos < 0.9999 or max_rel_l2 > 0.005:
+        os.remove(dst)
+        sys.exit("tableformer-encoder-fp16: fidelity gate FAILED — output deleted")
+
+
 def quantize_code_formula_decoder():
     """Dynamic INT8 (weights-only MatMul) of the CodeFormulaV2 KV-cache decoder
     step — the autoregressive stage that dominates enrichment latency. Same
@@ -514,12 +619,15 @@ def main():
             validate_layout(f"{MODELS}/layout_heron.onnx", f"{MODELS}/layout_heron_int8.onnx")
         elif t == "tableformer-decoder":
             quantize_tableformer_decoder()
+        elif t == "tableformer-encoder-fp16":
+            repack_tableformer_encoder_fp16()
         elif t == "code-formula-decoder":
             quantize_code_formula_decoder()
         else:
             sys.exit(
                 f"unknown target {t!r} "
-                "(expected: layout, validate-layout, tableformer-decoder, code-formula-decoder)"
+                "(expected: layout, validate-layout, tableformer-decoder, "
+                "tableformer-encoder-fp16, code-formula-decoder)"
             )
 
 

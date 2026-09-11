@@ -782,10 +782,17 @@ transformer encoder was materialized as a zero `[1,8,784,784]` fp32 constant
 `scripts/install/strip_zero_masks.py` (run by the export) removes those `Add`
 nodes; the stripped graph's outputs are bit-identical to the original's
 (onnxruntime, max |diff| = 0), so the republished encoder changes nothing but
-the download. An fp16-weight / fp32-compute variant (~52 MiB, cosine 1.000000
-and max relative error 1.4e-3 against fp32 on synthetic input) is the next
-size lever if a package needs it; it would ship as a separate file behind the
-conformance gate, never as the default.
+the download. On top of that, `encoder_fp16.onnx` (`quantize_models.py
+tableformer-encoder-fp16`) stores the same graph's weights as fp16 behind a
+`Cast` back to fp32 — ORT folds the cast at load, so compute, speed and
+memory are those of the fp32 encoder and only the file shrinks, 103 → 54 MB
+(4.2× below the original 226 MB). Fidelity gate on the 54 calibration inputs:
+cosine ≥ 0.999999, relative L2 error ≤ 1.5e-3 per output tensor; and over the
+full 101-file snapshot corpus the fp16 encoder's Markdown is **byte-identical**
+to the fp32 encoder's (same machine, same binary, `diff -rq` empty). It is
+therefore preferred when present, like the INT8 decoder; `DOCLING_RS_FP32=1`
+or an explicit `DOCLING_TABLEFORMER_ENCODER` keeps the fp32 file. INT8 for
+the encoder stays off the table.
 
 #### Layout: static QDQ INT8, **Conv ops only** (~2.4× faster layout)
 
