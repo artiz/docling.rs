@@ -287,6 +287,13 @@ impl Builder {
                 parent,
                 json!({ "level": level.saturating_sub(1) }),
             )),
+            Node::Caption { text, href } => {
+                let extra = match href {
+                    Some(url) => json!({ "hyperlink": url }),
+                    None => json!({}),
+                };
+                Some(self.add_text("caption", text, parent, extra))
+            }
             Node::Paragraph { text } => {
                 // A whole-paragraph display equation is a formula item (docling
                 // wraps it in `$$…$$` and, unlike a text item, never escapes it).

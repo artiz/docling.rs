@@ -136,6 +136,14 @@ pub enum Node {
         orig: String,
         location: Option<[u16; 4]>,
     },
+    /// A standalone caption item (docling's `DocItemLabel.CAPTION` text that
+    /// no picture or table claims): the HTML backend emits a `<figure>`'s
+    /// `<figcaption>` this way when the figure produced no picture and its
+    /// first item is not a table (docling#4050). `href` is the caption's
+    /// hyperlink annotation (the first link inside the figcaption); Markdown
+    /// renders it as `[text](href)`, JSON puts `hyperlink` on the caption
+    /// item, DocLang emits the block-form `<caption>` with an `<href>` head.
+    Caption { text: String, href: Option<String> },
     /// A chart (docling's `PictureItem` classified as a chart, carrying a
     /// `PictureTabularChartData` annotation). Markdown and JSON render it exactly
     /// like a [`Node::Picture`] placeholder (an `<!-- image -->` / `picture`
