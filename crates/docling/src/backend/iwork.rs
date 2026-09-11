@@ -1109,7 +1109,11 @@ fn legacy_paragraphs(dom: &roxmltree::Document) -> Vec<(String, PagesLabel)> {
             let in_ghost = node
                 .ancestors()
                 .take_while(|a| *a != para)
-                .any(|a| is_sf(a, "ghost-text"));
+                // docling#4170: a template defines each placeholder once as
+                // `sf:ghost-text`; every later paragraph reusing it holds an
+                // `sf:ghost-text-ref` with its own inline copy of the text, so
+                // both are pruned.
+                .any(|a| is_sf(a, "ghost-text") || is_sf(a, "ghost-text-ref"));
             if !in_ghost {
                 text.push_str(node.text().unwrap_or(""));
             }

@@ -129,13 +129,19 @@ fn parse_cue(payload: &str) -> Vec<Vec<Comp>> {
     while k < chars.len() {
         match chars[k] {
             '<' => {
-                flush(&mut buf, &mut paras, bold, italic);
                 let mut j = k + 1;
                 while j < chars.len() && chars[j] != '>' {
                     j += 1;
                 }
                 let tag: String = chars[k + 1..j.min(chars.len())].iter().collect();
                 k = j + 1;
+                // A cue timestamp tag (`<00:00:00.389>`, karaoke timing) is
+                // stripped from the text without splitting the run around it
+                // (docling-core#744: `the<…> quick<…> brown` is one span).
+                if tag.starts_with(|c: char| c.is_ascii_digit()) {
+                    continue;
+                }
+                flush(&mut buf, &mut paras, bold, italic);
                 let closing = tag.starts_with('/');
                 let base: String = tag
                     .trim_start_matches('/')
@@ -178,6 +184,38 @@ mod tests {
     fn strips_voice_and_skips_notes() {
         let out = md("WEBVTT\n\nNOTE hi\n\n00:01.000 --> 00:02.000\n<v Roger>Hello world\n");
         assert_eq!(out.trim(), "Hello world");
+    }
+
+    /// docling#4105: a line terminator inside a voice span starts a new
+    /// paragraph, and the text after the span's end joins *that* paragraph —
+    /// upstream's items are `["Hello", "there", " and afterwards"]`.
+    #[test]
+    fn text_after_multiline_span_stays_in_reading_order() {
+        let out =
+            md("WEBVTT\n\n00:00:01.000 --> 00:00:05.000\n<v Bob>Hello\nthere</v> and afterwards\n");
+        assert_eq!(out.trim(), "Hello\n\nthere  and afterwards");
+    }
+
+    /// docling-core#744: karaoke cue timestamps (`<00:00:00.389>`) are stripped
+    /// without splitting the span — one run, `the quick brown`.
+    #[test]
+    fn cue_timestamp_tags_are_stripped_from_the_run() {
+        let out = md("WEBVTT\n\n00:00:00.030 --> 00:00:02.669\nthe<00:00:00.389> quick<00:00:00.750> brown\n");
+        assert_eq!(out.trim(), "the quick brown");
+    }
+
+    /// docling-core#749 / docling#4157: bare CR and CRLF line terminators are
+    /// valid WebVTT — signature, cue separation and payload all parse.
+    #[test]
+    fn cr_and_crlf_terminators_parse() {
+        assert_eq!(
+            md("WEBVTT\r\r00:00:00.000 --> 00:00:01.000\rHello world\r").trim(),
+            "Hello world"
+        );
+        assert_eq!(
+            md("WEBVTT\r\n\r\n00:00:00.000 --> 00:00:01.000\r\nHello\r\nworld\r\n").trim(),
+            "Hello\n\nworld"
+        );
     }
 
     #[test]

@@ -33,12 +33,13 @@
 //! the way upstream's `RichTableCell` does (a nested `itemize`, a nested
 //! `table`), newlines flattened to spaces.
 //!
-//! Deliberate deviations: upstream *raises* on a section header deeper than
+//! Deliberate deviation: upstream *raises* on a section header deeper than
 //! `\subsubsection`; a conversion should not fail on an `<h5>`, so those
-//! degrade to `\paragraph` / `\subparagraph`. And upstream's serializer emits
-//! the text of a formatted list item or heading *twice* (once inside
-//! `\item` / `\section{}`, then again as the inline group's own paragraph —
-//! docling-core#740); that duplication is not reproduced.
+//! degrade to `\paragraph` / `\subparagraph`. (Until docling-core 2.95 the
+//! upstream serializer also emitted the text of a formatted list item or
+//! heading *twice* — inside `\item` / `\section{}` and again as the inline
+//! group's own paragraph, docling-core#740; that was never reproduced here
+//! and docling-core#743 fixed it upstream, so the outputs agree again.)
 
 use crate::document::{DoclingDocument, FieldItem, Node, Table};
 

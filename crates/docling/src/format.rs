@@ -187,7 +187,9 @@ impl InputFormat {
             // `.xlsb` (binary Excel 2007+) parses through the same calamine
             // engine as xlsx — the backend detects the binary workbook part
             // and switches readers, issue #210.
-            "xlsx" | "xlsm" | "xlsb" => InputFormat::Xlsx,
+            // Excel templates (docling#4178, 2.126): the same OOXML package
+            // under the template content type.
+            "xlsx" | "xlsm" | "xlsb" | "xltx" | "xltm" => InputFormat::Xlsx,
             // Legacy binary Office (Word/Excel/PowerPoint 97–2003), issue #127.
             // Extension sets mirror docling's FormatToExtensions.
             "doc" | "dot" => InputFormat::Doc,

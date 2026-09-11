@@ -140,7 +140,9 @@ fn spine_files(opf: &str, opf_dir: &str) -> Result<Vec<String>, String> {
     let mut id_to_href = std::collections::HashMap::new();
     for item in dom.descendants().filter(|n| n.has_tag_name("item")) {
         if let (Some(id), Some(href)) = (item.attribute("id"), item.attribute("href")) {
-            id_to_href.insert(id.to_string(), href.to_string());
+            // A manifest href is a URL while the archive stores the literal
+            // file name, so percent-escapes are decoded here (docling#4199).
+            id_to_href.insert(id.to_string(), percent_decode(href));
         }
     }
     let mut files = Vec::new();
@@ -156,9 +158,58 @@ fn spine_files(opf: &str, opf_dir: &str) -> Result<Vec<String>, String> {
     Ok(files)
 }
 
+/// Decode `%XX` escapes (UTF-8 bytes) in a manifest href — `urllib.parse.unquote`
+/// for the escapes that matter to an archive path; a malformed escape is kept
+/// verbatim, and invalid UTF-8 is replaced rather than rejected.
+fn percent_decode(s: &str) -> String {
+    if !s.contains('%') {
+        return s.to_string();
+    }
+    let b = s.as_bytes();
+    let mut out = Vec::with_capacity(b.len());
+    let mut i = 0;
+    while i < b.len() {
+        if b[i] == b'%' && i + 2 < b.len() {
+            let hex = |c: u8| (c as char).to_digit(16);
+            if let (Some(h), Some(l)) = (hex(b[i + 1]), hex(b[i + 2])) {
+                out.push((h * 16 + l) as u8);
+                i += 3;
+                continue;
+            }
+        }
+        out.push(b[i]);
+        i += 1;
+    }
+    String::from_utf8_lossy(&out).into_owned()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// docling#4199: manifest hrefs are URLs, the archive holds the literal
+    /// names — `chapter%201.xhtml` is `chapter 1.xhtml` in the zip.
+    #[test]
+    fn manifest_hrefs_are_percent_decoded() {
+        let opf = r#"<package xmlns="http://www.idpf.org/2007/opf">
+            <manifest>
+              <item id="a" href="chapter%201.xhtml"/>
+              <item id="b" href="%C3%A9pilogue.xhtml"/>
+              <item id="c" href="plain.xhtml"/>
+              <item id="d" href="odd%2.xhtml"/>
+            </manifest>
+            <spine><itemref idref="a"/><itemref idref="b"/><itemref idref="c"/><itemref idref="d"/></spine>
+          </package>"#;
+        assert_eq!(
+            spine_files(opf, "").unwrap(),
+            vec![
+                "chapter 1.xhtml",
+                "\u{e9}pilogue.xhtml",
+                "plain.xhtml",
+                "odd%2.xhtml"
+            ]
+        );
+    }
 
     #[test]
     fn spine_order_resolves_manifest_hrefs() {
