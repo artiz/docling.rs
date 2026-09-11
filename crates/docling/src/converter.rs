@@ -687,7 +687,12 @@ impl DocumentConverter {
                 // Optionally resolve the CSS cascade in a headless browser first
                 // (strips computed-hidden elements); everything else stays in the
                 // Rust HTML backend, which runs on the cleaned HTML.
-                let html = self.maybe_prerender(source.text()?)?;
+                // Bytes → text through docling's BeautifulSoup decoding order
+                // (#371): BOM, declared charset, UTF-8, windows-1252 — so a
+                // legacy windows-1252 page converts instead of failing the
+                // UTF-8 check every other text backend applies.
+                let decoded = crate::backend::decode_html_bytes(&source.bytes);
+                let html = self.maybe_prerender(&decoded)?;
                 if self.fetch_images {
                     let resolver = crate::backend::FsImageResolver::new(
                         source.base_dir().map(|p| p.to_path_buf()),
