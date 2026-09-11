@@ -669,11 +669,94 @@ fn picture_marker(image: Option<&crate::PictureImage>, ctx: &mut Ctx) -> String 
             );
             ctx.pic_index += 1;
             ctx.artifacts.push((path.clone(), img.data.clone()));
-            format!("![Image]({path})")
+            format!("![Image]({})", escape_uri_path(&path))
         }
         // Placeholder, or any mode with no extracted image.
         _ => "<!-- image -->".to_string(),
     }
+}
+
+/// Encode a URL or filesystem path as a Markdown link destination —
+/// docling-core's `MarkdownPictureSerializer._escape_uri_path`
+/// (docling-core#698, 2.94). Handles URLs of any scheme as well as POSIX and
+/// Windows paths, keeps relative paths relative and never double-encodes:
+/// backslashes become `/` (a backslash is both the Windows separator and a
+/// Markdown escape), a UNC share `//host/…` and an absolute Windows path
+/// `C:/…` become RFC 8089 `file://` URLs (the one spelling a renderer cannot
+/// misread as a scheme-relative URL or a `C:` scheme), a URL keeps its
+/// scheme / authority / delimiters with only the components encoded, and
+/// everything else is percent-encoded as a path. `%` is kept so an
+/// already-encoded destination stays as it is; spaces and parentheses are
+/// encoded because they would end (or unbalance) a Markdown inline link.
+pub(crate) fn escape_uri_path(value: &str) -> String {
+    const KEEP: &str = "/%:@+,;=~$!&'*";
+    let s = value.replace('\\', "/");
+    if let Some(rest) = s.strip_prefix("//") {
+        // A fileshare: `file://<host>/<path>`, the host possibly empty.
+        let rest = rest.trim_start_matches('/');
+        let (host, tail) = rest.split_once('/').unwrap_or((rest, ""));
+        return format!("file://{host}{}", percent_quote(&format!("/{tail}"), KEEP));
+    }
+    let bytes = s.as_bytes();
+    if bytes.len() >= 3 && bytes[0].is_ascii_alphabetic() && bytes[1] == b':' && bytes[2] == b'/' {
+        // A Windows path with a drive letter: `file:///C:/…`.
+        return format!("file:///{}", percent_quote(&s, KEEP));
+    }
+    // A URL keeps its scheme, authority and delimiters; only its components are
+    // encoded. A single-character scheme cannot be real (it is a drive letter,
+    // handled above), so it is read as a path — like `urlsplit`.
+    if let Some((scheme, rest)) = s.split_once(':') {
+        let valid_scheme = scheme.len() > 1
+            && scheme.as_bytes()[0].is_ascii_alphabetic()
+            && scheme
+                .bytes()
+                .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'+' | b'-' | b'.'));
+        if valid_scheme {
+            let (authority, rest) = match rest.strip_prefix("//") {
+                Some(r) => {
+                    let end = r.find(['/', '?', '#']).unwrap_or(r.len());
+                    (Some(&r[..end]), &r[end..])
+                }
+                None => (None, rest),
+            };
+            let (before_frag, fragment) = rest.split_once('#').unwrap_or((rest, ""));
+            let (path, query) = before_frag.split_once('?').unwrap_or((before_frag, ""));
+            let mut out = format!("{scheme}:");
+            if let Some(a) = authority {
+                out.push_str("//");
+                out.push_str(a);
+            }
+            out.push_str(&percent_quote(path, KEEP));
+            if !query.is_empty() {
+                out.push('?');
+                out.push_str(&percent_quote(query, KEEP));
+            }
+            if !fragment.is_empty() {
+                out.push('#');
+                out.push_str(&percent_quote(fragment, KEEP));
+            }
+            return out;
+        }
+    }
+    // A relative or root-relative local path.
+    percent_quote(&s, KEEP)
+}
+
+/// `urllib.parse.quote(s, safe)`: unreserved ASCII (`A–Z a–z 0–9 _ . - ~`) and
+/// the `safe` set stay, every other byte of the UTF-8 encoding becomes `%XX`.
+fn percent_quote(s: &str, safe: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    for &b in s.as_bytes() {
+        let keep = b.is_ascii_alphanumeric()
+            || matches!(b, b'_' | b'.' | b'-' | b'~')
+            || (b.is_ascii() && safe.contains(b as char));
+        if keep {
+            out.push(b as char);
+        } else {
+            out.push_str(&format!("%{b:02X}"));
+        }
+    }
+    out
 }
 
 fn ext_for(mimetype: &str) -> &str {
@@ -1017,6 +1100,83 @@ mod tests {
             doc.export_to_markdown_with(true),
             "[AI &amp; ML](https://a/) here, and [issues](https://first/) here, then [issues](https://second/) there.\n"
         );
+    }
+
+    /// docling-core#698: the referenced-image destination is percent-encoded —
+    /// upstream's own case table (paths, Windows flavours, UNC, URLs) plus
+    /// idempotency on the encoded result.
+    #[test]
+    fn referenced_image_destinations_are_escaped() {
+        let cases = [
+            (
+                "doc_artifacts/image_000001_ab12.png",
+                "doc_artifacts/image_000001_ab12.png",
+            ),
+            (
+                "My Report_artifacts/img.png",
+                "My%20Report_artifacts/img.png",
+            ),
+            ("artifacts/img (1).png", "artifacts/img%20%281%29.png"),
+            ("100%_scale/a#b?c.png", "100%_scale/a%23b%3Fc.png"),
+            ("/home/a b/img.png", "/home/a%20b/img.png"),
+            (
+                "My Report_artifacts\\img.png",
+                "My%20Report_artifacts/img.png",
+            ),
+            (
+                "C:/Users/me/My Docs/img.png",
+                "file:///C:/Users/me/My%20Docs/img.png",
+            ),
+            ("C:\\Users\\me\\img.png", "file:///C:/Users/me/img.png"),
+            (
+                "//server/share/My Docs/img.png",
+                "file://server/share/My%20Docs/img.png",
+            ),
+            ("\\\\server\\share\\img.png", "file://server/share/img.png"),
+            ("file:///home/a b/img.png", "file:///home/a%20b/img.png"),
+            (
+                "s3://bucket/My Report_artifacts/img.png",
+                "s3://bucket/My%20Report_artifacts/img.png",
+            ),
+            (
+                "https://example.com:8080/a b.png?w=1&h=2#frag",
+                "https://example.com:8080/a%20b.png?w=1&h=2#frag",
+            ),
+            (
+                "https://example.com/img (1).png",
+                "https://example.com/img%20%281%29.png",
+            ),
+            ("caf\u{e9}/im\u{e4}ge.png", "caf%C3%A9/im%C3%A4ge.png"),
+        ];
+        for (input, expected) in cases {
+            assert_eq!(escape_uri_path(input), expected, "input {input:?}");
+            assert_eq!(
+                escape_uri_path(expected),
+                expected,
+                "idempotent {expected:?}"
+            );
+        }
+        // The whole marker, through the referenced-image export.
+        let mut doc = DoclingDocument::new("t");
+        doc.push(Node::Picture {
+            caption: None,
+            caption_href: None,
+            image: Some(PictureImage {
+                mimetype: "image/png".into(),
+                width: 1,
+                height: 1,
+                data: b"x".to_vec(),
+            }),
+            classification: None,
+        });
+        let (md, files) = doc
+            .export_to_markdown_with_images(ImageMode::Referenced, "My Report (final)_artifacts");
+        assert!(
+            md.contains("![Image](My%20Report%20%28final%29_artifacts/image_000000.png)"),
+            "got:\n{md}"
+        );
+        // The file path handed back for writing stays unescaped.
+        assert_eq!(files[0].0, "My Report (final)_artifacts/image_000000.png");
     }
 
     /// Pictures the HTML backend folds into a list item print after the item
