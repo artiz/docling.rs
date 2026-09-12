@@ -210,7 +210,16 @@ fn is_roman(token: &str) -> bool {
 
 /// Whether `text` starts with `word` as a whole word (ASCII case-insensitive).
 fn starts_with_word(text: &str, word: &str) -> bool {
-    if text.len() < word.len() || !text[..word.len()].eq_ignore_ascii_case(word) {
+    // `word.len()` is a byte count taken from a *different* string, so it can
+    // land inside a multi-byte char of `text` — `Note 1\u{a0}Overview` against
+    // the 7-byte `chapter` splits the no-break space at bytes 6..8 (#377), and
+    // a direct slice panics there. `get` returns `None` instead, which is also
+    // the right answer: `text` cannot start with an ASCII word of that length
+    // if byte `word.len()` is mid-character.
+    let Some(head) = text.get(..word.len()) else {
+        return false;
+    };
+    if !head.eq_ignore_ascii_case(word) {
         return false;
     }
     text[word.len()..]
@@ -1038,6 +1047,29 @@ fn promote_list_item(nodes: &mut [Node], idx: usize, text: &str) {
 mod tests {
     use super::*;
 
+    /// #377: a keyword probe whose byte length falls inside a multi-byte
+    /// character of the heading must answer `false`, not panic — the
+    /// reporter's `Note 1\u{a0}Overview` (no-break space at bytes 6..8 vs the
+    /// 7-byte `chapter`), and every offset of a few non-ASCII characters.
+    #[test]
+    fn keyword_probe_never_slices_mid_char() {
+        assert!(!starts_with_word("Note 1\u{a0}Overview", "chapter"));
+        for word in ["chapter", "section", "part", "article", "appendix", "annex"] {
+            for k in 0..12 {
+                for ch in ['\u{a0}', '\u{e9}', '\u{3a9}', '\u{1f600}'] {
+                    let text = format!("{}{ch}Overview", "x".repeat(k));
+                    assert!(!starts_with_word(&text, word), "{text:?} vs {word}");
+                }
+            }
+        }
+        // The positive cases and the whole-word rule are unchanged.
+        assert!(starts_with_word("Chapter\u{a0}1", "chapter"));
+        assert!(starts_with_word("CHAPTER 2 Scope", "chapter"));
+        assert!(starts_with_word("Section", "section"));
+        assert!(!starts_with_word("Chapters", "chapter"));
+        assert!(!starts_with_word("Chapt", "chapter"));
+    }
+
     fn heading(loc: [u16; 4], text: &str) -> Node {
         Node::Located {
             location: loc,
@@ -1159,6 +1191,45 @@ mod tests {
         // Semantic 1/2 render as Markdown levels 2/3; the unnumbered heading
         // keeps the assembler's level.
         assert_eq!(levels(&nodes), vec![2, 3, 2]);
+    }
+
+    /// #377 end to end: headings and bookmark titles with no-break spaces
+    /// and non-ASCII letters go through the numbering *and* bookmark passes
+    /// without a panic; the numbered ones still get their levels.
+    #[test]
+    fn apply_survives_multibyte_headings_and_bookmarks() {
+        let mut nodes = vec![
+            page(1),
+            heading([10, 10, 200, 20], "Note 1\u{a0}Overview"),
+            heading([10, 40, 200, 50], "1.\u{a0}Einf\u{fc}hrung"),
+            heading(
+                [10, 70, 200, 80],
+                "1.1\u{a0}\u{dc}berblick \u{2014} Teil\u{a0}A",
+            ),
+            heading([10, 100, 200, 110], "Chapter\u{a0}2\u{a0}\u{3a9}mega"),
+            heading([10, 130, 200, 140], "\u{1f600} Anhang"),
+        ];
+        let outline = vec![
+            OutlineItem {
+                title: "Note\u{a0}1 Overview".into(),
+                level: 0,
+                page_no: Some(1),
+                y_top: None,
+            },
+            OutlineItem {
+                title: "Einf\u{fc}hrung".into(),
+                level: 1,
+                page_no: Some(1),
+                y_top: None,
+            },
+        ];
+        apply(
+            &mut nodes,
+            &outline,
+            &HashMap::new(),
+            &HeadingHierarchyOptions::enabled(true),
+        );
+        assert_eq!(levels(&nodes).len(), 5);
     }
 
     #[test]
