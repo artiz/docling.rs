@@ -575,9 +575,17 @@ fn graph_cache_dir() -> Option<PathBuf> {
 
 /// The SIMD feature set the saved graph was specialized for.
 fn cpu_features() -> String {
-    let mut s = String::from(std::env::consts::ARCH);
+    let arch = std::env::consts::ARCH;
+    // Only x86_64 has runtime-detected feature tiers worth keying the cache
+    // on; elsewhere the arch alone is the key (and a `mut` String would be an
+    // `unused_mut` warning on the aarch64 macOS CI runner).
+    #[cfg(not(target_arch = "x86_64"))]
+    {
+        String::from(arch)
+    }
     #[cfg(target_arch = "x86_64")]
     {
+        let mut s = String::from(arch);
         for (name, on) in [
             ("avx", std::arch::is_x86_feature_detected!("avx")),
             ("avx2", std::arch::is_x86_feature_detected!("avx2")),
@@ -594,8 +602,8 @@ fn cpu_features() -> String {
                 s.push_str(name);
             }
         }
+        s
     }
-    s
 }
 
 #[cfg(test)]
