@@ -592,13 +592,10 @@ impl Table {
     /// present (the PDF pipeline's TableFormer flags), else the cells derived
     /// from the structure overlay.
     ///
-    /// One deliberate deviation: a row on which a *non-header* cell with text
-    /// also starts does not extend the header block. docling's HTML backend
-    /// flags every `<th>` as `column_header`, row headers included, so a pivot
-    /// table's `<th rowspan>2025</th>` makes upstream fold the first data row
-    /// into the header (`Year - 2025 | Month - January | …`); here that row
-    /// stays data. Rows made only of header cells (and empty corners) behave
-    /// exactly as upstream. Reported upstream as docling-core#765.
+    /// A pivot table's row headers no longer disturb this: docling#4216 flags
+    /// a spanning `<th>` row as `row_header`, not `column_header`, so the
+    /// first data row is no longer folded into the header block and the
+    /// deviation this port carried for docling-core#765 is gone.
     pub fn header_row_count(&self) -> usize {
         if self.rows.is_empty() {
             return 0;
@@ -615,18 +612,7 @@ impl Table {
             return 1;
         }
         (0..self.rows.len())
-            .take_while(|&r| {
-                let starts = cells.iter().filter(|c| c.start_row == r);
-                let mut any_header = false;
-                for c in starts {
-                    if c.column_header {
-                        any_header = true;
-                    } else if !c.text.trim().is_empty() {
-                        return false;
-                    }
-                }
-                any_header
-            })
+            .take_while(|&r| cells.iter().any(|c| c.column_header && c.start_row == r))
             .count()
     }
 
