@@ -1311,12 +1311,12 @@ mod tests {
         );
     }
 
-    /// A pivot table's row headers (`<th rowspan>`) are flagged `column_header`
-    /// by docling's HTML backend; a row where data cells start alongside them
-    /// stays in the body (deliberate deviation from docling-core#723, which
-    /// folds `2025 | January | $134` into the header row).
+    /// A pivot table's row headers (`<th rowspan>`) carry `row_header`, not
+    /// `column_header` (docling#4216), so the data row beside them is not
+    /// pulled into the header block — what this port used to reach with a
+    /// deviation now falls out of the flags themselves.
     #[test]
-    fn row_headers_beside_data_cells_do_not_extend_the_header() {
+    fn pivot_row_headers_do_not_extend_the_header() {
         let mut t = Table {
             rows: vec![
                 vec!["Year".into(), "Month".into()],
@@ -1326,7 +1326,8 @@ mod tests {
             ..Default::default()
         };
         t.structure = Some(TableStructure {
-            col_header: vec![vec![true, true], vec![true, false], vec![true, false]],
+            col_header: vec![vec![true, true], vec![false, false], vec![false, false]],
+            row_header: vec![vec![false, false], vec![true, false], vec![true, false]],
             row_continuation: vec![vec![false, false], vec![false, false], vec![true, false]],
             ..Default::default()
         });

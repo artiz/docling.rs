@@ -2981,7 +2981,7 @@
             "end_col_offset_idx": 1,
             "text": "Servings",
             "column_header": false,
-            "row_header": false,
+            "row_header": true,
             "row_section": false,
             "fillable": false
           },
@@ -3007,7 +3007,7 @@
             "end_col_offset_idx": 1,
             "text": "Time",
             "column_header": false,
-            "row_header": false,
+            "row_header": true,
             "row_section": false,
             "fillable": false
           },
@@ -3033,7 +3033,7 @@
             "end_col_offset_idx": 1,
             "text": "Difficulty",
             "column_header": false,
-            "row_header": false,
+            "row_header": true,
             "row_section": false,
             "fillable": false
           },
@@ -3120,7 +3120,7 @@
               "end_col_offset_idx": 1,
               "text": "Servings",
               "column_header": false,
-              "row_header": false,
+              "row_header": true,
               "row_section": false,
               "fillable": false
             },
@@ -3148,7 +3148,7 @@
               "end_col_offset_idx": 1,
               "text": "Time",
               "column_header": false,
-              "row_header": false,
+              "row_header": true,
               "row_section": false,
               "fillable": false
             },
@@ -3176,7 +3176,7 @@
               "end_col_offset_idx": 1,
               "text": "Difficulty",
               "column_header": false,
-              "row_header": false,
+              "row_header": true,
               "row_section": false,
               "fillable": false
             },

@@ -8368,7 +8368,7 @@
             "end_col_offset_idx": 1,
             "text": "National",
             "column_header": false,
-            "row_header": false,
+            "row_header": true,
             "row_section": false,
             "fillable": false
           },
@@ -8394,7 +8394,7 @@
             "end_col_offset_idx": 1,
             "text": "Other",
             "column_header": false,
-            "row_header": false,
+            "row_header": true,
             "row_section": false,
             "fillable": false
           },
@@ -8453,7 +8453,7 @@
               "end_col_offset_idx": 1,
               "text": "National",
               "column_header": false,
-              "row_header": false,
+              "row_header": true,
               "row_section": false,
               "fillable": false
             },
@@ -8481,7 +8481,7 @@
               "end_col_offset_idx": 1,
               "text": "Other",
               "column_header": false,
-              "row_header": false,
+              "row_header": true,
               "row_section": false,
               "fillable": false
             },

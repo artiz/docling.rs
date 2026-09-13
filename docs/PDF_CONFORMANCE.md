@@ -36,7 +36,7 @@ are no longer scored.)
 | 2203.01017v2 | 55 | reference-accent spacing + author-block splits (in-picture table recovered: same grid as docling, different OCR engine noise) |
 | right_to_left_03 | 58 | RTL bidi + wrapper (form) children order |
 | redp5110_sampled | 71 | TOC row structure tails + cover-page ordering |
-| 2206.01062 | 113 | author-block cluster splits (model-borderline) + one int8-borderline header rowspan |
+| 2206.01062 | 82 | author-block cluster splits (model-borderline) + one int8-borderline header rowspan |
 
 Measured on the current tree with `scripts/conformance/pdf_groundtruth.sh`.
 The earlier revision of this table predated docling 2.118's reading-order
@@ -70,6 +70,11 @@ therefore read as "drift" that was really a stale baseline:
 * so the groundtruth `.md` was refreshed from that JSON rather than from a new
   docling run — the document model did not change, only its serializer — and
   the snapshots were regenerated.
+
+A later pass (#382) took `2206.01062` from 113 to 82: docling#4216's header
+flags let `header_row_count` drop the pivot-table deviation this port carried,
+so a table whose first row is a lone spanning label now promotes that row to
+the header exactly as docling does. Its snapshot was regenerated with it.
 
 Both baselines improve as a result: the snapshot corpus is back to 97/97 exact,
 `2305.03393v1-pg9` is byte-exact against the groundtruth again, and the three

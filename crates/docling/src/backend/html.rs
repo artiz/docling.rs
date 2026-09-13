@@ -1538,6 +1538,10 @@ fn parse_table_cells(
     // cell-level `column_header` (drives `<ched/>` and the chunker's dataframe
     // header detection).
     let mut th_grid: Vec<Vec<bool>> = vec![vec![false; num_cols]; num_rows];
+    // Per-cell `row_header` (docling#4216): a `<th>` labelling the rows beside
+    // it rather than the column above them — every cell of a spanning
+    // row-header row, and a lone `<th>` in a row that also holds `<td>` data.
+    let mut rh_grid: Vec<Vec<bool>> = vec![vec![false; num_cols]; num_rows];
     // Span continuations (#240): a covered position continues its anchor
     // horizontally / vertically — the source of real `TableCell` spans and
     // the DocLang `lcel`/`ucel` tokens.
@@ -1576,7 +1580,12 @@ fn parse_table_cells(
                 col += 1;
             }
             let (text, rich, cell_nodes) = render_cell(cell);
-            let is_th = cell.value().name() == "th" && all_th;
+            // docling#4216: a row-header row's cells label the rows they span
+            // into, so they are *row* headers — flagging them `column_header`
+            // (as docling did until 2.126) made docling-core 2.96 fold the
+            // first data row into the Markdown header (`Year - 2025`).
+            let is_th = all_th && !row_header;
+            let is_rh = row_header || (!all_th && cell.value().name() == "th");
             any_rich |= !cell_nodes.is_empty();
             let mut anchor_filled = false;
             for r in start_row_span..start_row_span + rowspan {
@@ -1602,6 +1611,7 @@ fn parse_table_cells(
                         }
                         anchor_filled = true;
                         th_grid[gr][gc] = is_th;
+                        rh_grid[gr][gc] = is_rh;
                         col_cont[gr][gc] = dc > 0;
                         row_cont[gr][gc] = r > start_row_span;
                     }
@@ -1620,6 +1630,7 @@ fn parse_table_cells(
         location: None,
         structure: Some(docling_core::TableStructure {
             col_header: th_grid,
+            row_header: rh_grid,
             col_continuation: col_cont,
             row_continuation: row_cont,
             ..Default::default()
@@ -2055,6 +2066,65 @@ mod tests {
     fn convert_bytes(html: &[u8]) -> DoclingDocument {
         let src = SourceDocument::from_bytes("t", InputFormat::Html, html.to_vec());
         HtmlBackend.convert(&src).unwrap()
+    }
+
+    /// docling#4216: a `<tr>` whose `<th>`s each span several rows is a pivot
+    /// table's row-header row — its cells label the rows they span into, so
+    /// they are `row_header`, never `column_header`. Flagging them as column
+    /// headers pulled the first data row into the Markdown header block once
+    /// docling-core 2.96 started deriving that block from the flags.
+    #[test]
+    fn pivot_row_headers_are_row_headers_not_column_headers() {
+        // The row-header row spans the data rows *plus itself*, exactly as a
+        // spreadsheet export writes a pivot table (`example_08`).
+        let doc = convert(
+            "<table>\
+             <tr><th>Year</th><th>Month</th><th>Revenue</th></tr>\
+             <tr><th rowspan=3>2025</th></tr>\
+             <tr><td>January</td><td>$134</td></tr>\
+             <tr><td>February</td><td>$150</td></tr>\
+             </table>",
+        );
+        let Some(Node::Table(t)) = doc.nodes.iter().find(|n| matches!(n, Node::Table(_))) else {
+            panic!("a table");
+        };
+        let st = t.structure.as_ref().expect("structure");
+        // Only the real column titles are column headers; the spanning `2025`
+        // label is a row header replicated down its span.
+        assert_eq!(
+            st.col_header,
+            vec![vec![true, true, true], vec![false; 3], vec![false; 3]]
+        );
+        assert_eq!(
+            st.row_header,
+            vec![
+                vec![false; 3],
+                vec![true, false, false],
+                vec![true, false, false]
+            ]
+        );
+        // …so the header block stays one row and the data rows stay data.
+        assert_eq!(t.header_row_count(), 1);
+        assert_eq!(
+            doc.export_to_markdown(),
+            "|   Year | Month    | Revenue   |\n|--------|----------|-----------|\n|   2025 | January  | $134      |\n|   2025 | February | $150      |\n"
+        );
+    }
+
+    /// A `<th>` label beside `<td>` data in the same row is a row header too
+    /// (docling's `(not col_header) and <th>` branch), and contributes no
+    /// column header at all.
+    #[test]
+    fn a_th_label_beside_data_is_a_row_header() {
+        let doc = convert(
+            "<table><tr><th>Rate</th><td>5%</td></tr><tr><th>Term</th><td>3y</td></tr></table>",
+        );
+        let Some(Node::Table(t)) = doc.nodes.iter().find(|n| matches!(n, Node::Table(_))) else {
+            panic!("a table");
+        };
+        let st = t.structure.as_ref().expect("structure");
+        assert_eq!(st.col_header, vec![vec![false; 2], vec![false; 2]]);
+        assert_eq!(st.row_header, vec![vec![true, false], vec![true, false]]);
     }
 
     /// #371: non-UTF-8 HTML decodes like docling's BeautifulSoup does —
