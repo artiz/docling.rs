@@ -117,6 +117,13 @@ cargo check -p docling --no-default-features --features pdf-text \
   `DOCLING_RS_REGEN=1`.
 - When touching serializers, keep the streaming and buffered paths
   byte-identical — `MarkdownStreamer` tests assert exactly that.
+- A `docling-core` serializer change reaches the **PDF** baselines too, and
+  neither runs in CI (both need pdfium + models): re-run
+  `scripts/conformance/pdf_conformance.sh` (snapshots) and
+  `scripts/conformance/pdf_groundtruth.sh` in the same PR, or the next person
+  reads the stale baseline as a pipeline regression. The groundtruth `.md` is a
+  serialization of the committed `groundtruth/*.json`, so a serializer-only
+  change is refreshed by re-exporting that JSON — no new docling run needed.
 
 ## Conventions that keep recurring
 

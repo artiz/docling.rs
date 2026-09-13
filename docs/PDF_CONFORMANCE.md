@@ -16,7 +16,7 @@ models over every source PDF, so its totals differ from this table.
 
 ## Current state
 
-**6 / 14 strict** · **7 / 14 whitespace-normalized.** (The two Korean
+**9 / 17 strict** · **10 / 17 whitespace-normalized.** (The two Korean
 image-only pages `skipped_1page`/`skipped_2pages` carry no text groundtruth and
 are no longer scored.)
 
@@ -27,22 +27,54 @@ are no longer scored.)
 | 2305.03393v1-pg9 | **exact** | — (TableFormer table, cell-for-cell) |
 | right_to_left_01 | **exact** | — (RTL period attachment) |
 | right_to_left_02 | **exact** | — (kashida dedup + page-number layout) |
+| base14_fonts_rot90 / _rot180 / _rot270 | **exact** | — (`/Rotate` display-frame normalization, docling#4008) |
 | amt_handbook_sample | 2 *(ws-ok)* | docling's spurious fraction double space — ours is more faithful |
 | code_and_formula | **exact** | — (flat legacy code, line-preserving `pretty` in strict) |
-| 2305.03393v1 | 14 | author-block cluster split + in-figure label clusters (model-level) |
+| 2305.03393v1 | 20 | author-block cluster split + in-figure label clusters (model-level) |
 | normal_4pages | 20 | two-column line interleave + section-1 numeral claim |
 | table_mislabeled_as_picture | 54 | layout over-detects tables (survey rendered as tables) |
-| right_to_left_03 | 60 | RTL bidi + wrapper (form) children order |
-| redp5110_sampled | 73 | TOC row structure tails + cover-page ordering |
-| 2203.01017v2 | 66 | reference-accent spacing + author-block splits (in-picture table recovered: same grid as docling, different OCR engine noise) |
-| 2206.01062 | 82 | author-block cluster splits (model-borderline) + one int8-borderline header rowspan |
+| 2203.01017v2 | 55 | reference-accent spacing + author-block splits (in-picture table recovered: same grid as docling, different OCR engine noise) |
+| right_to_left_03 | 58 | RTL bidi + wrapper (form) children order |
+| redp5110_sampled | 71 | TOC row structure tails + cover-page ordering |
+| 2206.01062 | 113 | author-block cluster splits (model-borderline) + one int8-borderline header rowspan |
 
-The per-fixture numbers above predate docling 2.118's reading-order
-dehyphenation (docling#3888, ported in #250): both sides now join a
+Measured on the current tree with `scripts/conformance/pdf_groundtruth.sh`.
+The earlier revision of this table predated docling 2.118's reading-order
+dehyphenation (docling#3888, ported in #250) — both sides now join a
 hard-hyphenated lowercase continuation across a column/page break without the
-`word- continuation` artifact, so re-measuring against docling ≥ 2.118 shifts
-the text-merge component of these diffs (2203/2305 snapshots and the mirrored
-groundtruth already reflect it).
+`word- continuation` artifact — and the groundtruth refresh below.
+
+### docling-core 2.96 table headers: PDF baselines refreshed
+
+The table-header rule ported in #362 (docling-core#723/#756 — the header block
+is the leading rows on which a `column_header` cell *starts*, flattened per
+column with ` - `) changed the Markdown of every multi-row-header table, the
+PDF pipeline's included. The declarative corpora were regenerated with it; the
+PDF snapshots and the docling groundtruth were not, because neither runs in CI
+(both need pdfium + the models). Five snapshots and four groundtruth files
+therefore read as "drift" that was really a stale baseline:
+
+* `2206.01062`, `2305.03393v1`, `2305.03393v1-pg9`, `2203.01017v2` and the
+  rendered `text_document_02.odt` — every drifting line was a table line;
+* re-serializing **docling's own committed JSON** (`tests/data/pdf/groundtruth/*.json`)
+  with docling-core 2.96 reproduces our new tables exactly, and changes those
+  four groundtruth files and no others (the remaining ten re-render
+  byte-identical, which is also what makes this refresh auditable: the
+  committed `.md` really is the serialization of the committed `.json`);
+* the groundtruth refresh is not quite table-only — it carries every
+  docling-core change since that groundtruth was taken, which here means six
+  further lines: a picture's **non-caption** text children (`HTML`, `OTSL`,
+  `PDF Cells`, in `2305.03393v1` and `2203.01017v2`) are no longer serialized,
+  while its caption still is. Our pipeline never emitted those fragments, so
+  that part moves toward us as well;
+* so the groundtruth `.md` was refreshed from that JSON rather than from a new
+  docling run — the document model did not change, only its serializer — and
+  the snapshots were regenerated.
+
+Both baselines improve as a result: the snapshot corpus is back to 97/97 exact,
+`2305.03393v1-pg9` is byte-exact against the groundtruth again, and the three
+remaining table-heavy fixtures drop from 203 → 113 (`2206.01062`), 48 → 20
+(`2305.03393v1`) and 65 → 55 (`2203.01017v2`) diff lines.
 
 ### docling 2.118–2.123 assembly / post-processing parity (#321)
 
