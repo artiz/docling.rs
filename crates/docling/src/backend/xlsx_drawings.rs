@@ -4,7 +4,8 @@
 //! Drawings (`xl/drawings/drawingN.xml`) anchor images and chart frames to
 //! cell ranges: a `twoCellAnchor` spans `from..to` (docling's bbox is
 //! `(from.col, from.row, to.col+1, to.row+1)`), a `oneCellAnchor` covers a
-//! single cell. Charts (`xl/charts/chartN.xml`) carry their series as
+//! single cell, and a chart sheet's `absoluteAnchor` has no cell range at all
+//! (docling's bbox is `(0, 0, 0, 0)`). Charts (`xl/charts/chartN.xml`) carry their series as
 //! *references* back into the workbook (`'Sheet1'!$B$2:$B$7`), which docling
 //! resolves against the live cell values; the reconstructed grid (categories
 //! down the first column as row headers, one column per series) becomes the
@@ -36,11 +37,12 @@ pub fn parse_drawing(xml: &str) -> Vec<DrawingItem> {
         return Vec::new();
     };
     let mut out = Vec::new();
-    for anchor in dom
-        .root_element()
-        .children()
-        .filter(|n| matches!(n.tag_name().name(), "twoCellAnchor" | "oneCellAnchor"))
-    {
+    for anchor in dom.root_element().children().filter(|n| {
+        matches!(
+            n.tag_name().name(),
+            "twoCellAnchor" | "oneCellAnchor" | "absoluteAnchor"
+        )
+    }) {
         let cell = |tag: &str| -> Option<(usize, usize)> {
             let n = anchor.children().find(|c| c.has_tag_name(tag))?;
             let num = |t: &str| {
@@ -51,12 +53,21 @@ pub fn parse_drawing(xml: &str) -> Vec<DrawingItem> {
             };
             Some((num("col")?, num("row")?))
         };
-        let Some((fc, fr)) = cell("from") else {
-            continue;
-        };
-        let bbox = match cell("to") {
-            Some((tc, tr)) => (fc, fr, tc + 1, tr + 1),
-            None => (fc, fr, fc + 1, fr + 1),
+        // A chart *sheet* anchors its one chart absolutely (`<absoluteAnchor>`
+        // with an EMU position, no cell range) — the anchor type docling's
+        // `_anchor_to_tuple` knows nothing about and maps to `(0, 0, 0, 0)`,
+        // which is the bbox its chart-sheet pictures carry (#405). Skipping
+        // the anchor, as we did, left the sheet's group empty.
+        let bbox = if anchor.has_tag_name("absoluteAnchor") {
+            (0, 0, 0, 0)
+        } else {
+            let Some((fc, fr)) = cell("from") else {
+                continue;
+            };
+            match cell("to") {
+                Some((tc, tr)) => (fc, fr, tc + 1, tr + 1),
+                None => (fc, fr, fc + 1, fr + 1),
+            }
         };
         let kind = if let Some(blip) = anchor.descendants().find(|n| {
             n.has_tag_name("blip") && !n.ancestors().any(|a| a.has_tag_name("graphicFrame"))
@@ -473,6 +484,46 @@ fn format_comment_time(raw: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// #405: a chart *sheet* anchors its chart with `<absoluteAnchor>` — no
+    /// cell range — which docling's `_anchor_to_tuple` maps to `(0, 0, 0, 0)`.
+    /// Skipping the anchor left the sheet's group empty.
+    #[test]
+    fn a_chart_sheets_absolute_anchor_is_a_zero_box_chart() {
+        let xml = r#"<wsDr xmlns="http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing">
+            <absoluteAnchor><pos x="0" y="0"/><ext cx="0" cy="0"/>
+              <graphicFrame><a:graphic xmlns:a="a"><a:graphicData uri="chart">
+                <c:chart xmlns:c="c" xmlns:r="r" r:id="rId1"/>
+              </a:graphicData></a:graphic></graphicFrame><clientData/>
+            </absoluteAnchor>
+            <oneCellAnchor><from><col>2</col><colOff>0</colOff><row>3</row><rowOff>0</rowOff></from>
+              <ext cx="1" cy="1"/>
+              <graphicFrame><a:graphic xmlns:a="a"><a:graphicData uri="chart">
+                <c:chart xmlns:c="c" xmlns:r="r" r:id="rId2"/>
+              </a:graphicData></a:graphic></graphicFrame><clientData/>
+            </oneCellAnchor>
+        </wsDr>"#;
+        let items = parse_drawing(xml);
+        let got: Vec<(_, String)> = items
+            .iter()
+            .map(|i| {
+                (
+                    i.bbox,
+                    match &i.kind {
+                        DrawingKind::Chart(id) => id.clone(),
+                        DrawingKind::Image(id) => format!("img:{id}"),
+                    },
+                )
+            })
+            .collect();
+        assert_eq!(
+            got,
+            vec![
+                ((0, 0, 0, 0), "rId1".to_string()),
+                ((2, 3, 3, 4), "rId2".to_string()),
+            ]
+        );
+    }
 
     #[test]
     fn range_refs() {
