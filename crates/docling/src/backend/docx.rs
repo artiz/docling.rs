@@ -265,11 +265,7 @@ fn parse_comments(pkg: &mut Package) -> Vec<(String, String)> {
         let author = attr(c, "author").unwrap_or("").trim();
         let initials = attr(c, "initials").unwrap_or("").trim();
         let date = attr(c, "date").map(format_comment_date).unwrap_or_default();
-        let text: String = c
-            .descendants()
-            .filter(|n| n.has_tag_name("t"))
-            .filter_map(|n| n.text())
-            .collect();
+        let text: String = c.descendants().filter_map(flat_text).collect();
         let head = if author.is_empty() {
             format!("[time: {date}]")
         } else if initials.is_empty() {
@@ -1198,11 +1194,8 @@ fn collect_equation_parts(p: XmlNode) -> Vec<EqPart> {
                     parts.push(EqPart::Eq(eq));
                 }
             } else {
-                for t in child
-                    .descendants()
-                    .filter(|n| n.has_tag_name("t") && !in_math(*n))
-                {
-                    if let Some(txt) = t.text() {
+                for t in child.descendants().filter(|n| !in_math(*n)) {
+                    if let Some(txt) = flat_text(t) {
                         parts.push(EqPart::Text(txt.to_string()));
                     }
                 }
@@ -1210,8 +1203,8 @@ fn collect_equation_parts(p: XmlNode) -> Vec<EqPart> {
         }
     } else {
         for node in p.descendants() {
-            if node.has_tag_name("t") && !in_math(node) {
-                if let Some(txt) = node.text() {
+            if !in_math(node) {
+                if let Some(txt) = flat_text(node) {
                     parts.push(EqPart::Text(txt.to_string()));
                 }
             } else if node.has_tag_name("oMath") {
@@ -1393,14 +1386,7 @@ fn collect_one(
             let run_fmt = run_format(child, fmt);
             // A run interleaves text (`<w:t>`) and line breaks (`<w:br>`/`<w:cr>`,
             // rendered as newlines that stay in the paragraph block).
-            let text: String = child_elements(child)
-                .map(|n| match n.tag_name().name() {
-                    "t" => n.text().unwrap_or("").to_string(),
-                    "br" | "cr" => "\n".to_string(),
-                    "tab" => "\t".to_string(),
-                    _ => String::new(),
-                })
-                .collect();
+            let text: String = child_elements(child).map(run_child_text).collect();
             if !text.is_empty() {
                 out.push((text, run_fmt, link.map(str::to_string)));
             }
@@ -1593,6 +1579,41 @@ fn grid_span(tc: XmlNode) -> usize {
         .unwrap_or(1)
 }
 
+/// The plain text of one child of a `w:r`, python-docx's `CT_R.text` — which
+/// is where docling's paragraph text comes from, so this is the parity target.
+/// Anything not in its `w:br | w:cr | w:noBreakHyphen | w:ptab | w:t | w:tab`
+/// set contributes nothing.
+fn run_child_text(n: XmlNode) -> String {
+    match n.tag_name().name() {
+        "t" => n.text().unwrap_or("").to_string(),
+        // A *line* break is a newline; a page or column break has no text
+        // equivalent at all.
+        "br" => match attr(n, "type") {
+            None | Some("textWrapping") => "\n".to_string(),
+            Some(_) => String::new(),
+        },
+        "cr" => "\n".to_string(),
+        // A hyphen Word marked as ineligible for a line wrap is still a hyphen
+        // (#400): dropping it glued `In` and `Transit` into `InTransit`.
+        "noBreakHyphen" => "-".to_string(),
+        "tab" | "ptab" => "\t".to_string(),
+        _ => String::new(),
+    }
+}
+
+/// The plain text of a run inner-content element, for the places that flatten
+/// a subtree with `descendants()` rather than walking a run's own children.
+/// Only `w:t` and `w:noBreakHyphen` are safe to pick up that way — `w:tab` and
+/// `w:br` also appear in paragraph *properties* (`w:pPr/w:tabs/w:tab`), which
+/// carry no text; `collect_run_tuples` handles those from the run itself.
+fn flat_text<'a, 'i>(n: XmlNode<'a, 'i>) -> Option<&'a str> {
+    match n.tag_name().name() {
+        "t" => Some(n.text().unwrap_or("")),
+        "noBreakHyphen" => Some("-"),
+        _ => None,
+    }
+}
+
 /// A row's `w:tc` cells in document order, unwrapping any content control
 /// (`w:sdt` → `w:sdtContent`) Word wrapped a cell in — its cover pages and
 /// document-property fields are written that way, and the cell is then no
@@ -1758,8 +1779,8 @@ fn plain_paragraph_text(p: XmlNode) -> String {
     for child in child_elements(p) {
         let omaths = omaths_of(child);
         if omaths.is_empty() {
-            for t in child.descendants().filter(|n| n.has_tag_name("t")) {
-                out.push_str(t.text().unwrap_or(""));
+            for t in child.descendants().filter_map(flat_text) {
+                out.push_str(t);
             }
         } else {
             for m in omaths {
@@ -1943,11 +1964,7 @@ fn is_code_by_font(p: XmlNode, style_id: &str, ctx: &Ctx, prev_is_code: bool) ->
 fn monospaced_char_counts(p: XmlNode, style_font: &str) -> (usize, usize) {
     let (mut mono, mut total) = (0usize, 0usize);
     for r in p.descendants().filter(|n| n.has_tag_name("r")) {
-        let text: String = r
-            .descendants()
-            .filter(|n| n.has_tag_name("t"))
-            .filter_map(|n| n.text())
-            .collect();
+        let text: String = r.descendants().filter_map(flat_text).collect();
         let len = text.trim().chars().count();
         if len == 0 {
             continue;
@@ -2300,8 +2317,63 @@ fn build_enum_marker(
 
 #[cfg(test)]
 mod tests {
-    use super::{block_comment_slots, format_enum_counter, heading_label_level, row_cells};
+    use super::{
+        block_comment_slots, child_elements, flat_text, format_enum_counter, heading_label_level,
+        row_cells, run_child_text,
+    };
     use std::collections::HashMap;
+
+    /// #400: `<w:noBreakHyphen/>` is a hyphen Word will not wrap at, and
+    /// python-docx — where docling's paragraph text comes from — renders it as
+    /// a plain `-`. Dropping it glued `In` and `Transit` into `InTransit`.
+    /// A page or column break, by contrast, has *no* text equivalent there,
+    /// while a line break and a carriage return are newlines.
+    #[test]
+    fn run_inner_content_matches_python_docx() {
+        let xml = r#"<w:document xmlns:w="w"><w:body>
+            <w:p><w:r><w:t>In</w:t><w:noBreakHyphen/><w:t>Transit</w:t></w:r></w:p>
+            <w:p><w:r><w:t>a</w:t><w:tab/><w:t>b</w:t><w:ptab/><w:t>c</w:t></w:r></w:p>
+            <w:p><w:r><w:t>line</w:t><w:br/><w:t>wrap</w:t></w:r></w:p>
+            <w:p><w:r><w:t>soft</w:t><w:cr/><w:t>return</w:t></w:r></w:p>
+            <w:p><w:r><w:t>page</w:t><w:br w:type="page"/><w:t>break</w:t></w:r></w:p>
+        </w:body></w:document>"#;
+        let dom = roxmltree::Document::parse(xml).unwrap();
+        let runs = |p: roxmltree::Node<'_, '_>| -> String {
+            p.descendants()
+                .filter(|n| n.has_tag_name("r"))
+                .flat_map(child_elements)
+                .map(run_child_text)
+                .collect()
+        };
+        let texts: Vec<String> = dom
+            .descendants()
+            .filter(|n| n.has_tag_name("p"))
+            .map(runs)
+            .collect();
+        assert_eq!(
+            texts,
+            vec![
+                "In-Transit",
+                "a\tb\tc",
+                "line\nwrap",
+                "soft\nreturn",
+                "pagebreak",
+            ]
+        );
+        // The flattening helper carries the hyphen too, and nothing else: a
+        // `w:tab` under `w:pPr/w:tabs` is a tab *stop*, not text.
+        let props = roxmltree::Document::parse(
+            r#"<w:p xmlns:w="w"><w:pPr><w:tabs><w:tab w:val="left"/></w:tabs></w:pPr>
+               <w:r><w:t>co</w:t><w:noBreakHyphen/><w:t>op</w:t></w:r></w:p>"#,
+        )
+        .unwrap();
+        let flat: String = props
+            .root_element()
+            .descendants()
+            .filter_map(flat_text)
+            .collect();
+        assert_eq!(flat, "co-op");
+    }
 
     /// docling#3946/#3951: Word wraps a table cell in a content control for
     /// cover pages and document-property fields, so the `w:tc` is no longer a
