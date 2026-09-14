@@ -53,11 +53,11 @@ Mobil
 
 079/9876543
 
-E-Mail robert@rschneider.ch
+E-Mail
 
 Internet:
 
-www.rschneider.ch
+robert@rschneider.ch www.rschneider.ch
 
 Date
 

@@ -1332,6 +1332,10 @@ impl Worker {
                 page.word_cells.extend(words);
             }
         }
+        // The cells are final: fit every regular region to the cells it
+        // claims and fold the orphans it now surrounds (#419), before
+        // TableFormer and the reading order see the boxes.
+        assemble::fit_regions_to_cells(&mut regions, &page.cells);
         Ok(Prepared {
             regions,
             ocr_confs,

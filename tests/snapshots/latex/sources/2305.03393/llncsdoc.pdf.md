@@ -98,11 +98,11 @@ Addresses of institutes, companies, etc. should be given in \institute . \instit
 
 Inside you can use \email
 
-\url{&lt;url&gt;}
+```
+\institute{<name of an institute> \and <name of the next institute> \and <name of the next institute>} Inside \institute you can use\email \email{<email address>} and\url
+```
 
-```
-\institute{<name of an institute> \and <name of the next institute> \and <name of the next institute>} Inside \institute you can use\email \email{<email address>} and\url \url{<url>}
-```
+\url{&lt;url&gt;}
 
 to provide author email addresses and Web pages. If you need to typeset the tilde character - e.g. for your Web page in your unix system's home directory - the \homedir command will do this. If multiple authors have the same affiliation, please check that the order of email addresses matches the sequence of (affiliated) author names.
 
@@ -162,13 +162,13 @@ Please note that all these characters are only available in math mode.
 Several theorem-like environments are predefined in the llncs document class. corollary ( env. ) definition ( env. ) lemma ( env. ) The following environments have a bold run-in heading, while the following text is in italics:
 
 ```
-\begin{corollary} <text> \end{corollary} \begin{definition} <text> \end{definition} \begin{lemma} <text> \end{lemma} \begin{proposition} <text> \end{proposition} \begin{theorem} <text> \end{theorem}
+proposition(env.) \begin{corollary} <text> \end{corollary} \begin{definition} <text> \end{definition} \begin{lemma} <text> \end{lemma} \begin{proposition} <text> \end{proposition} \begin{theorem} <text> \end{theorem}
 ```
 
 Other theorem-like environments render the text in roman, while the run-in case ( env. ) conjecture ( env. ) heading is bold as well:
 
 ```
-exercise(env.) property(env.) question(env.) solution(env.) heading is bold as well: problem(env.) note(env.) \begin{case} <text> \end{case} \begin{conjecture} <text> \end{conjecture} \begin{example} <text> \end{example} \begin{exercise} <text> \end{exercise} \begin{note} <text> \end{note} \begin{problem} <text> \end{problem} remark(env.) \begin{property} <text> \end{property} \begin{question} <text> \end{question} \begin{remark} <text> \end{remark} \begin{solution} <text> \end{solution}
+exercise(env.) property(env.) question(env.) solution(env.) heading is bold as well: example(env.) problem(env.) note(env.) \begin{case} <text> \end{case} \begin{conjecture} <text> \end{conjecture} \begin{example} <text> \end{example} \begin{exercise} <text> \end{exercise} \begin{note} <text> \end{note} \begin{problem} <text> \end{problem} remark(env.) \begin{property} <text> \end{property} \begin{question} <text> \end{question} \begin{remark} <text> \end{remark} \begin{solution} <text> \end{solution}
 ```
 
 Finally, there are also two unnumbered environments that have the run-in headclaim ( env. ) proof ( env. ) ing in italics and the text in upright roman.
@@ -183,11 +183,11 @@ Proofs may contain an eye catching square, which can be inserted with \qed ) \qe
 
 We have enhanced the standard \newtheorem command and slightly changed its syntax to get two new commands \spnewtheorem and \spnewtheorem* that now can be used to define additional environments. They require two additional arguments, namely the font style of the label and the font style of the text of the new environment:
 
-\spnewtheorem{maintheorem}[theorem]{Main Theorem}{\bfseries}{\itshape}
+```
+\spnewtheorem{<env_nam>}[<num_like>]{<caption>}{<cap_font>}{<body_font>} For example,
+```
 
-```
-\spnewtheorem{<env_nam>}[<num_like>]{<caption>}{<cap_font>}{<body_font>} For example, \spnewtheorem{maintheorem}[theorem]{Main Theorem}{\bfseries}{\itshape}
-```
+\spnewtheorem{maintheorem}[theorem]{Main Theorem}{\bfseries}{\itshape}
 
 \spnewtheorem*
 

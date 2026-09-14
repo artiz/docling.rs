@@ -34,6 +34,9 @@ pub fn refine_regions(
     // instead of shipping as pixels (needs a text layer; pre-OCR this is a
     // no-op and the OCR paths re-run it once cells exist).
     crate::assemble::recover_text_panels(&mut regions, cells);
+    // Fit the regular regions to their cells (#419) — a no-op pre-OCR, when
+    // there are none yet.
+    crate::assemble::fit_regions_to_cells(&mut regions, cells);
     regions
 }
 

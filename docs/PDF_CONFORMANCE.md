@@ -30,13 +30,13 @@ are no longer scored.)
 | base14_fonts_rot90 / _rot180 / _rot270 | **exact** | — (`/Rotate` display-frame normalization, docling#4008) |
 | amt_handbook_sample | 2 *(ws-ok)* | docling's spurious fraction double space — ours is more faithful |
 | code_and_formula | **exact** | — (flat legacy code, line-preserving `pretty` in strict) |
-| 2305.03393v1 | 20 | author-block cluster split + in-figure label clusters (model-level) |
-| normal_4pages | 20 | two-column line interleave + section-1 numeral claim |
-| table_mislabeled_as_picture | 54 | layout over-detects tables (survey rendered as tables) |
-| 2203.01017v2 | 55 | reference-accent spacing + author-block splits (in-picture table recovered: same grid as docling, different OCR engine noise) |
+| normal_4pages | 16 | two-column line interleave + section-1 numeral claim |
+| 2305.03393v1 | 18 | author-block cluster split + in-figure label clusters (model-level) |
+| table_mislabeled_as_picture | 48 | layout over-detects tables (survey rendered as tables) |
+| 2203.01017v2 | 51 | reference-accent spacing + author-block splits (in-picture table recovered: same grid as docling, different OCR engine noise) |
+| 2206.01062 | 52 | author-block cluster splits (model-borderline) + one int8-borderline header rowspan |
 | right_to_left_03 | 58 | RTL bidi + wrapper (form) children order |
-| redp5110_sampled | 71 | TOC row structure tails + cover-page ordering |
-| 2206.01062 | 82 | author-block cluster splits (model-borderline) + one int8-borderline header rowspan |
+| redp5110_sampled | 70 | TOC row structure tails + cover-page ordering |
 
 Measured on the current tree with `scripts/conformance/pdf_groundtruth.sh`.
 The earlier revision of this table predated docling 2.118's reading-order
@@ -166,6 +166,34 @@ so only border-straddlers (≤ 80 % containment) surface as text, on scanned
 pages exactly as on digital ones. The digital corpus is untouched (6/14
 strict, same per-file diffs); 17 scanned/image snapshots shed their leaked
 figure-internal text (axis ticks, diagram labels — net −59 lines).
+
+The #419 **cell refit** closes a gap that sat *before* the reading order.
+docling's `LayoutPostprocessor` never hands the model's boxes to the
+reading-order predictor: once cells are assigned, every regular cluster's
+bbox becomes the union of its cells (`_adjust_cluster_bboxes`), a regular
+cluster left with no cells is dropped (`keep_empty_clusters=False`, formulas
+excepted), and a cluster > 0.8 contained in another is merged into it
+(`_remove_overlapping_clusters`, three rounds). The port assigned cells and
+made orphans but ordered the raw model boxes. That mattered whenever a box
+ended partway through a line: the line missed the 0.2 claim and became an
+orphan (fine), but the *next* paragraph's model box still overlapped that
+line by a few points, so the strictly-above graph had no edge between them
+and emitted the paragraph first — the orphan came out stranded after the
+paragraph it belonged in, and `predict_merges` had already spliced the
+paragraph across the gap (a 460-page book showed 1540 of 6050 text blocks
+starting mid-sentence). `assemble::fit_regions_to_cells` is the refit —
+regular boxes fitted to their cells, empty regular boxes dropped, orphans
+inside a fitted box folded in — run once the page's cells are final, before
+TableFormer and the reading order; cell assignment is unchanged, since a
+fitted box contains every cell it claimed. Groundtruth moved only toward
+docling: 2206 82→52 (its author block now reads exactly as docling's),
+2305 20→18, normal_4pages 20→16, everything else identical; snapshots
+changed on 2206/2305/normal_4pages and on four fixtures with no groundtruth
+(llncsdoc's theorem-environment lines rejoin their paragraphs, nextn's
+figure digits sit beside their subscript bases, old_newspaper and qr_bill
+reorder a few OCR blocks). The same refresh took in the four blank-line
+drifts #385 had left in the PDF baselines (its list-boundary rule reached
+the PDF serializer, and the snapshots were not re-run then).
 
 The #265 **table-caption attachment** ports the table arm of docling's
 `ReadingOrderPredictor._find_to_captions`: a `caption` region binds to the
