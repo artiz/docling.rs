@@ -1467,9 +1467,12 @@ cargo run -p docling-cli -- recording.mp3
 # …with a named preset (fetch it first: download_dependencies.sh --asr-model=whisper_tiny_en)
 cargo run -p docling-cli -- --asr-model whisper_tiny_en recording.mp3
 
-# extract pictures (PDF/image inputs): embed as data URIs, or write ./artifacts/*.png
+# extract pictures: embed as data URIs, or write ./artifacts/*.png — for any
+# input that carries images, docling-JSON included (a `data:` URI or a
+# referenced file next to the JSON is read back, #403)
 cargo run -p docling-cli -- --images embedded   document.pdf
 cargo run -p docling-cli -- --images referenced document.pdf > out.md
+cargo run -p docling-cli -- --images referenced document.json > out.md
 
 # stream Markdown to stdout page by page (the CLI's default; --no-stream to buffer)
 cargo run -p docling-cli -- document.pdf
