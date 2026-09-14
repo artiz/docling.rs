@@ -151,8 +151,9 @@ jobs:
           mkdir -p third-party third-party/asr
           # Same backoff download_dependencies.sh uses: Hugging Face and
           # raw.githubusercontent answer 429 to shared CI egress often enough
-          # to fail an unretried fetch.
-          RETRY="--retry 5 --connect-timeout 30"
+          # to fail an unretried fetch, and GitHub's release-asset CDN has
+          # answered 504 for a quarter of a minute straight.
+          RETRY="--retry 8 --connect-timeout 30"
           curl -fsSL $RETRY -o /tmp/pdfium.tgz \
             "https://github.com/bblanchon/pdfium-binaries/releases/latest/download/pdfium-linux-x64.tgz"
           tar -xzf /tmp/pdfium.tgz -C third-party
