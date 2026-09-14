@@ -112,9 +112,14 @@ cargo check -p docling --no-default-features --features pdf-text \
   formats must match Python docling **byte-for-byte**; the ML pipeline is
   pinned by deterministic snapshots (`tests/snapshots/`,
   `scripts/conformance/`, see `docs/PDF_CONFORMANCE.md`).
-- Output-regression suite: `crates/docling/tests/regression.rs` over
-  `crates/docling/tests/data`; regenerate intentional changes with
-  `DOCLING_RS_REGEN=1`.
+- Output-regression suite: `crates/docling/tests/regression.rs`, expected
+  outputs under `crates/docling/tests/data/<format>/expected/`; regenerate
+  intentional changes with `DOCLING_RS_REGEN=1`. **A source file lives in one
+  place only:** an upstream fixture goes in the root `tests/data/<format>/sources/`
+  and is covered by adding its name to `crates/docling/tests/data/<format>/mirror.txt`;
+  only fixtures of our own (formats docling lacks, our regression cases) go in
+  `crates/docling/tests/data/<format>/sources/`. The harness fails on a copy
+  that exists in both.
 - When touching serializers, keep the streaming and buffered paths
   byte-identical — `MarkdownStreamer` tests assert exactly that.
 - A `docling-core` serializer change reaches the **PDF** baselines too, and

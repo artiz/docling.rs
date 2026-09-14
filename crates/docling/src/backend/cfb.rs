@@ -332,7 +332,7 @@ mod tests {
     fn opens_real_word_file_and_reads_streams() {
         let data = std::fs::read(concat!(
             env!("CARGO_MANIFEST_DIR"),
-            "/tests/data/doc/sources/docx_lists.doc"
+            "/../../tests/data/doc/sources/docx_lists.doc"
         ))
         .unwrap();
         let cfb = CompoundFile::open(&data).expect("valid CFB");
@@ -347,7 +347,7 @@ mod tests {
     fn truncated_header_is_rejected_not_panicked() {
         let data = std::fs::read(concat!(
             env!("CARGO_MANIFEST_DIR"),
-            "/tests/data/doc/sources/docx_lists.doc"
+            "/../../tests/data/doc/sources/docx_lists.doc"
         ))
         .unwrap();
         // Every truncation point must fail cleanly, never panic.

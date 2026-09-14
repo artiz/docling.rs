@@ -1283,7 +1283,7 @@ mod tests {
 
     fn fixture(name: &str) -> SourceDocument {
         let path = format!(
-            "{}/tests/data/doc/sources/{name}",
+            "{}/../../tests/data/doc/sources/{name}",
             env!("CARGO_MANIFEST_DIR")
         );
         let bytes = std::fs::read(&path).expect("fixture exists");

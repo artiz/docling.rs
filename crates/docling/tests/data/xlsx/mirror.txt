@@ -1,0 +1,13 @@
+xlsx_01.xlsx
+xlsx_02_sample_sales_data.xlsm
+xlsx_03_chartsheet.xlsx
+xlsx_04_inflated.xlsx
+xlsx_05_table_with_title.xlsx
+xlsx_06_edge_cases_.xlsx
+xlsx_07_gap_tolerance_.xlsx
+xlsx_08_one_cell_anchor.xlsx
+xlsx_09_section_label_header.xlsx
+xlsx_chart_sheet.xlsx
+xlsx_comments.xlsx
+xlsx_empty_merge_before_data.xlsx
+xlsx_merged_range.xlsx

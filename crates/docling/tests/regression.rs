@@ -1,9 +1,23 @@
 //! Output regression suite.
 //!
-//! Every supported source under `tests/data/<format>/sources/` is converted to
-//! legacy Markdown, strict Markdown and docling JSON, and compared against the
-//! committed fixtures in the sibling `expected/` directory. This pins the Rust
-//! converter's output so any unintended change is caught.
+//! Every source the suite covers is converted to legacy Markdown, strict
+//! Markdown, docling JSON and LaTeX, and compared against the committed
+//! fixtures in `tests/data/<format>/expected/`. This pins the Rust converter's
+//! output so any unintended change is caught.
+//!
+//! Sources come from two places, so the upstream corpus is stored once:
+//!
+//! - `tests/data/<format>/mirror.txt` (in this crate) lists, one file name per
+//!   line, the sources taken from the repository-root corpus mirrored from
+//!   Python docling, `../../tests/data/<format>/sources/` — the files the
+//!   conformance scripts compare against upstream groundtruth. Add a line to
+//!   cover another upstream fixture; never copy the file here.
+//! - `tests/data/<format>/sources/` (in this crate) holds the suite's **own**
+//!   fixtures: formats docling has no backend for, and regression cases of our
+//!   own. A file here must not exist in the mirrored corpus.
+//!
+//! The expected files are keyed by the source's file name, whichever place it
+//! came from.
 //!
 //! The ML formats (PDF, images, METS) need pdfium + the ONNX models, so they are
 //! covered by the deterministic snapshot harness (`scripts/conformance/pdf_conformance.sh`)
@@ -20,6 +34,8 @@ use std::path::{Path, PathBuf};
 
 use docling::{DocumentConverter, SourceDocument};
 
+/// This crate's `tests/data`: the expected fixtures, the own sources and the
+/// `mirror.txt` manifests.
 fn data_dir() -> PathBuf {
     // `cargo test` runs with the working directory set to the package root, so
     // resolve there first — this stays correct even if `target/` was copied from
@@ -35,38 +51,91 @@ fn data_dir() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/data")
 }
 
-/// Every file under `tests/data/*/sources/`, in a stable order.
-fn sources() -> Vec<PathBuf> {
+/// The repository-root corpus mirrored from upstream docling (`tests/data` two
+/// levels above the crate), which `mirror.txt` entries refer to.
+fn mirror_dir() -> PathBuf {
+    let d = data_dir().join("../../../../tests/data");
+    d.canonicalize().unwrap_or(d)
+}
+
+/// A covered source: where to read it, and the format directory whose
+/// `expected/` holds its fixtures.
+struct Source {
+    path: PathBuf,
+    fmt_dir: PathBuf,
+    /// `<format>/<file>`, for messages.
+    rel: String,
+}
+
+/// Every covered source, in a stable order: per format, the `mirror.txt`
+/// entries (resolved into the mirrored corpus), then the crate's own files.
+fn sources() -> Vec<Source> {
     let mut formats: Vec<PathBuf> = fs::read_dir(data_dir())
         .expect("tests/data missing")
         .flatten()
         .map(|e| e.path())
+        .filter(|p| p.is_dir())
         .collect();
     formats.sort();
 
+    let mirror = mirror_dir();
     let mut out = Vec::new();
-    for fmt in formats {
-        let sources = fmt.join("sources");
-        if !sources.is_dir() {
-            continue;
+    for fmt_dir in formats {
+        let fmt = fmt_dir.file_name().unwrap().to_string_lossy().to_string();
+        let mut names: Vec<(PathBuf, String)> = Vec::new();
+        if let Ok(manifest) = fs::read_to_string(fmt_dir.join("mirror.txt")) {
+            for name in manifest.lines().map(str::trim).filter(|l| !l.is_empty()) {
+                let path = mirror.join(&fmt).join("sources").join(name);
+                assert!(
+                    path.is_file(),
+                    "{fmt}/mirror.txt names {name}, which is not in the mirrored corpus at {}",
+                    path.display()
+                );
+                names.push((path, name.to_string()));
+            }
         }
-        let mut files: Vec<PathBuf> = fs::read_dir(&sources)
-            .unwrap()
-            .flatten()
-            .map(|e| e.path())
-            .filter(|p| p.is_file())
-            .collect();
-        files.sort();
-        out.extend(files);
+        let own = fmt_dir.join("sources");
+        if own.is_dir() {
+            let mut files: Vec<PathBuf> = fs::read_dir(&own)
+                .unwrap()
+                .flatten()
+                .map(|e| e.path())
+                .filter(|p| p.is_file())
+                .collect();
+            files.sort();
+            for path in files {
+                let name = path.file_name().unwrap().to_string_lossy().to_string();
+                // An own fixture shadowing an upstream one is the duplication
+                // this layout exists to prevent (and its expected files would
+                // collide): keep it in one place only.
+                let twin = mirror.join(&fmt).join("sources").join(&name);
+                assert!(
+                    !twin.exists(),
+                    "{fmt}/sources/{name} also exists in the mirrored corpus — list it in \
+                     {fmt}/mirror.txt instead of copying it"
+                );
+                assert!(
+                    !names.iter().any(|(_, n)| *n == name),
+                    "{fmt}/sources/{name} is also listed in {fmt}/mirror.txt"
+                );
+                names.push((path, name));
+            }
+        }
+        for (path, name) in names {
+            out.push(Source {
+                path,
+                rel: format!("{fmt}/{name}"),
+                fmt_dir: fmt_dir.clone(),
+            });
+        }
     }
     out
 }
 
-/// `<fmt>/sources/<file>` → `<fmt>/expected/<file><suffix>`.
-fn expected_path(src: &Path, suffix: &str) -> PathBuf {
-    let fmt_dir = src.parent().unwrap().parent().unwrap();
-    let name = src.file_name().unwrap().to_string_lossy();
-    fmt_dir.join("expected").join(format!("{name}{suffix}"))
+/// `<fmt>/expected/<file><suffix>` for a source.
+fn expected_path(src: &Source, suffix: &str) -> PathBuf {
+    let name = src.path.file_name().unwrap().to_string_lossy();
+    src.fmt_dir.join("expected").join(format!("{name}{suffix}"))
 }
 
 fn convert(src: &Path, strict: bool) -> Result<docling::DoclingDocument, String> {
@@ -101,16 +170,16 @@ fn streaming_matches_buffered_markdown() {
     let srcs = sources();
     let mut failures = Vec::new();
     for src in &srcs {
-        let rel = src.strip_prefix(data_dir()).unwrap().display().to_string();
+        let rel = &src.rel;
         for strict in [false, true] {
-            let buffered = match convert(src, strict) {
+            let buffered = match convert(&src.path, strict) {
                 Ok(d) => d.export_to_markdown(),
                 Err(e) => {
                     failures.push(format!("{rel}: convert error: {e}"));
                     continue;
                 }
             };
-            match stream_to_string(src, strict) {
+            match stream_to_string(&src.path, strict) {
                 Ok(streamed) if streamed == buffered => {}
                 Ok(_) => failures.push(format!(
                     "{rel} (strict={strict}): streamed Markdown != buffered export"
@@ -139,16 +208,16 @@ fn outputs_match_fixtures() {
 
     let mut failures = Vec::new();
     for src in &srcs {
-        let rel = src.strip_prefix(data_dir()).unwrap().display().to_string();
+        let rel = &src.rel;
 
-        let legacy = match convert(src, false) {
+        let legacy = match convert(&src.path, false) {
             Ok(d) => d,
             Err(e) => {
                 failures.push(format!("{rel}: convert error: {e}"));
                 continue;
             }
         };
-        let strict = match convert(src, true) {
+        let strict = match convert(&src.path, true) {
             Ok(d) => d,
             Err(e) => {
                 failures.push(format!("{rel}: strict convert error: {e}"));

@@ -876,7 +876,7 @@ mod chart_tests {
     #[test]
     fn native_chart_yields_classified_data_grid() {
         let path = format!(
-            "{}/tests/data/pptx/sources/pptx_chart.pptx",
+            "{}/../../tests/data/pptx/sources/pptx_chart.pptx",
             env!("CARGO_MANIFEST_DIR")
         );
         let bytes = std::fs::read(&path).expect("fixture exists");
