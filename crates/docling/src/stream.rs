@@ -46,11 +46,23 @@ impl Iterator for MarkdownStream {
         match self.rx.as_ref()?.recv() {
             Ok(item) => Some(item),
             // Producer finished and dropped its sender: join it and end.
+            //
+            // A producer that *panicked* also drops its sender, and reading
+            // that as a clean end of stream is how a backend bug turned into a
+            // silent empty document (#396: a 200 with no body where the panic
+            // should have been a 500). Report it as this stream's last item
+            // instead; the panic message and backtrace have already gone to
+            // stderr from the worker's own unwind.
             Err(_) => {
-                if let Some(h) = self.handle.take() {
-                    let _ = h.join();
-                }
-                None
+                let panicked = self.handle.take().is_some_and(|h| h.join().is_err());
+                // Nothing more to read either way — a further `next()` ends.
+                self.rx = None;
+                panicked.then(|| {
+                    Err(ConversionError::Panic(
+                        "the conversion worker panicked (its message and backtrace are on stderr)"
+                            .into(),
+                    ))
+                })
             }
         }
     }
@@ -228,5 +240,53 @@ fn run_buffered(
     let tail = streamer.finish();
     if !tail.is_empty() {
         let _ = tx.send(Ok(tail));
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// #395/#396: a producer that panics drops its sender exactly like one that
+    /// finished, so reading the closed channel as a clean end of stream turned a
+    /// backend bug into a silent empty document (an HTTP 200 with no body). The
+    /// stream reports it as its own last item instead. The worker's panic
+    /// message still goes to stderr — that is the noise this test prints.
+    #[test]
+    fn a_panicking_producer_ends_the_stream_with_an_error() {
+        let (tx, rx) = sync_channel::<Result<String, ConversionError>>(CHANNEL_DEPTH);
+        let handle = std::thread::spawn(move || {
+            tx.send(Ok("a chunk".into())).unwrap();
+            panic!("a backend bug");
+        });
+        let mut stream = MarkdownStream {
+            rx: Some(rx),
+            handle: Some(handle),
+        };
+        assert_eq!(stream.next().unwrap().unwrap(), "a chunk");
+        let err = stream
+            .next()
+            .expect("the panic is reported, not swallowed")
+            .expect_err("as an error");
+        assert!(matches!(err, ConversionError::Panic(_)), "got {err}");
+        assert!(
+            stream.next().is_none(),
+            "the stream ends after reporting the panic"
+        );
+    }
+
+    /// The ordinary end of a stream stays a plain `None`.
+    #[test]
+    fn a_finished_producer_just_ends() {
+        let (tx, rx) = sync_channel::<Result<String, ConversionError>>(CHANNEL_DEPTH);
+        let handle = std::thread::spawn(move || {
+            tx.send(Ok("only chunk".into())).unwrap();
+        });
+        let mut stream = MarkdownStream {
+            rx: Some(rx),
+            handle: Some(handle),
+        };
+        assert_eq!(stream.next().unwrap().unwrap(), "only chunk");
+        assert!(stream.next().is_none());
     }
 }
