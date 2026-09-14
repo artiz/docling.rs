@@ -126,9 +126,15 @@ fi
 # No --retry-delay: a fixed delay pins every attempt to the same short wait —
 # the container build's four tries at 2s landed inside six seconds, which is
 # nothing against the per-IP 429 Hugging Face answers CI runners with. Curl's
-# default doubling (1s, 2s, 4s, …) spreads five attempts over half a minute
-# instead; a server-sent Retry-After still overrides either way.
-CURL_TIMEOUTS="--connect-timeout 30 --speed-limit 1024 --speed-time 60 --retry 5"
+# default doubling (1s, 2s, 4s, …) spreads the attempts out instead; a
+# server-sent Retry-After still overrides either way. Eight retries reach
+# ~4 minutes (1+2+…+128 s): the v1.48.4 image publish died on `bbox.onnx`
+# when GitHub's release-asset CDN answered 504 for every one of five tries
+# inside 15 seconds — an outage that outlasts the old half-minute window
+# but not a few minutes. Only transient answers (408/429/5xx, a timeout) are
+# retried: a 404 still fails at once, which fetch_optional and the mirror
+# fallbacks rely on for the sidecars a release does not host.
+CURL_TIMEOUTS="--connect-timeout 30 --speed-limit 1024 --speed-time 60 --retry 8"
 
 fetch() { # <url> <dest>
   if [ "$FORCE" = false ] && [ -f "$2" ]; then
