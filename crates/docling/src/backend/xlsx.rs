@@ -36,6 +36,8 @@ pub(crate) type Merges = Vec<((u32, u32), (u32, u32))>;
 /// its `comment_section` group (docling's `comment-{sheet}-{cell}`).
 type SheetComment = (usize, usize, String, String);
 type SheetItems = (Vec<((usize, usize, usize, usize), Node)>, Vec<SheetComment>);
+/// A sheet item with its docling creation rank: `(seq, bbox, node)`.
+type RankedItem = (usize, (usize, usize, usize, usize), Node);
 
 /// Load one sheet's merged regions (`<mergeCells>`), absolute coordinates.
 fn sheet_merges<R: std::io::Read + std::io::Seek>(wb: &mut Xlsx<R>, name: &str) -> Merges {
@@ -216,8 +218,25 @@ impl DeclarativeBackend for XlsxBackend {
                 doc.push(sheet_group(sheet_name, hidden, Vec::new()));
                 continue;
             }
-            // docling sorts a sheet's children by top coordinate (stable).
-            items.sort_by_key(|((_, t, _, _), _)| *t);
+            // docling creates a sheet's items in three passes — the tables
+            // (each label right before its table), then the images, then the
+            // charts (in drawing order) — which is the order it numbers them
+            // (`#/tables/N`, `#/texts/N`, `#/pictures/N`); the group's
+            // children are then sorted by top coordinate, stably, so items
+            // sharing a top keep that creation order too. Reproduce both: rank
+            // by creation, then sort by top and carry the rank along.
+            let pass = |n: &Node| match n {
+                Node::Picture { .. } => 1,
+                Node::Chart { .. } => 2,
+                _ => 0,
+            };
+            items.sort_by_key(|(_, n)| pass(n));
+            let mut items: Vec<RankedItem> = items
+                .into_iter()
+                .enumerate()
+                .map(|(seq, (bbox, node))| (seq, bbox, node))
+                .collect();
+            items.sort_by_key(|(_, (_, t, _, _), _)| *t);
             // docling's `_find_cell_item`: a comment annotates the item whose
             // cell range covers the commented cell (resolved after the sort, so
             // the indices address the emitted order).
@@ -227,7 +246,7 @@ impl DeclarativeBackend for XlsxBackend {
                     .iter()
                     // The item bboxes are half-open on the right/bottom edge
                     // (`max + 1`), like the ranges `find_tables` reports.
-                    .position(|((l, t, r, b), _)| {
+                    .position(|(_, (l, t, r, b), _)| {
                         (*l..*r).contains(&col) && (*t..*b).contains(&row)
                     })
                 {
@@ -235,14 +254,22 @@ impl DeclarativeBackend for XlsxBackend {
                 }
             }
             // Location provenance against the sheet's extent.
-            let page_w = items.iter().map(|((_, _, r, _), _)| *r).max().unwrap_or(1);
-            let page_h = items.iter().map(|((_, _, _, b), _)| *b).max().unwrap_or(1);
+            let page_w = items
+                .iter()
+                .map(|(_, (_, _, r, _), _)| *r)
+                .max()
+                .unwrap_or(1);
+            let page_h = items
+                .iter()
+                .map(|(_, (_, _, _, b), _)| *b)
+                .max()
+                .unwrap_or(1);
             doc.push(Node::PageInfo {
                 page_no,
                 width: page_w as f32,
                 height: page_h as f32,
             });
-            for ((l, t, r, b), node) in &mut items {
+            for (_, (l, t, r, b), node) in &mut items {
                 let loc = [
                     location_value(*l, page_w),
                     location_value(*t, page_h),
@@ -257,7 +284,7 @@ impl DeclarativeBackend for XlsxBackend {
                 }
             }
             let mut children = Vec::with_capacity(items.len());
-            for (ix, ((l, t, r, b), node)) in items.into_iter().enumerate() {
+            for (ix, (seq, (l, t, r, b), node)) in items.into_iter().enumerate() {
                 let node = if let Node::Picture { .. } = &node {
                     Node::Located {
                         location: [
@@ -288,6 +315,7 @@ impl DeclarativeBackend for XlsxBackend {
                     page_no,
                     bbox: [l as f32, t as f32, r as f32, b as f32],
                     charspan: [0, 0],
+                    seq: Some(seq),
                     inner: Box::new(node),
                 });
             }

@@ -247,6 +247,14 @@ pub enum Node {
         bbox: [f32; 4],
         /// docling's `charspan` for the item (`[0, 0]` for an XLSX table).
         charspan: [usize; 2],
+        /// The item's creation rank among its siblings, when that differs
+        /// from the node order: docling numbers `#/tables/N` / `#/texts/N` /
+        /// `#/pictures/N` in the order it *creates* items (a sheet's tables,
+        /// then its images, then its charts) and only afterwards sorts the
+        /// container's children by position. The JSON export adds siblings in
+        /// this order and lays their refs out in node order; `None` when the
+        /// two orders coincide.
+        seq: Option<usize>,
         inner: Box<Node>,
     },
     /// A PDF page header or footer (docling's `page_header`/`page_footer`

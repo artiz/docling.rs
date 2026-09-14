@@ -688,6 +688,7 @@ impl Builder {
                 bbox,
                 charspan,
                 inner,
+                ..
             } => {
                 self.pending_exact = Some((*page_no, *bbox, *charspan));
                 let r = self.add_node(inner, parent);
@@ -1152,6 +1153,29 @@ impl Builder {
     /// Walk a slice of sibling nodes, returning each child's `$ref`; runs of
     /// list items are folded into list groups (one per sibling list).
     fn walk_into(&mut self, nodes: &[Node], parent: &str) -> Vec<Value> {
+        // Siblings that all carry a creation rank (an XLSX sheet's items) are
+        // *added* in that order — so `#/tables/N` and friends are numbered as
+        // docling numbers them — while their refs keep the node order, which
+        // is docling's position-sorted `children`.
+        let seqs: Option<Vec<usize>> = nodes
+            .iter()
+            .map(|n| match n {
+                Node::Prov { seq: Some(s), .. } => Some(*s),
+                _ => None,
+            })
+            .collect();
+        if let Some(seqs) = seqs.filter(|s| !s.is_empty()) {
+            let mut order: Vec<usize> = (0..nodes.len()).collect();
+            order.sort_by_key(|&i| seqs[i]);
+            let mut slots: Vec<Vec<Value>> = vec![Vec::new(); nodes.len()];
+            for i in order {
+                if let Some(r) = self.add_node(&nodes[i], parent) {
+                    slots[i].append(&mut self.pending_siblings);
+                    slots[i].push(json!({ "$ref": r }));
+                }
+            }
+            return slots.into_iter().flatten().collect();
+        }
         let mut children = Vec::new();
         let mut i = 0;
         while i < nodes.len() {
@@ -1434,16 +1458,22 @@ mod tests {
             name: Some("Data".into()),
             layer: None,
             children: vec![
+                // Node order is the position-sorted one; creation order (the
+                // `seq`) had the chart first — so the chart is `#/pictures/0`
+                // *and* its caption `#/texts/0`, while the table stays the
+                // group's first child.
                 Node::Prov {
                     page_no: 1,
                     bbox: [0.0, 0.0, 3.0, 4.0],
                     charspan: [0, 0],
+                    seq: Some(1),
                     inner: Box::new(Node::Table(table.clone())),
                 },
                 Node::Prov {
                     page_no: 1,
                     bbox: [0.0, 1.0, 1.0, 1.0],
                     charspan: [0, 0],
+                    seq: Some(0),
                     inner: Box::new(Node::Chart {
                         kind: "bar_chart".into(),
                         table,
