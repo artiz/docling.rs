@@ -1268,19 +1268,44 @@ fn region_text(region: &Region, cells: &[TextCell]) -> String {
 /// wrappers never claim (docling walks regular clusters only); ties go to the
 /// first region, like docling's strict `>` best-overlap scan.
 pub fn region_texts_exclusive(regions: &[Region], cells: &[TextCell]) -> Vec<String> {
-    let claimer: Vec<bool> = regions
+    let owned = assign_cells(regions, cells);
+    // Non-claimers (tables/wrappers/pictures) keep the inclusive > 0.5 text:
+    // docling fills a special cluster's cells from its contained children, and
+    // downstream table assembly gates on that text being non-empty.
+    regions
         .iter()
-        .map(|r| r.label != "picture" && !is_wrapper(r.label))
-        .collect();
-    let mut owned: Vec<Vec<&TextCell>> = vec![Vec::new(); regions.len()];
-    for c in cells {
+        .zip(owned)
+        .map(|(r, cs)| {
+            if claims_cells(r) {
+                cells_text(cs.iter().map(|&i| &cells[i]).collect())
+            } else {
+                region_text(r, cells)
+            }
+        })
+        .collect()
+}
+
+/// A *regular* region in docling's sense — one that claims cells. Pictures and
+/// the wrappers (`table`, `document_index`, `form`, `key_value_region`) fill
+/// their cells from contained children instead.
+fn claims_cells(r: &Region) -> bool {
+    r.label != "picture" && !is_wrapper(r.label)
+}
+
+/// docling's `_assign_cells_to_clusters`: each non-empty cell's index goes to
+/// the single best-overlapping regular region at intersection-over-self > 0.2
+/// (ties to the first region, like docling's strict `>` scan). One entry per
+/// region, in region order.
+fn assign_cells(regions: &[Region], cells: &[TextCell]) -> Vec<Vec<usize>> {
+    let mut owned: Vec<Vec<usize>> = vec![Vec::new(); regions.len()];
+    for (ci, c) in cells.iter().enumerate() {
         if c.text.trim().is_empty() {
             continue;
         }
         let ca = area(c.l, c.t, c.r, c.b).max(1.0);
         let mut best: Option<(usize, f32)> = None;
         for (i, r) in regions.iter().enumerate() {
-            if !claimer[i] {
+            if !claims_cells(r) {
                 continue;
             }
             let ov = inter(r, c.l, c.t, c.r, c.b) / ca;
@@ -1289,23 +1314,116 @@ pub fn region_texts_exclusive(regions: &[Region], cells: &[TextCell]) -> Vec<Str
             }
         }
         if let Some((i, _)) = best {
-            owned[i].push(c);
+            owned[i].push(ci);
         }
     }
-    // Non-claimers (tables/wrappers/pictures) keep the inclusive > 0.5 text:
-    // docling fills a special cluster's cells from its contained children, and
-    // downstream table assembly gates on that text being non-empty.
-    regions
-        .iter()
-        .zip(owned)
-        .map(|(r, cs)| {
-            if r.label != "picture" && !is_wrapper(r.label) {
-                cells_text(cs)
-            } else {
-                region_text(r, cells)
+    owned
+}
+
+/// docling's regular-cluster refinement after cell assignment
+/// (`LayoutPostprocessor._process_regular_clusters`, #419), run once the page's
+/// cells are final and before reading order:
+///
+/// 1. every regular region's box becomes the union of the cells it claimed
+///    (`_adjust_cluster_bboxes` — a regular cluster's bbox *is* its cells'
+///    bbox; a table's is the union with the model box, and pictures keep
+///    theirs, so neither is touched here);
+/// 2. a regular region that claimed no cell is dropped (`keep_empty_clusters`
+///    is off; a `formula` is kept, as upstream keeps it);
+/// 3. an orphan text region (`score == 0.0`, from [`add_orphan_regions`]) that
+///    now sits > 0.8 inside another regular region's fitted box is folded into
+///    it (`_remove_overlapping_clusters` at containment 0.8, the larger box
+///    winning the group) — up to three rounds, like upstream's loop.
+///
+/// Why it matters: the layout model's box can end partway through a line. That
+/// line fails the 0.2 claim and becomes an orphan — recoverable — but the
+/// *model* box still overlaps the orphan's line by a few points, so the
+/// reading-order graph, which links only strictly-above pairs, gets no edge
+/// between them and may emit the next paragraph first, stranding the line
+/// after the paragraph it belongs in (1540 of 6050 text blocks on the #419
+/// book began mid-sentence). Fitted to its cells, the box ends on a line
+/// boundary and the orphan slots in between; an orphan the fitted box
+/// swallows joins the paragraph outright. Cell assignment is untouched: a
+/// region's fitted box contains every cell it claimed, so
+/// [`region_texts_exclusive`] hands it the same cells afterwards.
+///
+/// A page with no cells yet (a scan before OCR) is left alone: dropping every
+/// text region for want of cells would be wrong, and the OCR paths call this
+/// again once the cells exist.
+pub fn fit_regions_to_cells(regions: &mut Vec<Region>, cells: &[TextCell]) {
+    if !cells.iter().any(|c| !c.text.trim().is_empty()) {
+        return;
+    }
+    for _ in 0..3 {
+        let owned = assign_cells(regions, cells);
+        let mut fitted: Vec<Region> = Vec::with_capacity(regions.len());
+        for (r, own) in regions.iter().zip(&owned) {
+            if !claims_cells(r) {
+                fitted.push(r.clone());
+                continue;
             }
-        })
-        .collect()
+            if own.is_empty() {
+                if r.label == "formula" {
+                    fitted.push(r.clone());
+                }
+                continue;
+            }
+            let mut f = r.clone();
+            f.l = own
+                .iter()
+                .map(|&i| cells[i].l)
+                .fold(f32::INFINITY, f32::min);
+            f.t = own
+                .iter()
+                .map(|&i| cells[i].t)
+                .fold(f32::INFINITY, f32::min);
+            f.r = own
+                .iter()
+                .map(|&i| cells[i].r)
+                .fold(f32::NEG_INFINITY, f32::max);
+            f.b = own
+                .iter()
+                .map(|&i| cells[i].b)
+                .fold(f32::NEG_INFINITY, f32::max);
+            fitted.push(f);
+        }
+        let mut changed = fitted.len() != regions.len();
+        // Fold orphans into the regular region whose fitted box holds them.
+        let mut drop = vec![false; fitted.len()];
+        for i in 0..fitted.len() {
+            let o = &fitted[i];
+            if !(o.score == 0.0 && o.label == "text") {
+                continue;
+            }
+            let oa = area(o.l, o.t, o.r, o.b).max(1.0);
+            let mut best: Option<(usize, f32)> = None;
+            for (j, r) in fitted.iter().enumerate() {
+                if j == i || drop[j] || r.score == 0.0 || !claims_cells(r) {
+                    continue;
+                }
+                let ov = inter(r, o.l, o.t, o.r, o.b) / oa;
+                if ov > 0.8 && best.is_none_or(|(_, b)| ov > b) {
+                    best = Some((j, ov));
+                }
+            }
+            if let Some((j, _)) = best {
+                let (l, t, r, b) = (o.l, o.t, o.r, o.b);
+                let host = &mut fitted[j];
+                host.l = host.l.min(l);
+                host.t = host.t.min(t);
+                host.r = host.r.max(r);
+                host.b = host.b.max(b);
+                drop[i] = true;
+                changed = true;
+            }
+        }
+        let mut drop = drop.into_iter();
+        fitted.retain(|_| !drop.next().expect("aligned"));
+        *regions = fitted;
+        if !changed {
+            break;
+        }
+    }
 }
 
 /// Join a prefiltered cell list into the region's text (docling's
@@ -3694,5 +3812,114 @@ mod tests {
             clean_text("\u{0627}\u{0644}\u{0622}\u{0644}\u{064a}"),
             "\u{0627}\u{0644}\u{0622}\u{0644}\u{064a}"
         );
+    }
+
+    /// The #419 page, in points: three layout boxes over one paragraph, two of
+    /// them ending partway through a line. The sliced lines miss the 0.2 claim
+    /// and become orphans; the third model box starts above the second orphan,
+    /// so unfitted the reading order emits that box first and strands the line.
+    fn sliced_paragraph() -> (Vec<Region>, Vec<TextCell>) {
+        let line = |text: &str, t: f32, r: f32| cell(text, 60.0, t, r, t + 11.0);
+        let cells = vec![
+            line("The mission of this series is to improve", 135.0, 458.0),
+            line("The books in this series are technical,", 147.0, 458.0),
+            line("substantial. The authors are", 159.0, 458.0),
+            line("highly experienced craftsmen and", 171.5, 458.0), // sliced: 1.5/11 under box A
+            line("actually works in practice, as opposed", 185.0, 458.0),
+            line("about what the author has done, not", 197.0, 458.0),
+            line("about programming, there will be lots", 210.5, 458.0), // sliced: 1.5/11 under box B
+            line("will be lots of case studies from real", 223.0, 206.0), // C's line
+        ];
+        let regions = vec![
+            region("text", 0.9, 60.0, 132.0, 458.0, 173.0), // A: three lines + a sliver of the 4th
+            region("text", 0.9, 60.0, 184.0, 458.0, 212.0), // B: two lines + a sliver of the 7th
+            region("text", 0.9, 60.0, 216.0, 206.0, 227.0), // C: last line, box opening 5.5pt too early
+        ];
+        (regions, cells)
+    }
+
+    fn ordered_texts(regions: &[Region], cells: &[TextCell]) -> Vec<String> {
+        let mut items: Vec<Region> = regions.to_vec();
+        super::order_regions(&mut items, 500.0, 700.0, |r| r);
+        super::region_texts_exclusive(&items, cells)
+            .into_iter()
+            .map(|t| t.chars().take(9).collect())
+            .collect()
+    }
+
+    /// #419: fitted to its cells, a model box that cut a line in half no longer
+    /// overlaps the orphan that line became, so the orphan orders where it
+    /// reads; unfitted, the same page strands the line after the paragraph.
+    #[test]
+    fn fitting_boxes_to_cells_puts_a_sliced_line_back_in_order() {
+        let (mut regions, cells) = sliced_paragraph();
+        super::add_orphan_regions(&mut regions, &cells);
+        assert_eq!(regions.len(), 5, "two orphan lines");
+        // The defect, for the record: C (top 216) is not strictly below the
+        // orphan at 210.5–221.5, so the graph orders C first.
+        assert_eq!(
+            ordered_texts(&regions, &cells).last().map(String::as_str),
+            Some("about pro")
+        );
+
+        super::fit_regions_to_cells(&mut regions, &cells);
+        assert_eq!(regions.len(), 5);
+        // A ends on its last claimed line, C starts on its only one.
+        assert_eq!((regions[0].t, regions[0].b), (135.0, 170.0));
+        assert_eq!((regions[2].t, regions[2].b), (223.0, 234.0));
+        assert_eq!(
+            ordered_texts(&regions, &cells),
+            [
+                "The missi",
+                "highly ex",
+                "actually ",
+                "about pro",
+                "will be l"
+            ]
+        );
+    }
+
+    /// An orphan the fitted paragraph box surrounds (a short middle line the
+    /// narrow model box missed while claiming the lines around it) is folded
+    /// into the paragraph; an empty regular box goes away, a formula stays, a
+    /// picture is never refitted, and a page with no cells is left untouched.
+    #[test]
+    fn fitting_folds_surrounded_orphans_and_drops_empty_regulars() {
+        let wide = |text: &str, t: f32| cell(text, 60.0, t, 400.0, t + 11.0);
+        let cells = vec![
+            wide("first line of the paragraph", 100.0),
+            cell("stray", 250.0, 112.0, 400.0, 123.0), // clear of the narrow box
+            wide("third line of the paragraph", 124.0),
+        ];
+        let mut regions = vec![
+            // Narrow box: claims the wide lines at 0.41, misses the short one.
+            region("text", 0.9, 60.0, 98.0, 200.0, 136.0),
+            region("section_header", 0.8, 60.0, 300.0, 200.0, 320.0), // no cells
+            region("formula", 0.8, 60.0, 340.0, 200.0, 360.0),        // no cells, kept
+            region("picture", 0.8, 0.0, 400.0, 500.0, 600.0),
+        ];
+        super::add_orphan_regions(&mut regions, &cells);
+        assert_eq!(regions.len(), 5, "the short line became an orphan");
+        super::fit_regions_to_cells(&mut regions, &cells);
+        let labels: Vec<&str> = regions.iter().map(|r| r.label).collect();
+        assert_eq!(labels, ["text", "formula", "picture"]);
+        let para = &regions[0];
+        assert_eq!(
+            (para.l, para.t, para.r, para.b),
+            (60.0, 100.0, 400.0, 135.0)
+        );
+        assert_eq!(
+            super::region_texts_exclusive(&regions, &cells)[0],
+            "first line of the paragraph stray third line of the paragraph"
+        );
+        assert_eq!(
+            (regions[2].t, regions[2].b),
+            (400.0, 600.0),
+            "picture untouched"
+        );
+
+        let mut untouched = vec![region("text", 0.9, 0.0, 0.0, 10.0, 10.0)];
+        super::fit_regions_to_cells(&mut untouched, &[]);
+        assert_eq!(untouched.len(), 1, "no cells yet: nothing dropped");
     }
 }

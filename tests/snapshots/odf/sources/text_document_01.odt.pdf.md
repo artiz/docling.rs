@@ -8,7 +8,6 @@ Contrary to popular belief, Lorem Ipsum is not simply random text. It has roots 
 
 1. numbered list 1
 2. numbered list 2
-
 - bullet list 2.1
 - bullet list 2.2
 - bullet list 2.2.1
