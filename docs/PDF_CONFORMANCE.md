@@ -34,7 +34,7 @@ are no longer scored.)
 | 2305.03393v1 | 18 | author-block cluster split + in-figure label clusters (model-level) |
 | table_mislabeled_as_picture | 48 | layout over-detects tables (survey rendered as tables) |
 | 2203.01017v2 | 51 | reference-accent spacing + author-block splits (in-picture table recovered: same grid as docling, different OCR engine noise) |
-| 2206.01062 | 60 | author-block cluster splits (model-borderline) + one int8-borderline header rowspan; 8 of the lines are the #424 same-row author order, which docling 2.127 produces too — the committed groundtruth is an older docling's |
+| 2206.01062 | 56 | author-block cluster splits (model-borderline) + one int8-borderline header rowspan; 4 of the lines are the #424 same-row author order, which docling 2.127 produces too — the committed groundtruth is an older docling's |
 | right_to_left_03 | 58 | RTL bidi + wrapper (form) children order |
 | redp5110_sampled | 70 | TOC row structure tails + cover-page ordering |
 
@@ -221,7 +221,7 @@ right table's caption is read ahead of the left column's headings (2206
 page 8) — which docling does not do. Verified against docling 2.127 itself:
 on `2206.01062` page 1 its author row reads Pfitzmann, Auer, Dolfi on one
 line, exactly as ours now does (the committed groundtruth predates the rule
-— its last real docling run was June 2026 — hence the 2206 diff moves 52→60
+— its last real docling run was June 2026 — hence the 2206 diff moves 52→56
 against it, all in that author row); on the reported Pearson page it reads
 the LCCN right after the Dewey number. Every other groundtruth fixture is
 unchanged, 9/17 strict as before. Snapshots refreshed for 2206 and for four
