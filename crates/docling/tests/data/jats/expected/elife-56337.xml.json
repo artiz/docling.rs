@@ -3185,6 +3185,7 @@
         ],
         "num_rows": 9,
         "num_cols": 5,
+        "orientation": "rot_0",
         "grid": [
           [
             {
@@ -5829,6 +5830,7 @@
         ],
         "num_rows": 31,
         "num_cols": 5,
+        "orientation": "rot_0",
         "grid": [
           [
             {

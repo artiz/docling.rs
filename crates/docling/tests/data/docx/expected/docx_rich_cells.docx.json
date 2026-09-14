@@ -491,6 +491,7 @@
         ],
         "num_rows": 4,
         "num_cols": 2,
+        "orientation": "rot_0",
         "grid": [
           [
             {
@@ -703,6 +704,7 @@
         ],
         "num_rows": 3,
         "num_cols": 2,
+        "orientation": "rot_0",
         "grid": [
           [
             {
@@ -887,6 +889,7 @@
         ],
         "num_rows": 3,
         "num_cols": 2,
+        "orientation": "rot_0",
         "grid": [
           [
             {
@@ -1019,6 +1022,7 @@
         ],
         "num_rows": 2,
         "num_cols": 1,
+        "orientation": "rot_0",
         "grid": [
           [
             {
@@ -1097,6 +1101,7 @@
         ],
         "num_rows": 2,
         "num_cols": 1,
+        "orientation": "rot_0",
         "grid": [
           [
             {
@@ -1201,6 +1206,7 @@
         ],
         "num_rows": 2,
         "num_cols": 2,
+        "orientation": "rot_0",
         "grid": [
           [
             {
@@ -1305,6 +1311,7 @@
         ],
         "num_rows": 2,
         "num_cols": 1,
+        "orientation": "rot_0",
         "grid": [
           [
             {

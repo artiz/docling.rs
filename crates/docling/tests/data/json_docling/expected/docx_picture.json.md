@@ -1,0 +1,5 @@
+TEXT-BEFORE-IMAGE
+
+<!-- image -->
+
+TEXT-AFTER-IMAGE

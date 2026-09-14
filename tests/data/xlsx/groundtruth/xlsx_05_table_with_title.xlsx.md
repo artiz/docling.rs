@@ -1,13 +1,11 @@
-## Duck Observations
+| Number of freshwater ducks per year   |
+|---------------------------------------|
 
-| Number of freshwater ducks per year |
-| - |
-
-| Year | Freshwater Ducks |
-| - | - |
-| 2019 | 120 |
-| 2020 | 135 |
-| 2021 | 150 |
-| 2022 | 170 |
-| 2023 | 160 |
-| 2024 | 180 |
+|   Year |   Freshwater Ducks |
+|--------|--------------------|
+|   2019 |                120 |
+|   2020 |                135 |
+|   2021 |                150 |
+|   2022 |                170 |
+|   2023 |                160 |
+|   2024 |                180 |

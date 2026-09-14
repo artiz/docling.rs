@@ -234,6 +234,29 @@ pub enum Node {
         location: [u16; 4],
         inner: Box<Node>,
     },
+    /// Exact page provenance for a backend whose geometry already *is* the
+    /// page's coordinate system — an XLSX item's cell-index box on its sheet,
+    /// which docling writes verbatim (`bbox` in a top-left origin, the
+    /// `charspan` the backend chose) and sizes the page from. The 0–511 grid
+    /// of a [`Node::Located`] cannot round-trip such integers exactly, so the
+    /// JSON export reads this wrapper; every other serializer renders `inner`
+    /// unchanged (DocLang keeps taking its `<location>` tokens from the grid).
+    Prov {
+        page_no: usize,
+        /// `[l, t, r, b]`, page units, top-left origin.
+        bbox: [f32; 4],
+        /// docling's `charspan` for the item (`[0, 0]` for an XLSX table).
+        charspan: [usize; 2],
+        /// The item's creation rank among its siblings, when that differs
+        /// from the node order: docling numbers `#/tables/N` / `#/texts/N` /
+        /// `#/pictures/N` in the order it *creates* items (a sheet's tables,
+        /// then its images, then its charts) and only afterwards sorts the
+        /// container's children by position. The JSON export adds siblings in
+        /// this order and lays their refs out in node order; `None` when the
+        /// two orders coincide.
+        seq: Option<usize>,
+        inner: Box<Node>,
+    },
     /// A PDF page header or footer (docling's `page_header`/`page_footer`
     /// furniture): DocLang emits `<page_header>`/`<page_footer>` with a
     /// `<layer value="furniture"/>` head, the four `<location>` tokens, then the
@@ -767,7 +790,7 @@ impl DoclingDocument {
         fn unwrap_table(n: &Node) -> Option<&Table> {
             match n {
                 Node::Table(t) => Some(t),
-                Node::Located { inner, .. } => unwrap_table(inner),
+                Node::Located { inner, .. } | Node::Prov { inner, .. } => unwrap_table(inner),
                 _ => None,
             }
         }
@@ -782,7 +805,7 @@ impl DoclingDocument {
         fn unwrap_table(n: &mut Node) -> Option<&mut Table> {
             match n {
                 Node::Table(t) => Some(t),
-                Node::Located { inner, .. } => unwrap_table(inner),
+                Node::Located { inner, .. } | Node::Prov { inner, .. } => unwrap_table(inner),
                 _ => None,
             }
         }

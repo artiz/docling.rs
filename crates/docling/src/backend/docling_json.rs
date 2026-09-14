@@ -11,14 +11,20 @@ use crate::backend::markdown::escape_text;
 use crate::backend::DeclarativeBackend;
 use crate::error::ConversionError;
 use crate::source::SourceDocument;
-use docling_core::{DoclingDocument, Node, Table};
+use docling_core::{DoclingDocument, Node, PictureImage, Table};
 
 pub struct DoclingJsonBackend;
 
 impl DeclarativeBackend for DoclingJsonBackend {
     fn convert(&self, source: &SourceDocument) -> Result<DoclingDocument, ConversionError> {
-        let root: Value = serde_json::from_str(source.text()?)
+        let mut root: Value = serde_json::from_str(source.text()?)
             .map_err(|e| ConversionError::with_source("docling-json", e))?;
+        // Referenced images resolve against the JSON file's directory (#403).
+        inline_referenced_images(
+            &mut root,
+            source.path.as_deref().and_then(std::path::Path::parent),
+        );
+        let root = root;
         let name = root["name"].as_str().unwrap_or(&source.name).to_string();
         let mut doc = DoclingDocument::new(name);
         if let Some(children) = root["body"]["children"].as_array() {
@@ -379,9 +385,108 @@ fn picture_item(item: &Value, root: &Value, doc: &mut DoclingDocument) {
     doc.push(Node::Picture {
         caption: caption_of(item, root),
         caption_href: None,
-        image: None,
+        image: picture_image(item),
         classification: None,
     });
+}
+
+/// The picture's embedded image — docling's `ImageRef` with a `data:` URI
+/// (`{"mimetype", "dpi", "size", "uri"}`), which is how docling and our own
+/// JSON export carry a picture's pixels. Without it every picture read back
+/// from JSON was an empty placeholder, and `--images embedded`/`referenced`
+/// silently had nothing to embed or write (#403). The dimensions come from the
+/// bytes themselves (PNG IHDR / JPEG SOF), the declared `size` as a fallback.
+fn picture_image(item: &Value) -> Option<PictureImage> {
+    let image = item.get("image")?;
+    let uri = image["uri"].as_str()?;
+    let (mimetype, data) = parse_data_uri(uri)?;
+    let mimetype = image["mimetype"]
+        .as_str()
+        .filter(|m| !m.is_empty())
+        .unwrap_or(&mimetype)
+        .to_string();
+    let declared = |k: &str| image["size"][k].as_f64().unwrap_or(0.0).round().max(0.0) as u32;
+    let (width, height) = crate::backend::rtf::image_size(&mimetype, &data)
+        .unwrap_or((declared("width"), declared("height")));
+    Some(PictureImage {
+        mimetype,
+        width,
+        height,
+        data,
+    })
+}
+
+/// Split a `data:<mimetype>;base64,<payload>` URI into its media type and
+/// decoded bytes. Anything else — a plain path, an `http(s)` or `file` URL —
+/// is `None`: [`DoclingJsonBackend::convert`] inlines the local files it can
+/// read beforehand, so only a genuinely unresolvable reference reaches here.
+fn parse_data_uri(uri: &str) -> Option<(String, Vec<u8>)> {
+    let rest = uri.strip_prefix("data:")?;
+    let (meta, payload) = rest.split_once(',')?;
+    let (mimetype, encoding) = meta.split_once(';').unwrap_or((meta, ""));
+    if !encoding.eq_ignore_ascii_case("base64") {
+        return None;
+    }
+    let data = docling_core::base64::decode(payload.trim())?;
+    Some((mimetype.to_string(), data))
+}
+
+/// Turn each picture's *referenced* image (`uri` a filesystem path or `file:`
+/// URL, as `--images referenced` writes them) into a `data:` URI, reading the
+/// file relative to the JSON's own directory — docling's `ImageRef.pil_image`
+/// opens such a URI from disk the same way. A file that cannot be read keeps
+/// its `uri`, so the picture degrades to a placeholder rather than failing.
+fn inline_referenced_images(root: &mut Value, base: Option<&std::path::Path>) {
+    let Some(pictures) = root.get_mut("pictures").and_then(Value::as_array_mut) else {
+        return;
+    };
+    for pic in pictures {
+        let Some(image) = pic.get_mut("image").filter(|i| i.is_object()) else {
+            continue;
+        };
+        let Some(uri) = image["uri"].as_str().map(str::to_string) else {
+            continue;
+        };
+        if uri.starts_with("data:") || (uri.contains("://") && !uri.starts_with("file://")) {
+            continue;
+        }
+        let path = std::path::PathBuf::from(uri.strip_prefix("file://").unwrap_or(&uri));
+        let path = match base {
+            Some(dir) if path.is_relative() => dir.join(path),
+            _ => path,
+        };
+        let Ok(data) = std::fs::read(&path) else {
+            continue;
+        };
+        let mimetype = image["mimetype"]
+            .as_str()
+            .filter(|m| !m.is_empty())
+            .map(str::to_string)
+            .unwrap_or_else(|| mime_of_path(&path));
+        image["uri"] = Value::String(format!(
+            "data:{mimetype};base64,{}",
+            docling_core::base64::encode(&data)
+        ));
+    }
+}
+
+/// A media type from a file extension, for a referenced image whose `ImageRef`
+/// carries none.
+fn mime_of_path(path: &std::path::Path) -> String {
+    match path
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(|e| e.to_ascii_lowercase())
+        .as_deref()
+    {
+        Some("jpg") | Some("jpeg") => "image/jpeg",
+        Some("gif") => "image/gif",
+        Some("bmp") => "image/bmp",
+        Some("webp") => "image/webp",
+        Some("tif") | Some("tiff") => "image/tiff",
+        _ => "image/png",
+    }
+    .to_string()
 }
 
 /// Whether a floating item lists this caption in its own `captions` — tables,
@@ -430,6 +535,82 @@ mod tests {
             ))
             .unwrap()
             .export_to_markdown()
+    }
+
+    /// #403: a picture's `image` (docling's `ImageRef`, a `data:` URI) comes
+    /// back as the node's image — so `--images embedded`/`referenced` have
+    /// pixels to work with — and a *referenced* image (a path relative to the
+    /// JSON file, as `--images referenced` writes) is read from disk.
+    #[test]
+    fn a_pictures_image_survives_the_round_trip() {
+        const PNG: &str = "iVBORw0KGgoAAAANSUhEUgAAADwAAAAoCAIAAAAt2Q6oAAAASUlEQVR4nO3OQQ3AIAAAMUAI/qUgCw97HFnSKug8e4+/Wa8DX0hXpCvSFemKdEW6Il2RrkhXpCvSFemKdEW6Il2RrkhXpCvSlQtBOQFUzKPJpQAAAABJRU5ErkJggg==";
+        let json_with = |uri: &str| {
+            format!(
+                r##"{{"name":"t","body":{{"children":[{{"$ref":"#/pictures/0"}}]}},
+                  "texts":[],"groups":[],"tables":[],
+                  "pictures":[{{"self_ref":"#/pictures/0","label":"picture","captions":[],"children":[],
+                    "image":{{"mimetype":"image/png","dpi":72,"size":{{"width":60.0,"height":40.0}},"uri":"{uri}"}}}}]}}"##
+            )
+        };
+        let image_of = |doc: &DoclingDocument| {
+            doc.nodes
+                .iter()
+                .find_map(|n| match n {
+                    Node::Picture { image, .. } => image.clone(),
+                    _ => None,
+                })
+                .expect("the picture keeps its image")
+        };
+        let doc = DoclingJsonBackend
+            .convert(&SourceDocument::from_bytes(
+                "t.json",
+                InputFormat::JsonDocling,
+                json_with(&format!("data:image/png;base64,{PNG}")).into_bytes(),
+            ))
+            .unwrap();
+        let img = image_of(&doc);
+        assert_eq!(
+            (img.mimetype.as_str(), img.width, img.height),
+            ("image/png", 60, 40)
+        );
+        assert_eq!(img.data_uri(), format!("data:image/png;base64,{PNG}"));
+        assert!(doc
+            .export_to_markdown_with_images(docling_core::ImageMode::Embedded, "artifacts")
+            .0
+            .contains(&format!("![Image](data:image/png;base64,{PNG})")));
+
+        // Referenced: the JSON sits next to its `artifacts/` directory.
+        let dir = std::env::temp_dir().join(format!(
+            "docling-rs-json-pic-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(dir.join("artifacts")).unwrap();
+        std::fs::write(
+            dir.join("artifacts/image_000000.png"),
+            docling_core::base64::decode(PNG).unwrap(),
+        )
+        .unwrap();
+        std::fs::write(dir.join("t.json"), json_with("artifacts/image_000000.png")).unwrap();
+        let doc = DoclingJsonBackend
+            .convert(&SourceDocument::from_file(dir.join("t.json")).unwrap())
+            .unwrap();
+        let img = image_of(&doc);
+        assert_eq!((img.width, img.height), (60, 40));
+        assert_eq!(img.data_uri(), format!("data:image/png;base64,{PNG}"));
+        // An unreadable reference degrades to a placeholder, never an error.
+        std::fs::write(dir.join("t.json"), json_with("artifacts/missing.png")).unwrap();
+        let doc = DoclingJsonBackend
+            .convert(&SourceDocument::from_file(dir.join("t.json")).unwrap())
+            .unwrap();
+        assert!(doc
+            .nodes
+            .iter()
+            .any(|n| matches!(n, Node::Picture { image: None, .. })));
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     /// #384: a caption leads its picture and its table, and trails its *code*

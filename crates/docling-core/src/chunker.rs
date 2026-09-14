@@ -643,7 +643,9 @@ impl Walker<'_> {
                 );
             }
             // Layout provenance and comment annotations are transparent.
-            Node::Located { inner, .. } | Node::Commented { inner, .. } => self.one(inner),
+            Node::Located { inner, .. }
+            | Node::Prov { inner, .. }
+            | Node::Commented { inner, .. } => self.one(inner),
             // Non-body layers and doclang-only nodes don't reach the chunker
             // (nor the JSON body).
             Node::CommentSection { .. }
@@ -1131,7 +1133,9 @@ fn block_chunk_text(node: &Node) -> String {
             format!("{mark}{}", unescape_text(text))
         }
         Node::Heading { text, .. } => unescape_text(text),
-        Node::Located { inner, .. } | Node::Commented { inner, .. } => block_chunk_text(inner),
+        Node::Located { inner, .. } | Node::Prov { inner, .. } | Node::Commented { inner, .. } => {
+            block_chunk_text(inner)
+        }
         Node::Group { layer: Some(_), .. } => String::new(),
         Node::Group { children, .. } => children
             .iter()

@@ -96498,6 +96498,7 @@
         ],
         "num_rows": 2266,
         "num_cols": 3,
+        "orientation": "rot_0",
         "grid": [
           [
             {
@@ -189894,6 +189895,7 @@
         ],
         "num_rows": 18,
         "num_cols": 3,
+        "orientation": "rot_0",
         "grid": [
           [
             {
@@ -200053,6 +200055,7 @@
         ],
         "num_rows": 104,
         "num_cols": 8,
+        "orientation": "rot_0",
         "grid": [
           [
             {
@@ -227986,6 +227989,7 @@
         ],
         "num_rows": 163,
         "num_cols": 9,
+        "orientation": "rot_0",
         "grid": [
           [
             {
@@ -270701,6 +270705,7 @@
         ],
         "num_rows": 200,
         "num_cols": 9,
+        "orientation": "rot_0",
         "grid": [
           [
             {
@@ -296824,6 +296829,7 @@
         ],
         "num_rows": 23,
         "num_cols": 8,
+        "orientation": "rot_0",
         "grid": [
           [
             {
@@ -304185,6 +304191,7 @@
         ],
         "num_rows": 48,
         "num_cols": 8,
+        "orientation": "rot_0",
         "grid": [
           [
             {
@@ -310166,6 +310173,7 @@
         ],
         "num_rows": 12,
         "num_cols": 6,
+        "orientation": "rot_0",
         "grid": [
           [
             {
@@ -312071,6 +312079,7 @@
         ],
         "num_rows": 11,
         "num_cols": 7,
+        "orientation": "rot_0",
         "grid": [
           [
             {
@@ -318329,6 +318338,7 @@
         ],
         "num_rows": 51,
         "num_cols": 8,
+        "orientation": "rot_0",
         "grid": [
           [
             {
@@ -324784,6 +324794,7 @@
         ],
         "num_rows": 14,
         "num_cols": 6,
+        "orientation": "rot_0",
         "grid": [
           [
             {
@@ -334766,6 +334777,7 @@
         ],
         "num_rows": 172,
         "num_cols": 11,
+        "orientation": "rot_0",
         "grid": [
           [
             {
@@ -373235,6 +373247,7 @@
         ],
         "num_rows": 174,
         "num_cols": 6,
+        "orientation": "rot_0",
         "grid": [
           [
             {
@@ -404337,6 +404350,7 @@
         ],
         "num_rows": 225,
         "num_cols": 6,
+        "orientation": "rot_0",
         "grid": [
           [
             {
@@ -423009,6 +423023,7 @@
         ],
         "num_rows": 9,
         "num_cols": 6,
+        "orientation": "rot_0",
         "grid": [
           [
             {
@@ -424206,6 +424221,7 @@
         ],
         "num_rows": 10,
         "num_cols": 5,
+        "orientation": "rot_0",
         "grid": [
           [
             {
