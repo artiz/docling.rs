@@ -382,17 +382,12 @@ fn process_block(node: XmlNode, ctx: &Ctx, state: &mut ListState, doc: &mut Docl
             let rows: Vec<XmlNode> = node.children().filter(|n| n.has_tag_name("tr")).collect();
             let num_cols = rows
                 .iter()
-                .map(|r| {
-                    r.children()
-                        .filter(|n| n.has_tag_name("tc"))
-                        .map(grid_span)
-                        .sum::<usize>()
-                })
+                .map(|r| row_cells(*r).into_iter().map(grid_span).sum::<usize>())
                 .max()
                 .unwrap_or(0);
             if rows.len() == 1 && num_cols == 1 {
-                if let Some(cell) = rows[0].children().find(|n| n.has_tag_name("tc")) {
-                    for child in child_elements(cell) {
+                if let Some(cell) = row_cells(rows[0]).first() {
+                    for child in child_elements(*cell) {
                         process_block(child, ctx, state, doc);
                     }
                 }
@@ -1491,12 +1486,7 @@ fn parse_table_with(tbl: XmlNode, ctx: &Ctx, nested: bool) -> Option<Table> {
         .iter()
         .map(|r| {
             let (before, after) = row_grid_offsets(*r);
-            before
-                + after
-                + r.children()
-                    .filter(|n| n.has_tag_name("tc"))
-                    .map(|tc| grid_span(tc))
-                    .sum::<usize>()
+            before + after + row_cells(*r).into_iter().map(grid_span).sum::<usize>()
         })
         .max()
         .unwrap_or(0);
@@ -1523,7 +1513,7 @@ fn parse_table_with(tbl: XmlNode, ctx: &Ctx, nested: bool) -> Option<Table> {
         // fixed in docling PR #3745: cells dropped and merges broken on
         // late-starting rows).
         let mut ci = row_grid_offsets(*row).0;
-        for tc in row.children().filter(|n| n.has_tag_name("tc")) {
+        for tc in row_cells(*row) {
             let span = grid_span(tc);
             // A continuation cell of a vertical merge repeats the cell above.
             let v_continue = tc
@@ -1601,6 +1591,28 @@ fn grid_span(tc: XmlNode) -> usize {
         .and_then(|n| attr(n, "val"))
         .and_then(|v| v.parse().ok())
         .unwrap_or(1)
+}
+
+/// A row's `w:tc` cells in document order, unwrapping any content control
+/// (`w:sdt` → `w:sdtContent`) Word wrapped a cell in — its cover pages and
+/// document-property fields are written that way, and the cell is then no
+/// longer a direct child of the `w:tr` (docling#3946/#3951). Controls nest, so
+/// the walk recurses. Without this a wrapped cell is skipped entirely: the
+/// grid cursor advances only per emitted cell, so every later cell in the row
+/// slides left under the wrong header, and a 1×1 layout table loses its only
+/// cell — and with it all of its content.
+fn row_cells<'a, 'i>(tr: XmlNode<'a, 'i>) -> Vec<XmlNode<'a, 'i>> {
+    let mut out = Vec::new();
+    for child in tr.children().filter(XmlNode::is_element) {
+        if child.has_tag_name("tc") {
+            out.push(child);
+        } else if child.has_tag_name("sdt") {
+            if let Some(content) = child.children().find(|n| n.has_tag_name("sdtContent")) {
+                out.extend(row_cells(content));
+            }
+        }
+    }
+    out
 }
 
 /// A row's skipped grid columns: `(w:gridBefore, w:gridAfter)` from its
@@ -2288,8 +2300,65 @@ fn build_enum_marker(
 
 #[cfg(test)]
 mod tests {
-    use super::{block_comment_slots, format_enum_counter, heading_label_level};
+    use super::{block_comment_slots, format_enum_counter, heading_label_level, row_cells};
     use std::collections::HashMap;
+
+    /// docling#3946/#3951: Word wraps a table cell in a content control for
+    /// cover pages and document-property fields, so the `w:tc` is no longer a
+    /// direct child of the `w:tr`. Collecting only direct children skipped it,
+    /// which slid every later cell of the row one column to the left (the grid
+    /// cursor advances per emitted cell) and emptied a 1×1 layout table.
+    #[test]
+    fn a_cell_in_a_content_control_is_still_a_cell_of_its_row() {
+        let cell = |t: &str| format!("<w:tc><w:p><w:r><w:t>{t}</w:t></w:r></w:p></w:tc>");
+        let wrapped = |t: &str| {
+            format!(
+                "<w:sdt><w:sdtPr/><w:sdtContent>{}</w:sdtContent></w:sdt>",
+                cell(t)
+            )
+        };
+        let row = |body: String| {
+            format!(
+                r#"<w:document xmlns:w="w"><w:body><w:tbl><w:tr>{body}</w:tr></w:tbl></w:body></w:document>"#
+            )
+        };
+        let texts = |xml: &str| {
+            let dom = roxmltree::Document::parse(xml).unwrap();
+            let tr = dom.descendants().find(|n| n.has_tag_name("tr")).unwrap();
+            row_cells(tr)
+                .into_iter()
+                .map(|tc| {
+                    tc.descendants()
+                        .filter(|n| n.has_tag_name("t"))
+                        .filter_map(|n| n.text())
+                        .collect::<String>()
+                })
+                .collect::<Vec<_>>()
+        };
+        let plain = row(format!("{}{}{}", cell("a"), cell("b"), cell("c")));
+        let want = vec!["a".to_string(), "b".into(), "c".into()];
+        assert_eq!(texts(&plain), want);
+        // Wrapped in any position, the row keeps the same cells in the same order.
+        for xml in [
+            row(format!("{}{}{}", wrapped("a"), cell("b"), cell("c"))),
+            row(format!("{}{}{}", cell("a"), wrapped("b"), cell("c"))),
+            row(format!("{}{}{}", cell("a"), cell("b"), wrapped("c"))),
+            row(format!("{}{}{}", wrapped("a"), cell("b"), wrapped("c"))),
+        ] {
+            assert_eq!(texts(&xml), want);
+        }
+        // Controls nest, and a control holding nothing contributes no cell.
+        let nested = row(format!(
+            "<w:sdt><w:sdtContent>{}</w:sdtContent></w:sdt>{}",
+            wrapped("a"),
+            cell("b")
+        ));
+        assert_eq!(texts(&nested), vec!["a".to_string(), "b".into()]);
+        assert_eq!(
+            texts(&row("<w:sdt><w:sdtContent/></w:sdt>".to_string())),
+            Vec::<String>::new()
+        );
+    }
 
     /// docling's `_format_enum_counter`: letters wrap by repetition (aa, bb),
     /// roman numerals in either case, `decimalZero` pads to two digits.
