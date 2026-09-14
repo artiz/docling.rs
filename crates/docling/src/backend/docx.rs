@@ -359,6 +359,13 @@ struct ListState {
     counters: HashMap<(String, i64), i64>, // (numId, ilvl) -> running number
     numbered_headers: HashMap<u8, u64>,    // heading level -> running number
     list_run_base: Option<i64>,            // base ilvl of the current contiguous list run
+    /// The `numId` of the last list item emitted, while docling would still
+    /// reuse its ListGroup: cleared by any non-empty body block (its
+    /// `_end_list_on_body_text` / a parent change), kept across an empty
+    /// spacer paragraph. A list item whose `numId` differs — or that follows
+    /// such a block — opens a new list (`_manage_list_structure`'s "new list
+    /// sequence"), which is what the item's `first_in_list` flags (#385).
+    last_list_num_id: Option<String>,
     /// Whether a heading/title was emitted before the current paragraph. In
     /// docling's tree later content is parented under that heading `TextItem`,
     /// and the DocLang serializer leaves an InlineGroup whose parent is a
@@ -390,6 +397,7 @@ fn process_block(node: XmlNode, ctx: &Ctx, state: &mut ListState, doc: &mut Docl
             } else if let Some(table) = parse_table(node, ctx) {
                 doc.push(Node::Table(table));
                 state.list_run_base = None;
+                state.last_list_num_id = None;
             }
         }
         "sdt" => {
@@ -527,6 +535,7 @@ fn handle_paragraph_inner(
             }
         }
         state.list_run_base = None;
+        state.last_list_num_id = None;
         return;
     }
 
@@ -541,6 +550,7 @@ fn handle_paragraph_inner(
         let text = clean_checkbox_symbols(&paragraph_markdown(p, ctx));
         doc.push(Node::CheckboxItem { checked, text });
         state.list_run_base = None;
+        state.last_list_num_id = None;
         return;
     }
 
@@ -605,6 +615,7 @@ fn handle_paragraph_inner(
             state.seen_heading = true;
         }
         state.list_run_base = None;
+        state.last_list_num_id = None;
         return;
     }
 
@@ -614,6 +625,7 @@ fn handle_paragraph_inner(
     let prev_is_code = matches!(doc.nodes.last(), Some(Node::Code { .. }));
     if !rich && (is_code_style(style_id, ctx) || is_code_by_font(p, style_id, ctx, prev_is_code)) {
         state.list_run_base = None;
+        state.last_list_num_id = None;
         // Keep leading indentation (code blocks are verbatim); trailing space
         // is dropped, matching docling's `raw_paragraph_text.rstrip()`.
         let code_text = plain_paragraph_text(p).trim_end().to_string();
@@ -650,6 +662,12 @@ fn handle_paragraph_inner(
         if text.is_empty() {
             return;
         }
+        // Word's list identity is the `numId`: the item continues the last
+        // list when it carries the same one and no body content intervened;
+        // anything else is a new list, so the serializers never have to infer
+        // the boundary from the numbering (#385).
+        let first_in_list = state.last_list_num_id.as_deref() != Some(num_id.as_str());
+        state.last_list_num_id = Some(num_id.clone());
         if numbered {
             get_list_counter(&mut state.counters, ctx.num_levels, &num_id, ilvl);
             let marker = build_enum_marker(&state.counters, ctx.num_levels, &num_id, ilvl);
@@ -668,7 +686,7 @@ fn handle_paragraph_inner(
                 doc.push(Node::ListItem {
                     ordered: true,
                     number,
-                    first_in_list: false,
+                    first_in_list,
                     text,
                     level,
                     // docling's DOCX backend passes the enumeration marker.
@@ -691,7 +709,7 @@ fn handle_paragraph_inner(
                 doc.push(Node::ListItem {
                     ordered: false,
                     number,
-                    first_in_list: false,
+                    first_in_list,
                     text: format!("{marker} {text}"),
                     level,
                     marker: None,
@@ -735,7 +753,7 @@ fn handle_paragraph_inner(
             doc.push(Node::ListItem {
                 ordered: false,
                 number: 0,
-                first_in_list: false,
+                first_in_list,
                 text,
                 level,
                 marker: None,
@@ -748,8 +766,13 @@ fn handle_paragraph_inner(
         return;
     }
 
-    // A plain (non-list) paragraph ends the current list run.
+    // A plain (non-list) paragraph ends the current list run. Body *text*
+    // also ends the list's identity; an empty spacer paragraph does not, so
+    // the same Word list resumes after it as one list (docling#3902).
     state.list_run_base = None;
+    if !text.is_empty() {
+        state.last_list_num_id = None;
+    }
 
     if !text.is_empty() {
         if has_equations {
@@ -2551,6 +2574,79 @@ mod tests {
                 "if x:\n\ty",
                 "see docs\nhere",
                 "ctrltext",
+            ]
+        );
+    }
+
+    /// #385: a list item's `first_in_list` is Word's list identity — a new
+    /// `numId`, or body text since the last item, opens a list; the items of
+    /// one `numId` continue it, across nesting and across an empty spacer
+    /// paragraph (docling's `_manage_list_structure` + its ListGroup cache).
+    /// The serializers draw every list boundary from this flag alone.
+    #[test]
+    fn list_boundaries_follow_word_list_identity() {
+        use crate::backend::DeclarativeBackend;
+        use docling_core::Node;
+        let convert = |name: &str| {
+            let path = format!(
+                "{}/tests/data/docx/sources/{name}",
+                env!("CARGO_MANIFEST_DIR")
+            );
+            let bytes = std::fs::read(&path).expect("fixture exists");
+            let src = crate::source::SourceDocument::from_bytes(
+                name,
+                crate::format::InputFormat::Docx,
+                bytes,
+            );
+            super::DocxBackend.convert(&src).expect("converts")
+        };
+        let flags = |doc: &docling_core::DoclingDocument| -> Vec<(String, bool)> {
+            doc.nodes
+                .iter()
+                .filter_map(|n| match n {
+                    Node::ListItem {
+                        text,
+                        first_in_list,
+                        ..
+                    } => Some((text.clone(), *first_in_list)),
+                    _ => None,
+                })
+                .collect()
+        };
+        let lists = flags(&convert("docx_lists.docx"));
+        let flag = |t: &str| {
+            lists
+                .iter()
+                .find(|(text, _)| text == t)
+                .unwrap_or_else(|| panic!("item {t:?} in {lists:?}"))
+                .1
+        };
+        // Test 1: one bullet list.
+        assert!(flag("List item 1"));
+        assert!(!flag("List item 2"));
+        // Test 3: nested items share the parent's numId — no new list.
+        assert!(!flag("List item 1.1"));
+        // Test 7: four items of numId 2, then two single-item lists, each a
+        // numId of its own, separated by empty paragraphs.
+        assert!(flag("First item with numId 2"));
+        assert!(!flag("Fourth item with numId 2"));
+        let singles: Vec<bool> = lists
+            .iter()
+            .filter(|(t, _)| t == "Single item of a new list")
+            .map(|(_, f)| *f)
+            .collect();
+        assert_eq!(singles, vec![true, true]);
+        // docling#3902: prose between two items of one Word list ends it, an
+        // empty spacer paragraph does not — `2. Second section` continues
+        // the list that `- 1.2. Sub two` reopened after the prose.
+        let spacer = flags(&convert("docx_list_blank_spacer.docx"));
+        assert_eq!(
+            spacer,
+            vec![
+                ("First section".to_string(), true),
+                ("1.1. Sub one".to_string(), false),
+                ("1.2. Sub two".to_string(), true),
+                ("Second section".to_string(), false),
             ]
         );
     }

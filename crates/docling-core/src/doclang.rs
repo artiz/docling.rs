@@ -1736,11 +1736,6 @@ fn emit_list(out: &mut Out, depth: i32, nodes: &[Node], i: &mut usize, level: u8
     };
     out.push(depth, open.to_string());
     let start = *i;
-    let mut prev_number: Option<u64> = None;
-    // Previous item was a multilevel projection (overlay ordered, flat bullet):
-    // Word numbers it and its parent-level successor within one list, so the
-    // ordered-continuity break must not fire across it (docling#3902).
-    let mut prev_projected = false;
     while *i < nodes.len() {
         match &nodes[*i] {
             Node::ListItem {
@@ -1757,22 +1752,14 @@ fn emit_list(out: &mut Out, depth: i32, nodes: &[Node], i: &mut usize, level: u8
             } if *l == level => {
                 // The DocLang overlay wins over the flat Markdown fields for the
                 // list kind and marker (see `ListItemDclx`).
-                let eff_ordered = dclx.as_ref().map_or(*o, |d| d.ordered);
                 let eff_marker = dclx.as_ref().map_or(marker.as_ref(), |d| d.marker.as_ref());
                 // A new sibling list at this depth closes this one (the caller
-                // re-opens): the backend flagged a fresh list, the kind flips, or
-                // an ordered run breaks — matching the Markdown serializer.
-                if *i != start
-                    && (*first_in_list
-                        || eff_ordered != ordered
-                        || (ordered
-                            && !prev_projected
-                            && Some(*number) != prev_number.map(|n| n + 1)))
-                {
+                // re-opens): the backend flagged a fresh list — the one
+                // boundary rule shared with the Markdown and JSON serializers
+                // (#385; the kind-flip and number-gap guesses are gone).
+                if *i != start && *first_in_list {
                     break;
                 }
-                prev_number = Some(*number);
-                prev_projected = eff_ordered && !*o;
                 // docling wraps a list item's content in `<text>` when a nested
                 // list follows it *anywhere* inside the same `<list>` — its
                 // `_list_item_has_segment_siblings` scans the parent group's
@@ -1780,14 +1767,10 @@ fn emit_list(out: &mut Out, depth: i32, nodes: &[Node], i: &mut usize, level: u8
                 // list stays bare.
                 let has_nested = {
                     let mut found = false;
-                    let mut pn = Some(*number);
                     let mut j = *i + 1;
                     while let Some(Node::ListItem {
                         level: nl,
-                        ordered: no,
-                        number: nn,
                         first_in_list: nf,
-                        dclx: nd,
                         ..
                     }) = nodes.get(j)
                     {
@@ -1798,16 +1781,11 @@ fn emit_list(out: &mut Out, depth: i32, nodes: &[Node], i: &mut usize, level: u8
                         if *nl < level {
                             break;
                         }
-                        // The same run-break rules as the main loop: a sibling
+                        // The same run-break rule as the main loop: a sibling
                         // list at this depth ends this `<list>` element.
-                        let n_ordered = nd.as_ref().map_or(*no, |d| d.ordered);
-                        if *nf
-                            || n_ordered != ordered
-                            || (ordered && Some(*nn) != pn.map(|n| n + 1))
-                        {
+                        if *nf {
                             break;
                         }
-                        pn = Some(*nn);
                         j += 1;
                     }
                     found
@@ -1881,20 +1859,14 @@ fn emit_list(out: &mut Out, depth: i32, nodes: &[Node], i: &mut usize, level: u8
             // An empty paragraph between two items of the *same* list run is
             // absorbed (docling deletes the empty text it added on close when
             // it reuses the ListGroup for the same numId). When the next item
-            // starts a *new* list (fresh-list flag, kind flip, or an ordered
-            // sequence break), no reuse happens and the empty text survives.
+            // starts a *new* list (the backend's fresh-list flag), no reuse
+            // happens and the empty text survives.
             Node::Paragraph { text }
                 if text.is_empty()
                     && matches!(
                         nodes.get(*i + 1),
-                        Some(Node::ListItem { level: nl, ordered: no, number: nn,
-                                              first_in_list: nf, dclx: nd, .. })
-                            if *nl > level
-                                || (*nl == level
-                                    && !*nf
-                                    && nd.as_ref().map_or(*no, |d| d.ordered) == ordered
-                                    && (!ordered
-                                        || Some(*nn) == prev_number.map(|n| n + 1)))
+                        Some(Node::ListItem { level: nl, first_in_list: nf, .. })
+                            if *nl > level || (*nl == level && !*nf)
                     ) =>
             {
                 *i += 1;
