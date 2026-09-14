@@ -207,7 +207,7 @@ mod tests {
         // A real corpus DOCX through the wasm entry path on the host.
         let bytes = std::fs::read(concat!(
             env!("CARGO_MANIFEST_DIR"),
-            "/../docling/tests/data/docx/sources/docx_lists.docx"
+            "/../../tests/data/docx/sources/docx_lists.docx"
         ))
         .expect("corpus docx");
         let out = convert_impl(&bytes, "docx_lists.docx", None, None, None).unwrap();
@@ -221,7 +221,7 @@ mod tests {
     fn embedded_images_inline_as_data_uris() {
         let bytes = std::fs::read(concat!(
             env!("CARGO_MANIFEST_DIR"),
-            "/../docling/tests/data/docx/sources/word_image_anchors.docx"
+            "/../../tests/data/docx/sources/word_image_anchors.docx"
         ))
         .expect("corpus docx with images");
         let placeholder =
