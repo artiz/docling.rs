@@ -220,7 +220,7 @@ impl ImageResolver for MapImageResolver {
 }
 
 /// Decode a `data:[<mime>][;base64],<payload>` image URI.
-fn from_data_uri(uri: &str) -> Option<PictureImage> {
+pub(crate) fn from_data_uri(uri: &str) -> Option<PictureImage> {
     let rest = uri.strip_prefix("data:")?;
     let (meta, payload) = rest.split_once(',')?;
     let mime = meta

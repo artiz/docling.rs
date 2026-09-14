@@ -48,7 +48,7 @@
 //! - `ocr_scale` — OCR render scale in px per PDF point (docling's
 //!   `OcrOptions.scale`, #254); unset reads the pipeline's own 2.0 px/pt
 //!   render, docling's default is 3 (216 dpi)
-//! - `fetch_images` — resolve external `<img src>` for HTML/EPUB (outbound
+//! - `fetch_images` — resolve external `<img src>` for HTML/EPUB/MHTML (outbound
 //!   fetch, so honored only under `--allow-url-fetch`)
 //! - `skip_empty_cells` — omit empty cells from sparse XLSX/XLS table grids
 //!   (#271; docling.rs extension, off by default)

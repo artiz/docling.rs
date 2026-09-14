@@ -338,13 +338,13 @@ impl DocumentConverter {
         self
     }
 
-    /// Fetch and embed external `<img>` images for HTML/EPUB sources.
+    /// Fetch and embed external `<img>` images for HTML/EPUB/MHTML sources.
     ///
     /// Off by default (matching docling's `enable_*_fetch=False`), so output is
-    /// unchanged unless you opt in. When on, the HTML/EPUB backends resolve each
-    /// `<img src>` — `data:` URIs, local files (relative to the source file's
-    /// directory), `http(s)` URLs, and EPUB archive entries — and embed the
-    /// bytes, so they survive into JSON `ImageRef`s and
+    /// unchanged unless you opt in. When on, the HTML/EPUB/MHTML backends
+    /// resolve each `<img src>` — `data:` URIs, local files (relative to the
+    /// source file's directory), `http(s)` URLs, and EPUB/MHTML archive
+    /// entries — and embed the bytes, so they survive into JSON `ImageRef`s and
     /// [`crate::DoclingDocument::export_to_markdown_with_images`].
     ///
     /// Remote `http(s)` URLs are fetched over the network; enable only for input
@@ -757,6 +757,7 @@ impl DocumentConverter {
             }
             .convert(&source)?,
             InputFormat::Mhtml => MhtmlBackend {
+                fetch_images: self.fetch_images,
                 use_web_browser: self.use_web_browser,
             }
             .convert(&source)?,
