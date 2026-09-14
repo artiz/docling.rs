@@ -10,6 +10,8 @@
 //! styled runs / `$…$` (docling PR #3726), and a `<table-wrap>`'s label+caption
 //! and header/span structure carry onto the table.
 
+use std::path::{Path, PathBuf};
+
 use roxmltree::{Document, Node as XmlNode, ParsingOptions};
 
 use crate::backend::markdown::escape_text;
@@ -17,10 +19,19 @@ use crate::backend::DeclarativeBackend;
 use crate::error::ConversionError;
 use crate::source::SourceDocument;
 use docling_core::{
-    inline_paragraph_node, DoclingDocument, InlineRun, Node, Script, Table, TableStructure,
+    inline_paragraph_node, DoclingDocument, InlineRun, Node, PictureImage, Script, Table,
+    TableStructure,
 };
 
-pub struct JatsBackend;
+/// JATS backend. `fetch_images` is docling's `JatsBackendOptions.fetch_images`
+/// together with its `enable_local_fetch` (docling#4041, #392): when set, a
+/// `<fig>`'s `<graphic xlink:href>` is read from disk relative to the source
+/// file's directory and embedded; off (the default), a figure is a picture
+/// with no image, as docling emits it.
+#[derive(Default)]
+pub struct JatsBackend {
+    pub fetch_images: bool,
+}
 
 const SKIP_TEXT: &[&str] = &["term", "disp-formula", "inline-formula"];
 
@@ -177,10 +188,27 @@ impl DeclarativeBackend for JatsBackend {
         // --- body + back ----------------------------------------------------
         // `hlevel` is a running section depth carried across body and back
         // (docling's `self.hlevel`); it is balanced by each `<sec>`.
+        // Figure images resolve against the source *file's* directory only
+        // (docling's `base_path`: its `source_uri` or the path it was opened
+        // from) — an in-memory source, or one fetched from a URL, embeds none,
+        // as docling's does (`_load_figure_image` requires a local base).
+        let fig_base = if self.fetch_images {
+            source.base_dir()
+        } else {
+            None
+        };
         let mut hlevel: i32 = 0;
         for tag in ["body", "back"] {
             if let Some(node) = dom.descendants().find(|n| n.has_tag_name(tag)) {
-                walk_linear(node, false, Fmt::default(), None, &mut hlevel, &mut doc);
+                walk_linear(
+                    node,
+                    false,
+                    Fmt::default(),
+                    None,
+                    &mut hlevel,
+                    fig_base,
+                    &mut doc,
+                );
             }
         }
         Ok(doc)
@@ -579,6 +607,7 @@ fn walk_linear(
     fmt: Fmt,
     hyperlink: Option<&str>,
     hlevel: &mut i32,
+    fig_base: Option<&Path>,
     doc: &mut DoclingDocument,
 ) -> Vec<Seg> {
     let node_tag = node.tag_name().name();
@@ -635,7 +664,7 @@ fn walk_linear(
                 stop_walk = true;
             }
             "fig" => {
-                add_figure(doc, child);
+                add_figure(doc, child, fig_base);
                 stop_walk = true;
             }
             "table-wrap" => {
@@ -689,8 +718,15 @@ fn walk_linear(
         }
 
         if !stop_walk {
-            let child_segments =
-                walk_linear(child, child_in_list, current, current_link, hlevel, doc);
+            let child_segments = walk_linear(
+                child,
+                child_in_list,
+                current,
+                current_link,
+                hlevel,
+                fig_base,
+                doc,
+            );
             // Don't fold a flushed block's runs back into an enclosing paragraph.
             let parent_is_p = node.parent().map(|p| p.has_tag_name("p")).unwrap_or(false);
             if !(parent_is_p && FLUSH_TAGS.contains(&node_tag)) {
@@ -935,8 +971,9 @@ fn add_equation(doc: &mut DoclingDocument, node: XmlNode) {
     }
 }
 
-/// A `<fig>` → its label + caption as a picture caption, then a picture marker.
-fn add_figure(doc: &mut DoclingDocument, node: XmlNode) {
+/// A `<fig>` → its label + caption as a picture caption, then a picture marker
+/// — carrying the figure's image when `fig_base` allows reading it (#392).
+fn add_figure(doc: &mut DoclingDocument, node: XmlNode, fig_base: Option<&Path>) {
     let label = node
         .children()
         .find(|c| c.has_tag_name("label"))
@@ -956,10 +993,164 @@ fn add_figure(doc: &mut DoclingDocument, node: XmlNode) {
     doc.push(Node::Picture {
         caption: (!fig_text.is_empty()).then(|| escape_text(&fig_text)),
         caption_href: None,
-        image: None,
+        image: fig_base.and_then(|base| load_figure_image(node, base)),
         classification: None,
         caption_parent: Default::default(),
     });
+}
+
+/// The raster suffixes docling probes for an extensionless `xlink:href`
+/// (`_RASTER_IMAGE_SUFFIXES`), in its order.
+const RASTER_IMAGE_SUFFIXES: [&str; 6] = [".jpg", ".jpeg", ".png", ".tif", ".tiff", ".gif"];
+
+/// docling's `_load_figure_image` (docling#4041): the first `<graphic>` of the
+/// figure — direct or inside `<alternatives>`, in document order — whose
+/// `xlink:href` names a readable, decodable raster under `base`.
+///
+/// Per rendition: a non-local href (a URL) is skipped silently; an absolute
+/// path is refused with a warning but does not stop a later relative one; an
+/// `.svg` is skipped; an extensionless href is probed with the raster
+/// suffixes; a candidate that resolves outside `base` aborts the **whole
+/// figure** (path traversal); a file that exists but does not decode warns
+/// and falls through to the next rendition. Existence is checked before
+/// decoding, so probe misses do not warn per suffix; a figure that resolved
+/// no file at all warns once, naming every href that missed.
+fn load_figure_image(fig: XmlNode, base: &Path) -> Option<PictureImage> {
+    let graphics = fig.children().filter(XmlNode::is_element).flat_map(|c| {
+        let own = std::iter::once(c).filter(|c| c.has_tag_name("graphic"));
+        let alternatives = c
+            .children()
+            .filter(move |g| c.has_tag_name("alternatives") && g.has_tag_name("graphic"));
+        own.chain(alternatives)
+    });
+    let mut missing: Vec<String> = Vec::new();
+    for graphic in graphics {
+        let Some(href) = graphic
+            .attributes()
+            .find(|a| a.name() == "href")
+            .map(|a| a.value().trim())
+            .filter(|v| !v.is_empty())
+        else {
+            continue;
+        };
+        if !is_local_path(href) {
+            continue;
+        }
+        // An absolute rendition is invalid for a confined local base, but it
+        // must not prevent a later relative rendition from being used.
+        if is_absolute_path(href) {
+            eprintln!(
+                "docling: warning: Could not process an image from {href}: \
+                 Absolute paths are not allowed with local base_path."
+            );
+            continue;
+        }
+        let suffix = Path::new(href)
+            .extension()
+            .and_then(|e| e.to_str())
+            .map(str::to_ascii_lowercase);
+        if suffix.as_deref() == Some("svg") {
+            continue;
+        }
+        let mut candidates = vec![href.to_string()];
+        if suffix.is_none() {
+            candidates.extend(RASTER_IMAGE_SUFFIXES.iter().map(|s| format!("{href}{s}")));
+        }
+        let mut found = false;
+        for candidate in &candidates {
+            let Some(resolved) = confined_path(base, candidate) else {
+                eprintln!(
+                    "docling: warning: Could not process an image from {href}: \
+                     Path traversal blocked: '{candidate}' resolves outside base directory"
+                );
+                return None;
+            };
+            if !resolved.is_file() {
+                continue;
+            }
+            found = true;
+            let decoded = std::fs::read(&resolved)
+                .ok()
+                .and_then(|data| crate::backend::ooxml::picture_image(candidate, data));
+            match decoded {
+                Some(image) => return Some(image),
+                None => eprintln!(
+                    "docling: warning: Could not process an image from {}: \
+                     cannot identify image file",
+                    resolved.display()
+                ),
+            }
+        }
+        if !found {
+            missing.push(href.to_string());
+        }
+    }
+    if !missing.is_empty() {
+        eprintln!(
+            "docling: warning: Could not process JATS figure image(s) {}: \
+             no matching local file exists.",
+            missing.join(", ")
+        );
+    }
+    None
+}
+
+/// docling's `ImageResourceLoader.is_local_path`: no host, and either no
+/// scheme or a one-letter one (a Windows drive).
+fn is_local_path(value: &str) -> bool {
+    let Some(colon) = value.find(':') else {
+        return !value.starts_with("//");
+    };
+    let scheme = &value[..colon];
+    let is_scheme = scheme
+        .chars()
+        .next()
+        .is_some_and(|c| c.is_ascii_alphabetic())
+        && scheme
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '+' | '-' | '.'));
+    if !is_scheme {
+        return !value.starts_with("//");
+    }
+    let rest = &value[colon + 1..];
+    !rest.starts_with("//") && scheme.len() == 1
+}
+
+/// docling's `ImageResourceLoader.is_absolute_path`: a rooted path, or a
+/// Windows drive spelling (`C:…`).
+fn is_absolute_path(value: &str) -> bool {
+    Path::new(value).is_absolute()
+        || (value.len() >= 2
+            && value.as_bytes()[1] == b':'
+            && value.as_bytes()[0].is_ascii_alphabetic()
+            && !value[2..].starts_with("//"))
+}
+
+/// `base / rel`, lexically normalized, when it stays under `base` —
+/// docling's `resolve_relative_path` traversal guard (`Path.resolve()` +
+/// `is_relative_to`). `None` when a `..` climbs out.
+fn confined_path(base: &Path, rel: &str) -> Option<PathBuf> {
+    use std::path::Component;
+    let mut out = base.to_path_buf();
+    let mut depth = 0usize;
+    for comp in Path::new(rel).components() {
+        match comp {
+            Component::CurDir => {}
+            Component::ParentDir => {
+                if depth == 0 {
+                    return None;
+                }
+                out.pop();
+                depth -= 1;
+            }
+            Component::Normal(seg) => {
+                out.push(seg);
+                depth += 1;
+            }
+            Component::RootDir | Component::Prefix(_) => return None,
+        }
+    }
+    Some(out)
 }
 
 /// A `<caption>`'s paragraphs, space-joined and trimmed (skipping any that hold
@@ -1354,7 +1545,7 @@ a=b
             <ref><mixed-citation>A. S. de&#xa0;Castro, Phys. Lett. A. 346 (2005).</mixed-citation></ref>
           </ref-list></back></article>"#;
         let src = SourceDocument::from_bytes("p", InputFormat::XmlJats, xml.as_bytes().to_vec());
-        let doc = JatsBackend.convert(&src).unwrap();
+        let doc = JatsBackend::default().convert(&src).unwrap();
         let md = doc.export_to_markdown();
         assert!(
             md.contains("See RRID: [AB\\_1](https://scicrunch.org/resolver/AB_1) here."),
@@ -1388,14 +1579,20 @@ a=b
           </article-meta></front>
           <body><sec><title>Intro</title><p>Body text.</p></sec></body></article>"#;
         let src = SourceDocument::from_bytes("p", InputFormat::XmlJats, xml.as_bytes().to_vec());
-        let md = JatsBackend.convert(&src).unwrap().export_to_markdown();
+        let md = JatsBackend::default()
+            .convert(&src)
+            .unwrap()
+            .export_to_markdown();
         // title #, author, label-stripped + escaped affiliation, ## Abstract, ## Intro
         assert!(md.starts_with("# My Paper\n\nJane Doe\n\nAcme &amp; Co\n\n## Abstract\n\nShort summary.\n\n## Intro\n\nBody text."), "got:\n{md}");
     }
 
     fn md_of(xml: &str) -> String {
         let src = SourceDocument::from_bytes("p", InputFormat::XmlJats, xml.as_bytes().to_vec());
-        JatsBackend.convert(&src).unwrap().export_to_markdown()
+        JatsBackend::default()
+            .convert(&src)
+            .unwrap()
+            .export_to_markdown()
     }
 
     /// docling#4172 (#391): a structured abstract keeps its `<sec>`s as
@@ -1503,7 +1700,10 @@ Sectioned.
             <ref><mixed-citation>Doe J. A title. 2020.</mixed-citation></ref>
           </ref-list></back></article>"#;
         let src = SourceDocument::from_bytes("p", InputFormat::XmlJats, xml.as_bytes().to_vec());
-        let md = JatsBackend.convert(&src).unwrap().export_to_markdown();
+        let md = JatsBackend::default()
+            .convert(&src)
+            .unwrap()
+            .export_to_markdown();
         assert!(
             md.contains("Fig 1 A caption.\n\n<!-- image -->"),
             "figure:\n{md}"
@@ -1528,7 +1728,7 @@ Sectioned.
               </table></table-wrap>
           </sec></body></article>"#;
         let src = SourceDocument::from_bytes("p", InputFormat::XmlJats, xml.as_bytes().to_vec());
-        let doc = JatsBackend.convert(&src).unwrap();
+        let doc = JatsBackend::default().convert(&src).unwrap();
         let dclx = doc.export_to_doclang();
         assert!(
             dclx.contains("<table>\n    <caption>Table 1 Cap.</caption>"),
@@ -1554,7 +1754,10 @@ Sectioned.
                <bold>strong</bold> effect and mass <inline-formula><tex-math>$m c^2$</tex-math></inline-formula> energy.</p>
           </sec></body></article>"#;
         let src = SourceDocument::from_bytes("p", InputFormat::XmlJats, xml.as_bytes().to_vec());
-        let md = JatsBackend.convert(&src).unwrap().export_to_markdown();
+        let md = JatsBackend::default()
+            .convert(&src)
+            .unwrap()
+            .export_to_markdown();
         assert!(
             md.contains(
                 "We combined *B* . *malayi* with a **strong** effect and mass $m c^2$ energy."
@@ -1578,7 +1781,7 @@ Sectioned.
               <list-item><p>Item 2</p></list-item>
             </list></sec></body></article>"#;
         let src = SourceDocument::from_bytes("p", InputFormat::XmlJats, xml.as_bytes().to_vec());
-        let doc = JatsBackend.convert(&src).unwrap();
+        let doc = JatsBackend::default().convert(&src).unwrap();
         let items: Vec<(String, u8)> = doc
             .nodes
             .iter()
@@ -1613,12 +1816,251 @@ Sectioned.
             <disp-formula><tex-math/></disp-formula>
             <p>After.</p></sec></body></article>"#;
         let src = SourceDocument::from_bytes("p", InputFormat::XmlJats, xml.as_bytes().to_vec());
-        let md = JatsBackend.convert(&src).unwrap().export_to_markdown();
+        let md = JatsBackend::default()
+            .convert(&src)
+            .unwrap()
+            .export_to_markdown();
         assert!(md.contains("Before."), "got:\n{md}");
         assert!(
             md.contains("After."),
             "content after the empty formula lost:\n{md}"
         );
         assert!(!md.contains("$$"), "no phantom formula:\n{md}");
+    }
+
+    /// A scratch directory under the system temp dir, removed on drop.
+    struct TempDir(PathBuf);
+    impl TempDir {
+        fn new(tag: &str) -> Self {
+            let dir = std::env::temp_dir().join(format!(
+                "docling-jats-{tag}-{}-{}",
+                std::process::id(),
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap()
+                    .as_nanos()
+            ));
+            std::fs::create_dir_all(&dir).unwrap();
+            TempDir(dir)
+        }
+        fn path(&self) -> &Path {
+            &self.0
+        }
+    }
+    impl Drop for TempDir {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+
+    fn write_png(path: &Path, w: u32, h: u32, rgb: [u8; 3]) {
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        image::DynamicImage::ImageRgb8(image::RgbImage::from_pixel(w, h, image::Rgb(rgb)))
+            .save_with_format(path, image::ImageFormat::Png)
+            .unwrap();
+    }
+
+    fn write_jpg(path: &Path, w: u32, h: u32, rgb: [u8; 3]) {
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        image::DynamicImage::ImageRgb8(image::RgbImage::from_pixel(w, h, image::Rgb(rgb)))
+            .save_with_format(path, image::ImageFormat::Jpeg)
+            .unwrap();
+    }
+
+    fn jats_body(body: &str) -> String {
+        format!(
+            r#"<article xmlns:xlink="http://www.w3.org/1999/xlink"><front><article-meta>
+            <title-group><article-title>T</article-title></title-group>
+          </article-meta></front><body><sec><title>S</title>{body}</sec></body></article>"#
+        )
+    }
+
+    /// Convert `body` written to `dir/article.nxml`, as a file (so the
+    /// backend knows the directory).
+    fn convert_file(dir: &Path, body: &str, fetch_images: bool) -> DoclingDocument {
+        let path = dir.join("article.nxml");
+        std::fs::write(&path, jats_body(body)).unwrap();
+        let src = SourceDocument::from_file(&path).unwrap();
+        JatsBackend { fetch_images }.convert(&src).unwrap()
+    }
+
+    fn picture_images(doc: &DoclingDocument) -> Vec<Option<&docling_core::PictureImage>> {
+        doc.nodes
+            .iter()
+            .filter_map(|n| match n {
+                Node::Picture { image, .. } => Some(image.as_ref()),
+                _ => None,
+            })
+            .collect()
+    }
+
+    fn size_and_pixel(img: &docling_core::PictureImage) -> ((u32, u32), [u8; 3]) {
+        let rgb = image::load_from_memory(&img.data).unwrap().to_rgb8();
+        ((img.width, img.height), rgb.get_pixel(0, 0).0)
+    }
+
+    /// #392 (docling#4041): a figure's graphic is read only under
+    /// `fetch_images`; then the relative href resolves against the file's
+    /// directory and the image reaches the picture (and the JSON), while
+    /// Markdown keeps the placeholder marker.
+    #[test]
+    fn figure_image_is_embedded_only_when_fetching() {
+        let dir = TempDir::new("embed");
+        write_png(&dir.path().join("images/figure.png"), 7, 5, [255, 0, 0]);
+        let body = r#"<fig><label>Figure 1</label><caption><p>A red rectangle.</p></caption>
+            <graphic xlink:href="images/figure.png"/></fig>"#;
+
+        let doc = convert_file(dir.path(), body, false);
+        assert_eq!(picture_images(&doc), [None]);
+
+        let doc = convert_file(dir.path(), body, true);
+        let pics = picture_images(&doc);
+        assert_eq!(pics.len(), 1);
+        let img = pics[0].expect("embedded");
+        assert_eq!(size_and_pixel(img), ((7, 5), [255, 0, 0]));
+        assert_eq!(img.mimetype, "image/png");
+        let caption = doc.nodes.iter().find_map(|n| match n {
+            Node::Picture { caption, .. } => caption.clone(),
+            _ => None,
+        });
+        assert_eq!(caption.as_deref(), Some("Figure 1 A red rectangle."));
+        assert!(doc.export_to_markdown().contains("<!-- image -->"));
+        let json: serde_json::Value = serde_json::from_str(&doc.export_to_json()).unwrap();
+        assert!(json["pictures"][0]["image"]["uri"]
+            .as_str()
+            .is_some_and(|u| u.starts_with("data:image/png;base64,")));
+    }
+
+    /// An in-memory source has no directory to resolve against, and one that
+    /// came from a URL is not a local base either: no image, as docling.
+    #[test]
+    fn figure_image_needs_a_local_source_file() {
+        let dir = TempDir::new("stream");
+        write_png(&dir.path().join("figure.png"), 7, 5, [255, 0, 0]);
+        let body = r#"<fig><graphic xlink:href="figure.png"/></fig>"#;
+        let xml = jats_body(body).into_bytes();
+        let stream = SourceDocument::from_bytes("article.nxml", InputFormat::XmlJats, xml.clone());
+        let doc = JatsBackend { fetch_images: true }.convert(&stream).unwrap();
+        assert_eq!(picture_images(&doc), [None]);
+
+        let remote = SourceDocument::from_bytes("article.nxml", InputFormat::XmlJats, xml.clone())
+            .with_base_url("https://example.com/article.nxml");
+        let doc = JatsBackend { fetch_images: true }.convert(&remote).unwrap();
+        assert_eq!(picture_images(&doc), [None]);
+
+        // docling's `source_uri` analogue: a path attached to a stream.
+        let mut with_path = SourceDocument::from_bytes("article.nxml", InputFormat::XmlJats, xml);
+        with_path.path = Some(dir.path().join("source.nxml"));
+        let doc = JatsBackend { fetch_images: true }
+            .convert(&with_path)
+            .unwrap();
+        assert!(picture_images(&doc)[0].is_some());
+    }
+
+    /// An extensionless href is probed with the raster suffixes, directly and
+    /// inside `<alternatives>` behind an unsupported SVG rendition.
+    #[test]
+    fn figure_image_resolves_an_extensionless_href() {
+        let dir = TempDir::new("extless");
+        write_jpg(&dir.path().join("images/figure.jpg"), 9, 6, [0, 0, 255]);
+        for graphic in [
+            r#"<graphic xlink:href="images/figure"/>"#,
+            r#"<alternatives><graphic xlink:href="images/unsupported.svg"/><graphic xlink:href="images/figure"/></alternatives>"#,
+        ] {
+            let doc = convert_file(dir.path(), &format!("<fig>{graphic}</fig>"), true);
+            let pics = picture_images(&doc);
+            assert_eq!(pics.len(), 1, "{graphic}");
+            let img = pics[0].expect("probed .jpg");
+            assert_eq!((img.width, img.height), (9, 6));
+            assert_eq!(img.mimetype, "image/jpeg");
+        }
+    }
+
+    /// Renditions are tried in document order: an undecodable file and an
+    /// absolute path each fall through to the relative rendition after them.
+    #[test]
+    fn figure_image_falls_back_past_undecodable_and_absolute_renditions() {
+        let dir = TempDir::new("fallback");
+        std::fs::create_dir_all(dir.path().join("images")).unwrap();
+        std::fs::write(dir.path().join("images/broken.png"), b"not an image").unwrap();
+        write_png(&dir.path().join("images/figure.png"), 9, 6, [0, 0, 255]);
+        write_png(&dir.path().join("absolute.png"), 7, 5, [255, 0, 0]);
+        let absolute = dir.path().join("absolute.png");
+        for body in [
+            r#"<fig><alternatives><graphic xlink:href="images/broken.png"/><graphic xlink:href="images/figure.png"/></alternatives></fig>"#.to_string(),
+            format!(
+                r#"<fig><alternatives><graphic xlink:href="{}"/><graphic xlink:href="images/figure.png"/></alternatives></fig>"#,
+                absolute.display()
+            ),
+        ] {
+            let doc = convert_file(dir.path(), &body, true);
+            let img = picture_images(&doc)[0].expect("fell back");
+            assert_eq!(size_and_pixel(img), ((9, 6), [0, 0, 255]), "{body}");
+        }
+    }
+
+    /// No graphic, no/blank href, a remote href, an SVG, a missing file: the
+    /// picture stays a placeholder and the walk goes on.
+    #[test]
+    fn figure_image_skips_unavailable_renditions() {
+        let dir = TempDir::new("skip");
+        for graphic in [
+            "",
+            "<graphic/>",
+            r#"<graphic xlink:href=" "/>"#,
+            r#"<graphic xlink:href="https://example.com/figure.png"/>"#,
+            r#"<graphic xlink:href="figure.svg"/>"#,
+            r#"<graphic xlink:href="missing.png"/>"#,
+        ] {
+            let doc = convert_file(
+                dir.path(),
+                &format!("<fig>{graphic}</fig><p>Content after the unavailable figure.</p>"),
+                true,
+            );
+            assert_eq!(picture_images(&doc), [None], "{graphic}");
+            assert!(doc
+                .export_to_markdown()
+                .contains("Content after the unavailable figure."));
+        }
+    }
+
+    /// A rendition climbing out of the source directory aborts the whole
+    /// figure — the in-directory fallback after it is not tried.
+    #[test]
+    fn figure_image_blocks_path_traversal() {
+        let dir = TempDir::new("traversal");
+        write_png(&dir.path().join("outside.png"), 7, 5, [255, 0, 0]);
+        let article_dir = dir.path().join("article");
+        write_png(&article_dir.join("fallback.png"), 9, 6, [0, 0, 255]);
+        let doc = convert_file(
+            &article_dir,
+            r#"<fig><alternatives><graphic xlink:href="../outside.png"/><graphic xlink:href="fallback.png"/></alternatives></fig>
+               <p>Content after the blocked figure.</p>"#,
+            true,
+        );
+        assert_eq!(picture_images(&doc), [None]);
+        assert!(doc
+            .export_to_markdown()
+            .contains("Content after the blocked figure."));
+    }
+
+    #[test]
+    fn figure_path_helpers_follow_docling() {
+        assert!(is_local_path("images/a.png"));
+        assert!(is_local_path("/abs/a.png"));
+        assert!(is_local_path(r"C:\a.png"));
+        assert!(!is_local_path("https://x/a.png"));
+        assert!(!is_local_path("//cdn/a.png"));
+        assert!(!is_local_path("data:image/png;base64,AA=="));
+        assert!(is_absolute_path("/abs/a.png"));
+        assert!(is_absolute_path("C:/a.png"));
+        assert!(!is_absolute_path("images/a.png"));
+        let base = Path::new("/base");
+        assert_eq!(
+            confined_path(base, "a/../b.png"),
+            Some(PathBuf::from("/base/b.png"))
+        );
+        assert_eq!(confined_path(base, "../b.png"), None);
+        assert_eq!(confined_path(base, "/etc/passwd"), None);
     }
 }

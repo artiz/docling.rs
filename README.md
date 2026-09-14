@@ -614,12 +614,13 @@ for (path, bytes) in files { std::fs::write(path, bytes).unwrap(); }
 `<!-- image -->`, like docling.
 
 > The cropped/extracted pixels are real, but the base64 won't be byte-identical
-> to docling's (different PNG encoder). HTML/EPUB/AsciiDoc pictures stay
-> placeholders by default (like docling); enable fetching with `--fetch-images` /
-> `DocumentConverter::fetch_images(true)` to resolve `<img src>` and AsciiDoc's
-> `image::target[]` — `data:` URIs, local files, remote `http(s)` URLs, and EPUB
-> archive entries — and embed the bytes. Remote URLs are fetched over the
-> network, so enable it only for input you trust.
+> to docling's (different PNG encoder). HTML/EPUB/MHTML/AsciiDoc/JATS pictures
+> stay placeholders by default (like docling); enable fetching with
+> `--fetch-images` / `DocumentConverter::fetch_images(true)` to resolve
+> `<img src>`, AsciiDoc's `image::target[]` and a JATS `<fig>`'s
+> `<graphic xlink:href>` — `data:` URIs, local files, remote `http(s)` URLs, and
+> EPUB/MHTML archive entries — and embed the bytes. Remote URLs are fetched over
+> the network, so enable it only for input you trust.
 
 ### `strict` Markdown (Rust-only)
 

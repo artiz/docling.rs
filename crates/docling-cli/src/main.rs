@@ -48,9 +48,10 @@
 //!                      streamed to disk page by page, so image-heavy PDFs stay
 //!                      memory-bounded. JSON always embeds extracted images as
 //!                      data URIs.
-//!   --fetch-images     for HTML/EPUB/MHTML, resolve external <img src> (data: URIs,
-//!                      local files, http(s) URLs, EPUB/MHTML archive parts) and embed
-//!                      the bytes. Off by default; fetches over the network.
+//!   --fetch-images     for HTML/EPUB/MHTML/JATS, resolve external <img src> (data:
+//!                      URIs, local files, http(s) URLs, EPUB/MHTML archive parts,
+//!                      JATS <graphic> files) and embed the bytes. Off by default;
+//!                      fetches over the network.
 //!   --strict           cleaner, more conformant Markdown instead of byte-for-byte
 //!                      docling-legacy output (Markdown only).
 //!   --no-stream        build the whole document before printing Markdown instead
@@ -185,7 +186,7 @@ INPUT SELECTION
   --scale X               `--to images` render scale, px per PDF point (0.1-4.0, default 2.0)
 
 FORMAT OPTIONS
-  --fetch-images          resolve external <img src> for HTML/EPUB/MHTML (network access)
+  --fetch-images          resolve external <img src> for HTML/EPUB/MHTML/JATS (network access)
   --list-attachments      append an Attachments section for .eml/.msg
   --skip-empty-cells      omit empty cells from XLSX/XLS grids
   --ebcdic-layout JSON|PATH   EBCDIC copybook layout

@@ -104,7 +104,7 @@ The API is described by <a href="/openapi.yaml"><code>/openapi.yaml</code></a> (
     </label>
     <label><input type="checkbox" id="strict"> strict Markdown</label>
     <label><input type="checkbox" id="embed" checked> embed images</label>
-    <label id="fetch-images-label" title="HTML/EPUB/MHTML: resolve external <img src> and embed the bytes (outbound fetch)"><input type="checkbox" id="fetch_images"> fetch images</label>
+    <label id="fetch-images-label" title="HTML/EPUB/MHTML/JATS: resolve external <img src> and embed the bytes (outbound fetch)"><input type="checkbox" id="fetch_images"> fetch images</label>
     <label><input type="checkbox" id="no_ocr"> no OCR</label>
     <label title="Keep layout + TableFormer, never OCR (docling's do_ocr=False): structure survives, pixel-only text comes back empty"><input type="checkbox" id="skip_ocr"> skip OCR</label>
     <label><input type="checkbox" id="no_table_former"> no TableFormer</label>
@@ -195,7 +195,7 @@ The API is described by <a href="/openapi.yaml"><code>/openapi.yaml</code></a> (
   <tr><td><code>no_text_panels</code></td><td><code>true</code>/<code>false</code></td><td>PDF/image: keep every detected picture as a picture — disable the demotion of uncaptioned dense-text "picture" regions into paragraphs.</td></tr>
   <tr><td><code>list_attachments</code></td><td><code>true</code>/<code>false</code></td><td>Email (.eml/.msg): append an <em>Attachments</em> section — names and content types only, never the payload.</td></tr>
   <tr><td><code>ebcdic_layout</code></td><td>JSON</td><td>EBCDIC (.ebc): the copybook layout as inline <code>EbcdicLayout</code> JSON — mandatory for the format.</td></tr>
-  <tr><td><code>fetch_images</code></td><td><code>true</code>/<code>false</code></td><td>HTML/EPUB/MHTML: resolve external <code>&lt;img src&gt;</code> and embed the bytes. Outbound fetch — honored only when the server runs with <code>--allow-url-fetch</code>, otherwise ignored.</td></tr>
+  <tr><td><code>fetch_images</code></td><td><code>true</code>/<code>false</code></td><td>HTML/EPUB/MHTML/JATS: resolve external <code>&lt;img src&gt;</code> and embed the bytes. Outbound fetch — honored only when the server runs with <code>--allow-url-fetch</code>, otherwise ignored.</td></tr>
   <tr><td><code>asr_lang</code></td><td><code>auto</code> (default) | a Whisper code (<code>en</code>, <code>de</code>, <code>zh</code>, …)</td><td>Audio/video: transcription language; <code>auto</code> detects it from the first 30 seconds. English-only presets always transcribe English.</td></tr>
   <tr><td><code>scale</code></td><td><code>0.1</code>–<code>4.0</code> (default <code>2.0</code>)</td><td><code>to=images</code>: render scale in pixels per PDF point — 2.0 = 144&nbsp;dpi, the ML pipeline's own render scale.</td></tr>
   <tr><td><code>force_full_page_ocr</code></td><td><code>true</code>/<code>false</code></td><td>PDF/image: OCR every page from its render, ignoring the embedded text layer (docling's <code>force_full_page_ocr</code>).</td></tr>

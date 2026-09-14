@@ -103,7 +103,7 @@ struct PyDocumentConverter {
 impl PyDocumentConverter {
     /// Engine knobs mapped from docling's converter/`PdfPipelineOptions` on the
     /// Python side:
-    /// * `fetch_images` — resolve remote/local `<img src>` for HTML/EPUB/MHTML.
+    /// * `fetch_images` — resolve remote/local `<img src>` for HTML/EPUB/MHTML/JATS.
     /// * `do_ocr` — run OCR on scanned PDF/image pages (docling's `do_ocr`).
     ///   `do_ocr=False` now matches docling exactly (#244): layout detection
     ///   and TableFormer still run, only OCR is skipped — previously it
