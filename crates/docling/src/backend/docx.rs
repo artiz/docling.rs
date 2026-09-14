@@ -127,6 +127,7 @@ impl DeclarativeBackend for DocxBackend {
                 // The docx backend replaces `add_comment`'s text ref with the
                 // group's, so replies to one comment group together.
                 refs_note_text: false,
+                grouped: true,
             });
         }
         Ok(doc)

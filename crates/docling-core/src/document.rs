@@ -214,10 +214,17 @@ pub enum Node {
     /// **note text**'s ref to each target (which is what the xlsx backend gets),
     /// while the docx backend overwrites that with the **group**'s ref so a
     /// comment's replies group together.
+    ///
+    /// `grouped` is whether docling wraps the note in a `comment_section`
+    /// group at all: the docx and spreadsheet backends do, while backends that
+    /// call docling-core's `add_comment` directly (Pages, #383) get a bare
+    /// notes-layer text item under the body — JSON then emits no group and
+    /// `name` is unused.
     CommentSection {
         name: String,
         text: String,
         refs_note_text: bool,
+        grouped: bool,
     },
     /// A body item annotated by reviewer comments: `comments` are indices into
     /// the document's [`Node::CommentSection`] nodes, in document order. JSON

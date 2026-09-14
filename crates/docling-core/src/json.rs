@@ -575,7 +575,17 @@ impl Builder {
                 name,
                 text,
                 refs_note_text,
+                grouped,
             } => {
+                if !*grouped {
+                    // docling-core's bare `add_comment`: the note text sits
+                    // directly under the parent and is what the back-refs
+                    // point at.
+                    let child =
+                        self.add_text("text", text, parent, json!({ "content_layer": "notes" }));
+                    self.comment_groups.push(child.clone());
+                    return Some(child);
+                }
                 let self_ref = format!("#/groups/{}", self.groups.len());
                 self.groups.push(Value::Null);
                 let child =
@@ -1822,6 +1832,7 @@ mod tests {
                     name: "comment-Sheet1-A1".into(),
                     text: "[author: A]: note".into(),
                     refs_note_text: true,
+                    grouped: true,
                 },
             ],
             ..DoclingDocument::new("c")
@@ -1852,6 +1863,7 @@ mod tests {
                     name: "comment-7".into(),
                     text: "[time: t]: note".into(),
                     refs_note_text: false,
+                    grouped: true,
                 },
             ],
             ..DoclingDocument::new("c")

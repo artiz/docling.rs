@@ -1,9 +1,14 @@
-//! Apple iWork input (#213, #318): the iWork backend pinned against committed
-//! Markdown groundtruth over `tests/data/iwork/` (repo root). The backend is
-//! pure Rust and deterministic — no models, no gating. The `.pages` fixtures
-//! are a conformance corpus: their groundtruth is upstream docling's own
-//! output (see the corpus README), the rest pins our Numbers/Keynote
-//! extension. Regenerate after an intentional change with:
+//! Apple iWork input (#213, #318, #383): the iWork backend pinned against
+//! committed Markdown groundtruth. The backend is pure Rust and deterministic
+//! — no models, no gating. Two corpora (repo root):
+//!
+//! - `tests/data/pages/` mirrors upstream docling's Pages fixtures and its
+//!   committed groundtruth (docling#4062): `.pages` is a conformance format,
+//!   so the Markdown must match byte-for-byte (modulo the trailing newline
+//!   upstream's test harness strips) and the JSON structure is cross-checked.
+//!   Never regenerated here — it is upstream's output.
+//! - `tests/data/iwork/` pins our own fixtures (Numbers/Keynote extension,
+//!   the libetonyek Pages bundles). Regenerate after an intentional change with:
 //!
 //! ```bash
 //! DOCLING_RS_REGEN=1 cargo test -p docling --test iwork
@@ -16,6 +21,157 @@ use docling::{DocumentConverter, SourceDocument};
 
 fn corpus() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/data/iwork")
+}
+
+fn pages_corpus() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/data/pages")
+}
+
+fn convert_pages(name: &str) -> docling::DoclingDocument {
+    let source = SourceDocument::from_file(pages_corpus().join("sources").join(name)).unwrap();
+    DocumentConverter::new()
+        .convert(source)
+        .unwrap_or_else(|e| panic!("{name}: {e}"))
+        .document
+}
+
+/// Upstream's Pages corpus (docling#4062): Markdown byte-for-byte against
+/// docling's committed groundtruth.
+#[test]
+fn pages_fixtures_match_upstream_groundtruth() {
+    let sources = pages_corpus().join("sources");
+    let mut entries: Vec<_> = fs::read_dir(&sources)
+        .expect("pages sources")
+        .map(|e| e.expect("dir entry").path())
+        .collect();
+    entries.sort();
+    assert_eq!(entries.len(), 4, "expected upstream's four Pages fixtures");
+    for path in entries {
+        let name = path.file_name().unwrap().to_str().unwrap();
+        let md = convert_pages(name).export_to_markdown();
+        let expected = fs::read_to_string(
+            pages_corpus()
+                .join("groundtruth")
+                .join(format!("{name}.md")),
+        )
+        .unwrap_or_else(|_| panic!("{name}: missing upstream groundtruth"));
+        // docling's test harness writes the groundtruth without the final
+        // newline our serializer always emits.
+        assert_eq!(
+            md.trim_end_matches('\n'),
+            expected.trim_end_matches('\n'),
+            "{name}: Markdown drifted from upstream groundtruth"
+        );
+    }
+}
+
+/// The JSON shape upstream's groundtruth pins and our exporter can carry:
+/// tables in the text flow, reviewer comments as bare notes-layer texts
+/// referenced from the items they annotate (no `comment_section` group), and
+/// character formatting on the items. The furniture layer (page header/footer,
+/// footnotes) stays out of the JSON, as for every backend (see MIGRATION.md).
+#[test]
+fn pages_json_follows_upstream_structure() {
+    let expected = |name: &str| -> serde_json::Value {
+        let path = pages_corpus()
+            .join("groundtruth")
+            .join(format!("{name}.json"));
+        serde_json::from_str(&fs::read_to_string(path).unwrap()).unwrap()
+    };
+    // Body children on the body layer: upstream's JSON also lists the
+    // furniture-layer items (page header/footer, footnotes) under the body,
+    // which our exporter leaves out for every backend.
+    let body_order = |v: &serde_json::Value| -> Vec<String> {
+        v["body"]["children"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|c| c["$ref"].as_str().unwrap().to_string())
+            .filter(|r| {
+                let item = r.trim_start_matches("#/").split('/').fold(v, |acc, k| {
+                    match k.parse::<usize>() {
+                        Ok(i) => &acc[i],
+                        Err(_) => &acc[k],
+                    }
+                });
+                item["content_layer"] == "body"
+            })
+            .collect()
+    };
+    let texts = |v: &serde_json::Value, layer: &str| -> Vec<(String, String)> {
+        v["texts"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|t| t["content_layer"] == layer)
+            .map(|t| {
+                (
+                    t["label"].as_str().unwrap().to_string(),
+                    t["text"].as_str().unwrap().to_string(),
+                )
+            })
+            .collect()
+    };
+    for name in ["pages_2013.pages", "pages_iwork09.pages"] {
+        let ours: serde_json::Value =
+            serde_json::from_str(&convert_pages(name).export_to_json()).unwrap();
+        let theirs = expected(name);
+        // The table sits where its anchor is in the text, not appended.
+        assert_eq!(body_order(&ours), body_order(&theirs), "{name}: body order");
+        assert_eq!(
+            texts(&ours, "body"),
+            texts(&theirs, "body"),
+            "{name}: body texts"
+        );
+        assert_eq!(ours["tables"], theirs["tables"], "{name}: tables");
+    }
+    let name = "pages_iwork09_comments.pages";
+    let ours: serde_json::Value =
+        serde_json::from_str(&convert_pages(name).export_to_json()).unwrap();
+    let theirs = expected(name);
+    assert_eq!(body_order(&ours), body_order(&theirs), "{name}: body order");
+    assert_eq!(
+        texts(&ours, "body"),
+        texts(&theirs, "body"),
+        "{name}: body texts"
+    );
+    assert_eq!(
+        texts(&ours, "notes"),
+        texts(&theirs, "notes"),
+        "{name}: comments"
+    );
+    assert!(
+        ours["groups"].as_array().unwrap().is_empty(),
+        "{name}: no groups"
+    );
+    let refs = |v: &serde_json::Value| -> Vec<(String, serde_json::Value)> {
+        v["texts"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|t| t.get("comments").is_some())
+            .map(|t| {
+                (
+                    t["self_ref"].as_str().unwrap().to_string(),
+                    t["comments"].clone(),
+                )
+            })
+            .collect()
+    };
+    assert_eq!(refs(&ours), refs(&theirs), "{name}: comment back-refs");
+    let name = "pages_iwork09_formatted.pages";
+    let ours: serde_json::Value =
+        serde_json::from_str(&convert_pages(name).export_to_json()).unwrap();
+    let theirs = expected(name);
+    assert_eq!(body_order(&ours), body_order(&theirs), "{name}: body order");
+    // Character formatting reaches the Markdown (bold/italic/strike/link
+    // markers) and DocLang (inline runs); the JSON exporter carries text items
+    // without docling's `formatting`/`hyperlink` fields for every backend.
+    assert_eq!(
+        texts(&ours, "body"),
+        texts(&theirs, "body"),
+        "{name}: body texts"
+    );
 }
 
 #[test]
@@ -61,7 +217,7 @@ fn iwork_fixtures_match_groundtruth() {
         checked += 1;
     }
     assert!(
-        checked >= 9,
+        checked >= 7,
         "expected the full iwork corpus, saw {checked}"
     );
 }
@@ -71,12 +227,8 @@ fn iwork_fixtures_match_groundtruth() {
 /// agree on the shared body text and on the table grid.
 #[test]
 fn both_pages_generations_agree() {
-    let convert = |name: &str| {
-        let source = SourceDocument::from_file(corpus().join("sources").join(name)).unwrap();
-        DocumentConverter::new().convert(source).unwrap().document
-    };
-    let modern = convert("pages_2013.pages");
-    let legacy = convert("pages_iwork09.pages");
+    let modern = convert_pages("pages_2013.pages");
+    let legacy = convert_pages("pages_iwork09.pages");
     for sentence in ["Sample pages document", "Some plain text to parse."] {
         assert!(
             modern.export_to_markdown().contains(sentence),
