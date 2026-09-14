@@ -998,6 +998,32 @@ mod tests {
         );
     }
 
+    /// The reporter's own geometry (#395): an empty `B1:N1` above *and to the
+    /// right of* the only value, in `A2`. The row axis underflowed; the column
+    /// axis had to grow instead.
+    #[test]
+    fn a_merge_above_and_right_of_the_data_keeps_both_axes() {
+        let mut range: Range<Data> = Range::new((1, 0), (1, 0));
+        range.set_value((1, 0), Data::String("data".into()));
+        let frame = sheet_frame(&range, &vec![((0, 1), (0, 13))]);
+        assert_eq!(
+            frame.origin,
+            (0, 0),
+            "up to the merge's row, out to column A"
+        );
+        assert_eq!(frame.shift, (1, 0), "one row before the range, no columns");
+        assert_eq!(
+            (frame.height, frame.width),
+            (2, 14),
+            "the merge's row above, and out to column N"
+        );
+        // Only the valued cell is a table; the empty merge beside it is not.
+        let found = find_tables(&range, &frame, false);
+        assert_eq!(found.len(), 1);
+        assert_eq!(found[0].table.rows, vec![vec!["data"]]);
+        assert_eq!((found[0].min_r, found[0].min_c), (1, 0));
+    }
+
     /// Without merges the frame is calamine's range, unshifted — the ordinary
     /// case, and the one the binary (xlsb) reader always takes.
     #[test]
