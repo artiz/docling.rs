@@ -1,0 +1,9 @@
+item-0 at level 0: unspecified: group _root_
+  item-1 at level 1: inline: group group
+    item-2 at level 2: text: Case 1: bold text then a plain text run.
+    item-3 at level 2: text: Plain tail.
+  item-4 at level 1: text: Case 2: bold text then a plain whitespace-only run.
+  item-5 at level 1: text: Case 3: italic text then a plain whitespace-only run.
+  item-6 at level 1: text: Case 4: the whole paragraph is a single bold run.
+  item-7 at level 1: list: group list
+    item-8 at level 2: list_item: Case 5: bold list item then a plain whitespace-only run.

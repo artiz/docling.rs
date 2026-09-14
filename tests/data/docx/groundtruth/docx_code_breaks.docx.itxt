@@ -1,0 +1,9 @@
+item-0 at level 0: unspecified: group _root_
+  item-1 at level 1: code: total = a + b
+print(total)
+# done
+x = 1
+y = 2
+z = x + y
+  item-2 at level 1: text: Plain line one
+plain line two.

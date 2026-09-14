@@ -1145,7 +1145,16 @@ fn run_groups(runs: Vec<(String, Fmt, Option<String>)>) -> Vec<(String, Fmt, Opt
         group_text.push_str(&text);
     }
     if !group_text.trim().is_empty() {
-        groups.push((group_text.trim().to_string(), last_format, None));
+        // The trailing group closes under the format that *opened* it, as in
+        // docling — a whitespace-only run never opens a group (its text is
+        // just appended), so it must not decide the group's format either.
+        // Taking the last run's format instead lost the bold/italic of a
+        // paragraph that ends with an unformatted space (#408).
+        groups.push((
+            group_text.trim().to_string(),
+            previous_format.unwrap_or(last_format),
+            None,
+        ));
     }
     groups
 }
@@ -1325,7 +1334,7 @@ fn inline_equation_runs(parts: &[EqPart]) -> Vec<InlineRun> {
     runs
 }
 
-#[derive(Clone, Copy, Default, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
 struct Fmt {
     bold: bool,
     italic: bool,
@@ -1773,15 +1782,14 @@ fn omaths_of<'a, 'i>(child: XmlNode<'a, 'i>) -> Vec<XmlNode<'a, 'i>> {
 }
 
 /// A paragraph's plain run text and equations (`$…$`) in document order, no
-/// formatting markers.
+/// formatting markers — python-docx's `Paragraph.text`, which is where
+/// docling's code text (`raw_paragraph_text`) and plain-cell text come from.
 fn plain_paragraph_text(p: XmlNode) -> String {
     let mut out = String::new();
     for child in child_elements(p) {
         let omaths = omaths_of(child);
         if omaths.is_empty() {
-            for t in child.descendants().filter_map(flat_text) {
-                out.push_str(t);
-            }
+            push_inline_text(child, &mut out);
         } else {
             for m in omaths {
                 let eq = crate::backend::omml::to_latex(m);
@@ -1794,6 +1802,35 @@ fn plain_paragraph_text(p: XmlNode) -> String {
         }
     }
     out
+}
+
+/// Append the plain text of one paragraph child the way python-docx's
+/// `CT_P.text` / docling's `_iter_paragraph_content` read it: a run's inner
+/// content through [`run_child_text`] (so a `<w:br/>` is a newline and a tab a
+/// tab — flattening the subtree to `w:t` alone glued the lines of a code
+/// paragraph together, #409), a hyperlink's runs likewise, a content control's
+/// `w:t` text only (docling's `.//w:sdtContent//w:t` xpath), and the
+/// transparent wrappers recursed into. Anything else contributes nothing.
+fn push_inline_text(node: XmlNode, out: &mut String) {
+    match node.tag_name().name() {
+        "r" => out.extend(child_elements(node).map(run_child_text)),
+        "hyperlink" => {
+            for r in node.children().filter(|n| n.has_tag_name("r")) {
+                out.extend(child_elements(r).map(run_child_text));
+            }
+        }
+        "sdt" => {
+            for t in node.descendants().filter(|n| n.has_tag_name("t")) {
+                out.push_str(t.text().unwrap_or(""));
+            }
+        }
+        "smartTag" | "customXml" | "ins" | "fldSimple" => {
+            for c in child_elements(node) {
+                push_inline_text(c, out);
+            }
+        }
+        _ => {}
+    }
 }
 
 /// Case-folded paragraph *style names* that mark a paragraph as code (docling PR
@@ -2319,7 +2356,7 @@ fn build_enum_marker(
 mod tests {
     use super::{
         block_comment_slots, child_elements, flat_text, format_enum_counter, heading_label_level,
-        row_cells, run_child_text,
+        plain_paragraph_text, row_cells, run_child_text, run_groups, Fmt,
     };
     use std::collections::HashMap;
 
@@ -2429,6 +2466,92 @@ mod tests {
         assert_eq!(
             texts(&row("<w:sdt><w:sdtContent/></w:sdt>".to_string())),
             Vec::<String>::new()
+        );
+    }
+
+    /// #408: docling's `_get_paragraph_elements` closes the trailing run group
+    /// under the format that *opened* it. A whitespace-only run never opens a
+    /// group — its text is appended to the current one — so a paragraph whose
+    /// bold or italic text is followed by an unformatted `" "` (Word writes
+    /// that trailing space as its own run) is still one bold/italic element.
+    /// We used the *last* run's format there, which reset it to plain.
+    #[test]
+    fn a_trailing_unformatted_space_keeps_the_paragraphs_format() {
+        let bold = Fmt {
+            bold: true,
+            ..Fmt::default()
+        };
+        let italic = Fmt {
+            italic: true,
+            ..Fmt::default()
+        };
+        let plain = Fmt::default();
+        let groups = |runs: Vec<(&str, Fmt)>| {
+            run_groups(
+                runs.into_iter()
+                    .map(|(t, f)| (t.to_string(), f, None))
+                    .collect(),
+            )
+            .into_iter()
+            .map(|(t, f, _)| (t, f))
+            .collect::<Vec<_>>()
+        };
+        assert_eq!(
+            groups(vec![("Bold text.", bold), (" ", plain)]),
+            vec![("Bold text.".to_string(), bold)]
+        );
+        assert_eq!(
+            groups(vec![("Italic text.", italic), (" ", plain)]),
+            vec![("Italic text.".to_string(), italic)]
+        );
+        // A trailing run with real text still starts its own plain group …
+        assert_eq!(
+            groups(vec![("Bold text.", bold), (" Plain tail.", plain)]),
+            vec![
+                ("Bold text.".to_string(), bold),
+                ("Plain tail.".to_string(), plain)
+            ]
+        );
+        // … and whitespace *between* differently formatted runs joins the
+        // group it follows, exactly as upstream concatenates it.
+        assert_eq!(
+            groups(vec![("a", bold), (" ", plain), ("b", italic), (" ", plain)]),
+            vec![("a".to_string(), bold), ("b".to_string(), italic)]
+        );
+    }
+
+    /// #409: a code paragraph's text is python-docx's `Paragraph.text`, so a
+    /// `<w:br/>` — whether it sits in its own run or between the `w:t`s of one
+    /// run — is a newline and a tab is a tab. Flattening the subtree to `w:t`
+    /// alone joined `total = a + b` and `print(total)` into one line. A page
+    /// break still has no text, a hyperlink's runs count, a content control
+    /// contributes its `w:t` text (docling's `.//w:sdtContent//w:t` xpath).
+    #[test]
+    fn plain_paragraph_text_keeps_line_breaks_and_tabs() {
+        let xml = r#"<w:document xmlns:w="w"><w:body>
+            <w:p><w:pPr><w:pStyle w:val="Code"/></w:pPr>
+                <w:r><w:t xml:space="preserve">total = a + b</w:t></w:r><w:r><w:br/></w:r>
+                <w:r><w:t>print(total)</w:t></w:r><w:r><w:br/></w:r><w:r><w:t># done</w:t></w:r></w:p>
+            <w:p><w:r><w:t>x = 1</w:t><w:br/><w:t>y = 2</w:t><w:br/><w:t>z = x + y</w:t></w:r></w:p>
+            <w:p><w:r><w:t>if x:</w:t><w:br/><w:tab/><w:t>y</w:t><w:br w:type="page"/></w:r></w:p>
+            <w:p><w:r><w:t>see </w:t></w:r><w:hyperlink r:id="rId1" xmlns:r="r"><w:r><w:t>docs</w:t><w:br/><w:t>here</w:t></w:r></w:hyperlink></w:p>
+            <w:p><w:sdt><w:sdtContent><w:r><w:t>ctrl</w:t><w:br/><w:t>text</w:t></w:r></w:sdtContent></w:sdt></w:p>
+        </w:body></w:document>"#;
+        let dom = roxmltree::Document::parse(xml).unwrap();
+        let texts: Vec<String> = dom
+            .descendants()
+            .filter(|n| n.has_tag_name("p"))
+            .map(plain_paragraph_text)
+            .collect();
+        assert_eq!(
+            texts,
+            vec![
+                "total = a + b\nprint(total)\n# done",
+                "x = 1\ny = 2\nz = x + y",
+                "if x:\n\ty",
+                "see docs\nhere",
+                "ctrltext",
+            ]
         );
     }
 
