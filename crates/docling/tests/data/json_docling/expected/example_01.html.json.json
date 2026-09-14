@@ -33,9 +33,6 @@
         "$ref": "#/pictures/0"
       },
       {
-        "$ref": "#/texts/4"
-      },
-      {
         "$ref": "#/groups/0"
       },
       {
@@ -155,11 +152,11 @@
     {
       "self_ref": "#/texts/4",
       "parent": {
-        "$ref": "#/body"
+        "$ref": "#/pictures/0"
       },
       "children": [],
       "content_layer": "body",
-      "label": "text",
+      "label": "caption",
       "prov": [],
       "orig": "Example image",
       "text": "Example image"
@@ -232,7 +229,7 @@
       "orig": "First item in ordered list with start",
       "text": "First item in ordered list with start",
       "enumerated": true,
-      "marker": "1."
+      "marker": "42."
     },
     {
       "self_ref": "#/texts/10",
@@ -246,7 +243,7 @@
       "orig": "Second item in ordered list with start",
       "text": "Second item in ordered list with start",
       "enumerated": true,
-      "marker": "2."
+      "marker": "43."
     }
   ],
   "pictures": [
@@ -259,7 +256,11 @@
       "content_layer": "body",
       "label": "picture",
       "prov": [],
-      "captions": [],
+      "captions": [
+        {
+          "$ref": "#/texts/4"
+        }
+      ],
       "references": [],
       "footnotes": [],
       "annotations": []

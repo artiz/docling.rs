@@ -78,7 +78,7 @@ fn walk(reference: &Value, root: &Value, level: u8, doc: &mut DoclingDocument) {
     }
     let kind = ref_kind(reference);
     if kind.starts_with("#/texts/") {
-        text_item(item, level, doc);
+        text_item(item, root, level, doc);
         // docling nests a section's content under its heading (and a list
         // item's sub-list under the item), so a text item's `children` are
         // body content too — without this walk a document collapses to its
@@ -98,7 +98,7 @@ fn walk(reference: &Value, root: &Value, level: u8, doc: &mut DoclingDocument) {
     }
 }
 
-fn text_item(item: &Value, level: u8, doc: &mut DoclingDocument) {
+fn text_item(item: &Value, root: &Value, level: u8, doc: &mut DoclingDocument) {
     let label = item["label"].as_str().unwrap_or("text");
     // docling does not serialize empty text items (an undecoded formula is the
     // one exception — it becomes a placeholder comment).
@@ -111,6 +111,10 @@ fn text_item(item: &Value, level: u8, doc: &mut DoclingDocument) {
         return;
     }
     let text = formatted_text(item);
+    // Code and formulas are the two items docling serializes *unescaped*
+    // (`escape_html = False`, `escape_underscores = False`): a SQL body keeps
+    // its `VERIFY_GROUP_FOR_USER`, not `VERIFY\_GROUP\_FOR\_USER`.
+    let raw = || item["text"].as_str().unwrap_or("").to_string();
     match label {
         "title" => doc.push(Node::Heading { level: 1, text }),
         "section_header" => {
@@ -120,15 +124,24 @@ fn text_item(item: &Value, level: u8, doc: &mut DoclingDocument) {
                 text,
             });
         }
-        "code" => doc.push(Node::Code {
-            language: item["code_language"]
-                .as_str()
-                .filter(|s| !s.is_empty() && *s != "unknown")
-                .map(String::from),
-            text,
-            orig: None,
-            pretty: None,
-        }),
+        "code" => {
+            doc.push(Node::Code {
+                language: item["code_language"]
+                    .as_str()
+                    .filter(|s| !s.is_empty() && *s != "unknown")
+                    .map(String::from),
+                text: raw(),
+                orig: None,
+                pretty: None,
+            });
+            // A `CodeItem` is docling's only *floating* text item, and the
+            // text serializer appends a floating item's captions **after** its
+            // own text — the opposite of a picture or a table, which lead with
+            // theirs (`Listing 1: …` under the fence, not above it).
+            if let Some(cap) = caption_of(item, root) {
+                doc.push(Node::Paragraph { text: cap });
+            }
+        }
         "list_item" => doc.push(Node::ListItem {
             ordered: item["enumerated"].as_bool().unwrap_or(false),
             number: 1,
@@ -141,8 +154,30 @@ fn text_item(item: &Value, level: u8, doc: &mut DoclingDocument) {
             href: None,
             layer: None,
         }),
-        "caption" => {} // rendered with its parent table/picture
-        _ => doc.push(Node::Paragraph { text }), // text, paragraph, formula, footnote, …
+        // docling prefixes the task-list marker to the text of a checkbox item.
+        "checkbox_selected" => doc.push(Node::CheckboxItem {
+            checked: true,
+            text,
+        }),
+        "checkbox_unselected" => doc.push(Node::CheckboxItem {
+            checked: false,
+            text,
+        }),
+        // A decoded formula renders as `$$…$$`, also unescaped.
+        "formula" => doc.push(Node::Formula {
+            latex: raw(),
+            orig: item["orig"].as_str().unwrap_or("").to_string(),
+            location: None,
+        }),
+        // A caption some table/picture/code claims renders with that element;
+        // one nobody claims is an ordinary body item and renders where it sits
+        // (docling's serializer only skips the refs a floating item consumed).
+        "caption" => {
+            if !caption_is_claimed(item, root) {
+                doc.push(Node::Caption { text, href: None });
+            }
+        }
+        _ => doc.push(Node::Paragraph { text }), // text, paragraph, footnote, …
     }
 }
 
@@ -172,14 +207,67 @@ fn group_item(item: &Value, root: &Value, level: u8, doc: &mut DoclingDocument) 
     }
 }
 
+/// How docling-core's Markdown serializer renders a list item's marker.
+///
+/// * A marker it already considers valid Markdown — a bullet, or `12.` — is
+///   printed **verbatim** and nothing is computed. This is what carries a
+///   split reference list's real numbering (`18.` on the group that continues
+///   over a page break) instead of restarting at 1.
+/// * Any *other* non-empty marker (`a.`, `[7]`, `(3)`) forces a **bullet**:
+///   the computed marker is a number only when the item carries no marker at
+///   all (`… and (mode != AUTO or not item.marker)`). The original marker is
+///   then kept after it when it holds a letter or digit, so docling renders
+///   `- (1) Human Annotation`. In this node model it rides in the item's text,
+///   which is where it lands on the rendered line either way; a marker with
+///   no alphanumerics (a stray bullet glyph) is dropped, as upstream drops it.
+/// * No marker at all leaves the group to decide: `{position}.` when its first
+///   child is an enumerated item, `-` otherwise.
+enum Marker {
+    /// Print verbatim: `Some(n)` numbers the item, `None` bullets it.
+    Verbatim(Option<u64>),
+    /// Bullet, with this text (if any) kept in front of the item's own.
+    Bullet(Option<String>),
+    /// Nothing of its own — the group's kind and the item's position decide.
+    FromGroup,
+}
+
+fn marker_of(item: &Value) -> Marker {
+    let raw = item["marker"].as_str().unwrap_or("");
+    if raw.is_empty() {
+        return Marker::FromGroup;
+    }
+    if matches!(raw, "-" | "*" | "+") {
+        return Marker::Verbatim(None);
+    }
+    if let Some(digits) = raw.strip_suffix('.') {
+        if !digits.is_empty() && digits.bytes().all(|b| b.is_ascii_digit()) {
+            return Marker::Verbatim(digits.parse().ok());
+        }
+    }
+    Marker::Bullet(
+        raw.chars()
+            .any(|c| c.is_ascii_alphanumeric())
+            .then(|| raw.to_string()),
+    )
+}
+
 /// Emit a list group's items, recursing into nested lists at the next level.
 fn list_group(children: &[Value], root: &Value, level: u8, doc: &mut DoclingDocument) {
-    let mut number = 0u64;
+    // docling-core's `first_item_is_enumerated`: the group renders computed
+    // markers as numbers only when its *first child* is an enumerated item.
+    let enumerated_group = children
+        .first()
+        .and_then(|c| resolve(c, root))
+        .is_some_and(|it| {
+            it["label"].as_str() == Some("list_item") && it["enumerated"].as_bool() == Some(true)
+        });
     let mut first = true;
-    for c in children {
+    for (pos, c) in children.iter().enumerate() {
         let kind = ref_kind(c);
         if kind.starts_with("#/groups/") {
-            // A bare nested list (no enclosing item).
+            // A bare nested list (no enclosing item). It still occupies a
+            // position in this group, which is why a later item can be
+            // numbered past it.
             walk(c, root, level + 1, doc);
             continue;
         }
@@ -189,12 +277,26 @@ fn list_group(children: &[Value], root: &Value, level: u8, doc: &mut DoclingDocu
         if item["label"].as_str() != Some("list_item") {
             continue;
         }
-        number += 1;
+        let position = pos as u64 + 1;
+        let body = formatted_text(item);
+        let (ordered, number, text) = match marker_of(item) {
+            Marker::Verbatim(Some(n)) => (true, n, body),
+            Marker::Verbatim(None) => (false, position, body),
+            Marker::Bullet(kept) => {
+                let text = match kept {
+                    Some(m) if !body.is_empty() => format!("{m} {body}"),
+                    Some(m) => m,
+                    None => body,
+                };
+                (false, position, text)
+            }
+            Marker::FromGroup => (enumerated_group, position, body),
+        };
         doc.push(Node::ListItem {
-            ordered: item["enumerated"].as_bool().unwrap_or(false),
+            ordered,
             number,
             first_in_list: first,
-            text: formatted_text(item),
+            text,
             level,
             marker: None,
             location: None,
@@ -263,10 +365,9 @@ fn table_item(item: &Value, root: &Value, doc: &mut DoclingDocument) {
             structure: has_structure.then_some(structure),
             cell_blocks: None,
             cells: None,
-            caption: None,
+            caption: caption_of(item, root),
         }));
     }
-    push_captions(item, root, doc);
 }
 
 /// Map each grid cell to a flag.
@@ -275,32 +376,205 @@ fn flags(cells: &[Value], f: impl FnMut(&Value) -> bool) -> Vec<bool> {
 }
 
 fn picture_item(item: &Value, root: &Value, doc: &mut DoclingDocument) {
-    // docling renders the image marker first, then each caption as a paragraph.
     doc.push(Node::Picture {
-        caption: None,
+        caption: caption_of(item, root),
         caption_href: None,
         image: None,
         classification: None,
     });
-    push_captions(item, root, doc);
 }
 
-/// Emit an item's `captions` (refs into `texts`) as paragraphs, after the element.
-fn push_captions(item: &Value, root: &Value, doc: &mut DoclingDocument) {
-    if let Some(caps) = item["captions"].as_array() {
-        for c in caps {
-            let t = text_of(c, root);
-            if !t.is_empty() {
-                doc.push(Node::Paragraph { text: t });
-            }
-        }
-    }
+/// Whether a floating item lists this caption in its own `captions` — tables,
+/// pictures and code items are the three that can. Scanning per caption keeps
+/// the walk's signature unchanged; a document has few of either.
+fn caption_is_claimed(item: &Value, root: &Value) -> bool {
+    let Some(me) = item["self_ref"].as_str() else {
+        return false;
+    };
+    ["tables", "pictures", "texts"].iter().any(|bucket| {
+        root[bucket].as_array().is_some_and(|items| {
+            items.iter().any(|it| {
+                it["captions"]
+                    .as_array()
+                    .is_some_and(|caps| caps.iter().any(|c| c["$ref"].as_str() == Some(me)))
+            })
+        })
+    })
+}
+
+/// An item's `captions` (refs into `texts`), joined as docling-core joins them
+/// (`caption_delim`, a space). It belongs *on* the table or picture, not after
+/// it: every serializer renders a caption before its element, and emitting the
+/// caption items as trailing paragraphs put them on the wrong side (#384).
+fn caption_of(item: &Value, root: &Value) -> Option<String> {
+    let caps = item["captions"].as_array()?;
+    let joined = caps
+        .iter()
+        .map(|c| text_of(c, root))
+        .collect::<Vec<_>>()
+        .join(" ");
+    (!joined.trim().is_empty()).then_some(joined)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::format::InputFormat;
+
+    fn md(json: &str) -> String {
+        DoclingJsonBackend
+            .convert(&SourceDocument::from_bytes(
+                "t.json",
+                InputFormat::JsonDocling,
+                json.as_bytes().to_vec(),
+            ))
+            .unwrap()
+            .export_to_markdown()
+    }
+
+    /// #384: a caption leads its picture and its table, and trails its *code*
+    /// block — a `CodeItem` is docling's only floating text item, and the text
+    /// serializer appends a floating item's captions after its own text.
+    #[test]
+    fn captions_lead_a_picture_and_a_table_but_trail_code() {
+        let json = r##"{
+          "name":"n","body":{"children":[{"$ref":"#/pictures/0"},{"$ref":"#/tables/0"},{"$ref":"#/texts/2"}]},
+          "texts":[
+            {"self_ref":"#/texts/0","label":"caption","text":"Figure 1: a duck","children":[]},
+            {"self_ref":"#/texts/1","label":"caption","text":"Table 1: the counts","children":[]},
+            {"self_ref":"#/texts/2","label":"code","text":"let x = 1;","children":[],
+             "captions":[{"$ref":"#/texts/3"}]},
+            {"self_ref":"#/texts/3","label":"caption","text":"Listing 1: a binding","children":[]}
+          ],
+          "groups":[],
+          "tables":[{"self_ref":"#/tables/0","label":"table","captions":[{"$ref":"#/texts/1"}],
+                     "data":{"grid":[[{"text":"a"}]]},"children":[]}],
+          "pictures":[{"self_ref":"#/pictures/0","label":"picture","captions":[{"$ref":"#/texts/0"}],"children":[]}]
+        }"##;
+        assert_eq!(
+            md(json),
+            "Figure 1: a duck\n\n<!-- image -->\n\nTable 1: the counts\n\n| a   |\n|-----|\n\n```\nlet x = 1;\n```\n\nListing 1: a binding\n"
+        );
+    }
+
+    /// A caption no floating item claims is an ordinary body item and renders
+    /// where it sits; one that is claimed renders only with its element.
+    #[test]
+    fn an_unclaimed_caption_still_renders() {
+        let json = r##"{
+          "name":"n","body":{"children":[{"$ref":"#/texts/0"},{"$ref":"#/pictures/0"},{"$ref":"#/texts/1"}]},
+          "texts":[
+            {"self_ref":"#/texts/0","label":"caption","text":"Figure 6: nobody claims me","children":[]},
+            {"self_ref":"#/texts/1","label":"caption","text":"Figure 7: claimed","children":[]}
+          ],
+          "groups":[],"tables":[],
+          "pictures":[{"self_ref":"#/pictures/0","label":"picture","captions":[{"$ref":"#/texts/1"}],"children":[]}]
+        }"##;
+        assert_eq!(
+            md(json),
+            "Figure 6: nobody claims me\n\nFigure 7: claimed\n\n<!-- image -->\n"
+        );
+    }
+
+    /// docling-core prints a marker it already considers valid Markdown
+    /// verbatim, so a reference list that continues over a page break keeps its
+    /// real numbering instead of restarting at 1.
+    #[test]
+    fn a_numeric_marker_is_printed_verbatim() {
+        let json = r##"{
+          "name":"n","body":{"children":[{"$ref":"#/groups/0"}]},
+          "texts":[
+            {"self_ref":"#/texts/0","label":"list_item","text":"Xue, W.","marker":"18.","enumerated":true,"children":[]},
+            {"self_ref":"#/texts/1","label":"list_item","text":"Ye, J.","marker":"19.","enumerated":true,"children":[]}
+          ],
+          "groups":[{"self_ref":"#/groups/0","label":"list","name":"list",
+                     "children":[{"$ref":"#/texts/0"},{"$ref":"#/texts/1"}]}],
+          "tables":[],"pictures":[]
+        }"##;
+        assert_eq!(md(json), "18. Xue, W.\n19. Ye, J.\n");
+    }
+
+    /// Any *other* non-empty marker forces a bullet and is kept in front of the
+    /// text when it holds a letter or digit (docling: `- (1) Human Annotation`),
+    /// because a number is computed only for an item with no marker at all.
+    #[test]
+    fn a_non_markdown_marker_forces_a_bullet_and_is_kept() {
+        let json = r##"{
+          "name":"n","body":{"children":[{"$ref":"#/groups/0"}]},
+          "texts":[
+            {"self_ref":"#/texts/0","label":"list_item","text":"Human Annotation","marker":"(1)","enumerated":true,"children":[]},
+            {"self_ref":"#/texts/1","label":"list_item","text":"Red - PDF cells","marker":"a.","enumerated":true,"children":[]},
+            {"self_ref":"#/texts/2","label":"list_item","text":"a stray glyph","marker":"\u0084","enumerated":false,"children":[]}
+          ],
+          "groups":[{"self_ref":"#/groups/0","label":"list","name":"list",
+                     "children":[{"$ref":"#/texts/0"},{"$ref":"#/texts/1"},{"$ref":"#/texts/2"}]}],
+          "tables":[],"pictures":[]
+        }"##;
+        assert_eq!(
+            md(json),
+            "- (1) Human Annotation\n- a. Red - PDF cells\n- a stray glyph\n"
+        );
+    }
+
+    /// With no marker at all the group decides: its first child being an
+    /// enumerated item numbers every item by its *position among the children*,
+    /// nested groups included — so an item after a sublist is numbered past it.
+    #[test]
+    fn an_unmarked_item_is_numbered_by_its_position_in_the_group() {
+        let json = r##"{
+          "name":"n","body":{"children":[{"$ref":"#/groups/0"}]},
+          "texts":[
+            {"self_ref":"#/texts/0","label":"list_item","text":"one","marker":"","enumerated":true,"children":[]},
+            {"self_ref":"#/texts/1","label":"list_item","text":"nested","marker":"","enumerated":true,"children":[]},
+            {"self_ref":"#/texts/2","label":"list_item","text":"after","marker":"","enumerated":true,"children":[]}
+          ],
+          "groups":[
+            {"self_ref":"#/groups/0","label":"list","name":"list",
+             "children":[{"$ref":"#/texts/0"},{"$ref":"#/groups/1"},{"$ref":"#/texts/2"}]},
+            {"self_ref":"#/groups/1","label":"list","name":"list","children":[{"$ref":"#/texts/1"}]}
+          ],
+          "tables":[],"pictures":[]
+        }"##;
+        // The nested group takes position 2, so "after" is the third child.
+        assert_eq!(md(json), "1. one\n    1. nested\n3. after\n");
+    }
+
+    /// A group whose first child is not an enumerated item bullets every item,
+    /// whatever each one's own flag says.
+    #[test]
+    fn a_group_starting_on_a_bullet_stays_bulleted() {
+        let json = r##"{
+          "name":"n","body":{"children":[{"$ref":"#/groups/0"}]},
+          "texts":[
+            {"self_ref":"#/texts/0","label":"list_item","text":"bullet first","marker":"","enumerated":false,"children":[]},
+            {"self_ref":"#/texts/1","label":"list_item","text":"still a bullet","marker":"","enumerated":true,"children":[]}
+          ],
+          "groups":[{"self_ref":"#/groups/0","label":"list","name":"list",
+                     "children":[{"$ref":"#/texts/0"},{"$ref":"#/texts/1"}]}],
+          "tables":[],"pictures":[]
+        }"##;
+        assert_eq!(md(json), "- bullet first\n- still a bullet\n");
+    }
+
+    /// Checkbox items carry docling's task-list marker, and code and formulas
+    /// are the two items it serializes unescaped.
+    #[test]
+    fn checkboxes_render_and_code_is_not_escaped() {
+        let json = r##"{
+          "name":"n","body":{"children":[{"$ref":"#/texts/0"},{"$ref":"#/texts/1"},{"$ref":"#/texts/2"},{"$ref":"#/texts/3"}]},
+          "texts":[
+            {"self_ref":"#/texts/0","label":"checkbox_selected","text":"done","children":[]},
+            {"self_ref":"#/texts/1","label":"checkbox_unselected","text":"todo","children":[]},
+            {"self_ref":"#/texts/2","label":"code","text":"VERIFY_GROUP_FOR_USER ( SESSION_USER )","children":[]},
+            {"self_ref":"#/texts/3","label":"formula","text":"a_1 + b_2","orig":"a_1 + b_2","children":[]}
+          ],
+          "groups":[],"tables":[],"pictures":[]
+        }"##;
+        assert_eq!(
+            md(json),
+            "- [x] done\n\n- [ ] todo\n\n```\nVERIFY_GROUP_FOR_USER ( SESSION_USER )\n```\n\n$$a_1 + b_2$$\n"
+        );
+    }
 
     /// docling ≥ 2.5x nests body content under its `section_header`; the
     /// nested items must be walked, not dropped with the heading's subtree.
