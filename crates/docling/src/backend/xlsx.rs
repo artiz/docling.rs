@@ -1174,7 +1174,7 @@ mod tests {
     #[test]
     fn sheet_groups_and_cell_comments() {
         let path = format!(
-            "{}/tests/data/xlsx/sources/xlsx_comments.xlsx",
+            "{}/../../tests/data/xlsx/sources/xlsx_comments.xlsx",
             env!("CARGO_MANIFEST_DIR")
         );
         let bytes = std::fs::read(&path).expect("fixture exists");
@@ -1237,7 +1237,7 @@ mod tests {
     #[test]
     fn section_label_splits_off_the_table() {
         let path = format!(
-            "{}/tests/data/xlsx/sources/xlsx_09_section_label_header.xlsx",
+            "{}/../../tests/data/xlsx/sources/xlsx_09_section_label_header.xlsx",
             env!("CARGO_MANIFEST_DIR")
         );
         let bytes = std::fs::read(&path).expect("fixture exists");

@@ -1411,9 +1411,11 @@ All commands run from the repo workspace root.
 # everything — unit tests + the output-regression suite (pure Rust; no Python/models)
 cargo test
 
-# just the regression suite: re-convert every source under
-# crates/docling/tests/data/<fmt>/sources/ and assert that legacy Markdown,
-# strict Markdown and docling JSON match the committed fixtures (catches drift)
+# just the regression suite: re-convert every covered source — the upstream
+# fixtures each crates/docling/tests/data/<fmt>/mirror.txt lists from the root
+# tests/data/<fmt>/sources/ corpus, plus our own under
+# crates/docling/tests/data/<fmt>/sources/ — and assert that legacy Markdown,
+# strict Markdown, docling JSON and LaTeX match the committed fixtures
 cargo test -p docling --test regression
 
 # refresh the fixtures after an *intentional* output change, then review `git diff`

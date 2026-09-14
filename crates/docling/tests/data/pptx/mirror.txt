@@ -1,0 +1,8 @@
+powerpoint_bad_text.pptx
+powerpoint_comments.pptx
+powerpoint_issue_2663.pptx
+powerpoint_malformed_pictures.pptx
+powerpoint_sample.pptx
+powerpoint_unrecognized_shape.pptx
+powerpoint_with_image.pptx
+pptx_chart.pptx

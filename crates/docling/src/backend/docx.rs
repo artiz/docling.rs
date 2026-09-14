@@ -2592,7 +2592,7 @@ mod tests {
         use docling_core::Node;
         let convert = |name: &str| {
             let path = format!(
-                "{}/tests/data/docx/sources/{name}",
+                "{}/../../tests/data/docx/sources/{name}",
                 env!("CARGO_MANIFEST_DIR")
             );
             let bytes = std::fs::read(&path).expect("fixture exists");
