@@ -334,12 +334,11 @@ fn convert_xlsb(
         let Ok(range) = workbook.worksheet_range(name) else {
             continue;
         };
-        let (rs_r, rs_c) = range.start().unwrap_or((0, 0));
-        let (or, oc) = (rs_r as usize, rs_c as usize);
-        let (height, width) = range.get_size();
-        let merge_of = HashMap::new();
+        // The binary reader exposes no merges, so the frame is the range itself.
+        let frame = sheet_frame(&range, &Merges::new());
+        let (or, oc) = frame.origin;
         let mut items: Vec<((usize, usize, usize, usize), Node)> = Vec::new();
-        for t in find_tables(&range, &merge_of, height, width, skip_empty) {
+        for t in find_tables(&range, &frame, skip_empty) {
             if let Some(label) = t.label {
                 items.push((
                     (
@@ -427,23 +426,12 @@ fn sheet_items<F: Fn(&str, &str) -> Vec<String> + Sync>(ctx: SheetCtx<'_, F>) ->
 
     if matches!(typ, calamine::SheetType::WorkSheet) {
         if let Some((range, abs_merges)) = ranges.get(name) {
-            let (rs_r, rs_c) = range.start().unwrap_or((0, 0));
-            let mut merge_of: HashMap<(usize, usize), (usize, usize)> = HashMap::new();
-            for &((sr, sc), (er, ec)) in abs_merges {
-                let tl = ((sr - rs_r) as usize, (sc - rs_c) as usize);
-                for r in sr..=er {
-                    for c in sc..=ec {
-                        merge_of.insert(((r - rs_r) as usize, (c - rs_c) as usize), tl);
-                    }
-                }
-            }
-            let (rh, rw) = range.get_size();
-            let height = rh.max(merge_of.keys().map(|(r, _)| r + 1).max().unwrap_or(0));
-            let width = rw.max(merge_of.keys().map(|(_, c)| c + 1).max().unwrap_or(0));
+            let frame = sheet_frame(range, abs_merges);
             // docling's bboxes are in *absolute* cell indices; calamine's
-            // range is clipped to its first non-empty row/column.
-            let (or, oc) = (rs_r as usize, rs_c as usize);
-            for t in find_tables(range, &merge_of, height, width, skip_empty) {
+            // range is clipped to its first non-empty row/column, and the
+            // frame reaches back over any merge that starts before it.
+            let (or, oc) = frame.origin;
+            for t in find_tables(range, &frame, skip_empty) {
                 if let Some(label) = t.label {
                     // The label row sits directly above the table's region.
                     items.push((
@@ -665,6 +653,57 @@ pub(crate) fn location_value(coord: usize, page: usize) -> u16 {
     v.clamp(0, LOC_RESOLUTION as i64 - 1) as u16
 }
 
+/// The cell frame one sheet is scanned in — docling's `_find_true_data_bounds`:
+/// the union of the cells carrying a value and *every* merged range, so a merge
+/// that starts above or to the left of the first value still fits.
+///
+/// calamine's `Range` is clipped to the first non-empty row/column, and merges
+/// are absolute, so rebasing a merge on the range origin underflowed for a
+/// merge that begins before any data (#395: `attempt to subtract with
+/// overflow`, an empty `A1:C1` above a table starting at `A3`). The frame
+/// origin is the minimum of the two instead, and `shift` records how far it
+/// reaches beyond the range so cell lookups can rebase back.
+pub(crate) struct SheetFrame {
+    /// Rows/columns the frame extends above/left of calamine's range origin.
+    pub(crate) shift: (usize, usize),
+    /// Frame origin in absolute cell coordinates (docling's bbox space).
+    pub(crate) origin: (usize, usize),
+    pub(crate) height: usize,
+    pub(crate) width: usize,
+    /// Frame position → the top-left of the merge covering it.
+    pub(crate) merge_of: HashMap<(usize, usize), (usize, usize)>,
+}
+
+pub(crate) fn sheet_frame(range: &Range<Data>, merges: &Merges) -> SheetFrame {
+    let (rs_r, rs_c) = range.start().unwrap_or((0, 0));
+    // Reach back to the earliest merge start, never past cell (0, 0).
+    let (mut or, mut oc) = (rs_r, rs_c);
+    for &((sr, sc), _) in merges {
+        or = or.min(sr);
+        oc = oc.min(sc);
+    }
+    let shift = ((rs_r - or) as usize, (rs_c - oc) as usize);
+    let mut merge_of: HashMap<(usize, usize), (usize, usize)> = HashMap::new();
+    for &((sr, sc), (er, ec)) in merges {
+        let tl = ((sr - or) as usize, (sc - oc) as usize);
+        for r in sr..=er {
+            for c in sc..=ec {
+                merge_of.insert(((r - or) as usize, (c - oc) as usize), tl);
+            }
+        }
+    }
+    let (rh, rw) = range.get_size();
+    let height = (rh + shift.0).max(merge_of.keys().map(|(r, _)| r + 1).max().unwrap_or(0));
+    let width = (rw + shift.1).max(merge_of.keys().map(|(_, c)| c + 1).max().unwrap_or(0));
+    SheetFrame {
+        shift,
+        origin: (or as usize, oc as usize),
+        height,
+        width,
+        merge_of,
+    }
+}
+
 /// A discovered table with its cell-index bounding box (inclusive), used to
 /// compute the DocLang `<location>` provenance.
 pub(crate) struct FoundTable {
@@ -693,22 +732,30 @@ pub(crate) struct FoundTable {
 /// up), while a dense region is byte-identical to the default path.
 pub(crate) fn find_tables(
     range: &Range<Data>,
-    merge_of: &HashMap<(usize, usize), (usize, usize)>,
-    height: usize,
-    width: usize,
+    frame: &SheetFrame,
     skip_empty: bool,
 ) -> Vec<FoundTable> {
-    let has_content = |r: usize, c: usize| -> bool {
-        merge_of.contains_key(&(r, c))
-            || range
-                .get((r, c))
-                .map(|d| !matches!(d, Data::Empty))
-                .unwrap_or(false)
+    let SheetFrame {
+        shift,
+        height,
+        width,
+        merge_of,
+        ..
+    } = frame;
+    let (height, width) = (*height, *width);
+    // A frame position rebased onto calamine's clipped range — `None` where the
+    // frame reaches above/left of it (rows only a merge extends into).
+    let value_at = |r: usize, c: usize| -> Option<&Data> {
+        range.get((r.checked_sub(shift.0)?, c.checked_sub(shift.1)?))
     };
+    let has_value =
+        |r: usize, c: usize| -> bool { value_at(r, c).is_some_and(|d| !matches!(d, Data::Empty)) };
+    let has_content =
+        |r: usize, c: usize| -> bool { merge_of.contains_key(&(r, c)) || has_value(r, c) };
     // A grid position renders the value of its merge's top-left cell, if merged.
     let cell_text = |r: usize, c: usize| -> String {
         let (sr, sc) = merge_of.get(&(r, c)).copied().unwrap_or((r, c));
-        range.get((sr, sc)).map(format_cell).unwrap_or_default()
+        value_at(sr, sc).map(format_cell).unwrap_or_default()
     };
 
     let mut visited: HashSet<(usize, usize)> = HashSet::new();
@@ -716,7 +763,11 @@ pub(crate) fn find_tables(
 
     for r in 0..height {
         for c in 0..width {
-            if !has_content(r, c) || visited.contains(&(r, c)) {
+            // docling seeds a table only from a cell that carries a value
+            // (`if cell.value is None: continue`); a merge is absorbed by the
+            // flood fill below, but an empty one never starts a table of its
+            // own (#395).
+            if !has_value(r, c) || visited.contains(&(r, c)) {
                 continue;
             }
             // Flood fill from this seed over 4-connected content cells.
@@ -908,6 +959,84 @@ mod tests {
             .collect()
     }
 
+    /// #395: calamine clips a sheet's range to its first non-empty row/column,
+    /// so a merge that begins before any data used to underflow the subtraction
+    /// that rebased it (`attempt to subtract with overflow`). The frame reaches
+    /// back to the earliest merge instead — docling's `_find_true_data_bounds`.
+    #[test]
+    fn a_merge_before_the_data_does_not_underflow_the_frame() {
+        // Data at C3:D4, an empty merge at A1:B2 — above *and* left of it.
+        let mut range: Range<Data> = Range::new((2, 2), (3, 3));
+        range.set_value((2, 2), Data::String("Name".into()));
+        range.set_value((2, 3), Data::String("Qty".into()));
+        range.set_value((3, 2), Data::String("Bolt".into()));
+        range.set_value((3, 3), Data::Int(4));
+        let frame = sheet_frame(&range, &vec![((0, 0), (1, 1))]);
+        assert_eq!(frame.origin, (0, 0), "the frame starts at the merge");
+        assert_eq!(frame.shift, (2, 2), "two rows/columns before the range");
+        assert_eq!((frame.height, frame.width), (4, 4));
+        assert_eq!(frame.merge_of.get(&(0, 0)), Some(&(0, 0)));
+        assert_eq!(frame.merge_of.get(&(1, 1)), Some(&(0, 0)));
+
+        // An *empty* merge is not a table of its own: docling seeds a table
+        // only from a cell that carries a value, so only the data is found —
+        // and it keeps its absolute position in the frame.
+        let found = find_tables(&range, &frame, false);
+        assert_eq!(found.len(), 1, "the empty merge seeds nothing");
+        assert_eq!(
+            found[0].table.rows,
+            vec![vec!["Name", "Qty"], vec!["Bolt", "4"]]
+        );
+        assert_eq!(
+            (
+                found[0].min_r,
+                found[0].min_c,
+                found[0].max_r,
+                found[0].max_c
+            ),
+            (2, 2, 3, 3)
+        );
+    }
+
+    /// The reporter's own geometry (#395): an empty `B1:N1` above *and to the
+    /// right of* the only value, in `A2`. The row axis underflowed; the column
+    /// axis had to grow instead.
+    #[test]
+    fn a_merge_above_and_right_of_the_data_keeps_both_axes() {
+        let mut range: Range<Data> = Range::new((1, 0), (1, 0));
+        range.set_value((1, 0), Data::String("data".into()));
+        let frame = sheet_frame(&range, &vec![((0, 1), (0, 13))]);
+        assert_eq!(
+            frame.origin,
+            (0, 0),
+            "up to the merge's row, out to column A"
+        );
+        assert_eq!(frame.shift, (1, 0), "one row before the range, no columns");
+        assert_eq!(
+            (frame.height, frame.width),
+            (2, 14),
+            "the merge's row above, and out to column N"
+        );
+        // Only the valued cell is a table; the empty merge beside it is not.
+        let found = find_tables(&range, &frame, false);
+        assert_eq!(found.len(), 1);
+        assert_eq!(found[0].table.rows, vec![vec!["data"]]);
+        assert_eq!((found[0].min_r, found[0].min_c), (1, 0));
+    }
+
+    /// Without merges the frame is calamine's range, unshifted — the ordinary
+    /// case, and the one the binary (xlsb) reader always takes.
+    #[test]
+    fn a_sheet_without_merges_keeps_the_range_frame() {
+        let mut range: Range<Data> = Range::new((1, 1), (2, 2));
+        range.set_value((1, 1), Data::String("a".into()));
+        let frame = sheet_frame(&range, &Merges::new());
+        assert_eq!(frame.origin, (1, 1));
+        assert_eq!(frame.shift, (0, 0));
+        assert_eq!((frame.height, frame.width), (2, 2));
+        assert!(frame.merge_of.is_empty());
+    }
+
     /// #271: `skip_empty` omits empty positions from each row of a ragged
     /// region instead of padding its bounding box; a dense region (or the
     /// default mode) is untouched, and a table that lost cells drops its
@@ -922,16 +1051,24 @@ mod tests {
         range.set_value((1, 1), Data::String("c".into()));
         range.set_value((2, 1), Data::String("d".into()));
         range.set_value((2, 2), Data::String("e".into()));
-        let merges = HashMap::new();
+        let frame = |merge_of: HashMap<(usize, usize), (usize, usize)>,
+                     height: usize,
+                     width: usize| SheetFrame {
+            shift: (0, 0),
+            origin: (0, 0),
+            height,
+            width,
+            merge_of,
+        };
 
-        let padded = find_tables(&range, &merges, 3, 3, false);
+        let padded = find_tables(&range, &frame(HashMap::new(), 3, 3), false);
         assert_eq!(
             padded[0].table.rows,
             vec![vec!["a", "b", ""], vec!["", "c", ""], vec!["", "d", "e"]],
             "default: the full bounding box materialises"
         );
 
-        let compact = find_tables(&range, &merges, 3, 3, true);
+        let compact = find_tables(&range, &frame(HashMap::new(), 3, 3), true);
         assert_eq!(
             compact[0].table.rows,
             vec![vec!["a", "b"], vec!["c"], vec!["d", "e"]],
@@ -959,7 +1096,7 @@ mod tests {
         range2.set_value((0, 0), Data::String("tall".into()));
         range2.set_value((0, 1), Data::String("a".into()));
         range2.set_value((1, 1), Data::String("b".into()));
-        let dense = find_tables(&range2, &merged, 2, 2, true);
+        let dense = find_tables(&range2, &frame(merged, 2, 2), true);
         assert_eq!(
             dense[0].table.rows,
             vec![vec!["tall", "a"], vec!["tall", "b"]],

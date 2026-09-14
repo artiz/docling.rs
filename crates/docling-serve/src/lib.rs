@@ -135,7 +135,8 @@ use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::{Json, Router};
 use docling::{
-    DoclingDocument, DocumentConverter, ImageMode, InputFormat, Pipeline, SourceDocument,
+    ConversionError, DoclingDocument, DocumentConverter, ImageMode, InputFormat, Pipeline,
+    SourceDocument,
 };
 use serde::Deserialize;
 use serde_json::json;
@@ -2408,7 +2409,7 @@ async fn stream_markdown(
     // confidence summary header — computable only after conversion, which is
     // exactly when the PDF/image branch sends its single chunk.
     type Chunk = (String, Option<header::HeaderValue>);
-    let (tx, rx) = tokio::sync::mpsc::channel::<Result<Chunk, String>>(8);
+    let (tx, rx) = tokio::sync::mpsc::channel::<Result<Chunk, ApiError>>(8);
     let st = state.clone();
     tokio::task::spawn_blocking(move || {
         // Held until this worker (and thus the response body) is done.
@@ -2421,7 +2422,7 @@ async fn stream_markdown(
             }
         }
         let _trim = TrimOnDrop;
-        let send = |item: Result<Chunk, String>| {
+        let send = |item: Result<Chunk, ApiError>| {
             // The receiver disappearing means the client went away — stop.
             tx.blocking_send(item).is_ok()
         };
@@ -2451,14 +2452,14 @@ async fn stream_markdown(
                     send(Ok((md, confidence_header(&doc))));
                 }
                 Err(e) => {
-                    send(Err(api_error_message(e)));
+                    send(Err(e));
                 }
             }
         } else {
             let converter = match request_converter(&st, &options) {
                 Ok(c) => c,
                 Err(e) => {
-                    send(Err(api_error_message(e)));
+                    send(Err(e));
                     return;
                 }
             };
@@ -2478,7 +2479,7 @@ async fn stream_markdown(
                             }
                             Err(e) => {
                                 o11y::record_conversion(false);
-                                send(Err(e.to_string()));
+                                send(Err(conversion_api_error(&e)));
                                 return;
                             }
                         }
@@ -2487,7 +2488,7 @@ async fn stream_markdown(
                 }
                 Err(e) => {
                     o11y::record_conversion(false);
-                    send(Err(e.to_string()));
+                    send(Err(conversion_api_error(&e)));
                 }
             }
         }
@@ -2506,7 +2507,7 @@ async fn stream_markdown(
             Body::empty(),
         )
             .into_response()),
-        Some(Err(e)) => Err(ApiError::Unsupported(e)),
+        Some(Err(e)) => Err(e),
         Some(Ok((first_chunk, confidence))) => {
             use tokio_stream::StreamExt;
             let rest = tokio_stream::wrappers::ReceiverStream::new(rx);
@@ -2514,7 +2515,10 @@ async fn stream_markdown(
                 .chain(rest)
                 .map(|item| {
                     item.map(|(text, _)| text.into_bytes()).map_err(|e| {
-                        std::io::Error::other(format!("conversion failed mid-stream: {e}"))
+                        std::io::Error::other(format!(
+                            "conversion failed mid-stream: {}",
+                            api_error_message(e)
+                        ))
                     })
                 });
             let mut response = (
@@ -2527,6 +2531,17 @@ async fn stream_markdown(
             }
             Ok(response)
         }
+    }
+}
+
+/// The HTTP shape of a conversion failure: a worker that *panicked* is a bug
+/// on this side and answers 500, while every other error is about the document
+/// and answers 422. Without the distinction a panic reached the client as an
+/// empty 200 — the stream simply ended (#395/#396).
+fn conversion_api_error(e: &ConversionError) -> ApiError {
+    match e {
+        ConversionError::Panic(msg) => ApiError::Internal(msg.clone()),
+        other => ApiError::Unsupported(other.to_string()),
     }
 }
 

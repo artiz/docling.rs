@@ -21,6 +21,12 @@ pub enum ConversionError {
     /// The headless-browser pre-render (`--use-web-browser`) failed, or the crate
     /// was built without the `web-browser` feature.
     Browser(String),
+    /// A conversion worker panicked — a backend bug reached on some input
+    /// (#395/#396). The panic itself is not swallowed: it still unwinds its own
+    /// thread and prints its message and backtrace to stderr. This turns it
+    /// into an ordinary error for the caller, so a server answers with a 500
+    /// instead of a silent empty document and a batch keeps going.
+    Panic(String),
     /// A dependency failed during conversion. Unlike [`ConversionError::Parse`]
     /// the underlying error is kept alive (not flattened into a string), so
     /// callers can walk [`std::error::Error::source`] and downcast to the
@@ -65,6 +71,7 @@ impl fmt::Display for ConversionError {
             ConversionError::Parse(msg) => write!(f, "parse error: {msg}"),
             ConversionError::Streaming(msg) => write!(f, "streaming not supported: {msg}"),
             ConversionError::Browser(msg) => write!(f, "web-browser render error: {msg}"),
+            ConversionError::Panic(msg) => write!(f, "conversion panicked: {msg}"),
             ConversionError::WithSource { context, source } => {
                 write!(f, "parse error: {context}: {source}")
             }

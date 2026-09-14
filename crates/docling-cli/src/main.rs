@@ -1301,7 +1301,21 @@ fn run_batch(
                     }
                     let i = next.fetch_add(1, Ordering::Relaxed);
                     let Some(file) = files.get(i) else { break };
-                    match batch_convert_one(file, base, output, cfg, &converter, &pipe) {
+                    // A backend that panics on one file must not take the
+                    // batch down with it (#395/#396): the documented contract
+                    // here is "a failed file is reported and skipped". The
+                    // panic still prints its own message and backtrace from
+                    // the unwind; this only decides what happens next. The
+                    // shared pipeline slot already recovers from a lock
+                    // poisoned by such a panic, and the per-worker converter
+                    // is plain configuration, so the next file starts clean.
+                    let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                        batch_convert_one(file, base, output, cfg, &converter, &pipe)
+                    }))
+                    .unwrap_or_else(|_| {
+                        Err("the conversion panicked (its message and backtrace are above)".into())
+                    });
+                    match outcome {
                         Ok((out, secs, pages)) => {
                             match pages {
                                 Some(n) if n > 0 => eprintln!(

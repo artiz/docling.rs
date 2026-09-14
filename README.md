@@ -207,6 +207,12 @@ an `X-Docling-Confidence` summary header (grades `poor`/`fair`/`good`/
 `excellent` + layout/OCR/parse scores) on every format, and the full per-page
 report under a top-level `confidence` key in `to=json` bodies.
 
+A conversion that *panics* — a backend bug reached on some input — answers
+**500** with the error body, on every endpoint, instead of leaving the caller
+with a silent empty 200 or a hanging request (#396). The panic still prints its
+message and backtrace to the server log, and the batch CLI reports that file as
+failed and moves on to the next one.
+
 `to=images` skips conversion entirely and rasterizes a PDF's pages to PNG
 through pdfium — `{"pages": [{"page", "width", "height", "png_base64"}]}` —
 honoring `pages=A-B` and a `scale` of 0.1–4.0 pixels per PDF point (default

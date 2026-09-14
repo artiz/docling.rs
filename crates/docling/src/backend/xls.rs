@@ -16,7 +16,7 @@ use std::io::Cursor;
 use calamine::{Reader, Xls};
 use docling_core::{DoclingDocument, Node};
 
-use crate::backend::xlsx::{find_tables, location_value, Merges};
+use crate::backend::xlsx::{find_tables, location_value, sheet_frame, Merges};
 use crate::backend::DeclarativeBackend;
 use crate::error::ConversionError;
 use crate::source::SourceDocument;
@@ -58,23 +58,11 @@ impl DeclarativeBackend for XlsBackend {
 
             // Same shaping as the XLSX backend: absolute cell coordinates, a
             // merge-covered cell counts as content and renders its top-left.
-            let (rs_r, rs_c) = range.start().unwrap_or((0, 0));
-            let mut merge_of = std::collections::HashMap::new();
-            for &((sr, sc), (er, ec)) in &merges {
-                let tl = ((sr - rs_r) as usize, (sc - rs_c) as usize);
-                for r in sr..=er {
-                    for c in sc..=ec {
-                        merge_of.insert(((r - rs_r) as usize, (c - rs_c) as usize), tl);
-                    }
-                }
-            }
-            let (rh, rw) = range.get_size();
-            let height = rh.max(merge_of.keys().map(|(r, _)| r + 1).max().unwrap_or(0));
-            let width = rw.max(merge_of.keys().map(|(_, c)| c + 1).max().unwrap_or(0));
-            let (or, oc) = (rs_r as usize, rs_c as usize);
+            let frame = sheet_frame(&range, &merges);
+            let (or, oc) = frame.origin;
 
             let mut items: Vec<((usize, usize, usize, usize), Node)> = Vec::new();
-            for t in find_tables(&range, &merge_of, height, width, self.skip_empty) {
+            for t in find_tables(&range, &frame, self.skip_empty) {
                 if let Some(label) = t.label {
                     items.push((
                         (
