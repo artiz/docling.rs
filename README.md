@@ -224,6 +224,10 @@ honoring `pages=A-B` and a `scale` of 0.1–4.0 pixels per PDF point (default
 Options per request: `to=md|json|dclx|chunks|latex|images`, `strict`, `images=placeholder|embedded`,
 `skip_empty_cells`, `compact_tables`,
 `no_ocr`, `skip_ocr`, `no_table_former`, `no_text_panels`, `heading_hierarchy`, `force_full_page_ocr`, `pages`,
+`do_picture_classification`, `do_code_enrichment`, `do_formula_enrichment` (#423: the
+[enrichment models](#enrichment-models-picture-classification-code-formulas), named as
+docling's `PdfPipelineOptions` flags; a request that changes the enrichment mix rebuilds the
+warm pipeline once, the models themselves load lazily on the first matching region),
 `ocr_lang`, `ocr_mode`, `ocr_scale`, `scale`, `asr_model`, `asr_lang`, `video_frames`, `fetch_images`,
 `chunker=hierarchical|hybrid`, `chunk_tokenizer`, `chunk_max_tokens`, `chunk_merge_peers` (#256:
 per-request `to=chunks` configuration; the tokenizer is a server-local relative path),
@@ -1165,7 +1169,11 @@ let converter = DocumentConverter::new()
 
 Both models load lazily on the first matching region (a missing model warns
 once and skips that pass), and are shared pipeline-wide like TableFormer. The
-Python bindings take the same three `do_*` kwargs. Mind that CodeFormula is an
+same three switches exist on every surface: the Python kwargs and the
+docling-serve request options (`do_picture_classification`,
+`do_code_enrichment`, `do_formula_enrichment` — query, multipart or JSON body,
+#423) and the Node options (`doPictureClassification`, `doCodeEnrichment`,
+`doFormulaEnrichment`, also on `new Pipeline()`). Mind that CodeFormula is an
 autoregressive 256M-parameter VLM — expect seconds per code/formula region on
 CPU. Its decoder also ships as dynamic INT8 (`decoder_kv_int8.onnx`, ~165 MB
 vs ~655 MB fp32 — 4× less decoder RAM) — fetched with `--enrich` and preferred

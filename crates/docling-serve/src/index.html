@@ -111,6 +111,9 @@ The API is described by <a href="/openapi.yaml"><code>/openapi.yaml</code></a> (
     <label title="Keep every detected picture as a picture (disable text-panel demotion)"><input type="checkbox" id="no_text_panels"> keep pictures</label>
     <label title="OCR every page from its render, ignoring the embedded text layer (docling's force_full_page_ocr)"><input type="checkbox" id="force_full_page_ocr"> force full-page OCR</label>
     <label title="Infer section-header levels from font size / numbering (docling's HeadingHierarchyModel, #302)"><input type="checkbox" id="heading_hierarchy"> heading levels</label>
+    <label title="Classify pictures with DocumentFigureClassifier — 26 classes on the JSON picture item (docling's do_picture_classification, #423)"><input type="checkbox" id="do_picture_classification"> classify pictures</label>
+    <label title="Rewrite code blocks and detect their language with the CodeFormulaV2 VLM (docling's do_code_enrichment, #423) — slow on CPU"><input type="checkbox" id="do_code_enrichment"> enrich code</label>
+    <label title="Decode display formulas to LaTeX with CodeFormulaV2 (docling's do_formula_enrichment, #423) — slow on CPU"><input type="checkbox" id="do_formula_enrichment"> enrich formulas</label>
     <label title="Unpadded | a | b | Markdown tables (#271)"><input type="checkbox" id="compact_tables"> compact tables</label>
     <label title="Omit empty cells from sparse XLSX/XLS grids (#271)"><input type="checkbox" id="skip_empty_cells"> skip empty cells</label>
   </div>
@@ -200,6 +203,9 @@ The API is described by <a href="/openapi.yaml"><code>/openapi.yaml</code></a> (
   <tr><td><code>scale</code></td><td><code>0.1</code>–<code>4.0</code> (default <code>2.0</code>)</td><td><code>to=images</code>: render scale in pixels per PDF point — 2.0 = 144&nbsp;dpi, the ML pipeline's own render scale.</td></tr>
   <tr><td><code>force_full_page_ocr</code></td><td><code>true</code>/<code>false</code></td><td>PDF/image: OCR every page from its render, ignoring the embedded text layer (docling's <code>force_full_page_ocr</code>).</td></tr>
   <tr><td><code>heading_hierarchy</code></td><td><code>true</code>/<code>false</code></td><td>PDF/image: infer section-header levels (docling's HeadingHierarchyModel, #302) instead of flat <code>##</code> headings.</td></tr>
+  <tr><td><code>do_picture_classification</code></td><td><code>true</code>/<code>false</code></td><td>PDF/image: classify every picture with DocumentFigureClassifier (docling's <code>do_picture_classification</code>, #423) — the 26-class prediction lands on the JSON picture item's <code>classification</code>; Markdown unchanged. Needs <code>.models/picture_classifier.onnx</code>; a missing model warns and skips.</td></tr>
+  <tr><td><code>do_code_enrichment</code></td><td><code>true</code>/<code>false</code></td><td>PDF/image: rewrite code blocks and detect their language with the CodeFormulaV2 VLM (docling's <code>do_code_enrichment</code>, #423). Needs <code>.models/code_formula/</code>; seconds per code region on CPU.</td></tr>
+  <tr><td><code>do_formula_enrichment</code></td><td><code>true</code>/<code>false</code></td><td>PDF/image: decode display formulas to LaTeX with CodeFormulaV2 (docling's <code>do_formula_enrichment</code>, #423) — Markdown renders <code>$$latex$$</code> instead of the placeholder comment.</td></tr>
   <tr><td><code>pages</code></td><td><code>A-B</code> | <code>N</code></td><td>PDF page window, 1-based inclusive (#80).</td></tr>
   <tr><td><code>ocr_lang</code></td><td><code>en</code> (default) | <code>ch</code></td><td>OCR recognition language for scanned pages (<code>ch</code> = the multilingual docling-conformance model).</td></tr>
   <tr><td><code>ocr_mode</code></td><td><code>default</code> | <code>full_page</code> | <code>layout_regions</code> | <code>pdf_aware_layout_regions</code></td><td>Which regions feed the OCR (docling's <code>OcrMode</code>, #254); <code>full_page</code>/<code>layout_regions</code> discard the text layer.</td></tr>
@@ -345,6 +351,9 @@ $('go').addEventListener('click', async () => {
     no_text_panels: $('no_text_panels').checked,
     force_full_page_ocr: $('force_full_page_ocr').checked,
     heading_hierarchy: $('heading_hierarchy').checked,
+    do_picture_classification: $('do_picture_classification').checked,
+    do_code_enrichment: $('do_code_enrichment').checked,
+    do_formula_enrichment: $('do_formula_enrichment').checked,
     compact_tables: $('compact_tables').checked,
     skip_empty_cells: $('skip_empty_cells').checked,
   };

@@ -559,6 +559,13 @@ deliberate scope boundary or a cosmetic, single-fixture polish gap.
   exported to a three-graph ONNX set with a KV-cached greedy decode verified
   token-identical to `transformers.generate` — for `do_code_enrichment` /
   `do_formula_enrichment`; opt-in flags on the converter/CLI/Python bindings,
+  and since #423 on docling-serve — `do_picture_classification` /
+  `do_code_enrichment` / `do_formula_enrichment` as query, multipart and JSON
+  body options, Python docling-serve's names, in the OpenAPI spec and the web
+  UI; the warm pipeline is rebuilt when a request's enrichment mix differs
+  from the cached instance's, as for the model switches — and the Node
+  bindings (`doPictureClassification` / `doCodeEnrichment` /
+  `doFormulaEnrichment`, also on `new Pipeline()`);
   conformance-checked by `scripts/conformance/enrich_conformance.sh`.)
 
 **Now migrated (previously listed here):**

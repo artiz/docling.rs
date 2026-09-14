@@ -59,6 +59,9 @@ paths:
         - { $ref: "#/components/parameters/no_table_former" }
         - { $ref: "#/components/parameters/no_text_panels" }
         - { $ref: "#/components/parameters/heading_hierarchy" }
+        - { $ref: "#/components/parameters/do_picture_classification" }
+        - { $ref: "#/components/parameters/do_code_enrichment" }
+        - { $ref: "#/components/parameters/do_formula_enrichment" }
         - { $ref: "#/components/parameters/fetch_images" }
         - { $ref: "#/components/parameters/skip_empty_cells" }
         - { $ref: "#/components/parameters/compact_tables" }
@@ -102,6 +105,9 @@ paths:
                 no_table_former: { type: boolean }
                 no_text_panels: { type: boolean }
                 heading_hierarchy: { type: boolean }
+                do_picture_classification: { type: boolean }
+                do_code_enrichment: { type: boolean }
+                do_formula_enrichment: { type: boolean }
                 fetch_images: { type: boolean }
                 skip_empty_cells: { type: boolean }
                 compact_tables: { type: boolean }
@@ -184,7 +190,7 @@ paths:
               schema: { type: string, format: binary }
           headers:
             Content-Disposition:
-              description: Present for `to=dclx` and `target: {kind: zip}` (attachment filename).
+              description: "Present for `to=dclx` and `target: {kind: zip}` (attachment filename)."
               schema: { type: string }
             X-Docling-Confidence:
               description: >
@@ -481,6 +487,34 @@ components:
             HeadingHierarchyModel): PDF bookmarks are authoritative, then
             legal/outline numbering, then font style. Off by default; headings
             then keep the flat level the pipeline emits.
+        do_picture_classification:
+          type: boolean
+          default: false
+          description: >
+            PDF/image — classify every picture with DocumentFigureClassifier
+            (docling's `do_picture_classification`, #423): the 26-class
+            prediction lands on the JSON picture item as its `classification`
+            annotation; Markdown is unchanged. Needs
+            `.models/picture_classifier.onnx` on the server — a missing model
+            warns and skips the pass.
+        do_code_enrichment:
+          type: boolean
+          default: false
+          description: >
+            PDF/image — rewrite detected code blocks (and detect their
+            language, JSON `code_language`) with the CodeFormulaV2 VLM
+            (docling's `do_code_enrichment`, #423). Needs
+            `.models/code_formula/`; slow on CPU — an autoregressive decode per
+            code region.
+        do_formula_enrichment:
+          type: boolean
+          default: false
+          description: >
+            PDF/image — decode display formulas to LaTeX with CodeFormulaV2
+            (docling's `do_formula_enrichment`, #423): Markdown renders
+            `$$latex$$` instead of the formula placeholder comment, the JSON
+            formula item carries the LaTeX in `text`. Same model and cost as
+            `do_code_enrichment`.
         ebcdic_layout:
           type: string
           description: >
@@ -724,6 +758,12 @@ components:
       { name: no_text_panels, in: query, schema: { type: boolean } }
     heading_hierarchy:
       { name: heading_hierarchy, in: query, schema: { type: boolean } }
+    do_picture_classification:
+      { name: do_picture_classification, in: query, schema: { type: boolean } }
+    do_code_enrichment:
+      { name: do_code_enrichment, in: query, schema: { type: boolean } }
+    do_formula_enrichment:
+      { name: do_formula_enrichment, in: query, schema: { type: boolean } }
     fetch_images:
       { name: fetch_images, in: query, schema: { type: boolean } }
     skip_empty_cells:
