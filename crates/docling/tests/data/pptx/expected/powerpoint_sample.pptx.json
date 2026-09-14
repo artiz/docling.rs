@@ -18,52 +18,13 @@
     "self_ref": "#/body",
     "children": [
       {
-        "$ref": "#/texts/0"
-      },
-      {
-        "$ref": "#/tables/0"
-      },
-      {
-        "$ref": "#/texts/1"
-      },
-      {
-        "$ref": "#/texts/2"
-      },
-      {
-        "$ref": "#/texts/3"
-      },
-      {
-        "$ref": "#/texts/4"
-      },
-      {
         "$ref": "#/groups/0"
-      },
-      {
-        "$ref": "#/texts/8"
       },
       {
         "$ref": "#/groups/1"
       },
       {
-        "$ref": "#/groups/2"
-      },
-      {
-        "$ref": "#/texts/16"
-      },
-      {
         "$ref": "#/groups/3"
-      },
-      {
-        "$ref": "#/texts/19"
-      },
-      {
-        "$ref": "#/groups/4"
-      },
-      {
-        "$ref": "#/groups/5"
-      },
-      {
-        "$ref": "#/texts/26"
       }
     ],
     "content_layer": "body",
@@ -75,6 +36,52 @@
       "self_ref": "#/groups/0",
       "parent": {
         "$ref": "#/body"
+      },
+      "children": [
+        {
+          "$ref": "#/texts/0"
+        },
+        {
+          "$ref": "#/tables/0"
+        },
+        {
+          "$ref": "#/texts/1"
+        }
+      ],
+      "content_layer": "body",
+      "name": "slide-0",
+      "label": "chapter"
+    },
+    {
+      "self_ref": "#/groups/1",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [
+        {
+          "$ref": "#/texts/2"
+        },
+        {
+          "$ref": "#/texts/3"
+        },
+        {
+          "$ref": "#/texts/4"
+        },
+        {
+          "$ref": "#/groups/2"
+        },
+        {
+          "$ref": "#/texts/8"
+        }
+      ],
+      "content_layer": "body",
+      "name": "slide-1",
+      "label": "chapter"
+    },
+    {
+      "self_ref": "#/groups/2",
+      "parent": {
+        "$ref": "#/groups/1"
       },
       "children": [
         {
@@ -92,9 +99,44 @@
       "label": "list"
     },
     {
-      "self_ref": "#/groups/1",
+      "self_ref": "#/groups/3",
       "parent": {
         "$ref": "#/body"
+      },
+      "children": [
+        {
+          "$ref": "#/groups/4"
+        },
+        {
+          "$ref": "#/groups/5"
+        },
+        {
+          "$ref": "#/texts/16"
+        },
+        {
+          "$ref": "#/groups/6"
+        },
+        {
+          "$ref": "#/texts/19"
+        },
+        {
+          "$ref": "#/groups/7"
+        },
+        {
+          "$ref": "#/groups/8"
+        },
+        {
+          "$ref": "#/texts/26"
+        }
+      ],
+      "content_layer": "body",
+      "name": "slide-2",
+      "label": "chapter"
+    },
+    {
+      "self_ref": "#/groups/4",
+      "parent": {
+        "$ref": "#/groups/3"
       },
       "children": [
         {
@@ -112,9 +154,9 @@
       "label": "list"
     },
     {
-      "self_ref": "#/groups/2",
+      "self_ref": "#/groups/5",
       "parent": {
-        "$ref": "#/body"
+        "$ref": "#/groups/3"
       },
       "children": [
         {
@@ -135,9 +177,9 @@
       "label": "list"
     },
     {
-      "self_ref": "#/groups/3",
+      "self_ref": "#/groups/6",
       "parent": {
-        "$ref": "#/body"
+        "$ref": "#/groups/3"
       },
       "children": [
         {
@@ -152,9 +194,9 @@
       "label": "list"
     },
     {
-      "self_ref": "#/groups/4",
+      "self_ref": "#/groups/7",
       "parent": {
-        "$ref": "#/body"
+        "$ref": "#/groups/3"
       },
       "children": [
         {
@@ -172,9 +214,9 @@
       "label": "list"
     },
     {
-      "self_ref": "#/groups/5",
+      "self_ref": "#/groups/8",
       "parent": {
-        "$ref": "#/body"
+        "$ref": "#/groups/3"
       },
       "children": [
         {
@@ -196,72 +238,162 @@
     {
       "self_ref": "#/texts/0",
       "parent": {
-        "$ref": "#/body"
+        "$ref": "#/groups/0"
       },
       "children": [],
       "content_layer": "body",
       "label": "title",
-      "prov": [],
+      "prov": [
+        {
+          "page_no": 1,
+          "bbox": {
+            "l": 1524000.0,
+            "t": 1580554.69,
+            "r": 10668000.0,
+            "b": 642937.5,
+            "coord_origin": "BOTTOMLEFT"
+          },
+          "charspan": [
+            0,
+            16
+          ]
+        }
+      ],
       "orig": "Test Table Slide",
       "text": "Test Table Slide"
     },
     {
       "self_ref": "#/texts/1",
       "parent": {
-        "$ref": "#/body"
+        "$ref": "#/groups/0"
       },
       "children": [],
       "content_layer": "body",
       "label": "text",
-      "prov": [],
+      "prov": [
+        {
+          "page_no": 1,
+          "bbox": {
+            "l": 1524000.0,
+            "t": 5893593.75,
+            "r": 10668000.0,
+            "b": 5438179.69,
+            "coord_origin": "BOTTOMLEFT"
+          },
+          "charspan": [
+            0,
+            13
+          ]
+        }
+      ],
       "orig": "With footnote",
       "text": "With footnote"
     },
     {
       "self_ref": "#/texts/2",
       "parent": {
-        "$ref": "#/body"
+        "$ref": "#/groups/1"
       },
       "children": [],
       "content_layer": "body",
       "label": "title",
-      "prov": [],
+      "prov": [
+        {
+          "page_no": 2,
+          "bbox": {
+            "l": 833437.5,
+            "t": 1687710.94,
+            "r": 11358562.5,
+            "b": 361652.34,
+            "coord_origin": "BOTTOMLEFT"
+          },
+          "charspan": [
+            0,
+            18
+          ]
+        }
+      ],
       "orig": "Second slide title",
       "text": "Second slide title"
     },
     {
       "self_ref": "#/texts/3",
       "parent": {
-        "$ref": "#/body"
+        "$ref": "#/groups/1"
       },
       "children": [],
       "content_layer": "body",
       "label": "text",
-      "prov": [],
+      "prov": [
+        {
+          "page_no": 2,
+          "bbox": {
+            "l": 6191250.0,
+            "t": 5223867.19,
+            "r": 10263187.5,
+            "b": 1339453.13,
+            "coord_origin": "BOTTOMLEFT"
+          },
+          "charspan": [
+            0,
+            40
+          ]
+        }
+      ],
       "orig": "A rectangle shape with this text inside.",
       "text": "A rectangle shape with this text inside."
     },
     {
       "self_ref": "#/texts/4",
       "parent": {
-        "$ref": "#/body"
+        "$ref": "#/groups/1"
       },
       "children": [],
       "content_layer": "body",
       "label": "text",
-      "prov": [],
+      "prov": [
+        {
+          "page_no": 2,
+          "bbox": {
+            "l": 833437.5,
+            "t": 3964781.25,
+            "r": 4452937.5,
+            "b": 1821656.25,
+            "coord_origin": "BOTTOMLEFT"
+          },
+          "charspan": [
+            0,
+            22
+          ]
+        }
+      ],
       "orig": "Let’s introduce a list",
       "text": "Let’s introduce a list"
     },
     {
       "self_ref": "#/texts/5",
       "parent": {
-        "$ref": "#/groups/0"
+        "$ref": "#/groups/2"
       },
       "children": [],
       "content_layer": "body",
       "label": "list_item",
-      "prov": [],
+      "prov": [
+        {
+          "page_no": 2,
+          "bbox": {
+            "l": 833437.5,
+            "t": 3964781.25,
+            "r": 4452937.5,
+            "b": 1821656.25,
+            "coord_origin": "BOTTOMLEFT"
+          },
+          "charspan": [
+            0,
+            8
+          ]
+        }
+      ],
       "orig": "With foo",
       "text": "With foo",
       "enumerated": false,
@@ -270,12 +402,27 @@
     {
       "self_ref": "#/texts/6",
       "parent": {
-        "$ref": "#/groups/0"
+        "$ref": "#/groups/2"
       },
       "children": [],
       "content_layer": "body",
       "label": "list_item",
-      "prov": [],
+      "prov": [
+        {
+          "page_no": 2,
+          "bbox": {
+            "l": 833437.5,
+            "t": 3964781.25,
+            "r": 4452937.5,
+            "b": 1821656.25,
+            "coord_origin": "BOTTOMLEFT"
+          },
+          "charspan": [
+            0,
+            3
+          ]
+        }
+      ],
       "orig": "Bar",
       "text": "Bar",
       "enumerated": false,
@@ -284,12 +431,27 @@
     {
       "self_ref": "#/texts/7",
       "parent": {
-        "$ref": "#/groups/0"
+        "$ref": "#/groups/2"
       },
       "children": [],
       "content_layer": "body",
       "label": "list_item",
-      "prov": [],
+      "prov": [
+        {
+          "page_no": 2,
+          "bbox": {
+            "l": 833437.5,
+            "t": 3964781.25,
+            "r": 4452937.5,
+            "b": 1821656.25,
+            "coord_origin": "BOTTOMLEFT"
+          },
+          "charspan": [
+            0,
+            14
+          ]
+        }
+      ],
       "orig": "And baz things",
       "text": "And baz things",
       "enumerated": false,
@@ -298,24 +460,54 @@
     {
       "self_ref": "#/texts/8",
       "parent": {
-        "$ref": "#/body"
+        "$ref": "#/groups/1"
       },
       "children": [],
       "content_layer": "notes",
       "label": "text",
-      "prov": [],
+      "prov": [
+        {
+          "page_no": 2,
+          "bbox": {
+            "l": 0.0,
+            "t": 0.0,
+            "r": 0.0,
+            "b": 0.0,
+            "coord_origin": "BOTTOMLEFT"
+          },
+          "charspan": [
+            0,
+            31
+          ]
+        }
+      ],
       "orig": "Some notes on the second slide.",
       "text": "Some notes on the second slide."
     },
     {
       "self_ref": "#/texts/9",
       "parent": {
-        "$ref": "#/groups/1"
+        "$ref": "#/groups/4"
       },
       "children": [],
       "content_layer": "body",
       "label": "list_item",
-      "prov": [],
+      "prov": [
+        {
+          "page_no": 3,
+          "bbox": {
+            "l": 2428875.0,
+            "t": 3362027.34,
+            "r": 3929062.5,
+            "b": 2437804.69,
+            "coord_origin": "BOTTOMLEFT"
+          },
+          "charspan": [
+            0,
+            10
+          ]
+        }
+      ],
       "orig": "List item4",
       "text": "List item4",
       "enumerated": true,
@@ -324,12 +516,27 @@
     {
       "self_ref": "#/texts/10",
       "parent": {
-        "$ref": "#/groups/1"
+        "$ref": "#/groups/4"
       },
       "children": [],
       "content_layer": "body",
       "label": "list_item",
-      "prov": [],
+      "prov": [
+        {
+          "page_no": 3,
+          "bbox": {
+            "l": 2428875.0,
+            "t": 3362027.34,
+            "r": 3929062.5,
+            "b": 2437804.69,
+            "coord_origin": "BOTTOMLEFT"
+          },
+          "charspan": [
+            0,
+            10
+          ]
+        }
+      ],
       "orig": "List item5",
       "text": "List item5",
       "enumerated": true,
@@ -338,12 +545,27 @@
     {
       "self_ref": "#/texts/11",
       "parent": {
-        "$ref": "#/groups/1"
+        "$ref": "#/groups/4"
       },
       "children": [],
       "content_layer": "body",
       "label": "list_item",
-      "prov": [],
+      "prov": [
+        {
+          "page_no": 3,
+          "bbox": {
+            "l": 2428875.0,
+            "t": 3362027.34,
+            "r": 3929062.5,
+            "b": 2437804.69,
+            "coord_origin": "BOTTOMLEFT"
+          },
+          "charspan": [
+            0,
+            10
+          ]
+        }
+      ],
       "orig": "List item6",
       "text": "List item6",
       "enumerated": true,
@@ -352,12 +574,27 @@
     {
       "self_ref": "#/texts/12",
       "parent": {
-        "$ref": "#/groups/2"
+        "$ref": "#/groups/5"
       },
       "children": [],
       "content_layer": "body",
       "label": "list_item",
-      "prov": [],
+      "prov": [
+        {
+          "page_no": 3,
+          "bbox": {
+            "l": 4452937.5,
+            "t": 3656707.03,
+            "r": 5119687.5,
+            "b": 2451199.22,
+            "coord_origin": "BOTTOMLEFT"
+          },
+          "charspan": [
+            0,
+            2
+          ]
+        }
+      ],
       "orig": "I1",
       "text": "I1",
       "enumerated": false,
@@ -366,12 +603,27 @@
     {
       "self_ref": "#/texts/13",
       "parent": {
-        "$ref": "#/groups/2"
+        "$ref": "#/groups/5"
       },
       "children": [],
       "content_layer": "body",
       "label": "list_item",
-      "prov": [],
+      "prov": [
+        {
+          "page_no": 3,
+          "bbox": {
+            "l": 4452937.5,
+            "t": 3656707.03,
+            "r": 5119687.5,
+            "b": 2451199.22,
+            "coord_origin": "BOTTOMLEFT"
+          },
+          "charspan": [
+            0,
+            2
+          ]
+        }
+      ],
       "orig": "I2",
       "text": "I2",
       "enumerated": false,
@@ -380,12 +632,27 @@
     {
       "self_ref": "#/texts/14",
       "parent": {
-        "$ref": "#/groups/2"
+        "$ref": "#/groups/5"
       },
       "children": [],
       "content_layer": "body",
       "label": "list_item",
-      "prov": [],
+      "prov": [
+        {
+          "page_no": 3,
+          "bbox": {
+            "l": 4452937.5,
+            "t": 3656707.03,
+            "r": 5119687.5,
+            "b": 2451199.22,
+            "coord_origin": "BOTTOMLEFT"
+          },
+          "charspan": [
+            0,
+            2
+          ]
+        }
+      ],
       "orig": "I3",
       "text": "I3",
       "enumerated": false,
@@ -394,12 +661,27 @@
     {
       "self_ref": "#/texts/15",
       "parent": {
-        "$ref": "#/groups/2"
+        "$ref": "#/groups/5"
       },
       "children": [],
       "content_layer": "body",
       "label": "list_item",
-      "prov": [],
+      "prov": [
+        {
+          "page_no": 3,
+          "bbox": {
+            "l": 4452937.5,
+            "t": 3656707.03,
+            "r": 5119687.5,
+            "b": 2451199.22,
+            "coord_origin": "BOTTOMLEFT"
+          },
+          "charspan": [
+            0,
+            2
+          ]
+        }
+      ],
       "orig": "I4",
       "text": "I4",
       "enumerated": false,
@@ -408,24 +690,54 @@
     {
       "self_ref": "#/texts/16",
       "parent": {
-        "$ref": "#/body"
+        "$ref": "#/groups/3"
       },
       "children": [],
       "content_layer": "body",
       "label": "text",
-      "prov": [],
+      "prov": [
+        {
+          "page_no": 3,
+          "bbox": {
+            "l": 5643562.5,
+            "t": 3375421.88,
+            "r": 6881812.5,
+            "b": 2451199.22,
+            "coord_origin": "BOTTOMLEFT"
+          },
+          "charspan": [
+            0,
+            10
+          ]
+        }
+      ],
       "orig": "Some info:",
       "text": "Some info:"
     },
     {
       "self_ref": "#/texts/17",
       "parent": {
-        "$ref": "#/groups/3"
+        "$ref": "#/groups/6"
       },
       "children": [],
       "content_layer": "body",
       "label": "list_item",
-      "prov": [],
+      "prov": [
+        {
+          "page_no": 3,
+          "bbox": {
+            "l": 5643562.5,
+            "t": 3375421.88,
+            "r": 6881812.5,
+            "b": 2451199.22,
+            "coord_origin": "BOTTOMLEFT"
+          },
+          "charspan": [
+            0,
+            6
+          ]
+        }
+      ],
       "orig": "Item A",
       "text": "Item A",
       "enumerated": false,
@@ -434,12 +746,27 @@
     {
       "self_ref": "#/texts/18",
       "parent": {
-        "$ref": "#/groups/3"
+        "$ref": "#/groups/6"
       },
       "children": [],
       "content_layer": "body",
       "label": "list_item",
-      "prov": [],
+      "prov": [
+        {
+          "page_no": 3,
+          "bbox": {
+            "l": 5643562.5,
+            "t": 3375421.88,
+            "r": 6881812.5,
+            "b": 2451199.22,
+            "coord_origin": "BOTTOMLEFT"
+          },
+          "charspan": [
+            0,
+            6
+          ]
+        }
+      ],
       "orig": "Item B",
       "text": "Item B",
       "enumerated": false,
@@ -448,24 +775,54 @@
     {
       "self_ref": "#/texts/19",
       "parent": {
-        "$ref": "#/body"
+        "$ref": "#/groups/3"
       },
       "children": [],
       "content_layer": "body",
       "label": "text",
-      "prov": [],
+      "prov": [
+        {
+          "page_no": 3,
+          "bbox": {
+            "l": 7524750.0,
+            "t": 3656707.03,
+            "r": 9001125.0,
+            "b": 2464593.75,
+            "coord_origin": "BOTTOMLEFT"
+          },
+          "charspan": [
+            0,
+            13
+          ]
+        }
+      ],
       "orig": "Maybe a list?",
       "text": "Maybe a list?"
     },
     {
       "self_ref": "#/texts/20",
       "parent": {
-        "$ref": "#/groups/4"
+        "$ref": "#/groups/7"
       },
       "children": [],
       "content_layer": "body",
       "label": "list_item",
-      "prov": [],
+      "prov": [
+        {
+          "page_no": 3,
+          "bbox": {
+            "l": 7524750.0,
+            "t": 3656707.03,
+            "r": 9001125.0,
+            "b": 2464593.75,
+            "coord_origin": "BOTTOMLEFT"
+          },
+          "charspan": [
+            0,
+            5
+          ]
+        }
+      ],
       "orig": "List1",
       "text": "List1",
       "enumerated": true,
@@ -474,12 +831,27 @@
     {
       "self_ref": "#/texts/21",
       "parent": {
-        "$ref": "#/groups/4"
+        "$ref": "#/groups/7"
       },
       "children": [],
       "content_layer": "body",
       "label": "list_item",
-      "prov": [],
+      "prov": [
+        {
+          "page_no": 3,
+          "bbox": {
+            "l": 7524750.0,
+            "t": 3656707.03,
+            "r": 9001125.0,
+            "b": 2464593.75,
+            "coord_origin": "BOTTOMLEFT"
+          },
+          "charspan": [
+            0,
+            5
+          ]
+        }
+      ],
       "orig": "List2",
       "text": "List2",
       "enumerated": true,
@@ -488,12 +860,27 @@
     {
       "self_ref": "#/texts/22",
       "parent": {
-        "$ref": "#/groups/4"
+        "$ref": "#/groups/7"
       },
       "children": [],
       "content_layer": "body",
       "label": "list_item",
-      "prov": [],
+      "prov": [
+        {
+          "page_no": 3,
+          "bbox": {
+            "l": 7524750.0,
+            "t": 3656707.03,
+            "r": 9001125.0,
+            "b": 2464593.75,
+            "coord_origin": "BOTTOMLEFT"
+          },
+          "charspan": [
+            0,
+            5
+          ]
+        }
+      ],
       "orig": "List3",
       "text": "List3",
       "enumerated": true,
@@ -502,12 +889,27 @@
     {
       "self_ref": "#/texts/23",
       "parent": {
-        "$ref": "#/groups/5"
+        "$ref": "#/groups/8"
       },
       "children": [],
       "content_layer": "body",
       "label": "list_item",
-      "prov": [],
+      "prov": [
+        {
+          "page_no": 3,
+          "bbox": {
+            "l": 9405937.5,
+            "t": 3362027.34,
+            "r": 10048875.0,
+            "b": 2437804.69,
+            "coord_origin": "BOTTOMLEFT"
+          },
+          "charspan": [
+            0,
+            3
+          ]
+        }
+      ],
       "orig": "l1 ",
       "text": "l1 ",
       "enumerated": false,
@@ -516,12 +918,27 @@
     {
       "self_ref": "#/texts/24",
       "parent": {
-        "$ref": "#/groups/5"
+        "$ref": "#/groups/8"
       },
       "children": [],
       "content_layer": "body",
       "label": "list_item",
-      "prov": [],
+      "prov": [
+        {
+          "page_no": 3,
+          "bbox": {
+            "l": 9405937.5,
+            "t": 3362027.34,
+            "r": 10048875.0,
+            "b": 2437804.69,
+            "coord_origin": "BOTTOMLEFT"
+          },
+          "charspan": [
+            0,
+            2
+          ]
+        }
+      ],
       "orig": "l2",
       "text": "l2",
       "enumerated": false,
@@ -530,12 +947,27 @@
     {
       "self_ref": "#/texts/25",
       "parent": {
-        "$ref": "#/groups/5"
+        "$ref": "#/groups/8"
       },
       "children": [],
       "content_layer": "body",
       "label": "list_item",
-      "prov": [],
+      "prov": [
+        {
+          "page_no": 3,
+          "bbox": {
+            "l": 9405937.5,
+            "t": 3362027.34,
+            "r": 10048875.0,
+            "b": 2437804.69,
+            "coord_origin": "BOTTOMLEFT"
+          },
+          "charspan": [
+            0,
+            2
+          ]
+        }
+      ],
       "orig": "l3",
       "text": "l3",
       "enumerated": false,
@@ -544,12 +976,27 @@
     {
       "self_ref": "#/texts/26",
       "parent": {
-        "$ref": "#/body"
+        "$ref": "#/groups/3"
       },
       "children": [],
       "content_layer": "notes",
       "label": "text",
-      "prov": [],
+      "prov": [
+        {
+          "page_no": 3,
+          "bbox": {
+            "l": 0.0,
+            "t": 0.0,
+            "r": 0.0,
+            "b": 0.0,
+            "coord_origin": "BOTTOMLEFT"
+          },
+          "charspan": [
+            0,
+            53
+          ]
+        }
+      ],
       "orig": "Final notes on the third slide.\nSecond line of notes.",
       "text": "Final notes on the third slide.\nSecond line of notes."
     }
@@ -559,12 +1006,27 @@
     {
       "self_ref": "#/tables/0",
       "parent": {
-        "$ref": "#/body"
+        "$ref": "#/groups/0"
       },
       "children": [],
       "content_layer": "body",
       "label": "table",
-      "prov": [],
+      "prov": [
+        {
+          "page_no": 1,
+          "bbox": {
+            "l": 2024062.5,
+            "t": 5277445.31,
+            "r": 10167937.5,
+            "b": 1942207.03,
+            "coord_origin": "BOTTOMLEFT"
+          },
+          "charspan": [
+            0,
+            0
+          ]
+        }
+      ],
       "captions": [],
       "references": [],
       "footnotes": [],
@@ -585,10 +1047,36 @@
           },
           {
             "row_span": 1,
-            "col_span": 3,
+            "col_span": 1,
             "start_row_offset_idx": 0,
             "end_row_offset_idx": 1,
             "start_col_offset_idx": 1,
+            "end_col_offset_idx": 2,
+            "text": "Class1",
+            "column_header": true,
+            "row_header": false,
+            "row_section": false,
+            "fillable": false
+          },
+          {
+            "row_span": 1,
+            "col_span": 1,
+            "start_row_offset_idx": 0,
+            "end_row_offset_idx": 1,
+            "start_col_offset_idx": 2,
+            "end_col_offset_idx": 3,
+            "text": "Class1",
+            "column_header": true,
+            "row_header": false,
+            "row_section": false,
+            "fillable": false
+          },
+          {
+            "row_span": 1,
+            "col_span": 1,
+            "start_row_offset_idx": 0,
+            "end_row_offset_idx": 1,
+            "start_col_offset_idx": 3,
             "end_col_offset_idx": 4,
             "text": "Class1",
             "column_header": true,
@@ -598,10 +1086,36 @@
           },
           {
             "row_span": 1,
-            "col_span": 3,
+            "col_span": 1,
             "start_row_offset_idx": 0,
             "end_row_offset_idx": 1,
             "start_col_offset_idx": 4,
+            "end_col_offset_idx": 5,
+            "text": "Class2",
+            "column_header": true,
+            "row_header": false,
+            "row_section": false,
+            "fillable": false
+          },
+          {
+            "row_span": 1,
+            "col_span": 1,
+            "start_row_offset_idx": 0,
+            "end_row_offset_idx": 1,
+            "start_col_offset_idx": 5,
+            "end_col_offset_idx": 6,
+            "text": "Class2",
+            "column_header": true,
+            "row_header": false,
+            "row_section": false,
+            "fillable": false
+          },
+          {
+            "row_span": 1,
+            "col_span": 1,
+            "start_row_offset_idx": 0,
+            "end_row_offset_idx": 1,
+            "start_col_offset_idx": 6,
             "end_col_offset_idx": 7,
             "text": "Class2",
             "column_header": true,
@@ -624,10 +1138,23 @@
           },
           {
             "row_span": 1,
-            "col_span": 2,
+            "col_span": 1,
             "start_row_offset_idx": 1,
             "end_row_offset_idx": 2,
             "start_col_offset_idx": 1,
+            "end_col_offset_idx": 2,
+            "text": "A merged with B",
+            "column_header": false,
+            "row_header": false,
+            "row_section": false,
+            "fillable": false
+          },
+          {
+            "row_span": 1,
+            "col_span": 1,
+            "start_row_offset_idx": 1,
+            "end_row_offset_idx": 2,
+            "start_col_offset_idx": 2,
             "end_col_offset_idx": 3,
             "text": "A merged with B",
             "column_header": false,
@@ -870,10 +1397,10 @@
             "fillable": false
           },
           {
-            "row_span": 2,
+            "row_span": 1,
             "col_span": 1,
             "start_row_offset_idx": 4,
-            "end_row_offset_idx": 6,
+            "end_row_offset_idx": 5,
             "start_col_offset_idx": 0,
             "end_col_offset_idx": 1,
             "text": "R3",
@@ -965,6 +1492,19 @@
             "col_span": 1,
             "start_row_offset_idx": 5,
             "end_row_offset_idx": 6,
+            "start_col_offset_idx": 0,
+            "end_col_offset_idx": 1,
+            "text": "R3",
+            "column_header": false,
+            "row_header": false,
+            "row_section": false,
+            "fillable": false
+          },
+          {
+            "row_span": 1,
+            "col_span": 1,
+            "start_row_offset_idx": 5,
+            "end_row_offset_idx": 6,
             "start_col_offset_idx": 1,
             "end_col_offset_idx": 2,
             "text": "",
@@ -1039,10 +1579,10 @@
             "fillable": false
           },
           {
-            "row_span": 3,
+            "row_span": 1,
             "col_span": 1,
             "start_row_offset_idx": 6,
-            "end_row_offset_idx": 9,
+            "end_row_offset_idx": 7,
             "start_col_offset_idx": 0,
             "end_col_offset_idx": 1,
             "text": "R4",
@@ -1134,6 +1674,19 @@
             "col_span": 1,
             "start_row_offset_idx": 7,
             "end_row_offset_idx": 8,
+            "start_col_offset_idx": 0,
+            "end_col_offset_idx": 1,
+            "text": "R4",
+            "column_header": false,
+            "row_header": false,
+            "row_section": false,
+            "fillable": false
+          },
+          {
+            "row_span": 1,
+            "col_span": 1,
+            "start_row_offset_idx": 7,
+            "end_row_offset_idx": 8,
             "start_col_offset_idx": 1,
             "end_col_offset_idx": 2,
             "text": "",
@@ -1202,6 +1755,19 @@
             "start_col_offset_idx": 6,
             "end_col_offset_idx": 7,
             "text": "False",
+            "column_header": false,
+            "row_header": false,
+            "row_section": false,
+            "fillable": false
+          },
+          {
+            "row_span": 1,
+            "col_span": 1,
+            "start_row_offset_idx": 8,
+            "end_row_offset_idx": 9,
+            "start_col_offset_idx": 0,
+            "end_col_offset_idx": 1,
+            "text": "R4",
             "column_header": false,
             "row_header": false,
             "row_section": false,
@@ -1305,10 +1871,36 @@
             },
             {
               "row_span": 1,
-              "col_span": 3,
+              "col_span": 1,
               "start_row_offset_idx": 0,
               "end_row_offset_idx": 1,
               "start_col_offset_idx": 1,
+              "end_col_offset_idx": 2,
+              "text": "Class1",
+              "column_header": true,
+              "row_header": false,
+              "row_section": false,
+              "fillable": false
+            },
+            {
+              "row_span": 1,
+              "col_span": 1,
+              "start_row_offset_idx": 0,
+              "end_row_offset_idx": 1,
+              "start_col_offset_idx": 2,
+              "end_col_offset_idx": 3,
+              "text": "Class1",
+              "column_header": true,
+              "row_header": false,
+              "row_section": false,
+              "fillable": false
+            },
+            {
+              "row_span": 1,
+              "col_span": 1,
+              "start_row_offset_idx": 0,
+              "end_row_offset_idx": 1,
+              "start_col_offset_idx": 3,
               "end_col_offset_idx": 4,
               "text": "Class1",
               "column_header": true,
@@ -1318,37 +1910,11 @@
             },
             {
               "row_span": 1,
-              "col_span": 3,
-              "start_row_offset_idx": 0,
-              "end_row_offset_idx": 1,
-              "start_col_offset_idx": 1,
-              "end_col_offset_idx": 4,
-              "text": "Class1",
-              "column_header": true,
-              "row_header": false,
-              "row_section": false,
-              "fillable": false
-            },
-            {
-              "row_span": 1,
-              "col_span": 3,
-              "start_row_offset_idx": 0,
-              "end_row_offset_idx": 1,
-              "start_col_offset_idx": 1,
-              "end_col_offset_idx": 4,
-              "text": "Class1",
-              "column_header": true,
-              "row_header": false,
-              "row_section": false,
-              "fillable": false
-            },
-            {
-              "row_span": 1,
-              "col_span": 3,
+              "col_span": 1,
               "start_row_offset_idx": 0,
               "end_row_offset_idx": 1,
               "start_col_offset_idx": 4,
-              "end_col_offset_idx": 7,
+              "end_col_offset_idx": 5,
               "text": "Class2",
               "column_header": true,
               "row_header": false,
@@ -1357,11 +1923,11 @@
             },
             {
               "row_span": 1,
-              "col_span": 3,
+              "col_span": 1,
               "start_row_offset_idx": 0,
               "end_row_offset_idx": 1,
-              "start_col_offset_idx": 4,
-              "end_col_offset_idx": 7,
+              "start_col_offset_idx": 5,
+              "end_col_offset_idx": 6,
               "text": "Class2",
               "column_header": true,
               "row_header": false,
@@ -1370,10 +1936,10 @@
             },
             {
               "row_span": 1,
-              "col_span": 3,
+              "col_span": 1,
               "start_row_offset_idx": 0,
               "end_row_offset_idx": 1,
-              "start_col_offset_idx": 4,
+              "start_col_offset_idx": 6,
               "end_col_offset_idx": 7,
               "text": "Class2",
               "column_header": true,
@@ -1398,11 +1964,11 @@
             },
             {
               "row_span": 1,
-              "col_span": 2,
+              "col_span": 1,
               "start_row_offset_idx": 1,
               "end_row_offset_idx": 2,
               "start_col_offset_idx": 1,
-              "end_col_offset_idx": 3,
+              "end_col_offset_idx": 2,
               "text": "A merged with B",
               "column_header": false,
               "row_header": false,
@@ -1411,10 +1977,10 @@
             },
             {
               "row_span": 1,
-              "col_span": 2,
+              "col_span": 1,
               "start_row_offset_idx": 1,
               "end_row_offset_idx": 2,
-              "start_col_offset_idx": 1,
+              "start_col_offset_idx": 2,
               "end_col_offset_idx": 3,
               "text": "A merged with B",
               "column_header": false,
@@ -1663,10 +2229,10 @@
           ],
           [
             {
-              "row_span": 2,
+              "row_span": 1,
               "col_span": 1,
               "start_row_offset_idx": 4,
-              "end_row_offset_idx": 6,
+              "end_row_offset_idx": 5,
               "start_col_offset_idx": 0,
               "end_col_offset_idx": 1,
               "text": "R3",
@@ -1756,9 +2322,9 @@
           ],
           [
             {
-              "row_span": 2,
+              "row_span": 1,
               "col_span": 1,
-              "start_row_offset_idx": 4,
+              "start_row_offset_idx": 5,
               "end_row_offset_idx": 6,
               "start_col_offset_idx": 0,
               "end_col_offset_idx": 1,
@@ -1849,10 +2415,10 @@
           ],
           [
             {
-              "row_span": 3,
+              "row_span": 1,
               "col_span": 1,
               "start_row_offset_idx": 6,
-              "end_row_offset_idx": 9,
+              "end_row_offset_idx": 7,
               "start_col_offset_idx": 0,
               "end_col_offset_idx": 1,
               "text": "R4",
@@ -1942,10 +2508,10 @@
           ],
           [
             {
-              "row_span": 3,
+              "row_span": 1,
               "col_span": 1,
-              "start_row_offset_idx": 6,
-              "end_row_offset_idx": 9,
+              "start_row_offset_idx": 7,
+              "end_row_offset_idx": 8,
               "start_col_offset_idx": 0,
               "end_col_offset_idx": 1,
               "text": "R4",
@@ -2035,9 +2601,9 @@
           ],
           [
             {
-              "row_span": 3,
+              "row_span": 1,
               "col_span": 1,
-              "start_row_offset_idx": 6,
+              "start_row_offset_idx": 8,
               "end_row_offset_idx": 9,
               "start_col_offset_idx": 0,
               "end_col_offset_idx": 1,
@@ -2133,5 +2699,27 @@
   ],
   "key_value_items": [],
   "form_items": [],
-  "pages": {}
+  "pages": {
+    "1": {
+      "size": {
+        "width": 12192000.0,
+        "height": 6858000.0
+      },
+      "page_no": 1
+    },
+    "2": {
+      "size": {
+        "width": 12192000.0,
+        "height": 6858000.0
+      },
+      "page_no": 2
+    },
+    "3": {
+      "size": {
+        "width": 12192000.0,
+        "height": 6858000.0
+      },
+      "page_no": 3
+    }
+  }
 }

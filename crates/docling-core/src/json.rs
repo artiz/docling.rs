@@ -193,6 +193,16 @@ impl Builder {
             return json!([]);
         };
         let r2 = |v: f64| (v * 100.0).round() / 100.0;
+        // An all-zero grid box is the sentinel for "this item has no geometry"
+        // (a slide's speaker notes, say). docling writes a zero bbox for it,
+        // not a box spanning the page, which is what denormalizing would give.
+        if [x0, y0, x1, y1] == [0, 0, 0, 0] {
+            return json!([{
+                "page_no": self.cur_page,
+                "bbox": { "l": 0.0, "t": 0.0, "r": 0.0, "b": 0.0, "coord_origin": "BOTTOMLEFT" },
+                "charspan": [0, char_len],
+            }]);
+        }
         json!([{
             "page_no": self.cur_page,
             "bbox": {
@@ -1146,6 +1156,41 @@ mod tests {
         );
         // The body layer is what Markdown serializes, so it does not change.
         assert_eq!(doc.export_to_markdown(), "# Slide One\n");
+    }
+
+    /// An all-zero location is the "no geometry" sentinel — a slide's speaker
+    /// notes carry one — and docling writes it as a zero bbox, not as a box
+    /// spanning the whole page, which is what denormalizing the grid gives.
+    #[test]
+    fn a_zero_location_is_a_zero_bbox_not_the_whole_page() {
+        let mut doc = DoclingDocument::new("t");
+        doc.push(Node::PageInfo {
+            page_no: 1,
+            width: 12192000.0,
+            height: 6858000.0,
+        });
+        doc.push(Node::Furniture {
+            layer: ContentLayer::Notes,
+            inner: Box::new(Node::Located {
+                location: [0, 0, 0, 0],
+                inner: Box::new(Node::Paragraph {
+                    text: "a note".into(),
+                }),
+            }),
+        });
+        let v: Value = serde_json::from_str(&doc.export_to_json()).unwrap();
+        let prov = &v["texts"][0]["prov"][0];
+        assert_eq!(prov["page_no"], 1);
+        assert_eq!(prov["charspan"], serde_json::json!([0, 6]));
+        assert_eq!(
+            prov["bbox"],
+            serde_json::json!({"l": 0.0, "t": 0.0, "r": 0.0, "b": 0.0, "coord_origin": "BOTTOMLEFT"})
+        );
+        // The page itself is recorded at its true size.
+        assert_eq!(
+            v["pages"]["1"]["size"],
+            serde_json::json!({"width": 12192000.0, "height": 6858000.0})
+        );
     }
 
     /// #171: PageInfo markers become the `pages` map, and `Located` wrappers /

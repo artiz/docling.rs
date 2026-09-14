@@ -18,10 +18,7 @@
     "self_ref": "#/body",
     "children": [
       {
-        "$ref": "#/texts/0"
-      },
-      {
-        "$ref": "#/texts/1"
+        "$ref": "#/groups/0"
       },
       {
         "$ref": "#/texts/2"
@@ -30,16 +27,10 @@
         "$ref": "#/texts/3"
       },
       {
-        "$ref": "#/texts/4"
+        "$ref": "#/groups/1"
       },
       {
-        "$ref": "#/texts/5"
-      },
-      {
-        "$ref": "#/texts/6"
-      },
-      {
-        "$ref": "#/groups/0"
+        "$ref": "#/groups/2"
       },
       {
         "$ref": "#/texts/10"
@@ -57,6 +48,57 @@
       "self_ref": "#/groups/0",
       "parent": {
         "$ref": "#/body"
+      },
+      "children": [
+        {
+          "$ref": "#/texts/0"
+        },
+        {
+          "$ref": "#/texts/1"
+        }
+      ],
+      "content_layer": "body",
+      "name": "slide-0",
+      "label": "chapter"
+    },
+    {
+      "self_ref": "#/groups/1",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [
+        {
+          "$ref": "#/texts/4"
+        },
+        {
+          "$ref": "#/texts/5"
+        }
+      ],
+      "content_layer": "body",
+      "name": "slide-1",
+      "label": "chapter"
+    },
+    {
+      "self_ref": "#/groups/2",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [
+        {
+          "$ref": "#/texts/6"
+        },
+        {
+          "$ref": "#/groups/3"
+        }
+      ],
+      "content_layer": "body",
+      "name": "slide-2",
+      "label": "chapter"
+    },
+    {
+      "self_ref": "#/groups/3",
+      "parent": {
+        "$ref": "#/groups/2"
       },
       "children": [
         {
@@ -78,24 +120,54 @@
     {
       "self_ref": "#/texts/0",
       "parent": {
-        "$ref": "#/body"
+        "$ref": "#/groups/0"
       },
       "children": [],
       "content_layer": "body",
       "label": "title",
-      "prov": [],
+      "prov": [
+        {
+          "page_no": 1,
+          "bbox": {
+            "l": 464343.75,
+            "t": 1419820.31,
+            "r": 8679656.25,
+            "b": 281285.16,
+            "coord_origin": "BOTTOMLEFT"
+          },
+          "charspan": [
+            0,
+            24
+          ]
+        }
+      ],
       "orig": "Test Slide With Comments",
       "text": "Test Slide With Comments"
     },
     {
       "self_ref": "#/texts/1",
       "parent": {
-        "$ref": "#/body"
+        "$ref": "#/groups/0"
       },
       "children": [],
       "content_layer": "body",
       "label": "text",
-      "prov": [],
+      "prov": [
+        {
+          "page_no": 1,
+          "bbox": {
+            "l": 464343.75,
+            "t": 6121300.78,
+            "r": 8679656.25,
+            "b": 1593949.22,
+            "coord_origin": "BOTTOMLEFT"
+          },
+          "charspan": [
+            0,
+            172
+          ]
+        }
+      ],
       "orig": "Docling converts messy documents into structured data and simplifies downstream document and AI processing by detecting tables, formulas, reading order, OCR, and much more.",
       "text": "Docling converts messy documents into structured data and simplifies downstream document and AI processing by detecting tables, formulas, reading order, OCR, and much more."
     },
@@ -126,48 +198,108 @@
     {
       "self_ref": "#/texts/4",
       "parent": {
-        "$ref": "#/body"
+        "$ref": "#/groups/1"
       },
       "children": [],
       "content_layer": "body",
       "label": "title",
-      "prov": [],
+      "prov": [
+        {
+          "page_no": 2,
+          "bbox": {
+            "l": 464343.75,
+            "t": 1419820.31,
+            "r": 8679656.25,
+            "b": 281285.16,
+            "coord_origin": "BOTTOMLEFT"
+          },
+          "charspan": [
+            0,
+            5
+          ]
+        }
+      ],
       "orig": "Start",
       "text": "Start"
     },
     {
       "self_ref": "#/texts/5",
       "parent": {
-        "$ref": "#/body"
+        "$ref": "#/groups/1"
       },
       "children": [],
       "content_layer": "body",
       "label": "text",
-      "prov": [],
+      "prov": [
+        {
+          "page_no": 2,
+          "bbox": {
+            "l": 464343.75,
+            "t": 6121300.78,
+            "r": 8679656.25,
+            "b": 1593949.22,
+            "coord_origin": "BOTTOMLEFT"
+          },
+          "charspan": [
+            0,
+            70
+          ]
+        }
+      ],
       "orig": "Install Docling as a Python library with your favorite package manager",
       "text": "Install Docling as a Python library with your favorite package manager"
     },
     {
       "self_ref": "#/texts/6",
       "parent": {
-        "$ref": "#/body"
+        "$ref": "#/groups/2"
       },
       "children": [],
       "content_layer": "body",
       "label": "title",
-      "prov": [],
+      "prov": [
+        {
+          "page_no": 3,
+          "bbox": {
+            "l": 464343.75,
+            "t": 1419820.31,
+            "r": 8679656.25,
+            "b": 281285.16,
+            "coord_origin": "BOTTOMLEFT"
+          },
+          "charspan": [
+            0,
+            8
+          ]
+        }
+      ],
       "orig": "Features",
       "text": "Features"
     },
     {
       "self_ref": "#/texts/7",
       "parent": {
-        "$ref": "#/groups/0"
+        "$ref": "#/groups/3"
       },
       "children": [],
       "content_layer": "body",
       "label": "list_item",
-      "prov": [],
+      "prov": [
+        {
+          "page_no": 3,
+          "bbox": {
+            "l": 464343.75,
+            "t": 6121300.78,
+            "r": 8679656.25,
+            "b": 1593949.22,
+            "coord_origin": "BOTTOMLEFT"
+          },
+          "charspan": [
+            0,
+            135
+          ]
+        }
+      ],
       "orig": "Import many document formats into a unified and structured Docling Document , including scanned pages via an OCR engine of your choice.",
       "text": "Import many document formats into a unified and structured Docling Document , including scanned pages via an OCR engine of your choice.",
       "enumerated": false,
@@ -176,12 +308,27 @@
     {
       "self_ref": "#/texts/8",
       "parent": {
-        "$ref": "#/groups/0"
+        "$ref": "#/groups/3"
       },
       "children": [],
       "content_layer": "body",
       "label": "list_item",
-      "prov": [],
+      "prov": [
+        {
+          "page_no": 3,
+          "bbox": {
+            "l": 464343.75,
+            "t": 6121300.78,
+            "r": 8679656.25,
+            "b": 1593949.22,
+            "coord_origin": "BOTTOMLEFT"
+          },
+          "charspan": [
+            0,
+            110
+          ]
+        }
+      ],
       "orig": "Export a parsed document to formats that simplify processing and ingestion into AI, RAG, and agentic systems. ",
       "text": "Export a parsed document to formats that simplify processing and ingestion into AI, RAG, and agentic systems. ",
       "enumerated": false,
@@ -190,12 +337,27 @@
     {
       "self_ref": "#/texts/9",
       "parent": {
-        "$ref": "#/groups/0"
+        "$ref": "#/groups/3"
       },
       "children": [],
       "content_layer": "body",
       "label": "list_item",
-      "prov": [],
+      "prov": [
+        {
+          "page_no": 3,
+          "bbox": {
+            "l": 464343.75,
+            "t": 6121300.78,
+            "r": 8679656.25,
+            "b": 1593949.22,
+            "coord_origin": "BOTTOMLEFT"
+          },
+          "charspan": [
+            0,
+            75
+          ]
+        }
+      ],
       "orig": "Extract document components and their properties from the Docling Document.",
       "text": "Extract document components and their properties from the Docling Document.",
       "enumerated": false,
@@ -230,5 +392,27 @@
   "tables": [],
   "key_value_items": [],
   "form_items": [],
-  "pages": {}
+  "pages": {
+    "1": {
+      "size": {
+        "width": 9144000.0,
+        "height": 6858000.0
+      },
+      "page_no": 1
+    },
+    "2": {
+      "size": {
+        "width": 9144000.0,
+        "height": 6858000.0
+      },
+      "page_no": 2
+    },
+    "3": {
+      "size": {
+        "width": 9144000.0,
+        "height": 6858000.0
+      },
+      "page_no": 3
+    }
+  }
 }

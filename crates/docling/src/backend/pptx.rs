@@ -57,7 +57,24 @@ impl DeclarativeBackend for PptxBackend {
             let Some((content, comments)) = frag else {
                 continue;
             };
-            doc.nodes.extend(content);
+            // docling records every slide as a page sized in EMU, which is
+            // what its item provenance is expressed in (#402).
+            doc.push(Node::PageInfo {
+                page_no: slide_ix + 1,
+                width: slide_size.0 as f32,
+                height: slide_size.1 as f32,
+            });
+            // docling gives each slide a `chapter` group named `slide-{0-based}`
+            // and hangs everything the slide holds off it (#402), so a note or
+            // a caption belongs to its slide rather than to the document body.
+            // Groups are transparent to Markdown and DocLang, so only the JSON
+            // gains the structure.
+            doc.push(Node::Group {
+                label: "chapter".into(),
+                name: Some(format!("slide-{slide_ix}")),
+                layer: None,
+                children: content,
+            });
             // DocLang page break: docling's serializer places each slide
             // boundary's break *after* the following slide's content (every
             // slide beyond the first trails one — same artifact as XLSX
@@ -810,6 +827,11 @@ mod chart_tests {
         let chart = doc
             .nodes
             .iter()
+            // Slide content hangs off the slide's own group (#402).
+            .flat_map(|n| match n {
+                Node::Group { children, .. } => children.as_slice(),
+                other => std::slice::from_ref(other),
+            })
             .find_map(|n| match n {
                 Node::Chart {
                     kind,

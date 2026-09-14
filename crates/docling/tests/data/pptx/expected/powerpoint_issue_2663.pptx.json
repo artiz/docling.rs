@@ -18,19 +18,7 @@
     "self_ref": "#/body",
     "children": [
       {
-        "$ref": "#/texts/0"
-      },
-      {
-        "$ref": "#/texts/1"
-      },
-      {
         "$ref": "#/groups/0"
-      },
-      {
-        "$ref": "#/texts/7"
-      },
-      {
-        "$ref": "#/groups/1"
       }
     ],
     "content_layer": "body",
@@ -42,6 +30,32 @@
       "self_ref": "#/groups/0",
       "parent": {
         "$ref": "#/body"
+      },
+      "children": [
+        {
+          "$ref": "#/texts/0"
+        },
+        {
+          "$ref": "#/texts/1"
+        },
+        {
+          "$ref": "#/groups/1"
+        },
+        {
+          "$ref": "#/texts/7"
+        },
+        {
+          "$ref": "#/groups/2"
+        }
+      ],
+      "content_layer": "body",
+      "name": "slide-0",
+      "label": "chapter"
+    },
+    {
+      "self_ref": "#/groups/1",
+      "parent": {
+        "$ref": "#/groups/0"
       },
       "children": [
         {
@@ -65,9 +79,9 @@
       "label": "list"
     },
     {
-      "self_ref": "#/groups/1",
+      "self_ref": "#/groups/2",
       "parent": {
-        "$ref": "#/body"
+        "$ref": "#/groups/0"
       },
       "children": [
         {
@@ -86,36 +100,81 @@
     {
       "self_ref": "#/texts/0",
       "parent": {
-        "$ref": "#/body"
+        "$ref": "#/groups/0"
       },
       "children": [],
       "content_layer": "body",
       "label": "title",
-      "prov": [],
+      "prov": [
+        {
+          "page_no": 1,
+          "bbox": {
+            "l": 833437.5,
+            "t": 1687710.94,
+            "r": 11358562.5,
+            "b": 361652.34,
+            "coord_origin": "BOTTOMLEFT"
+          },
+          "charspan": [
+            0,
+            20
+          ]
+        }
+      ],
       "orig": "Open-Source Software",
       "text": "Open-Source Software"
     },
     {
       "self_ref": "#/texts/1",
       "parent": {
-        "$ref": "#/body"
+        "$ref": "#/groups/0"
       },
       "children": [],
       "content_layer": "body",
       "label": "text",
-      "prov": [],
+      "prov": [
+        {
+          "page_no": 1,
+          "bbox": {
+            "l": 833437.5,
+            "t": 6174878.91,
+            "r": 11358562.5,
+            "b": 1821656.25,
+            "coord_origin": "BOTTOMLEFT"
+          },
+          "charspan": [
+            0,
+            13
+          ]
+        }
+      ],
       "orig": "Key Benefits:",
       "text": "Key Benefits:"
     },
     {
       "self_ref": "#/texts/2",
       "parent": {
-        "$ref": "#/groups/0"
+        "$ref": "#/groups/1"
       },
       "children": [],
       "content_layer": "body",
       "label": "list_item",
-      "prov": [],
+      "prov": [
+        {
+          "page_no": 1,
+          "bbox": {
+            "l": 833437.5,
+            "t": 6174878.91,
+            "r": 11358562.5,
+            "b": 1821656.25,
+            "coord_origin": "BOTTOMLEFT"
+          },
+          "charspan": [
+            0,
+            96
+          ]
+        }
+      ],
       "orig": "Open-source software is cost-effective as it eliminates license fees, reducing overall expenses.",
       "text": "Open-source software is cost-effective as it eliminates license fees, reducing overall expenses.",
       "enumerated": false,
@@ -124,12 +183,27 @@
     {
       "self_ref": "#/texts/3",
       "parent": {
-        "$ref": "#/groups/0"
+        "$ref": "#/groups/1"
       },
       "children": [],
       "content_layer": "body",
       "label": "list_item",
-      "prov": [],
+      "prov": [
+        {
+          "page_no": 1,
+          "bbox": {
+            "l": 833437.5,
+            "t": 6174878.91,
+            "r": 11358562.5,
+            "b": 1821656.25,
+            "coord_origin": "BOTTOMLEFT"
+          },
+          "charspan": [
+            0,
+            76
+          ]
+        }
+      ],
       "orig": "Ehnhances security and transparency by allowing public access to source code",
       "text": "Ehnhances security and transparency by allowing public access to source code",
       "enumerated": false,
@@ -138,12 +212,27 @@
     {
       "self_ref": "#/texts/4",
       "parent": {
-        "$ref": "#/groups/0"
+        "$ref": "#/groups/1"
       },
       "children": [],
       "content_layer": "body",
       "label": "list_item",
-      "prov": [],
+      "prov": [
+        {
+          "page_no": 1,
+          "bbox": {
+            "l": 833437.5,
+            "t": 6174878.91,
+            "r": 11358562.5,
+            "b": 1821656.25,
+            "coord_origin": "BOTTOMLEFT"
+          },
+          "charspan": [
+            0,
+            68
+          ]
+        }
+      ],
       "orig": "Strong global community improves and maintains open-source projects.",
       "text": "Strong global community improves and maintains open-source projects.",
       "enumerated": false,
@@ -152,12 +241,27 @@
     {
       "self_ref": "#/texts/5",
       "parent": {
-        "$ref": "#/groups/0"
+        "$ref": "#/groups/1"
       },
       "children": [],
       "content_layer": "body",
       "label": "list_item",
-      "prov": [],
+      "prov": [
+        {
+          "page_no": 1,
+          "bbox": {
+            "l": 833437.5,
+            "t": 6174878.91,
+            "r": 11358562.5,
+            "b": 1821656.25,
+            "coord_origin": "BOTTOMLEFT"
+          },
+          "charspan": [
+            0,
+            70
+          ]
+        }
+      ],
       "orig": "Offers flexibility, allowing users to customize and adapt the software",
       "text": "Offers flexibility, allowing users to customize and adapt the software",
       "enumerated": false,
@@ -166,12 +270,27 @@
     {
       "self_ref": "#/texts/6",
       "parent": {
-        "$ref": "#/groups/0"
+        "$ref": "#/groups/1"
       },
       "children": [],
       "content_layer": "body",
       "label": "list_item",
-      "prov": [],
+      "prov": [
+        {
+          "page_no": 1,
+          "bbox": {
+            "l": 833437.5,
+            "t": 6174878.91,
+            "r": 11358562.5,
+            "b": 1821656.25,
+            "coord_origin": "BOTTOMLEFT"
+          },
+          "charspan": [
+            0,
+            0
+          ]
+        }
+      ],
       "orig": "",
       "text": "",
       "enumerated": false,
@@ -180,24 +299,54 @@
     {
       "self_ref": "#/texts/7",
       "parent": {
-        "$ref": "#/body"
+        "$ref": "#/groups/0"
       },
       "children": [],
       "content_layer": "body",
       "label": "text",
-      "prov": [],
+      "prov": [
+        {
+          "page_no": 1,
+          "bbox": {
+            "l": 833437.5,
+            "t": 6174878.91,
+            "r": 11358562.5,
+            "b": 1821656.25,
+            "coord_origin": "BOTTOMLEFT"
+          },
+          "charspan": [
+            0,
+            47
+          ]
+        }
+      ],
       "orig": "Considerations When Using Open-Source Software:",
       "text": "Considerations When Using Open-Source Software:"
     },
     {
       "self_ref": "#/texts/8",
       "parent": {
-        "$ref": "#/groups/1"
+        "$ref": "#/groups/2"
       },
       "children": [],
       "content_layer": "body",
       "label": "list_item",
-      "prov": [],
+      "prov": [
+        {
+          "page_no": 1,
+          "bbox": {
+            "l": 833437.5,
+            "t": 6174878.91,
+            "r": 11358562.5,
+            "b": 1821656.25,
+            "coord_origin": "BOTTOMLEFT"
+          },
+          "charspan": [
+            0,
+            113
+          ]
+        }
+      ],
       "orig": "Open-source projects often rely on community support, which may not be as reliable as dedicated customer service.",
       "text": "Open-source projects often rely on community support, which may not be as reliable as dedicated customer service.",
       "enumerated": false,
@@ -206,12 +355,27 @@
     {
       "self_ref": "#/texts/9",
       "parent": {
-        "$ref": "#/groups/1"
+        "$ref": "#/groups/2"
       },
       "children": [],
       "content_layer": "body",
       "label": "list_item",
-      "prov": [],
+      "prov": [
+        {
+          "page_no": 1,
+          "bbox": {
+            "l": 833437.5,
+            "t": 6174878.91,
+            "r": 11358562.5,
+            "b": 1821656.25,
+            "coord_origin": "BOTTOMLEFT"
+          },
+          "charspan": [
+            0,
+            103
+          ]
+        }
+      ],
       "orig": "Some open-source solutions may require advanced technical expertise for implementation and maintenance.",
       "text": "Some open-source solutions may require advanced technical expertise for implementation and maintenance.",
       "enumerated": false,
@@ -222,5 +386,13 @@
   "tables": [],
   "key_value_items": [],
   "form_items": [],
-  "pages": {}
+  "pages": {
+    "1": {
+      "size": {
+        "width": 12192000.0,
+        "height": 6858000.0
+      },
+      "page_no": 1
+    }
+  }
 }
