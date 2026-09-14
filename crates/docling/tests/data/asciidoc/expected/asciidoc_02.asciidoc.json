@@ -84,6 +84,9 @@
         "$ref": "#/pictures/0"
       },
       {
+        "$ref": "#/texts/26"
+      },
+      {
         "$ref": "#/pictures/1"
       }
     ],
@@ -560,7 +563,7 @@
     {
       "self_ref": "#/texts/26",
       "parent": {
-        "$ref": "#/pictures/1"
+        "$ref": "#/body"
       },
       "children": [],
       "content_layer": "body",

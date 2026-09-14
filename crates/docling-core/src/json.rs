@@ -10,7 +10,7 @@
 
 use serde_json::{json, Value};
 
-use crate::document::{ContentLayer, DoclingDocument, Node, Table};
+use crate::document::{CaptionParent, ContentLayer, DoclingDocument, Node, Table};
 
 const SCHEMA_VERSION: &str = "1.10.0";
 
@@ -369,6 +369,14 @@ struct Builder {
     /// own — a chart's caption item, which docling's office backends add to
     /// the container ahead of the picture that references it.
     pending_siblings: Vec<Value>,
+    /// `$ref`s an item wants placed in its parent's `children` right *after*
+    /// its own — an HTML `<figure>`-wrapped table's caption
+    /// ([`CaptionParent::ContainerAfter`]).
+    pending_after: Vec<Value>,
+    /// Caption `$ref`s that hang off `#/body` while their item sits deeper
+    /// ([`CaptionParent::Body`]): docling appends them to the body's children
+    /// as they are created, so they follow the top-level item being walked.
+    pending_body: Vec<Value>,
     /// What each [`Node::CommentSection`] is referenced by, in document order —
     /// its group `$ref`, or its note text's when the section says so. The index
     /// is what a [`Node::Commented`] annotation carries.
@@ -602,12 +610,14 @@ impl Builder {
                 caption_href,
                 image,
                 classification,
+                caption_parent,
             } => Some(self.add_picture(
                 caption.as_deref(),
                 caption_href.as_deref(),
                 image.as_ref(),
                 classification.as_deref().map(classification_meta),
                 parent,
+                *caption_parent,
             )),
             // A chart is a picture item in the JSON with docling's chart
             // meta — `classification` (the chart kind, as the one prediction)
@@ -639,7 +649,7 @@ impl Builder {
                     captions.push(json!({ "$ref": cap_ref }));
                 }
                 let prov = self.take_prov(0);
-                Some(self.push_picture(prov, captions, None, Some(meta), parent))
+                Some(self.push_picture(prov, captions, Vec::new(), None, Some(meta), parent))
             }
             // A DocLang-only node is omitted from the JSON body.
             Node::DoclangOnly(_) => None,
@@ -979,16 +989,15 @@ impl Builder {
         // The caption is a separate text item the table references (docling's
         // `TableItem.captions`), added before the grid so its box isn't
         // inherited by a later item.
-        let mut captions = Vec::new();
-        if let Some(cap) = t.caption.as_deref().filter(|c| !c.is_empty()) {
-            let cap_ref = self.add_text("caption", cap, &self_ref, json!({}));
-            captions.push(json!({ "$ref": cap_ref }));
-        }
+        let (captions, children) = match t.caption.as_deref().filter(|c| !c.is_empty()) {
+            Some(cap) => self.add_caption(cap, json!({}), &self_ref, parent, t.caption_parent),
+            None => (Vec::new(), Vec::new()),
+        };
         let data = table_data(t);
         self.tables.push(json!({
             "self_ref": self_ref,
             "parent": { "$ref": parent },
-            "children": [],
+            "children": children,
             "content_layer": "body",
             "label": "table",
             "prov": prov,
@@ -1001,6 +1010,45 @@ impl Builder {
         self_ref
     }
 
+    /// Add a picture's or table's caption text item where `choice` says it
+    /// hangs (#390), returning the `captions` entry for the item and the
+    /// item's own `children` (the caption, when it is the item's child).
+    /// The caption never consumes the item's pending provenance — the item
+    /// takes its box first.
+    fn add_caption(
+        &mut self,
+        text: &str,
+        extra: Value,
+        self_ref: &str,
+        parent: &str,
+        choice: CaptionParent,
+    ) -> (Vec<Value>, Vec<Value>) {
+        // docling's PDF pipeline parents the caption to the item; every
+        // declarative backend leaves `add_text`'s default — the body — even
+        // for an item inside a group; the office backends and HTML's
+        // `<figure>` hang it off the item's container.
+        let cap_parent = match choice {
+            CaptionParent::Item => self_ref,
+            CaptionParent::Container | CaptionParent::ContainerAfter => parent,
+            CaptionParent::Body => "#/body",
+        };
+        let cap_ref = json!({ "$ref": self.add_text("caption", text, cap_parent, extra) });
+        match choice {
+            CaptionParent::Item => return (vec![cap_ref.clone()], vec![cap_ref]),
+            // Created ahead of the item, so it precedes the item in the
+            // container's children — and, on the body, in the body's.
+            CaptionParent::Container => self.pending_siblings.push(cap_ref.clone()),
+            CaptionParent::Body if parent == "#/body" => {
+                self.pending_siblings.push(cap_ref.clone())
+            }
+            CaptionParent::ContainerAfter => self.pending_after.push(cap_ref.clone()),
+            // The item sits deeper: the body's children get the caption after
+            // the top-level item under walk, where docling appended it.
+            CaptionParent::Body => self.pending_body.push(cap_ref.clone()),
+        }
+        (vec![cap_ref], Vec::new())
+    }
+
     /// `meta` is the picture's docling `PictureMeta` (a classifier's
     /// predictions, a chart's kind and data), `None` for a plain picture.
     fn add_picture(
@@ -1010,31 +1058,35 @@ impl Builder {
         image: Option<&crate::PictureImage>,
         meta: Option<Value>,
         parent: &str,
+        caption_parent: CaptionParent,
     ) -> String {
         let self_ref = format!("#/pictures/{}", self.pictures.len());
         // Take the picture's own provenance before the caption text is added —
         // the caption is a separate item and must not inherit the crop's box.
         let prov = self.take_prov(0);
-        let mut captions = Vec::new();
-        if let Some(cap) = caption.filter(|c| !c.is_empty()) {
-            // Emit the caption as a text item that the picture references. A
-            // wrapping `<a href>`'s link rides as docling's `hyperlink` field
-            // on the caption item (#328).
-            let extra = match caption_href {
-                Some(href) => json!({ "hyperlink": href }),
-                None => json!({}),
-            };
-            let cap_ref = self.add_text("caption", cap, &self_ref, extra);
-            captions.push(json!({ "$ref": cap_ref }));
-        }
-        self.push_picture(prov, captions, image, meta, parent)
+        let (captions, children) = match caption.filter(|c| !c.is_empty()) {
+            Some(cap) => {
+                // Emit the caption as a text item that the picture references. A
+                // wrapping `<a href>`'s link rides as docling's `hyperlink` field
+                // on the caption item (#328).
+                let extra = match caption_href {
+                    Some(href) => json!({ "hyperlink": href }),
+                    None => json!({}),
+                };
+                self.add_caption(cap, extra, &self_ref, parent, caption_parent)
+            }
+            None => (Vec::new(), Vec::new()),
+        };
+        self.push_picture(prov, captions, children, image, meta, parent)
     }
 
-    /// Append the picture item itself — `prov` and `captions` already settled.
+    /// Append the picture item itself — `prov`, `captions` and `children`
+    /// (a PDF caption is the picture's child) already settled.
     fn push_picture(
         &mut self,
         prov: Value,
         captions: Vec<Value>,
+        children: Vec<Value>,
         image: Option<&crate::PictureImage>,
         meta: Option<Value>,
         parent: &str,
@@ -1060,7 +1112,7 @@ impl Builder {
             Some(meta) => json!({
                 "self_ref": self_ref,
                 "parent": { "$ref": parent },
-                "children": [],
+                "children": children,
                 "content_layer": "body",
                 "meta": meta,
                 "label": "picture",
@@ -1073,7 +1125,7 @@ impl Builder {
             None => json!({
                 "self_ref": self_ref,
                 "parent": { "$ref": parent },
-                "children": [],
+                "children": children,
                 "content_layer": "body",
                 "label": "picture",
                 "prov": prov,
@@ -1172,6 +1224,10 @@ impl Builder {
                 if let Some(r) = self.add_node(&nodes[i], parent) {
                     slots[i].append(&mut self.pending_siblings);
                     slots[i].push(json!({ "$ref": r }));
+                    slots[i].append(&mut self.pending_after);
+                }
+                if parent == "#/body" {
+                    slots[i].append(&mut self.pending_body);
                 }
             }
             return slots.into_iter().flatten().collect();
@@ -1201,8 +1257,14 @@ impl Builder {
                 if let Some(r) = self.add_node(&nodes[i], parent) {
                     children.append(&mut self.pending_siblings);
                     children.push(json!({ "$ref": r }));
+                    children.append(&mut self.pending_after);
                 }
                 i += 1;
+            }
+            // Body-parented captions of items deeper in the tree follow the
+            // top-level item they were created under (#390).
+            if parent == "#/body" {
+                children.append(&mut self.pending_body);
             }
         }
         children
@@ -1281,7 +1343,9 @@ fn fnv1a(s: &str) -> u64 {
 
 #[cfg(test)]
 mod tests {
-    use crate::{ContentLayer, DoclingDocument, ImageMode, Node, PictureImage, Table};
+    use crate::{
+        CaptionParent, ContentLayer, DoclingDocument, ImageMode, Node, PictureImage, Table,
+    };
     use serde_json::Value;
 
     fn doc_with_image() -> DoclingDocument {
@@ -1296,6 +1360,7 @@ mod tests {
                 data: b"foobar".to_vec(),
             }),
             classification: None,
+            caption_parent: Default::default(),
         });
         doc
     }
@@ -1383,6 +1448,7 @@ mod tests {
             cell_blocks: None,
             cells: None,
             caption: None,
+            caption_parent: Default::default(),
         }));
         let v: Value = serde_json::from_str(&doc.export_to_json()).unwrap();
         let data = &v["tables"][0]["data"];
@@ -1679,6 +1745,7 @@ mod tests {
             cell_blocks: None,
             cells: None,
             caption: None,
+            caption_parent: Default::default(),
         }));
 
         let v: Value = serde_json::from_str(&doc.export_to_json()).unwrap();
@@ -1810,5 +1877,122 @@ mod tests {
             &keys[keys.len() - 4..],
             &["prov", "comments", "orig", "text"]
         );
+    }
+
+    fn picture(caption: &str, caption_parent: CaptionParent) -> Node {
+        Node::Picture {
+            caption: Some(caption.into()),
+            caption_href: None,
+            image: None,
+            classification: None,
+            caption_parent,
+        }
+    }
+
+    fn group(children: Vec<Node>) -> Node {
+        Node::Group {
+            label: "section".into(),
+            name: None,
+            layer: None,
+            children,
+        }
+    }
+
+    fn refs(v: &Value) -> Vec<&str> {
+        v.as_array()
+            .unwrap()
+            .iter()
+            .map(|r| r["$ref"].as_str().unwrap())
+            .collect()
+    }
+
+    /// #390: a declarative backend's caption is docling's `add_text` default —
+    /// a body child, appended as it is created — wherever the picture sits:
+    /// ahead of a top-level picture, behind the top-level item enclosing a
+    /// nested one. The picture references it either way and has no children.
+    #[test]
+    fn a_body_caption_follows_the_enclosing_top_level_item() {
+        let mut doc = DoclingDocument::new("t");
+        doc.push(picture("top", CaptionParent::Body));
+        doc.push(group(vec![
+            Node::Paragraph { text: "p".into() },
+            picture("nested", CaptionParent::Body),
+        ]));
+        doc.push(Node::Paragraph {
+            text: "after".into(),
+        });
+        let v: Value = serde_json::from_str(&doc.export_to_json()).unwrap();
+        assert_eq!(
+            refs(&v["body"]["children"]),
+            [
+                "#/texts/0",
+                "#/pictures/0",
+                "#/groups/0",
+                "#/texts/2",
+                "#/texts/3"
+            ]
+        );
+        assert_eq!(
+            refs(&v["groups"][0]["children"]),
+            ["#/texts/1", "#/pictures/1"]
+        );
+        for (cap, pic) in [(0, 0), (2, 1)] {
+            assert_eq!(v["texts"][cap]["label"], "caption");
+            assert_eq!(v["texts"][cap]["parent"]["$ref"], "#/body");
+            assert_eq!(
+                refs(&v["pictures"][pic]["captions"]),
+                [format!("#/texts/{cap}")]
+            );
+            assert_eq!(v["pictures"][pic]["children"], serde_json::json!([]));
+        }
+    }
+
+    /// The PDF pipeline's caption is the picture's (or table's) own child,
+    /// as docling attaches a layout caption.
+    #[test]
+    fn an_item_caption_is_the_items_first_child() {
+        let mut doc = DoclingDocument::new("t");
+        doc.push(picture("fig", CaptionParent::Item));
+        doc.push(Node::Table(Table {
+            rows: vec![vec!["a".into()]],
+            caption: Some("tab".into()),
+            caption_parent: CaptionParent::Item,
+            ..Table::default()
+        }));
+        let v: Value = serde_json::from_str(&doc.export_to_json()).unwrap();
+        assert_eq!(refs(&v["body"]["children"]), ["#/pictures/0", "#/tables/0"]);
+        assert_eq!(v["texts"][0]["parent"]["$ref"], "#/pictures/0");
+        assert_eq!(refs(&v["pictures"][0]["children"]), ["#/texts/0"]);
+        assert_eq!(refs(&v["pictures"][0]["captions"]), ["#/texts/0"]);
+        assert_eq!(v["texts"][1]["parent"]["$ref"], "#/tables/0");
+        assert_eq!(refs(&v["tables"][0]["children"]), ["#/texts/1"]);
+        assert_eq!(refs(&v["tables"][0]["captions"]), ["#/texts/1"]);
+    }
+
+    /// A container caption sits beside its item under the item's parent —
+    /// ahead of it (an office chart's title) or behind it (an HTML
+    /// `<figure>`'s table, whose figcaption docling adds after the table).
+    #[test]
+    fn a_container_caption_is_the_items_sibling() {
+        let mut doc = DoclingDocument::new("t");
+        doc.push(group(vec![
+            picture("chart", CaptionParent::Container),
+            Node::Table(Table {
+                rows: vec![vec!["a".into()]],
+                caption: Some("figcaption".into()),
+                caption_parent: CaptionParent::ContainerAfter,
+                ..Table::default()
+            }),
+        ]));
+        let v: Value = serde_json::from_str(&doc.export_to_json()).unwrap();
+        assert_eq!(refs(&v["body"]["children"]), ["#/groups/0"]);
+        assert_eq!(
+            refs(&v["groups"][0]["children"]),
+            ["#/texts/0", "#/pictures/0", "#/tables/0", "#/texts/1"]
+        );
+        assert_eq!(v["texts"][0]["parent"]["$ref"], "#/groups/0");
+        assert_eq!(v["texts"][1]["parent"]["$ref"], "#/groups/0");
+        assert_eq!(v["pictures"][0]["children"], serde_json::json!([]));
+        assert_eq!(v["tables"][0]["children"], serde_json::json!([]));
     }
 }

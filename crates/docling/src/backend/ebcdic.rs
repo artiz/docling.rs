@@ -251,6 +251,7 @@ impl DeclarativeBackend for EbcdicBackend {
                 cell_blocks: None,
                 cells: None,
                 caption: None,
+                caption_parent: Default::default(),
             }));
         }
         Ok(doc)

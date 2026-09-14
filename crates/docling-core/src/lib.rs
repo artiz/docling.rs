@@ -26,8 +26,8 @@ mod markdown;
 pub use confidence::{ConfidenceReport, PageConfidence, QualityGrade};
 pub use doclang::inline_runs_from_markdown;
 pub use document::{
-    inline_paragraph_node, ContentLayer, DoclingDocument, FieldItem, InlineRun, ListItemDclx, Node,
-    PictureClass, PictureImage, Script, Table, TableCell, TableStructure,
+    inline_paragraph_node, CaptionParent, ContentLayer, DoclingDocument, FieldItem, InlineRun,
+    ListItemDclx, Node, PictureClass, PictureImage, Script, Table, TableCell, TableStructure,
 };
 pub use labels::DocItemLabel;
 pub use markdown::{ImageMode, MarkdownStreamer};

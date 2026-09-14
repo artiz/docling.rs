@@ -125,6 +125,9 @@ pub enum Node {
         /// Serialized as docling's `classification` annotation + `meta` field
         /// on the JSON picture item; Markdown/DocLang output is unaffected.
         classification: Option<Vec<PictureClass>>,
+        /// Where the caption item hangs in the JSON tree (#390); see
+        /// [`CaptionParent`]. Markdown, DocLang and LaTeX ignore it.
+        caption_parent: CaptionParent,
     },
     /// A display-math formula item decoded by the CodeFormula enrichment:
     /// `latex` is the model's LaTeX (no `$$` wrapping), `orig` the raw glyph
@@ -467,6 +470,38 @@ pub struct TableCell {
     pub row_section: bool,
 }
 
+/// Where a picture's or table's caption text item hangs in the docling-JSON
+/// tree (#390). docling's backends do not agree, and the JSON structure is
+/// the only surface that shows it (Markdown, DocLang and LaTeX place a
+/// caption by its item, whatever its parent): the PDF pipeline parents a
+/// layout caption to the picture or table it belongs to, while every
+/// declarative backend creates the caption with `doc.add_text(label=CAPTION)`
+/// and no parent — the document body — even when the item itself sits in a
+/// group or under a section header (JATS, LaTeX, HTML, Markdown, EPUB,
+/// AsciiDoc all do). The office backends hang a chart's title caption off the
+/// chart's container (the sheet group, the slide, docx's current parent,
+/// docling#4190) — that is [`Node::Chart`]'s own path, not this choice. A
+/// backend that adds a new captioned item picks the variant matching
+/// upstream's `add_text` call for that format; the default is upstream's
+/// default.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum CaptionParent {
+    /// `#/body`, listed after the enclosing top-level item — docling's
+    /// `add_text` default, which every declarative backend leaves alone.
+    #[default]
+    Body,
+    /// The item's own container (its `parent`), listed ahead of the item:
+    /// the caption is created first, as docling's office backends do.
+    Container,
+    /// The item's own container, listed *after* the item: docling's HTML
+    /// backend adds a `<figure>`-wrapped table, then its `<figcaption>` under
+    /// `self.parents[self.level]` (docling#4050).
+    ContainerAfter,
+    /// The item itself — the caption is the picture's or table's first
+    /// child, as docling's PDF pipeline attaches a layout caption.
+    Item,
+}
+
 /// A simple row-major table. By default `rows[0]` is the header row; a
 /// [`TableStructure`] overlay overrides that and adds column spans.
 #[derive(Debug, Clone, PartialEq, Default)]
@@ -497,6 +532,9 @@ pub struct Table {
     /// table references; DocLang emits a `<caption>` as the table's first child.
     /// `None` → the table has no caption.
     pub caption: Option<String>,
+    /// Where the caption item hangs in the JSON tree (#390); see
+    /// [`CaptionParent`]. Only the JSON export reads it.
+    pub caption_parent: CaptionParent,
     /// Optional per-cell bounding boxes, same shape as [`Self::rows`]: `[l, t,
     /// r, b]` in page points with a **top-left** origin (the PDF pipeline's
     /// native space). Set by the ML pipeline's TableFormer paths — a spanned

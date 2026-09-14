@@ -122,6 +122,7 @@ fn nodes_for(label: &str, inner: &str) -> Vec<Node> {
             caption_href: None,
             image: None,
             classification: None,
+            caption_parent: Default::default(),
         }],
         "Title" => text_node(inner, |t| Node::Heading { level: 1, text: t }),
         "Section-Header" => text_node(inner, |t| Node::Heading { level: 2, text: t }),

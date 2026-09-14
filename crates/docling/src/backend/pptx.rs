@@ -448,6 +448,7 @@ fn handle_shape(
                         caption_href: None,
                         image: images.get(&rid).cloned(),
                         classification: None,
+                        caption_parent: Default::default(),
                     },
                 );
             }
@@ -679,8 +680,11 @@ fn handle_text_shape(sp: XmlNode, location: [u16; 4], doc: &mut DoclingDocument)
                     Placeholder::Title => {
                         push_located(doc, location, Node::Heading { level: 1, text })
                     }
-                    // docling intends SECTION_HEADER for subtitles but a bug
-                    // leaves the label as PARAGRAPH, so subtitles render as text.
+                    // A subtitle placeholder is a paragraph on purpose: docling
+                    // settled it in docling#3785 and, after briefly moving it
+                    // to SECTION_HEADER behind an option, reverted to that in
+                    // docling#4190 (which also deleted the dead `_handle_title`
+                    // that would have labelled it). Not a bug to fix.
                     _ => push_located(doc, location, Node::Paragraph { text }),
                 }
             }
@@ -836,6 +840,7 @@ fn parse_table(tbl: XmlNode) -> Option<Table> {
         cell_blocks: None,
         cells: None,
         caption: None,
+        caption_parent: Default::default(),
     })
 }
 

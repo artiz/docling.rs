@@ -11,7 +11,7 @@ use crate::backend::markdown::escape_text;
 use crate::backend::DeclarativeBackend;
 use crate::error::ConversionError;
 use crate::source::SourceDocument;
-use docling_core::{DoclingDocument, Node, PictureImage, Table};
+use docling_core::{CaptionParent, DoclingDocument, Node, PictureImage, Table};
 
 pub struct DoclingJsonBackend;
 
@@ -372,6 +372,7 @@ fn table_item(item: &Value, root: &Value, doc: &mut DoclingDocument) {
             cell_blocks: None,
             cells: None,
             caption: caption_of(item, root),
+            caption_parent: caption_parent_of(item, root),
         }));
     }
 }
@@ -384,10 +385,44 @@ fn flags(cells: &[Value], f: impl FnMut(&Value) -> bool) -> Vec<bool> {
 fn picture_item(item: &Value, root: &Value, doc: &mut DoclingDocument) {
     doc.push(Node::Picture {
         caption: caption_of(item, root),
+        caption_parent: caption_parent_of(item, root),
         caption_href: None,
         image: picture_image(item),
         classification: None,
     });
+}
+
+/// Where the item's first caption hangs in the source tree, so a re-export
+/// keeps it there (#390): on the item (a PDF layout caption), on the item's
+/// own parent — ahead of the item or behind it, by the parent's `children`
+/// order — or, anywhere else, docling's `add_text` default, the body.
+fn caption_parent_of(item: &Value, root: &Value) -> CaptionParent {
+    let cap = &item["captions"][0];
+    let Some(cap_ref) = cap["$ref"].as_str() else {
+        return CaptionParent::Body;
+    };
+    let cap_parent = resolve(cap, root)
+        .and_then(|c| c["parent"]["$ref"].as_str())
+        .unwrap_or("#/body");
+    let self_ref = item["self_ref"].as_str().unwrap_or("");
+    let item_parent = &item["parent"];
+    if cap_parent == self_ref {
+        CaptionParent::Item
+    } else if cap_parent == ref_kind(item_parent) && cap_parent != "#/body" {
+        let pos = |r: &str| {
+            resolve(item_parent, root)?
+                .get("children")?
+                .as_array()?
+                .iter()
+                .position(|c| c["$ref"] == r)
+        };
+        match (pos(cap_ref), pos(self_ref)) {
+            (Some(c), Some(i)) if c > i => CaptionParent::ContainerAfter,
+            _ => CaptionParent::Container,
+        }
+    } else {
+        CaptionParent::Body
+    }
 }
 
 /// The picture's embedded image — docling's `ImageRef` with a `data:` URI
@@ -535,6 +570,102 @@ mod tests {
             ))
             .unwrap()
             .export_to_markdown()
+    }
+
+    fn item(self_ref: &str, parent: &str, label: &str, extra: &str) -> String {
+        format!(
+            r#"{{"self_ref":"{self_ref}","parent":{{"$ref":"{parent}"}},"children":[],"label":"{label}","prov":[]{extra}}}"#
+        )
+    }
+
+    /// #390: where a caption hangs is read back from the source tree, so a
+    /// re-export keeps a PDF caption on its picture, an office chart's on the
+    /// sheet ahead of the picture, and a declarative backend's on the body.
+    #[test]
+    fn caption_parents_round_trip() {
+        let cap = |i: usize, parent: &str| {
+            item(
+                &format!("#/texts/{i}"),
+                parent,
+                "caption",
+                r#","orig":"c","text":"c""#,
+            )
+        };
+        let pic = |i: usize, parent: &str, cap: usize| {
+            item(
+                &format!("#/pictures/{i}"),
+                parent,
+                "picture",
+                &format!(r##","captions":[{{"$ref":"#/texts/{cap}"}}],"annotations":[]"##),
+            )
+        };
+        let json = format!(
+            r##"{{"schema_name":"DoclingDocument","version":"1.10.0","name":"t",
+            "body":{{"self_ref":"#/body","children":[{{"$ref":"#/pictures/0"}},{{"$ref":"#/groups/0"}},{{"$ref":"#/texts/1"}},{{"$ref":"#/pictures/2"}}],"name":"_root_","label":"unspecified"}},
+            "furniture":{{"self_ref":"#/furniture","children":[],"name":"_root_","label":"unspecified"}},
+            "groups":[{{"self_ref":"#/groups/0","parent":{{"$ref":"#/body"}},"children":[{{"$ref":"#/texts/2"}},{{"$ref":"#/pictures/1"}}],"name":"sheet","label":"section"}}],
+            "texts":[{},{},{}],
+            "pictures":[{},{},{}],
+            "tables":[],"key_value_items":[],"form_items":[],"pages":{{}}}}"##,
+            cap(0, "#/pictures/0"),
+            cap(1, "#/body"),
+            cap(2, "#/groups/0"),
+            pic(0, "#/body", 0),
+            pic(1, "#/groups/0", 2),
+            pic(2, "#/body", 1),
+        );
+        let doc = DoclingJsonBackend
+            .convert(&SourceDocument::from_bytes(
+                "t.json",
+                InputFormat::JsonDocling,
+                json.into_bytes(),
+            ))
+            .unwrap();
+        let parents: Vec<CaptionParent> = doc
+            .nodes
+            .iter()
+            .filter_map(|n| match n {
+                Node::Picture { caption_parent, .. } => Some(*caption_parent),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(
+            parents,
+            [
+                CaptionParent::Item,
+                CaptionParent::Container,
+                CaptionParent::Body
+            ]
+        );
+        let v: Value = serde_json::from_str(&doc.export_to_json()).unwrap();
+        let parent = |i: usize| {
+            v["texts"][i]["parent"]["$ref"]
+                .as_str()
+                .unwrap()
+                .to_string()
+        };
+        assert_eq!(parent(0), "#/pictures/0");
+        // A `section` group is replayed transparently (only lists come back
+        // as groups), so the container caption lands beside its picture on
+        // the body — ahead of it, as a chart's title is.
+        assert_eq!(parent(1), "#/body");
+        assert_eq!(parent(2), "#/body");
+        let body: Vec<&str> = v["body"]["children"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|r| r["$ref"].as_str().unwrap())
+            .collect();
+        assert_eq!(
+            body,
+            [
+                "#/pictures/0",
+                "#/texts/1",
+                "#/pictures/1",
+                "#/texts/2",
+                "#/pictures/2"
+            ]
+        );
     }
 
     /// #403: a picture's `image` (docling's `ImageRef`, a `data:` URI) comes

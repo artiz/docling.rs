@@ -403,6 +403,7 @@ mod picture_only {
                 caption_href: None,
                 image: None,
                 classification: None,
+                caption_parent: Default::default(),
             }),
         };
         assert!(!super::nodes_have_text(std::slice::from_ref(&pic)));

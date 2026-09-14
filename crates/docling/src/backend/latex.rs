@@ -300,6 +300,7 @@ fn emit_table(inner: &str, doc: &mut DoclingDocument) {
             cell_blocks: None,
             cells: None,
             caption: None,
+            caption_parent: Default::default(),
         }));
     }
 }
