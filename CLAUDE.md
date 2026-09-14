@@ -95,7 +95,8 @@ cargo check -p docling --no-default-features --features pdf-text \
   admission control), `DOCLING_RS_FP32`,
   `DOCLING_RS_EP` (GPU execution providers), `DOCLING_RS_ASR_LANG`,
   `DOCLING_RS_OCR_LANG` (en default; `ch` = the docling-conformance OCR
-  model, which conformance scripts pin themselves),
+  model, which conformance scripts pin themselves; BCP-47 tags for either
+  language — `en-US`, `zh-Hans` — resolve to the same two, #388),
   `DOCLING_RS_OCR_MODE` (#254; docling's `OcrMode` —
   `full_page`/`layout_regions` force-discard the text layer),
   `DOCLING_RS_OCR_SCALE` (#254; OCR input px/pt — resampled from the 2.0

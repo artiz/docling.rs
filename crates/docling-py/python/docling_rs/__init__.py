@@ -243,14 +243,26 @@ class DocumentConverter:
                 ocr_scale = float(scale)
             langs = list(getattr(ocr_opts, "lang", None) or [])
             if langs:
-                head = str(langs[0]).lower()
-                if head in ("en", "english"):
+                # The same spellings the engine's own `ocr_lang` accepts (#388):
+                # engine codes, docling's legacy names, EasyOCR's, and BCP-47
+                # tags for English / Chinese with or without docling's `iso:`
+                # prefix; script and region subtags are ignored. Passed through
+                # as written — the engine canonicalizes and would reject
+                # anything else, so the unrecognized case warns here instead.
+                head = str(langs[0]).strip().lower()
+                if head.startswith("iso:"):
+                    head = head[4:].strip()
+                # `ch_sim`, `ch_tra`, `chinese_cht`, `en_GB` all reduce to
+                # their first subtag.
+                primary = head.replace("_", "-").split("-", 1)[0]
+                if primary in ("en", "eng", "english"):
                     ocr_lang = "en"
-                elif head in ("ch", "chinese", "ch_sim", "zh"):
+                elif primary in ("ch", "zh", "zho", "chi", "cmn", "chinese"):
                     ocr_lang = "ch"
                 else:
                     warnings.warn(
-                        f"docling.rs OCR supports en|ch recognition models; "
+                        f"docling.rs OCR ships English and Chinese recognition "
+                        f"models only (en | ch, or a BCP-47 tag for either); "
                         f"ocr_options.lang={langs!r} is ignored",
                         stacklevel=2,
                     )

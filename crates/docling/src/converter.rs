@@ -254,7 +254,11 @@ impl DocumentConverter {
         let raw = self.ocr_lang.as_deref()?;
         let parsed = docling_pdf::OcrLang::parse(raw);
         if parsed.is_none() {
-            eprintln!("docling: ocr_lang {raw:?} is not en|ch; using the default");
+            eprintln!(
+                "docling: ocr_lang {raw:?} names no language the OCR models read ({}); using \
+                 the default",
+                docling_pdf::OcrLang::ACCEPTED
+            );
         }
         parsed
     }

@@ -45,7 +45,10 @@ pub struct ConverterOptions {
     pub pages: Option<String>,
     /// OCR recognition language for scanned PDF/image pages: `"en"` (default;
     /// proper Latin word spacing) or `"ch"` (the multilingual
-    /// docling-conformance model). Formats that never OCR ignore it.
+    /// docling-conformance model), or a BCP-47 tag for either language —
+    /// `"en-US"`, `"eng"`, `"zh"`, `"zh-Hans"`, `"zh-TW"`, docling's `iso:`
+    /// prefix accepted (#388); script and region subtags are ignored. Any
+    /// other language is an error. Formats that never OCR ignore it.
     pub ocr_lang: Option<String>,
     /// Which regions feed the OCR (docling's `OcrMode`, #254): `"default"` |
     /// `"full_page"` | `"layout_regions"` | `"pdf_aware_layout_regions"`.
@@ -180,7 +183,8 @@ pub struct ConvertOptions {
     pub video_frames: Option<u32>,
     /// PDF page window `"A-B"` (or `"N"`), 1-based inclusive (#80).
     pub pages: Option<String>,
-    /// OCR recognition language for scanned pages: `"en"` (default) | `"ch"`.
+    /// OCR recognition language for scanned pages: `"en"` (default) | `"ch"`,
+    /// or a BCP-47 tag for either (`"en-US"`, `"zh-Hans"`, #388).
     pub ocr_lang: Option<String>,
     /// Which regions feed the OCR (docling's `OcrMode`, #254): `"default"` |
     /// `"full_page"` | `"layout_regions"` | `"pdf_aware_layout_regions"`.
@@ -494,11 +498,15 @@ fn resolve_vlm(
     }
 }
 
-/// Validate an `ocrLang` option (`"en"`/`"ch"`); an unknown id is an error.
+/// Validate an `ocrLang` option (`"en"`/`"ch"` or a BCP-47 tag for English /
+/// Chinese, #388); an unknown language is an error.
 fn parse_ocr_lang(s: Option<String>) -> Result<Option<String>> {
     match s {
         Some(v) if docling::OcrLang::parse(&v).is_some() => Ok(Some(v)),
-        Some(v) => Err(Error::from_reason(format!("ocrLang {v:?} is not en|ch"))),
+        Some(v) => Err(Error::from_reason(format!(
+            "ocrLang {v:?} is not a supported OCR language ({})",
+            docling::OcrLang::ACCEPTED
+        ))),
         None => Ok(None),
     }
 }

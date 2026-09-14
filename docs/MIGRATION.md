@@ -458,7 +458,19 @@ These are deliberate or unavoidable divergences, not bugs.
     `ocr_scale` resamples the OCR input from the pipeline's 2.0 px/pt page
     render instead of re-rendering (docling renders natively at
     `72 × scale` dpi, default 3); unset keeps the pinned 144 dpi baseline,
-    so conformance snapshots never move.
+    so conformance snapshots never move. **OCR language spellings** (#388,
+    docling#4075's BCP-47 canonicalization): upstream reads a bare value as
+    the engine's native code and an `iso:`-prefixed one as a BCP-47 tag
+    reduced to language + script (region dropped), then maps it per engine —
+    RapidOCR's `en` and `zh-Hans` → `ch`. This engine ships exactly those two
+    PP-OCRv3 recognizers, so `ocr_lang` on every surface (`--ocr-lang`,
+    `DOCLING_RS_OCR_LANG`, serve, Python, Node, RAG's `RAG_OCR_LANG`) accepts
+    `en`/`ch` plus any English or Chinese tag with or without the prefix
+    (`en-US`, `eng`, `english`, `zh`, `zh-Hans`, `zh-TW`, `zho`, `chinese`,
+    EasyOCR's `ch_sim`); script/region subtags are ignored, a traditional-
+    script request gets the multilingual `ch` recognizer (upstream would pick
+    RapidOCR's separate `chinese_cht`, not shipped here), and any other
+    language is rejected (warn-and-default only for the env var).
 
 14. **Per-request chunking configuration** (docling 2.117–2.119
     service-datamodel, #256): `to=chunks` accepts `chunker`

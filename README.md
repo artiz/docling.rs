@@ -737,7 +737,15 @@ good Latin word spacing; the docling conformance corpus, however, was
 generated with the multilingual `ch_` model — if you're comparing output
 against Python docling byte-for-byte, run with `--ocr-lang ch`
 (`DOCLING_RS_OCR_LANG=ch`). On ordinary scans `en` reads better; on the
-conformance fixtures `ch` matches the groundtruth exactly.
+conformance fixtures `ch` matches the groundtruth exactly. Both spellings are
+the engine's own codes; BCP-47 tags for either language resolve to the same
+two models (#388, docling#4075's canonicalization): `en-US`, `en_GB`, `eng`,
+`english` → `en`; `zh`, `zh-Hans`, `zh-CN`, `zh-TW`, `zho`, `chinese`,
+EasyOCR's `ch_sim` → `ch`, with or without docling's `iso:` prefix — script
+and region subtags are ignored (a traditional-script request also gets the
+multilingual `ch` recognizer, the closest model shipped). Any other language
+(`de`, `ja`, …) is rejected by the CLI/serve/bindings and warns-and-defaults
+in `DOCLING_RS_OCR_LANG`.
 
 Two more OCR knobs mirror docling 2.116+ options (#254), on every surface
 (CLI flag, `DocumentConverter`/`Pipeline` builder, serve option, Python
@@ -1396,7 +1404,7 @@ downloads), `DOCLING_RS_VLM_EXTRA_BODY` (extra JSON merged into VLM requests).
 OCR recognition defaults to the **English** PP-OCRv3 model: the multilingual
 `ch_` model reads Latin text with broken word spacing (`Refactorexisting
 microservices writtenonJava`-style output on ordinary scans). The switch
-plumbs through every surface — CLI `--ocr-lang en|ch`,
+plumbs through every surface — CLI `--ocr-lang en|ch` (or a BCP-47 tag, #388),
 `DocumentConverter::ocr_lang` / `Pipeline::ocr_lang`, serve `ocr_lang`
 option, Python `ocr_lang=` kwarg (also mapped from docling-shaped
 `ocr_options.lang`), Node `ocrLang` option — or process-wide,

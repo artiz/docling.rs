@@ -45,12 +45,36 @@ pub enum OcrLang {
 }
 
 impl OcrLang {
-    /// Parse a user-supplied language id. `None` for anything but `en`/`ch`
-    /// (trimmed, case-insensitive) — callers surface their own error/warning.
+    /// Parse a user-supplied language id (#388): the engine's own codes
+    /// (`en`, `ch`) and BCP-47 tags naming a language one of the two
+    /// recognizers reads, trimmed and case-insensitive. `None` for anything
+    /// else — callers surface their own error/warning.
+    ///
+    /// docling canonicalizes OCR languages across its engines (docling#4075):
+    /// a bare value is the engine's native code, an `iso:`-prefixed value a
+    /// BCP-47 tag reduced to a language-script pair with the region dropped
+    /// (`zh-CN` and `zh-Hans` are the same recognizer, `en-GB` is `en`), and
+    /// the RapidOCR adapter maps `en` → its `en` model and `zh-Hans` → `ch`.
+    /// With only those two PP-OCRv3 pairs on board there is no ambiguity, so
+    /// the prefix is optional here: `en-US`, `eng`, `zh`, `zh-Hans`, `iso:zh-CN`
+    /// all resolve without a warning. Accepted primary subtags: English as
+    /// `en` / ISO 639-2/3 `eng` / docling's legacy `english`; Chinese as the
+    /// engine code `ch` (and RapidOCR's `chinese_cht`), `zh` / `zho` / `chi` /
+    /// `cmn` / legacy `chinese` / EasyOCR's `ch_sim` / `ch_tra`. Script,
+    /// region and variant subtags (`-Hans`, `-Hant`, `-CN`, `-TW`, `_US`) are
+    /// ignored: a traditional-script request (`zh-Hant`, `zh-TW`) gets the
+    /// multilingual `ch` recognizer too, the closest model shipped — upstream
+    /// would pick RapidOCR's separate `chinese_cht`, which this engine does
+    /// not carry. Genuinely unsupported languages (`de`, `fr`, `ja`, …) parse
+    /// to `None` and keep warning.
     pub fn parse(s: &str) -> Option<Self> {
-        match s.trim().to_ascii_lowercase().as_str() {
-            "en" => Some(Self::En),
-            "ch" => Some(Self::Ch),
+        let token = s.trim().to_ascii_lowercase();
+        let tag = token.strip_prefix("iso:").unwrap_or(&token).trim();
+        let primary = tag.split(['-', '_']).next().unwrap_or_default();
+        match primary {
+            "en" | "eng" | "english" => Some(Self::En),
+            "ch" | "chinese_cht" | "zh" | "zho" | "chi" | "cmn" | "chinese" | "ch_sim"
+            | "ch_tra" => Some(Self::Ch),
             _ => None,
         }
     }
@@ -62,10 +86,18 @@ impl OcrLang {
             return Self::default();
         };
         Self::parse(&raw).unwrap_or_else(|| {
-            eprintln!("docling-pdf: DOCLING_RS_OCR_LANG={raw:?} is not en|ch; using en");
+            eprintln!(
+                "docling-pdf: DOCLING_RS_OCR_LANG={raw:?} names no language the en/ch \
+                 recognizers read ({}); using en",
+                Self::ACCEPTED
+            );
             Self::default()
         })
     }
+
+    /// The accepted spellings, for error messages and docs.
+    pub const ACCEPTED: &'static str =
+        "en | ch, or a BCP-47 tag for English or Chinese such as en-US, eng, zh, zh-Hans, zh-TW";
 }
 
 /// Which document regions feed the OCR — docling 2.116's `OcrMode` (#254,
@@ -410,6 +442,53 @@ fn recognize_batch(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// #388: BCP-47 tags and the ISO 639-2/3 codes for English and Chinese
+    /// resolve to the two recognizers, with or without docling's `iso:`
+    /// prefix and whatever the script/region subtags; other languages and
+    /// nonsense stay `None`.
+    #[test]
+    fn ocr_lang_accepts_bcp47_tags_for_the_two_recognizers() {
+        for id in [
+            "en",
+            "EN",
+            " en ",
+            "en-US",
+            "en_GB",
+            "eng",
+            "english",
+            "iso:en",
+            "ISO:en-GB",
+            "en-Latn-US",
+        ] {
+            assert_eq!(OcrLang::parse(id), Some(OcrLang::En), "{id:?}");
+        }
+        for id in [
+            "ch",
+            "zh",
+            "zho",
+            "chi",
+            "cmn",
+            "chinese",
+            "ch_sim",
+            "ch_tra",
+            "chinese_cht",
+            "zh-Hans",
+            "zh-Hant",
+            "zh-CN",
+            "zh-TW",
+            "zh-Hant-HK",
+            "zh_SG",
+            "iso:zh-Hans",
+        ] {
+            assert_eq!(OcrLang::parse(id), Some(OcrLang::Ch), "{id:?}");
+        }
+        for id in [
+            "", "de", "fr-FR", "ja", "deu", "cn", "latin", "iso:", "iso:und", "e",
+        ] {
+            assert_eq!(OcrLang::parse(id), None, "{id:?}");
+        }
+    }
 
     /// #254: docling's four `OcrMode` ids parse; `full_page`/`layout_regions`
     /// reduce to the force-full-page machinery, the default/pdf-aware pair to

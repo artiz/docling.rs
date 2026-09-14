@@ -177,8 +177,12 @@ conv = DocumentConverter(format_options={InputFormat.PDF: PdfFormatOption(pipeli
 
 For scanned pages, `ocr_lang="en"|"ch"` picks the OCR recognition model (`en`
 is the default — proper Latin word spacing; `ch` is the multilingual
-docling-conformance model). docling-shaped `ocr_options.lang` lists map onto
-the same switch (`["english"]` → `en`, `["chinese"]` → `ch`).
+docling-conformance model). BCP-47 tags for either language resolve to the
+same two models — `"en-US"`, `"eng"`, `"zh"`, `"zh-Hans"`, `"zh-TW"`, with or
+without docling's `iso:` prefix (#388; script and region subtags are ignored,
+other languages raise `ValueError`). docling-shaped `ocr_options.lang` lists
+map onto the same switch the same way (`["english"]` → `en`, `["chinese"]` /
+`["iso:zh-Hans"]` → `ch`; the first entry wins).
 
 The Rust engine acts on `do_ocr`, `do_table_structure`, the opt-in enrichment
 flags `do_picture_classification` / `do_code_enrichment` /

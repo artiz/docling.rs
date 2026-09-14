@@ -361,7 +361,9 @@ JSON output always embeds extracted images as data URIs.
 
 For scanned PDFs/images, `ocrLang: 'en' | 'ch'` picks the OCR recognition
 model (`en` is the default — proper Latin word spacing; `ch` is the
-multilingual docling-conformance model), and `pages: 'A-B'` converts only that
+multilingual docling-conformance model; BCP-47 tags for either language —
+`'en-US'`, `'eng'`, `'zh'`, `'zh-Hans'`, `'zh-TW'` — resolve to the same two
+models, #388), and `pages: 'A-B'` converts only that
 1-based PDF page window.
 
 ## API
@@ -406,7 +408,9 @@ constructor; output options (`to`, `imageMode`, `artifactsDir`) are per call.
 - `allowedFormats`: restrict the converter to these format ids/extensions.
 - `pages`: convert only this PDF page window, `"A-B"` or `"N"` (1-based inclusive).
 - `ocrLang`: OCR recognition language for scanned pages, `"en"` (default) or
-  `"ch"` (the multilingual docling-conformance model).
+  `"ch"` (the multilingual docling-conformance model), or a BCP-47 tag for
+  either language (`"en-US"`, `"eng"`, `"zh"`, `"zh-Hans"`, `"zh-TW"`; docling's
+  `iso:` prefix accepted). Other languages are rejected.
 - `forceFullPageOcr`: OCR every PDF page even when it carries a text layer
   (docling's `force_full_page_ocr`).
 - `noTextPanels`: keep every detected picture as a picture — disable the
