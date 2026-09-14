@@ -376,8 +376,9 @@ These are deliberate or unavoidable divergences, not bugs.
      ligature recomposition, loose-box geometry. Plus docling's markdown escaping,
      docling-parse's typographic-punctuation table (every curly quote → `'`),
      wrap dehyphenation, paragraph-continuation merging, docling's rule-based
-     reading-order predictor with cluster cells joined in docling-parse index
-     order, and false-picture / page-number layout fixes. The parser is now the **sole** text
+     reading-order predictor (2.127's same-row links included, #424) with
+     cluster cells joined in docling-parse index order, and false-picture /
+     page-number layout fixes. The parser is now the **sole** text
      source — pdfium does only page rasterisation + link annotations. Its per-word
      cells reproduce docling-parse's `word_cells` byte-for-byte (377/377 on
      `2305-pg9`), which is what TableFormer matches against; a char-frequency

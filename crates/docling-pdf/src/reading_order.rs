@@ -12,13 +12,26 @@
 //! wrong.
 //!
 //! Everything runs in **bottom-left origin** (y grows upward), matching docling;
-//! callers pass top-left page coordinates and the page height. The `l2r`/`r2l`
-//! maps are omitted because docling disables them (a `False and …` guard).
+//! callers pass top-left page coordinates and the page height.
+//!
+//! **Same-row pairs** (`_init_l2r_map`, docling 2.127 — #424): two elements
+//! that are *consecutive in the page's assembly order* (docling's `cid`, the
+//! postprocessor's source-cell order), the left one strictly left of the right
+//! one, and sharing a row (vertical IoU > 0.8) are linked left→right. The link
+//! is an up/down edge in its own right, and a vertical edge that would land on
+//! the left partner is redirected to the row's right-most element, so a page
+//! reads `left, right, next row` instead of stranding the right-hand item
+//! wherever the vertical graph happens to reach it. The row test needs the
+//! callers' `cids`; without them (all distinct but non-consecutive) no row
+//! links form, which is the pre-#424 behaviour.
 
 const EPS: f32 = 1.0e-3;
 /// Horizontal-dilation threshold, normalized by page width
 /// (`_horizontal_dilation_threshold_norm`).
 const DILATION_THRESHOLD_NORM: f32 = 0.15;
+/// Vertical IoU two consecutive elements need to count as one row
+/// (`overlaps_vertically_with_iou(pelem_j, 0.8)`).
+const ROW_IOU: f32 = 0.8;
 
 /// A page element's box in bottom-left origin: `t > b` (top edge higher).
 #[derive(Clone, Copy)]
@@ -39,6 +52,20 @@ impl Bl {
     fn strictly_above(&self, o: &Bl) -> bool {
         (self.b + EPS) > o.t
     }
+    /// `is_strictly_left_of`: self ends before other starts.
+    fn strictly_left_of(&self, o: &Bl) -> bool {
+        (self.r + EPS) < o.l
+    }
+    /// `overlaps_vertically_with_iou` (bottom-left branch): the vertical
+    /// intersection over the vertical union exceeds `iou`; disjoint spans fail.
+    fn overlaps_v_iou(&self, o: &Bl, iou: f32) -> bool {
+        if self.t <= o.b || o.t <= self.b {
+            return false;
+        }
+        let (u0, u1) = (self.b.min(o.b), self.t.max(o.t));
+        let (i0, i1) = (self.b.max(o.b), self.t.min(o.t));
+        (i1 - i0) / (u1 - u0) > iou
+    }
     /// `PageElement.__lt__` for same-page elements: a horizontally-overlapping
     /// pair reads higher-first (larger bottom edge in bottom-left), otherwise the
     /// left-most reads first. Returns whether `self` reads before `other`.
@@ -51,15 +78,56 @@ impl Bl {
     }
 }
 
+/// `_init_l2r_map`: the same-row partner to the right of each element
+/// (`l2r[i]`) and to the left (`r2l[j]`). Two elements pair when they are
+/// consecutive in assembly order (`follows_maintext_order`: `cid + 1`), the
+/// first is strictly left of the second, and they share a row (vertical IoU
+/// above [`ROW_IOU`]). Computed once, on the undilated geometry.
+fn init_l2r(elems: &[Bl], cids: &[usize]) -> (Vec<Option<usize>>, Vec<Option<usize>>) {
+    let n = elems.len();
+    let mut l2r = vec![None; n];
+    let mut r2l = vec![None; n];
+    for i in 0..n {
+        for j in 0..n {
+            if cids[i] + 1 == cids[j]
+                && elems[i].strictly_left_of(&elems[j])
+                && elems[i].overlaps_v_iou(&elems[j], ROW_IOU)
+            {
+                l2r[i] = Some(j);
+                r2l[j] = Some(i);
+            }
+        }
+    }
+    (l2r, r2l)
+}
+
 /// Build the up/down adjacency maps (`_init_ud_maps`). `up[j]` lists elements
 /// directly above `j`; `dn[i]` lists elements directly below `i`. The rtree of
 /// the original is replaced by a brute-force scan (pages carry few regions) with
 /// the identical predicates, so the edge set matches.
-fn init_ud(elems: &[Bl]) -> (Vec<Vec<usize>>, Vec<Vec<usize>>) {
+///
+/// Same-row pairs (`l2r`/`r2l`, #424) shape the graph two ways, as upstream:
+/// an element's left partner is linked as its first "up" neighbour, and a
+/// vertical edge whose upper end has a right partner is redirected along the
+/// row to its right-most element — so the row is read through before the
+/// element below it.
+fn init_ud(
+    elems: &[Bl],
+    l2r: &[Option<usize>],
+    r2l: &[Option<usize>],
+) -> (Vec<Vec<usize>>, Vec<Vec<usize>>) {
     let n = elems.len();
     let mut up = vec![Vec::new(); n];
     let mut dn = vec![Vec::new(); n];
     for j in 0..n {
+        if let Some(left) = r2l[j] {
+            if !dn[left].contains(&j) {
+                dn[left].push(j);
+            }
+            if !up[j].contains(&left) {
+                up[j].push(left);
+            }
+        }
         for i in 0..n {
             if i == j {
                 continue;
@@ -70,8 +138,14 @@ fn init_ud(elems: &[Bl]) -> (Vec<Vec<usize>>, Vec<Vec<usize>>) {
             if has_interruption(elems, i, j) {
                 continue;
             }
-            dn[i].push(j);
-            up[j].push(i);
+            // Follow the row to its right-most element (`cid`s strictly
+            // increase along it, so the walk ends).
+            let mut k = i;
+            while let Some(next) = l2r[k] {
+                k = next;
+            }
+            dn[k].push(j);
+            up[j].push(k);
         }
     }
     (up, dn)
@@ -185,18 +259,21 @@ fn dfs_down(
     }
 }
 
-/// Reading order of one group of page elements (already in bottom-left origin).
-/// Returns the permutation of input indices in reading order.
-fn predict(orig: &[Bl], page_w: f32) -> Vec<usize> {
+/// Reading order of one group of page elements (already in bottom-left origin)
+/// with their assembly-order `cids`. Returns the permutation of input indices
+/// in reading order.
+fn predict(orig: &[Bl], cids: &[usize], page_w: f32) -> Vec<usize> {
     let n = orig.len();
     if n == 0 {
         return Vec::new();
     }
-    // Adjacency from the dilated boxes, but head/child sorting from the original
-    // geometry (docling's `_find_heads`/`_sort_ud_maps` take `page_elements`).
-    let (up0, dn0) = init_ud(orig);
+    // Same-row pairs from the original geometry, once; adjacency from the
+    // dilated boxes, but head/child sorting from the original geometry
+    // (docling's `_find_heads`/`_sort_ud_maps` take `page_elements`).
+    let (l2r, r2l) = init_l2r(orig, cids);
+    let (up0, dn0) = init_ud(orig, &l2r, &r2l);
     let dil = dilate(orig, &up0, &dn0, page_w);
-    let (up, mut dn) = init_ud(&dil);
+    let (up, mut dn) = init_ud(&dil, &l2r, &r2l);
 
     let by_geom = |a: usize, b: usize| orig[a].before(&orig[b]);
 
@@ -345,10 +422,13 @@ fn starts_mergeable(t: &str) -> bool {
 }
 
 /// Order one page's elements (top-left coords) into reading order, returning the
-/// input-index permutation. `headers`/`footers` are ordered as their own groups
+/// input-index permutation. `cids` are the elements' positions in docling's
+/// assembly order (see [`crate::assemble::cluster_cids`]) — the same-row rule
+/// pairs consecutive ones. `headers`/`footers` are ordered as their own groups
 /// and placed first/last, matching docling's per-page header→body→footer split.
 pub fn order_page(
     boxes: &[(f32, f32, f32, f32)],
+    cids: &[usize],
     is_header: &[bool],
     is_footer: &[bool],
     page_w: f32,
@@ -381,9 +461,59 @@ pub fn order_page(
                 }
             })
             .collect();
-        for local in predict(&bl, page_w) {
+        let group_cids: Vec<usize> = group.iter().map(|&i| cids[i]).collect();
+        for local in predict(&bl, &group_cids, page_w) {
             out.push(group[local]);
         }
     }
     out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::order_page;
+
+    /// The #424 row (top-left points, a Pearson copyright page): the LCCN sits
+    /// on the same line as the Dewey number, right of it, and is nothing's
+    /// horizontal neighbour below — the vertical graph alone reads it last.
+    /// Consecutive in source order with the Dewey number, the same-row rule
+    /// links the two and hangs the next paragraph off the LCCN.
+    fn copyright_rows() -> Vec<(f32, f32, f32, f32)> {
+        vec![
+            (36.9, 575.5, 85.3, 583.2),   // 0 "005.1-dc22"
+            (258.2, 575.5, 300.7, 583.2), // 1 "2008024750" (LCCN)
+            (36.9, 588.5, 181.5, 596.2),  // 2 "Copyright © 2009 Pearson…"
+            (36.9, 601.5, 388.4, 609.2),  // 3 "All rights reserved…"
+        ]
+    }
+
+    #[test]
+    fn a_right_hand_item_reads_before_the_next_row_when_it_follows_in_source_order() {
+        let boxes = copyright_rows();
+        let flags = vec![false; boxes.len()];
+        let order = order_page(&boxes, &[10, 11, 12, 13], &flags, &flags, 517.6, 666.4);
+        assert_eq!(order, [0, 1, 2, 3]);
+        // Not consecutive in assembly order (the LCCN cell came from
+        // elsewhere in the stream): no row link, the vertical graph decides —
+        // the pre-#424 order, kept for the record.
+        let order = order_page(&boxes, &[10, 20, 11, 12], &flags, &flags, 517.6, 666.4);
+        assert_eq!(order, [0, 2, 3, 1]);
+    }
+
+    /// The row rule needs a real row: a consecutive pair that is left-of but
+    /// a line apart does not link, and the order is the vertical graph's —
+    /// identical to what non-consecutive numbering gives.
+    #[test]
+    fn a_row_link_needs_vertical_overlap() {
+        let boxes = vec![
+            (36.9, 575.5, 85.3, 583.2),
+            (258.2, 590.0, 300.7, 597.7), // right of 0 but a line lower
+            (36.9, 601.5, 388.4, 609.2),
+        ];
+        let flags = vec![false; 3];
+        let linked = order_page(&boxes, &[0, 1, 2], &flags, &flags, 517.6, 666.4);
+        let unlinked = order_page(&boxes, &[0, 5, 1], &flags, &flags, 517.6, 666.4);
+        assert_eq!(linked, unlinked);
+        assert_eq!(linked, [0, 1, 2]);
+    }
 }
