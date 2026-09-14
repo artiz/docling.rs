@@ -337,6 +337,7 @@ fn render_page(
             cell_blocks: None,
             cells: None,
             caption: None,
+            caption_parent: Default::default(),
         }));
     }
     true
@@ -672,6 +673,7 @@ mod tests {
                     cell_blocks: None,
                     cells: None,
                     caption: None,
+                    caption_parent: Default::default(),
                 }),
             ]
         );

@@ -5,7 +5,7 @@
 //! assigned to its best-containing region, regions are ordered in reading order
 //! (two-column aware), and each becomes a typed node by its layout label.
 
-use docling_core::{Node, PictureClass, PictureImage, Table};
+use docling_core::{CaptionParent, Node, PictureClass, PictureImage, Table};
 #[cfg(feature = "ml")]
 use image::RgbImage;
 
@@ -2280,6 +2280,9 @@ pub fn assemble_page(
                     caption_href: None,
                     image,
                     classification,
+                    // docling's layout pipeline parents a figure's caption to
+                    // the picture itself (#390) — the one backend that does.
+                    caption_parent: CaptionParent::Item,
                 },
             ));
             continue;
@@ -2424,6 +2427,7 @@ pub fn assemble_page(
                                     caption_href: None,
                                     image,
                                     classification,
+                                    caption_parent: Default::default(),
                                 },
                             ));
                         }
@@ -2446,6 +2450,8 @@ pub fn assemble_page(
                         cell_blocks,
                         cells,
                         caption,
+                        // As for pictures: the caption is the table's child.
+                        caption_parent: CaptionParent::Item,
                     }),
                 ));
             }
@@ -3483,6 +3489,7 @@ mod tests {
                 caption_href: None,
                 image: None,
                 classification: None,
+                caption_parent: Default::default(),
             },
             para("Fig. 1. a diagram"),
             para("the most common kind"),

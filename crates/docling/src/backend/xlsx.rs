@@ -537,6 +537,7 @@ fn sheet_items<F: Fn(&str, &str) -> Vec<String> + Sync>(ctx: SheetCtx<'_, F>) ->
                                 caption_href: None,
                                 image: dimages.get(&rid).cloned(),
                                 classification: None,
+                                caption_parent: Default::default(),
                             },
                         ));
                     }
@@ -951,6 +952,7 @@ pub(crate) fn find_tables(
                     cell_blocks: None,
                     cells: None,
                     caption: None,
+                    caption_parent: Default::default(),
                 },
                 label,
                 min_r,

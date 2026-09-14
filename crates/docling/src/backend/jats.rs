@@ -870,6 +870,7 @@ fn add_figure(doc: &mut DoclingDocument, node: XmlNode) {
         caption_href: None,
         image: None,
         classification: None,
+        caption_parent: Default::default(),
     });
 }
 
@@ -1028,6 +1029,7 @@ fn parse_jats_table(table: XmlNode) -> Option<Table> {
         cell_blocks: None,
         cells: None,
         caption: None,
+        caption_parent: Default::default(),
     })
 }
 

@@ -480,6 +480,7 @@ fn handle_paragraph_inner(
                         caption_href: None,
                         image,
                         classification: None,
+                        caption_parent: Default::default(),
                     });
                 }
             }
@@ -500,6 +501,7 @@ fn handle_paragraph_inner(
             caption_href: None,
             image,
             classification: None,
+            caption_parent: Default::default(),
         });
     }
     // Native charts anchored in this paragraph (docling PR #3809): classified
@@ -1600,6 +1602,7 @@ fn parse_table_with(tbl: XmlNode, ctx: &Ctx, nested: bool) -> Option<Table> {
         cell_blocks: any_rich.then_some(blocks),
         cells: None,
         caption: None,
+        caption_parent: Default::default(),
     })
 }
 

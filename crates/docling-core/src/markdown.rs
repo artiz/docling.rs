@@ -1216,6 +1216,7 @@ mod tests {
                 data: b"x".to_vec(),
             }),
             classification: None,
+            caption_parent: Default::default(),
         });
         let (md, files) = doc
             .export_to_markdown_with_images(ImageMode::Referenced, "My Report (final)_artifacts");
@@ -1396,6 +1397,7 @@ mod tests {
             cell_blocks: None,
             cells: None,
             caption: None,
+            caption_parent: Default::default(),
         }));
         let md = doc.export_to_markdown();
         assert_eq!(md, "| a | b |\n| - | - |\n| 1 | 2 |\n");
@@ -1411,6 +1413,7 @@ mod tests {
             cell_blocks: None,
             cells: None,
             caption: None,
+            caption_parent: Default::default(),
         }));
         let md = doc.export_to_markdown();
         // Numeric data columns are right-aligned; columns padded to header+2.
@@ -1530,6 +1533,7 @@ mod tests {
             cell_blocks: None,
             cells: None,
             caption: None,
+            caption_parent: Default::default(),
         }));
         doc.push(Node::Picture {
             caption: Some("Fig 1".into()),
@@ -1541,6 +1545,7 @@ mod tests {
                 data: b"png-one".to_vec(),
             }),
             classification: None,
+            caption_parent: Default::default(),
         });
         doc.add_paragraph("Last paragraph.");
         // A second embedded picture, so referenced mode must keep numbering
@@ -1555,6 +1560,7 @@ mod tests {
                 data: b"png-two".to_vec(),
             }),
             classification: None,
+            caption_parent: Default::default(),
         });
 
         // A run of list items must never straddle a split, so try splits that fall

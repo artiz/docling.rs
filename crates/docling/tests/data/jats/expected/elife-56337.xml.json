@@ -54,7 +54,13 @@
         "$ref": "#/texts/11"
       },
       {
+        "$ref": "#/texts/12"
+      },
+      {
         "$ref": "#/pictures/0"
+      },
+      {
+        "$ref": "#/texts/13"
       },
       {
         "$ref": "#/tables/0"
@@ -75,6 +81,9 @@
         "$ref": "#/texts/18"
       },
       {
+        "$ref": "#/texts/19"
+      },
+      {
         "$ref": "#/pictures/1"
       },
       {
@@ -82,6 +91,9 @@
       },
       {
         "$ref": "#/texts/21"
+      },
+      {
+        "$ref": "#/texts/22"
       },
       {
         "$ref": "#/pictures/2"
@@ -100,6 +112,9 @@
       },
       {
         "$ref": "#/texts/27"
+      },
+      {
+        "$ref": "#/texts/28"
       },
       {
         "$ref": "#/pictures/3"
@@ -124,6 +139,9 @@
       },
       {
         "$ref": "#/texts/35"
+      },
+      {
+        "$ref": "#/texts/36"
       },
       {
         "$ref": "#/tables/1"
@@ -693,7 +711,7 @@
     {
       "self_ref": "#/texts/12",
       "parent": {
-        "$ref": "#/pictures/0"
+        "$ref": "#/body"
       },
       "children": [],
       "content_layer": "body",
@@ -705,7 +723,7 @@
     {
       "self_ref": "#/texts/13",
       "parent": {
-        "$ref": "#/tables/0"
+        "$ref": "#/body"
       },
       "children": [],
       "content_layer": "body",
@@ -778,7 +796,7 @@
     {
       "self_ref": "#/texts/19",
       "parent": {
-        "$ref": "#/pictures/1"
+        "$ref": "#/body"
       },
       "children": [],
       "content_layer": "body",
@@ -815,7 +833,7 @@
     {
       "self_ref": "#/texts/22",
       "parent": {
-        "$ref": "#/pictures/2"
+        "$ref": "#/body"
       },
       "children": [],
       "content_layer": "body",
@@ -888,7 +906,7 @@
     {
       "self_ref": "#/texts/28",
       "parent": {
-        "$ref": "#/pictures/3"
+        "$ref": "#/body"
       },
       "children": [],
       "content_layer": "body",
@@ -986,7 +1004,7 @@
     {
       "self_ref": "#/texts/36",
       "parent": {
-        "$ref": "#/tables/1"
+        "$ref": "#/body"
       },
       "children": [],
       "content_layer": "body",

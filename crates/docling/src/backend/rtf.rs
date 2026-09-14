@@ -532,6 +532,7 @@ impl<'a> Parser<'a> {
                 data,
             }),
             classification: None,
+            caption_parent: Default::default(),
         });
     }
 
@@ -743,6 +744,7 @@ impl<'a> Parser<'a> {
             cell_blocks: None,
             cells: None,
             caption: None,
+            caption_parent: Default::default(),
         }));
         self.prev_was_list = false;
     }

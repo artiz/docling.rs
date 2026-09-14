@@ -358,6 +358,7 @@ impl Parser<'_> {
             caption_href: None,
             image,
             classification: None,
+            caption_parent: Default::default(),
         });
         self.list_continuation = false;
     }
@@ -439,6 +440,7 @@ impl Parser<'_> {
                 cell_blocks: None,
                 cells: None,
                 caption: None,
+                caption_parent: Default::default(),
             }));
         }
         self.in_table = false;

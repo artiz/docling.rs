@@ -167,6 +167,7 @@ fn emit_paragraph(
             caption_href: None,
             image,
             classification: None,
+            caption_parent: Default::default(),
         });
     }
 

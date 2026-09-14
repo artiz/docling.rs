@@ -193,6 +193,7 @@ fn emit(label: &str, content: &str, caption: Option<String>, doc: &mut DoclingDo
             caption_href: None,
             image: None,
             classification: None,
+            caption_parent: Default::default(),
         }),
         "table" => {
             if let Some(cap) = caption {

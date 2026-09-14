@@ -780,6 +780,7 @@ fn parse_table(el: XmlNode) -> Option<Table> {
         cell_blocks: None,
         cells: None,
         caption: None,
+        caption_parent: Default::default(),
     })
 }
 
@@ -893,6 +894,7 @@ fn parse_picture(el: XmlNode) -> Node {
         caption_href: None,
         image: None,
         classification: None,
+        caption_parent: Default::default(),
     };
     match layer {
         Some(layer) => Node::Furniture {

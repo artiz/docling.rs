@@ -14,7 +14,7 @@
 //! cascade) visibility suppression, and the rich per-cell table provenance the
 //! Python backend computes.
 
-use docling_core::{ContentLayer, DoclingDocument, InlineRun, Node, Script, Table};
+use docling_core::{CaptionParent, ContentLayer, DoclingDocument, InlineRun, Node, Script, Table};
 use scraper::{ElementRef, Html, Node as HtmlNode, Selector};
 
 use crate::backend::images::{ImageResolver, NoFetch};
@@ -348,6 +348,7 @@ fn walk_block(
                         caption_href: None,
                         image: img_src(e).and_then(|s| images.resolve(&s)),
                         classification: None,
+                        caption_parent: Default::default(),
                     });
                 } else if name == "signature" || name == "stamp" {
                     // docling turns these into an image annotated with the kind.
@@ -357,6 +358,7 @@ fn walk_block(
                         caption_href: None,
                         image: None,
                         classification: None,
+                        caption_parent: Default::default(),
                     });
                     let mut label = name.to_string();
                     label[..1].make_ascii_uppercase();
@@ -383,6 +385,7 @@ fn walk_block(
                             caption_href,
                             image: src.as_deref().and_then(|s| images.resolve(s)),
                             classification: None,
+                            caption_parent: Default::default(),
                         });
                     } else if has_descendant(cref, "img") || contains_block(cref) {
                         // An anchor with an image among other content (docling
@@ -569,6 +572,7 @@ fn handle_block(
                                 caption_href: None,
                                 image: img_src(e).and_then(|s| images.resolve(&s)),
                                 classification: None,
+                                caption_parent: Default::default(),
                             });
                         } else if is_block(name) {
                             flush_inline(&mut inline, nodes);
@@ -603,7 +607,13 @@ fn handle_block(
             if !any_picture {
                 if let Some(text) = cap_text {
                     match produced.first_mut() {
-                        Some(Node::Table(table)) => table.caption = Some(text),
+                        // docling adds the table, then the figcaption under
+                        // the same parent (#390: the caption follows the
+                        // table in the container's children).
+                        Some(Node::Table(table)) => {
+                            table.caption = Some(text);
+                            table.caption_parent = CaptionParent::ContainerAfter;
+                        }
                         _ => nodes.push(Node::Caption {
                             text,
                             href: cap_href,
@@ -1638,6 +1648,7 @@ fn parse_table_cells(
         cell_blocks: any_rich.then_some(blocks),
         cells: None,
         caption: None,
+        caption_parent: Default::default(),
     })
 }
 
@@ -2192,9 +2203,18 @@ mod tests {
                 Node::Table(t) => {
                     tables += 1;
                     assert_eq!(t.caption.as_deref(), Some("Table cap link"));
+                    // #390: docling adds the figcaption after the table, under
+                    // the table's own parent.
+                    assert_eq!(t.caption_parent, CaptionParent::ContainerAfter);
                 }
-                Node::Picture { caption, .. } => {
+                Node::Picture {
+                    caption,
+                    caption_parent,
+                    ..
+                } => {
                     assert_eq!(caption.as_deref(), Some("Img cap"));
+                    // An image caption is `add_text`'s default parent, the body.
+                    assert_eq!(*caption_parent, CaptionParent::Body);
                 }
                 _ => {}
             }
