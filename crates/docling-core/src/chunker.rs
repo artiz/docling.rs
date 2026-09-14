@@ -269,11 +269,8 @@ impl Walker<'_> {
     fn sibling_lists(&mut self, run: &[Node]) {
         let base = level_of(&run[0]);
         let mut seg = 0;
-        let mut prev: Option<(bool, u64)> = None;
         for k in 0..run.len() {
             let Node::ListItem {
-                ordered,
-                number,
                 first_in_list,
                 level,
                 ..
@@ -284,15 +281,11 @@ impl Walker<'_> {
             if *level != base {
                 continue; // nested item — handled inside `list`
             }
-            if k > seg {
-                if let Some((po, pn)) = prev {
-                    if *first_in_list || po != *ordered || (*ordered && *number != pn + 1) {
-                        self.list(&run[seg..k]);
-                        seg = k;
-                    }
-                }
+            // The backend's list boundary, as in `json.rs::add_sibling_lists`.
+            if k > seg && *first_in_list {
+                self.list(&run[seg..k]);
+                seg = k;
             }
-            prev = Some((*ordered, *number));
         }
         self.list(&run[seg..]);
     }
@@ -393,11 +386,8 @@ impl Walker<'_> {
     fn nested_sibling_lists(&mut self, run: &[Node], out: &mut Vec<ChunkItem>) {
         let base = level_of(&run[0]);
         let mut seg = 0;
-        let mut prev: Option<(bool, u64)> = None;
         for k in 0..run.len() {
             let Node::ListItem {
-                ordered,
-                number,
                 first_in_list,
                 level,
                 ..
@@ -408,16 +398,11 @@ impl Walker<'_> {
             if *level != base {
                 continue;
             }
-            if k > seg {
-                if let Some((po, pn)) = prev {
-                    if *first_in_list || po != *ordered || (*ordered && *number != pn + 1) {
-                        self.alloc.group();
-                        self.list_refs(&run[seg..k], out);
-                        seg = k;
-                    }
-                }
+            if k > seg && *first_in_list {
+                self.alloc.group();
+                self.list_refs(&run[seg..k], out);
+                seg = k;
             }
-            prev = Some((*ordered, *number));
         }
         self.alloc.group();
         self.list_refs(&run[seg..], out);

@@ -687,22 +687,16 @@ fn level_of(node: &Node) -> u8 {
 }
 
 /// Split a run of list items into sibling list groups at the base level: a
-/// new group starts on `first_in_list`, a kind flip, or an ordered-number
-/// discontinuity — unless the previous base item was a multilevel projection
-/// continuing the same Word list (docling#3902).
+/// new group starts where the backend flagged one (`first_in_list`), the same
+/// boundary the Markdown and JSON serializers use (#385).
 fn sibling_lists(run: &[Node]) -> Vec<&[Node]> {
     let base = level_of(&run[0]);
     let mut groups = Vec::new();
     let mut seg = 0;
-    let mut prev: Option<(bool, u64)> = None;
-    let mut prev_projected = false;
     for k in 0..run.len() {
         let Node::ListItem {
-            ordered,
-            number,
             first_in_list,
             level,
-            dclx,
             ..
         } = &run[k]
         else {
@@ -711,20 +705,10 @@ fn sibling_lists(run: &[Node]) -> Vec<&[Node]> {
         if *level != base {
             continue;
         }
-        let eff_ordered = dclx.as_ref().map_or(*ordered, |d| d.ordered);
-        if k > seg {
-            if let Some((po, pn)) = prev {
-                let same_word_list = prev_projected && eff_ordered;
-                if *first_in_list
-                    || (!same_word_list && (po != *ordered || (*ordered && *number != pn + 1)))
-                {
-                    groups.push(&run[seg..k]);
-                    seg = k;
-                }
-            }
+        if k > seg && *first_in_list {
+            groups.push(&run[seg..k]);
+            seg = k;
         }
-        prev = Some((*ordered, *number));
-        prev_projected = eff_ordered && !*ordered;
     }
     groups.push(&run[seg..]);
     groups

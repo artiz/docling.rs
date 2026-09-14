@@ -381,27 +381,9 @@ fn render(nodes: &[Node], blocks: &mut Vec<String>, ctx: &mut Ctx) {
 /// docling-core's serializer.
 fn render_list_run(items: &[Node], blocks: &mut Vec<String>, strict: bool) {
     let mut lines: Vec<String> = Vec::new();
-    // Per level, the previous item's (ordered, number) so we can detect a new
-    // sibling list.
-    let mut prev: Vec<Option<(bool, u64)>> = Vec::new();
-    // Whether the previous top-level item was a multilevel projection — an
-    // ordered `1.2.`-style item rendered as a Markdown bullet (docx's DocLang
-    // overlay says ordered, the flat field says bullet). Word numbers such an
-    // item and its parent-level successor within one list (same `numId`), and
-    // docling keeps them in one group — so the kind-flip / number-continuity
-    // breaks below must not fire across it (docling#3902's
-    // docx_list_blank_spacer: `- 1.2. Sub two` directly followed by
-    // `2. Second section`, no blank line).
-    let mut prev_projected = false;
-    // Whether a deeper-level item has been rendered since the previous
-    // top-level one. docling's AsciiDoc shape hangs a nested list off the
-    // *group* rather than off the preceding item, so the nested group occupies
-    // a position in the parent group and the next top-level item is numbered
-    // past it (`3.` … `5.`). That gap is one list, not two, so it must not
-    // trigger the new-sibling-list blank line below. Backends whose nested
-    // lists hang off the item (HTML, DOCX, Markdown) number contiguously and
-    // are unaffected.
-    let mut nested_since_top = false;
+    // Whether a top-level item has been rendered yet — a fresh-list flag on
+    // the very first item opens nothing.
+    let mut any_top = false;
 
     for item in items {
         let Node::ListItem {
@@ -412,7 +394,7 @@ fn render_list_run(items: &[Node], blocks: &mut Vec<String>, strict: bool) {
             level,
             marker: _,
             location: _,
-            dclx,
+            dclx: _,
             href: _,
             layer,
         } = item
@@ -426,37 +408,19 @@ fn render_list_run(items: &[Node], blocks: &mut Vec<String>, strict: bool) {
         }
         let level = *level as usize;
 
-        // Returning to a shallower level ends the deeper sibling lists.
-        prev.truncate(level + 1);
-        while prev.len() <= level {
-            prev.push(None);
-        }
-
-        // A new sibling list at the same depth gets a blank line: the kind flips
-        // (`<ul>`↔`<ol>`), an ordered run breaks (`1, 2` then `42`), or the
-        // backend flagged a fresh list (e.g. Markdown's bullet changing `-`→`*`).
-        // Only at the top level: nested sibling groups are children of a list
-        // item, and docling joins an item's children without blank lines.
-        let eff_ordered = dclx.as_ref().map_or(*ordered, |d| d.ordered);
+        // A new sibling list at the top level gets a blank line — and only the
+        // backend knows where one starts (`first_in_list`: Word's `numId`
+        // changing, an HTML `<ul>` closing, a Markdown bullet switching
+        // `-`→`*`). The serializer used to guess it from a kind flip or a
+        // number gap as well, which split lists docling keeps whole (an
+        // AsciiDoc `1.` … `5.`, mixed `*`/`1.` markers) — #385. Only at the
+        // top level: nested sibling groups are children of a list item, and
+        // docling joins an item's children without blank lines.
         if level == 0 {
-            if let Some((prev_ordered, prev_number)) = prev[level] {
-                // A projected predecessor suppresses both heuristics for an
-                // ordered successor: the flat kind flip is an artifact of the
-                // bullet projection, and the numbering continues the deeper
-                // sequence (`1.2.` → `2.`), not this level's.
-                let same_word_list = prev_projected && eff_ordered;
-                let new_list = *first_in_list
-                    || (!same_word_list
-                        && (prev_ordered != *ordered
-                            || (*ordered && !nested_since_top && *number != prev_number + 1)));
-                if new_list {
-                    lines.push(String::new());
-                }
+            if any_top && *first_in_list {
+                lines.push(String::new());
             }
-            prev_projected = eff_ordered && !*ordered;
-            nested_since_top = false;
-        } else {
-            nested_since_top = true;
+            any_top = true;
         }
 
         let indent = "    ".repeat(level);
@@ -466,7 +430,6 @@ fn render_list_run(items: &[Node], blocks: &mut Vec<String>, strict: bool) {
             "-".to_string()
         };
         lines.push(format!("{indent}{marker} {}", list_item_text(text, strict)));
-        prev[level] = Some((*ordered, *number));
     }
 
     // A run consisting only of furniture (content-layer-filtered) items yields no
@@ -1006,6 +969,60 @@ fn escape_cell(s: &str) -> String {
 mod tests {
     use super::*;
     use crate::{PictureImage, TableCell, TableStructure};
+
+    /// #385: where one list ends and the next begins is the backend's call
+    /// (`first_in_list`), never the serializer's. An ordered run `1.` → `5.`
+    /// is one list (an AsciiDoc numbered list around a nested one), and so are
+    /// mixed bullet/ordered items the backend did not separate; only a flagged
+    /// item opens a new list and earns the blank line.
+    #[test]
+    fn list_boundaries_come_from_the_backend_not_the_numbering() {
+        let item = |ordered: bool, number: u64, first_in_list: bool, text: &str| Node::ListItem {
+            ordered,
+            number,
+            first_in_list,
+            text: text.into(),
+            level: 0,
+            marker: None,
+            location: None,
+            dclx: None,
+            href: None,
+            layer: None,
+        };
+        let md = |items: Vec<Node>| {
+            let mut doc = DoclingDocument::new("t");
+            for n in items {
+                doc.push(n);
+            }
+            doc.export_to_markdown()
+        };
+        // A number gap alone is not a boundary.
+        assert_eq!(
+            md(vec![
+                item(true, 1, true, "one"),
+                item(true, 5, false, "five")
+            ]),
+            "1. one\n5. five\n"
+        );
+        // Nor is a kind flip the backend did not flag …
+        assert_eq!(
+            md(vec![
+                item(false, 0, true, "bullet"),
+                item(true, 1, false, "one"),
+                item(false, 0, false, "bullet two"),
+            ]),
+            "- bullet\n1. one\n- bullet two\n"
+        );
+        // … while a flagged item is one, whatever its number says.
+        assert_eq!(
+            md(vec![
+                item(true, 1, true, "a"),
+                item(true, 2, false, "b"),
+                item(true, 3, true, "new list, continuing count"),
+            ]),
+            "1. a\n2. b\n\n3. new list, continuing count\n"
+        );
+    }
 
     #[test]
     fn renders_headings_paragraphs_and_lists() {

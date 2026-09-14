@@ -69,6 +69,10 @@ struct GroupState {
     outline: Option<u8>,
     /// `\ilvlN` list nesting level (0-based).
     ilvl: u8,
+    /// `\lsN`: the list override the paragraph belongs to — Word's list
+    /// identity, what `numId` is in DOCX. Writers that emit only the
+    /// `\listtext` compatibility markers leave it unset.
+    ls: Option<i32>,
 }
 
 /// One formatted run of paragraph text.
@@ -96,6 +100,10 @@ struct Parser<'a> {
     runs: Vec<Run>,
     list_marker: Option<ListMarker>,
     prev_was_list: bool,
+    /// The previous list item's `(\ls, ordered, level)`, for the list-boundary
+    /// flag (#385): a different `\ls` is a different list; without `\ls` on
+    /// both sides, a marker-kind flip at the top level is.
+    prev_list_key: Option<(Option<i32>, bool, u8)>,
     /// The table being assembled: completed rows (cells + their defs) and
     /// the current row's cells.
     rows: Vec<(Vec<String>, Vec<CellDef>)>,
@@ -133,6 +141,7 @@ impl<'a> Parser<'a> {
             runs: Vec::new(),
             list_marker: None,
             prev_was_list: false,
+            prev_list_key: None,
             rows: Vec::new(),
             cells: Vec::new(),
             cell_defs: Vec::new(),
@@ -264,12 +273,14 @@ impl<'a> Parser<'a> {
             "s" => self.state.style = param.map(|p| p as i32),
             "outlinelevel" => self.state.outline = param.map(|p| p.clamp(0, 8) as u8),
             "ilvl" => self.state.ilvl = param.unwrap_or(0).clamp(0, 8) as u8,
+            "ls" => self.state.ls = param.map(|p| p as i32),
             "pard" => {
                 // Paragraph-default reset clears paragraph-scoped properties.
                 self.state.style = None;
                 self.state.outline = None;
                 self.state.in_table = false;
                 self.state.ilvl = 0;
+                self.state.ls = None;
             }
             "intbl" => self.state.in_table = true,
             // Row prelude: \trowd starts the cell definitions, each \cellx
@@ -772,8 +783,21 @@ impl<'a> Parser<'a> {
             return;
         }
         if let Some((ordered, number, marker, prefix)) = marker {
-            let first_in_list = !self.prev_was_list;
             let level = self.state.ilvl;
+            // A new list starts after non-list content, or at a list-identity
+            // change: another `\ls` override, or — for `\listtext`-only files
+            // — a marker-kind flip between two top-level items. An empty
+            // spacing paragraph in between breaks nothing (it is dropped above).
+            let key = (self.state.ls, ordered, level);
+            let first_in_list = !self.prev_was_list
+                || match (self.prev_list_key, key) {
+                    (Some((Some(prev_ls), _, _)), (Some(ls), _, _)) => prev_ls != ls,
+                    (Some((_, prev_ordered, prev_level)), (_, ordered, level)) => {
+                        level == 0 && prev_level == 0 && prev_ordered != ordered
+                    }
+                    (None, _) => true,
+                };
+            self.prev_list_key = Some(key);
             let text = match &prefix {
                 Some(p) => format!("{p} {text}"),
                 None => text,
@@ -1078,10 +1102,51 @@ mod tests {
             &doc.nodes[1],
             Node::ListItem { ordered: false, first_in_list: false, text, .. } if text == "Second"
         ));
+        // #385: without `\ls`, a marker-kind flip between top-level items is
+        // the list boundary — a numbered item after bullets opens a new list.
         assert!(matches!(
             &doc.nodes[2],
-            Node::ListItem { ordered: true, number: 1, text, .. } if text == "Num"
+            Node::ListItem { ordered: true, number: 1, first_in_list: true, text, .. } if text == "Num"
         ));
+    }
+
+    /// #385: `\lsN` is Word's list identity (DOCX's `numId`). Items of one
+    /// override are one list whatever their marker kinds — a nested bullet
+    /// under a numbered item, a numbered item after them — and a different
+    /// override starts a new one; an empty spacing paragraph breaks nothing.
+    #[test]
+    fn ls_overrides_identify_lists() {
+        let doc = convert(concat!(
+            r"{\rtf1\ansi",
+            r"\pard\ls1\ilvl0{\listtext 1.\tab}One\par",
+            r"\pard\ls1\ilvl1{\listtext \'b7\tab}Sub\par",
+            r"\pard\ls1\ilvl0{\listtext 2.\tab}Two\par",
+            r"\pard\par",
+            r"\pard\ls1\ilvl0{\listtext 3.\tab}Three\par",
+            r"\pard\ls2\ilvl0{\listtext 1.\tab}Other\par}",
+        ));
+        let flags: Vec<(&str, bool)> = doc
+            .nodes
+            .iter()
+            .filter_map(|n| match n {
+                Node::ListItem {
+                    text,
+                    first_in_list,
+                    ..
+                } => Some((text.as_str(), *first_in_list)),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(
+            flags,
+            vec![
+                ("One", true),
+                ("Sub", false),
+                ("Two", false),
+                ("Three", false),
+                ("Other", true),
+            ]
+        );
     }
 
     #[test]

@@ -642,6 +642,10 @@ fn handle_text_shape(sp: XmlNode, location: [u16; 4], doc: &mut DoclingDocument)
         let text = paragraph_text(para);
         match list_kind(para, Some(tx_body), kind) {
             Some(numbered) => {
+                // docling opens one ListGroup per run of list paragraphs in a
+                // shape (`new_list`, reset by a non-list paragraph): the first
+                // item of the run starts the list, whatever marker kinds follow.
+                let first_in_list = !in_list;
                 if !in_list {
                     in_list = true;
                     number = 0;
@@ -659,7 +663,7 @@ fn handle_text_shape(sp: XmlNode, location: [u16; 4], doc: &mut DoclingDocument)
                 doc.push(Node::ListItem {
                     ordered: numbered,
                     number: n,
-                    first_in_list: false,
+                    first_in_list,
                     text,
                     level: 0,
                     marker: numbered.then(|| format!("{n}.")),

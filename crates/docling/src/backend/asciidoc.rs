@@ -634,13 +634,17 @@ mod tests {
     }
 
     #[test]
-    fn a_broken_run_of_explicit_markers_is_split_into_sibling_lists() {
-        // Known deviation (docs/MIGRATION.md): our Markdown serializer
-        // reconstructs list boundaries from the item numbering, because the
-        // backends that need it most (docx, rtf) cannot flag them — so a jump
-        // in explicit markers reads as a new list and gets a blank line, where
-        // docling keeps one list because it tracked the group itself.
-        assert_eq!(md("1. one\n5. five\n"), "1. one\n\n5. five\n");
+    fn a_broken_run_of_explicit_markers_stays_one_list() {
+        // #385: the list is the group this backend tracked, whatever the
+        // explicit markers say — docling prints them verbatim in one list. The
+        // Markdown serializer used to read the jump as a new list and insert a
+        // blank line (a deviation documented until the boundary guesses went).
+        assert_eq!(md("1. one\n5. five\n"), "1. one\n5. five\n");
+        // Mixed markers in one group are one list too.
+        assert_eq!(
+            md("* bullet one\n1. explicit one\n* bullet two\n"),
+            "- bullet one\n1. explicit one\n- bullet two\n"
+        );
     }
 
     #[test]
