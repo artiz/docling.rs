@@ -2,6 +2,8 @@
 
 AnNDEAFrench Institute opened its doors on OU's campuslastweekwith the arrival of its 48participants,eightexperienced professors of French, and four graduate assistants'and natives of France.
 
+ology.A demonstration class of first year students of French at the high school and junior high schoollevel is to be conducted by Pierre Simonian, the Institute's teacher in charge of demonstrationandmethodology.
+
 Theparticipants in the Institute(14menand34women,10 of them nuns)are teachers of French in junior and senior high schoolsinMichiganand14other states.Director of the Institute Is Ou's assistant professor of French,Don Iodice.Also from OU's staff are Mme Genevieve Prevost, assistant director of the Institute,-and M. Charles Forton,in charge of language Improvement. Familiar to OU's campus as well are M. et Mme Francis Tafoya,who will be workingwithcontemporary French-civilization andlanguage improvementrespectively.M. Tafoya was formerly the head of OU's department of foreign languages.
 
 The object of the Institute is twofold.The iirst objective is to bring the teachers up to date In theirsubject area,Because of rapid changes in content,approach,.and teaching techniques, trueofsuchfieldsasmathematics andscience as well asforeign languages,the National Defense EducationAct has established summer institutes all over the country to help teachers keep pace with advances within their own fields.The second goal of theFrench institute will be to
@@ -26,9 +28,7 @@ GETDUNLOPIMPORTQUALITY INTHEAMERICAN MADE GOLD SEAL FULL 4PLY (NOT2PLY)CONSTRUCT
 
 Bill Basinger strengthen the teacher's knowledge and control of the langlage,
 
-Lastweek marked the beginning of an intensive program in the French language,methods of teaching the language,and the culture of France.Faculty and Institute participants meet together instudysessionsallmorning and afternoon,Classes are conducted entirely in French, with the exception of courses in language analysis and method- ology.A demonstration class of first year students of French at the high school and junior high schoollevel is to be conducted by Pierre Simonian, the Institute's teacher in charge of demonstrationandmethodology.
-
-The participants eatlunchand dinner together and speak,it is expected,nothing but French. After dinner,participants share extracurricular activitiestogether--films,music,lectures.Often the arranged program of activi-
+Lastweek marked the beginning of an intensive program in the French language,methods of teaching the language,and the culture of France.Faculty and Institute participants meet together instudysessionsallmorning and afternoon,Classes are conducted entirely in French, with the exception of courses in language analysis and method- The participants eatlunchand dinner together and speak,it is expected,nothing but French. After dinner,participants share extracurricular activitiestogether--films,music,lectures.Often the arranged program of activi-
 
 ## MITZELFELD'S
 

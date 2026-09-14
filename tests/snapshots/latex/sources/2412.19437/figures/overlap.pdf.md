@@ -12,11 +12,11 @@ Communication
 
 <!-- image -->
 
+<!-- image -->
+
 △
 
 Forward chunk
-
-<!-- image -->
 
 ▲
 

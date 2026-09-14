@@ -34,7 +34,7 @@ are no longer scored.)
 | 2305.03393v1 | 18 | author-block cluster split + in-figure label clusters (model-level) |
 | table_mislabeled_as_picture | 48 | layout over-detects tables (survey rendered as tables) |
 | 2203.01017v2 | 51 | reference-accent spacing + author-block splits (in-picture table recovered: same grid as docling, different OCR engine noise) |
-| 2206.01062 | 52 | author-block cluster splits (model-borderline) + one int8-borderline header rowspan |
+| 2206.01062 | 56 | author-block cluster splits (model-borderline) + one int8-borderline header rowspan; 4 of the lines are the #424 same-row author order, which docling 2.127 produces too — the committed groundtruth is an older docling's |
 | right_to_left_03 | 58 | RTL bidi + wrapper (form) children order |
 | redp5110_sampled | 70 | TOC row structure tails + cover-page ordering |
 
@@ -91,6 +91,7 @@ all of them are ported, each as a deterministic snapshot update:
 | docling#3888 (2.118) | reading-order merge: a hard hyphen before a lowercase continuation is a split word — join without the hyphen | `assemble::merge_continuations` (ported earlier, #250) |
 | docling#4052 (2.122) | line join: a line-final dash fuses the wrapped word only when *attached* to it (the character before it is alphanumeric); a detached dash — a separator, a bullet, the bare `-` cell an ORCID superscript splits off — is kept and the lines join with a space (`[0000 - 0002 - 3723`, previously `[0000 -0002 -3723`) | `assemble::cells_text` (the `sanitize_text` port) |
 | docling#4059 (2.122) | cross-type coincident pairs: a region the layout model proposes under two labels at a near-identical box (IoU > 0.8) with confidences within 0.1 keeps the richer label — `document_index` over `table`, a table-like over `picture`, a surviving structured element over a `form`/`key_value_region` container. The earlier port dropped every coincident picture regardless of confidence | `assemble::handle_cross_type_overlaps` |
+| docling 2.127 `_init_l2r_map` (#424) | same-row links in the reading-order graph: two elements consecutive in the postprocessor's assembly order (source-cell order, docling's `cid`), the left strictly left of the right and sharing a row (vertical IoU > 0.8), are linked left→right — the link is an up/down edge, and a vertical edge onto the left partner is redirected to the row's right-most element, so a row is read through before the paragraph below it | `reading_order::init_l2r` / `init_ud`, `assemble::cluster_cids` |
 | docling#4064 (2.123) | `form` / `key_value_region` are containers: everything > 80 % inside (text, list items, and now tables and pictures) is a child, reading-ordered among itself and emitted as one block where the container sits in the page order; the container shrinks to its children's union for that ordering | `assemble::order_with_containers` |
 | docling#3906 (2.118.1) | a picture ≥ 80 % inside a TableFormer table is nested in the cell covering it (grid position inferred from median row/column centers when cell boxes overlap): the cell's Markdown reads `text  <!-- image -->` like docling's `RichTableCell`, the JSON `table_cells`/`grid` keep the plain text, DocLang gets the blocks (`Table::cell_blocks`), and the picture is no longer a standalone figure | `assemble::match_table_pictures` |
 | docling#4061 (2.122) | forced full-page OCR (`--force-full-page-ocr`, `ocr_mode=full_page|layout_regions`) skips the text-layer decode outright — the cells were cleared unread; on vector-dense pages the decode was most of the page cost | `pdfium_backend::for_each_page(extract_text = false)` |
@@ -194,6 +195,39 @@ figure digits sit beside their subscript bases, old_newspaper and qr_bill
 reorder a few OCR blocks). The same refresh took in the four blank-line
 drifts #385 had left in the PDF baselines (its list-boundary rule reached
 the PDF serializer, and the snapshots were not re-run then).
+
+The #424 **same-row links** port a reading-order rule that the predictor had
+kept disabled for years and docling switched on when it moved the model in
+house (docling#4093, 2.124): `_init_l2r_map` pairs two elements that are
+*consecutive in assembly order* — the postprocessor's `_sort_clusters(mode=
+"id")`, i.e. source-cell order, which docling numbers as `cid` — when the
+first is strictly left of the second and the two share a row (vertical IoU
+> 0.8). The pair is an up/down edge of its own, and a vertical edge whose
+upper end has a right partner is redirected along the row to its right-most
+element, so a row is read through before anything below it. The trigger
+was a Pearson copyright page: the LCCN sits right of the Dewey number on one
+line, the layout model gave it no box, and the orphan it became had no
+horizontal neighbour below it without an interruption in between — a head of
+its own, emitted after the copyright paragraph, and spliced into the middle
+of it by `predict_merges`. `assemble::cluster_cids` computes the assembly
+ranks and `reading_order::init_l2r` / `init_ud` carry the rule; container
+children get it among themselves. The rank is the region's first source
+cell, then top edge, then left edge — and for a table, picture or container
+the first cell *inside* it: upstream every unclaimed cell is an orphan
+cluster, and the ones > 0.8 inside a table become its children, so a table
+sorts where its interior text sits in the stream. Without that, tables sort
+last, two side-by-side tables become consecutive and row-linked, and the
+right table's caption is read ahead of the left column's headings (2206
+page 8) — which docling does not do. Verified against docling 2.127 itself:
+on `2206.01062` page 1 its author row reads Pfitzmann, Auer, Dolfi on one
+line, exactly as ours now does (the committed groundtruth predates the rule
+— its last real docling run was June 2026 — hence the 2206 diff moves 52→56
+against it, all in that author row); on the reported Pearson page it reads
+the LCCN right after the Dewey number. Every other groundtruth fixture is
+unchanged, 9/17 strict as before. Snapshots refreshed for 2206 and for four
+fixtures without groundtruth — three LaTeX figure PDFs whose diagram labels
+now read row-wise (`swa`, `fp8-128accumulatorv4`, `overlap`) and
+`old_newspaper`, whose OCR columns reorder two blocks.
 
 The #265 **table-caption attachment** ports the table arm of docling's
 `ReadingOrderPredictor._find_to_captions`: a `caption` region binds to the

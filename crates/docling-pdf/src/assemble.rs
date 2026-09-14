@@ -844,8 +844,13 @@ fn is_page_number(region: &Region, cells: &[TextCell], page_h: f32) -> bool {
 ///
 /// The containers themselves are still not emitted (`is_skipped`), so the
 /// Markdown is exactly upstream's — a group prints only its children.
+///
+/// `cids` are the items' positions in docling's assembly order
+/// ([`cluster_cids`]) — the reading-order predictor's same-row rule (#424)
+/// pairs consecutive ones, within the top level and within each container.
 fn order_with_containers<T: Clone>(
     items: &mut Vec<T>,
+    cids: &[usize],
     page_w: f32,
     page_h: f32,
     reg: impl Fn(&T) -> &Region,
@@ -855,7 +860,7 @@ fn order_with_containers<T: Clone>(
         .filter(|&i| is_container(reg(&items[i])))
         .collect();
     if containers.is_empty() {
-        order_regions(items, page_w, page_h, reg);
+        order_regions(items, cids, page_w, page_h, reg);
         return;
     }
     // Parent container per item (containers never nest in each other here —
@@ -901,15 +906,15 @@ fn order_with_containers<T: Clone>(
         }
         top.push((i, r));
     }
-    order_regions(&mut top, page_w, page_h, |it| &it.1);
+    let top_cids: Vec<usize> = top.iter().map(|(i, _)| cids[*i]).collect();
+    order_regions(&mut top, &top_cids, page_w, page_h, |it| &it.1);
     let mut out: Vec<T> = Vec::with_capacity(items.len());
     for (i, _) in top {
         if is_container(reg(&items[i])) {
-            let mut kids: Vec<T> = (0..items.len())
-                .filter(|&k| parent[k] == Some(i))
-                .map(|k| items[k].clone())
-                .collect();
-            order_regions(&mut kids, page_w, page_h, &reg);
+            let kid_idx: Vec<usize> = (0..items.len()).filter(|&k| parent[k] == Some(i)).collect();
+            let mut kids: Vec<T> = kid_idx.iter().map(|&k| items[k].clone()).collect();
+            let kid_cids: Vec<usize> = kid_idx.iter().map(|&k| cids[k]).collect();
+            order_regions(&mut kids, &kid_cids, page_w, page_h, &reg);
             out.push(items[i].clone());
             out.extend(kids);
         } else {
@@ -929,11 +934,13 @@ fn is_skipped(label: &str) -> bool {
 
 /// Reading-order sort of a page's regions, via the ported rule-based
 /// [`reading_order`](crate::reading_order) predictor (docling's
-/// `ReadingOrderPredictor`): an up/down geometry graph, horizontal dilation and a
+/// `ReadingOrderPredictor`): an up/down geometry graph with same-row links
+/// between `cids`-consecutive elements (#424), horizontal dilation and a
 /// depth-first traversal, with `page_header`/`page_footer` ordered as their own
 /// groups (first/last) as docling does.
 fn order_regions<T: Clone>(
     items: &mut Vec<T>,
+    cids: &[usize],
     page_w: f32,
     page_h: f32,
     reg: impl Fn(&T) -> &Region,
@@ -953,8 +960,78 @@ fn order_regions<T: Clone>(
         .iter()
         .map(|it| reg(it).label == "page_footer")
         .collect();
-    let order = crate::reading_order::order_page(&boxes, &is_header, &is_footer, page_w, page_h);
+    let order =
+        crate::reading_order::order_page(&boxes, cids, &is_header, &is_footer, page_w, page_h);
     *items = order.iter().map(|&i| items[i].clone()).collect();
+}
+
+/// docling's assembly order of a page's clusters (`LayoutPostprocessor`'s
+/// final `_sort_clusters(mode="id")`, #424): each region's rank when sorted by
+/// its first source cell, then by top edge, then left edge; a region with no
+/// cells sorts after every one that has some. docling numbers its page
+/// elements (`cid`) in this order, and the reading-order predictor's same-row
+/// rule pairs elements with consecutive numbers, so the ranks are what
+/// [`order_with_containers`] hands the predictor.
+///
+/// A regular region's first cell is the smallest index among the cells it
+/// claims. A table, picture or container has no cells of its own upstream
+/// either — its cells are its *children's*: the regular clusters > 0.8 inside
+/// it, and upstream every cell no regular cluster claimed is an orphan cluster
+/// of its own, so a table's interior text (which no regular cluster claims)
+/// reaches the table through those orphans. Here that is the cells > 0.8
+/// inside the region plus the claimed cells of the regular regions > 0.8
+/// inside it. Without the interior cells every table would sort last, and two
+/// side-by-side tables would then be consecutive and row-linked — reading the
+/// right table's caption ahead of the left column's headings (2206 page 8).
+pub fn cluster_cids(regions: &[Region], cells: &[TextCell]) -> Vec<usize> {
+    let owned = assign_cells(regions, cells);
+    let first_cell: Vec<usize> = regions
+        .iter()
+        .enumerate()
+        .map(|(i, r)| {
+            if claims_cells(r) {
+                return owned[i].iter().copied().min().unwrap_or(usize::MAX);
+            }
+            let interior = cells
+                .iter()
+                .enumerate()
+                .filter(|(_, c)| {
+                    !c.text.trim().is_empty()
+                        && inter(r, c.l, c.t, c.r, c.b) / area(c.l, c.t, c.r, c.b).max(1.0) > 0.8
+                })
+                .map(|(ci, _)| ci)
+                .min();
+            let children = regions
+                .iter()
+                .enumerate()
+                .filter(|(j, child)| {
+                    *j != i && claims_cells(child) && {
+                        let ca = area(child.l, child.t, child.r, child.b).max(1.0);
+                        inter(r, child.l, child.t, child.r, child.b) / ca > 0.8
+                    }
+                })
+                .filter_map(|(j, _)| owned[j].iter().copied().min())
+                .min();
+            interior
+                .into_iter()
+                .chain(children)
+                .min()
+                .unwrap_or(usize::MAX)
+        })
+        .collect();
+    let mut by_source: Vec<usize> = (0..regions.len()).collect();
+    // Stable, like Python's `sorted`: full ties keep the layout order.
+    by_source.sort_by(|&a, &b| {
+        first_cell[a]
+            .cmp(&first_cell[b])
+            .then(regions[a].t.total_cmp(&regions[b].t))
+            .then(regions[a].l.total_cmp(&regions[b].l))
+    });
+    let mut cids = vec![0; regions.len()];
+    for (rank, &i) in by_source.iter().enumerate() {
+        cids[i] = rank;
+    }
+    cids
 }
 
 /// Clean a region's assembled text: undo soft-hyphen line wraps, map curly
@@ -2235,6 +2312,9 @@ pub fn assemble_page(
     // Pair each region with its precomputed TableFormer grid and enrichment
     // (indexed by original order) and order by reading order together, so they
     // stay aligned.
+    // docling's assembly order of the regions — what its reading-order
+    // predictor knows as `cid` (#424) — before they are shuffled.
+    let cids = cluster_cids(&regions, &page.cells);
     type RegionItem = (Region, Option<TableGrid>, Option<Enrichment>);
     let mut items: Vec<RegionItem> = regions
         .into_iter()
@@ -2247,7 +2327,7 @@ pub fn assemble_page(
             )
         })
         .collect();
-    order_with_containers(&mut items, page.width, page.height, |it| &it.0);
+    order_with_containers(&mut items, &cids, page.width, page.height, |it| &it.0);
     // Float a margin page number to the front of reading order (docling parity:
     // right_to_left_02's bottom `11` is its first item). Stable, so everything
     // else keeps its order; no-op on pages without such a region.
@@ -3682,7 +3762,8 @@ mod tests {
             reg("text", 60.0, 320.0, 290.0, 340.0),  // 5 field B (child)
             reg("text", 50.0, 450.0, 550.0, 470.0),  // 6 outro
         ];
-        super::order_with_containers(&mut items, 600.0, 800.0, |r| r);
+        let cids = super::cluster_cids(&items, &[]);
+        super::order_with_containers(&mut items, &cids, 600.0, 800.0, |r| r);
         let order: Vec<(&str, f32)> = items.iter().map(|r| (r.label, r.t)).collect();
         // The form block (container, then its children top-down) is one unit.
         let form_pos = order.iter().position(|(l, _)| *l == "form").unwrap();
@@ -3703,7 +3784,8 @@ mod tests {
             .filter(|r| r.label != "form")
             .cloned()
             .collect();
-        super::order_regions(&mut flat, 600.0, 800.0, |r| r);
+        let cids = super::cluster_cids(&flat, &[]);
+        super::order_regions(&mut flat, &cids, 600.0, 800.0, |r| r);
         assert_ne!(
             flat.iter().map(|r| r.t).collect::<Vec<_>>(),
             order
@@ -3840,7 +3922,8 @@ mod tests {
 
     fn ordered_texts(regions: &[Region], cells: &[TextCell]) -> Vec<String> {
         let mut items: Vec<Region> = regions.to_vec();
-        super::order_regions(&mut items, 500.0, 700.0, |r| r);
+        let cids = super::cluster_cids(&items, cells);
+        super::order_regions(&mut items, &cids, 500.0, 700.0, |r| r);
         super::region_texts_exclusive(&items, cells)
             .into_iter()
             .map(|t| t.chars().take(9).collect())
