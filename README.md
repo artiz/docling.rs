@@ -76,12 +76,14 @@ docling's `FormatToExtensions`):
 Raw **DocTags** (`.doctags`/`.dt` — the token markup docling's VLMs emit) reads
 in through `docling-core`'s tolerant DocTags parser (#152), the same one the
 VLM pipeline uses for model responses.
-MHTML is a docling.rs-only extension (docling has no MHTML
-backend): saved-webpage `.mhtml`/`.mht` archives are parsed as a MIME message
-with [`mail-parser`](https://crates.io/crates/mail-parser) (which conforms to
-[RFC 2557](https://datatracker.ietf.org/doc/html/rfc2557), the MHTML spec) and
-routed through the HTML backend, with embedded images resolved from the
-archive by `Content-Location`/`cid:`. The discriminative PDF/image pipeline
+MHTML (docling's `InputFormat.MHTML`, docling#4184): saved-webpage
+`.mhtml`/`.mht` archives are parsed as a MIME message with
+[`mail-parser`](https://crates.io/crates/mail-parser) (which conforms to
+[RFC 2557](https://datatracker.ietf.org/doc/html/rfc2557), the MHTML spec), the
+`multipart/related` root part is selected the way docling selects it (`start`
+parameter, `multipart/alternative`) and routed through the HTML backend; with
+`--fetch-images` the archive's own image parts are embedded, resolved by
+`Content-Location`/`cid:` like docling resolves them. The discriminative PDF/image pipeline
 lives in `docling-pdf`: a pure-Rust PDF text parser, pdfium for page
 rasterization, and an ONNX layout/TableFormer/OCR stack. TableFormer is ported
 to ONNX and run on every detected table region to recover its structure;

@@ -47,8 +47,8 @@ pub enum InputFormat {
     Latex,
     Email,
     Epub,
-    /// MIME HTML archive (`.mhtml`/`.mht`) — a docling.rs extension; docling
-    /// has no MHTML backend.
+    /// MIME HTML archive (`.mhtml`/`.mht`) — docling's `InputFormat.MHTML`
+    /// (docling#4184), unwrapped and converted as HTML.
     Mhtml,
     /// Rich Text Format (`.rtf`) — a docling.rs extension (#209); docling
     /// converts RTF only by shelling out to LibreOffice.
