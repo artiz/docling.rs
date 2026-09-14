@@ -2,8 +2,6 @@ Vanilla Attention
 
 <!-- image -->
 
-1000 11000 11100 京
-
 Sliding Window Attention
 
 <!-- image -->
@@ -11,3 +9,5 @@ Sliding Window Attention
 Effective Context Length
 
 <!-- image -->
+
+1000 11000 11100 京

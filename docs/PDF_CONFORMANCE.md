@@ -34,7 +34,7 @@ are no longer scored.)
 | 2305.03393v1 | 18 | author-block cluster split + in-figure label clusters (model-level) |
 | table_mislabeled_as_picture | 48 | layout over-detects tables (survey rendered as tables) |
 | 2203.01017v2 | 51 | reference-accent spacing + author-block splits (in-picture table recovered: same grid as docling, different OCR engine noise) |
-| 2206.01062 | 52 | author-block cluster splits (model-borderline) + one int8-borderline header rowspan |
+| 2206.01062 | 60 | author-block cluster splits (model-borderline) + one int8-borderline header rowspan; 8 of the lines are the #424 same-row order (page-1 author row, Table 4 before "Learning Curve"), which docling 2.127 produces too — the committed groundtruth is an older docling's |
 | right_to_left_03 | 58 | RTL bidi + wrapper (form) children order |
 | redp5110_sampled | 70 | TOC row structure tails + cover-page ordering |
 
@@ -195,6 +195,35 @@ figure digits sit beside their subscript bases, old_newspaper and qr_bill
 reorder a few OCR blocks). The same refresh took in the four blank-line
 drifts #385 had left in the PDF baselines (its list-boundary rule reached
 the PDF serializer, and the snapshots were not re-run then).
+
+The #424 **same-row links** port a reading-order rule that the predictor had
+kept disabled for years and docling switched on when it moved the model in
+house (docling#4093, 2.124): `_init_l2r_map` pairs two elements that are
+*consecutive in assembly order* — the postprocessor's `_sort_clusters(mode=
+"id")`, i.e. source-cell order, which docling numbers as `cid` — when the
+first is strictly left of the second and the two share a row (vertical IoU
+> 0.8). The pair is an up/down edge of its own, and a vertical edge whose
+upper end has a right partner is redirected along the row to its right-most
+element, so a row is read through before anything below it. The trigger
+was a Pearson copyright page: the LCCN sits right of the Dewey number on one
+line, the layout model gave it no box, and the orphan it became had no
+horizontal neighbour below it without an interruption in between — a head of
+its own, emitted after the copyright paragraph, and spliced into the middle
+of it by `predict_merges`. `assemble::cluster_cids` computes the assembly
+ranks (first claimed source cell — the children's, for tables, pictures and
+containers — then top edge, then left edge) and `reading_order::init_l2r`
+/ `init_ud` carry the rule; container children get it among themselves.
+Verified against docling 2.127 itself on `2206.01062` page 1: its author row
+now reads Pfitzmann, Auer, Dolfi on one line, exactly as ours does. The
+groundtruth table moves 2206 52→60 *against* the committed file, but the
+committed file is an older docling's (last real run June 2026, before the
+rule went live) — both of its changed spots (the author row, Table 4 read
+before the "Learning Curve" heading it shares a row with) are what 2.127
+emits; every other groundtruth fixture is unchanged, 9/17 strict as before.
+Snapshots refreshed for 2206 and for four fixtures without groundtruth — three
+LaTeX figure PDFs whose diagram labels now read row-wise (`swa`,
+`fp8-128accumulatorv4`, `overlap`) and `old_newspaper`, whose OCR columns
+reorder two blocks.
 
 The #265 **table-caption attachment** ports the table arm of docling's
 `ReadingOrderPredictor._find_to_captions`: a `caption` region binds to the

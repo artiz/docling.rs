@@ -18,13 +18,15 @@ Factor
 
 WGMMA 1
 
+WGMMA 4
+
 Tensor Core
 
 Output
 
-CUDA Core WGMMA 4
+CUDA Core Low Prec Acc
 
-Low Prec Acc
+/
 
 GEMM Input
 
@@ -37,5 +39,3 @@ FP32 Register
 (b) Increasing accumulation precision
 
 <!-- image -->
-
-/
