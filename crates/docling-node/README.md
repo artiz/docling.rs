@@ -415,6 +415,14 @@ constructor; output options (`to`, `imageMode`, `artifactsDir`) are per call.
   (docling's `HeadingHierarchyModel`, #302): PDF bookmarks are authoritative,
   then legal/outline numbering, then font style. Off by default — headings
   then keep the flat detected level.
+- `doPictureClassification` / `doCodeEnrichment` / `doFormulaEnrichment`: the
+  opt-in enrichment models (docling's `PdfPipelineOptions` flags of the same
+  names, #423) — classify pictures with DocumentFigureClassifier (26 classes
+  on the JSON picture item), rewrite code blocks and detect their language
+  with the CodeFormulaV2 VLM, decode display formulas to LaTeX. Off by
+  default; each needs its model under `.models/` (`scripts/install/download_dependencies.sh --enrich`),
+  a missing one warns and skips the pass. CodeFormula is an autoregressive VLM:
+  expect seconds per code/formula region on CPU. Also read by `new Pipeline()`.
 - `asrModel` / `asrLang`: Whisper model preset and transcription language
   (`"auto"` default) for audio/video sources.
 - `videoFrames`: max frames sampled from a video input as timestamped pictures

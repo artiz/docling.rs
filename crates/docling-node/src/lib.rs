@@ -86,6 +86,22 @@ pub struct ConverterOptions {
     /// legal/outline numbering, then font style. Default `false` — headings
     /// then keep the flat detected level.
     pub heading_hierarchy: Option<bool>,
+    /// Classify every PDF/image picture with DocumentFigureClassifier
+    /// (docling's `do_picture_classification`, #423): the 26-class prediction
+    /// lands on the JSON picture item's `classification`. Needs
+    /// `.models/picture_classifier.onnx`; a missing model warns and skips the
+    /// pass. Default `false`.
+    pub do_picture_classification: Option<bool>,
+    /// Rewrite detected code blocks (and detect their language) with the
+    /// CodeFormulaV2 VLM (docling's `do_code_enrichment`, #423). Needs
+    /// `.models/code_formula/`; an autoregressive decode per code region —
+    /// seconds each on CPU. Default `false`.
+    pub do_code_enrichment: Option<bool>,
+    /// Decode display formulas to LaTeX with CodeFormulaV2 (docling's
+    /// `do_formula_enrichment`, #423): Markdown renders `$$latex$$` instead
+    /// of the formula placeholder comment. Same model and cost as
+    /// `doCodeEnrichment`. Default `false`.
+    pub do_formula_enrichment: Option<bool>,
     /// `"standard"` (default) or `"vlm"` (#77): replace the whole ONNX stack —
     /// layout, OCR, TableFormer — with a remote OpenAI-compatible vision
     /// endpoint, which converts each rendered page on its own. PDF and image
@@ -197,6 +213,11 @@ pub struct ConvertOptions {
     /// Infer PDF/image section-header levels after assembly (#302). Default
     /// `false`.
     pub heading_hierarchy: Option<bool>,
+    /// Opt-in enrichment models (#423): picture classification, code rewrite
+    /// + language, formula LaTeX. See [`ConverterOptions`]. Default `false`.
+    pub do_picture_classification: Option<bool>,
+    pub do_code_enrichment: Option<bool>,
+    pub do_formula_enrichment: Option<bool>,
     /// `"standard"` (default) or `"vlm"` (#77): convert PDF/image pages
     /// through a remote OpenAI-compatible vision endpoint instead of the ONNX
     /// stack. The `vlm_*` options below take effect only under `"vlm"` and are
@@ -282,6 +303,8 @@ struct ConvertConfig {
     force_full_page_ocr: bool,
     no_text_panels: bool,
     heading_hierarchy: bool,
+    /// Opt-in enrichment passes (#423), all off by default.
+    enrich: docling::EnrichmentOptions,
     /// `Some` only for `pipeline: "vlm"` (#77), already resolved against the
     /// `DOCLING_RS_VLM_*` environment. Its presence *is* the pipeline switch:
     /// [`run_convert`] short-circuits the whole ML stack when it is set.
@@ -359,6 +382,11 @@ fn build_config(o: ConvertOptions) -> Result<ConvertConfig> {
         force_full_page_ocr: o.force_full_page_ocr.unwrap_or(false),
         no_text_panels: o.no_text_panels.unwrap_or(false),
         heading_hierarchy: o.heading_hierarchy.unwrap_or(false),
+        enrich: enrichments(
+            o.do_picture_classification,
+            o.do_code_enrichment,
+            o.do_formula_enrichment,
+        ),
         vlm: resolve_vlm(
             o.pipeline.as_deref(),
             o.vlm_endpoint,
@@ -394,6 +422,20 @@ fn build_config(o: ConvertOptions) -> Result<ConvertConfig> {
 /// and ignores them without `--pipeline vlm`. Pinned by
 /// `standard_pipeline_ignores_vlm_options` below and by the Node-side smoke
 /// check, so the ignore stays a decision rather than resurfacing as a bug.
+/// The three enrichment switches as the engine's option set (#423); unset
+/// and `false` both mean off.
+fn enrichments(
+    picture_classification: Option<bool>,
+    code: Option<bool>,
+    formula: Option<bool>,
+) -> docling::EnrichmentOptions {
+    docling::EnrichmentOptions {
+        picture_classification: picture_classification.unwrap_or(false),
+        code: code.unwrap_or(false),
+        formula: formula.unwrap_or(false),
+    }
+}
+
 fn resolve_vlm(
     pipeline: Option<&str>,
     endpoint: Option<String>,
@@ -505,6 +547,9 @@ fn build_converter(cfg: &ConvertConfig) -> RsConverter {
         .force_full_page_ocr(cfg.force_full_page_ocr)
         .no_text_panels(cfg.no_text_panels)
         .heading_hierarchy(cfg.heading_hierarchy)
+        .do_picture_classification(cfg.enrich.picture_classification)
+        .do_code_enrichment(cfg.enrich.code)
+        .do_formula_enrichment(cfg.enrich.formula)
         .asr_model(cfg.asr_model.clone())
         .asr_lang(cfg.asr_lang.clone());
     let base = match cfg.video_frames {
@@ -745,6 +790,7 @@ pub struct DocumentConverter {
     force_full_page_ocr: bool,
     no_text_panels: bool,
     heading_hierarchy: bool,
+    enrich: docling::EnrichmentOptions,
     // Resolved once in the constructor and cloned per call: a converter is
     // configuration, so a missing endpoint should surface at `new`, and the
     // `DOCLING_RS_VLM_*` environment should be read at the same moment every
@@ -785,6 +831,11 @@ impl DocumentConverter {
             force_full_page_ocr: o.force_full_page_ocr.unwrap_or(false),
             no_text_panels: o.no_text_panels.unwrap_or(false),
             heading_hierarchy: o.heading_hierarchy.unwrap_or(false),
+            enrich: enrichments(
+                o.do_picture_classification,
+                o.do_code_enrichment,
+                o.do_formula_enrichment,
+            ),
             vlm: resolve_vlm(
                 o.pipeline.as_deref(),
                 o.vlm_endpoint.clone(),
@@ -818,6 +869,7 @@ impl DocumentConverter {
             force_full_page_ocr: self.force_full_page_ocr,
             no_text_panels: self.no_text_panels,
             heading_hierarchy: self.heading_hierarchy,
+            enrich: self.enrich,
             vlm: self.vlm.clone(),
             allowed_formats: self.allowed_formats.clone(),
             to: parse_output_kind(out.to.as_deref())?,
@@ -995,8 +1047,11 @@ pub struct Pipeline {
 
 #[napi]
 impl Pipeline {
-    /// Construct the pipeline. Only `strict` is read (cleaner Markdown);
-    /// `fetchImages` / `allowedFormats` don't apply to the PDF/image pipeline.
+    /// Construct the pipeline. `strict` (cleaner Markdown) and the three
+    /// enrichment switches (`doPictureClassification`, `doCodeEnrichment`,
+    /// `doFormulaEnrichment`, #423) are read — the enrichment passes are
+    /// per-instance state, so pick them here; `fetchImages` /
+    /// `allowedFormats` don't apply to the PDF/image pipeline.
     #[napi(constructor)]
     pub fn new(options: Option<ConverterOptions>) -> Result<Self> {
         let options = options.unwrap_or_default();
@@ -1022,8 +1077,15 @@ impl Pipeline {
             }
         }
         let strict = options.strict.unwrap_or(false);
+        let pipeline = RsPipeline::new()
+            .map_err(convert_err)?
+            .enrichments(enrichments(
+                options.do_picture_classification,
+                options.do_code_enrichment,
+                options.do_formula_enrichment,
+            ));
         Ok(Self {
-            inner: Arc::new(Mutex::new(RsPipeline::new().map_err(convert_err)?)),
+            inner: Arc::new(Mutex::new(pipeline)),
             strict,
         })
     }
@@ -1303,6 +1365,7 @@ fn output_config(out: Option<OutputOptions>, strict: bool) -> Result<ConvertConf
         force_full_page_ocr: false,
         no_text_panels: false,
         heading_hierarchy: false,
+        enrich: docling::EnrichmentOptions::default(),
         // The warm `Pipeline` is the ONNX-models class; `Pipeline::new` rejects
         // `pipeline: "vlm"` outright, so nothing reaches here with one set.
         vlm: None,
