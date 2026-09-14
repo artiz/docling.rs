@@ -25,6 +25,18 @@
       },
       {
         "$ref": "#/tables/2"
+      },
+      {
+        "$ref": "#/texts/0"
+      },
+      {
+        "$ref": "#/texts/1"
+      },
+      {
+        "$ref": "#/texts/2"
+      },
+      {
+        "$ref": "#/texts/3"
       }
     ],
     "content_layer": "body",
@@ -32,7 +44,56 @@
     "label": "unspecified"
   },
   "groups": [],
-  "texts": [],
+  "texts": [
+    {
+      "self_ref": "#/texts/0",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "notes",
+      "label": "text",
+      "prov": [],
+      "orig": "[author: John Reviewer]: Why Python specifically?",
+      "text": "[author: John Reviewer]: Why Python specifically?"
+    },
+    {
+      "self_ref": "#/texts/1",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "notes",
+      "label": "text",
+      "prov": [],
+      "orig": "[author: Jane Editor]: Which libraries are you referring to?",
+      "text": "[author: Jane Editor]: Which libraries are you referring to?"
+    },
+    {
+      "self_ref": "#/texts/2",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "notes",
+      "label": "text",
+      "prov": [],
+      "orig": "[author: Marcus Sterling (MS), time: 2026-06-18T17:15:52.310]: I never thought it would be so low",
+      "text": "[author: Marcus Sterling (MS), time: 2026-06-18T17:15:52.310]: I never thought it would be so low"
+    },
+    {
+      "self_ref": "#/texts/3",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "notes",
+      "label": "text",
+      "prov": [],
+      "orig": "[author: Jane Smith (JS), time: 2026-06-18T17:12:57.350]: Maximum number of ducks",
+      "text": "[author: Jane Smith (JS), time: 2026-06-18T17:12:57.350]: Maximum number of ducks"
+    }
+  ],
   "pictures": [],
   "tables": [
     {

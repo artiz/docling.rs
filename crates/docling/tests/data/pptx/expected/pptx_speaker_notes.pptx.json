@@ -1,11 +1,11 @@
 {
   "schema_name": "DoclingDocument",
   "version": "1.10.0",
-  "name": "pptx_chart",
+  "name": "pptx_speaker_notes",
   "origin": {
     "mimetype": "text/plain",
-    "binary_hash": 3519634595890635990,
-    "filename": "pptx_chart"
+    "binary_hash": 5765912764444866033,
+    "filename": "pptx_speaker_notes"
   },
   "furniture": {
     "self_ref": "#/furniture",
@@ -21,7 +21,7 @@
         "$ref": "#/groups/0"
       },
       {
-        "$ref": "#/groups/1"
+        "$ref": "#/groups/2"
       }
     ],
     "content_layer": "body",
@@ -39,7 +39,10 @@
           "$ref": "#/texts/0"
         },
         {
-          "$ref": "#/pictures/0"
+          "$ref": "#/groups/1"
+        },
+        {
+          "$ref": "#/texts/2"
         }
       ],
       "content_layer": "body",
@@ -49,19 +52,50 @@
     {
       "self_ref": "#/groups/1",
       "parent": {
+        "$ref": "#/groups/0"
+      },
+      "children": [
+        {
+          "$ref": "#/texts/1"
+        }
+      ],
+      "content_layer": "body",
+      "name": "list",
+      "label": "list"
+    },
+    {
+      "self_ref": "#/groups/2",
+      "parent": {
         "$ref": "#/body"
       },
       "children": [
         {
-          "$ref": "#/texts/2"
+          "$ref": "#/texts/3"
         },
         {
-          "$ref": "#/pictures/1"
+          "$ref": "#/groups/3"
+        },
+        {
+          "$ref": "#/texts/5"
         }
       ],
       "content_layer": "body",
       "name": "slide-1",
       "label": "chapter"
+    },
+    {
+      "self_ref": "#/groups/3",
+      "parent": {
+        "$ref": "#/groups/2"
+      },
+      "children": [
+        {
+          "$ref": "#/texts/4"
+        }
+      ],
+      "content_layer": "body",
+      "name": "list",
+      "label": "list"
     }
   ],
   "texts": [
@@ -85,29 +119,73 @@
           },
           "charspan": [
             0,
-            21
+            9
           ]
         }
       ],
-      "orig": "Quarterly Duck Survey",
-      "text": "Quarterly Duck Survey"
+      "orig": "Slide One",
+      "text": "Slide One"
     },
     {
       "self_ref": "#/texts/1",
       "parent": {
-        "$ref": "#/pictures/0"
+        "$ref": "#/groups/1"
       },
       "children": [],
       "content_layer": "body",
-      "label": "caption",
-      "prov": [],
-      "orig": "Wild Duck Observations by Year",
-      "text": "Wild Duck Observations by Year"
+      "label": "list_item",
+      "prov": [
+        {
+          "page_no": 1,
+          "bbox": {
+            "l": 464343.75,
+            "t": 6121300.78,
+            "r": 8679656.25,
+            "b": 1593949.22,
+            "coord_origin": "BOTTOMLEFT"
+          },
+          "charspan": [
+            0,
+            14
+          ]
+        }
+      ],
+      "orig": "Body text one.",
+      "text": "Body text one.",
+      "enumerated": false,
+      "marker": "-"
     },
     {
       "self_ref": "#/texts/2",
       "parent": {
-        "$ref": "#/groups/1"
+        "$ref": "#/groups/0"
+      },
+      "children": [],
+      "content_layer": "notes",
+      "label": "text",
+      "prov": [
+        {
+          "page_no": 1,
+          "bbox": {
+            "l": 0.0,
+            "t": 0.0,
+            "r": 0.0,
+            "b": 0.0,
+            "coord_origin": "BOTTOMLEFT"
+          },
+          "charspan": [
+            0,
+            25
+          ]
+        }
+      ],
+      "orig": "Speaker note for slide 1.",
+      "text": "Speaker note for slide 1."
+    },
+    {
+      "self_ref": "#/texts/3",
+      "parent": {
+        "$ref": "#/groups/2"
       },
       "children": [],
       "content_layer": "body",
@@ -124,78 +202,71 @@
           },
           "charspan": [
             0,
-            17
+            9
           ]
         }
       ],
-      "orig": "Quarterly revenue",
-      "text": "Quarterly revenue"
-    }
-  ],
-  "pictures": [
-    {
-      "self_ref": "#/pictures/0",
-      "parent": {
-        "$ref": "#/groups/0"
-      },
-      "children": [],
-      "content_layer": "body",
-      "label": "picture",
-      "prov": [
-        {
-          "page_no": 1,
-          "bbox": {
-            "l": 910828.13,
-            "t": 5853410.16,
-            "r": 8233171.88,
-            "b": 1460003.91,
-            "coord_origin": "BOTTOMLEFT"
-          },
-          "charspan": [
-            0,
-            0
-          ]
-        }
-      ],
-      "captions": [
-        {
-          "$ref": "#/texts/1"
-        }
-      ],
-      "references": [],
-      "footnotes": [],
-      "annotations": []
+      "orig": "Slide Two",
+      "text": "Slide Two"
     },
     {
-      "self_ref": "#/pictures/1",
+      "self_ref": "#/texts/4",
       "parent": {
-        "$ref": "#/groups/1"
+        "$ref": "#/groups/3"
       },
       "children": [],
       "content_layer": "body",
-      "label": "picture",
+      "label": "list_item",
       "prov": [
         {
           "page_no": 2,
           "bbox": {
-            "l": 910828.13,
-            "t": 5491757.81,
-            "r": 6393656.25,
-            "b": 1835050.78,
+            "l": 464343.75,
+            "t": 6121300.78,
+            "r": 8679656.25,
+            "b": 1593949.22,
             "coord_origin": "BOTTOMLEFT"
           },
           "charspan": [
             0,
-            0
+            14
           ]
         }
       ],
-      "captions": [],
-      "references": [],
-      "footnotes": [],
-      "annotations": []
+      "orig": "Body text two.",
+      "text": "Body text two.",
+      "enumerated": false,
+      "marker": "-"
+    },
+    {
+      "self_ref": "#/texts/5",
+      "parent": {
+        "$ref": "#/groups/2"
+      },
+      "children": [],
+      "content_layer": "notes",
+      "label": "text",
+      "prov": [
+        {
+          "page_no": 2,
+          "bbox": {
+            "l": 0.0,
+            "t": 0.0,
+            "r": 0.0,
+            "b": 0.0,
+            "coord_origin": "BOTTOMLEFT"
+          },
+          "charspan": [
+            0,
+            25
+          ]
+        }
+      ],
+      "orig": "Speaker note for slide 2.",
+      "text": "Speaker note for slide 2."
     }
   ],
+  "pictures": [],
   "tables": [],
   "key_value_items": [],
   "form_items": [],

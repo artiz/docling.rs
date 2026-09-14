@@ -193,6 +193,16 @@ impl Builder {
             return json!([]);
         };
         let r2 = |v: f64| (v * 100.0).round() / 100.0;
+        // An all-zero grid box is the sentinel for "this item has no geometry"
+        // (a slide's speaker notes, say). docling writes a zero bbox for it,
+        // not a box spanning the page, which is what denormalizing would give.
+        if [x0, y0, x1, y1] == [0, 0, 0, 0] {
+            return json!([{
+                "page_no": self.cur_page,
+                "bbox": { "l": 0.0, "t": 0.0, "r": 0.0, "b": 0.0, "coord_origin": "BOTTOMLEFT" },
+                "charspan": [0, char_len],
+            }]);
+        }
         json!([{
             "page_no": self.cur_page,
             "bbox": {
@@ -400,7 +410,18 @@ impl Builder {
             }
             // A plain-text backend dump is a single text item over the file body.
             Node::TextDump(text) => Some(self.add_text("text", text, parent, json!({}))),
-            // Furniture is not emitted into the body/JSON (DocLang-only layer).
+            // Speaker notes are content a deck carries, and docling puts them
+            // in the JSON on their own layer, so a consumer reading only JSON
+            // can pick them (#402). Page furniture stays out: docling keeps
+            // that too, but emitting it would be its own (much wider) change.
+            Node::Furniture {
+                layer: ContentLayer::Notes,
+                inner,
+            } => {
+                let item = self.add_node(inner, parent)?;
+                self.set_layer(&item, "notes");
+                Some(item)
+            }
             Node::Furniture { .. } => None,
             Node::PageFurniture { .. } => None,
             // A location wrapper turns into the wrapped item's `prov` entry —
@@ -483,6 +504,27 @@ impl Builder {
             "prov": [],
         });
         self_ref
+    }
+
+    /// Move an already-emitted item onto a content layer. Notes are single
+    /// text items today; a deeper notes subtree would need its children moved
+    /// too, and no backend builds one.
+    fn set_layer(&mut self, self_ref: &str, layer: &str) {
+        let bucket = match self_ref.split('/').nth(1) {
+            Some("texts") => &mut self.texts,
+            Some("tables") => &mut self.tables,
+            Some("pictures") => &mut self.pictures,
+            Some("groups") => &mut self.groups,
+            _ => return,
+        };
+        if let Some(item) = self_ref
+            .rsplit('/')
+            .next()
+            .and_then(|i| i.parse::<usize>().ok())
+            .and_then(|i| bucket.get_mut(i))
+        {
+            item["content_layer"] = json!(layer);
+        }
     }
 
     fn add_text(&mut self, label: &str, text: &str, parent: &str, extra: Value) -> String {
@@ -1066,6 +1108,89 @@ mod tests {
             classification: None,
         });
         doc
+    }
+
+    /// #402: a deck's speaker notes are content, and docling puts them in the
+    /// JSON on the `notes` layer so a consumer reading only JSON can pick them
+    /// out. Markdown still serializes the body layer alone, and page furniture
+    /// stays out of the JSON, where docling does keep it.
+    #[test]
+    fn notes_layer_items_reach_the_json_but_furniture_does_not() {
+        let mut doc = DoclingDocument::new("t");
+        doc.push(Node::Heading {
+            level: 1,
+            text: "Slide One".into(),
+        });
+        doc.push(Node::Furniture {
+            layer: ContentLayer::Notes,
+            inner: Box::new(Node::Located {
+                location: [0, 0, 0, 0],
+                inner: Box::new(Node::Paragraph {
+                    text: "Speaker note for slide 1.".into(),
+                }),
+            }),
+        });
+        doc.push(Node::Furniture {
+            layer: ContentLayer::Furniture,
+            inner: Box::new(Node::Paragraph {
+                text: "page header".into(),
+            }),
+        });
+
+        let v: Value = serde_json::from_str(&doc.export_to_json()).unwrap();
+        let texts = v["texts"].as_array().unwrap();
+        assert_eq!(
+            texts
+                .iter()
+                .map(|t| (
+                    t["label"].as_str().unwrap(),
+                    t["content_layer"].as_str().unwrap(),
+                    t["text"].as_str().unwrap()
+                ))
+                .collect::<Vec<_>>(),
+            vec![
+                ("title", "body", "Slide One"),
+                ("text", "notes", "Speaker note for slide 1."),
+            ],
+            "the note is carried on its own layer; the furniture is not carried"
+        );
+        // The body layer is what Markdown serializes, so it does not change.
+        assert_eq!(doc.export_to_markdown(), "# Slide One\n");
+    }
+
+    /// An all-zero location is the "no geometry" sentinel — a slide's speaker
+    /// notes carry one — and docling writes it as a zero bbox, not as a box
+    /// spanning the whole page, which is what denormalizing the grid gives.
+    #[test]
+    fn a_zero_location_is_a_zero_bbox_not_the_whole_page() {
+        let mut doc = DoclingDocument::new("t");
+        doc.push(Node::PageInfo {
+            page_no: 1,
+            width: 12192000.0,
+            height: 6858000.0,
+        });
+        doc.push(Node::Furniture {
+            layer: ContentLayer::Notes,
+            inner: Box::new(Node::Located {
+                location: [0, 0, 0, 0],
+                inner: Box::new(Node::Paragraph {
+                    text: "a note".into(),
+                }),
+            }),
+        });
+        let v: Value = serde_json::from_str(&doc.export_to_json()).unwrap();
+        let prov = &v["texts"][0]["prov"][0];
+        assert_eq!(prov["page_no"], 1);
+        assert_eq!(prov["charspan"], serde_json::json!([0, 6]));
+        assert_eq!(
+            prov["bbox"],
+            serde_json::json!({"l": 0.0, "t": 0.0, "r": 0.0, "b": 0.0, "coord_origin": "BOTTOMLEFT"})
+        );
+        // The page itself is recorded at its true size.
+        assert_eq!(
+            v["pages"]["1"]["size"],
+            serde_json::json!({"width": 12192000.0, "height": 6858000.0})
+        );
     }
 
     /// #171: PageInfo markers become the `pages` map, and `Located` wrappers /
