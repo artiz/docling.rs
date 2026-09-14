@@ -1,6 +1,8 @@
-//! RTF backend (issue #209) — a docling.rs extension; Python docling has no
-//! RTF backend (it converts RTF only by shelling out to LibreOffice), so there
-//! is no byte-conformance target: output follows the DOCX backend's shapes.
+//! RTF backend (issue #209) — native, where Python docling reads RTF through
+//! LibreOffice (a path it gained after this backend landed). That LibreOffice
+//! route publishes groundtruth, so there *is* a reference now, if a narrow
+//! one: `legacy_sample` is byte-exact against it (#387). Everything the
+//! upstream corpus does not cover follows the DOCX backend's shapes.
 //!
 //! RTF is a plain-text control-word format (`\b`, `\par`, `\trowd`, …) with
 //! `{}` groups scoping formatting state, so this is a hand-rolled tokenizer in
