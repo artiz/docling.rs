@@ -6,9 +6,9 @@ This is the first paragraph of the introduction.
 
 Some background information here.
 
-<!-- image -->
-
 Example image
+
+<!-- image -->
 
 - First item in unordered list
 - Second item in unordered list
@@ -16,5 +16,5 @@ Example image
 1. First item in ordered list
 2. Second item in ordered list
 
-1. First item in ordered list with start
-2. Second item in ordered list with start
+42. First item in ordered list with start
+43. Second item in ordered list with start
