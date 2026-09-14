@@ -339,6 +339,7 @@ impl DeclarativeBackend for XlsxBackend {
                 // which links the note text item itself (the docx backend
                 // overrides that with the group).
                 refs_note_text: true,
+                grouped: true,
             });
         }
         Ok(doc)

@@ -1,5 +1,11 @@
 A text box with text.
 
+| Column one   | Column two   | Column three   |
+|--------------|--------------|----------------|
+| Cell one     | Cell two     | Cell three     |
+| Cell four    | Cell five    | Cell six       |
+| Cell seven   | Cell eight   | Cell nine      |
+
 Sample pages document
 
 Some plain text to parse.
@@ -15,9 +21,3 @@ Similarly, understanding the Pages document structure is important for Apple dev
 A second page....
 
 Extensible Markup Language (XML) is a ubiquitous and flexible markup standard for processing and exchanging data. You can find XML in a wide range of categories, including property lists and file formats for various applications. XML is used extensively to specify the format of various sources of information on the Internet, including web-based services. XML is at the heart of both iWork applications, Keynote and Pages, developed by Apple.
-
-| Column one   | Column two   | Column three   |
-|--------------|--------------|----------------|
-| Cell one     | Cell two     | Cell three     |
-| Cell four    | Cell five    | Cell six       |
-| Cell seven   | Cell eight   | Cell nine      |

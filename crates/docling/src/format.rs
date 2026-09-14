@@ -62,8 +62,9 @@ pub enum InputFormat {
     /// (resvg) and rides the image pipeline; without ML — or under `--no-ocr`
     /// — `<text>` elements are extracted directly into flat paragraphs.
     Svg,
-    /// Apple Pages (`.pages`) — a docling.rs extension (#213); docling has
-    /// no iWork reader. Modern (2013+) IWA packages, text-level extraction.
+    /// Apple Pages (`.pages`) — a conformance format (#318, #383): mirrors
+    /// docling's `IWorkPagesDocumentBackend` for both the 2013+ IWA package
+    /// and the iWork '09 `index.xml` generation.
     Pages,
     /// Apple Numbers (`.numbers`), same IWA machinery as [`Self::Pages`].
     Numbers,
