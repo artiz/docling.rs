@@ -129,17 +129,49 @@ impl DeclarativeBackend for JatsBackend {
                 text: escape_text(&affiliations.join("; ")),
             });
         }
-        for (label, content) in parse_abstracts(&dom) {
-            if content.is_empty() {
+        for abs in parse_abstracts(&dom) {
+            // docling skips an abstract with neither plain paragraphs nor
+            // sections (`_add_abstract`, docling#4172).
+            if abs.plain.is_empty() && abs.sections.is_empty() {
                 continue;
             }
+            let label = if abs.label.is_empty() {
+                "Abstract"
+            } else {
+                &abs.label
+            };
+            // The levels are docling's `self.hlevel + 1` (the abstract heading)
+            // and `+ 2` (a section's), with `hlevel` still 0: the abstract is
+            // added before the body walk, the only thing that moves it — so
+            // the constants are exact, not a shortcut.
             doc.push(Node::Heading {
                 level: 2,
-                text: escape_text(&label),
+                text: escape_text(label),
             });
-            doc.push(Node::Paragraph {
-                text: escape_text(&content),
-            });
+            if abs.sections.is_empty() {
+                // A plain abstract: its paragraphs joined into one text item.
+                doc.push(Node::Paragraph {
+                    text: escape_text(&abs.plain),
+                });
+            } else {
+                // A structured abstract (docling#4172): each `<sec>` is a
+                // heading one level below the abstract's — none when it has
+                // no title — with one text item per `<p>`. Plain paragraphs
+                // beside sections are dropped, as docling drops them.
+                for (title, paragraphs) in &abs.sections {
+                    if !title.is_empty() {
+                        doc.push(Node::Heading {
+                            level: 3,
+                            text: escape_text(title),
+                        });
+                    }
+                    for p in paragraphs {
+                        doc.push(Node::Paragraph {
+                            text: escape_text(p),
+                        });
+                    }
+                }
+            }
         }
 
         // --- body + back ----------------------------------------------------
@@ -284,12 +316,51 @@ fn normalize(s: &str) -> String {
     out
 }
 
+/// docling's `_parse_title`: every `title-group` directly under an
+/// `article-meta`/`collection-meta`/`book-meta`/`book-part-meta`, its
+/// `article-title`/`subtitle`/`title`/`label` children joined by a space,
+/// the groups joined by ` - `. Each child contributes `elem.text` — the text
+/// **before its first child element** only — so a title with inline markup
+/// (`… of <italic>Yersinia pestis</italic> to …`) is cut at the markup, as
+/// upstream's `pmc2231364` groundtruth shows (`# Global transcriptional
+/// response of`). Replicated for byte parity (#391; docs/MIGRATION.md).
 fn parse_title(dom: &Document) -> Option<String> {
-    dom.descendants()
-        .find(|n| n.has_tag_name("article-meta"))
-        .and_then(|meta| meta.descendants().find(|n| n.has_tag_name("article-title")))
-        .map(node_text)
-        .filter(|s| !s.is_empty())
+    const METAS: [&str; 4] = [
+        "article-meta",
+        "collection-meta",
+        "book-meta",
+        "book-part-meta",
+    ];
+    const NAMES: [&str; 4] = ["article-title", "subtitle", "title", "label"];
+    let titles: Vec<String> = dom
+        .descendants()
+        .filter(|n| {
+            n.has_tag_name("title-group")
+                && n.parent()
+                    .is_some_and(|p| METAS.contains(&p.tag_name().name()))
+        })
+        .map(|group| {
+            group
+                .children()
+                .filter(|c| c.is_element() && NAMES.contains(&c.tag_name().name()))
+                .map(|c| direct_text(c).replace('\n', " ").trim().to_string())
+                .collect::<Vec<_>>()
+                .join(" ")
+                .trim()
+                .to_string()
+        })
+        .collect();
+    let text = titles.join(" - ");
+    (!text.is_empty()).then_some(text)
+}
+
+/// lxml's `elem.text`: the character data before the element's first child
+/// element (empty when the element opens with markup).
+fn direct_text<'a>(node: XmlNode<'a, 'a>) -> &'a str {
+    node.first_child()
+        .filter(XmlNode::is_text)
+        .and_then(|c| c.text())
+        .unwrap_or("")
 }
 
 /// Authors (`given-names surname`) and their (deduplicated) affiliation names.
@@ -371,50 +442,67 @@ fn contrib_name(contrib: XmlNode) -> String {
         .join(" ")
 }
 
-/// Abstracts as `(label, content)`; nested sections render as `label: content`.
-fn parse_abstracts(dom: &Document) -> Vec<(String, String)> {
+/// One `<abstract>`, as docling's `_parse_abstract` reads it (docling#4172).
+struct Abstract {
+    /// Its `title` or `label` child (the first in document order), or empty.
+    label: String,
+    /// The direct `<p>` children joined by a space (docling's `content`).
+    plain: String,
+    /// The direct `<sec>` children that hold paragraphs: `(title, paragraphs)`.
+    /// A section's title is its `title`/`label`; its paragraphs are its
+    /// direct `<p>` children only — a nested `<sec>` is not descended into.
+    sections: Vec<(String, Vec<String>)>,
+}
+
+fn parse_abstracts(dom: &Document) -> Vec<Abstract> {
     let mut out = Vec::new();
     for abs in dom.descendants().filter(|n| n.has_tag_name("abstract")) {
-        let content = abstract_section(abs);
-        let label = abs
-            .children()
-            .find(|c| c.has_tag_name("title"))
-            .map(node_text)
-            .filter(|s| !s.is_empty())
-            .unwrap_or_else(|| "Abstract".to_string());
-        out.push((label, content));
+        let mut plain = Vec::new();
+        let mut sections = Vec::new();
+        for child in abs.children().filter(XmlNode::is_element) {
+            match child.tag_name().name() {
+                "p" => {
+                    let t = node_text(child);
+                    if !t.is_empty() {
+                        plain.push(t);
+                    }
+                }
+                "sec" => {
+                    let section = abstract_section(child);
+                    if !section.1.is_empty() {
+                        sections.push(section);
+                    }
+                }
+                _ => {}
+            }
+        }
+        out.push(Abstract {
+            label: title_or_label(abs),
+            plain: normalize(&plain.join(" ")),
+            sections,
+        });
     }
     out
 }
 
-fn abstract_section(section: XmlNode) -> String {
-    let mut texts = Vec::new();
-    for child in section.children().filter(XmlNode::is_element) {
-        match child.tag_name().name() {
-            "p" => {
-                let t = node_text(child);
-                if !t.is_empty() {
-                    texts.push(t);
-                }
-            }
-            "sec" => {
-                let inner = abstract_section(child);
-                if !inner.is_empty() {
-                    let label = child
-                        .children()
-                        .find(|c| c.has_tag_name("title") || c.has_tag_name("label"))
-                        .map(node_text)
-                        .filter(|s| !s.is_empty());
-                    texts.push(match label {
-                        Some(l) => format!("{l}: {inner}"),
-                        None => inner,
-                    });
-                }
-            }
-            _ => {}
-        }
-    }
-    normalize(&texts.join(" "))
+/// docling's `_parse_abstract_section`: `(title, paragraphs)` of one `<sec>`.
+fn abstract_section(section: XmlNode) -> (String, Vec<String>) {
+    let paragraphs = section
+        .children()
+        .filter(|c| c.has_tag_name("p"))
+        .map(node_text)
+        .filter(|t| !t.is_empty())
+        .collect();
+    (title_or_label(section), paragraphs)
+}
+
+/// The first `title` or `label` child in document order (docling's
+/// `xpath("title|label")[0]`), or empty.
+fn title_or_label(node: XmlNode) -> String {
+    node.children()
+        .find(|c| c.has_tag_name("title") || c.has_tag_name("label"))
+        .map(node_text)
+        .unwrap_or_default()
 }
 
 /// `_get_text`, un-normalized (newlines → spaces, formula tags skipped).
@@ -1303,6 +1391,101 @@ a=b
         let md = JatsBackend.convert(&src).unwrap().export_to_markdown();
         // title #, author, label-stripped + escaped affiliation, ## Abstract, ## Intro
         assert!(md.starts_with("# My Paper\n\nJane Doe\n\nAcme &amp; Co\n\n## Abstract\n\nShort summary.\n\n## Intro\n\nBody text."), "got:\n{md}");
+    }
+
+    fn md_of(xml: &str) -> String {
+        let src = SourceDocument::from_bytes("p", InputFormat::XmlJats, xml.as_bytes().to_vec());
+        JatsBackend.convert(&src).unwrap().export_to_markdown()
+    }
+
+    /// docling#4172 (#391): a structured abstract keeps its `<sec>`s as
+    /// headings one level below the abstract's, one text item per `<p>`; an
+    /// untitled section's paragraphs sit right under the abstract heading; a
+    /// section without paragraphs is dropped; a nested `<sec>` is not walked.
+    #[test]
+    fn structured_abstract_keeps_its_sections() {
+        let md = md_of(
+            r#"<article><front><article-meta>
+            <title-group><article-title>T</article-title></title-group>
+            <abstract>
+              <sec><title>Background</title><p>B one.</p><p>B two.</p></sec>
+              <sec><p>No title here.</p></sec>
+              <sec><title>Empty</title></sec>
+              <sec><title>Outer</title><p>O.</p><sec><title>Inner</title><p>I.</p></sec></sec>
+            </abstract>
+          </article-meta></front><body/></article>"#,
+        );
+        assert_eq!(
+            md,
+            "# T
+
+## Abstract
+
+### Background
+
+B one.
+
+B two.
+
+No title here.
+
+### Outer
+
+O.
+"
+        );
+    }
+
+    /// An abstract made only of sections emits no plain text item; one with
+    /// nothing usable is skipped; a `<label>` names it like a `<title>` does.
+    #[test]
+    fn abstract_label_and_skip_rules_follow_docling() {
+        let md = md_of(
+            r#"<article><front><article-meta>
+            <title-group><article-title>T</article-title></title-group>
+            <abstract><label>Summary</label><p>S.</p></abstract>
+            <abstract abstract-type="graphical"><title>Graphical</title><sec><title>X</title></sec></abstract>
+            <abstract><p>Plain.</p><sec><title>Also</title><p>Sectioned.</p></sec></abstract>
+          </article-meta></front><body/></article>"#,
+        );
+        // The third abstract has sections, so its plain paragraph is dropped,
+        // as docling's `_add_abstract` drops it.
+        assert_eq!(
+            md,
+            "# T
+
+## Summary
+
+S.
+
+## Abstract
+
+### Also
+
+Sectioned.
+"
+        );
+    }
+
+    /// docling's `_parse_title` joins `elem.text` of each title-group child
+    /// — the text before its first child element — so inline markup cuts the
+    /// title (upstream's `pmc2231364` groundtruth), a subtitle follows the
+    /// title after a space, and two title-groups join with ` - `.
+    #[test]
+    fn title_is_the_direct_text_of_the_title_group_children() {
+        let md = md_of(
+            r#"<article><front><article-meta>
+            <title-group><article-title>Response of <italic>Y. pestis</italic> to stress</article-title>
+              <subtitle>A sub</subtitle></title-group>
+          </article-meta></front><body/></article>"#,
+        );
+        assert!(
+            md.starts_with(
+                "# Response of A sub
+"
+            ),
+            "{md}"
+        );
     }
 
     #[test]
