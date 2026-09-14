@@ -123,8 +123,9 @@ pub struct ConverterOptions {
     /// no inline-run spacing artifacts) instead of docling's byte-for-byte
     /// legacy output. Markdown only. Default `false`.
     pub strict: Option<bool>,
-    /// For HTML/EPUB, resolve external `<img src>` (data: URIs, local files,
-    /// http(s) URLs, EPUB entries) and embed the bytes. Off by default; when on,
+    /// For HTML/EPUB/MHTML/JATS, resolve external `<img src>` (data: URIs, local
+    /// files, http(s) URLs, EPUB/MHTML archive parts, JATS `<graphic>` files)
+    /// and embed the bytes. Off by default; when on,
     /// http(s) URLs are fetched over the network — enable only for trusted input.
     pub fetch_images: Option<bool>,
     /// Restrict the converter to these formats (ids like `"md"`, `"pdf"`, or
@@ -630,8 +631,8 @@ fn source_from_input(input: ConvertInput) -> Result<SourceDocument> {
 // ---------------------------------------------------------------------------
 
 /// Convert a file on disk. Detects the format from the extension and (for
-/// HTML/EPUB image fetching) resolves relative `<img src>` against the file's
-/// directory.
+/// HTML/EPUB/JATS image fetching) resolves relative `<img src>` / `<graphic>`
+/// paths against the file's directory.
 #[napi]
 pub fn convert_file(path: String, options: Option<ConvertOptions>) -> Result<ConvertResult> {
     let o = options.unwrap_or_default();

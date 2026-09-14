@@ -338,13 +338,15 @@ impl DocumentConverter {
         self
     }
 
-    /// Fetch and embed external `<img>` images for HTML/EPUB/MHTML sources.
+    /// Fetch and embed external `<img>` images for HTML/EPUB/MHTML/JATS sources.
     ///
     /// Off by default (matching docling's `enable_*_fetch=False`), so output is
     /// unchanged unless you opt in. When on, the HTML/EPUB/MHTML backends
     /// resolve each `<img src>` — `data:` URIs, local files (relative to the
     /// source file's directory), `http(s)` URLs, and EPUB/MHTML archive
-    /// entries — and embed the bytes, so they survive into JSON `ImageRef`s and
+    /// entries — and the JATS backend reads a `<fig>`'s `<graphic xlink:href>`
+    /// from the source file's directory (#392), embedding the bytes so they
+    /// survive into JSON `ImageRef`s and
     /// [`crate::DoclingDocument::export_to_markdown_with_images`].
     ///
     /// Remote `http(s)` URLs are fetched over the network; enable only for input
@@ -774,7 +776,10 @@ impl DocumentConverter {
                 match sniff_xml(&source.bytes) {
                     InputFormat::XmlUspto => UsptoBackend.convert(&source)?,
                     InputFormat::XmlXbrl => XbrlBackend.convert(&source)?,
-                    _ => JatsBackend.convert(&source)?,
+                    _ => JatsBackend {
+                        fetch_images: self.fetch_images,
+                    }
+                    .convert(&source)?,
                 }
             }
             InputFormat::Odt | InputFormat::Ods | InputFormat::Odp => {
