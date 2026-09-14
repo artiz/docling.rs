@@ -967,13 +967,22 @@ fn order_regions<T: Clone>(
 
 /// docling's assembly order of a page's clusters (`LayoutPostprocessor`'s
 /// final `_sort_clusters(mode="id")`, #424): each region's rank when sorted by
-/// its first source cell — the smallest index among the cells it claims
-/// (regular regions) or its children claim (tables, pictures, containers: the
-/// regular regions > 0.8 inside them) — then by top edge, then left edge; a
-/// region with no cells sorts after every one that has some. docling numbers
-/// its page elements (`cid`) in this order, and the reading-order predictor's
-/// same-row rule pairs elements with consecutive numbers, so the ranks are what
+/// its first source cell, then by top edge, then left edge; a region with no
+/// cells sorts after every one that has some. docling numbers its page
+/// elements (`cid`) in this order, and the reading-order predictor's same-row
+/// rule pairs elements with consecutive numbers, so the ranks are what
 /// [`order_with_containers`] hands the predictor.
+///
+/// A regular region's first cell is the smallest index among the cells it
+/// claims. A table, picture or container has no cells of its own upstream
+/// either — its cells are its *children's*: the regular clusters > 0.8 inside
+/// it, and upstream every cell no regular cluster claimed is an orphan cluster
+/// of its own, so a table's interior text (which no regular cluster claims)
+/// reaches the table through those orphans. Here that is the cells > 0.8
+/// inside the region plus the claimed cells of the regular regions > 0.8
+/// inside it. Without the interior cells every table would sort last, and two
+/// side-by-side tables would then be consecutive and row-linked — reading the
+/// right table's caption ahead of the left column's headings (2206 page 8).
 pub fn cluster_cids(regions: &[Region], cells: &[TextCell]) -> Vec<usize> {
     let owned = assign_cells(regions, cells);
     let first_cell: Vec<usize> = regions
@@ -983,7 +992,16 @@ pub fn cluster_cids(regions: &[Region], cells: &[TextCell]) -> Vec<usize> {
             if claims_cells(r) {
                 return owned[i].iter().copied().min().unwrap_or(usize::MAX);
             }
-            regions
+            let interior = cells
+                .iter()
+                .enumerate()
+                .filter(|(_, c)| {
+                    !c.text.trim().is_empty()
+                        && inter(r, c.l, c.t, c.r, c.b) / area(c.l, c.t, c.r, c.b).max(1.0) > 0.8
+                })
+                .map(|(ci, _)| ci)
+                .min();
+            let children = regions
                 .iter()
                 .enumerate()
                 .filter(|(j, child)| {
@@ -993,6 +1011,10 @@ pub fn cluster_cids(regions: &[Region], cells: &[TextCell]) -> Vec<usize> {
                     }
                 })
                 .filter_map(|(j, _)| owned[j].iter().copied().min())
+                .min();
+            interior
+                .into_iter()
+                .chain(children)
                 .min()
                 .unwrap_or(usize::MAX)
         })
