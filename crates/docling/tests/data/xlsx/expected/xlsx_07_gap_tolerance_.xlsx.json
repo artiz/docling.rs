@@ -94,7 +94,22 @@
       "children": [],
       "content_layer": "body",
       "label": "table",
-      "prov": [],
+      "prov": [
+        {
+          "page_no": 1,
+          "bbox": {
+            "l": 3.0,
+            "t": 0.0,
+            "r": 4.0,
+            "b": 2.0,
+            "coord_origin": "TOPLEFT"
+          },
+          "charspan": [
+            0,
+            0
+          ]
+        }
+      ],
       "captions": [],
       "references": [],
       "footnotes": [],
@@ -129,6 +144,7 @@
         ],
         "num_rows": 2,
         "num_cols": 1,
+        "orientation": "rot_0",
         "grid": [
           [
             {
@@ -172,7 +188,22 @@
       "children": [],
       "content_layer": "body",
       "label": "table",
-      "prov": [],
+      "prov": [
+        {
+          "page_no": 1,
+          "bbox": {
+            "l": 7.0,
+            "t": 0.0,
+            "r": 8.0,
+            "b": 3.0,
+            "coord_origin": "TOPLEFT"
+          },
+          "charspan": [
+            0,
+            0
+          ]
+        }
+      ],
       "captions": [],
       "references": [],
       "footnotes": [],
@@ -220,6 +251,7 @@
         ],
         "num_rows": 3,
         "num_cols": 1,
+        "orientation": "rot_0",
         "grid": [
           [
             {
@@ -278,7 +310,22 @@
       "children": [],
       "content_layer": "body",
       "label": "table",
-      "prov": [],
+      "prov": [
+        {
+          "page_no": 1,
+          "bbox": {
+            "l": 0.0,
+            "t": 1.0,
+            "r": 1.0,
+            "b": 2.0,
+            "coord_origin": "TOPLEFT"
+          },
+          "charspan": [
+            0,
+            0
+          ]
+        }
+      ],
       "captions": [],
       "references": [],
       "footnotes": [],
@@ -300,6 +347,7 @@
         ],
         "num_rows": 1,
         "num_cols": 1,
+        "orientation": "rot_0",
         "grid": [
           [
             {
@@ -328,7 +376,22 @@
       "children": [],
       "content_layer": "body",
       "label": "table",
-      "prov": [],
+      "prov": [
+        {
+          "page_no": 1,
+          "bbox": {
+            "l": 0.0,
+            "t": 4.0,
+            "r": 8.0,
+            "b": 6.0,
+            "coord_origin": "TOPLEFT"
+          },
+          "charspan": [
+            0,
+            0
+          ]
+        }
+      ],
       "captions": [],
       "references": [],
       "footnotes": [],
@@ -480,6 +543,7 @@
         ],
         "num_rows": 2,
         "num_cols": 8,
+        "orientation": "rot_0",
         "grid": [
           [
             {
@@ -705,7 +769,22 @@
       "children": [],
       "content_layer": "body",
       "label": "table",
-      "prov": [],
+      "prov": [
+        {
+          "page_no": 1,
+          "bbox": {
+            "l": 0.0,
+            "t": 7.0,
+            "r": 1.0,
+            "b": 8.0,
+            "coord_origin": "TOPLEFT"
+          },
+          "charspan": [
+            0,
+            0
+          ]
+        }
+      ],
       "captions": [],
       "references": [],
       "footnotes": [],
@@ -727,6 +806,7 @@
         ],
         "num_rows": 1,
         "num_cols": 1,
+        "orientation": "rot_0",
         "grid": [
           [
             {
@@ -755,7 +835,22 @@
       "children": [],
       "content_layer": "body",
       "label": "table",
-      "prov": [],
+      "prov": [
+        {
+          "page_no": 1,
+          "bbox": {
+            "l": 0.0,
+            "t": 9.0,
+            "r": 1.0,
+            "b": 30.0,
+            "coord_origin": "TOPLEFT"
+          },
+          "charspan": [
+            0,
+            0
+          ]
+        }
+      ],
       "captions": [],
       "references": [],
       "footnotes": [],
@@ -1037,6 +1132,7 @@
         ],
         "num_rows": 21,
         "num_cols": 1,
+        "orientation": "rot_0",
         "grid": [
           [
             {
@@ -1365,7 +1461,22 @@
       "children": [],
       "content_layer": "body",
       "label": "table",
-      "prov": [],
+      "prov": [
+        {
+          "page_no": 1,
+          "bbox": {
+            "l": 2.0,
+            "t": 10.0,
+            "r": 3.0,
+            "b": 16.0,
+            "coord_origin": "TOPLEFT"
+          },
+          "charspan": [
+            0,
+            0
+          ]
+        }
+      ],
       "captions": [],
       "references": [],
       "footnotes": [],
@@ -1452,6 +1563,7 @@
         ],
         "num_rows": 6,
         "num_cols": 1,
+        "orientation": "rot_0",
         "grid": [
           [
             {
@@ -1555,7 +1667,22 @@
       "children": [],
       "content_layer": "body",
       "label": "table",
-      "prov": [],
+      "prov": [
+        {
+          "page_no": 1,
+          "bbox": {
+            "l": 4.0,
+            "t": 10.0,
+            "r": 8.0,
+            "b": 16.0,
+            "coord_origin": "TOPLEFT"
+          },
+          "charspan": [
+            0,
+            0
+          ]
+        }
+      ],
       "captions": [],
       "references": [],
       "footnotes": [],
@@ -1876,6 +2003,7 @@
         ],
         "num_rows": 6,
         "num_cols": 4,
+        "orientation": "rot_0",
         "grid": [
           [
             {
@@ -2213,7 +2341,22 @@
       "children": [],
       "content_layer": "body",
       "label": "table",
-      "prov": [],
+      "prov": [
+        {
+          "page_no": 1,
+          "bbox": {
+            "l": 2.0,
+            "t": 17.0,
+            "r": 3.0,
+            "b": 20.0,
+            "coord_origin": "TOPLEFT"
+          },
+          "charspan": [
+            0,
+            0
+          ]
+        }
+      ],
       "captions": [],
       "references": [],
       "footnotes": [],
@@ -2261,6 +2404,7 @@
         ],
         "num_rows": 3,
         "num_cols": 1,
+        "orientation": "rot_0",
         "grid": [
           [
             {
@@ -2319,7 +2463,22 @@
       "children": [],
       "content_layer": "body",
       "label": "table",
-      "prov": [],
+      "prov": [
+        {
+          "page_no": 1,
+          "bbox": {
+            "l": 5.0,
+            "t": 17.0,
+            "r": 8.0,
+            "b": 20.0,
+            "coord_origin": "TOPLEFT"
+          },
+          "charspan": [
+            0,
+            0
+          ]
+        }
+      ],
       "captions": [],
       "references": [],
       "footnotes": [],
@@ -2445,6 +2604,7 @@
         ],
         "num_rows": 3,
         "num_cols": 3,
+        "orientation": "rot_0",
         "grid": [
           [
             {
@@ -2581,7 +2741,22 @@
       "children": [],
       "content_layer": "body",
       "label": "table",
-      "prov": [],
+      "prov": [
+        {
+          "page_no": 1,
+          "bbox": {
+            "l": 2.0,
+            "t": 21.0,
+            "r": 3.0,
+            "b": 25.0,
+            "coord_origin": "TOPLEFT"
+          },
+          "charspan": [
+            0,
+            0
+          ]
+        }
+      ],
       "captions": [],
       "references": [],
       "footnotes": [],
@@ -2642,6 +2817,7 @@
         ],
         "num_rows": 4,
         "num_cols": 1,
+        "orientation": "rot_0",
         "grid": [
           [
             {
@@ -2715,7 +2891,22 @@
       "children": [],
       "content_layer": "body",
       "label": "table",
-      "prov": [],
+      "prov": [
+        {
+          "page_no": 1,
+          "bbox": {
+            "l": 4.0,
+            "t": 21.0,
+            "r": 7.0,
+            "b": 25.0,
+            "coord_origin": "TOPLEFT"
+          },
+          "charspan": [
+            0,
+            0
+          ]
+        }
+      ],
       "captions": [],
       "references": [],
       "footnotes": [],
@@ -2880,6 +3071,7 @@
         ],
         "num_rows": 4,
         "num_cols": 3,
+        "orientation": "rot_0",
         "grid": [
           [
             {
@@ -3057,7 +3249,22 @@
       "children": [],
       "content_layer": "body",
       "label": "table",
-      "prov": [],
+      "prov": [
+        {
+          "page_no": 1,
+          "bbox": {
+            "l": 2.0,
+            "t": 26.0,
+            "r": 3.0,
+            "b": 27.0,
+            "coord_origin": "TOPLEFT"
+          },
+          "charspan": [
+            0,
+            0
+          ]
+        }
+      ],
       "captions": [],
       "references": [],
       "footnotes": [],
@@ -3079,6 +3286,7 @@
         ],
         "num_rows": 1,
         "num_cols": 1,
+        "orientation": "rot_0",
         "grid": [
           [
             {
@@ -3107,7 +3315,22 @@
       "children": [],
       "content_layer": "body",
       "label": "table",
-      "prov": [],
+      "prov": [
+        {
+          "page_no": 1,
+          "bbox": {
+            "l": 4.0,
+            "t": 26.0,
+            "r": 8.0,
+            "b": 27.0,
+            "coord_origin": "TOPLEFT"
+          },
+          "charspan": [
+            0,
+            0
+          ]
+        }
+      ],
       "captions": [],
       "references": [],
       "footnotes": [],
@@ -3168,6 +3391,7 @@
         ],
         "num_rows": 1,
         "num_cols": 4,
+        "orientation": "rot_0",
         "grid": [
           [
             {
@@ -3235,7 +3459,22 @@
       "children": [],
       "content_layer": "body",
       "label": "table",
-      "prov": [],
+      "prov": [
+        {
+          "page_no": 1,
+          "bbox": {
+            "l": 2.0,
+            "t": 28.0,
+            "r": 7.0,
+            "b": 31.0,
+            "coord_origin": "TOPLEFT"
+          },
+          "charspan": [
+            0,
+            0
+          ]
+        }
+      ],
       "captions": [],
       "references": [],
       "footnotes": [],
@@ -3283,6 +3522,7 @@
         ],
         "num_rows": 3,
         "num_cols": 5,
+        "orientation": "rot_0",
         "grid": [
           [
             {
@@ -3492,5 +3732,13 @@
   ],
   "key_value_items": [],
   "form_items": [],
-  "pages": {}
+  "pages": {
+    "1": {
+      "size": {
+        "width": 8.0,
+        "height": 31.0
+      },
+      "page_no": 1
+    }
+  }
 }

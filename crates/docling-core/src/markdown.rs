@@ -662,7 +662,7 @@ fn render_one(node: &Node, blocks: &mut Vec<String>, ctx: &mut Ctx) {
         Node::CommentSection { .. } => {}
         Node::Commented { inner, .. } => render_one(inner, blocks, ctx),
         // Layout provenance is DocLang-only; render the wrapped node.
-        Node::Located { inner, .. } => render_one(inner, blocks, ctx),
+        Node::Located { inner, .. } | Node::Prov { inner, .. } => render_one(inner, blocks, ctx),
         // Page breaks are DocLang-only; docling omits them from Markdown.
         Node::PageBreak => {}
         // Page markers feed the JSON export only.

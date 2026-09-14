@@ -1039,6 +1039,12 @@ fn emit_nodes(out: &mut Out, depth: i32, nodes: &[Node], i: &mut usize, level: u
                 emit_located(out, depth, location, inner);
                 *i += 1;
             }
+            // Exact page provenance feeds the JSON export only; DocLang takes
+            // its `<location>` tokens from the grid wrapper inside.
+            Node::Prov { inner, .. } => {
+                emit_nodes(out, depth, std::slice::from_ref(inner), &mut 0, level);
+                *i += 1;
+            }
             Node::PageBreak => {
                 out.push(depth, "<page_break/>".to_string());
                 *i += 1;

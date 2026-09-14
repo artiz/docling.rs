@@ -52,7 +52,22 @@
       "children": [],
       "content_layer": "body",
       "label": "table",
-      "prov": [],
+      "prov": [
+        {
+          "page_no": 1,
+          "bbox": {
+            "l": 0.0,
+            "t": 1.0,
+            "r": 1.0,
+            "b": 2.0,
+            "coord_origin": "TOPLEFT"
+          },
+          "charspan": [
+            0,
+            0
+          ]
+        }
+      ],
       "captions": [],
       "references": [],
       "footnotes": [],
@@ -74,6 +89,7 @@
         ],
         "num_rows": 1,
         "num_cols": 1,
+        "orientation": "rot_0",
         "grid": [
           [
             {
@@ -97,5 +113,13 @@
   ],
   "key_value_items": [],
   "form_items": [],
-  "pages": {}
+  "pages": {
+    "1": {
+      "size": {
+        "width": 1.0,
+        "height": 2.0
+      },
+      "page_no": 1
+    }
+  }
 }

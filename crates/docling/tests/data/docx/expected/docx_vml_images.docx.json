@@ -134,16 +134,16 @@
       "captions": [],
       "references": [],
       "footnotes": [],
-      "annotations": [],
       "image": {
         "mimetype": "image/png",
         "dpi": 72,
         "size": {
-          "width": 200,
-          "height": 200
+          "width": 200.0,
+          "height": 200.0
         },
         "uri": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAMgAAADICAIAAAAiOjnJAAACEklEQVR4nO3UsQ0AIBADsYf9d4YluALJHiDVKesMvLeDTRAWDY9FQlgkhEVCWCSERUJYJIRFQlgkhEVCWCSERUJYJIRFQlgkhEVCWCSERUJYJIRFQlgkhEVCWCSERUJYJIRFQlgkhEVCWCSERUJYJIRFQlgkhEVCWCSERUJYJIRFQlgkhEVCWCSERUJYJIRFQlgkhEVCWCSERUJYJIRFQlgkhEVCWCSERUJYJIRFQlgkhEVCWCSERUJYJIRFQlgkhEVCWCSERUJYJIRFQlgkhEVCWCSERUJYJIRFQlgkhEVCWCSERUJYJIRFQlgkhEVCWCSERUJYJIRFQlgkhEVCWCSERUJYJIRFQlgkhEVCWCSERUJYJIRFQlgkhEVCWCSERUJYJIRFQlgkhEVCWAiLf3gsEsIiISwSwiIhLBLCIiEsEsIiISwSwiIhLBLCIiEsEsIiISwSwiIhLBLCIiEsEsIiISwSwiIhLBLCIiEsEsIiISwSwiIhLBLCIiEsEsIiISwSwiIhLBLCIiEsEsIiISwSwiIhLBLCIiEsEsIiISwSwiIhLBLCIiEsEsIiISwSwiIhLBLCIiEsEsIiISwSwiIhLBLCIiEsEsIiISwSwiIhLBLCIiEsEsIiISwSwiIhLBLCIiEsEsIiISwSwiIhLBLCIiEsEsIiISwSwiIhLBLCIiEsEsIiISwSwiIhLBLCYgoXij0Cj3aTAC8AAAAASUVORK5CYII="
-      }
+      },
+      "annotations": []
     },
     {
       "self_ref": "#/pictures/1",
@@ -157,16 +157,16 @@
       "captions": [],
       "references": [],
       "footnotes": [],
-      "annotations": [],
       "image": {
         "mimetype": "image/png",
         "dpi": 72,
         "size": {
-          "width": 150,
-          "height": 150
+          "width": 150.0,
+          "height": 150.0
         },
         "uri": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAJYAAACWCAIAAACzY+a1AAABcUlEQVR4nO3RwQkAIBDAsNP9d9YhfEghmaDQNXOGsv07gFcW5lmYZ2GehXkW5lmYZ2GehXkW5lmYZ2GehXkW5lmYZ2GehXkW5lmYZ2GehXkW5lmYZ2GehXkW5lmYZ2GehXkW5lmYZ2GehXkW5lmYZ2GehXkW5lmYZ2GehXkW5lmYZ2GehXkW5lmYZ2GehXkW5lmYZ2GehXkW5lmYZ2GehXkW5lmYZ2GehXkW5lmYZ2GehXkW5lmYZ2GehXkW5lmYZ2GehXkW5lmYZ2GehXkW5lmYZ2GehXkW5lmYZ2GehXkW5lmYZ2GehXkW5lmYZ2GehXkW5lmYZ2GehXkW5lmYZ2GehXkW5lmYZ2GehXkW5lmYZ2GehXkW5lmYZ2GehXkW5lmYZ2GehXkW5lmYZ2GehXkW5lmYZ2GehXkW5lmYZ2GehXkW5lmYZ2GehXkW5lmYZ2GehXkW5lmYZ2GehXkW5lmYZ2GehXkW5lmYZ2GehVN3AS48AivB6nXZAAAAAElFTkSuQmCC"
-      }
+      },
+      "annotations": []
     }
   ],
   "tables": [],

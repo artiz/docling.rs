@@ -332,10 +332,13 @@ fn table_data(t: &Table) -> Value {
             grid.push(grid_row);
         }
     }
+    // docling-core's `TableData.orientation` — always the unrotated default
+    // from a declarative backend or the ML pipeline alike.
     json!({
         "table_cells": cells,
         "num_rows": num_rows,
         "num_cols": num_cols,
+        "orientation": "rot_0",
         "grid": grid,
     })
 }
@@ -359,6 +362,13 @@ struct Builder {
     /// The enclosing [`Node::Located`] wrapper's 0–511 grid box, waiting to be
     /// consumed as the next item's provenance.
     pending_loc: Option<[u16; 4]>,
+    /// The enclosing [`Node::Prov`] wrapper's exact `(page_no, bbox,
+    /// charspan)`, which takes precedence over the grid box.
+    pending_exact: Option<(usize, [f32; 4], [usize; 2])>,
+    /// `$ref`s an item wants placed in its parent's `children` *before* its
+    /// own — a chart's caption item, which docling's office backends add to
+    /// the container ahead of the picture that references it.
+    pending_siblings: Vec<Value>,
     /// What each [`Node::CommentSection`] is referenced by, in document order —
     /// its group `$ref`, or its note text's when the section says so. The index
     /// is what a [`Node::Commented`] annotation carries.
@@ -376,10 +386,36 @@ impl Builder {
     /// the item's text length in characters (0 for tables and pictures, whose
     /// charspan docling emits as `[0, 0]`).
     fn take_prov(&mut self, char_len: usize) -> Value {
-        let Some([x0, y0, x1, y1]) = self.pending_loc.take() else {
+        let prov = self.prov_json(char_len, false);
+        self.pending_exact = None;
+        self.pending_loc = None;
+        prov
+    }
+
+    /// The pending provenance without consuming it. An exact [`Node::Prov`]
+    /// box wins over the grid; its own `charspan` is used unless
+    /// `span_over_text` asks for `[0, char_len]` (a chart caption's span
+    /// covers the caption text where the chart's is `[0, 0]`).
+    fn prov_json(&self, char_len: usize, span_over_text: bool) -> Value {
+        let r2 = |v: f64| (v * 100.0).round() / 100.0;
+        if let Some((page_no, [l, t, r, b], charspan)) = self.pending_exact {
+            let charspan = if span_over_text {
+                [0, char_len]
+            } else {
+                charspan
+            };
+            return json!([{
+                "page_no": page_no,
+                "bbox": {
+                    "l": r2(l as f64), "t": r2(t as f64), "r": r2(r as f64), "b": r2(b as f64),
+                    "coord_origin": "TOPLEFT",
+                },
+                "charspan": charspan,
+            }]);
+        }
+        let Some([x0, y0, x1, y1]) = self.pending_loc else {
             return json!([]);
         };
-        let r2 = |v: f64| (v * 100.0).round() / 100.0;
         // An all-zero grid box is the sentinel for "this item has no geometry"
         // (a slide's speaker notes, say). docling writes a zero bbox for it,
         // not a box spanning the page, which is what denormalizing would give.
@@ -590,7 +626,20 @@ impl Builder {
                 if !table.rows.is_empty() {
                     meta["tabular_chart"] = json!({ "chart_data": table_data(table) });
                 }
-                Some(self.add_picture(caption.as_deref(), None, None, Some(meta), parent))
+                // docling's office backends add the chart's title as a caption
+                // item of the *container* (the sheet group, the slide), listed
+                // before the picture that references it, with the chart's own
+                // box and a charspan over the caption text — not as a child
+                // of the picture, which is where a PDF caption lives.
+                let mut captions = Vec::new();
+                if let Some(cap) = caption.as_deref().filter(|c| !c.is_empty()) {
+                    let prov = self.prov_json(unescape_text(cap).chars().count(), true);
+                    let cap_ref = self.add_text_with("caption", cap, parent, json!({}), prov);
+                    self.pending_siblings.push(json!({ "$ref": cap_ref }));
+                    captions.push(json!({ "$ref": cap_ref }));
+                }
+                let prov = self.take_prov(0);
+                Some(self.push_picture(prov, captions, None, Some(meta), parent))
             }
             // A DocLang-only node is omitted from the JSON body.
             Node::DoclangOnly(_) => None,
@@ -632,6 +681,17 @@ impl Builder {
                 }
                 let r = self.add_node(inner, parent);
                 self.pending_loc = None;
+                r
+            }
+            Node::Prov {
+                page_no,
+                bbox,
+                charspan,
+                inner,
+            } => {
+                self.pending_exact = Some((*page_no, *bbox, *charspan));
+                let r = self.add_node(inner, parent);
+                self.pending_exact = None;
                 r
             }
             // Page breaks are DocLang-only; docling omits them from the JSON body.
@@ -726,9 +786,22 @@ impl Builder {
     }
 
     fn add_text(&mut self, label: &str, text: &str, parent: &str, extra: Value) -> String {
+        let prov = self.take_prov(unescape_text(text).chars().count());
+        self.add_text_with(label, text, parent, extra, prov)
+    }
+
+    /// [`Self::add_text`] with an explicit `prov` (a chart caption shares the
+    /// chart's box without consuming it).
+    fn add_text_with(
+        &mut self,
+        label: &str,
+        text: &str,
+        parent: &str,
+        extra: Value,
+        prov: Value,
+    ) -> String {
         let self_ref = format!("#/texts/{}", self.texts.len());
         let raw = unescape_text(text);
-        let prov = self.take_prov(raw.chars().count());
         let mut item = json!({
             "self_ref": self_ref,
             "parent": { "$ref": parent },
@@ -953,6 +1026,19 @@ impl Builder {
             let cap_ref = self.add_text("caption", cap, &self_ref, extra);
             captions.push(json!({ "$ref": cap_ref }));
         }
+        self.push_picture(prov, captions, image, meta, parent)
+    }
+
+    /// Append the picture item itself — `prov` and `captions` already settled.
+    fn push_picture(
+        &mut self,
+        prov: Value,
+        captions: Vec<Value>,
+        image: Option<&crate::PictureImage>,
+        meta: Option<Value>,
+        parent: &str,
+    ) -> String {
+        let self_ref = format!("#/pictures/{}", self.pictures.len());
         // The legacy `classification` annotation rides along with a
         // classifier's `meta` (see `classification_meta`); a chart's meta has
         // none, like docling's.
@@ -996,14 +1082,22 @@ impl Builder {
                 "annotations": annotations,
             }),
         };
-        // docling stores the extracted image as an `ImageRef` (data URI + size).
+        // docling stores the extracted image as an `ImageRef` (data URI + size,
+        // the size as floats) between `footnotes` and `annotations` — pydantic
+        // field order, which `preserve_order` lets us reproduce by rebuilding
+        // the tail.
         if let Some(img) = image {
-            item["image"] = json!({
+            let image = json!({
                 "mimetype": img.mimetype,
                 "dpi": 72,
-                "size": { "width": img.width, "height": img.height },
+                "size": { "width": img.width as f64, "height": img.height as f64 },
                 "uri": img.data_uri(),
             });
+            if let Some(obj) = item.as_object_mut() {
+                let annotations = obj.remove("annotations").unwrap_or_else(|| json!([]));
+                obj.insert("image".into(), image);
+                obj.insert("annotations".into(), annotations);
+            }
         }
         self.pictures.push(item);
         self_ref
@@ -1081,6 +1175,7 @@ impl Builder {
                 self.add_sibling_lists(&nodes[start..i], parent, &mut children);
             } else {
                 if let Some(r) = self.add_node(&nodes[i], parent) {
+                    children.append(&mut self.pending_siblings);
                     children.push(json!({ "$ref": r }));
                 }
                 i += 1;
@@ -1317,6 +1412,86 @@ mod tests {
         assert_eq!(grid[2][2]["text"], "c");
     }
 
+    /// A [`Node::Prov`] wrapper is docling's provenance verbatim — the exact
+    /// box in a top-left origin, the backend's charspan — and the page marker
+    /// before it sizes the page; a chart's caption becomes a sibling of the
+    /// picture in the container, listed first, sharing the chart's box with
+    /// a charspan over its text. That is the JSON shape of an XLSX sheet.
+    #[test]
+    fn exact_provenance_pages_and_chart_captions_follow_docling() {
+        let mut doc = DoclingDocument::new("t");
+        doc.push(Node::PageInfo {
+            page_no: 1,
+            width: 3.0,
+            height: 4.0,
+        });
+        let table = crate::Table {
+            rows: vec![vec!["a".to_string(), "b".into()]],
+            ..Default::default()
+        };
+        doc.push(Node::Group {
+            label: "sheet".into(),
+            name: Some("Data".into()),
+            layer: None,
+            children: vec![
+                Node::Prov {
+                    page_no: 1,
+                    bbox: [0.0, 0.0, 3.0, 4.0],
+                    charspan: [0, 0],
+                    inner: Box::new(Node::Table(table.clone())),
+                },
+                Node::Prov {
+                    page_no: 1,
+                    bbox: [0.0, 1.0, 1.0, 1.0],
+                    charspan: [0, 0],
+                    inner: Box::new(Node::Chart {
+                        kind: "bar_chart".into(),
+                        table,
+                        caption: Some("Sales".into()),
+                        location: Some([0, 128, 170, 128]),
+                    }),
+                },
+            ],
+        });
+        let v: Value = serde_json::from_str(&doc.export_to_json()).unwrap();
+        assert_eq!(
+            v["pages"],
+            serde_json::json!({"1": {"size": {"width": 3.0, "height": 4.0}, "page_no": 1}})
+        );
+        assert_eq!(
+            v["tables"][0]["prov"],
+            serde_json::json!([{
+                "page_no": 1,
+                "bbox": {"l": 0.0, "t": 0.0, "r": 3.0, "b": 4.0, "coord_origin": "TOPLEFT"},
+                "charspan": [0, 0],
+            }])
+        );
+        assert_eq!(v["tables"][0]["data"]["orientation"], "rot_0");
+        // The caption is the group's child *before* the picture, parented to
+        // the group, and referenced by the picture.
+        let sheet = &v["groups"][0];
+        assert_eq!(
+            sheet["children"],
+            serde_json::json!([
+                {"$ref": "#/tables/0"}, {"$ref": "#/texts/0"}, {"$ref": "#/pictures/0"}
+            ])
+        );
+        let cap = &v["texts"][0];
+        assert_eq!(cap["label"], "caption");
+        assert_eq!(cap["parent"], serde_json::json!({"$ref": "#/groups/0"}));
+        assert_eq!(cap["prov"][0]["charspan"], serde_json::json!([0, 5]));
+        assert_eq!(cap["prov"][0]["bbox"]["b"], 1.0);
+        let pic = &v["pictures"][0];
+        assert_eq!(pic["captions"], serde_json::json!([{"$ref": "#/texts/0"}]));
+        assert_eq!(pic["prov"][0]["charspan"], serde_json::json!([0, 0]));
+        assert_eq!(pic["prov"][0]["bbox"]["coord_origin"], "TOPLEFT");
+        assert_eq!(
+            pic["meta"]["classification"]["predictions"][0]["class_name"],
+            "bar_chart"
+        );
+        assert_eq!(pic["meta"]["tabular_chart"]["chart_data"]["num_cols"], 2);
+    }
+
     /// An all-zero location is the "no geometry" sentinel — a slide's speaker
     /// notes carry one — and docling writes it as a zero bbox, not as a box
     /// spanning the whole page, which is what denormalizing the grid gives.
@@ -1429,10 +1604,18 @@ mod tests {
             files,
             vec![("artifacts/image_000000.png".to_string(), b"foobar".to_vec())]
         );
-        // JSON carries the ImageRef (data URI + size)
+        // JSON carries the ImageRef (data URI + size — floats, as docling's
+        // `Size` is — placed before `annotations`).
         let v: Value = serde_json::from_str(&doc.export_to_json()).unwrap();
         assert_eq!(v["pictures"][0]["image"]["mimetype"], "image/png");
-        assert_eq!(v["pictures"][0]["image"]["size"]["width"], 4);
+        assert_eq!(v["pictures"][0]["image"]["size"]["width"], 4.0);
+        let keys: Vec<&str> = v["pictures"][0]
+            .as_object()
+            .unwrap()
+            .keys()
+            .map(String::as_str)
+            .collect();
+        assert_eq!(&keys[keys.len() - 2..], ["image", "annotations"]);
         assert_eq!(
             v["pictures"][0]["image"]["uri"],
             "data:image/png;base64,Zm9vYmFy"

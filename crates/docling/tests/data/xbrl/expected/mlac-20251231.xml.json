@@ -2998,6 +2998,7 @@
         ],
         "num_rows": 10,
         "num_cols": 5,
+        "orientation": "rot_0",
         "grid": [
           [
             {
@@ -3807,6 +3808,7 @@
         ],
         "num_rows": 3,
         "num_cols": 3,
+        "orientation": "rot_0",
         "grid": [
           [
             {
@@ -5629,6 +5631,7 @@
         ],
         "num_rows": 9,
         "num_cols": 17,
+        "orientation": "rot_0",
         "grid": [
           [
             {
@@ -9231,6 +9234,7 @@
         ],
         "num_rows": 9,
         "num_cols": 17,
+        "orientation": "rot_0",
         "grid": [
           [
             {
@@ -11910,6 +11914,7 @@
         ],
         "num_rows": 10,
         "num_cols": 5,
+        "orientation": "rot_0",
         "grid": [
           [
             {
@@ -13252,6 +13257,7 @@
         ],
         "num_rows": 10,
         "num_cols": 5,
+        "orientation": "rot_0",
         "grid": [
           [
             {
@@ -14061,6 +14067,7 @@
         ],
         "num_rows": 3,
         "num_cols": 3,
+        "orientation": "rot_0",
         "grid": [
           [
             {
@@ -15883,6 +15890,7 @@
         ],
         "num_rows": 9,
         "num_cols": 17,
+        "orientation": "rot_0",
         "grid": [
           [
             {
@@ -19485,6 +19493,7 @@
         ],
         "num_rows": 9,
         "num_cols": 17,
+        "orientation": "rot_0",
         "grid": [
           [
             {
@@ -23191,6 +23200,7 @@
         ],
         "num_rows": 9,
         "num_cols": 17,
+        "orientation": "rot_0",
         "grid": [
           [
             {
@@ -26793,6 +26803,7 @@
         ],
         "num_rows": 9,
         "num_cols": 17,
+        "orientation": "rot_0",
         "grid": [
           [
             {
@@ -29537,6 +29548,7 @@
         ],
         "num_rows": 4,
         "num_cols": 16,
+        "orientation": "rot_0",
         "grid": [
           [
             {
@@ -31114,6 +31126,7 @@
         ],
         "num_rows": 4,
         "num_cols": 16,
+        "orientation": "rot_0",
         "grid": [
           [
             {
@@ -32288,6 +32301,7 @@
         ],
         "num_rows": 5,
         "num_cols": 5,
+        "orientation": "rot_0",
         "grid": [
           [
             {
@@ -32671,6 +32685,7 @@
         ],
         "num_rows": 1,
         "num_cols": 2,
+        "orientation": "rot_0",
         "grid": [
           [
             {
@@ -33436,6 +33451,7 @@
         ],
         "num_rows": 4,
         "num_cols": 16,
+        "orientation": "rot_0",
         "grid": [
           [
             {
@@ -35013,6 +35029,7 @@
         ],
         "num_rows": 4,
         "num_cols": 16,
+        "orientation": "rot_0",
         "grid": [
           [
             {
@@ -36187,6 +36204,7 @@
         ],
         "num_rows": 5,
         "num_cols": 5,
+        "orientation": "rot_0",
         "grid": [
           [
             {
@@ -36570,6 +36588,7 @@
         ],
         "num_rows": 1,
         "num_cols": 2,
+        "orientation": "rot_0",
         "grid": [
           [
             {
@@ -37036,6 +37055,7 @@
         ],
         "num_rows": 4,
         "num_cols": 9,
+        "orientation": "rot_0",
         "grid": [
           [
             {
@@ -37950,6 +37970,7 @@
         ],
         "num_rows": 4,
         "num_cols": 9,
+        "orientation": "rot_0",
         "grid": [
           [
             {
@@ -38864,6 +38885,7 @@
         ],
         "num_rows": 4,
         "num_cols": 9,
+        "orientation": "rot_0",
         "grid": [
           [
             {
@@ -39778,6 +39800,7 @@
         ],
         "num_rows": 4,
         "num_cols": 9,
+        "orientation": "rot_0",
         "grid": [
           [
             {

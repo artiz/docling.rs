@@ -89,7 +89,22 @@
       "children": [],
       "content_layer": "body",
       "label": "table",
-      "prov": [],
+      "prov": [
+        {
+          "page_no": 1,
+          "bbox": {
+            "l": 0.0,
+            "t": 0.0,
+            "r": 6.0,
+            "b": 4.0,
+            "coord_origin": "TOPLEFT"
+          },
+          "charspan": [
+            0,
+            0
+          ]
+        }
+      ],
       "captions": [],
       "references": [],
       "footnotes": [],
@@ -410,6 +425,7 @@
         ],
         "num_rows": 4,
         "num_cols": 6,
+        "orientation": "rot_0",
         "grid": [
           [
             {
@@ -743,7 +759,22 @@
       "children": [],
       "content_layer": "body",
       "label": "table",
-      "prov": [],
+      "prov": [
+        {
+          "page_no": 2,
+          "bbox": {
+            "l": 0.0,
+            "t": 1.0,
+            "r": 7.0,
+            "b": 5.0,
+            "coord_origin": "TOPLEFT"
+          },
+          "charspan": [
+            0,
+            0
+          ]
+        }
+      ],
       "captions": [],
       "references": [],
       "footnotes": [],
@@ -1116,6 +1147,7 @@
         ],
         "num_rows": 4,
         "num_cols": 7,
+        "orientation": "rot_0",
         "grid": [
           [
             {
@@ -1501,7 +1533,22 @@
       "children": [],
       "content_layer": "body",
       "label": "table",
-      "prov": [],
+      "prov": [
+        {
+          "page_no": 3,
+          "bbox": {
+            "l": 0.0,
+            "t": 0.0,
+            "r": 6.0,
+            "b": 4.0,
+            "coord_origin": "TOPLEFT"
+          },
+          "charspan": [
+            0,
+            0
+          ]
+        }
+      ],
       "captions": [],
       "references": [],
       "footnotes": [],
@@ -1822,6 +1869,7 @@
         ],
         "num_rows": 4,
         "num_cols": 6,
+        "orientation": "rot_0",
         "grid": [
           [
             {
@@ -2155,7 +2203,22 @@
       "children": [],
       "content_layer": "body",
       "label": "table",
-      "prov": [],
+      "prov": [
+        {
+          "page_no": 3,
+          "bbox": {
+            "l": 6.0,
+            "t": 4.0,
+            "r": 9.0,
+            "b": 7.0,
+            "coord_origin": "TOPLEFT"
+          },
+          "charspan": [
+            0,
+            0
+          ]
+        }
+      ],
       "captions": [],
       "references": [],
       "footnotes": [],
@@ -2281,6 +2344,7 @@
         ],
         "num_rows": 3,
         "num_cols": 3,
+        "orientation": "rot_0",
         "grid": [
           [
             {
@@ -2412,5 +2476,27 @@
   ],
   "key_value_items": [],
   "form_items": [],
-  "pages": {}
+  "pages": {
+    "1": {
+      "size": {
+        "width": 6.0,
+        "height": 4.0
+      },
+      "page_no": 1
+    },
+    "2": {
+      "size": {
+        "width": 7.0,
+        "height": 5.0
+      },
+      "page_no": 2
+    },
+    "3": {
+      "size": {
+        "width": 9.0,
+        "height": 7.0
+      },
+      "page_no": 3
+    }
+  }
 }

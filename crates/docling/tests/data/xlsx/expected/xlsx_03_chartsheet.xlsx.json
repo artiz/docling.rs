@@ -50,6 +50,9 @@
       },
       "children": [
         {
+          "$ref": "#/texts/0"
+        },
+        {
           "$ref": "#/pictures/0"
         }
       ],
@@ -62,12 +65,27 @@
     {
       "self_ref": "#/texts/0",
       "parent": {
-        "$ref": "#/pictures/0"
+        "$ref": "#/groups/1"
       },
       "children": [],
       "content_layer": "body",
       "label": "caption",
-      "prov": [],
+      "prov": [
+        {
+          "page_no": 2,
+          "bbox": {
+            "l": 0.0,
+            "t": 0.0,
+            "r": 14.0,
+            "b": 35.0,
+            "coord_origin": "TOPLEFT"
+          },
+          "charspan": [
+            0,
+            30
+          ]
+        }
+      ],
       "orig": "Wild Duck Observations by Year",
       "text": "Wild Duck Observations by Year"
     }
@@ -367,6 +385,7 @@
             ],
             "num_rows": 7,
             "num_cols": 3,
+            "orientation": "rot_0",
             "grid": [
               [
                 {
@@ -660,7 +679,22 @@
         }
       },
       "label": "picture",
-      "prov": [],
+      "prov": [
+        {
+          "page_no": 2,
+          "bbox": {
+            "l": 0.0,
+            "t": 0.0,
+            "r": 14.0,
+            "b": 35.0,
+            "coord_origin": "TOPLEFT"
+          },
+          "charspan": [
+            0,
+            0
+          ]
+        }
+      ],
       "captions": [
         {
           "$ref": "#/texts/0"
@@ -680,7 +714,22 @@
       "children": [],
       "content_layer": "body",
       "label": "table",
-      "prov": [],
+      "prov": [
+        {
+          "page_no": 1,
+          "bbox": {
+            "l": 0.0,
+            "t": 0.0,
+            "r": 4.0,
+            "b": 7.0,
+            "coord_origin": "TOPLEFT"
+          },
+          "charspan": [
+            0,
+            0
+          ]
+        }
+      ],
       "captions": [],
       "references": [],
       "footnotes": [],
@@ -1053,6 +1102,7 @@
         ],
         "num_rows": 7,
         "num_cols": 4,
+        "orientation": "rot_0",
         "grid": [
           [
             {
@@ -1439,5 +1489,20 @@
   ],
   "key_value_items": [],
   "form_items": [],
-  "pages": {}
+  "pages": {
+    "1": {
+      "size": {
+        "width": 4.0,
+        "height": 7.0
+      },
+      "page_no": 1
+    },
+    "2": {
+      "size": {
+        "width": 14.0,
+        "height": 35.0
+      },
+      "page_no": 2
+    }
+  }
 }

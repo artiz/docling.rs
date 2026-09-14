@@ -71,16 +71,16 @@
       "captions": [],
       "references": [],
       "footnotes": [],
-      "annotations": [],
       "image": {
         "mimetype": "image/png",
         "dpi": 72,
         "size": {
-          "width": 60,
-          "height": 40
+          "width": 60.0,
+          "height": 40.0
         },
         "uri": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAADwAAAAoCAIAAAAt2Q6oAAAASUlEQVR4nO3OQQ3AIAAAMUAI/qUgCw97HFnSKug8e4+/Wa8DX0hXpCvSFemKdEW6Il2RrkhXpCvSFemKdEW6Il2RrkhXpCvSlQtBOQFUzKPJpQAAAABJRU5ErkJggg=="
-      }
+      },
+      "annotations": []
     }
   ],
   "tables": [],

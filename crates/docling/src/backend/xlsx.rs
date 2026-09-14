@@ -201,7 +201,16 @@ impl DeclarativeBackend for XlsxBackend {
                     (slot, *row, *col)
                 })
                 .collect();
+            // Every sheet is a page of the JSON (`pages`), sized like docling's
+            // `_find_page_size`: the largest right/bottom edge of its items, in
+            // cell units — 0×0 for a sheet without any.
+            let page_no = page_ix + 1;
             if items.is_empty() {
+                doc.push(Node::PageInfo {
+                    page_no,
+                    width: 0.0,
+                    height: 0.0,
+                });
                 // docling still opens a group for a sheet with no items (an
                 // empty chartsheet), so the sheet count survives into the JSON.
                 doc.push(sheet_group(sheet_name, hidden, Vec::new()));
@@ -228,6 +237,11 @@ impl DeclarativeBackend for XlsxBackend {
             // Location provenance against the sheet's extent.
             let page_w = items.iter().map(|((_, _, r, _), _)| *r).max().unwrap_or(1);
             let page_h = items.iter().map(|((_, _, _, b), _)| *b).max().unwrap_or(1);
+            doc.push(Node::PageInfo {
+                page_no,
+                width: page_w as f32,
+                height: page_h as f32,
+            });
             for ((l, t, r, b), node) in &mut items {
                 let loc = [
                     location_value(*l, page_w),
@@ -265,7 +279,17 @@ impl DeclarativeBackend for XlsxBackend {
                         inner: Box::new(node),
                     }
                 };
-                children.push(node);
+                // docling's provenance for a sheet item is its cell-index box
+                // verbatim (top-left origin) with a `(0, 0)` charspan — for the
+                // table, the section label above it, a picture, a chart. The
+                // DocLang grid above cannot carry those integers exactly, so
+                // the JSON reads them from this wrapper.
+                children.push(Node::Prov {
+                    page_no,
+                    bbox: [l as f32, t as f32, r as f32, b as f32],
+                    charspan: [0, 0],
+                    inner: Box::new(node),
+                });
             }
             // A hidden sheet's group carries the invisible layer, which the
             // serializers stamp on every item inside it — the same output the
@@ -949,11 +973,16 @@ mod tests {
 
     /// Every sheet's items live inside that sheet's group, so tests that look
     /// for a node by kind flatten the groups away first.
+    /// The item nodes, looking through sheet groups and the provenance /
+    /// comment wrappers each item sits in.
     fn flatten(nodes: &[Node]) -> Vec<&Node> {
         nodes
             .iter()
             .flat_map(|n| match n {
                 Node::Group { children, .. } => flatten(children),
+                Node::Prov { inner, .. } | Node::Commented { inner, .. } => {
+                    flatten(std::slice::from_ref(inner))
+                }
                 other => vec![other],
             })
             .collect()
@@ -1122,12 +1151,13 @@ mod tests {
         let src = SourceDocument::from_bytes("x.xlsx", InputFormat::Xlsx, bytes);
         let doc = XlsxBackend::default().convert(&src).expect("converts");
 
+        // The sheet's page marker leads; the group follows it.
         let Some(Node::Group {
             label,
             name,
             layer,
             children,
-        }) = doc.nodes.first()
+        }) = doc.nodes.iter().find(|n| matches!(n, Node::Group { .. }))
         else {
             panic!("no sheet group in {:?}", doc.nodes);
         };
@@ -1160,6 +1190,10 @@ mod tests {
         let annotated: Vec<Vec<usize>> = children
             .iter()
             .map(|c| match c {
+                Node::Prov { inner, .. } => match inner.as_ref() {
+                    Node::Commented { comments, .. } => comments.clone(),
+                    _ => Vec::new(),
+                },
                 Node::Commented { comments, .. } => comments.clone(),
                 _ => Vec::new(),
             })

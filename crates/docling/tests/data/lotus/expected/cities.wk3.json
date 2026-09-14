@@ -244,6 +244,7 @@
         ],
         "num_rows": 5,
         "num_cols": 3,
+        "orientation": "rot_0",
         "grid": [
           [
             {
@@ -549,6 +550,7 @@
         ],
         "num_rows": 3,
         "num_cols": 2,
+        "orientation": "rot_0",
         "grid": [
           [
             {

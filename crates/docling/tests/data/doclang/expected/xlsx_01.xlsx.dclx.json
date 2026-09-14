@@ -27,10 +27,16 @@
         "$ref": "#/tables/2"
       },
       {
+        "$ref": "#/texts/0"
+      },
+      {
         "$ref": "#/pictures/0"
       },
       {
         "$ref": "#/tables/3"
+      },
+      {
+        "$ref": "#/texts/1"
       },
       {
         "$ref": "#/pictures/1"
@@ -54,7 +60,7 @@
     {
       "self_ref": "#/texts/0",
       "parent": {
-        "$ref": "#/pictures/0"
+        "$ref": "#/body"
       },
       "children": [],
       "content_layer": "body",
@@ -66,7 +72,7 @@
     {
       "self_ref": "#/texts/1",
       "parent": {
-        "$ref": "#/pictures/1"
+        "$ref": "#/body"
       },
       "children": [],
       "content_layer": "body",
@@ -228,6 +234,7 @@
             ],
             "num_rows": 5,
             "num_cols": 2,
+            "orientation": "rot_0",
             "grid": [
               [
                 {
@@ -873,6 +880,7 @@
             ],
             "num_rows": 9,
             "num_cols": 4,
+            "orientation": "rot_0",
             "grid": [
               [
                 {
@@ -1681,6 +1689,7 @@
         ],
         "num_rows": 7,
         "num_cols": 3,
+        "orientation": "rot_0",
         "grid": [
           [
             {
@@ -2458,6 +2467,7 @@
         ],
         "num_rows": 9,
         "num_cols": 4,
+        "orientation": "rot_0",
         "grid": [
           [
             {
@@ -3161,6 +3171,7 @@
         ],
         "num_rows": 5,
         "num_cols": 3,
+        "orientation": "rot_0",
         "grid": [
           [
             {
@@ -3583,6 +3594,7 @@
         ],
         "num_rows": 5,
         "num_cols": 3,
+        "orientation": "rot_0",
         "grid": [
           [
             {
@@ -4005,6 +4017,7 @@
         ],
         "num_rows": 7,
         "num_cols": 3,
+        "orientation": "rot_0",
         "grid": [
           [
             {
@@ -4509,6 +4522,7 @@
         ],
         "num_rows": 7,
         "num_cols": 3,
+        "orientation": "rot_0",
         "grid": [
           [
             {

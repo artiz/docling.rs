@@ -93,6 +93,7 @@
         ],
         "num_rows": 1,
         "num_cols": 1,
+        "orientation": "rot_0",
         "grid": [
           [
             {
@@ -143,6 +144,7 @@
         ],
         "num_rows": 1,
         "num_cols": 1,
+        "orientation": "rot_0",
         "grid": [
           [
             {
