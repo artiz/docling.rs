@@ -228,6 +228,7 @@ call are needed afterwards:
 | **pdfium** | `.pdfium/lib/libpdfium.so` (`libpdfium.dylib` on macOS) |
 | **layout** (`layout_heron.onnx`) | `models/layout_heron.onnx` |
 | **OCR** rec model + dictionary | `models/ocr_rec.onnx`, `models/ppocr_keys_v1.txt` |
+| **OCR** text detector (optional, #429 — lines outside layout regions on scans/images) | `models/ocr_det.onnx` |
 | **TableFormer** | `models/tableformer/{encoder,decoder,bbox}.onnx` |
 
 > **layout + TableFormer are PyTorch→ONNX exports**

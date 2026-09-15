@@ -747,6 +747,25 @@ multilingual `ch` recognizer, the closest model shipped). Any other language
 (`de`, `ja`, …) is rejected by the CLI/serve/bindings and warns-and-defaults
 in `DOCLING_RS_OCR_LANG`.
 
+OCR has two stages, like docling's engines (#429). Recognition (PP-OCRv3)
+reads the lines inside the layout regions of a scanned page or an image
+input; a **text detector** (RapidOCR's PP-OCRv6 DB model,
+`.models/ocr_det.onnx`, `DOCLING_OCR_DET_ONNX` to point elsewhere) then
+sweeps the whole bitmap and every detected line no recognized cell covers
+is recognized too and placed as orphan text — a diagram's labels, a stamp,
+a margin note, text the layout model scored below its threshold. Lines
+inside a kept picture or table stay that element's silent children, as in
+docling. The detector is optional: without the model OCR is region-scoped,
+exactly as before it shipped. It runs on bitmap pages only (a digital page
+costs nothing) and concurrently with the layout model; its network is the
+costliest OCR stage on a scan, so its input's longer side is capped at 960 px
+by default (PaddleOCR's own `det_limit_side_len`; a Letter page at the 2.0
+px/pt render goes in at 736 × 960 — about a third of the uncapped time, with
+only noise-level output differences on the snapshot corpus).
+`DOCLING_RS_OCR_DET_MAX_SIDE` moves the cap; `0` restores RapidOCR's — and so
+docling's — uncapped rule (shorter side scaled up to 736, 1216 × 1600 for
+that page).
+
 Two more OCR knobs mirror docling 2.116+ options (#254), on every surface
 (CLI flag, `DocumentConverter`/`Pipeline` builder, serve option, Python
 kwarg, Node option):
@@ -757,8 +776,8 @@ kwarg, Node option):
   behavior this pipeline has always had; `full_page` and `layout_regions`
   both discard the embedded text layer, exactly like `--force-full-page-ocr`
   (the upstream distinction between them — whole-page vs per-region
-  *detector* input — has no analogue here, since the PP-OCR recognizer
-  always reads per-region line crops).
+  *detector* input — has no analogue here: the text detector always sees the
+  whole page and the recognizer always reads line crops).
 - `--ocr-scale X` (`DOCLING_RS_OCR_SCALE`) — docling's `OcrOptions.scale`:
   the resolution OCR reads, in pixels per PDF point. Unset, OCR reads the
   pipeline's own 2.0 px/pt (144 dpi) page render — the pinned conformance
@@ -1091,6 +1110,7 @@ instead — same models plus `pdfium.dll` — and see
 | RT-DETR layout | `.models/layout_heron.onnx` |
 | PP-OCRv3 rec + dictionary, English (the runtime default) | `.models/ocr_rec_en.onnx`, `.models/en_dict.txt` |
 | PP-OCRv3 rec + dictionary, multilingual `ch_` (`DOCLING_RS_OCR_LANG=ch`; the docling-conformance model — weak Latin word spacing) | `.models/ocr_rec.onnx`, `.models/ppocr_keys_v1.txt` |
+| PP-OCRv6 text detector (optional, #429 — lines outside layout regions on bitmap pages; without it OCR stays region-scoped; also fetched by the Python `download_models()`, reported by Node's `checkDependencies().ocrDet`, and loaded by the browser demo) | `.models/ocr_det.onnx` |
 | TableFormer (optional) | `.models/tableformer/{encoder,decoder,bbox}.onnx` (+ `.data` sidecars where the export needs them); `decoder_kv.onnx` is preferred when present — its current export has a dynamic batch axis, so all tables on a page decode in one lockstep loop (byte-identical to one at a time; an older fixed-batch `decoder_kv.onnx` still works, one table at a time) |
 | Whisper tiny (audio/ASR; skip with `--no-asr`) | `.models/asr/{encoder_model,decoder_model}.onnx`, `.models/asr/vocab.json` (+ `added_tokens.json` for language selection) |
 | Whisper presets (optional; `--asr-model=<preset>`, repeatable) | `.models/asr/<preset>/…` — English-only (`whisper_tiny_en`, `whisper_base_en`, `whisper_small_en`) and Distil-Whisper (`whisper_distil_small_en`) exports, fetched from Hugging Face |
@@ -1391,6 +1411,7 @@ one host for convenience.
 
 To point at files you exported or placed elsewhere instead, set the env vars
 directly: `DOCLING_LAYOUT_ONNX`, `DOCLING_OCR_REC_ONNX`, `DOCLING_OCR_DICT`,
+`DOCLING_OCR_DET_ONNX`,
 `DOCLING_TABLEFORMER_{ENCODER,DECODER,BBOX}`, `DOCLING_CODE_FORMULA_DIR`
 (enrichment models), `PDFIUM_DYNAMIC_LIB_PATH` — an
 env var always wins over the `./models` / `./.pdfium` default. Other

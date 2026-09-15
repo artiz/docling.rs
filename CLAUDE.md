@@ -76,7 +76,8 @@ cargo check -p docling --no-default-features --features pdf-text \
 
 ## Runtime assets & env
 
-- `.models/` (repo root): layout, TableFormer, OCR, ASR (`.models/asr/`,
+- `.models/` (repo root): layout, TableFormer, OCR (rec pairs + the optional
+  `ocr_det.onnx` text detector, #429), ASR (`.models/asr/`,
   presets in subdirs), enrichment, embedder. `.pdfium/lib/libpdfium.so`
   (`libpdfium.dylib` on macOS, #298/#299) for page rendering. Fetch:
   `scripts/install/download_dependencies.sh`.
@@ -84,6 +85,10 @@ cargo check -p docling --no-default-features --features pdf-text \
   paths (#285 — whole-dir override keeping the engine's own selection logic,
   e.g. the OCR en/ch pair; the py bindings point it at their cache), then
   exe-dir fallback; env overrides: `PDFIUM_DYNAMIC_LIB_PATH`,
+  `DOCLING_OCR_DET_ONNX` (text detector; missing → recognition-only OCR),
+  `DOCLING_RS_OCR_DET_MAX_SIDE` (cap on the detector input's longer side;
+  default 960 = PaddleOCR's, ~⅓ the uncapped detection time; `0` = RapidOCR's
+  uncapped rule),
   `DOCLING_ASR_{ENCODER,DECODER,VOCAB}`,
   `DOCLING_FFMPEG` (video frames — ffmpeg is a runtime binary, never a build
   dep), `DOCLING_RS_PDF_WORKERS/_THREADS/_INTRA`, `DOCLING_RS_TF_INTRA` (#262),

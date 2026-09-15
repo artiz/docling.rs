@@ -175,6 +175,12 @@ jobs:
             "https://huggingface.co/SWHL/RapidOCR/resolve/main/PP-OCRv3/en_PP-OCRv3_rec_infer.onnx"
           curl -fsSL $RETRY -o third-party/en_dict.txt \
             "https://raw.githubusercontent.com/PaddlePaddle/PaddleOCR/main/ppocr/utils/en_dict.txt"
+          # PP-OCRv6 text detector (#429, Apache-2.0): RapidOCR's small DB
+          # detector, the one docling's RapidOCR default runs; re-hosted
+          # unmodified from RapidOCR's model hub (its SHA256 is pinned there:
+          # 090f04abcd9d9a7498bc4ebf677e4cb9bdce1fe4197ddb7e529f1ef44e1ff94f).
+          curl -fsSL $RETRY -o third-party/ocr_det.onnx \
+            "https://www.modelscope.cn/models/RapidAI/RapidOCR/resolve/v3.9.2/onnx/PP-OCRv6/det/PP-OCRv6_det_small.onnx"
           # Whisper tiny (the ASR default, ~150 MB): same reasoning — a
           # default install fetches it, so mirror it here and leave Hugging
           # Face as download_dependencies.sh's fallback host.
@@ -219,6 +225,7 @@ jobs:
           stage third-party/picture_classifier.onnx picture_classifier.onnx
           stage third-party/ocr_rec_en.onnx ocr_rec_en.onnx
           stage third-party/en_dict.txt en_dict.txt
+          stage third-party/ocr_det.onnx ocr_det.onnx
           # Whisper tiny flattens with an asr_ prefix (release assets are one
           # flat namespace; download_dependencies.sh maps them back into
           # .models/asr/).

@@ -39,6 +39,8 @@ pub mod layout;
 mod mets;
 #[cfg(feature = "ml")]
 mod ocr;
+#[cfg(any(feature = "ml", feature = "ocr-prep"))]
+pub mod ocr_det;
 #[cfg(feature = "ocr-prep")]
 pub mod ocr_prep;
 #[cfg(feature = "ml")]
@@ -611,6 +613,13 @@ struct Worker {
     /// `None` when `no_ocr` skips layout entirely — no model load, no inference.
     layout: Option<layout::LayoutModel>,
     ocr: OcrSlot,
+    det: DetSlot,
+    /// Text-detector results computed ahead of a page's OCR pass (#429), keyed
+    /// by page index: the detector reads nothing but the page image, so it
+    /// runs on its own thread while the layout model predicts — see
+    /// [`Self::detect_alongside`] — and the OCR block collects the boxes here
+    /// instead of paying for detection serially.
+    pending_det: BTreeMap<usize, Result<Vec<ocr_det::DetBox>, String>>,
     /// This worker's intra-op thread budget — also the OCR lane count (see
     /// [`ocr::OcrModel::load_with`]): a pool worker with two threads runs two
     /// single-thread recognisers, the primary as many as its cores.
@@ -651,6 +660,15 @@ enum OcrSlot {
 }
 
 #[cfg(feature = "ml")]
+/// The text detector (#429), loaded on the first OCR'd page like the
+/// recognizer; `Missing` keeps the pipeline recognition-only.
+enum DetSlot {
+    Unloaded,
+    Ready(ocr_det::DetModel),
+    Missing,
+}
+
+#[cfg(feature = "ml")]
 impl Worker {
     #[allow(clippy::too_many_arguments)] // mirrors the Pipeline's option set
     fn load(
@@ -672,6 +690,8 @@ impl Worker {
                 Some(layout::LayoutModel::load_with(intra).map_err(PdfError::Layout)?)
             },
             ocr: OcrSlot::Unloaded,
+            det: DetSlot::Unloaded,
+            pending_det: BTreeMap::new(),
             intra,
             tables,
             classifier: enrich_slots.0,
@@ -719,6 +739,30 @@ impl Worker {
         })
     }
 
+    /// The text detector (#429): loaded on first use, `None` with `skip_ocr`
+    /// or when the model is not installed — recognition stays region-scoped
+    /// then, exactly the pre-#429 behavior, and `DOCLING_RS_DEBUG` says why.
+    fn det_model(&mut self) -> Option<&mut ocr_det::DetModel> {
+        if self.skip_ocr {
+            return None;
+        }
+        if matches!(self.det, DetSlot::Unloaded) {
+            match ocr_det::DetModel::load(self.intra) {
+                Ok(model) => self.det = DetSlot::Ready(model),
+                Err(e) => {
+                    docling_core::debug_log!(
+                        "docling-pdf: text detection unavailable ({e}); OCR stays region-scoped"
+                    );
+                    self.det = DetSlot::Missing;
+                }
+            }
+        }
+        match &mut self.det {
+            DetSlot::Ready(model) => Some(model),
+            _ => None,
+        }
+    }
+
     /// Run layout (+ OCR for cell-less pages) + TableFormer and assemble page `n`
     /// into its nodes and links. Pure given the page (mutates only the worker's
     /// lazily-loaded OCR model), so it is safe to run concurrently across pages.
@@ -742,14 +786,86 @@ impl Worker {
             return Ok((nodes, links, conf));
         }
         self.normalize_orientation(n, page)?;
-        let regions = timing::timed("layout.predict", || {
-            self.layout
-                .as_mut()
-                .expect("layout model loaded unless no_ocr")
-                .predict(layout_src(page), page.width, page.height)
-        })
+        let det_pages = self.det_candidates(std::slice::from_ref(&(n, &*page)))?;
+        let regions = {
+            let Self {
+                layout,
+                det,
+                pending_det,
+                ocr_scale,
+                ..
+            } = self;
+            let layout = layout.as_mut().expect("layout model loaded unless no_ocr");
+            let page: &PdfPage = &*page;
+            Self::detect_alongside(det, pending_det, *ocr_scale, &det_pages, || {
+                timing::timed("layout.predict", || {
+                    layout.predict(layout_src(page), page.width, page.height)
+                })
+            })
+        }
         .map_err(|e| PdfError::Layout(format!("page {}: {e}", n + 1)))?;
         self.finish_page(n, page, regions)
+    }
+
+    /// The pages of a batch the text detector should sweep (#429): bitmap
+    /// pages (no text layer) on a run with OCR and the detector available —
+    /// loading both lazily here so the concurrent run below needs no `self`.
+    fn det_candidates<'p>(
+        &mut self,
+        pages: &[(usize, &'p PdfPage)],
+    ) -> Result<Vec<(usize, &'p PdfPage)>, PdfError> {
+        let scanned: Vec<(usize, &PdfPage)> = pages
+            .iter()
+            .filter(|(_, p)| p.cells.is_empty() && p.image.width() > 1)
+            .copied()
+            .collect();
+        if scanned.is_empty() || self.ocr_model()?.is_none() || self.det_model().is_none() {
+            return Ok(Vec::new());
+        }
+        Ok(scanned)
+    }
+
+    /// Run `layout` on the calling thread while the text detector sweeps
+    /// `det_pages` on another (#429): the detector only reads each page's
+    /// image, layout only reads the pages too, and the two sessions are
+    /// independent, so on a scanned page the ~0.7 s detection hides behind
+    /// layout instead of adding to it. Results land in `pending_det` for the
+    /// OCR block; a detector failure is recorded per page and surfaces there.
+    fn detect_alongside<T>(
+        det: &mut DetSlot,
+        pending_det: &mut BTreeMap<usize, Result<Vec<ocr_det::DetBox>, String>>,
+        ocr_scale: Option<f32>,
+        det_pages: &[(usize, &PdfPage)],
+        layout: impl FnOnce() -> T,
+    ) -> T {
+        let DetSlot::Ready(det) = det else {
+            return layout();
+        };
+        if det_pages.is_empty() {
+            return layout();
+        }
+        std::thread::scope(|s| {
+            let handle = s.spawn(move || {
+                det_pages
+                    .iter()
+                    .map(|&(n, page)| {
+                        let mut view = None;
+                        let (img, _) = ocr_input(&mut view, &page.image, page.scale, ocr_scale);
+                        (n, timing::timed("ocr.det", || det.detect(img)))
+                    })
+                    .collect::<Vec<_>>()
+            });
+            let out = layout();
+            match handle.join() {
+                Ok(results) => pending_det.extend(results),
+                Err(_) => {
+                    for &(n, _) in det_pages {
+                        pending_det.insert(n, Err("ocr-det: detection thread panicked".into()));
+                    }
+                }
+            }
+            out
+        })
     }
 
     /// Content-based orientation normalization (#225), before any inference:
@@ -818,12 +934,30 @@ impl Worker {
             .iter()
             .map(|(_, page)| (layout_src(page), page.width, page.height))
             .collect();
-        let batched = timing::timed("layout.predict", || {
-            self.layout
-                .as_mut()
-                .expect("layout model loaded unless no_ocr")
-                .predict_batch(&inputs)
-        });
+        let refs: Vec<(usize, &PdfPage)> = items.iter().map(|(n, page)| (*n, page)).collect();
+        let det_pages = match self.det_candidates(&refs) {
+            Ok(p) => p,
+            Err(e) => {
+                let msg = e.to_string();
+                return items
+                    .iter()
+                    .map(|_| Err(PdfError::Ocr(msg.clone())))
+                    .collect();
+            }
+        };
+        let batched = {
+            let Self {
+                layout,
+                det,
+                pending_det,
+                ocr_scale,
+                ..
+            } = self;
+            let layout = layout.as_mut().expect("layout model loaded unless no_ocr");
+            Self::detect_alongside(det, pending_det, *ocr_scale, &det_pages, || {
+                timing::timed("layout.predict", || layout.predict_batch(&inputs))
+            })
+        };
         match batched {
             Ok(all) => items
                 .iter_mut()
@@ -1158,6 +1292,8 @@ impl Worker {
         assemble::drop_contained_regulars(&mut regions);
         // No text layer → recognise text from the page image via OCR.
         let ocred = page.cells.is_empty();
+        // Lines the text detector found outside every layout region (#429).
+        let mut det_cells: Vec<pdfium_backend::TextCell> = Vec::new();
         if ocred {
             // `None` = `skip_ocr` or a missing model (#244): the page keeps
             // its layout regions (and TableFormer structure below) with no
@@ -1185,6 +1321,69 @@ impl Worker {
                     let words: Vec<_> = words.into_iter().map(|(cell, _)| cell).collect();
                     page.cells.extend(words.iter().cloned());
                     page.word_cells = words;
+                }
+            }
+            // docling's OCR engines detect text lines over the whole bitmap
+            // and every line becomes a cell, so text the layout model gave no
+            // region — a diagram's labels, a stamp, a margin note — still
+            // reads out as orphan text. Region-scoped recognition above stays
+            // the source inside layout regions; the detector (#429) adds only
+            // the lines no recognized cell already covers, and the orphan pass
+            // below places them (those inside a kept picture or table become
+            // that special's silent children, as upstream).
+            if self.ocr_model()?.is_some() {
+                let (img, scl) = ocr_input(&mut ocr_view, &page.image, page.scale, ocr_scale);
+                // Usually computed already, alongside layout (see
+                // `detect_alongside`); a page that reached OCR another way
+                // detects here.
+                // Degradation over failure: a detector that loaded but cannot
+                // run (a damaged file, an allocation failure) costs the page
+                // its detected lines, not its conversion — the region-scoped
+                // pass above is complete on its own.
+                let detected = match self.pending_det.remove(&n) {
+                    Some(result) => result,
+                    None => match self.det_model() {
+                        Some(det) => timing::timed("ocr.det", || det.detect(img)),
+                        None => Ok(Vec::new()),
+                    },
+                }
+                .unwrap_or_else(|e| {
+                    docling_core::debug_log!(
+                        "docling-pdf: page {}: text detection failed ({e}); keeping the \
+                         region-scoped OCR only",
+                        n + 1
+                    );
+                    Vec::new()
+                });
+                docling_core::debug_log!(
+                    "docling-pdf: page {}: text detector found {} line(s): {:?}",
+                    n + 1,
+                    detected.len(),
+                    detected
+                        .iter()
+                        .map(|d| (
+                            d.l.round(),
+                            d.t.round(),
+                            d.r.round(),
+                            d.b.round(),
+                            (d.score * 100.0).round() / 100.0
+                        ))
+                        .collect::<Vec<_>>()
+                );
+                let uncovered = ocr_det::uncovered_lines(&detected, scl, &regions, &page.cells);
+                docling_core::debug_log!(
+                    "docling-pdf: page {}: {} of {} detected line(s) not covered by the region pass",
+                    n + 1,
+                    uncovered.len(),
+                    detected.len()
+                );
+                if let (false, Some(ocr)) = (uncovered.is_empty(), self.ocr_model()?) {
+                    let scored =
+                        timing::timed("ocr.det_lines", || ocr.ocr_page(img, &uncovered, scl))
+                            .map_err(|e| PdfError::Ocr(format!("page {}: {e}", n + 1)))?;
+                    ocr_confs.extend(scored.iter().map(|(_, conf)| conf));
+                    det_cells = scored.into_iter().map(|(cell, _)| cell).collect();
+                    page.cells.extend(det_cells.iter().cloned());
                 }
             }
         }
@@ -1267,10 +1466,12 @@ impl Worker {
         // the image chunk (#200) — so the orphan pass places the recognized
         // lines, then the same containment drop that handled the first wave
         // re-runs to swallow the in-picture ones.
-        if ocred && !pic_cells.is_empty() {
+        if ocred && (!pic_cells.is_empty() || !det_cells.is_empty()) {
             // Pictures (and wrappers) no longer count as claimers (#165), so
-            // the plain orphan pass places the recognized lines directly.
+            // the plain orphan pass places the recognized lines directly —
+            // the detector's lines (#429) the same way.
             assemble::add_orphan_regions(&mut regions, &pic_cells);
+            assemble::add_orphan_regions(&mut regions, &det_cells);
             assemble::drop_contained_regulars(&mut regions);
         } else if !ocred && !pic_cells.is_empty() {
             // Digital page, picture kept: its speculative OCR cells must not

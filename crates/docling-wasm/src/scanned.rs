@@ -46,6 +46,22 @@ extern "C" {
 
     #[wasm_bindgen(method, catch)]
     pub async fn run(this: &LayoutSession, data: js_sys::Float32Array) -> Result<JsValue, JsValue>;
+
+    /// The JS-side text-detection session (#429): a wrapper around an
+    /// `ort.InferenceSession` over `ocr_det.onnx` exposing `run(h, w, data)` —
+    /// feed the `(1, 3, h, w)` CHW float buffer `docling_pdf::ocr_det::
+    /// prep_det_input` produced, resolve to `{ data, dims: [1, 1, h, w] }`,
+    /// the DB probability map. Optional: without one the browser pipeline is
+    /// recognition-only, like a native install without the model.
+    pub type DetSession;
+
+    #[wasm_bindgen(method, catch)]
+    pub async fn run(
+        this: &DetSession,
+        h: u32,
+        w: u32,
+        data: js_sys::Float32Array,
+    ) -> Result<JsValue, JsValue>;
 }
 
 /// Multi-page scanned-document converter (lite profile). Feed pages in
@@ -55,6 +71,7 @@ extern "C" {
 pub struct ScannedConverter {
     chars: Vec<String>,
     pages: Vec<docling_pdf::scanned::AssembledPage>,
+    det: Option<DetSession>,
 }
 
 #[wasm_bindgen]
@@ -66,7 +83,17 @@ impl ScannedConverter {
         Self {
             chars: dict_chars(dict),
             pages: Vec::new(),
+            det: None,
         }
+    }
+
+    /// Attach a text-detection session (#429): detected lines no layout region
+    /// or recognized cell covers — a diagram's labels, a margin note — get
+    /// recognized and placed as orphan text, as the native pipeline and
+    /// docling's OCR engines do. Call once before the first `add_page`.
+    #[wasm_bindgen(js_name = setDetector)]
+    pub fn set_detector(&mut self, det: DetSession) {
+        self.det = Some(det);
     }
 
     /// Convert one page (lite profile — geometric tables): `rgba` is the
@@ -255,6 +282,44 @@ impl ScannedConverter {
                 docling_pdf::assemble::add_orphan_regions(&mut regions, &pcells);
             }
         }
+
+        // Text detection (#429): the same supplement the native worker runs —
+        // DB sweeps the whole bitmap, lines the region pass did not cover are
+        // recognized and placed by the orphan pass; those inside a kept
+        // picture or table become its silent children (docling parity).
+        // (Taken out of `self` for the duration: the recognition below borrows
+        // `self` mutably, and a JS session handle is not `Clone`.)
+        let det = self.det.take();
+        if let Some(det) = det.as_ref() {
+            if let Some((input, dw, dh)) = docling_pdf::ocr_det::prep_det_input(&img) {
+                let out = det
+                    .run(dh, dw, js_sys::Float32Array::from(input.as_slice()))
+                    .await
+                    .map_err(|e| JsError::new(&format!("det session.run: {e:?}")))?;
+                let (prob, ph, pw) = tensor_parts(&out)?;
+                let boxes =
+                    docling_pdf::ocr_det::db_boxes(&prob, pw, ph, img.width(), img.height());
+                let uncovered =
+                    docling_pdf::ocr_det::uncovered_lines(&boxes, scale, &regions, &cells);
+                if !uncovered.is_empty() {
+                    let (dbboxes, dlines) = prep_region_lines(&img, &uncovered, scale);
+                    let dtexts = self.ocr_lines(rec, &dlines).await?;
+                    let mut dcells = Vec::new();
+                    for ((l, t, r, b), text) in dbboxes.into_iter().zip(dtexts) {
+                        let text = text.trim().to_string();
+                        if !text.is_empty() {
+                            dcells.push(TextCell { text, l, t, r, b });
+                        }
+                    }
+                    if !dcells.is_empty() {
+                        cells.extend(dcells.iter().cloned());
+                        docling_pdf::assemble::add_orphan_regions(&mut regions, &dcells);
+                        docling_pdf::assemble::drop_contained_regulars(&mut regions);
+                    }
+                }
+            }
+        }
+        self.det = det;
 
         // TableFormer (opt-in): resolve each table region's structure through
         // the ONNX graphs + shared matcher; other regions stay `None` (geometric
