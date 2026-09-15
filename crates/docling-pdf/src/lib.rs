@@ -614,6 +614,12 @@ struct Worker {
     layout: Option<layout::LayoutModel>,
     ocr: OcrSlot,
     det: DetSlot,
+    /// Text-detector results computed ahead of a page's OCR pass (#429), keyed
+    /// by page index: the detector reads nothing but the page image, so it
+    /// runs on its own thread while the layout model predicts — see
+    /// [`Self::detect_alongside`] — and the OCR block collects the boxes here
+    /// instead of paying for detection serially.
+    pending_det: BTreeMap<usize, Result<Vec<ocr_det::DetBox>, String>>,
     /// This worker's intra-op thread budget — also the OCR lane count (see
     /// [`ocr::OcrModel::load_with`]): a pool worker with two threads runs two
     /// single-thread recognisers, the primary as many as its cores.
@@ -685,6 +691,7 @@ impl Worker {
             },
             ocr: OcrSlot::Unloaded,
             det: DetSlot::Unloaded,
+            pending_det: BTreeMap::new(),
             intra,
             tables,
             classifier: enrich_slots.0,
@@ -779,14 +786,86 @@ impl Worker {
             return Ok((nodes, links, conf));
         }
         self.normalize_orientation(n, page)?;
-        let regions = timing::timed("layout.predict", || {
-            self.layout
-                .as_mut()
-                .expect("layout model loaded unless no_ocr")
-                .predict(layout_src(page), page.width, page.height)
-        })
+        let det_pages = self.det_candidates(std::slice::from_ref(&(n, &*page)))?;
+        let regions = {
+            let Self {
+                layout,
+                det,
+                pending_det,
+                ocr_scale,
+                ..
+            } = self;
+            let layout = layout.as_mut().expect("layout model loaded unless no_ocr");
+            let page: &PdfPage = &*page;
+            Self::detect_alongside(det, pending_det, *ocr_scale, &det_pages, || {
+                timing::timed("layout.predict", || {
+                    layout.predict(layout_src(page), page.width, page.height)
+                })
+            })
+        }
         .map_err(|e| PdfError::Layout(format!("page {}: {e}", n + 1)))?;
         self.finish_page(n, page, regions)
+    }
+
+    /// The pages of a batch the text detector should sweep (#429): bitmap
+    /// pages (no text layer) on a run with OCR and the detector available —
+    /// loading both lazily here so the concurrent run below needs no `self`.
+    fn det_candidates<'p>(
+        &mut self,
+        pages: &[(usize, &'p PdfPage)],
+    ) -> Result<Vec<(usize, &'p PdfPage)>, PdfError> {
+        let scanned: Vec<(usize, &PdfPage)> = pages
+            .iter()
+            .filter(|(_, p)| p.cells.is_empty() && p.image.width() > 1)
+            .copied()
+            .collect();
+        if scanned.is_empty() || self.ocr_model()?.is_none() || self.det_model().is_none() {
+            return Ok(Vec::new());
+        }
+        Ok(scanned)
+    }
+
+    /// Run `layout` on the calling thread while the text detector sweeps
+    /// `det_pages` on another (#429): the detector only reads each page's
+    /// image, layout only reads the pages too, and the two sessions are
+    /// independent, so on a scanned page the ~0.7 s detection hides behind
+    /// layout instead of adding to it. Results land in `pending_det` for the
+    /// OCR block; a detector failure is recorded per page and surfaces there.
+    fn detect_alongside<T>(
+        det: &mut DetSlot,
+        pending_det: &mut BTreeMap<usize, Result<Vec<ocr_det::DetBox>, String>>,
+        ocr_scale: Option<f32>,
+        det_pages: &[(usize, &PdfPage)],
+        layout: impl FnOnce() -> T,
+    ) -> T {
+        let DetSlot::Ready(det) = det else {
+            return layout();
+        };
+        if det_pages.is_empty() {
+            return layout();
+        }
+        std::thread::scope(|s| {
+            let handle = s.spawn(move || {
+                det_pages
+                    .iter()
+                    .map(|&(n, page)| {
+                        let mut view = None;
+                        let (img, _) = ocr_input(&mut view, &page.image, page.scale, ocr_scale);
+                        (n, timing::timed("ocr.det", || det.detect(img)))
+                    })
+                    .collect::<Vec<_>>()
+            });
+            let out = layout();
+            match handle.join() {
+                Ok(results) => pending_det.extend(results),
+                Err(_) => {
+                    for &(n, _) in det_pages {
+                        pending_det.insert(n, Err("ocr-det: detection thread panicked".into()));
+                    }
+                }
+            }
+            out
+        })
     }
 
     /// Content-based orientation normalization (#225), before any inference:
@@ -855,12 +934,30 @@ impl Worker {
             .iter()
             .map(|(_, page)| (layout_src(page), page.width, page.height))
             .collect();
-        let batched = timing::timed("layout.predict", || {
-            self.layout
-                .as_mut()
-                .expect("layout model loaded unless no_ocr")
-                .predict_batch(&inputs)
-        });
+        let refs: Vec<(usize, &PdfPage)> = items.iter().map(|(n, page)| (*n, page)).collect();
+        let det_pages = match self.det_candidates(&refs) {
+            Ok(p) => p,
+            Err(e) => {
+                let msg = e.to_string();
+                return items
+                    .iter()
+                    .map(|_| Err(PdfError::Ocr(msg.clone())))
+                    .collect();
+            }
+        };
+        let batched = {
+            let Self {
+                layout,
+                det,
+                pending_det,
+                ocr_scale,
+                ..
+            } = self;
+            let layout = layout.as_mut().expect("layout model loaded unless no_ocr");
+            Self::detect_alongside(det, pending_det, *ocr_scale, &det_pages, || {
+                timing::timed("layout.predict", || layout.predict_batch(&inputs))
+            })
+        };
         match batched {
             Ok(all) => items
                 .iter_mut()
@@ -1236,11 +1333,17 @@ impl Worker {
             // that special's silent children, as upstream).
             if self.ocr_model()?.is_some() {
                 let (img, scl) = ocr_input(&mut ocr_view, &page.image, page.scale, ocr_scale);
-                let detected = match self.det_model() {
-                    Some(det) => timing::timed("ocr.det", || det.detect(img))
-                        .map_err(|e| PdfError::Ocr(format!("page {}: {e}", n + 1)))?,
-                    None => Vec::new(),
-                };
+                // Usually computed already, alongside layout (see
+                // `detect_alongside`); a page that reached OCR another way
+                // detects here.
+                let detected = match self.pending_det.remove(&n) {
+                    Some(result) => result,
+                    None => match self.det_model() {
+                        Some(det) => timing::timed("ocr.det", || det.detect(img)),
+                        None => Ok(Vec::new()),
+                    },
+                }
+                .map_err(|e| PdfError::Ocr(format!("page {}: {e}", n + 1)))?;
                 docling_core::debug_log!(
                     "docling-pdf: page {}: text detector found {} line(s): {:?}",
                     n + 1,

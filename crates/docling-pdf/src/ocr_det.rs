@@ -65,16 +65,40 @@ pub struct DetBox {
 /// shorter side scaled up to [`LIMIT_SIDE_LEN`] (never down), both sides
 /// rounded to a multiple of 32. `None` when a side rounds to zero.
 pub fn det_input_size(w: u32, h: u32) -> Option<(u32, u32)> {
+    det_input_size_capped(w, h, max_side_cap())
+}
+
+/// `DOCLING_RS_OCR_DET_MAX_SIDE`: an optional cap on the detector input's
+/// longer side (PaddleOCR's own default is `limit_type: max, 960`; RapidOCR's
+/// — and so docling's — is the uncapped `min 736` rule this port follows).
+/// Unset or `0` = no cap. A cap trades detection recall on small print for
+/// time: the DB net is the costliest OCR stage on a scanned page and its
+/// cost is linear in input pixels.
+fn max_side_cap() -> u32 {
+    static CAP: std::sync::OnceLock<u32> = std::sync::OnceLock::new();
+    *CAP.get_or_init(|| docling_core::env::parse::<u32>("DOCLING_RS_OCR_DET_MAX_SIDE").unwrap_or(0))
+}
+
+/// [`det_input_size`] with an explicit longer-side cap (`0` = none): the cap
+/// scales the image down first, then RapidOCR's shorter-side rule applies to
+/// what is left (so a capped input never exceeds the cap).
+pub fn det_input_size_capped(w: u32, h: u32, max_side: u32) -> Option<(u32, u32)> {
     if w == 0 || h == 0 {
         return None;
     }
-    let ratio = if w.min(h) < LIMIT_SIDE_LEN {
-        LIMIT_SIDE_LEN as f32 / w.min(h) as f32
+    let (w, h) = (w as f32, h as f32);
+    // RapidOCR's rule first (shorter side up to 736, never down), then the
+    // cap pulls the longer side back if that overshoots it.
+    let mut ratio = if w.min(h) < LIMIT_SIDE_LEN as f32 {
+        LIMIT_SIDE_LEN as f32 / w.min(h)
     } else {
         1.0
     };
+    if max_side > 0 && w.max(h) * ratio > max_side as f32 {
+        ratio = max_side as f32 / w.max(h);
+    }
     let round32 = |v: f32| ((v as i64 as f32 / 32.0).round() * 32.0) as i64;
-    let (rw, rh) = (round32(w as f32 * ratio), round32(h as f32 * ratio));
+    let (rw, rh) = (round32(w * ratio), round32(h * ratio));
     (rw > 0 && rh > 0).then_some((rw as u32, rh as u32))
 }
 
@@ -87,7 +111,7 @@ pub fn prep_det_input(img: &RgbImage) -> Option<(Vec<f32>, u32, u32)> {
     let resized = if (w, h) == img.dimensions() {
         img.clone()
     } else {
-        image::imageops::resize(img, w, h, image::imageops::FilterType::Triangle)
+        resize_bilinear(img, w, h)
     };
     let n = (w * h) as usize;
     let mut data = vec![0f32; 3 * n];
@@ -98,6 +122,44 @@ pub fn prep_det_input(img: &RgbImage) -> Option<(Vec<f32>, u32, u32)> {
         data[2 * n + i] = px[0] as f32 / 127.5 - 1.0;
     }
     Some((data, w, h))
+}
+
+/// Bilinear resize (cv2's default `INTER_LINEAR`) — `fast_image_resize`'s SIMD
+/// convolution with the triangle kernel, the scalar `image` crate resize with
+/// `DOCLING_RS_SLOW_RESIZE=1` (same kernel, several times slower; the
+/// scalar path is also the fallback should the SIMD one refuse the buffer).
+fn resize_bilinear(img: &RgbImage, w: u32, h: u32) -> RgbImage {
+    #[cfg(feature = "ml")]
+    {
+        use fast_image_resize as fir;
+        static SLOW: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+        let slow = *SLOW.get_or_init(|| docling_core::env::flag("DOCLING_RS_SLOW_RESIZE"));
+        if !slow {
+            let fast = || {
+                let src = fir::images::ImageRef::new(
+                    img.width(),
+                    img.height(),
+                    img.as_raw(),
+                    fir::PixelType::U8x3,
+                )
+                .ok()?;
+                let mut dst = fir::images::Image::new(w, h, fir::PixelType::U8x3);
+                fir::Resizer::new()
+                    .resize(
+                        &src,
+                        &mut dst,
+                        &fir::ResizeOptions::new()
+                            .resize_alg(fir::ResizeAlg::Convolution(fir::FilterType::Bilinear)),
+                    )
+                    .ok()?;
+                RgbImage::from_raw(w, h, dst.into_vec())
+            };
+            if let Some(out) = fast() {
+                return out;
+            }
+        }
+    }
+    image::imageops::resize(img, w, h, image::imageops::FilterType::Triangle)
 }
 
 /// `DBPostProcess.__call__`: text boxes from the detector's `w × h`
@@ -488,16 +550,18 @@ mod session {
 
         /// Detect text lines on `img`; boxes in `img` pixels, reading order.
         pub fn detect(&mut self, img: &RgbImage) -> Result<Vec<DetBox>, String> {
-            let Some((data, w, h)) = prep_det_input(img) else {
+            let Some((data, w, h)) = crate::timing::timed("ocr.det.prep", || prep_det_input(img))
+            else {
                 return Ok(Vec::new());
             };
             let input = Tensor::from_array(([1usize, 3, h as usize, w as usize], data))
                 .map_err(|e| format!("ocr-det: input: {e}"))?;
             let name = self.session.inputs()[0].name().to_string();
-            let outputs = self
-                .session
-                .run(ort::inputs![name.as_str() => input])
-                .map_err(|e| format!("ocr-det: run: {e}"))?;
+            let outputs = crate::timing::timed("ocr.det.net", || {
+                self.session
+                    .run(ort::inputs![name.as_str() => input])
+                    .map_err(|e| format!("ocr-det: run: {e}"))
+            })?;
             let (shape, prob) = outputs[0]
                 .try_extract_tensor::<f32>()
                 .map_err(|e| format!("ocr-det: output: {e}"))?;
@@ -506,7 +570,9 @@ mod session {
                 [_, _, ph, pw] => (*ph, *pw),
                 _ => return Err(format!("ocr-det: unexpected output shape {dims:?}")),
             };
-            Ok(db_boxes(prob, pw, ph, img.width(), img.height()))
+            Ok(crate::timing::timed("ocr.det.post", || {
+                db_boxes(prob, pw, ph, img.width(), img.height())
+            }))
         }
     }
 }
@@ -522,6 +588,14 @@ mod tests {
         // Already ≥ 736 on the short side: unchanged bar the /32 rounding.
         assert_eq!(det_input_size(1335, 2652), Some((1344, 2656)));
         assert_eq!(det_input_size(0, 10), None);
+        // A longer-side cap scales a big page down (1224 × 1584 → 736 × 960
+        // for 960) and leaves a small image's shorter-side upscale alone
+        // (445 × 884 still goes to 736 × 1472 under a 1500 cap, 480 × 960
+        // under 960).
+        assert_eq!(det_input_size_capped(1224, 1584, 960), Some((736, 960)));
+        assert_eq!(det_input_size_capped(445, 884, 1500), Some((736, 1472)));
+        assert_eq!(det_input_size_capped(445, 884, 960), Some((480, 960)));
+        assert_eq!(det_input_size_capped(1224, 1584, 0), Some((1216, 1600)));
     }
 
     #[test]

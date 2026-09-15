@@ -86,6 +86,9 @@ cargo check -p docling --no-default-features --features pdf-text \
   e.g. the OCR en/ch pair; the py bindings point it at their cache), then
   exe-dir fallback; env overrides: `PDFIUM_DYNAMIC_LIB_PATH`,
   `DOCLING_OCR_DET_ONNX` (text detector; missing → recognition-only OCR),
+  `DOCLING_RS_OCR_DET_MAX_SIDE` (cap on the detector input's longer side,
+  0/unset = RapidOCR's uncapped rule; 960 = PaddleOCR's default, ~⅓ the
+  detection time),
   `DOCLING_ASR_{ENCODER,DECODER,VOCAB}`,
   `DOCLING_FFMPEG` (video frames — ffmpeg is a runtime binary, never a build
   dep), `DOCLING_RS_PDF_WORKERS/_THREADS/_INTRA`, `DOCLING_RS_TF_INTRA` (#262),

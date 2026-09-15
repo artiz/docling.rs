@@ -756,7 +756,13 @@ is recognized too and placed as orphan text — a diagram's labels, a stamp,
 a margin note, text the layout model scored below its threshold. Lines
 inside a kept picture or table stay that element's silent children, as in
 docling. The detector is optional: without the model OCR is region-scoped,
-exactly as before it shipped.
+exactly as before it shipped. It runs on bitmap pages only (a digital page
+costs nothing) and concurrently with the layout model; its network is the
+costliest OCR stage on a scan (RapidOCR's rule feeds it the page at ≥ 736 px
+on the shorter side — 1216 × 1600 for a Letter page at the 2.0 px/pt
+render), so `DOCLING_RS_OCR_DET_MAX_SIDE=960` (PaddleOCR's own default cap)
+trades a little small-print recall for roughly a third of that time; unset
+keeps RapidOCR's — and so docling's — uncapped input.
 
 Two more OCR knobs mirror docling 2.116+ options (#254), on every surface
 (CLI flag, `DocumentConverter`/`Pipeline` builder, serve option, Python
