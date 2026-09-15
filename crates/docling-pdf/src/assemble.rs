@@ -774,6 +774,20 @@ pub fn recover_text_panels(regions: &mut Vec<Region>, cells: &[TextCell]) {
     *regions = out;
 }
 
+/// Drop a `picture` detection covering more than 90 % of the page — docling's
+/// `LayoutPostprocessor._process_special_clusters` "Filter out full-page
+/// pictures" (upstream since 2.15), applied to the thresholded detections
+/// before overlap resolution. A box that big is the page itself, not a figure
+/// on it: the layout model emits one for a whole-page diagram (a LaTeX figure
+/// PDF cropped to its drawing), a plate, or a scan, and keeping it would swallow
+/// every text cell on the page as picture children — the diagram's labels and
+/// caption vanish behind a lone `<!-- image -->`, where docling reads them out as
+/// text. `page_w`/`page_h` is the display-frame page box.
+pub fn drop_full_page_pictures(regions: &mut Vec<Region>, page_w: f32, page_h: f32) {
+    let page_area = (page_w * page_h).max(1.0);
+    regions.retain(|r| r.label != "picture" || area(r.l, r.t, r.r, r.b) / page_area <= 0.90);
+}
+
 /// Drop a `picture` detection that is a small, empty, low-confidence margin box on
 /// a **text page** — a false positive the RT-DETR layout sometimes emits (e.g.
 /// `right_to_left_02`'s phantom right-column picture, score 0.40); docling does not
@@ -3037,6 +3051,35 @@ impl StreamAssembler {
 #[cfg(test)]
 mod tests {
     use super::{cells_text, clean_text};
+
+    /// docling drops a picture covering > 90 % of the page (its labels then
+    /// read out as text); a dominant-but-not-full figure and any other label
+    /// stay whatever their size.
+    #[test]
+    fn full_page_pictures_are_dropped_like_docling() {
+        use super::drop_full_page_pictures;
+        use crate::layout::Region;
+        let region = |label: &'static str, l, t, r, b| Region {
+            label,
+            score: 0.99,
+            l,
+            t,
+            r,
+            b,
+        };
+        let mut regions = vec![
+            region("picture", 0.0, 0.5, 478.9, 241.8),
+            region("picture", 10.0, 10.0, 400.0, 200.0),
+            region("table", 0.0, 0.0, 480.0, 243.0),
+            region("text", 5.0, 5.0, 100.0, 20.0),
+        ];
+        drop_full_page_pictures(&mut regions, 480.75, 243.75);
+        let labels: Vec<_> = regions.iter().map(|r| (r.label, r.l)).collect();
+        assert_eq!(
+            labels,
+            vec![("picture", 10.0), ("table", 0.0), ("text", 5.0)]
+        );
+    }
     use super::{code_region_text, merge_continuations, resolve_link_anchors, StreamAssembler};
     use crate::layout::Region;
     use crate::pdfium_backend::{LinkAnnot, PdfPage, TextCell};

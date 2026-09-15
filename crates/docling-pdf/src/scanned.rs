@@ -26,6 +26,7 @@ pub fn refine_regions(
 ) -> Vec<Region> {
     let mut regions = regions;
     regions.retain(|r| r.score >= label_threshold(r.label));
+    crate::assemble::drop_full_page_pictures(&mut regions, page_w, page_h);
     let mut regions = crate::assemble::resolve(regions);
     crate::assemble::add_orphan_regions(&mut regions, cells);
     crate::assemble::drop_false_pictures(&mut regions, cells, page_w, page_h);
