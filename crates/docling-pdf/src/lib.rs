@@ -1256,25 +1256,50 @@ impl Worker {
                         ))
                         .collect::<Vec<_>>()
                 );
-                let uncovered: Vec<layout::Region> = detected
-                    .iter()
-                    .map(|d| layout::Region {
-                        label: "text",
-                        score: d.score,
-                        l: d.l / scl,
-                        t: d.t / scl,
-                        r: d.r / scl,
-                        b: d.b / scl,
-                    })
-                    .filter(|d| {
-                        let da = ((d.r - d.l) * (d.b - d.t)).max(1.0);
-                        !page.cells.iter().any(|c| {
-                            let ix = (d.r.min(c.r) - d.l.max(c.l)).max(0.0);
-                            let iy = (d.b.min(c.b) - d.t.max(c.t)).max(0.0);
-                            ix * iy / da > 0.3
-                        })
-                    })
-                    .collect();
+                let mut uncovered: Vec<layout::Region> = Vec::new();
+                for d in detected.iter().map(|d| layout::Region {
+                    label: "text",
+                    score: d.score,
+                    l: d.l / scl,
+                    t: d.t / scl,
+                    r: d.r / scl,
+                    b: d.b / scl,
+                }) {
+                    // Covered = the region-scoped pass already read it: the
+                    // line lies mostly inside a text-like or table region
+                    // (whose lines were segmented and recognized above,
+                    // whatever it made of them), or recognized cells add up
+                    // to a fair share of it. Cumulative, because DB happily
+                    // spans two adjacent columns in one box, and such a box
+                    // overlaps every single cell a little while re-reading
+                    // all of them (the old_newspaper scan doubled a paragraph
+                    // that way). A box another accepted box already covers
+                    // (DB can emit a word and its whole line) is a duplicate.
+                    let da = ((d.r - d.l) * (d.b - d.t)).max(1.0);
+                    let inter = |l: f32, t: f32, r: f32, b: f32| {
+                        (d.r.min(r) - d.l.max(l)).max(0.0) * (d.b.min(b) - d.t.max(t)).max(0.0)
+                    };
+                    let in_region = regions.iter().any(|r| {
+                        (ocr_prep::is_text_label(r.label) || assemble::is_table_like(r.label))
+                            && inter(r.l, r.t, r.r, r.b) / da > 0.5
+                    });
+                    let by_cells: f32 = page
+                        .cells
+                        .iter()
+                        .map(|c| inter(c.l, c.t, c.r, c.b))
+                        .sum::<f32>()
+                        / da;
+                    let by_accepted = uncovered
+                        .iter()
+                        .any(|u| inter(u.l, u.t, u.r, u.b) / da > 0.3);
+                    docling_core::debug_log!(
+                        "docling-pdf: det box ({:.0},{:.0},{:.0},{:.0}) in_region={in_region} by_cells={by_cells:.2} dup={by_accepted}",
+                        d.l, d.t, d.r, d.b
+                    );
+                    if !in_region && by_cells <= 0.3 && !by_accepted {
+                        uncovered.push(d);
+                    }
+                }
                 if let (false, Some(ocr)) = (uncovered.is_empty(), self.ocr_model()?) {
                     let scored =
                         timing::timed("ocr.det_lines", || ocr.ocr_page(img, &uncovered, scl))

@@ -2,12 +2,10 @@ Vanilla Attention
 
 <!-- image -->
 
-Effective Context Length
+Sliding Window Attention
 
 <!-- image -->
 
-1000 11000 11100 京
-
-Sliding Window Attention
+Effective Context Length
 
 <!-- image -->
