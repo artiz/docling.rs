@@ -366,7 +366,12 @@ These are deliberate or unavoidable divergences, not bugs.
      the whole bitmap, and detected lines no recognized cell covers are
      recognized and placed as orphan text — docling's behavior for text its
      layout model gives no cluster (diagram labels, stamps, margin notes).
-     Lines inside a kept picture/table stay silent children, as upstream.
+     Lines inside a kept picture/table stay silent children, as upstream. The
+     detector input is capped at 960 px on the longer side by default
+     (PaddleOCR's own default; RapidOCR's uncapped rule via
+     `DOCLING_RS_OCR_DET_MAX_SIDE=0`) — ~⅓ of the detection time for
+     noise-level output differences. The browser pipeline runs the same
+     detector through onnxruntime-web when `ocr_det.onnx` is available.
    - **Tables** — **TableFormer** (image encoder + autoregressive OTSL structure
      decoder + cell-bbox decoder, ported to ONNX), on a cv2-exact preprocessed
      crop. Reproduces docling's padded GitHub tables — `2305-pg9` is cell-for-cell

@@ -8,6 +8,12 @@ Split Split
 
 Linear Linear Linear
 
+V
+
+个
+
 K
 
-1
+Q
+
+F

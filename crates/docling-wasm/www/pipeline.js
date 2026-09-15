@@ -173,6 +173,44 @@ export function createOcr({ onStatus }) {
     return recCache[lang];
   }
 
+  // Text detector (#429): RapidOCR's PP-OCRv6 DB model, the same file the
+  // native pipeline installs as .models/ocr_det.onnx. Optional — without it
+  // the browser pipeline is recognition-only (text outside layout regions on
+  // a bitmap page is lost, as before). Local ./.models/ first, then the model
+  // mirror, then RapidOCR's own hub.
+  const DET_UPSTREAM = "https://www.modelscope.cn/models/RapidAI/RapidOCR/resolve/v3.9.2/onnx/PP-OCRv6/det/PP-OCRv6_det_small.onnx";
+  let det = null;
+  let detTried = false;
+  async function loadDetector() {
+    if (det || detTried) return det;
+    detTried = true;
+    let buf;
+    try {
+      ({ buf } = await fetchModel("ocr_det.onnx", ["./.models/", MODEL_BASE], "text detector (first load only)"));
+    } catch (e) {
+      try {
+        buf = await fetchProgress(DET_UPSTREAM, "text detector (first load only)");
+      } catch (e2) {
+        return null; // not provided and not fetchable → recognition-only
+      }
+    }
+    status("starting text-detection session …", true);
+    const session = await ort.InferenceSession.create(buf, {
+      executionProviders: ["wasm"],
+      logSeverityLevel: 3,
+    });
+    det = {
+      run: async (h, w, data) => {
+        const results = await session.run({
+          [session.inputNames[0]]: new ort.Tensor("float32", data, [1, 3, h, w]),
+        });
+        const t = results[session.outputNames[0]];
+        return { data: t.data, dims: Array.from(t.dims) };
+      },
+    };
+    return det;
+  }
+
   // Interop wrapper docling_wasm expects (see src/scanned.rs).
   let layout = null;
   let layoutKind = null;
@@ -260,7 +298,10 @@ export function createOcr({ onStatus }) {
   async function startDoc(lang, useTf) {
     const { dict, rec } = await recFor(lang);
     const tfSess = useTf ? await ensureTf() : null;
-    cur = { conv: new ScannedConverter(dict), rec, tf: tfSess };
+    const conv = new ScannedConverter(dict);
+    const detector = await loadDetector();
+    if (detector) conv.setDetector(detector);
+    cur = { conv, rec, tf: tfSess };
   }
 
   // A digital PDF (one with a text layer): the text comes out of the file, so

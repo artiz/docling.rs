@@ -126,6 +126,8 @@ export interface DependencyStatus {
   layout: boolean
   /** OCR model + dictionary present. */
   ocr: boolean
+  /** PP-OCR text detector (ocr_det.onnx) present — optional; without it OCR reads only inside layout regions (#429). */
+  ocrDet: boolean
   /** TableFormer encoder/decoder/bbox present. */
   tableformer: boolean
   /** Hybrid-chunker tokenizer (.models/chunk/tokenizer.json) present. */

@@ -758,11 +758,13 @@ inside a kept picture or table stay that element's silent children, as in
 docling. The detector is optional: without the model OCR is region-scoped,
 exactly as before it shipped. It runs on bitmap pages only (a digital page
 costs nothing) and concurrently with the layout model; its network is the
-costliest OCR stage on a scan (RapidOCR's rule feeds it the page at ≥ 736 px
-on the shorter side — 1216 × 1600 for a Letter page at the 2.0 px/pt
-render), so `DOCLING_RS_OCR_DET_MAX_SIDE=960` (PaddleOCR's own default cap)
-trades a little small-print recall for roughly a third of that time; unset
-keeps RapidOCR's — and so docling's — uncapped input.
+costliest OCR stage on a scan, so its input's longer side is capped at 960 px
+by default (PaddleOCR's own `det_limit_side_len`; a Letter page at the 2.0
+px/pt render goes in at 736 × 960 — about a third of the uncapped time, with
+only noise-level output differences on the snapshot corpus).
+`DOCLING_RS_OCR_DET_MAX_SIDE` moves the cap; `0` restores RapidOCR's — and so
+docling's — uncapped rule (shorter side scaled up to 736, 1216 × 1600 for
+that page).
 
 Two more OCR knobs mirror docling 2.116+ options (#254), on every surface
 (CLI flag, `DocumentConverter`/`Pipeline` builder, serve option, Python
@@ -1108,7 +1110,7 @@ instead — same models plus `pdfium.dll` — and see
 | RT-DETR layout | `.models/layout_heron.onnx` |
 | PP-OCRv3 rec + dictionary, English (the runtime default) | `.models/ocr_rec_en.onnx`, `.models/en_dict.txt` |
 | PP-OCRv3 rec + dictionary, multilingual `ch_` (`DOCLING_RS_OCR_LANG=ch`; the docling-conformance model — weak Latin word spacing) | `.models/ocr_rec.onnx`, `.models/ppocr_keys_v1.txt` |
-| PP-OCRv6 text detector (optional, #429 — lines outside layout regions on bitmap pages; without it OCR stays region-scoped) | `.models/ocr_det.onnx` |
+| PP-OCRv6 text detector (optional, #429 — lines outside layout regions on bitmap pages; without it OCR stays region-scoped; also fetched by the Python `download_models()`, reported by Node's `checkDependencies().ocrDet`, and loaded by the browser demo) | `.models/ocr_det.onnx` |
 | TableFormer (optional) | `.models/tableformer/{encoder,decoder,bbox}.onnx` (+ `.data` sidecars where the export needs them); `decoder_kv.onnx` is preferred when present — its current export has a dynamic batch axis, so all tables on a page decode in one lockstep loop (byte-identical to one at a time; an older fixed-batch `decoder_kv.onnx` still works, one table at a time) |
 | Whisper tiny (audio/ASR; skip with `--no-asr`) | `.models/asr/{encoder_model,decoder_model}.onnx`, `.models/asr/vocab.json` (+ `added_tokens.json` for language selection) |
 | Whisper presets (optional; `--asr-model=<preset>`, repeatable) | `.models/asr/<preset>/…` — English-only (`whisper_tiny_en`, `whisper_base_en`, `whisper_small_en`) and Distil-Whisper (`whisper_distil_small_en`) exports, fetched from Hugging Face |

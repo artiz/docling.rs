@@ -60,7 +60,7 @@ DUNLOP
 
 BruceRobertson
 
-Tom Hill
+Tom Hill Tom Hill
 
 ## R.B. DUNLOP TIRE SALES
 
@@ -80,7 +80,7 @@ Prescriptions Cosmetics SundryItems Liquor,Beer,Wine
 
 <!-- image -->
 
-872E.Auburn,NearJohnR.Rochester UL2-5363 A
+872E.Auburn,NearJohnR.Rochester UL2-5363
 
 <!-- image -->
 

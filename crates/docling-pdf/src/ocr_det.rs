@@ -68,15 +68,24 @@ pub fn det_input_size(w: u32, h: u32) -> Option<(u32, u32)> {
     det_input_size_capped(w, h, max_side_cap())
 }
 
-/// `DOCLING_RS_OCR_DET_MAX_SIDE`: an optional cap on the detector input's
-/// longer side (PaddleOCR's own default is `limit_type: max, 960`; RapidOCR's
-/// — and so docling's — is the uncapped `min 736` rule this port follows).
-/// Unset or `0` = no cap. A cap trades detection recall on small print for
-/// time: the DB net is the costliest OCR stage on a scanned page and its
-/// cost is linear in input pixels.
+/// Default cap on the detector input's longer side: PaddleOCR's own
+/// `det_limit_side_len` (`limit_type: max`). RapidOCR — and so docling —
+/// runs the uncapped shorter-side rule instead; measured on the snapshot
+/// corpus the cap cuts detection to about a third of its time (a Letter page
+/// at the 2.0 px/pt render goes 1216 × 1600 → 736 × 960) and moves bitmap
+/// outputs only by noise-level amounts in both directions, so speed wins by
+/// default and `DOCLING_RS_OCR_DET_MAX_SIDE=0` restores RapidOCR's input.
+pub const DEFAULT_MAX_SIDE: u32 = 960;
+
+/// `DOCLING_RS_OCR_DET_MAX_SIDE`: the cap on the detector input's longer
+/// side — [`DEFAULT_MAX_SIDE`] unless set, `0` = uncapped (RapidOCR's rule).
+/// The DB net is the costliest OCR stage on a scanned page and its cost is
+/// linear in input pixels; a tighter cap trades small-print recall for time.
 fn max_side_cap() -> u32 {
     static CAP: std::sync::OnceLock<u32> = std::sync::OnceLock::new();
-    *CAP.get_or_init(|| docling_core::env::parse::<u32>("DOCLING_RS_OCR_DET_MAX_SIDE").unwrap_or(0))
+    *CAP.get_or_init(|| {
+        docling_core::env::parse::<u32>("DOCLING_RS_OCR_DET_MAX_SIDE").unwrap_or(DEFAULT_MAX_SIDE)
+    })
 }
 
 /// [`det_input_size`] with an explicit longer-side cap (`0` = none): the cap
@@ -506,6 +515,54 @@ fn unclip(quad: &[(f32, f32); 4]) -> Option<([(f32, f32); 4], f32)> {
     Some((corners, (wlen + 2.0 * d).min(hlen + 2.0 * d)))
 }
 
+/// The detected lines the recognizer still has to read (#429): those not
+/// already covered by the region-scoped pass. `detected` is in image pixels
+/// at `scale` px/pt; `regions` and `cells` are the page's layout regions and
+/// the cells recognized so far, in page points. A line counts as covered when
+/// it lies mostly (> 50 %) inside a text-like or table region — whose lines
+/// the region pass segmented and recognized, whatever it made of them — when
+/// the recognized cells inside it sum to > 30 % of its area, or when a line
+/// accepted earlier in reading order overlaps it by > 30 %. Cumulative on
+/// purpose: DB happily spans two adjacent columns in one box, and judged cell
+/// by cell such a box overlaps every cell a little while re-reading all of
+/// them (the `old_newspaper` scan doubled a paragraph that way); and DB can
+/// emit a word and its whole line. Returns `text` regions in page points for
+/// the recognizer's line prep. Shared by the native worker and the browser
+/// pipeline.
+pub fn uncovered_lines(
+    detected: &[DetBox],
+    scale: f32,
+    regions: &[crate::layout::Region],
+    cells: &[crate::pdfium_backend::TextCell],
+) -> Vec<crate::layout::Region> {
+    let mut accepted: Vec<crate::layout::Region> = Vec::new();
+    for d in detected.iter().map(|d| crate::layout::Region {
+        label: "text",
+        score: d.score,
+        l: d.l / scale,
+        t: d.t / scale,
+        r: d.r / scale,
+        b: d.b / scale,
+    }) {
+        let da = ((d.r - d.l) * (d.b - d.t)).max(1.0);
+        let inter = |l: f32, t: f32, r: f32, b: f32| {
+            (d.r.min(r) - d.l.max(l)).max(0.0) * (d.b.min(b) - d.t.max(t)).max(0.0)
+        };
+        let in_region = regions.iter().any(|r| {
+            (crate::ocr_prep::is_text_label(r.label) || crate::assemble::is_table_like(r.label))
+                && inter(r.l, r.t, r.r, r.b) / da > 0.5
+        });
+        let by_cells: f32 = cells.iter().map(|c| inter(c.l, c.t, c.r, c.b)).sum::<f32>() / da;
+        let by_accepted = accepted
+            .iter()
+            .any(|u| inter(u.l, u.t, u.r, u.b) / da > 0.3);
+        if !in_region && by_cells <= 0.3 && !by_accepted {
+            accepted.push(d);
+        }
+    }
+    accepted
+}
+
 #[cfg(feature = "ml")]
 pub use session::DetModel;
 
@@ -583,11 +640,14 @@ mod tests {
 
     #[test]
     fn input_size_scales_the_short_side_to_736_in_multiples_of_32() {
-        // 445 × 884: short side 445 → ×1.654; 736 × 1462 → 736 × 1472.
-        assert_eq!(det_input_size(445, 884), Some((736, 1472)));
+        // RapidOCR's uncapped rule. 445 × 884: short side 445 → ×1.654;
+        // 736 × 1462 → 736 × 1472.
+        assert_eq!(det_input_size_capped(445, 884, 0), Some((736, 1472)));
         // Already ≥ 736 on the short side: unchanged bar the /32 rounding.
-        assert_eq!(det_input_size(1335, 2652), Some((1344, 2656)));
+        assert_eq!(det_input_size_capped(1335, 2652, 0), Some((1344, 2656)));
         assert_eq!(det_input_size(0, 10), None);
+        // The default cap (960, PaddleOCR's) applies when the env knob is unset.
+        assert_eq!(det_input_size(1224, 1584), Some((736, 960)));
         // A longer-side cap scales a big page down (1224 × 1584 → 736 × 960
         // for 960) and leaves a small image's shorter-side upscale alone
         // (445 × 884 still goes to 736 × 1472 under a 1500 cap, 480 × 960
@@ -676,6 +736,52 @@ mod tests {
             (a.t - 11.0).abs() <= 2.0 && (a.b - 57.0).abs() <= 2.0,
             "{a:?}"
         );
+    }
+
+    /// The coverage rule: a line inside a text region, one whose area
+    /// recognized cells mostly fill (cumulatively — two half-covering cells
+    /// count), and a duplicate of an accepted line are all skipped; a line in
+    /// the open is kept, converted to page points.
+    #[test]
+    fn uncovered_lines_skip_what_the_region_pass_read() {
+        use crate::layout::Region;
+        use crate::pdfium_backend::TextCell;
+        let bx = |l: f32, t: f32, r: f32, b: f32| DetBox {
+            l,
+            t,
+            r,
+            b,
+            score: 0.9,
+        };
+        let regions = vec![Region {
+            label: "text",
+            score: 0.9,
+            l: 0.0,
+            t: 0.0,
+            r: 100.0,
+            b: 20.0,
+        }];
+        let cell = |l: f32, r: f32| TextCell {
+            text: "x".into(),
+            l,
+            t: 50.0,
+            r,
+            b: 60.0,
+        };
+        let cells = vec![cell(0.0, 50.0), cell(50.0, 100.0)];
+        let detected = vec![
+            bx(0.0, 0.0, 200.0, 40.0), // inside the text region (page pts 0..100 × 0..20)
+            bx(0.0, 100.0, 200.0, 120.0), // two cells cover it half each → covered
+            bx(0.0, 300.0, 200.0, 320.0), // in the open → kept
+            bx(20.0, 302.0, 100.0, 318.0), // a word of the accepted line → duplicate
+        ];
+        let out = uncovered_lines(&detected, 2.0, &regions, &cells);
+        assert_eq!(out.len(), 1, "{out:?}");
+        assert_eq!(
+            (out[0].l, out[0].t, out[0].r, out[0].b),
+            (0.0, 150.0, 100.0, 160.0)
+        );
+        assert_eq!(out[0].label, "text");
     }
 
     #[test]

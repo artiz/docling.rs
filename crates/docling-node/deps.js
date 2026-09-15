@@ -8,6 +8,7 @@
 //   - libpdfium            (PDF text extraction + page rasterization) — required for PDF
 //   - RT-DETR layout model (.models/layout_heron.onnx)                 — required for PDF & image
 //   - PP-OCR rec + dict    (.models/ocr_rec.onnx, ppocr_keys_v1.txt)   — used for pages with no text layer
+//   - PP-OCR text detector (.models/ocr_det.onnx)                      — optional; reads lines outside layout regions (#429)
 //   - TableFormer          (.models/tableformer/{encoder,decoder,bbox}.onnx) — optional; geometric fallback otherwise
 //
 // This module does NOT download anything — `scripts/install/download_dependencies.sh`
@@ -119,6 +120,8 @@ function resolvePaths(dir) {
     layout: process.env.DOCLING_LAYOUT_ONNX || path.join(models, 'layout_heron.onnx'),
     ocrRec: process.env.DOCLING_OCR_REC_ONNX || path.join(models, 'ocr_rec.onnx'),
     ocrDict: process.env.DOCLING_OCR_DICT || path.join(models, 'ppocr_keys_v1.txt'),
+    // The text detector (#429) is optional: without it OCR stays region-scoped.
+    ocrDet: process.env.DOCLING_OCR_DET_ONNX || path.join(models, 'ocr_det.onnx'),
     // The fp16-weight encoder repack (#374; fp32 compute, half the download)
     // ranks ahead of the fp32 file, like the Rust pipeline's own chain,
     // unless full precision is forced.
@@ -156,6 +159,7 @@ function checkDependencies(options = {}) {
     pdfium: has(p.pdfiumLib),
     layout: has(p.layout),
     ocr: has(p.ocrRec) && has(p.ocrDict),
+    ocrDet: has(p.ocrDet),
     tableformer: has(p.tfEncoder) && has(p.tfDecoder) && has(p.tfBbox),
     chunkTokenizer: has(p.chunkTokenizer),
   }
@@ -173,6 +177,7 @@ function exportEnv(p) {
   if (fs.existsSync(p.layout)) process.env.DOCLING_LAYOUT_ONNX = p.layout
   if (fs.existsSync(p.ocrRec)) process.env.DOCLING_OCR_REC_ONNX = p.ocrRec
   if (fs.existsSync(p.ocrDict)) process.env.DOCLING_OCR_DICT = p.ocrDict
+  if (fs.existsSync(p.ocrDet)) process.env.DOCLING_OCR_DET_ONNX = p.ocrDet
   if (fs.existsSync(p.tfEncoder)) process.env.DOCLING_TABLEFORMER_ENCODER = p.tfEncoder
   if (fs.existsSync(p.tfDecoder)) process.env.DOCLING_TABLEFORMER_DECODER = p.tfDecoder
   if (fs.existsSync(p.tfBbox)) process.env.DOCLING_TABLEFORMER_BBOX = p.tfBbox
