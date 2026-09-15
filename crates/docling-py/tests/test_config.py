@@ -305,6 +305,8 @@ def test_ensure_env_leaves_ocr_lang_selectable(tmp_path, monkeypatch):
     # The download manifest carries the English pair (with upstream
     # fallbacks for release tags that don't host it).
     assert m._OPTIONAL["ocr_rec_en.onnx"] == "models/ocr_rec_en.onnx"
+    assert m._OPTIONAL["ocr_det.onnx"] == "models/ocr_det.onnx"
+    assert "models/ocr_det.onnx" in m._FALLBACK_URLS
     assert m._OPTIONAL["en_dict.txt"] == "models/en_dict.txt"
     assert "models/ocr_rec_en.onnx" in m._FALLBACK_URLS
     assert "models/en_dict.txt" in m._FALLBACK_URLS

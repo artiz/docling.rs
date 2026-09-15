@@ -55,6 +55,10 @@ _OPTIONAL = {
     # scripts/install/download_dependencies.sh.
     "ocr_rec_en.onnx": "models/ocr_rec_en.onnx",
     "en_dict.txt": "models/en_dict.txt",
+    # The PP-OCRv6 text detector (#429): reads the lines the layout model
+    # gives no region on bitmap pages (diagram labels, stamps). Optional —
+    # without it OCR stays region-scoped; RapidOCR's hub is the fallback.
+    "ocr_det.onnx": "models/ocr_det.onnx",
     "layout_heron_int8.onnx": "models/layout_heron_int8.onnx",
     "decoder_int8.onnx": "models/tableformer/decoder_int8.onnx",
     # The #97 hoisted-KV TableFormer decoder — byte-exact vs the legacy graph
@@ -96,6 +100,9 @@ _FALLBACK_URLS = {
     ),
     "models/en_dict.txt": (
         "https://raw.githubusercontent.com/PaddlePaddle/PaddleOCR/main/ppocr/utils/en_dict.txt"
+    ),
+    "models/ocr_det.onnx": (
+        "https://www.modelscope.cn/models/RapidAI/RapidOCR/resolve/v3.9.2/onnx/PP-OCRv6/det/PP-OCRv6_det_small.onnx"
     ),
     "models/chunk/tokenizer.json": (
         "https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2/resolve/main/tokenizer.json"

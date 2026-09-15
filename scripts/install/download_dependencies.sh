@@ -26,6 +26,9 @@
 #     it, else straight from upstream PP-OCRv3 hosting)
 #   .models/ocr_rec.onnx + .models/ppocr_keys_v1.txt (multilingual ch_ pair —
 #     what docling conformance is measured with; DOCLING_RS_OCR_LANG=ch)
+#   .models/ocr_det.onnx (PP-OCRv6 text detector, #429 — reads lines the
+#     layout model gives no region; from the release when the tag mirrors it,
+#     else from RapidOCR's model hub)
 #   .models/tableformer/encoder.onnx (+ .data, if the export needs it)
 #   .models/tableformer/decoder.onnx (+ .data, if the export needs it)
 #   .models/tableformer/decoder_kv.onnx (+ .data; preferred when hosted)
@@ -236,6 +239,13 @@ fetch_mirrored .models/ocr_rec_en.onnx \
 fetch_mirrored .models/en_dict.txt \
   "$BASE_URL/en_dict.txt" \
   "https://raw.githubusercontent.com/PaddlePaddle/PaddleOCR/main/ppocr/utils/en_dict.txt"
+# PP-OCRv6 text detector (#429) — the model docling's RapidOCR default runs
+# in front of its recognizer, re-hosted unmodified; RapidOCR's own hub is the
+# fallback for release tags that predate the mirror. Optional: without it OCR
+# stays region-scoped (text outside layout regions on bitmap pages is lost).
+fetch_mirrored .models/ocr_det.onnx \
+  "$BASE_URL/ocr_det.onnx" \
+  "https://www.modelscope.cn/models/RapidAI/RapidOCR/resolve/v3.9.2/onnx/PP-OCRv6/det/PP-OCRv6_det_small.onnx"
 fetch "$BASE_URL/encoder.onnx" .models/tableformer/encoder.onnx
 fetch_optional "$BASE_URL/encoder.onnx.data" .models/tableformer/encoder.onnx.data
 fetch "$BASE_URL/decoder.onnx" .models/tableformer/decoder.onnx

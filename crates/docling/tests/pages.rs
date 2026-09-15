@@ -170,6 +170,40 @@ fn ocr_models_ready() -> bool {
     }
 }
 
+/// #429: the text detector reads what the layout model gives no region. On
+/// `ModalNet-19.png` (a diagram from the Transformer paper) layout scores
+/// only `SoftMax` above its 0.5 threshold, so recognition-only OCR emitted
+/// that one word; docling reads every label through its OCR engine's
+/// detector, and so does this pipeline with `.models/ocr_det.onnx` present
+/// (skipped without it — recognition-only remains the documented fallback).
+#[test]
+fn text_detector_reads_labels_outside_layout_regions() {
+    let det = repo_root().join(".models/ocr_det.onnx");
+    if !ocr_models_ready() || !det.exists() {
+        eprintln!("skipping: the OCR or text-detection models are not present");
+        return;
+    }
+    std::env::set_var("DOCLING_OCR_DET_ONNX", &det);
+    let src = SourceDocument::from_file(
+        repo_root().join("tests/data/latex/sources/1706.03762/Figures/ModalNet-19.png"),
+    )
+    .expect("fixture");
+    let md = DocumentConverter::new()
+        .convert(src)
+        .expect("convert")
+        .document
+        .export_to_markdown();
+    for label in ["MatMul", "SoftMax", "Mask (opt.)", "Scale"] {
+        assert!(md.contains(label), "{label:?} missing from {md:?}");
+    }
+    // Reading order: top to bottom, as RapidOCR sorts its boxes.
+    let pos = |s: &str| md.find(s).unwrap();
+    assert!(
+        pos("SoftMax") < pos("Mask (opt.)") && pos("Mask (opt.)") < pos("Scale"),
+        "{md:?}"
+    );
+}
+
 /// `force_full_page_ocr` (docling's option of the same name) must actually
 /// discard the text layer: converting a digital PDF page with it produces
 /// OCR-recognized text, not the embedded cells. The fixture's text layer
