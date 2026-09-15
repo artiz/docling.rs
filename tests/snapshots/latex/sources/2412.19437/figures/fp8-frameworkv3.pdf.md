@@ -12,16 +12,6 @@ To BF16
 
 FP32
 
-Output
-
-Output
-
-Gradient
-
-BF16
-
-<!-- image -->
-
 Fprop
 
 Σ
@@ -35,6 +25,18 @@ Dgrad To BF16
 To FP8
 
 To FP8
+
+Output
+
+Output
+
+Gradient
+
+BF16
+
+或者 Input-&gt;Activation\_L
+
+Output-&gt;Activation\_{L+1}
 
 To FP8
 

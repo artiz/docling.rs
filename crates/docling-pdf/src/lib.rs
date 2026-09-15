@@ -1139,9 +1139,12 @@ impl Worker {
             }
         }
         regions.retain(|r| r.score >= layout::label_threshold(r.label));
-        // docling's same-label picture dedup runs on the thresholded
-        // detections, before overlap resolution: a figure proposed both whole
-        // and as sub-panels collapses to one box (see `dedup_pictures`).
+        // docling's full-page picture filter and same-label picture dedup run
+        // on the thresholded detections, before overlap resolution: a picture
+        // that is the whole page goes (its text reads out as text), and a
+        // figure proposed both whole and as sub-panels collapses to one box
+        // (see `dedup_pictures`).
+        assemble::drop_full_page_pictures(&mut regions, page.width, page.height);
         assemble::dedup_pictures(&mut regions);
         // Resolve overlapping detections once, before OCR.
         let mut regions = assemble::resolve(regions);

@@ -4,15 +4,25 @@ Scaling
 
 Factor
 
+Tensor Core
+
+Output
+
+CUDA Core
+
 ...
 
 ...
+
+(a) Fine-grained quantization
 
 Weight
 
 Scaling
 
 Factor
+
+...
 
 ...
 
@@ -37,5 +47,3 @@ Scaling Factor
 FP32 Register
 
 (b) Increasing accumulation precision
-
-<!-- image -->

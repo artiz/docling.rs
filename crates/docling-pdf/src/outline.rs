@@ -172,25 +172,12 @@ fn dest_array(
     let y_pdf = y_index.and_then(|i| array.get(i)).and_then(as_number);
     let y_top = match (y_pdf, page_id) {
         // PDF y-up → top-left origin needs the page height.
-        (Some(y), Some(id)) => page_height(doc, id).map(|h| h - y),
+        // Destinations are user-space; the y-down frame starts at the display
+        // box's top edge (CropBox, like pdfium), not the MediaBox's.
+        (Some(y), Some(id)) => Some(crate::textparse::page_box(doc, id).top() - y),
         _ => None,
     };
     (page_no, y_top)
-}
-
-/// A page's MediaBox height, honoring inheritance from the page tree.
-fn page_height(doc: &Document, page: ObjectId) -> Option<f32> {
-    let mut id = page;
-    for _ in 0..32 {
-        let dict = doc.get_object(id).ok()?.as_dict().ok()?;
-        if let Some(Object::Array(mb)) = dict.get(b"MediaBox").ok().and_then(|o| deref(doc, o)) {
-            let y0 = mb.get(1).and_then(as_number)?;
-            let y1 = mb.get(3).and_then(as_number)?;
-            return Some((y1 - y0).abs());
-        }
-        id = dict.get(b"Parent").ok()?.as_reference().ok()?;
-    }
-    None
 }
 
 /// Resolve a named destination: the PDF 1.1 catalog `/Dests` dictionary, or
