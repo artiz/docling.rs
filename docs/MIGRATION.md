@@ -369,8 +369,11 @@ These are deliberate or unavoidable divergences, not bugs.
      reconstructs glyph boxes from font advance widths + the text/graphics matrices
      (matching docling-parse's geometry, not pdfium's rendered boxes); handles
      Type0/CID + simple fonts, ToUnicode/encodings, Form XObject recursion, a
-     glyph-name fallback, and overprint dedup. It is the default text layer
-     (`DOCLING_PDFIUM_TEXT=1` falls back to pdfium). Its cells feed a port of
+     glyph-name fallback, and overprint dedup; glyphs are placed in pdfium's
+     page frame — the CropBox ∩ MediaBox box with its lower-left corner as
+     the origin, inherited through the page tree — so a trimmed or offset
+     page lines up with the rendered bitmap and docling's `prov` boxes. It is
+     the default text layer (`DOCLING_PDFIUM_TEXT=1` falls back to pdfium). Its cells feed a port of
      docling-parse's line sanitizer (`dp_lines.rs`): 3-pass corner-distance
      contraction with gap-proportional space insertion, `enforce_same_font`,
      ligature recomposition, loose-box geometry. Plus docling's markdown escaping,

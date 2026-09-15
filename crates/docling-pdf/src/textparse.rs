@@ -642,28 +642,93 @@ fn codes(font: &Font, bytes: &[u8]) -> Vec<u32> {
     }
 }
 
-/// Page size (width, height) in PDF points from the MediaBox.
-fn page_size(doc: &Document, page_id: lopdf::ObjectId) -> (f32, f32) {
-    let mb = doc
-        .get_object(page_id)
-        .ok()
-        .and_then(|o| o.as_dict().ok())
-        .and_then(|d| {
-            // MediaBox may be inherited; lopdf resolves via get_page... fall back to a guess.
-            d.get(b"MediaBox").ok().cloned()
-        })
-        .or_else(|| {
-            doc.get_dictionary(page_id)
-                .ok()
-                .and_then(|d| d.get(b"MediaBox").ok().cloned())
-        });
-    if let Some(Object::Array(a)) = mb {
-        let v: Vec<f32> = a.iter().filter_map(|o| num(o).map(|x| x as f32)).collect();
-        if v.len() == 4 {
-            return ((v[2] - v[0]).abs(), (v[3] - v[1]).abs());
-        }
+/// A page's display box, in PDF user space: the `/CropBox` clipped to the
+/// `/MediaBox`, both inherited through the page tree and normalized — a
+/// missing or empty MediaBox is US Letter, an empty CropBox is the MediaBox
+/// (pdfium's `CPDF_Page::UpdateDimensions`). pdfium reports the page size from
+/// this box, renders exactly it, and translates every content coordinate so
+/// its lower-left corner is the origin (`m_PageMatrix`); docling's backends
+/// inherit that frame, so text cells, `prov` boxes and destinations all count
+/// from the CropBox corner, not the MediaBox one. The parser used to flip
+/// glyphs with the MediaBox *height* and no translation at all, so a page
+/// whose boxes do not start at (0, 0) — a trimmed book page with
+/// `MediaBox [-56 -58 576 723]` / `CropBox [1 -0.6 519 666]`, or a LaTeX
+/// figure cropped to `[156 147 637 391]` — had its text displaced against the
+/// rendered bitmap by the box offset, the bottom lines pushed past the page
+/// edge and clamped to `t = b`.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct PageBox {
+    /// Left edge, user space.
+    pub l: f32,
+    /// Bottom edge, user space.
+    pub b: f32,
+    pub w: f32,
+    pub h: f32,
+}
+
+impl PageBox {
+    /// Top edge, user space — the y that becomes `0` in the y-down frame.
+    pub fn top(&self) -> f32 {
+        self.b + self.h
     }
-    (612.0, 792.0)
+}
+
+/// A page-tree rect attribute (`/MediaBox`, `/CropBox`), inherited from the
+/// nearest ancestor that sets it, as normalized `(l, b, r, t)`.
+fn inherited_rect(
+    doc: &Document,
+    page_id: lopdf::ObjectId,
+    key: &[u8],
+) -> Option<(f32, f32, f32, f32)> {
+    let mut id = page_id;
+    for _ in 0..32 {
+        let dict = doc.get_object(id).ok()?.as_dict().ok()?;
+        if let Some(Object::Array(a)) = dict.get(key).ok().and_then(|o| deref(doc, o)) {
+            let v: Vec<f32> = a.iter().filter_map(|o| num(o).map(|x| x as f32)).collect();
+            if v.len() == 4 && v.iter().all(|x| x.is_finite()) {
+                return Some((
+                    v[0].min(v[2]),
+                    v[1].min(v[3]),
+                    v[0].max(v[2]),
+                    v[1].max(v[3]),
+                ));
+            }
+            return None;
+        }
+        id = dict.get(b"Parent").ok()?.as_reference().ok()?;
+    }
+    None
+}
+
+pub(crate) fn page_box(doc: &Document, page_id: lopdf::ObjectId) -> PageBox {
+    let nonempty = |r: &(f32, f32, f32, f32)| r.2 > r.0 && r.3 > r.1;
+    let media = inherited_rect(doc, page_id, b"MediaBox")
+        .filter(nonempty)
+        .unwrap_or((0.0, 0.0, 612.0, 792.0));
+    let crop = inherited_rect(doc, page_id, b"CropBox")
+        .map(|c| {
+            (
+                c.0.max(media.0),
+                c.1.max(media.1),
+                c.2.min(media.2),
+                c.3.min(media.3),
+            )
+        })
+        .filter(nonempty)
+        .unwrap_or(media);
+    PageBox {
+        l: crop.0,
+        b: crop.1,
+        w: crop.2 - crop.0,
+        h: crop.3 - crop.1,
+    }
+}
+
+/// Page size (width, height) in PDF points — the display box's, like pdfium's
+/// `FPDF_GetPageWidthF/HeightF`.
+fn page_size(doc: &Document, page_id: lopdf::ObjectId) -> (f32, f32) {
+    let pb = page_box(doc, page_id);
+    (pb.w, pb.h)
 }
 
 /// Localize where a page's text is lost, for the `text_layer` diagnostic.
@@ -1256,11 +1321,19 @@ fn page_glyphs_cached(
         return out;
     };
     if let Some(res) = page_res(doc, page_id) {
+        // pdfium's page matrix: user space translated so the display box's
+        // lower-left corner is the origin (see [`PageBox`]).
+        let pb = page_box(doc, page_id);
+        let base = Mat {
+            e: -(pb.l as f64),
+            f: -(pb.b as f64),
+            ..Mat::ID
+        };
         run_content(
             doc,
             res,
             &content,
-            Mat::ID,
+            base,
             TextState::INIT,
             0,
             caches,
@@ -1934,6 +2007,105 @@ fn macroman_table() -> HashMap<u8, char> {
         m.insert(b, c);
     }
     m
+}
+
+#[cfg(test)]
+mod page_box_frame {
+    use super::*;
+
+    /// One page, `boxes` spliced into the page dictionary verbatim, one text
+    /// run at user-space `(x, y)`.
+    fn pdf(boxes: &str, x: f32, y: f32) -> Vec<u8> {
+        let content = format!("BT /F1 12 Tf {x} {y} Td (First printing) Tj ET\n");
+        let objs: Vec<String> = vec![
+            "<</Type/Catalog/Pages 2 0 R>>".into(),
+            format!("<</Type/Pages/Kids[3 0 R]/Count 1{boxes}>>"),
+            "<</Type/Page/Parent 2 0 R/Contents 4 0 R/Resources<</Font<</F1 5 0 R>>>>>>".into(),
+            format!("<</Length {}>>stream\n{content}endstream", content.len()),
+            "<</Type/Font/Subtype/Type1/BaseFont/Helvetica>>".into(),
+        ];
+        let mut out = b"%PDF-1.4\n".to_vec();
+        let mut offsets = Vec::new();
+        for (i, body) in objs.iter().enumerate() {
+            offsets.push(out.len());
+            out.extend_from_slice(format!("{} 0 obj{body}endobj\n", i + 1).as_bytes());
+        }
+        let xref_at = out.len();
+        out.extend_from_slice(
+            format!("xref\n0 {}\n0000000000 65535 f \n", objs.len() + 1).as_bytes(),
+        );
+        for off in &offsets {
+            out.extend_from_slice(format!("{off:010} 00000 n \n").as_bytes());
+        }
+        out.extend_from_slice(
+            format!(
+                "trailer<</Size {}/Root 1 0 R>>\nstartxref\n{xref_at}\n%%EOF\n",
+                objs.len() + 1
+            )
+            .as_bytes(),
+        );
+        out
+    }
+
+    fn only_page(bytes: &[u8]) -> (PageBox, Vec<Glyph>) {
+        let doc = load_document(bytes).expect("loads");
+        let pid = *doc.get_pages().values().next().expect("one page");
+        (page_box(&doc, pid), page_glyphs(&doc, pid))
+    }
+
+    /// The trimmed-book-page shape: MediaBox and CropBox both away from the
+    /// origin (inherited from `/Pages`). The display box is the CropBox, and a
+    /// glyph's coordinates count from its lower-left corner — the same numbers
+    /// the same text gets on a page whose CropBox *is* `[0 0 w h]`.
+    #[test]
+    fn glyphs_count_from_the_cropbox_corner_like_pdfium() {
+        let (pb, shifted) = only_page(&pdf(
+            "/MediaBox[-56.505 -58.25 576.303 723.31]/CropBox[1.095 -0.65 518.703 665.71]",
+            37.0 + 1.095,
+            58.0 - 0.65,
+        ));
+        assert!((pb.l - 1.095).abs() < 1e-3 && (pb.b + 0.65).abs() < 1e-3);
+        assert!(
+            (pb.w - 517.608).abs() < 1e-3 && (pb.h - 666.36).abs() < 1e-3,
+            "{pb:?}"
+        );
+        let (pb0, plain) = only_page(&pdf("/MediaBox[0 0 517.608 666.36]", 37.0, 58.0));
+        assert!((pb0.w - pb.w).abs() < 1e-3 && (pb0.h - pb.h).abs() < 1e-3);
+        assert_eq!(shifted.len(), plain.len());
+        assert!(!plain.is_empty());
+        for (a, b) in shifted.iter().zip(&plain) {
+            assert!(
+                (a.l - b.l).abs() < 1e-3 && (a.b - b.b).abs() < 1e-3,
+                "{:?} vs {:?}",
+                (a.l, a.b),
+                (b.l, b.b)
+            );
+        }
+        assert!((plain[0].l - 37.0).abs() < 1e-3, "{}", plain[0].l);
+    }
+
+    /// pdfium's fallbacks: no MediaBox → Letter; a CropBox is clipped to the
+    /// MediaBox, and one that misses it entirely is ignored.
+    #[test]
+    fn page_box_follows_pdfium_fallbacks() {
+        let (pb, _) = only_page(&pdf("", 10.0, 10.0));
+        assert_eq!((pb.l, pb.b, pb.w, pb.h), (0.0, 0.0, 612.0, 792.0));
+        let (pb, _) = only_page(&pdf(
+            "/MediaBox[0 0 500 700]/CropBox[-100 100 600 900]",
+            10.0,
+            10.0,
+        ));
+        assert_eq!((pb.l, pb.b, pb.w, pb.h), (0.0, 100.0, 500.0, 600.0));
+        let (pb, _) = only_page(&pdf(
+            "/MediaBox[0 0 500 700]/CropBox[800 800 900 900]",
+            10.0,
+            10.0,
+        ));
+        assert_eq!((pb.l, pb.b, pb.w, pb.h), (0.0, 0.0, 500.0, 700.0));
+        // Reversed corners normalize.
+        let (pb, _) = only_page(&pdf("/MediaBox[500 700 0 0]", 10.0, 10.0));
+        assert_eq!((pb.l, pb.b, pb.w, pb.h), (0.0, 0.0, 500.0, 700.0));
+    }
 }
 
 #[cfg(test)]
