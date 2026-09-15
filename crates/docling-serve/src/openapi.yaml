@@ -415,9 +415,15 @@ components:
       description: Markdown picture handling — `embedded` inlines base64 data URIs.
     OcrLang:
       type: string
-      enum: [en, ch]
       default: en
-      description: OCR recognition language for scanned pages.
+      examples: [en, ch, en-US, eng, zh, zh-Hans, zh-TW, "iso:zh-CN"]
+      description: >
+        OCR recognition language for scanned pages: `en` (default; the English
+        PP-OCRv3 recognizer) or `ch` (the multilingual docling-conformance
+        recognizer), or a BCP-47 tag for either language — `en-US`, `eng`,
+        `zh`, `zh-Hans`, `zh-TW`; docling's `iso:` prefix is accepted and
+        script/region subtags are ignored (#388). Any other language is a
+        400 — only these two recognition models ship.
     OcrMode:
       type: string
       enum: [default, full_page, layout_regions, pdf_aware_layout_regions]

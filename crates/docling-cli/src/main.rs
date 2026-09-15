@@ -11,7 +11,7 @@
 //! optional features the binary carries (execution providers, `serve`,
 //! chunking) — both answer without models present.
 //!
-//! Usage: docling-rs [--strict] [--to md|json|dclx|chunks|images|latex] [--pages A-B] [--scale X] [--images MODE] [--input GLOB --output DIR [--jobs N]] [--fetch-images] [--list-attachments] [--skip-empty-cells] [--compact-tables] [--ebcdic-layout JSON|PATH] [--no-stream] [--no-table-former] [--no-ocr] [--skip-ocr] [--force-full-page-ocr] [--no-text-panels] [--heading-hierarchy] [--ocr-lang en|ch] [--ocr-mode MODE] [--ocr-scale X] [--chunker hierarchical|hybrid] [--chunk-tokenizer PATH] [--chunk-max-tokens N] [--no-chunk-merge-peers] [--pipeline standard|vlm] [--vlm-endpoint URL] [--vlm-model NAME] [--vlm-api-key TOKEN] [--vlm-prompt TEXT] [--vlm-max-tokens N] [--asr-model PRESET] [--asr-lang CODE] [--video-frames N] [--use-web-browser] [--enrich-picture-classes] [--enrich-code] [--enrich-formula] <input-file>
+//! Usage: docling-rs [--strict] [--to md|json|dclx|chunks|images|latex] [--pages A-B] [--scale X] [--images MODE] [--input GLOB --output DIR [--jobs N]] [--fetch-images] [--list-attachments] [--skip-empty-cells] [--compact-tables] [--ebcdic-layout JSON|PATH] [--no-stream] [--no-table-former] [--no-ocr] [--skip-ocr] [--force-full-page-ocr] [--no-text-panels] [--heading-hierarchy] [--ocr-lang LANG] [--ocr-mode MODE] [--ocr-scale X] [--chunker hierarchical|hybrid] [--chunk-tokenizer PATH] [--chunk-max-tokens N] [--no-chunk-merge-peers] [--pipeline standard|vlm] [--vlm-endpoint URL] [--vlm-model NAME] [--vlm-api-key TOKEN] [--vlm-prompt TEXT] [--vlm-max-tokens N] [--asr-model PRESET] [--asr-lang CODE] [--video-frames N] [--use-web-browser] [--enrich-picture-classes] [--enrich-code] [--enrich-formula] <input-file>
 //!   --input GLOB|DIR   batch mode (#205): convert every file the glob matches
 //!                      (`--input '/data/reports/**/*.pdf'` — quote it so the
 //!                      shell doesn't expand it) instead of one positional file.
@@ -199,7 +199,9 @@ PDF / IMAGE PIPELINE
   --force-full-page-ocr   OCR the whole page, discarding the text layer
   --no-text-panels        disable the text-panel heuristic
   --heading-hierarchy     infer heading levels from font weight/slant/case
-  --ocr-lang en|ch        OCR recognition model (default: en)
+  --ocr-lang LANG         OCR recognition model (default: en): en | ch, or a
+                          BCP-47 tag for English/Chinese (en-US, eng, zh,
+                          zh-Hans, zh-TW; docling's iso: prefix accepted)
   --ocr-mode MODE         auto (default) | full_page | layout_regions
   --ocr-scale X           OCR input scale in px per point
   --enrich-picture-classes | --enrich-code | --enrich-formula
@@ -410,13 +412,17 @@ fn main() -> ExitCode {
             // (default; proper Latin word spacing) | ch (the multilingual
             // docling-conformance model).
             "--ocr-lang" => match args.next() {
-                Some(v) if matches!(v.trim(), "en" | "ch") => ocr_lang = Some(v),
+                Some(v) if docling::OcrLang::parse(&v).is_some() => ocr_lang = Some(v),
                 Some(v) => {
-                    eprintln!("error: --ocr-lang {v:?} is not en|ch");
+                    eprintln!(
+                        "error: --ocr-lang {v:?} names no language the OCR models read \
+                         (accepted: {})",
+                        docling::OcrLang::ACCEPTED
+                    );
                     return ExitCode::from(2);
                 }
                 None => {
-                    eprintln!("error: --ocr-lang needs a value (en|ch)");
+                    eprintln!("error: --ocr-lang needs a value (en | ch | a BCP-47 tag)");
                     return ExitCode::from(2);
                 }
             },
@@ -1110,11 +1116,7 @@ fn batch_pipeline<'a>(
                 formula: cfg.enrich_formula,
             });
         p.set_pages(cfg.pages);
-        p.set_ocr_lang(match cfg.ocr_lang.as_deref() {
-            Some("ch") => Some(docling::OcrLang::Ch),
-            Some(_) => Some(docling::OcrLang::En),
-            None => None,
-        });
+        p.set_ocr_lang(cfg.ocr_lang.as_deref().and_then(docling::OcrLang::parse));
         // Dot-progress on stderr: one dot per 10 finished pages, newline when
         // the document completes (only if any dots were printed).
         p.set_progress(Some(std::sync::Arc::new(|done: usize, total: usize| {

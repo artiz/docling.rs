@@ -137,7 +137,12 @@ fn convert_impl(bytes: &[u8], filename: &str, options_json: &str) -> Result<Vec<
         converter = converter.page_range(first, last);
     }
     if let Some(lang) = &options.ocr_lang {
-        docling::OcrLang::parse(lang).ok_or_else(|| format!("ocr_lang {lang:?} is not en|ch"))?;
+        docling::OcrLang::parse(lang).ok_or_else(|| {
+            format!(
+                "ocr_lang {lang:?} is not a supported OCR language ({})",
+                docling::OcrLang::ACCEPTED
+            )
+        })?;
         converter = converter.ocr_lang(lang.clone());
     }
 

@@ -2437,8 +2437,12 @@ fn parse_ocr_scale(raw: Option<f32>) -> Result<Option<f32>, ApiError> {
 /// Validate a request's `ocr_lang` (None passes through — the engine default).
 fn parse_ocr_lang(raw: Option<&str>) -> Result<Option<docling::OcrLang>, ApiError> {
     raw.map(|v| {
-        docling::OcrLang::parse(v)
-            .ok_or_else(|| ApiError::Bad(format!("ocr_lang {v:?} is not en|ch")))
+        docling::OcrLang::parse(v).ok_or_else(|| {
+            ApiError::Bad(format!(
+                "ocr_lang {v:?} is not a supported OCR language ({})",
+                docling::OcrLang::ACCEPTED
+            ))
+        })
     })
     .transpose()
 }

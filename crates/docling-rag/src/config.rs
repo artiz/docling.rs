@@ -136,11 +136,18 @@ pub enum OcrLang {
 }
 
 fn parse_ocr_lang(s: &str) -> Result<OcrLang> {
-    match s.trim().to_ascii_lowercase().as_str() {
-        "ch" => Ok(OcrLang::Ch),
-        "" | "en" => Ok(OcrLang::En),
-        other => Err(RagError::config(format!(
-            "RAG_OCR_LANG={other:?} is not supported (ch|en)"
+    // The engine's own spellings (#388): `en`/`ch` plus BCP-47 tags for
+    // either language (`en-US`, `zh-Hans`, `iso:zh-CN`).
+    if s.trim().is_empty() {
+        return Ok(OcrLang::En);
+    }
+    match docling::OcrLang::parse(s) {
+        Some(docling::OcrLang::Ch) => Ok(OcrLang::Ch),
+        Some(docling::OcrLang::En) => Ok(OcrLang::En),
+        None => Err(RagError::config(format!(
+            "RAG_OCR_LANG={:?} is not supported ({})",
+            s.trim(),
+            docling::OcrLang::ACCEPTED
         ))),
     }
 }
@@ -413,6 +420,9 @@ mod tests {
         assert_eq!(parse_ocr_lang("").unwrap(), OcrLang::En);
         assert_eq!(parse_ocr_lang("ch").unwrap(), OcrLang::Ch);
         assert_eq!(parse_ocr_lang(" EN ").unwrap(), OcrLang::En);
+        assert_eq!(parse_ocr_lang("zh-Hans").unwrap(), OcrLang::Ch);
+        assert_eq!(parse_ocr_lang("en-US").unwrap(), OcrLang::En);
+        assert!(parse_ocr_lang("de").is_err());
         assert!(parse_ocr_lang("de").is_err());
     }
 

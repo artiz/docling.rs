@@ -133,7 +133,9 @@ impl PyDocumentConverter {
     ///   (docling's option of the same name, #80); other formats ignore it.
     /// * `ocr_lang` — OCR recognition language for scanned pages: `"en"`
     ///   (default; proper Latin word spacing) or `"ch"` (the multilingual
-    ///   docling-conformance model).
+    ///   docling-conformance model), or a BCP-47 tag for either language
+    ///   (`"en-US"`, `"eng"`, `"zh"`, `"zh-Hans"`, `"zh-TW"`; docling's `iso:`
+    ///   prefix accepted, #388). Any other language raises `ValueError`.
     /// * `ocr_mode` — which regions feed the OCR (docling's `OcrMode`, #254):
     ///   `"default"` | `"full_page"` | `"layout_regions"` |
     ///   `"pdf_aware_layout_regions"`. `full_page`/`layout_regions` discard
@@ -269,7 +271,10 @@ impl PyDocumentConverter {
         // warm pipeline in `initialize_pipeline`.
         let ocr_lang_choice = match &ocr_lang {
             Some(lang) => Some(docling::OcrLang::parse(lang).ok_or_else(|| {
-                PyValueError::new_err(format!("ocr_lang {lang:?} is not \"en\"|\"ch\""))
+                PyValueError::new_err(format!(
+                    "ocr_lang {lang:?} is not a supported OCR language ({})",
+                    docling::OcrLang::ACCEPTED
+                ))
             })?),
             None => None,
         };
