@@ -1336,6 +1336,10 @@ impl Worker {
                 // Usually computed already, alongside layout (see
                 // `detect_alongside`); a page that reached OCR another way
                 // detects here.
+                // Degradation over failure: a detector that loaded but cannot
+                // run (a damaged file, an allocation failure) costs the page
+                // its detected lines, not its conversion — the region-scoped
+                // pass above is complete on its own.
                 let detected = match self.pending_det.remove(&n) {
                     Some(result) => result,
                     None => match self.det_model() {
@@ -1343,7 +1347,14 @@ impl Worker {
                         None => Ok(Vec::new()),
                     },
                 }
-                .map_err(|e| PdfError::Ocr(format!("page {}: {e}", n + 1)))?;
+                .unwrap_or_else(|e| {
+                    docling_core::debug_log!(
+                        "docling-pdf: page {}: text detection failed ({e}); keeping the \
+                         region-scoped OCR only",
+                        n + 1
+                    );
+                    Vec::new()
+                });
                 docling_core::debug_log!(
                     "docling-pdf: page {}: text detector found {} line(s): {:?}",
                     n + 1,
