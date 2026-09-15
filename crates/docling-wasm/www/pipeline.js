@@ -177,38 +177,51 @@ export function createOcr({ onStatus }) {
   // native pipeline installs as .models/ocr_det.onnx. Optional — without it
   // the browser pipeline is recognition-only (text outside layout regions on
   // a bitmap page is lost, as before). Local ./.models/ first, then the model
-  // mirror, then RapidOCR's own hub.
-  const DET_UPSTREAM = "https://www.modelscope.cn/models/RapidAI/RapidOCR/resolve/v3.9.2/onnx/PP-OCRv6/det/PP-OCRv6_det_small.onnx";
-  let det = null;
-  let detTried = false;
-  async function loadDetector() {
-    if (det || detTried) return det;
-    detTried = true;
-    let buf;
-    try {
-      ({ buf } = await fetchModel("ocr_det.onnx", ["./.models/", MODEL_BASE], "text detector (first load only)"));
-    } catch (e) {
-      try {
-        buf = await fetchProgress(DET_UPSTREAM, "text detector (first load only)");
-      } catch (e2) {
-        return null; // not provided and not fetchable → recognition-only
-      }
+  // mirror — and nothing else: a third-party host without CORS or with a slow
+  // route stalls the fetch for minutes, and the first cut of this loader did
+  // exactly that, hanging the demo at "starting en recognition session …"
+  // while it waited on RapidOCR's hub. The load also runs in the background
+  // from boot and a document waits for it at most briefly (`DET_WAIT_MS`):
+  // a detector that is not ready yet is simply not used for that document,
+  // and is picked up by the next one.
+  const DET_WAIT_MS = 3000;
+  let detPromise = null;
+  function loadDetector() {
+    if (!detPromise) {
+      detPromise = (async () => {
+        let buf;
+        try {
+          ({ buf } = await fetchModel("ocr_det.onnx", ["./.models/", MODEL_BASE], "text detector (first load only)"));
+        } catch (e) {
+          return null; // not provided and not fetchable → recognition-only
+        }
+        try {
+          const session = await ort.InferenceSession.create(buf, {
+            executionProviders: ["wasm"],
+            logSeverityLevel: 3,
+          });
+          return {
+            run: async (h, w, data) => {
+              const results = await session.run({
+                [session.inputNames[0]]: new ort.Tensor("float32", data, [1, 3, h, w]),
+              });
+              const t = results[session.outputNames[0]];
+              return { data: t.data, dims: Array.from(t.dims) };
+            },
+          };
+        } catch (e) {
+          return null; // a session that will not start → recognition-only
+        }
+      })();
     }
-    status("starting text-detection session …", true);
-    const session = await ort.InferenceSession.create(buf, {
-      executionProviders: ["wasm"],
-      logSeverityLevel: 3,
-    });
-    det = {
-      run: async (h, w, data) => {
-        const results = await session.run({
-          [session.inputNames[0]]: new ort.Tensor("float32", data, [1, 3, h, w]),
-        });
-        const t = results[session.outputNames[0]];
-        return { data: t.data, dims: Array.from(t.dims) };
-      },
-    };
-    return det;
+    return detPromise;
+  }
+  // The detector if it is ready within `ms`, else null (the load goes on).
+  function detectorSoon(ms) {
+    return Promise.race([
+      loadDetector(),
+      new Promise((resolve) => setTimeout(() => resolve(null), ms)),
+    ]);
   }
 
   // Interop wrapper docling_wasm expects (see src/scanned.rs).
@@ -249,7 +262,10 @@ export function createOcr({ onStatus }) {
   async function boot() {
     status("loading wasm module …", true);
     await init();
-    return loadLayout();
+    const kind = await loadLayout();
+    // Start fetching the (optional) text detector now, off the critical path.
+    loadDetector();
+    return kind;
   }
 
   // One blank inference through layout + rec so ORT's lazy kernel/thread init
@@ -299,7 +315,7 @@ export function createOcr({ onStatus }) {
     const { dict, rec } = await recFor(lang);
     const tfSess = useTf ? await ensureTf() : null;
     const conv = new ScannedConverter(dict);
-    const detector = await loadDetector();
+    const detector = await detectorSoon(DET_WAIT_MS);
     if (detector) conv.setDetector(detector);
     cur = { conv, rec, tf: tfSess };
   }
