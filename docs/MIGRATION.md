@@ -359,6 +359,14 @@ These are deliberate or unavoidable divergences, not bugs.
    docling's standard pipeline:
    - **Layout** — RT-DETR (`docling-layout-heron`) exported to ONNX, run via
      `ort`. Same model family as docling.
+   - **Hostile-input limits** — Markdown block nesting stops at 100 levels
+     (markdown-it's `maxNesting`, docling's own Markdown parser), deeper
+     quotes/lists are skipped; docling-JSON `children` references are walked
+     once each and at most 256 deep (a cycle converts like its acyclic twin);
+     XML inputs and OOXML/ODF parts nested past `DOCLING_RS_MAX_XML_DEPTH`
+     (512) are rejected; a spreadsheet sheet whose used area exceeds
+     `DOCLING_RS_SHEET_MAX_CELLS` (10M) is skipped; HTML past
+     `DOCLING_RS_MAX_HTML_DEPTH` is emitted as text without a DOM.
    - **OCR** — PP-OCRv3 recognition (RapidOCR) via ONNX, *not* docling's default
      EasyOCR; different recognizer → different scanned text. Recognition runs
      on the lines inside layout regions; RapidOCR's PP-OCRv6 DB **text

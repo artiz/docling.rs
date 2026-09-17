@@ -1454,17 +1454,19 @@ pub(crate) fn emit_sheet_regions(
         return;
     }
 
-    let min_row = cells.keys().map(|(r, _)| *r).min().unwrap();
-    let max_row = cells.keys().map(|(r, _)| *r).max().unwrap();
-    let min_col = cells.keys().map(|(_, c)| *c).min().unwrap();
-    let max_col = cells.keys().map(|(_, c)| *c).max().unwrap();
-
     // Flood-fill connected content cells (4-directional, immediate neighbours
-    // only) in row-major scan order, so region order matches docling's.
+    // only) in row-major scan order, so region order matches docling's. The
+    // scan visits the *content* cells in that order, not every position of
+    // their bounding box: a sheet with one value in the first cell and one a
+    // million rows and 16 000 columns away (1.7 KB of ODS thanks to
+    // `number-*-repeated`) spans 17 billion positions, and walking them pinned
+    // a core for minutes.
+    let mut order: Vec<(usize, usize)> = cells.keys().copied().collect();
+    order.sort_unstable();
     let mut visited: HashSet<(usize, usize)> = HashSet::new();
-    for ri in min_row..=max_row {
-        for ci in min_col..=max_col {
-            if visited.contains(&(ri, ci)) || !cells.contains_key(&(ri, ci)) {
+    for (ri, ci) in order {
+        {
+            if visited.contains(&(ri, ci)) {
                 continue;
             }
             let mut region: HashSet<(usize, usize)> = HashSet::new();
@@ -1783,6 +1785,25 @@ fn attr<'a>(node: XmlNode<'a, '_>, name: &str) -> Option<&'a str> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Two cells a million rows and 16 000 columns apart: the region scan
+    /// visits the cells, not the 17-billion-position box between them.
+    #[test]
+    fn sheet_regions_scan_cells_not_the_bounding_box() {
+        let mut cells: HashMap<(usize, usize), String> = HashMap::new();
+        cells.insert((0, 0), "a".into());
+        cells.insert((1_000_000, 16_000), "b".into());
+        let mut doc = DoclingDocument::new("s");
+        let t = std::time::Instant::now();
+        emit_sheet_regions(&cells, &mut doc);
+        assert!(t.elapsed().as_secs() < 5);
+        let tables = doc
+            .nodes
+            .iter()
+            .filter(|n| matches!(n, Node::Table(_)))
+            .count();
+        assert_eq!(tables, 2);
+    }
 
     #[test]
     fn formatting_resolves_through_parent_chain() {

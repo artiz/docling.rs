@@ -1419,8 +1419,27 @@ process-wide knobs: `DOCLING_RS_PDF_THREADS` (total thread budget;
 `_WORKERS`/`_INTRA` below split it), `DOCLING_RS_TIMING=1` (per-stage
 timings on stderr), `DOCLING_RS_MAX_IMAGE_PIXELS` (image-input decompression
 cap), `DOCLING_RS_MAX_HTML_DEPTH`, `DOCLING_RS_MAX_PART_BYTES` (HTML/OOXML
-parser limits), `DOCLING_RS_IMAGE_FETCH_CONCURRENCY` (parallel `--fetch-images`
-downloads), `DOCLING_RS_VLM_EXTRA_BODY` (extra JSON merged into VLM requests).
+parser limits), `DOCLING_RS_MAX_XML_DEPTH` (element nesting any XML input or
+OOXML/ODF part may reach, default 512 — deeper files are rejected before the
+XML parser, whose recursion would otherwise overflow the stack),
+`DOCLING_RS_SHEET_MAX_CELLS` (the used area of one spreadsheet sheet, default
+10 million cells — a sheet with a value in `A1` and one in `XFD1048576` is
+skipped instead of materializing 17 billion cells), `DOCLING_RS_IMAGE_FETCH_CONCURRENCY`
+(parallel `--fetch-images` downloads), `DOCLING_RS_VLM_EXTRA_BODY` (extra JSON
+merged into VLM requests).
+
+Hostile inputs degrade, they do not abort: block quotes and lists in
+Markdown nest at most 100 deep (markdown-it's `maxNesting`, what docling's
+Markdown backend runs on) and deeper structure is skipped; a docling-JSON
+document's `children` references are each walked once and at most 256
+levels deep, so a cycle or a fan-out graph converts like the tree it
+pretends to be; an HTML page nested past `DOCLING_RS_MAX_HTML_DEPTH` is
+recognized by a linear tag scan and emitted as text without ever building a
+DOM (html5ever's tree builder is quadratic in nesting — 100 000 nested `<div>`
+took 37 s); an ODS sheet's regions are found by visiting its cells, not the
+box they span; OOXML parts inflate to at most `DOCLING_RS_MAX_PART_BYTES`;
+and a redirect on a `--fetch-images` download is checked against the
+private-address block-list at every hop.
 
 OCR recognition defaults to the **English** PP-OCRv3 model: the multilingual
 `ch_` model reads Latin text with broken word spacing (`Refactorexisting
@@ -1641,6 +1660,19 @@ See [`docs/DEPLOYMENT.md`](./docs/DEPLOYMENT.md) for full deployment documentati
 Prometheus metrics, OpenTelemetry tracing, and production tuning.
 
 ## Performance
+
+For the declarative formats (everything but PDF/images), `cargo run --release
+-p docling --example profile_declarative` times parse, Markdown export and
+JSON export separately for every file in the corpus and lists the slowest.
+Parsing is milliseconds per document and Markdown export is negligible; JSON
+export dominates on table-heavy documents because docling's schema repeats
+every table cell in the `grid`, and it builds a `serde_json::Value` tree
+before printing. The table builder now fills that grid from an index instead
+of a hash map of cloned cells: on the corpus's heaviest JSON (a 13 MB patent
+export) the export went from 256 ms to 179 ms, on an EBCDIC table dump from
+123 ms to 66 ms, byte-identical output. Printing the tree is ~10 % of the
+remaining cost; the rest is the `Value` allocation itself, so a further
+step would be serializing straight from the document.
 
 `scripts/test/performance.sh` runs a representative fixture of each supported type
 through both engines (published Python `docling` vs the Rust release binary) and

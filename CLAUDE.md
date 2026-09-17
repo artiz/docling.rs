@@ -109,7 +109,12 @@ cargo check -p docling --no-default-features --features pdf-text \
   `DOCLING_RS_OCR_ORIENTATION` (auto default; `off` disables content-based
   un-rotation of raster-rotated scans, #225), `DOCLING_CHUNK_TOKENIZER`,
   `DOCLING_RS_DEBUG` (re-enables quiet pipeline diagnostics, e.g. the
-  int8→fp32 layout-retry notice).
+  int8→fp32 layout-retry notice), `DOCLING_RS_MAX_XML_DEPTH` (512; XML
+  element nesting any input/part may reach — roxmltree recurses per level),
+  `DOCLING_RS_SHEET_MAX_CELLS` (10M; a sheet's used area before it is
+  skipped — calamine materializes a dense grid), `DOCLING_RS_MAX_HTML_DEPTH`
+  (2000; over-deep HTML is emitted as text from a linear tag scan, never
+  parsed).
 
 ## Conformance & fixtures
 

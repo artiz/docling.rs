@@ -298,13 +298,34 @@ pub(crate) fn fetch_remote(url: &str) -> Option<PictureImage> {
     if blocked_by_ssrf_guard(url) {
         return None;
     }
+    // Redirects are followed by hand so the SSRF guard sees every hop: with
+    // the client following them itself only the first URL was checked, and a
+    // public host could 30x-bounce the fetch onto a private address.
     let agent: ureq::Agent = ureq::Agent::config_builder()
         .timeout_connect(Some(Duration::from_secs(5)))
         .timeout_global(Some(Duration::from_secs(20)))
-        .max_redirects(3)
+        .max_redirects(0)
         .build()
         .into();
-    let mut resp = agent.get(url).call().ok()?;
+    let mut target = url.to_string();
+    let mut resp = None;
+    for _ in 0..=3 {
+        let r = agent.get(&target).call().ok()?;
+        if !r.status().is_redirection() {
+            resp = Some(r);
+            break;
+        }
+        let location = r.headers().get("location")?.to_str().ok()?;
+        target = url::Url::parse(&target)
+            .ok()?
+            .join(location)
+            .ok()?
+            .to_string();
+        if blocked_by_ssrf_guard(&target) {
+            return None;
+        }
+    }
+    let mut resp = resp?;
     let content_type = resp
         .headers()
         .get("content-type")

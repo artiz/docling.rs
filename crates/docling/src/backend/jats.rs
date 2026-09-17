@@ -113,6 +113,7 @@ const DEFAULT_TEXT_ETAL: &str = "et al.";
 impl DeclarativeBackend for JatsBackend {
     fn convert(&self, source: &SourceDocument) -> Result<DoclingDocument, ConversionError> {
         let xml = source.text()?;
+        super::xml_depth::check(xml, "jats")?;
         // JATS files carry a DOCTYPE/DTD reference, which roxmltree rejects by default.
         let opts = ParsingOptions {
             allow_dtd: true,
@@ -242,6 +243,7 @@ fn raw_text(node: XmlNode, out: &mut String) {
 /// docling's behaviour of walking such a file element-by-element.
 pub(crate) fn convert_generic(source: &SourceDocument) -> Result<DoclingDocument, ConversionError> {
     let xml = source.text()?;
+    super::xml_depth::check(xml, "xml")?;
     let opts = ParsingOptions {
         allow_dtd: true,
         ..Default::default()

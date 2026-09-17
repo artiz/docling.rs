@@ -66,10 +66,17 @@ impl Package {
         })
     }
 
-    /// Read a part to a string, or `None` if it is absent or not valid UTF-8.
+    /// Read a part to a string, or `None` if it is absent, not valid UTF-8, or
+    /// nested deeper than the XML guard allows (see [`super::xml_depth`]; the
+    /// part is reported and skipped, like an unreadable one).
     pub fn read(&mut self, path: &str) -> Option<String> {
         let bytes = self.read_bytes(path)?;
-        String::from_utf8(bytes).ok()
+        let text = String::from_utf8(bytes).ok()?;
+        if let Err(e) = super::xml_depth::check(&text, path) {
+            eprintln!("docling: {e}; part skipped");
+            return None;
+        }
+        Some(text)
     }
 
     /// Read a part's raw bytes (e.g. an embedded image), or `None` if absent.

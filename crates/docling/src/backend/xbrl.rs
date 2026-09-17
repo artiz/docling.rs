@@ -20,6 +20,7 @@ pub struct XbrlBackend;
 impl DeclarativeBackend for XbrlBackend {
     fn convert(&self, source: &SourceDocument) -> Result<DoclingDocument, ConversionError> {
         let xml = source.text()?;
+        super::xml_depth::check(xml, "xbrl")?;
         let opts = ParsingOptions {
             allow_dtd: true,
             ..Default::default()

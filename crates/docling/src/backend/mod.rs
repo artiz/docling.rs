@@ -70,6 +70,7 @@ pub(crate) mod xbrl;
 mod xls;
 mod xlsx;
 mod xlsx_drawings;
+pub(crate) mod xml_depth;
 
 pub use abw::AbwBackend;
 pub use asciidoc::AsciiDocBackend;
