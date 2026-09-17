@@ -27,9 +27,10 @@ impl DeclarativeBackend for DoclingJsonBackend {
         let root = root;
         let name = root["name"].as_str().unwrap_or(&source.name).to_string();
         let mut doc = DoclingDocument::new(name);
+        let mut guard = WalkGuard::default();
         if let Some(children) = root["body"]["children"].as_array() {
             for c in children {
-                walk(c, &root, 0, &mut doc);
+                walk(c, &root, 0, &mut doc, &mut guard);
             }
         }
         Ok(doc)
@@ -75,7 +76,39 @@ fn formatted_text(item: &Value) -> String {
 }
 
 /// Dispatch one body/child reference by the array it points into.
-fn walk(reference: &Value, root: &Value, level: u8, doc: &mut DoclingDocument) {
+/// Guards the tree walk against a document that is not a tree: a `children`
+/// entry that points back at an ancestor recursed until the stack overflowed
+/// (an abort, not an error), a chain of 50 000 nested groups did the same, and
+/// one item referenced from many parents multiplied the output with every
+/// level. Every `$ref` is visited once — a docling document gives each item
+/// exactly one parent — and nesting stops at [`MAX_DEPTH`].
+#[derive(Default)]
+struct WalkGuard {
+    seen: std::collections::HashSet<String>,
+    depth: usize,
+}
+
+/// Deepest `children` nesting walked. docling's own JSON never goes past a
+/// few dozen (sections in sections, lists in list items).
+const MAX_DEPTH: usize = 256;
+
+fn walk(reference: &Value, root: &Value, level: u8, doc: &mut DoclingDocument, g: &mut WalkGuard) {
+    let key = reference["$ref"].as_str().unwrap_or("");
+    if g.depth >= MAX_DEPTH || !g.seen.insert(key.to_string()) {
+        return;
+    }
+    g.depth += 1;
+    walk_inner(reference, root, level, doc, g);
+    g.depth -= 1;
+}
+
+fn walk_inner(
+    reference: &Value,
+    root: &Value,
+    level: u8,
+    doc: &mut DoclingDocument,
+    g: &mut WalkGuard,
+) {
     let Some(item) = resolve(reference, root) else {
         return;
     };
@@ -92,11 +125,11 @@ fn walk(reference: &Value, root: &Value, level: u8, doc: &mut DoclingDocument) {
         // are rich-cell / caption items already rendered with the parent.
         if let Some(children) = item["children"].as_array() {
             for c in children {
-                walk(c, root, level, doc);
+                walk(c, root, level, doc, g);
             }
         }
     } else if kind.starts_with("#/groups/") {
-        group_item(item, root, level, doc);
+        group_item(item, root, level, doc, g);
     } else if kind.starts_with("#/tables/") {
         table_item(item, root, doc);
     } else if kind.starts_with("#/pictures/") {
@@ -187,12 +220,12 @@ fn text_item(item: &Value, root: &Value, level: u8, doc: &mut DoclingDocument) {
     }
 }
 
-fn group_item(item: &Value, root: &Value, level: u8, doc: &mut DoclingDocument) {
+fn group_item(item: &Value, root: &Value, level: u8, doc: &mut DoclingDocument, g: &mut WalkGuard) {
     let label = item["label"].as_str().unwrap_or("unspecified");
     let empty = Vec::new();
     let children = item["children"].as_array().unwrap_or(&empty);
     match label {
-        "list" | "ordered_list" => list_group(children, root, level, doc),
+        "list" | "ordered_list" => list_group(children, root, level, doc, g),
         "inline" => {
             // An inline group is one line: serialize each child and join with " ".
             let joined = children
@@ -207,7 +240,7 @@ fn group_item(item: &Value, root: &Value, level: u8, doc: &mut DoclingDocument) 
         // section / chapter / unspecified / sheet / comment_section → transparent
         _ => {
             for c in children {
-                walk(c, root, level, doc);
+                walk(c, root, level, doc, g);
             }
         }
     }
@@ -258,7 +291,13 @@ fn marker_of(item: &Value) -> Marker {
 }
 
 /// Emit a list group's items, recursing into nested lists at the next level.
-fn list_group(children: &[Value], root: &Value, level: u8, doc: &mut DoclingDocument) {
+fn list_group(
+    children: &[Value],
+    root: &Value,
+    level: u8,
+    doc: &mut DoclingDocument,
+    g: &mut WalkGuard,
+) {
     // docling-core's `first_item_is_enumerated`: the group renders computed
     // markers as numbers only when its *first child* is an enumerated item.
     let enumerated_group = children
@@ -274,7 +313,7 @@ fn list_group(children: &[Value], root: &Value, level: u8, doc: &mut DoclingDocu
             // A bare nested list (no enclosing item). It still occupies a
             // position in this group, which is why a later item can be
             // numbered past it.
-            walk(c, root, level + 1, doc);
+            walk(c, root, level + 1, doc, g);
             continue;
         }
         let Some(item) = resolve(c, root) else {
@@ -313,7 +352,7 @@ fn list_group(children: &[Value], root: &Value, level: u8, doc: &mut DoclingDocu
         first = false;
         if let Some(sub) = item["children"].as_array() {
             for s in sub {
-                walk(s, root, level + 1, doc);
+                walk(s, root, level + 1, doc, g);
             }
         }
     }
@@ -570,6 +609,47 @@ mod tests {
             ))
             .unwrap()
             .export_to_markdown()
+    }
+
+    /// A `children` reference back to an ancestor, a chain of thousands of
+    /// nested groups, and an item listed under many parents used to recurse
+    /// without bound (or multiply the output). Each reference is walked once
+    /// and nesting stops at `MAX_DEPTH`, so the documents convert and the
+    /// cyclic one reads like its acyclic twin.
+    #[test]
+    fn cycles_and_deep_chains_convert() {
+        let doc = |groups_children: &str| {
+            format!(
+                r##"{{"schema_name":"DoclingDocument","version":"1.7.0","name":"c",
+                "body":{{"self_ref":"#/body","children":[{{"$ref":"#/groups/0"}}],"name":"_root_","label":"unspecified"}},
+                "groups":[{{"self_ref":"#/groups/0","parent":{{"$ref":"#/body"}},"children":[{groups_children}],"name":"g","label":"section"}}],
+                "texts":[{{"self_ref":"#/texts/0","parent":{{"$ref":"#/groups/0"}},"children":[],"label":"text","text":"hello","prov":[]}}]}}"##
+            )
+        };
+        let plain = md(&doc(r##"{"$ref":"#/texts/0"}"##));
+        assert!(plain.contains("hello"));
+        let cyclic = md(&doc(
+            r##"{"$ref":"#/texts/0"},{"$ref":"#/groups/0"},{"$ref":"#/body"}"##,
+        ));
+        assert_eq!(cyclic, plain);
+        // 20 000 groups, each the only child of the previous one.
+        let n = 20_000;
+        let groups: Vec<String> = (0..n)
+            .map(|i| {
+                let child = if i + 1 < n { format!(r##"{{"$ref":"#/groups/{}"}}"##, i + 1) } else { r##"{"$ref":"#/texts/0"}"##.to_string() };
+                let parent = if i == 0 { "#/body".to_string() } else { format!("#/groups/{}", i - 1) };
+                format!(r##"{{"self_ref":"#/groups/{i}","parent":{{"$ref":"{parent}"}},"children":[{child}],"name":"g","label":"section"}}"##)
+            })
+            .collect();
+        let deep = format!(
+            r##"{{"schema_name":"DoclingDocument","version":"1.7.0","name":"d",
+            "body":{{"self_ref":"#/body","children":[{{"$ref":"#/groups/0"}}],"name":"_root_","label":"unspecified"}},
+            "groups":[{}],
+            "texts":[{{"self_ref":"#/texts/0","parent":{{"$ref":"#/groups/19999"}},"children":[],"label":"text","text":"bottom","prov":[]}}]}}"##,
+            groups.join(",")
+        );
+        // Converts (the text sits past the depth cap and is dropped).
+        let _ = md(&deep);
     }
 
     fn item(self_ref: &str, parent: &str, label: &str, extra: &str) -> String {

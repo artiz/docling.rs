@@ -118,6 +118,19 @@ pub(crate) fn convert_html(name: &str, html: &str, images: &dyn ImageResolver) -
 /// Markdown backend, which feeds embedded raw-HTML blocks through here (as
 /// docling does).
 pub(crate) fn append_fragment(html: &str, out: &mut Vec<Node>, images: &dyn ImageResolver) {
+    // html5ever's tree builder walks its stack of open elements per tag, so
+    // a page nested tens of thousands of elements deep parses in quadratic
+    // time — 100 000 nested `<div>`s (1 MB) took 37 s before a single node
+    // was walked, well past the point where `within_depth_limit` would have
+    // flattened it anyway. Estimate the nesting first with a linear tag scan
+    // and, past the limit, emit the page's text without building a DOM.
+    if !nesting_estimate_within(html, max_dom_depth()) {
+        let text = normalize_ws(&strip_tags(html));
+        if !text.is_empty() {
+            out.push(Node::Paragraph { text });
+        }
+        return;
+    }
     let parsed = Html::parse_document(html);
     // The document `<title>` is docling's furniture-layer title heading — it
     // precedes the body content and is excluded from Markdown/JSON. Fragments
@@ -295,6 +308,200 @@ const MAX_DOM_DEPTH: usize = 2000;
 
 fn max_dom_depth() -> usize {
     docling_core::env::parse("DOCLING_RS_MAX_HTML_DEPTH").unwrap_or(MAX_DOM_DEPTH)
+}
+
+/// Elements that never take an end tag (HTML void elements) or whose end tag
+/// HTML lets a document omit — they must not count towards the nesting
+/// estimate, or a page written without `</p>`/`</li>` would look as deep as
+/// it is long. Everything else (`div`, `span`, `table`, `ul`, `b`, `a`, …)
+/// nests only as far as its explicit end tags allow.
+fn html_tag_implicitly_closed(name: &str) -> bool {
+    matches!(
+        name,
+        "area"
+            | "base"
+            | "br"
+            | "col"
+            | "embed"
+            | "hr"
+            | "img"
+            | "input"
+            | "link"
+            | "meta"
+            | "param"
+            | "source"
+            | "track"
+            | "wbr"
+            | "p"
+            | "li"
+            | "dt"
+            | "dd"
+            | "tr"
+            | "td"
+            | "th"
+            | "option"
+            | "optgroup"
+            | "thead"
+            | "tbody"
+            | "tfoot"
+            | "colgroup"
+            | "caption"
+            | "html"
+            | "head"
+            | "body"
+            | "rt"
+            | "rp"
+    )
+}
+
+/// A linear, tokenizer-free estimate of how deep the markup nests: `true`
+/// when no run of open tags exceeds `limit`. Start tags of explicitly-closed
+/// elements push, their end tags pop; `<script>`/`<style>` bodies, comments
+/// and quoted attribute values are skipped whole. An overestimate (a real
+/// page with unclosed `<div>`s) only routes the page through the text-only
+/// path that `within_depth_limit` already uses for over-deep DOMs.
+fn nesting_estimate_within(html: &str, limit: usize) -> bool {
+    let b = html.as_bytes();
+    let n = b.len();
+    let mut depth = 0usize;
+    let mut i = 0;
+    let find_ci = |from: usize, pat: &[u8]| -> usize {
+        let mut j = from;
+        while j + pat.len() <= n {
+            if b[j..j + pat.len()].eq_ignore_ascii_case(pat) {
+                return j + pat.len();
+            }
+            j += 1;
+        }
+        n
+    };
+    while i < n {
+        if b[i] != b'<' {
+            i += 1;
+            continue;
+        }
+        if b[i..].starts_with(b"<!--") {
+            i = find_ci(i + 4, b"-->");
+            continue;
+        }
+        if b[i..].starts_with(b"<!") || b[i..].starts_with(b"<?") {
+            i = find_ci(i + 2, b">");
+            continue;
+        }
+        let closing = b[i..].starts_with(b"</");
+        let name_start = if closing { i + 2 } else { i + 1 };
+        let mut j = name_start;
+        while j < n && (b[j].is_ascii_alphanumeric() || b[j] == b'-' || b[j] == b':') {
+            j += 1;
+        }
+        if j == name_start {
+            // A stray `<`, not a tag.
+            i += 1;
+            continue;
+        }
+        let name = html[name_start..j].to_ascii_lowercase();
+        // To the end of the tag, honouring quoted attribute values.
+        let mut quote: Option<u8> = None;
+        let mut prev = b' ';
+        while j < n {
+            let c = b[j];
+            match quote {
+                Some(q) if c == q => quote = None,
+                Some(_) => {}
+                None if c == b'"' || c == b'\'' => quote = Some(c),
+                None if c == b'>' => break,
+                None => {}
+            }
+            prev = c;
+            j += 1;
+        }
+        i = j + 1;
+        if closing {
+            if !html_tag_implicitly_closed(&name) {
+                depth = depth.saturating_sub(1);
+            }
+        } else if name == "script" || name == "style" {
+            // Raw-text bodies: skip to the matching end tag.
+            let end = format!("</{name}");
+            i = find_ci(i, end.as_bytes());
+            i = find_ci(i, b">");
+        } else if prev != b'/' && !html_tag_implicitly_closed(&name) {
+            depth += 1;
+            if depth > limit {
+                return false;
+            }
+        }
+    }
+    true
+}
+
+/// The text of `html` without its markup — the over-deep fallback's stand-in
+/// for `root.text()`: tags, comments and `<script>`/`<style>` bodies dropped,
+/// the five named entities and numeric references decoded.
+fn strip_tags(html: &str) -> String {
+    let b = html.as_bytes();
+    let n = b.len();
+    let mut out = String::with_capacity(n / 2);
+    let mut i = 0;
+    let find_ci = |from: usize, pat: &[u8]| -> usize {
+        let mut j = from;
+        while j + pat.len() <= n {
+            if b[j..j + pat.len()].eq_ignore_ascii_case(pat) {
+                return j + pat.len();
+            }
+            j += 1;
+        }
+        n
+    };
+    while i < n {
+        if b[i] == b'<' {
+            if b[i..].starts_with(b"<!--") {
+                i = find_ci(i + 4, b"-->");
+            } else if b[i + 1..].len() >= 6 && b[i + 1..i + 7].eq_ignore_ascii_case(b"script") {
+                i = find_ci(i, b"</script");
+                i = find_ci(i, b">");
+            } else if b[i + 1..].len() >= 5 && b[i + 1..i + 6].eq_ignore_ascii_case(b"style") {
+                i = find_ci(i, b"</style");
+                i = find_ci(i, b">");
+            } else {
+                i = find_ci(i + 1, b">");
+            }
+            out.push(' ');
+            continue;
+        }
+        if b[i] == b'&' {
+            if let Some(end) = html[i..].find(';').filter(|&e| e <= 10) {
+                let ent = &html[i + 1..i + end];
+                let decoded = match ent {
+                    "amp" => Some('&'),
+                    "lt" => Some('<'),
+                    "gt" => Some('>'),
+                    "quot" => Some('"'),
+                    "apos" => Some('\''),
+                    "nbsp" => Some('\u{a0}'),
+                    _ => ent
+                        .strip_prefix('#')
+                        .and_then(|num| {
+                            num.strip_prefix(['x', 'X']).map_or_else(
+                                || num.parse::<u32>().ok(),
+                                |h| u32::from_str_radix(h, 16).ok(),
+                            )
+                        })
+                        .and_then(char::from_u32),
+                };
+                if let Some(c) = decoded {
+                    out.push(c);
+                    i += end + 1;
+                    continue;
+                }
+            }
+        }
+        // Copy one UTF-8 scalar.
+        let ch = html[i..].chars().next().unwrap_or(' ');
+        out.push(ch);
+        i += ch.len_utf8();
+    }
+    out
 }
 
 /// Whether no node under `root` nests deeper than the limit. Iterative DFS —
@@ -2062,6 +2269,47 @@ fn root_of(el: ElementRef) -> ElementRef {
         cur = parent;
     }
     cur
+}
+
+#[cfg(test)]
+mod nesting_guard_tests {
+    use super::*;
+
+    #[test]
+    fn estimate_ignores_void_and_optional_end_tags_and_raw_text() {
+        let html = "<html><head><script>if (a<b) { x = '<div><div>'; }</script></head>\
+                    <body><p>one<p>two<p>three<li>a<li>b<br><img src=x><div title='<i><i>'>\
+                    <span><b>x</b></span></div><!-- <div><div><div> --></body></html>";
+        assert!(nesting_estimate_within(html, 4));
+        let deep = "<div>".repeat(600) + "x" + &"</div>".repeat(600);
+        assert!(!nesting_estimate_within(&deep, 512));
+        assert!(nesting_estimate_within(&deep, 600));
+    }
+
+    #[test]
+    fn strip_tags_keeps_text_and_decodes_entities() {
+        let html =
+            "<div><p>a &amp; b &lt;c&gt; &#233;&#xE9;</p><script>x<y</script><!-- z --></div>";
+        assert_eq!(normalize_ws(&strip_tags(html)), "a & b <c> éé");
+    }
+
+    /// The over-deep page converts to its text through the tag scan, without
+    /// a DOM.
+    #[test]
+    fn over_deep_html_falls_back_to_text_without_parsing() {
+        let deep = "<html><body>".to_string()
+            + &"<div>".repeat(5000)
+            + "deep text"
+            + &"</div>".repeat(5000)
+            + "</body></html>";
+        let mut out = Vec::new();
+        append_fragment(&deep, &mut out, &NoFetch);
+        assert_eq!(out.len(), 1);
+        assert!(
+            matches!(&out[0], Node::Paragraph { text } if text == "deep text"),
+            "{out:?}"
+        );
+    }
 }
 
 #[cfg(test)]

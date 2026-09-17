@@ -71,6 +71,7 @@ impl DeclarativeBackend for DocxBackend {
             rels: &rels,
             images: &images,
             charts: &charts,
+            table_depth: std::cell::Cell::new(0),
         };
 
         let mut doc = DoclingDocument::new(&source.name);
@@ -237,6 +238,7 @@ fn emit_header_footer_part(pkg: &mut Package, part: &str, ctx: &Ctx, doc: &mut D
         rels: &rels,
         images: &images,
         charts: &charts,
+        table_depth: std::cell::Cell::new(0),
     };
     let mut sub = DoclingDocument::new("");
     let mut state = ListState::default();
@@ -352,7 +354,16 @@ struct Ctx<'a> {
     /// Native charts by relationship id: `(classified kind, title, data grid)`
     /// parsed from the `word/charts/*.xml` parts (docling PR #3809).
     charts: &'a HashMap<String, (String, Option<String>, docling_core::Table)>,
+    /// Nesting depth of the table being parsed (a table inside a cell inside a
+    /// table …), bounded by [`MAX_TABLE_DEPTH`]: `parse_table_with` recurses
+    /// per level, and a 35 KB file with 2 000 tables nested one inside the next
+    /// overflowed the stack — an abort, not an error.
+    table_depth: std::cell::Cell<u32>,
 }
+
+/// Deepest table nesting parsed; anything deeper is dropped. Word itself
+/// renders a handful of levels — real documents stop at two or three.
+const MAX_TABLE_DEPTH: u32 = 64;
 
 /// Mutable list/heading numbering state carried across the body walk.
 #[derive(Default)]
@@ -1499,6 +1510,16 @@ fn parse_table(tbl: XmlNode, ctx: &Ctx) -> Option<Table> {
 /// `nested` = this table is being flattened inside a rich cell, so every cell is
 /// rendered as plain text (docling's `_collect_subtree_text` drops formatting).
 fn parse_table_with(tbl: XmlNode, ctx: &Ctx, nested: bool) -> Option<Table> {
+    if ctx.table_depth.get() >= MAX_TABLE_DEPTH {
+        return None;
+    }
+    ctx.table_depth.set(ctx.table_depth.get() + 1);
+    let out = parse_table_inner(tbl, ctx, nested);
+    ctx.table_depth.set(ctx.table_depth.get() - 1);
+    out
+}
+
+fn parse_table_inner(tbl: XmlNode, ctx: &Ctx, nested: bool) -> Option<Table> {
     let rows: Vec<XmlNode> = tbl.children().filter(|n| n.has_tag_name("tr")).collect();
     // A row's width in grid columns includes the leading/trailing skipped
     // columns (`w:gridBefore`/`w:gridAfter`) — a row that starts late still

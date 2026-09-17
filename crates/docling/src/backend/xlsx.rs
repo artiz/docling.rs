@@ -15,6 +15,68 @@ use std::io::Cursor;
 use std::sync::Arc;
 
 use calamine::{Data, Range, Reader, Xlsx};
+
+/// The most cells a sheet's used area (the bounding box of its non-empty
+/// cells) may span before the sheet is skipped: `DOCLING_RS_SHEET_MAX_CELLS`,
+/// default ten million (~320 MB of cell storage). calamine materializes a
+/// sheet as a *dense* grid over that box, so a 4 KB file with one value in
+/// `A1` and one in `XFD1048576` asked for 17 billion cells — a 512 GB
+/// allocation that aborted the whole process (and with it a docling-serve
+/// instance). Real sheets sit far below the cap: 200 000 rows × 20 columns
+/// is 4 million.
+fn sheet_max_cells() -> u64 {
+    docling_core::env::parse::<u64>("DOCLING_RS_SHEET_MAX_CELLS").unwrap_or(10_000_000)
+}
+
+/// `Xlsx::worksheet_range` with the used area checked *before* the dense grid
+/// is allocated: the non-empty cells stream through calamine's cell reader
+/// (the same reader and value decoding `worksheet_range` uses), their
+/// bounding box is compared against [`sheet_max_cells`], and only then does
+/// `Range::from_sparse` lay them out. An oversized sheet is skipped with a
+/// warning (`None`), like an unreadable one.
+fn bounded_worksheet_range<RS: std::io::Read + std::io::Seek>(
+    wb: &mut Xlsx<RS>,
+    name: &str,
+) -> Option<Range<Data>> {
+    let mut reader = wb.worksheet_cells_reader(name).ok()?;
+    let mut cells: Vec<calamine::Cell<Data>> = Vec::new();
+    let (mut r0, mut r1, mut c0, mut c1) = (u32::MAX, 0u32, u32::MAX, 0u32);
+    loop {
+        match reader.next_cell() {
+            Ok(Some(cell)) if matches!(cell.get_value(), calamine::DataRef::Empty) => {}
+            Ok(Some(cell)) => {
+                let (r, c) = cell.get_position();
+                r0 = r0.min(r);
+                r1 = r1.max(r);
+                c0 = c0.min(c);
+                c1 = c1.max(c);
+                cells.push(calamine::Cell::new(
+                    (r, c),
+                    Data::from(cell.get_value().clone()),
+                ));
+            }
+            Ok(None) => break,
+            Err(_) => return None,
+        }
+    }
+    if cells.is_empty() {
+        return Some(Range::empty());
+    }
+    let area = (r1 - r0 + 1) as u64 * (c1 - c0 + 1) as u64;
+    if area > sheet_max_cells() {
+        eprintln!(
+            "docling: sheet {name:?}: used area {}×{} cells ({area}) exceeds \
+             DOCLING_RS_SHEET_MAX_CELLS ({}); sheet skipped",
+            r1 - r0 + 1,
+            c1 - c0 + 1,
+            sheet_max_cells()
+        );
+        return None;
+    }
+    // `from_sparse` wants row order; a sheet's XML may list rows out of order.
+    cells.sort_by_key(|c| c.get_position());
+    Some(Range::from_sparse(cells))
+}
 use docling_core::{DoclingDocument, Node, Table};
 use quick_xml::events::Event;
 use quick_xml::Reader as XmlReader;
@@ -112,7 +174,7 @@ impl DeclarativeBackend for XlsxBackend {
                 || Xlsx::new(Cursor::new(shared.clone())).ok(),
                 |wb, (name, _, _)| {
                     let wb = wb.as_mut()?;
-                    let range = wb.worksheet_range(name).ok()?;
+                    let range = bounded_worksheet_range(wb, name)?;
                     Some((name.clone(), (range, sheet_merges(wb, name))))
                 },
             )
@@ -122,7 +184,7 @@ impl DeclarativeBackend for XlsxBackend {
         // same bytes already opened once above) loads from the main reader.
         for (name, typ, _) in &metas {
             if matches!(typ, calamine::SheetType::WorkSheet) && !ranges.contains_key(name) {
-                if let Ok(range) = workbook.worksheet_range(name) {
+                if let Some(range) = bounded_worksheet_range(&mut workbook, name) {
                     let merges = sheet_merges(&mut workbook, name);
                     ranges.insert(name.clone(), (range, merges));
                 }
@@ -1166,6 +1228,53 @@ mod tests {
             dense[0].table.structure.is_some(),
             "dense region keeps its span overlay under skip_empty"
         );
+    }
+
+    /// A minimal workbook with one sheet whose cells sit at `A1` and at `far`.
+    fn tiny_xlsx(far: &str) -> Vec<u8> {
+        use std::io::Write;
+        let mut zw = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
+        let opts = zip::write::SimpleFileOptions::default()
+            .compression_method(zip::CompressionMethod::Stored);
+        let parts: [(&str, String); 5] = [
+            ("[Content_Types].xml", r#"<?xml version="1.0" encoding="UTF-8"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/></Types>"#.into()),
+            ("_rels/.rels", r#"<?xml version="1.0" encoding="UTF-8"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>"#.into()),
+            ("xl/workbook.xml", r#"<?xml version="1.0" encoding="UTF-8"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="Sheet" sheetId="1" r:id="rId1"/></sheets></workbook>"#.into()),
+            ("xl/_rels/workbook.xml.rels", r#"<?xml version="1.0" encoding="UTF-8"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/></Relationships>"#.into()),
+            ("xl/worksheets/sheet1.xml", format!(r#"<?xml version="1.0" encoding="UTF-8"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData><row r="1"><c r="A1" t="inlineStr"><is><t>a</t></is></c></row><row><c r="{far}" t="inlineStr"><is><t>b</t></is></c></row></sheetData></worksheet>"#)),
+        ];
+        for (name, body) in parts {
+            zw.start_file(name, opts).unwrap();
+            zw.write_all(body.as_bytes()).unwrap();
+        }
+        zw.finish().unwrap().into_inner()
+    }
+
+    /// A 4 KB workbook with a value in `A1` and one in `XFD1048576` spans 17
+    /// billion cells: calamine's dense grid for it is a 512 GB allocation
+    /// that aborted the process. The used area is checked first and the
+    /// sheet skipped; a compact sheet still converts.
+    #[test]
+    fn oversized_used_area_skips_the_sheet_instead_of_allocating() {
+        let src = SourceDocument::from_bytes("x.xlsx", InputFormat::Xlsx, tiny_xlsx("XFD1048576"));
+        let doc = XlsxBackend::default().convert(&src).expect("converts");
+        // (Items sit inside the sheet group — look through it.)
+        assert!(
+            !flatten(&doc.nodes)
+                .iter()
+                .any(|n| matches!(n, Node::Table(_))),
+            "{:?}",
+            doc.nodes
+        );
+        // (`A2`, not `B2`: diagonal cells are two regions under docling's
+        // 4-neighbour flood fill.)
+        let src = SourceDocument::from_bytes("x.xlsx", InputFormat::Xlsx, tiny_xlsx("A2"));
+        let doc = XlsxBackend::default().convert(&src).expect("converts");
+        let table = flatten(&doc.nodes).into_iter().find_map(|n| match n {
+            Node::Table(t) => Some(t),
+            _ => None,
+        });
+        assert_eq!(table.map(|t| t.rows.len()), Some(2), "{:?}", doc.nodes);
     }
 
     /// docling's sheet groups and cell comments: each worksheet becomes a

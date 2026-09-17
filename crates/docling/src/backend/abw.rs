@@ -43,6 +43,7 @@ impl DeclarativeBackend for AbwBackend {
         } else {
             source.text()?.to_string()
         };
+        super::xml_depth::check(&text, "abw")?;
         // AbiWord files open with a DOCTYPE; allow it (roxmltree refuses
         // DTDs by default).
         let dom = Document::parse_with_options(

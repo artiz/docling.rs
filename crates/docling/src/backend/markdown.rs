@@ -184,7 +184,7 @@ impl DeclarativeBackend for MarkdownBackend {
 
         let mut doc = DoclingDocument::new(&source.name);
         let mut i = 0;
-        self.parse_blocks(&events, &mut i, &mut doc.nodes, 0, Stop::Eof);
+        self.parse_blocks(&events, &mut i, &mut doc.nodes, 0, Stop::Eof, 0);
         Ok(doc)
     }
 }
@@ -194,6 +194,33 @@ impl DeclarativeBackend for MarkdownBackend {
 enum Stop {
     Eof,
     BlockQuote,
+}
+
+/// Deepest block nesting (block quotes, lists) the parser descends into —
+/// markdown-it's `maxNesting`, which is what docling's Markdown backend runs
+/// on. Deeper structure is skipped: `parse_blocks`/`parse_list`/`parse_item`
+/// recurse per level, and 50 000 `>` (48 KB) or a 5 000-level list overflowed
+/// the stack — an abort, not an error.
+const MAX_NESTING: u16 = 100;
+
+/// Skip the balanced event subtree that starts at the `Start` event under
+/// `*i` (inclusive of its `End`), without recursion.
+fn skip_subtree(events: &[Event], i: &mut usize) {
+    let mut depth = 0usize;
+    while *i < events.len() {
+        match &events[*i] {
+            Event::Start(_) => depth += 1,
+            Event::End(_) => {
+                depth = depth.saturating_sub(1);
+                if depth == 0 {
+                    *i += 1;
+                    return;
+                }
+            }
+            _ => {}
+        }
+        *i += 1;
+    }
 }
 
 impl MarkdownBackend {
@@ -208,9 +235,13 @@ impl MarkdownBackend {
         out: &mut Vec<Node>,
         list_level: u8,
         stop: Stop,
+        depth: u16,
     ) {
         while *i < events.len() {
             match &events[*i] {
+                Event::Start(Tag::BlockQuote(_) | Tag::List(_)) if depth >= MAX_NESTING => {
+                    skip_subtree(events, i);
+                }
                 Event::End(TagEnd::BlockQuote(_)) if stop == Stop::BlockQuote => {
                     *i += 1;
                     return;
@@ -237,7 +268,7 @@ impl MarkdownBackend {
                 }
                 Event::Start(Tag::BlockQuote(_)) => {
                     *i += 1;
-                    self.parse_blocks(events, i, out, list_level, Stop::BlockQuote);
+                    self.parse_blocks(events, i, out, list_level, Stop::BlockQuote, depth + 1);
                 }
                 Event::Start(Tag::Paragraph) => {
                     // Legacy: a lone inline code span becomes a code block.
@@ -281,7 +312,7 @@ impl MarkdownBackend {
                     let ordered = start.is_some();
                     let start_num = start.unwrap_or(1);
                     *i += 1;
-                    self.parse_list(events, i, out, list_level, ordered, start_num);
+                    self.parse_list(events, i, out, list_level, ordered, start_num, depth + 1);
                 }
                 Event::Start(Tag::CodeBlock(kind)) => {
                     let language = match kind {
@@ -328,6 +359,7 @@ impl MarkdownBackend {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn parse_list(
         &self,
         events: &[Event],
@@ -336,6 +368,7 @@ impl MarkdownBackend {
         level: u8,
         ordered: bool,
         start: u64,
+        depth: u16,
     ) {
         let mut number = start;
         let mut first = true;
@@ -343,7 +376,7 @@ impl MarkdownBackend {
             match &events[*i] {
                 Event::Start(Tag::Item) => {
                     *i += 1;
-                    self.parse_item(events, i, out, level, ordered, number, first);
+                    self.parse_item(events, i, out, level, ordered, number, first, depth);
                     number += 1;
                     first = false;
                 }
@@ -368,6 +401,7 @@ impl MarkdownBackend {
         ordered: bool,
         number: u64,
         first_in_list: bool,
+        depth: u16,
     ) {
         let mut emitted = false;
         while *i < events.len() {
@@ -376,11 +410,22 @@ impl MarkdownBackend {
                     *i += 1;
                     break;
                 }
+                Event::Start(Tag::List(_) | Tag::BlockQuote(_)) if depth >= MAX_NESTING => {
+                    skip_subtree(events, i);
+                }
                 Event::Start(Tag::List(start)) => {
                     let nested_ordered = start.is_some();
                     let nested_start = start.unwrap_or(1);
                     *i += 1;
-                    self.parse_list(events, i, out, level + 1, nested_ordered, nested_start);
+                    self.parse_list(
+                        events,
+                        i,
+                        out,
+                        level + 1,
+                        nested_ordered,
+                        nested_start,
+                        depth + 1,
+                    );
                 }
                 Event::Start(Tag::Paragraph) => {
                     *i += 1;
@@ -741,6 +786,27 @@ mod tests {
         let mut doc = MarkdownBackend { strict: true }.convert(&src).unwrap();
         doc.strict_markdown = true;
         doc
+    }
+
+    /// Block nesting is capped at markdown-it's `maxNesting` (100): 50 000
+    /// `>` or a 5 000-level list used to recurse the parser off the stack.
+    /// The document still converts, with the content past the cap dropped.
+    #[test]
+    fn pathological_nesting_converts_instead_of_overflowing() {
+        let quotes = ">".repeat(50_000) + " deep\n\nafter\n";
+        let md = convert(&quotes).export_to_markdown();
+        assert!(md.contains("after"), "{md:?}");
+        let list: String = (0..5_000)
+            .map(|i| format!("{}- item {i}\n", "  ".repeat(i)))
+            .collect();
+        let md = convert(&list).export_to_markdown();
+        assert!(md.contains("item 0") && md.contains("item 99"), "{md:?}");
+        // Within the cap every level is kept.
+        let shallow: String = (0..20)
+            .map(|i| format!("{}- item {i}\n", "  ".repeat(i)))
+            .collect();
+        let md = convert(&shallow).export_to_markdown();
+        assert!(md.contains("item 19"), "{md:?}");
     }
 
     #[test]
