@@ -53,7 +53,8 @@ validated for byte-for-byte conformance against upstream Python docling.
 
 ```bash
 cargo test --lib --tests -p docling-core -p docling -p docling-asr -p docling-serve -p docling-pdf
-cargo clippy --lib --tests --bins <same -p list>   # keep it warning-free
+cargo clippy --all-targets  <same -p list>          # keep it warning-free
+# (CI lints examples too — `--all-targets`, not just `--lib --tests --bins`.)
 cargo fmt --all
 cargo check -p docling --no-default-features --features pdf-text \
   --target wasm32-unknown-unknown --locked           # the wasm CI gate
