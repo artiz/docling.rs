@@ -366,7 +366,9 @@ These are deliberate or unavoidable divergences, not bugs.
      XML inputs and OOXML/ODF parts nested past `DOCLING_RS_MAX_XML_DEPTH`
      (512) are rejected; a spreadsheet sheet whose used area exceeds
      `DOCLING_RS_SHEET_MAX_CELLS` (10M) is skipped; HTML past
-     `DOCLING_RS_MAX_HTML_DEPTH` is emitted as text without a DOM.
+     `DOCLING_RS_MAX_HTML_DEPTH` is emitted as text without a DOM; a PDF page
+     rasterizing past `DOCLING_RS_MAX_RENDER_PIXELS` (15000 px/side) is rejected
+     before the multi-GB bitmap is allocated.
    - **OCR** — PP-OCRv3 recognition (RapidOCR) via ONNX, *not* docling's default
      EasyOCR; different recognizer → different scanned text. Recognition runs
      on the lines inside layout regions; RapidOCR's PP-OCRv6 DB **text

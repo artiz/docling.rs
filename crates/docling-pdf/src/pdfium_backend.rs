@@ -386,6 +386,43 @@ pub struct RenderedPage {
     pub png: Vec<u8>,
 }
 
+/// Upper bound, in pixels, on a rendered page bitmap's side. A crafted PDF can
+/// declare an enormous `MediaBox` in a few hundred bytes; the page render then
+/// asks pdfium — and `into_rgb8` — to allocate `w * h * 4` bytes. At the
+/// pipeline's 3x supersample a 12000 pt box is 36000x36000 ~ 5 GB: pdfium
+/// returns an opaque internal error at the extreme, and just below it the
+/// `image` crate *panics* (a `TryReserveError`, not a recoverable error) when
+/// the allocation fails. Real pages, even large-format (A0 at 3x ~ 10110 px),
+/// stay well under this cap; it only rejects the implausible, turning an abort
+/// into a clean error. Mirrors `decode_image_limited`'s guard on the
+/// standalone-image path. `DOCLING_RS_MAX_RENDER_PIXELS` overrides it.
+#[cfg(feature = "ml")]
+fn max_render_side() -> u32 {
+    static M: std::sync::OnceLock<u32> = std::sync::OnceLock::new();
+    *M.get_or_init(|| docling_core::env::parse("DOCLING_RS_MAX_RENDER_PIXELS").unwrap_or(15_000))
+}
+
+/// Round float pixel dimensions to the `i32` pdfium wants, rejecting a page
+/// whose bitmap would exceed [`max_render_side`] on either side before either
+/// pdfium or `image` tries to allocate it.
+#[cfg(feature = "ml")]
+fn checked_render_dims(
+    w_px: f64,
+    h_px: f64,
+    page_no: usize,
+) -> Result<(i32, i32), crate::PdfError> {
+    let cap = max_render_side();
+    let w = w_px.round().max(1.0);
+    let h = h_px.round().max(1.0);
+    if w > f64::from(cap) || h > f64::from(cap) {
+        return Err(crate::PdfError::Pdfium(format!(
+            "page {page_no}: render size {w:.0}x{h:.0} px exceeds the {cap}px per-side cap \
+             (raise DOCLING_RS_MAX_RENDER_PIXELS); the page's declared size is implausibly large"
+        )));
+    }
+    Ok((w as i32, h as i32))
+}
+
 #[cfg(feature = "ml")]
 /// Rasterize a PDF's pages to PNG (#243) — the lean path behind serve's
 /// `to=images`: pdfium render only, no text extraction, no models, and only
@@ -437,8 +474,11 @@ pub fn render_pages(
         // pdfium applies /Rotate itself, so the bitmap is the page as a viewer
         // shows it — no orientation handling needed (the pipeline's scanned-page
         // un-rotation is an OCR-conformance concern, not a display one).
-        let tw = (page.width().value * scale).round().max(1.0) as i32;
-        let th = (page.height().value * scale).round().max(1.0) as i32;
+        let (tw, th) = checked_render_dims(
+            f64::from(page.width().value * scale),
+            f64::from(page.height().value * scale),
+            i + 1,
+        )?;
         let cfg = PdfRenderConfig::new()
             .set_target_width(tw)
             .set_target_height(th);
@@ -539,8 +579,15 @@ fn extract_page(
         // model is pixel-sensitive, so the page bitmap must match byte-for-byte.
         // `CatmullRom` is the same a=-0.5 cubic kernel as PIL's BICUBIC.
         const SUPERSAMPLE: f32 = 1.5;
-        let tw = (width * RENDER_SCALE * SUPERSAMPLE).round().max(1.0) as i32;
-        let th = (height * RENDER_SCALE * SUPERSAMPLE).round().max(1.0) as i32;
+        // The 3x supersample is the largest bitmap the pipeline renders, so the
+        // per-side cap is enforced here; the 1.5x layout render below is always
+        // smaller and needs no separate guard.
+        let (tw, th) = checked_render_dims(
+            f64::from(width * RENDER_SCALE * SUPERSAMPLE),
+            f64::from(height * RENDER_SCALE * SUPERSAMPLE),
+            (index + 1) as usize,
+        )
+        .map_err(|e| PdfiumError::IoError(std::io::Error::other(e.to_string())))?;
         let cfg = PdfRenderConfig::new()
             .set_target_width(tw)
             .set_target_height(th);
@@ -1441,7 +1488,36 @@ fn push_line(
 
 #[cfg(test)]
 mod tests {
-    use super::to_display_frame;
+    use super::{checked_render_dims, max_render_side, to_display_frame};
+
+    /// A page whose declared size renders past the per-side cap is rejected
+    /// with a recoverable error, before pdfium or `image` allocates the
+    /// multi-gigabyte bitmap that would otherwise abort the process; a normal
+    /// page passes through with its dimensions rounded to `i32`.
+    #[test]
+    fn oversized_render_is_rejected_not_allocated() {
+        let cap = f64::from(max_render_side());
+        // A 12000 pt box at the pipeline's 3x supersample is 36000 px/side.
+        let huge = checked_render_dims(cap + 1.0, 10.0, 1);
+        assert!(huge.is_err(), "over-cap width must be rejected");
+        let tall = checked_render_dims(10.0, cap + 1.0, 7);
+        assert!(tall.is_err(), "over-cap height must be rejected");
+        assert!(
+            tall.unwrap_err().to_string().contains("page 7"),
+            "the error names the offending page"
+        );
+        // A Letter page at 2x supersample (612x792 pt -> 1836x2376 px) is fine.
+        assert_eq!(
+            checked_render_dims(1836.4, 2375.6, 1).unwrap(),
+            (1836, 2376)
+        );
+        // Exactly at the cap is allowed; a zero-or-negative size floors to 1.
+        assert_eq!(
+            checked_render_dims(cap, cap, 1).unwrap(),
+            (cap as i32, cap as i32)
+        );
+        assert_eq!(checked_render_dims(0.0, 0.0, 1).unwrap(), (1, 1));
+    }
 
     /// A 612×792 portrait page displayed under `/Rotate`: a rect near the
     /// unrotated top-left lands where a viewer shows it (docling#4008).

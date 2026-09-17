@@ -1438,8 +1438,14 @@ recognized by a linear tag scan and emitted as text without ever building a
 DOM (html5ever's tree builder is quadratic in nesting — 100 000 nested `<div>`
 took 37 s); an ODS sheet's regions are found by visiting its cells, not the
 box they span; OOXML parts inflate to at most `DOCLING_RS_MAX_PART_BYTES`;
-and a redirect on a `--fetch-images` download is checked against the
-private-address block-list at every hop.
+a redirect on a `--fetch-images` download is checked against the
+private-address block-list at every hop; and a PDF page whose declared size
+would rasterize past `DOCLING_RS_MAX_RENDER_PIXELS` (15000 px/side, ~5000 pt —
+above any real page, A0 at the pipeline's 3x supersample is ~10110 px) is
+rejected before pdfium or the `image` crate tries to allocate the
+multi-gigabyte bitmap, which a few-hundred-byte crafted `MediaBox` otherwise
+forces (the `image` crate *panics* rather than erroring when that allocation
+fails).
 
 OCR recognition defaults to the **English** PP-OCRv3 model: the multilingual
 `ch_` model reads Latin text with broken word spacing (`Refactorexisting
@@ -1673,6 +1679,20 @@ export) the export went from 256 ms to 179 ms, on an EBCDIC table dump from
 123 ms to 66 ms, byte-identical output. Printing the tree is ~10 % of the
 remaining cost; the rest is the `Value` allocation itself, so a further
 step would be serializing straight from the document.
+
+For the PDF/image ML pipeline, `scripts/test/profile_pdf.sh` runs the release
+binary over the PDF corpus with `DOCLING_RS_TIMING=1` and sums the pipeline's
+per-stage wall-clock (`crates/docling-pdf/src/timing.rs`) into one table. On
+the 88-page corpus the cost is almost entirely model inference: TableFormer
+structure recognition (the autoregressive OTSL decode — ~1400 decode steps
+across the corpus's tables) and the per-page layout model together account for
+~85 % of it, with a one-time ONNX session/graph init paid on the first table
+page. Everything outside the models — both pdfium renders, the two resamples,
+text-layer parsing and assembly — is under ~6 % combined. There is no
+glue-code hot spot to cut here the way the JSON grid was; PDF throughput is
+bounded by the layout and TableFormer models, so the levers are the INT8
+models, the KV-cached decoder and GPU execution providers, not the Rust
+around them.
 
 `scripts/test/performance.sh` runs a representative fixture of each supported type
 through both engines (published Python `docling` vs the Rust release binary) and

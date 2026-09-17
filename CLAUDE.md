@@ -53,7 +53,8 @@ validated for byte-for-byte conformance against upstream Python docling.
 
 ```bash
 cargo test --lib --tests -p docling-core -p docling -p docling-asr -p docling-serve -p docling-pdf
-cargo clippy --lib --tests --bins <same -p list>   # keep it warning-free
+cargo clippy --all-targets  <same -p list>          # keep it warning-free
+# (CI lints examples too — `--all-targets`, not just `--lib --tests --bins`.)
 cargo fmt --all
 cargo check -p docling --no-default-features --features pdf-text \
   --target wasm32-unknown-unknown --locked           # the wasm CI gate
@@ -114,7 +115,10 @@ cargo check -p docling --no-default-features --features pdf-text \
   `DOCLING_RS_SHEET_MAX_CELLS` (10M; a sheet's used area before it is
   skipped — calamine materializes a dense grid), `DOCLING_RS_MAX_HTML_DEPTH`
   (2000; over-deep HTML is emitted as text from a linear tag scan, never
-  parsed).
+  parsed), `DOCLING_RS_MAX_RENDER_PIXELS` (15000; per-side cap on a rendered
+  PDF-page bitmap — a crafted `MediaBox` otherwise forces a multi-GB
+  allocation that pdfium rejects opaquely / the `image` crate panics on;
+  parallels the standalone-image `DOCLING_RS_MAX_IMAGE_PIXELS` cap of 30000).
 
 ## Conformance & fixtures
 
