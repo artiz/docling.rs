@@ -1258,8 +1258,11 @@ mod tests {
     fn oversized_used_area_skips_the_sheet_instead_of_allocating() {
         let src = SourceDocument::from_bytes("x.xlsx", InputFormat::Xlsx, tiny_xlsx("XFD1048576"));
         let doc = XlsxBackend::default().convert(&src).expect("converts");
+        // (Items sit inside the sheet group — look through it.)
         assert!(
-            !doc.nodes.iter().any(|n| matches!(n, Node::Table(_))),
+            !flatten(&doc.nodes)
+                .iter()
+                .any(|n| matches!(n, Node::Table(_))),
             "{:?}",
             doc.nodes
         );
@@ -1267,11 +1270,11 @@ mod tests {
         // 4-neighbour flood fill.)
         let src = SourceDocument::from_bytes("x.xlsx", InputFormat::Xlsx, tiny_xlsx("A2"));
         let doc = XlsxBackend::default().convert(&src).expect("converts");
-        let table = doc.nodes.iter().find_map(|n| match n {
+        let table = flatten(&doc.nodes).into_iter().find_map(|n| match n {
             Node::Table(t) => Some(t),
             _ => None,
         });
-        assert_eq!(table.map(|t| t.rows.len()), Some(2));
+        assert_eq!(table.map(|t| t.rows.len()), Some(2), "{:?}", doc.nodes);
     }
 
     /// docling's sheet groups and cell comments: each worksheet becomes a
