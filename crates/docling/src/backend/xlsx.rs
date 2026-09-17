@@ -1263,7 +1263,9 @@ mod tests {
             "{:?}",
             doc.nodes
         );
-        let src = SourceDocument::from_bytes("x.xlsx", InputFormat::Xlsx, tiny_xlsx("B2"));
+        // (`A2`, not `B2`: diagonal cells are two regions under docling's
+        // 4-neighbour flood fill.)
+        let src = SourceDocument::from_bytes("x.xlsx", InputFormat::Xlsx, tiny_xlsx("A2"));
         let doc = XlsxBackend::default().convert(&src).expect("converts");
         let table = doc.nodes.iter().find_map(|n| match n {
             Node::Table(t) => Some(t),
