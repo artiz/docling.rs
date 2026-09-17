@@ -182,86 +182,105 @@ fn classification_meta(classes: &[crate::PictureClass]) -> Value {
 /// docling's `TableData` for a table: `table_cells`, `num_rows`/`num_cols`
 /// and the `grid` that repeats each cell at every position it covers. Shared
 /// by table items and a chart picture's `meta.tabular_chart.chart_data`.
+/// One table cell as docling's `TableCell` JSON: the eleven fields in
+/// pydantic order, `bbox` appended when the cell carries one. Built straight
+/// into a `Map` sized for the entries — the table grid repeats every cell
+/// object once per spanned slot, so on a table-heavy document (a patent's
+/// claims tables, an EBCDIC dump) this constructor and its clones *are* the
+/// JSON export's cost; the `json!` macro built the same object through a
+/// growing map with a rehash per doubling.
+#[allow(clippy::too_many_arguments)]
+fn cell_value(
+    row_span: usize,
+    col_span: usize,
+    start_row: usize,
+    end_row: usize,
+    start_col: usize,
+    end_col: usize,
+    text: String,
+    column_header: bool,
+    row_header: bool,
+    row_section: bool,
+    bbox: Option<[f32; 4]>,
+) -> Value {
+    let mut m = serde_json::Map::with_capacity(12);
+    m.insert("row_span".into(), row_span.into());
+    m.insert("col_span".into(), col_span.into());
+    m.insert("start_row_offset_idx".into(), start_row.into());
+    m.insert("end_row_offset_idx".into(), end_row.into());
+    m.insert("start_col_offset_idx".into(), start_col.into());
+    m.insert("end_col_offset_idx".into(), end_col.into());
+    m.insert("text".into(), Value::String(text));
+    m.insert("column_header".into(), column_header.into());
+    m.insert("row_header".into(), row_header.into());
+    m.insert("row_section".into(), row_section.into());
+    m.insert("fillable".into(), false.into());
+    if let Some(b) = bbox {
+        m.insert(
+            "bbox".into(),
+            json!({
+                "l": b[0], "t": b[1], "r": b[2], "b": b[3],
+                "coord_origin": "TOPLEFT",
+            }),
+        );
+    }
+    Value::Object(m)
+}
+
 fn table_data(t: &Table) -> Value {
     let num_rows = t.rows.len();
     let num_cols = t.rows.iter().map(Vec::len).max().unwrap_or(0);
     let mut grid = Vec::with_capacity(num_rows);
     let mut cells = Vec::new();
+    // Grid slot → index into `cells` (the anchor cell covering it). A flat
+    // row-major table instead of a `HashMap<(r, c), Value>` of clones: the
+    // grid is filled from it with one clone per slot, and nothing is hashed.
+    let mut slot: Vec<Option<usize>> = vec![None; num_rows * num_cols];
     if let Some(first_class) = t.cells.as_ref().filter(|c| !c.is_empty()) {
-        // First-class cells (#240): serialize the real records — bbox
-        // (page points, top-left origin, docling's TableCell shape),
-        // span offsets and header roles — and repeat each spanning
-        // cell's entry across its covered grid positions, exactly like
-        // docling's `TableData.grid`.
-        let cell_json = |c: &crate::TableCell| {
-            let mut v = json!({
-                "row_span": c.row_span,
-                "col_span": c.col_span,
-                "start_row_offset_idx": c.start_row,
-                "end_row_offset_idx": c.start_row + c.row_span,
-                "start_col_offset_idx": c.start_col,
-                "end_col_offset_idx": c.start_col + c.col_span,
-                "text": unescape_text(&crate::markdown::strip_hard_breaks(&c.text)),
-                "column_header": c.column_header,
-                "row_header": c.row_header,
-                "row_section": c.row_section,
-                "fillable": false,
-            });
-            if let Some(b) = c.bbox {
-                v["bbox"] = json!({
-                    "l": b[0], "t": b[1], "r": b[2], "b": b[3],
-                    "coord_origin": "TOPLEFT",
-                });
-            }
-            v
-        };
-        let mut by_pos: std::collections::HashMap<(usize, usize), serde_json::Value> =
-            std::collections::HashMap::new();
         for c in first_class {
-            let v = cell_json(c);
-            cells.push(v.clone());
+            let idx = cells.len();
+            cells.push(cell_value(
+                c.row_span,
+                c.col_span,
+                c.start_row,
+                c.start_row + c.row_span,
+                c.start_col,
+                c.start_col + c.col_span,
+                unescape_text(&crate::markdown::strip_hard_breaks(&c.text)),
+                c.column_header,
+                c.row_header,
+                c.row_section,
+                c.bbox,
+            ));
             for r in c.start_row..(c.start_row + c.row_span).min(num_rows) {
                 for k in c.start_col..(c.start_col + c.col_span).min(num_cols) {
-                    by_pos.insert((r, k), v.clone());
+                    slot[r * num_cols + k] = Some(idx);
                 }
             }
         }
         for r in 0..num_rows {
             let mut grid_row = Vec::with_capacity(num_cols);
             for c in 0..num_cols {
-                // A position no cell covers (a hole in the prediction)
-                // falls back to an empty 1×1 entry.
-                grid_row.push(by_pos.get(&(r, c)).cloned().unwrap_or_else(|| {
-                    json!({
-                        "row_span": 1,
-                        "col_span": 1,
-                        "start_row_offset_idx": r,
-                        "end_row_offset_idx": r + 1,
-                        "start_col_offset_idx": c,
-                        "end_col_offset_idx": c + 1,
-                        "text": "",
-                        "column_header": false,
-                        "row_header": false,
-                        "row_section": false,
-                        "fillable": false,
-                    })
-                }));
+                grid_row.push(match slot[r * num_cols + c] {
+                    Some(i) => cells[i].clone(),
+                    None => cell_value(
+                        1,
+                        1,
+                        r,
+                        r + 1,
+                        c,
+                        c + 1,
+                        String::new(),
+                        false,
+                        false,
+                        false,
+                        None,
+                    ),
+                });
             }
             grid.push(grid_row);
         }
     } else {
-        // A backend without first-class cells describes its merged ranges
-        // (an XLSX `<mergeCell>`, a DOCX `gridSpan`/`vMerge`, a PPTX
-        // `rowSpan`) as continuation flags on the structure overlay, the
-        // covered positions repeating the anchor's text in `rows`. docling
-        // writes *one* `TableCell` per range — the anchor's offsets, its
-        // `row_span`/`col_span` — and repeats that entry across the grid
-        // positions it covers; we wrote a 1×1 cell for every position with
-        // the text copied into each, so a consumer reading the JSON alone
-        // could not tell the range was merged (#410). Walk each position
-        // back to its anchor (left over `<lcel/>`, then up over `<ucel/>`;
-        // a 2-D covered cell carries both) and size the anchors from the
-        // positions that resolve to them.
         let s = t.structure.as_ref();
         let flag = |grid: Option<&Vec<Vec<bool>>>, r: usize, c: usize| -> bool {
             grid.and_then(|g| g.get(r))
@@ -279,61 +298,58 @@ fn table_data(t: &Table) -> Value {
             }
             (r0, c0)
         };
-        let mut extent: std::collections::HashMap<(usize, usize), (usize, usize)> =
-            std::collections::HashMap::new();
-        for r in 0..num_rows {
-            for c in 0..num_cols {
-                let e = extent.entry(anchor_of(r, c)).or_insert((r, c));
-                e.0 = e.0.max(r);
-                e.1 = e.1.max(c);
-            }
+        // Each slot's anchor, computed once; the anchor's extent is the
+        // farthest slot that resolves to it.
+        let anchors: Vec<(usize, usize)> = (0..num_rows)
+            .flat_map(|r| (0..num_cols).map(move |c| (r, c)))
+            .map(|(r, c)| anchor_of(r, c))
+            .collect();
+        let mut extent: Vec<(usize, usize)> = (0..num_rows)
+            .flat_map(|r| (0..num_cols).map(move |c| (r, c)))
+            .collect();
+        for (i, &(ar, ac)) in anchors.iter().enumerate() {
+            let (r, c) = (i / num_cols.max(1), i % num_cols.max(1));
+            let e = &mut extent[ar * num_cols + ac];
+            e.0 = e.0.max(r);
+            e.1 = e.1.max(c);
         }
-        let mut by_pos: std::collections::HashMap<(usize, usize), serde_json::Value> =
-            std::collections::HashMap::new();
         for (r, row) in t.rows.iter().enumerate() {
             let mut grid_row = Vec::with_capacity(num_cols);
             for c in 0..num_cols {
-                let (ar, ac) = anchor_of(r, c);
+                let (ar, ac) = anchors[r * num_cols + c];
                 if (ar, ac) == (r, c) {
-                    let (er, ec) = extent.get(&(r, c)).copied().unwrap_or((r, c));
-                    // A rich cell's flat text is its Markdown serialization;
-                    // the GFM hard-line-break marker (docling-core#721) is
-                    // Markdown-only, so JSON sees the raw line breaks.
+                    let (er, ec) = extent[r * num_cols + c];
                     let text = row
                         .get(c)
                         .map(|s| unescape_text(&crate::markdown::strip_hard_breaks(s)))
                         .unwrap_or_default();
-                    // Header roles: the per-cell grids when the backend
-                    // supplies them (a chart's category column is a row
-                    // header, docling's `row_header=True`), else the first
-                    // row is the column header.
                     let column_header = match s.filter(|s| !s.col_header.is_empty()) {
                         Some(s) => flag(Some(&s.col_header), r, c),
                         None => r == 0,
                     };
-                    let cell = json!({
-                        "row_span": er - r + 1,
-                        "col_span": ec - c + 1,
-                        "start_row_offset_idx": r,
-                        "end_row_offset_idx": er + 1,
-                        "start_col_offset_idx": c,
-                        "end_col_offset_idx": ec + 1,
-                        "text": text,
-                        "column_header": column_header,
-                        "row_header": flag(s.map(|s| &s.row_header), r, c),
-                        "row_section": false,
-                        "fillable": false,
-                    });
-                    cells.push(cell.clone());
-                    by_pos.insert((r, c), cell);
+                    slot[r * num_cols + c] = Some(cells.len());
+                    cells.push(cell_value(
+                        er - r + 1,
+                        ec - c + 1,
+                        r,
+                        er + 1,
+                        c,
+                        ec + 1,
+                        text,
+                        column_header,
+                        flag(s.map(|s| &s.row_header), r, c),
+                        false,
+                        None,
+                    ));
                 }
-                grid_row.push(by_pos.get(&(ar, ac)).cloned().unwrap_or(Value::Null));
+                grid_row.push(match slot[ar * num_cols + ac] {
+                    Some(i) => cells[i].clone(),
+                    None => Value::Null,
+                });
             }
             grid.push(grid_row);
         }
     }
-    // docling-core's `TableData.orientation` — always the unrotated default
-    // from a declarative backend or the ML pipeline alike.
     json!({
         "table_cells": cells,
         "num_rows": num_rows,
