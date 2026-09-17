@@ -1674,6 +1674,20 @@ export) the export went from 256 ms to 179 ms, on an EBCDIC table dump from
 remaining cost; the rest is the `Value` allocation itself, so a further
 step would be serializing straight from the document.
 
+For the PDF/image ML pipeline, `scripts/test/profile_pdf.sh` runs the release
+binary over the PDF corpus with `DOCLING_RS_TIMING=1` and sums the pipeline's
+per-stage wall-clock (`crates/docling-pdf/src/timing.rs`) into one table. On
+the 88-page corpus the cost is almost entirely model inference: TableFormer
+structure recognition (the autoregressive OTSL decode — ~1400 decode steps
+across the corpus's tables) and the per-page layout model together account for
+~85 % of it, with a one-time ONNX session/graph init paid on the first table
+page. Everything outside the models — both pdfium renders, the two resamples,
+text-layer parsing and assembly — is under ~6 % combined. There is no
+glue-code hot spot to cut here the way the JSON grid was; PDF throughput is
+bounded by the layout and TableFormer models, so the levers are the INT8
+models, the KV-cached decoder and GPU execution providers, not the Rust
+around them.
+
 `scripts/test/performance.sh` runs a representative fixture of each supported type
 through both engines (published Python `docling` vs the Rust release binary) and
 reports peak RSS, CPU utilization, and conversion time. Ratios below are
