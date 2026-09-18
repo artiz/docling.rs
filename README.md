@@ -8,22 +8,23 @@
   <a href="https://github.com/docling-project/docling.rs/actions/workflows/ci.yml"><img src="https://github.com/docling-project/docling.rs/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
   <a href="https://docling-project.github.io/docling.rs/"><img src="https://img.shields.io/badge/demo-live-brightgreen" alt="Live browser demo"></a>
   <a href="https://docs.rs/docling"><img src="https://img.shields.io/docsrs/docling?logo=docs.rs" alt="docs.rs"></a>
-  <a href="https://crates.io/crates/docling"><img src="https://img.shields.io/crates/v/docling?logo=rust&color=e6b04a" alt="crates.io version"></a>
-  <a href="https://crates.io/crates/docling"><img src="https://img.shields.io/crates/msrv/docling?logo=rust&label=rust" alt="Rust MSRV"></a>
-  <a href="https://crates.io/crates/docling"><img src="https://img.shields.io/crates/d/docling?label=crates.io%20downloads" alt="crates.io downloads"></a>
-  <br>
-  <a href="https://www.npmjs.com/package/docling.rs"><img src="https://img.shields.io/npm/v/docling.rs?logo=npm&logoColor=fff&label=npm%20docling.rs" alt="npm docling.rs"></a>
-  <a href="https://www.npmjs.com/package/docling.rs"><img src="https://img.shields.io/npm/dm/docling.rs?label=npm%20downloads" alt="npm downloads/month"></a>
-  <a href="https://www.npmjs.com/package/docling.rs-wasm"><img src="https://img.shields.io/npm/v/docling.rs-wasm?logo=webassembly&logoColor=fff&label=npm%20docling.rs-wasm" alt="npm docling.rs-wasm"></a>
-  <a href="https://pypi.org/project/docling-rs/"><img src="https://img.shields.io/pypi/v/docling-rs?logo=pypi&logoColor=fff" alt="PyPI version"></a>
   <a href="https://pypi.org/project/docling-rs/"><img src="https://img.shields.io/pypi/pyversions/docling-rs" alt="Python versions"></a>
-  <a href="https://pepy.tech/projects/docling-rs"><img src="https://static.pepy.tech/badge/docling-rs/month" alt="PyPI downloads/month"></a>
+  <a href="https://crates.io/crates/docling"><img src="https://img.shields.io/crates/msrv/docling?logo=rust&label=rust" alt="Rust MSRV"></a>
+  <a href="https://opensource.org/licenses/MIT"><img src="https://img.shields.io/github/license/docling-project/docling.rs" alt="License MIT"></a>
+  <a href="https://lfaidata.foundation/projects/"><img src="https://img.shields.io/badge/LF%20AI%20%26%20Data-003778?logo=linuxfoundation&logoColor=fff&color=0094ff&labelColor=003778" alt="LF AI &amp; Data"></a>
+  <br>
+  <a href="https://crates.io/crates/docling"><img src="https://img.shields.io/crates/v/docling?logo=rust" alt="crates.io version"></a>
+  <a href="https://pypi.org/project/docling-rs/"><img src="https://img.shields.io/pypi/v/docling-rs?logo=pypi&logoColor=fff" alt="PyPI version"></a>
+  <a href="https://www.npmjs.com/package/docling.rs"><img src="https://img.shields.io/npm/v/docling.rs?logo=npm&logoColor=fff&label=npm%20docling.rs" alt="npm docling.rs"></a>
+  <a href="https://www.npmjs.com/package/docling.rs-wasm"><img src="https://img.shields.io/npm/v/docling.rs-wasm?logo=webassembly&logoColor=fff&label=npm%20docling.rs-wasm" alt="npm docling.rs-wasm"></a>
+  <a href="https://github.com/docling-project/docling.rs/releases"><img src="https://img.shields.io/github/v/release/docling-project/docling.rs?label=release&logo=github" alt="GitHub release"></a>
   <br>
   <a href="https://github.com/docling-project/docling.rs/pkgs/container/docling-rs-serve"><img src="https://img.shields.io/badge/ghcr.io-docling--rs--serve-2496ED?logo=docker&logoColor=fff" alt="GHCR docling-rs-serve"></a>
   <a href="https://github.com/docling-project/docling.rs/pkgs/container/docling-rs"><img src="https://img.shields.io/badge/ghcr.io-docling--rs-2496ED?logo=docker&logoColor=fff" alt="GHCR docling-rs (CLI)"></a>
-  <a href="https://github.com/docling-project/docling.rs/releases"><img src="https://img.shields.io/github/v/release/docling-project/docling.rs?label=release&logo=github" alt="GitHub release"></a>
-  <a href="https://opensource.org/licenses/MIT"><img src="https://img.shields.io/github/license/docling-project/docling.rs" alt="License MIT"></a>
-  <a href="https://lfaidata.foundation/projects/"><img src="https://img.shields.io/badge/LF%20AI%20%26%20Data-003778?logo=linuxfoundation&logoColor=fff&color=0094ff&labelColor=003778" alt="LF AI &amp; Data"></a>
+  <a href="https://crates.io/crates/docling"><img src="https://img.shields.io/crates/d/docling?label=crates.io%20downloads" alt="crates.io downloads"></a>
+  <a href="https://pepy.tech/projects/docling-rs"><img src="https://static.pepy.tech/badge/docling-rs/month" alt="PyPI downloads/month"></a>
+  <a href="https://www.npmjs.com/package/docling.rs"><img src="https://img.shields.io/npm/dm/docling.rs?label=npm%20downloads" alt="npm downloads/month"></a>
+  
 </p>
 
 A Rust port of [docling](https://github.com/docling-project/docling): convert
