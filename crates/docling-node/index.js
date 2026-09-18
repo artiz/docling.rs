@@ -217,14 +217,19 @@ class Pipeline {
    *
    * @param {string} filePath
    * @param {object} [options] output options (`imageMode`: `placeholder` or
-   *   `embedded`; `referenced` is rejected)
+   *   `embedded`; `referenced` is rejected; `pageBreakPlaceholder`: text
+   *   between pages)
    * @returns {AsyncGenerator<string, void, unknown>}
    */
   async *streamFileMarkdown(filePath, options = {}) {
     assertMlReady(mlFormatOf(filePath))
-    const { imageMode, artifactsDir } = options
+    const { imageMode, artifactsDir, pageBreakPlaceholder } = options
     yield* chunkStream((callback) =>
-      this._inner.convertFileStreaming(filePath, callback, { imageMode, artifactsDir }),
+      this._inner.convertFileStreaming(filePath, callback, {
+        imageMode,
+        artifactsDir,
+        pageBreakPlaceholder,
+      }),
     )
   }
 }
@@ -244,10 +249,10 @@ class Pipeline {
  */
 async function* streamFileMarkdown(filePath, options = {}) {
   assertMlReady(mlFormatOf(filePath), undefined, options)
-  const { imageMode, artifactsDir } = options
+  const { imageMode, artifactsDir, pageBreakPlaceholder } = options
   // The whole object, not a hand-copied allowlist: napi reads the
   // `ConverterOptions` fields it knows and ignores the rest (`imageMode`,
-  // `artifactsDir`), so every converter knob reaches the stream instead of the
+  // `artifactsDir`, `pageBreakPlaceholder`), so every converter knob reaches the stream instead of the
   // three that used to be copied by hand. `pages` above all — under
   // `pipeline: 'vlm'` it decides how many pages are rasterized and POSTed to a
   // metered endpoint, and dropping it would quietly send the whole document.
@@ -258,7 +263,11 @@ async function* streamFileMarkdown(filePath, options = {}) {
   // `convertFile(...).content` byte-for-byte.
   const converter = new native.DocumentConverter(options)
   yield* chunkStream((callback) =>
-    converter.convertFileStreaming(filePath, callback, { imageMode, artifactsDir }),
+    converter.convertFileStreaming(filePath, callback, {
+      imageMode,
+      artifactsDir,
+      pageBreakPlaceholder,
+    }),
   )
 }
 

@@ -60,6 +60,11 @@
 //!   (#271; docling.rs extension, off by default)
 //! - `compact_tables` — unpadded `| a | b |` Markdown tables, all formats
 //!   (#271; docling.rs extension, off by default)
+//! - `md_page_break_placeholder` — text inserted between pages in Markdown
+//!   output (docling-serve's option of the same name, docling-core's
+//!   `MarkdownParams.page_break_placeholder`; e.g. `<!-- page break -->`).
+//!   A break lands only between two rendered blocks on different pages;
+//!   unset (the default) keeps docling's break-free Markdown
 //! - `list_attachments` — email (.eml/.msg): append an Attachments section
 //!   with names and content types (#251; payload bytes are never embedded)
 //! - `ebcdic_layout` — EBCDIC (#252): the copybook layout as inline
@@ -444,6 +449,10 @@ struct ConvertOptions {
     skip_empty_cells: Option<bool>,
     /// Compact (unpadded) Markdown tables (#271, opt-in docling.rs extension).
     compact_tables: Option<bool>,
+    /// Text inserted between pages in Markdown output — docling-serve's
+    /// `md_page_break_placeholder` (docling-core's
+    /// `MarkdownParams.page_break_placeholder`). Unset = no page breaks.
+    md_page_break_placeholder: Option<String>,
     /// EBCDIC copybook layout (#252): inline `EbcdicLayout` JSON (uploads
     /// have no filesystem, so the JSON itself rides in the request).
     ebcdic_layout: Option<String>,
@@ -527,6 +536,9 @@ impl ConvertOptions {
             list_attachments: self.list_attachments.or(base.list_attachments),
             skip_empty_cells: self.skip_empty_cells.or(base.skip_empty_cells),
             compact_tables: self.compact_tables.or(base.compact_tables),
+            md_page_break_placeholder: self
+                .md_page_break_placeholder
+                .or(base.md_page_break_placeholder),
             ebcdic_layout: self.ebcdic_layout.or(base.ebcdic_layout),
             asr_model: self.asr_model.or(base.asr_model),
             asr_lang: self.asr_lang.or(base.asr_lang),
@@ -1749,6 +1761,7 @@ fn markdown_string(
 ) -> String {
     let mut doc = document.clone();
     doc.strict_markdown = options.strict.unwrap_or(state.cfg.strict);
+    doc.page_break_placeholder = options.md_page_break_placeholder.clone();
     match image_mode {
         ImageMode::Placeholder => doc.export_to_markdown(),
         _ => {
@@ -1812,6 +1825,9 @@ async fn read_multipart(
                 })?);
             }
             "ebcdic_layout" => body_opts.ebcdic_layout = Some(text_field(field).await?),
+            "md_page_break_placeholder" => {
+                body_opts.md_page_break_placeholder = Some(text_field(field).await?)
+            }
             "pipeline" => body_opts.pipeline = Some(text_field(field).await?),
             "vlm_endpoint" => body_opts.vlm_endpoint = Some(text_field(field).await?),
             "vlm_model" => body_opts.vlm_model = Some(text_field(field).await?),
@@ -2379,6 +2395,7 @@ fn request_converter(
         .list_attachments(options.list_attachments.unwrap_or(false))
         .skip_empty_cells(options.skip_empty_cells.unwrap_or(false))
         .compact_tables(options.compact_tables.unwrap_or(false))
+        .page_break_placeholder(options.md_page_break_placeholder.clone())
         .ebcdic_layout_opt(options.ebcdic_layout.clone())
         .asr_model(options.asr_model.clone())
         .asr_lang(options.asr_lang.clone())
@@ -2500,6 +2517,7 @@ async fn stream_markdown(
             match convert_document(&st, source, &options) {
                 Ok(mut doc) => {
                     doc.strict_markdown = options.strict.unwrap_or(st.cfg.strict);
+                    doc.page_break_placeholder = options.md_page_break_placeholder.clone();
                     let md = match image_mode {
                         ImageMode::Placeholder => doc.export_to_markdown(),
                         _ => {

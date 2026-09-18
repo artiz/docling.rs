@@ -88,6 +88,9 @@ pub struct DocumentConverter {
     /// Emit Markdown tables in the compact `| a | b |` form instead of the
     /// width-padded GitHub serializer (#271, opt-in docling.rs extension).
     compact_tables: bool,
+    /// docling-core's `MarkdownParams.page_break_placeholder`: text inserted
+    /// between pages in the Markdown export; `None` (default) omits breaks.
+    page_break_placeholder: Option<String>,
     /// EBCDIC copybook layout (#252): inline JSON or a file path. `None`
     /// falls back to the `<stem>.layout.json` sidecar.
     ebcdic_layout: Option<String>,
@@ -168,6 +171,7 @@ impl Default for DocumentConverter {
             list_attachments: false,
             skip_empty_cells: false,
             compact_tables: false,
+            page_break_placeholder: None,
             ebcdic_layout: None,
             no_table_former: false,
             no_text_panels: false,
@@ -433,6 +437,21 @@ impl DocumentConverter {
         self
     }
 
+    /// Insert `placeholder` between pages in the Markdown export — docling's
+    /// `export_to_markdown(page_break_placeholder=…)` (docling-core's
+    /// `MarkdownParams`, docling-serve's `md_page_break_placeholder`). Where
+    /// docling marks a break between two items whose `prov.page_no` differ,
+    /// the serializer here marks it between two rendered blocks separated by a
+    /// page boundary — the `PageInfo` marker opening every PDF page and sheet,
+    /// the `PageBreak` between slides and DjVu / DocTags pages — so a break
+    /// never leads or trails the document and empty pages collapse into one.
+    /// `None` (the default) keeps Markdown free of page breaks, as docling's
+    /// default export is. Markdown only; JSON carries pages in `prov`.
+    pub fn page_break_placeholder(mut self, placeholder: Option<String>) -> Self {
+        self.page_break_placeholder = placeholder;
+        self
+    }
+
     /// The copybook layout for EBCDIC sources (#252): docling's
     /// `EbcdicLayout` JSON, inline (a string starting with `{`) or as a file
     /// path. Without it, a path-loaded source looks for a
@@ -692,6 +711,7 @@ impl DocumentConverter {
             ocr_mode: self.ocr_mode_choice(),
             ocr_scale: self.ocr_scale_choice(),
             artifacts_dir: self.artifacts_dir.clone(),
+            page_break_placeholder: self.page_break_placeholder.clone(),
         }
     }
 
@@ -964,6 +984,11 @@ impl DocumentConverter {
         // on for its own corpus; never turn it back off here.
         if self.compact_tables {
             document.compact_tables = true;
+        }
+        // Page-break placeholder: a serializer knob like `strict`, carried on
+        // the document so every Markdown export of it agrees.
+        if self.page_break_placeholder.is_some() {
+            document.page_break_placeholder = self.page_break_placeholder.clone();
         }
         // First-class cells for every table (#240): backends with page
         // geometry (the PDF TableFormer paths) set them; everything else —

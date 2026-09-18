@@ -65,6 +65,7 @@ paths:
         - { $ref: "#/components/parameters/fetch_images" }
         - { $ref: "#/components/parameters/skip_empty_cells" }
         - { $ref: "#/components/parameters/compact_tables" }
+        - { $ref: "#/components/parameters/md_page_break_placeholder" }
         - { $ref: "#/components/parameters/list_attachments" }
         - { $ref: "#/components/parameters/ebcdic_layout" }
         - { $ref: "#/components/parameters/pages" }
@@ -111,6 +112,7 @@ paths:
                 fetch_images: { type: boolean }
                 skip_empty_cells: { type: boolean }
                 compact_tables: { type: boolean }
+                md_page_break_placeholder: { type: string, examples: ["<!-- page break -->"] }
                 pages: { type: string, examples: ["2-5"] }
                 ocr_lang: { $ref: "#/components/schemas/OcrLang" }
                 ocr_mode: { $ref: "#/components/schemas/OcrMode" }
@@ -552,6 +554,16 @@ components:
           description: >
             Render Markdown tables in the compact `| a | b |` form instead of
             the width-padded GitHub style (docling.rs extension, all formats).
+        md_page_break_placeholder:
+          type: string
+          examples: ["<!-- page break -->"]
+          description: >
+            Text inserted between pages in Markdown output (docling-serve's
+            option of the same name; docling-core's
+            `MarkdownParams.page_break_placeholder`). A break lands only
+            between two rendered blocks on different pages — never first or
+            last, empty pages collapse. Unset: no page breaks (docling's
+            default). Markdown only.
         pages:
           type: string
           pattern: '^\d+(-\d+)?$'
@@ -776,6 +788,8 @@ components:
       { name: skip_empty_cells, in: query, schema: { type: boolean } }
     compact_tables:
       { name: compact_tables, in: query, schema: { type: boolean } }
+    md_page_break_placeholder:
+      { name: md_page_break_placeholder, in: query, schema: { type: string } }
     list_attachments:
       { name: list_attachments, in: query, schema: { type: boolean } }
     ebcdic_layout:

@@ -29,6 +29,19 @@ struct Ctx {
     /// `in_table_cell`, docling-core#540): a heading has no valid Markdown
     /// form inside a table, so it renders as plain text without `#` markers.
     in_table_cell: bool,
+    /// docling-core's `MarkdownParams.page_break_placeholder`: the text that
+    /// separates two pages ([`DoclingDocument::page_break_placeholder`]).
+    /// `None` omits page breaks, docling's default.
+    page_break: Option<String>,
+    /// A page boundary has been crossed since the last rendered block, so the
+    /// next block is preceded by the placeholder. docling yields its
+    /// `_PageBreakNode` between two *items* whose `prov.page_no` differ, so a
+    /// boundary before the first block or after the last one emits nothing,
+    /// and a run of empty pages collapses into a single break.
+    pending_page_break: bool,
+    /// Whether any block has been rendered yet — for a streamer, across every
+    /// earlier push too — which is what makes a boundary a *pending* break.
+    emitted_any: bool,
 }
 
 /// Render a document to a Markdown string (pictures as placeholders).
@@ -57,6 +70,9 @@ pub fn to_markdown_images(
         artifacts: Vec::new(),
         pic_index: 0,
         in_table_cell: false,
+        page_break: doc.page_break_placeholder.clone(),
+        pending_page_break: false,
+        emitted_any: false,
     };
     let mut blocks: Vec<String> = Vec::new();
     render(&doc.nodes, &mut blocks, &mut ctx);
@@ -92,6 +108,12 @@ pub fn to_markdown_table_cell(doc: &DoclingDocument, strict: bool) -> String {
         artifacts: Vec::new(),
         pic_index: 0,
         in_table_cell: true,
+        // A rich cell is one page's content; its sub-document carries no
+        // page boundaries and docling's `_iterate_items` runs the page-break
+        // scan over the document root only.
+        page_break: None,
+        pending_page_break: false,
+        emitted_any: false,
     };
     let mut blocks: Vec<String> = Vec::new();
     render(&doc.nodes, &mut blocks, &mut ctx);
@@ -195,6 +217,11 @@ pub struct MarkdownStreamer {
     artifacts_dir: String,
     artifacts: Vec<(String, Vec<u8>)>,
     pic_index: usize,
+    /// [`DoclingDocument::page_break_placeholder`] and the boundary carried
+    /// over from the previous push (a page batch opens with its page marker,
+    /// so the break it implies is paid by that batch's first block).
+    page_break: Option<String>,
+    pending_page_break: bool,
 }
 
 impl MarkdownStreamer {
@@ -229,7 +256,18 @@ impl MarkdownStreamer {
             artifacts_dir: artifacts_dir.to_string(),
             artifacts: Vec::new(),
             pic_index: 0,
+            page_break: None,
+            pending_page_break: false,
         }
+    }
+
+    /// Insert `placeholder` between pages, mirroring
+    /// [`DoclingDocument::page_break_placeholder`] for the buffered path (the
+    /// concatenated chunks stay byte-identical to it). `None` — the default —
+    /// omits page breaks. Set before the first [`push`](Self::push).
+    pub fn with_page_break_placeholder(mut self, placeholder: Option<String>) -> Self {
+        self.page_break = placeholder;
+        self
     }
 
     /// The `(relative path, bytes)` of images rendered by pushes since the last
@@ -254,12 +292,17 @@ impl MarkdownStreamer {
             artifacts: std::mem::take(&mut self.artifacts),
             pic_index: self.pic_index,
             in_table_cell: false,
+            page_break: std::mem::take(&mut self.page_break),
+            pending_page_break: self.pending_page_break,
+            emitted_any: self.emitted_any,
         };
         let mut blocks: Vec<String> = Vec::new();
         render(nodes, &mut blocks, &mut ctx);
         self.artifacts_dir = std::mem::take(&mut ctx.artifacts_dir);
         self.artifacts = std::mem::take(&mut ctx.artifacts);
         self.pic_index = ctx.pic_index;
+        self.page_break = std::mem::take(&mut ctx.page_break);
+        self.pending_page_break = ctx.pending_page_break;
         if blocks.is_empty() {
             return String::new();
         }
@@ -345,7 +388,23 @@ fn heading_line_breaks(text: &str) -> String {
 fn render(nodes: &[Node], blocks: &mut Vec<String>, ctx: &mut Ctx) {
     let mut i = 0;
     while i < nodes.len() {
+        let before = blocks.len();
         match &nodes[i] {
+            // A page boundary: the explicit `PageBreak` (slides, DjVu / DocTags
+            // pages) or the `PageInfo` marker that opens every PDF page and
+            // spreadsheet sheet — a sheet boundary carries both, and the flag
+            // absorbs the pair into one break. docling's `_iterate_items`
+            // yields a `_PageBreakNode` only between two items on different
+            // pages (a group's leading item counts for the group), which is
+            // exactly "a boundary between two rendered blocks": nothing before
+            // the first block, nothing after the last, consecutive boundaries
+            // — empty or furniture-only pages — collapsed into one.
+            Node::PageBreak | Node::PageInfo { .. } => {
+                if ctx.page_break.is_some() && ctx.emitted_any {
+                    ctx.pending_page_break = true;
+                }
+                i += 1;
+            }
             Node::ListItem { .. } => {
                 let start = i;
                 i += 1;
@@ -370,6 +429,19 @@ fn render(nodes: &[Node], blocks: &mut Vec<String>, ctx: &mut Ctx) {
                 render_one(other, blocks, ctx);
                 i += 1;
             }
+        }
+        if blocks.len() > before {
+            if ctx.pending_page_break {
+                // The placeholder is a block of its own, joined by the document
+                // delimiter like docling's `_PageBreakSerResult` part — an
+                // empty placeholder therefore leaves the doubled `\n\n`
+                // upstream leaves too.
+                if let Some(placeholder) = &ctx.page_break {
+                    blocks.insert(before, placeholder.clone());
+                }
+                ctx.pending_page_break = false;
+            }
+            ctx.emitted_any = true;
         }
     }
 }
@@ -1453,7 +1525,8 @@ mod tests {
     ) {
         let (want, want_artifacts) = to_markdown_images(doc, strict, images, "artifacts");
         let mut streamer =
-            MarkdownStreamer::with_artifacts(strict, images, doc.compact_tables, "artifacts");
+            MarkdownStreamer::with_artifacts(strict, images, doc.compact_tables, "artifacts")
+                .with_page_break_placeholder(doc.page_break_placeholder.clone());
         let mut got = String::new();
         let mut got_artifacts = Vec::new();
         let mut start = 0;
@@ -1590,6 +1663,104 @@ mod tests {
         // The second anchor lives in the second block, so it must be carried across
         // the page boundary and placed when that block streams out.
         assert_stream_matches(&doc, true, ImageMode::Placeholder, &[1]);
+    }
+
+    /// A three-page document with one empty page in the middle and page
+    /// markers of both kinds, as the backends emit them.
+    fn paged_doc() -> DoclingDocument {
+        let mut doc = DoclingDocument::new("p");
+        doc.push(Node::PageInfo {
+            page_no: 1,
+            width: 100.0,
+            height: 100.0,
+        });
+        doc.add_heading(1, "Title");
+        doc.add_paragraph("Page one.");
+        // Page two: a marker plus furniture only — renders nothing.
+        doc.push(Node::PageBreak);
+        doc.push(Node::PageInfo {
+            page_no: 2,
+            width: 100.0,
+            height: 100.0,
+        });
+        doc.push(Node::PageFurniture {
+            footer: true,
+            location: [0, 500, 511, 511],
+            text: "2".into(),
+        });
+        doc.push(Node::PageBreak);
+        doc.push(Node::PageInfo {
+            page_no: 3,
+            width: 100.0,
+            height: 100.0,
+        });
+        doc.add_paragraph("Page three.");
+        // A trailing boundary with nothing after it.
+        doc.push(Node::PageBreak);
+        doc
+    }
+
+    #[test]
+    fn page_break_placeholder_lands_between_pages_only() {
+        let mut doc = paged_doc();
+        // Off by default: docling's Markdown carries no page breaks.
+        assert_eq!(
+            doc.export_to_markdown(),
+            "# Title\n\nPage one.\n\nPage three.\n"
+        );
+        doc.page_break_placeholder = Some("<!-- page break -->".into());
+        // One break for the 1→3 transition (the empty page 2 and the doubled
+        // PageBreak+PageInfo markers collapse), none before the first block,
+        // none for the trailing boundary.
+        assert_eq!(
+            doc.export_to_markdown(),
+            "# Title\n\nPage one.\n\n<!-- page break -->\n\nPage three.\n"
+        );
+        // An empty placeholder is still a (blank) part, as upstream's
+        // `str.replace(marker, "")` leaves the delimiters around it.
+        doc.page_break_placeholder = Some(String::new());
+        assert_eq!(
+            doc.export_to_markdown(),
+            "# Title\n\nPage one.\n\n\n\nPage three.\n"
+        );
+    }
+
+    #[test]
+    fn page_break_placeholder_never_leads_a_single_page() {
+        let mut doc = DoclingDocument::new("one");
+        doc.page_break_placeholder = Some("---".into());
+        doc.push(Node::PageBreak);
+        doc.push(Node::PageInfo {
+            page_no: 1,
+            width: 10.0,
+            height: 10.0,
+        });
+        doc.add_paragraph("Only page.");
+        assert_eq!(doc.export_to_markdown(), "Only page.\n");
+        // Two boundaries with no content between them: still one break.
+        doc.push(Node::PageBreak);
+        doc.push(Node::PageBreak);
+        doc.add_paragraph("Next.");
+        assert_eq!(doc.export_to_markdown(), "Only page.\n\n---\n\nNext.\n");
+    }
+
+    #[test]
+    fn page_break_placeholder_streams_byte_identical() {
+        let mut doc = paged_doc();
+        doc.page_break_placeholder = Some("<!-- page break -->".into());
+        // Split at every page marker (how the PDF pipeline pushes page batches)
+        // and at odd places inside a page: the pending break must survive a
+        // push that renders nothing (page two) and land on page three's block.
+        for splits in [
+            &[3usize][..],
+            &[3, 6],
+            &[3, 6, 8],
+            &[1, 2, 3, 4, 5, 6, 7, 8, 9],
+            &[8],
+        ] {
+            assert_stream_matches(&doc, false, ImageMode::Placeholder, splits);
+            assert_stream_matches(&doc, true, ImageMode::Placeholder, splits);
+        }
     }
 
     #[test]

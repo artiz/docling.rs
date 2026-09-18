@@ -223,7 +223,7 @@ honoring `pages=A-B` and a `scale` of 0.1–4.0 pixels per PDF point (default
 (`DOCLING_RS_MAX_RASTER_PAGES`); narrow big documents with `pages`.
 
 Options per request: `to=md|json|dclx|chunks|latex|images`, `strict`, `images=placeholder|embedded`,
-`skip_empty_cells`, `compact_tables`,
+`skip_empty_cells`, `compact_tables`, `md_page_break_placeholder` (text between pages in Markdown),
 `no_ocr`, `skip_ocr`, `no_table_former`, `no_text_panels`, `heading_hierarchy`, `force_full_page_ocr`, `pages`,
 `do_picture_classification`, `do_code_enrichment`, `do_formula_enrichment` (#423: the
 [enrichment models](#enrichment-models-picture-classification-code-formulas), named as
@@ -824,6 +824,21 @@ default output stays byte-for-byte docling), on every surface (CLI flag,
   `| a | b |` form instead of the width-padded GitHub style. Grid semantics
   are unchanged — only inter-cell padding is dropped, which is what
   dominates the output size on sparse sheets.
+- `--page-break-placeholder TEXT` — Markdown only: insert TEXT between
+  pages, docling's `export_to_markdown(page_break_placeholder=…)`
+  (docling-core's `MarkdownParams`; docling-serve's
+  `md_page_break_placeholder`, which is also the serve option's name here;
+  `pageBreakPlaceholder` in Node; the last positional argument of the wasm
+  `convert`). Pages are the PDF/image pipeline's pages, slides, sheets and
+  DjVu pages. Where docling marks a break between two items whose
+  `prov.page_no` differ, docling.rs marks it between two rendered blocks
+  separated by a page boundary — so it never leads or trails the document,
+  a run of empty pages collapses into one break, and a document without
+  pages (DOCX, HTML, Markdown) is untouched. Off by default, as docling's
+  Markdown carries no page breaks; the streamed and buffered outputs agree
+  byte for byte. Python callers pass the kwarg to upstream docling-core's
+  `export_to_markdown` directly (the wrapper hands back the real
+  `DoclingDocument`).
 
 ### VLM pipeline (remote endpoint)
 

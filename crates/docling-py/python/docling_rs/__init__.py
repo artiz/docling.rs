@@ -153,6 +153,11 @@ class DocumentConverter:
       this wrapper's ``document.export_to_markdown()`` runs upstream Python
       docling-core, whose padded table style is untouched;
       ``skip_empty_cells`` is structural and carries through everywhere.
+      Likewise page breaks: ``document.export_to_markdown(page_break_placeholder=…)``
+      is upstream docling-core's own option here and works off the items'
+      ``prov.page_no`` in the engine's JSON (PDF pages, slides, sheets); the
+      engine-side ``--page-break-placeholder`` of the CLI / serve / Node is
+      not a kwarg of this wrapper.
     * ``allowed_formats`` — restrict conversion to these :class:`InputFormat`\\ s
       (docling's converter arg); a source of any other format raises.
     * ``asr_lang`` — transcription language for audio/video: a Whisper code
