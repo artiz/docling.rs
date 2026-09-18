@@ -246,6 +246,47 @@ impl DocumentConverter {
             )))
     }
 
+    /// DjVu (#434): the hidden text layer by default; a scan-only DjVu (no
+    /// text layer on any selected page) falls back to rasterize + OCR when the
+    /// ML pipeline is built and OCR is not disabled, otherwise it degrades to
+    /// an empty document with a warning. See [`crate::backend::djvu`].
+    fn convert_djvu(
+        &self,
+        source: &SourceDocument,
+    ) -> Result<docling_core::DoclingDocument, ConversionError> {
+        use crate::backend::djvu;
+        let text = djvu::convert_text_layer(source, self.page_range)?;
+        if !djvu::is_text_layer_empty(&text) {
+            return Ok(text);
+        }
+        // No text layer anywhere in the selection.
+        #[cfg(feature = "pdf")]
+        if !self.no_ocr && !self.skip_ocr {
+            let pngs = djvu::rasterize_pages(&source.bytes, self.page_range)?;
+            let mut pipeline = self
+                .ml_pipeline()
+                .map_err(|e| ConversionError::with_source("djvu", e))?;
+            let mut doc = docling_core::DoclingDocument::new(&source.name);
+            for (i, png) in pngs.iter().enumerate() {
+                if i > 0 {
+                    doc.push(docling_core::Node::PageBreak);
+                }
+                let page = pipeline
+                    .convert_image(png, &source.name)
+                    .map_err(|e| ConversionError::with_source("djvu", e))?;
+                doc.nodes.extend(page.nodes);
+                doc.links.extend(page.links);
+            }
+            return Ok(doc);
+        }
+        eprintln!(
+            "docling: warning: DjVu '{}' has no text layer and OCR is unavailable/disabled; \
+             the document is empty",
+            source.name
+        );
+        Ok(text)
+    }
+
     /// The parsed [`Self::ocr_lang`] choice for the ML call sites; a value
     /// that parses to nothing warns here (once per conversion) rather than
     /// erroring — same degradation the env selector applies.
@@ -733,6 +774,10 @@ impl DocumentConverter {
             // StarOffice 5 binaries (#215): docling.rs extension, native CFB
             // parse (docling would go through LibreOffice).
             InputFormat::StarOffice5 => StarOffice5Backend.convert(&source)?,
+            // DjVu (#434): docling.rs extension, pure-Rust decode (`djvu-rs`).
+            // The hidden text layer is the default; a scan-only DjVu falls back
+            // to rasterize + OCR when the ML pipeline is built.
+            InputFormat::Djvu => self.convert_djvu(&source)?,
             // DIF/SYLK/dBase (#216): docling.rs extensions, one content-sniffing
             // backend for the three table relics.
             InputFormat::Dbf | InputFormat::Dif | InputFormat::Sylk => {
