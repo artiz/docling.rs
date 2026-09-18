@@ -165,6 +165,13 @@ pub struct OutputOptions {
     pub image_mode: Option<String>,
     /// Directory name used in `referenced` image links. Default `"artifacts"`.
     pub artifacts_dir: Option<String>,
+    /// Text inserted between pages in Markdown output — docling's
+    /// `export_to_markdown(page_break_placeholder=…)`, e.g.
+    /// `"<!-- page break -->"`. A break lands only between two rendered
+    /// blocks on different pages (PDF/image pages, slides, sheets, DjVu
+    /// pages) — never first or last, empty pages collapse. Unset: no page
+    /// breaks, docling's default. Markdown only.
+    pub page_break_placeholder: Option<String>,
 }
 
 /// All options for the one-shot module-level functions (converter config +
@@ -244,6 +251,8 @@ pub struct ConvertOptions {
     pub to: Option<String>,
     pub image_mode: Option<String>,
     pub artifacts_dir: Option<String>,
+    /// See [`OutputOptions::page_break_placeholder`].
+    pub page_break_placeholder: Option<String>,
 }
 
 /// In-memory input for [`DocumentConverter::convert`] / [`convert`].
@@ -317,6 +326,8 @@ struct ConvertConfig {
     to: OutputKind,
     image_mode: ImageMode,
     artifacts_dir: String,
+    /// docling's `page_break_placeholder` for the Markdown export.
+    page_break_placeholder: Option<String>,
 }
 
 #[derive(Clone, Copy, PartialEq)]
@@ -404,6 +415,7 @@ fn build_config(o: ConvertOptions) -> Result<ConvertConfig> {
         to: parse_output_kind(o.to.as_deref())?,
         image_mode: parse_image_mode(o.image_mode.as_deref())?,
         artifacts_dir: o.artifacts_dir.unwrap_or_else(|| "artifacts".to_string()),
+        page_break_placeholder: o.page_break_placeholder,
     })
 }
 
@@ -550,6 +562,7 @@ fn build_converter(cfg: &ConvertConfig) -> RsConverter {
         .list_attachments(cfg.list_attachments)
         .skip_empty_cells(cfg.skip_empty_cells)
         .compact_tables(cfg.compact_tables)
+        .page_break_placeholder(cfg.page_break_placeholder.clone())
         .ebcdic_layout_opt(cfg.ebcdic_layout.clone())
         .skip_ocr(cfg.skip_ocr)
         .force_full_page_ocr(cfg.force_full_page_ocr)
@@ -637,6 +650,7 @@ fn run_convert(source: SourceDocument, cfg: &ConvertConfig) -> Result<RawResult>
         // they silently lapse under `pipeline: "vlm"`.
         document.strict_markdown = cfg.strict;
         document.compact_tables = cfg.compact_tables;
+        document.page_break_placeholder = cfg.page_break_placeholder.clone();
         return Ok(render_doc(
             document,
             cfg,
@@ -883,6 +897,7 @@ impl DocumentConverter {
             to: parse_output_kind(out.to.as_deref())?,
             image_mode: parse_image_mode(out.image_mode.as_deref())?,
             artifacts_dir: out.artifacts_dir.unwrap_or_else(|| "artifacts".to_string()),
+            page_break_placeholder: out.page_break_placeholder,
         })
     }
 
@@ -994,7 +1009,8 @@ impl DocumentConverter {
                     image_mode,
                     cfg.compact_tables,
                     &cfg.artifacts_dir,
-                );
+                )
+                .with_page_break_placeholder(cfg.page_break_placeholder.clone());
                 for chunk in [streamer.push(&doc.nodes, &doc.links), streamer.finish()] {
                     if !chunk.is_empty() {
                         callback.call(Ok(Some(chunk)), ThreadsafeFunctionCallMode::NonBlocking);
@@ -1232,6 +1248,7 @@ fn run_pipeline(
         }
     };
     doc.strict_markdown = strict;
+    doc.page_break_placeholder = cfg.page_break_placeholder.clone();
     Ok(render_doc(
         doc,
         cfg,
@@ -1271,7 +1288,8 @@ fn stream_pipeline(
     // The PDF pipeline builds its document from `DoclingDocument::new` defaults,
     // so tables use the padded GitHub serializer (compact_tables = false),
     // matching the buffered path.
-    let mut streamer = MarkdownStreamer::new(strict, cfg.image_mode, false);
+    let mut streamer = MarkdownStreamer::new(strict, cfg.image_mode, false)
+        .with_page_break_placeholder(cfg.page_break_placeholder.clone());
     let emit_chunk = |chunk: String| {
         if !chunk.is_empty() {
             callback.call(Ok(Some(chunk)), ThreadsafeFunctionCallMode::NonBlocking);
@@ -1384,6 +1402,7 @@ fn output_config(out: Option<OutputOptions>, strict: bool) -> Result<ConvertConf
         to: parse_output_kind(out.to.as_deref())?,
         image_mode: parse_image_mode(out.image_mode.as_deref())?,
         artifacts_dir: out.artifacts_dir.unwrap_or_else(|| "artifacts".to_string()),
+        page_break_placeholder: out.page_break_placeholder,
     })
 }
 

@@ -402,6 +402,12 @@ constructor; output options (`to`, `imageMode`, `artifactsDir`) are per call.
 - `to`: `"markdown"` (default) or `"json"`.
 - `imageMode`: `"placeholder"` (default), `"embedded"`, or `"referenced"`.
 - `artifactsDir`: directory name used in `referenced` links (default `"artifacts"`).
+- `pageBreakPlaceholder`: text inserted between pages in Markdown output —
+  docling's `export_to_markdown(page_break_placeholder=…)`, e.g.
+  `"<!-- page break -->"`. Pages come from the PDF/image pipeline, slides,
+  sheets and DjVu pages; a break lands only between two rendered blocks on
+  different pages (never first or last). Unset: no page breaks, docling's
+  default. Markdown only.
 - `strict`: cleaner, more conformant Markdown instead of docling's byte-for-byte
   legacy output (Markdown only).
 - `fetchImages`: for HTML/EPUB, resolve and embed external `<img src>`. Off by

@@ -783,7 +783,7 @@ dependencies = [
 
 [[package]]
 name = "docling"
-version = "1.54.0"
+version = "1.55.0"
 dependencies = [
  "calamine",
  "csv",
@@ -812,7 +812,7 @@ dependencies = [
 
 [[package]]
 name = "docling-asr"
-version = "1.54.0"
+version = "1.55.0"
 dependencies = [
  "docling-core",
  "docling-onnx",
@@ -823,7 +823,7 @@ dependencies = [
 
 [[package]]
 name = "docling-core"
-version = "1.54.0"
+version = "1.55.0"
 dependencies = [
  "pulldown-cmark",
  "serde_json",
@@ -833,7 +833,7 @@ dependencies = [
 
 [[package]]
 name = "docling-onnx"
-version = "1.54.0"
+version = "1.55.0"
 dependencies = [
  "docling-core",
  "ort",
@@ -841,7 +841,7 @@ dependencies = [
 
 [[package]]
 name = "docling-pdf"
-version = "1.54.0"
+version = "1.55.0"
 dependencies = [
  "docling-core",
  "docling-onnx",

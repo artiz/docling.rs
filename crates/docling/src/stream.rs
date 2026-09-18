@@ -94,6 +94,9 @@ pub(crate) struct StreamSettings {
     pub ocr_mode: Option<docling_pdf::OcrMode>,
     pub ocr_scale: Option<f32>,
     pub artifacts_dir: String,
+    /// [`DocumentConverter::page_break_placeholder`] for the streamer — the
+    /// PDF path never builds a `DoclingDocument` to carry it.
+    pub page_break_placeholder: Option<String>,
 }
 
 /// Spawn the background conversion and return the chunk iterator.
@@ -157,7 +160,8 @@ fn run_pdf(
         image_mode,
         false,
         &settings.artifacts_dir,
-    );
+    )
+    .with_page_break_placeholder(settings.page_break_placeholder.clone());
     let mut pipeline = match docling_pdf::Pipeline::new().map(|p| {
         p.no_table_former(settings.no_table_former)
             .no_text_panels(settings.no_text_panels)
@@ -228,7 +232,8 @@ fn run_buffered(
         image_mode,
         doc.compact_tables,
         &settings.artifacts_dir,
-    );
+    )
+    .with_page_break_placeholder(doc.page_break_placeholder.clone());
     let chunk = streamer.push(&doc.nodes, &doc.links);
     if let Err(e) = write_artifacts(streamer.take_artifacts()) {
         let _ = tx.send(Err(e));

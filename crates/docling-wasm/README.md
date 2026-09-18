@@ -55,6 +55,7 @@ convert(
   to?: "md" | "json" | "doclang" | "latex", // default "md"
   images?: "placeholder" | "embedded",     // default "placeholder", Markdown only
   max_pages?: number,                      // convert only the first N PDF pages
+  page_break_placeholder?: string,         // text between pages in Markdown, e.g. "<!-- page break -->"
 ): string
 supported_extensions(): string   // JSON array, e.g. for <input accept=…>
 version(): string

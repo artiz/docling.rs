@@ -79,6 +79,8 @@ export declare class DocumentConverter {
 export interface PipelineStreamOptions {
   imageMode?: 'placeholder' | 'embedded'
   artifactsDir?: string
+  /** Text inserted between pages in the Markdown (docling's `page_break_placeholder`). */
+  pageBreakPlaceholder?: string
 }
 
 /**
@@ -160,6 +162,8 @@ export declare function checkDependencies(options?: { dir?: string }): Dependenc
 export interface StreamOptions extends ConverterOptions {
   imageMode?: 'placeholder' | 'embedded'
   artifactsDir?: string
+  /** Text inserted between pages in the Markdown (docling's `page_break_placeholder`). */
+  pageBreakPlaceholder?: string
 }
 
 /**

@@ -24,6 +24,13 @@ pub struct DoclingDocument {
     /// (its committed groundtruth corpus predates the padded serializer); DOCX/HTML
     /// leave it `false` to match current published docling.
     pub compact_tables: bool,
+    /// Text the Markdown export inserts between two pages — docling-core's
+    /// `MarkdownParams.page_break_placeholder` (e.g. `"<!-- page break -->"`).
+    /// `None` (the default) omits page breaks from Markdown, as docling does.
+    /// Set by `DocumentConverter::page_break_placeholder`. See
+    /// [`crate::markdown`] for where a break lands (only between two rendered
+    /// blocks that sit on different pages, never leading or trailing).
+    pub page_break_placeholder: Option<String>,
     /// Hyperlinks recovered from the source, as `(anchor_text, href)` pairs in
     /// document order. docling's standard pipeline drops PDF link annotations, so
     /// these are rendered as Markdown `[anchor](href)` **only in strict mode**
@@ -820,6 +827,7 @@ impl DoclingDocument {
             nodes: Vec::new(),
             strict_markdown: false,
             compact_tables: false,
+            page_break_placeholder: None,
             links: Vec::new(),
             confidence: None,
         }

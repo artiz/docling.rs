@@ -84,3 +84,41 @@ fn help_is_recognized_in_any_position() {
     assert_eq!(code, 0);
     assert!(stdout.contains("usage: docling-rs"), "{stdout:?}");
 }
+
+/// `--page-break-placeholder TEXT` (docling's `page_break_placeholder`):
+/// TEXT lands between two pages' blocks and nowhere else. The DjVu fixture
+/// converts on every build — no models, no pdfium — and streams through the
+/// default Markdown path, so this also pins the streamer's output.
+#[test]
+fn page_break_placeholder_separates_pages() {
+    let fixture = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../docling/tests/data/djvu/sources/example.djvu"
+    );
+    let (code, plain, stderr) = run(&[fixture]);
+    assert_eq!(code, 0, "stderr: {stderr}");
+    let (code, with, stderr) = run(&["--page-break-placeholder", "<!-- page break -->", fixture]);
+    assert_eq!(code, 0, "stderr: {stderr}");
+    // Three pages → two breaks, each a block of its own between two others.
+    assert_eq!(with.matches("<!-- page break -->").count(), 2, "{with}");
+    assert_eq!(with.replace("<!-- page break -->\n\n", ""), plain);
+    assert!(!with.starts_with("<!-- page break -->"), "{with}");
+    assert!(!with.trim_end().ends_with("<!-- page break -->"), "{with}");
+    // `--no-stream` (the buffered serializer) agrees byte for byte.
+    let (_, buffered, _) = run(&[
+        "--page-break-placeholder",
+        "<!-- page break -->",
+        "--no-stream",
+        fixture,
+    ]);
+    assert_eq!(buffered, with);
+}
+
+/// The flag needs its text — a bare flag is a usage error, like the other
+/// value-taking flags.
+#[test]
+fn page_break_placeholder_requires_a_value() {
+    let (code, _, stderr) = run(&["--page-break-placeholder"]);
+    assert_eq!(code, 2, "stderr: {stderr}");
+    assert!(stderr.contains("--page-break-placeholder"), "{stderr}");
+}

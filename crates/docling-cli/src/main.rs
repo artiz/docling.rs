@@ -11,7 +11,7 @@
 //! optional features the binary carries (execution providers, `serve`,
 //! chunking) — both answer without models present.
 //!
-//! Usage: docling-rs [--strict] [--to md|json|dclx|chunks|images|latex] [--pages A-B] [--scale X] [--images MODE] [--input GLOB --output DIR [--jobs N]] [--fetch-images] [--list-attachments] [--skip-empty-cells] [--compact-tables] [--ebcdic-layout JSON|PATH] [--no-stream] [--no-table-former] [--no-ocr] [--skip-ocr] [--force-full-page-ocr] [--no-text-panels] [--heading-hierarchy] [--ocr-lang LANG] [--ocr-mode MODE] [--ocr-scale X] [--chunker hierarchical|hybrid] [--chunk-tokenizer PATH] [--chunk-max-tokens N] [--no-chunk-merge-peers] [--pipeline standard|vlm] [--vlm-endpoint URL] [--vlm-model NAME] [--vlm-api-key TOKEN] [--vlm-prompt TEXT] [--vlm-max-tokens N] [--asr-model PRESET] [--asr-lang CODE] [--video-frames N] [--use-web-browser] [--enrich-picture-classes] [--enrich-code] [--enrich-formula] <input-file>
+//! Usage: docling-rs [--strict] [--page-break-placeholder TEXT] [--to md|json|dclx|chunks|images|latex] [--pages A-B] [--scale X] [--images MODE] [--input GLOB --output DIR [--jobs N]] [--fetch-images] [--list-attachments] [--skip-empty-cells] [--compact-tables] [--ebcdic-layout JSON|PATH] [--no-stream] [--no-table-former] [--no-ocr] [--skip-ocr] [--force-full-page-ocr] [--no-text-panels] [--heading-hierarchy] [--ocr-lang LANG] [--ocr-mode MODE] [--ocr-scale X] [--chunker hierarchical|hybrid] [--chunk-tokenizer PATH] [--chunk-max-tokens N] [--no-chunk-merge-peers] [--pipeline standard|vlm] [--vlm-endpoint URL] [--vlm-model NAME] [--vlm-api-key TOKEN] [--vlm-prompt TEXT] [--vlm-max-tokens N] [--asr-model PRESET] [--asr-lang CODE] [--video-frames N] [--use-web-browser] [--enrich-picture-classes] [--enrich-code] [--enrich-formula] <input-file>
 //!   --input GLOB|DIR   batch mode (#205): convert every file the glob matches
 //!                      (`--input '/data/reports/**/*.pdf'` — quote it so the
 //!                      shell doesn't expand it) instead of one positional file.
@@ -54,6 +54,14 @@
 //!                      fetches over the network.
 //!   --strict           cleaner, more conformant Markdown instead of byte-for-byte
 //!                      docling-legacy output (Markdown only).
+//!   --page-break-placeholder TEXT
+//!                      insert TEXT between pages in the Markdown output
+//!                      (docling's `export_to_markdown(page_break_placeholder=…)`,
+//!                      e.g. "<!-- page break -->"). Pages come from the PDF /
+//!                      image pipeline, slides, sheets and DjVu pages; a break
+//!                      lands only between two rendered blocks on different
+//!                      pages — never first or last, empty pages collapse. Off
+//!                      by default: docling's Markdown carries no page breaks.
 //!   --no-stream        build the whole document before printing Markdown instead
 //!                      of streaming it page by page. Streaming is the default for
 //!                      Markdown (placeholder/embedded images); JSON and referenced
@@ -174,6 +182,7 @@ Convert documents to Markdown, JSON, DocLang, LaTeX or chunks.
 OUTPUT
   --to md|json|dclx|chunks|images|latex   output format (default: md)
   --strict                cleaner, more conformant Markdown (Markdown only)
+  --page-break-placeholder TEXT   insert TEXT between pages (Markdown only, e.g. <!-- page break -->)
   --images MODE           picture handling: placeholder (default) | embedded | referenced
   --compact-tables        render Markdown tables without width padding
   --no-stream             build the whole document before printing
@@ -282,6 +291,7 @@ fn main() -> ExitCode {
     let mut list_attachments = false;
     let mut skip_empty_cells = false;
     let mut compact_tables = false;
+    let mut page_break_placeholder: Option<String> = None;
     let mut ebcdic_layout: Option<String> = None;
     let mut no_stream = false;
     let mut no_table_former = false;
@@ -327,6 +337,16 @@ fn main() -> ExitCode {
             // Markdown tables compact (no width padding).
             "--skip-empty-cells" => skip_empty_cells = true,
             "--compact-tables" => compact_tables = true,
+            // docling's `page_break_placeholder`: the text that separates
+            // pages in Markdown (an empty TEXT is allowed — upstream then
+            // leaves a doubled blank line between pages).
+            "--page-break-placeholder" => match args.next() {
+                Some(v) => page_break_placeholder = Some(v),
+                None => {
+                    eprintln!("error: --page-break-placeholder needs the text to insert");
+                    return ExitCode::from(2);
+                }
+            },
             // #252: EBCDIC copybook layout — inline JSON or a file path
             // (default: the <stem>.layout.json sidecar next to the source).
             "--ebcdic-layout" => match args.next() {
@@ -624,6 +644,7 @@ fn main() -> ExitCode {
             list_attachments,
             skip_empty_cells,
             compact_tables,
+            page_break_placeholder,
             ebcdic_layout,
             no_table_former,
             no_ocr,
@@ -738,6 +759,7 @@ fn main() -> ExitCode {
             }
         };
         document.strict_markdown = strict;
+        document.page_break_placeholder = page_break_placeholder.clone();
         return output_document(document, &to, image_mode, &path, &chunk_opts);
     }
 
@@ -749,6 +771,7 @@ fn main() -> ExitCode {
         .list_attachments(list_attachments)
         .skip_empty_cells(skip_empty_cells)
         .compact_tables(compact_tables)
+        .page_break_placeholder(page_break_placeholder.clone())
         .ebcdic_layout_opt(ebcdic_layout.clone())
         .no_table_former(no_table_former)
         .skip_ocr(skip_ocr)
@@ -786,9 +809,10 @@ fn main() -> ExitCode {
         let stream = match converter.convert_streaming_images(source, image_mode) {
             Ok(s) => s,
             Err(e) => {
-                if let Some(doc) =
+                if let Some(mut doc) =
                     pdf_no_ocr_fallback(&e.to_string(), is_pdf, no_ocr, strict, &path, pages)
                 {
+                    doc.page_break_placeholder = page_break_placeholder.clone();
                     return output_document(doc, &to, image_mode, &path, &chunk_opts);
                 }
                 eprintln!("error: {e}");
@@ -813,7 +837,7 @@ fn main() -> ExitCode {
                     // error can surface here — but only fall back while nothing
                     // has been printed, to never emit a document twice.
                     if !wrote_any {
-                        if let Some(doc) = pdf_no_ocr_fallback(
+                        if let Some(mut doc) = pdf_no_ocr_fallback(
                             &e.to_string(),
                             is_pdf,
                             no_ocr,
@@ -821,6 +845,7 @@ fn main() -> ExitCode {
                             &path,
                             pages,
                         ) {
+                            doc.page_break_placeholder = page_break_placeholder.clone();
                             return output_document(doc, &to, image_mode, &path, &chunk_opts);
                         }
                     }
@@ -842,9 +867,10 @@ fn main() -> ExitCode {
     let document = match converter.convert(source) {
         Ok(result) => result.document,
         Err(e) => {
-            if let Some(doc) =
+            if let Some(mut doc) =
                 pdf_no_ocr_fallback(&e.to_string(), is_pdf, no_ocr, strict, &path, pages)
             {
+                doc.page_break_placeholder = page_break_placeholder.clone();
                 return output_document(doc, &to, image_mode, &path, &chunk_opts);
             }
             eprintln!("error: {e}");
@@ -934,6 +960,8 @@ struct BatchCfg {
     skip_empty_cells: bool,
     /// Compact (unpadded) Markdown tables (#271).
     compact_tables: bool,
+    /// docling's `page_break_placeholder`: text between pages in Markdown.
+    page_break_placeholder: Option<String>,
     ebcdic_layout: Option<String>,
     no_table_former: bool,
     no_ocr: bool,
@@ -1061,6 +1089,7 @@ fn batch_converter(cfg: &BatchCfg) -> DocumentConverter {
         .list_attachments(cfg.list_attachments)
         .skip_empty_cells(cfg.skip_empty_cells)
         .compact_tables(cfg.compact_tables)
+        .page_break_placeholder(cfg.page_break_placeholder.clone())
         .ebcdic_layout_opt(cfg.ebcdic_layout.clone())
         .no_table_former(cfg.no_table_former)
         .no_ocr(cfg.no_ocr)
@@ -1226,6 +1255,7 @@ fn batch_convert_one(
             .document
     };
     document.strict_markdown = cfg.strict;
+    document.page_break_placeholder = cfg.page_break_placeholder.clone();
 
     let out = batch_out_path(file, base, output, &cfg.to);
     if let Some(dir) = out.parent() {
