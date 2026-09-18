@@ -271,13 +271,16 @@ impl DocumentConverter {
                 .ml_pipeline()
                 .map_err(|e| ConversionError::with_source("djvu", e))?;
             let mut doc = docling_core::DoclingDocument::new(&source.name);
-            for (i, png) in pngs.iter().enumerate() {
+            for (i, (page_no, png)) in pngs.iter().enumerate() {
                 if i > 0 {
                     doc.push(docling_core::Node::PageBreak);
                 }
-                let page = pipeline
+                let mut page = pipeline
                     .convert_image(png, &source.name)
                     .map_err(|e| ConversionError::with_source("djvu", e))?;
+                // An image is its own page 1; the DjVu page keeps its number so
+                // a `--pages` window's JSON `pages` matches the text-layer path.
+                docling_pdf::assemble::stamp_page_no(&mut page.nodes, *page_no);
                 doc.nodes.extend(page.nodes);
                 doc.links.extend(page.links);
             }
