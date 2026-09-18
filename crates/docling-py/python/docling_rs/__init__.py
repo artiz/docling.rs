@@ -155,7 +155,7 @@ class DocumentConverter:
       ``skip_empty_cells`` is structural and carries through everywhere.
       Likewise page breaks: ``document.export_to_markdown(page_break_placeholder=…)``
       is upstream docling-core's own option here and works off the items'
-      ``prov.page_no`` in the engine's JSON (PDF pages, slides, sheets); the
+      ``prov.page_no`` in the engine's JSON (PDF and DjVu pages, slides, sheets); the
       engine-side ``--page-break-placeholder`` of the CLI / serve / Node is
       not a kwarg of this wrapper.
     * ``allowed_formats`` — restrict conversion to these :class:`InputFormat`\\ s
