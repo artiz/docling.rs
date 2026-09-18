@@ -1929,6 +1929,9 @@ fn source_from_named_bytes_ct(
     let format = ext
         .and_then(InputFormat::from_extension)
         .or_else(|| content_type.and_then(format_from_content_type))
+        // A DjVu upload with a bare/renamed file name and a generic
+        // Content-Type is still unambiguous from its `AT&TFORM` magic (#434).
+        .or_else(|| docling::backend::looks_like_djvu(&bytes).then_some(InputFormat::Djvu))
         .ok_or_else(|| match ext {
             Some(e) => ApiError::Unsupported(format!("unrecognized extension '.{e}'")),
             None => ApiError::Bad(format!(
@@ -1973,6 +1976,9 @@ fn format_from_content_type(content_type: &str) -> Option<InputFormat> {
         // SVG (#212) is its own format, not Image: the ML build rasterizes it
         // first, and OCR-less builds extract its <text> elements instead.
         "image/svg+xml" => InputFormat::Svg,
+        // DjVu (#434): pure-Rust decode of the hidden text layer (OCR fallback
+        // for scan-only pages). Both registered and legacy MIME spellings.
+        "image/vnd.djvu" | "image/x-djvu" | "image/x.djvu" => InputFormat::Djvu,
         // Upstream's FormatToMimeType for AUDIO and VIDEO (docling v2.114).
         "audio/wav" | "audio/x-wav" | "audio/mpeg" | "audio/mp3" | "audio/mp4" | "audio/m4a"
         | "audio/aac" | "audio/ogg" | "audio/flac" | "audio/x-flac" => InputFormat::Audio,

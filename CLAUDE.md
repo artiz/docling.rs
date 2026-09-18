@@ -118,7 +118,10 @@ cargo check -p docling --no-default-features --features pdf-text \
   parsed), `DOCLING_RS_MAX_RENDER_PIXELS` (15000; per-side cap on a rendered
   PDF-page bitmap — a crafted `MediaBox` otherwise forces a multi-GB
   allocation that pdfium rejects opaquely / the `image` crate panics on;
-  parallels the standalone-image `DOCLING_RS_MAX_IMAGE_PIXELS` cap of 30000).
+  parallels the standalone-image `DOCLING_RS_MAX_IMAGE_PIXELS` cap of 30000),
+  `DOCLING_RS_DJVU_RENDER_PX` (2500; long-side box a scan-only DjVu page is
+  rendered into for the OCR fallback, #434 — DjVu decodes in pure Rust via
+  `djvu-rs`, no binary).
 
 ## Conformance & fixtures
 

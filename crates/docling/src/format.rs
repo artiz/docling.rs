@@ -106,6 +106,11 @@ pub enum InputFormat {
     /// `.vor` template of any application dispatches by content. StarCalc
     /// (`.sdc`) is a follow-up.
     StarOffice5,
+    /// DjVu scanned documents (`.djvu`/`.djv`) — a docling.rs extension (#434);
+    /// docling has no DjVu reader. Decoded in pure Rust (`djvu-rs`): the
+    /// hidden per-page text layer by default, rasterize + OCR for scan-only
+    /// pages when the ML pipeline is built.
+    Djvu,
 }
 
 impl InputFormat {
@@ -158,6 +163,7 @@ impl InputFormat {
             InputFormat::Lotus => "lotus",
             InputFormat::QuattroPro => "quattro",
             InputFormat::StarOffice5 => "staroffice5",
+            InputFormat::Djvu => "djvu",
         }
     }
 
@@ -267,6 +273,8 @@ impl InputFormat {
             // .sdc routes here too so StarCalc gets its targeted
             // "save as .ods" error instead of an unknown-extension one.
             "sdw" | "sda" | "sdd" | "sdc" | "vor" => InputFormat::StarOffice5,
+            // DjVu (#434): docling.rs extension, pure-Rust decode via `djvu-rs`.
+            "djvu" | "djv" => InputFormat::Djvu,
             // METS/Google Books scan packages ship as `*.tar.gz`.
             "gz" | "targz" => InputFormat::MetsGbs,
             _ => return None,
