@@ -24,20 +24,74 @@
         "$ref": "#/texts/1"
       },
       {
-        "$ref": "#/tables/0"
-      },
-      {
-        "$ref": "#/texts/2"
-      },
-      {
-        "$ref": "#/texts/3"
+        "$ref": "#/texts/8"
       }
     ],
     "content_layer": "body",
     "name": "_root_",
     "label": "unspecified"
   },
-  "groups": [],
+  "groups": [
+    {
+      "self_ref": "#/groups/0",
+      "parent": {
+        "$ref": "#/tables/0"
+      },
+      "children": [
+        {
+          "$ref": "#/texts/3"
+        }
+      ],
+      "content_layer": "body",
+      "name": "rich_cell_group_1_0_0",
+      "label": "unspecified"
+    },
+    {
+      "self_ref": "#/groups/1",
+      "parent": {
+        "$ref": "#/tables/0"
+      },
+      "children": [
+        {
+          "$ref": "#/texts/4"
+        }
+      ],
+      "content_layer": "body",
+      "name": "rich_cell_group_1_0_0",
+      "label": "unspecified"
+    },
+    {
+      "self_ref": "#/groups/2",
+      "parent": {
+        "$ref": "#/tables/0"
+      },
+      "children": [
+        {
+          "$ref": "#/texts/5"
+        }
+      ],
+      "content_layer": "body",
+      "name": "rich_cell_group_1_1_0",
+      "label": "unspecified"
+    },
+    {
+      "self_ref": "#/groups/3",
+      "parent": {
+        "$ref": "#/tables/0"
+      },
+      "children": [
+        {
+          "$ref": "#/texts/6"
+        },
+        {
+          "$ref": "#/texts/7"
+        }
+      ],
+      "content_layer": "body",
+      "name": "rich_cell_group_1_1_5",
+      "label": "unspecified"
+    }
+  ],
   "texts": [
     {
       "self_ref": "#/texts/0",
@@ -45,6 +99,25 @@
         "$ref": "#/body"
       },
       "children": [],
+      "content_layer": "furniture",
+      "label": "title",
+      "prov": [],
+      "orig": "Headings inside paragraphs in HTML",
+      "text": "Headings inside paragraphs in HTML"
+    },
+    {
+      "self_ref": "#/texts/1",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [
+        {
+          "$ref": "#/texts/2"
+        },
+        {
+          "$ref": "#/tables/0"
+        }
+      ],
       "content_layer": "body",
       "label": "title",
       "prov": [],
@@ -52,9 +125,9 @@
       "text": "1"
     },
     {
-      "self_ref": "#/texts/1",
+      "self_ref": "#/texts/2",
       "parent": {
-        "$ref": "#/body"
+        "$ref": "#/texts/1"
       },
       "children": [],
       "content_layer": "body",
@@ -64,11 +137,96 @@
       "text": "1st paragraph"
     },
     {
-      "self_ref": "#/texts/2",
+      "self_ref": "#/texts/3",
+      "parent": {
+        "$ref": "#/groups/0"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "2",
+      "text": "2",
+      "formatting": {
+        "bold": true,
+        "italic": false,
+        "underline": false,
+        "strikethrough": false,
+        "script": "baseline"
+      }
+    },
+    {
+      "self_ref": "#/texts/4",
+      "parent": {
+        "$ref": "#/groups/1"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "3",
+      "text": "3",
+      "formatting": {
+        "bold": true,
+        "italic": false,
+        "underline": false,
+        "strikethrough": false,
+        "script": "baseline"
+      }
+    },
+    {
+      "self_ref": "#/texts/5",
+      "parent": {
+        "$ref": "#/groups/2"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "4",
+      "text": "4",
+      "formatting": {
+        "bold": true,
+        "italic": false,
+        "underline": false,
+        "strikethrough": false,
+        "script": "baseline"
+      }
+    },
+    {
+      "self_ref": "#/texts/6",
+      "parent": {
+        "$ref": "#/groups/3"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "19",
+      "text": "19"
+    },
+    {
+      "self_ref": "#/texts/7",
+      "parent": {
+        "$ref": "#/groups/3"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "20",
+      "text": "20"
+    },
+    {
+      "self_ref": "#/texts/8",
       "parent": {
         "$ref": "#/body"
       },
-      "children": [],
+      "children": [
+        {
+          "$ref": "#/texts/9"
+        }
+      ],
       "content_layer": "body",
       "label": "title",
       "prov": [],
@@ -76,9 +234,9 @@
       "text": "21"
     },
     {
-      "self_ref": "#/texts/3",
+      "self_ref": "#/texts/9",
       "parent": {
-        "$ref": "#/body"
+        "$ref": "#/texts/8"
       },
       "children": [],
       "content_layer": "body",
@@ -93,9 +251,22 @@
     {
       "self_ref": "#/tables/0",
       "parent": {
-        "$ref": "#/body"
+        "$ref": "#/texts/1"
       },
-      "children": [],
+      "children": [
+        {
+          "$ref": "#/groups/0"
+        },
+        {
+          "$ref": "#/groups/1"
+        },
+        {
+          "$ref": "#/groups/2"
+        },
+        {
+          "$ref": "#/groups/3"
+        }
+      ],
       "content_layer": "body",
       "label": "table",
       "prov": [],
@@ -111,11 +282,14 @@
             "end_row_offset_idx": 1,
             "start_col_offset_idx": 0,
             "end_col_offset_idx": 1,
-            "text": "**2**",
+            "text": "2",
             "column_header": false,
             "row_header": false,
             "row_section": false,
-            "fillable": false
+            "fillable": false,
+            "ref": {
+              "$ref": "#/groups/0"
+            }
           },
           {
             "row_span": 1,
@@ -124,11 +298,14 @@
             "end_row_offset_idx": 1,
             "start_col_offset_idx": 1,
             "end_col_offset_idx": 2,
-            "text": "**3**",
+            "text": "3",
             "column_header": false,
             "row_header": false,
             "row_section": false,
-            "fillable": false
+            "fillable": false,
+            "ref": {
+              "$ref": "#/groups/1"
+            }
           },
           {
             "row_span": 1,
@@ -137,11 +314,14 @@
             "end_row_offset_idx": 1,
             "start_col_offset_idx": 2,
             "end_col_offset_idx": 3,
-            "text": "**4**",
+            "text": "4",
             "column_header": false,
             "row_header": false,
             "row_section": false,
-            "fillable": false
+            "fillable": false,
+            "ref": {
+              "$ref": "#/groups/2"
+            }
           },
           {
             "row_span": 1,
@@ -332,11 +512,14 @@
             "end_row_offset_idx": 6,
             "start_col_offset_idx": 2,
             "end_col_offset_idx": 3,
-            "text": "19\n\n20",
+            "text": "19 \n20",
             "column_header": false,
             "row_header": false,
             "row_section": false,
-            "fillable": false
+            "fillable": false,
+            "ref": {
+              "$ref": "#/groups/3"
+            }
           }
         ],
         "num_rows": 6,
@@ -351,7 +534,7 @@
               "end_row_offset_idx": 1,
               "start_col_offset_idx": 0,
               "end_col_offset_idx": 1,
-              "text": "**2**",
+              "text": "2",
               "column_header": false,
               "row_header": false,
               "row_section": false,
@@ -364,7 +547,7 @@
               "end_row_offset_idx": 1,
               "start_col_offset_idx": 1,
               "end_col_offset_idx": 2,
-              "text": "**3**",
+              "text": "3",
               "column_header": false,
               "row_header": false,
               "row_section": false,
@@ -377,7 +560,7 @@
               "end_row_offset_idx": 1,
               "start_col_offset_idx": 2,
               "end_col_offset_idx": 3,
-              "text": "**4**",
+              "text": "4",
               "column_header": false,
               "row_header": false,
               "row_section": false,
@@ -582,7 +765,7 @@
               "end_row_offset_idx": 6,
               "start_col_offset_idx": 2,
               "end_col_offset_idx": 3,
-              "text": "19\n\n20",
+              "text": "19 \n20",
               "column_header": false,
               "row_header": false,
               "row_section": false,

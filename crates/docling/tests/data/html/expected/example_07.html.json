@@ -96,6 +96,20 @@
       },
       "children": [
         {
+          "$ref": "#/groups/4"
+        }
+      ],
+      "content_layer": "body",
+      "name": "list",
+      "label": "list"
+    },
+    {
+      "self_ref": "#/groups/4",
+      "parent": {
+        "$ref": "#/groups/3"
+      },
+      "children": [
+        {
           "$ref": "#/texts/8"
         },
         {
@@ -107,9 +121,23 @@
       "label": "list"
     },
     {
-      "self_ref": "#/groups/4",
+      "self_ref": "#/groups/5",
       "parent": {
         "$ref": "#/texts/10"
+      },
+      "children": [
+        {
+          "$ref": "#/groups/6"
+        }
+      ],
+      "content_layer": "body",
+      "name": "list",
+      "label": "list"
+    },
+    {
+      "self_ref": "#/groups/6",
+      "parent": {
+        "$ref": "#/groups/5"
       },
       "children": [
         {
@@ -141,7 +169,7 @@
       "orig": "Asia",
       "text": "Asia",
       "enumerated": false,
-      "marker": "-"
+      "marker": ""
     },
     {
       "self_ref": "#/texts/1",
@@ -155,7 +183,7 @@
       "orig": "China",
       "text": "China",
       "enumerated": false,
-      "marker": "-"
+      "marker": ""
     },
     {
       "self_ref": "#/texts/2",
@@ -169,7 +197,7 @@
       "orig": "Japan",
       "text": "Japan",
       "enumerated": false,
-      "marker": "-"
+      "marker": ""
     },
     {
       "self_ref": "#/texts/3",
@@ -183,7 +211,7 @@
       "orig": "Thailand",
       "text": "Thailand",
       "enumerated": false,
-      "marker": "-"
+      "marker": ""
     },
     {
       "self_ref": "#/texts/4",
@@ -201,7 +229,7 @@
       "orig": "Europe",
       "text": "Europe",
       "enumerated": false,
-      "marker": "-"
+      "marker": ""
     },
     {
       "self_ref": "#/texts/5",
@@ -215,7 +243,7 @@
       "orig": "UK",
       "text": "UK",
       "enumerated": false,
-      "marker": "-"
+      "marker": ""
     },
     {
       "self_ref": "#/texts/6",
@@ -229,7 +257,7 @@
       "orig": "Germany",
       "text": "Germany",
       "enumerated": false,
-      "marker": "-"
+      "marker": ""
     },
     {
       "self_ref": "#/texts/7",
@@ -247,12 +275,12 @@
       "orig": "Switzerland",
       "text": "Switzerland",
       "enumerated": false,
-      "marker": "-"
+      "marker": ""
     },
     {
       "self_ref": "#/texts/8",
       "parent": {
-        "$ref": "#/groups/3"
+        "$ref": "#/groups/4"
       },
       "children": [],
       "content_layer": "body",
@@ -261,12 +289,12 @@
       "orig": "Bern",
       "text": "Bern",
       "enumerated": false,
-      "marker": "-"
+      "marker": ""
     },
     {
       "self_ref": "#/texts/9",
       "parent": {
-        "$ref": "#/groups/3"
+        "$ref": "#/groups/4"
       },
       "children": [],
       "content_layer": "body",
@@ -275,7 +303,7 @@
       "orig": "Aargau",
       "text": "Aargau",
       "enumerated": false,
-      "marker": "-"
+      "marker": ""
     },
     {
       "self_ref": "#/texts/10",
@@ -284,7 +312,7 @@
       },
       "children": [
         {
-          "$ref": "#/groups/4"
+          "$ref": "#/groups/5"
         }
       ],
       "content_layer": "body",
@@ -293,12 +321,12 @@
       "orig": "Italy",
       "text": "Italy",
       "enumerated": false,
-      "marker": "-"
+      "marker": ""
     },
     {
       "self_ref": "#/texts/11",
       "parent": {
-        "$ref": "#/groups/4"
+        "$ref": "#/groups/6"
       },
       "children": [],
       "content_layer": "body",
@@ -307,12 +335,12 @@
       "orig": "Piedmont",
       "text": "Piedmont",
       "enumerated": false,
-      "marker": "-"
+      "marker": ""
     },
     {
       "self_ref": "#/texts/12",
       "parent": {
-        "$ref": "#/groups/4"
+        "$ref": "#/groups/6"
       },
       "children": [],
       "content_layer": "body",
@@ -321,7 +349,7 @@
       "orig": "Liguria",
       "text": "Liguria",
       "enumerated": false,
-      "marker": "-"
+      "marker": ""
     },
     {
       "self_ref": "#/texts/13",
@@ -335,7 +363,7 @@
       "orig": "Africa",
       "text": "Africa",
       "enumerated": false,
-      "marker": "-"
+      "marker": ""
     }
   ],
   "pictures": [],

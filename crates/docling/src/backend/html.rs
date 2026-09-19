@@ -2,7 +2,12 @@
 //!
 //! Parses HTML with `scraper` (html5ever — the same HTML5 tree-construction
 //! algorithm browsers use) and walks the DOM into a [`DoclingDocument`]. This
-//! is the Rust counterpart of `docling/backend/html_backend.py`'s `_walk`.
+//! is the Rust counterpart of `docling/backend/html_backend.py`'s `_walk`,
+//! producing the flat node stream that Markdown / DocLang / LaTeX render
+//! byte-for-byte. The JSON export takes a second, structure-faithful walk:
+//! [`super::html_tree`] ports upstream's item-tree construction (heading
+//! nesting, inline groups, rich cells, content layers, item numbering) into
+//! [`DoclingDocument::tree`].
 //!
 //! Scope (Phase 2): block structure (headings, paragraphs, nested lists,
 //! tables, code blocks, figures/images), inline formatting (bold, italic,
@@ -111,6 +116,17 @@ fn declared_encoding(bytes: &[u8]) -> Option<String> {
 pub(crate) fn convert_html(name: &str, html: &str, images: &dyn ImageResolver) -> DoclingDocument {
     let mut doc = DoclingDocument::new(name);
     append_fragment(html, &mut doc.nodes, images);
+    // The flat nodes above drive Markdown / DocLang / LaTeX; the JSON export
+    // takes docling's item tree, built by a call-for-call port of upstream's
+    // walk ([`super::html_tree`]) so the JSON structure — heading nesting,
+    // inline groups, rich cells, content layers, item numbering — is
+    // upstream's.
+    if nesting_estimate_within(html, max_dom_depth()) {
+        let parsed = Html::parse_document(html);
+        if within_depth_limit(parsed.root_element(), MAX_DOM_DEPTH) {
+            doc.tree = Some(super::html_tree::build_tree(&parsed, images));
+        }
+    }
     doc
 }
 
@@ -133,8 +149,9 @@ pub(crate) fn append_fragment(html: &str, out: &mut Vec<Node>, images: &dyn Imag
     }
     let parsed = Html::parse_document(html);
     // The document `<title>` is docling's furniture-layer title heading — it
-    // precedes the body content and is excluded from Markdown/JSON. Fragments
-    // (e.g. Markdown-embedded HTML) carry no `<title>`, so none is added.
+    // precedes the body content and is excluded from Markdown (the JSON gets
+    // it from the item tree, `html_tree`). Fragments (e.g. Markdown-embedded
+    // HTML) carry no `<title>`, so none is added.
     if let Some(title) = parsed.select(cached_selector!("title")).next() {
         let text = normalize_ws(&title.text().collect::<String>());
         if !text.is_empty() {
@@ -227,7 +244,7 @@ fn mark_leading_furniture(nodes: &mut [Node]) {
 /// are honored beyond that — a full CSS cascade (class/stylesheet-driven
 /// visibility, e.g. Wikipedia's collapsed menus) still needs a real browser and
 /// is out of scope, as is docling's `_has_rendered_presence` zero-size check.
-fn is_hidden(e: &scraper::node::Element) -> bool {
+pub(super) fn is_hidden(e: &scraper::node::Element) -> bool {
     if e.attr("hidden").is_some() {
         return true;
     }
@@ -254,7 +271,7 @@ fn is_hidden(e: &scraper::node::Element) -> bool {
 }
 
 /// Tags whose content is not document text and should be skipped wholesale.
-fn is_skipped(name: &str) -> bool {
+pub(super) fn is_skipped(name: &str) -> bool {
     matches!(
         name,
         "script" | "style" | "head" | "title" | "noscript" | "template" | "svg"
@@ -911,7 +928,7 @@ fn handle_block(
 /// whose descendants carry the `keyN` / `keyN_valueM` / `keyN_marker` `id`
 /// convention. Returns the fields ordered by their numeric key, or `None` when
 /// this element is not such a region (so the caller recurses normally).
-fn detect_field_region(elem: ElementRef) -> Option<Vec<docling_core::FieldItem>> {
+pub(super) fn detect_field_region(elem: ElementRef) -> Option<Vec<docling_core::FieldItem>> {
     let is_form_region = elem
         .value()
         .attr("class")
@@ -938,13 +955,79 @@ fn detect_field_region(elem: ElementRef) -> Option<Vec<docling_core::FieldItem>>
         match kind {
             KvpKind::Marker => field.marker.get_or_insert(text),
             KvpKind::Key => field.key.get_or_insert(text),
-            KvpKind::Value => field.value.get_or_insert(text),
+            KvpKind::Value => {
+                if field.value.is_none() {
+                    field.value_kind = Some(form_value_kind(el).to_string());
+                }
+                field.value.get_or_insert(text)
+            }
         };
     }
     if fields.is_empty() {
         return None;
     }
     Some(fields.into_values().collect())
+}
+
+/// docling's `_infer_form_value_kind`: a value element is `fillable` when it
+/// is or holds a form control (a checkbox-like tag, `input`/`select`/
+/// `textarea`, or an input-styled class), `read_only` otherwise — the
+/// `field_value` item's `kind` in the JSON.
+fn form_value_kind(el: ElementRef) -> &'static str {
+    let is_checkbox_like = |e: &scraper::node::Element| {
+        (e.name() == "input"
+            && matches!(
+                e.attr("type")
+                    .unwrap_or("")
+                    .trim()
+                    .to_ascii_lowercase()
+                    .as_str(),
+                "checkbox" | "radio"
+            ))
+            || e.attr("class").is_some_and(|c| {
+                c.split_whitespace()
+                    .any(|k| matches!(k, "checkbox" | "checkbox-box" | "checkbox-input"))
+            })
+    };
+    let e = el.value();
+    if is_checkbox_like(e)
+        || el
+            .descendants()
+            .skip(1)
+            .any(|d| d.value().as_element().is_some_and(is_checkbox_like))
+    {
+        return "fillable";
+    }
+    let fillable_class = |k: &str| {
+        matches!(
+            k,
+            "input"
+                | "input-box"
+                | "input-field"
+                | "input_field"
+                | "text-input"
+                | "text-box"
+                | "textbox"
+                | "form-control"
+        ) || k.ends_with("-input")
+            || k.ends_with("_input")
+            || k.ends_with("-input-box")
+    };
+    if e.attr("class")
+        .is_some_and(|c| c.split_whitespace().any(fillable_class))
+    {
+        return "fillable";
+    }
+    let is_control = |name: &str| matches!(name, "input" | "select" | "textarea");
+    if is_control(e.name())
+        || el
+            .descendants()
+            .skip(1)
+            .any(|d| d.value().as_element().is_some_and(|d| is_control(d.name())))
+    {
+        return "fillable";
+    }
+    "read_only"
 }
 
 /// Which part of a key-value field an element's `id` names.
@@ -1609,7 +1692,7 @@ fn extract_pre(pre: ElementRef) -> (Option<String>, String) {
 }
 
 /// Extract a language hint from a `class` like `language-rust` or `lang-rust`.
-fn lang_from_class(class: &str) -> Option<String> {
+pub(super) fn lang_from_class(class: &str) -> Option<String> {
     class.split_whitespace().find_map(|c| {
         c.strip_prefix("language-")
             .or_else(|| c.strip_prefix("lang-"))
@@ -1654,7 +1737,7 @@ fn flatten_nested_table(table: ElementRef) -> String {
 /// text node is kept verbatim; the content of a `p`/`li`/`th`/`td` gets one
 /// trailing space; `<br>` becomes a newline. Only ASCII whitespace counts
 /// (BeautifulSoup leaves `&nbsp;` and friends untouched).
-fn subtree_text(elem: ElementRef, out: &mut String) {
+pub(super) fn subtree_text(elem: ElementRef, out: &mut String) {
     for child in elem.children() {
         match child.value() {
             HtmlNode::Text(t) => {
@@ -1938,7 +2021,7 @@ fn wrap_cell_inline_groups(nodes: &mut [Node]) {
 /// docling's `_is_rich_table_cell`: a cell is rich if it has a `<br>`, more than
 /// one direct `<p>/<div>/<li>`, more than one text run, a single run carrying
 /// formatting/link/code, or only an image/input.
-fn is_rich_cell(cell: ElementRef) -> bool {
+pub(super) fn is_rich_cell(cell: ElementRef) -> bool {
     if has_descendant(cell, "br") {
         return true;
     }
@@ -2042,7 +2125,7 @@ fn figure_img_src(fig: ElementRef) -> Option<String> {
 /// `src` is authoritative, but many pages leave `src` empty or a placeholder
 /// and put the true URL in `data-src` (or a `srcset`), so fall back to those —
 /// otherwise every lazy-loaded image would extract nothing.
-fn img_src(el: &scraper::node::Element) -> Option<String> {
+pub(super) fn img_src(el: &scraper::node::Element) -> Option<String> {
     let attr = |k: &str| el.attr(k).map(str::trim).filter(|s| !s.is_empty());
     // A non-placeholder src wins.
     if let Some(s) = attr("src") {
@@ -2074,7 +2157,7 @@ fn img_src(el: &scraper::node::Element) -> Option<String> {
     attr("src").map(str::to_string)
 }
 
-fn has_descendant(elem: ElementRef, name: &str) -> bool {
+pub(super) fn has_descendant(elem: ElementRef, name: &str) -> bool {
     // Callers pass a small fixed set of tags; cache those selectors (this runs
     // per table cell). Anything else falls back to an on-demand parse.
     let sel = match name {
@@ -2161,7 +2244,7 @@ fn figcaption_text(fig: ElementRef) -> Option<String> {
 /// Sanitize typographic Unicode to ASCII (docling's HTML text cleanup) and
 /// collapse all runs of whitespace to single spaces, trimming the ends — in a
 /// single pass (this runs once per text run, so it stays allocation-light).
-fn normalize_ws(s: &str) -> String {
+pub(super) fn normalize_ws(s: &str) -> String {
     let mut out = String::with_capacity(s.len());
     // A space is pending between emitted words; flushed only before the next
     // non-space char, so leading/trailing whitespace is trimmed and runs collapse.
@@ -2195,7 +2278,7 @@ fn normalize_ws(s: &str) -> String {
 
 /// The text for a checkbox `<input>`: the joined text of every `<label>` bound
 /// to it (`for=` its id, or a wrapping label), else its `aria-label`.
-fn checkbox_label_text(input: ElementRef) -> String {
+pub(super) fn checkbox_label_text(input: ElementRef) -> String {
     let mut texts: Vec<String> = Vec::new();
     if let Some(id) = input.value().attr("id").filter(|i| !i.is_empty()) {
         let root = root_of(input);
@@ -2237,7 +2320,7 @@ fn checkbox_label_text(input: ElementRef) -> String {
 
 /// Whether this `<label>`'s text is consumed by a checkbox/radio input (bound
 /// via `for=` or wrapping it), so it should not render again.
-fn label_feeds_checkbox(label: ElementRef) -> bool {
+pub(super) fn label_feeds_checkbox(label: ElementRef) -> bool {
     let is_checkbox = |el: ElementRef| {
         el.value().name() == "input"
             && matches!(

@@ -22,9 +22,6 @@
       },
       {
         "$ref": "#/texts/1"
-      },
-      {
-        "$ref": "#/texts/2"
       }
     ],
     "content_layer": "body",
@@ -39,7 +36,7 @@
         "$ref": "#/body"
       },
       "children": [],
-      "content_layer": "body",
+      "content_layer": "furniture",
       "label": "title",
       "prov": [],
       "orig": "Example Domain",
@@ -50,6 +47,25 @@
       "parent": {
         "$ref": "#/body"
       },
+      "children": [
+        {
+          "$ref": "#/texts/2"
+        },
+        {
+          "$ref": "#/texts/3"
+        }
+      ],
+      "content_layer": "body",
+      "label": "title",
+      "prov": [],
+      "orig": "Example Domain",
+      "text": "Example Domain"
+    },
+    {
+      "self_ref": "#/texts/2",
+      "parent": {
+        "$ref": "#/texts/1"
+      },
       "children": [],
       "content_layer": "body",
       "label": "text",
@@ -58,16 +74,17 @@
       "text": "This domain is for use in documentation examples without needing permission. Avoid use in operations."
     },
     {
-      "self_ref": "#/texts/2",
+      "self_ref": "#/texts/3",
       "parent": {
-        "$ref": "#/body"
+        "$ref": "#/texts/1"
       },
       "children": [],
       "content_layer": "body",
       "label": "text",
       "prov": [],
-      "orig": "[Learn more](https://iana.org/domains/example)",
-      "text": "[Learn more](https://iana.org/domains/example)"
+      "orig": "Learn more",
+      "text": "Learn more",
+      "hyperlink": "https://iana.org/domains/example"
     }
   ],
   "pictures": [],

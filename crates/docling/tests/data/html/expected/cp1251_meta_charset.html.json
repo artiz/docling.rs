@@ -36,6 +36,22 @@
         "$ref": "#/body"
       },
       "children": [],
+      "content_layer": "furniture",
+      "label": "title",
+      "prov": [],
+      "orig": "Привет",
+      "text": "Привет"
+    },
+    {
+      "self_ref": "#/texts/1",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [
+        {
+          "$ref": "#/texts/2"
+        }
+      ],
       "content_layer": "body",
       "label": "title",
       "prov": [],
@@ -43,9 +59,9 @@
       "text": "Заголовок"
     },
     {
-      "self_ref": "#/texts/1",
+      "self_ref": "#/texts/2",
       "parent": {
-        "$ref": "#/body"
+        "$ref": "#/texts/1"
       },
       "children": [],
       "content_layer": "body",

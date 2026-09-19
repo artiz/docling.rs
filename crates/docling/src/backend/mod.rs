@@ -38,6 +38,7 @@ mod ebcdic;
 mod email;
 mod epub;
 mod html;
+mod html_tree;
 pub(crate) mod images;
 mod interchange;
 mod iwork;

@@ -22,19 +22,60 @@
       },
       {
         "$ref": "#/texts/1"
-      },
-      {
-        "$ref": "#/texts/2"
-      },
-      {
-        "$ref": "#/texts/3"
       }
     ],
     "content_layer": "body",
     "name": "_root_",
     "label": "unspecified"
   },
-  "groups": [],
+  "groups": [
+    {
+      "self_ref": "#/groups/0",
+      "parent": {
+        "$ref": "#/texts/1"
+      },
+      "children": [
+        {
+          "$ref": "#/texts/2"
+        },
+        {
+          "$ref": "#/texts/3"
+        },
+        {
+          "$ref": "#/texts/4"
+        },
+        {
+          "$ref": "#/texts/5"
+        },
+        {
+          "$ref": "#/texts/6"
+        }
+      ],
+      "content_layer": "body",
+      "name": "group",
+      "label": "inline"
+    },
+    {
+      "self_ref": "#/groups/1",
+      "parent": {
+        "$ref": "#/texts/7"
+      },
+      "children": [
+        {
+          "$ref": "#/texts/8"
+        },
+        {
+          "$ref": "#/texts/9"
+        },
+        {
+          "$ref": "#/texts/10"
+        }
+      ],
+      "content_layer": "body",
+      "name": "group",
+      "label": "inline"
+    }
+  ],
   "texts": [
     {
       "self_ref": "#/texts/0",
@@ -42,7 +83,7 @@
         "$ref": "#/body"
       },
       "children": [],
-      "content_layer": "body",
+      "content_layer": "furniture",
       "label": "title",
       "prov": [],
       "orig": "Anchor Links Test",
@@ -53,19 +94,92 @@
       "parent": {
         "$ref": "#/body"
       },
-      "children": [],
+      "children": [
+        {
+          "$ref": "#/groups/0"
+        },
+        {
+          "$ref": "#/texts/7"
+        }
+      ],
       "content_layer": "body",
-      "label": "text",
+      "label": "title",
       "prov": [],
-      "orig": "Jump to [Section 2](#section-2) or visit [Example](https://example.com/) .",
-      "text": "Jump to [Section 2](#section-2) or visit [Example](https://example.com/) ."
+      "orig": "Anchor Links Test",
+      "text": "Anchor Links Test"
     },
     {
       "self_ref": "#/texts/2",
       "parent": {
-        "$ref": "#/body"
+        "$ref": "#/groups/0"
       },
       "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "Jump to",
+      "text": "Jump to"
+    },
+    {
+      "self_ref": "#/texts/3",
+      "parent": {
+        "$ref": "#/groups/0"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "Section 2",
+      "text": "Section 2",
+      "hyperlink": "#section-2"
+    },
+    {
+      "self_ref": "#/texts/4",
+      "parent": {
+        "$ref": "#/groups/0"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "or visit",
+      "text": "or visit"
+    },
+    {
+      "self_ref": "#/texts/5",
+      "parent": {
+        "$ref": "#/groups/0"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "Example",
+      "text": "Example",
+      "hyperlink": "https://example.com/"
+    },
+    {
+      "self_ref": "#/texts/6",
+      "parent": {
+        "$ref": "#/groups/0"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": ".",
+      "text": "."
+    },
+    {
+      "self_ref": "#/texts/7",
+      "parent": {
+        "$ref": "#/texts/1"
+      },
+      "children": [
+        {
+          "$ref": "#/groups/1"
+        }
+      ],
       "content_layer": "body",
       "label": "section_header",
       "prov": [],
@@ -74,16 +188,41 @@
       "level": 1
     },
     {
-      "self_ref": "#/texts/3",
+      "self_ref": "#/texts/8",
       "parent": {
-        "$ref": "#/body"
+        "$ref": "#/groups/1"
       },
       "children": [],
       "content_layer": "body",
       "label": "text",
       "prov": [],
-      "orig": "Content for section 2 with a [top link](#) .",
-      "text": "Content for section 2 with a [top link](#) ."
+      "orig": "Content for section 2 with a",
+      "text": "Content for section 2 with a"
+    },
+    {
+      "self_ref": "#/texts/9",
+      "parent": {
+        "$ref": "#/groups/1"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "top link",
+      "text": "top link",
+      "hyperlink": "#"
+    },
+    {
+      "self_ref": "#/texts/10",
+      "parent": {
+        "$ref": "#/groups/1"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": ".",
+      "text": "."
     }
   ],
   "pictures": [],

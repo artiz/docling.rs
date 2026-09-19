@@ -19,21 +19,6 @@
     "children": [
       {
         "$ref": "#/texts/0"
-      },
-      {
-        "$ref": "#/texts/1"
-      },
-      {
-        "$ref": "#/texts/2"
-      },
-      {
-        "$ref": "#/texts/3"
-      },
-      {
-        "$ref": "#/groups/0"
-      },
-      {
-        "$ref": "#/groups/1"
       }
     ],
     "content_layer": "body",
@@ -44,7 +29,7 @@
     {
       "self_ref": "#/groups/0",
       "parent": {
-        "$ref": "#/body"
+        "$ref": "#/texts/2"
       },
       "children": [
         {
@@ -61,7 +46,7 @@
     {
       "self_ref": "#/groups/1",
       "parent": {
-        "$ref": "#/body"
+        "$ref": "#/texts/2"
       },
       "children": [
         {
@@ -72,7 +57,7 @@
         }
       ],
       "content_layer": "body",
-      "name": "list",
+      "name": "ordered list",
       "label": "list"
     }
   ],
@@ -82,7 +67,14 @@
       "parent": {
         "$ref": "#/body"
       },
-      "children": [],
+      "children": [
+        {
+          "$ref": "#/texts/1"
+        },
+        {
+          "$ref": "#/texts/2"
+        }
+      ],
       "content_layer": "body",
       "label": "title",
       "prov": [],
@@ -92,7 +84,7 @@
     {
       "self_ref": "#/texts/1",
       "parent": {
-        "$ref": "#/body"
+        "$ref": "#/texts/0"
       },
       "children": [],
       "content_layer": "body",
@@ -104,9 +96,19 @@
     {
       "self_ref": "#/texts/2",
       "parent": {
-        "$ref": "#/body"
+        "$ref": "#/texts/0"
       },
-      "children": [],
+      "children": [
+        {
+          "$ref": "#/texts/3"
+        },
+        {
+          "$ref": "#/groups/0"
+        },
+        {
+          "$ref": "#/groups/1"
+        }
+      ],
       "content_layer": "body",
       "label": "section_header",
       "prov": [],
@@ -117,7 +119,7 @@
     {
       "self_ref": "#/texts/3",
       "parent": {
-        "$ref": "#/body"
+        "$ref": "#/texts/2"
       },
       "children": [],
       "content_layer": "body",
@@ -138,7 +140,7 @@
       "orig": "First item in unordered list",
       "text": "First item in unordered list",
       "enumerated": false,
-      "marker": "-"
+      "marker": ""
     },
     {
       "self_ref": "#/texts/5",
@@ -152,7 +154,7 @@
       "orig": "Second item in unordered list",
       "text": "Second item in unordered list",
       "enumerated": false,
-      "marker": "-"
+      "marker": ""
     },
     {
       "self_ref": "#/texts/6",
@@ -166,7 +168,7 @@
       "orig": "First item in ordered list",
       "text": "First item in ordered list",
       "enumerated": true,
-      "marker": "1."
+      "marker": ""
     },
     {
       "self_ref": "#/texts/7",
@@ -180,7 +182,7 @@
       "orig": "Second item in ordered list",
       "text": "Second item in ordered list",
       "enumerated": true,
-      "marker": "2."
+      "marker": ""
     }
   ],
   "pictures": [],

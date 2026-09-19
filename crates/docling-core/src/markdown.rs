@@ -1182,6 +1182,7 @@ mod tests {
                 marker: None,
                 key: Some("Name:".into()),
                 value: Some("John Doe".into()),
+                value_kind: None,
             }],
         });
         assert_eq!(doc.export_to_markdown(), "Name:\n\nJohn Doe\n");

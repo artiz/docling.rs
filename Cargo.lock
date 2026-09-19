@@ -1522,6 +1522,7 @@ dependencies = [
  "docling-asr",
  "docling-core",
  "docling-pdf",
+ "ego-tree",
  "encoding_rs",
  "flate2",
  "headless_chrome",

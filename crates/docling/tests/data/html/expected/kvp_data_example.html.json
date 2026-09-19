@@ -22,24 +22,6 @@
       },
       {
         "$ref": "#/texts/1"
-      },
-      {
-        "$ref": "#/texts/2"
-      },
-      {
-        "$ref": "#/field_regions/0"
-      },
-      {
-        "$ref": "#/texts/27"
-      },
-      {
-        "$ref": "#/texts/28"
-      },
-      {
-        "$ref": "#/tables/0"
-      },
-      {
-        "$ref": "#/texts/29"
       }
     ],
     "content_layer": "body",
@@ -54,6 +36,40 @@
         "$ref": "#/body"
       },
       "children": [],
+      "content_layer": "furniture",
+      "label": "title",
+      "prov": [],
+      "orig": "Restaurant Receipt Form",
+      "text": "Restaurant Receipt Form"
+    },
+    {
+      "self_ref": "#/texts/1",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [
+        {
+          "$ref": "#/texts/2"
+        },
+        {
+          "$ref": "#/texts/3"
+        },
+        {
+          "$ref": "#/field_regions/0"
+        },
+        {
+          "$ref": "#/texts/28"
+        },
+        {
+          "$ref": "#/texts/29"
+        },
+        {
+          "$ref": "#/tables/0"
+        },
+        {
+          "$ref": "#/texts/30"
+        }
+      ],
       "content_layer": "body",
       "label": "title",
       "prov": [],
@@ -61,9 +77,9 @@
       "text": "HEADER"
     },
     {
-      "self_ref": "#/texts/1",
+      "self_ref": "#/texts/2",
       "parent": {
-        "$ref": "#/body"
+        "$ref": "#/texts/1"
       },
       "children": [],
       "content_layer": "body",
@@ -73,9 +89,9 @@
       "text": "Order Receipt Details"
     },
     {
-      "self_ref": "#/texts/2",
+      "self_ref": "#/texts/3",
       "parent": {
-        "$ref": "#/body"
+        "$ref": "#/texts/1"
       },
       "children": [],
       "content_layer": "body",
@@ -85,7 +101,7 @@
       "text": "Receipt documentation for table service:"
     },
     {
-      "self_ref": "#/texts/3",
+      "self_ref": "#/texts/4",
       "parent": {
         "$ref": "#/field_items/0"
       },
@@ -97,7 +113,7 @@
       "text": "1"
     },
     {
-      "self_ref": "#/texts/4",
+      "self_ref": "#/texts/5",
       "parent": {
         "$ref": "#/field_items/0"
       },
@@ -109,7 +125,7 @@
       "text": "Restaurant"
     },
     {
-      "self_ref": "#/texts/5",
+      "self_ref": "#/texts/6",
       "parent": {
         "$ref": "#/field_items/0"
       },
@@ -118,10 +134,11 @@
       "label": "field_value",
       "prov": [],
       "orig": "Docling",
-      "text": "Docling"
+      "text": "Docling",
+      "kind": "read_only"
     },
     {
-      "self_ref": "#/texts/6",
+      "self_ref": "#/texts/7",
       "parent": {
         "$ref": "#/field_items/1"
       },
@@ -133,7 +150,7 @@
       "text": "2"
     },
     {
-      "self_ref": "#/texts/7",
+      "self_ref": "#/texts/8",
       "parent": {
         "$ref": "#/field_items/1"
       },
@@ -145,7 +162,7 @@
       "text": "Telephone"
     },
     {
-      "self_ref": "#/texts/8",
+      "self_ref": "#/texts/9",
       "parent": {
         "$ref": "#/field_items/1"
       },
@@ -154,10 +171,11 @@
       "label": "field_value",
       "prov": [],
       "orig": "(123) 456-7890",
-      "text": "(123) 456-7890"
+      "text": "(123) 456-7890",
+      "kind": "read_only"
     },
     {
-      "self_ref": "#/texts/9",
+      "self_ref": "#/texts/10",
       "parent": {
         "$ref": "#/field_items/2"
       },
@@ -169,7 +187,7 @@
       "text": "3"
     },
     {
-      "self_ref": "#/texts/10",
+      "self_ref": "#/texts/11",
       "parent": {
         "$ref": "#/field_items/2"
       },
@@ -181,7 +199,7 @@
       "text": "Server"
     },
     {
-      "self_ref": "#/texts/11",
+      "self_ref": "#/texts/12",
       "parent": {
         "$ref": "#/field_items/2"
       },
@@ -190,10 +208,11 @@
       "label": "field_value",
       "prov": [],
       "orig": "Quack Quackling",
-      "text": "Quack Quackling"
+      "text": "Quack Quackling",
+      "kind": "read_only"
     },
     {
-      "self_ref": "#/texts/12",
+      "self_ref": "#/texts/13",
       "parent": {
         "$ref": "#/field_items/3"
       },
@@ -205,7 +224,7 @@
       "text": "4"
     },
     {
-      "self_ref": "#/texts/13",
+      "self_ref": "#/texts/14",
       "parent": {
         "$ref": "#/field_items/3"
       },
@@ -217,7 +236,7 @@
       "text": "Order Number"
     },
     {
-      "self_ref": "#/texts/14",
+      "self_ref": "#/texts/15",
       "parent": {
         "$ref": "#/field_items/3"
       },
@@ -226,10 +245,11 @@
       "label": "field_value",
       "prov": [],
       "orig": "12345",
-      "text": "12345"
+      "text": "12345",
+      "kind": "read_only"
     },
     {
-      "self_ref": "#/texts/15",
+      "self_ref": "#/texts/16",
       "parent": {
         "$ref": "#/field_items/4"
       },
@@ -241,7 +261,7 @@
       "text": "5"
     },
     {
-      "self_ref": "#/texts/16",
+      "self_ref": "#/texts/17",
       "parent": {
         "$ref": "#/field_items/4"
       },
@@ -253,7 +273,7 @@
       "text": "Seating"
     },
     {
-      "self_ref": "#/texts/17",
+      "self_ref": "#/texts/18",
       "parent": {
         "$ref": "#/field_items/4"
       },
@@ -262,10 +282,11 @@
       "label": "field_value",
       "prov": [],
       "orig": "13",
-      "text": "13"
+      "text": "13",
+      "kind": "read_only"
     },
     {
-      "self_ref": "#/texts/18",
+      "self_ref": "#/texts/19",
       "parent": {
         "$ref": "#/field_items/5"
       },
@@ -277,7 +298,7 @@
       "text": "6"
     },
     {
-      "self_ref": "#/texts/19",
+      "self_ref": "#/texts/20",
       "parent": {
         "$ref": "#/field_items/5"
       },
@@ -289,7 +310,7 @@
       "text": "Dining Type"
     },
     {
-      "self_ref": "#/texts/20",
+      "self_ref": "#/texts/21",
       "parent": {
         "$ref": "#/field_items/5"
       },
@@ -298,10 +319,11 @@
       "label": "field_value",
       "prov": [],
       "orig": "Celebration",
-      "text": "Celebration"
+      "text": "Celebration",
+      "kind": "read_only"
     },
     {
-      "self_ref": "#/texts/21",
+      "self_ref": "#/texts/22",
       "parent": {
         "$ref": "#/field_items/6"
       },
@@ -313,7 +335,7 @@
       "text": "7"
     },
     {
-      "self_ref": "#/texts/22",
+      "self_ref": "#/texts/23",
       "parent": {
         "$ref": "#/field_items/6"
       },
@@ -325,7 +347,7 @@
       "text": "Number of guests"
     },
     {
-      "self_ref": "#/texts/23",
+      "self_ref": "#/texts/24",
       "parent": {
         "$ref": "#/field_items/6"
       },
@@ -334,10 +356,11 @@
       "label": "field_value",
       "prov": [],
       "orig": "5",
-      "text": "5"
+      "text": "5",
+      "kind": "read_only"
     },
     {
-      "self_ref": "#/texts/24",
+      "self_ref": "#/texts/25",
       "parent": {
         "$ref": "#/field_items/7"
       },
@@ -349,7 +372,7 @@
       "text": "8"
     },
     {
-      "self_ref": "#/texts/25",
+      "self_ref": "#/texts/26",
       "parent": {
         "$ref": "#/field_items/7"
       },
@@ -361,7 +384,7 @@
       "text": "Receipt date"
     },
     {
-      "self_ref": "#/texts/26",
+      "self_ref": "#/texts/27",
       "parent": {
         "$ref": "#/field_items/7"
       },
@@ -370,12 +393,13 @@
       "label": "field_value",
       "prov": [],
       "orig": "16/03/2026",
-      "text": "16/03/2026"
+      "text": "16/03/2026",
+      "kind": "read_only"
     },
     {
-      "self_ref": "#/texts/27",
+      "self_ref": "#/texts/28",
       "parent": {
-        "$ref": "#/body"
+        "$ref": "#/texts/1"
       },
       "children": [],
       "content_layer": "body",
@@ -385,9 +409,9 @@
       "text": "Order items:"
     },
     {
-      "self_ref": "#/texts/28",
+      "self_ref": "#/texts/29",
       "parent": {
-        "$ref": "#/body"
+        "$ref": "#/texts/1"
       },
       "children": [],
       "content_layer": "body",
@@ -397,9 +421,9 @@
       "text": "Itemized list of products ordered with quantities."
     },
     {
-      "self_ref": "#/texts/29",
+      "self_ref": "#/texts/30",
       "parent": {
-        "$ref": "#/body"
+        "$ref": "#/texts/1"
       },
       "children": [],
       "content_layer": "body",
@@ -414,7 +438,7 @@
     {
       "self_ref": "#/tables/0",
       "parent": {
-        "$ref": "#/body"
+        "$ref": "#/texts/1"
       },
       "children": [],
       "content_layer": "body",
@@ -761,7 +785,7 @@
     {
       "self_ref": "#/field_regions/0",
       "parent": {
-        "$ref": "#/body"
+        "$ref": "#/texts/1"
       },
       "children": [
         {
@@ -802,13 +826,13 @@
       },
       "children": [
         {
-          "$ref": "#/texts/3"
-        },
-        {
           "$ref": "#/texts/4"
         },
         {
           "$ref": "#/texts/5"
+        },
+        {
+          "$ref": "#/texts/6"
         }
       ],
       "content_layer": "body",
@@ -822,13 +846,13 @@
       },
       "children": [
         {
-          "$ref": "#/texts/6"
-        },
-        {
           "$ref": "#/texts/7"
         },
         {
           "$ref": "#/texts/8"
+        },
+        {
+          "$ref": "#/texts/9"
         }
       ],
       "content_layer": "body",
@@ -842,13 +866,13 @@
       },
       "children": [
         {
-          "$ref": "#/texts/9"
-        },
-        {
           "$ref": "#/texts/10"
         },
         {
           "$ref": "#/texts/11"
+        },
+        {
+          "$ref": "#/texts/12"
         }
       ],
       "content_layer": "body",
@@ -862,13 +886,13 @@
       },
       "children": [
         {
-          "$ref": "#/texts/12"
-        },
-        {
           "$ref": "#/texts/13"
         },
         {
           "$ref": "#/texts/14"
+        },
+        {
+          "$ref": "#/texts/15"
         }
       ],
       "content_layer": "body",
@@ -882,13 +906,13 @@
       },
       "children": [
         {
-          "$ref": "#/texts/15"
-        },
-        {
           "$ref": "#/texts/16"
         },
         {
           "$ref": "#/texts/17"
+        },
+        {
+          "$ref": "#/texts/18"
         }
       ],
       "content_layer": "body",
@@ -902,13 +926,13 @@
       },
       "children": [
         {
-          "$ref": "#/texts/18"
-        },
-        {
           "$ref": "#/texts/19"
         },
         {
           "$ref": "#/texts/20"
+        },
+        {
+          "$ref": "#/texts/21"
         }
       ],
       "content_layer": "body",
@@ -922,13 +946,13 @@
       },
       "children": [
         {
-          "$ref": "#/texts/21"
-        },
-        {
           "$ref": "#/texts/22"
         },
         {
           "$ref": "#/texts/23"
+        },
+        {
+          "$ref": "#/texts/24"
         }
       ],
       "content_layer": "body",
@@ -942,13 +966,13 @@
       },
       "children": [
         {
-          "$ref": "#/texts/24"
-        },
-        {
           "$ref": "#/texts/25"
         },
         {
           "$ref": "#/texts/26"
+        },
+        {
+          "$ref": "#/texts/27"
         }
       ],
       "content_layer": "body",
