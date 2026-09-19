@@ -81,6 +81,13 @@ const CODE_LANGUAGES: &[&str] = &[
 
 /// Map a fence language to docling's `CodeLanguageLabel` (case-insensitive), else
 /// `unknown`.
+/// docling's `CodeLanguageLabel` for a language name (`unknown` when it is
+/// not one docling knows) — the mapping the JSON `code_language` field uses,
+/// for a backend that wants to test a hint before storing it.
+pub fn code_language_label(lang: &str) -> &'static str {
+    code_language(Some(lang))
+}
+
 pub(crate) fn code_language(lang: Option<&str>) -> &'static str {
     match lang {
         Some(l) => CODE_LANGUAGES
@@ -92,10 +99,31 @@ pub(crate) fn code_language(lang: Option<&str>) -> &'static str {
     }
 }
 
+/// docling-core's `Formatting` model, every field written.
+fn formatting_json(f: &crate::tree::Formatting) -> Value {
+    json!({
+        "bold": f.bold,
+        "italic": f.italic,
+        "underline": f.underline,
+        "strikethrough": f.strikethrough,
+        "script": match f.script {
+            crate::Script::Baseline => "baseline",
+            crate::Script::Sub => "sub",
+            crate::Script::Super => "super",
+        },
+    })
+}
+
 /// Build the docling-core JSON object for `doc`.
 pub fn to_json(doc: &DoclingDocument) -> Value {
     let mut b = Builder::default();
-    let body = b.walk_into(&doc.nodes, "#/body");
+    // A backend that built docling's item tree ([`crate::tree`]) has already
+    // decided every parent, child and creation index; serialize that. The
+    // flat nodes are for the other serializers.
+    let body = match &doc.tree {
+        Some(tree) => b.write_tree(tree),
+        None => b.walk_into(&doc.nodes, "#/body"),
+    };
     b.link_comments();
 
     let mut out = json!({
@@ -227,7 +255,22 @@ fn cell_value(
     Value::Object(m)
 }
 
+/// `TableData` from a table whose cell text is Markdown-flavoured (the flat
+/// nodes: escapes to undo, GFM hard-break markers to strip).
 fn table_data(t: &Table) -> Value {
+    table_data_with(t, false)
+}
+
+/// `TableData`; with `raw` the cell text is docling's own raw cell text (a
+/// backend-built tree) and is written verbatim.
+fn table_data_with(t: &Table, raw: bool) -> Value {
+    let cell_text = |s: &str| {
+        if raw {
+            s.to_string()
+        } else {
+            unescape_text(&crate::markdown::strip_hard_breaks(s))
+        }
+    };
     let num_rows = t.rows.len();
     let num_cols = t.rows.iter().map(Vec::len).max().unwrap_or(0);
     let mut grid = Vec::with_capacity(num_rows);
@@ -246,7 +289,7 @@ fn table_data(t: &Table) -> Value {
                 c.start_row + c.row_span,
                 c.start_col,
                 c.start_col + c.col_span,
-                unescape_text(&crate::markdown::strip_hard_breaks(&c.text)),
+                cell_text(&c.text),
                 c.column_header,
                 c.row_header,
                 c.row_section,
@@ -319,10 +362,7 @@ fn table_data(t: &Table) -> Value {
                 let (ar, ac) = anchors[r * num_cols + c];
                 if (ar, ac) == (r, c) {
                     let (er, ec) = extent[r * num_cols + c];
-                    let text = row
-                        .get(c)
-                        .map(|s| unescape_text(&crate::markdown::strip_hard_breaks(s)))
-                        .unwrap_or_default();
+                    let text = row.get(c).map(|s| cell_text(s)).unwrap_or_default();
                     let column_header = match s.filter(|s| !s.col_header.is_empty()) {
                         Some(s) => flag(Some(&s.col_header), r, c),
                         None => r == 0,
@@ -533,6 +573,208 @@ impl Builder {
         bucket.get_mut(idx)
     }
 
+    /// Serialize a backend-built [`ItemTree`](crate::tree::ItemTree): every
+    /// item in creation order into its bucket, with the parent / children /
+    /// layer the tree recorded. Returns the body's `children` refs.
+    fn write_tree(&mut self, tree: &crate::tree::ItemTree) -> Vec<Value> {
+        use crate::tree::TreeKind;
+        // Every item's `self_ref` first: children may be listed before they
+        // are written (a rich cell's group is created after its content).
+        let mut refs: Vec<String> = Vec::with_capacity(tree.items.len());
+        let (mut nt, mut ng, mut ntb, mut np, mut nf) = (0, 0, 0, 0, 0);
+        for item in &tree.items {
+            let r = match &item.kind {
+                TreeKind::Text { .. } | TreeKind::Code { .. } => {
+                    nt += 1;
+                    format!("#/texts/{}", nt - 1)
+                }
+                TreeKind::Group { .. } => {
+                    ng += 1;
+                    format!("#/groups/{}", ng - 1)
+                }
+                TreeKind::Table { .. } => {
+                    ntb += 1;
+                    format!("#/tables/{}", ntb - 1)
+                }
+                TreeKind::Picture { .. } => {
+                    np += 1;
+                    format!("#/pictures/{}", np - 1)
+                }
+                TreeKind::FieldRegion { items } => {
+                    // A region's marker / key / value parts are text items
+                    // too, numbered where docling creates them.
+                    nt += items
+                        .iter()
+                        .map(|i| {
+                            [&i.marker, &i.key, &i.value]
+                                .iter()
+                                .filter(|p| p.is_some())
+                                .count()
+                        })
+                        .sum::<usize>();
+                    nf += 1;
+                    format!("#/field_regions/{}", nf - 1)
+                }
+            };
+            refs.push(r);
+        }
+        let ref_of = |id: usize| json!({ "$ref": refs[id] });
+        for (id, item) in tree.items.iter().enumerate() {
+            let parent = item.parent.map_or("#/body", |p| refs[p].as_str());
+            let children: Vec<Value> = item.children.iter().map(|&c| ref_of(c)).collect();
+            let layer = item.layer.map_or("body", |l| l.value());
+            let self_ref = match &item.kind {
+                TreeKind::Text {
+                    label,
+                    text,
+                    orig,
+                    formatting,
+                    hyperlink,
+                    level,
+                    list,
+                } => {
+                    // docling's field order: …, text, formatting, hyperlink,
+                    // then the subclass fields (`level`; `enumerated`, `marker`).
+                    let mut tail = serde_json::Map::new();
+                    if let Some(f) = formatting {
+                        tail.insert("formatting".into(), formatting_json(f));
+                    }
+                    if let Some(h) = hyperlink {
+                        tail.insert("hyperlink".into(), json!(h));
+                    }
+                    if let Some(l) = level {
+                        tail.insert("level".into(), json!(l));
+                    }
+                    if let Some(l) = list {
+                        tail.insert("enumerated".into(), json!(l.enumerated));
+                        tail.insert("marker".into(), json!(l.marker));
+                    }
+                    let r = format!("#/texts/{}", self.texts.len());
+                    let mut item_json = json!({
+                        "self_ref": r,
+                        "parent": { "$ref": parent },
+                        "children": children,
+                        "content_layer": layer,
+                        "label": label,
+                        "prov": [],
+                        "orig": orig.as_deref().unwrap_or(text),
+                        "text": text,
+                    });
+                    merge(&mut item_json, Value::Object(tail));
+                    self.texts.push(item_json);
+                    r
+                }
+                TreeKind::Code {
+                    text,
+                    orig,
+                    language,
+                    formatting,
+                    hyperlink,
+                } => {
+                    let r = format!("#/texts/{}", self.texts.len());
+                    let mut item_json = json!({
+                        "self_ref": r,
+                        "parent": { "$ref": parent },
+                        "children": children,
+                        "content_layer": layer,
+                        "label": "code",
+                        "prov": [],
+                        "orig": orig.as_deref().unwrap_or(text),
+                        "text": text,
+                    });
+                    if let Some(f) = formatting {
+                        item_json["formatting"] = formatting_json(f);
+                    }
+                    if let Some(h) = hyperlink {
+                        item_json["hyperlink"] = json!(h);
+                    }
+                    merge(
+                        &mut item_json,
+                        json!({
+                            "captions": [],
+                            "references": [],
+                            "footnotes": [],
+                            "code_language": code_language(language.as_deref()),
+                        }),
+                    );
+                    self.texts.push(item_json);
+                    r
+                }
+                TreeKind::Group { label, name } => {
+                    let r = format!("#/groups/{}", self.groups.len());
+                    self.groups.push(json!({
+                        "self_ref": r,
+                        "parent": { "$ref": parent },
+                        "children": children,
+                        "content_layer": layer,
+                        "name": name,
+                        "label": label,
+                    }));
+                    r
+                }
+                TreeKind::Table {
+                    table,
+                    rich_cells,
+                    captions,
+                } => {
+                    // docling's raw cell text: nothing to unescape or strip.
+                    let r = self.add_table_with(table, parent, true);
+                    let idx = ref_index(&r).expect("table ref");
+                    let t = &mut self.tables[idx];
+                    t["children"] = Value::Array(children);
+                    t["content_layer"] = json!(layer);
+                    t["captions"] = Value::Array(captions.iter().map(|&c| ref_of(c)).collect());
+                    // A `RichTableCell` is the plain cell plus a `ref` to the
+                    // group holding its content — on `table_cells` only; the
+                    // derived `grid` shows plain cells.
+                    for &(row, col, group) in rich_cells {
+                        let cell_ref = ref_of(group);
+                        let hit = |c: &Value| {
+                            c["start_row_offset_idx"] == json!(row)
+                                && c["start_col_offset_idx"] == json!(col)
+                        };
+                        if let Some(cells) = t["data"]["table_cells"].as_array_mut() {
+                            for c in cells.iter_mut().filter(|c| hit(c)) {
+                                c["ref"] = cell_ref.clone();
+                            }
+                        }
+                    }
+                    r
+                }
+                TreeKind::Picture {
+                    captions,
+                    image,
+                    classification,
+                } => {
+                    let meta = classification.as_ref().map(
+                        |c| json!({ "classification": { "predictions": [{ "class_name": c }] } }),
+                    );
+                    let r = self.push_picture(
+                        json!([]),
+                        captions.iter().map(|&c| ref_of(c)).collect(),
+                        children,
+                        image.as_ref(),
+                        meta,
+                        parent,
+                    );
+                    if let Some(idx) = ref_index(&r) {
+                        self.pictures[idx]["content_layer"] = json!(layer);
+                    }
+                    r
+                }
+                TreeKind::FieldRegion { items } => {
+                    let r = self.add_field_region(items, parent);
+                    if let Some(region) = self.field_regions.last_mut() {
+                        region["content_layer"] = json!(layer);
+                    }
+                    r
+                }
+            };
+            debug_assert_eq!(self_ref, refs[id], "tree item {id} numbered out of order");
+        }
+        tree.body.iter().map(|&c| ref_of(c)).collect()
+    }
+
     fn add_node(&mut self, node: &Node, parent: &str) -> Option<String> {
         match node {
             Node::Heading { level: 1, text } => {
@@ -695,8 +937,9 @@ impl Builder {
             Node::TextDump(text) => Some(self.add_text("text", text, parent, json!({}))),
             // Speaker notes are content a deck carries, and docling puts them
             // in the JSON on their own layer, so a consumer reading only JSON
-            // can pick them (#402). Page furniture stays out: docling keeps
-            // that too, but emitting it would be its own (much wider) change.
+            // can pick them (#402). Page furniture stays out of the flat
+            // path; a backend that builds docling's item tree (HTML) puts its
+            // furniture-layer items in the JSON through `write_tree`.
             Node::Furniture {
                 layer: ContentLayer::Notes,
                 inner,
@@ -786,8 +1029,13 @@ impl Builder {
             ("field_value", &item.value),
         ] {
             if let Some(text) = text {
-                child_refs
-                    .push(json!({ "$ref": self.add_text(label, text, &self_ref, json!({})) }));
+                // A value's `kind` (docling's `read_only` / `fillable`)
+                // follows its text.
+                let extra = match (label, &item.value_kind) {
+                    ("field_value", Some(kind)) => json!({ "kind": kind }),
+                    _ => json!({}),
+                };
+                child_refs.push(json!({ "$ref": self.add_text(label, text, &self_ref, extra) }));
             }
         }
         self.field_items[item_index] = json!({
@@ -1009,6 +1257,12 @@ impl Builder {
     }
 
     fn add_table(&mut self, t: &Table, parent: &str) -> String {
+        self.add_table_with(t, parent, false)
+    }
+
+    /// [`Self::add_table`]; `raw` cell text is written verbatim (see
+    /// [`table_data_with`]).
+    fn add_table_with(&mut self, t: &Table, parent: &str, raw: bool) -> String {
         let self_ref = format!("#/tables/{}", self.tables.len());
         self.adopt_loc(t.location);
         let prov = self.take_prov(0);
@@ -1019,7 +1273,7 @@ impl Builder {
             Some(cap) => self.add_caption(cap, json!({}), &self_ref, parent, t.caption_parent),
             None => (Vec::new(), Vec::new()),
         };
-        let data = table_data(t);
+        let data = table_data_with(t, raw);
         self.tables.push(json!({
             "self_ref": self_ref,
             "parent": { "$ref": parent },
@@ -1828,6 +2082,268 @@ mod tests {
         // The group's children are the items, and the body holds the groups.
         assert_eq!(v["groups"][1]["children"][0]["$ref"], "#/texts/1");
         assert_eq!(v["body"]["children"][1]["$ref"], "#/groups/1");
+    }
+
+    /// A backend-built item tree is serialized as it is: items numbered in
+    /// creation order per bucket (a field region's part texts included), the
+    /// tree's parents / children / layers, docling's field order for
+    /// `formatting`, `hyperlink`, `level`, `enumerated`/`marker`, a rich
+    /// cell's `ref` on `table_cells` only, raw cell text.
+    #[test]
+    fn a_backend_item_tree_is_written_verbatim() {
+        use crate::tree::{Formatting, ItemTree, ListMeta, TreeKind};
+        let mut t = ItemTree::default();
+        let text = |label: &str, txt: &str| TreeKind::Text {
+            label: label.into(),
+            text: txt.into(),
+            orig: None,
+            formatting: None,
+            hyperlink: None,
+            level: None,
+            list: None,
+        };
+        let title = t.add(None, Some(ContentLayer::Furniture), text("title", "Page"));
+        let h = t.add(None, None, text("title", "Heading"));
+        let group = t.add(
+            Some(h),
+            None,
+            TreeKind::Group {
+                label: "inline".into(),
+                name: "group".into(),
+            },
+        );
+        t.add(
+            Some(group),
+            None,
+            TreeKind::Text {
+                label: "text".into(),
+                text: "bold".into(),
+                orig: None,
+                formatting: Some(Formatting {
+                    bold: true,
+                    ..Formatting::default()
+                }),
+                hyperlink: Some("https://example.com/".into()),
+                level: None,
+                list: None,
+            },
+        );
+        t.add(
+            Some(group),
+            None,
+            TreeKind::Code {
+                text: "x = 1".into(),
+                orig: None,
+                language: Some("python".into()),
+                formatting: None,
+                hyperlink: None,
+            },
+        );
+        let sub = t.add(
+            Some(h),
+            None,
+            TreeKind::Text {
+                label: "section_header".into(),
+                text: "Sub".into(),
+                orig: Some("Sub\u{2019}".into()),
+                formatting: None,
+                hyperlink: None,
+                level: Some(1),
+                list: None,
+            },
+        );
+        t.add(
+            Some(sub),
+            None,
+            TreeKind::Text {
+                label: "list_item".into(),
+                text: "item".into(),
+                orig: None,
+                formatting: None,
+                hyperlink: None,
+                level: None,
+                list: Some(ListMeta {
+                    enumerated: true,
+                    marker: "3.".into(),
+                }),
+            },
+        );
+        let _region = t.add(
+            Some(sub),
+            None,
+            TreeKind::FieldRegion {
+                items: vec![crate::FieldItem {
+                    marker: None,
+                    key: Some("Name".into()),
+                    value: Some("Duck".into()),
+                    value_kind: Some("read_only".into()),
+                }],
+            },
+        );
+        let table = t.add(
+            Some(sub),
+            None,
+            TreeKind::Table {
+                table: Table {
+                    rows: vec![vec!["a  \n&lt;".into(), "b".into()]],
+                    cells: Some(vec![
+                        crate::TableCell {
+                            text: "a  \n&lt;".into(),
+                            bbox: None,
+                            start_row: 0,
+                            start_col: 0,
+                            row_span: 3,
+                            col_span: 1,
+                            column_header: false,
+                            row_header: true,
+                            row_section: false,
+                        },
+                        crate::TableCell {
+                            text: "b".into(),
+                            bbox: None,
+                            start_row: 0,
+                            start_col: 1,
+                            row_span: 1,
+                            col_span: 1,
+                            column_header: false,
+                            row_header: false,
+                            row_section: false,
+                        },
+                    ]),
+                    ..Table::default()
+                },
+                rich_cells: vec![(0, 1, 0)], // patched below
+                captions: Vec::new(),
+            },
+        );
+        let cell_group = t.add(
+            Some(table),
+            None,
+            TreeKind::Group {
+                label: "unspecified".into(),
+                name: "rich_cell_group_1_0_0".into(),
+            },
+        );
+        if let TreeKind::Table { rich_cells, .. } = &mut t.items[table].kind {
+            *rich_cells = vec![(0, 1, cell_group)];
+        }
+        let after = t.add(Some(sub), None, text("text", "after the region"));
+        let _ = (title, after);
+
+        let doc = DoclingDocument {
+            tree: Some(t),
+            ..DoclingDocument::new("t")
+        };
+        let v: Value = serde_json::from_str(&doc.export_to_json()).unwrap();
+        // Creation order: Page, Heading, bold, x = 1, Sub, item, [Name, Duck], after.
+        let texts: Vec<&str> = v["texts"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|t| t["text"].as_str().unwrap())
+            .collect();
+        assert_eq!(
+            texts,
+            [
+                "Page",
+                "Heading",
+                "bold",
+                "x = 1",
+                "Sub",
+                "item",
+                "Name",
+                "Duck",
+                "after the region"
+            ]
+        );
+        assert_eq!(
+            v["body"]["children"],
+            serde_json::json!([{"$ref": "#/texts/0"}, {"$ref": "#/texts/1"}])
+        );
+        assert_eq!(v["texts"][0]["content_layer"], "furniture");
+        assert_eq!(
+            v["texts"][1]["children"],
+            serde_json::json!([{"$ref": "#/groups/0"}, {"$ref": "#/texts/4"}])
+        );
+        let bold = &v["texts"][2];
+        assert_eq!(bold["parent"]["$ref"], "#/groups/0");
+        let keys: Vec<&str> = bold
+            .as_object()
+            .unwrap()
+            .keys()
+            .map(String::as_str)
+            .collect();
+        assert_eq!(
+            keys,
+            [
+                "self_ref",
+                "parent",
+                "children",
+                "content_layer",
+                "label",
+                "prov",
+                "orig",
+                "text",
+                "formatting",
+                "hyperlink"
+            ]
+        );
+        assert_eq!(
+            bold["formatting"],
+            serde_json::json!({"bold": true, "italic": false, "underline": false, "strikethrough": false, "script": "baseline"})
+        );
+        let code = &v["texts"][3];
+        assert_eq!(code["label"], "code");
+        assert_eq!(code["code_language"], "Python");
+        let sub = &v["texts"][4];
+        assert_eq!(sub["orig"], "Sub\u{2019}");
+        assert_eq!(sub["level"], 1);
+        let item = &v["texts"][5];
+        let keys: Vec<&str> = item
+            .as_object()
+            .unwrap()
+            .keys()
+            .map(String::as_str)
+            .collect();
+        assert_eq!(
+            keys,
+            [
+                "self_ref",
+                "parent",
+                "children",
+                "content_layer",
+                "label",
+                "prov",
+                "orig",
+                "text",
+                "enumerated",
+                "marker"
+            ]
+        );
+        assert_eq!(item["marker"], "3.");
+        assert_eq!(v["texts"][7]["kind"], "read_only");
+        assert_eq!(v["field_regions"][0]["parent"]["$ref"], "#/texts/4");
+        let table = &v["tables"][0];
+        assert_eq!(
+            table["children"],
+            serde_json::json!([{"$ref": "#/groups/1"}])
+        );
+        let cells = table["data"]["table_cells"].as_array().unwrap();
+        assert_eq!(
+            cells[0]["text"], "a  \n&lt;",
+            "raw cell text is written verbatim"
+        );
+        assert_eq!(
+            cells[0]["end_row_offset_idx"], 3,
+            "declared spans are not clamped"
+        );
+        assert_eq!(cells[1]["ref"], serde_json::json!({"$ref": "#/groups/1"}));
+        assert!(cells[0].get("ref").is_none());
+        assert!(
+            table["data"]["grid"][0][1].get("ref").is_none(),
+            "the grid shows plain cells"
+        );
+        assert_eq!(v["groups"][1]["name"], "rich_cell_group_1_0_0");
     }
 
     /// A comment section that links its note text rather than its group — the

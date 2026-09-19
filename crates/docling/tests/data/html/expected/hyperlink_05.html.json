@@ -21,16 +21,19 @@
         "$ref": "#/texts/0"
       },
       {
+        "$ref": "#/texts/1"
+      },
+      {
         "$ref": "#/pictures/0"
       },
       {
-        "$ref": "#/texts/1"
+        "$ref": "#/texts/2"
       },
       {
         "$ref": "#/pictures/1"
       },
       {
-        "$ref": "#/texts/2"
+        "$ref": "#/texts/3"
       },
       {
         "$ref": "#/pictures/2"
@@ -48,6 +51,18 @@
         "$ref": "#/body"
       },
       "children": [],
+      "content_layer": "furniture",
+      "label": "title",
+      "prov": [],
+      "orig": "Image Hyperlink and Caption Example",
+      "text": "Image Hyperlink and Caption Example"
+    },
+    {
+      "self_ref": "#/texts/1",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
       "content_layer": "body",
       "label": "caption",
       "prov": [],
@@ -56,7 +71,7 @@
       "hyperlink": "https://www.example.com/"
     },
     {
-      "self_ref": "#/texts/1",
+      "self_ref": "#/texts/2",
       "parent": {
         "$ref": "#/body"
       },
@@ -68,7 +83,7 @@
       "text": "This is an example caption for the image."
     },
     {
-      "self_ref": "#/texts/2",
+      "self_ref": "#/texts/3",
       "parent": {
         "$ref": "#/body"
       },
@@ -93,7 +108,7 @@
       "prov": [],
       "captions": [
         {
-          "$ref": "#/texts/0"
+          "$ref": "#/texts/1"
         }
       ],
       "references": [],
@@ -111,7 +126,7 @@
       "prov": [],
       "captions": [
         {
-          "$ref": "#/texts/1"
+          "$ref": "#/texts/2"
         }
       ],
       "references": [],
@@ -129,7 +144,7 @@
       "prov": [],
       "captions": [
         {
-          "$ref": "#/texts/2"
+          "$ref": "#/texts/3"
         }
       ],
       "references": [],

@@ -43,6 +43,12 @@ pub struct DoclingDocument {
     /// result, outside the document schema) — docling-serve surfaces it in
     /// the HTTP response instead.
     pub confidence: Option<crate::confidence::ConfidenceReport>,
+    /// docling's item tree, when the backend built one (the HTML backend
+    /// does): the JSON export serializes it instead of deriving a tree from
+    /// `nodes`, so the JSON carries upstream's exact parent/child structure,
+    /// item numbering, inline groups, formatting and content layers. Every
+    /// other serializer reads `nodes`. See [`crate::tree`].
+    pub tree: Option<crate::tree::ItemTree>,
 }
 
 /// A single piece of document content.
@@ -426,6 +432,9 @@ pub struct FieldItem {
     pub marker: Option<String>,
     pub key: Option<String>,
     pub value: Option<String>,
+    /// docling's `kind` on the `field_value` item — `read_only` or
+    /// `fillable` (the value is or holds a form control); JSON-only.
+    pub value_kind: Option<String>,
 }
 
 /// One DocumentPictureClassifier prediction — docling-core's
@@ -830,6 +839,7 @@ impl DoclingDocument {
             page_break_placeholder: None,
             links: Vec::new(),
             confidence: None,
+            tree: None,
         }
     }
 

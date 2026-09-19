@@ -19,30 +19,6 @@
     "children": [
       {
         "$ref": "#/texts/0"
-      },
-      {
-        "$ref": "#/texts/1"
-      },
-      {
-        "$ref": "#/texts/2"
-      },
-      {
-        "$ref": "#/texts/3"
-      },
-      {
-        "$ref": "#/texts/4"
-      },
-      {
-        "$ref": "#/groups/0"
-      },
-      {
-        "$ref": "#/groups/2"
-      },
-      {
-        "$ref": "#/texts/13"
-      },
-      {
-        "$ref": "#/tables/0"
       }
     ],
     "content_layer": "body",
@@ -53,7 +29,7 @@
     {
       "self_ref": "#/groups/0",
       "parent": {
-        "$ref": "#/body"
+        "$ref": "#/texts/3"
       },
       "children": [
         {
@@ -87,7 +63,7 @@
     {
       "self_ref": "#/groups/2",
       "parent": {
-        "$ref": "#/body"
+        "$ref": "#/texts/3"
       },
       "children": [
         {
@@ -98,7 +74,7 @@
         }
       ],
       "content_layer": "body",
-      "name": "list",
+      "name": "ordered list",
       "label": "list"
     },
     {
@@ -115,7 +91,7 @@
         }
       ],
       "content_layer": "body",
-      "name": "list",
+      "name": "ordered list",
       "label": "list"
     }
   ],
@@ -125,7 +101,17 @@
       "parent": {
         "$ref": "#/body"
       },
-      "children": [],
+      "children": [
+        {
+          "$ref": "#/texts/1"
+        },
+        {
+          "$ref": "#/texts/3"
+        },
+        {
+          "$ref": "#/texts/13"
+        }
+      ],
       "content_layer": "body",
       "label": "title",
       "prov": [],
@@ -135,9 +121,13 @@
     {
       "self_ref": "#/texts/1",
       "parent": {
-        "$ref": "#/body"
+        "$ref": "#/texts/0"
       },
-      "children": [],
+      "children": [
+        {
+          "$ref": "#/texts/2"
+        }
+      ],
       "content_layer": "body",
       "label": "section_header",
       "prov": [],
@@ -148,7 +138,7 @@
     {
       "self_ref": "#/texts/2",
       "parent": {
-        "$ref": "#/body"
+        "$ref": "#/texts/1"
       },
       "children": [],
       "content_layer": "body",
@@ -160,9 +150,19 @@
     {
       "self_ref": "#/texts/3",
       "parent": {
-        "$ref": "#/body"
+        "$ref": "#/texts/0"
       },
-      "children": [],
+      "children": [
+        {
+          "$ref": "#/texts/4"
+        },
+        {
+          "$ref": "#/groups/0"
+        },
+        {
+          "$ref": "#/groups/2"
+        }
+      ],
       "content_layer": "body",
       "label": "section_header",
       "prov": [],
@@ -173,7 +173,7 @@
     {
       "self_ref": "#/texts/4",
       "parent": {
-        "$ref": "#/body"
+        "$ref": "#/texts/3"
       },
       "children": [],
       "content_layer": "body",
@@ -198,7 +198,7 @@
       "orig": "First item in unordered list",
       "text": "First item in unordered list",
       "enumerated": false,
-      "marker": "-"
+      "marker": ""
     },
     {
       "self_ref": "#/texts/6",
@@ -212,7 +212,7 @@
       "orig": "Nested item 1",
       "text": "Nested item 1",
       "enumerated": false,
-      "marker": "-"
+      "marker": ""
     },
     {
       "self_ref": "#/texts/7",
@@ -226,7 +226,7 @@
       "orig": "Nested item 2",
       "text": "Nested item 2",
       "enumerated": false,
-      "marker": "-"
+      "marker": ""
     },
     {
       "self_ref": "#/texts/8",
@@ -240,7 +240,7 @@
       "orig": "Second item in unordered list",
       "text": "Second item in unordered list",
       "enumerated": false,
-      "marker": "-"
+      "marker": ""
     },
     {
       "self_ref": "#/texts/9",
@@ -258,7 +258,7 @@
       "orig": "First item in ordered list",
       "text": "First item in ordered list",
       "enumerated": true,
-      "marker": "1."
+      "marker": ""
     },
     {
       "self_ref": "#/texts/10",
@@ -272,7 +272,7 @@
       "orig": "Nested ordered item 1",
       "text": "Nested ordered item 1",
       "enumerated": true,
-      "marker": "1."
+      "marker": ""
     },
     {
       "self_ref": "#/texts/11",
@@ -286,7 +286,7 @@
       "orig": "Nested ordered item 2",
       "text": "Nested ordered item 2",
       "enumerated": true,
-      "marker": "2."
+      "marker": ""
     },
     {
       "self_ref": "#/texts/12",
@@ -300,14 +300,18 @@
       "orig": "Second item in ordered list",
       "text": "Second item in ordered list",
       "enumerated": true,
-      "marker": "2."
+      "marker": ""
     },
     {
       "self_ref": "#/texts/13",
       "parent": {
-        "$ref": "#/body"
+        "$ref": "#/texts/0"
       },
-      "children": [],
+      "children": [
+        {
+          "$ref": "#/tables/0"
+        }
+      ],
       "content_layer": "body",
       "label": "section_header",
       "prov": [],
@@ -321,7 +325,7 @@
     {
       "self_ref": "#/tables/0",
       "parent": {
-        "$ref": "#/body"
+        "$ref": "#/texts/13"
       },
       "children": [],
       "content_layer": "body",

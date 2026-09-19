@@ -22,6 +22,7 @@ mod json;
 mod labels;
 mod latex;
 mod markdown;
+pub mod tree;
 
 pub use confidence::{ConfidenceReport, PageConfidence, QualityGrade};
 pub use doclang::inline_runs_from_markdown;
@@ -29,5 +30,6 @@ pub use document::{
     inline_paragraph_node, CaptionParent, ContentLayer, DoclingDocument, FieldItem, InlineRun,
     ListItemDclx, Node, PictureClass, PictureImage, Script, Table, TableCell, TableStructure,
 };
+pub use json::code_language_label;
 pub use labels::DocItemLabel;
 pub use markdown::{ImageMode, MarkdownStreamer};

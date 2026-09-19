@@ -18,36 +18,46 @@
     "self_ref": "#/body",
     "children": [
       {
-        "$ref": "#/texts/0"
-      },
-      {
-        "$ref": "#/tables/0"
-      },
-      {
-        "$ref": "#/texts/1"
-      },
-      {
-        "$ref": "#/tables/1"
-      },
-      {
-        "$ref": "#/texts/2"
-      },
-      {
-        "$ref": "#/tables/2"
+        "$ref": "#/groups/0"
       }
     ],
     "content_layer": "body",
     "name": "_root_",
     "label": "unspecified"
   },
-  "groups": [],
+  "groups": [
+    {
+      "self_ref": "#/groups/0",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [
+        {
+          "$ref": "#/texts/0"
+        },
+        {
+          "$ref": "#/texts/1"
+        },
+        {
+          "$ref": "#/texts/2"
+        }
+      ],
+      "content_layer": "body",
+      "name": "header-1",
+      "label": "section"
+    }
+  ],
   "texts": [
     {
       "self_ref": "#/texts/0",
       "parent": {
-        "$ref": "#/body"
+        "$ref": "#/groups/0"
       },
-      "children": [],
+      "children": [
+        {
+          "$ref": "#/tables/0"
+        }
+      ],
       "content_layer": "body",
       "label": "section_header",
       "prov": [],
@@ -58,9 +68,13 @@
     {
       "self_ref": "#/texts/1",
       "parent": {
-        "$ref": "#/body"
+        "$ref": "#/groups/0"
       },
-      "children": [],
+      "children": [
+        {
+          "$ref": "#/tables/1"
+        }
+      ],
       "content_layer": "body",
       "label": "section_header",
       "prov": [],
@@ -71,9 +85,13 @@
     {
       "self_ref": "#/texts/2",
       "parent": {
-        "$ref": "#/body"
+        "$ref": "#/groups/0"
       },
-      "children": [],
+      "children": [
+        {
+          "$ref": "#/tables/2"
+        }
+      ],
       "content_layer": "body",
       "label": "section_header",
       "prov": [],
@@ -87,7 +105,7 @@
     {
       "self_ref": "#/tables/0",
       "parent": {
-        "$ref": "#/body"
+        "$ref": "#/texts/0"
       },
       "children": [],
       "content_layer": "body",
@@ -694,7 +712,7 @@
     {
       "self_ref": "#/tables/1",
       "parent": {
-        "$ref": "#/body"
+        "$ref": "#/texts/1"
       },
       "children": [],
       "content_layer": "body",
@@ -771,10 +789,10 @@
             "fillable": false
           },
           {
-            "row_span": 5,
+            "row_span": 6,
             "col_span": 1,
             "start_row_offset_idx": 1,
-            "end_row_offset_idx": 6,
+            "end_row_offset_idx": 7,
             "start_col_offset_idx": 0,
             "end_col_offset_idx": 1,
             "text": "2025",
@@ -1078,10 +1096,10 @@
           ],
           [
             {
-              "row_span": 5,
+              "row_span": 6,
               "col_span": 1,
               "start_row_offset_idx": 1,
-              "end_row_offset_idx": 6,
+              "end_row_offset_idx": 7,
               "start_col_offset_idx": 0,
               "end_col_offset_idx": 1,
               "text": "2025",
@@ -1145,10 +1163,10 @@
           ],
           [
             {
-              "row_span": 5,
+              "row_span": 6,
               "col_span": 1,
               "start_row_offset_idx": 1,
-              "end_row_offset_idx": 6,
+              "end_row_offset_idx": 7,
               "start_col_offset_idx": 0,
               "end_col_offset_idx": 1,
               "text": "2025",
@@ -1212,10 +1230,10 @@
           ],
           [
             {
-              "row_span": 5,
+              "row_span": 6,
               "col_span": 1,
               "start_row_offset_idx": 1,
-              "end_row_offset_idx": 6,
+              "end_row_offset_idx": 7,
               "start_col_offset_idx": 0,
               "end_col_offset_idx": 1,
               "text": "2025",
@@ -1279,10 +1297,10 @@
           ],
           [
             {
-              "row_span": 5,
+              "row_span": 6,
               "col_span": 1,
               "start_row_offset_idx": 1,
-              "end_row_offset_idx": 6,
+              "end_row_offset_idx": 7,
               "start_col_offset_idx": 0,
               "end_col_offset_idx": 1,
               "text": "2025",
@@ -1346,10 +1364,10 @@
           ],
           [
             {
-              "row_span": 5,
+              "row_span": 6,
               "col_span": 1,
               "start_row_offset_idx": 1,
-              "end_row_offset_idx": 6,
+              "end_row_offset_idx": 7,
               "start_col_offset_idx": 0,
               "end_col_offset_idx": 1,
               "text": "2025",
@@ -1418,7 +1436,7 @@
     {
       "self_ref": "#/tables/2",
       "parent": {
-        "$ref": "#/body"
+        "$ref": "#/texts/2"
       },
       "children": [],
       "content_layer": "body",
@@ -1495,10 +1513,10 @@
             "fillable": false
           },
           {
-            "row_span": 5,
+            "row_span": 7,
             "col_span": 1,
             "start_row_offset_idx": 1,
-            "end_row_offset_idx": 6,
+            "end_row_offset_idx": 8,
             "start_col_offset_idx": 0,
             "end_col_offset_idx": 1,
             "text": "2025",
@@ -1802,10 +1820,10 @@
           ],
           [
             {
-              "row_span": 5,
+              "row_span": 7,
               "col_span": 1,
               "start_row_offset_idx": 1,
-              "end_row_offset_idx": 6,
+              "end_row_offset_idx": 8,
               "start_col_offset_idx": 0,
               "end_col_offset_idx": 1,
               "text": "2025",
@@ -1869,10 +1887,10 @@
           ],
           [
             {
-              "row_span": 5,
+              "row_span": 7,
               "col_span": 1,
               "start_row_offset_idx": 1,
-              "end_row_offset_idx": 6,
+              "end_row_offset_idx": 8,
               "start_col_offset_idx": 0,
               "end_col_offset_idx": 1,
               "text": "2025",
@@ -1936,10 +1954,10 @@
           ],
           [
             {
-              "row_span": 5,
+              "row_span": 7,
               "col_span": 1,
               "start_row_offset_idx": 1,
-              "end_row_offset_idx": 6,
+              "end_row_offset_idx": 8,
               "start_col_offset_idx": 0,
               "end_col_offset_idx": 1,
               "text": "2025",
@@ -2003,10 +2021,10 @@
           ],
           [
             {
-              "row_span": 5,
+              "row_span": 7,
               "col_span": 1,
               "start_row_offset_idx": 1,
-              "end_row_offset_idx": 6,
+              "end_row_offset_idx": 8,
               "start_col_offset_idx": 0,
               "end_col_offset_idx": 1,
               "text": "2025",
@@ -2070,10 +2088,10 @@
           ],
           [
             {
-              "row_span": 5,
+              "row_span": 7,
               "col_span": 1,
               "start_row_offset_idx": 1,
-              "end_row_offset_idx": 6,
+              "end_row_offset_idx": 8,
               "start_col_offset_idx": 0,
               "end_col_offset_idx": 1,
               "text": "2025",

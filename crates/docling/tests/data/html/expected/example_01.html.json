@@ -21,28 +21,7 @@
         "$ref": "#/texts/0"
       },
       {
-        "$ref": "#/texts/1"
-      },
-      {
-        "$ref": "#/texts/2"
-      },
-      {
-        "$ref": "#/texts/3"
-      },
-      {
         "$ref": "#/texts/4"
-      },
-      {
-        "$ref": "#/pictures/0"
-      },
-      {
-        "$ref": "#/groups/0"
-      },
-      {
-        "$ref": "#/groups/1"
-      },
-      {
-        "$ref": "#/groups/2"
       }
     ],
     "content_layer": "body",
@@ -53,7 +32,7 @@
     {
       "self_ref": "#/groups/0",
       "parent": {
-        "$ref": "#/body"
+        "$ref": "#/texts/2"
       },
       "children": [
         {
@@ -70,7 +49,7 @@
     {
       "self_ref": "#/groups/1",
       "parent": {
-        "$ref": "#/body"
+        "$ref": "#/texts/2"
       },
       "children": [
         {
@@ -81,13 +60,13 @@
         }
       ],
       "content_layer": "body",
-      "name": "list",
+      "name": "ordered list",
       "label": "list"
     },
     {
       "self_ref": "#/groups/2",
       "parent": {
-        "$ref": "#/body"
+        "$ref": "#/texts/2"
       },
       "children": [
         {
@@ -98,7 +77,7 @@
         }
       ],
       "content_layer": "body",
-      "name": "list",
+      "name": "ordered list start 42",
       "label": "list"
     }
   ],
@@ -108,7 +87,14 @@
       "parent": {
         "$ref": "#/body"
       },
-      "children": [],
+      "children": [
+        {
+          "$ref": "#/texts/1"
+        },
+        {
+          "$ref": "#/texts/2"
+        }
+      ],
       "content_layer": "body",
       "label": "title",
       "prov": [],
@@ -118,7 +104,7 @@
     {
       "self_ref": "#/texts/1",
       "parent": {
-        "$ref": "#/body"
+        "$ref": "#/texts/0"
       },
       "children": [],
       "content_layer": "body",
@@ -130,9 +116,25 @@
     {
       "self_ref": "#/texts/2",
       "parent": {
-        "$ref": "#/body"
+        "$ref": "#/texts/0"
       },
-      "children": [],
+      "children": [
+        {
+          "$ref": "#/texts/3"
+        },
+        {
+          "$ref": "#/pictures/0"
+        },
+        {
+          "$ref": "#/groups/0"
+        },
+        {
+          "$ref": "#/groups/1"
+        },
+        {
+          "$ref": "#/groups/2"
+        }
+      ],
       "content_layer": "body",
       "label": "section_header",
       "prov": [],
@@ -143,7 +145,7 @@
     {
       "self_ref": "#/texts/3",
       "parent": {
-        "$ref": "#/body"
+        "$ref": "#/texts/2"
       },
       "children": [],
       "content_layer": "body",
@@ -176,7 +178,7 @@
       "orig": "First item in unordered list",
       "text": "First item in unordered list",
       "enumerated": false,
-      "marker": "-"
+      "marker": ""
     },
     {
       "self_ref": "#/texts/6",
@@ -190,7 +192,7 @@
       "orig": "Second item in unordered list",
       "text": "Second item in unordered list",
       "enumerated": false,
-      "marker": "-"
+      "marker": ""
     },
     {
       "self_ref": "#/texts/7",
@@ -204,7 +206,7 @@
       "orig": "First item in ordered list",
       "text": "First item in ordered list",
       "enumerated": true,
-      "marker": "1."
+      "marker": ""
     },
     {
       "self_ref": "#/texts/8",
@@ -218,7 +220,7 @@
       "orig": "Second item in ordered list",
       "text": "Second item in ordered list",
       "enumerated": true,
-      "marker": "2."
+      "marker": ""
     },
     {
       "self_ref": "#/texts/9",
@@ -253,7 +255,7 @@
     {
       "self_ref": "#/pictures/0",
       "parent": {
-        "$ref": "#/body"
+        "$ref": "#/texts/2"
       },
       "children": [],
       "content_layer": "body",

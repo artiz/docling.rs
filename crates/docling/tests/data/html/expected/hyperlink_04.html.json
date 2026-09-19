@@ -36,8 +36,9 @@
       "content_layer": "body",
       "label": "text",
       "prov": [],
-      "orig": "[This is some text.](/start.html)",
-      "text": "[This is some text.](/start.html)"
+      "orig": "This is some text.",
+      "text": "This is some text.",
+      "hyperlink": "/start.html"
     }
   ],
   "pictures": [],

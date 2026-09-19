@@ -36,16 +36,32 @@
         "$ref": "#/body"
       },
       "children": [],
-      "content_layer": "body",
+      "content_layer": "furniture",
       "label": "title",
       "prov": [],
-      "orig": "Café \"René\"",
-      "text": "Café \"René\""
+      "orig": "Legacy page",
+      "text": "Legacy page"
     },
     {
       "self_ref": "#/texts/1",
       "parent": {
         "$ref": "#/body"
+      },
+      "children": [
+        {
+          "$ref": "#/texts/2"
+        }
+      ],
+      "content_layer": "body",
+      "label": "title",
+      "prov": [],
+      "orig": "Café “René”",
+      "text": "Café \"René\""
+    },
+    {
+      "self_ref": "#/texts/2",
+      "parent": {
+        "$ref": "#/texts/1"
       },
       "children": [],
       "content_layer": "body",
