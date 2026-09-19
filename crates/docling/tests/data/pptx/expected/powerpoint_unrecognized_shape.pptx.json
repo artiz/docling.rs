@@ -143,10 +143,10 @@
         {
           "page_no": 1,
           "bbox": {
-            "l": 464343.75,
-            "t": 1419820.31,
-            "r": 8679656.25,
-            "b": 281285.16,
+            "l": 457200.0,
+            "t": 1417638.0,
+            "r": 8686800.0,
+            "b": 274638.0,
             "coord_origin": "BOTTOMLEFT"
           },
           "charspan": [
@@ -170,10 +170,10 @@
         {
           "page_no": 1,
           "bbox": {
-            "l": 464343.75,
-            "t": 6121300.78,
-            "r": 8679656.25,
-            "b": 1593949.22,
+            "l": 457200.0,
+            "t": 6126163.0,
+            "r": 8686800.0,
+            "b": 1600200.0,
             "coord_origin": "BOTTOMLEFT"
           },
           "charspan": [
@@ -185,7 +185,7 @@
       "orig": "Total revenue grew 18% year-over-year.",
       "text": "Total revenue grew 18% year-over-year.",
       "enumerated": false,
-      "marker": "-"
+      "marker": ""
     },
     {
       "self_ref": "#/texts/2",
@@ -199,10 +199,10 @@
         {
           "page_no": 1,
           "bbox": {
-            "l": 464343.75,
-            "t": 6121300.78,
-            "r": 8679656.25,
-            "b": 1593949.22,
+            "l": 457200.0,
+            "t": 6126163.0,
+            "r": 8686800.0,
+            "b": 1600200.0,
             "coord_origin": "BOTTOMLEFT"
           },
           "charspan": [
@@ -214,7 +214,7 @@
       "orig": "Enterprise segment led growth at 24%.",
       "text": "Enterprise segment led growth at 24%.",
       "enumerated": false,
-      "marker": "-"
+      "marker": ""
     },
     {
       "self_ref": "#/texts/3",
@@ -228,10 +228,10 @@
         {
           "page_no": 1,
           "bbox": {
-            "l": 464343.75,
-            "t": 6121300.78,
-            "r": 8679656.25,
-            "b": 1593949.22,
+            "l": 457200.0,
+            "t": 6126163.0,
+            "r": 8686800.0,
+            "b": 1600200.0,
             "coord_origin": "BOTTOMLEFT"
           },
           "charspan": [
@@ -243,7 +243,7 @@
       "orig": "APAC region exceeded targets by 12%.",
       "text": "APAC region exceeded targets by 12%.",
       "enumerated": false,
-      "marker": "-"
+      "marker": ""
     },
     {
       "self_ref": "#/texts/4",
@@ -252,15 +252,15 @@
       },
       "children": [],
       "content_layer": "body",
-      "label": "text",
+      "label": "paragraph",
       "prov": [
         {
           "page_no": 2,
           "bbox": {
-            "l": 910828.13,
-            "t": 2745878.91,
-            "r": 8233171.88,
-            "b": 910828.13,
+            "l": 914400.0,
+            "t": 2743200.0,
+            "r": 8229600.0,
+            "b": 914400.0,
             "coord_origin": "BOTTOMLEFT"
           },
           "charspan": [
@@ -279,15 +279,15 @@
       },
       "children": [],
       "content_layer": "body",
-      "label": "text",
+      "label": "paragraph",
       "prov": [
         {
           "page_no": 2,
           "bbox": {
-            "l": 910828.13,
-            "t": 2745878.91,
-            "r": 8233171.88,
-            "b": 910828.13,
+            "l": 914400.0,
+            "t": 2743200.0,
+            "r": 8229600.0,
+            "b": 914400.0,
             "coord_origin": "BOTTOMLEFT"
           },
           "charspan": [
@@ -306,15 +306,15 @@
       },
       "children": [],
       "content_layer": "body",
-      "label": "text",
+      "label": "paragraph",
       "prov": [
         {
           "page_no": 2,
           "bbox": {
-            "l": 910828.13,
-            "t": 2745878.91,
-            "r": 8233171.88,
-            "b": 910828.13,
+            "l": 914400.0,
+            "t": 2743200.0,
+            "r": 8229600.0,
+            "b": 914400.0,
             "coord_origin": "BOTTOMLEFT"
           },
           "charspan": [
@@ -333,15 +333,15 @@
       },
       "children": [],
       "content_layer": "body",
-      "label": "text",
+      "label": "paragraph",
       "prov": [
         {
           "page_no": 2,
           "bbox": {
             "l": 0.0,
             "t": 6858000.0,
-            "r": 9126140.63,
-            "b": 13394.53,
+            "r": 9144000.0,
+            "b": 0.0,
             "coord_origin": "BOTTOMLEFT"
           },
           "charspan": [
@@ -365,10 +365,10 @@
         {
           "page_no": 3,
           "bbox": {
-            "l": 464343.75,
-            "t": 1419820.31,
-            "r": 8679656.25,
-            "b": 281285.16,
+            "l": 457200.0,
+            "t": 1417638.0,
+            "r": 8686800.0,
+            "b": 274638.0,
             "coord_origin": "BOTTOMLEFT"
           },
           "charspan": [
@@ -392,10 +392,10 @@
         {
           "page_no": 3,
           "bbox": {
-            "l": 464343.75,
-            "t": 6121300.78,
-            "r": 8679656.25,
-            "b": 1593949.22,
+            "l": 457200.0,
+            "t": 6126163.0,
+            "r": 8686800.0,
+            "b": 1600200.0,
             "coord_origin": "BOTTOMLEFT"
           },
           "charspan": [
@@ -407,7 +407,7 @@
       "orig": "1. Finalize pricing model",
       "text": "1. Finalize pricing model",
       "enumerated": false,
-      "marker": "-"
+      "marker": ""
     },
     {
       "self_ref": "#/texts/10",
@@ -421,10 +421,10 @@
         {
           "page_no": 3,
           "bbox": {
-            "l": 464343.75,
-            "t": 6121300.78,
-            "r": 8679656.25,
-            "b": 1593949.22,
+            "l": 457200.0,
+            "t": 6126163.0,
+            "r": 8686800.0,
+            "b": 1600200.0,
             "coord_origin": "BOTTOMLEFT"
           },
           "charspan": [
@@ -436,7 +436,7 @@
       "orig": "2. Launch APAC campaign",
       "text": "2. Launch APAC campaign",
       "enumerated": false,
-      "marker": "-"
+      "marker": ""
     },
     {
       "self_ref": "#/texts/11",
@@ -450,10 +450,10 @@
         {
           "page_no": 3,
           "bbox": {
-            "l": 464343.75,
-            "t": 6121300.78,
-            "r": 8679656.25,
-            "b": 1593949.22,
+            "l": 457200.0,
+            "t": 6126163.0,
+            "r": 8686800.0,
+            "b": 1600200.0,
             "coord_origin": "BOTTOMLEFT"
           },
           "charspan": [
@@ -465,7 +465,7 @@
       "orig": "3. Hire 3 additional SEs",
       "text": "3. Hire 3 additional SEs",
       "enumerated": false,
-      "marker": "-"
+      "marker": ""
     }
   ],
   "pictures": [],

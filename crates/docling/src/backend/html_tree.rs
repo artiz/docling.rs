@@ -949,6 +949,7 @@ impl<'a> Walker<'a> {
                         image: None,
                         classification: Some(class_name),
                         chart: None,
+                        dpi: None,
                     },
                 );
                 let mut raw = String::new();
@@ -1599,6 +1600,7 @@ impl<'a> Walker<'a> {
                 image,
                 classification: None,
                 chart: None,
+                dpi: None,
             },
         )
     }

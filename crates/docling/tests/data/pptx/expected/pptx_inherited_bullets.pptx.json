@@ -91,10 +91,10 @@
         {
           "page_no": 1,
           "bbox": {
-            "l": 464343.75,
-            "t": 3201292.97,
-            "r": 5947171.88,
-            "b": 455414.06,
+            "l": 457200.0,
+            "t": 3200400.0,
+            "r": 5943600.0,
+            "b": 457200.0,
             "coord_origin": "BOTTOMLEFT"
           },
           "charspan": [
@@ -106,7 +106,7 @@
       "orig": "Level 1 bullet inherited from the shape's list style",
       "text": "Level 1 bullet inherited from the shape's list style",
       "enumerated": false,
-      "marker": "-"
+      "marker": ""
     },
     {
       "self_ref": "#/texts/1",
@@ -120,10 +120,10 @@
         {
           "page_no": 1,
           "bbox": {
-            "l": 464343.75,
-            "t": 3201292.97,
-            "r": 5947171.88,
-            "b": 455414.06,
+            "l": 457200.0,
+            "t": 3200400.0,
+            "r": 5943600.0,
+            "b": 457200.0,
             "coord_origin": "BOTTOMLEFT"
           },
           "charspan": [
@@ -135,7 +135,7 @@
       "orig": "Level 2 bullet inherited from the shape's list style",
       "text": "Level 2 bullet inherited from the shape's list style",
       "enumerated": false,
-      "marker": "-"
+      "marker": ""
     },
     {
       "self_ref": "#/texts/2",
@@ -149,10 +149,10 @@
         {
           "page_no": 1,
           "bbox": {
-            "l": 464343.75,
-            "t": 3201292.97,
-            "r": 5947171.88,
-            "b": 455414.06,
+            "l": 457200.0,
+            "t": 3200400.0,
+            "r": 5943600.0,
+            "b": 457200.0,
             "coord_origin": "BOTTOMLEFT"
           },
           "charspan": [
@@ -178,10 +178,10 @@
         {
           "page_no": 1,
           "bbox": {
-            "l": 464343.75,
-            "t": 4567535.16,
-            "r": 5947171.88,
-            "b": 3656707.03,
+            "l": 457200.0,
+            "t": 4572000.0,
+            "r": 5943600.0,
+            "b": 3657600.0,
             "coord_origin": "BOTTOMLEFT"
           },
           "charspan": [
@@ -193,7 +193,7 @@
       "orig": "Bullet declared directly on the paragraph (control)",
       "text": "Bullet declared directly on the paragraph (control)",
       "enumerated": false,
-      "marker": "-"
+      "marker": ""
     }
   ],
   "pictures": [],

@@ -1163,6 +1163,7 @@ impl Walker {
                     image: img,
                     classification: None,
                     chart: None,
+                    dpi: None,
                 },
             ));
         }
@@ -1182,6 +1183,7 @@ impl Walker {
                 image: None,
                 classification: None,
                 chart: None,
+                dpi: None,
             },
         );
     }
@@ -1214,6 +1216,7 @@ impl Walker {
                 image: None,
                 classification: spec.map(|(kind, _, _)| kind.clone()),
                 chart: spec.map(|(_, _, table)| table.clone()),
+                dpi: None,
             },
         ))
     }
