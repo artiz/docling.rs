@@ -186,6 +186,11 @@ impl DeclarativeBackend for MarkdownBackend {
         let mut doc = DoclingDocument::new(&source.name);
         let mut i = 0;
         self.parse_blocks(&events, &mut i, &mut doc.nodes, 0, Stop::Eof, 0);
+        // The JSON serializes docling's item tree — marko's CommonMark view of
+        // the document, walked as upstream does ([`super::md_tree`]); the flat
+        // nodes above stay the source for every other serializer. A document
+        // with a raw HTML block keeps the flat export (see the module docs).
+        doc.tree = super::md_tree::build_tree(text);
         Ok(doc)
     }
 }
@@ -206,7 +211,7 @@ const MAX_NESTING: u16 = 100;
 
 /// Skip the balanced event subtree that starts at the `Start` event under
 /// `*i` (inclusive of its `End`), without recursion.
-fn skip_subtree(events: &[Event], i: &mut usize) {
+pub(super) fn skip_subtree(events: &[Event], i: &mut usize) {
     let mut depth = 0usize;
     while *i < events.len() {
         match &events[*i] {
@@ -729,7 +734,7 @@ pub(crate) fn escape_underscores(text: &str) -> String {
 /// Decode the HTML entities docling's `html.unescape` resolves for the cases we
 /// see (named common + numeric). Used for code spans/blocks, which pulldown
 /// leaves literal but docling decodes.
-fn unescape_entities(text: &str) -> String {
+pub(super) fn unescape_entities(text: &str) -> String {
     let mut out = String::with_capacity(text.len());
     let bytes = text.as_bytes();
     let mut idx = 0;

@@ -18,29 +18,59 @@
     "self_ref": "#/body",
     "children": [
       {
-        "$ref": "#/tables/0"
-      },
-      {
-        "$ref": "#/tables/1"
+        "$ref": "#/groups/0"
       }
     ],
     "content_layer": "body",
     "name": "_root_",
     "label": "unspecified"
   },
-  "groups": [],
+  "groups": [
+    {
+      "self_ref": "#/groups/0",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [
+        {
+          "$ref": "#/tables/0"
+        },
+        {
+          "$ref": "#/tables/1"
+        }
+      ],
+      "content_layer": "body",
+      "name": "sheet: Sheet1",
+      "label": "section"
+    }
+  ],
   "texts": [],
   "pictures": [],
   "tables": [
     {
       "self_ref": "#/tables/0",
       "parent": {
-        "$ref": "#/body"
+        "$ref": "#/groups/0"
       },
       "children": [],
       "content_layer": "body",
       "label": "table",
-      "prov": [],
+      "prov": [
+        {
+          "page_no": 1,
+          "bbox": {
+            "l": 1.0,
+            "t": 1.0,
+            "r": 2.0,
+            "b": 2.0,
+            "coord_origin": "TOPLEFT"
+          },
+          "charspan": [
+            0,
+            0
+          ]
+        }
+      ],
       "captions": [],
       "references": [],
       "footnotes": [],
@@ -86,12 +116,27 @@
     {
       "self_ref": "#/tables/1",
       "parent": {
-        "$ref": "#/body"
+        "$ref": "#/groups/0"
       },
       "children": [],
       "content_layer": "body",
       "label": "table",
-      "prov": [],
+      "prov": [
+        {
+          "page_no": 1,
+          "bbox": {
+            "l": 1.0,
+            "t": 3.0,
+            "r": 3.0,
+            "b": 10.0,
+            "coord_origin": "TOPLEFT"
+          },
+          "charspan": [
+            0,
+            0
+          ]
+        }
+      ],
       "captions": [],
       "references": [],
       "footnotes": [],
@@ -487,5 +532,13 @@
   ],
   "key_value_items": [],
   "form_items": [],
-  "pages": {}
+  "pages": {
+    "1": {
+      "size": {
+        "width": 2.0,
+        "height": 9.0
+      },
+      "page_no": 1
+    }
+  }
 }

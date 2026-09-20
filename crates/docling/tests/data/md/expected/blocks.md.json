@@ -134,7 +134,7 @@
       "orig": "foo",
       "text": "foo",
       "enumerated": false,
-      "marker": "-"
+      "marker": ""
     },
     {
       "self_ref": "#/texts/2",

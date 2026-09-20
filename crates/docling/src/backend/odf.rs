@@ -39,12 +39,12 @@ use docling_core::{
 pub struct OdfBackend;
 
 #[derive(Default, Clone, Copy, PartialEq)]
-struct Fmt {
-    bold: bool,
-    italic: bool,
-    strike: bool,
-    underline: bool,
-    script: u8, // 0 none, 1 sub, 2 super
+pub(super) struct Fmt {
+    pub(super) bold: bool,
+    pub(super) italic: bool,
+    pub(super) strike: bool,
+    pub(super) underline: bool,
+    pub(super) script: u8, // 0 none, 1 sub, 2 super
 }
 
 impl Fmt {
@@ -97,17 +97,22 @@ type ListStyles = HashMap<String, HashMap<i64, OdfLevel>>;
 /// data grid, keyed in [`Styles::charts`] by the object name a `<draw:object>`
 /// references (e.g. `Object 1`).
 #[derive(Clone)]
-struct ChartInfo {
-    kind: String,
-    table: Table,
+pub(super) struct ChartInfo {
+    pub(super) kind: String,
+    pub(super) table: Table,
 }
 
-struct Styles {
+pub(super) struct Styles {
     map: HashMap<String, StyleInfo>,
     lists: ListStyles,
     /// Embedded chart objects by name (`Object 1` → chart). Empty for documents
     /// with no charts.
-    charts: HashMap<String, ChartInfo>,
+    pub(super) charts: HashMap<String, ChartInfo>,
+    /// The package's decodable bitmap parts by name (`Pictures/x.png` →
+    /// pixels), read for the JSON item tree: docling's `_add_odf_images`
+    /// adds a picture only when PIL can open the part, and writes its
+    /// `image` payload. The flat nodes keep their unloaded placeholders.
+    pub(super) images: HashMap<String, PictureImage>,
     /// The package's part names (`Pictures/1000.png`, …); `None` for flat ODF,
     /// where every image is inline `<office:binary-data>`. Decides whether a
     /// `draw:image` `xlink:href` is an embedded picture or an *external*
@@ -163,6 +168,19 @@ pub(crate) fn convert_odf(
         if let Some(pkg) = pkg.as_mut() {
             styles.parts = Some(pkg.names().map(str::to_string).collect());
             styles.charts = load_charts(pkg, &content_dom, &styles);
+            let names: Vec<String> = pkg
+                .names()
+                .filter(|n| n.starts_with("Pictures/"))
+                .map(str::to_string)
+                .collect();
+            for name in names {
+                if let Some(img) = pkg
+                    .read_bytes(&name)
+                    .and_then(|b| crate::backend::ooxml::picture_image(&name, b))
+                {
+                    styles.images.insert(name, img);
+                }
+            }
         }
 
         let mut doc = DoclingDocument::new(&source.name);
@@ -176,12 +194,26 @@ pub(crate) fn convert_odf(
         else {
             return Ok(doc);
         };
+        // The JSON serializes docling's item tree, built by a call-for-call
+        // port of upstream's walk ([`super::odf_tree`]) over the same
+        // container the flat walk reads; the flat nodes stay the source for
+        // Markdown / DocLang / LaTeX.
+        let mut built: Option<super::odf_tree::Built> = None;
         let mut wrapped = false;
         for office in body.children().filter(XmlNode::is_element) {
             match office.tag_name().name() {
-                "text" => walk_text(office, &styles, &mut doc),
-                "spreadsheet" => walk_spreadsheet(office, &styles, &mut doc),
-                "presentation" => walk_presentation(office, &styles, &mut doc),
+                "text" => {
+                    walk_text(office, &styles, &mut doc);
+                    built = Some(super::odf_tree::build_text(office, &styles));
+                }
+                "spreadsheet" => {
+                    walk_spreadsheet(office, &styles, &mut doc);
+                    built = Some(super::odf_tree::build_spreadsheet(office, &styles));
+                }
+                "presentation" => {
+                    walk_presentation(office, &styles, &mut doc);
+                    built = Some(super::odf_tree::build_presentation(office, &styles));
+                }
                 _ => continue,
             }
             wrapped = true;
@@ -193,11 +225,27 @@ pub(crate) fn convert_odf(
             let class = attr(content_dom.root_element(), "class");
             if class == Some("presentation") || body.children().any(|c| c.has_tag_name("page")) {
                 walk_presentation(body, &styles, &mut doc);
+                built = Some(super::odf_tree::build_presentation(body, &styles));
             } else if class == Some("spreadsheet") {
                 walk_spreadsheet(body, &styles, &mut doc);
+                built = Some(super::odf_tree::build_spreadsheet(body, &styles));
             } else {
                 walk_text(body, &styles, &mut doc);
+                built = Some(super::odf_tree::build_text(body, &styles));
             }
+        }
+        if let Some(built) = built {
+            // A spreadsheet's sheets are pages of the JSON, sized like
+            // docling's `_find_page_size`; the markers feed the export's
+            // `pages` map and nothing else (DocLang and Markdown ignore them).
+            for (page_no, width, height) in built.pages {
+                doc.push(Node::PageInfo {
+                    page_no,
+                    width: width as f32,
+                    height: height as f32,
+                });
+            }
+            doc.tree = Some(built.tree);
         }
         Ok(doc)
     }
@@ -205,7 +253,7 @@ pub(crate) fn convert_odf(
 
 /// Whether an element is a list container: ODF's `<text:list>` or OpenOffice
 /// 1.x's `<text:ordered-list>` / `<text:unordered-list>` (#215).
-fn is_list_tag(name: &str) -> bool {
+pub(super) fn is_list_tag(name: &str) -> bool {
     matches!(name, "list" | "ordered-list" | "unordered-list")
 }
 
@@ -256,6 +304,7 @@ fn parse_styles(content: &Document, styles: Option<&Document>) -> Styles {
         map,
         lists,
         charts: HashMap::new(),
+        images: HashMap::new(),
         parts: None,
         fetch_images: false,
     }
@@ -316,7 +365,7 @@ fn load_charts(
 /// `PictureClassificationLabel` chart kind — exactly docling's
 /// `_ODF_CHART_CLASS_TO_PICTURE_CLASSIFICATION` (unmapped classes fall back
 /// to `other_chart` at the call site).
-fn chart_kind(class: &str) -> Option<&'static str> {
+pub(super) fn chart_kind(class: &str) -> Option<&'static str> {
     match class {
         "chart:bar" => Some("bar_chart"),
         "chart:line" => Some("line_chart"),
@@ -365,7 +414,7 @@ fn is_bold(v: &str) -> bool {
 }
 
 /// Resolve a text/paragraph style's formatting through its parent chain.
-fn resolve_fmt(styles: &Styles, name: Option<&str>, base: Fmt) -> Fmt {
+pub(super) fn resolve_fmt(styles: &Styles, name: Option<&str>, base: Fmt) -> Fmt {
     let mut fmt = base;
     let mut chain = Vec::new();
     let mut cur = name.map(str::to_string);
@@ -403,7 +452,7 @@ fn resolve_fmt(styles: &Styles, name: Option<&str>, base: Fmt) -> Fmt {
 }
 
 /// The set of style names a paragraph resolves to (own, parent, display).
-fn paragraph_style_names(styles: &Styles, name: Option<&str>) -> Vec<String> {
+pub(super) fn paragraph_style_names(styles: &Styles, name: Option<&str>) -> Vec<String> {
     let mut out = Vec::new();
     if let Some(n) = name {
         out.push(n.to_string());
@@ -423,12 +472,12 @@ fn paragraph_style_names(styles: &Styles, name: Option<&str>) -> Vec<String> {
 
 /// One formatted run of text.
 #[derive(Clone)]
-struct Run {
-    text: String,
-    fmt: Fmt,
+pub(super) struct Run {
+    pub(super) text: String,
+    pub(super) fmt: Fmt,
     /// The `<text:a xlink:href>` target the run sits under (docling#3949,
     /// 2.120): rendered as a Markdown link around the run.
-    href: Option<String>,
+    pub(super) href: Option<String>,
 }
 
 /// docling's `_odf_hyperlink_from_href`: a parseable absolute URL is kept
@@ -436,7 +485,7 @@ struct Run {
 /// `/`), a relative target (`guide.odt#part`, `#part`) is kept as a path, and
 /// something that *looks* absolute (has a scheme) but does not parse
 /// (`http://[::1`, `http://`, `http:`) is dropped rather than guessed at.
-fn hyperlink_from_href(href: Option<&str>) -> Option<String> {
+pub(super) fn hyperlink_from_href(href: Option<&str>) -> Option<String> {
     let href = href?.trim();
     if href.is_empty() {
         return None;
@@ -478,7 +527,7 @@ fn hyperlink_from_href(href: Option<&str>) -> Option<String> {
 }
 
 /// Collect runs from a paragraph/heading element (recursing spans).
-fn collect_runs(el: XmlNode, styles: &Styles, base: Fmt, out: &mut Vec<Run>) {
+pub(super) fn collect_runs(el: XmlNode, styles: &Styles, base: Fmt, out: &mut Vec<Run>) {
     collect_runs_linked(el, styles, base, None, out)
 }
 
@@ -836,7 +885,7 @@ fn emit_frame_graphic(frame: XmlNode, styles: &Styles, doc: &mut DoclingDocument
 /// what a packaged file stores as a separate object part: the object wraps a
 /// whole `<office:document>` whose `<chart:chart>` and data `<table:table>`
 /// sit right in the content DOM.
-fn inline_chart(obj: XmlNode, styles: &Styles) -> Option<ChartInfo> {
+pub(super) fn inline_chart(obj: XmlNode, styles: &Styles) -> Option<ChartInfo> {
     let chart = obj.descendants().find(|n| n.has_tag_name("chart"))?;
     let kind = attr(chart, "class")
         .and_then(chart_kind)
@@ -865,7 +914,7 @@ struct ListCont {
 }
 
 /// A list's item elements (`<text:list-item>` / `<text:list-header>`).
-fn list_items<'a, 'i>(list: XmlNode<'a, 'i>) -> impl Iterator<Item = XmlNode<'a, 'i>> {
+pub(super) fn list_items<'a, 'i>(list: XmlNode<'a, 'i>) -> impl Iterator<Item = XmlNode<'a, 'i>> {
     list.children()
         .filter(|c| c.has_tag_name("list-item") || c.has_tag_name("list-header"))
 }
@@ -873,7 +922,7 @@ fn list_items<'a, 'i>(list: XmlNode<'a, 'i>) -> impl Iterator<Item = XmlNode<'a,
 /// An item's rendered text (its direct paragraphs' runs, cleaned to single lines)
 /// and its directly-nested `<text:list>` elements. Mirrors docling's
 /// `_odf_list_item_content` with `flatten_nested_text=False`.
-fn odf_item_content<'a, 'i>(
+pub(super) fn odf_item_content<'a, 'i>(
     item: XmlNode<'a, 'i>,
     styles: &Styles,
 ) -> (String, Vec<XmlNode<'a, 'i>>) {
@@ -898,7 +947,7 @@ fn odf_item_content<'a, 'i>(
 
 /// Split on newlines, strip each line, drop the blanks, re-join with spaces —
 /// docling's `_clean_odf_text_lines` joined.
-fn clean_lines(text: &str) -> String {
+pub(super) fn clean_lines(text: &str) -> String {
     text.lines()
         .map(str::trim)
         .filter(|l| !l.is_empty())
@@ -907,7 +956,7 @@ fn clean_lines(text: &str) -> String {
 }
 
 /// Whether a list renders anything (any item with text, or a renderable nested list).
-fn list_has_renderable(list: XmlNode, styles: &Styles) -> bool {
+pub(super) fn list_has_renderable(list: XmlNode, styles: &Styles) -> bool {
     list_items(list).any(|item| {
         let (text, nested) = odf_item_content(item, styles);
         !text.is_empty() || nested.iter().any(|n| list_has_renderable(*n, styles))
@@ -915,13 +964,13 @@ fn list_has_renderable(list: XmlNode, styles: &Styles) -> bool {
 }
 
 /// Whether any item carries direct text (vs. only nested lists).
-fn list_has_direct_text(list: XmlNode, styles: &Styles) -> bool {
+pub(super) fn list_has_direct_text(list: XmlNode, styles: &Styles) -> bool {
     list_items(list).any(|item| !odf_item_content(item, styles).0.is_empty())
 }
 
 /// Whether the first item is empty but wraps a renderable nested list — the
 /// signal that this list continues the previous one's numbering.
-fn list_starts_with_empty_nested(list: XmlNode, styles: &Styles) -> bool {
+pub(super) fn list_starts_with_empty_nested(list: XmlNode, styles: &Styles) -> bool {
     if let Some(item) = list_items(list).next() {
         let (text, nested) = odf_item_content(item, styles);
         return text.is_empty() && nested.iter().any(|n| list_has_renderable(*n, styles));
@@ -933,7 +982,12 @@ fn list_starts_with_empty_nested(list: XmlNode, styles: &Styles) -> bool {
 /// the inherited `fallback` — docling's `_odf_list_level_is_enumerated`. The
 /// OO1.x tags decide for themselves (#215): `<text:ordered-list>` is numbered,
 /// `<text:unordered-list>` is bulleted, whatever the inherited fallback says.
-fn level_is_enumerated(styles: &Styles, list: XmlNode, level: i64, fallback: bool) -> bool {
+pub(super) fn level_is_enumerated(
+    styles: &Styles,
+    list: XmlNode,
+    level: i64,
+    fallback: bool,
+) -> bool {
     attr(list, "style-name")
         .and_then(|name| styles.lists.get(name))
         .and_then(|levels| levels.get(&level))
@@ -946,7 +1000,7 @@ fn level_is_enumerated(styles: &Styles, list: XmlNode, level: i64, fallback: boo
 }
 
 /// A list level's `start-value` (default 1).
-fn level_start(styles: &Styles, list: XmlNode, level: i64) -> i64 {
+pub(super) fn level_start(styles: &Styles, list: XmlNode, level: i64) -> i64 {
     attr(list, "style-name")
         .and_then(|name| styles.lists.get(name))
         .and_then(|levels| levels.get(&level))
@@ -956,7 +1010,7 @@ fn level_start(styles: &Styles, list: XmlNode, level: i64) -> i64 {
 
 /// A level's `num-prefix`/`num-suffix` — the affixes wrapping an enumerated
 /// marker (e.g. `"" / "."` → `1.`).
-fn level_affixes(styles: &Styles, list: XmlNode, level: i64) -> (String, String) {
+pub(super) fn level_affixes(styles: &Styles, list: XmlNode, level: i64) -> (String, String) {
     attr(list, "style-name")
         .and_then(|name| styles.lists.get(name))
         .and_then(|levels| levels.get(&level))
@@ -1271,7 +1325,7 @@ fn cell_blocks_of(tc: XmlNode, styles: &Styles) -> Vec<Node> {
 /// non-empty paragraph, or any non-empty paragraph in a cell without a typed
 /// value (`office:value-type`) — presentation tables never type their cells, so
 /// their text cells are all rich (docling's `cell.value is None` clause).
-fn is_rich_cell(tc: XmlNode, styles: &Styles) -> bool {
+pub(super) fn is_rich_cell(tc: XmlNode, styles: &Styles) -> bool {
     if cell_has_image(tc) {
         return true;
     }
@@ -1296,12 +1350,12 @@ fn is_rich_cell(tc: XmlNode, styles: &Styles) -> bool {
 }
 
 /// A cell/paragraph holding a bitmap image (`<draw:image>`).
-fn cell_has_image(n: XmlNode) -> bool {
+pub(super) fn cell_has_image(n: XmlNode) -> bool {
     n.descendants().any(|d| d.has_tag_name("image"))
 }
 
 /// Whether a nested table has any non-empty cell.
-fn table_has_content(table: XmlNode) -> bool {
+pub(super) fn table_has_content(table: XmlNode) -> bool {
     table
         .descendants()
         .filter(|n| n.has_tag_name("table-cell"))
@@ -1310,7 +1364,7 @@ fn table_has_content(table: XmlNode) -> bool {
 
 /// A plain cell's text: its paragraphs' unformatted text, blank-line-joined
 /// (docling's `str(cell.value)` — subscripts inline, no Markdown markers).
-fn plain_cell_text(tc: XmlNode) -> String {
+pub(super) fn plain_cell_text(tc: XmlNode) -> String {
     tc.children()
         .filter(|c| c.has_tag_name("p") || c.has_tag_name("h"))
         .map(para_plain_text)
@@ -1321,7 +1375,7 @@ fn plain_cell_text(tc: XmlNode) -> String {
 
 /// A paragraph's unformatted text, expanding `<text:s>`/`<text:tab>`/
 /// `<text:line-break>` but dropping span formatting.
-fn para_plain_text(el: XmlNode) -> String {
+pub(super) fn para_plain_text(el: XmlNode) -> String {
     let mut out = String::new();
     para_plain_into(el, &mut out);
     out
@@ -1515,7 +1569,7 @@ pub(crate) fn emit_sheet_regions(
 }
 
 /// A `number-*-repeated` attribute, at least 1.
-fn repeat(node: XmlNode, name: &str) -> usize {
+pub(super) fn repeat(node: XmlNode, name: &str) -> usize {
     attr(node, name)
         .and_then(|v| v.parse().ok())
         .filter(|&n: &usize| n >= 1)
@@ -1524,7 +1578,7 @@ fn repeat(node: XmlNode, name: &str) -> usize {
 
 /// An ODS cell's plain text — its paragraphs' text, newline-joined (github tables
 /// are unescaped, matching docling's `_odf_cell_text` display).
-fn ods_cell_text(cell: XmlNode) -> String {
+pub(super) fn ods_cell_text(cell: XmlNode) -> String {
     cell.children()
         .filter(|c| c.has_tag_name("p") || c.has_tag_name("h"))
         .map(|p| {
@@ -1571,7 +1625,7 @@ fn walk_presentation(pres: XmlNode, styles: &Styles, doc: &mut DoclingDocument) 
 /// A flat-ODF image with no href at all (#215) carries its payload inline as
 /// `<office:binary-data>`, so the decoded magic bytes decide instead — that is
 /// how the SVM previews flat files keep alongside their real bitmaps stay out.
-fn image_can_be_bitmap(img: XmlNode, href: &str) -> bool {
+pub(super) fn image_can_be_bitmap(img: XmlNode, href: &str) -> bool {
     if let Some(mime) = attr(img, "mime-type") {
         return mime.starts_with("image/") && mime != "image/svg+xml";
     }
@@ -1620,7 +1674,7 @@ fn is_raster_magic(b: &[u8]) -> bool {
 
 /// Any non-blank text anywhere under the element (docling's
 /// `_clean_odf_text_lines(text_recursive)` non-emptiness).
-fn element_has_text(el: XmlNode) -> bool {
+pub(super) fn element_has_text(el: XmlNode) -> bool {
     el.descendants()
         .filter(|n| n.is_text())
         .any(|n| !n.text().unwrap_or("").trim().is_empty())
@@ -1628,14 +1682,14 @@ fn element_has_text(el: XmlNode) -> bool {
 
 /// docling's `_is_slide_title_element`: an explicit `presentation:class="title"`,
 /// or a `draw:custom-shape` holding the slide's first text content.
-fn is_slide_title_element(el: XmlNode, is_first_text_content: bool) -> bool {
+pub(super) fn is_slide_title_element(el: XmlNode, is_first_text_content: bool) -> bool {
     if attr(el, "class") == Some("title") {
         return true;
     }
     is_first_text_content && el.tag_name().name() == "custom-shape"
 }
 
-fn slide_has_visible_title(page: XmlNode) -> bool {
+pub(super) fn slide_has_visible_title(page: XmlNode) -> bool {
     let mut seen_text = false;
     for el in page.children().filter(XmlNode::is_element) {
         let tag = el.tag_name().name();
@@ -1776,7 +1830,7 @@ fn walk_textbox_children<'a, 'i: 'a>(
 }
 
 /// Attribute by local name (ODF attributes are namespaced, e.g. `text:style-name`).
-fn attr<'a>(node: XmlNode<'a, '_>, name: &str) -> Option<&'a str> {
+pub(super) fn attr<'a>(node: XmlNode<'a, '_>, name: &str) -> Option<&'a str> {
     node.attributes()
         .find(|a| a.name() == name)
         .map(|a| a.value())
