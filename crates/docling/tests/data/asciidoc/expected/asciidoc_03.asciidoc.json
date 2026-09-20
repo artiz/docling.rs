@@ -156,10 +156,10 @@
       },
       "children": [],
       "content_layer": "body",
-      "label": "caption",
+      "label": "text",
       "prov": [],
-      "orig": "Procedure",
-      "text": "Procedure"
+      "orig": "**Procedure**",
+      "text": "**Procedure**"
     },
     {
       "self_ref": "#/texts/6",
@@ -224,10 +224,10 @@
       },
       "children": [],
       "content_layer": "body",
-      "label": "caption",
+      "label": "text",
       "prov": [],
-      "orig": "Verification",
-      "text": "Verification"
+      "orig": "**Verification**",
+      "text": "**Verification**"
     },
     {
       "self_ref": "#/texts/11",

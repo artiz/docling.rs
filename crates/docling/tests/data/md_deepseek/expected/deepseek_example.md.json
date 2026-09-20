@@ -222,7 +222,7 @@
             "start_col_offset_idx": 3,
             "end_col_offset_idx": 4,
             "text": "simple",
-            "column_header": true,
+            "column_header": false,
             "row_header": false,
             "row_section": false,
             "fillable": false
@@ -235,7 +235,7 @@
             "start_col_offset_idx": 4,
             "end_col_offset_idx": 5,
             "text": "complex",
-            "column_header": true,
+            "column_header": false,
             "row_header": false,
             "row_section": false,
             "fillable": false
@@ -248,7 +248,7 @@
             "start_col_offset_idx": 5,
             "end_col_offset_idx": 6,
             "text": "all",
-            "column_header": true,
+            "column_header": false,
             "row_header": false,
             "row_section": false,
             "fillable": false
@@ -1140,7 +1140,7 @@
               "start_col_offset_idx": 3,
               "end_col_offset_idx": 4,
               "text": "simple",
-              "column_header": true,
+              "column_header": false,
               "row_header": false,
               "row_section": false,
               "fillable": false
@@ -1153,7 +1153,7 @@
               "start_col_offset_idx": 4,
               "end_col_offset_idx": 5,
               "text": "complex",
-              "column_header": true,
+              "column_header": false,
               "row_header": false,
               "row_section": false,
               "fillable": false
@@ -1166,7 +1166,7 @@
               "start_col_offset_idx": 5,
               "end_col_offset_idx": 6,
               "text": "all",
-              "column_header": true,
+              "column_header": false,
               "row_header": false,
               "row_section": false,
               "fillable": false

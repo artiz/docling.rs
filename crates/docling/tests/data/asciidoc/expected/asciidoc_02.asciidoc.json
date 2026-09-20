@@ -45,49 +45,49 @@
         "$ref": "#/texts/19"
       },
       {
-        "$ref": "#/tables/0"
+        "$ref": "#/pictures/0"
       },
       {
         "$ref": "#/texts/20"
       },
       {
-        "$ref": "#/tables/1"
+        "$ref": "#/pictures/1"
       },
       {
         "$ref": "#/texts/21"
       },
       {
-        "$ref": "#/tables/2"
+        "$ref": "#/tables/0"
       },
       {
         "$ref": "#/texts/22"
       },
       {
-        "$ref": "#/tables/3"
+        "$ref": "#/tables/1"
       },
       {
         "$ref": "#/texts/23"
       },
       {
-        "$ref": "#/tables/4"
+        "$ref": "#/tables/2"
       },
       {
         "$ref": "#/texts/24"
       },
       {
-        "$ref": "#/tables/5"
+        "$ref": "#/tables/3"
       },
       {
         "$ref": "#/texts/25"
       },
       {
-        "$ref": "#/pictures/0"
+        "$ref": "#/tables/4"
       },
       {
         "$ref": "#/texts/26"
       },
       {
-        "$ref": "#/pictures/1"
+        "$ref": "#/tables/5"
       }
     ],
     "content_layer": "body",
@@ -456,13 +456,26 @@
       },
       "children": [],
       "content_layer": "body",
+      "label": "section_header",
+      "prov": [],
+      "orig": "SubSubSection 2.1.1",
+      "text": "SubSubSection 2.1.1",
+      "level": 3
+    },
+    {
+      "self_ref": "#/texts/18",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
       "label": "text",
       "prov": [],
       "orig": "bla bla bla bli bla ble",
       "text": "bla bla bla bli bla ble"
     },
     {
-      "self_ref": "#/texts/18",
+      "self_ref": "#/texts/19",
       "parent": {
         "$ref": "#/body"
       },
@@ -475,7 +488,19 @@
       "level": 1
     },
     {
-      "self_ref": "#/texts/19",
+      "self_ref": "#/texts/20",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "caption",
+      "prov": [],
+      "orig": "An example caption for the image",
+      "text": "An example caption for the image"
+    },
+    {
+      "self_ref": "#/texts/21",
       "parent": {
         "$ref": "#/body"
       },
@@ -488,7 +513,7 @@
       "level": 1
     },
     {
-      "self_ref": "#/texts/20",
+      "self_ref": "#/texts/22",
       "parent": {
         "$ref": "#/body"
       },
@@ -500,7 +525,7 @@
       "text": "Caption for the table 1"
     },
     {
-      "self_ref": "#/texts/21",
+      "self_ref": "#/texts/23",
       "parent": {
         "$ref": "#/body"
       },
@@ -512,7 +537,7 @@
       "text": "Caption for the table 2"
     },
     {
-      "self_ref": "#/texts/22",
+      "self_ref": "#/texts/24",
       "parent": {
         "$ref": "#/body"
       },
@@ -524,7 +549,7 @@
       "text": "Caption for the table 3"
     },
     {
-      "self_ref": "#/texts/23",
+      "self_ref": "#/texts/25",
       "parent": {
         "$ref": "#/body"
       },
@@ -536,7 +561,7 @@
       "text": "Caption for the table 4"
     },
     {
-      "self_ref": "#/texts/24",
+      "self_ref": "#/texts/26",
       "parent": {
         "$ref": "#/body"
       },
@@ -546,31 +571,6 @@
       "prov": [],
       "orig": "Table 5 with multiple empty cells",
       "text": "Table 5 with multiple empty cells"
-    },
-    {
-      "self_ref": "#/texts/25",
-      "parent": {
-        "$ref": "#/body"
-      },
-      "children": [],
-      "content_layer": "body",
-      "label": "section_header",
-      "prov": [],
-      "orig": "SubSubSection 2.1.1",
-      "text": "SubSubSection 2.1.1",
-      "level": 3
-    },
-    {
-      "self_ref": "#/texts/26",
-      "parent": {
-        "$ref": "#/body"
-      },
-      "children": [],
-      "content_layer": "body",
-      "label": "caption",
-      "prov": [],
-      "orig": "An example caption for the image",
-      "text": "An example caption for the image"
     }
   ],
   "pictures": [
@@ -599,7 +599,7 @@
       "prov": [],
       "captions": [
         {
-          "$ref": "#/texts/26"
+          "$ref": "#/texts/20"
         }
       ],
       "references": [],

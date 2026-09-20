@@ -81,37 +81,10 @@
         "$ref": "#/texts/20"
       },
       {
-        "$ref": "#/texts/21"
-      },
-      {
-        "$ref": "#/texts/22"
-      },
-      {
-        "$ref": "#/texts/23"
-      },
-      {
-        "$ref": "#/texts/24"
-      },
-      {
-        "$ref": "#/texts/25"
-      },
-      {
-        "$ref": "#/texts/26"
-      },
-      {
-        "$ref": "#/texts/27"
-      },
-      {
-        "$ref": "#/texts/28"
-      },
-      {
-        "$ref": "#/texts/29"
-      },
-      {
         "$ref": "#/tables/0"
       },
       {
-        "$ref": "#/texts/30"
+        "$ref": "#/texts/21"
       }
     ],
     "content_layer": "body",
@@ -165,35 +138,11 @@
       "content_layer": "body",
       "label": "text",
       "prov": [],
-      "orig": "<!-- missing-text -->",
-      "text": "<!-- missing-text -->"
-    },
-    {
-      "self_ref": "#/texts/4",
-      "parent": {
-        "$ref": "#/body"
-      },
-      "children": [],
-      "content_layer": "body",
-      "label": "text",
-      "prov": [],
-      "orig": "<!-- missing-text -->",
-      "text": "<!-- missing-text -->"
-    },
-    {
-      "self_ref": "#/texts/5",
-      "parent": {
-        "$ref": "#/body"
-      },
-      "children": [],
-      "content_layer": "body",
-      "label": "text",
-      "prov": [],
       "orig": "Restaurant",
       "text": "Restaurant"
     },
     {
-      "self_ref": "#/texts/6",
+      "self_ref": "#/texts/4",
       "parent": {
         "$ref": "#/body"
       },
@@ -205,19 +154,7 @@
       "text": "Docling"
     },
     {
-      "self_ref": "#/texts/7",
-      "parent": {
-        "$ref": "#/body"
-      },
-      "children": [],
-      "content_layer": "body",
-      "label": "text",
-      "prov": [],
-      "orig": "<!-- missing-text -->",
-      "text": "<!-- missing-text -->"
-    },
-    {
-      "self_ref": "#/texts/8",
+      "self_ref": "#/texts/5",
       "parent": {
         "$ref": "#/body"
       },
@@ -229,7 +166,7 @@
       "text": "Telephone"
     },
     {
-      "self_ref": "#/texts/9",
+      "self_ref": "#/texts/6",
       "parent": {
         "$ref": "#/body"
       },
@@ -241,19 +178,7 @@
       "text": "(123) 456-7890"
     },
     {
-      "self_ref": "#/texts/10",
-      "parent": {
-        "$ref": "#/body"
-      },
-      "children": [],
-      "content_layer": "body",
-      "label": "text",
-      "prov": [],
-      "orig": "<!-- missing-text -->",
-      "text": "<!-- missing-text -->"
-    },
-    {
-      "self_ref": "#/texts/11",
+      "self_ref": "#/texts/7",
       "parent": {
         "$ref": "#/body"
       },
@@ -265,7 +190,7 @@
       "text": "Server"
     },
     {
-      "self_ref": "#/texts/12",
+      "self_ref": "#/texts/8",
       "parent": {
         "$ref": "#/body"
       },
@@ -277,19 +202,7 @@
       "text": "Quack Quackling"
     },
     {
-      "self_ref": "#/texts/13",
-      "parent": {
-        "$ref": "#/body"
-      },
-      "children": [],
-      "content_layer": "body",
-      "label": "text",
-      "prov": [],
-      "orig": "<!-- missing-text -->",
-      "text": "<!-- missing-text -->"
-    },
-    {
-      "self_ref": "#/texts/14",
+      "self_ref": "#/texts/9",
       "parent": {
         "$ref": "#/body"
       },
@@ -301,7 +214,7 @@
       "text": "Order Number"
     },
     {
-      "self_ref": "#/texts/15",
+      "self_ref": "#/texts/10",
       "parent": {
         "$ref": "#/body"
       },
@@ -313,19 +226,7 @@
       "text": "12345"
     },
     {
-      "self_ref": "#/texts/16",
-      "parent": {
-        "$ref": "#/body"
-      },
-      "children": [],
-      "content_layer": "body",
-      "label": "text",
-      "prov": [],
-      "orig": "<!-- missing-text -->",
-      "text": "<!-- missing-text -->"
-    },
-    {
-      "self_ref": "#/texts/17",
+      "self_ref": "#/texts/11",
       "parent": {
         "$ref": "#/body"
       },
@@ -337,7 +238,7 @@
       "text": "Seating"
     },
     {
-      "self_ref": "#/texts/18",
+      "self_ref": "#/texts/12",
       "parent": {
         "$ref": "#/body"
       },
@@ -349,19 +250,7 @@
       "text": "13"
     },
     {
-      "self_ref": "#/texts/19",
-      "parent": {
-        "$ref": "#/body"
-      },
-      "children": [],
-      "content_layer": "body",
-      "label": "text",
-      "prov": [],
-      "orig": "<!-- missing-text -->",
-      "text": "<!-- missing-text -->"
-    },
-    {
-      "self_ref": "#/texts/20",
+      "self_ref": "#/texts/13",
       "parent": {
         "$ref": "#/body"
       },
@@ -373,7 +262,7 @@
       "text": "Dining Type"
     },
     {
-      "self_ref": "#/texts/21",
+      "self_ref": "#/texts/14",
       "parent": {
         "$ref": "#/body"
       },
@@ -385,19 +274,7 @@
       "text": "Celebration"
     },
     {
-      "self_ref": "#/texts/22",
-      "parent": {
-        "$ref": "#/body"
-      },
-      "children": [],
-      "content_layer": "body",
-      "label": "text",
-      "prov": [],
-      "orig": "<!-- missing-text -->",
-      "text": "<!-- missing-text -->"
-    },
-    {
-      "self_ref": "#/texts/23",
+      "self_ref": "#/texts/15",
       "parent": {
         "$ref": "#/body"
       },
@@ -409,7 +286,7 @@
       "text": "Number of guests"
     },
     {
-      "self_ref": "#/texts/24",
+      "self_ref": "#/texts/16",
       "parent": {
         "$ref": "#/body"
       },
@@ -421,19 +298,7 @@
       "text": "5"
     },
     {
-      "self_ref": "#/texts/25",
-      "parent": {
-        "$ref": "#/body"
-      },
-      "children": [],
-      "content_layer": "body",
-      "label": "text",
-      "prov": [],
-      "orig": "<!-- missing-text -->",
-      "text": "<!-- missing-text -->"
-    },
-    {
-      "self_ref": "#/texts/26",
+      "self_ref": "#/texts/17",
       "parent": {
         "$ref": "#/body"
       },
@@ -445,7 +310,7 @@
       "text": "Receipt date"
     },
     {
-      "self_ref": "#/texts/27",
+      "self_ref": "#/texts/18",
       "parent": {
         "$ref": "#/body"
       },
@@ -457,7 +322,7 @@
       "text": "16/03/2026"
     },
     {
-      "self_ref": "#/texts/28",
+      "self_ref": "#/texts/19",
       "parent": {
         "$ref": "#/body"
       },
@@ -469,7 +334,7 @@
       "text": "Order items:"
     },
     {
-      "self_ref": "#/texts/29",
+      "self_ref": "#/texts/20",
       "parent": {
         "$ref": "#/body"
       },
@@ -481,7 +346,7 @@
       "text": "Itemized list of products ordered with quantities."
     },
     {
-      "self_ref": "#/texts/30",
+      "self_ref": "#/texts/21",
       "parent": {
         "$ref": "#/body"
       },

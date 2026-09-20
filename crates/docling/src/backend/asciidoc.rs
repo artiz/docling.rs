@@ -131,11 +131,6 @@ struct Parser<'r> {
     /// Set by a lone `+` inside a list: the next literal block or image stays
     /// inside the open item instead of closing the list.
     list_continuation: bool,
-    /// Which heading levels (docling 0-based) currently have an active ancestor.
-    active: Vec<bool>,
-    /// Images and orphan (level-skipping) headings: docling attaches these to the
-    /// body root with no parent, so they render after the whole title subtree.
-    deferred: Vec<Node>,
     images: Option<&'r dyn ImageResolver>,
 }
 
@@ -197,25 +192,18 @@ impl Parser<'_> {
                 level: 1,
                 text: escape_text(rest.trim()),
             });
-            self.set_active(0);
             return;
         }
 
-        // Section header: `==+ `
+        // Section header: `==+ `. docling ≥ 2.127 parents a heading to its
+        // nearest *present* ancestor level, so a `====` straight under a `==`
+        // stays where it is read (docling ≤ 2.126 hung it off the body root,
+        // which rendered it after the whole section tree).
         if let Some((n, text)) = section_header(line) {
-            let node = Node::Heading {
+            doc.push(Node::Heading {
                 level: n.min(6),
                 text: escape_text(text.trim()),
-            };
-            // A heading whose immediate parent level is absent (e.g. `====`
-            // under `==`) is orphaned to the body root and deferred.
-            let docling_level = (n - 1) as usize;
-            if docling_level >= 1 && !self.is_active(docling_level - 1) {
-                self.deferred.push(node);
-            } else {
-                doc.push(node);
-                self.set_active(docling_level);
-            }
+            });
             return;
         }
 
@@ -282,10 +270,15 @@ impl Parser<'_> {
     fn push_list_item(&mut self, item: ListItem<'_>, doc: &mut DoclingDocument) {
         if !self.in_list {
             self.in_list = true;
-            // A caption pending in front of a list is docling's own text item
-            // (the `.Procedure` / `.Verification` lead-ins), flushed when the
-            // list opens rather than swallowed by the first item.
-            self.flush_caption(doc);
+            // A block title pending in front of a list (the `.Procedure` /
+            // `.Verification` lead-ins): a list group has no caption slot, so
+            // docling ≥ 2.127 emits it as a *bold* paragraph right before the
+            // list (2.126 wrote it as a plain caption text).
+            if let Some(text) = self.take_caption() {
+                doc.push(Node::Paragraph {
+                    text: format!("**{text}**"),
+                });
+            }
             self.levels = vec![ListLevel {
                 indent: item.indent,
                 slots: 0,
@@ -353,7 +346,9 @@ impl Parser<'_> {
                 return;
             }
         }
-        self.deferred.push(Node::Picture {
+        // docling ≥ 2.127 parents the picture to the current section (it used
+        // to go to the body root and render after everything).
+        doc.push(Node::Picture {
             caption: cap,
             caption_href: None,
             image,
@@ -452,22 +447,6 @@ impl Parser<'_> {
         if self.in_table {
             self.flush_table(doc);
         }
-        // Root-attached items (images, orphan headings) render last.
-        doc.nodes.append(&mut self.deferred);
-    }
-
-    fn is_active(&self, level: usize) -> bool {
-        self.active.get(level).copied().unwrap_or(false)
-    }
-
-    /// Mark `level` active and clear all deeper levels (a heading resets its
-    /// descendants), mirroring docling's `parents` bookkeeping.
-    fn set_active(&mut self, level: usize) {
-        if self.active.len() <= level {
-            self.active.resize(level + 1, false);
-        }
-        self.active[level] = true;
-        self.active.truncate(level + 1);
     }
 }
 
@@ -649,11 +628,25 @@ mod tests {
         );
     }
 
+    /// docling ≥ 2.127: a block title in front of a list is a bold paragraph
+    /// (a list group has no caption slot); in front of a literal block it is
+    /// still the code item's caption text.
     #[test]
-    fn a_caption_in_front_of_a_list_is_kept_as_text() {
+    fn a_block_title_in_front_of_a_list_is_a_bold_paragraph() {
         assert_eq!(
             md(".Procedure\n\n. one\n\n.Verification\n\n* check\n"),
-            "Procedure\n\n1. one\n\nVerification\n\n- check\n"
+            "**Procedure**\n\n1. one\n\n**Verification**\n\n- check\n"
+        );
+    }
+
+    /// docling ≥ 2.127 parents a level-skipping heading to its nearest present
+    /// ancestor and a picture to the current section, so both stay in reading
+    /// order (2.126 hung them off the body root, after the whole tree).
+    #[test]
+    fn skipped_levels_and_pictures_keep_reading_order() {
+        assert_eq!(
+            md("= T\n\n== A\n\n==== Deep\n\ntext\n\n== B\n\n.Cap\nimage::x.png[]\n\nafter\n"),
+            "# T\n\n## A\n\n#### Deep\n\ntext\n\n## B\n\nCap\n\n<!-- image -->\n\nafter\n"
         );
     }
 

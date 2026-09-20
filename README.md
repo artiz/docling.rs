@@ -155,8 +155,8 @@ image bytes):
 | JATS | 6 | 6 | 0 |
 | ODF | 7 | 7 | 0 |
 | WebVTT | 4 | 4 | 0 |
-| DocLang | 15 | 13 | 0 |
-| AsciiDoc | 4 | 2 | 0 |
+| DocLang | 15 | 15 | 0 |
+| AsciiDoc | 4 | 4 | 0 |
 | USPTO | 9 | 5 | 0 |
 | EPUB | 1 | 0 | 1 |
 | Email / iWork Pages / EBCDIC | 2 / 1 / 3 | all | all |
