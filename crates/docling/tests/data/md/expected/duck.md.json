@@ -227,7 +227,7 @@
       "orig": "You can relax and look around",
       "text": "You can relax and look around",
       "enumerated": false,
-      "marker": "-"
+      "marker": ""
     },
     {
       "self_ref": "#/texts/7",
@@ -241,7 +241,7 @@
       "orig": "Paddle about",
       "text": "Paddle about",
       "enumerated": false,
-      "marker": "-"
+      "marker": ""
     },
     {
       "self_ref": "#/texts/8",
@@ -255,7 +255,7 @@
       "orig": "Enjoy summer warmth",
       "text": "Enjoy summer warmth",
       "enumerated": false,
-      "marker": "-"
+      "marker": ""
     },
     {
       "self_ref": "#/texts/9",
@@ -281,7 +281,7 @@
       "orig": "Wear sunglasses",
       "text": "Wear sunglasses",
       "enumerated": false,
-      "marker": "-"
+      "marker": ""
     },
     {
       "self_ref": "#/texts/11",
@@ -295,7 +295,7 @@
       "orig": "Don’t forget to drink water",
       "text": "Don’t forget to drink water",
       "enumerated": false,
-      "marker": "-"
+      "marker": ""
     },
     {
       "self_ref": "#/texts/12",
@@ -309,7 +309,7 @@
       "orig": "Use sun cream",
       "text": "Use sun cream",
       "enumerated": false,
-      "marker": "-"
+      "marker": ""
     },
     {
       "self_ref": "#/texts/13",
@@ -396,7 +396,7 @@
       "orig": "Leaves",
       "text": "Leaves",
       "enumerated": false,
-      "marker": "-"
+      "marker": ""
     },
     {
       "self_ref": "#/texts/20",
@@ -410,7 +410,7 @@
       "orig": "Berries",
       "text": "Berries",
       "enumerated": false,
-      "marker": "-"
+      "marker": ""
     },
     {
       "self_ref": "#/texts/21",
@@ -424,7 +424,7 @@
       "orig": "Grain",
       "text": "Grain",
       "enumerated": false,
-      "marker": "-"
+      "marker": ""
     },
     {
       "self_ref": "#/texts/22",

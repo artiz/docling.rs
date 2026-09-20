@@ -1782,7 +1782,7 @@ fn to_single(parts: &[Part]) -> Part {
 /// upstream's `detect_code_language` content fallback (no hint): a shebang,
 /// PHP / HTML / Dockerfile markers, `#include`, JSON. Conservative; anything
 /// else is `unknown`.
-fn detect_code_language(text: &str) -> Option<String> {
+pub(super) fn detect_code_language(text: &str) -> Option<String> {
     let head = text.trim_start();
     if let Some(rest) = head.strip_prefix("#!") {
         let first = rest.lines().next().unwrap_or("");

@@ -27,28 +27,28 @@
         "$ref": "#/texts/2"
       },
       {
-        "$ref": "#/texts/3"
-      },
-      {
-        "$ref": "#/texts/4"
-      },
-      {
-        "$ref": "#/texts/5"
-      },
-      {
-        "$ref": "#/texts/6"
-      },
-      {
         "$ref": "#/groups/0"
       },
       {
-        "$ref": "#/texts/12"
+        "$ref": "#/texts/14"
+      },
+      {
+        "$ref": "#/texts/15"
+      },
+      {
+        "$ref": "#/texts/16"
+      },
+      {
+        "$ref": "#/groups/1"
+      },
+      {
+        "$ref": "#/texts/22"
       },
       {
         "$ref": "#/tables/0"
       },
       {
-        "$ref": "#/texts/13"
+        "$ref": "#/texts/23"
       }
     ],
     "content_layer": "body",
@@ -63,13 +63,57 @@
       },
       "children": [
         {
+          "$ref": "#/texts/3"
+        },
+        {
+          "$ref": "#/texts/4"
+        },
+        {
+          "$ref": "#/texts/5"
+        },
+        {
+          "$ref": "#/texts/6"
+        },
+        {
           "$ref": "#/texts/7"
         },
         {
           "$ref": "#/texts/8"
         },
         {
+          "$ref": "#/texts/9"
+        },
+        {
+          "$ref": "#/texts/10"
+        },
+        {
           "$ref": "#/texts/11"
+        },
+        {
+          "$ref": "#/texts/12"
+        },
+        {
+          "$ref": "#/texts/13"
+        }
+      ],
+      "content_layer": "body",
+      "name": "group",
+      "label": "inline"
+    },
+    {
+      "self_ref": "#/groups/1",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [
+        {
+          "$ref": "#/texts/17"
+        },
+        {
+          "$ref": "#/texts/18"
+        },
+        {
+          "$ref": "#/texts/21"
         }
       ],
       "content_layer": "body",
@@ -77,16 +121,16 @@
       "label": "list"
     },
     {
-      "self_ref": "#/groups/1",
+      "self_ref": "#/groups/2",
       "parent": {
-        "$ref": "#/texts/8"
+        "$ref": "#/texts/18"
       },
       "children": [
         {
-          "$ref": "#/texts/9"
+          "$ref": "#/texts/19"
         },
         {
-          "$ref": "#/texts/10"
+          "$ref": "#/texts/20"
         }
       ],
       "content_layer": "body",
@@ -136,17 +180,172 @@
     {
       "self_ref": "#/texts/3",
       "parent": {
-        "$ref": "#/body"
+        "$ref": "#/groups/0"
       },
       "children": [],
       "content_layer": "body",
       "label": "text",
       "prov": [],
-      "orig": "Dieses Dokument stammt aus einer OpenOffice.org 1.x Registratur und wurde ohne Konvertierung übernommen. Es enthält  **fette**  und  *kursive*  Stellen,  ~~gestrichenen~~  sowie  unterstrichenen  Text und eine Fußnote 1 .",
-      "text": "Dieses Dokument stammt aus einer OpenOffice.org 1.x Registratur und wurde ohne Konvertierung übernommen. Es enthält  **fette**  und  *kursive*  Stellen,  ~~gestrichenen~~  sowie  unterstrichenen  Text und eine Fußnote 1 ."
+      "orig": "Dieses Dokument stammt aus einer OpenOffice.org 1.x Registratur und wurde ohne Konvertierung übernommen. Es enthält ",
+      "text": "Dieses Dokument stammt aus einer OpenOffice.org 1.x Registratur und wurde ohne Konvertierung übernommen. Es enthält "
     },
     {
       "self_ref": "#/texts/4",
+      "parent": {
+        "$ref": "#/groups/0"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "fette",
+      "text": "fette",
+      "formatting": {
+        "bold": true,
+        "italic": false,
+        "underline": false,
+        "strikethrough": false,
+        "script": "baseline"
+      }
+    },
+    {
+      "self_ref": "#/texts/5",
+      "parent": {
+        "$ref": "#/groups/0"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": " und ",
+      "text": " und "
+    },
+    {
+      "self_ref": "#/texts/6",
+      "parent": {
+        "$ref": "#/groups/0"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "kursive",
+      "text": "kursive",
+      "formatting": {
+        "bold": false,
+        "italic": true,
+        "underline": false,
+        "strikethrough": false,
+        "script": "baseline"
+      }
+    },
+    {
+      "self_ref": "#/texts/7",
+      "parent": {
+        "$ref": "#/groups/0"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": " Stellen, ",
+      "text": " Stellen, "
+    },
+    {
+      "self_ref": "#/texts/8",
+      "parent": {
+        "$ref": "#/groups/0"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "gestrichenen",
+      "text": "gestrichenen",
+      "formatting": {
+        "bold": false,
+        "italic": false,
+        "underline": false,
+        "strikethrough": true,
+        "script": "baseline"
+      }
+    },
+    {
+      "self_ref": "#/texts/9",
+      "parent": {
+        "$ref": "#/groups/0"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": " sowie ",
+      "text": " sowie "
+    },
+    {
+      "self_ref": "#/texts/10",
+      "parent": {
+        "$ref": "#/groups/0"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "unterstrichenen",
+      "text": "unterstrichenen",
+      "formatting": {
+        "bold": false,
+        "italic": false,
+        "underline": true,
+        "strikethrough": false,
+        "script": "baseline"
+      }
+    },
+    {
+      "self_ref": "#/texts/11",
+      "parent": {
+        "$ref": "#/groups/0"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": " Text und eine Fußnote",
+      "text": " Text und eine Fußnote"
+    },
+    {
+      "self_ref": "#/texts/12",
+      "parent": {
+        "$ref": "#/groups/0"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "1",
+      "text": "1",
+      "formatting": {
+        "bold": false,
+        "italic": false,
+        "underline": false,
+        "strikethrough": false,
+        "script": "super"
+      }
+    },
+    {
+      "self_ref": "#/texts/13",
+      "parent": {
+        "$ref": "#/groups/0"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": ".",
+      "text": "."
+    },
+    {
+      "self_ref": "#/texts/14",
       "parent": {
         "$ref": "#/body"
       },
@@ -159,7 +358,7 @@
       "level": 2
     },
     {
-      "self_ref": "#/texts/5",
+      "self_ref": "#/texts/15",
       "parent": {
         "$ref": "#/body"
       },
@@ -171,7 +370,7 @@
       "text": "Signatur:\tA-1997-042"
     },
     {
-      "self_ref": "#/texts/6",
+      "self_ref": "#/texts/16",
       "parent": {
         "$ref": "#/body"
       },
@@ -183,9 +382,9 @@
       "text": "Fassung:\tzweite  Durchsicht"
     },
     {
-      "self_ref": "#/texts/7",
+      "self_ref": "#/texts/17",
       "parent": {
-        "$ref": "#/groups/0"
+        "$ref": "#/groups/1"
       },
       "children": [],
       "content_layer": "body",
@@ -197,13 +396,13 @@
       "marker": "1."
     },
     {
-      "self_ref": "#/texts/8",
+      "self_ref": "#/texts/18",
       "parent": {
-        "$ref": "#/groups/0"
+        "$ref": "#/groups/1"
       },
       "children": [
         {
-          "$ref": "#/groups/1"
+          "$ref": "#/groups/2"
         }
       ],
       "content_layer": "body",
@@ -215,9 +414,9 @@
       "marker": "2."
     },
     {
-      "self_ref": "#/texts/9",
+      "self_ref": "#/texts/19",
       "parent": {
-        "$ref": "#/groups/1"
+        "$ref": "#/groups/2"
       },
       "children": [],
       "content_layer": "body",
@@ -226,12 +425,12 @@
       "orig": "Hauptregister",
       "text": "Hauptregister",
       "enumerated": false,
-      "marker": "-"
+      "marker": ""
     },
     {
-      "self_ref": "#/texts/10",
+      "self_ref": "#/texts/20",
       "parent": {
-        "$ref": "#/groups/1"
+        "$ref": "#/groups/2"
       },
       "children": [],
       "content_layer": "body",
@@ -240,12 +439,12 @@
       "orig": "Zweitregister",
       "text": "Zweitregister",
       "enumerated": false,
-      "marker": "-"
+      "marker": ""
     },
     {
-      "self_ref": "#/texts/11",
+      "self_ref": "#/texts/21",
       "parent": {
-        "$ref": "#/groups/0"
+        "$ref": "#/groups/1"
       },
       "children": [],
       "content_layer": "body",
@@ -257,7 +456,7 @@
       "marker": "3."
     },
     {
-      "self_ref": "#/texts/12",
+      "self_ref": "#/texts/22",
       "parent": {
         "$ref": "#/body"
       },
@@ -270,7 +469,7 @@
       "level": 2
     },
     {
-      "self_ref": "#/texts/13",
+      "self_ref": "#/texts/23",
       "parent": {
         "$ref": "#/body"
       },

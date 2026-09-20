@@ -18,22 +18,10 @@
     "self_ref": "#/body",
     "children": [
       {
-        "$ref": "#/texts/0"
-      },
-      {
-        "$ref": "#/texts/1"
-      },
-      {
         "$ref": "#/groups/0"
       },
       {
-        "$ref": "#/texts/4"
-      },
-      {
-        "$ref": "#/groups/1"
-      },
-      {
-        "$ref": "#/texts/8"
+        "$ref": "#/groups/2"
       }
     ],
     "content_layer": "body",
@@ -48,6 +36,26 @@
       },
       "children": [
         {
+          "$ref": "#/texts/0"
+        },
+        {
+          "$ref": "#/texts/1"
+        },
+        {
+          "$ref": "#/groups/1"
+        }
+      ],
+      "content_layer": "body",
+      "name": "slide-0",
+      "label": "chapter"
+    },
+    {
+      "self_ref": "#/groups/1",
+      "parent": {
+        "$ref": "#/groups/0"
+      },
+      "children": [
+        {
           "$ref": "#/texts/2"
         },
         {
@@ -59,9 +67,29 @@
       "label": "list"
     },
     {
-      "self_ref": "#/groups/1",
+      "self_ref": "#/groups/2",
       "parent": {
         "$ref": "#/body"
+      },
+      "children": [
+        {
+          "$ref": "#/texts/4"
+        },
+        {
+          "$ref": "#/groups/3"
+        },
+        {
+          "$ref": "#/texts/8"
+        }
+      ],
+      "content_layer": "body",
+      "name": "slide-1",
+      "label": "chapter"
+    },
+    {
+      "self_ref": "#/groups/3",
+      "parent": {
+        "$ref": "#/groups/2"
       },
       "children": [
         {
@@ -83,7 +111,7 @@
     {
       "self_ref": "#/texts/0",
       "parent": {
-        "$ref": "#/body"
+        "$ref": "#/groups/0"
       },
       "children": [],
       "content_layer": "body",
@@ -95,7 +123,7 @@
     {
       "self_ref": "#/texts/1",
       "parent": {
-        "$ref": "#/body"
+        "$ref": "#/groups/0"
       },
       "children": [],
       "content_layer": "body",
@@ -107,7 +135,7 @@
     {
       "self_ref": "#/texts/2",
       "parent": {
-        "$ref": "#/groups/0"
+        "$ref": "#/groups/1"
       },
       "children": [],
       "content_layer": "body",
@@ -116,12 +144,12 @@
       "orig": "Bestand gesichtet",
       "text": "Bestand gesichtet",
       "enumerated": false,
-      "marker": "-"
+      "marker": ""
     },
     {
       "self_ref": "#/texts/3",
       "parent": {
-        "$ref": "#/groups/0"
+        "$ref": "#/groups/1"
       },
       "children": [],
       "content_layer": "body",
@@ -130,12 +158,12 @@
       "orig": "Signaturen vergeben",
       "text": "Signaturen vergeben",
       "enumerated": false,
-      "marker": "-"
+      "marker": ""
     },
     {
       "self_ref": "#/texts/4",
       "parent": {
-        "$ref": "#/body"
+        "$ref": "#/groups/2"
       },
       "children": [],
       "content_layer": "body",
@@ -147,7 +175,7 @@
     {
       "self_ref": "#/texts/5",
       "parent": {
-        "$ref": "#/groups/1"
+        "$ref": "#/groups/3"
       },
       "children": [],
       "content_layer": "body",
@@ -156,12 +184,12 @@
       "orig": "April: Umzug der Mappen",
       "text": "April: Umzug der Mappen",
       "enumerated": false,
-      "marker": "-"
+      "marker": ""
     },
     {
       "self_ref": "#/texts/6",
       "parent": {
-        "$ref": "#/groups/1"
+        "$ref": "#/groups/3"
       },
       "children": [],
       "content_layer": "body",
@@ -170,12 +198,12 @@
       "orig": "Mai: Abgleich der Register",
       "text": "Mai: Abgleich der Register",
       "enumerated": false,
-      "marker": "-"
+      "marker": ""
     },
     {
       "self_ref": "#/texts/7",
       "parent": {
-        "$ref": "#/groups/1"
+        "$ref": "#/groups/3"
       },
       "children": [],
       "content_layer": "body",
@@ -184,12 +212,12 @@
       "orig": "Juni: Abschlussbericht",
       "text": "Juni: Abschlussbericht",
       "enumerated": false,
-      "marker": "-"
+      "marker": ""
     },
     {
       "self_ref": "#/texts/8",
       "parent": {
-        "$ref": "#/body"
+        "$ref": "#/groups/2"
       },
       "children": [],
       "content_layer": "body",

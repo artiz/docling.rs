@@ -151,9 +151,9 @@ image bytes):
 | PPTX | 8 | 8 | 8 |
 | XLSX | 13 | 13 | 13 |
 | CSV | 9 | 9 | 6 |
-| Markdown | 10 | 10 | 2 |
+| Markdown | 10 | 10 | 5 |
 | JATS | 6 | 6 | 0 |
-| ODF | 7 | 7 | 0 |
+| ODF | 7 | 7 | 6 |
 | WebVTT | 4 | 4 | 0 |
 | DocLang | 15 | 15 | 0 |
 | AsciiDoc | 4 | 4 | 0 |
@@ -162,7 +162,8 @@ image bytes):
 | Email / iWork Pages / EBCDIC | 2 / 1 / 3 | all | all |
 
 The JSON column is 100% wherever the backend builds docling's item tree
-(HTML, DOCX, PPTX) or its flat export already has upstream's shape (XLSX);
+(HTML, DOCX, PPTX, ODF, Markdown without raw HTML blocks) or its flat export
+already has upstream's shape (XLSX);
 the zeros are the flat export's `text`-for-`paragraph` labels, `-` list
 markers and missing heading nesting, next in line for the same treatment.
 Per-format residuals: [`docs/MIGRATION.md`](./docs/MIGRATION.md).

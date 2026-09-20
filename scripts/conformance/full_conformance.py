@@ -120,6 +120,15 @@ def upstream(path: Path):
         kwargs["options"] = EbcdicBackendOptions(layout_file=path.with_suffix(".layout.json"))
     in_doc = InputDocument(path_or_stream=path, format=fmt, backend=backend_cls, filename=path.name)
     doc = backend_cls(path_or_stream=path, in_doc=in_doc, **kwargs).convert()
+    # Wrap the document the way `DocumentConverter` does: building the
+    # `ConversionResult` re-validates it, and docling-core's
+    # `validate_document` clamps every provenance box to its page in place.
+    # That clamped state is what docling's own JSON shows, so it is what
+    # the Rust export is measured against.
+    from docling.datamodel.base_models import ConversionStatus
+    from docling.datamodel.document import ConversionResult
+
+    doc = ConversionResult(input=in_doc, status=ConversionStatus.SUCCESS, document=doc).document
     return doc.export_to_markdown(), doc.export_to_dict()
 
 

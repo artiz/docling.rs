@@ -42,10 +42,10 @@
         "$ref": "#/texts/14"
       },
       {
-        "$ref": "#/texts/15"
+        "$ref": "#/groups/4"
       },
       {
-        "$ref": "#/texts/16"
+        "$ref": "#/groups/5"
       }
     ],
     "content_layer": "body",
@@ -120,6 +120,70 @@
       "content_layer": "body",
       "name": "list",
       "label": "list"
+    },
+    {
+      "self_ref": "#/groups/4",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [
+        {
+          "$ref": "#/texts/15"
+        },
+        {
+          "$ref": "#/texts/16"
+        },
+        {
+          "$ref": "#/texts/17"
+        },
+        {
+          "$ref": "#/texts/18"
+        },
+        {
+          "$ref": "#/texts/19"
+        },
+        {
+          "$ref": "#/texts/20"
+        },
+        {
+          "$ref": "#/texts/21"
+        },
+        {
+          "$ref": "#/texts/22"
+        },
+        {
+          "$ref": "#/texts/23"
+        }
+      ],
+      "content_layer": "body",
+      "name": "group",
+      "label": "inline"
+    },
+    {
+      "self_ref": "#/groups/5",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [
+        {
+          "$ref": "#/texts/24"
+        },
+        {
+          "$ref": "#/texts/25"
+        },
+        {
+          "$ref": "#/texts/26"
+        },
+        {
+          "$ref": "#/texts/27"
+        },
+        {
+          "$ref": "#/texts/28"
+        }
+      ],
+      "content_layer": "body",
+      "name": "group",
+      "label": "inline"
     }
   ],
   "texts": [
@@ -242,7 +306,7 @@
       "orig": "bullet list 2.1",
       "text": "bullet list 2.1",
       "enumerated": false,
-      "marker": "-"
+      "marker": ""
     },
     {
       "self_ref": "#/texts/9",
@@ -260,7 +324,7 @@
       "orig": "bullet list 2.2",
       "text": "bullet list 2.2",
       "enumerated": false,
-      "marker": "-"
+      "marker": ""
     },
     {
       "self_ref": "#/texts/10",
@@ -274,7 +338,7 @@
       "orig": "bullet list 2.2.1",
       "text": "bullet list 2.2.1",
       "enumerated": false,
-      "marker": "-"
+      "marker": ""
     },
     {
       "self_ref": "#/texts/11",
@@ -288,7 +352,7 @@
       "orig": "bullet list 2.3",
       "text": "bullet list 2.3",
       "enumerated": false,
-      "marker": "-"
+      "marker": ""
     },
     {
       "self_ref": "#/texts/12",
@@ -320,7 +384,7 @@
       "orig": "bullet list 3.0.1",
       "text": "bullet list 3.0.1",
       "enumerated": false,
-      "marker": "-"
+      "marker": ""
     },
     {
       "self_ref": "#/texts/14",
@@ -338,26 +402,212 @@
     {
       "self_ref": "#/texts/15",
       "parent": {
-        "$ref": "#/body"
+        "$ref": "#/groups/4"
       },
       "children": [],
       "content_layer": "body",
       "label": "text",
       "prov": [],
-      "orig": "Contrary to popular belief,  **Lorem Ipsum is not simply random text** . Richard McClintock,  *a Latin professor at Hampden-Sydney College in Virginia* , looked up one of the more obscure Latin words, consectetur, from a Lorem Ipsum passage,  and going through the cites of the word in classical literature , discovered the undoubtable source. Lorem Ipsum comes from sections 1.10.32 and 1.10.33 of \"de Finibus Bonorum et Malorum\" ( ~~The Extremes of Good and Evil~~ ) by Cicero, written in 45 BC.",
-      "text": "Contrary to popular belief,  **Lorem Ipsum is not simply random text** . Richard McClintock,  *a Latin professor at Hampden-Sydney College in Virginia* , looked up one of the more obscure Latin words, consectetur, from a Lorem Ipsum passage,  and going through the cites of the word in classical literature , discovered the undoubtable source. Lorem Ipsum comes from sections 1.10.32 and 1.10.33 of \"de Finibus Bonorum et Malorum\" ( ~~The Extremes of Good and Evil~~ ) by Cicero, written in 45 BC."
+      "orig": "Contrary to popular belief, ",
+      "text": "Contrary to popular belief, "
     },
     {
       "self_ref": "#/texts/16",
       "parent": {
-        "$ref": "#/body"
+        "$ref": "#/groups/4"
       },
       "children": [],
       "content_layer": "body",
       "label": "text",
       "prov": [],
-      "orig": "X 2  + Y 2  = Z",
-      "text": "X 2  + Y 2  = Z"
+      "orig": "Lorem Ipsum is not simply random text",
+      "text": "Lorem Ipsum is not simply random text",
+      "formatting": {
+        "bold": true,
+        "italic": false,
+        "underline": false,
+        "strikethrough": false,
+        "script": "baseline"
+      }
+    },
+    {
+      "self_ref": "#/texts/17",
+      "parent": {
+        "$ref": "#/groups/4"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": ". Richard McClintock, ",
+      "text": ". Richard McClintock, "
+    },
+    {
+      "self_ref": "#/texts/18",
+      "parent": {
+        "$ref": "#/groups/4"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "a Latin professor at Hampden-Sydney College in Virginia",
+      "text": "a Latin professor at Hampden-Sydney College in Virginia",
+      "formatting": {
+        "bold": false,
+        "italic": true,
+        "underline": false,
+        "strikethrough": false,
+        "script": "baseline"
+      }
+    },
+    {
+      "self_ref": "#/texts/19",
+      "parent": {
+        "$ref": "#/groups/4"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": ", looked up one of the more obscure Latin words, consectetur, from a Lorem Ipsum passage, ",
+      "text": ", looked up one of the more obscure Latin words, consectetur, from a Lorem Ipsum passage, "
+    },
+    {
+      "self_ref": "#/texts/20",
+      "parent": {
+        "$ref": "#/groups/4"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "and going through the cites of the word in classical literature",
+      "text": "and going through the cites of the word in classical literature",
+      "formatting": {
+        "bold": false,
+        "italic": false,
+        "underline": true,
+        "strikethrough": false,
+        "script": "baseline"
+      }
+    },
+    {
+      "self_ref": "#/texts/21",
+      "parent": {
+        "$ref": "#/groups/4"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": ", discovered the undoubtable source. Lorem Ipsum comes from sections 1.10.32 and 1.10.33 of \"de Finibus Bonorum et Malorum\" (",
+      "text": ", discovered the undoubtable source. Lorem Ipsum comes from sections 1.10.32 and 1.10.33 of \"de Finibus Bonorum et Malorum\" ("
+    },
+    {
+      "self_ref": "#/texts/22",
+      "parent": {
+        "$ref": "#/groups/4"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "The Extremes of Good and Evil",
+      "text": "The Extremes of Good and Evil",
+      "formatting": {
+        "bold": false,
+        "italic": false,
+        "underline": false,
+        "strikethrough": true,
+        "script": "baseline"
+      }
+    },
+    {
+      "self_ref": "#/texts/23",
+      "parent": {
+        "$ref": "#/groups/4"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": ") by Cicero, written in 45 BC.",
+      "text": ") by Cicero, written in 45 BC."
+    },
+    {
+      "self_ref": "#/texts/24",
+      "parent": {
+        "$ref": "#/groups/5"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "X",
+      "text": "X"
+    },
+    {
+      "self_ref": "#/texts/25",
+      "parent": {
+        "$ref": "#/groups/5"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "2",
+      "text": "2",
+      "formatting": {
+        "bold": false,
+        "italic": false,
+        "underline": false,
+        "strikethrough": false,
+        "script": "super"
+      }
+    },
+    {
+      "self_ref": "#/texts/26",
+      "parent": {
+        "$ref": "#/groups/5"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": " + Y",
+      "text": " + Y"
+    },
+    {
+      "self_ref": "#/texts/27",
+      "parent": {
+        "$ref": "#/groups/5"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "2",
+      "text": "2",
+      "formatting": {
+        "bold": false,
+        "italic": false,
+        "underline": false,
+        "strikethrough": false,
+        "script": "sub"
+      }
+    },
+    {
+      "self_ref": "#/texts/28",
+      "parent": {
+        "$ref": "#/groups/5"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": " = Z",
+      "text": " = Z"
     }
   ],
   "pictures": [],

@@ -121,6 +121,85 @@ impl From<&crate::tree::TreeProv> for ExactProv {
     }
 }
 
+/// docling-core's `_clamp_provenance_bboxes_to_pages`: each `prov` box of
+/// every item on a known page is clamped to `[0, width] × [0, height]`
+/// (whatever its `coord_origin` — docling clamps the stored numbers), and a
+/// table whose provenance sits on one page has its cell boxes clamped too.
+fn clamp_boxes_to_pages(out: &mut Value, pages: &[(usize, f64, f64)]) {
+    if pages.is_empty() {
+        return;
+    }
+    let size = |page_no: &Value| -> Option<(f64, f64)> {
+        let n = page_no.as_u64()? as usize;
+        pages
+            .iter()
+            .find(|(p, _, _)| *p == n)
+            .map(|(_, w, h)| (*w, *h))
+    };
+    let r2 = |v: f64| (v * 100.0).round() / 100.0;
+    let clamp_bbox = |bbox: &mut Value, (w, h): (f64, f64)| {
+        for (key, hi) in [("l", w), ("r", w), ("t", h), ("b", h)] {
+            if let Some(v) = bbox.get(key).and_then(Value::as_f64) {
+                bbox[key] = json!(r2(v.clamp(0.0, hi.max(0.0))));
+            }
+        }
+    };
+    for bucket in [
+        "texts",
+        "pictures",
+        "tables",
+        "key_value_items",
+        "form_items",
+        "field_regions",
+        "field_items",
+    ] {
+        let Some(items) = out.get_mut(bucket).and_then(Value::as_array_mut) else {
+            continue;
+        };
+        for item in items {
+            let mut table_page: Option<Option<(f64, f64)>> = None;
+            if let Some(provs) = item.get_mut("prov").and_then(Value::as_array_mut) {
+                let mut page_nos: Vec<u64> = Vec::new();
+                for prov in provs.iter_mut() {
+                    if let Some(n) = prov.get("page_no").and_then(Value::as_u64) {
+                        page_nos.push(n);
+                    }
+                    let Some(sz) = prov.get("page_no").and_then(size) else {
+                        continue;
+                    };
+                    if let Some(bbox) = prov.get_mut("bbox") {
+                        clamp_bbox(bbox, sz);
+                    }
+                }
+                page_nos.sort_unstable();
+                page_nos.dedup();
+                if let [only] = page_nos[..] {
+                    table_page = Some(size(&json!(only)));
+                }
+            }
+            // A table's cells (and the `grid` docling derives from them).
+            if let (Some(Some(sz)), Some(data)) = (table_page, item.get_mut("data")) {
+                for key in ["table_cells", "grid"] {
+                    let Some(rows) = data.get_mut(key).and_then(Value::as_array_mut) else {
+                        continue;
+                    };
+                    for entry in rows.iter_mut() {
+                        let cells: Vec<&mut Value> = match entry {
+                            Value::Array(row) => row.iter_mut().collect(),
+                            other => vec![other],
+                        };
+                        for cell in cells {
+                            if let Some(bbox) = cell.get_mut("bbox").filter(|b| b.is_object()) {
+                                clamp_bbox(bbox, sz);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
 /// docling-core's `Formatting` model, every field written.
 fn formatting_json(f: &crate::tree::Formatting) -> Value {
     json!({
@@ -201,6 +280,16 @@ pub fn to_json(doc: &DoclingDocument) -> Value {
             }))
         }).collect::<serde_json::Map<String, Value>>(),
     });
+
+    // docling-core's `validate_document` — a pydantic `model_validator` every
+    // `DoclingDocument` passes through when a `ConversionResult` (or a
+    // serializer) is built around it — clamps every provenance box, and a
+    // table's cell boxes, into its page's bounds in place
+    // (`_clamp_provenance_bboxes_to_pages`). The JSON docling writes therefore
+    // carries the clamped boxes: a spreadsheet region whose page was sized
+    // `right − left` × `bottom − top` loses its offset, a slide shape hanging
+    // off the slide edge is cut at it. Reproduce that on the finished items.
+    clamp_boxes_to_pages(&mut out, &b.pages);
 
     // docling only emits `field_regions` / `field_items` when a document has
     // form fields, and places them just before `pages`. Insert them in that slot
@@ -2368,6 +2457,71 @@ mod tests {
         assert_eq!(v["texts"][1]["content_layer"], "notes");
         assert_eq!(v["pages"]["1"]["size"]["width"], 9144000.0);
         assert_eq!(v["pages"]["1"]["page_no"], 1);
+    }
+
+    /// docling-core's `validate_document` clamps every provenance box (and a
+    /// one-page table's cell boxes) into its page — the state every
+    /// `ConversionResult` leaves a document in, so the state docling's JSON
+    /// shows. A box on a page the document does not describe is left alone.
+    #[test]
+    fn provenance_boxes_are_clamped_to_their_page() {
+        let mut doc = DoclingDocument::new("t");
+        doc.push(Node::PageInfo {
+            page_no: 1,
+            width: 10.0,
+            height: 8.0,
+        });
+        doc.push(Node::Prov {
+            page_no: 1,
+            bbox: [-1.0, 2.0, 12.0, 9.5],
+            charspan: [0, 1],
+            seq: None,
+            inner: Box::new(Node::Paragraph { text: "x".into() }),
+        });
+        let mut table = Table {
+            rows: vec![vec!["a".into()]],
+            ..Table::default()
+        };
+        table.cells = Some(vec![crate::TableCell {
+            text: "a".into(),
+            bbox: Some([1.0, 1.0, 11.0, 9.0]),
+            start_row: 0,
+            start_col: 0,
+            row_span: 1,
+            col_span: 1,
+            column_header: false,
+            row_header: false,
+            row_section: false,
+        }]);
+        doc.push(Node::Prov {
+            page_no: 1,
+            bbox: [0.0, 0.0, 10.0, 8.0],
+            charspan: [0, 0],
+            seq: None,
+            inner: Box::new(Node::Table(table)),
+        });
+        doc.push(Node::Prov {
+            page_no: 7,
+            bbox: [-5.0, 0.0, 50.0, 50.0],
+            charspan: [0, 1],
+            seq: None,
+            inner: Box::new(Node::Paragraph { text: "y".into() }),
+        });
+        let v: Value = serde_json::from_str(&doc.export_to_json()).unwrap();
+        assert_eq!(
+            v["texts"][0]["prov"][0]["bbox"],
+            serde_json::json!({ "l": 0.0, "t": 2.0, "r": 10.0, "b": 8.0, "coord_origin": "TOPLEFT" })
+        );
+        let cell = &v["tables"][0]["data"]["table_cells"][0]["bbox"];
+        assert_eq!(
+            (cell["l"].as_f64(), cell["r"].as_f64(), cell["b"].as_f64()),
+            (Some(1.0), Some(10.0), Some(8.0))
+        );
+        assert_eq!(v["tables"][0]["data"]["grid"][0][0]["bbox"]["r"], 10.0);
+        assert_eq!(
+            v["texts"][1]["prov"][0]["bbox"]["r"], 50.0,
+            "page 7 is not described"
+        );
     }
 
     #[test]
