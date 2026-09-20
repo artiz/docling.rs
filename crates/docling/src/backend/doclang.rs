@@ -143,16 +143,12 @@ fn walk_body(parent: XmlNode, out: &mut Vec<Node>) {
             }
             "field_region" => {
                 // The deserialized tree keeps the region and each `<field_item>`
-                // as textless containers docling's Markdown renders as
-                // `<!-- missing-text -->` placeholders, followed by the item's
-                // key and value texts; the item marker is dropped.
-                out.push(Node::Paragraph {
-                    text: "<!-- missing-text -->".to_string(),
-                });
+                // as textless containers: docling-core's Markdown fallback
+                // serializes them to nothing since 2.93 (docling-core#724 — it
+                // used to write a `<!-- missing-text -->` placeholder for
+                // each), so only the item's key and value texts appear; the
+                // item marker is dropped.
                 for item in el.children().filter(|c| c.has_tag_name("field_item")) {
-                    out.push(Node::Paragraph {
-                        text: "<!-- missing-text -->".to_string(),
-                    });
                     for part in ["key", "value"] {
                         if let Some(text) = field_part(item, part) {
                             out.push(Node::Paragraph { text });
@@ -659,7 +655,14 @@ fn parse_table(el: XmlNode) -> Option<Table> {
                                         Some(false) => format!("- [ ] {}", sub.text),
                                         None => sub.text,
                                     };
-                                    block(inline, seg);
+                                    // docling-core serializes the cell's text
+                                    // item as Markdown first — a line break
+                                    // inside it becomes a GFM hard break
+                                    // (`"  \n"`) — and only then flattens the
+                                    // cell's newlines to spaces, so a
+                                    // `<content>` newline is three spaces in
+                                    // the table (`Rich cell   A nested table`).
+                                    block(inline, hard_breaks(&seg));
                                 }
                                 "list" => block(inline, flatten_cell_list(child)),
                                 "picture" => block(inline, "<!-- image -->".to_string()),
@@ -785,6 +788,18 @@ fn parse_table(el: XmlNode) -> Option<Table> {
     })
 }
 
+/// docling-core's `_get_text_with_line_breaks` on a paragraph: a single
+/// newline is a GFM hard break (two trailing spaces), a blank line stays.
+fn hard_breaks(text: &str) -> String {
+    if !text.contains('\n') {
+        return text.to_string();
+    }
+    text.split("\n\n")
+        .map(|para| para.replace('\n', "  \n"))
+        .collect::<Vec<_>>()
+        .join("\n\n")
+}
+
 /// Flatten a list inside a table cell: each item renders inline as
 /// `- text` / `N. text`, items joined with single spaces (the cell flatten
 /// turns the item newlines into spaces). Nested lists continue the run.
@@ -903,5 +918,52 @@ fn parse_picture(el: XmlNode) -> Node {
             inner: Box::new(picture),
         },
         None => picture,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::backend::DeclarativeBackend;
+    use crate::{InputFormat, SourceDocument};
+
+    fn md(dclg: &str) -> String {
+        let src =
+            SourceDocument::from_bytes("t.dclg", InputFormat::XmlDoclang, dclg.as_bytes().to_vec());
+        DoclangBackend.convert(&src).unwrap().export_to_markdown()
+    }
+
+    /// docling-core ≥ 2.93 renders a `<field_region>` and its `<field_item>`s
+    /// to nothing (no `<!-- missing-text -->` placeholders); only each item's
+    /// key and value survive, the marker is dropped.
+    #[test]
+    fn field_regions_render_their_keys_and_values_only() {
+        let doc = r#"<doclang version="0.7"><text>Form:</text><field_region><field_item><marker>1</marker><key>Server</key><value>Quack</value></field_item></field_region><text>End</text></doclang>"#;
+        assert_eq!(
+            md(doc),
+            "Form:
+
+Server
+
+Quack
+
+End
+"
+        );
+    }
+
+    /// A `<content>` newline inside a rich cell's text item is a GFM hard
+    /// break to docling-core's text serializer, and the table flatten then
+    /// turns its newline into a space: three spaces in the cell, two between
+    /// the cell's blocks (docling 2.129).
+    #[test]
+    fn rich_cell_line_breaks_flatten_like_docling_core() {
+        let doc = r#"<doclang version="0.7"><table><ched/>A<nl/><fcel/><text><content>Rich cell
+A nested table</content></text><table><fcel/>x<nl/></table><nl/></table></doclang>"#;
+        assert!(
+            md(doc).contains("| Rich cell   A nested table  x |"),
+            "{}",
+            md(doc)
+        );
     }
 }

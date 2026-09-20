@@ -199,7 +199,30 @@ fn emit(label: &str, content: &str, caption: Option<String>, doc: &mut DoclingDo
             if let Some(cap) = caption {
                 doc.push(Node::Paragraph { text: cap });
             }
+            let start = doc.nodes.len();
             append_fragment(content, &mut doc.nodes, &crate::backend::images::NoFetch);
+            // docling's `_parse_table_html` flags a `<th>` as `column_header`
+            // only on the first row (`is_header and row_idx == 0`), so a
+            // two-row `<thead>` keeps its second row in the body — rendered
+            // as data, its spanning cells repeated — where the HTML backend
+            // would fold both into one ` - `-joined header line.
+            for node in &mut doc.nodes[start..] {
+                if let Node::Table(t) = node {
+                    if let Some(s) = t.structure.as_mut() {
+                        for h in s.header_row.iter_mut().skip(1) {
+                            *h = false;
+                        }
+                        for row in s.col_header.iter_mut().skip(1) {
+                            row.iter_mut().for_each(|h| *h = false);
+                        }
+                    }
+                    if let Some(cells) = t.cells.as_mut() {
+                        for c in cells.iter_mut().filter(|c| c.start_row > 0) {
+                            c.column_header = false;
+                        }
+                    }
+                }
+            }
         }
         "title" => doc.push(Node::Heading {
             level: 1,
@@ -247,6 +270,21 @@ fn caption_matches(elem: &str, caption: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// docling's `_parse_table_html` marks column headers on row 0 only, so a
+    /// two-row `<thead>` renders its second row as the first body row (with
+    /// the row-spanning cells repeated) instead of a ` - `-joined header, and
+    /// the numeric columns lose their right alignment to that text row.
+    #[test]
+    fn only_the_first_header_row_is_a_column_header() {
+        let src = "<|ref|>table<|/ref|><|det|>[[10, 10, 90, 90]]<|/det|>\n<table><tr><th rowspan=\"2\">Model</th><th colspan=\"2\">TEDs</th></tr><tr><th>simple</th><th>all</th></tr><tr><td>A</td><td>0.9</td><td>0.8</td></tr></table>\n";
+        let mut doc = DoclingDocument::new("t");
+        emit_deepseek(src, &mut doc);
+        assert_eq!(
+            doc.export_to_markdown(),
+            "| Model   | TEDs   | TEDs   |\n|---------|--------|--------|\n| Model   | simple | all    |\n| A       | 0.9    | 0.8    |\n"
+        );
+    }
 
     /// docling#3944's normalization: the Unlimited-OCR annotation moves into
     /// the DeepSeek `<|ref|>` shape, alone on its line, content following.
