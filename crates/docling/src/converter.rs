@@ -729,13 +729,13 @@ impl DocumentConverter {
         let mut document = match source.format {
             // A legacy APS (Automated Patent System) plain-text patent (`PATN`
             // first record) is reconstructed verbatim, mirroring docling.
-            InputFormat::Md if crate::backend::uspto::looks_like_aps(source.text()?) => {
+            InputFormat::Md if crate::backend::uspto::looks_like_aps(&source.text()?) => {
                 crate::backend::uspto::convert_aps(&source)?
             }
             // A text/Markdown-typed file that is actually an XML document (e.g. a
             // JATS article saved with a `.txt` extension) routes to the XML
             // backends by content, mirroring docling's content-based detection.
-            InputFormat::Md if looks_like_xml(source.text()?) => match sniff_xml(&source.bytes) {
+            InputFormat::Md if looks_like_xml(&source.text()?) => match sniff_xml(&source.bytes) {
                 InputFormat::XmlUspto => UsptoBackend.convert(&source)?,
                 InputFormat::XmlXbrl => XbrlBackend.convert(&source)?,
                 // A JATS/other XML document saved as `.txt` is reconstructed
@@ -745,7 +745,7 @@ impl DocumentConverter {
             },
             // DeepSeek-OCR annotated Markdown (VLM token format) is detected by
             // its `<|ref|>…[[bbox]]` annotations and parsed separately.
-            InputFormat::Md if is_deepseek_markdown(source.text()?) => {
+            InputFormat::Md if is_deepseek_markdown(&source.text()?) => {
                 DeepSeekBackend.convert(&source)?
             }
             InputFormat::Md => MarkdownBackend {
@@ -865,7 +865,7 @@ impl DocumentConverter {
             // Raw DocTags (VLM token markup, #152): the tolerant docling-core
             // parser — never fails, best-effort document out.
             InputFormat::DocTags => {
-                let mut doc = docling_core::doctags::parse(source.text()?);
+                let mut doc = docling_core::doctags::parse(&source.text()?);
                 doc.name = source.name.clone();
                 doc
             }

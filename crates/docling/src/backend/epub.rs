@@ -148,14 +148,46 @@ fn spine_files(opf: &str, opf_dir: &str) -> Result<Vec<String>, String> {
     let mut files = Vec::new();
     for itemref in dom.descendants().filter(|n| n.has_tag_name("itemref")) {
         if let Some(href) = itemref.attribute("idref").and_then(|id| id_to_href.get(id)) {
-            files.push(if opf_dir.is_empty() {
+            // `posixpath.normpath(posixpath.join(opf_dir, href))` (docling#4261,
+            // 2.129): an href that steps out of the package directory
+            // (`../Text/ch1.xhtml` from `OEBPS/`) resolves to the archive
+            // path it names instead of a literal `OEBPS/../Text/…` no entry
+            // matches.
+            files.push(normpath(&if opf_dir.is_empty() {
                 href.clone()
             } else {
                 format!("{opf_dir}/{href}")
-            });
+            }));
         }
     }
     Ok(files)
+}
+
+/// Python's `posixpath.normpath`: collapse `//` and `.`, resolve `..` against
+/// the preceding segment (a leading `..` that cannot be resolved is kept, as
+/// is a leading `/`).
+fn normpath(path: &str) -> String {
+    let absolute = path.starts_with('/');
+    let mut out: Vec<&str> = Vec::new();
+    for seg in path.split('/') {
+        match seg {
+            "" | "." => {}
+            ".." => match out.last() {
+                Some(&last) if last != ".." => {
+                    out.pop();
+                }
+                _ if absolute => {}
+                _ => out.push(".."),
+            },
+            s => out.push(s),
+        }
+    }
+    let joined = out.join("/");
+    match (absolute, joined.is_empty()) {
+        (true, _) => format!("/{joined}"),
+        (false, true) => ".".to_string(),
+        (false, false) => joined,
+    }
 }
 
 /// Decode `%XX` escapes (UTF-8 bytes) in a manifest href — `urllib.parse.unquote`
@@ -186,6 +218,22 @@ fn percent_decode(s: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// docling#4261 (2.129): a manifest href stepping out of the OPF directory
+    /// resolves like `posixpath.normpath`.
+    #[test]
+    fn manifest_hrefs_stepping_out_of_the_opf_dir_normalize() {
+        assert_eq!(normpath("OEBPS/../Text/ch1.xhtml"), "Text/ch1.xhtml");
+        assert_eq!(normpath("OEBPS/./a//b.xhtml"), "OEBPS/a/b.xhtml");
+        assert_eq!(normpath("../x.xhtml"), "../x.xhtml");
+        assert_eq!(normpath("a/.."), ".");
+        let opf = r#"<package><manifest><item id="a" href="../Text/ch1.xhtml"/></manifest>
+                     <spine><itemref idref="a"/></spine></package>"#;
+        assert_eq!(
+            spine_files(opf, "OEBPS").unwrap(),
+            vec!["Text/ch1.xhtml".to_string()]
+        );
+    }
 
     /// docling#4199: manifest hrefs are URLs, the archive holds the literal
     /// names — `chapter%201.xhtml` is `chapter 1.xhtml` in the zip.

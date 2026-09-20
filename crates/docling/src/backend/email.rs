@@ -38,10 +38,10 @@ impl DeclarativeBackend for EmailBackend {
             .ok_or_else(|| ConversionError::Parse("email: could not parse message".into()))?;
         let mut doc = DoclingDocument::new(&source.name);
 
-        if let Some(subject) = msg.subject().map(str::trim).filter(|s| !s.is_empty()) {
+        if let Some(subject) = msg.subject().map(header_safe).filter(|s| !s.is_empty()) {
             doc.push(Node::Heading {
                 level: 1,
-                text: escape_text(subject),
+                text: escape_text(&subject),
             });
         }
         for (label, addrs) in [("From", msg.from()), ("To", msg.to())] {
@@ -104,11 +104,11 @@ fn eml_attachment_labels(msg: &Message) -> Vec<String> {
     msg.attachments()
         .enumerate()
         .map(|(i, part)| {
+            // Header-derived, so single-line like every header (docling#4242).
             let name = part
                 .attachment_name()
-                .map(str::trim)
+                .map(header_safe)
                 .filter(|s| !s.is_empty())
-                .map(str::to_string)
                 .unwrap_or_else(|| format!("attachment-{}", i + 1));
             match part.content_type() {
                 Some(ct) => {
@@ -116,12 +116,49 @@ fn eml_attachment_labels(msg: &Message) -> Vec<String> {
                         Some(sub) => format!("{}/{sub}", ct.ctype()),
                         None => ct.ctype().to_string(),
                     };
-                    format!("{name} ({mime})")
+                    format!("{name} ({})", header_safe(&mime))
                 }
                 None => name,
             }
         })
         .collect()
+}
+
+/// docling's `_header_safe` (2.128, docling#4242): a header value collapsed
+/// to one line of single-spaced text — `" ".join(value.split())`, which
+/// covers every line terminator `str.splitlines()` knows and unfolds a
+/// folded header to one space — so a decoded RFC 2047 encoded-word cannot
+/// stand up a forged header line in the rendered document.
+fn header_safe(value: &str) -> String {
+    value.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+/// docling's `_quote_display_name`: a rendered display name holding an RFC
+/// 5322 special (`()<>[]:;@,\"` — `.` excepted, it parses back unquoted and
+/// is common in real names) is quoted, with `\` and `"` escaped, so
+/// `Name <email>` parses back as itself; a non-ASCII name stays readable
+/// text (where `formataddr` would RFC 2047-encode it).
+fn quote_display_name(name: &str) -> String {
+    if name.chars().any(|c| {
+        matches!(
+            c,
+            '(' | ')' | '<' | '>' | '[' | ']' | ':' | ';' | '@' | ',' | '"' | '\\'
+        )
+    }) {
+        let escaped: String = name
+            .chars()
+            .flat_map(|c| {
+                if matches!(c, '"' | '\\') {
+                    vec!['\\', c]
+                } else {
+                    vec![c]
+                }
+            })
+            .collect();
+        format!("\"{escaped}\"")
+    } else {
+        name.to_string()
+    }
 }
 
 /// `"Name <email>"` per address (or bare `email`), joined with `", "`.
@@ -131,10 +168,10 @@ fn format_addresses(addr: Option<&Address>) -> String {
     };
     addr.iter()
         .filter_map(|a| {
-            let name = a.name().map(str::trim).filter(|s| !s.is_empty());
+            let name = a.name().map(header_safe).filter(|s| !s.is_empty());
             let email = a.address().map(str::trim).filter(|s| !s.is_empty());
             match (name, email) {
-                (Some(n), Some(e)) => Some(format!("{n} <{e}>")),
+                (Some(n), Some(e)) => Some(format!("{} <{e}>", quote_display_name(&n))),
                 (None, Some(e)) => Some(e.to_string()),
                 _ => None,
             }
@@ -143,10 +180,13 @@ fn format_addresses(addr: Option<&Address>) -> String {
         .join(", ")
 }
 
-/// Body paragraphs (split on blank lines), preferring `text/plain`.
+/// Body paragraphs (split on blank lines), preferring `text/plain`. CRLF and
+/// a lone CR are normalised to `\n` first (docling#4248, 2.129), so a
+/// CR-only body still splits into paragraphs.
 fn body_paragraphs(msg: &Message) -> Vec<String> {
     let re = cached_regex!(r"\n\s*\n+");
     let split = |text: &str, out: &mut Vec<String>| {
+        let text = text.replace("\r\n", "\n").replace('\r', "\n");
         for p in re.split(text.trim()) {
             let p = p.trim();
             if !p.is_empty() {
@@ -159,7 +199,7 @@ fn body_paragraphs(msg: &Message) -> Vec<String> {
     if plain > 0 {
         for i in 0..plain {
             if let Some(t) = msg.body_text(i) {
-                split(&t.replace("\r\n", "\n"), &mut out);
+                split(&t, &mut out);
             }
         }
         return out;
@@ -168,7 +208,7 @@ fn body_paragraphs(msg: &Message) -> Vec<String> {
     // plain-text only; full HTML→Markdown of email bodies is a later refinement).
     for i in 0..msg.html_body_count() {
         if let Some(t) = msg.body_html(i) {
-            split(&t.replace("\r\n", "\n"), &mut out);
+            split(&t, &mut out);
         }
     }
     out
@@ -199,6 +239,32 @@ mod tests {
 
     /// #251: `list_attachments` appends the section with `name (type)` labels
     /// for `.eml` too — the docling label format, payload never embedded.
+    /// docling#4242/#4248 (2.128–2.129): a display name with RFC 5322 specials
+    /// is quoted (with `"` and `\` escaped), header values are collapsed to
+    /// one line, and a CR-only body still splits into paragraphs.
+    #[test]
+    fn display_names_and_bodies_follow_docling_2129() {
+        assert_eq!(quote_display_name("Doe, John"), "\"Doe, John\"");
+        assert_eq!(quote_display_name("Ann \"Q\" Lee"), "\"Ann \\\"Q\\\" Lee\"");
+        assert_eq!(quote_display_name("J. R. Hartley"), "J. R. Hartley");
+        assert_eq!(quote_display_name("Zoë Müller"), "Zoë Müller");
+        assert_eq!(header_safe("  two\r\n  lines  "), "two lines");
+        let eml = "From: \"Doe, John\" <j@x.com>\r\nTo: b@y.com\r\nSubject: Re:\r\n folded\r\n\
+                   Content-Type: text/plain\r\n\r\nOne.\r\rTwo.\r";
+        let src = SourceDocument::from_bytes("m.eml", InputFormat::Email, eml.as_bytes().to_vec());
+        let md = EmailBackend {
+            list_attachments: false,
+        }
+        .convert(&src)
+        .unwrap()
+        .export_to_markdown();
+        assert!(
+            md.starts_with("# Re: folded\n\nFrom: \"Doe, John\" &lt;j@x.com&gt;\n"),
+            "{md}"
+        );
+        assert!(md.ends_with("One.\n\nTwo.\n"), "{md}");
+    }
+
     #[test]
     fn eml_list_attachments_appends_labels() {
         let eml = concat!(

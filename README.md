@@ -824,7 +824,9 @@ headings, so by default every PDF heading lands at the same depth; with the
 flag on, levels come from — in precedence order — the **PDF outline**
 (bookmarks, fuzzily matched by title + page; a confidently matched heading
 takes the bookmark's depth, and a bookmark-matched *list item* is promoted to
-a heading), **legal/outline numbering** (`PART I → 1. → 1.1 → (a) → (i)`), and
+a heading), **legal/outline numbering** (`PART I → 1. → 1.1 → (a) → (i)`, with
+docling 2.129's `1:` / `(2)` / `A -` separators and bare chapter numbers on a
+consecutive run from 1), and
 **font style** (size with near-equal measurement merging, then weight, slant
 and letter case from the embedded font names). Headings with no applicable
 signal keep their level; nothing else about the document changes. Off by

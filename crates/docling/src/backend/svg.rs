@@ -277,8 +277,8 @@ fn normalize_ws(s: &str) -> String {
 /// paragraph, then every visual line of canvas text as its own paragraph.
 pub(crate) fn extract_text(source: &SourceDocument) -> Result<DoclingDocument, ConversionError> {
     let xml = source.text()?;
-    super::xml_depth::check(xml, "svg")?;
-    let tree = Document::parse(xml).map_err(|e| ConversionError::Parse(format!("svg: {e}")))?;
+    super::xml_depth::check(&xml, "svg")?;
+    let tree = Document::parse(&xml).map_err(|e| ConversionError::Parse(format!("svg: {e}")))?;
     let root = tree.root_element();
     if root.tag_name().name() != "svg" {
         return Err(ConversionError::Parse(format!(

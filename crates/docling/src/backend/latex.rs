@@ -17,7 +17,7 @@ pub struct LatexBackend;
 impl DeclarativeBackend for LatexBackend {
     fn convert(&self, source: &SourceDocument) -> Result<DoclingDocument, ConversionError> {
         let raw = source.text()?;
-        let text = strip_comments(raw);
+        let text = strip_comments(&raw);
         let title = braced_arg(&text, "\\title");
         let author = braced_arg(&text, "\\author");
         let body = between(&text, "\\begin{document}", "\\end{document}").unwrap_or(&text);

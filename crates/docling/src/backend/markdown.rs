@@ -148,7 +148,8 @@ impl DeclarativeBackend for MarkdownBackend {
         // (docling#3817) reads the pipe-less spelling; normalizing the edges
         // up front lets pulldown parse the same tables. `text` stays borrowed
         // (no allocation) when nothing needs normalizing — the common case.
-        let normalized = normalize_table_edge_pipes(source.text()?);
+        let text = source.text()?;
+        let normalized = normalize_table_edge_pipes(&text);
         let text = normalized.as_ref();
         let mut opts = Options::empty();
         opts.insert(Options::ENABLE_TABLES);

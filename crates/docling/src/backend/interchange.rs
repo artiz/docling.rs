@@ -42,11 +42,11 @@ impl DeclarativeBackend for InterchangeBackend {
         let mut doc = DoclingDocument::new(&source.name);
         if let Ok(text) = source.text() {
             if text.trim_start().starts_with("ID;") {
-                convert_sylk(text, &mut doc)?;
+                convert_sylk(&text, &mut doc)?;
                 return Ok(doc);
             }
             if text.lines().next().map(str::trim) == Some("TABLE") {
-                convert_dif(text, &mut doc)?;
+                convert_dif(&text, &mut doc)?;
                 return Ok(doc);
             }
         }

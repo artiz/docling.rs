@@ -16,7 +16,11 @@ use crate::source::SourceDocument;
 
 /// AsciiDoc cell specifier, e.g. `2*`, `^`, `.^`, `h` — the run that can be
 /// glued before a `|` in a table line. Mirrors docling's `_CELL_SPEC`.
-const CELL_SPEC: &str = r"(?:\d+(?:\.\d+)?[*+])*[<^>]?(?:\.[<^>])?[adehlms]?";
+/// AsciiDoc writes the span as `[colspan][.rowspan]` followed by `+` or `*`,
+/// and either number may be omitted, so `.2+` is a rowspan on its own
+/// (docling#4290, 2.129); requiring one of the two keeps a bare `+` from
+/// matching.
+const CELL_SPEC: &str = r"(?:(?:\d+(?:\.\d+)?|\.\d+)[*+])*[<^>]?(?:\.[<^>])?[adehlms]?";
 
 /// docling's `_LIST_ITEM_PATTERN` (docling#4118): besides `*`, `-` and `1.`,
 /// AsciiDoc's dotted (`.`, `..`, `...`) and lettered/roman (`a.`, `i.`) ordered
@@ -44,9 +48,9 @@ impl DeclarativeBackend for AsciiDocBackend {
                 source.base_dir().map(|p| p.to_path_buf()),
                 source.base_url.clone(),
             );
-            Ok(parse(text, &source.name, &resolver))
+            Ok(parse(&text, &source.name, &resolver))
         } else {
-            Ok(parse(text, &source.name, &NoFetch))
+            Ok(parse(&text, &source.name, &NoFetch))
         }
     }
 }
@@ -171,7 +175,11 @@ impl Parser<'_> {
     fn feed_literal(&mut self, code: String, doc: &mut DoclingDocument) {
         self.close_list_if_needed(Trigger::Literal);
         self.flush_text(doc);
-        self.flush_caption(doc);
+        // A pending block title is the code item's *caption* since docling
+        // 2.127 (`add_code(caption=…)`), and docling-core's Markdown renders
+        // a code item's captions after the block — where 2.126 wrote the
+        // title as a text item ahead of it.
+        let caption = self.take_caption();
         if !(self.in_list && self.fold_child(doc, &format!("```\n{code}\n```"))) {
             doc.push(Node::Code {
                 language: None,
@@ -179,6 +187,9 @@ impl Parser<'_> {
                 orig: None,
                 pretty: None,
             });
+        }
+        if let Some(text) = caption {
+            doc.push(Node::Caption { text, href: None });
         }
         self.list_continuation = false;
     }
@@ -395,14 +406,6 @@ impl Parser<'_> {
         Some(escape_text(&cap))
     }
 
-    /// Emit a pending caption as docling's standalone caption text item — what
-    /// happens when a list or a literal block follows it instead of a figure.
-    fn flush_caption(&mut self, doc: &mut DoclingDocument) {
-        if let Some(text) = self.take_caption() {
-            doc.push(Node::Caption { text, href: None });
-        }
-    }
-
     fn flush_text(&mut self, doc: &mut DoclingDocument) {
         if !self.text_data.is_empty() {
             let text = self.text_data.join(" ");
@@ -558,10 +561,15 @@ mod tests {
         // An unterminated block still yields its body (docling's `_iter_blocks`
         // flushes what it has at EOF).
         assert_eq!(md("....\nno close\n"), "```\nno close\n```\n");
-        // A caption in front of a literal block is docling's own text item.
+        // A block title in front of a literal block is the code item's
+        // caption, which docling-core renders after the block (2.127+).
         assert_eq!(
             md(".Literal example\n....\nraw\n....\n"),
-            "Literal example\n\n```\nraw\n```\n"
+            "```\nraw\n```\n\nLiteral example\n"
+        );
+        assert_eq!(
+            md("= T\n\npara\n\n.Cap here\n....\nraw\n....\n\nafter\n"),
+            "# T\n\npara\n\n```\nraw\n```\n\nCap here\n\nafter\n"
         );
     }
 
@@ -647,6 +655,19 @@ mod tests {
         assert_eq!(
             md("= T\n\n== A\n\n==== Deep\n\ntext\n\n== B\n\n.Cap\nimage::x.png[]\n\nafter\n"),
             "# T\n\n## A\n\n#### Deep\n\ntext\n\n## B\n\nCap\n\n<!-- image -->\n\nafter\n"
+        );
+    }
+
+    /// docling#4290 (2.129): a rowspan-only cell specifier (`.2+|`) is a
+    /// specifier, not cell text; a `2.3+|` span and a bare `|` still read.
+    #[test]
+    fn rowspan_only_cell_specifiers_are_stripped() {
+        assert_eq!(parse_table_line(".2+|A |B"), vec!["A", "B"]);
+        assert_eq!(parse_table_line("2.3+|D ^.^h|E"), vec!["D", "E"]);
+        assert!(is_table_line(".2+|A |B"));
+        assert_eq!(
+            md("|===\n.2+|A |B\n|===\n"),
+            "| A   | B   |\n|-----|-----|\n"
         );
     }
 
