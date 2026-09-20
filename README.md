@@ -139,8 +139,33 @@ any OS; the docling-rs-serve Docker image ships ffmpeg preinstalled.
 
 Output is checked against upstream Python docling — declarative formats
 byte-for-byte against live docling, the ML pipeline against a deterministic
-snapshot baseline. See [`docs/MIGRATION.md`](./docs/MIGRATION.md) and
-`scripts/conformance/conformance.sh`.
+snapshot baseline. Latest full sweep, docling **2.129.0**
+(`scripts/conformance/full_conformance.py`: Markdown byte-for-byte, JSON
+structurally — every key and value but `origin`/`version` and re-encoded
+image bytes):
+
+| Format | Files | Markdown exact | JSON identical |
+|---|---|---|---|
+| DOCX | 36 | 36 | 35 |
+| HTML | 32 | 32 | 31 |
+| PPTX | 8 | 8 | 8 |
+| XLSX | 13 | 13 | 13 |
+| CSV | 9 | 9 | 6 |
+| Markdown | 10 | 10 | 2 |
+| JATS | 6 | 6 | 0 |
+| ODF | 7 | 7 | 0 |
+| WebVTT | 4 | 4 | 0 |
+| DocLang | 15 | 13 | 0 |
+| AsciiDoc | 4 | 2 | 0 |
+| USPTO | 9 | 5 | 0 |
+| EPUB | 1 | 0 | 1 |
+| Email / iWork Pages / EBCDIC | 2 / 1 / 3 | all | all |
+
+The JSON column is 100% wherever the backend builds docling's item tree
+(HTML, DOCX, PPTX) or its flat export already has upstream's shape (XLSX);
+the zeros are the flat export's `text`-for-`paragraph` labels, `-` list
+markers and missing heading nesting, next in line for the same treatment.
+Per-format residuals: [`docs/MIGRATION.md`](./docs/MIGRATION.md).
 
 ## RAG subsystem
 
