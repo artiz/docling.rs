@@ -439,6 +439,10 @@ constructor; output options (`to`, `imageMode`, `artifactsDir`) are per call.
   expect seconds per code/formula region on CPU. Also read by `new Pipeline()`.
 - `asrModel` / `asrLang`: Whisper model preset and transcription language
   (`"auto"` default) for audio/video sources.
+- `encoding`: character encoding of text inputs (Markdown, CSV, AsciiDoc,
+  WebVTT, XML, …) — docling's `TextBackendOptions.encoding`, a WHATWG label
+  such as `"shift_jis"` or `"koi8-r"`. Unset detects (BOM, UTF-8, then
+  windows-1252); bytes the named encoding cannot decode fail the conversion.
 - `videoFrames`: max frames sampled from a video input as timestamped pictures
   (`0` = transcript only; default 8, needs ffmpeg at runtime).
 - `pipeline`: `"standard"` (default) or `"vlm"` — convert PDF/image pages
