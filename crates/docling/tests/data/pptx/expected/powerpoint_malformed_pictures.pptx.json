@@ -83,15 +83,15 @@
       },
       "children": [],
       "content_layer": "body",
-      "label": "text",
+      "label": "paragraph",
       "prov": [
         {
           "page_no": 1,
           "bbox": {
-            "l": 910828.13,
-            "t": 1192113.28,
-            "r": 8233171.88,
-            "b": 267890.63,
+            "l": 914400.0,
+            "t": 1188720.0,
+            "r": 8229600.0,
+            "b": 274320.0,
             "coord_origin": "BOTTOMLEFT"
           },
           "charspan": [
@@ -110,15 +110,15 @@
       },
       "children": [],
       "content_layer": "body",
-      "label": "text",
+      "label": "paragraph",
       "prov": [
         {
           "page_no": 2,
           "bbox": {
-            "l": 910828.13,
-            "t": 1192113.28,
-            "r": 8233171.88,
-            "b": 267890.63,
+            "l": 914400.0,
+            "t": 1188720.0,
+            "r": 8229600.0,
+            "b": 274320.0,
             "coord_origin": "BOTTOMLEFT"
           },
           "charspan": [
@@ -137,15 +137,15 @@
       },
       "children": [],
       "content_layer": "body",
-      "label": "text",
+      "label": "paragraph",
       "prov": [
         {
           "page_no": 3,
           "bbox": {
-            "l": 910828.13,
-            "t": 1192113.28,
-            "r": 8233171.88,
-            "b": 267890.63,
+            "l": 914400.0,
+            "t": 1188720.0,
+            "r": 8229600.0,
+            "b": 274320.0,
             "coord_origin": "BOTTOMLEFT"
           },
           "charspan": [

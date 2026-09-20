@@ -21,22 +21,22 @@
         "$ref": "#/groups/0"
       },
       {
-        "$ref": "#/texts/2"
-      },
-      {
-        "$ref": "#/texts/3"
-      },
-      {
         "$ref": "#/groups/1"
       },
       {
         "$ref": "#/groups/2"
       },
       {
-        "$ref": "#/texts/10"
+        "$ref": "#/groups/3"
       },
       {
-        "$ref": "#/texts/11"
+        "$ref": "#/groups/4"
+      },
+      {
+        "$ref": "#/groups/6"
+      },
+      {
+        "$ref": "#/groups/7"
       }
     ],
     "content_layer": "body",
@@ -68,6 +68,34 @@
       },
       "children": [
         {
+          "$ref": "#/texts/2"
+        }
+      ],
+      "content_layer": "notes",
+      "name": "comment-slide1-1",
+      "label": "comment_section"
+    },
+    {
+      "self_ref": "#/groups/2",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [
+        {
+          "$ref": "#/texts/3"
+        }
+      ],
+      "content_layer": "notes",
+      "name": "comment-slide1-1",
+      "label": "comment_section"
+    },
+    {
+      "self_ref": "#/groups/3",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [
+        {
           "$ref": "#/texts/4"
         },
         {
@@ -79,7 +107,7 @@
       "label": "chapter"
     },
     {
-      "self_ref": "#/groups/2",
+      "self_ref": "#/groups/4",
       "parent": {
         "$ref": "#/body"
       },
@@ -88,7 +116,7 @@
           "$ref": "#/texts/6"
         },
         {
-          "$ref": "#/groups/3"
+          "$ref": "#/groups/5"
         }
       ],
       "content_layer": "body",
@@ -96,9 +124,9 @@
       "label": "chapter"
     },
     {
-      "self_ref": "#/groups/3",
+      "self_ref": "#/groups/5",
       "parent": {
-        "$ref": "#/groups/2"
+        "$ref": "#/groups/4"
       },
       "children": [
         {
@@ -114,6 +142,34 @@
       "content_layer": "body",
       "name": "list",
       "label": "list"
+    },
+    {
+      "self_ref": "#/groups/6",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [
+        {
+          "$ref": "#/texts/10"
+        }
+      ],
+      "content_layer": "notes",
+      "name": "comment-slide3-2",
+      "label": "comment_section"
+    },
+    {
+      "self_ref": "#/groups/7",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [
+        {
+          "$ref": "#/texts/11"
+        }
+      ],
+      "content_layer": "notes",
+      "name": "comment-slide3-3",
+      "label": "comment_section"
     }
   ],
   "texts": [
@@ -129,10 +185,10 @@
         {
           "page_no": 1,
           "bbox": {
-            "l": 464343.75,
-            "t": 1419820.31,
-            "r": 8679656.25,
-            "b": 281285.16,
+            "l": 457200.0,
+            "t": 1417638.0,
+            "r": 8686800.0,
+            "b": 274638.0,
             "coord_origin": "BOTTOMLEFT"
           },
           "charspan": [
@@ -151,15 +207,15 @@
       },
       "children": [],
       "content_layer": "body",
-      "label": "text",
+      "label": "paragraph",
       "prov": [
         {
           "page_no": 1,
           "bbox": {
-            "l": 464343.75,
-            "t": 6121300.78,
-            "r": 8679656.25,
-            "b": 1593949.22,
+            "l": 457200.0,
+            "t": 6126163.0,
+            "r": 8686800.0,
+            "b": 1600200.0,
             "coord_origin": "BOTTOMLEFT"
           },
           "charspan": [
@@ -174,7 +230,7 @@
     {
       "self_ref": "#/texts/2",
       "parent": {
-        "$ref": "#/body"
+        "$ref": "#/groups/1"
       },
       "children": [],
       "content_layer": "notes",
@@ -186,7 +242,7 @@
     {
       "self_ref": "#/texts/3",
       "parent": {
-        "$ref": "#/body"
+        "$ref": "#/groups/2"
       },
       "children": [],
       "content_layer": "notes",
@@ -198,7 +254,7 @@
     {
       "self_ref": "#/texts/4",
       "parent": {
-        "$ref": "#/groups/1"
+        "$ref": "#/groups/3"
       },
       "children": [],
       "content_layer": "body",
@@ -207,10 +263,10 @@
         {
           "page_no": 2,
           "bbox": {
-            "l": 464343.75,
-            "t": 1419820.31,
-            "r": 8679656.25,
-            "b": 281285.16,
+            "l": 457200.0,
+            "t": 1417638.0,
+            "r": 8686800.0,
+            "b": 274638.0,
             "coord_origin": "BOTTOMLEFT"
           },
           "charspan": [
@@ -225,19 +281,19 @@
     {
       "self_ref": "#/texts/5",
       "parent": {
-        "$ref": "#/groups/1"
+        "$ref": "#/groups/3"
       },
       "children": [],
       "content_layer": "body",
-      "label": "text",
+      "label": "paragraph",
       "prov": [
         {
           "page_no": 2,
           "bbox": {
-            "l": 464343.75,
-            "t": 6121300.78,
-            "r": 8679656.25,
-            "b": 1593949.22,
+            "l": 457200.0,
+            "t": 6126163.0,
+            "r": 8686800.0,
+            "b": 1600200.0,
             "coord_origin": "BOTTOMLEFT"
           },
           "charspan": [
@@ -252,7 +308,7 @@
     {
       "self_ref": "#/texts/6",
       "parent": {
-        "$ref": "#/groups/2"
+        "$ref": "#/groups/4"
       },
       "children": [],
       "content_layer": "body",
@@ -261,10 +317,10 @@
         {
           "page_no": 3,
           "bbox": {
-            "l": 464343.75,
-            "t": 1419820.31,
-            "r": 8679656.25,
-            "b": 281285.16,
+            "l": 457200.0,
+            "t": 1417638.0,
+            "r": 8686800.0,
+            "b": 274638.0,
             "coord_origin": "BOTTOMLEFT"
           },
           "charspan": [
@@ -279,7 +335,7 @@
     {
       "self_ref": "#/texts/7",
       "parent": {
-        "$ref": "#/groups/3"
+        "$ref": "#/groups/5"
       },
       "children": [],
       "content_layer": "body",
@@ -288,10 +344,10 @@
         {
           "page_no": 3,
           "bbox": {
-            "l": 464343.75,
-            "t": 6121300.78,
-            "r": 8679656.25,
-            "b": 1593949.22,
+            "l": 457200.0,
+            "t": 6126163.0,
+            "r": 8686800.0,
+            "b": 1600200.0,
             "coord_origin": "BOTTOMLEFT"
           },
           "charspan": [
@@ -303,12 +359,12 @@
       "orig": "Import many document formats into a unified and structured Docling Document , including scanned pages via an OCR engine of your choice.",
       "text": "Import many document formats into a unified and structured Docling Document , including scanned pages via an OCR engine of your choice.",
       "enumerated": false,
-      "marker": "-"
+      "marker": ""
     },
     {
       "self_ref": "#/texts/8",
       "parent": {
-        "$ref": "#/groups/3"
+        "$ref": "#/groups/5"
       },
       "children": [],
       "content_layer": "body",
@@ -317,10 +373,10 @@
         {
           "page_no": 3,
           "bbox": {
-            "l": 464343.75,
-            "t": 6121300.78,
-            "r": 8679656.25,
-            "b": 1593949.22,
+            "l": 457200.0,
+            "t": 6126163.0,
+            "r": 8686800.0,
+            "b": 1600200.0,
             "coord_origin": "BOTTOMLEFT"
           },
           "charspan": [
@@ -332,12 +388,12 @@
       "orig": "Export a parsed document to formats that simplify processing and ingestion into AI, RAG, and agentic systems. ",
       "text": "Export a parsed document to formats that simplify processing and ingestion into AI, RAG, and agentic systems. ",
       "enumerated": false,
-      "marker": "-"
+      "marker": ""
     },
     {
       "self_ref": "#/texts/9",
       "parent": {
-        "$ref": "#/groups/3"
+        "$ref": "#/groups/5"
       },
       "children": [],
       "content_layer": "body",
@@ -346,10 +402,10 @@
         {
           "page_no": 3,
           "bbox": {
-            "l": 464343.75,
-            "t": 6121300.78,
-            "r": 8679656.25,
-            "b": 1593949.22,
+            "l": 457200.0,
+            "t": 6126163.0,
+            "r": 8686800.0,
+            "b": 1600200.0,
             "coord_origin": "BOTTOMLEFT"
           },
           "charspan": [
@@ -361,12 +417,12 @@
       "orig": "Extract document components and their properties from the Docling Document.",
       "text": "Extract document components and their properties from the Docling Document.",
       "enumerated": false,
-      "marker": "-"
+      "marker": ""
     },
     {
       "self_ref": "#/texts/10",
       "parent": {
-        "$ref": "#/body"
+        "$ref": "#/groups/6"
       },
       "children": [],
       "content_layer": "notes",
@@ -378,7 +434,7 @@
     {
       "self_ref": "#/texts/11",
       "parent": {
-        "$ref": "#/body"
+        "$ref": "#/groups/7"
       },
       "children": [],
       "content_layer": "notes",

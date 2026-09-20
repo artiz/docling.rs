@@ -94,9 +94,36 @@ pub enum TreeKind {
         /// A native chart's data grid (docling's `meta.tabular_chart.chart_data`,
         /// the series reconstructed as a `TableData`), for a DOCX chart drawing.
         chart: Option<Table>,
+        /// The `ImageRef.dpi` docling writes for `image` when the backend
+        /// read one from the file (python-pptx's `Image.dpi`: PIL's `dpi`
+        /// info, rounded, 72 when absent or out of 1–2048); `None` → 72,
+        /// which is what upstream's other office backends pass.
+        dpi: Option<u32>,
     },
     /// A form key-value region (`field_regions` / `field_items`).
     FieldRegion { items: Vec<FieldItem> },
+}
+
+/// docling's `ProvenanceItem` for a tree item, written verbatim: the
+/// backend's own geometry in the page's units — a PPTX shape's EMU box,
+/// whose `pages` entry is the slide size in EMU — rather than the 0–511
+/// DocLang grid the flat [`Node::Located`](crate::Node::Located) carries
+/// (which cannot round-trip those integers).
+#[derive(Debug, Clone, PartialEq)]
+pub struct TreeProv {
+    /// 1-based page (slide) number.
+    pub page_no: usize,
+    /// `[l, t, r, b]`, exactly as docling computed them.
+    pub bbox: [f64; 4],
+    /// docling's `coord_origin` tag. `MsPowerpointDocumentBackend` builds a
+    /// shape's box with `BoundingBox.from_tuple(…, BOTTOMLEFT)` — which reads
+    /// the tuple as `(l, b, r, t)`, so the shape's top EMU lands in `b` — a
+    /// quirk the JSON keeps; a speaker note's zero box is `TOPLEFT`
+    /// (`BoundingBox`'s default).
+    pub bottom_left: bool,
+    /// `[0, len(text)]` in characters for a text item, `[0, 0]` for a table
+    /// or picture.
+    pub charspan: [usize; 2],
 }
 
 /// One item of an [`ItemTree`].
@@ -109,6 +136,9 @@ pub struct TreeItem {
     /// The content layer; `None` = `body`.
     pub layer: Option<ContentLayer>,
     pub kind: TreeKind,
+    /// The item's `prov` entry, when the backend has page geometry for it
+    /// (`None` → `prov: []`, what the HTML and DOCX backends write).
+    pub prov: Option<TreeProv>,
     /// docling's `DocItem.comments`: the `comment_section` groups (or note
     /// text items) annotating this item, as item indices — written after
     /// `prov` when non-empty.
@@ -144,6 +174,7 @@ impl ItemTree {
             children: Vec::new(),
             layer,
             kind,
+            prov: None,
             comments: Vec::new(),
             deleted: false,
         });
@@ -152,6 +183,59 @@ impl ItemTree {
             None => self.body.push(id),
         }
         id
+    }
+
+    /// [`add`](Self::add) with the item's provenance — docling's
+    /// `add_text(…, prov=prov)`.
+    pub fn add_with_prov(
+        &mut self,
+        parent: Option<usize>,
+        layer: Option<ContentLayer>,
+        kind: TreeKind,
+        prov: TreeProv,
+    ) -> usize {
+        let id = self.add(parent, layer, kind);
+        self.items[id].prov = Some(prov);
+        id
+    }
+
+    /// Append every item of `other` after this tree's, renumbering its
+    /// indices (parents, children, comments, table/picture caption and
+    /// rich-cell refs) and adding its body children to this body — so a
+    /// backend can build independent fragments in parallel (one per PPTX
+    /// slide) and still hand the export one tree in creation order, exactly
+    /// as if it had been built sequentially.
+    pub fn append(&mut self, other: ItemTree) {
+        let off = self.items.len();
+        let shift = |i: usize| i + off;
+        for mut item in other.items {
+            item.parent = item.parent.map(shift);
+            for c in item.children.iter_mut().chain(item.comments.iter_mut()) {
+                *c = shift(*c);
+            }
+            match &mut item.kind {
+                TreeKind::Table {
+                    rich_cells,
+                    captions,
+                    ..
+                } => {
+                    for (_, _, g) in rich_cells.iter_mut() {
+                        *g = shift(*g);
+                    }
+                    for c in captions.iter_mut() {
+                        *c = shift(*c);
+                    }
+                }
+                TreeKind::Picture { captions, .. } => {
+                    for c in captions.iter_mut() {
+                        *c = shift(*c);
+                    }
+                }
+                _ => {}
+            }
+            self.items.push(item);
+        }
+        self.body.extend(other.body.into_iter().map(shift));
     }
 
     /// Move `id` under `new_parent`, dropping it from its current parent's
@@ -280,5 +364,92 @@ mod tests {
         assert_eq!(t.bucket_index(code), 3, "title, a, b precede it in `texts`");
         assert_eq!(t.bucket_index(group), 0);
         assert_eq!(t.body, vec![title, code]);
+    }
+
+    /// `append` renumbers a fragment built on its own (a slide converted in
+    /// parallel) so the merged tree reads as if built in one pass: parents,
+    /// children, comment back-refs and caption refs all shift together.
+    #[test]
+    fn append_renumbers_a_fragment_into_creation_order() {
+        let mut whole = ItemTree::default();
+        let slide0 = whole.add(
+            None,
+            None,
+            TreeKind::Group {
+                label: "chapter".into(),
+                name: "slide-0".into(),
+            },
+        );
+        whole.add(Some(slide0), None, text("first"));
+
+        let mut frag = ItemTree::default();
+        let slide1 = frag.add(
+            None,
+            None,
+            TreeKind::Group {
+                label: "chapter".into(),
+                name: "slide-1".into(),
+            },
+        );
+        let cap = frag.add_with_prov(
+            Some(slide1),
+            None,
+            TreeKind::Text {
+                label: "caption".into(),
+                text: "Title".into(),
+                orig: None,
+                formatting: None,
+                hyperlink: None,
+                level: None,
+                list: None,
+            },
+            TreeProv {
+                page_no: 2,
+                bbox: [1.0, 2.0, 3.0, 4.0],
+                bottom_left: true,
+                charspan: [0, 5],
+            },
+        );
+        let pic = frag.add(
+            Some(slide1),
+            None,
+            TreeKind::Picture {
+                captions: vec![cap],
+                image: None,
+                classification: Some("bar_chart".into()),
+                chart: None,
+                dpi: None,
+            },
+        );
+        let note = frag.add(
+            None,
+            Some(ContentLayer::Notes),
+            TreeKind::Group {
+                label: "comment_section".into(),
+                name: "comment-slide2-1".into(),
+            },
+        );
+        frag.items[pic].comments.push(note);
+
+        whole.append(frag);
+        assert_eq!(whole.body, vec![slide0, 2, 5]);
+        assert_eq!(whole.items[2].children, vec![3, 4]);
+        assert_eq!(whole.items[3].parent, Some(2));
+        assert_eq!(whole.items[3].prov.as_ref().map(|p| p.page_no), Some(2));
+        assert!(
+            matches!(&whole.items[4].kind, TreeKind::Picture { captions, .. } if captions == &[3])
+        );
+        assert_eq!(whole.items[4].comments, vec![5]);
+        assert_eq!(whole.items[5].parent, None);
+        assert_eq!(
+            whole.bucket_index(4),
+            0,
+            "the fragment's picture is #/pictures/0"
+        );
+        assert_eq!(
+            whole.bucket_index(5),
+            2,
+            "slide-0, slide-1 precede it in `groups`"
+        );
     }
 }

@@ -109,10 +109,10 @@
         {
           "page_no": 1,
           "bbox": {
-            "l": 833437.5,
-            "t": 1687710.94,
-            "r": 11358562.5,
-            "b": 361652.34,
+            "l": 838200.0,
+            "t": 1690688.0,
+            "r": 11353800.0,
+            "b": 365125.0,
             "coord_origin": "BOTTOMLEFT"
           },
           "charspan": [
@@ -131,15 +131,15 @@
       },
       "children": [],
       "content_layer": "body",
-      "label": "text",
+      "label": "paragraph",
       "prov": [
         {
           "page_no": 1,
           "bbox": {
-            "l": 833437.5,
-            "t": 6174878.91,
-            "r": 11358562.5,
-            "b": 1821656.25,
+            "l": 838200.0,
+            "t": 6176963.0,
+            "r": 11353800.0,
+            "b": 1825625.0,
             "coord_origin": "BOTTOMLEFT"
           },
           "charspan": [
@@ -163,10 +163,10 @@
         {
           "page_no": 1,
           "bbox": {
-            "l": 833437.5,
-            "t": 6174878.91,
-            "r": 11358562.5,
-            "b": 1821656.25,
+            "l": 838200.0,
+            "t": 6176963.0,
+            "r": 11353800.0,
+            "b": 1825625.0,
             "coord_origin": "BOTTOMLEFT"
           },
           "charspan": [
@@ -178,7 +178,7 @@
       "orig": "Open-source software is cost-effective as it eliminates license fees, reducing overall expenses.",
       "text": "Open-source software is cost-effective as it eliminates license fees, reducing overall expenses.",
       "enumerated": false,
-      "marker": "-"
+      "marker": ""
     },
     {
       "self_ref": "#/texts/3",
@@ -192,10 +192,10 @@
         {
           "page_no": 1,
           "bbox": {
-            "l": 833437.5,
-            "t": 6174878.91,
-            "r": 11358562.5,
-            "b": 1821656.25,
+            "l": 838200.0,
+            "t": 6176963.0,
+            "r": 11353800.0,
+            "b": 1825625.0,
             "coord_origin": "BOTTOMLEFT"
           },
           "charspan": [
@@ -207,7 +207,7 @@
       "orig": "Ehnhances security and transparency by allowing public access to source code",
       "text": "Ehnhances security and transparency by allowing public access to source code",
       "enumerated": false,
-      "marker": "-"
+      "marker": ""
     },
     {
       "self_ref": "#/texts/4",
@@ -221,10 +221,10 @@
         {
           "page_no": 1,
           "bbox": {
-            "l": 833437.5,
-            "t": 6174878.91,
-            "r": 11358562.5,
-            "b": 1821656.25,
+            "l": 838200.0,
+            "t": 6176963.0,
+            "r": 11353800.0,
+            "b": 1825625.0,
             "coord_origin": "BOTTOMLEFT"
           },
           "charspan": [
@@ -236,7 +236,7 @@
       "orig": "Strong global community improves and maintains open-source projects.",
       "text": "Strong global community improves and maintains open-source projects.",
       "enumerated": false,
-      "marker": "-"
+      "marker": ""
     },
     {
       "self_ref": "#/texts/5",
@@ -250,10 +250,10 @@
         {
           "page_no": 1,
           "bbox": {
-            "l": 833437.5,
-            "t": 6174878.91,
-            "r": 11358562.5,
-            "b": 1821656.25,
+            "l": 838200.0,
+            "t": 6176963.0,
+            "r": 11353800.0,
+            "b": 1825625.0,
             "coord_origin": "BOTTOMLEFT"
           },
           "charspan": [
@@ -265,7 +265,7 @@
       "orig": "Offers flexibility, allowing users to customize and adapt the software",
       "text": "Offers flexibility, allowing users to customize and adapt the software",
       "enumerated": false,
-      "marker": "-"
+      "marker": ""
     },
     {
       "self_ref": "#/texts/6",
@@ -279,10 +279,10 @@
         {
           "page_no": 1,
           "bbox": {
-            "l": 833437.5,
-            "t": 6174878.91,
-            "r": 11358562.5,
-            "b": 1821656.25,
+            "l": 838200.0,
+            "t": 6176963.0,
+            "r": 11353800.0,
+            "b": 1825625.0,
             "coord_origin": "BOTTOMLEFT"
           },
           "charspan": [
@@ -294,7 +294,7 @@
       "orig": "",
       "text": "",
       "enumerated": false,
-      "marker": "-"
+      "marker": ""
     },
     {
       "self_ref": "#/texts/7",
@@ -303,15 +303,15 @@
       },
       "children": [],
       "content_layer": "body",
-      "label": "text",
+      "label": "paragraph",
       "prov": [
         {
           "page_no": 1,
           "bbox": {
-            "l": 833437.5,
-            "t": 6174878.91,
-            "r": 11358562.5,
-            "b": 1821656.25,
+            "l": 838200.0,
+            "t": 6176963.0,
+            "r": 11353800.0,
+            "b": 1825625.0,
             "coord_origin": "BOTTOMLEFT"
           },
           "charspan": [
@@ -335,10 +335,10 @@
         {
           "page_no": 1,
           "bbox": {
-            "l": 833437.5,
-            "t": 6174878.91,
-            "r": 11358562.5,
-            "b": 1821656.25,
+            "l": 838200.0,
+            "t": 6176963.0,
+            "r": 11353800.0,
+            "b": 1825625.0,
             "coord_origin": "BOTTOMLEFT"
           },
           "charspan": [
@@ -350,7 +350,7 @@
       "orig": "Open-source projects often rely on community support, which may not be as reliable as dedicated customer service.",
       "text": "Open-source projects often rely on community support, which may not be as reliable as dedicated customer service.",
       "enumerated": false,
-      "marker": "-"
+      "marker": ""
     },
     {
       "self_ref": "#/texts/9",
@@ -364,10 +364,10 @@
         {
           "page_no": 1,
           "bbox": {
-            "l": 833437.5,
-            "t": 6174878.91,
-            "r": 11358562.5,
-            "b": 1821656.25,
+            "l": 838200.0,
+            "t": 6176963.0,
+            "r": 11353800.0,
+            "b": 1825625.0,
             "coord_origin": "BOTTOMLEFT"
           },
           "charspan": [
@@ -379,7 +379,7 @@
       "orig": "Some open-source solutions may require advanced technical expertise for implementation and maintenance.",
       "text": "Some open-source solutions may require advanced technical expertise for implementation and maintenance.",
       "enumerated": false,
-      "marker": "-"
+      "marker": ""
     }
   ],
   "pictures": [],

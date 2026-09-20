@@ -12,14 +12,32 @@
 //! placeholder's list style and the master's `p:txStyles` — the tail of
 //! docling's chain — are not walked yet; the body-placeholder default stands in
 //! for them.
+//!
+//! The walk builds two things at once. The flat [`Node`] stream is what
+//! Markdown / DocLang / LaTeX render. The JSON export reads docling's item
+//! tree instead ([`docling_core::tree::ItemTree`], filled here as
+//! `MsPowerpointDocumentBackend._walk_linear` would): one `chapter` group per
+//! slide, a `paragraph`/`title` text or a `list` group of `list_item`s per
+//! text shape, tables with only their non-empty cells, pictures with the
+//! file's dpi, charts as classified pictures with a caption, speaker notes
+//! and `comment_section` groups on the `notes` layer — every item carrying
+//! upstream's provenance verbatim (the shape's EMU box tagged `BOTTOMLEFT`,
+//! a `charspan` over the item's text) and numbered in creation order. The
+//! slides convert in parallel; each one's fragment is merged in slide order
+//! with [`ItemTree::append`], which renumbers it as if built sequentially.
 
 use std::collections::{HashMap, HashSet};
 
-use docling_core::{DoclingDocument, Node, PictureImage, Table, TableStructure};
+use docling_core::tree::{ItemTree, ListMeta, TreeKind, TreeProv};
+use docling_core::{
+    ContentLayer, DoclingDocument, Node, PictureImage, Table, TableCell, TableStructure,
+};
 use rayon::prelude::*;
 use roxmltree::{Document, Node as XmlNode};
 
-use crate::backend::ooxml::{content_type, picture_image, resolve, Package};
+use crate::backend::ooxml::{
+    content_type, image_dpi, is_metafile, picture_image, resolve, Package,
+};
 use crate::backend::xlsx_drawings;
 use crate::backend::DeclarativeBackend;
 use crate::error::ConversionError;
@@ -54,14 +72,23 @@ impl DeclarativeBackend for PptxBackend {
             .enumerate()
             .filter_map(|(ix, rid)| rid_to_part.get(&rid).map(|p| (ix, p.clone())))
             .collect();
-        let frags: Vec<Option<(Vec<Node>, Vec<Node>)>> = slides
+        let frags: Vec<Option<SlideFrag>> = slides
             .par_iter()
-            .map(|(_, part)| convert_slide(pkg.clone(), part, slide_size, &content_types, &authors))
+            .map(|(ix, part)| {
+                convert_slide(pkg.clone(), part, *ix, slide_size, &content_types, &authors)
+            })
             .collect();
+        let mut tree = ItemTree::default();
         for ((slide_ix, _), frag) in slides.into_iter().zip(frags) {
-            let Some((content, comments)) = frag else {
+            let Some(SlideFrag {
+                content,
+                comments,
+                tree: slide_tree,
+            }) = frag
+            else {
                 continue;
             };
+            tree.append(slide_tree);
             // docling records every slide as a page sized in EMU, which is
             // what its item provenance is expressed in (#402).
             doc.push(Node::PageInfo {
@@ -91,20 +118,58 @@ impl DeclarativeBackend for PptxBackend {
             // after the page break, matching docling's comment_section groups.
             doc.nodes.extend(comments);
         }
+        // The JSON serializes docling's item tree (see the module docs); the
+        // flat nodes above stay the source for every other serializer.
+        doc.tree = Some(tree);
         Ok(doc)
     }
 }
 
-/// Convert one slide part into its content nodes (shapes + speaker notes)
-/// and its review-comment nodes, or `None` when the part is absent or not
-/// parsable XML (such a slide contributes nothing — not even a page break).
+/// One converted slide: its flat content nodes (shapes + speaker notes), its
+/// review-comment nodes, and its fragment of docling's item tree (the slide
+/// group with everything under it, then the slide's `comment_section`
+/// groups as body children — upstream's creation order within a slide).
+struct SlideFrag {
+    content: Vec<Node>,
+    comments: Vec<Node>,
+    tree: ItemTree,
+}
+
+/// What every shape handler on a slide reads.
+struct SlideCtx<'a> {
+    /// Relationship ids whose target is an image-typed part.
+    valid_imgs: &'a HashSet<String>,
+    /// The decodable ones, with their pixels.
+    images: &'a HashMap<String, PictureImage>,
+    /// The undecodable ones that are Windows metafiles: docling keeps those
+    /// as payload-less pictures and drops any other undecodable image.
+    metafiles: &'a HashSet<String>,
+    /// Native chart parts by relationship id: kind, title, data grid.
+    charts: &'a HashMap<String, (String, Option<String>, Table)>,
+    slide_size: (i64, i64),
+    phmap: &'a PhMap,
+    /// 1-based slide number — docling's `page_no`.
+    page_no: usize,
+}
+
+/// What every shape handler on a slide writes: the flat nodes and the tree
+/// fragment, whose `slide` group every body item hangs off.
+struct SlideOut {
+    doc: DoclingDocument,
+    tree: ItemTree,
+    slide: usize,
+}
+
+/// Convert one slide part, or `None` when the part is absent or not parsable
+/// XML (such a slide contributes nothing — not even a page break).
 fn convert_slide(
     mut pkg: Package,
     part: &str,
+    slide_ix: usize,
     slide_size: (i64, i64),
     content_types: &str,
     authors: &HashMap<String, (String, String)>,
-) -> Option<(Vec<Node>, Vec<Node>)> {
+) -> Option<SlideFrag> {
     // Placeholder geometry inherited from the slide's layout → master,
     // for shapes that carry no own `<a:xfrm>` (python-pptx resolves
     // `shape.left/top/...` up this chain).
@@ -119,6 +184,7 @@ fn convert_slide(
         .to_string();
     let mut valid_imgs: HashSet<String> = HashSet::new();
     let mut images: HashMap<String, PictureImage> = HashMap::new();
+    let mut metafiles: HashSet<String> = HashSet::new();
     // Native charts (docling PR #3794): each chart part parsed up front,
     // keyed by its relationship id — kind classified from the plot area,
     // data from the embedded caches.
@@ -156,33 +222,69 @@ fn convert_slide(
         valid_imgs.insert(r.id.clone());
         // Decodable images carry their pixels for export; the rest still
         // emit a placeholder picture.
-        if let Some(img) = pkg.read_bytes(&p).and_then(|b| picture_image(&p, b)) {
-            images.insert(r.id, img);
+        if let Some(bytes) = pkg.read_bytes(&p) {
+            let is_meta = is_metafile(&bytes);
+            match picture_image(&p, bytes) {
+                Some(img) => {
+                    images.insert(r.id, img);
+                }
+                None if is_meta => {
+                    metafiles.insert(r.id);
+                }
+                None => {}
+            }
         }
     }
 
     let xml = pkg.read(part)?;
     let slide = Document::parse(&xml).ok()?;
-    let mut content = DoclingDocument::new("slide");
+    let page_no = slide_ix + 1;
+    let ctx = SlideCtx {
+        valid_imgs: &valid_imgs,
+        images: &images,
+        metafiles: &metafiles,
+        charts: &charts,
+        slide_size,
+        phmap: &phmap,
+        page_no,
+    };
+    let mut out = SlideOut {
+        doc: DoclingDocument::new("slide"),
+        tree: ItemTree::default(),
+        slide: 0,
+    };
+    // docling's `slide-{0-based}` chapter group, created before the page.
+    out.slide = out.tree.add(
+        None,
+        None,
+        TreeKind::Group {
+            label: "chapter".into(),
+            name: format!("slide-{slide_ix}"),
+        },
+    );
     if let Some(tree) = descendant(slide.root_element(), "spTree") {
         for shape in shapes_by_position(tree, &phmap) {
-            handle_shape(
-                shape,
-                &valid_imgs,
-                &images,
-                &charts,
-                slide_size,
-                &phmap,
-                &mut content,
-            );
+            handle_shape(shape, &ctx, &mut out);
         }
     }
     // Speaker notes are slide content (docling gives them a zero-bbox
     // provenance on the slide's page), so they precede the page break.
-    slide_notes(&mut pkg, part, &dir, &mut content);
+    slide_notes(&mut pkg, part, &dir, page_no, &mut out);
     let mut comments = DoclingDocument::new("comments");
-    slide_comments(&mut pkg, part, &dir, authors, &mut comments);
-    Some((content.nodes, comments.nodes))
+    slide_comments(
+        &mut pkg,
+        part,
+        &dir,
+        slide_ix,
+        authors,
+        &mut comments,
+        &mut out.tree,
+    );
+    Some(SlideFrag {
+        content: out.doc.nodes,
+        comments: comments.nodes,
+        tree: out.tree,
+    })
 }
 
 /// Author id → (name, initials) from `ppt/commentAuthors.xml`.
@@ -209,7 +311,7 @@ fn comment_authors(pkg: &mut Package) -> HashMap<String, (String, String)> {
 /// Emit a slide's speaker notes: python-pptx's `notes_text_frame.text` (the
 /// body placeholder's paragraphs joined with newlines, soft breaks as `\v`),
 /// stripped, as one notes-layer text with a zero-bbox location.
-fn slide_notes(pkg: &mut Package, part: &str, dir: &str, doc: &mut DoclingDocument) {
+fn slide_notes(pkg: &mut Package, part: &str, dir: &str, page_no: usize, out: &mut SlideOut) {
     for r in pkg.rels_for(part) {
         if !r.rel_type.ends_with("/notesSlide") {
             continue;
@@ -251,8 +353,8 @@ fn slide_notes(pkg: &mut Package, part: &str, dir: &str, doc: &mut DoclingDocume
             .join("\n");
         let text = text.trim();
         if !text.is_empty() {
-            doc.push(Node::Furniture {
-                layer: docling_core::ContentLayer::Notes,
+            out.doc.push(Node::Furniture {
+                layer: ContentLayer::Notes,
                 inner: Box::new(Node::Located {
                     location: [0, 0, 0, 0],
                     inner: Box::new(Node::Paragraph {
@@ -260,19 +362,49 @@ fn slide_notes(pkg: &mut Package, part: &str, dir: &str, doc: &mut DoclingDocume
                     }),
                 }),
             });
+            // docling: a `text` item on the notes layer under the slide, with
+            // a zero `BoundingBox()` — top-left origin, unlike the shapes.
+            out.tree.add_with_prov(
+                Some(out.slide),
+                Some(ContentLayer::Notes),
+                text_kind("text", text),
+                TreeProv {
+                    page_no,
+                    bbox: [0.0; 4],
+                    bottom_left: false,
+                    charspan: [0, text.chars().count()],
+                },
+            );
         }
+    }
+}
+
+/// A plain text item of the tree: docling's `add_text(label, text)`.
+fn text_kind(label: &str, text: &str) -> TreeKind {
+    TreeKind::Text {
+        label: label.into(),
+        text: text.into(),
+        orig: None,
+        formatting: None,
+        hyperlink: None,
+        level: None,
+        list: None,
     }
 }
 
 /// Emit a slide's review comments as notes-layer texts, docling's format:
 /// `[author: Name (IN), time: dt]: text` (either metadata part may be absent;
-/// `dt` is the raw attribute string).
+/// `dt` is the raw attribute string). In the tree each one is a
+/// `comment_section` group named `comment-slide{page}-{idx}` (the comment's
+/// `idx`, else the 0-based slide index) under the body, holding the note.
 fn slide_comments(
     pkg: &mut Package,
     part: &str,
     dir: &str,
+    slide_ix: usize,
     authors: &HashMap<String, (String, String)>,
     doc: &mut DoclingDocument,
+    tree: &mut ItemTree,
 ) {
     for r in pkg.rels_for(part) {
         if !r.rel_type.ends_with("/comments") {
@@ -314,9 +446,26 @@ fn slide_comments(
                 format!("[{}]: {}", meta.join(", "), text)
             };
             doc.push(Node::Furniture {
-                layer: docling_core::ContentLayer::Notes,
-                inner: Box::new(Node::Paragraph { text: full }),
+                layer: ContentLayer::Notes,
+                inner: Box::new(Node::Paragraph { text: full.clone() }),
             });
+            let idx = cm
+                .attribute("idx")
+                .unwrap_or(&slide_ix.to_string())
+                .to_string();
+            let group = tree.add(
+                None,
+                Some(ContentLayer::Notes),
+                TreeKind::Group {
+                    label: "comment_section".into(),
+                    name: format!("comment-slide{}-{idx}", slide_ix + 1),
+                },
+            );
+            tree.add(
+                Some(group),
+                Some(ContentLayer::Notes),
+                text_kind("text", &full),
+            );
         }
     }
 }
@@ -390,45 +539,75 @@ fn shapes_by_position<'a>(tree: XmlNode<'a, 'a>, phmap: &PhMap) -> Vec<XmlNode<'
     out
 }
 
-fn handle_shape(
-    shape: XmlNode,
-    valid_imgs: &HashSet<String>,
-    images: &HashMap<String, PictureImage>,
-    charts: &HashMap<String, (String, Option<String>, docling_core::Table)>,
-    slide_size: (i64, i64),
-    phmap: &PhMap,
-    doc: &mut DoclingDocument,
-) {
+fn handle_shape(shape: XmlNode, ctx: &SlideCtx, out: &mut SlideOut) {
+    let location = shape_location(shape, ctx.slide_size, ctx.phmap);
     match shape.tag_name().name() {
         "grpSp" => {
             // Group children re-sort in visual order too (docling#3393); their
             // coordinates share the group's child space, so relative order is
             // well-defined. Groups carry no placeholder geometry — the phmap
             // lookup just never fires for them.
-            for child in shapes_by_position(shape, phmap) {
-                handle_shape(child, valid_imgs, images, charts, slide_size, phmap, doc);
+            for child in shapes_by_position(shape, ctx.phmap) {
+                handle_shape(child, ctx, out);
             }
         }
         "graphicFrame" => {
             if let Some(tbl) = descendant(shape, "tbl") {
                 if let Some(table) = parse_table(tbl) {
-                    push_located(
-                        doc,
-                        shape_location(shape, slide_size, phmap),
-                        Node::Table(table),
-                    );
+                    // docling keeps only the cells with text (`_handle_tables`)
+                    // and skips a table with none at all.
+                    let cells = tree_table_cells(tbl);
+                    if !cells.is_empty() {
+                        out.tree.add_with_prov(
+                            Some(out.slide),
+                            None,
+                            TreeKind::Table {
+                                table: Table {
+                                    rows: table.rows.clone(),
+                                    cells: Some(cells),
+                                    ..Table::default()
+                                },
+                                rich_cells: Vec::new(),
+                                captions: Vec::new(),
+                            },
+                            shape_prov(shape, ctx, 0),
+                        );
+                    }
+                    push_located(&mut out.doc, location, Node::Table(table));
                 }
             } else if let Some((kind, title, table)) = descendant(shape, "chart")
                 .and_then(|c| c.attributes().find(|a| a.name() == "id"))
-                .and_then(|a| charts.get(a.value()))
+                .and_then(|a| ctx.charts.get(a.value()))
             {
                 // A native chart frame (docling PR #3794): classified kind +
-                // the cached data grid, chart title as the caption.
-                doc.push(Node::Chart {
+                // the cached data grid, chart title as the caption. docling
+                // adds the caption to the slide first — with the chart's box
+                // and a charspan over the title — then the picture.
+                let caption = title.as_deref().filter(|t| !t.is_empty()).map(|t| {
+                    out.tree.add_with_prov(
+                        Some(out.slide),
+                        None,
+                        text_kind("caption", t),
+                        shape_prov(shape, ctx, t.chars().count()),
+                    )
+                });
+                out.tree.add_with_prov(
+                    Some(out.slide),
+                    None,
+                    TreeKind::Picture {
+                        captions: caption.into_iter().collect(),
+                        image: None,
+                        classification: Some(kind.clone()),
+                        chart: Some(table.clone()),
+                        dpi: None,
+                    },
+                    shape_prov(shape, ctx, 0),
+                );
+                out.doc.push(Node::Chart {
                     kind: kind.clone(),
                     table: table.clone(),
                     caption: title.clone(),
-                    location: Some(shape_location(shape, slide_size, phmap)),
+                    location: Some(location),
                 });
             }
         }
@@ -439,23 +618,110 @@ fn handle_shape(
                     .find(|a| a.name() == "embed")
                     .map(|a| a.value().to_string())
             });
-            if let Some(rid) = embedded.filter(|rid| valid_imgs.contains(rid)) {
+            if let Some(rid) = embedded.filter(|rid| ctx.valid_imgs.contains(rid)) {
+                let image = ctx.images.get(&rid);
+                // docling: PIL decodes it → a picture with the image (at the
+                // file's dpi); a metafile PIL cannot → a payload-less picture;
+                // anything else undecodable → no picture at all.
+                if image.is_some() || ctx.metafiles.contains(&rid) {
+                    out.tree.add_with_prov(
+                        Some(out.slide),
+                        None,
+                        TreeKind::Picture {
+                            captions: Vec::new(),
+                            image: image.cloned(),
+                            classification: None,
+                            chart: None,
+                            dpi: image.map(|img| pptx_dpi(&img.data)),
+                        },
+                        shape_prov(shape, ctx, 0),
+                    );
+                }
                 push_located(
-                    doc,
-                    shape_location(shape, slide_size, phmap),
+                    &mut out.doc,
+                    location,
                     Node::Picture {
                         caption: None,
                         caption_href: None,
-                        image: images.get(&rid).cloned(),
+                        image: image.cloned(),
                         classification: None,
                         caption_parent: Default::default(),
                     },
                 );
             }
         }
-        "sp" => handle_text_shape(shape, shape_location(shape, slide_size, phmap), doc),
+        "sp" => handle_text_shape(shape, location, ctx, out),
         _ => {}
     }
+}
+
+/// docling's `_generate_prov`: the shape's box in EMU — `shape.left/top/
+/// width/height` (its own `<a:xfrm>`, else the placeholder geometry it
+/// inherits), the whole slide when none resolves — handed to
+/// `BoundingBox.from_tuple((l, t, l + w, t + h), origin=BOTTOMLEFT)`, which
+/// reads a bottom-left tuple as `(l, b, r, t)`: the JSON's `b` is the shape's
+/// top EMU and `t` its bottom, tagged `BOTTOMLEFT`. A quirk, kept verbatim.
+/// `charspan` covers `char_len` characters.
+fn shape_prov(shape: XmlNode, ctx: &SlideCtx, char_len: usize) -> TreeProv {
+    let (w, h) = ctx.slide_size;
+    let [x, y, cx, cy] = xfrm_geom(shape)
+        .or_else(|| inherited_geom(shape, ctx.phmap))
+        .unwrap_or([0, 0, w, h]);
+    let (mut l, mut b, mut r, mut t) = (x, y, x + cx, y + cy);
+    // `from_tuple`'s normalization: `l <= r`, and for a bottom-left box `b <= t`.
+    if r < l {
+        std::mem::swap(&mut l, &mut r);
+    }
+    if b > t {
+        std::mem::swap(&mut b, &mut t);
+    }
+    TreeProv {
+        page_no: ctx.page_no,
+        bbox: [l as f64, t as f64, r as f64, b as f64],
+        bottom_left: true,
+        charspan: [0, char_len],
+    }
+}
+
+/// python-pptx's `Image.dpi`: PIL's horizontal dpi rounded (half to even,
+/// Python's `round`), 72 when the file records none or the value falls
+/// outside 1–2048.
+fn pptx_dpi(data: &[u8]) -> u32 {
+    match image_dpi(data).map(f64::round_ties_even) {
+        Some(d) if (1.0..=2048.0).contains(&d) => d as u32,
+        _ => 72,
+    }
+}
+
+/// The `TableCell`s docling's `_handle_tables` records for a table: one per
+/// `<a:tc>` (merge continuations included — python-pptx's `row.cells`) whose
+/// stripped text is non-empty, spanning its `rowSpan` × `gridSpan`, every
+/// first-row cell a column header.
+fn tree_table_cells(tbl: XmlNode) -> Vec<TableCell> {
+    let mut cells = Vec::new();
+    for (ri, row) in tbl.children().filter(|n| n.has_tag_name("tr")).enumerate() {
+        for (ci, tc) in row.children().filter(|n| n.has_tag_name("tc")).enumerate() {
+            let text = cell_text(tc);
+            if text.is_empty() {
+                continue;
+            }
+            let span = |name: &str| -> usize {
+                tc.attribute(name).and_then(|s| s.parse().ok()).unwrap_or(1)
+            };
+            cells.push(TableCell {
+                text,
+                bbox: None,
+                start_row: ri,
+                start_col: ci,
+                row_span: span("rowSpan"),
+                col_span: span("gridSpan"),
+                column_header: ri == 0,
+                row_header: false,
+                row_section: false,
+            });
+        }
+    }
+    cells
 }
 
 /// Slide size (EMU) from `<p:sldSz cx cy>`, defaulting to the 4:3 standard.
@@ -623,7 +889,7 @@ fn placeholder_kind(sp: XmlNode) -> Placeholder {
     }
 }
 
-fn handle_text_shape(sp: XmlNode, location: [u16; 4], doc: &mut DoclingDocument) {
+fn handle_text_shape(sp: XmlNode, location: [u16; 4], ctx: &SlideCtx, out: &mut SlideOut) {
     let Some(tx_body) = descendant(sp, "txBody") else {
         return;
     };
@@ -639,8 +905,13 @@ fn handle_text_shape(sp: XmlNode, location: [u16; 4], doc: &mut DoclingDocument)
 
     let mut in_list = false;
     let mut number = 0u64;
+    // The open `list` group of the tree, while a run of list paragraphs lasts.
+    let mut list_group: Option<usize> = None;
     for para in paragraphs {
         let text = paragraph_text(para);
+        // docling's `charspan` is over the paragraph's own text, `len()` in
+        // code points.
+        let prov = shape_prov(sp, ctx, text.chars().count());
         match list_kind(para, Some(tx_body), kind) {
             Some(numbered) => {
                 // docling opens one ListGroup per run of list paragraphs in a
@@ -657,17 +928,46 @@ fn handle_text_shape(sp: XmlNode, location: [u16; 4], doc: &mut DoclingDocument)
                 } else {
                     0
                 };
+                // docling passes numbered items an `"N."` enumeration marker
+                // and bulleted ones an empty one.
+                let marker = numbered.then(|| format!("{n}."));
+                let group = *list_group.get_or_insert_with(|| {
+                    out.tree.add(
+                        Some(out.slide),
+                        None,
+                        TreeKind::Group {
+                            label: "list".into(),
+                            name: "list".into(),
+                        },
+                    )
+                });
+                out.tree.add_with_prov(
+                    Some(group),
+                    None,
+                    TreeKind::Text {
+                        label: "list_item".into(),
+                        text: text.clone(),
+                        orig: None,
+                        formatting: None,
+                        hyperlink: None,
+                        level: None,
+                        list: Some(ListMeta {
+                            enumerated: numbered,
+                            marker: marker.clone().unwrap_or_default(),
+                        }),
+                    },
+                    prov,
+                );
                 // Each item carries its shape's `<location>` (all items of a
                 // body placeholder share the one box); the location rides on the
                 // item itself so consecutive items still group into one `<list>`.
-                // docling passes numbered items an `"N."` enumeration marker.
-                doc.push(Node::ListItem {
+                out.doc.push(Node::ListItem {
                     ordered: numbered,
                     number: n,
                     first_in_list,
                     text,
                     level: 0,
-                    marker: numbered.then(|| format!("{n}.")),
+                    marker,
                     location: Some(location),
                     dclx: None,
                     href: None,
@@ -676,16 +976,25 @@ fn handle_text_shape(sp: XmlNode, location: [u16; 4], doc: &mut DoclingDocument)
             }
             None => {
                 in_list = false;
+                list_group = None;
+                // docling labels a title placeholder's text `title` and any
+                // other non-list text `paragraph` (a `text` in Markdown terms).
+                let label = match kind {
+                    Placeholder::Title => "title",
+                    _ => "paragraph",
+                };
+                out.tree
+                    .add_with_prov(Some(out.slide), None, text_kind(label, &text), prov);
                 match kind {
                     Placeholder::Title => {
-                        push_located(doc, location, Node::Heading { level: 1, text })
+                        push_located(&mut out.doc, location, Node::Heading { level: 1, text })
                     }
                     // A subtitle placeholder is a paragraph on purpose: docling
                     // settled it in docling#3785 and, after briefly moving it
                     // to SECTION_HEADER behind an option, reverted to that in
                     // docling#4190 (which also deleted the dead `_handle_title`
                     // that would have labelled it). Not a bug to fix.
-                    _ => push_located(doc, location, Node::Paragraph { text }),
+                    _ => push_located(&mut out.doc, location, Node::Paragraph { text }),
                 }
             }
         }
@@ -973,5 +1282,94 @@ mod list_marker_tests {
         let para = body.children().find(|n| n.has_tag_name("p")).unwrap();
         assert_eq!(list_kind(para, Some(body), Placeholder::Body), Some(false));
         assert_eq!(list_kind(para, Some(body), Placeholder::TextBox), None);
+    }
+}
+
+#[cfg(test)]
+mod json_tree_tests {
+    use super::*;
+    use crate::backend::ooxml::image_dpi_tests::png;
+    use crate::backend::DeclarativeBackend;
+    use crate::{InputFormat, SourceDocument};
+    use serde_json::Value;
+
+    /// Drop what a conformance comparison never looks at: the file's
+    /// `origin` and schema `version`, and an image's bytes (PIL re-encodes
+    /// them; ours are the embedded file's).
+    fn normalize(v: &mut Value) {
+        match v {
+            Value::Object(m) => {
+                m.remove("origin");
+                m.remove("version");
+                if let Some(uri) = m.get_mut("uri") {
+                    *uri = Value::Null;
+                }
+                m.values_mut().for_each(normalize);
+            }
+            Value::Array(a) => a.iter_mut().for_each(normalize),
+            _ => {}
+        }
+    }
+
+    /// The JSON is docling's item tree: on every mirrored fixture it is
+    /// structurally identical to upstream's groundtruth (docling 2.129) —
+    /// slide groups, `paragraph`/`title`/`list_item` labels and markers,
+    /// list groups, the non-empty table cells, pictures with the file's
+    /// dpi, chart captions, notes, `comment_section` groups, and every
+    /// item's raw-EMU provenance with its per-item `charspan`.
+    #[test]
+    fn json_is_structurally_identical_to_docling_groundtruth() {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/data/pptx");
+        let mut compared = 0;
+        for entry in std::fs::read_dir(root.join("sources")).expect("pptx corpus") {
+            let path = entry.expect("entry").path();
+            let name = path.file_name().unwrap().to_str().unwrap().to_string();
+            let Ok(gt) =
+                std::fs::read_to_string(root.join("groundtruth").join(format!("{name}.json")))
+            else {
+                continue;
+            };
+            let bytes = std::fs::read(&path).expect("fixture bytes");
+            let doc = PptxBackend
+                .convert(&SourceDocument::from_bytes(&name, InputFormat::Pptx, bytes))
+                .expect("converts");
+            let mut ours: Value = serde_json::from_str(&doc.export_to_json()).unwrap();
+            let mut want: Value = serde_json::from_str(&gt).unwrap();
+            for v in [&mut ours, &mut want] {
+                v.as_object_mut().unwrap().remove("name");
+                normalize(v);
+            }
+            assert_eq!(
+                ours, want,
+                "{name}: JSON differs from docling's groundtruth"
+            );
+            compared += 1;
+        }
+        assert!(compared >= 8, "{compared} fixtures compared");
+    }
+
+    /// python-pptx's `Image.dpi`: Pillow's value rounded half-to-even, 72
+    /// when absent or outside 1–2048.
+    #[test]
+    fn dpi_follows_python_pptx() {
+        let phys = |ppu: u32| {
+            let mut d = ppu.to_be_bytes().to_vec();
+            d.extend(ppu.to_be_bytes());
+            d.push(1);
+            d
+        };
+        assert_eq!(
+            pptx_dpi(&png(&[(b"pHYs", phys(11811))])),
+            300,
+            "299.9994 rounds up"
+        );
+        assert_eq!(pptx_dpi(&png(&[(b"pHYs", phys(2835))])), 72, "72.009");
+        assert_eq!(
+            pptx_dpi(&png(&[(b"pHYs", phys(100_000))])),
+            72,
+            "2540 is out of range"
+        );
+        assert_eq!(pptx_dpi(&png(&[(b"IEND", vec![])])), 72, "no pHYs");
+        assert_eq!(pptx_dpi(b"GIF89a"), 72);
     }
 }

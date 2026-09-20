@@ -99,6 +99,28 @@ pub(crate) fn code_language(lang: Option<&str>) -> &'static str {
     }
 }
 
+/// An item's exact provenance, written verbatim (see [`Builder::prov_json`]):
+/// a [`Node::Prov`] wrapper's top-left page box, or a tree item's
+/// [`TreeProv`](crate::tree::TreeProv).
+#[derive(Clone, Copy)]
+struct ExactProv {
+    page_no: usize,
+    bbox: [f64; 4],
+    bottom_left: bool,
+    charspan: [usize; 2],
+}
+
+impl From<&crate::tree::TreeProv> for ExactProv {
+    fn from(p: &crate::tree::TreeProv) -> Self {
+        ExactProv {
+            page_no: p.page_no,
+            bbox: p.bbox,
+            bottom_left: p.bottom_left,
+            charspan: p.charspan,
+        }
+    }
+}
+
 /// docling-core's `Formatting` model, every field written.
 fn formatting_json(f: &crate::tree::Formatting) -> Value {
     json!({
@@ -121,7 +143,23 @@ pub fn to_json(doc: &DoclingDocument) -> Value {
     // decided every parent, child and creation index; serialize that. The
     // flat nodes are for the other serializers.
     let body = match &doc.tree {
-        Some(tree) => b.write_tree(tree),
+        Some(tree) => {
+            // The page map still comes from the flat stream's markers (a
+            // PPTX slide's EMU size): the tree holds items, not pages.
+            for n in &doc.nodes {
+                if let Node::PageInfo {
+                    page_no,
+                    width,
+                    height,
+                } = n
+                {
+                    if *page_no > 0 {
+                        b.pages.push((*page_no, *width as f64, *height as f64));
+                    }
+                }
+            }
+            b.write_tree(tree)
+        }
         None => b.walk_into(&doc.nodes, "#/body"),
     };
     b.link_comments();
@@ -418,9 +456,9 @@ struct Builder {
     /// The enclosing [`Node::Located`] wrapper's 0–511 grid box, waiting to be
     /// consumed as the next item's provenance.
     pending_loc: Option<[u16; 4]>,
-    /// The enclosing [`Node::Prov`] wrapper's exact `(page_no, bbox,
-    /// charspan)`, which takes precedence over the grid box.
-    pending_exact: Option<(usize, [f32; 4], [usize; 2])>,
+    /// The enclosing [`Node::Prov`] wrapper's (or the tree item's) exact
+    /// provenance, which takes precedence over the grid box.
+    pending_exact: Option<ExactProv>,
     /// `$ref`s an item wants placed in its parent's `children` *before* its
     /// own — a chart's caption item, which docling's office backends add to
     /// the container ahead of the picture that references it.
@@ -462,7 +500,13 @@ impl Builder {
     /// covers the caption text where the chart's is `[0, 0]`).
     fn prov_json(&self, char_len: usize, span_over_text: bool) -> Value {
         let r2 = |v: f64| (v * 100.0).round() / 100.0;
-        if let Some((page_no, [l, t, r, b], charspan)) = self.pending_exact {
+        if let Some(ExactProv {
+            page_no,
+            bbox: [l, t, r, b],
+            bottom_left,
+            charspan,
+        }) = self.pending_exact
+        {
             let charspan = if span_over_text {
                 [0, char_len]
             } else {
@@ -471,8 +515,8 @@ impl Builder {
             return json!([{
                 "page_no": page_no,
                 "bbox": {
-                    "l": r2(l as f64), "t": r2(t as f64), "r": r2(r as f64), "b": r2(b as f64),
-                    "coord_origin": "TOPLEFT",
+                    "l": r2(l), "t": r2(t), "r": r2(r), "b": r2(b),
+                    "coord_origin": if bottom_left { "BOTTOMLEFT" } else { "TOPLEFT" },
                 },
                 "charspan": charspan,
             }]);
@@ -630,6 +674,9 @@ impl Builder {
             let parent = item.parent.map_or("#/body", |p| refs[p].as_str());
             let children: Vec<Value> = item.children.iter().map(|&c| ref_of(c)).collect();
             let layer = item.layer.map_or("body", |l| l.value());
+            // The item's own provenance, consumed by the writer below
+            // (`take_prov`); an item without one writes `prov: []`.
+            self.pending_exact = item.prov.as_ref().map(ExactProv::from);
             let self_ref = match &item.kind {
                 TreeKind::Text {
                     label,
@@ -657,13 +704,14 @@ impl Builder {
                         tail.insert("marker".into(), json!(l.marker));
                     }
                     let r = format!("#/texts/{}", self.texts.len());
+                    let prov = self.take_prov(text.chars().count());
                     let mut item_json = json!({
                         "self_ref": r,
                         "parent": { "$ref": parent },
                         "children": children,
                         "content_layer": layer,
                         "label": label,
-                        "prov": [],
+                        "prov": prov,
                     });
                     // docling's `comments` back-refs sit between `prov` and
                     // `orig`, and are written only when set.
@@ -690,13 +738,14 @@ impl Builder {
                     hyperlink,
                 } => {
                     let r = format!("#/texts/{}", self.texts.len());
+                    let prov = self.take_prov(text.chars().count());
                     let mut item_json = json!({
                         "self_ref": r,
                         "parent": { "$ref": parent },
                         "children": children,
                         "content_layer": layer,
                         "label": "code",
-                        "prov": [],
+                        "prov": prov,
                     });
                     if !item.comments.is_empty() {
                         item_json["comments"] =
@@ -728,6 +777,7 @@ impl Builder {
                     r
                 }
                 TreeKind::Group { label, name } => {
+                    self.pending_exact = None;
                     let r = format!("#/groups/{}", self.groups.len());
                     self.groups.push(json!({
                         "self_ref": r,
@@ -773,6 +823,7 @@ impl Builder {
                     image,
                     classification,
                     chart,
+                    dpi,
                 } => {
                     // A chart's meta: the kind as the one classification
                     // prediction, then the reconstructed data grid (#405).
@@ -784,8 +835,9 @@ impl Builder {
                             m["tabular_chart"] = json!({ "chart_data": table_data(t) });
                         }
                     }
+                    let prov = self.take_prov(0);
                     let r = self.push_picture(
-                        json!([]),
+                        prov,
                         captions.iter().map(|&c| ref_of(c)).collect(),
                         children,
                         image.as_ref(),
@@ -794,10 +846,16 @@ impl Builder {
                     );
                     if let Some(idx) = ref_index(&r) {
                         self.pictures[idx]["content_layer"] = json!(layer);
+                        // The image's dpi is the file's when the backend read
+                        // it (python-pptx does); the default 72 otherwise.
+                        if let (Some(dpi), Some(img)) = (dpi, self.pictures[idx].get_mut("image")) {
+                            img["dpi"] = json!(dpi);
+                        }
                     }
                     r
                 }
                 TreeKind::FieldRegion { items } => {
+                    self.pending_exact = None;
                     let r = self.add_field_region(items, parent);
                     if let Some(region) = self.field_regions.last_mut() {
                         region["content_layer"] = json!(layer);
@@ -1004,7 +1062,12 @@ impl Builder {
                 inner,
                 ..
             } => {
-                self.pending_exact = Some((*page_no, *bbox, *charspan));
+                self.pending_exact = Some(ExactProv {
+                    page_no: *page_no,
+                    bbox: bbox.map(f64::from),
+                    bottom_left: false,
+                    charspan: *charspan,
+                });
                 let r = self.add_node(inner, parent);
                 self.pending_exact = None;
                 r
@@ -2166,6 +2229,7 @@ mod tests {
                     rows: vec![vec!["".into(), "s".into()], vec!["c".into(), "1".into()]],
                     ..Table::default()
                 }),
+                dpi: None,
             },
         );
         assert_eq!(t.last_text(), Some(4), "the note; the blank is skipped");
@@ -2212,6 +2276,98 @@ mod tests {
             "bar_chart"
         );
         assert_eq!(meta["tabular_chart"]["chart_data"]["num_rows"], 2);
+    }
+
+    /// A tree item's `TreeProv` is written verbatim — the PPTX backend's raw
+    /// EMU box with its `BOTTOMLEFT` tag and per-item charspan, a note's zero
+    /// `TOPLEFT` box — a picture's `image.dpi` is the file's when the backend
+    /// read one, an item without provenance writes `prov: []`, and the page
+    /// map still comes from the flat stream's markers.
+    #[test]
+    fn tree_items_carry_exact_provenance_and_dpi() {
+        use crate::tree::{ItemTree, TreeKind, TreeProv};
+        let text = |label: &str, t: &str| TreeKind::Text {
+            label: label.into(),
+            text: t.into(),
+            orig: None,
+            formatting: None,
+            hyperlink: None,
+            level: None,
+            list: None,
+        };
+        let mut t = ItemTree::default();
+        let slide = t.add(
+            None,
+            None,
+            TreeKind::Group {
+                label: "chapter".into(),
+                name: "slide-0".into(),
+            },
+        );
+        t.add_with_prov(
+            Some(slide),
+            None,
+            text("paragraph", "héllo"),
+            TreeProv {
+                page_no: 1,
+                bbox: [914400.0, 1828800.0, 2743200.0, 457200.0],
+                bottom_left: true,
+                charspan: [0, 5],
+            },
+        );
+        t.add_with_prov(
+            Some(slide),
+            None,
+            TreeKind::Picture {
+                captions: Vec::new(),
+                image: Some(crate::PictureImage {
+                    mimetype: "image/png".into(),
+                    width: 2,
+                    height: 2,
+                    data: vec![0],
+                }),
+                classification: None,
+                chart: None,
+                dpi: Some(300),
+            },
+            TreeProv {
+                page_no: 1,
+                bbox: [0.0; 4],
+                bottom_left: false,
+                charspan: [0, 0],
+            },
+        );
+        t.add(
+            Some(slide),
+            Some(ContentLayer::Notes),
+            text("text", "no geometry"),
+        );
+        let mut doc = DoclingDocument::new("t");
+        doc.push(Node::PageInfo {
+            page_no: 1,
+            width: 9144000.0,
+            height: 6858000.0,
+        });
+        doc.tree = Some(t);
+        let v: Value = serde_json::from_str(&doc.export_to_json()).unwrap();
+        assert_eq!(
+            v["texts"][0]["prov"],
+            serde_json::json!([{
+                "page_no": 1,
+                "bbox": { "l": 914400.0, "t": 1828800.0, "r": 2743200.0, "b": 457200.0, "coord_origin": "BOTTOMLEFT" },
+                "charspan": [0, 5],
+            }])
+        );
+        assert_eq!(v["texts"][0]["label"], "paragraph");
+        assert_eq!(
+            v["pictures"][0]["prov"][0]["bbox"]["coord_origin"],
+            "TOPLEFT"
+        );
+        assert_eq!(v["pictures"][0]["image"]["dpi"], 300);
+        assert_eq!(v["texts"][1]["prov"], serde_json::json!([]));
+        assert_eq!(v["texts"][1]["content_layer"], "notes");
+        assert_eq!(v["pages"]["1"]["size"]["width"], 9144000.0);
+        assert_eq!(v["pages"]["1"]["page_no"], 1);
     }
 
     #[test]

@@ -111,10 +111,10 @@
         {
           "page_no": 1,
           "bbox": {
-            "l": 464343.75,
-            "t": 1419820.31,
-            "r": 8679656.25,
-            "b": 281285.16,
+            "l": 457200.0,
+            "t": 1417638.0,
+            "r": 8686800.0,
+            "b": 274638.0,
             "coord_origin": "BOTTOMLEFT"
           },
           "charspan": [
@@ -138,10 +138,10 @@
         {
           "page_no": 1,
           "bbox": {
-            "l": 464343.75,
-            "t": 6121300.78,
-            "r": 8679656.25,
-            "b": 1593949.22,
+            "l": 457200.0,
+            "t": 6126163.0,
+            "r": 8686800.0,
+            "b": 1600200.0,
             "coord_origin": "BOTTOMLEFT"
           },
           "charspan": [
@@ -153,7 +153,7 @@
       "orig": "Body text one.",
       "text": "Body text one.",
       "enumerated": false,
-      "marker": "-"
+      "marker": ""
     },
     {
       "self_ref": "#/texts/2",
@@ -171,7 +171,7 @@
             "t": 0.0,
             "r": 0.0,
             "b": 0.0,
-            "coord_origin": "BOTTOMLEFT"
+            "coord_origin": "TOPLEFT"
           },
           "charspan": [
             0,
@@ -194,10 +194,10 @@
         {
           "page_no": 2,
           "bbox": {
-            "l": 464343.75,
-            "t": 1419820.31,
-            "r": 8679656.25,
-            "b": 281285.16,
+            "l": 457200.0,
+            "t": 1417638.0,
+            "r": 8686800.0,
+            "b": 274638.0,
             "coord_origin": "BOTTOMLEFT"
           },
           "charspan": [
@@ -221,10 +221,10 @@
         {
           "page_no": 2,
           "bbox": {
-            "l": 464343.75,
-            "t": 6121300.78,
-            "r": 8679656.25,
-            "b": 1593949.22,
+            "l": 457200.0,
+            "t": 6126163.0,
+            "r": 8686800.0,
+            "b": 1600200.0,
             "coord_origin": "BOTTOMLEFT"
           },
           "charspan": [
@@ -236,7 +236,7 @@
       "orig": "Body text two.",
       "text": "Body text two.",
       "enumerated": false,
-      "marker": "-"
+      "marker": ""
     },
     {
       "self_ref": "#/texts/5",
@@ -254,7 +254,7 @@
             "t": 0.0,
             "r": 0.0,
             "b": 0.0,
-            "coord_origin": "BOTTOMLEFT"
+            "coord_origin": "TOPLEFT"
           },
           "charspan": [
             0,
