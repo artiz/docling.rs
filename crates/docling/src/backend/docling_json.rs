@@ -17,7 +17,7 @@ pub struct DoclingJsonBackend;
 
 impl DeclarativeBackend for DoclingJsonBackend {
     fn convert(&self, source: &SourceDocument) -> Result<DoclingDocument, ConversionError> {
-        let mut root: Value = serde_json::from_str(source.text()?)
+        let mut root: Value = serde_json::from_str(&source.text()?)
             .map_err(|e| ConversionError::with_source("docling-json", e))?;
         // Referenced images resolve against the JSON file's directory (#403).
         inline_referenced_images(

@@ -77,7 +77,7 @@ pub struct DeepSeekBackend;
 impl DeclarativeBackend for DeepSeekBackend {
     fn convert(&self, source: &SourceDocument) -> Result<DoclingDocument, ConversionError> {
         let text = source.text()?;
-        Ok(parse_deepseek_text(&source.name, text))
+        Ok(parse_deepseek_text(&source.name, &text))
     }
 }
 

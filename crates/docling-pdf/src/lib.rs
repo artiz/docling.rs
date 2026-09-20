@@ -436,7 +436,7 @@ fn decode_heif(bytes: &[u8], max_side: u32) -> Result<image::RgbImage, PdfError>
 
 #[cfg(feature = "ml")]
 fn decode_image_with_max_side(bytes: &[u8], max_side: u32) -> Result<image::RgbImage, PdfError> {
-    use image::ImageReader;
+    use image::{ImageDecoder, ImageReader};
     use std::io::Cursor;
 
     if is_heif(bytes) {
@@ -459,10 +459,20 @@ fn decode_image_with_max_side(bytes: &[u8], max_side: u32) -> Result<image::RgbI
         .with_guessed_format()
         .map_err(|e| PdfError::Pdfium(format!("image: {e}")))?;
     reader.limits(limits);
-    Ok(reader
-        .decode()
-        .map_err(|e| PdfError::Pdfium(format!("image: {e}")))?
-        .into_rgb8())
+    let mut decoder = reader
+        .into_decoder()
+        .map_err(|e| PdfError::Pdfium(format!("image: {e}")))?;
+    // docling#4247 (2.128, `ImageOps.exif_transpose`): a camera stores the
+    // sensor readout plus an orientation tag rather than rotated pixels, so
+    // a portrait photo would reach layout and OCR on its side unless the tag
+    // is honoured. An unreadable tag is no orientation, not an error.
+    let orientation = decoder
+        .orientation()
+        .unwrap_or(image::metadata::Orientation::NoTransforms);
+    let mut img = image::DynamicImage::from_decoder(decoder)
+        .map_err(|e| PdfError::Pdfium(format!("image: {e}")))?;
+    img.apply_orientation(orientation);
+    Ok(img.into_rgb8())
 }
 
 #[cfg(feature = "ml")]
@@ -2771,6 +2781,44 @@ mod image_limit_tests {
     fn normal_image_decodes_under_the_cap() {
         let img = decode_image_with_max_side(&png_bytes(8, 8), 30_000).expect("8x8 decodes");
         assert_eq!(img.dimensions(), (8, 8));
+    }
+
+    /// docling#4247 (2.128): the EXIF orientation is applied when a frame is
+    /// loaded — a 4×2 JPEG tagged "rotate 90° CW" (orientation 6) decodes as
+    /// 2×4, with the pixels turned.
+    #[test]
+    fn exif_orientation_is_applied() {
+        use std::io::Cursor;
+        let mut img = image::RgbImage::new(4, 2);
+        img.put_pixel(0, 0, image::Rgb([255, 0, 0]));
+        let mut jpeg = Vec::new();
+        img.write_to(&mut Cursor::new(&mut jpeg), image::ImageFormat::Jpeg)
+            .unwrap();
+        // Splice an APP1 Exif segment (little-endian TIFF, one IFD entry:
+        // Orientation = 6) right after the SOI marker.
+        let mut tiff = b"II*\0".to_vec();
+        tiff.extend(8u32.to_le_bytes());
+        tiff.extend(1u16.to_le_bytes());
+        tiff.extend(0x0112u16.to_le_bytes());
+        tiff.extend(3u16.to_le_bytes());
+        tiff.extend(1u32.to_le_bytes());
+        tiff.extend(6u16.to_le_bytes());
+        tiff.extend([0, 0]);
+        tiff.extend(0u32.to_le_bytes());
+        let mut app1 = b"Exif\0\0".to_vec();
+        app1.extend(tiff);
+        let mut out = jpeg[..2].to_vec();
+        out.extend([0xff, 0xe1]);
+        out.extend((app1.len() as u16 + 2).to_be_bytes());
+        out.extend(app1);
+        out.extend(&jpeg[2..]);
+        let plain = decode_image_with_max_side(&jpeg, 30_000).unwrap();
+        assert_eq!(plain.dimensions(), (4, 2));
+        let turned = decode_image_with_max_side(&out, 30_000).unwrap();
+        assert_eq!(turned.dimensions(), (2, 4), "quarter turn swaps the sides");
+        // Rotating 90° CW moves the top-left pixel to the top-right corner.
+        assert!(turned.get_pixel(1, 0).0[0] > 128);
+        assert!(turned.get_pixel(0, 0).0[0] <= 128);
     }
 
     #[test]

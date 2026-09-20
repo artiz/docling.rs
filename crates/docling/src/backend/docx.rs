@@ -39,18 +39,7 @@ impl DeclarativeBackend for DocxBackend {
         let styles = pkg.read("word/styles.xml").unwrap_or_default();
         let numbering = pkg.read("word/numbering.xml").unwrap_or_default();
         // Hyperlink relationship ids → target URLs.
-        let rels: HashMap<String, String> = pkg
-            .rels_for("word/document.xml")
-            .iter()
-            .map(|r| {
-                let t = if r.rel_type.ends_with("/hyperlink") {
-                    r.target.clone()
-                } else {
-                    resolve("word", &r.target)
-                };
-                (r.id.clone(), t)
-            })
-            .collect();
+        let rels = part_rels(&mut pkg, "word/document.xml");
 
         // Embedded images, by relationship id (for image export).
         let images = pkg.image_rels("word/document.xml", "word");
@@ -258,10 +247,16 @@ fn emit_header_footer_part(pkg: &mut Package, part: &str, ctx: &Ctx, doc: &mut D
 }
 
 /// A part's relationship id → target map: hyperlink targets verbatim, every
-/// other target resolved against `word/`.
+/// other target resolved against `word/`. A fragment-only target
+/// (`Target="#_Procédures_spéciales"`, an internal bookmark reference some
+/// generators write as a relationship) is dropped, as docling 2.128 strips
+/// those `Relationship` elements before python-docx opens the package
+/// (docling#4243 — resolved as a part name they made it fail to load): the
+/// hyperlink keeps its text and carries no target.
 pub(super) fn part_rels(pkg: &mut Package, part: &str) -> HashMap<String, String> {
     pkg.rels_for(part)
         .iter()
+        .filter(|r| !r.target.starts_with('#'))
         .map(|r| {
             let t = if r.rel_type.ends_with("/hyperlink") {
                 r.target.clone()
@@ -2815,5 +2810,41 @@ mod tests {
         assert_eq!(heading_label_level("HeadingCustom"), Some(2));
         assert_eq!(heading_label_level("Heading 1a2"), Some(2));
         assert_eq!(heading_label_level("my heading"), None);
+    }
+}
+
+#[cfg(test)]
+mod fragment_rels_tests {
+    use crate::backend::DeclarativeBackend;
+    use crate::{InputFormat, SourceDocument};
+
+    /// docling#4243 (2.128): a relationship whose target is a bare fragment
+    /// (`Target="#anchor"`, an internal bookmark some generators write as a
+    /// relationship) is dropped before the package is read — the hyperlink
+    /// keeps its text and carries no target, and a real link still resolves.
+    #[test]
+    fn fragment_only_relationship_targets_are_dropped() {
+        use std::io::Write;
+        let body = r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><w:body>
+<w:p><w:r><w:t xml:space="preserve">see </w:t></w:r><w:hyperlink r:id="rId1"><w:r><w:t>the annex</w:t></w:r></w:hyperlink><w:r><w:t xml:space="preserve"> and </w:t></w:r><w:hyperlink r:id="rId2"><w:r><w:t>the site</w:t></w:r></w:hyperlink></w:p>
+</w:body></w:document>"#;
+        let rels = r##"<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink" Target="#_Proc%C3%A9dures" TargetMode="External"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink" Target="https://example.com" TargetMode="External"/></Relationships>"##;
+        let mut zw = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
+        let opts = zip::write::SimpleFileOptions::default()
+            .compression_method(zip::CompressionMethod::Stored);
+        for (name, content) in [
+            ("word/document.xml", body),
+            ("word/_rels/document.xml.rels", rels),
+        ] {
+            zw.start_file(name, opts).unwrap();
+            zw.write_all(content.as_bytes()).unwrap();
+        }
+        let bytes = zw.finish().unwrap().into_inner();
+        let src = SourceDocument::from_bytes("t.docx", InputFormat::Docx, bytes);
+        let md = super::DocxBackend
+            .convert(&src)
+            .unwrap()
+            .export_to_markdown();
+        assert_eq!(md, "see the annex and [the site](https://example.com)\n");
     }
 }

@@ -56,10 +56,10 @@ pub struct UsptoBackend;
 impl DeclarativeBackend for UsptoBackend {
     fn convert(&self, source: &SourceDocument) -> Result<DoclingDocument, ConversionError> {
         let raw = source.text()?;
-        super::xml_depth::check(raw, "uspto")?;
+        super::xml_depth::check(&raw, "uspto")?;
         let mut doc = DoclingDocument::new(&source.name);
 
-        let xml = resolve_named_entities(raw);
+        let xml = resolve_named_entities(&raw);
         let opts = ParsingOptions {
             allow_dtd: true,
             ..Default::default()

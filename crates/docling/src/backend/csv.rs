@@ -17,7 +17,15 @@ pub struct CsvBackend;
 impl DeclarativeBackend for CsvBackend {
     fn convert(&self, source: &SourceDocument) -> Result<DoclingDocument, ConversionError> {
         let text = source.text()?;
+        let text: &str = &text;
         let delimiter = detect_delimiter(text);
+        // docling reads with `csv.reader(strict=True)` and, since 2.129
+        // (docling#4260), turns its `csv.Error` into a load error rather
+        // than letting it escape: a closing quote followed by anything but
+        // the delimiter or a line end, or a quote still open at EOF. The
+        // `csv` crate is lenient about both, so they are checked up front.
+        check_strict_quoting(text, delimiter)
+            .map_err(|e| ConversionError::Parse(format!("csv: malformed quoting — {e}")))?;
 
         let mut reader = ReaderBuilder::new()
             .delimiter(delimiter)
@@ -53,6 +61,59 @@ impl DeclarativeBackend for CsvBackend {
 }
 
 /// Sniff the delimiter from the first line: the candidate (`, ; \t | :`) that
+/// Python `csv`'s strict-mode errors: `'<delimiter>' expected after '"'`
+/// when a quoted field's closing quote is followed by anything other than
+/// the delimiter, a line end or EOF (`""` inside the field is an escaped
+/// quote), and `unexpected end of data` when EOF arrives inside a quoted
+/// field. A quote inside an *unquoted* field is ordinary text, as in Python.
+fn check_strict_quoting(text: &str, delimiter: u8) -> Result<(), String> {
+    let d = delimiter as char;
+    let mut chars = text.chars().peekable();
+    let mut field_start = true;
+    let mut line = 1usize;
+    while let Some(c) = chars.next() {
+        if field_start && c == '"' {
+            // Inside a quoted field.
+            loop {
+                match chars.next() {
+                    None => {
+                        return Err(format!(
+                            "unexpected end of data in a quoted field (line {line})"
+                        ))
+                    }
+                    Some('"') => match chars.peek() {
+                        Some('"') => {
+                            chars.next();
+                        }
+                        Some(&n) if n == d => {
+                            chars.next();
+                            field_start = true;
+                            break;
+                        }
+                        Some('\n') | Some('\r') | None => {
+                            field_start = true;
+                            break;
+                        }
+                        Some(n) => {
+                            return Err(format!(
+                                "'{d}' expected after '\"' (line {line}), found {n:?}"
+                            ))
+                        }
+                    },
+                    Some('\n') => line += 1,
+                    Some(_) => {}
+                }
+            }
+            continue;
+        }
+        if c == '\n' {
+            line += 1;
+        }
+        field_start = c == d || c == '\n' || c == '\r';
+    }
+    Ok(())
+}
+
 /// occurs most often wins. When the first line carries none — a quoted field
 /// spanning several lines cuts it mid-quote (docling#3985, 2.123) — retry
 /// over the first 4 KiB, which closes the quote; comma remains the default
@@ -100,6 +161,23 @@ mod tests {
             doc.export_to_markdown(),
             "| name   |   age |\n|--------|-------|\n| Alice  |    30 |\n| Bob    |    25 |\n"
         );
+    }
+
+    /// docling#4260 (2.129): Python's strict reader rejects a closing quote
+    /// followed by text and a quote left open at EOF; both are load errors
+    /// here too, while an escaped quote and a quote inside an unquoted field
+    /// still read.
+    #[test]
+    fn malformed_quoting_is_a_load_error() {
+        let bad = |s: &str| {
+            let src = SourceDocument::from_bytes("t.csv", InputFormat::Csv, s.as_bytes().to_vec());
+            CsvBackend.convert(&src).is_err()
+        };
+        assert!(bad("a,\"b\"c,d\n"));
+        assert!(bad("a,\"open\n"));
+        assert!(!bad("a,\"x \"\"y\"\" z\",c\n"));
+        assert!(!bad("a,b\"c,d\n"));
+        assert!(!bad("\"a\",\"b\"\n\"c\",\"d\""));
     }
 
     #[test]

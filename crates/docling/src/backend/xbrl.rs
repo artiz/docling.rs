@@ -20,12 +20,12 @@ pub struct XbrlBackend;
 impl DeclarativeBackend for XbrlBackend {
     fn convert(&self, source: &SourceDocument) -> Result<DoclingDocument, ConversionError> {
         let xml = source.text()?;
-        super::xml_depth::check(xml, "xbrl")?;
+        super::xml_depth::check(&xml, "xbrl")?;
         let opts = ParsingOptions {
             allow_dtd: true,
             ..Default::default()
         };
-        let dom = Document::parse_with_options(xml, opts)
+        let dom = Document::parse_with_options(&xml, opts)
             .map_err(|e| ConversionError::with_source("xbrl", e))?;
         let mut doc = DoclingDocument::new(&source.name);
 

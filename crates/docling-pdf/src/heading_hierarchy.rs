@@ -292,13 +292,20 @@ fn parse_marker(text: &str) -> Option<Marker> {
         }
     }
 
-    // Dotted decimal outline (1.1, 1.1.1, …) terminated by space/end/punct.
-    if let Some((segments, rest)) = take_dotted(s) {
+    // docling 2.129 (docling#4204): every numeric/letter form may open with
+    // `(`, and besides `.`/`)`/`]` a colon or a dash (`-`, `–`, `—`) that is
+    // followed by whitespace or the end closes the marker (`1: Intro`,
+    // `A - Scope`, `1.2 – Detail`).
+    let body = s.strip_prefix('(').map(str::trim_start).unwrap_or(s);
+
+    // Dotted decimal outline (1.1, 1.1.1, …) terminated by punct/space/end.
+    if let Some((segments, rest)) = take_dotted(body) {
         if segments >= 2
-            && rest
+            && (rest
                 .chars()
                 .next()
                 .is_none_or(|c| matches!(c, '.' | ')' | ']') || c.is_whitespace())
+                || separator_at(rest))
         {
             return Some(Marker {
                 family: "dotted",
@@ -308,28 +315,105 @@ fn parse_marker(text: &str) -> Option<Marker> {
             });
         }
     }
-    // Single Arabic index (1. / 2)).
-    let digits = s.chars().take_while(|c| c.is_ascii_digit()).count();
+    // Single Arabic index (1. / 1) / (1) / 1: / 1 -): `\d+\s*(?:\.(?!\d)|SEP)`.
+    let digits = body.chars().take_while(|c| c.is_ascii_digit()).count();
     if digits > 0 {
-        let rest = &s[digits..];
-        if rest.starts_with('.') || rest.starts_with(')') {
+        let rest = body[digits..].trim_start();
+        let dot_not_decimal = rest
+            .strip_prefix('.')
+            .is_some_and(|r| !r.starts_with(|c: char| c.is_ascii_digit()));
+        if dot_not_decimal || separator_at(rest) {
             return Some(Marker::family("arabic"));
         }
     }
 
-    // Single/multi letter marker, optionally parenthesized: (a) / A. / (iv).
-    let after_paren = s.strip_prefix('(').map(str::trim_start).unwrap_or(s);
-    let letters: String = after_paren
+    // Single/multi letter marker, optionally parenthesized: (a) / A. / (iv) /
+    // A: / A -.
+    let letters: String = body
         .chars()
-        .take_while(|c| c.is_alphabetic())
+        .take_while(|c| c.is_ascii_alphabetic())
         .collect();
     if !letters.is_empty() {
-        let rest = after_paren[letters.len()..].trim_start();
-        if rest.starts_with(')') || rest.starts_with('.') {
+        let rest = body[letters.len()..].trim_start();
+        if rest.starts_with('.') || separator_at(rest) {
             return classify_letter(&letters);
         }
     }
     None
+}
+
+/// docling's `_SEP`: `)` or `]`, or a colon / hyphen / en dash / em dash
+/// followed by whitespace or the end of the text.
+fn separator_at(rest: &str) -> bool {
+    let mut chars = rest.chars();
+    match chars.next() {
+        Some(')' | ']') => true,
+        Some(':' | '-' | '\u{2013}' | '\u{2014}') => chars.next().is_none_or(char::is_whitespace),
+        _ => false,
+    }
+}
+
+/// docling's `_BARE_ARABIC` (`^(\d+)\s+\S`): the number a heading opens with
+/// when nothing but whitespace separates it from the title.
+fn bare_arabic(text: &str) -> Option<u64> {
+    let s = text.trim();
+    let digits = s.chars().take_while(|c| c.is_ascii_digit()).count();
+    if digits == 0 {
+        return None;
+    }
+    let rest = &s[digits..];
+    let ws = rest.len() - rest.trim_start().len();
+    (ws > 0 && !rest[ws..].is_empty())
+        .then(|| s[..digits].parse().ok())
+        .flatten()
+}
+
+/// docling 2.129's `_resolve_bare_arabic` (docling#4179): a heading whose
+/// only marker is a bare number (`1 Introduction`) is numbered when the
+/// document carries a consecutive run starting at 1 with at least two
+/// entries — explicit Arabic markers (`2.`) count as evidence too, dotted
+/// sections and unnumbered headings may intervene, and a gap (`1`, `2`, `4`)
+/// ends the run, leaving the `4` unrecognized. A leading number alone may be
+/// a year or a quantity, hence the sequence requirement; a 1-based run of
+/// incidental headings (`1 January`, `2 February`) can still be misread.
+fn resolve_bare_arabic(heading_texts: &[&str], markers: &mut [Option<Marker>]) {
+    let mut sequence: Vec<usize> = Vec::new();
+    for (i, text) in heading_texts.iter().enumerate() {
+        let explicit = match &markers[i] {
+            Some(m) if m.family != "arabic" => continue,
+            Some(_) => true,
+            None => false,
+        };
+        let number = if explicit {
+            let body = text
+                .trim()
+                .strip_prefix('(')
+                .map(str::trim_start)
+                .unwrap_or(text.trim());
+            let digits = body.chars().take_while(|c| c.is_ascii_digit()).count();
+            body[..digits].parse::<u64>().ok()
+        } else {
+            bare_arabic(text)
+        };
+        let Some(number) = number else {
+            continue;
+        };
+        if number == 1 {
+            sequence = vec![i];
+        } else if !sequence.is_empty() && number == sequence.len() as u64 + 1 {
+            sequence.push(i);
+            // Confirm the first entry when 2 arrives, then only the newly
+            // extended pair.
+            let n = sequence.len();
+            for &index in &sequence[n.saturating_sub(2)..] {
+                if markers[index].is_none() {
+                    markers[index] = Some(Marker::family("arabic"));
+                }
+            }
+        } else {
+            sequence.clear();
+        }
+    }
 }
 
 /// Parse a leading `N(.N)+` run: `(segment count, rest)`. `None` when the
@@ -416,6 +500,7 @@ fn infer_from_numbering(
         .unwrap_or_else(|| DEFAULT_FAMILY_ORDER.iter().map(|s| s.to_string()).collect());
     let mut markers: Vec<Option<Marker>> = heading_texts.iter().map(|t| parse_marker(t)).collect();
     resolve_ambiguous(&mut markers);
+    resolve_bare_arabic(heading_texts, &mut markers);
 
     let mut keys: HashMap<usize, (usize, usize)> = HashMap::new();
     for (i, m) in markers.iter().enumerate() {
@@ -611,7 +696,7 @@ fn strip_marker(text: &str) -> String {
         Some(n) => {
             let rest = &s[n..];
             let trimmed = rest.trim_start_matches(|c: char| {
-                c.is_whitespace() || matches!(c, '.' | ':' | ')' | '-')
+                c.is_whitespace() || matches!(c, '.' | ':' | ')' | '-' | '\u{2013}' | '\u{2014}')
             });
             trimmed.to_string()
         }
@@ -655,7 +740,7 @@ fn leading_marker_len(s: &str) -> Option<usize> {
             return Some(s.len() - rest.len() + ws + num);
         }
     }
-    // \(? \d+(\.\d+)* [).]?
+    // \(? \d+(\.\d+)* [.)\]]?
     let (paren, body) = match s.strip_prefix('(') {
         Some(r) => (1, r),
         None => (0, s),
@@ -674,17 +759,23 @@ fn leading_marker_len(s: &str) -> Option<usize> {
             }
             i += 1 + d;
         }
-        if i < b.len() && (b[i] == b')' || b[i] == b'.') {
+        if i < b.len() && matches!(b[i], b')' | b'.' | b']') {
             i += 1;
         }
         return Some(paren + i);
     }
-    // \(? [A-Za-z]{1,2} [).]
+    // \(? [A-Za-z]{1,2} (?:[.)\]]|(?=\s*[:\-–—])) — docling 2.129 also
+    // strips `A: Title` / `A - Title`, leaving the separator to the trailing
+    // trim.
     let letters = body.bytes().take_while(|b| b.is_ascii_alphabetic()).count();
     if (1..=2).contains(&letters) {
         let b = body.as_bytes();
-        if letters < b.len() && (b[letters] == b')' || b[letters] == b'.') {
+        if letters < b.len() && matches!(b[letters], b')' | b'.' | b']') {
             return Some(paren + letters + 1);
+        }
+        let after = body[letters..].trim_start();
+        if after.starts_with([':', '-', '\u{2013}', '\u{2014}']) {
+            return Some(paren + letters);
         }
     }
     None
@@ -1130,6 +1221,44 @@ mod tests {
         // Plain words are not numbering.
         assert_eq!(fam("Summary."), None);
         assert_eq!(fam("Overview"), None);
+        // docling#4204 (2.129): colon, dash, bracket and parenthesized forms.
+        assert_eq!(fam("1: Introduction"), Some(("arabic", 1)));
+        assert_eq!(fam("(2) Scope"), Some(("arabic", 1)));
+        assert_eq!(fam("3] Notes"), Some(("arabic", 1)));
+        assert_eq!(fam("4 - Methods"), Some(("arabic", 1)));
+        assert_eq!(fam("5 — Results"), Some(("arabic", 1)));
+        assert_eq!(fam("1.2: Detail"), Some(("dotted", 2)));
+        assert_eq!(fam("(1.2.3) Deep"), Some(("dotted", 3)));
+        assert_eq!(fam("A: Annex"), Some(("alpha_u", 1)));
+        assert_eq!(fam("B - Bee"), Some(("alpha_u", 1)));
+        assert_eq!(fam("(e) see"), Some(("alpha_l", 1)));
+        // A dash glued to the title is a hyphenated word, not a separator; a
+        // bare number needs sequence evidence (see `resolve_bare_arabic`).
+        assert_eq!(fam("1-A Something"), None);
+        assert_eq!(fam("2 Methods"), None);
+        assert_eq!(fam("1.5 kg"), Some(("dotted", 2)));
+    }
+
+    /// docling#4179 (2.129): bare Arabic chapter numbers count once the
+    /// document shows a consecutive run from 1 (dotted sections may
+    /// intervene, explicit `2.` markers are evidence too); a gap ends the run.
+    #[test]
+    fn bare_arabic_chapter_numbers_need_a_sequence() {
+        let opts = HeadingHierarchyOptions::default();
+        let texts = ["1 Intro", "1.1 Scope", "2. Methods", "3 Results", "Plain"];
+        let map = infer_from_numbering(&texts.map(|t| t), &opts);
+        assert_eq!(map[&0], 1, "confirmed by the explicit `2.`");
+        assert_eq!(map[&1], 2);
+        assert_eq!(map[&2], 1);
+        assert_eq!(map[&3], 1, "3 follows the run 1, 2");
+        assert!(!map.contains_key(&4));
+        let texts = ["1 Intro", "2 Methods", "4 Results"];
+        let map = infer_from_numbering(&texts.map(|t| t), &opts);
+        assert_eq!(map.get(&0), Some(&1));
+        assert_eq!(map.get(&1), Some(&1));
+        assert!(!map.contains_key(&2), "the gap leaves 4 unrecognized");
+        let texts = ["2024 Report", "3 kg", "Summary"];
+        assert!(infer_from_numbering(&texts.map(|t| t), &opts).is_empty());
     }
 
     #[test]

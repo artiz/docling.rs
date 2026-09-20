@@ -1958,12 +1958,21 @@ fn is_row_header(cells: &[ElementRef]) -> bool {
             .all(|c| c.value().name() == "th" && span_attr(*c, "rowspan") > 1)
 }
 
+/// docling's `_get_cell_spans`: the attribute's leading run of digits when
+/// its first character is a digit (`"2px"` → 2, `" 2"` → 1 — no trimming),
+/// and never below 1 (docling#4287, 2.129: a `colspan="0"` covered no grid
+/// position, so the cell dropped out and every later cell shifted left;
+/// HTML5's "rowspan=0 spans to the end of the row group" is not modelled,
+/// the cell simply keeps one slot).
 fn span_attr(cell: ElementRef, name: &str) -> usize {
-    cell.value()
-        .attr(name)
-        .and_then(|v| v.trim().parse().ok())
-        .filter(|&n| n >= 1)
-        .unwrap_or(1)
+    let Some(v) = cell.value().attr(name) else {
+        return 1;
+    };
+    if !v.starts_with(|c: char| c.is_numeric()) {
+        return 1;
+    }
+    let digits: String = v.chars().take_while(|c| c.is_ascii_digit()).collect();
+    digits.parse::<usize>().map_or(1, |n| n.max(1))
 }
 
 /// Render a table cell to Markdown. docling treats a cell as "rich" (and
@@ -2408,6 +2417,24 @@ mod tests {
     fn convert_bytes(html: &[u8]) -> DoclingDocument {
         let src = SourceDocument::from_bytes("t", InputFormat::Html, html.to_vec());
         HtmlBackend.convert(&src).unwrap()
+    }
+
+    /// docling#4287 (2.129): a zero `colspan`/`rowspan` covers no grid slot,
+    /// which dropped the cell and shifted the ones after it; it defaults to 1
+    /// like a missing or non-numeric span, and a `"2px"` still reads as 2.
+    #[test]
+    fn zero_spans_default_to_one() {
+        let doc = convert(
+            "<table><tr><td colspan=\"0\">a</td><td rowspan=\"0\">b</td><td colspan=\"2px\">c</td></tr>\
+             <tr><td>d</td><td>e</td><td>f</td><td>g</td></tr></table>",
+        );
+        let Some(Node::Table(t)) = doc.nodes.iter().find(|n| matches!(n, Node::Table(_))) else {
+            panic!("a table");
+        };
+        assert_eq!(
+            t.rows,
+            vec![vec!["a", "b", "c", "c"], vec!["d", "e", "f", "g"],]
+        );
     }
 
     /// docling#4216: a `<tr>` whose `<th>`s each span several rows is a pivot
