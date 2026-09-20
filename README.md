@@ -154,10 +154,10 @@ image bytes):
 | Markdown | 10 | 10 | 5 |
 | JATS | 6 | 6 | 0 |
 | ODF | 7 | 7 | 6 |
-| WebVTT | 4 | 4 | 0 |
+| WebVTT | 4 | 4 | 4 |
 | DocLang | 15 | 15 | 0 |
 | AsciiDoc | 4 | 4 | 0 |
-| USPTO | 9 | 5 | 0 |
+| USPTO | 9 | 6 | 1 |
 | EPUB | 1 | 0 | 1 |
 | Email / iWork Pages / EBCDIC | 2 / 1 / 3 | all | all |
 
