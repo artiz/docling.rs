@@ -419,11 +419,7 @@ fn rich_content(cell: XmlNode) -> bool {
             }
             "h" if !clean_lines_vec(&para_plain_text(child)).is_empty() => return true,
             "table" if super::odf::table_has_content(child) => return true,
-            "p" => {
-                if !clean_lines_vec(&para_plain_text(child)).is_empty() {
-                    paragraphs += 1;
-                }
-            }
+            "p" if !clean_lines_vec(&para_plain_text(child)).is_empty() => paragraphs += 1,
             _ => {}
         }
     }
