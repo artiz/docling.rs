@@ -1316,6 +1316,18 @@ driver/toolkit libs) fails the conversion rather than silently running 10×
 slower on CPU; `auto` is the quiet-fallback mode for images deployed on mixed
 fleets.
 
+**Session creation is serialized under a GPU provider** (#452). The page
+workers, OCR lanes and enrichment models normally open their ONNX Runtime
+sessions concurrently so start-up is paid once; the CUDA provider does not
+tolerate that on one device — with `DOCLING_RS_PDF_WORKERS` or
+`DOCLING_RS_OCR_SESSIONS` above 1, initialization failed intermittently with
+`Exception during initialization: … stride > 0 was false`, while the sessions
+ran fine side by side once they existed. Every session in the workspace now
+takes one process-wide lock while it is being created whenever a non-CPU
+provider is registered; inference stays fully parallel, and CPU builds (or
+`DOCLING_RS_EP=cpu`) keep the parallel start-up. No configuration needed —
+the `=1` workarounds are no longer necessary.
+
 CoreML registers with the **`MLProgram`** model format by default (#324):
 ONNX Runtime's own default, `NeuralNetwork`, cannot place operators the
 layout model carries (`GridSample`, `ScatterND`, dynamic output shapes) and
