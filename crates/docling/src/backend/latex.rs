@@ -51,6 +51,18 @@ const HEADINGS: &[(&str, u8)] = &[
 ];
 
 impl Parser<'_> {
+    /// The body walk follows docling's `_process_nodes` — a text buffer
+    /// flushed at headings, environments, math and paragraph breaks — with one
+    /// deliberate difference. pylatexenc hands docling the plain text between
+    /// two macros as one *chars node*, and docling's `_process_chars_node`
+    /// splits a node holding a paragraph break and `strip()`s the part before
+    /// it: the space that follows the paragraph's last macro is lost
+    /// (`\textit{italic} text.` → `italictext.`, upstream's own groundtruth
+    /// for `example_01.tex` reads so), and every part after the break becomes
+    /// a paragraph on the spot, cutting a sentence that continues with a
+    /// macro in two. Both corrupt the text, so they are *not* reproduced here
+    /// (docling#4339); the fixture's one-word difference is the known,
+    /// intended residual until docling fixes it.
     fn run(&mut self, doc: &mut DoclingDocument) {
         let mut para = String::new();
         while self.i < self.chars.len() {
@@ -279,8 +291,19 @@ fn emit_table(inner: &str, doc: &mut DoclingDocument) {
     };
     let mut rows = Vec::new();
     for line in body.split("\\\\") {
-        let line = line.replace("\\hline", "");
-        if line.trim().is_empty() {
+        // docling's `_parse_table` finishes a row at `\\` and once more at the
+        // end of the environment; rule macros (`\hline`, `\toprule`, …) add
+        // no cell content, but the bare newlines around them are chars nodes,
+        // so a segment that still holds *anything* after removing the rules —
+        // typically the `\n\hline\n` after the last `\\` — is a row of one
+        // empty cell, padded to the table's width (upstream's trailing blank
+        // row). Only a segment with nothing at all yields no row.
+        let line = line
+            .replace("\\hline", "")
+            .replace("\\toprule", "")
+            .replace("\\midrule", "")
+            .replace("\\bottomrule", "");
+        if line.is_empty() {
             continue;
         }
         rows.push(
@@ -456,6 +479,34 @@ fn read_group_at(chars: &[char], mut i: usize) -> (String, usize) {
 mod tests {
     use super::*;
     use crate::format::InputFormat;
+
+    /// Deliberate deviation from docling (see [`Parser::run`]): the space
+    /// after a paragraph's last formatting macro is kept (`bf more.`, not
+    /// upstream's `bfmore.`) and a sentence continuing with a macro after a
+    /// paragraph break stays one paragraph (`C emx and it.`, not `C` alone).
+    #[test]
+    fn paragraph_breaks_keep_the_space_after_the_last_macro() {
+        let tex = "\\begin{document}\nA \\textit{it} text. B \\textbf{bf} more.\n\n\
+            C \\emph{em}x and \\textit{it}.\n\\end{document}";
+        let src = SourceDocument::from_bytes("d", InputFormat::Latex, tex.as_bytes().to_vec());
+        let md = LatexBackend.convert(&src).unwrap().export_to_markdown();
+        assert_eq!(md.trim(), "A it text. B bf more.\n\nC emx and it.");
+    }
+
+    /// docling's `_parse_table` finishes one more row after the last `\\`:
+    /// the newline around a trailing `\hline` is a chars node, so every
+    /// tabular ends with a blank row.
+    #[test]
+    fn tabular_keeps_the_trailing_blank_row() {
+        let tex = "\\begin{document}\n\\begin{tabular}{|c|c|}\n\\hline\nH1 & H2 \\\\\n\\hline\n\
+            a & b \\\\\n\\hline\n\\end{tabular}\n\\end{document}";
+        let src = SourceDocument::from_bytes("d", InputFormat::Latex, tex.as_bytes().to_vec());
+        let md = LatexBackend.convert(&src).unwrap().export_to_markdown();
+        assert!(
+            md.contains("| H1   | H2   |\n|------|------|\n| a    | b    |\n|      |      |"),
+            "got:\n{md}"
+        );
+    }
 
     #[test]
     fn title_sections_lists_and_font_macros() {

@@ -169,18 +169,21 @@ bytes; ✅ all = every file of the format matches):
 | JATS | 6 | ✅ all | 0 |
 | DocLang | 15 | ✅ all | 0 |
 | AsciiDoc | 4 | ✅ all | 0 |
-| USPTO | 9 | 6 | 1 |
-| EPUB | 1 | 0 | ✅ all |
-| LaTeX | 2 | 0 | 0 |
+| USPTO | 9 | ✅ all | 1 |
+| EPUB | 1 | ✅ all | ✅ all |
+| LaTeX | 2 | 1 ¹ | 0 |
 
 The JSON column is complete wherever the backend builds docling's item tree
 (HTML, DOCX, PPTX, ODF, WebVTT, the `pftaps` USPTO patent, Markdown without
 raw HTML blocks) or its flat export already has upstream's shape (XLSX, CSV,
 EBCDIC); the zeros (JATS, DocLang, AsciiDoc, the USPTO XML paths) are the
 flat export's `text`-for-`paragraph` labels, `-` list markers and missing
-heading nesting — next in line for the same treatment. The two Markdown
-misses are known single residuals (EPUB's 4-line HTML inline join, LaTeX's
-`italictext` run join). Per-format residuals, with the exact files:
+heading nesting — next in line for the same treatment. Markdown is exact on
+every file upstream itself converts (the tenth USPTO fixture,
+`tables_ipa20180000016.xml`, fails in upstream), with one deliberate
+exception: ¹ docling's LaTeX backend drops the space after a paragraph's
+last formatting macro (`\textit{italic} text.` → `italictext.`, in its own
+groundtruth for `example_01.tex`); we keep the space — [docling#4339](https://github.com/docling-project/docling/issues/4339). Per-format residuals, with the exact files:
 [`docs/MIGRATION.md`](./docs/MIGRATION.md).
 
 ## RAG subsystem
