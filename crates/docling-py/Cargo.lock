@@ -502,7 +502,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d045de693cb712d0b22c6a64be5b953f67b3ce00ab5ad3dd5d8b441886ab8e1a"
 dependencies = [
  "quote",
- "syn 3.0.5",
+ "syn 2.0.119",
 ]
 
 [[package]]
@@ -783,7 +783,7 @@ dependencies = [
 
 [[package]]
 name = "docling"
-version = "1.62.1"
+version = "1.63.0"
 dependencies = [
  "calamine",
  "csv",
@@ -813,7 +813,7 @@ dependencies = [
 
 [[package]]
 name = "docling-asr"
-version = "1.62.1"
+version = "1.63.0"
 dependencies = [
  "docling-core",
  "docling-onnx",
@@ -824,7 +824,7 @@ dependencies = [
 
 [[package]]
 name = "docling-core"
-version = "1.62.1"
+version = "1.63.0"
 dependencies = [
  "pulldown-cmark",
  "serde_json",
@@ -834,7 +834,7 @@ dependencies = [
 
 [[package]]
 name = "docling-onnx"
-version = "1.62.1"
+version = "1.63.0"
 dependencies = [
  "docling-core",
  "ort",
@@ -842,7 +842,7 @@ dependencies = [
 
 [[package]]
 name = "docling-pdf"
-version = "1.62.1"
+version = "1.63.0"
 dependencies = [
  "docling-core",
  "docling-onnx",
@@ -2795,9 +2795,9 @@ dependencies = [
 
 [[package]]
 name = "rustls"
-version = "0.23.44"
+version = "0.23.45"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6725596c3f2c3a0aef021139e145d4eafe314a6623e4680ca83852b2c67ab2ba"
+checksum = "0d41d731c7d2f962d1ccc364cec258de3c0e93b38c2fb3ba97ac74513048d634"
 dependencies = [
  "log",
  "once_cell",
