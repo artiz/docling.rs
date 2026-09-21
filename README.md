@@ -183,8 +183,7 @@ every file upstream itself converts (the tenth USPTO fixture,
 `tables_ipa20180000016.xml`, fails in upstream), with one deliberate
 exception: ¹ docling's LaTeX backend drops the space after a paragraph's
 last formatting macro (`\textit{italic} text.` → `italictext.`, in its own
-groundtruth for `example_01.tex`); we keep the space and reported the bug
-upstream. Per-format residuals, with the exact files:
+groundtruth for `example_01.tex`); we keep the space — [docling#4339](https://github.com/docling-project/docling/issues/4339). Per-format residuals, with the exact files:
 [`docs/MIGRATION.md`](./docs/MIGRATION.md).
 
 ## RAG subsystem

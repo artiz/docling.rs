@@ -61,7 +61,7 @@ impl Parser<'_> {
     /// for `example_01.tex` reads so), and every part after the break becomes
     /// a paragraph on the spot, cutting a sentence that continues with a
     /// macro in two. Both corrupt the text, so they are *not* reproduced here
-    /// (reported upstream); the fixture's one-word difference is the known,
+    /// (docling#4339); the fixture's one-word difference is the known,
     /// intended residual until docling fixes it.
     fn run(&mut self, doc: &mut DoclingDocument) {
         let mut para = String::new();
