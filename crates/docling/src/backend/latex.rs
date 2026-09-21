@@ -51,11 +51,25 @@ const HEADINGS: &[(&str, u8)] = &[
 ];
 
 impl Parser<'_> {
+    /// The body walk mirrors docling's `_process_nodes` over pylatexenc's
+    /// node stream: `para` is its `text_buffer` (joined and stripped at each
+    /// flush), `node` the *chars node* being read — the plain text between two
+    /// macros / groups / environments. The distinction matters for paragraph
+    /// breaks: a chars node holding `\n\n` is split there, its first part
+    /// **stripped** before it joins the buffer (so `\textit{italic} text.`
+    /// ends a paragraph as `italictext.` — the space after the last macro is
+    /// lost, as upstream loses it), and every later part becomes a paragraph
+    /// of its own on the spot (`tail`) even when more macros follow on the
+    /// same line.
     fn run(&mut self, doc: &mut DoclingDocument) {
         let mut para = String::new();
+        let mut node = String::new();
+        let mut tail = false;
         while self.i < self.chars.len() {
             let rest: String = self.chars[self.i..].iter().collect();
+            let ch = self.chars[self.i];
             if rest.starts_with("\\maketitle") {
+                end_chars_node(&mut node, &mut tail, &mut para, doc);
                 self.i += "\\maketitle".len();
                 if let Some(t) = self.title.take() {
                     doc.push(Node::Heading { level: 1, text: t });
@@ -66,6 +80,7 @@ impl Parser<'_> {
             } else if let Some((cmd, level)) = HEADINGS.iter().find(|(c, _)| {
                 rest.starts_with(*c) && !rest[c.len()..].starts_with(|ch: char| ch.is_alphabetic())
             }) {
+                end_chars_node(&mut node, &mut tail, &mut para, doc);
                 flush(&mut para, doc);
                 self.i += cmd.len();
                 self.skip_star();
@@ -75,9 +90,11 @@ impl Parser<'_> {
                     text: clean_inline(&text),
                 });
             } else if rest.starts_with("\\begin{") {
+                end_chars_node(&mut node, &mut tail, &mut para, doc);
                 flush(&mut para, doc);
                 self.read_environment(doc);
             } else if rest.starts_with("\\[") || rest.starts_with("$$") {
+                end_chars_node(&mut node, &mut tail, &mut para, doc);
                 flush(&mut para, doc);
                 let close = if rest.starts_with("\\[") { "\\]" } else { "$$" };
                 self.i += 2;
@@ -88,8 +105,9 @@ impl Parser<'_> {
                         math.split_whitespace().collect::<Vec<_>>().join(" ")
                     ),
                 });
-            } else if self.chars[self.i] == '$' {
+            } else if ch == '$' {
                 // Inline math becomes its own block (docling extracts formulas).
+                end_chars_node(&mut node, &mut tail, &mut para, doc);
                 flush(&mut para, doc);
                 self.i += 1;
                 let math = self.read_until("$");
@@ -99,15 +117,90 @@ impl Parser<'_> {
                         math.split_whitespace().collect::<Vec<_>>().join(" ")
                     ),
                 });
-            } else if self.chars[self.i] == '\n' && self.peek_blank_line() {
+            } else if ch == '\n' && self.peek_blank_line() {
+                // `_process_chars_node` on a chars node with a paragraph break:
+                // the part before it is stripped and appended (or, when it is
+                // itself a tail, emitted), the buffer flushed, and what follows
+                // up to the next macro is a paragraph of its own.
+                let first = node.trim().to_string();
+                if tail {
+                    emit_paragraph(&first, doc);
+                } else {
+                    para.push_str(&first);
+                }
                 flush(&mut para, doc);
+                node.clear();
+                tail = true;
                 self.consume_blank_line();
+            } else if ch == '\\' {
+                // A macro ends the chars node; the macro itself (name + its
+                // `[…]`/`{…}` arguments) rides along verbatim in the buffer for
+                // `clean_inline` to reduce at flush time, as before.
+                end_chars_node(&mut node, &mut tail, &mut para, doc);
+                self.copy_macro(&mut para);
+            } else if matches!(ch, '{' | '}' | '~' | '&') {
+                // Group braces and the `~`/`&` specials are nodes of their own
+                // in pylatexenc: they end the chars node too.
+                end_chars_node(&mut node, &mut tail, &mut para, doc);
+                para.push(ch);
+                self.i += 1;
             } else {
-                para.push(self.chars[self.i]);
+                node.push(ch);
                 self.i += 1;
             }
         }
+        end_chars_node(&mut node, &mut tail, &mut para, doc);
         flush(&mut para, doc);
+    }
+
+    /// Copy a macro verbatim: the backslash, its name (letters, or the one
+    /// non-letter of a control symbol) and the `[…]` / `{…}` arguments that
+    /// directly follow it.
+    fn copy_macro(&mut self, out: &mut String) {
+        out.push('\\');
+        self.i += 1;
+        if self.i < self.chars.len() && self.chars[self.i].is_alphabetic() {
+            while self.i < self.chars.len() && self.chars[self.i].is_alphabetic() {
+                out.push(self.chars[self.i]);
+                self.i += 1;
+            }
+        } else if self.i < self.chars.len() {
+            out.push(self.chars[self.i]);
+            self.i += 1;
+        }
+        loop {
+            match self.chars.get(self.i) {
+                Some('{') => {
+                    let mut depth = 0usize;
+                    while self.i < self.chars.len() {
+                        let c = self.chars[self.i];
+                        out.push(c);
+                        self.i += 1;
+                        match c {
+                            '{' => depth += 1,
+                            '}' => {
+                                depth -= 1;
+                                if depth == 0 {
+                                    break;
+                                }
+                            }
+                            _ => {}
+                        }
+                    }
+                }
+                Some('[') => {
+                    while self.i < self.chars.len() && self.chars[self.i] != ']' {
+                        out.push(self.chars[self.i]);
+                        self.i += 1;
+                    }
+                    if self.i < self.chars.len() {
+                        out.push(']');
+                        self.i += 1;
+                    }
+                }
+                _ => break,
+            }
+        }
     }
 
     /// `\begin{env} … \end{env}` — handle the structural environments, ignore others.
@@ -239,11 +332,33 @@ impl Parser<'_> {
 
 fn flush(para: &mut String, doc: &mut DoclingDocument) {
     let text = clean_inline(para);
+    emit_paragraph(&text, doc);
+    para.clear();
+}
+
+/// A paragraph from already macro-free text (whitespace collapsed).
+fn emit_paragraph(text: &str, doc: &mut DoclingDocument) {
     let text = text.split_whitespace().collect::<Vec<_>>().join(" ");
     if !text.is_empty() {
         doc.push(Node::Paragraph { text });
     }
-    para.clear();
+}
+
+/// Close the current chars node (see [`Parser::run`]): a post-break tail is a
+/// paragraph of its own, anything else joins the text buffer verbatim.
+fn end_chars_node(
+    node: &mut String,
+    tail: &mut bool,
+    para: &mut String,
+    doc: &mut DoclingDocument,
+) {
+    if *tail {
+        emit_paragraph(node.trim(), doc);
+    } else {
+        para.push_str(node);
+    }
+    node.clear();
+    *tail = false;
 }
 
 /// Emit `\item` entries of an itemize/enumerate body as (unordered) list items.
@@ -279,8 +394,19 @@ fn emit_table(inner: &str, doc: &mut DoclingDocument) {
     };
     let mut rows = Vec::new();
     for line in body.split("\\\\") {
-        let line = line.replace("\\hline", "");
-        if line.trim().is_empty() {
+        // docling's `_parse_table` finishes a row at `\\` and once more at the
+        // end of the environment; rule macros (`\hline`, `\toprule`, …) add
+        // no cell content, but the bare newlines around them are chars nodes,
+        // so a segment that still holds *anything* after removing the rules —
+        // typically the `\n\hline\n` after the last `\\` — is a row of one
+        // empty cell, padded to the table's width (upstream's trailing blank
+        // row). Only a segment with nothing at all yields no row.
+        let line = line
+            .replace("\\hline", "")
+            .replace("\\toprule", "")
+            .replace("\\midrule", "")
+            .replace("\\bottomrule", "");
+        if line.is_empty() {
             continue;
         }
         rows.push(
@@ -456,6 +582,34 @@ fn read_group_at(chars: &[char], mut i: usize) -> (String, usize) {
 mod tests {
     use super::*;
     use crate::format::InputFormat;
+
+    /// docling's `_process_chars_node` (pylatexenc): the chars node holding
+    /// a paragraph break is split there and its first part *stripped*, so the
+    /// space after the paragraph's last macro is lost (`bfmore.`), and text
+    /// after the break up to the next macro is a paragraph of its own (`C`).
+    #[test]
+    fn paragraph_breaks_follow_pylatexenc_chars_nodes() {
+        let tex = "\\begin{document}\nA \\textit{it} text. B \\textbf{bf} more.\n\n\
+            C \\emph{em}x and \\textit{it}.\n\\end{document}";
+        let src = SourceDocument::from_bytes("d", InputFormat::Latex, tex.as_bytes().to_vec());
+        let md = LatexBackend.convert(&src).unwrap().export_to_markdown();
+        assert_eq!(md.trim(), "A it text. B bfmore.\n\nC\n\nemx and it.");
+    }
+
+    /// docling's `_parse_table` finishes one more row after the last `\\`:
+    /// the newline around a trailing `\hline` is a chars node, so every
+    /// tabular ends with a blank row.
+    #[test]
+    fn tabular_keeps_the_trailing_blank_row() {
+        let tex = "\\begin{document}\n\\begin{tabular}{|c|c|}\n\\hline\nH1 & H2 \\\\\n\\hline\n\
+            a & b \\\\\n\\hline\n\\end{tabular}\n\\end{document}";
+        let src = SourceDocument::from_bytes("d", InputFormat::Latex, tex.as_bytes().to_vec());
+        let md = LatexBackend.convert(&src).unwrap().export_to_markdown();
+        assert!(
+            md.contains("| H1   | H2   |\n|------|------|\n| a    | b    |\n|      |      |"),
+            "got:\n{md}"
+        );
+    }
 
     #[test]
     fn title_sections_lists_and_font_macros() {

@@ -218,7 +218,7 @@ The idol of my soul-
 Then blame me not-this burst of grief  
 I cannot now control.
 
-## To the *Hibernia*
+## *To the Hibernia*
 
 O, speed thee! speed thee! gallant bark,  
 Across the bounding wave;  
@@ -472,7 +472,7 @@ The cover page is adapted from *Sunday Morning*,
 a painting completed in 1877 by [Thomas Waterman Wood](https://en.wikipedia.org/wiki/Thomas_Waterman_Wood).  
 The cover and title pages feature the **League Spartan** and **Sorts Mill Goudy** typefaces created in 2014 and 2009 by [The League of Moveable Type](https://www.theleagueofmoveabletype.com/).
 
-This edition was released on **May 21, 2026, 6:29** **p.m.** and is based on **revision 936122b**.  
+This edition was released on **May 21, 2026, 6:29 p.m.** and is based on **revision 936122b**.  
 The first edition of this ebook was released on  
 December 6, 2023, 8:52 p.m.  
 You can check for updates to this ebook, view its revision history, or download it for different ereading systems at [standardebooks.org/ebooks/sarah-louisa-forten-purvis/poetry](https://standardebooks.org/ebooks/sarah-louisa-forten-purvis/poetry).

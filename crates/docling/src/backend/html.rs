@@ -693,7 +693,7 @@ fn handle_block(
     match name {
         "h1" | "h2" | "h3" | "h4" | "h5" | "h6" => {
             let level: u8 = name[1..].parse().unwrap_or(1);
-            let text = render_inline_fmt(elem, base);
+            let text = render_heading(elem, base);
             if !text.is_empty() {
                 nodes.push(Node::Heading { level, text });
             }
@@ -1284,7 +1284,7 @@ fn walk_dd(dd: ElementRef, nodes: &mut Vec<Node>, level: u8, base: Fmt) {
 /// Markdown marker — they only surface in DocLang, via the structured runs.
 /// `raw` suppresses `&<>`/`_` escaping — docling escapes body text but not
 /// table-cell text.
-#[derive(Clone, Copy, Default)]
+#[derive(Clone, Copy, Default, PartialEq, Eq)]
 struct Fmt {
     bold: bool,
     italic: bool,
@@ -1320,6 +1320,20 @@ impl Fmt {
 struct RunBuf {
     md: Vec<String>,
     rich: Vec<InlineRun>,
+    /// Every text part in order with its annotation — docling's
+    /// `AnnotatedTextList`, which the heading rule (`to_single_text_element`,
+    /// [`render_heading`]) reads.
+    parts: Vec<TextPart>,
+    /// The last plain (non-link) text run — its index in `md` and `rich`, its
+    /// text and formatting — so the next same-annotation segment can merge
+    /// into it ([`RunBuf::push_text`]). Invalidated by anything pushed after
+    /// it (the indices no longer point at the tails).
+    last_plain: Option<(usize, usize, String, Fmt)>,
+    /// How many runs `rich` would hold without the same-annotation merge —
+    /// what the anchor-folding rule in [`collect_element`] counts (a TOC
+    /// entry `<a><span>1</span><span>Etymology</span></a>` is *fragmented*
+    /// whether or not its two spans merged).
+    unmerged_runs: usize,
     /// A `<br>` was just seen: the next same-formatting text segment folds into
     /// the previous run with a newline (docling keeps `a<br>b` as one text item
     /// `"a\nb"`, not two runs).
@@ -1330,7 +1344,61 @@ struct RunBuf {
     prev_link: bool,
 }
 
+/// One annotated text part (docling's `AnnotatedText`).
+struct TextPart {
+    text: String,
+    fmt: Fmt,
+    hyperlink: Option<String>,
+}
+
 impl RunBuf {
+    /// Append a plain text segment (already whitespace-normalized) as a
+    /// Markdown run, a structured run and a part. Two adjacent segments with
+    /// the same annotation — formatting, no hyperlink — merge into one run
+    /// joined by a single space: upstream's `simplify_text_elements`, under
+    /// which `<b><time>6:29 <abbr>p.m.</abbr></time></b>` is the one bold run
+    /// `**6:29 p.m.**`, not `**6:29** **p.m.**`. A pending `<br>` takes
+    /// precedence (the newline fold in [`Self::push_rich`]).
+    fn push_text(&mut self, text: &str, fmt: Fmt, hyperlink: Option<&str>) {
+        self.parts.push(TextPart {
+            text: text.to_string(),
+            fmt,
+            hyperlink: hyperlink.map(str::to_string),
+        });
+        if hyperlink.is_none() && !self.merge_next {
+            if let Some((mi, ri, prev, pfmt)) = self.last_plain.clone() {
+                if pfmt == fmt && mi + 1 == self.md.len() && ri + 1 == self.rich.len() {
+                    let merged = format!("{prev} {text}");
+                    self.md[mi] = serialize_run(&merged, fmt, None);
+                    self.rich[ri].text = merged.clone();
+                    self.last_plain = Some((mi, ri, merged, fmt));
+                    self.unmerged_runs += 1;
+                    return;
+                }
+            }
+        }
+        self.md.push(serialize_run(text, fmt, hyperlink));
+        if hyperlink.is_some() {
+            self.push_rich_link(fmt.to_inline_run(text));
+            self.last_plain = None;
+            self.unmerged_runs += 1;
+        } else {
+            let before = self.rich.len();
+            self.push_rich(fmt.to_inline_run(text));
+            self.unmerged_runs += usize::from(self.rich.len() > before);
+            // Folded into the previous run across a `<br>`: that run's text is
+            // now two segments, so nothing later merges into it.
+            self.last_plain = (self.rich.len() > before).then(|| {
+                (
+                    self.md.len() - 1,
+                    self.rich.len() - 1,
+                    text.to_string(),
+                    fmt,
+                )
+            });
+        }
+    }
+
     /// Append a text segment as a structured run, folding it into the previous
     /// run across a pending `<br>` when the formatting matches.
     fn push_rich(&mut self, run: InlineRun) {
@@ -1395,6 +1463,43 @@ fn render_inline_fmt(elem: ElementRef, base: Fmt) -> String {
     finalize(&runs.md)
 }
 
+/// A heading's Markdown — docling's `_handle_heading` makes the heading ONE
+/// text item with `to_single_text_element`: every part stripped and joined
+/// by single spaces, the *first* formatting and the first hyperlink found
+/// applied to the whole, code if any part is code. So
+/// `<h2>To the <i>Hibernia</i></h2>` is `## *To the Hibernia*`, not
+/// `## To the *Hibernia*`.
+fn render_heading(elem: ElementRef, base: Fmt) -> String {
+    let mut runs = RunBuf::default();
+    collect_runs(elem, base, None, &mut runs);
+    if runs.parts.is_empty() {
+        return finalize(&runs.md);
+    }
+    let text = runs
+        .parts
+        .iter()
+        .map(|p| p.text.trim())
+        .filter(|t| !t.is_empty())
+        .collect::<Vec<_>>()
+        .join(" ");
+    // docling's `formatting` is `None` for a part under no formatting tag;
+    // the first `Some` wins for the whole heading.
+    let styled =
+        |f: &Fmt| f.bold || f.italic || f.strike || f.underline || f.script != Script::Baseline;
+    let fmt = runs
+        .parts
+        .iter()
+        .map(|p| p.fmt)
+        .find(styled)
+        .unwrap_or(Fmt {
+            raw: base.raw,
+            ..Fmt::default()
+        });
+    let code = runs.parts.iter().any(|p| p.fmt.code);
+    let hyperlink = runs.parts.iter().find_map(|p| p.hyperlink.clone());
+    serialize_run(&text, Fmt { code, ..fmt }, hyperlink.as_deref())
+}
+
 /// Like [`render_inline_fmt`] but also returns the structured runs, for the
 /// paragraph path that emits an `InlineGroup`.
 fn render_inline(elem: ElementRef, base: Fmt) -> (String, Vec<InlineRun>) {
@@ -1438,12 +1543,7 @@ fn collect_runs(elem: ElementRef, fmt: Fmt, hyperlink: Option<&str>, runs: &mut 
             HtmlNode::Text(text) => {
                 let normalized = normalize_ws(text);
                 if !normalized.is_empty() {
-                    runs.md.push(serialize_run(&normalized, fmt, hyperlink));
-                    if hyperlink.is_some() {
-                        runs.push_rich_link(fmt.to_inline_run(&normalized));
-                    } else {
-                        runs.push_rich(fmt.to_inline_run(&normalized));
-                    }
+                    runs.push_text(&normalized, fmt, hyperlink);
                 }
             }
             HtmlNode::Element(_) => {
@@ -1596,7 +1696,7 @@ fn collect_element(elem: ElementRef, fmt: Fmt, hyperlink: Option<&str>, runs: &m
             // emits one text item per anchor, not one per fragment.
             let mut inner = RunBuf::default();
             collect_runs(elem, fmt, None, &mut inner);
-            if inner.rich.len() > 1 {
+            if inner.unmerged_runs > 1 {
                 let joined = inner
                     .rich
                     .iter()
@@ -1624,6 +1724,13 @@ fn collect_element(elem: ElementRef, fmt: Fmt, hyperlink: Option<&str>, runs: &m
                 } else {
                     runs.push_rich(run_fmt.to_inline_run(&joined));
                 }
+                runs.parts.push(TextPart {
+                    text: joined,
+                    fmt: run_fmt,
+                    hyperlink: link.map(str::to_string),
+                });
+                runs.last_plain = None;
+                runs.unmerged_runs += 1;
             } else {
                 collect_runs(elem, fmt, link, runs);
             }
@@ -2417,6 +2524,33 @@ mod tests {
     fn convert_bytes(html: &[u8]) -> DoclingDocument {
         let src = SourceDocument::from_bytes("t", InputFormat::Html, html.to_vec());
         HtmlBackend.convert(&src).unwrap()
+    }
+
+    /// docling's `_handle_heading` builds the heading with
+    /// `to_single_text_element`: parts stripped and joined by spaces, the
+    /// *first* formatting found applied to the whole heading.
+    #[test]
+    fn heading_takes_the_first_formatting_for_its_whole_text() {
+        let md = convert("<h2>To the <i>Hibernia</i></h2>").export_to_markdown();
+        assert!(md.contains("## *To the Hibernia*"), "{md}");
+        let md = convert("<h2><b>Bold</b> then <i>italic</i></h2>").export_to_markdown();
+        assert!(md.contains("## **Bold then italic**"), "{md}");
+    }
+
+    /// `simplify_text_elements`: adjacent text nodes with the same annotation
+    /// are one run (`<time>` split by an `<abbr>` inside a `<b>`), while a
+    /// fragmented anchor still folds into a single link.
+    #[test]
+    fn adjacent_same_formatting_text_merges_into_one_run() {
+        let md = convert(
+            "<p><b><time>May 21, 6:29 <abbr>p.m.</abbr></time></b> and <b>x</b><b>y</b> <i>z</i></p>",
+        )
+        .export_to_markdown();
+        assert!(md.contains("**May 21, 6:29 p.m.** and **x y** *z*"), "{md}");
+        let md =
+            convert("<ul><li><a href=\"#e\"><span>1</span><span>Etymology</span></a></li></ul>")
+                .export_to_markdown();
+        assert!(md.contains("[1 Etymology](#e)"), "{md}");
     }
 
     /// docling#4287 (2.129): a zero `colspan`/`rowspan` covers no grid slot,

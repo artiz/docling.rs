@@ -160,8 +160,8 @@
       "content_layer": "body",
       "label": "text",
       "prov": [],
-      "orig": "Some background information here with bold and italic text.",
-      "text": "Some background information here with bold and italic text."
+      "orig": "Some background information here with bold and italictext.",
+      "text": "Some background information here with bold and italictext."
     },
     {
       "self_ref": "#/texts/6",

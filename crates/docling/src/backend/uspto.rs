@@ -287,7 +287,8 @@ impl DeclarativeBackend for UsptoBackend {
         super::xml_depth::check(&raw, "uspto")?;
         let mut doc = DoclingDocument::new(&source.name);
 
-        let xml = resolve_named_entities(&raw);
+        let tables_stripped = drop_table_entities(&raw);
+        let xml = resolve_named_entities(&tables_stripped);
         let opts = ParsingOptions {
             allow_dtd: true,
             ..Default::default()
@@ -340,21 +341,72 @@ fn parse_ice(dom: &Document, doc: &mut DoclingDocument) {
     }
 
     if let Some(claims) = dom.descendants().find(|n| n.has_tag_name("claims")) {
+        // docling's SAX handler records a table at its `</table>` under the
+        // parent of that moment, while the CLAIMS heading and the claim
+        // paragraphs are only added at `</claims>` — so a table inside a
+        // claim (`ipa20110039701`'s substituent table) precedes the heading.
+        push_tables(claims, doc);
         doc.push(Node::Heading {
             level: 3,
             text: "CLAIMS".into(),
         });
         for claim in claims.children().filter(|c| c.has_tag_name("claim")) {
-            for ct in claim.children().filter(|c| c.has_tag_name("claim-text")) {
-                let t = node_text(ct);
-                if !t.is_empty() {
-                    doc.push(Node::Paragraph {
-                        text: escape_text(&t),
-                    });
+            let t = claim_text(claim);
+            if !t.is_empty() {
+                doc.push(Node::Paragraph {
+                    text: escape_text(&t),
+                });
+            }
+        }
+    }
+}
+
+/// One claim's text, docling's way: `<claim-text>` elements nest (a claim
+/// whose limitations are sub-`<claim-text>`s), and the SAX handler cuts the
+/// text at every `<claim-text>` start and end — each piece whitespace-
+/// collapsed and stripped, the non-empty pieces joined with single spaces
+/// into ONE paragraph per `<claim>`. Text outside any `<claim-text>` (the
+/// `<claim>` element's own) is not text to the handler and is dropped.
+fn claim_text(claim: XmlNode) -> String {
+    fn walk(node: XmlNode, in_text: bool, cur: &mut String, segments: &mut Vec<String>) {
+        let flush = |cur: &mut String, segments: &mut Vec<String>| {
+            let piece = cur.split_whitespace().collect::<Vec<_>>().join(" ");
+            if !piece.is_empty() {
+                segments.push(piece);
+            }
+            cur.clear();
+        };
+        for child in node.children() {
+            if child.is_text() {
+                if in_text {
+                    if let Some(t) = child.text() {
+                        cur.push_str(t);
+                    }
+                }
+            } else if child.is_element() {
+                if child.has_tag_name("claim-text") {
+                    flush(cur, segments);
+                    walk(child, true, cur, segments);
+                    flush(cur, segments);
+                } else if in_text {
+                    // Styling (`<sup>`/`<sub>` → super/subscript characters),
+                    // references and chemistry wrappers: their text flows in;
+                    // formulas and tables do not.
+                    raw_node(child, cur);
+                } else {
+                    walk(child, false, cur, segments);
                 }
             }
         }
     }
+    let mut segments = Vec::new();
+    let mut cur = String::new();
+    walk(claim, false, &mut cur, &mut segments);
+    let tail = cur.split_whitespace().collect::<Vec<_>>().join(" ");
+    if !tail.is_empty() {
+        segments.push(tail);
+    }
+    segments.join(" ")
 }
 
 // ===========================================================================
@@ -509,6 +561,68 @@ fn grant_text(node: XmlNode) -> String {
     node_text(node)
 }
 
+/// One PATDOC claim, assembled exactly as docling's `PatentUsptoGrantV2` SAX
+/// handler assembles it — unlike paragraphs, a claim's text is never
+/// whitespace-collapsed, so the handler's mechanics show through in the
+/// spacing: characters are kept only while the innermost *registered*
+/// element (`PDAT`, `PARA`, `H`) is a text one; at `</PDAT>` the buffered
+/// text is styled by the registered element beneath it (`SP`/`SB` →
+/// super/subscript characters, `ITALIC` → math italics) and appended to the
+/// claim; every `</PARA>` appends one space ("we may need a space after a
+/// paragraph in claim text"); and text that gathered directly under a
+/// `PARA` (indentation between its children) is *not* cleared at `</PARA>`,
+/// so it rides into the next `<PDAT>`'s text — which is how a formula
+/// paragraph followed by `wherein` gets two spaces. Unregistered wrappers
+/// (`CLMSTEP`, `PTEXT`, `HIL`, `F`) are transparent; a `CWU` or `table`
+/// swallows its text. The result is stripped.
+fn patdoc_claim_text(clm: XmlNode) -> String {
+    const REGISTERED: &[&str] = &[
+        "PDAT", "SDOAB", "SDOCL", "B540", "CL", "CLM", "PARA", "H", "DRWDESC", "SP", "SB",
+        "ITALIC", "CWU", "table",
+    ];
+    fn walk(node: XmlNode, stack: &mut Vec<&'static str>, text: &mut String, claim: &mut String) {
+        for child in node.children() {
+            if child.is_text() {
+                if matches!(stack.last(), Some(&"PDAT" | &"PARA" | &"H")) {
+                    text.push_str(child.text().unwrap_or(""));
+                }
+            } else if child.is_element() {
+                let name = child.tag_name().name();
+                let registered = REGISTERED.iter().copied().find(|r| *r == name);
+                if let Some(r) = registered {
+                    stack.push(r);
+                }
+                walk(child, stack, text, claim);
+                if let Some(r) = registered {
+                    stack.pop();
+                    match r {
+                        "PDAT" if !text.is_empty() => {
+                            match stack.last() {
+                                Some(&"SP") => {
+                                    claim.extend(text.chars().map(|c| script_char(c, true)))
+                                }
+                                Some(&"SB") => {
+                                    claim.extend(text.chars().map(|c| script_char(c, false)))
+                                }
+                                Some(&"ITALIC") => claim.extend(text.chars().map(math_italic_char)),
+                                _ => claim.push_str(text),
+                            }
+                            text.clear();
+                        }
+                        "PARA" => claim.push(' '),
+                        _ => {}
+                    }
+                }
+            }
+        }
+    }
+    let mut stack = vec!["CLM"];
+    let mut text = String::new();
+    let mut claim = String::new();
+    walk(clm, &mut stack, &mut text, &mut claim);
+    claim.trim().to_string()
+}
+
 fn parse_grant_v2(dom: &Document, doc: &mut DoclingDocument) {
     let mut lv = HeadingLevels::new();
     walk_grant_v2(dom.root_element(), doc, &mut lv);
@@ -571,7 +685,7 @@ fn walk_grant_v2(node: XmlNode, doc: &mut DoclingDocument, lv: &mut HeadingLevel
                 let claims: Vec<String> = child
                     .children()
                     .filter(|c| c.has_tag_name("CLM"))
-                    .map(grant_text)
+                    .map(patdoc_claim_text)
                     .filter(|s| !s.is_empty())
                     .collect();
                 if !claims.is_empty() {
@@ -613,17 +727,19 @@ fn walk_description(node: XmlNode, doc: &mut DoclingDocument) {
             }
             "p" => {
                 // A `<p>` may wrap `<tables>` (USPTO nests them inside a
-                // paragraph). docling adds a table at each `<table>` position and
-                // the wrapping paragraph emits no text of its own.
+                // paragraph). docling adds a table at each `</table>` and, at
+                // `</p>`, one paragraph of everything the `<p>` said *outside*
+                // its tables and formulas (`raw_text` skips those subtrees) —
+                // the `Table N: …` captions with their `<ul>` substituent lists
+                // that follow a table in `ipa20110039701` are such text.
                 if child.descendants().any(|n| n.has_tag_name("table")) {
                     push_tables(child, doc);
-                } else {
-                    let t = node_text(child);
-                    if !t.is_empty() {
-                        doc.push(Node::Paragraph {
-                            text: escape_text(&t),
-                        });
-                    }
+                }
+                let t = node_text(child);
+                if !t.is_empty() {
+                    doc.push(Node::Paragraph {
+                        text: escape_text(&t),
+                    });
                 }
             }
             "maths" => {}
@@ -813,9 +929,14 @@ fn parse_table(table: XmlNode) -> Option<Table> {
                 .filter(|n| n.has_tag_name("entry") || n.has_tag_name("td"))
                 .collect();
 
-            let mut row_text: Vec<String> = Vec::new();
-            let mut row_cont: Vec<bool> = Vec::new();
-            let mut ncols = 0usize;
+            // docling appends every replicated cell to the row and then lets
+            // docling-core's `TableData.grid` place them by column offset in a
+            // grid `ncols_max` wide — cells past that width (a tgroup whose
+            // unified span exceeds the widest tgroup's column count, as in
+            // `pa20010031492` / `ipa20110039701`) are silently clipped. Place
+            // by index into a fixed-width row to get the same grid.
+            let mut row_text: Vec<String> = vec![String::new(); ncols_max];
+            let mut row_cont: Vec<bool> = vec![false; ncols_max];
             let mut is_row_empty = true;
             let mut wrong_nbr_cols = false;
 
@@ -845,25 +966,19 @@ fn parse_table(table: XmlNode) -> Option<Table> {
                     is_row_empty = false;
                 }
                 let mut irep = r0;
-                let mut first = true;
                 while irep <= r1 {
-                    ncols += 1;
-                    row_text.push(text.clone());
-                    row_cont.push(!first);
-                    first = false;
+                    if let Some(idx) = usize::try_from(irep).ok().filter(|&i| i < ncols_max) {
+                        row_text[idx] = text.clone();
+                        row_cont[idx] = irep != r0;
+                    }
                     irep += 1;
                 }
             }
 
             if wrong_nbr_cols {
-                row_text.clear();
-                row_cont.clear();
-                ncols = 0;
-            }
-            while ncols < ncols_max {
-                row_text.push(String::new());
-                row_cont.push(false);
-                ncols += 1;
+                // Keep the row empty-texted, not to introduce noise (docling).
+                row_text = vec![String::new(); ncols_max];
+                row_cont = vec![false; ncols_max];
             }
 
             if !is_row_empty {
@@ -917,6 +1032,15 @@ fn raw_text(node: XmlNode, out: &mut String) {
     // processing instruction or comment — e.g. the leading "R" in
     // `<?in-line-formulae?>R<sup>1</sup>—CO…` — is not dropped.
     for child in node.children() {
+        raw_node(child, out);
+    }
+}
+
+/// One node of [`raw_text`]'s walk: a text node's characters, or an element
+/// with its styling applied (`<sup>`/`<sub>` → Unicode super/subscripts,
+/// PATDOC `<ITALIC>` → math italics) and the text-less ones skipped.
+fn raw_node(child: XmlNode, out: &mut String) {
+    {
         if child.is_text() {
             if let Some(t) = child.text() {
                 out.push_str(&t.replace('\n', " "));
@@ -1070,6 +1194,91 @@ fn script_char(c: char, sup: bool) -> char {
 /// whose name uses characters outside `[A-Za-z0-9]` (the unparsed-graphics
 /// `NDATA` entities USPTO declares in its internal subset) are also dropped —
 /// they are illegal in element content and would abort the parse.
+/// docling parses each table separately: the `<table …>…</table>` source
+/// (matched at the start of a line, `^(<table .*?</table>)`) is re-read with
+/// BeautifulSoup's lxml XML parser, which knows no named entities beyond the
+/// five XML built-ins and, recovering, drops the reference — `ZEOCIN&thinsp;
+/// &trade;` is `ZEOCIN` in a cell (a paragraph keeps the ™). Once a text run
+/// has hit an undefined entity, lxml drops the built-in references after it in
+/// that run too (`a &amp; b &trade; c &amp; d` → `a & b  c  d`). Numeric
+/// references always survive. Reproduce that on the table spans before the
+/// document-wide entity resolution so the cells see what lxml saw.
+fn drop_table_entities(xml: &str) -> Cow<'_, str> {
+    if !xml.contains('&') || !xml.contains("<table ") {
+        return Cow::Borrowed(xml);
+    }
+    let mut out = String::with_capacity(xml.len());
+    let mut i = 0;
+    while i < xml.len() {
+        // The next table at a line start.
+        let at_line_start = |pos: usize| pos == 0 || xml.as_bytes()[pos - 1] == b'\n';
+        let mut search = i;
+        let start = loop {
+            match xml[search..].find("<table ") {
+                Some(rel) if at_line_start(search + rel) => break Some(search + rel),
+                Some(rel) => search += rel + 1,
+                None => break None,
+            }
+        };
+        let Some(start) = start else {
+            out.push_str(&xml[i..]);
+            break;
+        };
+        let end = match xml[start..].find("</table>") {
+            Some(rel) => start + rel + "</table>".len(),
+            None => {
+                out.push_str(&xml[i..]);
+                break;
+            }
+        };
+        out.push_str(&xml[i..start]);
+        strip_undefined_entities(&xml[start..end], &mut out);
+        i = end;
+    }
+    Cow::Owned(out)
+}
+
+/// lxml's recovery on one table span (see [`drop_table_entities`]): per text
+/// run (between tags), named references are kept while they are XML built-ins,
+/// and every named reference from the first undefined one on is dropped.
+fn strip_undefined_entities(span: &str, out: &mut String) {
+    let mut poisoned = false;
+    let mut i = 0;
+    while i < span.len() {
+        let c = span.as_bytes()[i];
+        if c == b'<' {
+            // A tag: copy through, and a new text run starts after it.
+            let close = span[i..].find('>').map_or(span.len(), |r| i + r + 1);
+            out.push_str(&span[i..close]);
+            i = close;
+            poisoned = false;
+            continue;
+        }
+        if c == b'&' {
+            let semi = span[i + 1..]
+                .char_indices()
+                .take(64)
+                .find(|&(_, ch)| ch == ';')
+                .map(|(off, _)| i + 1 + off);
+            if let Some(semi) = semi {
+                let name = &span[i + 1..semi];
+                let numeric = name.starts_with('#');
+                let builtin = matches!(name, "amp" | "lt" | "gt" | "quot" | "apos");
+                if numeric || (builtin && !poisoned) {
+                    out.push_str(&span[i..=semi]);
+                } else {
+                    poisoned = true;
+                }
+                i = semi + 1;
+                continue;
+            }
+        }
+        let ch_len = span[i..].chars().next().map_or(1, char::len_utf8);
+        out.push_str(&span[i..i + ch_len]);
+        i += ch_len;
+    }
+}
+
 fn resolve_named_entities(xml: &str) -> Cow<'_, str> {
     if !xml.contains('&') {
         return Cow::Borrowed(xml);
@@ -1171,6 +1380,86 @@ mod tests {
             "1. A widget comprising a knob. wherein the knob is red."
         );
         assert_eq!(texts[7]["parent"]["$ref"], "#/texts/6");
+    }
+
+    /// ICE claims are one paragraph per `<claim>`: nested `<claim-text>`s cut
+    /// the text into pieces joined by single spaces (styled `<sup>` kept); a
+    /// table inside a claim is recorded before the CLAIMS heading, as
+    /// docling's SAX handler adds it at `</table>` and the heading only at
+    /// `</claims>`; a `<p>` wrapping tables keeps its own text after them.
+    #[test]
+    fn ice_claims_join_and_in_claim_tables_lead() {
+        let xml = "<us-patent-application><description>\n<p>Intro <tables>\n<table frame=\"none\">\n\
+            <tgroup cols=\"2\"><colspec colname=\"1\" colwidth=\"10pt\"/><colspec colname=\"2\" colwidth=\"10pt\"/>\
+            <tbody><row><entry>a</entry><entry>b</entry></row></tbody></tgroup></table></tables> Table 2: X<sub>2</sub></p>\n\
+            </description><claims><claim id=\"1\"><claim-text><b>1</b>. A compound\n<claim-text>in which R<sup>1</sup> is H,</claim-text>\n\
+            <claim-text>and</claim-text></claim-text></claim><claim id=\"2\"><claim-text>2. Uses\n<table frame=\"none\">\n\
+            <tgroup cols=\"1\"><colspec colname=\"1\" colwidth=\"10pt\"/><tbody><row><entry>T</entry></row></tbody></tgroup></table>\
+            </claim-text></claim></claims></us-patent-application>";
+        let src = SourceDocument::from_bytes("p", InputFormat::XmlUspto, xml.as_bytes().to_vec());
+        let md = UsptoBackend.convert(&src).unwrap().export_to_markdown();
+        let pos = |s: &str| {
+            md.find(s)
+                .unwrap_or_else(|| panic!("missing {s:?} in:\n{md}"))
+        };
+        assert!(pos("| a ") < pos("Intro Table 2: X₂"));
+        assert!(pos("| T ") < pos("### CLAIMS"));
+        assert!(
+            md.contains("### CLAIMS\n\n1. A compound in which R¹ is H, and\n\n2. Uses"),
+            "{md}"
+        );
+    }
+
+    /// CALS grid: docling-core's `TableData.grid` is `ncols_max` (the widest
+    /// tgroup's colspec count) wide, so cells the unified span pushes past it
+    /// are clipped — `pa20010031492`'s two 3-column tgroups stay 3 columns,
+    /// not 4. And a cell's named entities vanish: docling re-parses each table
+    /// with lxml, which knows only the XML built-ins (`ZEOCIN&thinsp;&trade;`
+    /// → `ZEOCIN`) and, once one is undefined, drops the built-ins after it in
+    /// that text run too.
+    #[test]
+    fn cals_grid_clips_to_the_widest_tgroup_and_cells_drop_named_entities() {
+        let xml = "<us-patent-application><description>\n<table frame=\"none\">\n\
+            <tgroup cols=\"3\"><colspec colname=\"1\" colwidth=\"91PT\"/><colspec colname=\"2\" colwidth=\"119PT\"/><colspec colname=\"3\" colwidth=\"7PT\"/>\
+            <tbody><row><entry></entry><entry>SENS</entry><entry></entry></row></tbody></tgroup>\
+            <tgroup cols=\"3\"><colspec colname=\"1\" colwidth=\"91PT\"/><colspec colname=\"2\" colwidth=\"63PT\"/><colspec colname=\"3\" colwidth=\"63PT\"/>\
+            <tbody><row><entry>G</entry><entry>ZEOCIN&thinsp;&trade;</entry><entry>C &amp; D &trade; E &amp; F</entry></row></tbody></tgroup>\
+            </table>\n<p>Mark &trade; stays</p></description></us-patent-application>";
+        let src = SourceDocument::from_bytes("p", InputFormat::XmlUspto, xml.as_bytes().to_vec());
+        let md = UsptoBackend.convert(&src).unwrap().export_to_markdown();
+        let table_line = md
+            .lines()
+            .find(|l| l.contains("SENS"))
+            .unwrap_or_else(|| panic!("{md}"));
+        assert_eq!(
+            table_line.matches('|').count(),
+            4,
+            "3 columns expected: {table_line}"
+        );
+        assert!(md.contains("| ZEOCIN "), "{md}");
+        assert!(md.contains("| C & D  E  F "), "{md}");
+        // Outside a table the entity resolves as before.
+        assert!(md.contains("Mark ™ stays"), "{md}");
+    }
+
+    /// PATDOC claims follow docling's SAX mechanics to the space: `<PDAT>`
+    /// texts concatenate raw (styled by the registered element beneath),
+    /// every `</PARA>` adds one space, and whitespace that gathered directly
+    /// under a `PARA` rides into the next `<PDAT>` — two spaces before
+    /// `wherein`, as in `pg06442728`.
+    #[test]
+    fn patdoc_claims_keep_the_handler_spacing() {
+        let xml = "<PATDOC><SDOCL><CL><CLM ID=\"1\"><PARA ID=\"p1\" LVL=\"0\"><PTEXT><PDAT>1. A method comprising;</PDAT></PTEXT></PARA>\n\
+            <CLMSTEP LVL=\"2\"><PTEXT><PDAT>N</PDAT><HIL><SB><PDAT>1</PDAT></SB></HIL><PDAT> rows </PDAT></PTEXT></CLMSTEP>\n\
+            <PARA ID=\"p2\" LVL=\"0\"><PTEXT><F><PTEXT><PDAT>D(</PDAT><HIL><ITALIC><PDAT>j</PDAT></ITALIC></HIL><PDAT>)</PDAT></PTEXT></F> </PTEXT></PARA>\n\
+            <PARA ID=\"p3\" LVL=\"7\"><PTEXT><PDAT>wherein</PDAT></PTEXT></PARA>\n\
+            <CLMSTEP LVL=\"2\"><PTEXT><PDAT>j is an index</PDAT></PTEXT></CLMSTEP></CLM></CL></SDOCL></PATDOC>";
+        let src = SourceDocument::from_bytes("p", InputFormat::XmlUspto, xml.as_bytes().to_vec());
+        let md = UsptoBackend.convert(&src).unwrap().export_to_markdown();
+        assert!(
+            md.contains("1. A method comprising; N₁ rows D(𝑗)  wherein j is an index"),
+            "{md}"
+        );
     }
 
     #[test]
