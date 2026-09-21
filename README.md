@@ -169,18 +169,16 @@ bytes; ✅ all = every file of the format matches):
 | JATS | 7 | ✅ all | ✅ all |
 | DocLang | 15 | ✅ all | ✅ all |
 | AsciiDoc | 4 | ✅ all | ✅ all |
-| USPTO | 9 | ✅ all | 1 |
+| USPTO | 9 | ✅ all | ✅ all |
 | EPUB | 1 | ✅ all | ✅ all |
 | LaTeX | 2 | 1 ¹ | 1 ¹ |
 
 The JSON column is complete wherever the backend builds docling's item tree
-(HTML, DOCX, PPTX, ODF, WebVTT, JATS, AsciiDoc, DocLang, LaTeX, the `pftaps`
-USPTO patent, Markdown without raw HTML blocks) or its flat export already has
-upstream's shape (XLSX, CSV, EBCDIC); the one remaining zero-ish column, the
-USPTO XML paths, is the flat export's `text`-for-`paragraph` labels, `-` list
-markers and missing heading nesting — next in line for the same treatment.
-LaTeX's JSON differs on `example_01.tex` by the same one word as its
-Markdown (¹). Markdown is exact on
+(HTML, DOCX, PPTX, ODF, WebVTT, JATS, AsciiDoc, DocLang, LaTeX, USPTO,
+Markdown without raw HTML blocks) or its flat export already has upstream's
+shape (XLSX, CSV, EBCDIC); the partial columns are listed with their exact
+files in [`docs/MIGRATION.md`](./docs/MIGRATION.md). LaTeX's JSON differs on
+`example_01.tex` by the same one word as its Markdown (¹). Markdown is exact on
 every file upstream itself converts (the tenth USPTO fixture,
 `tables_ipa20180000016.xml`, fails in upstream), with one deliberate
 exception: ¹ docling's LaTeX backend drops the space after a paragraph's

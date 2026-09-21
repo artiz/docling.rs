@@ -1412,7 +1412,7 @@ fn empty_table() -> Table {
 /// A [`Table`] carrying docling's cells verbatim: `rows` is the
 /// `num_rows` × `num_cols` grid (each cell's text at every slot it covers),
 /// which the export sizes `TableData` from; `cells` are the `table_cells`.
-fn table_from_cells(cells: Vec<TableCell>, num_rows: usize, num_cols: usize) -> Table {
+pub(super) fn table_from_cells(cells: Vec<TableCell>, num_rows: usize, num_cols: usize) -> Table {
     let mut rows = vec![vec![String::new(); num_cols]; num_rows];
     for c in &cells {
         let row_end = (c.start_row + c.row_span).min(num_rows);
