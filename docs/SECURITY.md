@@ -99,3 +99,11 @@ fields.
 ```sh
 cargo audit         # known-CVE scan of the dependency tree
 ```
+
+CI runs the same scan weekly over both committed lockfiles (the `audit` job in
+`.github/workflows/deps-update.yml`, with the "Known residual" advisories
+above passed as `--ignore`; keep the two lists in sync). A new finding fails
+that job — the red run is the alarm — and triggers `audit-fix`, which runs
+`cargo audit fix` on both lockfiles and opens a `fix(deps):` PR with the
+semver-compatible bump when one exists; an advisory that needs a new major
+version is reported in the job log and stays a manual change.
