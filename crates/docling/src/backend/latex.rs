@@ -10,7 +10,8 @@
 use crate::backend::DeclarativeBackend;
 use crate::error::ConversionError;
 use crate::source::SourceDocument;
-use docling_core::{DoclingDocument, Node, Table};
+use docling_core::tree::{ItemTree, ListMeta, TreeKind};
+use docling_core::{DoclingDocument, Node, Table, TableCell};
 
 pub struct LatexBackend;
 
@@ -23,6 +24,11 @@ impl DeclarativeBackend for LatexBackend {
         let body = between(&text, "\\begin{document}", "\\end{document}").unwrap_or(&text);
 
         let mut doc = DoclingDocument::new(&source.name);
+        // docling's `LatexDocumentBackend` parents every item to the body
+        // (headings are flat siblings of their text); the tree records
+        // upstream's labels — `paragraph` vs `text`, `formula`, list items
+        // with `enumerated=False` — that the flat stream cannot express.
+        doc.tree = Some(ItemTree::default());
         let chars: Vec<char> = body.chars().collect();
         let mut p = Parser {
             chars: &chars,
@@ -65,61 +71,80 @@ impl Parser<'_> {
     /// intended residual until docling fixes it.
     fn run(&mut self, doc: &mut DoclingDocument) {
         let mut para = String::new();
+        // Whether `para` started right after a paragraph break, with no
+        // macro, math or environment since: upstream labels such text
+        // `paragraph` (the tail parts of a chars node holding `\n\n`), and
+        // everything that went through its text buffer `text`.
+        let mut after_break = false;
         while self.i < self.chars.len() {
             let rest: String = self.chars[self.i..].iter().collect();
             if rest.starts_with("\\maketitle") {
                 self.i += "\\maketitle".len();
                 if let Some(t) = self.title.take() {
+                    add_text(doc, "title", &t, None, None);
                     doc.push(Node::Heading { level: 1, text: t });
                 }
                 if let Some(a) = self.author.take() {
+                    add_text(doc, "text", &a, None, None);
                     doc.push(Node::Paragraph { text: a });
                 }
+                after_break = false;
             } else if let Some((cmd, level)) = HEADINGS.iter().find(|(c, _)| {
                 rest.starts_with(*c) && !rest[c.len()..].starts_with(|ch: char| ch.is_alphabetic())
             }) {
-                flush(&mut para, doc);
+                flush(&mut para, doc, after_break);
+                after_break = false;
                 self.i += cmd.len();
                 self.skip_star();
-                let text = self.read_group();
+                let text = clean_inline(&self.read_group());
+                // docling's `_get_heading_level`: part/chapter/section → 1,
+                // subsection → 2, …; the flat level is one deeper (1 = title).
+                add_text(
+                    doc,
+                    "section_header",
+                    &text,
+                    Some(level.saturating_sub(1).max(1)),
+                    None,
+                );
                 doc.push(Node::Heading {
                     level: *level,
-                    text: clean_inline(&text),
+                    text,
                 });
             } else if rest.starts_with("\\begin{") {
-                flush(&mut para, doc);
+                flush(&mut para, doc, after_break);
+                after_break = false;
                 self.read_environment(doc);
             } else if rest.starts_with("\\[") || rest.starts_with("$$") {
-                flush(&mut para, doc);
+                flush(&mut para, doc, after_break);
+                after_break = false;
                 let close = if rest.starts_with("\\[") { "\\]" } else { "$$" };
                 self.i += 2;
                 let math = self.read_until(close);
-                doc.push(Node::Paragraph {
-                    text: format!(
-                        "$${}$$",
-                        math.split_whitespace().collect::<Vec<_>>().join(" ")
-                    ),
-                });
+                emit_formula(doc, &math.split_whitespace().collect::<Vec<_>>().join(" "));
             } else if self.chars[self.i] == '$' {
                 // Inline math becomes its own block (docling extracts formulas).
-                flush(&mut para, doc);
+                flush(&mut para, doc, after_break);
+                after_break = false;
                 self.i += 1;
                 let math = self.read_until("$");
-                doc.push(Node::Paragraph {
-                    text: format!(
-                        "${}$",
-                        math.split_whitespace().collect::<Vec<_>>().join(" ")
-                    ),
-                });
+                // Upstream appends inline math to its text buffer, so the item
+                // it lands in is a `text`, `$…$` included.
+                let text = format!(
+                    "${}$",
+                    math.split_whitespace().collect::<Vec<_>>().join(" ")
+                );
+                add_text(doc, "text", &text, None, None);
+                doc.push(Node::Paragraph { text });
             } else if self.chars[self.i] == '\n' && self.peek_blank_line() {
-                flush(&mut para, doc);
+                flush(&mut para, doc, after_break);
+                after_break = true;
                 self.consume_blank_line();
             } else {
                 para.push(self.chars[self.i]);
                 self.i += 1;
             }
         }
-        flush(&mut para, doc);
+        flush(&mut para, doc, after_break);
     }
 
     /// `\begin{env} … \end{env}` — handle the structural environments, ignore others.
@@ -133,15 +158,13 @@ impl Parser<'_> {
             "tabular" => emit_table(&inner, doc),
             "equation" | "displaymath" | "align" | "equation*" | "align*" | "gather"
             | "gather*" => {
-                doc.push(Node::Paragraph {
-                    text: format!(
-                        "$${}$$",
-                        clean_inline(&inner)
-                            .split_whitespace()
-                            .collect::<Vec<_>>()
-                            .join(" ")
-                    ),
-                });
+                emit_formula(
+                    doc,
+                    &clean_inline(&inner)
+                        .split_whitespace()
+                        .collect::<Vec<_>>()
+                        .join(" "),
+                );
             }
             // Containers: render inner content (nested tabular, caption, …) transparently.
             "table" | "figure" | "document" | "abstract" | "center" => {
@@ -249,10 +272,57 @@ impl Parser<'_> {
     }
 }
 
-fn flush(para: &mut String, doc: &mut DoclingDocument) {
+/// docling's `add_text` on the body: every LaTeX item is a body child.
+fn add_text(
+    doc: &mut DoclingDocument,
+    label: &str,
+    text: &str,
+    level: Option<u8>,
+    list: Option<ListMeta>,
+) -> usize {
+    tree(doc).add(
+        None,
+        None,
+        TreeKind::Text {
+            label: label.into(),
+            text: text.into(),
+            orig: None,
+            formatting: None,
+            hyperlink: None,
+            level,
+            list,
+        },
+    )
+}
+
+fn tree(doc: &mut DoclingDocument) -> &mut ItemTree {
+    doc.tree.get_or_insert_with(ItemTree::default)
+}
+
+/// A display equation: a `formula` item holding the bare math; the flat
+/// stream carries it `$$`-fenced for Markdown.
+fn emit_formula(doc: &mut DoclingDocument, math: &str) {
+    add_text(doc, "formula", math, None, None);
+    doc.push(Node::Paragraph {
+        text: format!("$${math}$$"),
+    });
+}
+
+/// Flush the paragraph buffer. `after_break` says the buffer began right
+/// after a blank line; upstream then adds the text as a `paragraph` item —
+/// unless a macro contributed to it, since a macro ends the chars node and
+/// upstream's `_process_chars_node` routes the part before it through the
+/// text buffer (label `text`). The merged item keeps that label.
+fn flush(para: &mut String, doc: &mut DoclingDocument, after_break: bool) {
+    let label = if after_break && !para.contains('\\') {
+        "paragraph"
+    } else {
+        "text"
+    };
     let text = clean_inline(para);
     let text = text.split_whitespace().collect::<Vec<_>>().join(" ");
     if !text.is_empty() {
+        add_text(doc, label, &text, None, None);
         doc.push(Node::Paragraph { text });
     }
     para.clear();
@@ -261,10 +331,37 @@ fn flush(para: &mut String, doc: &mut DoclingDocument) {
 /// Emit `\item` entries of an itemize/enumerate body as (unordered) list items.
 fn emit_list(inner: &str, doc: &mut DoclingDocument) {
     let mut first = true;
+    // docling's `_process_environment` opens one `add_list_group` per
+    // itemize/enumerate and adds every `\item` with `enumerated=False` and
+    // an empty marker — an enumerate is not numbered in its JSON either.
+    let mut group = None;
     for part in inner.split("\\item").skip(1) {
         let text = clean_inline(part);
         let text = text.split_whitespace().collect::<Vec<_>>().join(" ");
         if !text.is_empty() {
+            let g = *group.get_or_insert_with(|| {
+                tree(doc).add(
+                    None,
+                    None,
+                    TreeKind::Group {
+                        label: "list".into(),
+                        name: "list".into(),
+                    },
+                )
+            });
+            tree(doc).add(
+                Some(g),
+                None,
+                TreeKind::Text {
+                    label: "list_item".into(),
+                    text: text.clone(),
+                    orig: None,
+                    formatting: None,
+                    hyperlink: None,
+                    level: None,
+                    list: Some(ListMeta::default()),
+                },
+            );
             doc.push(Node::ListItem {
                 ordered: false,
                 number: 0,
@@ -315,17 +412,52 @@ fn emit_table(inner: &str, doc: &mut DoclingDocument) {
                 .collect::<Vec<_>>(),
         );
     }
-    if !rows.is_empty() {
-        doc.push(Node::Table(Table {
-            rows,
-            location: None,
-            structure: None,
-            cell_blocks: None,
-            cells: None,
-            caption: None,
-            caption_parent: Default::default(),
-        }));
+    if rows.is_empty() {
+        return;
     }
+    // docling's `_parse_table` pads every row to the widest and writes each
+    // slot as a plain `TableCell` — no header roles (a `tabular` has no
+    // header markup), the trailing blank row included.
+    let num_cols = rows.iter().map(Vec::len).max().unwrap_or(0);
+    for r in &mut rows {
+        r.resize(num_cols, String::new());
+    }
+    let cells = rows
+        .iter()
+        .enumerate()
+        .flat_map(|(ri, row)| {
+            row.iter().enumerate().map(move |(ci, text)| TableCell {
+                text: text.clone(),
+                bbox: None,
+                start_row: ri,
+                start_col: ci,
+                row_span: 1,
+                col_span: 1,
+                column_header: false,
+                row_header: false,
+                row_section: false,
+            })
+        })
+        .collect();
+    let table = Table {
+        rows,
+        location: None,
+        structure: None,
+        cell_blocks: None,
+        cells: Some(cells),
+        caption: None,
+        caption_parent: Default::default(),
+    };
+    tree(doc).add(
+        None,
+        None,
+        TreeKind::Table {
+            table: table.clone(),
+            rich_cells: Vec::new(),
+            captions: Vec::new(),
+        },
+    );
+    doc.push(Node::Table(table));
 }
 
 /// Strip line comments (`%` to end of line, unless escaped `\%`).
@@ -506,6 +638,58 @@ mod tests {
             md.contains("| H1   | H2   |\n|------|------|\n| a    | b    |\n|      |      |"),
             "got:\n{md}"
         );
+    }
+
+    /// The item tree docling's backend builds: everything on the body, the
+    /// `paragraph` label for text a chars node's `\n\n` split off vs `text`
+    /// for buffered text (inline math included), `formula` items, list
+    /// items that are never `enumerated`, and `tabular` cells with no
+    /// header roles down to the trailing blank row.
+    #[test]
+    fn tree_labels_and_list_meta_follow_docling() {
+        let tex = "\\title{T}\\author{A}\n\\begin{document}\n\\maketitle\n\n            \\section{Math}\n\nInline math: $x$\n\nDisplay:\n$$y = 1$$\n\n            \\subsection{List}\nAfter a heading \\textbf{bold} text.\n\n            \\begin{enumerate}\n\\item one\n\\item two\n\\end{enumerate}\n\n            \\begin{tabular}{cc}\n\\hline\na & b \\\\\n\\hline\n\\end{tabular}\n\\end{document}";
+        let src = SourceDocument::from_bytes("d", InputFormat::Latex, tex.as_bytes().to_vec());
+        let json: serde_json::Value =
+            serde_json::from_str(&LatexBackend.convert(&src).unwrap().export_to_json()).unwrap();
+        let texts = json["texts"].as_array().unwrap();
+        let labels: Vec<(&str, &str)> = texts
+            .iter()
+            .map(|t| (t["label"].as_str().unwrap(), t["text"].as_str().unwrap()))
+            .collect();
+        assert_eq!(
+            labels,
+            [
+                ("title", "T"),
+                ("text", "A"),
+                ("section_header", "Math"),
+                ("paragraph", "Inline math:"),
+                ("text", "$x$"),
+                ("paragraph", "Display:"),
+                ("formula", "y = 1"),
+                ("section_header", "List"),
+                // Merged across the macro (docling#4339): the buffer's label.
+                ("text", "After a heading bold text."),
+                ("list_item", "one"),
+                ("list_item", "two"),
+            ]
+        );
+        assert_eq!(texts[2]["level"], 1);
+        assert_eq!(texts[7]["level"], 2);
+        assert_eq!(texts[9]["enumerated"], false);
+        assert_eq!(texts[9]["marker"], "");
+        assert_eq!(texts[9]["parent"]["$ref"], "#/groups/0");
+        assert_eq!(json["groups"][0]["label"], "list");
+        assert_eq!(json["groups"][0]["name"], "list");
+        assert!(texts
+            .iter()
+            .all(|t| t["parent"]["$ref"] == "#/body" || t["parent"]["$ref"] == "#/groups/0"));
+        let data = &json["tables"][0]["data"];
+        assert_eq!(data["num_rows"], 2);
+        assert_eq!(data["num_cols"], 2);
+        let cells = data["table_cells"].as_array().unwrap();
+        assert_eq!(cells.len(), 4);
+        assert!(cells.iter().all(|c| c["column_header"] == false));
+        assert_eq!(cells[3]["text"], "");
     }
 
     #[test]

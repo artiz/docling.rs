@@ -24,98 +24,922 @@
         "$ref": "#/tables/0"
       },
       {
-        "$ref": "#/texts/1"
+        "$ref": "#/groups/11"
       },
       {
-        "$ref": "#/texts/2"
+        "$ref": "#/texts/33"
       },
       {
-        "$ref": "#/texts/3"
+        "$ref": "#/texts/34"
       },
       {
         "$ref": "#/tables/1"
       },
       {
-        "$ref": "#/texts/4"
+        "$ref": "#/texts/47"
       },
       {
-        "$ref": "#/texts/5"
+        "$ref": "#/texts/48"
       },
       {
-        "$ref": "#/texts/6"
+        "$ref": "#/texts/49"
       },
       {
-        "$ref": "#/texts/7"
+        "$ref": "#/texts/50"
       },
       {
-        "$ref": "#/texts/8"
+        "$ref": "#/groups/23"
       },
       {
-        "$ref": "#/texts/9"
+        "$ref": "#/texts/51"
       },
       {
-        "$ref": "#/texts/10"
-      },
-      {
-        "$ref": "#/tables/2"
-      },
-      {
-        "$ref": "#/texts/11"
-      },
-      {
-        "$ref": "#/texts/12"
-      },
-      {
-        "$ref": "#/texts/13"
-      },
-      {
-        "$ref": "#/tables/3"
-      },
-      {
-        "$ref": "#/texts/14"
-      },
-      {
-        "$ref": "#/texts/15"
-      },
-      {
-        "$ref": "#/texts/16"
+        "$ref": "#/groups/24"
       },
       {
         "$ref": "#/tables/4"
       },
       {
-        "$ref": "#/texts/17"
+        "$ref": "#/groups/27"
       },
       {
-        "$ref": "#/texts/18"
+        "$ref": "#/texts/53"
       },
       {
-        "$ref": "#/texts/19"
+        "$ref": "#/groups/28"
       },
       {
         "$ref": "#/tables/5"
       },
       {
-        "$ref": "#/texts/20"
+        "$ref": "#/groups/33"
       },
       {
-        "$ref": "#/texts/21"
+        "$ref": "#/texts/58"
       },
       {
-        "$ref": "#/texts/22"
+        "$ref": "#/groups/34"
       },
       {
         "$ref": "#/tables/6"
       },
       {
-        "$ref": "#/texts/23"
+        "$ref": "#/groups/39"
+      },
+      {
+        "$ref": "#/texts/63"
+      },
+      {
+        "$ref": "#/groups/40"
+      },
+      {
+        "$ref": "#/tables/7"
+      },
+      {
+        "$ref": "#/groups/49"
+      },
+      {
+        "$ref": "#/texts/72"
+      },
+      {
+        "$ref": "#/groups/50"
+      },
+      {
+        "$ref": "#/tables/8"
+      },
+      {
+        "$ref": "#/groups/53"
       }
     ],
     "content_layer": "body",
     "name": "_root_",
     "label": "unspecified"
   },
-  "groups": [],
+  "groups": [
+    {
+      "self_ref": "#/groups/0",
+      "parent": {
+        "$ref": "#/tables/0"
+      },
+      "children": [
+        {
+          "$ref": "#/texts/1"
+        },
+        {
+          "$ref": "#/groups/1"
+        }
+      ],
+      "content_layer": "body",
+      "name": "group",
+      "label": "unspecified"
+    },
+    {
+      "self_ref": "#/groups/1",
+      "parent": {
+        "$ref": "#/groups/0"
+      },
+      "children": [
+        {
+          "$ref": "#/texts/2"
+        },
+        {
+          "$ref": "#/texts/3"
+        },
+        {
+          "$ref": "#/texts/4"
+        }
+      ],
+      "content_layer": "body",
+      "name": "group",
+      "label": "list"
+    },
+    {
+      "self_ref": "#/groups/2",
+      "parent": {
+        "$ref": "#/tables/0"
+      },
+      "children": [
+        {
+          "$ref": "#/texts/5"
+        },
+        {
+          "$ref": "#/groups/3"
+        }
+      ],
+      "content_layer": "body",
+      "name": "group",
+      "label": "unspecified"
+    },
+    {
+      "self_ref": "#/groups/3",
+      "parent": {
+        "$ref": "#/groups/2"
+      },
+      "children": [
+        {
+          "$ref": "#/texts/6"
+        },
+        {
+          "$ref": "#/texts/9"
+        },
+        {
+          "$ref": "#/texts/12"
+        }
+      ],
+      "content_layer": "body",
+      "name": "group",
+      "label": "list"
+    },
+    {
+      "self_ref": "#/groups/4",
+      "parent": {
+        "$ref": "#/texts/6"
+      },
+      "children": [
+        {
+          "$ref": "#/texts/7"
+        },
+        {
+          "$ref": "#/texts/8"
+        }
+      ],
+      "content_layer": "body",
+      "name": "group",
+      "label": "inline"
+    },
+    {
+      "self_ref": "#/groups/5",
+      "parent": {
+        "$ref": "#/texts/9"
+      },
+      "children": [
+        {
+          "$ref": "#/texts/10"
+        },
+        {
+          "$ref": "#/texts/11"
+        }
+      ],
+      "content_layer": "body",
+      "name": "group",
+      "label": "inline"
+    },
+    {
+      "self_ref": "#/groups/6",
+      "parent": {
+        "$ref": "#/texts/12"
+      },
+      "children": [
+        {
+          "$ref": "#/texts/13"
+        },
+        {
+          "$ref": "#/texts/14"
+        }
+      ],
+      "content_layer": "body",
+      "name": "group",
+      "label": "inline"
+    },
+    {
+      "self_ref": "#/groups/7",
+      "parent": {
+        "$ref": "#/tables/0"
+      },
+      "children": [
+        {
+          "$ref": "#/texts/15"
+        },
+        {
+          "$ref": "#/texts/16"
+        },
+        {
+          "$ref": "#/groups/8"
+        }
+      ],
+      "content_layer": "body",
+      "name": "group",
+      "label": "unspecified"
+    },
+    {
+      "self_ref": "#/groups/8",
+      "parent": {
+        "$ref": "#/groups/7"
+      },
+      "children": [
+        {
+          "$ref": "#/texts/17"
+        },
+        {
+          "$ref": "#/texts/18"
+        },
+        {
+          "$ref": "#/texts/19"
+        }
+      ],
+      "content_layer": "body",
+      "name": "group",
+      "label": "list"
+    },
+    {
+      "self_ref": "#/groups/9",
+      "parent": {
+        "$ref": "#/tables/0"
+      },
+      "children": [
+        {
+          "$ref": "#/texts/20"
+        },
+        {
+          "$ref": "#/texts/21"
+        },
+        {
+          "$ref": "#/texts/22"
+        },
+        {
+          "$ref": "#/texts/23"
+        },
+        {
+          "$ref": "#/texts/24"
+        },
+        {
+          "$ref": "#/texts/25"
+        },
+        {
+          "$ref": "#/texts/26"
+        },
+        {
+          "$ref": "#/texts/27"
+        },
+        {
+          "$ref": "#/texts/28"
+        },
+        {
+          "$ref": "#/texts/29"
+        },
+        {
+          "$ref": "#/texts/30"
+        }
+      ],
+      "content_layer": "body",
+      "name": "group",
+      "label": "unspecified"
+    },
+    {
+      "self_ref": "#/groups/10",
+      "parent": {
+        "$ref": "#/tables/0"
+      },
+      "children": [
+        {
+          "$ref": "#/texts/31"
+        },
+        {
+          "$ref": "#/texts/32"
+        }
+      ],
+      "content_layer": "body",
+      "name": "group",
+      "label": "unspecified"
+    },
+    {
+      "self_ref": "#/groups/11",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "name": "group",
+      "label": "inline"
+    },
+    {
+      "self_ref": "#/groups/12",
+      "parent": {
+        "$ref": "#/tables/1"
+      },
+      "children": [
+        {
+          "$ref": "#/texts/35"
+        },
+        {
+          "$ref": "#/texts/36"
+        },
+        {
+          "$ref": "#/texts/37"
+        },
+        {
+          "$ref": "#/texts/38"
+        },
+        {
+          "$ref": "#/texts/39"
+        }
+      ],
+      "content_layer": "body",
+      "name": "group",
+      "label": "unspecified"
+    },
+    {
+      "self_ref": "#/groups/13",
+      "parent": {
+        "$ref": "#/tables/1"
+      },
+      "children": [
+        {
+          "$ref": "#/tables/2"
+        },
+        {
+          "$ref": "#/groups/17"
+        }
+      ],
+      "content_layer": "body",
+      "name": "group",
+      "label": "unspecified"
+    },
+    {
+      "self_ref": "#/groups/14",
+      "parent": {
+        "$ref": "#/tables/2"
+      },
+      "children": [
+        {
+          "$ref": "#/texts/40"
+        }
+      ],
+      "content_layer": "body",
+      "name": "group",
+      "label": "unspecified"
+    },
+    {
+      "self_ref": "#/groups/15",
+      "parent": {
+        "$ref": "#/tables/2"
+      },
+      "children": [
+        {
+          "$ref": "#/texts/41"
+        }
+      ],
+      "content_layer": "body",
+      "name": "group",
+      "label": "unspecified"
+    },
+    {
+      "self_ref": "#/groups/16",
+      "parent": {
+        "$ref": "#/tables/2"
+      },
+      "children": [
+        {
+          "$ref": "#/texts/42"
+        }
+      ],
+      "content_layer": "body",
+      "name": "group",
+      "label": "unspecified"
+    },
+    {
+      "self_ref": "#/groups/17",
+      "parent": {
+        "$ref": "#/groups/13"
+      },
+      "children": [],
+      "content_layer": "body",
+      "name": "group",
+      "label": "inline"
+    },
+    {
+      "self_ref": "#/groups/18",
+      "parent": {
+        "$ref": "#/tables/1"
+      },
+      "children": [
+        {
+          "$ref": "#/texts/43"
+        },
+        {
+          "$ref": "#/tables/3"
+        },
+        {
+          "$ref": "#/groups/22"
+        }
+      ],
+      "content_layer": "body",
+      "name": "group",
+      "label": "unspecified"
+    },
+    {
+      "self_ref": "#/groups/19",
+      "parent": {
+        "$ref": "#/tables/3"
+      },
+      "children": [
+        {
+          "$ref": "#/texts/44"
+        }
+      ],
+      "content_layer": "body",
+      "name": "group",
+      "label": "unspecified"
+    },
+    {
+      "self_ref": "#/groups/20",
+      "parent": {
+        "$ref": "#/tables/3"
+      },
+      "children": [
+        {
+          "$ref": "#/texts/45"
+        }
+      ],
+      "content_layer": "body",
+      "name": "group",
+      "label": "unspecified"
+    },
+    {
+      "self_ref": "#/groups/21",
+      "parent": {
+        "$ref": "#/tables/3"
+      },
+      "children": [
+        {
+          "$ref": "#/texts/46"
+        }
+      ],
+      "content_layer": "body",
+      "name": "group",
+      "label": "unspecified"
+    },
+    {
+      "self_ref": "#/groups/22",
+      "parent": {
+        "$ref": "#/groups/18"
+      },
+      "children": [],
+      "content_layer": "body",
+      "name": "group",
+      "label": "inline"
+    },
+    {
+      "self_ref": "#/groups/23",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "name": "group",
+      "label": "inline"
+    },
+    {
+      "self_ref": "#/groups/24",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "name": "group",
+      "label": "inline"
+    },
+    {
+      "self_ref": "#/groups/25",
+      "parent": {
+        "$ref": "#/tables/4"
+      },
+      "children": [
+        {
+          "$ref": "#/pictures/0"
+        }
+      ],
+      "content_layer": "body",
+      "name": "group",
+      "label": "unspecified"
+    },
+    {
+      "self_ref": "#/groups/26",
+      "parent": {
+        "$ref": "#/tables/4"
+      },
+      "children": [
+        {
+          "$ref": "#/texts/52"
+        },
+        {
+          "$ref": "#/pictures/1"
+        }
+      ],
+      "content_layer": "body",
+      "name": "group",
+      "label": "unspecified"
+    },
+    {
+      "self_ref": "#/groups/27",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "name": "group",
+      "label": "inline"
+    },
+    {
+      "self_ref": "#/groups/28",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "name": "group",
+      "label": "inline"
+    },
+    {
+      "self_ref": "#/groups/29",
+      "parent": {
+        "$ref": "#/tables/5"
+      },
+      "children": [
+        {
+          "$ref": "#/groups/30"
+        }
+      ],
+      "content_layer": "body",
+      "name": "group",
+      "label": "unspecified"
+    },
+    {
+      "self_ref": "#/groups/30",
+      "parent": {
+        "$ref": "#/groups/29"
+      },
+      "children": [
+        {
+          "$ref": "#/texts/54"
+        },
+        {
+          "$ref": "#/texts/55"
+        }
+      ],
+      "content_layer": "body",
+      "name": "group",
+      "label": "list"
+    },
+    {
+      "self_ref": "#/groups/31",
+      "parent": {
+        "$ref": "#/tables/5"
+      },
+      "children": [
+        {
+          "$ref": "#/groups/32"
+        }
+      ],
+      "content_layer": "body",
+      "name": "group",
+      "label": "unspecified"
+    },
+    {
+      "self_ref": "#/groups/32",
+      "parent": {
+        "$ref": "#/groups/31"
+      },
+      "children": [
+        {
+          "$ref": "#/texts/56"
+        },
+        {
+          "$ref": "#/texts/57"
+        }
+      ],
+      "content_layer": "body",
+      "name": "group",
+      "label": "list"
+    },
+    {
+      "self_ref": "#/groups/33",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "name": "group",
+      "label": "inline"
+    },
+    {
+      "self_ref": "#/groups/34",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "name": "group",
+      "label": "inline"
+    },
+    {
+      "self_ref": "#/groups/35",
+      "parent": {
+        "$ref": "#/tables/6"
+      },
+      "children": [
+        {
+          "$ref": "#/groups/36"
+        }
+      ],
+      "content_layer": "body",
+      "name": "group",
+      "label": "unspecified"
+    },
+    {
+      "self_ref": "#/groups/36",
+      "parent": {
+        "$ref": "#/groups/35"
+      },
+      "children": [
+        {
+          "$ref": "#/texts/59"
+        },
+        {
+          "$ref": "#/texts/60"
+        }
+      ],
+      "content_layer": "body",
+      "name": "group",
+      "label": "list"
+    },
+    {
+      "self_ref": "#/groups/37",
+      "parent": {
+        "$ref": "#/tables/6"
+      },
+      "children": [
+        {
+          "$ref": "#/groups/38"
+        }
+      ],
+      "content_layer": "body",
+      "name": "group",
+      "label": "unspecified"
+    },
+    {
+      "self_ref": "#/groups/38",
+      "parent": {
+        "$ref": "#/groups/37"
+      },
+      "children": [
+        {
+          "$ref": "#/texts/61"
+        },
+        {
+          "$ref": "#/texts/62"
+        }
+      ],
+      "content_layer": "body",
+      "name": "group",
+      "label": "list"
+    },
+    {
+      "self_ref": "#/groups/39",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "name": "group",
+      "label": "inline"
+    },
+    {
+      "self_ref": "#/groups/40",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "name": "group",
+      "label": "inline"
+    },
+    {
+      "self_ref": "#/groups/41",
+      "parent": {
+        "$ref": "#/tables/7"
+      },
+      "children": [
+        {
+          "$ref": "#/groups/42"
+        }
+      ],
+      "content_layer": "body",
+      "name": "group",
+      "label": "unspecified"
+    },
+    {
+      "self_ref": "#/groups/42",
+      "parent": {
+        "$ref": "#/groups/41"
+      },
+      "children": [
+        {
+          "$ref": "#/texts/64"
+        },
+        {
+          "$ref": "#/texts/65"
+        }
+      ],
+      "content_layer": "body",
+      "name": "group",
+      "label": "list"
+    },
+    {
+      "self_ref": "#/groups/43",
+      "parent": {
+        "$ref": "#/tables/7"
+      },
+      "children": [
+        {
+          "$ref": "#/groups/44"
+        }
+      ],
+      "content_layer": "body",
+      "name": "group",
+      "label": "unspecified"
+    },
+    {
+      "self_ref": "#/groups/44",
+      "parent": {
+        "$ref": "#/groups/43"
+      },
+      "children": [
+        {
+          "$ref": "#/texts/66"
+        },
+        {
+          "$ref": "#/texts/67"
+        }
+      ],
+      "content_layer": "body",
+      "name": "group",
+      "label": "list"
+    },
+    {
+      "self_ref": "#/groups/45",
+      "parent": {
+        "$ref": "#/tables/7"
+      },
+      "children": [
+        {
+          "$ref": "#/groups/46"
+        }
+      ],
+      "content_layer": "body",
+      "name": "group",
+      "label": "unspecified"
+    },
+    {
+      "self_ref": "#/groups/46",
+      "parent": {
+        "$ref": "#/groups/45"
+      },
+      "children": [
+        {
+          "$ref": "#/texts/68"
+        },
+        {
+          "$ref": "#/texts/69"
+        }
+      ],
+      "content_layer": "body",
+      "name": "group",
+      "label": "list"
+    },
+    {
+      "self_ref": "#/groups/47",
+      "parent": {
+        "$ref": "#/tables/7"
+      },
+      "children": [
+        {
+          "$ref": "#/groups/48"
+        }
+      ],
+      "content_layer": "body",
+      "name": "group",
+      "label": "unspecified"
+    },
+    {
+      "self_ref": "#/groups/48",
+      "parent": {
+        "$ref": "#/groups/47"
+      },
+      "children": [
+        {
+          "$ref": "#/texts/70"
+        },
+        {
+          "$ref": "#/texts/71"
+        }
+      ],
+      "content_layer": "body",
+      "name": "group",
+      "label": "list"
+    },
+    {
+      "self_ref": "#/groups/49",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "name": "group",
+      "label": "inline"
+    },
+    {
+      "self_ref": "#/groups/50",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "name": "group",
+      "label": "inline"
+    },
+    {
+      "self_ref": "#/groups/51",
+      "parent": {
+        "$ref": "#/tables/8"
+      },
+      "children": [
+        {
+          "$ref": "#/groups/52"
+        }
+      ],
+      "content_layer": "body",
+      "name": "group",
+      "label": "unspecified"
+    },
+    {
+      "self_ref": "#/groups/52",
+      "parent": {
+        "$ref": "#/groups/51"
+      },
+      "children": [
+        {
+          "$ref": "#/texts/73"
+        },
+        {
+          "$ref": "#/texts/74"
+        }
+      ],
+      "content_layer": "body",
+      "name": "group",
+      "label": "list"
+    },
+    {
+      "self_ref": "#/groups/53",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "name": "group",
+      "label": "inline"
+    }
+  ],
   "texts": [
     {
       "self_ref": "#/texts/0",
@@ -133,17 +957,475 @@
     {
       "self_ref": "#/texts/1",
       "parent": {
-        "$ref": "#/body"
+        "$ref": "#/groups/0"
       },
       "children": [],
       "content_layer": "body",
       "label": "text",
       "prov": [],
-      "orig": "",
-      "text": ""
+      "orig": "This is a list:",
+      "text": "This is a list:"
     },
     {
       "self_ref": "#/texts/2",
+      "parent": {
+        "$ref": "#/groups/1"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "list_item",
+      "prov": [],
+      "orig": "A First",
+      "text": "A First",
+      "enumerated": false,
+      "marker": ""
+    },
+    {
+      "self_ref": "#/texts/3",
+      "parent": {
+        "$ref": "#/groups/1"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "list_item",
+      "prov": [],
+      "orig": "A Second",
+      "text": "A Second",
+      "enumerated": false,
+      "marker": ""
+    },
+    {
+      "self_ref": "#/texts/4",
+      "parent": {
+        "$ref": "#/groups/1"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "list_item",
+      "prov": [],
+      "orig": "A Third",
+      "text": "A Third",
+      "enumerated": false,
+      "marker": ""
+    },
+    {
+      "self_ref": "#/texts/5",
+      "parent": {
+        "$ref": "#/groups/2"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "This is a formatted list:",
+      "text": "This is a formatted list:"
+    },
+    {
+      "self_ref": "#/texts/6",
+      "parent": {
+        "$ref": "#/groups/3"
+      },
+      "children": [
+        {
+          "$ref": "#/groups/4"
+        }
+      ],
+      "content_layer": "body",
+      "label": "list_item",
+      "prov": [],
+      "orig": "",
+      "text": "",
+      "enumerated": false,
+      "marker": ""
+    },
+    {
+      "self_ref": "#/texts/7",
+      "parent": {
+        "$ref": "#/groups/4"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "B",
+      "text": "B"
+    },
+    {
+      "self_ref": "#/texts/8",
+      "parent": {
+        "$ref": "#/groups/4"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "First",
+      "text": "First",
+      "formatting": {
+        "bold": true,
+        "italic": false,
+        "underline": false,
+        "strikethrough": false,
+        "script": "baseline"
+      }
+    },
+    {
+      "self_ref": "#/texts/9",
+      "parent": {
+        "$ref": "#/groups/3"
+      },
+      "children": [
+        {
+          "$ref": "#/groups/5"
+        }
+      ],
+      "content_layer": "body",
+      "label": "list_item",
+      "prov": [],
+      "orig": "",
+      "text": "",
+      "enumerated": false,
+      "marker": ""
+    },
+    {
+      "self_ref": "#/texts/10",
+      "parent": {
+        "$ref": "#/groups/5"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "B",
+      "text": "B"
+    },
+    {
+      "self_ref": "#/texts/11",
+      "parent": {
+        "$ref": "#/groups/5"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "Second",
+      "text": "Second",
+      "formatting": {
+        "bold": false,
+        "italic": true,
+        "underline": false,
+        "strikethrough": false,
+        "script": "baseline"
+      }
+    },
+    {
+      "self_ref": "#/texts/12",
+      "parent": {
+        "$ref": "#/groups/3"
+      },
+      "children": [
+        {
+          "$ref": "#/groups/6"
+        }
+      ],
+      "content_layer": "body",
+      "label": "list_item",
+      "prov": [],
+      "orig": "",
+      "text": "",
+      "enumerated": false,
+      "marker": ""
+    },
+    {
+      "self_ref": "#/texts/13",
+      "parent": {
+        "$ref": "#/groups/6"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "B",
+      "text": "B"
+    },
+    {
+      "self_ref": "#/texts/14",
+      "parent": {
+        "$ref": "#/groups/6"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "Third",
+      "text": "Third",
+      "formatting": {
+        "bold": false,
+        "italic": false,
+        "underline": true,
+        "strikethrough": false,
+        "script": "baseline"
+      }
+    },
+    {
+      "self_ref": "#/texts/15",
+      "parent": {
+        "$ref": "#/groups/7"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "First Paragraph\n\nSecond Paragraph",
+      "text": "First Paragraph\n\nSecond Paragraph"
+    },
+    {
+      "self_ref": "#/texts/16",
+      "parent": {
+        "$ref": "#/groups/7"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "Third paragraph before a numbered list",
+      "text": "Third paragraph before a numbered list"
+    },
+    {
+      "self_ref": "#/texts/17",
+      "parent": {
+        "$ref": "#/groups/8"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "list_item",
+      "prov": [],
+      "orig": "Number one",
+      "text": "Number one",
+      "enumerated": true,
+      "marker": "1."
+    },
+    {
+      "self_ref": "#/texts/18",
+      "parent": {
+        "$ref": "#/groups/8"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "list_item",
+      "prov": [],
+      "orig": "Number two",
+      "text": "Number two",
+      "enumerated": true,
+      "marker": "2."
+    },
+    {
+      "self_ref": "#/texts/19",
+      "parent": {
+        "$ref": "#/groups/8"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "list_item",
+      "prov": [],
+      "orig": "Number three",
+      "text": "Number three",
+      "enumerated": true,
+      "marker": "3."
+    },
+    {
+      "self_ref": "#/texts/20",
+      "parent": {
+        "$ref": "#/groups/9"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "This is simple text with",
+      "text": "This is simple text with"
+    },
+    {
+      "self_ref": "#/texts/21",
+      "parent": {
+        "$ref": "#/groups/9"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "bold",
+      "text": "bold",
+      "formatting": {
+        "bold": true,
+        "italic": false,
+        "underline": false,
+        "strikethrough": false,
+        "script": "baseline"
+      }
+    },
+    {
+      "self_ref": "#/texts/22",
+      "parent": {
+        "$ref": "#/groups/9"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": ",",
+      "text": ","
+    },
+    {
+      "self_ref": "#/texts/23",
+      "parent": {
+        "$ref": "#/groups/9"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "strikethrough",
+      "text": "strikethrough",
+      "formatting": {
+        "bold": false,
+        "italic": false,
+        "underline": false,
+        "strikethrough": true,
+        "script": "baseline"
+      }
+    },
+    {
+      "self_ref": "#/texts/24",
+      "parent": {
+        "$ref": "#/groups/9"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "and",
+      "text": "and"
+    },
+    {
+      "self_ref": "#/texts/25",
+      "parent": {
+        "$ref": "#/groups/9"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "italic",
+      "text": "italic",
+      "formatting": {
+        "bold": false,
+        "italic": true,
+        "underline": false,
+        "strikethrough": false,
+        "script": "baseline"
+      }
+    },
+    {
+      "self_ref": "#/texts/26",
+      "parent": {
+        "$ref": "#/groups/9"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "formatting with x",
+      "text": "formatting with x"
+    },
+    {
+      "self_ref": "#/texts/27",
+      "parent": {
+        "$ref": "#/groups/9"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "2",
+      "text": "2",
+      "formatting": {
+        "bold": false,
+        "italic": false,
+        "underline": false,
+        "strikethrough": false,
+        "script": "super"
+      }
+    },
+    {
+      "self_ref": "#/texts/28",
+      "parent": {
+        "$ref": "#/groups/9"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "and H",
+      "text": "and H"
+    },
+    {
+      "self_ref": "#/texts/29",
+      "parent": {
+        "$ref": "#/groups/9"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "2",
+      "text": "2",
+      "formatting": {
+        "bold": false,
+        "italic": false,
+        "underline": false,
+        "strikethrough": false,
+        "script": "sub"
+      }
+    },
+    {
+      "self_ref": "#/texts/30",
+      "parent": {
+        "$ref": "#/groups/9"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "O",
+      "text": "O"
+    },
+    {
+      "self_ref": "#/texts/31",
+      "parent": {
+        "$ref": "#/groups/10"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "This is a paragraph",
+      "text": "This is a paragraph"
+    },
+    {
+      "self_ref": "#/texts/32",
+      "parent": {
+        "$ref": "#/groups/10"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "This is another paragraph",
+      "text": "This is another paragraph"
+    },
+    {
+      "self_ref": "#/texts/33",
       "parent": {
         "$ref": "#/body"
       },
@@ -156,7 +1438,7 @@
       "level": 2
     },
     {
-      "self_ref": "#/texts/3",
+      "self_ref": "#/texts/34",
       "parent": {
         "$ref": "#/body"
       },
@@ -168,7 +1450,207 @@
       "text": "Before table"
     },
     {
-      "self_ref": "#/texts/4",
+      "self_ref": "#/texts/35",
+      "parent": {
+        "$ref": "#/groups/12"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "Simple cell with",
+      "text": "Simple cell with"
+    },
+    {
+      "self_ref": "#/texts/36",
+      "parent": {
+        "$ref": "#/groups/12"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "bold",
+      "text": "bold",
+      "formatting": {
+        "bold": true,
+        "italic": false,
+        "underline": false,
+        "strikethrough": false,
+        "script": "baseline"
+      }
+    },
+    {
+      "self_ref": "#/texts/37",
+      "parent": {
+        "$ref": "#/groups/12"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "and",
+      "text": "and"
+    },
+    {
+      "self_ref": "#/texts/38",
+      "parent": {
+        "$ref": "#/groups/12"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "italic",
+      "text": "italic",
+      "formatting": {
+        "bold": false,
+        "italic": true,
+        "underline": false,
+        "strikethrough": false,
+        "script": "baseline"
+      }
+    },
+    {
+      "self_ref": "#/texts/39",
+      "parent": {
+        "$ref": "#/groups/12"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "text",
+      "text": "text"
+    },
+    {
+      "self_ref": "#/texts/40",
+      "parent": {
+        "$ref": "#/groups/14"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "Cell 1",
+      "text": "Cell 1",
+      "formatting": {
+        "bold": false,
+        "italic": true,
+        "underline": false,
+        "strikethrough": false,
+        "script": "baseline"
+      }
+    },
+    {
+      "self_ref": "#/texts/41",
+      "parent": {
+        "$ref": "#/groups/15"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "Cell 2",
+      "text": "Cell 2",
+      "formatting": {
+        "bold": false,
+        "italic": false,
+        "underline": true,
+        "strikethrough": false,
+        "script": "baseline"
+      }
+    },
+    {
+      "self_ref": "#/texts/42",
+      "parent": {
+        "$ref": "#/groups/16"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "Cell 3",
+      "text": "Cell 3",
+      "formatting": {
+        "bold": true,
+        "italic": false,
+        "underline": false,
+        "strikethrough": false,
+        "script": "baseline"
+      }
+    },
+    {
+      "self_ref": "#/texts/43",
+      "parent": {
+        "$ref": "#/groups/18"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "Rich cell\nA nested table",
+      "text": "Rich cell\nA nested table"
+    },
+    {
+      "self_ref": "#/texts/44",
+      "parent": {
+        "$ref": "#/groups/19"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "Cell 1",
+      "text": "Cell 1",
+      "formatting": {
+        "bold": false,
+        "italic": false,
+        "underline": false,
+        "strikethrough": true,
+        "script": "baseline"
+      }
+    },
+    {
+      "self_ref": "#/texts/45",
+      "parent": {
+        "$ref": "#/groups/20"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "Cell 2",
+      "text": "Cell 2",
+      "formatting": {
+        "bold": true,
+        "italic": true,
+        "underline": false,
+        "strikethrough": false,
+        "script": "baseline"
+      }
+    },
+    {
+      "self_ref": "#/texts/46",
+      "parent": {
+        "$ref": "#/groups/21"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "Cell 3",
+      "text": "Cell 3",
+      "formatting": {
+        "bold": false,
+        "italic": false,
+        "underline": true,
+        "strikethrough": false,
+        "script": "baseline"
+      }
+    },
+    {
+      "self_ref": "#/texts/47",
       "parent": {
         "$ref": "#/body"
       },
@@ -176,11 +1658,18 @@
       "content_layer": "body",
       "label": "text",
       "prov": [],
-      "orig": "**bold**",
-      "text": "**bold**"
+      "orig": "bold",
+      "text": "bold",
+      "formatting": {
+        "bold": true,
+        "italic": false,
+        "underline": false,
+        "strikethrough": false,
+        "script": "baseline"
+      }
     },
     {
-      "self_ref": "#/texts/5",
+      "self_ref": "#/texts/48",
       "parent": {
         "$ref": "#/body"
       },
@@ -189,10 +1678,17 @@
       "label": "text",
       "prov": [],
       "orig": "underline",
-      "text": "underline"
+      "text": "underline",
+      "formatting": {
+        "bold": false,
+        "italic": false,
+        "underline": true,
+        "strikethrough": false,
+        "script": "baseline"
+      }
     },
     {
-      "self_ref": "#/texts/6",
+      "self_ref": "#/texts/49",
       "parent": {
         "$ref": "#/body"
       },
@@ -200,11 +1696,18 @@
       "content_layer": "body",
       "label": "text",
       "prov": [],
-      "orig": "~~strikethrough~~",
-      "text": "~~strikethrough~~"
+      "orig": "strikethrough",
+      "text": "strikethrough",
+      "formatting": {
+        "bold": false,
+        "italic": false,
+        "underline": false,
+        "strikethrough": true,
+        "script": "baseline"
+      }
     },
     {
-      "self_ref": "#/texts/7",
+      "self_ref": "#/texts/50",
       "parent": {
         "$ref": "#/body"
       },
@@ -212,23 +1715,18 @@
       "content_layer": "body",
       "label": "text",
       "prov": [],
-      "orig": "*italic*",
-      "text": "*italic*"
+      "orig": "italic",
+      "text": "italic",
+      "formatting": {
+        "bold": false,
+        "italic": true,
+        "underline": false,
+        "strikethrough": false,
+        "script": "baseline"
+      }
     },
     {
-      "self_ref": "#/texts/8",
-      "parent": {
-        "$ref": "#/body"
-      },
-      "children": [],
-      "content_layer": "body",
-      "label": "text",
-      "prov": [],
-      "orig": "",
-      "text": ""
-    },
-    {
-      "self_ref": "#/texts/9",
+      "self_ref": "#/texts/51",
       "parent": {
         "$ref": "#/body"
       },
@@ -241,31 +1739,19 @@
       "level": 2
     },
     {
-      "self_ref": "#/texts/10",
+      "self_ref": "#/texts/52",
       "parent": {
-        "$ref": "#/body"
+        "$ref": "#/groups/26"
       },
       "children": [],
       "content_layer": "body",
       "label": "text",
       "prov": [],
-      "orig": "",
-      "text": ""
+      "orig": "Text and picture",
+      "text": "Text and picture"
     },
     {
-      "self_ref": "#/texts/11",
-      "parent": {
-        "$ref": "#/body"
-      },
-      "children": [],
-      "content_layer": "body",
-      "label": "text",
-      "prov": [],
-      "orig": "",
-      "text": ""
-    },
-    {
-      "self_ref": "#/texts/12",
+      "self_ref": "#/texts/53",
       "parent": {
         "$ref": "#/body"
       },
@@ -278,31 +1764,63 @@
       "level": 2
     },
     {
-      "self_ref": "#/texts/13",
+      "self_ref": "#/texts/54",
       "parent": {
-        "$ref": "#/body"
+        "$ref": "#/groups/30"
       },
       "children": [],
       "content_layer": "body",
-      "label": "text",
+      "label": "list_item",
       "prov": [],
-      "orig": "",
-      "text": ""
+      "orig": "Cell 1 item 1",
+      "text": "Cell 1 item 1",
+      "enumerated": false,
+      "marker": ""
     },
     {
-      "self_ref": "#/texts/14",
+      "self_ref": "#/texts/55",
       "parent": {
-        "$ref": "#/body"
+        "$ref": "#/groups/30"
       },
       "children": [],
       "content_layer": "body",
-      "label": "text",
+      "label": "list_item",
       "prov": [],
-      "orig": "",
-      "text": ""
+      "orig": "Cell 1 item 2",
+      "text": "Cell 1 item 2",
+      "enumerated": false,
+      "marker": ""
     },
     {
-      "self_ref": "#/texts/15",
+      "self_ref": "#/texts/56",
+      "parent": {
+        "$ref": "#/groups/32"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "list_item",
+      "prov": [],
+      "orig": "Cell 2 item 1",
+      "text": "Cell 2 item 1",
+      "enumerated": false,
+      "marker": ""
+    },
+    {
+      "self_ref": "#/texts/57",
+      "parent": {
+        "$ref": "#/groups/32"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "list_item",
+      "prov": [],
+      "orig": "Cell 2 item 2",
+      "text": "Cell 2 item 2",
+      "enumerated": false,
+      "marker": ""
+    },
+    {
+      "self_ref": "#/texts/58",
       "parent": {
         "$ref": "#/body"
       },
@@ -315,31 +1833,63 @@
       "level": 2
     },
     {
-      "self_ref": "#/texts/16",
+      "self_ref": "#/texts/59",
       "parent": {
-        "$ref": "#/body"
+        "$ref": "#/groups/36"
       },
       "children": [],
       "content_layer": "body",
-      "label": "text",
+      "label": "list_item",
       "prov": [],
-      "orig": "",
-      "text": ""
+      "orig": "Cell 1 item 1",
+      "text": "Cell 1 item 1",
+      "enumerated": false,
+      "marker": ""
     },
     {
-      "self_ref": "#/texts/17",
+      "self_ref": "#/texts/60",
       "parent": {
-        "$ref": "#/body"
+        "$ref": "#/groups/36"
       },
       "children": [],
       "content_layer": "body",
-      "label": "text",
+      "label": "list_item",
       "prov": [],
-      "orig": "",
-      "text": ""
+      "orig": "Cell 1 item 2",
+      "text": "Cell 1 item 2",
+      "enumerated": false,
+      "marker": ""
     },
     {
-      "self_ref": "#/texts/18",
+      "self_ref": "#/texts/61",
+      "parent": {
+        "$ref": "#/groups/38"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "list_item",
+      "prov": [],
+      "orig": "Cell 2 item 1",
+      "text": "Cell 2 item 1",
+      "enumerated": false,
+      "marker": ""
+    },
+    {
+      "self_ref": "#/texts/62",
+      "parent": {
+        "$ref": "#/groups/38"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "list_item",
+      "prov": [],
+      "orig": "Cell 2 item 2",
+      "text": "Cell 2 item 2",
+      "enumerated": false,
+      "marker": ""
+    },
+    {
+      "self_ref": "#/texts/63",
       "parent": {
         "$ref": "#/body"
       },
@@ -352,31 +1902,119 @@
       "level": 2
     },
     {
-      "self_ref": "#/texts/19",
+      "self_ref": "#/texts/64",
       "parent": {
-        "$ref": "#/body"
+        "$ref": "#/groups/42"
       },
       "children": [],
       "content_layer": "body",
-      "label": "text",
+      "label": "list_item",
       "prov": [],
-      "orig": "",
-      "text": ""
+      "orig": "R1C1 item 1",
+      "text": "R1C1 item 1",
+      "enumerated": false,
+      "marker": ""
     },
     {
-      "self_ref": "#/texts/20",
+      "self_ref": "#/texts/65",
       "parent": {
-        "$ref": "#/body"
+        "$ref": "#/groups/42"
       },
       "children": [],
       "content_layer": "body",
-      "label": "text",
+      "label": "list_item",
       "prov": [],
-      "orig": "",
-      "text": ""
+      "orig": "R1C1 item 2",
+      "text": "R1C1 item 2",
+      "enumerated": false,
+      "marker": ""
     },
     {
-      "self_ref": "#/texts/21",
+      "self_ref": "#/texts/66",
+      "parent": {
+        "$ref": "#/groups/44"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "list_item",
+      "prov": [],
+      "orig": "R1C2 item 1",
+      "text": "R1C2 item 1",
+      "enumerated": false,
+      "marker": ""
+    },
+    {
+      "self_ref": "#/texts/67",
+      "parent": {
+        "$ref": "#/groups/44"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "list_item",
+      "prov": [],
+      "orig": "R1C2 item 2",
+      "text": "R1C2 item 2",
+      "enumerated": false,
+      "marker": ""
+    },
+    {
+      "self_ref": "#/texts/68",
+      "parent": {
+        "$ref": "#/groups/46"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "list_item",
+      "prov": [],
+      "orig": "R2C1 item 1",
+      "text": "R2C1 item 1",
+      "enumerated": false,
+      "marker": ""
+    },
+    {
+      "self_ref": "#/texts/69",
+      "parent": {
+        "$ref": "#/groups/46"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "list_item",
+      "prov": [],
+      "orig": "R2C1 item 2",
+      "text": "R2C1 item 2",
+      "enumerated": false,
+      "marker": ""
+    },
+    {
+      "self_ref": "#/texts/70",
+      "parent": {
+        "$ref": "#/groups/48"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "list_item",
+      "prov": [],
+      "orig": "R2C2 item 1",
+      "text": "R2C2 item 1",
+      "enumerated": false,
+      "marker": ""
+    },
+    {
+      "self_ref": "#/texts/71",
+      "parent": {
+        "$ref": "#/groups/48"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "list_item",
+      "prov": [],
+      "orig": "R2C2 item 2",
+      "text": "R2C2 item 2",
+      "enumerated": false,
+      "marker": ""
+    },
+    {
+      "self_ref": "#/texts/72",
       "parent": {
         "$ref": "#/body"
       },
@@ -389,38 +2027,105 @@
       "level": 2
     },
     {
-      "self_ref": "#/texts/22",
+      "self_ref": "#/texts/73",
       "parent": {
-        "$ref": "#/body"
+        "$ref": "#/groups/52"
       },
       "children": [],
       "content_layer": "body",
-      "label": "text",
+      "label": "list_item",
       "prov": [],
-      "orig": "",
-      "text": ""
+      "orig": "List item 1",
+      "text": "List item 1",
+      "enumerated": false,
+      "marker": ""
     },
     {
-      "self_ref": "#/texts/23",
+      "self_ref": "#/texts/74",
       "parent": {
-        "$ref": "#/body"
+        "$ref": "#/groups/52"
       },
       "children": [],
       "content_layer": "body",
-      "label": "text",
+      "label": "list_item",
       "prov": [],
-      "orig": "",
-      "text": ""
+      "orig": "List item 2",
+      "text": "List item 2",
+      "enumerated": false,
+      "marker": ""
     }
   ],
-  "pictures": [],
+  "pictures": [
+    {
+      "self_ref": "#/pictures/0",
+      "parent": {
+        "$ref": "#/groups/25"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "picture",
+      "prov": [],
+      "captions": [],
+      "references": [],
+      "footnotes": [],
+      "image": {
+        "mimetype": "image/png",
+        "dpi": 72,
+        "size": {
+          "width": 48.0,
+          "height": 48.0
+        },
+        "uri": "data:image/png;base64,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"
+      },
+      "annotations": []
+    },
+    {
+      "self_ref": "#/pictures/1",
+      "parent": {
+        "$ref": "#/groups/26"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "picture",
+      "prov": [],
+      "captions": [],
+      "references": [],
+      "footnotes": [],
+      "image": {
+        "mimetype": "image/png",
+        "dpi": 72,
+        "size": {
+          "width": 48.0,
+          "height": 48.0
+        },
+        "uri": "data:image/png;base64,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"
+      },
+      "annotations": []
+    }
+  ],
   "tables": [
     {
       "self_ref": "#/tables/0",
       "parent": {
         "$ref": "#/body"
       },
-      "children": [],
+      "children": [
+        {
+          "$ref": "#/groups/0"
+        },
+        {
+          "$ref": "#/groups/2"
+        },
+        {
+          "$ref": "#/groups/7"
+        },
+        {
+          "$ref": "#/groups/9"
+        },
+        {
+          "$ref": "#/groups/10"
+        }
+      ],
       "content_layer": "body",
       "label": "table",
       "prov": [],
@@ -462,11 +2167,14 @@
             "end_row_offset_idx": 2,
             "start_col_offset_idx": 0,
             "end_col_offset_idx": 1,
-            "text": "This is a list:  - A First - A Second - A Third",
+            "text": "This is a list:A FirstA SecondA Third",
             "column_header": false,
             "row_header": false,
             "row_section": false,
-            "fillable": false
+            "fillable": false,
+            "ref": {
+              "$ref": "#/groups/0"
+            }
           },
           {
             "row_span": 1,
@@ -475,11 +2183,14 @@
             "end_row_offset_idx": 2,
             "start_col_offset_idx": 1,
             "end_col_offset_idx": 2,
-            "text": "This is a formatted list:  - B **First** - B *Second* - B Third",
+            "text": "This is a formatted list:BFirstBSecondBThird",
             "column_header": false,
             "row_header": false,
             "row_section": false,
-            "fillable": false
+            "fillable": false,
+            "ref": {
+              "$ref": "#/groups/2"
+            }
           },
           {
             "row_span": 1,
@@ -488,11 +2199,14 @@
             "end_row_offset_idx": 3,
             "start_col_offset_idx": 0,
             "end_col_offset_idx": 1,
-            "text": "First Paragraph\n\nSecond Paragraph  Third paragraph before a numbered list  1. Number one 2. Number two 3. Number three",
+            "text": "First Paragraph\n\nSecond ParagraphThird paragraph before a numbered list1.Number one2.Number two3.Number three",
             "column_header": false,
             "row_header": false,
             "row_section": false,
-            "fillable": false
+            "fillable": false,
+            "ref": {
+              "$ref": "#/groups/7"
+            }
           },
           {
             "row_span": 1,
@@ -501,11 +2215,14 @@
             "end_row_offset_idx": 3,
             "start_col_offset_idx": 1,
             "end_col_offset_idx": 2,
-            "text": "This is simple text with  **bold**  ,  ~~strikethrough~~  and  *italic*  formatting with x  2  and H  2  O",
+            "text": "This is simple text withbold,strikethroughanditalicformatting with x2and H2O",
             "column_header": false,
             "row_header": false,
             "row_section": false,
-            "fillable": false
+            "fillable": false,
+            "ref": {
+              "$ref": "#/groups/9"
+            }
           },
           {
             "row_span": 1,
@@ -514,11 +2231,14 @@
             "end_row_offset_idx": 4,
             "start_col_offset_idx": 0,
             "end_col_offset_idx": 1,
-            "text": "This is a paragraph  This is another paragraph",
+            "text": "This is a paragraphThis is another paragraph",
             "column_header": false,
             "row_header": false,
             "row_section": false,
-            "fillable": false
+            "fillable": false,
+            "ref": {
+              "$ref": "#/groups/10"
+            }
           },
           {
             "row_span": 1,
@@ -574,7 +2294,7 @@
               "end_row_offset_idx": 2,
               "start_col_offset_idx": 0,
               "end_col_offset_idx": 1,
-              "text": "This is a list:  - A First - A Second - A Third",
+              "text": "This is a list:A FirstA SecondA Third",
               "column_header": false,
               "row_header": false,
               "row_section": false,
@@ -587,7 +2307,7 @@
               "end_row_offset_idx": 2,
               "start_col_offset_idx": 1,
               "end_col_offset_idx": 2,
-              "text": "This is a formatted list:  - B **First** - B *Second* - B Third",
+              "text": "This is a formatted list:BFirstBSecondBThird",
               "column_header": false,
               "row_header": false,
               "row_section": false,
@@ -602,7 +2322,7 @@
               "end_row_offset_idx": 3,
               "start_col_offset_idx": 0,
               "end_col_offset_idx": 1,
-              "text": "First Paragraph\n\nSecond Paragraph  Third paragraph before a numbered list  1. Number one 2. Number two 3. Number three",
+              "text": "First Paragraph\n\nSecond ParagraphThird paragraph before a numbered list1.Number one2.Number two3.Number three",
               "column_header": false,
               "row_header": false,
               "row_section": false,
@@ -615,7 +2335,7 @@
               "end_row_offset_idx": 3,
               "start_col_offset_idx": 1,
               "end_col_offset_idx": 2,
-              "text": "This is simple text with  **bold**  ,  ~~strikethrough~~  and  *italic*  formatting with x  2  and H  2  O",
+              "text": "This is simple text withbold,strikethroughanditalicformatting with x2and H2O",
               "column_header": false,
               "row_header": false,
               "row_section": false,
@@ -630,7 +2350,7 @@
               "end_row_offset_idx": 4,
               "start_col_offset_idx": 0,
               "end_col_offset_idx": 1,
-              "text": "This is a paragraph  This is another paragraph",
+              "text": "This is a paragraphThis is another paragraph",
               "column_header": false,
               "row_header": false,
               "row_section": false,
@@ -659,7 +2379,17 @@
       "parent": {
         "$ref": "#/body"
       },
-      "children": [],
+      "children": [
+        {
+          "$ref": "#/groups/12"
+        },
+        {
+          "$ref": "#/groups/13"
+        },
+        {
+          "$ref": "#/groups/18"
+        }
+      ],
       "content_layer": "body",
       "label": "table",
       "prov": [],
@@ -714,11 +2444,14 @@
             "end_row_offset_idx": 2,
             "start_col_offset_idx": 1,
             "end_col_offset_idx": 2,
-            "text": "Simple cell with  **bold**  and  *italic*  text",
+            "text": "Simple cell withboldanditalictext",
             "column_header": false,
             "row_header": false,
             "row_section": false,
-            "fillable": false
+            "fillable": false,
+            "ref": {
+              "$ref": "#/groups/12"
+            }
           },
           {
             "row_span": 1,
@@ -727,11 +2460,14 @@
             "end_row_offset_idx": 3,
             "start_col_offset_idx": 0,
             "end_col_offset_idx": 1,
-            "text": "A B C Cell 1 Cell 2 Cell 3",
+            "text": "ABCCell 1Cell 2Cell 3",
             "column_header": false,
             "row_header": false,
             "row_section": false,
-            "fillable": false
+            "fillable": false,
+            "ref": {
+              "$ref": "#/groups/13"
+            }
           },
           {
             "row_span": 1,
@@ -740,11 +2476,14 @@
             "end_row_offset_idx": 3,
             "start_col_offset_idx": 1,
             "end_col_offset_idx": 2,
-            "text": "Rich cell\nA nested table  A B C Cell 1 Cell 2 Cell 3",
+            "text": "Rich cell\nA nested tableABCCell 1Cell 2Cell 3",
             "column_header": false,
             "row_header": false,
             "row_section": false,
-            "fillable": false
+            "fillable": false,
+            "ref": {
+              "$ref": "#/groups/18"
+            }
           }
         ],
         "num_rows": 3,
@@ -800,7 +2539,7 @@
               "end_row_offset_idx": 2,
               "start_col_offset_idx": 1,
               "end_col_offset_idx": 2,
-              "text": "Simple cell with  **bold**  and  *italic*  text",
+              "text": "Simple cell withboldanditalictext",
               "column_header": false,
               "row_header": false,
               "row_section": false,
@@ -815,7 +2554,7 @@
               "end_row_offset_idx": 3,
               "start_col_offset_idx": 0,
               "end_col_offset_idx": 1,
-              "text": "A B C Cell 1 Cell 2 Cell 3",
+              "text": "ABCCell 1Cell 2Cell 3",
               "column_header": false,
               "row_header": false,
               "row_section": false,
@@ -828,7 +2567,7 @@
               "end_row_offset_idx": 3,
               "start_col_offset_idx": 1,
               "end_col_offset_idx": 2,
-              "text": "Rich cell\nA nested table  A B C Cell 1 Cell 2 Cell 3",
+              "text": "Rich cell\nA nested tableABCCell 1Cell 2Cell 3",
               "column_header": false,
               "row_header": false,
               "row_section": false,
@@ -842,9 +2581,420 @@
     {
       "self_ref": "#/tables/2",
       "parent": {
+        "$ref": "#/groups/13"
+      },
+      "children": [
+        {
+          "$ref": "#/groups/14"
+        },
+        {
+          "$ref": "#/groups/15"
+        },
+        {
+          "$ref": "#/groups/16"
+        }
+      ],
+      "content_layer": "body",
+      "label": "table",
+      "prov": [],
+      "captions": [],
+      "references": [],
+      "footnotes": [],
+      "data": {
+        "table_cells": [
+          {
+            "row_span": 1,
+            "col_span": 1,
+            "start_row_offset_idx": 0,
+            "end_row_offset_idx": 1,
+            "start_col_offset_idx": 0,
+            "end_col_offset_idx": 1,
+            "text": "A",
+            "column_header": true,
+            "row_header": false,
+            "row_section": false,
+            "fillable": false
+          },
+          {
+            "row_span": 1,
+            "col_span": 1,
+            "start_row_offset_idx": 0,
+            "end_row_offset_idx": 1,
+            "start_col_offset_idx": 1,
+            "end_col_offset_idx": 2,
+            "text": "B",
+            "column_header": true,
+            "row_header": false,
+            "row_section": false,
+            "fillable": false
+          },
+          {
+            "row_span": 1,
+            "col_span": 1,
+            "start_row_offset_idx": 0,
+            "end_row_offset_idx": 1,
+            "start_col_offset_idx": 2,
+            "end_col_offset_idx": 3,
+            "text": "C",
+            "column_header": true,
+            "row_header": false,
+            "row_section": false,
+            "fillable": false
+          },
+          {
+            "row_span": 1,
+            "col_span": 1,
+            "start_row_offset_idx": 1,
+            "end_row_offset_idx": 2,
+            "start_col_offset_idx": 0,
+            "end_col_offset_idx": 1,
+            "text": "Cell 1",
+            "column_header": false,
+            "row_header": false,
+            "row_section": false,
+            "fillable": false,
+            "ref": {
+              "$ref": "#/groups/14"
+            }
+          },
+          {
+            "row_span": 1,
+            "col_span": 1,
+            "start_row_offset_idx": 1,
+            "end_row_offset_idx": 2,
+            "start_col_offset_idx": 1,
+            "end_col_offset_idx": 2,
+            "text": "Cell 2",
+            "column_header": false,
+            "row_header": false,
+            "row_section": false,
+            "fillable": false,
+            "ref": {
+              "$ref": "#/groups/15"
+            }
+          },
+          {
+            "row_span": 1,
+            "col_span": 1,
+            "start_row_offset_idx": 1,
+            "end_row_offset_idx": 2,
+            "start_col_offset_idx": 2,
+            "end_col_offset_idx": 3,
+            "text": "Cell 3",
+            "column_header": false,
+            "row_header": false,
+            "row_section": false,
+            "fillable": false,
+            "ref": {
+              "$ref": "#/groups/16"
+            }
+          }
+        ],
+        "num_rows": 2,
+        "num_cols": 3,
+        "orientation": "rot_0",
+        "grid": [
+          [
+            {
+              "row_span": 1,
+              "col_span": 1,
+              "start_row_offset_idx": 0,
+              "end_row_offset_idx": 1,
+              "start_col_offset_idx": 0,
+              "end_col_offset_idx": 1,
+              "text": "A",
+              "column_header": true,
+              "row_header": false,
+              "row_section": false,
+              "fillable": false
+            },
+            {
+              "row_span": 1,
+              "col_span": 1,
+              "start_row_offset_idx": 0,
+              "end_row_offset_idx": 1,
+              "start_col_offset_idx": 1,
+              "end_col_offset_idx": 2,
+              "text": "B",
+              "column_header": true,
+              "row_header": false,
+              "row_section": false,
+              "fillable": false
+            },
+            {
+              "row_span": 1,
+              "col_span": 1,
+              "start_row_offset_idx": 0,
+              "end_row_offset_idx": 1,
+              "start_col_offset_idx": 2,
+              "end_col_offset_idx": 3,
+              "text": "C",
+              "column_header": true,
+              "row_header": false,
+              "row_section": false,
+              "fillable": false
+            }
+          ],
+          [
+            {
+              "row_span": 1,
+              "col_span": 1,
+              "start_row_offset_idx": 1,
+              "end_row_offset_idx": 2,
+              "start_col_offset_idx": 0,
+              "end_col_offset_idx": 1,
+              "text": "Cell 1",
+              "column_header": false,
+              "row_header": false,
+              "row_section": false,
+              "fillable": false
+            },
+            {
+              "row_span": 1,
+              "col_span": 1,
+              "start_row_offset_idx": 1,
+              "end_row_offset_idx": 2,
+              "start_col_offset_idx": 1,
+              "end_col_offset_idx": 2,
+              "text": "Cell 2",
+              "column_header": false,
+              "row_header": false,
+              "row_section": false,
+              "fillable": false
+            },
+            {
+              "row_span": 1,
+              "col_span": 1,
+              "start_row_offset_idx": 1,
+              "end_row_offset_idx": 2,
+              "start_col_offset_idx": 2,
+              "end_col_offset_idx": 3,
+              "text": "Cell 3",
+              "column_header": false,
+              "row_header": false,
+              "row_section": false,
+              "fillable": false
+            }
+          ]
+        ]
+      },
+      "annotations": []
+    },
+    {
+      "self_ref": "#/tables/3",
+      "parent": {
+        "$ref": "#/groups/18"
+      },
+      "children": [
+        {
+          "$ref": "#/groups/19"
+        },
+        {
+          "$ref": "#/groups/20"
+        },
+        {
+          "$ref": "#/groups/21"
+        }
+      ],
+      "content_layer": "body",
+      "label": "table",
+      "prov": [],
+      "captions": [],
+      "references": [],
+      "footnotes": [],
+      "data": {
+        "table_cells": [
+          {
+            "row_span": 1,
+            "col_span": 1,
+            "start_row_offset_idx": 0,
+            "end_row_offset_idx": 1,
+            "start_col_offset_idx": 0,
+            "end_col_offset_idx": 1,
+            "text": "A",
+            "column_header": true,
+            "row_header": false,
+            "row_section": false,
+            "fillable": false
+          },
+          {
+            "row_span": 1,
+            "col_span": 1,
+            "start_row_offset_idx": 0,
+            "end_row_offset_idx": 1,
+            "start_col_offset_idx": 1,
+            "end_col_offset_idx": 2,
+            "text": "B",
+            "column_header": true,
+            "row_header": false,
+            "row_section": false,
+            "fillable": false
+          },
+          {
+            "row_span": 1,
+            "col_span": 1,
+            "start_row_offset_idx": 0,
+            "end_row_offset_idx": 1,
+            "start_col_offset_idx": 2,
+            "end_col_offset_idx": 3,
+            "text": "C",
+            "column_header": true,
+            "row_header": false,
+            "row_section": false,
+            "fillable": false
+          },
+          {
+            "row_span": 1,
+            "col_span": 1,
+            "start_row_offset_idx": 1,
+            "end_row_offset_idx": 2,
+            "start_col_offset_idx": 0,
+            "end_col_offset_idx": 1,
+            "text": "Cell 1",
+            "column_header": false,
+            "row_header": false,
+            "row_section": false,
+            "fillable": false,
+            "ref": {
+              "$ref": "#/groups/19"
+            }
+          },
+          {
+            "row_span": 1,
+            "col_span": 1,
+            "start_row_offset_idx": 1,
+            "end_row_offset_idx": 2,
+            "start_col_offset_idx": 1,
+            "end_col_offset_idx": 2,
+            "text": "Cell 2",
+            "column_header": false,
+            "row_header": false,
+            "row_section": false,
+            "fillable": false,
+            "ref": {
+              "$ref": "#/groups/20"
+            }
+          },
+          {
+            "row_span": 1,
+            "col_span": 1,
+            "start_row_offset_idx": 1,
+            "end_row_offset_idx": 2,
+            "start_col_offset_idx": 2,
+            "end_col_offset_idx": 3,
+            "text": "Cell 3",
+            "column_header": false,
+            "row_header": false,
+            "row_section": false,
+            "fillable": false,
+            "ref": {
+              "$ref": "#/groups/21"
+            }
+          }
+        ],
+        "num_rows": 2,
+        "num_cols": 3,
+        "orientation": "rot_0",
+        "grid": [
+          [
+            {
+              "row_span": 1,
+              "col_span": 1,
+              "start_row_offset_idx": 0,
+              "end_row_offset_idx": 1,
+              "start_col_offset_idx": 0,
+              "end_col_offset_idx": 1,
+              "text": "A",
+              "column_header": true,
+              "row_header": false,
+              "row_section": false,
+              "fillable": false
+            },
+            {
+              "row_span": 1,
+              "col_span": 1,
+              "start_row_offset_idx": 0,
+              "end_row_offset_idx": 1,
+              "start_col_offset_idx": 1,
+              "end_col_offset_idx": 2,
+              "text": "B",
+              "column_header": true,
+              "row_header": false,
+              "row_section": false,
+              "fillable": false
+            },
+            {
+              "row_span": 1,
+              "col_span": 1,
+              "start_row_offset_idx": 0,
+              "end_row_offset_idx": 1,
+              "start_col_offset_idx": 2,
+              "end_col_offset_idx": 3,
+              "text": "C",
+              "column_header": true,
+              "row_header": false,
+              "row_section": false,
+              "fillable": false
+            }
+          ],
+          [
+            {
+              "row_span": 1,
+              "col_span": 1,
+              "start_row_offset_idx": 1,
+              "end_row_offset_idx": 2,
+              "start_col_offset_idx": 0,
+              "end_col_offset_idx": 1,
+              "text": "Cell 1",
+              "column_header": false,
+              "row_header": false,
+              "row_section": false,
+              "fillable": false
+            },
+            {
+              "row_span": 1,
+              "col_span": 1,
+              "start_row_offset_idx": 1,
+              "end_row_offset_idx": 2,
+              "start_col_offset_idx": 1,
+              "end_col_offset_idx": 2,
+              "text": "Cell 2",
+              "column_header": false,
+              "row_header": false,
+              "row_section": false,
+              "fillable": false
+            },
+            {
+              "row_span": 1,
+              "col_span": 1,
+              "start_row_offset_idx": 1,
+              "end_row_offset_idx": 2,
+              "start_col_offset_idx": 2,
+              "end_col_offset_idx": 3,
+              "text": "Cell 3",
+              "column_header": false,
+              "row_header": false,
+              "row_section": false,
+              "fillable": false
+            }
+          ]
+        ]
+      },
+      "annotations": []
+    },
+    {
+      "self_ref": "#/tables/4",
+      "parent": {
         "$ref": "#/body"
       },
-      "children": [],
+      "children": [
+        {
+          "$ref": "#/groups/25"
+        },
+        {
+          "$ref": "#/groups/26"
+        }
+      ],
       "content_layer": "body",
       "label": "table",
       "prov": [],
@@ -899,11 +3049,14 @@
             "end_row_offset_idx": 2,
             "start_col_offset_idx": 1,
             "end_col_offset_idx": 2,
-            "text": "<!-- image -->",
+            "text": "<picture>\n      <src uri=\"assets/image_000000_e7c55b5bbee66e6dddee6bfedc35f4ccde4d56b91ba46da6307182f38436dfde.png\"/>\n    </picture>",
             "column_header": false,
             "row_header": false,
             "row_section": false,
-            "fillable": false
+            "fillable": false,
+            "ref": {
+              "$ref": "#/groups/25"
+            }
           },
           {
             "row_span": 1,
@@ -912,11 +3065,14 @@
             "end_row_offset_idx": 3,
             "start_col_offset_idx": 0,
             "end_col_offset_idx": 1,
-            "text": "Text and picture  <!-- image -->",
+            "text": "Text and picture",
             "column_header": false,
             "row_header": false,
             "row_section": false,
-            "fillable": false
+            "fillable": false,
+            "ref": {
+              "$ref": "#/groups/26"
+            }
           },
           {
             "row_span": 1,
@@ -985,7 +3141,7 @@
               "end_row_offset_idx": 2,
               "start_col_offset_idx": 1,
               "end_col_offset_idx": 2,
-              "text": "<!-- image -->",
+              "text": "<picture>\n      <src uri=\"assets/image_000000_e7c55b5bbee66e6dddee6bfedc35f4ccde4d56b91ba46da6307182f38436dfde.png\"/>\n    </picture>",
               "column_header": false,
               "row_header": false,
               "row_section": false,
@@ -1000,7 +3156,7 @@
               "end_row_offset_idx": 3,
               "start_col_offset_idx": 0,
               "end_col_offset_idx": 1,
-              "text": "Text and picture  <!-- image -->",
+              "text": "Text and picture",
               "column_header": false,
               "row_header": false,
               "row_section": false,
@@ -1025,169 +3181,18 @@
       "annotations": []
     },
     {
-      "self_ref": "#/tables/3",
-      "parent": {
-        "$ref": "#/body"
-      },
-      "children": [],
-      "content_layer": "body",
-      "label": "table",
-      "prov": [],
-      "captions": [],
-      "references": [],
-      "footnotes": [],
-      "data": {
-        "table_cells": [
-          {
-            "row_span": 1,
-            "col_span": 1,
-            "start_row_offset_idx": 0,
-            "end_row_offset_idx": 1,
-            "start_col_offset_idx": 0,
-            "end_col_offset_idx": 1,
-            "text": "- Cell 1 item 1 - Cell 1 item 2",
-            "column_header": true,
-            "row_header": false,
-            "row_section": false,
-            "fillable": false
-          },
-          {
-            "row_span": 1,
-            "col_span": 1,
-            "start_row_offset_idx": 1,
-            "end_row_offset_idx": 2,
-            "start_col_offset_idx": 0,
-            "end_col_offset_idx": 1,
-            "text": "- Cell 2 item 1 - Cell 2 item 2",
-            "column_header": false,
-            "row_header": false,
-            "row_section": false,
-            "fillable": false
-          }
-        ],
-        "num_rows": 2,
-        "num_cols": 1,
-        "orientation": "rot_0",
-        "grid": [
-          [
-            {
-              "row_span": 1,
-              "col_span": 1,
-              "start_row_offset_idx": 0,
-              "end_row_offset_idx": 1,
-              "start_col_offset_idx": 0,
-              "end_col_offset_idx": 1,
-              "text": "- Cell 1 item 1 - Cell 1 item 2",
-              "column_header": true,
-              "row_header": false,
-              "row_section": false,
-              "fillable": false
-            }
-          ],
-          [
-            {
-              "row_span": 1,
-              "col_span": 1,
-              "start_row_offset_idx": 1,
-              "end_row_offset_idx": 2,
-              "start_col_offset_idx": 0,
-              "end_col_offset_idx": 1,
-              "text": "- Cell 2 item 1 - Cell 2 item 2",
-              "column_header": false,
-              "row_header": false,
-              "row_section": false,
-              "fillable": false
-            }
-          ]
-        ]
-      },
-      "annotations": []
-    },
-    {
-      "self_ref": "#/tables/4",
-      "parent": {
-        "$ref": "#/body"
-      },
-      "children": [],
-      "content_layer": "body",
-      "label": "table",
-      "prov": [],
-      "captions": [],
-      "references": [],
-      "footnotes": [],
-      "data": {
-        "table_cells": [
-          {
-            "row_span": 1,
-            "col_span": 1,
-            "start_row_offset_idx": 0,
-            "end_row_offset_idx": 1,
-            "start_col_offset_idx": 0,
-            "end_col_offset_idx": 1,
-            "text": "- Cell 1 item 1 - Cell 1 item 2",
-            "column_header": true,
-            "row_header": false,
-            "row_section": false,
-            "fillable": false
-          },
-          {
-            "row_span": 1,
-            "col_span": 1,
-            "start_row_offset_idx": 1,
-            "end_row_offset_idx": 2,
-            "start_col_offset_idx": 0,
-            "end_col_offset_idx": 1,
-            "text": "- Cell 2 item 1 - Cell 2 item 2",
-            "column_header": false,
-            "row_header": false,
-            "row_section": false,
-            "fillable": false
-          }
-        ],
-        "num_rows": 2,
-        "num_cols": 1,
-        "orientation": "rot_0",
-        "grid": [
-          [
-            {
-              "row_span": 1,
-              "col_span": 1,
-              "start_row_offset_idx": 0,
-              "end_row_offset_idx": 1,
-              "start_col_offset_idx": 0,
-              "end_col_offset_idx": 1,
-              "text": "- Cell 1 item 1 - Cell 1 item 2",
-              "column_header": true,
-              "row_header": false,
-              "row_section": false,
-              "fillable": false
-            }
-          ],
-          [
-            {
-              "row_span": 1,
-              "col_span": 1,
-              "start_row_offset_idx": 1,
-              "end_row_offset_idx": 2,
-              "start_col_offset_idx": 0,
-              "end_col_offset_idx": 1,
-              "text": "- Cell 2 item 1 - Cell 2 item 2",
-              "column_header": false,
-              "row_header": false,
-              "row_section": false,
-              "fillable": false
-            }
-          ]
-        ]
-      },
-      "annotations": []
-    },
-    {
       "self_ref": "#/tables/5",
       "parent": {
         "$ref": "#/body"
       },
-      "children": [],
+      "children": [
+        {
+          "$ref": "#/groups/29"
+        },
+        {
+          "$ref": "#/groups/31"
+        }
+      ],
       "content_layer": "body",
       "label": "table",
       "prov": [],
@@ -1203,24 +3208,14 @@
             "end_row_offset_idx": 1,
             "start_col_offset_idx": 0,
             "end_col_offset_idx": 1,
-            "text": "- R1C1 item 1 - R1C1 item 2",
-            "column_header": true,
+            "text": "Cell 1 item 1Cell 1 item 2",
+            "column_header": false,
             "row_header": false,
             "row_section": false,
-            "fillable": false
-          },
-          {
-            "row_span": 1,
-            "col_span": 1,
-            "start_row_offset_idx": 0,
-            "end_row_offset_idx": 1,
-            "start_col_offset_idx": 1,
-            "end_col_offset_idx": 2,
-            "text": "- R1C2 item 1 - R1C2 item 2",
-            "column_header": true,
-            "row_header": false,
-            "row_section": false,
-            "fillable": false
+            "fillable": false,
+            "ref": {
+              "$ref": "#/groups/29"
+            }
           },
           {
             "row_span": 1,
@@ -1229,28 +3224,18 @@
             "end_row_offset_idx": 2,
             "start_col_offset_idx": 0,
             "end_col_offset_idx": 1,
-            "text": "- R2C1 item 1 - R2C1 item 2",
+            "text": "Cell 2 item 1Cell 2 item 2",
             "column_header": false,
             "row_header": false,
             "row_section": false,
-            "fillable": false
-          },
-          {
-            "row_span": 1,
-            "col_span": 1,
-            "start_row_offset_idx": 1,
-            "end_row_offset_idx": 2,
-            "start_col_offset_idx": 1,
-            "end_col_offset_idx": 2,
-            "text": "- R2C2 item 1 - R2C2 item 2",
-            "column_header": false,
-            "row_header": false,
-            "row_section": false,
-            "fillable": false
+            "fillable": false,
+            "ref": {
+              "$ref": "#/groups/31"
+            }
           }
         ],
         "num_rows": 2,
-        "num_cols": 2,
+        "num_cols": 1,
         "orientation": "rot_0",
         "grid": [
           [
@@ -1261,21 +3246,8 @@
               "end_row_offset_idx": 1,
               "start_col_offset_idx": 0,
               "end_col_offset_idx": 1,
-              "text": "- R1C1 item 1 - R1C1 item 2",
-              "column_header": true,
-              "row_header": false,
-              "row_section": false,
-              "fillable": false
-            },
-            {
-              "row_span": 1,
-              "col_span": 1,
-              "start_row_offset_idx": 0,
-              "end_row_offset_idx": 1,
-              "start_col_offset_idx": 1,
-              "end_col_offset_idx": 2,
-              "text": "- R1C2 item 1 - R1C2 item 2",
-              "column_header": true,
+              "text": "Cell 1 item 1Cell 1 item 2",
+              "column_header": false,
               "row_header": false,
               "row_section": false,
               "fillable": false
@@ -1289,20 +3261,7 @@
               "end_row_offset_idx": 2,
               "start_col_offset_idx": 0,
               "end_col_offset_idx": 1,
-              "text": "- R2C1 item 1 - R2C1 item 2",
-              "column_header": false,
-              "row_header": false,
-              "row_section": false,
-              "fillable": false
-            },
-            {
-              "row_span": 1,
-              "col_span": 1,
-              "start_row_offset_idx": 1,
-              "end_row_offset_idx": 2,
-              "start_col_offset_idx": 1,
-              "end_col_offset_idx": 2,
-              "text": "- R2C2 item 1 - R2C2 item 2",
+              "text": "Cell 2 item 1Cell 2 item 2",
               "column_header": false,
               "row_header": false,
               "row_section": false,
@@ -1318,7 +3277,14 @@
       "parent": {
         "$ref": "#/body"
       },
-      "children": [],
+      "children": [
+        {
+          "$ref": "#/groups/35"
+        },
+        {
+          "$ref": "#/groups/37"
+        }
+      ],
       "content_layer": "body",
       "label": "table",
       "prov": [],
@@ -1334,11 +3300,259 @@
             "end_row_offset_idx": 1,
             "start_col_offset_idx": 0,
             "end_col_offset_idx": 1,
-            "text": "- List item 1 - List item 2",
-            "column_header": true,
+            "text": "Cell 1 item 1Cell 1 item 2",
+            "column_header": false,
             "row_header": false,
             "row_section": false,
-            "fillable": false
+            "fillable": false,
+            "ref": {
+              "$ref": "#/groups/35"
+            }
+          },
+          {
+            "row_span": 1,
+            "col_span": 1,
+            "start_row_offset_idx": 1,
+            "end_row_offset_idx": 2,
+            "start_col_offset_idx": 0,
+            "end_col_offset_idx": 1,
+            "text": "Cell 2 item 1Cell 2 item 2",
+            "column_header": false,
+            "row_header": false,
+            "row_section": false,
+            "fillable": false,
+            "ref": {
+              "$ref": "#/groups/37"
+            }
+          }
+        ],
+        "num_rows": 2,
+        "num_cols": 1,
+        "orientation": "rot_0",
+        "grid": [
+          [
+            {
+              "row_span": 1,
+              "col_span": 1,
+              "start_row_offset_idx": 0,
+              "end_row_offset_idx": 1,
+              "start_col_offset_idx": 0,
+              "end_col_offset_idx": 1,
+              "text": "Cell 1 item 1Cell 1 item 2",
+              "column_header": false,
+              "row_header": false,
+              "row_section": false,
+              "fillable": false
+            }
+          ],
+          [
+            {
+              "row_span": 1,
+              "col_span": 1,
+              "start_row_offset_idx": 1,
+              "end_row_offset_idx": 2,
+              "start_col_offset_idx": 0,
+              "end_col_offset_idx": 1,
+              "text": "Cell 2 item 1Cell 2 item 2",
+              "column_header": false,
+              "row_header": false,
+              "row_section": false,
+              "fillable": false
+            }
+          ]
+        ]
+      },
+      "annotations": []
+    },
+    {
+      "self_ref": "#/tables/7",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [
+        {
+          "$ref": "#/groups/41"
+        },
+        {
+          "$ref": "#/groups/43"
+        },
+        {
+          "$ref": "#/groups/45"
+        },
+        {
+          "$ref": "#/groups/47"
+        }
+      ],
+      "content_layer": "body",
+      "label": "table",
+      "prov": [],
+      "captions": [],
+      "references": [],
+      "footnotes": [],
+      "data": {
+        "table_cells": [
+          {
+            "row_span": 1,
+            "col_span": 1,
+            "start_row_offset_idx": 0,
+            "end_row_offset_idx": 1,
+            "start_col_offset_idx": 0,
+            "end_col_offset_idx": 1,
+            "text": "R1C1 item 1R1C1 item 2",
+            "column_header": false,
+            "row_header": false,
+            "row_section": false,
+            "fillable": false,
+            "ref": {
+              "$ref": "#/groups/41"
+            }
+          },
+          {
+            "row_span": 1,
+            "col_span": 1,
+            "start_row_offset_idx": 0,
+            "end_row_offset_idx": 1,
+            "start_col_offset_idx": 1,
+            "end_col_offset_idx": 2,
+            "text": "R1C2 item 1R1C2 item 2",
+            "column_header": false,
+            "row_header": false,
+            "row_section": false,
+            "fillable": false,
+            "ref": {
+              "$ref": "#/groups/43"
+            }
+          },
+          {
+            "row_span": 1,
+            "col_span": 1,
+            "start_row_offset_idx": 1,
+            "end_row_offset_idx": 2,
+            "start_col_offset_idx": 0,
+            "end_col_offset_idx": 1,
+            "text": "R2C1 item 1R2C1 item 2",
+            "column_header": false,
+            "row_header": false,
+            "row_section": false,
+            "fillable": false,
+            "ref": {
+              "$ref": "#/groups/45"
+            }
+          },
+          {
+            "row_span": 1,
+            "col_span": 1,
+            "start_row_offset_idx": 1,
+            "end_row_offset_idx": 2,
+            "start_col_offset_idx": 1,
+            "end_col_offset_idx": 2,
+            "text": "R2C2 item 1R2C2 item 2",
+            "column_header": false,
+            "row_header": false,
+            "row_section": false,
+            "fillable": false,
+            "ref": {
+              "$ref": "#/groups/47"
+            }
+          }
+        ],
+        "num_rows": 2,
+        "num_cols": 2,
+        "orientation": "rot_0",
+        "grid": [
+          [
+            {
+              "row_span": 1,
+              "col_span": 1,
+              "start_row_offset_idx": 0,
+              "end_row_offset_idx": 1,
+              "start_col_offset_idx": 0,
+              "end_col_offset_idx": 1,
+              "text": "R1C1 item 1R1C1 item 2",
+              "column_header": false,
+              "row_header": false,
+              "row_section": false,
+              "fillable": false
+            },
+            {
+              "row_span": 1,
+              "col_span": 1,
+              "start_row_offset_idx": 0,
+              "end_row_offset_idx": 1,
+              "start_col_offset_idx": 1,
+              "end_col_offset_idx": 2,
+              "text": "R1C2 item 1R1C2 item 2",
+              "column_header": false,
+              "row_header": false,
+              "row_section": false,
+              "fillable": false
+            }
+          ],
+          [
+            {
+              "row_span": 1,
+              "col_span": 1,
+              "start_row_offset_idx": 1,
+              "end_row_offset_idx": 2,
+              "start_col_offset_idx": 0,
+              "end_col_offset_idx": 1,
+              "text": "R2C1 item 1R2C1 item 2",
+              "column_header": false,
+              "row_header": false,
+              "row_section": false,
+              "fillable": false
+            },
+            {
+              "row_span": 1,
+              "col_span": 1,
+              "start_row_offset_idx": 1,
+              "end_row_offset_idx": 2,
+              "start_col_offset_idx": 1,
+              "end_col_offset_idx": 2,
+              "text": "R2C2 item 1R2C2 item 2",
+              "column_header": false,
+              "row_header": false,
+              "row_section": false,
+              "fillable": false
+            }
+          ]
+        ]
+      },
+      "annotations": []
+    },
+    {
+      "self_ref": "#/tables/8",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [
+        {
+          "$ref": "#/groups/51"
+        }
+      ],
+      "content_layer": "body",
+      "label": "table",
+      "prov": [],
+      "captions": [],
+      "references": [],
+      "footnotes": [],
+      "data": {
+        "table_cells": [
+          {
+            "row_span": 1,
+            "col_span": 1,
+            "start_row_offset_idx": 0,
+            "end_row_offset_idx": 1,
+            "start_col_offset_idx": 0,
+            "end_col_offset_idx": 1,
+            "text": "List item 1List item 2",
+            "column_header": false,
+            "row_header": false,
+            "row_section": false,
+            "fillable": false,
+            "ref": {
+              "$ref": "#/groups/51"
+            }
           },
           {
             "row_span": 1,
@@ -1366,8 +3580,8 @@
               "end_row_offset_idx": 1,
               "start_col_offset_idx": 0,
               "end_col_offset_idx": 1,
-              "text": "- List item 1 - List item 2",
-              "column_header": true,
+              "text": "List item 1List item 2",
+              "column_header": false,
               "row_header": false,
               "row_section": false,
               "fillable": false
@@ -1395,5 +3609,13 @@
   ],
   "key_value_items": [],
   "form_items": [],
-  "pages": {}
+  "pages": {
+    "1": {
+      "size": {
+        "width": 512.0,
+        "height": 512.0
+      },
+      "page_no": 1
+    }
+  }
 }

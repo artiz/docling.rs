@@ -550,6 +550,7 @@ impl Parser<'_> {
                 captions,
                 image: image.clone(),
                 classification: None,
+                confidence: None,
                 chart: None,
                 dpi: None,
             },

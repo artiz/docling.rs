@@ -175,7 +175,7 @@
       "orig": "First item in unordered list",
       "text": "First item in unordered list",
       "enumerated": false,
-      "marker": "-"
+      "marker": ""
     },
     {
       "self_ref": "#/texts/7",
@@ -189,7 +189,7 @@
       "orig": "Second item in unordered list",
       "text": "Second item in unordered list",
       "enumerated": false,
-      "marker": "-"
+      "marker": ""
     },
     {
       "self_ref": "#/texts/8",
@@ -203,7 +203,7 @@
       "orig": "First item in ordered list",
       "text": "First item in ordered list",
       "enumerated": false,
-      "marker": "-"
+      "marker": ""
     },
     {
       "self_ref": "#/texts/9",
@@ -217,7 +217,7 @@
       "orig": "Second item in ordered list",
       "text": "Second item in ordered list",
       "enumerated": false,
-      "marker": "-"
+      "marker": ""
     },
     {
       "self_ref": "#/texts/10",

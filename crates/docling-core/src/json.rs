@@ -932,14 +932,22 @@ impl Builder {
                     captions,
                     image,
                     classification,
+                    confidence,
                     chart,
                     dpi,
                 } => {
                     // A chart's meta: the kind as the one classification
-                    // prediction, then the reconstructed data grid (#405).
-                    let mut meta = classification.as_ref().map(
-                        |c| json!({ "classification": { "predictions": [{ "class_name": c }] } }),
-                    );
+                    // prediction (pydantic's field order puts `confidence`
+                    // first when present), then the reconstructed data grid
+                    // (#405).
+                    let mut meta = classification.as_ref().map(|c| {
+                        let mut pred = serde_json::Map::new();
+                        if let Some(conf) = confidence {
+                            pred.insert("confidence".into(), json!(conf));
+                        }
+                        pred.insert("class_name".into(), json!(c));
+                        json!({ "classification": { "predictions": [pred] } })
+                    });
                     if let (Some(m), Some(t)) = (meta.as_mut(), chart) {
                         if !t.rows.is_empty() {
                             m["tabular_chart"] = json!({ "chart_data": table_data(t) });
@@ -2335,6 +2343,7 @@ mod tests {
                 captions: Vec::new(),
                 image: None,
                 classification: Some("bar_chart".into()),
+                confidence: None,
                 chart: Some(Table {
                     rows: vec![vec!["".into(), "s".into()], vec!["c".into(), "1".into()]],
                     ..Table::default()
@@ -2437,6 +2446,7 @@ mod tests {
                     data: vec![0],
                 }),
                 classification: None,
+                confidence: None,
                 chart: None,
                 dpi: Some(300),
             },

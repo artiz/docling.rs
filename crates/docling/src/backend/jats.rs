@@ -1185,6 +1185,7 @@ fn add_figure(out: &mut Out, parent: Option<usize>, node: XmlNode, fig_base: Opt
             captions,
             image,
             classification: None,
+            confidence: None,
             chart: None,
             dpi: None,
         },

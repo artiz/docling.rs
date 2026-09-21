@@ -19,6 +19,12 @@
     "children": [
       {
         "$ref": "#/texts/0"
+      },
+      {
+        "$ref": "#/pictures/0"
+      },
+      {
+        "$ref": "#/texts/1"
       }
     ],
     "content_layer": "body",
@@ -34,6 +40,18 @@
       },
       "children": [],
       "content_layer": "body",
+      "label": "caption",
+      "prov": [],
+      "orig": "Image alt text",
+      "text": "Image alt text"
+    },
+    {
+      "self_ref": "#/texts/1",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
       "label": "section_header",
       "prov": [],
       "orig": "Home",
@@ -41,9 +59,36 @@
       "level": 1
     }
   ],
-  "pictures": [],
+  "pictures": [
+    {
+      "self_ref": "#/pictures/0",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "furniture",
+      "label": "picture",
+      "prov": [],
+      "captions": [
+        {
+          "$ref": "#/texts/0"
+        }
+      ],
+      "references": [],
+      "footnotes": [],
+      "annotations": []
+    }
+  ],
   "tables": [],
   "key_value_items": [],
   "form_items": [],
-  "pages": {}
+  "pages": {
+    "1": {
+      "size": {
+        "width": 512.0,
+        "height": 512.0
+      },
+      "page_no": 1
+    }
+  }
 }

@@ -32,6 +32,7 @@ mod csv;
 mod deepseek;
 mod doc;
 pub(crate) mod doclang;
+mod doclang_tree;
 mod docling_json;
 mod docx;
 mod docx_tree;
