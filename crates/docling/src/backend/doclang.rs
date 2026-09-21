@@ -22,10 +22,15 @@ pub struct DoclangBackend;
 
 impl DeclarativeBackend for DoclangBackend {
     fn convert(&self, source: &SourceDocument) -> Result<DoclingDocument, ConversionError> {
+        // The archive stays open for the tree walk: a `<src uri>` names one
+        // of its assets (docling's `media_root`).
+        let mut pkg: Option<Package> = None;
         let xml: String = if source.format == InputFormat::Dclx {
-            let mut pkg = Package::open(&source.bytes)
-                .ok_or_else(|| ConversionError::Parse("dclx: not a zip archive".into()))?;
-            pkg.read("document.xml")
+            let p = pkg.insert(
+                Package::open(&source.bytes)
+                    .ok_or_else(|| ConversionError::Parse("dclx: not a zip archive".into()))?,
+            );
+            p.read("document.xml")
                 .ok_or_else(|| ConversionError::Parse("dclx: no document.xml".into()))?
         } else {
             source.text()?.to_string()
@@ -41,6 +46,18 @@ impl DeclarativeBackend for DoclangBackend {
         }
         let mut doc = DoclingDocument::new(&source.name);
         walk_body(root, &mut doc.nodes);
+        // The JSON export reads docling's item tree (see `doclang_tree`);
+        // the deserializer lays every document out on 512×512 pages, one
+        // per `<page_break>`, which the export's page map is built from.
+        let (tree, pages) = super::doclang_tree::build(root, pkg.as_mut());
+        doc.tree = Some(tree);
+        for page_no in 1..=pages {
+            doc.push(Node::PageInfo {
+                page_no,
+                width: super::doclang_tree::PAGE_SIZE,
+                height: super::doclang_tree::PAGE_SIZE,
+            });
+        }
         Ok(doc)
     }
 }
@@ -931,6 +948,136 @@ mod tests {
         let src =
             SourceDocument::from_bytes("t.dclg", InputFormat::XmlDoclang, dclg.as_bytes().to_vec());
         DoclangBackend.convert(&src).unwrap().export_to_markdown()
+    }
+
+    fn json_of(dclg: &str) -> serde_json::Value {
+        let src =
+            SourceDocument::from_bytes("t.dclg", InputFormat::XmlDoclang, dclg.as_bytes().to_vec());
+        serde_json::from_str(&DoclangBackend.convert(&src).unwrap().export_to_json()).unwrap()
+    }
+
+    /// The JSON is docling-core's `DocLangDocDeserializer` tree: a mixed
+    /// `<text>` is an `inline` group of per-run items (an empty `<text/>` an
+    /// empty one), a `<location>` quartet is the item's `prov` on the 512
+    /// page grid with `charspan = (0, len)`, a `<page_break>` opens another
+    /// 512×512 page, list items carry `marker: ""` unless the `<ldiv>` says
+    /// otherwise, and a CDATA code body is read the way minidom splits it —
+    /// the pretty-print whitespace around it is not part of the code.
+    #[test]
+    fn tree_follows_the_docling_deserializer() {
+        let json = json_of(
+            r#"<doclang version="0.7">
+  <heading level="2">
+    <location value="10"/><location value="20"/><location value="30"/><location value="40"/>
+    Title
+  </heading>
+  <text>plain <bold>strong</bold> tail</text>
+  <text/>
+  <list class="ordered">
+    <ldiv><marker>a)</marker></ldiv>
+    virtual <italic>text</italic>
+    <ldiv/>
+    <text>wrapped</text>
+    <list><ldiv/>nested</list>
+  </list>
+  <page_break/>
+  <code>
+    <label value="Python"/>
+<![CDATA[print("hi")]]>  </code>
+</doclang>"#,
+        );
+        let texts = json["texts"].as_array().unwrap();
+        let groups = json["groups"].as_array().unwrap();
+        assert_eq!(texts[0]["label"], "section_header");
+        assert_eq!(texts[0]["level"], 1);
+        assert_eq!(texts[0]["prov"][0]["charspan"], serde_json::json!([0, 5]));
+        assert_eq!(texts[0]["prov"][0]["bbox"]["r"], 30.0);
+        // `plain <bold>strong</bold> tail` → inline group of three items.
+        assert_eq!(groups[0]["label"], "inline");
+        assert_eq!(groups[0]["name"], "group");
+        assert_eq!(groups[0]["children"].as_array().unwrap().len(), 3);
+        assert_eq!(texts[2]["text"], "strong");
+        assert_eq!(texts[2]["formatting"]["bold"], true);
+        // The empty `<text/>` is an empty inline group.
+        assert_eq!(groups[1]["label"], "inline");
+        assert!(groups[1]["children"].as_array().unwrap().is_empty());
+        // The list: `a)` marker kept, virtual text with a styled run → an
+        // empty item holding an inline group; the wrapped item keeps its
+        // text and parents the nested list.
+        assert_eq!(groups[2]["label"], "list");
+        assert_eq!(groups[2]["name"], "group");
+        assert_eq!(texts[4]["label"], "list_item");
+        assert_eq!(texts[4]["text"], "");
+        assert_eq!(texts[4]["marker"], "a)");
+        assert_eq!(texts[4]["enumerated"], true);
+        assert_eq!(texts[4]["children"][0]["$ref"], "#/groups/3");
+        assert_eq!(texts[7]["text"], "wrapped");
+        assert_eq!(texts[7]["marker"], "");
+        assert_eq!(texts[7]["children"][0]["$ref"], "#/groups/4");
+        assert_eq!(texts[8]["text"], "nested");
+        assert_eq!(texts[8]["parent"]["$ref"], "#/groups/4");
+        // The code block: label → language, CDATA verbatim, whitespace gone.
+        let code = texts.last().unwrap();
+        assert_eq!(code["label"], "code");
+        assert_eq!(code["text"], "print(\"hi\")");
+        assert_eq!(code["code_language"], "Python");
+        assert_eq!(json["pages"]["1"]["size"]["width"], 512.0);
+        assert_eq!(json["pages"]["2"]["page_no"], 2);
+    }
+
+    /// Floats: the caption is a body-level item created before its table or
+    /// picture, a rich cell's content hangs off an `unspecified` group under
+    /// the table (the cell's `ref`), a `ched` cell is a column header with
+    /// its span, and a chart picture carries its label (confidence 1.0) and
+    /// `<tabular>` data.
+    #[test]
+    fn floats_captions_rich_cells_and_charts() {
+        let json = json_of(
+            r#"<doclang version="0.7">
+  <table>
+    <caption>Cap</caption>
+    <ched/>H<lcel/><nl/>
+    <fcel/><text>rich</text><list><ldiv/>item</list><fcel/>plain<nl/>
+  </table>
+  <picture class="chart">
+    <label value="line_chart"/>
+    <caption><![CDATA['col-3']]></caption>
+    <tabular><ched/>c<nl/><fcel/>1<nl/></tabular>
+  </picture>
+</doclang>"#,
+        );
+        let body: Vec<&str> = json["body"]["children"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|c| c["$ref"].as_str().unwrap())
+            .collect();
+        assert_eq!(
+            body,
+            ["#/texts/0", "#/tables/0", "#/texts/3", "#/pictures/0"]
+        );
+        assert_eq!(json["texts"][0]["label"], "caption");
+        assert_eq!(json["tables"][0]["captions"][0]["$ref"], "#/texts/0");
+        let cells = json["tables"][0]["data"]["table_cells"].as_array().unwrap();
+        assert_eq!(cells[0]["column_header"], true);
+        assert_eq!(cells[0]["col_span"], 2);
+        // `"".join(self._get_text(part) …)`: the parts' texts concatenate.
+        assert_eq!(cells[1]["text"], "richitem");
+        assert_eq!(cells[1]["ref"]["$ref"], "#/groups/0");
+        assert_eq!(json["groups"][0]["label"], "unspecified");
+        assert_eq!(json["groups"][0]["parent"]["$ref"], "#/tables/0");
+        assert_eq!(json["texts"][1]["parent"]["$ref"], "#/groups/0");
+        assert_eq!(json["groups"][1]["label"], "list");
+        assert_eq!(json["groups"][1]["parent"]["$ref"], "#/groups/0");
+        assert_eq!(cells[2]["text"], "plain");
+        assert_eq!(json["texts"][3]["text"], "'col-3'");
+        let pic = &json["pictures"][0];
+        assert_eq!(pic["captions"][0]["$ref"], "#/texts/3");
+        assert_eq!(
+            pic["meta"]["classification"]["predictions"][0],
+            serde_json::json!({ "confidence": 1.0, "class_name": "line_chart" })
+        );
+        assert_eq!(pic["meta"]["tabular_chart"]["chart_data"]["num_rows"], 2);
     }
 
     /// docling-core ≥ 2.93 renders a `<field_region>` and its `<field_item>`s

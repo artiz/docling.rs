@@ -77,7 +77,7 @@
       },
       "children": [],
       "content_layer": "body",
-      "label": "text",
+      "label": "paragraph",
       "prov": [],
       "orig": "Inline math:",
       "text": "Inline math:"
@@ -101,7 +101,7 @@
       },
       "children": [],
       "content_layer": "body",
-      "label": "text",
+      "label": "paragraph",
       "prov": [],
       "orig": "Display math:",
       "text": "Display math:"
@@ -205,7 +205,7 @@
             "start_col_offset_idx": 0,
             "end_col_offset_idx": 1,
             "text": "Name",
-            "column_header": true,
+            "column_header": false,
             "row_header": false,
             "row_section": false,
             "fillable": false
@@ -218,7 +218,7 @@
             "start_col_offset_idx": 1,
             "end_col_offset_idx": 2,
             "text": "Age",
-            "column_header": true,
+            "column_header": false,
             "row_header": false,
             "row_section": false,
             "fillable": false
@@ -231,7 +231,7 @@
             "start_col_offset_idx": 2,
             "end_col_offset_idx": 3,
             "text": "City",
-            "column_header": true,
+            "column_header": false,
             "row_header": false,
             "row_section": false,
             "fillable": false
@@ -326,6 +326,32 @@
             "row_header": false,
             "row_section": false,
             "fillable": false
+          },
+          {
+            "row_span": 1,
+            "col_span": 1,
+            "start_row_offset_idx": 3,
+            "end_row_offset_idx": 4,
+            "start_col_offset_idx": 1,
+            "end_col_offset_idx": 2,
+            "text": "",
+            "column_header": false,
+            "row_header": false,
+            "row_section": false,
+            "fillable": false
+          },
+          {
+            "row_span": 1,
+            "col_span": 1,
+            "start_row_offset_idx": 3,
+            "end_row_offset_idx": 4,
+            "start_col_offset_idx": 2,
+            "end_col_offset_idx": 3,
+            "text": "",
+            "column_header": false,
+            "row_header": false,
+            "row_section": false,
+            "fillable": false
           }
         ],
         "num_rows": 4,
@@ -341,7 +367,7 @@
               "start_col_offset_idx": 0,
               "end_col_offset_idx": 1,
               "text": "Name",
-              "column_header": true,
+              "column_header": false,
               "row_header": false,
               "row_section": false,
               "fillable": false
@@ -354,7 +380,7 @@
               "start_col_offset_idx": 1,
               "end_col_offset_idx": 2,
               "text": "Age",
-              "column_header": true,
+              "column_header": false,
               "row_header": false,
               "row_section": false,
               "fillable": false
@@ -367,7 +393,7 @@
               "start_col_offset_idx": 2,
               "end_col_offset_idx": 3,
               "text": "City",
-              "column_header": true,
+              "column_header": false,
               "row_header": false,
               "row_section": false,
               "fillable": false

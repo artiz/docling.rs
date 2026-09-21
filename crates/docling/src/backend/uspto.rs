@@ -17,7 +17,7 @@ use crate::backend::DeclarativeBackend;
 use crate::error::ConversionError;
 use crate::source::SourceDocument;
 use docling_core::tree::{ItemTree, TreeKind};
-use docling_core::{DoclingDocument, Node, Table, TableStructure};
+use docling_core::{DoclingDocument, Node, Table, TableCell, TableStructure};
 
 /// Whether a plain-text file is a legacy APS (Automated Patent System) patent —
 /// its first non-blank line is the `PATN` record marker. docling routes such a
@@ -39,7 +39,7 @@ pub fn looks_like_aps(text: &str) -> bool {
 /// (bibliographic records, `##STRn##` structure placeholders) is dropped.
 pub fn convert_aps(source: &SourceDocument) -> Result<DoclingDocument, ConversionError> {
     let raw = source.text()?;
-    let mut aps = Aps::default();
+    let mut aps = PatentTree::default();
     let (mut section, mut key, mut value) = (String::new(), String::new(), String::new());
     for line in raw.lines() {
         let cols = split_on_double_space(line);
@@ -114,32 +114,52 @@ const APS_FIELDS: &[&str] = &[
     "PNO", "APN", "APT", "CNT",
 ];
 
-/// docling's APS parser state: the item tree being built and its
-/// `level`/`parents` heading hierarchy (`parents[level]` is the item new
-/// content goes under; `None` = the body).
-struct Aps {
+/// docling's patent-handler state, shared by the four `PatentUspto*`
+/// parsers: the item tree being built and its `level`/`parents` heading
+/// hierarchy (`parents[level]` is the item new content goes under; `None` =
+/// the body). The XML handlers add items as their SAX events fire — a title
+/// at `</invention-title>`, a heading at `</heading>`, a paragraph at
+/// `</p>`, a table placeholder at `</table>` — and the DOM walks below call
+/// these methods at the same points.
+struct PatentTree {
     tree: ItemTree,
     level: i32,
     parents: std::collections::BTreeMap<i32, Option<usize>>,
+    /// docling parses the tables *again* from the raw text with a regex
+    /// (`^(<table .*?</table>)`) and fills the placeholders by index only when
+    /// it found exactly as many as the handler recorded; otherwise every
+    /// table stays an empty `TableData`.
+    tables_broken: bool,
 }
 
-impl Default for Aps {
+impl Default for PatentTree {
     fn default() -> Self {
         Self {
             tree: ItemTree::default(),
             level: 1,
             parents: [(1, None)].into_iter().collect(),
+            tables_broken: false,
         }
     }
 }
 
-impl Aps {
+impl PatentTree {
     fn parent(&self) -> Option<usize> {
         self.parents.get(&self.level).copied().flatten()
     }
 
     fn add_text(&mut self, label: &str, text: &str, level: Option<u8>) -> usize {
         let parent = self.parent();
+        self.add_text_under(parent, label, text, level)
+    }
+
+    fn add_text_under(
+        &mut self,
+        parent: Option<usize>,
+        label: &str,
+        text: &str,
+        level: Option<u8>,
+    ) -> usize {
         self.tree.add(
             parent,
             None,
@@ -155,6 +175,68 @@ impl Aps {
                 list: None,
             },
         )
+    }
+
+    /// The XML handlers' title: `parents[level + 1] = add_title(parent=
+    /// parents[level])`, then `level += 1` — everything after nests under it.
+    fn add_title(&mut self, text: &str) {
+        let id = self.add_text("title", text, None);
+        self.parents.insert(self.level + 1, Some(id));
+        self.level += 1;
+    }
+
+    /// The XML handlers' `<heading level="N">`: `level = N + 1` when that
+    /// level is already known (the title made 2 known), else the lowest
+    /// level; the heading goes under `parents[level]` at that level and
+    /// opens `parents[level + 1]`.
+    fn add_heading(&mut self, text: &str, attr_level: i64) {
+        let cand = i32::try_from(attr_level.clamp(0, 1 << 20)).unwrap_or(1) + 1;
+        self.level = if self.parents.contains_key(&cand) {
+            cand
+        } else {
+            *self.parents.keys().next().unwrap_or(&1)
+        };
+        let id = self.add_text("section_header", text, Some(self.level.min(255) as u8));
+        self.parents.insert(self.level + 1, Some(id));
+        self.level += 1;
+    }
+
+    /// A `PatentHeading` section (ABSTRACT / CLAIMS) of the XML handlers: the
+    /// heading at level 2 when a level 2 exists, else 1, under that level's
+    /// parent, with its paragraphs as children — `level` is left alone, so
+    /// what follows does not nest under it.
+    fn add_section(&mut self, heading: &str, paragraphs: &[String]) {
+        let lvl = if self.parents.contains_key(&2) { 2 } else { 1 };
+        let parent = self.parents.get(&lvl).copied().flatten();
+        let id = self.add_text_under(parent, "section_header", heading, Some(lvl as u8));
+        for text in paragraphs {
+            self.add_text_under(Some(id), "paragraph", text, None);
+        }
+    }
+
+    fn add_paragraph(&mut self, text: &str) {
+        self.add_text("paragraph", text, None);
+    }
+
+    /// The `</table>` placeholder under `parents[level]`, filled with the
+    /// table's `XmlTable` data (or left empty, see `tables_broken`).
+    fn add_table(&mut self, node: XmlNode) {
+        let (cells, num_rows, num_cols) = if self.tables_broken {
+            (Vec::new(), 0, 0)
+        } else {
+            xml_table_cells(node)
+        };
+        let table = super::doclang_tree::table_from_cells(cells, num_rows, num_cols);
+        let parent = self.parent();
+        self.tree.add(
+            parent,
+            None,
+            TreeKind::Table {
+                table,
+                rich_cells: Vec::new(),
+                captions: Vec::new(),
+            },
+        );
     }
 
     /// `add_heading(value, level=L, parent=parents[L])` at the level docling
@@ -296,24 +378,37 @@ impl DeclarativeBackend for UsptoBackend {
         let dom = Document::parse_with_options(&xml, opts)
             .map_err(|e| ConversionError::with_source("uspto", e))?;
 
+        // The item tree for the JSON export, built alongside the flat nodes.
+        let mut tree = PatentTree {
+            tables_broken: regex_table_count(&raw)
+                != dom
+                    .descendants()
+                    .filter(|n| n.has_tag_name("table"))
+                    .count(),
+            ..PatentTree::default()
+        };
         // Dispatch on the document root, mirroring docling's `_set_parser`.
         match dom.root_element().tag_name().name() {
-            "patent-application-publication" => parse_app_v1(&dom, &mut doc),
-            root if root.eq_ignore_ascii_case("PATDOC") => parse_grant_v2(&dom, &mut doc),
-            _ => parse_ice(&dom, &mut doc), // modern us-patent-application / -grant
+            "patent-application-publication" => parse_app_v1(&dom, &mut doc, &mut tree),
+            root if root.eq_ignore_ascii_case("PATDOC") => {
+                parse_grant_v2(&dom, &mut doc, &mut tree)
+            }
+            _ => parse_ice(&dom, &mut doc, &mut tree), // modern us-patent-application / -grant
         }
+        doc.tree = Some(tree.tree);
         Ok(doc)
     }
 }
 
 /// Modern ICE path (`us-patent-application` / `us-patent-grant`, v4x).
-fn parse_ice(dom: &Document, doc: &mut DoclingDocument) {
+fn parse_ice(dom: &Document, doc: &mut DoclingDocument, tree: &mut PatentTree) {
     if let Some(title) = dom
         .descendants()
         .find(|n| n.has_tag_name("invention-title"))
         .map(node_text)
         .filter(|s| !s.is_empty())
     {
+        tree.add_title(&title);
         doc.push(Node::Heading {
             level: 1,
             text: escape_text(&title),
@@ -330,14 +425,16 @@ fn parse_ice(dom: &Document, doc: &mut DoclingDocument) {
             // docling emits the abstract as a single text item — its
             // paragraphs (with any chemistry-drawing `<p>` dropped as empty)
             // are joined into one, not split per `<p>`.
+            let joined = paras.join(" ");
+            tree.add_section("ABSTRACT", std::slice::from_ref(&joined));
             doc.push(Node::Paragraph {
-                text: escape_text(&paras.join(" ")),
+                text: escape_text(&joined),
             });
         }
     }
 
     if let Some(desc) = dom.descendants().find(|n| n.has_tag_name("description")) {
-        walk_description(desc, doc);
+        walk_description(desc, doc, tree);
     }
 
     if let Some(claims) = dom.descendants().find(|n| n.has_tag_name("claims")) {
@@ -345,18 +442,25 @@ fn parse_ice(dom: &Document, doc: &mut DoclingDocument) {
         // parent of that moment, while the CLAIMS heading and the claim
         // paragraphs are only added at `</claims>` — so a table inside a
         // claim (`ipa20110039701`'s substituent table) precedes the heading.
-        push_tables(claims, doc);
+        push_tables(claims, doc, tree);
+        let texts: Vec<String> = claims
+            .children()
+            .filter(|c| c.has_tag_name("claim"))
+            .map(claim_text)
+            .filter(|t| !t.is_empty())
+            .collect();
+        // `</claims>` with no claim text adds nothing upstream either.
+        if !texts.is_empty() {
+            tree.add_section("CLAIMS", &texts);
+        }
         doc.push(Node::Heading {
             level: 3,
             text: "CLAIMS".into(),
         });
-        for claim in claims.children().filter(|c| c.has_tag_name("claim")) {
-            let t = claim_text(claim);
-            if !t.is_empty() {
-                doc.push(Node::Paragraph {
-                    text: escape_text(&t),
-                });
-            }
+        for t in texts {
+            doc.push(Node::Paragraph {
+                text: escape_text(&t),
+            });
         }
     }
 }
@@ -462,17 +566,23 @@ fn styled_raw(node: XmlNode) -> String {
     s
 }
 
-fn parse_app_v1(dom: &Document, doc: &mut DoclingDocument) {
+fn parse_app_v1(dom: &Document, doc: &mut DoclingDocument, tree: &mut PatentTree) {
     let mut lv = HeadingLevels::new();
-    walk_app_v1(dom.root_element(), doc, &mut lv);
+    walk_app_v1(dom.root_element(), doc, &mut lv, tree);
 }
 
-fn walk_app_v1(node: XmlNode, doc: &mut DoclingDocument, lv: &mut HeadingLevels) {
+fn walk_app_v1(
+    node: XmlNode,
+    doc: &mut DoclingDocument,
+    lv: &mut HeadingLevels,
+    tree: &mut PatentTree,
+) {
     for child in node.children().filter(XmlNode::is_element) {
         match child.tag_name().name() {
             "title-of-invention" => {
                 let t = node_text(child);
                 if !t.is_empty() {
+                    tree.add_title(&t);
                     doc.push(Node::Heading {
                         level: 1,
                         text: escape_text(&t),
@@ -488,6 +598,9 @@ fn walk_app_v1(node: XmlNode, doc: &mut DoclingDocument, lv: &mut HeadingLevels)
                     .map(styled_raw)
                     .collect();
                 if !abstract_text.trim().is_empty() {
+                    // `add_text(text=self.abstract)`: the raw accumulation,
+                    // trailing space included.
+                    tree.add_section("ABSTRACT", std::slice::from_ref(&abstract_text));
                     doc.push(Node::Heading {
                         level: lv.tagged_section_level(2),
                         text: "ABSTRACT".into(),
@@ -498,10 +611,11 @@ fn walk_app_v1(node: XmlNode, doc: &mut DoclingDocument, lv: &mut HeadingLevels)
                 }
             }
             "heading" => {
-                let lvl_attr = child.attribute("lvl").and_then(as_index).unwrap_or(1) as i32;
+                let lvl_attr = child.attribute("lvl").and_then(as_index).unwrap_or(1);
                 let t = node_text(child);
                 if !t.is_empty() {
-                    let level = lv.heading_level(lvl_attr);
+                    tree.add_heading(&t, lvl_attr);
+                    let level = lv.heading_level(lvl_attr as i32);
                     doc.push(Node::Heading {
                         level,
                         text: escape_text(&t),
@@ -512,10 +626,11 @@ fn walk_app_v1(node: XmlNode, doc: &mut DoclingDocument, lv: &mut HeadingLevels)
                 // docling adds a table at each `<table>` position (fires at
                 // `</table>`), then the paragraph's own text at `</paragraph>`.
                 if child.descendants().any(|n| n.has_tag_name("table")) {
-                    push_tables(child, doc);
+                    push_tables(child, doc, tree);
                 }
                 let t = node_text(child);
                 if !t.is_empty() {
+                    tree.add_paragraph(&t);
                     doc.push(Node::Paragraph {
                         text: escape_text(&t),
                     });
@@ -529,6 +644,7 @@ fn walk_app_v1(node: XmlNode, doc: &mut DoclingDocument, lv: &mut HeadingLevels)
                     .filter(|s| !s.is_empty())
                     .collect();
                 if !claims.is_empty() {
+                    tree.add_section("CLAIMS", &claims);
                     doc.push(Node::Heading {
                         level: lv.tagged_section_level(2),
                         text: "CLAIMS".into(),
@@ -540,9 +656,9 @@ fn walk_app_v1(node: XmlNode, doc: &mut DoclingDocument, lv: &mut HeadingLevels)
                     }
                 }
             }
-            "tables" | "table" => push_tables(child, doc),
+            "tables" | "table" => push_tables(child, doc, tree),
             "math-cwu" | "math" | "maths" => {}
-            _ => walk_app_v1(child, doc, lv),
+            _ => walk_app_v1(child, doc, lv, tree),
         }
     }
 }
@@ -623,17 +739,23 @@ fn patdoc_claim_text(clm: XmlNode) -> String {
     claim.trim().to_string()
 }
 
-fn parse_grant_v2(dom: &Document, doc: &mut DoclingDocument) {
+fn parse_grant_v2(dom: &Document, doc: &mut DoclingDocument, tree: &mut PatentTree) {
     let mut lv = HeadingLevels::new();
-    walk_grant_v2(dom.root_element(), doc, &mut lv);
+    walk_grant_v2(dom.root_element(), doc, &mut lv, tree);
 }
 
-fn walk_grant_v2(node: XmlNode, doc: &mut DoclingDocument, lv: &mut HeadingLevels) {
+fn walk_grant_v2(
+    node: XmlNode,
+    doc: &mut DoclingDocument,
+    lv: &mut HeadingLevels,
+    tree: &mut PatentTree,
+) {
     for child in node.children().filter(XmlNode::is_element) {
         match child.tag_name().name() {
             "B540" => {
                 let t = grant_text(child);
                 if !t.is_empty() {
+                    tree.add_title(&t);
                     doc.push(Node::Heading {
                         level: 1,
                         text: escape_text(&t),
@@ -645,6 +767,7 @@ fn walk_grant_v2(node: XmlNode, doc: &mut DoclingDocument, lv: &mut HeadingLevel
             "SDOAB" => {
                 let t = grant_text(child);
                 if !t.is_empty() {
+                    tree.add_section("ABSTRACT", std::slice::from_ref(&t));
                     doc.push(Node::Heading {
                         level: lv.tagged_section_level(2),
                         text: "ABSTRACT".into(),
@@ -660,10 +783,11 @@ fn walk_grant_v2(node: XmlNode, doc: &mut DoclingDocument, lv: &mut HeadingLevel
                 if child.ancestors().any(|a| a.has_tag_name("SDOCL")) {
                     continue;
                 }
-                let lvl_attr = child.attribute("LVL").and_then(as_index).unwrap_or(1) as i32;
+                let lvl_attr = child.attribute("LVL").and_then(as_index).unwrap_or(1);
                 let t = grant_text(child);
                 if !t.is_empty() {
-                    let level = lv.heading_level(lvl_attr);
+                    tree.add_heading(&t, lvl_attr);
+                    let level = lv.heading_level(lvl_attr as i32);
                     doc.push(Node::Heading {
                         level,
                         text: escape_text(&t),
@@ -672,10 +796,11 @@ fn walk_grant_v2(node: XmlNode, doc: &mut DoclingDocument, lv: &mut HeadingLevel
             }
             "PARA" => {
                 if child.descendants().any(|n| n.has_tag_name("table")) {
-                    push_tables(child, doc);
+                    push_tables(child, doc, tree);
                 }
                 let t = grant_text(child);
                 if !t.is_empty() {
+                    tree.add_paragraph(&t);
                     doc.push(Node::Paragraph {
                         text: escape_text(&t),
                     });
@@ -689,6 +814,7 @@ fn walk_grant_v2(node: XmlNode, doc: &mut DoclingDocument, lv: &mut HeadingLevel
                     .filter(|s| !s.is_empty())
                     .collect();
                 if !claims.is_empty() {
+                    tree.add_section("CLAIMS", &claims);
                     doc.push(Node::Heading {
                         level: lv.tagged_section_level(2),
                         text: "CLAIMS".into(),
@@ -700,16 +826,16 @@ fn walk_grant_v2(node: XmlNode, doc: &mut DoclingDocument, lv: &mut HeadingLevel
                     }
                 }
             }
-            "tables" | "table" => push_tables(child, doc),
+            "tables" | "table" => push_tables(child, doc, tree),
             "CWU" => {}
-            _ => walk_grant_v2(child, doc, lv),
+            _ => walk_grant_v2(child, doc, lv, tree),
         }
     }
 }
 
 /// Walk `<description>`: `<heading level="N">` → a heading (`#`×(N+2)), `<p>` →
 /// a paragraph; recurse into other containers.
-fn walk_description(node: XmlNode, doc: &mut DoclingDocument) {
+fn walk_description(node: XmlNode, doc: &mut DoclingDocument, tree: &mut PatentTree) {
     for child in node.children().filter(XmlNode::is_element) {
         match child.tag_name().name() {
             "heading" => {
@@ -719,6 +845,8 @@ fn walk_description(node: XmlNode, doc: &mut DoclingDocument) {
                     .unwrap_or(1);
                 let t = node_text(child);
                 if !t.is_empty() {
+                    // `int(level_attr) if level_attr.isnumeric() else 1`.
+                    tree.add_heading(&t, child.attribute("level").and_then(as_index).unwrap_or(1));
                     doc.push(Node::Heading {
                         level: level + 2,
                         text: escape_text(&t),
@@ -733,18 +861,19 @@ fn walk_description(node: XmlNode, doc: &mut DoclingDocument) {
                 // the `Table N: …` captions with their `<ul>` substituent lists
                 // that follow a table in `ipa20110039701` are such text.
                 if child.descendants().any(|n| n.has_tag_name("table")) {
-                    push_tables(child, doc);
+                    push_tables(child, doc, tree);
                 }
                 let t = node_text(child);
                 if !t.is_empty() {
+                    tree.add_paragraph(&t);
                     doc.push(Node::Paragraph {
                         text: escape_text(&t),
                     });
                 }
             }
             "maths" => {}
-            "tables" | "table" => push_tables(child, doc),
-            _ => walk_description(child, doc),
+            "tables" | "table" => push_tables(child, doc, tree),
+            _ => walk_description(child, doc, tree),
         }
     }
 }
@@ -761,7 +890,7 @@ fn walk_description(node: XmlNode, doc: &mut DoclingDocument) {
 /// Emit a [`Node::Table`] for every `<table>` element in `node`'s subtree
 /// (or `node` itself), in document order — mirroring docling, which records one
 /// table per `<table>` tag it encounters.
-fn push_tables(node: XmlNode, doc: &mut DoclingDocument) {
+fn push_tables(node: XmlNode, doc: &mut DoclingDocument, tree: &mut PatentTree) {
     let tables: Vec<XmlNode> = if node.has_tag_name("table") {
         vec![node]
     } else {
@@ -770,10 +899,133 @@ fn push_tables(node: XmlNode, doc: &mut DoclingDocument) {
             .collect()
     };
     for tn in tables {
+        // The tree gets docling's placeholder for every `<table>`, data or
+        // not; the flat stream skips a table with nothing to render.
+        tree.add_table(tn);
         if let Some(t) = parse_table(tn) {
             doc.push(Node::Table(t));
         }
     }
+}
+
+/// How many tables docling's `re.findall(r"^(<table .*?</table>)", text,
+/// MULTILINE | DOTALL)` finds in the raw file: a `<table ` opening a line,
+/// up to the nearest `</table>` after it.
+fn regex_table_count(raw: &str) -> usize {
+    let mut count = 0;
+    let mut pos = 0;
+    while pos <= raw.len() {
+        let rest = &raw[pos..];
+        let start = if rest.starts_with("<table ") && (pos == 0 || raw[..pos].ends_with('\n')) {
+            0
+        } else {
+            match rest.find("\n<table ") {
+                Some(i) => i + 1,
+                None => break,
+            }
+        };
+        let Some(end) = rest[start..].find("</table>") else {
+            break;
+        };
+        count += 1;
+        pos += start + end + "</table>".len();
+    }
+    count
+}
+
+/// `XmlTable._parse_table` as docling records it in `TableData`: one
+/// `TableCell` per physical column a spanning entry covers — each replica
+/// carrying the whole span — rows padded to the widest tgroup with empty
+/// cells, empty rows dropped, and a row with an out-of-range span reduced to
+/// padding. Returns the cells and the `num_rows` × `num_cols` upstream reports
+/// (replicas past `num_cols` are still listed; the grid clips them).
+fn xml_table_cells(table: XmlNode) -> (Vec<TableCell>, usize, usize) {
+    let tgroups: Vec<XmlNode> = table
+        .children()
+        .filter(|n| n.has_tag_name("tgroup"))
+        .collect();
+    let tgs_cw: Vec<Vec<f64>> = tgroups
+        .iter()
+        .map(|tg| {
+            tg.children()
+                .filter(|n| n.has_tag_name("colspec"))
+                .map(|cs| cs.attribute("colwidth").map(parse_colwidth).unwrap_or(0.0))
+                .collect()
+        })
+        .collect();
+    let Some(tgs_range) = create_tg_range(&tgs_cw).filter(|r| !r.is_empty()) else {
+        return (Vec::new(), 0, 0);
+    };
+    let ncols_max = tgs_cw.iter().map(Vec::len).max().unwrap_or(0);
+    let cell = |text: &str, row: usize, col: i64, span: i64, header: bool| TableCell {
+        text: text.to_string(),
+        bbox: None,
+        start_row: row,
+        start_col: col.max(0) as usize,
+        row_span: 1,
+        col_span: span.max(1) as usize,
+        column_header: header,
+        row_header: false,
+        row_section: false,
+    };
+
+    let mut cells = Vec::new();
+    let mut i_row = 0usize;
+    for (itg, tg) in tgroups.iter().enumerate() {
+        let cell_offst = &tgs_range[itg];
+        let rows: Vec<XmlNode> = tg
+            .descendants()
+            .filter(|n| n.has_tag_name("row") || n.has_tag_name("tr"))
+            .collect();
+        for row_sec in rows {
+            let is_header = row_sec.parent().is_some_and(|p| p.has_tag_name("thead"));
+            let entries: Vec<XmlNode> = row_sec
+                .children()
+                .filter(|n| n.has_tag_name("entry") || n.has_tag_name("td"))
+                .collect();
+            let mut local: Vec<TableCell> = Vec::new();
+            let mut ncols = 0usize;
+            let mut is_row_empty = true;
+            let mut wrong_nbr_cols = false;
+            for (ientry, entry) in entries.iter().enumerate() {
+                let text = cell_text(*entry);
+                let start = entry
+                    .attribute("namest")
+                    .and_then(as_index)
+                    .unwrap_or(ientry as i64 + 1);
+                let (end, shift) = match entry.attribute("nameend").and_then(as_index) {
+                    Some(e) => (e, 0),
+                    None => (ientry as i64 + 2, 1),
+                };
+                let n_offst = cell_offst.len() as i64;
+                if start < 1 || start > n_offst || end > n_offst {
+                    wrong_nbr_cols = true;
+                    break;
+                }
+                let r0 = cell_offst[(start - 1) as usize];
+                let r1 = cell_offst[(end - 1) as usize] - shift;
+                if !text.is_empty() {
+                    is_row_empty = false;
+                }
+                for _ in r0..=r1 {
+                    ncols += 1;
+                    local.push(cell(&text, i_row, r0, r1 - r0 + 1, is_header));
+                }
+            }
+            if wrong_nbr_cols {
+                local.clear();
+                ncols = 0;
+            }
+            for irep in ncols..ncols_max {
+                local.push(cell("", i_row, irep as i64, 1, is_header));
+            }
+            if !is_row_empty {
+                cells.extend(local);
+                i_row += 1;
+            }
+        }
+    }
+    (cells, i_row, ncols_max)
 }
 
 /// Parse a CALS `<colspec>` width (`"42pt"`, `"24.47mm"`) to a number.
@@ -1479,6 +1731,82 @@ mod tests {
             resolve_named_entities("no entities here"),
             "no entities here"
         );
+    }
+
+    /// The JSON is the tree docling's SAX handler builds: everything nests
+    /// under the title; ABSTRACT and CLAIMS are level-2 headings under it
+    /// holding `paragraph` items and leaving the level alone; a
+    /// `<heading level="N">` sits at level N+1 and parents what follows; a
+    /// table is a placeholder recorded at `</table>` — before its `<p>`'s
+    /// own text — whose `XmlTable` data lists a spanning entry once per
+    /// covered column, rows padded to the widest tgroup.
+    #[test]
+    fn tree_mirrors_the_sax_handler() {
+        let xml = "<us-patent-application>\n<us-bibliographic-data-application>\n\
+            <invention-title>A Device</invention-title>\n</us-bibliographic-data-application>\n\
+            <abstract><p>First.</p><p>Second.</p></abstract>\n<description>\n\
+            <heading level=\"1\">BACKGROUND</heading>\n<p>Body.</p>\n\
+            <heading level=\"2\">Detail</heading>\n<p>Deep.</p>\n\
+            <heading level=\"1\">SUMMARY</heading>\n<p>Before\n<tables>\n\
+            <table frame=\"none\">\n<tgroup cols=\"3\"><colspec colname=\"1\" colwidth=\"10pt\"/>\
+            <colspec colname=\"2\" colwidth=\"10pt\"/><colspec colname=\"3\" colwidth=\"10pt\"/>\
+            <thead><row><entry namest=\"1\" nameend=\"3\">TABLE 1</entry></row></thead>\
+            <tbody><row><entry>a</entry><entry>b</entry></row></tbody></tgroup></table>\n\
+            </tables>\nafter</p>\n</description>\n<claims>\n\
+            <claim><claim-text>1. A thing.</claim-text></claim>\n</claims>\n</us-patent-application>";
+        let src = SourceDocument::from_bytes("p", InputFormat::XmlUspto, xml.as_bytes().to_vec());
+        let json: serde_json::Value =
+            serde_json::from_str(&UsptoBackend.convert(&src).unwrap().export_to_json()).unwrap();
+        let texts = json["texts"].as_array().unwrap();
+        let items: Vec<(&str, &str, &str)> = texts
+            .iter()
+            .map(|t| {
+                (
+                    t["label"].as_str().unwrap(),
+                    t["text"].as_str().unwrap(),
+                    t["parent"]["$ref"].as_str().unwrap(),
+                )
+            })
+            .collect();
+        assert_eq!(
+            items,
+            [
+                ("title", "A Device", "#/body"),
+                ("section_header", "ABSTRACT", "#/texts/0"),
+                ("paragraph", "First. Second.", "#/texts/1"),
+                ("section_header", "BACKGROUND", "#/texts/0"),
+                ("paragraph", "Body.", "#/texts/3"),
+                ("section_header", "Detail", "#/texts/3"),
+                ("paragraph", "Deep.", "#/texts/5"),
+                ("section_header", "SUMMARY", "#/texts/0"),
+                ("paragraph", "Before after", "#/texts/7"),
+                ("section_header", "CLAIMS", "#/texts/0"),
+                ("paragraph", "1. A thing.", "#/texts/9"),
+            ]
+        );
+        assert_eq!(texts[1]["level"], 2);
+        assert_eq!(texts[5]["level"], 3);
+        assert_eq!(json["body"]["children"].as_array().unwrap().len(), 1);
+        // The table precedes the paragraph under SUMMARY.
+        let summary_children: Vec<&str> = texts[7]["children"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|c| c["$ref"].as_str().unwrap())
+            .collect();
+        assert_eq!(summary_children, ["#/tables/0", "#/texts/8"]);
+        let data = &json["tables"][0]["data"];
+        assert_eq!(data["num_rows"], 2);
+        assert_eq!(data["num_cols"], 3);
+        let cells = data["table_cells"].as_array().unwrap();
+        // Three replicas of the spanning header, then a, b and the padding.
+        assert_eq!(cells.len(), 6);
+        assert!(cells[..3].iter().all(|c| c["text"] == "TABLE 1"
+            && c["col_span"] == 3
+            && c["start_col_offset_idx"] == 0
+            && c["column_header"] == true));
+        assert_eq!(cells[5]["text"], "");
+        assert_eq!(cells[5]["start_col_offset_idx"], 2);
     }
 
     #[test]

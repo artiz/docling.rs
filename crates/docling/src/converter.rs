@@ -33,6 +33,19 @@ fn looks_like_xml(text: &str) -> bool {
 
 /// Pick the concrete XML backend for a generic `.xml` source by sniffing its
 /// DOCTYPE / root element (the first part of the file).
+/// docling's `_guess_from_content` JATS rule for an `application/xml` input:
+/// the `<!DOCTYPE …>` declaration names a JATS DTD.
+fn has_jats_doctype(text: &str) -> bool {
+    let Some(start) = text.find("<!DOCTYPE ") else {
+        return false;
+    };
+    let Some(len) = text[start..].find('>') else {
+        return false;
+    };
+    let doctype = &text[start..start + len];
+    doctype.contains("JATS-journalpublishing") || doctype.contains("JATS-archive")
+}
+
 fn sniff_xml(bytes: &[u8]) -> InputFormat {
     // Lossy over the raw head (docling#4038, 2.122): the window can cut a
     // well-formed file mid-codepoint — a fixed-offset `&str` slice would
@@ -768,9 +781,16 @@ impl DocumentConverter {
             InputFormat::Md if looks_like_xml(&source.text()?) => match sniff_xml(&source.bytes) {
                 InputFormat::XmlUspto => UsptoBackend.convert(&source)?,
                 InputFormat::XmlXbrl => XbrlBackend.convert(&source)?,
-                // A JATS/other XML document saved as `.txt` is reconstructed
-                // generically (element-by-element), as docling does — the
-                // semantic JATS backend is only used for real `.xml`/`.nxml`.
+                // docling's format detection reads an XML-looking `.txt` as
+                // `application/xml` and, when its DOCTYPE names a JATS DTD
+                // (`JATS-journalpublishing…` / `JATS-archive…`), converts it
+                // with the JATS backend like a real `.nxml`; any other XML
+                // saved as `.txt` is reconstructed generically
+                // (element-by-element).
+                _ if has_jats_doctype(&source.text()?) => JatsBackend {
+                    fetch_images: self.fetch_images,
+                }
+                .convert(&source)?,
                 _ => crate::backend::jats::convert_generic(&source)?,
             },
             // DeepSeek-OCR annotated Markdown (VLM token format) is detected by
@@ -1047,6 +1067,22 @@ impl DocumentConverter {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// docling reads an XML-looking `.txt` as `application/xml` and converts
+    /// it with the JATS backend when its DOCTYPE names a JATS DTD; other XML
+    /// under `.txt` stays the generic element-by-element reconstruction.
+    #[test]
+    fn jats_doctype_text_file_uses_the_jats_backend() {
+        let jats = "<!DOCTYPE article PUBLIC \"-//NLM//DTD JATS (Z39.96) Journal Archiving and Interchange DTD v1.2 20190208//EN\" \"JATS-archivearticle1.dtd\">\n<article><front><article-meta><title-group><article-title>T</article-title></title-group></article-meta></front><body><sec><title>S</title><p>Body.</p></sec></body></article>";
+        let src = SourceDocument::from_bytes("a.txt", InputFormat::Md, jats.as_bytes().to_vec());
+        let doc = DocumentConverter::new().convert(src).unwrap().document;
+        assert!(doc.tree.is_some(), "JATS tree expected");
+        assert_eq!(doc.export_to_markdown().trim(), "# T\n\n## S\n\nBody.");
+        let other = "<?xml version=\"1.0\"?>\n<article><body><sec><title>S</title><p>Body.</p></sec></body></article>";
+        let src = SourceDocument::from_bytes("b.txt", InputFormat::Md, other.as_bytes().to_vec());
+        let doc = DocumentConverter::new().convert(src).unwrap().document;
+        assert!(doc.tree.is_none(), "generic XML path expected");
+    }
 
     /// docling's `TextBackendOptions.encoding`: the converter's `encoding`
     /// decodes text inputs as named (a source's own setting wins), and an

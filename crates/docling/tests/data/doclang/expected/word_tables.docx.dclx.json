@@ -27,53 +27,114 @@
         "$ref": "#/tables/0"
       },
       {
-        "$ref": "#/texts/2"
+        "$ref": "#/groups/0"
       },
       {
-        "$ref": "#/texts/3"
+        "$ref": "#/texts/2"
       },
       {
         "$ref": "#/tables/1"
       },
       {
-        "$ref": "#/texts/4"
+        "$ref": "#/groups/1"
       },
       {
-        "$ref": "#/texts/5"
+        "$ref": "#/texts/3"
       },
       {
         "$ref": "#/tables/2"
       },
       {
-        "$ref": "#/texts/6"
+        "$ref": "#/groups/2"
       },
       {
-        "$ref": "#/texts/7"
+        "$ref": "#/texts/4"
       },
       {
         "$ref": "#/tables/3"
       },
       {
-        "$ref": "#/texts/8"
+        "$ref": "#/groups/3"
       },
       {
-        "$ref": "#/texts/9"
+        "$ref": "#/texts/5"
       },
       {
         "$ref": "#/tables/4"
       },
       {
-        "$ref": "#/texts/10"
+        "$ref": "#/groups/4"
       },
       {
-        "$ref": "#/texts/11"
+        "$ref": "#/groups/5"
       }
     ],
     "content_layer": "body",
     "name": "_root_",
     "label": "unspecified"
   },
-  "groups": [],
+  "groups": [
+    {
+      "self_ref": "#/groups/0",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "name": "group",
+      "label": "inline"
+    },
+    {
+      "self_ref": "#/groups/1",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "name": "group",
+      "label": "inline"
+    },
+    {
+      "self_ref": "#/groups/2",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "name": "group",
+      "label": "inline"
+    },
+    {
+      "self_ref": "#/groups/3",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "name": "group",
+      "label": "inline"
+    },
+    {
+      "self_ref": "#/groups/4",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "name": "group",
+      "label": "inline"
+    },
+    {
+      "self_ref": "#/groups/5",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "name": "group",
+      "label": "inline"
+    }
+  ],
   "texts": [
     {
       "self_ref": "#/texts/0",
@@ -109,35 +170,11 @@
       "content_layer": "body",
       "label": "text",
       "prov": [],
-      "orig": "",
-      "text": ""
-    },
-    {
-      "self_ref": "#/texts/3",
-      "parent": {
-        "$ref": "#/body"
-      },
-      "children": [],
-      "content_layer": "body",
-      "label": "text",
-      "prov": [],
       "orig": "A non-uniform table with horizontal spans",
       "text": "A non-uniform table with horizontal spans"
     },
     {
-      "self_ref": "#/texts/4",
-      "parent": {
-        "$ref": "#/body"
-      },
-      "children": [],
-      "content_layer": "body",
-      "label": "text",
-      "prov": [],
-      "orig": "",
-      "text": ""
-    },
-    {
-      "self_ref": "#/texts/5",
+      "self_ref": "#/texts/3",
       "parent": {
         "$ref": "#/body"
       },
@@ -149,19 +186,7 @@
       "text": "A non-uniform table with horizontal spans in inner columns"
     },
     {
-      "self_ref": "#/texts/6",
-      "parent": {
-        "$ref": "#/body"
-      },
-      "children": [],
-      "content_layer": "body",
-      "label": "text",
-      "prov": [],
-      "orig": "",
-      "text": ""
-    },
-    {
-      "self_ref": "#/texts/7",
+      "self_ref": "#/texts/4",
       "parent": {
         "$ref": "#/body"
       },
@@ -173,19 +198,7 @@
       "text": "A non-uniform table with vertical spans"
     },
     {
-      "self_ref": "#/texts/8",
-      "parent": {
-        "$ref": "#/body"
-      },
-      "children": [],
-      "content_layer": "body",
-      "label": "text",
-      "prov": [],
-      "orig": "",
-      "text": ""
-    },
-    {
-      "self_ref": "#/texts/9",
+      "self_ref": "#/texts/5",
       "parent": {
         "$ref": "#/body"
       },
@@ -195,30 +208,6 @@
       "prov": [],
       "orig": "A non-uniform table with all kinds of spans and empty cells",
       "text": "A non-uniform table with all kinds of spans and empty cells"
-    },
-    {
-      "self_ref": "#/texts/10",
-      "parent": {
-        "$ref": "#/body"
-      },
-      "children": [],
-      "content_layer": "body",
-      "label": "text",
-      "prov": [],
-      "orig": "",
-      "text": ""
-    },
-    {
-      "self_ref": "#/texts/11",
-      "parent": {
-        "$ref": "#/body"
-      },
-      "children": [],
-      "content_layer": "body",
-      "label": "text",
-      "prov": [],
-      "orig": "",
-      "text": ""
     }
   ],
   "pictures": [],
@@ -1496,7 +1485,7 @@
             "start_col_offset_idx": 3,
             "end_col_offset_idx": 4,
             "text": "",
-            "column_header": true,
+            "column_header": false,
             "row_header": false,
             "row_section": false,
             "fillable": false
@@ -1509,7 +1498,7 @@
             "start_col_offset_idx": 4,
             "end_col_offset_idx": 5,
             "text": "",
-            "column_header": true,
+            "column_header": false,
             "row_header": false,
             "row_section": false,
             "fillable": false
@@ -1970,7 +1959,7 @@
               "start_col_offset_idx": 3,
               "end_col_offset_idx": 4,
               "text": "",
-              "column_header": true,
+              "column_header": false,
               "row_header": false,
               "row_section": false,
               "fillable": false
@@ -1983,7 +1972,7 @@
               "start_col_offset_idx": 4,
               "end_col_offset_idx": 5,
               "text": "",
-              "column_header": true,
+              "column_header": false,
               "row_header": false,
               "row_section": false,
               "fillable": false
@@ -2532,5 +2521,13 @@
   ],
   "key_value_items": [],
   "form_items": [],
-  "pages": {}
+  "pages": {
+    "1": {
+      "size": {
+        "width": 512.0,
+        "height": 512.0
+      },
+      "page_no": 1
+    }
+  }
 }

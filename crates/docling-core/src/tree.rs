@@ -91,6 +91,10 @@ pub enum TreeKind {
         captions: Vec<usize>,
         image: Option<PictureImage>,
         classification: Option<String>,
+        /// The prediction's `confidence`, when the backend writes one: the
+        /// DocLang deserializer stamps `1.0`; the office and HTML backends
+        /// leave it out (`None`).
+        confidence: Option<f64>,
         /// A native chart's data grid (docling's `meta.tabular_chart.chart_data`,
         /// the series reconstructed as a `TableData`), for a DOCX chart drawing.
         chart: Option<Table>,
@@ -436,6 +440,7 @@ mod tests {
                 captions: vec![cap],
                 image: None,
                 classification: Some("bar_chart".into()),
+                confidence: None,
                 chart: None,
                 dpi: None,
             },

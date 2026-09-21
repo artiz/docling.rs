@@ -88,7 +88,7 @@
         }
       ],
       "content_layer": "body",
-      "name": "list",
+      "name": "group",
       "label": "list"
     },
     {
@@ -108,7 +108,7 @@
         }
       ],
       "content_layer": "body",
-      "name": "list",
+      "name": "group",
       "label": "list"
     },
     {
@@ -131,7 +131,7 @@
         }
       ],
       "content_layer": "body",
-      "name": "list",
+      "name": "group",
       "label": "list"
     },
     {
@@ -148,7 +148,7 @@
         }
       ],
       "content_layer": "body",
-      "name": "list",
+      "name": "group",
       "label": "list"
     },
     {
@@ -168,7 +168,7 @@
         }
       ],
       "content_layer": "body",
-      "name": "list",
+      "name": "group",
       "label": "list"
     },
     {
@@ -188,7 +188,7 @@
         }
       ],
       "content_layer": "body",
-      "name": "list",
+      "name": "group",
       "label": "list"
     }
   ],
@@ -201,7 +201,22 @@
       "children": [],
       "content_layer": "body",
       "label": "title",
-      "prov": [],
+      "prov": [
+        {
+          "page_no": 1,
+          "bbox": {
+            "l": 64.0,
+            "t": 394.0,
+            "r": 448.0,
+            "b": 464.0,
+            "coord_origin": "TOPLEFT"
+          },
+          "charspan": [
+            0,
+            16
+          ]
+        }
+      ],
       "orig": "Test Table Slide",
       "text": "Test Table Slide"
     },
@@ -213,7 +228,22 @@
       "children": [],
       "content_layer": "body",
       "label": "text",
-      "prov": [],
+      "prov": [
+        {
+          "page_no": 1,
+          "bbox": {
+            "l": 64.0,
+            "t": 72.0,
+            "r": 448.0,
+            "b": 106.0,
+            "coord_origin": "TOPLEFT"
+          },
+          "charspan": [
+            0,
+            13
+          ]
+        }
+      ],
       "orig": "With footnote",
       "text": "With footnote"
     },
@@ -225,7 +255,22 @@
       "children": [],
       "content_layer": "body",
       "label": "title",
-      "prov": [],
+      "prov": [
+        {
+          "page_no": 1,
+          "bbox": {
+            "l": 35.0,
+            "t": 386.0,
+            "r": 477.0,
+            "b": 485.0,
+            "coord_origin": "TOPLEFT"
+          },
+          "charspan": [
+            0,
+            18
+          ]
+        }
+      ],
       "orig": "Second slide title",
       "text": "Second slide title"
     },
@@ -237,7 +282,22 @@
       "children": [],
       "content_layer": "body",
       "label": "text",
-      "prov": [],
+      "prov": [
+        {
+          "page_no": 1,
+          "bbox": {
+            "l": 35.0,
+            "t": 216.0,
+            "r": 187.0,
+            "b": 376.0,
+            "coord_origin": "TOPLEFT"
+          },
+          "charspan": [
+            0,
+            22
+          ]
+        }
+      ],
       "orig": "Let’s introduce a list",
       "text": "Let’s introduce a list"
     },
@@ -249,11 +309,26 @@
       "children": [],
       "content_layer": "body",
       "label": "list_item",
-      "prov": [],
+      "prov": [
+        {
+          "page_no": 1,
+          "bbox": {
+            "l": 35.0,
+            "t": 216.0,
+            "r": 187.0,
+            "b": 376.0,
+            "coord_origin": "TOPLEFT"
+          },
+          "charspan": [
+            0,
+            8
+          ]
+        }
+      ],
       "orig": "With foo",
       "text": "With foo",
       "enumerated": false,
-      "marker": "-"
+      "marker": ""
     },
     {
       "self_ref": "#/texts/5",
@@ -263,11 +338,26 @@
       "children": [],
       "content_layer": "body",
       "label": "list_item",
-      "prov": [],
+      "prov": [
+        {
+          "page_no": 1,
+          "bbox": {
+            "l": 35.0,
+            "t": 216.0,
+            "r": 187.0,
+            "b": 376.0,
+            "coord_origin": "TOPLEFT"
+          },
+          "charspan": [
+            0,
+            3
+          ]
+        }
+      ],
       "orig": "Bar",
       "text": "Bar",
       "enumerated": false,
-      "marker": "-"
+      "marker": ""
     },
     {
       "self_ref": "#/texts/6",
@@ -277,11 +367,26 @@
       "children": [],
       "content_layer": "body",
       "label": "list_item",
-      "prov": [],
+      "prov": [
+        {
+          "page_no": 1,
+          "bbox": {
+            "l": 35.0,
+            "t": 216.0,
+            "r": 187.0,
+            "b": 376.0,
+            "coord_origin": "TOPLEFT"
+          },
+          "charspan": [
+            0,
+            14
+          ]
+        }
+      ],
       "orig": "And baz things",
       "text": "And baz things",
       "enumerated": false,
-      "marker": "-"
+      "marker": ""
     },
     {
       "self_ref": "#/texts/7",
@@ -291,7 +396,22 @@
       "children": [],
       "content_layer": "body",
       "label": "text",
-      "prov": [],
+      "prov": [
+        {
+          "page_no": 1,
+          "bbox": {
+            "l": 260.0,
+            "t": 122.0,
+            "r": 431.0,
+            "b": 412.0,
+            "coord_origin": "TOPLEFT"
+          },
+          "charspan": [
+            0,
+            40
+          ]
+        }
+      ],
       "orig": "A rectangle shape with this text inside.",
       "text": "A rectangle shape with this text inside."
     },
@@ -303,7 +423,22 @@
       "children": [],
       "content_layer": "notes",
       "label": "text",
-      "prov": [],
+      "prov": [
+        {
+          "page_no": 1,
+          "bbox": {
+            "l": 0.0,
+            "t": 0.0,
+            "r": 0.0,
+            "b": 0.0,
+            "coord_origin": "TOPLEFT"
+          },
+          "charspan": [
+            0,
+            31
+          ]
+        }
+      ],
       "orig": "Some notes on the second slide.",
       "text": "Some notes on the second slide."
     },
@@ -315,7 +450,22 @@
       "children": [],
       "content_layer": "body",
       "label": "list_item",
-      "prov": [],
+      "prov": [
+        {
+          "page_no": 2,
+          "bbox": {
+            "l": 102.0,
+            "t": 261.0,
+            "r": 165.0,
+            "b": 330.0,
+            "coord_origin": "TOPLEFT"
+          },
+          "charspan": [
+            0,
+            10
+          ]
+        }
+      ],
       "orig": "List item4",
       "text": "List item4",
       "enumerated": true,
@@ -329,7 +479,22 @@
       "children": [],
       "content_layer": "body",
       "label": "list_item",
-      "prov": [],
+      "prov": [
+        {
+          "page_no": 2,
+          "bbox": {
+            "l": 102.0,
+            "t": 261.0,
+            "r": 165.0,
+            "b": 330.0,
+            "coord_origin": "TOPLEFT"
+          },
+          "charspan": [
+            0,
+            10
+          ]
+        }
+      ],
       "orig": "List item5",
       "text": "List item5",
       "enumerated": true,
@@ -343,7 +508,22 @@
       "children": [],
       "content_layer": "body",
       "label": "list_item",
-      "prov": [],
+      "prov": [
+        {
+          "page_no": 2,
+          "bbox": {
+            "l": 102.0,
+            "t": 261.0,
+            "r": 165.0,
+            "b": 330.0,
+            "coord_origin": "TOPLEFT"
+          },
+          "charspan": [
+            0,
+            10
+          ]
+        }
+      ],
       "orig": "List item6",
       "text": "List item6",
       "enumerated": true,
@@ -357,11 +537,26 @@
       "children": [],
       "content_layer": "body",
       "label": "list_item",
-      "prov": [],
+      "prov": [
+        {
+          "page_no": 2,
+          "bbox": {
+            "l": 187.0,
+            "t": 239.0,
+            "r": 215.0,
+            "b": 329.0,
+            "coord_origin": "TOPLEFT"
+          },
+          "charspan": [
+            0,
+            2
+          ]
+        }
+      ],
       "orig": "I1",
       "text": "I1",
       "enumerated": false,
-      "marker": "-"
+      "marker": ""
     },
     {
       "self_ref": "#/texts/13",
@@ -371,11 +566,26 @@
       "children": [],
       "content_layer": "body",
       "label": "list_item",
-      "prov": [],
+      "prov": [
+        {
+          "page_no": 2,
+          "bbox": {
+            "l": 187.0,
+            "t": 239.0,
+            "r": 215.0,
+            "b": 329.0,
+            "coord_origin": "TOPLEFT"
+          },
+          "charspan": [
+            0,
+            2
+          ]
+        }
+      ],
       "orig": "I2",
       "text": "I2",
       "enumerated": false,
-      "marker": "-"
+      "marker": ""
     },
     {
       "self_ref": "#/texts/14",
@@ -385,11 +595,26 @@
       "children": [],
       "content_layer": "body",
       "label": "list_item",
-      "prov": [],
+      "prov": [
+        {
+          "page_no": 2,
+          "bbox": {
+            "l": 187.0,
+            "t": 239.0,
+            "r": 215.0,
+            "b": 329.0,
+            "coord_origin": "TOPLEFT"
+          },
+          "charspan": [
+            0,
+            2
+          ]
+        }
+      ],
       "orig": "I3",
       "text": "I3",
       "enumerated": false,
-      "marker": "-"
+      "marker": ""
     },
     {
       "self_ref": "#/texts/15",
@@ -399,11 +624,26 @@
       "children": [],
       "content_layer": "body",
       "label": "list_item",
-      "prov": [],
+      "prov": [
+        {
+          "page_no": 2,
+          "bbox": {
+            "l": 187.0,
+            "t": 239.0,
+            "r": 215.0,
+            "b": 329.0,
+            "coord_origin": "TOPLEFT"
+          },
+          "charspan": [
+            0,
+            2
+          ]
+        }
+      ],
       "orig": "I4",
       "text": "I4",
       "enumerated": false,
-      "marker": "-"
+      "marker": ""
     },
     {
       "self_ref": "#/texts/16",
@@ -413,7 +653,22 @@
       "children": [],
       "content_layer": "body",
       "label": "text",
-      "prov": [],
+      "prov": [
+        {
+          "page_no": 2,
+          "bbox": {
+            "l": 237.0,
+            "t": 260.0,
+            "r": 289.0,
+            "b": 329.0,
+            "coord_origin": "TOPLEFT"
+          },
+          "charspan": [
+            0,
+            10
+          ]
+        }
+      ],
       "orig": "Some info:",
       "text": "Some info:"
     },
@@ -425,11 +680,26 @@
       "children": [],
       "content_layer": "body",
       "label": "list_item",
-      "prov": [],
+      "prov": [
+        {
+          "page_no": 2,
+          "bbox": {
+            "l": 237.0,
+            "t": 260.0,
+            "r": 289.0,
+            "b": 329.0,
+            "coord_origin": "TOPLEFT"
+          },
+          "charspan": [
+            0,
+            6
+          ]
+        }
+      ],
       "orig": "Item A",
       "text": "Item A",
       "enumerated": false,
-      "marker": "-"
+      "marker": ""
     },
     {
       "self_ref": "#/texts/18",
@@ -439,11 +709,26 @@
       "children": [],
       "content_layer": "body",
       "label": "list_item",
-      "prov": [],
+      "prov": [
+        {
+          "page_no": 2,
+          "bbox": {
+            "l": 237.0,
+            "t": 260.0,
+            "r": 289.0,
+            "b": 329.0,
+            "coord_origin": "TOPLEFT"
+          },
+          "charspan": [
+            0,
+            6
+          ]
+        }
+      ],
       "orig": "Item B",
       "text": "Item B",
       "enumerated": false,
-      "marker": "-"
+      "marker": ""
     },
     {
       "self_ref": "#/texts/19",
@@ -453,7 +738,22 @@
       "children": [],
       "content_layer": "body",
       "label": "text",
-      "prov": [],
+      "prov": [
+        {
+          "page_no": 2,
+          "bbox": {
+            "l": 316.0,
+            "t": 239.0,
+            "r": 378.0,
+            "b": 328.0,
+            "coord_origin": "TOPLEFT"
+          },
+          "charspan": [
+            0,
+            13
+          ]
+        }
+      ],
       "orig": "Maybe a list?",
       "text": "Maybe a list?"
     },
@@ -465,7 +765,22 @@
       "children": [],
       "content_layer": "body",
       "label": "list_item",
-      "prov": [],
+      "prov": [
+        {
+          "page_no": 2,
+          "bbox": {
+            "l": 316.0,
+            "t": 239.0,
+            "r": 378.0,
+            "b": 328.0,
+            "coord_origin": "TOPLEFT"
+          },
+          "charspan": [
+            0,
+            5
+          ]
+        }
+      ],
       "orig": "List1",
       "text": "List1",
       "enumerated": true,
@@ -479,7 +794,22 @@
       "children": [],
       "content_layer": "body",
       "label": "list_item",
-      "prov": [],
+      "prov": [
+        {
+          "page_no": 2,
+          "bbox": {
+            "l": 316.0,
+            "t": 239.0,
+            "r": 378.0,
+            "b": 328.0,
+            "coord_origin": "TOPLEFT"
+          },
+          "charspan": [
+            0,
+            5
+          ]
+        }
+      ],
       "orig": "List2",
       "text": "List2",
       "enumerated": true,
@@ -493,7 +823,22 @@
       "children": [],
       "content_layer": "body",
       "label": "list_item",
-      "prov": [],
+      "prov": [
+        {
+          "page_no": 2,
+          "bbox": {
+            "l": 316.0,
+            "t": 239.0,
+            "r": 378.0,
+            "b": 328.0,
+            "coord_origin": "TOPLEFT"
+          },
+          "charspan": [
+            0,
+            5
+          ]
+        }
+      ],
       "orig": "List3",
       "text": "List3",
       "enumerated": true,
@@ -507,11 +852,26 @@
       "children": [],
       "content_layer": "body",
       "label": "list_item",
-      "prov": [],
+      "prov": [
+        {
+          "page_no": 2,
+          "bbox": {
+            "l": 395.0,
+            "t": 261.0,
+            "r": 422.0,
+            "b": 330.0,
+            "coord_origin": "TOPLEFT"
+          },
+          "charspan": [
+            0,
+            2
+          ]
+        }
+      ],
       "orig": "l1",
       "text": "l1",
       "enumerated": false,
-      "marker": "-"
+      "marker": ""
     },
     {
       "self_ref": "#/texts/24",
@@ -521,11 +881,26 @@
       "children": [],
       "content_layer": "body",
       "label": "list_item",
-      "prov": [],
+      "prov": [
+        {
+          "page_no": 2,
+          "bbox": {
+            "l": 395.0,
+            "t": 261.0,
+            "r": 422.0,
+            "b": 330.0,
+            "coord_origin": "TOPLEFT"
+          },
+          "charspan": [
+            0,
+            2
+          ]
+        }
+      ],
       "orig": "l2",
       "text": "l2",
       "enumerated": false,
-      "marker": "-"
+      "marker": ""
     },
     {
       "self_ref": "#/texts/25",
@@ -535,11 +910,26 @@
       "children": [],
       "content_layer": "body",
       "label": "list_item",
-      "prov": [],
+      "prov": [
+        {
+          "page_no": 2,
+          "bbox": {
+            "l": 395.0,
+            "t": 261.0,
+            "r": 422.0,
+            "b": 330.0,
+            "coord_origin": "TOPLEFT"
+          },
+          "charspan": [
+            0,
+            2
+          ]
+        }
+      ],
       "orig": "l3",
       "text": "l3",
       "enumerated": false,
-      "marker": "-"
+      "marker": ""
     },
     {
       "self_ref": "#/texts/26",
@@ -549,7 +939,22 @@
       "children": [],
       "content_layer": "notes",
       "label": "text",
-      "prov": [],
+      "prov": [
+        {
+          "page_no": 2,
+          "bbox": {
+            "l": 0.0,
+            "t": 0.0,
+            "r": 0.0,
+            "b": 0.0,
+            "coord_origin": "TOPLEFT"
+          },
+          "charspan": [
+            0,
+            53
+          ]
+        }
+      ],
       "orig": "Final notes on the third slide.\nSecond line of notes.",
       "text": "Final notes on the third slide.\nSecond line of notes."
     }
@@ -564,7 +969,22 @@
       "children": [],
       "content_layer": "body",
       "label": "table",
-      "prov": [],
+      "prov": [
+        {
+          "page_no": 1,
+          "bbox": {
+            "l": 85.0,
+            "t": 118.0,
+            "r": 427.0,
+            "b": 367.0,
+            "coord_origin": "TOPLEFT"
+          },
+          "charspan": [
+            0,
+            0
+          ]
+        }
+      ],
       "captions": [],
       "references": [],
       "footnotes": [],
@@ -578,7 +998,7 @@
             "start_col_offset_idx": 0,
             "end_col_offset_idx": 1,
             "text": "",
-            "column_header": true,
+            "column_header": false,
             "row_header": false,
             "row_section": false,
             "fillable": false
@@ -1299,7 +1719,7 @@
               "start_col_offset_idx": 0,
               "end_col_offset_idx": 1,
               "text": "",
-              "column_header": true,
+              "column_header": false,
               "row_header": false,
               "row_section": false,
               "fillable": false
@@ -2134,5 +2554,27 @@
   ],
   "key_value_items": [],
   "form_items": [],
-  "pages": {}
+  "pages": {
+    "1": {
+      "size": {
+        "width": 512.0,
+        "height": 512.0
+      },
+      "page_no": 1
+    },
+    "2": {
+      "size": {
+        "width": 512.0,
+        "height": 512.0
+      },
+      "page_no": 2
+    },
+    "3": {
+      "size": {
+        "width": 512.0,
+        "height": 512.0
+      },
+      "page_no": 3
+    }
+  }
 }
