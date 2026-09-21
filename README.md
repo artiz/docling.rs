@@ -32,9 +32,12 @@ documents into a unified `DoclingDocument` for downstream AI workflows.
 
 **Fast and small:** one static binary, no Python/PyTorch at runtime. The PDF
 ML pipeline runs **4.3× faster** than Python docling at **2.3–2.6× less peak
-RAM**; declarative formats (DOCX/HTML/XLSX/…) convert **20–60× faster** at
-**~60× less memory** — methodology and per-fixture numbers in
-[`docs/PDF_CONFORMANCE.md`](./docs/PDF_CONFORMANCE.md).
+RAM** (methodology, profiling and per-fixture numbers in
+[`docs/PDF_CONFORMANCE.md` § Performance](./docs/PDF_CONFORMANCE.md#performance--review--profiling-notes));
+declarative formats (DOCX/HTML/XLSX/…) convert **20–60× faster** at
+**~60× less memory** (measured with `scripts/test/performance.sh`, Python
+docling vs Rust on the same file). Output is checked against upstream for
+every format — see [Conformance with Python docling](#conformance-with-python-docling).
 
 The format migration is **complete** — every document format in docling's
 pipeline is supported, validated byte-for-byte against live docling. See
@@ -54,8 +57,8 @@ Developed with **Claude Code** and _[TENET](https://github.com/artiz/tenet/tree/
 
 The public API works end to end across **Markdown, CSV, HTML, AsciiDoc, DOCX,
 PPTX, XLSX, legacy DOC/XLS/PPT, Apple iWork, EPUB, ODF, RTF, WebVTT, Email, MHTML, JATS, USPTO,
-XBRL, LaTeX, JSON, PDF, images, METS, audio and video** — plus Markdown / docling-JSON output and image
-extraction. The full extension map (`InputFormat::from_extension`, mirroring
+XBRL, LaTeX, JSON, PDF, images, METS, audio and video** — with Markdown, docling-JSON,
+DocLang `.dclx`, LaTeX and chunk output, plus image extraction. The full extension map (`InputFormat::from_extension`, mirroring
 docling's `FormatToExtensions`):
 
 | Category | Extensions |
@@ -137,36 +140,48 @@ Check with `ffmpeg -version`. `DOCLING_FFMPEG` overrides the binary used on
 any OS; the docling-rs-serve Docker image ships ffmpeg preinstalled.
 </details>
 
-Output is checked against upstream Python docling — declarative formats
-byte-for-byte against live docling, the ML pipeline against a deterministic
-snapshot baseline. Latest full sweep, docling **2.129.0**
+## Conformance with Python docling
+
+Every output is checked against upstream Python docling. Declarative formats
+are compared byte-for-byte against the live library; the PDF/image ML pipeline
+is pinned by a deterministic snapshot baseline and scored against docling's
+groundtruth in [`docs/PDF_CONFORMANCE.md`](./docs/PDF_CONFORMANCE.md).
+
+Latest full sweep of the declarative corpus, docling **2.129.0**
 (`scripts/conformance/full_conformance.py`: Markdown byte-for-byte, JSON
-structurally — every key and value but `origin`/`version` and re-encoded
-image bytes):
+structurally — every key and value but `origin`/`version` and re-encoded image
+bytes; ✅ all = every file of the format matches):
 
 | Format | Files | Markdown exact | JSON identical |
 |---|---|---|---|
-| DOCX | 36 | 36 | 35 |
-| HTML | 32 | 32 | 31 |
-| PPTX | 8 | 8 | 8 |
-| XLSX | 13 | 13 | 13 |
-| CSV | 9 | 9 | 6 |
-| Markdown | 10 | 10 | 5 |
-| JATS | 6 | 6 | 0 |
-| ODF | 7 | 7 | 6 |
-| WebVTT | 4 | 4 | 4 |
-| DocLang | 15 | 15 | 0 |
-| AsciiDoc | 4 | 4 | 0 |
+| DOCX | 36 | ✅ all | 35 |
+| HTML | 32 | ✅ all | 31 |
+| PPTX | 8 | ✅ all | ✅ all |
+| XLSX | 13 | ✅ all | ✅ all |
+| ODF | 7 | ✅ all | 6 |
+| CSV | 9 | ✅ all | 6 |
+| Markdown | 10 | ✅ all | 5 |
+| DeepSeek-OCR Markdown | 3 | ✅ all | n/a |
+| WebVTT | 4 | ✅ all | ✅ all |
+| Email (`.eml`) | 2 | ✅ all | ✅ all |
+| iWork Pages | 1 | ✅ all | ✅ all |
+| EBCDIC | 3 | ✅ all | ✅ all |
+| JATS | 6 | ✅ all | 0 |
+| DocLang | 15 | ✅ all | 0 |
+| AsciiDoc | 4 | ✅ all | 0 |
 | USPTO | 9 | 6 | 1 |
-| EPUB | 1 | 0 | 1 |
-| Email / iWork Pages / EBCDIC | 2 / 1 / 3 | all | all |
+| EPUB | 1 | 0 | ✅ all |
+| LaTeX | 2 | 0 | 0 |
 
-The JSON column is 100% wherever the backend builds docling's item tree
-(HTML, DOCX, PPTX, ODF, Markdown without raw HTML blocks) or its flat export
-already has upstream's shape (XLSX);
-the zeros are the flat export's `text`-for-`paragraph` labels, `-` list
-markers and missing heading nesting, next in line for the same treatment.
-Per-format residuals: [`docs/MIGRATION.md`](./docs/MIGRATION.md).
+The JSON column is complete wherever the backend builds docling's item tree
+(HTML, DOCX, PPTX, ODF, WebVTT, the `pftaps` USPTO patent, Markdown without
+raw HTML blocks) or its flat export already has upstream's shape (XLSX, CSV,
+EBCDIC); the zeros (JATS, DocLang, AsciiDoc, the USPTO XML paths) are the
+flat export's `text`-for-`paragraph` labels, `-` list markers and missing
+heading nesting — next in line for the same treatment. The two Markdown
+misses are known single residuals (EPUB's 4-line HTML inline join, LaTeX's
+`italictext` run join). Per-format residuals, with the exact files:
+[`docs/MIGRATION.md`](./docs/MIGRATION.md).
 
 ## RAG subsystem
 
@@ -1608,6 +1623,10 @@ cargo run -p docling --example stream  -- crates/docling/sample.md
 # score HTML output against the latest published docling (installed from PyPI)
 scripts/conformance/conformance.sh html
 
+# the full declarative sweep behind the "Conformance with Python docling" table
+# (Markdown byte-for-byte + JSON structural, every format or the ones you name)
+.venv-compare/bin/python scripts/conformance/full_conformance.py [docx html …]
+
 # diff Python docling vs Rust on one file (installs published docling from PyPI)
 scripts/conformance/compare.sh tests/data/html/sources/example_03.html
 
@@ -1617,7 +1636,8 @@ scripts/test/performance.sh tests/data/html/sources/wiki_duck.html 10
 
 The comparison scripts install the latest published Python `docling` from PyPI
 into `.venv-compare` automatically on first run. See
-[`docs/MIGRATION.md`](./docs/MIGRATION.md) (§9, “Comparing against docling”).
+[`docs/MIGRATION.md`](./docs/MIGRATION.md) (§7 “Testing” for the differential
+and performance scripts, §9 for keeping up with upstream releases).
 
 ## Install locally / in CI (one-liner)
 
