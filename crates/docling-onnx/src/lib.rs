@@ -48,7 +48,7 @@
 //! conformance-validated there, while fp32 is (see docs/PDF_CONFORMANCE.md).
 
 use std::path::{Path, PathBuf};
-use std::sync::OnceLock;
+use std::sync::{Mutex, MutexGuard, OnceLock};
 
 use ort::ep::ExecutionProviderDispatch;
 use ort::session::builder::{GraphOptimizationLevel, SessionBuilder};
@@ -366,6 +366,47 @@ fn memory_opts(builder: SessionBuilder) -> Result<SessionBuilder, String> {
     Ok(builder)
 }
 
+/// The process-wide session-creation lock GPU builds take (#452).
+static CREATION: Mutex<()> = Mutex::new(());
+
+/// Serialize ONNX Runtime session creation while a GPU (non-CPU) execution
+/// provider is registered — held for the duration of `commit_from_file` by
+/// every session in the workspace ([`commit`], [`commit_uncached`]).
+///
+/// The page-worker pool, the OCR lanes and the enrichment models all open
+/// their sessions concurrently (`thread::scope`) so the start-up latency is
+/// paid once, not per session. ONNX Runtime's CUDA provider does not tolerate
+/// that on one device (#452): with `DOCLING_RS_PDF_WORKERS` or
+/// `DOCLING_RS_OCR_SESSIONS` above 1 initialization failed intermittently
+/// with `Exception during initialization: … stride > 0 was false` — the
+/// racing provider set-ups corrupt each other's graph state while the
+/// sessions, once created, run side by side without trouble. So creation is
+/// funnelled through one lock; inference stays fully parallel. CPU builds
+/// (and `DOCLING_RS_EP=cpu`) keep the parallel start-up: the CPU provider
+/// has no such race, and the overlap is the whole point of the lanes.
+///
+/// `None` when no lock is needed, so callers hold it as `let _guard = …;`.
+pub fn creation_guard() -> Option<MutexGuard<'static, ()>> {
+    dispatches()?;
+    // A panic while creating a session poisons the lock; the next creation
+    // is unaffected by that failure, so take the lock anyway.
+    Some(CREATION.lock().unwrap_or_else(|p| p.into_inner()))
+}
+
+/// Create the session for `model_path` the plain way (no graph cache) under
+/// the [`creation_guard`] — for the models whose graph is not worth caching
+/// (enrichment, Whisper, the embedder) but which must still serialize their
+/// creation on a GPU (#452).
+pub fn commit_uncached(
+    mut builder: SessionBuilder,
+    model_path: impl AsRef<Path>,
+) -> Result<Session, String> {
+    let _guard = creation_guard();
+    builder
+        .commit_from_file(model_path)
+        .map_err(|e| e.to_string())
+}
+
 /// Create the session for `model_path`, serving ONNX Runtime's *optimized*
 /// graph from an on-disk cache when this machine has built it before.
 ///
@@ -387,6 +428,9 @@ fn memory_opts(builder: SessionBuilder) -> Result<SessionBuilder, String> {
 /// Every failure on the cached path falls back to the ordinary load, so a
 /// stale or truncated entry costs one rebuild, never a wrong answer.
 pub fn commit(builder: SessionBuilder, model_path: &str, variant: &str) -> Result<Session, String> {
+    // Every `commit_from_file` below runs under the GPU creation lock (#452);
+    // on CPU there is no lock and the workers/lanes still start in parallel.
+    let _guard = creation_guard();
     let plain = |mut b: SessionBuilder| b.commit_from_file(model_path).map_err(|e| e.to_string());
     let Some(cache) = graph_cache_path(model_path, variant) else {
         return plain(builder);
@@ -609,6 +653,21 @@ fn cpu_features() -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// #452: the creation lock exists only for GPU providers. A CPU-only build
+    /// has nothing to serialize (the OCR lanes keep their parallel start-up);
+    /// with a GPU feature compiled in, the guard is a real lock — taken and
+    /// released per creation, never held across two of them.
+    #[test]
+    fn creation_guard_matches_the_provider_choice() {
+        let g = creation_guard();
+        assert_eq!(g.is_some(), dispatches().is_some());
+        drop(g);
+        // A second acquisition must not deadlock — a poisoned or held lock
+        // would turn every later model load into a hang.
+        let g = creation_guard();
+        assert_eq!(g.is_some(), dispatches().is_some());
+    }
 
     #[test]
     fn parse_known_names_and_aliases() {

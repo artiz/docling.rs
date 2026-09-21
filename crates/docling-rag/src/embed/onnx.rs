@@ -41,11 +41,14 @@ impl OnnxEmbedder {
         // Same execution-provider selection as the PDF pipeline (#74): one
         // DOCLING_RS_EP switch covers the embedder too — a `--features cuda`
         // build embeds on the GPU with per-session CPU fallback.
-        let mut builder = docling_onnx::apply(builder)
+        let builder = docling_onnx::apply(builder)
             .map_err(|e| RagError::Embedding(format!("embedder {e}")))?;
-        let session = builder
-            .commit_from_file(docling_core::assets::resolve(&cfg.embed_onnx_path))
-            .map_err(|e| RagError::Embedding(format!("loading ONNX model: {e}")))?;
+        // Under the GPU creation lock (#452), like every other session.
+        let session = docling_onnx::commit_uncached(
+            builder,
+            docling_core::assets::resolve(&cfg.embed_onnx_path),
+        )
+        .map_err(|e| RagError::Embedding(format!("loading ONNX model: {e}")))?;
         let needs_token_type_ids = session
             .inputs()
             .iter()

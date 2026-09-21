@@ -94,10 +94,10 @@ impl PictureClassifier {
             return None;
         }
         let builder = Session::builder().ok()?.with_intra_threads(intra).ok()?;
-        let session = docling_onnx::apply(builder)
+        let builder = docling_onnx::apply(builder)
             .map_err(|e| eprintln!("docling-pdf: picture classifier: {e}"))
-            .ok()?
-            .commit_from_file(&path)
+            .ok()?;
+        let session = docling_onnx::commit_uncached(builder, &path)
             .map_err(|e| eprintln!("docling-pdf: picture classifier load {path}: {e}"))
             .ok()?;
         Some(Self { session })
@@ -213,10 +213,10 @@ impl CodeFormula {
         }
         let load = |p: String| {
             let builder = Session::builder().ok()?.with_intra_threads(intra).ok()?;
-            docling_onnx::apply(builder)
+            let builder = docling_onnx::apply(builder)
                 .map_err(|e| eprintln!("docling-pdf: CodeFormula: {e}"))
-                .ok()?
-                .commit_from_file(&p)
+                .ok()?;
+            docling_onnx::commit_uncached(builder, &p)
                 .map_err(|e| eprintln!("docling-pdf: CodeFormula load {p}: {e}"))
                 .ok()
         };

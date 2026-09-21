@@ -204,10 +204,11 @@ impl Transcriber {
                 .map_err(|e| format!("asr: threads: {e}"))?;
             // Same DOCLING_RS_EP switch as the PDF pipeline - a GPU
             // build runs both Whisper sessions on the accelerator.
-            let mut builder = docling_onnx::apply(builder)
+            let builder = docling_onnx::apply(builder)
                 .map_err(|e| format!("asr: execution providers: {e}"))?;
-            builder
-                .commit_from_file(&path)
+            // Under the GPU creation lock (#452): the encoder and decoder
+            // sessions must not initialize concurrently with the PDF pool's.
+            docling_onnx::commit_uncached(builder, &path)
                 .map_err(|e| format!("asr: loading {}: {e}", path.display()))
         };
         let encoder = session(model_path(
