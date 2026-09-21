@@ -1,12 +1,26 @@
-# Weekly `cargo update` PR — the other half of committing Cargo.lock
+# Weekly dependency maintenance — the other half of committing Cargo.lock
 # (blog.rust-lang.org/2023/08/29/committing-lockfiles): the committed lock pins
-# every build, and this job keeps that pin from fossilizing. It refreshes both
-# lockfiles (the root workspace and the docling-py bindings workspace), tests
-# the workspace against the latest compatible dependency versions right here
-# (the post's "run cargo update as part of a scheduled CI job"), and opens a
-# PR with the diff. CI on that PR (fmt/clippy, test --locked, msrv) is the
-# merge gate — a dependency that breaks the build or raises the MSRV floor
-# shows up red on the PR instead of as a release-day surprise.
+# every build, and this workflow keeps that pin from fossilizing. Three jobs:
+#
+#   * `audit`        — `cargo audit` of both committed lockfiles (the root
+#                      workspace and the docling-py bindings workspace). A new
+#                      advisory fails the job: the scheduled-run failure is the
+#                      alarm.
+#   * `audit-fix`    — runs only when `audit` went red. `cargo audit fix` bumps
+#                      the vulnerable crates to their patched semver-compatible
+#                      versions in both lockfiles, compiles the workspace
+#                      against the result and opens/refreshes a `fix(deps):` PR
+#                      (a merge cuts a patch release). When no compatible fix
+#                      exists it just says so — the red `audit` stays the
+#                      signal and the bump is a manual job.
+#   * `cargo-update` — refreshes both lockfiles to the latest compatible
+#                      versions, tests the workspace against them right here
+#                      (the post's "run cargo update as part of a scheduled CI
+#                      job"), and opens a PR with the diff.
+#
+# CI on either PR (fmt/clippy, test --locked, msrv) is the merge gate — a
+# dependency that breaks the build or raises the MSRV floor shows up red on
+# the PR instead of as a release-day surprise.
 name: deps
 
 on:
@@ -14,9 +28,21 @@ on:
     - cron: "17 4 * * 1" # Mondays 04:17 UTC
   workflow_dispatch:
 
-# Least privilege by default; the `cargo-update` job raises what it needs.
+# Least privilege by default; the PR-opening jobs raise what they need.
 permissions:
   contents: read
+
+env:
+  # Known-accepted advisories, ignored by ID so `audit` fails only on NEW
+  # findings (an unfiltered audit would go red every week on the residual and
+  # get tuned out) and `audit-fix` doesn't try to bump what we've accepted.
+  # Keep this list in sync with the "Known residual" section of
+  # docs/SECURITY.md; drop an entry the week its upstream fix lands so a
+  # regression can't hide behind the ignore.
+  #   RUSTSEC-2026-0194 / -0195: quick-xml DoS, reachable only via calamine's
+  #     transitive 0.31 pin (XLSX). Our direct quick-xml is >=0.41 (patched).
+  #     Remove when calamine bumps quick-xml.
+  AUDIT_IGNORES: --ignore RUSTSEC-2026-0194 --ignore RUSTSEC-2026-0195
 
 jobs:
   # Weekly known-CVE scan of the committed lockfiles. Runs unconditionally
@@ -24,7 +50,9 @@ jobs:
   # version we already pin, so the value is auditing the *current* tree every
   # week, independent of whether `cargo update` moved anything. A finding fails
   # the job — the scheduled-run failure is the alarm, same philosophy as the
-  # in-job test below.
+  # in-job test below — and hands over to `audit-fix`, which opens the repair
+  # PR when `cargo audit fix` can make one. This job stays red regardless, so
+  # the finding is never silently "handled".
   audit:
     runs-on: ubuntu-latest
     steps:
@@ -49,22 +77,197 @@ jobs:
         run: cargo install cargo-audit --locked
 
       - name: Audit both lockfiles
-        # Known-accepted advisories are ignored by ID so the job fails only on
-        # NEW findings (an unfiltered audit would go red every week on the
-        # residual and get tuned out). Keep this list in sync with the
-        # "Known residual" section of docs/SECURITY.md; drop an entry the week
-        # its upstream fix lands so a regression can't hide behind the ignore.
-        #   RUSTSEC-2026-0194 / -0195: quick-xml DoS, reachable only via
-        #     calamine's transitive 0.31 pin (XLSX). Our direct quick-xml is
-        #     >=0.41 (patched). Remove when calamine bumps quick-xml.
+        # $AUDIT_IGNORES (workflow-level env above) is deliberately unquoted:
+        # it is a list of `--ignore ID` flags, not one argument.
         run: |
-          IGNORES="--ignore RUSTSEC-2026-0194 --ignore RUSTSEC-2026-0195"
           echo "::group::root workspace"
-          cargo audit $IGNORES
+          cargo audit $AUDIT_IGNORES
           echo "::endgroup::"
           echo "::group::docling-py workspace"
-          cargo audit $IGNORES --file crates/docling-py/Cargo.lock
+          cargo audit $AUDIT_IGNORES --file crates/docling-py/Cargo.lock
           echo "::endgroup::"
+
+  # Automated repair for a red `audit`. `cargo audit fix` runs `cargo update
+  # <vulnerable pkgid>` per finding, i.e. exactly the by-hand fix (see the
+  # RUSTSEC-2026-0285 rustls bump), but only within the semver range the
+  # manifests already allow — an advisory whose patch is a new major cannot be
+  # fixed here and is reported instead. Mirrors `cargo-update` below: same
+  # token, same git identity, one rolling PR on a fixed branch. Runs in
+  # parallel with `cargo-update`; the two PRs touch the same lockfiles, and
+  # whichever merges second gets refreshed by its next scheduled run.
+  audit-fix:
+    needs: audit
+    # `always()` because a *failed* `audit` is the only case we care about —
+    # without it a failed dependency skips this job. The result check keeps a
+    # green, skipped or cancelled audit from ever opening a PR.
+    if: ${{ always() && needs.audit.result == 'failure' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # push the deps/audit-fix branch
+      pull-requests: write # open/refresh the fix PR
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # Same reasoning as in `cargo-update`: a branch pushed with the
+          # default GITHUB_TOKEN doesn't trigger workflows, so the fix PR would
+          # sit there with no CI verdict.
+          token: ${{ secrets.RELEASE_PAT || github.token }}
+
+      - name: Install Rust (stable)
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+
+      # The cargo-audit binary built *with* the `fix` feature. Distinct key
+      # from the `audit` job's cache: both cache ~/.cargo/bin wholesale, and a
+      # shared key would hand one job the other's binary (cargo install does
+      # re-install on a feature mismatch, but only after a full rebuild).
+      - uses: actions/cache@v6
+        with:
+          path: ~/.cargo/bin
+          key: ${{ runner.os }}-cargo-audit-fix-bin
+
+      # Registry + target for the compile check. Fall back to the
+      # `cargo-update` job's cache: its `cargo test` artifacts carry the
+      # metadata `cargo check` reuses.
+      - uses: actions/cache@v6
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+            target
+          key: ${{ runner.os }}-cargo-audit-fix-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-audit-fix-
+            ${{ runner.os }}-cargo-deps-update-
+
+      - name: Install cargo-audit (with `fix`)
+        # `fix` is a plain cfg feature (`fix = []`, no extra dependencies), so
+        # --locked pins the same lockfile as the plain install above.
+        run: cargo install cargo-audit --locked --features fix
+
+      - name: cargo audit fix (both lockfiles)
+        id: fix
+        # The `--ignore` flags belong to `cargo audit` and go *before* the
+        # `fix` subcommand (which only takes `--file` / `--dry-run` itself);
+        # they filter the findings the fixer acts on. With `--file`, the
+        # `cargo update` runs in that lockfile's directory, i.e. against the
+        # docling-py workspace.
+        run: |
+          # Advisory IDs open before the fix, so the commit/PR can name what
+          # the bump actually cleared. `cargo audit` exits 1 on findings, so
+          # its status is swallowed inside the pipeline (the shell has
+          # pipefail on); the JSON report is what we want.
+          open_ids() {
+            { cargo audit $AUDIT_IGNORES --json --file "$1" || true; } \
+              | jq -r '.vulnerabilities.list[].advisory.id'
+          }
+          { open_ids Cargo.lock; open_ids crates/docling-py/Cargo.lock; } | sort -u > /tmp/before.txt
+          echo "Open advisories before the fix: $(paste -sd' ' /tmp/before.txt)"
+
+          {
+            echo "::group::root workspace"
+            cargo audit $AUDIT_IGNORES fix
+            echo "::endgroup::"
+            echo "::group::docling-py workspace"
+            cargo audit $AUDIT_IGNORES fix --file crates/docling-py/Cargo.lock
+            echo "::endgroup::"
+          } 2>&1 | tee /tmp/fix.log
+
+          if git diff --quiet -- Cargo.lock crates/docling-py/Cargo.lock; then
+            echo "::notice title=cargo audit fix made no change::No semver-compatible patched version exists for the open advisories (or the manifests pin too tightly); the bump needs a manual Cargo.toml change. The red 'audit' job remains the signal."
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "changed=true" >> "$GITHUB_OUTPUT"
+          git diff --stat -- Cargo.lock crates/docling-py/Cargo.lock | tee /tmp/diffstat.txt
+
+          # fixed = open before − still open after (across both lockfiles).
+          { open_ids Cargo.lock; open_ids crates/docling-py/Cargo.lock; } | sort -u > /tmp/after.txt
+          comm -23 /tmp/before.txt /tmp/after.txt > /tmp/fixed.txt
+          echo "fixed=$(paste -sd' ' /tmp/fixed.txt)" >> "$GITHUB_OUTPUT"
+          echo "remaining=$(paste -sd' ' /tmp/after.txt)" >> "$GITHUB_OUTPUT"
+
+      # Compile against the bumped resolution in-job, so a fix that doesn't
+      # build never even becomes a PR. Not --locked: the lock just changed on
+      # purpose. `check` (no codegen/link) is enough here — the PR's own CI
+      # runs the full suite and is the merge gate.
+      - name: Compile against the fixed lockfiles
+        if: steps.fix.outputs.changed == 'true'
+        run: |
+          cargo check --workspace --all-targets
+          (cd crates/docling-py && cargo check)
+
+      - name: Open / refresh the fix PR
+        if: steps.fix.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_PAT || github.token }}
+          FIXED: ${{ steps.fix.outputs.fixed }}
+          REMAINING: ${{ steps.fix.outputs.remaining }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          # `fix(deps):` on purpose — per scripts/ci/bump_version.sh a merge
+          # whose commits are all fix:/perf:/revert: cuts a patch release.
+          if [ -n "$FIXED" ]; then
+            SUBJECT="fix(deps): cargo audit fix ($(echo "$FIXED" | sed 's/ /, /g'))"
+          else
+            SUBJECT="fix(deps): cargo audit fix"
+          fi
+          git checkout -B deps/audit-fix
+          git add Cargo.lock crates/docling-py/Cargo.lock
+          git commit -s -m "$SUBJECT" \
+            -m "Automated \`cargo audit fix\` of both committed lockfiles (root workspace and crates/docling-py) after the weekly \`cargo audit\` went red." \
+            -m "Advisories fixed: ${FIXED:-see the workflow log}" \
+            -m "Still open after the fix: ${REMAINING:-none}"
+          # Rebase onto master as of *now*, not as of job start — see the
+          # identical step in `cargo-update` for why (workflow-change pushes
+          # and the RELEASE_PAT `workflow` scope).
+          git fetch origin master
+          git rebase origin/master
+          git push --force -u origin deps/audit-fix
+          {
+            echo "The weekly \`cargo audit\` found new advisories; \`cargo audit fix\` bumped the"
+            echo "affected crates to their patched, semver-compatible versions in both committed"
+            echo "lockfiles, and the workspace compiles against the result. **CI on this PR is the"
+            echo "merge gate**; the \`fix(deps):\` prefix means a merge cuts a patch release."
+            echo
+            echo "### Advisories fixed"
+            echo
+            if [ -n "$FIXED" ]; then
+              for id in $FIXED; do echo "- [$id](https://rustsec.org/advisories/$id.html)"; done
+            else
+              echo "- _(could not be determined from the audit report — see the log below)_"
+            fi
+            if [ -n "$REMAINING" ]; then
+              echo
+              echo "### Still open after the fix (needs a manual, semver-incompatible bump)"
+              echo
+              for id in $REMAINING; do echo "- [$id](https://rustsec.org/advisories/$id.html)"; done
+            fi
+            echo
+            echo '```'
+            cat /tmp/diffstat.txt
+            echo '```'
+            echo
+            echo "<details><summary>cargo audit fix log</summary>"
+            echo
+            echo '```'
+            head -c 60000 /tmp/fix.log
+            echo '```'
+            echo
+            echo "</details>"
+          } > /tmp/pr-body.md
+          # One rolling PR: force-pushing the branch refreshes an open PR in
+          # place; create only when none is open.
+          if [ -z "$(gh pr list --head deps/audit-fix --state open --json number --jq '.[].number')" ]; then
+            gh pr create \
+              --title "$SUBJECT" \
+              --body-file /tmp/pr-body.md
+          else
+            gh pr edit deps/audit-fix --title "$SUBJECT" --body-file /tmp/pr-body.md
+          fi
 
   cargo-update:
     runs-on: ubuntu-latest
