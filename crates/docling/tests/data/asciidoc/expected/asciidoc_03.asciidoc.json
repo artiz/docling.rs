@@ -22,27 +22,6 @@
       },
       {
         "$ref": "#/texts/1"
-      },
-      {
-        "$ref": "#/texts/2"
-      },
-      {
-        "$ref": "#/texts/3"
-      },
-      {
-        "$ref": "#/texts/4"
-      },
-      {
-        "$ref": "#/texts/5"
-      },
-      {
-        "$ref": "#/groups/0"
-      },
-      {
-        "$ref": "#/texts/10"
-      },
-      {
-        "$ref": "#/groups/1"
       }
     ],
     "content_layer": "body",
@@ -53,7 +32,7 @@
     {
       "self_ref": "#/groups/0",
       "parent": {
-        "$ref": "#/body"
+        "$ref": "#/texts/1"
       },
       "children": [
         {
@@ -76,7 +55,7 @@
     {
       "self_ref": "#/groups/1",
       "parent": {
-        "$ref": "#/body"
+        "$ref": "#/texts/1"
       },
       "children": [
         {
@@ -96,7 +75,7 @@
       },
       "children": [],
       "content_layer": "body",
-      "label": "text",
+      "label": "paragraph",
       "prov": [],
       "orig": ":_mod-docs-content-type: PROCEDURE :experimental:",
       "text": ":_mod-docs-content-type: PROCEDURE :experimental:"
@@ -106,7 +85,29 @@
       "parent": {
         "$ref": "#/body"
       },
-      "children": [],
+      "children": [
+        {
+          "$ref": "#/texts/2"
+        },
+        {
+          "$ref": "#/texts/3"
+        },
+        {
+          "$ref": "#/texts/4"
+        },
+        {
+          "$ref": "#/texts/5"
+        },
+        {
+          "$ref": "#/groups/0"
+        },
+        {
+          "$ref": "#/texts/10"
+        },
+        {
+          "$ref": "#/groups/1"
+        }
+      ],
       "content_layer": "body",
       "label": "title",
       "prov": [],
@@ -116,11 +117,11 @@
     {
       "self_ref": "#/texts/2",
       "parent": {
-        "$ref": "#/body"
+        "$ref": "#/texts/1"
       },
       "children": [],
       "content_layer": "body",
-      "label": "text",
+      "label": "paragraph",
       "prov": [],
       "orig": "[id=\"renaming-a-bookmark_{context}\"]",
       "text": "[id=\"renaming-a-bookmark_{context}\"]"
@@ -128,11 +129,11 @@
     {
       "self_ref": "#/texts/3",
       "parent": {
-        "$ref": "#/body"
+        "$ref": "#/texts/1"
       },
       "children": [],
       "content_layer": "body",
-      "label": "text",
+      "label": "paragraph",
       "prov": [],
       "orig": "You can rename a bookmark to distinguish it from other bookmarks. If you have bookmarks to several folders that all share the same name, you can tell the bookmarks apart if you rename them.",
       "text": "You can rename a bookmark to distinguish it from other bookmarks. If you have bookmarks to several folders that all share the same name, you can tell the bookmarks apart if you rename them."
@@ -140,11 +141,11 @@
     {
       "self_ref": "#/texts/4",
       "parent": {
-        "$ref": "#/body"
+        "$ref": "#/texts/1"
       },
       "children": [],
       "content_layer": "body",
-      "label": "text",
+      "label": "paragraph",
       "prov": [],
       "orig": "Renaming the bookmark does not rename the folder.",
       "text": "Renaming the bookmark does not rename the folder."
@@ -152,14 +153,21 @@
     {
       "self_ref": "#/texts/5",
       "parent": {
-        "$ref": "#/body"
+        "$ref": "#/texts/1"
       },
       "children": [],
       "content_layer": "body",
-      "label": "text",
+      "label": "paragraph",
       "prov": [],
-      "orig": "**Procedure**",
-      "text": "**Procedure**"
+      "orig": "Procedure",
+      "text": "Procedure",
+      "formatting": {
+        "bold": true,
+        "italic": false,
+        "underline": false,
+        "strikethrough": false,
+        "script": "baseline"
+      }
     },
     {
       "self_ref": "#/texts/6",
@@ -173,35 +181,43 @@
       "orig": "Right-click the bookmark in the side bar.",
       "text": "Right-click the bookmark in the side bar.",
       "enumerated": true,
-      "marker": "1."
+      "marker": ""
     },
     {
       "self_ref": "#/texts/7",
       "parent": {
         "$ref": "#/groups/0"
       },
-      "children": [],
+      "children": [
+        {
+          "$ref": "#/pictures/0"
+        }
+      ],
       "content_layer": "body",
       "label": "list_item",
       "prov": [],
-      "orig": "Select *Rename…*.\n<!-- image -->",
-      "text": "Select *Rename…*.\n<!-- image -->",
+      "orig": "Select *Rename…*.",
+      "text": "Select *Rename…*.",
       "enumerated": true,
-      "marker": "2."
+      "marker": ""
     },
     {
       "self_ref": "#/texts/8",
       "parent": {
         "$ref": "#/groups/0"
       },
-      "children": [],
+      "children": [
+        {
+          "$ref": "#/pictures/1"
+        }
+      ],
       "content_layer": "body",
       "label": "list_item",
       "prov": [],
-      "orig": "In the *Name* field, enter the new name for the bookmark.\n<!-- image -->",
-      "text": "In the *Name* field, enter the new name for the bookmark.\n<!-- image -->",
+      "orig": "In the *Name* field, enter the new name for the bookmark.",
+      "text": "In the *Name* field, enter the new name for the bookmark.",
       "enumerated": true,
-      "marker": "3."
+      "marker": ""
     },
     {
       "self_ref": "#/texts/9",
@@ -215,36 +231,90 @@
       "orig": "Click btn:[Rename].",
       "text": "Click btn:[Rename].",
       "enumerated": true,
-      "marker": "4."
+      "marker": ""
     },
     {
       "self_ref": "#/texts/10",
       "parent": {
-        "$ref": "#/body"
+        "$ref": "#/texts/1"
       },
       "children": [],
       "content_layer": "body",
-      "label": "text",
+      "label": "paragraph",
       "prov": [],
-      "orig": "**Verification**",
-      "text": "**Verification**"
+      "orig": "Verification",
+      "text": "Verification",
+      "formatting": {
+        "bold": true,
+        "italic": false,
+        "underline": false,
+        "strikethrough": false,
+        "script": "baseline"
+      }
     },
     {
       "self_ref": "#/texts/11",
       "parent": {
         "$ref": "#/groups/1"
       },
-      "children": [],
+      "children": [
+        {
+          "$ref": "#/pictures/2"
+        }
+      ],
       "content_layer": "body",
       "label": "list_item",
       "prov": [],
-      "orig": "Check that the side bar lists the bookmark under the new name.\n<!-- image -->",
-      "text": "Check that the side bar lists the bookmark under the new name.\n<!-- image -->",
+      "orig": "Check that the side bar lists the bookmark under the new name.",
+      "text": "Check that the side bar lists the bookmark under the new name.",
       "enumerated": false,
-      "marker": "-"
+      "marker": ""
     }
   ],
-  "pictures": [],
+  "pictures": [
+    {
+      "self_ref": "#/pictures/0",
+      "parent": {
+        "$ref": "#/texts/7"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "picture",
+      "prov": [],
+      "captions": [],
+      "references": [],
+      "footnotes": [],
+      "annotations": []
+    },
+    {
+      "self_ref": "#/pictures/1",
+      "parent": {
+        "$ref": "#/texts/8"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "picture",
+      "prov": [],
+      "captions": [],
+      "references": [],
+      "footnotes": [],
+      "annotations": []
+    },
+    {
+      "self_ref": "#/pictures/2",
+      "parent": {
+        "$ref": "#/texts/11"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "picture",
+      "prov": [],
+      "captions": [],
+      "references": [],
+      "footnotes": [],
+      "annotations": []
+    }
+  ],
   "tables": [],
   "key_value_items": [],
   "form_items": [],

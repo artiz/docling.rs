@@ -16,13 +16,30 @@
   },
   "body": {
     "self_ref": "#/body",
-    "children": [],
+    "children": [
+      {
+        "$ref": "#/texts/0"
+      }
+    ],
     "content_layer": "body",
     "name": "_root_",
     "label": "unspecified"
   },
   "groups": [],
-  "texts": [],
+  "texts": [
+    {
+      "self_ref": "#/texts/0",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "title",
+      "prov": [],
+      "orig": "",
+      "text": ""
+    }
+  ],
   "pictures": [],
   "tables": [],
   "key_value_items": [],

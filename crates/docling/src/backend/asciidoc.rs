@@ -5,8 +5,19 @@
 //! literal-block/image children), `....`-delimited literal blocks, bare and
 //! `|===`-delimited tables (with cell-format-specifier stripping), images and
 //! captions, and multi-line paragraphs.
+//!
+//! Alongside the flat nodes the parser builds docling's item tree for the
+//! JSON export, mirroring `_parse`'s `parents` / `indents` bookkeeping: the
+//! title is the root the sections hang off, a heading is parented to the
+//! nearest present ancestor level, every list opens a `list` group at the
+//! next level (a deeper indent nests another group, a dedent pops levels
+//! while an outer group exists), items are children of the innermost group,
+//! a `+`-continued picture or literal block is a child of the open list item,
+//! block titles become body-level `caption` items that tables / pictures /
+//! code reference — or a bold paragraph when they precede a list.
 
-use docling_core::{DoclingDocument, Node, Table};
+use docling_core::tree::{Formatting, ItemTree, ListMeta, TreeKind};
+use docling_core::{DoclingDocument, Node, Table, TableCell};
 
 use crate::backend::images::{FsImageResolver, ImageResolver, NoFetch};
 use crate::backend::markdown::escape_text;
@@ -59,6 +70,8 @@ fn parse(text: &str, name: &str, images: &dyn ImageResolver) -> DoclingDocument 
     let mut doc = DoclingDocument::new(name);
     let mut p = Parser {
         images: Some(images),
+        parents: vec![None; LEVELS],
+        indents: vec![None; LEVELS],
         ..Parser::default()
     };
     // Iterate raw lines, preserving them as docling does (it never strips the
@@ -70,8 +83,12 @@ fn parse(text: &str, name: &str, images: &dyn ImageResolver) -> DoclingDocument 
         }
     }
     p.finish(&mut doc);
+    doc.tree = Some(std::mem::take(&mut p.tree));
     doc
 }
+
+/// docling keeps ten section levels (`parents[0..10]`).
+const LEVELS: usize = 10;
 
 /// One unit of input: a raw line, or the body of a `....` literal block.
 enum Block<'a> {
@@ -136,6 +153,18 @@ struct Parser<'r> {
     /// inside the open item instead of closing the list.
     list_continuation: bool,
     images: Option<&'r dyn ImageResolver>,
+    /// docling's item tree (see the module docs).
+    tree: ItemTree,
+    /// docling's `parents`: the item open at each level — the title at 0,
+    /// headings at their level, list groups at the level after their parent.
+    parents: Vec<Option<usize>>,
+    /// docling's `indents`: the indent width that opened the list group at a
+    /// level (never cleared when a list closes, exactly like upstream).
+    indents: Vec<Option<usize>>,
+    /// The tree id of the most recent list item — docling's `last_list_item`.
+    last_item_tree: Option<usize>,
+    /// The unescaped text of the caption [`Self::take_caption`] last returned.
+    raw_caption: String,
 }
 
 /// What is being fed to [`Parser::close_list_if_needed`] — docling passes a
@@ -147,6 +176,70 @@ enum Trigger<'a> {
 }
 
 impl Parser<'_> {
+    /// docling's `_get_current_level`: the level before the first empty slot.
+    fn current_level(&self) -> usize {
+        (1..LEVELS)
+            .find(|&k| self.parents[k].is_none())
+            .map_or(0, |k| k - 1)
+    }
+
+    /// docling's `_get_current_parent`: the item at [`Self::current_level`].
+    fn current_parent(&self) -> Option<usize> {
+        (1..LEVELS)
+            .find(|&k| self.parents[k].is_none())
+            .and_then(|k| self.parents[k - 1])
+    }
+
+    /// A text item in the tree (`add_text` / `add_heading` / `add_list_item`).
+    fn add_tree_text(
+        &mut self,
+        parent: Option<usize>,
+        label: &str,
+        text: &str,
+        formatting: Option<Formatting>,
+        level: Option<u8>,
+        list: Option<ListMeta>,
+    ) -> usize {
+        self.tree.add(
+            parent,
+            None,
+            TreeKind::Text {
+                label: label.into(),
+                text: text.into(),
+                orig: None,
+                formatting,
+                hyperlink: None,
+                level,
+                list,
+            },
+        )
+    }
+
+    /// docling: `parents[level + 1] = add_group(parent=parents[level],
+    /// name="list", label=LIST)`, `indents[level + 1] = indent`.
+    fn open_list_group(&mut self, level: usize, indent: usize) {
+        if level + 1 >= LEVELS {
+            return;
+        }
+        let g = self.tree.add(
+            self.parents[level],
+            None,
+            TreeKind::Group {
+                label: "list".into(),
+                name: "list".into(),
+            },
+        );
+        self.parents[level + 1] = Some(g);
+        self.indents[level + 1] = Some(indent);
+    }
+
+    /// A block title claimed by a table / picture / code block: docling adds
+    /// it with `add_text(label=CAPTION)` and *no parent* — a body-level item
+    /// the floating item then references in `captions`.
+    fn add_tree_caption(&mut self, text: &str) -> usize {
+        self.add_tree_text(None, "caption", text, None, None, None)
+    }
+
     /// docling's `_close_list_if_needed`: anything that is not a list item, a
     /// blank line, a `+`, or a continuation block claimed by a preceding `+`
     /// ends the open list. Unlike docling ≤ 2.124 the line is *not* swallowed —
@@ -166,6 +259,10 @@ impl Parser<'_> {
             }
         };
         if !keep {
+            // docling: `parents[level] = None` for the current level only —
+            // the indent stays recorded.
+            let level = self.current_level();
+            self.parents[level] = None;
             self.end_list();
         }
     }
@@ -180,6 +277,33 @@ impl Parser<'_> {
         // a code item's captions after the block — where 2.126 wrote the
         // title as a text item ahead of it.
         let caption = self.take_caption();
+        let tree_caption = if caption.is_some() {
+            let raw = self.raw_caption.clone();
+            Some(self.add_tree_caption(&raw))
+        } else {
+            None
+        };
+        let parent = if self.in_list {
+            self.last_item_tree
+        } else {
+            self.current_parent()
+        };
+        let code_id = self.tree.add(
+            parent,
+            None,
+            TreeKind::Code {
+                text: code.clone(),
+                orig: None,
+                language: None,
+                formatting: None,
+                hyperlink: None,
+            },
+        );
+        // docling's `add_code(caption=…)`: the caption is a child reference
+        // on the code item.
+        if let Some(c) = tree_caption {
+            self.tree.items[code_id].children.push(c);
+        }
         if !(self.in_list && self.fold_child(doc, &format!("```\n{code}\n```"))) {
             doc.push(Node::Code {
                 language: None,
@@ -203,6 +327,9 @@ impl Parser<'_> {
                 level: 1,
                 text: escape_text(rest.trim()),
             });
+            // docling: `parents[0] = add_text(label=TITLE)` — on the body.
+            let id = self.add_tree_text(None, "title", rest.trim(), None, None, None);
+            self.parents[0] = Some(id);
             return;
         }
 
@@ -215,6 +342,22 @@ impl Parser<'_> {
                 level: n.min(6),
                 text: escape_text(text.trim()),
             });
+            // docling: level = `=` count − 1, parent = the nearest present
+            // ancestor level, deeper levels cleared.
+            let level = (usize::from(n) - 1).min(LEVELS - 1);
+            let ancestor = (0..level).rev().find_map(|k| self.parents[k]);
+            let id = self.add_tree_text(
+                ancestor,
+                "section_header",
+                text.trim(),
+                None,
+                Some(level as u8),
+                None,
+            );
+            self.parents[level] = Some(id);
+            for k in level + 1..LEVELS {
+                self.parents[k] = None;
+            }
             return;
         }
 
@@ -279,6 +422,8 @@ impl Parser<'_> {
     }
 
     fn push_list_item(&mut self, item: ListItem<'_>, doc: &mut DoclingDocument) {
+        // docling's `parents` / `indents` bookkeeping for the tree.
+        let mut level = self.current_level();
         if !self.in_list {
             self.in_list = true;
             // A block title pending in front of a list (the `.Procedure` /
@@ -289,7 +434,53 @@ impl Parser<'_> {
                 doc.push(Node::Paragraph {
                     text: format!("**{text}**"),
                 });
+                let raw = self.raw_caption.clone();
+                let parent = self.parents[level];
+                self.add_tree_text(
+                    parent,
+                    "paragraph",
+                    &raw,
+                    Some(Formatting {
+                        bold: true,
+                        ..Formatting::default()
+                    }),
+                    None,
+                    None,
+                );
             }
+            self.open_list_group(level, item.indent);
+        } else if item.indent > self.indents[level].unwrap_or(0) {
+            self.open_list_group(level, item.indent);
+        } else if item.indent < self.indents[level].unwrap_or(0) {
+            while level > 0 && item.indent < self.indents[level].unwrap_or(0) {
+                // Only pop while an outer group exists to fall back to;
+                // otherwise the current group stays the list root.
+                if self.indents[level - 1].is_none() {
+                    break;
+                }
+                self.parents[level] = None;
+                self.indents[level] = None;
+                level -= 1;
+            }
+        }
+        let tree_parent = self.current_parent();
+        let tree_marker =
+            numeric_marker(item.marker).map_or(String::new(), |_| item.marker.to_string());
+        let id = self.add_tree_text(
+            tree_parent,
+            "list_item",
+            item.text.trim(),
+            None,
+            None,
+            Some(ListMeta {
+                enumerated: item.numbered,
+                marker: tree_marker,
+            }),
+        );
+        self.last_item_tree = Some(id);
+        // The flat path's own list state (`levels`): what the Markdown
+        // serializer needs to number and indent the items.
+        if self.levels.is_empty() {
             self.levels = vec![ListLevel {
                 indent: item.indent,
                 slots: 0,
@@ -339,6 +530,30 @@ impl Parser<'_> {
     fn push_picture(&mut self, uri: &str, doc: &mut DoclingDocument) {
         let cap = self.take_caption();
         let image = self.images.and_then(|r| r.resolve(uri));
+        // Tree: the caption is a body-level item the picture references; the
+        // picture hangs off the open list item or the current section.
+        let captions: Vec<usize> = if cap.is_some() {
+            let raw = self.raw_caption.clone();
+            vec![self.add_tree_caption(&raw)]
+        } else {
+            Vec::new()
+        };
+        let parent = if self.in_list {
+            self.last_item_tree
+        } else {
+            self.current_parent()
+        };
+        self.tree.add(
+            parent,
+            None,
+            TreeKind::Picture {
+                captions,
+                image: image.clone(),
+                classification: None,
+                chart: None,
+                dpi: None,
+            },
+        );
         // Inside a list docling nests the picture under the open item, so it
         // is folded into the item's text (see `fold_child`): the marker lands
         // where docling prints it, at the cost of the separate JSON picture
@@ -393,16 +608,20 @@ impl Parser<'_> {
         self.in_list = false;
         self.levels.clear();
         self.last_item = None;
+        self.last_item_tree = None;
         self.list_continuation = false;
     }
 
-    /// Take a pending caption for the picture or table that claims it.
+    /// Take a pending caption for the picture or table that claims it — the
+    /// Markdown-escaped text; the raw joined text stays in `raw_caption` for
+    /// the tree item.
     fn take_caption(&mut self) -> Option<String> {
         if self.caption_data.is_empty() {
             return None;
         }
         let cap = self.caption_data.join(" ");
         self.caption_data.clear();
+        self.raw_caption = cap.clone();
         Some(escape_text(&cap))
     }
 
@@ -413,16 +632,22 @@ impl Parser<'_> {
             doc.push(Node::Paragraph {
                 text: escape_text(&text),
             });
+            let parent = self.current_parent();
+            self.add_tree_text(parent, "paragraph", &text, None, None, None);
         }
     }
 
     fn flush_table(&mut self, doc: &mut DoclingDocument) {
         if !self.table_data.is_empty() {
             // A pending caption is attached to this table and renders before it.
+            let mut captions = Vec::new();
             if let Some(cap) = self.take_caption() {
                 doc.push(Node::Paragraph { text: cap });
+                let raw = self.raw_caption.clone();
+                captions.push(self.add_tree_caption(&raw));
             }
             let num_cols = self.table_data.iter().map(Vec::len).max().unwrap_or(0);
+            let raw_rows: Vec<Vec<String>> = self.table_data.clone();
             let rows: Vec<Vec<String>> = self
                 .table_data
                 .drain(..)
@@ -431,7 +656,7 @@ impl Parser<'_> {
                     r
                 })
                 .collect();
-            doc.push(Node::Table(Table {
+            let table = Table {
                 rows,
                 location: None,
                 structure: None,
@@ -439,7 +664,42 @@ impl Parser<'_> {
                 cells: None,
                 caption: None,
                 caption_parent: Default::default(),
-            }));
+            };
+            // docling's `_populate_table_as_grid` writes a cell only where
+            // the source row has one — a short row leaves its tail empty in
+            // the grid (no cell, no header flag) — so the tree's table carries
+            // the ragged cells while the flat rows stay padded for Markdown.
+            let cells: Vec<TableCell> = raw_rows
+                .iter()
+                .enumerate()
+                .flat_map(|(r, row)| {
+                    row.iter().enumerate().map(move |(c, text)| TableCell {
+                        text: text.clone(),
+                        bbox: None,
+                        start_row: r,
+                        start_col: c,
+                        row_span: 1,
+                        col_span: 1,
+                        column_header: r == 0,
+                        row_header: false,
+                        row_section: false,
+                    })
+                })
+                .collect();
+            let parent = self.current_parent();
+            self.tree.add(
+                parent,
+                None,
+                TreeKind::Table {
+                    table: Table {
+                        cells: Some(cells),
+                        ..table.clone()
+                    },
+                    rich_cells: Vec::new(),
+                    captions,
+                },
+            );
+            doc.push(Node::Table(table));
         }
         self.in_table = false;
         self.table_data.clear();
@@ -550,6 +810,85 @@ mod tests {
 
     fn md(src: &str) -> String {
         parse(src, "t", &NoFetch).export_to_markdown()
+    }
+
+    fn json(src: &str) -> serde_json::Value {
+        serde_json::from_str(&parse(src, "t", &NoFetch).export_to_json()).unwrap()
+    }
+
+    /// docling's `_parse` tree (verified item for item against docling
+    /// 2.129 on this input): the title is the root, a heading hangs off the
+    /// nearest present ancestor level, a list opens a `list` group whose
+    /// deeper indents nest further groups, items are the innermost group's
+    /// children, a block title before a list is a bold paragraph, and a
+    /// table's block title is a body-level `caption` the table references.
+    #[test]
+    fn tree_mirrors_docling_parents_and_indents() {
+        let v = json(
+            "= Title\n\nAbstract.\n\n== Section 1\n\n* a\n  * b\n* c\n\n\
+                      === Deep\n\n.Steps\n. one\n. two\n\n.Table title\n|===\n|H|I|\n|1|2|\n|===\n",
+        );
+        let texts = v["texts"].as_array().unwrap();
+        let by = |i: usize| {
+            (
+                texts[i]["label"].as_str().unwrap(),
+                texts[i]["parent"]["$ref"].as_str().unwrap(),
+            )
+        };
+        assert_eq!(by(0), ("title", "#/body"));
+        assert_eq!(by(1), ("paragraph", "#/texts/0"));
+        assert_eq!(by(2), ("section_header", "#/texts/0"));
+        assert_eq!(texts[2]["level"], 1);
+        // `* a` opens groups/0 under the section; `  * b` nests groups/1
+        // inside it; `* c` dedents back to groups/0.
+        assert_eq!(by(3), ("list_item", "#/groups/0"));
+        assert_eq!(by(4), ("list_item", "#/groups/1"));
+        assert_eq!(by(5), ("list_item", "#/groups/0"));
+        assert_eq!(v["groups"][0]["parent"]["$ref"], "#/texts/2");
+        assert_eq!(v["groups"][1]["parent"]["$ref"], "#/groups/0");
+        assert_eq!(texts[3]["marker"], "");
+        assert_eq!(texts[3]["enumerated"], false);
+        // `===` under `==`: level 2, parented to the level-1 heading.
+        assert_eq!(by(6), ("section_header", "#/texts/2"));
+        assert_eq!(texts[6]["level"], 2);
+        // `.Steps` before the dotted list: a bold paragraph under `Deep`; the
+        // list group follows it there, its items enumerated with no marker.
+        assert_eq!(by(7), ("paragraph", "#/texts/6"));
+        assert_eq!(texts[7]["formatting"]["bold"], true);
+        assert_eq!(v["groups"][2]["parent"]["$ref"], "#/texts/6");
+        assert_eq!(by(8), ("list_item", "#/groups/2"));
+        assert_eq!(texts[8]["enumerated"], true);
+        assert_eq!(texts[8]["marker"], "");
+        // The table's block title: a caption on the *body*, referenced.
+        assert_eq!(by(10), ("caption", "#/body"));
+        assert_eq!(v["tables"][0]["parent"]["$ref"], "#/texts/6");
+        assert_eq!(v["tables"][0]["captions"][0]["$ref"], "#/texts/10");
+        assert_eq!(
+            v["tables"][0]["data"]["table_cells"][0]["column_header"],
+            true
+        );
+    }
+
+    /// A `+`-continued picture is a child of the open list item (docling's
+    /// `parent=last_list_item`), and a short table row leaves its tail
+    /// without cells (`_populate_table_as_grid` writes only what the row has).
+    #[test]
+    fn tree_nests_continued_pictures_and_keeps_ragged_rows() {
+        let v = json("= T\n\n. step\n+\nimage::a.png[]\n\n|A|B|C|\n|1|\n");
+        assert_eq!(v["pictures"][0]["parent"]["$ref"], "#/texts/1");
+        assert_eq!(v["texts"][1]["children"][0]["$ref"], "#/pictures/0");
+        // `line.split("|")[1:]` keeps the trailing empty field, so the rows
+        // are 4 and 2 cells wide; the short row is not padded to 4.
+        let cells = v["tables"][0]["data"]["table_cells"].as_array().unwrap();
+        assert_eq!(cells.len(), 6, "4 header cells + 2, no padding");
+        assert_eq!(v["tables"][0]["data"]["num_cols"], 4);
+        assert_eq!(
+            cells
+                .iter()
+                .filter(|c| c["start_row_offset_idx"] == 1)
+                .count(),
+            2
+        );
     }
 
     #[test]

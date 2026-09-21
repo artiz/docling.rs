@@ -19,21 +19,6 @@
     "children": [
       {
         "$ref": "#/texts/0"
-      },
-      {
-        "$ref": "#/texts/1"
-      },
-      {
-        "$ref": "#/tables/0"
-      },
-      {
-        "$ref": "#/texts/2"
-      },
-      {
-        "$ref": "#/texts/3"
-      },
-      {
-        "$ref": "#/tables/1"
       }
     ],
     "content_layer": "body",
@@ -47,7 +32,23 @@
       "parent": {
         "$ref": "#/body"
       },
-      "children": [],
+      "children": [
+        {
+          "$ref": "#/texts/1"
+        },
+        {
+          "$ref": "#/tables/0"
+        },
+        {
+          "$ref": "#/texts/2"
+        },
+        {
+          "$ref": "#/texts/3"
+        },
+        {
+          "$ref": "#/tables/1"
+        }
+      ],
       "content_layer": "body",
       "label": "title",
       "prov": [],
@@ -57,11 +58,11 @@
     {
       "self_ref": "#/texts/1",
       "parent": {
-        "$ref": "#/body"
+        "$ref": "#/texts/0"
       },
       "children": [],
       "content_layer": "body",
-      "label": "text",
+      "label": "paragraph",
       "prov": [],
       "orig": "A table whose header row uses alignment and style specifiers on every cell.",
       "text": "A table whose header row uses alignment and style specifiers on every cell."
@@ -69,11 +70,11 @@
     {
       "self_ref": "#/texts/2",
       "parent": {
-        "$ref": "#/body"
+        "$ref": "#/texts/0"
       },
       "children": [],
       "content_layer": "body",
-      "label": "text",
+      "label": "paragraph",
       "prov": [],
       "orig": "[%autowidth, cols=\"^.^40,<.^60\"]",
       "text": "[%autowidth, cols=\"^.^40,<.^60\"]"
@@ -81,11 +82,11 @@
     {
       "self_ref": "#/texts/3",
       "parent": {
-        "$ref": "#/body"
+        "$ref": "#/texts/0"
       },
       "children": [],
       "content_layer": "body",
-      "label": "text",
+      "label": "paragraph",
       "prov": [],
       "orig": "A table with single-letter cells that collide with style operators.",
       "text": "A table with single-letter cells that collide with style operators."
@@ -96,7 +97,7 @@
     {
       "self_ref": "#/tables/0",
       "parent": {
-        "$ref": "#/body"
+        "$ref": "#/texts/0"
       },
       "children": [],
       "content_layer": "body",
@@ -281,7 +282,7 @@
     {
       "self_ref": "#/tables/1",
       "parent": {
-        "$ref": "#/body"
+        "$ref": "#/texts/0"
       },
       "children": [],
       "content_layer": "body",

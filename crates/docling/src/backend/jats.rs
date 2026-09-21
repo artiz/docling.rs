@@ -18,6 +18,7 @@ use crate::backend::markdown::escape_text;
 use crate::backend::DeclarativeBackend;
 use crate::error::ConversionError;
 use crate::source::SourceDocument;
+use docling_core::tree::{Formatting, ItemTree, ListMeta, TreeKind};
 use docling_core::{
     inline_paragraph_node, DoclingDocument, InlineRun, Node, PictureImage, Script, Table,
     TableStructure,
@@ -110,6 +111,104 @@ const DEFAULT_HEADER_FOOTNOTES: &str = "Footnotes";
 const DEFAULT_HEADER_REFERENCES: &str = "References";
 const DEFAULT_TEXT_ETAL: &str = "et al.";
 
+/// The two outputs the walk fills side by side: the flat nodes (Markdown /
+/// DocLang / LaTeX) and docling's item tree (JSON), the latter mirroring
+/// `JatsDocumentBackend`'s `parent` threading — the title is the root every
+/// section hangs off, a `<sec>` heading parents what follows it, a `<list>`
+/// is a `list` group, a paragraph of several runs an `inline` group, figure
+/// and table captions body-level `caption` items the picture / table
+/// references, a `<fn-group>` a heading over a `footnotes` list of empty
+/// items each holding an inline group with the `footnote` text.
+struct Out<'a> {
+    doc: &'a mut DoclingDocument,
+    tree: ItemTree,
+}
+
+impl Out<'_> {
+    #[allow(clippy::too_many_arguments)]
+    fn text(
+        &mut self,
+        parent: Option<usize>,
+        label: &str,
+        text: &str,
+        formatting: Option<Formatting>,
+        hyperlink: Option<String>,
+        level: Option<u8>,
+        list: Option<ListMeta>,
+    ) -> usize {
+        self.tree.add(
+            parent,
+            None,
+            TreeKind::Text {
+                label: label.into(),
+                text: text.into(),
+                orig: None,
+                formatting,
+                hyperlink,
+                level,
+                list,
+            },
+        )
+    }
+
+    /// `add_heading(text, parent, level)`.
+    fn heading(&mut self, parent: Option<usize>, text: &str, level: i32) -> usize {
+        self.text(
+            parent,
+            "section_header",
+            text,
+            None,
+            None,
+            Some(level.clamp(1, 100) as u8),
+            None,
+        )
+    }
+
+    fn group(&mut self, parent: Option<usize>, label: &str, name: &str) -> usize {
+        self.tree.add(
+            parent,
+            None,
+            TreeKind::Group {
+                label: label.into(),
+                name: name.into(),
+            },
+        )
+    }
+
+    /// `add_list_item(text, parent)` with docling's defaults (`enumerated=False`,
+    /// marker `""`).
+    fn list_item(&mut self, parent: Option<usize>, text: &str) -> usize {
+        self.text(
+            parent,
+            "list_item",
+            text,
+            None,
+            None,
+            None,
+            Some(ListMeta::default()),
+        )
+    }
+
+    /// Whether `parent` is a `list` group — docling's `_add_citation` test.
+    fn is_list(&self, parent: Option<usize>) -> bool {
+        parent.is_some_and(|p| {
+            matches!(&self.tree.items[p].kind, TreeKind::Group { label, .. } if label == "list")
+        })
+    }
+}
+
+/// docling's `Formatting` for a run: `None` while no emphasis tag applied
+/// (`_merge_formatting` only creates one under a mapped tag).
+fn tree_formatting(fmt: Fmt) -> Option<Formatting> {
+    (fmt != Fmt::default()).then_some(Formatting {
+        bold: fmt.bold,
+        italic: fmt.italic,
+        underline: fmt.underline,
+        strikethrough: fmt.strike,
+        script: fmt.script,
+    })
+}
+
 impl DeclarativeBackend for JatsBackend {
     fn convert(&self, source: &SourceDocument) -> Result<DoclingDocument, ConversionError> {
         let xml = source.text()?;
@@ -122,24 +221,46 @@ impl DeclarativeBackend for JatsBackend {
         let dom = Document::parse_with_options(&xml, opts)
             .map_err(|e| ConversionError::with_source("jats", e))?;
         let mut doc = DoclingDocument::new(&source.name);
+        let mut out = Out {
+            doc: &mut doc,
+            tree: ItemTree::default(),
+        };
 
         // --- metadata -------------------------------------------------------
-        if let Some(title) = parse_title(&dom) {
-            doc.push(Node::Heading {
+        // docling's `_add_title`: the title item is *always* the root the
+        // whole document hangs off (an empty text when the article has no
+        // title-group).
+        let title = parse_title(&dom);
+        if let Some(title) = &title {
+            out.doc.push(Node::Heading {
                 level: 1,
-                text: escape_text(&title),
+                text: escape_text(title),
             });
         }
+        let root = out.text(
+            None,
+            "title",
+            title.as_deref().unwrap_or(""),
+            None,
+            None,
+            None,
+            None,
+        );
+        let root = Some(root);
         let (authors, affiliations) = parse_authors(&dom);
         if !authors.is_empty() {
-            doc.push(Node::Paragraph {
-                text: escape_text(&authors.join(", ")),
+            let joined = authors.join(", ");
+            out.doc.push(Node::Paragraph {
+                text: escape_text(&joined),
             });
+            out.text(root, "paragraph", &joined, None, None, None, None);
         }
         if !affiliations.is_empty() {
-            doc.push(Node::Paragraph {
-                text: escape_text(&affiliations.join("; ")),
+            let joined = affiliations.join("; ");
+            out.doc.push(Node::Paragraph {
+                text: escape_text(&joined),
             });
+            out.text(root, "paragraph", &joined, None, None, None, None);
         }
         for abs in parse_abstracts(&dom) {
             // docling skips an abstract with neither plain paragraphs nor
@@ -156,31 +277,37 @@ impl DeclarativeBackend for JatsBackend {
             // and `+ 2` (a section's), with `hlevel` still 0: the abstract is
             // added before the body walk, the only thing that moves it — so
             // the constants are exact, not a shortcut.
-            doc.push(Node::Heading {
+            out.doc.push(Node::Heading {
                 level: 2,
                 text: escape_text(label),
             });
+            let abs_heading = Some(out.heading(root, label, 1));
             if abs.sections.is_empty() {
                 // A plain abstract: its paragraphs joined into one text item.
-                doc.push(Node::Paragraph {
+                out.doc.push(Node::Paragraph {
                     text: escape_text(&abs.plain),
                 });
+                out.text(abs_heading, "text", &abs.plain, None, None, None, None);
             } else {
                 // A structured abstract (docling#4172): each `<sec>` is a
                 // heading one level below the abstract's — none when it has
                 // no title — with one text item per `<p>`. Plain paragraphs
                 // beside sections are dropped, as docling drops them.
                 for (title, paragraphs) in &abs.sections {
-                    if !title.is_empty() {
-                        doc.push(Node::Heading {
+                    let section_parent = if title.is_empty() {
+                        abs_heading
+                    } else {
+                        out.doc.push(Node::Heading {
                             level: 3,
                             text: escape_text(title),
                         });
-                    }
+                        Some(out.heading(abs_heading, title, 2))
+                    };
                     for p in paragraphs {
-                        doc.push(Node::Paragraph {
+                        out.doc.push(Node::Paragraph {
                             text: escape_text(p),
                         });
+                        out.text(section_parent, "text", p, None, None, None, None);
                     }
                 }
             }
@@ -203,15 +330,17 @@ impl DeclarativeBackend for JatsBackend {
             if let Some(node) = dom.descendants().find(|n| n.has_tag_name(tag)) {
                 walk_linear(
                     node,
-                    false,
+                    root,
                     Fmt::default(),
                     None,
                     &mut hlevel,
                     fig_base,
-                    &mut doc,
+                    &mut out,
                 );
             }
         }
+        let tree = out.tree;
+        doc.tree = Some(tree);
         Ok(doc)
     }
 }
@@ -259,7 +388,13 @@ fn walk_generic(node: XmlNode, doc: &mut DoclingDocument) {
     for child in node.children().filter(XmlNode::is_element) {
         let tag = child.tag_name().name();
         if tag == "table-wrap" {
-            add_table(doc, child);
+            // The generic XML path stays flat: the table's tree entry is
+            // built and dropped.
+            let mut out = Out {
+                doc,
+                tree: ItemTree::default(),
+            };
+            add_table(&mut out, None, child);
             continue;
         }
         if tag == "table" {
@@ -571,14 +706,14 @@ fn header_text(child: XmlNode) -> Option<String> {
         })
 }
 
-/// A citation renders as a list item inside a list group, else a paragraph —
-/// docling's `_add_citation`.
-fn add_citation(doc: &mut DoclingDocument, parent_is_list: bool, text: &str) {
+/// docling's `_add_citation`: a list item under a `list` group, a text item
+/// elsewhere.
+fn add_citation(out: &mut Out, parent: Option<usize>, text: &str) {
     if text.is_empty() {
         return;
     }
-    if parent_is_list {
-        doc.push(Node::ListItem {
+    if out.is_list(parent) {
+        out.doc.push(Node::ListItem {
             ordered: false,
             number: 0,
             first_in_list: false,
@@ -590,10 +725,12 @@ fn add_citation(doc: &mut DoclingDocument, parent_is_list: bool, text: &str) {
             href: None,
             layer: None,
         });
+        out.list_item(parent, text);
     } else {
-        doc.push(Node::Paragraph {
+        out.doc.push(Node::Paragraph {
             text: escape_text(text),
         });
+        out.text(parent, "text", text, None, None, None, None);
     }
 }
 
@@ -605,12 +742,12 @@ fn add_citation(doc: &mut DoclingDocument, parent_is_list: bool, text: &str) {
 /// paragraph.
 fn walk_linear(
     node: XmlNode,
-    parent_is_list: bool,
+    parent: Option<usize>,
     fmt: Fmt,
     hyperlink: Option<&str>,
     hlevel: &mut i32,
     fig_base: Option<&Path>,
-    doc: &mut DoclingDocument,
+    out: &mut Out,
 ) -> Vec<Seg> {
     let node_tag = node.tag_name().name();
     // An emphasis tag (`<italic>`, `<bold>`, …) contributes its formatting to
@@ -629,17 +766,22 @@ fn walk_linear(
         }
     }
 
+    // docling's `new_parent`: what the recursion hangs items off. Set once
+    // per element, *not* per child — so once a `<sec>` (or `<list>`,
+    // `<ref-list>`) child has moved it, the following siblings are walked
+    // under that heading / group too. `ptag100`'s back matter relies on it:
+    // the paragraphs after the `Funding` section's `<sec>` sit under its
+    // heading in upstream's tree.
+    let mut new_parent = parent;
     for child in node.children().filter(XmlNode::is_element) {
         let mut stop_walk = false;
         let ctag = child.tag_name().name();
 
         // Flush accumulated inline runs before a block-level child.
         if node_tag == "p" && FLUSH_TAGS.contains(&ctag) {
-            emit_inline(doc, std::mem::take(&mut segments));
+            emit_inline(out, parent, std::mem::take(&mut segments));
         }
 
-        // Whether the recursion below should treat `child` as a list parent.
-        let mut child_in_list = parent_is_list;
         // Whether this child opened a section (so we decrement `hlevel` after).
         let mut opened_section = false;
 
@@ -647,37 +789,38 @@ fn walk_linear(
             "sec" | "ack" => {
                 if let Some(text) = header_text(child) {
                     *hlevel += 1;
-                    doc.push(Node::Heading {
+                    out.doc.push(Node::Heading {
                         level: fw_level(*hlevel),
                         text: escape_text(&text),
                     });
+                    new_parent = Some(out.heading(parent, &text, *hlevel));
                     opened_section = true;
                 }
             }
             "list" => {
-                child_in_list = true;
+                new_parent = Some(out.group(parent, "list", "list"));
             }
             "list-item" => {
                 // docling PR #3619: a nested <list> inside the item is real
                 // structure, not part of the item's text — the item's text
                 // comes from its non-list children only, and the nested
                 // list's items follow one level deeper (recursively).
-                add_list_item(doc, child, 0);
+                add_list_item(out, parent, child, 0);
                 stop_walk = true;
             }
             "fig" => {
-                add_figure(doc, child, fig_base);
+                add_figure(out, parent, child, fig_base);
                 stop_walk = true;
             }
             "table-wrap" => {
-                add_table(doc, child);
+                add_table(out, parent, child);
                 stop_walk = true;
             }
             "supplementary-material" => {
                 stop_walk = true;
             }
             "fn-group" => {
-                add_footnote_group(doc, child, *hlevel);
+                add_footnote_group(out, parent, child, *hlevel);
                 stop_walk = true;
             }
             "ref-list" if node_tag != "ref-list" => {
@@ -687,24 +830,27 @@ fn walk_linear(
                     .map(|h| normalize(&get_text(h)))
                     .filter(|s| !s.is_empty())
                     .unwrap_or_else(|| DEFAULT_HEADER_REFERENCES.to_string());
-                doc.push(Node::Heading {
+                out.doc.push(Node::Heading {
                     level: fw_level(1),
                     text: escape_text(&text),
                 });
-                child_in_list = true;
+                // docling: `add_heading(text, parent)` at its default level 1,
+                // then a `list` group under it for the citations.
+                let heading = out.heading(parent, &text, 1);
+                new_parent = Some(out.group(Some(heading), "list", "list"));
             }
             "element-citation" => {
                 let text = parse_element_citation(child);
-                add_citation(doc, parent_is_list, &text);
+                add_citation(out, parent, &text);
                 stop_walk = true;
             }
             "mixed-citation" => {
                 let text = norm_text(child);
-                add_citation(doc, parent_is_list, &text);
+                add_citation(out, parent, &text);
                 stop_walk = true;
             }
             "tex-math" => {
-                add_equation(doc, child);
+                add_equation(out, parent, child);
                 stop_walk = true;
             }
             "inline-formula" => {
@@ -722,12 +868,12 @@ fn walk_linear(
         if !stop_walk {
             let child_segments = walk_linear(
                 child,
-                child_in_list,
+                new_parent,
                 current,
                 current_link,
                 hlevel,
                 fig_base,
-                doc,
+                out,
             );
             // Don't fold a flushed block's runs back into an enclosing paragraph.
             let parent_is_p = node.parent().map(|p| p.has_tag_name("p")).unwrap_or(false);
@@ -750,7 +896,7 @@ fn walk_linear(
     }
 
     if node_tag == "p" {
-        emit_inline(doc, segments);
+        emit_inline(out, parent, segments);
         Vec::new()
     } else {
         segments
@@ -855,7 +1001,7 @@ fn extend_segments(segments: &mut Vec<Seg>, more: Vec<Seg>) {
 /// formula run renders as `$…$` in Markdown and a `<formula>` in DocLang; a
 /// styled run carries its emphasis into DocLang while Markdown keeps the
 /// baked-in `*…*`/`**…**` markers.
-fn emit_inline(doc: &mut DoclingDocument, segments: Vec<Seg>) {
+fn emit_inline(out: &mut Out, parent: Option<usize>, segments: Vec<Seg>) {
     let stripped: Vec<Seg> = segments
         .into_iter()
         .filter_map(|s| {
@@ -889,7 +1035,26 @@ fn emit_inline(doc: &mut DoclingDocument, segments: Vec<Seg>) {
         .collect();
     // JATS inline groups serialize unwrapped in DocLang (docling adds them
     // directly under the section/body, not inside a `<text>` wrapper).
-    doc.push(inline_paragraph_node(md_text, runs, true));
+    out.doc.push(inline_paragraph_node(md_text, runs, true));
+    // Tree: one item under `parent`, or an `inline` group of one item per run
+    // (docling's `_emit_inline`); a formula run is a `formula` item.
+    let container = if stripped.len() > 1 {
+        Some(out.group(parent, "inline", "group"))
+    } else {
+        parent
+    };
+    for seg in &stripped {
+        let label = if seg.formula { "formula" } else { "text" };
+        out.text(
+            container,
+            label,
+            &seg.text,
+            tree_formatting(seg.fmt),
+            seg.hyperlink.clone(),
+            None,
+            None,
+        );
+    }
 }
 
 /// One run's Markdown: `$formula$`, or the escaped text wrapped in its emphasis
@@ -917,8 +1082,10 @@ fn seg_markdown(s: &Seg) -> String {
 /// A `<list-item>` at `level`: its text (from every child except nested
 /// `<list>` elements) becomes the item, then each nested `<list>`'s items
 /// emit one level deeper — docling PR #3619 (nested list structure was
-/// previously flattened into the parent item's text).
-fn add_list_item(doc: &mut DoclingDocument, item: XmlNode, level: u8) {
+/// previously flattened into the parent item's text). In the tree the item
+/// hangs off `parent` (its `list` group) and every nested `<list>` is a new
+/// `list` group under the item, exactly as `_walk_linear` builds it.
+fn add_list_item(out: &mut Out, parent: Option<usize>, item: XmlNode, level: u8) {
     let mut text = String::new();
     for part in item.children() {
         if part.has_tag_name("list") {
@@ -938,7 +1105,7 @@ fn add_list_item(doc: &mut DoclingDocument, item: XmlNode, level: u8) {
         text.push_str(t.trim());
     }
     if !text.is_empty() {
-        doc.push(Node::ListItem {
+        out.doc.push(Node::ListItem {
             ordered: false,
             number: 0,
             first_in_list: false,
@@ -951,9 +1118,12 @@ fn add_list_item(doc: &mut DoclingDocument, item: XmlNode, level: u8) {
             layer: None,
         });
     }
+    // docling adds the item whatever its text (an empty one too).
+    let item_id = Some(out.list_item(parent, &text));
     for nested in item.children().filter(|c| c.has_tag_name("list")) {
+        let group = Some(out.group(item_id, "list", "list"));
         for sub in nested.children().filter(|c| c.has_tag_name("list-item")) {
-            add_list_item(doc, sub, level.saturating_add(1));
+            add_list_item(out, group, sub, level.saturating_add(1));
         }
     }
 }
@@ -963,19 +1133,22 @@ fn add_list_item(doc: &mut DoclingDocument, item: XmlNode, level: u8) {
 /// `_add_equation`: `add_text(label=FORMULA, text=formula)`). Emitted as
 /// [`Node::Formula`] so Markdown prints `$$…$$` verbatim — a multi-line body
 /// keeps its newlines, the GFM hard-line-break rule applies to text items only.
-fn add_equation(doc: &mut DoclingDocument, node: XmlNode) {
+fn add_equation(out: &mut Out, parent: Option<usize>, node: XmlNode) {
     if let Some(formula) = extract_tex_math(node) {
-        doc.push(Node::Formula {
+        out.doc.push(Node::Formula {
             orig: formula.clone(),
-            latex: formula,
+            latex: formula.clone(),
             location: None,
         });
+        out.text(parent, "formula", &formula, None, None, None, None);
     }
 }
 
 /// A `<fig>` → its label + caption as a picture caption, then a picture marker
-/// — carrying the figure's image when `fig_base` allows reading it (#392).
-fn add_figure(doc: &mut DoclingDocument, node: XmlNode, fig_base: Option<&Path>) {
+/// — carrying the figure's image when `fig_base` allows reading it (#392). In
+/// the tree the caption is a body-level `caption` item (docling's
+/// `add_text(label=CAPTION)` with no parent) the picture references.
+fn add_figure(out: &mut Out, parent: Option<usize>, node: XmlNode, fig_base: Option<&Path>) {
     let label = node
         .children()
         .find(|c| c.has_tag_name("label"))
@@ -992,13 +1165,30 @@ fn add_figure(doc: &mut DoclingDocument, node: XmlNode, fig_base: Option<&Path>)
         ""
     };
     let fig_text = format!("{label}{sep}{caption}");
-    doc.push(Node::Picture {
+    let image = fig_base.and_then(|base| load_figure_image(node, base));
+    out.doc.push(Node::Picture {
         caption: (!fig_text.is_empty()).then(|| escape_text(&fig_text)),
         caption_href: None,
-        image: fig_base.and_then(|base| load_figure_image(node, base)),
+        image: image.clone(),
         classification: None,
         caption_parent: Default::default(),
     });
+    let captions = if fig_text.is_empty() {
+        Vec::new()
+    } else {
+        vec![out.text(None, "caption", &fig_text, None, None, None, None)]
+    };
+    out.tree.add(
+        parent,
+        None,
+        TreeKind::Picture {
+            captions,
+            image,
+            classification: None,
+            chart: None,
+            dpi: None,
+        },
+    );
 }
 
 /// The raster suffixes docling probes for an extensionless `xlink:href`
@@ -1173,7 +1363,10 @@ fn caption_text(caption: XmlNode) -> String {
 }
 
 /// A `<table-wrap>` → an optional caption paragraph followed by the table grid.
-fn add_table(doc: &mut DoclingDocument, node: XmlNode) {
+/// In the tree the label+caption is a body-level `caption` item (created
+/// before the table, whether or not the table parses — docling's order) and
+/// the table hangs off `parent` referencing it.
+fn add_table(out: &mut Out, parent: Option<usize>, node: XmlNode) {
     let content = node
         .children()
         .find(|c| c.has_tag_name("table"))
@@ -1182,11 +1375,6 @@ fn add_table(doc: &mut DoclingDocument, node: XmlNode) {
                 .find(|c| c.has_tag_name("alternatives"))
                 .and_then(|a| a.children().find(|c| c.has_tag_name("table")))
         });
-    let Some(table_node) = content else { return };
-    let Some(mut table) = parse_jats_table(table_node) else {
-        return;
-    };
-
     let label = node
         .children()
         .find(|c| c.has_tag_name("label"))
@@ -1204,11 +1392,29 @@ fn add_table(doc: &mut DoclingDocument, node: XmlNode) {
         ""
     };
     let cap_text = format!("{label}{sep}{caption}");
+    let Some(table_node) = content else { return };
+    let captions = if cap_text.is_empty() {
+        Vec::new()
+    } else {
+        vec![out.text(None, "caption", &cap_text, None, None, None, None)]
+    };
+    let Some(mut table) = parse_jats_table(table_node) else {
+        return;
+    };
+    out.tree.add(
+        parent,
+        None,
+        TreeKind::Table {
+            table: table.clone(),
+            rich_cells: Vec::new(),
+            captions,
+        },
+    );
     // The label+caption becomes the table's own caption (docling attaches it to
     // the `TableItem` rather than emitting a standalone paragraph before it).
     // Stored escaped, matching the backend's text-node convention.
     table.caption = (!cap_text.is_empty()).then(|| escape_text(&cap_text));
-    doc.push(Node::Table(table));
+    out.doc.push(Node::Table(table));
 }
 
 /// Parse a JATS/XHTML `<table>` into a row-major grid, expanding `colspan`
@@ -1329,7 +1535,7 @@ fn row_span(cell: XmlNode) -> usize {
 }
 
 /// A `<fn-group>` → a "Footnotes" heading and a bullet list of its `<fn>` texts.
-fn add_footnote_group(doc: &mut DoclingDocument, node: XmlNode, hlevel: i32) {
+fn add_footnote_group(out: &mut Out, parent: Option<usize>, node: XmlNode, hlevel: i32) {
     let footnotes: Vec<String> = node
         .children()
         .filter(|c| c.has_tag_name("fn"))
@@ -1345,12 +1551,20 @@ fn add_footnote_group(doc: &mut DoclingDocument, node: XmlNode, hlevel: i32) {
         .map(|t| normalize(&get_text(t)))
         .filter(|s| !s.is_empty())
         .unwrap_or_else(|| DEFAULT_HEADER_FOOTNOTES.to_string());
-    doc.push(Node::Heading {
+    out.doc.push(Node::Heading {
         level: fw_level(hlevel + 1),
         text: escape_text(&title),
     });
+    // Tree (docling's `_add_footnote_group`): the heading, a `footnotes`
+    // list group under it, and per note an empty list item holding an
+    // inline group with the `footnote` text.
+    let heading = Some(out.heading(parent, &title, hlevel + 1));
+    let group = Some(out.group(heading, "list", "footnotes"));
     for item in footnotes {
-        doc.push(Node::ListItem {
+        let li = Some(out.list_item(group, ""));
+        let inline = Some(out.group(li, "inline", "group"));
+        out.text(inline, "footnote", &item, None, None, None, None);
+        out.doc.push(Node::ListItem {
             ordered: false,
             number: 0,
             first_in_list: false,
@@ -1587,6 +1801,91 @@ a=b
             .export_to_markdown();
         // title #, author, label-stripped + escaped affiliation, ## Abstract, ## Intro
         assert!(md.starts_with("# My Paper\n\nJane Doe\n\nAcme &amp; Co\n\n## Abstract\n\nShort summary.\n\n## Intro\n\nBody text."), "got:\n{md}");
+    }
+
+    fn json_of(xml: &str) -> serde_json::Value {
+        let src = SourceDocument::from_bytes("t", InputFormat::XmlJats, xml.as_bytes().to_vec());
+        serde_json::from_str(
+            &JatsBackend::default()
+                .convert(&src)
+                .unwrap()
+                .export_to_json(),
+        )
+        .unwrap()
+    }
+
+    /// docling's item tree: the title is the root; authors and the abstract
+    /// heading hang off it; a `<sec>` heading parents its paragraphs; a
+    /// paragraph of several runs is an `inline` group of `text` items with
+    /// `formatting`; a `<list>` is a `list` group of items; a figure's caption
+    /// is a body-level `caption` the picture references; footnotes are a
+    /// heading over a `footnotes` list of empty items each holding an inline
+    /// group with the `footnote` text; references a heading over a `list`
+    /// group of citation items.
+    #[test]
+    fn tree_mirrors_docling_parent_threading() {
+        let xml = r#"<article><front><article-meta><title-group><article-title>T</article-title></title-group>
+            <contrib-group><contrib contrib-type="author"><name><surname>Doe</surname><given-names>J</given-names></name></contrib></contrib-group>
+            <abstract><p>Abs.</p></abstract></article-meta></front>
+            <body><sec><title>Intro</title><p>Plain <italic>it</italic> end.</p>
+            <list><list-item><p>one</p></list-item><list-item><p>two</p></list-item></list>
+            <fig><label>Fig 1</label><caption><p>Cap.</p></caption><graphic xlink:href="a.png" xmlns:xlink="http://www.w3.org/1999/xlink"/></fig></sec></body>
+            <back><fn-group><fn><p>Note.</p></fn></fn-group>
+            <ref-list><title>References</title><ref><mixed-citation>Ref one.</mixed-citation></ref></ref-list></back></article>"#;
+        let v = json_of(xml);
+        let texts = v["texts"].as_array().unwrap();
+        let by = |i: usize| {
+            (
+                texts[i]["label"].as_str().unwrap(),
+                texts[i]["parent"]["$ref"].as_str().unwrap(),
+            )
+        };
+        assert_eq!(by(0), ("title", "#/body"));
+        assert_eq!(by(1), ("paragraph", "#/texts/0")); // authors
+        assert_eq!(by(2), ("section_header", "#/texts/0")); // Abstract, level 1
+        assert_eq!(texts[2]["level"], 1);
+        assert_eq!(by(3), ("text", "#/texts/2"));
+        assert_eq!(by(4), ("section_header", "#/texts/0")); // Intro
+                                                            // Three runs → an inline group under the section, the italic run styled.
+        assert_eq!(v["groups"][0]["label"], "inline");
+        assert_eq!(v["groups"][0]["parent"]["$ref"], "#/texts/4");
+        assert_eq!(by(5), ("text", "#/groups/0"));
+        assert_eq!(texts[6]["formatting"]["italic"], true);
+        // The list: a `list` group under the section with two items.
+        assert_eq!(v["groups"][1]["label"], "list");
+        assert_eq!(v["groups"][1]["parent"]["$ref"], "#/texts/4");
+        assert_eq!(by(8), ("list_item", "#/groups/1"));
+        // The figure: caption on the body, picture under the section.
+        assert_eq!(by(10), ("caption", "#/body"));
+        assert_eq!(texts[10]["text"], "Fig 1 Cap.");
+        assert_eq!(v["pictures"][0]["parent"]["$ref"], "#/texts/4");
+        assert_eq!(v["pictures"][0]["captions"][0]["$ref"], "#/texts/10");
+        // Footnotes: heading → `footnotes` list → empty item → inline → footnote.
+        assert_eq!(by(11), ("section_header", "#/texts/0"));
+        assert_eq!(texts[11]["text"], "Footnotes");
+        assert_eq!(v["groups"][2]["name"], "footnotes");
+        assert_eq!(by(12), ("list_item", "#/groups/2"));
+        assert_eq!(texts[12]["text"], "");
+        assert_eq!(v["groups"][3]["label"], "inline");
+        assert_eq!(by(13), ("footnote", "#/groups/3"));
+        // References: heading → `list` group → citation list item.
+        assert_eq!(by(14), ("section_header", "#/texts/0"));
+        assert_eq!(v["groups"][4]["label"], "list");
+        assert_eq!(v["groups"][4]["parent"]["$ref"], "#/texts/14");
+        assert_eq!(by(15), ("list_item", "#/groups/4"));
+    }
+
+    /// docling's `_walk_linear` sets `new_parent` once per element, so the
+    /// siblings that follow a `<sec>` are parented under that section's
+    /// heading too (`ptag100`'s paragraphs after its `Funding` section).
+    #[test]
+    fn siblings_after_a_section_inherit_its_heading() {
+        let xml = r#"<article><body><sec><title>Funding</title><p>a</p></sec><p>after</p></body></article>"#;
+        let v = json_of(xml);
+        let texts = v["texts"].as_array().unwrap();
+        assert_eq!(texts[1]["text"], "Funding");
+        assert_eq!(texts[3]["text"], "after");
+        assert_eq!(texts[3]["parent"]["$ref"], "#/texts/1");
     }
 
     fn md_of(xml: &str) -> String {

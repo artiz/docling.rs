@@ -166,19 +166,19 @@ bytes; ✅ all = every file of the format matches):
 | Email (`.eml`) | 2 | ✅ all | ✅ all |
 | iWork Pages | 1 | ✅ all | ✅ all |
 | EBCDIC | 3 | ✅ all | ✅ all |
-| JATS | 6 | ✅ all | 0 |
+| JATS | 7 | ✅ all | ✅ all |
 | DocLang | 15 | ✅ all | 0 |
-| AsciiDoc | 4 | ✅ all | 0 |
+| AsciiDoc | 4 | ✅ all | ✅ all |
 | USPTO | 9 | ✅ all | 1 |
 | EPUB | 1 | ✅ all | ✅ all |
 | LaTeX | 2 | 1 ¹ | 0 |
 
 The JSON column is complete wherever the backend builds docling's item tree
-(HTML, DOCX, PPTX, ODF, WebVTT, the `pftaps` USPTO patent, Markdown without
-raw HTML blocks) or its flat export already has upstream's shape (XLSX, CSV,
-EBCDIC); the zeros (JATS, DocLang, AsciiDoc, the USPTO XML paths) are the
-flat export's `text`-for-`paragraph` labels, `-` list markers and missing
-heading nesting — next in line for the same treatment. Markdown is exact on
+(HTML, DOCX, PPTX, ODF, WebVTT, JATS, AsciiDoc, the `pftaps` USPTO patent,
+Markdown without raw HTML blocks) or its flat export already has upstream's
+shape (XLSX, CSV, EBCDIC); the zeros (DocLang, the USPTO XML paths, LaTeX)
+are the flat export's `text`-for-`paragraph` labels, `-` list markers and
+missing heading nesting — next in line for the same treatment. Markdown is exact on
 every file upstream itself converts (the tenth USPTO fixture,
 `tables_ipa20180000016.xml`, fails in upstream), with one deliberate
 exception: ¹ docling's LaTeX backend drops the space after a paragraph's
