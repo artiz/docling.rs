@@ -758,7 +758,12 @@ messages since the last `v*` tag (`feat:` → minor, `fix:`/`perf:` → patch, a
 workspace version, commits + tags it (with `[skip ci]`, via the `RELEASE_PAT`
 admin token — needed to satisfy the master ruleset — so it
 doesn't loop), and publishes the crates with `scripts/ci/ci_publish.sh` in
-dependency order — skipping any version already on crates.io.
+dependency order — skipping any version already on crates.io. The uploads
+authenticate through crates.io Trusted Publishing (OIDC: the job's
+`id-token: write` identity — `docling-project/docling.rs` + `ci.yml` — is what
+each crate's crates.io settings name as its trusted publisher; a fresh
+30-minute token is minted per crate by `scripts/ci/crates_io_token.sh`), so
+there is no registry token secret to rotate.
 
 ---
 

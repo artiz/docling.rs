@@ -15,7 +15,9 @@
 # Set FORCE_VERSION=X.Y.Z to (re)publish that exact version instead of computing it
 # from the commit history — used to release a version a failed/blocked run skipped.
 #
-# Requires: CARGO_REGISTRY_TOKEN (publish) and push access to master.
+# Requires: push access to master, and for the publish either `id-token: write`
+# (crates.io Trusted Publishing, see scripts/ci/ci_publish.sh) or an explicit
+# CARGO_REGISTRY_TOKEN.
 # Usage: scripts/ci/release.sh
 set -euo pipefail
 cd "$(dirname "$0")/../.."
