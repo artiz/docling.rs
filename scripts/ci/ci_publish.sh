@@ -4,8 +4,15 @@
 # whose current version is already published ("only changed ones"). Idempotent:
 # re-running after a no-op merge publishes nothing.
 #
-# Requires CARGO_REGISTRY_TOKEN in the environment for the actual upload (the
-# existence checks need no auth). Used by .github/workflows/ci.yml on master.
+# Auth: in CI the job runs with `id-token: write` and each upload uses a fresh
+# Trusted Publishing token from scripts/ci/crates_io_token.sh (OIDC — no
+# long-lived secret to rotate; every published crate's crates.io settings name
+# docling-project/docling.rs + ci.yml as its trusted publisher). Minted per
+# crate because a token lives 30 minutes and a cold `cargo publish` verify
+# build of the heavier crates can eat into that. An explicit
+# CARGO_REGISTRY_TOKEN in the environment (a manual re-publish from a laptop)
+# is used as-is instead. The existence checks need no auth.
+# Used by .github/workflows/ci.yml on master.
 #
 # Usage: scripts/ci/ci_publish.sh
 set -euo pipefail
@@ -43,7 +50,13 @@ for crate in "${CRATES[@]}"; do
     continue
   fi
   echo ">> publishing $crate@$version ..."
-  cargo publish -p "$crate"
+  if [[ -n "${CARGO_REGISTRY_TOKEN:-}" ]]; then
+    cargo publish -p "$crate"
+  else
+    token="$(scripts/ci/crates_io_token.sh)"
+    CARGO_REGISTRY_TOKEN="$token" cargo publish -p "$crate"
+    scripts/ci/crates_io_token.sh revoke "$token"
+  fi
   published_any=1
 done
 
