@@ -420,8 +420,17 @@ fn main() -> ExitCode {
                 }
             },
             // Max frames sampled from a video input (needs the ffmpeg binary;
-            // 0 = transcript only). Default 8.
-            "--video-frames" => video_frames = args.next().and_then(|v| v.parse().ok()),
+            // 0 = transcript only). Default 8. A missing or non-numeric value
+            // is a usage error like every other numeric flag — it used to be
+            // swallowed silently and the default applied, so a typo
+            // (`--video-frames 1O`) went unnoticed.
+            "--video-frames" => match args.next().map(|v| v.trim().parse::<usize>()) {
+                Some(Ok(n)) => video_frames = Some(n),
+                _ => {
+                    eprintln!("error: --video-frames needs a non-negative integer");
+                    return ExitCode::from(2);
+                }
+            },
             "--images" => images = args.next().unwrap_or_default(),
             // `--to images` render scale, pixels per PDF point (#243).
             "--scale" => match args.next().and_then(|v| v.parse::<f32>().ok()) {

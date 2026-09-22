@@ -122,3 +122,17 @@ fn page_break_placeholder_requires_a_value() {
     assert_eq!(code, 2, "stderr: {stderr}");
     assert!(stderr.contains("--page-break-placeholder"), "{stderr}");
 }
+
+/// `--video-frames` rejects a missing or non-numeric value with a usage error
+/// instead of silently falling back to the default (used to apply 8 frames).
+#[test]
+fn video_frames_requires_a_number() {
+    for args in [
+        &["--video-frames"][..],
+        &["--video-frames", "1O", "x.mp4"][..],
+    ] {
+        let (code, _, stderr) = run(args);
+        assert_eq!(code, 2, "args {args:?}, stderr: {stderr}");
+        assert!(stderr.contains("--video-frames"), "{stderr}");
+    }
+}
