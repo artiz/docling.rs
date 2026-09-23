@@ -108,7 +108,11 @@ cargo check -p docling --no-default-features --features pdf-text \
   `DOCLING_RS_OCR_LANG` (en default; `ch` = the docling-conformance OCR
   model, which conformance scripts pin themselves; BCP-47 tags for either
   language — `en-US`, `zh-Hans` — resolve to the same two, #388),
-  `DOCLING_RS_OCR_MODE` (#254; docling's `OcrMode` —
+  `DOCLING_RS_OCR_ENGINE` (#460; `ppocr` default | `tesseract` = the system
+  binary on the same layout-region crops — `DOCLING_TESSERACT` names it,
+  `DOCLING_RS_TESSERACT_PSM` its page segmentation mode,
+  `DOCLING_RS_TESSDATA_DIR` its data; under it `ocr_lang` is tessdata stems /
+  BCP-47 tags), `DOCLING_RS_OCR_MODE` (#254; docling's `OcrMode` —
   `full_page`/`layout_regions` force-discard the text layer),
   `DOCLING_RS_OCR_SCALE` (#254; OCR input px/pt — resampled from the 2.0
   render; docling's default is 3),

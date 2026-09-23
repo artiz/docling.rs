@@ -64,6 +64,11 @@ pub struct ConverterOptions {
     /// #254); unset reads the pipeline's own 2.0 px/pt render (docling's
     /// default is 3 = 216 dpi).
     pub ocr_scale: Option<f64>,
+    /// Which OCR engine reads scanned pages (#460): `"ppocr"` (default, the
+    /// built-in PP-OCRv3 recognizer) | `"tesseract"` (the system `tesseract`
+    /// binary). Under Tesseract `ocrLang` is its language list — tessdata
+    /// stems (`"deu+fra"`) or BCP-47 tags.
+    pub ocr_engine: Option<String>,
     /// Email (.eml/.msg): append an Attachments section — names and content
     /// types only, never the payload (#251). Default `false`.
     pub list_attachments: Option<bool>,
@@ -207,6 +212,9 @@ pub struct ConvertOptions {
     /// OCR render scale in px per PDF point (docling's `OcrOptions.scale`,
     /// #254); unset reads the pipeline's own 2.0 px/pt render.
     pub ocr_scale: Option<f64>,
+    /// Which OCR engine reads scanned pages (#460): `"ppocr"` (default) |
+    /// `"tesseract"`.
+    pub ocr_engine: Option<String>,
     /// Email (.eml/.msg): append an Attachments section — names and content
     /// types only, never the payload (#251). Default `false`.
     pub list_attachments: Option<bool>,
@@ -316,6 +324,7 @@ struct ConvertConfig {
     page_range: Option<(usize, usize)>,
     ocr_lang: Option<String>,
     ocr_mode: Option<String>,
+    ocr_engine: Option<String>,
     ocr_scale: Option<f32>,
     list_attachments: bool,
     skip_empty_cells: bool,
@@ -396,8 +405,9 @@ fn build_config(o: ConvertOptions) -> Result<ConvertConfig> {
         encoding: o.encoding,
         video_frames: o.video_frames.map(|n| n as usize),
         page_range,
-        ocr_lang: parse_ocr_lang(o.ocr_lang)?,
+        ocr_lang: parse_ocr_lang(o.ocr_lang, o.ocr_engine.as_deref())?,
         ocr_mode: parse_ocr_mode(o.ocr_mode)?,
+        ocr_engine: parse_ocr_engine(o.ocr_engine)?,
         ocr_scale: parse_ocr_scale(o.ocr_scale)?,
         list_attachments: o.list_attachments.unwrap_or(false),
         skip_empty_cells: o.skip_empty_cells.unwrap_or(false),
@@ -520,14 +530,30 @@ fn resolve_vlm(
     }
 }
 
-/// Validate an `ocrLang` option (`"en"`/`"ch"` or a BCP-47 tag for English /
-/// Chinese, #388); an unknown language is an error.
-fn parse_ocr_lang(s: Option<String>) -> Result<Option<String>> {
+/// Validate an `ocrLang` option against the engine it will drive (#388,
+/// #460): `"en"`/`"ch"` or a BCP-47 tag for English / Chinese under PP-OCR,
+/// tessdata stems or BCP-47 tags under Tesseract; an unknown language is an
+/// error.
+fn parse_ocr_lang(s: Option<String>, engine: Option<&str>) -> Result<Option<String>> {
+    let Some(v) = s else {
+        return Ok(None);
+    };
+    let engine = engine
+        .and_then(docling::OcrEngine::parse)
+        .unwrap_or_else(docling::OcrEngine::from_env);
+    engine
+        .validate_lang(&v)
+        .map(|()| Some(v))
+        .map_err(|e| Error::from_reason(format!("ocrLang: {e}")))
+}
+
+/// Validate an `ocrEngine` option (#460); an unknown id is an error.
+fn parse_ocr_engine(s: Option<String>) -> Result<Option<String>> {
     match s {
-        Some(v) if docling::OcrLang::parse(&v).is_some() => Ok(Some(v)),
+        Some(v) if docling::OcrEngine::parse(&v).is_some() => Ok(Some(v)),
         Some(v) => Err(Error::from_reason(format!(
-            "ocrLang {v:?} is not a supported OCR language ({})",
-            docling::OcrLang::ACCEPTED
+            "ocrEngine {v:?} is not {}",
+            docling::OcrEngine::ACCEPTED
         ))),
         None => Ok(None),
     }
@@ -598,6 +624,10 @@ fn build_converter(cfg: &ConvertConfig) -> RsConverter {
     };
     let base = match &cfg.ocr_mode {
         Some(mode) => base.ocr_mode(mode.clone()),
+        None => base,
+    };
+    let base = match &cfg.ocr_engine {
+        Some(engine) => base.ocr_engine(engine.clone()),
         None => base,
     };
     match cfg.ocr_scale {
@@ -815,6 +845,7 @@ pub struct DocumentConverter {
     page_range: Option<(usize, usize)>,
     ocr_lang: Option<String>,
     ocr_mode: Option<String>,
+    ocr_engine: Option<String>,
     ocr_scale: Option<f32>,
     list_attachments: bool,
     skip_empty_cells: bool,
@@ -855,8 +886,9 @@ impl DocumentConverter {
             encoding: o.encoding.clone(),
             video_frames: o.video_frames.map(|n| n as usize),
             page_range,
-            ocr_lang: parse_ocr_lang(o.ocr_lang.clone())?,
+            ocr_lang: parse_ocr_lang(o.ocr_lang.clone(), o.ocr_engine.as_deref())?,
             ocr_mode: parse_ocr_mode(o.ocr_mode.clone())?,
+            ocr_engine: parse_ocr_engine(o.ocr_engine.clone())?,
             ocr_scale: parse_ocr_scale(o.ocr_scale)?,
             list_attachments: o.list_attachments.unwrap_or(false),
             skip_empty_cells: o.skip_empty_cells.unwrap_or(false),
@@ -896,6 +928,7 @@ impl DocumentConverter {
             page_range: self.page_range,
             ocr_lang: self.ocr_lang.clone(),
             ocr_mode: self.ocr_mode.clone(),
+            ocr_engine: self.ocr_engine.clone(),
             ocr_scale: self.ocr_scale,
             list_attachments: self.list_attachments,
             skip_empty_cells: self.skip_empty_cells,
@@ -1412,6 +1445,7 @@ fn output_config(out: Option<OutputOptions>, strict: bool) -> Result<ConvertConf
         vlm: None,
         ocr_lang: None,
         ocr_mode: None,
+        ocr_engine: None,
         ocr_scale: None,
         allowed_formats: None,
         to: parse_output_kind(out.to.as_deref())?,

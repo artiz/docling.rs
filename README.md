@@ -273,7 +273,7 @@ Options per request: `to=md|json|dclx|chunks|latex|images`, `strict`, `images=pl
 [enrichment models](#enrichment-models-picture-classification-code-formulas), named as
 docling's `PdfPipelineOptions` flags; a request that changes the enrichment mix rebuilds the
 warm pipeline once, the models themselves load lazily on the first matching region),
-`ocr_lang`, `ocr_mode`, `ocr_scale`, `scale`, `asr_model`, `asr_lang`, `encoding`, `video_frames`, `fetch_images`,
+`ocr_lang`, `ocr_engine`, `ocr_mode`, `ocr_scale`, `scale`, `asr_model`, `asr_lang`, `encoding`, `video_frames`, `fetch_images`,
 `chunker=hierarchical|hybrid`, `chunk_tokenizer`, `chunk_max_tokens`, `chunk_merge_peers` (#256:
 per-request `to=chunks` configuration; the tokenizer is a server-local relative path),
 `pipeline=standard|vlm` + `vlm_endpoint`, `vlm_model`, `vlm_api_key`, `vlm_prompt`,
@@ -791,6 +791,29 @@ and region subtags are ignored (a traditional-script request also gets the
 multilingual `ch` recognizer, the closest model shipped). Any other language
 (`de`, `ja`, …) is rejected by the CLI/serve/bindings and warns-and-defaults
 in `DOCLING_RS_OCR_LANG`.
+
+**OCR engines** (#460). PP-OCRv3 is the built-in default and the engine
+every conformance baseline is pinned against. `--ocr-engine tesseract`
+(`DOCLING_RS_OCR_ENGINE=tesseract`; `ocr_engine` on the `DocumentConverter` /
+`Pipeline` builders, serve, Python and Node) runs the system `tesseract`
+binary instead — docling's `TesseractCliOcrOptions`: a subprocess per
+layout-region crop, `tsv` on stdout, no bindings — so any of Tesseract's
+100+ languages reads out through the same pipeline (regions, orphan
+recovery, TableFormer word matching, `ocr_score`). Under it `--ocr-lang` is
+Tesseract's language list: tessdata stems (`deu`, `eng+fra`,
+`script/Cyrillic`, a traineddata of your own) or BCP-47 tags mapped onto
+them (`de` → `deu`, `zh-Hant` → `chi_tra`, `iso:` prefix optional); `en` and
+`ch` keep working. Orientation (#225) comes from Tesseract's own OSD
+(needs the `osd` traineddata). Install `tesseract-ocr` plus the language
+packs (`tesseract --list-langs` shows them; the serve image ships
+`tesseract-ocr` with `eng`); `DOCLING_TESSERACT` names the binary,
+`DOCLING_RS_TESSERACT_PSM` sets a page segmentation mode (unset =
+Tesseract's automatic 3; 6 = one uniform block, 11 = sparse text),
+`DOCLING_RS_TESSDATA_DIR` a data directory (`TESSDATA_PREFIX` is honored by
+Tesseract itself). A missing binary or traineddata warns and degrades to no
+OCR, like a missing model (#244); with `--force-full-page-ocr` it is an
+error. Each crop is one process, dealt across the OCR lanes
+(`DOCLING_RS_OCR_SESSIONS`), each pinned to one OpenMP thread.
 
 OCR has two stages, like docling's engines (#429). Recognition (PP-OCRv3)
 reads the lines inside the layout regions of a scanned page or an image
@@ -1520,6 +1543,14 @@ rejected before pdfium or the `image` crate tries to allocate the
 multi-gigabyte bitmap, which a few-hundred-byte crafted `MediaBox` otherwise
 forces (the `image` crate *panics* rather than erroring when that allocation
 fails).
+
+The OCR engine is a switch on every surface too (#460): `--ocr-engine
+ppocr|tesseract`, `DocumentConverter::ocr_engine` / `Pipeline::ocr_engine`,
+serve `ocr_engine`, Python `ocr_engine=` (also mapped from a docling-shaped
+`TesseractCliOcrOptions`, whose `lang`, `tesseract_cmd`, `path` and `psm`
+carry over), Node `ocrEngine`; process-wide `DOCLING_RS_OCR_ENGINE`. Under
+Tesseract, `ocr_lang` is validated as a tessdata stem list / BCP-47 tag on
+the same surfaces.
 
 OCR recognition defaults to the **English** PP-OCRv3 model: the multilingual
 `ch_` model reads Latin text with broken word spacing (`Refactorexisting

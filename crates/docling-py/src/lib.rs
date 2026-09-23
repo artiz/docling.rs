@@ -90,6 +90,9 @@ struct PyDocumentConverter {
     /// validated in `new`, so they hold engine values, not raw strings.
     force_full_page_ocr: bool,
     ocr_lang: Option<docling::OcrLang>,
+    ocr_engine: Option<docling::OcrEngine>,
+    /// Tesseract's `-l` argument from `ocr_lang` when the engine is Tesseract.
+    tesseract_lang: Option<String>,
     ocr_mode: Option<docling::OcrMode>,
     ocr_scale: Option<f32>,
     page_range: Option<(usize, usize)>,
@@ -143,6 +146,13 @@ impl PyDocumentConverter {
     /// * `ocr_scale` — OCR render scale in px per PDF point (docling's
     ///   `OcrOptions.scale`, #254); `None` reads the pipeline's own 2.0 px/pt
     ///   render (docling's default is 3 = 216 dpi).
+    /// * `ocr_engine` — which OCR engine reads scanned pages (#460):
+    ///   `"ppocr"` (default, the built-in PP-OCRv3 recognizer) or
+    ///   `"tesseract"` (the system `tesseract` binary, docling's
+    ///   `TesseractCliOcrOptions`); under Tesseract `ocr_lang` is its
+    ///   language list — tessdata stems (`"deu+fra"`) or BCP-47 tags. An
+    ///   unknown engine, or a language the engine cannot read, raises
+    ///   `ValueError`.
     /// * `skip_empty_cells` — omit empty cells from sparse XLSX/XLS table
     ///   grids instead of materialising each region's full bounding box
     ///   (#271; docling.rs extension, off by default).
@@ -187,6 +197,7 @@ impl PyDocumentConverter {
         ocr_lang = None,
         ocr_mode = None,
         ocr_scale = None,
+        ocr_engine = None,
         allowed_formats = None,
         text_layer_only = false,
         list_attachments = false,
@@ -220,6 +231,7 @@ impl PyDocumentConverter {
         ocr_lang: Option<String>,
         ocr_mode: Option<String>,
         ocr_scale: Option<f32>,
+        ocr_engine: Option<String>,
         allowed_formats: Option<Vec<String>>,
         text_layer_only: bool,
         list_attachments: bool,
@@ -276,14 +288,36 @@ impl PyDocumentConverter {
         // `ocr_lang` / `ocr_mode` / `ocr_scale` (#254) — validated here so a
         // typo raises instead of degrading; the parsed values also prime the
         // warm pipeline in `initialize_pipeline`.
-        let ocr_lang_choice = match &ocr_lang {
-            Some(lang) => Some(docling::OcrLang::parse(lang).ok_or_else(|| {
+        let ocr_engine_choice = match &ocr_engine {
+            Some(e) => Some(docling::OcrEngine::parse(e).ok_or_else(|| {
                 PyValueError::new_err(format!(
-                    "ocr_lang {lang:?} is not a supported OCR language ({})",
-                    docling::OcrLang::ACCEPTED
+                    "ocr_engine {e:?} is not {}",
+                    docling::OcrEngine::ACCEPTED
                 ))
             })?),
             None => None,
+        };
+        // `ocr_lang` is read against the engine (#460): en/ch (or a BCP-47
+        // tag for either) select a PP-OCR model; under Tesseract it is that
+        // engine's language list instead.
+        let engine = ocr_engine_choice.unwrap_or_else(docling::OcrEngine::from_env);
+        let ocr_lang_choice = match &ocr_lang {
+            Some(lang) => {
+                engine
+                    .validate_lang(lang)
+                    .map_err(PyValueError::new_err)?;
+                match engine {
+                    docling::OcrEngine::PpOcr => docling::OcrLang::parse(lang),
+                    docling::OcrEngine::Tesseract => None,
+                }
+            }
+            None => None,
+        };
+        let tesseract_lang = match (&ocr_lang, engine) {
+            (Some(lang), docling::OcrEngine::Tesseract) => {
+                Some(docling::tesseract_lang_arg(lang).map_err(PyValueError::new_err)?)
+            }
+            _ => None,
         };
         let ocr_mode_choice = match &ocr_mode {
             Some(mode) => Some(docling::OcrMode::parse(mode).ok_or_else(|| {
@@ -307,6 +341,10 @@ impl PyDocumentConverter {
         };
         let base = match ocr_mode {
             Some(mode) => base.ocr_mode(mode),
+            None => base,
+        };
+        let base = match ocr_engine {
+            Some(engine) => base.ocr_engine(engine),
             None => base,
         };
         let base = match ocr_scale {
@@ -342,6 +380,8 @@ impl PyDocumentConverter {
             enrich,
             force_full_page_ocr,
             ocr_lang: ocr_lang_choice,
+            ocr_engine: ocr_engine_choice,
+            tesseract_lang,
             ocr_mode: ocr_mode_choice,
             ocr_scale,
             page_range,
@@ -374,6 +414,8 @@ impl PyDocumentConverter {
         let enrich = self.enrich;
         let force_full_page_ocr = self.force_full_page_ocr;
         let ocr_lang = self.ocr_lang;
+        let ocr_engine = self.ocr_engine;
+        let tesseract_lang = self.tesseract_lang.clone();
         let ocr_mode = self.ocr_mode;
         let ocr_scale = self.ocr_scale;
         let page_range = self.page_range;
@@ -392,6 +434,8 @@ impl PyDocumentConverter {
                     // option set the transient path honors.
                     .force_full_page_ocr(force_full_page_ocr)
                     .ocr_lang(ocr_lang)
+                    .ocr_engine(ocr_engine)
+                    .tesseract_lang(tesseract_lang)
                     .ocr_mode(ocr_mode)
                     .ocr_scale(ocr_scale)
                     .pages(page_range)

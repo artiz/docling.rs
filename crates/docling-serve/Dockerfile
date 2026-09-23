@@ -110,7 +110,7 @@ RUN if [ "$FETCH_ASSETS" = "1" ]; then sh scripts/install/download_dependencies.
 # Stage: runtime (CPU base, Debian Trixie slim)
 # ------------------------------------------------------------------------------
 FROM debian:trixie-slim AS runtime
-RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates ffmpeg curl \
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates ffmpeg tesseract-ocr curl \
     && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 COPY --from=assets /src/.models ./.models
@@ -121,7 +121,7 @@ ENV PDFIUM_DYNAMIC_LIB_PATH=/app/.pdfium/lib
 # Stage: runtime-cuda (CUDA 12 + cuDNN 9 base on Ubuntu 24.04)
 # ------------------------------------------------------------------------------
 FROM nvidia/cuda:12.6.2-cudnn-runtime-ubuntu24.04 AS runtime-cuda
-RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates ffmpeg curl \
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates ffmpeg tesseract-ocr curl \
     && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 COPY --from=assets /src/.models ./.models

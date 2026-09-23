@@ -46,7 +46,11 @@
 //!   regions. Off by default; a missing model warns and skips the pass
 //! - `pages` — PDF page window `A-B` / `N` (1-based inclusive, #80)
 //! - `ocr_lang` — OCR recognition language for scanned pages: `en` (default)
-//!   | `ch` (the multilingual docling-conformance model)
+//!   | `ch` (the multilingual docling-conformance model); under
+//!   `ocr_engine=tesseract` a tessdata stem list (`deu+fra`) or BCP-47 tags
+//! - `ocr_engine` — which OCR engine reads scanned pages (#460): `ppocr`
+//!   (default, the built-in PP-OCRv3 recognizer) | `tesseract` (the
+//!   server's `tesseract` binary)
 //! - `ocr_mode` — which regions feed the OCR (docling's `OcrMode`, #254):
 //!   `default` | `full_page` | `layout_regions` | `pdf_aware_layout_regions`
 //!   (`full_page`/`layout_regions` discard the text layer like
@@ -476,6 +480,9 @@ struct ConvertOptions {
     /// Which regions feed the OCR (docling's `OcrMode`, #254): `default` |
     /// `full_page` | `layout_regions` | `pdf_aware_layout_regions`.
     ocr_mode: Option<String>,
+    /// Which OCR engine reads scanned pages (#460): `ppocr` (default) |
+    /// `tesseract` (the server's `tesseract` binary).
+    ocr_engine: Option<String>,
     /// OCR render scale in px per PDF point (docling's `OcrOptions.scale`,
     /// #254); unset reads the pipeline's own 2.0 px/pt render.
     ocr_scale: Option<f32>,
@@ -552,6 +559,7 @@ impl ConvertOptions {
             pages: self.pages.or(base.pages),
             ocr_lang: self.ocr_lang.or(base.ocr_lang),
             ocr_mode: self.ocr_mode.or(base.ocr_mode),
+            ocr_engine: self.ocr_engine.or(base.ocr_engine),
             ocr_scale: self.ocr_scale.or(base.ocr_scale),
             scale: self.scale.or(base.scale),
             chunker: self.chunker.or(base.chunker),
@@ -828,6 +836,8 @@ fn validate_output(options: &ConvertOptions) -> Result<(String, ImageMode), ApiE
     // and a bad option deserves a plain 400 up front.
     parse_ocr_mode(options.ocr_mode.as_deref())?;
     parse_ocr_scale(options.ocr_scale)?;
+    parse_ocr_engine(options.ocr_engine.as_deref())?;
+    parse_ocr_lang(options)?;
     parse_chunk_options(options)?;
     Ok((to, image_mode))
 }
@@ -1825,6 +1835,7 @@ async fn read_multipart(
             "pages" => body_opts.pages = Some(text_field(field).await?),
             "ocr_lang" => body_opts.ocr_lang = Some(text_field(field).await?),
             "ocr_mode" => body_opts.ocr_mode = Some(text_field(field).await?),
+            "ocr_engine" => body_opts.ocr_engine = Some(text_field(field).await?),
             "ocr_scale" => {
                 let v = text_field(field).await?;
                 body_opts.ocr_scale = Some(v.parse().map_err(|_| {
@@ -2287,7 +2298,9 @@ fn convert_document_inner(
             pipeline.set_pages(range);
             // OCR language likewise applies per request; only a worker whose
             // cached recognition model mismatches actually reloads anything.
-            pipeline.set_ocr_lang(parse_ocr_lang(options.ocr_lang.as_deref())?);
+            pipeline.set_ocr_engine(parse_ocr_engine(options.ocr_engine.as_deref())?);
+            pipeline.set_ocr_lang(parse_ocr_lang(options)?);
+            pipeline.set_tesseract_lang(tesseract_lang(options)?);
             // Forcing, mode and scale (#254) are pure per-worker configuration
             // — set unconditionally like the page window. (This also makes
             // `force_full_page_ocr` effective on the warm path at all: it was
@@ -2426,8 +2439,14 @@ fn request_converter(
             docling::parse_page_range(pages).map_err(|e| ApiError::Bad(format!("pages: {e}")))?;
         converter = converter.page_range(first, last);
     }
-    if parse_ocr_lang(options.ocr_lang.as_deref())?.is_some() {
-        converter = converter.ocr_lang(options.ocr_lang.clone().expect("checked above"));
+    // Validated against the request's engine (#460): `deu` is a language
+    // to Tesseract only.
+    parse_ocr_lang(options)?;
+    if let Some(lang) = &options.ocr_lang {
+        converter = converter.ocr_lang(lang.clone());
+    }
+    if parse_ocr_engine(options.ocr_engine.as_deref())?.is_some() {
+        converter = converter.ocr_engine(options.ocr_engine.clone().expect("checked above"));
     }
     // #254: the converter path reaches the ML pipeline too (rasterized SVG),
     // so mode/scale plumb here as well — validated up front like ocr_lang.
@@ -2465,17 +2484,55 @@ fn parse_ocr_scale(raw: Option<f32>) -> Result<Option<f32>, ApiError> {
     }
 }
 
-/// Validate a request's `ocr_lang` (None passes through — the engine default).
-fn parse_ocr_lang(raw: Option<&str>) -> Result<Option<docling::OcrLang>, ApiError> {
+/// Validate a request's `ocr_engine` (#460; None passes through — the
+/// process default).
+fn parse_ocr_engine(raw: Option<&str>) -> Result<Option<docling::OcrEngine>, ApiError> {
     raw.map(|v| {
-        docling::OcrLang::parse(v).ok_or_else(|| {
+        docling::OcrEngine::parse(v).ok_or_else(|| {
             ApiError::Bad(format!(
-                "ocr_lang {v:?} is not a supported OCR language ({})",
-                docling::OcrLang::ACCEPTED
+                "ocr_engine {v:?} is not {}",
+                docling::OcrEngine::ACCEPTED
             ))
         })
     })
     .transpose()
+}
+
+/// The engine a request's OCR options are read against: its `ocr_engine`,
+/// else the process default (`DOCLING_RS_OCR_ENGINE`, else PP-OCR).
+fn request_engine(options: &ConvertOptions) -> Result<docling::OcrEngine, ApiError> {
+    Ok(parse_ocr_engine(options.ocr_engine.as_deref())?
+        .unwrap_or_else(docling::OcrEngine::from_env))
+}
+
+/// Validate a request's `ocr_lang` against its engine (None passes through —
+/// the engine default) and return the PP-OCR model it selects; under
+/// Tesseract the value is that engine's language list ([`tesseract_lang`])
+/// and no PP-OCR model is selected.
+fn parse_ocr_lang(options: &ConvertOptions) -> Result<Option<docling::OcrLang>, ApiError> {
+    let Some(v) = options.ocr_lang.as_deref() else {
+        return Ok(None);
+    };
+    let engine = request_engine(options)?;
+    engine.validate_lang(v).map_err(ApiError::Bad)?;
+    Ok(match engine {
+        docling::OcrEngine::PpOcr => docling::OcrLang::parse(v),
+        docling::OcrEngine::Tesseract => None,
+    })
+}
+
+/// Tesseract's `-l` argument from a request's `ocr_lang` (#460), `None`
+/// under PP-OCR or without a language.
+fn tesseract_lang(options: &ConvertOptions) -> Result<Option<String>, ApiError> {
+    let Some(v) = options.ocr_lang.as_deref() else {
+        return Ok(None);
+    };
+    match request_engine(options)? {
+        docling::OcrEngine::Tesseract => docling::tesseract_lang_arg(v)
+            .map(Some)
+            .map_err(ApiError::Bad),
+        docling::OcrEngine::PpOcr => Ok(None),
+    }
 }
 
 /// Markdown response: converted through the streaming serializer, body sent

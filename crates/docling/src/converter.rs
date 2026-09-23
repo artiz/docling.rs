@@ -114,6 +114,9 @@ pub struct DocumentConverter {
     force_full_page_ocr: bool,
     /// OCR mode id (docling's `OcrMode`, #254); parsed at the ML call sites.
     ocr_mode: Option<String>,
+    /// OCR engine id (`ppocr` | `tesseract`, #460); parsed at the ML call
+    /// sites.
+    ocr_engine: Option<String>,
     /// OCR render scale in px/pt (#254); validated at the ML call sites.
     ocr_scale: Option<f32>,
     /// Infer PDF/image section-header levels after assembly (#302, docling's
@@ -195,6 +198,7 @@ impl Default for DocumentConverter {
             skip_ocr: false,
             force_full_page_ocr: false,
             ocr_mode: None,
+            ocr_engine: None,
             ocr_scale: None,
             heading_hierarchy: false,
             use_web_browser: false,
@@ -241,7 +245,11 @@ impl DocumentConverter {
     /// multilingual model docling conformance is measured with — glues Latin
     /// words). An unknown value warns at conversion time and uses the
     /// default; explicit `DOCLING_OCR_REC_ONNX`/`DOCLING_OCR_DICT` paths win
-    /// over this switch. Formats that never OCR ignore it.
+    /// over this switch. Under [`ocr_engine`](Self::ocr_engine) `tesseract`
+    /// it is Tesseract's language list instead — tessdata stems (`"deu"`,
+    /// `"eng+fra"`, `"script/Cyrillic"`) or BCP-47 tags mapped onto them
+    /// (`"de"`, `"zh-Hant"`), see [`docling_pdf::tesseract_lang_arg`]; `en`
+    /// and `ch` keep working there. Formats that never OCR ignore it.
     pub fn ocr_lang(mut self, lang: impl Into<String>) -> Self {
         self.ocr_lang = Some(lang.into());
         self
@@ -260,6 +268,8 @@ impl DocumentConverter {
             .no_text_panels(self.no_text_panels)
             .enrichments(self.enrich)
             .ocr_lang(self.ocr_lang_choice())
+            .ocr_engine(self.ocr_engine_choice())
+            .tesseract_lang(self.tesseract_lang_choice())
             .ocr_mode(self.ocr_mode_choice())
             .ocr_scale(self.ocr_scale_choice())
             .heading_hierarchy(docling_pdf::HeadingHierarchyOptions::enabled(
@@ -317,6 +327,11 @@ impl DocumentConverter {
     #[cfg(feature = "pdf")]
     fn ocr_lang_choice(&self) -> Option<docling_pdf::OcrLang> {
         let raw = self.ocr_lang.as_deref()?;
+        // Under Tesseract the value is its language list, not a PP-OCR model
+        // — see `tesseract_lang_choice`.
+        if self.ocr_engine_choice() == Some(docling_pdf::OcrEngine::Tesseract) {
+            return None;
+        }
         let parsed = docling_pdf::OcrLang::parse(raw);
         if parsed.is_none() {
             eprintln!(
@@ -326,6 +341,39 @@ impl DocumentConverter {
             );
         }
         parsed
+    }
+
+    /// The parsed [`Self::ocr_engine`] choice (#460), with the same
+    /// warn-and-default degradation as [`ocr_lang_choice`](Self::ocr_lang_choice).
+    #[cfg(feature = "pdf")]
+    fn ocr_engine_choice(&self) -> Option<docling_pdf::OcrEngine> {
+        let raw = self.ocr_engine.as_deref()?;
+        let parsed = docling_pdf::OcrEngine::parse(raw);
+        if parsed.is_none() {
+            eprintln!(
+                "docling: ocr_engine {raw:?} is not {}; using the default",
+                docling_pdf::OcrEngine::ACCEPTED
+            );
+        }
+        parsed
+    }
+
+    /// Tesseract's `-l` argument from [`Self::ocr_lang`] (#460) when the
+    /// engine is Tesseract: an unmappable value warns and leaves Tesseract's
+    /// default language.
+    #[cfg(feature = "pdf")]
+    fn tesseract_lang_choice(&self) -> Option<String> {
+        if self.ocr_engine_choice() != Some(docling_pdf::OcrEngine::Tesseract) {
+            return None;
+        }
+        let raw = self.ocr_lang.as_deref()?;
+        match docling_pdf::tesseract_lang_arg(raw) {
+            Ok(arg) => Some(arg),
+            Err(e) => {
+                eprintln!("docling: {e}; using Tesseract's default language");
+                None
+            }
+        }
     }
 
     /// The parsed [`Self::ocr_mode`] choice (#254), with the same
@@ -606,6 +654,22 @@ impl DocumentConverter {
         self
     }
 
+    /// Which OCR engine recognizes text on scanned pages (#460): `"ppocr"`
+    /// (the default — the built-in PP-OCRv3 recognizer, the conformance
+    /// engine) or `"tesseract"` (the system `tesseract` binary, docling's
+    /// `TesseractCliOcrOptions`; needs `tesseract-ocr` with a language pack
+    /// installed — `DOCLING_TESSERACT` names the binary,
+    /// `DOCLING_RS_TESSERACT_PSM` its page segmentation mode,
+    /// `DOCLING_RS_TESSDATA_DIR` / `TESSDATA_PREFIX` its data). Both read
+    /// the same layout-region crops; [`ocr_lang`](Self::ocr_lang) is the
+    /// engine's language. An unknown value warns at conversion time and uses
+    /// the default (`DOCLING_RS_OCR_ENGINE`, else PP-OCR). Formats that never
+    /// OCR ignore it.
+    pub fn ocr_engine(mut self, engine: impl Into<String>) -> Self {
+        self.ocr_engine = Some(engine.into());
+        self
+    }
+
     /// OCR render scale in pixels per PDF point — docling's
     /// `OcrOptions.scale` (#254; docling's default 3 = 216 dpi). Unset feeds
     /// the recognizer the pipeline's own 2.0 px/pt page render; a different
@@ -753,6 +817,8 @@ impl DocumentConverter {
             enrich: self.enrich,
             page_range: self.page_range,
             ocr_lang: self.ocr_lang_choice(),
+            ocr_engine: self.ocr_engine_choice(),
+            tesseract_lang: self.tesseract_lang_choice(),
             ocr_mode: self.ocr_mode_choice(),
             ocr_scale: self.ocr_scale_choice(),
             artifacts_dir: self.artifacts_dir.clone(),

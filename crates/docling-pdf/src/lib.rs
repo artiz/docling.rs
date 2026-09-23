@@ -61,6 +61,8 @@ pub mod scanned;
 mod std14;
 #[cfg(feature = "ml")]
 pub mod tableformer;
+#[cfg(feature = "ml")]
+mod tesseract;
 pub mod textparse;
 #[cfg(feature = "ocr-prep")]
 pub mod tf_core;
@@ -114,10 +116,12 @@ pub use heading_hierarchy::HeadingHierarchyOptions;
 #[cfg(feature = "ml")]
 pub use mets::{convert_mets_gbs, convert_mets_gbs_with_options, convert_mets_gbs_with_pipeline};
 #[cfg(feature = "ml")]
-pub use ocr::{OcrLang, OcrMode};
+pub use ocr::{OcrEngine, OcrLang, OcrMode};
 #[cfg(feature = "ml")]
 pub use pdfium_backend::PdfDocument;
 pub use pdfium_backend::{PdfPage, TextCell};
+#[cfg(feature = "ml")]
+pub use tesseract::{lang_arg as tesseract_lang_arg, TesseractOptions};
 // Plain page rasterization (#243) — pdfium only, no models.
 #[cfg(feature = "ml")]
 pub use pdfium_backend::{render_pages, RenderedPage};
@@ -654,6 +658,10 @@ struct Worker {
     skip_ocr: bool,
     /// Which recognition model [`Self::ocr`] loads. See [`Pipeline::ocr_lang`].
     ocr_lang: ocr::OcrLang,
+    /// Which engine [`Self::ocr`] is (#460). See [`Pipeline::ocr_engine`].
+    ocr_engine: ocr::OcrEngine,
+    /// Tesseract's `-l` argument (#460). See [`Pipeline::tesseract_lang`].
+    tesseract_lang: Option<String>,
     /// OCR render scale override (px/pt, #254). See [`Pipeline::ocr_scale`].
     ocr_scale: Option<f32>,
 }
@@ -665,8 +673,47 @@ struct Worker {
 /// empty) so the load isn't retried per page.
 enum OcrSlot {
     Unloaded,
-    Ready(ocr::OcrModel),
+    Ready(Recognizer),
     Missing,
+}
+
+#[cfg(feature = "ml")]
+/// The loaded OCR engine (#460): PP-OCRv3 via ONNX Runtime or the
+/// `tesseract` binary. Both answer the two questions the page assembly asks
+/// — line cells for text regions, word cells for table regions — in page
+/// points with a 0–1 confidence, so the call sites never know which runs.
+pub(crate) enum Recognizer {
+    PpOcr(ocr::OcrModel),
+    Tesseract(tesseract::TesseractOcr),
+}
+
+#[cfg(feature = "ml")]
+impl Recognizer {
+    /// See [`ocr::OcrModel::ocr_page`].
+    fn ocr_page(
+        &mut self,
+        img: &image::RgbImage,
+        regions: &[layout::Region],
+        scale: f32,
+    ) -> Result<Vec<(TextCell, f32)>, String> {
+        match self {
+            Self::PpOcr(m) => m.ocr_page(img, regions, scale),
+            Self::Tesseract(t) => t.ocr_page(img, regions, scale),
+        }
+    }
+
+    /// See [`ocr::OcrModel::ocr_table_words`].
+    fn ocr_table_words(
+        &mut self,
+        img: &image::RgbImage,
+        regions: &[layout::Region],
+        scale: f32,
+    ) -> Result<Vec<(TextCell, f32)>, String> {
+        match self {
+            Self::PpOcr(m) => m.ocr_table_words(img, regions, scale),
+            Self::Tesseract(t) => t.ocr_table_words(img, regions, scale),
+        }
+    }
 }
 
 #[cfg(feature = "ml")]
@@ -691,6 +738,8 @@ impl Worker {
         force_full_page_ocr: bool,
         no_text_panels: bool,
         ocr_lang: ocr::OcrLang,
+        ocr_engine: ocr::OcrEngine,
+        tesseract_lang: Option<String>,
         ocr_scale: Option<f32>,
     ) -> Result<Self, PdfError> {
         Ok(Self {
@@ -712,6 +761,8 @@ impl Worker {
             force_full_page_ocr,
             no_text_panels,
             ocr_lang,
+            ocr_engine,
+            tesseract_lang,
             ocr_scale,
         })
     }
@@ -722,21 +773,39 @@ impl Worker {
     /// unless `force_full_page_ocr` demanded OCR explicitly, where a missing
     /// model stays a hard error (the text layer was deliberately discarded, so
     /// degrading would silently emit an empty document).
-    fn ocr_model(&mut self) -> Result<Option<&mut ocr::OcrModel>, PdfError> {
+    fn ocr_model(&mut self) -> Result<Option<&mut Recognizer>, PdfError> {
         if self.skip_ocr {
             return Ok(None);
         }
         if matches!(self.ocr, OcrSlot::Unloaded) {
-            match ocr::OcrModel::load_with(self.ocr_lang, self.intra) {
+            let loaded = match self.ocr_engine {
+                ocr::OcrEngine::PpOcr => {
+                    ocr::OcrModel::load_with(self.ocr_lang, self.intra).map(Recognizer::PpOcr)
+                }
+                ocr::OcrEngine::Tesseract => tesseract::TesseractOcr::load(
+                    tesseract::TesseractOptions::from_env(self.tesseract_lang.clone()),
+                    self.intra,
+                )
+                .map(Recognizer::Tesseract),
+            };
+            match loaded {
                 Ok(model) => self.ocr = OcrSlot::Ready(model),
                 Err(e) if self.force_full_page_ocr => return Err(PdfError::Ocr(e)),
                 Err(e) => {
                     static WARNED: std::sync::Once = std::sync::Once::new();
+                    let hint = match self.ocr_engine {
+                        ocr::OcrEngine::PpOcr => {
+                            "run scripts/install/download_dependencies.sh for the model"
+                        }
+                        ocr::OcrEngine::Tesseract => {
+                            "install tesseract-ocr with the language pack, or use --ocr-engine ppocr"
+                        }
+                    };
                     WARNED.call_once(|| {
                         eprintln!(
                             "warning: OCR model unavailable ({e}); continuing without OCR — \
                              scanned pages and text inside images will come back empty \
-                             (run scripts/install/download_dependencies.sh for the model)"
+                             ({hint})"
                         );
                     });
                     self.ocr = OcrSlot::Missing;
@@ -899,7 +968,9 @@ impl Worker {
         let Some(ocr) = self.ocr_model()? else {
             return Ok(());
         };
-        let deg = timing::timed("orient.detect", || orient::detect(&page.image, ocr));
+        let deg = timing::timed("orient.detect", || {
+            orient::detect(&page.image, ocr, page.scale)
+        });
         if deg != 0 {
             debug_log!(
                 "docling-pdf: page {}: content rotated {deg}° in the raster; \
@@ -1813,6 +1884,10 @@ pub struct Pipeline {
     page_range: Option<(usize, usize)>,
     /// OCR recognition language. See [`Pipeline::ocr_lang`].
     ocr_lang: ocr::OcrLang,
+    /// Which OCR engine runs (#460). See [`Pipeline::ocr_engine`].
+    ocr_engine: ocr::OcrEngine,
+    /// Tesseract's languages (#460). See [`Pipeline::tesseract_lang`].
+    tesseract_lang: Option<String>,
     /// Which regions feed the OCR (#254). See [`Pipeline::ocr_mode`].
     ocr_mode: ocr::OcrMode,
     /// OCR render scale override in px/pt (#254). See [`Pipeline::ocr_scale`].
@@ -1847,6 +1922,8 @@ impl Pipeline {
             enrich: EnrichmentOptions::default(),
             page_range: None,
             ocr_lang: ocr::OcrLang::from_env(),
+            ocr_engine: ocr::OcrEngine::from_env(),
+            tesseract_lang: None,
             ocr_mode: ocr::OcrMode::from_env(),
             ocr_scale: ocr::scale_from_env(),
             heading_hierarchy: HeadingHierarchyOptions::default(),
@@ -1950,6 +2027,59 @@ impl Pipeline {
             if worker.ocr_lang != lang {
                 worker.ocr_lang = lang;
                 worker.ocr = OcrSlot::Unloaded;
+            }
+        }
+    }
+
+    /// Which OCR engine recognizes text (#460, see [`OcrEngine`]): the
+    /// built-in PP-OCRv3 recognizer by default, or the system `tesseract`
+    /// binary (docling's `TesseractCliOcrOptions`) — same layout-region
+    /// crops, same cells; Tesseract does its own line/word segmentation and
+    /// reads orientation from its OSD. `None` keeps the process default
+    /// (`DOCLING_RS_OCR_ENGINE`, else PP-OCR). Set before the first
+    /// conversion; for a warm pipeline use
+    /// [`set_ocr_engine`](Self::set_ocr_engine).
+    pub fn ocr_engine(mut self, engine: Option<ocr::OcrEngine>) -> Self {
+        self.set_ocr_engine(engine);
+        self
+    }
+
+    /// In-place variant of [`ocr_engine`](Self::ocr_engine): a model switch
+    /// like [`set_ocr_lang`](Self::set_ocr_lang) — workers holding the other
+    /// engine drop it, to be lazily reloaded.
+    pub fn set_ocr_engine(&mut self, engine: Option<ocr::OcrEngine>) {
+        let engine = engine.unwrap_or_else(ocr::OcrEngine::from_env);
+        self.ocr_engine = engine;
+        for worker in self.primary.iter_mut().chain(self.pool.iter_mut()) {
+            if worker.ocr_engine != engine {
+                worker.ocr_engine = engine;
+                worker.ocr = OcrSlot::Unloaded;
+            }
+        }
+    }
+
+    /// Tesseract's languages (#460): the `-l` argument, tessdata stems joined
+    /// with `+` — build it from an `ocr_lang` value with
+    /// [`tesseract_lang_arg`], which also maps BCP-47 tags and the PP-OCR
+    /// codes. `None` runs Tesseract's default (`eng`). Ignored under the
+    /// PP-OCR engine, whose language is [`ocr_lang`](Self::ocr_lang). For a
+    /// warm pipeline use [`set_tesseract_lang`](Self::set_tesseract_lang).
+    pub fn tesseract_lang(mut self, lang: Option<String>) -> Self {
+        self.set_tesseract_lang(lang);
+        self
+    }
+
+    /// In-place variant of [`tesseract_lang`](Self::tesseract_lang): a model
+    /// switch like [`set_ocr_lang`](Self::set_ocr_lang) — a worker whose
+    /// Tesseract was probed for other languages drops it.
+    pub fn set_tesseract_lang(&mut self, lang: Option<String>) {
+        self.tesseract_lang = lang.clone();
+        for worker in self.primary.iter_mut().chain(self.pool.iter_mut()) {
+            if worker.tesseract_lang != lang {
+                worker.tesseract_lang = lang.clone();
+                if worker.ocr_engine == ocr::OcrEngine::Tesseract {
+                    worker.ocr = OcrSlot::Unloaded;
+                }
             }
         }
     }
@@ -2171,6 +2301,8 @@ impl Pipeline {
                 self.force_full_page_ocr || self.ocr_mode.forces_full_page(),
                 self.no_text_panels,
                 self.ocr_lang,
+                self.ocr_engine,
+                self.tesseract_lang.clone(),
                 self.ocr_scale,
             )?);
         }
@@ -2544,6 +2676,8 @@ impl Pipeline {
         let force = self.force_full_page_ocr || self.ocr_mode.forces_full_page();
         let ntp = self.no_text_panels;
         let ocr_lang = self.ocr_lang;
+        let ocr_engine = self.ocr_engine;
+        let tesseract_lang = self.tesseract_lang.clone();
         let ocr_scale = self.ocr_scale;
         let enrich = self.enrich;
         let tables = self.tables_slot();
@@ -2553,6 +2687,7 @@ impl Pipeline {
                 .map(|_| {
                     let tables = tables.clone();
                     let enrich_slots = enrich_slots.clone();
+                    let tesseract_lang = tesseract_lang.clone();
                     s.spawn(move || {
                         Worker::load(
                             intra,
@@ -2564,6 +2699,8 @@ impl Pipeline {
                             force,
                             ntp,
                             ocr_lang,
+                            ocr_engine,
+                            tesseract_lang,
                             ocr_scale,
                         )
                     })

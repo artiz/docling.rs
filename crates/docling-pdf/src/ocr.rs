@@ -167,6 +167,68 @@ impl OcrMode {
     }
 }
 
+/// Which OCR engine recognizes text (#460): the built-in PP-OCRv3 recognizer
+/// (+ the RapidOCR text detector) — the default and the engine every
+/// conformance baseline is pinned against — or the system `tesseract` binary
+/// (see [`crate::tesseract`]), docling's `TesseractCliOcrOptions`
+/// counterpart. Both consume the same layout-region crops and produce the
+/// same cells; everything downstream is engine-agnostic.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum OcrEngine {
+    /// PP-OCRv3 recognition via ONNX Runtime (docling's `rapidocr` kind).
+    #[default]
+    PpOcr,
+    /// The `tesseract` CLI (docling's `tesseract` kind).
+    Tesseract,
+}
+
+impl OcrEngine {
+    /// Parse an engine id: `ppocr` (also `pp-ocr`, `rapidocr`, docling's
+    /// kind name) or `tesseract` (also `tesseract_cli`, `tesserocr`),
+    /// trimmed and case-insensitive. `None` for anything else.
+    pub fn parse(s: &str) -> Option<Self> {
+        match s.trim().to_ascii_lowercase().as_str() {
+            "ppocr" | "pp-ocr" | "pp_ocr" | "rapidocr" | "onnx" | "default" => Some(Self::PpOcr),
+            "tesseract" | "tesseract_cli" | "tesseract-cli" | "tesserocr" => Some(Self::Tesseract),
+            _ => None,
+        }
+    }
+
+    /// The process-level choice from `DOCLING_RS_OCR_ENGINE` (empty/unset →
+    /// PP-OCR; unknown values warn and use PP-OCR).
+    pub fn from_env() -> Self {
+        let Some(raw) = docling_core::env::nonempty("DOCLING_RS_OCR_ENGINE") else {
+            return Self::default();
+        };
+        Self::parse(&raw).unwrap_or_else(|| {
+            eprintln!(
+                "docling-pdf: DOCLING_RS_OCR_ENGINE={raw:?} is not ppocr|tesseract; using ppocr"
+            );
+            Self::default()
+        })
+    }
+
+    /// The accepted spellings, for error messages and docs.
+    pub const ACCEPTED: &'static str = "ppocr | tesseract";
+
+    /// Whether `raw` is an `ocr_lang` this engine can act on — what the
+    /// option surfaces validate up front: the en/ch model switch (or a
+    /// BCP-47 tag for either, [`OcrLang::parse`]) under PP-OCR; tessdata
+    /// stems and BCP-47 tags ([`crate::tesseract::lang_arg`]) under
+    /// Tesseract. The `Err` says what is accepted.
+    pub fn validate_lang(self, raw: &str) -> Result<(), String> {
+        match self {
+            Self::PpOcr => OcrLang::parse(raw).map(|_| ()).ok_or_else(|| {
+                format!(
+                    "ocr_lang {raw:?} names no language the OCR models read ({})",
+                    OcrLang::ACCEPTED
+                )
+            }),
+            Self::Tesseract => crate::tesseract::lang_arg(raw).map(|_| ()),
+        }
+    }
+}
+
 /// The process-level OCR render scale from `DOCLING_RS_OCR_SCALE` (#254,
 /// upstream docling#3877's `OcrOptions.scale`): pixels per PDF point fed to
 /// the recognizer. Unset/empty → `None` (OCR reads the pipeline's own page
@@ -511,5 +573,23 @@ mod tests {
         assert_eq!(OcrMode::parse(" Full_Page "), Some(OcrMode::FullPage));
         assert_eq!(OcrMode::parse("easyocr"), None);
         assert_eq!(OcrMode::parse(""), None);
+    }
+
+    /// #460: the engine ids, and engine-aware `ocr_lang` validation — `deu`
+    /// is a Tesseract stem, not a PP-OCR model; `en` works under both.
+    #[test]
+    fn ocr_engine_ids_and_lang_validation() {
+        for id in ["ppocr", "PP-OCR", " rapidocr ", "default"] {
+            assert_eq!(OcrEngine::parse(id), Some(OcrEngine::PpOcr), "{id:?}");
+        }
+        for id in ["tesseract", "Tesseract_CLI", "tesserocr"] {
+            assert_eq!(OcrEngine::parse(id), Some(OcrEngine::Tesseract), "{id:?}");
+        }
+        assert_eq!(OcrEngine::parse("easyocr"), None);
+        assert!(OcrEngine::PpOcr.validate_lang("en").is_ok());
+        assert!(OcrEngine::PpOcr.validate_lang("deu").is_err());
+        assert!(OcrEngine::Tesseract.validate_lang("en").is_ok());
+        assert!(OcrEngine::Tesseract.validate_lang("deu+fra").is_ok());
+        assert!(OcrEngine::Tesseract.validate_lang("xx").is_err());
     }
 }

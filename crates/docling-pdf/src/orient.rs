@@ -34,6 +34,7 @@ use image::RgbImage;
 use crate::layout::Region;
 use crate::ocr::OcrModel;
 use crate::ocr_prep::{prep_region_lines, PrepLine};
+use crate::Recognizer;
 use docling_core::debug_log;
 
 /// Whether the detection pass runs (`DOCLING_RS_OCR_ORIENTATION`, default
@@ -123,8 +124,18 @@ fn probe(img: &RgbImage, ocr: &mut OcrModel) -> Result<Score, String> {
 /// Detect the clockwise angle the page content is rotated by in the raster
 /// (`0`/`90`/`180`/`270`); un-rotating by the returned angle makes it upright.
 /// Any internal failure returns 0 — the page converts as-is, exactly as it
-/// would have without this pass.
-pub(crate) fn detect(img: &RgbImage, ocr: &mut OcrModel) -> u16 {
+/// would have without this pass. The PP-OCR engine runs the four-way probe
+/// below; Tesseract (#460) asks its own OSD (`scale` is the px/pt of `img`,
+/// its dpi hint).
+pub(crate) fn detect(img: &RgbImage, ocr: &mut Recognizer, scale: f32) -> u16 {
+    match ocr {
+        Recognizer::PpOcr(model) => detect_by_probe(img, model),
+        Recognizer::Tesseract(t) => t.detect_orientation(img, scale).unwrap_or(0),
+    }
+}
+
+/// The recognize-four-ways probe, see the module docs.
+fn detect_by_probe(img: &RgbImage, ocr: &mut OcrModel) -> u16 {
     let fail = |e: String| {
         debug_log!("docling-pdf: orientation probe failed ({e}); assuming upright");
         0

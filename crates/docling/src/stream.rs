@@ -91,6 +91,8 @@ pub(crate) struct StreamSettings {
     pub enrich: docling_pdf::EnrichmentOptions,
     pub page_range: Option<(usize, usize)>,
     pub ocr_lang: Option<docling_pdf::OcrLang>,
+    pub ocr_engine: Option<docling_pdf::OcrEngine>,
+    pub tesseract_lang: Option<String>,
     pub ocr_mode: Option<docling_pdf::OcrMode>,
     pub ocr_scale: Option<f32>,
     pub artifacts_dir: String,
@@ -169,6 +171,8 @@ fn run_pdf(
             .skip_ocr(settings.skip_ocr)
             .force_full_page_ocr(settings.force_full_page_ocr)
             .ocr_lang(settings.ocr_lang)
+            .ocr_engine(settings.ocr_engine)
+            .tesseract_lang(settings.tesseract_lang.clone())
             .ocr_mode(settings.ocr_mode)
             .ocr_scale(settings.ocr_scale)
             .enrichments(settings.enrich)
