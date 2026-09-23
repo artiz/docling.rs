@@ -886,9 +886,11 @@ default output stays byte-for-byte docling), on every surface (CLI flag,
 - `--skip-empty-cells` — XLSX/XLS family: omit empty cells from each table
   row instead of materialising the full bounding box of every detected
   region. A ragged region's box is mostly padding on sparse sheets (a
-  reported 2.7 MB workbook inflated ~7× over its content); a table that
-  loses cells this way drops its merged-span overlay, and dense sheets are
-  untouched.
+  reported 2.7 MB workbook inflated ~7× over its content). Markdown reads
+  the compacted rows; the JSON keeps every surviving cell at its true grid
+  offset, one cell per merged range with its span, so it is the default
+  `table_cells` minus the empty positions (the `grid` fills them back with
+  docling's empty cells). Dense sheets are untouched.
 - `--compact-tables` — all formats: render Markdown tables in the compact
   `| a | b |` form instead of the width-padded GitHub style. Grid semantics
   are unchanged — only inter-cell padding is dropped, which is what

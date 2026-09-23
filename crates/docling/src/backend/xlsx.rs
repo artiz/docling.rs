@@ -77,7 +77,7 @@ fn bounded_worksheet_range<RS: std::io::Read + std::io::Seek>(
     cells.sort_by_key(|c| c.get_position());
     Some(Range::from_sparse(cells))
 }
-use docling_core::{DoclingDocument, Node, Table};
+use docling_core::{DoclingDocument, Node, Table, TableCell};
 use quick_xml::events::Event;
 use quick_xml::Reader as XmlReader;
 use rayon::prelude::*;
@@ -1007,13 +1007,51 @@ pub(crate) fn find_tables(
                     col_header: Vec::new(),
                 }
             });
+            // A compacted table keeps its geometry for the JSON through
+            // first-class cells: the surviving positions at their true grid
+            // offsets, one cell per merged range with its span — what the
+            // default path's overlay yields (#410), minus the empty
+            // positions, which is what `skip_empty` promises. The ragged
+            // `rows` (Markdown, DocLang) cannot carry offsets, and padding
+            // them back at export made the "sparse" JSON *larger* than the
+            // dense one (16 cells for an 8-column row that holds three).
+            let cells = (skip_empty && omitted).then(|| {
+                let mut out = Vec::new();
+                for gr in min_r..=max_r {
+                    for gc in min_c..=max_c {
+                        if !has_content(gr, gc) {
+                            continue;
+                        }
+                        let (tr, tc) = merge_of.get(&(gr, gc)).copied().unwrap_or((gr, gc));
+                        // A merge is one cell, anchored where it enters the
+                        // box (its top-left may sit above a split-off label
+                        // row or left of the clipped range).
+                        if (gr, gc) != (tr.max(min_r), tc.max(min_c)) {
+                            continue;
+                        }
+                        let covered = |r: usize, c: usize| merge_of.get(&(r, c)) == Some(&(tr, tc));
+                        out.push(TableCell {
+                            text: cell_text(gr, gc),
+                            bbox: None,
+                            start_row: gr - min_r,
+                            start_col: gc - min_c,
+                            row_span: (gr..=max_r).take_while(|&r| covered(r, gc)).count().max(1),
+                            col_span: (gc..=max_c).take_while(|&c| covered(gr, c)).count().max(1),
+                            column_header: gr == min_r,
+                            row_header: false,
+                            row_section: false,
+                        });
+                    }
+                }
+                out
+            });
             tables.push(FoundTable {
                 table: Table {
                     rows,
                     location: None,
                     structure,
                     cell_blocks: None,
-                    cells: None,
+                    cells,
                     caption: None,
                     caption_parent: Default::default(),
                 },
@@ -1196,6 +1234,29 @@ mod tests {
             vec![vec!["a", "b"], vec!["c"], vec!["d", "e"]],
             "skip_empty: rows keep only their occupied cells"
         );
+        // …and the JSON keeps their true offsets through first-class cells.
+        let placed: Vec<(&str, usize, usize, bool)> = compact[0]
+            .table
+            .cells
+            .as_deref()
+            .expect("a compacted table carries first-class cells")
+            .iter()
+            .map(|c| (c.text.as_str(), c.start_row, c.start_col, c.column_header))
+            .collect();
+        assert_eq!(
+            placed,
+            vec![
+                ("a", 0, 0, true),
+                ("b", 0, 1, true),
+                ("c", 1, 1, false),
+                ("d", 2, 1, false),
+                ("e", 2, 2, false),
+            ]
+        );
+        assert!(
+            padded[0].table.cells.is_none(),
+            "the default path keeps the overlay representation"
+        );
         // Provenance keeps the true region box either way.
         assert_eq!(
             (
@@ -1227,6 +1288,43 @@ mod tests {
         assert!(
             dense[0].table.structure.is_some(),
             "dense region keeps its span overlay under skip_empty"
+        );
+        assert!(dense[0].table.cells.is_none());
+
+        // A ragged region with a merge: the compacted rows repeat the span
+        // text, the first-class cells carry the range once with its span —
+        // a 3-wide merge on row 1 under a header row holding two of the
+        // three columns.
+        let mut merged: HashMap<(usize, usize), (usize, usize)> = HashMap::new();
+        for c in 0..3 {
+            merged.insert((1, c), (1, 0));
+        }
+        let mut range3: Range<Data> = Range::new((0, 0), (1, 2));
+        range3.set_value((0, 0), Data::String("h0".into()));
+        range3.set_value((0, 2), Data::String("h2".into()));
+        range3.set_value((1, 0), Data::String("wide".into()));
+        let ragged = find_tables(&range3, &frame(merged, 2, 3), true);
+        assert_eq!(
+            ragged[0].table.rows,
+            vec![vec!["h0", "h2"], vec!["wide", "wide", "wide"]]
+        );
+        assert!(ragged[0].table.structure.is_none());
+        let cells = ragged[0].table.cells.as_deref().unwrap();
+        let shaped: Vec<(&str, usize, usize, usize, usize)> = cells
+            .iter()
+            .map(|c| {
+                (
+                    c.text.as_str(),
+                    c.start_row,
+                    c.start_col,
+                    c.row_span,
+                    c.col_span,
+                )
+            })
+            .collect();
+        assert_eq!(
+            shaped,
+            vec![("h0", 0, 0, 1, 1), ("h2", 0, 2, 1, 1), ("wide", 1, 0, 1, 3)]
         );
     }
 

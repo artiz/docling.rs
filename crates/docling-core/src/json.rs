@@ -414,8 +414,22 @@ fn table_data_with(t: &Table, raw: bool) -> Value {
             unescape_text(&crate::markdown::strip_hard_breaks(s))
         }
     };
-    let num_rows = t.rows.len();
-    let num_cols = t.rows.iter().map(Vec::len).max().unwrap_or(0);
+    let mut num_rows = t.rows.len();
+    let mut num_cols = t.rows.iter().map(Vec::len).max().unwrap_or(0);
+    // Rectangular `rows` are the grid, and cells reaching past it are
+    // clipped — docling's own `TableData.grid` on a USPTO table whose
+    // replicated cells outrun `num_cols`, or an HTML rowspan past the last
+    // row. Ragged rows are no grid at all: a backend that compacts them
+    // (xlsx `skip_empty_cells`, #271) keeps the true offsets in first-class
+    // cells, so there the grid spans every cell's extent and the omitted
+    // positions come back as docling's empty filler cells.
+    let ragged = t.rows.iter().any(|r| r.len() != num_cols);
+    if let Some(first_class) = t.cells.as_ref().filter(|c| ragged && !c.is_empty()) {
+        for c in first_class {
+            num_rows = num_rows.max(c.start_row + c.row_span);
+            num_cols = num_cols.max(c.start_col + c.col_span);
+        }
+    }
     let mut grid = Vec::with_capacity(num_rows);
     let mut cells = Vec::new();
     // Grid slot → index into `cells` (the anchor cell covering it). A flat
@@ -1843,6 +1857,68 @@ mod tests {
         CaptionParent, ContentLayer, DoclingDocument, ImageMode, Node, PictureImage, Table,
     };
     use serde_json::Value;
+
+    fn cell_at(text: &str, row: usize, col: usize, col_span: usize) -> crate::TableCell {
+        crate::TableCell {
+            text: text.into(),
+            bbox: None,
+            start_row: row,
+            start_col: col,
+            row_span: 1,
+            col_span,
+            column_header: row == 0,
+            row_header: false,
+            row_section: false,
+        }
+    }
+
+    /// First-class cells past the rows: rectangular rows are the grid and
+    /// clip them (docling's `TableData.grid` on USPTO's overrun replicas);
+    /// ragged rows — an xlsx table compacted by `skip_empty_cells` (#271) —
+    /// are no grid, so the cells' extent sizes it and the omitted positions
+    /// come back as empty filler cells in `grid` only.
+    #[test]
+    fn ragged_rows_take_their_grid_from_first_class_cells() {
+        let cells = vec![
+            cell_at("h0", 0, 0, 1),
+            cell_at("h2", 0, 2, 1),
+            cell_at("wide", 1, 0, 3),
+        ];
+        let export = |rows: Vec<Vec<String>>| -> Value {
+            let mut doc = DoclingDocument::new("t");
+            doc.push(Node::Table(Table {
+                rows,
+                cells: Some(cells.clone()),
+                ..Table::default()
+            }));
+            let v: Value = serde_json::from_str(&doc.export_to_json()).unwrap();
+            v["tables"][0]["data"].clone()
+        };
+        // Compacted rows: 2 and 3 wide, the cells say the grid is 3 wide.
+        let data = export(vec![
+            vec!["h0".into(), "h2".into()],
+            vec!["wide".into(), "wide".into(), "wide".into()],
+        ]);
+        assert_eq!(data["num_rows"], 2);
+        assert_eq!(data["num_cols"], 3);
+        assert_eq!(data["table_cells"].as_array().unwrap().len(), 3);
+        let row0: Vec<&str> = data["grid"][0]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|c| c["text"].as_str().unwrap())
+            .collect();
+        assert_eq!(row0, ["h0", "", "h2"]);
+        assert_eq!(data["table_cells"][2]["col_span"], 3);
+        // Rectangular rows narrower than the cells: the rows win, the cells
+        // are clipped to them exactly as before.
+        let data = export(vec![
+            vec!["h0".into(), "h2".into()],
+            vec!["wide".into(), "wide".into()],
+        ]);
+        assert_eq!(data["num_cols"], 2);
+        assert_eq!(data["grid"][0].as_array().unwrap().len(), 2);
+    }
 
     fn doc_with_image() -> DoclingDocument {
         let mut doc = DoclingDocument::new("t");
