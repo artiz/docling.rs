@@ -514,7 +514,10 @@ These are deliberate or unavoidable divergences, not bugs.
 12. **Sparse spreadsheets can skip empty cells** (#271, docling.rs-only
     options, both off by default): `skip_empty_cells` omits empty positions
     from each XLSX/XLS table row instead of materialising every region's
-    full bounding box (docling pads the box too; the related upstream #3328
+    full bounding box (the JSON keeps the surviving cells at their true
+    offsets and spans through first-class cells, so `table_cells` is the
+    dense list minus the empties — padding the compacted rows back at export
+    used to make it larger than the dense one) (docling pads the box too; the related upstream #3328
     tracks the RAM cost of its one-TableCell-per-cell materialisation on
     large sheets), and `compact_tables` renders Markdown tables unpadded for
     every format. Default output stays byte-for-byte docling.
