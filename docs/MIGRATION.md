@@ -412,7 +412,14 @@ These are deliberate or unavoidable divergences, not bugs.
      rasterizing past `DOCLING_RS_MAX_RENDER_PIXELS` (15000 px/side) is rejected
      before the multi-GB bitmap is allocated.
    - **OCR** — PP-OCRv3 recognition (RapidOCR) via ONNX, *not* docling's default
-     EasyOCR; different recognizer → different scanned text. Recognition runs
+     EasyOCR; different recognizer → different scanned text. **Tesseract**
+     (#460, `--ocr-engine tesseract` / `ocr_engine` on every surface) is the
+     alternative — docling's `TesseractCliOcrOptions` port: the system binary,
+     one subprocess per layout-region crop with `tsv` output, its own
+     line/word segmentation inside the crop, orientation from its OSD,
+     `ocr_lang` as tessdata stems or BCP-47 tags (`deu+fra`, `zh-Hant`), a
+     docling-shaped `TesseractCliOcrOptions` mapped by the Python bindings
+     (`lang`, `tesseract_cmd`, `path`, `psm`). Recognition runs
      on the lines inside layout regions; RapidOCR's PP-OCRv6 DB **text
      detector** (#429, the model docling's RapidOCR default runs) then sweeps
      the whole bitmap, and detected lines no recognized cell covers are
@@ -536,7 +543,12 @@ These are deliberate or unavoidable divergences, not bugs.
     EasyOCR's `ch_sim`); script/region subtags are ignored, a traditional-
     script request gets the multilingual `ch` recognizer (upstream would pick
     RapidOCR's separate `chinese_cht`, not shipped here), and any other
-    language is rejected (warn-and-default only for the env var).
+    language is rejected (warn-and-default only for the env var). Under the
+    Tesseract engine (#460) the same option is Tesseract's language list:
+    stems verbatim (`deu`, `script/Latin`), two-letter BCP-47 tags mapped
+    onto ISO 639-2/T stems with docling's deviations (`zh-Hans` → `chi_sim`,
+    `sr-Latn` → `srp_latn`, `nb` → `nor`), `en`/`ch` still accepted, the
+    installed set checked when the engine loads.
 
 14. **Per-request chunking configuration** (docling 2.117–2.119
     service-datamodel, #256): `to=chunks` accepts `chunker`

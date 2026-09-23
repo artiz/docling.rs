@@ -11,7 +11,7 @@
 //! optional features the binary carries (execution providers, `serve`,
 //! chunking) — both answer without models present.
 //!
-//! Usage: docling-rs [--strict] [--page-break-placeholder TEXT] [--to md|json|dclx|chunks|images|latex] [--pages A-B] [--scale X] [--images MODE] [--input GLOB --output DIR [--jobs N]] [--fetch-images] [--list-attachments] [--skip-empty-cells] [--compact-tables] [--ebcdic-layout JSON|PATH] [--encoding LABEL] [--no-stream] [--no-table-former] [--no-ocr] [--skip-ocr] [--force-full-page-ocr] [--no-text-panels] [--heading-hierarchy] [--ocr-lang LANG] [--ocr-mode MODE] [--ocr-scale X] [--chunker hierarchical|hybrid] [--chunk-tokenizer PATH] [--chunk-max-tokens N] [--no-chunk-merge-peers] [--pipeline standard|vlm] [--vlm-endpoint URL] [--vlm-model NAME] [--vlm-api-key TOKEN] [--vlm-prompt TEXT] [--vlm-max-tokens N] [--asr-model PRESET] [--asr-lang CODE] [--video-frames N] [--use-web-browser] [--enrich-picture-classes] [--enrich-code] [--enrich-formula] <input-file>
+//! Usage: docling-rs [--strict] [--page-break-placeholder TEXT] [--to md|json|dclx|chunks|images|latex] [--pages A-B] [--scale X] [--images MODE] [--input GLOB --output DIR [--jobs N]] [--fetch-images] [--list-attachments] [--skip-empty-cells] [--compact-tables] [--ebcdic-layout JSON|PATH] [--encoding LABEL] [--no-stream] [--no-table-former] [--no-ocr] [--skip-ocr] [--force-full-page-ocr] [--no-text-panels] [--heading-hierarchy] [--ocr-lang LANG] [--ocr-engine ppocr|tesseract] [--ocr-mode MODE] [--ocr-scale X] [--chunker hierarchical|hybrid] [--chunk-tokenizer PATH] [--chunk-max-tokens N] [--no-chunk-merge-peers] [--pipeline standard|vlm] [--vlm-endpoint URL] [--vlm-model NAME] [--vlm-api-key TOKEN] [--vlm-prompt TEXT] [--vlm-max-tokens N] [--asr-model PRESET] [--asr-lang CODE] [--video-frames N] [--use-web-browser] [--enrich-picture-classes] [--enrich-code] [--enrich-formula] <input-file>
 //!   --input GLOB|DIR   batch mode (#205): convert every file the glob matches
 //!                      (`--input '/data/reports/**/*.pdf'` — quote it so the
 //!                      shell doesn't expand it) instead of one positional file.
@@ -210,6 +210,7 @@ FORMAT OPTIONS
   --use-web-browser       pre-render HTML with a headless browser (feature `web-browser`)
 
 PDF / IMAGE PIPELINE
+  --ocr-engine ppocr|tesseract   OCR engine (default: ppocr; tesseract = the system binary)
   --no-table-former       skip the TableFormer model (geometric tables instead)
   --no-ocr                skip OCR entirely (text-layer only)
   --skip-ocr              keep layout + tables, never run OCR
@@ -321,6 +322,7 @@ fn main() -> ExitCode {
     let mut scale: f32 = 2.0;
     let mut ocr_lang: Option<String> = None;
     let mut ocr_mode: Option<String> = None;
+    let mut ocr_engine: Option<String> = None;
     let mut ocr_scale: Option<f32> = None;
     let mut chunk_opts = docling::chunks::ChunkOptions::default();
     let mut pipeline: Option<String> = None;
@@ -458,18 +460,32 @@ fn main() -> ExitCode {
             // OCR recognition language for scanned PDF/image pages: en
             // (default; proper Latin word spacing) | ch (the multilingual
             // docling-conformance model).
+            // Validated against the engine after the loop — `--ocr-engine`
+            // may come later on the line, and `deu` is only a language to
+            // Tesseract.
             "--ocr-lang" => match args.next() {
-                Some(v) if docling::OcrLang::parse(&v).is_some() => ocr_lang = Some(v),
+                Some(v) => ocr_lang = Some(v),
+                None => {
+                    eprintln!(
+                        "error: --ocr-lang needs a value (en | ch | a BCP-47 tag; tessdata \
+                         stems such as deu+fra under --ocr-engine tesseract)"
+                    );
+                    return ExitCode::from(2);
+                }
+            },
+            // Which OCR engine reads scanned pages (#460): the built-in
+            // PP-OCRv3 recognizer (default) or the system tesseract binary.
+            "--ocr-engine" => match args.next() {
+                Some(v) if docling::OcrEngine::parse(&v).is_some() => ocr_engine = Some(v),
                 Some(v) => {
                     eprintln!(
-                        "error: --ocr-lang {v:?} names no language the OCR models read \
-                         (accepted: {})",
-                        docling::OcrLang::ACCEPTED
+                        "error: --ocr-engine {v:?} is not {}",
+                        docling::OcrEngine::ACCEPTED
                     );
                     return ExitCode::from(2);
                 }
                 None => {
-                    eprintln!("error: --ocr-lang needs a value (en | ch | a BCP-47 tag)");
+                    eprintln!("error: --ocr-engine needs a value (ppocr | tesseract)");
                     return ExitCode::from(2);
                 }
             },
@@ -599,6 +615,19 @@ fn main() -> ExitCode {
         eprintln!("error: unknown --to '{to}' (expected: md, json, dclx, chunks, images, latex)");
         return ExitCode::from(2);
     }
+    // `--ocr-lang` is checked against the engine it will drive, whichever
+    // order the two flags came in: en/ch (or a BCP-47 tag for either) under
+    // PP-OCR, tessdata stems or BCP-47 tags under Tesseract.
+    if let Some(lang) = &ocr_lang {
+        let engine = ocr_engine
+            .as_deref()
+            .and_then(docling::OcrEngine::parse)
+            .unwrap_or_else(docling::OcrEngine::from_env);
+        if let Err(e) = engine.validate_lang(lang) {
+            eprintln!("error: --ocr-lang: {e}");
+            return ExitCode::from(2);
+        }
+    }
     let image_mode = match images.as_str() {
         "placeholder" => ImageMode::Placeholder,
         "embedded" => ImageMode::Embedded,
@@ -690,6 +719,7 @@ fn main() -> ExitCode {
             pages,
             ocr_lang,
             ocr_mode,
+            ocr_engine,
             ocr_scale,
             scale,
             chunk: chunk_opts.clone(),
@@ -823,6 +853,9 @@ fn main() -> ExitCode {
     }
     if let Some(mode) = &ocr_mode {
         converter = converter.ocr_mode(mode.clone());
+    }
+    if let Some(engine) = &ocr_engine {
+        converter = converter.ocr_engine(engine.clone());
     }
     if let Some(s) = ocr_scale {
         converter = converter.ocr_scale(s);
@@ -1010,6 +1043,8 @@ struct BatchCfg {
     ocr_lang: Option<String>,
     /// Which regions feed the OCR (docling's `OcrMode`, #254).
     ocr_mode: Option<String>,
+    /// Which OCR engine reads scanned pages (#460): `ppocr` | `tesseract`.
+    ocr_engine: Option<String>,
     /// OCR render scale in px/pt (docling's `OcrOptions.scale`, #254).
     ocr_scale: Option<f32>,
     /// `--to images` render scale (pixels per PDF point, #243).
@@ -1143,6 +1178,9 @@ fn batch_converter(cfg: &BatchCfg) -> DocumentConverter {
     if let Some(mode) = &cfg.ocr_mode {
         converter = converter.ocr_mode(mode.clone());
     }
+    if let Some(engine) = &cfg.ocr_engine {
+        converter = converter.ocr_engine(engine.clone());
+    }
     if let Some(s) = cfg.ocr_scale {
         converter = converter.ocr_scale(s);
     }
@@ -1158,6 +1196,10 @@ fn batch_pipeline<'a>(
     cfg: &BatchCfg,
 ) -> Result<&'a mut Pipeline, String> {
     if slot.is_none() {
+        let ocr_engine = cfg
+            .ocr_engine
+            .as_deref()
+            .and_then(docling::OcrEngine::parse);
         let mut p = Pipeline::new()
             .map_err(|e| e.to_string())?
             .no_table_former(cfg.no_table_former)
@@ -1169,6 +1211,14 @@ fn batch_pipeline<'a>(
                 cfg.heading_hierarchy,
             ))
             .ocr_mode(cfg.ocr_mode.as_deref().and_then(docling::OcrMode::parse))
+            .ocr_engine(ocr_engine)
+            .tesseract_lang(if ocr_engine == Some(docling::OcrEngine::Tesseract) {
+                cfg.ocr_lang
+                    .as_deref()
+                    .and_then(|l| docling::tesseract_lang_arg(l).ok())
+            } else {
+                None
+            })
             .ocr_scale(cfg.ocr_scale)
             .enrichments(docling::EnrichmentOptions {
                 picture_classification: cfg.enrich_picture_classes,

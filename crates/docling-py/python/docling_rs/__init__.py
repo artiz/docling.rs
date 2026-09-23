@@ -146,6 +146,17 @@ class DocumentConverter:
       text layer) and ``OcrOptions.scale`` (OCR input resolution in px per PDF
       point), #254. Also accepted docling-shaped, via
       ``pipeline_options.ocr_options.mode`` / ``.scale``.
+    * ``ocr_engine`` — which OCR engine reads scanned pages (#460):
+      ``"ppocr"`` (default, the built-in PP-OCRv3 recognizer) or
+      ``"tesseract"`` (the system ``tesseract`` binary, docling's
+      ``TesseractCliOcrOptions``). Under Tesseract ``ocr_lang`` is its
+      language list — tessdata stems (``"deu+fra"``) or BCP-47 tags. Also
+      accepted docling-shaped: a ``TesseractCliOcrOptions`` /
+      ``TesseractOcrOptions`` as ``pipeline_options.ocr_options`` selects
+      the engine, its ``lang`` list joins with ``+``, and its
+      ``tesseract_cmd`` / ``path`` / ``psm`` seed ``DOCLING_TESSERACT`` /
+      ``DOCLING_RS_TESSDATA_DIR`` / ``DOCLING_RS_TESSERACT_PSM`` (process-wide,
+      an explicit environment override wins).
     * ``skip_empty_cells`` / ``compact_tables`` — sparse-spreadsheet output
       controls (docling.rs extensions, #271): omit empty cells from XLSX/XLS
       table rows; render Markdown tables unpadded (all formats). Note
@@ -199,6 +210,7 @@ class DocumentConverter:
         ocr_lang: Optional[str] = None,
         ocr_mode: Optional[str] = None,
         ocr_scale: Optional[float] = None,
+        ocr_engine: Optional[str] = None,
         skip_empty_cells: bool = False,
         compact_tables: bool = False,
         asr_lang: Optional[str] = None,
@@ -252,8 +264,27 @@ class DocumentConverter:
             scale = getattr(ocr_opts, "scale", None)
             if scale is not None:
                 ocr_scale = float(scale)
+            # docling's Tesseract kinds (#460) select the engine; the CLI
+            # options' binary, tessdata path and page segmentation mode are
+            # process-wide knobs here, seeded like the accelerator device.
+            kind = getattr(ocr_opts, "kind", None)
+            if kind in ("tesseract", "tesserocr"):
+                ocr_engine = "tesseract"
+                cmd = getattr(ocr_opts, "tesseract_cmd", None)
+                if cmd:
+                    os.environ.setdefault("DOCLING_TESSERACT", str(cmd))
+                tessdata = getattr(ocr_opts, "path", None)
+                if tessdata:
+                    os.environ.setdefault("DOCLING_RS_TESSDATA_DIR", str(tessdata))
+                psm = getattr(ocr_opts, "psm", None)
+                if psm is not None:
+                    os.environ.setdefault("DOCLING_RS_TESSERACT_PSM", str(int(psm)))
             langs = list(getattr(ocr_opts, "lang", None) or [])
-            if langs:
+            if langs and ocr_engine == "tesseract":
+                # Tesseract's own vocabulary: stems and `iso:` tags pass
+                # through, the engine maps and validates them (#460).
+                ocr_lang = "+".join(str(lang).strip() for lang in langs)
+            elif langs:
                 # The same spellings the engine's own `ocr_lang` accepts (#388):
                 # engine codes, docling's legacy names, EasyOCR's, and BCP-47
                 # tags for English / Chinese with or without docling's `iso:`
@@ -314,6 +345,7 @@ class DocumentConverter:
             ocr_lang=ocr_lang,
             ocr_mode=ocr_mode,
             ocr_scale=ocr_scale,
+            ocr_engine=ocr_engine,
             skip_empty_cells=skip_empty_cells,
             compact_tables=compact_tables,
             asr_lang=asr_lang,

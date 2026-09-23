@@ -312,6 +312,40 @@ async fn images_output_requires_a_pdf_input() {
     assert!(body_string(response).await.contains("PDF inputs only"));
 }
 
+/// #460: `ocr_engine` is validated up front, and `ocr_lang` against the
+/// engine it will drive — `deu` is a language to Tesseract only, `xx` to
+/// neither.
+#[tokio::test]
+async fn ocr_engine_and_lang_are_validated_together() {
+    let (ct, body) = multipart("x.md", b"# hi", &[("ocr_engine", "easyocr")]);
+    let response = app().oneshot(convert_request(&ct, body, "")).await.unwrap();
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    assert!(body_string(response).await.contains("ocr_engine"));
+
+    let (ct, body) = multipart("x.md", b"# hi", &[("ocr_lang", "deu")]);
+    let response = app().oneshot(convert_request(&ct, body, "")).await.unwrap();
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    assert!(body_string(response).await.contains("ocr_lang"));
+
+    let (ct, body) = multipart(
+        "x.md",
+        b"# hi",
+        &[("ocr_engine", "tesseract"), ("ocr_lang", "xx")],
+    );
+    let response = app().oneshot(convert_request(&ct, body, "")).await.unwrap();
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    assert!(body_string(response).await.contains("ocr_lang"));
+
+    // A Tesseract language list passes on a non-OCR format.
+    let (ct, body) = multipart(
+        "x.md",
+        b"# hi",
+        &[("ocr_engine", "tesseract"), ("ocr_lang", "deu+iso:fr")],
+    );
+    let response = app().oneshot(convert_request(&ct, body, "")).await.unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+}
+
 /// #254: an unknown `ocr_mode` and a non-positive `ocr_scale` are rejected up
 /// front (400), before any model work — the shared converter builder
 /// validates them, so a plain-CI markdown upload exercises it.

@@ -2,6 +2,7 @@
 (declarative path only — no ML models required)."""
 
 import io
+import os
 from pathlib import Path
 
 import pytest
@@ -533,3 +534,43 @@ def test_vlm_converts_an_image_through_a_stub_endpoint(tmp_path):
     assert seen["path"] == "/v1/chat/completions"
     assert seen["body"]["model"] == "mock-docling"
     assert seen["body"]["max_tokens"] == 512
+
+
+def test_ocr_engine_forwards_and_maps_tesseract_options(monkeypatch):
+    """#460: ocr_engine reaches the native converter (which validates it and
+    reads ocr_lang against it), directly and docling-shaped via a
+    TesseractCliOcrOptions-like ocr_options (kind, lang, tesseract_cmd, path,
+    psm)."""
+    from types import SimpleNamespace
+
+    from docling_rs import DocumentConverter, InputFormat, PdfFormatOption
+
+    DocumentConverter(ocr_engine="tesseract", ocr_lang="deu+fra")
+    DocumentConverter(ocr_engine="ppocr", ocr_lang="en")
+    with pytest.raises(Exception):
+        DocumentConverter(ocr_engine="easyocr")
+    # A tessdata stem is not a PP-OCR model, and an unknown tag is nothing.
+    with pytest.raises(Exception):
+        DocumentConverter(ocr_engine="ppocr", ocr_lang="deu")
+    with pytest.raises(Exception):
+        DocumentConverter(ocr_engine="tesseract", ocr_lang="xx")
+
+    for var in ("DOCLING_TESSERACT", "DOCLING_RS_TESSDATA_DIR", "DOCLING_RS_TESSERACT_PSM"):
+        monkeypatch.delenv(var, raising=False)
+    shaped = SimpleNamespace(
+        do_ocr=True,
+        do_table_structure=True,
+        ocr_options=SimpleNamespace(
+            kind="tesseract",
+            lang=["deu", "iso:fr"],
+            tesseract_cmd="/opt/tesseract/bin/tesseract",
+            path="/opt/tessdata",
+            psm=6,
+        ),
+    )
+    DocumentConverter(
+        format_options={InputFormat.PDF: PdfFormatOption(pipeline_options=shaped)}
+    )
+    assert os.environ["DOCLING_TESSERACT"] == "/opt/tesseract/bin/tesseract"
+    assert os.environ["DOCLING_RS_TESSDATA_DIR"] == "/opt/tessdata"
+    assert os.environ["DOCLING_RS_TESSERACT_PSM"] == "6"

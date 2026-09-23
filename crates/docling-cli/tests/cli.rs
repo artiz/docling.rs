@@ -136,3 +136,40 @@ fn video_frames_requires_a_number() {
         assert!(stderr.contains("--video-frames"), "{stderr}");
     }
 }
+
+/// #460: `--ocr-engine` takes ppocr | tesseract, and `--ocr-lang` is checked
+/// against the engine whichever order the flags come in — `deu` is a
+/// Tesseract language, not a PP-OCR model.
+#[test]
+fn ocr_engine_and_lang_validate_together() {
+    let (code, _, stderr) = run(&["--ocr-engine", "easyocr", "x.pdf"]);
+    assert_eq!(code, 2, "stderr: {stderr}");
+    assert!(stderr.contains("--ocr-engine"), "{stderr}");
+
+    let (code, _, stderr) = run(&["--ocr-engine", "ppocr", "--ocr-lang", "deu", "x.pdf"]);
+    assert_eq!(code, 2, "stderr: {stderr}");
+    assert!(stderr.contains("--ocr-lang"), "{stderr}");
+
+    // Accepted under Tesseract in either flag order: the run then fails on
+    // the missing input, not on the option.
+    for args in [
+        &[
+            "--ocr-engine",
+            "tesseract",
+            "--ocr-lang",
+            "deu+fra",
+            "missing.pdf",
+        ][..],
+        &[
+            "--ocr-lang",
+            "iso:de",
+            "--ocr-engine",
+            "tesseract",
+            "missing.pdf",
+        ][..],
+    ] {
+        let (_, _, stderr) = run(args);
+        assert!(!stderr.contains("--ocr-lang"), "args {args:?}: {stderr}");
+        assert!(!stderr.contains("--ocr-engine"), "args {args:?}: {stderr}");
+    }
+}
