@@ -57,7 +57,7 @@ docling-pdf = { path = "../docling-pdf", version = "1.69.0" }
 # session through the same switch as the rest of the stack.
 docling-onnx = { path = "../docling-onnx", version = "1.69.0" }
 # Counting slides/sheets in OOXML containers for page metrics (names only).
-zip = { version = "2.2", default-features = false, features = ["deflate"] }
+zip = { version = "8.6", default-features = false, features = ["deflate-flate2"] }
 
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "fs", "time", "signal"] }
 axum = "0.8"
