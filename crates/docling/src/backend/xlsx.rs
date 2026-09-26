@@ -103,8 +103,8 @@ type RankedItem = (usize, (usize, usize, usize, usize), Node);
 
 /// Load one sheet's merged regions (`<mergeCells>`), absolute coordinates.
 fn sheet_merges<R: std::io::Read + std::io::Seek>(wb: &mut Xlsx<R>, name: &str) -> Merges {
-    wb.worksheet_merge_cells(name)
-        .and_then(|r| r.ok())
+    // A sheet without `<mergeCells>` (or one calamine cannot read) has none.
+    wb.merge_cells_by_sheet_name(name)
         .unwrap_or_default()
         .iter()
         .map(|d| (d.start, d.end))
