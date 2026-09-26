@@ -57,7 +57,7 @@ coreml = ["pdf", "docling-pdf/coreml", "docling-asr?/coreml"]
 xnnpack = ["pdf", "docling-pdf/xnnpack", "docling-asr?/xnnpack"]
 
 [dependencies]
-calamine = { version = "0.26", features = ["dates"] }
+calamine = { version = "0.36", features = ["dates"] }
 csv = "1.4.0"
 # DjVu input (#434): pure-Rust decoder — hidden text layer + JB2/IW44 raster —
 # MIT, no GPL deps (written from the public spec), so no DjVuLibre binary or
@@ -104,7 +104,7 @@ ureq = { version = "3", optional = true }
 # Resolve relative / protocol-relative <img src> against the page's base URL
 # when the HTML was fetched from the web (fetch_images). Gated with ureq.
 url = { version = "2", optional = true }
-zip = { version = "2.2", default-features = false, features = ["deflate"] }
+zip = { version = "8.6", default-features = false, features = ["deflate-flate2"] }
 # AbiWord .zabw / gzip-compressed .abw (#216); already in the tree via zip.
 flate2 = "1"
 # Raw-block Snappy decode for Apple iWork's IWA members (#213); pure Rust, so

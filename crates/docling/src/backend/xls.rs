@@ -50,7 +50,7 @@ impl DeclarativeBackend for XlsBackend {
                 continue;
             };
             let merges: Merges = workbook
-                .worksheet_merge_cells(name)
+                .merge_cells_by_sheet_name(name)
                 .unwrap_or_default()
                 .iter()
                 .map(|d| (d.start, d.end))
