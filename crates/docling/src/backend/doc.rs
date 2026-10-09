@@ -2436,6 +2436,7 @@ impl NodeBuilder {
             caption_href: None,
             image,
             classification: None,
+            description: None,
             caption_parent: Default::default(),
             caption_location: None,
         };

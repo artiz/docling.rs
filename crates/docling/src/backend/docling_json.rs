@@ -430,6 +430,7 @@ fn picture_item(item: &Value, root: &Value, doc: &mut DoclingDocument) {
         caption_href: None,
         image: picture_image(item),
         classification: None,
+        description: None,
     });
 }
 

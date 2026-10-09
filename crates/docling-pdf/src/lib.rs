@@ -52,6 +52,8 @@ mod orient;
 pub mod outline;
 pub mod pdfium_backend;
 #[cfg(feature = "ml")]
+pub mod picture;
+#[cfg(feature = "ml")]
 pub mod quality;
 mod reading_order;
 // Pure-Rust region resampling (page→1024px box-average, crop→448 bilinear) —
@@ -754,11 +756,11 @@ const RAPIDOCR_MAX_SIDE: f32 = 2000.0;
 /// pinned to. Measured on FUNSD at 1.0 / 2.0 / 3.0 px/pt: 0.825 / 0.856 /
 /// 0.836 word recall — the recognizer likes its crops at the resolution
 /// RapidOCR hands it, no more.
-fn page_ocr_scale(ocr_scale: Option<f32>, page: &PdfPage) -> Option<f32> {
-    if ocr_scale.is_some() || page.scale != 1.0 {
+fn page_ocr_scale(ocr_scale: Option<f32>, width: f32, height: f32, scale: f32) -> Option<f32> {
+    if ocr_scale.is_some() || scale != 1.0 {
         return ocr_scale;
     }
-    let longest = page.width.max(page.height);
+    let longest = width.max(height);
     if longest <= 0.0 {
         return None;
     }
@@ -1147,7 +1149,7 @@ impl Worker {
                             &mut view,
                             &page.image,
                             page.scale,
-                            page_ocr_scale(ocr_scale, page),
+                            page_ocr_scale(ocr_scale, page.width, page.height, page.scale),
                         );
                         (n, timing::timed("ocr.det", || det.detect(img)))
                     })
@@ -1199,7 +1201,7 @@ impl Worker {
             }),
             None => Vec::new(),
         };
-        let ocr_scale = page_ocr_scale(self.ocr_scale, page);
+        let ocr_scale = page_ocr_scale(self.ocr_scale, page.width, page.height, page.scale);
         let Some(ocr) = self.ocr_model()? else {
             return Ok(());
         };
@@ -1545,7 +1547,7 @@ impl Worker {
         // the page render at the requested px/pt, built lazily on the first
         // OCR use so non-OCR pages never pay for it. Copied out of `self` up
         // front — the OCR sites hold `self.ocr_model()`'s mutable borrow.
-        let ocr_scale = page_ocr_scale(self.ocr_scale, page);
+        let ocr_scale = page_ocr_scale(self.ocr_scale, page.width, page.height, page.scale);
         let mut ocr_view: Option<image::RgbImage> = None;
         if self.force_full_page_ocr {
             page.cells.clear();
@@ -3503,38 +3505,19 @@ mod image_limit_tests {
 mod ocr_scale_tests {
     use super::*;
 
-    fn page(w: f32, h: f32, scale: f32) -> PdfPage {
-        PdfPage {
-            width: w,
-            height: h,
-            scale,
-            cells: Vec::new(),
-            code_cells: Vec::new(),
-            checkboxes: Vec::new(),
-            word_cells: Vec::new(),
-            image: image::RgbImage::new(1, 1),
-            image_layout: None,
-            links: Vec::new(),
-            rotation: 0,
-        }
-    }
-
     /// #570: an explicit scale wins everywhere; a rendered page keeps its
     /// render; a scale-1.0 image page reads at docling's 3 px/pt, shrunk to
     /// RapidOCR's 2000 px longer side (a FUNSD scan at 2.0, a 3000 px photo
     /// downsampled to 0.67), and an image that lands at 1.0 is not resampled.
     #[test]
     fn image_inputs_follow_rapidocrs_resolution() {
-        assert_eq!(
-            page_ocr_scale(Some(1.5), &page(754.0, 1000.0, 1.0)),
-            Some(1.5)
-        );
-        assert_eq!(page_ocr_scale(None, &page(612.0, 792.0, 2.0)), None);
-        assert_eq!(page_ocr_scale(None, &page(754.0, 1000.0, 1.0)), Some(2.0));
-        assert_eq!(page_ocr_scale(None, &page(400.0, 600.0, 1.0)), Some(3.0));
-        let s = page_ocr_scale(None, &page(3000.0, 2000.0, 1.0)).unwrap();
+        assert_eq!(page_ocr_scale(Some(1.5), 754.0, 1000.0, 1.0), Some(1.5));
+        assert_eq!(page_ocr_scale(None, 612.0, 792.0, 2.0), None);
+        assert_eq!(page_ocr_scale(None, 754.0, 1000.0, 1.0), Some(2.0));
+        assert_eq!(page_ocr_scale(None, 400.0, 600.0, 1.0), Some(3.0));
+        let s = page_ocr_scale(None, 3000.0, 2000.0, 1.0).unwrap();
         assert!((s - 2.0 / 3.0).abs() < 1e-6, "{s}");
-        assert_eq!(page_ocr_scale(None, &page(2000.0, 1500.0, 1.0)), None);
+        assert_eq!(page_ocr_scale(None, 2000.0, 1500.0, 1.0), None);
     }
 }
 

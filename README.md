@@ -376,6 +376,8 @@ Options per request: `to=md|json|html|text|dclx|chunks|latex|pandoc|images` (`pa
 [enrichment models](#enrichment-models-picture-classification-code-formulas), named as
 docling's `PdfPipelineOptions` flags; a request that changes the enrichment mix rebuilds the
 warm pipeline once, the models themselves load lazily on the first matching region),
+`do_picture_ocr`, `picture_ocr_classes`, `picture_ocr_min_side`, `keep_picture_images` (#645:
+[OCR the pictures of non-PDF documents](#picture-ocr-for-non-pdf-documents---picture-ocr)),
 `ocr_lang`, `ocr_engine`, `ocr_mode`, `ocr_scale`, `scale`, `document_timeout` (#497: a per-document budget in seconds — a cut conversion answers `X-Docling-Status: partial_success` + `X-Docling-Errors`, batch / async items carry `status` and `errors`), `asr_model`, `asr_lang`, `encoding`, `video_frames`, `xbrl_taxonomy`, `fetch_images`,
 `chunker=hierarchical|hybrid`, `chunk_tokenizer`, `chunk_max_tokens`, `chunk_merge_peers` (#256:
 per-request `to=chunks` configuration; the tokenizer is a server-local relative path),
@@ -1997,6 +1999,64 @@ blank line inside the code block). `DOCLING_RS_FP32=1` opts back into the
 byte-exact fp32 decoder.
 `scripts/conformance/enrich_conformance.sh` checks the enriched output
 against Python docling's on the enrichment test PDFs.
+
+### Picture OCR for non-PDF documents (`--picture-ocr`)
+
+A DOCX or PPTX full of screenshots, an HTML page whose figures are images
+of text, the sampled frames of a video — docling leaves the words inside
+those pictures unread, since only its PDF/image pipeline runs OCR. Opt in
+and the same OCR models read every embedded picture of a non-PDF document
+(#645; PDF/image/METS pages are OCR'd by the pipeline already and are left
+alone), and the text lands on the picture as docling's description
+annotation — exactly where upstream's picture-description (VLM captioning)
+models put theirs: Markdown prints it between the caption and the image
+placeholder (docling's picture serializer order), the JSON picture item
+carries `meta.description` (`created_by` = the engine) plus the
+`description` annotation, DCLX writes it structurally and the chunkers put
+it in the picture's chunk.
+
+```bash
+docling-rs --picture-ocr deck.pptx
+docling-rs --picture-ocr --picture-ocr-classes screenshot_from_computer,screenshot_from_manual \
+           --picture-ocr-min-side 64 --no-picture-images --to json deck.pptx
+```
+
+```rust
+let converter = DocumentConverter::new()
+    .do_picture_ocr(true)
+    .picture_ocr_classes(["screenshot_from_computer", "screenshot_from_manual"])
+    .picture_ocr_min_side(64)
+    .keep_picture_images(false);
+```
+
+* **Which pictures are read.** Every one whose smaller side reaches
+  `picture_ocr_min_side` (32 px by default, `DOCLING_RS_PICTURE_OCR_MIN_SIDE`;
+  icons and bullets never reach the models); with `picture_ocr_classes`
+  only those the DocumentFigureClassifier's top prediction labels as one of
+  the listed classes (its 26 — `screenshot_from_computer`, `logo`,
+  `photograph`, …; an unknown label is rejected up front). The same image
+  embedded twice — a slide master's logo on every slide — is read once.
+* **What is attached.** The recognizer's lines in reading order (rows top to
+  bottom, left to right within a row), lines under
+  `DOCLING_RS_OCR_TEXT_SCORE` dropped as on a scanned page; a picture the
+  engine reads no text from gets nothing, so an unused or silent enrichment
+  leaves every export byte-identical to today's. The models are the
+  pipeline's own — the PP-OCR recognizer with the `ocr_det.onnx` line
+  detector when installed, read at docling's image resolution, or Tesseract
+  under `--ocr-engine tesseract` — so `ocr_lang` / `ocr_scale` apply.
+* **`--no-picture-images`** (`keep_picture_images(false)`) drops the image
+  bytes from every picture after the pass: a slim JSON/DCLX and a
+  placeholder-only Markdown with the text kept.
+* **Degradation.** Under `--no-ocr` / `--text-layer-only`, without the OCR
+  model, or in a build without the `pdf` feature, one warning and no text —
+  the conversion succeeds.
+
+The same four switches exist on every surface: the docling-serve request
+options (`do_picture_ocr`, `picture_ocr_classes`, `picture_ocr_min_side`,
+`keep_picture_images` — query, multipart or JSON body), the Python kwargs
+(also on `PdfPipelineOptions`; `picture_ocr_classes` takes a list or the
+comma-separated string) and the Node options (`doPictureOcr`,
+`pictureOcrClasses`, `pictureOcrMinSide`, `keepPictureImages`).
 
 ### INT8 models (faster PDF conversion on CPU — the default)
 

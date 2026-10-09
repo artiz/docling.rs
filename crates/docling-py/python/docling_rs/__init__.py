@@ -307,6 +307,10 @@ class DocumentConverter:
         do_picture_classification: bool = False,
         do_code_enrichment: bool = False,
         do_formula_enrichment: bool = False,
+        do_picture_ocr: bool = False,
+        picture_ocr_classes: Optional[Union[str, Iterable[str]]] = None,
+        picture_ocr_min_side: Optional[int] = None,
+        keep_picture_images: bool = True,
         fetch_images: bool = False,
         use_web_browser: bool = False,
         ocr_lang: Optional[str] = None,
@@ -367,6 +371,17 @@ class DocumentConverter:
             )
             do_formula_enrichment = getattr(
                 pdf_opts, "do_formula_enrichment", do_formula_enrichment
+            )
+            # The picture-OCR enrichment (#645) and its filters, when set on
+            # the pipeline options (a docling.rs extension of
+            # PdfPipelineOptions).
+            do_picture_ocr = getattr(pdf_opts, "do_picture_ocr", do_picture_ocr)
+            if getattr(pdf_opts, "picture_ocr_classes", None) is not None:
+                picture_ocr_classes = pdf_opts.picture_ocr_classes
+            if getattr(pdf_opts, "picture_ocr_min_side", None) is not None:
+                picture_ocr_min_side = pdf_opts.picture_ocr_min_side
+            keep_picture_images = getattr(
+                pdf_opts, "keep_picture_images", keep_picture_images
             )
             # docling's PipelineOptions.document_timeout (#497), when set on
             # the pipeline options, wins over the shorthand kwarg.
@@ -482,6 +497,10 @@ class DocumentConverter:
             do_picture_classification=do_picture_classification,
             do_code_enrichment=do_code_enrichment,
             do_formula_enrichment=do_formula_enrichment,
+            do_picture_ocr=do_picture_ocr,
+            picture_ocr_classes=_label_list(picture_ocr_classes),
+            picture_ocr_min_side=picture_ocr_min_side,
+            keep_picture_images=keep_picture_images,
             ocr_lang=ocr_lang,
             ocr_mode=ocr_mode,
             ocr_scale=ocr_scale,
@@ -730,6 +749,14 @@ def _stream_bytes(stream) -> bytes:
     if hasattr(stream, "seekable") and stream.seekable():
         stream.seek(0)
     return stream.read()
+
+
+def _label_list(labels) -> Optional[str]:
+    """``picture_ocr_classes`` as the engine's comma-separated string: a
+    string passes through, an iterable of labels is joined."""
+    if labels is None or isinstance(labels, str):
+        return labels
+    return ",".join(str(label) for label in labels)
 
 
 def _page_range(page_range) -> Optional[Tuple[int, int]]:

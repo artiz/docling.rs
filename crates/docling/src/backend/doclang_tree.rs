@@ -1254,6 +1254,7 @@ impl Builder<'_> {
                 captions,
                 image,
                 classification,
+                description: None,
                 // `PictureClassificationPrediction(class_name, confidence=1.0)`.
                 confidence: Some(1.0),
                 chart,

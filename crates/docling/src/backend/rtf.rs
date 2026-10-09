@@ -598,6 +598,7 @@ impl<'a> Parser<'a> {
                     caption_href: None,
                     image: Some(image),
                     classification: None,
+                    description: None,
                     caption_parent: Default::default(),
                     caption_location: None,
                 });
@@ -616,6 +617,7 @@ impl<'a> Parser<'a> {
                 data,
             }),
             classification: None,
+            description: None,
             caption_parent: Default::default(),
             caption_location: None,
         });

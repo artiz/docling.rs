@@ -954,6 +954,35 @@ deliberate scope boundary or a cosmetic, single-fixture polish gap.
   chat model (run on the converted document, every input format). URL sources
   (`convert("https://…")`) download first, as in docling.
 
+- **Picture OCR for non-PDF documents** (#645) — docling only OCRs through
+  its PDF/image pipeline, so the text inside a DOCX/PPTX screenshot, an HTML
+  figure or a video frame is never read. `do_picture_ocr` (every surface:
+  `--picture-ocr`, serve `do_picture_ocr`, Python `do_picture_ocr` /
+  `PdfPipelineOptions.do_picture_ocr`, Node `doPictureOcr`) runs the same
+  OCR models — the PP-OCR recognizer with the `ocr_det.onnx` line crops at
+  docling's image resolution, or Tesseract under `ocr_engine` — over every
+  embedded picture of a non-PDF document after the backend, and attaches the
+  lines (reading order; `DOCLING_RS_OCR_TEXT_SCORE` applies) as docling's
+  picture description — `meta.description` (`created_by` = the engine) plus
+  the `PictureDescriptionData` annotation, the shape `PictureDescriptionBaseModel`
+  writes, so a docling-core consumer reads it like a VLM caption. Markdown
+  prints it between the caption and the placeholder (docling's
+  `MarkdownPictureSerializer` order: captions, annotations, image), the chunkers
+  put it in the picture's chunk, DocLang / LaTeX / Pandoc are unchanged
+  (docling's DocTags carry no description either). Filters:
+  `picture_ocr_classes` (the DocumentFigureClassifier's top label must be one
+  of the listed classes; a label it never predicts is rejected) and
+  `picture_ocr_min_side` (32 px, `DOCLING_RS_PICTURE_OCR_MIN_SIDE`);
+  `keep_picture_images=false` drops the image bytes after the pass. Off by
+  default — the default exports of every fixture are byte-identical — and a
+  picture without text, `no_ocr` / `text_layer_only`, or a missing model
+  attaches nothing (one warning). PDF/image/METS inputs are untouched: their
+  pages went through the OCR pipeline already. The dedupe is by image bytes,
+  so a DOCX (walked into both the flat nodes and the item tree) or a slide
+  master's logo is read once. `picture_ocr.docx` (a 720 × 180 two-line
+  screenshot and a 16 × 16 icon) is the fixture; the e2e test also reads
+  the text drawn into a generated video clip's frame.
+
 ## 7. Testing
 
 - **`cargo test`** — unit tests per backend/serializer **plus an output-

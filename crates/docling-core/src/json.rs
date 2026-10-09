@@ -8,7 +8,7 @@
 //! therefore *un-escape* on the way out so a docling-core round-trip
 //! (`load_from_json().export_to_markdown()`) reproduces the same Markdown.
 
-use serde_json::{json, Value};
+use serde_json::{json, Map, Value};
 
 use crate::document::{CaptionParent, ContentLayer, DoclingDocument, Node, Table};
 
@@ -410,6 +410,55 @@ fn classification_meta(classes: &[crate::PictureClass]) -> Value {
             })).collect::<Vec<_>>(),
         }],
     })
+}
+
+/// The picture-OCR enrichment's text (#645) as docling writes a picture
+/// description: `meta.description` — a `DescriptionMetaField`, pydantic
+/// field order `created_by` (the model, here the OCR engine) then `text` —
+/// plus the deprecated-but-still-emitted `PictureDescriptionData`
+/// annotation (`kind`, `text`, `provenance`), both exactly what
+/// `PictureDescriptionBaseModel` attaches. Carried like
+/// [`classification_meta`]'s: `annotations` is lifted onto the item.
+fn description_meta(desc: &crate::PictureDescription) -> Value {
+    json!({
+        "description": {
+            "created_by": desc.provenance,
+            "text": desc.text,
+        },
+        "annotations": [{
+            "kind": "description",
+            "text": desc.text,
+            "provenance": desc.provenance,
+        }],
+    })
+}
+
+/// A flat picture node's `meta`: the classifier's predictions and/or the
+/// OCR description, merged — `description` precedes `classification` in
+/// `PictureMeta`'s field order (it is inherited from the floating-item
+/// base), the annotations run in the order docling's enrichment pipeline
+/// appends them (classification, then description).
+fn picture_meta(
+    classes: Option<&[crate::PictureClass]>,
+    desc: Option<&crate::PictureDescription>,
+) -> Option<Value> {
+    let mut meta = Map::new();
+    let mut annotations = Vec::new();
+    if let Some(desc) = desc {
+        let mut m = description_meta(desc);
+        annotations.push(m["annotations"][0].take());
+        meta.insert("description".into(), m["description"].take());
+    }
+    if let Some(classes) = classes {
+        let mut m = classification_meta(classes);
+        annotations.insert(0, m["annotations"][0].take());
+        meta.insert("classification".into(), m["classification"].take());
+    }
+    if meta.is_empty() {
+        return None;
+    }
+    meta.insert("annotations".into(), Value::Array(annotations));
+    Some(Value::Object(meta))
 }
 
 /// docling's `TableData` for a table: `table_cells`, `num_rows`/`num_cols`
@@ -1058,6 +1107,7 @@ impl Builder {
                     captions,
                     image,
                     classification,
+                    description,
                     confidence,
                     chart,
                     dpi,
@@ -1078,6 +1128,19 @@ impl Builder {
                         if !t.rows.is_empty() {
                             m["tabular_chart"] = json!({ "chart_data": table_data(t) });
                         }
+                    }
+                    // The OCR description (#645) goes first in the meta —
+                    // `PictureMeta` field order — and as the annotation the
+                    // flat node writes (see `description_meta`).
+                    if let Some(desc) = description {
+                        let mut d = description_meta(desc);
+                        let mut merged = Map::new();
+                        merged.insert("description".into(), d["description"].take());
+                        if let Some(Value::Object(rest)) = meta {
+                            merged.extend(rest);
+                        }
+                        merged.insert("annotations".into(), d["annotations"].take());
+                        meta = Some(Value::Object(merged));
                     }
                     let prov = self.take_prov(0);
                     let r = self.push_picture(
@@ -1266,13 +1329,14 @@ impl Builder {
                 caption_href,
                 image,
                 classification,
+                description,
                 caption_parent,
                 caption_location,
             } => Some(self.add_picture(
                 caption.as_deref(),
                 caption_href.as_deref(),
                 image.as_ref(),
-                classification.as_deref().map(classification_meta),
+                picture_meta(classification.as_deref(), description.as_ref()),
                 parent,
                 (*caption_parent, *caption_location),
             )),
@@ -2227,6 +2291,7 @@ mod tests {
                 data: b"foobar".to_vec(),
             }),
             classification: None,
+            description: None,
             caption_parent: Default::default(),
             caption_location: None,
         });
@@ -2498,6 +2563,7 @@ mod tests {
                 caption_href: None,
                 image: None,
                 classification: None,
+                description: None,
                 caption_parent: CaptionParent::Item,
                 caption_location: Some([64, 264, 448, 280]),
             }),
@@ -2568,6 +2634,7 @@ mod tests {
                 caption_href: None,
                 image: None,
                 classification: None,
+                description: None,
                 caption_parent: CaptionParent::Item,
                 caption_location: None,
             }),
@@ -2852,6 +2919,7 @@ mod tests {
                 captions: Vec::new(),
                 image: None,
                 classification: Some("bar_chart".into()),
+                description: None,
                 confidence: None,
                 chart: Some(Table {
                     rows: vec![vec!["".into(), "s".into()], vec!["c".into(), "1".into()]],
@@ -2956,6 +3024,7 @@ mod tests {
                     data: vec![0],
                 }),
                 classification: None,
+                description: None,
                 confidence: None,
                 chart: None,
                 dpi: Some(300),
@@ -3540,6 +3609,7 @@ mod tests {
             caption_href: None,
             image: None,
             classification: None,
+            description: None,
             caption_parent,
             caption_location: None,
         }

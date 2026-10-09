@@ -122,6 +122,7 @@ fn nodes_for(label: &str, inner: &str) -> Vec<Node> {
             caption_href: None,
             image: None,
             classification: None,
+            description: None,
             caption_parent: Default::default(),
             caption_location: None,
         }],

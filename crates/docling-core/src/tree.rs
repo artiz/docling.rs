@@ -91,6 +91,9 @@ pub enum TreeKind {
         captions: Vec<usize>,
         image: Option<PictureImage>,
         classification: Option<String>,
+        /// The picture-OCR enrichment's text (#645), serialized like the flat
+        /// node's: `meta.description` + the `description` annotation.
+        description: Option<crate::PictureDescription>,
         /// The prediction's `confidence`, when the backend writes one: the
         /// DocLang deserializer stamps `1.0`; the office and HTML backends
         /// leave it out (`None`).
@@ -677,6 +680,7 @@ mod tests {
                 captions: vec![cap],
                 image: None,
                 classification: Some("bar_chart".into()),
+                description: None,
                 confidence: None,
                 chart: None,
                 dpi: None,

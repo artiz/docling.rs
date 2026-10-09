@@ -817,6 +817,7 @@ fn odf_picture(styles: &Styles, img: XmlNode) -> Option<Node> {
             caption_href: None,
             image,
             classification: None,
+            description: None,
             caption_parent: Default::default(),
             caption_location: None,
         })

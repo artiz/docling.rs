@@ -134,6 +134,18 @@ pub struct ConvertOptions {
     pub do_code_enrichment: Option<bool>,
     /// Enrichment: decode display formulas to LaTeX with CodeFormulaV2 (#423).
     pub do_formula_enrichment: Option<bool>,
+    /// Enrichment: OCR the embedded pictures of non-PDF documents (#645);
+    /// the text becomes the picture's description annotation.
+    pub do_picture_ocr: Option<bool>,
+    /// Comma-separated DocumentFigureClassifier labels a picture must be
+    /// classified as to be OCR'd (#645); unset/empty = every picture.
+    pub picture_ocr_classes: Option<String>,
+    /// Smallest side in px a picture must have to be OCR'd (#645; default
+    /// 32, `DOCLING_RS_PICTURE_OCR_MIN_SIDE`).
+    pub picture_ocr_min_side: Option<u32>,
+    /// Keep the embedded image bytes on the pictures (#645); `false` drops
+    /// them after the enrichment pass. Default `true`.
+    pub keep_picture_images: Option<bool>,
 
     // --- pipeline selection --------------------------------------------------
     /// `standard` (default) | `vlm` (#77): the remote vision model instead of
@@ -316,6 +328,16 @@ pub const OPTIONS: &[OptionInfo] = &[
         cli: Some("--enrich-formula"),
         ..row("do_formula_enrichment")
     },
+    OptionInfo {
+        cli: Some("--picture-ocr"),
+        ..row("do_picture_ocr")
+    },
+    row("picture_ocr_classes"),
+    row("picture_ocr_min_side"),
+    OptionInfo {
+        cli: Some("--no-picture-images"),
+        ..row("keep_picture_images")
+    },
     row("pipeline"),
     row("vlm_endpoint"),
     row("vlm_model"),
@@ -395,8 +417,9 @@ impl ConvertOptions {
     /// `pages` spelling, a positive `document_timeout`, a positive
     /// `ocr_scale`, `images_scale` in 0.1–4.0, a known `pipeline`, a positive
     /// `vlm_max_tokens`, and (with the `pdf` feature, which has the engine
-    /// tables) a known `ocr_engine` / `ocr_mode` and an `ocr_lang` the
-    /// selected engine reads. `asr_lang`, `encoding` and `ebcdic_layout` are
+    /// tables) a known `ocr_engine` / `ocr_mode`, an `ocr_lang` the
+    /// selected engine reads and `picture_ocr_classes` the classifier
+    /// predicts. `asr_lang`, `encoding` and `ebcdic_layout` are
     /// checked against the model / codec / copybook when the conversion runs.
     pub fn validate(&self) -> Result<(), OptionsError> {
         self.page_range()?;
@@ -430,7 +453,38 @@ impl ConvertOptions {
             self.ocr_mode()?;
             self.ocr_lang()?;
         }
+        self.picture_ocr_classes()?;
         Ok(())
+    }
+
+    /// The parsed `picture_ocr_classes` (#645): the comma-separated labels,
+    /// trimmed and lower-cased, empty when unset. With the `pdf` feature
+    /// (which has the classifier's label table) a label the
+    /// DocumentFigureClassifier never predicts is rejected — a typo would
+    /// otherwise silently skip every picture.
+    pub fn picture_ocr_classes(&self) -> Result<Vec<String>, OptionsError> {
+        let labels: Vec<String> = self
+            .picture_ocr_classes
+            .as_deref()
+            .unwrap_or("")
+            .split(',')
+            .map(|s| s.trim().to_ascii_lowercase())
+            .filter(|s| !s.is_empty())
+            .collect();
+        #[cfg(feature = "pdf")]
+        if let Some(bad) = labels
+            .iter()
+            .find(|l| !docling_pdf::enrich::PICTURE_CLASSES.contains(&l.as_str()))
+        {
+            return Err(OptionsError::new(
+                "picture_ocr_classes",
+                format!(
+                    "picture_ocr_classes: {bad:?} is not a DocumentFigureClassifier label ({})",
+                    docling_pdf::enrich::PICTURE_CLASSES.join(", ")
+                ),
+            ));
+        }
+        Ok(labels)
     }
 
     /// Validate, then set every given option on `base` — unset ones leave the
@@ -531,6 +585,18 @@ impl ConvertOptions {
         }
         if let Some(v) = self.do_formula_enrichment {
             c = c.do_formula_enrichment(v);
+        }
+        if let Some(v) = self.do_picture_ocr {
+            c = c.do_picture_ocr(v);
+        }
+        if self.picture_ocr_classes.is_some() {
+            c = c.picture_ocr_classes(self.picture_ocr_classes()?);
+        }
+        if let Some(v) = self.picture_ocr_min_side {
+            c = c.picture_ocr_min_side(v);
+        }
+        if let Some(v) = self.keep_picture_images {
+            c = c.keep_picture_images(v);
         }
         Ok(c)
     }
