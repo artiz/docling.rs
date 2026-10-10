@@ -31,6 +31,96 @@ fn strip_picture_images(document: &mut docling_core::DoclingDocument) {
     }
 }
 
+/// The picture-OCR reader (#645): the OCR models behind the size floor and
+/// the classifier filter, with a by-bytes cache so the same image embedded
+/// twice is read once. Built by [`DocumentConverter::picture_reader`].
+#[cfg(feature = "pdf")]
+struct PictureReader {
+    pipeline: docling_pdf::Pipeline,
+    min_side: u32,
+    classes: Vec<String>,
+    cache: std::collections::HashMap<u64, Option<docling_core::PictureDescription>>,
+}
+
+#[cfg(feature = "pdf")]
+impl PictureReader {
+    /// The text read off `img`, as the picture's description annotation;
+    /// `None` when the picture is skipped (too small, filtered out by its
+    /// class) or carries no text.
+    fn read(
+        &mut self,
+        img: &docling_core::PictureImage,
+    ) -> Option<docling_core::PictureDescription> {
+        use std::hash::{Hash, Hasher};
+        let mut h = std::collections::hash_map::DefaultHasher::new();
+        img.data.hash(&mut h);
+        let key = h.finish();
+        if let Some(hit) = self.cache.get(&key) {
+            return hit.clone();
+        }
+        let text = self.read_uncached(img);
+        self.cache.insert(key, text.clone());
+        text
+    }
+
+    fn read_uncached(
+        &mut self,
+        img: &docling_core::PictureImage,
+    ) -> Option<docling_core::PictureDescription> {
+        // The declared size is a hint; the decoded one is the truth
+        // (a 16 × 16 icon is skipped before any inference).
+        if img.width.min(img.height) < self.min_side && img.width * img.height > 0 {
+            return None;
+        }
+        let decoded = match self.pipeline.decode_picture(&img.data) {
+            Ok(d) => d,
+            Err(e) => {
+                docling_core::debug_log!("docling: picture OCR: undecodable image: {e}");
+                return None;
+            }
+        };
+        if decoded.width().min(decoded.height()) < self.min_side {
+            return None;
+        }
+        // The loader warned once when the classifier is missing; an
+        // unclassifiable picture is read rather than silently skipped.
+        if !self.classes.is_empty() {
+            if let Some(preds) = self.pipeline.classify_picture(&decoded) {
+                let top = preds.first().map(|p| p.class_name.as_str());
+                if !top.is_some_and(|t| self.classes.iter().any(|c| c == t)) {
+                    return None;
+                }
+            }
+        }
+        match self.pipeline.ocr_picture(&decoded) {
+            Ok(Some(t)) => Some(docling_core::PictureDescription {
+                text: t.text,
+                provenance: t.provenance.to_string(),
+            }),
+            Ok(None) => None,
+            Err(e) => {
+                eprintln!("warning: picture OCR failed: {e}");
+                None
+            }
+        }
+    }
+}
+
+/// Without the `pdf` feature there is no reader; the type exists so the
+/// callers compile unchanged.
+#[cfg(not(feature = "pdf"))]
+struct PictureReader;
+
+#[cfg(not(feature = "pdf"))]
+impl PictureReader {
+    fn read(
+        &mut self,
+        _img: &docling_core::PictureImage,
+    ) -> Option<docling_core::PictureDescription> {
+        None
+    }
+}
+
 /// Whether `text` begins with an XML prolog — an `<?xml …?>` declaration or a
 /// non-HTML `<!DOCTYPE …>`. Used to route XML documents that arrived with a
 /// text/Markdown extension (e.g. a JATS article saved as `.txt`) to the XML
@@ -162,8 +252,19 @@ pub struct DocumentConverter {
     asr_model: Option<String>,
     asr_lang: Option<String>,
     /// Max sampled frames per video (#138 Phase 2). `None` = the default
-    /// ([`DEFAULT_VIDEO_FRAMES`]); `Some(0)` disables frame extraction.
+    /// ([`DEFAULT_VIDEO_FRAMES`]); `Some(0)` disables frame extraction;
+    /// [`ALL_VIDEO_FRAMES`] keeps every distinct cut (#647).
     video_frames: Option<usize>,
+    /// ffmpeg's scene score a video frame must exceed to count as a cut
+    /// (#647); `None` = `DOCLING_RS_VIDEO_SCENE_THRESHOLD`, else 0.27.
+    video_scene_threshold: Option<f32>,
+    /// Cap on a sampled frame's longer side in px (#647); `None` =
+    /// `DOCLING_RS_VIDEO_FRAME_MAX_SIDE`, else the source resolution.
+    video_frame_max_side: Option<u32>,
+    /// Hamming distance under which a frame's difference hash makes it a
+    /// duplicate of a kept one (#647); `None` = `DOCLING_RS_VIDEO_FRAME_DEDUPE`,
+    /// else no de-duplication.
+    video_frame_dedupe: Option<u32>,
     /// The directory an XBRL instance's taxonomy is read from (docling's
     /// `XBRLBackendOptions.taxonomy`); `None` = the instance's own directory.
     xbrl_taxonomy: Option<PathBuf>,
@@ -208,6 +309,13 @@ pub struct DocumentConverter {
 /// in short clips, and uniform fallback at 8 keeps JSON/DCLX output (which
 /// embeds the PNGs) within sane bounds.
 pub const DEFAULT_VIDEO_FRAMES: usize = 8;
+
+/// The `video_frames` count meaning "every distinct cut" (#647): no cap,
+/// no even resampling of a cut-less video (its first frame alone), the
+/// scene threshold and de-duplication deciding what a distinct frame is.
+/// Any count at or above `u32::MAX` reads as this on the JSON surfaces, so
+/// a binding whose integers are 32-bit (the npm addon) can ask for it.
+pub const ALL_VIDEO_FRAMES: usize = usize::MAX;
 
 /// Parse a user-facing page-range string (issue #80's `--pages`): `"A-B"` for
 /// an inclusive 1-based window, or a single `"N"` for one page. Whitespace
@@ -263,6 +371,9 @@ impl Default for DocumentConverter {
             asr_model: None,
             asr_lang: None,
             video_frames: None,
+            video_scene_threshold: None,
+            video_frame_max_side: None,
+            video_frame_dedupe: None,
             xbrl_taxonomy: None,
             enrich: crate::EnrichmentOptions::default(),
             picture_ocr: false,
@@ -550,6 +661,49 @@ impl DocumentConverter {
         self
     }
 
+    /// Keep every distinct cut of a video (#647) — [`ALL_VIDEO_FRAMES`]:
+    /// no cap, so what bounds the picture count is the scene threshold and
+    /// the de-duplication. Memory stays one frame at a time whatever the
+    /// count ([`do_picture_ocr`](Self::do_picture_ocr) +
+    /// [`keep_picture_images`](Self::keep_picture_images)`(false)` reads and
+    /// drops each frame before the next is decoded).
+    pub fn video_frames_all(self) -> Self {
+        self.video_frames(ALL_VIDEO_FRAMES)
+    }
+
+    /// ffmpeg's `scene` score (0–1, the normalized difference of a frame to
+    /// its predecessor) a frame must exceed to be a cut (#647). Default
+    /// 0.27 (`DOCLING_RS_VIDEO_SCENE_THRESHOLD` overrides it): a slide
+    /// change in a screen recording scores well above it, a fade or a
+    /// lighting change around 0.5, a hard cut near 1.0 — raise it to keep
+    /// only hard cuts. Out-of-range values are clamped.
+    pub fn video_scene_threshold(mut self, threshold: f32) -> Self {
+        self.video_scene_threshold = Some(threshold.clamp(0.0, 1.0));
+        self
+    }
+
+    /// Downscale each sampled frame inside ffmpeg so its longer side is at
+    /// most `px` (#647; the aspect ratio is kept, a smaller frame is left as
+    /// it is): a 1080p recording at 640 yields 640×360 PNGs, so neither the
+    /// embedded images nor the OCR input ever reach memory at full size.
+    /// `0` (the default, `DOCLING_RS_VIDEO_FRAME_MAX_SIDE` overrides it) =
+    /// the source resolution.
+    pub fn video_frame_max_side(mut self, px: u32) -> Self {
+        self.video_frame_max_side = Some(px);
+        self
+    }
+
+    /// Drop a sampled frame whose perceptual difference hash (64 bits over
+    /// a 9×8 grey thumbnail) is within `max_distance` bits of a frame
+    /// already kept (#647): the same slide after a fade, or shown again
+    /// after a camera cut, becomes one picture. 4–6 is a good distance;
+    /// `None` (the default, `DOCLING_RS_VIDEO_FRAME_DEDUPE` overrides it)
+    /// keeps every sampled frame.
+    pub fn video_frame_dedupe(mut self, max_distance: Option<u32>) -> Self {
+        self.video_frame_dedupe = max_distance.map(|d| d.min(64));
+        self
+    }
+
     /// The folder holding the taxonomy an XBRL instance refers to (docling's
     /// `XBRLBackendOptions.taxonomy`): the filing's extension schema and
     /// linkbases at the relative paths its `link:schemaRef` names, plus any
@@ -713,107 +867,24 @@ impl DocumentConverter {
     }
 
     /// The picture-OCR pass itself: PDF, image and METS pages already went
-    /// through the OCR pipeline, so their pictures are left alone; with OCR
-    /// disabled, or without the recognizer, the pictures keep no text and
-    /// one warning says why. The same image embedded twice — a DOCX walked
-    /// into both the flat nodes and the item tree, a slide master's logo on
-    /// every slide — is read once (cached by its bytes).
-    #[cfg(feature = "pdf")]
+    /// through the OCR pipeline, so their pictures are left alone, and a
+    /// video's frames were read as they were decoded
+    /// ([`convert_video`](Self::convert_video)); with OCR disabled, or
+    /// without the recognizer, the pictures keep no text and one warning
+    /// says why. The same image embedded twice — a DOCX walked into both
+    /// the flat nodes and the item tree, a slide master's logo on every
+    /// slide — is read once (cached by its bytes).
     fn ocr_pictures(&self, document: &mut docling_core::DoclingDocument, format: InputFormat) {
-        use std::collections::HashMap;
-        use std::hash::{Hash, Hasher};
-
-        use docling_core::{tree::TreeKind, Node, PictureDescription, PictureImage};
+        use docling_core::{tree::TreeKind, Node};
 
         if matches!(
             format,
-            InputFormat::Pdf | InputFormat::Image | InputFormat::MetsGbs
+            InputFormat::Pdf | InputFormat::Image | InputFormat::MetsGbs | InputFormat::Video
         ) {
             return;
         }
-        static WARNED: std::sync::Once = std::sync::Once::new();
-        if self.no_ocr || self.text_layer_only {
-            WARNED.call_once(|| {
-                eprintln!(
-                    "warning: picture OCR requested, but OCR is disabled (no_ocr / \
-                     text_layer_only); pictures keep no text"
-                );
-            });
+        let Some(mut reader) = self.picture_reader() else {
             return;
-        }
-        // The OCR models only — no layout, no TableFormer: the caller already
-        // knows each whole image is the picture. Lazily loaded on the first
-        // picture, so a document without one costs nothing.
-        let pipeline = docling_pdf::Pipeline::new().map(|p| {
-            p.no_ocr(true)
-                .no_table_former(true)
-                .ocr_lang(self.ocr_lang_choice())
-                .ocr_engine(self.ocr_engine_choice())
-                .tesseract_lang(self.tesseract_lang_choice())
-                .ocr_scale(self.ocr_scale_choice())
-        });
-        let mut pipeline = match pipeline {
-            Ok(p) => p,
-            Err(e) => {
-                WARNED.call_once(|| {
-                    eprintln!("warning: picture OCR unavailable ({e}); pictures keep no text");
-                });
-                return;
-            }
-        };
-        let min_side = self
-            .picture_ocr_min_side
-            .or_else(|| docling_core::env::parse::<u32>("DOCLING_RS_PICTURE_OCR_MIN_SIDE"))
-            .unwrap_or(32);
-        let classes = &self.picture_ocr_classes;
-        let mut cache: HashMap<u64, Option<PictureDescription>> = HashMap::new();
-        let mut read = |img: &PictureImage| -> Option<PictureDescription> {
-            let mut h = std::collections::hash_map::DefaultHasher::new();
-            img.data.hash(&mut h);
-            let key = h.finish();
-            if let Some(hit) = cache.get(&key) {
-                return hit.clone();
-            }
-            let text = (|| {
-                // The declared size is a hint; the decoded one is the truth
-                // (a 16 × 16 icon is skipped before any inference).
-                if img.width.min(img.height) < min_side && img.width * img.height > 0 {
-                    return None;
-                }
-                let decoded = match pipeline.decode_picture(&img.data) {
-                    Ok(d) => d,
-                    Err(e) => {
-                        docling_core::debug_log!("docling: picture OCR: undecodable image: {e}");
-                        return None;
-                    }
-                };
-                if decoded.width().min(decoded.height()) < min_side {
-                    return None;
-                }
-                // The loader warned once when the classifier is missing; an
-                // unclassifiable picture is read rather than silently skipped.
-                if !classes.is_empty() {
-                    if let Some(preds) = pipeline.classify_picture(&decoded) {
-                        let top = preds.first().map(|p| p.class_name.as_str());
-                        if !top.is_some_and(|t| classes.iter().any(|c| c == t)) {
-                            return None;
-                        }
-                    }
-                }
-                match pipeline.ocr_picture(&decoded) {
-                    Ok(Some(t)) => Some(PictureDescription {
-                        text: t.text,
-                        provenance: t.provenance.to_string(),
-                    }),
-                    Ok(None) => None,
-                    Err(e) => {
-                        eprintln!("warning: picture OCR failed: {e}");
-                        None
-                    }
-                }
-            })();
-            cache.insert(key, text.clone());
-            text
         };
         document.for_each_picture_mut(&mut |node| {
             if let Node::Picture {
@@ -823,7 +894,7 @@ impl DocumentConverter {
             } = node
             {
                 if description.is_none() {
-                    *description = read(img);
+                    *description = reader.read(img);
                 }
             }
         });
@@ -836,17 +907,63 @@ impl DocumentConverter {
                 } = &mut item.kind
                 {
                     if description.is_none() {
-                        *description = read(img);
+                        *description = reader.read(img);
                     }
                 }
             }
         }
     }
 
+    /// The reader the picture-OCR pass (#645) and the video frame hook
+    /// (#647) share: the OCR models only — no layout, no TableFormer, the
+    /// caller already knows each whole image is the picture — behind the
+    /// size floor and the classifier filter. `None` (after one warning)
+    /// when OCR is disabled or the recognizer cannot load.
+    #[cfg(feature = "pdf")]
+    fn picture_reader(&self) -> Option<PictureReader> {
+        static WARNED: std::sync::Once = std::sync::Once::new();
+        if self.no_ocr || self.text_layer_only {
+            WARNED.call_once(|| {
+                eprintln!(
+                    "warning: picture OCR requested, but OCR is disabled (no_ocr / \
+                     text_layer_only); pictures keep no text"
+                );
+            });
+            return None;
+        }
+        let pipeline = docling_pdf::Pipeline::new().map(|p| {
+            p.no_ocr(true)
+                .no_table_former(true)
+                .ocr_lang(self.ocr_lang_choice())
+                .ocr_engine(self.ocr_engine_choice())
+                .tesseract_lang(self.tesseract_lang_choice())
+                .ocr_scale(self.ocr_scale_choice())
+        });
+        let pipeline = match pipeline {
+            Ok(p) => p,
+            Err(e) => {
+                WARNED.call_once(|| {
+                    eprintln!("warning: picture OCR unavailable ({e}); pictures keep no text");
+                });
+                return None;
+            }
+        };
+        let min_side = self
+            .picture_ocr_min_side
+            .or_else(|| docling_core::env::parse::<u32>("DOCLING_RS_PICTURE_OCR_MIN_SIDE"))
+            .unwrap_or(32);
+        Some(PictureReader {
+            pipeline,
+            min_side,
+            classes: self.picture_ocr_classes.clone(),
+            cache: std::collections::HashMap::new(),
+        })
+    }
+
     /// Without the `pdf` feature there is no OCR engine to run: one warning,
     /// the pictures keep no text.
     #[cfg(not(feature = "pdf"))]
-    fn ocr_pictures(&self, _document: &mut docling_core::DoclingDocument, _format: InputFormat) {
+    fn picture_reader(&self) -> Option<PictureReader> {
         static WARNED: std::sync::Once = std::sync::Once::new();
         WARNED.call_once(|| {
             eprintln!(
@@ -854,6 +971,80 @@ impl DocumentConverter {
                  with the `pdf` feature); pictures keep no text"
             );
         });
+        None
+    }
+
+    /// The frame sampling a video gets (#647): the builder's settings, else
+    /// the environment's, else the defaults.
+    #[cfg(feature = "asr")]
+    fn frame_options(&self) -> crate::video::FrameOptions {
+        use docling_core::env;
+        crate::video::FrameOptions {
+            max_frames: self.video_frames.unwrap_or(DEFAULT_VIDEO_FRAMES),
+            scene_threshold: self
+                .video_scene_threshold
+                .or_else(|| env::parse::<f32>("DOCLING_RS_VIDEO_SCENE_THRESHOLD"))
+                .map_or(crate::video::DEFAULT_SCENE_THRESHOLD, |t| t.clamp(0.0, 1.0)),
+            max_side: self
+                .video_frame_max_side
+                .or_else(|| env::parse::<u32>("DOCLING_RS_VIDEO_FRAME_MAX_SIDE"))
+                .unwrap_or(0),
+            dedupe: self
+                .video_frame_dedupe
+                .or_else(|| env::parse::<u32>("DOCLING_RS_VIDEO_FRAME_DEDUPE"))
+                .map(|d| d.min(64)),
+        }
+    }
+
+    /// Video (#138): the audio track transcribes through the ASR path
+    /// (Phase 1), and — when the ffmpeg binary is available — sampled
+    /// frames interleave with the transcript as timestamped pictures
+    /// (Phase 2). Without ffmpeg: transcript only. Each frame goes through
+    /// the picture enrichment as soon as it is decoded (#647): read by the
+    /// OCR models when [`do_picture_ocr`](Self::do_picture_ocr) asks, its
+    /// bytes dropped when [`keep_picture_images`](Self::keep_picture_images)
+    /// is off — so however many frames are sampled, one is in memory at a
+    /// time. The models load on the first frame; a video without one costs
+    /// nothing.
+    #[cfg(feature = "asr")]
+    fn convert_video(
+        &self,
+        source: &SourceDocument,
+    ) -> Result<docling_core::DoclingDocument, String> {
+        use docling_core::Node;
+        let opts = self.frame_options();
+        let mut reader: Option<Option<PictureReader>> = None;
+        let mut on_frame = |node: &mut Node| {
+            if self.picture_ocr {
+                let reader = reader.get_or_insert_with(|| self.picture_reader());
+                if let (
+                    Some(reader),
+                    Node::Picture {
+                        image: Some(img),
+                        description,
+                        ..
+                    },
+                ) = (reader.as_mut(), &mut *node)
+                {
+                    if description.is_none() {
+                        *description = reader.read(img);
+                    }
+                }
+            }
+            if !self.keep_picture_images {
+                if let Node::Picture { image, .. } = node {
+                    *image = None;
+                }
+            }
+        };
+        crate::video::convert_video(
+            &source.bytes,
+            &source.name,
+            self.asr_model.as_deref(),
+            self.asr_lang.as_deref(),
+            &opts,
+            &mut on_frame,
+        )
     }
 
     /// The copybook layout for EBCDIC sources (#252): docling's
@@ -1636,14 +1827,9 @@ impl DocumentConverter {
             // sampled frames interleave with the transcript as timestamped
             // pictures (Phase 2). Without ffmpeg: transcript only.
             #[cfg(feature = "asr")]
-            InputFormat::Video => crate::video::convert_video(
-                &source.bytes,
-                &source.name,
-                self.asr_model.as_deref(),
-                self.asr_lang.as_deref(),
-                self.video_frames.unwrap_or(DEFAULT_VIDEO_FRAMES),
-            )
-            .map_err(|e| ConversionError::with_source(source.format.as_str(), e))?,
+            InputFormat::Video => self
+                .convert_video(source)
+                .map_err(|e| ConversionError::with_source(source.format.as_str(), e))?,
             // Without the full ML pipeline, `pdf-text` still converts a PDF's
             // embedded text layer (pure Rust — the wasm32 path), equivalent to
             // `--text-layer-only`: flat paragraphs, no headings/tables/pictures. A

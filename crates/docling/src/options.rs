@@ -83,8 +83,21 @@ pub struct ConvertOptions {
     /// Transcription language (a Whisper code) or `auto`.
     pub asr_lang: Option<String>,
     /// Max frames sampled from a video (0 = transcript only); unset =
-    /// [`crate::DEFAULT_VIDEO_FRAMES`].
+    /// [`crate::DEFAULT_VIDEO_FRAMES`]. `"all"` — or any count at or above
+    /// `u32::MAX` — is [`crate::ALL_VIDEO_FRAMES`]: every distinct cut (#647).
+    #[serde(deserialize_with = "de_video_frames")]
     pub video_frames: Option<usize>,
+    /// ffmpeg's scene score (0–1) a video frame must exceed to be a cut
+    /// (#647); unset = 0.27 (`DOCLING_RS_VIDEO_SCENE_THRESHOLD`).
+    pub video_scene_threshold: Option<f32>,
+    /// Cap on a sampled video frame's longer side in px, applied inside
+    /// ffmpeg (#647); 0 / unset = the source resolution
+    /// (`DOCLING_RS_VIDEO_FRAME_MAX_SIDE`).
+    pub video_frame_max_side: Option<u32>,
+    /// Hamming distance (0–64) of the difference hash under which a sampled
+    /// frame is a duplicate of a kept one and dropped (#647); unset = keep
+    /// every frame (`DOCLING_RS_VIDEO_FRAME_DEDUPE`).
+    pub video_frame_dedupe: Option<u32>,
 
     // --- PDF / image pipeline ------------------------------------------------
     /// PDF page window, `"A-B"` or a single `"N"` (1-based inclusive, #80).
@@ -290,6 +303,9 @@ pub const OPTIONS: &[OptionInfo] = &[
     row("asr_model"),
     row("asr_lang"),
     row("video_frames"),
+    row("video_scene_threshold"),
+    row("video_frame_max_side"),
+    row("video_frame_dedupe"),
     // Python takes docling's `page_range=(first, last)` tuple.
     OptionInfo {
         python: Some("page_range"),
@@ -399,6 +415,40 @@ pub fn merge_options<T: Serialize + DeserializeOwned + Default>(over: T, base: T
     serde_json::from_value(merged).unwrap_or_default()
 }
 
+/// `video_frames` on the wire (#647): an integer, or `"all"` (any case,
+/// also a digit string, which the text surfaces send) for
+/// [`crate::ALL_VIDEO_FRAMES`]; a count at or above `u32::MAX` reads as
+/// "all" too, so a 32-bit binding can ask for it.
+fn de_video_frames<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Option<usize>, D::Error> {
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum Raw {
+        Count(u64),
+        Text(String),
+    }
+    let raw = Option::<Raw>::deserialize(d)?;
+    let n = match raw {
+        None => return Ok(None),
+        Some(Raw::Count(n)) => n,
+        Some(Raw::Text(s)) => {
+            let s = s.trim();
+            if s.eq_ignore_ascii_case("all") {
+                return Ok(Some(crate::ALL_VIDEO_FRAMES));
+            }
+            s.parse::<u64>().map_err(|_| {
+                serde::de::Error::custom(format!(
+                    "video_frames: expected a non-negative integer or \"all\", got {s:?}"
+                ))
+            })?
+        }
+    };
+    Ok(Some(if n >= u32::MAX as u64 {
+        crate::ALL_VIDEO_FRAMES
+    } else {
+        n as usize
+    }))
+}
+
 impl ConvertOptions {
     /// The wire names of every field, from the struct itself (an unset
     /// option serializes as `null`), so a new field is listed without a
@@ -459,6 +509,22 @@ impl ConvertOptions {
                 return Err(OptionsError::new(
                     "images_scale",
                     format!("images_scale must be a number in 0.1-4.0, got {s}"),
+                ));
+            }
+        }
+        if let Some(t) = self.video_scene_threshold {
+            if !(t.is_finite() && (0.0..=1.0).contains(&t)) {
+                return Err(OptionsError::new(
+                    "video_scene_threshold",
+                    format!("video_scene_threshold must be a number in 0.0-1.0, got {t}"),
+                ));
+            }
+        }
+        if let Some(d) = self.video_frame_dedupe {
+            if d > 64 {
+                return Err(OptionsError::new(
+                    "video_frame_dedupe",
+                    format!("video_frame_dedupe must be a Hamming distance in 0-64, got {d}"),
                 ));
             }
         }
@@ -611,6 +677,15 @@ impl ConvertOptions {
         }
         if let Some(n) = self.video_frames {
             c = c.video_frames(n);
+        }
+        if let Some(t) = self.video_scene_threshold {
+            c = c.video_scene_threshold(t);
+        }
+        if let Some(px) = self.video_frame_max_side {
+            c = c.video_frame_max_side(px);
+        }
+        if let Some(d) = self.video_frame_dedupe {
+            c = c.video_frame_dedupe(Some(d));
         }
         if let Some((first, last)) = self.page_range()? {
             c = c.page_range(first, last);
@@ -935,6 +1010,51 @@ mod tests {
             ),
             vec!["strictness".to_string()]
         );
+    }
+
+    /// #647: `video_frames` reads an integer, `"all"`, a digit string (the
+    /// text surfaces) and a 32-bit-max count as the npm addon sends it;
+    /// the two bounded tunables are range-checked.
+    #[test]
+    fn video_frames_spellings_and_video_ranges() {
+        let parse = |json: &str| serde_json::from_str::<ConvertOptions>(json).unwrap();
+        assert_eq!(parse(r#"{"video_frames": 3}"#).video_frames, Some(3));
+        assert_eq!(parse(r#"{"video_frames": "12"}"#).video_frames, Some(12));
+        assert_eq!(
+            parse(r#"{"video_frames": "all"}"#).video_frames,
+            Some(crate::ALL_VIDEO_FRAMES)
+        );
+        assert_eq!(
+            parse(r#"{"video_frames": 4294967295}"#).video_frames,
+            Some(crate::ALL_VIDEO_FRAMES)
+        );
+        assert_eq!(parse("{}").video_frames, None);
+        assert!(serde_json::from_str::<ConvertOptions>(r#"{"video_frames": "some"}"#).is_err());
+        // "all" survives a merge round trip (serialized as the u64 max).
+        let merged = ConvertOptions {
+            video_frames: Some(crate::ALL_VIDEO_FRAMES),
+            ..Default::default()
+        }
+        .merge_over(ConvertOptions::default());
+        assert_eq!(merged.video_frames, Some(crate::ALL_VIDEO_FRAMES));
+
+        let ok = ConvertOptions {
+            video_scene_threshold: Some(0.6),
+            video_frame_max_side: Some(640),
+            video_frame_dedupe: Some(5),
+            ..Default::default()
+        };
+        ok.validate().unwrap();
+        let bad = ConvertOptions {
+            video_scene_threshold: Some(1.5),
+            ..Default::default()
+        };
+        assert_eq!(bad.validate().unwrap_err().field, "video_scene_threshold");
+        let bad = ConvertOptions {
+            video_frame_dedupe: Some(65),
+            ..Default::default()
+        };
+        assert_eq!(bad.validate().unwrap_err().field, "video_frame_dedupe");
     }
 
     #[test]

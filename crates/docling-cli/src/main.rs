@@ -18,7 +18,7 @@
 //! the same name): one identifier per line, sorted, for scripts that ask the
 //! binary what it converts instead of hard-coding a list.
 //!
-//! Usage: docling-rs [--strict] [--page-break-placeholder TEXT] [--to md|json|html|text|dclx|chunks|images|latex|pandoc|vtt] [--pages A-B] [--scale X] [--images MODE] [--input GLOB --output DIR [--jobs N]] [--output-file PATH] [--fetch-images] [--list-attachments] [--skip-empty-cells] [--compact-tables] [--ebcdic-layout JSON|PATH] [--encoding LABEL] [--no-stream] [--no-table-former] [--no-ocr] [--text-layer-only] [--password PASSWORD | --password-file PATH] [--force-full-page-ocr] [--no-text-panels] [--heading-hierarchy] [--ocr-lang LANG] [--ocr-engine ppocr|tesseract] [--ocr-mode MODE] [--ocr-scale X] [--images-scale X] [--page-images] [--chunker hierarchical|hybrid] [--chunk-tokenizer PATH] [--chunk-max-tokens N] [--no-chunk-merge-peers] [--pipeline standard|vlm] [--vlm-endpoint URL] [--vlm-model NAME] [--vlm-api-key TOKEN] [--vlm-prompt TEXT] [--vlm-max-tokens N] [--asr-model PRESET] [--asr-lang CODE] [--video-frames N] [--xbrl-taxonomy DIR] [--use-web-browser] [--enrich-picture-classes] [--enrich-code] [--enrich-formula] [--picture-ocr] [--picture-ocr-classes LABELS] [--picture-ocr-min-side N] [--no-picture-images] [--redact-pii] [--redact-mode label|pseudonym|fixed:TEXT] [--redact-kinds LIST] [--redact-pattern NAME=REGEX]... [--redact-images drop|box_out|keep] [--document-timeout SECONDS] [--abort-on-error] [--output-dirs auto|flat|mirror] <input-file> | SOURCE...
+//! Usage: docling-rs [--strict] [--page-break-placeholder TEXT] [--to md|json|html|text|dclx|chunks|images|latex|pandoc|vtt] [--pages A-B] [--scale X] [--images MODE] [--input GLOB --output DIR [--jobs N]] [--output-file PATH] [--fetch-images] [--list-attachments] [--skip-empty-cells] [--compact-tables] [--ebcdic-layout JSON|PATH] [--encoding LABEL] [--no-stream] [--no-table-former] [--no-ocr] [--text-layer-only] [--password PASSWORD | --password-file PATH] [--force-full-page-ocr] [--no-text-panels] [--heading-hierarchy] [--ocr-lang LANG] [--ocr-engine ppocr|tesseract] [--ocr-mode MODE] [--ocr-scale X] [--images-scale X] [--page-images] [--chunker hierarchical|hybrid] [--chunk-tokenizer PATH] [--chunk-max-tokens N] [--no-chunk-merge-peers] [--pipeline standard|vlm] [--vlm-endpoint URL] [--vlm-model NAME] [--vlm-api-key TOKEN] [--vlm-prompt TEXT] [--vlm-max-tokens N] [--asr-model PRESET] [--asr-lang CODE] [--video-frames N|all] [--video-scene-threshold X] [--video-frame-max-side PX] [--video-frame-dedupe N] [--xbrl-taxonomy DIR] [--use-web-browser] [--enrich-picture-classes] [--enrich-code] [--enrich-formula] [--picture-ocr] [--picture-ocr-classes LABELS] [--picture-ocr-min-side N] [--no-picture-images] [--redact-pii] [--redact-mode label|pseudonym|fixed:TEXT] [--redact-kinds LIST] [--redact-pattern NAME=REGEX]... [--redact-images drop|box_out|keep] [--document-timeout SECONDS] [--abort-on-error] [--output-dirs auto|flat|mirror] <input-file> | SOURCE...
 //!   --to FORMAT        repeatable (#491, like Python's `docling convert --to
 //!                      md --to json`): each document converts once and is
 //!                      written in every format named, `<stem>.md` +
@@ -102,9 +102,22 @@
 //!                      geometric reconstruction from cell positions. Faster
 //!                      (no model load, no per-table inference) at the cost of
 //!                      table fidelity — helps most in streaming mode.
-//!   --video-frames N   Max frames sampled from a video input as timestamped
+//!   --video-frames N|all
+//!                      Max frames sampled from a video input as timestamped
 //!                      pictures (needs the ffmpeg binary; 0 = transcript
-//!                      only). Default 8.
+//!                      only; `all` = every distinct cut, #647). Default 8.
+//!   --video-scene-threshold X
+//!                      ffmpeg's scene score (0–1) a frame must exceed to be
+//!                      a cut (#647). Default 0.27; 0.6 keeps hard cuts only.
+//!   --video-frame-max-side PX
+//!                      Downscale each sampled frame inside ffmpeg so its
+//!                      longer side is at most PX (#647). Default 0 = the
+//!                      source resolution.
+//!   --video-frame-dedupe N
+//!                      Drop a sampled frame whose difference hash is within
+//!                      N bits (0–64) of a kept one (#647) — the same slide
+//!                      after a fade. Unset = keep every frame; 4–6 is a
+//!                      good distance.
 //!   --xbrl-taxonomy DIR
 //!                      Directory holding an XBRL instance's taxonomy — its
 //!                      schema and linkbases at the paths the instance's
@@ -405,7 +418,12 @@ AUDIO / VIDEO
   --asr-model PRESET      ASR preset for audio/video transcription (whisper_*,
                           parakeet_tdt_0.6b_v3)
   --asr-lang CODE         force a transcription language
-  --video-frames N        sample N key frames from a video
+  --video-frames N|all    sample N key frames from a video (all = every cut)
+  --video-scene-threshold X
+                          scene score a frame must exceed to be a cut (0.27)
+  --video-frame-max-side PX
+                          downscale frames to at most PX on the longer side
+  --video-frame-dedupe N  drop frames within N hash bits of a kept one
   --xbrl-taxonomy DIR     taxonomy directory for XBRL instances (default: the
                           instance's own directory)
 
@@ -726,10 +744,38 @@ fn main() -> ExitCode {
             // is a usage error like every other numeric flag — it used to be
             // swallowed silently and the default applied, so a typo
             // (`--video-frames 1O`) went unnoticed.
-            "--video-frames" => match args.next().map(|v| v.trim().parse::<usize>()) {
-                Some(Ok(n)) => opts.video_frames = Some(n),
+            "--video-frames" => match args.next().as_deref().map(str::trim) {
+                Some(v) if v.eq_ignore_ascii_case("all") => {
+                    opts.video_frames = Some(docling::ALL_VIDEO_FRAMES)
+                }
+                Some(v) if v.parse::<usize>().is_ok() => {
+                    opts.video_frames = v.parse::<usize>().ok()
+                }
                 _ => {
-                    eprintln!("error: --video-frames needs a non-negative integer");
+                    eprintln!("error: --video-frames needs a non-negative integer or `all`");
+                    return ExitCode::from(2);
+                }
+            },
+            // The #647 sampling tunables; the range checks are
+            // `ConvertOptions::validate`'s, like every other option.
+            "--video-scene-threshold" => match args.next().map(|v| v.trim().parse::<f32>()) {
+                Some(Ok(t)) => opts.video_scene_threshold = Some(t),
+                _ => {
+                    eprintln!("error: --video-scene-threshold needs a number in 0.0-1.0");
+                    return ExitCode::from(2);
+                }
+            },
+            "--video-frame-max-side" => match args.next().map(|v| v.trim().parse::<u32>()) {
+                Some(Ok(px)) => opts.video_frame_max_side = Some(px),
+                _ => {
+                    eprintln!("error: --video-frame-max-side needs a whole number of pixels");
+                    return ExitCode::from(2);
+                }
+            },
+            "--video-frame-dedupe" => match args.next().map(|v| v.trim().parse::<u32>()) {
+                Some(Ok(d)) => opts.video_frame_dedupe = Some(d),
+                _ => {
+                    eprintln!("error: --video-frame-dedupe needs a Hamming distance in 0-64");
                     return ExitCode::from(2);
                 }
             },

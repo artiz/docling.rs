@@ -140,7 +140,17 @@ when there are more cuts than frames (#648), evenly spaced fallback — and
 interleave with the transcript as `[time: <ts>]`-captioned pictures, PNGs
 embedded in JSON/DCLX output. Without ffmpeg, or with `--video-frames 0`, a
 video converts to its transcript alone; a video with *no* audio track converts
-to its frames alone. What symphonia can't decode in-process — Ogg **Opus**
+to its frames alone. The sampling is tunable (#647, every surface):
+`--video-frames all` keeps every distinct cut instead of a cap,
+`--video-scene-threshold X` sets ffmpeg's scene score a frame must exceed to
+be a cut (0.27; 0.6 keeps hard cuts only), `--video-frame-max-side PX`
+downscales each frame inside ffmpeg (a 1080p recording at 640 → 640×360
+PNGs), and `--video-frame-dedupe N` drops a frame whose difference hash is
+within N bits of a kept one (the same slide after a fade becomes one
+picture; 4–6 is a good distance). Frames are decoded one at a time and each
+goes through the picture enrichment before the next is decoded, so
+`--picture-ocr --no-picture-images` reads a 300-frame lecture with one frame
+in memory. What symphonia can't decode in-process — Ogg **Opus**
 (the codec of Telegram/WhatsApp voice messages) and **AVI** containers —
 falls back to the same optional ffmpeg binary when present; without ffmpeg
 those inputs fail with a targeted message and an install hint.

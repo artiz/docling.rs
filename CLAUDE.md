@@ -127,7 +127,11 @@ cargo test -p docling-pdf --features pdfium --lib raster:: pdfium_backend::  # t
   (Parakeet's Silero VAD, on when `.models/asr/vad/silero_vad.onnx` exists;
   `off` = the energy-based pause splitter) + `DOCLING_ASR_VAD_ONNX` (its path),
   `DOCLING_FFMPEG` (video frames — ffmpeg is a runtime binary, never a build
-  dep), `DOCLING_RS_PDF_WORKERS/_THREADS/_INTRA`, `DOCLING_RS_TF_INTRA` (#262),
+  dep), `DOCLING_RS_VIDEO_SCENE_THRESHOLD` / `DOCLING_RS_VIDEO_FRAME_MAX_SIDE` /
+  `DOCLING_RS_VIDEO_FRAME_DEDUPE` (#647; the defaults of `video_scene_threshold`
+  0.27, `video_frame_max_side` 0 = source size, `video_frame_dedupe` unset —
+  frames stream one at a time through the picture-OCR hook, `video_frames=all`
+  keeps every distinct cut), `DOCLING_RS_PDF_WORKERS/_THREADS/_INTRA`, `DOCLING_RS_TF_INTRA` (#262),
   `DOCLING_RS_NO_ARENA` (#263; serve defaults it on),
   `DOCLING_RS_GRAPH_CACHE_DIR` / `DOCLING_RS_NO_GRAPH_CACHE` (ONNX Runtime
   optimized-graph cache, CPU provider only), `DOCLING_RS_OCR_SESSIONS`

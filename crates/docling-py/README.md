@@ -202,7 +202,11 @@ lands in `picture.meta.description` + the `description` annotation, exactly
 where `do_picture_description` puts a VLM's; `picture_ocr_classes` (a list
 or comma-separated string of DocumentFigureClassifier labels) and
 `picture_ocr_min_side` filter the pictures, `keep_picture_images=False`
-drops the image bytes afterwards), and
+drops the image bytes afterwards; video frame sampling is tunable too, #647:
+`video_frames="all"` / `docling_rs.VIDEO_FRAMES_ALL` keeps every distinct
+cut, `video_scene_threshold` (0.27) sets the cut score, `video_frame_max_side`
+downscales frames inside ffmpeg and `video_frame_dedupe` (4–6) collapses a
+re-lit slide — frames stream one at a time through the OCR hook), and
 its `--enrich` flag), `redact_pii` (#621, a docling.rs extension: personal
 data — e-mail, phone, card numbers, IBANs, IPs, URL credentials, national
 IDs, and names / organizations / locations with the NER model under

@@ -75,8 +75,13 @@ from ._native import DocumentConverter as _NativeDocumentConverter
 from ._native import compiled_providers as _compiled_providers
 from ._native import email_attachments as _email_attachments
 
+#: ``video_frames`` meaning "every distinct cut" (#647) — ``video_frames="all"``
+#: spells the same.
+VIDEO_FRAMES_ALL = 2**64 - 1
+
 __all__ = [
     "DocumentConverter",
+    "VIDEO_FRAMES_ALL",
     "ConversionResult",
     "ArchiveItem",
     "ConversionStatus",
@@ -233,7 +238,17 @@ class DocumentConverter:
       ``EbcdicLayout`` JSON or a file path (default: the ``<stem>.layout.json``
       sidecar next to the source).
     * ``video_frames`` — max frames sampled from a video (0 = transcript only;
-      needs the ``ffmpeg`` binary); default 8.
+      needs the ``ffmpeg`` binary); default 8. ``"all"`` (or
+      :data:`VIDEO_FRAMES_ALL`) keeps every distinct cut (#647).
+    * ``video_scene_threshold`` — ffmpeg's scene score (0–1) a frame must
+      exceed to count as a cut (#647); default 0.27, 0.6 keeps hard cuts only.
+    * ``video_frame_max_side`` — downscale each sampled frame inside ffmpeg
+      so its longer side is at most this many px (#647); 0 / ``None`` = the
+      source resolution.
+    * ``video_frame_dedupe`` — drop a sampled frame whose 64-bit difference
+      hash is within this Hamming distance (0–64) of a frame already kept
+      (#647): the same slide after a fade becomes one picture. ``None`` =
+      keep every frame; 4–6 is a good distance.
     * ``xbrl_taxonomy`` — XBRL: the directory the instance's taxonomy is read
       from (docling's ``XBRLBackendOptions.taxonomy``); default: the instance's
       own directory.
@@ -346,11 +361,22 @@ class DocumentConverter:
         text_layer_only: bool = False,
         list_attachments: bool = False,
         ebcdic_layout: Optional[str] = None,
-        video_frames: Optional[int] = None,
+        video_frames: Optional[Union[int, str]] = None,
+        video_scene_threshold: Optional[float] = None,
+        video_frame_max_side: Optional[int] = None,
+        video_frame_dedupe: Optional[int] = None,
         xbrl_taxonomy: Optional[Union[str, "os.PathLike[str]"]] = None,
         artifacts_path=None,
     ):
         ensure_env(artifacts_path)
+
+        if isinstance(video_frames, str):
+            if video_frames.strip().lower() != "all":
+                raise ValueError(
+                    "video_frames: expected a non-negative int or 'all', "
+                    f"got {video_frames!r}"
+                )
+            video_frames = VIDEO_FRAMES_ALL
 
         if password is None:
             password = pdf_password
@@ -539,6 +565,9 @@ class DocumentConverter:
             list_attachments=list_attachments,
             ebcdic_layout=ebcdic_layout,
             video_frames=video_frames,
+            video_scene_threshold=video_scene_threshold,
+            video_frame_max_side=video_frame_max_side,
+            video_frame_dedupe=video_frame_dedupe,
             xbrl_taxonomy=xbrl_taxonomy,
             allowed_formats=(
                 [InputFormat(f).value for f in allowed_formats]
