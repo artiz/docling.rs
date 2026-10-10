@@ -771,498 +771,152 @@ let options: ConvertOptions = serde_json::from_str(r#"{"pages": "1-3", "no_ocr":
 let converter = DocumentConverter::from_options(&options)?; // validated + applied
 ```
 
-### Post-extraction table editing
+### Output formats
 
-Tables converted by the PDF ML pipeline carry **first-class cells**
-(`Table::cells` — docling's `TableCell` shape: text, `[l, t, r, b]` page-point
-bbox with a top-left origin, span rectangle and header roles from the
-predicted structure, #240), serialized into the JSON export's `table_cells`
-(and therefore visible to the Python/Node bindings), with the DocLang span
-tokens (`<lcel/>`/`<ucel/>`/`<ched/>`) derived from them. `DoclingDocument`
-exposes the tables for in-place repair (#238) — recover missing OCR text, fix
-a misread cell, then re-export:
+| `--to` / `to` | Library | What it is |
+|---|---|---|
+| `md` (default) | `export_to_markdown()` | docling's Markdown byte for byte; `--strict` for the cleaner dialect (below); `--images embedded\|referenced` for pictures |
+| `json` | `export_to_json()` | docling-core's `DoclingDocument` wire format (schema 1.10.0): the `body` tree of `$ref`s into `texts` / `groups` / `tables` / `pictures`, labels, list groups, table grids, images as `data:` URIs. Loads straight into Python docling-core (`DoclingDocument.load_from_json`) and round-trips to the same Markdown |
+| `html` | `export_to_html()` | docling-core's `HTMLDocSerializer` with its defaults: stylesheet, `<h{level+1}>`, inline groups, tables with spans and rich cells, `<figure>` pictures, MathML formulas (a literal port of `latex2mathml`). Byte-identical to docling-core on the whole declarative corpus (265/265) |
+| `text` | `export_to_text()` | docling's `--to text` (#613): the Markdown with the decoration off — no `#`, no emphasis markers, links as their label, code without fences, no escaping; lists, checkboxes and table grids kept |
+| `dclx` | `export_to_doclang()`, `docling::dclx::save_as_dclx` | DocLang — docling 2.110's XML of the tree (`<doclang version="0.7">`), pretty-printed like `minidom.toprettyxml`; `.dclx` is the OPC archive `save_as_doclang()` writes (`document.xml` + one PNG part per picture). Reads back in too: `.dclg` / `.dclx` are input formats (15/15 exact vs docling) |
+| `latex` | `export_to_latex()` | docling 2.124's `LaTeXDocSerializer` with its defaults: `article` preamble, `\title` + `\maketitle`, sectioning, `itemize` / `enumerate`, `tabular` grids, `figure` placeholders, `verbatim`, `$$…$$`. 93 of 116 fixtures byte-exact against `docling --to latex` (98 once upstream's duplicated formatted list items — docling-core#740 — are normalized away) |
+| `pandoc` | `export_to_pandoc_json()` | Pandoc's JSON AST (#515, `pandoc-api-version` 1.23.1.1), so every Pandoc writer — DOCX, ODT, EPUB, reST, Org, Typst, … — sits behind the parser; pictures embedded by default. `--pandoc-api-version` states the version a consumer needs |
+| `vtt` | `export_to_vtt()` | WebVTT subtitles (#614, docling-core's `WebVTTDocSerializer`): one cue per timed item — an ASR transcript's segments, a WebVTT input's cues with voices and formatting. Untimed content is not represented |
+| `chunks` | `docling::chunker` | both chunkers' records (below) |
+| `images` | — | no conversion: a PDF's pages as PNG (`<stem>_page_NNNN.png`; `{"pages": […]}` on serve), honouring `--pages` and `--scale` 0.1–4.0 px/pt (#243) |
 
-```rust
-let mut document = converter.convert(source).unwrap().document;
-for table in document.tables_mut() {
-    // Locate the cell an external OCR box refers to (best IoU) and fix it…
-    if let Some((row, col)) = table.find_cell_by_bbox([310.0, 224.0, 351.0, 231.0]) {
-        table.set_cell_text(row, col, "corrected");
-    }
-    // …or in one call:
-    table.update_cell_by_bbox([310.0, 224.0, 351.0, 231.0], "corrected");
-}
-println!("{}", document.export_to_markdown()); // repairs included
-```
-
-Updating a spanning cell through any covered position updates the whole cell
-(record + every covered grid slot). `rows`, `structure` and `cells` are public
-fields, so full reconstruction (inserting rows, rebuilding a borderless table
-from corrected OCR) is ordinary `Vec` surgery; `set_cell_bbox` materializes
-1×1 cells on demand. Declarative tables get their cells derived
-from the parsed structure — real spans for DOCX/XLSX merged regions, ODF
-covered cells and HTML `rowspan`/`colspan`, `th`-driven header roles — just
-without page geometry (`bbox: None`), so a spreadsheet repair loop works the
-same way.
-
-### JSON output
-
-`export_to_json()` emits docling-core's native `DoclingDocument` wire format
-(schema `1.10.0`) — the same shape Python docling's `export_to_dict()` /
-`save_as_json()` produce: a `body` tree of `$ref`s into `texts` / `groups` /
-`tables` / `pictures`, with labels (`title`, `section_header`, `list_item`,
-`code`, `formula`, …), list grouping, and table grids. The output loads straight
-back into Python docling-core (`DoclingDocument.load_from_json(...)`) and
-round-trips to the same Markdown.
-
-> Note: docling.rs's model bakes inline formatting (bold, links, inline math)
-> into the text, so for those spans the JSON carries the rendered text rather
-> than docling's structured `formatting` / `hyperlink` fields. Block structure,
-> headings, lists, tables, code and display equations match.
-
-### DocLang (`.dclx`) output
-
-`export_to_doclang()` renders the document as **DocLang** — docling 2.110's
-XML serialization (`<doclang version="0.7">`) of the `DoclingDocument` tree:
-headings, paragraphs, rich inline runs (`<bold>` / `<italic>` / `<underline>` /
-`<strikethrough>` / `<subscript>` / `<superscript>`), lists with enumeration
-`<marker>`s, tables with per-cell `<location>` provenance, code blocks with a
-language `<label>`, formulas, pictures and furniture. The pretty-printed
-indentation follows Python's `minidom.toprettyxml` byte-for-byte. A picture's
-`<src uri="assets/image_NNNNNN_<sha256>.png"/>` is named like docling's: the
-index counts every body picture, the digest is over the decoded pixels (PIL
-`tobytes()`) — exact for PNG and JPEG images (JPEG through a libjpeg-exact
-decoder); other encodings (GIF, BMP, …) hash the file bytes.
-
-```rust
-println!("{}", result.document.export_to_doclang()); // <doclang> XML string
-```
-
-Wrap that XML in an OPC archive — the `.dclx` container docling's
-`save_as_doclang()` writes (`[Content_Types].xml` + `_rels/.rels` + one PNG
-part per referenced picture under `assets/` + `document.xml`) — with
-`docling::dclx::save_as_dclx` (`export_to_doclang_with_assets()` hands you the
-markup and those parts yourself):
-
-```rust
-use std::path::Path;
-docling::dclx::save_as_dclx(&result.document, Path::new("out.dclx")).unwrap();
-```
-
-From the CLI, `--to dclx` writes `<input-stem>.dclx` next to the CWD:
-
-```sh
-cargo run -p docling-cli -- --to dclx crates/docling/sample.html   # -> sample.dclx
-```
-
-`--to images` (#243) is the CLI counterpart of serve's rasterization: it skips
-conversion and writes a PDF's pages as `<stem>_page_NNNN.png` files (CWD, or
-`--output DIR` in batch mode), honoring `--pages A-B` (absolute page numbers
-survive the window) and `--scale` (0.1–4.0 px per PDF point, default 2.0 =
-144 dpi):
-
-```sh
-docling-rs --to images --pages 2-3 --scale 1.5 paper.pdf  # -> paper_page_0002.png, paper_page_0003.png
-```
-
-Conformance against docling's own `.dclx` output is tracked by
-`scripts/conformance/gen_dclx.py` (generates the groundtruth) and
-`scripts/conformance/dclx_conformance.sh` (line-diffs the extracted
-`document.xml`).
-
-### Plain-text (`.txt`) output
-
-`export_to_text()` — docling's `--to text` (#613), the Rust counterpart of
-docling-core's `DoclingDocument.export_to_text()` / `PlainTextDocSerializer` —
-is the Markdown export with the decoration turned off: headings without `#`,
-no bold / italic / strikethrough markers, a link reduced to its label, code
-without fences or backticks, no image placeholders (captions stay) and no
-escaping (`R&D`, not `R&amp;D`). List bullets and numbers, checkbox marks and
-table grids are kept, as upstream keeps them. Text for indexing, embeddings
-and search without Markdown noise:
-
-```bash
-docling-rs report.docx --to text                         # stdout
-docling-rs --input ./docs --output ./out --to text       # <stem>.txt per file
-```
-
-Serve answers `to=text` as `text/plain` (inline under `text` in a batch,
-`<stem>.txt` in a zip), Node / wasm / the C ABI take `to: "text"`, and
-`--page-break-placeholder` applies like for Markdown. The Python bindings need
-nothing: their `result.document` *is* docling-core's `DoclingDocument`, so
-`result.document.export_to_text()` is upstream's own. Measured against
-`export_to_text()` on the upstream groundtruth JSON: identical on 134 of the
-135 declarative fixtures whose Markdown already matches (the one left is a
-WebVTT cue where docling wraps italics around a bare space — `* *` — which the
-port keeps literal; see `docs/MIGRATION.md`). `crates/docling/tests/plain_text.rs`
-pins 15 of them against docling-core's output.
-
-### WebVTT (`.vtt`) output
-
-`export_to_vtt()` — docling's `--to vtt` (#614), a port of docling-core's
-`WebVTTDocSerializer` as `save_as_vtt` runs it — writes subtitles: a cue per
-timed text item. An audio or video transcript gives one cue per segment
-(start and end from the ASR timing, a zero-length segment stretched by 1 ms,
-blank ones dropped, as docling's ASR pipeline does), and a WebVTT input comes
-back with its cues, identifiers, `<v voice>` spans and `<b>`/`<i>`/`<u>`
-formatting. Other content (tables, pictures, untimed text) is not
-represented, so a DOCX gives the bare `WEBVTT` header (titled by its title,
-like upstream).
-
-```bash
-docling-rs talk.mp3 --to vtt > talk.vtt                       # subtitles from a transcript
-docling-rs --input ./media --output ./out --to vtt,md          # <stem>.vtt + <stem>.md
-```
-
-Serve answers `to=vtt` as `text/vtt` (inline under `vtt` in a batch), Node /
-wasm / the C ABI take `to: "vtt"`, and the Python bindings use docling-core's
-own `result.document.export_to_vtt()` / `save_as_vtt()` — the transcript JSON
-carries each segment as docling does (the words as `text`, the timing as a
-`source` track). Byte-identical to docling 2.135 on the four mirrored WebVTT
-inputs (`crates/docling/tests/vtt_export.rs`), and on a transcript loaded into
-docling-core from our JSON.
-
-### LaTeX (`.tex`) output
-
-`export_to_latex()` renders a complete LaTeX document — docling 2.124's
-`--to latex` (#317), the Rust counterpart of docling-core's
-`LaTeXDocSerializer` with its default parameters: the `article` preamble and
-package list, a document title hoisted into `\title{}` + `\maketitle`,
-`\section`/`\subsection`/`\subsubsection` headings, `itemize`/`enumerate`
-lists (nested environments indented two spaces), `table`/`tabular` grids with
-`\hline` rules and captions (rich cells render their lists / nested tables
-inline), `figure` environments with a `% image` placeholder and the picture
-classification as a `% annotation` comment, `verbatim` code, `$$…$$` formulas,
-inline formatting as `\textbf{}` / `\textit{}` / `\sout{}` / `\texttt{}` /
-`\href{}{}` / `$…$`, and LaTeX escaping of every special character in text.
-
-Scored against Python docling's **own** `docling --to latex` output on the
-shared declarative corpus (md, docx, html, pptx, xlsx, asciidoc, csv, webvtt,
-jats): **93 of 116 fixtures byte-exact**, 98 once upstream's duplicated
-formatted list items / headings are normalized away (see below). The
-remaining differences are model gaps rather than serializer bugs: underline
-and sub/superscript have no Markdown form and stay plain text; HTML rich
-table cells (lists / nested tables inside a `<td>`) are flattened; a few
-list-grouping and furniture placements differ. The regression suite
-(`crates/docling/tests/regression.rs`) pins every fixture's `.tex`.
-
-```rust
-println!("{}", result.document.export_to_latex()); // \documentclass … \end{document}
-```
-
-`--to latex` on the CLI prints it (batch mode writes `<stem>.tex`), serve
-answers `to=latex` as `text/x-tex` (inline under `latex` in a batch), and the
-Node bindings take `to: 'latex'`. The Python bindings need nothing: their
-`result.document` *is* upstream docling-core's `DoclingDocument`, so
-`LaTeXDocSerializer(doc=result.document).serialize().text` applies directly.
-Two deliberate deviations: upstream raises on a heading deeper than
-`\subsubsection`, docling.rs degrades those to `\paragraph` /
-`\subparagraph` instead of failing the conversion; and upstream emits the
-text of a *formatted* list item or heading twice (inside `\item` /
-`\section{}` and again as its own paragraph —
-[docling-core#740](https://github.com/docling-project/docling-core/issues/740)),
-which docling.rs does not reproduce.
-
-### HTML (`.html`) output
-
-`export_to_html()` renders a complete HTML document (#492) — the Rust
-counterpart of docling-core's `HTMLDocSerializer` with its default
-parameters: the single-column stylesheet in `<head>`, `<title>` = the
-document name, `<div class='page'>` around the body, `<h1>` for the title and
-`<h{level+1}>` for section headers, `<p>` paragraphs with `<br>` for newlines,
-`<ol>`/`<ul>` lists whose `<li>` carry the original marker as
-`list-style-type`, inline groups as `<span class='inline-group'>` with
-`<strong>`/`<em>`/`<u>`/`<del>`/`<sub>`/`<sup>`/`<a href>`, tables with
-`<th>` header cells, `rowspan`/`colspan` and rich cells rendered as their
-block content, `<figure>` pictures with `<figcaption>`, and the picture
-`meta` block (`<details class="docling-meta">` with the classification and
-the tabular-chart table). Pictures follow the image mode exactly as Markdown
-does: `export_to_html_with_images(ImageMode::Embedded, …)` inlines `data:`
-URIs, `Referenced` returns the same `<stem>_artifacts/image_NNNNNN.<ext>`
-files the Markdown export names and links to them, and the default
-placeholder mode (upstream's `ImageRefMode.PLACEHOLDER`) leaves pictures out
-but for their captions and meta.
-
-The serializer walks the docling-JSON structure the JSON export already
-reproduces item for item, so it inherits every heading-nesting, inline-group
-and rich-cell decision from there. It is pinned two ways: byte-for-byte
-against the HTML groundtruth upstream ships for its ODF and DOCX fixtures
-(`crates/docling/tests/html_export.rs`, 8/8 — picture payloads masked, since
-upstream's `save_as_html` re-encodes every picture through PIL), and against
-docling-core 2.99's own `export_to_html()` run over our exported JSON for the
-whole declarative corpus: **265 of 265 fixtures byte-identical**. Formulas
-are MathML like upstream's: `docling_core::mathml` is a literal port of the
-`latex2mathml` library docling-core runs (tokenizer, walker, converter, its
-`unimathsymbols.txt` table, the same failure modes — verified against the
-Python package on every corpus formula plus a synthetic suite, inline and
-block, errors included), wrapped in `<div>` for a block formula and carrying
-the source in `<annotation encoding="TeX">`; LaTeX the library rejects
-falls back to upstream's `<pre>{latex}</pre>`. Even upstream's raw
-(unescaped) source inside `<pre><code>` for code items is reproduced. The
-regression suite pins every fixture's `.html`.
-
-```rust
-let (html, _) = result.document.export_to_html_with_images(ImageMode::Embedded, "artifacts");
-```
-
-**Content layers** (#499 — docling-core's `HTMLParams.layers` /
-`export_to_html(included_content_layers=…)`): the export renders the `body`
-layer only by default, so page headers and footers (the `furniture` layer —
-DOCX/ODF running headers, PDF `page_header`/`page_footer` items, HTML
-chrome), reviewer comments (`notes`) and hidden content (`invisible`) stay
-out exactly as upstream leaves them out. `export_to_html_with_layers` takes
-the set to render: `ContentLayers::BODY.with(ContentLayer::Furniture)`,
-`ContentLayers::ALL` (Python's `set(ContentLayer)`), or a set without
-`body`; `HtmlExportOptions` combines it with the image mode and artifacts
-directory for `export_to_html_with`. An item off the set is skipped while
-its children are still walked, and the extra items render through the same
-serializers as the body — a header is a `<p>`, a comment a `<p>`, a header
-table a `<table>` — byte-identical to docling-core 2.99's output for the
-same layer sets (`html_layers_match_docling_core` pins DOCX header/footer,
-comment and all-layer exports). The default export is unchanged byte for
-byte.
-
-```rust
-use docling::{ContentLayer, ContentLayers, HtmlExportOptions, ImageMode};
-let html = doc.export_to_html_with_layers(ContentLayers::BODY.with(ContentLayer::Furniture));
-let (html, artifacts) = doc.export_to_html_with(&HtmlExportOptions {
-    image_mode: ImageMode::Referenced,
-    layers: ContentLayers::ALL,
-    ..HtmlExportOptions::default()
-});
-```
-
-The Markdown export takes the same kind of struct (#599 — docling-core's
-`MarkdownParams`): `MarkdownExportOptions` carries the content `layers`, whether
-to `traverse_pictures` (the text items the PDF pipeline nests in a picture — a
-bordered form laid out as one picture holds every field there, and the default
-export prints only the image placeholder), `escape_html` / `escape_underscores`
-(off, `R&D` and `snake_case` stay as written instead of `R&amp;D` and
-`snake\_case`), the `image_placeholder` and the image mode. Its defaults are
-upstream's, so `export_to_markdown_with_options(&Default::default())` is
-`export_to_markdown()` byte for byte; `MarkdownStreamer::with_export_options`
-gives the streaming path the same settings.
-
-```rust
-use docling::{ContentLayer, ContentLayers, MarkdownExportOptions};
-let (md, _) = doc.export_to_markdown_with_options(&MarkdownExportOptions {
-    layers: ContentLayers::BODY.with(ContentLayer::Furniture),
-    traverse_pictures: true,
-    escape_html: false,
-    ..MarkdownExportOptions::default()
-});
-```
-
-`--to html` on the CLI prints it (batch mode writes `<stem>.html`, pictures
-per `--images`), serve answers `to=html` as `text/html` (inline under `html`
-in a batch), the Node bindings take `to: 'html'`, wasm `"html"`. The Python
-bindings need nothing: `result.document.export_to_html()` is upstream's.
-
-DocLang also reads back **in**: `.dclg`/`.dclg.xml` (bare DocLang XML) and
-`.dclx` archives are input formats like any other —
-`convert(SourceDocument::from_file("doc.dclx")?)` — scored byte-for-byte
-against live docling reading the same archives (15/15 exact,
-`tests/data/doclang`).
-
-### Pandoc AST (`--to pandoc`) output
-
-`export_to_pandoc_json()` writes the document as Pandoc's JSON AST (#515) —
-the serialization of Pandoc's own `Pandoc` type that `pandoc -f json` reads —
-so every Pandoc writer (DOCX, ODT, EPUB, reStructuredText, Org, Typst,
-AsciiDoc, JATS, …) sits behind docling.rs's parsing, PDF layout analysis
-included:
+Every surface takes the same values — the CLI (batch mode writes
+`<stem>.<ext>`, several formats at once with `--to md,json`), serve
+(`to=`, the matching content type), Node / wasm / the C ABI (`to:`); the
+Python bindings hand back docling-core's own `DoclingDocument`, so upstream's
+`export_to_*` / `save_as_*` apply to it directly. Page breaks
+(`--page-break-placeholder`) apply to Markdown and text.
 
 ```bash
 docling-rs paper.pdf --to pandoc | pandoc -f json -t docx -o paper.docx
-docling-rs report.docx --to pandoc | pandoc -f json -t gfm      # footnotes as [^n]
+docling-rs talk.mp3 --to vtt > talk.vtt
+docling-rs --to images --pages 2-3 --scale 1.5 paper.pdf   # paper_page_0002.png, paper_page_0003.png
 ```
 
-Pictures are embedded by default for this output (#537): `--to pandoc`
-without `--images` writes `data:` URIs, so the AST alone rebuilds a DOCX with
-its pictures (serve's `images`, the Node `imageMode`, FFI / wasm `images` and
-Python's `image_mode` default the same way for the Pandoc AST only).
+**JSON structure.** HTML, DOCX, PPTX, ODF, WebVTT, JATS, AsciiDoc, DocLang,
+LaTeX and USPTO build docling's item tree — heading nesting, `inline`
+groups with `formatting` / `hyperlink`, rich table cells, `furniture` — so
+their JSON is structurally identical to upstream's; the flat backends
+(XLSX, CSV, EBCDIC) already have upstream's shape. Tables carry first-class
+cells (`table_cells`: text, page-point bbox, spans, header roles — #240),
+and `DoclingDocument` exposes them for in-place repair before re-export
+(#238): `tables_mut()`, `find_cell_by_bbox`, `set_cell_text`,
+`update_cell_by_bbox`; `rows`, `structure` and `cells` are public fields.
 
-It is built from the same docling-JSON structure the HTML and LaTeX exports
-walk, mapped to Pandoc's constructors:
-
-| docling | Pandoc |
-|---|---|
-| `title` / `section_header` (level *n*) | `Header 1` / `Header (n+1)` (capped at 6) |
-| `text`, `paragraph`, `inline` groups | `Para` of `Str`/`Space` runs (`Plain` inside lists and cells) |
-| bold / italic / underline / strikethrough / sub / superscript, hyperlinks | `Strong` / `Emph` / `Underline` / `Strikeout` / `Subscript` / `Superscript`, `Link` |
-| `list` groups | `BulletList` / `OrderedList` (start from the first marker), nested lists inside their item |
-| `code` | `CodeBlock` with the language as class (`Code` inline) |
-| `formula` | `Math DisplayMath` (`InlineMath` inside a paragraph) |
-| `checkbox_selected` / `_unselected` | `☒` / `☐` + the text — Pandoc's task-list convention |
-| `table` | `Table`: leading all-header rows as `TableHead`, `rowspan`/`colspan`, rich cells as blocks, captions |
-| `picture` | `Para [Image]` — Pandoc's own readers' shape — or, with a caption (also the alt text) or a chart's data `Table`, a `Figure`; the target per `--images` (`embedded` → `data:` URI, `referenced` → `<stem>_artifacts/` files). A picture without one (`placeholder`, or an image that could not be decoded) is still an `Image`, classed `docling-placeholder` with an empty target |
-| table / picture footnotes | `Note` in the caption |
-| DOCX footnotes / endnotes, ODT `text:note`s (#538) | `Note` at the reference, inside its paragraph / heading / list item / cell (pandoc writes them back as real notes: `word/footnotes.xml`, `[^n]`); a footnote with no recorded call site (a JSON from Python docling) as a trailing `Note` |
-| key-value graphs, form field regions | `Div .key-value-region` / `.form-container` / `.field-region` holding a `DefinitionList` |
-| any other label (`page_header`, `reference`, `handwritten_text`, …) | `Div .docling-<label>` |
-
-Not mapped, because Pandoc has no place for it: page provenance and bounding
-boxes, confidence / classification meta, form field geometry, comment
-authorship; furniture (headers, footers) and reviewer comments stay out like
-in the HTML export. Note call sites are not in docling's JSON model, so they
-travel only inside the Rust document: the CLI, serve, Node, FFI and wasm place
-notes at their calls, while Python's `export_to_pandoc` (which reads a
-docling `DoclingDocument`) appends them at the end. The output
-is stamped `pandoc-api-version` **1.23.1.1** (`pandoc-types` for Pandoc 3.x;
-`docling_core::pandoc::PANDOC_API_VERSION`) — the only version written.
-`--pandoc-api-version V` (serve `pandoc_api_version`, the library's
-`PandocExportOptions::api_version`) states the version a consumer needs;
-anything Pandoc would not read as 1.23 fails with `unsupported Pandoc API
-version '…'` instead of producing a document Pandoc rejects. Every
-convertible declarative fixture (305) and the PDF corpus pass `pandoc -f json
--t native`; `crates/docling/tests/pandoc.rs` pins 16 documents both as JSON
-and as Pandoc's `native` reading of it, and rebuilds a DOCX through
-`pandoc -t docx` to check its pictures and footnotes.
+**Content layers** (#499, #599). The HTML and Markdown exports render the
+`body` layer by default, so page headers and footers (`furniture`),
+reviewer comments (`notes`) and hidden content (`invisible`) stay out as
+upstream leaves them out; `export_to_html_with_layers` /
+`MarkdownExportOptions { layers, traverse_pictures, escape_html,
+escape_underscores, image_placeholder, image_mode }` take the set to render
+— byte-identical to docling-core for the same sets, and the defaults are
+`export_to_markdown()` / `export_to_html()` byte for byte:
 
 ```rust
-println!("{}", result.document.export_to_pandoc_json()); // {"pandoc-api-version":[1,23,1,1],…}
+use docling::{ContentLayer, ContentLayers, MarkdownExportOptions};
+let html = doc.export_to_html_with_layers(ContentLayers::BODY.with(ContentLayer::Furniture));
+let (md, _) = doc.export_to_markdown_with_options(&MarkdownExportOptions {
+    layers: ContentLayers::ALL, traverse_pictures: true, ..MarkdownExportOptions::default()
+});
 ```
 
-The CLI's batch mode writes `<stem>.pandoc.json`, serve answers `to=pandoc`
-as `application/json` (inline under `pandoc` in a batch), the Node bindings
-take `to: 'pandoc'`, the FFI `"to":"pandoc"`, wasm and the browser demo
-`"pandoc"`; Python runs the same serializer on any `DoclingDocument`:
-
-```python
-from docling_rs.pandoc import export_to_pandoc, save_as_pandoc
-ast = export_to_pandoc(result.document)              # str
-save_as_pandoc(result.document, "paper.pandoc.json", image_mode="referenced")
-```
+**Pandoc mapping.** Headings → `Header`, text and inline groups → `Para`
+of `Str` / `Space` runs with `Strong` / `Emph` / `Underline` / `Strikeout` /
+`Link`, lists → `BulletList` / `OrderedList`, code → `CodeBlock`, formulas
+→ `Math`, tables → `Table` with header rows and spans, pictures → `Image`
+or a captioned `Figure`, DOCX/ODT footnotes → `Note` at their call site
+(#538), key-value and form regions → classed `Div`s with a
+`DefinitionList`, every other label → `Div .docling-<label>`. Page
+provenance, confidence and furniture have no Pandoc place and are left
+out. Every declarative fixture and the PDF corpus pass `pandoc -f json -t
+native`; from Python, `docling_rs.pandoc.export_to_pandoc(doc)` /
+`save_as_pandoc(doc, path, image_mode=…)`.
 
 ### Chunking (docling's Hierarchical & Hybrid chunkers)
 
-`docling_core.transforms.chunker` ported to Rust — the chunkers RAG pipelines
-feed to embedding models, scored against live docling's output on the same
-corpus:
+`docling_core.transforms.chunker` ported to Rust — the chunkers RAG
+pipelines feed to embedding models. `HierarchicalChunker` yields one chunk
+per document item (whole lists, triplet-serialized tables, picture
+captions) with its heading path; `HybridChunker` refines them with a
+tokenizer — splits oversized chunks (item boundaries, then docling's
+`semchunk` inside text, tables line by line) and merges undersized
+same-heading neighbours. Against docling's chunkers on the 83-document
+corpus (`scripts/conformance/chunks_conformance.sh`): hierarchical 98.8 % /
+hybrid 96.2 % identical chunk records.
 
 ```rust
 use docling::chunker::{contextualize, HierarchicalChunker, HybridChunker, HuggingFaceTokenizer};
 
 let chunks = HierarchicalChunker.chunk(&result.document);          // structure-driven
-let tok = HuggingFaceTokenizer::from_file(".models/chunk/tokenizer.json", 256)?; // feature "chunking"; fetched by download_dependencies.sh
+let tok = HuggingFaceTokenizer::from_file(".models/chunk/tokenizer.json", 256)?; // feature "chunking"
 for chunk in HybridChunker::new(tok).chunk(&result.document) {
     let embed_me = contextualize(&chunk); // heading path + chunk text
 }
 ```
 
-Same thing from Python (the `docling_rs` package runs these natively):
-
 ```python
-from docling_rs import DocumentConverter
 from docling_rs.chunking import HierarchicalChunker, HybridChunker
-
-docling_rs.download_models()
-doc = DocumentConverter().convert("report.docx").document
-
-for chunk in HierarchicalChunker().chunk(doc):
-    print(chunk.meta.headings, chunk.text)
-
 chunker = HybridChunker(max_tokens=256)
 for chunk in chunker.chunk(doc):
-    embed_me = chunker.contextualize(chunk)  # heading path + chunk text
+    embed_me = chunker.contextualize(chunk)
 ```
 
-`HierarchicalChunker` yields one chunk per document item (whole lists, triplet-
-serialized tables — `row, column = value` — picture captions), each carrying its
-heading path. `HybridChunker` refines them with a tokenizer: splits oversized
-chunks (at item boundaries, then with docling's `semchunk` algorithm inside
-text; tables line-by-line), and merges undersized same-heading neighbours. The
-HuggingFace tokenizer (MiniLM etc.) sits behind the `chunking` cargo feature
-(on by default in the CLI); `--to chunks` dumps both chunkers' records.
-`scripts/install/download_dependencies.sh` fetches MiniLM's tokenizer to
-`.models/chunk/tokenizer.json`, which every surface picks up automatically when
-no explicit tokenizer path is given (`DOCLING_CHUNK_TOKENIZER` overrides the
-path and `DOCLING_CHUNK_MAX_TOKENS` the 256-token budget; per-run overrides:
-`--chunker hierarchical|hybrid`, `--chunk-tokenizer`, `--chunk-max-tokens`,
-`--no-chunk-merge-peers` on the CLI and the matching serve request fields,
-#256). The chunkers are also
-exposed in the [Node bindings](./crates/docling-node) (`chunkFile` /
-`chunkDocument` + async variants), the
-[Python bindings](./crates/docling-py) (`docling_rs.chunking`), and the
-[RAG subsystem](./crates/docling-rag) (`RAG_CHUNKER=window|hierarchical|hybrid`, `window` default). Conformance vs
-docling's chunkers over the 83-doc corpus (`scripts/conformance/
-chunks_conformance.sh`): **hierarchical 98.8% / hybrid 96.2% identical chunk
-records** (text + headings), 79 and 76 of 83 documents fully exact.
+`download_dependencies.sh` fetches MiniLM's tokenizer to
+`.models/chunk/tokenizer.json`, which every surface picks up
+(`DOCLING_CHUNK_TOKENIZER`, `DOCLING_CHUNK_MAX_TOKENS` override it;
+per run `--chunker hierarchical|hybrid`, `--chunk-tokenizer`,
+`--chunk-max-tokens`, `--no-chunk-merge-peers` and the matching serve
+fields, #256). Also in the [Node bindings](./crates/docling-node)
+(`chunkFile` / `chunkDocument`), the [Python bindings](./crates/docling-py)
+(`docling_rs.chunking`) and the [RAG subsystem](./crates/docling-rag).
 
 ### Image extraction
 
-Backends that have the image populate `Node::Picture { image }`: the PDF/image
-pipeline crops figure regions, the DOCX / PPTX / MHTML backends pull embedded
-image blobs (MHTML resolves `<img src>` against the archive's own MIME parts —
-no network/filesystem access needed, so it's on by default), and — opt-in —
-the HTML / EPUB backends fetch `<img src>` (see below).
-Pick how pictures render with an [`ImageMode`] — the analogue of docling's
-`image_mode`:
+Backends that have the image populate `Node::Picture { image }`: the
+PDF/image pipeline crops figure regions, DOCX / PPTX / MHTML pull embedded
+blobs, Windows metafiles (EMF / WMF) in the office formats are rendered to
+PNG in-process (#536). `ImageMode` — docling's `image_mode` — picks how
+pictures render:
 
 ```rust
 use docling::ImageMode;
-
 // self-contained Markdown: ![Image](data:image/png;base64,…)
 let (md, _) = result.document.export_to_markdown_with_images(ImageMode::Embedded, "artifacts");
-
 // referenced: ![Image](artifacts/image_000000.png) + the bytes to write
 let (md, files) = result.document.export_to_markdown_with_images(ImageMode::Referenced, "artifacts");
 for (path, bytes) in files { std::fs::write(path, bytes).unwrap(); }
 ```
 
-`export_to_json()` always embeds extracted images as docling `ImageRef`s
-(`data:` URIs + size). The default `export_to_markdown()` stays
-`<!-- image -->`, like docling.
-
-> The cropped/extracted pixels are real, but the base64 won't be byte-identical
-> to docling's (different PNG encoder). HTML/EPUB/MHTML/AsciiDoc/JATS pictures
-> stay placeholders by default (like docling); enable fetching with
-> `--image-sources MODE` / `DocumentConverter::image_sources` (#646) to resolve
-> `<img src>`, Markdown's `![…](…)` and inline `<img>`, AsciiDoc's
-> `image::target[]`, a JATS `<fig>`'s `<graphic xlink:href>`, an ODF
-> `draw:image` URL and an email body's `cid:` images, and embed the bytes.
-> The tiers nest: `embedded` = `data:` URIs and parts of the same container
-> (EPUB/MHTML entries, email attachments) — no filesystem, no network, the
-> tier for untrusted input; `local` = plus files under the source file's
-> directory (never an absolute path, never outside it); `remote` = plus
-> `http(s)` fetches, confined to `--image-hosts` when given (redirects
-> included) and to the private-address block-list always. `--fetch-images` /
-> `fetch_images(true)` is `remote`'s alias. Per-document limits —
-> `--max-image-bytes` (32 MiB), `--max-images`, `--max-image-total-mb`,
-> `--min-image-bytes` (`DOCLING_RS_MAX_IMAGE_BYTES` / `_MAX_IMAGES` /
-> `_MAX_IMAGE_TOTAL_MB` / `_MIN_IMAGE_BYTES`) — leave a picture a placeholder
-> instead of failing the conversion. Remote URLs are fetched over the
-> network, so enable that tier only for input you trust.
->
-> Windows metafile pictures (EMF / WMF — Word/Visio drawings, clip art, OLE
-> previews) in DOCX, DOC, PPTX, XLSX, ODF, RTF and the other office formats
-> are rendered to PNG in-process (#536): the GDI records become SVG that
-> resvg rasterizes, at the metafile's own size (≤ 2048 px a side) on white.
-> Upstream renders them through LibreOffice when it is installed. Not drawn:
-> clipping regions, hatch/pattern brushes (solid), and EMF+ records (a dual
-> EMF+ file's plain-EMF records are drawn). A metafile that draws nothing,
-> a Mac PICT, or a build without the `pdf` feature (wasm) leaves the
-> picture payload-less as before.
+JSON always embeds the images as docling `ImageRef`s; the default Markdown
+stays `<!-- image -->`, like docling (the pixels are real, the base64 is
+not byte-identical to docling's — a different PNG encoder). Pictures that
+are *references* — HTML / EPUB / MHTML / JATS / AsciiDoc / ODF `<img src>`,
+Markdown `![…](…)`, an email's `cid:` — stay placeholders by default and
+resolve under `image_sources` (#646): `embedded` (`data:` URIs and parts of
+the same container; no filesystem, no network), `local` (plus files under
+the source's directory), `remote` (plus `http(s)`, confined to
+`image_hosts`); `max_image_bytes` / `max_images` / `max_image_total_mb` /
+`min_image_bytes` bound a document — details in
+[`docs/OPTIONS.md`](docs/OPTIONS.md) and [`docs/SECURITY.md`](docs/SECURITY.md).
 
 ### `strict` Markdown (Rust-only)
 
 By default `export_to_markdown()` reproduces docling's output byte-for-byte,
-quirks included (`***x*** .`, dropped code-fence languages, `\_` escaping). Set
-`strict(true)` for cleaner, more conformant Markdown:
-
-```rust
-let converter = DocumentConverter::new().strict(true);
-let result = converter.convert(source).unwrap();
-println!("{}", result.document.export_to_markdown()); // ```rust kept, no `***x*** .`, `_` not escaped
-```
+quirks included (`***x*** .`, dropped code-fence languages, `\_` escaping).
+`strict(true)` gives cleaner, more conformant Markdown
+(`export_to_markdown_with(strict)` per call; Python docling has no such
+switch):
 
 ```text
 legacy:  Foo ***both*** .   |   ``` (lang dropped)   |   Name: \_\_\_
 strict:  Foo ***both***.    |   ```rust (lang kept)  |   Name: ___
 ```
-
-`result.document.export_to_markdown_with(strict)` overrides the mode per call.
-Python docling has no such switch.
 
 ### Streaming Markdown
 
