@@ -523,20 +523,52 @@ impl Walker<'_> {
                     }],
                 );
             }
-            Node::Picture { caption, .. } => {
+            Node::Picture {
+                caption,
+                description,
+                ..
+            } => {
                 let cap = caption.as_deref().filter(|c| !c.is_empty());
                 let cap_item = cap.map(|c| ChunkItem {
                     self_ref: self.alloc.text(),
                     kind: ChunkItemKind::Text,
                     text: unescape_text(c),
                 });
-                self.alloc.picture();
+                let pic_ref = self.alloc.picture();
                 // The picture itself serializes to the (empty) chunking image
                 // placeholder, and its caption is already consumed by the
-                // caption chunk — so only the caption text is emitted.
-                if let Some(cap_item) = cap_item {
-                    let body = cap_item.text.clone();
-                    self.emit(body, vec![cap_item]);
+                // caption chunk — so only the caption text is emitted. A
+                // description (the picture-OCR text, #645) is the picture's
+                // own annotation text — docling's chunker serializes the
+                // picture through the Markdown picture serializer, so the
+                // description lands in the chunk after the caption.
+                let desc = description
+                    .as_ref()
+                    .map(|d| d.text.as_str())
+                    .filter(|t| !t.is_empty());
+                match (cap_item, desc) {
+                    (Some(cap_item), None) => {
+                        let body = cap_item.text.clone();
+                        self.emit(body, vec![cap_item]);
+                    }
+                    (Some(cap_item), Some(desc)) => {
+                        let body = format!("{}\n\n{desc}", cap_item.text);
+                        let pic_item = ChunkItem {
+                            self_ref: pic_ref,
+                            kind: ChunkItemKind::Picture,
+                            text: desc.to_string(),
+                        };
+                        self.emit(body, vec![cap_item, pic_item]);
+                    }
+                    (None, Some(desc)) => {
+                        let pic_item = ChunkItem {
+                            self_ref: pic_ref,
+                            kind: ChunkItemKind::Picture,
+                            text: desc.to_string(),
+                        };
+                        self.emit(desc.to_string(), vec![pic_item]);
+                    }
+                    (None, None) => {}
                 }
             }
             Node::Chart {
@@ -2255,6 +2287,7 @@ mod tests {
                 caption_href: None,
                 image: None,
                 classification: None,
+                description: None,
                 caption_parent: crate::CaptionParent::Item,
                 caption_location: None,
             },

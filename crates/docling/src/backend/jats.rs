@@ -1171,6 +1171,7 @@ fn add_figure(out: &mut Out, parent: Option<usize>, node: XmlNode, fig_base: Opt
         caption_href: None,
         image: image.clone(),
         classification: None,
+        description: None,
         caption_parent: Default::default(),
         caption_location: None,
     });
@@ -1186,6 +1187,7 @@ fn add_figure(out: &mut Out, parent: Option<usize>, node: XmlNode, fig_base: Opt
             captions,
             image,
             classification: None,
+            description: None,
             confidence: None,
             chart: None,
             dpi: None,

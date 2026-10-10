@@ -202,6 +202,12 @@ impl PyDocumentConverter {
     /// * `do_code_enrichment` / `do_formula_enrichment` — rewrite code blocks /
     ///   decode formula LaTeX with the CodeFormulaV2 VLM (docling's flags of
     ///   the same names; need .models/code_formula/).
+    /// * `do_picture_ocr` — OCR the pictures embedded in non-PDF documents
+    ///   (#645) and attach the text as the picture's description annotation
+    ///   (`meta.description` / `annotations`); `picture_ocr_classes` (a
+    ///   comma-separated DocumentFigureClassifier label list) and
+    ///   `picture_ocr_min_side` (px, default 32) filter which pictures are
+    ///   read; `keep_picture_images=False` drops the image bytes afterwards.
     /// * `use_web_browser` — render HTML via headless Chrome before parsing.
     /// * `page_range` — `(first, last)` 1-based inclusive PDF page window
     ///   (docling's option of the same name, #80); other formats ignore it.
@@ -273,6 +279,10 @@ impl PyDocumentConverter {
         do_picture_classification = false,
         do_code_enrichment = false,
         do_formula_enrichment = false,
+        do_picture_ocr = false,
+        picture_ocr_classes = None,
+        picture_ocr_min_side = None,
+        keep_picture_images = true,
         asr_model = None,
         asr_lang = None,
         encoding = None,
@@ -313,6 +323,10 @@ impl PyDocumentConverter {
         do_picture_classification: bool,
         do_code_enrichment: bool,
         do_formula_enrichment: bool,
+        do_picture_ocr: bool,
+        picture_ocr_classes: Option<String>,
+        picture_ocr_min_side: Option<u32>,
+        keep_picture_images: bool,
         asr_model: Option<String>,
         asr_lang: Option<String>,
         encoding: Option<String>,
@@ -383,6 +397,10 @@ impl PyDocumentConverter {
             do_picture_classification: Some(do_picture_classification),
             do_code_enrichment: Some(do_code_enrichment),
             do_formula_enrichment: Some(do_formula_enrichment),
+            do_picture_ocr: Some(do_picture_ocr),
+            picture_ocr_classes,
+            picture_ocr_min_side,
+            keep_picture_images: Some(keep_picture_images),
             pipeline,
             vlm_endpoint,
             vlm_model,

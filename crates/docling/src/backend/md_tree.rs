@@ -721,6 +721,7 @@ impl Walker {
                         captions,
                         image: None,
                         classification: None,
+                        description: None,
                         confidence: None,
                         chart: None,
                         dpi: None,

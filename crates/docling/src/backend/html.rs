@@ -601,6 +601,7 @@ fn walk_block(
                         caption_href: None,
                         image: img_src(e).and_then(|s| images.resolve(&s)),
                         classification: None,
+                        description: None,
                         caption_parent: Default::default(),
                         caption_location: None,
                     });
@@ -612,6 +613,7 @@ fn walk_block(
                         caption_href: None,
                         image: None,
                         classification: None,
+                        description: None,
                         caption_parent: Default::default(),
                         caption_location: None,
                     });
@@ -640,6 +642,7 @@ fn walk_block(
                             caption_href,
                             image: src.as_deref().and_then(|s| images.resolve(s)),
                             classification: None,
+                            description: None,
                             caption_parent: Default::default(),
                             caption_location: None,
                         });
@@ -836,6 +839,7 @@ fn handle_block(
                                 caption_href: None,
                                 image: img_src(e).and_then(|s| images.resolve(&s)),
                                 classification: None,
+                                description: None,
                                 caption_parent: Default::default(),
                                 caption_location: None,
                             });

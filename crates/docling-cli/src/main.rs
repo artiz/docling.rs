@@ -18,7 +18,7 @@
 //! the same name): one identifier per line, sorted, for scripts that ask the
 //! binary what it converts instead of hard-coding a list.
 //!
-//! Usage: docling-rs [--strict] [--page-break-placeholder TEXT] [--to md|json|html|text|dclx|chunks|images|latex|pandoc|vtt] [--pages A-B] [--scale X] [--images MODE] [--input GLOB --output DIR [--jobs N]] [--output-file PATH] [--fetch-images] [--list-attachments] [--skip-empty-cells] [--compact-tables] [--ebcdic-layout JSON|PATH] [--encoding LABEL] [--no-stream] [--no-table-former] [--no-ocr] [--text-layer-only] [--password PASSWORD | --password-file PATH] [--force-full-page-ocr] [--no-text-panels] [--heading-hierarchy] [--ocr-lang LANG] [--ocr-engine ppocr|tesseract] [--ocr-mode MODE] [--ocr-scale X] [--images-scale X] [--page-images] [--chunker hierarchical|hybrid] [--chunk-tokenizer PATH] [--chunk-max-tokens N] [--no-chunk-merge-peers] [--pipeline standard|vlm] [--vlm-endpoint URL] [--vlm-model NAME] [--vlm-api-key TOKEN] [--vlm-prompt TEXT] [--vlm-max-tokens N] [--asr-model PRESET] [--asr-lang CODE] [--video-frames N] [--xbrl-taxonomy DIR] [--use-web-browser] [--enrich-picture-classes] [--enrich-code] [--enrich-formula] [--document-timeout SECONDS] [--abort-on-error] [--output-dirs auto|flat|mirror] <input-file> | SOURCE...
+//! Usage: docling-rs [--strict] [--page-break-placeholder TEXT] [--to md|json|html|text|dclx|chunks|images|latex|pandoc|vtt] [--pages A-B] [--scale X] [--images MODE] [--input GLOB --output DIR [--jobs N]] [--output-file PATH] [--fetch-images] [--list-attachments] [--skip-empty-cells] [--compact-tables] [--ebcdic-layout JSON|PATH] [--encoding LABEL] [--no-stream] [--no-table-former] [--no-ocr] [--text-layer-only] [--password PASSWORD | --password-file PATH] [--force-full-page-ocr] [--no-text-panels] [--heading-hierarchy] [--ocr-lang LANG] [--ocr-engine ppocr|tesseract] [--ocr-mode MODE] [--ocr-scale X] [--images-scale X] [--page-images] [--chunker hierarchical|hybrid] [--chunk-tokenizer PATH] [--chunk-max-tokens N] [--no-chunk-merge-peers] [--pipeline standard|vlm] [--vlm-endpoint URL] [--vlm-model NAME] [--vlm-api-key TOKEN] [--vlm-prompt TEXT] [--vlm-max-tokens N] [--asr-model PRESET] [--asr-lang CODE] [--video-frames N] [--xbrl-taxonomy DIR] [--use-web-browser] [--enrich-picture-classes] [--enrich-code] [--enrich-formula] [--picture-ocr] [--picture-ocr-classes LABELS] [--picture-ocr-min-side N] [--no-picture-images] [--document-timeout SECONDS] [--abort-on-error] [--output-dirs auto|flat|mirror] <input-file> | SOURCE...
 //!   --to FORMAT        repeatable (#491, like Python's `docling convert --to
 //!                      md --to json`): each document converts once and is
 //!                      written in every format named, `<stem>.md` +
@@ -168,6 +168,29 @@
 //!   --enrich-formula   decode display formulas to LaTeX with CodeFormulaV2
 //!                      (docling's do_formula_enrichment); Markdown then renders
 //!                      $$latex$$ instead of the formula placeholder comment.
+//!   --picture-ocr      OCR the pictures embedded in non-PDF documents — DOCX/PPTX
+//!                      screenshots, HTML figures, sampled video frames — and
+//!                      attach the text to the picture as docling's description
+//!                      annotation (#645): Markdown prints it after the caption,
+//!                      before the image placeholder; JSON carries
+//!                      meta.description. Needs the OCR models (.models/ocr_rec*,
+//!                      ocr_det.onnx for line detection; --ocr-engine tesseract
+//!                      works too); under --no-ocr / --text-layer-only it warns
+//!                      and reads nothing. PDF/image pages are OCR'd by the
+//!                      pipeline already and are left alone.
+//!   --picture-ocr-classes LABELS
+//!                      only read the pictures the DocumentFigureClassifier
+//!                      labels as one of these (comma-separated, e.g.
+//!                      screenshot_from_computer,screenshot_from_manual); default:
+//!                      every picture. Needs .models/picture_classifier.onnx —
+//!                      missing, the filter is waived with a warning.
+//!   --picture-ocr-min-side N
+//!                      skip pictures whose smaller side is under N px (icons,
+//!                      bullets, rules). Default 32 (DOCLING_RS_PICTURE_OCR_MIN_SIDE).
+//!   --no-picture-images
+//!                      drop the embedded image bytes from every picture after
+//!                      the enrichment (keep_picture_images=false): a slim
+//!                      JSON/DCLX and placeholder-only Markdown, the OCR text kept.
 
 use std::io::{self, Write};
 use std::path::Path;
@@ -514,6 +537,29 @@ fn main() -> ExitCode {
             "--enrich-picture-classes" => opts.do_picture_classification = Some(true),
             "--enrich-code" => opts.do_code_enrichment = Some(true),
             "--enrich-formula" => opts.do_formula_enrichment = Some(true),
+            // Picture OCR for non-PDF documents (#645) and its filters.
+            "--picture-ocr" => opts.do_picture_ocr = Some(true),
+            "--picture-ocr-classes" => match args.next() {
+                Some(v) => opts.picture_ocr_classes = Some(v),
+                None => {
+                    eprintln!(
+                        "error: --picture-ocr-classes needs a comma-separated list of labels"
+                    );
+                    return ExitCode::from(2);
+                }
+            },
+            "--picture-ocr-min-side" => match args.next().map(|v| v.trim().parse::<u32>()) {
+                Some(Ok(n)) => opts.picture_ocr_min_side = Some(n),
+                Some(_) => {
+                    eprintln!("error: --picture-ocr-min-side needs a whole number of pixels");
+                    return ExitCode::from(2);
+                }
+                None => {
+                    eprintln!("error: --picture-ocr-min-side needs a value");
+                    return ExitCode::from(2);
+                }
+            },
+            "--no-picture-images" => opts.keep_picture_images = Some(false),
             "--abort-on-error" => abort_on_error = true,
             "--output-dirs" => match args.next().as_deref().map(OutputDirs::parse) {
                 Some(Some(mode)) => output_dirs = mode,

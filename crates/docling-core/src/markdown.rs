@@ -1020,11 +1020,24 @@ fn render_item(node: &Node, blocks: &mut Vec<String>, ctx: &mut Ctx) {
                 blocks.push(rendered);
             }
         }
-        // Classification predictions don't affect docling's Markdown output.
-        Node::Picture { caption, image, .. } => {
+        // Classification predictions don't affect docling's Markdown output;
+        // a description (the picture-OCR text, #645) prints between the
+        // caption and the image placeholder — docling's
+        // `MarkdownPictureSerializer` order: captions, annotations, image.
+        Node::Picture {
+            caption,
+            image,
+            description,
+            ..
+        } => {
             if let Some(cap) = caption {
                 if !cap.is_empty() {
                     blocks.push(ctx.breaks(&ctx.caption(cap)));
+                }
+            }
+            if let Some(desc) = description {
+                if !desc.text.is_empty() {
+                    blocks.push(ctx.breaks(&ctx.text(&desc.text)));
                 }
             }
             blocks.push(picture_marker(image.as_ref(), ctx));
@@ -1727,6 +1740,7 @@ mod tests {
                 data: b"x".to_vec(),
             }),
             classification: None,
+            description: None,
             caption_parent: Default::default(),
             caption_location: None,
         });
@@ -2155,6 +2169,7 @@ mod tests {
                 data: b"png-one".to_vec(),
             }),
             classification: None,
+            description: None,
             caption_parent: Default::default(),
             caption_location: None,
         });
@@ -2172,6 +2187,7 @@ mod tests {
                 data: b"png-two".to_vec(),
             }),
             classification: None,
+            description: None,
             caption_parent: Default::default(),
             caption_location: None,
         });
@@ -2332,6 +2348,7 @@ mod tests {
             caption_href: None,
             image: None,
             classification: None,
+            description: None,
             caption_parent: Default::default(),
             caption_location: None,
         });
@@ -2524,6 +2541,7 @@ mod tests {
                 caption_href: None,
                 image: None,
                 classification: None,
+                description: None,
                 caption_parent: Default::default(),
                 caption_location: None,
             }
@@ -2693,6 +2711,7 @@ mod tests {
             caption_href: None,
             image: None,
             classification: None,
+            description: None,
             caption_parent: Default::default(),
             caption_location: None,
         });

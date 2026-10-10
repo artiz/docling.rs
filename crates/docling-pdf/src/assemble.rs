@@ -3254,6 +3254,7 @@ pub fn assemble_page(
                     caption_href: None,
                     image,
                     classification,
+                    description: None,
                     // docling's layout pipeline parents a figure's caption to
                     // the picture itself (#390) — the one backend that does.
                     caption_parent: CaptionParent::Item,
@@ -3389,6 +3390,7 @@ pub fn assemble_page(
                                     caption_href: None,
                                     image,
                                     classification,
+                                    description: None,
                                     caption_parent: Default::default(),
                                     caption_location: None,
                                 },
@@ -4873,6 +4875,7 @@ mod tests {
                 caption_href: None,
                 image: None,
                 classification: None,
+                description: None,
                 caption_parent: Default::default(),
                 caption_location: None,
             },

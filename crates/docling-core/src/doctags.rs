@@ -625,6 +625,7 @@ fn parse_picture(toks: &[Tok], i: &mut usize, out: &mut Vec<Node>, close: &str) 
             caption_href: None,
             image: None,
             classification: None,
+            description: None,
             caption_parent: Default::default(),
             caption_location: None,
         },

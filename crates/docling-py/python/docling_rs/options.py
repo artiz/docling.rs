@@ -122,6 +122,8 @@ class PdfPipelineOptions:
     directly too — #187's escape hatch for undecodable text layers),
     ``do_picture_classification`` / ``do_code_enrichment`` /
     ``do_formula_enrichment`` (the opt-in enrichment models),
+    ``do_picture_ocr`` + ``picture_ocr_classes`` / ``picture_ocr_min_side`` /
+    ``keep_picture_images`` (#645: OCR the pictures of non-PDF documents),
     ``no_text_panels`` (a docling.rs extension, #173/#174: keep every detected
     picture as a picture instead of demoting uncaptioned dense-text panels to
     paragraphs) and
@@ -147,6 +149,17 @@ class PdfPipelineOptions:
     do_picture_classification: bool = False
     do_code_enrichment: bool = False
     do_formula_enrichment: bool = False
+    #: docling.rs extension (#645): OCR the pictures embedded in non-PDF
+    #: documents with the engine's OCR models; the text lands in
+    #: ``picture.meta.description`` (+ the ``description`` annotation), as
+    #: ``do_picture_description`` writes it. ``picture_ocr_classes`` (a
+    #: comma-separated string or a list of DocumentFigureClassifier labels)
+    #: and ``picture_ocr_min_side`` (px, default 32) filter which pictures
+    #: are read; ``keep_picture_images=False`` drops the image bytes after.
+    do_picture_ocr: bool = False
+    picture_ocr_classes: Optional[Any] = None
+    picture_ocr_min_side: Optional[int] = None
+    keep_picture_images: bool = True
     table_structure_options: TableStructureOptions = field(
         default_factory=TableStructureOptions
     )

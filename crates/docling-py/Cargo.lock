@@ -166,6 +166,12 @@ checksum = "9e1b586273c5702936fe7b7d6896644d8be71e6314cfe09d3167c95f712589e8"
 
 [[package]]
 name = "base64"
+version = "0.22.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "72b3254f16251a8381aa12e40e3c4d2f0199f8c6508fbecb9d91f575e0fbb8c6"
+
+[[package]]
+name = "base64"
 version = "0.23.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ac07cdecf99051d9a5238b80f35af32cdeba5b336e55d957b318b50137e18da5"
@@ -764,8 +770,10 @@ dependencies = [
 
 [[package]]
 name = "docling"
-version = "2.2.3"
+version = "2.8.0"
 dependencies = [
+ "aes",
+ "base64 0.22.1",
  "calamine",
  "csv",
  "djvu-rs",
@@ -777,6 +785,7 @@ dependencies = [
  "flate2",
  "image",
  "mail-parser",
+ "md-5",
  "pulldown-cmark",
  "quick-xml",
  "rayon",
@@ -786,6 +795,8 @@ dependencies = [
  "scraper",
  "serde",
  "serde_json",
+ "sha1",
+ "sha2 0.11.0",
  "snap",
  "ureq",
  "url",
@@ -794,7 +805,7 @@ dependencies = [
 
 [[package]]
 name = "docling-asr"
-version = "2.2.3"
+version = "2.8.0"
 dependencies = [
  "docling-core",
  "docling-onnx",
@@ -805,7 +816,7 @@ dependencies = [
 
 [[package]]
 name = "docling-core"
-version = "2.2.3"
+version = "2.8.0"
 dependencies = [
  "png 0.18.1",
  "pulldown-cmark",
@@ -816,7 +827,7 @@ dependencies = [
 
 [[package]]
 name = "docling-onnx"
-version = "2.2.3"
+version = "2.8.0"
 dependencies = [
  "docling-core",
  "libloading 0.8.9",
@@ -825,7 +836,7 @@ dependencies = [
 
 [[package]]
 name = "docling-pdf"
-version = "2.2.3"
+version = "2.8.0"
 dependencies = [
  "docling-core",
  "docling-onnx",
@@ -2920,6 +2931,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "170fb83ab34de17dc69aa7c67482b22218ddb85da56546f9bd6b929e32a05930"
 dependencies = [
  "stable_deref_trait",
+]
+
+[[package]]
+name = "sha1"
+version = "0.11.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "aacc4cc499359472b4abe1bf11d0b12e688af9a805fa5e3016f9a386dc2d0214"
+dependencies = [
+ "cfg-if",
+ "cpufeatures 0.3.1",
+ "digest 0.11.3",
 ]
 
 [[package]]

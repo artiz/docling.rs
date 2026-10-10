@@ -471,6 +471,17 @@ constructor; output options (`to`, `imageMode`, `artifactsDir`) are per call.
   default; each needs its model under `.models/` (`scripts/install/download_dependencies.sh --enrich`),
   a missing one warns and skips the pass. CodeFormula is an autoregressive VLM:
   expect seconds per code/formula region on CPU. Also read by `new Pipeline()`.
+- `doPictureOcr`: OCR the pictures embedded in non-PDF documents (DOCX/PPTX
+  screenshots, HTML figures, sampled video frames) with the OCR models and
+  attach the text to the picture as docling's description annotation (#645):
+  Markdown prints it between the caption and the image placeholder, the JSON
+  picture item carries `meta.description` + the `description` annotation,
+  chunks include it. `pictureOcrClasses` (comma-separated
+  DocumentFigureClassifier labels, e.g.
+  `"screenshot_from_computer,screenshot_from_manual"`) and
+  `pictureOcrMinSide` (px, default 32) filter which pictures are read;
+  `keepPictureImages: false` drops the image bytes after the pass. Off by
+  default — every default output is unchanged.
 - `asrModel` / `asrLang`: Whisper model preset and transcription language
   (`"auto"` default) for audio/video sources.
 - `encoding`: character encoding of text inputs (Markdown, CSV, AsciiDoc,

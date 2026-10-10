@@ -36,7 +36,7 @@ pub use doclang::inline_runs_from_markdown;
 pub use document::{
     inline_paragraph_node, CaptionParent, ContentLayer, ContentLayers, DoclingDocument, FieldItem,
     GraphCell, GraphLink, HtmlExportOptions, InlineRun, ListItemDclx, MarkdownExportOptions, Node,
-    PictureClass, PictureImage, Script, Table, TableCell, TableStructure,
+    PictureClass, PictureDescription, PictureImage, Script, Table, TableCell, TableStructure,
 };
 pub use encryption::EncryptionError;
 pub use json::code_language_label;

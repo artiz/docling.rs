@@ -496,6 +496,7 @@ mod picture_only {
                 caption_href: None,
                 image: None,
                 classification: None,
+                description: None,
                 caption_parent: Default::default(),
                 caption_location: None,
             }),

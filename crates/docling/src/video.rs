@@ -99,6 +99,7 @@ fn picture_node(frame: VideoFrame) -> Node {
             data: frame.png,
         }),
         classification: None,
+        description: None,
         caption_parent: Default::default(),
         caption_location: None,
     }

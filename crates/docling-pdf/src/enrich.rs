@@ -38,7 +38,7 @@ pub const CODE_FORMULA_EXPANSION: f32 = 0.18;
 
 /// The 26 classes of DocumentFigureClassifier-v2.5, indexed by model class id
 /// (`config.json` `id2label`).
-const PICTURE_CLASSES: [&str; 26] = [
+pub const PICTURE_CLASSES: [&str; 26] = [
     "logo",
     "photograph",
     "icon",

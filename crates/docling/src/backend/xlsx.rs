@@ -633,6 +633,7 @@ fn sheet_items<F: Fn(&str, &str) -> Vec<String> + Sync>(ctx: SheetCtx<'_, F>) ->
                                 caption_href: None,
                                 image: dimages.get(&rid).cloned(),
                                 classification: None,
+                                description: None,
                                 caption_parent: Default::default(),
                                 caption_location: None,
                             },

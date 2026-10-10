@@ -145,6 +145,15 @@ pub enum Node {
         /// Serialized as docling's `classification` annotation + `meta` field
         /// on the JSON picture item; Markdown/DocLang output is unaffected.
         classification: Option<Vec<PictureClass>>,
+        /// Text read off the embedded image by the picture-OCR enrichment
+        /// (#645) — docling's `PictureDescriptionData` annotation /
+        /// `meta.description`, which is where upstream's picture-description
+        /// models (VLM captioning) put their text too. JSON and DCLX carry it
+        /// structurally; Markdown prints it between the caption and the
+        /// image placeholder, where docling's picture serializer renders
+        /// annotations. `None` when the enrichment did not run or read no
+        /// text, so every default export stays unchanged.
+        description: Option<PictureDescription>,
         /// Where the caption item hangs in the JSON tree (#390); see
         /// [`CaptionParent`]. Markdown, DocLang and LaTeX ignore it.
         caption_parent: CaptionParent,
@@ -781,6 +790,17 @@ pub struct PictureClass {
     pub confidence: f32,
 }
 
+/// A picture's text annotation — docling-core's `PictureDescriptionData`
+/// (`text` + `provenance`), the one shape upstream uses for every model that
+/// writes prose about a picture. The picture-OCR enrichment (#645) fills it
+/// with the lines the OCR engine read off the image, `provenance` naming the
+/// engine (`ppocr` / `tesseract`) the way a VLM description names its model.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PictureDescription {
+    pub text: String,
+    pub provenance: String,
+}
+
 /// An extracted picture's raw encoded bytes plus its mimetype and pixel size —
 /// the docling.rs analogue of docling-core's `ImageRef`.
 #[derive(Debug, Clone, PartialEq)]
@@ -1265,6 +1285,41 @@ impl DoclingDocument {
 
     pub fn push(&mut self, node: Node) {
         self.nodes.push(node);
+    }
+
+    /// Visit every [`Node::Picture`] in the flat node stream, wherever it
+    /// nests — group children, table cell blocks, a picture's own
+    /// children, the located/prov/track/comment/furniture wrappers — so an
+    /// enrichment that reads the embedded images (picture OCR, #645) reaches
+    /// each one. The callback gets the picture node itself.
+    pub fn for_each_picture_mut(&mut self, f: &mut dyn FnMut(&mut Node)) {
+        fn walk(nodes: &mut [Node], f: &mut dyn FnMut(&mut Node)) {
+            for node in nodes {
+                match node {
+                    Node::Picture { .. } => f(node),
+                    Node::Group { children, .. } | Node::PictureChildren(children) => {
+                        walk(children, f)
+                    }
+                    Node::Located { inner, .. }
+                    | Node::Prov { inner, .. }
+                    | Node::Track { inner, .. }
+                    | Node::Furniture { inner, .. }
+                    | Node::Commented { inner, .. }
+                    | Node::DoclangOnly(inner) => walk(std::slice::from_mut(inner), f),
+                    Node::Table(t) => {
+                        if let Some(blocks) = t.cell_blocks.as_mut() {
+                            for row in blocks {
+                                for cell in row {
+                                    walk(cell, f);
+                                }
+                            }
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+        walk(&mut self.nodes, f);
     }
 
     /// Convenience: append a heading.

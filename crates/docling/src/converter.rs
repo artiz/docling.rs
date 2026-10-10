@@ -11,6 +11,26 @@ use crate::backend::{
     UsptoBackend, VisioBackend, WebVttBackend, WpdBackend, WpsBackend, XlsBackend, XlsxBackend,
 };
 
+/// Drop the embedded image bytes from every picture — the flat nodes and the
+/// item tree alike — for [`DocumentConverter::keep_picture_images`]`(false)`.
+/// The picture items stay (caption, OCR text, classification, geometry);
+/// only their payload goes, so the JSON writes no `image` and Markdown's
+/// embedded mode prints the placeholder.
+fn strip_picture_images(document: &mut docling_core::DoclingDocument) {
+    document.for_each_picture_mut(&mut |node| {
+        if let docling_core::Node::Picture { image, .. } = node {
+            *image = None;
+        }
+    });
+    if let Some(tree) = document.tree.as_mut() {
+        for item in tree.items.iter_mut() {
+            if let docling_core::tree::TreeKind::Picture { image, .. } = &mut item.kind {
+                *image = None;
+            }
+        }
+    }
+}
+
 /// Whether `text` begins with an XML prolog — an `<?xml …?>` declaration or a
 /// non-HTML `<!DOCTYPE …>`. Used to route XML documents that arrived with a
 /// text/Markdown extension (e.g. a JATS article saved as `.txt`) to the XML
@@ -151,6 +171,18 @@ pub struct DocumentConverter {
     /// `do_picture_classification` / `do_code_enrichment` /
     /// `do_formula_enrichment`).
     enrich: crate::EnrichmentOptions,
+    /// OCR the embedded pictures of non-PDF documents (#645). See
+    /// [`Self::do_picture_ocr`].
+    picture_ocr: bool,
+    /// DocumentFigureClassifier labels a picture must carry to be OCR'd;
+    /// empty = every picture. See [`Self::picture_ocr_classes`].
+    picture_ocr_classes: Vec<String>,
+    /// Smallest side (px) a picture must have to be OCR'd; `None` = the
+    /// environment's default. See [`Self::picture_ocr_min_side`].
+    picture_ocr_min_side: Option<u32>,
+    /// Keep the embedded image bytes on every picture (the default). See
+    /// [`Self::keep_picture_images`].
+    keep_picture_images: bool,
     /// 1-based inclusive PDF page window (#80). See [`Self::page_range`].
     page_range: Option<(usize, usize)>,
     /// OCR recognition language for scanned PDF/image pages (`en`/`ch`).
@@ -231,6 +263,10 @@ impl Default for DocumentConverter {
             video_frames: None,
             xbrl_taxonomy: None,
             enrich: crate::EnrichmentOptions::default(),
+            picture_ocr: false,
+            picture_ocr_classes: Vec::new(),
+            picture_ocr_min_side: None,
+            keep_picture_images: true,
             page_range: None,
             ocr_lang: None,
             encoding: None,
@@ -659,6 +695,164 @@ impl DocumentConverter {
         }
     }
 
+    /// The picture enrichment pass (#645): OCR the embedded pictures when
+    /// [`do_picture_ocr`](Self::do_picture_ocr) asks for it, then drop the
+    /// image bytes unless [`keep_picture_images`](Self::keep_picture_images)
+    /// keeps them. Runs on every conversion after the backend, before
+    /// [`finish_document`](Self::finish_document).
+    fn enrich_pictures(&self, document: &mut docling_core::DoclingDocument, format: InputFormat) {
+        if self.picture_ocr {
+            self.ocr_pictures(document, format);
+        }
+        if !self.keep_picture_images {
+            strip_picture_images(document);
+        }
+    }
+
+    /// The picture-OCR pass itself: PDF, image and METS pages already went
+    /// through the OCR pipeline, so their pictures are left alone; with OCR
+    /// disabled, or without the recognizer, the pictures keep no text and
+    /// one warning says why. The same image embedded twice — a DOCX walked
+    /// into both the flat nodes and the item tree, a slide master's logo on
+    /// every slide — is read once (cached by its bytes).
+    #[cfg(feature = "pdf")]
+    fn ocr_pictures(&self, document: &mut docling_core::DoclingDocument, format: InputFormat) {
+        use std::collections::HashMap;
+        use std::hash::{Hash, Hasher};
+
+        use docling_core::{tree::TreeKind, Node, PictureDescription, PictureImage};
+
+        if matches!(
+            format,
+            InputFormat::Pdf | InputFormat::Image | InputFormat::MetsGbs
+        ) {
+            return;
+        }
+        static WARNED: std::sync::Once = std::sync::Once::new();
+        if self.no_ocr || self.text_layer_only {
+            WARNED.call_once(|| {
+                eprintln!(
+                    "warning: picture OCR requested, but OCR is disabled (no_ocr / \
+                     text_layer_only); pictures keep no text"
+                );
+            });
+            return;
+        }
+        // The OCR models only — no layout, no TableFormer: the caller already
+        // knows each whole image is the picture. Lazily loaded on the first
+        // picture, so a document without one costs nothing.
+        let pipeline = docling_pdf::Pipeline::new().map(|p| {
+            p.no_ocr(true)
+                .no_table_former(true)
+                .ocr_lang(self.ocr_lang_choice())
+                .ocr_engine(self.ocr_engine_choice())
+                .tesseract_lang(self.tesseract_lang_choice())
+                .ocr_scale(self.ocr_scale_choice())
+        });
+        let mut pipeline = match pipeline {
+            Ok(p) => p,
+            Err(e) => {
+                WARNED.call_once(|| {
+                    eprintln!("warning: picture OCR unavailable ({e}); pictures keep no text");
+                });
+                return;
+            }
+        };
+        let min_side = self
+            .picture_ocr_min_side
+            .or_else(|| docling_core::env::parse::<u32>("DOCLING_RS_PICTURE_OCR_MIN_SIDE"))
+            .unwrap_or(32);
+        let classes = &self.picture_ocr_classes;
+        let mut cache: HashMap<u64, Option<PictureDescription>> = HashMap::new();
+        let mut read = |img: &PictureImage| -> Option<PictureDescription> {
+            let mut h = std::collections::hash_map::DefaultHasher::new();
+            img.data.hash(&mut h);
+            let key = h.finish();
+            if let Some(hit) = cache.get(&key) {
+                return hit.clone();
+            }
+            let text = (|| {
+                // The declared size is a hint; the decoded one is the truth
+                // (a 16 × 16 icon is skipped before any inference).
+                if img.width.min(img.height) < min_side && img.width * img.height > 0 {
+                    return None;
+                }
+                let decoded = match pipeline.decode_picture(&img.data) {
+                    Ok(d) => d,
+                    Err(e) => {
+                        docling_core::debug_log!("docling: picture OCR: undecodable image: {e}");
+                        return None;
+                    }
+                };
+                if decoded.width().min(decoded.height()) < min_side {
+                    return None;
+                }
+                // The loader warned once when the classifier is missing; an
+                // unclassifiable picture is read rather than silently skipped.
+                if !classes.is_empty() {
+                    if let Some(preds) = pipeline.classify_picture(&decoded) {
+                        let top = preds.first().map(|p| p.class_name.as_str());
+                        if !top.is_some_and(|t| classes.iter().any(|c| c == t)) {
+                            return None;
+                        }
+                    }
+                }
+                match pipeline.ocr_picture(&decoded) {
+                    Ok(Some(t)) => Some(PictureDescription {
+                        text: t.text,
+                        provenance: t.provenance.to_string(),
+                    }),
+                    Ok(None) => None,
+                    Err(e) => {
+                        eprintln!("warning: picture OCR failed: {e}");
+                        None
+                    }
+                }
+            })();
+            cache.insert(key, text.clone());
+            text
+        };
+        document.for_each_picture_mut(&mut |node| {
+            if let Node::Picture {
+                image: Some(img),
+                description,
+                ..
+            } = node
+            {
+                if description.is_none() {
+                    *description = read(img);
+                }
+            }
+        });
+        if let Some(tree) = document.tree.as_mut() {
+            for item in tree.items.iter_mut() {
+                if let TreeKind::Picture {
+                    image: Some(img),
+                    description,
+                    ..
+                } = &mut item.kind
+                {
+                    if description.is_none() {
+                        *description = read(img);
+                    }
+                }
+            }
+        }
+    }
+
+    /// Without the `pdf` feature there is no OCR engine to run: one warning,
+    /// the pictures keep no text.
+    #[cfg(not(feature = "pdf"))]
+    fn ocr_pictures(&self, _document: &mut docling_core::DoclingDocument, _format: InputFormat) {
+        static WARNED: std::sync::Once = std::sync::Once::new();
+        WARNED.call_once(|| {
+            eprintln!(
+                "warning: picture OCR requested, but this build has no OCR engine (rebuild \
+                 with the `pdf` feature); pictures keep no text"
+            );
+        });
+    }
+
     /// The copybook layout for EBCDIC sources (#252): docling's
     /// `EbcdicLayout` JSON, inline (a string starting with `{`) or as a file
     /// path. Without it, a path-loaded source looks for a
@@ -859,6 +1053,68 @@ impl DocumentConverter {
     /// model warns once and skips classification.
     pub fn do_picture_classification(mut self, enable: bool) -> Self {
         self.enrich.picture_classification = enable;
+        self
+    }
+
+    /// OCR the pictures embedded in non-PDF documents (#645) — a DOCX/PPTX
+    /// screenshot, an HTML figure, a sampled video frame — with the ML
+    /// pipeline's OCR models (the PP-OCR recognizer + the `ocr_det.onnx`
+    /// line detector when installed, or Tesseract under
+    /// [`ocr_engine`](Self::ocr_engine)), and attach the text to the picture
+    /// as docling's `PictureDescriptionData` annotation: Markdown prints it
+    /// between the caption and the image placeholder, JSON/DCLX carry it as
+    /// `meta.description` + the `description` annotation, the hybrid chunker
+    /// puts it in the picture's chunk. Off by default — every default export
+    /// is unchanged. Nothing is attached to a picture the engine reads no
+    /// text from (lines under `DOCLING_RS_OCR_TEXT_SCORE` are dropped as on a
+    /// scanned page). PDF, image and METS inputs are untouched: their pages
+    /// go through the OCR pipeline already. With [`no_ocr`](Self::no_ocr) /
+    /// [`text_layer_only`](Self::text_layer_only), or without the OCR model
+    /// (or the `pdf` feature), one warning and no text. See also
+    /// [`picture_ocr_classes`](Self::picture_ocr_classes),
+    /// [`picture_ocr_min_side`](Self::picture_ocr_min_side) and
+    /// [`keep_picture_images`](Self::keep_picture_images).
+    pub fn do_picture_ocr(mut self, enable: bool) -> Self {
+        self.picture_ocr = enable;
+        self
+    }
+
+    /// Only OCR the pictures the DocumentFigureClassifier labels as one of
+    /// `labels` (its 26 classes: `screenshot_from_computer`,
+    /// `screenshot_from_manual`, `logo`, `photograph`, …), judged by its top
+    /// prediction — the way to skip photos and logos on a slide deck while
+    /// reading its screenshots. Empty (the default) OCRs every picture that
+    /// passes the size floor. Needs `.models/picture_classifier.onnx`; a
+    /// missing model warns once and the filter is waived.
+    pub fn picture_ocr_classes<I, S>(mut self, labels: I) -> Self
+    where
+        I: IntoIterator<Item = S>,
+        S: Into<String>,
+    {
+        self.picture_ocr_classes = labels
+            .into_iter()
+            .map(|s| s.into().trim().to_ascii_lowercase())
+            .filter(|s| !s.is_empty())
+            .collect();
+        self
+    }
+
+    /// The smallest side, in pixels, a picture must have to be OCR'd:
+    /// bullets, icons and rules are skipped without decoding or inference.
+    /// Default 32 (`DOCLING_RS_PICTURE_OCR_MIN_SIDE` overrides it); `0`
+    /// reads everything.
+    pub fn picture_ocr_min_side(mut self, px: u32) -> Self {
+        self.picture_ocr_min_side = Some(px);
+        self
+    }
+
+    /// Whether the pictures keep their embedded image bytes (the default,
+    /// `true`): `false` drops them from every picture after the enrichment
+    /// pass, so a document whose images were only there to be read — a slide
+    /// deck of screenshots, the sampled frames of a video — exports a slim
+    /// JSON/DCLX and a placeholder-only Markdown while keeping the OCR text.
+    pub fn keep_picture_images(mut self, keep: bool) -> Self {
+        self.keep_picture_images = keep;
         self
     }
 
@@ -1346,6 +1602,7 @@ impl DocumentConverter {
                 )))
             }
         };
+        self.enrich_pictures(&mut document, source.format);
         self.finish_document(&mut document);
 
         let status = if errors.is_empty() {

@@ -148,6 +148,29 @@ pub struct ConverterOptions {
     /// of the formula placeholder comment. Same model and cost as
     /// `doCodeEnrichment`. Default `false`.
     pub do_formula_enrichment: Option<bool>,
+    /// OCR the pictures embedded in non-PDF documents — DOCX/PPTX
+    /// screenshots, HTML figures, sampled video frames — with the pipeline's
+    /// OCR models and attach the text to the picture as docling's description
+    /// annotation (#645): Markdown prints it between the caption and the
+    /// image placeholder, the JSON picture item carries `meta.description` +
+    /// the `description` annotation, chunks include it. Needs the OCR models
+    /// (`.models/ocr_rec*`, `ocr_det.onnx`; or Tesseract under `ocrEngine`);
+    /// with `skipOcr` / `textLayerOnly` it warns and reads nothing. PDF/image
+    /// pages are OCR'd by the pipeline itself. Default `false`.
+    pub do_picture_ocr: Option<bool>,
+    /// With `doPictureOcr`: only read the pictures the DocumentFigureClassifier
+    /// labels as one of these comma-separated classes
+    /// (`"screenshot_from_computer,screenshot_from_manual"`); unset = every
+    /// picture. Needs `.models/picture_classifier.onnx`.
+    pub picture_ocr_classes: Option<String>,
+    /// With `doPictureOcr`: skip pictures whose smaller side is under this
+    /// many pixels (icons, bullets). Default 32
+    /// (`DOCLING_RS_PICTURE_OCR_MIN_SIDE`).
+    pub picture_ocr_min_side: Option<u32>,
+    /// `false` drops the embedded image bytes from every picture after the
+    /// enrichment pass (#645): slim JSON/DCLX, placeholder-only Markdown, the
+    /// OCR text kept. Default `true`.
+    pub keep_picture_images: Option<bool>,
     /// `"standard"` (default) or `"vlm"` (#77): replace the whole ONNX stack —
     /// layout, OCR, TableFormer — with a remote OpenAI-compatible vision
     /// endpoint, which converts each rendered page on its own. PDF and image
@@ -315,6 +338,12 @@ pub struct ConvertOptions {
     pub do_picture_classification: Option<bool>,
     pub do_code_enrichment: Option<bool>,
     pub do_formula_enrichment: Option<bool>,
+    /// Picture OCR for non-PDF documents (#645) and its filters. See
+    /// [`ConverterOptions`]. Defaults `false` / unset / 32 / `true`.
+    pub do_picture_ocr: Option<bool>,
+    pub picture_ocr_classes: Option<String>,
+    pub picture_ocr_min_side: Option<u32>,
+    pub keep_picture_images: Option<bool>,
     /// `"standard"` (default) or `"vlm"` (#77): convert PDF/image pages
     /// through a remote OpenAI-compatible vision endpoint instead of the ONNX
     /// stack. The `vlm_*` options below take effect only under `"vlm"` and are

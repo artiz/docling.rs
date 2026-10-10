@@ -117,6 +117,7 @@ fn picture_assets_are_packaged_and_read_back() {
                 dpi: docling_core::PictureImage::DEFAULT_DPI,
             }),
             classification: None,
+            description: None,
             caption_parent: Default::default(),
             caption_location: None,
         });

@@ -534,6 +534,7 @@ pub(crate) fn emit(content: Content, doc: &mut DoclingDocument) {
                         .as_ref()
                         .and_then(|d| crate::backend::ooxml::picture_image(&pic.name, d.clone())),
                     classification: None,
+                    description: None,
                     caption_parent: Default::default(),
                     caption_location: None,
                 }

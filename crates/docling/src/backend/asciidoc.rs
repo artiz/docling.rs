@@ -617,6 +617,7 @@ impl Parser<'_> {
                 captions,
                 image: image.clone(),
                 classification: None,
+                description: None,
                 confidence: None,
                 chart: None,
                 dpi: None,
@@ -647,6 +648,7 @@ impl Parser<'_> {
             caption_href: None,
             image,
             classification: None,
+            description: None,
             caption_parent: Default::default(),
             caption_location: None,
         });

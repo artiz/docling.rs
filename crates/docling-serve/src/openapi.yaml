@@ -75,6 +75,10 @@ paths:
         - { $ref: "#/components/parameters/do_picture_classification" }
         - { $ref: "#/components/parameters/do_code_enrichment" }
         - { $ref: "#/components/parameters/do_formula_enrichment" }
+        - { $ref: "#/components/parameters/do_picture_ocr" }
+        - { $ref: "#/components/parameters/picture_ocr_classes" }
+        - { $ref: "#/components/parameters/picture_ocr_min_side" }
+        - { $ref: "#/components/parameters/keep_picture_images" }
         - { $ref: "#/components/parameters/fetch_images" }
         - { $ref: "#/components/parameters/skip_empty_cells" }
         - { $ref: "#/components/parameters/compact_tables" }
@@ -135,6 +139,10 @@ paths:
                 do_picture_classification: { type: boolean }
                 do_code_enrichment: { type: boolean }
                 do_formula_enrichment: { type: boolean }
+                do_picture_ocr: { type: boolean }
+                picture_ocr_classes: { type: string }
+                picture_ocr_min_side: { type: integer }
+                keep_picture_images: { type: boolean }
                 fetch_images: { type: boolean }
                 skip_empty_cells: { type: boolean }
                 compact_tables: { type: boolean }
@@ -753,6 +761,45 @@ components:
             `$$latex$$` instead of the formula placeholder comment, the JSON
             formula item carries the LaTeX in `text`. Same model and cost as
             `do_code_enrichment`.
+        do_picture_ocr:
+          type: boolean
+          default: false
+          description: >
+            Non-PDF documents — OCR the embedded pictures (DOCX/PPTX
+            screenshots, HTML figures, sampled video frames) with the
+            pipeline's OCR models and attach the text to the picture as
+            docling's description annotation (#645): Markdown prints it
+            between the caption and the image placeholder, the JSON picture
+            item carries `meta.description` + the `description` annotation,
+            chunks include it. Needs the OCR models on the server (the
+            recognizer pair; `ocr_det.onnx` for line detection; Tesseract
+            under `ocr_engine`); with `no_ocr` / `text_layer_only` or without
+            them, one warning and no text. PDF/image pages are OCR'd by the
+            pipeline itself and are left alone.
+        picture_ocr_classes:
+          type: string
+          description: >
+            With `do_picture_ocr`: only read the pictures the
+            DocumentFigureClassifier labels as one of these comma-separated
+            classes (`screenshot_from_computer,screenshot_from_manual`, …);
+            unset = every picture. An unknown label is rejected (422). Needs
+            `.models/picture_classifier.onnx`; a missing model waives the
+            filter with a warning.
+        picture_ocr_min_side:
+          type: integer
+          minimum: 0
+          default: 32
+          description: >
+            With `do_picture_ocr`: skip pictures whose smaller side is under
+            this many pixels — icons, bullets, rules. The server's
+            `DOCLING_RS_PICTURE_OCR_MIN_SIDE` sets the default.
+        keep_picture_images:
+          type: boolean
+          default: true
+          description: >
+            `false` drops the embedded image bytes from every picture after
+            the enrichment pass (#645): a slim JSON/DCLX and placeholder-only
+            Markdown, the OCR text and captions kept.
         ebcdic_layout:
           type: string
           description: >
@@ -1159,6 +1206,14 @@ components:
       { name: do_code_enrichment, in: query, schema: { type: boolean } }
     do_formula_enrichment:
       { name: do_formula_enrichment, in: query, schema: { type: boolean } }
+    do_picture_ocr:
+      { name: do_picture_ocr, in: query, schema: { type: boolean } }
+    picture_ocr_classes:
+      { name: picture_ocr_classes, in: query, schema: { type: string } }
+    picture_ocr_min_side:
+      { name: picture_ocr_min_side, in: query, schema: { type: integer } }
+    keep_picture_images:
+      { name: keep_picture_images, in: query, schema: { type: boolean } }
     fetch_images:
       { name: fetch_images, in: query, schema: { type: boolean } }
     skip_empty_cells:

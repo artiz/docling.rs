@@ -55,6 +55,7 @@ column.
 | `password` | string | the password of an encrypted PDF or Office document — .docx/.xlsx/.pptx/.doc/.xls/.ppt (#611, #625); `pdf_password`, docling's name, is read too |
 | `ocr_engine`, `ocr_lang`, `ocr_mode`, `ocr_scale`, `images_scale`, `page_images` | — | OCR engine (`ppocr` \| `tesseract`, #460) and language; which regions feed the OCR (#254); OCR / picture-crop scale in px per PDF point; keep page renders in the JSON (#520) |
 | `do_picture_classification`, `do_code_enrichment`, `do_formula_enrichment` | bool | Enrichment models (#423) |
+| `do_picture_ocr`, `picture_ocr_classes`, `picture_ocr_min_side`, `keep_picture_images` | bool, string, int, bool | Picture OCR for non-PDF documents (#645): read the embedded pictures' text into the picture's description annotation; comma-separated classifier labels / smallest side in px that gate which pictures are read; `keep_picture_images=false` drops the image bytes after |
 | `pipeline`, `vlm_endpoint`, `vlm_model`, `vlm_api_key`, `vlm_prompt`, `vlm_max_tokens` | — | `standard` (default) \| `vlm`: the remote vision-model pipeline (#77) and its settings |
 
 Unknown keys fail the conversion with a clear message — a typo never
