@@ -183,7 +183,12 @@ struct PyDocumentConverter {
 impl PyDocumentConverter {
     /// Engine knobs mapped from docling's converter/`PdfPipelineOptions` on the
     /// Python side:
-    /// * `fetch_images` — resolve remote/local `<img src>` for HTML/EPUB/MHTML/JATS.
+    /// * `fetch_images` — resolve remote/local `<img src>` for HTML/EPUB/MHTML/JATS
+    ///   (the alias of `image_sources="remote"`, #646).
+    /// * `image_sources` / `image_hosts` / `max_image_bytes` / `max_images` /
+    ///   `max_image_total_mb` / `min_image_bytes` — the image-source policy
+    ///   (#646): which references resolve (`none` | `embedded` | `local` |
+    ///   `remote`), the remote host allow-list, the per-document limits.
     /// * `password` — the password of an encrypted PDF (docling's
     ///   `--pdf-password` / `PdfBackendOptions.password`, #611) or Office
     ///   document (.docx/.xlsx/.pptx/.doc/.xls/.ppt, #625). `pdf_password`,
@@ -288,6 +293,12 @@ impl PyDocumentConverter {
     #[new]
     #[pyo3(signature = (
         fetch_images = false,
+        image_sources = None,
+        image_hosts = None,
+        max_image_bytes = None,
+        max_images = None,
+        max_image_total_mb = None,
+        min_image_bytes = None,
         do_ocr = true,
         force_full_page_ocr = false,
         do_table_structure = true,
@@ -340,6 +351,12 @@ impl PyDocumentConverter {
     #[allow(clippy::too_many_arguments)]
     fn new(
         fetch_images: bool,
+        image_sources: Option<String>,
+        image_hosts: Option<Vec<String>>,
+        max_image_bytes: Option<u64>,
+        max_images: Option<usize>,
+        max_image_total_mb: Option<u64>,
+        min_image_bytes: Option<u64>,
         do_ocr: bool,
         force_full_page_ocr: bool,
         do_table_structure: bool,
@@ -403,6 +420,12 @@ impl PyDocumentConverter {
         // this surface, so they stay unset.
         let opts = docling::ConvertOptions {
             fetch_images: Some(fetch_images),
+            image_sources,
+            image_hosts,
+            max_image_bytes,
+            max_images,
+            max_image_total_mb,
+            min_image_bytes,
             list_attachments: Some(list_attachments),
             skip_empty_cells: Some(skip_empty_cells),
             compact_tables: Some(compact_tables),

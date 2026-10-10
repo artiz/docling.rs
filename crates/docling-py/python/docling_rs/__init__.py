@@ -200,7 +200,27 @@ class DocumentConverter:
       assembly (docling's ``HeadingHierarchyModel``, #302 — bookmarks >
       numbering > font style). Also accepted docling-shaped, via
       ``pipeline_options.heading_hierarchy_options.enabled``.
-    * ``fetch_images`` — resolve remote/local ``<img src>`` for HTML/EPUB.
+    * ``fetch_images`` — resolve remote/local ``<img src>`` for HTML/EPUB
+      (the alias of ``image_sources="remote"``; #646).
+    * ``image_sources`` — which image references resolve (#646): ``"none"``
+      (default — every picture a placeholder), ``"embedded"`` (``data:`` URIs
+      and parts of the same container: EPUB/MHTML entries, an email's
+      ``cid:`` attachments — no filesystem, no network), ``"local"`` (plus
+      files under the source file's directory, never an absolute path or one
+      that escapes it), ``"remote"`` (plus ``http(s)`` fetches). HTML, EPUB,
+      MHTML, JATS, AsciiDoc, ODF, Markdown (``![…](data:…)`` and inline
+      ``<img>``) and email bodies (``cid:`` images, in body order).
+    * ``image_hosts`` — hosts a ``remote`` image fetch may reach (a list or a
+      comma-separated string; exact names or ``*.suffix`` wildcards); redirects
+      are held to the same list. Default: any host.
+    * ``max_image_bytes`` / ``max_images`` / ``max_image_total_mb`` /
+      ``min_image_bytes`` — the per-document image limits (#646): the largest
+      image that resolves (32 MiB), how many resolve (unlimited), their total
+      in MiB (unlimited), the smallest that resolves (0 — raise it to skip
+      spacer / tracking pixels). Over a limit a picture stays a placeholder;
+      the conversion never fails. Defaults come from ``DOCLING_RS_MAX_IMAGE_BYTES``,
+      ``DOCLING_RS_MAX_IMAGES``, ``DOCLING_RS_MAX_IMAGE_TOTAL_MB``,
+      ``DOCLING_RS_MIN_IMAGE_BYTES``.
     * ``use_web_browser`` — render HTML via headless Chrome before parsing.
     * ``ocr_mode`` / ``ocr_scale`` — docling 2.116's ``OcrMode`` (which regions
       feed the OCR; ``"full_page"``/``"layout_regions"`` discard the embedded
@@ -336,6 +356,12 @@ class DocumentConverter:
         redact_pattern: Optional[Union[str, Iterable[str]]] = None,
         redact_images: Optional[str] = None,
         fetch_images: bool = False,
+        image_sources: Optional[str] = None,
+        image_hosts: Optional[Union[str, Iterable[str]]] = None,
+        max_image_bytes: Optional[int] = None,
+        max_images: Optional[int] = None,
+        max_image_total_mb: Optional[int] = None,
+        min_image_bytes: Optional[int] = None,
         use_web_browser: bool = False,
         ocr_lang: Optional[str] = None,
         ocr_mode: Optional[str] = None,
@@ -521,8 +547,19 @@ class DocumentConverter:
                     # explicit environment override.
                     os.environ.setdefault("DOCLING_RS_PDF_THREADS", str(acc.num_threads))
 
+        if isinstance(image_hosts, str):
+            image_hosts = [h.strip() for h in image_hosts.split(",") if h.strip()]
+        elif image_hosts is not None:
+            image_hosts = [str(h) for h in image_hosts]
+
         self._inner = _NativeDocumentConverter(
             fetch_images=fetch_images,
+            image_sources=image_sources,
+            image_hosts=image_hosts,
+            max_image_bytes=max_image_bytes,
+            max_images=max_images,
+            max_image_total_mb=max_image_total_mb,
+            min_image_bytes=min_image_bytes,
             do_ocr=do_ocr,
             force_full_page_ocr=force_full_page_ocr,
             no_text_panels=no_text_panels,

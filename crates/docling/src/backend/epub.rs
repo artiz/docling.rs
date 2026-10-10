@@ -10,6 +10,7 @@ use std::collections::HashMap;
 
 use roxmltree::Document;
 
+use crate::backend::images::ImagePolicy;
 use crate::backend::ooxml::{self, Package};
 use crate::backend::{
     convert_html, maybe_prerender_html, DeclarativeBackend, MapImageResolver, NoFetch,
@@ -20,9 +21,11 @@ use docling_core::{DoclingDocument, PictureImage};
 
 #[derive(Default)]
 pub struct EpubBackend {
-    /// When set, `<img>` sources are read out of the EPUB archive and embedded
-    /// as [`PictureImage`]s (the analogue of docling's image fetch).
-    pub fetch_images: bool,
+    /// Under [`ImageSources::Embedded`] and above, `<img>` sources are read
+    /// out of the EPUB archive and embedded as [`PictureImage`]s (the
+    /// analogue of docling's image fetch; #646 — an archive entry is a part
+    /// of the same container, no filesystem or network is touched).
+    pub images: ImagePolicy,
     /// Pre-render the concatenated spine HTML in a headless browser first
     /// (mirrors [`crate::DocumentConverter::use_web_browser`]).
     pub use_web_browser: bool,
@@ -76,7 +79,7 @@ impl DeclarativeBackend for EpubBackend {
             });
             // Each `<img src>` is relative to *this* spine file's directory, so
             // resolve + extract here, before the bodies are flattened together.
-            let body = if self.fetch_images {
+            let body = if self.images.sources.embedded() {
                 let dir = file.rsplit_once('/').map(|(d, _)| d).unwrap_or("");
                 extract_images(&body, dir, &mut pkg, &mut images)
             } else {
@@ -88,8 +91,12 @@ impl DeclarativeBackend for EpubBackend {
         combined.push_str("\n</body></html>");
 
         let combined = maybe_prerender_html(&combined, self.use_web_browser)?;
-        let doc = if self.fetch_images {
-            convert_html(&source.name, &combined, &MapImageResolver::new(images))
+        let doc = if self.images.sources.embedded() {
+            convert_html(
+                &source.name,
+                &combined,
+                &MapImageResolver::new(images, &self.images),
+            )
         } else {
             convert_html(&source.name, &combined, &NoFetch)
         };
@@ -275,6 +282,7 @@ fn percent_decode(s: &str) -> String {
 
 #[cfg(test)]
 mod tests {
+    use crate::backend::images::ImageSources;
     #[test]
     fn utf16_content_documents_decode_behind_their_bom() {
         // docling#4351: a UTF-16 content document used to be dropped.
@@ -429,17 +437,12 @@ mod tests {
         };
 
         // Default: pictures stay placeholders (no archive reads).
-        let plain = EpubBackend {
-            fetch_images: false,
-            ..Default::default()
-        }
-        .convert(&src)
-        .unwrap();
+        let plain = EpubBackend::default().convert(&src).unwrap();
         assert!(embedded(&plain).is_empty());
 
         // Fetching: real image bytes are pulled out of the archive.
         let fetched = EpubBackend {
-            fetch_images: true,
+            images: ImagePolicy::new(ImageSources::Embedded),
             ..Default::default()
         }
         .convert(&src)

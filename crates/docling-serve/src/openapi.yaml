@@ -85,6 +85,12 @@ paths:
         - { $ref: "#/components/parameters/redact_pattern" }
         - { $ref: "#/components/parameters/redact_images" }
         - { $ref: "#/components/parameters/fetch_images" }
+        - { $ref: "#/components/parameters/image_sources" }
+        - { $ref: "#/components/parameters/image_hosts" }
+        - { $ref: "#/components/parameters/max_images" }
+        - { $ref: "#/components/parameters/max_image_bytes" }
+        - { $ref: "#/components/parameters/max_image_total_mb" }
+        - { $ref: "#/components/parameters/min_image_bytes" }
         - { $ref: "#/components/parameters/skip_empty_cells" }
         - { $ref: "#/components/parameters/compact_tables" }
         - { $ref: "#/components/parameters/page_break_placeholder" }
@@ -157,6 +163,12 @@ paths:
                 redact_pattern: { type: string }
                 redact_images: { type: string }
                 fetch_images: { type: boolean }
+                image_sources: { $ref: "#/components/schemas/ImageSources" }
+                image_hosts: { oneOf: [{ type: array, items: { type: string } }, { type: string }] }
+                max_images: { type: integer, minimum: 0 }
+                max_image_bytes: { type: integer, minimum: 1 }
+                max_image_total_mb: { type: integer, minimum: 0 }
+                min_image_bytes: { type: integer, minimum: 0 }
                 skip_empty_cells: { type: boolean }
                 compact_tables: { type: boolean }
                 list_attachments: { type: boolean }
@@ -512,7 +524,10 @@ paths:
                 properties:
                   allow_url_fetch:
                     type: boolean
-                    description: Whether URL inputs and `fetch_images` are enabled.
+                    description: Whether URL inputs and `fetch_images` / `image_sources=remote` are enabled.
+                  allow_local_images:
+                    type: boolean
+                    description: Whether `image_sources=local` is accepted (#646, `--allow-local-images`).
                   models:
                     type: array
                     description: >
@@ -879,7 +894,44 @@ components:
           default: false
           description: >
             HTML/EPUB — resolve external `<img src>` and embed the bytes.
-            Outbound fetch; honored only with `--allow-url-fetch`.
+            Outbound fetch; honored only with `--allow-url-fetch`. The alias
+            of `image_sources: remote` (#646).
+        image_sources:
+          allOf: [{ $ref: "#/components/schemas/ImageSources" }]
+          description: >
+            Which image references resolve (#646): `none` (default — every
+            picture a placeholder), `embedded` (`data:` URIs and parts of the
+            same container: EPUB/MHTML entries, email `cid:` attachments — no
+            filesystem, no network), `local` (plus files next to a
+            server-side source; needs `--allow-local-images`, 400 otherwise),
+            `remote` (plus `http(s)` fetches; without `--allow-url-fetch` the
+            request is held to `embedded`). HTML, EPUB, MHTML, JATS, AsciiDoc,
+            ODF, Markdown and email bodies.
+        image_hosts:
+          oneOf:
+            - { type: array, items: { type: string } }
+            - { type: string }
+          description: >
+            Hosts a `remote` image fetch may reach (#646): exact names or
+            `*.suffix` wildcards, as a list or a comma-separated string;
+            unset = any host. Redirects are held to the same list; the
+            private/loopback address block applies regardless.
+        max_images:
+          type: integer
+          minimum: 0
+          description: Images resolved per document; the rest stay placeholders (#646; default unlimited, `DOCLING_RS_MAX_IMAGES`).
+        max_image_bytes:
+          type: integer
+          minimum: 1
+          description: Largest image that resolves, in bytes (#646; default 32 MiB, `DOCLING_RS_MAX_IMAGE_BYTES`).
+        max_image_total_mb:
+          type: integer
+          minimum: 0
+          description: Total resolved image bytes per document, in MiB (#646; default unlimited, `DOCLING_RS_MAX_IMAGE_TOTAL_MB`).
+        min_image_bytes:
+          type: integer
+          minimum: 0
+          description: Smallest image that resolves, in bytes — skips spacer / tracking pixels (#646; default 0, `DOCLING_RS_MIN_IMAGE_BYTES`).
         skip_empty_cells:
           type: boolean
           default: false
@@ -1119,6 +1171,11 @@ components:
         request-supplied `vlm_endpoint` needs `--allow-url-fetch` (SSRF
         surface) and must not resolve to a private address. With `standard`
         the `vlm_*` options are ignored.
+    ImageSources:
+      type: string
+      enum: [none, embedded, local, remote]
+      default: none
+      description: The image-source tier (#646); see `image_sources`.
     Chunker:
       type: string
       enum: [hierarchical, hybrid]
@@ -1314,6 +1371,18 @@ components:
       { name: redact_images, in: query, schema: { type: string } }
     fetch_images:
       { name: fetch_images, in: query, schema: { type: boolean } }
+    image_sources:
+      { name: image_sources, in: query, schema: { $ref: "#/components/schemas/ImageSources" } }
+    image_hosts:
+      { name: image_hosts, in: query, schema: { type: string }, description: "Comma-separated host allow-list (#646)." }
+    max_images:
+      { name: max_images, in: query, schema: { type: integer, minimum: 0 } }
+    max_image_bytes:
+      { name: max_image_bytes, in: query, schema: { type: integer, minimum: 1 } }
+    max_image_total_mb:
+      { name: max_image_total_mb, in: query, schema: { type: integer, minimum: 0 } }
+    min_image_bytes:
+      { name: min_image_bytes, in: query, schema: { type: integer, minimum: 0 } }
     skip_empty_cells:
       { name: skip_empty_cells, in: query, schema: { type: boolean } }
     compact_tables:

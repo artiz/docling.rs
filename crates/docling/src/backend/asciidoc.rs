@@ -19,7 +19,7 @@
 use docling_core::tree::{Formatting, ItemTree, ListMeta, TreeKind};
 use docling_core::{DoclingDocument, Node, Table, TableCell};
 
-use crate::backend::images::{FsImageResolver, ImageResolver, NoFetch};
+use crate::backend::images::{FsImageResolver, ImagePolicy, ImageResolver, ImageSources, NoFetch};
 use crate::backend::markdown::escape_text;
 use crate::backend::DeclarativeBackend;
 use crate::error::ConversionError;
@@ -55,21 +55,22 @@ const SOURCE_ATTR: &str = r"^\[source(?:,\s*([\w+#.-]+))?[^\]]*\]$";
 
 #[derive(Default)]
 pub struct AsciiDocBackend {
-    /// When set, an `image::target[]` target is resolved to the actual image
-    /// bytes — docling's `AsciiDocBackendOptions.fetch_images` together with
+    /// Which `image::target[]` targets resolve to the actual image bytes
+    /// (#646) — docling's `AsciiDocBackendOptions.fetch_images` together with
     /// its `enable_local_fetch`/`enable_remote_fetch` (docling#4156). Off by
     /// default, matching docling: a picture is then emitted with no image at
     /// all (until 2.126 docling fabricated a `file://…` `ImageRef` here).
-    pub fetch_images: bool,
+    pub images: ImagePolicy,
 }
 
 impl DeclarativeBackend for AsciiDocBackend {
     fn convert(&self, source: &SourceDocument) -> Result<DoclingDocument, ConversionError> {
         let text = source.text()?;
-        if self.fetch_images {
+        if self.images.sources != ImageSources::None {
             let resolver = FsImageResolver::new(
                 source.base_dir().map(|p| p.to_path_buf()),
                 source.base_url.clone(),
+                self.images.clone(),
             );
             Ok(parse(&text, &source.name, &resolver))
         } else {
@@ -1159,9 +1160,11 @@ mod tests {
         // used to get a fabricated `file://…` ImageRef).
         assert!(picture(AsciiDocBackend::default().convert(&source).unwrap()).is_none());
         let fetched = picture(
-            AsciiDocBackend { fetch_images: true }
-                .convert(&source)
-                .unwrap(),
+            AsciiDocBackend {
+                images: ImagePolicy::new(ImageSources::Local),
+            }
+            .convert(&source)
+            .unwrap(),
         )
         .expect("the local image is read");
         assert_eq!((fetched.width, fetched.height), (2, 3));

@@ -449,6 +449,18 @@ constructor; output options (`to`, `imageMode`, `artifactsDir`) are per call.
   legacy output (Markdown only).
 - `fetchImages`: for HTML/EPUB, resolve and embed external `<img src>`. Off by
   default; fetches http(s) URLs over the network — enable only for trusted input.
+  The alias of `imageSources: "remote"`.
+- `imageSources` (#646): which image references resolve — `"none"` (default),
+  `"embedded"` (`data:` URIs and parts of the same container: EPUB/MHTML entries,
+  an email's `cid:` attachments; no filesystem, no network — the tier for
+  untrusted input), `"local"` (plus files under the source file's directory,
+  never an absolute path or one that escapes it), `"remote"` (plus http(s)
+  fetches). HTML, EPUB, MHTML, JATS, AsciiDoc, ODF, Markdown (`![…](data:…)`,
+  inline `<img>`) and email bodies (`cid:` images in body order).
+  `imageHosts` (exact names or `*.suffix`) confines `"remote"` to listed hosts,
+  redirects included; `maxImageBytes` (32 MiB), `maxImages`, `maxImageTotalMb`
+  and `minImageBytes` bound what a document may make the process hold — over a
+  limit a picture stays a placeholder, the conversion never fails.
 - `allowedFormats`: restrict the converter to these format ids/extensions.
 - `pages`: convert only this PDF page window, `"A-B"` or `"N"` (1-based inclusive).
 - `ocrLang`: OCR recognition language for scanned pages, `"en"` (default) or

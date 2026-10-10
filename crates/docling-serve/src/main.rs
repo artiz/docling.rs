@@ -2,7 +2,7 @@
 //!
 //! Usage: docling-serve [--addr HOST:PORT] [--concurrency N] [--max-body-mb N]
 //!                      [--queue-size N] [--result-ttl SECS] [--max-memory-mb N]
-//!                      [--warmup] [--allow-url-fetch] [--strict] [--api-key KEY]
+//!                      [--warmup] [--allow-url-fetch] [--allow-local-images] [--strict] [--api-key KEY]
 //!
 //!   --addr HOST:PORT  bind address (default: 127.0.0.1:5001). Bind 0.0.0.0
 //!                     only behind a trusted proxy.
@@ -18,6 +18,10 @@
 //!   --allow-url-fetch accept {"url": …} inputs (outbound fetch — SSRF surface;
 //!                     off by default). A private/loopback/link-local IP guard
 //!                     applies even when enabled.
+//!   --allow-local-images
+//!                      accept image_sources=local (#646): a request may then
+//!                      make the converter read image files next to a
+//!                      server-side source. Off by default (400).
 //!   --no-url-fetch    accepted for compatibility (URL fetch is now off by
 //!                     default; this is a no-op)
 //!   --strict          default to the cleaner strict Markdown dialect
@@ -73,6 +77,9 @@ fn main() -> ExitCode {
             },
             "--warmup" => cfg.warmup = true,
             "--allow-url-fetch" => cfg.allow_url_fetch = true,
+            // #646: `image_sources=local` reads files next to a server-side
+            // source; an operator opts in.
+            "--allow-local-images" => cfg.allow_local_images = true,
             // URL fetch is off by default now; keep the old flag as a no-op so
             // existing invocations don't break.
             "--no-url-fetch" => cfg.allow_url_fetch = false,
@@ -107,7 +114,7 @@ fn usage(err: &str) -> ExitCode {
         eprintln!("error: {err}");
     }
     eprintln!(
-        "usage: docling-serve [--addr HOST:PORT] [--concurrency N] [--max-body-mb N] [--queue-size N] [--result-ttl SECS] [--max-memory-mb N] [--warmup] [--allow-url-fetch] [--strict] [--api-key KEY]"
+        "usage: docling-serve [--addr HOST:PORT] [--concurrency N] [--max-body-mb N] [--queue-size N] [--result-ttl SECS] [--max-memory-mb N] [--warmup] [--allow-url-fetch] [--allow-local-images] [--strict] [--api-key KEY]"
     );
     if err.is_empty() {
         ExitCode::SUCCESS

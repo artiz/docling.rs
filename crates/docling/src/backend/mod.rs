@@ -43,7 +43,7 @@ mod email;
 mod epub;
 mod html;
 mod html_tree;
-pub(crate) mod images;
+pub mod images;
 mod interchange;
 mod iwork;
 mod iwork_charts;

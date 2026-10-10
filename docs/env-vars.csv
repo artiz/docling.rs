@@ -21,6 +21,10 @@ DOCLING_TESSERACT,subprocess,crates/docling-pdf/src/tesseract.rs
 DOCLING_RS_VLM_API_KEY,secret,crates/docling/src/vlm.rs
 DOCLING_SERVE_API_KEY,secret,crates/docling-serve/src/lib.rs
 DOCLING_RS_ALLOW_PRIVATE_IP_FETCH,network,crates/docling/src/backend/images.rs
+DOCLING_RS_MAX_IMAGE_BYTES,limit,crates/docling/src/backend/images.rs
+DOCLING_RS_MAX_IMAGES,limit,crates/docling/src/backend/images.rs
+DOCLING_RS_MAX_IMAGE_TOTAL_MB,limit,crates/docling/src/backend/images.rs
+DOCLING_RS_MIN_IMAGE_BYTES,limit,crates/docling/src/backend/images.rs
 DOCLING_RS_VLM_ENDPOINT,network,crates/docling/src/vlm.rs
 DOCLING_RS_VLM_MODEL,network,crates/docling/src/options.rs
 DOCLING_ASR_ADDED_TOKENS,model path,crates/docling-asr/src/lib.rs

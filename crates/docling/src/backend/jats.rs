@@ -14,6 +14,7 @@ use std::path::{Path, PathBuf};
 
 use roxmltree::{Document, Node as XmlNode, ParsingOptions};
 
+use crate::backend::images::ImagePolicy;
 use crate::backend::markdown::escape_text;
 use crate::backend::DeclarativeBackend;
 use crate::error::ConversionError;
@@ -24,14 +25,14 @@ use docling_core::{
     TableStructure,
 };
 
-/// JATS backend. `fetch_images` is docling's `JatsBackendOptions.fetch_images`
+/// JATS backend. `images` at `Local` or above is docling's `JatsBackendOptions.fetch_images`
 /// together with its `enable_local_fetch` (docling#4041, #392): when set, a
 /// `<fig>`'s `<graphic xlink:href>` is read from disk relative to the source
 /// file's directory and embedded; off (the default), a figure is a picture
 /// with no image, as docling emits it.
 #[derive(Default)]
 pub struct JatsBackend {
-    pub fetch_images: bool,
+    pub images: ImagePolicy,
 }
 
 const SKIP_TEXT: &[&str] = &["term", "disp-formula", "inline-formula"];
@@ -320,7 +321,7 @@ impl DeclarativeBackend for JatsBackend {
         // (docling's `base_path`: its `source_uri` or the path it was opened
         // from) — an in-memory source, or one fetched from a URL, embeds none,
         // as docling's does (`_load_figure_image` requires a local base).
-        let fig_base = if self.fetch_images {
+        let fig_base = if self.images.sources.local() {
             source.base_dir()
         } else {
             None
@@ -1755,6 +1756,7 @@ fn rstrip_dot_space(s: &mut String) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::backend::images::ImageSources;
     use crate::format::InputFormat;
 
     /// docling#4029: `<ext-link xlink:href>` makes its runs hyperlinks —
@@ -2198,7 +2200,20 @@ Sectioned.
         let path = dir.join("article.nxml");
         std::fs::write(&path, jats_body(body)).unwrap();
         let src = SourceDocument::from_file(&path).unwrap();
-        JatsBackend { fetch_images }.convert(&src).unwrap()
+        JatsBackend {
+            images: local_images(fetch_images),
+        }
+        .convert(&src)
+        .unwrap()
+    }
+
+    /// The `Local` tier (reads under the source directory) or none.
+    fn local_images(on: bool) -> ImagePolicy {
+        ImagePolicy::new(if on {
+            ImageSources::Local
+        } else {
+            ImageSources::None
+        })
     }
 
     fn picture_images(doc: &DoclingDocument) -> Vec<Option<&docling_core::PictureImage>> {
@@ -2257,20 +2272,30 @@ Sectioned.
         let body = r#"<fig><graphic xlink:href="figure.png"/></fig>"#;
         let xml = jats_body(body).into_bytes();
         let stream = SourceDocument::from_bytes("article.nxml", InputFormat::XmlJats, xml.clone());
-        let doc = JatsBackend { fetch_images: true }.convert(&stream).unwrap();
+        let doc = JatsBackend {
+            images: local_images(true),
+        }
+        .convert(&stream)
+        .unwrap();
         assert_eq!(picture_images(&doc), [None]);
 
         let remote = SourceDocument::from_bytes("article.nxml", InputFormat::XmlJats, xml.clone())
             .with_base_url("https://example.com/article.nxml");
-        let doc = JatsBackend { fetch_images: true }.convert(&remote).unwrap();
+        let doc = JatsBackend {
+            images: local_images(true),
+        }
+        .convert(&remote)
+        .unwrap();
         assert_eq!(picture_images(&doc), [None]);
 
         // docling's `source_uri` analogue: a path attached to a stream.
         let mut with_path = SourceDocument::from_bytes("article.nxml", InputFormat::XmlJats, xml);
         with_path.path = Some(dir.path().join("source.nxml"));
-        let doc = JatsBackend { fetch_images: true }
-            .convert(&with_path)
-            .unwrap();
+        let doc = JatsBackend {
+            images: local_images(true),
+        }
+        .convert(&with_path)
+        .unwrap();
         assert!(picture_images(&doc)[0].is_some());
     }
 

@@ -28,10 +28,11 @@
 //!   the synthetic `thismessage:/` origin — so `<img src>` values resolve
 //!   against it the same way `Content-Location` values do and meet in the
 //!   map, without a filesystem lookup;
-//! - archive images are embedded only under `fetch_images`, like docling's
-//!   `HTMLBackendOptions.fetch_images` (the default leaves every `<img>` a
-//!   placeholder, even one the archive carries), and a `data:` URI is decoded
-//!   by the same switch.
+//! - archive images are embedded only under [`ImageSources::Embedded`] and
+//!   above (#646; docling's `HTMLBackendOptions.fetch_images` — the default
+//!   leaves every `<img>` a placeholder, even one the archive carries), and
+//!   a `data:` URI is decoded by the same tier; an archive part is a part of
+//!   the same container, so no filesystem or network is touched.
 //!
 //! What docling does beyond this and we do not: fall back to its shared image
 //! loader (local files next to the archive, remote fetches) for a reference
@@ -45,7 +46,9 @@ use std::collections::HashMap;
 
 use mail_parser::{MessageParser, MessagePart, MimeHeaders, PartType};
 
-use crate::backend::images::{build_picture, from_data_uri, ImageResolver};
+use crate::backend::images::{
+    build_picture, from_data_uri, normalize_cid, Budget, ImagePolicy, ImageResolver, ImageSources,
+};
 use crate::backend::{convert_html, maybe_prerender_html, DeclarativeBackend};
 use crate::error::ConversionError;
 use crate::source::SourceDocument;
@@ -58,8 +61,8 @@ const SYNTHETIC_BASE: &str = "thismessage:/";
 #[derive(Default)]
 pub struct MhtmlBackend {
     /// Embed the archive's own image parts (and `data:` URIs) — docling's
-    /// `fetch_images`; off, every `<img>` stays a placeholder.
-    pub fetch_images: bool,
+    /// `Embedded`+ (#646); off, every `<img>` stays a placeholder.
+    pub images: ImagePolicy,
     /// Pre-render the extracted page HTML in a headless browser first (mirrors
     /// [`crate::DocumentConverter::use_web_browser`]).
     pub use_web_browser: bool,
@@ -81,7 +84,7 @@ impl DeclarativeBackend for MhtmlBackend {
 
         let base = resolve_base(parts[root].content_location().map(str::trim));
         let html = maybe_prerender_html(html, self.use_web_browser)?;
-        let images = if self.fetch_images {
+        let images = if self.images.sources.embedded() {
             collect_images(parts, scope, &base)
         } else {
             HashMap::new()
@@ -92,7 +95,8 @@ impl DeclarativeBackend for MhtmlBackend {
             &ArchiveResolver {
                 images,
                 base,
-                fetch_images: self.fetch_images,
+                sources: self.images.sources,
+                budget: Budget::new(self.images.limits),
             },
         ))
     }
@@ -178,16 +182,6 @@ fn find_html_root(parts: &[MessagePart], entity: usize) -> Option<usize> {
     }
 }
 
-/// docling's `_normalize_content_id`: `cid:<id>` lower-cased, whatever
-/// spelling (`<…>` brackets, a `cid:` prefix, case) the header or `src` used.
-fn normalize_cid(value: &str) -> String {
-    let mut id = value.trim();
-    if id.len() >= 4 && id[..4].eq_ignore_ascii_case("cid:") {
-        id = &id[4..];
-    }
-    format!("cid:{}", id.trim_matches(['<', '>']).to_lowercase())
-}
-
 /// The image parts of the `multipart/related` scope, under every key the page
 /// may address them by (docling's `_collect_mhtml_resources`). `None` marks a
 /// part whose bytes are not a decodable raster (SVG, an empty payload): the
@@ -232,24 +226,31 @@ fn collect_images(
 /// `_create_image_ref` do with `_mhtml_resources` set: a `cid:` reference by
 /// its normalized id, anything else joined onto the archive base and looked
 /// up in the map; a `data:` URI decoded inline (docling hands it to its
-/// shared loader, gated by the same `fetch_images`).
+/// shared loader, gated by the same tier). The per-document limits apply
+/// (#646).
 struct ArchiveResolver {
     images: HashMap<String, Option<PictureImage>>,
     base: String,
-    fetch_images: bool,
+    sources: ImageSources,
+    budget: Budget,
 }
 
 impl ImageResolver for ArchiveResolver {
     fn resolve(&self, src: &str) -> Option<PictureImage> {
+        if !self.sources.embedded() {
+            return None;
+        }
         let src = src.trim();
         if src.len() >= 4 && src[..4].eq_ignore_ascii_case("cid:") {
-            return self.images.get(&normalize_cid(src)).cloned().flatten();
+            return self
+                .budget
+                .filter(self.images.get(&normalize_cid(src)).cloned().flatten());
         }
         if let Some(pic) = self.images.get(&join_location(&self.base, src)) {
-            return pic.clone();
+            return self.budget.filter(pic.clone());
         }
-        if self.fetch_images && src.starts_with("data:") {
-            return from_data_uri(src);
+        if src.starts_with("data:") {
+            return self.budget.filter(from_data_uri(src));
         }
         None
     }
@@ -527,7 +528,11 @@ mod tests {
 
     fn convert(bytes: Vec<u8>, fetch_images: bool) -> Result<DoclingDocument, ConversionError> {
         MhtmlBackend {
-            fetch_images,
+            images: ImagePolicy::new(if fetch_images {
+                ImageSources::Embedded
+            } else {
+                ImageSources::None
+            }),
             use_web_browser: false,
         }
         .convert(&SourceDocument::from_bytes(

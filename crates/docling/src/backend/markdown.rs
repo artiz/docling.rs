@@ -15,6 +15,7 @@
 //! Table cells are plain text in both modes; pipe/newline escaping is done by
 //! the serializer.
 
+use crate::backend::images::{FsImageResolver, ImagePolicy, ImageResolver, ImageSources, NoFetch};
 use docling_core::{DoclingDocument, Node, Table};
 use pulldown_cmark::{CodeBlockKind, Event, HeadingLevel, Options, Parser, Tag, TagEnd};
 
@@ -26,6 +27,11 @@ use crate::source::SourceDocument;
 pub struct MarkdownBackend {
     /// Emit cleaner, more conformant Markdown rather than docling-legacy output.
     pub strict: bool,
+    /// Which image destinations resolve to bytes (#646): `data:` URIs under
+    /// `Embedded`, paths under the file's directory under `Local`, URLs
+    /// under `Remote`; the default resolves none (upstream fetches none).
+    /// A raw-HTML block's `<img>` goes through the same policy.
+    pub images: ImagePolicy,
 }
 
 /// Is this trimmed line a GFM table delimiter row (`--- | :---:` …)? Every
@@ -196,14 +202,28 @@ impl DeclarativeBackend for MarkdownBackend {
             }
         }
 
+        // One resolver (and one per-document budget) for both walks; the
+        // `None` tier keeps the no-op resolver, so the default path is the
+        // pre-#646 one.
+        let fs_resolver;
+        let images: &dyn ImageResolver = if self.images.sources == ImageSources::None {
+            &NoFetch
+        } else {
+            fs_resolver = FsImageResolver::new(
+                source.base_dir().map(|p| p.to_path_buf()),
+                source.base_url.clone(),
+                self.images.clone(),
+            );
+            &fs_resolver
+        };
         let mut doc = DoclingDocument::new(&source.name);
         let mut i = 0;
-        self.parse_blocks(&events, &mut i, &mut doc.nodes, 0, Stop::Eof, 0);
+        self.parse_blocks(&events, &mut i, &mut doc.nodes, 0, Stop::Eof, 0, images);
         // The JSON serializes docling's item tree — marko's CommonMark view of
         // the document, walked as upstream does ([`super::md_tree`]); the flat
         // nodes above stay the source for every other serializer. A document
         // with a raw HTML block keeps the flat export (see the module docs).
-        doc.tree = super::md_tree::build_tree(text);
+        doc.tree = super::md_tree::build_tree(text, images);
         Ok(doc)
     }
 }
@@ -247,6 +267,7 @@ impl MarkdownBackend {
     // Block structure
     // -----------------------------------------------------------------------
 
+    #[allow(clippy::too_many_arguments)]
     fn parse_blocks(
         &self,
         events: &[Event],
@@ -255,6 +276,7 @@ impl MarkdownBackend {
         list_level: u8,
         stop: Stop,
         depth: u16,
+        images: &dyn ImageResolver,
     ) {
         while *i < events.len() {
             match &events[*i] {
@@ -281,13 +303,21 @@ impl MarkdownBackend {
                         *i += 1;
                     }
                     consume_end(events, i);
-                    // docling parses embedded raw-HTML blocks; reuse the HTML backend.
-                    // Embedded HTML never fetches images.
-                    super::html::append_fragment(&html, out, &super::images::NoFetch);
+                    // docling parses embedded raw-HTML blocks; reuse the HTML
+                    // backend, under the same image policy (#646).
+                    super::html::append_fragment(&html, out, images);
                 }
                 Event::Start(Tag::BlockQuote(_)) => {
                     *i += 1;
-                    self.parse_blocks(events, i, out, list_level, Stop::BlockQuote, depth + 1);
+                    self.parse_blocks(
+                        events,
+                        i,
+                        out,
+                        list_level,
+                        Stop::BlockQuote,
+                        depth + 1,
+                        images,
+                    );
                 }
                 Event::Start(Tag::Paragraph) => {
                     // Legacy: a lone inline code span becomes a code block.
@@ -310,6 +340,18 @@ impl MarkdownBackend {
                         continue;
                     }
                     *i += 1;
+                    // A paragraph that is one image whose destination the
+                    // policy resolves (#646) is a picture with its bytes —
+                    // the flat chain's counterpart of the tree's
+                    // `TreeKind::Picture`, so `--images embedded` Markdown
+                    // shows it. Anything else (the default tier included)
+                    // stays the `![alt](dest)` text it always was.
+                    if let Some(node) = self.lone_image_picture(events, *i, images) {
+                        skip_subtree(events, i); // the image
+                        consume_end(events, i); // the paragraph
+                        out.push(node);
+                        continue;
+                    }
                     let runs = self.collect_inline(events, i, false);
                     consume_end(events, i);
                     let text = self.join_runs(&runs, false);
@@ -408,6 +450,37 @@ impl MarkdownBackend {
                 }
             }
         }
+    }
+
+    /// The picture for a paragraph whose only content is an image at
+    /// `events[start]` and whose destination `images` resolves; `None`
+    /// otherwise (the paragraph is parsed as text).
+    fn lone_image_picture(
+        &self,
+        events: &[Event],
+        start: usize,
+        images: &dyn ImageResolver,
+    ) -> Option<Node> {
+        let Some(Event::Start(Tag::Image { dest_url, .. })) = events.get(start) else {
+            return None;
+        };
+        let mut end = start;
+        skip_subtree(events, &mut end);
+        if !matches!(events.get(end), Some(Event::End(TagEnd::Paragraph))) {
+            return None;
+        }
+        let image = images.resolve(dest_url)?;
+        let mut j = start + 1;
+        let alt = self.join_runs(&self.collect_inline(events, &mut j, false), false);
+        Some(Node::Picture {
+            caption: Some(alt).filter(|a| !a.is_empty()),
+            caption_href: None,
+            image: Some(image),
+            classification: None,
+            description: None,
+            caption_parent: Default::default(),
+            caption_location: None,
+        })
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -902,12 +975,22 @@ mod tests {
 
     fn convert(md: &str) -> DoclingDocument {
         let src = SourceDocument::from_bytes("t", InputFormat::Md, md.as_bytes().to_vec());
-        MarkdownBackend { strict: false }.convert(&src).unwrap()
+        MarkdownBackend {
+            strict: false,
+            images: Default::default(),
+        }
+        .convert(&src)
+        .unwrap()
     }
 
     fn convert_strict(md: &str) -> DoclingDocument {
         let src = SourceDocument::from_bytes("t", InputFormat::Md, md.as_bytes().to_vec());
-        let mut doc = MarkdownBackend { strict: true }.convert(&src).unwrap();
+        let mut doc = MarkdownBackend {
+            strict: true,
+            images: Default::default(),
+        }
+        .convert(&src)
+        .unwrap();
         doc.strict_markdown = true;
         doc
     }

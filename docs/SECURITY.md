@@ -34,6 +34,7 @@ secret or network variable is missing from this page.
 |---------|-----------------|-----------|----------|
 | Standalone image decode (`convert_image`, METS) | ONNX-free decode with `image::Limits`: 30000 px per side, 256 MiB allocation — a few-KB image declaring 60000×60000 no longer allocates ~10 GB | the image fails with an error | `DOCLING_RS_MAX_IMAGE_PIXELS` |
 | Rendered PDF page bitmap | 15000 px per side — a few-hundred-byte PDF declaring a huge `MediaBox` would otherwise ask for a multi-GB bitmap | the page fails with an error before anything is allocated | `DOCLING_RS_MAX_RENDER_PIXELS` |
+| Resolved images (HTML/EPUB/MHTML/JATS/AsciiDoc/ODF/Markdown/email, #646) | 32 MiB per image (also the remote fetch's read cap); per document: images resolved, their total bytes, a size floor — unlimited / unlimited / 0 by default | the picture stays a placeholder, one warning per document; the conversion never fails | `DOCLING_RS_MAX_IMAGE_BYTES`, `DOCLING_RS_MAX_IMAGES`, `DOCLING_RS_MAX_IMAGE_TOTAL_MB`, `DOCLING_RS_MIN_IMAGE_BYTES` (and the `max_image_bytes` / `max_images` / `max_image_total_mb` / `min_image_bytes` options) |
 | DjVu scan render (OCR fallback) | the page is rendered into a 2500 px box | never fails: the bitmap is scaled down | `DOCLING_RS_DJVU_RENDER_PX` |
 | OOXML / EPUB part inflation (DOCX, PPTX, XLSX, EPUB) | 512 MiB per decompressed part (checked against the declared size, then while reading, so a lying header cannot get past it) | the part is **skipped** (never truncated, no message) and the conversion continues without it | `DOCLING_RS_MAX_PART_BYTES` |
 | ZIP inputs (a `.zip` given to the CLI or uploaded to serve, #557) | 10 000 entries · 256 MiB per entry · 1024 MiB in total · compression ratio 200 for an entry over 1 MiB — checked on the central directory before anything is inflated | the entry is skipped with its reason in the log; the other entries convert | `DOCLING_RS_ZIP_MAX_ENTRIES`, `DOCLING_RS_ZIP_MAX_ENTRY_MB`, `DOCLING_RS_ZIP_MAX_TOTAL_MB`, `DOCLING_RS_ZIP_MAX_RATIO` |
@@ -129,16 +130,27 @@ extracted to disk, so there is no zip-slip path.
 - A crafted PDF/image that panics inside the pipeline no longer **poisons**
   the shared mutex — the lock recovers, so one bad document can't turn into a
   permanent outage of the endpoint.
-- **`fetch_images` (`<img src>` resolution for HTML/EPUB)** is outbound fetch,
-  so it lives behind the **same `--allow-url-fetch` gate** as URL inputs: with
-  the flag off (the default) the option is ignored server-side (pictures stay
-  placeholders) and the web UI greys the checkbox. When enabled it carries the
-  same SSRF guard — a remote image whose host resolves to a private/loopback/
-  link-local address is skipped, and each fetch has a connect/overall timeout
-  (5 s / 20 s) plus a redirect cap, so one slow or hostile image can't hang the
-  conversion (and thus the server). `DOCLING_RS_ALLOW_PRIVATE_IP_FETCH=1` opts
-  out of the IP block-list for local/intranet image servers, same as the URL
-  fetch above.
+- **Image sources (`image_sources`, #646; `fetch_images` is its `remote`
+  alias)** — which `<img src>` / `![…](…)` / `cid:` references the
+  declarative backends resolve. `embedded` (`data:` URIs and parts of the
+  same container — EPUB/MHTML entries, email `cid:` attachments) touches
+  neither the filesystem nor the network and is the tier to run on untrusted
+  input. `local` reads files only **under the source file's directory**: a
+  relative path is canonicalized (so `..` and symlinks resolve) and must
+  still be inside; absolute paths and `file://` are never read (a document
+  naming `/etc/hosts` gets a placeholder). `remote` is outbound fetch, so it
+  lives behind the **same `--allow-url-fetch` gate** as URL inputs: with the
+  flag off (the default) the request is held to `embedded` (pictures that
+  need the network stay placeholders) and the web UI greys the checkbox; and
+  `local` is refused (400) unless the operator started the server with
+  `--allow-local-images`. A remote fetch carries the same SSRF guard — a host
+  resolving to a private/loopback/link-local address is skipped — plus an
+  optional **host allow-list** (`image_hosts`: exact names or `*.suffix`)
+  that every redirect hop is held to, a connect/overall timeout (5 s / 20 s)
+  and a redirect cap, so one slow or hostile image can't hang the conversion
+  (and thus the server). `DOCLING_RS_ALLOW_PRIVATE_IP_FETCH=1` opts out of the
+  IP block-list for local/intranet image servers, same as the URL fetch above;
+  a host on the allow-list does **not** lift it.
 - **`pipeline=vlm` with a request-supplied `vlm_endpoint`** (#304) points
   the server's outbound traffic (page images included) wherever the caller
   says, so it sits behind the **same `--allow-url-fetch` gate** and the same
