@@ -41,6 +41,8 @@ use std::fmt;
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 
+use docling_core::{CustomPattern, ImageRedaction, PiiKind, RedactionOptions, Replacement};
+
 use crate::DocumentConverter;
 
 /// Conversion options as every surface accepts them — see the module docs.
@@ -146,6 +148,21 @@ pub struct ConvertOptions {
     /// Keep the embedded image bytes on the pictures (#645); `false` drops
     /// them after the enrichment pass. Default `true`.
     pub keep_picture_images: Option<bool>,
+
+    // --- PII redaction (#621) ---------------------------------------------
+    /// Redact personal data from the converted document before any export.
+    pub redact_pii: Option<bool>,
+    /// What a span becomes: `label` (default) | `pseudonym` | `fixed:<text>`.
+    pub redact_mode: Option<String>,
+    /// Comma-separated kinds to redact (`email,phone,credit_card,iban,
+    /// ip_address,url_credentials,national_id,person,organization,
+    /// location,address`); unset = every kind.
+    pub redact_kinds: Option<String>,
+    /// Extra patterns, `NAME=REGEX` entries separated by newlines (the CLI
+    /// flag repeats); the match (or capture group 1) is redacted as `[NAME]`.
+    pub redact_pattern: Option<String>,
+    /// Embedded images and page renders: `drop` (default) | `box_out` | `keep`.
+    pub redact_images: Option<String>,
 
     // --- pipeline selection --------------------------------------------------
     /// `standard` (default) | `vlm` (#77): the remote vision model instead of
@@ -338,6 +355,11 @@ pub const OPTIONS: &[OptionInfo] = &[
         cli: Some("--no-picture-images"),
         ..row("keep_picture_images")
     },
+    row("redact_pii"),
+    row("redact_mode"),
+    row("redact_kinds"),
+    row("redact_pattern"),
+    row("redact_images"),
     row("pipeline"),
     row("vlm_endpoint"),
     row("vlm_model"),
@@ -454,6 +476,7 @@ impl ConvertOptions {
             self.ocr_lang()?;
         }
         self.picture_ocr_classes()?;
+        self.redaction()?;
         Ok(())
     }
 
@@ -485,6 +508,63 @@ impl ConvertOptions {
             ));
         }
         Ok(labels)
+    }
+
+    /// The parsed PII redaction request (#621): `None` unless `redact_pii`
+    /// is set; the mode, kinds, patterns and image mode checked — an
+    /// unknown spelling or an invalid regex is rejected here, naming the
+    /// field, rather than failing the conversion.
+    pub fn redaction(&self) -> Result<Option<RedactionOptions>, OptionsError> {
+        let mut opts = RedactionOptions::default();
+        if let Some(m) = self.redact_mode.as_deref().filter(|m| !m.trim().is_empty()) {
+            opts.replacement = Replacement::parse(m).ok_or_else(|| {
+                OptionsError::new(
+                    "redact_mode",
+                    format!(
+                        "redact_mode must be one of {} , got {m:?}",
+                        Replacement::ACCEPTED
+                    ),
+                )
+            })?;
+        }
+        if let Some(k) = self.redact_kinds.as_deref() {
+            for name in k.split(',').map(str::trim).filter(|s| !s.is_empty()) {
+                let kind = PiiKind::parse(name).ok_or_else(|| {
+                    OptionsError::new(
+                        "redact_kinds",
+                        format!(
+                            "redact_kinds: {name:?} is not a PII kind ({})",
+                            PiiKind::ACCEPTED
+                        ),
+                    )
+                })?;
+                if !opts.kinds.contains(&kind) {
+                    opts.kinds.push(kind);
+                }
+            }
+        }
+        if let Some(p) = self.redact_pattern.as_deref() {
+            opts.custom_patterns = p.lines().filter_map(CustomPattern::parse).collect();
+            // Compile now: the error names the field.
+            docling_core::redact::PatternDetector::new(&opts)
+                .map_err(|e| OptionsError::new("redact_pattern", e.0))?;
+        }
+        if let Some(i) = self
+            .redact_images
+            .as_deref()
+            .filter(|i| !i.trim().is_empty())
+        {
+            opts.images = ImageRedaction::parse(i).ok_or_else(|| {
+                OptionsError::new(
+                    "redact_images",
+                    format!(
+                        "redact_images must be one of {}, got {i:?}",
+                        ImageRedaction::ACCEPTED
+                    ),
+                )
+            })?;
+        }
+        Ok(self.redact_pii.unwrap_or(false).then_some(opts))
     }
 
     /// Validate, then set every given option on `base` — unset ones leave the
@@ -597,6 +677,9 @@ impl ConvertOptions {
         }
         if let Some(v) = self.keep_picture_images {
             c = c.keep_picture_images(v);
+        }
+        if self.redact_pii.is_some() {
+            c = c.redact_pii_opt(self.redaction()?);
         }
         Ok(c)
     }

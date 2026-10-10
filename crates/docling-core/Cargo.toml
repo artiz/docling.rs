@@ -28,6 +28,10 @@ sha2 = "0.10"
 # (`PIL img.tobytes()`), not the file bytes (pixel_digest.rs). Pure Rust, the
 # same version the `image` crate already pulls in.
 png = "0.18"
+# The PII redaction pass's pattern detector (#621): e-mail, phone, card,
+# IBAN, IP and national-ID shapes plus the caller's own expressions. Pure
+# Rust, compiles for wasm; the same crate the `docling` backends use.
+regex = "1.11"
 # HuggingFace tokenizer for the HybridChunker (behind the `chunking` feature);
 # same flags as docling-rag's optional embedder to keep one build of the crate.
 tokenizers = { version = "0.20", default-features = false, features = ["onig"], optional = true }

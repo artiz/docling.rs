@@ -159,7 +159,9 @@ class ConversionResult:
     """docling's ``ConversionResult``: ``.document`` (a genuine
     :class:`~docling_core.types.doc.DoclingDocument`), ``.status``,
     ``.input`` and ``.errors`` (non-empty exactly when the status is
-    ``PARTIAL_SUCCESS``)."""
+    ``PARTIAL_SUCCESS``). ``.redaction`` (a docling.rs extension, #621) is
+    the PII pass's counts per label — ``{"EMAIL": 2, "PHONE": 1}`` — when
+    the converter was built with ``redact_pii=True``, else ``None``."""
 
     def __init__(
         self,
@@ -167,11 +169,13 @@ class ConversionResult:
         input_name: str,
         document: DoclingDocument,
         errors: Iterable[ErrorItem] = (),
+        redaction: Optional[Dict[str, int]] = None,
     ):
         self.status = ConversionStatus(status)
         self.document = document
         self.input = InputDocument(file=Path(input_name))
         self.errors = list(errors)
+        self.redaction = dict(redaction) if redaction is not None else None
 
 
 class DocumentConverter:
@@ -311,6 +315,11 @@ class DocumentConverter:
         picture_ocr_classes: Optional[Union[str, Iterable[str]]] = None,
         picture_ocr_min_side: Optional[int] = None,
         keep_picture_images: bool = True,
+        redact_pii: bool = False,
+        redact_mode: Optional[str] = None,
+        redact_kinds: Optional[Union[str, Iterable[str]]] = None,
+        redact_pattern: Optional[Union[str, Iterable[str]]] = None,
+        redact_images: Optional[str] = None,
         fetch_images: bool = False,
         use_web_browser: bool = False,
         ocr_lang: Optional[str] = None,
@@ -501,6 +510,11 @@ class DocumentConverter:
             picture_ocr_classes=_label_list(picture_ocr_classes),
             picture_ocr_min_side=picture_ocr_min_side,
             keep_picture_images=keep_picture_images,
+            redact_pii=redact_pii,
+            redact_mode=redact_mode,
+            redact_kinds=_joined(redact_kinds, ","),
+            redact_pattern=_joined(redact_pattern, "\n"),
+            redact_images=redact_images,
             ocr_lang=ocr_lang,
             ocr_mode=ocr_mode,
             ocr_scale=ocr_scale,
@@ -757,6 +771,12 @@ def _label_list(labels) -> Optional[str]:
     if labels is None or isinstance(labels, str):
         return labels
     return ",".join(str(label) for label in labels)
+def _joined(value, sep: str) -> Optional[str]:
+    """A list-or-string option as the engine's joined string (``redact_kinds``
+    with commas, ``redact_pattern`` with newlines); a string passes through."""
+    if value is None or isinstance(value, str):
+        return value
+    return sep.join(str(v) for v in value)
 
 
 def _page_range(page_range) -> Optional[Tuple[int, int]]:
@@ -835,4 +855,10 @@ def _wrap(native) -> ConversionResult:
     """Validate the Rust engine's JSON into a real ``DoclingDocument``."""
     document = DoclingDocument.model_validate_json(native.document_json)
     errors = [ErrorItem(*item) for item in getattr(native, "errors", ())]
-    return ConversionResult(native.status, native.input_name, document, errors)
+    return ConversionResult(
+        native.status,
+        native.input_name,
+        document,
+        errors,
+        getattr(native, "redaction", None),
+    )

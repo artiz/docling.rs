@@ -28,6 +28,7 @@ mod markdown;
 mod mathml;
 pub mod pandoc;
 mod pixel_digest;
+pub mod redact;
 pub mod tree;
 mod vtt;
 
@@ -42,4 +43,8 @@ pub use encryption::EncryptionError;
 pub use json::code_language_label;
 pub use labels::DocItemLabel;
 pub use markdown::{ImageMode, MarkdownStreamer};
+pub use redact::{
+    CustomPattern, ImageRedaction, PiiDetector, PiiKind, RedactionOptions, RedactionReport,
+    Replacement,
+};
 pub use vtt::VttExportOptions;

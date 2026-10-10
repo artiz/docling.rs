@@ -139,7 +139,7 @@ PY
 
 | docling.rs | docling counterpart | notes |
 |---|---|---|
-| `DocumentConverter(format_options=None, *, allowed_formats=None, do_ocr=True, do_table_structure=True, force_full_page_ocr=False, no_text_panels=False, heading_hierarchy=False, do_picture_classification=False, do_code_enrichment=False, do_formula_enrichment=False, do_picture_ocr=False, picture_ocr_classes=None, picture_ocr_min_side=None, keep_picture_images=True, fetch_images=False, use_web_browser=False, artifacts_path=None, ocr_lang=None, asr_model=None, asr_lang=None, pipeline=None, vlm_endpoint=None, vlm_model=None, vlm_api_key=None, vlm_prompt=None, vlm_max_tokens=None)` | `DocumentConverter(allowed_formats=…, format_options=…)` | Pass `{InputFormat.PDF: PdfFormatOption(pipeline_options=PdfPipelineOptions(…))}` or the shorthand kwargs; `allowed_formats` restricts conversion; `artifacts_path` overrides the model cache dir. |
+| `DocumentConverter(format_options=None, *, allowed_formats=None, do_ocr=True, do_table_structure=True, force_full_page_ocr=False, no_text_panels=False, heading_hierarchy=False, do_picture_classification=False, do_code_enrichment=False, do_formula_enrichment=False, do_picture_ocr=False, picture_ocr_classes=None, picture_ocr_min_side=None, keep_picture_images=True, redact_pii=False, redact_mode=None, redact_kinds=None, redact_pattern=None, redact_images=None, fetch_images=False, use_web_browser=False, artifacts_path=None, ocr_lang=None, asr_model=None, asr_lang=None, pipeline=None, vlm_endpoint=None, vlm_model=None, vlm_api_key=None, vlm_prompt=None, vlm_max_tokens=None)` | `DocumentConverter(allowed_formats=…, format_options=…)` | Pass `{InputFormat.PDF: PdfFormatOption(pipeline_options=PdfPipelineOptions(…))}` or the shorthand kwargs; `allowed_formats` restricts conversion; `artifacts_path` overrides the model cache dir. |
 | `.convert(path \| url \| DocumentStream) -> ConversionResult` | `.convert(source)` | str / `pathlib.Path` / `http(s)://` URL (downloaded first; the format comes from the file name, else the response's `Content-Type`) / `DocumentStream`. Releases the GIL during conversion. |
 | `.convert_all(sources, raises_on_error=True) -> Iterator[ConversionResult]` | same | lazily converts many sources; `raises_on_error=False` yields a `failure` result instead of raising |
 | `.initialize_pipeline(format=None)` | same | pre-loads the PDF/image ML models so the first conversion isn't slow and later PDFs reuse the warm pipeline (no-op for non-ML formats; needs the models available) |
@@ -203,6 +203,15 @@ where `do_picture_description` puts a VLM's; `picture_ocr_classes` (a list
 or comma-separated string of DocumentFigureClassifier labels) and
 `picture_ocr_min_side` filter the pictures, `keep_picture_images=False`
 drops the image bytes afterwards), and
+its `--enrich` flag), `redact_pii` (#621, a docling.rs extension: personal
+data — e-mail, phone, card numbers, IBANs, IPs, URL credentials, national
+IDs, and names / organizations / locations with the NER model under
+`.models/ner/` — is replaced in the document model before export, so
+`export_to_markdown()`, `export_to_dict()` and the chunkers all see the
+redacted text; `redact_mode` is `label` | `pseudonym` | `fixed:<text>`,
+`redact_kinds` a list or comma-separated string, `redact_pattern` a list or
+newline-joined string of `NAME=REGEX`, `redact_images` `drop` | `box_out` |
+`keep`; `result.redaction` is the counts per label), and
 `accelerator_options.num_threads` (→ ONNX Runtime intra-op threads via
 `DOCLING_RS_PDF_THREADS`), and the image outputs (#520):
 `generate_page_images` keeps each page's render as `document.pages[n].image`

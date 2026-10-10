@@ -33,6 +33,11 @@ heif = ["dep:libheif-rs"]
 # run against it. Needs `libpdfium` at runtime (`PDFIUM_DYNAMIC_LIB_PATH`,
 # `.pdfium/lib`).
 pdfium = ["ml", "dep:pdfium-render"]
+# Named-entity detection for the PII redaction pass (#621): a BERT-class
+# token-classification ONNX model (`.models/ner/`) behind the same ort +
+# tokenizers stack the enrichment models use — no extra dependency, the
+# model is the optional part (missing → one warning, pattern-only).
+ner = ["ml", "dep:serde_json"]
 ml = [
     "ocr-prep",
     "dep:ort",
@@ -67,6 +72,8 @@ xnnpack = ["ml", "docling-onnx/xnnpack"]
 ort-load-dynamic = ["ml", "docling-onnx/load-dynamic", "ort/load-dynamic"]
 
 [dependencies]
+# The NER model's `config.json` (`id2label`), behind the `ner` feature.
+serde_json = { version = "1", optional = true }
 # ~1.0: keeps libheif-sys on the 2.x line, which links libheif 1.16–1.17 —
 # what current LTS distros ship (Ubuntu 24.04 = 1.17). Newer libheif-rs
 # requires libheif >= 1.18 and can be selected once baselines move.

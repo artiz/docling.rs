@@ -22,7 +22,7 @@ heif = ["pdf", "docling-pdf/heif"]
 # client are feature-sliced so `--no-default-features` leaves the pure-Rust
 # declarative converters (DOCX/HTML/MD/XLSX/PPTX/… → md/json) — a set that
 # compiles for wasm32-unknown-unknown (issue #79, see crates/docling-wasm).
-default = ["pdf", "asr", "fetch-images", "vlm"]
+default = ["pdf", "asr", "fetch-images", "vlm", "ner"]
 # PDF/image/METS-GBS ML pipeline (the pure-Rust renderer + ONNX Runtime via
 # docling-pdf). resvg rides along so SVG input (#212) can rasterize into the
 # same image pipeline; the non-ML SVG path (direct <text> extraction) needs
@@ -32,6 +32,11 @@ pdf = ["dep:docling-pdf", "docling-pdf/ml", "dep:resvg"]
 # pypdfium2 chain) and the last resort for a file lopdf cannot read — off by
 # default; forwards to docling-pdf's `pdfium` feature.
 pdfium = ["pdf", "docling-pdf/pdfium"]
+# Named-entity detection (person / organization / location) for the PII
+# redaction pass (#621) — docling-pdf's `ner` module on the ML stack; the
+# model under `.models/ner/` is optional (missing → pattern-only, one
+# warning). No extra crate: in the default set.
+ner = ["pdf", "docling-pdf/ner"]
 # Text-layer-only PDF conversion (docling-pdf's pure-Rust parser, no ONNX) —
 # the wasm32 PDF path. Subsumed by `pdf`, which converts everything.
 pdf-text = ["dep:docling-pdf"]

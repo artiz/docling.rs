@@ -379,6 +379,9 @@ docling's `PdfPipelineOptions` flags; a request that changes the enrichment mix 
 warm pipeline once, the models themselves load lazily on the first matching region),
 `do_picture_ocr`, `picture_ocr_classes`, `picture_ocr_min_side`, `keep_picture_images` (#645:
 [OCR the pictures of non-PDF documents](#picture-ocr-for-non-pdf-documents---picture-ocr)),
+`redact_pii`, `redact_mode`, `redact_kinds`, `redact_pattern`, `redact_images` (#621:
+[PII redaction](#pii-redaction---redact-pii) before any export; the counts come back in
+`X-Docling-Redaction` / the item's `redaction`),
 `ocr_lang`, `ocr_engine`, `ocr_mode`, `ocr_scale`, `scale`, `document_timeout` (#497: a per-document budget in seconds — a cut conversion answers `X-Docling-Status: partial_success` + `X-Docling-Errors`, batch / async items carry `status` and `errors`), `asr_model`, `asr_lang`, `encoding`, `video_frames`, `xbrl_taxonomy`, `fetch_images`,
 `chunker=hierarchical|hybrid`, `chunk_tokenizer`, `chunk_max_tokens`, `chunk_merge_peers` (#256:
 per-request `to=chunks` configuration; the tokenizer is a server-local relative path),
@@ -1815,6 +1818,7 @@ instead — the same models — and see
 | TableFormer encoder, fp16 weights (fetched by default; skip with `--no-int8`) | `.models/tableformer/encoder_fp16.onnx` — the same graph with fp16-stored weights cast back to fp32 at load (#374): half the download, fp32 compute; preferred when present, `DOCLING_RS_FP32=1` opts out |
 | DocumentFigureClassifier (picture classification) | `.models/picture_classifier.onnx` |
 | CodeFormulaV2 (code/formula enrichment, ~1.3 GB; fetch with `--enrich`) | `.models/code_formula/{vision,embed,decoder_kv}.onnx`, `.models/code_formula/tokenizer.json` |
+| NER for PII redaction (#621; `dslim/bert-base-NER`'s ONNX export, MIT, ~430 MB; fetch with `--with-ner`, Python `download_models(ner=True)`) | `.models/ner/{model.onnx,tokenizer.json,config.json}` — `--redact-pii` reads names, organizations and locations with it; without it the pass is pattern-only |
 
 Idempotent — safe to re-run; it skips files already on disk. Pass `--force` to
 re-fetch everything, `--no-chunk` to skip the chunker tokenizer, `--embed` to
@@ -2058,6 +2062,79 @@ options (`do_picture_ocr`, `picture_ocr_classes`, `picture_ocr_min_side`,
 (also on `PdfPipelineOptions`; `picture_ocr_classes` takes a list or the
 comma-separated string) and the Node options (`doPictureOcr`,
 `pictureOcrClasses`, `pictureOcrMinSide`, `keepPictureImages`).
+### PII redaction (`--redact-pii`)
+
+A converted document feeds search and RAG pipelines — Markdown, chunks,
+embeddings, vector stores, LLM prompts — and personal data in the source
+flows into every one of them. Post-processing one export misses the text
+that lives elsewhere in the model: the item tree behind the JSON, the link
+table, a code block's `orig`, a caption's hyperlink, the pixels of an
+embedded image. The opt-in redaction pass (#621; a docling.rs extension —
+Python docling has no redaction stage) runs **once, on the
+`DoclingDocument`, after the backend and before any serializer, chunker or
+stream reads it**, replaces every detected span in place and reports
+counts per label — never the values:
+
+```bash
+docling-rs --redact-pii contract.docx                       # [EMAIL], [PHONE], [PERSON] …
+docling-rs --redact-pii --redact-mode pseudonym deck.pptx   # [EMAIL_1], [EMAIL_2]: consistent per value
+docling-rs --redact-pii --redact-kinds email,phone,credit_card \
+           --redact-pattern 'case_id=CASE-\d{6}' --redact-images box_out --to json scan.pdf
+```
+
+```rust
+use docling::{DocumentConverter, RedactionOptions, Replacement};
+let converter = DocumentConverter::new().redact_pii(RedactionOptions {
+    replacement: Replacement::Pseudonym,
+    ..Default::default()
+});
+let result = converter.convert(source)?;
+println!("{:?}", result.redaction.unwrap().counts);   // {"EMAIL": 3, "PHONE": 1, "PERSON": 2}
+```
+
+* **What is found.** The built-in pattern detector (pure Rust, wasm too):
+  e-mail (Markdown escapes and `mailto:` links included), phone numbers in
+  their usual groupings, card numbers (Luhn-checked, so an order number is
+  not a card), IBANs (mod-97 + the registry's per-country length), IPv4 /
+  IPv6, `user:password@` URL credentials, US SSNs, UK NINOs and Indian
+  Aadhaar numbers (Verhoeff) — dates and version strings are not phones.
+  With the NER model installed (`scripts/install/download_dependencies.sh
+  --with-ner` / Python `download_models(ner=True)`: `dslim/bert-base-NER`'s
+  MIT-licensed ONNX export into `.models/ner/` — `model.onnx`,
+  `tokenizer.json`, `config.json`; `DOCLING_RS_NER_DIR` overrides the
+  directory) also **names, organizations and locations**; without it one
+  warning and the pattern kinds only. Your
+  own `NAME=REGEX` patterns, deny terms and allow terms plug in through
+  `RedactionOptions`; any detector implementing `docling_core::PiiDetector`
+  does.
+* **What is rewritten.** Every string of the model, wherever it nests:
+  headings, paragraphs, list items, inline runs (matched on the joined
+  text, mapped back onto the runs), table cells and rich-cell blocks, field
+  regions, key-value cells, captions and their hyperlinks, code text and
+  `orig`, a formula's `orig` (not its LaTeX), comments, VTT voices, the
+  link table, and the item tree the JSON export reads for HTML / DOCX. So
+  Markdown, JSON, DCLX, text, LaTeX, Pandoc and the chunkers all come out
+  clean; the streaming Markdown of a PDF is byte-identical to the buffered
+  one. The document's file name is not touched.
+* **Images.** `--redact-images drop` (the default) removes every embedded
+  image and page render — nothing unread leaves the document; `box_out`
+  OCRs each image with the pipeline's own models and paints a box over the
+  lines that carry a value (needs the OCR models; a `--no-ocr` converter and
+  the PDF streaming path drop instead, with a warning); `keep` leaves them.
+* **Report.** `result.redaction` (`RedactionReport`): counts per label and
+  the total; `return_mapping` (library only) adds the `original →
+  placeholder` pairs. docling-serve answers with the counts in
+  `X-Docling-Redaction` (one document) or `redaction` (batch / async items)
+  and never returns the mapping.
+
+Not a compliance guarantee (GDPR, HIPAA, PCI): pattern and model recall are
+what they are, there is no cross-node entity detection, pseudonyms do not
+persist across documents, and the source file is never rewritten. The same
+five switches exist on every surface: `redact_pii`, `redact_mode`,
+`redact_kinds`, `redact_pattern`, `redact_images` as docling-serve request
+options, Python kwargs (`result.redaction` is the counts dict) and Node
+options (`redactPii`, `redactMode`, `redactKinds`, `redactPattern`,
+`redactImages`; the result's `redaction`).
 
 ### INT8 models (faster PDF conversion on CPU — the default)
 

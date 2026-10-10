@@ -79,6 +79,11 @@ paths:
         - { $ref: "#/components/parameters/picture_ocr_classes" }
         - { $ref: "#/components/parameters/picture_ocr_min_side" }
         - { $ref: "#/components/parameters/keep_picture_images" }
+        - { $ref: "#/components/parameters/redact_pii" }
+        - { $ref: "#/components/parameters/redact_mode" }
+        - { $ref: "#/components/parameters/redact_kinds" }
+        - { $ref: "#/components/parameters/redact_pattern" }
+        - { $ref: "#/components/parameters/redact_images" }
         - { $ref: "#/components/parameters/fetch_images" }
         - { $ref: "#/components/parameters/skip_empty_cells" }
         - { $ref: "#/components/parameters/compact_tables" }
@@ -143,6 +148,11 @@ paths:
                 picture_ocr_classes: { type: string }
                 picture_ocr_min_side: { type: integer }
                 keep_picture_images: { type: boolean }
+                redact_pii: { type: boolean }
+                redact_mode: { type: string }
+                redact_kinds: { type: string }
+                redact_pattern: { type: string }
+                redact_images: { type: string }
                 fetch_images: { type: boolean }
                 skip_empty_cells: { type: boolean }
                 compact_tables: { type: boolean }
@@ -800,6 +810,52 @@ components:
             `false` drops the embedded image bytes from every picture after
             the enrichment pass (#645): a slim JSON/DCLX and placeholder-only
             Markdown, the OCR text and captions kept.
+        redact_pii:
+          type: boolean
+          default: false
+          description: >
+            Redact personal data from the converted document before any
+            export (#621, a docling.rs extension): e-mail, phone, card
+            numbers (Luhn-checked), IBANs (mod-97), IP addresses, URL
+            credentials, national IDs (US SSN, UK NINO, Aadhaar) and — with
+            the NER model under `.models/ner/` on the server — names,
+            organizations and locations. Every string of the document model
+            is rewritten (the JSON's item tree, links, captions, hrefs, code,
+            comments, table cells included), so Markdown, JSON, DCLX, text
+            and chunks all come out clean. What was removed is reported as
+            counts per label: `X-Docling-Redaction` on a single response,
+            `redaction` on a batch / async item — never the values. Not a
+            compliance guarantee.
+        redact_mode:
+          type: string
+          enum: [label, pseudonym]
+          default: label
+          description: >
+            `label` (`[EMAIL]`, `[PERSON]`), `pseudonym` (`[EMAIL_1]`,
+            `[EMAIL_2]`: one number per distinct value, consistent within the
+            document) or `fixed:<text>` (one string for everything).
+        redact_kinds:
+          type: string
+          description: >
+            Comma-separated kinds to redact — `email, phone, credit_card,
+            iban, ip_address, url_credentials, national_id, person,
+            organization, location, address`; unset = every kind. An unknown
+            kind is rejected (422).
+        redact_pattern:
+          type: string
+          description: >
+            Extra patterns as `NAME=REGEX` entries, one per line; the match
+            (or capture group 1) is redacted as `[NAME]`. An invalid
+            expression is rejected (422).
+        redact_images:
+          type: string
+          enum: [drop, box_out, keep]
+          default: drop
+          description: >
+            Embedded images and page renders: `drop` removes them (nothing
+            unread leaves the document); `box_out` OCRs each one and paints
+            over the lines that carry a value (needs the OCR models; the
+            streaming endpoint drops instead); `keep` leaves them.
         ebcdic_layout:
           type: string
           description: >
@@ -1214,6 +1270,16 @@ components:
       { name: picture_ocr_min_side, in: query, schema: { type: integer } }
     keep_picture_images:
       { name: keep_picture_images, in: query, schema: { type: boolean } }
+    redact_pii:
+      { name: redact_pii, in: query, schema: { type: boolean } }
+    redact_mode:
+      { name: redact_mode, in: query, schema: { type: string } }
+    redact_kinds:
+      { name: redact_kinds, in: query, schema: { type: string } }
+    redact_pattern:
+      { name: redact_pattern, in: query, schema: { type: string } }
+    redact_images:
+      { name: redact_images, in: query, schema: { type: string } }
     fetch_images:
       { name: fetch_images, in: query, schema: { type: boolean } }
     skip_empty_cells:

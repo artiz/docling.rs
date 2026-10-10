@@ -108,6 +108,9 @@ pub(crate) struct StreamSettings {
     pub compact_tables: bool,
     /// [`DocumentConverter::document_timeout`] (#497).
     pub document_timeout: Option<std::time::Duration>,
+    /// The PII pass (#621), applied to each page batch before it is
+    /// serialized, so the stream matches the buffered redacted Markdown.
+    pub redact: Option<docling_core::RedactionOptions>,
 }
 
 /// Spawn the background conversion and return the chunk iterator.
@@ -180,6 +183,29 @@ fn run_pdf(
         &settings.artifacts_dir,
     )
     .with_page_break_placeholder(settings.page_break_placeholder.clone());
+    // The PII pass (#621) on the streaming path: one `Redactor` across the
+    // page batches, so pseudonym numbering follows document order exactly
+    // as the buffered pass numbers it. `BoxOut` needs the OCR pipeline,
+    // which is busy converting here — the images are dropped instead.
+    let redact_opts = settings.redact.clone().map(|mut o| {
+        if o.images == docling_core::ImageRedaction::BoxOut {
+            crate::redact::warn_box_out_unavailable("the streaming path drops them");
+            o.images = docling_core::ImageRedaction::Drop;
+        }
+        o
+    });
+    let detector = match redact_opts.as_ref().map(crate::redact::detector) {
+        Some(Ok(d)) => Some(d),
+        Some(Err(e)) => {
+            let _ = tx.send(Err(e));
+            return;
+        }
+        None => None,
+    };
+    let mut redactor = match (redact_opts.as_ref(), detector.as_ref()) {
+        (Some(o), Some(d)) => Some(docling_core::redact::Redactor::new(o, d)),
+        _ => None,
+    };
     let mut pipeline = match docling_pdf::Pipeline::new().map(|p| {
         p.no_table_former(settings.no_table_former)
             .no_text_panels(settings.no_text_panels)
@@ -208,7 +234,11 @@ fn run_pdf(
         &source.bytes,
         settings.password.as_deref(),
         &source.name,
-        |nodes, links| {
+        |mut nodes, mut links| {
+            if let Some(r) = redactor.as_mut() {
+                r.redact_nodes(&mut nodes);
+                r.redact_links(&mut links);
+            }
             let chunk = streamer.push(&nodes, &links);
             // Referenced mode: this push's images hit the disk as its Markdown is
             // emitted, keeping ~one page batch of image bytes resident. A write

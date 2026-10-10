@@ -53,6 +53,11 @@
 #     (CodeFormulaV2, the --enrich-code/--enrich-formula VLM, ~1.3 GB fp32 —
 #     opt-in with --enrich; release-hosted only. With int8 enabled the ~165 MB
 #     decoder_kv_int8.onnx replaces the ~655 MB fp32 decoder)
+#   .models/ner/{model.onnx,tokenizer.json,config.json}  (dslim/bert-base-NER's
+#     ONNX export, MIT, ~430 MB — the names / organizations / locations
+#     detector of the --redact-pii pass, #621; opt-in with --with-ner. From
+#     Hugging Face, the release mirror first when it hosts it; override the
+#     host with $DOCLING_RS_NER_MODELS_URL)
 #   .models/embed/bge-m3.onnx + model.onnx.data + tokenizer.json   (bge-m3 for
 #     docling-rag's local ONNX embedder, ~2.3 GB — opt-in with --embed; from
 #     Hugging Face, matching the RAG_EMBED_ONNX_PATH/RAG_EMBED_TOKENIZER
@@ -113,6 +118,7 @@ WITH_ENRICH=false
 WITH_EMBED=false
 WITH_DPARSE="${DOCLING_RS_WITH_DOCLING_PARSE:-false}"
 WITH_FONTS="${DOCLING_RS_WITH_FONTS:-false}"
+WITH_NER="${DOCLING_RS_WITH_NER:-false}"
 case "$(uname -m)" in
   s390x) WITH_ORT_DEFAULT=true ;;
   *) WITH_ORT_DEFAULT=false ;;
@@ -131,11 +137,12 @@ for arg in "$@"; do
     --embed) WITH_EMBED=true ;;
     --with-docling-parse) WITH_DPARSE=true ;;
     --with-fonts) WITH_FONTS=true ;;
+    --with-ner) WITH_NER=true ;;
     --with-onnxruntime) WITH_ORT=true ;;
     --no-onnxruntime) WITH_ORT=false ;;
 
     *)
-      echo "usage: download_dependencies.sh [--force] [--no-asr] [--asr-model=<preset>] [--no-int8] [--no-chunk] [--enrich] [--embed] [--with-docling-parse] [--with-fonts] [--with-onnxruntime|--no-onnxruntime]" >&2
+      echo "usage: download_dependencies.sh [--force] [--no-asr] [--asr-model=<preset>] [--no-int8] [--no-chunk] [--enrich] [--embed] [--with-docling-parse] [--with-fonts] [--with-ner] [--with-onnxruntime|--no-onnxruntime]" >&2
       echo "  ASR presets: whisper_tiny_en whisper_base_en whisper_small_en whisper_distil_small_en parakeet_tdt_0.6b_v3" >&2
       exit 2
       ;;
@@ -466,6 +473,20 @@ fi
 fetch_mirrored .models/picture_classifier.onnx \
   "$BASE_URL/picture_classifier.onnx" \
   "https://huggingface.co/docling-project/DocumentFigureClassifier-v2.5/resolve/main/model.onnx"
+
+if [ "$WITH_NER" = true ]; then
+  # dslim/bert-base-NER (MIT) — the token classifier the PII redaction pass
+  # (#621, `--redact-pii`) reads names, organizations and locations with;
+  # the pass runs pattern-only without it. Hugging Face ships the ONNX
+  # export itself (~430 MB fp32), so no re-export is needed; the release
+  # mirror is tried first for when it hosts a copy. Opt-in because of the
+  # size, like --enrich.
+  NER_BASE_URL="${DOCLING_RS_NER_MODELS_URL:-https://huggingface.co/dslim/bert-base-NER/resolve/main/onnx}"
+  mkdir -p .models/ner
+  fetch_mirrored .models/ner/model.onnx "$BASE_URL/ner_model.onnx" "$NER_BASE_URL/model.onnx"
+  fetch_mirrored .models/ner/tokenizer.json "$BASE_URL/ner_tokenizer.json" "$NER_BASE_URL/tokenizer.json"
+  fetch_mirrored .models/ner/config.json "$BASE_URL/ner_config.json" "$NER_BASE_URL/config.json"
+fi
 
 if [ "$WITH_ENRICH" = true ]; then
   # CodeFormulaV2 (code/formula enrichment, ~1.3 GB fp32): the

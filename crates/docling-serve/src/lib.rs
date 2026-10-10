@@ -51,6 +51,13 @@
 //!   `--enrich-picture-classes` / `--enrich-code` / `--enrich-formula`):
 //!   DocumentFigureClassifier over pictures, CodeFormulaV2 over code / formula
 //!   regions. Off by default; a missing model warns and skips the pass
+//! - `redact_pii`, `redact_mode`, `redact_kinds`, `redact_pattern`,
+//!   `redact_images` — the PII redaction pass (#621, a docling.rs extension):
+//!   personal data is replaced in the document model before any export
+//!   (`label` | `pseudonym` | `fixed:<text>`; comma-separated kinds;
+//!   `NAME=REGEX` lines; `drop` | `box_out` | `keep` for images). A single
+//!   response says what was removed in `X-Docling-Redaction` (counts per
+//!   label, JSON); batch / async items carry `redaction`. Never the values.
 //! - `pages` — PDF page window `A-B` / `N` (1-based inclusive, #80)
 //! - `document_timeout` — per-document budget in seconds for the PDF pipeline
 //!   (docling's `document_timeout`, #497): checked between pages; once spent
@@ -1294,6 +1301,7 @@ async fn job_result(
                 content_type: stored.content_type,
                 disposition: stored.disposition.clone(),
                 confidence: stored.confidence.clone(),
+                redaction: stored.redaction.clone(),
                 body: stored.body.clone(),
             }
             .into_response(),
@@ -1310,6 +1318,8 @@ struct StoredResponse {
     disposition: Option<String>,
     /// The `X-Docling-Confidence` summary (#183), when the pipeline made one.
     confidence: Option<header::HeaderValue>,
+    /// The `X-Docling-Redaction` counts (#621), when the PII pass ran.
+    redaction: Option<header::HeaderValue>,
     body: Vec<u8>,
     /// The problems the conversion survived (#497) — a non-empty list is a
     /// `partial_success`, announced in `X-Docling-Status` / `X-Docling-Errors`
@@ -1324,6 +1334,7 @@ impl StoredResponse {
             let converted = Converted {
                 document: DoclingDocument::new(""),
                 errors: self.errors,
+                redaction: None,
             };
             response.headers_mut().insert(
                 "x-docling-status",
@@ -1342,6 +1353,9 @@ impl StoredResponse {
         }
         if let Some(v) = self.confidence {
             response.headers_mut().insert("x-docling-confidence", v);
+        }
+        if let Some(v) = self.redaction {
+            response.headers_mut().insert("x-docling-redaction", v);
         }
         response
     }
@@ -1390,6 +1404,7 @@ fn run_conversion(
                 content_type: "application/json",
                 disposition: None,
                 confidence: None,
+                redaction: None,
                 body: serde_json::to_vec_pretty(&json!({ "pages": pages }))
                     .expect("page JSON serializes"),
             });
@@ -1397,6 +1412,7 @@ fn run_conversion(
         let name = source.name.clone();
         let converted = convert_document(state, source, options)?;
         let mut stored = render_stored(state, to, image_mode, &name, &converted.document, options)?;
+        stored.redaction = converted.redaction_header();
         stored.errors = converted.errors;
         return Ok(stored);
     }
@@ -1448,6 +1464,7 @@ fn run_conversion(
         content_type: "application/json",
         disposition: None,
         confidence: None,
+        redaction: None,
         body: serde_json::to_vec_pretty(&json!({ "results": items }))
             .expect("batch JSON serializes"),
     })
@@ -1549,6 +1566,7 @@ fn run_conversion_to_target(
         content_type: "application/json",
         disposition: None,
         confidence: None,
+        redaction: None,
         // Upstream's RemoteTargetResult is the bare kind ("no content, the
         // result has been pushed to a remote target"); the credential-free
         // target display and per-item outcomes ride along as extra keys.
@@ -1614,6 +1632,7 @@ fn run_conversion_to_zip(
         content_type: "application/zip",
         disposition: Some(format!("attachment; filename=\"{file_name}\"")),
         confidence: None,
+        redaction: None,
         body: docling::dclx::zip_bytes(entry_refs),
     })
 }
@@ -1693,6 +1712,7 @@ fn run_conversion_to_put(
         content_type: "application/json",
         disposition: None,
         confidence: None,
+        redaction: None,
         // The echoed target drops the query string: pre-signed URLs carry
         // their signature there, and the ack may transit logs and proxies.
         body: serde_json::to_vec_pretty(&json!({
@@ -1825,6 +1845,7 @@ fn render_stored(
             content_type: "text/markdown; charset=utf-8",
             disposition: None,
             confidence,
+            redaction: None,
             body: markdown_string(state, document, image_mode, options).into_bytes(),
         },
         "json" => {
@@ -1837,6 +1858,7 @@ fn render_stored(
                 content_type: "application/json",
                 disposition: None,
                 confidence,
+                redaction: None,
                 body: serde_json::to_vec_pretty(&value).expect("document JSON serializes"),
             }
         }
@@ -1856,6 +1878,7 @@ fn render_stored(
                 content_type: "application/json",
                 disposition: None,
                 confidence,
+                redaction: None,
                 body: serde_json::to_vec(&records).expect("chunk records serialize"),
             }
         }
@@ -1864,6 +1887,7 @@ fn render_stored(
             content_type: "application/octet-stream",
             disposition: Some(format!("attachment; filename=\"{name}.dclx\"")),
             confidence,
+            redaction: None,
             body: docling::dclx::to_dclx_bytes(document),
         },
         // #317: a text body like Markdown (no download disposition).
@@ -1872,6 +1896,7 @@ fn render_stored(
             content_type: "text/x-tex; charset=utf-8",
             disposition: None,
             confidence,
+            redaction: None,
             body: document.export_to_latex().into_bytes(),
         },
         // #613: docling's `--to text`, a text body like Markdown.
@@ -1880,6 +1905,7 @@ fn render_stored(
             content_type: "text/plain; charset=utf-8",
             disposition: None,
             confidence,
+            redaction: None,
             body: text_string(state, document, options).into_bytes(),
         },
         // #614: docling's `--to vtt`, a text body like Markdown.
@@ -1888,6 +1914,7 @@ fn render_stored(
             content_type: "text/vtt; charset=utf-8",
             disposition: None,
             confidence,
+            redaction: None,
             body: document.export_to_vtt().into_bytes(),
         },
         // #515: Pandoc's AST, for `pandoc -f json`; pictures follow
@@ -1897,6 +1924,7 @@ fn render_stored(
             content_type: "application/json",
             disposition: None,
             confidence,
+            redaction: None,
             body: pandoc_string(document, image_mode).into_bytes(),
         },
         // #492: docling-core's HTML serializer; pictures follow `images`
@@ -1906,6 +1934,7 @@ fn render_stored(
             content_type: "text/html; charset=utf-8",
             disposition: None,
             confidence,
+            redaction: None,
             body: html_string(document, image_mode).into_bytes(),
         },
         _ => unreachable!("validated above"),
@@ -1918,6 +1947,10 @@ fn mark_partial(item: &mut serde_json::Value, converted: &Converted) {
     if !converted.errors.is_empty() {
         item["status"] = json!(converted.status());
         item["errors"] = converted.errors_json();
+    }
+    // The PII pass's counts (#621) ride along the same way.
+    if let Some(report) = &converted.redaction {
+        item["redaction"] = report.counts_json();
     }
 }
 
@@ -2411,9 +2444,19 @@ fn convert_document(
 struct Converted {
     document: DoclingDocument,
     errors: Vec<docling::ErrorItem>,
+    /// The PII pass's counts (#621) when the request asked for redaction —
+    /// `X-Docling-Redaction` on a single response, `redaction` on a batch /
+    /// async item. Never the mapping.
+    redaction: Option<docling_core::RedactionReport>,
 }
 
 impl Converted {
+    /// The `X-Docling-Redaction` value: the counts as JSON.
+    fn redaction_header(&self) -> Option<header::HeaderValue> {
+        let report = self.redaction.as_ref()?;
+        header::HeaderValue::from_str(&report.counts_json().to_string()).ok()
+    }
+
     fn status(&self) -> &'static str {
         if self.errors.is_empty() {
             "success"
@@ -2484,14 +2527,19 @@ fn convert_document_inner(
     if let Some(vlm) = resolve_vlm_options(state, options, true)? {
         let finish = request_converter(state, options)?;
         return docling::vlm::convert_vlm(&source, &vlm)
-            .map(|mut document| {
+            .map_err(|e| conversion_api_error(&e))
+            .and_then(|mut document| {
                 finish.finish_document(&mut document);
-                Converted {
+                // The PII pass (#621) on the VLM path too.
+                let redaction = finish
+                    .redact(&mut document)
+                    .map_err(|e| conversion_api_error(&e))?;
+                Ok(Converted {
                     document,
                     errors: Vec::new(),
-                }
-            })
-            .map_err(|e| conversion_api_error(&e));
+                    redaction,
+                })
+            });
     }
     match source.format {
         InputFormat::Pdf | InputFormat::Image => {
@@ -2545,18 +2593,25 @@ fn convert_document_inner(
                             .into_iter()
                             .collect(),
                         document: c.document,
+                        redaction: None,
                     }),
                 _ => pipeline
                     .convert_image(&source.bytes, &source.name)
                     .map(|document| Converted {
                         document,
                         errors: Vec::new(),
+                        redaction: None,
                     }),
             }
             // An encrypted PDF is the client's to fix (422 + `code`, #636);
             // anything else the warm pipeline fails on keeps its status.
             .map_err(|e| pdf_api_error(&e, ApiError::Internal))?;
             finish.finish_document(&mut converted.document);
+            // The warm pipeline bypasses `DocumentConverter::convert`, so the
+            // PII pass (#621) is applied here, like the serializer knobs.
+            converted.redaction = finish
+                .redact(&mut converted.document)
+                .map_err(|e| conversion_api_error(&e))?;
             Ok(converted)
         }
         _ => {
@@ -2566,6 +2621,7 @@ fn convert_document_inner(
                 .map(|r| Converted {
                     document: r.document,
                     errors: r.errors,
+                    redaction: r.redaction,
                 })
                 .map_err(|e| conversion_api_error(&e))
         }

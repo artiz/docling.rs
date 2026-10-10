@@ -183,6 +183,8 @@ pub struct DocumentConverter {
     /// Keep the embedded image bytes on every picture (the default). See
     /// [`Self::keep_picture_images`].
     keep_picture_images: bool,
+    /// The PII redaction pass (#621), when asked for. See [`Self::redact_pii`].
+    redact: Option<docling_core::RedactionOptions>,
     /// 1-based inclusive PDF page window (#80). See [`Self::page_range`].
     page_range: Option<(usize, usize)>,
     /// OCR recognition language for scanned PDF/image pages (`en`/`ch`).
@@ -267,6 +269,7 @@ impl Default for DocumentConverter {
             picture_ocr_classes: Vec::new(),
             picture_ocr_min_side: None,
             keep_picture_images: true,
+            redact: None,
             page_range: None,
             ocr_lang: None,
             encoding: None,
@@ -1118,6 +1121,91 @@ impl DocumentConverter {
         self
     }
 
+    /// Redact personal data from every converted document (#621): after
+    /// the backend builds the [`DoclingDocument`](docling_core::DoclingDocument)
+    /// and before any export, chunker or stream reads it, every detected
+    /// span — e-mail, phone, card number, IBAN, IP, URL credentials,
+    /// national IDs, and names / organizations / locations when the NER
+    /// model is installed (`.models/ner/`, the `ner` feature) — is replaced
+    /// in place by a placeholder (`[EMAIL]`, `[PERSON_2]` with
+    /// [`Replacement::Pseudonym`](docling_core::Replacement::Pseudonym), or
+    /// a fixed string), in the flat nodes, the item tree behind the JSON,
+    /// the link table, captions, hrefs, code, comments, table cells. Images
+    /// are dropped by default
+    /// ([`ImageRedaction`](docling_core::ImageRedaction)); `BoxOut` paints
+    /// over the OCR'd lines that carry a span, `Keep` leaves them. The
+    /// result's `redaction` is the [`RedactionReport`](docling_core::RedactionReport)
+    /// — counts per label, never the values unless `return_mapping` asks.
+    /// Off by default; unused, the output is byte-identical. A docling.rs
+    /// extension — Python docling has no redaction stage — and not a
+    /// compliance guarantee: pattern and model recall are what they are.
+    pub fn redact_pii(mut self, opts: docling_core::RedactionOptions) -> Self {
+        self.redact = Some(opts);
+        self
+    }
+
+    /// Option-typed variant of [`redact_pii`](Self::redact_pii): `None`
+    /// turns the pass off.
+    pub fn redact_pii_opt(mut self, opts: Option<docling_core::RedactionOptions>) -> Self {
+        self.redact = opts;
+        self
+    }
+
+    /// Run the PII pass (#621) this converter is configured with over a
+    /// document built elsewhere — docling-serve's warm pipeline and the
+    /// VLM pipeline bypass [`convert`](Self::convert) — and return its
+    /// report; `Ok(None)` when [`redact_pii`](Self::redact_pii) is unset.
+    pub fn redact(
+        &self,
+        document: &mut docling_core::DoclingDocument,
+    ) -> Result<Option<docling_core::RedactionReport>, ConversionError> {
+        match self.redact.as_ref() {
+            Some(opts) => self.redact_document(document, opts).map(Some),
+            None => Ok(None),
+        }
+    }
+
+    /// The PII pass over a converted document (#621): the detectors from
+    /// the options, the OCR pipeline for `BoxOut` when this converter may
+    /// run OCR (a `no_ocr` / `text_layer_only` converter drops the images
+    /// instead, with the warning), then the walk. An invalid custom regex
+    /// is a `Parse` error — the conversion cannot honour the request.
+    fn redact_document(
+        &self,
+        document: &mut docling_core::DoclingDocument,
+        opts: &docling_core::RedactionOptions,
+    ) -> Result<docling_core::RedactionReport, ConversionError> {
+        let detector = crate::redact::detector(opts)?;
+        #[cfg(feature = "pdf")]
+        {
+            let mut ocr = None;
+            if opts.images == docling_core::ImageRedaction::BoxOut
+                && !self.no_ocr
+                && !self.text_layer_only
+            {
+                // The OCR models only — no layout, no TableFormer.
+                match docling_pdf::Pipeline::new() {
+                    Ok(p) => {
+                        ocr = Some(
+                            p.no_ocr(true)
+                                .no_table_former(true)
+                                .ocr_lang(self.ocr_lang_choice())
+                                .ocr_engine(self.ocr_engine_choice())
+                                .tesseract_lang(self.tesseract_lang_choice())
+                                .ocr_scale(self.ocr_scale_choice()),
+                        )
+                    }
+                    Err(e) => crate::redact::warn_box_out_unavailable(&e.to_string()),
+                }
+            }
+            Ok(crate::redact::run(document, opts, &detector, ocr.as_mut()))
+        }
+        #[cfg(not(feature = "pdf"))]
+        {
+            Ok(crate::redact::run(document, opts, &detector))
+        }
+    }
+
     /// Rewrite detected code blocks with the CodeFormulaV2 VLM (docling's
     /// `do_code_enrichment`). Off by default.
     ///
@@ -1250,6 +1338,7 @@ impl DocumentConverter {
             page_break_placeholder: self.page_break_placeholder.clone(),
             compact_tables: self.compact_tables,
             document_timeout: self.document_timeout,
+            redact: self.redact.clone(),
         }
     }
 
@@ -1603,6 +1692,9 @@ impl DocumentConverter {
             }
         };
         self.enrich_pictures(&mut document, source.format);
+        // The PII pass (#621) runs on the finished model, before anything
+        // reads it — after the backend, before the export-side settings.
+        let redaction = self.redact(&mut document)?;
         self.finish_document(&mut document);
 
         let status = if errors.is_empty() {
@@ -1615,6 +1707,7 @@ impl DocumentConverter {
             status,
             input_name: source.name.clone(),
             format: source.format,
+            redaction,
             errors,
         })
     }

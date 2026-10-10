@@ -41,6 +41,8 @@ mod heading_hierarchy;
 pub mod layout;
 #[cfg(feature = "ml")]
 mod mets;
+#[cfg(feature = "ner")]
+pub mod ner;
 #[cfg(feature = "ml")]
 mod ocr;
 #[cfg(any(feature = "ml", feature = "ocr-prep"))]
@@ -56,6 +58,8 @@ pub mod picture;
 #[cfg(feature = "ml")]
 pub mod quality;
 mod reading_order;
+#[cfg(feature = "ml")]
+mod redact_ocr;
 // Pure-Rust region resampling (page→1024px box-average, crop→448 bilinear) —
 // available to the browser TableFormer path (#157 stage 3), not just `ml`.
 #[cfg(feature = "ocr-prep")]

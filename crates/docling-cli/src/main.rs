@@ -18,7 +18,7 @@
 //! the same name): one identifier per line, sorted, for scripts that ask the
 //! binary what it converts instead of hard-coding a list.
 //!
-//! Usage: docling-rs [--strict] [--page-break-placeholder TEXT] [--to md|json|html|text|dclx|chunks|images|latex|pandoc|vtt] [--pages A-B] [--scale X] [--images MODE] [--input GLOB --output DIR [--jobs N]] [--output-file PATH] [--fetch-images] [--list-attachments] [--skip-empty-cells] [--compact-tables] [--ebcdic-layout JSON|PATH] [--encoding LABEL] [--no-stream] [--no-table-former] [--no-ocr] [--text-layer-only] [--password PASSWORD | --password-file PATH] [--force-full-page-ocr] [--no-text-panels] [--heading-hierarchy] [--ocr-lang LANG] [--ocr-engine ppocr|tesseract] [--ocr-mode MODE] [--ocr-scale X] [--images-scale X] [--page-images] [--chunker hierarchical|hybrid] [--chunk-tokenizer PATH] [--chunk-max-tokens N] [--no-chunk-merge-peers] [--pipeline standard|vlm] [--vlm-endpoint URL] [--vlm-model NAME] [--vlm-api-key TOKEN] [--vlm-prompt TEXT] [--vlm-max-tokens N] [--asr-model PRESET] [--asr-lang CODE] [--video-frames N] [--xbrl-taxonomy DIR] [--use-web-browser] [--enrich-picture-classes] [--enrich-code] [--enrich-formula] [--picture-ocr] [--picture-ocr-classes LABELS] [--picture-ocr-min-side N] [--no-picture-images] [--document-timeout SECONDS] [--abort-on-error] [--output-dirs auto|flat|mirror] <input-file> | SOURCE...
+//! Usage: docling-rs [--strict] [--page-break-placeholder TEXT] [--to md|json|html|text|dclx|chunks|images|latex|pandoc|vtt] [--pages A-B] [--scale X] [--images MODE] [--input GLOB --output DIR [--jobs N]] [--output-file PATH] [--fetch-images] [--list-attachments] [--skip-empty-cells] [--compact-tables] [--ebcdic-layout JSON|PATH] [--encoding LABEL] [--no-stream] [--no-table-former] [--no-ocr] [--text-layer-only] [--password PASSWORD | --password-file PATH] [--force-full-page-ocr] [--no-text-panels] [--heading-hierarchy] [--ocr-lang LANG] [--ocr-engine ppocr|tesseract] [--ocr-mode MODE] [--ocr-scale X] [--images-scale X] [--page-images] [--chunker hierarchical|hybrid] [--chunk-tokenizer PATH] [--chunk-max-tokens N] [--no-chunk-merge-peers] [--pipeline standard|vlm] [--vlm-endpoint URL] [--vlm-model NAME] [--vlm-api-key TOKEN] [--vlm-prompt TEXT] [--vlm-max-tokens N] [--asr-model PRESET] [--asr-lang CODE] [--video-frames N] [--xbrl-taxonomy DIR] [--use-web-browser] [--enrich-picture-classes] [--enrich-code] [--enrich-formula] [--picture-ocr] [--picture-ocr-classes LABELS] [--picture-ocr-min-side N] [--no-picture-images] [--redact-pii] [--redact-mode label|pseudonym|fixed:TEXT] [--redact-kinds LIST] [--redact-pattern NAME=REGEX]... [--redact-images drop|box_out|keep] [--document-timeout SECONDS] [--abort-on-error] [--output-dirs auto|flat|mirror] <input-file> | SOURCE...
 //!   --to FORMAT        repeatable (#491, like Python's `docling convert --to
 //!                      md --to json`): each document converts once and is
 //!                      written in every format named, `<stem>.md` +
@@ -191,6 +191,34 @@
 //!                      drop the embedded image bytes from every picture after
 //!                      the enrichment (keep_picture_images=false): a slim
 //!                      JSON/DCLX and placeholder-only Markdown, the OCR text kept.
+//!   --redact-pii       redact personal data from the converted document before
+//!                      any output is written (#621): e-mail, phone, card
+//!                      numbers (Luhn), IBANs (mod-97), IP addresses, URL
+//!                      credentials, national IDs (US SSN, UK NINO, Aadhaar)
+//!                      and — with the NER model under .models/ner/ — names,
+//!                      organizations and locations; every string of the
+//!                      document model (tree, links, captions, hrefs, code,
+//!                      comments, table cells) is rewritten, so every format
+//!                      written comes out clean. Buffered conversions print the
+//!                      counts per label on stderr. A docling.rs extension; off
+//!                      by default.
+//!   --redact-mode MODE label (default: [EMAIL], [PERSON]) | pseudonym
+//!                      ([EMAIL_1], [EMAIL_2]: one number per distinct value,
+//!                      consistent within the document) | fixed:TEXT.
+//!   --redact-kinds LIST
+//!                      comma-separated kinds to redact (email, phone,
+//!                      credit_card, iban, ip_address, url_credentials,
+//!                      national_id, person, organization, location, address);
+//!                      default: every kind.
+//!   --redact-pattern NAME=REGEX
+//!                      an extra pattern, redacted as [NAME] (the match, or
+//!                      capture group 1); repeatable.
+//!   --redact-images MODE
+//!                      what happens to embedded images and page renders: drop
+//!                      (default — nothing unread leaves the document) |
+//!                      box_out (OCR each image and paint over the lines that
+//!                      carry a value; needs the OCR models, --no-stream for
+//!                      PDFs) | keep.
 
 use std::io::{self, Write};
 use std::path::Path;
@@ -198,6 +226,25 @@ use std::process::ExitCode;
 
 use docling::chunks::{ChunkOptions, ChunkerKind};
 use docling::{DocumentConverter, ImageMode, InputFormat, Pipeline, SourceDocument};
+
+/// The PII pass's counts for stderr: `EMAIL=2 PHONE=1 (3 spans)` (#621).
+fn redaction_summary(report: &docling::RedactionReport) -> String {
+    let per_label: Vec<String> = report
+        .counts
+        .iter()
+        .map(|(label, n)| format!("{label}={n}"))
+        .collect();
+    format!(
+        "{} ({} span{})",
+        if per_label.is_empty() {
+            "nothing".to_string()
+        } else {
+            per_label.join(" ")
+        },
+        report.total,
+        if report.total == 1 { "" } else { "s" }
+    )
+}
 
 /// `--version` output: the crate version plus the optional features this
 /// binary was actually built with. The feature list is the useful half — the
@@ -560,6 +607,43 @@ fn main() -> ExitCode {
                 }
             },
             "--no-picture-images" => opts.keep_picture_images = Some(false),
+            // PII redaction (#621); the pattern flag repeats and joins on
+            // newlines, the wire form of the option.
+            "--redact-pii" => opts.redact_pii = Some(true),
+            "--redact-mode" => match args.next() {
+                Some(v) => opts.redact_mode = Some(v),
+                None => {
+                    eprintln!("error: --redact-mode needs label, pseudonym or fixed:TEXT");
+                    return ExitCode::from(2);
+                }
+            },
+            "--redact-kinds" => match args.next() {
+                Some(v) => opts.redact_kinds = Some(v),
+                None => {
+                    eprintln!("error: --redact-kinds needs a comma-separated list of kinds");
+                    return ExitCode::from(2);
+                }
+            },
+            "--redact-pattern" => match args.next() {
+                Some(v) => {
+                    let joined = match opts.redact_pattern.take() {
+                        Some(prev) => format!("{prev}\n{v}"),
+                        None => v,
+                    };
+                    opts.redact_pattern = Some(joined);
+                }
+                None => {
+                    eprintln!("error: --redact-pattern needs NAME=REGEX");
+                    return ExitCode::from(2);
+                }
+            },
+            "--redact-images" => match args.next() {
+                Some(v) => opts.redact_images = Some(v),
+                None => {
+                    eprintln!("error: --redact-images needs drop, box_out or keep");
+                    return ExitCode::from(2);
+                }
+            },
             "--abort-on-error" => abort_on_error = true,
             "--output-dirs" => match args.next().as_deref().map(OutputDirs::parse) {
                 Some(Some(mode)) => output_dirs = mode,
@@ -1199,6 +1283,9 @@ fn main() -> ExitCode {
             for problem in &result.errors {
                 eprintln!("warning: partial document: {}", problem.error_message);
             }
+            if let Some(report) = &result.redaction {
+                eprintln!("redacted: {}", redaction_summary(report));
+            }
             result.document
         }
         Err(e) => {
@@ -1827,6 +1914,12 @@ fn batch_convert_one(
     // Problems the conversion survived — docling's `ConversionResult.errors`:
     // a spent `--document-timeout` (#497) leaves the pages done so far.
     let mut partial: Vec<String> = Vec::new();
+    // The PII pass's report (#621): the converter branch runs the pass
+    // itself; the VLM and warm-pipeline branches bypass `convert`, so it
+    // is applied to their document below.
+    let mut redaction = None;
+    let bypasses_converter =
+        cfg.vlm.is_some() || matches!(source.format, InputFormat::Pdf | InputFormat::Image);
     let mut document = if let Some(vlm) = &cfg.vlm {
         docling::vlm::convert_vlm(&source, vlm).map_err(|e| e.to_string())?
     } else if matches!(source.format, InputFormat::Pdf | InputFormat::Image) {
@@ -1850,8 +1943,15 @@ fn batch_convert_one(
     } else {
         let result = converter.convert(source).map_err(|e| e.to_string())?;
         partial.extend(result.errors.into_iter().map(|e| e.error_message));
+        redaction = result.redaction;
         result.document
     };
+    if bypasses_converter {
+        redaction = converter.redact(&mut document).map_err(|e| e.to_string())?;
+    }
+    if let Some(report) = &redaction {
+        eprintln!("{}: redacted: {}", item.label(), redaction_summary(report));
+    }
     document.strict_markdown = cfg.opts.strict.unwrap_or(false);
     document.page_break_placeholder = cfg.opts.page_break_placeholder.clone();
 

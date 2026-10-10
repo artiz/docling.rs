@@ -30,6 +30,7 @@ pub mod email_attachments;
 mod error;
 mod format;
 pub mod options;
+mod redact;
 mod result;
 mod sniff;
 mod source;
@@ -44,6 +45,9 @@ pub mod video;
 
 pub use archive::{ArchiveLimits, ArchiveOutcome};
 pub use converter::{parse_page_range, DocumentConverter, DEFAULT_VIDEO_FRAMES};
+pub use docling_core::{
+    CustomPattern, ImageRedaction, PiiKind, RedactionOptions, RedactionReport, Replacement,
+};
 pub use email_attachments::{EmailAttachmentInfo, EmailAttachments};
 pub use error::{ConversionError, EncryptionError};
 pub use format::{InputFormat, OUTPUT_FORMATS};
