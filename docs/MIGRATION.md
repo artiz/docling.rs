@@ -982,6 +982,23 @@ deliberate scope boundary or a cosmetic, single-fixture polish gap.
   master's logo is read once. `picture_ocr.docx` (a 720 × 180 two-line
   screenshot and a 16 × 16 icon) is the fixture; the e2e test also reads
   the text drawn into a generated video clip's frame.
+- **Video frame sampling tunables** (#647) — docling's video path is the
+  transcript; the frames are a docling.rs extension (#138), and their
+  sampling now takes options on every surface: `video_frames=all` (every
+  distinct cut — no cap, a cut-less video yields its first frame alone),
+  `video_scene_threshold` (ffmpeg's `scene` score a frame must exceed, 0.27;
+  0.6 keeps hard cuts only), `video_frame_max_side` (a `scale` filter in
+  ffmpeg's chain capping the longer side, 0 = source size) and
+  `video_frame_dedupe` (a 64-bit difference hash over a 9×8 grey thumbnail;
+  a frame within the Hamming distance of a kept one is dropped — a re-lit
+  or re-shown slide becomes one picture; unset = keep all). Env defaults:
+  `DOCLING_RS_VIDEO_SCENE_THRESHOLD`, `DOCLING_RS_VIDEO_FRAME_MAX_SIDE`,
+  `DOCLING_RS_VIDEO_FRAME_DEDUPE`. Memory is bounded by construction: each
+  chosen frame is decoded with one seek, handed to the converter's hook
+  (picture OCR when `do_picture_ocr`, bytes dropped when
+  `keep_picture_images=false`) and its file deleted before the next decode,
+  so one frame is in flight whatever the count. With nothing set the
+  sampling is the pre-#647 one and every default output is unchanged.
 - **PII redaction** (#621) — Python docling has no redaction stage; this is
   a docling.rs extension, off by default and inert unless asked for (the
   regression baselines are untouched). `DocumentConverter::redact_pii` /

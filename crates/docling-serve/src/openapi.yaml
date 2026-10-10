@@ -106,6 +106,9 @@ paths:
         - { $ref: "#/components/parameters/asr_lang" }
         - { $ref: "#/components/parameters/encoding" }
         - { $ref: "#/components/parameters/video_frames" }
+        - { $ref: "#/components/parameters/video_scene_threshold" }
+        - { $ref: "#/components/parameters/video_frame_max_side" }
+        - { $ref: "#/components/parameters/video_frame_dedupe" }
         - { $ref: "#/components/parameters/xbrl_taxonomy" }
         - { $ref: "#/components/parameters/chunker" }
         - { $ref: "#/components/parameters/chunk_tokenizer" }
@@ -173,7 +176,10 @@ paths:
                 asr_model: { type: string }
                 asr_lang: { type: string, examples: ["auto", "en", "de"] }
                 encoding: { type: string, examples: ["shift_jis", "koi8-r", "windows-1251"] }
-                video_frames: { type: integer, minimum: 0 }
+                video_frames: { oneOf: [{ type: integer, minimum: 0 }, { type: string, enum: ["all"] }] }
+                video_scene_threshold: { type: number, minimum: 0, maximum: 1 }
+                video_frame_max_side: { type: integer, minimum: 0 }
+                video_frame_dedupe: { type: integer, minimum: 0, maximum: 64 }
                 xbrl_taxonomy: { type: string }
                 chunker: { $ref: "#/components/schemas/Chunker" }
                 chunk_tokenizer: { type: string }
@@ -960,9 +966,35 @@ components:
             cannot decode fail the request instead of being guessed.
           examples: ["auto", "en", "de"]
         video_frames:
+          oneOf:
+            - { type: integer, minimum: 0 }
+            - { type: string, enum: ["all"] }
+          description: >
+            Video — max frames sampled as pictures (0 = transcript only;
+            needs ffmpeg on the server). `all` (or any count at or above
+            4294967295) keeps every distinct cut (#647).
+        video_scene_threshold:
+          type: number
+          minimum: 0
+          maximum: 1
+          description: >
+            Video — ffmpeg's scene score a frame must exceed to count as a
+            cut (#647). Default 0.27; 0.6 keeps hard cuts only.
+        video_frame_max_side:
           type: integer
           minimum: 0
-          description: Video — max frames sampled as pictures (0 = transcript only; needs ffmpeg on the server).
+          description: >
+            Video — downscale each sampled frame inside ffmpeg so its longer
+            side is at most this many px (#647); 0 = the source resolution.
+        video_frame_dedupe:
+          type: integer
+          minimum: 0
+          maximum: 64
+          description: >
+            Video — drop a sampled frame whose 64-bit difference hash is
+            within this Hamming distance of a frame already kept (#647): the
+            same slide after a fade becomes one picture. Unset = keep every
+            frame; 4–6 is a good distance.
         xbrl_taxonomy:
           type: string
           description: >
@@ -1323,7 +1355,13 @@ components:
     encoding:
       { name: encoding, in: query, schema: { type: string } }
     video_frames:
-      { name: video_frames, in: query, schema: { type: integer, minimum: 0 } }
+      { name: video_frames, in: query, schema: { oneOf: [{ type: integer, minimum: 0 }, { type: string, enum: ["all"] }] } }
+    video_scene_threshold:
+      { name: video_scene_threshold, in: query, schema: { type: number, minimum: 0, maximum: 1 } }
+    video_frame_max_side:
+      { name: video_frame_max_side, in: query, schema: { type: integer, minimum: 0 } }
+    video_frame_dedupe:
+      { name: video_frame_dedupe, in: query, schema: { type: integer, minimum: 0, maximum: 64 } }
     xbrl_taxonomy:
       { name: xbrl_taxonomy, in: query, schema: { type: string } }
     chunker:

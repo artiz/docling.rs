@@ -45,7 +45,20 @@ pub struct ConverterOptions {
     pub encoding: Option<String>,
     /// Max frames sampled from a video input as timestamped pictures (needs
     /// the ffmpeg binary at runtime; `0` = transcript only). Default 8.
+    /// `4294967295` (`2**32 - 1`, the largest value this field takes) keeps
+    /// every distinct cut (#647).
     pub video_frames: Option<u32>,
+    /// ffmpeg's scene score (0–1) a video frame must exceed to count as a
+    /// cut (#647). Default 0.27; 0.6 keeps hard cuts only.
+    pub video_scene_threshold: Option<f64>,
+    /// Downscale each sampled video frame inside ffmpeg so its longer side
+    /// is at most this many px (#647); `0` / unset = the source resolution.
+    pub video_frame_max_side: Option<u32>,
+    /// Drop a sampled video frame whose 64-bit difference hash is within
+    /// this Hamming distance (0–64) of a frame already kept (#647): the same
+    /// slide after a fade becomes one picture. Unset = keep every frame;
+    /// 4–6 is a good distance.
+    pub video_frame_dedupe: Option<u32>,
     /// XBRL: the directory the instance's taxonomy is read from (docling's
     /// `XBRLBackendOptions.taxonomy`); unset = the instance's own directory.
     pub xbrl_taxonomy: Option<String>,
@@ -284,8 +297,16 @@ pub struct ConvertOptions {
     /// Character encoding of text inputs (docling's
     /// `TextBackendOptions.encoding`); unset = detect.
     pub encoding: Option<String>,
-    /// Max frames sampled from a video input (`0` = transcript only).
+    /// Max frames sampled from a video input (`0` = transcript only;
+    /// `4294967295` = every distinct cut, #647).
     pub video_frames: Option<u32>,
+    /// Scene score (0–1) a video frame must exceed to be a cut (#647).
+    pub video_scene_threshold: Option<f64>,
+    /// Cap on a sampled video frame's longer side in px (#647).
+    pub video_frame_max_side: Option<u32>,
+    /// Difference-hash distance (0–64) under which a sampled video frame is
+    /// a duplicate and dropped (#647).
+    pub video_frame_dedupe: Option<u32>,
     /// XBRL taxonomy directory (docling's `XBRLBackendOptions.taxonomy`).
     pub xbrl_taxonomy: Option<String>,
     /// PDF page window `"A-B"` (or `"N"`), 1-based inclusive (#80).

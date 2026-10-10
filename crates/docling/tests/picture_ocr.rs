@@ -250,6 +250,45 @@ fn missing_model_warns_and_succeeds() {
     );
 }
 
+/// A clip with "Frame text sample" drawn on every frame: `seconds` long,
+/// background white for the first half and grey for the second — one soft
+/// cut whose two sides hash alike for the de-duplication (#647). `None`
+/// when this ffmpeg cannot draw text, or the ASR models are missing (a
+/// silent clip still goes through the ASR entry point).
+fn text_clip(dir: &std::path::Path, seconds: u32) -> Option<(PathBuf, Option<&'static str>)> {
+    let preset = [None, Some("parakeet_tdt_0.6b_v3")]
+        .into_iter()
+        .find(|p| docling_asr::models_available_for(*p));
+    let Some(preset) = preset else {
+        eprintln!("skipping: no ASR model installed");
+        return None;
+    };
+    std::fs::create_dir_all(dir).unwrap();
+    let clip = dir.join("frame_text.mp4");
+    let ffmpeg = std::env::var("DOCLING_FFMPEG").unwrap_or_else(|_| "ffmpeg".into());
+    let half = seconds / 2;
+    let status = std::process::Command::new(ffmpeg)
+        .args(["-hide_banner", "-loglevel", "error", "-f", "lavfi", "-i"])
+        .arg(format!("color=c=black:s=640x160:d={seconds}:r=10"))
+        .args(["-vf"])
+        .arg(format!(
+            "geq=r='if(lt(T\\,{half})\\,255\\,176)':g='if(lt(T\\,{half})\\,255\\,176)':b='if(lt(T\\,{half})\\,255\\,176)',\
+             drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf:text='Frame text sample':fontsize=40:fontcolor=black:x=20:y=60"
+        ))
+        .args(["-pix_fmt", "yuv420p", "-y"])
+        .arg(&clip)
+        .status();
+    let Ok(status) = status else {
+        eprintln!("skipping: ffmpeg could not run");
+        return None;
+    };
+    if !status.success() {
+        eprintln!("skipping: this ffmpeg cannot draw text");
+        return None;
+    }
+    Some((clip, preset))
+}
+
 /// A sampled video frame is a picture like any other: the text drawn into a
 /// generated clip comes back on its frame. Needs ffmpeg with `drawtext`.
 #[test]
@@ -258,33 +297,10 @@ fn video_frames_are_read_too() {
         eprintln!("skipping: OCR models or ffmpeg not found");
         return;
     }
-    // A silent clip still goes through the ASR entry point, which wants its
-    // model files: whichever preset is installed (Whisper, else Parakeet).
-    let preset = [None, Some("parakeet_tdt_0.6b_v3")]
-        .into_iter()
-        .find(|p| docling_asr::models_available_for(*p));
-    let Some(preset) = preset else {
-        eprintln!("skipping: no ASR model installed");
-        return;
-    };
     let dir = std::env::temp_dir().join(format!("docling-picture-ocr-{}", std::process::id()));
-    std::fs::create_dir_all(&dir).unwrap();
-    let clip = dir.join("frame_text.mp4");
-    let ffmpeg = std::env::var("DOCLING_FFMPEG").unwrap_or_else(|_| "ffmpeg".into());
-    let status = std::process::Command::new(ffmpeg)
-        .args(["-hide_banner", "-loglevel", "error", "-f", "lavfi", "-i", "color=c=white:s=640x160:d=2:r=10"])
-        .args(["-vf", "drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf:text='Frame text sample':fontsize=40:fontcolor=black:x=20:y=60"])
-        .args(["-pix_fmt", "yuv420p", "-y"])
-        .arg(&clip)
-        .status();
-    let Ok(status) = status else {
-        eprintln!("skipping: ffmpeg could not run");
+    let Some((clip, preset)) = text_clip(&dir, 2) else {
         return;
     };
-    if !status.success() {
-        eprintln!("skipping: this ffmpeg cannot draw text");
-        return;
-    }
     let source = SourceDocument::from_file(&clip).expect("clip");
     let mut converter = DocumentConverter::new()
         .video_frames(1)
@@ -301,4 +317,45 @@ fn video_frames_are_read_too() {
             .any(|(t, _)| t.as_deref().is_some_and(|t| t.contains("Frame text"))),
         "no frame carries the drawn text: {texts:?}"
     );
+}
+
+/// #647: the frames go through the picture enrichment one at a time —
+/// with `keep_picture_images(false)` no frame reaches the document with
+/// its bytes, the OCR text still does; `video_frame_dedupe` collapses the
+/// re-lit second half onto the first frame, `None` keeps both.
+#[test]
+fn video_frames_stream_through_the_enrichment() {
+    if !ocr_models_ready() || !docling::video::ffmpeg_available() {
+        eprintln!("skipping: OCR models or ffmpeg not found");
+        return;
+    }
+    let dir = std::env::temp_dir().join(format!("docling-picture-ocr-647-{}", std::process::id()));
+    let Some((clip, preset)) = text_clip(&dir, 4) else {
+        return;
+    };
+    let run = |dedupe: Option<u32>| {
+        let source = SourceDocument::from_file(&clip).expect("clip");
+        let mut converter = DocumentConverter::new()
+            .video_frames_all()
+            .video_frame_dedupe(dedupe)
+            .do_picture_ocr(true)
+            .keep_picture_images(false);
+        if let Some(p) = preset {
+            converter = converter.asr_model(Some(p.to_string()));
+        }
+        let result = converter.convert(source).expect("convert the clip");
+        pictures(&json(&result.document))
+    };
+    let both = run(None);
+    let one = run(Some(5));
+    let _ = std::fs::remove_dir_all(&dir);
+    assert_eq!(both.len(), 2, "first frame + the re-lit cut: {both:?}");
+    assert_eq!(one.len(), 1, "de-duplicated: {one:?}");
+    for (text, has_image) in both.iter().chain(&one) {
+        assert!(!has_image, "frame bytes dropped before the document");
+        assert!(
+            text.as_deref().is_some_and(|t| t.contains("Frame text")),
+            "frame read before its bytes were dropped: {text:?}"
+        );
+    }
 }

@@ -90,4 +90,7 @@ DOCLING_RS_TF_MATCH_DUMP,debug,crates/docling-pdf/src/tf_core.rs
 DOCLING_RS_TIMING,debug,crates/docling-onnx/src/lib.rs
 DOCLING_RS_VLM_DEBUG,debug,crates/docling/src/vlm.rs
 DOCLING_RS_PICTURE_OCR_MIN_SIDE,operational,crates/docling/src/converter.rs
+DOCLING_RS_VIDEO_SCENE_THRESHOLD,operational,crates/docling/src/converter.rs
+DOCLING_RS_VIDEO_FRAME_MAX_SIDE,operational,crates/docling/src/converter.rs
+DOCLING_RS_VIDEO_FRAME_DEDUPE,operational,crates/docling/src/converter.rs
 DOCLING_RS_NER_DIR,model path,crates/docling-pdf/src/ner.rs

@@ -499,7 +499,15 @@ constructor; output options (`to`, `imageMode`, `artifactsDir`) are per call.
   such as `"shift_jis"` or `"koi8-r"`. Unset detects (BOM, UTF-8, then
   windows-1252); bytes the named encoding cannot decode fail the conversion.
 - `videoFrames`: max frames sampled from a video input as timestamped pictures
-  (`0` = transcript only; default 8, needs ffmpeg at runtime).
+  (`0` = transcript only; default 8, needs ffmpeg at runtime; `4294967295` =
+  every distinct cut, #647).
+- `videoSceneThreshold` / `videoFrameMaxSide` / `videoFrameDedupe` (#647):
+  ffmpeg's scene score a frame must exceed to be a cut (0.27; 0.6 keeps hard
+  cuts only), a cap on each frame's longer side applied inside ffmpeg (0 =
+  source size), and the difference-hash distance (0–64) under which a frame
+  is a duplicate of a kept one and dropped (unset = keep all; 4–6 collapses a
+  re-lit slide). Frames stream one at a time through `doPictureOcr` +
+  `keepPictureImages: false`, so a long lecture costs one frame of memory.
 - `pipeline`: `"standard"` (default) or `"vlm"` — convert PDF/image pages
   through a remote vision endpoint instead of the ONNX stack (#77). See
   [VLM pipeline](#vlm-pipeline-remote-endpoint). The five `vlm*` options below
