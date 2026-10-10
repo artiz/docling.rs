@@ -88,6 +88,13 @@ async function loadRuntime(plan) {
   const info = adapter && adapter.info ? [adapter.info.vendor, adapter.info.architecture].filter(Boolean).join(" ") : "";
   runtime = {
     threads: ort.env.wasm.numThreads,
+    // The WebGPU build is an asyncify build: a call that enters its wasm while
+    // another is suspended on a GPU round trip corrupts the suspended stack
+    // ("memory access out of bounds", or a hang — measured with an inference
+    // overlapping a session creation, which is what the background detector
+    // load does). Its calls are serialized; the wasm build has no suspension
+    // points and keeps overlapping.
+    serial: !!adapter,
     gpu: adapter ? plan : new Set(),
     gpuInfo: info,
     gpuUnavailable: plan.size && !adapter ? why : "",
@@ -188,6 +195,16 @@ export function createOcr({ onStatus }) {
   let plan = new Set();
   const backend = {};
   let stats = {};
+  // One ORT call at a time on the WebGPU build (see loadRuntime). Each
+  // create/run call queues on its own — never a whole createSession, whose
+  // wasm fallback queues again.
+  let queue = Promise.resolve();
+  function serial(fn) {
+    if (!runtime || !runtime.serial) return fn();
+    const p = queue.then(fn, fn);
+    queue = p.catch(() => {});
+    return p;
+  }
   // Session creation per model key: WebGPU when the plan has it, else wasm. A
   // WebGPU session that will not start (an op the EP lacks, a lost device, GPU
   // memory) falls back to wasm instead of failing the conversion. `key` null =
@@ -197,7 +214,7 @@ export function createOcr({ onStatus }) {
     const base = { logSeverityLevel: 3, ...opts };
     if (key && plan.has(key)) {
       try {
-        const s = await ort.InferenceSession.create(model, { ...base, executionProviders: ["webgpu"] });
+        const s = await serial(() => ort.InferenceSession.create(model, { ...base, executionProviders: ["webgpu"] }));
         backend[key] = "webgpu";
         return s;
       } catch (e) {
@@ -207,13 +224,16 @@ export function createOcr({ onStatus }) {
     } else if (key) {
       backend[key] = "wasm";
     }
-    return ort.InferenceSession.create(model, { ...base, executionProviders: ["wasm"] });
+    return serial(() => ort.InferenceSession.create(model, { ...base, executionProviders: ["wasm"] }));
   }
-  // session.run with the time charged to `key`.
+  // session.run with the time charged to `key` (time in the queue excluded).
   async function run(key, session, feeds) {
-    const t = performance.now();
+    let t = 0;
     try {
-      return await session.run(feeds);
+      return await serial(() => {
+        t = performance.now();
+        return session.run(feeds);
+      });
     } finally {
       const s = (stats[key] ||= { runs: 0, ms: 0 });
       s.runs++;
