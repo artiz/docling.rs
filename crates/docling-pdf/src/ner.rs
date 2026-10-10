@@ -203,8 +203,56 @@ impl NerDetector {
             }
         }
         flush(&mut current, &mut spans);
+        // The model labels wordpieces, and a span that ends on a piece
+        // boundary inside a word (`Angela Merk|el`, `SS|N`) is not a
+        // usable span: snap both ends to the word. Then drop what the
+        // model gets reliably wrong on document text: a lone all-caps
+        // abbreviation of up to four letters (`SSN`, `IBAN`, `PDF`, `URL`
+        // all read as organizations at 0.95) — a long all-caps name
+        // (UNESCO, SIEMENS) is still taken.
+        for s in spans.iter_mut() {
+            s.start = snap_back(chunk, s.start);
+            s.end = snap_forward(chunk, s.end);
+        }
+        spans.retain(|s| {
+            let text = &chunk[s.start..s.end];
+            let letters = text.chars().filter(|c| c.is_alphabetic()).count();
+            !(text.chars().all(|c| !c.is_lowercase()) && letters <= 4 && !text.contains(' '))
+        });
         Ok(spans)
     }
+}
+
+fn is_word_char(c: char) -> bool {
+    c.is_alphanumeric() || c == '\''
+}
+
+/// `i` moved back to the start of the word it sits in.
+fn snap_back(text: &str, mut i: usize) -> usize {
+    while i > 0 {
+        let Some(c) = text[..i].chars().next_back() else {
+            break;
+        };
+        if !is_word_char(c) {
+            break;
+        }
+        i -= c.len_utf8();
+    }
+    i
+}
+
+/// `i` moved forward to the end of the word it sits in.
+fn snap_forward(text: &str, mut i: usize) -> usize {
+    while i < text.len() {
+        let Some(c) = text[i..].chars().next() else {
+            break;
+        };
+        if !is_word_char(c) {
+            break;
+        }
+        i += c.len_utf8();
+    }
+    i
 }
 
 /// Argmax of a logit row and that class's softmax probability.
@@ -294,15 +342,52 @@ mod tests {
         assert!(p > 0.6 && p < 0.7, "{p}");
     }
 
+    /// The repo-root `.models/ner` from the crate's own CWD, like the
+    /// other ML tests reach their assets.
+    fn model_ready() -> bool {
+        if !models_available() {
+            let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../.models/ner");
+            if root.join("model.onnx").exists() {
+                std::env::set_var("DOCLING_RS_NER_DIR", root);
+            }
+        }
+        models_available()
+    }
+
+    #[test]
+    fn snapping_covers_whole_words() {
+        let t = "see Angela Merkel, SSN";
+        assert_eq!(snap_back(t, 13), 11);
+        assert_eq!(snap_back(t, 11), 11);
+        assert_eq!(snap_forward(t, 15), 17);
+        assert_eq!(snap_forward(t, 17), 17);
+        assert_eq!(snap_back(t, 0), 0);
+        assert_eq!(snap_forward(t, t.len()), t.len());
+    }
+
     /// With the model installed: a seeded name, organization and place are
-    /// found with byte-exact spans (also past a multi-byte character).
+    /// found with byte-exact spans (also past a multi-byte character); a
+    /// span the model cuts on a wordpiece boundary is snapped to the word,
+    /// and the abbreviations it misreads as organizations are not taken.
     #[test]
     fn detects_seeded_entities() {
-        if !models_available() {
+        if !model_ready() {
             eprintln!("skipping: NER model not found");
             return;
         }
         let det = NerDetector::load().unwrap();
+        let text = "Contact john.doe@example.com or +1 (555) 123-4567 (Angela Merkel).";
+        let found: Vec<&str> = det
+            .detect(text)
+            .iter()
+            .map(|s| &text[s.start..s.end])
+            .collect();
+        assert_eq!(found, vec!["Angela Merkel"], "{found:?}");
+        let text = "Card 4111 1111 1111 1111, SSN 123-45-6789, IBAN DE89 3704 0044 0532 0130 00.";
+        assert!(
+            det.detect(text).is_empty(),
+            "abbreviations are not entities"
+        );
         let text = "Café note: Angela Merkel met Siemens AG in Berlin on Monday.";
         let spans = det.detect(text);
         let found: Vec<(PiiKind, &str)> = spans

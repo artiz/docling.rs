@@ -281,7 +281,9 @@ pub struct RedactionOptions {
     /// Literal terms (case-insensitive) never redacted even when a detector
     /// flags them — `support@example.com`, the company's own name.
     pub allow_terms: Vec<String>,
-    /// The NER detector's minimum confidence for a span (0–1; 0.5 default).
+    /// The NER detector's minimum confidence for a span (0–1; 0.85 by
+    /// default — a lone common word in a table header reads as a location
+    /// at ~0.8, a real name at 0.99+).
     pub ner_min_score: f32,
     pub images: ImageRedaction,
     /// Keep the `original → placeholder` pairs in the report. Off by default
@@ -298,7 +300,7 @@ impl Default for RedactionOptions {
             custom_patterns: Vec::new(),
             deny_terms: Vec::new(),
             allow_terms: Vec::new(),
-            ner_min_score: 0.5,
+            ner_min_score: 0.85,
             images: ImageRedaction::Drop,
             return_mapping: false,
         }
