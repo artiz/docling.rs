@@ -65,6 +65,9 @@ enum El {
     },
     Image {
         title: String,
+        /// The destination (`![alt](dest)`), resolved to bytes under the
+        /// image policy (#646).
+        dest: String,
         children: Vec<El>,
     },
     CodeSpan(String),
@@ -300,8 +303,11 @@ fn parse_container(tag: Tag, events: &[Event], i: &mut usize, depth: u16) -> El 
             dest: dest_url.to_string(),
             children: parse_children(events, i, depth),
         },
-        Tag::Image { title, .. } => El::Image {
+        Tag::Image {
+            title, dest_url, ..
+        } => El::Image {
             title: title.to_string(),
+            dest: dest_url.to_string(),
             children: parse_children(events, i, depth),
         },
         _ => El::Other(parse_children(events, i, depth)),
@@ -407,7 +413,9 @@ enum Pending {
     ListItem { enumerated: bool, marker: String },
 }
 
-struct Walker {
+struct Walker<'a> {
+    /// Resolves an image's destination to its bytes (#646).
+    images: &'a dyn super::images::ImageResolver,
     tree: ItemTree,
     in_table: bool,
     in_pipeless_table: bool,
@@ -424,9 +432,13 @@ struct Walker {
 
 /// Build docling's item tree for a Markdown document, or `None` when it holds
 /// a raw HTML block (see the module docs).
-pub(super) fn build_tree(text: &str) -> Option<ItemTree> {
+pub(super) fn build_tree(
+    text: &str,
+    images: &dyn super::images::ImageResolver,
+) -> Option<ItemTree> {
     let root = parse(text);
     let mut w = Walker {
+        images,
         tree: ItemTree::default(),
         in_table: false,
         in_pipeless_table: false,
@@ -464,7 +476,7 @@ fn text_kind(
     }
 }
 
-impl Walker {
+impl Walker<'_> {
     /// `_close_table`: the buffered `|` lines become one table on the body —
     /// row 0 the header, row 1 (the delimiter) skipped, the rest the body,
     /// every row cut or padded to the header's width (GFM), cells unescaped.
@@ -692,12 +704,13 @@ impl Walker {
                         .push(Pending::ListItem { enumerated, marker });
                 }
             }
-            El::Image { title, .. } => {
+            El::Image { title, dest, .. } => {
                 self.close_table();
                 // The `"title"` is the caption (on the body, like every
                 // `add_text` without a parent); the alt text runs are walked
-                // as the picture's children afterwards. No image payload:
-                // upstream fetches none by default.
+                // as the picture's children afterwards. The payload is what
+                // the image policy resolves the destination to (#646) —
+                // nothing by default, as upstream fetches none.
                 let mut captions = Vec::new();
                 if !title.is_empty() {
                     let cap = self.tree.add(
@@ -719,7 +732,7 @@ impl Walker {
                     None,
                     TreeKind::Picture {
                         captions,
-                        image: None,
+                        image: self.images.resolve(dest),
                         classification: None,
                         description: None,
                         confidence: None,
@@ -926,7 +939,7 @@ mod tests {
     use docling_core::tree::TreeItem;
 
     fn tree(md: &str) -> ItemTree {
-        build_tree(md).expect("a tree")
+        build_tree(md, &super::super::images::NoFetch).expect("a tree")
     }
 
     fn label(it: &TreeItem) -> String {
@@ -1076,14 +1089,14 @@ mod tests {
     /// no tree is built (the flat export stays).
     #[test]
     fn html_blocks_yield_no_tree() {
-        assert!(build_tree("para\n\n<div>hi</div>\n").is_none());
-        assert!(build_tree("para\n").is_some());
+        assert!(build_tree("para\n\n<div>hi</div>\n", &super::super::images::NoFetch).is_none());
+        assert!(build_tree("para\n", &super::super::images::NoFetch).is_some());
     }
 
     /// Deep nesting is cut off instead of overflowing the stack.
     #[test]
     fn deep_nesting_is_bounded() {
         let deep = ">".repeat(50_000) + " x\n";
-        assert!(build_tree(&deep).is_some());
+        assert!(build_tree(&deep, &super::super::images::NoFetch).is_some());
     }
 }

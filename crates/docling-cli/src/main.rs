@@ -18,7 +18,7 @@
 //! the same name): one identifier per line, sorted, for scripts that ask the
 //! binary what it converts instead of hard-coding a list.
 //!
-//! Usage: docling-rs [--strict] [--page-break-placeholder TEXT] [--to md|json|html|text|dclx|chunks|images|latex|pandoc|vtt] [--pages A-B] [--scale X] [--images MODE] [--input GLOB --output DIR [--jobs N]] [--output-file PATH] [--fetch-images] [--list-attachments] [--skip-empty-cells] [--compact-tables] [--ebcdic-layout JSON|PATH] [--encoding LABEL] [--no-stream] [--no-table-former] [--no-ocr] [--text-layer-only] [--password PASSWORD | --password-file PATH] [--force-full-page-ocr] [--no-text-panels] [--heading-hierarchy] [--ocr-lang LANG] [--ocr-engine ppocr|tesseract] [--ocr-mode MODE] [--ocr-scale X] [--images-scale X] [--page-images] [--chunker hierarchical|hybrid] [--chunk-tokenizer PATH] [--chunk-max-tokens N] [--no-chunk-merge-peers] [--pipeline standard|vlm] [--vlm-endpoint URL] [--vlm-model NAME] [--vlm-api-key TOKEN] [--vlm-prompt TEXT] [--vlm-max-tokens N] [--asr-model PRESET] [--asr-lang CODE] [--video-frames N|all] [--video-scene-threshold X] [--video-frame-max-side PX] [--video-frame-dedupe N] [--xbrl-taxonomy DIR] [--use-web-browser] [--enrich-picture-classes] [--enrich-code] [--enrich-formula] [--picture-ocr] [--picture-ocr-classes LABELS] [--picture-ocr-min-side N] [--no-picture-images] [--redact-pii] [--redact-mode label|pseudonym|fixed:TEXT] [--redact-kinds LIST] [--redact-pattern NAME=REGEX]... [--redact-images drop|box_out|keep] [--document-timeout SECONDS] [--abort-on-error] [--output-dirs auto|flat|mirror] <input-file> | SOURCE...
+//! Usage: docling-rs [--strict] [--page-break-placeholder TEXT] [--to md|json|html|text|dclx|chunks|images|latex|pandoc|vtt] [--pages A-B] [--scale X] [--images MODE] [--input GLOB --output DIR [--jobs N]] [--output-file PATH] [--fetch-images] [--image-sources none|embedded|local|remote] [--image-hosts LIST] [--max-images N] [--max-image-bytes N] [--max-image-total-mb N] [--min-image-bytes N] [--list-attachments] [--skip-empty-cells] [--compact-tables] [--ebcdic-layout JSON|PATH] [--encoding LABEL] [--no-stream] [--no-table-former] [--no-ocr] [--text-layer-only] [--password PASSWORD | --password-file PATH] [--force-full-page-ocr] [--no-text-panels] [--heading-hierarchy] [--ocr-lang LANG] [--ocr-engine ppocr|tesseract] [--ocr-mode MODE] [--ocr-scale X] [--images-scale X] [--page-images] [--chunker hierarchical|hybrid] [--chunk-tokenizer PATH] [--chunk-max-tokens N] [--no-chunk-merge-peers] [--pipeline standard|vlm] [--vlm-endpoint URL] [--vlm-model NAME] [--vlm-api-key TOKEN] [--vlm-prompt TEXT] [--vlm-max-tokens N] [--asr-model PRESET] [--asr-lang CODE] [--video-frames N|all] [--video-scene-threshold X] [--video-frame-max-side PX] [--video-frame-dedupe N] [--xbrl-taxonomy DIR] [--use-web-browser] [--enrich-picture-classes] [--enrich-code] [--enrich-formula] [--picture-ocr] [--picture-ocr-classes LABELS] [--picture-ocr-min-side N] [--no-picture-images] [--redact-pii] [--redact-mode label|pseudonym|fixed:TEXT] [--redact-kinds LIST] [--redact-pattern NAME=REGEX]... [--redact-images drop|box_out|keep] [--document-timeout SECONDS] [--abort-on-error] [--output-dirs auto|flat|mirror] <input-file> | SOURCE...
 //!   --to FORMAT        repeatable (#491, like Python's `docling convert --to
 //!                      md --to json`): each document converts once and is
 //!                      written in every format named, `<stem>.md` +
@@ -82,7 +82,29 @@
 //!   --fetch-images     for HTML/EPUB/MHTML/JATS, resolve external <img src> (data:
 //!                      URIs, local files, http(s) URLs, EPUB/MHTML archive parts,
 //!                      JATS <graphic> files) and embed the bytes. Off by default;
-//!                      fetches over the network.
+//!                      fetches over the network. The same as
+//!                      `--image-sources remote` (#646).
+//!   --image-sources none|embedded|local|remote
+//!                      Which image references resolve (#646): `embedded` =
+//!                      data: URIs and parts of the same container (EPUB/MHTML
+//!                      entries, email cid: attachments) — no filesystem, no
+//!                      network; `local` = plus files under the source file's
+//!                      directory (never an absolute path, never outside it);
+//!                      `remote` = plus http(s) fetches. HTML, EPUB, MHTML,
+//!                      JATS, AsciiDoc, ODF, Markdown, email. Default none.
+//!   --image-hosts LIST Comma-separated hosts a remote image fetch may reach
+//!                      (exact, or `*.suffix`); redirects are held to it too.
+//!   --max-images N     Images resolved per document; the rest stay
+//!                      placeholders (default unlimited, DOCLING_RS_MAX_IMAGES).
+//!   --max-image-bytes N
+//!                      Largest image that resolves (default 32 MiB,
+//!                      DOCLING_RS_MAX_IMAGE_BYTES).
+//!   --max-image-total-mb N
+//!                      Total resolved image bytes per document, in MiB
+//!                      (default unlimited, DOCLING_RS_MAX_IMAGE_TOTAL_MB).
+//!   --min-image-bytes N
+//!                      Smallest image that resolves — skips spacer/tracking
+//!                      pixels (default 0, DOCLING_RS_MIN_IMAGE_BYTES).
 //!   --strict           cleaner, more conformant Markdown instead of byte-for-byte
 //!                      docling-legacy output (Markdown only).
 //!   --page-break-placeholder TEXT
@@ -367,6 +389,15 @@ INPUT SELECTION
 
 FORMAT OPTIONS
   --fetch-images          resolve external <img src> for HTML/EPUB/MHTML/JATS (network access)
+                          (= --image-sources remote)
+  --image-sources MODE    which image references resolve: none (default), embedded
+                          (data: URIs + same-container parts), local (+ files under
+                          the source's directory), remote (+ http(s) fetches)
+  --image-hosts LIST      hosts a remote image fetch may reach (exact or *.suffix)
+  --max-images N          images resolved per document (default unlimited)
+  --max-image-bytes N     largest image that resolves (default 32 MiB)
+  --max-image-total-mb N  total resolved image bytes per document (default unlimited)
+  --min-image-bytes N     smallest image that resolves (default 0)
   --list-attachments      append an Attachments section for .eml/.msg
   --skip-empty-cells      omit empty cells from XLSX/XLS grids
   --ebcdic-layout JSON|PATH   EBCDIC copybook layout
@@ -528,6 +559,57 @@ fn main() -> ExitCode {
         match arg.as_str() {
             "--strict" => opts.strict = Some(true),
             "--fetch-images" => opts.fetch_images = Some(true),
+            // #646: the image-source policy; the tier's spelling is checked
+            // by `ConvertOptions::validate`.
+            "--image-sources" => match args.next() {
+                Some(v) if !v.trim().is_empty() => opts.image_sources = Some(v),
+                _ => {
+                    eprintln!("error: --image-sources needs none, embedded, local or remote");
+                    return ExitCode::from(2);
+                }
+            },
+            "--image-hosts" => match args.next() {
+                Some(v) if !v.trim().is_empty() => {
+                    opts.image_hosts = Some(
+                        v.split(',')
+                            .map(|h| h.trim().to_string())
+                            .filter(|h| !h.is_empty())
+                            .collect(),
+                    )
+                }
+                _ => {
+                    eprintln!("error: --image-hosts needs a comma-separated host list");
+                    return ExitCode::from(2);
+                }
+            },
+            "--max-images" => match args.next().map(|v| v.trim().parse::<usize>()) {
+                Some(Ok(n)) => opts.max_images = Some(n),
+                _ => {
+                    eprintln!("error: --max-images needs a non-negative integer");
+                    return ExitCode::from(2);
+                }
+            },
+            "--max-image-bytes" => match args.next().map(|v| v.trim().parse::<u64>()) {
+                Some(Ok(n)) => opts.max_image_bytes = Some(n),
+                _ => {
+                    eprintln!("error: --max-image-bytes needs a number of bytes");
+                    return ExitCode::from(2);
+                }
+            },
+            "--max-image-total-mb" => match args.next().map(|v| v.trim().parse::<u64>()) {
+                Some(Ok(n)) => opts.max_image_total_mb = Some(n),
+                _ => {
+                    eprintln!("error: --max-image-total-mb needs a number of MiB");
+                    return ExitCode::from(2);
+                }
+            },
+            "--min-image-bytes" => match args.next().map(|v| v.trim().parse::<u64>()) {
+                Some(Ok(n)) => opts.min_image_bytes = Some(n),
+                _ => {
+                    eprintln!("error: --min-image-bytes needs a number of bytes");
+                    return ExitCode::from(2);
+                }
+            },
             // #251: append an Attachments section to converted emails
             // (.eml/.msg) — names and content types only.
             "--list-attachments" => opts.list_attachments = Some(true),

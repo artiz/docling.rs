@@ -62,8 +62,34 @@ pub struct ConvertOptions {
     pub page_break_placeholder: Option<String>,
 
     // --- declarative formats -------------------------------------------------
-    /// Resolve external `<img src>` for HTML/EPUB/MHTML/JATS (network access).
+    /// Resolve external `<img src>` for HTML/EPUB/MHTML/JATS (network access)
+    /// — the pre-#646 switch: `true` is `image_sources=remote`, `false` is
+    /// `none`; an explicit `image_sources` wins.
     pub fetch_images: Option<bool>,
+    /// Which image references resolve (#646): `none` (default — every picture
+    /// a placeholder) | `embedded` (`data:` URIs and parts of the same
+    /// container: EPUB/MHTML entries, email `cid:` attachments; no
+    /// filesystem or network) | `local` (plus files under the source file's
+    /// directory) | `remote` (plus `http(s)` fetches). HTML, EPUB, MHTML,
+    /// JATS, AsciiDoc, ODF, Markdown and email bodies.
+    pub image_sources: Option<String>,
+    /// Hosts a `remote` image fetch may reach (#646): exact names or
+    /// `*.suffix` wildcards, a list or a comma-separated string; unset =
+    /// any host. A redirect is held to the same list.
+    #[serde(default, deserialize_with = "de_string_list")]
+    pub image_hosts: Option<Vec<String>>,
+    /// Largest image that resolves, in bytes (#646; 32 MiB,
+    /// `DOCLING_RS_MAX_IMAGE_BYTES`).
+    pub max_image_bytes: Option<u64>,
+    /// How many images resolve per document; the rest stay placeholders
+    /// (#646; unlimited, `DOCLING_RS_MAX_IMAGES`).
+    pub max_images: Option<usize>,
+    /// Total resolved image bytes per document, in MiB (#646; unlimited,
+    /// `DOCLING_RS_MAX_IMAGE_TOTAL_MB`).
+    pub max_image_total_mb: Option<u64>,
+    /// Smallest image that resolves, in bytes — skips spacer / tracking
+    /// pixels (#646; 0, `DOCLING_RS_MIN_IMAGE_BYTES`).
+    pub min_image_bytes: Option<u64>,
     /// Email (.eml/.msg): append an Attachments section (#251).
     pub list_attachments: Option<bool>,
     /// Omit empty cells from sparse XLSX/XLS table grids (#271).
@@ -289,6 +315,12 @@ pub const OPTIONS: &[OptionInfo] = &[
         ..row("page_break_placeholder")
     },
     row("fetch_images"),
+    row("image_sources"),
+    row("image_hosts"),
+    row("max_image_bytes"),
+    row("max_images"),
+    row("max_image_total_mb"),
+    row("min_image_bytes"),
     row("list_attachments"),
     row("skip_empty_cells"),
     row("ebcdic_layout"),
@@ -415,6 +447,28 @@ pub fn merge_options<T: Serialize + DeserializeOwned + Default>(over: T, base: T
     serde_json::from_value(merged).unwrap_or_default()
 }
 
+/// A list option on the wire: a JSON array, or one string the text surfaces
+/// (query, multipart) send — split on commas, trimmed, empties dropped.
+fn de_string_list<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Option<Vec<String>>, D::Error> {
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum Raw {
+        List(Vec<String>),
+        Text(String),
+    }
+    Ok(Option::<Raw>::deserialize(d)?.map(|raw| {
+        let items: Vec<String> = match raw {
+            Raw::List(v) => v,
+            Raw::Text(s) => s.split(',').map(str::to_string).collect(),
+        };
+        items
+            .into_iter()
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty())
+            .collect()
+    }))
+}
+
 /// `video_frames` on the wire (#647): an integer, or `"all"` (any case,
 /// also a digit string, which the text surfaces send) for
 /// [`crate::ALL_VIDEO_FRAMES`]; a count at or above `u32::MAX` reads as
@@ -450,6 +504,19 @@ fn de_video_frames<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Option<usiz
 }
 
 impl ConvertOptions {
+    /// The image tier `image_sources` names (#646); `None` when unset (the
+    /// `fetch_images` alias, else the converter's default, decides).
+    pub fn image_sources(&self) -> Result<Option<crate::ImageSources>, OptionsError> {
+        self.image_sources
+            .as_deref()
+            .filter(|s| !s.trim().is_empty())
+            .map(|s| {
+                s.parse::<crate::ImageSources>()
+                    .map_err(|e| OptionsError::new("image_sources", e))
+            })
+            .transpose()
+    }
+
     /// The wire names of every field, from the struct itself (an unset
     /// option serializes as `null`), so a new field is listed without a
     /// hand-kept list — the inventory test and the unknown-key checks of the
@@ -511,6 +578,13 @@ impl ConvertOptions {
                     format!("images_scale must be a number in 0.1-4.0, got {s}"),
                 ));
             }
+        }
+        self.image_sources()?;
+        if self.max_image_bytes == Some(0) {
+            return Err(OptionsError::new(
+                "max_image_bytes",
+                "max_image_bytes must be a positive number of bytes, got 0",
+            ));
         }
         if let Some(t) = self.video_scene_threshold {
             if !(t.is_finite() && (0.0..=1.0).contains(&t)) {
@@ -650,6 +724,24 @@ impl ConvertOptions {
         }
         if let Some(v) = self.fetch_images {
             c = c.fetch_images(v);
+        }
+        if let Some(sources) = self.image_sources()? {
+            c = c.image_sources(sources);
+        }
+        if let Some(hosts) = &self.image_hosts {
+            c = c.image_hosts(hosts.iter().cloned());
+        }
+        if let Some(v) = self.max_image_bytes {
+            c = c.max_image_bytes(v);
+        }
+        if let Some(v) = self.max_images {
+            c = c.max_images(v);
+        }
+        if let Some(v) = self.max_image_total_mb {
+            c = c.max_image_total_mb(v);
+        }
+        if let Some(v) = self.min_image_bytes {
+            c = c.min_image_bytes(v);
         }
         if let Some(v) = self.list_attachments {
             c = c.list_attachments(v);

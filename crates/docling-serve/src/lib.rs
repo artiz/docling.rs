@@ -83,7 +83,13 @@
 //! - `page_images` — keep each page's render as the JSON `pages[n].image`
 //!   (docling's `generate_page_images`, #520; off by default)
 //! - `fetch_images` — resolve external `<img src>` for HTML/EPUB/MHTML/JATS (outbound
-//!   fetch, so honored only under `--allow-url-fetch`)
+//!   fetch, so honored only under `--allow-url-fetch`; the alias of
+//!   `image_sources=remote`)
+//! - `image_sources` — `none` | `embedded` | `local` | `remote` (#646): which image
+//!   references resolve. `remote` without `--allow-url-fetch` is held to
+//!   `embedded`; `local` needs `--allow-local-images` (400 otherwise).
+//!   `image_hosts`, `max_images`, `max_image_bytes`, `max_image_total_mb`,
+//!   `min_image_bytes` bound it.
 //! - `skip_empty_cells` — omit empty cells from sparse XLSX/XLS table grids
 //!   (#271; docling.rs extension, off by default)
 //! - `compact_tables` — unpadded `| a | b |` Markdown tables, all formats
@@ -212,6 +218,11 @@ pub struct ServeConfig {
     /// letting a caller name the fetch target is a deliberate exposure that a
     /// deployment must opt into (`--allow-url-fetch`).
     pub allow_url_fetch: bool,
+    /// Allow `image_sources=local` (#646): a request may then make the
+    /// converter read image files next to a server-side source (a URL
+    /// input has none; an upload has none either, so this only matters for
+    /// deployments that mount documents). Off by default — refused with 400.
+    pub allow_local_images: bool,
     /// Default `strict` for requests that don't set it.
     pub strict: bool,
     /// Maximum async jobs (#182) waiting or running at once; further
@@ -244,6 +255,7 @@ impl Default for ServeConfig {
             max_body_bytes: 256 * 1024 * 1024,
             warmup: false,
             allow_url_fetch: false,
+            allow_local_images: false,
             strict: false,
             queue_size: 16,
             result_ttl_secs: 600,
@@ -496,6 +508,8 @@ async fn shutdown_signal() {
 async fn config(State(state): State<Arc<AppState>>) -> Response {
     Json(json!({
         "allow_url_fetch": state.cfg.allow_url_fetch,
+        // #646: whether `image_sources=local` is accepted.
+        "allow_local_images": state.cfg.allow_local_images,
         // #263: the resolved memory ceiling (0/absent = none) and live RSS —
         // what admission control compares.
         "max_memory_mb": state.memory_ceiling_mb,
@@ -2698,12 +2712,39 @@ fn request_converter(
     options: &ConvertOptions,
 ) -> Result<DocumentConverter, ApiError> {
     let mut o = options.convert.clone();
-    // `fetch_images` pulls external `<img src>` over the network — the same
-    // outbound-fetch / SSRF surface as URL inputs, so it lives behind the
-    // same `--allow-url-fetch` gate. Off by default, it's silently ignored
-    // rather than honored (the UI greys the box; an API caller just gets
-    // placeholder images instead of a surprise outbound fetch).
-    o.fetch_images = Some(state.cfg.allow_url_fetch && o.fetch_images.unwrap_or(false));
+    // The image-source policy (#646). `remote` (and its alias
+    // `fetch_images=true`) pulls external `<img src>` over the network — the
+    // same outbound-fetch / SSRF surface as URL inputs, so it lives behind
+    // the same `--allow-url-fetch` gate: without the flag the request is
+    // held to `embedded` (`data:` URIs and container parts, which need no
+    // network) rather than refused — an API caller gets the safe tier
+    // instead of a surprise outbound fetch (the UI greys the box). `local`
+    // names server-side files, so it is refused unless the operator started
+    // the server with `--allow-local-images`.
+    let requested = o.image_sources().map_err(bad)?.or_else(|| {
+        o.fetch_images
+            .filter(|&f| f)
+            .map(|_| docling::ImageSources::Remote)
+    });
+    match requested {
+        Some(docling::ImageSources::Local) if !state.cfg.allow_local_images => {
+            return Err(ApiError::Unsupported(
+                "image_sources=local reads files next to the source on the server; \
+                 start docling-serve with --allow-local-images to enable it, or use \
+                 image_sources=embedded"
+                    .into(),
+            ));
+        }
+        Some(docling::ImageSources::Remote) if !state.cfg.allow_url_fetch => {
+            o.image_sources = Some(docling::ImageSources::Embedded.to_string());
+            o.fetch_images = Some(false);
+        }
+        Some(sources) => {
+            o.image_sources = Some(sources.to_string());
+            o.fetch_images = None;
+        }
+        None => {}
+    }
     // A server-local directory, held to the same rule as `chunk_tokenizer`:
     // relative, no `..` — a request must not name arbitrary server paths.
     if let Some(dir) = o.xbrl_taxonomy.as_deref() {

@@ -44,6 +44,7 @@ pub mod backend;
 pub mod video;
 
 pub use archive::{ArchiveLimits, ArchiveOutcome};
+pub use backend::images::{ImageLimits, ImagePolicy, ImageSources, DEFAULT_MAX_IMAGE_BYTES};
 pub use converter::{parse_page_range, DocumentConverter, ALL_VIDEO_FRAMES, DEFAULT_VIDEO_FRAMES};
 pub use docling_core::{
     CustomPattern, ImageRedaction, PiiKind, RedactionOptions, RedactionReport, Replacement,

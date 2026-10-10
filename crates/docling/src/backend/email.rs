@@ -10,19 +10,37 @@
 //! docling's own architecture for the format. `list_attachments` (opt-in,
 //! docling's `EmailBackendOptions.list_attachments`) appends an `Attachments`
 //! section listing names and content types; payload bytes are never embedded.
+//!
+//! Inline images (#646): docling flattens an HTML body to Markdown and
+//! splits it into paragraphs, which loses the pictures pasted into it (their
+//! `cid:` references name image parts of the same message). Under
+//! [`ImageSources::Embedded`](crate::ImageSources::Embedded) and above, when an HTML body references
+//! images the message carries — `Content-ID` parts of an `.eml`,
+//! PR_ATTACH_CONTENT_ID attachments of a `.msg`, or `data:` URIs — the body
+//! is appended as the HTML backend's nodes instead (headings, lists, tables
+//! and the pictures in body order). A body without a resolvable image, and
+//! every conversion at the default tier, takes docling's paragraph path, so
+//! the default output is unchanged.
 
-use mail_parser::{Address, Message, MessageParser};
+use std::collections::HashMap;
 
+use mail_parser::{Address, Message, MessageParser, MimeHeaders};
+
+use crate::backend::images::{build_picture, normalize_cid, ImagePolicy, MapImageResolver};
 use crate::backend::markdown::escape_text;
 use crate::backend::DeclarativeBackend;
 use crate::error::ConversionError;
 use crate::source::SourceDocument;
-use docling_core::{DoclingDocument, Node};
+use docling_core::{DoclingDocument, Node, PictureImage};
 
 pub struct EmailBackend {
     /// Append an `Attachments` section (names + content types, never the
     /// payload) — docling's opt-in `list_attachments`.
     pub list_attachments: bool,
+    /// Which images of an HTML body resolve (#646): the message's own
+    /// `cid:` parts and `data:` URIs under `Embedded` and above; none by
+    /// default (see the module docs).
+    pub images: ImagePolicy,
 }
 
 impl DeclarativeBackend for EmailBackend {
@@ -60,10 +78,15 @@ impl DeclarativeBackend for EmailBackend {
                 text: escape_text(&format!("Date: {date}")),
             });
         }
-        for para in body_paragraphs(&msg) {
-            doc.push(Node::Paragraph {
-                text: escape_text(&para),
-            });
+        match self.body_with_images(source, &msg, projected.as_ref()) {
+            Some(nodes) => doc.nodes.extend(nodes),
+            None => {
+                for para in body_paragraphs(&msg) {
+                    doc.push(Node::Paragraph {
+                        text: escape_text(&para),
+                    });
+                }
+            }
         }
         if self.list_attachments {
             let labels = match &projected {
@@ -94,6 +117,98 @@ impl DeclarativeBackend for EmailBackend {
         }
         Ok(doc)
     }
+}
+
+impl EmailBackend {
+    /// The HTML body as nodes with its pictures (#646), when the tier allows
+    /// container parts and a body references an image the message carries;
+    /// `None` takes the paragraph path. An `.eml`'s images are its
+    /// `Content-ID` parts (every image part, wherever it nests); a `.msg`'s
+    /// are its attachments with a PR_ATTACH_CONTENT_ID, keyed the way the
+    /// body spells them (`cid:` + the id, brackets and case normalized).
+    fn body_with_images(
+        &self,
+        source: &SourceDocument,
+        msg: &Message,
+        projected: Option<&super::msg::ProjectedMsg>,
+    ) -> Option<Vec<Node>> {
+        if !self.images.sources.embedded() {
+            return None;
+        }
+        let (bodies, cids): (Vec<String>, HashMap<String, PictureImage>) = match projected {
+            Some(p) => {
+                let html = p
+                    .html_body
+                    .as_deref()
+                    .map(|b| super::html::decode_html_bytes(b).into_owned())
+                    .filter(|h| !h.trim().is_empty());
+                (html.into_iter().collect(), msg_cid_images(&source.bytes))
+            }
+            None => (
+                (0..msg.html_body_count())
+                    .filter_map(|i| msg.body_html(i).map(|h| h.into_owned()))
+                    .collect(),
+                eml_cid_images(msg),
+            ),
+        };
+        for html in bodies {
+            let resolver = MapImageResolver::new(cids.clone(), &self.images);
+            let html_doc = super::html::convert_html("email-body.html", &html, &resolver);
+            if html_doc
+                .nodes
+                .iter()
+                .any(|n| matches!(n, Node::Picture { image: Some(_), .. }))
+            {
+                return Some(html_doc.nodes);
+            }
+        }
+        None
+    }
+}
+
+/// An `.eml`'s image parts by normalized `cid:` key (#646).
+fn eml_cid_images(msg: &Message) -> HashMap<String, PictureImage> {
+    let mut out = HashMap::new();
+    for part in &msg.parts {
+        if part.is_multipart() {
+            continue;
+        }
+        let Some(ct) = part.content_type() else {
+            continue;
+        };
+        if !ct.ctype().eq_ignore_ascii_case("image") {
+            continue;
+        }
+        let Some(id) = part.content_id() else {
+            continue;
+        };
+        let mimetype =
+            format!("{}/{}", ct.ctype(), ct.subtype().unwrap_or("")).to_ascii_lowercase();
+        if let Some(pic) = build_picture(mimetype, part.contents().to_vec()) {
+            out.entry(normalize_cid(id)).or_insert(pic);
+        }
+    }
+    out
+}
+
+/// A `.msg`'s inline image attachments by normalized `cid:` key (#646):
+/// a by-value attachment with a PR_ATTACH_CONTENT_ID whose bytes decode as
+/// a raster (the MIME tag names the type, else the file name's extension).
+fn msg_cid_images(bytes: &[u8]) -> HashMap<String, PictureImage> {
+    let mut out = HashMap::new();
+    for att in super::msg::attachments(bytes).unwrap_or_default() {
+        let (Some(id), Some(payload)) = (att.content_id.as_deref(), att.payload) else {
+            continue;
+        };
+        let pic = match att.mime.as_deref().filter(|m| m.starts_with("image/")) {
+            Some(mime) => build_picture(mime.to_ascii_lowercase(), payload),
+            None => super::ooxml::picture_image(att.name.as_deref().unwrap_or(""), payload),
+        };
+        if let Some(pic) = pic {
+            out.entry(normalize_cid(id)).or_insert(pic);
+        }
+    }
+    out
 }
 
 /// Attachment display labels for a parsed `.eml`: `name (type/subtype)`,
@@ -231,6 +346,7 @@ mod tests {
         let src = SourceDocument::from_bytes("m", InputFormat::Email, eml.as_bytes().to_vec());
         let md = EmailBackend {
             list_attachments: false,
+            images: ImagePolicy::default(),
         }
         .convert(&src)
         .unwrap()
@@ -259,6 +375,7 @@ mod tests {
         let src = SourceDocument::from_bytes("m.eml", InputFormat::Email, eml.as_bytes().to_vec());
         let md = EmailBackend {
             list_attachments: false,
+            images: ImagePolicy::default(),
         }
         .convert(&src)
         .unwrap()
@@ -286,6 +403,7 @@ mod tests {
         let src = SourceDocument::from_bytes("m", crate::InputFormat::Email, eml.into());
         let md = EmailBackend {
             list_attachments: true,
+            images: ImagePolicy::default(),
         }
         .convert(&src)
         .unwrap()
@@ -294,6 +412,7 @@ mod tests {
         assert!(md.contains("- note.txt (text/plain)"), "{md}");
         let md_off = EmailBackend {
             list_attachments: false,
+            images: ImagePolicy::default(),
         }
         .convert(&src)
         .unwrap()

@@ -1,0 +1,27 @@
+From: Alice <alice@example.com>
+To: Bob <bob@example.com>
+Subject: Two inline pictures
+Date: Tue, 20 May 2026 10:30:00 +0000
+MIME-Version: 1.0
+Content-Type: multipart/related; boundary="REL"; type="text/html"
+
+--REL
+Content-Type: text/html; charset=utf-8
+Content-Transfer-Encoding: 7bit
+
+<html><body><h2>Report</h2><p>First the red box:</p><img src="cid:red-box@example.com" alt="red box"><p>Then the blue one:</p><img src="CID:<blue-box@example.com>" alt="blue box"><p>Regards, Alice</p></body></html>
+--REL
+Content-Type: image/png; name="red.png"
+Content-Transfer-Encoding: base64
+Content-ID: <red-box@example.com>
+Content-Disposition: inline; filename="red.png"
+
+iVBORw0KGgoAAAANSUhEUgAAABgAAAAQCAIAAACDRijCAAAAHElEQVR4nGO8IyfHQA3ARBVTRg0aNWjUoBFsEABJ6QE4U1cKUgAAAABJRU5ErkJggg==
+--REL
+Content-Type: image/png; name="blue.png"
+Content-Transfer-Encoding: base64
+Content-ID: <blue-box@example.com>
+Content-Disposition: inline; filename="blue.png"
+
+iVBORw0KGgoAAAANSUhEUgAAABAAAAAYCAIAAAB8wupbAAAAHUlEQVR4nGOUs7nDQApgIkn1qIZRDaMaRjWQrAEAABgBZg/4r3kAAAAASUVORK5CYII=
+--REL--

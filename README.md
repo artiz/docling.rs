@@ -392,7 +392,7 @@ warm pipeline once, the models themselves load lazily on the first matching regi
 `redact_pii`, `redact_mode`, `redact_kinds`, `redact_pattern`, `redact_images` (#621:
 [PII redaction](#pii-redaction---redact-pii) before any export; the counts come back in
 `X-Docling-Redaction` / the item's `redaction`),
-`ocr_lang`, `ocr_engine`, `ocr_mode`, `ocr_scale`, `scale`, `document_timeout` (#497: a per-document budget in seconds — a cut conversion answers `X-Docling-Status: partial_success` + `X-Docling-Errors`, batch / async items carry `status` and `errors`), `asr_model`, `asr_lang`, `encoding`, `video_frames`, `xbrl_taxonomy`, `fetch_images`,
+`ocr_lang`, `ocr_engine`, `ocr_mode`, `ocr_scale`, `scale`, `document_timeout` (#497: a per-document budget in seconds — a cut conversion answers `X-Docling-Status: partial_success` + `X-Docling-Errors`, batch / async items carry `status` and `errors`), `asr_model`, `asr_lang`, `encoding`, `video_frames`, `image_sources` (#646: `remote` needs `--allow-url-fetch` — else held to `embedded` — and `local` needs `--allow-local-images`), `image_hosts`, `max_images` / `max_image_bytes` / `max_image_total_mb` / `min_image_bytes`, `xbrl_taxonomy`, `fetch_images`,
 `chunker=hierarchical|hybrid`, `chunk_tokenizer`, `chunk_max_tokens`, `chunk_merge_peers` (#256:
 per-request `to=chunks` configuration; the tokenizer is a server-local relative path),
 `pipeline=standard|vlm` + `vlm_endpoint`, `vlm_model`, `vlm_api_key`, `vlm_prompt`,
@@ -1055,11 +1055,22 @@ for (path, bytes) in files { std::fs::write(path, bytes).unwrap(); }
 > The cropped/extracted pixels are real, but the base64 won't be byte-identical
 > to docling's (different PNG encoder). HTML/EPUB/MHTML/AsciiDoc/JATS pictures
 > stay placeholders by default (like docling); enable fetching with
-> `--fetch-images` / `DocumentConverter::fetch_images(true)` to resolve
-> `<img src>`, AsciiDoc's `image::target[]` and a JATS `<fig>`'s
-> `<graphic xlink:href>` — `data:` URIs, local files, remote `http(s)` URLs, and
-> EPUB/MHTML archive entries — and embed the bytes. Remote URLs are fetched over
-> the network, so enable it only for input you trust.
+> `--image-sources MODE` / `DocumentConverter::image_sources` (#646) to resolve
+> `<img src>`, Markdown's `![…](…)` and inline `<img>`, AsciiDoc's
+> `image::target[]`, a JATS `<fig>`'s `<graphic xlink:href>`, an ODF
+> `draw:image` URL and an email body's `cid:` images, and embed the bytes.
+> The tiers nest: `embedded` = `data:` URIs and parts of the same container
+> (EPUB/MHTML entries, email attachments) — no filesystem, no network, the
+> tier for untrusted input; `local` = plus files under the source file's
+> directory (never an absolute path, never outside it); `remote` = plus
+> `http(s)` fetches, confined to `--image-hosts` when given (redirects
+> included) and to the private-address block-list always. `--fetch-images` /
+> `fetch_images(true)` is `remote`'s alias. Per-document limits —
+> `--max-image-bytes` (32 MiB), `--max-images`, `--max-image-total-mb`,
+> `--min-image-bytes` (`DOCLING_RS_MAX_IMAGE_BYTES` / `_MAX_IMAGES` /
+> `_MAX_IMAGE_TOTAL_MB` / `_MIN_IMAGE_BYTES`) — leave a picture a placeholder
+> instead of failing the conversion. Remote URLs are fetched over the
+> network, so enable that tier only for input you trust.
 >
 > Windows metafile pictures (EMF / WMF — Word/Visio drawings, clip art, OLE
 > previews) in DOCX, DOC, PPTX, XLSX, ODF, RTF and the other office formats

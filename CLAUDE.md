@@ -166,6 +166,11 @@ cargo test -p docling-pdf --features pdfium --lib raster:: pdfium_backend::  # t
   element nesting any input/part may reach — roxmltree recurses per level),
   `DOCLING_RS_SHEET_MAX_CELLS` (10M; a sheet's used area before it is
   skipped — calamine materializes a dense grid),
+  `DOCLING_RS_MAX_IMAGE_BYTES` / `DOCLING_RS_MAX_IMAGES` /
+  `DOCLING_RS_MAX_IMAGE_TOTAL_MB` / `DOCLING_RS_MIN_IMAGE_BYTES` (#646; 32 MiB /
+  unlimited / unlimited / 0 — the per-document budget of the image resolvers
+  under `image_sources` = `none` default | `embedded` | `local` | `remote`,
+  `fetch_images` being `remote`'s alias; `image_hosts` confines `remote`),
   `DOCLING_RS_ZIP_MAX_ENTRIES` / `_MAX_ENTRY_MB` / `_MAX_TOTAL_MB` /
   `_MAX_RATIO` (10000 / 256 / 1024 / 200; what a ZIP input may make the CLI
   or serve inflate, #557 — `ArchiveLimits::from_env`), `DOCLING_RS_MAX_HTML_DEPTH`

@@ -21,6 +21,11 @@ use crate::backend::cfb::CompoundFile;
 pub(crate) struct ProjectedMsg {
     pub(crate) rfc822: Vec<u8>,
     pub(crate) attachment_labels: Vec<String>,
+    /// PR_HTML (1013) — the HTML body as the writer stored it, bytes in
+    /// the message's code page (the HTML backend's charset sniffing decodes
+    /// them). The projection keeps the plain body for the shared parse;
+    /// this is for the image-bearing body path (#646).
+    pub(crate) html_body: Option<Vec<u8>>,
 }
 
 /// Project `.msg` bytes onto RFC 822. `None` when the container doesn't
@@ -86,6 +91,10 @@ pub(crate) fn project_entries(cfb: &CompoundFile, root: &[usize], header: usize)
     // plain body) degrades to an empty body rather than failing — the
     // headers still convert. (LZFu decompression can come on demand.)
     let body = read_string(cfb, root, "1000").unwrap_or_default();
+    // PidTagHtml is binary (10130102); a string-typed spelling (1013001F /
+    // 1013001E) is what a few writers produce.
+    let html_body = read_binary(cfb, root, "10130102")
+        .or_else(|| read_string(cfb, root, "1013").map(String::into_bytes));
 
     let mut labels: Vec<String> = Vec::new();
     for idx in attachment_storages(cfb, root) {
@@ -123,6 +132,7 @@ pub(crate) fn project_entries(cfb: &CompoundFile, root: &[usize], header: usize)
     ProjectedMsg {
         rfc822: out.into_bytes(),
         attachment_labels: labels,
+        html_body,
     }
 }
 
@@ -169,6 +179,9 @@ pub(crate) struct MsgAttachment {
     /// PR_ATTACHMENT_HIDDEN (7FFE) — an inline image of the HTML body — or
     /// `ATT_MHTML_REF` in PR_ATTACH_FLAGS (3714), or a content id (3712).
     pub(crate) inline: bool,
+    /// PR_ATTACH_CONTENT_ID (3712): what the HTML body's `<img src="cid:…">`
+    /// names (#646), as stored (brackets, case).
+    pub(crate) content_id: Option<String>,
 }
 
 /// The attachments of `.msg` bytes with their payloads. `None` when the
@@ -218,13 +231,16 @@ pub(crate) fn attachments(data: &[u8]) -> Option<Vec<MsgAttachment>> {
         };
         let hidden = fixed_u32(&cfb, &kids, SUB_HEADER, 0x7FFE).is_some_and(|v| v & 0xFF != 0);
         let mhtml_ref = fixed_u32(&cfb, &kids, SUB_HEADER, 0x3714).is_some_and(|f| f & 4 != 0);
-        let content_id = read_string(&cfb, &kids, "3712").is_some_and(|s| !s.trim().is_empty());
+        let content_id = read_string(&cfb, &kids, "3712")
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty());
         out.push(MsgAttachment {
             name,
             mime,
             method,
             payload,
-            inline: hidden || mhtml_ref || content_id,
+            inline: hidden || mhtml_ref || content_id.is_some(),
+            content_id,
         });
     }
     Some(out)
@@ -268,6 +284,16 @@ fn read_string(cfb: &CompoundFile, entries: &[usize], id: &str) -> Option<String
         return Some(s.trim_end_matches('\0').to_string());
     }
     None
+}
+
+/// A binary property stream (`__substg1.0_<id>`, `id` with its `0102`
+/// type suffix) among `entries`, as stored.
+fn read_binary(cfb: &CompoundFile, entries: &[usize], id: &str) -> Option<Vec<u8>> {
+    let want = format!("__substg1.0_{id}");
+    entries
+        .iter()
+        .find(|&&i| cfb.entry_name(i) == want)
+        .and_then(|&i| cfb.stream_by_index(i))
 }
 
 /// A fixed-size property's raw 8-byte value from `__properties_version1.0`:

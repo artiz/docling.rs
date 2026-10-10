@@ -26,6 +26,7 @@ use std::collections::{HashMap, HashSet, VecDeque};
 
 use roxmltree::{Document, Node as XmlNode};
 
+use crate::backend::images::ImagePolicy;
 use crate::backend::markdown::escape_text;
 use crate::backend::ooxml::Package;
 use crate::backend::DeclarativeBackend;
@@ -119,19 +120,21 @@ pub(super) struct Styles {
     /// reference (docling#4015, 2.120.3).
     parts: Option<HashSet<String>>,
     /// Whether external `http(s)` image references may be fetched — the
-    /// converter's `fetch_images` (docling's `enable_remote_fetch`). Local
-    /// filesystem paths are never read: a document-supplied path must not
-    /// turn into an arbitrary local-file read (the advisory behind #4015).
-    fetch_images: bool,
+    /// converter's image policy at the `Remote` tier (docling's
+    /// `enable_remote_fetch`; #646 adds the host allow-list and the size
+    /// cap). Local filesystem paths are never read: a document-supplied
+    /// path must not turn into an arbitrary local-file read (the advisory
+    /// behind #4015).
+    policy: ImagePolicy,
 }
 
 impl DeclarativeBackend for OdfBackend {
     fn convert(&self, source: &SourceDocument) -> Result<DoclingDocument, ConversionError> {
-        convert_odf(source, false)
+        convert_odf(source, &ImagePolicy::default())
     }
 }
 
-/// Convert an ODF / OO1.x / flat-ODF document. `fetch_images` allows external
+/// Convert an ODF / OO1.x / flat-ODF document. `policy` at `Remote` allows external
 /// `http(s)` `draw:image` references to be fetched (bounded, SSRF-guarded);
 /// off, an external image reference yields no picture at all — exactly
 /// docling's `ImageResourceLoader` with remote fetch disabled (#4015).
@@ -151,7 +154,7 @@ fn manifest_encrypts_content(manifest: &str) -> bool {
 
 pub(crate) fn convert_odf(
     source: &SourceDocument,
-    fetch_images: bool,
+    policy: &ImagePolicy,
 ) -> Result<DoclingDocument, ConversionError> {
     {
         let mut pkg = Package::open(&source.bytes);
@@ -190,7 +193,7 @@ pub(crate) fn convert_odf(
         }
         let styles_dom = Document::parse(&styles_xml).ok();
         let mut styles = parse_styles(&content_dom, styles_dom.as_ref());
-        styles.fetch_images = fetch_images;
+        styles.policy = policy.clone();
         if let Some(pkg) = pkg.as_mut() {
             styles.parts = Some(pkg.names().map(str::to_string).collect());
             styles.charts = load_charts(pkg, &content_dom, &styles);
@@ -334,7 +337,7 @@ fn parse_styles(content: &Document, styles: Option<&Document>) -> Styles {
         charts: HashMap::new(),
         images: HashMap::new(),
         parts: None,
-        fetch_images: false,
+        policy: ImagePolicy::default(),
     }
 }
 
@@ -836,12 +839,13 @@ fn odf_picture(styles: &Styles, img: XmlNode) -> Option<Node> {
         _ => {}
     }
     if href.starts_with("http://") || href.starts_with("https://") {
-        if !styles.fetch_images {
+        if !styles.policy.sources.remote() {
             return None;
         }
         #[cfg(feature = "fetch-images")]
         {
-            return crate::backend::images::fetch_remote(href).and_then(|img| picture(Some(img)));
+            return crate::backend::images::fetch_remote_with(href, &styles.policy)
+                .and_then(|img| picture(Some(img)));
         }
         #[cfg(not(feature = "fetch-images"))]
         {

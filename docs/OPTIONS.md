@@ -32,7 +32,13 @@ own output options next to the shared ones.
 | `strict` | bool | false | `--strict` | — | `strict` | Cleaner, more conformant Markdown instead of the readable default. Python: at export time (`export_to_markdown` reads `document.strict_markdown`). |
 | `compact_tables` | bool | false | `--compact-tables` | `compact_tables` | `compactTables` | Unpadded `| a | b |` Markdown tables (#271). |
 | `page_break_placeholder` | string | unset = no breaks | `--page-break-placeholder` | — | `pageBreakPlaceholder` | Text inserted between pages in the Markdown export (docling-core's `MarkdownParams.page_break_placeholder`). serve also accepts the historical `md_page_break_placeholder`; Python: `export_to_markdown(page_break_placeholder=…)`; Node: an output option (`OutputOptions`). |
-| `fetch_images` | bool | false | `--fetch-images` | `fetch_images` | `fetchImages` | Resolve external `<img src>` for HTML/EPUB/MHTML/JATS (network access). serve honours it only under `--allow-url-fetch`. |
+| `fetch_images` | bool | false | `--fetch-images` | `fetch_images` | `fetchImages` | Resolve external `<img src>` for HTML/EPUB/MHTML/JATS (network access) — the pre-#646 switch, the alias of `image_sources=remote` (`false` = `none`; an explicit `image_sources` wins). serve honours it only under `--allow-url-fetch`. |
+| `image_sources` | `none` \| `embedded` \| `local` \| `remote` | `none` | `--image-sources` | `image_sources` | `imageSources` | Which image references resolve (#646): `embedded` = `data:` URIs and parts of the same container (EPUB/MHTML entries, email `cid:` attachments — no filesystem, no network); `local` = plus files under the source file's directory (never an absolute path, never outside it); `remote` = plus `http(s)` fetches. HTML, EPUB, MHTML, JATS, AsciiDoc, ODF, Markdown (`![…](…)`, inline `<img>`, embedded HTML) and email bodies. serve: `remote` without `--allow-url-fetch` is held to `embedded`; `local` needs `--allow-local-images` (400 otherwise). |
+| `image_hosts` | list / comma-separated | unset = any host | `--image-hosts` | `image_hosts` | `imageHosts` | Hosts a `remote` image fetch may reach (#646): exact names or `*.suffix` wildcards, case-insensitive; a redirect is held to the same list. The private/loopback block-list applies regardless (`DOCLING_RS_ALLOW_PRIVATE_IP_FETCH` is the only way around it). |
+| `max_image_bytes` | bytes > 0 | 32 MiB (`DOCLING_RS_MAX_IMAGE_BYTES`) | `--max-image-bytes` | `max_image_bytes` | `maxImageBytes` | Largest image that resolves (#646); a larger one stays a placeholder. Also the remote fetch's read cap. |
+| `max_images` | int ≥ 0 | unlimited (`DOCLING_RS_MAX_IMAGES`) | `--max-images` | `max_images` | `maxImages` | Images resolved per document (#646); the rest stay placeholders, one warning per document says so. |
+| `max_image_total_mb` | MiB ≥ 0 | unlimited (`DOCLING_RS_MAX_IMAGE_TOTAL_MB`) | `--max-image-total-mb` | `max_image_total_mb` | `maxImageTotalMb` | Total resolved image bytes per document (#646). |
+| `min_image_bytes` | bytes ≥ 0 | 0 (`DOCLING_RS_MIN_IMAGE_BYTES`) | `--min-image-bytes` | `min_image_bytes` | `minImageBytes` | Smallest image that resolves (#646) — spacers and tracking pixels are a few dozen bytes; skipped quietly, no budget charged. |
 | `list_attachments` | bool | false | `--list-attachments` | `list_attachments` | `listAttachments` | Email (.eml/.msg): append an Attachments section — names and content types, never the payload (#251). |
 | `skip_empty_cells` | bool | false | `--skip-empty-cells` | `skip_empty_cells` | `skipEmptyCells` | Omit empty cells from sparse XLSX/XLS table grids (#271). |
 | `ebcdic_layout` | string | unset = the `<stem>.layout.json` sidecar | `--ebcdic-layout` | `ebcdic_layout` | `ebcdicLayout` | EBCDIC copybook layout (#252): inline `EbcdicLayout` JSON or a file path. |
@@ -114,9 +120,11 @@ codec or copybook when the conversion runs.
   integer, number, then `1`/`true`/`yes`/`on` and `0`/`false`/`no`/`off` for
   booleans), an unreadable one is a 400 naming the option. Unknown names are
   ignored, as unknown query parameters always were. The two server-side
-  policies stay in serve: `fetch_images` and a request-supplied
-  `vlm_endpoint` need `--allow-url-fetch`, `xbrl_taxonomy` must be a
-  relative path without `..`.
+  policies stay in serve: `fetch_images` / `image_sources=remote` and a
+  request-supplied `vlm_endpoint` need `--allow-url-fetch` (`remote` is
+  held to `embedded` without it), `image_sources=local` needs
+  `--allow-local-images`, `xbrl_taxonomy` must be a relative path without
+  `..`.
 - **Python** — the keyword arguments keep docling's spellings (`do_ocr`,
   `do_table_structure`, `page_range`, `generate_page_images`) and map onto
   the struct; a rejected option is a `ValueError` at construction.

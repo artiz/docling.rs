@@ -203,7 +203,12 @@ use docling_core::ImageMode;
 pub struct DocumentConverter {
     allowed_formats: Option<HashSet<InputFormat>>,
     strict: bool,
-    fetch_images: bool,
+    /// Which image references the declarative backends may resolve (#646):
+    /// the tier, the remote host allow-list and the limit overrides. See
+    /// [`Self::image_sources`]; [`Self::fetch_images`] is the pre-#646 switch.
+    image_sources: crate::ImageSources,
+    image_hosts: Vec<String>,
+    image_limits: ImageLimitOverrides,
     list_attachments: bool,
     /// Omit empty cells from sparse spreadsheet table grids (#271, XLSX/XLS
     /// family; opt-in docling.rs extension).
@@ -305,6 +310,16 @@ pub struct DocumentConverter {
     archive_limits: crate::archive::ArchiveLimits,
 }
 
+/// The builder's overrides of [`crate::ImageLimits`] (#646): `None` = the
+/// environment's value, else the default.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+struct ImageLimitOverrides {
+    max_bytes: Option<u64>,
+    max_images: Option<usize>,
+    max_total_mb: Option<u64>,
+    min_bytes: Option<u64>,
+}
+
 /// Default cap on sampled frames per video. Scene changes rarely exceed this
 /// in short clips, and uniform fallback at 8 keeps JSON/DCLX output (which
 /// embeds the PNGs) within sane bounds.
@@ -349,7 +364,9 @@ impl Default for DocumentConverter {
         Self {
             allowed_formats: None,
             strict: false,
-            fetch_images: false,
+            image_sources: crate::ImageSources::None,
+            image_hosts: Vec::new(),
+            image_limits: ImageLimitOverrides::default(),
             list_attachments: false,
             skip_empty_cells: false,
             compact_tables: false,
@@ -753,22 +770,112 @@ impl DocumentConverter {
         self
     }
 
-    /// Fetch and embed external `<img>` images for HTML/EPUB/MHTML/JATS sources.
+    /// Fetch and embed external `<img>` images for HTML/EPUB/MHTML/JATS/
+    /// AsciiDoc/Markdown/email sources — the pre-#646 switch, kept as an
+    /// alias: `true` is [`image_sources`](Self::image_sources)
+    /// `(`[`ImageSources::Remote`](crate::ImageSources::Remote)`)`, `false`
+    /// is `None`.
     ///
     /// Off by default (matching docling's `enable_*_fetch=False`), so output is
-    /// unchanged unless you opt in. When on, the HTML/EPUB/MHTML backends
-    /// resolve each `<img src>` — `data:` URIs, local files (relative to the
-    /// source file's directory), `http(s)` URLs, and EPUB/MHTML archive
-    /// entries — and the JATS backend reads a `<fig>`'s `<graphic xlink:href>`
-    /// from the source file's directory (#392), embedding the bytes so they
-    /// survive into JSON `ImageRef`s and
-    /// [`crate::DoclingDocument::export_to_markdown_with_images`].
-    ///
-    /// Remote `http(s)` URLs are fetched over the network; enable only for input
-    /// you trust (it can otherwise be used to make the process issue requests).
-    pub fn fetch_images(mut self, fetch: bool) -> Self {
-        self.fetch_images = fetch;
+    /// unchanged unless you opt in. `Remote` resolves `data:` URIs, container
+    /// parts (EPUB/MHTML entries, email `cid:` attachments), files under the
+    /// source file's directory, and `http(s)` URLs — fetched over the network,
+    /// so enable it only for input you trust (it can otherwise make the
+    /// process issue requests). A server converting untrusted input wants
+    /// `image_sources(ImageSources::Embedded)` instead. Unlike before #646 an
+    /// absolute local path (`/etc/hosts`, `file://…`) is never read.
+    pub fn fetch_images(self, fetch: bool) -> Self {
+        self.image_sources(if fetch {
+            crate::ImageSources::Remote
+        } else {
+            crate::ImageSources::None
+        })
+    }
+
+    /// Which image references the declarative backends resolve (#646):
+    /// [`None`](crate::ImageSources::None) (the default — every picture a
+    /// placeholder), [`Embedded`](crate::ImageSources::Embedded) (`data:`
+    /// URIs and parts of the same container: EPUB/MHTML entries, an email's
+    /// `cid:` attachments — no filesystem, no network),
+    /// [`Local`](crate::ImageSources::Local) (plus files under the source
+    /// file's directory, never an absolute path or one that escapes it) and
+    /// [`Remote`](crate::ImageSources::Remote) (plus `http(s)` fetches, see
+    /// [`image_hosts`](Self::image_hosts)). Applies to HTML, EPUB, MHTML,
+    /// JATS, AsciiDoc, ODF (`http(s)` `draw:image` references), Markdown
+    /// (`![…](…)` and inline `<img>`) and email bodies.
+    pub fn image_sources(mut self, sources: crate::ImageSources) -> Self {
+        self.image_sources = sources;
         self
+    }
+
+    /// Restrict `Remote` fetches to these hosts (#646): exact names or
+    /// `*.suffix` wildcards for any subdomain, case-insensitive; a redirect
+    /// is held to the same list. Empty (the default) allows any host. The
+    /// private/loopback/link-local block-list still applies to a listed
+    /// host (`DOCLING_RS_ALLOW_PRIVATE_IP_FETCH` is the only way around it).
+    pub fn image_hosts<I, S>(mut self, hosts: I) -> Self
+    where
+        I: IntoIterator<Item = S>,
+        S: Into<String>,
+    {
+        self.image_hosts = hosts
+            .into_iter()
+            .map(|h| h.into().trim().to_ascii_lowercase())
+            .filter(|h| !h.is_empty())
+            .collect();
+        self
+    }
+
+    /// Largest image that resolves, in bytes (#646). Default 32 MiB
+    /// (`DOCLING_RS_MAX_IMAGE_BYTES` overrides it); a larger one stays a
+    /// placeholder.
+    pub fn max_image_bytes(mut self, bytes: u64) -> Self {
+        self.image_limits.max_bytes = Some(bytes.max(1));
+        self
+    }
+
+    /// How many images resolve per document (#646); the rest stay
+    /// placeholders and one warning says so. Default unlimited
+    /// (`DOCLING_RS_MAX_IMAGES` overrides it).
+    pub fn max_images(mut self, count: usize) -> Self {
+        self.image_limits.max_images = Some(count);
+        self
+    }
+
+    /// Total resolved image bytes per document, in MiB (#646). Default
+    /// unlimited (`DOCLING_RS_MAX_IMAGE_TOTAL_MB` overrides it).
+    pub fn max_image_total_mb(mut self, mb: u64) -> Self {
+        self.image_limits.max_total_mb = Some(mb);
+        self
+    }
+
+    /// Smallest image that resolves, in bytes (#646) — spacers and tracking
+    /// pixels are a few dozen bytes. Default 0 (`DOCLING_RS_MIN_IMAGE_BYTES`
+    /// overrides it).
+    pub fn min_image_bytes(mut self, bytes: u64) -> Self {
+        self.image_limits.min_bytes = Some(bytes);
+        self
+    }
+
+    /// The image policy a conversion runs under (#646): the builder's tier
+    /// and hosts, the limits from the builder where set, else the
+    /// environment, else the defaults.
+    pub fn image_policy(&self) -> crate::ImagePolicy {
+        let env = crate::ImageLimits::from_env();
+        let o = &self.image_limits;
+        crate::ImagePolicy {
+            sources: self.image_sources,
+            hosts: self.image_hosts.clone(),
+            limits: crate::ImageLimits {
+                max_bytes: o.max_bytes.unwrap_or(env.max_bytes),
+                max_images: o.max_images.or(env.max_images),
+                max_total_bytes: o
+                    .max_total_mb
+                    .map(|mb| mb.saturating_mul(1024 * 1024))
+                    .or(env.max_total_bytes),
+                min_bytes: o.min_bytes.unwrap_or(env.min_bytes),
+            },
+        }
     }
 
     /// Append an `Attachments` section to converted emails (`.eml` / `.msg`):
@@ -1628,7 +1735,7 @@ impl DocumentConverter {
                 // saved as `.txt` is reconstructed generically
                 // (element-by-element).
                 _ if has_jats_doctype(&source.text()?) => JatsBackend {
-                    fetch_images: self.fetch_images,
+                    images: self.image_policy(),
                 }
                 .convert(source)?,
                 _ => crate::backend::jats::convert_generic(source)?,
@@ -1640,6 +1747,7 @@ impl DocumentConverter {
             }
             InputFormat::Md => MarkdownBackend {
                 strict: self.strict,
+                images: self.image_policy(),
             }
             .convert(source)?,
             InputFormat::Csv => CsvBackend.convert(source)?,
@@ -1653,10 +1761,12 @@ impl DocumentConverter {
                 // UTF-8 check every other text backend applies.
                 let decoded = crate::backend::decode_html_bytes(&source.bytes);
                 let html = self.maybe_prerender(&decoded)?;
-                if self.fetch_images {
+                let policy = self.image_policy();
+                if policy.sources != crate::ImageSources::None {
                     let resolver = crate::backend::FsImageResolver::new(
                         source.base_dir().map(|p| p.to_path_buf()),
                         source.base_url.clone(),
+                        policy,
                     );
                     crate::backend::convert_html(&source.name, &html, &resolver)
                 } else {
@@ -1664,7 +1774,7 @@ impl DocumentConverter {
                 }
             }
             InputFormat::Asciidoc => AsciiDocBackend {
-                fetch_images: self.fetch_images,
+                images: self.image_policy(),
             }
             .convert(source)?,
             InputFormat::Xlsx => XlsxBackend {
@@ -1718,15 +1828,16 @@ impl DocumentConverter {
             .convert(source)?,
             InputFormat::Email => EmailBackend {
                 list_attachments: self.list_attachments,
+                images: self.image_policy(),
             }
             .convert(source)?,
             InputFormat::Mhtml => MhtmlBackend {
-                fetch_images: self.fetch_images,
+                images: self.image_policy(),
                 use_web_browser: self.use_web_browser,
             }
             .convert(source)?,
             InputFormat::Epub => EpubBackend {
-                fetch_images: self.fetch_images,
+                images: self.image_policy(),
                 use_web_browser: self.use_web_browser,
             }
             .convert(source)?,
@@ -1741,13 +1852,13 @@ impl DocumentConverter {
                         crate::backend::xbrl::convert_xbrl(source, self.xbrl_taxonomy.as_deref())?
                     }
                     _ => JatsBackend {
-                        fetch_images: self.fetch_images,
+                        images: self.image_policy(),
                     }
                     .convert(source)?,
                 }
             }
             InputFormat::Odt | InputFormat::Ods | InputFormat::Odp => {
-                crate::backend::convert_odf(source, self.fetch_images)?
+                crate::backend::convert_odf(source, &self.image_policy())?
             }
             // DocLang back in: bare XML (`.dclg`/`.dclg.xml`) or the OPC
             // archive `--to dclx` writes.

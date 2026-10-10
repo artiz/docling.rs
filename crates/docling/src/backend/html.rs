@@ -3314,7 +3314,15 @@ mod tests {
         assert!(matches!(plain.nodes[0], Node::Picture { image: None, .. }));
 
         // With a resolver the data: URI is decoded and embedded.
-        let doc = convert_html("t", &html, &FsImageResolver::new(None, None));
+        let doc = convert_html(
+            "t",
+            &html,
+            &FsImageResolver::new(
+                None,
+                None,
+                crate::backend::images::ImagePolicy::new(crate::ImageSources::Embedded),
+            ),
+        );
         match &doc.nodes[0] {
             Node::Picture {
                 image: Some(img),

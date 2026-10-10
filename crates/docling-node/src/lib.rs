@@ -246,7 +246,31 @@ pub struct ConverterOptions {
     /// files, http(s) URLs, EPUB/MHTML archive parts, JATS `<graphic>` files)
     /// and embed the bytes. Off by default; when on,
     /// http(s) URLs are fetched over the network — enable only for trusted input.
+    /// The alias of `imageSources: "remote"` (#646).
     pub fetch_images: Option<bool>,
+    /// Which image references resolve (#646): `"none"` (default — every
+    /// picture a placeholder), `"embedded"` (`data:` URIs and parts of the
+    /// same container: EPUB/MHTML entries, an email's `cid:` attachments —
+    /// no filesystem, no network), `"local"` (plus files under the source
+    /// file's directory, never an absolute path or one that escapes it),
+    /// `"remote"` (plus http(s) fetches). HTML, EPUB, MHTML, JATS, AsciiDoc,
+    /// ODF, Markdown and email bodies.
+    pub image_sources: Option<String>,
+    /// Hosts a `"remote"` image fetch may reach (#646): exact names or
+    /// `*.suffix` wildcards; redirects are held to the same list. Unset =
+    /// any host.
+    pub image_hosts: Option<Vec<String>>,
+    /// Largest image that resolves, in bytes (#646; default 32 MiB).
+    pub max_image_bytes: Option<f64>,
+    /// Images resolved per document; the rest stay placeholders (#646;
+    /// default unlimited).
+    pub max_images: Option<u32>,
+    /// Total resolved image bytes per document, in MiB (#646; default
+    /// unlimited).
+    pub max_image_total_mb: Option<u32>,
+    /// Smallest image that resolves, in bytes — skips spacer / tracking
+    /// pixels (#646; default 0).
+    pub min_image_bytes: Option<u32>,
     /// Restrict the converter to these formats (ids like `"md"`, `"pdf"`, or
     /// extensions like `".html"`); anything else is rejected. Default: accept all.
     pub allowed_formats: Option<Vec<String>>,
@@ -289,6 +313,18 @@ pub struct OutputOptions {
 pub struct ConvertOptions {
     pub strict: Option<bool>,
     pub fetch_images: Option<bool>,
+    /// Image-source tier (#646): `"none"` | `"embedded"` | `"local"` | `"remote"`.
+    pub image_sources: Option<String>,
+    /// Remote image host allow-list (#646).
+    pub image_hosts: Option<Vec<String>>,
+    /// Largest image that resolves, in bytes (#646).
+    pub max_image_bytes: Option<f64>,
+    /// Images resolved per document (#646).
+    pub max_images: Option<u32>,
+    /// Total resolved image bytes per document, in MiB (#646).
+    pub max_image_total_mb: Option<u32>,
+    /// Smallest image that resolves, in bytes (#646).
+    pub min_image_bytes: Option<u32>,
     /// Named Whisper model preset for audio sources.
     pub asr_model: Option<String>,
     /// ASR transcription language for audio/video: a Whisper code (`"en"`,

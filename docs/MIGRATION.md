@@ -494,10 +494,35 @@ pointed at the wrong item).
   boxes — without the font the code is ambiguous.
 - **Image extraction** is wired for PDF/image (figure-region crops) and DOCX/PPTX
   (embedded blobs) by default, and — opt-in via
-  `DocumentConverter::fetch_images` (`--fetch-images`) — for HTML/EPUB `<img src>`:
-  `data:` URIs, local files (relative to the source), remote `http(s)` URLs, and
-  EPUB archive entries. Off by default, matching docling's `enable_*_fetch=False`.
-  JSON always embeds extracted images as data URIs.
+  `DocumentConverter::image_sources` (`--image-sources`, #646;
+  `fetch_images` / `--fetch-images` is the `remote` tier's alias) — for HTML,
+  EPUB, MHTML, JATS, AsciiDoc, ODF, Markdown and email: `embedded` resolves
+  `data:` URIs and parts of the same container (EPUB/MHTML entries, email
+  `cid:` attachments) with no filesystem or network access, `local` adds files
+  under the source file's directory, `remote` adds `http(s)` URLs. Off by
+  default, matching docling's `enable_*_fetch=False`. docling keeps two
+  booleans (`enable_remote_fetch` / `enable_local_fetch`); the tiers map onto
+  them, with three deliberate differences: an absolute local path or `file://`
+  URL is **never** read (docling's local fetch reads any path; a document
+  converter honouring `/etc/hosts` is the surprise #646 closes), a relative
+  path must stay under the source directory after `..` and symlink
+  resolution, and a remote fetch can be confined to `image_hosts` (redirects
+  included) and is always held to the private-address block-list. Per-document
+  limits (`max_image_bytes` 32 MiB, `max_images`, `max_image_total_mb`,
+  `min_image_bytes`; `DOCLING_RS_MAX_IMAGE*` / `DOCLING_RS_MIN_IMAGE_BYTES`)
+  leave a picture a placeholder rather than failing. **Markdown** images
+  (`![alt](data:…)`, inline `<img src="data:…">`, embedded HTML blocks) resolve
+  under the same policy — docling's Markdown backend resolves none; the JSON
+  tree's `PictureItem` carries the bytes, and in the flat chain a paragraph
+  that is one resolved image becomes a picture (so `--images embedded`
+  Markdown shows it) while the default output is unchanged. **Email** bodies:
+  docling flattens an HTML body to Markdown paragraphs and loses pasted
+  images; under `embedded`+ a body whose `cid:` references resolve (an
+  `.eml`'s `Content-ID` parts, a `.msg`'s PR_ATTACH_CONTENT_ID attachments
+  against its PR_HTML body) is appended as the HTML backend's nodes with its
+  pictures in body order — a body without a resolvable image, and every
+  default-tier conversion, keeps docling's paragraphs. JSON always embeds
+  extracted images as data URIs.
 
 ---
 
