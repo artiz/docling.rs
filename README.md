@@ -135,7 +135,8 @@ timestamps and Silero VAD segmentation; see
 (isomp4/Matroska readers) and the transcript becomes the document. When the
 `ffmpeg` **binary** is present (runtime detection — no build dependency;
 `DOCLING_FFMPEG` overrides the path), up to `--video-frames N` frames (default
-8) are also sampled — scene changes first, evenly spaced fallback — and
+8) are also sampled — scene changes first, spread over the whole duration
+when there are more cuts than frames (#648), evenly spaced fallback — and
 interleave with the transcript as `[time: <ts>]`-captioned pictures, PNGs
 embedded in JSON/DCLX output. Without ffmpeg, or with `--video-frames 0`, a
 video converts to its transcript alone; a video with *no* audio track converts

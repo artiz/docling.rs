@@ -8,12 +8,22 @@
 //! video still converts exactly as in Phase 1: transcript only.
 //!
 //! Sampling strategy, per file:
-//! 1. **Scene changes** — `select='eq(n,0)+gt(scene,0.27)'` keeps the first
-//!    frame plus every cut sharper than the threshold, capped at `max_frames`.
-//!    This favors slides/scene boundaries in screen recordings and lectures.
-//! 2. **Uniform fallback** — a static or single-scene video yields just the
-//!    first frame above, in which case `fps=max_frames/duration` resamples the
-//!    timeline evenly.
+//! 1. **Scene changes** — a scan of the whole timeline (`select='gt(scene,
+//!    0.27)'` with the scores printed, nothing written) lists every cut
+//!    sharper than the threshold. This favors slides/scene boundaries in
+//!    screen recordings and lectures. The first frame is always kept; with
+//!    `max_frames − 1` or fewer cuts all of them follow. More cuts than that
+//!    are spread over the duration (#648): the timeline is split into
+//!    `max_frames` equal windows, the first window is the first frame, each
+//!    other window keeps its sharpest cut (its midpoint when it has none) —
+//!    the capped scan this replaces stopped at the `max_frames`-th cut, so a
+//!    long lecture's eight frames all came from its first minutes.
+//! 2. **Uniform fallback** — a static or single-scene video has no cut, in
+//!    which case `fps=max_frames/duration` resamples the timeline evenly.
+//!
+//! The chosen frames are then decoded one at a time with an accurate seek
+//! (`-ss` before `-i`), so a long file costs one scan plus `max_frames`
+//! short decodes rather than a second full pass.
 //!
 //! Each extracted frame carries the source timestamp (`showinfo`'s
 //! `pts_time`); the converter interleaves frames with the ASR transcript by
@@ -153,30 +163,146 @@ pub fn extract_frames(
     if !probe.has_video {
         return Ok(Vec::new());
     }
+    let duration = probe.duration.filter(|d| *d > 0.0);
 
-    // Pass 1: scene changes (always includes frame 0).
-    let mut frames = run_filter(
-        &dir,
-        &input,
-        "select='eq(n,0)+gt(scene,0.27)',showinfo",
-        max_frames,
-        "scene",
-    )?;
-    // Pass 2: a single kept frame means no cuts were found — resample evenly.
-    if frames.len() < 2 && max_frames >= 2 {
-        if let Some(duration) = probe.duration {
-            if duration > 0.0 {
-                frames = run_filter(
-                    &dir,
-                    &input,
-                    &format!("fps={max_frames}/{duration},showinfo"),
-                    max_frames,
-                    "uniform",
-                )?;
-            }
+    // Pass 1: every cut of the whole timeline, with its score.
+    let cuts = scene_cuts(&input)?;
+    // No cut at all: a static or single-scene video — resample evenly.
+    if cuts.is_empty() && max_frames >= 2 {
+        if let Some(duration) = duration {
+            return run_filter(
+                &dir,
+                &input,
+                &format!("fps={max_frames}/{duration},showinfo"),
+                max_frames,
+                "uniform",
+            );
+        }
+    }
+    // Pass 2: decode the chosen frames, one accurate seek each.
+    let chosen = choose_timestamps(&cuts, duration, max_frames);
+    let mut frames = Vec::with_capacity(chosen.len());
+    for (i, ts) in chosen.into_iter().enumerate() {
+        if let Some(png) = frame_at(&dir, &input, ts, i)? {
+            frames.push(VideoFrame { ts, png });
         }
     }
     Ok(frames)
+}
+
+/// The frames to keep (#648): the first frame, then — with `max_frames − 1`
+/// or fewer cuts — every cut; with more, the sharpest cut of each of the
+/// `max_frames` equal windows the duration splits into (the first window is
+/// the first frame; a window without a cut contributes its midpoint, so a
+/// cluster of cuts never empties the rest of the timeline). Without a known
+/// duration, the first `max_frames − 1` cuts — the capped scan's choice.
+/// Timestamps ascend.
+fn choose_timestamps(cuts: &[(f64, f64)], duration: Option<f64>, max_frames: usize) -> Vec<f64> {
+    let mut out = vec![0.0];
+    if max_frames <= 1 {
+        return out;
+    }
+    if cuts.len() < max_frames {
+        out.extend(cuts.iter().map(|&(ts, _)| ts));
+        return out;
+    }
+    let Some(duration) = duration else {
+        out.extend(cuts.iter().take(max_frames - 1).map(|&(ts, _)| ts));
+        return out;
+    };
+    let window = duration / max_frames as f64;
+    for k in 1..max_frames {
+        let (lo, hi) = (window * k as f64, window * (k + 1) as f64);
+        let best = cuts
+            .iter()
+            .filter(|(ts, _)| *ts >= lo && *ts < hi)
+            // The sharpest cut; the earliest of equal scores.
+            .fold(None::<(f64, f64)>, |acc, &(ts, score)| match acc {
+                Some((_, s)) if s >= score => acc,
+                _ => Some((ts, score)),
+            });
+        out.push(best.map_or((lo + hi) / 2.0, |(ts, _)| ts));
+    }
+    out
+}
+
+/// Scan the whole video for scene changes: `(pts_time, scene score)` of
+/// every frame sharper than the threshold, in order, nothing written (`-f
+/// null`). `select` tags each kept frame with `lavfi.scene_score`, which
+/// `metadata=print` logs as a `pts_time:` line followed by the score line.
+fn scene_cuts(input: &Path) -> Result<Vec<(f64, f64)>, String> {
+    let out = Command::new(ffmpeg_bin())
+        .args(["-hide_banner", "-nostats", "-i"])
+        .arg(input)
+        .args([
+            "-vf",
+            "select='gt(scene,0.27)',metadata=print:key=lavfi.scene_score",
+            "-fps_mode",
+            "vfr",
+            "-f",
+            "null",
+            "-",
+        ])
+        .output()
+        .map_err(|e| format!("video: running ffmpeg: {e}"))?;
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    if !out.status.success() {
+        let last = stderr
+            .lines()
+            .rev()
+            .find(|l| !l.trim().is_empty())
+            .unwrap_or("");
+        return Err(format!("video: ffmpeg scene scan failed: {last}"));
+    }
+    let mut cuts = Vec::new();
+    let mut pending: Option<f64> = None;
+    for line in stderr.lines() {
+        let Some(rest) = line.split("Parsed_metadata").nth(1) else {
+            continue;
+        };
+        if let Some(ts) = rest.split("pts_time:").nth(1) {
+            pending = ts.split_whitespace().next().and_then(|v| v.parse().ok());
+        } else if let Some(score) = rest.split("lavfi.scene_score=").nth(1) {
+            if let (Some(ts), Some(score)) = (
+                pending.take(),
+                score
+                    .split_whitespace()
+                    .next()
+                    .and_then(|v| v.parse::<f64>().ok()),
+            ) {
+                cuts.push((ts, score));
+            }
+        }
+    }
+    Ok(cuts)
+}
+
+/// Decode the frame at `ts` seconds (the first frame at or after it — an
+/// accurate seek, `-ss` ahead of `-i`) into one PNG; `None` past the end.
+fn frame_at(dir: &TempDir, input: &Path, ts: f64, index: usize) -> Result<Option<Vec<u8>>, String> {
+    let path = dir.path.join(format!("frame_{index:04}.png"));
+    let mut cmd = Command::new(ffmpeg_bin());
+    cmd.args(["-hide_banner", "-nostats"]);
+    if ts > 0.0 {
+        cmd.arg("-ss").arg(format!("{ts:.6}"));
+    }
+    let out = cmd
+        .arg("-i")
+        .arg(input)
+        .args(["-frames:v", "1", "-f", "image2", "-y"])
+        .arg(&path)
+        .output()
+        .map_err(|e| format!("video: running ffmpeg: {e}"))?;
+    if !out.status.success() {
+        let stderr = String::from_utf8_lossy(&out.stderr);
+        let last = stderr
+            .lines()
+            .rev()
+            .find(|l| !l.trim().is_empty())
+            .unwrap_or("");
+        return Err(format!("video: ffmpeg frame extraction failed: {last}"));
+    }
+    Ok(std::fs::read(&path).ok())
 }
 
 struct Probe {
@@ -352,6 +478,91 @@ mod tests {
     fn zero_max_frames_disables_extraction() {
         let frames = extract_frames(b"not a video", "s.mp4", 0).unwrap();
         assert!(frames.is_empty());
+    }
+
+    /// A `seconds`-long 64×64 video that changes colour every `segment`
+    /// seconds (a cut per boundary), synthesized by ffmpeg — no fixture.
+    fn colour_cuts_video(seconds: u32, segment: u32) -> Vec<u8> {
+        let dir = TempDir::new().unwrap();
+        let out = dir.path.join("cuts.mp4");
+        let status = Command::new(ffmpeg_bin())
+            .args(["-hide_banner", "-loglevel", "error", "-y", "-f", "lavfi", "-i"])
+            .arg(format!("color=c=black:s=64x64:r=10:d={seconds}"))
+            .args(["-vf"])
+            .arg(format!(
+                "geq=r='255*mod(floor(T/{segment})\\,2)':g='128*mod(floor(T/{segment})\\,3)':b='255*mod(floor(T/{segment})+1\\,2)'"
+            ))
+            .args(["-c:v", "mpeg4", "-pix_fmt", "yuv420p"])
+            .arg(&out)
+            .status()
+            .unwrap();
+        assert!(status.success());
+        std::fs::read(&out).unwrap()
+    }
+
+    /// #648: more cuts than the cap are spread over the whole duration —
+    /// twenty 5-second scenes sampled as four frames land in four different
+    /// quarters, where the capped scan took the first three cuts.
+    #[test]
+    fn capped_scene_sampling_spans_the_whole_video() {
+        if !ffmpeg_available() {
+            eprintln!("skipping: ffmpeg not on PATH");
+            return;
+        }
+        let frames = extract_frames(&colour_cuts_video(100, 5), "cuts.mp4", 4).unwrap();
+        assert_frames(&frames, 4);
+        let ts: Vec<f64> = frames.iter().map(|f| f.ts).collect();
+        assert_eq!(ts.len(), 4, "{ts:?}");
+        assert_eq!(ts[0], 0.0, "{ts:?}");
+        let quarters: Vec<usize> = ts.iter().map(|t| (t / 25.0).floor() as usize).collect();
+        assert_eq!(quarters, vec![0, 1, 2, 3], "{ts:?}");
+        // Each later frame sits on a cut (a 5-second boundary).
+        for t in &ts[1..] {
+            assert!((t % 5.0).abs() < 0.2, "{ts:?}");
+        }
+    }
+
+    /// A cap at or above the cut count keeps the first frame and every cut,
+    /// as before.
+    #[test]
+    fn a_cap_above_the_cut_count_keeps_every_cut() {
+        if !ffmpeg_available() {
+            eprintln!("skipping: ffmpeg not on PATH");
+            return;
+        }
+        let frames = extract_frames(&colour_cuts_video(20, 5), "cuts.mp4", 8).unwrap();
+        let ts: Vec<f64> = frames.iter().map(|f| f.ts).collect();
+        assert_eq!(ts.len(), 4, "{ts:?}");
+        assert_eq!(ts[0], 0.0);
+        for (t, cut) in ts[1..].iter().zip([5.0, 10.0, 15.0]) {
+            assert!((t - cut).abs() < 0.2, "{ts:?}");
+        }
+    }
+
+    /// The selection rule on its own: all cuts under the cap, windows with
+    /// the sharpest cut (or the midpoint) above it, the capped-scan choice
+    /// without a duration.
+    #[test]
+    fn timestamp_selection_rules() {
+        let cuts = [
+            (5.0, 0.9),
+            (7.0, 0.5),
+            (12.0, 0.6),
+            (30.0, 0.95),
+            (31.0, 0.3),
+        ];
+        assert_eq!(
+            choose_timestamps(&cuts, Some(40.0), 8),
+            vec![0.0, 5.0, 7.0, 12.0, 30.0, 31.0]
+        );
+        // Four windows of 10 s: (10,20) → 12.0, (20,30) → midpoint 25, (30,40) → 30.0.
+        assert_eq!(
+            choose_timestamps(&cuts, Some(40.0), 4),
+            vec![0.0, 12.0, 25.0, 30.0]
+        );
+        assert_eq!(choose_timestamps(&cuts, None, 4), vec![0.0, 5.0, 7.0, 12.0]);
+        assert_eq!(choose_timestamps(&cuts, Some(40.0), 1), vec![0.0]);
+        assert_eq!(choose_timestamps(&[], Some(40.0), 4), vec![0.0]);
     }
 
     /// Whether Whisper-tiny is reachable, pointing `DOCLING_ASR_*` at the
