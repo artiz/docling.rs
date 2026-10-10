@@ -997,7 +997,8 @@ deliberate scope boundary or a cosmetic, single-fixture polish gap.
   lengths, IPv4/IPv6, URL credentials, US SSN / UK NINO / Aadhaar
   (Verhoeff), custom `NAME=REGEX` patterns, deny / allow terms — plus, under
   the `ner` feature with `dslim/bert-base-NER`'s ONNX export in
-  `.models/ner/` (MIT), person / organization / location spans from BIO
+  `.models/ner/` (MIT; `download_dependencies.sh --with-ner`, Python
+  `download_models(ner=True)`), person / organization / location spans from BIO
   wordpieces (`Address` is not a class that model has); a missing model is
   one warning. Replacement: `[EMAIL]` labels, `[EMAIL_1]` pseudonyms (one
   number per distinct value, case- and separator-folded, consistent within

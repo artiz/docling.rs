@@ -1818,6 +1818,7 @@ instead — the same models — and see
 | TableFormer encoder, fp16 weights (fetched by default; skip with `--no-int8`) | `.models/tableformer/encoder_fp16.onnx` — the same graph with fp16-stored weights cast back to fp32 at load (#374): half the download, fp32 compute; preferred when present, `DOCLING_RS_FP32=1` opts out |
 | DocumentFigureClassifier (picture classification) | `.models/picture_classifier.onnx` |
 | CodeFormulaV2 (code/formula enrichment, ~1.3 GB; fetch with `--enrich`) | `.models/code_formula/{vision,embed,decoder_kv}.onnx`, `.models/code_formula/tokenizer.json` |
+| NER for PII redaction (#621; `dslim/bert-base-NER`'s ONNX export, MIT, ~430 MB; fetch with `--with-ner`, Python `download_models(ner=True)`) | `.models/ner/{model.onnx,tokenizer.json,config.json}` — `--redact-pii` reads names, organizations and locations with it; without it the pass is pattern-only |
 
 Idempotent — safe to re-run; it skips files already on disk. Pass `--force` to
 re-fetch everything, `--no-chunk` to skip the chunker tokenizer, `--embed` to
@@ -2097,10 +2098,12 @@ println!("{:?}", result.redaction.unwrap().counts);   // {"EMAIL": 3, "PHONE": 1
   not a card), IBANs (mod-97 + the registry's per-country length), IPv4 /
   IPv6, `user:password@` URL credentials, US SSNs, UK NINOs and Indian
   Aadhaar numbers (Verhoeff) — dates and version strings are not phones.
-  With the NER model installed (`.models/ner/`: `dslim/bert-base-NER`'s
-  MIT-licensed ONNX export — `model.onnx`, `tokenizer.json`, `config.json`;
-  `DOCLING_RS_NER_DIR` overrides the directory) also **names, organizations
-  and locations**; without it one warning and the pattern kinds only. Your
+  With the NER model installed (`scripts/install/download_dependencies.sh
+  --with-ner` / Python `download_models(ner=True)`: `dslim/bert-base-NER`'s
+  MIT-licensed ONNX export into `.models/ner/` — `model.onnx`,
+  `tokenizer.json`, `config.json`; `DOCLING_RS_NER_DIR` overrides the
+  directory) also **names, organizations and locations**; without it one
+  warning and the pattern kinds only. Your
   own `NAME=REGEX` patterns, deny terms and allow terms plug in through
   `RedactionOptions`; any detector implementing `docling_core::PiiDetector`
   does.

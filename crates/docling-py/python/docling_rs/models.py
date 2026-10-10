@@ -102,6 +102,20 @@ _ENRICH = {
 }
 _ENRICH_FP32_DECODER = ("cf_decoder_kv.onnx", "models/code_formula/decoder_kv.onnx")
 
+# dslim/bert-base-NER (MIT, ~430 MB): the names / organizations / locations
+# detector of ``DocumentConverter(redact_pii=True)`` (#621) — the pass runs
+# pattern-only without it. Opt-in (``download_models(ner=True)``), release
+# asset name -> cache path, with Hugging Face's own ONNX export as the
+# fallback (it ships the graph itself).
+_NER = {
+    "ner_model.onnx": "models/ner/model.onnx",
+    "ner_tokenizer.json": "models/ner/tokenizer.json",
+    "ner_config.json": "models/ner/config.json",
+}
+_NER_BASE_URL = os.environ.get(
+    "DOCLING_RS_NER_MODELS_URL", "https://huggingface.co/dslim/bert-base-NER/resolve/main/onnx"
+)
+
 # IBM Z (#504): the s390x wheel has no ONNX Runtime linked in — pyke ships
 # none for the target — and dlopens libonnxruntime.so from ``ORT_DYLIB_PATH``,
 # else ``<models dir>/onnxruntime/`` (``DOCLING_RS_MODELS_DIR``, which
@@ -213,6 +227,7 @@ def download_models(
     force: bool = False,
     asr_model: "str | Iterable[str] | None" = None,
     pdf_models: bool = True,
+    ner: bool = False,
 ) -> Path:
     """Fetch the PDF/image pipeline's models into the cache (idempotent).
 
@@ -231,7 +246,10 @@ def download_models(
     languages, plus the Silero VAD). None are fetched by default. Select the
     model at conversion time with ``DocumentConverter(asr_model=…)``.
     ``pdf_models=False`` skips the PDF/image models (~700 MB), e.g. for an
-    audio-only install.
+    audio-only install. ``ner=True`` adds the named-entity model of the PII
+    redaction pass (``DocumentConverter(redact_pii=True)``, #621): dslim's
+    ``bert-base-NER`` ONNX export (MIT, ~430 MB) into ``models/ner/`` — the
+    release asset when hosted, else straight from Hugging Face.
     """
     presets = _asr_presets(asr_model)
     root = Path(dest) if dest else cache_dir()
@@ -239,6 +257,18 @@ def download_models(
         print(f"docling.rs: fetching models to {root}", file=sys.stderr, flush=True)
     for preset in presets:
         _fetch_asr(root, preset, progress=progress, force=force)
+    if ner:
+        for name, rel in _NER.items():
+            if not _fetch(
+                f"{BASE_URL}/{name}", root / rel, optional=True, progress=progress, force=force
+            ):
+                _fetch(
+                    f"{_NER_BASE_URL}/{name.removeprefix('ner_')}",
+                    root / rel,
+                    optional=False,
+                    progress=progress,
+                    force=force,
+                )
     if not pdf_models:
         return root
     for name, rel in _REQUIRED.items():
