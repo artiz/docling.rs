@@ -56,131 +56,29 @@ Developed with **Claude Code** and _[TENET](https://github.com/artiz/tenet/tree/
 
 ## Status
 
-The public API works end to end across **Markdown, CSV, HTML, AsciiDoc, DOCX,
-PPTX, XLSX, legacy DOC/XLS/PPT, Apple iWork, EPUB, ODF, RTF, WebVTT, Email, MHTML, JATS, USPTO,
-XBRL, LaTeX, JSON, PDF, images, METS, audio and video** — with Markdown, docling-JSON,
-plain text, DocLang `.dclx`, LaTeX, HTML, Pandoc AST and chunk output, plus image extraction. The full extension map (`InputFormat::from_extension`, mirroring
-docling's `FormatToExtensions`) picks the backend; a file whose conversion
-fails under its extension is checked by content and, when it is evidently
-another format (an RTF, DOCX or HTML file saved as `.doc`, …), converted once
-more as that format with a warning (#556) — files that convert as named are
-never inspected:
+Every format in docling's pipeline converts — plus a few docling lacks — to
+Markdown, docling JSON, plain text, DocLang `.dclx`, LaTeX, HTML, Pandoc AST,
+WebVTT and chunk records, with image extraction. The extension map
+(`InputFormat::from_extension`, docling's `FormatToExtensions`) picks the
+backend; a file that fails under its extension is checked by content and,
+when it is evidently another format (an RTF or HTML file saved as `.doc`),
+converted once more as that format with a warning (#556).
 
-| Category | Extensions |
-|---|---|
-| Text & markup | `.md` `.markdown` `.txt` `.text` `.qmd` `.rmd` · AsciiDoc `.adoc` `.asciidoc` `.asc` (text inputs decode like docling's `decode_text`: BOM, UTF-8, then windows-1252 — or the encoding you name with `--encoding shift_jis` / the `encoding` option, docling's `TextBackendOptions.encoding`) · HTML `.html` `.htm` `.xhtml` (any charset: BOM, declared `<meta charset>`, UTF-8, windows-1252 fallback; the JSON is docling's own tree — heading nesting, `inline` groups of formatted runs with `formatting`/`hyperlink`, rich table cells, `furniture` chrome — structurally identical to upstream's on the whole corpus) · MHTML `.mhtml` `.mht` · LaTeX `.tex` `.latex` |
-| Word processing | DOCX `.docx` `.docm` `.dotx` `.dotm` (the JSON is docling's own tree — heading nesting, `inline` groups of formatting runs, list groups, rich cells, textbox/header/footer sections, comment back-refs — structurally identical to upstream's on the whole corpus; `mc:AlternateContent` is resolved before parsing — the modern `mc:Choice` the backend reads (text boxes, shape groups, 2010 extensions) over the `mc:Fallback`, body-level blocks included, #572) · Word 97–2004 `.doc` `.dot` (numbered headings keep their number, #641; text boxes, headers/footers and footnotes included; Word 6.0/95 files with their tables, headings, bold/italic, headers/footers and footnotes (#640; pictures and text boxes not yet); Word for Windows 1.x/2.0 flat files — `wIdent` 0xA5DB, the pre-OLE layout — as paragraphs, tables, bold/italic and the standard heading styles, #566/#573) · OpenDocument `.odt` `.ott` (flat `.fodt`) · OpenOffice 1.x `.sxw` `.stw` `.sxg` · StarWriter 3–5 `.sdw` `.vor` · AbiWord `.abw` `.zabw` `.awt` · WordPerfect 5.x/6.x+ `.wpd` `.wp` `.wp5` `.wp6` `.wpt` · Microsoft Works 2–9 `.wps` · EPUB `.epub` · RTF `.rtf` (equations — `{\mmath …}`, OMML spelled in control words — are LaTeX like DOCX's, inline `$…$` or a `$$…$$` formula, #578) |
-| Presentations | PPTX `.pptx` `.pptm` `.potx` `.potm` `.ppsx` `.ppsm` (the JSON is docling's own tree — slide groups, `paragraph`/`title`/`list_item` items with docling's markers, list groups, non-empty table cells, pictures at the file's dpi, chart captions, notes and `comment_section` groups, every item's raw-EMU provenance — structurally identical to upstream's on the whole corpus; equations (`a14:m` OMML, which python-pptx and so docling drop) are LaTeX through the DOCX converter, a formula of their own or inline `$…$`, #575) · PowerPoint 97–2003 `.ppt` `.pot` `.pps` · OpenDocument `.odp` `.otp` (flat `.fodp`) · OpenOffice 1.x `.sxi` `.sti` · StarImpress/StarDraw 3–5 `.sdd` `.sda` |
-| Diagrams | Visio `.vsdx` `.vsdm` — pages as sections, shape text in reading order, connectors as a relations table · SVG `.svg` — rasterized (resvg) into the image ML pipeline; without ML or with `--no-ocr` / `--text-layer-only`, `<text>` elements extract directly into reading-order paragraphs |
-| Spreadsheets | XLSX `.xlsx` `.xlsm` (templates `.xltx` `.xltm`; cells print what Excel displays — `$12.50`, `10%`, `Feb-25` — by docling PR #4628's number-format rules, #634) · binary XLSB `.xlsb` · Excel 97–2004 `.xls` `.xlt` (number formats too) · OpenDocument `.ods` `.ots` (flat `.fods`) · OpenOffice 1.x `.sxc` `.stc` · CSV `.csv` `.tsv` · dBase `.dbf` · DIF `.dif` · SYLK `.slk` `.sylk` · Lotus 1-2-3 / Symphony `.wk1` `.wk2` `.wk3` `.wk4` `.wks` `.wrk` `.123` · Quattro Pro `.wq1` `.wq2` `.wb1` `.wb2` `.wb3` `.qpw` · MS Works 6–9 `.xlr` · MS Works `.wks` |
-| Apple iWork | Pages `.pages` · Numbers `.numbers` · Keynote `.key` — Pages mirrors docling's reader (#318, #383): both generations (2013+ `Index/*.iwa` and iWork '09 `index.xml`), title/heading labels from paragraph styles, tables in the text flow, text boxes, lists, inline images, bold/italic/strike/links, headers/footers/footnotes (furniture) and reviewer comments (notes), byte-identical Markdown on upstream's corpus; Keynote mirrors docling's reader too (#466, docling 2.130+): charts (`TSCH.ChartDrawableArchive`, docling#4376) as pictures classified by kind with the chart's data as a table and its shown title as the caption — the shape the PPTX backend gives a chart; all three container generations (`Index/*.iwa`, the 2018+ nested `Index.zip`, iWork '09 `index.apxl`), a `chapter` group and a page per slide, drawables in reading order with their boxes, title placeholders as titles, theme-inherited bullets, tables, presenter notes and comments on the notes layer — exact Markdown and structurally identical JSON on upstream's corpus; Numbers is a text-level extension (#213): sheet/table names + cell text |
-| XML dialects | JATS / USPTO / XBRL (`.xml` `.nxml`, content-sniffed) · DocLang `.dclg` |
-| PDF & images | `.pdf` · `.png` `.jpg` `.jpeg` `.tif` `.tiff` `.bmp` `.webp` `.gif` · HEIC/HEIF `.heic` `.heif` (opt-in `--features heif`, links the system libheif — #211) · METS/GBS scan packages `.tar.gz` · DjVu `.djvu` `.djv` — pure-Rust decode (`djvu-rs`, MIT), the hidden per-page OCR text layer by default (deterministic, no models, works in wasm) with page provenance in the JSON (`pages` + per-paragraph `prov` from the text-layer zone boxes); a scan-only DjVu falls back to rasterize + OCR in the ML build (#434, a docling.rs extension — docling has no DjVu reader); a PDF's JSON carries its page headers and footers as `furniture`-layer items, and keeps the text inside a picture as that picture's children, as docling's does |
-| docling native | docling JSON `.json` · DocTags `.doctags` `.dt` · DCLX `.dclx` |
-| Mainframe data | EBCDIC `.ebc` `.ebcdic` — fixed-width record files decoded through a COBOL copybook layout (docling's `EbcdicLayout` JSON: cp037/cp500/cp1140 text, COMP/COMP-3/zoned numerics with implied decimal scale, multi-schema record-type prefixes); pass the layout via `ebcdic_layout` (inline JSON or path) or drop a `<stem>.layout.json` sidecar next to the file |
-| Email & subtitles | `.eml` · Outlook `.msg` (CFB/MAPI, projected onto RFC 822 — same output as the equivalent `.eml`; optional `list_attachments` appends attachment names + content types; the payloads themselves through `EmailAttachments` / `convert_email_attachments`, py `email_attachments()`, Node `emailAttachments()` — #561, see "Email attachments" below) · WebVTT `.vtt` |
-| Audio | `.wav` `.mp3` `.mpga` `.m4a` `.aac` `.ogg` `.flac` |
-| Video | `.mp4` `.avi` `.mov` `.mkv` `.webm` `.mpeg` `.mpg` |
-
-Raw **DocTags** (`.doctags`/`.dt` — the token markup docling's VLMs emit) reads
-in through `docling-core`'s tolerant DocTags parser (#152), the same one the
-VLM pipeline uses for model responses.
-MHTML (docling's `InputFormat.MHTML`, docling#4184): saved-webpage
-`.mhtml`/`.mht` archives are parsed as a MIME message with
-[`mail-parser`](https://crates.io/crates/mail-parser) (which conforms to
-[RFC 2557](https://datatracker.ietf.org/doc/html/rfc2557), the MHTML spec), the
-`multipart/related` root part is selected the way docling selects it (`start`
-parameter, `multipart/alternative`) and routed through the HTML backend; with
-`--fetch-images` the archive's own image parts are embedded, resolved by
-`Content-Location`/`cid:` like docling resolves them. The discriminative PDF/image pipeline
-lives in `docling-pdf`: a pure-Rust PDF text parser and page-metadata reader
-(page count, geometry, `/Rotate`, link annotations — all lopdf), a pure-Rust
-page renderer for the page images the models see (paths, clips, embedded
-and host fonts, shadings, patterns, images and widget appearances drawn in
-docling-parse's frame with tiny-skia; the docling-parse renderer plugin —
-the very canvas docling 2.123+ feeds them, #478 — is a development oracle
-the conformance scripts ask for by name), and an ONNX layout/TableFormer/OCR
-stack. Image-only pages —
-scans — are rasterized byte for byte what pdfium renders (its stretch engine
-and a libjpeg-exact JPEG decoder, ported; `DOCLING_RS_SCAN_RASTER=pdfium`
-switches back). pdfium is gone from the default build: `.models/` alone
-converts every PDF, the text layer has one source (the Rust parser), and no
-native PDF library is fetched or linked. The opt-in `pdfium` cargo feature
-brings the library back for `DOCLING_RS_RENDERER=pdfium` (docling's
-pypdfium2 chain) and for a file lopdf cannot read
-(`docs/PDF_CONFORMANCE.md`, "The PDF stack"; JPEG 2000 (`JPXDecode`) images
-decode in pure Rust too (#598), JBIG2 draws as a placeholder). TableFormer is ported
-to ONNX and run on every detected table region to recover its structure;
-geometric reconstruction from cell positions remains only as the fallback when
-the TableFormer graphs aren't present (see `docs/PDF_CONFORMANCE.md`).
-
-**Audio/ASR** (docling's Whisper pipeline) lives in `docling-asr`, and it is
-Rust all the way down: [`symphonia`](https://crates.io/crates/symphonia)
-demuxes/decodes the container in-process (wav, mp3, flac, ogg, aac, m4a; no
-ffmpeg), a ported log-mel front-end feeds a
-**Whisper tiny** encoder/decoder exported to ONNX (run on `ort`, greedy with
-OpenAI's timestamp rules — docling's ASR defaults), and each segment becomes a
-`[time: start-end] text` paragraph in Markdown — in the JSON, docling 2.135's
-text item (the words) with the timing as its `source` track, which `--to vtt`
-turns into subtitles (#614). The transcription language is
-auto-detected from the first 30 seconds (docling 2.116 parity); pin it with
-`--asr-lang <code>` (a Whisper code like `en`, `de`, `zh`; `auto` re-enables
-detection), the `asr_lang` option on the other surfaces, or the
-`DOCLING_RS_ASR_LANG` environment variable. The `parakeet_tdt_0.6b_v3`
-preset (#508) swaps Whisper for NVIDIA's **Parakeet TDT 0.6B v3** — a
-FastConformer transducer for 25 European languages that detects the language
-itself, with a 128-mel NeMo front-end, TDT greedy decoding with per-token
-timestamps and Silero VAD segmentation; see
-[Whisper and Parakeet models](#whisper-and-parakeet-models-for-audioasr). **Video** inputs (`mp4`/`mov`/`mkv`/`webm`, docling's
-`InputFormat.VIDEO`) take the same path: symphonia demuxes the audio track
-(isomp4/Matroska readers) and the transcript becomes the document. When the
-`ffmpeg` **binary** is present (runtime detection — no build dependency;
-`DOCLING_FFMPEG` overrides the path), up to `--video-frames N` frames (default
-8) are also sampled — scene changes first, spread over the whole duration
-when there are more cuts than frames (#648), evenly spaced fallback — and
-interleave with the transcript as `[time: <ts>]`-captioned pictures, PNGs
-embedded in JSON/DCLX output. Without ffmpeg, or with `--video-frames 0`, a
-video converts to its transcript alone; a video with *no* audio track converts
-to its frames alone. The sampling is tunable (#647, every surface):
-`--video-frames all` keeps every distinct cut instead of a cap,
-`--video-scene-threshold X` sets ffmpeg's scene score a frame must exceed to
-be a cut (0.27; 0.6 keeps hard cuts only), `--video-frame-max-side PX`
-downscales each frame inside ffmpeg (a 1080p recording at 640 → 640×360
-PNGs), and `--video-frame-dedupe N` drops a frame whose difference hash is
-within N bits of a kept one (the same slide after a fade becomes one
-picture; 4–6 is a good distance). Frames are decoded one at a time and each
-goes through the picture enrichment before the next is decoded, so
-`--picture-ocr --no-picture-images` reads a 300-frame lecture with one frame
-in memory. What symphonia can't decode in-process — Ogg **Opus**
-(the codec of Telegram/WhatsApp voice messages) and **AVI** containers —
-falls back to the same optional ffmpeg binary when present; without ffmpeg
-those inputs fail with a targeted message and an install hint.
-
-**XBRL** (SEC-style financial instance documents, content-sniffed from `.xml`)
-converts without arelle: the `dei` facts make the title, each
-`textBlockItemType` fact is an HTML fragment converted in place, and the
-numeric facts end the document as docling's key-value graph (`GraphData`
-in the JSON, one key cell per fact over its value, period, unit and
-decimals cells, plus the concept hierarchy from the taxonomy's presentation
-and calculation linkbases — the Markdown carries docling's
-`<!-- missing-key-value-item -->` placeholder there). The taxonomy is read
-offline from `--xbrl-taxonomy DIR` (`xbrl_taxonomy` on the other surfaces,
-docling's `XBRLBackendOptions.taxonomy`): the extension schema and linkbases
-at the relative paths the instance's `schemaRef` names, plus taxonomy
-packages (`.zip` with a `META-INF/catalog.xml`) mapping the base taxonomies'
-URLs to files. Without the option the instance's own directory is searched;
-whatever cannot be found only costs the graph its hierarchy links.
-
-**LaTeX** (`.tex`) is docling's `LatexDocumentBackend` ported handler for
-handler on a port of pylatexenc's tolerant `LatexWalker`, so a multi-file
-arXiv project converts the way upstream converts it: the preamble's
-`\title`/`\author`, sectioning, paragraphs, inline and display math,
-`\newcommand` expansion, `\input`/`\include` files parsed in place (kept
-inside the source's directory), lists, `thebibliography`, `tabular` grids,
-figures whose `\includegraphics` becomes an `Image: <path>` caption over a
-picture — a raster file embedded as PNG, a PDF figure left without a payload
-(upstream renders it with pypdfium2). The six arXiv papers upstream tests on
-are Markdown-exact and, but for those PDF payloads, JSON-identical.
+| Category | Extensions | Notes |
+|---|---|---|
+| Text & markup | `.md` `.markdown` `.txt` `.text` `.qmd` `.rmd` · AsciiDoc `.adoc` `.asciidoc` `.asc` · HTML `.html` `.htm` `.xhtml` · MHTML `.mhtml` `.mht` · LaTeX `.tex` `.latex` | text encodings detected like docling's `decode_text`, or set with `encoding`; HTML JSON is docling's item tree; MHTML is parsed as MIME and routed through the HTML backend; LaTeX is docling's backend on a pylatexenc port — multi-file arXiv projects, math, `\newcommand`, `tabular`, figures |
+| Word processing | DOCX `.docx` `.docm` `.dotx` `.dotm` · Word 97–2004 `.doc` `.dot` (Word 6/95 and Word for Windows 1.x/2.0 too) · OpenDocument `.odt` `.ott` `.fodt` · OpenOffice 1.x `.sxw` `.stw` `.sxg` · StarWriter `.sdw` `.vor` · AbiWord `.abw` `.zabw` `.awt` · WordPerfect `.wpd` `.wp` `.wp5` `.wp6` `.wpt` · MS Works `.wps` · EPUB `.epub` · RTF `.rtf` | DOCX JSON is docling's item tree; OMML equations come out as LaTeX; numbered headings keep their numbers |
+| Presentations | PPTX `.pptx` `.pptm` `.potx` `.potm` `.ppsx` `.ppsm` · PowerPoint 97–2003 `.ppt` `.pot` `.pps` · OpenDocument `.odp` `.otp` `.fodp` · OpenOffice 1.x `.sxi` `.sti` · StarImpress/StarDraw `.sdd` `.sda` | PPTX JSON is docling's item tree — slides, lists, tables, pictures, charts, notes, comments |
+| Diagrams | Visio `.vsdx` `.vsdm` · SVG `.svg` | Visio: pages as sections, shape text in reading order, connectors as a relations table; SVG rasterized into the image pipeline, or its `<text>` as paragraphs without ML |
+| Spreadsheets | XLSX `.xlsx` `.xlsm` `.xltx` `.xltm` · XLSB `.xlsb` · Excel 97–2004 `.xls` `.xlt` · OpenDocument `.ods` `.ots` `.fods` · OpenOffice 1.x `.sxc` `.stc` · CSV `.csv` `.tsv` · dBase `.dbf` · DIF `.dif` · SYLK `.slk` `.sylk` · Lotus 1-2-3 / Symphony `.wk1` `.wk2` `.wk3` `.wk4` `.wks` `.wrk` `.123` · Quattro Pro `.wq1` `.wq2` `.wb1` `.wb2` `.wb3` `.qpw` · MS Works `.xlr` | cells print what Excel displays — `$12.50`, `10%`, `Feb-25` (#634); merged cells keep their spans; chart sheets expose their chart |
+| Apple iWork | Pages `.pages` · Numbers `.numbers` · Keynote `.key` | both container generations (`Index/*.iwa` and iWork '09 XML); Pages and Keynote mirror docling's readers, Keynote charts as classified pictures with their data table; Numbers as sheet/table text (#213) |
+| XML dialects | JATS / USPTO / XBRL (`.xml` `.nxml`, content-sniffed) · DocLang `.dclg` | XBRL converts without arelle: `dei` title, text blocks, numeric facts as docling's key-value graph, the taxonomy read offline from `xbrl_taxonomy` |
+| PDF & images | `.pdf` · `.png` `.jpg` `.jpeg` `.tif` `.tiff` `.bmp` `.webp` `.gif` · HEIC/HEIF `.heic` `.heif` (`--features heif`) · METS/GBS scan packages `.tar.gz` · DjVu `.djvu` `.djv` | pure-Rust text layer, page renderer and scan raster, ONNX layout + TableFormer + OCR (`docling-pdf`; no native PDF library in the default build, `pdfium` is an opt-in feature — [`docs/PDF_CONFORMANCE.md`](./docs/PDF_CONFORMANCE.md)); JPEG 2000 decodes in Rust, JBIG2 is a placeholder; DjVu reads its hidden text layer without models and falls back to OCR with them (#434) |
+| docling native | docling JSON `.json` · DocTags `.doctags` `.dt` · DCLX `.dclx` | DocTags — the token markup docling's VLMs emit — read through docling-core's tolerant parser, the one the VLM pipeline uses (#152) |
+| Mainframe data | EBCDIC `.ebc` `.ebcdic` | fixed-width records decoded through a COBOL copybook (docling's `EbcdicLayout`): `ebcdic_layout`, or a `<stem>.layout.json` sidecar |
+| Email & subtitles | `.eml` · Outlook `.msg` · WebVTT `.vtt` | `.msg` is projected onto RFC 822 (same output as the `.eml`); `list_attachments` names the attachments, `email_attachments()` converts them (#561); `cid:` images embed under `image_sources=embedded` (#646) |
+| Audio | `.wav` `.mp3` `.mpga` `.m4a` `.aac` `.ogg` `.flac` | Rust all the way down: symphonia decodes, Whisper tiny (ONNX, docling's ASR defaults) or the Parakeet TDT 0.6B v3 preset (#508) transcribes; `[time: start-end] text` paragraphs, the timing as the JSON item's track, `--to vtt` for subtitles; language auto-detected or `asr_lang`. Ogg Opus falls back to the `ffmpeg` binary |
+| Video | `.mp4` `.avi` `.mov` `.mkv` `.webm` `.mpeg` `.mpg` | the audio track transcribed the same way; with the `ffmpeg` binary on `PATH` (`DOCLING_FFMPEG`), `video_frames` scene-change frames (8 by default, `all` for every cut) interleave as `[time: <ts>]` pictures, tuned by the `video_*` options (#647, #648). AVI needs ffmpeg; without it a video is its transcript |
 
 <details>
 <summary><b>Installing ffmpeg</b> (optional — only for video frame sampling)</summary>
@@ -218,13 +116,13 @@ bytes; ✅ all = every file of the format matches):
 
 | Format | Files | Markdown exact | JSON identical |
 |---|---|---|---|
-| DOCX | 36 | ✅ all | 35 |
+| DOCX | 38 | ✅ all | ✅ all |
 | HTML | 32 | ✅ all | 31 |
 | PPTX | 8 | ✅ all | ✅ all |
-| XLSX | 13 | ✅ all | ✅ all |
-| ODF | 7 | ✅ all | 6 |
+| XLSX | 14 | 13 ² | 13 ² |
+| ODF | 7 | ✅ all | ✅ all |
 | CSV | 9 | ✅ all | 6 |
-| Markdown | 10 | ✅ all | 5 |
+| Markdown | 11 | ✅ all | 6 |
 | DeepSeek-OCR Markdown | 3 | ✅ all | n/a |
 | WebVTT | 4 | ✅ all | ✅ all |
 | Email (`.eml`) | 2 | ✅ all | ✅ all |
@@ -233,12 +131,13 @@ bytes; ✅ all = every file of the format matches):
 | EBCDIC | 3 | ✅ all | ✅ all |
 | JATS | 7 | ✅ all | ✅ all |
 | DocLang | 15 | ✅ all | ✅ all |
-| AsciiDoc | 4 | ✅ all | ✅ all |
+| AsciiDoc | 5 | ✅ all | ✅ all |
 | USPTO | 9 | ✅ all | ✅ all |
 | EPUB | 1 | ✅ all | ✅ all |
 | LaTeX | 8 | ✅ all | 7 ¹ |
 
 ¹ `1706.03762`: one `tabular`'s cells carry consistent `row_span`/`col_span` where upstream writes the span into the offsets only; PDF figures carry no image payload (upstream renders them with pypdfium2).
+² `xlsx_02_sample_sales_data`: 20 date cells print by docling PR #4628's number-format rules (#634), which the released docling does not apply yet.
 
 The JSON column is complete wherever the backend builds docling's item tree
 (HTML, DOCX, PPTX, ODF, WebVTT, JATS, AsciiDoc, DocLang, LaTeX, USPTO,
@@ -248,6 +147,295 @@ files in [`docs/MIGRATION.md`](./docs/MIGRATION.md). Markdown is exact on
 every file upstream itself converts (the tenth USPTO fixture,
 `tables_ipa20180000016.xml`, fails in upstream). Per-format residuals, with the exact files:
 [`docs/MIGRATION.md`](./docs/MIGRATION.md).
+
+## Testing
+
+All commands run from the repo workspace root.
+
+```bash
+# everything — unit tests + the output-regression suite (pure Rust; no Python/models)
+cargo test
+
+# just the regression suite: re-convert every covered source — the upstream
+# fixtures each crates/docling/tests/data/<fmt>/mirror.txt lists from the root
+# tests/data/<fmt>/sources/ corpus, plus our own under
+# crates/docling/tests/data/<fmt>/sources/ — and assert that legacy Markdown,
+# strict Markdown, docling JSON and LaTeX match the committed fixtures
+cargo test -p docling --test regression
+
+# refresh the fixtures after an *intentional* output change, then review `git diff`
+DOCLING_RS_REGEN=1 cargo test -p docling --test regression
+
+# a single crate / a single test (with output)
+cargo test -p docling-core
+cargo test outputs_match_fixtures -- --nocapture
+```
+
+The ML formats (PDF, images, METS) need the ONNX models, so they are
+covered by a separate **deterministic snapshot** harness rather than `cargo test`:
+
+```bash
+bash scripts/install/pdf_setup.sh           # one-time: export the ONNX models
+                                    # (layout + TableFormer; needs a torch/docling Python)
+# Updating an existing checkout after a model-format change (e.g. the cached
+# TableFormer decoder): `rm -rf .models/tableformer && bash scripts/install/pdf_setup.sh`,
+# or re-run `python scripts/install/export_tableformer.py .models/tableformer` directly.
+
+export DOCLING_LAYOUT_ONNX="$(pwd)/models/layout_heron.onnx"
+export DOCLING_OCR_REC_ONNX="$(pwd)/models/ocr_rec.onnx"
+export DOCLING_OCR_DICT="$(pwd)/models/ppocr_keys_v1.txt"
+# Optional (falls back to geometric table reconstruction if unset/missing —
+# but the fallback is *silent*, so set these to be sure TableFormer is used,
+# especially if you invoke docling.rs from anywhere but the repo root: the
+# defaults baked into the binary are relative paths, so a different working
+# directory makes them silently miss even when the files exist elsewhere).
+export DOCLING_TABLEFORMER_ENCODER="$(pwd)/models/tableformer/encoder.onnx"
+export DOCLING_TABLEFORMER_DECODER="$(pwd)/models/tableformer/decoder.onnx"
+export DOCLING_TABLEFORMER_BBOX="$(pwd)/models/tableformer/bbox.onnx"
+bash scripts/conformance/pdf_conformance.sh     # regenerate + diff the snapshot baseline (94 outputs)
+```
+
+## Try it
+
+```bash
+# convert a file from the CLI — Markdown to stdout (add --strict for cleaner MD)
+cargo run -p docling-cli -- crates/docling/sample.html
+cargo run -p docling-cli -- --strict crates/docling/sample.html
+
+# emit docling's native DoclingDocument JSON instead (--to md is the default)
+cargo run -p docling-cli -- --to json crates/docling/sample.html
+cargo run -p docling-cli -- --to json crates/docling/sample.html > out.json
+
+# PDF/image conversion needs the ML models — see "Getting the ML models" below.
+scripts/install/download_dependencies.sh
+cargo run -p docling-cli -- document.pdf
+
+# transcribe audio (wav/mp3/flac/ogg/aac/m4a, or an mp4/mov audio track) — the
+# Whisper models come from the same download script
+cargo run -p docling-cli -- recording.mp3
+# …with a named preset (fetch it first: download_dependencies.sh --asr-model=whisper_tiny_en)
+cargo run -p docling-cli -- --asr-model whisper_tiny_en recording.mp3
+
+# extract pictures: embed as data URIs, or write ./artifacts/*.png — for any
+# input that carries images, docling-JSON included (a `data:` URI or a
+# referenced file next to the JSON is read back, #403)
+cargo run -p docling-cli -- --images embedded   document.pdf
+cargo run -p docling-cli -- --images referenced document.pdf > out.md
+cargo run -p docling-cli -- --images referenced document.json > out.md
+
+# stream Markdown to stdout page by page (the CLI's default; --no-stream to buffer)
+cargo run -p docling-cli -- document.pdf
+cargo run -p docling-cli -- --no-stream document.pdf
+
+# or via the examples
+cargo run -p docling --example convert -- crates/docling/sample.md
+cargo run -p docling --example stream  -- crates/docling/sample.md
+
+# score HTML output against the latest published docling (installed from PyPI)
+scripts/conformance/conformance.sh html
+
+# the full declarative sweep behind the "Conformance with Python docling" table
+# (Markdown byte-for-byte + JSON structural, every format or the ones you name)
+.venv-compare/bin/python scripts/conformance/full_conformance.py [docx html …]
+
+# diff Python docling vs Rust on one file (installs published docling from PyPI)
+scripts/conformance/compare.sh tests/data/html/sources/example_03.html
+
+# benchmark time / CPU / memory: Python docling vs Rust
+scripts/test/performance.sh tests/data/html/sources/wiki_duck.html 10
+```
+
+The comparison scripts install the latest published Python `docling` from PyPI
+into `.venv-compare` automatically on first run. See
+[`docs/MIGRATION.md`](./docs/MIGRATION.md) (§7 “Testing” for the differential
+and performance scripts, §9 for keeping up with upstream releases).
+
+## Install locally / in CI (one-liner)
+
+`scripts/install/install.sh` installs a self-contained tree — for a dev box or
+a pipeline step:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/docling-project/docling.rs/master/scripts/install/install.sh | bash
+docling-rs your.pdf > out.md
+```
+
+It grabs the **prebuilt CLI binary** from the latest
+[GitHub Release](https://github.com/docling-project/docling.rs/releases)
+(Linux x64/arm64; `DOCLING_RS_FROM_SOURCE=1` opts out) and only falls back to
+building from source when no matching asset exists — in that case it checks
+for a Rust toolchain (installs one via rustup if `cargo` is missing) and runs
+`cargo build --release -p docling-cli`. Either way it installs the
+binary + all models under `/usr/local/docling.rs`, symlinks
+`/usr/local/bin/docling-rs`, and writes `/etc/profile.d/docling-rs.sh` with
+the `DOCLING_*` exports. The env file is a convenience for other
+consumers of the model tree — the CLI itself resolves `.models/`
+**relative to its own (symlink-resolved) location**, so the
+command works from any directory with no environment at all. ONNX Runtime is
+statically linked; nothing else lands outside the prefix.
+
+Knobs (env vars before the call): `DOCLING_RS_PREFIX` (default
+`/usr/local/docling.rs`), `DOCLING_RS_BIN_DIR`, `DOCLING_RS_REF` (git ref
+to build), `DOCLING_RS_NO_ASR=1` (skip the ~150 MB Whisper models),
+`DOCLING_RS_SUDO=0` (never escalate). Re-running is idempotent — it only
+fetches missing model files. Uninstall:
+`rm -rf /usr/local/docling.rs /usr/local/bin/docling-rs /etc/profile.d/docling-rs.sh`.
+
+## Deploy in a container
+
+### Container Images
+
+The following container images are available on **GitHub Container Registry (GHCR)**, with all native dependencies, ffmpeg, and ONNX models baked in (zero Python runtime dependencies). Both are targets of the same Dockerfile and share their layers:
+
+#### 📦 Distributed Images
+
+| Image | Description | Architectures |
+|---|---|---|
+| [`ghcr.io/docling-project/docling-rs-serve`](https://github.com/docling-project/docling.rs/pkgs/container/docling-rs-serve) | High-performance document conversion HTTP API with PDF, DOCX, PPTX, XLSX, HTML, images, and audio/video models pre-installed (CPU). | `linux/amd64`, `linux/arm64` |
+| [`ghcr.io/docling-project/docling-rs`](https://github.com/docling-project/docling.rs/pkgs/container/docling-rs) | The `docling-rs` CLI with the same models baked in — batch conversion without installing Rust (CPU). Entrypoint `docling-rs`, working directory `/data`. | `linux/amd64`, `linux/arm64` |
+| [`ghcr.io/docling-project/docling-rs-serve-cuda`](https://github.com/docling-project/docling.rs/pkgs/container/docling-rs-serve-cuda) | NVIDIA CUDA 12 GPU-accelerated HTTP conversion API (CUDA 12 + cuDNN 9, Linux x86_64). Tagged like the CPU images: `latest` plus `v1.81.0`, `1.81`, `1`. | `linux/amd64` |
+| [`ghcr.io/docling-project/docling-rs-cuda`](https://github.com/docling-project/docling.rs/pkgs/container/docling-rs-cuda) | NVIDIA CUDA 12 GPU-accelerated `docling-rs` CLI. Tagged like the CPU images: `latest` plus `v1.81.0`, `1.81`, `1`. | `linux/amd64` |
+
+```bash
+# Run docling-rs-serve HTTP API (CPU):
+docker run -p 127.0.0.1:5001:5001 ghcr.io/docling-project/docling-rs-serve:latest
+
+# Or run with NVIDIA GPU acceleration (--gpus all):
+docker run --gpus all -p 127.0.0.1:5001:5001 ghcr.io/docling-project/docling-rs-serve-cuda:latest
+
+# Convert a document:
+curl -F file=@paper.pdf localhost:5001/v1/convert
+
+# Or use the CLI image on local files (mounted at /data):
+docker run --rm -v "$PWD:/data" ghcr.io/docling-project/docling-rs:latest paper.pdf --to md
+docker run --gpus all --rm -v "$PWD:/data" ghcr.io/docling-project/docling-rs-cuda:latest paper.pdf --to md
+```
+### Docker Compose
+
+Launch with [`examples/docker-compose/`](./examples/docker-compose/):
+
+```bash
+cd examples/docker-compose
+docker compose up -d                        # standalone service (127.0.0.1:5001)
+# or: docker compose -f docker-compose.caddy.yml up -d   # with Caddy TLS reverse proxy
+```
+
+### Core Container Configuration
+
+| Variable / Option | Default | Description |
+|---|---|---|
+| `DOCLING_RS_NO_ARENA` | `1` | Disables ONNX Runtime CPU arena to prevent RSS heap ratcheting (#263) |
+| `DOCLING_RS_SYSTEM_FONTS` | `0` | The PDF renderer's fallback fonts come only from `.models/fonts` + `DOCLING_RS_FONT_DIRS`, never the host's font directories, so the layout input is the same on every host (#633). Unset to search the host again |
+| `DOCLING_RS_FONT_DIRS` | Liberation + DejaVu dirs | The font directories the image installs (`/usr/share/fonts/truetype/{liberation,dejavu}`); extend it to render other scripts with a font you add |
+| `DOCLING_RS_MAX_MEMORY_MB` | `0` (or cgroup) | Memory ceiling (MiB); returns 503 + Retry-After when near watermark |
+| `DOCLING_RS_MEMORY_WATERMARK_PCT` | `85` | Watermark % above which new requests get HTTP 503 |
+| `DOCLING_RS_TF_INTRA` | auto (#262) | Narrows ONNX intra-op thread count for TableFormer decoder sessions |
+| `DOCLING_RS_GRAPH_CACHE_DIR` | `$XDG_CACHE_HOME/docling-rs/graphs` (else `~/.cache/…`) | Where ONNX Runtime's optimized graphs are cached between processes (CPU provider only; session creation for the layout model ~0.8 s → ~0.15 s) |
+| `DOCLING_RS_NO_GRAPH_CACHE` | `0` | `1` disables the optimized-graph cache (models load and optimize from scratch every process) |
+| `DOCLING_RS_OCR_SESSIONS` | worker thread budget (1–8) | Parallel single-thread OCR recognition lanes per worker; output is byte-identical at any count |
+| `--concurrency N` | `2` | Max simultaneous conversions in flight; excess requests queue |
+| `--warmup` | enabled in image | Load the PDF/image models — layout, OCR, TableFormer and the multi-page worker pool — at startup; `/ready` returns 503 until they are loaded, and stays 503 (`warmup_failed` + the error) if loading fails |
+| `/health` vs `/ready` | — | `/health` = liveness (200 immediately); `/ready` = readiness: with `--warmup`, 200 once the models are loaded (`"models": "warm"`); without it, 200 immediately (`"models": "lazy"` — the first PDF/image request loads them) |
+
+For a self-contained CLI image with models exported from PyTorch, [`examples/Dockerfile`](./examples/Dockerfile)
+is a 3-stage build that bakes the binary, native libs, and models into a slim runtime stage:
+
+```bash
+docker build -f examples/Dockerfile -t docling-rs .
+docker run --rm -v "$PWD:/data" docling-rs /data/input.pdf          # Markdown to stdout
+docker run --rm -v "$PWD:/data" docling-rs /data/input.pdf --to json
+```
+
+Both `linux/amd64` and `linux/arm64` build (#281) — everything in the image
+is arch-neutral or built from source.
+
+See [`docs/DEPLOYMENT.md`](./docs/DEPLOYMENT.md) for full deployment documentation,
+Prometheus metrics, OpenTelemetry tracing, and production tuning.
+
+## Performance
+
+For the declarative formats (everything but PDF/images), `cargo run --release
+-p docling --example profile_declarative` times parse, Markdown export and
+JSON export separately for every file in the corpus and lists the slowest.
+Parsing is milliseconds per document and Markdown export is negligible; JSON
+export dominates on table-heavy documents because docling's schema repeats
+every table cell in the `grid`, and it builds a `serde_json::Value` tree
+before printing. The table builder now fills that grid from an index instead
+of a hash map of cloned cells: on the corpus's heaviest JSON (a 13 MB patent
+export) the export went from 256 ms to 179 ms, on an EBCDIC table dump from
+123 ms to 66 ms, byte-identical output. Printing the tree is ~10 % of the
+remaining cost; the rest is the `Value` allocation itself, so a further
+step would be serializing straight from the document.
+
+For the PDF/image ML pipeline, `scripts/test/profile_pdf.sh` runs the release
+binary over the PDF corpus with `DOCLING_RS_TIMING=1` and sums the pipeline's
+per-stage wall-clock (`crates/docling-pdf/src/timing.rs`) into one table. On
+the 88-page corpus the cost is almost entirely model inference: TableFormer
+structure recognition (the autoregressive OTSL decode — ~1400 decode steps
+across the corpus's tables) and the per-page layout model together account for
+~85 % of it, with a one-time ONNX session/graph init paid on the first table
+page. Everything outside the models — both page renders, the two resamples,
+text-layer parsing and assembly — is under ~6 % combined (measured on the
+pdfium chain; the Rust renderer's share is of the same order). There is no
+glue-code hot spot to cut here the way the JSON grid was; PDF throughput is
+bounded by the layout and TableFormer models, so the levers are the INT8
+models, the KV-cached decoder and GPU execution providers, not the Rust
+around them.
+
+`scripts/test/performance.sh` runs a representative fixture of each supported type
+through both engines (published Python `docling` vs the Rust release binary) and
+reports peak RSS, CPU utilization, and conversion time. Ratios below are
+docling ÷ docling.rs — bigger means Rust wins by more. The PDF row is the
+**default stack** ([INT8 layout](#int8-models-faster-pdf-conversion-on-cpu--the-default) +
+KV-cached TableFormer decoder); with `DOCLING_RS_FP32=1` (full-precision
+models) the same fixture measures 5.2× less memory, a 6.2× warm speedup and
+19.8× end-to-end — see [`docs/PDF_CONFORMANCE.md`](./docs/PDF_CONFORMANCE.md).
+
+| File | Size | Peak-memory ratio | CPU ratio | Warm-conversion speedup |
+|---|---:|---:|---:|---:|
+| `picture_classification.pdf` (PDF) | 208 KB | **6.5× less** | 0.8× | 10.6× |
+| `docx_rich_tables_01.docx` (DOCX) | 3.1 MB | **39× less** | 1.2× | 19× |
+| `wiki_duck.html` (HTML) | 240 KB | **57× less** | 1.3× | 47× |
+| `elife-56337.nxml` (JATS XML) | 180 KB | **59× less** | 1.2× | 10× |
+| `xlsx_04_inflated.xlsx` (XLSX) | 168 KB | **51× less** | 0.9× | 18× |
+| `powerpoint_with_image.pptx` (PPTX) | 80 KB | **55× less** | 1.2× | 3.1× |
+| `wiki.md` (Markdown) | 8 KB | **57× less** | 1.2× | 1.2× |
+| `csv-comma.csv` (CSV) | 4 KB | **64× less** | 1.2× | 0.6× † |
+
+- **Peak memory** is where Rust wins decisively: a declarative conversion holds a
+  few MB versus docling's ~750 MB (it imports torch even for non-ML formats). The
+  PDF runs the full ML pipeline in both engines (torch vs ONNX), so the gap there
+  is 6.5× rather than 50×+, but Rust peaks at 0.37 GB vs docling's 2.4 GB —
+  and the PDF converts **28.5× faster end-to-end** (docling re-pays its torch
+  import + model load on every invocation).
+- **CPU**: recent docling releases run declarative work at ~1.2 cores against
+  Rust's single core; on the PDF Rust goes wider (~160%) while finishing an
+  order of magnitude sooner.
+- **Warm-conversion speedup** isolates the parse/convert work — it times docling
+  *in-process* (excluding its ~3 s interpreter + import startup) against the Rust
+  whole-process figure. Rust wins on substantial inputs (HTML 47×, DOCX 19×); the
+  end-to-end figure, which re-pays docling's startup every invocation, is **300–
+  870× faster** for the declarative formats.
+- † For trivial inputs (a 4 KB CSV) the conversion itself is microseconds, so Rust's
+  own process startup dominates its number while warm-Python excludes startup — the
+  warm metric understates Rust there. End-to-end, the CSV is **870× faster** in Rust.
+
+## Layout
+
+| Crate | Role | Python analogue |
+|---|---|---|
+| `docling-core` | `DoclingDocument` model + serializers | `docling-core` |
+| `docling` | `DocumentConverter`, source loading, backends | `docling` |
+| `docling-pdf` | PDF/image ML pipeline (pure-Rust text layer + renderer, ONNX layout/table/OCR) | `docling` PDF pipeline |
+| `docling-asr` | audio/ASR pipeline (symphonia + ONNX Whisper) | `docling` ASR pipeline |
+| `docling-onnx` | shared ONNX Runtime execution-provider selection (`DOCLING_RS_EP`; `cuda` / `tensorrt` / `directml` / `coreml` / `xnnpack` features) for the ML crates | — |
+| `docling-cli` | command-line interface (`docling-rs`, plus the `serve` subcommand behind `--features serve`) | `docling.cli` |
+| `docling-serve` | HTTP conversion API over a warm pipeline (`docling-serve` binary, `ghcr.io/docling-project/docling-rs-serve` image) | `docling-serve` |
+| `docling-ffi` | C ABI (`docling.h` + shared/static library) for C, C++, C#, Go, Java, Swift embedders | — |
+| `docling-node` | Node.js / Bun N-API bindings | https://www.npmjs.com/package/docling.rs |
+| `docling-py` | Python bindings (strangler-fig drop-in over docling-core) | https://pypi.org/project/docling-rs |
+| `docling-wasm` | WebAssembly bindings (declarative converters + PDF text layer + browser OCR) | https://www.npmjs.com/package/docling.rs-wasm |
+| `docling-rag` | RAG layer: chunking, embeddings, vector search, REST API | — |
 
 ## RAG subsystem
 
@@ -318,6 +506,54 @@ an `X-Docling-Confidence` summary header (grades `poor`/`fair`/`good`/
 `excellent` + layout/OCR/parse scores) on every format, and the full per-page
 report under a top-level `confidence` key in `to=json` bodies.
 
+### Request options
+
+Options go as query parameters, multipart fields or JSON keys (the body
+wins). The output options belong to serve; every conversion option is a
+[`ConvertOptions`](docs/OPTIONS.md) field under its wire name.
+
+| Option | Values | Meaning |
+|---|---|---|
+| `to` | `md` (default) \| `json` \| `html` \| `text` \| `dclx` \| `latex` \| `pandoc` \| `vtt` \| `chunks` \| `images` | the output. `images` skips conversion and rasterizes a PDF's pages to PNG — `{"pages": [{"page", "width", "height", "png_base64"}]}` — honouring `pages` and `scale` (0.1–4.0 px/pt, default 2.0), at most 100 pages per request (`DOCLING_RS_MAX_RASTER_PAGES`) |
+| `images` | `placeholder` \| `embedded` | pictures in the Markdown: `<!-- image -->` or `data:` URIs |
+| `pandoc_api_version` | `1.23`, … | the Pandoc API a `to=pandoc` caller expects |
+| `chunker` · `chunk_tokenizer` · `chunk_max_tokens` · `chunk_merge_peers` | `hierarchical` \| `hybrid` · a server-local path · int · bool | `to=chunks` configuration (#256) |
+| `url` · `sources` · `target` | JSON body | a URL input (`--allow-url-fetch`), or docling's service shape (#139): `file` (base64) and `http` sources, `s3` / `azure_blob` / `google_cloud_storage` sources and targets with the `cloud` cargo feature, and the jobkit targets `zip` (one archive of the rendered outputs, nothing outbound) and `put` (HTTP-PUT each output to a pre-signed URL, behind `--allow-url-fetch`) — the `s3_pipeline` example in `/openapi.yaml` |
+| every `ConvertOptions` field | its wire name | `strict`, `pages`, `no_ocr`, `password`, `ocr_*`, `heading_hierarchy`, the `do_*_enrichment` and `redact_*` switches, `document_timeout`, `image_sources`, `pipeline=vlm` + `vlm_*`, … — values and defaults in [`docs/OPTIONS.md`](docs/OPTIONS.md) |
+
+Policies that stay with the server: URL inputs, `image_sources=remote` /
+`fetch_images`, a request-supplied `vlm_endpoint` and `put` targets need
+`--allow-url-fetch`; `image_sources=local` needs `--allow-local-images`;
+`xbrl_taxonomy` and `chunk_tokenizer` are server-local relative paths. A
+conversion cut by `document_timeout` answers `X-Docling-Status:
+partial_success` + `X-Docling-Errors` (batch and async items carry `status`
+and `errors`); `redact_pii` reports its counts in `X-Docling-Redaction`.
+
+### Server flags
+
+| Flag | Default | Meaning |
+|---|---|---|
+| `--addr HOST:PORT` | `127.0.0.1:5001` | bind address — loopback by default; front it with a policy proxy for anything wider |
+| `--concurrency N` | 2 | conversions in flight; further requests queue |
+| `--max-body-mb N` | 256 | upload cap |
+| `--queue-size N` · `--result-ttl SECS` | 16 · 600 | async jobs queued or unfetched at once (429 beyond) · how long a finished result stays fetchable |
+| `--warmup` | off | load the PDF/image models at startup; `/ready` is 503 until they are |
+| `--allow-url-fetch` | off | URL inputs, remote images, caller-supplied VLM endpoints, `put` targets. Private/loopback targets stay blocked (`DOCLING_RS_ALLOW_PRIVATE_IP_FETCH=1` opts out) and downloads are capped (`DOCLING_RS_MAX_FETCH_BYTES`) |
+| `--allow-local-images` | off | accept `image_sources=local` (#646) |
+| `--strict` | off | strict Markdown for requests that don't say |
+| `--api-key KEY` | unset | `X-Api-Key` on every `/v1` route (#615); `DOCLING_SERVE_API_KEY` when the flag is absent — prefer it, a flag shows in the process list |
+| `--max-memory-mb N` | the cgroup limit (`DOCLING_RS_MAX_MEMORY_MB`) | admission control (#263): above 85 % of it (`DOCLING_RS_MEMORY_WATERMARK_PCT`) new conversions get 503 + Retry-After instead of an OOM kill; `0` disables |
+
+Thread pools are cgroup-quota-aware (#262; `DOCLING_RS_TF_INTRA` narrows the
+shared TableFormer session) and the server runs with `DOCLING_RS_NO_ARENA=1`,
+which measured ~3× lower warm RSS at no latency cost. Observability mirrors
+Python docling-serve (#297): `tracing` request logs (`RUST_LOG`), Prometheus
+text on `GET /metrics` (request counts by status class, an in-flight gauge, a
+latency histogram, conversions by outcome) and, with the opt-in `otel` cargo
+feature and `OTEL_EXPORTER_OTLP_ENDPOINT` set, OTLP/gRPC request spans.
+Container images, Compose files and tuning: [Deploy in a
+container](#deploy-in-a-container) and [`docs/DEPLOYMENT.md`](./docs/DEPLOYMENT.md).
+
 ### Drop-in for docling-serve (Open WebUI, n8n, Dify, LangChain)
 
 Clients written against Python docling-serve's API talk to this server
@@ -358,8 +594,7 @@ Docling*, *Docling Server URL* = `http://<host>:5001` (and the API key if you
 set one). Its loader posts `files` with `image_export_mode=placeholder` and a
 form-feed `md_page_break_placeholder`, and reads `document.md_content` split
 into pages. Extra *Docling parameters* JSON (`{"do_ocr": true, "ocr_lang":
-["en"], "pdf_backend": "dlparse_v4"}`) is mapped where it means something here
-and ignored otherwise.
+["en"]}`) is mapped where it means something here and ignored otherwise.
 
 ```bash
 curl -F files=@report.pdf -F to_formats=md -F to_formats=text \
@@ -368,94 +603,6 @@ curl -H 'content-type: application/json' localhost:5001/v1/convert/source \
      -d '{"sources": [{"kind": "http", "url": "https://arxiv.org/pdf/2206.01062"}],
           "options": {"to_formats": ["md"], "do_ocr": false}}'  # needs --allow-url-fetch
 ```
-
-A conversion that *panics* — a backend bug reached on some input — answers
-**500** with the error body, on every endpoint, instead of leaving the caller
-with a silent empty 200 or a hanging request (#396). The panic still prints its
-message and backtrace to the server log, and the batch CLI reports that file as
-failed and moves on to the next one.
-
-`to=images` skips conversion entirely and rasterizes a PDF's pages to PNG —
-`{"pages": [{"page", "width", "height", "png_base64"}]}` —
-honoring `pages=A-B` and a `scale` of 0.1–4.0 pixels per PDF point (default
-2.0 = 144 dpi). Capped at 100 pages per request
-(`DOCLING_RS_MAX_RASTER_PAGES`); narrow big documents with `pages`.
-
-Options per request: `to=md|json|html|text|dclx|chunks|latex|pandoc|images` (`pandoc_api_version` checks the Pandoc API a `to=pandoc` caller expects), `strict`, `images=placeholder|embedded`,
-`skip_empty_cells`, `compact_tables`, `md_page_break_placeholder` (text between pages in Markdown),
-`no_ocr` (docling's `--no-ocr`; `skip_ocr` its pre-2.0 name), `text_layer_only`, `password` (`pdf_password` too), `no_table_former`, `no_text_panels`, `heading_hierarchy`, `force_full_page_ocr`, `pages`,
-`do_picture_classification`, `do_code_enrichment`, `do_formula_enrichment` (#423: the
-[enrichment models](#enrichment-models-picture-classification-code-formulas), named as
-docling's `PdfPipelineOptions` flags; a request that changes the enrichment mix rebuilds the
-warm pipeline once, the models themselves load lazily on the first matching region),
-`do_picture_ocr`, `picture_ocr_classes`, `picture_ocr_min_side`, `keep_picture_images` (#645:
-[OCR the pictures of non-PDF documents](#picture-ocr-for-non-pdf-documents---picture-ocr)),
-`redact_pii`, `redact_mode`, `redact_kinds`, `redact_pattern`, `redact_images` (#621:
-[PII redaction](#pii-redaction---redact-pii) before any export; the counts come back in
-`X-Docling-Redaction` / the item's `redaction`),
-`ocr_lang`, `ocr_engine`, `ocr_mode`, `ocr_scale`, `scale`, `document_timeout` (#497: a per-document budget in seconds — a cut conversion answers `X-Docling-Status: partial_success` + `X-Docling-Errors`, batch / async items carry `status` and `errors`), `asr_model`, `asr_lang`, `encoding`, `video_frames`, `image_sources` (#646: `remote` needs `--allow-url-fetch` — else held to `embedded` — and `local` needs `--allow-local-images`), `image_hosts`, `max_images` / `max_image_bytes` / `max_image_total_mb` / `min_image_bytes`, `xbrl_taxonomy`, `fetch_images`,
-`chunker=hierarchical|hybrid`, `chunk_tokenizer`, `chunk_max_tokens`, `chunk_merge_peers` (#256:
-per-request `to=chunks` configuration; the tokenizer is a server-local relative path),
-`pipeline=standard|vlm` + `vlm_endpoint`, `vlm_model`, `vlm_api_key`, `vlm_prompt`,
-`vlm_max_tokens` (#304: the remote [VLM pipeline](#vlm-pipeline-remote-endpoint); a
-request-supplied `vlm_endpoint` needs `--allow-url-fetch` and passes the same SSRF
-check as URL inputs — pin it server-side via `DOCLING_RS_VLM_*` instead for the safer
-operator-controlled mode) — as query
-parameters, multipart fields, or JSON keys (body wins). Server flags: `--addr`,
-`--concurrency`, `--max-body-mb`, `--queue-size`, `--result-ttl`, `--warmup`,
-`--allow-url-fetch`, `--no-url-fetch`, `--strict`, `--api-key` (#615:
-`X-Api-Key` on every `/v1` route; `DOCLING_SERVE_API_KEY` when absent),
-`--max-memory-mb` (#263:
-memory ceiling for admission control — explicit, or `DOCLING_RS_MAX_MEMORY_MB`,
-else the container's cgroup limit; once RSS crosses 85% of it — tunable via
-`DOCLING_RS_MEMORY_WATERMARK_PCT` — new conversions get 503 + Retry-After
-instead of OOM-killing the process; `0` disables). Thread pools are
-**cgroup-quota-aware** (#262; `DOCLING_RS_TF_INTRA` further narrows the shared
-TableFormer session — the reporter's 4-CPU case dropped ~40% peak memory), and
-the server defaults `DOCLING_RS_NO_ARENA=1`: with the ONNX CPU arena off plus
-heap trimming, warm retained RSS measured ~3× lower (2.0 GB → 0.7 GB) at no
-latency cost — set `DOCLING_RS_NO_ARENA=0` to restore the arena. Prebuilt
-multi-arch images (`linux/amd64`, `linux/arm64`) publish to GHCR:
-`ghcr.io/docling-project/docling-rs-serve:latest` (the server) and
-`ghcr.io/docling-project/docling-rs:latest` (the CLI, `docker run --rm -v
-"$PWD:/data" ghcr.io/docling-project/docling-rs report.pdf --to md`), both
-built from [`crates/docling-serve/Dockerfile`](./crates/docling-serve/Dockerfile)
-with the models baked in (or mountable with `--build-arg
-FETCH_ASSETS=0`; extra speech-recognition presets with `--build-arg
-ASR_MODELS=parakeet_tdt_0.6b_v3`). Docker
-Compose setups are in [`examples/docker-compose/`](./examples/docker-compose/) and
-the full guide is in [`docs/DEPLOYMENT.md`](./docs/DEPLOYMENT.md).
-URL inputs are **off by default** (SSRF surface): pass `--allow-url-fetch` to
-enable them; the fetcher blocks private-IP targets
-(`DOCLING_RS_ALLOW_PRIVATE_IP_FETCH=1` opts out) and caps the download size
-(`DOCLING_RS_MAX_FETCH_BYTES`). The server binds loopback by default — front
-it with a policy proxy for anything wider.
-The JSON body also takes docling's service-datamodel `sources`/`target` shape
-(#139): `kind`-tagged `file` (base64) and `http` (URL + headers) sources, and —
-with the opt-in `cloud` cargo feature (feature-gated `object_store`) — `s3`,
-`azure_blob` and `google_cloud_storage` sources and output targets, coordinate
-fields mirroring upstream's models. A cloud target uploads each converted
-output as `<stem>.<ext>` under the prefix and answers with a
-`RemoteTargetResult` acknowledgment; everything outbound sits behind
-`--allow-url-fetch`. The jobkit targets `zip` and `put` work too (#303, no
-`cloud` feature needed): `{"kind": "zip"}` answers with one `application/zip`
-archive of the `<stem>.<ext>` rendered outputs (a batch download — nothing
-outbound, no gate; a failed batch item becomes a `<stem>.<ext>.error.txt`
-entry), and `{"kind": "put", "url": …}` HTTP-PUTs each rendered output to the
-given — typically pre-signed — URL, so upload credentials live in the URL the
-caller minted, never in the request (behind `--allow-url-fetch`, with the same
-SSRF resolution check as URL inputs and redirects disabled). See the
-`s3_pipeline` example in `/openapi.yaml`.
-
-Observability (#297, mirroring Python docling-serve's posture — metrics on by
-default, traces opt-in): every request logs through `tracing` (`RUST_LOG`
-filters, default `info`), and `GET /metrics` serves Prometheus text —
-request counts by status class, an in-flight gauge, a request-latency
-histogram, and per-outcome conversion counts (`/metrics`, `/health` and
-`/ready` probes excluded). Building with the opt-in `otel` cargo feature and
-setting `OTEL_EXPORTER_OTLP_ENDPOINT` additionally ships the request spans
-over OTLP/gRPC (`OTEL_SERVICE_NAME` defaults to `docling-rs-serve`); without the
-env var the feature is inert.
 
 ## In the browser — `docling-wasm`
 
@@ -495,7 +642,7 @@ One engine, several front doors. Every surface takes the same options
 | You write… | Use | Install | Details |
 |---|---|---|---|
 | Rust | the `docling` crate: `DocumentConverter` + `SourceDocument` | `cargo add docling` | [The API](#the-api) |
-| a shell / CI job | the `docling-rs` CLI (`--to md\|json\|html\|dclx\|chunks\|latex\|pandoc\|images`, `--input`/`--output` batch mode) | `cargo install docling-cli` · [release binaries](https://github.com/docling-project/docling.rs/releases) · `ghcr.io/docling-project/docling-rs` | [Batch conversion](#batch-conversion--input----output), [Install](#install-locally--in-ci-one-liner) |
+| a shell / CI job | the `docling-rs` CLI (`--to md\|json\|html\|dclx\|chunks\|latex\|pandoc\|images`, `--input`/`--output` batch mode) | `cargo install docling-cli` · [release binaries](https://github.com/docling-project/docling.rs/releases) · `ghcr.io/docling-project/docling-rs` | [Batch conversion](#batch-conversion--several-sources---input----output), [Install](#install-locally--in-ci-one-liner) |
 | anything that speaks HTTP | `docling-serve`: `POST /v1/convert` (multipart or JSON), async jobs, OpenAPI 3.1 | `docker run -p 5001:5001 ghcr.io/docling-project/docling-rs-serve` · `cargo install docling-serve` | [HTTP conversion API](#http-conversion-api--docling-rs-serve), [docs/DEPLOYMENT.md](./docs/DEPLOYMENT.md) |
 | Node.js / Bun / Electron | `docling.rs` (N-API addon): `convertFile`, `convert`, streaming, chunking, warm `Pipeline` | `npm i docling.rs` (`docling.rs-cuda` for GPU) | [Node bindings](#nodejs--bun-bindings), [crate README](./crates/docling-node/README.md) |
 | Python | `docling-rs` — a drop-in for docling's `DocumentConverter` over the Rust engine | `pip install docling-rs` (`docling-rs-cuda` for GPU) | [Python bindings](#python-bindings), [migration guide](./crates/docling-py/README.md#migrating-from-python-docling) |
@@ -588,20 +735,35 @@ match converter.convert(SourceDocument::from_file("locked.pdf").unwrap()) {
 
 ### One option set, every surface — `ConvertOptions`
 
-Every conversion knob — the `DocumentConverter` builder's methods plus the
-pipeline selection and the `vlm_*` settings — is also one serializable struct,
+Every conversion knob is one serializable struct,
 [`docling::ConvertOptions`](crates/docling/src/options.rs) (#577), and every
-surface speaks it: the CLI fills it from flags, `docling-rs serve` from the
-query string / JSON body / multipart text parts, the Python and Node bindings
-from their keyword arguments and option objects, the C ABI and the wasm
-module from one JSON object. They all then run the same
-`ConvertOptions::validate()` (one set of rejection rules and messages) and
-`ConvertOptions::apply()` (one mapping onto the builder); the engine defaults
-are defined once, in `DocumentConverter::default()`, and an unset option means
-that default everywhere. The full table — wire name, values, default, and each
-surface's spelling where it differs — is [`docs/OPTIONS.md`](docs/OPTIONS.md);
-an inventory test holds every surface's documentation to it, so a new option
-cannot ship on one surface and silently miss another.
+surface fills it — the CLI from flags, serve from the query string / JSON
+body / multipart parts, Python and Node from keyword arguments and option
+objects, the C ABI and wasm from one JSON object — then runs the same
+`validate()` and `apply()`. The defaults live in
+`DocumentConverter::default()`; an unset option means that default
+everywhere. The ones most conversions reach for:
+
+| Wire name | CLI | Meaning |
+|---|---|---|
+| `pages` | `--pages A-B` | PDF page window (#80) |
+| `no_ocr` · `text_layer_only` · `force_full_page_ocr` | `--no-ocr` · `--text-layer-only` · `--force-full-page-ocr` | never OCR, layout and tables kept · the text layer alone, no ML · OCR every page even with a text layer |
+| `no_table_former` | `--no-table-former` | geometric tables instead of TableFormer |
+| `ocr_lang` · `ocr_engine` | `--ocr-lang` · `--ocr-engine` | `en` / `ch` / BCP-47; `ppocr` or `tesseract` (#460) |
+| `heading_hierarchy` | `--heading-hierarchy` | infer PDF heading levels (#302) |
+| `images_scale` · `page_images` | `--images-scale` · `--page-images` | picture-crop resolution; keep page renders in the JSON (#520) |
+| `document_timeout` | `--document-timeout` | per-document budget; the pages done so far become a partial success (#497) |
+| `password` | `--password` | encrypted PDF and Office documents (#611, #625) |
+| `image_sources` | `--image-sources` | `none` / `embedded` / `local` / `remote` — which `<img>` references resolve (#646) |
+| `do_picture_classification` · `do_code_enrichment` · `do_formula_enrichment` · `do_picture_ocr` | `--enrich-picture-classes` · `--enrich-code` · `--enrich-formula` · `--picture-ocr` | the enrichment models (#423, #645) |
+| `redact_pii` | `--redact-pii` | PII redaction before export (#621) |
+| `pipeline` + `vlm_endpoint`, `vlm_model` | `--pipeline vlm --vlm-endpoint … --vlm-model …` | the remote vision-model pipeline (#77) |
+| `strict` · `compact_tables` · `page_break_placeholder` | `--strict` · `--compact-tables` · `--page-break-placeholder` | Markdown dialect, unpadded tables, text between pages |
+
+The full table — every option with its values, default and each surface's
+spelling — is [`docs/OPTIONS.md`](docs/OPTIONS.md); an inventory test holds
+every surface's documentation to it, so an option cannot ship on one surface
+and silently miss another.
 
 ```rust
 use docling::{ConvertOptions, DocumentConverter};
@@ -610,504 +772,158 @@ let options: ConvertOptions = serde_json::from_str(r#"{"pages": "1-3", "no_ocr":
 let converter = DocumentConverter::from_options(&options)?; // validated + applied
 ```
 
-### Post-extraction table editing
+### Output formats
 
-Tables converted by the PDF ML pipeline carry **first-class cells**
-(`Table::cells` — docling's `TableCell` shape: text, `[l, t, r, b]` page-point
-bbox with a top-left origin, span rectangle and header roles from the
-predicted structure, #240), serialized into the JSON export's `table_cells`
-(and therefore visible to the Python/Node bindings), with the DocLang span
-tokens (`<lcel/>`/`<ucel/>`/`<ched/>`) derived from them. `DoclingDocument`
-exposes the tables for in-place repair (#238) — recover missing OCR text, fix
-a misread cell, then re-export:
+| `--to` / `to` | Library | What it is |
+|---|---|---|
+| `md` (default) | `export_to_markdown()` | docling's Markdown byte for byte; `--strict` for the cleaner dialect (below); `--images embedded\|referenced` for pictures |
+| `json` | `export_to_json()` | docling-core's `DoclingDocument` wire format (schema 1.10.0): the `body` tree of `$ref`s into `texts` / `groups` / `tables` / `pictures`, labels, list groups, table grids, images as `data:` URIs. Loads straight into Python docling-core (`DoclingDocument.load_from_json`) and round-trips to the same Markdown |
+| `html` | `export_to_html()` | docling-core's `HTMLDocSerializer` with its defaults: stylesheet, `<h{level+1}>`, inline groups, tables with spans and rich cells, `<figure>` pictures, MathML formulas (a literal port of `latex2mathml`). Byte-identical to docling-core on the whole declarative corpus (265/265) |
+| `text` | `export_to_text()` | docling's `--to text` (#613): the Markdown with the decoration off — no `#`, no emphasis markers, links as their label, code without fences, no escaping; lists, checkboxes and table grids kept |
+| `dclx` | `export_to_doclang()`, `docling::dclx::save_as_dclx` | DocLang — docling 2.110's XML of the tree (`<doclang version="0.7">`), pretty-printed like `minidom.toprettyxml`; `.dclx` is the OPC archive `save_as_doclang()` writes (`document.xml` + one PNG part per picture). Reads back in too: `.dclg` / `.dclx` are input formats (15/15 exact vs docling) |
+| `latex` | `export_to_latex()` | docling 2.124's `LaTeXDocSerializer` with its defaults: `article` preamble, `\title` + `\maketitle`, sectioning, `itemize` / `enumerate`, `tabular` grids, `figure` placeholders, `verbatim`, `$$…$$`. 93 of 116 fixtures byte-exact against `docling --to latex` (98 once upstream's duplicated formatted list items — docling-core#740 — are normalized away) |
+| `pandoc` | `export_to_pandoc_json()` | Pandoc's JSON AST (#515, `pandoc-api-version` 1.23.1.1), so every Pandoc writer — DOCX, ODT, EPUB, reST, Org, Typst, … — sits behind the parser; pictures embedded by default. `--pandoc-api-version` states the version a consumer needs |
+| `vtt` | `export_to_vtt()` | WebVTT subtitles (#614, docling-core's `WebVTTDocSerializer`): one cue per timed item — an ASR transcript's segments, a WebVTT input's cues with voices and formatting. Untimed content is not represented |
+| `chunks` | `docling::chunker` | both chunkers' records (below) |
+| `images` | — | no conversion: a PDF's pages as PNG (`<stem>_page_NNNN.png`; `{"pages": […]}` on serve), honouring `--pages` and `--scale` 0.1–4.0 px/pt (#243) |
 
-```rust
-let mut document = converter.convert(source).unwrap().document;
-for table in document.tables_mut() {
-    // Locate the cell an external OCR box refers to (best IoU) and fix it…
-    if let Some((row, col)) = table.find_cell_by_bbox([310.0, 224.0, 351.0, 231.0]) {
-        table.set_cell_text(row, col, "corrected");
-    }
-    // …or in one call:
-    table.update_cell_by_bbox([310.0, 224.0, 351.0, 231.0], "corrected");
-}
-println!("{}", document.export_to_markdown()); // repairs included
-```
-
-Updating a spanning cell through any covered position updates the whole cell
-(record + every covered grid slot). `rows`, `structure` and `cells` are public
-fields, so full reconstruction (inserting rows, rebuilding a borderless table
-from corrected OCR) is ordinary `Vec` surgery; `set_cell_bbox` materializes
-1×1 cells on demand. Declarative tables get their cells derived
-from the parsed structure — real spans for DOCX/XLSX merged regions, ODF
-covered cells and HTML `rowspan`/`colspan`, `th`-driven header roles — just
-without page geometry (`bbox: None`), so a spreadsheet repair loop works the
-same way.
-
-### JSON output
-
-`export_to_json()` emits docling-core's native `DoclingDocument` wire format
-(schema `1.10.0`) — the same shape Python docling's `export_to_dict()` /
-`save_as_json()` produce: a `body` tree of `$ref`s into `texts` / `groups` /
-`tables` / `pictures`, with labels (`title`, `section_header`, `list_item`,
-`code`, `formula`, …), list grouping, and table grids. The output loads straight
-back into Python docling-core (`DoclingDocument.load_from_json(...)`) and
-round-trips to the same Markdown.
-
-> Note: docling.rs's model bakes inline formatting (bold, links, inline math)
-> into the text, so for those spans the JSON carries the rendered text rather
-> than docling's structured `formatting` / `hyperlink` fields. Block structure,
-> headings, lists, tables, code and display equations match.
-
-### DocLang (`.dclx`) output
-
-`export_to_doclang()` renders the document as **DocLang** — docling 2.110's
-XML serialization (`<doclang version="0.7">`) of the `DoclingDocument` tree:
-headings, paragraphs, rich inline runs (`<bold>` / `<italic>` / `<underline>` /
-`<strikethrough>` / `<subscript>` / `<superscript>`), lists with enumeration
-`<marker>`s, tables with per-cell `<location>` provenance, code blocks with a
-language `<label>`, formulas, pictures and furniture. The pretty-printed
-indentation follows Python's `minidom.toprettyxml` byte-for-byte. A picture's
-`<src uri="assets/image_NNNNNN_<sha256>.png"/>` is named like docling's: the
-index counts every body picture, the digest is over the decoded pixels (PIL
-`tobytes()`) — exact for PNG and JPEG images (JPEG through a libjpeg-exact
-decoder); other encodings (GIF, BMP, …) hash the file bytes.
-
-```rust
-println!("{}", result.document.export_to_doclang()); // <doclang> XML string
-```
-
-Wrap that XML in an OPC archive — the `.dclx` container docling's
-`save_as_doclang()` writes (`[Content_Types].xml` + `_rels/.rels` + one PNG
-part per referenced picture under `assets/` + `document.xml`) — with
-`docling::dclx::save_as_dclx` (`export_to_doclang_with_assets()` hands you the
-markup and those parts yourself):
-
-```rust
-use std::path::Path;
-docling::dclx::save_as_dclx(&result.document, Path::new("out.dclx")).unwrap();
-```
-
-From the CLI, `--to dclx` writes `<input-stem>.dclx` next to the CWD:
-
-```sh
-cargo run -p docling-cli -- --to dclx crates/docling/sample.html   # -> sample.dclx
-```
-
-`--to images` (#243) is the CLI counterpart of serve's rasterization: it skips
-conversion and writes a PDF's pages as `<stem>_page_NNNN.png` files (CWD, or
-`--output DIR` in batch mode), honoring `--pages A-B` (absolute page numbers
-survive the window) and `--scale` (0.1–4.0 px per PDF point, default 2.0 =
-144 dpi):
-
-```sh
-docling-rs --to images --pages 2-3 --scale 1.5 paper.pdf  # -> paper_page_0002.png, paper_page_0003.png
-```
-
-Conformance against docling's own `.dclx` output is tracked by
-`scripts/conformance/gen_dclx.py` (generates the groundtruth) and
-`scripts/conformance/dclx_conformance.sh` (line-diffs the extracted
-`document.xml`).
-
-### Plain-text (`.txt`) output
-
-`export_to_text()` — docling's `--to text` (#613), the Rust counterpart of
-docling-core's `DoclingDocument.export_to_text()` / `PlainTextDocSerializer` —
-is the Markdown export with the decoration turned off: headings without `#`,
-no bold / italic / strikethrough markers, a link reduced to its label, code
-without fences or backticks, no image placeholders (captions stay) and no
-escaping (`R&D`, not `R&amp;D`). List bullets and numbers, checkbox marks and
-table grids are kept, as upstream keeps them. Text for indexing, embeddings
-and search without Markdown noise:
-
-```bash
-docling-rs report.docx --to text                         # stdout
-docling-rs --input ./docs --output ./out --to text       # <stem>.txt per file
-```
-
-Serve answers `to=text` as `text/plain` (inline under `text` in a batch,
-`<stem>.txt` in a zip), Node / wasm / the C ABI take `to: "text"`, and
-`--page-break-placeholder` applies like for Markdown. The Python bindings need
-nothing: their `result.document` *is* docling-core's `DoclingDocument`, so
-`result.document.export_to_text()` is upstream's own. Measured against
-`export_to_text()` on the upstream groundtruth JSON: identical on 134 of the
-135 declarative fixtures whose Markdown already matches (the one left is a
-WebVTT cue where docling wraps italics around a bare space — `* *` — which the
-port keeps literal; see `docs/MIGRATION.md`). `crates/docling/tests/plain_text.rs`
-pins 15 of them against docling-core's output.
-
-### WebVTT (`.vtt`) output
-
-`export_to_vtt()` — docling's `--to vtt` (#614), a port of docling-core's
-`WebVTTDocSerializer` as `save_as_vtt` runs it — writes subtitles: a cue per
-timed text item. An audio or video transcript gives one cue per segment
-(start and end from the ASR timing, a zero-length segment stretched by 1 ms,
-blank ones dropped, as docling's ASR pipeline does), and a WebVTT input comes
-back with its cues, identifiers, `<v voice>` spans and `<b>`/`<i>`/`<u>`
-formatting. Other content (tables, pictures, untimed text) is not
-represented, so a DOCX gives the bare `WEBVTT` header (titled by its title,
-like upstream).
-
-```bash
-docling-rs talk.mp3 --to vtt > talk.vtt                       # subtitles from a transcript
-docling-rs --input ./media --output ./out --to vtt,md          # <stem>.vtt + <stem>.md
-```
-
-Serve answers `to=vtt` as `text/vtt` (inline under `vtt` in a batch), Node /
-wasm / the C ABI take `to: "vtt"`, and the Python bindings use docling-core's
-own `result.document.export_to_vtt()` / `save_as_vtt()` — the transcript JSON
-carries each segment as docling does (the words as `text`, the timing as a
-`source` track). Byte-identical to docling 2.135 on the four mirrored WebVTT
-inputs (`crates/docling/tests/vtt_export.rs`), and on a transcript loaded into
-docling-core from our JSON.
-
-### LaTeX (`.tex`) output
-
-`export_to_latex()` renders a complete LaTeX document — docling 2.124's
-`--to latex` (#317), the Rust counterpart of docling-core's
-`LaTeXDocSerializer` with its default parameters: the `article` preamble and
-package list, a document title hoisted into `\title{}` + `\maketitle`,
-`\section`/`\subsection`/`\subsubsection` headings, `itemize`/`enumerate`
-lists (nested environments indented two spaces), `table`/`tabular` grids with
-`\hline` rules and captions (rich cells render their lists / nested tables
-inline), `figure` environments with a `% image` placeholder and the picture
-classification as a `% annotation` comment, `verbatim` code, `$$…$$` formulas,
-inline formatting as `\textbf{}` / `\textit{}` / `\sout{}` / `\texttt{}` /
-`\href{}{}` / `$…$`, and LaTeX escaping of every special character in text.
-
-Scored against Python docling's **own** `docling --to latex` output on the
-shared declarative corpus (md, docx, html, pptx, xlsx, asciidoc, csv, webvtt,
-jats): **93 of 116 fixtures byte-exact**, 98 once upstream's duplicated
-formatted list items / headings are normalized away (see below). The
-remaining differences are model gaps rather than serializer bugs: underline
-and sub/superscript have no Markdown form and stay plain text; HTML rich
-table cells (lists / nested tables inside a `<td>`) are flattened; a few
-list-grouping and furniture placements differ. The regression suite
-(`crates/docling/tests/regression.rs`) pins every fixture's `.tex`.
-
-```rust
-println!("{}", result.document.export_to_latex()); // \documentclass … \end{document}
-```
-
-`--to latex` on the CLI prints it (batch mode writes `<stem>.tex`), serve
-answers `to=latex` as `text/x-tex` (inline under `latex` in a batch), and the
-Node bindings take `to: 'latex'`. The Python bindings need nothing: their
-`result.document` *is* upstream docling-core's `DoclingDocument`, so
-`LaTeXDocSerializer(doc=result.document).serialize().text` applies directly.
-Two deliberate deviations: upstream raises on a heading deeper than
-`\subsubsection`, docling.rs degrades those to `\paragraph` /
-`\subparagraph` instead of failing the conversion; and upstream emits the
-text of a *formatted* list item or heading twice (inside `\item` /
-`\section{}` and again as its own paragraph —
-[docling-core#740](https://github.com/docling-project/docling-core/issues/740)),
-which docling.rs does not reproduce.
-
-### HTML (`.html`) output
-
-`export_to_html()` renders a complete HTML document (#492) — the Rust
-counterpart of docling-core's `HTMLDocSerializer` with its default
-parameters: the single-column stylesheet in `<head>`, `<title>` = the
-document name, `<div class='page'>` around the body, `<h1>` for the title and
-`<h{level+1}>` for section headers, `<p>` paragraphs with `<br>` for newlines,
-`<ol>`/`<ul>` lists whose `<li>` carry the original marker as
-`list-style-type`, inline groups as `<span class='inline-group'>` with
-`<strong>`/`<em>`/`<u>`/`<del>`/`<sub>`/`<sup>`/`<a href>`, tables with
-`<th>` header cells, `rowspan`/`colspan` and rich cells rendered as their
-block content, `<figure>` pictures with `<figcaption>`, and the picture
-`meta` block (`<details class="docling-meta">` with the classification and
-the tabular-chart table). Pictures follow the image mode exactly as Markdown
-does: `export_to_html_with_images(ImageMode::Embedded, …)` inlines `data:`
-URIs, `Referenced` returns the same `<stem>_artifacts/image_NNNNNN.<ext>`
-files the Markdown export names and links to them, and the default
-placeholder mode (upstream's `ImageRefMode.PLACEHOLDER`) leaves pictures out
-but for their captions and meta.
-
-The serializer walks the docling-JSON structure the JSON export already
-reproduces item for item, so it inherits every heading-nesting, inline-group
-and rich-cell decision from there. It is pinned two ways: byte-for-byte
-against the HTML groundtruth upstream ships for its ODF and DOCX fixtures
-(`crates/docling/tests/html_export.rs`, 8/8 — picture payloads masked, since
-upstream's `save_as_html` re-encodes every picture through PIL), and against
-docling-core 2.99's own `export_to_html()` run over our exported JSON for the
-whole declarative corpus: **265 of 265 fixtures byte-identical**. Formulas
-are MathML like upstream's: `docling_core::mathml` is a literal port of the
-`latex2mathml` library docling-core runs (tokenizer, walker, converter, its
-`unimathsymbols.txt` table, the same failure modes — verified against the
-Python package on every corpus formula plus a synthetic suite, inline and
-block, errors included), wrapped in `<div>` for a block formula and carrying
-the source in `<annotation encoding="TeX">`; LaTeX the library rejects
-falls back to upstream's `<pre>{latex}</pre>`. Even upstream's raw
-(unescaped) source inside `<pre><code>` for code items is reproduced. The
-regression suite pins every fixture's `.html`.
-
-```rust
-let (html, _) = result.document.export_to_html_with_images(ImageMode::Embedded, "artifacts");
-```
-
-**Content layers** (#499 — docling-core's `HTMLParams.layers` /
-`export_to_html(included_content_layers=…)`): the export renders the `body`
-layer only by default, so page headers and footers (the `furniture` layer —
-DOCX/ODF running headers, PDF `page_header`/`page_footer` items, HTML
-chrome), reviewer comments (`notes`) and hidden content (`invisible`) stay
-out exactly as upstream leaves them out. `export_to_html_with_layers` takes
-the set to render: `ContentLayers::BODY.with(ContentLayer::Furniture)`,
-`ContentLayers::ALL` (Python's `set(ContentLayer)`), or a set without
-`body`; `HtmlExportOptions` combines it with the image mode and artifacts
-directory for `export_to_html_with`. An item off the set is skipped while
-its children are still walked, and the extra items render through the same
-serializers as the body — a header is a `<p>`, a comment a `<p>`, a header
-table a `<table>` — byte-identical to docling-core 2.99's output for the
-same layer sets (`html_layers_match_docling_core` pins DOCX header/footer,
-comment and all-layer exports). The default export is unchanged byte for
-byte.
-
-```rust
-use docling::{ContentLayer, ContentLayers, HtmlExportOptions, ImageMode};
-let html = doc.export_to_html_with_layers(ContentLayers::BODY.with(ContentLayer::Furniture));
-let (html, artifacts) = doc.export_to_html_with(&HtmlExportOptions {
-    image_mode: ImageMode::Referenced,
-    layers: ContentLayers::ALL,
-    ..HtmlExportOptions::default()
-});
-```
-
-The Markdown export takes the same kind of struct (#599 — docling-core's
-`MarkdownParams`): `MarkdownExportOptions` carries the content `layers`, whether
-to `traverse_pictures` (the text items the PDF pipeline nests in a picture — a
-bordered form laid out as one picture holds every field there, and the default
-export prints only the image placeholder), `escape_html` / `escape_underscores`
-(off, `R&D` and `snake_case` stay as written instead of `R&amp;D` and
-`snake\_case`), the `image_placeholder` and the image mode. Its defaults are
-upstream's, so `export_to_markdown_with_options(&Default::default())` is
-`export_to_markdown()` byte for byte; `MarkdownStreamer::with_export_options`
-gives the streaming path the same settings.
-
-```rust
-use docling::{ContentLayer, ContentLayers, MarkdownExportOptions};
-let (md, _) = doc.export_to_markdown_with_options(&MarkdownExportOptions {
-    layers: ContentLayers::BODY.with(ContentLayer::Furniture),
-    traverse_pictures: true,
-    escape_html: false,
-    ..MarkdownExportOptions::default()
-});
-```
-
-`--to html` on the CLI prints it (batch mode writes `<stem>.html`, pictures
-per `--images`), serve answers `to=html` as `text/html` (inline under `html`
-in a batch), the Node bindings take `to: 'html'`, wasm `"html"`. The Python
-bindings need nothing: `result.document.export_to_html()` is upstream's.
-
-DocLang also reads back **in**: `.dclg`/`.dclg.xml` (bare DocLang XML) and
-`.dclx` archives are input formats like any other —
-`convert(SourceDocument::from_file("doc.dclx")?)` — scored byte-for-byte
-against live docling reading the same archives (15/15 exact,
-`tests/data/doclang`).
-
-### Pandoc AST (`--to pandoc`) output
-
-`export_to_pandoc_json()` writes the document as Pandoc's JSON AST (#515) —
-the serialization of Pandoc's own `Pandoc` type that `pandoc -f json` reads —
-so every Pandoc writer (DOCX, ODT, EPUB, reStructuredText, Org, Typst,
-AsciiDoc, JATS, …) sits behind docling.rs's parsing, PDF layout analysis
-included:
+Every surface takes the same values — the CLI (batch mode writes
+`<stem>.<ext>`, several formats at once with `--to md,json`), serve
+(`to=`, the matching content type), Node / wasm / the C ABI (`to:`); the
+Python bindings hand back docling-core's own `DoclingDocument`, so upstream's
+`export_to_*` / `save_as_*` apply to it directly. Page breaks
+(`--page-break-placeholder`) apply to Markdown and text.
 
 ```bash
 docling-rs paper.pdf --to pandoc | pandoc -f json -t docx -o paper.docx
-docling-rs report.docx --to pandoc | pandoc -f json -t gfm      # footnotes as [^n]
+docling-rs talk.mp3 --to vtt > talk.vtt
+docling-rs --to images --pages 2-3 --scale 1.5 paper.pdf   # paper_page_0002.png, paper_page_0003.png
 ```
 
-Pictures are embedded by default for this output (#537): `--to pandoc`
-without `--images` writes `data:` URIs, so the AST alone rebuilds a DOCX with
-its pictures (serve's `images`, the Node `imageMode`, FFI / wasm `images` and
-Python's `image_mode` default the same way for the Pandoc AST only).
+**JSON structure.** HTML, DOCX, PPTX, ODF, WebVTT, JATS, AsciiDoc, DocLang,
+LaTeX and USPTO build docling's item tree — heading nesting, `inline`
+groups with `formatting` / `hyperlink`, rich table cells, `furniture` — so
+their JSON is structurally identical to upstream's; the flat backends
+(XLSX, CSV, EBCDIC) already have upstream's shape. Tables carry first-class
+cells (`table_cells`: text, page-point bbox, spans, header roles — #240),
+and `DoclingDocument` exposes them for in-place repair before re-export
+(#238): `tables_mut()`, `find_cell_by_bbox`, `set_cell_text`,
+`update_cell_by_bbox`; `rows`, `structure` and `cells` are public fields.
 
-It is built from the same docling-JSON structure the HTML and LaTeX exports
-walk, mapped to Pandoc's constructors:
-
-| docling | Pandoc |
-|---|---|
-| `title` / `section_header` (level *n*) | `Header 1` / `Header (n+1)` (capped at 6) |
-| `text`, `paragraph`, `inline` groups | `Para` of `Str`/`Space` runs (`Plain` inside lists and cells) |
-| bold / italic / underline / strikethrough / sub / superscript, hyperlinks | `Strong` / `Emph` / `Underline` / `Strikeout` / `Subscript` / `Superscript`, `Link` |
-| `list` groups | `BulletList` / `OrderedList` (start from the first marker), nested lists inside their item |
-| `code` | `CodeBlock` with the language as class (`Code` inline) |
-| `formula` | `Math DisplayMath` (`InlineMath` inside a paragraph) |
-| `checkbox_selected` / `_unselected` | `☒` / `☐` + the text — Pandoc's task-list convention |
-| `table` | `Table`: leading all-header rows as `TableHead`, `rowspan`/`colspan`, rich cells as blocks, captions |
-| `picture` | `Para [Image]` — Pandoc's own readers' shape — or, with a caption (also the alt text) or a chart's data `Table`, a `Figure`; the target per `--images` (`embedded` → `data:` URI, `referenced` → `<stem>_artifacts/` files). A picture without one (`placeholder`, or an image that could not be decoded) is still an `Image`, classed `docling-placeholder` with an empty target |
-| table / picture footnotes | `Note` in the caption |
-| DOCX footnotes / endnotes, ODT `text:note`s (#538) | `Note` at the reference, inside its paragraph / heading / list item / cell (pandoc writes them back as real notes: `word/footnotes.xml`, `[^n]`); a footnote with no recorded call site (a JSON from Python docling) as a trailing `Note` |
-| key-value graphs, form field regions | `Div .key-value-region` / `.form-container` / `.field-region` holding a `DefinitionList` |
-| any other label (`page_header`, `reference`, `handwritten_text`, …) | `Div .docling-<label>` |
-
-Not mapped, because Pandoc has no place for it: page provenance and bounding
-boxes, confidence / classification meta, form field geometry, comment
-authorship; furniture (headers, footers) and reviewer comments stay out like
-in the HTML export. Note call sites are not in docling's JSON model, so they
-travel only inside the Rust document: the CLI, serve, Node, FFI and wasm place
-notes at their calls, while Python's `export_to_pandoc` (which reads a
-docling `DoclingDocument`) appends them at the end. The output
-is stamped `pandoc-api-version` **1.23.1.1** (`pandoc-types` for Pandoc 3.x;
-`docling_core::pandoc::PANDOC_API_VERSION`) — the only version written.
-`--pandoc-api-version V` (serve `pandoc_api_version`, the library's
-`PandocExportOptions::api_version`) states the version a consumer needs;
-anything Pandoc would not read as 1.23 fails with `unsupported Pandoc API
-version '…'` instead of producing a document Pandoc rejects. Every
-convertible declarative fixture (305) and the PDF corpus pass `pandoc -f json
--t native`; `crates/docling/tests/pandoc.rs` pins 16 documents both as JSON
-and as Pandoc's `native` reading of it, and rebuilds a DOCX through
-`pandoc -t docx` to check its pictures and footnotes.
+**Content layers** (#499, #599). The HTML and Markdown exports render the
+`body` layer by default, so page headers and footers (`furniture`),
+reviewer comments (`notes`) and hidden content (`invisible`) stay out as
+upstream leaves them out; `export_to_html_with_layers` /
+`MarkdownExportOptions { layers, traverse_pictures, escape_html,
+escape_underscores, image_placeholder, image_mode }` take the set to render
+— byte-identical to docling-core for the same sets, and the defaults are
+`export_to_markdown()` / `export_to_html()` byte for byte:
 
 ```rust
-println!("{}", result.document.export_to_pandoc_json()); // {"pandoc-api-version":[1,23,1,1],…}
+use docling::{ContentLayer, ContentLayers, MarkdownExportOptions};
+let html = doc.export_to_html_with_layers(ContentLayers::BODY.with(ContentLayer::Furniture));
+let (md, _) = doc.export_to_markdown_with_options(&MarkdownExportOptions {
+    layers: ContentLayers::ALL, traverse_pictures: true, ..MarkdownExportOptions::default()
+});
 ```
 
-The CLI's batch mode writes `<stem>.pandoc.json`, serve answers `to=pandoc`
-as `application/json` (inline under `pandoc` in a batch), the Node bindings
-take `to: 'pandoc'`, the FFI `"to":"pandoc"`, wasm and the browser demo
-`"pandoc"`; Python runs the same serializer on any `DoclingDocument`:
-
-```python
-from docling_rs.pandoc import export_to_pandoc, save_as_pandoc
-ast = export_to_pandoc(result.document)              # str
-save_as_pandoc(result.document, "paper.pandoc.json", image_mode="referenced")
-```
+**Pandoc mapping.** Headings → `Header`, text and inline groups → `Para`
+of `Str` / `Space` runs with `Strong` / `Emph` / `Underline` / `Strikeout` /
+`Link`, lists → `BulletList` / `OrderedList`, code → `CodeBlock`, formulas
+→ `Math`, tables → `Table` with header rows and spans, pictures → `Image`
+or a captioned `Figure`, DOCX/ODT footnotes → `Note` at their call site
+(#538), key-value and form regions → classed `Div`s with a
+`DefinitionList`, every other label → `Div .docling-<label>`. Page
+provenance, confidence and furniture have no Pandoc place and are left
+out. Every declarative fixture and the PDF corpus pass `pandoc -f json -t
+native`; from Python, `docling_rs.pandoc.export_to_pandoc(doc)` /
+`save_as_pandoc(doc, path, image_mode=…)`.
 
 ### Chunking (docling's Hierarchical & Hybrid chunkers)
 
-`docling_core.transforms.chunker` ported to Rust — the chunkers RAG pipelines
-feed to embedding models, scored against live docling's output on the same
-corpus:
+`docling_core.transforms.chunker` ported to Rust — the chunkers RAG
+pipelines feed to embedding models. `HierarchicalChunker` yields one chunk
+per document item (whole lists, triplet-serialized tables, picture
+captions) with its heading path; `HybridChunker` refines them with a
+tokenizer — splits oversized chunks (item boundaries, then docling's
+`semchunk` inside text, tables line by line) and merges undersized
+same-heading neighbours. Against docling's chunkers on the 83-document
+corpus (`scripts/conformance/chunks_conformance.sh`): hierarchical 98.8 % /
+hybrid 96.2 % identical chunk records.
 
 ```rust
 use docling::chunker::{contextualize, HierarchicalChunker, HybridChunker, HuggingFaceTokenizer};
 
 let chunks = HierarchicalChunker.chunk(&result.document);          // structure-driven
-let tok = HuggingFaceTokenizer::from_file(".models/chunk/tokenizer.json", 256)?; // feature "chunking"; fetched by download_dependencies.sh
+let tok = HuggingFaceTokenizer::from_file(".models/chunk/tokenizer.json", 256)?; // feature "chunking"
 for chunk in HybridChunker::new(tok).chunk(&result.document) {
     let embed_me = contextualize(&chunk); // heading path + chunk text
 }
 ```
 
-Same thing from Python (the `docling_rs` package runs these natively):
-
 ```python
-from docling_rs import DocumentConverter
 from docling_rs.chunking import HierarchicalChunker, HybridChunker
-
-docling_rs.download_models()
-doc = DocumentConverter().convert("report.docx").document
-
-for chunk in HierarchicalChunker().chunk(doc):
-    print(chunk.meta.headings, chunk.text)
-
 chunker = HybridChunker(max_tokens=256)
 for chunk in chunker.chunk(doc):
-    embed_me = chunker.contextualize(chunk)  # heading path + chunk text
+    embed_me = chunker.contextualize(chunk)
 ```
 
-`HierarchicalChunker` yields one chunk per document item (whole lists, triplet-
-serialized tables — `row, column = value` — picture captions), each carrying its
-heading path. `HybridChunker` refines them with a tokenizer: splits oversized
-chunks (at item boundaries, then with docling's `semchunk` algorithm inside
-text; tables line-by-line), and merges undersized same-heading neighbours. The
-HuggingFace tokenizer (MiniLM etc.) sits behind the `chunking` cargo feature
-(on by default in the CLI); `--to chunks` dumps both chunkers' records.
-`scripts/install/download_dependencies.sh` fetches MiniLM's tokenizer to
-`.models/chunk/tokenizer.json`, which every surface picks up automatically when
-no explicit tokenizer path is given (`DOCLING_CHUNK_TOKENIZER` overrides the
-path and `DOCLING_CHUNK_MAX_TOKENS` the 256-token budget; per-run overrides:
-`--chunker hierarchical|hybrid`, `--chunk-tokenizer`, `--chunk-max-tokens`,
-`--no-chunk-merge-peers` on the CLI and the matching serve request fields,
-#256). The chunkers are also
-exposed in the [Node bindings](./crates/docling-node) (`chunkFile` /
-`chunkDocument` + async variants), the
-[Python bindings](./crates/docling-py) (`docling_rs.chunking`), and the
-[RAG subsystem](./crates/docling-rag) (`RAG_CHUNKER=window|hierarchical|hybrid`, `window` default). Conformance vs
-docling's chunkers over the 83-doc corpus (`scripts/conformance/
-chunks_conformance.sh`): **hierarchical 98.8% / hybrid 96.2% identical chunk
-records** (text + headings), 79 and 76 of 83 documents fully exact.
+`download_dependencies.sh` fetches MiniLM's tokenizer to
+`.models/chunk/tokenizer.json`, which every surface picks up
+(`DOCLING_CHUNK_TOKENIZER`, `DOCLING_CHUNK_MAX_TOKENS` override it;
+per run `--chunker hierarchical|hybrid`, `--chunk-tokenizer`,
+`--chunk-max-tokens`, `--no-chunk-merge-peers` and the matching serve
+fields, #256). Also in the [Node bindings](./crates/docling-node)
+(`chunkFile` / `chunkDocument`), the [Python bindings](./crates/docling-py)
+(`docling_rs.chunking`) and the [RAG subsystem](./crates/docling-rag).
 
 ### Image extraction
 
-Backends that have the image populate `Node::Picture { image }`: the PDF/image
-pipeline crops figure regions, the DOCX / PPTX / MHTML backends pull embedded
-image blobs (MHTML resolves `<img src>` against the archive's own MIME parts —
-no network/filesystem access needed, so it's on by default), and — opt-in —
-the HTML / EPUB backends fetch `<img src>` (see below).
-Pick how pictures render with an [`ImageMode`] — the analogue of docling's
-`image_mode`:
+Backends that have the image populate `Node::Picture { image }`: the
+PDF/image pipeline crops figure regions, DOCX / PPTX / MHTML pull embedded
+blobs, Windows metafiles (EMF / WMF) in the office formats are rendered to
+PNG in-process (#536). `ImageMode` — docling's `image_mode` — picks how
+pictures render:
 
 ```rust
 use docling::ImageMode;
-
 // self-contained Markdown: ![Image](data:image/png;base64,…)
 let (md, _) = result.document.export_to_markdown_with_images(ImageMode::Embedded, "artifacts");
-
 // referenced: ![Image](artifacts/image_000000.png) + the bytes to write
 let (md, files) = result.document.export_to_markdown_with_images(ImageMode::Referenced, "artifacts");
 for (path, bytes) in files { std::fs::write(path, bytes).unwrap(); }
 ```
 
-`export_to_json()` always embeds extracted images as docling `ImageRef`s
-(`data:` URIs + size). The default `export_to_markdown()` stays
-`<!-- image -->`, like docling.
-
-> The cropped/extracted pixels are real, but the base64 won't be byte-identical
-> to docling's (different PNG encoder). HTML/EPUB/MHTML/AsciiDoc/JATS pictures
-> stay placeholders by default (like docling); enable fetching with
-> `--image-sources MODE` / `DocumentConverter::image_sources` (#646) to resolve
-> `<img src>`, Markdown's `![…](…)` and inline `<img>`, AsciiDoc's
-> `image::target[]`, a JATS `<fig>`'s `<graphic xlink:href>`, an ODF
-> `draw:image` URL and an email body's `cid:` images, and embed the bytes.
-> The tiers nest: `embedded` = `data:` URIs and parts of the same container
-> (EPUB/MHTML entries, email attachments) — no filesystem, no network, the
-> tier for untrusted input; `local` = plus files under the source file's
-> directory (never an absolute path, never outside it); `remote` = plus
-> `http(s)` fetches, confined to `--image-hosts` when given (redirects
-> included) and to the private-address block-list always. `--fetch-images` /
-> `fetch_images(true)` is `remote`'s alias. Per-document limits —
-> `--max-image-bytes` (32 MiB), `--max-images`, `--max-image-total-mb`,
-> `--min-image-bytes` (`DOCLING_RS_MAX_IMAGE_BYTES` / `_MAX_IMAGES` /
-> `_MAX_IMAGE_TOTAL_MB` / `_MIN_IMAGE_BYTES`) — leave a picture a placeholder
-> instead of failing the conversion. Remote URLs are fetched over the
-> network, so enable that tier only for input you trust.
->
-> Windows metafile pictures (EMF / WMF — Word/Visio drawings, clip art, OLE
-> previews) in DOCX, DOC, PPTX, XLSX, ODF, RTF and the other office formats
-> are rendered to PNG in-process (#536): the GDI records become SVG that
-> resvg rasterizes, at the metafile's own size (≤ 2048 px a side) on white.
-> Upstream renders them through LibreOffice when it is installed. Not drawn:
-> clipping regions, hatch/pattern brushes (solid), and EMF+ records (a dual
-> EMF+ file's plain-EMF records are drawn). A metafile that draws nothing,
-> a Mac PICT, or a build without the `pdf` feature (wasm) leaves the
-> picture payload-less as before.
+JSON always embeds the images as docling `ImageRef`s; the default Markdown
+stays `<!-- image -->`, like docling (the pixels are real, the base64 is
+not byte-identical to docling's — a different PNG encoder). Pictures that
+are *references* — HTML / EPUB / MHTML / JATS / AsciiDoc / ODF `<img src>`,
+Markdown `![…](…)`, an email's `cid:` — stay placeholders by default and
+resolve under `image_sources` (#646): `embedded` (`data:` URIs and parts of
+the same container; no filesystem, no network), `local` (plus files under
+the source's directory), `remote` (plus `http(s)`, confined to
+`image_hosts`); `max_image_bytes` / `max_images` / `max_image_total_mb` /
+`min_image_bytes` bound a document — details in
+[`docs/OPTIONS.md`](docs/OPTIONS.md) and [`docs/SECURITY.md`](docs/SECURITY.md).
 
 ### `strict` Markdown (Rust-only)
 
 By default `export_to_markdown()` reproduces docling's output byte-for-byte,
-quirks included (`***x*** .`, dropped code-fence languages, `\_` escaping). Set
-`strict(true)` for cleaner, more conformant Markdown:
-
-```rust
-let converter = DocumentConverter::new().strict(true);
-let result = converter.convert(source).unwrap();
-println!("{}", result.document.export_to_markdown()); // ```rust kept, no `***x*** .`, `_` not escaped
-```
+quirks included (`***x*** .`, dropped code-fence languages, `\_` escaping).
+`strict(true)` gives cleaner, more conformant Markdown
+(`export_to_markdown_with(strict)` per call; Python docling has no such
+switch):
 
 ```text
 legacy:  Foo ***both*** .   |   ``` (lang dropped)   |   Name: \_\_\_
 strict:  Foo ***both***.    |   ```rust (lang kept)  |   Name: ___
 ```
 
-`result.document.export_to_markdown_with(strict)` overrides the mode per call.
-Python docling has no such switch.
-
 ### Streaming Markdown
 
-For embedding in real apps, `convert_streaming` returns the document's Markdown
-as an iterator of chunks instead of one big string — handy for piping a long
-document straight to stdout, an HTTP response, or a socket as it is produced:
+`convert_streaming` returns the Markdown as an iterator of chunks instead of
+one string — for piping a long document to stdout, an HTTP response or a
+socket as it is produced:
 
 ```rust
 use std::io::Write;
@@ -1120,292 +936,77 @@ for chunk in DocumentConverter::new().convert_streaming(source).unwrap() {
 }
 ```
 
-The headline win is PDF. The ML pipeline already processes pages **in parallel**;
-streaming emits each page's Markdown **in document order, as soon as it is ready**
-(with a one-page look-ahead so paragraphs that wrap across a page break still
-merge), so output starts flowing before the last page is done. The conversion
-runs on a background thread and the chunk iterator applies backpressure; dropping
-it cancels the work. Concatenating every chunk is **byte-identical** to the
-buffered `export_to_markdown()`.
+PDF is where it pays: the pipeline processes pages in parallel and streams
+each page's Markdown in document order as soon as it is ready (a one-page
+look-ahead lets paragraphs that wrap across a page break still merge). The
+conversion runs on a background thread, the iterator applies backpressure,
+dropping it cancels the work, and the concatenated chunks are byte-identical
+to `export_to_markdown()`. Every image mode streams
+(`convert_streaming_images(source, mode)`); `referenced` writes each page's
+image files under `artifacts_dir` as that page is emitted and drops the
+bytes. Streaming is Markdown-only — JSON needs every node up front. The CLI
+streams by default (`--no-stream` buffers; `--to json` always does).
 
-Streaming is Markdown-only — JSON serializes docling-core's reference-based tree
-and needs every node up front. Every image mode streams
-(`convert_streaming_images(source, mode)` picks it): placeholders and `embedded`
-data URIs render inline, and `referenced` (issue #80) writes each page's image
-files under the converter's `artifacts_dir` **as that page's Markdown is
-emitted**, then drops the bytes — an image-heavy PDF holds ~one page of images
-in memory instead of all of them until export.
+### PDF pipeline switches
 
-`--pages A-B` (issue #80; also `Pipeline::pages` /
-`DocumentConverter::page_range`, `pages` in serve/Node, `page_range=` in
-Python) converts only that 1-based inclusive PDF page window. Out-of-window
-pages are skipped *before* rasterization, so 3 pages of a 500-page PDF cost 3
-pages; `B` past the end clamps, and a window that selects nothing is an error.
-In Python the window also goes per call, as docling takes it —
-`converter.convert(source, page_range=(2, 3))` (also `convert_all` /
-`convert_bytes`), overriding a constructor `page_range=` (#518).
+All on every surface (library builder, CLI, serve, Python, Node) — values
+and defaults in [`docs/OPTIONS.md`](docs/OPTIONS.md):
 
-`--document-timeout SECONDS` (#497; docling's `PipelineOptions.document_timeout`
-— also `DocumentConverter::document_timeout` / `Pipeline::document_timeout`
-in the library, `document_timeout` in serve and the FFI options,
-`documentTimeout` in Node, `document_timeout=` or
-`pipeline_options.document_timeout` in Python) is a per-document wall-clock
-budget for the PDF pipeline, unlimited by default. It starts with the
-conversion and is checked cooperatively between pages: once spent, no further
-page is rendered or processed, the pages already finished become the
-document, and the result is docling's `PARTIAL_SUCCESS` with one error
-(`document timeout of 90.000s exceeded after 12 of 40 pages; the output holds
-the pages processed`). The CLI writes the partial document, prints the reason
-as a warning and exits 0 (`--abort-on-error` ends a batch on it, like a
-failure); `docling-serve` answers a single conversion with
-`X-Docling-Status: partial_success` and `X-Docling-Errors`, and marks a
-batch or async item's `status` / `errors`; the Node and Python results carry
-`status` and `errors` (docling's `ErrorItem`: `component_type`,
-`module_name`, `error_message`). A page in flight finishes first, so a
-budget shorter than one page's work still yields that page; a single image
-is never cut, and declarative formats convert whole, as in docling. A
-streaming conversion emits the pages that fit and ends with a `Timeout`
-error item, the chunk stream's spelling of a partial success.
+- `--pages A-B` (#80): converts that 1-based page window only; out-of-window
+  pages are skipped before rasterization.
+- `--document-timeout SECONDS` (#497): a per-document budget, checked
+  between pages. Once spent, the pages already finished become the document
+  and the result is docling's `PARTIAL_SUCCESS` with one error item; the CLI
+  writes it and exits 0, serve answers `X-Docling-Status: partial_success`,
+  a stream ends with a `Timeout` error item.
+- `--text-layer-only`: no ML at all — the embedded text cells as flat
+  paragraphs, the fastest path; a scanned PDF comes back empty rather than
+  erroring. `--no-ocr` (docling's `--no-ocr` since 2.0, #611) keeps layout
+  and TableFormer but never runs OCR; `--no-table-former` keeps OCR but
+  reconstructs tables geometrically. `--force-full-page-ocr` is the
+  opposite: OCR every page from its render even when a text layer exists
+  (for layers that lie — broken encodings, garbage subset fonts).
+- `--heading-hierarchy` (#302, docling's `HeadingHierarchyModel`): infers
+  section-header levels after assembly from the PDF outline, legal/outline
+  numbering and font style, in that precedence. Off by default, as in the
+  docling groundtruth.
+- `--no-text-panels`: keeps every detected picture a picture instead of
+  demoting uncaptioned dense-text "pictures" into paragraphs (#173).
+- `--skip-empty-cells`, `--compact-tables` (#271): sparse-spreadsheet
+  relief — omit empty cells from XLSX table rows; unpadded `| a | b |`
+  Markdown tables. `--page-break-placeholder TEXT`: docling's
+  `page_break_placeholder` between rendered pages.
 
-The CLI streams Markdown by default (`--no-stream` opts back into buffering;
-`--to json` always buffers). `--no-table-former` skips
-loading/running the TableFormer table-structure model, falling back to simple
-geometric table reconstruction from cell positions — no model load, no
-per-table inference, which can noticeably speed up parsing (especially in
-streaming mode) at the cost of table fidelity. `--text-layer-only` goes
-further and skips layout detection, OCR, and TableFormer entirely — no ML
-inference at all, only the PDF's embedded text cells grouped into flat
-paragraphs by reading order (no headings/lists/tables/pictures). It's the
-fastest PDF path by a wide margin, but a scanned/image-only PDF (no embedded
-text layer) comes back empty rather than erroring, so a caller can detect
-that and re-convert without the flag. `--no-ocr` sits between the two, as in
-Python docling's `docling convert --no-ocr`: it keeps layout detection and
-TableFormer but never runs (or loads) OCR — docling's `do_ocr=False`, the
-counterpart of `--no-table-former`. Structured output — headings, tables,
-pictures, reading order — survives; only text that exists solely as pixels
-is lost (scanned pages come back with empty regions, and the speculative OCR
-of large embedded images never runs). **Before 2.0 `--no-ocr` was the
-text-layer fast path** (#611): it is `--text-layer-only` now, and
-`--skip-ocr`, the old name of today's `--no-ocr` (#244), still works.
-Independently of the flag, a *missing* OCR model warns and degrades to the
-same behavior instead of failing the conversion (`no_ocr` in serve/Node,
-`do_ocr=False` in Python, which matches docling exactly;
-`text_layer_only` everywhere is the skip-everything path).
-`--force-full-page-ocr` is the opposite escape hatch
-(docling's `force_full_page_ocr`): OCR every page from its rendered image
-even when it carries a text layer — for layers that exist but lie (broken
-encodings, subset fonts with garbage mappings, a scanned form with a few
-typed-in field values). Ignored under `--no-ocr`, mirroring docling (and
-under `--text-layer-only`); docling's deprecated `--force-ocr` is this flag
-or `--ocr-mode full_page`. The same
-switch is available on every surface: `force_full_page_ocr(bool)` on the
-library builder, a `force_full_page_ocr` option in docling-rs-serve, the
-`force_full_page_ocr=` kwarg in Python, `forceFullPageOcr` in Node, and the
-"Force OCR" toggle in the wasm demo.
+Scanned pages come upright before layout and OCR: a `/Rotate` flag is
+applied, and a page rotated physically in the raster is probed under each
+90° hypothesis on the text detector's lines and un-rotated when a rotated
+reading is clearly more confident (#225, #571; `DOCLING_RS_OCR_ORIENTATION=off`
+disables it). A one-line paragraph the layout model files as `page_footer`
+directly under a heading with no other body — a CV's `Languages` line — is
+read as that heading's text instead of vanishing with the furniture.
 
-`--no-text-panels` keeps every detected picture as a picture: it disables the
-demotion of uncaptioned dense-text "picture" regions into paragraphs (the
-recovery that turns misdetected text panels back into text, issue #173).
-A second recovery of the same kind has no flag: a one-line paragraph in the
-bottom margin directly under a heading that has no other body — a CV's
-`Languages` line — comes out of the layout model as `page_footer` and would
-vanish from the Markdown with the rest of the page furniture; it is read as
-that heading's text instead.
+### OCR
 
-Scanned pages with a `/Rotate` flag (a scan that came in sideways or
-upside-down — the most common defect of real-world scans) are normalized
-before layout/OCR: the raster is un-rotated to upright for inference and the
-output geometry is mapped back to display coordinates, so all four
-orientations of the same scan OCR identically. Pages rotated *physically in
-the raster* (a sideways phone photo, a landscape-fed sheet — `/Rotate 0`, so
-the flag says nothing) are caught too: the recognizer probes a handful of
-the text detector's lines under each 90° hypothesis and un-rotates when a
-rotated reading clearly beats the upright one — more confident text, not
-merely more characters (#571: on the ink-projection strips the probe once
-read, a sparse form's fields gave every hypothesis the same poor confidence
-and 9 of FUNSD's 199 upright forms were turned on their side; on the
-detector's boxes all 199 read upright at 0.97+ confidence and take the
-early exit) — page by page, before any inference. The pass runs only on
-pages with no text layer, degrades to a no-op when the evidence is thin, and
-can be disabled with `DOCLING_RS_OCR_ORIENTATION=off`.
-Note on the OCR default:
-`--ocr-lang en` (the default) uses an English PP-OCRv3 recognition model with
-good Latin word spacing; the docling conformance corpus, however, was
-generated with the multilingual `ch_` model — if you're comparing output
-against Python docling byte-for-byte, run with `--ocr-lang ch`
-(`DOCLING_RS_OCR_LANG=ch`). On ordinary scans `en` reads better; on the
-conformance fixtures `ch` matches the groundtruth exactly. Both spellings are
-the engine's own codes; BCP-47 tags for either language resolve to the same
-two models (#388, docling#4075's canonicalization): `en-US`, `en_GB`, `eng`,
-`english` → `en`; `zh`, `zh-Hans`, `zh-CN`, `zh-TW`, `zho`, `chinese`,
-EasyOCR's `ch_sim` → `ch`, with or without docling's `iso:` prefix — script
-and region subtags are ignored (a traditional-script request also gets the
-multilingual `ch` recognizer, the closest model shipped). Any other language
-(`de`, `ja`, …) is rejected by the CLI/serve/bindings and warns-and-defaults
-in `DOCLING_RS_OCR_LANG`.
-
-**OCR engines** (#460). PP-OCRv3 is the built-in default and the engine
-every conformance baseline is pinned against. `--ocr-engine tesseract`
-(`DOCLING_RS_OCR_ENGINE=tesseract`; `ocr_engine` on the `DocumentConverter` /
-`Pipeline` builders, serve, Python and Node) runs the system `tesseract`
-binary instead — docling's `TesseractCliOcrOptions`: a subprocess per
-layout-region crop, `tsv` on stdout, no bindings — so any of Tesseract's
-100+ languages reads out through the same pipeline (regions, orphan
-recovery, TableFormer word matching, `ocr_score`). Under it `--ocr-lang` is
-Tesseract's language list: tessdata stems (`deu`, `eng+fra`,
-`script/Cyrillic`, a traineddata of your own) or BCP-47 tags mapped onto
-them (`de` → `deu`, `zh-Hant` → `chi_tra`, `iso:` prefix optional); `en` and
-`ch` keep working. Orientation (#225) comes from Tesseract's own OSD
-(needs the `osd` traineddata). Install `tesseract-ocr` plus the language
-packs (`tesseract --list-langs` shows them; the serve image ships
-`tesseract-ocr` with `eng`); `DOCLING_TESSERACT` names the binary,
-`DOCLING_RS_TESSERACT_PSM` sets a page segmentation mode (unset =
-Tesseract's automatic 3; 6 = one uniform block, 11 = sparse text),
-`DOCLING_RS_TESSDATA_DIR` a data directory (`TESSDATA_PREFIX` is honored by
-Tesseract itself). A missing binary or traineddata warns and degrades to no
-OCR, like a missing model (#244); with `--force-full-page-ocr` it is an
-error. Each crop is one process, dealt across the OCR lanes
-(`DOCLING_RS_OCR_SESSIONS`), each pinned to one OpenMP thread.
-
-OCR has two stages, like docling's engines (#429): a **text detector**
-(RapidOCR's PP-OCRv6 DB model, `.models/ocr_det.onnx`, `DOCLING_OCR_DET_ONNX`
-to point elsewhere) sweeps the bitmap of a scanned page or an image input,
-and the recognizer reads its boxes. Inside the layout regions the detector's
-boxes are the recognizer's crops (#570) — one text run each, with the
-detector's margin, exactly what RapidOCR hands its recognizer; the detected
-lines no region covers are recognized too and placed as orphan text — a
-diagram's labels, a stamp, a margin note, text the layout model scored below
-its threshold (lines inside a kept picture or table stay that element's
-silent children, as in docling). A region the detector found nothing in,
-and every region when the model is not installed, is cut into lines by an
-ink-projection profile instead — the pre-#570 path, `DOCLING_RS_OCR_LINES=
-projection` forces it. The difference shows on forms: several fields on one
-baseline used to share one strip and read as `OLDCOLDMENTHOLUIGHTS&ULTRA`;
-on FUNSD's 199 scanned forms word recall against the annotations went from
-0.61 to 0.90 — Python docling 2.133 with RapidOCR reads 0.85 (see
-`docs/MIGRATION.md`). Recognition is **PP-OCRv6**
-(`.models/ocr_rec_v6.onnx`, RapidOCR's and docling's multilingual model) when
-installed, the PP-OCRv3 pairs otherwise, and a line whose mean character
-confidence is under RapidOCR's `text_score` (0.5, `DOCLING_RS_OCR_TEXT_SCORE`)
-is dropped — a shaded band no longer reads out as a 30-letter heading. The
-detector runs on bitmap pages only (a digital page costs nothing) and
-concurrently with the layout model; its input's longer side is capped at
-RapidOCR's `max_side_len`, 2000 px (`DOCLING_RS_OCR_DET_MAX_SIDE`; `0` lifts
-the cap, 960 — PaddleOCR's budget and the pre-#570 default — is about a third
-of the time at a cost of ~0.02 recall on FUNSD).
-
-Two more OCR knobs mirror docling 2.116+ options (#254), on every surface
-(CLI flag, `DocumentConverter`/`Pipeline` builder, serve option, Python
-kwarg, Node option):
-
-- `--ocr-mode default|full_page|layout_regions|pdf_aware_layout_regions`
-  (`DOCLING_RS_OCR_MODE`) — docling's `OcrMode`, i.e. which regions feed the
-  OCR. The default (= `pdf_aware_layout_regions`) is the text-layer-aware
-  behavior this pipeline has always had; `full_page` and `layout_regions`
-  both discard the embedded text layer, exactly like `--force-full-page-ocr`
-  (the upstream distinction between them — whole-page vs per-region
-  *detector* input — has no analogue here: the text detector always sees the
-  whole page and the recognizer always reads line crops).
-- `--ocr-scale X` (`DOCLING_RS_OCR_SCALE`) — docling's `OcrOptions.scale`:
-  the resolution OCR reads, in pixels per PDF point. Unset, OCR reads the
-  pipeline's own 2.0 px/pt (144 dpi) page render — the pinned conformance
-  baseline — and an **image input** at docling's effective resolution (#570):
-  3 px/pt shrunk so the longer side stays within RapidOCR's 2000 px, which is
-  what its models see after RapidOCR's `max_side_len` pass (a 754 × 1000 scan
-  reads at 2.0 — measured best on FUNSD: 0.825 / 0.856 / 0.836 word recall at
-  1 / 2 / 3 px/pt); a set value resamples the render or image for the OCR
-  input only (layout and TableFormer pixels are untouched). docling's default is 3
-  (216 dpi); lower it when the source raster is already high-resolution and
-  upscaling degrades recognition.
-- `--images-scale X` — docling's `images_scale` (#520): the resolution of
-  picture crops (and page images), in pixels per PDF point, 0.1–4.0. Unset,
-  crops come straight out of the pipeline's 2.0 px/pt render, as before;
-  another value resamples that render (above 2.0 that upsamples, it does not
-  re-render). Each picture's `image.dpi` in the JSON is 72·scale, so code
-  mapping pixels back to points stays exact — 144 by default (#519; it used
-  to say 72 for a 2× crop).
-- `--page-images` — docling's `generate_page_images` (#520): keep every
-  page's render, at `--images-scale`, as the JSON `pages[n].image`
-  (docling-core's `PageItem.image`), so docling-core's
-  `TableItem.get_image(doc)` / `FormulaItem.get_image(doc)` crop from it and
-  full-page consumers need not re-render the PDF. Off by default (a PNG per
-  page, held in memory); `--text-layer-only` pages have no render,
-  and streamed Markdown carries no page map. Both options are on every
-  surface: `DocumentConverter::images_scale` / `::generate_page_images` and
-  `Pipeline::images_scale` / `::generate_page_images` / `::set_images`,
-  `images_scale` / `page_images` in serve and the FFI options,
-  `imagesScale` / `pageImages` in Node, `images_scale=` /
-  `generate_page_images=` in Python (also docling-shaped through
-  `PdfPipelineOptions`, where `images_scale` applies once
-  `generate_picture_images` or `generate_page_images` is on — docling renders
-  images only then).
-Turn it on for image-extraction workflows over scanned documents whose
-uncaptioned figures carry enough label text to look panel-like. Available on
-every surface: `no_text_panels(bool)` on the library builder, a
-`no_text_panels` option in docling-serve (with a "keep pictures" toggle in
-the playground), the `no_text_panels=` kwarg in Python, and `noTextPanels`
-in Node.
-
-`--heading-hierarchy` (#302, docling's `HeadingHierarchyModel`) infers PDF/image
-section-header *levels* after assembly. The layout model only flags regions as
-headings, so by default every PDF heading lands at the same depth; with the
-flag on, levels come from — in precedence order — the **PDF outline**
-(bookmarks, fuzzily matched by title + page; a confidently matched heading
-takes the bookmark's depth, and a bookmark-matched *list item* is promoted to
-a heading), **legal/outline numbering** (`PART I → 1. → 1.1 → (a) → (i)`, with
-docling 2.129's `1:` / `(2)` / `A -` separators and bare chapter numbers on a
-consecutive run from 1), and
-**font style** (size with near-equal measurement merging, then weight, slant
-and letter case from the embedded font names). Headings with no applicable
-signal keep their level; nothing else about the document changes. Off by
-default (docling parity — the docling groundtruth is produced with the stage
-disabled). On every surface: `heading_hierarchy(bool)` on the library builder
-(full `HeadingHierarchyOptions` on the `Pipeline`), a `heading_hierarchy`
-serve option, the `heading_hierarchy=` kwarg in Python (also docling-shaped
-via `PdfPipelineOptions.heading_hierarchy_options.enabled`), and
-`headingHierarchy` in Node.
-
-Two sparse-spreadsheet knobs (#271, docling.rs extensions, off by default —
-default output stays byte-for-byte docling), on every surface (CLI flag,
-`DocumentConverter` builder, serve option, Python kwarg, Node option):
-
-- `--skip-empty-cells` — XLSX/XLS family: omit empty cells from each table
-  row instead of materialising the full bounding box of every detected
-  region. A ragged region's box is mostly padding on sparse sheets (a
-  reported 2.7 MB workbook inflated ~7× over its content). Markdown reads
-  the compacted rows; the JSON keeps every surviving cell at its true grid
-  offset, one cell per merged range with its span, so it is the default
-  `table_cells` minus the empty positions (the `grid` fills them back with
-  docling's empty cells). Dense sheets are untouched.
-- `--compact-tables` — all formats: render Markdown tables in the compact
-  `| a | b |` form instead of the width-padded GitHub style. Grid semantics
-  are unchanged — only inter-cell padding is dropped, which is what
-  dominates the output size on sparse sheets.
-- `--page-break-placeholder TEXT` — Markdown only: insert TEXT between
-  pages, docling's `export_to_markdown(page_break_placeholder=…)`
-  (docling-core's `MarkdownParams`; docling-serve's
-  `md_page_break_placeholder`, which is also the serve option's name here;
-  `pageBreakPlaceholder` in Node; the last positional argument of the wasm
-  `convert`). Pages are the PDF/image pipeline's pages, slides, sheets and
-  DjVu pages. Where docling marks a break between two items whose
-  `prov.page_no` differ, docling.rs marks it between two rendered blocks
-  separated by a page boundary — so it never leads or trails the document,
-  a run of empty pages collapses into one break, and a document without
-  pages (DOCX, HTML, Markdown) is untouched. Off by default, as docling's
-  Markdown carries no page breaks; the streamed and buffered outputs agree
-  byte for byte. Python callers pass the kwarg to upstream docling-core's
-  `export_to_markdown` directly (the wrapper hands back the real
-  `DoclingDocument`).
+OCR has docling's two stages (#429, #570): RapidOCR's PP-OCRv6 text detector
+finds the lines on a scanned page or image — inside the layout regions its
+boxes are the recognizer's crops, the lines no region covers come out as
+orphan text — and the recognizer reads them, PP-OCRv6 when installed and the
+PP-OCRv3 pairs otherwise. On FUNSD's 199 scanned forms word recall is 0.90
+against the annotations (Python docling 2.133 with RapidOCR: 0.85). The
+default language is `en`; the conformance corpus was generated with the
+multilingual `ch` model, so byte-for-byte comparisons with Python docling
+run with `--ocr-lang ch`. `--ocr-engine tesseract` (#460) runs the system
+`tesseract` binary on the same crops instead, with any of its languages.
+Languages, `ocr_mode`, `ocr_scale`, the Tesseract environment and the
+detector knobs: [`docs/OPTIONS.md` § OCR](docs/OPTIONS.md#ocr-engines-and-languages).
 
 ### VLM pipeline (remote endpoint)
 
-`--pipeline vlm` (issue #77) replaces the whole discriminative ML stack with a
-Vision Language Model: each PDF page is rendered (in pure Rust) and sent to any
-**OpenAI-compatible** vision endpoint — LM Studio, Ollama, vLLM, or a hosted
-service — with docling's page-conversion prompt; the returned DocLang markup
-is parsed by the same reader that `.dclg`/`.dclx` inputs use. An image input
-is sent as-is (it is its own page). No ONNX models load at all; local
-in-process VLM inference is a possible later enhancement.
+`--pipeline vlm` (#77) replaces the discriminative ML stack with a Vision
+Language Model: each page is rendered in Rust and sent to any
+OpenAI-compatible vision endpoint — LM Studio, Ollama, vLLM, a hosted
+service — with docling's page-conversion prompt, and the answer is parsed by
+the DocLang reader. No ONNX models load.
 
 ```bash
 docling-rs --pipeline vlm \
@@ -1414,79 +1015,26 @@ docling-rs --pipeline vlm \
   paper.pdf
 ```
 
-The same pipeline is exposed by the **Node bindings** as
-`pipeline: 'vlm'` with `vlmEndpoint` / `vlmModel` / `vlmApiKey` / `vlmPrompt` /
-`vlmMaxTokens` (see [Node.js / Bun bindings](#nodejs--bun-bindings)), by the
-**Python bindings** as constructor kwargs with the same snake_case names
-(#304; a bad configuration raises `ValueError` at construction):
-
-```python
-from docling_rs import DocumentConverter
-
-conv = DocumentConverter(pipeline="vlm",
-                         vlm_endpoint="http://localhost:11434/v1",
-                         vlm_model="granite-docling")
-doc = conv.convert("paper.pdf").document
-```
-
-and by **`docling-rs serve`** as the per-request options
-`pipeline=vlm` + `vlm_endpoint` / `vlm_model` / `vlm_api_key` / `vlm_prompt` /
-`vlm_max_tokens` (#304). On serve, a *request-supplied* `vlm_endpoint` is
-outbound traffic steered by the caller, so it requires `--allow-url-fetch` and
-passes the same SSRF resolution check as URL inputs (private/loopback
-endpoints are refused; `DOCLING_RS_ALLOW_PRIVATE_IP_FETCH=1` for local
-development). The safer default is the **operator-pinned mode**: set
-`DOCLING_RS_VLM_ENDPOINT` / `DOCLING_RS_VLM_MODEL` (and optionally
-`_API_KEY` / `_PROMPT`) on the server and have requests send just
-`pipeline=vlm` — callers pick the pipeline, the operator picks where it talks
-to, and no gate is needed:
+The same on Node (`pipeline: 'vlm'`, `vlmEndpoint`, …), Python
+(`pipeline="vlm", vlm_endpoint=…`) and serve (`pipeline=vlm` + the `vlm_*`
+request options). Selecting the pipeline is always explicit: the
+`DOCLING_RS_VLM_*` environment supplies values but never switches it on, and
+the `vlm_*` options are inert under the standard pipeline. On serve a
+request-supplied `vlm_endpoint` needs `--allow-url-fetch`; the safer
+deployment pins `DOCLING_RS_VLM_ENDPOINT` / `DOCLING_RS_VLM_MODEL` on the
+server and lets requests send only `pipeline=vlm`:
 
 ```bash
-curl -F file=@paper.pdf 'localhost:8000/v1/convert?pipeline=vlm'
+curl -F file=@paper.pdf 'localhost:5001/v1/convert?pipeline=vlm'
 ```
 
-A VLM failure (unreachable endpoint, non-200, unparseable answer) fails that
-request with a clear error; the server itself is unaffected.
-
-`--vlm-endpoint` takes the server's `/v1` base or the full
-`…/chat/completions` URL. `--vlm-api-key TOKEN` (Bearer), `--vlm-prompt TEXT`
-and `--vlm-max-tokens N` (default 8192) tune the rest (#312);
-`DOCLING_RS_VLM_ENDPOINT` / `DOCLING_RS_VLM_MODEL` / `DOCLING_RS_VLM_API_KEY` /
-`DOCLING_RS_VLM_PROMPT` are the env fallbacks for the corresponding flags, and
-`DOCLING_RS_VLM_TIMEOUT` (seconds, default 600) raises the per-page request
-cap for slow — e.g. CPU-served — endpoints. Selecting the pipeline is always
-explicit: the environment supplies values, it never switches the pipeline on,
-so a stale `DOCLING_RS_VLM_ENDPOINT` can't reroute an ordinary PDF conversion
-over the network. The `--vlm-*` flags are inert on their own for the same
-reason — without `--pipeline vlm` they are parsed and ignored, never a pipeline
-switch of their own — and the Node bindings ignore stray `vlm*` options
-identically. `--pages A-B` composes (only the window's pages are rendered
-and sent), and `--to md|json|dclx|chunks` plus `--strict` work as usual. Transient
-endpoint failures (timeouts, 408/429, 5xx) retry with exponential backoff;
-a page that still fails fails the conversion — no silently dropped pages.
-
-Answer grammars are auto-detected per response (#322): **DocTags**
-(granite-docling-class models) and **DocLang XML** as before, plus
-**Chandra** layout HTML (`<div data-bbox=… data-label=…>` blocks — tables
-with spans, Form-held tables, lists, figures, page furniture; docling
-2.123–2.125 semantics incl. `<br>`-as-spacing), **Unlimited-OCR** grounding
-output (normalized into the DeepSeek-OCR annotation shape and parsed by
-that backend), and raw **DeepSeek-OCR** annotated Markdown. Plain prose
-still degrades to text — hostile model output never errors. Known models
-also get their official prompts by name when `--vlm-prompt` isn't given:
-`unlimited*` → the model-card `<image>document parsing.` (any other phrasing
-returns an empty completion) plus the `skip_special_tokens=false` request
-flag its grounding markers need; `chandra*` → docling's Chandra layout
-prompt; everything else keeps the DocLang-eliciting default.
-Output quality is entirely the model's; what docling.rs adds is measured
-(#311): converting the PDF corpus through the same granite-docling endpoint
-from both docling.rs and Python docling's `VlmPipeline` scores **87.7% mean
-whitespace-normalized similarity over 18 fixtures, 3 byte-exact** — the gap
-is dominated by each side rendering pages at its own scale (144 vs 216 dpi),
-which greedy VLM decoding amplifies. Table and methodology:
-[docs/PDF_CONFORMANCE.md](./docs/PDF_CONFORMANCE.md); harness:
-`scripts/conformance/vlm_conformance.sh` (needs a GPU-served endpoint — CPU
-inference measures hours per page).
+Answer grammars are detected per response (#322): DocTags (granite-docling),
+DocLang XML, Chandra layout HTML, Unlimited-OCR grounding output and
+DeepSeek-OCR Markdown; plain prose degrades to text. Measured against Python
+docling's `VlmPipeline` on the same granite-docling endpoint: 87.7 % mean
+similarity over 18 fixtures, 3 byte-exact
+([docs/PDF_CONFORMANCE.md](./docs/PDF_CONFORMANCE.md)). Flags, env
+fallbacks, timeouts, retries and prompts: [`docs/OPTIONS.md` § VLM](docs/OPTIONS.md#vlm-pipeline).
 
 ### Headless-browser HTML pre-render (optional)
 
@@ -1517,25 +1065,6 @@ saved page that links external stylesheets needs those fetchable (with a base
 host). Without the feature, `--use-web-browser` is a clear error rather than a
 silent no-op.
 
-## Python `docling convert` spellings (#611)
-
-A script written for Python docling's CLI runs as is: `--page-range 1-4`
-(`--pages`), `--image-export-mode referenced` (`--images`), `--no-tables`
-(`--no-table-former`), `--no-ocr` (never OCR, keep layout and tables —
-docling's meaning since 2.0; the old text-layer fast path is
-`--text-layer-only`), `--pdf-password SECRET` (= `--password`, which opens
-encrypted Office documents too — see below) and
-`--output-file PATH`, which writes the one result to exactly that path —
-docling's rule: exactly one input document and one `--to` format, else an
-error naming the failing condition; `--images referenced` pictures land in
-`<stem>_artifacts/` next to it. docling's deprecated `--force-ocr` has no
-alias: it is `--force-full-page-ocr` (or `--ocr-mode full_page`).
-
-```bash
-docling-rs report.pdf --page-range 1-3 --no-ocr --output-file out/report.md
-docling-rs locked.pdf --pdf-password 1234 --to json --output-file locked.json
-```
-
 ## Encrypted Office documents
 
 A password-protected `.docx`, `.xlsx`, `.pptx`, `.doc`, `.xls` or `.ppt` converts
@@ -1556,122 +1085,36 @@ curl -F file=@deck.pptx -F password=1234 localhost:5001/v1/convert
 
 ## Batch conversion — several sources, `--input` / `--output`
 
-One warm process converts many documents (#205, #489). Like Python's
-`docling convert file1.docx file2.docx --output ./out/`, any number of
-positional sources — files, directories, quoted globs — go into one run;
-`--input` takes a glob (quote it — the shell must not expand it) or a plain
-directory. `--output` is a directory: a file lands in it by stem, and the
-structure below a directory or a pattern's static prefix is preserved:
+One warm process converts many documents (#205, #489): any number of
+positional sources — files, directories, quoted globs, ZIP archives — or
+`--input GLOB|DIR`, into `--output DIR`. The ML models load once; a failing
+file is reported and skipped (non-zero exit at the end, `--abort-on-error`
+to stop at the first); output paths print to stdout, progress to stderr.
 
 ```bash
-docling-rs a.docx sub/b.docx other/c.pdf --output ./converted
-# ./converted/a.md, ./converted/b.md, ./converted/c.md — models load once
-docling-rs --to md --to json report.pdf --output ./converted
-# one conversion, every format: ./converted/report.md + report.json (#491;
-# `--to md,json` is the same, `--to` twice with one format writes it once)
-docling-rs --input '/data/reports/**/*.pdf' --output ./converted --to json
-# /data/reports/2024/q1/a.pdf  ->  ./converted/2024/q1/a.json
-docling-rs --input /data/reports --output ./converted
-# a directory sweeps recursively, taking every file with a convertible
-# extension (stray .log/.tmp files are ignored instead of failing the batch)
+docling-rs a.docx sub/b.docx other/c.pdf --output ./converted   # a.md, b.md, c.md
+docling-rs --to md,json report.pdf --output ./converted          # report.md + report.json
+docling-rs --input '/data/reports/**/*.pdf' --output ./out --to json   # tree kept: out/2024/q1/a.json
+docling-rs --input /data/reports --output ./out                  # recursive sweep, convertible files only
+docling-rs bundle.zip --output out/                              # every document inside: out/bundle/<entry>.md (#557)
 ```
 
-Which files a batch takes is the binary's own list (#603, Pandoc's
-discovery flags): `docling-rs --list-input-formats` prints every input
-extension this build converts — sorted, one per line, no dot, `zip` included —
-and `--list-output-formats` the `--to` values, so a wrapper script asks the
-binary instead of hard-coding a list that drifts from it. A format behind a
-cargo feature the build lacks (PDF and images without `pdf`, audio/video
-without `asr`, `.heic` without `heif`) is left out. The library side is
-`InputFormat::supported_extensions()` and `docling::OUTPUT_FORMATS`.
+| Flag | Meaning |
+|---|---|
+| `--to FMT[,FMT]` (repeatable) | every format for each document; several need `--output` |
+| `--output DIR` · `--output-file PATH` | the output directory · one input, one format, exactly that path (#611) |
+| `--output-dirs auto\|flat\|mirror` | layout under `--output` (#496): mirror a directory's / glob's tree, land plain files by stem (default); everything flat as `<stem>.<ext>`; everything by its path relative to the CWD |
+| `--images referenced` | each document's pictures in a sibling `<stem>_artifacts/` |
+| `--jobs N` | declarative formats in parallel (PDFs share the one warm pipeline) |
+| `--abort-on-error` | stop at the first failed file (Python's flag) |
+| `--list-input-formats` · `--list-output-formats` | what this build converts, one per line (#603) — ask the binary instead of hard-coding a list |
 
-```bash
-if docling-rs --list-input-formats | grep -qx rtf; then
-  docling-rs input.rtf --output out/
-fi
-```
-
-Two sources that would write the same output file (`sub/b.docx` and
-`other/b.docx` both become `b.md`) are refused before anything converts —
-pass a common parent directory instead, whose tree is kept (`sub/b.md`,
-`other/b.md`), use `--output-dirs mirror`, or separate `--output`
-directories. `--output-dirs auto|flat|mirror` (#496, a docling.rs extension)
-chooses the layout under `--output` for every input at once: `auto` (the
-default) is the rule above — a directory or glob mirrors its tree, a plain
-file lands by stem; `flat` puts every output as `<stem>.<ext>` directly in
-`--output` (collisions are refused up front); `mirror` lays every input out
-by its path relative to the current directory, explicit files included
-(`docling-rs a/README.md b/README.md --output out/ --output-dirs mirror` →
-`out/a/README.md`, `out/b/README.md`), and refuses an input outside the
-current directory rather than guess at a path for it. `--abort-on-error`
-stops the batch at the first failed file (Python's flag of the same name);
-by default the file is reported and skipped. `--to` is repeatable like Python's: each document converts once and
-is written in every format named — several formats need `--output`, since
-stdout carries one document.
-
-A **ZIP archive** named as a source (a file or a glob match) converts every
-document inside it (#557): `docling-rs bundle.zip --output out/` writes
-`out/bundle/<entry path>.md`, each entry its own item of the batch — one
-broken document fails only itself. Entries are listed from the archive's
-directory before anything is inflated; those that do not convert are
-reported (`skip: bundle.zip:tool.exe: unsupported file type`) and counted in
-the summary: unsupported types, nested archives (one level only), `__MACOSX`
-metadata, encrypted entries, paths that climb out with `..`, and entries over
-the limits — 10 000 entries, 256 MiB per entry, 1 GiB in all, a 200:1
-compression ratio (`DOCLING_RS_ZIP_MAX_ENTRIES` / `_MAX_ENTRY_MB` /
-`_MAX_TOTAL_MB` / `_MAX_RATIO`). Nothing is extracted to disk. A directory
-sweep (`--input DIR`) does not open archives it finds — only explicitly named
-ones expand — and a lone `.zip` without `--output` is a usage error (it holds
-many documents). From Rust, `DocumentConverter::convert_archive(reader)` is
-the same as a lazy iterator of per-entry `Converted` / `Skipped` / `Failed`
-outcomes (`docling::archive`); the Python (`convert_archive`) and Node
-(`convertArchiveFile` / `convertArchive`) bindings expose the same.
-
-**Email attachments** (#561) are reachable the same way: an `.eml` or
-Outlook `.msg` renders as headers + body (plus the attachment *names* with
-`--list-attachments`), and `docling::EmailAttachments::open(bytes, &limits)`
-lists the payloads behind it — each with a safe file name (unique within the
-message: a second `report.pdf` is `report-2.pdf`), media type, size, whether
-it is an image the message shows inline, and the format it converts as (from
-its extension, else its media type, else the bytes), or why it will not
-(no payload: an attachment by reference or an OLE object; over a limit; a
-nested archive or an unsupported type — those bytes stay available through
-`data(i)`, a `.zip` for `convert_archive`). A forwarded message —
-`message/rfc822` in an `.eml`, an embedded message in a `.msg` — is an `.eml`
-entry carrying the nested message. `DocumentConverter::convert_email_attachments(bytes)`
-converts them one at a time with the archive outcomes above; the `ArchiveLimits`
-apply (no compression ratio: MIME cannot bomb). Python:
-`docling_rs.email_attachments(path | bytes | DocumentStream)` →
-`EmailAttachment(…, data)` with `.as_stream()` for `convert` (the stream
-carries the detected `format`, so a `scan.bin` sent as `application/pdf`
-converts as a PDF); Node: `emailAttachments({ name, data })` /
-`emailAttachmentsFile(path)` (+ `*Async`), then
-`convert({ name: att.name, data: att.data, format: att.format })`. Payloads
-are the bytes as sent — only the transfer encoding is undone, so a
-windows-1252 text file stays windows-1252 (#564). The CLI and serve do not
-expand attachments (a message converts as one document).
-
-The PDF/image ML pipeline loads its models **once** and every matched file
-reuses the warm sessions — the same amortization `docling-rs serve` does
-across requests, without running a server. Extensions follow `--to` (`.md`,
-`.json`, `.dclx`, `.chunks.json`, `.tex`, `.pandoc.json`), `--images referenced` writes each
-document's pictures into a sibling `<stem>_artifacts/` directory, and every
-other flag (`--strict`, `--pages`, `--ocr-lang`, `--pipeline vlm`, enrichment,
-…) applies to the whole batch. `--jobs N` converts declarative formats in
-parallel (PDF/image files share the one warm pipeline, which already
-parallelizes internally per document). Output paths print to stdout one per
-line for scripting; progress goes to stderr — a `start: <file> (N pages)`
-line per document, a dot every 10 finished pages, and an
-`ok: … (12.8s, 800 ms/page)` line when it completes. A failing file is
-skipped rather than aborting the batch, and the exit code is non-zero if
-anything failed (`--abort-on-error` stops at the first failure instead) —
-with one deliberate exception: an execution-provider
-failure (an explicit `DOCLING_RS_EP` whose runtime libraries are missing)
-would fail every remaining PDF identically, so the first one aborts the
-whole batch (`fatal: …`, remaining files reported as `skipped`). `--output`
-with a single positional file works too (a batch of one). Pipeline
-diagnostics (e.g. the int8→fp32 layout-retry notice) are quiet by default;
-`DOCLING_RS_DEBUG=1` turns them back on.
+Every other flag (`--strict`, `--pages`, `--ocr-lang`, `--pipeline vlm`,
+enrichment, …) applies to the whole batch. Collision rules, the ZIP limits
+and outcomes, email attachments (`EmailAttachments`, Python
+`email_attachments()`, Node `emailAttachments()`, #561) and the progress /
+exit-code details: [`docs/OPTIONS.md` § CLI batch
+mode](docs/OPTIONS.md#cli-batch-mode).
 
 ## Node.js / Bun bindings
 
@@ -2392,38 +1835,14 @@ and enrichment warn and skip, DOCX/HTML/XLSX/… and `docling-rs --to md` on a
 DOCX never touch it.
 
 **The s390x runtime itself** ships in the models release as
-`onnxruntime-linux-s390x.tar.gz`: ONNX Runtime 1.29.0 (the first release
-without the picture-classifier bug of #517 — pyke's linked x86_64/aarch64
-builds stay on 1.28 until `ort` ships a newer one) cross-compiled from source by
-`.github/workflows/onnxruntime-s390x.yml` with
-`scripts/install/build_onnxruntime_s390x.sh` — zig as the compiler
-(`zig cc -target s390x-linux-gnu.2.28 -mcpu=z15`: a glibc 2.28 floor and
-its own libc++, so the library loads on RHEL 8/9 era mainframe Linux, where
-the distro `gcc-s390x-linux-gnu` toolchain would pin it to glibc 2.38 and
-GCC 13's libstdc++; `ORT_TOOLCHAIN=gcc` still builds that way), a host
-`protoc`, `--build_shared_lib`, Eigen's ZVector kernels disabled (they do
-not compile with GCC 13; ORT's s390x SIMD lives in MLAS) — about 40 minutes
-on four cores where upstream's own s390x CI compiles natively under QEMU
-for hours. Every s390x artifact (CLI tarball, FFI library, wheel, npm
-addon, this runtime) has the same glibc 2.28 floor.
-`download_dependencies.sh` fetches it into `.models/onnxruntime/`
-automatically on an s390x host (`--with-onnxruntime` / `--no-onnxruntime`
-elsewhere), so the usual install flow covers the mainframe too; the
-workflow's smoke test runs the s390x CLI under `qemu-user` against the fresh
-library, a DOCX and then a one-page PDF through the layout model. The
-release workflow attaches the cross-compiled
-`docling-rs-<tag>-s390x-unknown-linux-gnu.tar.gz` (and the FFI library),
-`install.sh` picks it on an s390x host, and the container images publish a
-`linux/s390x` variant (binaries cross-built on the build platform, the
-runtime fetched into the image). The Python wheel
-(`cp39-abi3-manylinux_2_28_s390x`) and the npm platform package
-`docling.rs-linux-s390x-gnu` are cross-compiled too, in maturin's / napi's
-zig mode against glibc 2.28 — the manylinux s390x container would compile
-the workspace under QEMU for hours, and the distro cross toolchain would pin
-them to its glibc 2.39 sysroot, shutting out RHEL 8/9 mainframes; `docling_rs.download_models()` fetches the runtime into its cache on an
-s390x host, and the Node binding reports `onnxruntime/libonnxruntime.so` as
-a missing dependency there until `download_dependencies.sh` has run (or
-`ORT_DYLIB_PATH` names one).
+`onnxruntime-linux-s390x.tar.gz`: ONNX Runtime 1.29.0, cross-compiled by
+`.github/workflows/onnxruntime-s390x.yml` with zig against glibc 2.28, so it
+loads on RHEL 8/9-era mainframe Linux. `download_dependencies.sh` fetches it
+into `.models/onnxruntime/` on an s390x host (`--with-onnxruntime` /
+`--no-onnxruntime` elsewhere); the release attaches the s390x CLI tarball,
+the FFI library, the Python wheel (`manylinux_2_28_s390x`) and the npm
+platform package, `install.sh` picks them, and the container images publish
+a `linux/s390x` variant. Every s390x artifact has the same glibc 2.28 floor.
 
 Then either:
 
@@ -2504,320 +1923,16 @@ multi-gigabyte bitmap, which a few-hundred-byte crafted `MediaBox` otherwise
 forces (the `image` crate *panics* rather than erroring when that allocation
 fails).
 
-The OCR engine is a switch on every surface too (#460): `--ocr-engine
-ppocr|tesseract`, `DocumentConverter::ocr_engine` / `Pipeline::ocr_engine`,
-serve `ocr_engine`, Python `ocr_engine=` (also mapped from a docling-shaped
-`TesseractCliOcrOptions`, whose `lang`, `tesseract_cmd`, `path` and `psm`
-carry over), Node `ocrEngine`; process-wide `DOCLING_RS_OCR_ENGINE`. Under
-Tesseract, `ocr_lang` is validated as a tessdata stem list / BCP-47 tag on
-the same surfaces.
-
-OCR recognition defaults to the **English** PP-OCRv3 model: the multilingual
-`ch_` model reads Latin text with broken word spacing (`Refactorexisting
-microservices writtenonJava`-style output on ordinary scans). The switch
-plumbs through every surface — CLI `--ocr-lang en|ch` (or a BCP-47 tag, #388),
-`DocumentConverter::ocr_lang` / `Pipeline::ocr_lang`, serve `ocr_lang`
-option, Python `ocr_lang=` kwarg (also mapped from docling-shaped
-`ocr_options.lang`), Node `ocrLang` option — or process-wide,
-`DOCLING_RS_OCR_LANG=ch` selects the `ch_` pair — that's the model upstream
-docling conformance is measured against, and the conformance scripts pin it
-themselves; explicit `DOCLING_OCR_REC_ONNX`+`DOCLING_OCR_DICT` (a pair — set
-both) override the language switch entirely. An install without the English
-model falls back to `ch_` with a warning. Because those per-file pins beat
-the switch, the Python bindings' `ensure_env()` hands the cache over as
-`DOCLING_RS_MODELS_DIR` (a whole-directory override in the asset resolver)
-instead of pinning the pair, and `download_models()` fetches both language
-pairs — so the `ocr_lang=` kwarg works on the documented setup path (#285;
-re-run `download_models()` on an older cache to pick up the English pair).
-
-## Testing
-
-All commands run from the repo workspace root.
-
-```bash
-# everything — unit tests + the output-regression suite (pure Rust; no Python/models)
-cargo test
-
-# just the regression suite: re-convert every covered source — the upstream
-# fixtures each crates/docling/tests/data/<fmt>/mirror.txt lists from the root
-# tests/data/<fmt>/sources/ corpus, plus our own under
-# crates/docling/tests/data/<fmt>/sources/ — and assert that legacy Markdown,
-# strict Markdown, docling JSON and LaTeX match the committed fixtures
-cargo test -p docling --test regression
-
-# refresh the fixtures after an *intentional* output change, then review `git diff`
-DOCLING_RS_REGEN=1 cargo test -p docling --test regression
-
-# a single crate / a single test (with output)
-cargo test -p docling-core
-cargo test outputs_match_fixtures -- --nocapture
-```
-
-The ML formats (PDF, images, METS) need the ONNX models, so they are
-covered by a separate **deterministic snapshot** harness rather than `cargo test`:
-
-```bash
-bash scripts/install/pdf_setup.sh           # one-time: export the ONNX models
-                                    # (layout + TableFormer; needs a torch/docling Python)
-# Updating an existing checkout after a model-format change (e.g. the cached
-# TableFormer decoder): `rm -rf .models/tableformer && bash scripts/install/pdf_setup.sh`,
-# or re-run `python scripts/install/export_tableformer.py .models/tableformer` directly.
-
-export DOCLING_LAYOUT_ONNX="$(pwd)/models/layout_heron.onnx"
-export DOCLING_OCR_REC_ONNX="$(pwd)/models/ocr_rec.onnx"
-export DOCLING_OCR_DICT="$(pwd)/models/ppocr_keys_v1.txt"
-# Optional (falls back to geometric table reconstruction if unset/missing —
-# but the fallback is *silent*, so set these to be sure TableFormer is used,
-# especially if you invoke docling.rs from anywhere but the repo root: the
-# defaults baked into the binary are relative paths, so a different working
-# directory makes them silently miss even when the files exist elsewhere).
-export DOCLING_TABLEFORMER_ENCODER="$(pwd)/models/tableformer/encoder.onnx"
-export DOCLING_TABLEFORMER_DECODER="$(pwd)/models/tableformer/decoder.onnx"
-export DOCLING_TABLEFORMER_BBOX="$(pwd)/models/tableformer/bbox.onnx"
-bash scripts/conformance/pdf_conformance.sh     # regenerate + diff the snapshot baseline (94 outputs)
-```
-
-## Try it
-
-```bash
-# convert a file from the CLI — Markdown to stdout (add --strict for cleaner MD)
-cargo run -p docling-cli -- crates/docling/sample.html
-cargo run -p docling-cli -- --strict crates/docling/sample.html
-
-# emit docling's native DoclingDocument JSON instead (--to md is the default)
-cargo run -p docling-cli -- --to json crates/docling/sample.html
-cargo run -p docling-cli -- --to json crates/docling/sample.html > out.json
-
-# PDF/image conversion needs the ML models — see "Getting the ML models" above.
-scripts/install/download_dependencies.sh
-cargo run -p docling-cli -- document.pdf
-
-# transcribe audio (wav/mp3/flac/ogg/aac/m4a, or an mp4/mov audio track) — the
-# Whisper models come from the same download script
-cargo run -p docling-cli -- recording.mp3
-# …with a named preset (fetch it first: download_dependencies.sh --asr-model=whisper_tiny_en)
-cargo run -p docling-cli -- --asr-model whisper_tiny_en recording.mp3
-
-# extract pictures: embed as data URIs, or write ./artifacts/*.png — for any
-# input that carries images, docling-JSON included (a `data:` URI or a
-# referenced file next to the JSON is read back, #403)
-cargo run -p docling-cli -- --images embedded   document.pdf
-cargo run -p docling-cli -- --images referenced document.pdf > out.md
-cargo run -p docling-cli -- --images referenced document.json > out.md
-
-# stream Markdown to stdout page by page (the CLI's default; --no-stream to buffer)
-cargo run -p docling-cli -- document.pdf
-cargo run -p docling-cli -- --no-stream document.pdf
-
-# or via the examples
-cargo run -p docling --example convert -- crates/docling/sample.md
-cargo run -p docling --example stream  -- crates/docling/sample.md
-
-# score HTML output against the latest published docling (installed from PyPI)
-scripts/conformance/conformance.sh html
-
-# the full declarative sweep behind the "Conformance with Python docling" table
-# (Markdown byte-for-byte + JSON structural, every format or the ones you name)
-.venv-compare/bin/python scripts/conformance/full_conformance.py [docx html …]
-
-# diff Python docling vs Rust on one file (installs published docling from PyPI)
-scripts/conformance/compare.sh tests/data/html/sources/example_03.html
-
-# benchmark time / CPU / memory: Python docling vs Rust
-scripts/test/performance.sh tests/data/html/sources/wiki_duck.html 10
-```
-
-The comparison scripts install the latest published Python `docling` from PyPI
-into `.venv-compare` automatically on first run. See
-[`docs/MIGRATION.md`](./docs/MIGRATION.md) (§7 “Testing” for the differential
-and performance scripts, §9 for keeping up with upstream releases).
-
-## Install locally / in CI (one-liner)
-
-`scripts/install/install.sh` installs a self-contained tree — for a dev box or
-a pipeline step:
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/docling-project/docling.rs/master/scripts/install/install.sh | bash
-docling-rs your.pdf > out.md
-```
-
-It grabs the **prebuilt CLI binary** from the latest
-[GitHub Release](https://github.com/docling-project/docling.rs/releases)
-(Linux x64/arm64; `DOCLING_RS_FROM_SOURCE=1` opts out) and only falls back to
-building from source when no matching asset exists — in that case it checks
-for a Rust toolchain (installs one via rustup if `cargo` is missing) and runs
-`cargo build --release -p docling-cli`. Either way it installs the
-binary + all models under `/usr/local/docling.rs`, symlinks
-`/usr/local/bin/docling-rs`, and writes `/etc/profile.d/docling-rs.sh` with
-the `DOCLING_*` exports. The env file is a convenience for other
-consumers of the model tree — the CLI itself resolves `.models/`
-**relative to its own (symlink-resolved) location**, so the
-command works from any directory with no environment at all. ONNX Runtime is
-statically linked; nothing else lands outside the prefix.
-
-Knobs (env vars before the call): `DOCLING_RS_PREFIX` (default
-`/usr/local/docling.rs`), `DOCLING_RS_BIN_DIR`, `DOCLING_RS_REF` (git ref
-to build), `DOCLING_RS_NO_ASR=1` (skip the ~150 MB Whisper models),
-`DOCLING_RS_SUDO=0` (never escalate). Re-running is idempotent — it only
-fetches missing model files. Uninstall:
-`rm -rf /usr/local/docling.rs /usr/local/bin/docling-rs /etc/profile.d/docling-rs.sh`.
-
-## Deploy in a container
-
-### Container Images
-
-The following container images are available on **GitHub Container Registry (GHCR)**, with all native dependencies, ffmpeg, and ONNX models baked in (zero Python runtime dependencies). Both are targets of the same Dockerfile and share their layers:
-
-#### 📦 Distributed Images
-
-| Image | Description | Architectures |
-|---|---|---|
-| [`ghcr.io/docling-project/docling-rs-serve`](https://github.com/docling-project/docling.rs/pkgs/container/docling-rs-serve) | High-performance document conversion HTTP API with PDF, DOCX, PPTX, XLSX, HTML, images, and audio/video models pre-installed (CPU). | `linux/amd64`, `linux/arm64` |
-| [`ghcr.io/docling-project/docling-rs`](https://github.com/docling-project/docling.rs/pkgs/container/docling-rs) | The `docling-rs` CLI with the same models baked in — batch conversion without installing Rust (CPU). Entrypoint `docling-rs`, working directory `/data`. | `linux/amd64`, `linux/arm64` |
-| [`ghcr.io/docling-project/docling-rs-serve-cuda`](https://github.com/docling-project/docling.rs/pkgs/container/docling-rs-serve-cuda) | NVIDIA CUDA 12 GPU-accelerated HTTP conversion API (CUDA 12 + cuDNN 9, Linux x86_64). Tagged like the CPU images: `latest` plus `v1.81.0`, `1.81`, `1`. | `linux/amd64` |
-| [`ghcr.io/docling-project/docling-rs-cuda`](https://github.com/docling-project/docling.rs/pkgs/container/docling-rs-cuda) | NVIDIA CUDA 12 GPU-accelerated `docling-rs` CLI. Tagged like the CPU images: `latest` plus `v1.81.0`, `1.81`, `1`. | `linux/amd64` |
-
-```bash
-# Run docling-rs-serve HTTP API (CPU):
-docker run -p 127.0.0.1:5001:5001 ghcr.io/docling-project/docling-rs-serve:latest
-
-# Or run with NVIDIA GPU acceleration (--gpus all):
-docker run --gpus all -p 127.0.0.1:5001:5001 ghcr.io/docling-project/docling-rs-serve-cuda:latest
-
-# Convert a document:
-curl -F file=@paper.pdf localhost:5001/v1/convert
-
-# Or use the CLI image on local files (mounted at /data):
-docker run --rm -v "$PWD:/data" ghcr.io/docling-project/docling-rs:latest paper.pdf --to md
-docker run --gpus all --rm -v "$PWD:/data" ghcr.io/docling-project/docling-rs-cuda:latest paper.pdf --to md
-```
-### Docker Compose
-
-Launch with [`examples/docker-compose/`](./examples/docker-compose/):
-
-```bash
-cd examples/docker-compose
-docker compose up -d                        # standalone service (127.0.0.1:5001)
-# or: docker compose -f docker-compose.caddy.yml up -d   # with Caddy TLS reverse proxy
-```
-
-### Core Container Configuration
-
-| Variable / Option | Default | Description |
-|---|---|---|
-| `DOCLING_RS_NO_ARENA` | `1` | Disables ONNX Runtime CPU arena to prevent RSS heap ratcheting (#263) |
-| `DOCLING_RS_SYSTEM_FONTS` | `0` | The PDF renderer's fallback fonts come only from `.models/fonts` + `DOCLING_RS_FONT_DIRS`, never the host's font directories, so the layout input is the same on every host (#633). Unset to search the host again |
-| `DOCLING_RS_FONT_DIRS` | Liberation + DejaVu dirs | The font directories the image installs (`/usr/share/fonts/truetype/{liberation,dejavu}`); extend it to render other scripts with a font you add |
-| `DOCLING_RS_MAX_MEMORY_MB` | `0` (or cgroup) | Memory ceiling (MiB); returns 503 + Retry-After when near watermark |
-| `DOCLING_RS_MEMORY_WATERMARK_PCT` | `85` | Watermark % above which new requests get HTTP 503 |
-| `DOCLING_RS_TF_INTRA` | auto (#262) | Narrows ONNX intra-op thread count for TableFormer decoder sessions |
-| `DOCLING_RS_GRAPH_CACHE_DIR` | `$XDG_CACHE_HOME/docling-rs/graphs` (else `~/.cache/…`) | Where ONNX Runtime's optimized graphs are cached between processes (CPU provider only; session creation for the layout model ~0.8 s → ~0.15 s) |
-| `DOCLING_RS_NO_GRAPH_CACHE` | `0` | `1` disables the optimized-graph cache (models load and optimize from scratch every process) |
-| `DOCLING_RS_OCR_SESSIONS` | worker thread budget (1–8) | Parallel single-thread OCR recognition lanes per worker; output is byte-identical at any count |
-| `--concurrency N` | `2` | Max simultaneous conversions in flight; excess requests queue |
-| `--warmup` | enabled in image | Load the PDF/image models — layout, OCR, TableFormer and the multi-page worker pool — at startup; `/ready` returns 503 until they are loaded, and stays 503 (`warmup_failed` + the error) if loading fails |
-| `/health` vs `/ready` | — | `/health` = liveness (200 immediately); `/ready` = readiness: with `--warmup`, 200 once the models are loaded (`"models": "warm"`); without it, 200 immediately (`"models": "lazy"` — the first PDF/image request loads them) |
-
-For a self-contained CLI image with models exported from PyTorch, [`examples/Dockerfile`](./examples/Dockerfile)
-is a 3-stage build that bakes the binary, native libs, and models into a slim runtime stage:
-
-```bash
-docker build -f examples/Dockerfile -t docling-rs .
-docker run --rm -v "$PWD:/data" docling-rs /data/input.pdf          # Markdown to stdout
-docker run --rm -v "$PWD:/data" docling-rs /data/input.pdf --to json
-```
-
-Both `linux/amd64` and `linux/arm64` build (#281) — everything in the image
-is arch-neutral or built from source.
-
-See [`docs/DEPLOYMENT.md`](./docs/DEPLOYMENT.md) for full deployment documentation,
-Prometheus metrics, OpenTelemetry tracing, and production tuning.
-
-## Performance
-
-For the declarative formats (everything but PDF/images), `cargo run --release
--p docling --example profile_declarative` times parse, Markdown export and
-JSON export separately for every file in the corpus and lists the slowest.
-Parsing is milliseconds per document and Markdown export is negligible; JSON
-export dominates on table-heavy documents because docling's schema repeats
-every table cell in the `grid`, and it builds a `serde_json::Value` tree
-before printing. The table builder now fills that grid from an index instead
-of a hash map of cloned cells: on the corpus's heaviest JSON (a 13 MB patent
-export) the export went from 256 ms to 179 ms, on an EBCDIC table dump from
-123 ms to 66 ms, byte-identical output. Printing the tree is ~10 % of the
-remaining cost; the rest is the `Value` allocation itself, so a further
-step would be serializing straight from the document.
-
-For the PDF/image ML pipeline, `scripts/test/profile_pdf.sh` runs the release
-binary over the PDF corpus with `DOCLING_RS_TIMING=1` and sums the pipeline's
-per-stage wall-clock (`crates/docling-pdf/src/timing.rs`) into one table. On
-the 88-page corpus the cost is almost entirely model inference: TableFormer
-structure recognition (the autoregressive OTSL decode — ~1400 decode steps
-across the corpus's tables) and the per-page layout model together account for
-~85 % of it, with a one-time ONNX session/graph init paid on the first table
-page. Everything outside the models — both page renders, the two resamples,
-text-layer parsing and assembly — is under ~6 % combined (measured on the
-pdfium chain; the Rust renderer's share is of the same order). There is no
-glue-code hot spot to cut here the way the JSON grid was; PDF throughput is
-bounded by the layout and TableFormer models, so the levers are the INT8
-models, the KV-cached decoder and GPU execution providers, not the Rust
-around them.
-
-`scripts/test/performance.sh` runs a representative fixture of each supported type
-through both engines (published Python `docling` vs the Rust release binary) and
-reports peak RSS, CPU utilization, and conversion time. Ratios below are
-docling ÷ docling.rs — bigger means Rust wins by more. The PDF row is the
-**default stack** ([INT8 layout](#int8-models-faster-pdf-conversion-on-cpu) +
-KV-cached TableFormer decoder); with `DOCLING_RS_FP32=1` (full-precision
-models) the same fixture measures 5.2× less memory, a 6.2× warm speedup and
-19.8× end-to-end — see [`docs/PDF_CONFORMANCE.md`](./docs/PDF_CONFORMANCE.md).
-
-| File | Size | Peak-memory ratio | CPU ratio | Warm-conversion speedup |
-|---|---:|---:|---:|---:|
-| `picture_classification.pdf` (PDF) | 208 KB | **6.5× less** | 0.8× | 10.6× |
-| `docx_rich_tables_01.docx` (DOCX) | 3.1 MB | **39× less** | 1.2× | 19× |
-| `wiki_duck.html` (HTML) | 240 KB | **57× less** | 1.3× | 47× |
-| `elife-56337.nxml` (JATS XML) | 180 KB | **59× less** | 1.2× | 10× |
-| `xlsx_04_inflated.xlsx` (XLSX) | 168 KB | **51× less** | 0.9× | 18× |
-| `powerpoint_with_image.pptx` (PPTX) | 80 KB | **55× less** | 1.2× | 3.1× |
-| `wiki.md` (Markdown) | 8 KB | **57× less** | 1.2× | 1.2× |
-| `csv-comma.csv` (CSV) | 4 KB | **64× less** | 1.2× | 0.6× † |
-
-- **Peak memory** is where Rust wins decisively: a declarative conversion holds a
-  few MB versus docling's ~750 MB (it imports torch even for non-ML formats). The
-  PDF runs the full ML pipeline in both engines (torch vs ONNX), so the gap there
-  is 6.5× rather than 50×+, but Rust peaks at 0.37 GB vs docling's 2.4 GB —
-  and the PDF converts **28.5× faster end-to-end** (docling re-pays its torch
-  import + model load on every invocation).
-- **CPU**: recent docling releases run declarative work at ~1.2 cores against
-  Rust's single core; on the PDF Rust goes wider (~160%) while finishing an
-  order of magnitude sooner.
-- **Warm-conversion speedup** isolates the parse/convert work — it times docling
-  *in-process* (excluding its ~3 s interpreter + import startup) against the Rust
-  whole-process figure. Rust wins on substantial inputs (HTML 47×, DOCX 19×); the
-  end-to-end figure, which re-pays docling's startup every invocation, is **300–
-  870× faster** for the declarative formats.
-- † For trivial inputs (a 4 KB CSV) the conversion itself is microseconds, so Rust's
-  own process startup dominates its number while warm-Python excludes startup — the
-  warm metric understates Rust there. End-to-end, the CSV is **870× faster** in Rust.
-
-## Layout
-
-| Crate | Role | Python analogue |
-|---|---|---|
-| `docling-core` | `DoclingDocument` model + serializers | `docling-core` |
-| `docling` | `DocumentConverter`, source loading, backends | `docling` |
-| `docling-pdf` | PDF/image ML pipeline (pure-Rust text layer + renderer, ONNX layout/table/OCR) | `docling` PDF pipeline |
-| `docling-asr` | audio/ASR pipeline (symphonia + ONNX Whisper) | `docling` ASR pipeline |
-| `docling-onnx` | shared ONNX Runtime execution-provider selection (`DOCLING_RS_EP`; `cuda` / `tensorrt` / `directml` / `coreml` / `xnnpack` features) for the ML crates | — |
-| `docling-cli` | command-line interface (`docling-rs`, plus the `serve` subcommand behind `--features serve`) | `docling.cli` |
-| `docling-serve` | HTTP conversion API over a warm pipeline (`docling-serve` binary, `ghcr.io/docling-project/docling-rs-serve` image) | `docling-serve` |
-| `docling-ffi` | C ABI (`docling.h` + shared/static library) for C, C++, C#, Go, Java, Swift embedders | — |
-| `docling-node` | Node.js / Bun N-API bindings | https://www.npmjs.com/package/docling.rs |
-| `docling-py` | Python bindings (strangler-fig drop-in over docling-core) | https://pypi.org/project/docling-rs |
-| `docling-wasm` | WebAssembly bindings (declarative converters + PDF text layer + browser OCR) | https://www.npmjs.com/package/docling.rs-wasm |
-| `docling-rag` | RAG layer: chunking, embeddings, vector search, REST API | — |
+The OCR engine and language are options on every surface — `ocr_engine`
+(`ppocr` | `tesseract`, #460) and `ocr_lang` (`en` by default, `ch` for the
+model the conformance baselines were pinned against, BCP-47 tags, tessdata
+stems under Tesseract; [`docs/OPTIONS.md`](./docs/OPTIONS.md#ocr-engines-and-languages))
+— or process-wide through `DOCLING_RS_OCR_ENGINE` / `DOCLING_RS_OCR_LANG`.
+Explicit `DOCLING_OCR_REC_ONNX` + `DOCLING_OCR_DICT` (a pair — set both)
+override the language switch entirely; an install without the English model
+falls back to `ch` with a warning. The Python bindings hand their cache over
+as `DOCLING_RS_MODELS_DIR` and `download_models()` fetches both pairs, so
+`ocr_lang=` works on the documented setup path (#285).
 
 ## Contributing
 

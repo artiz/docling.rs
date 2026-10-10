@@ -135,3 +135,208 @@ codec or copybook when the conversion runs.
   the property (`ocrLang`, `documentTimeout`).
 - **C ABI / wasm** — one JSON object: `to`, `images` plus the wire names;
   an unknown key is an error.
+
+## OCR engines and languages
+
+- **Engines** (`ocr_engine`, #460). `ppocr` is the built-in PP-OCR stack
+  every conformance baseline is pinned against: RapidOCR's PP-OCRv6 text
+  detector (`.models/ocr_det.onnx`, `DOCLING_OCR_DET_ONNX`) finds the lines
+  on a bitmap page — inside the layout regions its boxes are the
+  recognizer's crops, the lines no region covers come out as orphan text
+  (#570; `DOCLING_RS_OCR_LINES=projection` restores the pre-#570
+  ink-projection strips) — and the recognizer reads them: PP-OCRv6
+  (`.models/ocr_rec_v6.onnx`) when installed, else the PP-OCRv3 `en` / `ch`
+  pairs; `DOCLING_OCR_REC_ONNX` + `DOCLING_OCR_DICT` pin a pair explicitly.
+  `tesseract` runs the system `tesseract` binary — docling's
+  `TesseractCliOcrOptions`: one subprocess per layout-region crop, `tsv` on
+  stdout, no bindings — so any of its 100+ languages reads through the same
+  pipeline (regions, orphan recovery, TableFormer word matching); orientation
+  comes from Tesseract's own OSD (needs the `osd` traineddata). Install
+  `tesseract-ocr` plus language packs (`tesseract --list-langs`; the serve
+  image ships `eng`). `DOCLING_TESSERACT` names the binary,
+  `DOCLING_RS_TESSERACT_PSM` a page segmentation mode (unset = Tesseract's
+  automatic 3; 6 = one uniform block, 11 = sparse text),
+  `DOCLING_RS_TESSDATA_DIR` the data directory (`TESSDATA_PREFIX` is honoured
+  by Tesseract itself). A missing binary or traineddata warns and degrades
+  to no OCR, like a missing model; under `force_full_page_ocr` it is an
+  error. Each crop is one process, dealt across the OCR lanes
+  (`DOCLING_RS_OCR_SESSIONS`), each pinned to one OpenMP thread. Python also
+  maps a docling-shaped `TesseractCliOcrOptions` (`lang`, `tesseract_cmd`,
+  `path`, `psm`).
+- **Languages** (`ocr_lang`). Under PP-OCR: `en` (the default — the English
+  PP-OCRv3 model, good Latin word spacing) or `ch` (the multilingual model
+  the docling conformance corpus was generated with — use it for
+  byte-for-byte comparisons; `DOCLING_RS_OCR_LANG=ch` process-wide, the
+  conformance scripts pin it themselves). BCP-47 tags resolve to the same
+  two (#388, docling#4075): `en-US`, `en_GB`, `eng`, `english` → `en`; `zh`,
+  `zh-Hans`, `zh-CN`, `zh-TW`, `zho`, `chinese`, EasyOCR's `ch_sim` → `ch`,
+  with or without docling's `iso:` prefix — script and region subtags are
+  ignored; any other language (`de`, `ja`, …) is rejected (the env var
+  warns and defaults). Under Tesseract: tessdata stems (`deu`, `eng+fra`,
+  `script/Cyrillic`, a traineddata of your own) or BCP-47 tags mapped onto
+  them (`de` → `deu`, `zh-Hant` → `chi_tra`); `en` and `ch` keep working.
+- **Regions and scale** (#254). `ocr_mode` is docling's `OcrMode`: the
+  default (= `pdf_aware_layout_regions`) keeps the text layer and OCRs what
+  lacks one; `full_page` and `layout_regions` both discard the text layer,
+  exactly like `force_full_page_ocr` (the whole-page vs per-region *detector*
+  input they distinguish upstream has no analogue here: the detector always
+  sees the whole page, the recognizer always reads line crops). `ocr_scale`
+  is docling's `OcrOptions.scale` in px/pt: unset, OCR reads the pipeline's
+  2.0 px/pt (144 dpi) render — the pinned conformance baseline — and an
+  image input at docling's effective resolution (#570): 3 px/pt shrunk so
+  the longer side stays within RapidOCR's 2000 px (a 754 × 1000 scan reads
+  at 2.0; measured best on FUNSD: 0.825 / 0.856 / 0.836 word recall at
+  1 / 2 / 3 px/pt); a set value resamples the OCR input only, layout and
+  TableFormer pixels are untouched. docling's default is 3 (216 dpi); lower
+  it when the source raster is already high-resolution.
+- **Detector and recognizer knobs** (env): `DOCLING_RS_OCR_DET_MAX_SIDE`
+  (2000 = RapidOCR's `max_side_len`; `0` lifts the cap, 960 — PaddleOCR's
+  budget — is about a third of the time at ~0.02 recall on FUNSD),
+  `DOCLING_RS_OCR_TEXT_SCORE` (RapidOCR's `text_score`, 0.5 — a line whose
+  mean character confidence is under it is dropped; `0` keeps all),
+  `DOCLING_RS_OCR_ORIENTATION=off` (no un-rotation probe of raster-rotated
+  scans, #225/#571). The detector runs on bitmap pages only and
+  concurrently with the layout model.
+- **Picture crops and page images** (#520). `images_scale` (0.1–4.0 px/pt)
+  resamples the 2.0 px/pt render for picture crops and page images (above
+  2.0 upsamples, it does not re-render); each picture's `image.dpi` in the
+  JSON is 72·scale (#519). `page_images` keeps every page's render, at
+  `images_scale`, as the JSON `pages[n].image` (docling-core's
+  `PageItem.image`), so `TableItem.get_image(doc)` / `FormulaItem.get_image(doc)`
+  crop from it; off by default (a PNG per page in memory), no render under
+  `text_layer_only`, none in streamed Markdown. Python also takes both
+  docling-shaped through `PdfPipelineOptions`, where `images_scale` applies
+  once `generate_picture_images` or `generate_page_images` is on.
+
+## VLM pipeline
+
+`pipeline=vlm` (#77) renders each page in Rust and sends it, with docling's
+page-conversion prompt, to an OpenAI-compatible vision endpoint — LM Studio,
+Ollama, vLLM, a hosted service; an image input is sent as-is. No ONNX
+models load.
+
+- `vlm_endpoint` takes the server's `/v1` base or the full
+  `…/chat/completions` URL; `vlm_api_key` is sent as a Bearer token;
+  `vlm_max_tokens` defaults to 8192 (#312). `DOCLING_RS_VLM_ENDPOINT` /
+  `_MODEL` / `_API_KEY` / `_PROMPT` are the env fallbacks of the options.
+  They supply values, never switch the pipeline on — a stale endpoint
+  cannot reroute an ordinary conversion over the network — and the `vlm_*`
+  options are inert under `standard` (the Node bindings ignore stray `vlm*`
+  options likewise). `DOCLING_RS_VLM_TIMEOUT` (seconds, 600) caps each page
+  request for slow, e.g. CPU-served, endpoints; `DOCLING_RS_VLM_EXTRA_BODY`
+  merges extra JSON into every request; `DOCLING_RS_VLM_DEBUG` logs the
+  exchange.
+- Transient failures (timeouts, 408/429, 5xx) retry with exponential
+  backoff; a page that still fails fails the conversion — no silently
+  dropped pages. On serve a VLM failure (unreachable endpoint, non-200,
+  unparseable answer) fails that request only.
+- `pages` composes (only the window is rendered and sent); `to` and
+  `strict` work as usual.
+- Answer grammars are detected per response (#322): DocTags
+  (granite-docling-class models), DocLang XML, Chandra layout HTML
+  (`<div data-bbox=… data-label=…>` blocks — tables with spans, Form-held
+  tables, lists, figures, page furniture; docling 2.123–2.125 semantics
+  including `<br>`-as-spacing), Unlimited-OCR grounding output (normalized
+  into the DeepSeek-OCR annotation shape) and raw DeepSeek-OCR annotated
+  Markdown; plain prose degrades to text — hostile model output never
+  errors. Known models get their official prompt when `vlm_prompt` is
+  unset: `unlimited*` → the model card's `<image>document parsing.` (any
+  other phrasing returns an empty completion) plus the
+  `skip_special_tokens=false` request flag its grounding markers need;
+  `chandra*` → docling's Chandra layout prompt; everything else the
+  DocLang-eliciting default.
+- serve: a request-supplied `vlm_endpoint` is outbound traffic steered by
+  the caller, so it needs `--allow-url-fetch` and passes the same SSRF
+  resolution check as URL inputs (private/loopback endpoints refused;
+  `DOCLING_RS_ALLOW_PRIVATE_IP_FETCH=1` for local development). The
+  operator-pinned mode — `DOCLING_RS_VLM_ENDPOINT` / `DOCLING_RS_VLM_MODEL`
+  on the server, requests send only `pipeline=vlm` — needs no gate.
+- Measured (#311): the PDF corpus through one granite-docling endpoint from
+  docling.rs and from Python docling's `VlmPipeline` scores 87.7 % mean
+  whitespace-normalized similarity over 18 fixtures, 3 byte-exact; the gap
+  is dominated by each side rendering at its own scale (144 vs 216 dpi).
+  Table and method in `docs/PDF_CONFORMANCE.md`; harness
+  `scripts/conformance/vlm_conformance.sh` (a GPU-served endpoint — CPU
+  inference measures hours per page).
+
+## CLI batch mode
+
+`docling-rs SOURCE… --output DIR` / `--input GLOB|DIR --output DIR` (#205,
+#489): one warm process, every source a batch item.
+
+- **Sources.** Positional files, directories (swept recursively, taking
+  every file with a convertible extension — stray `.log` / `.tmp` files are
+  ignored, not failures), quoted globs, and `--input` with a glob (quote it)
+  or a directory. `--output` with a single file works too (a batch of one).
+  Which extensions count is the binary's own list (#603): `--list-input-formats`
+  prints them sorted, one per line, no dot, `zip` included;
+  `--list-output-formats` the `--to` values; a format behind a cargo feature
+  the build lacks (PDF/images without `pdf`, audio/video without `asr`,
+  `.heic` without `heif`) is left out. Library: `InputFormat::supported_extensions()`,
+  `docling::OUTPUT_FORMATS`.
+- **Outputs.** `--to` is repeatable (`--to md --to json` = `--to md,json`):
+  each document converts once and is written in every format named, as
+  `<stem>.<ext>` (`.md`, `.json`, `.html`, `.txt`, `.dclx`, `.chunks.json`,
+  `.tex`, `.pandoc.json`, `.vtt`); several formats need `--output`, since
+  stdout carries one document. `--output-file PATH` (#611, docling's)
+  writes the one result to exactly PATH — refused unless there is exactly
+  one input and one format; `--images referenced` pictures land in
+  `<stem>_artifacts/` next to it.
+- **Layout** (`--output-dirs`, #496). `auto` (default): a directory or glob
+  source mirrors its tree below the directory / the pattern's static
+  prefix (`/data/reports/**/*.pdf` → `out/2024/q1/a.json`), a plain file
+  lands by stem. `flat`: every output directly in `--output`. `mirror`:
+  every input by its path relative to the current directory, explicit files
+  included (`a/README.md b/README.md` → `out/a/README.md`, `out/b/README.md`);
+  an input outside the current directory is refused. Two sources that would
+  write the same file (`sub/b.docx` and `other/b.docx` → `b.md`) are refused
+  before anything converts — pass a common parent, use `mirror`, or
+  separate `--output` directories.
+- **Parallelism and progress.** The PDF/image models load once and every
+  file reuses the warm sessions; `--jobs N` converts declarative formats in
+  parallel (PDFs already parallelize internally). Output paths print to
+  stdout one per line; stderr gets `start: <file> (N pages)`, a dot every
+  10 finished pages and `ok: … (12.8s, 800 ms/page)`. Pipeline diagnostics
+  are quiet unless `DOCLING_RS_DEBUG=1`.
+- **Failures.** A failing file is reported and skipped; the exit code is
+  non-zero if anything failed; `--abort-on-error` (Python's flag) stops at
+  the first. One exception: an execution-provider failure (an explicit
+  `DOCLING_RS_EP` whose runtime libraries are missing) would fail every
+  remaining PDF identically, so the first one aborts the batch (`fatal: …`,
+  the rest `skipped`).
+- **ZIP archives** (#557). A `.zip` named as a source (or matched by a glob)
+  converts every document inside, each its own batch item — one broken
+  document fails only itself; `out/bundle/<entry path>.<ext>`. Entries are
+  listed from the central directory before anything is inflated, nothing is
+  extracted to disk, and the ones that do not convert are reported
+  (`skip: bundle.zip:tool.exe: unsupported file type`) and counted:
+  unsupported types, nested archives (one level only), `__MACOSX` metadata,
+  encrypted entries, `..` paths, and entries over the limits — 10 000
+  entries, 256 MiB per entry, 1 GiB in all, a 200:1 compression ratio
+  (`DOCLING_RS_ZIP_MAX_ENTRIES` / `_MAX_ENTRY_MB` / `_MAX_TOTAL_MB` /
+  `_MAX_RATIO`, `ArchiveLimits::from_env`). A directory sweep does not open
+  archives it finds — only explicitly named ones expand — and a lone `.zip`
+  without `--output` is a usage error. Library:
+  `DocumentConverter::convert_archive(reader)`, a lazy iterator of
+  `Converted` / `Skipped` / `Failed` outcomes (`docling::archive`); Python
+  `convert_archive`, Node `convertArchiveFile` / `convertArchive`.
+- **Email attachments** (#561). An `.eml` / `.msg` converts as one document
+  (headers + body, the attachment *names* with `--list-attachments`); the
+  payloads are reachable from the library and bindings, not the CLI or
+  serve. `docling::EmailAttachments::open(bytes, &limits)` lists them — a
+  safe unique file name (`report-2.pdf` for a second `report.pdf`), media
+  type, size, inline-image flag, and the format it converts as (extension,
+  else media type, else the bytes) or why it will not (no payload — an
+  attachment by reference or an OLE object; over a limit; a nested archive
+  or unsupported type, whose bytes stay available through `data(i)`). A
+  forwarded message (`message/rfc822`, an embedded `.msg` message) is an
+  `.eml` entry. `DocumentConverter::convert_email_attachments(bytes)`
+  converts them with the archive outcomes above under the same
+  `ArchiveLimits` (no ratio: MIME cannot bomb). Python:
+  `docling_rs.email_attachments(path | bytes | DocumentStream)` →
+  `EmailAttachment(…, data)` with `.as_stream()` for `convert` (the stream
+  carries the detected format, so a `scan.bin` sent as `application/pdf`
+  converts as a PDF); Node: `emailAttachments({ name, data })` /
+  `emailAttachmentsFile(path)` (+ `*Async`), then `convert({ name, data,
+  format })`. Payloads are the bytes as sent — only the transfer encoding is
+  undone (#564).
