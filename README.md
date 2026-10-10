@@ -1084,122 +1084,36 @@ curl -F file=@deck.pptx -F password=1234 localhost:5001/v1/convert
 
 ## Batch conversion — several sources, `--input` / `--output`
 
-One warm process converts many documents (#205, #489). Like Python's
-`docling convert file1.docx file2.docx --output ./out/`, any number of
-positional sources — files, directories, quoted globs — go into one run;
-`--input` takes a glob (quote it — the shell must not expand it) or a plain
-directory. `--output` is a directory: a file lands in it by stem, and the
-structure below a directory or a pattern's static prefix is preserved:
+One warm process converts many documents (#205, #489): any number of
+positional sources — files, directories, quoted globs, ZIP archives — or
+`--input GLOB|DIR`, into `--output DIR`. The ML models load once; a failing
+file is reported and skipped (non-zero exit at the end, `--abort-on-error`
+to stop at the first); output paths print to stdout, progress to stderr.
 
 ```bash
-docling-rs a.docx sub/b.docx other/c.pdf --output ./converted
-# ./converted/a.md, ./converted/b.md, ./converted/c.md — models load once
-docling-rs --to md --to json report.pdf --output ./converted
-# one conversion, every format: ./converted/report.md + report.json (#491;
-# `--to md,json` is the same, `--to` twice with one format writes it once)
-docling-rs --input '/data/reports/**/*.pdf' --output ./converted --to json
-# /data/reports/2024/q1/a.pdf  ->  ./converted/2024/q1/a.json
-docling-rs --input /data/reports --output ./converted
-# a directory sweeps recursively, taking every file with a convertible
-# extension (stray .log/.tmp files are ignored instead of failing the batch)
+docling-rs a.docx sub/b.docx other/c.pdf --output ./converted   # a.md, b.md, c.md
+docling-rs --to md,json report.pdf --output ./converted          # report.md + report.json
+docling-rs --input '/data/reports/**/*.pdf' --output ./out --to json   # tree kept: out/2024/q1/a.json
+docling-rs --input /data/reports --output ./out                  # recursive sweep, convertible files only
+docling-rs bundle.zip --output out/                              # every document inside: out/bundle/<entry>.md (#557)
 ```
 
-Which files a batch takes is the binary's own list (#603, Pandoc's
-discovery flags): `docling-rs --list-input-formats` prints every input
-extension this build converts — sorted, one per line, no dot, `zip` included —
-and `--list-output-formats` the `--to` values, so a wrapper script asks the
-binary instead of hard-coding a list that drifts from it. A format behind a
-cargo feature the build lacks (PDF and images without `pdf`, audio/video
-without `asr`, `.heic` without `heif`) is left out. The library side is
-`InputFormat::supported_extensions()` and `docling::OUTPUT_FORMATS`.
+| Flag | Meaning |
+|---|---|
+| `--to FMT[,FMT]` (repeatable) | every format for each document; several need `--output` |
+| `--output DIR` · `--output-file PATH` | the output directory · one input, one format, exactly that path (#611) |
+| `--output-dirs auto\|flat\|mirror` | layout under `--output` (#496): mirror a directory's / glob's tree, land plain files by stem (default); everything flat as `<stem>.<ext>`; everything by its path relative to the CWD |
+| `--images referenced` | each document's pictures in a sibling `<stem>_artifacts/` |
+| `--jobs N` | declarative formats in parallel (PDFs share the one warm pipeline) |
+| `--abort-on-error` | stop at the first failed file (Python's flag) |
+| `--list-input-formats` · `--list-output-formats` | what this build converts, one per line (#603) — ask the binary instead of hard-coding a list |
 
-```bash
-if docling-rs --list-input-formats | grep -qx rtf; then
-  docling-rs input.rtf --output out/
-fi
-```
-
-Two sources that would write the same output file (`sub/b.docx` and
-`other/b.docx` both become `b.md`) are refused before anything converts —
-pass a common parent directory instead, whose tree is kept (`sub/b.md`,
-`other/b.md`), use `--output-dirs mirror`, or separate `--output`
-directories. `--output-dirs auto|flat|mirror` (#496, a docling.rs extension)
-chooses the layout under `--output` for every input at once: `auto` (the
-default) is the rule above — a directory or glob mirrors its tree, a plain
-file lands by stem; `flat` puts every output as `<stem>.<ext>` directly in
-`--output` (collisions are refused up front); `mirror` lays every input out
-by its path relative to the current directory, explicit files included
-(`docling-rs a/README.md b/README.md --output out/ --output-dirs mirror` →
-`out/a/README.md`, `out/b/README.md`), and refuses an input outside the
-current directory rather than guess at a path for it. `--abort-on-error`
-stops the batch at the first failed file (Python's flag of the same name);
-by default the file is reported and skipped. `--to` is repeatable like Python's: each document converts once and
-is written in every format named — several formats need `--output`, since
-stdout carries one document.
-
-A **ZIP archive** named as a source (a file or a glob match) converts every
-document inside it (#557): `docling-rs bundle.zip --output out/` writes
-`out/bundle/<entry path>.md`, each entry its own item of the batch — one
-broken document fails only itself. Entries are listed from the archive's
-directory before anything is inflated; those that do not convert are
-reported (`skip: bundle.zip:tool.exe: unsupported file type`) and counted in
-the summary: unsupported types, nested archives (one level only), `__MACOSX`
-metadata, encrypted entries, paths that climb out with `..`, and entries over
-the limits — 10 000 entries, 256 MiB per entry, 1 GiB in all, a 200:1
-compression ratio (`DOCLING_RS_ZIP_MAX_ENTRIES` / `_MAX_ENTRY_MB` /
-`_MAX_TOTAL_MB` / `_MAX_RATIO`). Nothing is extracted to disk. A directory
-sweep (`--input DIR`) does not open archives it finds — only explicitly named
-ones expand — and a lone `.zip` without `--output` is a usage error (it holds
-many documents). From Rust, `DocumentConverter::convert_archive(reader)` is
-the same as a lazy iterator of per-entry `Converted` / `Skipped` / `Failed`
-outcomes (`docling::archive`); the Python (`convert_archive`) and Node
-(`convertArchiveFile` / `convertArchive`) bindings expose the same.
-
-**Email attachments** (#561) are reachable the same way: an `.eml` or
-Outlook `.msg` renders as headers + body (plus the attachment *names* with
-`--list-attachments`), and `docling::EmailAttachments::open(bytes, &limits)`
-lists the payloads behind it — each with a safe file name (unique within the
-message: a second `report.pdf` is `report-2.pdf`), media type, size, whether
-it is an image the message shows inline, and the format it converts as (from
-its extension, else its media type, else the bytes), or why it will not
-(no payload: an attachment by reference or an OLE object; over a limit; a
-nested archive or an unsupported type — those bytes stay available through
-`data(i)`, a `.zip` for `convert_archive`). A forwarded message —
-`message/rfc822` in an `.eml`, an embedded message in a `.msg` — is an `.eml`
-entry carrying the nested message. `DocumentConverter::convert_email_attachments(bytes)`
-converts them one at a time with the archive outcomes above; the `ArchiveLimits`
-apply (no compression ratio: MIME cannot bomb). Python:
-`docling_rs.email_attachments(path | bytes | DocumentStream)` →
-`EmailAttachment(…, data)` with `.as_stream()` for `convert` (the stream
-carries the detected `format`, so a `scan.bin` sent as `application/pdf`
-converts as a PDF); Node: `emailAttachments({ name, data })` /
-`emailAttachmentsFile(path)` (+ `*Async`), then
-`convert({ name: att.name, data: att.data, format: att.format })`. Payloads
-are the bytes as sent — only the transfer encoding is undone, so a
-windows-1252 text file stays windows-1252 (#564). The CLI and serve do not
-expand attachments (a message converts as one document).
-
-The PDF/image ML pipeline loads its models **once** and every matched file
-reuses the warm sessions — the same amortization `docling-rs serve` does
-across requests, without running a server. Extensions follow `--to` (`.md`,
-`.json`, `.dclx`, `.chunks.json`, `.tex`, `.pandoc.json`), `--images referenced` writes each
-document's pictures into a sibling `<stem>_artifacts/` directory, and every
-other flag (`--strict`, `--pages`, `--ocr-lang`, `--pipeline vlm`, enrichment,
-…) applies to the whole batch. `--jobs N` converts declarative formats in
-parallel (PDF/image files share the one warm pipeline, which already
-parallelizes internally per document). Output paths print to stdout one per
-line for scripting; progress goes to stderr — a `start: <file> (N pages)`
-line per document, a dot every 10 finished pages, and an
-`ok: … (12.8s, 800 ms/page)` line when it completes. A failing file is
-skipped rather than aborting the batch, and the exit code is non-zero if
-anything failed (`--abort-on-error` stops at the first failure instead) —
-with one deliberate exception: an execution-provider
-failure (an explicit `DOCLING_RS_EP` whose runtime libraries are missing)
-would fail every remaining PDF identically, so the first one aborts the
-whole batch (`fatal: …`, remaining files reported as `skipped`). `--output`
-with a single positional file works too (a batch of one). Pipeline
-diagnostics (e.g. the int8→fp32 layout-retry notice) are quiet by default;
-`DOCLING_RS_DEBUG=1` turns them back on.
+Every other flag (`--strict`, `--pages`, `--ocr-lang`, `--pipeline vlm`,
+enrichment, …) applies to the whole batch. Collision rules, the ZIP limits
+and outcomes, email attachments (`EmailAttachments`, Python
+`email_attachments()`, Node `emailAttachments()`, #561) and the progress /
+exit-code details: [`docs/OPTIONS.md` § CLI batch
+mode](docs/OPTIONS.md#cli-batch-mode).
 
 ## Node.js / Bun bindings
 

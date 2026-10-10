@@ -258,3 +258,85 @@ models load.
   Table and method in `docs/PDF_CONFORMANCE.md`; harness
   `scripts/conformance/vlm_conformance.sh` (a GPU-served endpoint — CPU
   inference measures hours per page).
+
+## CLI batch mode
+
+`docling-rs SOURCE… --output DIR` / `--input GLOB|DIR --output DIR` (#205,
+#489): one warm process, every source a batch item.
+
+- **Sources.** Positional files, directories (swept recursively, taking
+  every file with a convertible extension — stray `.log` / `.tmp` files are
+  ignored, not failures), quoted globs, and `--input` with a glob (quote it)
+  or a directory. `--output` with a single file works too (a batch of one).
+  Which extensions count is the binary's own list (#603): `--list-input-formats`
+  prints them sorted, one per line, no dot, `zip` included;
+  `--list-output-formats` the `--to` values; a format behind a cargo feature
+  the build lacks (PDF/images without `pdf`, audio/video without `asr`,
+  `.heic` without `heif`) is left out. Library: `InputFormat::supported_extensions()`,
+  `docling::OUTPUT_FORMATS`.
+- **Outputs.** `--to` is repeatable (`--to md --to json` = `--to md,json`):
+  each document converts once and is written in every format named, as
+  `<stem>.<ext>` (`.md`, `.json`, `.html`, `.txt`, `.dclx`, `.chunks.json`,
+  `.tex`, `.pandoc.json`, `.vtt`); several formats need `--output`, since
+  stdout carries one document. `--output-file PATH` (#611, docling's)
+  writes the one result to exactly PATH — refused unless there is exactly
+  one input and one format; `--images referenced` pictures land in
+  `<stem>_artifacts/` next to it.
+- **Layout** (`--output-dirs`, #496). `auto` (default): a directory or glob
+  source mirrors its tree below the directory / the pattern's static
+  prefix (`/data/reports/**/*.pdf` → `out/2024/q1/a.json`), a plain file
+  lands by stem. `flat`: every output directly in `--output`. `mirror`:
+  every input by its path relative to the current directory, explicit files
+  included (`a/README.md b/README.md` → `out/a/README.md`, `out/b/README.md`);
+  an input outside the current directory is refused. Two sources that would
+  write the same file (`sub/b.docx` and `other/b.docx` → `b.md`) are refused
+  before anything converts — pass a common parent, use `mirror`, or
+  separate `--output` directories.
+- **Parallelism and progress.** The PDF/image models load once and every
+  file reuses the warm sessions; `--jobs N` converts declarative formats in
+  parallel (PDFs already parallelize internally). Output paths print to
+  stdout one per line; stderr gets `start: <file> (N pages)`, a dot every
+  10 finished pages and `ok: … (12.8s, 800 ms/page)`. Pipeline diagnostics
+  are quiet unless `DOCLING_RS_DEBUG=1`.
+- **Failures.** A failing file is reported and skipped; the exit code is
+  non-zero if anything failed; `--abort-on-error` (Python's flag) stops at
+  the first. One exception: an execution-provider failure (an explicit
+  `DOCLING_RS_EP` whose runtime libraries are missing) would fail every
+  remaining PDF identically, so the first one aborts the batch (`fatal: …`,
+  the rest `skipped`).
+- **ZIP archives** (#557). A `.zip` named as a source (or matched by a glob)
+  converts every document inside, each its own batch item — one broken
+  document fails only itself; `out/bundle/<entry path>.<ext>`. Entries are
+  listed from the central directory before anything is inflated, nothing is
+  extracted to disk, and the ones that do not convert are reported
+  (`skip: bundle.zip:tool.exe: unsupported file type`) and counted:
+  unsupported types, nested archives (one level only), `__MACOSX` metadata,
+  encrypted entries, `..` paths, and entries over the limits — 10 000
+  entries, 256 MiB per entry, 1 GiB in all, a 200:1 compression ratio
+  (`DOCLING_RS_ZIP_MAX_ENTRIES` / `_MAX_ENTRY_MB` / `_MAX_TOTAL_MB` /
+  `_MAX_RATIO`, `ArchiveLimits::from_env`). A directory sweep does not open
+  archives it finds — only explicitly named ones expand — and a lone `.zip`
+  without `--output` is a usage error. Library:
+  `DocumentConverter::convert_archive(reader)`, a lazy iterator of
+  `Converted` / `Skipped` / `Failed` outcomes (`docling::archive`); Python
+  `convert_archive`, Node `convertArchiveFile` / `convertArchive`.
+- **Email attachments** (#561). An `.eml` / `.msg` converts as one document
+  (headers + body, the attachment *names* with `--list-attachments`); the
+  payloads are reachable from the library and bindings, not the CLI or
+  serve. `docling::EmailAttachments::open(bytes, &limits)` lists them — a
+  safe unique file name (`report-2.pdf` for a second `report.pdf`), media
+  type, size, inline-image flag, and the format it converts as (extension,
+  else media type, else the bytes) or why it will not (no payload — an
+  attachment by reference or an OLE object; over a limit; a nested archive
+  or unsupported type, whose bytes stay available through `data(i)`). A
+  forwarded message (`message/rfc822`, an embedded `.msg` message) is an
+  `.eml` entry. `DocumentConverter::convert_email_attachments(bytes)`
+  converts them with the archive outcomes above under the same
+  `ArchiveLimits` (no ratio: MIME cannot bomb). Python:
+  `docling_rs.email_attachments(path | bytes | DocumentStream)` →
+  `EmailAttachment(…, data)` with `.as_stream()` for `convert` (the stream
+  carries the detected format, so a `scan.bin` sent as `application/pdf`
+  converts as a PDF); Node: `emailAttachments({ name, data })` /
+  `emailAttachmentsFile(path)` (+ `*Async`), then `convert({ name, data,
+  format })`. Payloads are the bytes as sent — only the transfer encoding is
+  undone (#564).
