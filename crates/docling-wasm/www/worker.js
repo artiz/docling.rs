@@ -7,12 +7,16 @@
 //
 // RPC: every request carries an id; the reply is {type:"ok", id, ...data} or
 // {type:"error", id, msg}. Progress is a broadcast {type:"status", msg,
-// spinning}. Requests: set-models{models} | boot{lang,layoutOnly} | rec{lang} |
+// spinning}. Requests: set-models{models} | boot{lang,layoutOnly,gpu} | rec{lang} |
 // doc-start{lang,useTf} | doc-start-digital{bytes,useTf,lang} |
 // doc-page{rgba,w,h,scale,index} | doc-finish{name,to,images} |
-// convert-image{bytes,name,lang,to,images}.
+// convert-image{bytes,name,lang,to,images} | stats.
+//
+// `gpu` is the WebGPU request (pipeline.js gpuPlan). The ONNX Runtime build
+// it selects is fixed for the worker's lifetime: the page switches by
+// terminating this worker and booting a new one.
 
-import { createOcr, THREADS } from "./pipeline.js";
+import { createOcr } from "./pipeline.js";
 
 const post = (type, extra) => self.postMessage({ type, ...extra });
 
@@ -26,15 +30,15 @@ async function handle(m) {
       ocr.setProvidedModels(m.models);
       return {};
     case "boot": {
-      const kind = await ocr.boot();
-      if (!kind) return { noLayout: true };
+      const r = await ocr.boot(m.gpu);
+      if (!r.kind) return { noLayout: true };
       // A digital PDF never recognises anything, so its boot skips the
       // recognition model entirely; the scanned path loads it lazily anyway.
       if (!m.layoutOnly) {
         await ocr.recFor(m.lang);
         await ocr.warmup(m.lang);
       }
-      return { kind, threads: THREADS };
+      return r;
     }
     case "rec":
       await ocr.recFor(m.lang);
@@ -52,6 +56,8 @@ async function handle(m) {
       return { md: ocr.finishDoc(m.name, m.to, m.images) };
     case "convert-image":
       return { md: await ocr.convertImage(m.bytes, m.name, m.lang, m.to, m.images) };
+    case "stats":
+      return { stats: ocr.takeStats() };
     default:
       throw new Error(`unknown request ${m.type}`);
   }

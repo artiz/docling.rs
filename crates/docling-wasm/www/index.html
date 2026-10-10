@@ -139,6 +139,9 @@
     <label title="OCR every PDF page from its rendered image, ignoring any embedded text layer — docling's force_full_page_ocr. For text layers that exist but lie: broken encodings, scanned forms with a few typed-in fields.">
       <input type="checkbox" id="forceOcr"> Force OCR
     </label>
+    <label id="gpuWrap" title="Experimental: run the layout model, the text detector and the TableFormer encoder on the GPU through WebGPU (the rest stays on the CPU). Uses the fp32 layout model (~172 MB instead of ~69 MB). Falls back to the CPU when WebGPU is unavailable. Kept in the URL as ?webgpu — e.g. ?webgpu=layout,det,rec,tf_enc,tf_dec,tf_bbox picks the models.">
+      <input type="checkbox" id="gpu"> GPU (WebGPU)
+    </label>
     <span class="hint" id="ocrState">scanned pages need models — see below</span>
   </div>
   <div class="row">
@@ -169,7 +172,8 @@
     <li>
       <strong>From your device</strong> — pick the <code>.onnx</code> files:
       <input type="file" id="models" multiple accept=".onnx,.data,.txt">
-      <br>Layout needs <code>layout_heron_int8.onnx</code>; TableFormer also needs
+      <br>Layout needs <code>layout_heron_int8.onnx</code> (the GPU option uses
+      <code>layout_heron.onnx</code> instead); TableFormer also needs
       <code>encoder.onnx</code>, <code>decoder_kv.onnx</code>&nbsp;+&nbsp;<code>.data</code>,
       <code>bbox.onnx</code>&nbsp;+&nbsp;<code>.data</code>. Each file is read
       locally — no download, and it avoids the memory spike a 225&nbsp;MB fetch
@@ -193,6 +197,17 @@ curl -fsSL https://raw.githubusercontent.com/docling-project/docling.rs/master/s
     streams from Hugging Face on demand; layout is ~68&nbsp;MB and TableFormer
     ~380&nbsp;MB, so on mobile prefer picking files from the device.
   </p>
+  <p class="hint">
+    <strong>GPU (WebGPU), experimental.</strong> With the GPU box ticked, the
+    layout model, the text detector and the TableFormer encoder run on the GPU
+    through ONNX Runtime Web's WebGPU execution provider; recognition and the
+    TableFormer decoder stay on the CPU. The layout model is then the fp32 one
+    (~172&nbsp;MB) — the int8 graph is calibrated for CPU kernels and gives
+    different detections on a GPU. Where WebGPU is missing, or a model will not
+    start on it, everything runs on the CPU as before. After each OCR run the
+    status line shows the time spent in each model and where it ran — toggle the
+    box to compare the two paths on your device.
+  </p>
 
   <script type="module">
     // One page, two conversion paths:
@@ -208,13 +223,31 @@ curl -fsSL https://raw.githubusercontent.com/docling-project/docling.rs/master/s
     const IMAGE_EXT = ["png", "jpg", "jpeg", "tif", "tiff", "webp", "bmp", "gif"];
 
     const $ = (id) => document.getElementById(id);
-    const [meta, out, preview, drop, pick, to, images, render, structure, maxPages, stop, lang, tf, forceOcr, modelsInput, ocrState] =
-      ["meta", "out", "preview", "drop", "pick", "to", "images", "render", "structure", "maxPages", "stop", "lang", "tf", "forceOcr", "models", "ocrState"].map($);
+    const [meta, out, preview, drop, pick, to, images, render, structure, maxPages, stop, lang, tf, forceOcr, gpu, gpuWrap, modelsInput, ocrState] =
+      ["meta", "out", "preview", "drop", "pick", "to", "images", "render", "structure", "maxPages", "stop", "lang", "tf", "forceOcr", "gpu", "gpuWrap", "models", "ocrState"].map($);
+
+    // WebGPU opt-in (#629): the checkbox, or ?webgpu in the URL (a model list
+    // there picks which models; see pipeline.js gpuPlan). The checkbox mirrors
+    // itself into the URL, so a reload or a shared link keeps the choice.
+    const OFF = /^(0|off|false|no)$/i;
+    const gpuParam = () => new URLSearchParams(location.search).get("webgpu");
+    const hasWebGpu = "gpu" in navigator;
+    gpu.checked = hasWebGpu && gpuParam() !== null && !OFF.test(gpuParam().trim());
+    if (!hasWebGpu) {
+      gpu.disabled = true;
+      gpuWrap.title = "This browser has no WebGPU — the models run on the CPU (wasm).";
+    }
+    // The request the OCR pipeline boots with: "" = CPU only.
+    function gpuRequest() {
+      if (!gpu.checked) return "";
+      const v = (gpuParam() || "").trim();
+      return v && !/^(1|on|true|yes)$/i.test(v) && !OFF.test(v) ? v : "1";
+    }
 
     // Everything the user can touch, frozen for the whole of a conversion:
     // a control left live lets a second run start on top of the first, and the
     // two then fight over the pipeline's single in-flight document.
-    const CONTROLS = [pick, to, images, render, structure, maxPages, lang, tf, forceOcr, modelsInput];
+    const CONTROLS = [pick, to, images, render, structure, maxPages, lang, tf, forceOcr, ...(hasWebGpu ? [gpu] : []), modelsInput];
 
     await init();
     const exts = JSON.parse(supported_extensions());
@@ -248,6 +281,7 @@ curl -fsSL https://raw.githubusercontent.com/docling-project/docling.rs/master/s
     let providedModels = null; // device files picked before the driver existed
     let cancelled = false;     // set by Stop; conversion loops give up on it
     let liveWorkerDrv = null;  // whichever worker driver exists, even mid-boot
+    let ocrUsed = false;       // the current run went through the OCR pipeline
 
     // ONNX Runtime Web is the one thing the OCR path fetches from a CDN, so a
     // failure there is the likeliest reason OCR won't start — say so plainly
@@ -295,7 +329,7 @@ curl -fsSL https://raw.githubusercontent.com/docling-project/docling.rs/master/s
       return {
         worker,
         kill,
-        boot: (l, layoutOnly) => rpc("boot", { lang: l, layoutOnly }),
+        boot: (l, layoutOnly, g) => rpc("boot", { lang: l, layoutOnly, gpu: g }),
         rec: (l) => rpc("rec", { lang: l }),
         docStart: (l, useTf) => rpc("doc-start", { lang: l, useTf }),
         docStartDigital: (bytes, useTf, l) =>
@@ -306,22 +340,25 @@ curl -fsSL https://raw.githubusercontent.com/docling-project/docling.rs/master/s
         convertImage: (bytes, name, l, fmt, img) =>
           rpc("convert-image", { bytes, name, lang: l, to: fmt, images: img }, [bytes]).then((r) => r.md),
         setModels: (m) => rpc("set-models", { models: m }, Object.values(m)),
+        stats: () => rpc("stats").then((r) => r.stats),
       };
     }
     async function mainDriver() {
-      const { createOcr, THREADS } = await import("./pipeline.js").catch(() => {
+      const { createOcr } = await import("./pipeline.js").catch(() => {
         throw new Error(ORT_HINT);
       });
       const p = createOcr({ onStatus: (m, s) => document.body.classList.contains("busy") && status(m, s) });
       return {
-        boot: async (l, layoutOnly) => {
-          const kind = await p.boot();
-          if (!kind) return { noLayout: true };
+        // The main thread cannot restart its realm, so it keeps the ONNX
+        // Runtime build of its first boot whatever `g` later asks for.
+        boot: async (l, layoutOnly, g) => {
+          const r = await p.boot(g);
+          if (!r.kind) return { noLayout: true };
           if (!layoutOnly) {
             await p.recFor(l);
             await p.warmup(l);
           }
-          return { kind, threads: THREADS, main: true };
+          return { ...r, main: true };
         },
         rec: async (l) => { await p.recFor(l); await p.warmup(l); return {}; },
         docStart: (l, useTf) => p.startDoc(l, useTf),
@@ -331,11 +368,13 @@ curl -fsSL https://raw.githubusercontent.com/docling-project/docling.rs/master/s
         docFinish: (name, fmt, img) => Promise.resolve(p.finishDoc(name, fmt, img)),
         convertImage: (bytes, name, l, fmt, img) => p.convertImage(bytes, name, l, fmt, img),
         setModels: (m) => p.setProvidedModels(m),
+        stats: async () => p.takeStats(),
       };
     }
 
     // Bring the OCR pipeline up once; concurrent callers share the promise.
     function ensureOcr(layoutOnly = false) {
+      ocrUsed = true;
       if (ocr) return Promise.resolve(ocr);
       if (ocrBooting) return ocrBooting;
       ocrBooting = (async () => {
@@ -347,14 +386,14 @@ curl -fsSL https://raw.githubusercontent.com/docling-project/docling.rs/master/s
         if (providedModels) await drv.setModels(providedModels);
         let r;
         try {
-          r = await drv.boot(lang.value, layoutOnly);
+          r = await drv.boot(lang.value, layoutOnly, gpuRequest());
         } catch (e) {
           // Worker died during boot (module load, CSP, …) — retry same-thread.
           if (drv.worker) {
             try { drv.worker.terminate(); } catch {}
             drv = await mainDriver();
             if (providedModels) await drv.setModels(providedModels);
-            r = await drv.boot(lang.value, layoutOnly);
+            r = await drv.boot(lang.value, layoutOnly, gpuRequest());
           } else throw e;
         }
         if (r.noLayout) {
@@ -363,8 +402,11 @@ curl -fsSL https://raw.githubusercontent.com/docling-project/docling.rs/master/s
             "no layout model — pick the .onnx files from your device, or install them into ./.models/ (see below)",
           );
         }
+        const gpuNote = r.gpu && r.gpu.length
+          ? ` · WebGPU${r.gpuInfo ? ` (${r.gpuInfo})` : ""}: ${r.gpu.join(", ")}`
+          : r.gpuUnavailable ? ` · ${r.gpuUnavailable} — CPU only` : "";
         ocrState.textContent =
-          `OCR ready — ${r.kind} layout, ${r.threads} thread${r.threads > 1 ? "s" : ""}${r.main ? ", main thread" : ""}`;
+          `OCR ready — ${r.kind} layout, ${r.threads} thread${r.threads > 1 ? "s" : ""}${r.main ? ", main thread" : ""}${gpuNote}`;
         ocr = drv;
         return drv;
       })();
@@ -511,15 +553,17 @@ curl -fsSL https://raw.githubusercontent.com/docling-project/docling.rs/master/s
       if (!last || running) return;
       running = true;
       cancelled = false;
+      ocrUsed = false;
       out.textContent = "";
       preview.style.display = "none";
       busy(`converting ${last.name} …`);
       const t0 = performance.now();
       try {
         const text = await convertFile(last.bytes, last.name);
+        const ms = performance.now() - t0;
         lastText = text || "(nothing extracted)";
         show(lastText);
-        ready(`${last.name} → ${to.value} in ${fmtTime(performance.now() - t0)}`);
+        ready(`${last.name} → ${to.value} in ${fmtTime(ms)}${await ocrTimings()}`);
       } catch (e) {
         const msg = String((e && e.message) || e);
         if (cancelled || msg === "stopped") {
@@ -529,6 +573,7 @@ curl -fsSL https://raw.githubusercontent.com/docling-project/docling.rs/master/s
           preview.style.display = "none";
           ready("stopped");
         } else {
+          await ocrTimings(); // drop a failed run's partial timings
           lastText = msg;
           show(lastText);
           ready(`${last.name} — failed`);
@@ -538,15 +583,36 @@ curl -fsSL https://raw.githubusercontent.com/docling-project/docling.rs/master/s
       }
     }
 
-    stop.onclick = () => {
-      cancelled = true;
-      // Terminating the worker is the only way to interrupt WASM mid-inference;
-      // the pipeline is gone with it, so the next run boots a fresh one.
+    // Drop the OCR pipeline; the next conversion boots a fresh one.
+    function resetOcr() {
       if (liveWorkerDrv) liveWorkerDrv.kill();
       ocr = null;
       ocrBooting = null;
       liveWorkerDrv = null;
+      ocrState.textContent = "";
+    }
+    stop.onclick = () => {
+      cancelled = true;
+      // Terminating the worker is the only way to interrupt WASM mid-inference;
+      // the pipeline is gone with it, so the next run boots a fresh one.
+      resetOcr();
     };
+
+    // Inference time per model for the OCR run that just finished, e.g.
+    // " — layout 1.2 s GPU, rec 0.8 s, det 0.3 s GPU": the numbers to compare
+    // the GPU and CPU paths by (#629). Empty when the run needed no OCR.
+    async function ocrTimings() {
+      if (!ocrUsed || !ocr || !ocr.stats) return "";
+      try {
+        const parts = Object.entries(await ocr.stats()).map(([k, v]) => {
+          const on = v.on === "webgpu" ? " GPU" : v.on.startsWith("wasm (") ? ` CPU${v.on.slice(4)}` : "";
+          return `${k} ${fmtTime(v.ms)}${on}`;
+        });
+        return parts.length ? ` — ${parts.join(", ")}` : "";
+      } catch {
+        return "";
+      }
+    }
 
     const fmtTime = (ms) => (ms < 1000 ? `${ms.toFixed(0)} ms` : `${(ms / 1000).toFixed(1)} s`);
     // The Pages control: a positive integer caps how many pages convert;
@@ -623,6 +689,16 @@ curl -fsSL https://raw.githubusercontent.com/docling-project/docling.rs/master/s
       catch (e) { ready(`could not load that model: ${(e && e.message) || e}`); }
     };
     tf.onchange = forceOcr.onchange = () => last && run();
+    // The ONNX Runtime build is chosen when the pipeline boots (a worker keeps
+    // it for life), so switching restarts the pipeline and re-runs.
+    gpu.onchange = () => {
+      const u = new URL(location.href);
+      if (!gpu.checked) u.searchParams.delete("webgpu");
+      else if (gpuParam() === null || OFF.test(gpuParam().trim())) u.searchParams.set("webgpu", "1");
+      history.replaceState(null, "", u);
+      resetOcr();
+      if (last) run();
+    };
 
     // Device model files: read each to an ArrayBuffer and hand them to the
     // pipeline (transferred to the worker) so models load with no download.
