@@ -363,7 +363,8 @@ impl PiiDetector for CompositeDetector {
 /// What was redacted: one count per label (`EMAIL`, `PHONE`, a custom
 /// pattern's name, `REDACTED` for deny terms), the total, and — only with
 /// [`RedactionOptions::return_mapping`] — the `original → placeholder`
-/// pairs.
+/// pairs. A backend that also builds docling's item tree (DOCX, HTML) has
+/// its text redacted in both representations but counted once.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct RedactionReport {
     pub counts: BTreeMap<String, usize>,
@@ -769,6 +770,10 @@ pub struct Redactor<'a> {
     numbers: HashMap<(String, String), usize>,
     next: HashMap<String, usize>,
     report: RedactionReport,
+    /// Off while the item tree is walked: a DOCX / HTML document holds its
+    /// text twice (the flat nodes and the tree the JSON export reads), and
+    /// the report counts a value once, not per representation.
+    counting: bool,
 }
 
 impl<'a> Redactor<'a> {
@@ -782,6 +787,7 @@ impl<'a> Redactor<'a> {
                 mapping: opts.return_mapping.then(Vec::new),
                 ..Default::default()
             },
+            counting: true,
         }
     }
 
@@ -845,8 +851,10 @@ impl<'a> Redactor<'a> {
     /// The placeholder for one span of `original`.
     fn placeholder(&mut self, span: &Span, original: &str) -> String {
         let label = Self::label_of(span);
-        *self.report.counts.entry(label.clone()).or_insert(0) += 1;
-        self.report.total += 1;
+        if self.counting {
+            *self.report.counts.entry(label.clone()).or_insert(0) += 1;
+            self.report.total += 1;
+        }
         let out = match &self.opts.replacement {
             Replacement::Label => format!("[{label}]"),
             Replacement::Fixed(s) => s.clone(),
@@ -1080,8 +1088,16 @@ impl<'a> Redactor<'a> {
     }
 
     /// Redact the item tree (#621: the JSON export reads it, not the nodes,
-    /// for the backends that build one).
+    /// for the backends that build one). The same pseudonym numbering as
+    /// the nodes got; the counts are not incremented again — the tree is
+    /// the same text in docling's shape, not more of it.
     pub fn redact_tree(&mut self, tree: &mut ItemTree) {
+        let counting = std::mem::replace(&mut self.counting, false);
+        self.redact_tree_items(tree);
+        self.counting = counting;
+    }
+
+    fn redact_tree_items(&mut self, tree: &mut ItemTree) {
         for item in tree.items.iter_mut() {
             match &mut item.kind {
                 TreeKind::Text {
@@ -1476,7 +1492,8 @@ mod tests {
         let opts = RedactionOptions::default();
         let d = detector(&opts);
         let report = doc.redact(&opts, &d);
-        assert_eq!(report.counts["EMAIL"], 14);
+        // The tree's three copies are redacted but not counted again.
+        assert_eq!(report.counts["EMAIL"], 11);
         let json = doc.export_to_json();
         let md = doc.export_to_markdown();
         let dl = doc.export_to_doclang();
