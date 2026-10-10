@@ -112,7 +112,10 @@ cargo test -p docling-pdf --features pdfium --lib raster:: pdfium_backend::  # t
   #570; `0` = uncapped, 960 = the pre-#570 PaddleOCR budget),
   `DOCLING_RS_OCR_LINES` (#570; `det` default | `projection` = the strips alone),
   `DOCLING_RS_OCR_TEXT_SCORE` (#570; RapidOCR's `text_score`, 0.5 — lines under
-  it are dropped; `0` keeps all), `DOCLING_OCR_REC_ONNX` + `DOCLING_OCR_DICT`
+  it are dropped; `0` keeps all), `DOCLING_RS_PICTURE_OCR_MIN_SIDE` (#645; 32 —
+  the smallest side in px an embedded picture must have for the opt-in
+  picture-OCR enrichment `do_picture_ocr` / `--picture-ocr` to read it; the
+  text lands on the picture as docling's `description` annotation), `DOCLING_OCR_REC_ONNX` + `DOCLING_OCR_DICT`
   (the recognizer pair; unset → `.models/ocr_rec_v6.onnx` + `ocr_rec_v6_dict.txt`
   when present (#570, RapidOCR's PP-OCRv6), else the PP-OCRv3 en/ch pair),
   `DOCLING_ASR_{ENCODER,DECODER,VOCAB}` (Whisper), `DOCLING_RS_ASR_VAD`
