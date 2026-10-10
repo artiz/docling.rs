@@ -48,8 +48,9 @@ mapping, and per-format conformance.
 the whole converter compiled to wasm: drop a DOCX, PDF, XLSX, EPUB … and get
 Markdown, docling JSON, DocLang XML, LaTeX or a Pandoc AST back. Nothing is uploaded; the page runs
 entirely on your device, phone included. Scanned pages can be OCR'd there too
-(layout + PP-OCR + TableFormer via ONNX Runtime Web) once you point it at the
-models. See [`crates/docling-wasm`](./crates/docling-wasm/README.md).
+(layout + PP-OCR + TableFormer via ONNX Runtime Web, optionally on the GPU
+through WebGPU) once you point it at the models. See
+[`crates/docling-wasm`](./crates/docling-wasm/README.md).
 
 Developed with **Claude Code** and _[TENET](https://github.com/artiz/tenet/tree/master)_ (minimalistic AI-driven development framework).
 

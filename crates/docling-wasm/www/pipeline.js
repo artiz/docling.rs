@@ -7,14 +7,100 @@
 //
 // DOM-free: the only host concern is onStatus(msg, spinning) for progress.
 
-import * as ort from "https://cdn.jsdelivr.net/npm/onnxruntime-web/dist/ort.min.mjs";
 import init, { DigitalConverter, ScannedConverter, convert_scanned_image } from "./pkg/docling_wasm.js";
 
-// Multi-threaded wasm when cross-origin isolated (coi.js); else one thread.
-ort.env.wasm.numThreads = self.crossOriginIsolated
-  ? Math.min(navigator.hardwareConcurrency || 4, 8)
-  : 1;
-export const THREADS = ort.env.wasm.numThreads;
+// ONNX Runtime Web, pinned (#629): an unpinned import follows every release,
+// and the build this page used to load (`ort.min.mjs`) is the JSEP one,
+// deprecated since 1.29. Two builds of the same version:
+//   * ort.wasm.min.mjs   — CPU (wasm) only, the default (3.5 MB gzipped wasm);
+//   * ort.webgpu.min.mjs — adds the native WebGPU EP (6.3 MB gzipped).
+// Not JSEP: its WebGPU AveragePool lacks `ceil_mode`, so the heron layout
+// model fails on it, while the native EP runs it with detections identical to
+// wasm (measured on the #629 probe pages).
+const ORT_BASE = "https://cdn.jsdelivr.net/npm/onnxruntime-web@1.30.0/dist/";
+
+// The models WebGPU may take, and the ones it takes by default: the
+// conv-heavy, fixed-shape graphs. Recognition (batches of varying width) and
+// the TableFormer decoder/bbox (a loop of small per-token ops) stay on wasm,
+// where GPU dispatch and per-shape shader compiles are expected to cost more
+// than they save — to be confirmed on real devices, which is what the
+// `?webgpu=layout,rec,…` override and the per-model timings are for.
+export const GPU_MODELS = ["layout", "det", "rec", "tf_enc", "tf_dec", "tf_bbox"];
+const GPU_DEFAULT = ["layout", "det", "tf_enc"];
+
+/// Parse a WebGPU request: "" / "0" / "off" / "false" → off; "1" / "on" /
+/// "true" → the defaults; "all" → every model; else a comma list of
+/// GPU_MODELS keys (unknown keys ignored).
+export function gpuPlan(req) {
+  const v = String(req ?? "").trim().toLowerCase();
+  if (!v || ["0", "off", "false", "no"].includes(v)) return new Set();
+  if (["1", "on", "true", "yes"].includes(v)) return new Set(GPU_DEFAULT);
+  if (v === "all") return new Set(GPU_MODELS);
+  return new Set(v.split(",").map((s) => s.trim()).filter((s) => GPU_MODELS.includes(s)));
+}
+
+// Load the runtime once per realm: the WebGPU build when the plan wants the
+// GPU and an adapter exists, else the wasm build. A realm keeps the build it
+// loaded first (two ORT builds must not share one) — the host restarts the
+// worker to switch.
+let ort = null;
+let runtime = null;
+async function loadRuntime(plan) {
+  if (runtime) return runtime;
+  let adapter = null;
+  let why = "";
+  if (plan.size) {
+    try {
+      adapter = navigator.gpu ? await navigator.gpu.requestAdapter({ powerPreference: "high-performance" }) : null;
+      if (!adapter) why = navigator.gpu ? "no WebGPU adapter" : "no WebGPU in this browser";
+    } catch (e) {
+      why = `WebGPU adapter request failed: ${(e && e.message) || e}`;
+    }
+  }
+  // The CDN is the one thing OCR fetches that the page does not ship, so a
+  // failure here is the likeliest reason OCR will not start — say so. A
+  // WebGPU build that will not load still leaves the wasm one to try.
+  const load = async (file) => {
+    try {
+      return await import(ORT_BASE + file);
+    } catch (e) {
+      throw new Error(
+        `could not load ONNX Runtime Web (${ORT_BASE + file}) — OCR needs it. Check the network ` +
+          `(a blocker or an offline device will do this); everything else on this page works without it.`,
+      );
+    }
+  };
+  if (adapter) {
+    try {
+      ort = await load("ort.webgpu.min.mjs");
+    } catch (e) {
+      adapter = null;
+      why = "ONNX Runtime's WebGPU build did not load";
+    }
+  }
+  if (!ort) ort = await load("ort.wasm.min.mjs");
+  // Multi-threaded wasm when cross-origin isolated (coi.js); else one thread.
+  // It matters under WebGPU too: ORT keeps shape arithmetic and any op the
+  // EP lacks on the CPU.
+  ort.env.wasm.numThreads = self.crossOriginIsolated
+    ? Math.min(navigator.hardwareConcurrency || 4, 8)
+    : 1;
+  const info = adapter && adapter.info ? [adapter.info.vendor, adapter.info.architecture].filter(Boolean).join(" ") : "";
+  runtime = {
+    threads: ort.env.wasm.numThreads,
+    // The WebGPU build is an asyncify build: a call that enters its wasm while
+    // another is suspended on a GPU round trip corrupts the suspended stack
+    // ("memory access out of bounds", or a hang — measured with an inference
+    // overlapping a session creation, which is what the background detector
+    // load does). Its calls are serialized; the wasm build has no suspension
+    // points and keeps overlapping.
+    serial: !!adapter,
+    gpu: adapter ? plan : new Set(),
+    gpuInfo: info,
+    gpuUnavailable: plan.size && !adapter ? why : "",
+  };
+  return runtime;
+}
 
 // Model bases, tried in order after any user-provided file: local ./.models/
 // (download_dependencies.sh for local dev), then a CORS-enabled Hugging
@@ -54,8 +140,12 @@ const TF_DIRS = ["./.models/tableformer/", MODEL_BASE];
 /// one decoder step feeding the stored cross + growing cache; `bbox` runs the
 /// bbox decoder. The heavy tensors stay here — only tags and logits/hidden
 /// cross the wasm boundary. Geometry: 6 layers, 8 KV heads, head_dim 64.
+/// `run(key, session, feeds)` is the pipeline's timed session.run; the three
+/// sessions may sit on different EPs (outputs come back as CPU tensors, so an
+/// encoder on WebGPU feeds a decoder on wasm as is).
 class JsTfSession {
-  constructor(enc, dec, bbox) {
+  constructor(enc, dec, bbox, run) {
+    this.run = run;
     this.enc = enc;
     this.dec = dec;
     this.bboxSess = bbox;
@@ -65,7 +155,7 @@ class JsTfSession {
     this.cacheV = null;
   }
   async encode(image) {
-    const out = await this.enc.run({ image: new ort.Tensor("float32", image, [1, 3, 448, 448]) });
+    const out = await this.run("tf_enc", this.enc, { image: new ort.Tensor("float32", image, [1, 3, 448, 448]) });
     this.cross = {};
     for (let i = 0; i < 6; i++) {
       this.cross["cross_kt_" + i] = out["cross_kt_" + i];
@@ -77,7 +167,7 @@ class JsTfSession {
     this.cacheV = new ort.Tensor("float32", new Float32Array(0), [6, 1, 8, 0, 64]);
   }
   async step(tag) {
-    const out = await this.dec.run({
+    const out = await this.run("tf_dec", this.dec, {
       tag: new ort.Tensor("int64", BigInt64Array.from([BigInt(tag)]), [1, 1]),
       cache_k: this.cacheK,
       cache_v: this.cacheV,
@@ -88,7 +178,7 @@ class JsTfSession {
     return { logits: out["logits"].data, hidden: out["hidden"].data };
   }
   async bbox(tagH, n) {
-    const out = await this.bboxSess.run({
+    const out = await this.run("tf_bbox", this.bboxSess, {
       enc_out: this.encOut,
       tag_h: new ort.Tensor("float32", tagH, [n, 512]),
     });
@@ -98,6 +188,65 @@ class JsTfSession {
 
 export function createOcr({ onStatus }) {
   const status = (msg, spinning = true) => onStatus && onStatus(msg, spinning);
+
+  // Which execution provider each model actually runs on, and the inference
+  // time spent in it — reported back so the GPU and CPU paths can be compared
+  // on real devices (#629).
+  let plan = new Set();
+  const backend = {};
+  let stats = {};
+  // One ORT call at a time on the WebGPU build (see loadRuntime). Each
+  // create/run call queues on its own — never a whole createSession, whose
+  // wasm fallback queues again.
+  let queue = Promise.resolve();
+  function serial(fn) {
+    if (!runtime || !runtime.serial) return fn();
+    const p = queue.then(fn, fn);
+    queue = p.catch(() => {});
+    return p;
+  }
+  // Session creation per model key: WebGPU when the plan has it, else wasm. A
+  // WebGPU session that will not start (an op the EP lacks, a lost device, GPU
+  // memory) falls back to wasm instead of failing the conversion. `key` null =
+  // never on the GPU (the int8 layout graph: CPU-calibrated QDQ, diverges on
+  // WebGPU — the native pipeline's fp32-on-GPU rule, #74).
+  async function createSession(key, model, opts = {}) {
+    const base = { logSeverityLevel: 3, ...opts };
+    if (key && plan.has(key)) {
+      try {
+        const s = await serial(() => ort.InferenceSession.create(model, { ...base, executionProviders: ["webgpu"] }));
+        backend[key] = "webgpu";
+        return s;
+      } catch (e) {
+        console.warn(`docling.rs: ${key} could not start on WebGPU (${(e && e.message) || e}); using wasm`);
+        backend[key] = "wasm (WebGPU failed)";
+      }
+    } else if (key) {
+      backend[key] = "wasm";
+    }
+    return serial(() => ort.InferenceSession.create(model, { ...base, executionProviders: ["wasm"] }));
+  }
+  // session.run with the time charged to `key` (time in the queue excluded).
+  async function run(key, session, feeds) {
+    let t = 0;
+    try {
+      return await serial(() => {
+        t = performance.now();
+        return session.run(feeds);
+      });
+    } finally {
+      const s = (stats[key] ||= { runs: 0, ms: 0 });
+      s.runs++;
+      s.ms += performance.now() - t;
+    }
+  }
+  // The per-model timings since the last call, with each model's backend.
+  function takeStats() {
+    const out = {};
+    for (const [k, s] of Object.entries(stats)) out[k] = { ...s, ms: Math.round(s.ms), on: backend[k] || "wasm" };
+    stats = {};
+    return out;
+  }
 
   // Model files the user picked from the device (basename → ArrayBuffer),
   // used instead of any network fetch — see index.html's model picker. Reading a
@@ -153,15 +302,12 @@ export function createOcr({ onStatus }) {
         fetch(REC_MODELS[lang].dict, { cache: "force-cache" }).then((r) => r.text()),
       ]);
       status(`starting ${lang} recognition session …`, true);
-      const session = await ort.InferenceSession.create(model, {
-        executionProviders: ["wasm"],
-        logSeverityLevel: 3,
-      });
+      const session = await createSession("rec", model);
       recCache[lang] = {
         dict,
         rec: {
           run: async (n, h, w, data) => {
-            const results = await session.run({
+            const results = await run("rec", session, {
               [session.inputNames[0]]: new ort.Tensor("float32", data, [n, 3, h, w]),
             });
             const t = results[session.outputNames[0]];
@@ -196,13 +342,10 @@ export function createOcr({ onStatus }) {
           return null; // not provided and not fetchable → recognition-only
         }
         try {
-          const session = await ort.InferenceSession.create(buf, {
-            executionProviders: ["wasm"],
-            logSeverityLevel: 3,
-          });
+          const session = await createSession("det", buf);
           return {
             run: async (h, w, data) => {
-              const results = await session.run({
+              const results = await run("det", session, {
                 [session.inputNames[0]]: new ort.Tensor("float32", data, [1, 3, h, w]),
               });
               const t = results[session.outputNames[0]];
@@ -228,25 +371,29 @@ export function createOcr({ onStatus }) {
   let layout = null;
   let layoutKind = null;
   async function loadLayout() {
-    for (const [name, kind] of [
-      ["layout_heron_int8.onnx", "int8"],
-      ["layout_heron.onnx", "fp32"],
-    ]) {
+    // int8 first on wasm (smaller download, conformance-validated on CPU);
+    // fp32 first under WebGPU, where the int8 graph runs but diverges (#629:
+    // max logit diff 5–7, most detections relabelled — CPU-calibrated QDQ).
+    // A device with only the int8 file still converts: int8 on wasm.
+    const gpuLayout = plan.has("layout");
+    const candidates = gpuLayout
+      ? [["layout_heron.onnx", "fp32"], ["layout_heron_int8.onnx", "int8"]]
+      : [["layout_heron_int8.onnx", "int8"], ["layout_heron.onnx", "fp32"]];
+    for (const [name, kind] of candidates) {
       let buf;
       try {
-        ({ buf } = await fetchModel(name, ["./.models/", MODEL_BASE], "layout model (first load only)"));
+        const label = gpuLayout && kind === "fp32" ? "fp32 layout model for WebGPU (first load only)" : "layout model (first load only)";
+        ({ buf } = await fetchModel(name, ["./.models/", MODEL_BASE], label));
       } catch (e) {
         continue; // not provided and not fetchable → try the next candidate
       }
       status("starting layout session …", true);
-      const session = await ort.InferenceSession.create(buf, {
-        executionProviders: ["wasm"],
-        logSeverityLevel: 3,
-      });
+      const session = await createSession(kind === "fp32" ? "layout" : null, buf);
+      if (kind === "int8") backend.layout = gpuLayout ? "wasm (int8 never runs on WebGPU)" : "wasm";
       layoutKind = kind;
       layout = {
         run: async (data) => {
-          const results = await session.run({
+          const results = await run("layout", session, {
             pixel_values: new ort.Tensor("float32", data, [1, 3, 640, 640]),
           });
           const t = (n) => ({ data: results[n].data, dims: Array.from(results[n].dims) });
@@ -258,18 +405,24 @@ export function createOcr({ onStatus }) {
     return null;
   }
 
-  // Bring wasm + the layout model up. Returns "int8" | "fp32" | null.
-  async function boot() {
+  // Bring ONNX Runtime, wasm and the layout model up. `gpu` is the WebGPU
+  // request (see gpuPlan). Returns { kind: "int8" | "fp32" | null, threads,
+  // gpu: [models WebGPU may take], gpuInfo, gpuUnavailable: reason or "" }.
+  async function boot(gpu) {
+    status("loading ONNX Runtime …", true);
+    const rt = await loadRuntime(gpuPlan(gpu));
+    plan = rt.gpu;
     status("loading wasm module …", true);
     await init();
     const kind = await loadLayout();
     // Start fetching the (optional) text detector now, off the critical path.
     loadDetector();
-    return kind;
+    return { kind, threads: rt.threads, gpu: [...plan], gpuInfo: rt.gpuInfo, gpuUnavailable: rt.gpuUnavailable };
   }
 
   // One blank inference through layout + rec so ORT's lazy kernel/thread init
-  // happens now, not inside the first real page.
+  // (and, on WebGPU, the shader compiles) happens now, not inside the first
+  // real page. Not counted in the per-model timings.
   async function warmup(lang) {
     try {
       await layout.run(new Float32Array(3 * 640 * 640));
@@ -278,6 +431,7 @@ export function createOcr({ onStatus }) {
     } catch (e) {
       // best-effort — a failure just means the first page pays it.
     }
+    stats = {};
   }
 
   // TableFormer sessions, loaded lazily on first use (the encoder alone is
@@ -285,11 +439,11 @@ export function createOcr({ onStatus }) {
   let tf = null;
   async function ensureTf() {
     if (tf) return tf;
-    const load = async (name, external) => {
+    const load = async (name, key, external) => {
       // A provided file wins; else the first base (local, then HF). External
       // data comes from a provided file or the same base the .onnx came from.
       const { buf: model, base } = await fetchModel(name + ".onnx", TF_DIRS, `tableformer ${name}`);
-      const opts = { executionProviders: ["wasm"], logSeverityLevel: 3 };
+      const opts = {};
       if (external) {
         const { buf: data } = await fetchModel(
           name + ".onnx.data",
@@ -298,13 +452,13 @@ export function createOcr({ onStatus }) {
         );
         opts.externalData = [{ path: name + ".onnx.data", data: new Uint8Array(data) }];
       }
-      return ort.InferenceSession.create(model, opts);
+      return createSession(key, model, opts);
     };
-    const enc = await load("encoder", false);
-    const dec = await load("decoder_kv", true);
-    const bbox = await load("bbox", true);
+    const enc = await load("encoder", "tf_enc", false);
+    const dec = await load("decoder_kv", "tf_dec", true);
+    const bbox = await load("bbox", "tf_bbox", true);
     status("starting tableformer sessions …", true);
-    tf = new JsTfSession(enc, dec, bbox);
+    tf = new JsTfSession(enc, dec, bbox, run);
     return tf;
   }
 
@@ -369,7 +523,7 @@ export function createOcr({ onStatus }) {
   }
 
   return {
-    boot, warmup, recFor, startDoc, startDigital, addPage, finishDoc, convertImage, setProvidedModels,
+    boot, warmup, recFor, startDoc, startDigital, addPage, finishDoc, convertImage, setProvidedModels, takeStats,
     get layoutKind() { return layoutKind; },
   };
 }
