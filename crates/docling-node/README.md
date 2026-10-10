@@ -482,6 +482,16 @@ constructor; output options (`to`, `imageMode`, `artifactsDir`) are per call.
   `pictureOcrMinSide` (px, default 32) filter which pictures are read;
   `keepPictureImages: false` drops the image bytes after the pass. Off by
   default — every default output is unchanged.
+- `redactPii`: redact personal data from the converted document before any
+  output (#621, a docling.rs extension) — e-mail, phone, card numbers (Luhn),
+  IBANs (mod-97), IP addresses, URL credentials, national IDs and, with the
+  NER model under `.models/ner/`, names / organizations / locations; every
+  string of the document model is rewritten, so Markdown, JSON, DCLX and
+  chunks come out clean. `redactMode` (`"label"` | `"pseudonym"` |
+  `"fixed:<text>"`), `redactKinds` (comma-separated), `redactPattern`
+  (`NAME=REGEX` lines) and `redactImages` (`"drop"` | `"box_out"` | `"keep"`)
+  tune it; the result's `redaction` is the counts per label. Also read by
+  `new Pipeline()`.
 - `asrModel` / `asrLang`: Whisper model preset and transcription language
   (`"auto"` default) for audio/video sources.
 - `encoding`: character encoding of text inputs (Markdown, CSV, AsciiDoc,

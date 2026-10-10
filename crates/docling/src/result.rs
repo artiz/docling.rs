@@ -53,4 +53,8 @@ pub struct ConversionResult {
     pub input_name: String,
     pub format: InputFormat,
     pub errors: Vec<ErrorItem>,
+    /// What the PII redaction pass removed (#621), when
+    /// [`DocumentConverter::redact_pii`](crate::DocumentConverter::redact_pii)
+    /// ran: counts per label, and the mapping only when asked for.
+    pub redaction: Option<docling_core::RedactionReport>,
 }

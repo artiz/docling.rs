@@ -982,6 +982,38 @@ deliberate scope boundary or a cosmetic, single-fixture polish gap.
   master's logo is read once. `picture_ocr.docx` (a 720 × 180 two-line
   screenshot and a 16 × 16 icon) is the fixture; the e2e test also reads
   the text drawn into a generated video clip's frame.
+- **PII redaction** (#621) — Python docling has no redaction stage; this is
+  a docling.rs extension, off by default and inert unless asked for (the
+  regression baselines are untouched). `DocumentConverter::redact_pii` /
+  `--redact-pii` / serve `redact_pii` / Python `redact_pii` / Node
+  `redactPii` run one pass over the `DoclingDocument` after the backend and
+  before any serializer, chunker or stream — not over an export — so the
+  item tree behind the JSON, the link table, code `orig`, key-value cells,
+  captions and hrefs, comments and VTT voices are rewritten along with the
+  body text, and the PDF streaming Markdown matches the buffered one byte
+  for byte (one `Redactor` across the page batches). Detection:
+  `docling_core::redact::PatternDetector` (pure Rust, wasm) — e-mail, phone
+  (dates / versions excluded), Luhn cards, mod-97 IBANs with the registry
+  lengths, IPv4/IPv6, URL credentials, US SSN / UK NINO / Aadhaar
+  (Verhoeff), custom `NAME=REGEX` patterns, deny / allow terms — plus, under
+  the `ner` feature with `dslim/bert-base-NER`'s ONNX export in
+  `.models/ner/` (MIT), person / organization / location spans from BIO
+  wordpieces (`Address` is not a class that model has); a missing model is
+  one warning. Replacement: `[EMAIL]` labels, `[EMAIL_1]` pseudonyms (one
+  number per distinct value, case- and separator-folded, consistent within
+  the document) or a fixed string; overlapping spans resolve longest-first,
+  then card / IBAN / national ID over phone. Images: `drop` (default —
+  pictures and page renders gone), `box_out` (the pipeline's OCR reads each
+  image as a scale-1.0 page and paints over the lines with a hit; without
+  the OCR models, a `no_ocr` converter or on the streaming path it drops),
+  `keep`. The report is counts per label (`RedactionReport`; serve's
+  `X-Docling-Redaction` / item `redaction`), the mapping only on explicit
+  request in the library. Non-goals as in the ticket: no compliance claim,
+  no cross-node entities, no cross-document pseudonyms, the source file
+  untouched. Fixtures `pii_sample.*` (DOCX with a comment and a table, HTML
+  with `mailto:` and a figure, `.eml`, `.vtt`, a text-layer PDF, a scanned
+  PDF, a DOCX with the scan embedded) seed the same values; the e2e checks
+  every export of each.
 
 ## 7. Testing
 

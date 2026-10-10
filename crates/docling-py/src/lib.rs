@@ -102,6 +102,16 @@ struct PyNativeResult {
     /// error_message)` tuples; non-empty exactly for `partial_success`.
     #[pyo3(get)]
     errors: Vec<(String, String, String)>,
+    /// What the PII pass redacted (#621) when `redact_pii` was on: counts
+    /// per label; `None` otherwise.
+    #[pyo3(get)]
+    redaction: Option<std::collections::HashMap<String, usize>>,
+}
+
+fn redaction_counts(
+    report: Option<docling::RedactionReport>,
+) -> Option<std::collections::HashMap<String, usize>> {
+    report.map(|r| r.counts.into_iter().collect())
 }
 
 /// One entry of a ZIP archive converted through
@@ -208,6 +218,14 @@ impl PyDocumentConverter {
     ///   comma-separated DocumentFigureClassifier label list) and
     ///   `picture_ocr_min_side` (px, default 32) filter which pictures are
     ///   read; `keep_picture_images=False` drops the image bytes afterwards.
+    /// * `redact_pii` — redact personal data from the converted document
+    ///   before export (#621; a docling.rs extension): e-mail, phone, card
+    ///   numbers, IBANs, IPs, URL credentials, national IDs, and names /
+    ///   organizations / locations with the NER model (.models/ner/).
+    ///   `redact_mode` (`label` | `pseudonym` | `fixed:<text>`),
+    ///   `redact_kinds` (comma-separated), `redact_pattern` (`NAME=REGEX`
+    ///   lines) and `redact_images` (`drop` | `box_out` | `keep`) tune it;
+    ///   the result's `redaction` carries the counts per label.
     /// * `use_web_browser` — render HTML via headless Chrome before parsing.
     /// * `page_range` — `(first, last)` 1-based inclusive PDF page window
     ///   (docling's option of the same name, #80); other formats ignore it.
@@ -283,6 +301,11 @@ impl PyDocumentConverter {
         picture_ocr_classes = None,
         picture_ocr_min_side = None,
         keep_picture_images = true,
+        redact_pii = false,
+        redact_mode = None,
+        redact_kinds = None,
+        redact_pattern = None,
+        redact_images = None,
         asr_model = None,
         asr_lang = None,
         encoding = None,
@@ -327,6 +350,11 @@ impl PyDocumentConverter {
         picture_ocr_classes: Option<String>,
         picture_ocr_min_side: Option<u32>,
         keep_picture_images: bool,
+        redact_pii: bool,
+        redact_mode: Option<String>,
+        redact_kinds: Option<String>,
+        redact_pattern: Option<String>,
+        redact_images: Option<String>,
         asr_model: Option<String>,
         asr_lang: Option<String>,
         encoding: Option<String>,
@@ -401,6 +429,11 @@ impl PyDocumentConverter {
             picture_ocr_classes,
             picture_ocr_min_side,
             keep_picture_images: Some(keep_picture_images),
+            redact_pii: Some(redact_pii),
+            redact_mode,
+            redact_kinds,
+            redact_pattern,
+            redact_images,
             pipeline,
             vlm_endpoint,
             vlm_model,
@@ -671,13 +704,17 @@ impl PyDocumentConverter {
             if page_range.is_some() {
                 vlm.page_range = page_range;
             }
+            let converter = self.inner.clone();
             return run_interruptible(py, move || {
-                let doc = docling::vlm::convert_vlm(&src, &vlm).map_err(conversion_error)?;
+                let mut doc = docling::vlm::convert_vlm(&src, &vlm).map_err(conversion_error)?;
+                // The PII pass (#621) on the VLM path too.
+                let redaction = converter.redact(&mut doc).map_err(conversion_error)?;
                 Ok(PyNativeResult {
                     status: "success".to_string(),
                     input_name: src.name,
                     document_json: doc.export_to_json(),
                     errors: Vec::new(),
+                    redaction: redaction_counts(redaction),
                 })
             });
         }
@@ -686,6 +723,7 @@ impl PyDocumentConverter {
             let window = page_range.or(self.page_range);
             let default_window = self.page_range;
             let password = self.password.clone();
+            let converter = self.inner.clone();
             return run_interruptible(py, move || {
                 let mut slot = slot.lock().unwrap();
                 let pipeline = slot
@@ -698,13 +736,18 @@ impl PyDocumentConverter {
                 pipeline.set_pages(default_window);
                 // docling's PARTIAL_SUCCESS (#497): a spent budget leaves the
                 // pages done so far and says so in `errors`.
-                let c = outcome.map_err(pdf_error)?;
+                let mut c = outcome.map_err(pdf_error)?;
                 let errors: Vec<docling::ErrorItem> = c
                     .completion
                     .message()
                     .map(docling::ErrorItem::timeout)
                     .into_iter()
                     .collect();
+                // The warm pipeline bypasses `DocumentConverter::convert`:
+                // the PII pass (#621) is applied here.
+                let redaction = converter
+                    .redact(&mut c.document)
+                    .map_err(conversion_error)?;
                 Ok(PyNativeResult {
                     status: if errors.is_empty() {
                         "success"
@@ -715,6 +758,7 @@ impl PyDocumentConverter {
                     input_name: src.name,
                     document_json: c.document.export_to_json(),
                     errors: error_tuples(errors),
+                    redaction: redaction_counts(redaction),
                 })
             });
         }
@@ -780,6 +824,7 @@ fn native_result(r: docling::ConversionResult) -> PyNativeResult {
         input_name: r.input_name,
         document_json,
         errors: error_tuples(r.errors),
+        redaction: redaction_counts(r.redaction),
     }
 }
 

@@ -1,0 +1,104 @@
+{
+  "schema_name": "DoclingDocument",
+  "version": "1.10.0",
+  "name": "pii_sample",
+  "origin": {
+    "mimetype": "text/plain",
+    "binary_hash": 1340237496169753520,
+    "filename": "pii_sample"
+  },
+  "furniture": {
+    "self_ref": "#/furniture",
+    "children": [],
+    "content_layer": "furniture",
+    "name": "_root_",
+    "label": "unspecified"
+  },
+  "body": {
+    "self_ref": "#/body",
+    "children": [
+      {
+        "$ref": "#/texts/0"
+      },
+      {
+        "$ref": "#/texts/1"
+      },
+      {
+        "$ref": "#/texts/2"
+      }
+    ],
+    "content_layer": "body",
+    "name": "_root_",
+    "label": "unspecified"
+  },
+  "groups": [],
+  "texts": [
+    {
+      "self_ref": "#/texts/0",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "source": [
+        {
+          "kind": "track",
+          "start_time": 0.0,
+          "end_time": 3.0,
+          "identifier": "1",
+          "voice": "Angela Merkel"
+        }
+      ],
+      "orig": "My email is john.doe@example.com.",
+      "text": "My email is john.doe@example.com."
+    },
+    {
+      "self_ref": "#/texts/1",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "source": [
+        {
+          "kind": "track",
+          "start_time": 3.0,
+          "end_time": 6.0,
+          "identifier": "2",
+          "voice": "Support Agent"
+        }
+      ],
+      "orig": "Please call +1 (555) 123-4567 and quote card 4111 1111 1111 1111.",
+      "text": "Please call +1 (555) 123-4567 and quote card 4111 1111 1111 1111."
+    },
+    {
+      "self_ref": "#/texts/2",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "source": [
+        {
+          "kind": "track",
+          "start_time": 6.0,
+          "end_time": 9.0,
+          "identifier": "3"
+        }
+      ],
+      "orig": "Released on 2024-01-15 as version 1.2.3.",
+      "text": "Released on 2024-01-15 as version 1.2.3."
+    }
+  ],
+  "pictures": [],
+  "tables": [],
+  "key_value_items": [],
+  "form_items": [],
+  "pages": {}
+}

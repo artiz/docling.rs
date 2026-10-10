@@ -171,6 +171,27 @@ pub struct ConverterOptions {
     /// enrichment pass (#645): slim JSON/DCLX, placeholder-only Markdown, the
     /// OCR text kept. Default `true`.
     pub keep_picture_images: Option<bool>,
+    /// Redact personal data from the converted document before any export
+    /// (#621): e-mail, phone, card numbers (Luhn), IBANs (mod-97), IP
+    /// addresses, URL credentials, national IDs, and — with the NER model
+    /// under `.models/ner/` — names, organizations and locations; every
+    /// string of the document model is rewritten, so Markdown, JSON, DCLX
+    /// and chunks all come out clean. The result's `redaction` carries the
+    /// counts per label. A docling.rs extension; default `false`.
+    pub redact_pii: Option<bool>,
+    /// `"label"` (default: `[EMAIL]`) | `"pseudonym"` (`[EMAIL_1]`, one
+    /// number per distinct value) | `"fixed:<text>"`.
+    pub redact_mode: Option<String>,
+    /// Comma-separated kinds to redact (`"email,phone,credit_card,iban,
+    /// ip_address,url_credentials,national_id,person,organization,location,
+    /// address"`); unset = every kind.
+    pub redact_kinds: Option<String>,
+    /// Extra patterns as `NAME=REGEX` lines (newline-separated); the match
+    /// (or capture group 1) is redacted as `[NAME]`.
+    pub redact_pattern: Option<String>,
+    /// Embedded images and page renders: `"drop"` (default) | `"box_out"`
+    /// (OCR and paint over the lines carrying a value) | `"keep"`.
+    pub redact_images: Option<String>,
     /// `"standard"` (default) or `"vlm"` (#77): replace the whole ONNX stack —
     /// layout, OCR, TableFormer — with a remote OpenAI-compatible vision
     /// endpoint, which converts each rendered page on its own. PDF and image
@@ -344,6 +365,12 @@ pub struct ConvertOptions {
     pub picture_ocr_classes: Option<String>,
     pub picture_ocr_min_side: Option<u32>,
     pub keep_picture_images: Option<bool>,
+    /// PII redaction (#621) and its settings. See [`ConverterOptions`].
+    pub redact_pii: Option<bool>,
+    pub redact_mode: Option<String>,
+    pub redact_kinds: Option<String>,
+    pub redact_pattern: Option<String>,
+    pub redact_images: Option<String>,
     /// `"standard"` (default) or `"vlm"` (#77): convert PDF/image pages
     /// through a remote OpenAI-compatible vision endpoint instead of the ONNX
     /// stack. The `vlm_*` options below take effect only under `"vlm"` and are
@@ -409,6 +436,9 @@ pub struct ConvertResult {
     /// `ConversionResult.errors`; non-empty exactly when `status` is
     /// `"partial_success"` (today: a spent `documentTimeout`, #497).
     pub errors: Vec<ConversionErrorItem>,
+    /// What the PII pass redacted (#621) when `redactPii` was on: counts
+    /// per label (`{ EMAIL: 2, PHONE: 1 }`); absent otherwise.
+    pub redaction: Option<std::collections::HashMap<String, u32>>,
 }
 
 /// docling's `ErrorItem`: one recorded problem of a conversion that still
@@ -523,6 +553,7 @@ pub struct RawResult {
     input_name: String,
     images: Vec<(String, Vec<u8>)>,
     errors: Vec<docling::ErrorItem>,
+    redaction: Option<docling::RedactionReport>,
 }
 
 impl RawResult {
@@ -533,6 +564,9 @@ impl RawResult {
             status: self.status,
             input_name: self.input_name,
             errors: error_items(self.errors),
+            redaction: self
+                .redaction
+                .map(|r| r.counts.into_iter().map(|(k, v)| (k, v as u32)).collect()),
             images: self
                 .images
                 .into_iter()
@@ -635,6 +669,7 @@ fn render_doc(
     format: String,
     status: String,
     errors: Vec<docling::ErrorItem>,
+    redaction: Option<docling::RedactionReport>,
 ) -> RawResult {
     let (content, images) = match cfg.to {
         OutputKind::Json => (doc.export_to_json(), Vec::new()),
@@ -665,6 +700,7 @@ fn render_doc(
         input_name,
         images,
         errors,
+        redaction,
     }
 }
 
@@ -698,6 +734,10 @@ fn run_convert(source: SourceDocument, cfg: &ConvertConfig) -> Result<RawResult>
         document.strict_markdown = cfg.opts.strict.unwrap_or(false);
         document.compact_tables = cfg.opts.compact_tables.unwrap_or(false);
         document.page_break_placeholder = cfg.page_break_placeholder.clone();
+        // The PII pass (#621) lapses on this path too unless applied here.
+        let redaction = build_converter(cfg)?
+            .redact(&mut document)
+            .map_err(convert_err)?;
         return Ok(render_doc(
             document,
             cfg,
@@ -705,6 +745,7 @@ fn run_convert(source: SourceDocument, cfg: &ConvertConfig) -> Result<RawResult>
             format,
             "success".to_string(),
             Vec::new(),
+            redaction,
         ));
     }
     let converter = build_converter(cfg)?;
@@ -718,6 +759,7 @@ fn run_convert(source: SourceDocument, cfg: &ConvertConfig) -> Result<RawResult>
         format,
         status,
         result.errors,
+        result.redaction,
     ))
 }
 
@@ -1533,6 +1575,11 @@ fn run_pipeline(
     };
     doc.strict_markdown = strict;
     doc.page_break_placeholder = cfg.page_break_placeholder.clone();
+    // The warm pipeline bypasses `DocumentConverter::convert`: the PII pass
+    // (#621) is applied here, like the serializer knobs above.
+    let redaction = build_converter(cfg)?
+        .redact(&mut doc)
+        .map_err(convert_err)?;
     let status = if errors.is_empty() {
         "success"
     } else {
@@ -1545,6 +1592,7 @@ fn run_pipeline(
         source.format.as_str().to_string(),
         status.to_string(),
         errors,
+        redaction,
     ))
 }
 

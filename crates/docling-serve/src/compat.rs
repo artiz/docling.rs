@@ -398,6 +398,7 @@ pub(crate) fn run(
             content_type: "application/json",
             disposition: None,
             confidence: None,
+            redaction: None,
             body: serde_json::to_vec(&body).expect("the envelope serializes"),
         };
     }
@@ -442,6 +443,7 @@ pub(crate) fn run(
         content_type: "application/zip",
         disposition: Some("attachment; filename=\"converted_docs.zip\"".into()),
         confidence: None,
+        redaction: None,
         body: docling::dclx::zip_bytes(refs),
     }
 }

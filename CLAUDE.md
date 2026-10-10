@@ -115,7 +115,11 @@ cargo test -p docling-pdf --features pdfium --lib raster:: pdfium_backend::  # t
   it are dropped; `0` keeps all), `DOCLING_RS_PICTURE_OCR_MIN_SIDE` (#645; 32 —
   the smallest side in px an embedded picture must have for the opt-in
   picture-OCR enrichment `do_picture_ocr` / `--picture-ocr` to read it; the
-  text lands on the picture as docling's `description` annotation), `DOCLING_OCR_REC_ONNX` + `DOCLING_OCR_DICT`
+  text lands on the picture as docling's `description` annotation),
+  `DOCLING_RS_NER_DIR` (#621; `.models/ner` —
+  the token-classification model + `tokenizer.json` + `config.json` the
+  opt-in PII redaction pass `redact_pii` / `--redact-pii` reads names,
+  organizations and locations with; missing → one warning, pattern-only), `DOCLING_OCR_REC_ONNX` + `DOCLING_OCR_DICT`
   (the recognizer pair; unset → `.models/ocr_rec_v6.onnx` + `ocr_rec_v6_dict.txt`
   when present (#570, RapidOCR's PP-OCRv6), else the PP-OCRv3 en/ch pair),
   `DOCLING_ASR_{ENCODER,DECODER,VOCAB}` (Whisper), `DOCLING_RS_ASR_VAD`
