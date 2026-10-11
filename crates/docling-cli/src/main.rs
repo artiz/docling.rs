@@ -18,7 +18,7 @@
 //! the same name): one identifier per line, sorted, for scripts that ask the
 //! binary what it converts instead of hard-coding a list.
 //!
-//! Usage: docling-rs [--strict] [--page-break-placeholder TEXT] [--to md|json|html|text|dclx|chunks|images|latex|pandoc|vtt] [--pages A-B] [--scale X] [--images MODE] [--input GLOB --output DIR [--jobs N]] [--output-file PATH] [--fetch-images] [--image-sources none|embedded|local|remote] [--image-hosts LIST] [--max-images N] [--max-image-bytes N] [--max-image-total-mb N] [--min-image-bytes N] [--list-attachments] [--skip-empty-cells] [--compact-tables] [--ebcdic-layout JSON|PATH] [--encoding LABEL] [--no-stream] [--no-table-former] [--no-ocr] [--text-layer-only] [--password PASSWORD | --password-file PATH] [--force-full-page-ocr] [--no-text-panels] [--heading-hierarchy] [--ocr-lang LANG] [--ocr-engine ppocr|tesseract] [--ocr-mode MODE] [--ocr-scale X] [--images-scale X] [--page-images] [--chunker hierarchical|hybrid] [--chunk-tokenizer PATH] [--chunk-max-tokens N] [--no-chunk-merge-peers] [--pipeline standard|vlm] [--vlm-endpoint URL] [--vlm-model NAME] [--vlm-api-key TOKEN] [--vlm-prompt TEXT] [--vlm-max-tokens N] [--asr-model PRESET] [--asr-lang CODE] [--video-frames N|all] [--video-scene-threshold X] [--video-frame-max-side PX] [--video-frame-dedupe N] [--xbrl-taxonomy DIR] [--use-web-browser] [--enrich-picture-classes] [--enrich-code] [--enrich-formula] [--picture-ocr] [--picture-ocr-classes LABELS] [--picture-ocr-min-side N] [--no-picture-images] [--redact-pii] [--redact-mode label|pseudonym|fixed:TEXT] [--redact-kinds LIST] [--redact-pattern NAME=REGEX]... [--redact-images drop|box_out|keep] [--document-timeout SECONDS] [--abort-on-error] [--output-dirs auto|flat|mirror] <input-file> | SOURCE...
+//! Usage: docling-rs [--strict] [--page-break-placeholder TEXT] [--layers body|all|LIST] [--traverse-pictures] [--to md|json|html|text|dclx|chunks|images|latex|pandoc|vtt] [--pages A-B] [--scale X] [--images MODE] [--input GLOB --output DIR [--jobs N]] [--output-file PATH] [--fetch-images] [--image-sources none|embedded|local|remote] [--image-hosts LIST] [--max-images N] [--max-image-bytes N] [--max-image-total-mb N] [--min-image-bytes N] [--list-attachments] [--skip-empty-cells] [--compact-tables] [--ebcdic-layout JSON|PATH] [--encoding LABEL] [--no-stream] [--no-table-former] [--no-ocr] [--text-layer-only] [--password PASSWORD | --password-file PATH] [--force-full-page-ocr] [--no-text-panels] [--heading-hierarchy] [--ocr-lang LANG] [--ocr-engine ppocr|tesseract] [--ocr-mode MODE] [--ocr-scale X] [--images-scale X] [--page-images] [--chunker hierarchical|hybrid] [--chunk-tokenizer PATH] [--chunk-max-tokens N] [--no-chunk-merge-peers] [--pipeline standard|vlm] [--vlm-endpoint URL] [--vlm-model NAME] [--vlm-api-key TOKEN] [--vlm-prompt TEXT] [--vlm-max-tokens N] [--asr-model PRESET] [--asr-lang CODE] [--video-frames N|all] [--video-scene-threshold X] [--video-frame-max-side PX] [--video-frame-dedupe N] [--xbrl-taxonomy DIR] [--use-web-browser] [--enrich-picture-classes] [--enrich-code] [--enrich-formula] [--picture-ocr] [--picture-ocr-classes LABELS] [--picture-ocr-min-side N] [--no-picture-images] [--redact-pii] [--redact-mode label|pseudonym|fixed:TEXT] [--redact-kinds LIST] [--redact-pattern NAME=REGEX]... [--redact-images drop|box_out|keep] [--document-timeout SECONDS] [--abort-on-error] [--output-dirs auto|flat|mirror] <input-file> | SOURCE...
 //!   --to FORMAT        repeatable (#491, like Python's `docling convert --to
 //!                      md --to json`): each document converts once and is
 //!                      written in every format named, `<stem>.md` +
@@ -115,6 +115,11 @@
 //!                      lands only between two rendered blocks on different
 //!                      pages — never first or last, empty pages collapse. Off
 //!                      by default: docling's Markdown carries no page breaks.
+//!   --layers body|all|LIST, --traverse-pictures
+//!                      docling's `export_to_markdown(included_content_layers=…,
+//!                      traverse_pictures=…)`: layers for md/text/html (default
+//!                      body; LIST from body,furniture,notes,invisible), picture
+//!                      text for md/text. Both imply --no-stream.
 //!   --no-stream        build the whole document before printing Markdown instead
 //!                      of streaming it page by page. Streaming is the default for
 //!                      Markdown (placeholder/embedded images); JSON and referenced
@@ -260,7 +265,10 @@ use std::path::Path;
 use std::process::ExitCode;
 
 use docling::chunks::{ChunkOptions, ChunkerKind};
-use docling::{DocumentConverter, ImageMode, InputFormat, Pipeline, SourceDocument};
+use docling::{
+    ContentLayers, DoclingDocument, DocumentConverter, HtmlExportOptions, ImageMode, InputFormat,
+    MarkdownExportOptions, Pipeline, SourceDocument,
+};
 
 /// The PII pass's counts for stderr: `EMAIL=2 PHONE=1 (3 spans)` (#621).
 fn redaction_summary(report: &docling::RedactionReport) -> String {
@@ -359,6 +367,9 @@ OUTPUT
                           vtt = WebVTT subtitles from a transcript's (or a .vtt's) cues
   --strict                cleaner, more conformant Markdown (Markdown only)
   --page-break-placeholder TEXT   insert TEXT between pages (Markdown only, e.g. <!-- page break -->)
+  --layers body|all|LIST  content layers md/text/html render (default body; LIST from
+                          body,furniture,notes,invisible); implies --no-stream
+  --traverse-pictures     render text nested in pictures (md/text); implies --no-stream
   --images MODE           picture handling: placeholder (default; embedded for --to pandoc)
                           | embedded | referenced (docling's --image-export-mode)
   --pandoc-api-version V  fail unless the Pandoc AST is this API (`--to pandoc`; only 1.23)
@@ -539,6 +550,7 @@ fn main() -> ExitCode {
     // `None` = not given: placeholder, except embedded for `--to pandoc` (#537).
     let mut images: Option<String> = None;
     let mut no_stream = false;
+    let mut export = ExportLayers::default();
     let mut bench_warm: Option<usize> = None;
     let mut scale: f32 = 2.0;
     let mut chunk_opts = docling::chunks::ChunkOptions::default();
@@ -638,6 +650,22 @@ fn main() -> ExitCode {
                 }
             },
             "--no-stream" => no_stream = true,
+            // Export-only (docling-core's `included_content_layers` /
+            // `traverse_pictures`); the streamed path doesn't take them yet.
+            "--layers" => match args.next().map(|v| ContentLayers::parse_list(&v)) {
+                Some(Ok(l)) if l != ContentLayers::NONE => {
+                    export.layers = l;
+                    no_stream = true;
+                }
+                _ => {
+                    eprintln!("error: --layers needs body, all or a list of body,furniture,notes,invisible");
+                    return ExitCode::from(2);
+                }
+            },
+            "--traverse-pictures" => {
+                export.traverse_pictures = true;
+                no_stream = true;
+            }
             // `--no-tables` is docling's spelling (`do_table_structure=False`, #611).
             "--no-table-former" | "--no-tables" => opts.no_table_former = Some(true),
             // Since 2.0 (#611) `--no-ocr` is docling's: keep layout +
@@ -1119,6 +1147,7 @@ fn main() -> ExitCode {
         let cfg = BatchCfg {
             to,
             image_mode,
+            export,
             pandoc_image_mode,
             opts,
             pages,
@@ -1193,6 +1222,7 @@ fn main() -> ExitCode {
         let cfg = BatchCfg {
             to,
             image_mode,
+            export,
             pandoc_image_mode,
             opts,
             pages,
@@ -1310,7 +1340,7 @@ fn main() -> ExitCode {
         };
         document.strict_markdown = strict;
         document.page_break_placeholder = page_break_placeholder.clone();
-        return output_document(document, &to, image_mode, &path, &chunk_opts);
+        return output_document(document, &to, image_mode, &path, &chunk_opts, export);
     }
 
     // Validated above, so this cannot fail; the mapping onto the builder is
@@ -1342,7 +1372,7 @@ fn main() -> ExitCode {
                     pages,
                 ) {
                     doc.page_break_placeholder = page_break_placeholder.clone();
-                    return output_document(doc, &to, image_mode, &path, &chunk_opts);
+                    return output_document(doc, &to, image_mode, &path, &chunk_opts, export);
                 }
                 eprintln!("error: {e}");
                 return ExitCode::FAILURE;
@@ -1386,7 +1416,14 @@ fn main() -> ExitCode {
                             pages,
                         ) {
                             doc.page_break_placeholder = page_break_placeholder.clone();
-                            return output_document(doc, &to, image_mode, &path, &chunk_opts);
+                            return output_document(
+                                doc,
+                                &to,
+                                image_mode,
+                                &path,
+                                &chunk_opts,
+                                export,
+                            );
                         }
                     }
                     eprintln!("error: {e}");
@@ -1426,13 +1463,13 @@ fn main() -> ExitCode {
                 pages,
             ) {
                 doc.page_break_placeholder = page_break_placeholder.clone();
-                return output_document(doc, &to, image_mode, &path, &chunk_opts);
+                return output_document(doc, &to, image_mode, &path, &chunk_opts, export);
             }
             eprintln!("error: {e}");
             return ExitCode::FAILURE;
         }
     };
-    output_document(document, &to, image_mode, &path, &chunk_opts)
+    output_document(document, &to, image_mode, &path, &chunk_opts, export)
 }
 
 /// Launch-blocker fallback: a bare `cargo install docling-cli` ships no ONNX
@@ -1473,6 +1510,53 @@ fn pdf_text_layer_fallback(
     }
 }
 
+/// `--layers` / `--traverse-pictures`: docling-core's
+/// `export_to_markdown(included_content_layers=…, traverse_pictures=…)` for
+/// md/text/html. The default (body, no traversal) is upstream's default
+/// export byte for byte. HTML takes the layers only.
+#[derive(Clone, Copy, Default)]
+struct ExportLayers {
+    layers: ContentLayers,
+    traverse_pictures: bool,
+}
+
+type Rendered = (String, Vec<(String, Vec<u8>)>);
+
+impl ExportLayers {
+    fn markdown(self, doc: &DoclingDocument, mode: ImageMode, dir: &str) -> Rendered {
+        doc.export_to_markdown_with_options(&self.md(MarkdownExportOptions {
+            image_mode: mode,
+            artifacts_dir: dir.into(),
+            ..Default::default()
+        }))
+    }
+
+    /// `export_to_text`, layers applied: its options, its trimmed newline.
+    fn text(self, doc: &DoclingDocument) -> String {
+        let (text, _) =
+            doc.export_to_markdown_with_options(&self.md(MarkdownExportOptions::plain_text()));
+        text.strip_suffix('\n').unwrap_or(&text).to_string()
+    }
+
+    fn html(self, doc: &DoclingDocument, mode: ImageMode, dir: &str) -> Rendered {
+        let (image_mode, artifacts_dir, layers) = (mode, dir.into(), self.layers);
+        doc.export_to_html_with(&HtmlExportOptions {
+            image_mode,
+            artifacts_dir,
+            layers,
+        })
+    }
+
+    fn md(self, base: MarkdownExportOptions) -> MarkdownExportOptions {
+        let (layers, traverse_pictures) = (self.layers, self.traverse_pictures);
+        MarkdownExportOptions {
+            layers,
+            traverse_pictures,
+            ..base
+        }
+    }
+}
+
 /// The buffered output tail shared by the standard (non-streaming) and VLM
 /// paths: `--to` selection, image sidecars, exit code.
 /// The CLI flags a batch run freezes for every file (#205).
@@ -1481,6 +1565,7 @@ struct BatchCfg {
     /// document converts once and is written in every one of them.
     to: Vec<String>,
     image_mode: ImageMode,
+    export: ExportLayers,
     /// `image_mode` for `--to pandoc`: embedded unless `--images` was given
     /// (#537).
     pandoc_image_mode: ImageMode,
@@ -2104,7 +2189,7 @@ fn batch_convert_one(
             "latex" => std::fs::write(&out, document.export_to_latex())
                 .map_err(|e| format!("writing {}: {e}", out.display()))?,
             // #613: docling's `--to text` writes `export_to_text()` verbatim.
-            "text" => std::fs::write(&out, document.export_to_text())
+            "text" => std::fs::write(&out, cfg.export.text(&document))
                 .map_err(|e| format!("writing {}: {e}", out.display()))?,
             // #614: docling's `--to vtt` (`save_as_vtt`), verbatim.
             "vtt" => std::fs::write(&out, document.export_to_vtt())
@@ -2144,7 +2229,7 @@ fn batch_convert_one(
                     .map(|s| s.to_string_lossy().into_owned())
                     .unwrap_or_else(|| "document".into());
                 let art = format!("{stem}_artifacts");
-                let (html, artifacts) = document.export_to_html_with_images(cfg.image_mode, &art);
+                let (html, artifacts) = cfg.export.html(&document, cfg.image_mode, &art);
                 let parent = out.parent().unwrap_or(Path::new(""));
                 for (rel, bytes) in &artifacts {
                     let target = parent.join(rel);
@@ -2160,7 +2245,8 @@ fn batch_convert_one(
             }
             _ => {
                 if cfg.image_mode == ImageMode::Placeholder {
-                    std::fs::write(&out, document.export_to_markdown())
+                    let (md, _) = cfg.export.markdown(&document, cfg.image_mode, "artifacts");
+                    std::fs::write(&out, md)
                         .map_err(|e| format!("writing {}: {e}", out.display()))?;
                 } else {
                     // `referenced` images land next to the output file, in a
@@ -2170,8 +2256,7 @@ fn batch_convert_one(
                         .map(|s| s.to_string_lossy().into_owned())
                         .unwrap_or_else(|| "document".into());
                     let art = format!("{stem}_artifacts");
-                    let (md, artifacts) =
-                        document.export_to_markdown_with_images(cfg.image_mode, &art);
+                    let (md, artifacts) = cfg.export.markdown(&document, cfg.image_mode, &art);
                     let parent = out.parent().unwrap_or(Path::new(""));
                     for (rel, bytes) in &artifacts {
                         let target = parent.join(rel);
@@ -2501,6 +2586,7 @@ fn output_document(
     image_mode: ImageMode,
     path: &str,
     chunk: &ChunkOptions,
+    export: ExportLayers,
 ) -> ExitCode {
     if to == "json" {
         let mut out = std::io::BufWriter::new(std::io::stdout().lock());
@@ -2518,7 +2604,7 @@ fn output_document(
     // #492: a complete HTML document on stdout; `--images referenced` writes
     // the pictures under ./artifacts/ like the Markdown path does.
     if to == "html" {
-        let (html, artifacts) = document.export_to_html_with_images(image_mode, "artifacts");
+        let (html, artifacts) = export.html(&document, image_mode, "artifacts");
         for (rel, bytes) in &artifacts {
             let target = Path::new(rel);
             if let Some(dir) = target.parent() {
@@ -2574,7 +2660,7 @@ fn output_document(
     // #613: docling's `--to text` — the plain-text serializer, a trailing
     // newline added on stdout as for LaTeX.
     if to == "text" {
-        println!("{}", document.export_to_text());
+        println!("{}", export.text(&document));
         return ExitCode::SUCCESS;
     }
 
@@ -2620,12 +2706,7 @@ fn output_document(
         return ExitCode::SUCCESS;
     }
 
-    if image_mode == ImageMode::Placeholder {
-        print!("{}", document.export_to_markdown());
-        return ExitCode::SUCCESS;
-    }
-
-    let (md, artifacts) = document.export_to_markdown_with_images(image_mode, "artifacts");
+    let (md, artifacts) = export.markdown(&document, image_mode, "artifacts");
     for (rel, bytes) in &artifacts {
         let rel = Path::new(rel);
         if let Some(dir) = rel.parent() {
@@ -2789,6 +2870,50 @@ fn chunks_json(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// `--layers` / `--traverse-pictures` on a scanned letter's shape: a
+    /// page footer (bank details) and a picture holding a form field. The
+    /// defaults are the plain exports; each flag adds exactly its part.
+    #[test]
+    fn export_layers_add_the_footer_and_the_picture_text() {
+        use docling::Node;
+        let mut doc = DoclingDocument::new("letter");
+        doc.add_paragraph("Invoice");
+        doc.push(Node::Picture {
+            caption: None,
+            caption_href: None,
+            image: None,
+            classification: None,
+            description: None,
+            caption_parent: Default::default(),
+            caption_location: None,
+        });
+        doc.push(Node::PictureChildren(vec![Node::Paragraph {
+            text: "IBAN DE00".into(),
+        }]));
+        doc.push(Node::FurnitureText {
+            label: "page_footer".into(),
+            text: "Bank AG".into(),
+        });
+        let md = |e: ExportLayers| e.markdown(&doc, ImageMode::Placeholder, "artifacts").0;
+        let html = |e: ExportLayers| e.html(&doc, ImageMode::Placeholder, "artifacts").0;
+        let default = ExportLayers::default();
+        assert_eq!(md(default), doc.export_to_markdown());
+        assert_eq!(default.text(&doc), doc.export_to_text());
+        assert_eq!(html(default), doc.export_to_html());
+        assert!(!md(default).contains("Bank AG") && !md(default).contains("IBAN"));
+        let all = ExportLayers {
+            layers: ContentLayers::ALL,
+            ..default
+        };
+        assert!(md(all).contains("Bank AG") && !md(all).contains("IBAN"));
+        assert!(all.text(&doc).contains("Bank AG") && html(all).contains("Bank AG"));
+        let traverse = ExportLayers {
+            traverse_pictures: true,
+            ..default
+        };
+        assert!(md(traverse).contains("IBAN DE00") && !md(traverse).contains("Bank AG"));
+    }
 
     #[test]
     fn glob_base_stops_at_the_first_metachar_component() {
