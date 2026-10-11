@@ -15,7 +15,7 @@
 use std::sync::mpsc::{sync_channel, Receiver};
 use std::thread::JoinHandle;
 
-use docling_core::{ImageMode, MarkdownStreamer};
+use docling_core::{ImageMode, MarkdownExportOptions, MarkdownStreamer};
 
 use crate::converter::DocumentConverter;
 use crate::error::ConversionError;
@@ -98,7 +98,6 @@ pub(crate) struct StreamSettings {
     pub ocr_scale: Option<f32>,
     /// Picture-crop scale (#520); page images have no place in a stream.
     pub images_scale: Option<f32>,
-    pub artifacts_dir: String,
     /// [`DocumentConverter::page_break_placeholder`] for the streamer — the
     /// PDF path never builds a `DoclingDocument` to carry it.
     pub page_break_placeholder: Option<String>,
@@ -116,12 +115,12 @@ pub(crate) struct StreamSettings {
 /// Spawn the background conversion and return the chunk iterator.
 ///
 /// [`ImageMode::Referenced`] is memory-bounded (issue #80): each page's image
-/// files are written under the converter's artifacts dir as that page's chunk
-/// is emitted, then dropped, instead of accumulating until export.
+/// files are written under `options.artifacts_dir` as that page's chunk is
+/// emitted, then dropped, instead of accumulating until export.
 pub(crate) fn spawn(
     converter: DocumentConverter,
     source: SourceDocument,
-    image_mode: ImageMode,
+    options: MarkdownExportOptions,
 ) -> MarkdownStream {
     let (tx, rx) = sync_channel::<Result<String, ConversionError>>(CHANNEL_DEPTH);
     let handle = std::thread::spawn(move || match source.format {
@@ -138,17 +137,37 @@ pub(crate) fn spawn(
             if !converter.heading_hierarchy_enabled()
                 && crate::sniff::looks_like_pdf(&source.bytes) =>
         {
-            run_pdf(converter.stream_settings(), &source, image_mode, &tx)
+            run_pdf(converter.stream_settings(), &source, &options, &tx)
         }
         // Every other backend builds the whole `DoclingDocument` synchronously, so
         // there is no latency to stream away; serialize it through the same chunk
         // API for a uniform interface (one chunk plus the trailing newline).
-        _ => run_buffered(converter, source, image_mode, &tx),
+        _ => run_buffered(converter, source, &options, &tx),
     });
     MarkdownStream {
         rx: Some(rx),
         handle: Some(handle),
     }
+}
+
+/// The streamer for `options` (#599's layers, picture traversal, escaping,
+/// placeholder — byte-identical to the buffered
+/// `export_to_markdown_with_options`), with the converter's table style and
+/// page-break placeholder.
+fn streamer(
+    strict: bool,
+    compact_tables: bool,
+    page_break_placeholder: Option<String>,
+    options: &MarkdownExportOptions,
+) -> MarkdownStreamer {
+    MarkdownStreamer::with_artifacts(
+        strict,
+        ImageMode::Placeholder,
+        compact_tables,
+        &options.artifacts_dir,
+    )
+    .with_export_options(options)
+    .with_page_break_placeholder(page_break_placeholder)
 }
 
 /// Write one push's referenced-mode images (paths are relative to the process
@@ -170,19 +189,18 @@ fn write_artifacts(artifacts: Vec<(String, Vec<u8>)>) -> Result<(), ConversionEr
 fn run_pdf(
     settings: StreamSettings,
     source: &SourceDocument,
-    image_mode: ImageMode,
+    options: &MarkdownExportOptions,
     tx: &std::sync::mpsc::SyncSender<Result<String, ConversionError>>,
 ) {
     // Tables use the padded GitHub serializer unless the converter asked for
     // compact ones — the same knob the buffered PDF path carries on its
     // document (`--compact-tables` used to reach only `--no-stream`).
-    let mut streamer = MarkdownStreamer::with_artifacts(
+    let mut streamer = streamer(
         settings.strict,
-        image_mode,
         settings.compact_tables,
-        &settings.artifacts_dir,
-    )
-    .with_page_break_placeholder(settings.page_break_placeholder.clone());
+        settings.page_break_placeholder.clone(),
+        options,
+    );
     // The PII pass (#621) on the streaming path: one `Redactor` across the
     // page batches, so pseudonym numbering follows document order exactly
     // as the buffered pass numbers it. `BoxOut` needs the OCR pipeline,
@@ -283,7 +301,7 @@ fn run_pdf(
 fn run_buffered(
     converter: DocumentConverter,
     source: SourceDocument,
-    image_mode: ImageMode,
+    options: &MarkdownExportOptions,
     tx: &std::sync::mpsc::SyncSender<Result<String, ConversionError>>,
 ) {
     let settings = converter.stream_settings();
@@ -294,13 +312,12 @@ fn run_buffered(
             return;
         }
     };
-    let mut streamer = MarkdownStreamer::with_artifacts(
+    let mut streamer = streamer(
         settings.strict,
-        image_mode,
         doc.compact_tables,
-        &settings.artifacts_dir,
-    )
-    .with_page_break_placeholder(doc.page_break_placeholder.clone());
+        doc.page_break_placeholder.clone(),
+        options,
+    );
     let chunk = streamer.push(&doc.nodes, &doc.links);
     if let Err(e) = write_artifacts(streamer.take_artifacts()) {
         let _ = tx.send(Err(e));

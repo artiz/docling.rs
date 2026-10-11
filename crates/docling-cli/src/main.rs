@@ -119,7 +119,7 @@
 //!                      docling's `export_to_markdown(included_content_layers=…,
 //!                      traverse_pictures=…)`: layers for md/text/html (default
 //!                      body; LIST from body,furniture,notes,invisible), picture
-//!                      text for md/text. Both imply --no-stream.
+//!                      text for md/text.
 //!   --no-stream        build the whole document before printing Markdown instead
 //!                      of streaming it page by page. Streaming is the default for
 //!                      Markdown (placeholder/embedded images); JSON and referenced
@@ -368,8 +368,8 @@ OUTPUT
   --strict                cleaner, more conformant Markdown (Markdown only)
   --page-break-placeholder TEXT   insert TEXT between pages (Markdown only, e.g. <!-- page break -->)
   --layers body|all|LIST  content layers md/text/html render (default body; LIST from
-                          body,furniture,notes,invisible); implies --no-stream
-  --traverse-pictures     render text nested in pictures (md/text); implies --no-stream
+                          body,furniture,notes,invisible)
+  --traverse-pictures     render text nested in pictures (md/text)
   --images MODE           picture handling: placeholder (default; embedded for --to pandoc)
                           | embedded | referenced (docling's --image-export-mode)
   --pandoc-api-version V  fail unless the Pandoc AST is this API (`--to pandoc`; only 1.23)
@@ -651,21 +651,15 @@ fn main() -> ExitCode {
             },
             "--no-stream" => no_stream = true,
             // Export-only (docling-core's `included_content_layers` /
-            // `traverse_pictures`); the streamed path doesn't take them yet.
+            // `traverse_pictures`), streamed and buffered alike.
             "--layers" => match args.next().map(|v| ContentLayers::parse_list(&v)) {
-                Some(Ok(l)) if l != ContentLayers::NONE => {
-                    export.layers = l;
-                    no_stream = true;
-                }
+                Some(Ok(l)) if l != ContentLayers::NONE => export.layers = l,
                 _ => {
                     eprintln!("error: --layers needs body, all or a list of body,furniture,notes,invisible");
                     return ExitCode::from(2);
                 }
             },
-            "--traverse-pictures" => {
-                export.traverse_pictures = true;
-                no_stream = true;
-            }
+            "--traverse-pictures" => export.traverse_pictures = true,
             // `--no-tables` is docling's spelling (`do_table_structure=False`, #611).
             "--no-table-former" | "--no-tables" => opts.no_table_former = Some(true),
             // Since 2.0 (#611) `--no-ocr` is docling's: keep layout +
@@ -1360,7 +1354,9 @@ fn main() -> ExitCode {
     // path. `--no-stream` opts back into buffering.
     let is_markdown = matches!(to.as_str(), "md" | "markdown");
     if is_markdown && !no_stream {
-        let stream = match converter.convert_streaming_images(source, image_mode) {
+        let stream = match converter
+            .convert_streaming_with_options(source, &export.md_images(image_mode, "artifacts"))
+        {
             Ok(s) => s,
             Err(e) => {
                 if let Some(mut doc) = pdf_text_layer_fallback(
@@ -1524,11 +1520,16 @@ type Rendered = (String, Vec<(String, Vec<u8>)>);
 
 impl ExportLayers {
     fn markdown(self, doc: &DoclingDocument, mode: ImageMode, dir: &str) -> Rendered {
-        doc.export_to_markdown_with_options(&self.md(MarkdownExportOptions {
-            image_mode: mode,
+        doc.export_to_markdown_with_options(&self.md_images(mode, dir))
+    }
+
+    /// The Markdown export's options, buffered or streamed.
+    fn md_images(self, image_mode: ImageMode, dir: &str) -> MarkdownExportOptions {
+        self.md(MarkdownExportOptions {
+            image_mode,
             artifacts_dir: dir.into(),
             ..Default::default()
-        }))
+        })
     }
 
     /// `export_to_text`, layers applied: its options, its trimmed newline.

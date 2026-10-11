@@ -190,7 +190,7 @@ use crate::source::SourceDocument;
 #[cfg(feature = "pdf")]
 use crate::stream::MarkdownStream;
 #[cfg(feature = "pdf")]
-use docling_core::ImageMode;
+use docling_core::{ImageMode, MarkdownExportOptions};
 
 /// Routes a [`SourceDocument`] to the backend for its format and returns a
 /// [`ConversionResult`].
@@ -1594,13 +1594,35 @@ impl DocumentConverter {
         source: SourceDocument,
         image_mode: ImageMode,
     ) -> Result<MarkdownStream, ConversionError> {
+        self.convert_streaming_with_options(
+            source,
+            &MarkdownExportOptions {
+                image_mode,
+                artifacts_dir: self.artifacts_dir.clone(),
+                ..MarkdownExportOptions::default()
+            },
+        )
+    }
+
+    /// Like [`convert_streaming_images`](Self::convert_streaming_images) but
+    /// with every [`MarkdownExportOptions`] setting (#599): content layers,
+    /// picture traversal, escaping, the image placeholder. Referenced images
+    /// go under `options.artifacts_dir` (not the converter's
+    /// [`artifacts_dir`](Self::artifacts_dir)). The concatenated chunks match
+    /// the buffered `export_to_markdown_with_options(options)` byte-for-byte.
+    #[cfg(feature = "pdf")]
+    pub fn convert_streaming_with_options(
+        &self,
+        source: SourceDocument,
+        options: &MarkdownExportOptions,
+    ) -> Result<MarkdownStream, ConversionError> {
         if let Some(allowed) = &self.allowed_formats {
             if !allowed.contains(&source.format) {
                 return Err(ConversionError::UnsupportedFormat(source.format));
             }
         }
         let source = self.with_encoding(source);
-        Ok(crate::stream::spawn(self.clone(), source, image_mode))
+        Ok(crate::stream::spawn(self.clone(), source, options.clone()))
     }
 
     /// Whether the heading-hierarchy stage (#302) is enabled — the streaming
@@ -1632,7 +1654,6 @@ impl DocumentConverter {
             ocr_mode: self.ocr_mode_choice(),
             ocr_scale: self.ocr_scale_choice(),
             images_scale: self.images_scale,
-            artifacts_dir: self.artifacts_dir.clone(),
             page_break_placeholder: self.page_break_placeholder.clone(),
             compact_tables: self.compact_tables,
             document_timeout: self.document_timeout,
