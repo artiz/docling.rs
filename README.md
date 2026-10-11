@@ -817,7 +817,10 @@ upstream leaves them out; `export_to_html_with_layers` /
 `MarkdownExportOptions { layers, traverse_pictures, escape_html,
 escape_underscores, image_placeholder, image_mode }` take the set to render
 — byte-identical to docling-core for the same sets, and the defaults are
-`export_to_markdown()` / `export_to_html()` byte for byte:
+`export_to_markdown()` / `export_to_html()` byte for byte.
+`convert_streaming_with_options` streams the same Markdown. The CLI's
+`--layers body|all|LIST` and `--traverse-pictures` set them for
+md/text/html (#661):
 
 ```rust
 use docling::{ContentLayer, ContentLayers, MarkdownExportOptions};
@@ -976,9 +979,6 @@ and defaults in [`docs/OPTIONS.md`](docs/OPTIONS.md):
   relief — omit empty cells from XLSX table rows; unpadded `| a | b |`
   Markdown tables. `--page-break-placeholder TEXT`: docling's
   `page_break_placeholder` between rendered pages.
-- `--layers body|all|LIST`, `--traverse-pictures` (CLI only, imply
-  `--no-stream`): docling's `included_content_layers` / `traverse_pictures`
-  for md/text/html — keep page headers/footers and the text inside pictures.
 
 Scanned pages come upright before layout and OCR: a `/Rotate` flag is
 applied, and a page rotated physically in the raster is probed under each

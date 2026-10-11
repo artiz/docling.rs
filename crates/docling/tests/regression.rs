@@ -235,6 +235,52 @@ fn streaming_matches_buffered_markdown() {
     );
 }
 
+/// `convert_streaming_with_options` with every layer and picture traversal
+/// on — the CLI's streamed `--layers all --traverse-pictures` — matches the
+/// buffered `export_to_markdown_with_options` byte for byte.
+#[test]
+fn streaming_with_options_matches_buffered_markdown() {
+    let options = docling::MarkdownExportOptions {
+        layers: docling::ContentLayers::ALL,
+        traverse_pictures: true,
+        ..Default::default()
+    };
+    let mut failures = Vec::new();
+    for src in &sources() {
+        let rel = &src.rel;
+        let buffered = match convert(&src.path, false) {
+            Ok(d) => d.export_to_markdown_with_options(&options).0,
+            Err(e) => {
+                failures.push(format!("{rel}: convert error: {e}"));
+                continue;
+            }
+        };
+        let streamed = SourceDocument::from_file(&src.path)
+            .map_err(|e| e.to_string())
+            .and_then(|source| {
+                converter_for(&src.path)
+                    .convert_streaming_with_options(source, &options)
+                    .map_err(|e| e.to_string())
+            })
+            .and_then(|stream| {
+                stream
+                    .collect::<Result<String, _>>()
+                    .map_err(|e| e.to_string())
+            });
+        match streamed {
+            Ok(streamed) if streamed == buffered => {}
+            Ok(_) => failures.push(format!("{rel}: streamed Markdown != buffered export")),
+            Err(e) => failures.push(format!("{rel}: stream error: {e}")),
+        }
+    }
+    assert!(
+        failures.is_empty(),
+        "{} streaming mismatch(es):\n{}",
+        failures.len(),
+        failures.join("\n")
+    );
+}
+
 #[test]
 fn outputs_match_fixtures() {
     let regen = std::env::var_os("DOCLING_RS_REGEN").is_some();

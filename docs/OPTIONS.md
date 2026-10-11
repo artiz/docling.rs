@@ -120,8 +120,8 @@ codec or copybook when the conversion runs.
   `export_to_markdown(included_content_layers=…, traverse_pictures=…)` for
   `--to md`/`text`/`html` (HTML takes the layers only), inert for the other
   formats. `furniture` keeps page headers/footers; `--layers furniture`
-  alone drops the body, as upstream's set does. Both imply `--no-stream`
-  for now.
+  alone drops the body, as upstream's set does. Markdown keeps streaming
+  with them (`convert_streaming_with_options`).
 - **serve** — the query string, the JSON body and multipart text parts are
   three layers of the same struct (body over query, text parts over query),
   merged generically; a text value is read as the option's type (string,
