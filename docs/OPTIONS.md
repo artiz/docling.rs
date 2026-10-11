@@ -114,6 +114,14 @@ codec or copybook when the conversion runs.
   `--pdf-password` (= `--password`), and `--output-file PATH` — the one result written to
   exactly PATH, refused unless there is exactly one input document and one
   `--to` format (docling's checks and messages).
+  Two CLI-only export options sit beside `--images`, outside the shared
+  table: `--layers body|all|LIST` (LIST from `body,furniture,notes,invisible`;
+  default `body`) and `--traverse-pictures` — docling-core's
+  `export_to_markdown(included_content_layers=…, traverse_pictures=…)` for
+  `--to md`/`text`/`html` (HTML takes the layers only), inert for the other
+  formats. `furniture` keeps page headers/footers; `--layers furniture`
+  alone drops the body, as upstream's set does. Both imply `--no-stream`
+  for now.
 - **serve** — the query string, the JSON body and multipart text parts are
   three layers of the same struct (body over query, text parts over query),
   merged generically; a text value is read as the option's type (string,

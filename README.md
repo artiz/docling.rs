@@ -976,6 +976,9 @@ and defaults in [`docs/OPTIONS.md`](docs/OPTIONS.md):
   relief — omit empty cells from XLSX table rows; unpadded `| a | b |`
   Markdown tables. `--page-break-placeholder TEXT`: docling's
   `page_break_placeholder` between rendered pages.
+- `--layers body|all|LIST`, `--traverse-pictures` (CLI only, imply
+  `--no-stream`): docling's `included_content_layers` / `traverse_pictures`
+  for md/text/html — keep page headers/footers and the text inside pictures.
 
 Scanned pages come upright before layout and OCR: a `/Rotate` flag is
 applied, and a page rotated physically in the raster is probed under each
