@@ -45,7 +45,7 @@ never both):
 
 ```bash
 pip install docling-rs            # CPU wheels: Linux x86-64/arm64/s390x, Windows; sdist elsewhere
-# or, with an NVIDIA GPU (Linux x86_64, CUDA 12 + cuDNN 9, glibc ≥ 2.38):
+# or, with an NVIDIA GPU (Linux x86_64, CUDA 13 + cuDNN 9, glibc ≥ 2.38):
 pip install docling-rs-cuda       # converts on the GPU automatically, CPU fallback
 pip uninstall docling             # optional — only when you no longer import it
 ```
@@ -450,7 +450,7 @@ and falls back to CPU when not — no environment setup needed.
 `DOCLING_RS_EP=cpu` (or `AcceleratorOptions(device="cpu")`) forces CPU;
 `DOCLING_RS_EP=cuda` / `device="cuda"` pins the GPU and fails loudly if it
 can't initialize. The fp32 models are preferred automatically on GPU, and
-**CUDA 12 + cuDNN 9 must be installed on the system** — the wheel ships the
+**CUDA 13 + cuDNN 9 must be installed on the system** — the wheel ships the
 ONNX Runtime provider, not the CUDA toolkit. The wheel is tagged **`manylinux_2_38`**
 (glibc ≥ 2.38 at runtime, i.e. Ubuntu 24.04+ / Debian 13+): the CUDA ONNX
 Runtime static binaries carry glibc-2.38 symbols, so this floor is inherent —

@@ -116,7 +116,7 @@ async function main() {
     fs.writeFileSync(tmp, raw)
     fs.renameSync(tmp, dest)
   }
-  console.log('docling.rs-cuda: ready (CUDA 12 + cuDNN 9 required at runtime; DOCLING_RS_EP overrides)')
+  console.log('docling.rs-cuda: ready (CUDA 13 + cuDNN 9 required at runtime; DOCLING_RS_EP overrides)')
 }
 
 main().catch((e) => fail(e.stack || String(e)))

@@ -21,7 +21,7 @@ Requirements:
 
 - Linux x64, glibc ≥ 2.38 (Ubuntu 24.04+ / Debian 13+ era — inherited from the
   CUDA ONNX Runtime binaries, same floor as the `docling-rs-cuda` Python wheel)
-- CUDA 12 + cuDNN 9 installed on the system (the download ships the ONNX
+- CUDA 13 + cuDNN 9 installed on the system (the download ships the ONNX
   Runtime provider, not the CUDA toolkit)
 - network access to `github.com` at install time — or set
   `DOCLING_RS_NPM_CUDA_URL` to a mirror base URL / local directory holding the

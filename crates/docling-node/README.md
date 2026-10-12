@@ -62,7 +62,7 @@ package** (Linux x64). Same JS API; the npm tarball is a few KB and its
 this repo's matching `npm-cuda-v<version>` GitHub release, verifying each
 file against the release's sha256 manifest (the binaries are far past npm's
 practical size limits — the same fetch-at-install model `onnxruntime-node`
-uses). Requires glibc ≥ 2.38 (Ubuntu 24.04+ era), CUDA 12 + cuDNN 9 at
+uses). Requires glibc ≥ 2.38 (Ubuntu 24.04+ era), CUDA 13 + cuDNN 9 at
 runtime, and `github.com` access at install time — or set
 `DOCLING_RS_NPM_CUDA_URL` to a mirror base URL / local directory with the
 same assets (air-gapped installs). To keep existing `require('docling.rs')`
@@ -90,7 +90,7 @@ cp ../../target/release/libonnxruntime_providers_{shared,cuda}.so .
 The CUDA execution provider is two *separate* shared libraries that ONNX
 Runtime dlopens at session start; the `$ORIGIN` rpath makes it look next to
 the `.node` addon, so ship them alongside it (without them a CUDA build
-falls back to CPU with a warning). CUDA 12 + cuDNN 9 must be installed on the
+falls back to CPU with a warning). CUDA 13 + cuDNN 9 must be installed on the
 system. A GPU build defaults to `DOCLING_RS_EP=auto` — GPU when usable, CPU
 fallback; set `DOCLING_RS_EP=cuda` to fail loudly instead of falling back, or
 `DOCLING_RS_EP=cpu` to force CPU. `tensorrt` / `directml` (Windows) /

@@ -10,7 +10,7 @@
 #   CPU (multi-arch: linux/amd64 + linux/arm64):
 #     - ghcr.io/docling-project/docling-rs-serve      — HTTP conversion API
 #     - ghcr.io/docling-project/docling-rs            — docling-rs CLI
-#   CUDA GPU (linux/amd64, CUDA 12 + cuDNN 9, --features cuda):
+#   CUDA GPU (linux/amd64, CUDA 13 + cuDNN 9, --features cuda):
 #     - ghcr.io/docling-project/docling-rs-serve-cuda — CUDA HTTP conversion API
 #     - ghcr.io/docling-project/docling-rs-cuda       — CUDA docling-rs CLI
 #
@@ -448,7 +448,7 @@ jobs:
           push-to-registry: true
 
   # ============================================================================
-  # 3. CUDA GPU Build & Publish (Linux x86_64, CUDA 12 + cuDNN 9)
+  # 3. CUDA GPU Build & Publish (Linux x86_64, CUDA 13 + cuDNN 9)
   # ============================================================================
   build-and-publish-cuda:
     name: build & publish CUDA (linux/amd64)
@@ -501,7 +501,7 @@ jobs:
             type=raw,value=${{ inputs.tag }},enable=${{ inputs.tag != '' }}
           labels: |
             org.opencontainers.image.title=docling-rs-serve-cuda
-            org.opencontainers.image.description=CUDA 12 GPU document conversion API in Rust (PDF, DOCX, PPTX, XLSX, HTML, Audio)
+            org.opencontainers.image.description=CUDA 13 GPU document conversion API in Rust (PDF, DOCX, PPTX, XLSX, HTML, Audio)
             org.opencontainers.image.licenses=MIT
             org.opencontainers.image.vendor=docling-project
 
@@ -522,7 +522,7 @@ jobs:
             type=raw,value=${{ inputs.tag }},enable=${{ inputs.tag != '' }}
           labels: |
             org.opencontainers.image.title=docling-rs-cuda
-            org.opencontainers.image.description=docling-rs CLI (CUDA 12 GPU) — document conversion to Markdown / JSON / DCLX / LaTeX
+            org.opencontainers.image.description=docling-rs CLI (CUDA 13 GPU) — document conversion to Markdown / JSON / DCLX / LaTeX
             org.opencontainers.image.licenses=MIT
             org.opencontainers.image.vendor=docling-project
 

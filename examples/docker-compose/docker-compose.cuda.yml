@@ -1,9 +1,9 @@
-# NVIDIA CUDA 12 GPU deployment for docling-serve
+# NVIDIA CUDA 13 GPU deployment for docling-serve
 #
 # Requires:
 #   - NVIDIA GPU (Turing / Ampere / Ada / Hopper / Blackwell)
 #   - NVIDIA Container Toolkit installed on host
-#   - Host driver >= 525 (CUDA 12 compatible)
+#   - Host driver >= 580 (CUDA 13 compatible)
 #
 # Run:
 #   docker compose -f docker-compose.cuda.yml up -d

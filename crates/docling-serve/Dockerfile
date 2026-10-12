@@ -7,7 +7,8 @@
 #   docker build -f crates/docling-serve/Dockerfile --target cli   -t docling-rs .
 # (`serve` is the default CPU target if --target is omitted.)
 #
-# NVIDIA CUDA 12 GPU targets (built with --features cuda on Ubuntu 24.04 + cuDNN 9):
+# NVIDIA CUDA 13 GPU targets (built with --features cuda on Ubuntu 24.04 + cuDNN 9;
+# host driver >= 580):
 #   docker build -f crates/docling-serve/Dockerfile --target serve-cuda -t docling-rs-serve-cuda .
 #   docker build -f crates/docling-serve/Dockerfile --target cli-cuda   -t docling-rs-cuda .
 #
@@ -76,13 +77,19 @@ RUN cargo build --release -p docling-serve -p docling-cli --locked
 # Ubuntu 24.04 (glibc 2.39 + GCC 14) matches the runtime-cuda base below (#333),
 # avoiding glibc version mismatches between build and runtime environments.
 # ------------------------------------------------------------------------------
-FROM nvidia/cuda:12.6.2-cudnn-devel-ubuntu24.04 AS chef-cuda
+# CUDA 13 (#664): pyke's ONNX Runtime 1.28 build for ort 2.0.0-rc.13 — the
+# only CUDA build it ships for this target — links libcublas/libcudart .so.13,
+# so a CUDA 12 base cannot load its CUDA provider. ORT_CUDA_VERSION pins the
+# download instead of leaving it to ort's detection. 13.0, the oldest 13.x:
+# the NVIDIA runtime admits it on any driver with CUDA 13 support (>= 580).
+FROM nvidia/cuda:13.0.3-cudnn-devel-ubuntu24.04 AS chef-cuda
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl build-essential pkg-config ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 ENV RUSTUP_HOME=/usr/local/rustup \
     CARGO_HOME=/usr/local/cargo \
-    PATH=/usr/local/cargo/bin:$PATH
+    PATH=/usr/local/cargo/bin:$PATH \
+    ORT_CUDA_VERSION=13
 RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain 1.96.0 --profile minimal \
     && cargo install cargo-chef --locked
 WORKDIR /src
@@ -171,9 +178,9 @@ WORKDIR /app
 COPY --from=assets /src/.models ./.models
 
 # ------------------------------------------------------------------------------
-# Stage: runtime-cuda (CUDA 12 + cuDNN 9 base on Ubuntu 24.04)
+# Stage: runtime-cuda (CUDA 13 + cuDNN 9 base on Ubuntu 24.04)
 # ------------------------------------------------------------------------------
-FROM nvidia/cuda:12.6.2-cudnn-runtime-ubuntu24.04 AS runtime-cuda
+FROM nvidia/cuda:13.0.3-cudnn-runtime-ubuntu24.04 AS runtime-cuda
 RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates ffmpeg tesseract-ocr curl \
        fonts-liberation fonts-dejavu-core \
     && rm -rf /var/lib/apt/lists/*
