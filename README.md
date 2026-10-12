@@ -293,8 +293,8 @@ The following container images are available on **GitHub Container Registry (GHC
 |---|---|---|
 | [`ghcr.io/docling-project/docling-rs-serve`](https://github.com/docling-project/docling.rs/pkgs/container/docling-rs-serve) | High-performance document conversion HTTP API with PDF, DOCX, PPTX, XLSX, HTML, images, and audio/video models pre-installed (CPU). | `linux/amd64`, `linux/arm64` |
 | [`ghcr.io/docling-project/docling-rs`](https://github.com/docling-project/docling.rs/pkgs/container/docling-rs) | The `docling-rs` CLI with the same models baked in — batch conversion without installing Rust (CPU). Entrypoint `docling-rs`, working directory `/data`. | `linux/amd64`, `linux/arm64` |
-| [`ghcr.io/docling-project/docling-rs-serve-cuda`](https://github.com/docling-project/docling.rs/pkgs/container/docling-rs-serve-cuda) | NVIDIA CUDA 12 GPU-accelerated HTTP conversion API (CUDA 12 + cuDNN 9, Linux x86_64). Tagged like the CPU images: `latest` plus `v1.81.0`, `1.81`, `1`. | `linux/amd64` |
-| [`ghcr.io/docling-project/docling-rs-cuda`](https://github.com/docling-project/docling.rs/pkgs/container/docling-rs-cuda) | NVIDIA CUDA 12 GPU-accelerated `docling-rs` CLI. Tagged like the CPU images: `latest` plus `v1.81.0`, `1.81`, `1`. | `linux/amd64` |
+| [`ghcr.io/docling-project/docling-rs-serve-cuda`](https://github.com/docling-project/docling.rs/pkgs/container/docling-rs-serve-cuda) | NVIDIA CUDA 13 GPU-accelerated HTTP conversion API (CUDA 13 + cuDNN 9, Linux x86_64). Tagged like the CPU images: `latest` plus `v1.81.0`, `1.81`, `1`. | `linux/amd64` |
+| [`ghcr.io/docling-project/docling-rs-cuda`](https://github.com/docling-project/docling.rs/pkgs/container/docling-rs-cuda) | NVIDIA CUDA 13 GPU-accelerated `docling-rs` CLI. Tagged like the CPU images: `latest` plus `v1.81.0`, `1.81`, `1`. | `linux/amd64` |
 
 ```bash
 # Run docling-rs-serve HTTP API (CPU):
@@ -1730,9 +1730,12 @@ built with `--use_xnnpack`). When a GPU provider is selected, the pipeline autom
 the fp32 models over the int8 defaults — the int8 exports are calibrated for
 CPU kernels (an explicit `DOCLING_*_ONNX` path still wins; the Python
 bindings no longer set one themselves, #602, so this holds there too). CUDA needs the
-CUDA 12 runtime + cuDNN 9 on the machine; the `ort` crate downloads the
-matching ONNX Runtime binaries at build time and copies the provider
-libraries next to the binary.
+CUDA 13 runtime + cuDNN 9 on the machine (NVIDIA driver ≥ 580); the `ort` crate downloads the
+matching ONNX Runtime binaries at build time and links the provider
+libraries next to the binary — as symlinks into its download cache, so
+install them with `cp -L`, next to the installed binary: ONNX Runtime
+opens them from the binary's directory, not through `LD_LIBRARY_PATH`
+(#664).
 
 The same features exist on every binding: the Python GPU wheel ships as
 [`docling-rs-cuda`](https://pypi.org/project/docling-rs-cuda/) on PyPI, the
@@ -1785,7 +1788,7 @@ reproduce with `scripts/test/gpu_benchmark.sh`.
 > 2. **Build in a newer-glibc container** (when the OS must stay put):
 >    ```bash
 >    docker run --rm -it --gpus all -v $PWD:/w -w /w \
->        nvidia/cuda:12.6.2-cudnn-devel-ubuntu24.04 bash
+>        nvidia/cuda:13.0.3-cudnn-devel-ubuntu24.04 bash
 >    # inside: apt-get update && apt-get install -y curl build-essential
 >    #         curl https://sh.rustup.rs -sSf | sh -s -- -y && . ~/.cargo/env
 >    #         cargo build --release -p docling-cli --features cuda

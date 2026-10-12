@@ -266,7 +266,7 @@ jobs:
   # Operational notes:
   # - the wheel bundles libonnxruntime_providers_{shared,cuda}.so; if PyPI
   #   rejects the upload for size, request a per-project file-size bump
-  #   (onnxruntime-gpu is the precedent). CUDA 12 + cuDNN 9 remain *system*
+  #   (onnxruntime-gpu is the precedent). CUDA 13 + cuDNN 9 remain *system*
   #   requirements at runtime — the wheel does not ship them.
   # - PyPI Trusted Publishing is per-project: register this workflow as a
   #   trusted publisher on the `docling-rs-cuda` project as well, or the

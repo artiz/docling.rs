@@ -479,6 +479,9 @@ Environment knobs (execution providers, model paths, worker counts) are
 documented in the README: https://github.com/docling-project/docling.rs";
 
 fn main() -> ExitCode {
+    // #664: a CUDA build started by bare name re-executes under its absolute
+    // path, or ONNX Runtime looks for its providers in the working directory.
+    docling::reexec_for_provider_libraries();
     // `--help` / `--version` before anything else: they must answer on a
     // binary whose models are missing, and a smoke test that runs
     // `docling-rs --version` should not be told to convert a file named

@@ -35,6 +35,9 @@ use std::process::ExitCode;
 use docling_serve::{serve, ServeConfig};
 
 fn main() -> ExitCode {
+    // #664: a CUDA build started by bare name re-executes under its absolute
+    // path, or ONNX Runtime looks for its providers in the working directory.
+    docling::reexec_for_provider_libraries();
     // #263: a long-lived server defaults the ONNX CPU arena OFF — measured
     // here, a warm server's retained RSS drops ~3x (2.0 GB -> 0.7 GB after
     // large-PDF requests) at no measurable latency cost, and stops ratcheting

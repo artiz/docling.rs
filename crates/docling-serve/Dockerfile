@@ -7,7 +7,8 @@
 #   docker build -f crates/docling-serve/Dockerfile --target cli   -t docling-rs .
 # (`serve` is the default CPU target if --target is omitted.)
 #
-# NVIDIA CUDA 12 GPU targets (built with --features cuda on Ubuntu 24.04 + cuDNN 9):
+# NVIDIA CUDA 13 GPU targets (built with --features cuda on Ubuntu 24.04 + cuDNN 9;
+# host driver >= 580):
 #   docker build -f crates/docling-serve/Dockerfile --target serve-cuda -t docling-rs-serve-cuda .
 #   docker build -f crates/docling-serve/Dockerfile --target cli-cuda   -t docling-rs-cuda .
 #
@@ -76,13 +77,19 @@ RUN cargo build --release -p docling-serve -p docling-cli --locked
 # Ubuntu 24.04 (glibc 2.39 + GCC 14) matches the runtime-cuda base below (#333),
 # avoiding glibc version mismatches between build and runtime environments.
 # ------------------------------------------------------------------------------
-FROM nvidia/cuda:12.6.2-cudnn-devel-ubuntu24.04 AS chef-cuda
+# CUDA 13 (#664): pyke's ONNX Runtime 1.28 build for ort 2.0.0-rc.13 — the
+# only CUDA build it ships for this target — links libcublas/libcudart .so.13,
+# so a CUDA 12 base cannot load its CUDA provider. ORT_CUDA_VERSION pins the
+# download instead of leaving it to ort's detection. 13.0, the oldest 13.x:
+# the NVIDIA runtime admits it on any driver with CUDA 13 support (>= 580).
+FROM nvidia/cuda:13.0.3-cudnn-devel-ubuntu24.04 AS chef-cuda
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl build-essential pkg-config ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 ENV RUSTUP_HOME=/usr/local/rustup \
     CARGO_HOME=/usr/local/cargo \
-    PATH=/usr/local/cargo/bin:$PATH
+    PATH=/usr/local/cargo/bin:$PATH \
+    ORT_CUDA_VERSION=13
 RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain 1.96.0 --profile minimal \
     && cargo install cargo-chef --locked
 WORKDIR /src
@@ -92,10 +99,15 @@ COPY --from=planner /src/recipe.json recipe.json
 # Build dependency tree with --features cuda so ONNX Runtime with CUDA is fetched and cooked.
 RUN cargo chef cook --release -p docling-serve -p docling-cli --features cuda --locked --recipe-path recipe.json
 COPY . .
+# ort's copy-dylibs leaves the provider libraries in target/release as
+# symlinks into its download cache (~/.cache/ort.pyke.io), which no later
+# stage has: copy the files they point to (`cp -L`), and fail the build if a
+# symlink still reached the copy — `cp -a` shipped dangling links (#664).
 RUN cargo build --release -p docling-serve -p docling-cli --features cuda --locked \
     && mkdir -p /src/cuda-dylibs \
-    && test $(find target/release -maxdepth 1 -name "libonnxruntime_providers_*.so" | wc -l) -ge 2 \
-    && find target/release -maxdepth 1 -name "libonnxruntime_providers_*.so" -exec cp -av {} /src/cuda-dylibs/ \;
+    && test $(find -L target/release -maxdepth 1 -name "libonnxruntime_providers_*.so" -type f | wc -l) -ge 2 \
+    && find target/release -maxdepth 1 -name "libonnxruntime_providers_*.so" -exec cp -vL {} /src/cuda-dylibs/ \; \
+    && ! find /src/cuda-dylibs -type l | grep .
 # ------------------------------------------------------------------------------
 # Stage: IBM Z (s390x) cross build (#504)
 #
@@ -166,15 +178,22 @@ WORKDIR /app
 COPY --from=assets /src/.models ./.models
 
 # ------------------------------------------------------------------------------
-# Stage: runtime-cuda (CUDA 12 + cuDNN 9 base on Ubuntu 24.04)
+# Stage: runtime-cuda (CUDA 13 + cuDNN 9 base on Ubuntu 24.04)
 # ------------------------------------------------------------------------------
-FROM nvidia/cuda:12.6.2-cudnn-runtime-ubuntu24.04 AS runtime-cuda
+FROM nvidia/cuda:13.0.3-cudnn-runtime-ubuntu24.04 AS runtime-cuda
 RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates ffmpeg tesseract-ocr curl \
        fonts-liberation fonts-dejavu-core \
     && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 COPY --from=assets /src/.models ./.models
+# ONNX Runtime opens its providers by absolute path from the directory of the
+# binary it is linked into — never through LD_LIBRARY_PATH (#664) — so they
+# must be reachable next to /usr/local/bin/docling-{serve,rs}: the files live
+# in /usr/local/lib, linked from /usr/local/bin. A binary started by bare
+# name re-executes under its absolute path to keep that lookup off the
+# working directory.
 COPY --from=build-cuda /src/cuda-dylibs/ /usr/local/lib/
+RUN ln -s /usr/local/lib/libonnxruntime_providers_*.so /usr/local/bin/
 # Fonts pinned as in the CPU runtime stage (#633).
 ENV LD_LIBRARY_PATH=/usr/local/lib:${LD_LIBRARY_PATH:-} \
     DOCLING_RS_EP=auto \
@@ -235,7 +254,8 @@ FROM runtime-cuda AS cli-cuda
 COPY --from=build-cuda /src/target/release/docling-rs /usr/local/bin/docling-rs
 ENV DOCLING_RS_MODELS_DIR=/app/.models
 WORKDIR /data
-ENTRYPOINT ["docling-rs"]
+# Absolute, so ONNX Runtime finds its providers next to the binary (#664).
+ENTRYPOINT ["/usr/local/bin/docling-rs"]
 
 # --- ghcr.io/docling-project/docling-rs-serve-cuda: the HTTP API (CUDA) --------
 FROM runtime-cuda AS serve-cuda
@@ -243,4 +263,5 @@ COPY --from=build-cuda /src/target/release/docling-serve /usr/local/bin/docling-
 EXPOSE 5001
 HEALTHCHECK --interval=15s --timeout=5s --start-period=45s --retries=3 \
     CMD curl -f http://localhost:5001/ready || exit 1
-CMD ["docling-serve", "--addr", "0.0.0.0:5001", "--warmup"]
+# Absolute, so ONNX Runtime finds its providers next to the binary (#664).
+CMD ["/usr/local/bin/docling-serve", "--addr", "0.0.0.0:5001", "--warmup"]

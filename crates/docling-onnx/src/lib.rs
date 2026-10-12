@@ -559,6 +559,69 @@ fn dispatches() -> Option<Vec<ExecutionProviderDispatch>> {
     Some(d)
 }
 
+/// Re-execute the process under an absolute `argv[0]` when a provider-library
+/// execution provider (CUDA, TensorRT) is compiled in (#664).
+///
+/// ONNX Runtime opens `libonnxruntime_providers_shared.so` and the provider
+/// (`…_cuda.so`, `…_tensorrt.so`) by absolute path from its runtime directory:
+/// the directory of the object `dladdr()` finds ORT's own code in, made
+/// absolute against the working directory. Linked statically into an
+/// executable, that object is the main program, which glibc names by
+/// `argv[0]` — so a binary started by bare name from `PATH`
+/// (`docling-serve`, as Kubernetes manifests and the CUDA images' old `CMD`
+/// do) looks for its providers in the working directory, never next to the
+/// binary, and `LD_LIBRARY_PATH` is not consulted. Re-executing through
+/// `/proc/self/exe` with the absolute path as `argv[0]` (same PID, arguments
+/// and environment) makes the lookup land next to the binary, where
+/// `ort`'s `copy-dylibs` and the CUDA images put the providers.
+///
+/// Call first thing in `main`, before any thread starts. A no-op unless on
+/// Linux with ONNX Runtime linked in (not `load-dynamic`, whose library
+/// `dladdr()` names by its own path) and a CUDA/TensorRT feature, and only
+/// when `argv[0]` has no `/`. On failure it warns and returns: the CPU
+/// provider still works.
+pub fn reexec_for_provider_libraries() {
+    #[cfg(all(
+        target_os = "linux",
+        any(feature = "cuda", feature = "tensorrt"),
+        not(feature = "load-dynamic")
+    ))]
+    {
+        use std::os::unix::process::CommandExt;
+        let mut args = std::env::args_os();
+        let Some(arg0) = args.next() else { return };
+        if !needs_absolute_argv0(&arg0) {
+            return;
+        }
+        let Ok(exe) = std::env::current_exe() else {
+            return;
+        };
+        let err = std::process::Command::new(&exe)
+            .arg0(&exe)
+            .args(args)
+            .exec();
+        eprintln!(
+            "docling-rs: warning: re-executing as {} failed ({err}); ONNX Runtime will look \
+             for its GPU provider libraries in the working directory",
+            exe.display()
+        );
+    }
+}
+
+/// Whether ONNX Runtime would resolve its runtime directory against the
+/// working directory: `argv[0]` without a path (#664).
+#[cfg_attr(
+    not(all(
+        target_os = "linux",
+        any(feature = "cuda", feature = "tensorrt"),
+        not(feature = "load-dynamic")
+    )),
+    allow(dead_code)
+)]
+fn needs_absolute_argv0(arg0: &std::ffi::OsStr) -> bool {
+    !arg0.as_encoded_bytes().contains(&b'/')
+}
+
 /// Register the selected execution providers on a session builder. Called by
 /// every ONNX session in the workspace; a no-op (and infallible) in the
 /// default CPU configuration.
@@ -989,6 +1052,19 @@ mod tests {
     /// #602: the provider-dependent defaults, per provider and per
     /// compiled-in set (the closures stand in for the builds — the real
     /// features differ per host).
+    #[test]
+    fn bare_program_names_need_an_absolute_argv0() {
+        use std::ffi::OsStr;
+        assert!(needs_absolute_argv0(OsStr::new("docling-serve")));
+        assert!(!needs_absolute_argv0(OsStr::new(
+            "/usr/local/bin/docling-serve"
+        )));
+        assert!(!needs_absolute_argv0(OsStr::new("./docling-rs")));
+        assert!(!needs_absolute_argv0(OsStr::new(
+            "target/release/docling-rs"
+        )));
+    }
+
     #[test]
     fn provider_defaults_follow_the_provider() {
         let cpu_only = |ep: Ep| matches!(ep, Ep::Cpu | Ep::Auto);

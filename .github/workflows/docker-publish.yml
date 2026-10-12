@@ -10,7 +10,7 @@
 #   CPU (multi-arch: linux/amd64 + linux/arm64):
 #     - ghcr.io/docling-project/docling-rs-serve      — HTTP conversion API
 #     - ghcr.io/docling-project/docling-rs            — docling-rs CLI
-#   CUDA GPU (linux/amd64, CUDA 12 + cuDNN 9, --features cuda):
+#   CUDA GPU (linux/amd64, CUDA 13 + cuDNN 9, --features cuda):
 #     - ghcr.io/docling-project/docling-rs-serve-cuda — CUDA HTTP conversion API
 #     - ghcr.io/docling-project/docling-rs-cuda       — CUDA docling-rs CLI
 #
@@ -448,7 +448,7 @@ jobs:
           push-to-registry: true
 
   # ============================================================================
-  # 3. CUDA GPU Build & Publish (Linux x86_64, CUDA 12 + cuDNN 9)
+  # 3. CUDA GPU Build & Publish (Linux x86_64, CUDA 13 + cuDNN 9)
   # ============================================================================
   build-and-publish-cuda:
     name: build & publish CUDA (linux/amd64)
@@ -501,7 +501,7 @@ jobs:
             type=raw,value=${{ inputs.tag }},enable=${{ inputs.tag != '' }}
           labels: |
             org.opencontainers.image.title=docling-rs-serve-cuda
-            org.opencontainers.image.description=CUDA 12 GPU document conversion API in Rust (PDF, DOCX, PPTX, XLSX, HTML, Audio)
+            org.opencontainers.image.description=CUDA 13 GPU document conversion API in Rust (PDF, DOCX, PPTX, XLSX, HTML, Audio)
             org.opencontainers.image.licenses=MIT
             org.opencontainers.image.vendor=docling-project
 
@@ -522,7 +522,7 @@ jobs:
             type=raw,value=${{ inputs.tag }},enable=${{ inputs.tag != '' }}
           labels: |
             org.opencontainers.image.title=docling-rs-cuda
-            org.opencontainers.image.description=docling-rs CLI (CUDA 12 GPU) — document conversion to Markdown / JSON / DCLX / LaTeX
+            org.opencontainers.image.description=docling-rs CLI (CUDA 13 GPU) — document conversion to Markdown / JSON / DCLX / LaTeX
             org.opencontainers.image.licenses=MIT
             org.opencontainers.image.vendor=docling-project
 
@@ -554,6 +554,37 @@ jobs:
           labels: ${{ steps.meta_cuda_serve.outputs.labels }}
           cache-from: type=gha,scope=docling-rs-serve-cuda-linux-amd64
           cache-to: type=gha,mode=max,scope=docling-rs-serve-cuda-linux-amd64
+
+      # #664: the smoke tests below pass on CPU fallback even when the GPU can
+      # never be used, so check the provider libraries themselves: regular
+      # files (not links into the build machine's ort cache), reachable next
+      # to the binaries where ONNX Runtime looks, every dependency resolved —
+      # but the driver's libcuda.so.1, which the NVIDIA runtime mounts.
+      - name: Check CUDA provider libraries (#664)
+        run: |
+          for img in docling-rs-cuda:test docling-rs-serve-cuda:test; do
+            echo "Checking $img..."
+            docker run --rm --entrypoint sh "$img" -ec '
+              ls -la /usr/local/lib/libonnxruntime_providers_* /usr/local/bin/libonnxruntime_providers_*
+              for n in shared cuda; do
+                lib=/usr/local/lib/libonnxruntime_providers_$n.so
+                if [ -L "$lib" ] || [ ! -f "$lib" ]; then echo "$lib is not a regular file"; exit 1; fi
+                [ -f /usr/local/bin/libonnxruntime_providers_$n.so ] || { echo "no provider $n next to the binaries"; exit 1; }
+              done
+              missing=$(ldd /usr/local/lib/libonnxruntime_providers_cuda.so | grep "not found" | grep -v "libcuda\.so\.1" || true)
+              [ -z "$missing" ] || { echo "unresolved dependencies:"; echo "$missing"; exit 1; }
+            '
+          done
+          # A bare-name start (a Kubernetes `command:` override) re-executes
+          # under the absolute path: ONNX Runtime must not look for its
+          # providers in the working directory. On this GPU-less runner the
+          # CUDA provider then fails for want of a device, which is fine.
+          err=$(docker run --rm --entrypoint docling-rs -e DOCLING_RS_EP=cuda \
+            -v "$PWD/tests/data/pdf/sources:/data:ro" docling-rs-cuda:test base14_fonts.pdf --to md 2>&1 >/dev/null || true)
+          echo "$err" | tail -n 20
+          if echo "$err" | grep -Eq '(/data|/app)/libonnxruntime_providers|libonnxruntime_providers_[a-z]+\.so: cannot open'; then
+            echo "ONNX Runtime did not find its provider libraries next to the binary"; exit 1
+          fi
 
       - name: Run CUDA CLI smoke test (auto fallback to CPU on GPU-less runner)
         run: |

@@ -86,6 +86,16 @@ pub use docling_pdf::{
 #[cfg(any(feature = "pdf", feature = "pdf-text"))]
 pub use docling_pdf::convert_text_layer_pages as pdf_text_layer_pages;
 
+/// Re-execute under an absolute `argv[0]` so ONNX Runtime finds its GPU
+/// provider libraries next to the binary (#664) — see
+/// `docling_onnx::reexec_for_provider_libraries`. Binaries call it first
+/// thing in `main`; a no-op unless a CUDA/TensorRT build was started by bare
+/// name on Linux.
+pub fn reexec_for_provider_libraries() {
+    #[cfg(feature = "pdf")]
+    docling_pdf::ep::reexec_for_provider_libraries();
+}
+
 /// Which PDF conversion this build compiled in: the full ML pipeline (`pdf`
 /// feature), the pure-Rust text-layer path (`pdf-text`, the wasm32 build), or
 /// neither. Compile-time facts, exported so downstream crates (whose own

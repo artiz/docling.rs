@@ -311,7 +311,7 @@ DOCLING_RS_EP=cuda target/release/docling-rag ingest   # pin GPU (or auto/cpu)
 
 HTTP embedders (Ollama/Gemini) are unaffected — their GPU usage is the
 serving side's business. Runtime requirements match the CLI's CUDA build:
-CUDA 12 + cuDNN 9, glibc ≥ 2.38 for the static ONNX Runtime link.
+CUDA 13 + cuDNN 9, glibc ≥ 2.38 for the static ONNX Runtime link.
 
 The default feature set is fully self-contained and offline-testable
 (`cargo test -p docling-rag`) using the bundled SQLite store and the
