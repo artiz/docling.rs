@@ -1731,8 +1731,11 @@ the fp32 models over the int8 defaults — the int8 exports are calibrated for
 CPU kernels (an explicit `DOCLING_*_ONNX` path still wins; the Python
 bindings no longer set one themselves, #602, so this holds there too). CUDA needs the
 CUDA 12 runtime + cuDNN 9 on the machine; the `ort` crate downloads the
-matching ONNX Runtime binaries at build time and copies the provider
-libraries next to the binary.
+matching ONNX Runtime binaries at build time and links the provider
+libraries next to the binary — as symlinks into its download cache, so
+install them with `cp -L`, next to the installed binary: ONNX Runtime
+opens them from the binary's directory, not through `LD_LIBRARY_PATH`
+(#664).
 
 The same features exist on every binding: the Python GPU wheel ships as
 [`docling-rs-cuda`](https://pypi.org/project/docling-rs-cuda/) on PyPI, the
