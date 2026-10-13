@@ -168,7 +168,11 @@
 //! defaults `DOCLING_RS_NO_ARENA=1` — ONNX Runtime's CPU arena grows with
 //! every new page shape and never returns memory; without it (plus a
 //! `malloc_trim` after each conversion) a warm server's retained RSS measured
-//! ~3× lower and stopped ratcheting, at no observed latency cost. A memory
+//! ~3× lower and stopped ratcheting, at no observed latency cost. glibc's
+//! mmap threshold is pinned at startup as well (#669, [`docling::memory`]),
+//! so large buffers are unmapped when freed instead of fragmenting the
+//! per-thread arenas: RSS then holds flat across requests (~590 MB over six
+//! mixed PDFs) where the trim alone let it creep (528 -> 754 MB). A memory
 //! **ceiling** (`--max-memory-mb` / `DOCLING_RS_MAX_MEMORY_MB`, else the
 //! container's cgroup limit; `0` disables) drives admission control: once
 //! process RSS crosses the watermark (85%, `DOCLING_RS_MEMORY_WATERMARK_PCT`)
@@ -463,6 +467,11 @@ pub async fn serve(cfg: ServeConfig) -> Result<(), String> {
     // Logging/tracing first (#297): startup diagnostics below already flow
     // through a configured subscriber this way.
     o11y::init();
+    // Large buffers mapped and returned rather than carved from the
+    // per-thread arenas (#669): without it RSS crept 528 -> 754 MB over six
+    // PDF requests despite the trim, with it it held at ~590 MB, at the same
+    // latency. See [`docling::memory`].
+    docling::memory::pin_mmap_threshold();
     let addr = cfg.addr.clone();
     let app = router(cfg);
     let listener = tokio::net::TcpListener::bind(&addr)
@@ -1767,15 +1776,10 @@ fn redact_url(url: &str) -> String {
 /// churns hundreds of MB of page bitmaps through glibc's allocator, which
 /// keeps the freed arenas mapped — measured here, a warm server sat at
 /// ~2 GB RSS after one big conversion with the actual live data a fraction
-/// of that. `malloc_trim` walks the arenas and gives the free pages back;
-/// admission control (and the operator's dashboards) then see the truth.
-/// glibc-Linux only — a no-op elsewhere (musl/mac allocators don't have the
-/// retention pattern to the same degree, and no trim call to offer).
+/// of that. Giving the free pages back lets admission control (and the
+/// operator's dashboards) see the truth. See [`docling::memory`].
 fn trim_heap() {
-    #[cfg(all(target_os = "linux", target_env = "gnu"))]
-    unsafe {
-        libc::malloc_trim(0);
-    }
+    docling::memory::release_free_memory();
 }
 
 /// Server-side cap on pages rasterized per `to=images` request (#243). A small

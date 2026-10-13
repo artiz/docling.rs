@@ -314,6 +314,10 @@ pub struct DocumentConverter {
     /// Bounds on what a ZIP input may decompress (#557,
     /// [`DocumentConverter::convert_archive`]).
     archive_limits: crate::archive::ArchiveLimits,
+    /// The caller's long-lived ML pipeline (#669), when one was lent with
+    /// [`Self::warm_pipeline`]; `None` loads the models per conversion.
+    #[cfg(feature = "pdf")]
+    warm: Option<WarmPipeline>,
 }
 
 /// The builder's overrides of [`crate::ImageLimits`] (#646): `None` = the
@@ -365,6 +369,133 @@ pub fn parse_page_range(s: &str) -> Result<(usize, usize), String> {
     Ok((first, last))
 }
 
+/// A PDF/image ML pipeline kept loaded across conversions (#669) — what a
+/// long-lived caller (a server, an agent tool) lends its converters with
+/// [`DocumentConverter::warm_pipeline`] so the layout, TableFormer and OCR
+/// sessions load once instead of once per document. Cloning shares the
+/// pipeline; conversions on it take turns.
+///
+/// The pipeline is rebuilt only when a conversion asks for different model
+/// switches (text-layer only, OCR off, no TableFormer, no text panels, the
+/// enrichments — what a built pipeline cannot change); a panic inside a
+/// conversion discards it, so the next one starts clean.
+#[cfg(feature = "pdf")]
+#[derive(Clone, Default)]
+pub struct WarmPipeline {
+    slot: std::sync::Arc<std::sync::Mutex<WarmSlot>>,
+}
+
+#[cfg(feature = "pdf")]
+type WarmSlot = Option<(PipelineSwitches, docling_pdf::Pipeline)>;
+
+#[cfg(feature = "pdf")]
+impl WarmPipeline {
+    /// An empty handle; the models load on the first PDF/image conversion.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// The pipeline for a conversion with `switches`, rebuilt when the
+    /// loaded one was built with others.
+    fn lease(
+        &self,
+        switches: PipelineSwitches,
+    ) -> Result<std::sync::MutexGuard<'_, WarmSlot>, docling_pdf::PdfError> {
+        let mut slot = self.slot.lock().unwrap_or_else(|poisoned| {
+            // A conversion panicked mid-document: its workers may hold half a
+            // page — start from a fresh pipeline rather than reuse them.
+            let mut slot = poisoned.into_inner();
+            *slot = None;
+            slot
+        });
+        self.slot.clear_poison();
+        if slot.as_ref().map(|(built, _)| *built) != Some(switches) {
+            // Drop the old models before the new ones load, not after.
+            *slot = None;
+            *slot = Some((switches, switches.build()?));
+        }
+        Ok(slot)
+    }
+}
+
+#[cfg(feature = "pdf")]
+impl std::fmt::Debug for WarmPipeline {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let loaded = match self.slot.try_lock() {
+            Ok(slot) => format!("{:?}", slot.as_ref().map(|(switches, _)| switches)),
+            Err(_) => "in use".to_string(),
+        };
+        f.debug_struct("WarmPipeline")
+            .field("loaded", &loaded)
+            .finish()
+    }
+}
+
+/// What a built [`docling_pdf::Pipeline`] cannot change: the model set it
+/// loads. Every other setting is applied per conversion.
+#[cfg(feature = "pdf")]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct PipelineSwitches {
+    text_layer_only: bool,
+    no_ocr: bool,
+    no_table_former: bool,
+    no_text_panels: bool,
+    enrich: crate::EnrichmentOptions,
+}
+
+#[cfg(feature = "pdf")]
+impl PipelineSwitches {
+    fn of(c: &DocumentConverter) -> Self {
+        Self {
+            text_layer_only: c.text_layer_only,
+            no_ocr: c.no_ocr,
+            no_table_former: c.no_table_former,
+            no_text_panels: c.no_text_panels,
+            enrich: c.enrich,
+        }
+    }
+
+    fn build(self) -> Result<docling_pdf::Pipeline, docling_pdf::PdfError> {
+        Ok(docling_pdf::Pipeline::new()?
+            .no_table_former(self.no_table_former)
+            // docling-pdf's `Pipeline` keeps its pre-2.0 names: its `no_ocr`
+            // is the text-layer fast path, its `skip_ocr` docling's do_ocr=False.
+            .no_ocr(self.text_layer_only)
+            .skip_ocr(self.no_ocr)
+            .no_text_panels(self.no_text_panels)
+            .enrichments(self.enrich))
+    }
+}
+
+/// A conversion's pipeline: its own, or the warm one held for the call.
+#[cfg(feature = "pdf")]
+enum PipelineLease<'a> {
+    Fresh(Box<docling_pdf::Pipeline>),
+    Warm(std::sync::MutexGuard<'a, WarmSlot>),
+}
+
+#[cfg(feature = "pdf")]
+impl std::ops::Deref for PipelineLease<'_> {
+    type Target = docling_pdf::Pipeline;
+
+    fn deref(&self) -> &Self::Target {
+        match self {
+            Self::Fresh(p) => p,
+            Self::Warm(slot) => &slot.as_ref().expect("filled by the lease").1,
+        }
+    }
+}
+
+#[cfg(feature = "pdf")]
+impl std::ops::DerefMut for PipelineLease<'_> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        match self {
+            Self::Fresh(p) => p,
+            Self::Warm(slot) => &mut slot.as_mut().expect("filled by the lease").1,
+        }
+    }
+}
+
 impl Default for DocumentConverter {
     fn default() -> Self {
         Self {
@@ -412,6 +543,8 @@ impl Default for DocumentConverter {
             artifacts_dir: "artifacts".to_string(),
             document_timeout: None,
             archive_limits: crate::archive::ArchiveLimits::default(),
+            #[cfg(feature = "pdf")]
+            warm: None,
         }
     }
 }
@@ -477,33 +610,57 @@ impl DocumentConverter {
         self
     }
 
-    /// The configured ML pipeline for one conversion (models load per call —
-    /// callers that convert many files hold a warm [`docling_pdf::Pipeline`]
-    /// themselves). Grew out of docling-pdf's `convert_with_options` free
-    /// functions, whose fixed signatures couldn't take #244's `skip_ocr`.
+    /// Convert on `warm`'s ML pipeline (#669) instead of loading the models
+    /// for each conversion: PDFs, images, SVG's raster route, METS pages and
+    /// a scanned DjVu's OCR fallback all run on the one instance, which keeps
+    /// its ONNX sessions between conversions. Everything else about the
+    /// conversion is this converter's — page window, password, OCR and
+    /// image settings are applied to the pipeline on every call, so nothing
+    /// carries over from the previous caller's options. Converters sharing a
+    /// handle take turns on it; the declarative formats never touch it.
     #[cfg(feature = "pdf")]
-    fn ml_pipeline(&self) -> Result<docling_pdf::Pipeline, docling_pdf::PdfError> {
-        let p = docling_pdf::Pipeline::new()?;
-        Ok(self
-            .with_textline_orientation(p)
-            .no_table_former(self.no_table_former)
-            // docling-pdf's `Pipeline` keeps its pre-2.0 names: its `no_ocr`
-            // is the text-layer fast path, its `skip_ocr` docling's do_ocr=False.
-            .no_ocr(self.text_layer_only)
-            .skip_ocr(self.no_ocr)
-            .no_text_panels(self.no_text_panels)
-            .enrichments(self.enrich)
-            .ocr_lang(self.ocr_lang_choice())
-            .ocr_engine(self.ocr_engine_choice())
-            .tesseract_lang(self.tesseract_lang_choice())
-            .ocr_mode(self.ocr_mode_choice())
-            .ocr_scale(self.ocr_scale_choice())
-            .images_scale(self.images_scale)
-            .generate_page_images(self.generate_page_images)
-            .heading_hierarchy(docling_pdf::HeadingHierarchyOptions::enabled(
-                self.heading_hierarchy,
-            ))
-            .document_timeout(self.document_timeout))
+    pub fn warm_pipeline(mut self, warm: &WarmPipeline) -> Self {
+        self.warm = Some(warm.clone());
+        self
+    }
+
+    /// The configured ML pipeline for one conversion: a fresh one (models
+    /// load per call), or the [`warm`](Self::warm_pipeline) one this
+    /// converter was lent. Both are configured by the same setters, so the
+    /// warm path cannot drift from the cold one.
+    #[cfg(feature = "pdf")]
+    fn ml_pipeline(&self) -> Result<PipelineLease<'_>, docling_pdf::PdfError> {
+        let switches = PipelineSwitches::of(self);
+        let mut lease = match &self.warm {
+            None => PipelineLease::Fresh(Box::new(switches.build()?)),
+            Some(warm) => PipelineLease::Warm(warm.lease(switches)?),
+        };
+        self.configure_pipeline(&mut lease);
+        Ok(lease)
+    }
+
+    /// Every per-conversion setting, set unconditionally — on a warm
+    /// pipeline a setting left alone would be the previous conversion's.
+    #[cfg(feature = "pdf")]
+    fn configure_pipeline(&self, p: &mut docling_pdf::Pipeline) {
+        p.set_ocr_textline_orientation(self.ocr_textline_orientation);
+        p.set_ocr_lang(self.ocr_lang_choice());
+        p.set_ocr_engine(self.ocr_engine_choice());
+        p.set_tesseract_lang(self.tesseract_lang_choice());
+        p.set_ocr_mode(self.ocr_mode_choice());
+        p.set_ocr_scale(self.ocr_scale_choice());
+        p.set_images(docling_pdf::ImageOutput {
+            scale: self.images_scale,
+            page_images: self.generate_page_images,
+        });
+        p.set_heading_hierarchy(docling_pdf::HeadingHierarchyOptions::enabled(
+            self.heading_hierarchy,
+        ));
+        p.set_document_timeout(self.document_timeout);
+        // The PDF route sets these two for itself; every other route reads
+        // the whole input with OCR left to the layout.
+        p.set_force_full_page_ocr(false);
+        p.set_pages(None);
     }
 
     /// DjVu (#434): the hidden text layer by default; a scan-only DjVu (no
@@ -1964,11 +2121,9 @@ impl DocumentConverter {
             InputFormat::Pdf => {
                 let converted = self
                     .ml_pipeline()
-                    .map(|p| {
-                        p.force_full_page_ocr(self.force_full_page_ocr)
-                            .pages(self.page_range)
-                    })
                     .and_then(|mut p| {
+                        p.set_force_full_page_ocr(self.force_full_page_ocr);
+                        p.set_pages(self.page_range);
                         p.convert_outcome(&source.bytes, self.password.as_deref(), &source.name)
                     })
                     .map_err(|e| ConversionError::with_source("pdf", e))?;
@@ -2101,6 +2256,49 @@ impl DocumentConverter {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The warm slot records the switches it was built with and rebuilds
+    /// on a change (#669).
+    #[cfg(feature = "pdf")]
+    #[test]
+    fn warm_pipeline_tracks_its_switches() {
+        let warm = WarmPipeline::new();
+        let full = PipelineSwitches::of(&DocumentConverter::new());
+        let text = PipelineSwitches::of(&DocumentConverter::new().text_layer_only(true));
+        assert_ne!(full, text);
+        let built = |w: &WarmPipeline| w.slot.lock().unwrap().as_ref().map(|(s, _)| *s);
+        assert_eq!(built(&warm), None, "nothing loads before the first lease");
+        drop(warm.lease(full).unwrap());
+        assert_eq!(built(&warm), Some(full));
+        drop(warm.lease(text).unwrap());
+        assert_eq!(built(&warm), Some(text));
+        // Converters share the handle.
+        let converter = DocumentConverter::new().warm_pipeline(&warm);
+        drop(converter.ml_pipeline().unwrap());
+        assert_eq!(built(&warm), Some(full));
+    }
+
+    /// A conversion that panics holding the warm pipeline poisons its lock;
+    /// the next one gets a fresh pipeline, not the half-used one or a panic.
+    #[cfg(feature = "pdf")]
+    #[test]
+    fn warm_pipeline_recovers_from_a_panic() {
+        let warm = WarmPipeline::new();
+        let full = PipelineSwitches::of(&DocumentConverter::new());
+        drop(warm.lease(full).unwrap());
+        let held = warm.clone();
+        let _ = std::thread::spawn(move || {
+            let _slot = held.lease(full).unwrap();
+            panic!("a conversion panics mid-document");
+        })
+        .join();
+        assert!(warm.slot.is_poisoned());
+        let slot = warm.lease(full).expect("recovered");
+        assert!(slot.is_some());
+        drop(slot);
+        assert!(!warm.slot.is_poisoned());
+        assert!(format!("{warm:?}").contains("WarmPipeline"));
+    }
 
     /// A file whose extension lies converts as its content after the
     /// declared format fails (#556); junk keeps its original error, and a

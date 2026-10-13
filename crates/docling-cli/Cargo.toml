@@ -48,7 +48,7 @@ serve = ["dep:docling-serve", "dep:tokio"]
 # ~5 MB to the stripped binary (measured 39.2 → 44.2 MB before ONNX Runtime),
 # and an MCP server is exactly where one static binary without Python pays
 # off. `--no-default-features` drops it.
-mcp = ["dep:rmcp", "dep:schemars", "dep:serde", "dep:axum", "dep:tokio", "dep:url", "dep:docling-core", "dep:libc"]
+mcp = ["dep:rmcp", "dep:schemars", "dep:serde", "dep:axum", "dep:tokio", "dep:url", "dep:docling-core"]
 # GPU execution providers for the PDF/image ML pipeline (#74) — pass-through
 # to docling → docling-pdf. Build e.g. `--features cuda`; such a build defaults
 # to `DOCLING_RS_EP=auto` (use the GPU when one is usable, fall back to CPU),
@@ -75,7 +75,3 @@ axum = { version = "0.8", optional = true, default-features = false, features = 
 url = { version = "2", optional = true }
 serde = { version = "1", features = ["derive"], optional = true }
 docling-core = { path = "../docling-core", version = "2.16.0", optional = true }
-
-# `malloc_trim` after each MCP conversion (#669), as docling-serve does (#263).
-[target.'cfg(all(target_os = "linux", target_env = "gnu"))'.dependencies]
-libc = { version = "0.2", optional = true }

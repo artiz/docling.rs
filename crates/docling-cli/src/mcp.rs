@@ -119,6 +119,10 @@ struct State {
     permits: Arc<tokio::sync::Semaphore>,
     /// The missing-models note is printed once per process.
     warned_text_layer: AtomicBool,
+    /// The PDF/image models, loaded on the first call that needs them and
+    /// kept for the next — docling-serve's warm pipeline, shared by every
+    /// session of this process.
+    warm: docling::WarmPipeline,
 }
 
 struct HttpConfig {
@@ -207,7 +211,11 @@ pub fn run(args: Vec<String>) -> ExitCode {
         fetch_limits: docling::fetch::FetchLimits::from_env(),
         permits: Arc::new(tokio::sync::Semaphore::new(concurrency)),
         warned_text_layer: AtomicBool::new(false),
+        warm: docling::WarmPipeline::new(),
     });
+    // A long-lived process: large buffers are mapped and returned, not
+    // carved from the per-thread arenas where they stay resident.
+    docling::memory::pin_mmap_threshold();
     let runtime = match tokio::runtime::Runtime::new() {
         Ok(rt) => rt,
         Err(e) => {
@@ -387,20 +395,6 @@ async fn shutdown_signal() {
     }
 }
 
-/// Give the heap a conversion freed back to the OS. glibc keeps freed arenas
-/// mapped, so a long-lived server's RSS climbs with every PDF (measured: 0.5
-/// → 1.1 GB over three conversions of a 9-page paper) though the live data
-/// is dropped with the converter; docling-serve trims for the same reason
-/// (#263). glibc-Linux only — a no-op elsewhere.
-fn trim_heap() {
-    #[cfg(all(target_os = "linux", target_env = "gnu"))]
-    // SAFETY: `malloc_trim` only releases free memory at the top of glibc's
-    // heaps; it touches no live allocation.
-    unsafe {
-        libc::malloc_trim(0);
-    }
-}
-
 /// Byte comparison whose time does not depend on where the inputs differ —
 /// a token check must not leak its prefix through response timing.
 fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
@@ -500,7 +494,9 @@ impl DoclingMcp {
         let mut job = tokio::task::spawn_blocking(move || {
             let _permit = permit;
             let result = convert(&state, &request);
-            trim_heap();
+            // What the conversion freed goes back to the OS, not into the
+            // allocator's arenas (`docling::memory`).
+            docling::memory::release_free_memory();
             result
         });
         let token = ctx.meta.get_progress_token();
@@ -687,7 +683,7 @@ fn convert_document(
     options: &ConvertOptions,
 ) -> Result<docling::DoclingDocument, String> {
     let converter = options
-        .apply(DocumentConverter::new())
+        .apply(DocumentConverter::new().warm_pipeline(&state.warm))
         .map_err(|e| e.to_string())?;
     // The remote VLM pipeline (#304) is a sibling path, as in docling-serve.
     if let Some(vlm) = options.vlm_options().map_err(|e| e.to_string())? {
@@ -714,6 +710,8 @@ fn convert_document(
                      DOCLING_RS_MODELS_DIR at a .models directory."
                 );
             }
+            // A converter of its own: the text-layer pipeline loads no
+            // models, and putting it in the warm slot would only evict them.
             let retry = DocumentConverter::new().text_layer_only(true);
             let converter = options.apply(retry).map_err(|e| e.to_string())?;
             converter
@@ -1011,6 +1009,7 @@ mod tests {
             fetch_limits: Default::default(),
             permits: Arc::new(tokio::sync::Semaphore::new(1)),
             warned_text_layer: AtomicBool::new(false),
+            warm: docling::WarmPipeline::new(),
         }
     }
 
@@ -1162,6 +1161,31 @@ mod tests {
         };
         let md = convert(&s, &request).unwrap();
         assert!(md.contains("Lorem ipsum"), "{md}");
+    }
+
+    /// Calls share the server's warm pipeline (#669) without sharing their
+    /// options: a page window on one call does not cut the next.
+    #[test]
+    fn calls_on_the_warm_pipeline_keep_their_own_options() {
+        let warm = state(&fixtures(), false);
+        let request = |pages: Option<&str>| Request {
+            uri: "pdf/sources/2206.01062.pdf".into(),
+            to: "json".into(),
+            images: ImageMode::Placeholder,
+            options: ConvertOptions {
+                text_layer_only: Some(true),
+                pages: pages.map(str::to_string),
+                ..Default::default()
+            },
+        };
+        for pages in [Some("2-3"), None, Some("1-1"), None] {
+            let cold = convert(&state(&fixtures(), false), &request(pages)).unwrap();
+            assert_eq!(
+                convert(&warm, &request(pages)).unwrap(),
+                cold,
+                "pages {pages:?}"
+            );
+        }
     }
 
     /// Optional parameters are single-typed and not required (MCP

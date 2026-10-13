@@ -137,7 +137,9 @@ cargo test -p docling-pdf --features pdfium --lib raster:: pdfium_backend::  # t
   0.27, `video_frame_max_side` 0 = source size, `video_frame_dedupe` unset —
   frames stream one at a time through the picture-OCR hook, `video_frames=all`
   keeps every distinct cut), `DOCLING_RS_PDF_WORKERS/_THREADS/_INTRA`, `DOCLING_RS_TF_INTRA` (#262),
-  `DOCLING_RS_NO_ARENA` (#263; serve defaults it on),
+  `DOCLING_RS_NO_ARENA` (#263; serve and `docling-rs mcp` default it on —
+  both also pin glibc's mmap threshold and trim after each conversion,
+  `docling::memory`, #669),
   `DOCLING_RS_GRAPH_CACHE_DIR` / `DOCLING_RS_NO_GRAPH_CACHE` (ONNX Runtime
   optimized-graph cache, CPU provider only), `DOCLING_RS_OCR_SESSIONS`
   (parallel single-thread OCR lanes; byte-identical output),

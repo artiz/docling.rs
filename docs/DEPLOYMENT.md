@@ -193,7 +193,7 @@ docker compose -f docker-compose.cuda.yml up -d
 ## Resource Sizing & Performance Tuning
 
 1. **Memory Arena & Admission Control (#263)**:
-   By default, `DOCLING_RS_NO_ARENA=1` is enabled. Without this, ONNX Runtime's allocator retains mapped heap memory indefinitely. Combined with automatic `malloc_trim` calls, process memory drops ~3× after heavy PDF conversions.
+   By default, `DOCLING_RS_NO_ARENA=1` is enabled. Without this, ONNX Runtime's allocator retains mapped heap memory indefinitely. Combined with automatic `malloc_trim` calls, process memory drops ~3× after heavy PDF conversions. The server also pins glibc's mmap threshold at 4 MiB on startup (#669): glibc otherwise raises it each time a large buffer is freed, after which page bitmaps and tensors are carved from per-thread arenas and stay resident — measured, RSS crept 528 → 754 MB over six mixed PDF requests and now holds at ~590 MB, at the same latency. `GLIBC_TUNABLES=glibc.malloc.mmap_threshold=<bytes>` (or `MALLOC_MMAP_THRESHOLD_`) overrides the pinned value.
    Setting `DOCLING_RS_MAX_MEMORY_MB=4096` ensures the server sheds load with `503 + Retry-After` when under memory pressure, rather than being OOM-killed.
 
 2. **Concurrency (`--concurrency`)**:

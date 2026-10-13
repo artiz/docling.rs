@@ -575,11 +575,14 @@ fn main() -> ExitCode {
     {
         let mut args = std::env::args().skip(1);
         if args.next().as_deref() == Some("mcp") {
-            // Unlike `serve`, no `DOCLING_RS_NO_ARENA` default: each call
-            // builds its converter and drops the ONNX sessions with it, so no
-            // warm session's arena can ratchet, and the heap is trimmed after
-            // every conversion. With the arena a 9-page paper converted in
-            // 15.4 s against 16.7 s without (4 vCPU).
+            // A long-lived server holding warm ONNX sessions, like `serve`
+            // (#263): the CPU arena off unless the operator says otherwise.
+            // Measured on the warm MCP server (4 vCPU, a 9-page paper and two
+            // short PDFs in turn): 2.1 GB live with the arena, 0.55 GB — the
+            // models — without, at the same latency.
+            if std::env::var_os("DOCLING_RS_NO_ARENA").is_none() {
+                std::env::set_var("DOCLING_RS_NO_ARENA", "1");
+            }
             return run_mcp(args.collect());
         }
     }

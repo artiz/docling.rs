@@ -606,7 +606,11 @@ and `errors`); `redact_pii` reports its counts in `X-Docling-Redaction`.
 
 Thread pools are cgroup-quota-aware (#262; `DOCLING_RS_TF_INTRA` narrows the
 shared TableFormer session) and the server runs with `DOCLING_RS_NO_ARENA=1`,
-which measured ~3× lower warm RSS at no latency cost. Observability mirrors
+which measured ~3× lower warm RSS at no latency cost; glibc's mmap threshold
+is pinned at startup (#669) so freed buffers leave the process instead of
+piling up in its per-thread arenas — RSS holds flat across requests (~590 MB
+over six mixed PDFs) where it used to creep (528 → 754 MB). An operator's
+own `GLIBC_TUNABLES=glibc.malloc.mmap_threshold=…` wins. Observability mirrors
 Python docling-serve (#297): `tracing` request logs (`RUST_LOG`), Prometheus
 text on `GET /metrics` (request counts by status class, an in-flight gauge, a
 latency histogram, conversions by outcome) and, with the opt-in `otel` cargo
@@ -729,8 +733,13 @@ for docling's padded ones). Without the layout models (a bare release
 binary — fetch them with `scripts/install/download_dependencies.sh`, or point
 `DOCLING_RS_MODELS_DIR` at a `.models` directory in the client's `env`), PDFs
 convert from their text layer, as MarkItDown's do, instead of failing.
-Calls carrying a progress token get a heartbeat every 10 s while a long PDF
-converts.
+The PDF/image models load on the first call that needs them and stay loaded
+— one warm pipeline per server, as in `docling-serve` — so later calls skip
+the load (a 5-page PDF: 5.4 s first, 2.6 s after), and memory stays flat
+between calls (~0.6 GB with the models resident; ONNX Runtime's CPU arena is
+off and freed buffers go back to the OS — `DOCLING_RS_NO_ARENA=0` restores
+the arena). Calls carrying a progress token get a heartbeat every 10 s while
+a long PDF converts.
 
 ## In the browser — `docling-wasm`
 
