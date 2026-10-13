@@ -78,6 +78,7 @@ paths:
         - { $ref: "#/components/parameters/do_picture_ocr" }
         - { $ref: "#/components/parameters/picture_ocr_classes" }
         - { $ref: "#/components/parameters/picture_ocr_min_side" }
+        - { $ref: "#/components/parameters/picture_ocr_scale" }
         - { $ref: "#/components/parameters/keep_picture_images" }
         - { $ref: "#/components/parameters/redact_pii" }
         - { $ref: "#/components/parameters/redact_mode" }
@@ -103,6 +104,7 @@ paths:
         - { $ref: "#/components/parameters/ocr_lang" }
         - { $ref: "#/components/parameters/ocr_mode" }
         - { $ref: "#/components/parameters/ocr_scale" }
+        - { $ref: "#/components/parameters/ocr_textline_orientation" }
         - { $ref: "#/components/parameters/ocr_engine" }
         - { $ref: "#/components/parameters/images_scale" }
         - { $ref: "#/components/parameters/page_images" }
@@ -156,6 +158,7 @@ paths:
                 do_picture_ocr: { type: boolean }
                 picture_ocr_classes: { type: string }
                 picture_ocr_min_side: { type: integer }
+                picture_ocr_scale: { $ref: "#/components/schemas/PictureOcrScale" }
                 keep_picture_images: { type: boolean }
                 redact_pii: { type: boolean }
                 redact_mode: { type: string }
@@ -180,6 +183,7 @@ paths:
                 ocr_lang: { $ref: "#/components/schemas/OcrLang" }
                 ocr_mode: { $ref: "#/components/schemas/OcrMode" }
                 ocr_scale: { $ref: "#/components/schemas/OcrScale" }
+                ocr_textline_orientation: { type: boolean }
                 ocr_engine: { $ref: "#/components/schemas/OcrEngine" }
                 images_scale: { $ref: "#/components/schemas/ImagesScale" }
                 page_images: { type: boolean }
@@ -676,6 +680,15 @@ components:
         OCR render scale in pixels per PDF point (docling's
         `OcrOptions.scale`). Unset reads the pipeline's own 2.0 px/pt render;
         docling's default is 3 (216 dpi).
+    PictureOcrScale:
+      type: number
+      exclusiveMinimum: 0
+      description: >-
+        With `do_picture_ocr` (#666): the picture OCR's resolution in pixels
+        per picture pixel, shrunk to RapidOCR's 2000 px longer side — `1.0`
+        reads pictures at their native pixels, as RapidOCR does. Unset keeps
+        the image-input rule (`ocr_scale`, else 3x under the cap; the
+        server's `DOCLING_RS_PICTURE_OCR_SCALE`). Pages are unaffected.
     OcrEngine:
       type: string
       enum: [ppocr, tesseract]
@@ -824,6 +837,7 @@ components:
             With `do_picture_ocr`: skip pictures whose smaller side is under
             this many pixels — icons, bullets, rules. The server's
             `DOCLING_RS_PICTURE_OCR_MIN_SIDE` sets the default.
+        picture_ocr_scale: { $ref: "#/components/schemas/PictureOcrScale" }
         keep_picture_images:
           type: boolean
           default: true
@@ -973,6 +987,17 @@ components:
         ocr_lang: { $ref: "#/components/schemas/OcrLang" }
         ocr_mode: { $ref: "#/components/schemas/OcrMode" }
         ocr_scale: { $ref: "#/components/schemas/OcrScale" }
+        ocr_textline_orientation:
+          type: boolean
+          default: false
+          description: >
+            RapidOCR's text-line orientation handling (#666): each detected
+            line cropped along its rotated rectangle, crops 1.5× taller than
+            wide turned 90°, upside-down lines turned by the 0/180 classifier
+            (`.models/ocr_textline_ori.onnx`; missing, that step is skipped
+            with a warning). Vertical, skewed and upside-down lines read;
+            PP-OCR only, scanned pages and pictures alike. The server's
+            `DOCLING_RS_OCR_TEXTLINE_ORIENTATION` sets the default.
         ocr_engine: { $ref: "#/components/schemas/OcrEngine" }
         images_scale: { $ref: "#/components/schemas/ImagesScale" }
         page_images:
@@ -1357,6 +1382,8 @@ components:
       { name: picture_ocr_classes, in: query, schema: { type: string } }
     picture_ocr_min_side:
       { name: picture_ocr_min_side, in: query, schema: { type: integer } }
+    picture_ocr_scale:
+      { name: picture_ocr_scale, in: query, schema: { $ref: "#/components/schemas/PictureOcrScale" } }
     keep_picture_images:
       { name: keep_picture_images, in: query, schema: { type: boolean } }
     redact_pii:
@@ -1407,6 +1434,8 @@ components:
       { name: ocr_mode, in: query, schema: { $ref: "#/components/schemas/OcrMode" } }
     ocr_scale:
       { name: ocr_scale, in: query, schema: { $ref: "#/components/schemas/OcrScale" } }
+    ocr_textline_orientation:
+      { name: ocr_textline_orientation, in: query, schema: { type: boolean } }
     ocr_engine:
       { name: ocr_engine, in: query, schema: { $ref: "#/components/schemas/OcrEngine" } }
     images_scale:

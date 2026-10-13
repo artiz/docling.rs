@@ -163,6 +163,10 @@ pub struct ConvertOptions {
     pub ocr_mode: Option<String>,
     /// OCR input scale in px per PDF point (#254); unset = the 2.0 render.
     pub ocr_scale: Option<f32>,
+    /// RapidOCR's text-line orientation handling (#666): oriented crops, the
+    /// 90° turn of tall lines and the 0/180 classifier. Default off
+    /// (`DOCLING_RS_OCR_TEXTLINE_ORIENTATION`).
+    pub ocr_textline_orientation: Option<bool>,
     /// Picture-crop / page-image scale in px per point, 0.1–4.0 (#520).
     pub images_scale: Option<f32>,
     /// Keep each page's render as the JSON page image (docling's
@@ -184,6 +188,10 @@ pub struct ConvertOptions {
     /// Smallest side in px a picture must have to be OCR'd (#645; default
     /// 32, `DOCLING_RS_PICTURE_OCR_MIN_SIDE`).
     pub picture_ocr_min_side: Option<u32>,
+    /// Picture OCR resolution in px per picture pixel before the 2000 px cap
+    /// (#666); `1.0` = RapidOCR's native pixels. Unset = the image-input
+    /// rule (`DOCLING_RS_PICTURE_OCR_SCALE`).
+    pub picture_ocr_scale: Option<f32>,
     /// Keep the embedded image bytes on the pictures (#645); `false` drops
     /// them after the enrichment pass. Default `true`.
     pub keep_picture_images: Option<bool>,
@@ -375,6 +383,7 @@ pub const OPTIONS: &[OptionInfo] = &[
     row("ocr_lang"),
     row("ocr_mode"),
     row("ocr_scale"),
+    row("ocr_textline_orientation"),
     row("images_scale"),
     OptionInfo {
         aliases: &["generate_page_images"],
@@ -399,6 +408,7 @@ pub const OPTIONS: &[OptionInfo] = &[
     },
     row("picture_ocr_classes"),
     row("picture_ocr_min_side"),
+    row("picture_ocr_scale"),
     OptionInfo {
         cli: Some("--no-picture-images"),
         ..row("keep_picture_images")
@@ -554,7 +564,8 @@ impl ConvertOptions {
     /// Check every option that can be checked without the input document —
     /// the one set of rules all surfaces apply, before any work starts:
     /// `pages` spelling, a positive `document_timeout`, a positive
-    /// `ocr_scale`, `images_scale` in 0.1–4.0, a known `pipeline`, a positive
+    /// `ocr_scale` and `picture_ocr_scale`, `images_scale` in 0.1–4.0, a
+    /// known `pipeline`, a positive
     /// `vlm_max_tokens`, and (with the `pdf` feature, which has the engine
     /// tables) a known `ocr_engine` / `ocr_mode`, an `ocr_lang` the
     /// selected engine reads and `picture_ocr_classes` the classifier
@@ -568,6 +579,14 @@ impl ConvertOptions {
                 return Err(OptionsError::new(
                     "ocr_scale",
                     format!("ocr_scale must be a positive number, got {s}"),
+                ));
+            }
+        }
+        if let Some(s) = self.picture_ocr_scale {
+            if !(s.is_finite() && s > 0.0) {
+                return Err(OptionsError::new(
+                    "picture_ocr_scale",
+                    format!("picture_ocr_scale must be a positive number, got {s}"),
                 ));
             }
         }
@@ -818,6 +837,9 @@ impl ConvertOptions {
         if let Some(s) = self.ocr_scale {
             c = c.ocr_scale(s);
         }
+        if let Some(v) = self.ocr_textline_orientation {
+            c = c.ocr_textline_orientation(v);
+        }
         if let Some(s) = self.images_scale {
             c = c.images_scale(s);
         }
@@ -841,6 +863,9 @@ impl ConvertOptions {
         }
         if let Some(v) = self.picture_ocr_min_side {
             c = c.picture_ocr_min_side(v);
+        }
+        if let Some(s) = self.picture_ocr_scale {
+            c = c.picture_ocr_scale(s);
         }
         if let Some(v) = self.keep_picture_images {
             c = c.keep_picture_images(v);
@@ -1181,6 +1206,15 @@ mod tests {
         assert_eq!(
             e.cli_message(),
             "--ocr-scale must be a positive number, got 0"
+        );
+        // #666: the picture OCR's own scale, the same rule.
+        let e = bad(ConvertOptions {
+            picture_ocr_scale: Some(-1.0),
+            ..Default::default()
+        });
+        assert_eq!(
+            e.cli_message(),
+            "--picture-ocr-scale must be a positive number, got -1"
         );
 
         let e = bad(ConvertOptions {

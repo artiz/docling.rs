@@ -27,6 +27,20 @@ pub struct OcrModel {
     recs: Vec<Session>,
     /// CTC classes: index 0 = blank, then the dictionary, then space.
     chars: Vec<String>,
+    /// RapidOCR's line orientation handling (#666). See
+    /// [`crate::Pipeline::ocr_textline_orientation`].
+    orient: bool,
+    /// The text-line orientation classifier, loaded on the first oriented
+    /// page.
+    cls: ClsSlot,
+}
+
+/// [`OcrModel::cls`]: `Missing` records a failed load (warned once per
+/// process), so it is not retried per page.
+enum ClsSlot {
+    Unloaded,
+    Ready(crate::ocr_cls::TextlineCls),
+    Missing,
 }
 
 /// OCR recognition language: which PP-OCRv3 model + dictionary pair runs
@@ -244,16 +258,34 @@ impl OcrEngine {
 /// the recognizer. Unset/empty → `None` (OCR reads the pipeline's own page
 /// render, 2.0 px/pt); non-positive or unparsable values warn and are ignored.
 pub fn scale_from_env() -> Option<f32> {
-    let raw = docling_core::env::nonempty("DOCLING_RS_OCR_SCALE")?;
+    positive_scale_env("DOCLING_RS_OCR_SCALE")
+}
+
+/// The process-level picture OCR scale from `DOCLING_RS_PICTURE_OCR_SCALE`
+/// (#666): pixels per picture pixel for the picture-OCR enrichment, before
+/// RapidOCR's 2000 px cap — see [`crate::Pipeline::picture_ocr_scale`].
+/// Unset/empty → `None`; non-positive or unparsable values warn and are
+/// ignored.
+pub fn picture_scale_from_env() -> Option<f32> {
+    positive_scale_env("DOCLING_RS_PICTURE_OCR_SCALE")
+}
+
+fn positive_scale_env(name: &str) -> Option<f32> {
+    let raw = docling_core::env::nonempty(name)?;
     match raw.parse::<f32>() {
         Ok(s) if s > 0.0 && s.is_finite() => Some(s),
         _ => {
-            eprintln!(
-                "docling-pdf: DOCLING_RS_OCR_SCALE={raw:?} is not a positive number; ignored"
-            );
+            eprintln!("docling-pdf: {name}={raw:?} is not a positive number; ignored");
             None
         }
     }
+}
+
+/// The process-level default of [`crate::Pipeline::ocr_textline_orientation`]
+/// from `DOCLING_RS_OCR_TEXTLINE_ORIENTATION` (#666; a `docling_core::env`
+/// flag). Off when unset.
+pub fn textline_orientation_from_env() -> bool {
+    docling_core::env::flag("DOCLING_RS_OCR_TEXTLINE_ORIENTATION")
 }
 
 /// Whether the text detector's boxes are the recognizer's line source inside
@@ -365,7 +397,87 @@ impl OcrModel {
         Ok(Self {
             recs,
             chars: dict_chars(&dict),
+            orient: false,
+            cls: ClsSlot::Unloaded,
         })
+    }
+
+    /// Turn RapidOCR's line orientation handling on or off (#666): oriented
+    /// crops, the 90° turn, and the 0/180 classifier on detector lines.
+    pub fn set_textline_orientation(&mut self, enable: bool) {
+        self.orient = enable;
+    }
+
+    /// The orientation classifier, loading it on first use; `None` (warned
+    /// once) when the model is not installed or fails to load.
+    fn cls(&mut self) -> Option<&mut crate::ocr_cls::TextlineCls> {
+        if matches!(self.cls, ClsSlot::Unloaded) {
+            self.cls = match crate::ocr_cls::TextlineCls::load() {
+                Ok(m) => ClsSlot::Ready(m),
+                Err(e) => {
+                    static WARNED: std::sync::Once = std::sync::Once::new();
+                    WARNED.call_once(|| {
+                        eprintln!(
+                            "warning: {e}; text lines are cropped and turned upright but not \
+                             checked for 180° (run scripts/install/download_dependencies.sh)"
+                        );
+                    });
+                    ClsSlot::Missing
+                }
+            };
+        }
+        match &mut self.cls {
+            ClsSlot::Ready(m) => Some(m),
+            _ => None,
+        }
+    }
+
+    /// The oriented line prep (#666): RapidOCR's crops, the upside-down ones
+    /// turned 180° by the classifier when it is installed, then prepared
+    /// for recognition like any other line.
+    fn oriented_lines(
+        &mut self,
+        img: &RgbImage,
+        regions: &[Region],
+        scale: f32,
+        detected: &[crate::ocr_det::DetBox],
+    ) -> Result<(Vec<crate::ocr_prep::LineBox>, Vec<PrepLine>), String> {
+        use crate::ocr_prep::LineSrc;
+        let (bboxes, mut srcs) =
+            crate::ocr_prep::region_line_crops_det(img, regions, scale, detected);
+        let crop_idx: Vec<usize> = (0..srcs.len())
+            .filter(|&i| matches!(srcs[i], LineSrc::Crop(_)))
+            .collect();
+        if !crop_idx.is_empty() {
+            if let Some(cls) = self.cls() {
+                let crops: Vec<&RgbImage> = crop_idx
+                    .iter()
+                    .map(|&i| match &srcs[i] {
+                        LineSrc::Crop(c) => c,
+                        LineSrc::Prepared(_) => unreachable!("filtered to crops"),
+                    })
+                    .collect();
+                let flip = crate::timing::timed("ocr.cls", || cls.upside_down(&crops))?;
+                for (&i, flip) in crop_idx.iter().zip(flip) {
+                    if let (true, LineSrc::Crop(c)) = (flip, &mut srcs[i]) {
+                        image::imageops::rotate180_in_place(c);
+                    }
+                }
+            }
+        }
+        let mut boxes = Vec::with_capacity(bboxes.len());
+        let mut lines = Vec::with_capacity(bboxes.len());
+        for (bb, src) in bboxes.into_iter().zip(srcs) {
+            let line = match src {
+                LineSrc::Crop(c) => crate::ocr_prep::prep_line(&c),
+                LineSrc::Prepared(p) => Some(p),
+            };
+            if let Some(line) = line {
+                boxes.push(bb);
+                lines.push(line);
+            }
+        }
+        Ok((boxes, lines))
     }
 
     /// Recognise every width batch of `lines`, dealt round-robin across the
@@ -460,10 +572,13 @@ impl OcrModel {
         // Gather every line crop on the page first (shared with the browser
         // path), so equal-width lines can share a recognition run regardless
         // of which region they came from.
-        let (bboxes, lines) = crate::timing::timed("ocr.prep", || match detected {
-            Some(det) => prep_region_lines_det(img, regions, scale, det),
-            None => prep_region_lines(img, regions, scale),
-        });
+        let (bboxes, lines) = match detected {
+            Some(det) if self.orient => self.oriented_lines(img, regions, scale, det)?,
+            _ => crate::timing::timed("ocr.prep", || match detected {
+                Some(det) => prep_region_lines_det(img, regions, scale, det),
+                None => prep_region_lines(img, regions, scale),
+            }),
+        };
 
         // Deterministic width-batching (shared with the wasm path), dealt
         // across the recognition lanes.

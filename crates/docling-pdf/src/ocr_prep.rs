@@ -295,7 +295,7 @@ pub fn prep_region_lines_det(
             lines.extend(pl);
             continue;
         }
-        for (dl, dt, dr, db) in inside {
+        for ((dl, dt, dr, db), _) in inside {
             let line = imageops::crop_imm(img, dl, dt, dr - dl, db - dt).to_image();
             let Some(pl) = prep_line(&line) else {
                 continue;
@@ -431,7 +431,10 @@ pub fn prep_table_words_det(
         if r <= l || b <= t {
             continue;
         }
-        let inside = det_boxes_inside(detected, l, t, r, b, iw, ih);
+        let inside: Vec<_> = det_boxes_inside(detected, l, t, r, b, iw, ih)
+            .into_iter()
+            .map(|(rect, _)| rect)
+            .collect();
         if inside.is_empty() {
             let (bb, pl) = prep_table_words(img, std::slice::from_ref(region), scale);
             bboxes.extend(bb);
@@ -463,6 +466,9 @@ pub fn prep_table_words_det(
 /// detector's box as drawn. The crop may thus poke a little outside the
 /// region; the cell keeps the box geometry and assembly assigns it by
 /// overlap, as for any cell.
+/// A detected line's box clamped to the image, in whole pixels.
+type PxRect = (u32, u32, u32, u32);
+
 fn det_boxes_inside(
     detected: &[crate::ocr_det::DetBox],
     l: u32,
@@ -471,7 +477,7 @@ fn det_boxes_inside(
     b: u32,
     iw: u32,
     ih: u32,
-) -> Vec<(u32, u32, u32, u32)> {
+) -> Vec<(PxRect, &crate::ocr_det::DetBox)> {
     detected
         .iter()
         .filter(|d| {
@@ -483,9 +489,163 @@ fn det_boxes_inside(
             let dt = d.t.max(0.0) as u32;
             let dr = (d.r.max(0.0) as u32).min(iw);
             let db = (d.b.max(0.0) as u32).min(ih);
-            (dr > dl && db > dt).then_some((dl, dt, dr, db))
+            (dr > dl && db > dt).then_some(((dl, dt, dr, db), d))
         })
         .collect()
+}
+
+/// A text line's pixels before recognition prep: an oriented crop still to
+/// classify (#666), or a projection strip already prepared.
+pub enum LineSrc {
+    Crop(RgbImage),
+    Prepared(PrepLine),
+}
+
+/// [`prep_region_lines_det`] for `ocr_textline_orientation` (#666):
+/// RapidOCR's crops — each detected line warped upright out of its
+/// minimum-area rectangle and turned when tall ([`rotate_crop`]) — left
+/// unprepared so the orientation classifier can see them first. The boxes
+/// are the same axis-aligned ones, so reading order and geometry do not
+/// move; a region without detected lines falls back to the projection split
+/// as there.
+pub fn region_line_crops_det(
+    img: &RgbImage,
+    regions: &[crate::layout::Region],
+    scale: f32,
+    detected: &[crate::ocr_det::DetBox],
+) -> (Vec<LineBox>, Vec<LineSrc>) {
+    let (iw, ih) = img.dimensions();
+    let mut bboxes = Vec::new();
+    let mut lines = Vec::new();
+    for region in regions {
+        if !is_text_label(region.label) {
+            continue;
+        }
+        let l = (region.l * scale).max(0.0) as u32;
+        let t = (region.t * scale).max(0.0) as u32;
+        let r = ((region.r * scale).max(0.0) as u32).min(iw);
+        let b = ((region.b * scale).max(0.0) as u32).min(ih);
+        if r <= l || b <= t {
+            continue;
+        }
+        let inside = det_boxes_inside(detected, l, t, r, b, iw, ih);
+        if inside.is_empty() {
+            let (bb, pl) = prep_region_lines(img, std::slice::from_ref(region), scale);
+            bboxes.extend(bb);
+            lines.extend(pl.into_iter().map(LineSrc::Prepared));
+            continue;
+        }
+        for ((dl, dt, dr, db), d) in inside {
+            let Some(crop) = rotate_crop(img, &d.quad) else {
+                continue;
+            };
+            bboxes.push((
+                dl as f32 / scale,
+                dt as f32 / scale,
+                dr as f32 / scale,
+                db as f32 / scale,
+            ));
+            lines.push(LineSrc::Crop(crop));
+        }
+    }
+    (bboxes, lines)
+}
+
+/// RapidOCR's `get_rotate_crop_image` (#666): the quad `[tl, tr, br, bl]`
+/// warped onto an upright `w × h` rectangle — `w`, `h` the longer of each
+/// pair of opposite edges, truncated — with bicubic sampling (OpenCV's
+/// `INTER_CUBIC`, a = −0.75) and replicated borders; then, when the crop is
+/// at least 1.5× taller than wide, turned 90° counter-clockwise (numpy's
+/// `rot90`), so vertical text reaches the recognizer lying down. An
+/// axis-aligned integer quad samples exactly its pixels — the plain crop.
+/// `None` for a degenerate quad.
+pub fn rotate_crop(img: &RgbImage, quad: &[(f32, f32); 4]) -> Option<RgbImage> {
+    let dist = |a: (f32, f32), b: (f32, f32)| ((a.0 - b.0).powi(2) + (a.1 - b.1).powi(2)).sqrt();
+    let w = dist(quad[0], quad[1]).max(dist(quad[2], quad[3])) as u32;
+    let h = dist(quad[0], quad[3]).max(dist(quad[1], quad[2])) as u32;
+    if w == 0 || h == 0 || img.width() == 0 || img.height() == 0 {
+        return None;
+    }
+    let (wf, hf) = (w as f64, h as f64);
+    let map = perspective(
+        [(0.0, 0.0), (wf, 0.0), (wf, hf), (0.0, hf)],
+        quad.map(|(x, y)| (x as f64, y as f64)),
+    )?;
+    let mut out = RgbImage::new(w, h);
+    for (x, y, px) in out.enumerate_pixels_mut() {
+        let (x, y) = (x as f64, y as f64);
+        let d = map[6] * x + map[7] * y + 1.0;
+        if d.abs() < 1e-12 {
+            continue;
+        }
+        let sx = (map[0] * x + map[1] * y + map[2]) / d;
+        let sy = (map[3] * x + map[4] * y + map[5]) / d;
+        *px = bicubic_replicate(img, sx, sy);
+    }
+    Some(if h as f32 / w as f32 >= 1.5 {
+        imageops::rotate270(&out)
+    } else {
+        out
+    })
+}
+
+/// The homography taking each `from` point to its `to` point (OpenCV's
+/// `getPerspectiveTransform`): `[a, b, c, d, e, f, g, h]` with
+/// `x' = (ax + by + c) / (gx + hy + 1)`, `y' = (dx + ey + f) / (gx + hy + 1)`.
+/// `None` for a degenerate (collinear) quad.
+fn perspective(from: [(f64, f64); 4], to: [(f64, f64); 4]) -> Option<[f64; 8]> {
+    let mut m = [[0f64; 9]; 8];
+    for k in 0..4 {
+        let ((x, y), (u, v)) = (from[k], to[k]);
+        m[2 * k] = [x, y, 1.0, 0.0, 0.0, 0.0, -x * u, -y * u, u];
+        m[2 * k + 1] = [0.0, 0.0, 0.0, x, y, 1.0, -x * v, -y * v, v];
+    }
+    // Gaussian elimination with partial pivoting.
+    for col in 0..8 {
+        let pivot = (col..8).max_by(|&a, &b| m[a][col].abs().total_cmp(&m[b][col].abs()))?;
+        if m[pivot][col].abs() < 1e-12 {
+            return None;
+        }
+        m.swap(col, pivot);
+        let pivot_row = m[col];
+        for (row, r) in m.iter_mut().enumerate() {
+            let f = r[col] / pivot_row[col];
+            if row != col && f != 0.0 {
+                for (v, p) in r[col..].iter_mut().zip(&pivot_row[col..]) {
+                    *v -= f * p;
+                }
+            }
+        }
+    }
+    Some(std::array::from_fn(|i| m[i][8] / m[i][i]))
+}
+
+/// One bicubic sample at `(x, y)` (OpenCV `INTER_CUBIC`, a = −0.75),
+/// coordinates outside the image clamped to its edge (`BORDER_REPLICATE`).
+fn bicubic_replicate(img: &RgbImage, x: f64, y: f64) -> Rgb<u8> {
+    fn weights(t: f64) -> [f64; 4] {
+        const A: f64 = -0.75;
+        let w0 = ((A * (t + 1.0) - 5.0 * A) * (t + 1.0) + 8.0 * A) * (t + 1.0) - 4.0 * A;
+        let w1 = ((A + 2.0) * t - (A + 3.0)) * t * t + 1.0;
+        let w2 = ((A + 2.0) * (1.0 - t) - (A + 3.0)) * (1.0 - t) * (1.0 - t) + 1.0;
+        [w0, w1, w2, 1.0 - w0 - w1 - w2]
+    }
+    let (x0, y0) = (x.floor(), y.floor());
+    let (wx, wy) = (weights(x - x0), weights(y - y0));
+    let (mw, mh) = (img.width() as i64 - 1, img.height() as i64 - 1);
+    let mut acc = [0f64; 3];
+    for (j, wyj) in wy.iter().enumerate() {
+        let yy = (y0 as i64 - 1 + j as i64).clamp(0, mh) as u32;
+        for (i, wxi) in wx.iter().enumerate() {
+            let xx = (x0 as i64 - 1 + i as i64).clamp(0, mw) as u32;
+            let p = img.get_pixel(xx, yy);
+            let w = wxi * wyj;
+            for c in 0..3 {
+                acc[c] += w * p[c] as f64;
+            }
+        }
+    }
+    Rgb(acc.map(|v| v.round().clamp(0.0, 255.0) as u8))
 }
 
 /// Normalize an image to the scan polarity every stage assumes — dark ink
@@ -624,13 +784,7 @@ mod tests {
             r: 200.0,
             b: 100.0,
         };
-        let bx = |l: f32, t: f32, r: f32, b: f32| crate::ocr_det::DetBox {
-            l,
-            t,
-            r,
-            b,
-            score: 0.9,
-        };
+        let bx = |l: f32, t: f32, r: f32, b: f32| crate::ocr_det::DetBox::rect(l, t, r, b, 0.9);
         let det = [bx(8.0, 18.0, 192.0, 32.0), bx(8.0, 58.0, 122.0, 74.0)];
         let (boxes, lines) = prep_region_lines_det(&img, std::slice::from_ref(&region), 1.0, &det);
         assert_eq!(
@@ -766,6 +920,74 @@ mod word_segmentation {
                 1,
                 "h={h}: a narrower gap must not split"
             );
+        }
+    }
+
+    /// #666: an axis-aligned integer quad warps to exactly its pixels — the
+    /// plain crop, so upright lines prepare as before — and a crop at least
+    /// 1.5× taller than wide is turned 90° counter-clockwise.
+    #[test]
+    fn rotate_crop_is_the_plain_crop_for_an_upright_box_and_turns_tall_ones() {
+        let img = RgbImage::from_fn(40, 30, |x, y| Rgb([(x * 6) as u8, (y * 8) as u8, 77]));
+        let quad = [(5.0, 4.0), (25.0, 4.0), (25.0, 14.0), (5.0, 14.0)];
+        let warped = super::rotate_crop(&img, &quad).unwrap();
+        let plain = image::imageops::crop_imm(&img, 5, 4, 20, 10).to_image();
+        assert_eq!(warped, plain);
+        // 6 wide, 12 tall: turned to 12 × 6, the top row now the left column.
+        let tall = [(10.0, 2.0), (16.0, 2.0), (16.0, 14.0), (10.0, 14.0)];
+        let turned = super::rotate_crop(&img, &tall).unwrap();
+        assert_eq!(turned.dimensions(), (12, 6));
+        assert_eq!(turned.get_pixel(0, 5), img.get_pixel(10, 2));
+        assert!(super::rotate_crop(&img, &[(1.0, 1.0); 4]).is_none());
+    }
+
+    /// A rectangle drawn at 30° comes out upright: its warp is a uniform
+    /// dark bar, whatever the angle.
+    #[test]
+    fn rotate_crop_straightens_a_rotated_rectangle() {
+        let (cx, cy, a) = (50.0f32, 40.0f32, 30f32.to_radians());
+        let (hw, hh) = (30.0f32, 6.0f32);
+        let inside = |x: f32, y: f32| {
+            let (dx, dy) = (x - cx, y - cy);
+            let u = dx * a.cos() + dy * a.sin();
+            let v = -dx * a.sin() + dy * a.cos();
+            u.abs() <= hw && v.abs() <= hh
+        };
+        let img = RgbImage::from_fn(100, 80, |x, y| {
+            if inside(x as f32 + 0.5, y as f32 + 0.5) {
+                Rgb([0, 0, 0])
+            } else {
+                Rgb([255, 255, 255])
+            }
+        });
+        let corner = |su: f32, sv: f32| {
+            (
+                cx + su * hw * a.cos() - sv * hh * a.sin(),
+                cy + su * hw * a.sin() + sv * hh * a.cos(),
+            )
+        };
+        let quad = crate::ocr_det::order_corners([
+            corner(-1.0, -1.0),
+            corner(1.0, -1.0),
+            corner(1.0, 1.0),
+            corner(-1.0, 1.0),
+        ]);
+        let bar = super::rotate_crop(&img, &quad).unwrap();
+        // 60 × 12, less what float edge lengths truncate.
+        let (w, h) = bar.dimensions();
+        assert!(
+            (59..=60).contains(&w) && (11..=12).contains(&h),
+            "{w} × {h}"
+        );
+        // The interior (away from the anti-aliased edge) is all ink.
+        for y in 2..h - 2 {
+            for x in 2..w - 2 {
+                assert!(
+                    bar.get_pixel(x, y)[0] < 60,
+                    "({x}, {y}) {:?}",
+                    bar.get_pixel(x, y)
+                );
+            }
         }
     }
 }

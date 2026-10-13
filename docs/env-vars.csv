@@ -36,6 +36,7 @@ DOCLING_CHUNK_TOKENIZER,model path,crates/docling/src/chunks.rs
 DOCLING_CODE_FORMULA_DIR,model path,crates/docling-pdf/src/enrich.rs
 DOCLING_LAYOUT_ONNX,model path,crates/docling-pdf/src/layout.rs
 DOCLING_OCR_DET_ONNX,model path,crates/docling-pdf/src/ocr_det.rs
+DOCLING_OCR_TEXTLINE_ORI_ONNX,model path,crates/docling-pdf/src/ocr_cls.rs
 DOCLING_OCR_DICT,model path,crates/docling-pdf/src/ocr.rs
 DOCLING_OCR_REC_ONNX,model path,crates/docling-pdf/src/ocr.rs
 DOCLING_PARSE_RENDER_LIB,model path,crates/docling-pdf/src/render/mod.rs
@@ -74,6 +75,7 @@ DOCLING_RS_NO_ARENA,performance,crates/docling-cli/src/main.rs
 DOCLING_RS_NO_GRAPH_CACHE,performance,crates/docling-onnx/src/lib.rs
 DOCLING_RS_OCR_DET_MAX_SIDE,performance,crates/docling-pdf/src/ocr_det.rs
 DOCLING_RS_OCR_SCALE,performance,crates/docling-pdf/src/ocr.rs
+DOCLING_RS_OCR_TEXTLINE_ORIENTATION,operational,crates/docling-pdf/src/ocr.rs
 DOCLING_RS_OCR_SESSIONS,performance,crates/docling-pdf/src/ocr.rs
 DOCLING_RS_PDF_INTRA,performance,crates/docling-pdf/src/lib.rs
 DOCLING_RS_PDF_LAYOUT_BATCH,performance,crates/docling-pdf/src/lib.rs
@@ -94,6 +96,7 @@ DOCLING_RS_TF_MATCH_DUMP,debug,crates/docling-pdf/src/tf_core.rs
 DOCLING_RS_TIMING,debug,crates/docling-onnx/src/lib.rs
 DOCLING_RS_VLM_DEBUG,debug,crates/docling/src/vlm.rs
 DOCLING_RS_PICTURE_OCR_MIN_SIDE,operational,crates/docling/src/converter.rs
+DOCLING_RS_PICTURE_OCR_SCALE,performance,crates/docling-pdf/src/ocr.rs
 DOCLING_RS_VIDEO_SCENE_THRESHOLD,operational,crates/docling/src/converter.rs
 DOCLING_RS_VIDEO_FRAME_MAX_SIDE,operational,crates/docling/src/converter.rs
 DOCLING_RS_VIDEO_FRAME_DEDUPE,operational,crates/docling/src/converter.rs

@@ -193,6 +193,13 @@ jobs:
             "https://www.modelscope.cn/models/RapidAI/RapidOCR/resolve/v3.9.2/onnx/PP-OCRv6/rec/PP-OCRv6_rec_small.onnx"
           curl -fsSL $RETRY -o third-party/ocr_rec_v6_dict.txt \
             "https://www.modelscope.cn/models/RapidAI/RapidOCR/resolve/v3.9.2/paddle/PP-OCRv6/rec/PP-OCRv6_rec_small/ppocrv6_dict.txt"
+          # PP-LCNet text-line orientation classifier (#666, Apache-2.0):
+          # RapidOCR's `ch_PP-LCNet_x0_25_textline_ori_cls_mobile`, the 0/180
+          # check of `ocr_textline_orientation`; re-hosted unmodified (hub
+          # SHA256: 54379ae5174d026780215fc748a7f31910dee36818e63d49e17dc598ecc82df7).
+          curl -fsSL $RETRY -o third-party/ocr_textline_ori.onnx \
+            "https://www.modelscope.cn/models/RapidAI/RapidOCR/resolve/v3.9.2/onnx/PP-OCRv5/cls/ch_PP-LCNet_x0_25_textline_ori_cls_mobile.onnx"
+          echo "54379ae5174d026780215fc748a7f31910dee36818e63d49e17dc598ecc82df7  third-party/ocr_textline_ori.onnx" | sha256sum -c -
           # Whisper tiny (the ASR default, ~150 MB): same reasoning — a
           # default install fetches it, so mirror it here and leave Hugging
           # Face as download_dependencies.sh's fallback host.
@@ -240,6 +247,7 @@ jobs:
           stage third-party/ocr_det.onnx ocr_det.onnx
           stage third-party/ocr_rec_v6.onnx ocr_rec_v6.onnx
           stage third-party/ocr_rec_v6_dict.txt ocr_rec_v6_dict.txt
+          stage third-party/ocr_textline_ori.onnx ocr_textline_ori.onnx
           # Whisper tiny flattens with an asr_ prefix (release assets are one
           # flat namespace; download_dependencies.sh maps them back into
           # .models/asr/).

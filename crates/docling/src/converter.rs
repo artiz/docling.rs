@@ -240,6 +240,9 @@ pub struct DocumentConverter {
     ocr_engine: Option<String>,
     /// OCR render scale in px/pt (#254); validated at the ML call sites.
     ocr_scale: Option<f32>,
+    /// RapidOCR's line orientation handling (#666); `None` = the
+    /// environment's default. See [`Self::ocr_textline_orientation`].
+    ocr_textline_orientation: Option<bool>,
     /// Picture-crop / page-image scale in px/pt (docling's `images_scale`,
     /// #520); `None` = the pipeline's 2.0 render.
     images_scale: Option<f32>,
@@ -286,6 +289,9 @@ pub struct DocumentConverter {
     /// Smallest side (px) a picture must have to be OCR'd; `None` = the
     /// environment's default. See [`Self::picture_ocr_min_side`].
     picture_ocr_min_side: Option<u32>,
+    /// The picture OCR's resolution (#666); `None` = the image-input rule.
+    /// See [`Self::picture_ocr_scale`].
+    picture_ocr_scale: Option<f32>,
     /// Keep the embedded image bytes on every picture (the default). See
     /// [`Self::keep_picture_images`].
     keep_picture_images: bool,
@@ -381,6 +387,7 @@ impl Default for DocumentConverter {
             ocr_mode: None,
             ocr_engine: None,
             ocr_scale: None,
+            ocr_textline_orientation: None,
             images_scale: None,
             generate_page_images: false,
             heading_hierarchy: false,
@@ -396,6 +403,7 @@ impl Default for DocumentConverter {
             picture_ocr: false,
             picture_ocr_classes: Vec::new(),
             picture_ocr_min_side: None,
+            picture_ocr_scale: None,
             keep_picture_images: true,
             redact: None,
             page_range: None,
@@ -475,7 +483,9 @@ impl DocumentConverter {
     /// functions, whose fixed signatures couldn't take #244's `skip_ocr`.
     #[cfg(feature = "pdf")]
     fn ml_pipeline(&self) -> Result<docling_pdf::Pipeline, docling_pdf::PdfError> {
-        Ok(docling_pdf::Pipeline::new()?
+        let p = docling_pdf::Pipeline::new()?;
+        Ok(self
+            .with_textline_orientation(p)
             .no_table_former(self.no_table_former)
             // docling-pdf's `Pipeline` keeps its pre-2.0 names: its `no_ocr`
             // is the text-layer fast path, its `skip_ocr` docling's do_ocr=False.
@@ -620,6 +630,28 @@ impl DocumentConverter {
             return None;
         }
         Some(s)
+    }
+
+    /// The validated [`Self::picture_ocr_scale`] (#666), like
+    /// [`Self::ocr_scale_choice`].
+    #[cfg(feature = "pdf")]
+    fn picture_ocr_scale_choice(&self) -> Option<f32> {
+        let s = self.picture_ocr_scale?;
+        if !(s.is_finite() && s > 0.0) {
+            eprintln!("docling: picture_ocr_scale {s} is not a positive number; using the default");
+            return None;
+        }
+        Some(s)
+    }
+
+    /// [`Self::ocr_textline_orientation`] on a pipeline (#666); unset keeps
+    /// the pipeline's `DOCLING_RS_OCR_TEXTLINE_ORIENTATION` default.
+    #[cfg(feature = "pdf")]
+    fn with_textline_orientation(&self, p: docling_pdf::Pipeline) -> docling_pdf::Pipeline {
+        match self.ocr_textline_orientation {
+            Some(enable) => p.ocr_textline_orientation(enable),
+            None => p,
+        }
     }
 
     /// Where [`ImageMode::Referenced`] streaming writes image files, and the
@@ -1039,12 +1071,15 @@ impl DocumentConverter {
             return None;
         }
         let pipeline = docling_pdf::Pipeline::new().map(|p| {
-            p.no_ocr(true)
-                .no_table_former(true)
-                .ocr_lang(self.ocr_lang_choice())
-                .ocr_engine(self.ocr_engine_choice())
-                .tesseract_lang(self.tesseract_lang_choice())
-                .ocr_scale(self.ocr_scale_choice())
+            self.with_textline_orientation(
+                p.no_ocr(true)
+                    .no_table_former(true)
+                    .ocr_lang(self.ocr_lang_choice())
+                    .ocr_engine(self.ocr_engine_choice())
+                    .tesseract_lang(self.tesseract_lang_choice())
+                    .ocr_scale(self.ocr_scale_choice())
+                    .picture_ocr_scale(self.picture_ocr_scale_choice()),
+            )
         });
         let pipeline = match pipeline {
             Ok(p) => p,
@@ -1321,6 +1356,22 @@ impl DocumentConverter {
         self
     }
 
+    /// RapidOCR's handling of text-line orientation (#666), off by default
+    /// (`DOCLING_RS_OCR_TEXTLINE_ORIENTATION` sets the process default):
+    /// detected lines are cropped along the detector's rotated rectangle, a
+    /// crop at least 1.5× taller than wide is turned 90°, and the
+    /// PP-LCNet text-line orientation classifier
+    /// (`.models/ocr_textline_ori.onnx`) turns upside-down lines — so
+    /// vertical axis titles, rotated headers, skewed and upside-down lines
+    /// read as text. Applies to the PP-OCR lines of scanned pages, images
+    /// and pictures alike (changing their output when on); table words and
+    /// Tesseract are untouched. A missing classifier warns once and keeps
+    /// the crop and the 90° turn.
+    pub fn ocr_textline_orientation(mut self, enable: bool) -> Self {
+        self.ocr_textline_orientation = Some(enable);
+        self
+    }
+
     /// Pixels per PDF point for picture crops and page images — docling's
     /// `images_scale` (#520). Unset delivers crops at the pipeline's own 2.0
     /// px/pt render (144 dpi), as before; another value resamples it (above
@@ -1409,6 +1460,19 @@ impl DocumentConverter {
         self
     }
 
+    /// The picture OCR's resolution (#666), in pixels per picture pixel
+    /// before RapidOCR's 2000 px longer-side cap: `1.0` reads a picture at
+    /// its native pixels, as RapidOCR does, shrinking only what exceeds
+    /// 2000 px. Unset (`DOCLING_RS_PICTURE_OCR_SCALE`, else the image-input
+    /// rule) reads it like a scanned image — [`ocr_scale`](Self::ocr_scale)
+    /// when set, else 3 px/pt under the cap, which upscales a 720 × 180
+    /// screenshot to 2000 × 500. Scanned pages and image inputs are
+    /// unaffected. Non-positive values warn and are ignored.
+    pub fn picture_ocr_scale(mut self, scale: f32) -> Self {
+        self.picture_ocr_scale = Some(scale);
+        self
+    }
+
     /// Whether the pictures keep their embedded image bytes (the default,
     /// `true`): `false` drops them from every picture after the enrichment
     /// pass, so a document whose images were only there to be read — a slide
@@ -1485,12 +1549,14 @@ impl DocumentConverter {
                 match docling_pdf::Pipeline::new() {
                     Ok(p) => {
                         ocr = Some(
-                            p.no_ocr(true)
-                                .no_table_former(true)
-                                .ocr_lang(self.ocr_lang_choice())
-                                .ocr_engine(self.ocr_engine_choice())
-                                .tesseract_lang(self.tesseract_lang_choice())
-                                .ocr_scale(self.ocr_scale_choice()),
+                            self.with_textline_orientation(
+                                p.no_ocr(true)
+                                    .no_table_former(true)
+                                    .ocr_lang(self.ocr_lang_choice())
+                                    .ocr_engine(self.ocr_engine_choice())
+                                    .tesseract_lang(self.tesseract_lang_choice())
+                                    .ocr_scale(self.ocr_scale_choice()),
+                            ),
                         )
                     }
                     Err(e) => crate::redact::warn_box_out_unavailable(&e.to_string()),
@@ -1653,6 +1719,7 @@ impl DocumentConverter {
             tesseract_lang: self.tesseract_lang_choice(),
             ocr_mode: self.ocr_mode_choice(),
             ocr_scale: self.ocr_scale_choice(),
+            ocr_textline_orientation: self.ocr_textline_orientation,
             images_scale: self.images_scale,
             page_break_placeholder: self.page_break_placeholder.clone(),
             compact_tables: self.compact_tables,

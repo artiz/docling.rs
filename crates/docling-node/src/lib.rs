@@ -86,6 +86,11 @@ pub struct ConverterOptions {
     /// #254); unset reads the pipeline's own 2.0 px/pt render (docling's
     /// default is 3 = 216 dpi).
     pub ocr_scale: Option<f64>,
+    /// RapidOCR's text-line orientation handling (#666): oriented line
+    /// crops, tall lines turned 90°, upside-down lines turned by the 0/180
+    /// classifier (`.models/ocr_textline_ori.onnx`). Unset = off unless
+    /// `DOCLING_RS_OCR_TEXTLINE_ORIENTATION` is set.
+    pub ocr_textline_orientation: Option<bool>,
     /// Picture crops (and page images) in px per PDF point — docling's
     /// `images_scale` (#520), 0.1–4.0; unset keeps the pipeline's 2.0 px/pt
     /// render. The JSON picture `dpi` is 72·scale (#519).
@@ -180,6 +185,10 @@ pub struct ConverterOptions {
     /// many pixels (icons, bullets). Default 32
     /// (`DOCLING_RS_PICTURE_OCR_MIN_SIDE`).
     pub picture_ocr_min_side: Option<u32>,
+    /// The picture OCR's resolution in px per picture pixel under
+    /// RapidOCR's 2000 px cap (#666): `1.0` reads pictures at their native
+    /// pixels; unset keeps the image-input rule.
+    pub picture_ocr_scale: Option<f64>,
     /// `false` drops the embedded image bytes from every picture after the
     /// enrichment pass (#645): slim JSON/DCLX, placeholder-only Markdown, the
     /// OCR text kept. Default `true`.
@@ -359,6 +368,9 @@ pub struct ConvertOptions {
     /// OCR render scale in px per PDF point (docling's `OcrOptions.scale`,
     /// #254); unset reads the pipeline's own 2.0 px/pt render.
     pub ocr_scale: Option<f64>,
+    /// RapidOCR's text-line orientation handling (#666). See
+    /// [`ConverterOptions`].
+    pub ocr_textline_orientation: Option<bool>,
     /// Picture crops (and page images) in px per PDF point — docling's
     /// `images_scale` (#520), 0.1–4.0; unset keeps the pipeline's 2.0 px/pt
     /// render. The JSON picture `dpi` is 72·scale (#519).
@@ -421,6 +433,7 @@ pub struct ConvertOptions {
     pub do_picture_ocr: Option<bool>,
     pub picture_ocr_classes: Option<String>,
     pub picture_ocr_min_side: Option<u32>,
+    pub picture_ocr_scale: Option<f64>,
     pub keep_picture_images: Option<bool>,
     /// PII redaction (#621) and its settings. See [`ConverterOptions`].
     pub redact_pii: Option<bool>,
@@ -1380,6 +1393,9 @@ struct WarmPipelineConfig {
     tesseract_lang: Option<String>,
     ocr_mode: Option<docling::OcrMode>,
     ocr_scale: Option<f32>,
+    /// RapidOCR's text-line orientation handling (#666); `None` = the
+    /// environment's default.
+    ocr_textline_orientation: Option<bool>,
     /// Picture-crop scale and page images (#519/#520).
     images: docling::ImageOutput,
     enrich: docling::EnrichmentOptions,
@@ -1412,6 +1428,7 @@ fn warm_pipeline_config(o: &ConverterOptions) -> Result<WarmPipelineConfig> {
         tesseract_lang: s.tesseract_lang().map_err(option_err)?,
         ocr_mode: s.ocr_mode().map_err(option_err)?,
         ocr_scale: s.ocr_scale,
+        ocr_textline_orientation: s.ocr_textline_orientation,
         images: s.image_output(),
         enrich: s.enrichments(),
     })
@@ -1460,7 +1477,7 @@ impl Pipeline {
         // error on `new`, like on `DocumentConverter`, not a warning after
         // the models have loaded.
         let warm = warm_pipeline_config(&options)?;
-        let pipeline = RsPipeline::new()
+        let mut pipeline = RsPipeline::new()
             .map_err(convert_err)?
             // docling-pdf's pre-2.0 names: its `skip_ocr` is do_ocr=False,
             // its `no_ocr` the text-layer fast path (#611).
@@ -1482,6 +1499,7 @@ impl Pipeline {
             .pages(warm.page_range)
             .document_timeout(warm.document_timeout)
             .enrichments(warm.enrich);
+        pipeline.set_ocr_textline_orientation(warm.ocr_textline_orientation);
         Ok(Self {
             inner: Arc::new(Mutex::new(pipeline)),
             strict,
@@ -2703,6 +2721,7 @@ mod tests {
                 tesseract_lang: None,
                 ocr_mode: None,
                 ocr_scale: None,
+                ocr_textline_orientation: None,
                 images: docling::ImageOutput::default(),
                 enrich: docling::EnrichmentOptions::default(),
             }

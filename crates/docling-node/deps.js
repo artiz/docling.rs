@@ -8,6 +8,7 @@
 //   - RT-DETR layout model (.models/layout_heron.onnx)                 — required for PDF & image
 //   - PP-OCR rec + dict    (.models/ocr_rec.onnx, ppocr_keys_v1.txt)   — used for pages with no text layer
 //   - PP-OCR text detector (.models/ocr_det.onnx)                      — optional; reads lines outside layout regions (#429)
+//   - Text-line orientation (.models/ocr_textline_ori.onnx)            — optional; ocrTextlineOrientation's 0/180 check (#666)
 //   - TableFormer          (.models/tableformer/{encoder,decoder,bbox}.onnx) — optional; geometric fallback otherwise
 //
 // This module does NOT download anything — `scripts/install/download_dependencies.sh`
@@ -102,6 +103,9 @@ function resolvePaths(dir) {
     ocrDict: process.env.DOCLING_OCR_DICT || path.join(models, 'ppocr_keys_v1.txt'),
     // The text detector (#429) is optional: without it OCR stays region-scoped.
     ocrDet: process.env.DOCLING_OCR_DET_ONNX || path.join(models, 'ocr_det.onnx'),
+    // The text-line orientation classifier (#666), optional likewise.
+    ocrTextlineOri:
+      process.env.DOCLING_OCR_TEXTLINE_ORI_ONNX || path.join(models, 'ocr_textline_ori.onnx'),
     // The fp16-weight encoder repack (#374; fp32 compute, half the download)
     // ranks ahead of the fp32 file, like the Rust pipeline's own chain,
     // unless full precision is forced.
@@ -150,6 +154,7 @@ function checkDependencies(options = {}) {
     layout: has(p.layout),
     ocr: has(p.ocrRec) && has(p.ocrDict),
     ocrDet: has(p.ocrDet),
+    ocrTextlineOri: has(p.ocrTextlineOri),
     tableformer: has(p.tfEncoder) && has(p.tfDecoder) && has(p.tfBbox),
     chunkTokenizer: has(p.chunkTokenizer),
     // true where the runtime is linked in; on s390x whether the library is present.
@@ -169,6 +174,7 @@ function exportEnv(p) {
   if (fs.existsSync(p.ocrRec)) process.env.DOCLING_OCR_REC_ONNX = p.ocrRec
   if (fs.existsSync(p.ocrDict)) process.env.DOCLING_OCR_DICT = p.ocrDict
   if (fs.existsSync(p.ocrDet)) process.env.DOCLING_OCR_DET_ONNX = p.ocrDet
+  if (fs.existsSync(p.ocrTextlineOri)) process.env.DOCLING_OCR_TEXTLINE_ORI_ONNX = p.ocrTextlineOri
   if (fs.existsSync(p.tfEncoder)) process.env.DOCLING_TABLEFORMER_ENCODER = p.tfEncoder
   if (fs.existsSync(p.tfDecoder)) process.env.DOCLING_TABLEFORMER_DECODER = p.tfDecoder
   if (fs.existsSync(p.tfBbox)) process.env.DOCLING_TABLEFORMER_BBOX = p.tfBbox

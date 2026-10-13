@@ -115,6 +115,7 @@ The API is described by <a href="/openapi.yaml"><code>/openapi.yaml</code></a> (
     <label title="Keep every detected picture as a picture (disable text-panel demotion)"><input type="checkbox" id="no_text_panels"> keep pictures</label>
     <label title="OCR every page from its render, ignoring the embedded text layer (docling's force_full_page_ocr)"><input type="checkbox" id="force_full_page_ocr"> force full-page OCR</label>
     <label title="Infer section-header levels from font size / numbering (docling's HeadingHierarchyModel, #302)"><input type="checkbox" id="heading_hierarchy"> heading levels</label>
+    <label title="RapidOCR's text-line orientation: oriented line crops, tall lines turned 90°, upside-down lines turned by the 0/180 classifier (#666)"><input type="checkbox" id="ocr_textline_orientation"> orient OCR lines</label>
     <label title="Classify pictures with DocumentFigureClassifier — 26 classes on the JSON picture item (docling's do_picture_classification, #423)"><input type="checkbox" id="do_picture_classification"> classify pictures</label>
     <label title="Rewrite code blocks and detect their language with the CodeFormulaV2 VLM (docling's do_code_enrichment, #423) — slow on CPU"><input type="checkbox" id="do_code_enrichment"> enrich code</label>
     <label title="Decode display formulas to LaTeX with CodeFormulaV2 (docling's do_formula_enrichment, #423) — slow on CPU"><input type="checkbox" id="do_formula_enrichment"> enrich formulas</label>
@@ -224,6 +225,8 @@ The API is described by <a href="/openapi.yaml"><code>/openapi.yaml</code></a> (
   <tr><td><code>ocr_lang</code></td><td><code>en</code> (default) | <code>ch</code> | a BCP-47 tag (<code>en-US</code>, <code>zh-Hans</code>, <code>iso:zh-CN</code>)</td><td>OCR recognition language for scanned pages (<code>ch</code> = the multilingual docling-conformance model; BCP-47 tags for English/Chinese resolve to the same two models, #388).</td></tr>
   <tr><td><code>ocr_mode</code></td><td><code>default</code> | <code>full_page</code> | <code>layout_regions</code> | <code>pdf_aware_layout_regions</code></td><td>Which regions feed the OCR (docling's <code>OcrMode</code>, #254); <code>full_page</code>/<code>layout_regions</code> discard the text layer.</td></tr>
   <tr><td><code>ocr_scale</code></td><td>float</td><td>OCR render scale in px per PDF point (docling's <code>OcrOptions.scale</code>, default 3 = 216&nbsp;dpi; unset reads the pipeline's own 2.0 render).</td></tr>
+  <tr><td><code>ocr_textline_orientation</code></td><td><code>true</code>/<code>false</code></td><td>RapidOCR's text-line orientation handling (#666): detected lines cropped along their rotated rectangle, tall crops turned 90°, upside-down lines turned by the 0/180 classifier (<code>.models/ocr_textline_ori.onnx</code>). Vertical, skewed and upside-down text reads; PP-OCR only. Off by default.</td></tr>
+  <tr><td><code>picture_ocr_scale</code></td><td>float</td><td>With <code>do_picture_ocr</code>: the picture OCR's resolution in px per picture pixel under RapidOCR's 2000&nbsp;px cap (#666); <code>1.0</code> reads pictures at their native pixels. Unset keeps the image-input rule.</td></tr>
   <tr><td><code>compact_tables</code>, <code>skip_empty_cells</code></td><td><code>true</code>/<code>false</code></td><td>Unpadded <code>| a | b |</code> Markdown tables; drop empty cells from sparse XLSX/XLS grids (#271, docling.rs extensions).</td></tr>
   <tr><td><code>md_page_break_placeholder</code></td><td>string</td><td>Text inserted between pages in Markdown output (docling-serve's option; docling-core's <code>MarkdownParams.page_break_placeholder</code>), e.g. <code>&lt;!-- page break --&gt;</code>. Unset: no page breaks, docling's default.</td></tr>
   <tr><td><code>video_frames</code></td><td>int</td><td>Video: maximum sampled frames (0 = transcript only, #138).</td></tr>
@@ -367,6 +370,7 @@ $('go').addEventListener('click', async () => {
     no_text_panels: $('no_text_panels').checked,
     force_full_page_ocr: $('force_full_page_ocr').checked,
     heading_hierarchy: $('heading_hierarchy').checked,
+    ocr_textline_orientation: $('ocr_textline_orientation').checked,
     do_picture_classification: $('do_picture_classification').checked,
     do_code_enrichment: $('do_code_enrichment').checked,
     do_formula_enrichment: $('do_formula_enrichment').checked,
