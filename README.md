@@ -30,6 +30,14 @@
 A Rust port of [docling](https://github.com/docling-project/docling): convert
 documents into a unified `DoclingDocument` for downstream AI workflows.
 
+**Coming from [MarkItDown](https://github.com/microsoft/markitdown)?**
+`pip install docling-rs` and change one import —
+`from docling_rs.markitdown import MarkItDown` — to keep MarkItDown's API with
+layout analysis, TableFormer tables and local OCR behind it: PDF table-cell
+recall 0.31 → 0.94, Office/HTML 5–10× faster
+([measured](#conformance-with-microsoft-markitdown),
+[docling.rs for MarkItDown users](./docs/MARKITDOWN.md)).
+
 **Fast and small:** one static binary, no Python/PyTorch at runtime. The PDF
 ML pipeline runs **4.3× faster** than Python docling at **2.3–2.6× less peak
 RAM** (methodology, profiling and per-fixture numbers in
@@ -157,7 +165,8 @@ and recognizer, ONNX) — no API key, nothing leaves the machine.
 **Switching** is an import away — `pip install docling-rs`, then
 `from docling_rs.markitdown import MarkItDown`: MarkItDown's `convert*`
 methods, `StreamInfo`, result and exceptions over the docling.rs engine
-([migration notes](./crates/docling-py/README.md#migrating-from-markitdown)).
+([migration notes](./crates/docling-py/README.md#migrating-from-markitdown),
+[docling.rs for MarkItDown users](./docs/MARKITDOWN.md)).
 
 ## Conformance with Python docling
 
@@ -702,7 +711,7 @@ One engine, several front doors. Every surface takes the same options
 | a shell / CI job | the `docling-rs` CLI (`--to md\|json\|html\|dclx\|chunks\|latex\|pandoc\|images`, `--input`/`--output` batch mode) | `cargo install docling-cli` · [release binaries](https://github.com/docling-project/docling.rs/releases) · `ghcr.io/docling-project/docling-rs` | [Batch conversion](#batch-conversion--several-sources---input----output), [Install](#install-locally--in-ci-one-liner) |
 | anything that speaks HTTP | `docling-serve`: `POST /v1/convert` (multipart or JSON), async jobs, OpenAPI 3.1 | `docker run -p 5001:5001 ghcr.io/docling-project/docling-rs-serve` · `cargo install docling-serve` | [HTTP conversion API](#http-conversion-api--docling-rs-serve), [docs/DEPLOYMENT.md](./docs/DEPLOYMENT.md) |
 | Node.js / Bun / Electron | `docling.rs` (N-API addon): `convertFile`, `convert`, streaming, chunking, warm `Pipeline` | `npm i docling.rs` (`docling.rs-cuda` for GPU) | [Node bindings](#nodejs--bun-bindings), [crate README](./crates/docling-node/README.md) |
-| Python | `docling-rs` — a drop-in for docling's `DocumentConverter` over the Rust engine | `pip install docling-rs` (`docling-rs-cuda` for GPU) | [Python bindings](#python-bindings), [migration guide](./crates/docling-py/README.md#migrating-from-python-docling) |
+| Python | `docling-rs` — a drop-in for docling's `DocumentConverter`, and for MarkItDown (`docling_rs.markitdown`), over the Rust engine | `pip install docling-rs` (`docling-rs-cuda` for GPU) | [Python bindings](#python-bindings), migration guides [from docling](./crates/docling-py/README.md#migrating-from-python-docling) and [from MarkItDown](./docs/MARKITDOWN.md) |
 | the browser / Tauri / a PWA | `docling.rs-wasm`: `convert(bytes, name, to)` fully client-side, optional in-browser OCR/layout | `npm i docling.rs-wasm` | [In the browser](#in-the-browser--docling-wasm), [crate README](./crates/docling-wasm/README.md) |
 | C, C++, C#/.NET, Go, Java, Swift, Zig, … | `docling-ffi`: `docling_convert(bytes, len, filename, options_json)` behind one `docling.h` | [release archives](https://github.com/docling-project/docling.rs/releases) `docling-ffi-<tag>-<target>` (library + header) | [C ABI](#c-abi-for-embedders--docling-ffi), [language quickstarts](./crates/docling-ffi/README.md#language-quickstarts) |
 | a RAG stack | `docling-rag`: chunk → embed → search, REST API and web UI | `cargo install docling-rag` | [RAG subsystem](#rag-subsystem) |
@@ -1245,6 +1254,12 @@ result = DocumentConverter().convert("report.docx")
 print(result.document.export_to_markdown())
 data = result.document.export_to_dict()   # docling JSON wire format (schema 1.10.0)
 ```
+
+The same package speaks Microsoft MarkItDown's API (#674) —
+`from docling_rs.markitdown import MarkItDown`, then
+`MarkItDown().convert(src).markdown` with `StreamInfo` hints, streams, URIs and
+`python -m docling_rs.markitdown` for its CLI; see
+[docling.rs for MarkItDown users](./docs/MARKITDOWN.md).
 
 `DocumentConverter().convert_archive("bundle.zip")` (#557) converts every
 document inside a ZIP — a path, the archive's `bytes` or a `DocumentStream` —

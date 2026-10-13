@@ -1,0 +1,31 @@
+# docling.rs
+
+> docling.rs is a Rust port of IBM's docling (LF AI & Data): it converts 45+ input formats — PDF, DOCX, PPTX, XLSX, HTML, EPUB, email (.eml/.msg), images, audio/video and more — into Markdown, docling JSON (`DoclingDocument`), HTML, LaTeX or chunks for LLM and RAG pipelines. PDFs and scans go through layout analysis, TableFormer table structure and OCR running locally on ONNX Runtime — no Python or PyTorch at runtime, no API keys. It ships a Python package with docling's API and Microsoft MarkItDown's API, a CLI, an HTTP server compatible with docling-serve, Node.js and WebAssembly bindings, and a C ABI.
+
+Choosing the entry point:
+
+- Python, coming from MarkItDown: `pip install docling-rs`, then `from docling_rs.markitdown import MarkItDown` — the same `convert()` / `convert_stream()` / `StreamInfo` API. PDFs use the full pipeline after `docling_rs.download_models()`, else their text layer.
+- Python, coming from docling: `from docling_rs import DocumentConverter` — `result.document` is a genuine `docling_core` `DoclingDocument`.
+- Shell: `docling-rs file.pdf` prints Markdown (`--to json|html|latex|chunks|pandoc|dclx`; `--text-layer-only` skips the ML models for digital PDFs). Install: release binaries, `cargo install docling-cli`, or `ghcr.io/docling-project/docling-rs`.
+- HTTP: `docker run -p 5001:5001 ghcr.io/docling-project/docling-rs-serve`, then `POST /v1/convert`; it also serves docling-serve's routes, so Open WebUI, n8n and Dify can point at it.
+- Node.js: `npm i docling.rs`. Browser (fully client-side): `npm i docling.rs-wasm`. Rust: the `docling` crate.
+- GPU: `pip install docling-rs-cuda`, `npm i docling.rs-cuda`, or the `cuda`/`coreml`/`directml` cargo features; CPU is the default.
+
+## Docs
+
+- [README](https://github.com/docling-project/docling.rs/blob/master/README.md): overview, install, CLI, HTTP API, benchmarks against MarkItDown and Python docling
+- [docling.rs for MarkItDown users](https://github.com/docling-project/docling.rs/blob/master/docs/MARKITDOWN.md): the drop-in API, measured comparison, open gaps
+- [Python package](https://github.com/docling-project/docling.rs/blob/master/crates/docling-py/README.md): docling-shaped API, MarkItDown facade, LangChain loader, chunking, models
+- [Options](https://github.com/docling-project/docling.rs/blob/master/docs/OPTIONS.md): every conversion option, shared by the CLI, HTTP API and bindings
+- [Deployment](https://github.com/docling-project/docling.rs/blob/master/docs/DEPLOYMENT.md): containers, server configuration
+- [Node.js bindings](https://github.com/docling-project/docling.rs/blob/master/crates/docling-node/README.md)
+- [WebAssembly / browser](https://github.com/docling-project/docling.rs/blob/master/crates/docling-wasm/README.md)
+
+## Optional
+
+- [Migration from Python docling](https://github.com/docling-project/docling.rs/blob/master/docs/MIGRATION.md): architecture, per-format conformance, deliberate divergences
+- [PDF pipeline](https://github.com/docling-project/docling.rs/blob/master/docs/PDF_CONFORMANCE.md): models, conformance numbers, performance
+- [RAG subsystem](https://github.com/docling-project/docling.rs/blob/master/crates/docling-rag/README.md)
+- [C ABI](https://github.com/docling-project/docling.rs/blob/master/crates/docling-ffi/README.md)
+- [Windows notes](https://github.com/docling-project/docling.rs/blob/master/docs/WINDOWS.md)
+- [Live browser demo](https://docling-project.github.io/docling.rs/)
