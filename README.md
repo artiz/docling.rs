@@ -293,6 +293,13 @@ cargo run -p docling-cli -- --images referenced document.json > out.md
 cargo run -p docling-cli -- document.pdf
 cargo run -p docling-cli -- --no-stream document.pdf
 
+# sources need not be files (#668): stdin, http(s), data: and file: URLs —
+# the format from the name, the Content-Type or the bytes, or say it
+cat report.docx | docling-rs --from docx -
+docling-rs https://example.com/whitepaper.pdf > whitepaper.md
+docling-rs --mime-type text/markdown https://raw.example.com/README
+docling-rs "data:text/html;base64,PGgxPkhpPC9oMT4="
+
 # or via the examples
 cargo run -p docling --example convert -- crates/docling/sample.md
 cargo run -p docling --example stream  -- crates/docling/sample.md
@@ -1177,6 +1184,7 @@ docling-rs bundle.zip --output out/                              # every documen
 | `--jobs N` | declarative formats in parallel (PDFs share the one warm pipeline) |
 | `--abort-on-error` | stop at the first failed file (Python's flag) |
 | `--list-input-formats` · `--list-output-formats` | what this build converts, one per line (#603) — ask the binary instead of hard-coding a list |
+| `-` · `http(s)://…` · `data:…` · `file:…` | stdin, a fetched URL, an inline document, a path through the URL grammar — as sources anywhere a path goes (#668); `--from FORMAT` / `--mime-type TYPE` type what carries no extension, `--no-url-fetch` refuses URLs |
 
 Every other flag (`--strict`, `--pages`, `--ocr-lang`, `--pipeline vlm`,
 enrichment, …) applies to the whole batch. Collision rules, the ZIP limits

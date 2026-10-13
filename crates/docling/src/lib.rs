@@ -28,6 +28,7 @@ mod converter;
 pub mod dclx;
 pub mod email_attachments;
 mod error;
+pub mod fetch;
 mod format;
 pub mod options;
 mod redact;
@@ -51,6 +52,7 @@ pub use docling_core::{
 };
 pub use email_attachments::{EmailAttachmentInfo, EmailAttachments};
 pub use error::{ConversionError, EncryptionError};
+pub use fetch::FetchPolicy;
 pub use format::{InputFormat, OUTPUT_FORMATS};
 pub use options::{
     cli_flag, merge_options, ConvertOptions, OptionInfo, OptionsError, PipelineKind, OPTIONS,
