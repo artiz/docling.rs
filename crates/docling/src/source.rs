@@ -65,6 +65,86 @@ impl SourceDocument {
         })
     }
 
+    /// Build a document from bytes that arrived with a name and, maybe, a
+    /// media type — an upload, a fetched URL, an email attachment. The
+    /// format comes from the name's extension, else from `media_type`
+    /// ([`InputFormat::from_mime`]), else from the bytes themselves (the
+    /// signatures the converter's content sniffing knows: PDF, OOXML/ODF/EPUB packages,
+    /// OLE, RTF, HTML, the raster image headers, DjVu). The name's stem is
+    /// the document's name, as with [`Self::from_file`].
+    ///
+    /// # Errors
+    /// [`ConversionError::UnknownFormat`] when none of the three decides —
+    /// a bare name, no (or a generic) media type, unrecognized bytes.
+    pub fn from_named_bytes(
+        name: &str,
+        bytes: Vec<u8>,
+        media_type: Option<&str>,
+    ) -> Result<Self, ConversionError> {
+        let path = Path::new(name);
+        let ext = path.extension().and_then(|e| e.to_str());
+        let format = ext
+            .and_then(InputFormat::from_extension)
+            .or_else(|| media_type.and_then(InputFormat::from_mime))
+            .or_else(|| crate::sniff::detect_any(&bytes))
+            .ok_or_else(|| ConversionError::UnknownFormat {
+                hint: match (ext, media_type) {
+                    (Some(e), _) => format!("unrecognized extension '.{e}'"),
+                    (None, Some(m)) => format!(
+                        "cannot determine the format of '{name}': no file extension, \
+                         media type '{m}' is not one docling converts, and the content \
+                         matches no known signature"
+                    ),
+                    (None, None) => format!(
+                        "cannot determine the format of '{name}': no file extension, \
+                         no media type, and the content matches no known signature"
+                    ),
+                },
+            })?;
+        let stem = path
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .filter(|s| !s.is_empty())
+            .unwrap_or("document")
+            .to_string();
+        Ok(Self::from_bytes(stem, format, bytes))
+    }
+
+    /// Read a document to the end of `reader` — stdin, a socket, a pipe —
+    /// and resolve its format as [`Self::from_named_bytes`] does from `name`
+    /// (`-` or `stdin` is fine: a name without an extension decides nothing)
+    /// and `media_type`.
+    pub fn from_reader<R: std::io::Read>(
+        name: &str,
+        mut reader: R,
+        media_type: Option<&str>,
+    ) -> Result<Self, ConversionError> {
+        let mut bytes = Vec::new();
+        reader.read_to_end(&mut bytes)?;
+        Self::from_named_bytes(name, bytes, media_type)
+    }
+
+    /// Fetch a document over HTTP(S) under `policy` (#668). The name comes
+    /// from the response's `Content-Disposition`, else the URL path's last
+    /// segment; the format from that name's extension, else the response's
+    /// `Content-Type`, else the bytes ([`Self::from_named_bytes`]). The URL
+    /// becomes the document's [`base_url`](Self::base_url) so relative
+    /// `<img src>` on a fetched page resolve against its origin when image
+    /// fetching is on. Blocking; every hop passes the SSRF guard
+    /// ([`crate::fetch::check_outbound_url`]).
+    #[cfg(feature = "fetch-url")]
+    pub fn from_url(
+        url: &str,
+        policy: &crate::fetch::FetchPolicy,
+    ) -> Result<Self, ConversionError> {
+        let fetched = crate::fetch::fetch(url, policy)?;
+        let name = crate::fetch::fetched_name(&fetched.url, fetched.content_disposition.as_deref());
+        Ok(
+            Self::from_named_bytes(&name, fetched.bytes, fetched.content_type.as_deref())?
+                .with_base_url(fetched.url),
+        )
+    }
+
     /// Construct directly from in-memory bytes (no disk access).
     pub fn from_bytes(name: impl Into<String>, format: InputFormat, bytes: Vec<u8>) -> Self {
         Self {

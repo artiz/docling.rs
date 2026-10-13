@@ -592,6 +592,9 @@ pub(crate) fn from_data_uri(uri: &str) -> Option<PictureImage> {
     build_picture(mime, data)
 }
 
+#[cfg(feature = "fetch-images")]
+use crate::fetch::is_blocked_ip;
+
 /// `true` when the URL's host resolves to a blocked address and the operator
 /// hasn't opted out with `DOCLING_RS_ALLOW_PRIVATE_IP_FETCH` (the same flag
 /// docling-serve's URL fetch honors, for local/intranet development). The
@@ -612,8 +615,7 @@ fn blocked_by_ssrf_guard(url: &str) -> bool {
     };
     let port = parsed.port_or_known_default().unwrap_or(80);
     match (host, port).to_socket_addrs() {
-        // The block-list docling-serve and the URL inputs (#669) share.
-        Ok(addrs) => addrs.map(|a| a.ip()).any(crate::fetch::is_blocked_ip),
+        Ok(addrs) => addrs.map(|a| a.ip()).any(is_blocked_ip),
         // Unresolvable host: nothing to fetch — treat as blocked (skip).
         Err(_) => true,
     }
@@ -724,9 +726,8 @@ pub(crate) fn build_picture(mimetype: impl Into<String>, data: Vec<u8>) -> Optio
     })
 }
 
-/// Minimal `%XX` percent-decoding for non-base64 `data:` URIs (rare for
-/// images) — and URL path segments in [`crate::fetch`].
-pub(crate) fn percent_decode(s: &str) -> Vec<u8> {
+/// Minimal `%XX` percent-decoding for non-base64 `data:` URIs (rare for images).
+fn percent_decode(s: &str) -> Vec<u8> {
     let b = s.as_bytes();
     let mut out = Vec::with_capacity(b.len());
     let mut i = 0;

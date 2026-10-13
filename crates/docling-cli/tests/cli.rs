@@ -882,3 +882,317 @@ fn password_opens_an_encrypted_office_document() {
         "an unreadable password file is a usage error: {stderr}"
     );
 }
+
+/// A one-thread HTTP fixture server for the URL-source tests (#668): a
+/// handful of routes, each answering with the status, headers and body the
+/// test needs. It serves until dropped; the binary under test reaches it on
+/// 127.0.0.1, which the SSRF guard blocks unless the test lifts it.
+struct FixtureServer {
+    url: String,
+    stop: std::sync::Arc<std::sync::atomic::AtomicBool>,
+}
+
+impl FixtureServer {
+    fn start() -> Self {
+        use std::io::{Read as _, Write as _};
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("bind");
+        let url = format!("http://{}", listener.local_addr().unwrap());
+        listener.set_nonblocking(true).unwrap();
+        let stop = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let flag = stop.clone();
+        let docx = std::fs::read(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../tests/data/docx/sources/Strict.docx"
+        ))
+        .unwrap();
+        std::thread::spawn(move || {
+            while !flag.load(std::sync::atomic::Ordering::Relaxed) {
+                let Ok((mut stream, _)) = listener.accept() else {
+                    std::thread::sleep(std::time::Duration::from_millis(10));
+                    continue;
+                };
+                stream.set_nonblocking(false).unwrap();
+                let mut buf = [0u8; 4096];
+                let n = stream.read(&mut buf).unwrap_or(0);
+                let request = String::from_utf8_lossy(&buf[..n]).into_owned();
+                let path = request.split_whitespace().nth(1).unwrap_or("/").to_string();
+                let (status, headers, body): (&str, Vec<String>, Vec<u8>) = match path.as_str() {
+                    // A bare path and a generic type: only the bytes decide.
+                    "/doc" => (
+                        "200 OK",
+                        vec!["Content-Type: application/octet-stream".into()],
+                        docx.clone(),
+                    ),
+                    // A bare path typed by Content-Type.
+                    "/page" => (
+                        "200 OK",
+                        vec!["Content-Type: text/html; charset=utf-8".into()],
+                        b"<html><body><h1>Fetched</h1><p>over http</p></body></html>".to_vec(),
+                    ),
+                    // Content-Disposition names (and so types) the document.
+                    "/download?id=7" => (
+                        "200 OK",
+                        vec![
+                            "Content-Type: application/octet-stream".into(),
+                            "Content-Disposition: attachment; filename=\"notes.md\"".into(),
+                        ],
+                        b"# From disposition\n\ntext\n".to_vec(),
+                    ),
+                    // Nothing to go on: the hints must decide.
+                    "/opaque" => (
+                        "200 OK",
+                        vec!["Content-Type: application/octet-stream".into()],
+                        b"plain words only\n".to_vec(),
+                    ),
+                    "/redirect" => ("302 Found", vec!["Location: /page".into()], Vec::new()),
+                    "/loop" => ("302 Found", vec!["Location: /loop".into()], Vec::new()),
+                    "/accept" => (
+                        "200 OK",
+                        vec!["Content-Type: text/plain".into()],
+                        request
+                            .lines()
+                            .find(|l| l.to_ascii_lowercase().starts_with("accept:"))
+                            .unwrap_or("accept: (none)")
+                            .as_bytes()
+                            .to_vec(),
+                    ),
+                    _ => ("404 Not Found", vec![], b"no such route".to_vec()),
+                };
+                let mut response = format!("HTTP/1.1 {status}\r\n");
+                for h in headers {
+                    response.push_str(&h);
+                    response.push_str("\r\n");
+                }
+                response.push_str(&format!(
+                    "Content-Length: {}\r\nConnection: close\r\n\r\n",
+                    body.len()
+                ));
+                let _ = stream.write_all(response.as_bytes());
+                let _ = stream.write_all(&body);
+                let _ = stream.flush();
+            }
+        });
+        Self { url, stop }
+    }
+}
+
+impl Drop for FixtureServer {
+    fn drop(&mut self) {
+        self.stop.store(true, std::sync::atomic::Ordering::Relaxed);
+    }
+}
+
+/// Run the binary with `stdin` piped in and the private-address block lifted
+/// (the fixture server is on 127.0.0.1).
+fn run_with(args: &[&str], stdin: &[u8], allow_private: bool) -> (i32, String, String) {
+    use std::io::Write as _;
+    let mut cmd = Command::new(env!("CARGO_BIN_EXE_docling-rs"));
+    cmd.args(args)
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped());
+    if allow_private {
+        cmd.env("DOCLING_RS_ALLOW_PRIVATE_IP_FETCH", "1");
+    } else {
+        cmd.env_remove("DOCLING_RS_ALLOW_PRIVATE_IP_FETCH");
+    }
+    let mut child = cmd.spawn().expect("run docling-rs");
+    child.stdin.take().unwrap().write_all(stdin).unwrap();
+    let out = child.wait_with_output().expect("wait");
+    (
+        out.status.code().unwrap_or(-1),
+        String::from_utf8_lossy(&out.stdout).into_owned(),
+        String::from_utf8_lossy(&out.stderr).into_owned(),
+    )
+}
+
+const STRICT_DOCX: &str = concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/../../tests/data/docx/sources/Strict.docx"
+);
+
+/// #668: `cat test.docx | docling-rs --from docx -` is `docling-rs test.docx`
+/// byte for byte; without the hint the OOXML package signature decides;
+/// bytes nobody can type are a usage error with the way out named.
+#[test]
+fn stdin_converts_with_a_format_hint_or_by_signature() {
+    let (code, expected, stderr) = run(&[STRICT_DOCX]);
+    assert_eq!(code, 0, "stderr: {stderr}");
+    let bytes = std::fs::read(STRICT_DOCX).unwrap();
+    let (code, from_hint, stderr) = run_with(&["--from", "docx", "-"], &bytes, false);
+    assert_eq!(code, 0, "stderr: {stderr}");
+    assert_eq!(from_hint, expected);
+    let (code, sniffed, stderr) = run_with(&["-"], &bytes, false);
+    assert_eq!(code, 0, "stderr: {stderr}");
+    assert_eq!(sniffed, expected);
+    // A media type stands in for the missing extension.
+    let (code, md, stderr) = run_with(
+        &["--mime-type", "text/markdown", "-"],
+        b"# From stdin\n\nbody\n",
+        false,
+    );
+    assert_eq!(code, 0, "stderr: {stderr}");
+    assert!(md.starts_with("# From stdin"), "{md:?}");
+    // Nothing to go on: exit 2, the hint flags named.
+    let (code, _, stderr) = run_with(&["-"], b"plain words only\n", false);
+    assert_eq!(code, 2, "stderr: {stderr}");
+    assert!(
+        stderr.contains("cannot determine the format of stdin")
+            && stderr.contains("--from FORMAT or --mime-type TYPE"),
+        "{stderr}"
+    );
+    // The hint is validated like every other flag value.
+    let (code, _, stderr) = run_with(&["--from", "nope", "-"], b"", false);
+    assert_eq!(code, 2, "stderr: {stderr}");
+    assert!(stderr.contains("unknown input format 'nope'"), "{stderr}");
+    let (code, _, stderr) = run_with(&["--mime-type", "application/x-what", "-"], b"", false);
+    assert_eq!(code, 2, "stderr: {stderr}");
+    assert!(
+        stderr.contains("not a media type docling converts"),
+        "{stderr}"
+    );
+}
+
+/// #668: `--from` also retypes a file whose extension says otherwise, and
+/// `--output-file` / `--output` take stdin like any other source.
+#[test]
+fn hints_apply_to_files_and_stdin_lands_in_output_files() {
+    let scratch = Scratch::new("hints");
+    let txt = scratch.path("notes.txt");
+    std::fs::write(&txt, "<h1>Typed as HTML</h1><p>not markdown</p>").unwrap();
+    let (code, out, stderr) = run(&["--from", "html", &txt]);
+    assert_eq!(code, 0, "stderr: {stderr}");
+    assert!(out.starts_with("# Typed as HTML"), "{out:?}");
+    // No extension: the media type decides, the file is otherwise refused.
+    let bare = scratch.path("bare");
+    std::fs::write(&bare, "# Bare\n").unwrap();
+    let (code, _, stderr) = run(&[&bare]);
+    assert_eq!(code, 2, "stderr: {stderr}");
+    assert!(
+        stderr.contains("--from FORMAT or --mime-type TYPE"),
+        "{stderr}"
+    );
+    let (code, out, stderr) = run(&["--mime-type", "text/markdown", &bare]);
+    assert_eq!(code, 0, "stderr: {stderr}");
+    assert!(out.starts_with("# Bare"), "{out:?}");
+    // stdin into --output-file …
+    let target = scratch.path("out/result.md");
+    let bytes = std::fs::read(STRICT_DOCX).unwrap();
+    let (code, _, stderr) = run_with(
+        &["--from", "docx", "-", "--output-file", &target],
+        &bytes,
+        false,
+    );
+    assert_eq!(code, 0, "stderr: {stderr}");
+    let (_, expected, _) = run(&[STRICT_DOCX]);
+    assert_eq!(std::fs::read_to_string(&target).unwrap(), expected);
+    // … and into a batch, named after the document.
+    let outdir = scratch.path("batch");
+    let (code, stdout, stderr) =
+        run_with(&["-", "--to", "json", "--output", &outdir], &bytes, false);
+    assert_eq!(code, 0, "stderr: {stderr}");
+    assert!(stdout.trim().ends_with("document.json"), "{stdout:?}");
+    assert!(std::path::Path::new(&outdir)
+        .join("document.json")
+        .is_file());
+}
+
+/// #668: `data:` URLs convert from their payload, typed by the media type
+/// (or the bytes), `file:` URLs are the path they name.
+#[test]
+fn data_and_file_urls_convert() {
+    let (code, out, stderr) = run(&["data:text/html;base64,PGgxPkhpPC9oMT48cD50aGVyZTwvcD4="]);
+    assert_eq!(code, 0, "stderr: {stderr}");
+    assert_eq!(out, "# Hi\n\nthere\n");
+    let (code, out, stderr) = run(&["data:,%23%20Percent%0A%0Aplain"]);
+    assert_eq!(code, 2, "stderr: {stderr}");
+    assert!(
+        stderr.contains("--from FORMAT or --mime-type TYPE"),
+        "{stderr}"
+    );
+    assert!(out.is_empty());
+    let (code, out, stderr) = run(&["--from", "md", "data:,%23%20Percent%0A%0Aplain"]);
+    assert_eq!(code, 0, "stderr: {stderr}");
+    assert!(out.starts_with("# Percent"), "{out:?}");
+    let (code, _, stderr) = run(&["data:text/html;base64,@@@"]);
+    assert_eq!(code, 2, "stderr: {stderr}");
+    assert!(stderr.contains("invalid base64"), "{stderr}");
+    let (_, expected, _) = run(&[STRICT_DOCX]);
+    let (code, out, stderr) = run(&[&format!("file://{STRICT_DOCX}")]);
+    assert_eq!(code, 0, "stderr: {stderr}");
+    assert_eq!(out, expected);
+}
+
+/// #668: an http(s) source is fetched — named by `Content-Disposition`, then
+/// the URL path; typed by that name, then `Content-Type`, then the bytes —
+/// with redirects followed and every hop checked; `--no-url-fetch` and the
+/// SSRF guard refuse before any byte moves.
+#[test]
+fn http_sources_are_fetched_named_and_typed() {
+    let server = FixtureServer::start();
+    let base = server.url.as_str();
+    let (_, expected, _) = run(&[STRICT_DOCX]);
+    // Bare path, generic Content-Type: the OOXML signature decides.
+    let (code, out, stderr) = run_with(&[&format!("{base}/doc")], b"", true);
+    assert_eq!(code, 0, "stderr: {stderr}");
+    assert_eq!(out, expected);
+    // Bare path, typed by Content-Type.
+    let (code, out, stderr) = run_with(&[&format!("{base}/page")], b"", true);
+    assert_eq!(code, 0, "stderr: {stderr}");
+    assert_eq!(out, "# Fetched\n\nover http\n");
+    // Content-Disposition names it `notes.md`; a batch lands it by that stem.
+    let scratch = Scratch::new("http");
+    let outdir = scratch.path("out");
+    let (code, stdout, stderr) = run_with(
+        &[&format!("{base}/download?id=7"), "--output", &outdir],
+        b"",
+        true,
+    );
+    assert_eq!(code, 0, "stderr: {stderr}");
+    assert!(stdout.trim().ends_with("notes.md"), "{stdout:?}");
+    assert!(
+        std::fs::read_to_string(std::path::Path::new(&outdir).join("notes.md"))
+            .unwrap()
+            .starts_with("# From disposition")
+    );
+    // Nothing decides: exit 2 with the hints named; a hint fixes it.
+    let (code, _, stderr) = run_with(&[&format!("{base}/opaque")], b"", true);
+    assert_eq!(code, 2, "stderr: {stderr}");
+    assert!(
+        stderr.contains("--from FORMAT or --mime-type TYPE"),
+        "{stderr}"
+    );
+    let (code, out, stderr) = run_with(&["--from", "txt", &format!("{base}/opaque")], b"", true);
+    assert_eq!(code, 0, "stderr: {stderr}");
+    assert!(out.contains("plain words only"), "{out:?}");
+    // A redirect is followed; a loop is not.
+    let (code, out, stderr) = run_with(&[&format!("{base}/redirect")], b"", true);
+    assert_eq!(code, 0, "stderr: {stderr}");
+    assert_eq!(out, "# Fetched\n\nover http\n");
+    let (code, _, stderr) = run_with(&[&format!("{base}/loop")], b"", true);
+    assert_eq!(code, 1, "stderr: {stderr}");
+    assert!(stderr.contains("too many redirects"), "{stderr}");
+    // The document Accept header rides along.
+    let (code, out, stderr) = run_with(&["--from", "txt", &format!("{base}/accept")], b"", true);
+    assert_eq!(code, 0, "stderr: {stderr}");
+    // (`*/*` is Markdown-escaped on the way out; the prefix is the check.)
+    assert!(
+        out.contains("accept: text/markdown, text/html;q=0.9"),
+        "{out:?}"
+    );
+    // A 404 is a failed fetch, not a usage error.
+    let (code, _, stderr) = run_with(&[&format!("{base}/missing")], b"", true);
+    assert_eq!(code, 1, "stderr: {stderr}");
+    assert!(stderr.contains("404"), "{stderr}");
+    // Refused before fetching: the flag, and the private-address guard.
+    let (code, _, stderr) = run_with(&["--no-url-fetch", &format!("{base}/page")], b"", true);
+    assert_eq!(code, 2, "stderr: {stderr}");
+    assert!(stderr.contains("URL sources are disabled"), "{stderr}");
+    let (code, _, stderr) = run_with(&[&format!("{base}/page")], b"", false);
+    assert_eq!(code, 2, "stderr: {stderr}");
+    assert!(
+        stderr.contains("private/loopback address")
+            && stderr.contains("DOCLING_RS_ALLOW_PRIVATE_IP_FETCH"),
+        "{stderr}"
+    );
+}

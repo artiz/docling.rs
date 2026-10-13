@@ -65,6 +65,15 @@ pub struct PdfPage {
     /// [`Self::image`].
     #[cfg(feature = "ocr-prep")]
     pub image_layout: Option<RgbImage>,
+    /// The 2x bitmap of a page with a text layer, still rendering on the
+    /// page walk's helper thread (#682): [`Self::image`] holds a 1×1
+    /// placeholder until [`Self::resolve_image`] installs the render, which
+    /// the ML pipeline does right after layout — the stage that reads
+    /// [`Self::image_layout`] instead — so the render overlaps it. `None`
+    /// once resolved, and on every path that renders synchronously (scanned
+    /// pages, the plugin and pdfium renderers, images, METS).
+    #[cfg(feature = "ml")]
+    pub pending_image: Option<PendingImage>,
     /// Hyperlink annotations on the page (rect in top-left page coords + target
     /// URI), restricted to web/mail/tel schemes. Used only by strict Markdown.
     pub links: Vec<LinkAnnot>,
@@ -100,9 +109,22 @@ impl PdfPage {
             image: RgbImage::new(0, 0),
             #[cfg(feature = "ocr-prep")]
             image_layout: None,
+            #[cfg(feature = "ml")]
+            pending_image: None,
             links: Vec::new(),
             rotation: 0,
         }
+    }
+
+    /// Wait for a deferred 2x render (#682) and install it as
+    /// [`Self::image`]; a no-op when nothing is pending. The ML pipeline
+    /// calls it once layout is done, before anything reads the bitmap.
+    #[cfg(feature = "ml")]
+    pub fn resolve_image(&mut self) -> Result<(), PdfError> {
+        if let Some(pending) = self.pending_image.take() {
+            self.image = crate::timing::timed("render.wait", || pending.wait())?;
+        }
+        Ok(())
     }
 
     /// Same as [`from_cells`](Self::from_cells) but carrying the rendered page
@@ -342,44 +364,63 @@ where
         _ => None,
     };
     let (first, last) = range.unwrap_or((0, total.saturating_sub(1)));
-    // Index the window directly: iterating pdfium's pages from page 0 and
-    // skipping to `first` would load (and close) every page before the
-    // window — ~0.7 ms each, 1.3 s of pure overhead for a one-page window
-    // over the 1913-page .NET reference.
-    for i in first..=last {
-        if i >= total {
-            break;
+    // The 2x bitmap of a page with a text layer renders on a helper thread
+    // (#682, `DeferredRender`) when the pure-Rust renderer is the only one
+    // drawing: the plugin and pdfium hold per-document handles the walk
+    // thread owns, so their pages render in place as before.
+    let defer_meta = match (&meta, &renderer, &dparse, &session) {
+        (Some(m), Some(_), None, None) => Some(m),
+        _ => None,
+    };
+    std::thread::scope(|scope| {
+        let defer = defer_meta.map(|m| {
+            let (tx, rx) = std::sync::mpsc::channel();
+            scope.spawn(move || DeferredRender::serve(m, rx));
+            DeferredRender { tx }
+        });
+        // Index the window directly: iterating pdfium's pages from page 0 and
+        // skipping to `first` would load (and close) every page before the
+        // window — ~0.7 ms each, 1.3 s of pure overhead for a one-page window
+        // over the 1913-page .NET reference.
+        for i in first..=last {
+            if i >= total {
+                break;
+            }
+            let page = match &session {
+                Some(s) => Some(s.page(i)?),
+                None => None,
+            };
+            let geom = match (&meta, &page) {
+                (Some(m), _) => m.geometry(i).ok_or_else(|| no_raster(i as i32))?,
+                (None, Some(p)) => p.geom(),
+                (None, None) => return Err(no_raster(i as i32).into()),
+            };
+            let links = match (&meta, &page) {
+                (Some(m), _) => m.links(i),
+                (None, Some(p)) => p.links(geom.unrotated().1),
+                (None, None) => Vec::new(),
+            };
+            let rc = rust.as_mut().map(|p| p.cells_timed(i));
+            let extracted = extract_page(
+                PageSources {
+                    page: page.as_ref(),
+                    dparse: dparse.as_ref(),
+                    meta: meta.as_ref(),
+                    renderer: renderer.as_ref(),
+                    defer: defer.as_ref(),
+                },
+                geom,
+                links,
+                i as i32,
+                rc,
+                render_image,
+            )?;
+            f(i, total, extracted)?;
         }
-        let page = match &session {
-            Some(s) => Some(s.page(i)?),
-            None => None,
-        };
-        let geom = match (&meta, &page) {
-            (Some(m), _) => m.geometry(i).ok_or_else(|| no_raster(i as i32))?,
-            (None, Some(p)) => p.geom(),
-            (None, None) => return Err(no_raster(i as i32).into()),
-        };
-        let links = match (&meta, &page) {
-            (Some(m), _) => m.links(i),
-            (None, Some(p)) => p.links(geom.unrotated().1),
-            (None, None) => Vec::new(),
-        };
-        let rc = rust.as_mut().map(|p| p.cells_timed(i));
-        let extracted = extract_page(
-            PageSources {
-                page: page.as_ref(),
-                dparse: dparse.as_ref(),
-                meta: meta.as_ref(),
-                renderer: renderer.as_ref(),
-            },
-            geom,
-            links,
-            i as i32,
-            rc,
-            render_image,
-        )?;
-        f(i, total, extracted)?;
-    }
+        // Dropping the job sender ends the helper; the scope joins it.
+        drop(defer);
+        Ok::<(), E>(())
+    })?;
     // Tearing down the parsed document (hundreds of thousands of lopdf
     // objects on a long PDF — 250 ms for the 1913-page .NET reference) is
     // nobody's business but the allocator's: hand it to a detached thread so
@@ -658,6 +699,105 @@ struct PageSources<'a> {
     /// The pure-Rust page renderer over the same object model (its
     /// per-document caches live for the whole conversion).
     renderer: Option<&'a crate::render::Renderer<'a>>,
+    /// The helper thread that renders the 2x bitmap of pages with a text
+    /// layer off the walk (#682); `None` when another renderer draws.
+    defer: Option<&'a DeferredRender>,
+}
+
+/// A page's 2x bitmap being rendered on the walk's helper thread (#682):
+/// the result arrives through a one-shot channel. Cloning a page clones the
+/// handle; whichever copy resolves first gets the bitmap.
+#[cfg(feature = "ml")]
+#[derive(Clone)]
+pub struct PendingImage(std::sync::Arc<std::sync::Mutex<Option<PendingReceiver>>>);
+
+/// The one-shot channel a [`PendingImage`] waits on.
+#[cfg(feature = "ml")]
+type PendingReceiver = std::sync::mpsc::Receiver<Result<RgbImage, PdfError>>;
+
+#[cfg(feature = "ml")]
+impl PendingImage {
+    fn wait(self) -> Result<RgbImage, PdfError> {
+        let rx = self.0.lock().unwrap_or_else(|p| p.into_inner()).take();
+        match rx {
+            Some(rx) => rx
+                .recv()
+                .unwrap_or_else(|_| Err(PdfError::Pdfium("page render thread ended early".into()))),
+            None => Err(PdfError::Pdfium("page bitmap resolved twice".into())),
+        }
+    }
+}
+
+#[cfg(feature = "ml")]
+impl std::fmt::Debug for PendingImage {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("PendingImage")
+    }
+}
+
+/// One deferred render: the 3x supersample of page `index` at `w` × `h`
+/// with the decode `hint`, box-downscaled to `dw` × `dh` — exactly the
+/// synchronous path's steps, on another thread.
+#[cfg(feature = "ml")]
+struct RenderJob {
+    index: i32,
+    w: u32,
+    h: u32,
+    hint: f64,
+    dw: u32,
+    dh: u32,
+    reply: std::sync::mpsc::SyncSender<Result<RgbImage, PdfError>>,
+}
+
+/// The walk's render helper (#682): a second pure-Rust renderer, with its
+/// own per-document caches, on a scoped thread, fed one [`RenderJob`] per
+/// page with a text layer. Its bitmaps are the ones the walk thread would
+/// have drawn — the same renderer code over the same object model — so the
+/// output is byte-identical; what changes is that the page leaves the walk
+/// as soon as its 1x layout image is drawn and the 2x bitmap lands while
+/// layout runs. The walk's own channel bounds the jobs in flight.
+#[cfg(feature = "ml")]
+struct DeferredRender {
+    tx: std::sync::mpsc::Sender<RenderJob>,
+}
+
+#[cfg(feature = "ml")]
+impl DeferredRender {
+    fn submit(&self, index: i32, w: u32, h: u32, hint: f64, dw: u32, dh: u32) -> PendingImage {
+        let (reply, rx) = std::sync::mpsc::sync_channel(1);
+        // A helper that is gone surfaces as the page's resolve error.
+        let _ = self.tx.send(RenderJob {
+            index,
+            w,
+            h,
+            hint,
+            dw,
+            dh,
+            reply,
+        });
+        PendingImage(std::sync::Arc::new(std::sync::Mutex::new(Some(rx))))
+    }
+
+    /// The helper's loop: runs until the job sender is dropped.
+    fn serve(meta: &crate::pdf_meta::PdfMeta, jobs: std::sync::mpsc::Receiver<RenderJob>) {
+        let renderer = crate::render::Renderer::new(meta);
+        for job in jobs {
+            let out = rust_bitmap(
+                Some(meta),
+                Some(&renderer),
+                false,
+                job.index,
+                job.w,
+                job.h,
+                job.hint,
+            )
+            .map(|big| {
+                crate::timing::timed("image.resize", || fast_downscale(&big, job.dw, job.dh))
+            })
+            .ok_or_else(|| no_raster(job.index));
+            let _ = job.reply.send(out);
+        }
+    }
 }
 
 #[cfg(feature = "ml")]
@@ -674,6 +814,7 @@ fn extract_page(
         dparse,
         meta,
         renderer,
+        defer,
     } = sources;
     // The page size (and the render) is the *display* frame — `/Rotate`
     // applied — while every text coordinate (pdfium's own text page, the
@@ -726,6 +867,7 @@ fn extract_page(
     // every consumer maps points through `RENDER_SCALE`, not through the
     // image size, so the extra row/column is harmless.
     let scanned = cells.is_empty() && word_cells.is_empty() && code_cells.is_empty();
+    let mut pending_image = None;
     let (mut dp_image, mut dp_layout) = (None, None);
     if let (true, Some(dp)) = (render_image, dparse) {
         let layout = crate::timing::timed("dparse.render_layout", || {
@@ -785,26 +927,36 @@ fn extract_page(
         // images at full size (hint 0.0); a digital page's TableFormer input
         // follows docling's hint 1.0 like the layout image below.
         let hint = if cells.is_empty() { 0.0 } else { 1.0 };
-        let big = match rust_bitmap(
-            meta,
-            renderer,
-            page.is_some(),
-            index,
-            tw as u32,
-            th as u32,
-            hint,
-        ) {
-            Some(img) => Some(img),
-            None if page.is_some() => {
-                let page = page.ok_or_else(|| no_raster(index))?;
-                Some(page.render(tw, th, "pdfium.render")?)
+        // A page with a text layer needs this bitmap only after layout
+        // (TableFormer, crops): the helper thread draws it meanwhile (#682).
+        // A scanned page reads it first (orientation, OCR) and renders here.
+        if let (Some(defer), false) = (defer, scanned) {
+            pending_image = Some(defer.submit(index, tw as u32, th as u32, hint, dw, dh));
+            RgbImage::new(1, 1)
+        } else {
+            let big = match rust_bitmap(
+                meta,
+                renderer,
+                page.is_some(),
+                index,
+                tw as u32,
+                th as u32,
+                hint,
+            ) {
+                Some(img) => Some(img),
+                None if page.is_some() => {
+                    let page = page.ok_or_else(|| no_raster(index))?;
+                    Some(page.render(tw, th, "pdfium.render")?)
+                }
+                None => None,
+            };
+            match (big, scanned_fallback(page)?) {
+                (Some(big), _) => {
+                    crate::timing::timed("image.resize", || fast_downscale(&big, dw, dh))
+                }
+                (None, Some(canvas)) => canvas,
+                (None, None) => return Err(no_raster(index)),
             }
-            None => None,
-        };
-        match (big, scanned_fallback(page)?) {
-            (Some(big), _) => crate::timing::timed("image.resize", || fast_downscale(&big, dw, dh)),
-            (None, Some(canvas)) => canvas,
-            (None, None) => return Err(no_raster(index)),
         }
     } else {
         RgbImage::new(1, 1)
@@ -870,6 +1022,7 @@ fn extract_page(
         height,
         scale: RENDER_SCALE,
         image_layout,
+        pending_image,
         cells,
         code_cells,
         word_cells,

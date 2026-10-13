@@ -784,14 +784,36 @@ pub fn cap_before_1_29(builder: SessionBuilder) -> Result<SessionBuilder, String
         .map_err(|e| e.to_string())
 }
 
+/// `DOCLING_RS_ORT_PROFILE=<dir>`: have ONNX Runtime write its per-operator
+/// profile of every run of this session to `<dir>/<model stem>_<timestamp>.json`
+/// (ORT's Chrome-trace JSON, one `model_run` event per run and one
+/// `*_kernel_time` event per node). Off unless the variable names a
+/// directory; a session option, so it costs nothing otherwise. Summarize a
+/// file with `scripts/dev/ort_profile_summary.py`. The profile is written when
+/// the session is dropped — a process that is killed loses it.
+fn with_profile(builder: SessionBuilder, model_path: &Path) -> Result<SessionBuilder, String> {
+    let Some(dir) = docling_core::env::nonempty("DOCLING_RS_ORT_PROFILE") else {
+        return Ok(builder);
+    };
+    let stem = model_path
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("session");
+    builder
+        .with_profiling(Path::new(&dir).join(stem))
+        .map_err(|e| format!("DOCLING_RS_ORT_PROFILE: {e}"))
+}
+
 /// Create the session for `model_path` the plain way (no graph cache) under
 /// the [`creation_guard`] — for the models whose graph is not worth caching
 /// (enrichment, Whisper, the embedder) but which must still serialize their
 /// creation on a GPU (#452).
 pub fn commit_uncached(
-    mut builder: SessionBuilder,
+    builder: SessionBuilder,
     model_path: impl AsRef<Path>,
 ) -> Result<Session, String> {
+    let model_path = model_path.as_ref();
+    let mut builder = with_profile(builder, model_path)?;
     let _guard = creation_guard();
     builder
         .commit_from_file(model_path)
@@ -819,6 +841,7 @@ pub fn commit_uncached(
 /// Every failure on the cached path falls back to the ordinary load, so a
 /// stale or truncated entry costs one rebuild, never a wrong answer.
 pub fn commit(builder: SessionBuilder, model_path: &str, variant: &str) -> Result<Session, String> {
+    let builder = with_profile(builder, Path::new(model_path))?;
     // Every `commit_from_file` below runs under the GPU creation lock (#452);
     // on CPU there is no lock and the workers/lanes still start in parallel.
     let _guard = creation_guard();

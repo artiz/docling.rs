@@ -4398,6 +4398,8 @@ mod tests {
                 annot(290.0, 360.0, "https://c"),
             ],
             rotation: 0,
+            #[cfg(feature = "ml")]
+            pending_image: None,
         };
         assert_eq!(
             resolve_link_anchors(&page),

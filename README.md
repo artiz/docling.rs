@@ -30,6 +30,14 @@
 A Rust port of [docling](https://github.com/docling-project/docling): convert
 documents into a unified `DoclingDocument` for downstream AI workflows.
 
+**Coming from [MarkItDown](https://github.com/microsoft/markitdown)?**
+`pip install docling-rs` and change one import —
+`from docling_rs.markitdown import MarkItDown` — to keep MarkItDown's API with
+layout analysis, TableFormer tables and local OCR behind it: PDF table-cell
+recall 0.31 → 0.94, Office/HTML 5–10× faster
+([measured](#conformance-with-microsoft-markitdown),
+[docling.rs for MarkItDown users](./docs/MARKITDOWN.md)).
+
 **Fast and small:** one static binary, no Python/PyTorch at runtime. The PDF
 ML pipeline runs **4.3× faster** than Python docling at **2.3–2.6× less peak
 RAM** (methodology, profiling and per-fixture numbers in
@@ -157,7 +165,8 @@ and recognizer, ONNX) — no API key, nothing leaves the machine.
 **Switching** is an import away — `pip install docling-rs`, then
 `from docling_rs.markitdown import MarkItDown`: MarkItDown's `convert*`
 methods, `StreamInfo`, result and exceptions over the docling.rs engine
-([migration notes](./crates/docling-py/README.md#migrating-from-markitdown)).
+([migration notes](./crates/docling-py/README.md#migrating-from-markitdown),
+[docling.rs for MarkItDown users](./docs/MARKITDOWN.md)).
 Using MarkItDown's MCP server? `docling-rs mcp` serves the same
 `convert_to_markdown(uri)` tool from one binary
 ([MCP server](#mcp-server--docling-rs-mcp)).
@@ -287,6 +296,13 @@ cargo run -p docling-cli -- --images referenced document.json > out.md
 cargo run -p docling-cli -- document.pdf
 cargo run -p docling-cli -- --no-stream document.pdf
 
+# sources need not be files (#668): stdin, http(s), data: and file: URLs —
+# the format from the name, the Content-Type or the bytes, or say it
+cat report.docx | docling-rs --from docx -
+docling-rs https://example.com/whitepaper.pdf > whitepaper.md
+docling-rs --mime-type text/markdown https://raw.example.com/README
+docling-rs "data:text/html;base64,PGgxPkhpPC9oMT4="
+
 # or via the examples
 cargo run -p docling --example convert -- crates/docling/sample.md
 cargo run -p docling --example stream  -- crates/docling/sample.md
@@ -392,6 +408,7 @@ docker compose up -d                        # standalone service (127.0.0.1:5001
 | `DOCLING_RS_TF_INTRA` | auto (#262) | Narrows ONNX intra-op thread count for TableFormer decoder sessions |
 | `DOCLING_RS_GRAPH_CACHE_DIR` | `$XDG_CACHE_HOME/docling-rs/graphs` (else `~/.cache/…`) | Where ONNX Runtime's optimized graphs are cached between processes (CPU provider only; session creation for the layout model ~0.8 s → ~0.15 s) |
 | `DOCLING_RS_NO_GRAPH_CACHE` | `0` | `1` disables the optimized-graph cache (models load and optimize from scratch every process) |
+| `DOCLING_RS_ORT_PROFILE` | unset | A directory: every ONNX session writes ORT's per-operator profile there (`<model>_<timestamp>.json`, Chrome-trace format); `scripts/dev/ort_profile_summary.py` summarizes one |
 | `DOCLING_RS_OCR_SESSIONS` | worker thread budget (1–8) | Parallel single-thread OCR recognition lanes per worker; output is byte-identical at any count |
 | `--concurrency N` | `2` | Max simultaneous conversions in flight; excess requests queue |
 | `--warmup` | enabled in image | Load the PDF/image models — layout, OCR, TableFormer and the multi-page worker pool — at startup; `/ready` returns 503 until they are loaded, and stays 503 (`warmup_failed` + the error) if loading fails |
@@ -435,12 +452,40 @@ structure recognition (the autoregressive OTSL decode — ~1400 decode steps
 across the corpus's tables) and the per-page layout model together account for
 ~85 % of it, with a one-time ONNX session/graph init paid on the first table
 page. Everything outside the models — both page renders, the two resamples,
-text-layer parsing and assembly — is under ~6 % combined (measured on the
-pdfium chain; the Rust renderer's share is of the same order). There is no
-glue-code hot spot to cut here the way the JSON grid was; PDF throughput is
-bounded by the layout and TableFormer models, so the levers are the INT8
-models, the KV-cached decoder and GPU execution providers, not the Rust
-around them.
+text-layer parsing and assembly — was under ~6 % combined on the pdfium
+chain; the pure-Rust renderer that replaced it costs more (on the 18-file
+corpus of the MarkItDown comparison, 80 pages, the two renders of every page
+sum to a third of the CPU time the models take), so since #682 the renders
+are scheduled off the model's path rather than before it: a page's 2× bitmap
+draws on a helper thread while layout reads its 1× image, the serial path
+renders the next page while the worker processes the current one, and the
+worker pool — two-thread workers, which the layout model's weak intra-op
+scaling makes faster than one four-thread worker — takes every document of
+four pages or more. Output is byte-identical; the model cost itself is bounded
+by the layout and TableFormer models, so the levers there stay the INT8
+models, the KV-cached decoder and GPU execution providers.
+
+What a TableFormer decode step costs, measured on the same box with
+`DOCLING_RS_ORT_PROFILE` (ORT's per-operator profile; see
+`scripts/dev/ort_profile_summary.py`) and a per-step timer: 4.4 ms with an
+empty cache, 5.7 ms once 100–150 tokens are cached, 6.2 ms past 150 — about
+10 µs per cached token — and 6.0 ms for two tables batched. The floor is
+memory traffic, not arithmetic: a step streams the decoder's ~90 MB of fp32
+weights through 49 single-token GEMMs (40–50 % of kernel time) plus 19 MB of
+per-table cross-attention K/V (about a quarter); the cache-dependent part is
+the `Split`/`Concat`/`Transpose` copies the exported graph makes of the
+growing cache (≈10 % at 85 cached tokens), and the rest is ~330 nodes of
+shape plumbing and per-node executor overhead. Three things were measured
+not to pay and are not in the tree: ONNX Runtime IO binding for the step
+(cross tensors bound once, outputs pre-bound: 5.41 vs 5.34 ms per step,
+byte-identical output — the copies are inside the graph, not in the
+`Run()` call); a decoder session per pool worker instead of the shared slot
+(wall time unchanged on 9-, 18- and 60-page documents, +0.5 GB RSS — two
+weight-streaming decodes share one memory bus); and more intra-op threads
+(the step does not scale). What would: re-exporting the decoder with
+per-layer caches that need no `Split`/`Concat`/`Transpose` (bit-exact in
+principle, new model files), narrower weights (INT8/fp16 — a numerics
+change), or a GPU execution provider.
 
 `scripts/test/performance.sh` runs a representative fixture of each supported type
 through both engines (published Python `docling` vs the Rust release binary) and
@@ -782,7 +827,7 @@ One engine, several front doors. Every surface takes the same options
 | a shell / CI job | the `docling-rs` CLI (`--to md\|json\|html\|dclx\|chunks\|latex\|pandoc\|images`, `--input`/`--output` batch mode) | `cargo install docling-cli` · [release binaries](https://github.com/docling-project/docling.rs/releases) · `ghcr.io/docling-project/docling-rs` | [Batch conversion](#batch-conversion--several-sources---input----output), [Install](#install-locally--in-ci-one-liner) |
 | anything that speaks HTTP | `docling-serve`: `POST /v1/convert` (multipart or JSON), async jobs, OpenAPI 3.1 | `docker run -p 5001:5001 ghcr.io/docling-project/docling-rs-serve` · `cargo install docling-serve` | [HTTP conversion API](#http-conversion-api--docling-rs-serve), [docs/DEPLOYMENT.md](./docs/DEPLOYMENT.md) |
 | Node.js / Bun / Electron | `docling.rs` (N-API addon): `convertFile`, `convert`, streaming, chunking, warm `Pipeline` | `npm i docling.rs` (`docling.rs-cuda` for GPU) | [Node bindings](#nodejs--bun-bindings), [crate README](./crates/docling-node/README.md) |
-| Python | `docling-rs` — a drop-in for docling's `DocumentConverter` over the Rust engine | `pip install docling-rs` (`docling-rs-cuda` for GPU) | [Python bindings](#python-bindings), [migration guide](./crates/docling-py/README.md#migrating-from-python-docling) |
+| Python | `docling-rs` — a drop-in for docling's `DocumentConverter`, and for MarkItDown (`docling_rs.markitdown`), over the Rust engine | `pip install docling-rs` (`docling-rs-cuda` for GPU) | [Python bindings](#python-bindings), migration guides [from docling](./crates/docling-py/README.md#migrating-from-python-docling) and [from MarkItDown](./docs/MARKITDOWN.md) |
 | the browser / Tauri / a PWA | `docling.rs-wasm`: `convert(bytes, name, to)` fully client-side, optional in-browser OCR/layout | `npm i docling.rs-wasm` | [In the browser](#in-the-browser--docling-wasm), [crate README](./crates/docling-wasm/README.md) |
 | C, C++, C#/.NET, Go, Java, Swift, Zig, … | `docling-ffi`: `docling_convert(bytes, len, filename, options_json)` behind one `docling.h` | [release archives](https://github.com/docling-project/docling.rs/releases) `docling-ffi-<tag>-<target>` (library + header) | [C ABI](#c-abi-for-embedders--docling-ffi), [language quickstarts](./crates/docling-ffi/README.md#language-quickstarts) |
 | an AI agent (Claude Desktop / Code, Cursor, VS Code, any MCP client) | `docling-rs mcp`: `convert_to_markdown` (MarkItDown's MCP tool), `convert`, `list_input_formats` over stdio or Streamable HTTP | in the `docling-rs` binary / image | [MCP server](#mcp-server--docling-rs-mcp) |
@@ -1249,6 +1294,7 @@ docling-rs bundle.zip --output out/                              # every documen
 | `--jobs N` | declarative formats in parallel (PDFs share the one warm pipeline) |
 | `--abort-on-error` | stop at the first failed file (Python's flag) |
 | `--list-input-formats` · `--list-output-formats` | what this build converts, one per line (#603) — ask the binary instead of hard-coding a list |
+| `-` · `http(s)://…` · `data:…` · `file:…` | stdin, a fetched URL, an inline document, a path through the URL grammar — as sources anywhere a path goes (#668); `--from FORMAT` / `--mime-type TYPE` type what carries no extension, `--no-url-fetch` refuses URLs |
 
 Every other flag (`--strict`, `--pages`, `--ocr-lang`, `--pipeline vlm`,
 enrichment, …) applies to the whole batch. Collision rules, the ZIP limits
@@ -1326,6 +1372,12 @@ result = DocumentConverter().convert("report.docx")
 print(result.document.export_to_markdown())
 data = result.document.export_to_dict()   # docling JSON wire format (schema 1.10.0)
 ```
+
+The same package speaks Microsoft MarkItDown's API (#674) —
+`from docling_rs.markitdown import MarkItDown`, then
+`MarkItDown().convert(src).markdown` with `StreamInfo` hints, streams, URIs and
+`python -m docling_rs.markitdown` for its CLI; see
+[docling.rs for MarkItDown users](./docs/MARKITDOWN.md).
 
 `DocumentConverter().convert_archive("bundle.zip")` (#557) converts every
 document inside a ZIP — a path, the archive's `bytes` or a `DocumentStream` —

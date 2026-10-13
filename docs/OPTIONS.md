@@ -117,6 +117,21 @@ codec or copybook when the conversion runs.
   `--pdf-password` (= `--password`), and `--output-file PATH` — the one result written to
   exactly PATH, refused unless there is exactly one input document and one
   `--to` format (docling's checks and messages).
+  A source is a path, `-` (stdin), an `http(s)://` URL, a `data:` URL or a
+  `file:` URL (#668, MarkItDown's `markitdown URL` and `cat f | markitdown`).
+  A fetched URL is named by its `Content-Disposition`, else the URL path's
+  last segment, and typed by that name's extension, else the `Content-Type`,
+  else the bytes' signature (PDF, OOXML/ODF/EPUB, OLE, RTF, HTML, the raster
+  images, DjVu); redirects are followed (5) and every hop passes the SSRF
+  guard docling-serve uses — a private/loopback address needs
+  `DOCLING_RS_ALLOW_PRIVATE_IP_FETCH=1`, the body is capped by
+  `DOCLING_RS_MAX_FETCH_BYTES`. `--from FORMAT` (an identifier from
+  `--list-input-formats`) names the format outright, for stdin, a bare URL
+  or a file whose extension lies; `--mime-type TYPE` stands in for a
+  missing `Content-Type`; a source none of these can type is a usage error
+  (exit 2) naming both flags. `--no-url-fetch` refuses http(s) sources.
+  Library: `SourceDocument::from_reader`, `from_named_bytes`, `from_url`
+  (with a `FetchPolicy`), `docling::fetch::from_data_url`.
   Two CLI-only export options sit beside `--images`, outside the shared
   table: `--layers body|all|LIST` (LIST from `body,furniture,notes,invisible`;
   default `body`) and `--traverse-pictures` — docling-core's

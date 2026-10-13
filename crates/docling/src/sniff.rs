@@ -45,6 +45,28 @@ pub(crate) fn detect(bytes: &[u8]) -> Option<InputFormat> {
     None
 }
 
+/// [`detect`] plus the formats a failed conversion never needs re-routing
+/// to but a nameless input (stdin, a `data:` URL, an extensionless URL
+/// with a generic `Content-Type`) does: the raster image headers and DjVu.
+pub(crate) fn detect_any(bytes: &[u8]) -> Option<InputFormat> {
+    detect(bytes)
+        .or_else(|| looks_like_image(bytes).then_some(InputFormat::Image))
+        .or_else(|| crate::backend::looks_like_djvu(bytes).then_some(InputFormat::Djvu))
+}
+
+/// The magic of the raster formats the image pipeline decodes: PNG, JPEG,
+/// GIF, BMP, TIFF (both byte orders), WebP.
+fn looks_like_image(bytes: &[u8]) -> bool {
+    bytes.starts_with(b"\x89PNG\r\n\x1a\n")
+        || bytes.starts_with(b"\xFF\xD8\xFF")
+        || bytes.starts_with(b"GIF87a")
+        || bytes.starts_with(b"GIF89a")
+        || bytes.starts_with(b"BM")
+        || bytes.starts_with(b"II*\0")
+        || bytes.starts_with(b"MM\0*")
+        || (bytes.len() >= 12 && bytes.starts_with(b"RIFF") && &bytes[8..12] == b"WEBP")
+}
+
 /// A PDF header within the first KiB — where readers (pdfium, docling-parse)
 /// accept it after leading junk.
 pub(crate) fn looks_like_pdf(bytes: &[u8]) -> bool {
@@ -198,5 +220,35 @@ mod tests {
         assert_eq!(detect(&epub), Some(InputFormat::Epub));
         let other = zip_with(&[("readme.txt", b"hi")]);
         assert_eq!(detect(&other), None);
+    }
+
+    /// A nameless input (stdin, a `data:` URL, an extensionless URL or
+    /// file) is typed by its signature alone — text without markup stays
+    /// unknown rather than guessed.
+    #[test]
+    fn detect_any_reads_signatures() {
+        let docx = std::fs::read(
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("../../tests/data/docx/sources/lorem_ipsum.docx"),
+        )
+        .unwrap();
+        assert_eq!(detect_any(&docx), Some(InputFormat::Docx));
+        assert_eq!(detect_any(b"%PDF-1.7\n%..."), Some(InputFormat::Pdf));
+        for image in [
+            &b"\x89PNG\r\n\x1a\n\0\0\0\rIHDR"[..],
+            b"\xFF\xD8\xFF\xE0\0\x10JFIF",
+            b"RIFF\0\0\0\0WEBPVP8 ",
+        ] {
+            assert_eq!(detect_any(image), Some(InputFormat::Image));
+        }
+        assert_eq!(
+            detect_any(b"<!DOCTYPE html><html><body>x</body></html>"),
+            Some(InputFormat::Html)
+        );
+        assert_eq!(detect_any(b"{\\rtf1\\ansi x}"), Some(InputFormat::Rtf));
+        assert_eq!(detect_any(b"just some words"), None);
+        assert_eq!(detect_any(b""), None);
+        // A WAV file is a RIFF container too — not an image.
+        assert_eq!(detect_any(b"RIFF\0\0\0\0WAVEfmt "), None);
     }
 }

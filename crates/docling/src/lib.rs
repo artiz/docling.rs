@@ -28,9 +28,6 @@ mod converter;
 pub mod dclx;
 pub mod email_attachments;
 mod error;
-// Bounded URL download with the SSRF guard on every hop (#669), on the
-// HTTP client the image resolver already pulls in.
-#[cfg(feature = "fetch-images")]
 pub mod fetch;
 mod format;
 // Allocator housekeeping for processes that convert many documents (#669).
@@ -59,6 +56,7 @@ pub use docling_core::{
 };
 pub use email_attachments::{EmailAttachmentInfo, EmailAttachments};
 pub use error::{ConversionError, EncryptionError};
+pub use fetch::FetchPolicy;
 pub use format::{InputFormat, OUTPUT_FORMATS};
 pub use options::{
     cli_flag, merge_options, ConvertOptions, OptionInfo, OptionsError, PipelineKind, OPTIONS,

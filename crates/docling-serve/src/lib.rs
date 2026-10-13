@@ -188,8 +188,6 @@
 //! proxy before exposing it.
 
 use std::collections::HashMap;
-use std::io::Read;
-use std::net::ToSocketAddrs;
 use std::sync::{Arc, Mutex};
 
 use axum::body::Body;
@@ -198,11 +196,6 @@ use axum::http::{header, HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::{Json, Router};
-// The core SSRF guard: a resolved address back into the local host or
-// infrastructure (`http://169.254.169.254/…`, `http://127.0.0.1:…`) is
-// refused. The block-list is the library's, shared with the image resolver
-// and the MCP server's URL inputs (#669).
-use docling::fetch::is_blocked_ip;
 use docling::{
     ConversionError, DoclingDocument, DocumentConverter, ImageMode, InputFormat, Pipeline,
     SourceDocument,
@@ -2236,189 +2229,76 @@ fn source_from_named_bytes(file_name: &str, bytes: Vec<u8>) -> Result<SourceDocu
 /// As [`source_from_named_bytes`], with an optional response `Content-Type` used
 /// as a fallback when the name carries no usable extension — a URL like
 /// `…/help/example-domains` has no `.html`, but the server reports
-/// `text/html`, so it still converts.
+/// `text/html`, so it still converts. The resolution (extension, media type,
+/// then the content's own signature — a DjVu upload under a bare name, #434)
+/// is the library's [`SourceDocument::from_named_bytes`]; this maps its
+/// failure onto the status: an extension docling does not know is
+/// unsupported, a name that decides nothing is a bad request.
 fn source_from_named_bytes_ct(
     file_name: &str,
     bytes: Vec<u8>,
     content_type: Option<&str>,
 ) -> Result<SourceDocument, ApiError> {
-    let ext = std::path::Path::new(file_name)
+    let has_ext = std::path::Path::new(file_name)
         .extension()
-        .and_then(|e| e.to_str());
-    let format = ext
-        .and_then(InputFormat::from_extension)
-        .or_else(|| content_type.and_then(format_from_content_type))
-        // A DjVu upload with a bare/renamed file name and a generic
-        // Content-Type is still unambiguous from its `AT&TFORM` magic (#434).
-        .or_else(|| docling::backend::looks_like_djvu(&bytes).then_some(InputFormat::Djvu))
-        .ok_or_else(|| match ext {
-            Some(e) => ApiError::Unsupported(format!("unrecognized extension '.{e}'")),
-            None => ApiError::Bad(format!(
-                "cannot determine the format of '{file_name}': no file extension \
-                 and no recognized Content-Type"
-            )),
-        })?;
-    let stem = std::path::Path::new(file_name)
-        .file_stem()
-        .and_then(|s| s.to_str())
-        .unwrap_or("document")
-        .to_string();
-    Ok(SourceDocument::from_bytes(stem, format, bytes))
-}
-
-/// Map an HTTP `Content-Type` (its media-type, parameters stripped) to an input
-/// format — the common web types docling can convert. Anything else returns
-/// `None` and the caller reports an unknown-format error.
-fn format_from_content_type(content_type: &str) -> Option<InputFormat> {
-    let mime = content_type
-        .split(';')
-        .next()
-        .unwrap_or("")
-        .trim()
-        .to_ascii_lowercase();
-    Some(match mime.as_str() {
-        "text/html" | "application/xhtml+xml" => InputFormat::Html,
-        "application/pdf" => InputFormat::Pdf,
-        "text/markdown" | "text/plain" => InputFormat::Md,
-        "text/csv" => InputFormat::Csv,
-        "application/vnd.openxmlformats-officedocument.wordprocessingml.document" => {
-            InputFormat::Docx
+        .and_then(|e| e.to_str())
+        .is_some();
+    SourceDocument::from_named_bytes(file_name, bytes, content_type).map_err(|e| {
+        let msg = match e {
+            docling::ConversionError::UnknownFormat { hint } => hint,
+            other => other.to_string(),
+        };
+        if has_ext {
+            ApiError::Unsupported(msg)
+        } else {
+            ApiError::Bad(msg)
         }
-        "application/vnd.openxmlformats-officedocument.presentationml.presentation" => {
-            InputFormat::Pptx
-        }
-        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" => InputFormat::Xlsx,
-        "application/epub+zip" => InputFormat::Epub,
-        "image/jpeg" | "image/png" | "image/tiff" | "image/bmp" | "image/webp" => {
-            InputFormat::Image
-        }
-        // SVG (#212) is its own format, not Image: the ML build rasterizes it
-        // first, and OCR-less builds extract its <text> elements instead.
-        "image/svg+xml" => InputFormat::Svg,
-        // DjVu (#434): pure-Rust decode of the hidden text layer (OCR fallback
-        // for scan-only pages). Both registered and legacy MIME spellings.
-        "image/vnd.djvu" | "image/x-djvu" | "image/x.djvu" => InputFormat::Djvu,
-        // Upstream's FormatToMimeType for AUDIO and VIDEO (docling v2.114).
-        "audio/wav" | "audio/x-wav" | "audio/mpeg" | "audio/mp3" | "audio/mp4" | "audio/m4a"
-        | "audio/aac" | "audio/ogg" | "audio/flac" | "audio/x-flac" => InputFormat::Audio,
-        "video/mp4" | "video/avi" | "video/x-msvideo" | "video/quicktime" | "video/x-matroska"
-        | "video/webm" => InputFormat::Video,
-        _ => return None,
     })
 }
 
-/// Largest URL-fetch response accepted (256 MiB default). Unlike the
-/// request-body limit, `read_to_end` on a fetched response is otherwise
-/// unbounded — a hostile URL streaming an endless body would exhaust memory.
-/// Override with `DOCLING_RS_MAX_FETCH_BYTES`.
-fn max_fetch_bytes() -> u64 {
-    docling_core::env::parse("DOCLING_RS_MAX_FETCH_BYTES").unwrap_or(256 * 1024 * 1024)
-}
-
-/// Escape hatch for local development: when `DOCLING_RS_ALLOW_PRIVATE_IP_FETCH`
-/// is set to a truthy value, the SSRF IP block-list is not enforced, so a URL
-/// like `http://localhost:8080/doc.pdf` can be fetched. Off by default —
-/// leave it unset in production.
-fn allow_private_ip_fetch() -> bool {
-    docling_core::env::flag("DOCLING_RS_ALLOW_PRIVATE_IP_FETCH")
+/// docling-serve's URL-fetch policy on top of the library's defaults
+/// (`DOCLING_RS_MAX_FETCH_BYTES`, 10 s connect / 300 s total — without
+/// timeouts a slow-drip URL pins one spawn_blocking worker indefinitely, and
+/// a handful of them starves the pool): no redirects, since a public URL
+/// could 30x-bounce to an internal target and defeat the pre-check.
+fn fetch_policy(headers: &[(String, String)]) -> docling::FetchPolicy {
+    docling::FetchPolicy {
+        max_redirects: 0,
+        headers: headers.to_vec(),
+        ..docling::FetchPolicy::default()
+    }
 }
 
 /// SSRF pre-check shared by every request-supplied outbound URL — URL inputs
-/// and the `vlm_endpoint` request option (#304): http(s) scheme only, then
-/// resolve the host and reject if it maps to a private/loopback/link-local
-/// address (fetches additionally forbid redirects — a public URL could
-/// 30x-bounce to an internal target, defeating this pre-check). This is a
-/// best-effort mitigation — a DNS-rebinding race between this resolution and
-/// the eventual connect remains theoretically possible; the deployment-level
-/// control is to leave URL fetch disabled unless the network is trusted.
-/// Blocking (DNS) — call on the blocking pool.
+/// and the `vlm_endpoint` request option (#304): the library's
+/// [`docling::fetch::check_outbound_url`] (http(s) only, host resolved and
+/// refused when private/loopback/link-local unless
+/// `DOCLING_RS_ALLOW_PRIVATE_IP_FETCH` lifts it), as a 400. Blocking (DNS) —
+/// call on the blocking pool.
 fn check_outbound_url(url: &str) -> Result<(), ApiError> {
-    if !url.starts_with("http://") && !url.starts_with("https://") {
-        return Err(ApiError::Bad(format!("unsupported URL scheme in '{url}'")));
-    }
-    let parsed =
-        url::Url::parse(url).map_err(|e| ApiError::Bad(format!("bad URL '{url}': {e}")))?;
-    let host = parsed
-        .host_str()
-        .ok_or_else(|| ApiError::Bad(format!("no host in URL '{url}'")))?;
-    let port = parsed.port_or_known_default().unwrap_or(80);
-    let mut resolved = (host, port)
-        .to_socket_addrs()
-        .map_err(|e| ApiError::Bad(format!("cannot resolve {host}: {e}")))?
-        .peekable();
-    if resolved.peek().is_none() {
-        return Err(ApiError::Bad(format!("cannot resolve {host}")));
-    }
-    if !allow_private_ip_fetch() {
-        for addr in resolved {
-            if is_blocked_ip(addr.ip()) {
-                return Err(ApiError::Bad(format!(
-                    "refusing to fetch {url}: resolves to a private/loopback address \
-                     (set DOCLING_RS_ALLOW_PRIVATE_IP_FETCH=1 for local development)"
-                )));
-            }
-        }
-    }
-    Ok(())
+    docling::fetch::check_outbound_url(url, false).map_err(ApiError::Bad)
 }
 
 /// Fetch a URL input (blocking; run on the blocking pool). The name comes
-/// from `file_name` or the URL path's last segment.
+/// from `file_name`, else the response's `Content-Disposition`, else the
+/// URL path's last segment; request headers ride along verbatim (docling's
+/// `HttpSource.headers`, #139 — auth tokens for protected origins).
 fn fetch_url(
     url: &str,
     file_name: Option<&str>,
     headers: &[(String, String)],
 ) -> Result<SourceDocument, ApiError> {
-    check_outbound_url(url)?;
-    // Bounded in time as well as size: without timeouts a slow-drip URL pins
-    // one spawn_blocking worker indefinitely, and a handful of them starves
-    // the pool. Generous global cap — legitimate fetches may be ~256 MiB.
-    let agent: ureq::Agent = ureq::Agent::config_builder()
-        .max_redirects(0)
-        .timeout_connect(Some(std::time::Duration::from_secs(10)))
-        .timeout_global(Some(std::time::Duration::from_secs(300)))
-        .build()
-        .into();
-    // Request headers ride along verbatim (docling's `HttpSource.headers`,
-    // #139 — auth tokens for protected origins).
-    let mut request = agent.get(url);
-    for (k, v) in headers {
-        request = request.header(k, v);
-    }
-    let mut response = request
-        .call()
-        .map_err(|e| ApiError::Bad(format!("fetching {url}: {e}")))?;
-    // Kept for format detection when the URL/name has no usable extension.
-    let content_type = response
-        .headers()
-        .get(header::CONTENT_TYPE)
-        .and_then(|v| v.to_str().ok())
-        .map(str::to_string);
-    let max_fetch = max_fetch_bytes();
-    let mut bytes = Vec::new();
-    response
-        .body_mut()
-        .as_reader()
-        .take(max_fetch + 1)
-        .read_to_end(&mut bytes)
-        .map_err(|e| ApiError::Bad(format!("reading {url}: {e}")))?;
-    if bytes.len() as u64 > max_fetch {
-        return Err(ApiError::Bad(format!(
-            "response from {url} exceeds {max_fetch} bytes"
-        )));
-    }
-    let name = file_name
-        .map(|s| s.to_string())
-        .or_else(|| {
-            url.split('/')
-                .next_back()
-                .map(|s| s.split(['?', '#']).next().unwrap_or(s).to_string())
-                .filter(|s| !s.is_empty())
-        })
-        .unwrap_or_else(|| "document".to_string());
+    let fetched = docling::fetch::fetch(url, &fetch_policy(headers))
+        .map_err(|e| ApiError::Bad(e.to_string()))?;
+    let name = file_name.map(str::to_string).unwrap_or_else(|| {
+        docling::fetch::fetched_name(&fetched.url, fetched.content_disposition.as_deref())
+    });
     // Record the fetch URL as the document's base URL so relative `<img src>`
     // on a fetched web page resolve against its origin when fetch_images is on.
-    Ok(source_from_named_bytes_ct(&name, bytes, content_type.as_deref())?.with_base_url(url))
+    Ok(
+        source_from_named_bytes_ct(&name, fetched.bytes, fetched.content_type.as_deref())?
+            .with_base_url(fetched.url),
+    )
 }
 
 /// Convert to a [`DoclingDocument`], routing PDF/image through the warm
@@ -3012,49 +2892,6 @@ mod pipeline_flag_tests {
 
 #[cfg(test)]
 mod ssrf_tests {
-    use super::is_blocked_ip;
-    use std::net::IpAddr;
-
-    fn ip(s: &str) -> IpAddr {
-        s.parse().unwrap()
-    }
-
-    #[test]
-    fn blocks_internal_targets() {
-        // Loopback, private ranges, link-local (incl. cloud metadata),
-        // unspecified, CGNAT, and the IPv4-mapped IPv6 forms must all be
-        // refused as SSRF targets.
-        for s in [
-            "127.0.0.1",
-            "127.5.5.5",
-            "10.0.0.1",
-            "172.16.0.1",
-            "192.168.1.1",
-            "169.254.169.254", // AWS/GCP metadata
-            "0.0.0.0",
-            "100.64.0.1", // carrier-grade NAT
-            "::1",
-            "fe80::1",          // link-local
-            "fc00::1",          // unique-local
-            "::ffff:127.0.0.1", // IPv4-mapped loopback
-            "::ffff:169.254.169.254",
-        ] {
-            assert!(is_blocked_ip(ip(s)), "{s} should be blocked");
-        }
-    }
-
-    #[test]
-    fn allows_public_targets() {
-        for s in [
-            "8.8.8.8",
-            "1.1.1.1",
-            "93.184.216.34",
-            "2606:4700:4700::1111",
-        ] {
-            assert!(!is_blocked_ip(ip(s)), "{s} should be allowed");
-        }
-    }
-
     #[test]
     fn url_fetch_off_by_default() {
         assert!(!super::ServeConfig::default().allow_url_fetch);
@@ -3103,10 +2940,10 @@ mod ssrf_tests {
         // so the block-list is enforced by default. (Set within this test only,
         // then cleared, to avoid leaking to sibling tests.)
         std::env::remove_var("DOCLING_RS_ALLOW_PRIVATE_IP_FETCH");
-        assert!(!super::allow_private_ip_fetch());
+        assert!(!docling::fetch::allow_private_ip_fetch());
         // The accepted spellings are `docling_core::env::flag`'s, tested there.
         std::env::set_var("DOCLING_RS_ALLOW_PRIVATE_IP_FETCH", "1");
-        assert!(super::allow_private_ip_fetch());
+        assert!(docling::fetch::allow_private_ip_fetch());
         std::env::remove_var("DOCLING_RS_ALLOW_PRIVATE_IP_FETCH");
     }
 }

@@ -19,7 +19,7 @@
 //! the same name): one identifier per line, sorted, for scripts that ask the
 //! binary what it converts instead of hard-coding a list.
 //!
-//! Usage: docling-rs [--strict] [--page-break-placeholder TEXT] [--layers body|all|LIST] [--traverse-pictures] [--to md|json|html|text|dclx|chunks|images|latex|pandoc|vtt] [--pages A-B] [--scale X] [--images MODE] [--input GLOB --output DIR [--jobs N]] [--output-file PATH] [--fetch-images] [--image-sources none|embedded|local|remote] [--image-hosts LIST] [--max-images N] [--max-image-bytes N] [--max-image-total-mb N] [--min-image-bytes N] [--list-attachments] [--skip-empty-cells] [--compact-tables] [--ebcdic-layout JSON|PATH] [--encoding LABEL] [--no-stream] [--no-table-former] [--no-ocr] [--text-layer-only] [--password PASSWORD | --password-file PATH] [--force-full-page-ocr] [--no-text-panels] [--heading-hierarchy] [--ocr-lang LANG] [--ocr-engine ppocr|tesseract] [--ocr-mode MODE] [--ocr-scale X] [--ocr-textline-orientation] [--images-scale X] [--page-images] [--chunker hierarchical|hybrid] [--chunk-tokenizer PATH] [--chunk-max-tokens N] [--no-chunk-merge-peers] [--pipeline standard|vlm] [--vlm-endpoint URL] [--vlm-model NAME] [--vlm-api-key TOKEN] [--vlm-prompt TEXT] [--vlm-max-tokens N] [--asr-model PRESET] [--asr-lang CODE] [--video-frames N|all] [--video-scene-threshold X] [--video-frame-max-side PX] [--video-frame-dedupe N] [--xbrl-taxonomy DIR] [--use-web-browser] [--enrich-picture-classes] [--enrich-code] [--enrich-formula] [--picture-ocr] [--picture-ocr-classes LABELS] [--picture-ocr-min-side N] [--picture-ocr-scale X] [--no-picture-images] [--redact-pii] [--redact-mode label|pseudonym|fixed:TEXT] [--redact-kinds LIST] [--redact-pattern NAME=REGEX]... [--redact-images drop|box_out|keep] [--document-timeout SECONDS] [--abort-on-error] [--output-dirs auto|flat|mirror] <input-file> | SOURCE...
+//! Usage: docling-rs [--strict] [--page-break-placeholder TEXT] [--layers body|all|LIST] [--traverse-pictures] [--to md|json|html|text|dclx|chunks|images|latex|pandoc|vtt] [--pages A-B] [--scale X] [--images MODE] [--input GLOB --output DIR [--jobs N]] [--output-file PATH] [--fetch-images] [--image-sources none|embedded|local|remote] [--image-hosts LIST] [--max-images N] [--max-image-bytes N] [--max-image-total-mb N] [--min-image-bytes N] [--list-attachments] [--skip-empty-cells] [--compact-tables] [--ebcdic-layout JSON|PATH] [--encoding LABEL] [--from FORMAT] [--mime-type TYPE] [--no-url-fetch] [--no-stream] [--no-table-former] [--no-ocr] [--text-layer-only] [--password PASSWORD | --password-file PATH] [--force-full-page-ocr] [--no-text-panels] [--heading-hierarchy] [--ocr-lang LANG] [--ocr-engine ppocr|tesseract] [--ocr-mode MODE] [--ocr-scale X] [--ocr-textline-orientation] [--images-scale X] [--page-images] [--chunker hierarchical|hybrid] [--chunk-tokenizer PATH] [--chunk-max-tokens N] [--no-chunk-merge-peers] [--pipeline standard|vlm] [--vlm-endpoint URL] [--vlm-model NAME] [--vlm-api-key TOKEN] [--vlm-prompt TEXT] [--vlm-max-tokens N] [--asr-model PRESET] [--asr-lang CODE] [--video-frames N|all] [--video-scene-threshold X] [--video-frame-max-side PX] [--video-frame-dedupe N] [--xbrl-taxonomy DIR] [--use-web-browser] [--enrich-picture-classes] [--enrich-code] [--enrich-formula] [--picture-ocr] [--picture-ocr-classes LABELS] [--picture-ocr-min-side N] [--picture-ocr-scale X] [--no-picture-images] [--redact-pii] [--redact-mode label|pseudonym|fixed:TEXT] [--redact-kinds LIST] [--redact-pattern NAME=REGEX]... [--redact-images drop|box_out|keep] [--document-timeout SECONDS] [--abort-on-error] [--output-dirs auto|flat|mirror] <input-file> | - | URL | SOURCE...
 //!   --to FORMAT        repeatable (#491, like Python's `docling convert --to
 //!                      md --to json`): each document converts once and is
 //!                      written in every format named, `<stem>.md` +
@@ -33,6 +33,29 @@
 //!                      `--output`. A file lands in `--output` by stem, a
 //!                      directory/glob keeps its tree; two sources that would
 //!                      write the same output file are refused up front.
+//!                      A source need not be a path (#668, MarkItDown's
+//!                      `markitdown URL` / `cat f | markitdown`): `-` reads
+//!                      stdin, `http(s)://…` is fetched (named by its
+//!                      `Content-Disposition`, else the URL path; typed by
+//!                      that name, else `Content-Type`, else the bytes'
+//!                      signature — redirects followed, every hop through the
+//!                      SSRF guard docling-serve uses, so a private/loopback
+//!                      address needs `DOCLING_RS_ALLOW_PRIVATE_IP_FETCH=1`;
+//!                      bounded by `DOCLING_RS_MAX_FETCH_BYTES`), `data:` URLs
+//!                      carry their document, `file:` URLs name a path. Any
+//!                      of them lands in `--output` / `--output-file` like a
+//!                      file (stdin as `document.<ext>`).
+//!   --from FORMAT      the input format (an identifier from
+//!                      `--list-input-formats`: `docx`, `pdf`, `html`, `md`…)
+//!                      — for stdin, an extensionless URL or a file whose
+//!                      extension lies. Overrides every other signal.
+//!   --mime-type TYPE   the media type (`application/pdf`, `text/markdown`),
+//!                      consulted when the name has no extension — in place
+//!                      of a missing or generic `Content-Type`. A source that
+//!                      neither a name, a media type nor its bytes can type
+//!                      is a usage error (exit 2) naming both flags.
+//!   --no-url-fetch     refuse http(s) sources (a wrapper that passes
+//!                      user-supplied arguments through must not fetch).
 //!   --abort-on-error   stop the batch at the first failed file; by default a
 //!                      failed file is reported and skipped and the exit code
 //!                      is 1 at the end.
@@ -279,8 +302,8 @@
 #[cfg(feature = "mcp")]
 mod mcp;
 
-use std::io::{self, Write};
-use std::path::Path;
+use std::io::{self, Read, Write};
+use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use docling::chunks::{ChunkOptions, ChunkerKind};
@@ -376,7 +399,7 @@ fn output_format_list() -> Vec<&'static str> {
 }
 
 /// One-line synopsis — the `usage:` prefix an argument error prints.
-const USAGE: &str = "usage: docling-rs [OPTIONS] <input-file>\n       docling-rs [OPTIONS] --output DIR SOURCE...\n       docling-rs --input GLOB|DIR --output DIR [OPTIONS]\n       docling-rs serve [SERVE OPTIONS]\n       docling-rs mcp [MCP OPTIONS]";
+const USAGE: &str = "usage: docling-rs [OPTIONS] <input-file> | - | URL\n       docling-rs [OPTIONS] --output DIR SOURCE...\n       docling-rs --input GLOB|DIR --output DIR [OPTIONS]\n       docling-rs serve [SERVE OPTIONS]\n       docling-rs mcp [MCP OPTIONS]";
 
 /// `--help`: the synopsis plus every flag, grouped. Kept in sync with the
 /// module doc comment above, which carries the long-form rationale.
@@ -400,7 +423,13 @@ OUTPUT
 
 INPUT SELECTION
   SOURCE...               one file converts to stdout; several files, directories
-                          or quoted globs are a batch and need --output
+                          or quoted globs are a batch and need --output; `-` is stdin,
+                          http(s)://, data: and file: URLs are sources too (#668)
+  --from FORMAT           input format of stdin / a URL / a mislabelled file (an
+                          identifier from --list-input-formats: docx, pdf, html, md…)
+  --mime-type TYPE        media type deciding the format when the name has no
+                          extension (in place of a missing Content-Type)
+  --no-url-fetch          refuse http(s) sources
   --input GLOB|DIR        batch mode: convert everything the glob/directory matches
   --output DIR            where batch (or single-file) results are written
   --output-file PATH      write the one result to exactly PATH (one input document,
@@ -614,6 +643,9 @@ fn main() -> ExitCode {
     // exactly this path.
     let mut output_file: Option<String> = None;
     let mut output_dirs = OutputDirs::Auto;
+    // `--from` / `--mime-type` / `--no-url-fetch` (#668): how a source that
+    // carries no usable extension — stdin, a bare URL — is typed.
+    let mut hints = SourceHints::default();
     let mut jobs: usize = 1;
     let mut args = std::env::args().skip(1);
     while let Some(arg) = args.next() {
@@ -904,6 +936,42 @@ fn main() -> ExitCode {
                     std::process::exit(2);
                 }
             },
+            // Input format hint (#668): an identifier from --list-input-formats
+            // (`docx`, `pdf`, `html`, `md`…). It overrides whatever the name,
+            // the media type or the content would have said.
+            "--from" => match args.next() {
+                Some(v) => match parse_input_format(&v) {
+                    Some(f) => hints.format = Some(f),
+                    None => {
+                        eprintln!(
+                            "error: --from: unknown input format '{v}' \
+                             (see --list-input-formats)"
+                        );
+                        std::process::exit(2);
+                    }
+                },
+                None => {
+                    eprintln!("error: --from needs an input format (e.g. docx, pdf, html)");
+                    std::process::exit(2);
+                }
+            },
+            // Media-type hint (#668): decides the format of a source whose
+            // name has no extension — stdin, a URL answered without a usable
+            // Content-Type.
+            "--mime-type" => match args.next() {
+                Some(v) if InputFormat::from_mime(&v).is_some() => hints.mime = Some(v),
+                Some(v) => {
+                    eprintln!("error: --mime-type: '{v}' is not a media type docling converts");
+                    std::process::exit(2);
+                }
+                None => {
+                    eprintln!("error: --mime-type needs a media type (e.g. application/pdf)");
+                    std::process::exit(2);
+                }
+            },
+            // Refuse http(s) sources outright (#668) — for a wrapper that
+            // passes user-supplied arguments through and must not fetch.
+            "--no-url-fetch" => hints.no_url_fetch = true,
             // Max frames sampled from a video input (needs the ffmpeg binary;
             // 0 = transcript only). Default 8. A missing or non-numeric value
             // is a usage error like every other numeric flag — it used to be
@@ -1210,7 +1278,7 @@ fn main() -> ExitCode {
             chunk: chunk_opts.clone(),
             vlm,
         };
-        return write_output_file(Path::new(&target), &sources, &cfg);
+        return write_output_file(Path::new(&target), &sources, &hints, &cfg);
     }
 
     // Batch mode (#205, #489): `--input <glob>` and/or several positional
@@ -1243,16 +1311,15 @@ fn main() -> ExitCode {
             eprintln!("error: --output needs --input GLOB or at least one input file");
             return ExitCode::from(2);
         }
-        let mut files: Vec<(std::path::PathBuf, std::path::PathBuf)> = Vec::new();
-        for pattern in inputs.iter().chain(&paths) {
-            match expand_source(pattern) {
-                Ok((matched, base)) => files.extend(matched.into_iter().map(|f| (f, base.clone()))),
-                Err(e) => {
-                    eprintln!("error: {e}");
-                    return ExitCode::from(2);
-                }
+        // stdin / URL / `data:` sources (#668) are loaded now — they have no
+        // path to expand — and join the batch as items of their own.
+        let (files, preloaded) = match expand_sources(inputs.iter().chain(&paths), &hints) {
+            Ok(split) => split,
+            Err((code, msg)) => {
+                eprintln!("error: {msg}");
+                return ExitCode::from(code);
             }
-        }
+        };
         // `--output-dirs` (#496) rewrites every source's base at once: `flat`
         // drops the trees, `mirror` roots them all at the current directory.
         let files = match apply_output_dirs(output_dirs, files) {
@@ -1265,7 +1332,8 @@ fn main() -> ExitCode {
         // A `.zip` source expands into its documents (#557), each named
         // `<archive minus .zip>/<entry path>` for its outputs; what it holds
         // that does not convert is reported now, before any work starts.
-        let (items, archive_report) = expand_archives(files);
+        let (mut items, archive_report) = expand_archives(files);
+        items.extend(preloaded);
         let pairs: Vec<(std::path::PathBuf, std::path::PathBuf)> = items
             .iter()
             .map(|i| (i.file.clone(), i.base.clone()))
@@ -1310,21 +1378,39 @@ fn main() -> ExitCode {
         return ExitCode::from(2);
     };
 
-    if is_zip(Path::new(&path)) {
+    if !is_special_source(&path) && is_zip(Path::new(&path)) {
         eprintln!(
             "error: '{path}' is a ZIP archive: its documents convert one output each, \
              so it needs --output DIR"
         );
         return ExitCode::from(2);
     }
-    let source = match SourceDocument::from_file(&path) {
+    let source = match load_source(&path, &hints) {
         Ok(src) => src,
-        Err(e) => {
-            eprintln!("error: {e}");
-            return ExitCode::FAILURE;
+        Err((code, msg)) => {
+            eprintln!("error: {msg}");
+            return ExitCode::from(code);
         }
     };
     let is_pdf = source.format == InputFormat::Pdf;
+    // Outputs beside stdout — `--to dclx`'s archive, `--images referenced`'s
+    // artifacts, `--to images`' pages — are named after the file; a source
+    // with no file (stdin, a URL) is named after the document.
+    let path = if is_special_source(&path) {
+        source.name.clone()
+    } else {
+        path
+    };
+    // The `--text-layer-only` fallback converts the same bytes again after
+    // the pipeline refused them for missing models; keep them (they are
+    // moved into the conversion) only when it can apply.
+    let text_layer_fallback = (is_pdf && text_layer_only).then(|| {
+        let name = Path::new(&path)
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_else(|| source.name.clone());
+        (source.bytes.clone(), name)
+    });
 
     if let Some(runs) = bench_warm {
         return match bench_warm_conversion(
@@ -1425,7 +1511,7 @@ fn main() -> ExitCode {
                     is_pdf,
                     text_layer_only,
                     strict,
-                    &path,
+                    text_layer_fallback.as_ref(),
                     pages,
                 ) {
                     doc.page_break_placeholder = page_break_placeholder.clone();
@@ -1469,7 +1555,7 @@ fn main() -> ExitCode {
                             is_pdf,
                             text_layer_only,
                             strict,
-                            &path,
+                            text_layer_fallback.as_ref(),
                             pages,
                         ) {
                             doc.page_break_placeholder = page_break_placeholder.clone();
@@ -1516,7 +1602,7 @@ fn main() -> ExitCode {
                 is_pdf,
                 text_layer_only,
                 strict,
-                &path,
+                text_layer_fallback.as_ref(),
                 pages,
             ) {
                 doc.page_break_placeholder = page_break_placeholder.clone();
@@ -1542,7 +1628,7 @@ fn pdf_text_layer_fallback(
     is_pdf: bool,
     text_layer_only: bool,
     strict: bool,
-    path: &str,
+    source: Option<&(Vec<u8>, String)>,
     pages: Option<(usize, usize)>,
 ) -> Option<docling::DoclingDocument> {
     let assets_missing =
@@ -1550,9 +1636,8 @@ fn pdf_text_layer_fallback(
     if !is_pdf || !text_layer_only || !assets_missing {
         return None;
     }
-    let bytes = std::fs::read(path).ok()?;
-    let name = Path::new(path).file_name()?.to_string_lossy().into_owned();
-    match docling::pdf_text_layer_pages(&bytes, &name, pages) {
+    let (bytes, name) = source?;
+    match docling::pdf_text_layer_pages(bytes, name, pages) {
         Ok(mut doc) if !doc.nodes.is_empty() => {
             eprintln!(
                 "warning: models unavailable — --text-layer-only extracted the embedded text \
@@ -1778,6 +1863,198 @@ fn expand_source(arg: &str) -> Result<(Vec<std::path::PathBuf>, std::path::PathB
     Err(format!("'{arg}': no such file or directory"))
 }
 
+/// How a source whose name decides nothing is typed (#668): `--from`
+/// names the format outright, `--mime-type` stands in for a missing
+/// `Content-Type`, `--no-url-fetch` refuses http(s) sources.
+#[derive(Clone, Default)]
+struct SourceHints {
+    format: Option<InputFormat>,
+    mime: Option<String>,
+    no_url_fetch: bool,
+}
+
+/// `--from`'s value: an input-format identifier as `--list-input-formats`
+/// prints them (an extension: `docx`, `pdf`, `md`, `html`, `txt`…) or the
+/// format's own name (`markdown`, `image`, `json_docling`).
+fn parse_input_format(value: &str) -> Option<InputFormat> {
+    let v = value.trim().trim_start_matches('.');
+    InputFormat::from_extension(v).or_else(|| {
+        InputFormat::supported_extensions()
+            .iter()
+            .filter_map(|ext| InputFormat::from_extension(ext))
+            .find(|f| f.as_str().eq_ignore_ascii_case(v))
+    })
+}
+
+/// A positional source that is not a path (#668): `-` (stdin), an http(s)
+/// URL, a `data:` URL, or a `file:` URL (which names a path, but through
+/// the URL grammar).
+fn is_special_source(arg: &str) -> bool {
+    arg == "-"
+        || arg.starts_with("http://")
+        || arg.starts_with("https://")
+        || arg.starts_with("data:")
+        || arg.starts_with("file:")
+}
+
+/// Load one source — a path, `-`, a URL — under `hints`. `--from` wins over
+/// everything; otherwise the name's extension, then the media type
+/// (`--mime-type`, else the response's `Content-Type`), then the bytes
+/// decide, as [`SourceDocument::from_named_bytes`] does. The error carries
+/// the exit code: 2 when the source was named or typed wrong (a usage
+/// error — no such file, no way to tell the format, URL fetch refused), 1
+/// when reading or fetching it failed.
+fn load_source(arg: &str, hints: &SourceHints) -> Result<SourceDocument, (u8, String)> {
+    // `--from`: build straight from the bytes; nothing else is consulted.
+    let typed = |name: &str, bytes: Vec<u8>, content_type: Option<&str>| {
+        if let Some(format) = hints.format {
+            let stem = Path::new(name)
+                .file_stem()
+                .and_then(|s| s.to_str())
+                .filter(|s| !s.is_empty())
+                .unwrap_or("document");
+            return Ok(SourceDocument::from_bytes(stem, format, bytes));
+        }
+        SourceDocument::from_named_bytes(name, bytes, hints.mime.as_deref().or(content_type))
+            .map_err(|e| {
+                let what = match e {
+                    docling::ConversionError::UnknownFormat { hint } => hint,
+                    other => other.to_string(),
+                };
+                // stdin has no name to speak of, and a data: URL's payload
+                // is not worth repeating.
+                let (label, what) = if arg == "-" {
+                    (
+                        "stdin".to_string(),
+                        what.replace("of 'document': no file extension, ", "of stdin: "),
+                    )
+                } else if arg.starts_with("data:") {
+                    ("data: URL".to_string(), what)
+                } else {
+                    (arg.to_string(), what)
+                };
+                (
+                    2,
+                    format!("{label}: {what} (pass --from FORMAT or --mime-type TYPE)"),
+                )
+            })
+    };
+    if arg == "-" {
+        let mut bytes = Vec::new();
+        io::stdin()
+            .lock()
+            .read_to_end(&mut bytes)
+            .map_err(|e| (1, format!("reading stdin: {e}")))?;
+        return typed("document", bytes, None);
+    }
+    if arg.starts_with("data:") {
+        let data = docling::fetch::parse_data_url(arg).map_err(|e| (2, e.to_string()))?;
+        let name = data.name.as_deref().unwrap_or("document").to_string();
+        return typed(&name, data.bytes, data.media_type.as_deref());
+    }
+    if arg.starts_with("http://") || arg.starts_with("https://") {
+        if hints.no_url_fetch {
+            return Err((
+                2,
+                format!("'{arg}': URL sources are disabled (--no-url-fetch)"),
+            ));
+        }
+        // A CLI follows the redirects a browser would; the SSRF guard sees
+        // every hop (lift it with DOCLING_RS_ALLOW_PRIVATE_IP_FETCH=1 for a
+        // local server). Bounds are the library's defaults.
+        let policy = docling::FetchPolicy {
+            max_redirects: 5,
+            ..docling::FetchPolicy::default()
+        };
+        let fetched = docling::fetch::fetch(arg, &policy).map_err(|e| {
+            let code = if e.to_string().starts_with("refusing to fetch") {
+                2
+            } else {
+                1
+            };
+            (code, e.to_string())
+        })?;
+        let name =
+            docling::fetch::fetched_name(&fetched.url, fetched.content_disposition.as_deref());
+        return typed(&name, fetched.bytes, fetched.content_type.as_deref())
+            .map(|s| s.with_base_url(fetched.url));
+    }
+    let path = if arg.starts_with("file:") {
+        docling::fetch::file_url_path(arg).map_err(|e| (2, e))?
+    } else {
+        PathBuf::from(arg)
+    };
+    // A plain file: `from_file` unless a hint has to decide its format (no
+    // extension, or `--from`).
+    let has_ext = path.extension().is_some();
+    if hints.format.is_none() && (has_ext || hints.mime.is_none()) {
+        return SourceDocument::from_file(&path).map_err(|e| match e {
+            docling::ConversionError::UnknownFormat { hint } => (
+                2,
+                format!(
+                    "{}: {hint} (pass --from FORMAT or --mime-type TYPE)",
+                    path.display()
+                ),
+            ),
+            docling::ConversionError::Io(io) if io.kind() == io::ErrorKind::NotFound => (
+                2,
+                format!("'{}': no such file or directory", path.display()),
+            ),
+            other => (1, format!("{}: {other}", path.display())),
+        });
+    }
+    let bytes = std::fs::read(&path).map_err(|e| (1, format!("{}: {e}", path.display())))?;
+    let name = path
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_else(|| "document".to_string());
+    let mut source = typed(&name, bytes, None)?;
+    source.path = Some(path);
+    Ok(source)
+}
+
+/// [`expand_sources`]' result: the `(file, base)` pairs of the path
+/// sources, and the items of the loaded ones.
+type SplitSources = (Vec<(PathBuf, PathBuf)>, Vec<BatchItem>);
+
+/// Split a batch's sources (#668): paths, directories and globs expand to
+/// files as before; stdin, URLs and `data:` URLs are loaded here and come
+/// back as ready items named `<name>.<ext>` (so they land under `--output`
+/// by stem like a plain file would).
+fn expand_sources<'a>(
+    patterns: impl Iterator<Item = &'a String>,
+    hints: &SourceHints,
+) -> Result<SplitSources, (u8, String)> {
+    let mut files = Vec::new();
+    let mut preloaded = Vec::new();
+    for pattern in patterns {
+        if is_special_source(pattern) && !pattern.starts_with("file:") {
+            let source = load_source(pattern, hints)?;
+            let ext = source.format.extensions().next().unwrap_or("bin");
+            preloaded.push(BatchItem {
+                file: PathBuf::from(format!("{}.{ext}", source.name)),
+                base: PathBuf::new(),
+                entry: None,
+                preloaded: Some((pattern.clone(), source)),
+            });
+            continue;
+        }
+        let pattern = if pattern.starts_with("file:") {
+            docling::fetch::file_url_path(pattern)
+                .map_err(|e| (2, e))?
+                .to_string_lossy()
+                .into_owned()
+        } else {
+            pattern.clone()
+        };
+        match expand_source(&pattern) {
+            Ok((matched, base)) => files.extend(matched.into_iter().map(|f| (f, base.clone()))),
+            Err(e) => return Err((2, e)),
+        }
+    }
+    Ok((files, preloaded))
+}
+
 /// Two sources that would write the same output file (#489): `sub/b.docx`
 /// and `other/b.docx` both land as `out/b.md` when passed as files. Python
 /// docling lets the later one overwrite the earlier silently; refuse instead —
@@ -1889,16 +2166,24 @@ fn glob_base(pattern: &str) -> std::path::PathBuf {
 /// One unit of batch work: a file, or a document inside a ZIP archive (#557).
 struct BatchItem {
     /// The file — for an archive entry `<archive minus .zip>/<entry path>`,
-    /// which places its outputs (`out/<archive>/<entry>.md`).
+    /// which places its outputs (`out/<archive>/<entry>.md`); for a loaded
+    /// source (#668) `<name>.<ext>`, a stem carrier with no file behind it.
     file: std::path::PathBuf,
     base: std::path::PathBuf,
     /// The archive and directory index an entry is read from.
     entry: Option<(std::path::PathBuf, usize)>,
+    /// A source already in memory — stdin, a fetched URL, a `data:` URL
+    /// (#668) — with the argument that named it, for progress lines.
+    preloaded: Option<(String, SourceDocument)>,
 }
 
 impl BatchItem {
-    /// How progress and errors name the item: the path, or `archive.zip:entry`.
+    /// How progress and errors name the item: the path, `archive.zip:entry`,
+    /// or the argument a loaded source was given as.
     fn label(&self) -> String {
+        if let Some((label, _)) = &self.preloaded {
+            return label.clone();
+        }
         match &self.entry {
             None => self.file.display().to_string(),
             Some((zip, _)) => {
@@ -1943,6 +2228,7 @@ fn expand_archives(
                 file,
                 base,
                 entry: None,
+                preloaded: None,
             });
             continue;
         }
@@ -1974,6 +2260,7 @@ fn expand_archives(
                 file: root.join(&entry.path),
                 base: base.clone(),
                 entry: Some((file.clone(), entry.index)),
+                preloaded: None,
             });
         }
     }
@@ -2124,9 +2411,10 @@ fn batch_convert_one(
 ) -> Result<BatchOutcome, String> {
     let (file, base) = (item.file.as_path(), item.base.as_path());
     let label = item.label();
-    let source = match &item.entry {
-        None => SourceDocument::from_file(file).map_err(|e| e.to_string())?,
-        Some((zip, index)) => archives.read(zip, *index)?,
+    let source = match (&item.preloaded, &item.entry) {
+        (Some((_, source)), _) => source.clone(),
+        (None, None) => SourceDocument::from_file(file).map_err(|e| e.to_string())?,
+        (None, Some((zip, index))) => archives.read(zip, *index)?,
     };
     // Announce the document up front — with its page count for PDFs, so long
     // conversions are attributable while the dots tick.
@@ -2365,18 +2653,21 @@ struct BatchOutcome {
 /// referenced`, which its links point into relatively — into PATH's
 /// directory, where docling exports them too. Progress goes to stderr;
 /// nothing is printed on stdout.
-fn write_output_file(target: &Path, sources: &[&String], cfg: &BatchCfg) -> ExitCode {
-    let mut files = Vec::new();
-    for pattern in sources {
-        match expand_source(pattern) {
-            Ok((matched, base)) => files.extend(matched.into_iter().map(|f| (f, base.clone()))),
-            Err(e) => {
-                eprintln!("error: {e}");
-                return ExitCode::from(2);
-            }
+fn write_output_file(
+    target: &Path,
+    sources: &[&String],
+    hints: &SourceHints,
+    cfg: &BatchCfg,
+) -> ExitCode {
+    let (files, preloaded) = match expand_sources(sources.iter().copied(), hints) {
+        Ok(split) => split,
+        Err((code, msg)) => {
+            eprintln!("error: {msg}");
+            return ExitCode::from(code);
         }
-    }
+    };
     let (mut items, report) = expand_archives(files);
+    items.extend(preloaded);
     if items.len() != 1 || report.failed + report.skipped > 0 {
         eprintln!(
             "error: --output-file requires exactly one input document ({} given)",

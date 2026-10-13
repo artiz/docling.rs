@@ -115,7 +115,8 @@ struct State {
     /// relative paths.
     roots: Vec<Root>,
     allow_url_fetch: bool,
-    fetch_limits: docling::fetch::FetchLimits,
+    /// How `http(s)` inputs are fetched (only with `--allow-url-fetch`).
+    fetch_policy: docling::FetchPolicy,
     permits: Arc<tokio::sync::Semaphore>,
     /// The missing-models note is printed once per process.
     warned_text_layer: AtomicBool,
@@ -208,7 +209,7 @@ pub fn run(args: Vec<String>) -> ExitCode {
     let state = Arc::new(State {
         roots,
         allow_url_fetch,
-        fetch_limits: docling::fetch::FetchLimits::from_env(),
+        fetch_policy: fetch_policy(),
         permits: Arc::new(tokio::sync::Semaphore::new(concurrency)),
         warned_text_layer: AtomicBool::new(false),
         warm: docling::WarmPipeline::new(),
@@ -782,7 +783,7 @@ fn guard_options(state: &State, options: &ConvertOptions) -> Result<ConvertOptio
                     .into(),
             );
         }
-        docling::fetch::check_url(endpoint).map_err(|e| e.to_string())?;
+        docling::fetch::check_outbound_url(endpoint, false)?;
     }
     if o.use_web_browser == Some(true) && !state.allow_url_fetch {
         return Err(
@@ -818,7 +819,7 @@ fn resolve_source(state: &State, uri: &str) -> Result<SourceDocument, String> {
     }
     let lower = uri.get(..8).unwrap_or(uri).to_ascii_lowercase();
     if lower.starts_with("data:") {
-        return data_uri_source(uri);
+        return docling::fetch::from_data_url(uri).map_err(|e| e.to_string());
     }
     if lower.starts_with("http://") || lower.starts_with("https://") {
         if !state.allow_url_fetch {
@@ -828,14 +829,10 @@ fn resolve_source(state: &State, uri: &str) -> Result<SourceDocument, String> {
                 state.roots_display()
             ));
         }
-        let fetched = docling::fetch::fetch(uri, &state.fetch_limits).map_err(|e| e.to_string())?;
-        return fetched.into_source().map_err(|e| e.to_string());
+        return SourceDocument::from_url(uri, &state.fetch_policy).map_err(|e| e.to_string());
     }
     let path = if lower.starts_with("file:") {
-        url::Url::parse(uri)
-            .ok()
-            .and_then(|u| u.to_file_path().ok())
-            .ok_or_else(|| format!("not a local file URI: {uri:?}"))?
+        docling::fetch::file_url_path(uri)?
     } else if let Some(scheme) = uri_scheme(uri) {
         return Err(format!(
             "unsupported URI scheme {scheme:?} (expected http, https, file, data, or a path)"
@@ -847,22 +844,33 @@ fn resolve_source(state: &State, uri: &str) -> Result<SourceDocument, String> {
     if path.is_dir() {
         return Err(format!("{} is a directory, not a document", path.display()));
     }
-    let source = SourceDocument::from_file(&path).map_err(|e| e.to_string());
-    match source {
+    match SourceDocument::from_file(&path) {
         Ok(source) => Ok(source),
         // No (known) extension: read it and let the content decide.
-        Err(e) => {
+        Err(_) => {
             let bytes = std::fs::read(&path).map_err(|e| format!("{}: {e}", path.display()))?;
-            let format = InputFormat::sniff(&bytes).ok_or(e)?;
             let name = path
-                .file_stem()
-                .and_then(|s| s.to_str())
-                .unwrap_or("document")
-                .to_string();
-            let mut source = SourceDocument::from_bytes(name, format, bytes);
+                .file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or("document");
+            let mut source = SourceDocument::from_named_bytes(name, bytes, None)
+                .map_err(|e| format!("{}: {e}", path.display()))?;
             source.path = Some(path);
             Ok(source)
         }
+    }
+}
+
+/// The server's URL-fetch policy on top of the library's bounds
+/// (`DOCLING_RS_MAX_FETCH_BYTES`, 10 s connect / 300 s total): up to five
+/// redirects, each hop re-checked against the private-address block —
+/// links agents are handed (`http:` → `https:`, an arXiv abstract → its
+/// PDF) redirect routinely, and the per-hop check keeps a public URL from
+/// bouncing onto an internal one. docling-serve refuses redirects instead.
+fn fetch_policy() -> docling::FetchPolicy {
+    docling::FetchPolicy {
+        max_redirects: 5,
+        ..docling::FetchPolicy::default()
     }
 }
 
@@ -938,66 +946,6 @@ fn normalize(path: &Path) -> PathBuf {
 /// A `data:[<mime>][;charset=…][;base64],<payload>` URI as a document: the
 /// format from the media type, else the content's signature; a `charset`
 /// decodes text formats.
-fn data_uri_source(uri: &str) -> Result<SourceDocument, String> {
-    let rest = &uri["data:".len()..];
-    let (meta, payload) = rest
-        .split_once(',')
-        .ok_or("malformed data: URI (no ',' before the payload)")?;
-    let mut params = meta.split(';');
-    let mime = params.next().unwrap_or("").trim().to_string();
-    let mut base64 = false;
-    let mut charset = None;
-    for p in params {
-        let p = p.trim();
-        if p.eq_ignore_ascii_case("base64") {
-            base64 = true;
-        } else if let Some((k, v)) = p.split_once('=') {
-            if k.trim().eq_ignore_ascii_case("charset") {
-                charset = Some(v.trim().trim_matches('"').to_string());
-            }
-        }
-    }
-    let bytes = if base64 {
-        // Whitespace may wrap a long payload.
-        let compact: String = payload.chars().filter(|c| !c.is_whitespace()).collect();
-        docling::base64::decode(&compact).ok_or("data: URI: invalid base64 payload")?
-    } else {
-        percent_decode(payload)
-    };
-    let format = InputFormat::from_mime(&mime)
-        .or_else(|| InputFormat::sniff(&bytes))
-        .ok_or_else(|| {
-            format!(
-                "data: URI: cannot tell the format (media type {:?}, no recognizable signature)",
-                if mime.is_empty() { "text/plain" } else { &mime }
-            )
-        })?;
-    let source = SourceDocument::from_bytes("document", format, bytes);
-    Ok(match charset {
-        Some(label) if !label.eq_ignore_ascii_case("utf-8") => source.with_encoding(Some(label)),
-        _ => source,
-    })
-}
-
-fn percent_decode(s: &str) -> Vec<u8> {
-    let b = s.as_bytes();
-    let mut out = Vec::with_capacity(b.len());
-    let mut i = 0;
-    while i < b.len() {
-        if b[i] == b'%' && i + 2 < b.len() {
-            let hex = |c: u8| (c as char).to_digit(16);
-            if let (Some(h), Some(l)) = (hex(b[i + 1]), hex(b[i + 2])) {
-                out.push((h * 16 + l) as u8);
-                i += 3;
-                continue;
-            }
-        }
-        out.push(b[i]);
-        i += 1;
-    }
-    out
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1006,7 +954,7 @@ mod tests {
         State {
             roots: vec![Root::new(root.to_str().unwrap()).unwrap()],
             allow_url_fetch,
-            fetch_limits: Default::default(),
+            fetch_policy: fetch_policy(),
             permits: Arc::new(tokio::sync::Semaphore::new(1)),
             warned_text_layer: AtomicBool::new(false),
             warm: docling::WarmPipeline::new(),
@@ -1083,21 +1031,24 @@ mod tests {
         assert!(err.contains("is a directory"), "{err}");
     }
 
+    /// `data:` URIs decode in the library (`docling::fetch::from_data_url`)
+    /// whether or not URL fetching is on — nothing leaves the machine.
     #[test]
     fn data_uris_decode() {
-        let src = data_uri_source("data:text/markdown;base64,IyBUaXRsZQoKSGVsbG8=").unwrap();
+        let s = state(&fixtures(), false);
+        let src = resolve_source(&s, "data:text/markdown;base64,IyBUaXRsZQoKSGVsbG8=").unwrap();
         assert_eq!(src.format, InputFormat::Md);
         assert_eq!(src.bytes, b"# Title\n\nHello");
-        let src = data_uri_source("data:text/html,%3Ch1%3EHi%3C/h1%3E").unwrap();
+        let src = resolve_source(&s, "DATA:text/html,%3Ch1%3EHi%3C/h1%3E").unwrap();
         assert_eq!(src.format, InputFormat::Html);
         assert_eq!(src.bytes, b"<h1>Hi</h1>");
         // No media type: the signature decides.
-        let src = data_uri_source("data:;base64,JVBERi0xLjQK").unwrap();
+        let src = resolve_source(&s, "data:;base64,JVBERi0xLjQK").unwrap();
         assert_eq!(src.format, InputFormat::Pdf);
-        let src = data_uri_source("data:text/csv;charset=shift_jis,a,b").unwrap();
+        let src = resolve_source(&s, "data:text/csv;charset=shift_jis,a,b").unwrap();
         assert_eq!(src.encoding.as_deref(), Some("shift_jis"));
-        assert!(data_uri_source("data:text/plain").is_err());
-        assert!(data_uri_source("data:application/octet-stream,xyz").is_err());
+        assert!(resolve_source(&s, "data:text/plain").is_err());
+        assert!(resolve_source(&s, "data:application/octet-stream,xyz").is_err());
     }
 
     #[test]
