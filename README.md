@@ -6,25 +6,12 @@
 
 <p align="center">
   <a href="https://github.com/docling-project/docling.rs/actions/workflows/ci.yml"><img src="https://github.com/docling-project/docling.rs/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="https://crates.io/crates/docling"><img src="https://img.shields.io/crates/v/docling?logo=rust" alt="crates.io"></a>
+  <a href="https://pypi.org/project/docling-rs/"><img src="https://img.shields.io/pypi/v/docling-rs?logo=pypi&logoColor=fff" alt="PyPI"></a>
+  <a href="https://www.npmjs.com/package/docling.rs"><img src="https://img.shields.io/npm/v/docling.rs?logo=npm&logoColor=fff" alt="npm"></a>
+  <a href="https://github.com/docling-project/docling.rs/pkgs/container/docling-rs-serve"><img src="https://img.shields.io/badge/ghcr.io-docling--rs--serve-2496ED?logo=docker&logoColor=fff" alt="GHCR"></a>
   <a href="https://docling-project.github.io/docling.rs/"><img src="https://img.shields.io/badge/demo-live-brightgreen" alt="Live browser demo"></a>
-  <a href="https://docs.rs/docling"><img src="https://img.shields.io/docsrs/docling?logo=docs.rs" alt="docs.rs"></a>
-  <a href="https://pypi.org/project/docling-rs/"><img src="https://img.shields.io/pypi/pyversions/docling-rs" alt="Python versions"></a>
-  <a href="https://crates.io/crates/docling"><img src="https://img.shields.io/crates/msrv/docling?logo=rust&label=rust" alt="Rust MSRV"></a>
   <a href="https://opensource.org/licenses/MIT"><img src="https://img.shields.io/github/license/docling-project/docling.rs" alt="License MIT"></a>
-  <a href="https://lfaidata.foundation/projects/"><img src="https://img.shields.io/badge/LF%20AI%20%26%20Data-003778?logo=linuxfoundation&logoColor=fff&color=0094ff&labelColor=003778" alt="LF AI &amp; Data"></a>
-  <br>
-  <a href="https://crates.io/crates/docling"><img src="https://img.shields.io/crates/v/docling?logo=rust" alt="crates.io version"></a>
-  <a href="https://pypi.org/project/docling-rs/"><img src="https://img.shields.io/pypi/v/docling-rs?logo=pypi&logoColor=fff" alt="PyPI version"></a>
-  <a href="https://www.npmjs.com/package/docling.rs"><img src="https://img.shields.io/npm/v/docling.rs?logo=npm&logoColor=fff&label=npm%20docling.rs" alt="npm docling.rs"></a>
-  <a href="https://www.npmjs.com/package/docling.rs-wasm"><img src="https://img.shields.io/npm/v/docling.rs-wasm?logo=webassembly&logoColor=fff&label=npm%20docling.rs-wasm" alt="npm docling.rs-wasm"></a>
-  <a href="https://github.com/docling-project/docling.rs/releases"><img src="https://img.shields.io/github/v/release/docling-project/docling.rs?label=release&logo=github" alt="GitHub release"></a>
-  <br>
-  <a href="https://github.com/docling-project/docling.rs/pkgs/container/docling-rs-serve"><img src="https://img.shields.io/badge/ghcr.io-docling--rs--serve-2496ED?logo=docker&logoColor=fff" alt="GHCR docling-rs-serve"></a>
-  <a href="https://github.com/docling-project/docling.rs/pkgs/container/docling-rs"><img src="https://img.shields.io/badge/ghcr.io-docling--rs-2496ED?logo=docker&logoColor=fff" alt="GHCR docling-rs (CLI)"></a>
-  <a href="https://crates.io/crates/docling"><img src="https://img.shields.io/crates/d/docling?label=crates.io%20downloads" alt="crates.io downloads"></a>
-  <a href="https://pepy.tech/projects/docling-rs"><img src="https://static.pepy.tech/badge/docling-rs/month" alt="PyPI downloads/month"></a>
-  <a href="https://www.npmjs.com/package/docling.rs"><img src="https://img.shields.io/npm/dm/docling.rs?label=npm%20downloads" alt="npm downloads/month"></a>
-  
 </p>
 
 **docling.rs** converts documents — PDF, Office, HTML, scans, audio — into
@@ -69,6 +56,9 @@ and the containers bring them along; with `pip`, run
 convert — it fills `./.models`, where every surface looks
 ([details](#getting-the-ml-models)). Windows:
 [`docs/WINDOWS.md`](./docs/WINDOWS.md).
+
+**▶ [Try it in your browser](https://docling-project.github.io/docling.rs/)**
+first — the converter as wasm, OCR included; nothing leaves your device.
 
 ## Use
 
@@ -117,9 +107,6 @@ in [`docs/OPTIONS.md`](./docs/OPTIONS.md).
 - **Every docling format, and a few it lacks** — the table under
   [Status](#status), each validated against live docling
   ([Conformance](#conformance-with-python-docling)).
-- **▶ [Try it in your browser](https://docling-project.github.io/docling.rs/)** —
-  the converter as wasm, OCR included. Nothing leaves your device
-  ([`crates/docling-wasm`](./crates/docling-wasm/README.md)).
 - **A drop-in server for docling-serve** — Open WebUI, n8n, Dify and LangChain
   clients work unchanged ([`docling-rs serve`](#http-conversion-api--docling-rs-serve)).
 
@@ -133,7 +120,7 @@ WebVTT and chunk records, with image extraction. The extension map
 (`InputFormat::from_extension`, docling's `FormatToExtensions`) picks the
 backend; a file that fails under its extension is checked by content and,
 when it is evidently another format (an RTF or HTML file saved as `.doc`),
-converted once more as that format with a warning (#556).
+converted once more as that format with a warning.
 
 | Category | Extensions | Notes |
 |---|---|---|
@@ -141,15 +128,15 @@ converted once more as that format with a warning (#556).
 | Word processing | DOCX `.docx` `.docm` `.dotx` `.dotm` · Word 97–2004 `.doc` `.dot` (Word 6/95 and Word for Windows 1.x/2.0 too) · OpenDocument `.odt` `.ott` `.fodt` · OpenOffice 1.x `.sxw` `.stw` `.sxg` · StarWriter `.sdw` `.vor` · AbiWord `.abw` `.zabw` `.awt` · WordPerfect `.wpd` `.wp` `.wp5` `.wp6` `.wpt` · MS Works `.wps` · EPUB `.epub` · RTF `.rtf` | DOCX JSON is docling's item tree; OMML equations come out as LaTeX; numbered headings keep their numbers |
 | Presentations | PPTX `.pptx` `.pptm` `.potx` `.potm` `.ppsx` `.ppsm` · PowerPoint 97–2003 `.ppt` `.pot` `.pps` · OpenDocument `.odp` `.otp` `.fodp` · OpenOffice 1.x `.sxi` `.sti` · StarImpress/StarDraw `.sdd` `.sda` | PPTX JSON is docling's item tree — slides, lists, tables, pictures, charts, notes, comments |
 | Diagrams | Visio `.vsdx` `.vsdm` · SVG `.svg` | Visio: pages as sections, shape text in reading order, connectors as a relations table; SVG rasterized into the image pipeline, or its `<text>` as paragraphs without ML |
-| Spreadsheets | XLSX `.xlsx` `.xlsm` `.xltx` `.xltm` · XLSB `.xlsb` · Excel 97–2004 `.xls` `.xlt` · OpenDocument `.ods` `.ots` `.fods` · OpenOffice 1.x `.sxc` `.stc` · CSV `.csv` `.tsv` · dBase `.dbf` · DIF `.dif` · SYLK `.slk` `.sylk` · Lotus 1-2-3 / Symphony `.wk1` `.wk2` `.wk3` `.wk4` `.wks` `.wrk` `.123` · Quattro Pro `.wq1` `.wq2` `.wb1` `.wb2` `.wb3` `.qpw` · MS Works `.xlr` | cells print what Excel displays — `$12.50`, `10%`, `Feb-25` (#634); merged cells keep their spans; chart sheets expose their chart |
-| Apple iWork | Pages `.pages` · Numbers `.numbers` · Keynote `.key` | both container generations (`Index/*.iwa` and iWork '09 XML); Pages and Keynote mirror docling's readers, Keynote charts as classified pictures with their data table; Numbers as sheet/table text (#213) |
+| Spreadsheets | XLSX `.xlsx` `.xlsm` `.xltx` `.xltm` · XLSB `.xlsb` · Excel 97–2004 `.xls` `.xlt` · OpenDocument `.ods` `.ots` `.fods` · OpenOffice 1.x `.sxc` `.stc` · CSV `.csv` `.tsv` · dBase `.dbf` · DIF `.dif` · SYLK `.slk` `.sylk` · Lotus 1-2-3 / Symphony `.wk1` `.wk2` `.wk3` `.wk4` `.wks` `.wrk` `.123` · Quattro Pro `.wq1` `.wq2` `.wb1` `.wb2` `.wb3` `.qpw` · MS Works `.xlr` | cells print what Excel displays — `$12.50`, `10%`, `Feb-25`; merged cells keep their spans; chart sheets expose their chart |
+| Apple iWork | Pages `.pages` · Numbers `.numbers` · Keynote `.key` | both container generations (`Index/*.iwa` and iWork '09 XML); Pages and Keynote mirror docling's readers, Keynote charts as classified pictures with their data table; Numbers as sheet/table text |
 | XML dialects | JATS / USPTO / XBRL (`.xml` `.nxml`, content-sniffed) · DocLang `.dclg` | XBRL converts without arelle: `dei` title, text blocks, numeric facts as docling's key-value graph, the taxonomy read offline from `xbrl_taxonomy` |
-| PDF & images | `.pdf` · `.png` `.jpg` `.jpeg` `.tif` `.tiff` `.bmp` `.webp` `.gif` · HEIC/HEIF `.heic` `.heif` (`--features heif`) · METS/GBS scan packages `.tar.gz` · DjVu `.djvu` `.djv` | pure-Rust text layer, page renderer and scan raster, ONNX layout + TableFormer + OCR (`docling-pdf`; no native PDF library in the default build, `pdfium` is an opt-in feature — [`docs/PDF_CONFORMANCE.md`](./docs/PDF_CONFORMANCE.md)); JPEG 2000 decodes in Rust, JBIG2 is a placeholder; DjVu reads its hidden text layer without models and falls back to OCR with them (#434) |
-| docling native | docling JSON `.json` · DocTags `.doctags` `.dt` · DCLX `.dclx` | DocTags — the token markup docling's VLMs emit — read through docling-core's tolerant parser, the one the VLM pipeline uses (#152) |
+| PDF & images | `.pdf` · `.png` `.jpg` `.jpeg` `.tif` `.tiff` `.bmp` `.webp` `.gif` · HEIC/HEIF `.heic` `.heif` (`--features heif`) · METS/GBS scan packages `.tar.gz` · DjVu `.djvu` `.djv` | pure-Rust text layer, page renderer and scan raster, ONNX layout + TableFormer + OCR (`docling-pdf`; no native PDF library in the default build, `pdfium` is an opt-in feature — [`docs/PDF_CONFORMANCE.md`](./docs/PDF_CONFORMANCE.md)); JPEG 2000 decodes in Rust, JBIG2 is a placeholder; DjVu reads its hidden text layer without models and falls back to OCR with them |
+| docling native | docling JSON `.json` · DocTags `.doctags` `.dt` · DCLX `.dclx` | DocTags — the token markup docling's VLMs emit — read through docling-core's tolerant parser, the one the VLM pipeline uses |
 | Mainframe data | EBCDIC `.ebc` `.ebcdic` | fixed-width records decoded through a COBOL copybook (docling's `EbcdicLayout`): `ebcdic_layout`, or a `<stem>.layout.json` sidecar |
-| Email & subtitles | `.eml` · Outlook `.msg` · WebVTT `.vtt` | `.msg` is projected onto RFC 822 (same output as the `.eml`); `list_attachments` names the attachments, `email_attachments()` converts them (#561); `cid:` images embed under `image_sources=embedded` (#646) |
-| Audio | `.wav` `.mp3` `.mpga` `.m4a` `.aac` `.ogg` `.flac` | Rust all the way down: symphonia decodes, Whisper tiny (ONNX, docling's ASR defaults) or the Parakeet TDT 0.6B v3 preset (#508) transcribes; `[time: start-end] text` paragraphs, the timing as the JSON item's track, `--to vtt` for subtitles; language auto-detected or `asr_lang`. Ogg Opus falls back to the `ffmpeg` binary |
-| Video | `.mp4` `.avi` `.mov` `.mkv` `.webm` `.mpeg` `.mpg` | the audio track transcribed the same way; with the `ffmpeg` binary on `PATH` (`DOCLING_FFMPEG`), `video_frames` scene-change frames (8 by default, `all` for every cut) interleave as `[time: <ts>]` pictures, tuned by the `video_*` options (#647, #648). AVI needs ffmpeg; without it a video is its transcript |
+| Email & subtitles | `.eml` · Outlook `.msg` · WebVTT `.vtt` | `.msg` is projected onto RFC 822 (same output as the `.eml`); `list_attachments` names the attachments, `email_attachments()` converts them; `cid:` images embed under `image_sources=embedded` |
+| Audio | `.wav` `.mp3` `.mpga` `.m4a` `.aac` `.ogg` `.flac` | Rust all the way down: symphonia decodes, Whisper tiny (ONNX, docling's ASR defaults) or the Parakeet TDT 0.6B v3 preset transcribes; `[time: start-end] text` paragraphs, the timing as the JSON item's track, `--to vtt` for subtitles; language auto-detected or `asr_lang`. Ogg Opus falls back to the `ffmpeg` binary |
+| Video | `.mp4` `.avi` `.mov` `.mkv` `.webm` `.mpeg` `.mpg` | the audio track transcribed the same way; with the `ffmpeg` binary on `PATH` (`DOCLING_FFMPEG`), `video_frames` scene-change frames (8 by default, `all` for every cut) interleave as `[time: <ts>]` pictures, tuned by the `video_*` options. AVI needs ffmpeg; without it a video is its transcript |
 
 <details>
 <summary><b>Installing ffmpeg</b> (optional — only for video frame sampling)</summary>
