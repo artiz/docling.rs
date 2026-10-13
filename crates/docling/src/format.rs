@@ -266,6 +266,8 @@ impl InputFormat {
             "image/png" | "image/jpeg" | "image/tiff" | "image/bmp" | "image/webp"
             | "image/gif" | "image/heic" | "image/heif" => InputFormat::Image,
             "image/svg+xml" => InputFormat::Svg,
+            // Registered and legacy DjVu spellings (#434).
+            "image/vnd.djvu" | "image/x-djvu" | "image/x.djvu" => InputFormat::Djvu,
             "audio/mpeg" | "audio/mp3" | "audio/wav" | "audio/x-wav" | "audio/wave"
             | "audio/mp4" | "audio/m4a" | "audio/x-m4a" | "audio/aac" | "audio/ogg"
             | "audio/flac" => InputFormat::Audio,

@@ -1,6 +1,6 @@
 name,category,source
 DOCLING_RS_DJVU_RENDER_PX,limit,crates/docling/src/backend/djvu.rs
-DOCLING_RS_MAX_FETCH_BYTES,limit,crates/docling-serve/src/lib.rs
+DOCLING_RS_MAX_FETCH_BYTES,limit,crates/docling/src/fetch.rs
 DOCLING_RS_MAX_HTML_DEPTH,limit,crates/docling/src/backend/html.rs
 DOCLING_RS_MAX_IMAGE_PIXELS,limit,crates/docling-pdf/src/lib.rs
 DOCLING_RS_MAX_MEMORY_MB,limit,crates/docling-serve/src/lib.rs
@@ -20,7 +20,7 @@ DOCLING_RS_CHROME,subprocess,crates/docling/src/backend/browser.rs
 DOCLING_TESSERACT,subprocess,crates/docling-pdf/src/tesseract.rs
 DOCLING_RS_VLM_API_KEY,secret,crates/docling/src/vlm.rs
 DOCLING_SERVE_API_KEY,secret,crates/docling-serve/src/lib.rs
-DOCLING_RS_ALLOW_PRIVATE_IP_FETCH,network,crates/docling/src/backend/images.rs
+DOCLING_RS_ALLOW_PRIVATE_IP_FETCH,network,crates/docling/src/fetch.rs
 DOCLING_RS_MAX_IMAGE_BYTES,limit,crates/docling/src/backend/images.rs
 DOCLING_RS_MAX_IMAGES,limit,crates/docling/src/backend/images.rs
 DOCLING_RS_MAX_IMAGE_TOTAL_MB,limit,crates/docling/src/backend/images.rs

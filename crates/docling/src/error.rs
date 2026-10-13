@@ -18,6 +18,10 @@ pub enum ConversionError {
     UnsupportedFormat(InputFormat),
     /// The backend recognized the format but failed to parse the content.
     Parse(String),
+    /// Loading the input from a URL failed (#668): the SSRF guard refused
+    /// it, the transfer failed or overran its bounds, or a `data:` URL is
+    /// malformed.
+    Fetch(String),
     /// The requested streaming conversion is not supported (e.g. JSON, or the
     /// referenced image mode, which both need the whole document up front).
     Streaming(String),
@@ -132,6 +136,7 @@ impl fmt::Display for ConversionError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             ConversionError::Io(e) => write!(f, "i/o error: {e}"),
+            ConversionError::Fetch(msg) => write!(f, "{msg}"),
             ConversionError::UnknownFormat { hint } => {
                 write!(f, "could not determine input format (hint: {hint})")
             }

@@ -45,6 +45,28 @@ pub(crate) fn detect(bytes: &[u8]) -> Option<InputFormat> {
     None
 }
 
+/// [`detect`] plus the formats a failed conversion never needs re-routing
+/// to but a nameless input (stdin, a `data:` URL, an extensionless URL
+/// with a generic `Content-Type`) does: the raster image headers and DjVu.
+pub(crate) fn detect_any(bytes: &[u8]) -> Option<InputFormat> {
+    detect(bytes)
+        .or_else(|| looks_like_image(bytes).then_some(InputFormat::Image))
+        .or_else(|| crate::backend::looks_like_djvu(bytes).then_some(InputFormat::Djvu))
+}
+
+/// The magic of the raster formats the image pipeline decodes: PNG, JPEG,
+/// GIF, BMP, TIFF (both byte orders), WebP.
+fn looks_like_image(bytes: &[u8]) -> bool {
+    bytes.starts_with(b"\x89PNG\r\n\x1a\n")
+        || bytes.starts_with(b"\xFF\xD8\xFF")
+        || bytes.starts_with(b"GIF87a")
+        || bytes.starts_with(b"GIF89a")
+        || bytes.starts_with(b"BM")
+        || bytes.starts_with(b"II*\0")
+        || bytes.starts_with(b"MM\0*")
+        || (bytes.len() >= 12 && bytes.starts_with(b"RIFF") && &bytes[8..12] == b"WEBP")
+}
+
 /// A PDF header within the first KiB — where readers (pdfium, docling-parse)
 /// accept it after leading junk.
 pub(crate) fn looks_like_pdf(bytes: &[u8]) -> bool {
