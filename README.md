@@ -27,38 +27,111 @@
   
 </p>
 
-A Rust port of [docling](https://github.com/docling-project/docling): convert
-documents into a unified `DoclingDocument` for downstream AI workflows.
+**docling.rs** turns documents — PDF, DOCX, PPTX, XLSX, HTML, scans and
+images, audio — into Markdown, docling JSON, HTML, LaTeX or chunk records
+that an LLM or a RAG pipeline can take. It is a Rust port of IBM's
+[docling](https://github.com/docling-project/docling): the same output,
+checked byte-for-byte against upstream for every format, in one static
+binary with no Python or PyTorch at runtime.
 
-**Coming from [MarkItDown](https://github.com/microsoft/markitdown)?**
-`pip install docling-rs` and change one import —
-`from docling_rs.markitdown import MarkItDown` — to keep MarkItDown's API with
-layout analysis, TableFormer tables and local OCR behind it: PDF table-cell
-recall 0.31 → 0.94, Office/HTML 5–10× faster
-([measured](#conformance-with-microsoft-markitdown),
-[docling.rs for MarkItDown users](./docs/MARKITDOWN.md)).
+The problem it solves: getting text out of a document is easy; getting it out
+*with its structure* — headings in order, tables as tables, figures where they
+belong, scanned pages read — needs layout analysis, table recognition and
+OCR. docling does that, but it costs a Python environment and gigabytes of
+dependencies; plain extractors like MarkItDown stay small but lose the
+structure (PDF table-cell recall 0.31 against docling.rs's 0.94,
+[measured](#conformance-with-microsoft-markitdown)). docling.rs keeps
+docling's models and accuracy at a fraction of the footprint: the PDF
+pipeline runs 4.3× faster than Python docling at 2.3–2.6× less RAM, Office
+and HTML formats 20–60× faster at ~60× less memory
+([how it is measured](./docs/PDF_CONFORMANCE.md#performance--review--profiling-notes)).
 
-**Fast and small:** one static binary, no Python/PyTorch at runtime. The PDF
-ML pipeline runs **4.3× faster** than Python docling at **2.3–2.6× less peak
-RAM** (methodology, profiling and per-fixture numbers in
-[`docs/PDF_CONFORMANCE.md` § Performance](./docs/PDF_CONFORMANCE.md#performance--review--profiling-notes));
-declarative formats (DOCX/HTML/XLSX/…) convert **20–60× faster** at
-**~60× less memory** (measured with `scripts/test/performance.sh`, Python
-docling vs Rust on the same file). Output is checked against upstream for
-every format — see [Conformance with Python docling](#conformance-with-python-docling).
+## Install
 
-The format migration is **complete** — every document format in docling's
-pipeline is supported, validated byte-for-byte against live docling. See
-[`docs/MIGRATION.md`](./docs/MIGRATION.md) for the full architecture, the Python → Rust
-mapping, and per-format conformance.
+```bash
+# CLI, with the ML models — Linux x64/arm64 prebuilt, builds from source elsewhere
+curl -fsSL https://raw.githubusercontent.com/docling-project/docling.rs/master/scripts/install/install.sh | bash
 
-**▶ [Try it in your browser](https://docling-project.github.io/docling.rs/)** —
-the whole converter compiled to wasm: drop a DOCX, PDF, XLSX, EPUB … and get
-Markdown, docling JSON, DocLang XML, LaTeX or a Pandoc AST back. Nothing is uploaded; the page runs
-entirely on your device, phone included. Scanned pages can be OCR'd there too
-(layout + PP-OCR + TableFormer via ONNX Runtime Web, optionally on the GPU
-through WebGPU) once you point it at the models. See
-[`crates/docling-wasm`](./crates/docling-wasm/README.md).
+# or from crates.io (PDF/image/audio models fetched separately, see below)
+cargo install docling-cli
+curl -fsSL https://raw.githubusercontent.com/docling-project/docling.rs/master/scripts/install/download_dependencies.sh | sh
+
+pip install docling-rs          # Python — drop-in for docling's and MarkItDown's APIs
+npm install docling.rs          # Node.js / Bun
+cargo add docling               # Rust library
+
+# containers: the CLI and the HTTP server, models baked in (CPU; -cuda variants for NVIDIA)
+docker run --rm -v "$PWD:/data" ghcr.io/docling-project/docling-rs paper.pdf
+docker run -p 127.0.0.1:5001:5001 ghcr.io/docling-project/docling-rs-serve
+```
+
+Office, HTML, Markdown, e-mail and the other declarative formats need no
+models. PDF, images, scans and audio need the ONNX models (layout, OCR,
+TableFormer, Whisper — under 1 GB): `install.sh` and the containers include
+them; `pip` users run `python -c "import docling_rs; docling_rs.download_models()"`
+once; for `cargo install`, `npm` or a checkout, run `download_dependencies.sh`
+in the directory you convert from — it fills `./.models`, which every surface
+looks for by default ([Getting the ML models](#getting-the-ml-models)).
+Windows: [`docs/WINDOWS.md`](./docs/WINDOWS.md).
+
+## Use
+
+```bash
+docling-rs report.pdf > report.md               # Markdown (streamed page by page)
+docling-rs report.pdf --to json                 # docling JSON; also html, text, latex, dclx, chunks, images
+docling-rs --input ./docs --output ./out        # a directory tree; --jobs N in parallel
+docling-rs https://example.com/paper.pdf        # URLs, data: URIs and stdin (`-`) too
+docling-rs --help                               # every flag: OCR, page ranges, images, enrichment, redaction …
+```
+
+```python
+from docling_rs import DocumentConverter       # was: from docling.document_converter import …
+doc = DocumentConverter().convert("report.pdf").document
+print(doc.export_to_markdown())
+```
+
+```js
+import { convertFile } from 'docling.rs'
+const { content } = convertFile('report.pdf', { to: 'markdown' })
+```
+
+```rust
+use docling::{DocumentConverter, SourceDocument};
+let result = DocumentConverter::new().convert(SourceDocument::from_file("report.pdf")?)?;
+println!("{}", result.document.export_to_markdown());
+```
+
+```bash
+curl -F file=@report.pdf 'localhost:5001/v1/convert?to=md'   # the server; OpenAPI at /openapi.yaml
+```
+
+Every surface takes the same options and returns the same outputs; which one
+to pick, plus wasm, the C ABI, LangChain and RAG, is in
+[Integration](#integration--using-doclingrs-from-your-language). The options
+themselves: [`docs/OPTIONS.md`](./docs/OPTIONS.md).
+
+## Highlights
+
+- **Coming from [MarkItDown](https://github.com/microsoft/markitdown)?**
+  `pip install docling-rs` and change one import —
+  `from docling_rs.markitdown import MarkItDown` — to keep its API with layout
+  analysis, TableFormer tables and local OCR behind it
+  ([docling.rs for MarkItDown users](./docs/MARKITDOWN.md)).
+- **Coming from Python docling?** `from docling_rs import DocumentConverter`;
+  `result.document` is a genuine `docling_core` `DoclingDocument`
+  ([migration notes](./crates/docling-py/README.md#migrating-from-python-docling)).
+- **Every docling format, and some docling lacks** — the table under
+  [Status](#status); output validated against live docling
+  ([Conformance](#conformance-with-python-docling),
+  [`docs/MIGRATION.md`](./docs/MIGRATION.md) for the architecture).
+- **▶ [Try it in your browser](https://docling-project.github.io/docling.rs/)** —
+  the converter compiled to wasm: drop a DOCX, PDF, XLSX, EPUB … and get
+  Markdown, JSON, DocLang, LaTeX or a Pandoc AST back. Nothing is uploaded;
+  scanned pages can be OCR'd on-device too
+  ([`crates/docling-wasm`](./crates/docling-wasm/README.md)).
+- **An HTTP server** that is a drop-in for Python docling-serve — Open WebUI,
+  n8n, Dify and LangChain clients work unchanged
+  ([`docling-rs serve`](#http-conversion-api--docling-rs-serve)).
 
 Developed with **Claude Code** and _[TENET](https://github.com/artiz/tenet/tree/master)_ (minimalistic AI-driven development framework).
 
@@ -261,7 +334,7 @@ export DOCLING_TABLEFORMER_BBOX="$(pwd)/models/tableformer/bbox.onnx"
 bash scripts/conformance/pdf_conformance.sh     # regenerate + diff the snapshot baseline (94 outputs)
 ```
 
-## Try it
+## Try it from a checkout
 
 ```bash
 # convert a file from the CLI — Markdown to stdout (add --strict for cleaner MD)
