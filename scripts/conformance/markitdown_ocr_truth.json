@@ -1,0 +1,169 @@
+{
+ "docx_complex_layout.docx": [
+  "NOTICE: SSL Certificate Expires 2025-12-31"
+ ],
+ "docx_image_end.docx": [
+  "FOOTER: Document ID: DOC-2024-001"
+ ],
+ "docx_image_middle.docx": [
+  "FIGURE 1: System Architecture"
+ ],
+ "docx_image_start.docx": [
+  "HEADER: Company Logo - ACME Corp"
+ ],
+ "docx_multipage.docx": [
+  "DOCX PAGE 1: Section Title",
+  "DOCX PAGE 2: Footer Note",
+  "DOCX PAGE 3: Header Image"
+ ],
+ "docx_multiple_images.docx": [
+  "Chart 1: Revenue Growth",
+  "Chart 2: Customer Satisfaction"
+ ],
+ "pptx_complex_layout.pptx": [
+  "Market Share: 35%"
+ ],
+ "pptx_image_end.pptx": [
+  "Contact: info@techcorp.com"
+ ],
+ "pptx_image_middle.pptx": [
+  "Diagram: System Components"
+ ],
+ "pptx_image_start.pptx": [
+  "Company: TechCorp Inc."
+ ],
+ "pptx_multiple_images.pptx": [
+  "Before: 50% Efficiency",
+  "After: 95% Efficiency"
+ ],
+ "xlsx_complex_layout.xlsx": [
+  "Figure 1: Monthly Trend",
+  "Figure 2: Year Overview",
+  "Growth: +25%",
+  "Map: Top"
+ ],
+ "xlsx_image_end.xlsx": [
+  "Approved by: John Doe,",
+  "by: Jane Smith,"
+ ],
+ "xlsx_image_middle.xlsx": [
+  "Growth Trend: +15%",
+  "Cost Analysis: Optimized"
+ ],
+ "xlsx_image_start.xlsx": [
+  "Q1 Sales Chart",
+  "Q2 Forecast: +20% Growth"
+ ],
+ "xlsx_multiple_images.xlsx": [
+  "KPI: 95% Success Rate",
+  "Uptime: 99.9%",
+  "Response Time 50ms",
+  "Q1 Results: Exceeded Goals"
+ ],
+ "pdf_complex_layout.pdf": [
+  "WARNING: Handle with care"
+ ],
+ "pdf_image_end.pdf": [
+  "END: Contact: support@example.com"
+ ],
+ "pdf_image_middle.pdf": [
+  "MIDDLE: Product Code: ABC-12345"
+ ],
+ "pdf_image_start.pdf": [
+  "START: This is the first image in PDF"
+ ],
+ "pdf_multipage.pdf": [
+  "PAGE 1 IMAGE: Section A",
+  "PAGE 2 IMAGE: Contact Info",
+  "PAGE 3 IMAGE: Header Banner"
+ ],
+ "pdf_multiple_images.pdf": [
+  "Image 1: Serial Number SN-001",
+  "Image 2: Model Number M-2024"
+ ],
+ "pdf_scanned_invoice.pdf": [
+  "INVOICE",
+  "Company: TechCorp Industries",
+  "Invoice Number: INV-2024-001",
+  "Date: January 15, 2024",
+  "BILL TO:",
+  "Acme Corporation",
+  "123 Main Street",
+  "New York, NY 10001",
+  "DESCRIPTION:",
+  "Software Development Services",
+  "Professional Consulting",
+  "Technical Support",
+  "TOTAL AMOUNT DUE: $5,000.00"
+ ],
+ "pdf_scanned_meeting_minutes.pdf": [
+  "MEETING MINUTES",
+  "Date: March 10, 2024",
+  "Attendees: John Smith, Jane Doe, Bob Johnson",
+  "AGENDA ITEMS",
+  "1. Project Status Update",
+  "- Phase 1 completed successfully",
+  "- Phase 2 on track for Q2 delivery",
+  "2. Budget Review",
+  "- Current spend: 75% of allocated budget",
+  "- Forecast: Within budget",
+  "3. Action Items",
+  "- John: Finalize requirements document"
+ ],
+ "pdf_scanned_minimal.pdf": [
+  "NOTICE",
+  "This is a minimal test document",
+  "with just a few lines of text.",
+  "It should still be processed correctly."
+ ],
+ "pdf_scanned_report.pdf": [
+  "TECHNICAL REPORT",
+  "Page 1",
+  "EXECUTIVE SUMMARY",
+  "This document presents the findings of our",
+  "technical analysis conducted in Q1 2024.",
+  "Key highlights include:",
+  "- System performance improvements",
+  "- Security enhancements",
+  "- User experience updates",
+  "The following pages detail our methodology",
+  "and recommendations.",
+  "TECHNICAL REPORT",
+  "Page 2",
+  "METHODOLOGY",
+  "Our analysis involved three phases:",
+  "1. Data Collection",
+  "Gathered metrics from production systems",
+  "over a 90-day period.",
+  "2. Performance Analysis",
+  "Identified bottlenecks and optimization",
+  "opportunities.",
+  "3. Security Review",
+  "Conducted vulnerability assessment and",
+  "TECHNICAL REPORT",
+  "Page 3",
+  "RECOMMENDATIONS",
+  "Based on our findings, we recommend:",
+  "1. Implement caching layer to improve",
+  "response times by 40%.",
+  "2. Upgrade authentication system to",
+  "support multi-factor authentication.",
+  "3. Optimize database queries to reduce",
+  "server load by 30%.",
+  "CONCLUSION"
+ ],
+ "pdf_scanned_sales_report.pdf": [
+  "QUARTERLY SALES REPORT",
+  "Q1 2024 Performance Summary",
+  "REGIONAL BREAKDOWN",
+  "Region Revenue Growth",
+  "North America $2.5M +15%",
+  "Europe $1.8M +22%",
+  "Asia Pacific $3.2M +35%",
+  "Latin America $0.9M +12%",
+  "TOTAL $8.4M +23%",
+  "Top performing products:",
+  "- Product A: $3.1M",
+  "- Product B: $2.7M"
+ ]
+}

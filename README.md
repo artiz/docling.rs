@@ -102,6 +102,51 @@ Check with `ffmpeg -version`. `DOCLING_FFMPEG` overrides the binary used on
 any OS; the docling-rs-serve Docker image ships ffmpeg preinstalled.
 </details>
 
+## Conformance with Microsoft MarkItDown
+
+[MarkItDown](https://github.com/microsoft/markitdown) converts the same kinds
+of documents to Markdown for LLMs. Measured side by side — MarkItDown 0.1.8
+(`markitdown[all]`) and docling.rs 2.16.0 (release build), 4 vCPU, no GPU —
+on this repository's test corpus and on MarkItDown's own OCR test set
+([`scripts/conformance/markitdown_compare.py`](./scripts/conformance/markitdown_compare.py)):
+
+| Corpus (files) | MarkItDown, warm | docling.rs, warm | Cold CLI call, MarkItDown / docling.rs | Word F1 | Table-cell recall | Heading recall |
+|---|---|---|---|---|---|---|
+| DOCX (38) | 5.04 s | **0.55 s** | 1441 / **14** ms | 0.93 / **1.00** | 0.81 / **1.00** | 0.78 / **1.00** |
+| PPTX (8) | 0.15 s | **0.02 s** | 1080 / **9** ms | 0.81 / **0.97** | 0.62 / **1.00** | 0.86 / **1.00** |
+| XLSX (14) | 1.08 s | **0.19 s** | 1085 / **11** ms | 0.60 / **0.95** | 0.78 / **0.98** | — ¹ |
+| HTML (32) | 0.40 s | **0.06 s** | 1226 / **7** ms | 0.98 / **1.00** | 0.89 / **1.00** | 0.96 / **1.00** |
+| CSV (9) | 0.04 s | **0.01 s** | 1086 / **6** ms | 1.00 / 1.00 | 0.78 / **1.00** | — |
+| EPUB (1) | 0.06 s | **0.01 s** | 1278 / **14** ms | 0.99 / **1.00** | — | 1.00 / 1.00 |
+| PDF (18), ML pipeline | **10.0 s** | 49.3 s | 1237 / 1314 ms | 0.63 / **0.997** | 0.31 / **0.94** | 0.00 / **0.91** |
+| PDF (18), `--text-layer-only` | 10.0 s | **0.7 s** | — | 0.63 / **0.97** | 0.31 / 0.00 | 0.00 / 0.00 |
+
+Accuracy pairs are MarkItDown / docling.rs against the docling groundtruth
+Markdown of each file (word-bag F1, recall of table-cell texts and of
+headings). That reference is Python docling's output, which docling.rs is
+conformance-tested against, so these columns favour docling.rs by
+construction; the timings do not depend on it. Warm = MarkItDown in-process
+after a warm-up conversion vs a docling.rs batch run (`--jobs 1`; its ONNX
+models still use every core, MarkItDown runs on one). MarkItDown raised on
+2 of the 46 Office files (`docx_external_image.docx`,
+`powerpoint_unrecognized_shape.pptx`), docling.rs on none.
+¹ only one XLSX groundtruth carries a heading.
+
+**Text inside images** — MarkItDown's own `markitdown-ocr` test files (27
+DOCX/PPTX/XLSX/PDF files with text drawn into pictures and five scanned
+PDFs; [`markitdown_ocr_truth.json`](./scripts/conformance/markitdown_ocr_truth.json),
+transcribed by hand), share of those words in the output:
+
+| Run | Office pictures (16) | PDF with images (6) | Scanned PDF (5) | Time | Cost |
+|---|---|---|---|---|---|
+| MarkItDown, no LLM | 0.16 | 0.33 | 0.00 | 1.7 s | — |
+| MarkItDown + `markitdown-ocr`, gpt-4o | 1.00 | 1.00 | 1.00 | 47.4 s (45 API calls) | $0.063 |
+| docling.rs `--picture-ocr --force-full-page-ocr` | **1.00** | **1.00** | **1.00** | **41.5 s** (`--jobs 4`: 34.4 s) | local, offline |
+
+The non-zero scores without OCR are words the images share with the body
+text. docling.rs reads the pictures with its own OCR models (PP-OCR detector
+and recognizer, ONNX) — no API key, nothing leaves the machine.
+
 ## Conformance with Python docling
 
 Every output is checked against upstream Python docling. Declarative formats
