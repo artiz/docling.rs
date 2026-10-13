@@ -118,8 +118,8 @@ on this repository's test corpus and on MarkItDown's own OCR test set
 | HTML (32) | 0.40 s | **0.06 s** | 1226 / **7** ms | 0.98 / **1.00** | 0.89 / **1.00** | 0.96 / **1.00** |
 | CSV (9) | 0.04 s | **0.01 s** | 1086 / **6** ms | 1.00 / 1.00 | 0.78 / **1.00** | — |
 | EPUB (1) | 0.06 s | **0.01 s** | 1278 / **14** ms | 0.99 / **1.00** | — | 1.00 / 1.00 |
-| PDF (18), ML pipeline | **10.0 s** | 49.3 s | 1237 / 1314 ms | 0.63 / **0.997** | 0.31 / **0.94** | 0.00 / **0.91** |
-| PDF (18), `--text-layer-only` | 10.0 s | **0.7 s** | — | 0.63 / **0.97** | 0.31 / 0.00 | 0.00 / 0.00 |
+| PDF (18), full layout + tables + OCR | **10.0 s** | 49.3 s | 1237 / 1314 ms | 0.63 / **0.997** | 0.31 / **0.94** | 0.00 / **0.91** |
+| PDF (18), text layer only (`--text-layer-only`) | 10.0 s | **0.7 s** | — | 0.63 / **0.97** | 0.31 / 0.00 | 0.00 / 0.00 |
 
 Accuracy pairs are MarkItDown / docling.rs against the docling groundtruth
 Markdown of each file (word-bag F1, recall of table-cell texts and of
@@ -131,6 +131,13 @@ models still use every core, MarkItDown runs on one). MarkItDown raised on
 2 of the 46 Office files (`docx_external_image.docx`,
 `powerpoint_unrecognized_shape.pptx`), docling.rs on none.
 ¹ only one XLSX groundtruth carries a heading.
+
+The two PDF rows do different amounts of work. MarkItDown (pdfminer) reads
+the text layer only — the like-for-like comparison is docling.rs'
+`--text-layer-only`, 14× faster. The full docling.rs pipeline renders every
+page and runs neural models on CPU: layout analysis (~0.4 s/page), TableFormer
+for every table (~1 s/table) and OCR on pages without a text layer — the
+work that turns 0.31 table-cell recall into 0.94 and that reads scans at all.
 
 **Text inside images** — MarkItDown's own `markitdown-ocr` test files (27
 DOCX/PPTX/XLSX/PDF files with text drawn into pictures and five scanned
