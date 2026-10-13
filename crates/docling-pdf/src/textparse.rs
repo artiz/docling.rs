@@ -1295,6 +1295,8 @@ impl PageTextParser {
             image: image::RgbImage::new(1, 1),
             links: Vec::new(),
             rotation: 0,
+            #[cfg(feature = "ml")]
+            pending_image: None,
         }
     }
 }

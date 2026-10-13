@@ -1104,6 +1104,9 @@ impl Worker {
             })
         }
         .map_err(|e| PdfError::Layout(format!("page {}: {e}", n + 1)))?;
+        // The 2x bitmap, rendered meanwhile (#682): everything from here on
+        // reads it.
+        page.resolve_image()?;
         self.finish_page(n, page, regions)
     }
 
@@ -1306,7 +1309,11 @@ impl Worker {
             Ok(all) => items
                 .iter_mut()
                 .zip(all)
-                .map(|((n, page), regions)| self.stage_page(*n, page, regions))
+                .map(|((n, page), regions)| {
+                    // The 2x bitmap, rendered meanwhile (#682).
+                    page.resolve_image()?;
+                    self.stage_page(*n, page, regions)
+                })
                 .collect(),
             Err(e) => items
                 .iter()
@@ -2155,14 +2162,29 @@ pub(crate) fn pdf_layout_batch() -> usize {
 }
 
 #[cfg(feature = "ml")]
-/// Minimum page count before a PDF is worth the parallel worker pool. Below this,
-/// the serial primary (running its model on every core) is faster than fanning out
-/// — the helper pool's one-time model-load cost only pays off once enough pages
-/// share it. `DOCLING_RS_PDF_PARALLEL_MIN` overrides.
+/// Pages the serial path renders ahead of the one being processed
+/// ([`Pipeline::render_ahead`], #682): one in flight on the worker, two
+/// rendered and waiting — a bound on resident page bitmaps, like the
+/// pool's channel.
+const RENDER_AHEAD: usize = 2;
+
+#[cfg(feature = "ml")]
+/// Minimum page count before a PDF goes to the parallel worker pool; below
+/// it the serial primary runs its model on every core. Four since #682 (was
+/// six, from the days of the pool's uncached model load): the layout model's
+/// intra-op scaling is weak (on a 4-core x86 box 4 threads run a page 2.35×
+/// faster than one, 2 threads 1.6×), so two workers of two threads convert
+/// pages faster than one worker of four converts them in turn — 4–5-page
+/// digital documents measured 18% faster than the serial path with its
+/// render-ahead, the pool's load included (the pool is sized to the page
+/// count, [`Pipeline::ensure_pool_for`]). Not lower: the text detector a
+/// scanned page needs scales well with threads, so a 2–3-page scan runs
+/// 15–20% *slower* split across two-thread workers than on the four-thread
+/// primary. `DOCLING_RS_PDF_PARALLEL_MIN` overrides.
 fn pdf_parallel_min() -> usize {
     env::parse::<usize>("DOCLING_RS_PDF_PARALLEL_MIN")
         .filter(|&n| n > 0)
-        .unwrap_or(6)
+        .unwrap_or(4)
 }
 
 #[cfg(feature = "ml")]
@@ -2866,20 +2888,14 @@ impl Pipeline {
         let progress = self.progress.clone();
         let mut done = 0usize;
         let worker = self.primary()?;
-        // The walk renders a page before handing it over, so the budget is
-        // checked where a page *arrives*: a page the budget had already run
-        // out on is dropped unprocessed and ends the walk through the
-        // sentinel (`for_each_page` reads it as an error; here it is the cut).
-        let walk = pdfium_backend::for_each_page(
+        let timed_out = Self::render_ahead(
             bytes,
             password,
             render_image,
             extract_text,
             range,
-            |n, _total, mut page| {
-                if expired(deadline) {
-                    return Err(timeout_sentinel());
-                }
+            deadline,
+            |n, mut page| {
                 let (mut nodes, links, conf, page_image) = worker.process(n, &mut page)?;
                 assemble::stamp_page_no(&mut nodes, n + 1);
                 if let Some(img) = page_image {
@@ -2892,18 +2908,83 @@ impl Pipeline {
                 if let Some(cb) = &progress {
                     cb(done, selected);
                 }
-                Ok::<(), PdfError>(())
+                Ok(())
             },
-        );
-        let timed_out = match walk {
-            Ok(()) => false,
-            Err(PdfError::Timeout(_)) => true,
-            Err(e) => return Err(e),
-        };
+        )?;
         assemble::merge_continuations(&mut doc.nodes);
         self.apply_heading_hierarchy(&mut doc.nodes, Some(bytes));
         doc.confidence = Some(docling_core::ConfidenceReport::from_pages(confs));
         Ok((doc, done, timed_out))
+    }
+
+    /// The serial path's schedule (#682): pages render on a scoped thread
+    /// and queue through a [`RENDER_AHEAD`]-page channel while the primary
+    /// worker processes the previous one on the calling thread, so a page's
+    /// two rasters (about a third of a digital page's cost) hide behind
+    /// layout and TableFormer instead of preceding them — the render-ahead
+    /// the worker pool always had, for documents too small for the pool.
+    /// One consumer, pages in order: the output is byte-identical to the
+    /// sequential walk. `consume` runs on the calling thread (a streaming
+    /// `emit` need not be `Send`). A spent budget (#497) ends the walk at
+    /// the renderer and the consumer alike; a consumer error closes the
+    /// channel, which stops the renderer, and is the one reported.
+    fn render_ahead<F>(
+        bytes: &[u8],
+        password: Option<&str>,
+        render_image: bool,
+        extract_text: bool,
+        range: Option<(usize, usize)>,
+        deadline: Option<std::time::Instant>,
+        mut consume: F,
+    ) -> Result<bool, PdfError>
+    where
+        F: FnMut(usize, PdfPage) -> Result<(), PdfError>,
+    {
+        let (tx, rx) = sync_channel::<(usize, PdfPage)>(RENDER_AHEAD);
+        std::thread::scope(|s| {
+            let render = s.spawn(move || {
+                pdfium_backend::for_each_page(
+                    bytes,
+                    password,
+                    render_image,
+                    extract_text,
+                    range,
+                    |n, _total, page| {
+                        if expired(deadline) {
+                            return Err(timeout_sentinel());
+                        }
+                        tx.send((n, page))
+                            .map_err(|_| PdfError::Pdfium("page channel closed".into()))
+                    },
+                )
+            });
+            let mut timed_out = false;
+            let mut failed = None;
+            for (n, page) in rx.iter() {
+                if expired(deadline) {
+                    timed_out = true;
+                    break;
+                }
+                if let Err(e) = consume(n, page) {
+                    failed = Some(e);
+                    break;
+                }
+            }
+            // Closing the channel ends a walk still rendering.
+            drop(rx);
+            let walk = render
+                .join()
+                .map_err(|_| PdfError::Pdfium("page render thread panicked".into()))?;
+            if let Some(e) = failed {
+                return Err(e);
+            }
+            match walk {
+                Ok(()) => Ok(timed_out),
+                Err(PdfError::Timeout(_)) => Ok(true),
+                Err(_) if timed_out => Ok(true),
+                Err(e) => Err(e),
+            }
+        })
     }
 
     /// Render pages serially on this thread (pdfium) and process them in parallel
@@ -2920,7 +3001,7 @@ impl Pipeline {
         selected: usize,
         deadline: Option<std::time::Instant>,
     ) -> Result<(DoclingDocument, usize, bool), PdfError> {
-        self.ensure_pool()?;
+        self.ensure_pool_for(selected)?;
         let progress = self.progress.clone();
         let pages_done = std::sync::atomic::AtomicUsize::new(0);
         let timed_out = std::sync::atomic::AtomicBool::new(false);
@@ -3083,7 +3164,7 @@ impl Pipeline {
         let range = self.resolve_range(pages)?;
         let selected = range.map_or(pages, |(a, b)| b - a + 1);
         let r = if self.target_workers >= 2 && selected >= self.parallel_min {
-            self.convert_streaming_parallel(bytes, password, range, deadline, emit)
+            self.convert_streaming_parallel(bytes, password, range, deadline, selected, emit)
         } else {
             self.convert_streaming_serial(bytes, password, range, deadline, emit)
         };
@@ -3110,16 +3191,14 @@ impl Pipeline {
         let extract_text = self.extract_text_layer();
         let worker = self.primary()?;
         let mut done = 0usize;
-        let walk = pdfium_backend::for_each_page(
+        let timed_out = Self::render_ahead(
             bytes,
             password,
             render_image,
             extract_text,
             range,
-            |n, _total, mut page| {
-                if expired(deadline) {
-                    return Err(timeout_sentinel());
-                }
+            deadline,
+            |n, mut page| {
                 // Confidence is dropped on the streaming path: the report is
                 // only complete once every page has run, which defeats
                 // page-by-page emission — buffered `convert` carries it.
@@ -3127,12 +3206,7 @@ impl Pipeline {
                 done += 1;
                 emit(asm.push(nodes), links)
             },
-        );
-        let timed_out = match walk {
-            Ok(()) => false,
-            Err(PdfError::Timeout(_)) => true,
-            Err(e) => return Err(e),
-        };
+        )?;
         emit(asm.finish(), Vec::new())?;
         Ok((done, timed_out))
     }
@@ -3149,12 +3223,13 @@ impl Pipeline {
         password: Option<&str>,
         range: Option<(usize, usize)>,
         deadline: Option<std::time::Instant>,
+        selected: usize,
         mut emit: F,
     ) -> Result<(usize, bool), PdfError>
     where
         F: FnMut(Vec<Node>, Vec<(String, String)>) -> Result<(), PdfError>,
     {
-        self.ensure_pool()?;
+        self.ensure_pool_for(selected)?;
         let n_workers = self.pool.len();
         let render_image = !self.no_ocr;
         let extract_text = self.extract_text_layer();
@@ -3274,7 +3349,16 @@ impl Pipeline {
     /// concurrently (model load is mostly I/O + mmap, so N loads overlap to roughly
     /// one load's wall-time). Cached for reuse across documents.
     fn ensure_pool(&mut self) -> Result<(), PdfError> {
-        let need = self.target_workers.saturating_sub(self.pool.len());
+        self.ensure_pool_for(self.target_workers)
+    }
+
+    /// [`ensure_pool`](Self::ensure_pool) for a document of `pages` pages:
+    /// no more workers than pages (#682 — a two-page document on a 16-core
+    /// host loads two workers, not eight), never fewer than two, and never
+    /// more than `target_workers`; a later, longer document grows the pool.
+    fn ensure_pool_for(&mut self, pages: usize) -> Result<(), PdfError> {
+        let want = pages.max(2).min(self.target_workers);
+        let need = want.saturating_sub(self.pool.len());
         if need == 0 {
             return Ok(());
         }
@@ -3347,6 +3431,7 @@ impl Pipeline {
             image,
             links: Vec::new(),
             rotation: 0,
+            pending_image: None,
         };
         self.process_pages(vec![page], name)
     }

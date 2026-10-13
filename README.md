@@ -427,12 +427,18 @@ structure recognition (the autoregressive OTSL decode — ~1400 decode steps
 across the corpus's tables) and the per-page layout model together account for
 ~85 % of it, with a one-time ONNX session/graph init paid on the first table
 page. Everything outside the models — both page renders, the two resamples,
-text-layer parsing and assembly — is under ~6 % combined (measured on the
-pdfium chain; the Rust renderer's share is of the same order). There is no
-glue-code hot spot to cut here the way the JSON grid was; PDF throughput is
-bounded by the layout and TableFormer models, so the levers are the INT8
-models, the KV-cached decoder and GPU execution providers, not the Rust
-around them.
+text-layer parsing and assembly — was under ~6 % combined on the pdfium
+chain; the pure-Rust renderer that replaced it costs more (on the 18-file
+corpus of the MarkItDown comparison, 80 pages, the two renders of every page
+sum to a third of the CPU time the models take), so since #682 the renders
+are scheduled off the model's path rather than before it: a page's 2× bitmap
+draws on a helper thread while layout reads its 1× image, the serial path
+renders the next page while the worker processes the current one, and the
+worker pool — two-thread workers, which the layout model's weak intra-op
+scaling makes faster than one four-thread worker — takes every document of
+four pages or more. Output is byte-identical; the model cost itself is bounded
+by the layout and TableFormer models, so the levers there stay the INT8
+models, the KV-cached decoder and GPU execution providers.
 
 `scripts/test/performance.sh` runs a representative fixture of each supported type
 through both engines (published Python `docling` vs the Rust release binary) and

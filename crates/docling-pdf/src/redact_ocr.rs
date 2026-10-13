@@ -73,6 +73,8 @@ impl Pipeline {
             image: image.clone(),
             links: Vec::new(),
             rotation: 0,
+            #[cfg(feature = "ml")]
+            pending_image: None,
         };
         let ocr_scale = page_ocr_scale(self.ocr_scale, page.width, page.height, page.scale);
         let mut cache = None;
