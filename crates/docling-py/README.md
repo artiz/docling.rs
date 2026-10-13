@@ -107,6 +107,55 @@ divergences. `HybridChunker(tokenizer=…)` takes a `tokenizer.json` **path**
 `device="cuda"` pins the GPU and fails loudly instead of falling back. See
 [GPU wheel](#gpu-wheel-docling-rs-cuda) for the runtime requirements.
 
+## Migrating from MarkItDown
+
+[Microsoft MarkItDown](https://github.com/microsoft/markitdown) code moves over
+by changing the import (#674):
+
+```python
+# was:  from markitdown import MarkItDown, StreamInfo
+from docling_rs.markitdown import MarkItDown, StreamInfo
+
+md = MarkItDown()
+result = md.convert("report.docx")      # path, Path, http(s)/file/data URI,
+print(result.markdown)                  # binary stream or requests.Response
+print(result.title)
+
+with open("scan.bin", "rb") as fh:      # no extension? hint it — or let the
+    md.convert_stream(fh, stream_info=StreamInfo(extension=".pdf"))  # magic bytes decide
+```
+
+`convert` / `convert_local` / `convert_stream` / `convert_uri` /
+`convert_url` / `convert_response`, `StreamInfo`, `DocumentConverterResult`
+(`.markdown`, `.text_content`, `.title`, `str(result)`) and the exceptions
+(`UnsupportedFormatException`, `FileConversionException`, …) behave as
+MarkItDown's do. `python -m docling_rs.markitdown FILE [-o OUT] [-x EXT]
+[-m MIME] [-c CHARSET] [--keep-data-uris]` stands in for the `markitdown`
+CLI (stdin when no file is given).
+
+What you get instead of MarkItDown's converters is docling.rs's: layout
+analysis, TableFormer tables and OCR for PDFs and scans, the declarative
+Office/HTML/EPUB/email backends — measured side by side in the main README's
+[MarkItDown comparison](../../README.md#conformance-with-microsoft-markitdown)
+(5–10× faster on Office/HTML, higher word/table/heading recall). What differs:
+
+| MarkItDown | docling.rs facade |
+|---|---|
+| its own Markdown dialect | docling's Markdown (`<!-- image -->` placeholders, `- ` bullets, compact tables); byte-identical output is a non-goal |
+| `keep_data_uris=True` | same: pictures as `data:` URIs |
+| `llm_client` / `llm_model` / `llm_prompt` | same request (one `chat.completions.create` per picture); every embedded picture is described, the text lands in the Markdown and in `picture.meta.description`; an image input gets MarkItDown's `# Description:` section |
+| XLSX `## <sheet>` headings | same (XLS not yet: its document carries no sheet groups) |
+| PDFs via pdfminer (text layer) | the full pipeline once `docling_rs.download_models()` ran; until then the text layer, with a one-time warning |
+| `magika` / `charset_normalizer` guesses | magic bytes + container structure; `charset_normalizer` when installed (it comes with `requests`), else BOM/UTF-8/windows-1252 (#675) |
+| `exiftool_path`, `style_map`, `docintel_*`, `cu_*` | accepted, ignored with a warning (EXIF/metadata: #679) |
+| plugins, `register_converter` | not supported (#680); `enable_plugins` warns |
+| picture alt text (`![alt](…)`) | not yet (#676) |
+
+`MarkItDown(docling_options={...})` passes options through to
+`DocumentConverter` — `{"text_layer_only": True}` for pdfminer-speed PDFs,
+`{"ocr_lang": "ch"}`, `{"do_picture_ocr": True}` — and `result.document` is
+the converted `DoclingDocument` for anything Markdown cannot carry.
+
 ## Try it locally
 
 Needs a Rust toolchain (1.88+, the workspace MSRV) and Python ≥ 3.9.

@@ -154,6 +154,11 @@ The non-zero scores without OCR are words the images share with the body
 text. docling.rs reads the pictures with its own OCR models (PP-OCR detector
 and recognizer, ONNX) — no API key, nothing leaves the machine.
 
+**Switching** is an import away — `pip install docling-rs`, then
+`from docling_rs.markitdown import MarkItDown`: MarkItDown's `convert*`
+methods, `StreamInfo`, result and exceptions over the docling.rs engine
+([migration notes](./crates/docling-py/README.md#migrating-from-markitdown)).
+
 ## Conformance with Python docling
 
 Every output is checked against upstream Python docling. Declarative formats

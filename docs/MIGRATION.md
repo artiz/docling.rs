@@ -74,6 +74,7 @@ The layers mirror docling's:
 | **Chunking** | `docling-core` chunkers (`HierarchicalChunker`/`HybridChunker`) | `docling-core::chunker`, re-exported as `docling::chunker` |
 | **CLI** | `docling/cli` | `docling-cli` (incl. warm batch mode: `SOURCE... --output DIR`, `--input GLOB --output DIR [--jobs N]`, `--abort-on-error`, #489; repeatable `--to`, #491; `--list-input-formats` / `--list-output-formats`, #603 — Pandoc's discovery flags, which Python's CLI lacks: the extensions this build converts and the `--to` values, sorted, one per line) |
 | **Beyond upstream's packages** | docling-serve (separate repo) | `docling-serve` (HTTP API), `docling-rag`, Python/Node/wasm bindings, GPU execution providers (`cuda`/`tensorrt`/`directml`/`coreml` features, `DOCLING_RS_EP`) |
+| **MarkItDown facade** (#674, docling.rs extension) | — (Microsoft MarkItDown's API) | `docling_rs.markitdown`: `MarkItDown` / `StreamInfo` / `DocumentConverterResult` / its exceptions over `DocumentConverter`, docling's Markdown out (compact tables, MarkItDown's `## <sheet>` headings for XLSX), `llm_client` picture captions, text-layer PDFs until the models are downloaded; `python -m docling_rs.markitdown` for the CLI |
 
 ```text
 crates/
