@@ -90,6 +90,7 @@ DOCLING_RS_DEBUG,debug,crates/docling-core/src/env.rs
 DOCLING_RS_DEBUG_MERGES,debug,crates/docling-pdf/src/assemble.rs
 DOCLING_RS_DEBUG_REGIONS,debug,crates/docling-pdf/src/lib.rs
 DOCLING_RS_ENRICH_DEBUG,debug,crates/docling-pdf/src/enrich.rs
+DOCLING_RS_ORT_PROFILE,debug,crates/docling-onnx/src/lib.rs
 DOCLING_RS_RASTER_DUMP,debug,crates/docling-pdf/src/raster/mod.rs
 DOCLING_RS_SHIM_CORPUS,debug,crates/docling-pdf/src/render/mod.rs
 DOCLING_RS_TF_MATCH_DUMP,debug,crates/docling-pdf/src/tf_core.rs

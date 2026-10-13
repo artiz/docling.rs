@@ -405,6 +405,7 @@ docker compose up -d                        # standalone service (127.0.0.1:5001
 | `DOCLING_RS_TF_INTRA` | auto (#262) | Narrows ONNX intra-op thread count for TableFormer decoder sessions |
 | `DOCLING_RS_GRAPH_CACHE_DIR` | `$XDG_CACHE_HOME/docling-rs/graphs` (else `~/.cache/…`) | Where ONNX Runtime's optimized graphs are cached between processes (CPU provider only; session creation for the layout model ~0.8 s → ~0.15 s) |
 | `DOCLING_RS_NO_GRAPH_CACHE` | `0` | `1` disables the optimized-graph cache (models load and optimize from scratch every process) |
+| `DOCLING_RS_ORT_PROFILE` | unset | A directory: every ONNX session writes ORT's per-operator profile there (`<model>_<timestamp>.json`, Chrome-trace format); `scripts/dev/ort_profile_summary.py` summarizes one |
 | `DOCLING_RS_OCR_SESSIONS` | worker thread budget (1–8) | Parallel single-thread OCR recognition lanes per worker; output is byte-identical at any count |
 | `--concurrency N` | `2` | Max simultaneous conversions in flight; excess requests queue |
 | `--warmup` | enabled in image | Load the PDF/image models — layout, OCR, TableFormer and the multi-page worker pool — at startup; `/ready` returns 503 until they are loaded, and stays 503 (`warmup_failed` + the error) if loading fails |
@@ -460,6 +461,28 @@ scaling makes faster than one four-thread worker — takes every document of
 four pages or more. Output is byte-identical; the model cost itself is bounded
 by the layout and TableFormer models, so the levers there stay the INT8
 models, the KV-cached decoder and GPU execution providers.
+
+What a TableFormer decode step costs, measured on the same box with
+`DOCLING_RS_ORT_PROFILE` (ORT's per-operator profile; see
+`scripts/dev/ort_profile_summary.py`) and a per-step timer: 4.4 ms with an
+empty cache, 5.7 ms once 100–150 tokens are cached, 6.2 ms past 150 — about
+10 µs per cached token — and 6.0 ms for two tables batched. The floor is
+memory traffic, not arithmetic: a step streams the decoder's ~90 MB of fp32
+weights through 49 single-token GEMMs (40–50 % of kernel time) plus 19 MB of
+per-table cross-attention K/V (about a quarter); the cache-dependent part is
+the `Split`/`Concat`/`Transpose` copies the exported graph makes of the
+growing cache (≈10 % at 85 cached tokens), and the rest is ~330 nodes of
+shape plumbing and per-node executor overhead. Three things were measured
+not to pay and are not in the tree: ONNX Runtime IO binding for the step
+(cross tensors bound once, outputs pre-bound: 5.41 vs 5.34 ms per step,
+byte-identical output — the copies are inside the graph, not in the
+`Run()` call); a decoder session per pool worker instead of the shared slot
+(wall time unchanged on 9-, 18- and 60-page documents, +0.5 GB RSS — two
+weight-streaming decodes share one memory bus); and more intra-op threads
+(the step does not scale). What would: re-exporting the decoder with
+per-layer caches that need no `Split`/`Concat`/`Transpose` (bit-exact in
+principle, new model files), narrower weights (INT8/fp16 — a numerics
+change), or a GPU execution provider.
 
 `scripts/test/performance.sh` runs a representative fixture of each supported type
 through both engines (published Python `docling` vs the Rust release binary) and
