@@ -14,6 +14,21 @@ print(result.document.export_to_markdown())
 data = result.document.export_to_dict()     # docling-core JSON wire format (schema 1.10.0)
 ```
 
+**Coming from [MarkItDown](https://github.com/microsoft/markitdown)?** The same
+package speaks its API — change the import, keep the code:
+
+```python
+# was:  from markitdown import MarkItDown
+from docling_rs.markitdown import MarkItDown
+
+print(MarkItDown().convert("report.pdf").markdown)
+```
+
+Layout analysis, TableFormer tables and local OCR replace pdfminer and LLM
+calls: PDF table-cell recall 0.31 → 0.94, Office/HTML 5–10× faster
+([measured](https://github.com/docling-project/docling.rs/blob/master/docs/MARKITDOWN.md);
+[migration notes](#migrating-from-markitdown)).
+
 **Only the document processor is Rust.** The engine parses the input and returns
 docling-core's JSON wire format; this package validates it into a genuine
 [`docling_core.types.doc.DoclingDocument`](https://github.com/docling-project/docling-core).

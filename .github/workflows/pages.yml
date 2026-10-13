@@ -23,6 +23,7 @@ on:
       - "crates/docling/**"
       - "crates/docling-core/**"
       - "crates/docling-pdf/**"
+      - "llms.txt"
       - ".github/workflows/pages.yml"
   # Deploy on demand too (e.g. the first run, before any matching push).
   workflow_dispatch:
@@ -79,6 +80,8 @@ jobs:
         run: |
           mkdir -p site
           cp -r crates/docling-wasm/www/. site/
+          # The llmstxt.org summary assistants read, next to the demo.
+          cp llms.txt site/
           # Jekyll would swallow paths that start with an underscore.
           touch site/.nojekyll
           ls -la site site/pkg
