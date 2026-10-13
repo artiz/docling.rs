@@ -32,6 +32,9 @@
 #   .models/ocr_det.onnx (PP-OCRv6 text detector, #429 — reads lines the
 #     layout model gives no region; from the release when the tag mirrors it,
 #     else from RapidOCR's model hub)
+#   .models/ocr_textline_ori.onnx (PP-LCNet text-line orientation classifier,
+#     #666 — ocr_textline_orientation's 0/180 check; from the release when the
+#     tag mirrors it, else from RapidOCR's model hub)
 #   .models/tableformer/encoder.onnx (+ .data, if the export needs it)
 #   .models/tableformer/decoder.onnx (+ .data, if the export needs it)
 #   .models/tableformer/decoder_kv.onnx (+ .data; preferred when hosted)
@@ -378,6 +381,14 @@ fetch_mirrored .models/ocr_rec_v6.onnx \
 fetch_mirrored .models/ocr_rec_v6_dict.txt \
   "$BASE_URL/ocr_rec_v6_dict.txt" \
   "https://www.modelscope.cn/models/RapidAI/RapidOCR/resolve/v3.9.2/paddle/PP-OCRv6/rec/PP-OCRv6_rec_small/ppocrv6_dict.txt"
+# PP-LCNet text-line orientation classifier (#666, ~1 MB) — RapidOCR's
+# `ch_PP-LCNet_x0_25_textline_ori_cls_mobile` (SHA256 pinned in RapidOCR's
+# hub: 54379ae5174d026780215fc748a7f31910dee36818e63d49e17dc598ecc82df7).
+# Optional: only `ocr_textline_orientation` reads it; without it that mode
+# still crops and turns lines but never flips an upside-down one.
+fetch_mirrored .models/ocr_textline_ori.onnx \
+  "$BASE_URL/ocr_textline_ori.onnx" \
+  "https://www.modelscope.cn/models/RapidAI/RapidOCR/resolve/v3.9.2/onnx/PP-OCRv5/cls/ch_PP-LCNet_x0_25_textline_ori_cls_mobile.onnx"
 fetch "$BASE_URL/encoder.onnx" .models/tableformer/encoder.onnx
 fetch_optional "$BASE_URL/encoder.onnx.data" .models/tableformer/encoder.onnx.data
 fetch "$BASE_URL/decoder.onnx" .models/tableformer/decoder.onnx

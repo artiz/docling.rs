@@ -292,7 +292,8 @@ order, so batch throughput comes from keeping the models warm, not from
 parallel calls.
 
 The constructor takes the same PDF/image options as the one-shot calls —
-`ocrEngine`, `ocrLang`, `ocrMode`, `ocrScale`, `noOcr` (docling's `--no-ocr`:
+`ocrEngine`, `ocrLang`, `ocrMode`, `ocrScale`, `ocrTextlineOrientation`
+(RapidOCR's text-line orientation handling, #666), `noOcr` (docling's `--no-ocr`:
 never OCR, keep layout and tables; `skipOcr` is its pre-2.0 name),
 `textLayerOnly` (the text layer only, no models — what `noOcr` meant before
 2.0, #611), `password` (an encrypted PDF's or Office document's password,
@@ -419,7 +420,7 @@ models, #388), and `pages: 'A-B'` converts only that
 then `convertFile` / `convert` / `convertFileAsync` / `convertAsync` /
 `convertFileStreaming` / `streamFileMarkdown`. It reads `strict`, the
 enrichment switches and every PDF/image option (`ocrEngine`, `ocrLang`,
-`ocrMode`, `ocrScale`, `noOcr`, `textLayerOnly`, `password`,
+`ocrMode`, `ocrScale`, `ocrTextlineOrientation`, `noOcr`, `textLayerOnly`, `password`,
 `forceFullPageOcr`, `noTextPanels`, `headingHierarchy`, `pages`, `imagesScale`,
 `pageImages`) from
 `converterOptions` (#471).
@@ -492,6 +493,9 @@ constructor; output options (`to`, `imageMode`, `artifactsDir`) are per call.
   DocumentFigureClassifier labels, e.g.
   `"screenshot_from_computer,screenshot_from_manual"`) and
   `pictureOcrMinSide` (px, default 32) filter which pictures are read;
+  `pictureOcrScale` sets their OCR resolution in px per picture pixel under
+  RapidOCR's 2000 px cap (#666; `1.0` = native pixels);
+  `ocrTextlineOrientation: true` reads vertical, skewed and upside-down lines;
   `keepPictureImages: false` drops the image bytes after the pass. Off by
   default — every default output is unchanged.
 - `redactPii`: redact personal data from the converted document before any

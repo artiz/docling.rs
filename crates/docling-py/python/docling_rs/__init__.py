@@ -227,6 +227,16 @@ class DocumentConverter:
       text layer) and ``OcrOptions.scale`` (OCR input resolution in px per PDF
       point), #254. Also accepted docling-shaped, via
       ``pipeline_options.ocr_options.mode`` / ``.scale``.
+    * ``ocr_textline_orientation`` — RapidOCR's text-line orientation
+      handling (#666): detected lines cropped along their rotated rectangle,
+      tall crops turned 90°, upside-down lines turned by the 0/180 classifier
+      (``.models/ocr_textline_ori.onnx``). ``None`` = off unless
+      ``DOCLING_RS_OCR_TEXTLINE_ORIENTATION`` is set; docling's
+      ``RapidOcrOptions.use_cls`` (when set) maps onto it.
+    * ``picture_ocr_scale`` — with ``do_picture_ocr``, the pictures' OCR
+      resolution in px per picture pixel under RapidOCR's 2000 px cap (#666):
+      ``1.0`` reads them at their native pixels; ``None`` keeps the
+      image-input rule.
     * ``ocr_engine`` — which OCR engine reads scanned pages (#460):
       ``"ppocr"`` (default, the built-in PP-OCRv3 recognizer) or
       ``"tesseract"`` (the system ``tesseract`` binary, docling's
@@ -349,6 +359,7 @@ class DocumentConverter:
         do_picture_ocr: bool = False,
         picture_ocr_classes: Optional[Union[str, Iterable[str]]] = None,
         picture_ocr_min_side: Optional[int] = None,
+        picture_ocr_scale: Optional[float] = None,
         keep_picture_images: bool = True,
         redact_pii: bool = False,
         redact_mode: Optional[str] = None,
@@ -366,6 +377,7 @@ class DocumentConverter:
         ocr_lang: Optional[str] = None,
         ocr_mode: Optional[str] = None,
         ocr_scale: Optional[float] = None,
+        ocr_textline_orientation: Optional[bool] = None,
         ocr_engine: Optional[str] = None,
         skip_empty_cells: bool = False,
         compact_tables: bool = False,
@@ -441,6 +453,12 @@ class DocumentConverter:
                 picture_ocr_classes = pdf_opts.picture_ocr_classes
             if getattr(pdf_opts, "picture_ocr_min_side", None) is not None:
                 picture_ocr_min_side = pdf_opts.picture_ocr_min_side
+            if getattr(pdf_opts, "picture_ocr_scale", None) is not None:
+                picture_ocr_scale = float(pdf_opts.picture_ocr_scale)
+            # RapidOCR's line orientation (#666), a docling.rs extension of
+            # PdfPipelineOptions.
+            if getattr(pdf_opts, "ocr_textline_orientation", None) is not None:
+                ocr_textline_orientation = bool(pdf_opts.ocr_textline_orientation)
             keep_picture_images = getattr(
                 pdf_opts, "keep_picture_images", keep_picture_images
             )
@@ -472,6 +490,11 @@ class DocumentConverter:
             scale = getattr(ocr_opts, "scale", None)
             if scale is not None:
                 ocr_scale = float(scale)
+            # docling's RapidOcrOptions.use_cls (RapidOCR's text-line
+            # orientation classifier, #666) when set explicitly.
+            use_cls = getattr(ocr_opts, "use_cls", None)
+            if use_cls is not None and ocr_textline_orientation is None:
+                ocr_textline_orientation = bool(use_cls)
             # docling's Tesseract kinds (#460) select the engine; the CLI
             # options' binary, tessdata path and page segmentation mode are
             # process-wide knobs here, seeded like the accelerator device.
@@ -572,6 +595,7 @@ class DocumentConverter:
             do_picture_ocr=do_picture_ocr,
             picture_ocr_classes=_label_list(picture_ocr_classes),
             picture_ocr_min_side=picture_ocr_min_side,
+            picture_ocr_scale=picture_ocr_scale,
             keep_picture_images=keep_picture_images,
             redact_pii=redact_pii,
             redact_mode=redact_mode,
@@ -581,6 +605,7 @@ class DocumentConverter:
             ocr_lang=ocr_lang,
             ocr_mode=ocr_mode,
             ocr_scale=ocr_scale,
+            ocr_textline_orientation=ocr_textline_orientation,
             ocr_engine=ocr_engine,
             skip_empty_cells=skip_empty_cells,
             compact_tables=compact_tables,

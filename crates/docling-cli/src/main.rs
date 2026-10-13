@@ -18,7 +18,7 @@
 //! the same name): one identifier per line, sorted, for scripts that ask the
 //! binary what it converts instead of hard-coding a list.
 //!
-//! Usage: docling-rs [--strict] [--page-break-placeholder TEXT] [--layers body|all|LIST] [--traverse-pictures] [--to md|json|html|text|dclx|chunks|images|latex|pandoc|vtt] [--pages A-B] [--scale X] [--images MODE] [--input GLOB --output DIR [--jobs N]] [--output-file PATH] [--fetch-images] [--image-sources none|embedded|local|remote] [--image-hosts LIST] [--max-images N] [--max-image-bytes N] [--max-image-total-mb N] [--min-image-bytes N] [--list-attachments] [--skip-empty-cells] [--compact-tables] [--ebcdic-layout JSON|PATH] [--encoding LABEL] [--no-stream] [--no-table-former] [--no-ocr] [--text-layer-only] [--password PASSWORD | --password-file PATH] [--force-full-page-ocr] [--no-text-panels] [--heading-hierarchy] [--ocr-lang LANG] [--ocr-engine ppocr|tesseract] [--ocr-mode MODE] [--ocr-scale X] [--images-scale X] [--page-images] [--chunker hierarchical|hybrid] [--chunk-tokenizer PATH] [--chunk-max-tokens N] [--no-chunk-merge-peers] [--pipeline standard|vlm] [--vlm-endpoint URL] [--vlm-model NAME] [--vlm-api-key TOKEN] [--vlm-prompt TEXT] [--vlm-max-tokens N] [--asr-model PRESET] [--asr-lang CODE] [--video-frames N|all] [--video-scene-threshold X] [--video-frame-max-side PX] [--video-frame-dedupe N] [--xbrl-taxonomy DIR] [--use-web-browser] [--enrich-picture-classes] [--enrich-code] [--enrich-formula] [--picture-ocr] [--picture-ocr-classes LABELS] [--picture-ocr-min-side N] [--no-picture-images] [--redact-pii] [--redact-mode label|pseudonym|fixed:TEXT] [--redact-kinds LIST] [--redact-pattern NAME=REGEX]... [--redact-images drop|box_out|keep] [--document-timeout SECONDS] [--abort-on-error] [--output-dirs auto|flat|mirror] <input-file> | SOURCE...
+//! Usage: docling-rs [--strict] [--page-break-placeholder TEXT] [--layers body|all|LIST] [--traverse-pictures] [--to md|json|html|text|dclx|chunks|images|latex|pandoc|vtt] [--pages A-B] [--scale X] [--images MODE] [--input GLOB --output DIR [--jobs N]] [--output-file PATH] [--fetch-images] [--image-sources none|embedded|local|remote] [--image-hosts LIST] [--max-images N] [--max-image-bytes N] [--max-image-total-mb N] [--min-image-bytes N] [--list-attachments] [--skip-empty-cells] [--compact-tables] [--ebcdic-layout JSON|PATH] [--encoding LABEL] [--no-stream] [--no-table-former] [--no-ocr] [--text-layer-only] [--password PASSWORD | --password-file PATH] [--force-full-page-ocr] [--no-text-panels] [--heading-hierarchy] [--ocr-lang LANG] [--ocr-engine ppocr|tesseract] [--ocr-mode MODE] [--ocr-scale X] [--ocr-textline-orientation] [--images-scale X] [--page-images] [--chunker hierarchical|hybrid] [--chunk-tokenizer PATH] [--chunk-max-tokens N] [--no-chunk-merge-peers] [--pipeline standard|vlm] [--vlm-endpoint URL] [--vlm-model NAME] [--vlm-api-key TOKEN] [--vlm-prompt TEXT] [--vlm-max-tokens N] [--asr-model PRESET] [--asr-lang CODE] [--video-frames N|all] [--video-scene-threshold X] [--video-frame-max-side PX] [--video-frame-dedupe N] [--xbrl-taxonomy DIR] [--use-web-browser] [--enrich-picture-classes] [--enrich-code] [--enrich-formula] [--picture-ocr] [--picture-ocr-classes LABELS] [--picture-ocr-min-side N] [--picture-ocr-scale X] [--no-picture-images] [--redact-pii] [--redact-mode label|pseudonym|fixed:TEXT] [--redact-kinds LIST] [--redact-pattern NAME=REGEX]... [--redact-images drop|box_out|keep] [--document-timeout SECONDS] [--abort-on-error] [--output-dirs auto|flat|mirror] <input-file> | SOURCE...
 //!   --to FORMAT        repeatable (#491, like Python's `docling convert --to
 //!                      md --to json`): each document converts once and is
 //!                      written in every format named, `<stem>.md` +
@@ -171,6 +171,15 @@
 //!   --force-full-page-ocr  OCR every PDF page even when it has a text layer
 //!                      (docling's force_full_page_ocr) — for layers that lie:
 //!                      broken encodings, forms with a few typed-in fields
+//!   --ocr-textline-orientation
+//!                      RapidOCR's line orientation handling (#666): crop each
+//!                      detected line along its rotated rectangle, turn tall
+//!                      crops 90°, and turn upside-down lines with the 0/180
+//!                      classifier (.models/ocr_textline_ori.onnx; missing, it
+//!                      warns and skips that step) — vertical axis titles,
+//!                      rotated headers, skewed and upside-down lines read.
+//!                      PP-OCR only; changes scanned-page output too. Off by
+//!                      default (DOCLING_RS_OCR_TEXTLINE_ORIENTATION).
 //!   --no-text-panels   keep every detected picture as a picture — disable the
 //!                      #157 demotion of uncaptioned text-panel pictures into
 //!                      paragraphs (the escape hatch for image-extraction
@@ -227,6 +236,12 @@
 //!   --picture-ocr-min-side N
 //!                      skip pictures whose smaller side is under N px (icons,
 //!                      bullets, rules). Default 32 (DOCLING_RS_PICTURE_OCR_MIN_SIDE).
+//!   --picture-ocr-scale X
+//!                      read pictures at X px per picture pixel, shrunk to
+//!                      RapidOCR's 2000 px longer side (#666): 1.0 = native
+//!                      pixels, as RapidOCR reads them. Default: the image-input
+//!                      rule (--ocr-scale, else 3x under the cap;
+//!                      DOCLING_RS_PICTURE_OCR_SCALE). Pages are unaffected.
 //!   --no-picture-images
 //!                      drop the embedded image bytes from every picture after
 //!                      the enrichment (keep_picture_images=false): a slim
@@ -438,6 +453,11 @@ PDF / IMAGE PIPELINE
                           zh-Hans, zh-TW; docling's iso: prefix accepted)
   --ocr-mode MODE         auto (default) | full_page | layout_regions
   --ocr-scale X           OCR input scale in px per point
+  --ocr-textline-orientation
+                          RapidOCR's line orientation: oriented crops, 90° turn of
+                          tall lines, 0/180 classifier (off by default)
+  --picture-ocr-scale X   picture OCR scale in px per picture pixel under the
+                          2000 px cap (1.0 = RapidOCR's native pixels)
   --images-scale X        picture crops (and page images) in px per point,
                           0.1-4.0 (docling's images_scale; default: the 2.0 render)
   --page-images           keep each page's render as the JSON page image
@@ -720,6 +740,18 @@ fn main() -> ExitCode {
                     return ExitCode::from(2);
                 }
             },
+            "--picture-ocr-scale" => match args.next().map(|v| v.trim().parse::<f32>()) {
+                Some(Ok(s)) => opts.picture_ocr_scale = Some(s),
+                Some(_) => {
+                    eprintln!("error: --picture-ocr-scale needs a positive number");
+                    return ExitCode::from(2);
+                }
+                None => {
+                    eprintln!("error: --picture-ocr-scale needs a value");
+                    return ExitCode::from(2);
+                }
+            },
+            "--ocr-textline-orientation" => opts.ocr_textline_orientation = Some(true),
             "--picture-ocr-min-side" => match args.next().map(|v| v.trim().parse::<u32>()) {
                 Some(Ok(n)) => opts.picture_ocr_min_side = Some(n),
                 Some(_) => {
@@ -2014,6 +2046,7 @@ fn batch_pipeline<'a>(
             .document_timeout(o.document_timeout().map_err(err)?);
         p.set_pages(cfg.pages);
         p.set_ocr_lang(o.ocr_lang().map_err(err)?);
+        p.set_ocr_textline_orientation(o.ocr_textline_orientation);
         // Dot-progress on stderr: one dot per 10 finished pages, newline when
         // the document completes (only if any dots were printed).
         p.set_progress(Some(std::sync::Arc::new(|done: usize, total: usize| {

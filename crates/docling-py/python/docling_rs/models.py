@@ -69,6 +69,9 @@ _OPTIONAL = {
     # pairs when present. RapidOCR's hub is the fallback.
     "ocr_rec_v6.onnx": "models/ocr_rec_v6.onnx",
     "ocr_rec_v6_dict.txt": "models/ocr_rec_v6_dict.txt",
+    # The text-line orientation classifier (#666): the 0/180 check of
+    # ocr_textline_orientation. Optional; RapidOCR's hub is the fallback.
+    "ocr_textline_ori.onnx": "models/ocr_textline_ori.onnx",
     "layout_heron_int8.onnx": "models/layout_heron_int8.onnx",
     "decoder_int8.onnx": "models/tableformer/decoder_int8.onnx",
     # The #97 hoisted-KV TableFormer decoder — byte-exact vs the legacy graph
@@ -142,6 +145,9 @@ _FALLBACK_URLS = {
     ),
     "models/ocr_rec_v6_dict.txt": (
         "https://www.modelscope.cn/models/RapidAI/RapidOCR/resolve/v3.9.2/paddle/PP-OCRv6/rec/PP-OCRv6_rec_small/ppocrv6_dict.txt"
+    ),
+    "models/ocr_textline_ori.onnx": (
+        "https://www.modelscope.cn/models/RapidAI/RapidOCR/resolve/v3.9.2/onnx/PP-OCRv5/cls/ch_PP-LCNet_x0_25_textline_ori_cls_mobile.onnx"
     ),
     "models/chunk/tokenizer.json": (
         "https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2/resolve/main/tokenizer.json"

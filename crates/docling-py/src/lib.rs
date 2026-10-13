@@ -166,6 +166,9 @@ struct PyDocumentConverter {
     tesseract_lang: Option<String>,
     ocr_mode: Option<docling::OcrMode>,
     ocr_scale: Option<f32>,
+    /// RapidOCR's text-line orientation handling (#666); `None` = the
+    /// environment's default.
+    ocr_textline_orientation: Option<bool>,
     /// Picture-crop scale and page images (#519/#520), for the warm pipeline.
     images: docling::ImageOutput,
     page_range: Option<(usize, usize)>,
@@ -222,7 +225,10 @@ impl PyDocumentConverter {
     ///   (`meta.description` / `annotations`); `picture_ocr_classes` (a
     ///   comma-separated DocumentFigureClassifier label list) and
     ///   `picture_ocr_min_side` (px, default 32) filter which pictures are
-    ///   read; `keep_picture_images=False` drops the image bytes afterwards.
+    ///   read; `picture_ocr_scale` sets their OCR resolution in px per
+    ///   picture pixel under RapidOCR's 2000 px cap (#666; `1.0` = native
+    ///   pixels, `None` = the image-input rule);
+    ///   `keep_picture_images=False` drops the image bytes afterwards.
     /// * `redact_pii` — redact personal data from the converted document
     ///   before export (#621; a docling.rs extension): e-mail, phone, card
     ///   numbers, IBANs, IPs, URL credentials, national IDs, and names /
@@ -246,6 +252,11 @@ impl PyDocumentConverter {
     /// * `ocr_scale` — OCR render scale in px per PDF point (docling's
     ///   `OcrOptions.scale`, #254); `None` reads the pipeline's own 2.0 px/pt
     ///   render (docling's default is 3 = 216 dpi).
+    /// * `ocr_textline_orientation` — RapidOCR's text-line orientation
+    ///   handling (#666): oriented line crops, tall lines turned 90°,
+    ///   upside-down lines turned by the 0/180 classifier
+    ///   (.models/ocr_textline_ori.onnx). `None` = off unless
+    ///   `DOCLING_RS_OCR_TEXTLINE_ORIENTATION` is set.
     /// * `images_scale` — picture crops (and page images) in px per PDF
     ///   point, docling's `images_scale` (#520), 0.1–4.0; `None` keeps the
     ///   pipeline's 2.0 px/pt render. The picture `dpi` in the JSON is
@@ -311,6 +322,7 @@ impl PyDocumentConverter {
         do_picture_ocr = false,
         picture_ocr_classes = None,
         picture_ocr_min_side = None,
+        picture_ocr_scale = None,
         keep_picture_images = true,
         redact_pii = false,
         redact_mode = None,
@@ -329,6 +341,7 @@ impl PyDocumentConverter {
         ocr_lang = None,
         ocr_mode = None,
         ocr_scale = None,
+        ocr_textline_orientation = None,
         ocr_engine = None,
         allowed_formats = None,
         images_scale = None,
@@ -369,6 +382,7 @@ impl PyDocumentConverter {
         do_picture_ocr: bool,
         picture_ocr_classes: Option<String>,
         picture_ocr_min_side: Option<u32>,
+        picture_ocr_scale: Option<f32>,
         keep_picture_images: bool,
         redact_pii: bool,
         redact_mode: Option<String>,
@@ -387,6 +401,7 @@ impl PyDocumentConverter {
         ocr_lang: Option<String>,
         ocr_mode: Option<String>,
         ocr_scale: Option<f32>,
+        ocr_textline_orientation: Option<bool>,
         ocr_engine: Option<String>,
         allowed_formats: Option<Vec<String>>,
         images_scale: Option<f32>,
@@ -452,6 +467,7 @@ impl PyDocumentConverter {
             ocr_lang,
             ocr_mode,
             ocr_scale,
+            ocr_textline_orientation,
             images_scale,
             page_images: Some(generate_page_images),
             do_picture_classification: Some(do_picture_classification),
@@ -460,6 +476,7 @@ impl PyDocumentConverter {
             do_picture_ocr: Some(do_picture_ocr),
             picture_ocr_classes,
             picture_ocr_min_side,
+            picture_ocr_scale,
             keep_picture_images: Some(keep_picture_images),
             redact_pii: Some(redact_pii),
             redact_mode,
@@ -516,6 +533,7 @@ impl PyDocumentConverter {
             tesseract_lang: opts.tesseract_lang().map_err(value_err)?,
             ocr_mode: opts.ocr_mode().map_err(value_err)?,
             ocr_scale,
+            ocr_textline_orientation,
             images: opts.image_output(),
             page_range,
             document_timeout: opts.document_timeout().map_err(value_err)?,
@@ -553,6 +571,7 @@ impl PyDocumentConverter {
         let tesseract_lang = self.tesseract_lang.clone();
         let ocr_mode = self.ocr_mode;
         let ocr_scale = self.ocr_scale;
+        let ocr_textline_orientation = self.ocr_textline_orientation;
         let images = self.images;
         let page_range = self.page_range;
         let document_timeout = self.document_timeout;
@@ -580,6 +599,7 @@ impl PyDocumentConverter {
                     .pages(page_range)
                     .document_timeout(document_timeout)
                     .enrichments(enrich);
+                pipeline.set_ocr_textline_orientation(ocr_textline_orientation);
                 pipeline
                     .warm_up()
                     .map_err(|e| ConversionError::new_err(e.to_string()))?;

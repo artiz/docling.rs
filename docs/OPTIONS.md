@@ -65,6 +65,7 @@ own output options next to the shared ones.
 | `ocr_lang` | `en` \| `ch` \| BCP-47; tessdata stems under Tesseract | `en` (`DOCLING_RS_OCR_LANG`) | `--ocr-lang` | `ocr_lang` | `ocrLang` | OCR recognition language, validated against the engine it will drive. |
 | `ocr_mode` | `default` \| `full_page` \| `layout_regions` \| `pdf_aware_layout_regions` | `default` | `--ocr-mode` | `ocr_mode` | `ocrMode` | Which regions feed the OCR (docling's `OcrMode`, #254). |
 | `ocr_scale` | px/pt > 0 | unset = the 2.0 render | `--ocr-scale` | `ocr_scale` | `ocrScale` | OCR input scale (docling's `OcrOptions.scale`, #254). |
+| `ocr_textline_orientation` | bool | false (`DOCLING_RS_OCR_TEXTLINE_ORIENTATION`) | `--ocr-textline-orientation` | `ocr_textline_orientation` | `ocrTextlineOrientation` | RapidOCR's text-line orientation handling (#666): oriented line crops, tall lines turned 90°, upside-down lines turned by the 0/180 classifier. PP-OCR pages and pictures alike. Python also maps docling's `RapidOcrOptions.use_cls`. |
 | `images_scale` | 0.1–4.0 px/pt | unset = the 2.0 render | `--images-scale` | `images_scale` | `imagesScale` | Picture-crop / page-image scale (docling's `images_scale`, #520). |
 | `page_images` | bool | false | `--page-images` | `generate_page_images` | `pageImages` | Keep each page's render as the JSON page image (docling's `generate_page_images`, #520). Python: `generate_page_images` (also accepted as a JSON alias). |
 | `do_picture_classification` | bool | false | `--enrich-picture-classes` | `do_picture_classification` | `doPictureClassification` | Enrichment: classify pictures with DocumentFigureClassifier (#423). CLI: `--enrich-picture-classes`. |
@@ -73,6 +74,7 @@ own output options next to the shared ones.
 | `do_picture_ocr` | bool | false | `--picture-ocr` | `do_picture_ocr` | `doPictureOcr` | Enrichment: OCR the pictures embedded in non-PDF documents (DOCX/PPTX/HTML/…, video frames) with the OCR models; the text is the picture's description annotation — Markdown prints it after the caption, JSON carries `meta.description` (#645). CLI: `--picture-ocr`. |
 | `picture_ocr_classes` | comma-separated classifier labels | unset = every picture | `--picture-ocr-classes` | `picture_ocr_classes` (str or list) | `pictureOcrClasses` | With `do_picture_ocr`: only read pictures the DocumentFigureClassifier labels as one of these (its 26 classes; an unknown label is rejected). |
 | `picture_ocr_min_side` | px ≥ 0 | 32 (`DOCLING_RS_PICTURE_OCR_MIN_SIDE`) | `--picture-ocr-min-side` | `picture_ocr_min_side` | `pictureOcrMinSide` | With `do_picture_ocr`: skip pictures whose smaller side is under this (icons, bullets). |
+| `picture_ocr_scale` | px/px > 0 | unset = the image-input rule (`DOCLING_RS_PICTURE_OCR_SCALE`) | `--picture-ocr-scale` | `picture_ocr_scale` | `pictureOcrScale` | With `do_picture_ocr`: the pictures' OCR resolution in px per picture pixel, shrunk to RapidOCR's 2000 px longer side (#666) — `1.0` reads them at their native pixels, as RapidOCR does. Pages and image inputs are unaffected. |
 | `keep_picture_images` | bool | true | `--no-picture-images` | `keep_picture_images` | `keepPictureImages` | `false` drops the embedded image bytes from every picture after the enrichment pass: slim JSON/DCLX, placeholder-only Markdown, the OCR text kept. CLI: `--no-picture-images`. |
 | `redact_pii` | bool | false | `--redact-pii` | `redact_pii` | `redactPii` | Redact personal data from the converted document before any export (#621): e-mail, phone, card (Luhn), IBAN (mod-97), IP, URL credentials, national IDs, and names / organizations / locations with the NER model. The result carries the counts (`redaction`; serve: `X-Docling-Redaction` / item `redaction`). A docling.rs extension. |
 | `redact_mode` | `label` \| `pseudonym` \| `fixed:<text>` | `label` | `--redact-mode` | `redact_mode` | `redactMode` | What a span becomes: `[EMAIL]`; `[EMAIL_1]` / `[EMAIL_2]` (one number per distinct value, consistent within the document); a fixed string. |
@@ -196,7 +198,25 @@ codec or copybook when the conversion runs.
   at 2.0; measured best on FUNSD: 0.825 / 0.856 / 0.836 word recall at
   1 / 2 / 3 px/pt); a set value resamples the OCR input only, layout and
   TableFormer pixels are untouched. docling's default is 3 (216 dpi); lower
-  it when the source raster is already high-resolution.
+  it when the source raster is already high-resolution. Pictures (the
+  picture-OCR enrichment) follow the image-input rule unless
+  `picture_ocr_scale` (#666) sets their own: px per picture pixel under the
+  same 2000 px cap, `1.0` being RapidOCR's native-pixel reading — a 720 ×
+  180 screenshot reads at 720 × 180 instead of 2000 × 500.
+- **Line orientation** (#666, off by default). `ocr_textline_orientation`
+  ports RapidOCR's line handling around the recognizer: each detected line
+  is warped upright out of the detector's rotated rectangle
+  (`get_rotate_crop_image`: bicubic, replicated borders) instead of cropped
+  as its axis-aligned box, a crop at least 1.5× taller than wide is turned
+  90° counter-clockwise, and PaddleOCR's `PP-LCNet_x0_25_textline_ori`
+  classifier (`.models/ocr_textline_ori.onnx`, `DOCLING_OCR_TEXTLINE_ORI_ONNX`;
+  80 × 160 BGR input, batches of 6, `180` above 0.9) turns upside-down
+  lines. Vertical axis titles, rotated headers, skewed and upside-down lines
+  then read; the reported boxes stay axis-aligned, so reading order does not
+  move. It applies to every PP-OCR line read off the detector — scanned
+  pages and images change too when on — but not to table words, the
+  projection fallback or Tesseract. A missing classifier warns once and
+  keeps the crop and the 90° turn.
 - **Detector and recognizer knobs** (env): `DOCLING_RS_OCR_DET_MAX_SIDE`
   (2000 = RapidOCR's `max_side_len`; `0` lifts the cap, 960 — PaddleOCR's
   budget — is about a third of the time at ~0.02 recall on FUNSD),

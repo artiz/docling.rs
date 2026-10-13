@@ -45,6 +45,8 @@ mod mets;
 pub mod ner;
 #[cfg(feature = "ml")]
 mod ocr;
+#[cfg(feature = "ml")]
+mod ocr_cls;
 #[cfg(any(feature = "ml", feature = "ocr-prep"))]
 pub mod ocr_det;
 #[cfg(feature = "ocr-prep")]
@@ -470,6 +472,7 @@ pub fn model_inventory() -> Vec<ModelEntry> {
         entry("tableformer.bbox", bbx),
         entry("ocr.rec", rec),
         entry("ocr.dict", dict),
+        entry("ocr.textline_ori", ocr_cls::resolve_cls_path()),
         entry("pdfium", pdfium),
     ]
 }
@@ -747,7 +750,7 @@ pub fn layout_src(page: &PdfPage) -> layout::LayoutSrc<'_> {
 /// OCR input at `OcrOptions.scale` = 3 and RapidOCR then shrinks what exceeds
 /// this before detecting and recognizing, so that is the resolution its
 /// models actually see.
-const RAPIDOCR_MAX_SIDE: f32 = 2000.0;
+pub(crate) const RAPIDOCR_MAX_SIDE: f32 = 2000.0;
 
 #[cfg(feature = "ml")]
 /// The px/pt the OCR reads a page at: the caller's `ocr_scale` when set; else,
@@ -848,6 +851,9 @@ struct Worker {
     tesseract_lang: Option<String>,
     /// OCR render scale override (px/pt, #254). See [`Pipeline::ocr_scale`].
     ocr_scale: Option<f32>,
+    /// RapidOCR's line orientation handling (#666), handed to the PP-OCR
+    /// recognizer. See [`Pipeline::ocr_textline_orientation`].
+    textline_orientation: bool,
     /// Picture-crop scale and page images (#519/#520). See [`ImageOutput`].
     images: ImageOutput,
 }
@@ -940,6 +946,7 @@ impl Worker {
         ocr_engine: ocr::OcrEngine,
         tesseract_lang: Option<String>,
         ocr_scale: Option<f32>,
+        textline_orientation: bool,
         images: ImageOutput,
     ) -> Result<Self, PdfError> {
         Ok(Self {
@@ -965,7 +972,17 @@ impl Worker {
             ocr_engine,
             tesseract_lang,
             ocr_scale,
+            textline_orientation,
         })
+    }
+
+    /// Set [`Pipeline::ocr_textline_orientation`] here and on a loaded
+    /// PP-OCR recognizer.
+    fn set_textline_orientation(&mut self, enable: bool) {
+        self.textline_orientation = enable;
+        if let OcrSlot::Ready(Recognizer::PpOcr(m)) = &mut self.ocr {
+            m.set_textline_orientation(enable);
+        }
     }
 
     /// The OCR model, or `None` when this conversion must not (or cannot) OCR:
@@ -981,7 +998,10 @@ impl Worker {
         if matches!(self.ocr, OcrSlot::Unloaded) {
             let loaded = match self.ocr_engine {
                 ocr::OcrEngine::PpOcr => {
-                    ocr::OcrModel::load_with(self.ocr_lang, self.intra).map(Recognizer::PpOcr)
+                    ocr::OcrModel::load_with(self.ocr_lang, self.intra).map(|mut m| {
+                        m.set_textline_orientation(self.textline_orientation);
+                        Recognizer::PpOcr(m)
+                    })
                 }
                 ocr::OcrEngine::Tesseract => tesseract::TesseractOcr::load(
                     tesseract::TesseractOptions::from_env(self.tesseract_lang.clone()),
@@ -2192,6 +2212,11 @@ pub struct Pipeline {
     ocr_mode: ocr::OcrMode,
     /// OCR render scale override in px/pt (#254). See [`Pipeline::ocr_scale`].
     ocr_scale: Option<f32>,
+    /// Picture OCR scale (#666). See [`Pipeline::picture_ocr_scale`].
+    picture_ocr_scale: Option<f32>,
+    /// RapidOCR's line orientation handling (#666). See
+    /// [`Pipeline::ocr_textline_orientation`].
+    textline_orientation: bool,
     /// Picture-crop scale and page images (#519/#520). See
     /// [`Pipeline::images_scale`] / [`Pipeline::generate_page_images`].
     images: ImageOutput,
@@ -2232,6 +2257,8 @@ impl Pipeline {
             tesseract_lang: None,
             ocr_mode: ocr::OcrMode::from_env(),
             ocr_scale: ocr::scale_from_env(),
+            picture_ocr_scale: ocr::picture_scale_from_env(),
+            textline_orientation: ocr::textline_orientation_from_env(),
             images: ImageOutput::default(),
             heading_hierarchy: HeadingHierarchyOptions::default(),
             progress: None,
@@ -2559,6 +2586,56 @@ impl Pipeline {
         self.sync_ocr_config();
     }
 
+    /// Resolution of the picture-OCR enrichment (#645) in pixels per
+    /// picture pixel, before RapidOCR's 2000 px longer-side cap (#666) —
+    /// RapidOCR reads a picture at its native pixels (`1.0`) and only
+    /// shrinks what exceeds 2000 px. `None` (default:
+    /// `DOCLING_RS_PICTURE_OCR_SCALE`, else unset) keeps the image-input
+    /// rule pictures shared with scanned images: [`ocr_scale`](Self::ocr_scale)
+    /// when set, else 3 px/pt shrunk to the 2000 px cap — which upscales a
+    /// 720 × 180 screenshot to 2000 × 500. Pages and image inputs are
+    /// unaffected. Non-positive values are ignored.
+    pub fn picture_ocr_scale(mut self, scale: Option<f32>) -> Self {
+        self.set_picture_ocr_scale(scale);
+        self
+    }
+
+    /// In-place [`picture_ocr_scale`](Self::picture_ocr_scale) for a warm
+    /// pipeline.
+    pub fn set_picture_ocr_scale(&mut self, scale: Option<f32>) {
+        self.picture_ocr_scale = scale
+            .filter(|s| s.is_finite() && *s > 0.0)
+            .or_else(ocr::picture_scale_from_env);
+    }
+
+    /// RapidOCR's handling of text-line orientation (#666), off by default
+    /// (`DOCLING_RS_OCR_TEXTLINE_ORIENTATION` sets the process default): each
+    /// detected line is cropped along the detector's rotated rectangle (a
+    /// perspective warp, `get_rotate_crop_image`) instead of its axis-aligned
+    /// box, a crop at least 1.5× taller than wide is turned 90°
+    /// counter-clockwise, and the PP-LCNet text-line orientation classifier
+    /// (`.models/ocr_textline_ori.onnx`, `DOCLING_OCR_TEXTLINE_ORI_ONNX`)
+    /// turns lines it reads as upside down (`180` above 0.9). Vertical axis
+    /// titles, rotated headers, skewed and upside-down lines then read as
+    /// text. Applies to every PP-OCR line read off the detector — pages and
+    /// pictures alike — but not to table words or the projection fallback;
+    /// the reported boxes stay axis-aligned. A missing classifier warns once
+    /// and keeps the crop and the 90° turn. Tesseract orients on its own.
+    pub fn ocr_textline_orientation(mut self, enable: bool) -> Self {
+        self.set_ocr_textline_orientation(Some(enable));
+        self
+    }
+
+    /// In-place [`ocr_textline_orientation`](Self::ocr_textline_orientation)
+    /// for a warm pipeline (serve, the bindings' `Pipeline`), applied to
+    /// loaded workers too; `None` restores the process default
+    /// (`DOCLING_RS_OCR_TEXTLINE_ORIENTATION`), like
+    /// [`set_ocr_scale`](Self::set_ocr_scale).
+    pub fn set_ocr_textline_orientation(&mut self, enable: Option<bool>) {
+        self.textline_orientation = enable.unwrap_or_else(ocr::textline_orientation_from_env);
+        self.sync_ocr_config();
+    }
+
     /// Whether page extraction should decode the text layer at all. Forced
     /// full-page OCR (the flag or `ocr_mode=full_page|layout_regions`) clears
     /// every extracted cell unread, so the decode is skipped outright —
@@ -2573,9 +2650,11 @@ impl Pipeline {
     fn sync_ocr_config(&mut self) {
         let force = self.force_full_page_ocr || self.ocr_mode.forces_full_page();
         let scale = self.ocr_scale;
+        let orient = self.textline_orientation;
         for worker in self.primary.iter_mut().chain(self.pool.iter_mut()) {
             worker.force_full_page_ocr = force;
             worker.ocr_scale = scale;
+            worker.set_textline_orientation(orient);
         }
     }
 
@@ -2719,6 +2798,7 @@ impl Pipeline {
                 self.ocr_engine,
                 self.tesseract_lang.clone(),
                 self.ocr_scale,
+                self.textline_orientation,
                 self.images,
             )?);
         }
@@ -3207,6 +3287,7 @@ impl Pipeline {
         let ocr_engine = self.ocr_engine;
         let tesseract_lang = self.tesseract_lang.clone();
         let ocr_scale = self.ocr_scale;
+        let textline_orientation = self.textline_orientation;
         let images = self.images;
         let enrich = self.enrich;
         let tables = self.tables_slot();
@@ -3231,6 +3312,7 @@ impl Pipeline {
                             ocr_engine,
                             tesseract_lang,
                             ocr_scale,
+                            textline_orientation,
                             images,
                         )
                     })

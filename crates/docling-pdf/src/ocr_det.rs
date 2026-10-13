@@ -25,7 +25,9 @@
 //! `RETR_LIST` also walks hole contours, whose boxes fail the score gate
 //! anyway), and a detected quad is handed on as its axis-aligned bounding
 //! box — the recognizer's line prep crops rectangles, and rotated lines are
-//! not what documents lose today.
+//! not what documents lose today. The quad rides along on [`DetBox::quad`]:
+//! with `ocr_textline_orientation` on (#666) the line prep warps it upright
+//! the way RapidOCR's `get_rotate_crop_image` does.
 //!
 //! Since #570 the detector is also the recognizer's *line source* inside the
 //! layout regions (`ocr_prep::prep_region_lines_det`), as it is for RapidOCR:
@@ -62,6 +64,23 @@ pub struct DetBox {
     pub r: f32,
     pub b: f32,
     pub score: f32,
+    /// The detector's (unclipped) minimum-area rectangle the box bounds,
+    /// `[tl, tr, br, bl]` in the same pixels (#666) — what RapidOCR crops.
+    pub quad: [(f32, f32); 4],
+}
+
+impl DetBox {
+    /// An axis-aligned box, its quad the rectangle itself.
+    pub fn rect(l: f32, t: f32, r: f32, b: f32, score: f32) -> Self {
+        Self {
+            l,
+            t,
+            r,
+            b,
+            score,
+            quad: [(l, t), (r, t), (r, b), (l, b)],
+        }
+    }
 }
 
 /// `DetPreProcess.resize`: the network input size for a `w × h` image —
@@ -144,7 +163,7 @@ pub fn prep_det_input(img: &RgbImage) -> Option<(Vec<f32>, u32, u32)> {
 /// convolution with the triangle kernel, the scalar `image` crate resize with
 /// `DOCLING_RS_SLOW_RESIZE=1` (same kernel, several times slower; the
 /// scalar path is also the fallback should the SIMD one refuse the buffer).
-fn resize_bilinear(img: &RgbImage, w: u32, h: u32) -> RgbImage {
+pub(crate) fn resize_bilinear(img: &RgbImage, w: u32, h: u32) -> RgbImage {
     #[cfg(feature = "ml")]
     {
         use fast_image_resize as fir;
@@ -297,6 +316,7 @@ pub fn db_boxes(prob: &[f32], w: usize, h: usize, dest_w: u32, dest_h: u32) -> V
                 r: xs.fold(f32::MIN, f32::max),
                 b: ys.fold(f32::MIN, f32::max),
                 score,
+                quad: q,
             })
         })
         .collect();
@@ -388,7 +408,7 @@ pub fn min_area_rect(points: &[(f32, f32)]) -> Option<([(f32, f32); 4], f32)> {
 
 /// `get_mini_boxes`' corner order: sort by x, then the left pair top-first and
 /// the right pair top-first → `[tl, tr, br, bl]`.
-fn order_corners(mut c: [(f32, f32); 4]) -> [(f32, f32); 4] {
+pub(crate) fn order_corners(mut c: [(f32, f32); 4]) -> [(f32, f32); 4] {
     c.sort_by(|a, b| a.0.total_cmp(&b.0));
     let (i1, i4) = if c[1].1 > c[0].1 { (0, 1) } else { (1, 0) };
     let (i2, i3) = if c[3].1 > c[2].1 { (2, 3) } else { (3, 2) };
@@ -763,13 +783,7 @@ mod tests {
     fn uncovered_lines_skip_what_the_region_pass_read() {
         use crate::layout::Region;
         use crate::pdfium_backend::TextCell;
-        let bx = |l: f32, t: f32, r: f32, b: f32| DetBox {
-            l,
-            t,
-            r,
-            b,
-            score: 0.9,
-        };
+        let bx = |l: f32, t: f32, r: f32, b: f32| DetBox::rect(l, t, r, b, 0.9);
         let regions = vec![Region {
             label: "text",
             score: 0.9,
@@ -803,13 +817,7 @@ mod tests {
 
     #[test]
     fn boxes_sort_by_row_then_column() {
-        let bx = |l: f32, t: f32| DetBox {
-            l,
-            t,
-            r: l + 10.0,
-            b: t + 10.0,
-            score: 1.0,
-        };
+        let bx = |l: f32, t: f32| DetBox::rect(l, t, l + 10.0, t + 10.0, 1.0);
         let mut boxes = vec![
             bx(50.0, 100.0),
             bx(10.0, 105.0),

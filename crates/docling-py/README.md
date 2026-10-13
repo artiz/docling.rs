@@ -139,7 +139,7 @@ PY
 
 | docling.rs | docling counterpart | notes |
 |---|---|---|
-| `DocumentConverter(format_options=None, *, allowed_formats=None, do_ocr=True, do_table_structure=True, force_full_page_ocr=False, no_text_panels=False, heading_hierarchy=False, do_picture_classification=False, do_code_enrichment=False, do_formula_enrichment=False, do_picture_ocr=False, picture_ocr_classes=None, picture_ocr_min_side=None, keep_picture_images=True, redact_pii=False, redact_mode=None, redact_kinds=None, redact_pattern=None, redact_images=None, fetch_images=False, use_web_browser=False, artifacts_path=None, ocr_lang=None, asr_model=None, asr_lang=None, pipeline=None, vlm_endpoint=None, vlm_model=None, vlm_api_key=None, vlm_prompt=None, vlm_max_tokens=None)` | `DocumentConverter(allowed_formats=…, format_options=…)` | Pass `{InputFormat.PDF: PdfFormatOption(pipeline_options=PdfPipelineOptions(…))}` or the shorthand kwargs; `allowed_formats` restricts conversion; `artifacts_path` overrides the model cache dir. |
+| `DocumentConverter(format_options=None, *, allowed_formats=None, do_ocr=True, do_table_structure=True, force_full_page_ocr=False, no_text_panels=False, heading_hierarchy=False, do_picture_classification=False, do_code_enrichment=False, do_formula_enrichment=False, do_picture_ocr=False, picture_ocr_classes=None, picture_ocr_min_side=None, picture_ocr_scale=None, keep_picture_images=True, redact_pii=False, redact_mode=None, redact_kinds=None, redact_pattern=None, redact_images=None, fetch_images=False, use_web_browser=False, artifacts_path=None, ocr_lang=None, ocr_textline_orientation=None, asr_model=None, asr_lang=None, pipeline=None, vlm_endpoint=None, vlm_model=None, vlm_api_key=None, vlm_prompt=None, vlm_max_tokens=None)` | `DocumentConverter(allowed_formats=…, format_options=…)` | Pass `{InputFormat.PDF: PdfFormatOption(pipeline_options=PdfPipelineOptions(…))}` or the shorthand kwargs; `allowed_formats` restricts conversion; `artifacts_path` overrides the model cache dir. |
 | `.convert(path \| url \| DocumentStream) -> ConversionResult` | `.convert(source)` | str / `pathlib.Path` / `http(s)://` URL (downloaded first; the format comes from the file name, else the response's `Content-Type`) / `DocumentStream`. Releases the GIL during conversion. |
 | `.convert_all(sources, raises_on_error=True) -> Iterator[ConversionResult]` | same | lazily converts many sources; `raises_on_error=False` yields a `failure` result instead of raising |
 | `.initialize_pipeline(format=None)` | same | pre-loads the PDF/image ML models so the first conversion isn't slow and later PDFs reuse the warm pipeline (no-op for non-ML formats; needs the models available) |
@@ -201,8 +201,12 @@ DOCX/PPTX/HTML/… and video frames with the engine's OCR models — the text
 lands in `picture.meta.description` + the `description` annotation, exactly
 where `do_picture_description` puts a VLM's; `picture_ocr_classes` (a list
 or comma-separated string of DocumentFigureClassifier labels) and
-`picture_ocr_min_side` filter the pictures, `keep_picture_images=False`
-drops the image bytes afterwards; video frame sampling is tunable too, #647:
+`picture_ocr_min_side` filter the pictures, `picture_ocr_scale` sets their
+OCR resolution in px per picture pixel under RapidOCR's 2000 px cap (#666;
+`1.0` = native pixels), `ocr_textline_orientation=True` adds RapidOCR's
+text-line orientation handling (oriented crops, tall lines turned 90°, the
+0/180 classifier — pages too; docling's `RapidOcrOptions.use_cls` maps onto
+it), `keep_picture_images=False` drops the image bytes afterwards; video frame sampling is tunable too, #647:
 `video_frames="all"` / `docling_rs.VIDEO_FRAMES_ALL` keeps every distinct
 cut, `video_scene_threshold` (0.27) sets the cut score, `video_frame_max_side`
 downscales frames inside ffmpeg and `video_frame_dedupe` (4–6) collapses a

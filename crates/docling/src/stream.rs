@@ -96,6 +96,9 @@ pub(crate) struct StreamSettings {
     pub tesseract_lang: Option<String>,
     pub ocr_mode: Option<docling_pdf::OcrMode>,
     pub ocr_scale: Option<f32>,
+    /// [`DocumentConverter::ocr_textline_orientation`] (#666); `None` keeps
+    /// the pipeline's environment default.
+    pub ocr_textline_orientation: Option<bool>,
     /// Picture-crop scale (#520); page images have no place in a stream.
     pub images_scale: Option<f32>,
     /// [`DocumentConverter::page_break_placeholder`] for the streamer — the
@@ -225,6 +228,10 @@ fn run_pdf(
         _ => None,
     };
     let mut pipeline = match docling_pdf::Pipeline::new().map(|p| {
+        let p = match settings.ocr_textline_orientation {
+            Some(enable) => p.ocr_textline_orientation(enable),
+            None => p,
+        };
         p.no_table_former(settings.no_table_former)
             .no_text_panels(settings.no_text_panels)
             // docling-pdf's pre-2.0 names (see `DocumentConverter::ml_pipeline`).

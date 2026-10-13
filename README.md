@@ -1517,6 +1517,14 @@ let converter = DocumentConverter::new()
   pipeline's own — the PP-OCR recognizer with the `ocr_det.onnx` line
   detector when installed, read at docling's image resolution, or Tesseract
   under `--ocr-engine tesseract` — so `ocr_lang` / `ocr_scale` apply.
+* **Resolution and orientation** (#666). `--picture-ocr-scale X` reads the
+  pictures at X px per picture pixel under RapidOCR's 2000 px cap — `1.0`
+  is RapidOCR's own native-pixel reading, where the default upscales a
+  720 × 180 screenshot to 2000 × 500. `--ocr-textline-orientation` adds
+  RapidOCR's line handling: oriented crops, tall lines turned 90°,
+  upside-down lines turned by the 0/180 classifier
+  (`.models/ocr_textline_ori.onnx`) — vertical axis titles, rotated
+  headers and sideways photos read. It applies to scanned pages too.
 * **`--no-picture-images`** (`keep_picture_images(false)`) drops the image
   bytes from every picture after the pass: a slim JSON/DCLX and a
   placeholder-only Markdown with the text kept.
@@ -1524,12 +1532,14 @@ let converter = DocumentConverter::new()
   model, or in a build without the `pdf` feature, one warning and no text —
   the conversion succeeds.
 
-The same four switches exist on every surface: the docling-serve request
+The same switches exist on every surface: the docling-serve request
 options (`do_picture_ocr`, `picture_ocr_classes`, `picture_ocr_min_side`,
-`keep_picture_images` — query, multipart or JSON body), the Python kwargs
-(also on `PdfPipelineOptions`; `picture_ocr_classes` takes a list or the
+`picture_ocr_scale`, `ocr_textline_orientation`, `keep_picture_images` —
+query, multipart or JSON body), the Python kwargs (also on
+`PdfPipelineOptions`; `picture_ocr_classes` takes a list or the
 comma-separated string) and the Node options (`doPictureOcr`,
-`pictureOcrClasses`, `pictureOcrMinSide`, `keepPictureImages`).
+`pictureOcrClasses`, `pictureOcrMinSide`, `pictureOcrScale`,
+`ocrTextlineOrientation`, `keepPictureImages`).
 ### PII redaction (`--redact-pii`)
 
 A converted document feeds search and RAG pipelines — Markdown, chunks,

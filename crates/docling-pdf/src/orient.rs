@@ -173,12 +173,20 @@ pub(crate) fn rotate_boxes(boxes: &[DetBox], w: f32, h: f32, deg: u16) -> Vec<De
                 270 => (h - d.b, d.l, h - d.t, d.r),
                 _ => (d.l, d.t, d.r, d.b),
             };
+            // The quad's corners follow the same pixels (#666).
+            let point = |(x, y): (f32, f32)| match deg {
+                90 => (y, w - x),
+                180 => (w - x, h - y),
+                270 => (h - y, x),
+                _ => (x, y),
+            };
             DetBox {
                 l,
                 t,
                 r,
                 b,
                 score: d.score,
+                quad: crate::ocr_det::order_corners(d.quad.map(point)),
             }
         })
         .collect()
@@ -262,13 +270,7 @@ mod tests {
     /// `rotate90` put those pixels, and un-rotating by 0 is the identity.
     #[test]
     fn boxes_rotate_with_the_image() {
-        let bx = DetBox {
-            l: 10.0,
-            t: 5.0,
-            r: 50.0,
-            b: 15.0,
-            score: 0.9,
-        };
+        let bx = DetBox::rect(10.0, 5.0, 50.0, 15.0, 0.9);
         let at = |deg: u16| {
             let r = rotate_boxes(std::slice::from_ref(&bx), 100.0, 60.0, deg);
             (r[0].l, r[0].t, r[0].r, r[0].b)

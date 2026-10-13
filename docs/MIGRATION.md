@@ -578,8 +578,15 @@ These are deliberate or unavoidable divergences, not bugs.
      regions (RapidOCR's crops; projection strips only as the fallback) and
      drops lines under RapidOCR's `text_score`; the remaining differences are
      the crop geometry (axis-aligned box vs RapidOCR's perspective crop of the
-     quad), RapidOCR's batch width padding and its angle classifier, which is
-     not run. **Tesseract**
+     quad), RapidOCR's batch width padding and its angle classifier — the
+     first and last of which `ocr_textline_orientation` (#666, off by
+     default, every surface) closes: the perspective crop of the quad
+     (`get_rotate_crop_image`, bicubic, replicated borders), the 90° turn of
+     crops ≥ 1.5× taller than wide, and the PP-LCNet text-line orientation
+     classifier (`ocr_textline_ori.onnx`, RapidOCR's `Cls` for PP-OCRv5:
+     80 × 160 BGR, batches of 6 by aspect ratio, `180` above 0.9). The
+     reported boxes stay axis-aligned. Python maps docling's
+     `RapidOcrOptions.use_cls` onto it when set. **Tesseract**
      (#460, `--ocr-engine tesseract` / `ocr_engine` on every surface) is the
      alternative — docling's `TesseractCliOcrOptions` port: the system binary,
      one subprocess per layout-region crop with `tsv` output, its own
@@ -1006,7 +1013,14 @@ deliberate scope boundary or a cosmetic, single-fixture polish gap.
   so a DOCX (walked into both the flat nodes and the item tree) or a slide
   master's logo is read once. `picture_ocr.docx` (a 720 × 180 two-line
   screenshot and a 16 × 16 icon) is the fixture; the e2e test also reads
-  the text drawn into a generated video clip's frame.
+  the text drawn into a generated video clip's frame. Pictures read at
+  docling's image resolution unless `picture_ocr_scale` (#666; every
+  surface, `DOCLING_RS_PICTURE_OCR_SCALE`) sets their own: px per picture
+  pixel under RapidOCR's 2000 px cap — `1.0` is RapidOCR's native-pixel
+  reading (RapidOCR being the reference here, since docling never OCRs
+  these pictures), where the default reads a 720 × 180 screenshot at
+  2000 × 500. `ocr_textline_orientation` reads their vertical, skewed and
+  upside-down lines (`tests/fixtures/textline/`).
 - **Video frame sampling tunables** (#647) — docling's video path is the
   transcript; the frames are a docling.rs extension (#138), and their
   sampling now takes options on every surface: `video_frames=all` (every

@@ -326,6 +326,34 @@ def test_sparse_sheet_kwargs_forward_to_engine():
     assert sparse < dense
 
 
+def test_picture_ocr_scale_and_textline_orientation_forward():
+    """#666: picture_ocr_scale / ocr_textline_orientation reach the native
+    converter (a bad scale is its validation error), directly and on
+    PdfPipelineOptions; docling's RapidOcrOptions.use_cls maps onto the
+    orientation switch."""
+    from types import SimpleNamespace
+
+    from docling_rs import DocumentConverter, InputFormat, PdfFormatOption
+    from docling_rs.options import PdfPipelineOptions
+
+    DocumentConverter(picture_ocr_scale=1.0, ocr_textline_orientation=True)
+    with pytest.raises(Exception, match="picture_ocr_scale"):
+        DocumentConverter(picture_ocr_scale=0.0)
+    opts = PdfPipelineOptions(picture_ocr_scale=-2.0, ocr_textline_orientation=True)
+    with pytest.raises(Exception, match="picture_ocr_scale"):
+        DocumentConverter(
+            format_options={InputFormat.PDF: PdfFormatOption(pipeline_options=opts)}
+        )
+    shaped = SimpleNamespace(
+        do_ocr=True,
+        do_table_structure=True,
+        ocr_options=SimpleNamespace(use_cls=True, lang=[]),
+    )
+    DocumentConverter(
+        format_options={InputFormat.PDF: PdfFormatOption(pipeline_options=shaped)}
+    )
+
+
 def test_ocr_kwargs_forward_and_validate():
     """#274 follow-through for #254: ocr_mode / ocr_scale reach the native
     converter (which validates them), directly and docling-shaped via
@@ -399,6 +427,8 @@ def test_ensure_env_leaves_ocr_lang_selectable(tmp_path, monkeypatch):
     assert m._OPTIONAL["ocr_rec_en.onnx"] == "models/ocr_rec_en.onnx"
     assert m._OPTIONAL["ocr_det.onnx"] == "models/ocr_det.onnx"
     assert "models/ocr_det.onnx" in m._FALLBACK_URLS
+    assert m._OPTIONAL["ocr_textline_ori.onnx"] == "models/ocr_textline_ori.onnx"
+    assert "models/ocr_textline_ori.onnx" in m._FALLBACK_URLS
     assert m._OPTIONAL["ocr_rec_v6.onnx"] == "models/ocr_rec_v6.onnx"
     assert m._OPTIONAL["ocr_rec_v6_dict.txt"] == "models/ocr_rec_v6_dict.txt"
     assert "models/ocr_rec_v6.onnx" in m._FALLBACK_URLS

@@ -20,7 +20,7 @@ use image::RgbImage;
 
 use crate::layout::Region;
 use crate::pdfium_backend::TextCell;
-use crate::{ocr, ocr_input, page_ocr_scale, EnrichSlot, PdfError, Pipeline};
+use crate::{ocr, ocr_input, page_ocr_scale, EnrichSlot, PdfError, Pipeline, RAPIDOCR_MAX_SIDE};
 
 /// What the OCR read off one picture: the lines in reading order (top to
 /// bottom, left to right within a row, rows joined by `\n`) and the engine
@@ -78,8 +78,12 @@ impl Pipeline {
             return Ok(None);
         }
         // The image is its own page at 1 px per point; the OCR reads it at
+        // `picture_ocr_scale` under RapidOCR's 2000 px cap (#666), else at
         // docling's image resolution unless `ocr_scale` says otherwise.
-        let ocr_scale = page_ocr_scale(self.ocr_scale, w, h, 1.0);
+        let ocr_scale = match self.picture_ocr_scale {
+            Some(p) => picture_ocr_scale(p, w, h),
+            None => page_ocr_scale(self.ocr_scale, w, h, 1.0),
+        };
         let mut cache = None;
         let (view, scale) = ocr_input(&mut cache, img, 1.0, ocr_scale);
         let region = Region {
@@ -109,6 +113,16 @@ impl Pipeline {
         let text = lines_text(cells.into_iter().map(|(c, _)| c).collect());
         Ok((!text.is_empty()).then_some(PictureText { text, provenance }))
     }
+}
+
+/// The px/px a picture reads at under `picture_ocr_scale` = `p` (#666):
+/// `p`, shrunk so the longer side stays within RapidOCR's 2000 px
+/// (`max_side_len`) — at `1.0`, RapidOCR's own rule: native pixels, only
+/// shrinking what exceeds the cap. `None` when that is the picture's own
+/// resolution (no resample).
+fn picture_ocr_scale(p: f32, w: f32, h: f32) -> Option<f32> {
+    let s = p.min(RAPIDOCR_MAX_SIDE / w.max(h));
+    ((s - 1.0).abs() > 1e-3).then_some(s)
 }
 
 /// Join OCR line cells into text in reading order: rows top to bottom, cells
@@ -169,5 +183,26 @@ mod tests {
         ];
         assert_eq!(lines_text(cells), "left right\nbelow");
         assert_eq!(lines_text(Vec::new()), "");
+    }
+
+    /// #666: `picture_ocr_scale(1.0)` is RapidOCR's rule — a 720 × 180
+    /// screenshot reads at its own 720 × 180 (no resample, where the default
+    /// upscales it to 2000 × 500), a 3000 × 1000 one shrinks to 2000 × 667.
+    #[test]
+    fn picture_scale_reads_native_pixels_under_the_2000_px_cap() {
+        let dims = |p: f32, w: f32, h: f32| {
+            let s = picture_ocr_scale(p, w, h).unwrap_or(1.0);
+            ((w * s).round(), (h * s).round())
+        };
+        assert_eq!(picture_ocr_scale(1.0, 720.0, 180.0), None);
+        assert_eq!(dims(1.0, 3000.0, 1000.0), (2000.0, 667.0));
+        assert_eq!(dims(2.0, 720.0, 180.0), (1440.0, 360.0));
+        assert_eq!(dims(2.0, 1280.0, 720.0), (2000.0, 1125.0));
+        // The default rule, for comparison: 3 px/pt under the cap.
+        let default = page_ocr_scale(None, 720.0, 180.0, 1.0).unwrap();
+        assert_eq!(
+            ((720.0 * default).round(), (180.0 * default).round()),
+            (2000.0, 500.0)
+        );
     }
 }
