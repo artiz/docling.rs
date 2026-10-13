@@ -194,6 +194,11 @@ use axum::http::{header, HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::{Json, Router};
+// The core SSRF guard: a resolved address back into the local host or
+// infrastructure (`http://169.254.169.254/…`, `http://127.0.0.1:…`) is
+// refused. The block-list is the library's, shared with the image resolver
+// and the MCP server's URL inputs (#669).
+use docling::fetch::is_blocked_ip;
 use docling::{
     ConversionError, DoclingDocument, DocumentConverter, ImageMode, InputFormat, Pipeline,
     SourceDocument,
@@ -2312,37 +2317,6 @@ fn max_fetch_bytes() -> u64 {
 /// leave it unset in production.
 fn allow_private_ip_fetch() -> bool {
     docling_core::env::flag("DOCLING_RS_ALLOW_PRIVATE_IP_FETCH")
-}
-
-/// Reject a resolved IP that points back into the local host or infrastructure.
-/// This is the core SSRF guard: without it, `{"url": "http://169.254.169.254/…"}`
-/// or `http://127.0.0.1:…` would let a caller reach cloud metadata and internal
-/// services from the server's network position.
-fn is_blocked_ip(ip: std::net::IpAddr) -> bool {
-    use std::net::IpAddr;
-    match ip {
-        IpAddr::V4(v4) => {
-            v4.is_loopback()
-                || v4.is_private()
-                || v4.is_link_local()
-                || v4.is_unspecified()
-                || v4.is_broadcast()
-                || v4.is_documentation()
-                // Carrier-grade NAT 100.64.0.0/10.
-                || (v4.octets()[0] == 100 && (v4.octets()[1] & 0xc0) == 64)
-        }
-        IpAddr::V6(v6) => {
-            v6.is_loopback()
-                || v6.is_unspecified()
-                // Unique-local fc00::/7 and link-local fe80::/10.
-                || (v6.segments()[0] & 0xfe00) == 0xfc00
-                || (v6.segments()[0] & 0xffc0) == 0xfe80
-                // IPv4-mapped (::ffff:a.b.c.d): re-check the embedded v4.
-                || v6
-                    .to_ipv4_mapped()
-                    .is_some_and(|v4| is_blocked_ip(IpAddr::V4(v4)))
-        }
-    }
 }
 
 /// SSRF pre-check shared by every request-supplied outbound URL — URL inputs

@@ -28,6 +28,10 @@ mod converter;
 pub mod dclx;
 pub mod email_attachments;
 mod error;
+// Bounded URL download with the SSRF guard on every hop (#669), on the
+// HTTP client the image resolver already pulls in.
+#[cfg(feature = "fetch-images")]
+pub mod fetch;
 mod format;
 pub mod options;
 mod redact;

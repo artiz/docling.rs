@@ -3,7 +3,8 @@
 Every way of driving docling.rs — the `docling-rs` CLI, `docling-rs serve` /
 `docling-serve` (query string, JSON body or multipart text parts), the
 Python `docling_rs.DocumentConverter`, the Node `docling.rs` package, the C
-ABI (`docling-ffi`) and the wasm module (`convert_with_options`) — speaks
+ABI (`docling-ffi`), the wasm module (`convert_with_options`) and the MCP
+server's `convert` tool (`options`, #669) — speaks
 the same conversion options: the fields of
 [`docling::ConvertOptions`](../crates/docling/src/options.rs) (#577).
 Validation (`ConvertOptions::validate`) and the mapping onto the converter

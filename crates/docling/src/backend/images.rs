@@ -592,35 +592,6 @@ pub(crate) fn from_data_uri(uri: &str) -> Option<PictureImage> {
     build_picture(mime, data)
 }
 
-/// Whether a resolved IP points back at the local host or private
-/// infrastructure — the SSRF block-list (mirrors docling-serve's URL-fetch
-/// guard, so a document that points `<img src>` at an internal address can't
-/// reach it when image fetching runs on a server).
-#[cfg(feature = "fetch-images")]
-fn is_blocked_ip(ip: std::net::IpAddr) -> bool {
-    use std::net::IpAddr;
-    match ip {
-        IpAddr::V4(v4) => {
-            v4.is_loopback()
-                || v4.is_private()
-                || v4.is_link_local()
-                || v4.is_unspecified()
-                || v4.is_broadcast()
-                || v4.is_documentation()
-                || (v4.octets()[0] == 100 && (v4.octets()[1] & 0xc0) == 64)
-        }
-        IpAddr::V6(v6) => {
-            v6.is_loopback()
-                || v6.is_unspecified()
-                || (v6.segments()[0] & 0xfe00) == 0xfc00
-                || (v6.segments()[0] & 0xffc0) == 0xfe80
-                || v6
-                    .to_ipv4_mapped()
-                    .is_some_and(|v4| is_blocked_ip(IpAddr::V4(v4)))
-        }
-    }
-}
-
 /// `true` when the URL's host resolves to a blocked address and the operator
 /// hasn't opted out with `DOCLING_RS_ALLOW_PRIVATE_IP_FETCH` (the same flag
 /// docling-serve's URL fetch honors, for local/intranet development). The
@@ -641,7 +612,8 @@ fn blocked_by_ssrf_guard(url: &str) -> bool {
     };
     let port = parsed.port_or_known_default().unwrap_or(80);
     match (host, port).to_socket_addrs() {
-        Ok(addrs) => addrs.map(|a| a.ip()).any(is_blocked_ip),
+        // The block-list docling-serve and the URL inputs (#669) share.
+        Ok(addrs) => addrs.map(|a| a.ip()).any(crate::fetch::is_blocked_ip),
         // Unresolvable host: nothing to fetch — treat as blocked (skip).
         Err(_) => true,
     }
@@ -752,8 +724,9 @@ pub(crate) fn build_picture(mimetype: impl Into<String>, data: Vec<u8>) -> Optio
     })
 }
 
-/// Minimal `%XX` percent-decoding for non-base64 `data:` URIs (rare for images).
-fn percent_decode(s: &str) -> Vec<u8> {
+/// Minimal `%XX` percent-decoding for non-base64 `data:` URIs (rare for
+/// images) — and URL path segments in [`crate::fetch`].
+pub(crate) fn percent_decode(s: &str) -> Vec<u8> {
     let b = s.as_bytes();
     let mut out = Vec::with_capacity(b.len());
     let mut i = 0;

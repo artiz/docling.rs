@@ -158,6 +158,9 @@ and recognizer, ONNX) — no API key, nothing leaves the machine.
 `from docling_rs.markitdown import MarkItDown`: MarkItDown's `convert*`
 methods, `StreamInfo`, result and exceptions over the docling.rs engine
 ([migration notes](./crates/docling-py/README.md#migrating-from-markitdown)).
+Using MarkItDown's MCP server? `docling-rs mcp` serves the same
+`convert_to_markdown(uri)` tool from one binary
+([MCP server](#mcp-server--docling-rs-mcp)).
 
 ## Conformance with Python docling
 
@@ -661,6 +664,74 @@ curl -H 'content-type: application/json' localhost:5001/v1/convert/source \
           "options": {"to_formats": ["md"], "do_ocr": false}}'  # needs --allow-url-fetch
 ```
 
+## MCP server — `docling-rs mcp`
+
+`docling-rs mcp` (#669) is a [Model Context Protocol](https://modelcontextprotocol.io)
+server, so agents — Claude Desktop, Claude Code, Cursor, VS Code, any MCP
+client — convert documents themselves. It is in the default build: the
+release binaries, `cargo install docling-cli` and the `ghcr.io/docling-project/docling-rs`
+image all carry it, no Python needed. Three tools:
+
+| Tool | What it returns |
+|---|---|
+| `convert_to_markdown(uri)` | Markdown of the document behind an `http:`/`https:`/`file:`/`data:` URI or a path — **MarkItDown's MCP tool, same name and contract**, so a `markitdown-mcp` setup switches by changing the command |
+| `convert(uri, to?, images?, options?)` | `to` = `md` (default), `json` (docling's `DoclingDocument`), `html`, `text`, `latex`, `chunks`, `vtt`, `pandoc`; `options` = the [shared conversion options](./docs/OPTIONS.md) (`{"pages": "1-5"}`, `{"text_layer_only": true}`, `{"ocr_lang": "ch"}`, `{"password": "…"}`, …) |
+| `list_input_formats()` | the extensions this server converts |
+
+Claude Desktop (`claude_desktop_config.json`) or any client that launches
+stdio servers:
+
+```json
+{
+  "mcpServers": {
+    "docling": {
+      "command": "docling-rs",
+      "args": ["mcp", "--root", "/Users/me/Documents"]
+    }
+  }
+}
+```
+
+```bash
+claude mcp add docling -- docling-rs mcp --root ~/Documents     # Claude Code
+```
+
+The container image has the models baked in; mount the folder at the same
+path inside so the paths the agent sees are the paths the server reads:
+
+```json
+{
+  "mcpServers": {
+    "docling": {
+      "command": "docker",
+      "args": ["run", "-i", "--rm", "-v", "/Users/me/Documents:/Users/me/Documents",
+               "ghcr.io/docling-project/docling-rs", "mcp", "--root", "/Users/me/Documents"]
+    }
+  }
+}
+```
+
+Streamable HTTP instead of stdio, for clients that connect to a URL:
+`docling-rs mcp --http` serves `http://127.0.0.1:3001/mcp` (`--host`,
+`--port`; `--bearer-token` or `DOCLING_RS_MCP_TOKEN` to require
+`Authorization: Bearer …`).
+
+What a tool call may reach is the operator's decision, not the model's:
+local paths and `file:` URIs are confined to `--root` (repeatable; the
+working directory by default, checked before and after resolving symlinks);
+`http(s)` URLs — and remote images, a request-supplied `vlm_endpoint` — only
+with `--allow-url-fetch`, through the SSRF block-list on every redirect hop
+with a 256 MiB / 300 s cap; `--http` refuses a non-loopback bind without
+`--allow-remote` and checks `Host`/`Origin` on loopback. Details in
+[docs/SECURITY.md](./docs/SECURITY.md#docling-rs-mcp-model-context-protocol-server-669).
+Markdown comes with compact tables (fewer tokens; `"compact_tables": false`
+for docling's padded ones). Without the layout models (a bare release
+binary — fetch them with `scripts/install/download_dependencies.sh`, or point
+`DOCLING_RS_MODELS_DIR` at a `.models` directory in the client's `env`), PDFs
+convert from their text layer, as MarkItDown's do, instead of failing.
+Calls carrying a progress token get a heartbeat every 10 s while a long PDF
+converts.
+
 ## In the browser — `docling-wasm`
 
 The declarative converters (everything except the PDF/image/audio ML
@@ -705,6 +776,7 @@ One engine, several front doors. Every surface takes the same options
 | Python | `docling-rs` — a drop-in for docling's `DocumentConverter` over the Rust engine | `pip install docling-rs` (`docling-rs-cuda` for GPU) | [Python bindings](#python-bindings), [migration guide](./crates/docling-py/README.md#migrating-from-python-docling) |
 | the browser / Tauri / a PWA | `docling.rs-wasm`: `convert(bytes, name, to)` fully client-side, optional in-browser OCR/layout | `npm i docling.rs-wasm` | [In the browser](#in-the-browser--docling-wasm), [crate README](./crates/docling-wasm/README.md) |
 | C, C++, C#/.NET, Go, Java, Swift, Zig, … | `docling-ffi`: `docling_convert(bytes, len, filename, options_json)` behind one `docling.h` | [release archives](https://github.com/docling-project/docling.rs/releases) `docling-ffi-<tag>-<target>` (library + header) | [C ABI](#c-abi-for-embedders--docling-ffi), [language quickstarts](./crates/docling-ffi/README.md#language-quickstarts) |
+| an AI agent (Claude Desktop / Code, Cursor, VS Code, any MCP client) | `docling-rs mcp`: `convert_to_markdown` (MarkItDown's MCP tool), `convert`, `list_input_formats` over stdio or Streamable HTTP | in the `docling-rs` binary / image | [MCP server](#mcp-server--docling-rs-mcp) |
 | a RAG stack | `docling-rag`: chunk → embed → search, REST API and web UI | `cargo install docling-rag` | [RAG subsystem](#rag-subsystem) |
 | a LangChain pipeline | `docling_rs.langchain.DoclingLoader` — langchain-docling's loader (and picture descriptions) on the Rust engine | `pip install "docling-rs[langchain]"` | [Python bindings](#python-bindings), [examples](./crates/docling-py/examples/langchain/) |
 

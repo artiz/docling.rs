@@ -289,6 +289,31 @@ impl InputFormat {
             .map(|&(_, format)| format)
     }
 
+    /// Format detection from the content alone, for an input whose name and
+    /// media type say nothing — a URL without an extension behind a generic
+    /// `Content-Type`, a file saved without one (#669). The markers are the
+    /// formats' own signatures, never heuristics: those of the converter's
+    /// retry after a failed conversion (#556 — PDF, RTF, OOXML / ODF / EPUB
+    /// packages, OLE Word / Excel / PowerPoint / Outlook files, HTML), DjVu's
+    /// `AT&TFORM`, and the PNG / JPEG / GIF / TIFF / WebP magic numbers.
+    /// `None` when nothing matches.
+    pub fn sniff(bytes: &[u8]) -> Option<Self> {
+        let image = bytes.starts_with(b"\x89PNG\r\n\x1a\n")
+            || bytes.starts_with(b"\xFF\xD8\xFF")
+            || bytes.starts_with(b"GIF87a")
+            || bytes.starts_with(b"GIF89a")
+            || bytes.starts_with(b"II*\0")
+            || bytes.starts_with(b"MM\0*")
+            || (bytes.len() >= 12 && &bytes[..4] == b"RIFF" && &bytes[8..12] == b"WEBP");
+        if image {
+            return Some(Self::Image);
+        }
+        if crate::backend::looks_like_djvu(bytes) {
+            return Some(Self::Djvu);
+        }
+        crate::sniff::detect(bytes)
+    }
+
     /// The file extensions that route to this format (lowercase, no dot), in
     /// [`EXTENSIONS`] order.
     pub fn extensions(self) -> impl Iterator<Item = &'static str> {
@@ -623,6 +648,46 @@ mod tests {
         assert_eq!(list.contains(&"heic"), cfg!(feature = "heif"));
         // Routed for its error message only (StarCalc is not converted).
         assert!(!list.contains(&"sdc"));
+    }
+
+    /// #669: content-only detection for inputs whose name and media type
+    /// say nothing — signatures only, so text without markup stays `None`.
+    #[test]
+    fn sniff_reads_signatures() {
+        let docx = std::fs::read(
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("../../tests/data/docx/sources/lorem_ipsum.docx"),
+        )
+        .unwrap();
+        assert_eq!(InputFormat::sniff(&docx), Some(InputFormat::Docx));
+        assert_eq!(
+            InputFormat::sniff(b"%PDF-1.7\n%..."),
+            Some(InputFormat::Pdf)
+        );
+        assert_eq!(
+            InputFormat::sniff(b"\x89PNG\r\n\x1a\n\0\0\0\rIHDR"),
+            Some(InputFormat::Image)
+        );
+        assert_eq!(
+            InputFormat::sniff(b"\xFF\xD8\xFF\xE0\0\x10JFIF"),
+            Some(InputFormat::Image)
+        );
+        assert_eq!(
+            InputFormat::sniff(b"RIFF\0\0\0\0WEBPVP8 "),
+            Some(InputFormat::Image)
+        );
+        assert_eq!(
+            InputFormat::sniff(b"<!DOCTYPE html><html><body>x</body></html>"),
+            Some(InputFormat::Html)
+        );
+        assert_eq!(
+            InputFormat::sniff(b"{\\rtf1\\ansi x}"),
+            Some(InputFormat::Rtf)
+        );
+        assert_eq!(InputFormat::sniff(b"just some words"), None);
+        assert_eq!(InputFormat::sniff(b""), None);
+        // A WAV file is a RIFF container too — not an image.
+        assert_eq!(InputFormat::sniff(b"RIFF\0\0\0\0WAVEfmt "), None);
     }
 
     #[test]

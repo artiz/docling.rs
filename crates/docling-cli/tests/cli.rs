@@ -38,7 +38,9 @@ fn version_lists_compiled_features() {
     let (_, stdout, _) = run(&["--version"]);
     #[cfg(feature = "chunking")]
     assert!(stdout.contains("chunking"), "{stdout:?}");
-    #[cfg(not(feature = "chunking"))]
+    #[cfg(feature = "mcp")]
+    assert!(stdout.contains("mcp"), "{stdout:?}");
+    #[cfg(not(any(feature = "chunking", feature = "mcp")))]
     assert!(!stdout.contains('('), "{stdout:?}");
 }
 
