@@ -141,15 +141,6 @@ VECTORS = [
 ]
 
 
-def _has_charset_normalizer():
-    try:
-        import charset_normalizer  # noqa: F401
-
-        return True
-    except ImportError:
-        return False
-
-
 @pytest.fixture(scope="module")
 def md():
     with warnings.catch_warnings():
@@ -206,8 +197,8 @@ def test_vectors(md, v, mode):
             with open(local, "rb") as fh:
                 result = md.convert(fh, stream_info=info)
         elif mode == "stream_no_hints":
-            if v.charset and not _has_charset_normalizer():
-                pytest.skip("charset detection without a hint needs charset_normalizer (#675)")
+            # #675: the engine guesses a non-Latin charset itself, so a
+            # cp932 stream converts with or without charset_normalizer.
             with open(local, "rb") as fh:
                 result = md.convert(fh)
         elif mode == "file_uri":

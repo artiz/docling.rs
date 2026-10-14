@@ -293,7 +293,9 @@ impl PyDocumentConverter {
     /// * `encoding` — character encoding of text inputs (Markdown, CSV,
     ///   AsciiDoc, WebVTT, XML, …), docling's `TextBackendOptions.encoding`:
     ///   a WHATWG label or Python codec name (`"shift_jis"`, `"koi8-r"`).
-    ///   `None` (default) detects — BOM, UTF-8, then windows-1252; bytes the
+    ///   `None` (default) detects — BOM, UTF-8, a statistical guess for a
+    ///   non-Latin encoding (Shift_JIS, GBK, KOI8-R, …; #675), else
+    ///   windows-1252; bytes the
     ///   requested encoding cannot decode raise.
     /// * `ipynb_outputs` — Jupyter notebooks (#673): `"none"` (default, the
     ///   notebook as written) or `"text"` (stream and `text/plain` results

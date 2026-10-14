@@ -224,11 +224,20 @@ impl SourceDocument {
     /// be UTF-8; when it is not, the share of non-ASCII bytes that still form
     /// well-formed UTF-8 sequences decides: at 50% or more the file reads as
     /// *damaged* UTF-8 and is an error (decoding it as a code page would turn
-    /// the damage into text that looks fine and is not), below that it is the
-    /// one code page docling falls back to, windows-1252 — decoded with a
-    /// warning, or an error on the five bytes that page leaves undefined
-    /// (Python's `cp1252` rejects them where the WHATWG table maps them to
-    /// C1 controls). Borrowed when the bytes are already UTF-8.
+    /// the damage into text that looks fine and is not); below that the
+    /// encoding is guessed statistically (#675, `chardetng` — Firefox's
+    /// detector, what MarkItDown asks `charset_normalizer` for): a guess of
+    /// a non-Latin encoding — Shift_JIS, EUC-JP, GBK, Big5, EUC-KR, KOI8-R,
+    /// windows-1251, Greek, Hebrew, Arabic, Thai, … — that decodes cleanly
+    /// into letters is taken, with a warning naming it; otherwise the file
+    /// is the one code page docling falls back to, windows-1252 — decoded
+    /// with a warning, or an error on the five bytes that page leaves
+    /// undefined (Python's `cp1252` rejects them where the WHATWG table
+    /// maps them to C1 controls). A Latin code page other than 1252
+    /// (windows-1250, ISO-8859-2, Turkish, Baltic) is not guessed — its
+    /// bytes read as text under 1252 either way, as they always did — so
+    /// name it with `encoding`, which wins over every guess. Borrowed when
+    /// the bytes are already UTF-8.
     pub fn text(&self) -> Result<Cow<'_, str>, ConversionError> {
         match &self.encoding {
             Some(label) => decode_text_as(&self.bytes, label),
@@ -314,6 +323,17 @@ pub(crate) fn decode_text(bytes: &[u8]) -> Result<Cow<'_, str>, ConversionError>
                     coverage * 100.0
                 )));
             }
+            // A legacy encoding of another script (#675): Firefox's detector
+            // on the bytes, taken when it names a non-Latin encoding that
+            // decodes them cleanly into letters.
+            if let Some((encoding, text)) = guess_legacy_encoding(bytes) {
+                eprintln!(
+                    "warning: input is not UTF-8; it reads as {} and was decoded as that — pass \
+                     encoding=… if it is another encoding",
+                    encoding.name()
+                );
+                return Ok(Cow::Owned(text));
+            }
             // Python's cp1252 has no mapping for these five bytes.
             if bytes
                 .iter()
@@ -333,6 +353,58 @@ pub(crate) fn decode_text(bytes: &[u8]) -> Result<Cow<'_, str>, ConversionError>
             Ok(Cow::Owned(text.into_owned()))
         }
     }
+}
+
+/// The statistical guess for bytes that are not UTF-8 (#675): `chardetng`
+/// (Firefox's detector) on the whole input, UTF-8 and ISO-2022-JP ruled
+/// out. Accepted only for an encoding of a non-Latin script — the Latin
+/// code pages share their letters with windows-1252, which stays the
+/// fallback for them (docling's behaviour, and the one the `encoding`
+/// option overrides) — and only when the bytes decode without error into
+/// at least three non-ASCII characters of which four in five are letters
+/// or digits: a short or odd file is not guessed either.
+fn guess_legacy_encoding(bytes: &[u8]) -> Option<(&'static encoding_rs::Encoding, String)> {
+    use encoding_rs::*;
+    let mut detector = chardetng::EncodingDetector::new(chardetng::Iso2022JpDetection::Deny);
+    detector.feed(bytes, true);
+    let encoding = detector.guess(None, chardetng::Utf8Detection::Deny);
+    const NON_LATIN: &[&Encoding] = &[
+        SHIFT_JIS,
+        EUC_JP,
+        GBK,
+        GB18030,
+        BIG5,
+        EUC_KR,
+        KOI8_R,
+        KOI8_U,
+        IBM866,
+        WINDOWS_1251,
+        ISO_8859_5,
+        WINDOWS_1253,
+        ISO_8859_7,
+        WINDOWS_1255,
+        ISO_8859_8,
+        ISO_8859_8_I,
+        WINDOWS_1256,
+        ISO_8859_6,
+        WINDOWS_874,
+    ];
+    if !NON_LATIN.contains(&encoding) {
+        return None;
+    }
+    let (text, malformed) = encoding.decode_without_bom_handling(bytes);
+    if malformed {
+        return None;
+    }
+    let non_ascii: Vec<char> = text.chars().filter(|c| !c.is_ascii()).collect();
+    let letters = non_ascii
+        .iter()
+        .filter(|c| c.is_alphabetic() || c.is_numeric())
+        .count();
+    if non_ascii.len() < 3 || letters * 5 < non_ascii.len() * 4 {
+        return None;
+    }
+    Some((encoding, text.into_owned()))
 }
 
 /// Python's `utf-32` codec on the bytes after the mark.
@@ -426,7 +498,8 @@ mod decode_tests {
 
     /// docling#4202: a BOM settles the encoding (and is dropped); UTF-8 is
     /// borrowed; a legacy single-byte file decodes as windows-1252; damaged
-    /// UTF-8 and bytes cp1252 leaves undefined are errors, not guesses.
+    /// UTF-8 and bytes cp1252 leaves undefined are errors, not guesses —
+    /// and a legacy encoding of another script is guessed (#675).
     #[test]
     fn text_documents_decode_like_docling() {
         assert_eq!(decode_text("caf\u{e9}".as_bytes()).unwrap(), "caf\u{e9}");
@@ -449,5 +522,26 @@ mod decode_tests {
         assert!(damaged.unwrap_err().to_string().contains("damaged UTF-8"));
         // A byte cp1252 does not define.
         assert!(decode_text(b"x\x81y").is_err());
+        // #675: Shift_JIS, KOI8-R and GBK text is read as such, with the
+        // bytes' own letters; Western text keeps the windows-1252 reading.
+        let sjis = "名前,年齢,住所\n佐藤太郎,30,東京\n髙橋淳,35,名古屋\n";
+        let (bytes, _, _) = encoding_rs::SHIFT_JIS.encode(sjis);
+        assert_eq!(decode_text(&bytes).unwrap(), sjis);
+        let koi = "Отчёт о командировке: встречи с заказчиком, обсуждение сроков.";
+        let (bytes, _, _) = encoding_rs::KOI8_R.encode(koi);
+        assert_eq!(decode_text(&bytes).unwrap(), koi);
+        let gbk = "本周完成了数据导入模块的开发，并与测试团队一起验证了常见的输入格式。";
+        let (bytes, _, _) = encoding_rs::GBK.encode(gbk);
+        assert_eq!(decode_text(&bytes).unwrap(), gbk);
+        // Latin code pages stay windows-1252: Polish in windows-1250 reads
+        // with 1252's letters, as before, until `encoding` names it.
+        let (bytes, _, _) =
+            encoding_rs::WINDOWS_1250.encode("Zażółć gęślą jaźń, zażółć gęślą jaźń.");
+        let (want, _) = encoding_rs::WINDOWS_1252.decode_without_bom_handling(&bytes);
+        assert_eq!(decode_text(&bytes).unwrap(), want);
+        assert_eq!(
+            decode_text_as(&bytes, "windows-1250").unwrap(),
+            "Zażółć gęślą jaźń, zażółć gęślą jaźń."
+        );
     }
 }
