@@ -1,8 +1,9 @@
 # Publish the docling.rs MCP server (#669) to the official MCP registry
 # (registry.modelcontextprotocol.io — the catalog MCP clients and
-# downstream registries read) on every release:
-# server.json, with the release's version written in, as
-# `io.github.docling-project/docling-rs`.
+# downstream registries read): server.json, with the version written in, as
+# `io.github.docling-project/docling-rs`. pypi-publish.yml calls it after it
+# publishes a release tag's launcher (PyPI publishing is manual, so a GitHub
+# Release alone does not); run it by hand to repair a failed publish.
 #
 # The registry verifies every package server.json lists before accepting
 # the entry: the PyPI launcher `docling-rs-mcp` (its README carries the
@@ -16,12 +17,16 @@
 name: mcp registry
 
 on:
-  release:
-    types: [published]
+  workflow_call:
+    inputs:
+      version:
+        description: "Version to publish (e.g. 2.19.1); its release tag is checked out."
+        required: true
+        type: string
   workflow_dispatch:
     inputs:
       version:
-        description: "Version to publish (e.g. 2.19.1). Blank = the workspace version from the root Cargo.toml."
+        description: "Version to publish (e.g. 2.19.1); its release tag is checked out. Blank = the workspace version of the dispatched ref."
         required: false
         default: ""
 
@@ -32,8 +37,8 @@ jobs:
   publish:
     name: publish server.json
     # Only the canonical repository owns the io.github.docling-project
-    # namespace, and only `v<version>` releases are published.
-    if: github.repository == 'docling-project/docling.rs' && (github.event_name != 'release' || startsWith(github.event.release.tag_name, 'v'))
+    # namespace.
+    if: github.repository == 'docling-project/docling.rs'
     runs-on: ubuntu-latest
     timeout-minutes: 300
     permissions:
@@ -42,14 +47,13 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
-          ref: ${{ github.event.release.tag_name || github.ref }}
+          ref: ${{ inputs.version && format('v{0}', inputs.version) || github.ref }}
 
       - name: Resolve version
         id: v
         shell: bash
         run: |
           v="${{ inputs.version }}"
-          if [ -z "$v" ]; then v="${{ github.event.release.tag_name }}"; v="${v#v}"; fi
           if [ -z "$v" ]; then v="$(grep -m1 '^version = ' Cargo.toml | sed -E 's/.*"([^"]+)".*/\1/')"; fi
           echo "version=$v" >> "$GITHUB_OUTPUT"
           echo "Publishing server version $v"

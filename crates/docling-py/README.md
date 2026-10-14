@@ -39,9 +39,9 @@ Python code, unchanged. `docling-core` is a runtime dependency; nothing else fro
 docling is required for the declarative path.
 
 > **Status: experimental.** The PyPI distribution name is `docling-rs`.
-> Releases are published automatically (like the npm package) by the
-> [`pypi-publish`](../../.github/workflows/pypi-publish.yml) workflow whenever
-> CI cuts a GitHub Release — see [Publishing](#publishing) below. The crate is intentionally outside the repo's
+> Releases reach PyPI when the maintainer runs the
+> [`pypi-publish`](../../.github/workflows/pypi-publish.yml) workflow for them —
+> not every GitHub Release is published there; see [Publishing](#publishing) below. The crate is intentionally outside the repo's
 > Cargo workspace and its crates.io publish flow. For development, build and
 > install locally as shown next.
 
@@ -532,14 +532,18 @@ Runtime at run time, see the repo README's IBM Z section — and Windows x86-64;
 one wheel covers every Python ≥ 3.9) plus an
 sdist and the `docling-rs-cuda` wheel, and uploads them to PyPI at the release's
 version — then the pure-Python [`docling-rs-mcp`](./mcp/) launcher, pinned to
-that version, as its own PyPI project (`docs/MCP_REGISTRIES.md`). It can also be run by hand (`workflow_dispatch`) — to re-publish a
-version an automatic run skipped or failed on, or to publish a branch build;
-files already on PyPI are skipped, so re-runs are safe:
+that version, as its own PyPI project, and the MCP registry entry
+(`docs/MCP_REGISTRIES.md`). It runs **only by hand** (`workflow_dispatch`):
+a GitHub Release is cut on every merge, which would outgrow PyPI's per-project
+size limit (below) within weeks, so the maintainer publishes the releases
+worth it. Files already on PyPI are skipped, so re-runs are safe — within 14
+days of a release's first upload, after which PyPI accepts no new files for it:
 
 ```bash
 # From the Actions tab, or:
-gh workflow run pypi-publish.yml                 # version from the workspace Cargo.toml
-gh workflow run pypi-publish.yml -f tag=v0.16.0 -f cuda_wheel=true
+gh workflow run pypi-publish.yml -f tag=v2.23.0                     # a release, with docling-rs-cuda
+gh workflow run pypi-publish.yml -f tag=v2.23.0 -f cuda_wheel=false # without it
+gh workflow run pypi-publish.yml                                    # the dispatched ref at the workspace version
 ```
 
 No secrets: it publishes via PyPI **Trusted Publishing** (OIDC), like

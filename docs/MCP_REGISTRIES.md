@@ -29,17 +29,23 @@ same name everywhere, the registry's 100-character caps, the ownership
 markers in place, and every flag the catalogs pass one the server takes
 (checked against the binary's `--help`).
 
-## On every release (automatic)
+## On a PyPI publish
 
-1. `pypi-publish.yml` publishes the `docling-rs` wheels, then the
+PyPI publishing is manual (`gh workflow run pypi-publish.yml -f tag=vX.Y.Z`,
+crates/docling-py/README.md — a release per merge outgrew PyPI's project size
+limit), and the catalog entries follow it:
+
+1. `docker-publish.yml` has published the images on the GitHub Release; the
+   CLI image carries the registry label.
+2. `pypi-publish.yml` publishes the `docling-rs` wheels, then the
    `docling-rs-mcp` launcher pinned to that version (a separate job, so a
    launcher problem never holds back `docling-rs`).
-2. `docker-publish.yml` publishes the images; the CLI image carries the
-   registry label.
-3. `mcp-registry.yml` waits until `docling-rs-mcp==<version>` is on PyPI and
+3. For a release tag it then calls `mcp-registry.yml`, which waits until
+   `docling-rs-mcp==<version>` is on PyPI and
    `ghcr.io/docling-project/docling-rs:<version>` on GHCR, writes the version
-   into `server.json`, and publishes it with `mcp-publisher` — authenticated
-   by GitHub OIDC, no secret. It runs only in `docling-project/docling.rs`.
+   into `server.json` (from the release tag), and publishes it with
+   `mcp-publisher` — authenticated by GitHub OIDC, no secret. It runs only in
+   `docling-project/docling.rs`.
 
 ## One-time setup
 
@@ -48,8 +54,8 @@ markers in place, and every flag the catalogs pass one the server takes
    *Publishing* → *Add a new pending publisher*: project `docling-rs-mcp`,
    owner `docling-project`, repository `docling.rs`, workflow
    `pypi-publish.yml`, environment `pypi`. Until then
-   `publish-mcp-launcher` fails (nothing else does) and `mcp-registry.yml`
-   times out waiting for it; re-run both once it is set.
+   `publish-mcp-launcher` fails (nothing else does) and the registry step
+   never runs; re-run the failed jobs once it is set.
 2. **Official registry** — nothing: the OIDC token from this repository
    proves the `io.github.docling-project` namespace (the org already
    publishes `io.github.docling-project/docling-mcp` that way).
@@ -62,7 +68,7 @@ markers in place, and every flag the catalogs pass one the server takes
 
 ## Publishing by hand
 
-When a release needs a re-run (`mcp-registry.yml` has a `version` input on
+When a publish needs a re-run (`mcp-registry.yml` has a `version` input on
 *Run workflow*), or to publish from a laptop as a `docling-project` member:
 
 ```bash
