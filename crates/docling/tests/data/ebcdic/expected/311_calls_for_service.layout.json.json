@@ -16,13 +16,34 @@
   },
   "body": {
     "self_ref": "#/body",
-    "children": [],
+    "children": [
+      {
+        "$ref": "#/texts/0"
+      }
+    ],
     "content_layer": "body",
     "name": "_root_",
     "label": "unspecified"
   },
   "groups": [],
-  "texts": [],
+  "texts": [
+    {
+      "self_ref": "#/texts/0",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "code",
+      "prov": [],
+      "orig": "{\n  \"description\": \"311 service requests, single schema of character fields\",\n  \"records\": [\n    {\n      \"name\": \"main\",\n      \"fields\": [\n        {\n          \"name\": \"service_request_id\",\n          \"size\": 12\n        },\n        {\n          \"name\": \"status\",\n          \"size\": 6\n        },\n        {\n          \"name\": \"status_notes\",\n          \"size\": 126\n        },\n        {\n          \"name\": \"service_name\",\n          \"size\": 30\n        },\n        {\n          \"name\": \"service_code\",\n          \"size\": 10\n        },\n        {\n          \"name\": \"description\",\n          \"size\": 344\n        },\n        {\n          \"name\": \"agency_responsible\",\n          \"size\": 11\n        },\n        {\n          \"name\": \"service_notice\",\n          \"size\": 1\n        },\n        {\n          \"name\": \"requested_datetime\",\n          \"size\": 25\n        },\n        {\n          \"name\": \"updated_datetime\",\n          \"size\": 25\n        },\n        {\n          \"name\": \"expected_datetime\",\n          \"size\": 25\n        },\n        {\n          \"name\": \"address\",\n          \"size\": 130\n        },\n        {\n          \"name\": \"address_id\",\n          \"size\": 8\n        },\n        {\n          \"name\": \"zipcode\",\n          \"size\": 6\n        },\n        {\n          \"name\": \"long\",\n          \"size\": 14\n        },\n        {\n          \"name\": \"lat\",\n          \"size\": 14\n        },\n        {\n          \"name\": \"media_url\",\n          \"size\": 118\n        }\n      ]\n    }\n  ]\n}",
+      "text": "{\n  \"description\": \"311 service requests, single schema of character fields\",\n  \"records\": [\n    {\n      \"name\": \"main\",\n      \"fields\": [\n        {\n          \"name\": \"service_request_id\",\n          \"size\": 12\n        },\n        {\n          \"name\": \"status\",\n          \"size\": 6\n        },\n        {\n          \"name\": \"status_notes\",\n          \"size\": 126\n        },\n        {\n          \"name\": \"service_name\",\n          \"size\": 30\n        },\n        {\n          \"name\": \"service_code\",\n          \"size\": 10\n        },\n        {\n          \"name\": \"description\",\n          \"size\": 344\n        },\n        {\n          \"name\": \"agency_responsible\",\n          \"size\": 11\n        },\n        {\n          \"name\": \"service_notice\",\n          \"size\": 1\n        },\n        {\n          \"name\": \"requested_datetime\",\n          \"size\": 25\n        },\n        {\n          \"name\": \"updated_datetime\",\n          \"size\": 25\n        },\n        {\n          \"name\": \"expected_datetime\",\n          \"size\": 25\n        },\n        {\n          \"name\": \"address\",\n          \"size\": 130\n        },\n        {\n          \"name\": \"address_id\",\n          \"size\": 8\n        },\n        {\n          \"name\": \"zipcode\",\n          \"size\": 6\n        },\n        {\n          \"name\": \"long\",\n          \"size\": 14\n        },\n        {\n          \"name\": \"lat\",\n          \"size\": 14\n        },\n        {\n          \"name\": \"media_url\",\n          \"size\": 118\n        }\n      ]\n    }\n  ]\n}",
+      "captions": [],
+      "references": [],
+      "footnotes": [],
+      "code_language": "JSON"
+    }
+  ],
   "pictures": [],
   "tables": [],
   "key_value_items": [],

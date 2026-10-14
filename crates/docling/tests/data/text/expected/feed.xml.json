@@ -1,0 +1,52 @@
+{
+  "schema_name": "DoclingDocument",
+  "version": "1.10.0",
+  "name": "feed",
+  "origin": {
+    "mimetype": "text/plain",
+    "binary_hash": 1153451989585354341,
+    "filename": "feed"
+  },
+  "furniture": {
+    "self_ref": "#/furniture",
+    "children": [],
+    "content_layer": "furniture",
+    "name": "_root_",
+    "label": "unspecified"
+  },
+  "body": {
+    "self_ref": "#/body",
+    "children": [
+      {
+        "$ref": "#/texts/0"
+      }
+    ],
+    "content_layer": "body",
+    "name": "_root_",
+    "label": "unspecified"
+  },
+  "groups": [],
+  "texts": [
+    {
+      "self_ref": "#/texts/0",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "code",
+      "prov": [],
+      "orig": "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<rss version=\"2.0\">\n  <channel>\n    <title>Example Feed</title>\n    <link>https://example.com/</link>\n    <description>Release notes</description>\n    <item>\n      <title>docling.rs 2.23.0</title>\n      <link>https://example.com/2.23.0</link>\n      <description>Links ONNX Runtime 1.31 and reads plain text.</description>\n    </item>\n  </channel>\n</rss>",
+      "text": "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<rss version=\"2.0\">\n  <channel>\n    <title>Example Feed</title>\n    <link>https://example.com/</link>\n    <description>Release notes</description>\n    <item>\n      <title>docling.rs 2.23.0</title>\n      <link>https://example.com/2.23.0</link>\n      <description>Links ONNX Runtime 1.31 and reads plain text.</description>\n    </item>\n  </channel>\n</rss>",
+      "captions": [],
+      "references": [],
+      "footnotes": [],
+      "code_language": "XML"
+    }
+  ],
+  "pictures": [],
+  "tables": [],
+  "key_value_items": [],
+  "form_items": [],
+  "pages": {}
+}

@@ -16,13 +16,34 @@
   },
   "body": {
     "self_ref": "#/body",
-    "children": [],
+    "children": [
+      {
+        "$ref": "#/texts/0"
+      }
+    ],
     "content_layer": "body",
     "name": "_root_",
     "label": "unspecified"
   },
   "groups": [],
-  "texts": [],
+  "texts": [
+    {
+      "self_ref": "#/texts/0",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "code",
+      "prov": [],
+      "orig": "{\n  \"description\": \"Casinghead gas disposition, single schema of character fields\",\n  \"records\": [\n    {\n      \"name\": \"main\",\n      \"fields\": [\n        {\n          \"name\": \"GD-PR-DISTRICT\",\n          \"size\": 2\n        },\n        {\n          \"name\": \"GD-PR-LEASE-NO\",\n          \"size\": 5\n        },\n        {\n          \"name\": \"GD-PR-REPORT-CENT\",\n          \"size\": 2\n        },\n        {\n          \"name\": \"GD-PR-REPORT-YEAR\",\n          \"size\": 2\n        },\n        {\n          \"name\": \"GD-PR-REPORT-MONTH\",\n          \"size\": 2\n        },\n        {\n          \"name\": \"GD-PR-CASINGHEADBALANCING-CODE\",\n          \"size\": 1\n        },\n        {\n          \"name\": \"GD-PR-DISCREPANCY-PRINTED-CODE\",\n          \"size\": 1\n        },\n        {\n          \"name\": \"GD-PR-DISPOSITION-CODE-FLAG\",\n          \"size\": 1\n        },\n        {\n          \"name\": \"GD-PR-FIELD-NUMBER\",\n          \"size\": 8\n        },\n        {\n          \"name\": \"GD-PR-CODING-MAST-OP-NUMBER\",\n          \"size\": 6\n        },\n        {\n          \"name\": \"GD-PR-COMPANY-TAPE-OP-NUMBER\",\n          \"size\": 6\n        },\n        {\n          \"name\": \"GD-PR-LEASE-NAME\",\n          \"size\": 32\n        },\n        {\n          \"name\": \"GD-PR-FIELD-NAME\",\n          \"size\": 32\n        },\n        {\n          \"name\": \"GD-PR-BATCH-CODE\",\n          \"size\": 1\n        },\n        {\n          \"name\": \"GD-PR-CERT-DATE\",\n          \"size\": 2\n        },\n        {\n          \"name\": \"GD-PR-LEASE-FLD-FUEL-SYSTEMS\",\n          \"size\": 9\n        },\n        {\n          \"name\": \"GD-PR-TRANSMISSION-LINE\",\n          \"size\": 9\n        },\n        {\n          \"name\": \"GD-PR-PROCESSING-PLANT\",\n          \"size\": 9\n        },\n        {\n          \"name\": \"GD-PR-VENTED-OR-FLARED\",\n          \"size\": 9\n        },\n        {\n          \"name\": \"GD-PR-CASINGHEAD-LIFT\",\n          \"size\": 9\n        },\n        {\n          \"name\": \"GD-PR-PRESSURE-MAINTENANCE\",\n          \"size\": 9\n        },\n        {\n          \"name\": \"GD-PR-CARBON-BLACK\",\n          \"size\": 9\n        },\n        {\n          \"name\": \"GD-PR-UNDERGROUND-STORAGE\",\n          \"size\": 9\n        },\n        {\n          \"name\": \"GD-PR-CASINGHEAD-PRODUCTION\",\n          \"size\": 9\n        },\n        {\n          \"name\": \"GD-PR-CASINGHEAD-LIFT-GAS-INJECTED\",\n          \"size\": 9\n        },\n        {\n          \"name\": \"FILLER-1\",\n          \"size\": 7\n        }\n      ]\n    }\n  ]\n}",
+      "text": "{\n  \"description\": \"Casinghead gas disposition, single schema of character fields\",\n  \"records\": [\n    {\n      \"name\": \"main\",\n      \"fields\": [\n        {\n          \"name\": \"GD-PR-DISTRICT\",\n          \"size\": 2\n        },\n        {\n          \"name\": \"GD-PR-LEASE-NO\",\n          \"size\": 5\n        },\n        {\n          \"name\": \"GD-PR-REPORT-CENT\",\n          \"size\": 2\n        },\n        {\n          \"name\": \"GD-PR-REPORT-YEAR\",\n          \"size\": 2\n        },\n        {\n          \"name\": \"GD-PR-REPORT-MONTH\",\n          \"size\": 2\n        },\n        {\n          \"name\": \"GD-PR-CASINGHEADBALANCING-CODE\",\n          \"size\": 1\n        },\n        {\n          \"name\": \"GD-PR-DISCREPANCY-PRINTED-CODE\",\n          \"size\": 1\n        },\n        {\n          \"name\": \"GD-PR-DISPOSITION-CODE-FLAG\",\n          \"size\": 1\n        },\n        {\n          \"name\": \"GD-PR-FIELD-NUMBER\",\n          \"size\": 8\n        },\n        {\n          \"name\": \"GD-PR-CODING-MAST-OP-NUMBER\",\n          \"size\": 6\n        },\n        {\n          \"name\": \"GD-PR-COMPANY-TAPE-OP-NUMBER\",\n          \"size\": 6\n        },\n        {\n          \"name\": \"GD-PR-LEASE-NAME\",\n          \"size\": 32\n        },\n        {\n          \"name\": \"GD-PR-FIELD-NAME\",\n          \"size\": 32\n        },\n        {\n          \"name\": \"GD-PR-BATCH-CODE\",\n          \"size\": 1\n        },\n        {\n          \"name\": \"GD-PR-CERT-DATE\",\n          \"size\": 2\n        },\n        {\n          \"name\": \"GD-PR-LEASE-FLD-FUEL-SYSTEMS\",\n          \"size\": 9\n        },\n        {\n          \"name\": \"GD-PR-TRANSMISSION-LINE\",\n          \"size\": 9\n        },\n        {\n          \"name\": \"GD-PR-PROCESSING-PLANT\",\n          \"size\": 9\n        },\n        {\n          \"name\": \"GD-PR-VENTED-OR-FLARED\",\n          \"size\": 9\n        },\n        {\n          \"name\": \"GD-PR-CASINGHEAD-LIFT\",\n          \"size\": 9\n        },\n        {\n          \"name\": \"GD-PR-PRESSURE-MAINTENANCE\",\n          \"size\": 9\n        },\n        {\n          \"name\": \"GD-PR-CARBON-BLACK\",\n          \"size\": 9\n        },\n        {\n          \"name\": \"GD-PR-UNDERGROUND-STORAGE\",\n          \"size\": 9\n        },\n        {\n          \"name\": \"GD-PR-CASINGHEAD-PRODUCTION\",\n          \"size\": 9\n        },\n        {\n          \"name\": \"GD-PR-CASINGHEAD-LIFT-GAS-INJECTED\",\n          \"size\": 9\n        },\n        {\n          \"name\": \"FILLER-1\",\n          \"size\": 7\n        }\n      ]\n    }\n  ]\n}",
+      "captions": [],
+      "references": [],
+      "footnotes": [],
+      "code_language": "JSON"
+    }
+  ],
   "pictures": [],
   "tables": [],
   "key_value_items": [],
