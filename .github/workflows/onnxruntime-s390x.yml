@@ -60,7 +60,9 @@ jobs:
       - uses: actions/checkout@v7
 
       # zig + cargo-zigbuild as wheels (the build script finds zig through the
-      # ziglang module; the smoke-test CLI builds with cargo-zigbuild for the
+      # ziglang module — pinned: the clang source patches in
+      # build_onnxruntime_s390x.sh are checked against its clang, 22 in zig
+      # 0.17; the smoke-test CLI builds with cargo-zigbuild for the
       # same glibc 2.28 floor the release binaries have); the target's binutils
       # for strip/objdump; qemu-user to run the result, and libc6-s390x-cross
       # for the sysroot `qemu-s390x-static -L /usr/s390x-linux-gnu` resolves
@@ -69,7 +71,7 @@ jobs:
       # (the gcc cross toolchain this job used before pulled it in).
       - name: zig, cargo-zigbuild, cmake, ninja, binutils, qemu, s390x libc
         run: |
-          python3 -m pip install --user --break-system-packages ziglang cargo-zigbuild
+          python3 -m pip install --user --break-system-packages ziglang==0.17.0 cargo-zigbuild
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
             cmake ninja-build python3 binutils-s390x-linux-gnu qemu-user-static \
