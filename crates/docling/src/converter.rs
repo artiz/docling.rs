@@ -121,6 +121,43 @@ impl PictureReader {
     }
 }
 
+/// The image type by its magic bytes, for the four the vision endpoints
+/// take (OpenAI's `image_url` set: PNG, JPEG, GIF, WebP) plus BMP and TIFF,
+/// which [`endpoint_image`] re-encodes.
+#[cfg(feature = "vlm")]
+fn image_mimetype(bytes: &[u8]) -> Option<&'static str> {
+    match bytes {
+        [0x89, b'P', b'N', b'G', ..] => Some("image/png"),
+        [0xFF, 0xD8, 0xFF, ..] => Some("image/jpeg"),
+        [b'G', b'I', b'F', b'8', ..] => Some("image/gif"),
+        [b'R', b'I', b'F', b'F', _, _, _, _, b'W', b'E', b'B', b'P', ..] => Some("image/webp"),
+        [b'B', b'M', ..] => Some("image/bmp"),
+        [b'I', b'I', 0x2A, 0x00, ..] | [b'M', b'M', 0x00, 0x2A, ..] => Some("image/tiff"),
+        _ => None,
+    }
+}
+
+/// `img` as the endpoint takes it: PNG/JPEG/GIF/WebP bytes as they are
+/// (the type read off the bytes, not the declared one — an office file's
+/// `image/jpg` or a mislabelled PNG), BMP/TIFF re-encoded as PNG, anything
+/// else (EMF/WMF, SVG, …) `None`.
+#[cfg(feature = "vlm")]
+fn endpoint_image(
+    img: &docling_core::PictureImage,
+) -> Option<(&'static str, std::borrow::Cow<'_, [u8]>)> {
+    match image_mimetype(&img.data)? {
+        m @ ("image/png" | "image/jpeg" | "image/gif" | "image/webp") => {
+            Some((m, std::borrow::Cow::Borrowed(&img.data)))
+        }
+        _ => {
+            let decoded = image::load_from_memory(&img.data).ok()?;
+            let mut buf = std::io::Cursor::new(Vec::new());
+            decoded.write_to(&mut buf, image::ImageFormat::Png).ok()?;
+            Some(("image/png", std::borrow::Cow::Owned(buf.into_inner())))
+        }
+    }
+}
+
 /// Whether `text` begins with an XML prolog — an `<?xml …?>` declaration or a
 /// non-HTML `<!DOCTYPE …>`. Used to route XML documents that arrived with a
 /// text/Markdown extension (e.g. a JATS article saved as `.txt`) to the XML
@@ -295,6 +332,10 @@ pub struct DocumentConverter {
     /// Keep the embedded image bytes on every picture (the default). See
     /// [`Self::keep_picture_images`].
     keep_picture_images: bool,
+    /// Describe the pictures through a vision endpoint (#670); `None` = off.
+    /// See [`Self::picture_description`].
+    #[cfg(feature = "vlm")]
+    picture_description: Option<crate::vlm::PictureDescriptionOptions>,
     /// The PII redaction pass (#621), when asked for. See [`Self::redact_pii`].
     redact: Option<docling_core::RedactionOptions>,
     /// 1-based inclusive PDF page window (#80). See [`Self::page_range`].
@@ -536,6 +577,8 @@ impl Default for DocumentConverter {
             picture_ocr_min_side: None,
             picture_ocr_scale: None,
             keep_picture_images: true,
+            #[cfg(feature = "vlm")]
+            picture_description: None,
             redact: None,
             page_range: None,
             ocr_lang: None,
@@ -1148,12 +1191,23 @@ impl DocumentConverter {
         }
     }
 
-    /// The picture enrichment pass (#645): OCR the embedded pictures when
-    /// [`do_picture_ocr`](Self::do_picture_ocr) asks for it, then drop the
-    /// image bytes unless [`keep_picture_images`](Self::keep_picture_images)
+    /// The picture enrichment pass: describe the pictures through the
+    /// vision endpoint when [`picture_description`](Self::picture_description)
+    /// is set (#670), OCR the embedded pictures when
+    /// [`do_picture_ocr`](Self::do_picture_ocr) asks for it (#645), then
+    /// drop the image bytes unless [`keep_picture_images`](Self::keep_picture_images)
     /// keeps them. Runs on every conversion after the backend, before
     /// [`finish_document`](Self::finish_document).
-    fn enrich_pictures(&self, document: &mut docling_core::DoclingDocument, format: InputFormat) {
+    fn enrich_pictures(
+        &self,
+        document: &mut docling_core::DoclingDocument,
+        source: &SourceDocument,
+    ) {
+        let format = source.format;
+        #[cfg(feature = "vlm")]
+        if let Some(opts) = &self.picture_description {
+            self.describe_pictures(document, source, opts);
+        }
         if self.picture_ocr {
             self.ocr_pictures(document, format);
         }
@@ -1206,6 +1260,236 @@ impl DocumentConverter {
                         *description = reader.read(img);
                     }
                 }
+            }
+        }
+    }
+
+    /// The picture-description pass (#670). Two walks over the document:
+    /// the first collects every undescribed picture that passes the size
+    /// floor and the class filter, keyed by its bytes so a logo on every
+    /// slide is asked about once; the requests run on `concurrency` threads;
+    /// the second walk writes the answers back. In caption mode an image
+    /// input, which the layout model turned into text and figures, is also
+    /// described as a whole — the caption MarkItDown gives an image file.
+    #[cfg(feature = "vlm")]
+    fn describe_pictures(
+        &self,
+        document: &mut docling_core::DoclingDocument,
+        source: &SourceDocument,
+        opts: &crate::vlm::PictureDescriptionOptions,
+    ) {
+        use std::collections::HashMap;
+        use std::hash::{Hash, Hasher};
+
+        use docling_core::{tree::TreeKind, Node, PictureDescription, PictureImage};
+
+        fn key_of(data: &[u8]) -> u64 {
+            let mut h = std::collections::hash_map::DefaultHasher::new();
+            data.hash(&mut h);
+            h.finish()
+        }
+
+        // Walk 1: the candidates, in document order, each distinct image once.
+        let mut order: Vec<u64> = Vec::new();
+        let mut images: HashMap<u64, PictureImage> = HashMap::new();
+        let mut collect = |img: &PictureImage, description: &Option<PictureDescription>| {
+            if description.is_some() {
+                return;
+            }
+            let key = key_of(&img.data);
+            if let std::collections::hash_map::Entry::Vacant(e) = images.entry(key) {
+                order.push(key);
+                e.insert(img.clone());
+            }
+        };
+        document.for_each_picture_mut(&mut |node| {
+            if let Node::Picture {
+                image: Some(img),
+                description,
+                ..
+            } = node
+            {
+                collect(img, description);
+            }
+        });
+        if let Some(tree) = document.tree.as_ref() {
+            for item in &tree.items {
+                if let TreeKind::Picture {
+                    image: Some(img),
+                    description,
+                    ..
+                } = &item.kind
+                {
+                    collect(img, description);
+                }
+            }
+        }
+        // An image input as a whole (caption mode): the layout model split
+        // it into text and figures, but the file is the picture.
+        let whole = (source.format == InputFormat::Image
+            && opts.mode == crate::vlm::PictureDescriptionMode::Caption)
+            .then(|| PictureImage {
+                mimetype: image_mimetype(&source.bytes)
+                    .unwrap_or("application/octet-stream")
+                    .into(),
+                width: 0,
+                height: 0,
+                data: source.bytes.clone(),
+                dpi: PictureImage::DEFAULT_DPI,
+            });
+        if let Some(img) = &whole {
+            collect(img, &None);
+        }
+        if order.is_empty() {
+            return;
+        }
+
+        // The filters picture OCR applies (#645): the size floor on the
+        // declared, then decoded, size; the classifier's top label when
+        // classes are named.
+        let min_side = self
+            .picture_ocr_min_side
+            .or_else(|| docling_core::env::parse::<u32>("DOCLING_RS_PICTURE_OCR_MIN_SIDE"))
+            .unwrap_or(32);
+        let mut classifier = (!self.picture_ocr_classes.is_empty())
+            .then(|| docling_pdf::Pipeline::new().ok())
+            .flatten()
+            .map(|p| p.no_ocr(true).no_table_former(true));
+        let mut jobs: Vec<(u64, String, Vec<u8>)> = Vec::new();
+        for key in &order {
+            let img = &images[key];
+            if img.width.min(img.height) < min_side && img.width * img.height > 0 {
+                continue;
+            }
+            // The endpoint takes PNG/JPEG/GIF/WebP data URIs; a BMP or TIFF
+            // is re-encoded, a vector or Windows metafile picture skipped.
+            let Some((mimetype, bytes)) = endpoint_image(img) else {
+                docling_core::debug_log!(
+                    "docling: picture description: {} is not an image the endpoint takes; skipped",
+                    img.mimetype
+                );
+                continue;
+            };
+            if min_side > 0 || classifier.is_some() {
+                let decoded = match image::load_from_memory(&bytes) {
+                    Ok(d) => d.into_rgb8(),
+                    Err(e) => {
+                        docling_core::debug_log!(
+                            "docling: picture description: undecodable image: {e}"
+                        );
+                        continue;
+                    }
+                };
+                if decoded.width().min(decoded.height()) < min_side {
+                    continue;
+                }
+                if let Some(p) = classifier.as_mut() {
+                    if let Some(preds) = p.classify_picture(&decoded) {
+                        let top = preds.first().map(|c| c.class_name.as_str());
+                        if !top.is_some_and(|t| self.picture_ocr_classes.iter().any(|c| c == t)) {
+                            continue;
+                        }
+                    }
+                }
+            }
+            jobs.push((*key, mimetype.to_string(), bytes.into_owned()));
+        }
+        if jobs.is_empty() {
+            return;
+        }
+
+        // The requests: `concurrency` workers pull from one queue; a
+        // rejected picture is warned about and skipped, an unreachable
+        // endpoint stops the queue — every later picture would wait out the
+        // same retries for the same answer.
+        let agent = crate::vlm::agent();
+        let next = std::sync::atomic::AtomicUsize::new(0);
+        let stop = std::sync::atomic::AtomicBool::new(false);
+        let answers: std::sync::Mutex<HashMap<u64, String>> = std::sync::Mutex::new(HashMap::new());
+        let workers = opts.concurrency.max(1).min(jobs.len());
+        std::thread::scope(|scope| {
+            for _ in 0..workers {
+                scope.spawn(|| loop {
+                    if stop.load(std::sync::atomic::Ordering::Relaxed) {
+                        break;
+                    }
+                    let i = next.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                    let Some((key, mimetype, bytes)) = jobs.get(i) else {
+                        break;
+                    };
+                    match opts.describe(&agent, mimetype, bytes) {
+                        Ok(Some(text)) => {
+                            answers.lock().unwrap().insert(*key, text);
+                        }
+                        Ok(None) => {}
+                        Err(crate::vlm::RequestError::Rejected(e)) => {
+                            eprintln!("warning: picture description: {e}; the picture keeps none");
+                        }
+                        Err(crate::vlm::RequestError::Unavailable(e)) => {
+                            if !stop.swap(true, std::sync::atomic::Ordering::Relaxed) {
+                                let left = jobs.len().saturating_sub(i);
+                                eprintln!(
+                                    "warning: picture description: {e}; {left} picture(s) keep no \
+                                     description"
+                                );
+                            }
+                        }
+                    }
+                });
+            }
+        });
+        let answers = answers.into_inner().unwrap();
+        if answers.is_empty() {
+            return;
+        }
+
+        // Walk 2: the answers onto every picture carrying those bytes.
+        let provenance = opts.provenance();
+        let described = |img: &PictureImage| -> Option<PictureDescription> {
+            answers
+                .get(&key_of(&img.data))
+                .map(|text| PictureDescription {
+                    text: text.clone(),
+                    provenance: provenance.clone(),
+                })
+        };
+        document.for_each_picture_mut(&mut |node| {
+            if let Node::Picture {
+                image: Some(img),
+                description,
+                ..
+            } = node
+            {
+                if description.is_none() {
+                    *description = described(img);
+                }
+            }
+        });
+        if let Some(tree) = document.tree.as_mut() {
+            for item in tree.items.iter_mut() {
+                if let TreeKind::Picture {
+                    image: Some(img),
+                    description,
+                    ..
+                } = &mut item.kind
+                {
+                    if description.is_none() {
+                        *description = described(img);
+                    }
+                }
+            }
+        }
+        if let Some(img) = whole {
+            if let Some(description) = described(&img) {
+                document.nodes.push(Node::Picture {
+                    caption: None,
+                    caption_href: None,
+                    image: self.keep_picture_images.then_some(img),
+                    classification: None,
+                    description: Some(description),
+                    caption_parent: Default::default(),
+                    caption_location: None,
+                });
             }
         }
     }
@@ -1627,6 +1911,28 @@ impl DocumentConverter {
     /// unaffected. Non-positive values warn and are ignored.
     pub fn picture_ocr_scale(mut self, scale: f32) -> Self {
         self.picture_ocr_scale = Some(scale);
+        self
+    }
+
+    /// Describe every picture through an OpenAI-compatible vision endpoint
+    /// (#670) — MarkItDown's `llm_client` / `llm_model` / `llm_prompt` and
+    /// its markitdown-ocr plugin, for every format: the embedded pictures of
+    /// DOCX/PPTX/XLSX/HTML, a PDF's or scan's figure crops, sampled video
+    /// frames, and (in caption mode) an image input as a whole. The answer
+    /// becomes the picture's description annotation, where
+    /// [`do_picture_ocr`](Self::do_picture_ocr) puts its text: Markdown
+    /// prints it after the caption, JSON carries `meta.description` with the
+    /// model as `created_by`. [`picture_ocr_min_side`](Self::picture_ocr_min_side)
+    /// and [`picture_ocr_classes`](Self::picture_ocr_classes) select the
+    /// pictures here too; identical image bytes are sent once per document;
+    /// `concurrency` pictures are in flight at once. An endpoint that rejects
+    /// a picture warns and the rest go on; one that cannot be reached warns
+    /// once and the remaining pictures keep no description — the conversion
+    /// never fails over it. Runs before the local picture OCR, which then
+    /// reads only what stayed undescribed.
+    #[cfg(feature = "vlm")]
+    pub fn picture_description(mut self, opts: crate::vlm::PictureDescriptionOptions) -> Self {
+        self.picture_description = Some(opts);
         self
     }
 
@@ -2231,7 +2537,7 @@ impl DocumentConverter {
                 )))
             }
         };
-        self.enrich_pictures(&mut document, source.format);
+        self.enrich_pictures(&mut document, source);
         // The PII pass (#621) runs on the finished model, before anything
         // reads it — after the backend, before the export-side settings.
         let redaction = self.redact(&mut document)?;

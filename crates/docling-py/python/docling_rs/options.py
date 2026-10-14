@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import enum
 from dataclasses import dataclass, field
-from typing import Any, BinaryIO, Optional
+from typing import Any, BinaryIO, Dict, Optional
 
 
 class InputFormat(str, enum.Enum):
@@ -176,16 +176,43 @@ class PdfPipelineOptions:
     images_scale: float = 1.0
     generate_page_images: bool = False
     generate_picture_images: bool = False
-    #: docling's picture description enrichment: run on the converted
-    #: document with ``picture_description_options``' model (a
+    #: docling's picture description enrichment. With
+    #: :class:`PictureDescriptionApiOptions` (docling's, or this module's)
+    #: the engine describes every picture through the OpenAI-compatible
+    #: endpoint it names (#670); with a Python-side describer (a
     #: :class:`docling_rs.picture_description.PictureDescriptionBaseOptions`
-    #: subclass such as ``docling_rs.langchain.PictureDescriptionLangChainOptions``).
+    #: subclass such as ``docling_rs.langchain.PictureDescriptionLangChainOptions``)
+    #: the pass runs in Python on the converted document.
     do_picture_description: bool = False
     picture_description_options: Optional[Any] = None
     #: Accepted for docling compatibility; no effect (no plugin system, no
     #: remote-service gate — the describer you pass is what runs).
     allow_external_plugins: bool = False
     enable_remote_services: bool = False
+
+
+@dataclass
+class PictureDescriptionApiOptions:
+    """docling's ``PictureDescriptionApiOptions``: describe pictures through
+    an OpenAI-compatible vision endpoint. Mapped onto the engine's
+    ``picture_description_*`` options (#670) — ``url`` the endpoint,
+    ``params["model"]`` the model, an ``Authorization: Bearer …`` header the
+    key, ``prompt`` and ``concurrency`` theirs; ``timeout``, ``scale``,
+    ``batch_size`` and ``provenance`` are accepted for compatibility
+    (``DOCLING_RS_VLM_TIMEOUT`` caps a request; ``created_by`` is the model).
+    """
+
+    kind: str = "api"
+    url: str = "http://localhost:8000/v1/chat/completions"
+    headers: Dict[str, str] = field(default_factory=dict)
+    params: Dict[str, Any] = field(default_factory=dict)
+    timeout: float = 20.0
+    concurrency: int = 1
+    prompt: str = "Describe this image in a few sentences."
+    provenance: str = ""
+    batch_size: int = 8
+    scale: float = 2.0
+    picture_area_threshold: float = 0.05
 
 
 @dataclass

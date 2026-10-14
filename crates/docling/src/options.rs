@@ -195,6 +195,24 @@ pub struct ConvertOptions {
     /// Keep the embedded image bytes on the pictures (#645); `false` drops
     /// them after the enrichment pass. Default `true`.
     pub keep_picture_images: Option<bool>,
+    /// Enrichment: describe the pictures of every format through an
+    /// OpenAI-compatible vision endpoint (#670) — the answer is the
+    /// picture's description annotation, as `do_picture_ocr` writes it.
+    pub do_picture_description: Option<bool>,
+    /// The vision endpoint (`/v1` base or the full `chat/completions` URL);
+    /// falls back to `vlm_endpoint`, then `DOCLING_RS_VLM_ENDPOINT`.
+    pub picture_description_endpoint: Option<String>,
+    /// Model name; falls back to `vlm_model`, then `DOCLING_RS_VLM_MODEL`.
+    pub picture_description_model: Option<String>,
+    /// Bearer token; falls back to `vlm_api_key`, then `DOCLING_RS_VLM_API_KEY`.
+    pub picture_description_api_key: Option<String>,
+    /// The instruction sent with every picture; unset = the mode's prompt
+    /// (MarkItDown's caption prompt, markitdown-ocr's extraction prompt).
+    pub picture_description_prompt: Option<String>,
+    /// `caption` (default) | `ocr`: a caption, or the text in the picture.
+    pub picture_description_mode: Option<String>,
+    /// Pictures in flight at once (default 1); 0 is rejected.
+    pub picture_description_concurrency: Option<usize>,
 
     // --- PII redaction (#621) ---------------------------------------------
     /// Redact personal data from the converted document before any export.
@@ -226,6 +244,52 @@ pub struct ConvertOptions {
     /// `max_tokens` per completion (default 8192); 0 is rejected.
     pub vlm_max_tokens: Option<usize>,
 }
+
+/// What a picture is asked for (#670): a caption, or the text it carries.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum PictureDescriptionMode {
+    /// MarkItDown's `llm_caption`: "Write a detailed caption for this image."
+    #[default]
+    Caption,
+    /// markitdown-ocr's extraction prompt: the text only, layout kept, no
+    /// commentary — LLM-vision OCR for pictures the local OCR models read
+    /// poorly (handwriting, stylized text, charts).
+    Ocr,
+}
+
+impl PictureDescriptionMode {
+    /// `caption` | `ocr`.
+    pub fn parse(s: &str) -> Option<Self> {
+        match s.trim().to_ascii_lowercase().as_str() {
+            "caption" => Some(Self::Caption),
+            "ocr" => Some(Self::Ocr),
+            _ => None,
+        }
+    }
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Caption => "caption",
+            Self::Ocr => "ocr",
+        }
+    }
+
+    /// The prompt sent when the options name none.
+    pub fn default_prompt(self) -> &'static str {
+        match self {
+            Self::Caption => CAPTION_PROMPT,
+            Self::Ocr => OCR_PROMPT,
+        }
+    }
+}
+
+/// MarkItDown's caption prompt (`_llm_caption.py`), verbatim.
+pub const CAPTION_PROMPT: &str = "Write a detailed caption for this image.";
+
+/// markitdown-ocr's extraction prompt (`_ocr_service.py`), verbatim.
+pub const OCR_PROMPT: &str = "Extract all text from this image. Return ONLY the extracted text, \
+                              maintaining the original layout and order. Do not add any commentary \
+                              or description.";
 
 /// A rejected option: which field, and why. The message names the field in
 /// its wire spelling (`ocr_scale must be a positive number, got 0`); the CLI
@@ -413,6 +477,16 @@ pub const OPTIONS: &[OptionInfo] = &[
         cli: Some("--no-picture-images"),
         ..row("keep_picture_images")
     },
+    OptionInfo {
+        cli: Some("--picture-description"),
+        ..row("do_picture_description")
+    },
+    row("picture_description_endpoint"),
+    row("picture_description_model"),
+    row("picture_description_api_key"),
+    row("picture_description_prompt"),
+    row("picture_description_mode"),
+    row("picture_description_concurrency"),
     row("redact_pii"),
     row("redact_mode"),
     row("redact_kinds"),
@@ -590,6 +664,13 @@ impl ConvertOptions {
                 ));
             }
         }
+        self.picture_description_mode()?;
+        if self.picture_description_concurrency == Some(0) {
+            return Err(OptionsError::new(
+                "picture_description_concurrency",
+                "picture_description_concurrency must be a positive integer, got 0",
+            ));
+        }
         if let Some(s) = self.images_scale {
             if !(0.1..=4.0).contains(&s) {
                 return Err(OptionsError::new(
@@ -667,6 +748,67 @@ impl ConvertOptions {
             ));
         }
         Ok(labels)
+    }
+
+    /// The parsed `picture_description_mode` (#670): `caption` (the
+    /// default) or `ocr`.
+    pub fn picture_description_mode(&self) -> Result<PictureDescriptionMode, OptionsError> {
+        match self.picture_description_mode.as_deref().map(str::trim) {
+            None | Some("") => Ok(PictureDescriptionMode::Caption),
+            Some(m) => PictureDescriptionMode::parse(m).ok_or_else(|| {
+                OptionsError::new(
+                    "picture_description_mode",
+                    format!("picture_description_mode must be caption or ocr, got {m:?}"),
+                )
+            }),
+        }
+    }
+
+    /// The picture-description pass's resolved options (#670): `None`
+    /// unless `do_picture_description` is set; else the endpoint, model and
+    /// key from the `picture_description_*` options, the `vlm_*` options,
+    /// then the `DOCLING_RS_VLM_*` environment — endpoint and model being
+    /// required — with the prompt, mode and concurrency given here.
+    #[cfg(feature = "vlm")]
+    pub fn picture_description_options(
+        &self,
+    ) -> Result<Option<crate::vlm::PictureDescriptionOptions>, OptionsError> {
+        if self.do_picture_description != Some(true) {
+            return Ok(None);
+        }
+        let set = |s: &Option<String>| s.clone().filter(|v| !v.trim().is_empty());
+        let endpoint = set(&self.picture_description_endpoint).or_else(|| set(&self.vlm_endpoint));
+        let model = set(&self.picture_description_model).or_else(|| set(&self.vlm_model));
+        let mut o =
+            crate::vlm::PictureDescriptionOptions::resolve(endpoint, model).map_err(|e| {
+                let msg = match e {
+                    crate::ConversionError::Parse(m) => m,
+                    other => other.to_string(),
+                }
+                .replace(
+                    "pass --picture-description-endpoint",
+                    "set picture_description_endpoint",
+                )
+                .replace(
+                    "pass --picture-description-model",
+                    "set picture_description_model",
+                );
+                let field = if msg.contains("picture_description_model") {
+                    "picture_description_model"
+                } else {
+                    "picture_description_endpoint"
+                };
+                OptionsError::new(field, msg)
+            })?;
+        if let Some(k) = set(&self.picture_description_api_key).or_else(|| set(&self.vlm_api_key)) {
+            o.api_key = Some(k);
+        }
+        o.prompt = set(&self.picture_description_prompt);
+        o.mode = self.picture_description_mode()?;
+        if let Some(n) = self.picture_description_concurrency {
+            o.concurrency = n;
+        }
+        Ok(Some(o))
     }
 
     /// The parsed PII redaction request (#621): `None` unless `redact_pii`
@@ -869,6 +1011,10 @@ impl ConvertOptions {
         }
         if let Some(v) = self.keep_picture_images {
             c = c.keep_picture_images(v);
+        }
+        #[cfg(feature = "vlm")]
+        if let Some(o) = self.picture_description_options()? {
+            c = c.picture_description(o);
         }
         if self.redact_pii.is_some() {
             c = c.redact_pii_opt(self.redaction()?);

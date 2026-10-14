@@ -781,3 +781,105 @@ def test_document_timeout_forwards_and_validates():
     result = converter.convert(HTML)
     assert result.status == ConversionStatus.SUCCESS
     assert result.errors == []
+
+
+def _caption_stub(answer="A duck on a pond."):
+    """An OpenAI-compatible stub answering every chat completion with
+    `answer`; returns (server, thread, seen-requests list)."""
+    import json
+    import threading
+    from http.server import BaseHTTPRequestHandler, HTTPServer
+
+    seen = []
+
+    class Stub(BaseHTTPRequestHandler):
+        def do_POST(self):
+            body = self.rfile.read(int(self.headers["Content-Length"]))
+            seen.append({"path": self.path, "auth": self.headers.get("Authorization"), "body": json.loads(body)})
+            payload = json.dumps({"choices": [{"message": {"role": "assistant", "content": answer}}]}).encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(payload)))
+            self.end_headers()
+            self.wfile.write(payload)
+
+        def log_message(self, *args):
+            pass
+
+    server = HTTPServer(("127.0.0.1", 0), Stub)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    return server, thread, seen
+
+
+_PICTURE_DOCX = (
+    __import__("pathlib").Path(__file__).resolve().parents[2] / "docling/tests/data/docx/sources/picture_ocr.docx"
+)
+
+
+def test_picture_description_kwargs_reach_the_engine():
+    """#670: the engine's picture-description pass over a local stub — the
+    caption lands in meta.description with the model as created_by, the
+    request carries the mode's prompt and the bearer token."""
+    from docling_rs import DocumentConverter
+
+    server, thread, seen = _caption_stub()
+    try:
+        conv = DocumentConverter(
+            do_picture_description=True,
+            picture_description_endpoint=f"http://127.0.0.1:{server.server_port}/v1",
+            picture_description_model="mock-vision",
+            picture_description_api_key="sk-test",
+            picture_description_mode="ocr",
+            picture_ocr_min_side=0,
+        )
+        doc = conv.convert(_PICTURE_DOCX).document
+    finally:
+        server.shutdown()
+        thread.join()
+    described = [p for p in doc.pictures if p.meta and p.meta.description]
+    assert len(described) == 2, [p.meta for p in doc.pictures]
+    assert described[0].meta.description.text == "A duck on a pond."
+    assert described[0].meta.description.created_by == "mock-vision"
+    assert "A duck on a pond." in doc.export_to_markdown()
+    assert len(seen) == 2
+    assert seen[0]["path"] == "/v1/chat/completions"
+    assert seen[0]["auth"] == "Bearer sk-test"
+    assert seen[0]["body"]["model"] == "mock-vision"
+    assert seen[0]["body"]["messages"][0]["content"][0]["text"].startswith("Extract all text from this image.")
+
+
+def test_picture_description_api_options_map_onto_the_engine():
+    """docling's PictureDescriptionApiOptions on the pipeline options is the
+    engine pass, not the Python post-pass: url → endpoint, params["model"] →
+    model, the Authorization header → key, prompt and concurrency theirs."""
+    from docling_rs import DocumentConverter, InputFormat, PdfFormatOption, PdfPipelineOptions
+    from docling_rs.datamodel.pipeline_options import PictureDescriptionApiOptions
+
+    server, thread, seen = _caption_stub("Via the API options.")
+    try:
+        api = PictureDescriptionApiOptions(
+            url=f"http://127.0.0.1:{server.server_port}/v1/chat/completions",
+            headers={"Authorization": "Bearer sk-api"},
+            params={"model": "gpt-4o-mini"},
+            prompt="Describe the picture.",
+            concurrency=2,
+        )
+        opts = PdfPipelineOptions(do_picture_description=True, picture_description_options=api)
+        conv = DocumentConverter(format_options={InputFormat.PDF: PdfFormatOption(pipeline_options=opts)})
+        assert conv._picture_description is None  # no Python post-pass
+        doc = conv.convert(_PICTURE_DOCX).document
+    finally:
+        server.shutdown()
+        thread.join()
+    assert [p.meta.description.text for p in doc.pictures if p.meta and p.meta.description] == ["Via the API options."]
+    assert seen[0]["auth"] == "Bearer sk-api"
+    assert seen[0]["body"]["model"] == "gpt-4o-mini"
+    assert seen[0]["body"]["messages"][0]["content"][0]["text"] == "Describe the picture."
+
+
+def test_picture_description_rejects_a_bad_mode():
+    from docling_rs import DocumentConverter
+
+    with pytest.raises(ValueError, match="picture_description_mode"):
+        DocumentConverter(do_picture_description=True, picture_description_mode="summary")

@@ -498,6 +498,15 @@ constructor; output options (`to`, `imageMode`, `artifactsDir`) are per call.
   `ocrTextlineOrientation: true` reads vertical, skewed and upside-down lines;
   `keepPictureImages: false` drops the image bytes after the pass. Off by
   default — every default output is unchanged.
+- `doPictureDescription`: describe every picture — any format, PDF figures
+  and image inputs included — through an OpenAI-compatible vision endpoint
+  (#670); the answer is the picture's description annotation, where
+  `doPictureOcr` puts its text. `pictureDescriptionEndpoint` / `Model` /
+  `ApiKey` fall back to the `vlm*` options, then `DOCLING_RS_VLM_*`;
+  `pictureDescriptionMode` is `"caption"` (MarkItDown's caption prompt) or
+  `"ocr"` (markitdown-ocr's text-extraction prompt); `pictureDescriptionPrompt`
+  overrides it; `pictureDescriptionConcurrency` pictures are in flight at
+  once. Endpoint errors warn; the conversion goes on.
 - `redactPii`: redact personal data from the converted document before any
   output (#621, a docling.rs extension) — e-mail, phone, card numbers (Luhn),
   IBANs (mod-97), IP addresses, URL credentials, national IDs and, with the

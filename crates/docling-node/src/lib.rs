@@ -193,6 +193,28 @@ pub struct ConverterOptions {
     /// enrichment pass (#645): slim JSON/DCLX, placeholder-only Markdown, the
     /// OCR text kept. Default `true`.
     pub keep_picture_images: Option<bool>,
+    /// Describe every picture — the embedded pictures of DOCX/PPTX/XLSX/
+    /// HTML, a PDF's figures, video frames, an image input as a whole —
+    /// through an OpenAI-compatible vision endpoint (#670); the answer is the
+    /// picture's description annotation, where `doPictureOcr` puts its text.
+    /// `pictureOcrMinSide` / `pictureOcrClasses` select the pictures here
+    /// too; identical images are sent once; an endpoint error warns and the
+    /// conversion goes on. Default `false`.
+    pub do_picture_description: Option<bool>,
+    /// The vision endpoint (`/v1` base or the full `chat/completions` URL);
+    /// falls back to `vlmEndpoint`, then `$DOCLING_RS_VLM_ENDPOINT`.
+    pub picture_description_endpoint: Option<String>,
+    /// Model name; falls back to `vlmModel`, then `$DOCLING_RS_VLM_MODEL`.
+    pub picture_description_model: Option<String>,
+    /// Bearer token; falls back to `vlmApiKey`, then `$DOCLING_RS_VLM_API_KEY`.
+    pub picture_description_api_key: Option<String>,
+    /// The instruction sent with every picture; unset = the mode's prompt.
+    pub picture_description_prompt: Option<String>,
+    /// `"caption"` (default; MarkItDown's caption prompt) | `"ocr"`
+    /// (markitdown-ocr's text-extraction prompt).
+    pub picture_description_mode: Option<String>,
+    /// Pictures in flight at once (default 1).
+    pub picture_description_concurrency: Option<u32>,
     /// Redact personal data from the converted document before any export
     /// (#621): e-mail, phone, card numbers (Luhn), IBANs (mod-97), IP
     /// addresses, URL credentials, national IDs, and — with the NER model
@@ -435,6 +457,28 @@ pub struct ConvertOptions {
     pub picture_ocr_min_side: Option<u32>,
     pub picture_ocr_scale: Option<f64>,
     pub keep_picture_images: Option<bool>,
+    /// Describe every picture — the embedded pictures of DOCX/PPTX/XLSX/
+    /// HTML, a PDF's figures, video frames, an image input as a whole —
+    /// through an OpenAI-compatible vision endpoint (#670); the answer is the
+    /// picture's description annotation, where `doPictureOcr` puts its text.
+    /// `pictureOcrMinSide` / `pictureOcrClasses` select the pictures here
+    /// too; identical images are sent once; an endpoint error warns and the
+    /// conversion goes on. Default `false`.
+    pub do_picture_description: Option<bool>,
+    /// The vision endpoint (`/v1` base or the full `chat/completions` URL);
+    /// falls back to `vlmEndpoint`, then `$DOCLING_RS_VLM_ENDPOINT`.
+    pub picture_description_endpoint: Option<String>,
+    /// Model name; falls back to `vlmModel`, then `$DOCLING_RS_VLM_MODEL`.
+    pub picture_description_model: Option<String>,
+    /// Bearer token; falls back to `vlmApiKey`, then `$DOCLING_RS_VLM_API_KEY`.
+    pub picture_description_api_key: Option<String>,
+    /// The instruction sent with every picture; unset = the mode's prompt.
+    pub picture_description_prompt: Option<String>,
+    /// `"caption"` (default; MarkItDown's caption prompt) | `"ocr"`
+    /// (markitdown-ocr's text-extraction prompt).
+    pub picture_description_mode: Option<String>,
+    /// Pictures in flight at once (default 1).
+    pub picture_description_concurrency: Option<u32>,
     /// PII redaction (#621) and its settings. See [`ConverterOptions`].
     pub redact_pii: Option<bool>,
     pub redact_mode: Option<String>,
