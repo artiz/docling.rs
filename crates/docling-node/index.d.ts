@@ -29,7 +29,7 @@ export type {
 }
 
 // Format helpers pass straight through from the native binding.
-export { supportedFormats, formatFromName } from './native'
+export { supportedFormats, formatFromName, detectFormat } from './native'
 // Email attachment payloads of an .eml / .msg (#561): list them with their
 // bytes, then `convert({ name: att.name, data: att.data, format: att.format })`
 // the ones you want — `format` carries what the extension cannot (#564). The

@@ -362,6 +362,29 @@ impl InputFormat {
     /// `heif` feature (libheif — the image pipeline cannot decode them) and
     /// StarCalc's `.sdc`, which reaches the StarOffice backend for its
     /// targeted "save as .ods" error, never a document.
+    /// The format `bytes` evidently are, from their content alone (#672) —
+    /// what decides for an input with no usable name: stdin, an upload, a
+    /// `data:` URL, an email attachment, a file with no or an unknown
+    /// extension ([`SourceDocument::from_file`](crate::SourceDocument::from_file)
+    /// and [`from_named_bytes`](crate::SourceDocument::from_named_bytes)
+    /// call it after the extension and the media type). Signatures only, no
+    /// classifier: PDF, RTF, the ZIP packages (OOXML, ODF, EPUB, Visio,
+    /// Apple iWork), the OLE files (Word, Excel, PowerPoint, Outlook),
+    /// flat Word 2.0, HTML, the raster images, DjVu, the audio and video
+    /// containers, WordPerfect, WebVTT, DocTags, SVG, AbiWord, XML (the
+    /// `xml` route then reads the dialect), JSON (a Jupyter notebook, else
+    /// the docling-JSON route), MIME messages (MHTML by `multipart/related`,
+    /// else email) and LaTeX. Prose, Markdown, CSV and AsciiDoc have no
+    /// signature and come back `None` — the converter reads such input as
+    /// plain text (#671) when the extension says nothing either.
+    ///
+    /// A correctly named file never pays for this: the extension decides
+    /// first. The Python `docling_rs.detect_format` and the Node
+    /// `detectFormat` are this function.
+    pub fn detect(bytes: &[u8]) -> Option<InputFormat> {
+        crate::sniff::detect_any(bytes)
+    }
+
     pub fn supported_extensions() -> Vec<&'static str> {
         let mut out: Vec<&'static str> = EXTENSIONS
             .iter()

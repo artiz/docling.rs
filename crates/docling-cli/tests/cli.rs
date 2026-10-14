@@ -1068,6 +1068,35 @@ fn stdin_converts_with_a_format_hint_or_by_signature() {
 
 /// #668: `--from` also retypes a file whose extension says otherwise, and
 /// `--output-file` / `--output` take stdin like any other source.
+/// Content detection (#672): a PPTX renamed to a name with no extension
+/// converts as the original, a PDF saved as `.bin` converts, and a
+/// correctly named file is read by its name.
+#[test]
+fn nameless_and_misnamed_files_convert_by_content() {
+    let scratch = Scratch::new("detect");
+    let pptx = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../tests/data/pptx/sources/powerpoint_bad_text.pptx"
+    );
+    let deck = scratch.path("deck");
+    std::fs::copy(pptx, &deck).unwrap();
+    let (code, want, stderr) = run(&[pptx]);
+    assert_eq!(code, 0, "{stderr}");
+    let (code, got, stderr) = run(&[&deck]);
+    assert_eq!(code, 0, "{stderr}");
+    assert_eq!(got, want);
+    assert!(!got.trim().is_empty());
+    let pdf = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../tests/data/pdf/sources/base14_fonts.pdf"
+    );
+    let bin = scratch.path("scan.bin");
+    std::fs::copy(pdf, &bin).unwrap();
+    let (code, out, stderr) = run(&["--text-layer-only", &bin]);
+    assert_eq!(code, 0, "{stderr}");
+    assert!(out.contains("quick brown fox"), "{out}");
+}
+
 #[test]
 fn hints_apply_to_files_and_stdin_lands_in_output_files() {
     let scratch = Scratch::new("hints");

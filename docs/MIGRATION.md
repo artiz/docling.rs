@@ -66,7 +66,7 @@ The layers mirror docling's:
 | Layer | docling (Python) | `docling.rs` (Rust) |
 |---|---|---|
 | **Data model + serializers** | `docling-core` | `docling-core` — `DoclingDocument`, the `Node` tree, Markdown + JSON serializers, base64 |
-| **Converter** | `docling/document_converter.py` | `docling.rs` — `converter.rs` (format dispatch + XML content sniffing) |
+| **Converter** | `docling/document_converter.py` | `docling.rs` — `converter.rs` (format dispatch + XML content sniffing); `sniff.rs` (`InputFormat::detect`, content detection for nameless input and the retry of a misnamed file) |
 | **ZIP input** (#557, docling.rs extension — docling takes no archives) | — | `archive.rs`: `DocumentConverter::convert_archive` converts each document of a `.zip` on its own (lazy per-entry `Converted` / `Skipped` / `Failed`), entries vetted from the central directory before inflating (`ArchiveLimits`: entries, per-entry / total size, compression ratio; unsafe `..` paths, nested archives, encrypted and `__MACOSX` entries skipped); the CLI expands a named `.zip` into batch items (`out/<archive>/<entry>`), serve a `.zip` upload into a batch. Python `DocumentConverter.convert_archive(source)` yields an `ArchiveItem` per entry; Node `convertArchiveFile` / `convertArchive` (+ `*Async`, and the `DocumentConverter` methods) return `ArchiveItem[]`. `InputFormat` gains no variant and `convert()` still rejects `.zip` |
 | **Backends** | `docling/backend/*` | `docling.rs` — `backend/*` (one per format) |
 | **PDF/ML pipeline** | `docling/pipeline/*`, `docling/models/*` | `docling-pdf` — pure-Rust text layer + renderer, ONNX layout/OCR + assembly |
@@ -726,6 +726,20 @@ These are deliberate or unavoidable divergences, not bugs.
    too, the first error stands. docling decides by extension and MIME guess
    up front and fails such files (RTF / HTML / DOCX saved as `.doc`, the
    common case in legacy archives).
+   An input with no usable name is typed by its content *before* converting
+   (#672, `InputFormat::detect` — `docling_rs.detect_format` /
+   `detectFormat` in the bindings): a file with no or an unknown extension
+   (a PPTX renamed to nothing, a PDF saved as `.bin`), stdin, an upload, a
+   `data:` URL, an email attachment. Signatures only, no classifier: the
+   packages (OOXML, ODF, EPUB, Visio, Apple iWork), the OLE files, PDF,
+   RTF, flat Word 2.0, HTML, the raster images and HEIF, DjVu, the audio
+   and video containers, WordPerfect, WebVTT, DocTags, SVG, AbiWord, XML
+   (the dialect read on the `xml` route), JSON (a Jupyter notebook, else
+   the docling-JSON route), MIME messages (MHTML by `multipart/related`,
+   else email) and LaTeX; prose, Markdown, CSV and AsciiDoc have no
+   signature and read as plain text (#671). A correctly named file is never
+   sniffed, so nothing changes for it. MarkItDown runs magika on every
+   input; docling decides by extension and MIME guess.
 
 8. **Headless-browser pass is opt-in.** Form key-value regions, inline
    visibility, and nested-table cell flattening (docling's exact spacing) are

@@ -380,6 +380,7 @@ module.exports.streamDocumentChunks = streamDocumentChunks
 module.exports.checkDependencies = checkDependencies
 module.exports.supportedFormats = native.supportedFormats
 module.exports.formatFromName = native.formatFromName
+module.exports.detectFormat = native.detectFormat
 // Email attachment payloads (#561): declarative, no ML guard needed.
 module.exports.emailAttachments = native.emailAttachments
 module.exports.emailAttachmentsFile = native.emailAttachmentsFile

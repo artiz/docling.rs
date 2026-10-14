@@ -25,6 +25,7 @@ import {
   emailAttachmentsFile,
   emailAttachmentsFileAsync,
   formatFromName,
+  detectFormat,
   Pipeline,
   streamChunks,
   streamDocumentChunks,
@@ -98,6 +99,12 @@ async function main() {
     const formats = supportedFormats()
     assert.ok(formats.includes('md'))
     assert.ok(formats.includes('pdf'))
+  })
+
+  await check('detectFormat reads the bytes', () => {
+    assert.equal(detectFormat(Buffer.from('%PDF-1.7\n')), 'pdf')
+    assert.equal(detectFormat(Buffer.from('WEBVTT\n\n00:00.000 --> 00:01.000\nhi')), 'vtt')
+    assert.equal(detectFormat(Buffer.from('just words')), null)
   })
 
   await check('formatFromName detects extensions', () => {

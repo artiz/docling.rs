@@ -74,6 +74,7 @@ from ._native import (
 from ._native import DocumentConverter as _NativeDocumentConverter
 from ._native import compiled_providers as _compiled_providers
 from ._native import email_attachments as _email_attachments
+from ._native import detect_format as _detect_format
 
 #: ``video_frames`` meaning "every distinct cut" (#647) — ``video_frames="all"``
 #: spells the same.
@@ -96,6 +97,7 @@ __all__ = [
     # email attachment payloads (.eml / .msg)
     "EmailAttachment",
     "email_attachments",
+    "detect_format",
     # docling-shaped configuration
     "InputFormat",
     "DocumentStream",
@@ -849,6 +851,38 @@ class EmailAttachment:
         if self.data is None:
             raise ValueError(f"attachment {self.name!r} has no payload ({self.skipped})")
         return DocumentStream(name=self.name, stream=io.BytesIO(self.data), format=self.format)
+
+
+def detect_format(
+    source: Union[bytes, bytearray, memoryview, str, os.PathLike, DocumentStream],
+) -> Optional[Union[InputFormat, str]]:
+    """The format ``source`` evidently is, by its content alone (#672; the
+    engine's ``InputFormat::detect``, what MarkItDown asks magika for):
+    the bytes, a path, or a :class:`DocumentStream`. Signatures only — PDF,
+    the Office / ODF / EPUB / iWork packages, the OLE files, RTF, HTML, the
+    raster images, DjVu, audio and video containers, WordPerfect, WebVTT,
+    DocTags, SVG, AbiWord, XML, JSON and Jupyter notebooks, MIME messages,
+    LaTeX. Returns the :class:`InputFormat` member, the bare format id for
+    a format the enum does not spell (``"svg"``, ``"pages"``, …), or
+    ``None`` for bytes without a signature (prose, Markdown, CSV, random
+    bytes) — those convert by their name, or as plain text.
+
+    A :class:`DocumentConverter` already does this for a file with no or an
+    unknown extension, a nameless stream and a ``data:`` URL; call it to
+    route or label an input yourself."""
+    if isinstance(source, DocumentStream):
+        data = _stream_bytes(source.stream)
+    elif isinstance(source, (bytes, bytearray, memoryview)):
+        data = bytes(source)
+    else:
+        data = Path(source).read_bytes()
+    fmt = _detect_format(data)
+    if fmt is None:
+        return None
+    try:
+        return InputFormat(fmt)
+    except ValueError:
+        return fmt
 
 
 def email_attachments(

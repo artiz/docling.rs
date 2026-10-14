@@ -46,7 +46,7 @@ mod html_tree;
 pub mod images;
 mod interchange;
 pub mod ipynb;
-mod iwork;
+pub(crate) mod iwork;
 mod iwork_charts;
 pub(crate) mod jats;
 mod keynote;
