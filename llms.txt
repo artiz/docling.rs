@@ -17,7 +17,11 @@ Choosing the entry point:
 - [README](https://github.com/docling-project/docling.rs/blob/master/README.md): overview, install, CLI, HTTP API, benchmarks against MarkItDown and Python docling
 - [docling.rs for MarkItDown users](https://github.com/docling-project/docling.rs/blob/master/docs/MARKITDOWN.md): the drop-in API, measured comparison, open gaps
 - [Python package](https://github.com/docling-project/docling.rs/blob/master/crates/docling-py/README.md): docling-shaped API, MarkItDown facade, LangChain loader, chunking, models
+- [Rust library guide](https://github.com/docling-project/docling.rs/blob/master/crates/docling/README.md): the API, output formats, chunking, images, streaming, OCR, VLM
+- [CLI and MCP server](https://github.com/docling-project/docling.rs/blob/master/crates/docling-cli/README.md): `docling-rs` usage, batch conversion, `docling-rs mcp` for AI agents
+- [HTTP server](https://github.com/docling-project/docling.rs/blob/master/crates/docling-serve/README.md): request options, flags, docling-serve drop-in routes, Open WebUI
 - [Options](https://github.com/docling-project/docling.rs/blob/master/docs/OPTIONS.md): every conversion option, shared by the CLI, HTTP API and bindings
+- [ML models](https://github.com/docling-project/docling.rs/blob/master/docs/MODELS.md): what to download, GPU execution providers, environment overrides
 - [Deployment](https://github.com/docling-project/docling.rs/blob/master/docs/DEPLOYMENT.md): containers, server configuration
 - [Node.js bindings](https://github.com/docling-project/docling.rs/blob/master/crates/docling-node/README.md)
 - [WebAssembly / browser](https://github.com/docling-project/docling.rs/blob/master/crates/docling-wasm/README.md)
@@ -29,4 +33,5 @@ Choosing the entry point:
 - [RAG subsystem](https://github.com/docling-project/docling.rs/blob/master/crates/docling-rag/README.md)
 - [C ABI](https://github.com/docling-project/docling.rs/blob/master/crates/docling-ffi/README.md)
 - [Windows notes](https://github.com/docling-project/docling.rs/blob/master/docs/WINDOWS.md)
+- [IBM Z (s390x)](https://github.com/docling-project/docling.rs/blob/master/docs/IBMZ.md)
 - [Live browser demo](https://docling-project.github.io/docling.rs/)

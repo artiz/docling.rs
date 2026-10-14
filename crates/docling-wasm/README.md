@@ -16,7 +16,9 @@ image fetcher are compiled out: scanned/image-only PDFs get a clear "no
 embedded text layer … OCR needs a build with the `pdf` feature" error, and
 images/audio/METS are rejected with a "rebuild with …" message. Remote
 `<img src>` images stay placeholders (no network in the module); embedded
-images work normally.
+images work normally. Native builds are untouched: the feature slices behind
+this (`pdf` / `asr` / `fetch-images`) all stay in the `docling` default set,
+so a plain `cargo build` is unchanged.
 
 **Size: ~11 MB raw, ~3.4 MB gzipped** (measured at 0.49.x — the module now
 also carries the browser ML pipeline's pre/post-processing: layout decode, OCR

@@ -10,6 +10,9 @@
 #   scripts/install/download_dependencies.sh
 # or, without a checkout:
 #   curl -fsSL https://raw.githubusercontent.com/docling-project/docling.rs/master/scripts/install/download_dependencies.sh | sh
+# or, for a `cargo install docling-cli` binary (--cli: into the cargo install
+# root, where that binary finds them from any directory):
+#   curl -fsSL https://raw.githubusercontent.com/docling-project/docling.rs/master/scripts/install/download_dependencies.sh | sh -s -- --cli
 #
 # Then either:
 #   cargo run -p docling-cli -- <file>
@@ -94,6 +97,13 @@
 # renderer scans (`fonts-liberation`/`fonts-dejavu-core` packages, Arial /
 # Times / Courier); DOCLING_RS_FONT_DIRS adds more directories at runtime.
 #
+# --cli installs into the cargo install root instead of the current directory
+# — `$CARGO_INSTALL_ROOT`, else `$CARGO_HOME`, else `~/.cargo` — whose bin/
+# is where `cargo install docling-cli` puts the binary: the CLI looks for
+# .models/ next to its executable and one level above it
+# (crates/docling-core/src/assets.rs), so `<root>/.models` is found whatever
+# the working directory.
+#
 # Idempotent: skips files already on disk. Pass --force to re-fetch everything.
 set -eu
 
@@ -127,6 +137,7 @@ case "$(uname -m)" in
   *) WITH_ORT_DEFAULT=false ;;
 esac
 WITH_ORT="${DOCLING_RS_WITH_ONNXRUNTIME:-$WITH_ORT_DEFAULT}"
+INTO_CLI=false
 
 for arg in "$@"; do
   case "$arg" in
@@ -143,9 +154,10 @@ for arg in "$@"; do
     --with-ner) WITH_NER=true ;;
     --with-onnxruntime) WITH_ORT=true ;;
     --no-onnxruntime) WITH_ORT=false ;;
+    --cli) INTO_CLI=true ;;
 
     *)
-      echo "usage: download_dependencies.sh [--force] [--no-asr] [--asr-model=<preset>] [--no-int8] [--no-chunk] [--enrich] [--embed] [--with-docling-parse] [--with-fonts] [--with-ner] [--with-onnxruntime|--no-onnxruntime]" >&2
+      echo "usage: download_dependencies.sh [--cli] [--force] [--no-asr] [--asr-model=<preset>] [--no-int8] [--no-chunk] [--enrich] [--embed] [--with-docling-parse] [--with-fonts] [--with-ner] [--with-onnxruntime|--no-onnxruntime]" >&2
       echo "  ASR presets: whisper_tiny_en whisper_base_en whisper_small_en whisper_distil_small_en parakeet_tdt_0.6b_v3" >&2
       exit 2
       ;;
@@ -155,6 +167,13 @@ done
 if ! command -v curl >/dev/null 2>&1; then
   echo "error: curl is required" >&2
   exit 1
+fi
+
+if [ "$INTO_CLI" = true ]; then
+  CLI_ROOT="${CARGO_INSTALL_ROOT:-${CARGO_HOME:-$HOME/.cargo}}"
+  mkdir -p "$CLI_ROOT"
+  cd "$CLI_ROOT"
+  echo "--cli: installing into $CLI_ROOT/.models (beside $CLI_ROOT/bin, where cargo install puts docling-rs)"
 fi
 
 mkdir -p .models/tableformer
@@ -562,3 +581,6 @@ if [ "$WITH_INT8" = true ]; then
 fi
 
 echo "done — .models/ populated in $(pwd)"
+if [ "$INTO_CLI" = true ]; then
+  echo "a cargo-installed docling-rs ($(pwd)/bin/docling-rs) now finds them from any directory"
+fi

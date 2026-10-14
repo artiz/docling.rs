@@ -28,8 +28,9 @@ the same Markdown byte for byte.
 
 MarkItDown 0.1.8 (`markitdown[all]`) vs docling.rs 2.16.0 on 4 vCPU, no GPU,
 with [`scripts/conformance/markitdown_compare.py`](../scripts/conformance/markitdown_compare.py);
-full table and caveats in the README's
-[MarkItDown comparison](../README.md#conformance-with-microsoft-markitdown).
+the per-format table is in the README's
+[MarkItDown comparison](../README.md#conformance-with-microsoft-markitdown),
+the scoring [below](#how-the-comparison-is-scored).
 Accuracy is scored against Python docling's groundtruth, which favours
 docling.rs by construction; the timings do not depend on it.
 
@@ -48,6 +49,46 @@ slower than MarkItDown's pdfminer pass (49.3 s vs 10.0 s on the 18 PDFs) and
 does the work that turns 0.31 table-cell recall into 0.94 and reads scans at
 all. When only the text layer matters, `text_layer_only` is 14× faster than
 MarkItDown and still scores higher on word F1 (0.97 vs 0.63).
+
+## How the comparison is scored
+
+The per-format table is in the README's
+[MarkItDown comparison](../README.md#conformance-with-microsoft-markitdown).
+
+Accuracy pairs are MarkItDown / docling.rs against the docling groundtruth
+Markdown of each file (word-bag F1, recall of table-cell texts and of
+headings). That reference is Python docling's output, which docling.rs is
+conformance-tested against, so these columns favour docling.rs by
+construction; the timings do not depend on it. Warm = MarkItDown in-process
+after a warm-up conversion vs a docling.rs batch run (`--jobs 1`; its ONNX
+models still use every core, MarkItDown runs on one). MarkItDown raised on
+2 of the 46 Office files (`docx_external_image.docx`,
+`powerpoint_unrecognized_shape.pptx`), docling.rs on none.
+¹ only one XLSX groundtruth carries a heading.
+
+The two PDF rows do different amounts of work. MarkItDown (pdfminer) reads
+the text layer only — the like-for-like comparison is docling.rs'
+`--text-layer-only`, 14× faster. The full docling.rs pipeline renders every
+page and runs neural models on CPU: layout analysis (~0.4 s/page), TableFormer
+for every table (~1 s/table) and OCR on pages without a text layer — the
+work that turns 0.31 table-cell recall into 0.94 and that reads scans at all.
+
+### Text inside images
+
+MarkItDown's own `markitdown-ocr` test files (27
+DOCX/PPTX/XLSX/PDF files with text drawn into pictures and five scanned
+PDFs; [`markitdown_ocr_truth.json`](../scripts/conformance/markitdown_ocr_truth.json),
+transcribed by hand), share of those words in the output:
+
+| Run | Office pictures (16) | PDF with images (6) | Scanned PDF (5) | Time | Cost |
+|---|---|---|---|---|---|
+| MarkItDown, no LLM | 0.16 | 0.33 | 0.00 | 1.7 s | — |
+| MarkItDown + `markitdown-ocr`, gpt-4o | 1.00 | 1.00 | 1.00 | 47.4 s (45 API calls) | $0.063 |
+| docling.rs `--picture-ocr --force-full-page-ocr` | **1.00** | **1.00** | **1.00** | **41.5 s** (`--jobs 4`: 34.4 s) | local, offline |
+
+The non-zero scores without OCR are words the images share with the body
+text. docling.rs reads the pictures with its own OCR models (PP-OCR detector
+and recognizer, ONNX) — no API key, nothing leaves the machine.
 
 ## The API
 
@@ -90,7 +131,7 @@ package's [Migrating from MarkItDown](../crates/docling-py/README.md#migrating-f
 | a Python library | `from docling_rs.markitdown import MarkItDown` |
 | the `markitdown` CLI | `docling-rs FILE` prints Markdown (`--to json\|html\|chunks\|…`); `docling-rs URL`, `cat f \| docling-rs --from docx -`, `data:` URLs (#668); [release binaries](https://github.com/docling-project/docling.rs/releases), `cargo install docling-cli`, or `python -m docling_rs.markitdown` |
 | the `markitdown-mcp` MCP server | `docling-rs mcp` — the same `convert_to_markdown(uri)` tool for Claude Desktop, Claude Code, Cursor and VS Code, plus `convert` (JSON, HTML, chunks, …) and `list_input_formats`; stdio or Streamable HTTP, in the release binaries and the `ghcr.io/docling-project/docling-rs` image ([setup](../README.md#mcp-server--docling-rs-mcp)) |
-| a service | `docker run -p 5001:5001 ghcr.io/docling-project/docling-rs-serve` — `POST /v1/convert`, and docling-serve's routes for Open WebUI, n8n, Dify ([details](../README.md#drop-in-for-docling-serve-open-webui-n8n-dify-langchain)) |
+| a service | `docker run -p 5001:5001 ghcr.io/docling-project/docling-rs-serve` — `POST /v1/convert`, and docling-serve's routes for Open WebUI, n8n, Dify ([details](../crates/docling-serve/README.md#drop-in-for-docling-serve-open-webui-n8n-dify-langchain)) |
 | a LangChain loader | `docling_rs.langchain.DoclingLoader` |
 | — | Node.js (`npm i docling.rs`), the browser (`npm i docling.rs-wasm`, [live demo](https://docling-project.github.io/docling.rs/)), Rust (`docling` crate), C (`docling-ffi`) |
 

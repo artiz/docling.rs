@@ -10,7 +10,11 @@ rem Everything lands relative to the repo root (the binary resolves .models\
 rem next to the CWD or the executable, no env vars needed). The models come
 rem from the same GitHub release the Linux script uses.
 rem
-rem Usage: scripts\install\download_dependencies.bat [--no-asr] [--no-int8] [--force]
+rem Usage: scripts\install\download_dependencies.bat [--cli] [--no-asr] [--no-int8] [--force]
+rem --cli installs into the cargo install root (%CARGO_INSTALL_ROOT%, else
+rem %CARGO_HOME%, else %USERPROFILE%\.cargo) instead of the repo root: its
+rem bin\ is where `cargo install docling-cli` puts docling-rs.exe, which looks
+rem for .models\ next to itself and one level up, from any directory.
 rem Needs curl.exe and tar.exe (both ship with Windows 10 1803+).
 setlocal enabledelayedexpansion
 
@@ -26,21 +30,31 @@ set "OCR_REC_V6_DICT_URL=https://www.modelscope.cn/models/RapidAI/RapidOCR/resol
 set WITH_ASR=1
 set WITH_INT8=1
 set FORCE=0
+set INTO_CLI=0
 :parse
 if "%~1"=="" goto parsed
 if "%~1"=="--no-asr"  set WITH_ASR=0
 if "%~1"=="--no-int8" set WITH_INT8=0
 if "%~1"=="--force"   set FORCE=1
+if "%~1"=="--cli"     set INTO_CLI=1
 if "%~1"=="--help" (
-  echo usage: download_dependencies.bat [--no-asr] [--no-int8] [--force]
+  echo usage: download_dependencies.bat [--cli] [--no-asr] [--no-int8] [--force]
   exit /b 0
 )
 shift
 goto parse
 :parsed
 
-rem repo root = two levels above this script
+rem repo root = two levels above this script; --cli: the cargo install root
 cd /d "%~dp0..\.."
+if %INTO_CLI%==1 (
+  set "CLI_ROOT=%USERPROFILE%\.cargo"
+  if not "%CARGO_HOME%"=="" set "CLI_ROOT=%CARGO_HOME%"
+  if not "%CARGO_INSTALL_ROOT%"=="" set "CLI_ROOT=%CARGO_INSTALL_ROOT%"
+  if not exist "!CLI_ROOT!" mkdir "!CLI_ROOT!"
+  cd /d "!CLI_ROOT!"
+  echo --cli: installing into !CLI_ROOT!\.models ^(beside bin\, where cargo install puts docling-rs.exe^)
+)
 
 where curl >nul 2>nul || (echo error: curl.exe not found ^(ships with Windows 10 1803+^) & exit /b 1)
 

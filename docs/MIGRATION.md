@@ -224,6 +224,32 @@ docling's `paragraph`, `-` list markers, no heading nesting or inline groups —
 that HTML, DOCX and PPTX left behind for the item tree (`DoclingDocument::tree`);
 the same treatment is what closes those columns.
 
+### Every extension, by category
+
+Every format in docling's pipeline converts — plus a few docling lacks — to
+Markdown, docling JSON, plain text, DocLang `.dclx`, LaTeX, HTML, Pandoc AST,
+WebVTT and chunk records, with image extraction. The extension map
+(`InputFormat::from_extension`, docling's `FormatToExtensions`) picks the
+backend; a file that fails under its extension is checked by content and,
+when it is evidently another format (an RTF or HTML file saved as `.doc`),
+converted once more as that format with a warning.
+
+| Category | Extensions | Notes |
+|---|---|---|
+| Text & markup | `.md` `.markdown` `.txt` `.text` `.qmd` `.rmd` · AsciiDoc `.adoc` `.asciidoc` `.asc` · HTML `.html` `.htm` `.xhtml` · MHTML `.mhtml` `.mht` · LaTeX `.tex` `.latex` | text encodings detected like docling's `decode_text`, or set with `encoding`; HTML JSON is docling's item tree; MHTML is parsed as MIME and routed through the HTML backend; LaTeX is docling's backend on a pylatexenc port — multi-file arXiv projects, math, `\newcommand`, `tabular`, figures |
+| Word processing | DOCX `.docx` `.docm` `.dotx` `.dotm` · Word 97–2004 `.doc` `.dot` (Word 6/95 and Word for Windows 1.x/2.0 too) · OpenDocument `.odt` `.ott` `.fodt` · OpenOffice 1.x `.sxw` `.stw` `.sxg` · StarWriter `.sdw` `.vor` · AbiWord `.abw` `.zabw` `.awt` · WordPerfect `.wpd` `.wp` `.wp5` `.wp6` `.wpt` · MS Works `.wps` · EPUB `.epub` · RTF `.rtf` | DOCX JSON is docling's item tree; OMML equations come out as LaTeX; numbered headings keep their numbers |
+| Presentations | PPTX `.pptx` `.pptm` `.potx` `.potm` `.ppsx` `.ppsm` · PowerPoint 97–2003 `.ppt` `.pot` `.pps` · OpenDocument `.odp` `.otp` `.fodp` · OpenOffice 1.x `.sxi` `.sti` · StarImpress/StarDraw `.sdd` `.sda` | PPTX JSON is docling's item tree — slides, lists, tables, pictures, charts, notes, comments |
+| Diagrams | Visio `.vsdx` `.vsdm` · SVG `.svg` | Visio: pages as sections, shape text in reading order, connectors as a relations table; SVG rasterized into the image pipeline, or its `<text>` as paragraphs without ML |
+| Spreadsheets | XLSX `.xlsx` `.xlsm` `.xltx` `.xltm` · XLSB `.xlsb` · Excel 97–2004 `.xls` `.xlt` · OpenDocument `.ods` `.ots` `.fods` · OpenOffice 1.x `.sxc` `.stc` · CSV `.csv` `.tsv` · dBase `.dbf` · DIF `.dif` · SYLK `.slk` `.sylk` · Lotus 1-2-3 / Symphony `.wk1` `.wk2` `.wk3` `.wk4` `.wks` `.wrk` `.123` · Quattro Pro `.wq1` `.wq2` `.wb1` `.wb2` `.wb3` `.qpw` · MS Works `.xlr` | cells print what Excel displays — `$12.50`, `10%`, `Feb-25`; merged cells keep their spans; chart sheets expose their chart |
+| Apple iWork | Pages `.pages` · Numbers `.numbers` · Keynote `.key` | both container generations (`Index/*.iwa` and iWork '09 XML); Pages and Keynote mirror docling's readers, Keynote charts as classified pictures with their data table; Numbers as sheet/table text |
+| XML dialects | JATS / USPTO / XBRL (`.xml` `.nxml`, content-sniffed) · DocLang `.dclg` | XBRL converts without arelle: `dei` title, text blocks, numeric facts as docling's key-value graph, the taxonomy read offline from `xbrl_taxonomy` |
+| PDF & images | `.pdf` · `.png` `.jpg` `.jpeg` `.tif` `.tiff` `.bmp` `.webp` `.gif` · HEIC/HEIF `.heic` `.heif` (`--features heif`) · METS/GBS scan packages `.tar.gz` · DjVu `.djvu` `.djv` | pure-Rust text layer, page renderer and scan raster, ONNX layout + TableFormer + OCR (`docling-pdf`; no native PDF library in the default build, `pdfium` is an opt-in feature — [`docs/PDF_CONFORMANCE.md`](./PDF_CONFORMANCE.md)); JPEG 2000 decodes in Rust, JBIG2 is a placeholder; DjVu reads its hidden text layer without models and falls back to OCR with them |
+| docling native | docling JSON `.json` · DocTags `.doctags` `.dt` · DCLX `.dclx` | DocTags — the token markup docling's VLMs emit — read through docling-core's tolerant parser, the one the VLM pipeline uses |
+| Mainframe data | EBCDIC `.ebc` `.ebcdic` | fixed-width records decoded through a COBOL copybook (docling's `EbcdicLayout`): `ebcdic_layout`, or a `<stem>.layout.json` sidecar |
+| Email & subtitles | `.eml` · Outlook `.msg` · WebVTT `.vtt` | `.msg` is projected onto RFC 822 (same output as the `.eml`); `list_attachments` names the attachments, `email_attachments()` converts them; `cid:` images embed under `image_sources=embedded` |
+| Audio | `.wav` `.mp3` `.mpga` `.m4a` `.aac` `.ogg` `.flac` | Rust all the way down: symphonia decodes, Whisper tiny (ONNX, docling's ASR defaults) or the Parakeet TDT 0.6B v3 preset transcribes; `[time: start-end] text` paragraphs, the timing as the JSON item's track, `--to vtt` for subtitles; language auto-detected or `asr_lang`. Ogg Opus falls back to the `ffmpeg` binary |
+| Video | `.mp4` `.avi` `.mov` `.mkv` `.webm` `.mpeg` `.mpg` | the audio track transcribed the same way; with the `ffmpeg` binary on `PATH` (`DOCLING_FFMPEG`), `video_frames` scene-change frames (8 by default, `all` for every cut) interleave as `[time: <ts>]` pictures, tuned by the `video_*` options. AVI needs ffmpeg; without it a video is its transcript |
+
 ### Declarative formats — pure Rust, no models
 
 | Format | Backend | Status |
@@ -527,6 +553,38 @@ pointed at the wrong item).
   extracted images as data URIs.
 
 ---
+
+### JSON structure and content layers
+
+**JSON structure.** HTML, DOCX, PPTX, ODF, WebVTT, JATS, AsciiDoc, DocLang,
+LaTeX and USPTO build docling's item tree — heading nesting, `inline`
+groups with `formatting` / `hyperlink`, rich table cells, `furniture` — so
+their JSON is structurally identical to upstream's; the flat backends
+(XLSX, CSV, EBCDIC) already have upstream's shape. Tables carry first-class
+cells (`table_cells`: text, page-point bbox, spans, header roles — #240),
+and `DoclingDocument` exposes them for in-place repair before re-export
+(#238): `tables_mut()`, `find_cell_by_bbox`, `set_cell_text`,
+`update_cell_by_bbox`; `rows`, `structure` and `cells` are public fields.
+
+**Content layers** (#499, #599). The HTML and Markdown exports render the
+`body` layer by default, so page headers and footers (`furniture`),
+reviewer comments (`notes`) and hidden content (`invisible`) stay out as
+upstream leaves them out; `export_to_html_with_layers` /
+`MarkdownExportOptions { layers, traverse_pictures, escape_html,
+escape_underscores, image_placeholder, image_mode }` take the set to render
+— byte-identical to docling-core for the same sets, and the defaults are
+`export_to_markdown()` / `export_to_html()` byte for byte.
+`convert_streaming_with_options` streams the same Markdown. The CLI's
+`--layers body|all|LIST` and `--traverse-pictures` set them for
+md/text/html (#661):
+
+```rust
+use docling::{ContentLayer, ContentLayers, MarkdownExportOptions};
+let html = doc.export_to_html_with_layers(ContentLayers::BODY.with(ContentLayer::Furniture));
+let (md, _) = doc.export_to_markdown_with_options(&MarkdownExportOptions {
+    layers: ContentLayers::ALL, traverse_pictures: true, ..MarkdownExportOptions::default()
+});
+```
 
 ## 4. Differences from upstream docling
 
@@ -973,7 +1031,7 @@ deliberate scope boundary or a cosmetic, single-fixture polish gap.
 - **`docling-wasm`** — WebAssembly bindings: the declarative converters (and
   digital PDFs via the opt-in `pdf-text` text-layer feature — the same
   extraction as `--text-layer-only`, no ONNX) run fully client-side in the
-  browser, ~1.9 MB gzipped; scanned PDFs return a "needs OCR" error. Python
+  browser, ~3.4 MB gzipped (the browser ML pipeline's pre/post-processing included); scanned PDFs return a "needs OCR" error. Python
   docling has no equivalent. See the crate README.
 - **`docling-py`** — PyO3 bindings (PyPI package `docling-rs`): a strangler-fig
   drop-in for docling's Python API where the Rust engine is the document

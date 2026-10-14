@@ -77,6 +77,20 @@ curl -F file=@document.pdf http://localhost:5001/v1/convert
 
 ---
 
+### A self-built CLI image (`examples/Dockerfile`)
+
+For a self-contained CLI image with models exported from PyTorch, [`examples/Dockerfile`](../examples/Dockerfile)
+is a 3-stage build that bakes the binary, native libs, and models into a slim runtime stage:
+
+```bash
+docker build -f examples/Dockerfile -t docling-rs .
+docker run --rm -v "$PWD:/data" docling-rs /data/input.pdf          # Markdown to stdout
+docker run --rm -v "$PWD:/data" docling-rs /data/input.pdf --to json
+```
+
+Both `linux/amd64` and `linux/arm64` build (#281) — everything in the image
+is arch-neutral or built from source.
+
 ## Deployment with Docker Compose
 
 Preconfigured compose files are available in [`examples/docker-compose/`](../examples/docker-compose/):
@@ -145,23 +159,48 @@ docker compose -f docker-compose.cuda.yml up -d
 ```
 
 ---
+## Installing without containers — `install.sh`
+
+`scripts/install/install.sh` installs a self-contained tree — for a dev box or
+a pipeline step:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/docling-project/docling.rs/master/scripts/install/install.sh | bash
+docling-rs your.pdf > out.md
+```
+
+It grabs the **prebuilt CLI binary** from the latest
+[GitHub Release](https://github.com/docling-project/docling.rs/releases)
+(Linux x64/arm64; `DOCLING_RS_FROM_SOURCE=1` opts out) and only falls back to
+building from source when no matching asset exists — in that case it checks
+for a Rust toolchain (installs one via rustup if `cargo` is missing) and runs
+`cargo build --release -p docling-cli`. Either way it installs the
+binary + all models under `/usr/local/docling.rs`, symlinks
+`/usr/local/bin/docling-rs`, and writes `/etc/profile.d/docling-rs.sh` with
+the `DOCLING_*` exports. The env file is a convenience for other
+consumers of the model tree — the CLI itself resolves `.models/`
+**relative to its own (symlink-resolved) location**, so the
+command works from any directory with no environment at all. ONNX Runtime is
+statically linked; nothing else lands outside the prefix.
+
+Knobs (env vars before the call): `DOCLING_RS_PREFIX` (default
+`/usr/local/docling.rs`), `DOCLING_RS_BIN_DIR`, `DOCLING_RS_REF` (git ref
+to build), `DOCLING_RS_NO_ASR=1` (skip the ~150 MB Whisper models),
+`DOCLING_RS_SUDO=0` (never escalate). Re-running is idempotent — it only
+fetches missing model files. Uninstall:
+`rm -rf /usr/local/docling.rs /usr/local/bin/docling-rs /etc/profile.d/docling-rs.sh`.
+
 ## Configuration & Environment Variables
 
 `docling-serve` is configured via CLI arguments and environment variables:
 
 ### CLI Arguments
 
-| Argument | Default | Description |
-|---|---|---|
-| `--addr HOST:PORT` | `127.0.0.1:5001` | Server bind address (`0.0.0.0:5001` inside container) |
-| `--concurrency N` | `2` | Max conversions processed in parallel; excess requests queue |
-| `--max-body-mb N` | `256` | Maximum request body size, uploads and JSON bodies alike (MiB); a larger body is refused with 413 |
-| `--queue-size N` | `16` | Maximum async jobs held in queue / unfetched before returning HTTP 429 |
-| `--result-ttl SECS` | `600` | Retention duration for finished async job results (seconds) |
-| `--max-memory-mb N` | auto | RSS ceiling for admission control (MB); 0 disables |
-| `--warmup` | off | Load the PDF/image models (layout, OCR, TableFormer, the multi-page worker pool) at startup; `/ready` returns 503 until they are loaded, and stays 503 with the error if loading fails |
-| `--allow-url-fetch` | off | Enable `{"url": "..."}` inputs and remote fetching (SSRF protected) |
-| `--strict` | off | Default output to clean strict Markdown dialect |
+Every server flag, with its default, is in the serve README's
+[Server flags](../crates/docling-serve/README.md#server-flags) table. The
+published images run `docling-serve --addr 0.0.0.0:5001 --warmup`: bound to
+all interfaces inside the container, and `/ready` answers 503 until the
+PDF/image models have loaded (and stays 503, with the error, if loading fails).
 
 ### Environment Variables
 
@@ -177,6 +216,7 @@ docker compose -f docker-compose.cuda.yml up -d
 | `DOCLING_RS_GRAPH_CACHE_DIR` | `$XDG_CACHE_HOME/docling-rs/graphs` (else `~/.cache/…`) | Where ONNX Runtime's optimized graphs are cached between processes (CPU provider only; session creation for the layout model ~0.8 s → ~0.15 s) |
 | `DOCLING_RS_NO_GRAPH_CACHE` | `0` | `1` disables the optimized-graph cache (models load and optimize from scratch every process) |
 | `DOCLING_RS_OCR_SESSIONS` | worker thread budget (1–8) | Parallel single-thread OCR recognition lanes per worker; output is byte-identical at any count |
+| `DOCLING_RS_ORT_PROFILE` | unset | A directory: every ONNX session writes ORT's per-operator profile there (`<model>_<timestamp>.json`, Chrome-trace format); `scripts/dev/ort_profile_summary.py` summarizes one |
 | `DOCLING_RS_MAX_RASTER_PAGES` | `100` | Max page count for `to=images` PDF page rasterization |
 | `DOCLING_RS_MAX_FETCH_BYTES` | `268435456` (256MB) | Max response size for remote URL fetching |
 | `DOCLING_RS_OCR_LANG` | `en` | Default OCR language (`en` or `ch` multilingual) |
