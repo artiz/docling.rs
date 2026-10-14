@@ -35,9 +35,10 @@
 #   ORT_SRC_DIR          an existing checkout to build instead of cloning.
 #   JOBS                 parallel compile jobs (default: nproc).
 #   OUT_DIR              where lib/, LICENSE and VERSION land (default ./onnxruntime-s390x).
-#   PROTOC               a host protoc 21.x binary (default: downloaded from the
-#                        protobuf release — ONNX Runtime needs the host's protoc
-#                        when cross-compiling, its own would be an s390x binary).
+#   PROTOC               a host protoc of the protobuf release the tag pins in
+#                        cmake/deps.txt (default: downloaded from that release —
+#                        ONNX Runtime needs the host's protoc when
+#                        cross-compiling, its own would be an s390x binary).
 #   CMAKE_EXTRA_DEFINES  extra KEY=VALUE cmake definitions appended (e.g.
 #                        FETCHCONTENT_SOURCE_DIR_ONNX=… to feed pre-fetched deps).
 set -euo pipefail
@@ -48,7 +49,6 @@ JOBS="${JOBS:-$(nproc)}"
 OUT_DIR="${OUT_DIR:-$PWD/onnxruntime-s390x}"
 WORK="${WORK_DIR:-$PWD/.onnxruntime-build}"
 HERE="$(cd "$(dirname "$0")" && pwd)"
-PROTOC_VERSION=21.12
 
 for tool in cmake ninja python3 curl git; do
   command -v "$tool" >/dev/null 2>&1 || { echo "error: $tool is required (apt-get install cmake ninja-build python3 curl git)" >&2; exit 1; }
@@ -90,27 +90,33 @@ case "$ORT_TOOLCHAIN" in
 esac
 STRIP="$(command -v s390x-linux-gnu-strip || true)"
 
-# ONNX Runtime pins protobuf 21.12; the host needs a protoc of that series.
+SRC="${ORT_SRC_DIR:-$WORK/onnxruntime}"
+if [ ! -d "$SRC/.git" ]; then
+  git clone --depth 1 --branch "$ORT_TAG" --recurse-submodules --shallow-submodules https://github.com/microsoft/onnxruntime.git "$SRC"
+fi
+
+# The host protoc must be the release of the protobuf this ONNX Runtime builds
+# against — its generated code only compiles with that runtime's headers
+# (1.31 moved to 33.6, and 21.x output fails with "undeclared identifier
+# 'Arena'"). Read it from the checkout's cmake/deps.txt; 21.12 for a tag whose
+# entry has no version in it.
+PROTOC_VERSION="$(grep -m1 '^protobuf;' "$SRC/cmake/deps.txt" 2>/dev/null | grep -oE '/v[0-9]+(\.[0-9]+)+' | head -n1 | cut -c3- || true)"
+PROTOC_VERSION="${PROTOC_VERSION:-21.12}"
 if [ -z "${PROTOC:-}" ]; then
-  PROTOC="$WORK/protoc/bin/protoc"
+  PROTOC="$WORK/protoc-$PROTOC_VERSION/bin/protoc"
   if [ ! -x "$PROTOC" ]; then
     case "$(uname -m)" in
       x86_64 | amd64) PROTOC_ARCH=x86_64 ;;
       aarch64 | arm64) PROTOC_ARCH=aarch_64 ;;
       *) echo "error: no prebuilt protoc for the host arch $(uname -m); set PROTOC" >&2; exit 1 ;;
     esac
-    mkdir -p "$WORK/protoc"
-    curl -fsSL -o "$WORK/protoc.zip" "https://github.com/protocolbuffers/protobuf/releases/download/v$PROTOC_VERSION/protoc-$PROTOC_VERSION-linux-$PROTOC_ARCH.zip"
-    python3 -c "import zipfile,sys; zipfile.ZipFile(sys.argv[1]).extractall(sys.argv[2])" "$WORK/protoc.zip" "$WORK/protoc"
+    mkdir -p "$WORK/protoc-$PROTOC_VERSION"
+    curl -fsSL -o "$WORK/protoc-$PROTOC_VERSION.zip" "https://github.com/protocolbuffers/protobuf/releases/download/v$PROTOC_VERSION/protoc-$PROTOC_VERSION-linux-$PROTOC_ARCH.zip"
+    python3 -c "import zipfile,sys; zipfile.ZipFile(sys.argv[1]).extractall(sys.argv[2])" "$WORK/protoc-$PROTOC_VERSION.zip" "$WORK/protoc-$PROTOC_VERSION"
     chmod +x "$PROTOC"
   fi
 fi
 "$PROTOC" --version
-
-SRC="${ORT_SRC_DIR:-$WORK/onnxruntime}"
-if [ ! -d "$SRC/.git" ]; then
-  git clone --depth 1 --branch "$ORT_TAG" --recurse-submodules --shallow-submodules https://github.com/microsoft/onnxruntime.git "$SRC"
-fi
 
 # clang (zig) wants a builtin type after `__vector` where gcc also takes a
 # typedef: MLAS's s390x quantized kernels spell `__vector int32_t`. Patched
