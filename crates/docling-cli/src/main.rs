@@ -19,7 +19,7 @@
 //! the same name): one identifier per line, sorted, for scripts that ask the
 //! binary what it converts instead of hard-coding a list.
 //!
-//! Usage: docling-rs [--strict] [--page-break-placeholder TEXT] [--layers body|all|LIST] [--traverse-pictures] [--to md|json|html|text|dclx|chunks|images|latex|pandoc|vtt] [--pages A-B] [--scale X] [--images MODE] [--input GLOB --output DIR [--jobs N]] [--output-file PATH] [--fetch-images] [--image-sources none|embedded|local|remote] [--image-hosts LIST] [--max-images N] [--max-image-bytes N] [--max-image-total-mb N] [--min-image-bytes N] [--list-attachments] [--skip-empty-cells] [--compact-tables] [--ebcdic-layout JSON|PATH] [--encoding LABEL] [--from FORMAT] [--mime-type TYPE] [--no-url-fetch] [--no-stream] [--no-table-former] [--no-ocr] [--text-layer-only] [--password PASSWORD | --password-file PATH] [--force-full-page-ocr] [--no-text-panels] [--heading-hierarchy] [--ocr-lang LANG] [--ocr-engine ppocr|tesseract] [--ocr-mode MODE] [--ocr-scale X] [--ocr-textline-orientation] [--images-scale X] [--page-images] [--chunker hierarchical|hybrid] [--chunk-tokenizer PATH] [--chunk-max-tokens N] [--no-chunk-merge-peers] [--pipeline standard|vlm] [--vlm-endpoint URL] [--vlm-model NAME] [--vlm-api-key TOKEN] [--vlm-prompt TEXT] [--vlm-max-tokens N] [--asr-model PRESET] [--asr-lang CODE] [--video-frames N|all] [--video-scene-threshold X] [--video-frame-max-side PX] [--video-frame-dedupe N] [--xbrl-taxonomy DIR] [--use-web-browser] [--enrich-picture-classes] [--enrich-code] [--enrich-formula] [--picture-ocr] [--picture-ocr-classes LABELS] [--picture-ocr-min-side N] [--picture-ocr-scale X] [--no-picture-images] [--redact-pii] [--redact-mode label|pseudonym|fixed:TEXT] [--redact-kinds LIST] [--redact-pattern NAME=REGEX]... [--redact-images drop|box_out|keep] [--document-timeout SECONDS] [--abort-on-error] [--output-dirs auto|flat|mirror] <input-file> | - | URL | SOURCE...
+//! Usage: docling-rs [--strict] [--page-break-placeholder TEXT] [--layers body|all|LIST] [--traverse-pictures] [--to md|json|html|text|dclx|chunks|images|latex|pandoc|vtt] [--pages A-B] [--scale X] [--images MODE] [--input GLOB --output DIR [--jobs N]] [--output-file PATH] [--fetch-images] [--image-sources none|embedded|local|remote] [--image-hosts LIST] [--max-images N] [--max-image-bytes N] [--max-image-total-mb N] [--min-image-bytes N] [--list-attachments] [--skip-empty-cells] [--compact-tables] [--ebcdic-layout JSON|PATH] [--encoding LABEL] [--from FORMAT] [--mime-type TYPE] [--no-url-fetch] [--no-stream] [--no-table-former] [--no-ocr] [--text-layer-only] [--password PASSWORD | --password-file PATH] [--force-full-page-ocr] [--no-text-panels] [--heading-hierarchy] [--ocr-lang LANG] [--ocr-engine ppocr|tesseract] [--ocr-mode MODE] [--ocr-scale X] [--ocr-textline-orientation] [--images-scale X] [--page-images] [--chunker hierarchical|hybrid] [--chunk-tokenizer PATH] [--chunk-max-tokens N] [--no-chunk-merge-peers] [--pipeline standard|vlm] [--vlm-endpoint URL] [--vlm-model NAME] [--vlm-api-key TOKEN] [--vlm-prompt TEXT] [--vlm-max-tokens N] [--asr-model PRESET] [--asr-lang CODE] [--video-frames N|all] [--video-scene-threshold X] [--video-frame-max-side PX] [--video-frame-dedupe N] [--xbrl-taxonomy DIR] [--use-web-browser] [--enrich-picture-classes] [--enrich-code] [--enrich-formula] [--picture-ocr] [--picture-ocr-classes LABELS] [--picture-ocr-min-side N] [--picture-ocr-scale X] [--no-picture-images] [--picture-description] [--picture-description-endpoint URL] [--picture-description-model NAME] [--picture-description-api-key TOKEN] [--picture-description-prompt TEXT] [--picture-description-mode caption|ocr] [--picture-description-concurrency N] [--redact-pii] [--redact-mode label|pseudonym|fixed:TEXT] [--redact-kinds LIST] [--redact-pattern NAME=REGEX]... [--redact-images drop|box_out|keep] [--document-timeout SECONDS] [--abort-on-error] [--output-dirs auto|flat|mirror] <input-file> | - | URL | SOURCE...
 //!   --to FORMAT        repeatable (#491, like Python's `docling convert --to
 //!                      md --to json`): each document converts once and is
 //!                      written in every format named, `<stem>.md` +
@@ -266,6 +266,35 @@
 //!                      pixels, as RapidOCR reads them. Default: the image-input
 //!                      rule (--ocr-scale, else 3x under the cap;
 //!                      DOCLING_RS_PICTURE_OCR_SCALE). Pages are unaffected.
+//!   --picture-description
+//!                      describe every picture through an OpenAI-compatible
+//!                      vision endpoint (#670) — the embedded pictures of
+//!                      DOCX/PPTX/XLSX/HTML, a PDF's figures, video frames, and
+//!                      an image input as a whole — and attach the answer as
+//!                      the picture's description, where --picture-ocr puts
+//!                      its text: MarkItDown's llm_client/llm_model/llm_prompt
+//!                      and its markitdown-ocr plugin. --picture-ocr-min-side
+//!                      and --picture-ocr-classes select the pictures here too;
+//!                      identical images are sent once. An endpoint error
+//!                      warns; the conversion goes on.
+//!   --picture-description-endpoint URL
+//!                      the server's /v1 base or the full chat/completions URL;
+//!                      default --vlm-endpoint, else DOCLING_RS_VLM_ENDPOINT.
+//!   --picture-description-model NAME
+//!                      default --vlm-model, else DOCLING_RS_VLM_MODEL.
+//!   --picture-description-api-key TOKEN
+//!                      Bearer token; default --vlm-api-key, else
+//!                      DOCLING_RS_VLM_API_KEY.
+//!   --picture-description-prompt TEXT
+//!                      the instruction sent with every picture; default: the
+//!                      mode's prompt.
+//!   --picture-description-mode caption|ocr
+//!                      caption (default): MarkItDown's "Write a detailed
+//!                      caption for this image."; ocr: markitdown-ocr's
+//!                      "Extract all text from this image …" — LLM-vision OCR
+//!                      where the local models read poorly.
+//!   --picture-description-concurrency N
+//!                      pictures in flight at once (default 1).
 //!   --no-picture-images
 //!                      drop the embedded image bytes from every picture after
 //!                      the enrichment (keep_picture_images=false): a slim
@@ -497,6 +526,17 @@ PDF / IMAGE PIPELINE
                           (docling's generate_page_images)
   --enrich-picture-classes | --enrich-code | --enrich-formula
                           optional enrichment models (off by default)
+  --picture-description   describe every picture (any format) through an
+                          OpenAI-compatible vision endpoint; the answer is the
+                          picture's description, as --picture-ocr writes it
+  --picture-description-endpoint URL | --picture-description-model NAME |
+  --picture-description-api-key TOKEN
+                          default: the --vlm-* values, else DOCLING_RS_VLM_*
+  --picture-description-mode caption|ocr
+                          MarkItDown's caption prompt (default) or
+                          markitdown-ocr's text-extraction prompt
+  --picture-description-prompt TEXT | --picture-description-concurrency N
+                          your own instruction; pictures in flight (default 1)
 
 CHUNKING (`--to chunks`)
   --chunker hierarchical|hybrid
@@ -800,6 +840,24 @@ fn main() -> ExitCode {
                 }
             },
             "--ocr-textline-orientation" => opts.ocr_textline_orientation = Some(true),
+            "--picture-description" => opts.do_picture_description = Some(true),
+            "--picture-description-endpoint" => opts.picture_description_endpoint = args.next(),
+            "--picture-description-model" => opts.picture_description_model = args.next(),
+            "--picture-description-api-key" => opts.picture_description_api_key = args.next(),
+            "--picture-description-prompt" => opts.picture_description_prompt = args.next(),
+            "--picture-description-mode" => opts.picture_description_mode = args.next(),
+            "--picture-description-concurrency" => {
+                match args.next().map(|v| v.trim().parse::<usize>()) {
+                    // 0 is rejected by `validate()` below, like the other surfaces do.
+                    Some(Ok(n)) => opts.picture_description_concurrency = Some(n),
+                    _ => {
+                        eprintln!(
+                            "error: --picture-description-concurrency needs a positive integer"
+                        );
+                        return ExitCode::from(2);
+                    }
+                }
+            }
             "--picture-ocr-min-side" => match args.next().map(|v| v.trim().parse::<u32>()) {
                 Some(Ok(n)) => opts.picture_ocr_min_side = Some(n),
                 Some(_) => {

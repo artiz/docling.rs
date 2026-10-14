@@ -229,6 +229,11 @@ impl PyDocumentConverter {
     ///   picture pixel under RapidOCR's 2000 px cap (#666; `1.0` = native
     ///   pixels, `None` = the image-input rule);
     ///   `keep_picture_images=False` drops the image bytes afterwards.
+    /// * `do_picture_description` + `picture_description_endpoint` / `_model`
+    ///   / `_api_key` / `_prompt` / `_mode` (`caption` | `ocr`) /
+    ///   `_concurrency` (#670): describe every picture through an
+    ///   OpenAI-compatible vision endpoint; endpoint, model and key fall
+    ///   back to the `vlm_*` kwargs, then `DOCLING_RS_VLM_*`.
     /// * `redact_pii` — redact personal data from the converted document
     ///   before export (#621; a docling.rs extension): e-mail, phone, card
     ///   numbers, IBANs, IPs, URL credentials, national IDs, and names /
@@ -324,6 +329,13 @@ impl PyDocumentConverter {
         picture_ocr_min_side = None,
         picture_ocr_scale = None,
         keep_picture_images = true,
+        do_picture_description = false,
+        picture_description_endpoint = None,
+        picture_description_model = None,
+        picture_description_api_key = None,
+        picture_description_prompt = None,
+        picture_description_mode = None,
+        picture_description_concurrency = None,
         redact_pii = false,
         redact_mode = None,
         redact_kinds = None,
@@ -384,6 +396,13 @@ impl PyDocumentConverter {
         picture_ocr_min_side: Option<u32>,
         picture_ocr_scale: Option<f32>,
         keep_picture_images: bool,
+        do_picture_description: bool,
+        picture_description_endpoint: Option<String>,
+        picture_description_model: Option<String>,
+        picture_description_api_key: Option<String>,
+        picture_description_prompt: Option<String>,
+        picture_description_mode: Option<String>,
+        picture_description_concurrency: Option<usize>,
         redact_pii: bool,
         redact_mode: Option<String>,
         redact_kinds: Option<String>,
@@ -478,6 +497,13 @@ impl PyDocumentConverter {
             picture_ocr_min_side,
             picture_ocr_scale,
             keep_picture_images: Some(keep_picture_images),
+            do_picture_description: Some(do_picture_description),
+            picture_description_endpoint,
+            picture_description_model,
+            picture_description_api_key,
+            picture_description_prompt,
+            picture_description_mode,
+            picture_description_concurrency,
             redact_pii: Some(redact_pii),
             redact_mode,
             redact_kinds,

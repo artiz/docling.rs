@@ -80,6 +80,13 @@ paths:
         - { $ref: "#/components/parameters/picture_ocr_min_side" }
         - { $ref: "#/components/parameters/picture_ocr_scale" }
         - { $ref: "#/components/parameters/keep_picture_images" }
+        - { $ref: "#/components/parameters/do_picture_description" }
+        - { $ref: "#/components/parameters/picture_description_endpoint" }
+        - { $ref: "#/components/parameters/picture_description_model" }
+        - { $ref: "#/components/parameters/picture_description_api_key" }
+        - { $ref: "#/components/parameters/picture_description_prompt" }
+        - { $ref: "#/components/parameters/picture_description_mode" }
+        - { $ref: "#/components/parameters/picture_description_concurrency" }
         - { $ref: "#/components/parameters/redact_pii" }
         - { $ref: "#/components/parameters/redact_mode" }
         - { $ref: "#/components/parameters/redact_kinds" }
@@ -160,6 +167,13 @@ paths:
                 picture_ocr_min_side: { type: integer }
                 picture_ocr_scale: { $ref: "#/components/schemas/PictureOcrScale" }
                 keep_picture_images: { type: boolean }
+                do_picture_description: { type: boolean }
+                picture_description_endpoint: { type: string }
+                picture_description_model: { type: string }
+                picture_description_api_key: { type: string }
+                picture_description_prompt: { type: string }
+                picture_description_mode: { $ref: "#/components/schemas/PictureDescriptionMode" }
+                picture_description_concurrency: { type: integer, minimum: 1 }
                 redact_pii: { type: boolean }
                 redact_mode: { type: string }
                 redact_kinds: { type: string }
@@ -680,6 +694,15 @@ components:
         OCR render scale in pixels per PDF point (docling's
         `OcrOptions.scale`). Unset reads the pipeline's own 2.0 px/pt render;
         docling's default is 3 (216 dpi).
+    PictureDescriptionMode:
+      type: string
+      enum: [caption, ocr]
+      default: caption
+      description: >-
+        With `do_picture_description` (#670): `caption` sends MarkItDown's
+        "Write a detailed caption for this image.", `ocr` markitdown-ocr's
+        "Extract all text from this image …" — LLM-vision OCR where the local
+        models read poorly.
     PictureOcrScale:
       type: number
       exclusiveMinimum: 0
@@ -845,6 +868,43 @@ components:
             `false` drops the embedded image bytes from every picture after
             the enrichment pass (#645): a slim JSON/DCLX and placeholder-only
             Markdown, the OCR text and captions kept.
+        do_picture_description:
+          type: boolean
+          default: false
+          description: >-
+            Describe every picture — the embedded pictures of DOCX/PPTX/XLSX/
+            HTML, a PDF's figures, video frames, an image input as a whole —
+            through an OpenAI-compatible vision endpoint (#670); the answer is
+            the picture's description annotation, where `do_picture_ocr` puts
+            its text (Markdown after the caption, JSON `meta.description`).
+            `picture_ocr_min_side` / `picture_ocr_classes` select the
+            pictures here too; identical images are sent once; an endpoint
+            error warns and the conversion goes on. Also docling-serve's
+            `picture_description_api` on the compat routes.
+        picture_description_endpoint:
+          type: string
+          description: >-
+            The vision endpoint: the server's `/v1` base or the full
+            `chat/completions` URL. Falls back to `vlm_endpoint`, then the
+            server's `DOCLING_RS_VLM_ENDPOINT`. A request-supplied endpoint
+            needs `--allow-url-fetch`, like `vlm_endpoint`.
+        picture_description_model:
+          type: string
+          description: Model name; falls back to `vlm_model`, then `DOCLING_RS_VLM_MODEL`.
+        picture_description_api_key:
+          type: string
+          description: Bearer token; falls back to `vlm_api_key`, then `DOCLING_RS_VLM_API_KEY`.
+        picture_description_prompt:
+          type: string
+          description: >-
+            The instruction sent with every picture; unset = the mode's
+            prompt.
+        picture_description_mode: { $ref: "#/components/schemas/PictureDescriptionMode" }
+        picture_description_concurrency:
+          type: integer
+          minimum: 1
+          default: 1
+          description: Pictures in flight at once.
         redact_pii:
           type: boolean
           default: false
@@ -1386,6 +1446,20 @@ components:
       { name: picture_ocr_scale, in: query, schema: { $ref: "#/components/schemas/PictureOcrScale" } }
     keep_picture_images:
       { name: keep_picture_images, in: query, schema: { type: boolean } }
+    do_picture_description:
+      { name: do_picture_description, in: query, schema: { type: boolean } }
+    picture_description_endpoint:
+      { name: picture_description_endpoint, in: query, schema: { type: string } }
+    picture_description_model:
+      { name: picture_description_model, in: query, schema: { type: string } }
+    picture_description_api_key:
+      { name: picture_description_api_key, in: query, schema: { type: string } }
+    picture_description_prompt:
+      { name: picture_description_prompt, in: query, schema: { type: string } }
+    picture_description_mode:
+      { name: picture_description_mode, in: query, schema: { $ref: "#/components/schemas/PictureDescriptionMode" } }
+    picture_description_concurrency:
+      { name: picture_description_concurrency, in: query, schema: { type: integer, minimum: 1 } }
     redact_pii:
       { name: redact_pii, in: query, schema: { type: boolean } }
     redact_mode:

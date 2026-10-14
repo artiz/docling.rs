@@ -1043,6 +1043,7 @@ async fn convert(
     // #304: bad pipeline/vlm options are a 400/422 up front (no DNS here —
     // the endpoint's SSRF resolution check runs on the blocking pool).
     resolve_vlm_options(&state, &options, false)?;
+    check_picture_description(&state, &options, false)?;
     validate_target(&to, target.as_ref())?;
     // Admission control (#263): shed load before taking a conversion slot.
     if let Some(msg) = state.overloaded() {
@@ -1171,6 +1172,7 @@ async fn convert_async(
     let (to, image_mode) = validate_output(&options)?;
     // #304: fail an async submission fast instead of parking a doomed job.
     resolve_vlm_options(&state, &options, false)?;
+    check_picture_description(&state, &options, false)?;
     validate_target(&to, target.as_ref())?;
     // Admission control (#263) applies to async submissions too — a queued
     // job holds its upload bytes and will run into the same ceiling.
@@ -2392,6 +2394,42 @@ fn resolve_vlm_options(
     o.vlm_options().map_err(bad)
 }
 
+/// The picture-description pass's endpoint (#670) is the same outbound/SSRF
+/// surface as `vlm_endpoint`: a request-supplied one (its own field, or
+/// `vlm_endpoint` standing in for it) needs `--allow-url-fetch` and the
+/// resolution check; the server's `DOCLING_RS_VLM_ENDPOINT` needs neither.
+/// The pass's other options are validated through the shared resolution.
+fn check_picture_description(
+    state: &AppState,
+    options: &ConvertOptions,
+    check_ip: bool,
+) -> Result<(), ApiError> {
+    let o = &options.convert;
+    if o.do_picture_description != Some(true) {
+        return Ok(());
+    }
+    let supplied = o
+        .picture_description_endpoint
+        .as_deref()
+        .or(o.vlm_endpoint.as_deref())
+        .filter(|v| !v.trim().is_empty());
+    if let Some(url) = supplied {
+        if !state.cfg.allow_url_fetch {
+            return Err(ApiError::Unsupported(
+                "request-supplied picture_description_endpoint is disabled; start docling-serve \
+                 with --allow-url-fetch (SSRF surface — see docs/SECURITY.md), or pin the \
+                 endpoint server-side via DOCLING_RS_VLM_ENDPOINT"
+                    .into(),
+            ));
+        }
+        if check_ip {
+            check_outbound_url(url)?;
+        }
+    }
+    o.picture_description_options().map_err(bad)?;
+    Ok(())
+}
+
 fn convert_document_inner(
     state: &AppState,
     source: SourceDocument,
@@ -2403,6 +2441,7 @@ fn convert_document_inner(
     // buffered surface — sync, batch item, async job, cloud target — and the
     // streaming path's buffered branch pick it up in one place. A VLM failure
     // is a per-request error like any other, never a server crash.
+    check_picture_description(state, options, true)?;
     if let Some(vlm) = resolve_vlm_options(state, options, true)? {
         let finish = request_converter(state, options)?;
         return docling::vlm::convert_vlm(&source, &vlm)

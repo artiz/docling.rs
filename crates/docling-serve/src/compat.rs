@@ -187,6 +187,18 @@ pub(crate) fn parse_fields(fields: &[(String, String)]) -> Result<(ConvertOption
                 }
             }
             "target_type" => zip = value.trim() == "zip",
+            // docling's `PictureDescriptionApiOptions` as JSON (#670): its
+            // `url` is the endpoint, `params.model` the model, an
+            // `Authorization: Bearer …` header the key, `prompt` and
+            // `concurrency` theirs. `do_picture_description` switches the
+            // pass on, as upstream.
+            "picture_description_api" => picture_description_api(c, value)?,
+            // `picture_description_local` names a model to run in-process
+            // (SmolVLM, granite-vision); there is no in-process VLM here, so
+            // it is accepted and ignored — `do_picture_description` then
+            // describes through the server's DOCLING_RS_VLM_* endpoint, if
+            // any, as it would without it.
+            "picture_description_local" => {}
             other if is_own_option(other) => opts.set_text(other, value)?,
             _ => {}
         }
@@ -214,6 +226,48 @@ pub(crate) fn parse_fields(fields: &[(String, String)]) -> Result<(ConvertOption
             image_mode,
         },
     ))
+}
+
+/// docling's `PictureDescriptionApiOptions` (a JSON object: `url`,
+/// `headers`, `params`, `prompt`, `concurrency`, …) onto the
+/// `picture_description_*` options.
+fn picture_description_api(c: &mut docling::ConvertOptions, value: &str) -> Result<(), ApiError> {
+    let v: Value =
+        serde_json::from_str(value).map_err(|_| bad_value("picture_description_api", value))?;
+    let Value::Object(map) = v else {
+        return Err(bad_value("picture_description_api", value));
+    };
+    let text = |v: Option<&Value>| {
+        v.and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(str::to_string)
+    };
+    if let Some(url) = text(map.get("url")) {
+        c.picture_description_endpoint = Some(url);
+    }
+    if let Some(model) = map.get("params").and_then(|p| text(p.get("model"))) {
+        c.picture_description_model = Some(model);
+    }
+    if let Some(Value::Object(headers)) = map.get("headers") {
+        let auth = headers
+            .iter()
+            .find(|(k, _)| k.eq_ignore_ascii_case("authorization"))
+            .and_then(|(_, v)| v.as_str());
+        if let Some(token) = auth.and_then(|a| {
+            a.strip_prefix("Bearer ")
+                .or_else(|| a.strip_prefix("bearer "))
+        }) {
+            c.picture_description_api_key = Some(token.trim().to_string());
+        }
+    }
+    if let Some(prompt) = text(map.get("prompt")) {
+        c.picture_description_prompt = Some(prompt);
+    }
+    if let Some(n) = map.get("concurrency").and_then(Value::as_u64) {
+        c.picture_description_concurrency = Some(n as usize);
+    }
+    Ok(())
 }
 
 /// Whether `name` is an option of this server's own (`/v1/convert`'s
@@ -785,9 +839,26 @@ mod tests {
             ("abort_on_error", "false"),
             ("page_range", "2"),
             ("page_range", "5"),
-            ("picture_description_api", r#"{"url": "http://x"}"#),
+            ("do_picture_description", "true"),
+            (
+                "picture_description_api",
+                r#"{"url": "http://x/v1", "headers": {"Authorization": "Bearer sk-1"}, "params": {"model": "gpt-4o-mini", "max_tokens": 200}, "prompt": "Describe.", "concurrency": 3, "timeout": 20}"#,
+            ),
+            ("picture_description_local", r#"{"repo_id": "HuggingFaceTB/SmolVLM-256M-Instruct"}"#),
         ]))
         .expect("parses");
+        {
+            let c = &opts.convert;
+            assert_eq!(c.do_picture_description, Some(true));
+            assert_eq!(
+                c.picture_description_endpoint.as_deref(),
+                Some("http://x/v1")
+            );
+            assert_eq!(c.picture_description_model.as_deref(), Some("gpt-4o-mini"));
+            assert_eq!(c.picture_description_api_key.as_deref(), Some("sk-1"));
+            assert_eq!(c.picture_description_prompt.as_deref(), Some("Describe."));
+            assert_eq!(c.picture_description_concurrency, Some(3));
+        }
         assert_eq!(ask.formats, [Format::Md, Format::Json]);
         assert_eq!(ask.image_mode, ImageMode::Placeholder);
         let c = &opts.convert;

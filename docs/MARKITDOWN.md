@@ -104,7 +104,8 @@ with `convert`, `convert_local`, `convert_stream`, `convert_uri`,
 | `MarkItDown().convert(source)` | same — path, `Path`, `http(s)`/`file`/`data` URI, binary stream, `requests.Response` |
 | `StreamInfo(extension=…, mimetype=…, charset=…)` hints | same; without hints, magic bytes and container structure decide |
 | `keep_data_uris=True` | same — pictures as `data:` URIs |
-| `llm_client`, `llm_model`, `llm_prompt` | same request per picture; image inputs get the `# Description:` section |
+| `llm_client`, `llm_model`, `llm_prompt` | same request per picture; image inputs get the `# Description:` section. Outside the facade — every surface, every format — `do_picture_description` + `picture_description_endpoint` / `_model` / `_prompt` send the same caption request from the engine (#670) |
+| markitdown-ocr plugin (`llm_prompt` for text extraction) | `picture_description_mode=ocr`: markitdown-ocr's prompt, through the same endpoint, for DOCX/PPTX/XLSX pictures and PDF figures alike — or the local, offline `--picture-ocr` |
 | `requests_session` | same |
 | XLSX `## <sheet>` headings | same |
 | ZIP: `## File:` per entry | same |
