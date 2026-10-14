@@ -1,0 +1,44 @@
+# PyPI distribution `docling-rs-mcp`: what `uvx docling-rs-mcp` installs and
+# runs (#669), like MarkItDown's `markitdown-mcp`. It has no server code of
+# its own — the server is `docling_rs.mcp`, the one `docling-rs mcp` runs,
+# compiled into the docling-rs wheel — so this package only pins that wheel
+# and names the command. pypi-publish.yml writes the release version into
+# `version` and into the docling-rs pin before building; the committed
+# values are placeholders (install locally with `pip install --no-deps`).
+[build-system]
+requires = ["hatchling>=1.24"]
+build-backend = "hatchling.build"
+
+[project]
+name = "docling-rs-mcp"
+version = "0.0.0"
+description = "MCP server that converts documents to Markdown for AI agents: PDF with layout, tables and OCR, DOCX, PPTX, XLSX, HTML, scans. docling in Rust, MarkItDown's convert_to_markdown tool."
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.9"
+keywords = [
+    "mcp", "model-context-protocol", "mcp-server", "markitdown", "markitdown-mcp",
+    "docling", "pdf-to-markdown", "document-conversion", "ocr", "claude", "llm", "rag",
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Rust",
+    "Topic :: Text Processing :: Markup :: Markdown",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+dependencies = ["docling-rs==0.0.0"]
+
+[project.scripts]
+docling-rs-mcp = "docling_rs_mcp:main"
+
+[project.urls]
+Homepage = "https://github.com/docling-project/docling.rs"
+Repository = "https://github.com/docling-project/docling.rs"
+Documentation = "https://github.com/docling-project/docling.rs/blob/master/crates/docling-cli/README.md#mcp-server--docling-rs-mcp"
+Issues = "https://github.com/docling-project/docling.rs/issues"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/docling_rs_mcp"]

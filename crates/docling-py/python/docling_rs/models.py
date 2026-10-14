@@ -234,6 +234,7 @@ def download_models(
     asr_model: "str | Iterable[str] | None" = None,
     pdf_models: bool = True,
     ner: bool = False,
+    enrichment: bool = True,
 ) -> Path:
     """Fetch the PDF/image pipeline's models into the cache (idempotent).
 
@@ -256,6 +257,9 @@ def download_models(
     redaction pass (``DocumentConverter(redact_pii=True)``, #621): dslim's
     ``bert-base-NER`` ONNX export (MIT, ~430 MB) into ``models/ner/`` — the
     release asset when hosted, else straight from Hugging Face.
+    ``enrichment=False`` skips the CodeFormula models (~740 MB) that only
+    ``do_code_enrichment`` / ``do_formula_enrichment`` use — what the
+    ``docling-rs-mcp --download-models`` launcher fetches.
     """
     presets = _asr_presets(asr_model)
     root = Path(dest) if dest else cache_dir()
@@ -279,7 +283,7 @@ def download_models(
         return root
     for name, rel in _REQUIRED.items():
         _fetch(f"{BASE_URL}/{name}", root / rel, optional=False, progress=progress, force=force)
-    for name, rel in {**_OPTIONAL, **_ENRICH}.items():
+    for name, rel in {**_OPTIONAL, **(_ENRICH if enrichment else {})}.items():
         if not _fetch(
             f"{BASE_URL}/{name}", root / rel, optional=True, progress=progress, force=force
         ):
@@ -288,7 +292,7 @@ def download_models(
     # The huge fp32 CodeFormula decoder only matters when its int8 variant
     # isn't hosted (or DOCLING_RS_FP32 users fetch it here as the fallback).
     name, rel = _ENRICH_FP32_DECODER
-    if not (root / _ENRICH["cf_decoder_kv_int8.onnx"]).exists():
+    if enrichment and not (root / _ENRICH["cf_decoder_kv_int8.onnx"]).exists():
         _fetch(f"{BASE_URL}/{name}", root / rel, optional=True, progress=progress, force=force)
     if platform.machine() == "s390x":
         _fetch_onnxruntime(root, progress=progress, force=force)

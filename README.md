@@ -123,8 +123,8 @@ Same options, same outputs on every surface — every option in
   [Open WebUI setup](./crates/docling-serve/README.md#open-webui)).
 - **AI agents (MCP):** `docling-rs mcp` gives Claude Desktop, Claude Code,
   Cursor or VS Code MarkItDown's `convert_to_markdown` tool, plus `convert`
-  for JSON, chunks and the rest — `claude mcp add docling -- docling-rs mcp`
-  ([MCP server](#mcp-server--docling-rs-mcp)).
+  for JSON, chunks and the rest — `uvx docling-rs-mcp`, or
+  `claude mcp add docling -- docling-rs mcp` ([MCP server](#mcp-server--docling-rs-mcp)).
 - **LangChain:** `pip install "docling-rs[langchain]"` — langchain-docling's
   `DoclingLoader` on the Rust engine, one import to swap
   ([details](./crates/docling-py/README.md#langchain)).
@@ -339,10 +339,12 @@ server in the default `docling-rs` binary and image. Agents get MarkItDown's
 
 ```bash
 claude mcp add docling -- docling-rs mcp --root ~/Documents     # Claude Code
+uvx docling-rs-mcp --root ~/Documents                           # the same server from PyPI
 ```
 
-Local reads stay under `--root`; URLs need `--allow-url-fetch`. Docker,
-Streamable HTTP (`--http`), the security model and memory behaviour:
+Local reads stay under `--root`; URLs need `--allow-url-fetch`. The PyPI
+launcher, Docker, Streamable HTTP (`--http`), the security model and memory
+behaviour:
 [`crates/docling-cli/README.md`](./crates/docling-cli/README.md#mcp-server--docling-rs-mcp).
 
 ## RAG subsystem

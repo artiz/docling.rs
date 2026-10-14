@@ -1207,6 +1207,30 @@ fn compiled_providers() -> Vec<&'static str> {
     docling_onnx::compiled_providers()
 }
 
+/// The MCP server (#669) — the one `docling-rs mcp` runs — for the
+/// `docling-rs-mcp` launcher (`docling_rs.mcp`): `args` are the flags after
+/// the command, the rest name the launcher in the server's messages. Blocks,
+/// without the GIL, until the client hangs up (stdio) or Ctrl-C (HTTP);
+/// returns the exit status.
+#[cfg(feature = "mcp")]
+#[pyfunction]
+fn mcp_main(
+    py: Python<'_>,
+    args: Vec<String>,
+    command: String,
+    client_config: String,
+    models_hint: String,
+    extra_flags: String,
+) -> u8 {
+    let launcher = docling_cli::mcp::Launcher {
+        command: &command,
+        client_config: &client_config,
+        models_hint: &models_hint,
+        extra_flags: &extra_flags,
+    };
+    py.detach(|| docling_cli::mcp::run_with(args, &launcher))
+}
+
 #[pymodule]
 fn _native(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyDocumentConverter>()?;
@@ -1217,6 +1241,8 @@ fn _native(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(pyo3::wrap_pyfunction!(pandoc_from_json, m)?)?;
     m.add_function(pyo3::wrap_pyfunction!(email_attachments, m)?)?;
     m.add_function(pyo3::wrap_pyfunction!(compiled_providers, m)?)?;
+    #[cfg(feature = "mcp")]
+    m.add_function(pyo3::wrap_pyfunction!(mcp_main, m)?)?;
     m.add("ConversionError", m.py().get_type::<ConversionError>())?;
     m.add("EncryptionError", m.py().get_type::<EncryptionError>())?;
     m.add(

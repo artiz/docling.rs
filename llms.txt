@@ -7,7 +7,7 @@ Choosing the entry point:
 - Python, coming from MarkItDown: `pip install docling-rs`, then `from docling_rs.markitdown import MarkItDown` — the same `convert()` / `convert_stream()` / `StreamInfo` API. PDFs use the full pipeline after `docling_rs.download_models()`, else their text layer.
 - Python, coming from docling: `from docling_rs import DocumentConverter` — `result.document` is a genuine `docling_core` `DoclingDocument`.
 - Shell: `docling-rs file.pdf` prints Markdown (`--to json|html|latex|chunks|pandoc|dclx`; `--text-layer-only` skips the ML models for digital PDFs). Install: release binaries, `cargo install docling-cli`, or `ghcr.io/docling-project/docling-rs`.
-- AI agents (MCP): `docling-rs mcp` is a Model Context Protocol server with MarkItDown's `convert_to_markdown(uri)` tool plus `convert` and `list_input_formats` — `claude mcp add docling -- docling-rs mcp --root ~/Documents`; stdio, or Streamable HTTP with `--http`.
+- AI agents (MCP): `docling-rs mcp` is a Model Context Protocol server with MarkItDown's `convert_to_markdown(uri)` tool plus `convert` and `list_input_formats` — `uvx docling-rs-mcp --root ~/Documents` (PyPI) or `claude mcp add docling -- docling-rs mcp --root ~/Documents`; stdio, or Streamable HTTP with `--http`; registry name `io.github.docling-project/docling-rs`.
 - HTTP: `docker run -p 5001:5001 ghcr.io/docling-project/docling-rs-serve`, then `POST /v1/convert`; it also serves docling-serve's routes, so Open WebUI, n8n and Dify can point at it.
 - Node.js: `npm i docling.rs`. Browser (fully client-side): `npm i docling.rs-wasm`. Rust: the `docling` crate.
 - GPU: `pip install docling-rs-cuda`, `npm i docling.rs-cuda`, or the `cuda`/`coreml`/`directml` cargo features; CPU is the default.

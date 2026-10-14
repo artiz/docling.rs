@@ -11,6 +11,13 @@ keywords.workspace = true
 categories = ["command-line-utilities", "text-processing"]
 rust-version.workspace = true
 
+# The library half: the MCP server (#669) for embedders — the Python
+# package's `docling-rs-mcp` launcher runs it in-process. The binary uses it
+# too.
+[lib]
+name = "docling_cli"
+path = "src/lib.rs"
+
 [[bin]]
 name = "docling-rs"
 path = "src/main.rs"

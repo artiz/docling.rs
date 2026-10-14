@@ -285,3 +285,30 @@ fn http_serves_with_a_bearer_token() {
     let _ = child.kill();
     let _ = child.wait();
 }
+
+/// Started in `/` (where desktop clients often start servers) without
+/// `--root`, the server refuses rather than open the whole file system; an
+/// explicit `--root /` is the operator's choice and starts.
+#[cfg(unix)]
+#[test]
+fn a_defaulted_file_system_root_is_refused() {
+    let out = Command::new(env!("CARGO_BIN_EXE_docling-rs"))
+        .arg("mcp")
+        .current_dir("/")
+        .stdin(Stdio::null())
+        .output()
+        .unwrap();
+    assert_eq!(out.status.code(), Some(2));
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(stderr.contains("file system root"), "{stderr}");
+    let out = Command::new(env!("CARGO_BIN_EXE_docling-rs"))
+        .args(["mcp", "--root=/"])
+        .current_dir("/")
+        .stdin(Stdio::null())
+        .output()
+        .unwrap();
+    // stdin closed at once: the server starts, sees no client and exits.
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(!stderr.contains("file system root"), "{stderr}");
+    assert!(stderr.contains("root /"), "{stderr}");
+}

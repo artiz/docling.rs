@@ -495,6 +495,17 @@ not flood the context); the conversion runs on a worker thread, as
 [`examples/autogen/`](./examples/autogen/) indexes a paper into a Chroma
 memory and answers questions with page citations.
 
+## MCP server
+
+The wheel also carries docling.rs's Model Context Protocol server (#669) —
+the one `docling-rs mcp` runs, MarkItDown's `convert_to_markdown(uri)` tool
+included — as `python -m docling_rs.mcp --root ~/Documents`. The PyPI
+launcher [`docling-rs-mcp`](./mcp/README.md) pins this package and names the
+command, so agents start it with `uvx docling-rs-mcp --root ~/Documents`;
+`--download-models` fetches the layout, OCR and table models into this
+package's cache once. Configuration, tools and the security model: the
+[CLI README](../docling-cli/README.md#mcp-server--docling-rs-mcp).
+
 ## Not covered (yet)
 
 The *local in-process* full-VLM conversion pipeline (SmolDocling) and
@@ -520,7 +531,8 @@ workflow, which builds an `abi3` wheel per platform (Linux x86-64/arm64 as
 Runtime at run time, see the repo README's IBM Z section — and Windows x86-64;
 one wheel covers every Python ≥ 3.9) plus an
 sdist and the `docling-rs-cuda` wheel, and uploads them to PyPI at the release's
-version. It can also be run by hand (`workflow_dispatch`) — to re-publish a
+version — then the pure-Python [`docling-rs-mcp`](./mcp/) launcher, pinned to
+that version, as its own PyPI project (`docs/MCP_REGISTRIES.md`). It can also be run by hand (`workflow_dispatch`) — to re-publish a
 version an automatic run skipped or failed on, or to publish a branch build;
 files already on PyPI are skipped, so re-runs are safe:
 

@@ -194,11 +194,16 @@ extracted to disk, so there is no zip-slip path.
 
 The MCP server converts documents **on behalf of a model**, whose tool calls
 may be steered by the documents it reads (prompt injection) — so what a call
-can reach is fixed by the operator's flags, not by the call:
+can reach is fixed by the operator's flags, not by the call. The same rules
+hold however it is started: `docling-rs mcp`, the PyPI launcher
+`uvx docling-rs-mcp` (the same Rust server, in the `docling-rs` wheel) or
+the container image.
 
 - **Local reads are confined to `--root DIR`** (repeatable; the working
-  directory by default). A path is resolved against the first root, folded
-  lexically (`..`) and refused if it leaves every root — before the file
+  directory by default). A defaulted root that is the file-system root —
+  where desktop clients often start servers — is refused: the server would
+  otherwise read everything, so `/` takes an explicit `--root /`. A path
+  is resolved against the first root, folded lexically (`..`) and refused if it leaves every root — before the file
   system is asked, so a probe learns nothing about what exists outside — and
   checked again after `canonicalize`, so a symlink inside a root cannot lead
   out. Options that name files (`xbrl_taxonomy`, a copybook path in
