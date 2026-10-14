@@ -19,8 +19,8 @@ reproduce it byte for byte (see "Conformance & fixtures").
   cut by hand (`force_version` dispatch input) — v1.0.0 marks the breaking
   `.models/` asset-dir rename. ci.yml publishes the crates and cuts the
   GitHub Release (not marked latest); **everything else is published by
-  hand**, for a release the maintainer picks: `gh workflow run release.yml -f
-  tag=vX.Y.Z` dispatches `pypi-publish.yml` (`docling-rs` + `docling-rs-cuda`,
+  hand**, for a release the maintainer picks: `gh workflow run release.yml`
+  (the newest `vX.Y.Z` release; `-f tag=vX.Y.Z` for another) dispatches `pypi-publish.yml` (`docling-rs` + `docling-rs-cuda`,
   the `docling-rs-mcp` launcher, then the MCP catalogs), `npm-publish.yml`
   (`docling.rs`, the platform packages, `docling.rs-cuda`,
   `docling.rs-wasm`), `docker-publish.yml` (GHCR) and `cli-binaries.yml` (the

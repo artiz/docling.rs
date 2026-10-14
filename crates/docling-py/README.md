@@ -544,7 +544,8 @@ days of a release's first upload, after which PyPI accepts no new files for it:
 
 ```bash
 # From the Actions tab, or:
-gh workflow run release.yml -f tag=v2.23.0                          # every channel
+gh workflow run release.yml                                         # every channel, the newest release
+gh workflow run release.yml -f tag=v2.23.0                          # every channel, a given release
 gh workflow run pypi-publish.yml -f tag=v2.23.0                     # PyPI only, with docling-rs-cuda
 gh workflow run pypi-publish.yml -f tag=v2.23.0 -f cuda_wheel=false # without it
 gh workflow run pypi-publish.yml                                    # the dispatched ref at the workspace version
