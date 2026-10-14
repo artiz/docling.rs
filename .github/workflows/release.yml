@@ -6,7 +6,8 @@
 # every merge — not marked latest; this publishes the releases the maintainer
 # picks:
 #
-#     gh workflow run release.yml -f tag=v2.23.0
+#     gh workflow run release.yml                  # the newest vX.Y.Z release
+#     gh workflow run release.yml -f tag=v2.23.0   # a given one
 #
 # Each channel runs as its own workflow (pypi-publish.yml, npm-publish.yml,
 # docker-publish.yml, cli-binaries.yml), dispatched from here rather than
@@ -18,13 +19,15 @@
 # repaired from its own run (*Re-run failed jobs*), or by running this again:
 # every channel skips or overwrites what is already published.
 name: release
+run-name: release ${{ inputs.tag || '(newest tag)' }}
 
 on:
   workflow_dispatch:
     inputs:
       tag:
-        description: "Release tag to publish (e.g. v2.23.0) — a GitHub Release ci.yml cut."
-        required: true
+        description: "Release tag to publish (e.g. v2.23.0) — a GitHub Release ci.yml cut. Blank = the newest vX.Y.Z release."
+        required: false
+        default: ""
       pypi:
         description: "PyPI: docling-rs (+ docling-rs-cuda), the docling-rs-mcp launcher, the MCP catalogs."
         type: boolean
@@ -54,7 +57,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: release-${{ inputs.tag }}
+  group: release-${{ inputs.tag || 'newest' }}
   cancel-in-progress: false
 
 jobs:
@@ -63,6 +66,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       channels: ${{ steps.plan.outputs.channels }}
+      tag: ${{ steps.plan.outputs.tag }}
     steps:
       - name: Check the tag and pick the channels
         id: plan
@@ -71,6 +75,16 @@ jobs:
           TAG: ${{ inputs.tag }}
           CUDA: ${{ inputs.cuda }}
         run: |
+          # Blank: the newest final release ci.yml cut (the `npm-cuda-v*` and
+          # `models-v*` asset releases and pre-releases do not count).
+          if [ -z "$TAG" ]; then
+            TAG=$(gh release list --repo "$GITHUB_REPOSITORY" --exclude-drafts --limit 100 \
+              --json tagName --jq '.[].tagName' | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -n1 || true)
+            if [ -z "$TAG" ]; then echo "::error::no vX.Y.Z GitHub Release found"; exit 1; fi
+            echo "No tag given: publishing the newest release, $TAG"
+          fi
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "### Publishing $TAG" >> "$GITHUB_STEP_SUMMARY"
           if ! [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+([-+].+)?$ ]]; then
             echo "::error::'$TAG' is not a v<semver> release tag"; exit 1
           fi
@@ -151,16 +165,16 @@ jobs:
 
   latest:
     name: mark the release latest
-    needs: publish
+    needs: [plan, publish]
     if: ${{ !cancelled() && inputs.latest && needs.publish.result == 'success' }}
     runs-on: ubuntu-latest
     permissions:
       contents: write # gh release edit
     steps:
-      - name: Mark ${{ inputs.tag }} latest
+      - name: Mark ${{ needs.plan.outputs.tag }} latest
         env:
           GH_TOKEN: ${{ github.token }}
-          TAG: ${{ inputs.tag }}
+          TAG: ${{ needs.plan.outputs.tag }}
         run: |
           asset="docling-rs-$TAG-x86_64-unknown-linux-gnu.tar.gz"
           if ! gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name' | grep -qxF "$asset"; then
