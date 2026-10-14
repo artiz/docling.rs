@@ -17,8 +17,23 @@ pub struct DoclingJsonBackend;
 
 impl DeclarativeBackend for DoclingJsonBackend {
     fn convert(&self, source: &SourceDocument) -> Result<DoclingDocument, ConversionError> {
-        let mut root: Value = serde_json::from_str(&source.text()?)
-            .map_err(|e| ConversionError::with_source("docling-json", e))?;
+        let text = source.text()?;
+        let mut root: Value = match serde_json::from_str(&text) {
+            Ok(v) => v,
+            // Not JSON at all — but not a docling document either (its
+            // schema name is nowhere in the text): the bytes as a json
+            // code block, as MarkItDown reads any `.json` (#671). A broken
+            // DoclingDocument keeps its parse error.
+            Err(_) if !text.contains("DoclingDocument") => {
+                return crate::backend::text::convert_json_text(source);
+            }
+            Err(e) => return Err(ConversionError::with_source("docling-json", e)),
+        };
+        // Generic JSON (#671) — no `schema_name`, no `body` to walk — is one
+        // `json` code block, not an empty document.
+        if !crate::backend::text::is_docling_document(&root) {
+            return crate::backend::text::convert_json_text(source);
+        }
         // Referenced images resolve against the JSON file's directory (#403).
         inline_referenced_images(
             &mut root,

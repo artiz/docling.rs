@@ -2960,9 +2960,22 @@ mod ssrf_tests {
             )),
             Some(InputFormat::Pdf)
         );
-        // Neither an extension nor a known Content-Type → a 4xx (Bad), not a 500.
+        // Neither an extension nor a known Content-Type: text bytes are
+        // plain text (#671); binary bytes a 4xx (Bad), not a 500.
+        assert_eq!(
+            fmt(source_from_named_bytes_ct(
+                "noext",
+                b"x".to_vec(),
+                Some("application/octet-stream")
+            )),
+            Some(InputFormat::Text)
+        );
         assert!(matches!(
-            source_from_named_bytes_ct("noext", b"x".to_vec(), Some("application/octet-stream")),
+            source_from_named_bytes_ct(
+                "noext",
+                vec![0, 1, 2, 255, 254, 0],
+                Some("application/octet-stream")
+            ),
             Err(ApiError::Bad(_))
         ));
     }

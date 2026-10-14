@@ -333,7 +333,7 @@ fn positional_directories_and_files_mix_and_need_an_output_dir() {
     std::fs::create_dir_all(src.0.join("deep/er")).unwrap();
     std::fs::write(src.0.join("deep/er/x.md"), "# x\n").unwrap();
     std::fs::write(
-        src.0.join("deep/notes.log"),
+        src.0.join("deep/blob.bin"),
         "ignored: not a convertible extension\n",
     )
     .unwrap();
@@ -409,9 +409,14 @@ fn same_stem_sources_are_refused_before_converting() {
 #[test]
 fn abort_on_error_stops_at_the_first_failure() {
     let src = Scratch::new("abort");
-    // Unknown extension: `SourceDocument::from_file` rejects it at convert
-    // time, which is a per-file failure rather than an expansion error.
-    std::fs::write(src.0.join("bad.xyz"), "not a document\n").unwrap();
+    // Unknown extension and binary content (text would read as plain text
+    // since #671): `SourceDocument::from_file` rejects it at convert time,
+    // which is a per-file failure rather than an expansion error.
+    std::fs::write(
+        src.0.join("bad.xyz"),
+        b"\x00\x01\x02\xff\xfe not a document\x00",
+    )
+    .unwrap();
     std::fs::write(src.0.join("good.md"), "# good\n").unwrap();
     let out = Scratch::new("abort-out");
     let (code, _, stderr) = run(&[
@@ -606,7 +611,11 @@ fn repeated_to_needs_an_output_dir_and_validates_each_entry() {
 #[test]
 fn repeated_to_respects_abort_on_error() {
     let src = Scratch::new("to-abort");
-    std::fs::write(src.0.join("bad.xyz"), "not a document\n").unwrap();
+    std::fs::write(
+        src.0.join("bad.xyz"),
+        b"\x00\x01\x02\xff\xfe not a document\x00",
+    )
+    .unwrap();
     std::fs::write(src.0.join("good.md"), "# good\n").unwrap();
     let out = Scratch::new("to-abort-out");
     let (code, stdout, stderr) = run(&[
@@ -1033,8 +1042,12 @@ fn stdin_converts_with_a_format_hint_or_by_signature() {
     );
     assert_eq!(code, 0, "stderr: {stderr}");
     assert!(md.starts_with("# From stdin"), "{md:?}");
-    // Nothing to go on: exit 2, the hint flags named.
-    let (code, _, stderr) = run_with(&["-"], b"plain words only\n", false);
+    // Text with nothing else to go on is plain text (#671); binary bytes
+    // are refused: exit 2, the hint flags named.
+    let (code, out, stderr) = run_with(&["-"], b"plain words only\n", false);
+    assert_eq!(code, 0, "stderr: {stderr}");
+    assert_eq!(out, "plain words only\n");
+    let (code, _, stderr) = run_with(&["-"], b"\x00\x01\x02\xff\xfe\x00", false);
     assert_eq!(code, 2, "stderr: {stderr}");
     assert!(
         stderr.contains("cannot determine the format of stdin")
@@ -1063,18 +1076,25 @@ fn hints_apply_to_files_and_stdin_lands_in_output_files() {
     let (code, out, stderr) = run(&["--from", "html", &txt]);
     assert_eq!(code, 0, "stderr: {stderr}");
     assert!(out.starts_with("# Typed as HTML"), "{out:?}");
-    // No extension: the media type decides, the file is otherwise refused.
+    // No extension: the media type decides; text bytes read as plain text
+    // (#671), so the heading is a paragraph until a hint says Markdown;
+    // binary bytes are refused with the hints named.
     let bare = scratch.path("bare");
     std::fs::write(&bare, "# Bare\n").unwrap();
-    let (code, _, stderr) = run(&[&bare]);
+    let (code, out, stderr) = run(&[&bare]);
+    assert_eq!(code, 0, "stderr: {stderr}");
+    assert_eq!(out, "# Bare\n");
+    let (code, out, stderr) = run(&["--mime-type", "text/markdown", &bare]);
+    assert_eq!(code, 0, "stderr: {stderr}");
+    assert!(out.starts_with("# Bare"), "{out:?}");
+    let blob = scratch.path("blob");
+    std::fs::write(&blob, b"\x00\x01\x02\xff\xfe\x00").unwrap();
+    let (code, _, stderr) = run(&[&blob]);
     assert_eq!(code, 2, "stderr: {stderr}");
     assert!(
         stderr.contains("--from FORMAT or --mime-type TYPE"),
         "{stderr}"
     );
-    let (code, out, stderr) = run(&["--mime-type", "text/markdown", &bare]);
-    assert_eq!(code, 0, "stderr: {stderr}");
-    assert!(out.starts_with("# Bare"), "{out:?}");
     // stdin into --output-file …
     let target = scratch.path("out/result.md");
     let bytes = std::fs::read(STRICT_DOCX).unwrap();
@@ -1104,7 +1124,13 @@ fn data_and_file_urls_convert() {
     let (code, out, stderr) = run(&["data:text/html;base64,PGgxPkhpPC9oMT48cD50aGVyZTwvcD4="]);
     assert_eq!(code, 0, "stderr: {stderr}");
     assert_eq!(out, "# Hi\n\nthere\n");
+    // An untyped text payload is plain text (#671): two paragraphs, the
+    // `#` a character; `--from md` reads it as Markdown. Untyped binary
+    // bytes are refused with the hints named.
     let (code, out, stderr) = run(&["data:,%23%20Percent%0A%0Aplain"]);
+    assert_eq!(code, 0, "stderr: {stderr}");
+    assert_eq!(out, "# Percent\n\nplain\n");
+    let (code, out, stderr) = run(&["data:;base64,AAECA//+AA=="]);
     assert_eq!(code, 2, "stderr: {stderr}");
     assert!(
         stderr.contains("--from FORMAT or --mime-type TYPE"),
@@ -1155,13 +1181,11 @@ fn http_sources_are_fetched_named_and_typed() {
             .unwrap()
             .starts_with("# From disposition")
     );
-    // Nothing decides: exit 2 with the hints named; a hint fixes it.
-    let (code, _, stderr) = run_with(&[&format!("{base}/opaque")], b"", true);
-    assert_eq!(code, 2, "stderr: {stderr}");
-    assert!(
-        stderr.contains("--from FORMAT or --mime-type TYPE"),
-        "{stderr}"
-    );
+    // Nothing but the bytes decides, and they are text: plain text (#671);
+    // a hint still types it.
+    let (code, out, stderr) = run_with(&[&format!("{base}/opaque")], b"", true);
+    assert_eq!(code, 0, "stderr: {stderr}");
+    assert!(out.contains("plain words only"), "{out:?}");
     let (code, out, stderr) = run_with(&["--from", "txt", &format!("{base}/opaque")], b"", true);
     assert_eq!(code, 0, "stderr: {stderr}");
     assert!(out.contains("plain words only"), "{out:?}");
@@ -1251,5 +1275,43 @@ fn redact_precision_flags_validate() {
         let (code, _, stderr) = run(args);
         assert_eq!(code, 2, "args {args:?}, stderr: {stderr}");
         assert!(stderr.contains("--redact-"), "{stderr}");
+    }
+}
+
+/// #671: a source file converts to a fenced code block, a `.json` that is
+/// no DoclingDocument to a `json` block, and `--list-input-formats` names
+/// the text extensions.
+#[test]
+fn plain_text_and_code_inputs_convert() {
+    let py = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../docling/tests/data/text/sources/script.py"
+    );
+    let (code, stdout, stderr) = run(&[py]);
+    assert_eq!(code, 0, "{stderr}");
+    assert!(
+        stdout.starts_with("```\n#!/usr/bin/env python3"),
+        "{stdout}"
+    );
+    let (_, strict, _) = run(&["--strict", py]);
+    assert!(
+        strict.starts_with("```python\n#!/usr/bin/env python3"),
+        "{strict}"
+    );
+    let json = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../docling/tests/data/text/sources/test.json"
+    );
+    let (code, stdout, _) = run(&[json]);
+    assert_eq!(code, 0);
+    assert!(
+        stdout.starts_with("```\n{") && stdout.contains("5b64c88c-b3c3-4510-bcb8-da0b200602d8"),
+        "{stdout}"
+    );
+    let (code, stdout, _) = run(&["--list-input-formats"]);
+    assert_eq!(code, 0);
+    let listed: Vec<&str> = stdout.lines().collect();
+    for e in ["py", "jsonl", "log", "xml"] {
+        assert!(listed.contains(&e), "{e} not listed");
     }
 }

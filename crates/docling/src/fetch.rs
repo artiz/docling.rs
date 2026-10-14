@@ -534,7 +534,15 @@ mod tests {
         assert_eq!(doc.format, InputFormat::Pdf);
         assert!(from_data_url("data:text/plain").is_err());
         assert!(from_data_url("data:;base64,@@@").is_err());
-        assert!(from_data_url("data:application/octet-stream,zzz").is_err());
+        // A generic media type says nothing; text bytes are plain text
+        // (#671), binary ones an error.
+        assert_eq!(
+            from_data_url("data:application/octet-stream,zzz")
+                .unwrap()
+                .format,
+            InputFormat::Text
+        );
+        assert!(from_data_url("data:application/octet-stream;base64,AAECAwQF").is_err());
         // A non-UTF-8 charset is the text encoding; base64 may wrap.
         let doc = from_data_url("data:text/csv;charset=shift_jis,a,b").unwrap();
         assert_eq!(doc.encoding.as_deref(), Some("shift_jis"));

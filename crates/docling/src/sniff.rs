@@ -54,6 +54,29 @@ pub(crate) fn detect_any(bytes: &[u8]) -> Option<InputFormat> {
         .or_else(|| crate::backend::looks_like_djvu(bytes).then_some(InputFormat::Djvu))
 }
 
+/// Whether `bytes` are text (#671): the fallback route for an unknown or
+/// missing extension. Not empty, no NUL byte, and either valid UTF-8 (a
+/// BOM allowed) with control characters other than tab, newline, carriage
+/// return and form feed under one per cent, or — a single-byte legacy
+/// encoding — the same test on the bytes themselves with the high half
+/// counted as letters. Random bytes, archives and binaries fail on NULs and
+/// control characters; a `.log` in windows-1251 passes.
+pub(crate) fn looks_like_text(bytes: &[u8]) -> bool {
+    let b = bytes.strip_prefix(b"\xEF\xBB\xBF").unwrap_or(bytes);
+    if b.is_empty() || b.contains(&0) {
+        return false;
+    }
+    let is_control = |c: u32| c < 0x20 && !matches!(c, 0x09 | 0x0A | 0x0D | 0x0C) || c == 0x7F;
+    let (total, control) = match std::str::from_utf8(b) {
+        Ok(s) => (
+            s.chars().count(),
+            s.chars().filter(|&c| is_control(c as u32)).count(),
+        ),
+        Err(_) => (b.len(), b.iter().filter(|&&c| is_control(c as u32)).count()),
+    };
+    control * 100 < total
+}
+
 /// The magic of the raster formats the image pipeline decodes: PNG, JPEG,
 /// GIF, BMP, TIFF (both byte orders), WebP.
 fn looks_like_image(bytes: &[u8]) -> bool {
