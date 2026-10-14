@@ -115,10 +115,23 @@ fi
 # clang (zig) wants a builtin type after `__vector` where gcc also takes a
 # typedef: MLAS's s390x quantized kernels spell `__vector int32_t`. Patched
 # in place (idempotent; `int32_t` is `int` on s390x). gcc builds take it too.
+#
+# From 1.31 the s390x SGEMM/DGEMM kernels splat a lane with
+# `vec_splat(AElements[Row], Lane)`, `Lane` a template parameter. clang
+# resolves that call while parsing the template — its vec_splat overloads
+# take the index through enable_if ("a constant integer from 0 to 3") — before
+# `Lane` has a value, and rejects every overload; gcc, what Microsoft builds
+# s390x with, defers it. `vec_splats(AElements[Row][Lane])` is the same
+# operation and compiles to the same vrepf/vrepg (checked with zig 0.17 /
+# clang 22 under qemu).
 if [ "$ORT_TOOLCHAIN" = zig ]; then
   sed -i -E 's/__vector int32_t\b/__vector int/g' \
     "$SRC/onnxruntime/core/mlas/lib/qlmul.cpp" \
     "$SRC/onnxruntime/core/mlas/lib/s390x/qgemm_kernel_zvector.cpp"
+  FGEMM="$SRC/onnxruntime/core/mlas/lib/s390x/FgemmKernelZVECTOR.h"
+  if [ -f "$FGEMM" ]; then
+    sed -i -E 's/vec_splat\(AElements\[Row\], Lane\)/vec_splats(AElements[Row][Lane])/' "$FGEMM"
+  fi
 fi
 
 # --skip_tests only skips *running* the tests; onnxruntime_BUILD_UNIT_TESTS=OFF
