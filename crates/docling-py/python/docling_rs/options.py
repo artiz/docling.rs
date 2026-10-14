@@ -50,6 +50,12 @@ class InputFormat(str, enum.Enum):
     XML_XBRL = "xml_xbrl"
     XML_DOCLANG = "xml_doclang"
     METS_GBS = "mets_gbs"
+    # #671: plain text / source code (also the fallback for an unknown
+    # extension whose bytes are text), JSON Lines, and bare ``.xml`` that is
+    # routed by its content.
+    TEXT = "text"
+    JSONL = "jsonl"
+    XML = "xml"
 
 
 class AcceleratorDevice(str, enum.Enum):

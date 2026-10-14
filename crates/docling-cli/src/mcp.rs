@@ -1161,7 +1161,10 @@ mod tests {
         let src = resolve_source(&s, "data:text/csv;charset=shift_jis,a,b").unwrap();
         assert_eq!(src.encoding.as_deref(), Some("shift_jis"));
         assert!(resolve_source(&s, "data:text/plain").is_err());
-        assert!(resolve_source(&s, "data:application/octet-stream,xyz").is_err());
+        // Untyped text is plain text since #671; untyped binary is refused.
+        let src = resolve_source(&s, "data:application/octet-stream,xyz").unwrap();
+        assert_eq!(src.format, InputFormat::Text);
+        assert!(resolve_source(&s, "data:application/octet-stream;base64,AAECAwQF").is_err());
     }
 
     #[test]

@@ -936,23 +936,26 @@ fn run_convert_archive(bytes: Vec<u8>, cfg: &ConvertConfig) -> Result<Vec<RawArc
 
 /// Load a [`SourceDocument`] from an in-memory [`ConvertInput`].
 fn source_from_input(input: ConvertInput) -> Result<SourceDocument> {
-    let format = match &input.format {
-        Some(f) => parse_format(f)?,
-        None => infer_format(&input.name).ok_or_else(|| {
-            Error::new(
-                Status::InvalidArg,
-                format!(
-                    "could not infer a format from name '{}'; pass `format` explicitly",
-                    input.name
-                ),
-            )
-        })?,
-    };
-    Ok(SourceDocument::from_bytes(
-        input.name,
-        format,
-        input.data.to_vec(),
-    ))
+    match &input.format {
+        Some(f) => {
+            let format = parse_format(f)?;
+            Ok(SourceDocument::from_bytes(
+                input.name,
+                format,
+                input.data.to_vec(),
+            ))
+        }
+        // The engine's own routing (#671): the extension, else the content's
+        // signature, else plain text when the bytes are text.
+        None => {
+            SourceDocument::from_named_bytes(&input.name, input.data.to_vec(), None).map_err(|e| {
+                Error::new(
+                    Status::InvalidArg,
+                    format!("{}: {e}; pass `format` explicitly", input.name),
+                )
+            })
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -2437,6 +2440,9 @@ pub fn supported_formats() -> Vec<String> {
         "email",
         "epub",
         "mhtml",
+        "text",
+        "jsonl",
+        "xml",
     ]
     .iter()
     .map(|s| s.to_string())
@@ -2516,6 +2522,7 @@ fn parse_format(s: &str) -> Result<InputFormat> {
         "latex" => InputFormat::Latex,
         "audio" => InputFormat::Audio,
         "video" => InputFormat::Video,
+        "text" | "plain" => InputFormat::Text,
         _ => {
             return Err(Error::new(
                 Status::InvalidArg,
