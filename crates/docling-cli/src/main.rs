@@ -48,7 +48,15 @@
 //!   --from FORMAT      the input format (an identifier from
 //!                      `--list-input-formats`: `docx`, `pdf`, `html`, `md`…)
 //!                      — for stdin, an extensionless URL or a file whose
-//!                      extension lies. Overrides every other signal.
+//!                      extension lies. Overrides every other signal. `text`
+//!                      is plain text / source code (#671): the listed code
+//!                      extensions (py, rs, yaml, sh, …) become one code block
+//!                      in that language, `log` and the rest paragraphs; a
+//!                      file with no or an unlisted extension whose bytes are
+//!                      text takes the same route, so only binary junk fails.
+//!                      `.json` that is not a DoclingDocument, `.jsonl` and a
+//!                      `.xml` of no known dialect are kept as one json / xml
+//!                      code block.
 //!   --mime-type TYPE   the media type (`application/pdf`, `text/markdown`),
 //!                      consulted when the name has no extension — in place
 //!                      of a missing or generic `Content-Type`. A source that
@@ -470,7 +478,9 @@ INPUT SELECTION
                           or quoted globs are a batch and need --output; `-` is stdin,
                           http(s)://, data: and file: URLs are sources too (#668)
   --from FORMAT           input format of stdin / a URL / a mislabelled file (an
-                          identifier from --list-input-formats: docx, pdf, html, md…)
+                          identifier from --list-input-formats: docx, pdf, html, md…;
+                          text = plain text / source code, also the fallback for any
+                          other extension whose bytes are text)
   --mime-type TYPE        media type deciding the format when the name has no
                           extension (in place of a missing Content-Type)
   --no-url-fetch          refuse http(s) sources

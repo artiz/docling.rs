@@ -149,7 +149,7 @@ what it really is, with a warning.
 
 | Category | Formats |
 |---|---|
-| Text & markup | Markdown, AsciiDoc, HTML, MHTML, LaTeX (multi-file arXiv projects, math, tables) |
+| Text & markup | Markdown, AsciiDoc, HTML, MHTML, LaTeX (multi-file arXiv projects, math, tables); plain text and source code (`.py`, `.yaml`, `.log`, … — any text file, as a code block or paragraphs), generic JSON / JSON Lines and XML (kept as code blocks) |
 | Word processing | DOCX, Word 97–2004 `.doc` (and Word 6/95, 1.x/2.0), ODT, OpenOffice / StarWriter, AbiWord, WordPerfect, MS Works, EPUB, RTF |
 | Presentations | PPTX, PowerPoint 97–2003, ODP, OpenOffice / StarImpress |
 | Spreadsheets | XLSX, XLSB, Excel 97–2004, ODS, CSV / TSV, dBase, DIF, SYLK, Lotus 1-2-3, Quattro Pro, MS Works |

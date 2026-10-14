@@ -16,6 +16,10 @@ pub struct SourceDocument {
     pub name: String,
     pub format: InputFormat,
     pub bytes: Vec<u8>,
+    /// The file extension the document arrived with (lowercase, no dot),
+    /// when it had one — what tells a [`InputFormat::Text`] source its
+    /// language (`py` → a `python` code block). `None` for nameless input.
+    pub extension: Option<String>,
     /// The filesystem path it was loaded from, if any (`from_file`). Used to
     /// resolve relative `<img src>` paths when image fetching is enabled; `None`
     /// for in-memory sources.
@@ -40,16 +44,32 @@ impl SourceDocument {
     /// extension.
     pub fn from_file(path: impl AsRef<Path>) -> Result<Self, ConversionError> {
         let path = path.as_ref();
-        let ext = path.extension().and_then(|e| e.to_str()).ok_or_else(|| {
-            ConversionError::UnknownFormat {
-                hint: format!("no extension on {}", path.display()),
-            }
-        })?;
-        let format =
-            InputFormat::from_extension(ext).ok_or_else(|| ConversionError::UnknownFormat {
-                hint: format!("unrecognized extension '.{ext}'"),
-            })?;
+        let ext = path
+            .extension()
+            .and_then(|e| e.to_str())
+            .map(str::to_ascii_lowercase);
         let bytes = std::fs::read(path)?;
+        // The extension decides; without one, or with one the table does not
+        // know, the bytes do (#671): a known signature, else text as plain
+        // text — a `Makefile`, a `.cfg` in a dialect the table lacks.
+        let format = match ext.as_deref().and_then(InputFormat::from_extension) {
+            Some(f) => f,
+            None => crate::sniff::detect_any(&bytes)
+                .or_else(|| crate::sniff::looks_like_text(&bytes).then_some(InputFormat::Text))
+                .ok_or_else(|| ConversionError::UnknownFormat {
+                    hint: match &ext {
+                        Some(e) => format!(
+                            "unrecognized extension '.{e}' and the content is neither a known \
+                             signature nor text"
+                        ),
+                        None => format!(
+                            "no extension on {} and the content is neither a known signature \
+                             nor text",
+                            path.display()
+                        ),
+                    },
+                })?,
+        };
         let name = path
             .file_stem()
             .and_then(|s| s.to_str())
@@ -59,6 +79,7 @@ impl SourceDocument {
             name,
             format,
             bytes,
+            extension: ext,
             path: Some(path.to_path_buf()),
             base_url: None,
             encoding: None,
@@ -87,6 +108,7 @@ impl SourceDocument {
             .and_then(InputFormat::from_extension)
             .or_else(|| media_type.and_then(InputFormat::from_mime))
             .or_else(|| crate::sniff::detect_any(&bytes))
+            .or_else(|| crate::sniff::looks_like_text(&bytes).then_some(InputFormat::Text))
             .ok_or_else(|| ConversionError::UnknownFormat {
                 hint: match (ext, media_type) {
                     (Some(e), _) => format!("unrecognized extension '.{e}'"),
@@ -107,7 +129,9 @@ impl SourceDocument {
             .filter(|s| !s.is_empty())
             .unwrap_or("document")
             .to_string();
-        Ok(Self::from_bytes(stem, format, bytes))
+        let mut doc = Self::from_bytes(stem, format, bytes);
+        doc.extension = ext.map(str::to_ascii_lowercase);
+        Ok(doc)
     }
 
     /// Read a document to the end of `reader` — stdin, a socket, a pipe —
@@ -145,12 +169,20 @@ impl SourceDocument {
         )
     }
 
-    /// Construct directly from in-memory bytes (no disk access).
+    /// Construct directly from in-memory bytes (no disk access). An
+    /// extension on `name` (`notes.dclg`) is kept as the document's
+    /// [`extension`](Self::extension); the name itself stays as given.
     pub fn from_bytes(name: impl Into<String>, format: InputFormat, bytes: Vec<u8>) -> Self {
+        let name = name.into();
+        let extension = Path::new(&name)
+            .extension()
+            .and_then(|e| e.to_str())
+            .map(str::to_ascii_lowercase);
         Self {
-            name: name.into(),
+            name,
             format,
             bytes,
+            extension,
             path: None,
             base_url: None,
             encoding: None,

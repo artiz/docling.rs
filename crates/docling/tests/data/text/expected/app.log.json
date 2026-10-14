@@ -1,0 +1,63 @@
+{
+  "schema_name": "DoclingDocument",
+  "version": "1.10.0",
+  "name": "app",
+  "origin": {
+    "mimetype": "text/plain",
+    "binary_hash": 16667724471828382604,
+    "filename": "app"
+  },
+  "furniture": {
+    "self_ref": "#/furniture",
+    "children": [],
+    "content_layer": "furniture",
+    "name": "_root_",
+    "label": "unspecified"
+  },
+  "body": {
+    "self_ref": "#/body",
+    "children": [
+      {
+        "$ref": "#/texts/0"
+      },
+      {
+        "$ref": "#/texts/1"
+      }
+    ],
+    "content_layer": "body",
+    "name": "_root_",
+    "label": "unspecified"
+  },
+  "groups": [],
+  "texts": [
+    {
+      "self_ref": "#/texts/0",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "2026-10-14 10:00:01 INFO  server started on 0.0.0.0:5001\n2026-10-14 10:00:02 WARN  model cache cold: layout_heron_int8.onnx",
+      "text": "2026-10-14 10:00:01 INFO  server started on 0.0.0.0:5001\n2026-10-14 10:00:02 WARN  model cache cold: layout_heron_int8.onnx"
+    },
+    {
+      "self_ref": "#/texts/1",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "2026-10-14 10:05:17 ERROR conversion failed: pdf: the PDF is encrypted\n2026-10-14 10:05:18 INFO  request done in 1.2s",
+      "text": "2026-10-14 10:05:17 ERROR conversion failed: pdf: the PDF is encrypted\n2026-10-14 10:05:18 INFO  request done in 1.2s"
+    }
+  ],
+  "pictures": [],
+  "tables": [],
+  "key_value_items": [],
+  "form_items": [],
+  "pages": {}
+}

@@ -178,6 +178,13 @@ fn looks_like_xml(text: &str) -> bool {
     false
 }
 
+/// Whether an XML document is a JATS article: a JATS DOCTYPE, or an
+/// `<article` root element (JATS files in the wild often carry no DOCTYPE).
+fn looks_like_jats(bytes: &[u8]) -> bool {
+    let head = String::from_utf8_lossy(&bytes[..bytes.len().min(4000)]);
+    has_jats_doctype(&head) || head.contains("<article")
+}
+
 /// Pick the concrete XML backend for a generic `.xml` source by sniffing its
 /// DOCTYPE / root element (the first part of the file).
 /// docling's `_guess_from_content` JATS rule for an `application/xml` input:
@@ -2393,6 +2400,23 @@ impl DocumentConverter {
             }
             .convert(source)?,
             InputFormat::JsonDocling => DoclingJsonBackend.convert(source)?,
+            InputFormat::Jsonl => crate::backend::text::convert_json_text(source)?,
+            InputFormat::Text => crate::backend::TextBackend.convert(source)?,
+            // A bare `.xml` (#671): the dialects docling reads by content —
+            // JATS by its DOCTYPE or `<article>` root — else one xml code
+            // block with a warning, never an empty document.
+            InputFormat::Xml => match sniff_xml(&source.bytes) {
+                InputFormat::XmlUspto => UsptoBackend.convert(source)?,
+                InputFormat::XmlXbrl => {
+                    crate::backend::xbrl::convert_xbrl(source, self.xbrl_taxonomy.as_deref())?
+                }
+                InputFormat::XmlDoclang => crate::backend::DoclangBackend.convert(source)?,
+                _ if looks_like_jats(&source.bytes) => JatsBackend {
+                    images: self.image_policy(),
+                }
+                .convert(source)?,
+                _ => crate::backend::text::convert_xml_text(source)?,
+            },
             InputFormat::Latex => LatexBackend.convert(source)?,
             // A bare `.xml` defaults to XmlJats; sniff the content to route to the
             // right XML backend (docling distinguishes by DOCTYPE / root element).

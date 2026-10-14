@@ -111,6 +111,21 @@ pub enum InputFormat {
     /// hidden per-page text layer by default, rasterize + OCR for scan-only
     /// pages when the ML pipeline is built.
     Djvu,
+    /// Plain text and source code (#671) — MarkItDown's plain-text
+    /// converter: a code extension (`.py`, `.rs`, `.yaml`, `.sh`, …) becomes
+    /// one code block in that language, anything else paragraphs; also the
+    /// fallback for an unknown or missing extension whose bytes are text.
+    /// Markdown-like text (`.txt`, `.md`) stays [`Md`](Self::Md), as docling
+    /// reads it.
+    Text,
+    /// JSON Lines (`.jsonl`/`.ndjson`, #671): kept verbatim as one `json`
+    /// code block. A `.json` is [`JsonDocling`](Self::JsonDocling), which
+    /// renders any other JSON the same way.
+    Jsonl,
+    /// A bare `.xml` (#671): sniffed into the dialects docling reads — JATS,
+    /// USPTO, XBRL, DocLang — and, matching none, kept as one `xml` code
+    /// block with a warning. `.nxml` is [`XmlJats`](Self::XmlJats) outright.
+    Xml,
 }
 
 impl InputFormat {
@@ -164,6 +179,9 @@ impl InputFormat {
             InputFormat::QuattroPro => "quattro",
             InputFormat::StarOffice5 => "staroffice5",
             InputFormat::Djvu => "djvu",
+            InputFormat::Text => "text",
+            InputFormat::Jsonl => "jsonl",
+            InputFormat::Xml => "xml",
         }
     }
 
@@ -219,6 +237,9 @@ impl InputFormat {
             "quattro" => InputFormat::QuattroPro,
             "staroffice5" => InputFormat::StarOffice5,
             "djvu" => InputFormat::Djvu,
+            "text" => InputFormat::Text,
+            "jsonl" => InputFormat::Jsonl,
+            "xml" => InputFormat::Xml,
             _ => return None,
         })
     }
@@ -261,6 +282,10 @@ impl InputFormat {
             "text/x-tex" | "application/x-tex" | "application/x-latex" => InputFormat::Latex,
             "text/vtt" => InputFormat::Vtt,
             "application/json" => InputFormat::JsonDocling,
+            "application/x-ndjson" | "application/jsonl" | "application/x-jsonlines" => {
+                InputFormat::Jsonl
+            }
+            "application/xml" | "text/xml" => InputFormat::Xml,
             "message/rfc822" | "application/vnd.ms-outlook" => InputFormat::Email,
             "multipart/related" | "message/rfc822-headers" => return None,
             "image/png" | "image/jpeg" | "image/tiff" | "image/bmp" | "image/webp"
@@ -273,6 +298,9 @@ impl InputFormat {
             | "audio/flac" => InputFormat::Audio,
             "video/mp4" | "video/quicktime" | "video/x-msvideo" | "video/x-matroska"
             | "video/webm" | "video/mpeg" => InputFormat::Video,
+            // Any other `text/*` is text (#671): `text/x-python`,
+            // `text/x-log`, `text/yaml`, … — MarkItDown's rule.
+            t if t.starts_with("text/") => InputFormat::Text,
             _ => return None,
         })
     }
@@ -379,7 +407,7 @@ const EXTENSIONS: &[(&str, InputFormat)] = {
         ("html", Html),
         ("htm", Html),
         ("xhtml", Html),
-        ("xml", XmlJats),
+        ("xml", Xml),
         ("nxml", XmlJats),
         ("dclg", XmlDoclang),
         ("doctags", DocTags),
@@ -446,6 +474,8 @@ const EXTENSIONS: &[(&str, InputFormat)] = {
         ("sti", Odp),
         ("fodp", Odp),
         ("json", JsonDocling),
+        ("jsonl", Jsonl),
+        ("ndjson", Jsonl),
         // `.mpga` *is* MPEG audio (an mp3 stream) — symphonia probes the
         // codec from the bytes, the extension is just the alias (#208).
         ("wav", Audio),
@@ -476,6 +506,80 @@ const EXTENSIONS: &[(&str, InputFormat)] = {
         // backend sniffs the magic and projects it onto RFC 822.
         ("msg", Email),
         ("ebc", Ebcdic),
+        // Plain text and source code (#671): the extensions MarkItDown's
+        // plain-text converter would take by `text/*` media type, each as
+        // one code block in its language (`crate::backend::text::code_language`)
+        // — and `log`, which reads as paragraphs. Any extension not in this
+        // table whose bytes are text takes the same route.
+        ("py", Text),
+        ("pyi", Text),
+        ("rs", Text),
+        ("js", Text),
+        ("mjs", Text),
+        ("cjs", Text),
+        ("ts", Text),
+        ("tsx", Text),
+        ("jsx", Text),
+        ("java", Text),
+        ("kt", Text),
+        ("kts", Text),
+        ("scala", Text),
+        ("groovy", Text),
+        ("gradle", Text),
+        ("c", Text),
+        ("h", Text),
+        ("cpp", Text),
+        ("cc", Text),
+        ("cxx", Text),
+        ("hpp", Text),
+        ("hh", Text),
+        ("cs", Text),
+        ("go", Text),
+        ("rb", Text),
+        ("php", Text),
+        ("swift", Text),
+        ("m", Text),
+        ("mm", Text),
+        ("dart", Text),
+        ("lua", Text),
+        ("pl", Text),
+        ("pm", Text),
+        ("r", Text),
+        ("jl", Text),
+        ("hs", Text),
+        ("ex", Text),
+        ("exs", Text),
+        ("erl", Text),
+        ("clj", Text),
+        ("sh", Text),
+        ("bash", Text),
+        ("zsh", Text),
+        ("fish", Text),
+        ("ps1", Text),
+        ("bat", Text),
+        ("cmd", Text),
+        ("sql", Text),
+        ("css", Text),
+        ("scss", Text),
+        ("less", Text),
+        ("yaml", Text),
+        ("yml", Text),
+        ("toml", Text),
+        ("ini", Text),
+        ("cfg", Text),
+        ("conf", Text),
+        ("properties", Text),
+        ("env", Text),
+        ("proto", Text),
+        ("graphql", Text),
+        ("gql", Text),
+        ("dockerfile", Text),
+        ("makefile", Text),
+        ("mk", Text),
+        ("cmake", Text),
+        ("diff", Text),
+        ("patch", Text),
+        ("log", Text),
         ("ebcdic", Ebcdic),
         ("epub", Epub),
         ("mhtml", Mhtml),

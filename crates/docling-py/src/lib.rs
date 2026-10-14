@@ -680,23 +680,18 @@ impl PyDocumentConverter {
     ) -> PyResult<PyNativeResult> {
         let page_range = check_page_range(page_range)?;
         let bytes = data.as_bytes().to_vec();
-        let format = match format {
-            Some(id) => docling::InputFormat::from_id(&id).ok_or_else(|| {
-                PyValueError::new_err(format!("unknown input format {id:?}"))
-            })?,
-            None => {
-                let ext = std::path::Path::new(&name)
-                    .extension()
-                    .and_then(|e| e.to_str())
-                    .unwrap_or("");
-                docling::InputFormat::from_extension(ext).ok_or_else(|| {
-                    ConversionError::new_err(format!(
-                        "cannot detect input format from name {name:?}"
-                    ))
-                })?
+        let source = match format {
+            Some(id) => {
+                let format = docling::InputFormat::from_id(&id).ok_or_else(|| {
+                    PyValueError::new_err(format!("unknown input format {id:?}"))
+                })?;
+                SourceDocument::from_bytes(&name, format, bytes)
             }
+            // The engine's own routing (#671): the extension, else the
+            // content's signature, else plain text when the bytes are text.
+            None => SourceDocument::from_named_bytes(&name, bytes, None).map_err(conversion_error)?,
         };
-        self.convert_source(py, SourceDocument::from_bytes(&name, format, bytes), page_range)
+        self.convert_source(py, source, page_range)
     }
 
     /// Convert every document inside a ZIP archive on disk (#557): one item
@@ -897,6 +892,9 @@ fn parse_format(name: &str) -> Option<docling::InputFormat> {
         "email" => Email,
         "epub" => Epub,
         "mhtml" => Mhtml,
+        "text" => Text,
+        "jsonl" => Jsonl,
+        "xml" => Xml,
         _ => return None,
     })
 }

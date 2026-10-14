@@ -1,0 +1,52 @@
+{
+  "schema_name": "DoclingDocument",
+  "version": "1.10.0",
+  "name": "script",
+  "origin": {
+    "mimetype": "text/plain",
+    "binary_hash": 12464980982266880842,
+    "filename": "script"
+  },
+  "furniture": {
+    "self_ref": "#/furniture",
+    "children": [],
+    "content_layer": "furniture",
+    "name": "_root_",
+    "label": "unspecified"
+  },
+  "body": {
+    "self_ref": "#/body",
+    "children": [
+      {
+        "$ref": "#/texts/0"
+      }
+    ],
+    "content_layer": "body",
+    "name": "_root_",
+    "label": "unspecified"
+  },
+  "groups": [],
+  "texts": [
+    {
+      "self_ref": "#/texts/0",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "code",
+      "prov": [],
+      "orig": "#!/usr/bin/env python3\n\"\"\"A tiny script: the `#` lines must not become headings.\"\"\"\n\nimport sys\n\n\ndef main(argv):\n    # Print the arguments, one per line.\n    for arg in argv[1:]:\n        print(f\"* {arg}\")\n\n\nif __name__ == \"__main__\":\n    main(sys.argv)",
+      "text": "#!/usr/bin/env python3\n\"\"\"A tiny script: the `#` lines must not become headings.\"\"\"\n\nimport sys\n\n\ndef main(argv):\n    # Print the arguments, one per line.\n    for arg in argv[1:]:\n        print(f\"* {arg}\")\n\n\nif __name__ == \"__main__\":\n    main(sys.argv)",
+      "captions": [],
+      "references": [],
+      "footnotes": [],
+      "code_language": "Python"
+    }
+  ],
+  "pictures": [],
+  "tables": [],
+  "key_value_items": [],
+  "form_items": [],
+  "pages": {}
+}

@@ -1,0 +1,52 @@
+{
+  "schema_name": "DoclingDocument",
+  "version": "1.10.0",
+  "name": "records",
+  "origin": {
+    "mimetype": "text/plain",
+    "binary_hash": 11709876839689393901,
+    "filename": "records"
+  },
+  "furniture": {
+    "self_ref": "#/furniture",
+    "children": [],
+    "content_layer": "furniture",
+    "name": "_root_",
+    "label": "unspecified"
+  },
+  "body": {
+    "self_ref": "#/body",
+    "children": [
+      {
+        "$ref": "#/texts/0"
+      }
+    ],
+    "content_layer": "body",
+    "name": "_root_",
+    "label": "unspecified"
+  },
+  "groups": [],
+  "texts": [
+    {
+      "self_ref": "#/texts/0",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "code",
+      "prov": [],
+      "orig": "{\"id\": 1, \"name\": \"alpha\", \"tags\": [\"x\", \"y\"]}\n{\"id\": 2, \"name\": \"béta\", \"tags\": []}\n{\"id\": 3, \"name\": \"日本語\", \"ok\": true}",
+      "text": "{\"id\": 1, \"name\": \"alpha\", \"tags\": [\"x\", \"y\"]}\n{\"id\": 2, \"name\": \"béta\", \"tags\": []}\n{\"id\": 3, \"name\": \"日本語\", \"ok\": true}",
+      "captions": [],
+      "references": [],
+      "footnotes": [],
+      "code_language": "JSON"
+    }
+  ],
+  "pictures": [],
+  "tables": [],
+  "key_value_items": [],
+  "form_items": [],
+  "pages": {}
+}

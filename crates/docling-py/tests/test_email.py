@@ -108,9 +108,10 @@ def test_as_stream_carries_the_detected_format():
     assert stream.format == InputFormat.MD
     result = DocumentConverter().convert(stream)
     assert "sniffed by type" in result.document.export_to_markdown()
-    # A plain DocumentStream still detects from the name alone.
-    with pytest.raises(docling_rs.ConversionError):
-        DocumentConverter().convert(DocumentStream(name="scan.bin", stream=io.BytesIO(scan.data)))
+    # A plain DocumentStream has only the name: `.bin` is no extension docling
+    # knows, so the bytes are read as plain text (#671), not as Markdown.
+    plain = DocumentConverter().convert(DocumentStream(name="scan.bin", stream=io.BytesIO(scan.data)))
+    assert "sniffed by type" in plain.document.export_to_markdown()
 
 
 def test_streams_are_rewound_before_reading():

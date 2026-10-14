@@ -1,0 +1,5 @@
+```json
+{"id": 1, "name": "alpha", "tags": ["x", "y"]}
+{"id": 2, "name": "béta", "tags": []}
+{"id": 3, "name": "日本語", "ok": true}
+```

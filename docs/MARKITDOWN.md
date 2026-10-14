@@ -136,8 +136,10 @@ package's [Migrating from MarkItDown](../crates/docling-py/README.md#migrating-f
 | a LangChain loader | `docling_rs.langchain.DoclingLoader` |
 | — | Node.js (`npm i docling.rs`), the browser (`npm i docling.rs-wasm`, [live demo](https://docling-project.github.io/docling.rs/)), Rust (`docling` crate), C (`docling-ffi`) |
 
-Formats: everything MarkItDown converts except generic JSON/XML, RSS,
-Jupyter notebooks and YouTube URLs, plus ODF, RTF, legacy `.doc`/`.ppt`,
+Formats: everything MarkItDown converts except Jupyter notebooks and
+YouTube URLs — plain text and source code, generic JSON / JSON Lines and
+XML (kept as code blocks; an RSS feed is one `xml` block, not a rendered
+feed) included since #671 — plus ODF, RTF, legacy `.doc`/`.ppt`,
 Apple iWork, DjVu, LaTeX, AsciiDoc, WebVTT, MHTML, `.eml`, JATS/USPTO/XBRL,
 and local speech recognition for audio and video.
 
@@ -147,7 +149,6 @@ Tracked, in roughly the order they matter to MarkItDown users:
 [#676](https://github.com/docling-project/docling.rs/issues/676) (picture alt text),
 [#679](https://github.com/docling-project/docling.rs/issues/679) (document metadata),
 [#675](https://github.com/docling-project/docling.rs/issues/675) (charset detection),
-[#671](https://github.com/docling-project/docling.rs/issues/671) (plain text, JSON, XML),
 [#673](https://github.com/docling-project/docling.rs/issues/673) (Jupyter notebooks),
 [#680](https://github.com/docling-project/docling.rs/issues/680) (pluggable backends).
 

@@ -336,7 +336,9 @@ async fn dclx_download_has_attachment_headers() {
 
 #[tokio::test]
 async fn unknown_format_is_422() {
-    let (ct, body) = multipart("data.xyz", b"?", &[]);
+    // Binary bytes under an unknown extension (text ones are plain text
+    // since #671).
+    let (ct, body) = multipart("data.xyz", b"\x00\x01\x02\xff\xfe\x00", &[]);
     let response = app().oneshot(convert_request(&ct, body, "")).await.unwrap();
     assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
 }
@@ -959,7 +961,9 @@ async fn batch_upload_returns_results_array() {
         &[
             ("a.md", b"# A\n"),
             ("b.csv", b"x,y\n1,2\n"),
-            ("broken.xyz", b"?"),
+            // Binary under an unknown extension: text would read as plain
+            // text since #671.
+            ("broken.xyz", b"\x00\x01\x02\xff\xfe\x00"),
         ],
         &[("to", "md")],
     );
@@ -1621,7 +1625,8 @@ async fn zip_target_single_source_names_the_archive_and_propagates_errors() {
 
     // …and a single failing input propagates its error instead of answering
     // with an archive of one error file (matching the inbody semantics).
-    let b64 = docling_b64("x");
+    // Binary bytes: text under an unknown extension is plain text since #671.
+    let b64 = docling::base64::encode(b"\x00\x01\x02\xff\xfe\x00");
     let body = format!(
         r#"{{"sources": [{{"kind": "file", "base64_string": "{b64}", "filename": "wat.unknown"}}],
             "target": {{"kind": "zip"}}, "to": "md"}}"#
@@ -1633,10 +1638,12 @@ async fn zip_target_single_source_names_the_archive_and_propagates_errors() {
 #[tokio::test]
 async fn zip_target_batch_converts_around_a_bad_item() {
     let b64 = docling_b64("a,b\n1,2\n");
+    // Binary bytes: text under an unknown extension is plain text since #671.
+    let bad = docling::base64::encode(b"\x00\x01\x02\xff\xfe\x00");
     let body = format!(
         r#"{{"sources": [
             {{"kind": "file", "base64_string": "{b64}", "filename": "good.csv"}},
-            {{"kind": "file", "base64_string": "{b64}", "filename": "bad.unknown"}}
+            {{"kind": "file", "base64_string": "{bad}", "filename": "bad.unknown"}}
         ], "target": {{"kind": "zip"}}, "to": "md"}}"#
     );
     let response = app().oneshot(json_convert(&body)).await.unwrap();

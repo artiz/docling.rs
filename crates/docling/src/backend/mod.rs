@@ -77,6 +77,7 @@ mod rtf;
 mod staroffice5;
 pub(crate) mod svg;
 mod symbol_fonts;
+pub mod text;
 // DjVu (#434): pure-Rust decode via `djvu-rs`, so it builds everywhere,
 // wasm included.
 pub(crate) mod djvu;
@@ -131,6 +132,7 @@ pub use quattro::QuattroBackend;
 pub use rtf::RtfBackend;
 pub use staroffice5::StarOffice5Backend;
 pub use svg::SvgBackend;
+pub use text::TextBackend;
 pub use uspto::UsptoBackend;
 pub use visio::VisioBackend;
 pub use webvtt::WebVttBackend;
