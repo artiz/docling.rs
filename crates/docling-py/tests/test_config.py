@@ -883,3 +883,25 @@ def test_picture_description_rejects_a_bad_mode():
 
     with pytest.raises(ValueError, match="picture_description_mode"):
         DocumentConverter(do_picture_description=True, picture_description_mode="summary")
+
+
+def test_redact_allow_patterns_and_terms_reach_the_engine():
+    """#694: allow patterns/terms, deny terms and the NER floor are kwargs;
+    an allowed shape survives the pass, the rest is redacted."""
+    from docling_rs import DocumentConverter
+
+    html = __import__("pathlib").Path(__file__).resolve().parents[2] / "docling/tests/data/html/sources/pii_sample.html"
+    conv = DocumentConverter(
+        redact_pii=True,
+        redact_allow_patterns=[r"\+1 \(555\) \d{3}-\d{4}"],
+        redact_allow_terms=["john.doe@example.com"],
+        redact_deny_terms="Angela Merkel",
+        redact_ner_min_score=0.5,
+    )
+    md = conv.convert(html).document.export_to_markdown()
+    assert "+1 (555) 123-4567" in md
+    assert "john.doe@example.com" in md
+    assert "[REDACTED]" in md and "Angela Merkel" not in md
+    assert "4111 1111 1111 1111" not in md
+    with pytest.raises(ValueError, match="redact_allow_patterns"):
+        DocumentConverter(redact_pii=True, redact_allow_patterns=["("])

@@ -1236,3 +1236,20 @@ fn picture_description_needs_an_endpoint() {
         "{stderr}"
     );
 }
+
+/// `--redact-allow-pattern` must compile and `--redact-ner-min-score` lie
+/// in 0–1 — usage errors naming the flag (#694).
+#[test]
+fn redact_precision_flags_validate() {
+    let fixture = concat!(env!("CARGO_MANIFEST_DIR"), "/../docling/sample.html");
+    for args in [
+        &["--redact-pii", "--redact-allow-pattern", "(", fixture][..],
+        &["--redact-ner-min-score", "1.5", fixture][..],
+        &["--redact-ner-min-score", "high", fixture][..],
+        &["--redact-allow-pattern"][..],
+    ] {
+        let (code, _, stderr) = run(args);
+        assert_eq!(code, 2, "args {args:?}, stderr: {stderr}");
+        assert!(stderr.contains("--redact-"), "{stderr}");
+    }
+}

@@ -19,7 +19,7 @@
 //! the same name): one identifier per line, sorted, for scripts that ask the
 //! binary what it converts instead of hard-coding a list.
 //!
-//! Usage: docling-rs [--strict] [--page-break-placeholder TEXT] [--layers body|all|LIST] [--traverse-pictures] [--to md|json|html|text|dclx|chunks|images|latex|pandoc|vtt] [--pages A-B] [--scale X] [--images MODE] [--input GLOB --output DIR [--jobs N]] [--output-file PATH] [--fetch-images] [--image-sources none|embedded|local|remote] [--image-hosts LIST] [--max-images N] [--max-image-bytes N] [--max-image-total-mb N] [--min-image-bytes N] [--list-attachments] [--skip-empty-cells] [--compact-tables] [--ebcdic-layout JSON|PATH] [--encoding LABEL] [--from FORMAT] [--mime-type TYPE] [--no-url-fetch] [--no-stream] [--no-table-former] [--no-ocr] [--text-layer-only] [--password PASSWORD | --password-file PATH] [--force-full-page-ocr] [--no-text-panels] [--heading-hierarchy] [--ocr-lang LANG] [--ocr-engine ppocr|tesseract] [--ocr-mode MODE] [--ocr-scale X] [--ocr-textline-orientation] [--images-scale X] [--page-images] [--chunker hierarchical|hybrid] [--chunk-tokenizer PATH] [--chunk-max-tokens N] [--no-chunk-merge-peers] [--pipeline standard|vlm] [--vlm-endpoint URL] [--vlm-model NAME] [--vlm-api-key TOKEN] [--vlm-prompt TEXT] [--vlm-max-tokens N] [--asr-model PRESET] [--asr-lang CODE] [--video-frames N|all] [--video-scene-threshold X] [--video-frame-max-side PX] [--video-frame-dedupe N] [--xbrl-taxonomy DIR] [--use-web-browser] [--enrich-picture-classes] [--enrich-code] [--enrich-formula] [--picture-ocr] [--picture-ocr-classes LABELS] [--picture-ocr-min-side N] [--picture-ocr-scale X] [--no-picture-images] [--picture-description] [--picture-description-endpoint URL] [--picture-description-model NAME] [--picture-description-api-key TOKEN] [--picture-description-prompt TEXT] [--picture-description-mode caption|ocr] [--picture-description-concurrency N] [--redact-pii] [--redact-mode label|pseudonym|fixed:TEXT] [--redact-kinds LIST] [--redact-pattern NAME=REGEX]... [--redact-images drop|box_out|keep] [--document-timeout SECONDS] [--abort-on-error] [--output-dirs auto|flat|mirror] <input-file> | - | URL | SOURCE...
+//! Usage: docling-rs [--strict] [--page-break-placeholder TEXT] [--layers body|all|LIST] [--traverse-pictures] [--to md|json|html|text|dclx|chunks|images|latex|pandoc|vtt] [--pages A-B] [--scale X] [--images MODE] [--input GLOB --output DIR [--jobs N]] [--output-file PATH] [--fetch-images] [--image-sources none|embedded|local|remote] [--image-hosts LIST] [--max-images N] [--max-image-bytes N] [--max-image-total-mb N] [--min-image-bytes N] [--list-attachments] [--skip-empty-cells] [--compact-tables] [--ebcdic-layout JSON|PATH] [--encoding LABEL] [--from FORMAT] [--mime-type TYPE] [--no-url-fetch] [--no-stream] [--no-table-former] [--no-ocr] [--text-layer-only] [--password PASSWORD | --password-file PATH] [--force-full-page-ocr] [--no-text-panels] [--heading-hierarchy] [--ocr-lang LANG] [--ocr-engine ppocr|tesseract] [--ocr-mode MODE] [--ocr-scale X] [--ocr-textline-orientation] [--images-scale X] [--page-images] [--chunker hierarchical|hybrid] [--chunk-tokenizer PATH] [--chunk-max-tokens N] [--no-chunk-merge-peers] [--pipeline standard|vlm] [--vlm-endpoint URL] [--vlm-model NAME] [--vlm-api-key TOKEN] [--vlm-prompt TEXT] [--vlm-max-tokens N] [--asr-model PRESET] [--asr-lang CODE] [--video-frames N|all] [--video-scene-threshold X] [--video-frame-max-side PX] [--video-frame-dedupe N] [--xbrl-taxonomy DIR] [--use-web-browser] [--enrich-picture-classes] [--enrich-code] [--enrich-formula] [--picture-ocr] [--picture-ocr-classes LABELS] [--picture-ocr-min-side N] [--picture-ocr-scale X] [--no-picture-images] [--picture-description] [--picture-description-endpoint URL] [--picture-description-model NAME] [--picture-description-api-key TOKEN] [--picture-description-prompt TEXT] [--picture-description-mode caption|ocr] [--picture-description-concurrency N] [--redact-pii] [--redact-mode label|pseudonym|fixed:TEXT] [--redact-kinds LIST] [--redact-pattern NAME=REGEX]... [--redact-images drop|box_out|keep] [--redact-allow-terms LIST] [--redact-deny-terms LIST] [--redact-allow-pattern REGEX]... [--redact-ner-min-score X] [--document-timeout SECONDS] [--abort-on-error] [--output-dirs auto|flat|mirror] <input-file> | - | URL | SOURCE...
 //!   --to FORMAT        repeatable (#491, like Python's `docling convert --to
 //!                      md --to json`): each document converts once and is
 //!                      written in every format named, `<stem>.md` +
@@ -327,6 +327,18 @@
 //!                      box_out (OCR each image and paint over the lines that
 //!                      carry a value; needs the OCR models, --no-stream for
 //!                      PDFs) | keep.
+//!   --redact-allow-terms LIST
+//!                      comma-separated terms never redacted even when a
+//!                      detector flags them (support@example.com, the
+//!                      company's own name).
+//!   --redact-deny-terms LIST
+//!                      comma-separated terms always redacted, as [REDACTED].
+//!   --redact-allow-pattern REGEX
+//!                      a span matching this regex in full is never redacted
+//!                      — the document's own part numbers, record IDs;
+//!                      repeatable.
+//!   --redact-ner-min-score X
+//!                      the NER detector's minimum confidence, 0-1 (default 0.85).
 
 use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
@@ -897,6 +909,28 @@ fn main() -> ExitCode {
                 }
                 None => {
                     eprintln!("error: --redact-pattern needs NAME=REGEX");
+                    return ExitCode::from(2);
+                }
+            },
+            "--redact-allow-terms" => opts.redact_allow_terms = args.next(),
+            "--redact-deny-terms" => opts.redact_deny_terms = args.next(),
+            "--redact-allow-pattern" => match args.next() {
+                Some(v) => {
+                    let joined = match opts.redact_allow_patterns.take() {
+                        Some(prev) => format!("{prev}\n{v}"),
+                        None => v,
+                    };
+                    opts.redact_allow_patterns = Some(joined);
+                }
+                None => {
+                    eprintln!("error: --redact-allow-pattern needs a regular expression");
+                    return ExitCode::from(2);
+                }
+            },
+            "--redact-ner-min-score" => match args.next().map(|v| v.trim().parse::<f32>()) {
+                Some(Ok(x)) => opts.redact_ner_min_score = Some(x),
+                _ => {
+                    eprintln!("error: --redact-ner-min-score needs a number in 0-1");
                     return ExitCode::from(2);
                 }
             },

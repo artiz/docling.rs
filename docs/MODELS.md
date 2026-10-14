@@ -367,20 +367,40 @@ println!("{:?}", result.redaction.unwrap().counts);   // {"EMAIL": 3, "PHONE": 1
 ```
 
 * **What is found.** The built-in pattern detector (pure Rust, wasm too):
-  e-mail (Markdown escapes and `mailto:` links included), phone numbers in
-  their usual groupings, card numbers (Luhn-checked, so an order number is
-  not a card), IBANs (mod-97 + the registry's per-country length), IPv4 /
+  e-mail (Markdown escapes and `mailto:` links included), phone numbers,
+  card numbers, IBANs (mod-97 + the registry's per-country length), IPv4 /
   IPv6, `user:password@` URL credentials, US SSNs, UK NINOs and Indian
-  Aadhaar numbers (Verhoeff) — dates and version strings are not phones.
+  Aadhaar numbers. Digit groups alone are not personal data (#694): a
+  phone number is written with a `+` country code, a `(area)`, NANP's
+  `3-3-4`, a national number of 10–11 digits in three or more groups (or a
+  trunk-`0` one), or a word nearby that says so (`tel`, `phone`, `fax`,
+  `mobile`, `call`, …) — a ZIP+4, a rule number, two record IDs side by
+  side are left alone, and no match starts or ends inside a longer token.
+  A card number must open with a brand's IIN at that brand's length
+  (Visa, Mastercard, Amex, Discover, Diners, JCB, UnionPay, Maestro), be
+  grouped as cards are printed and pass Luhn. An SSN keeps the SSA's
+  never-issued ranges out and is not a legal citation (`rule 412-18-0150`,
+  `§ …`); a NINO is written compact (`AB123456C`) or fully spaced (`AB 12
+  34 56 C`), never half and half; an Aadhaar is `4-4-4` with one separator
+  throughout, its first group not a year, Verhoeff-checked. Dates and
+  version strings are not phones, and a transcript's `[time: …]` prefix is
+  never one — only the cue's words are read, and counted once.
   With the NER model installed (`scripts/install/download_dependencies.sh
   --with-ner` / Python `download_models(ner=True)`: `dslim/bert-base-NER`'s
   MIT-licensed ONNX export into `.models/ner/` — `model.onnx`,
   `tokenizer.json`, `config.json`; `DOCLING_RS_NER_DIR` overrides the
   directory) also **names, organizations and locations**; without it one
-  warning and the pattern kinds only. Your
-  own `NAME=REGEX` patterns, deny terms and allow terms plug in through
-  `RedactionOptions`; any detector implementing `docling_core::PiiDetector`
-  does.
+  warning and the pattern kinds only; a lone all-caps token that is an
+  abbreviation (`SSN`, `PDF`) or an identifier with a digit or underscore
+  in it (`TR482913`, `SETUP_FLAG`) is not an organization, and
+  `redact_ner_min_score` (0.85) sets the confidence floor. Your own
+  `NAME=REGEX` patterns (`redact_pattern`), deny terms
+  (`redact_deny_terms`: always redacted), allow terms
+  (`redact_allow_terms`: never redacted) and allow patterns
+  (`redact_allow_patterns`: a flagged span matching one in full is left
+  alone, whichever detector flagged it — the document's own part numbers
+  and record IDs) are options on every surface; any detector implementing
+  `docling_core::PiiDetector` plugs in through `RedactionOptions`.
 * **What is rewritten.** Every string of the model, wherever it nests:
   headings, paragraphs, list items, inline runs (matched on the joined
   text, mapped back onto the runs), table cells and rich-cell blocks, field

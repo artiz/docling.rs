@@ -236,6 +236,16 @@ pub struct ConverterOptions {
     /// Embedded images and page renders: `"drop"` (default) | `"box_out"`
     /// (OCR and paint over the lines carrying a value) | `"keep"`.
     pub redact_images: Option<String>,
+    /// With `redactPii` (#694): comma-separated terms never redacted even
+    /// when a detector flags them.
+    pub redact_allow_terms: Option<String>,
+    /// Comma-separated terms always redacted, as `[REDACTED]`.
+    pub redact_deny_terms: Option<String>,
+    /// Regexes, one per line, a flagged span must not match in full to be
+    /// redacted — the document's own part numbers and record IDs.
+    pub redact_allow_patterns: Option<String>,
+    /// The NER detector's minimum confidence, 0–1 (default 0.85).
+    pub redact_ner_min_score: Option<f64>,
     /// `"standard"` (default) or `"vlm"` (#77): replace the whole ONNX stack —
     /// layout, OCR, TableFormer — with a remote OpenAI-compatible vision
     /// endpoint, which converts each rendered page on its own. PDF and image
@@ -485,6 +495,16 @@ pub struct ConvertOptions {
     pub redact_kinds: Option<String>,
     pub redact_pattern: Option<String>,
     pub redact_images: Option<String>,
+    /// With `redactPii` (#694): comma-separated terms never redacted even
+    /// when a detector flags them.
+    pub redact_allow_terms: Option<String>,
+    /// Comma-separated terms always redacted, as `[REDACTED]`.
+    pub redact_deny_terms: Option<String>,
+    /// Regexes, one per line, a flagged span must not match in full to be
+    /// redacted — the document's own part numbers and record IDs.
+    pub redact_allow_patterns: Option<String>,
+    /// The NER detector's minimum confidence, 0–1 (default 0.85).
+    pub redact_ner_min_score: Option<f64>,
     /// `"standard"` (default) or `"vlm"` (#77): convert PDF/image pages
     /// through a remote OpenAI-compatible vision endpoint instead of the ONNX
     /// stack. The `vlm_*` options below take effect only under `"vlm"` and are
