@@ -1196,3 +1196,43 @@ fn http_sources_are_fetched_named_and_typed() {
         "{stderr}"
     );
 }
+
+/// `--picture-description-mode` takes `caption` or `ocr`;
+/// `--picture-description-concurrency` a positive integer — the usage
+/// error names the flag, before any conversion (#670).
+#[test]
+fn picture_description_flags_validate() {
+    let fixture = concat!(env!("CARGO_MANIFEST_DIR"), "/../docling/sample.html");
+    for args in [
+        &[
+            "--picture-description",
+            "--picture-description-mode",
+            "summary",
+            fixture,
+        ][..],
+        &["--picture-description-concurrency", "0", fixture][..],
+        &["--picture-description-concurrency", "two", fixture][..],
+    ] {
+        let (code, _, stderr) = run(args);
+        assert_eq!(code, 2, "args {args:?}, stderr: {stderr}");
+        assert!(stderr.contains("--picture-description"), "{stderr}");
+    }
+}
+
+/// Enabled without any endpoint, the CLI refuses up front and names the
+/// flag that would supply one.
+#[test]
+fn picture_description_needs_an_endpoint() {
+    let fixture = concat!(env!("CARGO_MANIFEST_DIR"), "/../docling/sample.html");
+    let out = Command::new(env!("CARGO_BIN_EXE_docling-rs"))
+        .args(["--picture-description", fixture])
+        .env_remove("DOCLING_RS_VLM_ENDPOINT")
+        .output()
+        .expect("run docling-rs");
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert_eq!(out.status.code(), Some(2), "{stderr}");
+    assert!(
+        stderr.contains("--picture-description-endpoint"),
+        "{stderr}"
+    );
+}

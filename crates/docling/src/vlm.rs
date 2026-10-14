@@ -148,12 +148,140 @@ impl VlmOptions {
     }
 
     fn url(&self) -> String {
-        let base = self.endpoint.trim_end_matches('/');
-        if base.ends_with("/chat/completions") {
-            base.to_string()
-        } else {
-            format!("{base}/chat/completions")
+        chat_url(&self.endpoint)
+    }
+}
+
+pub use crate::options::{PictureDescriptionMode, CAPTION_PROMPT, OCR_PROMPT};
+
+/// The picture-description pass (#670): every picture of a document — a
+/// DOCX/PPTX/XLSX/HTML embedded image, a PDF figure crop, a sampled video
+/// frame — goes to an OpenAI-compatible vision endpoint and the answer
+/// becomes its description annotation (`meta.description` in docling JSON,
+/// printed after the caption in Markdown). MarkItDown's `llm_client` /
+/// `llm_model` / `llm_prompt` and its markitdown-ocr plugin, on every format
+/// and surface. Endpoint, model and key fall back to the `DOCLING_RS_VLM_*`
+/// environment like the page pipeline's; the prompt does not
+/// (`DOCLING_RS_VLM_PROMPT` asks for a page's markup, not a caption).
+#[derive(Debug, Clone)]
+pub struct PictureDescriptionOptions {
+    /// The server's `/v1` base or the full `…/chat/completions` URL.
+    pub endpoint: String,
+    /// Model name as the server knows it.
+    pub model: String,
+    /// Bearer token, if the endpoint wants one.
+    pub api_key: Option<String>,
+    /// The instruction sent with every picture; `None` = the mode's prompt.
+    pub prompt: Option<String>,
+    /// Caption or OCR.
+    pub mode: PictureDescriptionMode,
+    /// Pictures in flight at once (default 1; the endpoint's rate limit sets
+    /// the ceiling — 429s retry with backoff).
+    pub concurrency: usize,
+}
+
+impl PictureDescriptionOptions {
+    /// Build options from explicit values, the endpoint, model and key
+    /// falling back to the `DOCLING_RS_VLM_*` environment. Endpoint and
+    /// model are required.
+    pub fn resolve(
+        endpoint: Option<String>,
+        model: Option<String>,
+    ) -> Result<Self, ConversionError> {
+        let env = docling_core::env::nonempty;
+        let endpoint = endpoint
+            .or_else(|| env("DOCLING_RS_VLM_ENDPOINT"))
+            .ok_or_else(|| {
+                ConversionError::Parse(
+                    "picture description: no endpoint (pass --picture-description-endpoint or set \
+                     DOCLING_RS_VLM_ENDPOINT)"
+                        .into(),
+                )
+            })?;
+        let model = model
+            .or_else(|| env("DOCLING_RS_VLM_MODEL"))
+            .ok_or_else(|| {
+                ConversionError::Parse(
+                    "picture description: no model (pass --picture-description-model or set \
+                     DOCLING_RS_VLM_MODEL)"
+                        .into(),
+                )
+            })?;
+        Ok(Self {
+            endpoint,
+            model,
+            api_key: env("DOCLING_RS_VLM_API_KEY"),
+            prompt: None,
+            mode: PictureDescriptionMode::default(),
+            concurrency: 1,
+        })
+    }
+
+    /// The prompt in force: the explicit one, else the mode's.
+    pub fn prompt(&self) -> &str {
+        self.prompt.as_deref().unwrap_or(self.mode.default_prompt())
+    }
+
+    /// `created_by` of the descriptions this produces: the model name.
+    pub fn provenance(&self) -> String {
+        self.model.clone()
+    }
+
+    /// Ask the endpoint about one image (`mimetype` as the data URI says
+    /// it). The retry policy is the page loop's; an empty answer is `None`,
+    /// the way MarkItDown reads a blank completion as "no text".
+    pub fn describe(
+        &self,
+        agent: &ureq::Agent,
+        mimetype: &str,
+        image: &[u8],
+    ) -> Result<Option<String>, RequestError> {
+        let req = ImageRequest {
+            url: chat_url(&self.endpoint),
+            model: &self.model,
+            api_key: self.api_key.as_deref(),
+            prompt: self.prompt(),
+            max_tokens: None,
+            keep_special: false,
+        };
+        let text = request_image(agent, &req, mimetype, image)?;
+        let text = text.trim();
+        Ok((!text.is_empty()).then(|| text.to_string()))
+    }
+}
+
+/// Why a request produced no answer: the endpoint rejected this image (a
+/// 4xx, a malformed body — the next picture may fare better), or it could
+/// not be reached at all (transport errors, 5xx and 408/429 exhausted their
+/// retries, our own timeout — the next picture will not fare better).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum RequestError {
+    Rejected(String),
+    Unavailable(String),
+}
+
+impl std::fmt::Display for RequestError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Rejected(m) | Self::Unavailable(m) => f.write_str(m),
         }
+    }
+}
+
+impl From<RequestError> for String {
+    fn from(e: RequestError) -> String {
+        e.to_string()
+    }
+}
+
+/// The `chat/completions` URL for an endpoint given as the `/v1` base or in
+/// full.
+fn chat_url(endpoint: &str) -> String {
+    let base = endpoint.trim_end_matches('/');
+    if base.ends_with("/chat/completions") {
+        base.to_string()
+    } else {
+        format!("{base}/chat/completions")
     }
 }
 
@@ -285,7 +413,7 @@ fn pdf_err(e: docling_pdf::PdfError) -> ConversionError {
     ConversionError::with_source("pdf", e)
 }
 
-fn agent() -> ureq::Agent {
+pub(crate) fn agent() -> ureq::Agent {
     // A VLM can chew on a dense page for minutes — and a CPU-served endpoint
     // for many more: #311's measurement clocked a routine page at 587 s on a
     // desktop CPU, a hair under this default. `DOCLING_RS_VLM_TIMEOUT`
@@ -306,30 +434,69 @@ fn agent() -> ureq::Agent {
 /// 408/429 and 5xx with exponential backoff (2s/4s/8s); other statuses and a
 /// malformed body fail immediately.
 fn request_page(agent: &ureq::Agent, opts: &VlmOptions, image: &[u8]) -> Result<String, String> {
-    let data_uri = format!(
-        "data:image/png;base64,{}",
-        docling_core::base64::encode(image)
-    );
     // Unlimited-OCR's grounding markers are special tokens: without this vLLM
     // extension flag the server strips them from the completion and the page
     // comes back as flat text (docling#3944's api_overrides).
-    let keep_special = opts.model.to_ascii_lowercase().contains("unlimited");
+    let req = ImageRequest {
+        url: opts.url(),
+        model: &opts.model,
+        api_key: opts.api_key.as_deref(),
+        prompt: opts
+            .prompt
+            .as_deref()
+            .unwrap_or(default_prompt_for(&opts.model)),
+        max_tokens: Some(opts.max_tokens),
+        keep_special: opts.model.to_ascii_lowercase().contains("unlimited"),
+    };
+    request_image(agent, &req, "image/png", image).map_err(String::from)
+}
+
+/// One image in, one completion out — what the page loop and the picture
+/// description pass both send.
+struct ImageRequest<'a> {
+    url: String,
+    model: &'a str,
+    api_key: Option<&'a str>,
+    prompt: &'a str,
+    /// `max_tokens` when set; omitted from the body otherwise (the server's
+    /// default, as MarkItDown sends it).
+    max_tokens: Option<usize>,
+    /// vLLM's `skip_special_tokens: false`.
+    keep_special: bool,
+}
+
+/// POST `image` (a data URI of `mimetype`) with the request's prompt and
+/// return `choices[0].message.content`. Transport errors, 408/429 and 5xx
+/// retry with exponential backoff (2s/4s/8s) and come back as
+/// [`RequestError::Unavailable`] once exhausted; other statuses and a
+/// malformed body are [`RequestError::Rejected`] at once.
+fn request_image(
+    agent: &ureq::Agent,
+    req: &ImageRequest<'_>,
+    mimetype: &str,
+    image: &[u8],
+) -> Result<String, RequestError> {
+    let data_uri = format!(
+        "data:{mimetype};base64,{}",
+        docling_core::base64::encode(image)
+    );
     let mut body = serde_json::json!({
-        "model": opts.model,
+        "model": req.model,
         // Deterministic-ish output: sampling noise only hurts a structured
         // markup task (docling's ApiVlmOptions ships temperature 0 too).
         "temperature": 0,
-        "max_tokens": opts.max_tokens,
         "messages": [{
             "role": "user",
             "content": [
-                { "type": "text",
-                  "text": opts.prompt.as_deref().unwrap_or(default_prompt_for(&opts.model)) },
+                { "type": "text", "text": req.prompt },
                 { "type": "image_url", "image_url": { "url": data_uri } },
             ],
         }],
     });
-    if keep_special {
+    if let Some(n) = req.max_tokens {
+        body["max_tokens"] = serde_json::Value::from(n);
+    }
+    if req.keep_special {
         body["skip_special_tokens"] = serde_json::Value::Bool(false);
     }
     // DOCLING_RS_VLM_EXTRA_BODY: a JSON object merged into the request at the
@@ -345,13 +512,13 @@ fn request_page(agent: &ureq::Agent, opts: &VlmOptions, image: &[u8]) -> Result<
                 }
             }
             _ => {
-                return Err(
+                return Err(RequestError::Rejected(
                     "DOCLING_RS_VLM_EXTRA_BODY is not a JSON object; fix or unset it".into(),
-                )
+                ))
             }
         }
     }
-    let url = opts.url();
+    let url = &req.url;
     let mut delay = Duration::from_secs(2);
     let mut last_err = String::new();
     for attempt in 0..4 {
@@ -359,21 +526,21 @@ fn request_page(agent: &ureq::Agent, opts: &VlmOptions, image: &[u8]) -> Result<
             std::thread::sleep(delay);
             delay *= 2;
         }
-        let mut req = agent.post(&url).header("content-type", "application/json");
-        if let Some(key) = &opts.api_key {
-            req = req.header("authorization", &format!("Bearer {key}"));
+        let mut post = agent.post(url).header("content-type", "application/json");
+        if let Some(key) = req.api_key {
+            post = post.header("authorization", &format!("Bearer {key}"));
         }
         // Hand-serialized body: the crate pulls ureq without its `json`
         // feature (fetch-images doesn't need it), and one to_string keeps it
         // that way.
         let payload = serde_json::to_string(&body).expect("static json shape");
-        match req.send(payload.as_bytes()) {
+        match post.send(payload.as_bytes()) {
             Ok(mut resp) => {
                 let status = resp.status().as_u16();
                 let text = resp
                     .body_mut()
                     .read_to_string()
-                    .map_err(|e| format!("{url}: read response: {e}"))?;
+                    .map_err(|e| RequestError::Unavailable(format!("{url}: read response: {e}")))?;
                 if status == 408 || status == 429 || status >= 500 {
                     // Keep a body snippet: for OpenAI-style servers the real
                     // reason (insufficient_quota vs. a plain rate limit)
@@ -389,17 +556,22 @@ fn request_page(agent: &ureq::Agent, opts: &VlmOptions, image: &[u8]) -> Result<
                     continue;
                 }
                 if status != 200 {
-                    return Err(format!(
+                    return Err(RequestError::Rejected(format!(
                         "{url}: HTTP {status}: {}",
                         text.chars().take(300).collect::<String>()
-                    ));
+                    )));
                 }
-                let parsed: serde_json::Value = serde_json::from_str(&text)
-                    .map_err(|e| format!("{url}: malformed JSON response: {e}"))?;
+                let parsed: serde_json::Value = serde_json::from_str(&text).map_err(|e| {
+                    RequestError::Rejected(format!("{url}: malformed JSON response: {e}"))
+                })?;
                 let content = parsed["choices"][0]["message"]["content"]
                     .as_str()
                     .map(str::to_string)
-                    .ok_or_else(|| format!("{url}: no choices[0].message.content in response"));
+                    .ok_or_else(|| {
+                        RequestError::Rejected(format!(
+                            "{url}: no choices[0].message.content in response"
+                        ))
+                    });
                 if docling_core::env::flag("DOCLING_RS_VLM_DEBUG") {
                     match &content {
                         Ok(c) => {
@@ -417,18 +589,20 @@ fn request_page(agent: &ureq::Agent, opts: &VlmOptions, image: &[u8]) -> Result<
             // (#311's GPU run: a 3300 s page vs. a 1800 s cap). Raise
             // DOCLING_RS_VLM_TIMEOUT instead; the error says so.
             Err(ureq::Error::Timeout(_)) => {
-                return Err(format!(
-                    "{url}: page request exceeded the {}s cap (DOCLING_RS_VLM_TIMEOUT raises \
+                return Err(RequestError::Unavailable(format!(
+                    "{url}: request exceeded the {}s cap (DOCLING_RS_VLM_TIMEOUT raises \
                      it; the server may still be finishing the abandoned generation)",
                     docling_core::env::parse("DOCLING_RS_VLM_TIMEOUT").unwrap_or(600_u64)
-                ));
+                )));
             }
             Err(e) => {
                 last_err = format!("{url}: {e} (attempt {})", attempt + 1);
             }
         }
     }
-    Err(format!("giving up after 4 attempts: {last_err}"))
+    Err(RequestError::Unavailable(format!(
+        "giving up after 4 attempts: {last_err}"
+    )))
 }
 
 /// Is this fragment DocTags rather than DocLang? Granite-class models always

@@ -73,6 +73,7 @@ everywhere. The ones most conversions reach for:
 | `password` | `--password` | encrypted PDF and Office documents (#611, #625) |
 | `image_sources` | `--image-sources` | `none` / `embedded` / `local` / `remote` — which `<img>` references resolve (#646) |
 | `do_picture_classification` · `do_code_enrichment` · `do_formula_enrichment` · `do_picture_ocr` | `--enrich-picture-classes` · `--enrich-code` · `--enrich-formula` · `--picture-ocr` | the enrichment models (#423, #645) |
+| `do_picture_description` + `picture_description_endpoint`, `picture_description_model`, `picture_description_mode` | `--picture-description --picture-description-mode caption\|ocr` | every picture described through an OpenAI-compatible vision endpoint — MarkItDown's caption and OCR prompts (#670) |
 | `redact_pii` | `--redact-pii` | PII redaction before export (#621) |
 | `pipeline` + `vlm_endpoint`, `vlm_model` | `--pipeline vlm --vlm-endpoint … --vlm-model …` | the remote vision-model pipeline (#77) |
 | `strict` · `compact_tables` · `page_break_placeholder` | `--strict` · `--compact-tables` · `--page-break-placeholder` | Markdown dialect, unpadded tables, text between pages |

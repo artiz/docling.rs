@@ -38,7 +38,7 @@ import os
 import warnings
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, Iterable, Iterator, List, Optional, Tuple, Union
+from typing import Any, Dict, Iterable, Iterator, List, Optional, Tuple, Union
 
 from docling_core.types.doc import DoclingDocument, ImageRefMode
 
@@ -183,6 +183,12 @@ class ConversionResult:
         self.redaction = dict(redaction) if redaction is not None else None
 
 
+def _is_api_options(pd: Any) -> bool:
+    """docling's ``PictureDescriptionApiOptions`` (ours, or docling's own):
+    anything with a ``url`` and no Python-side describer."""
+    return pd is not None and hasattr(pd, "url") and not hasattr(pd, "_annotate_images")
+
+
 class DocumentConverter:
     """docling-shaped converter whose processor is Rust.
 
@@ -237,6 +243,14 @@ class DocumentConverter:
       resolution in px per picture pixel under RapidOCR's 2000 px cap (#666):
       ``1.0`` reads them at their native pixels; ``None`` keeps the
       image-input rule.
+    * ``do_picture_description`` + ``picture_description_endpoint`` /
+      ``_model`` / ``_api_key`` / ``_prompt`` / ``_mode`` (``"caption"`` |
+      ``"ocr"``) / ``_concurrency`` (#670) — describe every picture of any
+      format through an OpenAI-compatible vision endpoint; the answer is the
+      picture's ``meta.description``. Endpoint, model and key fall back to
+      the ``vlm_*`` kwargs, then ``DOCLING_RS_VLM_*``. docling's
+      ``PictureDescriptionApiOptions`` on the pipeline options maps onto
+      these.
     * ``ocr_engine`` — which OCR engine reads scanned pages (#460):
       ``"ppocr"`` (default, the built-in PP-OCRv3 recognizer) or
       ``"tesseract"`` (the system ``tesseract`` binary, docling's
@@ -361,6 +375,13 @@ class DocumentConverter:
         picture_ocr_min_side: Optional[int] = None,
         picture_ocr_scale: Optional[float] = None,
         keep_picture_images: bool = True,
+        do_picture_description: bool = False,
+        picture_description_endpoint: Optional[str] = None,
+        picture_description_model: Optional[str] = None,
+        picture_description_api_key: Optional[str] = None,
+        picture_description_prompt: Optional[str] = None,
+        picture_description_mode: Optional[str] = None,
+        picture_description_concurrency: Optional[int] = None,
         redact_pii: bool = False,
         redact_mode: Optional[str] = None,
         redact_kinds: Optional[Union[str, Iterable[str]]] = None,
@@ -462,6 +483,26 @@ class DocumentConverter:
             keep_picture_images = getattr(
                 pdf_opts, "keep_picture_images", keep_picture_images
             )
+            # docling's picture description through an API
+            # (PictureDescriptionApiOptions, #670) runs in the engine: url →
+            # endpoint, params["model"] → model, an Authorization header →
+            # key, prompt and concurrency theirs. Other describers (a
+            # LangChain chat model) stay the Python post-pass below.
+            pd = getattr(pdf_opts, "picture_description_options", None)
+            if getattr(pdf_opts, "do_picture_description", False) and _is_api_options(pd):
+                do_picture_description = True
+                picture_description_endpoint = str(pd.url) or picture_description_endpoint
+                params = getattr(pd, "params", None) or {}
+                if params.get("model"):
+                    picture_description_model = str(params["model"])
+                headers = getattr(pd, "headers", None) or {}
+                auth = next((v for k, v in headers.items() if k.lower() == "authorization"), None)
+                if isinstance(auth, str) and auth.lower().startswith("bearer "):
+                    picture_description_api_key = auth[7:].strip()
+                if getattr(pd, "prompt", None):
+                    picture_description_prompt = str(pd.prompt)
+                if getattr(pd, "concurrency", None):
+                    picture_description_concurrency = int(pd.concurrency)
             # docling's PipelineOptions.document_timeout (#497), when set on
             # the pipeline options, wins over the shorthand kwarg.
             dt = getattr(pdf_opts, "document_timeout", None)
@@ -597,6 +638,13 @@ class DocumentConverter:
             picture_ocr_min_side=picture_ocr_min_side,
             picture_ocr_scale=picture_ocr_scale,
             keep_picture_images=keep_picture_images,
+            do_picture_description=do_picture_description,
+            picture_description_endpoint=picture_description_endpoint,
+            picture_description_model=picture_description_model,
+            picture_description_api_key=picture_description_api_key,
+            picture_description_prompt=picture_description_prompt,
+            picture_description_mode=picture_description_mode,
+            picture_description_concurrency=picture_description_concurrency,
             redact_pii=redact_pii,
             redact_mode=redact_mode,
             redact_kinds=_joined(redact_kinds, ","),
@@ -644,7 +692,9 @@ class DocumentConverter:
         self._picture_description = None
         if pdf_opts is not None and getattr(pdf_opts, "do_picture_description", False):
             pd = getattr(pdf_opts, "picture_description_options", None)
-            if pd is None or not hasattr(pd, "_annotate_images"):
+            if _is_api_options(pd):
+                pass  # the engine's pass (#670), wired above
+            elif pd is None or not hasattr(pd, "_annotate_images"):
                 # docling's default (a local SmolVLM) has no counterpart here;
                 # degrade like a missing enrichment model.
                 warnings.warn(

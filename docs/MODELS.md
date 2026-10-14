@@ -294,6 +294,48 @@ query, multipart or JSON body), the Python kwargs (also on
 comma-separated string) and the Node options (`doPictureOcr`,
 `pictureOcrClasses`, `pictureOcrMinSide`, `pictureOcrScale`,
 `ocrTextlineOrientation`, `keepPictureImages`).
+## Picture description through a vision model (`--picture-description`)
+
+The other way to read a picture (#670): send it to an OpenAI-compatible
+vision endpoint — a hosted model, or LM Studio / Ollama / vLLM on your own
+machine — and attach the answer where `--picture-ocr` puts its text. Every
+format and every surface: the embedded pictures of DOCX/PPTX/XLSX/HTML, a
+PDF's or scan's figure crops, sampled video frames, and (in caption mode) an
+image input as a whole. It is MarkItDown's `llm_client` / `llm_model` /
+`llm_prompt` and its markitdown-ocr plugin, with the same two prompts:
+
+```bash
+export DOCLING_RS_VLM_ENDPOINT=https://api.openai.com/v1 DOCLING_RS_VLM_API_KEY=sk-… DOCLING_RS_VLM_MODEL=gpt-4o-mini
+docling-rs --picture-description deck.pptx                      # captions: "Write a detailed caption for this image."
+docling-rs --picture-description --picture-description-mode ocr scan.pdf   # markitdown-ocr's "Extract all text from this image …"
+docling-rs --picture-description --picture-description-endpoint http://localhost:11434/v1 \
+           --picture-description-model llava --picture-description-prompt "Describe the chart's trend." \
+           --picture-description-concurrency 4 report.docx
+```
+
+```python
+from docling_rs import DocumentConverter, InputFormat, PdfFormatOption, PdfPipelineOptions
+from docling_rs.datamodel.pipeline_options import PictureDescriptionApiOptions   # docling's class, same fields
+
+opts = PdfPipelineOptions(do_picture_description=True, picture_description_options=PictureDescriptionApiOptions(
+    url="http://localhost:11434/v1", params={"model": "llava"}, prompt="Describe the picture."))
+doc = DocumentConverter(format_options={InputFormat.PDF: PdfFormatOption(pipeline_options=opts)}).convert("paper.pdf").document
+# or, plainly: DocumentConverter(do_picture_description=True, picture_description_endpoint=…, picture_description_model=…)
+```
+
+Endpoint, model and key fall back to the `vlm_*` options and then the
+`DOCLING_RS_VLM_*` environment; the prompt does not (`DOCLING_RS_VLM_PROMPT`
+asks for a page's markup). `picture_ocr_min_side` and `picture_ocr_classes`
+select the pictures here too, identical image bytes are sent once per
+document, `concurrency` pictures are in flight at once, and the answer lands
+as the picture's description with the model as `created_by`. An endpoint
+that rejects a picture warns and the rest go on; one that cannot be reached
+warns once and the remaining pictures keep no description — the conversion
+never fails over it. With `--picture-ocr` on as well, the local models read
+only what the endpoint left undescribed. docling-serve maps docling's
+`picture_description_api` request option onto this (a request-supplied
+endpoint needs `--allow-url-fetch`, like `vlm_endpoint`).
+
 ## PII redaction (`--redact-pii`)
 
 A converted document feeds search and RAG pipelines — Markdown, chunks,

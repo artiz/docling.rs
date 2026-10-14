@@ -116,7 +116,7 @@ limit — a container cgroup or `systemd` `RuntimeMaxSec` / `MemoryMax`.
 
 - `DOCLING_RS_VLM_API_KEY` is sent as a bearer token to the VLM endpoint —
   the operator's `DOCLING_RS_VLM_ENDPOINT`, or a request-supplied
-  `vlm_endpoint` (behind `--allow-url-fetch`). A caller who may choose the
+  `vlm_endpoint` / `picture_description_endpoint` (behind `--allow-url-fetch`). A caller who may choose the
   endpoint therefore receives the server's key: pin the endpoint
   server-side when a key is set.
 - `DOCLING_SERVE_API_KEY` (or `--api-key`) is docling-serve's own access key
@@ -175,10 +175,13 @@ extracted to disk, so there is no zip-slip path.
   (and thus the server). `DOCLING_RS_ALLOW_PRIVATE_IP_FETCH=1` opts out of the
   IP block-list for local/intranet image servers, same as the URL fetch above;
   a host on the allow-list does **not** lift it.
-- **`pipeline=vlm` with a request-supplied `vlm_endpoint`** (#304) points
-  the server's outbound traffic (page images included) wherever the caller
-  says, so it sits behind the **same `--allow-url-fetch` gate** and the same
-  resolve-and-refuse private-address check as URL inputs. The safer
+- **`pipeline=vlm` with a request-supplied `vlm_endpoint`** (#304) — and
+  `do_picture_description` with a request-supplied
+  `picture_description_endpoint` (#670), which sends every picture of the
+  document the same way — points the server's outbound traffic (page images
+  included) wherever the caller says, so it sits behind the **same
+  `--allow-url-fetch` gate** and the same resolve-and-refuse
+  private-address check as URL inputs. The safer
   deployment is the operator-pinned mode: set `DOCLING_RS_VLM_ENDPOINT` /
   `DOCLING_RS_VLM_MODEL` on the server and let requests send only
   `pipeline=vlm` — the pinned endpoint is the operator's own choice, so it

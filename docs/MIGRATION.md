@@ -1081,6 +1081,21 @@ deliberate scope boundary or a cosmetic, single-fixture polish gap.
   these pictures), where the default reads a 720 × 180 screenshot at
   2000 × 500. `ocr_textline_orientation` reads their vertical, skewed and
   upside-down lines (`tests/fixtures/textline/`).
+- **Picture description through a vision endpoint (#670).** docling's
+  `do_picture_description` with `PictureDescriptionApiOptions` is an engine
+  pass here, on every format and surface (`--picture-description`, serve
+  `do_picture_description` + docling-serve's `picture_description_api`,
+  Python `PictureDescriptionApiOptions` or the flat kwargs, Node
+  `doPictureDescription`): every picture — embedded office/HTML pictures,
+  PDF figure crops, video frames, an image input as a whole — goes to an
+  OpenAI-compatible `chat/completions` endpoint and the answer is its
+  description annotation, where `do_picture_ocr` puts its text. Two prompts,
+  MarkItDown's: `caption` ("Write a detailed caption for this image.") and
+  `ocr` (markitdown-ocr's text extraction). The picture-OCR filters apply,
+  identical bytes are sent once, `concurrency` requests run at once, and
+  endpoint errors warn without failing the conversion. docling's local
+  describers (`PictureDescriptionVlmOptions`, SmolVLM in process) have no
+  counterpart; a LangChain chat model still runs as the Python post-pass.
 - **Video frame sampling tunables** (#647) — docling's video path is the
   transcript; the frames are a docling.rs extension (#138), and their
   sampling now takes options on every surface: `video_frames=all` (every
