@@ -9,8 +9,7 @@ onnxruntime_profile_*.json
 # wasm-bindgen output for the docling-wasm demo (built from source, see its README)
 crates/docling-wasm/www/pkg/
 # ML models the scan demo fetches same-origin (download_dependencies.sh, run in www/)
-crates/docling-wasm/www/models/
-crates/docling-wasm/www/.models/
+crates/docling-wasm/www/models
 
 # Secrets — never commit (holds CARGO_REGISTRY_TOKEN)
 .env
@@ -24,10 +23,12 @@ crates/docling-wasm/www/.models/
 # Python virtual environments (venv) — not committed, but can be created from requirements.txt
 /.venv*
 
-# Downloaded native libs / models (not committed)
-.pdfium/
+# Downloaded native libs / models (not committed). No trailing slash: a
+# `name/` pattern matches directories only, and git sees a symlink (e.g.
+# crates/docling-wasm/www/.models -> the root .models) as a file.
+.pdfium
 *.onnx
-.models/
+.models
 
 # Python bytecode cache from the comparison scripts
 __pycache__/
@@ -48,4 +49,4 @@ crates/docling-py/python/docling_rs/*.so
 tests/data/**/*_artifacts/
 tests/data/**/groundtruth_dclx/tests/
 # docling-parse renderer plugin (#478, scripts/install/build_docling_parse_render.sh)
-.docling-parse/
+.docling-parse
