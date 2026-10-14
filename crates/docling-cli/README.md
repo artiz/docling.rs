@@ -73,7 +73,8 @@ mode](../../docs/OPTIONS.md#cli-batch-mode).
 server, so agents — Claude Desktop, Claude Code, Cursor, VS Code, any MCP
 client — convert documents themselves. It is in the default build: the
 release binaries, `cargo install docling-cli` and the `ghcr.io/docling-project/docling-rs`
-image all carry it, no Python needed. Three tools:
+image all carry it, and `uvx docling-rs-mcp` runs the same server from PyPI
+(below). Three tools:
 
 | Tool | What it returns |
 |---|---|
@@ -99,6 +100,28 @@ stdio servers:
 claude mcp add docling -- docling-rs mcp --root ~/Documents     # Claude Code
 ```
 
+With only Python and [uv](https://docs.astral.sh/uv/) at hand —
+MarkItDown's `uvx markitdown-mcp` route — the PyPI launcher `docling-rs-mcp`
+runs the same server, compiled into the `docling-rs` wheel:
+
+```json
+{
+  "mcpServers": {
+    "docling": { "command": "uvx", "args": ["docling-rs-mcp", "--root", "/Users/me/Documents"] }
+  }
+}
+```
+
+`uvx docling-rs-mcp --download-models` fetches the layout, OCR and table
+models (~720 MB) into the docling.rs cache once (`=all` adds the code/formula
+enrichment models); the launcher finds them there from any directory. With
+the `docling-rs` package installed the server is also
+`python -m docling_rs.mcp`, and on NVIDIA GPUs
+`uv run --with docling-rs-cuda python -m docling_rs.mcp`. Every release
+publishes it to the official MCP registry as
+`io.github.docling-project/docling-rs`; Smithery and Glama read
+`smithery.yaml` and `glama.json` ([`docs/MCP_REGISTRIES.md`](../../docs/MCP_REGISTRIES.md)).
+
 The container image has the models baked in; mount the folder at the same
 path inside so the paths the agent sees are the paths the server reads:
 
@@ -121,7 +144,9 @@ Streamable HTTP instead of stdio, for clients that connect to a URL:
 
 What a tool call may reach is the operator's decision, not the model's:
 local paths and `file:` URIs are confined to `--root` (repeatable; the
-working directory by default, checked before and after resolving symlinks);
+working directory by default — unless that is the file-system root, where
+desktop clients often start servers: there `--root` is required — checked
+before and after resolving symlinks);
 `http(s)` URLs — and remote images, a request-supplied `vlm_endpoint` — only
 with `--allow-url-fetch`, through the SSRF block-list on every redirect hop
 with a 256 MiB / 300 s cap; `--http` refuses a non-loopback bind without
@@ -138,7 +163,8 @@ the load (a 5-page PDF: 5.4 s first, 2.6 s after), and memory stays flat
 between calls (~0.6 GB with the models resident; ONNX Runtime's CPU arena is
 off and freed buffers go back to the OS — `DOCLING_RS_NO_ARENA=0` restores
 the arena). Calls carrying a progress token get a heartbeat every 10 s while
-a long PDF converts.
+a long PDF converts. Flags take `--flag value` or `--flag=value`
+(`--allow-url-fetch=false`), the form catalog configs generate.
 
 
 ## HTTP server

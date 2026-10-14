@@ -1,0 +1,97 @@
+# Publish the docling.rs MCP server (#669) to the official MCP registry
+# (registry.modelcontextprotocol.io — the catalog MCP clients and
+# downstream registries read) on every release:
+# server.json, with the release's version written in, as
+# `io.github.docling-project/docling-rs`.
+#
+# The registry verifies every package server.json lists before accepting
+# the entry: the PyPI launcher `docling-rs-mcp` (its README carries the
+# `mcp-name:` marker) and the CLI image
+# `ghcr.io/docling-project/docling-rs:<version>` (its
+# `io.modelcontextprotocol.server.name` label). pypi-publish.yml and
+# docker-publish.yml publish those on the same release, so this job waits
+# until both exist. Authentication is GitHub OIDC — the workflow's identity
+# proves the `io.github.docling-project` namespace; no secret. Manual
+# fallback and the other catalogs: docs/MCP_REGISTRIES.md.
+name: mcp registry
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to publish (e.g. 2.19.1). Blank = the workspace version from the root Cargo.toml."
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    name: publish server.json
+    # Only the canonical repository owns the io.github.docling-project
+    # namespace, and only `v<version>` releases are published.
+    if: github.repository == 'docling-project/docling.rs' && (github.event_name != 'release' || startsWith(github.event.release.tag_name, 'v'))
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.release.tag_name || github.ref }}
+
+      - name: Resolve version
+        id: v
+        shell: bash
+        run: |
+          v="${{ inputs.version }}"
+          if [ -z "$v" ]; then v="${{ github.event.release.tag_name }}"; v="${v#v}"; fi
+          if [ -z "$v" ]; then v="$(grep -m1 '^version = ' Cargo.toml | sed -E 's/.*"([^"]+)".*/\1/')"; fi
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+          echo "Publishing server version $v"
+
+      # PyPI wheels and the multi-arch images take a while: poll every 2 min
+      # for up to 4 h rather than fail on a race.
+      - name: Wait for the PyPI launcher and the CLI image
+        shell: bash
+        run: |
+          v="${{ steps.v.outputs.version }}"
+          accept="application/vnd.oci.image.index.v1+json, application/vnd.docker.distribution.manifest.list.v2+json, application/vnd.oci.image.manifest.v1+json"
+          for _ in $(seq 1 120); do
+            pypi=$(curl -sS -o /dev/null -w '%{http_code}' "https://pypi.org/pypi/docling-rs-mcp/$v/json" || true)
+            token=$(curl -sS "https://ghcr.io/token?scope=repository:docling-project/docling-rs:pull" | jq -r .token || true)
+            image=$(curl -sS -o /dev/null -w '%{http_code}' -H "Authorization: Bearer $token" -H "Accept: $accept" \
+              "https://ghcr.io/v2/docling-project/docling-rs/manifests/$v" || true)
+            echo "pypi docling-rs-mcp==$v: $pypi · ghcr docling-rs:$v: $image"
+            if [ "$pypi" = 200 ] && [ "$image" = 200 ]; then exit 0; fi
+            sleep 120
+          done
+          echo "::error::docling-rs-mcp==$v on PyPI or ghcr.io/docling-project/docling-rs:$v never appeared"
+          exit 1
+
+      - name: Write the version into server.json
+        shell: bash
+        run: |
+          v="${{ steps.v.outputs.version }}"
+          jq --arg v "$v" '
+            .version = $v
+            | .packages |= map(
+                if .registryType == "oci" then .identifier |= sub(":[^:/]*$"; ":" + $v)
+                else .version = $v end)' server.json > server.tmp
+          mv server.tmp server.json
+          cat server.json
+
+      - name: Install mcp-publisher
+        shell: bash
+        run: |
+          curl -fsSL "https://github.com/modelcontextprotocol/registry/releases/latest/download/mcp-publisher_$(uname -s | tr '[:upper:]' '[:lower:]')_$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/').tar.gz" | tar xz mcp-publisher
+
+      - name: Authenticate (GitHub OIDC)
+        run: ./mcp-publisher login github-oidc
+
+      - name: Publish
+        run: ./mcp-publisher publish

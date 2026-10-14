@@ -43,6 +43,11 @@
 //! `notifications/progress` every 10 s, so clients that reset their request
 //! timeout on progress wait out a long PDF. stdout is the stdio transport's
 //! wire — everything else the process says goes to stderr.
+//!
+//! The same server runs from the `docling-rs` binary ([`run`]) and from
+//! embedders such as the Python package's `docling-rs-mcp` launcher
+//! ([`run_with`] and a [`Launcher`] naming the command and where its PDF
+//! models come from).
 
 use std::path::{Component, Path, PathBuf};
 use std::process::ExitCode;
@@ -58,12 +63,44 @@ use rmcp::service::RequestContext;
 use rmcp::{tool, tool_handler, tool_router, RoleServer, ServerHandler, ServiceExt};
 use serde::Deserialize;
 
-const HELP: &str = "\
-docling-rs mcp — a Model Context Protocol server over the docling.rs converter
+/// How the server presents itself: the command that starts it (in `--help`,
+/// usage errors and the startup line), the client configuration `--help`
+/// shows, and how to get the PDF models when they are missing. The binary
+/// uses [`Launcher::CLI`].
+#[derive(Clone, Copy, Debug)]
+pub struct Launcher<'a> {
+    /// The command line that starts the server, e.g. `docling-rs mcp`.
+    pub command: &'a str,
+    /// A Claude Desktop `mcpServers` entry that launches it.
+    pub client_config: &'a str,
+    /// The sentence that tells the operator how to fetch the layout models.
+    pub models_hint: &'a str,
+    /// Flags the launcher handles itself, listed in `--help` (empty for none).
+    pub extra_flags: &'a str,
+}
 
-usage: docling-rs mcp [--root DIR]... [--allow-url-fetch] [--concurrency N]
-       docling-rs mcp --http [--host HOST] [--port PORT] [--allow-remote]
-                      [--bearer-token TOKEN] [...]
+impl Launcher<'static> {
+    /// The `docling-rs` binary's `mcp` subcommand.
+    pub const CLI: Self = Self {
+        command: "docling-rs mcp",
+        client_config: "{\"mcpServers\": {\"docling\": {\"command\": \"docling-rs\",\n     \"args\": [\"mcp\", \"--root\", \"/Users/me/Documents\"]}}}",
+        models_hint: "Fetch them with scripts/install/download_dependencies.sh (--cli \
+                      beside a cargo-installed binary), or point DOCLING_RS_MODELS_DIR at a \
+                      .models directory.",
+        extra_flags: "",
+    };
+}
+
+fn help(launcher: &Launcher) -> String {
+    let cmd = launcher.command;
+    let pad = " ".repeat(cmd.len());
+    format!(
+        "\
+{cmd} — a Model Context Protocol server over the docling.rs converter
+
+usage: {cmd} [--root DIR]... [--allow-url-fetch] [--concurrency N]
+       {cmd} --http [--host HOST] [--port PORT] [--allow-remote]
+       {pad} [--bearer-token TOKEN] [...]
 
 Tools: convert_to_markdown(uri) (MarkItDown's MCP tool, same contract),
 convert(uri, to, images, options), list_input_formats().
@@ -81,10 +118,17 @@ convert(uri, to, images, options), list_input_formats().
   --allow-remote      let --http bind a non-loopback address
   --bearer-token T    require `Authorization: Bearer T` on --http
                       (default: DOCLING_RS_MCP_TOKEN when set)
-
+{}
 Claude Desktop (claude_desktop_config.json):
-  {\"mcpServers\": {\"docling\": {\"command\": \"docling-rs\",
-     \"args\": [\"mcp\", \"--root\", \"/Users/me/Documents\"]}}}";
+  {}",
+        if launcher.extra_flags.is_empty() {
+            String::new()
+        } else {
+            format!("{}\n", launcher.extra_flags.trim_end())
+        },
+        launcher.client_config
+    )
+}
 
 /// A `--root` directory in both spellings a path may arrive in: as the
 /// operator gave it (absolute, `..` folded — what an agent quotes back) and
@@ -120,6 +164,10 @@ struct State {
     permits: Arc<tokio::sync::Semaphore>,
     /// The missing-models note is printed once per process.
     warned_text_layer: AtomicBool,
+    /// The command that started the server, for the stderr notes.
+    command: String,
+    /// How to get the layout models when they are missing.
+    models_hint: String,
     /// The PDF/image models, loaded on the first call that needs them and
     /// kept for the next — docling-serve's warm pipeline, shared by every
     /// session of this process.
@@ -136,6 +184,23 @@ struct HttpConfig {
 /// `docling-rs mcp …` — parse the flags, then serve until the client hangs
 /// up (stdio) or Ctrl-C (HTTP).
 pub fn run(args: Vec<String>) -> ExitCode {
+    ExitCode::from(run_with(args, &Launcher::CLI))
+}
+
+/// [`run`] for an embedder: the flags after the command, how the server
+/// should name itself; returns the process exit status (0, 1 on a serving
+/// error, 2 on a usage error). Call it before other threads read the
+/// environment — it defaults `DOCLING_RS_NO_ARENA`.
+pub fn run_with(args: Vec<String>, launcher: &Launcher) -> u8 {
+    // A long-lived server holding warm ONNX sessions, like `serve` (#263):
+    // the CPU arena off unless the operator says otherwise. Measured on the
+    // warm MCP server (4 vCPU, a 9-page paper and two short PDFs in turn):
+    // 2.1 GB live with the arena, 0.55 GB — the models — without, at the
+    // same latency.
+    if std::env::var_os("DOCLING_RS_NO_ARENA").is_none() {
+        std::env::set_var("DOCLING_RS_NO_ARENA", "1");
+    }
+    let usage = |err: &str| usage(launcher, err);
     let mut roots: Vec<String> = Vec::new();
     let mut allow_url_fetch = false;
     let mut concurrency: usize = 2;
@@ -147,12 +212,16 @@ pub fn run(args: Vec<String>) -> ExitCode {
     // The `--http`-only flags, so a stdio launch that carries one fails
     // loudly instead of ignoring it.
     let mut http_flag: Option<&'static str> = None;
+    let args = match split_flag_values(args) {
+        Ok(args) => args,
+        Err(e) => return usage(&e),
+    };
     let mut it = args.into_iter();
     while let Some(arg) = it.next() {
         match arg.as_str() {
             "--help" | "-h" => {
-                println!("{HELP}");
-                return ExitCode::SUCCESS;
+                println!("{}", help(launcher));
+                return 0;
             }
             "--root" => match it.next() {
                 Some(v) if !v.is_empty() => roots.push(v),
@@ -195,7 +264,8 @@ pub fn run(args: Vec<String>) -> ExitCode {
     if let (false, Some(flag)) = (http, http_flag) {
         return usage(&format!("{flag} applies to --http only"));
     }
-    if roots.is_empty() {
+    let defaulted = roots.is_empty();
+    if defaulted {
         roots.push(".".to_string());
     }
     let roots = match roots
@@ -206,12 +276,24 @@ pub fn run(args: Vec<String>) -> ExitCode {
         Ok(roots) => roots,
         Err(e) => return usage(&e),
     };
+    // Desktop clients often start servers in `/`: the working-directory
+    // default would then open the whole file system. That takes an explicit
+    // `--root`.
+    if defaulted && roots[0].canonical.parent().is_none() {
+        return usage(&format!(
+            "the working directory is the file system root ({}); pass --root DIR \
+             to choose what the server may read",
+            roots[0].canonical.display()
+        ));
+    }
     let state = Arc::new(State {
         roots,
         allow_url_fetch,
         fetch_policy: fetch_policy(),
         permits: Arc::new(tokio::sync::Semaphore::new(concurrency)),
         warned_text_layer: AtomicBool::new(false),
+        command: launcher.command.to_string(),
+        models_hint: launcher.models_hint.to_string(),
         warm: docling::WarmPipeline::new(),
     });
     // A long-lived process: large buffers are mapped and returned, not
@@ -221,7 +303,7 @@ pub fn run(args: Vec<String>) -> ExitCode {
         Ok(rt) => rt,
         Err(e) => {
             eprintln!("error: tokio runtime: {e}");
-            return ExitCode::FAILURE;
+            return 1;
         }
     };
     let result = if http {
@@ -239,25 +321,55 @@ pub fn run(args: Vec<String>) -> ExitCode {
     // answer: exit now rather than wait for it.
     runtime.shutdown_background();
     match result {
-        Ok(()) => ExitCode::SUCCESS,
+        Ok(()) => 0,
         Err(e) => {
             eprintln!("error: {e}");
-            ExitCode::FAILURE
+            1
         }
     }
 }
 
-fn usage(err: &str) -> ExitCode {
+/// The `--flag=value` spelling next to `--flag value`, so the argument
+/// lists MCP catalogs generate work (the registry's `server.json` describes
+/// a named argument as `--flag={value}`): value flags split in two, the
+/// switches take `=true` / `=false`.
+fn split_flag_values(args: Vec<String>) -> Result<Vec<String>, String> {
+    const SWITCHES: [&str; 3] = ["--allow-url-fetch", "--http", "--allow-remote"];
+    let mut out = Vec::with_capacity(args.len());
+    for arg in args {
+        let Some((flag, value)) = arg.split_once('=').filter(|(f, _)| f.starts_with("--")) else {
+            out.push(arg);
+            continue;
+        };
+        if SWITCHES.contains(&flag) {
+            match value.to_ascii_lowercase().as_str() {
+                "" | "true" | "1" | "yes" | "on" => out.push(flag.to_string()),
+                "false" | "0" | "no" | "off" => {}
+                _ => return Err(format!("{flag} takes true or false, not '{value}'")),
+            }
+        } else {
+            out.push(flag.to_string());
+            out.push(value.to_string());
+        }
+    }
+    Ok(out)
+}
+
+fn usage(launcher: &Launcher, err: &str) -> u8 {
     eprintln!("error: {err}");
-    eprintln!("usage: docling-rs mcp [--root DIR]... [--allow-url-fetch] [--concurrency N] [--http [--host HOST] [--port PORT] [--allow-remote] [--bearer-token TOKEN]]");
-    ExitCode::from(2)
+    eprintln!(
+        "usage: {} [--root DIR]... [--allow-url-fetch] [--concurrency N] [--http [--host HOST] [--port PORT] [--allow-remote] [--bearer-token TOKEN]]",
+        launcher.command
+    );
+    2
 }
 
 /// One line on stderr saying what this server may reach — the operator's
 /// check that the flags did what they meant.
 fn describe(state: &State, transport: &str) {
     eprintln!(
-        "docling-rs mcp {} · {transport} · root {} · URL fetch {}",
+        "{} {} · {transport} · root {} · URL fetch {}",
+        state.command,
         env!("CARGO_PKG_VERSION"),
         state.roots_display(),
         if state.allow_url_fetch { "on" } else { "off" }
@@ -705,10 +817,9 @@ fn convert_document(
         {
             if !state.warned_text_layer.swap(true, Ordering::Relaxed) {
                 eprintln!(
-                    "docling-rs mcp: the layout models are missing, so PDFs convert from \
-                     their text layer (no layout analysis, table structure or OCR). Fetch \
-                     them with scripts/install/download_dependencies.sh, or point \
-                     DOCLING_RS_MODELS_DIR at a .models directory."
+                    "{}: the layout models are missing, so PDFs convert from their text \
+                     layer (no layout analysis, table structure or OCR). {}",
+                    state.command, state.models_hint
                 );
             }
             // A converter of its own: the text-layer pipeline loads no
@@ -957,6 +1068,8 @@ mod tests {
             fetch_policy: fetch_policy(),
             permits: Arc::new(tokio::sync::Semaphore::new(1)),
             warned_text_layer: AtomicBool::new(false),
+            command: Launcher::CLI.command.to_string(),
+            models_hint: Launcher::CLI.models_hint.to_string(),
             warm: docling::WarmPipeline::new(),
         }
     }
@@ -1137,6 +1250,24 @@ mod tests {
                 "pages {pages:?}"
             );
         }
+    }
+
+    /// `--flag=value` reads like `--flag value`; switches take true/false.
+    #[test]
+    fn flags_accept_the_equals_spelling() {
+        let v = |a: &[&str]| split_flag_values(a.iter().map(|s| s.to_string()).collect());
+        assert_eq!(
+            v(&[
+                "--root=/a",
+                "--allow-url-fetch=true",
+                "--http=false",
+                "--port=9"
+            ])
+            .unwrap(),
+            ["--root", "/a", "--allow-url-fetch", "--port", "9"]
+        );
+        assert_eq!(v(&["--root", "/a=b"]).unwrap(), ["--root", "/a=b"]);
+        assert!(v(&["--allow-url-fetch=maybe"]).is_err());
     }
 
     /// Optional parameters are single-typed and not required (MCP

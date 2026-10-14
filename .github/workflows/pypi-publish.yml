@@ -379,10 +379,19 @@ jobs:
     permissions:
       id-token: write
     steps:
-      # All wheels + the sdist → a single dist/ for the upload.
-      - name: Download artifacts
+      # All wheels + the sdist → a single dist/ for the upload. By name: the
+      # docling-rs-mcp launcher (below) uploads on its own, so a launcher
+      # problem can never hold back a docling-rs release.
+      - name: Download the sdist
         uses: actions/download-artifact@v8
         with:
+          name: sdist
+          path: dist
+
+      - name: Download the wheels
+        uses: actions/download-artifact@v8
+        with:
+          pattern: wheel-*
           path: dist
           merge-multiple: true
 
@@ -392,4 +401,73 @@ jobs:
           packages-dir: dist
           attestations: true
           # Idempotent re-runs: don't fail if a version is already uploaded.
+          skip-existing: true
+
+  # `docling-rs-mcp` (#669): the pure-Python launcher behind
+  # `uvx docling-rs-mcp`, MarkItDown's `markitdown-mcp` counterpart. It has
+  # no code of its own — it pins this run's docling-rs, whose wheels carry
+  # the MCP server (`docling_rs.mcp`) — so it takes the same resolved
+  # version and uploads only once that docling-rs is on PyPI. A separate
+  # PyPI project: its trusted publisher (this workflow, environment `pypi`)
+  # is configured once on pypi.org — docs/MCP_REGISTRIES.md.
+  mcp-launcher:
+    name: docling-rs-mcp launcher
+    if: github.event_name != 'release' || startsWith(github.event.release.tag_name, 'v')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.tag || github.event.release.tag_name || github.ref }}
+
+      - name: Resolve version and pin docling-rs
+        shell: bash
+        working-directory: crates/docling-py/mcp
+        run: |
+          v="${{ inputs.version }}"
+          if [ -z "$v" ] && [ -n "${{ inputs.tag || github.event.release.tag_name }}" ]; then v="${{ inputs.tag || github.event.release.tag_name }}"; v="${v#v}"; fi
+          if [ -z "$v" ]; then
+            v="$(grep -m1 '^version = ' ../../../Cargo.toml | sed -E 's/.*"([^"]+)".*/\1/')"
+          fi
+          sed -i -E "0,/^version = \".*\"/s//version = \"$v\"/" pyproject.toml
+          sed -i -E "s/\"docling-rs==[^\"]*\"/\"docling-rs==$v\"/" pyproject.toml
+          grep -q "\"docling-rs==$v\"" pyproject.toml
+          echo "Building docling-rs-mcp $v (pins docling-rs==$v)"
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.11"
+
+      - name: Build sdist + wheel
+        run: |
+          python -m pip install build
+          python -m build crates/docling-py/mcp --outdir mcp-dist
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: mcp-launcher
+          path: mcp-dist/*
+          if-no-files-found: error
+
+  publish-mcp-launcher:
+    name: publish docling-rs-mcp to PyPI
+    needs: [publish, mcp-launcher]
+    if: ${{ !cancelled() && needs.publish.result == 'success' && needs.mcp-launcher.result == 'success' }}
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/p/docling-rs-mcp
+    permissions:
+      id-token: write
+    steps:
+      - name: Download the launcher
+        uses: actions/download-artifact@v8
+        with:
+          name: mcp-launcher
+          path: dist
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: dist
+          attestations: true
           skip-existing: true

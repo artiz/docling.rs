@@ -1,0 +1,92 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.docling-project/docling-rs",
+  "title": "docling.rs",
+  "description": "Documents to Markdown for agents: PDF layout, tables and OCR, Office, HTML, scans. docling in Rust.",
+  "websiteUrl": "https://github.com/docling-project/docling.rs/blob/master/crates/docling-cli/README.md#mcp-server--docling-rs-mcp",
+  "repository": {
+    "url": "https://github.com/docling-project/docling.rs",
+    "source": "github"
+  },
+  "version": "2.19.0",
+  "packages": [
+    {
+      "registryType": "pypi",
+      "registryBaseUrl": "https://pypi.org",
+      "identifier": "docling-rs-mcp",
+      "version": "2.19.0",
+      "runtimeHint": "uvx",
+      "transport": {
+        "type": "stdio"
+      },
+      "packageArguments": [
+        {
+          "type": "named",
+          "name": "--root",
+          "description": "Directory the server may read documents from; local paths and file: URIs outside it are refused. Repeatable.",
+          "format": "filepath",
+          "isRequired": true,
+          "isRepeated": true
+        },
+        {
+          "type": "named",
+          "name": "--allow-url-fetch",
+          "description": "Also convert http(s) URLs (private and loopback addresses stay blocked).",
+          "format": "boolean",
+          "default": "false",
+          "choices": [
+            "true",
+            "false"
+          ]
+        }
+      ],
+      "environmentVariables": [
+        {
+          "name": "DOCLING_RS_CACHE_DIR",
+          "description": "Where `docling-rs-mcp --download-models` puts the PDF/image models and the server finds them (default ~/.cache/docling.rs)."
+        },
+        {
+          "name": "DOCLING_RS_OCR_LANG",
+          "description": "OCR language for scans: en (default), ch, or a BCP-47 tag.",
+          "default": "en"
+        }
+      ]
+    },
+    {
+      "registryType": "oci",
+      "identifier": "ghcr.io/docling-project/docling-rs:2.19.0",
+      "transport": {
+        "type": "stdio"
+      },
+      "runtimeArguments": [
+        {
+          "type": "named",
+          "name": "--mount",
+          "description": "The documents directory, mounted at /data — the image's working directory and the server's root.",
+          "value": "type=bind,src={documents_dir},dst=/data",
+          "isRequired": true,
+          "variables": {
+            "documents_dir": {
+              "description": "Directory on the host with the documents to convert",
+              "format": "filepath",
+              "isRequired": true
+            }
+          }
+        }
+      ],
+      "packageArguments": [
+        {
+          "type": "positional",
+          "valueHint": "subcommand",
+          "value": "mcp"
+        },
+        {
+          "type": "named",
+          "name": "--root",
+          "value": "/data",
+          "description": "The mounted documents directory."
+        }
+      ]
+    }
+  ]
+}

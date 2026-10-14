@@ -206,6 +206,10 @@ ENV LD_LIBRARY_PATH=/usr/local/lib:${LD_LIBRARY_PATH:-} \
 
 # --- ghcr.io/docling-project/docling-rs: the CLI (CPU) ------------------------
 FROM runtime AS cli
+# The official MCP registry (#669) checks this label to accept the image as
+# the `io.github.docling-project/docling-rs` server's OCI package
+# (server.json): `docker run -i --rm -v DIR:/data <image> mcp --root /data`.
+LABEL io.modelcontextprotocol.server.name="io.github.docling-project/docling-rs"
 COPY --from=build /src/target/release/docling-rs /usr/local/bin/docling-rs
 # The CLI runs from /data (the user's mount), so `.models/…` cannot resolve
 # CWD-relative; point the whole-directory override (#285) at the baked assets.
@@ -232,6 +236,10 @@ CMD ["docling-serve", "--addr", "0.0.0.0:5001", "--warmup"]
 
 # --- ghcr.io/docling-project/docling-rs (linux/s390x): the CLI ----------------
 FROM runtime AS cli-s390x
+# The official MCP registry (#669) checks this label to accept the image as
+# the `io.github.docling-project/docling-rs` server's OCI package
+# (server.json): `docker run -i --rm -v DIR:/data <image> mcp --root /data`.
+LABEL io.modelcontextprotocol.server.name="io.github.docling-project/docling-rs"
 COPY --from=build-s390x /src/target/s390x-unknown-linux-gnu/release/docling-rs /usr/local/bin/docling-rs
 ENV DOCLING_RS_MODELS_DIR=/app/.models
 WORKDIR /data
@@ -251,6 +259,10 @@ CMD ["docling-serve", "--addr", "0.0.0.0:5001", "--warmup"]
 
 # --- ghcr.io/docling-project/docling-rs-cuda: the CLI (CUDA) ------------------
 FROM runtime-cuda AS cli-cuda
+# The official MCP registry (#669) checks this label to accept the image as
+# the `io.github.docling-project/docling-rs` server's OCI package
+# (server.json): `docker run -i --rm -v DIR:/data <image> mcp --root /data`.
+LABEL io.modelcontextprotocol.server.name="io.github.docling-project/docling-rs"
 COPY --from=build-cuda /src/target/release/docling-rs /usr/local/bin/docling-rs
 ENV DOCLING_RS_MODELS_DIR=/app/.models
 WORKDIR /data

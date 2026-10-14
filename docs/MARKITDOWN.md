@@ -131,7 +131,7 @@ package's [Migrating from MarkItDown](../crates/docling-py/README.md#migrating-f
 |---|---|
 | a Python library | `from docling_rs.markitdown import MarkItDown` |
 | the `markitdown` CLI | `docling-rs FILE` prints Markdown (`--to json\|html\|chunks\|…`); `docling-rs URL`, `cat f \| docling-rs --from docx -`, `data:` URLs (#668); [release binaries](https://github.com/docling-project/docling.rs/releases), `cargo install docling-cli`, or `python -m docling_rs.markitdown` |
-| the `markitdown-mcp` MCP server | `docling-rs mcp` — the same `convert_to_markdown(uri)` tool for Claude Desktop, Claude Code, Cursor and VS Code, plus `convert` (JSON, HTML, chunks, …) and `list_input_formats`; stdio or Streamable HTTP, in the release binaries and the `ghcr.io/docling-project/docling-rs` image ([setup](../README.md#mcp-server--docling-rs-mcp)) |
+| the `markitdown-mcp` MCP server | `uvx docling-rs-mcp` (or `docling-rs mcp`) — the same `convert_to_markdown(uri)` tool for Claude Desktop, Claude Code, Cursor and VS Code, plus `convert` (JSON, HTML, chunks, …) and `list_input_formats`; stdio or Streamable HTTP, in the release binaries and the `ghcr.io/docling-project/docling-rs` image ([setup](../README.md#mcp-server--docling-rs-mcp)) |
 | a service | `docker run -p 5001:5001 ghcr.io/docling-project/docling-rs-serve` — `POST /v1/convert`, and docling-serve's routes for Open WebUI, n8n, Dify ([details](../crates/docling-serve/README.md#drop-in-for-docling-serve-open-webui-n8n-dify-langchain)) |
 | a LangChain loader | `docling_rs.langchain.DoclingLoader` |
 | — | Node.js (`npm i docling.rs`), the browser (`npm i docling.rs-wasm`, [live demo](https://docling-project.github.io/docling.rs/)), Rust (`docling` crate), C (`docling-ffi`) |

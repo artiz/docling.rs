@@ -50,9 +50,9 @@ reproduce it byte for byte (see "Conformance & fixtures").
 | `crates/docling-pdf` | ML pipeline: lopdf object model + pure-Rust page renderer (`render/`) / raster (`raster/`) + RT-DETR layout + TableFormer + PP-OCRv3 + enrichment (`ml` feature; pdfium only behind the opt-in `pdfium` feature); pure-Rust text-layer path compiles for wasm without it |
 | `crates/docling-onnx` | Shared ONNX Runtime execution-provider selection (`DOCLING_RS_EP`, `cuda`/`tensorrt`/`directml`/`coreml`/`xnnpack` features) and the one `session_builder()` every session starts from (`load-dynamic` feature, #504: ORT `dlopen`ed at run time — `ORT_DYLIB_PATH`, `.models/onnxruntime/`, search path — for s390x and self-built runtimes) for docling-pdf/docling-asr/docling-rag |
 | `crates/docling-asr` | ASR: symphonia decode (audio + video containers) → Whisper (log-mel → ONNX encoder/decoder), or the `parakeet_tdt_0.6b_v3` preset (#508: NeMo 128-mel → FastConformer encoder → TDT greedy decoding, Silero VAD spans; a port of onnx-asr) |
-| `crates/docling-cli` | `docling-rs` binary (also `serve` subcommand behind `--features serve`) |
+| `crates/docling-cli` | `docling-rs` binary (also `serve` subcommand behind `--features serve`); its lib target holds the MCP server (`mcp.rs`, `docling-rs mcp`) so the Python wheel links the same one |
 | `crates/docling-serve` | axum HTTP conversion API (+ Dockerfile with ffmpeg) |
-| `crates/docling-py` / `docling-node` / `docling-wasm` | pyo3 / napi-rs / wasm-bindgen bindings — **node and wasm are ordinary workspace members; only docling-py sits outside the workspace and builds from its own directory (maturin)** |
+| `crates/docling-py` / `docling-node` / `docling-wasm` | pyo3 / napi-rs / wasm-bindgen bindings — **node and wasm are ordinary workspace members; only docling-py sits outside the workspace and builds from its own directory (maturin)**; `crates/docling-py/mcp` is the pure-Python `docling-rs-mcp` launcher (`uvx docling-rs-mcp`; catalog metadata: `server.json`, `smithery.yaml`, `glama.json`, `docs/MCP_REGISTRIES.md`) |
 | `crates/docling-rag` | RAG subsystem (embedder, store, web UI) |
 
 ## Build & test
