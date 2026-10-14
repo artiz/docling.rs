@@ -98,6 +98,10 @@ pub struct ConvertOptions {
     pub ebcdic_layout: Option<String>,
     /// Character encoding of text inputs (a WHATWG label); unset = detect.
     pub encoding: Option<String>,
+    /// Jupyter notebooks (#673): which cell outputs the document keeps —
+    /// `none` (default: the notebook as written) or `text` (stream and
+    /// `text/plain` results as code blocks, image outputs as pictures).
+    pub ipynb_outputs: Option<String>,
     /// Pre-render HTML with a headless browser (the `web-browser` feature).
     pub use_web_browser: Option<bool>,
     /// XBRL: the directory the instance's taxonomy is read from.
@@ -408,6 +412,7 @@ pub const OPTIONS: &[OptionInfo] = &[
     row("skip_empty_cells"),
     row("ebcdic_layout"),
     row("encoding"),
+    row("ipynb_outputs"),
     // The npm addon is not built with the `web-browser` feature, so the
     // option would only ever error there.
     OptionInfo {
@@ -619,6 +624,19 @@ impl ConvertOptions {
             .transpose()
     }
 
+    /// The notebook outputs `ipynb_outputs` names (#673); `None` when unset
+    /// (the converter's default, `none`).
+    pub fn ipynb_outputs(&self) -> Result<Option<crate::IpynbOutputs>, OptionsError> {
+        self.ipynb_outputs
+            .as_deref()
+            .filter(|s| !s.trim().is_empty())
+            .map(|s| {
+                s.parse::<crate::IpynbOutputs>()
+                    .map_err(|e| OptionsError::new("ipynb_outputs", e))
+            })
+            .transpose()
+    }
+
     /// The wire names of every field, from the struct itself (an unset
     /// option serializes as `null`), so a new field is listed without a
     /// hand-kept list — the inventory test and the unknown-key checks of the
@@ -666,6 +684,7 @@ impl ConvertOptions {
     pub fn validate(&self) -> Result<(), OptionsError> {
         self.page_range()?;
         self.document_timeout()?;
+        self.ipynb_outputs()?;
         if let Some(s) = self.ocr_scale {
             if !(s.is_finite() && s > 0.0) {
                 return Err(OptionsError::new(
@@ -967,6 +986,9 @@ impl ConvertOptions {
         }
         if self.encoding.is_some() {
             c = c.encoding(self.encoding.clone());
+        }
+        if let Some(outputs) = self.ipynb_outputs()? {
+            c = c.ipynb_outputs(outputs);
         }
         if let Some(v) = self.use_web_browser {
             c = c.use_web_browser(v);

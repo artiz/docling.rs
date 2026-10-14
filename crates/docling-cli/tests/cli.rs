@@ -1281,6 +1281,46 @@ fn redact_precision_flags_validate() {
 /// #671: a source file converts to a fenced code block, a `.json` that is
 /// no DoclingDocument to a `json` block, and `--list-input-formats` names
 /// the text extensions.
+/// Jupyter notebooks (#673): MarkItDown's `test_notebook.ipynb` prints its
+/// heading, the code fences and the sections; `--ipynb-outputs text` adds
+/// the stream output; a wrong spelling is refused; `ipynb` is listed.
+#[test]
+fn jupyter_notebooks_convert() {
+    let nb = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../docling/tests/data/ipynb/sources/test_notebook.ipynb"
+    );
+    let (code, stdout, stderr) = run(&[nb]);
+    assert_eq!(code, 0, "{stderr}");
+    assert!(stdout.starts_with("# Test Notebook\n"), "{stdout}");
+    assert!(
+        stdout.contains("```\nprint(\"markitdown\")\n```"),
+        "{stdout}"
+    );
+    assert!(stdout.contains("## Code Cell Below"), "{stdout}");
+    assert!(!stdout.contains("\n42\n"), "{stdout}");
+    let (_, strict, _) = run(&["--strict", nb]);
+    assert!(
+        strict.contains("```python\nprint(\"markitdown\")"),
+        "{strict}"
+    );
+    let (code, stdout, stderr) = run(&["--ipynb-outputs", "text", nb]);
+    assert_eq!(code, 0, "{stderr}");
+    assert!(
+        stdout.contains("print(42)\n```\n\n```\n42\n```"),
+        "{stdout}"
+    );
+    let (code, _, stderr) = run(&["--ipynb-outputs", "all", nb]);
+    assert_eq!(code, 2);
+    assert!(
+        stderr.contains("--ipynb-outputs must be one of none, text"),
+        "{stderr}"
+    );
+    let (code, stdout, _) = run(&["--list-input-formats"]);
+    assert_eq!(code, 0);
+    assert!(stdout.lines().any(|l| l == "ipynb"), "{stdout}");
+}
+
 #[test]
 fn plain_text_and_code_inputs_convert() {
     let py = concat!(

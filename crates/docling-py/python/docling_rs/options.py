@@ -56,6 +56,8 @@ class InputFormat(str, enum.Enum):
     TEXT = "text"
     JSONL = "jsonl"
     XML = "xml"
+    #: Jupyter notebooks (#673).
+    IPYNB = "ipynb"
 
 
 class AcceleratorDevice(str, enum.Enum):

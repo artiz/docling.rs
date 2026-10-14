@@ -43,6 +43,11 @@ pub struct ConverterOptions {
     /// (`"shift_jis"`, `"koi8-r"`, `"windows-1251"`). Unset = detect (BOM,
     /// UTF-8, then windows-1252); bytes it cannot decode fail the conversion.
     pub encoding: Option<String>,
+    /// Jupyter notebooks (#673): which cell outputs the document keeps —
+    /// `"none"` (default, the notebook as written) or `"text"` (stream and
+    /// `text/plain` results as code blocks after their cell, image outputs
+    /// as pictures).
+    pub ipynb_outputs: Option<String>,
     /// Max frames sampled from a video input as timestamped pictures (needs
     /// the ffmpeg binary at runtime; `0` = transcript only). Default 8.
     /// `4294967295` (`2**32 - 1`, the largest value this field takes) keeps
@@ -374,6 +379,11 @@ pub struct ConvertOptions {
     /// Character encoding of text inputs (docling's
     /// `TextBackendOptions.encoding`); unset = detect.
     pub encoding: Option<String>,
+    /// Jupyter notebooks (#673): which cell outputs the document keeps —
+    /// `"none"` (default, the notebook as written) or `"text"` (stream and
+    /// `text/plain` results as code blocks after their cell, image outputs
+    /// as pictures).
+    pub ipynb_outputs: Option<String>,
     /// Max frames sampled from a video input (`0` = transcript only;
     /// `4294967295` = every distinct cut, #647).
     pub video_frames: Option<u32>,
@@ -2443,6 +2453,7 @@ pub fn supported_formats() -> Vec<String> {
         "text",
         "jsonl",
         "xml",
+        "ipynb",
     ]
     .iter()
     .map(|s| s.to_string())

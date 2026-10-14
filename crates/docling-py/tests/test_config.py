@@ -13,6 +13,22 @@ HTML = REPO / "tests/data/html/sources/hyperlink_03.html"
 docling_rs = pytest.importorskip("docling_rs")
 
 
+def test_ipynb_outputs_forward_and_notebooks_convert():
+    """#673: a notebook converts through the wrapper; ``ipynb_outputs``
+    reaches the engine and is validated there."""
+    from docling_rs import DocumentConverter, InputFormat
+
+    nb = REPO / "crates/docling/tests/data/ipynb/sources/test_notebook.ipynb"
+    assert InputFormat.IPYNB == "ipynb"
+    quiet = DocumentConverter().convert(nb).document.export_to_markdown()
+    assert quiet.startswith("# Test Notebook\n") and "## Code Cell Below" in quiet
+    assert "\n42\n" not in quiet
+    loud = DocumentConverter(ipynb_outputs="text").convert(nb).document.export_to_markdown()
+    assert "```\n42\n```" in loud
+    with pytest.raises(Exception, match="ipynb_outputs"):
+        DocumentConverter(ipynb_outputs="all")
+
+
 def test_input_format_matches_docling_values():
     from docling_rs import InputFormat
 

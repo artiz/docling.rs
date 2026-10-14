@@ -295,6 +295,9 @@ impl PyDocumentConverter {
     ///   a WHATWG label or Python codec name (`"shift_jis"`, `"koi8-r"`).
     ///   `None` (default) detects — BOM, UTF-8, then windows-1252; bytes the
     ///   requested encoding cannot decode raise.
+    /// * `ipynb_outputs` — Jupyter notebooks (#673): `"none"` (default, the
+    ///   notebook as written) or `"text"` (stream and `text/plain` results
+    ///   as code blocks after their cell, image outputs as pictures).
     /// * `pipeline` — `"standard"` (default) or `"vlm"` (#304): convert PDF /
     ///   image inputs by sending each page to a remote OpenAI-compatible
     ///   vision model instead of the local ML stack. The `vlm_*` kwargs
@@ -348,6 +351,7 @@ impl PyDocumentConverter {
         asr_model = None,
         asr_lang = None,
         encoding = None,
+        ipynb_outputs = None,
         video_frames = None,
         video_scene_threshold = None,
         video_frame_max_side = None,
@@ -419,6 +423,7 @@ impl PyDocumentConverter {
         asr_model: Option<String>,
         asr_lang: Option<String>,
         encoding: Option<String>,
+        ipynb_outputs: Option<String>,
         video_frames: Option<usize>,
         video_scene_threshold: Option<f32>,
         video_frame_max_side: Option<u32>,
@@ -473,6 +478,7 @@ impl PyDocumentConverter {
             compact_tables: Some(compact_tables),
             ebcdic_layout,
             encoding,
+            ipynb_outputs,
             use_web_browser: Some(use_web_browser),
             xbrl_taxonomy: xbrl_taxonomy.map(|p| p.to_string_lossy().into_owned()),
             asr_model,
@@ -895,6 +901,7 @@ fn parse_format(name: &str) -> Option<docling::InputFormat> {
         "text" => Text,
         "jsonl" => Jsonl,
         "xml" => Xml,
+        "ipynb" => Ipynb,
         _ => return None,
     })
 }

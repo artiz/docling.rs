@@ -97,6 +97,9 @@
 //!   `embedded`; `local` needs `--allow-local-images` (400 otherwise).
 //!   `image_hosts`, `max_images`, `max_image_bytes`, `max_image_total_mb`,
 //!   `min_image_bytes` bound it.
+//! - `ipynb_outputs` — Jupyter notebooks (#673): `none` (default, the
+//!   notebook as written) | `text` (stream and `text/plain` results as code
+//!   blocks after their cell, image outputs as pictures)
 //! - `skip_empty_cells` — omit empty cells from sparse XLSX/XLS table grids
 //!   (#271; docling.rs extension, off by default)
 //! - `compact_tables` — unpadded `| a | b |` Markdown tables, all formats

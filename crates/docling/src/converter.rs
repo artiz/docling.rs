@@ -353,6 +353,9 @@ pub struct DocumentConverter {
     /// Character encoding for text inputs (docling's
     /// `TextBackendOptions.encoding`); `None` = detect. See [`Self::encoding`].
     encoding: Option<String>,
+    /// Which Jupyter notebook outputs the document keeps (#673). See
+    /// [`Self::ipynb_outputs`].
+    ipynb_outputs: crate::IpynbOutputs,
     /// Directory referenced-mode streaming writes images into (#80).
     /// See [`Self::artifacts_dir`].
     artifacts_dir: String,
@@ -590,6 +593,7 @@ impl Default for DocumentConverter {
             page_range: None,
             ocr_lang: None,
             encoding: None,
+            ipynb_outputs: crate::IpynbOutputs::None,
             artifacts_dir: "artifacts".to_string(),
             document_timeout: None,
             archive_limits: crate::archive::ArchiveLimits::default(),
@@ -885,6 +889,17 @@ impl DocumentConverter {
         self
     }
 
+    /// Jupyter notebooks (#673): which cell outputs the document keeps —
+    /// [`IpynbOutputs::None`](crate::IpynbOutputs::None) (the default: the
+    /// notebook as written, MarkItDown's reading) or
+    /// [`IpynbOutputs::Text`](crate::IpynbOutputs::Text): stream and
+    /// `text/plain` results as code blocks after their cell, raster image
+    /// outputs as pictures. The CLI's `--ipynb-outputs none|text`.
+    pub fn ipynb_outputs(mut self, outputs: crate::IpynbOutputs) -> Self {
+        self.ipynb_outputs = outputs;
+        self
+    }
+
     /// The converter's [`encoding`](Self::encoding) applied to a source that
     /// did not set its own.
     /// Bounds on what a ZIP input may make the converter decompress (#557):
@@ -1094,6 +1109,16 @@ impl DocumentConverter {
     pub fn min_image_bytes(mut self, bytes: u64) -> Self {
         self.image_limits.min_bytes = Some(bytes);
         self
+    }
+
+    /// The Jupyter notebook backend (#673) under the builder's Markdown
+    /// flavour, image policy and [`ipynb_outputs`](Self::ipynb_outputs).
+    fn ipynb_backend(&self) -> crate::IpynbBackend {
+        crate::IpynbBackend {
+            strict: self.strict,
+            images: self.image_policy(),
+            outputs: self.ipynb_outputs,
+        }
     }
 
     /// The image policy a conversion runs under (#646): the builder's tier
@@ -2399,9 +2424,19 @@ impl DocumentConverter {
                 use_web_browser: self.use_web_browser,
             }
             .convert(source)?,
-            InputFormat::JsonDocling => DoclingJsonBackend.convert(source)?,
+            // A `.json` that is a Jupyter notebook (#673) — `"nbformat"` and
+            // `"cells"` — reads as one, like MarkItDown's `application/json`
+            // sniff; any other JSON is the docling-JSON backend's.
+            InputFormat::JsonDocling => {
+                if crate::backend::ipynb::looks_like_notebook(&source.text()?) {
+                    self.ipynb_backend().convert(source)?
+                } else {
+                    DoclingJsonBackend.convert(source)?
+                }
+            }
             InputFormat::Jsonl => crate::backend::text::convert_json_text(source)?,
             InputFormat::Text => crate::backend::TextBackend.convert(source)?,
+            InputFormat::Ipynb => self.ipynb_backend().convert(source)?,
             // A bare `.xml` (#671): the dialects docling reads by content —
             // JATS by its DOCTYPE or `<article>` root — else one xml code
             // block with a warning, never an empty document.

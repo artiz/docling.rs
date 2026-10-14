@@ -1,0 +1,344 @@
+{
+  "schema_name": "DoclingDocument",
+  "version": "1.10.0",
+  "name": "recommendations.md",
+  "origin": {
+    "mimetype": "text/plain",
+    "binary_hash": 8576077393126163618,
+    "filename": "recommendations.md"
+  },
+  "furniture": {
+    "self_ref": "#/furniture",
+    "children": [],
+    "content_layer": "furniture",
+    "name": "_root_",
+    "label": "unspecified"
+  },
+  "body": {
+    "self_ref": "#/body",
+    "children": [
+      {
+        "$ref": "#/texts/0"
+      },
+      {
+        "$ref": "#/texts/1"
+      },
+      {
+        "$ref": "#/texts/2"
+      },
+      {
+        "$ref": "#/texts/3"
+      },
+      {
+        "$ref": "#/texts/4"
+      },
+      {
+        "$ref": "#/texts/5"
+      },
+      {
+        "$ref": "#/texts/6"
+      },
+      {
+        "$ref": "#/texts/7"
+      },
+      {
+        "$ref": "#/texts/8"
+      },
+      {
+        "$ref": "#/texts/9"
+      },
+      {
+        "$ref": "#/texts/10"
+      },
+      {
+        "$ref": "#/texts/11"
+      },
+      {
+        "$ref": "#/texts/12"
+      },
+      {
+        "$ref": "#/texts/13"
+      },
+      {
+        "$ref": "#/texts/14"
+      },
+      {
+        "$ref": "#/texts/15"
+      },
+      {
+        "$ref": "#/texts/16"
+      }
+    ],
+    "content_layer": "body",
+    "name": "_root_",
+    "label": "unspecified"
+  },
+  "groups": [],
+  "texts": [
+    {
+      "self_ref": "#/texts/0",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "title",
+      "prov": [],
+      "orig": "Задание по программированию: Рекомендательные системы",
+      "text": "Задание по программированию: Рекомендательные системы"
+    },
+    {
+      "self_ref": "#/texts/1",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "Библиотеки",
+      "text": "Библиотеки"
+    },
+    {
+      "self_ref": "#/texts/2",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "code",
+      "prov": [],
+      "orig": "import pandas as pd\nimport numpy as np\n\n%pylab inline\nimport pandas as pd\nfrom scipy import stats\nimport statsmodels\nimport statsmodels.api as sm\nimport matplotlib.pyplot as plt\nimport warnings\nimport itertools\n\nwarnings.simplefilter('ignore')\n\n# fix cyrillic fonts\nfrom matplotlib import rc\nfont = {'family': 'Verdana','weight': 'normal'}\nrc('font', **font)",
+      "text": "import pandas as pd\nimport numpy as np\n\n%pylab inline\nimport pandas as pd\nfrom scipy import stats\nimport statsmodels\nimport statsmodels.api as sm\nimport matplotlib.pyplot as plt\nimport warnings\nimport itertools\n\nwarnings.simplefilter('ignore')\n\n# fix cyrillic fonts\nfrom matplotlib import rc\nfont = {'family': 'Verdana','weight': 'normal'}\nrc('font', **font)",
+      "captions": [],
+      "references": [],
+      "footnotes": [],
+      "code_language": "Python"
+    },
+    {
+      "self_ref": "#/texts/3",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "Считаем данные",
+      "text": "Считаем данные"
+    },
+    {
+      "self_ref": "#/texts/4",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "code",
+      "prov": [],
+      "orig": "def read_sessions(file_name):\n    sessions = []\n    with open(file_name, 'r') as f:\n        for l in f.readlines():\n            parts = str.split(l.strip(), ';')\n            sessions.append(([int(_) for _ in str.split(parts[0], ',')], \n                      [int(_) for _ in str.split(parts[1], ',')] if len(parts[1]) > 0 else []))\n    return sessions\n\n\ntrain = read_sessions ('coursera_sessions_train.txt')\ntest = read_sessions ('coursera_sessions_test.txt')",
+      "text": "def read_sessions(file_name):\n    sessions = []\n    with open(file_name, 'r') as f:\n        for l in f.readlines():\n            parts = str.split(l.strip(), ';')\n            sessions.append(([int(_) for _ in str.split(parts[0], ',')], \n                      [int(_) for _ in str.split(parts[1], ',')] if len(parts[1]) > 0 else []))\n    return sessions\n\n\ntrain = read_sessions ('coursera_sessions_train.txt')\ntest = read_sessions ('coursera_sessions_test.txt')",
+      "captions": [],
+      "references": [],
+      "footnotes": [],
+      "code_language": "Python"
+    },
+    {
+      "self_ref": "#/texts/5",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "code",
+      "prov": [],
+      "orig": "train[:5]",
+      "text": "train[:5]",
+      "captions": [],
+      "references": [],
+      "footnotes": [],
+      "code_language": "Python"
+    },
+    {
+      "self_ref": "#/texts/6",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "code",
+      "prov": [],
+      "orig": "test[:5]",
+      "text": "test[:5]",
+      "captions": [],
+      "references": [],
+      "footnotes": [],
+      "code_language": "Python"
+    },
+    {
+      "self_ref": "#/texts/7",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "code",
+      "prov": [],
+      "orig": "from collections import Counter, defaultdict\n\ndef calc_model(sessions):\n    views = defaultdict(int)\n    purchases = defaultdict(int)\n    for sess in sessions:\n        for k, v in Counter(sess[0]).items():\n            views[k] += v\n        if len(sess[1]):\n            for k, v in Counter(sess[1]).items():\n                purchases[k] += v\n\n    return views, purchases",
+      "text": "from collections import Counter, defaultdict\n\ndef calc_model(sessions):\n    views = defaultdict(int)\n    purchases = defaultdict(int)\n    for sess in sessions:\n        for k, v in Counter(sess[0]).items():\n            views[k] += v\n        if len(sess[1]):\n            for k, v in Counter(sess[1]).items():\n                purchases[k] += v\n\n    return views, purchases",
+      "captions": [],
+      "references": [],
+      "footnotes": [],
+      "code_language": "Python"
+    },
+    {
+      "self_ref": "#/texts/8",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "code",
+      "prov": [],
+      "orig": "train_views, train_purchases = calc_model(train)\ntest_views, test_purchases = calc_model(test)",
+      "text": "train_views, train_purchases = calc_model(train)\ntest_views, test_purchases = calc_model(test)",
+      "captions": [],
+      "references": [],
+      "footnotes": [],
+      "code_language": "Python"
+    },
+    {
+      "self_ref": "#/texts/9",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "code",
+      "prov": [],
+      "orig": "train_purchases",
+      "text": "train_purchases",
+      "captions": [],
+      "references": [],
+      "footnotes": [],
+      "code_language": "Python"
+    },
+    {
+      "self_ref": "#/texts/10",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "code",
+      "prov": [],
+      "orig": "train_views_list = np.array(list([k,v] for k,v in train_views.items()))\ntrain_purchases_list = np.array(list([k,v] for k,v in train_purchases.items()))\n\ntrain_views_sorted = train_views_list[train_views_list[:,1].argsort(kind = 'mergesort')][::-1]\ntrain_purchases_sorted = train_purchases_list[train_purchases_list[:,1].argsort(kind = 'mergesort')][::-1]\n\nprint(train_views_sorted[:5], '\\n\\n', train_views_sorted[-5:])\nprint(train_purchases_sorted[:5], '\\n\\n', train_purchases_sorted[-5:])",
+      "text": "train_views_list = np.array(list([k,v] for k,v in train_views.items()))\ntrain_purchases_list = np.array(list([k,v] for k,v in train_purchases.items()))\n\ntrain_views_sorted = train_views_list[train_views_list[:,1].argsort(kind = 'mergesort')][::-1]\ntrain_purchases_sorted = train_purchases_list[train_purchases_list[:,1].argsort(kind = 'mergesort')][::-1]\n\nprint(train_views_sorted[:5], '\\n\\n', train_views_sorted[-5:])\nprint(train_purchases_sorted[:5], '\\n\\n', train_purchases_sorted[-5:])",
+      "captions": [],
+      "references": [],
+      "footnotes": [],
+      "code_language": "Python"
+    },
+    {
+      "self_ref": "#/texts/11",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "code",
+      "prov": [],
+      "orig": "import operator\ndef recommend_by(sessions, recommendations_model):\n    #   теперь надо показывать не последние просмотренные пользователем товары, \n    # а те товары из просмотренных, которые он наиболее вероятно купит.\n    metrics = np.zeros(4) \n    count = 0\n    for sess in sessions:\n        # skip empty sessions\n        if not sess[1]:\n            continue\n\n        count += 1\n        views = pd.unique(sess[0])\n        purchases = sess[1]\n        \n        popularities = [recommendations_model[id] for id in views]\n        \n        # works for 1 and 2\n        # recommended = views[np.argsort(popularities, kind = 'mergesort')][::-1]\n        \n        popularities_2 = [(id, recommendations_model[id]) for id in views]\n        recommended = list(map(operator.itemgetter(0), \n                               sorted(popularities_2, key=operator.itemgetter(1), reverse=True)))\n        \n        # print(purchases, recommended)\n        # break\n        \n        # AverageRecall@1, AveragePrecision@1, AverageRecall@5, AveragePrecision@5\n        precision1 = 1. if recommended[0] in purchases else 0.\n        recall1 = 1./len(purchases) if recommended[0] in purchases else 0.\n        \n        recommended_count = min(5, len(views))\n        purchases_intercept = len(np.intersect1d(purchases, recommended[:5]))\n        \n        precision5 = purchases_intercept / 5.\n        recall5 = purchases_intercept / len(purchases)\n                \n        metrics[0] += recall1\n        metrics[1] += precision1\n        metrics[2] += recall5\n        metrics[3] += precision5\n        \n    return np.round(metrics / count, 2)\n\ndef write_answer(filename, metrics):\n    metrics_str = ' '.join(([str(round(_, 2)) for _ in metrics]))\n    print(filename, ':', metrics_str)\n    with open(filename, 'w') as f:\n        f.write(metrics_str)",
+      "text": "import operator\ndef recommend_by(sessions, recommendations_model):\n    #   теперь надо показывать не последние просмотренные пользователем товары, \n    # а те товары из просмотренных, которые он наиболее вероятно купит.\n    metrics = np.zeros(4) \n    count = 0\n    for sess in sessions:\n        # skip empty sessions\n        if not sess[1]:\n            continue\n\n        count += 1\n        views = pd.unique(sess[0])\n        purchases = sess[1]\n        \n        popularities = [recommendations_model[id] for id in views]\n        \n        # works for 1 and 2\n        # recommended = views[np.argsort(popularities, kind = 'mergesort')][::-1]\n        \n        popularities_2 = [(id, recommendations_model[id]) for id in views]\n        recommended = list(map(operator.itemgetter(0), \n                               sorted(popularities_2, key=operator.itemgetter(1), reverse=True)))\n        \n        # print(purchases, recommended)\n        # break\n        \n        # AverageRecall@1, AveragePrecision@1, AverageRecall@5, AveragePrecision@5\n        precision1 = 1. if recommended[0] in purchases else 0.\n        recall1 = 1./len(purchases) if recommended[0] in purchases else 0.\n        \n        recommended_count = min(5, len(views))\n        purchases_intercept = len(np.intersect1d(purchases, recommended[:5]))\n        \n        precision5 = purchases_intercept / 5.\n        recall5 = purchases_intercept / len(purchases)\n                \n        metrics[0] += recall1\n        metrics[1] += precision1\n        metrics[2] += recall5\n        metrics[3] += precision5\n        \n    return np.round(metrics / count, 2)\n\ndef write_answer(filename, metrics):\n    metrics_str = ' '.join(([str(round(_, 2)) for _ in metrics]))\n    print(filename, ':', metrics_str)\n    with open(filename, 'w') as f:\n        f.write(metrics_str)",
+      "captions": [],
+      "references": [],
+      "footnotes": [],
+      "code_language": "Python"
+    },
+    {
+      "self_ref": "#/texts/12",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "code",
+      "prov": [],
+      "orig": "write_answer('recommend_by_views_train.txt', recommend_by(train, train_views))",
+      "text": "write_answer('recommend_by_views_train.txt', recommend_by(train, train_views))",
+      "captions": [],
+      "references": [],
+      "footnotes": [],
+      "code_language": "Python"
+    },
+    {
+      "self_ref": "#/texts/13",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "code",
+      "prov": [],
+      "orig": "write_answer('recommend_by_views_test.txt', recommend_by(test, train_views))",
+      "text": "write_answer('recommend_by_views_test.txt', recommend_by(test, train_views))",
+      "captions": [],
+      "references": [],
+      "footnotes": [],
+      "code_language": "Python"
+    },
+    {
+      "self_ref": "#/texts/14",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "code",
+      "prov": [],
+      "orig": "res = recommend_by(train, train_purchases)    \ninvalid=[0.66, 0.78, 0.92, 0.25]\nprint(res == invalid)\nwrite_answer('recommend_by_purchases_train.txt', recommend_by(train, train_purchases))",
+      "text": "res = recommend_by(train, train_purchases)    \ninvalid=[0.66, 0.78, 0.92, 0.25]\nprint(res == invalid)\nwrite_answer('recommend_by_purchases_train.txt', recommend_by(train, train_purchases))",
+      "captions": [],
+      "references": [],
+      "footnotes": [],
+      "code_language": "Python"
+    },
+    {
+      "self_ref": "#/texts/15",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "code",
+      "prov": [],
+      "orig": "res = recommend_by(test, train_purchases)    \ninvalid=[0.4, 0.46, 0.76, 0.2]\nprint(res == invalid)\nwrite_answer('recommend_by_purchases_test.txt', res)",
+      "text": "res = recommend_by(test, train_purchases)    \ninvalid=[0.4, 0.46, 0.76, 0.2]\nprint(res == invalid)\nwrite_answer('recommend_by_purchases_test.txt', res)",
+      "captions": [],
+      "references": [],
+      "footnotes": [],
+      "code_language": "Python"
+    },
+    {
+      "self_ref": "#/texts/16",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "code",
+      "prov": [],
+      "orig": "# test\nviews_t = ['59', '60', '61', '62', '60', '63', '64', '65', '66', '61', '67', '68', '67']\npurchases_t = ['67','60', '63']\nrecommend_by([[views_t, purchases_t]], Counter(views_t))",
+      "text": "# test\nviews_t = ['59', '60', '61', '62', '60', '63', '64', '65', '66', '61', '67', '68', '67']\npurchases_t = ['67','60', '63']\nrecommend_by([[views_t, purchases_t]], Counter(views_t))",
+      "captions": [],
+      "references": [],
+      "footnotes": [],
+      "code_language": "Python"
+    }
+  ],
+  "pictures": [],
+  "tables": [],
+  "key_value_items": [],
+  "form_items": [],
+  "pages": {}
+}

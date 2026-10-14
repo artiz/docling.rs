@@ -1,0 +1,185 @@
+{
+  "schema_name": "DoclingDocument",
+  "version": "1.10.0",
+  "name": "milk_quiz.md",
+  "origin": {
+    "mimetype": "text/plain",
+    "binary_hash": 10117310085953187061,
+    "filename": "milk_quiz.md"
+  },
+  "furniture": {
+    "self_ref": "#/furniture",
+    "children": [],
+    "content_layer": "furniture",
+    "name": "_root_",
+    "label": "unspecified"
+  },
+  "body": {
+    "self_ref": "#/body",
+    "children": [
+      {
+        "$ref": "#/texts/0"
+      },
+      {
+        "$ref": "#/texts/1"
+      },
+      {
+        "$ref": "#/texts/2"
+      },
+      {
+        "$ref": "#/texts/3"
+      },
+      {
+        "$ref": "#/texts/4"
+      },
+      {
+        "$ref": "#/texts/5"
+      },
+      {
+        "$ref": "#/texts/6"
+      },
+      {
+        "$ref": "#/texts/7"
+      }
+    ],
+    "content_layer": "body",
+    "name": "_root_",
+    "label": "unspecified"
+  },
+  "groups": [],
+  "texts": [
+    {
+      "self_ref": "#/texts/0",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "code",
+      "prov": [],
+      "orig": "%matplotlib inline\n\nimport random\nimport pandas as pd\nimport matplotlib.pyplot as plt\nfrom sklearn.preprocessing import normalize\nimport numpy as np",
+      "text": "%matplotlib inline\n\nimport random\nimport pandas as pd\nimport matplotlib.pyplot as plt\nfrom sklearn.preprocessing import normalize\nimport numpy as np",
+      "captions": [],
+      "references": [],
+      "footnotes": [],
+      "code_language": "Python"
+    },
+    {
+      "self_ref": "#/texts/1",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "code",
+      "prov": [],
+      "orig": "data = pd.read_csv('monthly-milk-production.csv', sep = ';')\ndata.milk = data.milk.apply(pd.to_numeric)\ndata['month_dt'] = pd.to_datetime(data.month, dayfirst = True)\ndata['milk_daily'] = np.array([float(m) for m in data['milk']])/[m.days_in_month for m in data['month_dt']]\n\ndata.head(6)",
+      "text": "data = pd.read_csv('monthly-milk-production.csv', sep = ';')\ndata.milk = data.milk.apply(pd.to_numeric)\ndata['month_dt'] = pd.to_datetime(data.month, dayfirst = True)\ndata['milk_daily'] = np.array([float(m) for m in data['milk']])/[m.days_in_month for m in data['month_dt']]\n\ndata.head(6)",
+      "captions": [],
+      "references": [],
+      "footnotes": [],
+      "code_language": "Python"
+    },
+    {
+      "self_ref": "#/texts/2",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "code",
+      "prov": [],
+      "orig": "# 6.\npl = data['milk_daily'].plot()",
+      "text": "# 6.\npl = data['milk_daily'].plot()",
+      "captions": [],
+      "references": [],
+      "footnotes": [],
+      "code_language": "Python"
+    },
+    {
+      "self_ref": "#/texts/3",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "code",
+      "prov": [],
+      "orig": "# 7.\nimport statsmodels.api as sm\nadf_pvalue = sm.tsa.stattools.adfuller(data['milk_daily'].values)[0]\nD = [(0, adf_pvalue)]\nd = [(0, adf_pvalue)]\n\ndata_len = len(data['milk_daily'])\nfor ndx in range(1, 12): \n    diff = data['milk_daily'] - data['milk_daily'].shift(ndx * 12)\n    diff.dropna(inplace = True)\n    # print(len(diff.values), len(data['milk_daily'].values))\n    adf = sm.tsa.stattools.adfuller(diff.values)\n    # print(adf)\n    D.append((ndx, adf[1]))\n    \nfor ndx in range(1, data_len // 2): \n    diff = data['milk_daily'] - data['milk_daily'].shift(ndx)\n    diff.dropna(inplace = True)\n    adf = sm.tsa.stattools.adfuller(diff.values)\n    d.append((ndx, adf[1]))\n    \n\nprint('D', D[:5])\nprint('d', d[:5])\n\nprint('D min', sorted(D, key = lambda _: _[1])[:5])\nprint('d min', sorted(d, key = lambda _: _[1])[:5])\n\n# Ряд становится стационарным после однократного дифференцирования - NO\n# Ряд становится стационарным после сезонного дифференцирования - NO\n# Ряд становится стационарным после двух последовательных дифференцирований — сезонного и обычного - YES !!!!\n\ndiff = data['milk_daily'] - data['milk_daily'].shift(12)\ndiff.dropna(inplace = True)\n\nprint(len(diff.values))\n\ndiff = diff - diff.shift(1)\ndiff.dropna(inplace = True)\n\nprint(len(diff.values))\nadf = sm.tsa.stattools.adfuller(diff.values)\nprint(adf)",
+      "text": "# 7.\nimport statsmodels.api as sm\nadf_pvalue = sm.tsa.stattools.adfuller(data['milk_daily'].values)[0]\nD = [(0, adf_pvalue)]\nd = [(0, adf_pvalue)]\n\ndata_len = len(data['milk_daily'])\nfor ndx in range(1, 12): \n    diff = data['milk_daily'] - data['milk_daily'].shift(ndx * 12)\n    diff.dropna(inplace = True)\n    # print(len(diff.values), len(data['milk_daily'].values))\n    adf = sm.tsa.stattools.adfuller(diff.values)\n    # print(adf)\n    D.append((ndx, adf[1]))\n    \nfor ndx in range(1, data_len // 2): \n    diff = data['milk_daily'] - data['milk_daily'].shift(ndx)\n    diff.dropna(inplace = True)\n    adf = sm.tsa.stattools.adfuller(diff.values)\n    d.append((ndx, adf[1]))\n    \n\nprint('D', D[:5])\nprint('d', d[:5])\n\nprint('D min', sorted(D, key = lambda _: _[1])[:5])\nprint('d min', sorted(d, key = lambda _: _[1])[:5])\n\n# Ряд становится стационарным после однократного дифференцирования - NO\n# Ряд становится стационарным после сезонного дифференцирования - NO\n# Ряд становится стационарным после двух последовательных дифференцирований — сезонного и обычного - YES !!!!\n\ndiff = data['milk_daily'] - data['milk_daily'].shift(12)\ndiff.dropna(inplace = True)\n\nprint(len(diff.values))\n\ndiff = diff - diff.shift(1)\ndiff.dropna(inplace = True)\n\nprint(len(diff.values))\nadf = sm.tsa.stattools.adfuller(diff.values)\nprint(adf)",
+      "captions": [],
+      "references": [],
+      "footnotes": [],
+      "code_language": "Python"
+    },
+    {
+      "self_ref": "#/texts/4",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "code",
+      "prov": [],
+      "orig": "data['milk_shifted'] = diff # - data['milk_daily'].shift(12)\npl = data['milk_shifted'].plot()",
+      "text": "data['milk_shifted'] = diff # - data['milk_daily'].shift(12)\npl = data['milk_shifted'].plot()",
+      "captions": [],
+      "references": [],
+      "footnotes": [],
+      "code_language": "Python"
+    },
+    {
+      "self_ref": "#/texts/5",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "code",
+      "prov": [],
+      "orig": "# 8.\nimport statsmodels.api as sm\npl = sm.graphics.tsa.plot_acf(data['milk_daily'].values.squeeze(), lags=100)",
+      "text": "# 8.\nimport statsmodels.api as sm\npl = sm.graphics.tsa.plot_acf(data['milk_daily'].values.squeeze(), lags=100)",
+      "captions": [],
+      "references": [],
+      "footnotes": [],
+      "code_language": "Python"
+    },
+    {
+      "self_ref": "#/texts/6",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "code",
+      "prov": [],
+      "orig": "###### import statsmodels.api as sm\nplt.figure(figsize = (20,20))\npl = sm.graphics.tsa.plot_acf(data.milk_shifted.dropna().squeeze(), lags=50)\n# 8.\n# Q = 4 (48) - NO\n# Q = 0 - NO\n# Q = 1 - YES !!!!",
+      "text": "###### import statsmodels.api as sm\nplt.figure(figsize = (20,20))\npl = sm.graphics.tsa.plot_acf(data.milk_shifted.dropna().squeeze(), lags=50)\n# 8.\n# Q = 4 (48) - NO\n# Q = 0 - NO\n# Q = 1 - YES !!!!",
+      "captions": [],
+      "references": [],
+      "footnotes": [],
+      "code_language": "Python"
+    },
+    {
+      "self_ref": "#/texts/7",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "code",
+      "prov": [],
+      "orig": "# 9.\nimport statsmodels.api as sm\np = sm.graphics.tsa.plot_pacf(data.milk_shifted.dropna().squeeze(), lags=50)\n\n# p = 13 - NO\n# p = 25 - NO\n# p = 12 - NO\n\n# p = 0 - ?",
+      "text": "# 9.\nimport statsmodels.api as sm\np = sm.graphics.tsa.plot_pacf(data.milk_shifted.dropna().squeeze(), lags=50)\n\n# p = 13 - NO\n# p = 25 - NO\n# p = 12 - NO\n\n# p = 0 - ?",
+      "captions": [],
+      "references": [],
+      "footnotes": [],
+      "code_language": "Python"
+    }
+  ],
+  "pictures": [],
+  "tables": [],
+  "key_value_items": [],
+  "form_items": [],
+  "pages": {}
+}

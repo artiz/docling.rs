@@ -1,0 +1,603 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8"/>
+<title>vgg16.md</title>
+<meta name="generator" content="Docling HTML Serializer"/>
+<style>
+    html {
+        background-color: #f5f5f5;
+        font-family: Arial, sans-serif;
+        line-height: 1.6;
+    }
+    body {
+        max-width: 800px;
+        margin: 0 auto;
+        padding: 2rem;
+        background-color: white;
+        box-shadow: 0 0 10px rgba(0,0,0,0.1);
+    }
+    h1, h2, h3, h4, h5, h6 {
+        color: #333;
+        margin-top: 1.5em;
+        margin-bottom: 0.5em;
+    }
+    h1 {
+        font-size: 2em;
+        border-bottom: 1px solid #eee;
+        padding-bottom: 0.3em;
+    }
+    table {
+        border-collapse: collapse;
+        margin: 1em 0;
+        width: 100%;
+    }
+    th, td {
+        border: 1px solid #ddd;
+        padding: 8px;
+        text-align: left;
+    }
+    th {
+        background-color: #f2f2f2;
+        font-weight: bold;
+    }
+    figure {
+        margin: 1.5em 0;
+        text-align: center;
+    }
+    figcaption {
+        color: #666;
+        font-style: italic;
+        margin-top: 0.5em;
+    }
+    img {
+        max-width: 100%;
+        height: auto;
+    }
+    pre {
+        background-color: #f6f8fa;
+        border-radius: 3px;
+        padding: 1em;
+        overflow: auto;
+    }
+    code {
+        font-family: monospace;
+        background-color: #f6f8fa;
+        padding: 0.2em 0.4em;
+        border-radius: 3px;
+    }
+    pre code {
+        background-color: transparent;
+        padding: 0;
+    }
+    .formula {
+        text-align: center;
+        padding: 0.5em;
+        margin: 1em 0;
+        background-color: #f9f9f9;
+    }
+    .formula-not-decoded {
+        text-align: center;
+        padding: 0.5em;
+        margin: 1em 0;
+        background: repeating-linear-gradient(
+            45deg,
+            #f0f0f0,
+            #f0f0f0 10px,
+            #f9f9f9 10px,
+            #f9f9f9 20px
+        );
+    }
+    .page-break {
+        page-break-after: always;
+        border-top: 1px dashed #ccc;
+        margin: 2em 0;
+    }
+    .key-value-region {
+        background-color: #f9f9f9;
+        padding: 1em;
+        border-radius: 4px;
+        margin: 1em 0;
+    }
+    .key-value-region dt {
+        font-weight: bold;
+    }
+    .key-value-region dd {
+        margin-left: 1em;
+        margin-bottom: 0.5em;
+    }
+    .form-container {
+        border: 1px solid #ddd;
+        padding: 1em;
+        border-radius: 4px;
+        margin: 1em 0;
+    }
+    .form-item {
+        margin-bottom: 0.5em;
+    }
+    .image-classification {
+        font-size: 0.9em;
+        color: #666;
+        margin-top: 0.5em;
+    }
+    details.docling-meta {
+        margin: 0.5em 0;
+        font-size: 0.9em;
+        text-align: left;
+    }
+    figure details.docling-meta {
+        text-align: left;
+    }
+    details.docling-meta > summary {
+        cursor: pointer;
+        color: #555;
+        font-style: italic;
+        padding: 2px 6px;
+    }
+    .docling-meta-field {
+        background-color: #f0f0f0;
+        border-left: 3px solid #ccc;
+        padding: 6px 10px;
+        margin: 4px 0 4px 1em;
+        border-radius: 3px;
+        text-align: left;
+    }
+    .docling-meta-field-label {
+        font-weight: bold;
+        color: #444;
+    }
+    pre.docling-meta-code {
+        background-color: #1e1e1e;
+        color: #d4d4d4;
+        border-radius: 4px;
+        padding: 10px 12px;
+        margin: 6px 0;
+        overflow-x: auto;
+        font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+        font-size: 0.85em;
+        line-height: 1.45;
+        white-space: pre;
+        tab-size: 4;
+    }
+    pre.docling-meta-code code {
+        background: transparent;
+        border: none;
+        padding: 0;
+        color: inherit;
+        font-family: inherit;
+        font-size: inherit;
+        display: block;
+        white-space: pre;
+    }
+</style>
+</head>
+<body>
+<div class='page'>
+<h1>Programming Assignment: Анализ изображений</h1>
+<p>Задача заключается в том, чтобы применить предобученную на imagenet нейронную сеть на практической задаче классификации автомобилей.</p>
+<span class='inline-group'>Учиться применять нейронные сети для анализа изображений мы будем на библиотеке TensorFlow. Это известный опенсорсный проект, разработанный инженерами Google Brain Team. Подробнее почитать о TensorFlow можно на официальном сайте, на <a href="https://github.com/tensorflow/tensorflow">гитхабе</a> или <a href="https://habrahabr.ru/post/270543/">на хабре</a> .</span>
+<h3>Установка окружения</h3>
+<span class='inline-group'>В первую очередь нам будет необходимо установить <strong>TensorFlow</strong> .</span>
+<ul>
+<li>
+<span class='inline-group'><a href="https://www.tensorflow.org/versions/r0.10/get_started/os_setup.html#download-and-setup">Инструкции по установке на сайте</a> .</span>
+</li>
+<li>
+<span class='inline-group'>Если есть опыт работы с Docker, то можно воспользоваться готовым <a href="https://www.tensorflow.org/versions/r0.10/get_started/os_setup.html#docker-installation">докер-контейнером с тензорфлоу</a> .</span>
+</li>
+</ul>
+<span class='inline-group'><strong>Важно!</strong> Если вы пользователь Windows, то уставить tensorflow напрямую, к сожалению, не получится:</span>
+<ul>
+<li>
+<span class='inline-group'>для пользователей Windows 10 (и выше) нужно использовать <strong>Docker</strong> ( <a href="https://www.docker.com/products/docker#/windows">ссылка на дистрибутив</a> );</span>
+</li>
+<li>если у вас Windows старше версии 10, то и вариант с докером не подойдет — он не установится. В таком случае советуем установить линукс на локальную машину как еще одну операционную систему (поможет избежать страданий в будущем при работе с некоторыми библиотеками для ML).</li>
+</ul>
+<span class='inline-group'>Если же поставить Tensorflow на вашу машину никак не получается, мы предлагаем воспользоваться одним из облачных сервисов, в который необходимо установить линукс-образ. Самые популярные облачные сервисы <a href="https://aws.amazon.com/">AWS</a> и <a href="http://digitalocean.com/">DigitalOcean</a> предоставляют бесплатные инстансы (имейте в виду, что для того, чтобы ими воспользоваться, нужно будет привязать кредитную карту).</span>
+<p>Чтобы освоить компьютерное зрение (или другие интересные задачи из области ML и AI), так или иначе придётся научиться работать с библиотеками нейронных сетей, линуксом и виртуальными серверами. Например, для более масштабных практических задач, крайне необходимы сервера с GPU, а с ними уже локально работать не получиться.</p>
+<p>Тем не менее, мы понимаем, что в силу временных ограничений курса кто-то может успеть установить TensorFlow. Поэтому мы сделали пункты 1 и 2 необязательными. На оценку они не повлияют — можете сразу переходить к третьему пункту.</p>
+<span class='inline-group'>Помимо tensorflow, потребуется библиотека <strong><code>scipy</code></strong> . Если вы уже работали с Anaconda и/или выполняли задания в нашей специализации, то она должна присутствовать.</span>
+<h2>Данные</h2>
+<p>Скачать данные нужно тут: https://yadi.sk/d/6m_KbM4HvmLfs</p>
+<span class='inline-group'>Данные это часть выборки <em>Cars Dataset</em> ( <a href="http://ai.stanford.edu/~jkrause/cars/car_dataset.html">link</a> ). Исходный датасет содержит 16,185 изображений автомобилей, принадлежащих к 196 классам. Данные разделены на 8,144 тренировочных и 8,041 тестовых изображений, при этом каждый класс разделён приблизительно поровну между тестом и трейном. Все классы уровня параметров <em>Марка</em> , <em>Год</em> , <em>Модель</em> и др. (например, <em>2012 Tesla Model S or 2012 BMW M3 coupe</em> ).</span>
+<span class='inline-group'>В нашем же случае в <code>train</code> 204 изображения, и в <code>test</code> — 202 изображения.</span>
+<h2>Что делать</h2>
+<p>Помимо данных, потребуется скачать:</p>
+<ul>
+<li>
+<span class='inline-group'><a href="https://github.com/ton4eg/coursera_pa">код</a> ,</span>
+</li>
+<li>
+<span class='inline-group'>веса модели <a href="https://yadi.sk/d/9-3kXyxRvnBwh">по ссылке</a></span>
+</li>
+</ul>
+<p>Положите данные, код и модель в одну папку. У вас должна получиться такая структура:</p>
+<pre><code>/assignment-computer-vision/
+|
+|-- test              # папки  
+|    `---- ...        # с
+|-- train             # картинками
+|    `---- ...
+|
+|-- class_names.txt   # имена классов, номер строки соответствует id класса
+|-- results.txt       # соответствие имя картинки — id класса
+|-- vgg16_weights.npz # веса модели в формате tensorflow
+|
+|-- vgg16.py            # основной скрипт
+|-- imagenet_classes.py 
+|
+`-- beach.jpg         # картиночка с пляжем</code></pre>
+<h2>Запуск из Docker gcr.io/tensorflow/tensorflow</h2>
+<ul>
+<li>докер запускает Jupyter Notebook с рабочей папкой /notebooks</li>
+<li>в докере не хватает библиотек sklearn и Pillow</li>
+</ul>
+<p>Рекомендуется запускать докер командой</p>
+<p>docker run -it -p 127.0.0.1:8888:8888 -v $PWD:/notebooks gcr.io/tensorflow/tensorflow</p>
+<p>при запуске из папки, где лежит данный ноутбук и все нужные файлы, они сразу окажутся в рабочей папке Jupyter Notebook.</p>
+<p>Следующие две ячейки содержат команды, доустанавливающие нужные библиотеки.</p>
+<pre><code>!pip install sklearn</code></pre>
+<pre><code>!pip install -U pillow</code></pre>
+<p>Импортируем всё, что нам нужно для работы.</p>
+<pre><code># inspired by
+# http://www.cs.toronto.edu/~frossard/post/vgg16/                               
+# Model from https://gist.github.com/ksimonyan/211839e770f7b538e2d8#file-readme-md     #
+# Weights from Caffe converted using https://github.com/ethereon/caffe-tensorflow      #
+
+import glob
+import os
+import tensorflow as tf
+import numpy as np
+from scipy.misc import imread, imresize
+from imagenet_classes import class_names
+import sys
+from sklearn.svm import SVC</code></pre>
+<p>В этом классе содержится описание модели VGG - структура, инициализация, загрузка весов. Следует помнить - пока не запущена сессия Tensorflow, никакой реальной работы не производится.</p>
+<pre><code>class vgg16:
+    def __init__(self, imgs, weights=None, sess=None):
+        self.imgs = imgs
+        self.convlayers()
+        self.fc_layers()
+        self.probs = tf.nn.softmax(self.fc3l)
+        if weights is not None and sess is not None:
+            self.load_weights(weights, sess)
+
+
+    def convlayers(self):
+        self.parameters = []
+
+        # zero-mean input
+        with tf.name_scope('preprocess') as scope:
+            mean = tf.constant([123.68, 116.779, 103.939], dtype=tf.float32, shape=[1, 1, 1, 3], name='img_mean')
+            images = self.imgs-mean
+
+        # conv1_1
+        with tf.name_scope('conv1_1') as scope:
+            kernel = tf.Variable(tf.truncated_normal([3, 3, 3, 64], dtype=tf.float32,
+                                                     stddev=1e-1), name='weights')
+            conv = tf.nn.conv2d(images, kernel, [1, 1, 1, 1], padding='SAME')
+            biases = tf.Variable(tf.constant(0.0, shape=[64], dtype=tf.float32),
+                                 trainable=True, name='biases')
+            out = tf.nn.bias_add(conv, biases)
+            self.conv1_1 = tf.nn.relu(out, name=scope)
+            self.parameters += [kernel, biases]
+
+        # conv1_2
+        with tf.name_scope('conv1_2') as scope:
+            kernel = tf.Variable(tf.truncated_normal([3, 3, 64, 64], dtype=tf.float32,
+                                                     stddev=1e-1), name='weights')
+            conv = tf.nn.conv2d(self.conv1_1, kernel, [1, 1, 1, 1], padding='SAME')
+            biases = tf.Variable(tf.constant(0.0, shape=[64], dtype=tf.float32),
+                                 trainable=True, name='biases')
+            out = tf.nn.bias_add(conv, biases)
+            self.conv1_2 = tf.nn.relu(out, name=scope)
+            self.parameters += [kernel, biases]
+
+        # pool1
+        self.pool1 = tf.nn.max_pool(self.conv1_2,
+                               ksize=[1, 2, 2, 1],
+                               strides=[1, 2, 2, 1],
+                               padding='SAME',
+                               name='pool1')
+
+        # conv2_1
+        with tf.name_scope('conv2_1') as scope:
+            kernel = tf.Variable(tf.truncated_normal([3, 3, 64, 128], dtype=tf.float32,
+                                                     stddev=1e-1), name='weights')
+            conv = tf.nn.conv2d(self.pool1, kernel, [1, 1, 1, 1], padding='SAME')
+            biases = tf.Variable(tf.constant(0.0, shape=[128], dtype=tf.float32),
+                                 trainable=True, name='biases')
+            out = tf.nn.bias_add(conv, biases)
+            self.conv2_1 = tf.nn.relu(out, name=scope)
+            self.parameters += [kernel, biases]
+
+        # conv2_2
+        with tf.name_scope('conv2_2') as scope:
+            kernel = tf.Variable(tf.truncated_normal([3, 3, 128, 128], dtype=tf.float32,
+                                                     stddev=1e-1), name='weights')
+            conv = tf.nn.conv2d(self.conv2_1, kernel, [1, 1, 1, 1], padding='SAME')
+            biases = tf.Variable(tf.constant(0.0, shape=[128], dtype=tf.float32),
+                                 trainable=True, name='biases')
+            out = tf.nn.bias_add(conv, biases)
+            self.conv2_2 = tf.nn.relu(out, name=scope)
+            self.parameters += [kernel, biases]
+
+        # pool2
+        self.pool2 = tf.nn.max_pool(self.conv2_2,
+                               ksize=[1, 2, 2, 1],
+                               strides=[1, 2, 2, 1],
+                               padding='SAME',
+                               name='pool2')
+
+        # conv3_1
+        with tf.name_scope('conv3_1') as scope:
+            kernel = tf.Variable(tf.truncated_normal([3, 3, 128, 256], dtype=tf.float32,
+                                                     stddev=1e-1), name='weights')
+            conv = tf.nn.conv2d(self.pool2, kernel, [1, 1, 1, 1], padding='SAME')
+            biases = tf.Variable(tf.constant(0.0, shape=[256], dtype=tf.float32),
+                                 trainable=True, name='biases')
+            out = tf.nn.bias_add(conv, biases)
+            self.conv3_1 = tf.nn.relu(out, name=scope)
+            self.parameters += [kernel, biases]
+
+        # conv3_2
+        with tf.name_scope('conv3_2') as scope:
+            kernel = tf.Variable(tf.truncated_normal([3, 3, 256, 256], dtype=tf.float32,
+                                                     stddev=1e-1), name='weights')
+            conv = tf.nn.conv2d(self.conv3_1, kernel, [1, 1, 1, 1], padding='SAME')
+            biases = tf.Variable(tf.constant(0.0, shape=[256], dtype=tf.float32),
+                                 trainable=True, name='biases')
+            out = tf.nn.bias_add(conv, biases)
+            self.conv3_2 = tf.nn.relu(out, name=scope)
+            self.parameters += [kernel, biases]
+
+        # conv3_3
+        with tf.name_scope('conv3_3') as scope:
+            kernel = tf.Variable(tf.truncated_normal([3, 3, 256, 256], dtype=tf.float32,
+                                                     stddev=1e-1), name='weights')
+            conv = tf.nn.conv2d(self.conv3_2, kernel, [1, 1, 1, 1], padding='SAME')
+            biases = tf.Variable(tf.constant(0.0, shape=[256], dtype=tf.float32),
+                                 trainable=True, name='biases')
+            out = tf.nn.bias_add(conv, biases)
+            self.conv3_3 = tf.nn.relu(out, name=scope)
+            self.parameters += [kernel, biases]
+
+        # pool3
+        self.pool3 = tf.nn.max_pool(self.conv3_3,
+                               ksize=[1, 2, 2, 1],
+                               strides=[1, 2, 2, 1],
+                               padding='SAME',
+                               name='pool3')
+
+        # conv4_1
+        with tf.name_scope('conv4_1') as scope:
+            kernel = tf.Variable(tf.truncated_normal([3, 3, 256, 512], dtype=tf.float32,
+                                                     stddev=1e-1), name='weights')
+            conv = tf.nn.conv2d(self.pool3, kernel, [1, 1, 1, 1], padding='SAME')
+            biases = tf.Variable(tf.constant(0.0, shape=[512], dtype=tf.float32),
+                                 trainable=True, name='biases')
+            out = tf.nn.bias_add(conv, biases)
+            self.conv4_1 = tf.nn.relu(out, name=scope)
+            self.parameters += [kernel, biases]
+
+        # conv4_2
+        with tf.name_scope('conv4_2') as scope:
+            kernel = tf.Variable(tf.truncated_normal([3, 3, 512, 512], dtype=tf.float32,
+                                                     stddev=1e-1), name='weights')
+            conv = tf.nn.conv2d(self.conv4_1, kernel, [1, 1, 1, 1], padding='SAME')
+            biases = tf.Variable(tf.constant(0.0, shape=[512], dtype=tf.float32),
+                                 trainable=True, name='biases')
+            out = tf.nn.bias_add(conv, biases)
+            self.conv4_2 = tf.nn.relu(out, name=scope)
+            self.parameters += [kernel, biases]
+
+        # conv4_3
+        with tf.name_scope('conv4_3') as scope:
+            kernel = tf.Variable(tf.truncated_normal([3, 3, 512, 512], dtype=tf.float32,
+                                                     stddev=1e-1), name='weights')
+            conv = tf.nn.conv2d(self.conv4_2, kernel, [1, 1, 1, 1], padding='SAME')
+            biases = tf.Variable(tf.constant(0.0, shape=[512], dtype=tf.float32),
+                                 trainable=True, name='biases')
+            out = tf.nn.bias_add(conv, biases)
+            self.conv4_3 = tf.nn.relu(out, name=scope)
+            self.parameters += [kernel, biases]
+
+        # pool4
+        self.pool4 = tf.nn.max_pool(self.conv4_3,
+                               ksize=[1, 2, 2, 1],
+                               strides=[1, 2, 2, 1],
+                               padding='SAME',
+                               name='pool4')
+
+        # conv5_1
+        with tf.name_scope('conv5_1') as scope:
+            kernel = tf.Variable(tf.truncated_normal([3, 3, 512, 512], dtype=tf.float32,
+                                                     stddev=1e-1), name='weights')
+            conv = tf.nn.conv2d(self.pool4, kernel, [1, 1, 1, 1], padding='SAME')
+            biases = tf.Variable(tf.constant(0.0, shape=[512], dtype=tf.float32),
+                                 trainable=True, name='biases')
+            out = tf.nn.bias_add(conv, biases)
+            self.conv5_1 = tf.nn.relu(out, name=scope)
+            self.parameters += [kernel, biases]
+
+        # conv5_2
+        with tf.name_scope('conv5_2') as scope:
+            kernel = tf.Variable(tf.truncated_normal([3, 3, 512, 512], dtype=tf.float32,
+                                                     stddev=1e-1), name='weights')
+            conv = tf.nn.conv2d(self.conv5_1, kernel, [1, 1, 1, 1], padding='SAME')
+            biases = tf.Variable(tf.constant(0.0, shape=[512], dtype=tf.float32),
+                                 trainable=True, name='biases')
+            out = tf.nn.bias_add(conv, biases)
+            self.conv5_2 = tf.nn.relu(out, name=scope)
+            self.parameters += [kernel, biases]
+
+        # conv5_3
+        with tf.name_scope('conv5_3') as scope:
+            kernel = tf.Variable(tf.truncated_normal([3, 3, 512, 512], dtype=tf.float32,
+                                                     stddev=1e-1), name='weights')
+            conv = tf.nn.conv2d(self.conv5_2, kernel, [1, 1, 1, 1], padding='SAME')
+            biases = tf.Variable(tf.constant(0.0, shape=[512], dtype=tf.float32),
+                                 trainable=True, name='biases')
+            out = tf.nn.bias_add(conv, biases)
+            self.conv5_3 = tf.nn.relu(out, name=scope)
+            self.parameters += [kernel, biases]
+
+        # pool5
+        self.pool5 = tf.nn.max_pool(self.conv5_3,
+                               ksize=[1, 2, 2, 1],
+                               strides=[1, 2, 2, 1],
+                               padding='SAME',
+                               name='pool4')
+
+    def fc_layers(self):
+        # fc1
+        with tf.name_scope('fc1') as scope:
+            shape = int(np.prod(self.pool5.get_shape()[1:]))
+            fc1w = tf.Variable(tf.truncated_normal([shape, 4096],
+                                                         dtype=tf.float32,
+                                                         stddev=1e-1), name='weights')
+            fc1b = tf.Variable(tf.constant(1.0, shape=[4096], dtype=tf.float32),
+                                 trainable=True, name='biases')
+            pool5_flat = tf.reshape(self.pool5, [-1, shape])
+            fc1l = tf.nn.bias_add(tf.matmul(pool5_flat, fc1w), fc1b)
+            self.fc1 = tf.nn.relu(fc1l)
+            self.parameters += [fc1w, fc1b]
+
+        # fc2
+        with tf.name_scope('fc2') as scope:
+            fc2w = tf.Variable(tf.truncated_normal([4096, 4096],
+                                                         dtype=tf.float32,
+                                                         stddev=1e-1), name='weights')
+            fc2b = tf.Variable(tf.constant(1.0, shape=[4096], dtype=tf.float32),
+                                 trainable=True, name='biases')
+            fc2l = tf.nn.bias_add(tf.matmul(self.fc1, fc2w), fc2b)
+            self.fc2 = tf.nn.relu(fc2l)
+            self.parameters += [fc2w, fc2b]
+
+        # fc3
+        with tf.name_scope('fc3') as scope:
+            fc3w = tf.Variable(tf.truncated_normal([4096, 1000],
+                                                         dtype=tf.float32,
+                                                         stddev=1e-1), name='weights')
+            fc3b = tf.Variable(tf.constant(1.0, shape=[1000], dtype=tf.float32),
+                                 trainable=True, name='biases')
+            self.fc3l = tf.nn.bias_add(tf.matmul(self.fc2, fc3w), fc3b)
+            self.parameters += [fc3w, fc3b]
+
+    def load_weights(self, weight_file, sess):
+        weights = np.load(weight_file)
+        keys = sorted(weights.keys())
+        for i, k in enumerate(keys):
+            print(i, k, np.shape(weights[k]))
+            sess.run(self.parameters[i].assign(weights[k]))</code></pre>
+<pre><code># Функция сохранения в файл ответа, состоящего из одного числа
+def save_answerNum(fname, number):
+    with open(fname,"w") as fout:
+        fout.write(str(number))</code></pre>
+<pre><code># Функция сохранения в файл ответа, представленного массивом
+def save_answerArray(fname,array):
+    with open(fname,"w") as fout:
+        fout.write(" ".join([str(el) for el in array]))</code></pre>
+<pre><code># Загрузка словаря из текстового файла. Словарь у нас используется для сохранения меток классов в выборке data.
+def load_txt(fname):
+    line_dict = {}
+    for line in open(fname):
+        fname, class_id = line.strip().split()
+        line_dict[fname] = class_id
+
+    return line_dict</code></pre>
+<pre><code># Функция обработки отдельного изображения, печатает метки TOP-5 классов и уверенность модели в каждом из них.
+def process_image(fname):
+    img1 = imread(fname, mode='RGB')
+    img1 = imresize(img1, (224, 224))
+    
+    prob = sess.run(vgg.probs, feed_dict={vgg.imgs: [img1]})[0]
+    preds = (np.argsort(prob)[::-1])[0:5]
+    return [(class_names[p], prob[p]) for p in preds]</code></pre>
+<pre><code># Инициируем TF сессию, и инициализируем модель. На этом шаге модель загружает веса. Веса - это 500Мб в сжатом виде
+# и ~2.5Гб в памяти, процесс их загрузки послойно выводится ниже этой ячейки, и если вы увидите этот вывод ещё раз - 
+# у вас неистово кончается память. Остановитесь. Также, не запускайте эту ячейку на выполнение больше одного раза
+# за запуск ядра Jupyter.
+sess = tf.Session()
+imgs = tf.placeholder(tf.float32, [None, 224, 224, 3])
+vgg = vgg16(imgs, 'vgg16_weights.npz', sess)</code></pre>
+<p>Все ячейки выше не нуждаются в модификации для выполнения задания, и необходимы к исполнению только один раз, в порядке следования. Повторный запуск ячейки с инициализацией модели будет сжирать память. Вы предупреждены.</p>
+<h2><span class='inline-group'>Задание 1 .</span></h2>
+<span class='inline-group'>Для начала нужно запустить готовую модель <code>vgg16</code> , предобученную на <code>imagenet</code> . Модель обучена с помощью <code>caffe</code> и сконвертирована в формат <code>tensorflow</code> - <code>vgg16_weights.npz</code> . Скрипт, иллюстрирующий применение этой модели к изображению, возвращает топ-5 классов из <code>imagenet</code> и уверенность в этих классах.</span>
+<span class='inline-group'><strong>Задание:</strong> Загрузите уверенность для первого класса для изображения <code>train/00002.jpg</code> с точностью до 1 знака после запятой в файл с ответом.</span>
+<pre><code># Ваш код здесь
+prob1 = process_image('train/00002.jpg')
+print(prob1)</code></pre>
+<pre><code>ans1 = round(prob1[0][1], 1)
+print(ans1)
+save_answerNum("vgg16_answer1.txt", ans1 )</code></pre>
+<h2><span class='inline-group'>Задание 2 .</span></h2>
+<span class='inline-group'>Научитесь извлекать <code>fc2</code> слой. Возьмите за основу код <code>process_image</code> , и модифицируйте, чтобы вместо последнего слоя извлекались выходы <code>fc2</code> .</span>
+<span class='inline-group'><strong>Задание:</strong> Посчитайте <code>fc2</code> для картинки <code>train/00002.jpg</code> .  Запишите первые 20 компонент.</span>
+<pre><code>def load_fc2_values(fname):
+    img1 = imread(fname, mode='RGB')
+    img1 = imresize(img1, (224, 224))
+    
+    prob = sess.run(vgg.fc2, feed_dict={vgg.imgs: [img1]})[0]
+    return prob
+    
+
+prob_fc2 = load_fc2_values('train/00002.jpg')</code></pre>
+<pre><code>for p in prob_fc2[:20]:
+  print(p)
+# preds = (np.argsort(prob)[::-1])[0:5]
+    # return [(class_names[p], prob[p]) for p in preds]
+   
+save_answerArray("vgg16_answer2.txt",  prob_fc2[:20] )</code></pre>
+<h2><span class='inline-group'>Задание 3 .</span></h2>
+<span class='inline-group'>Теперь необходимо дообучить классификатор на нашей базе. В качестве бейзлайна предлагается воспользоваться классификатором <code>svm</code> из пакета <code>scipy</code> .</span>
+<ul>
+<li>
+<span class='inline-group'>Модифицировать функцию <code>get_features</code> и добавить возможность вычислять <code>fc2</code> . (Аналогично второму заданию).</span>
+</li>
+<li>
+<span class='inline-group'>Применить <code>get_feautures</code> , чтобы получить <code>X_test</code> и <code>Y_test</code> .</span>
+</li>
+<li>
+<span class='inline-group'>Воспользоваться классификатором <code>SVC</code> с <code>random_state=0</code> .</span>
+</li>
+</ul>
+<span class='inline-group'><strong>Важно!</strong> Если вам не удалось поставить <code>tensorflow</code> , то необходимо вместо использования функции <code>get_features</code> , загрузить предпосчитанные <code>X</code> , <code>Y</code> , <code>X_test</code> , <code>Y_test</code> из архива: https://yadi.sk/d/RzMOK8Fjvs6Ln и воспользоваться функцией <code>np.load</code> для их загрузки, а после этого два последних пункта.</span>
+<span class='inline-group'><strong>Задание:</strong> Сколько правильных ответов получается на валидационной выборке из папки <code>test</code> ? Запишите в файл.</span>
+<pre><code># Функция, возвращающая признаковое описание для каждого файла jpg в заданной папке
+def get_features(folder, ydict):
+
+    paths = glob.glob(folder)
+    X = np.zeros((len(paths), 4096))
+    Y = np.zeros(len(paths))
+
+    for i,img_name in enumerate(paths):
+        print(img_name)
+        base = os.path.basename(img_name)
+        Y[i] = ydict[base]
+
+        img1 = imread(img_name, mode='RGB')
+        img1 = imresize(img1, (224, 224))
+        fc2 = sess.run(vgg.fc2, feed_dict={ vgg.imgs: [img1] })[0]
+        X[i, :] = fc2
+    
+    return X, Y</code></pre>
+<pre><code># Функция обработки папки. Ожидается, что в этой папке лежит файл results.txt с метками классов, и 
+# имеются подразделы train и test с jpg файлами.
+def process_folder(folder):
+    ydict = load_txt(os.path.join(folder,'results.txt'))
+    
+    return get_features(os.path.join(folder, 'train/*jpg'), ydict)</code></pre>
+<pre><code>X, Y = process_folder('.') # Вызови меня!</code></pre>
+<pre><code>%%time
+ydict = load_txt('results.txt')
+X_test, Y_test = get_features(os.path.join('.', 'test/*jpg'), ydict)</code></pre>
+<pre><code># Ваш код здесь. 
+clf = SVC()
+clf.fit(X, Y)</code></pre>
+<pre><code>Y_test_pred = clf.predict(X_test)
+print(len(Y_test), len(Y_test_pred), sum(Y_test == Y_test_pred)) # Число правильно предсказанных классов</code></pre>
+<pre><code>save_answerNum("vgg16_answer3.txt", sum(Y_test == Y_test_pred))</code></pre>
+</div>
+</body>
+</html>
