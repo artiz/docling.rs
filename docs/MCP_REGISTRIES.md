@@ -64,10 +64,12 @@ limit), and the catalog entries follow it:
    into `server.json` (from the release tag), and publishes it with
    `mcp-publisher` — authenticated by GitHub OIDC, no secret. Its `bundle`
    job waits for the launcher alone, packs `docling-rs-mcp-<version>.mcpb`
-   (`mcpb pack` validates the manifest), publishes it to Smithery when the
-   repository has the `SMITHERY_API_KEY` secret and the `SMITHERY_SERVER`
-   variable, and attaches it to the release. Both jobs run only in
-   `docling-project/docling.rs`.
+   (`mcpb pack` validates the manifest) and attaches it to the release; when
+   the repository has the `SMITHERY_API_KEY` secret and the `SMITHERY_SERVER`
+   variable it publishes Smithery's copy of it, whose manifest carries each
+   tool's input schema as the server lists it (`scripts/ci/mcpb_smithery.py`
+   — Smithery's API requires one per tool, the MCPB schema allows none).
+   Both jobs run only in `docling-project/docling.rs`.
 
 ## One-time setup
 
@@ -123,9 +125,14 @@ jq --arg v "$v" '.version = $v | .server.mcp_config.args |= map(if startswith("d
 cp /tmp/manifest.json crates/docling-py/mcp/mcpb/manifest.json
 npx -y @anthropic-ai/mcpb@2.1.2 pack crates/docling-py/mcp/mcpb "docling-rs-mcp-$v.mcpb"
 git checkout crates/docling-py/mcp/mcpb/manifest.json
+# Smithery's copy: the tools' input schemas from the server (runs it with uvx)
+python3 scripts/ci/mcpb_smithery.py "docling-rs-mcp-$v.mcpb" "smithery-$v.mcpb"
 npx -y @smithery/cli@4.11.1 auth login   # or export SMITHERY_API_KEY
-npx -y @smithery/cli@4.11.1 mcp publish "docling-rs-mcp-$v.mcpb" -n <namespace>/docling-rs
+npx -y @smithery/cli@4.11.1 mcp publish "smithery-$v.mcpb" -n <namespace>/docling-rs
 ```
+
+Publishing the packed bundle itself fails with `400 Invalid input: expected
+object, received undefined` — once per tool, for the missing input schemas.
 
 ## Checking a release
 
