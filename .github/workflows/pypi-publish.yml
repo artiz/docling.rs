@@ -377,8 +377,14 @@ jobs:
       name: pypi
       url: https://pypi.org/p/docling-rs
     permissions:
+      contents: read # the checkout for the size check
       id-token: write
     steps:
+      # Only the size check below; the upload itself needs no checkout.
+      - uses: actions/checkout@v7
+        with:
+          sparse-checkout: scripts/ci
+
       # All wheels + the sdist → a single dist/ for the upload. By name: the
       # docling-rs-mcp launcher (below) uploads on its own, so a launcher
       # problem can never hold back a docling-rs release.
@@ -394,6 +400,16 @@ jobs:
           pattern: wheel-*
           path: dist
           merge-multiple: true
+
+      # PyPI refuses files past a project's total-size limit one by one,
+      # after the earlier files of the upload went through — v2.22.0 got its
+      # aarch64 wheel only. Fail before uploading anything instead, and warn
+      # near the limit. PYPI_SIZE_LIMIT_GIB (repository variable) records a
+      # limit PyPI raised: `docling-rs=20,docling-rs-cuda=15`.
+      - name: Check room under the PyPI size limits
+        env:
+          PYPI_SIZE_LIMIT_GIB: ${{ vars.PYPI_SIZE_LIMIT_GIB }}
+        run: python3 scripts/ci/pypi_room.py dist
 
       - name: Publish to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1

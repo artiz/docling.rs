@@ -549,6 +549,25 @@ idempotent (`skip-existing`). macOS wheels are omitted (no hosted runners here);
 macOS users install the sdist, which compiles from source. The ONNX runtime is
 bundled in the wheel; the ONNX models are fetched at runtime by `download_models()`.
 
+**PyPI's size limit.** PyPI caps the total of all files a project keeps at
+10 GiB unless it [raises it on request](https://docs.pypi.org/project-management/storage-limits#requesting-a-project-size-limit-increase);
+a release adds ~100 MB to `docling-rs` and ~63 MB to `docling-rs-cuda`. An
+upload past the cap is refused file by file after the earlier ones went
+through (v2.22.0 got its aarch64 wheel only), so the publish job first runs
+`scripts/ci/pypi_room.py`: it fails before uploading anything when a project
+would overflow and warns past 90 %. To make room, a project owner deletes
+superseded releases — permanently; pins to them stop resolving — e.g. all of
+0.x and 1.x but their last versions, with
+[`pypi-cleanup`](https://github.com/arcivanov/pypi-cleanup) (a dry run
+without `--do-it`; `--query-only` lists the versions without logging in):
+
+```bash
+uvx pypi-cleanup -u <pypi-user> -p docling-rs -r '^0\.(?!53\.3$)' -r '^1\.(?!104\.3$)' --do-it
+```
+
+then re-run the failed publish job. When PyPI raises a limit, record it in the
+repository variable `PYPI_SIZE_LIMIT_GIB` (`docling-rs=20,docling-rs-cuda=15`).
+
 ### GPU wheel: `docling-rs-cuda`
 
 The workflow's `cuda_wheel` input additionally builds a **Linux x86_64** wheel
