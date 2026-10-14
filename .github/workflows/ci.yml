@@ -487,7 +487,10 @@ jobs:
       # list it assembled as the description. Skipped when the release step was a
       # no-op (no release-worthy commits). Idempotent: if a release for the tag
       # already exists (e.g. a forced re-publish), refresh its notes instead of
-      # failing.
+      # failing. Not marked latest: nothing is published to PyPI, npm, GHCR or
+      # the release's assets until the maintainer runs release.yml for it, which
+      # then marks it latest — install.sh downloads the CLI from the latest
+      # release, so that must be one that has the binaries.
       - name: Create GitHub Release
         if: steps.release.outputs.released == 'true'
         env:
@@ -498,7 +501,7 @@ jobs:
           if gh release view "$tag" >/dev/null 2>&1; then
             gh release edit "$tag" --title "$tag" --notes-file "$notes"
           else
-            gh release create "$tag" --title "$tag" --notes-file "$notes" --verify-tag
+            gh release create "$tag" --title "$tag" --notes-file "$notes" --verify-tag --latest=false
           fi
 
       # actions/cache saves target/ in its post-step, i.e. after this runs:

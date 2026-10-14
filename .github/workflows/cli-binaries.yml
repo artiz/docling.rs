@@ -1,11 +1,14 @@
 # Prebuilt `docling-rs` CLI binaries — and the `docling-ffi` C ABI library
-# (#193, cdylib + docling.h) — attached to each GitHub Release.
+# (#193, cdylib + docling.h) — attached to each published GitHub Release.
 # `cargo install docling-cli` means several minutes of compiling on the user's
 # machine; a downloadable binary is the first thing launch-day visitors look
 # for, and FFI embedders (C#/Go/Java/Swift) get a lib + header instead of a
-# full clone-and-build. Runs automatically when ci.yml publishes a release
-# (the release is created with RELEASE_PAT, so the `release: published` event
-# fires for this workflow), or on manual dispatch for an existing tag.
+# full clone-and-build. Runs on manual dispatch for an existing release tag —
+# release.yml runs it, with PyPI, npm and the images, for a release the
+# maintainer picks, then marks that release GitHub's latest: install.sh
+# downloads the binary from the latest release, so it only ever points at one
+# that has the assets (ci.yml cuts every merge's release with
+# `--latest=false`).
 #
 # macOS prebuilds are omitted for the same reason as in npm-publish.yml:
 # GitHub-hosted macOS runners are blocked in this environment, and darwin
@@ -33,8 +36,6 @@
 name: cli-binaries
 
 on:
-  release:
-    types: [published]
   workflow_dispatch:
     inputs:
       tag:
@@ -74,11 +75,11 @@ jobs:
             zig: true
             features: ort-load-dynamic
     env:
-      TAG: ${{ github.event.release.tag_name || inputs.tag }}
+      TAG: ${{ inputs.tag }}
     steps:
       - uses: actions/checkout@v7
         with:
-          ref: ${{ github.event.release.tag_name || inputs.tag }}
+          ref: ${{ inputs.tag }}
 
       # rustup is preinstalled on GitHub-hosted runners; the org allowlists only
       # GitHub-owned / vetted actions, so no marketplace toolchain action.
@@ -175,5 +176,5 @@ jobs:
       - name: Upload to the GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
-          TAG: ${{ github.event.release.tag_name || inputs.tag }}
+          TAG: ${{ inputs.tag }}
         run: gh release upload "$TAG" assets/* --repo "${{ github.repository }}" --clobber

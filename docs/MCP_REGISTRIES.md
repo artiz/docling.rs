@@ -53,11 +53,11 @@ substitutes only values it has), and the tools the server lists.
 
 ## On a PyPI publish
 
-PyPI publishing is manual (`gh workflow run pypi-publish.yml -f tag=vX.Y.Z`,
-crates/docling-py/README.md — a release per merge outgrew PyPI's project size
-limit), and the catalog entries follow it:
+Publishing is manual (`gh workflow run release.yml -f tag=vX.Y.Z`, which runs
+PyPI, npm, the images and the CLI binaries — a release per merge outgrew
+PyPI's project size limit), and the catalog entries follow the PyPI channel:
 
-1. `docker-publish.yml` has published the images on the GitHub Release; the
+1. `docker-publish.yml` publishes the images (in parallel); the
    CLI image carries the registry label.
 2. `pypi-publish.yml` publishes the `docling-rs` wheels, then the
    `docling-rs-mcp` launcher pinned to that version (a separate job, so a

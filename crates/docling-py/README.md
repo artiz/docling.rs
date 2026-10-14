@@ -523,8 +523,10 @@ inline formatting rather than structured `formatting` fields — see
 
 ## Publishing
 
-Releases are **automatic**, mirroring the npm package: every GitHub Release
-CI cuts (`v<version>`, see the repo's release flow) triggers the
+A release reaches PyPI when the maintainer publishes it — the
+[`release`](../../.github/workflows/release.yml) workflow (`gh workflow run
+release.yml -f tag=v<version>`) runs every channel: PyPI, npm, the images and
+the CLI binaries. Its PyPI channel is the
 [`pypi-publish`](../../.github/workflows/pypi-publish.yml) GitHub Actions
 workflow, which builds an `abi3` wheel per platform (Linux x86-64/arm64 as
 `manylinux_2_28`, Linux s390x cross-compiled with maturin — it loads ONNX
@@ -536,12 +538,14 @@ that version, as its own PyPI project, and the MCP registry entry
 (`docs/MCP_REGISTRIES.md`). It runs **only by hand** (`workflow_dispatch`):
 a GitHub Release is cut on every merge, which would outgrow PyPI's per-project
 size limit (below) within weeks, so the maintainer publishes the releases
-worth it. Files already on PyPI are skipped, so re-runs are safe — within 14
+worth it. Run alone, it publishes PyPI only — e.g. to repair a failed PyPI
+channel. Files already on PyPI are skipped, so re-runs are safe — within 14
 days of a release's first upload, after which PyPI accepts no new files for it:
 
 ```bash
 # From the Actions tab, or:
-gh workflow run pypi-publish.yml -f tag=v2.23.0                     # a release, with docling-rs-cuda
+gh workflow run release.yml -f tag=v2.23.0                          # every channel
+gh workflow run pypi-publish.yml -f tag=v2.23.0                     # PyPI only, with docling-rs-cuda
 gh workflow run pypi-publish.yml -f tag=v2.23.0 -f cuda_wheel=false # without it
 gh workflow run pypi-publish.yml                                    # the dispatched ref at the workspace version
 ```

@@ -17,17 +17,18 @@ reproduce it byte for byte (see "Conformance & fixtures").
   Docs/CI-only merges still release nothing (release.sh only fires when a
   publishable crate's source changed). No automatic semver-major: majors are
   cut by hand (`force_version` dispatch input) — v1.0.0 marks the breaking
-  `.models/` asset-dir rename. The GitHub Release ci.yml creates then fans
-  out (`release: published`) to `cli-binaries.yml` and `docker-publish.yml` —
-  nothing to click; re-run one by hand only to repair a skipped/failed
-  publish. **PyPI and npm are manual**, for a release the maintainer picks:
-  `gh workflow run pypi-publish.yml -f tag=vX.Y.Z` publishes `docling-rs` +
-  `docling-rs-cuda`, the `docling-rs-mcp` launcher and the MCP catalog entries
-  — a release per merge outgrew PyPI's 10 GiB per-project limit (v2.22.0
-  failed half-way); `scripts/ci/pypi_room.py` refuses an upload that would not
-  fit — and `gh workflow run npm-publish.yml -f tag=vX.Y.Z` publishes
-  `docling.rs`, the platform packages, `docling.rs-cuda` and
-  `docling.rs-wasm`.
+  `.models/` asset-dir rename. ci.yml publishes the crates and cuts the
+  GitHub Release (not marked latest); **everything else is published by
+  hand**, for a release the maintainer picks: `gh workflow run release.yml -f
+  tag=vX.Y.Z` dispatches `pypi-publish.yml` (`docling-rs` + `docling-rs-cuda`,
+  the `docling-rs-mcp` launcher, then the MCP catalogs), `npm-publish.yml`
+  (`docling.rs`, the platform packages, `docling.rs-cuda`,
+  `docling.rs-wasm`), `docker-publish.yml` (GHCR) and `cli-binaries.yml` (the
+  release's CLI/FFI assets), waits for them and marks the release latest
+  (install.sh downloads the CLI from it). Each also runs alone (`-f
+  tag=vX.Y.Z`) to repair a failed channel. A release per merge outgrew PyPI's
+  10 GiB per-project limit (v2.22.0 failed half-way);
+  `scripts/ci/pypi_room.py` refuses an upload that would not fit.
 - Claude Web: **Never open pull requests on `artiz/docling.rs`.** Push a `claude/<topic>`
   branch and hand back a compare link
   (`https://github.com/docling-project/docling.rs/compare/master...artiz:docling.rs:<branch>?expand=1`);

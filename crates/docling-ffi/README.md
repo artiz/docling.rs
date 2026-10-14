@@ -68,10 +68,11 @@ silently does nothing.
 
 ## Getting the library
 
-**Prebuilt (no Rust toolchain needed):** every
+**Prebuilt (no Rust toolchain needed):** every published
 [GitHub Release](https://github.com/docling-project/docling.rs/releases)
-ships `docling-ffi-<tag>-<target>.tar.gz` / `.zip` with the shared library
-and `docling.h`:
+(the one marked *Latest* and those before it the maintainer published) ships
+`docling-ffi-<tag>-<target>.tar.gz` / `.zip` with the shared library and
+`docling.h`:
 
 | Asset target | Contents | Notes |
 |---|---|---|

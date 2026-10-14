@@ -375,7 +375,7 @@ Details and the demo page: [`crates/docling-wasm`](./crates/docling-wasm/README.
   AutoGen integrations.
 - **C ABI** — [`docling-ffi`](./crates/docling-ffi/README.md): one library and
   one `docling.h` for C, C++, C#/.NET, Go, Java, Swift and Zig, prebuilt in
-  every release.
+  every published release.
 
 ## Deploy in a container
 

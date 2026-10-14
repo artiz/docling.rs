@@ -7,7 +7,8 @@
 #
 # Trigger: manual dispatch only. Like pypi-publish.yml, a GitHub Release
 # (cut on every merge) does NOT publish to npm; the maintainer picks the
-# releases worth publishing:
+# releases worth publishing — release.yml runs this with PyPI, the images and
+# the CLI binaries; alone, it repairs a failed npm channel:
 #
 #     gh workflow run npm-publish.yml -f tag=v2.23.0
 #

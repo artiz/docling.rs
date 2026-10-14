@@ -24,13 +24,15 @@ IBM Z the addon loads ONNX Runtime at run time from the library
 `download_dependencies.sh` fetches (#504). (macOS isn't
 prebuilt — build from source, see below.) The right binary is pulled in
 automatically as a platform-specific `optionalDependency` (`docling.rs-<triple>`). Releases reach npm
-when the maintainer runs the `npm publish` workflow
-(`.github/workflows/npm-publish.yml`) for them — not every GitHub Release is
-published there: `gh workflow run npm-publish.yml -f tag=v<version>` builds the
-release tag and publishes it at its version, together with `docling.rs-cuda`
-(the `cuda` input, on by default) and `docling.rs-wasm`; without a tag it
-builds the latest master (the workspace version). Versions already on npm are
-skipped, so re-runs are safe.
+when the maintainer publishes them — `gh workflow run release.yml -f
+tag=v<version>` runs every channel (PyPI, npm, the images, the CLI binaries);
+not every GitHub Release is published. Its npm channel is the `npm publish`
+workflow (`.github/workflows/npm-publish.yml`), which also runs alone (`gh
+workflow run npm-publish.yml -f tag=v<version>`): it builds the release tag and
+publishes it at its version, together with `docling.rs-cuda` (the `cuda`
+input, on by default) and `docling.rs-wasm`; without a tag it builds the
+latest master (the workspace version). Versions already on npm are skipped,
+so re-runs are safe.
 
 ## Build from source
 

@@ -14,7 +14,9 @@
 # NOT publish to PyPI: PyPI caps a project's total size (10 GiB), and a
 # release per merge (~100 MB of docling-rs wheels + ~63 MB of docling-rs-cuda
 # each, 139 releases in three months) filled docling-rs and failed v2.22.0
-# half-way. The maintainer picks the releases worth publishing:
+# half-way. The maintainer picks the releases worth publishing — release.yml
+# runs this with npm, the images and the CLI binaries; alone, it repairs a
+# failed PyPI channel:
 #
 #     gh workflow run pypi-publish.yml -f tag=v2.23.0
 #
