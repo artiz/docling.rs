@@ -526,6 +526,10 @@ constructor; output options (`to`, `imageMode`, `artifactsDir`) are per call.
   WebVTT, XML, …) — docling's `TextBackendOptions.encoding`, a WHATWG label
   such as `"shift_jis"` or `"koi8-r"`. Unset detects (BOM, UTF-8, then
   windows-1252); bytes the named encoding cannot decode fail the conversion.
+- `ipynbOutputs`: Jupyter notebooks (#673) — `"none"` (default: the notebook
+  as written; markdown cells, code cells as code items in the kernel's
+  language, raw cells as code blocks) or `"text"` (stream and `text/plain`
+  results as code blocks after their cell, image outputs as pictures).
 - `videoFrames`: max frames sampled from a video input as timestamped pictures
   (`0` = transcript only; default 8, needs ffmpeg at runtime; `4294967295` =
   every distinct cut, #647).

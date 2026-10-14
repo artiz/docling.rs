@@ -126,6 +126,11 @@ pub enum InputFormat {
     /// USPTO, XBRL, DocLang — and, matching none, kept as one `xml` code
     /// block with a warning. `.nxml` is [`XmlJats`](Self::XmlJats) outright.
     Xml,
+    /// Jupyter notebook (`.ipynb`, #673): markdown cells as Markdown, code
+    /// cells as code items in the kernel's language, raw cells as code
+    /// blocks; outputs under `ipynb_outputs`. A `.json` holding a notebook
+    /// (`"nbformat"` + `"cells"`) takes the same route.
+    Ipynb,
 }
 
 impl InputFormat {
@@ -182,6 +187,7 @@ impl InputFormat {
             InputFormat::Text => "text",
             InputFormat::Jsonl => "jsonl",
             InputFormat::Xml => "xml",
+            InputFormat::Ipynb => "ipynb",
         }
     }
 
@@ -240,6 +246,7 @@ impl InputFormat {
             "text" => InputFormat::Text,
             "jsonl" => InputFormat::Jsonl,
             "xml" => InputFormat::Xml,
+            "ipynb" => InputFormat::Ipynb,
             _ => return None,
         })
     }
@@ -286,6 +293,7 @@ impl InputFormat {
                 InputFormat::Jsonl
             }
             "application/xml" | "text/xml" => InputFormat::Xml,
+            "application/x-ipynb+json" => InputFormat::Ipynb,
             "message/rfc822" | "application/vnd.ms-outlook" => InputFormat::Email,
             "multipart/related" | "message/rfc822-headers" => return None,
             "image/png" | "image/jpeg" | "image/tiff" | "image/bmp" | "image/webp"
@@ -476,6 +484,7 @@ const EXTENSIONS: &[(&str, InputFormat)] = {
         ("json", JsonDocling),
         ("jsonl", Jsonl),
         ("ndjson", Jsonl),
+        ("ipynb", Ipynb),
         // `.mpga` *is* MPEG audio (an mp3 stream) — symphonia probes the
         // codec from the bytes, the extension is just the alias (#208).
         ("wav", Audio),

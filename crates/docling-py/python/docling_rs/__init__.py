@@ -317,6 +317,11 @@ class DocumentConverter:
       (``MarkdownBackendOptions(encoding="shift_jis")``), a WHATWG label or
       Python codec name. ``None`` (default) detects — BOM, UTF-8, then
       windows-1252; bytes the requested encoding cannot decode raise.
+    * ``ipynb_outputs`` — Jupyter notebooks (#673): ``"none"`` (default,
+      the notebook as written — markdown cells, code cells as code items in
+      the kernel's language, raw cells as code blocks) or ``"text"`` (stream
+      and ``text/plain`` results as code blocks after their cell, image
+      outputs as pictures).
     * ``pipeline`` — ``"standard"`` (default) or ``"vlm"`` (#304): convert
       PDF / image inputs by sending each page to a remote OpenAI-compatible
       vision model instead of the local ML stack (no models needed). The
@@ -409,6 +414,7 @@ class DocumentConverter:
         asr_model: Optional[str] = None,
         asr_lang: Optional[str] = None,
         encoding: Optional[str] = None,
+        ipynb_outputs: Optional[str] = None,
         pipeline: Optional[str] = None,
         vlm_endpoint: Optional[str] = None,
         vlm_model: Optional[str] = None,
@@ -668,6 +674,7 @@ class DocumentConverter:
             asr_model=asr_model,
             asr_lang=asr_lang,
             encoding=encoding,
+            ipynb_outputs=ipynb_outputs,
             pipeline=pipeline,
             vlm_endpoint=vlm_endpoint,
             vlm_model=vlm_model,

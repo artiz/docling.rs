@@ -48,6 +48,7 @@ pub mod video;
 
 pub use archive::{ArchiveLimits, ArchiveOutcome};
 pub use backend::images::{ImageLimits, ImagePolicy, ImageSources, DEFAULT_MAX_IMAGE_BYTES};
+pub use backend::ipynb::{IpynbBackend, IpynbOutputs};
 #[cfg(feature = "pdf")]
 pub use converter::WarmPipeline;
 pub use converter::{parse_page_range, DocumentConverter, ALL_VIDEO_FRAMES, DEFAULT_VIDEO_FRAMES};

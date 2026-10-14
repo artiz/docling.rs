@@ -231,6 +231,7 @@ _MIME_EXTENSIONS = {
     "text/markdown": ".md",
     "text/x-markdown": ".md",
     "text/plain": ".txt",
+    "application/x-ipynb+json": ".ipynb",
     "text/csv": ".csv",
     "text/tab-separated-values": ".tsv",
     "text/vtt": ".vtt",
@@ -257,7 +258,7 @@ _MIME_EXTENSIONS = {
 
 _TEXT_EXTENSIONS = {
     ".txt", ".md", ".markdown", ".text", ".qmd", ".rmd", ".csv", ".tsv", ".html", ".htm",
-    ".xhtml", ".xml", ".json", ".vtt", ".adoc", ".asciidoc", ".asc", ".tex", ".latex", ".svg",
+    ".xhtml", ".xml", ".json", ".ipynb", ".vtt", ".adoc", ".asciidoc", ".asc", ".tex", ".latex", ".svg",
 }
 _IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".gif", ".bmp", ".tif", ".tiff", ".webp", ".heic", ".heif"}
 

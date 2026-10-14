@@ -1,0 +1,3522 @@
+{
+  "schema_name": "DoclingDocument",
+  "version": "1.10.0",
+  "name": "vgg16.md",
+  "origin": {
+    "mimetype": "text/plain",
+    "binary_hash": 9339391363758615791,
+    "filename": "vgg16.md"
+  },
+  "furniture": {
+    "self_ref": "#/furniture",
+    "children": [],
+    "content_layer": "furniture",
+    "name": "_root_",
+    "label": "unspecified"
+  },
+  "body": {
+    "self_ref": "#/body",
+    "children": [
+      {
+        "$ref": "#/texts/0"
+      },
+      {
+        "$ref": "#/texts/1"
+      },
+      {
+        "$ref": "#/groups/0"
+      },
+      {
+        "$ref": "#/texts/7"
+      },
+      {
+        "$ref": "#/groups/1"
+      },
+      {
+        "$ref": "#/groups/2"
+      },
+      {
+        "$ref": "#/groups/5"
+      },
+      {
+        "$ref": "#/groups/6"
+      },
+      {
+        "$ref": "#/groups/8"
+      },
+      {
+        "$ref": "#/texts/32"
+      },
+      {
+        "$ref": "#/texts/33"
+      },
+      {
+        "$ref": "#/groups/9"
+      },
+      {
+        "$ref": "#/texts/37"
+      },
+      {
+        "$ref": "#/texts/38"
+      },
+      {
+        "$ref": "#/groups/10"
+      },
+      {
+        "$ref": "#/groups/11"
+      },
+      {
+        "$ref": "#/texts/57"
+      },
+      {
+        "$ref": "#/texts/58"
+      },
+      {
+        "$ref": "#/groups/12"
+      },
+      {
+        "$ref": "#/texts/65"
+      },
+      {
+        "$ref": "#/texts/66"
+      },
+      {
+        "$ref": "#/texts/67"
+      },
+      {
+        "$ref": "#/groups/15"
+      },
+      {
+        "$ref": "#/texts/70"
+      },
+      {
+        "$ref": "#/texts/71"
+      },
+      {
+        "$ref": "#/texts/72"
+      },
+      {
+        "$ref": "#/texts/73"
+      },
+      {
+        "$ref": "#/texts/74"
+      },
+      {
+        "$ref": "#/texts/75"
+      },
+      {
+        "$ref": "#/texts/76"
+      },
+      {
+        "$ref": "#/texts/77"
+      },
+      {
+        "$ref": "#/texts/78"
+      },
+      {
+        "$ref": "#/texts/79"
+      },
+      {
+        "$ref": "#/texts/80"
+      },
+      {
+        "$ref": "#/texts/81"
+      },
+      {
+        "$ref": "#/texts/82"
+      },
+      {
+        "$ref": "#/texts/83"
+      },
+      {
+        "$ref": "#/texts/84"
+      },
+      {
+        "$ref": "#/texts/85"
+      },
+      {
+        "$ref": "#/texts/86"
+      },
+      {
+        "$ref": "#/groups/17"
+      },
+      {
+        "$ref": "#/groups/18"
+      },
+      {
+        "$ref": "#/texts/106"
+      },
+      {
+        "$ref": "#/texts/107"
+      },
+      {
+        "$ref": "#/texts/108"
+      },
+      {
+        "$ref": "#/groups/20"
+      },
+      {
+        "$ref": "#/groups/21"
+      },
+      {
+        "$ref": "#/texts/124"
+      },
+      {
+        "$ref": "#/texts/125"
+      },
+      {
+        "$ref": "#/texts/126"
+      },
+      {
+        "$ref": "#/groups/23"
+      },
+      {
+        "$ref": "#/groups/24"
+      },
+      {
+        "$ref": "#/groups/28"
+      },
+      {
+        "$ref": "#/groups/29"
+      },
+      {
+        "$ref": "#/texts/174"
+      },
+      {
+        "$ref": "#/texts/175"
+      },
+      {
+        "$ref": "#/texts/176"
+      },
+      {
+        "$ref": "#/texts/177"
+      },
+      {
+        "$ref": "#/texts/178"
+      },
+      {
+        "$ref": "#/texts/179"
+      },
+      {
+        "$ref": "#/texts/180"
+      }
+    ],
+    "content_layer": "body",
+    "name": "_root_",
+    "label": "unspecified"
+  },
+  "groups": [
+    {
+      "self_ref": "#/groups/0",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [
+        {
+          "$ref": "#/texts/2"
+        },
+        {
+          "$ref": "#/texts/3"
+        },
+        {
+          "$ref": "#/texts/4"
+        },
+        {
+          "$ref": "#/texts/5"
+        },
+        {
+          "$ref": "#/texts/6"
+        }
+      ],
+      "content_layer": "body",
+      "name": "group",
+      "label": "inline"
+    },
+    {
+      "self_ref": "#/groups/1",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [
+        {
+          "$ref": "#/texts/8"
+        },
+        {
+          "$ref": "#/texts/9"
+        },
+        {
+          "$ref": "#/texts/10"
+        }
+      ],
+      "content_layer": "body",
+      "name": "group",
+      "label": "inline"
+    },
+    {
+      "self_ref": "#/groups/2",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [
+        {
+          "$ref": "#/texts/11"
+        },
+        {
+          "$ref": "#/texts/14"
+        }
+      ],
+      "content_layer": "body",
+      "name": "list",
+      "label": "list"
+    },
+    {
+      "self_ref": "#/groups/3",
+      "parent": {
+        "$ref": "#/texts/11"
+      },
+      "children": [
+        {
+          "$ref": "#/texts/12"
+        },
+        {
+          "$ref": "#/texts/13"
+        }
+      ],
+      "content_layer": "body",
+      "name": "group",
+      "label": "inline"
+    },
+    {
+      "self_ref": "#/groups/4",
+      "parent": {
+        "$ref": "#/texts/14"
+      },
+      "children": [
+        {
+          "$ref": "#/texts/15"
+        },
+        {
+          "$ref": "#/texts/16"
+        },
+        {
+          "$ref": "#/texts/17"
+        }
+      ],
+      "content_layer": "body",
+      "name": "group",
+      "label": "inline"
+    },
+    {
+      "self_ref": "#/groups/5",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [
+        {
+          "$ref": "#/texts/18"
+        },
+        {
+          "$ref": "#/texts/19"
+        }
+      ],
+      "content_layer": "body",
+      "name": "group",
+      "label": "inline"
+    },
+    {
+      "self_ref": "#/groups/6",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [
+        {
+          "$ref": "#/texts/20"
+        },
+        {
+          "$ref": "#/texts/26"
+        }
+      ],
+      "content_layer": "body",
+      "name": "list",
+      "label": "list"
+    },
+    {
+      "self_ref": "#/groups/7",
+      "parent": {
+        "$ref": "#/texts/20"
+      },
+      "children": [
+        {
+          "$ref": "#/texts/21"
+        },
+        {
+          "$ref": "#/texts/22"
+        },
+        {
+          "$ref": "#/texts/23"
+        },
+        {
+          "$ref": "#/texts/24"
+        },
+        {
+          "$ref": "#/texts/25"
+        }
+      ],
+      "content_layer": "body",
+      "name": "group",
+      "label": "inline"
+    },
+    {
+      "self_ref": "#/groups/8",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [
+        {
+          "$ref": "#/texts/27"
+        },
+        {
+          "$ref": "#/texts/28"
+        },
+        {
+          "$ref": "#/texts/29"
+        },
+        {
+          "$ref": "#/texts/30"
+        },
+        {
+          "$ref": "#/texts/31"
+        }
+      ],
+      "content_layer": "body",
+      "name": "group",
+      "label": "inline"
+    },
+    {
+      "self_ref": "#/groups/9",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [
+        {
+          "$ref": "#/texts/34"
+        },
+        {
+          "$ref": "#/texts/35"
+        },
+        {
+          "$ref": "#/texts/36"
+        }
+      ],
+      "content_layer": "body",
+      "name": "group",
+      "label": "inline"
+    },
+    {
+      "self_ref": "#/groups/10",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [
+        {
+          "$ref": "#/texts/39"
+        },
+        {
+          "$ref": "#/texts/40"
+        },
+        {
+          "$ref": "#/texts/41"
+        },
+        {
+          "$ref": "#/texts/42"
+        },
+        {
+          "$ref": "#/texts/43"
+        },
+        {
+          "$ref": "#/texts/44"
+        },
+        {
+          "$ref": "#/texts/45"
+        },
+        {
+          "$ref": "#/texts/46"
+        },
+        {
+          "$ref": "#/texts/47"
+        },
+        {
+          "$ref": "#/texts/48"
+        },
+        {
+          "$ref": "#/texts/49"
+        },
+        {
+          "$ref": "#/texts/50"
+        },
+        {
+          "$ref": "#/texts/51"
+        }
+      ],
+      "content_layer": "body",
+      "name": "group",
+      "label": "inline"
+    },
+    {
+      "self_ref": "#/groups/11",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [
+        {
+          "$ref": "#/texts/52"
+        },
+        {
+          "$ref": "#/texts/53"
+        },
+        {
+          "$ref": "#/texts/54"
+        },
+        {
+          "$ref": "#/texts/55"
+        },
+        {
+          "$ref": "#/texts/56"
+        }
+      ],
+      "content_layer": "body",
+      "name": "group",
+      "label": "inline"
+    },
+    {
+      "self_ref": "#/groups/12",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [
+        {
+          "$ref": "#/texts/59"
+        },
+        {
+          "$ref": "#/texts/62"
+        }
+      ],
+      "content_layer": "body",
+      "name": "list",
+      "label": "list"
+    },
+    {
+      "self_ref": "#/groups/13",
+      "parent": {
+        "$ref": "#/texts/59"
+      },
+      "children": [
+        {
+          "$ref": "#/texts/60"
+        },
+        {
+          "$ref": "#/texts/61"
+        }
+      ],
+      "content_layer": "body",
+      "name": "group",
+      "label": "inline"
+    },
+    {
+      "self_ref": "#/groups/14",
+      "parent": {
+        "$ref": "#/texts/62"
+      },
+      "children": [
+        {
+          "$ref": "#/texts/63"
+        },
+        {
+          "$ref": "#/texts/64"
+        }
+      ],
+      "content_layer": "body",
+      "name": "group",
+      "label": "inline"
+    },
+    {
+      "self_ref": "#/groups/15",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [
+        {
+          "$ref": "#/texts/68"
+        },
+        {
+          "$ref": "#/texts/69"
+        }
+      ],
+      "content_layer": "body",
+      "name": "list",
+      "label": "list"
+    },
+    {
+      "self_ref": "#/groups/16",
+      "parent": {
+        "$ref": "#/texts/86"
+      },
+      "children": [
+        {
+          "$ref": "#/texts/87"
+        },
+        {
+          "$ref": "#/texts/88"
+        }
+      ],
+      "content_layer": "body",
+      "name": "group",
+      "label": "inline"
+    },
+    {
+      "self_ref": "#/groups/17",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [
+        {
+          "$ref": "#/texts/89"
+        },
+        {
+          "$ref": "#/texts/90"
+        },
+        {
+          "$ref": "#/texts/91"
+        },
+        {
+          "$ref": "#/texts/92"
+        },
+        {
+          "$ref": "#/texts/93"
+        },
+        {
+          "$ref": "#/texts/94"
+        },
+        {
+          "$ref": "#/texts/95"
+        },
+        {
+          "$ref": "#/texts/96"
+        },
+        {
+          "$ref": "#/texts/97"
+        },
+        {
+          "$ref": "#/texts/98"
+        },
+        {
+          "$ref": "#/texts/99"
+        },
+        {
+          "$ref": "#/texts/100"
+        },
+        {
+          "$ref": "#/texts/101"
+        }
+      ],
+      "content_layer": "body",
+      "name": "group",
+      "label": "inline"
+    },
+    {
+      "self_ref": "#/groups/18",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [
+        {
+          "$ref": "#/texts/102"
+        },
+        {
+          "$ref": "#/texts/103"
+        },
+        {
+          "$ref": "#/texts/104"
+        },
+        {
+          "$ref": "#/texts/105"
+        }
+      ],
+      "content_layer": "body",
+      "name": "group",
+      "label": "inline"
+    },
+    {
+      "self_ref": "#/groups/19",
+      "parent": {
+        "$ref": "#/texts/108"
+      },
+      "children": [
+        {
+          "$ref": "#/texts/109"
+        },
+        {
+          "$ref": "#/texts/110"
+        }
+      ],
+      "content_layer": "body",
+      "name": "group",
+      "label": "inline"
+    },
+    {
+      "self_ref": "#/groups/20",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [
+        {
+          "$ref": "#/texts/111"
+        },
+        {
+          "$ref": "#/texts/112"
+        },
+        {
+          "$ref": "#/texts/113"
+        },
+        {
+          "$ref": "#/texts/114"
+        },
+        {
+          "$ref": "#/texts/115"
+        },
+        {
+          "$ref": "#/texts/116"
+        },
+        {
+          "$ref": "#/texts/117"
+        }
+      ],
+      "content_layer": "body",
+      "name": "group",
+      "label": "inline"
+    },
+    {
+      "self_ref": "#/groups/21",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [
+        {
+          "$ref": "#/texts/118"
+        },
+        {
+          "$ref": "#/texts/119"
+        },
+        {
+          "$ref": "#/texts/120"
+        },
+        {
+          "$ref": "#/texts/121"
+        },
+        {
+          "$ref": "#/texts/122"
+        },
+        {
+          "$ref": "#/texts/123"
+        }
+      ],
+      "content_layer": "body",
+      "name": "group",
+      "label": "inline"
+    },
+    {
+      "self_ref": "#/groups/22",
+      "parent": {
+        "$ref": "#/texts/126"
+      },
+      "children": [
+        {
+          "$ref": "#/texts/127"
+        },
+        {
+          "$ref": "#/texts/128"
+        }
+      ],
+      "content_layer": "body",
+      "name": "group",
+      "label": "inline"
+    },
+    {
+      "self_ref": "#/groups/23",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [
+        {
+          "$ref": "#/texts/129"
+        },
+        {
+          "$ref": "#/texts/130"
+        },
+        {
+          "$ref": "#/texts/131"
+        },
+        {
+          "$ref": "#/texts/132"
+        },
+        {
+          "$ref": "#/texts/133"
+        }
+      ],
+      "content_layer": "body",
+      "name": "group",
+      "label": "inline"
+    },
+    {
+      "self_ref": "#/groups/24",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [
+        {
+          "$ref": "#/texts/134"
+        },
+        {
+          "$ref": "#/texts/140"
+        },
+        {
+          "$ref": "#/texts/148"
+        }
+      ],
+      "content_layer": "body",
+      "name": "list",
+      "label": "list"
+    },
+    {
+      "self_ref": "#/groups/25",
+      "parent": {
+        "$ref": "#/texts/134"
+      },
+      "children": [
+        {
+          "$ref": "#/texts/135"
+        },
+        {
+          "$ref": "#/texts/136"
+        },
+        {
+          "$ref": "#/texts/137"
+        },
+        {
+          "$ref": "#/texts/138"
+        },
+        {
+          "$ref": "#/texts/139"
+        }
+      ],
+      "content_layer": "body",
+      "name": "group",
+      "label": "inline"
+    },
+    {
+      "self_ref": "#/groups/26",
+      "parent": {
+        "$ref": "#/texts/140"
+      },
+      "children": [
+        {
+          "$ref": "#/texts/141"
+        },
+        {
+          "$ref": "#/texts/142"
+        },
+        {
+          "$ref": "#/texts/143"
+        },
+        {
+          "$ref": "#/texts/144"
+        },
+        {
+          "$ref": "#/texts/145"
+        },
+        {
+          "$ref": "#/texts/146"
+        },
+        {
+          "$ref": "#/texts/147"
+        }
+      ],
+      "content_layer": "body",
+      "name": "group",
+      "label": "inline"
+    },
+    {
+      "self_ref": "#/groups/27",
+      "parent": {
+        "$ref": "#/texts/148"
+      },
+      "children": [
+        {
+          "$ref": "#/texts/149"
+        },
+        {
+          "$ref": "#/texts/150"
+        },
+        {
+          "$ref": "#/texts/151"
+        },
+        {
+          "$ref": "#/texts/152"
+        },
+        {
+          "$ref": "#/texts/153"
+        }
+      ],
+      "content_layer": "body",
+      "name": "group",
+      "label": "inline"
+    },
+    {
+      "self_ref": "#/groups/28",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [
+        {
+          "$ref": "#/texts/154"
+        },
+        {
+          "$ref": "#/texts/155"
+        },
+        {
+          "$ref": "#/texts/156"
+        },
+        {
+          "$ref": "#/texts/157"
+        },
+        {
+          "$ref": "#/texts/158"
+        },
+        {
+          "$ref": "#/texts/159"
+        },
+        {
+          "$ref": "#/texts/160"
+        },
+        {
+          "$ref": "#/texts/161"
+        },
+        {
+          "$ref": "#/texts/162"
+        },
+        {
+          "$ref": "#/texts/163"
+        },
+        {
+          "$ref": "#/texts/164"
+        },
+        {
+          "$ref": "#/texts/165"
+        },
+        {
+          "$ref": "#/texts/166"
+        },
+        {
+          "$ref": "#/texts/167"
+        },
+        {
+          "$ref": "#/texts/168"
+        },
+        {
+          "$ref": "#/texts/169"
+        }
+      ],
+      "content_layer": "body",
+      "name": "group",
+      "label": "inline"
+    },
+    {
+      "self_ref": "#/groups/29",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [
+        {
+          "$ref": "#/texts/170"
+        },
+        {
+          "$ref": "#/texts/171"
+        },
+        {
+          "$ref": "#/texts/172"
+        },
+        {
+          "$ref": "#/texts/173"
+        }
+      ],
+      "content_layer": "body",
+      "name": "group",
+      "label": "inline"
+    }
+  ],
+  "texts": [
+    {
+      "self_ref": "#/texts/0",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "title",
+      "prov": [],
+      "orig": "Programming Assignment: Анализ изображений",
+      "text": "Programming Assignment: Анализ изображений"
+    },
+    {
+      "self_ref": "#/texts/1",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "Задача заключается в том, чтобы применить предобученную на imagenet нейронную сеть на практической задаче классификации автомобилей.",
+      "text": "Задача заключается в том, чтобы применить предобученную на imagenet нейронную сеть на практической задаче классификации автомобилей."
+    },
+    {
+      "self_ref": "#/texts/2",
+      "parent": {
+        "$ref": "#/groups/0"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "Учиться применять нейронные сети для анализа изображений мы будем на библиотеке TensorFlow. Это известный опенсорсный проект, разработанный инженерами Google Brain Team. Подробнее почитать о TensorFlow можно на официальном сайте, на",
+      "text": "Учиться применять нейронные сети для анализа изображений мы будем на библиотеке TensorFlow. Это известный опенсорсный проект, разработанный инженерами Google Brain Team. Подробнее почитать о TensorFlow можно на официальном сайте, на"
+    },
+    {
+      "self_ref": "#/texts/3",
+      "parent": {
+        "$ref": "#/groups/0"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "гитхабе",
+      "text": "гитхабе",
+      "hyperlink": "https://github.com/tensorflow/tensorflow"
+    },
+    {
+      "self_ref": "#/texts/4",
+      "parent": {
+        "$ref": "#/groups/0"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "или",
+      "text": "или"
+    },
+    {
+      "self_ref": "#/texts/5",
+      "parent": {
+        "$ref": "#/groups/0"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "на хабре",
+      "text": "на хабре",
+      "hyperlink": "https://habrahabr.ru/post/270543/"
+    },
+    {
+      "self_ref": "#/texts/6",
+      "parent": {
+        "$ref": "#/groups/0"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": ".",
+      "text": "."
+    },
+    {
+      "self_ref": "#/texts/7",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "section_header",
+      "prov": [],
+      "orig": "Установка окружения",
+      "text": "Установка окружения",
+      "level": 2
+    },
+    {
+      "self_ref": "#/texts/8",
+      "parent": {
+        "$ref": "#/groups/1"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "В первую очередь нам будет необходимо установить",
+      "text": "В первую очередь нам будет необходимо установить"
+    },
+    {
+      "self_ref": "#/texts/9",
+      "parent": {
+        "$ref": "#/groups/1"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "TensorFlow",
+      "text": "TensorFlow",
+      "formatting": {
+        "bold": true,
+        "italic": false,
+        "underline": false,
+        "strikethrough": false,
+        "script": "baseline"
+      }
+    },
+    {
+      "self_ref": "#/texts/10",
+      "parent": {
+        "$ref": "#/groups/1"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": ".",
+      "text": "."
+    },
+    {
+      "self_ref": "#/texts/11",
+      "parent": {
+        "$ref": "#/groups/2"
+      },
+      "children": [
+        {
+          "$ref": "#/groups/3"
+        }
+      ],
+      "content_layer": "body",
+      "label": "list_item",
+      "prov": [],
+      "orig": "",
+      "text": "",
+      "enumerated": false,
+      "marker": ""
+    },
+    {
+      "self_ref": "#/texts/12",
+      "parent": {
+        "$ref": "#/groups/3"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "Инструкции по установке на сайте",
+      "text": "Инструкции по установке на сайте",
+      "hyperlink": "https://www.tensorflow.org/versions/r0.10/get_started/os_setup.html#download-and-setup"
+    },
+    {
+      "self_ref": "#/texts/13",
+      "parent": {
+        "$ref": "#/groups/3"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": ".",
+      "text": "."
+    },
+    {
+      "self_ref": "#/texts/14",
+      "parent": {
+        "$ref": "#/groups/2"
+      },
+      "children": [
+        {
+          "$ref": "#/groups/4"
+        }
+      ],
+      "content_layer": "body",
+      "label": "list_item",
+      "prov": [],
+      "orig": "",
+      "text": "",
+      "enumerated": false,
+      "marker": ""
+    },
+    {
+      "self_ref": "#/texts/15",
+      "parent": {
+        "$ref": "#/groups/4"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "Если есть опыт работы с Docker, то можно воспользоваться готовым",
+      "text": "Если есть опыт работы с Docker, то можно воспользоваться готовым"
+    },
+    {
+      "self_ref": "#/texts/16",
+      "parent": {
+        "$ref": "#/groups/4"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "докер-контейнером с тензорфлоу",
+      "text": "докер-контейнером с тензорфлоу",
+      "hyperlink": "https://www.tensorflow.org/versions/r0.10/get_started/os_setup.html#docker-installation"
+    },
+    {
+      "self_ref": "#/texts/17",
+      "parent": {
+        "$ref": "#/groups/4"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": ".",
+      "text": "."
+    },
+    {
+      "self_ref": "#/texts/18",
+      "parent": {
+        "$ref": "#/groups/5"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "Важно!",
+      "text": "Важно!",
+      "formatting": {
+        "bold": true,
+        "italic": false,
+        "underline": false,
+        "strikethrough": false,
+        "script": "baseline"
+      }
+    },
+    {
+      "self_ref": "#/texts/19",
+      "parent": {
+        "$ref": "#/groups/5"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "Если вы пользователь Windows, то уставить tensorflow напрямую, к сожалению, не получится:",
+      "text": "Если вы пользователь Windows, то уставить tensorflow напрямую, к сожалению, не получится:"
+    },
+    {
+      "self_ref": "#/texts/20",
+      "parent": {
+        "$ref": "#/groups/6"
+      },
+      "children": [
+        {
+          "$ref": "#/groups/7"
+        }
+      ],
+      "content_layer": "body",
+      "label": "list_item",
+      "prov": [],
+      "orig": "",
+      "text": "",
+      "enumerated": false,
+      "marker": ""
+    },
+    {
+      "self_ref": "#/texts/21",
+      "parent": {
+        "$ref": "#/groups/7"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "для пользователей Windows 10 (и выше) нужно использовать",
+      "text": "для пользователей Windows 10 (и выше) нужно использовать"
+    },
+    {
+      "self_ref": "#/texts/22",
+      "parent": {
+        "$ref": "#/groups/7"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "Docker",
+      "text": "Docker",
+      "formatting": {
+        "bold": true,
+        "italic": false,
+        "underline": false,
+        "strikethrough": false,
+        "script": "baseline"
+      }
+    },
+    {
+      "self_ref": "#/texts/23",
+      "parent": {
+        "$ref": "#/groups/7"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "(",
+      "text": "("
+    },
+    {
+      "self_ref": "#/texts/24",
+      "parent": {
+        "$ref": "#/groups/7"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "ссылка на дистрибутив",
+      "text": "ссылка на дистрибутив",
+      "hyperlink": "https://www.docker.com/products/docker#/windows"
+    },
+    {
+      "self_ref": "#/texts/25",
+      "parent": {
+        "$ref": "#/groups/7"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": ");",
+      "text": ");"
+    },
+    {
+      "self_ref": "#/texts/26",
+      "parent": {
+        "$ref": "#/groups/6"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "list_item",
+      "prov": [],
+      "orig": "если у вас Windows старше версии 10, то и вариант с докером не подойдет — он не установится. В таком случае советуем установить линукс на локальную машину как еще одну операционную систему (поможет избежать страданий в будущем при работе с некоторыми библиотеками для ML).",
+      "text": "если у вас Windows старше версии 10, то и вариант с докером не подойдет — он не установится. В таком случае советуем установить линукс на локальную машину как еще одну операционную систему (поможет избежать страданий в будущем при работе с некоторыми библиотеками для ML).",
+      "enumerated": false,
+      "marker": ""
+    },
+    {
+      "self_ref": "#/texts/27",
+      "parent": {
+        "$ref": "#/groups/8"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "Если же поставить Tensorflow на вашу машину никак не получается, мы предлагаем воспользоваться одним из облачных сервисов, в который необходимо установить линукс-образ. Самые популярные облачные сервисы",
+      "text": "Если же поставить Tensorflow на вашу машину никак не получается, мы предлагаем воспользоваться одним из облачных сервисов, в который необходимо установить линукс-образ. Самые популярные облачные сервисы"
+    },
+    {
+      "self_ref": "#/texts/28",
+      "parent": {
+        "$ref": "#/groups/8"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "AWS",
+      "text": "AWS",
+      "hyperlink": "https://aws.amazon.com/"
+    },
+    {
+      "self_ref": "#/texts/29",
+      "parent": {
+        "$ref": "#/groups/8"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "и",
+      "text": "и"
+    },
+    {
+      "self_ref": "#/texts/30",
+      "parent": {
+        "$ref": "#/groups/8"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "DigitalOcean",
+      "text": "DigitalOcean",
+      "hyperlink": "http://digitalocean.com/"
+    },
+    {
+      "self_ref": "#/texts/31",
+      "parent": {
+        "$ref": "#/groups/8"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "предоставляют бесплатные инстансы (имейте в виду, что для того, чтобы ими воспользоваться, нужно будет привязать кредитную карту).",
+      "text": "предоставляют бесплатные инстансы (имейте в виду, что для того, чтобы ими воспользоваться, нужно будет привязать кредитную карту)."
+    },
+    {
+      "self_ref": "#/texts/32",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "Чтобы освоить компьютерное зрение (или другие интересные задачи из области ML и AI), так или иначе придётся научиться работать с библиотеками нейронных сетей, линуксом и виртуальными серверами. Например, для более масштабных практических задач, крайне необходимы сервера с GPU, а с ними уже локально работать не получиться.",
+      "text": "Чтобы освоить компьютерное зрение (или другие интересные задачи из области ML и AI), так или иначе придётся научиться работать с библиотеками нейронных сетей, линуксом и виртуальными серверами. Например, для более масштабных практических задач, крайне необходимы сервера с GPU, а с ними уже локально работать не получиться."
+    },
+    {
+      "self_ref": "#/texts/33",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "Тем не менее, мы понимаем, что в силу временных ограничений курса кто-то может успеть установить TensorFlow. Поэтому мы сделали пункты 1 и 2 необязательными. На оценку они не повлияют — можете сразу переходить к третьему пункту.",
+      "text": "Тем не менее, мы понимаем, что в силу временных ограничений курса кто-то может успеть установить TensorFlow. Поэтому мы сделали пункты 1 и 2 необязательными. На оценку они не повлияют — можете сразу переходить к третьему пункту."
+    },
+    {
+      "self_ref": "#/texts/34",
+      "parent": {
+        "$ref": "#/groups/9"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "Помимо tensorflow, потребуется библиотека",
+      "text": "Помимо tensorflow, потребуется библиотека"
+    },
+    {
+      "self_ref": "#/texts/35",
+      "parent": {
+        "$ref": "#/groups/9"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "code",
+      "prov": [],
+      "orig": "scipy",
+      "text": "scipy",
+      "formatting": {
+        "bold": true,
+        "italic": false,
+        "underline": false,
+        "strikethrough": false,
+        "script": "baseline"
+      },
+      "captions": [],
+      "references": [],
+      "footnotes": [],
+      "code_language": "unknown"
+    },
+    {
+      "self_ref": "#/texts/36",
+      "parent": {
+        "$ref": "#/groups/9"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": ". Если вы уже работали с Anaconda и/или выполняли задания в нашей специализации, то она должна присутствовать.",
+      "text": ". Если вы уже работали с Anaconda и/или выполняли задания в нашей специализации, то она должна присутствовать."
+    },
+    {
+      "self_ref": "#/texts/37",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "section_header",
+      "prov": [],
+      "orig": "Данные",
+      "text": "Данные",
+      "level": 1
+    },
+    {
+      "self_ref": "#/texts/38",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "Скачать данные нужно тут: https://yadi.sk/d/6m_KbM4HvmLfs",
+      "text": "Скачать данные нужно тут: https://yadi.sk/d/6m_KbM4HvmLfs"
+    },
+    {
+      "self_ref": "#/texts/39",
+      "parent": {
+        "$ref": "#/groups/10"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "Данные это часть выборки",
+      "text": "Данные это часть выборки"
+    },
+    {
+      "self_ref": "#/texts/40",
+      "parent": {
+        "$ref": "#/groups/10"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "Cars Dataset",
+      "text": "Cars Dataset",
+      "formatting": {
+        "bold": false,
+        "italic": true,
+        "underline": false,
+        "strikethrough": false,
+        "script": "baseline"
+      }
+    },
+    {
+      "self_ref": "#/texts/41",
+      "parent": {
+        "$ref": "#/groups/10"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "(",
+      "text": "("
+    },
+    {
+      "self_ref": "#/texts/42",
+      "parent": {
+        "$ref": "#/groups/10"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "link",
+      "text": "link",
+      "hyperlink": "http://ai.stanford.edu/~jkrause/cars/car_dataset.html"
+    },
+    {
+      "self_ref": "#/texts/43",
+      "parent": {
+        "$ref": "#/groups/10"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "). Исходный датасет содержит 16,185 изображений автомобилей, принадлежащих к 196 классам. Данные разделены на 8,144 тренировочных и 8,041 тестовых изображений, при этом каждый класс разделён приблизительно поровну между тестом и трейном. Все классы уровня параметров",
+      "text": "). Исходный датасет содержит 16,185 изображений автомобилей, принадлежащих к 196 классам. Данные разделены на 8,144 тренировочных и 8,041 тестовых изображений, при этом каждый класс разделён приблизительно поровну между тестом и трейном. Все классы уровня параметров"
+    },
+    {
+      "self_ref": "#/texts/44",
+      "parent": {
+        "$ref": "#/groups/10"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "Марка",
+      "text": "Марка",
+      "formatting": {
+        "bold": false,
+        "italic": true,
+        "underline": false,
+        "strikethrough": false,
+        "script": "baseline"
+      }
+    },
+    {
+      "self_ref": "#/texts/45",
+      "parent": {
+        "$ref": "#/groups/10"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": ",",
+      "text": ","
+    },
+    {
+      "self_ref": "#/texts/46",
+      "parent": {
+        "$ref": "#/groups/10"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "Год",
+      "text": "Год",
+      "formatting": {
+        "bold": false,
+        "italic": true,
+        "underline": false,
+        "strikethrough": false,
+        "script": "baseline"
+      }
+    },
+    {
+      "self_ref": "#/texts/47",
+      "parent": {
+        "$ref": "#/groups/10"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": ",",
+      "text": ","
+    },
+    {
+      "self_ref": "#/texts/48",
+      "parent": {
+        "$ref": "#/groups/10"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "Модель",
+      "text": "Модель",
+      "formatting": {
+        "bold": false,
+        "italic": true,
+        "underline": false,
+        "strikethrough": false,
+        "script": "baseline"
+      }
+    },
+    {
+      "self_ref": "#/texts/49",
+      "parent": {
+        "$ref": "#/groups/10"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "и др. (например,",
+      "text": "и др. (например,"
+    },
+    {
+      "self_ref": "#/texts/50",
+      "parent": {
+        "$ref": "#/groups/10"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "2012 Tesla Model S or 2012 BMW M3 coupe",
+      "text": "2012 Tesla Model S or 2012 BMW M3 coupe",
+      "formatting": {
+        "bold": false,
+        "italic": true,
+        "underline": false,
+        "strikethrough": false,
+        "script": "baseline"
+      }
+    },
+    {
+      "self_ref": "#/texts/51",
+      "parent": {
+        "$ref": "#/groups/10"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": ").",
+      "text": ")."
+    },
+    {
+      "self_ref": "#/texts/52",
+      "parent": {
+        "$ref": "#/groups/11"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "В нашем же случае в",
+      "text": "В нашем же случае в"
+    },
+    {
+      "self_ref": "#/texts/53",
+      "parent": {
+        "$ref": "#/groups/11"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "code",
+      "prov": [],
+      "orig": "train",
+      "text": "train",
+      "captions": [],
+      "references": [],
+      "footnotes": [],
+      "code_language": "unknown"
+    },
+    {
+      "self_ref": "#/texts/54",
+      "parent": {
+        "$ref": "#/groups/11"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "204 изображения, и в",
+      "text": "204 изображения, и в"
+    },
+    {
+      "self_ref": "#/texts/55",
+      "parent": {
+        "$ref": "#/groups/11"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "code",
+      "prov": [],
+      "orig": "test",
+      "text": "test",
+      "captions": [],
+      "references": [],
+      "footnotes": [],
+      "code_language": "unknown"
+    },
+    {
+      "self_ref": "#/texts/56",
+      "parent": {
+        "$ref": "#/groups/11"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "— 202 изображения.",
+      "text": "— 202 изображения."
+    },
+    {
+      "self_ref": "#/texts/57",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "section_header",
+      "prov": [],
+      "orig": "Что делать",
+      "text": "Что делать",
+      "level": 1
+    },
+    {
+      "self_ref": "#/texts/58",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "Помимо данных, потребуется скачать:",
+      "text": "Помимо данных, потребуется скачать:"
+    },
+    {
+      "self_ref": "#/texts/59",
+      "parent": {
+        "$ref": "#/groups/12"
+      },
+      "children": [
+        {
+          "$ref": "#/groups/13"
+        }
+      ],
+      "content_layer": "body",
+      "label": "list_item",
+      "prov": [],
+      "orig": "",
+      "text": "",
+      "enumerated": false,
+      "marker": ""
+    },
+    {
+      "self_ref": "#/texts/60",
+      "parent": {
+        "$ref": "#/groups/13"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "код",
+      "text": "код",
+      "hyperlink": "https://github.com/ton4eg/coursera_pa"
+    },
+    {
+      "self_ref": "#/texts/61",
+      "parent": {
+        "$ref": "#/groups/13"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": ",",
+      "text": ","
+    },
+    {
+      "self_ref": "#/texts/62",
+      "parent": {
+        "$ref": "#/groups/12"
+      },
+      "children": [
+        {
+          "$ref": "#/groups/14"
+        }
+      ],
+      "content_layer": "body",
+      "label": "list_item",
+      "prov": [],
+      "orig": "",
+      "text": "",
+      "enumerated": false,
+      "marker": ""
+    },
+    {
+      "self_ref": "#/texts/63",
+      "parent": {
+        "$ref": "#/groups/14"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "веса модели",
+      "text": "веса модели"
+    },
+    {
+      "self_ref": "#/texts/64",
+      "parent": {
+        "$ref": "#/groups/14"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "по ссылке",
+      "text": "по ссылке",
+      "hyperlink": "https://yadi.sk/d/9-3kXyxRvnBwh"
+    },
+    {
+      "self_ref": "#/texts/65",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "Положите данные, код и модель в одну папку. У вас должна получиться такая структура:",
+      "text": "Положите данные, код и модель в одну папку. У вас должна получиться такая структура:"
+    },
+    {
+      "self_ref": "#/texts/66",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "code",
+      "prov": [],
+      "orig": "/assignment-computer-vision/\n|\n|-- test              # папки  \n|    `---- ...        # с\n|-- train             # картинками\n|    `---- ...\n|\n|-- class_names.txt   # имена классов, номер строки соответствует id класса\n|-- results.txt       # соответствие имя картинки — id класса\n|-- vgg16_weights.npz # веса модели в формате tensorflow\n|\n|-- vgg16.py            # основной скрипт\n|-- imagenet_classes.py \n|\n`-- beach.jpg         # картиночка с пляжем",
+      "text": "/assignment-computer-vision/\n|\n|-- test              # папки  \n|    `---- ...        # с\n|-- train             # картинками\n|    `---- ...\n|\n|-- class_names.txt   # имена классов, номер строки соответствует id класса\n|-- results.txt       # соответствие имя картинки — id класса\n|-- vgg16_weights.npz # веса модели в формате tensorflow\n|\n|-- vgg16.py            # основной скрипт\n|-- imagenet_classes.py \n|\n`-- beach.jpg         # картиночка с пляжем",
+      "captions": [],
+      "references": [],
+      "footnotes": [],
+      "code_language": "unknown"
+    },
+    {
+      "self_ref": "#/texts/67",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "section_header",
+      "prov": [],
+      "orig": "Запуск из Docker gcr.io/tensorflow/tensorflow",
+      "text": "Запуск из Docker gcr.io/tensorflow/tensorflow",
+      "level": 1
+    },
+    {
+      "self_ref": "#/texts/68",
+      "parent": {
+        "$ref": "#/groups/15"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "list_item",
+      "prov": [],
+      "orig": "докер запускает Jupyter Notebook с рабочей папкой /notebooks",
+      "text": "докер запускает Jupyter Notebook с рабочей папкой /notebooks",
+      "enumerated": false,
+      "marker": ""
+    },
+    {
+      "self_ref": "#/texts/69",
+      "parent": {
+        "$ref": "#/groups/15"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "list_item",
+      "prov": [],
+      "orig": "в докере не хватает библиотек sklearn и Pillow",
+      "text": "в докере не хватает библиотек sklearn и Pillow",
+      "enumerated": false,
+      "marker": ""
+    },
+    {
+      "self_ref": "#/texts/70",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "Рекомендуется запускать докер командой",
+      "text": "Рекомендуется запускать докер командой"
+    },
+    {
+      "self_ref": "#/texts/71",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "docker run -it -p 127.0.0.1:8888:8888 -v $PWD:/notebooks gcr.io/tensorflow/tensorflow",
+      "text": "docker run -it -p 127.0.0.1:8888:8888 -v $PWD:/notebooks gcr.io/tensorflow/tensorflow"
+    },
+    {
+      "self_ref": "#/texts/72",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "при запуске из папки, где лежит данный ноутбук и все нужные файлы, они сразу окажутся в рабочей папке Jupyter Notebook.",
+      "text": "при запуске из папки, где лежит данный ноутбук и все нужные файлы, они сразу окажутся в рабочей папке Jupyter Notebook."
+    },
+    {
+      "self_ref": "#/texts/73",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "Следующие две ячейки содержат команды, доустанавливающие нужные библиотеки.",
+      "text": "Следующие две ячейки содержат команды, доустанавливающие нужные библиотеки."
+    },
+    {
+      "self_ref": "#/texts/74",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "code",
+      "prov": [],
+      "orig": "!pip install sklearn",
+      "text": "!pip install sklearn",
+      "captions": [],
+      "references": [],
+      "footnotes": [],
+      "code_language": "Python"
+    },
+    {
+      "self_ref": "#/texts/75",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "code",
+      "prov": [],
+      "orig": "!pip install -U pillow",
+      "text": "!pip install -U pillow",
+      "captions": [],
+      "references": [],
+      "footnotes": [],
+      "code_language": "Python"
+    },
+    {
+      "self_ref": "#/texts/76",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "Импортируем всё, что нам нужно для работы.",
+      "text": "Импортируем всё, что нам нужно для работы."
+    },
+    {
+      "self_ref": "#/texts/77",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "code",
+      "prov": [],
+      "orig": "# inspired by\n# http://www.cs.toronto.edu/~frossard/post/vgg16/                               \n# Model from https://gist.github.com/ksimonyan/211839e770f7b538e2d8#file-readme-md     #\n# Weights from Caffe converted using https://github.com/ethereon/caffe-tensorflow      #\n\nimport glob\nimport os\nimport tensorflow as tf\nimport numpy as np\nfrom scipy.misc import imread, imresize\nfrom imagenet_classes import class_names\nimport sys\nfrom sklearn.svm import SVC",
+      "text": "# inspired by\n# http://www.cs.toronto.edu/~frossard/post/vgg16/                               \n# Model from https://gist.github.com/ksimonyan/211839e770f7b538e2d8#file-readme-md     #\n# Weights from Caffe converted using https://github.com/ethereon/caffe-tensorflow      #\n\nimport glob\nimport os\nimport tensorflow as tf\nimport numpy as np\nfrom scipy.misc import imread, imresize\nfrom imagenet_classes import class_names\nimport sys\nfrom sklearn.svm import SVC",
+      "captions": [],
+      "references": [],
+      "footnotes": [],
+      "code_language": "Python"
+    },
+    {
+      "self_ref": "#/texts/78",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "В этом классе содержится описание модели VGG - структура, инициализация, загрузка весов. Следует помнить - пока не запущена сессия Tensorflow, никакой реальной работы не производится.",
+      "text": "В этом классе содержится описание модели VGG - структура, инициализация, загрузка весов. Следует помнить - пока не запущена сессия Tensorflow, никакой реальной работы не производится."
+    },
+    {
+      "self_ref": "#/texts/79",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "code",
+      "prov": [],
+      "orig": "class vgg16:\n    def __init__(self, imgs, weights=None, sess=None):\n        self.imgs = imgs\n        self.convlayers()\n        self.fc_layers()\n        self.probs = tf.nn.softmax(self.fc3l)\n        if weights is not None and sess is not None:\n            self.load_weights(weights, sess)\n\n\n    def convlayers(self):\n        self.parameters = []\n\n        # zero-mean input\n        with tf.name_scope('preprocess') as scope:\n            mean = tf.constant([123.68, 116.779, 103.939], dtype=tf.float32, shape=[1, 1, 1, 3], name='img_mean')\n            images = self.imgs-mean\n\n        # conv1_1\n        with tf.name_scope('conv1_1') as scope:\n            kernel = tf.Variable(tf.truncated_normal([3, 3, 3, 64], dtype=tf.float32,\n                                                     stddev=1e-1), name='weights')\n            conv = tf.nn.conv2d(images, kernel, [1, 1, 1, 1], padding='SAME')\n            biases = tf.Variable(tf.constant(0.0, shape=[64], dtype=tf.float32),\n                                 trainable=True, name='biases')\n            out = tf.nn.bias_add(conv, biases)\n            self.conv1_1 = tf.nn.relu(out, name=scope)\n            self.parameters += [kernel, biases]\n\n        # conv1_2\n        with tf.name_scope('conv1_2') as scope:\n            kernel = tf.Variable(tf.truncated_normal([3, 3, 64, 64], dtype=tf.float32,\n                                                     stddev=1e-1), name='weights')\n            conv = tf.nn.conv2d(self.conv1_1, kernel, [1, 1, 1, 1], padding='SAME')\n            biases = tf.Variable(tf.constant(0.0, shape=[64], dtype=tf.float32),\n                                 trainable=True, name='biases')\n            out = tf.nn.bias_add(conv, biases)\n            self.conv1_2 = tf.nn.relu(out, name=scope)\n            self.parameters += [kernel, biases]\n\n        # pool1\n        self.pool1 = tf.nn.max_pool(self.conv1_2,\n                               ksize=[1, 2, 2, 1],\n                               strides=[1, 2, 2, 1],\n                               padding='SAME',\n                               name='pool1')\n\n        # conv2_1\n        with tf.name_scope('conv2_1') as scope:\n            kernel = tf.Variable(tf.truncated_normal([3, 3, 64, 128], dtype=tf.float32,\n                                                     stddev=1e-1), name='weights')\n            conv = tf.nn.conv2d(self.pool1, kernel, [1, 1, 1, 1], padding='SAME')\n            biases = tf.Variable(tf.constant(0.0, shape=[128], dtype=tf.float32),\n                                 trainable=True, name='biases')\n            out = tf.nn.bias_add(conv, biases)\n            self.conv2_1 = tf.nn.relu(out, name=scope)\n            self.parameters += [kernel, biases]\n\n        # conv2_2\n        with tf.name_scope('conv2_2') as scope:\n            kernel = tf.Variable(tf.truncated_normal([3, 3, 128, 128], dtype=tf.float32,\n                                                     stddev=1e-1), name='weights')\n            conv = tf.nn.conv2d(self.conv2_1, kernel, [1, 1, 1, 1], padding='SAME')\n            biases = tf.Variable(tf.constant(0.0, shape=[128], dtype=tf.float32),\n                                 trainable=True, name='biases')\n            out = tf.nn.bias_add(conv, biases)\n            self.conv2_2 = tf.nn.relu(out, name=scope)\n            self.parameters += [kernel, biases]\n\n        # pool2\n        self.pool2 = tf.nn.max_pool(self.conv2_2,\n                               ksize=[1, 2, 2, 1],\n                               strides=[1, 2, 2, 1],\n                               padding='SAME',\n                               name='pool2')\n\n        # conv3_1\n        with tf.name_scope('conv3_1') as scope:\n            kernel = tf.Variable(tf.truncated_normal([3, 3, 128, 256], dtype=tf.float32,\n                                                     stddev=1e-1), name='weights')\n            conv = tf.nn.conv2d(self.pool2, kernel, [1, 1, 1, 1], padding='SAME')\n            biases = tf.Variable(tf.constant(0.0, shape=[256], dtype=tf.float32),\n                                 trainable=True, name='biases')\n            out = tf.nn.bias_add(conv, biases)\n            self.conv3_1 = tf.nn.relu(out, name=scope)\n            self.parameters += [kernel, biases]\n\n        # conv3_2\n        with tf.name_scope('conv3_2') as scope:\n            kernel = tf.Variable(tf.truncated_normal([3, 3, 256, 256], dtype=tf.float32,\n                                                     stddev=1e-1), name='weights')\n            conv = tf.nn.conv2d(self.conv3_1, kernel, [1, 1, 1, 1], padding='SAME')\n            biases = tf.Variable(tf.constant(0.0, shape=[256], dtype=tf.float32),\n                                 trainable=True, name='biases')\n            out = tf.nn.bias_add(conv, biases)\n            self.conv3_2 = tf.nn.relu(out, name=scope)\n            self.parameters += [kernel, biases]\n\n        # conv3_3\n        with tf.name_scope('conv3_3') as scope:\n            kernel = tf.Variable(tf.truncated_normal([3, 3, 256, 256], dtype=tf.float32,\n                                                     stddev=1e-1), name='weights')\n            conv = tf.nn.conv2d(self.conv3_2, kernel, [1, 1, 1, 1], padding='SAME')\n            biases = tf.Variable(tf.constant(0.0, shape=[256], dtype=tf.float32),\n                                 trainable=True, name='biases')\n            out = tf.nn.bias_add(conv, biases)\n            self.conv3_3 = tf.nn.relu(out, name=scope)\n            self.parameters += [kernel, biases]\n\n        # pool3\n        self.pool3 = tf.nn.max_pool(self.conv3_3,\n                               ksize=[1, 2, 2, 1],\n                               strides=[1, 2, 2, 1],\n                               padding='SAME',\n                               name='pool3')\n\n        # conv4_1\n        with tf.name_scope('conv4_1') as scope:\n            kernel = tf.Variable(tf.truncated_normal([3, 3, 256, 512], dtype=tf.float32,\n                                                     stddev=1e-1), name='weights')\n            conv = tf.nn.conv2d(self.pool3, kernel, [1, 1, 1, 1], padding='SAME')\n            biases = tf.Variable(tf.constant(0.0, shape=[512], dtype=tf.float32),\n                                 trainable=True, name='biases')\n            out = tf.nn.bias_add(conv, biases)\n            self.conv4_1 = tf.nn.relu(out, name=scope)\n            self.parameters += [kernel, biases]\n\n        # conv4_2\n        with tf.name_scope('conv4_2') as scope:\n            kernel = tf.Variable(tf.truncated_normal([3, 3, 512, 512], dtype=tf.float32,\n                                                     stddev=1e-1), name='weights')\n            conv = tf.nn.conv2d(self.conv4_1, kernel, [1, 1, 1, 1], padding='SAME')\n            biases = tf.Variable(tf.constant(0.0, shape=[512], dtype=tf.float32),\n                                 trainable=True, name='biases')\n            out = tf.nn.bias_add(conv, biases)\n            self.conv4_2 = tf.nn.relu(out, name=scope)\n            self.parameters += [kernel, biases]\n\n        # conv4_3\n        with tf.name_scope('conv4_3') as scope:\n            kernel = tf.Variable(tf.truncated_normal([3, 3, 512, 512], dtype=tf.float32,\n                                                     stddev=1e-1), name='weights')\n            conv = tf.nn.conv2d(self.conv4_2, kernel, [1, 1, 1, 1], padding='SAME')\n            biases = tf.Variable(tf.constant(0.0, shape=[512], dtype=tf.float32),\n                                 trainable=True, name='biases')\n            out = tf.nn.bias_add(conv, biases)\n            self.conv4_3 = tf.nn.relu(out, name=scope)\n            self.parameters += [kernel, biases]\n\n        # pool4\n        self.pool4 = tf.nn.max_pool(self.conv4_3,\n                               ksize=[1, 2, 2, 1],\n                               strides=[1, 2, 2, 1],\n                               padding='SAME',\n                               name='pool4')\n\n        # conv5_1\n        with tf.name_scope('conv5_1') as scope:\n            kernel = tf.Variable(tf.truncated_normal([3, 3, 512, 512], dtype=tf.float32,\n                                                     stddev=1e-1), name='weights')\n            conv = tf.nn.conv2d(self.pool4, kernel, [1, 1, 1, 1], padding='SAME')\n            biases = tf.Variable(tf.constant(0.0, shape=[512], dtype=tf.float32),\n                                 trainable=True, name='biases')\n            out = tf.nn.bias_add(conv, biases)\n            self.conv5_1 = tf.nn.relu(out, name=scope)\n            self.parameters += [kernel, biases]\n\n        # conv5_2\n        with tf.name_scope('conv5_2') as scope:\n            kernel = tf.Variable(tf.truncated_normal([3, 3, 512, 512], dtype=tf.float32,\n                                                     stddev=1e-1), name='weights')\n            conv = tf.nn.conv2d(self.conv5_1, kernel, [1, 1, 1, 1], padding='SAME')\n            biases = tf.Variable(tf.constant(0.0, shape=[512], dtype=tf.float32),\n                                 trainable=True, name='biases')\n            out = tf.nn.bias_add(conv, biases)\n            self.conv5_2 = tf.nn.relu(out, name=scope)\n            self.parameters += [kernel, biases]\n\n        # conv5_3\n        with tf.name_scope('conv5_3') as scope:\n            kernel = tf.Variable(tf.truncated_normal([3, 3, 512, 512], dtype=tf.float32,\n                                                     stddev=1e-1), name='weights')\n            conv = tf.nn.conv2d(self.conv5_2, kernel, [1, 1, 1, 1], padding='SAME')\n            biases = tf.Variable(tf.constant(0.0, shape=[512], dtype=tf.float32),\n                                 trainable=True, name='biases')\n            out = tf.nn.bias_add(conv, biases)\n            self.conv5_3 = tf.nn.relu(out, name=scope)\n            self.parameters += [kernel, biases]\n\n        # pool5\n        self.pool5 = tf.nn.max_pool(self.conv5_3,\n                               ksize=[1, 2, 2, 1],\n                               strides=[1, 2, 2, 1],\n                               padding='SAME',\n                               name='pool4')\n\n    def fc_layers(self):\n        # fc1\n        with tf.name_scope('fc1') as scope:\n            shape = int(np.prod(self.pool5.get_shape()[1:]))\n            fc1w = tf.Variable(tf.truncated_normal([shape, 4096],\n                                                         dtype=tf.float32,\n                                                         stddev=1e-1), name='weights')\n            fc1b = tf.Variable(tf.constant(1.0, shape=[4096], dtype=tf.float32),\n                                 trainable=True, name='biases')\n            pool5_flat = tf.reshape(self.pool5, [-1, shape])\n            fc1l = tf.nn.bias_add(tf.matmul(pool5_flat, fc1w), fc1b)\n            self.fc1 = tf.nn.relu(fc1l)\n            self.parameters += [fc1w, fc1b]\n\n        # fc2\n        with tf.name_scope('fc2') as scope:\n            fc2w = tf.Variable(tf.truncated_normal([4096, 4096],\n                                                         dtype=tf.float32,\n                                                         stddev=1e-1), name='weights')\n            fc2b = tf.Variable(tf.constant(1.0, shape=[4096], dtype=tf.float32),\n                                 trainable=True, name='biases')\n            fc2l = tf.nn.bias_add(tf.matmul(self.fc1, fc2w), fc2b)\n            self.fc2 = tf.nn.relu(fc2l)\n            self.parameters += [fc2w, fc2b]\n\n        # fc3\n        with tf.name_scope('fc3') as scope:\n            fc3w = tf.Variable(tf.truncated_normal([4096, 1000],\n                                                         dtype=tf.float32,\n                                                         stddev=1e-1), name='weights')\n            fc3b = tf.Variable(tf.constant(1.0, shape=[1000], dtype=tf.float32),\n                                 trainable=True, name='biases')\n            self.fc3l = tf.nn.bias_add(tf.matmul(self.fc2, fc3w), fc3b)\n            self.parameters += [fc3w, fc3b]\n\n    def load_weights(self, weight_file, sess):\n        weights = np.load(weight_file)\n        keys = sorted(weights.keys())\n        for i, k in enumerate(keys):\n            print(i, k, np.shape(weights[k]))\n            sess.run(self.parameters[i].assign(weights[k]))",
+      "text": "class vgg16:\n    def __init__(self, imgs, weights=None, sess=None):\n        self.imgs = imgs\n        self.convlayers()\n        self.fc_layers()\n        self.probs = tf.nn.softmax(self.fc3l)\n        if weights is not None and sess is not None:\n            self.load_weights(weights, sess)\n\n\n    def convlayers(self):\n        self.parameters = []\n\n        # zero-mean input\n        with tf.name_scope('preprocess') as scope:\n            mean = tf.constant([123.68, 116.779, 103.939], dtype=tf.float32, shape=[1, 1, 1, 3], name='img_mean')\n            images = self.imgs-mean\n\n        # conv1_1\n        with tf.name_scope('conv1_1') as scope:\n            kernel = tf.Variable(tf.truncated_normal([3, 3, 3, 64], dtype=tf.float32,\n                                                     stddev=1e-1), name='weights')\n            conv = tf.nn.conv2d(images, kernel, [1, 1, 1, 1], padding='SAME')\n            biases = tf.Variable(tf.constant(0.0, shape=[64], dtype=tf.float32),\n                                 trainable=True, name='biases')\n            out = tf.nn.bias_add(conv, biases)\n            self.conv1_1 = tf.nn.relu(out, name=scope)\n            self.parameters += [kernel, biases]\n\n        # conv1_2\n        with tf.name_scope('conv1_2') as scope:\n            kernel = tf.Variable(tf.truncated_normal([3, 3, 64, 64], dtype=tf.float32,\n                                                     stddev=1e-1), name='weights')\n            conv = tf.nn.conv2d(self.conv1_1, kernel, [1, 1, 1, 1], padding='SAME')\n            biases = tf.Variable(tf.constant(0.0, shape=[64], dtype=tf.float32),\n                                 trainable=True, name='biases')\n            out = tf.nn.bias_add(conv, biases)\n            self.conv1_2 = tf.nn.relu(out, name=scope)\n            self.parameters += [kernel, biases]\n\n        # pool1\n        self.pool1 = tf.nn.max_pool(self.conv1_2,\n                               ksize=[1, 2, 2, 1],\n                               strides=[1, 2, 2, 1],\n                               padding='SAME',\n                               name='pool1')\n\n        # conv2_1\n        with tf.name_scope('conv2_1') as scope:\n            kernel = tf.Variable(tf.truncated_normal([3, 3, 64, 128], dtype=tf.float32,\n                                                     stddev=1e-1), name='weights')\n            conv = tf.nn.conv2d(self.pool1, kernel, [1, 1, 1, 1], padding='SAME')\n            biases = tf.Variable(tf.constant(0.0, shape=[128], dtype=tf.float32),\n                                 trainable=True, name='biases')\n            out = tf.nn.bias_add(conv, biases)\n            self.conv2_1 = tf.nn.relu(out, name=scope)\n            self.parameters += [kernel, biases]\n\n        # conv2_2\n        with tf.name_scope('conv2_2') as scope:\n            kernel = tf.Variable(tf.truncated_normal([3, 3, 128, 128], dtype=tf.float32,\n                                                     stddev=1e-1), name='weights')\n            conv = tf.nn.conv2d(self.conv2_1, kernel, [1, 1, 1, 1], padding='SAME')\n            biases = tf.Variable(tf.constant(0.0, shape=[128], dtype=tf.float32),\n                                 trainable=True, name='biases')\n            out = tf.nn.bias_add(conv, biases)\n            self.conv2_2 = tf.nn.relu(out, name=scope)\n            self.parameters += [kernel, biases]\n\n        # pool2\n        self.pool2 = tf.nn.max_pool(self.conv2_2,\n                               ksize=[1, 2, 2, 1],\n                               strides=[1, 2, 2, 1],\n                               padding='SAME',\n                               name='pool2')\n\n        # conv3_1\n        with tf.name_scope('conv3_1') as scope:\n            kernel = tf.Variable(tf.truncated_normal([3, 3, 128, 256], dtype=tf.float32,\n                                                     stddev=1e-1), name='weights')\n            conv = tf.nn.conv2d(self.pool2, kernel, [1, 1, 1, 1], padding='SAME')\n            biases = tf.Variable(tf.constant(0.0, shape=[256], dtype=tf.float32),\n                                 trainable=True, name='biases')\n            out = tf.nn.bias_add(conv, biases)\n            self.conv3_1 = tf.nn.relu(out, name=scope)\n            self.parameters += [kernel, biases]\n\n        # conv3_2\n        with tf.name_scope('conv3_2') as scope:\n            kernel = tf.Variable(tf.truncated_normal([3, 3, 256, 256], dtype=tf.float32,\n                                                     stddev=1e-1), name='weights')\n            conv = tf.nn.conv2d(self.conv3_1, kernel, [1, 1, 1, 1], padding='SAME')\n            biases = tf.Variable(tf.constant(0.0, shape=[256], dtype=tf.float32),\n                                 trainable=True, name='biases')\n            out = tf.nn.bias_add(conv, biases)\n            self.conv3_2 = tf.nn.relu(out, name=scope)\n            self.parameters += [kernel, biases]\n\n        # conv3_3\n        with tf.name_scope('conv3_3') as scope:\n            kernel = tf.Variable(tf.truncated_normal([3, 3, 256, 256], dtype=tf.float32,\n                                                     stddev=1e-1), name='weights')\n            conv = tf.nn.conv2d(self.conv3_2, kernel, [1, 1, 1, 1], padding='SAME')\n            biases = tf.Variable(tf.constant(0.0, shape=[256], dtype=tf.float32),\n                                 trainable=True, name='biases')\n            out = tf.nn.bias_add(conv, biases)\n            self.conv3_3 = tf.nn.relu(out, name=scope)\n            self.parameters += [kernel, biases]\n\n        # pool3\n        self.pool3 = tf.nn.max_pool(self.conv3_3,\n                               ksize=[1, 2, 2, 1],\n                               strides=[1, 2, 2, 1],\n                               padding='SAME',\n                               name='pool3')\n\n        # conv4_1\n        with tf.name_scope('conv4_1') as scope:\n            kernel = tf.Variable(tf.truncated_normal([3, 3, 256, 512], dtype=tf.float32,\n                                                     stddev=1e-1), name='weights')\n            conv = tf.nn.conv2d(self.pool3, kernel, [1, 1, 1, 1], padding='SAME')\n            biases = tf.Variable(tf.constant(0.0, shape=[512], dtype=tf.float32),\n                                 trainable=True, name='biases')\n            out = tf.nn.bias_add(conv, biases)\n            self.conv4_1 = tf.nn.relu(out, name=scope)\n            self.parameters += [kernel, biases]\n\n        # conv4_2\n        with tf.name_scope('conv4_2') as scope:\n            kernel = tf.Variable(tf.truncated_normal([3, 3, 512, 512], dtype=tf.float32,\n                                                     stddev=1e-1), name='weights')\n            conv = tf.nn.conv2d(self.conv4_1, kernel, [1, 1, 1, 1], padding='SAME')\n            biases = tf.Variable(tf.constant(0.0, shape=[512], dtype=tf.float32),\n                                 trainable=True, name='biases')\n            out = tf.nn.bias_add(conv, biases)\n            self.conv4_2 = tf.nn.relu(out, name=scope)\n            self.parameters += [kernel, biases]\n\n        # conv4_3\n        with tf.name_scope('conv4_3') as scope:\n            kernel = tf.Variable(tf.truncated_normal([3, 3, 512, 512], dtype=tf.float32,\n                                                     stddev=1e-1), name='weights')\n            conv = tf.nn.conv2d(self.conv4_2, kernel, [1, 1, 1, 1], padding='SAME')\n            biases = tf.Variable(tf.constant(0.0, shape=[512], dtype=tf.float32),\n                                 trainable=True, name='biases')\n            out = tf.nn.bias_add(conv, biases)\n            self.conv4_3 = tf.nn.relu(out, name=scope)\n            self.parameters += [kernel, biases]\n\n        # pool4\n        self.pool4 = tf.nn.max_pool(self.conv4_3,\n                               ksize=[1, 2, 2, 1],\n                               strides=[1, 2, 2, 1],\n                               padding='SAME',\n                               name='pool4')\n\n        # conv5_1\n        with tf.name_scope('conv5_1') as scope:\n            kernel = tf.Variable(tf.truncated_normal([3, 3, 512, 512], dtype=tf.float32,\n                                                     stddev=1e-1), name='weights')\n            conv = tf.nn.conv2d(self.pool4, kernel, [1, 1, 1, 1], padding='SAME')\n            biases = tf.Variable(tf.constant(0.0, shape=[512], dtype=tf.float32),\n                                 trainable=True, name='biases')\n            out = tf.nn.bias_add(conv, biases)\n            self.conv5_1 = tf.nn.relu(out, name=scope)\n            self.parameters += [kernel, biases]\n\n        # conv5_2\n        with tf.name_scope('conv5_2') as scope:\n            kernel = tf.Variable(tf.truncated_normal([3, 3, 512, 512], dtype=tf.float32,\n                                                     stddev=1e-1), name='weights')\n            conv = tf.nn.conv2d(self.conv5_1, kernel, [1, 1, 1, 1], padding='SAME')\n            biases = tf.Variable(tf.constant(0.0, shape=[512], dtype=tf.float32),\n                                 trainable=True, name='biases')\n            out = tf.nn.bias_add(conv, biases)\n            self.conv5_2 = tf.nn.relu(out, name=scope)\n            self.parameters += [kernel, biases]\n\n        # conv5_3\n        with tf.name_scope('conv5_3') as scope:\n            kernel = tf.Variable(tf.truncated_normal([3, 3, 512, 512], dtype=tf.float32,\n                                                     stddev=1e-1), name='weights')\n            conv = tf.nn.conv2d(self.conv5_2, kernel, [1, 1, 1, 1], padding='SAME')\n            biases = tf.Variable(tf.constant(0.0, shape=[512], dtype=tf.float32),\n                                 trainable=True, name='biases')\n            out = tf.nn.bias_add(conv, biases)\n            self.conv5_3 = tf.nn.relu(out, name=scope)\n            self.parameters += [kernel, biases]\n\n        # pool5\n        self.pool5 = tf.nn.max_pool(self.conv5_3,\n                               ksize=[1, 2, 2, 1],\n                               strides=[1, 2, 2, 1],\n                               padding='SAME',\n                               name='pool4')\n\n    def fc_layers(self):\n        # fc1\n        with tf.name_scope('fc1') as scope:\n            shape = int(np.prod(self.pool5.get_shape()[1:]))\n            fc1w = tf.Variable(tf.truncated_normal([shape, 4096],\n                                                         dtype=tf.float32,\n                                                         stddev=1e-1), name='weights')\n            fc1b = tf.Variable(tf.constant(1.0, shape=[4096], dtype=tf.float32),\n                                 trainable=True, name='biases')\n            pool5_flat = tf.reshape(self.pool5, [-1, shape])\n            fc1l = tf.nn.bias_add(tf.matmul(pool5_flat, fc1w), fc1b)\n            self.fc1 = tf.nn.relu(fc1l)\n            self.parameters += [fc1w, fc1b]\n\n        # fc2\n        with tf.name_scope('fc2') as scope:\n            fc2w = tf.Variable(tf.truncated_normal([4096, 4096],\n                                                         dtype=tf.float32,\n                                                         stddev=1e-1), name='weights')\n            fc2b = tf.Variable(tf.constant(1.0, shape=[4096], dtype=tf.float32),\n                                 trainable=True, name='biases')\n            fc2l = tf.nn.bias_add(tf.matmul(self.fc1, fc2w), fc2b)\n            self.fc2 = tf.nn.relu(fc2l)\n            self.parameters += [fc2w, fc2b]\n\n        # fc3\n        with tf.name_scope('fc3') as scope:\n            fc3w = tf.Variable(tf.truncated_normal([4096, 1000],\n                                                         dtype=tf.float32,\n                                                         stddev=1e-1), name='weights')\n            fc3b = tf.Variable(tf.constant(1.0, shape=[1000], dtype=tf.float32),\n                                 trainable=True, name='biases')\n            self.fc3l = tf.nn.bias_add(tf.matmul(self.fc2, fc3w), fc3b)\n            self.parameters += [fc3w, fc3b]\n\n    def load_weights(self, weight_file, sess):\n        weights = np.load(weight_file)\n        keys = sorted(weights.keys())\n        for i, k in enumerate(keys):\n            print(i, k, np.shape(weights[k]))\n            sess.run(self.parameters[i].assign(weights[k]))",
+      "captions": [],
+      "references": [],
+      "footnotes": [],
+      "code_language": "Python"
+    },
+    {
+      "self_ref": "#/texts/80",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "code",
+      "prov": [],
+      "orig": "# Функция сохранения в файл ответа, состоящего из одного числа\ndef save_answerNum(fname, number):\n    with open(fname,\"w\") as fout:\n        fout.write(str(number))",
+      "text": "# Функция сохранения в файл ответа, состоящего из одного числа\ndef save_answerNum(fname, number):\n    with open(fname,\"w\") as fout:\n        fout.write(str(number))",
+      "captions": [],
+      "references": [],
+      "footnotes": [],
+      "code_language": "Python"
+    },
+    {
+      "self_ref": "#/texts/81",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "code",
+      "prov": [],
+      "orig": "# Функция сохранения в файл ответа, представленного массивом\ndef save_answerArray(fname,array):\n    with open(fname,\"w\") as fout:\n        fout.write(\" \".join([str(el) for el in array]))",
+      "text": "# Функция сохранения в файл ответа, представленного массивом\ndef save_answerArray(fname,array):\n    with open(fname,\"w\") as fout:\n        fout.write(\" \".join([str(el) for el in array]))",
+      "captions": [],
+      "references": [],
+      "footnotes": [],
+      "code_language": "Python"
+    },
+    {
+      "self_ref": "#/texts/82",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "code",
+      "prov": [],
+      "orig": "# Загрузка словаря из текстового файла. Словарь у нас используется для сохранения меток классов в выборке data.\ndef load_txt(fname):\n    line_dict = {}\n    for line in open(fname):\n        fname, class_id = line.strip().split()\n        line_dict[fname] = class_id\n\n    return line_dict",
+      "text": "# Загрузка словаря из текстового файла. Словарь у нас используется для сохранения меток классов в выборке data.\ndef load_txt(fname):\n    line_dict = {}\n    for line in open(fname):\n        fname, class_id = line.strip().split()\n        line_dict[fname] = class_id\n\n    return line_dict",
+      "captions": [],
+      "references": [],
+      "footnotes": [],
+      "code_language": "Python"
+    },
+    {
+      "self_ref": "#/texts/83",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "code",
+      "prov": [],
+      "orig": "# Функция обработки отдельного изображения, печатает метки TOP-5 классов и уверенность модели в каждом из них.\ndef process_image(fname):\n    img1 = imread(fname, mode='RGB')\n    img1 = imresize(img1, (224, 224))\n    \n    prob = sess.run(vgg.probs, feed_dict={vgg.imgs: [img1]})[0]\n    preds = (np.argsort(prob)[::-1])[0:5]\n    return [(class_names[p], prob[p]) for p in preds]",
+      "text": "# Функция обработки отдельного изображения, печатает метки TOP-5 классов и уверенность модели в каждом из них.\ndef process_image(fname):\n    img1 = imread(fname, mode='RGB')\n    img1 = imresize(img1, (224, 224))\n    \n    prob = sess.run(vgg.probs, feed_dict={vgg.imgs: [img1]})[0]\n    preds = (np.argsort(prob)[::-1])[0:5]\n    return [(class_names[p], prob[p]) for p in preds]",
+      "captions": [],
+      "references": [],
+      "footnotes": [],
+      "code_language": "Python"
+    },
+    {
+      "self_ref": "#/texts/84",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "code",
+      "prov": [],
+      "orig": "# Инициируем TF сессию, и инициализируем модель. На этом шаге модель загружает веса. Веса - это 500Мб в сжатом виде\n# и ~2.5Гб в памяти, процесс их загрузки послойно выводится ниже этой ячейки, и если вы увидите этот вывод ещё раз - \n# у вас неистово кончается память. Остановитесь. Также, не запускайте эту ячейку на выполнение больше одного раза\n# за запуск ядра Jupyter.\nsess = tf.Session()\nimgs = tf.placeholder(tf.float32, [None, 224, 224, 3])\nvgg = vgg16(imgs, 'vgg16_weights.npz', sess)",
+      "text": "# Инициируем TF сессию, и инициализируем модель. На этом шаге модель загружает веса. Веса - это 500Мб в сжатом виде\n# и ~2.5Гб в памяти, процесс их загрузки послойно выводится ниже этой ячейки, и если вы увидите этот вывод ещё раз - \n# у вас неистово кончается память. Остановитесь. Также, не запускайте эту ячейку на выполнение больше одного раза\n# за запуск ядра Jupyter.\nsess = tf.Session()\nimgs = tf.placeholder(tf.float32, [None, 224, 224, 3])\nvgg = vgg16(imgs, 'vgg16_weights.npz', sess)",
+      "captions": [],
+      "references": [],
+      "footnotes": [],
+      "code_language": "Python"
+    },
+    {
+      "self_ref": "#/texts/85",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "Все ячейки выше не нуждаются в модификации для выполнения задания, и необходимы к исполнению только один раз, в порядке следования. Повторный запуск ячейки с инициализацией модели будет сжирать память. Вы предупреждены.",
+      "text": "Все ячейки выше не нуждаются в модификации для выполнения задания, и необходимы к исполнению только один раз, в порядке следования. Повторный запуск ячейки с инициализацией модели будет сжирать память. Вы предупреждены."
+    },
+    {
+      "self_ref": "#/texts/86",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [
+        {
+          "$ref": "#/groups/16"
+        }
+      ],
+      "content_layer": "body",
+      "label": "section_header",
+      "prov": [],
+      "orig": "",
+      "text": "",
+      "level": 1
+    },
+    {
+      "self_ref": "#/texts/87",
+      "parent": {
+        "$ref": "#/groups/16"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "Задание 1",
+      "text": "Задание 1"
+    },
+    {
+      "self_ref": "#/texts/88",
+      "parent": {
+        "$ref": "#/groups/16"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": ".",
+      "text": "."
+    },
+    {
+      "self_ref": "#/texts/89",
+      "parent": {
+        "$ref": "#/groups/17"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "Для начала нужно запустить готовую модель",
+      "text": "Для начала нужно запустить готовую модель"
+    },
+    {
+      "self_ref": "#/texts/90",
+      "parent": {
+        "$ref": "#/groups/17"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "code",
+      "prov": [],
+      "orig": "vgg16",
+      "text": "vgg16",
+      "captions": [],
+      "references": [],
+      "footnotes": [],
+      "code_language": "unknown"
+    },
+    {
+      "self_ref": "#/texts/91",
+      "parent": {
+        "$ref": "#/groups/17"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": ", предобученную на",
+      "text": ", предобученную на"
+    },
+    {
+      "self_ref": "#/texts/92",
+      "parent": {
+        "$ref": "#/groups/17"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "code",
+      "prov": [],
+      "orig": "imagenet",
+      "text": "imagenet",
+      "captions": [],
+      "references": [],
+      "footnotes": [],
+      "code_language": "unknown"
+    },
+    {
+      "self_ref": "#/texts/93",
+      "parent": {
+        "$ref": "#/groups/17"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": ". Модель обучена с помощью",
+      "text": ". Модель обучена с помощью"
+    },
+    {
+      "self_ref": "#/texts/94",
+      "parent": {
+        "$ref": "#/groups/17"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "code",
+      "prov": [],
+      "orig": "caffe",
+      "text": "caffe",
+      "captions": [],
+      "references": [],
+      "footnotes": [],
+      "code_language": "unknown"
+    },
+    {
+      "self_ref": "#/texts/95",
+      "parent": {
+        "$ref": "#/groups/17"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "и сконвертирована в формат",
+      "text": "и сконвертирована в формат"
+    },
+    {
+      "self_ref": "#/texts/96",
+      "parent": {
+        "$ref": "#/groups/17"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "code",
+      "prov": [],
+      "orig": "tensorflow",
+      "text": "tensorflow",
+      "captions": [],
+      "references": [],
+      "footnotes": [],
+      "code_language": "unknown"
+    },
+    {
+      "self_ref": "#/texts/97",
+      "parent": {
+        "$ref": "#/groups/17"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "-",
+      "text": "-"
+    },
+    {
+      "self_ref": "#/texts/98",
+      "parent": {
+        "$ref": "#/groups/17"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "code",
+      "prov": [],
+      "orig": "vgg16_weights.npz",
+      "text": "vgg16_weights.npz",
+      "captions": [],
+      "references": [],
+      "footnotes": [],
+      "code_language": "unknown"
+    },
+    {
+      "self_ref": "#/texts/99",
+      "parent": {
+        "$ref": "#/groups/17"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": ". Скрипт, иллюстрирующий применение этой модели к изображению, возвращает топ-5 классов из",
+      "text": ". Скрипт, иллюстрирующий применение этой модели к изображению, возвращает топ-5 классов из"
+    },
+    {
+      "self_ref": "#/texts/100",
+      "parent": {
+        "$ref": "#/groups/17"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "code",
+      "prov": [],
+      "orig": "imagenet",
+      "text": "imagenet",
+      "captions": [],
+      "references": [],
+      "footnotes": [],
+      "code_language": "unknown"
+    },
+    {
+      "self_ref": "#/texts/101",
+      "parent": {
+        "$ref": "#/groups/17"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "и уверенность в этих классах.",
+      "text": "и уверенность в этих классах."
+    },
+    {
+      "self_ref": "#/texts/102",
+      "parent": {
+        "$ref": "#/groups/18"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "Задание:",
+      "text": "Задание:",
+      "formatting": {
+        "bold": true,
+        "italic": false,
+        "underline": false,
+        "strikethrough": false,
+        "script": "baseline"
+      }
+    },
+    {
+      "self_ref": "#/texts/103",
+      "parent": {
+        "$ref": "#/groups/18"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "Загрузите уверенность для первого класса для изображения",
+      "text": "Загрузите уверенность для первого класса для изображения"
+    },
+    {
+      "self_ref": "#/texts/104",
+      "parent": {
+        "$ref": "#/groups/18"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "code",
+      "prov": [],
+      "orig": "train/00002.jpg",
+      "text": "train/00002.jpg",
+      "captions": [],
+      "references": [],
+      "footnotes": [],
+      "code_language": "unknown"
+    },
+    {
+      "self_ref": "#/texts/105",
+      "parent": {
+        "$ref": "#/groups/18"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "с точностью до 1 знака после запятой в файл с ответом.",
+      "text": "с точностью до 1 знака после запятой в файл с ответом."
+    },
+    {
+      "self_ref": "#/texts/106",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "code",
+      "prov": [],
+      "orig": "# Ваш код здесь\nprob1 = process_image('train/00002.jpg')\nprint(prob1)",
+      "text": "# Ваш код здесь\nprob1 = process_image('train/00002.jpg')\nprint(prob1)",
+      "captions": [],
+      "references": [],
+      "footnotes": [],
+      "code_language": "Python"
+    },
+    {
+      "self_ref": "#/texts/107",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "code",
+      "prov": [],
+      "orig": "ans1 = round(prob1[0][1], 1)\nprint(ans1)\nsave_answerNum(\"vgg16_answer1.txt\", ans1 )",
+      "text": "ans1 = round(prob1[0][1], 1)\nprint(ans1)\nsave_answerNum(\"vgg16_answer1.txt\", ans1 )",
+      "captions": [],
+      "references": [],
+      "footnotes": [],
+      "code_language": "Python"
+    },
+    {
+      "self_ref": "#/texts/108",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [
+        {
+          "$ref": "#/groups/19"
+        }
+      ],
+      "content_layer": "body",
+      "label": "section_header",
+      "prov": [],
+      "orig": "",
+      "text": "",
+      "level": 1
+    },
+    {
+      "self_ref": "#/texts/109",
+      "parent": {
+        "$ref": "#/groups/19"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "Задание 2",
+      "text": "Задание 2"
+    },
+    {
+      "self_ref": "#/texts/110",
+      "parent": {
+        "$ref": "#/groups/19"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": ".",
+      "text": "."
+    },
+    {
+      "self_ref": "#/texts/111",
+      "parent": {
+        "$ref": "#/groups/20"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "Научитесь извлекать",
+      "text": "Научитесь извлекать"
+    },
+    {
+      "self_ref": "#/texts/112",
+      "parent": {
+        "$ref": "#/groups/20"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "code",
+      "prov": [],
+      "orig": "fc2",
+      "text": "fc2",
+      "captions": [],
+      "references": [],
+      "footnotes": [],
+      "code_language": "unknown"
+    },
+    {
+      "self_ref": "#/texts/113",
+      "parent": {
+        "$ref": "#/groups/20"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "слой. Возьмите за основу код",
+      "text": "слой. Возьмите за основу код"
+    },
+    {
+      "self_ref": "#/texts/114",
+      "parent": {
+        "$ref": "#/groups/20"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "code",
+      "prov": [],
+      "orig": "process_image",
+      "text": "process_image",
+      "captions": [],
+      "references": [],
+      "footnotes": [],
+      "code_language": "unknown"
+    },
+    {
+      "self_ref": "#/texts/115",
+      "parent": {
+        "$ref": "#/groups/20"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": ", и модифицируйте, чтобы вместо последнего слоя извлекались выходы",
+      "text": ", и модифицируйте, чтобы вместо последнего слоя извлекались выходы"
+    },
+    {
+      "self_ref": "#/texts/116",
+      "parent": {
+        "$ref": "#/groups/20"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "code",
+      "prov": [],
+      "orig": "fc2",
+      "text": "fc2",
+      "captions": [],
+      "references": [],
+      "footnotes": [],
+      "code_language": "unknown"
+    },
+    {
+      "self_ref": "#/texts/117",
+      "parent": {
+        "$ref": "#/groups/20"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": ".",
+      "text": "."
+    },
+    {
+      "self_ref": "#/texts/118",
+      "parent": {
+        "$ref": "#/groups/21"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "Задание:",
+      "text": "Задание:",
+      "formatting": {
+        "bold": true,
+        "italic": false,
+        "underline": false,
+        "strikethrough": false,
+        "script": "baseline"
+      }
+    },
+    {
+      "self_ref": "#/texts/119",
+      "parent": {
+        "$ref": "#/groups/21"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "Посчитайте",
+      "text": "Посчитайте"
+    },
+    {
+      "self_ref": "#/texts/120",
+      "parent": {
+        "$ref": "#/groups/21"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "code",
+      "prov": [],
+      "orig": "fc2",
+      "text": "fc2",
+      "captions": [],
+      "references": [],
+      "footnotes": [],
+      "code_language": "unknown"
+    },
+    {
+      "self_ref": "#/texts/121",
+      "parent": {
+        "$ref": "#/groups/21"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "для картинки",
+      "text": "для картинки"
+    },
+    {
+      "self_ref": "#/texts/122",
+      "parent": {
+        "$ref": "#/groups/21"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "code",
+      "prov": [],
+      "orig": "train/00002.jpg",
+      "text": "train/00002.jpg",
+      "captions": [],
+      "references": [],
+      "footnotes": [],
+      "code_language": "unknown"
+    },
+    {
+      "self_ref": "#/texts/123",
+      "parent": {
+        "$ref": "#/groups/21"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": ".  Запишите первые 20 компонент.",
+      "text": ".  Запишите первые 20 компонент."
+    },
+    {
+      "self_ref": "#/texts/124",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "code",
+      "prov": [],
+      "orig": "def load_fc2_values(fname):\n    img1 = imread(fname, mode='RGB')\n    img1 = imresize(img1, (224, 224))\n    \n    prob = sess.run(vgg.fc2, feed_dict={vgg.imgs: [img1]})[0]\n    return prob\n    \n\nprob_fc2 = load_fc2_values('train/00002.jpg')",
+      "text": "def load_fc2_values(fname):\n    img1 = imread(fname, mode='RGB')\n    img1 = imresize(img1, (224, 224))\n    \n    prob = sess.run(vgg.fc2, feed_dict={vgg.imgs: [img1]})[0]\n    return prob\n    \n\nprob_fc2 = load_fc2_values('train/00002.jpg')",
+      "captions": [],
+      "references": [],
+      "footnotes": [],
+      "code_language": "Python"
+    },
+    {
+      "self_ref": "#/texts/125",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "code",
+      "prov": [],
+      "orig": "for p in prob_fc2[:20]:\n  print(p)\n# preds = (np.argsort(prob)[::-1])[0:5]\n    # return [(class_names[p], prob[p]) for p in preds]\n   \nsave_answerArray(\"vgg16_answer2.txt\",  prob_fc2[:20] )",
+      "text": "for p in prob_fc2[:20]:\n  print(p)\n# preds = (np.argsort(prob)[::-1])[0:5]\n    # return [(class_names[p], prob[p]) for p in preds]\n   \nsave_answerArray(\"vgg16_answer2.txt\",  prob_fc2[:20] )",
+      "captions": [],
+      "references": [],
+      "footnotes": [],
+      "code_language": "Python"
+    },
+    {
+      "self_ref": "#/texts/126",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [
+        {
+          "$ref": "#/groups/22"
+        }
+      ],
+      "content_layer": "body",
+      "label": "section_header",
+      "prov": [],
+      "orig": "",
+      "text": "",
+      "level": 1
+    },
+    {
+      "self_ref": "#/texts/127",
+      "parent": {
+        "$ref": "#/groups/22"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "Задание 3",
+      "text": "Задание 3"
+    },
+    {
+      "self_ref": "#/texts/128",
+      "parent": {
+        "$ref": "#/groups/22"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": ".",
+      "text": "."
+    },
+    {
+      "self_ref": "#/texts/129",
+      "parent": {
+        "$ref": "#/groups/23"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "Теперь необходимо дообучить классификатор на нашей базе. В качестве бейзлайна предлагается воспользоваться классификатором",
+      "text": "Теперь необходимо дообучить классификатор на нашей базе. В качестве бейзлайна предлагается воспользоваться классификатором"
+    },
+    {
+      "self_ref": "#/texts/130",
+      "parent": {
+        "$ref": "#/groups/23"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "code",
+      "prov": [],
+      "orig": "svm",
+      "text": "svm",
+      "captions": [],
+      "references": [],
+      "footnotes": [],
+      "code_language": "unknown"
+    },
+    {
+      "self_ref": "#/texts/131",
+      "parent": {
+        "$ref": "#/groups/23"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "из пакета",
+      "text": "из пакета"
+    },
+    {
+      "self_ref": "#/texts/132",
+      "parent": {
+        "$ref": "#/groups/23"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "code",
+      "prov": [],
+      "orig": "scipy",
+      "text": "scipy",
+      "captions": [],
+      "references": [],
+      "footnotes": [],
+      "code_language": "unknown"
+    },
+    {
+      "self_ref": "#/texts/133",
+      "parent": {
+        "$ref": "#/groups/23"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": ".",
+      "text": "."
+    },
+    {
+      "self_ref": "#/texts/134",
+      "parent": {
+        "$ref": "#/groups/24"
+      },
+      "children": [
+        {
+          "$ref": "#/groups/25"
+        }
+      ],
+      "content_layer": "body",
+      "label": "list_item",
+      "prov": [],
+      "orig": "",
+      "text": "",
+      "enumerated": false,
+      "marker": ""
+    },
+    {
+      "self_ref": "#/texts/135",
+      "parent": {
+        "$ref": "#/groups/25"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "Модифицировать функцию",
+      "text": "Модифицировать функцию"
+    },
+    {
+      "self_ref": "#/texts/136",
+      "parent": {
+        "$ref": "#/groups/25"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "code",
+      "prov": [],
+      "orig": "get_features",
+      "text": "get_features",
+      "captions": [],
+      "references": [],
+      "footnotes": [],
+      "code_language": "unknown"
+    },
+    {
+      "self_ref": "#/texts/137",
+      "parent": {
+        "$ref": "#/groups/25"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "и добавить возможность вычислять",
+      "text": "и добавить возможность вычислять"
+    },
+    {
+      "self_ref": "#/texts/138",
+      "parent": {
+        "$ref": "#/groups/25"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "code",
+      "prov": [],
+      "orig": "fc2",
+      "text": "fc2",
+      "captions": [],
+      "references": [],
+      "footnotes": [],
+      "code_language": "unknown"
+    },
+    {
+      "self_ref": "#/texts/139",
+      "parent": {
+        "$ref": "#/groups/25"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": ". (Аналогично второму заданию).",
+      "text": ". (Аналогично второму заданию)."
+    },
+    {
+      "self_ref": "#/texts/140",
+      "parent": {
+        "$ref": "#/groups/24"
+      },
+      "children": [
+        {
+          "$ref": "#/groups/26"
+        }
+      ],
+      "content_layer": "body",
+      "label": "list_item",
+      "prov": [],
+      "orig": "",
+      "text": "",
+      "enumerated": false,
+      "marker": ""
+    },
+    {
+      "self_ref": "#/texts/141",
+      "parent": {
+        "$ref": "#/groups/26"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "Применить",
+      "text": "Применить"
+    },
+    {
+      "self_ref": "#/texts/142",
+      "parent": {
+        "$ref": "#/groups/26"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "code",
+      "prov": [],
+      "orig": "get_feautures",
+      "text": "get_feautures",
+      "captions": [],
+      "references": [],
+      "footnotes": [],
+      "code_language": "unknown"
+    },
+    {
+      "self_ref": "#/texts/143",
+      "parent": {
+        "$ref": "#/groups/26"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": ", чтобы получить",
+      "text": ", чтобы получить"
+    },
+    {
+      "self_ref": "#/texts/144",
+      "parent": {
+        "$ref": "#/groups/26"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "code",
+      "prov": [],
+      "orig": "X_test",
+      "text": "X_test",
+      "captions": [],
+      "references": [],
+      "footnotes": [],
+      "code_language": "unknown"
+    },
+    {
+      "self_ref": "#/texts/145",
+      "parent": {
+        "$ref": "#/groups/26"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "и",
+      "text": "и"
+    },
+    {
+      "self_ref": "#/texts/146",
+      "parent": {
+        "$ref": "#/groups/26"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "code",
+      "prov": [],
+      "orig": "Y_test",
+      "text": "Y_test",
+      "captions": [],
+      "references": [],
+      "footnotes": [],
+      "code_language": "unknown"
+    },
+    {
+      "self_ref": "#/texts/147",
+      "parent": {
+        "$ref": "#/groups/26"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": ".",
+      "text": "."
+    },
+    {
+      "self_ref": "#/texts/148",
+      "parent": {
+        "$ref": "#/groups/24"
+      },
+      "children": [
+        {
+          "$ref": "#/groups/27"
+        }
+      ],
+      "content_layer": "body",
+      "label": "list_item",
+      "prov": [],
+      "orig": "",
+      "text": "",
+      "enumerated": false,
+      "marker": ""
+    },
+    {
+      "self_ref": "#/texts/149",
+      "parent": {
+        "$ref": "#/groups/27"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "Воспользоваться классификатором",
+      "text": "Воспользоваться классификатором"
+    },
+    {
+      "self_ref": "#/texts/150",
+      "parent": {
+        "$ref": "#/groups/27"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "code",
+      "prov": [],
+      "orig": "SVC",
+      "text": "SVC",
+      "captions": [],
+      "references": [],
+      "footnotes": [],
+      "code_language": "unknown"
+    },
+    {
+      "self_ref": "#/texts/151",
+      "parent": {
+        "$ref": "#/groups/27"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "с",
+      "text": "с"
+    },
+    {
+      "self_ref": "#/texts/152",
+      "parent": {
+        "$ref": "#/groups/27"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "code",
+      "prov": [],
+      "orig": "random_state=0",
+      "text": "random_state=0",
+      "captions": [],
+      "references": [],
+      "footnotes": [],
+      "code_language": "unknown"
+    },
+    {
+      "self_ref": "#/texts/153",
+      "parent": {
+        "$ref": "#/groups/27"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": ".",
+      "text": "."
+    },
+    {
+      "self_ref": "#/texts/154",
+      "parent": {
+        "$ref": "#/groups/28"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "Важно!",
+      "text": "Важно!",
+      "formatting": {
+        "bold": true,
+        "italic": false,
+        "underline": false,
+        "strikethrough": false,
+        "script": "baseline"
+      }
+    },
+    {
+      "self_ref": "#/texts/155",
+      "parent": {
+        "$ref": "#/groups/28"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "Если вам не удалось поставить",
+      "text": "Если вам не удалось поставить"
+    },
+    {
+      "self_ref": "#/texts/156",
+      "parent": {
+        "$ref": "#/groups/28"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "code",
+      "prov": [],
+      "orig": "tensorflow",
+      "text": "tensorflow",
+      "captions": [],
+      "references": [],
+      "footnotes": [],
+      "code_language": "unknown"
+    },
+    {
+      "self_ref": "#/texts/157",
+      "parent": {
+        "$ref": "#/groups/28"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": ", то необходимо вместо использования функции",
+      "text": ", то необходимо вместо использования функции"
+    },
+    {
+      "self_ref": "#/texts/158",
+      "parent": {
+        "$ref": "#/groups/28"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "code",
+      "prov": [],
+      "orig": "get_features",
+      "text": "get_features",
+      "captions": [],
+      "references": [],
+      "footnotes": [],
+      "code_language": "unknown"
+    },
+    {
+      "self_ref": "#/texts/159",
+      "parent": {
+        "$ref": "#/groups/28"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": ", загрузить предпосчитанные",
+      "text": ", загрузить предпосчитанные"
+    },
+    {
+      "self_ref": "#/texts/160",
+      "parent": {
+        "$ref": "#/groups/28"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "code",
+      "prov": [],
+      "orig": "X",
+      "text": "X",
+      "captions": [],
+      "references": [],
+      "footnotes": [],
+      "code_language": "unknown"
+    },
+    {
+      "self_ref": "#/texts/161",
+      "parent": {
+        "$ref": "#/groups/28"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": ",",
+      "text": ","
+    },
+    {
+      "self_ref": "#/texts/162",
+      "parent": {
+        "$ref": "#/groups/28"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "code",
+      "prov": [],
+      "orig": "Y",
+      "text": "Y",
+      "captions": [],
+      "references": [],
+      "footnotes": [],
+      "code_language": "unknown"
+    },
+    {
+      "self_ref": "#/texts/163",
+      "parent": {
+        "$ref": "#/groups/28"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": ",",
+      "text": ","
+    },
+    {
+      "self_ref": "#/texts/164",
+      "parent": {
+        "$ref": "#/groups/28"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "code",
+      "prov": [],
+      "orig": "X_test",
+      "text": "X_test",
+      "captions": [],
+      "references": [],
+      "footnotes": [],
+      "code_language": "unknown"
+    },
+    {
+      "self_ref": "#/texts/165",
+      "parent": {
+        "$ref": "#/groups/28"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": ",",
+      "text": ","
+    },
+    {
+      "self_ref": "#/texts/166",
+      "parent": {
+        "$ref": "#/groups/28"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "code",
+      "prov": [],
+      "orig": "Y_test",
+      "text": "Y_test",
+      "captions": [],
+      "references": [],
+      "footnotes": [],
+      "code_language": "unknown"
+    },
+    {
+      "self_ref": "#/texts/167",
+      "parent": {
+        "$ref": "#/groups/28"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "из архива: https://yadi.sk/d/RzMOK8Fjvs6Ln и воспользоваться функцией",
+      "text": "из архива: https://yadi.sk/d/RzMOK8Fjvs6Ln и воспользоваться функцией"
+    },
+    {
+      "self_ref": "#/texts/168",
+      "parent": {
+        "$ref": "#/groups/28"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "code",
+      "prov": [],
+      "orig": "np.load",
+      "text": "np.load",
+      "captions": [],
+      "references": [],
+      "footnotes": [],
+      "code_language": "unknown"
+    },
+    {
+      "self_ref": "#/texts/169",
+      "parent": {
+        "$ref": "#/groups/28"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "для их загрузки, а после этого два последних пункта.",
+      "text": "для их загрузки, а после этого два последних пункта."
+    },
+    {
+      "self_ref": "#/texts/170",
+      "parent": {
+        "$ref": "#/groups/29"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "Задание:",
+      "text": "Задание:",
+      "formatting": {
+        "bold": true,
+        "italic": false,
+        "underline": false,
+        "strikethrough": false,
+        "script": "baseline"
+      }
+    },
+    {
+      "self_ref": "#/texts/171",
+      "parent": {
+        "$ref": "#/groups/29"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "Сколько правильных ответов получается на валидационной выборке из папки",
+      "text": "Сколько правильных ответов получается на валидационной выборке из папки"
+    },
+    {
+      "self_ref": "#/texts/172",
+      "parent": {
+        "$ref": "#/groups/29"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "code",
+      "prov": [],
+      "orig": "test",
+      "text": "test",
+      "captions": [],
+      "references": [],
+      "footnotes": [],
+      "code_language": "unknown"
+    },
+    {
+      "self_ref": "#/texts/173",
+      "parent": {
+        "$ref": "#/groups/29"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "? Запишите в файл.",
+      "text": "? Запишите в файл."
+    },
+    {
+      "self_ref": "#/texts/174",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "code",
+      "prov": [],
+      "orig": "# Функция, возвращающая признаковое описание для каждого файла jpg в заданной папке\ndef get_features(folder, ydict):\n\n    paths = glob.glob(folder)\n    X = np.zeros((len(paths), 4096))\n    Y = np.zeros(len(paths))\n\n    for i,img_name in enumerate(paths):\n        print(img_name)\n        base = os.path.basename(img_name)\n        Y[i] = ydict[base]\n\n        img1 = imread(img_name, mode='RGB')\n        img1 = imresize(img1, (224, 224))\n        fc2 = sess.run(vgg.fc2, feed_dict={ vgg.imgs: [img1] })[0]\n        X[i, :] = fc2\n    \n    return X, Y",
+      "text": "# Функция, возвращающая признаковое описание для каждого файла jpg в заданной папке\ndef get_features(folder, ydict):\n\n    paths = glob.glob(folder)\n    X = np.zeros((len(paths), 4096))\n    Y = np.zeros(len(paths))\n\n    for i,img_name in enumerate(paths):\n        print(img_name)\n        base = os.path.basename(img_name)\n        Y[i] = ydict[base]\n\n        img1 = imread(img_name, mode='RGB')\n        img1 = imresize(img1, (224, 224))\n        fc2 = sess.run(vgg.fc2, feed_dict={ vgg.imgs: [img1] })[0]\n        X[i, :] = fc2\n    \n    return X, Y",
+      "captions": [],
+      "references": [],
+      "footnotes": [],
+      "code_language": "Python"
+    },
+    {
+      "self_ref": "#/texts/175",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "code",
+      "prov": [],
+      "orig": "# Функция обработки папки. Ожидается, что в этой папке лежит файл results.txt с метками классов, и \n# имеются подразделы train и test с jpg файлами.\ndef process_folder(folder):\n    ydict = load_txt(os.path.join(folder,'results.txt'))\n    \n    return get_features(os.path.join(folder, 'train/*jpg'), ydict)",
+      "text": "# Функция обработки папки. Ожидается, что в этой папке лежит файл results.txt с метками классов, и \n# имеются подразделы train и test с jpg файлами.\ndef process_folder(folder):\n    ydict = load_txt(os.path.join(folder,'results.txt'))\n    \n    return get_features(os.path.join(folder, 'train/*jpg'), ydict)",
+      "captions": [],
+      "references": [],
+      "footnotes": [],
+      "code_language": "Python"
+    },
+    {
+      "self_ref": "#/texts/176",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "code",
+      "prov": [],
+      "orig": "X, Y = process_folder('.') # Вызови меня!",
+      "text": "X, Y = process_folder('.') # Вызови меня!",
+      "captions": [],
+      "references": [],
+      "footnotes": [],
+      "code_language": "Python"
+    },
+    {
+      "self_ref": "#/texts/177",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "code",
+      "prov": [],
+      "orig": "%%time\nydict = load_txt('results.txt')\nX_test, Y_test = get_features(os.path.join('.', 'test/*jpg'), ydict)",
+      "text": "%%time\nydict = load_txt('results.txt')\nX_test, Y_test = get_features(os.path.join('.', 'test/*jpg'), ydict)",
+      "captions": [],
+      "references": [],
+      "footnotes": [],
+      "code_language": "Python"
+    },
+    {
+      "self_ref": "#/texts/178",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "code",
+      "prov": [],
+      "orig": "# Ваш код здесь. \nclf = SVC()\nclf.fit(X, Y)",
+      "text": "# Ваш код здесь. \nclf = SVC()\nclf.fit(X, Y)",
+      "captions": [],
+      "references": [],
+      "footnotes": [],
+      "code_language": "Python"
+    },
+    {
+      "self_ref": "#/texts/179",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "code",
+      "prov": [],
+      "orig": "Y_test_pred = clf.predict(X_test)\nprint(len(Y_test), len(Y_test_pred), sum(Y_test == Y_test_pred)) # Число правильно предсказанных классов",
+      "text": "Y_test_pred = clf.predict(X_test)\nprint(len(Y_test), len(Y_test_pred), sum(Y_test == Y_test_pred)) # Число правильно предсказанных классов",
+      "captions": [],
+      "references": [],
+      "footnotes": [],
+      "code_language": "Python"
+    },
+    {
+      "self_ref": "#/texts/180",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "code",
+      "prov": [],
+      "orig": "save_answerNum(\"vgg16_answer3.txt\", sum(Y_test == Y_test_pred))",
+      "text": "save_answerNum(\"vgg16_answer3.txt\", sum(Y_test == Y_test_pred))",
+      "captions": [],
+      "references": [],
+      "footnotes": [],
+      "code_language": "Python"
+    }
+  ],
+  "pictures": [],
+  "tables": [],
+  "key_value_items": [],
+  "form_items": [],
+  "pages": {}
+}

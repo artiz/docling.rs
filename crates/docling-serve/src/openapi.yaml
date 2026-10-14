@@ -124,6 +124,7 @@ paths:
         - { $ref: "#/components/parameters/asr_model" }
         - { $ref: "#/components/parameters/asr_lang" }
         - { $ref: "#/components/parameters/encoding" }
+        - { $ref: "#/components/parameters/ipynb_outputs" }
         - { $ref: "#/components/parameters/video_frames" }
         - { $ref: "#/components/parameters/video_scene_threshold" }
         - { $ref: "#/components/parameters/video_frame_max_side" }
@@ -214,6 +215,7 @@ paths:
                 asr_model: { type: string }
                 asr_lang: { type: string, examples: ["auto", "en", "de"] }
                 encoding: { type: string, examples: ["shift_jis", "koi8-r", "windows-1251"] }
+                ipynb_outputs: { $ref: "#/components/schemas/IpynbOutputs" }
                 video_frames: { oneOf: [{ type: integer, minimum: 0 }, { type: string, enum: ["all"] }] }
                 video_scene_threshold: { type: number, minimum: 0, maximum: 1 }
                 video_frame_max_side: { type: integer, minimum: 0 }
@@ -711,6 +713,16 @@ components:
         "Write a detailed caption for this image.", `ocr` markitdown-ocr's
         "Extract all text from this image …" — LLM-vision OCR where the local
         models read poorly.
+    IpynbOutputs:
+      type: string
+      enum: [none, text]
+      default: none
+      description: >-
+        Jupyter notebooks (#673): which cell outputs the document keeps.
+        `none` reads the notebook as written — markdown cells as Markdown,
+        code cells as code items in the kernel's language, raw cells as
+        code blocks; `text` keeps stream and `text/plain` results as code
+        blocks after their cell and image outputs as pictures.
     PictureOcrScale:
       type: number
       exclusiveMinimum: 0
@@ -1133,6 +1145,7 @@ components:
             mark, then UTF-8, then windows-1252. Bytes the named encoding
             cannot decode fail the request instead of being guessed.
           examples: ["auto", "en", "de"]
+        ipynb_outputs: { $ref: "#/components/schemas/IpynbOutputs" }
         video_frames:
           oneOf:
             - { type: integer, minimum: 0 }
@@ -1565,6 +1578,8 @@ components:
       { name: asr_lang, in: query, schema: { type: string } }
     encoding:
       { name: encoding, in: query, schema: { type: string } }
+    ipynb_outputs:
+      { name: ipynb_outputs, in: query, schema: { $ref: "#/components/schemas/IpynbOutputs" } }
     video_frames:
       { name: video_frames, in: query, schema: { oneOf: [{ type: integer, minimum: 0 }, { type: string, enum: ["all"] }] } }
     video_scene_threshold:
