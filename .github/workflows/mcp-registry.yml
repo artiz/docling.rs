@@ -1,19 +1,28 @@
-# Publish the docling.rs MCP server (#669) to the official MCP registry
-# (registry.modelcontextprotocol.io — the catalog MCP clients and
-# downstream registries read): server.json, with the version written in, as
-# `io.github.docling-project/docling-rs`. pypi-publish.yml calls it after it
-# publishes a release tag's launcher (PyPI publishing is manual, so a GitHub
-# Release alone does not); run it by hand to repair a failed publish.
+# Publish the docling.rs MCP server (#669) to the MCP catalogs.
+# pypi-publish.yml calls it after it publishes a release tag's launcher (PyPI
+# publishing is manual, so a GitHub Release alone does not); run it by hand
+# to repair a failed publish.
 #
-# The registry verifies every package server.json lists before accepting
-# the entry: the PyPI launcher `docling-rs-mcp` (its README carries the
-# `mcp-name:` marker) and the CLI image
-# `ghcr.io/docling-project/docling-rs:<version>` (its
+# `publish`: the official MCP registry (registry.modelcontextprotocol.io —
+# the catalog MCP clients and downstream registries read) gets
+# server.json, with the version written in, as
+# `io.github.docling-project/docling-rs`. The registry verifies every
+# package server.json lists before accepting the entry: the PyPI launcher
+# `docling-rs-mcp` (its README carries the `mcp-name:` marker) and the CLI
+# image `ghcr.io/docling-project/docling-rs:<version>` (its
 # `io.modelcontextprotocol.server.name` label). pypi-publish.yml and
-# docker-publish.yml publish those on the same release, so this job waits
-# until both exist. Authentication is GitHub OIDC — the workflow's identity
-# proves the `io.github.docling-project` namespace; no secret. Manual
-# fallback and the other catalogs: docs/MCP_REGISTRIES.md.
+# docker-publish.yml publish those, so this job waits until both exist.
+# Authentication is GitHub OIDC — the workflow's identity proves the
+# `io.github.docling-project` namespace; no secret.
+#
+# `bundle`: Smithery lists a local server only as an MCP bundle (.mcpb) — a
+# zip of crates/docling-py/mcp/mcpb/ whose manifest runs
+# `uvx docling-rs-mcp@<version>`. Once the launcher is on PyPI the job packs
+# it with the version, publishes it to Smithery when the repository has the
+# `SMITHERY_API_KEY` secret and the `SMITHERY_SERVER` variable
+# (`<namespace>/<server id>`), and attaches it to the release.
+#
+# Manual fallback and the other catalogs: docs/MCP_REGISTRIES.md.
 name: mcp registry
 
 on:
@@ -23,6 +32,9 @@ on:
         description: "Version to publish (e.g. 2.19.1); its release tag is checked out."
         required: true
         type: string
+    secrets:
+      SMITHERY_API_KEY:
+        required: false
   workflow_dispatch:
     inputs:
       version:
@@ -99,3 +111,78 @@ jobs:
 
       - name: Publish
         run: ./mcp-publisher publish
+
+  bundle:
+    name: MCP bundle (.mcpb) → Smithery + release
+    if: github.repository == 'docling-project/docling.rs'
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+    permissions:
+      contents: write # attach the bundle to the release
+    env:
+      SMITHERY_API_KEY: ${{ secrets.SMITHERY_API_KEY }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.version && format('v{0}', inputs.version) || github.ref }}
+
+      - name: Resolve version
+        id: v
+        shell: bash
+        run: |
+          v="${{ inputs.version }}"
+          if [ -z "$v" ]; then v="$(grep -m1 '^version = ' Cargo.toml | sed -E 's/.*"([^"]+)".*/\1/')"; fi
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+          echo "Bundling server version $v"
+
+      # The bundle runs `uvx docling-rs-mcp@<version>`: publish it only once
+      # that resolves.
+      - name: Wait for the PyPI launcher
+        shell: bash
+        run: |
+          v="${{ steps.v.outputs.version }}"
+          for _ in $(seq 1 120); do
+            pypi=$(curl -sS -o /dev/null -w '%{http_code}' "https://pypi.org/pypi/docling-rs-mcp/$v/json" || true)
+            echo "pypi docling-rs-mcp==$v: $pypi"
+            if [ "$pypi" = 200 ]; then exit 0; fi
+            sleep 120
+          done
+          echo "::error::docling-rs-mcp==$v never appeared on PyPI"
+          exit 1
+
+      # `mcpb pack` validates the manifest against the MCPB schema.
+      - name: Pack the bundle
+        shell: bash
+        run: |
+          v="${{ steps.v.outputs.version }}"
+          m=crates/docling-py/mcp/mcpb/manifest.json
+          jq --arg v "$v" '
+            .version = $v
+            | .server.mcp_config.args |= map(
+                if startswith("docling-rs-mcp@") then "docling-rs-mcp@" + $v else . end)' "$m" > manifest.tmp
+          mv manifest.tmp "$m"
+          cat "$m"
+          npx -y @anthropic-ai/mcpb@2.1.2 pack crates/docling-py/mcp/mcpb "docling-rs-mcp-$v.mcpb"
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: mcp-bundle
+          path: docling-rs-mcp-*.mcpb
+          if-no-files-found: error
+
+      # Non-interactive: the key comes from the environment, and a server id
+      # Smithery does not know yet is created.
+      - name: Publish to Smithery
+        if: ${{ env.SMITHERY_API_KEY != '' && vars.SMITHERY_SERVER != '' }}
+        shell: bash
+        run: |
+          v="${{ steps.v.outputs.version }}"
+          npx -y @smithery/cli@4.11.1 mcp publish "docling-rs-mcp-$v.mcpb" -n "${{ vars.SMITHERY_SERVER }}"
+
+      - name: Attach the bundle to the release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          v="${{ steps.v.outputs.version }}"
+          gh release upload "v$v" "docling-rs-mcp-$v.mcpb" --clobber --repo "$GITHUB_REPOSITORY"

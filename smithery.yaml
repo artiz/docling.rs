@@ -1,30 +1,10 @@
-# Smithery (https://smithery.ai) — the docling.rs MCP server (#669) as a
-# local stdio server: the PyPI launcher run with uvx, the same server as
-# `docling-rs mcp`. docs/MCP_REGISTRIES.md covers publishing.
-startCommand:
-  type: stdio
-  configSchema:
-    type: object
-    properties:
-      root:
-        type: string
-        description: Directory the server may read documents from; local paths and file URIs outside it are refused.
-      allowUrlFetch:
-        type: boolean
-        default: false
-        description: Also convert http(s) URLs (private and loopback addresses stay blocked).
-      ocrLang:
-        type: string
-        default: en
-        description: OCR language for scans — en, ch, or a BCP-47 tag.
-    required: [root]
-  commandFunction: |-
-    (config) => ({
-      command: 'uvx',
-      args: ['docling-rs-mcp', '--root', config.root, ...(config.allowUrlFetch ? ['--allow-url-fetch'] : [])],
-      env: config.ocrLang ? { DOCLING_RS_OCR_LANG: config.ocrLang } : {}
-    })
-  exampleConfig:
-    root: /Users/me/Documents
-    allowUrlFetch: false
-    ocrLang: en
+# Smithery (https://smithery.ai) — the docling.rs MCP server (#669). Smithery
+# publishes a server as an HTTPS URL or as an MCP bundle (.mcpb); this one
+# is local, so it ships as the bundle `crates/docling-py/mcp/mcpb/` packs —
+# `uvx docling-rs-mcp@<version>` with the folder, URL fetching and OCR
+# language as settings — built and published by mcp-registry.yml. The
+# Smithery CLI (`smithery mcp publish`) reads only the server id below from
+# this file; the old `startCommand` keys are no longer read.
+# docs/MCP_REGISTRIES.md covers publishing.
+name: docling-rs
+target: local

@@ -1,14 +1,17 @@
 //! The MCP catalog metadata (#669) holds together: `server.json` (the
 //! official registry), the PyPI launcher it lists, the image label the
-//! registry checks, `smithery.yaml` and `glama.json` name the same server,
-//! stay inside the registry's limits, and pass only flags the server takes.
-//! A mismatch fails a registry submission at release time, far from the
-//! change that caused it.
+//! registry checks, the MCP bundle Smithery lists (`crates/docling-py/mcp/mcpb`,
+//! named by `smithery.yaml`) and `glama.json` name the same server, stay
+//! inside the catalogs' limits, and pass only flags the server takes. A
+//! mismatch fails a catalog submission at release time, far from the change
+//! that caused it.
 
+use std::collections::BTreeSet;
+use std::io::{BufRead, BufReader, Write};
 use std::path::PathBuf;
-use std::process::Command;
+use std::process::{Command, Stdio};
 
-use serde_json::Value;
+use serde_json::{json, Value};
 
 const NAME: &str = "io.github.docling-project/docling-rs";
 
@@ -87,15 +90,24 @@ fn the_listed_packages_carry_the_ownership_markers() {
     }
 }
 
-/// Every flag the catalogs pass is one the server takes.
-#[test]
-fn catalog_arguments_are_server_flags() {
+fn manifest() -> Value {
+    serde_json::from_str(&read("crates/docling-py/mcp/mcpb/manifest.json"))
+        .expect("manifest.json parses")
+}
+
+fn server_help() -> String {
     let out = Command::new(env!("CARGO_BIN_EXE_docling-rs"))
         .args(["mcp", "--help"])
         .output()
         .unwrap();
     assert!(out.status.success());
-    let help = String::from_utf8_lossy(&out.stdout);
+    String::from_utf8_lossy(&out.stdout).into_owned()
+}
+
+/// Every flag the catalogs pass is one the server takes.
+#[test]
+fn catalog_arguments_are_server_flags() {
+    let help = server_help();
     let s = server();
     for p in s["packages"].as_array().unwrap() {
         for arg in p["packageArguments"].as_array().into_iter().flatten() {
@@ -104,12 +116,137 @@ fn catalog_arguments_are_server_flags() {
             }
         }
     }
-    let smithery = read("smithery.yaml");
-    assert!(smithery.contains("command: 'uvx'"));
-    assert!(smithery.contains("'docling-rs-mcp'"));
-    for flag in ["--root", "--allow-url-fetch"] {
-        assert!(smithery.contains(flag) && help.contains(flag), "{flag}");
+    let m = manifest();
+    for arg in m["server"]["mcp_config"]["args"].as_array().unwrap() {
+        let arg = arg.as_str().unwrap();
+        if arg.starts_with("--") {
+            let flag = arg.split_once('=').map_or(arg, |(flag, _)| flag);
+            assert!(help.contains(flag), "the bundle passes {flag}");
+        }
     }
     let glama: Value = serde_json::from_str(&read("glama.json")).unwrap();
     assert!(!glama["maintainers"].as_array().unwrap().is_empty());
+}
+
+/// The bundle as Smithery's CLI (4.x) reads it: `smithery.yaml` names a
+/// server id its rule accepts, the runtime is one it detects (`python` —
+/// MCPB's newer `uv` type is rejected), the command runs the launcher at
+/// the bundle's own version (mcp-registry.yml rewrites both together), and
+/// every `${user_config.*}` the command uses is a declared setting. Smithery
+/// substitutes only settings that have a value, after filling defaults, so
+/// an optional setting without a default would reach the server as the
+/// literal `${user_config.…}`.
+#[test]
+fn the_mcp_bundle_runs_the_launcher() {
+    let m = manifest();
+    let id = read("smithery.yaml")
+        .lines()
+        .find_map(|l| l.strip_prefix("name: "))
+        .expect("smithery.yaml names the server")
+        .trim()
+        .to_string();
+    assert_eq!(m["name"], id.as_str());
+    let mut chars = id.chars();
+    assert!(
+        (3..=39).contains(&id.len())
+            && chars.next().is_some_and(|c| c.is_ascii_alphabetic())
+            && chars.all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_'),
+        "Smithery rejects the server id {id:?}"
+    );
+    assert_eq!(m["server"]["type"], "python");
+    let config = &m["server"]["mcp_config"];
+    assert_eq!(config["command"], "uvx");
+    let args: Vec<&str> = config["args"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|a| a.as_str().unwrap())
+        .collect();
+    assert_eq!(
+        args[0],
+        format!("docling-rs-mcp@{}", m["version"].as_str().unwrap())
+    );
+    let mut used = BTreeSet::new();
+    let env = config["env"].as_object().into_iter().flatten();
+    for text in args
+        .iter()
+        .copied()
+        .chain(env.map(|(_, v)| v.as_str().unwrap()))
+    {
+        let mut rest = text;
+        while let Some(at) = rest.find("${user_config.") {
+            let key = &rest[at + "${user_config.".len()..];
+            let end = key.find('}').expect("closed placeholder");
+            used.insert(key[..end].to_string());
+            rest = &key[end..];
+        }
+    }
+    let settings = m["user_config"].as_object().unwrap();
+    let declared: BTreeSet<String> = settings.keys().cloned().collect();
+    assert_eq!(used, declared, "settings used vs. declared");
+    for (key, setting) in settings {
+        assert!(
+            setting["required"] == true || setting.get("default").is_some(),
+            "{key}: optional without a default"
+        );
+    }
+    let icon = std::fs::read(
+        repo()
+            .join("crates/docling-py/mcp/mcpb")
+            .join(m["icon"].as_str().unwrap()),
+    )
+    .expect("the bundle's icon");
+    assert!(icon.starts_with(b"\x89PNG"), "MCPB icons are PNG");
+}
+
+/// The tools the bundle advertises (Smithery's listing shows them) are the
+/// ones the server lists.
+#[test]
+fn the_mcp_bundle_lists_the_server_tools() {
+    let mut child = Command::new(env!("CARGO_BIN_EXE_docling-rs"))
+        .args(["mcp", "--root"])
+        .arg(repo())
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+        .unwrap();
+    let mut stdin = child.stdin.take().unwrap();
+    let mut stdout = BufReader::new(child.stdout.take().unwrap());
+    for message in [
+        json!({"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {
+            "protocolVersion": "2025-06-18", "capabilities": {},
+            "clientInfo": {"name": "mcp-registry-test", "version": "0"}}}),
+        json!({"jsonrpc": "2.0", "method": "notifications/initialized"}),
+        json!({"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}}),
+    ] {
+        writeln!(stdin, "{message}").unwrap();
+    }
+    stdin.flush().unwrap();
+    let listed: BTreeSet<String> = loop {
+        let mut line = String::new();
+        assert!(
+            stdout.read_line(&mut line).unwrap() > 0,
+            "server closed stdout"
+        );
+        let message: Value = serde_json::from_str(&line).unwrap();
+        if message["id"] == 2 {
+            break message["result"]["tools"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|t| t["name"].as_str().unwrap().to_string())
+                .collect();
+        }
+    };
+    drop(stdin);
+    let _ = child.kill();
+    let _ = child.wait();
+    let advertised: BTreeSet<String> = manifest()["tools"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|t| t["name"].as_str().unwrap().to_string())
+        .collect();
+    assert_eq!(advertised, listed);
 }

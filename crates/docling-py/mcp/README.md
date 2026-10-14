@@ -48,6 +48,11 @@ They land in the docling.rs cache (`$DOCLING_RS_CACHE_DIR`, else
 `--download-models=all` adds the code/formula enrichment models (~740 MB
 more). Until then PDFs convert from their text layer, as MarkItDown's do.
 
+**macOS:** PyPI has no macOS wheel of `docling-rs` yet, so uv builds it from
+source on first use — install a Rust toolchain (`rustup`) and run the
+`--download-models` line in a terminal once; the build is cached, and an MCP
+client then starts the server without waiting for it.
+
 ## What a call may reach
 
 Local paths and `file:` URIs are confined to `--root` (repeatable; the
