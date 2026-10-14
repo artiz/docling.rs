@@ -23,13 +23,14 @@ Prebuilt platforms: Linux x64 / arm64 / s390x (glibc) and Windows x64 — on
 IBM Z the addon loads ONNX Runtime at run time from the library
 `download_dependencies.sh` fetches (#504). (macOS isn't
 prebuilt — build from source, see below.) The right binary is pulled in
-automatically as a platform-specific `optionalDependency` (`docling.rs-<triple>`). Releases are published to npm
-automatically by the `npm publish` workflow
-(`.github/workflows/npm-publish.yml`) whenever CI cuts a GitHub Release
-(`v<version>`): the release tag is built and published at its version, together
-with `docling.rs-cuda` and `docling.rs-wasm`. The workflow can also be run by
-hand — by default it builds the latest master (the workspace version), or pass
-a release tag to (re-)publish that; versions already on npm are skipped.
+automatically as a platform-specific `optionalDependency` (`docling.rs-<triple>`). Releases reach npm
+when the maintainer runs the `npm publish` workflow
+(`.github/workflows/npm-publish.yml`) for them — not every GitHub Release is
+published there: `gh workflow run npm-publish.yml -f tag=v<version>` builds the
+release tag and publishes it at its version, together with `docling.rs-cuda`
+(the `cuda` input, on by default) and `docling.rs-wasm`; without a tag it
+builds the latest master (the workspace version). Versions already on npm are
+skipped, so re-runs are safe.
 
 ## Build from source
 
@@ -74,9 +75,9 @@ npm install docling.rs-cuda
 ```
 
 The package is published by the `npm publish` workflow
-(`.github/workflows/npm-publish.yml`) — automatically on every GitHub Release,
-or on a manual run with the `cuda` input — which also uploads the release
-assets (`crates/docling-node/cuda/` holds the shim sources).
+(`.github/workflows/npm-publish.yml`, run by hand; its `cuda` input is on by
+default), which also uploads the release assets (`crates/docling-node/cuda/`
+holds the shim sources).
 
 **Or build the addon from source** with the `cuda` feature:
 

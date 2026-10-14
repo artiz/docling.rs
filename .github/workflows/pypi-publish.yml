@@ -10,7 +10,7 @@
 # `pypa/cibuildwheel` (which orchestrates the manylinux containers and auditwheel
 # repair itself) and uploaded with `pypa/gh-action-pypi-publish`.
 #
-# Trigger: manual dispatch only. Unlike npm-publish.yml, a GitHub Release does
+# Trigger: manual dispatch only (so is npm-publish.yml). A GitHub Release does
 # NOT publish to PyPI: PyPI caps a project's total size (10 GiB), and a
 # release per merge (~100 MB of docling-rs wheels + ~63 MB of docling-rs-cuda
 # each, 139 releases in three months) filled docling-rs and failed v2.22.0
