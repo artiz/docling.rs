@@ -7,58 +7,112 @@
 <p align="center">
   <a href="https://github.com/docling-project/docling.rs/actions/workflows/ci.yml"><img src="https://github.com/docling-project/docling.rs/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
   <a href="https://docling-project.github.io/docling.rs/"><img src="https://img.shields.io/badge/demo-live-brightgreen" alt="Live browser demo"></a>
-  <a href="https://docs.rs/docling"><img src="https://img.shields.io/docsrs/docling?logo=docs.rs" alt="docs.rs"></a>
-  <a href="https://pypi.org/project/docling-rs/"><img src="https://img.shields.io/pypi/pyversions/docling-rs" alt="Python versions"></a>
-  <a href="https://crates.io/crates/docling"><img src="https://img.shields.io/crates/msrv/docling?logo=rust&label=rust" alt="Rust MSRV"></a>
   <a href="https://opensource.org/licenses/MIT"><img src="https://img.shields.io/github/license/docling-project/docling.rs" alt="License MIT"></a>
-  <a href="https://lfaidata.foundation/projects/"><img src="https://img.shields.io/badge/LF%20AI%20%26%20Data-003778?logo=linuxfoundation&logoColor=fff&color=0094ff&labelColor=003778" alt="LF AI &amp; Data"></a>
   <br>
   <a href="https://crates.io/crates/docling"><img src="https://img.shields.io/crates/v/docling?logo=rust" alt="crates.io version"></a>
   <a href="https://pypi.org/project/docling-rs/"><img src="https://img.shields.io/pypi/v/docling-rs?logo=pypi&logoColor=fff" alt="PyPI version"></a>
-  <a href="https://www.npmjs.com/package/docling.rs"><img src="https://img.shields.io/npm/v/docling.rs?logo=npm&logoColor=fff&label=npm%20docling.rs" alt="npm docling.rs"></a>
-  <a href="https://www.npmjs.com/package/docling.rs-wasm"><img src="https://img.shields.io/npm/v/docling.rs-wasm?logo=webassembly&logoColor=fff&label=npm%20docling.rs-wasm" alt="npm docling.rs-wasm"></a>
+  <a href="https://www.npmjs.com/package/docling.rs"><img src="https://img.shields.io/npm/v/docling.rs?logo=npm&logoColor=fff" alt="npm version"></a>
   <a href="https://github.com/docling-project/docling.rs/releases"><img src="https://img.shields.io/github/v/release/docling-project/docling.rs?label=release&logo=github" alt="GitHub release"></a>
-  <br>
-  <a href="https://github.com/docling-project/docling.rs/pkgs/container/docling-rs-serve"><img src="https://img.shields.io/badge/ghcr.io-docling--rs--serve-2496ED?logo=docker&logoColor=fff" alt="GHCR docling-rs-serve"></a>
-  <a href="https://github.com/docling-project/docling.rs/pkgs/container/docling-rs"><img src="https://img.shields.io/badge/ghcr.io-docling--rs-2496ED?logo=docker&logoColor=fff" alt="GHCR docling-rs (CLI)"></a>
   <a href="https://crates.io/crates/docling"><img src="https://img.shields.io/crates/d/docling?label=crates.io%20downloads" alt="crates.io downloads"></a>
   <a href="https://pepy.tech/projects/docling-rs"><img src="https://static.pepy.tech/badge/docling-rs/month" alt="PyPI downloads/month"></a>
   <a href="https://www.npmjs.com/package/docling.rs"><img src="https://img.shields.io/npm/dm/docling.rs?label=npm%20downloads" alt="npm downloads/month"></a>
-  
 </p>
 
-A Rust port of [docling](https://github.com/docling-project/docling): convert
-documents into a unified `DoclingDocument` for downstream AI workflows.
+**docling.rs** converts documents — PDF, Office, HTML, scans, audio — into
+Markdown, docling JSON and the other shapes an LLM or a RAG pipeline can
+read. It is a Rust port of IBM's
+[docling](https://github.com/docling-project/docling): the same output,
+byte-for-byte, from one static binary. No Python, no PyTorch.
 
-**Coming from [MarkItDown](https://github.com/microsoft/markitdown)?**
-`pip install docling-rs` and change one import —
-`from docling_rs.markitdown import MarkItDown` — to keep MarkItDown's API with
-layout analysis, TableFormer tables and local OCR behind it: PDF table-cell
-recall 0.31 → 0.94, Office/HTML 5–10× faster
-([measured](#conformance-with-microsoft-markitdown),
-[docling.rs for MarkItDown users](./docs/MARKITDOWN.md)).
+Pulling text out of a PDF is easy. Keeping its *structure* — headings in
+order, tables as tables, scanned pages read — takes layout analysis, table
+recognition and OCR. docling has the models for that, and a Python stack to
+match. docling.rs runs the same models from a single binary: PDF 4.3× faster
+than Python docling at under half the RAM, Office and HTML 20–60× faster, and
+tables that survive — cell recall 0.94 where MarkItDown gets 0.31
+([numbers](#conformance-with-microsoft-markitdown),
+[method](./docs/PDF_CONFORMANCE.md#performance--review--profiling-notes)).
 
-**Fast and small:** one static binary, no Python/PyTorch at runtime. The PDF
-ML pipeline runs **4.3× faster** than Python docling at **2.3–2.6× less peak
-RAM** (methodology, profiling and per-fixture numbers in
-[`docs/PDF_CONFORMANCE.md` § Performance](./docs/PDF_CONFORMANCE.md#performance--review--profiling-notes));
-declarative formats (DOCX/HTML/XLSX/…) convert **20–60× faster** at
-**~60× less memory** (measured with `scripts/test/performance.sh`, Python
-docling vs Rust on the same file). Output is checked against upstream for
-every format — see [Conformance with Python docling](#conformance-with-python-docling).
+## Install
 
-The format migration is **complete** — every document format in docling's
-pipeline is supported, validated byte-for-byte against live docling. See
-[`docs/MIGRATION.md`](./docs/MIGRATION.md) for the full architecture, the Python → Rust
-mapping, and per-format conformance.
+```bash
+# CLI + models (Linux x64/arm64 prebuilt; builds from source elsewhere)
+curl -fsSL https://raw.githubusercontent.com/docling-project/docling.rs/master/scripts/install/install.sh | bash
 
-**▶ [Try it in your browser](https://docling-project.github.io/docling.rs/)** —
-the whole converter compiled to wasm: drop a DOCX, PDF, XLSX, EPUB … and get
-Markdown, docling JSON, DocLang XML, LaTeX or a Pandoc AST back. Nothing is uploaded; the page runs
-entirely on your device, phone included. Scanned pages can be OCR'd there too
-(layout + PP-OCR + TableFormer via ONNX Runtime Web, optionally on the GPU
-through WebGPU) once you point it at the models. See
-[`crates/docling-wasm`](./crates/docling-wasm/README.md).
+# or from crates.io, models separately
+cargo install docling-cli
+curl -fsSL https://raw.githubusercontent.com/docling-project/docling.rs/master/scripts/install/download_dependencies.sh | sh
+
+pip install docling-rs          # Python — drop-in for docling's and MarkItDown's APIs
+npm install docling.rs          # Node.js / Bun
+cargo add docling               # Rust library
+
+# containers, models baked in (-cuda variants for NVIDIA)
+docker run --rm -v "$PWD:/data" ghcr.io/docling-project/docling-rs paper.pdf
+docker run -p 127.0.0.1:5001:5001 ghcr.io/docling-project/docling-rs-serve
+```
+
+Office, HTML, Markdown and e-mail need no models. PDF, images and audio need
+the ONNX models (layout, OCR, TableFormer, Whisper; under 1 GB). `install.sh`
+and the containers bring them along; with `pip`, run
+`python -c "import docling_rs; docling_rs.download_models()"` once; with
+`cargo install`, `npm` or a checkout, run `download_dependencies.sh` where you
+convert — it fills `./.models`, where every surface looks
+([details](#getting-the-ml-models)). Windows:
+[`docs/WINDOWS.md`](./docs/WINDOWS.md).
+
+**▶ [Try it in your browser](https://docling-project.github.io/docling.rs/)**
+first — the converter as wasm, OCR included; nothing leaves your device.
+
+## Use
+
+```bash
+docling-rs report.pdf > report.md               # Markdown (streamed page by page)
+docling-rs report.pdf --to json                 # docling JSON; also html, text, latex, dclx, chunks, images
+docling-rs --input ./docs --output ./out        # a directory tree; --jobs N in parallel
+docling-rs https://example.com/paper.pdf        # URLs, data: URIs and stdin (`-`) too
+docling-rs --help                               # every flag: OCR, page ranges, images, enrichment, redaction …
+```
+
+```python
+from docling_rs import DocumentConverter       # was: from docling.document_converter import …
+doc = DocumentConverter().convert("report.pdf").document
+print(doc.export_to_markdown())
+```
+
+```js
+import { convertFile } from 'docling.rs'
+const { content } = convertFile('report.pdf', { to: 'markdown' })
+```
+
+```rust
+use docling::{DocumentConverter, SourceDocument};
+let result = DocumentConverter::new().convert(SourceDocument::from_file("report.pdf")?)?;
+println!("{}", result.document.export_to_markdown());
+```
+
+```bash
+curl -F file=@report.pdf 'localhost:5001/v1/convert?to=md'   # the server; OpenAPI at /openapi.yaml
+```
+
+Same options, same outputs on every surface. Which to pick — plus wasm, the
+C ABI, LangChain and RAG — in
+[Integration](#integration--using-doclingrs-from-your-language); every option
+in [`docs/OPTIONS.md`](./docs/OPTIONS.md).
+
+## Highlights
+
+- **From MarkItDown:** `pip install docling-rs`, swap one import —
+  `from docling_rs.markitdown import MarkItDown` — and keep its API with real
+  layout, tables and OCR behind it ([guide](./docs/MARKITDOWN.md)).
+- **From Python docling:** `from docling_rs import DocumentConverter`;
+  `result.document` is a genuine `DoclingDocument`
+  ([migration notes](./crates/docling-py/README.md#migrating-from-python-docling)).
+- **Every docling format, and a few it lacks** — the table under
+  [Status](#status), each validated against live docling
+  ([Conformance](#conformance-with-python-docling)).
+- **A drop-in server for docling-serve** — Open WebUI, n8n, Dify and LangChain
+  clients work unchanged ([`docling-rs serve`](#http-conversion-api--docling-rs-serve)).
 
 Developed with **Claude Code** and _[TENET](https://github.com/artiz/tenet/tree/master)_ (minimalistic AI-driven development framework).
 
@@ -70,7 +124,7 @@ WebVTT and chunk records, with image extraction. The extension map
 (`InputFormat::from_extension`, docling's `FormatToExtensions`) picks the
 backend; a file that fails under its extension is checked by content and,
 when it is evidently another format (an RTF or HTML file saved as `.doc`),
-converted once more as that format with a warning (#556).
+converted once more as that format with a warning.
 
 | Category | Extensions | Notes |
 |---|---|---|
@@ -78,15 +132,15 @@ converted once more as that format with a warning (#556).
 | Word processing | DOCX `.docx` `.docm` `.dotx` `.dotm` · Word 97–2004 `.doc` `.dot` (Word 6/95 and Word for Windows 1.x/2.0 too) · OpenDocument `.odt` `.ott` `.fodt` · OpenOffice 1.x `.sxw` `.stw` `.sxg` · StarWriter `.sdw` `.vor` · AbiWord `.abw` `.zabw` `.awt` · WordPerfect `.wpd` `.wp` `.wp5` `.wp6` `.wpt` · MS Works `.wps` · EPUB `.epub` · RTF `.rtf` | DOCX JSON is docling's item tree; OMML equations come out as LaTeX; numbered headings keep their numbers |
 | Presentations | PPTX `.pptx` `.pptm` `.potx` `.potm` `.ppsx` `.ppsm` · PowerPoint 97–2003 `.ppt` `.pot` `.pps` · OpenDocument `.odp` `.otp` `.fodp` · OpenOffice 1.x `.sxi` `.sti` · StarImpress/StarDraw `.sdd` `.sda` | PPTX JSON is docling's item tree — slides, lists, tables, pictures, charts, notes, comments |
 | Diagrams | Visio `.vsdx` `.vsdm` · SVG `.svg` | Visio: pages as sections, shape text in reading order, connectors as a relations table; SVG rasterized into the image pipeline, or its `<text>` as paragraphs without ML |
-| Spreadsheets | XLSX `.xlsx` `.xlsm` `.xltx` `.xltm` · XLSB `.xlsb` · Excel 97–2004 `.xls` `.xlt` · OpenDocument `.ods` `.ots` `.fods` · OpenOffice 1.x `.sxc` `.stc` · CSV `.csv` `.tsv` · dBase `.dbf` · DIF `.dif` · SYLK `.slk` `.sylk` · Lotus 1-2-3 / Symphony `.wk1` `.wk2` `.wk3` `.wk4` `.wks` `.wrk` `.123` · Quattro Pro `.wq1` `.wq2` `.wb1` `.wb2` `.wb3` `.qpw` · MS Works `.xlr` | cells print what Excel displays — `$12.50`, `10%`, `Feb-25` (#634); merged cells keep their spans; chart sheets expose their chart |
-| Apple iWork | Pages `.pages` · Numbers `.numbers` · Keynote `.key` | both container generations (`Index/*.iwa` and iWork '09 XML); Pages and Keynote mirror docling's readers, Keynote charts as classified pictures with their data table; Numbers as sheet/table text (#213) |
+| Spreadsheets | XLSX `.xlsx` `.xlsm` `.xltx` `.xltm` · XLSB `.xlsb` · Excel 97–2004 `.xls` `.xlt` · OpenDocument `.ods` `.ots` `.fods` · OpenOffice 1.x `.sxc` `.stc` · CSV `.csv` `.tsv` · dBase `.dbf` · DIF `.dif` · SYLK `.slk` `.sylk` · Lotus 1-2-3 / Symphony `.wk1` `.wk2` `.wk3` `.wk4` `.wks` `.wrk` `.123` · Quattro Pro `.wq1` `.wq2` `.wb1` `.wb2` `.wb3` `.qpw` · MS Works `.xlr` | cells print what Excel displays — `$12.50`, `10%`, `Feb-25`; merged cells keep their spans; chart sheets expose their chart |
+| Apple iWork | Pages `.pages` · Numbers `.numbers` · Keynote `.key` | both container generations (`Index/*.iwa` and iWork '09 XML); Pages and Keynote mirror docling's readers, Keynote charts as classified pictures with their data table; Numbers as sheet/table text |
 | XML dialects | JATS / USPTO / XBRL (`.xml` `.nxml`, content-sniffed) · DocLang `.dclg` | XBRL converts without arelle: `dei` title, text blocks, numeric facts as docling's key-value graph, the taxonomy read offline from `xbrl_taxonomy` |
-| PDF & images | `.pdf` · `.png` `.jpg` `.jpeg` `.tif` `.tiff` `.bmp` `.webp` `.gif` · HEIC/HEIF `.heic` `.heif` (`--features heif`) · METS/GBS scan packages `.tar.gz` · DjVu `.djvu` `.djv` | pure-Rust text layer, page renderer and scan raster, ONNX layout + TableFormer + OCR (`docling-pdf`; no native PDF library in the default build, `pdfium` is an opt-in feature — [`docs/PDF_CONFORMANCE.md`](./docs/PDF_CONFORMANCE.md)); JPEG 2000 decodes in Rust, JBIG2 is a placeholder; DjVu reads its hidden text layer without models and falls back to OCR with them (#434) |
-| docling native | docling JSON `.json` · DocTags `.doctags` `.dt` · DCLX `.dclx` | DocTags — the token markup docling's VLMs emit — read through docling-core's tolerant parser, the one the VLM pipeline uses (#152) |
+| PDF & images | `.pdf` · `.png` `.jpg` `.jpeg` `.tif` `.tiff` `.bmp` `.webp` `.gif` · HEIC/HEIF `.heic` `.heif` (`--features heif`) · METS/GBS scan packages `.tar.gz` · DjVu `.djvu` `.djv` | pure-Rust text layer, page renderer and scan raster, ONNX layout + TableFormer + OCR (`docling-pdf`; no native PDF library in the default build, `pdfium` is an opt-in feature — [`docs/PDF_CONFORMANCE.md`](./docs/PDF_CONFORMANCE.md)); JPEG 2000 decodes in Rust, JBIG2 is a placeholder; DjVu reads its hidden text layer without models and falls back to OCR with them |
+| docling native | docling JSON `.json` · DocTags `.doctags` `.dt` · DCLX `.dclx` | DocTags — the token markup docling's VLMs emit — read through docling-core's tolerant parser, the one the VLM pipeline uses |
 | Mainframe data | EBCDIC `.ebc` `.ebcdic` | fixed-width records decoded through a COBOL copybook (docling's `EbcdicLayout`): `ebcdic_layout`, or a `<stem>.layout.json` sidecar |
-| Email & subtitles | `.eml` · Outlook `.msg` · WebVTT `.vtt` | `.msg` is projected onto RFC 822 (same output as the `.eml`); `list_attachments` names the attachments, `email_attachments()` converts them (#561); `cid:` images embed under `image_sources=embedded` (#646) |
-| Audio | `.wav` `.mp3` `.mpga` `.m4a` `.aac` `.ogg` `.flac` | Rust all the way down: symphonia decodes, Whisper tiny (ONNX, docling's ASR defaults) or the Parakeet TDT 0.6B v3 preset (#508) transcribes; `[time: start-end] text` paragraphs, the timing as the JSON item's track, `--to vtt` for subtitles; language auto-detected or `asr_lang`. Ogg Opus falls back to the `ffmpeg` binary |
-| Video | `.mp4` `.avi` `.mov` `.mkv` `.webm` `.mpeg` `.mpg` | the audio track transcribed the same way; with the `ffmpeg` binary on `PATH` (`DOCLING_FFMPEG`), `video_frames` scene-change frames (8 by default, `all` for every cut) interleave as `[time: <ts>]` pictures, tuned by the `video_*` options (#647, #648). AVI needs ffmpeg; without it a video is its transcript |
+| Email & subtitles | `.eml` · Outlook `.msg` · WebVTT `.vtt` | `.msg` is projected onto RFC 822 (same output as the `.eml`); `list_attachments` names the attachments, `email_attachments()` converts them; `cid:` images embed under `image_sources=embedded` |
+| Audio | `.wav` `.mp3` `.mpga` `.m4a` `.aac` `.ogg` `.flac` | Rust all the way down: symphonia decodes, Whisper tiny (ONNX, docling's ASR defaults) or the Parakeet TDT 0.6B v3 preset transcribes; `[time: start-end] text` paragraphs, the timing as the JSON item's track, `--to vtt` for subtitles; language auto-detected or `asr_lang`. Ogg Opus falls back to the `ffmpeg` binary |
+| Video | `.mp4` `.avi` `.mov` `.mkv` `.webm` `.mpeg` `.mpg` | the audio track transcribed the same way; with the `ffmpeg` binary on `PATH` (`DOCLING_FFMPEG`), `video_frames` scene-change frames (8 by default, `all` for every cut) interleave as `[time: <ts>]` pictures, tuned by the `video_*` options. AVI needs ffmpeg; without it a video is its transcript |
 
 <details>
 <summary><b>Installing ffmpeg</b> (optional — only for video frame sampling)</summary>
@@ -261,7 +315,7 @@ export DOCLING_TABLEFORMER_BBOX="$(pwd)/models/tableformer/bbox.onnx"
 bash scripts/conformance/pdf_conformance.sh     # regenerate + diff the snapshot baseline (94 outputs)
 ```
 
-## Try it
+## Try it from a checkout
 
 ```bash
 # convert a file from the CLI — Markdown to stdout (add --strict for cleaner MD)
