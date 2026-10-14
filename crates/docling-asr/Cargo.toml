@@ -30,7 +30,7 @@ docling-core = { path = "../docling-core", version = "2.23.0" }
 # Whisper encoder/decoder sessions through the same switch as docling-pdf.
 docling-onnx = { path = "../docling-onnx", version = "2.23.0" }
 # Same ort as docling-pdf so the workspace keeps a single ONNX runtime.
-ort = { version = "2.0.0-rc.13", default-features = false, features = ["std", "download-binaries", "tls-rustls"] }
+ort = { version = "2.0.0-rc.14", default-features = false, features = ["std", "download-binaries", "tls-rustls"] }
 serde_json = "1"
 # Pure-Rust audio demuxing/decoding for every container docling's ASR accepts:
 # wav (pcm), mp3, flac, ogg/vorbis, aac (adts), m4a/mp4 (isomp4+aac).

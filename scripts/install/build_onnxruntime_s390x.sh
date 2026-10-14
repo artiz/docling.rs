@@ -23,13 +23,14 @@
 # what `qemu-s390x-static -L` resolves against) to run the result.
 #
 #   scripts/install/build_onnxruntime_s390x.sh
-#   ORT_TAG=v1.29.0 JOBS=8 OUT_DIR=$PWD/onnxruntime-s390x scripts/install/build_onnxruntime_s390x.sh
+#   ORT_TAG=v1.31.0 JOBS=8 OUT_DIR=$PWD/onnxruntime-s390x scripts/install/build_onnxruntime_s390x.sh
 #
 # Environment:
-#   ORT_TAG              ONNX Runtime tag to build (default v1.29.0 — the first
-#                        release without the NCHWc picture-classifier bug, #517;
-#                        ort 2.0.0-rc.13 accepts any runtime from 1.17 up, and
-#                        pyke built no 1.29 for the linked targets to match).
+#   ORT_TAG              ONNX Runtime tag to build (default v1.31.0 — the
+#                        version the linked builds carry since #523, ort
+#                        2.0.0-rc.14; anything from 1.29 up is free of the
+#                        NCHWc picture-classifier bug, #517, and ort accepts
+#                        any runtime from 1.17).
 #   ORT_TOOLCHAIN        zig (default) | gcc — see above.
 #   ORT_SRC_DIR          an existing checkout to build instead of cloning.
 #   JOBS                 parallel compile jobs (default: nproc).
@@ -41,7 +42,7 @@
 #                        FETCHCONTENT_SOURCE_DIR_ONNX=… to feed pre-fetched deps).
 set -euo pipefail
 
-ORT_TAG="${ORT_TAG:-v1.29.0}"
+ORT_TAG="${ORT_TAG:-v1.31.0}"
 ORT_TOOLCHAIN="${ORT_TOOLCHAIN:-zig}"
 JOBS="${JOBS:-$(nproc)}"
 OUT_DIR="${OUT_DIR:-$PWD/onnxruntime-s390x}"

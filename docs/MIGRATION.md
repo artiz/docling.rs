@@ -960,8 +960,9 @@ deliberate scope boundary or a cosmetic, single-fixture polish gap.
   conformance-checked by `scripts/conformance/enrich_conformance.sh`. Since
   #517 the classifier's session stops at ONNX Runtime's `EXTENDED`
   optimization level on runtimes before 1.29 — 1.26–1.28's x86 NCHWc rewrite
-  returned one distribution for every picture — so the linked 1.28 builds
-  classify like Python docling on 1.29+.)
+  returned one distribution for every picture; the linked builds carry 1.31
+  since #523 and run uncapped, the cap only applies to an older
+  `libonnxruntime` under `ort-load-dynamic`.)
 
 **Now migrated (previously listed here):**
 

@@ -147,8 +147,9 @@ float rounding (≤ 2·10⁻⁵), the TDT loop run on the same encoder output em
 the same tokens at the same frames, and with the fp32 graphs the whole
 pipeline's tokens and timestamps are identical to onnx-asr's. The int8
 encoder quantizes its activations dynamically, so its output — and the odd
-word — shifts with the ONNX Runtime build (1.28 linked here, 1.30 in
-onnx-asr's wheel), the same way it does between two onnx-asr installs.
+word — shifts with the ONNX Runtime build (1.31 linked here since #523,
+1.30 in onnx-asr's wheel), the same way it does between two onnx-asr
+installs.
 About 0.2× real time on four CPU cores (int8, a 10 s clip in ~2 s).
 
 **Python and Docker.** The Python wheel fetches no ASR models by default;
@@ -195,12 +196,12 @@ let converter = DocumentConverter::new()
   (EfficientNet, 26 figure classes: `bar_chart`, `logo`, `signature`, …). The
   full prediction distribution lands on the JSON picture item as docling's
   `classification` annotation + `meta.classification`; Markdown is unchanged.
-  On an ONNX Runtime older than 1.29 (the linked builds carry 1.28) its
-  session stops at the `EXTENDED` optimization level (#517): those
-  runtimes' x86 NCHWc rewrite turns this graph into one that returns the
-  same distribution for every picture (`table` 0.091 first). That costs
-  ~5 ms per picture; a 1.29+ library (`ort-load-dynamic`) runs fully
-  optimized.
+  The linked builds carry ONNX Runtime 1.31 (#523) and run it fully
+  optimized; on a runtime older than 1.29 — an older `libonnxruntime`
+  under `ort-load-dynamic` — its session stops at the `EXTENDED`
+  optimization level (#517): those runtimes' x86 NCHWc rewrite turns this
+  graph into one that returns the same distribution for every picture
+  (`table` 0.091 first). That cap costs ~5 ms per picture.
 * **Code enrichment** — `docling-project/CodeFormulaV2` (an Idefics3/SmolVLM-
   class VLM exported to ONNX by `scripts/install/export_code_formula.py`, its
   greedy decode verified token-identical to `transformers.generate`). Rewrites

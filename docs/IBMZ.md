@@ -30,7 +30,9 @@ and enrichment warn and skip, DOCX/HTML/XLSX/… and `docling-rs --to md` on a
 DOCX never touch it.
 
 **The s390x runtime itself** ships in the models release as
-`onnxruntime-linux-s390x.tar.gz`: ONNX Runtime 1.29.0, cross-compiled by
+`onnxruntime-linux-s390x.tar.gz`: ONNX Runtime 1.29.0 as published (the
+workflow's default tag is now v1.31.0, the version the linked builds carry
+since #523 — re-run it to refresh the asset), cross-compiled by
 `.github/workflows/onnxruntime-s390x.yml` with zig against glibc 2.28, so it
 loads on RHEL 8/9-era mainframe Linux. `download_dependencies.sh` fetches it
 into `.models/onnxruntime/` on an s390x host (`--with-onnxruntime` /
