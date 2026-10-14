@@ -1484,3 +1484,45 @@ per-layer caches that need no `Split`/`Concat`/`Transpose` (bit-exact in
 principle, new model files), narrower weights (INT8/fp16 — a numerics
 change), or a GPU execution provider.
 
+
+## ONNX Runtime 1.31 (#523)
+
+Since ort 2.0.0-rc.14 the default builds — CLI, wheels, npm, containers,
+crates — statically link ONNX Runtime **1.31** (pyke's `ms@1.31.0`
+binaries; `docling-rs --version` prints the linked version). Measured
+against the 1.28 build of the same commit on a 4-vCPU x86-64 box (release,
+INT8 layout, `--jobs 1`, same models, same graph cache rebuilt per runtime):
+
+| | ORT 1.28 | ORT 1.31 |
+|---|---:|---:|
+| 18-PDF corpus (80 pages), wall | 38.9 s | 40.0 s |
+| `2206.01062.pdf` (9 pages, 5 tables), wall | 6.9–7.5 s | 8.4 s |
+| `redp5110_sampled.pdf` (18 pages, scans + tables), wall | 10.0–10.9 s | 10.1 s |
+| `layout.predict`, 9 pages (2 threads) | 3.98 s | 3.80–3.97 s |
+| `tf.encoder`, 5 tables | 1.25 s | 1.17 s |
+| `tf.bbox`, 5 tables | 1.48 s | 0.47 s |
+| `tf.decode_step`, 458 steps | 2.34 s (5.1 ms/step) | 3.0–3.4 s (6.5–7.5 ms/step) |
+
+The one regression is the TableFormer decode step: its 49 single-token
+fp32 GEMMs run at ~100 µs each on 1.31 against ~56 µs on 1.28 (ORT's own
+per-operator profile, `DOCLING_RS_ORT_PROFILE`; the same 331-node graph,
+the same 1-thread session), so a table-heavy page is ~10–15 % slower and
+the corpus ~3 %. 2 intra-op threads recover about half of it at the
+price of run-to-run determinism, so the session stays single-threaded.
+The bbox head got three times faster and layout, the encoder and OCR are
+unchanged.
+
+Output: the 18-PDF corpus converts to byte-identical Markdown on both
+runtimes; `--to json` differs in one file (`redp5110_sampled`): two table
+cells' box edges move by 0.01 pt, two table regions' edges by 1.2–1.5 pt,
+and one picture crop is 1 px wider — the float-accumulation noise of a
+different GEMM kernel, below every tolerance the DocLang comparison uses.
+`scripts/conformance/pdf_groundtruth.sh` and `pdf_conformance.sh` report
+the same files with the same line counts on both runtimes (9/18 strict and
+74/98 snapshots exact with the pure-Rust renderer — the committed
+snapshots are pinned to the docling-parse renderer, that drift predates
+the bump and is not the runtime's). The picture classifier runs fully
+optimized (the #517 cap only fires under `ort-load-dynamic` with an older
+library) and matches docling on the enrichment fixtures; the ASR tests
+pass on the Whisper tiny fixtures (the Parakeet int8 preset was not
+re-measured here).

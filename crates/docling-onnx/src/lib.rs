@@ -105,10 +105,9 @@ pub fn runtime_library() -> Result<&'static Path, String> {
         };
         match ort::init_from(&candidate) {
             Ok(env) => {
-                let env = env.with_telemetry(false);
-                // `commit` is false when an environment was configured
-                // before this call — the library is loaded either way.
-                let _ = env.commit();
+                // The library is loaded by `init_from`; the environment
+                // itself is built once by [`environment`].
+                drop(env);
                 docling_core::debug_log!(
                     "docling-onnx: ONNX Runtime loaded from {}",
                     candidate.display()
@@ -142,18 +141,26 @@ pub fn runtime_library() -> Result<&'static Path, String> {
 /// `load-dynamic` build runs whatever library the machine provides. A
 /// document converter does not report its users' models to anyone.
 pub fn session_builder() -> Result<SessionBuilder, String> {
-    #[cfg(feature = "load-dynamic")]
-    runtime_library()?;
-    #[cfg(not(feature = "load-dynamic"))]
-    {
-        static ENV: std::sync::Once = std::sync::Once::new();
-        // `false` when something configured the environment first — nothing
-        // in the workspace does; the setting then stays as that caller left it.
-        ENV.call_once(|| {
-            let _ = ort::init().with_telemetry(false).commit();
-        });
-    }
-    Session::builder().map_err(|e| e.to_string())
+    Session::builder(environment()?).map_err(|e| e.to_string())
+}
+
+/// The process's one ONNX Runtime [`Environment`] (ort 2.0.0-rc.14 made
+/// it explicit: every session is created from one), built on first use
+/// with telemetry off — and, in a `load-dynamic` build, after the runtime
+/// library is loaded ([`runtime_library`]).
+pub fn environment() -> Result<&'static ort::environment::Environment, String> {
+    static ENV: OnceLock<Result<ort::environment::Environment, String>> = OnceLock::new();
+    ENV.get_or_init(|| {
+        #[cfg(feature = "load-dynamic")]
+        runtime_library()?;
+        ort::init()
+            .with_name("docling-rs")
+            .with_telemetry(false)
+            .build()
+            .map_err(|e| format!("ONNX Runtime environment: {e}"))
+    })
+    .as_ref()
+    .map_err(Clone::clone)
 }
 
 /// The parsed `DOCLING_RS_EP` choice. Named GPU variants are only ever
@@ -633,7 +640,8 @@ pub fn apply(builder: SessionBuilder) -> Result<SessionBuilder, String> {
     static LOGGED: OnceLock<()> = OnceLock::new();
     LOGGED.get_or_init(|| {
         if docling_core::env::flag("DOCLING_RS_TIMING") {
-            eprintln!("docling-rs: execution providers: {eps:?}");
+            let names: Vec<&str> = eps.iter().map(|e| e.name()).collect();
+            eprintln!("docling-rs: execution providers: {names:?}");
         }
         // CoreML's cost profile is invisible otherwise (#324 follow-up
         // testing): session creation runs ~2 s per worker, does not
@@ -760,7 +768,9 @@ fn parse_version(s: &str) -> Option<(u32, u32)> {
 }
 
 /// Cap `builder` below the layout-level graph optimizations when the runtime
-/// predates ONNX Runtime 1.29 (#517): on x86-64 with AVX2/AVX-512, 1.26–1.28's
+/// predates ONNX Runtime 1.29 (#517) — the linked builds carry 1.31 since
+/// #523, so this only ever fires for an older `libonnxruntime` under
+/// `load-dynamic`: on x86-64 with AVX2/AVX-512, 1.26–1.28's
 /// `NchwcTransformer` rewrites the picture classifier into a graph that
 /// returns the same logits for every input — every picture came out `table`
 /// 0.091 / `logo` 0.085 / `icon` 0.078. Disabling that one transformer, or

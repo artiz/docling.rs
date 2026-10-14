@@ -407,11 +407,17 @@ fn version_line() -> String {
         features.push("xnnpack");
     }
     let version = env!("CARGO_PKG_VERSION");
-    if features.is_empty() {
+    let mut line = if features.is_empty() {
         format!("docling-rs {version}")
     } else {
         format!("docling-rs {version} ({})", features.join(", "))
+    };
+    // The runtime behind the ML stages (#523): the linked ONNX Runtime, or
+    // the library an ort-load-dynamic build found.
+    if let Some((major, minor)) = docling::onnx_runtime_version() {
+        line.push_str(&format!("; ONNX Runtime {major}.{minor}"));
     }
+    line
 }
 
 /// `--list-input-formats` (#603): the file extensions this binary converts —

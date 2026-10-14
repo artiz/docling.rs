@@ -102,6 +102,21 @@ pub fn reexec_for_provider_libraries() {
     docling_pdf::ep::reexec_for_provider_libraries();
 }
 
+/// The ONNX Runtime the ML stages run on, as `(major, minor)` — the
+/// statically linked one (1.31 since #523), or the library an
+/// `ort-load-dynamic` build loaded. `None` without the `pdf` feature or
+/// when the runtime cannot be asked.
+pub fn onnx_runtime_version() -> Option<(u32, u32)> {
+    #[cfg(feature = "pdf")]
+    {
+        docling_pdf::ep::runtime_version()
+    }
+    #[cfg(not(feature = "pdf"))]
+    {
+        None
+    }
+}
+
 /// Which PDF conversion this build compiled in: the full ML pipeline (`pdf`
 /// feature), the pure-Rust text-layer path (`pdf-text`, the wasm32 build), or
 /// neither. Compile-time facts, exported so downstream crates (whose own
