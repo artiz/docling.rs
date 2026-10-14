@@ -271,10 +271,16 @@ cargo test -p docling-pdf --features pdfium --lib raster:: pdfium_backend::  # t
   error's `source()` chain (#636: `ConversionError::encrypted[_with_message]`,
   `PdfError::Encrypted`; read with `ConversionError::encryption()`) — never
   a bare `Parse(String)`, which callers would have to match by text.
-- Docs live in `README.md` (user-facing) + `docs/MIGRATION.md` (parity table
-  with real conformance numbers and the deliberate divergences from docling)
-  — update both with behavior changes;
-  `docs/PDF_CONFORMANCE.md` for pipeline/model changes.
+- Docs: `README.md` is the overview — keep it at 10–12 screens (headline
+  tables, one short section per surface with a link out); the detail lives
+  in the crate READMEs (`crates/docling` = the library guide: API, output
+  formats, chunking, OCR, VLM…; `crates/docling-cli` = CLI, batch, MCP;
+  `crates/docling-serve`; the bindings') and `docs/` (`OPTIONS.md`,
+  `MODELS.md`, `DEPLOYMENT.md`, `SECURITY.md`, `IBMZ.md`, `MARKITDOWN.md`).
+  `docs/MIGRATION.md` holds the parity tables with real conformance numbers,
+  every extension, and the deliberate divergences from docling — update it
+  with behavior changes; `docs/PDF_CONFORMANCE.md` for pipeline/model
+  changes.
 - MSRV 1.92 (1.85 for docling-core), edition 2021; CI lints on the 1.96
   toolchain — `cargo fmt` + clippy clean; comments explain *why*
   (docling parity or a deliberate divergence from it, perf tradeoffs),

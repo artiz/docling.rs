@@ -63,6 +63,27 @@ unlimited there); use `--page-range` to convert a window, and the server's
 total or ratio cap across its parts (docling's strict OOXML path caps
 512 MiB per member and 2 GiB in total).
 
+### Hostile inputs
+
+Hostile inputs degrade, they do not abort: block quotes and lists in
+Markdown nest at most 100 deep (markdown-it's `maxNesting`, what docling's
+Markdown backend runs on) and deeper structure is skipped; a docling-JSON
+document's `children` references are each walked once and at most 256
+levels deep, so a cycle or a fan-out graph converts like the tree it
+pretends to be; an HTML page nested past `DOCLING_RS_MAX_HTML_DEPTH` is
+recognized by a linear tag scan and emitted as text without ever building a
+DOM (html5ever's tree builder is quadratic in nesting — 100 000 nested `<div>`
+took 37 s); an ODS sheet's regions are found by visiting its cells, not the
+box they span; OOXML parts inflate to at most `DOCLING_RS_MAX_PART_BYTES`;
+a redirect on a `--fetch-images` download is checked against the
+private-address block-list at every hop; and a PDF page whose declared size
+would rasterize past `DOCLING_RS_MAX_RENDER_PIXELS` (15000 px/side, ~5000 pt —
+above any real page, A0 at the pipeline's 3x supersample is ~10110 px) is
+rejected before the renderer or the `image` crate tries to allocate the
+multi-gigabyte bitmap, which a few-hundred-byte crafted `MediaBox` otherwise
+forces (the `image` crate *panics* rather than erroring when that allocation
+fails).
+
 ### External programs
 
 Some inputs and options run a program the converter does not ship, on

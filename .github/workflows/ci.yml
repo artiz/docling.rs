@@ -298,7 +298,7 @@ jobs:
 
   # The declarative converters compile for the browser (#79): check the
   # feature-sliced `docling` on wasm32, build the wasm-bindgen crate, and log
-  # the gzipped module size (the number docs/README quote — ~1.9 MB).
+  # the gzipped module size (the number docs/README quote — ~3.4 MB).
   wasm:
     name: wasm32 (declarative converters)
     runs-on: ubuntu-latest

@@ -1426,3 +1426,61 @@ pre-quantized assets by default (`--no-int8` skips; published by
 `scripts/test/performance.sh` benchmarks whatever the pipeline default resolves to
 (int8 when present, `DOCLING_RS_FP32=1` for fp32); `examples/Dockerfile`
 bakes both precisions and defaults to int8 (`--build-arg INT8=0` for fp32).
+### Where the time goes
+
+For the declarative formats (everything but PDF/images), `cargo run --release
+-p docling --example profile_declarative` times parse, Markdown export and
+JSON export separately for every file in the corpus and lists the slowest.
+Parsing is milliseconds per document and Markdown export is negligible; JSON
+export dominates on table-heavy documents because docling's schema repeats
+every table cell in the `grid`, and it builds a `serde_json::Value` tree
+before printing. The table builder now fills that grid from an index instead
+of a hash map of cloned cells: on the corpus's heaviest JSON (a 13 MB patent
+export) the export went from 256 ms to 179 ms, on an EBCDIC table dump from
+123 ms to 66 ms, byte-identical output. Printing the tree is ~10 % of the
+remaining cost; the rest is the `Value` allocation itself, so a further
+step would be serializing straight from the document.
+
+For the PDF/image ML pipeline, `scripts/test/profile_pdf.sh` runs the release
+binary over the PDF corpus with `DOCLING_RS_TIMING=1` and sums the pipeline's
+per-stage wall-clock (`crates/docling-pdf/src/timing.rs`) into one table. On
+the 88-page corpus the cost is almost entirely model inference: TableFormer
+structure recognition (the autoregressive OTSL decode — ~1400 decode steps
+across the corpus's tables) and the per-page layout model together account for
+~85 % of it, with a one-time ONNX session/graph init paid on the first table
+page. Everything outside the models — both page renders, the two resamples,
+text-layer parsing and assembly — was under ~6 % combined on the pdfium
+chain; the pure-Rust renderer that replaced it costs more (on the 18-file
+corpus of the MarkItDown comparison, 80 pages, the two renders of every page
+sum to a third of the CPU time the models take), so since #682 the renders
+are scheduled off the model's path rather than before it: a page's 2× bitmap
+draws on a helper thread while layout reads its 1× image, the serial path
+renders the next page while the worker processes the current one, and the
+worker pool — two-thread workers, which the layout model's weak intra-op
+scaling makes faster than one four-thread worker — takes every document of
+four pages or more. Output is byte-identical; the model cost itself is bounded
+by the layout and TableFormer models, so the levers there stay the INT8
+models, the KV-cached decoder and GPU execution providers.
+
+What a TableFormer decode step costs, measured on the same box with
+`DOCLING_RS_ORT_PROFILE` (ORT's per-operator profile; see
+`scripts/dev/ort_profile_summary.py`) and a per-step timer: 4.4 ms with an
+empty cache, 5.7 ms once 100–150 tokens are cached, 6.2 ms past 150 — about
+10 µs per cached token — and 6.0 ms for two tables batched. The floor is
+memory traffic, not arithmetic: a step streams the decoder's ~90 MB of fp32
+weights through 49 single-token GEMMs (40–50 % of kernel time) plus 19 MB of
+per-table cross-attention K/V (about a quarter); the cache-dependent part is
+the `Split`/`Concat`/`Transpose` copies the exported graph makes of the
+growing cache (≈10 % at 85 cached tokens), and the rest is ~330 nodes of
+shape plumbing and per-node executor overhead. Three things were measured
+not to pay and are not in the tree: ONNX Runtime IO binding for the step
+(cross tensors bound once, outputs pre-bound: 5.41 vs 5.34 ms per step,
+byte-identical output — the copies are inside the graph, not in the
+`Run()` call); a decoder session per pool worker instead of the shared slot
+(wall time unchanged on 9-, 18- and 60-page documents, +0.5 GB RSS — two
+weight-streaming decodes share one memory bus); and more intra-op threads
+(the step does not scale). What would: re-exporting the decoder with
+per-layer caches that need no `Split`/`Concat`/`Transpose` (bit-exact in
+principle, new model files), narrower weights (INT8/fp16 — a numerics
+change), or a GPU execution provider.
+
