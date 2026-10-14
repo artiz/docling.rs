@@ -74,6 +74,7 @@ The layers mirror docling's:
 | **Chunking** | `docling-core` chunkers (`HierarchicalChunker`/`HybridChunker`) | `docling-core::chunker`, re-exported as `docling::chunker` |
 | **CLI** | `docling/cli` | `docling-cli` (incl. warm batch mode: `SOURCE... --output DIR`, `--input GLOB --output DIR [--jobs N]`, `--abort-on-error`, #489; repeatable `--to`, #491; `--list-input-formats` / `--list-output-formats`, #603 — Pandoc's discovery flags, which Python's CLI lacks: the extensions this build converts and the `--to` values, sorted, one per line) |
 | **Beyond upstream's packages** | docling-serve (separate repo) | `docling-serve` (HTTP API), `docling-rag`, Python/Node/wasm bindings, GPU execution providers (`cuda`/`tensorrt`/`directml`/`coreml` features, `DOCLING_RS_EP`) |
+| **MCP server** (#669) | docling-mcp (separate repo, Python, its own tool set around a cached `DoclingDocument`) | `docling-rs mcp` (default `mcp` feature of the CLI, rmcp): MarkItDown's MCP tool `convert_to_markdown(uri)` — same name and contract, so `markitdown-mcp` configs switch by changing the command — plus `convert(uri, to, images, options)` over the shared `ConvertOptions` and `list_input_formats()`; stdio or Streamable HTTP (`--http`); local reads confined to `--root`, URLs only with `--allow-url-fetch` through `docling::fetch` (the SSRF block-list on every redirect hop); a PDF without the layout models converts from its text layer (one stderr note) rather than failing |
 | **MarkItDown facade** (#674, docling.rs extension) | — (Microsoft MarkItDown's API) | `docling_rs.markitdown`: `MarkItDown` / `StreamInfo` / `DocumentConverterResult` / its exceptions over `DocumentConverter`, docling's Markdown out (compact tables, MarkItDown's `## <sheet>` headings for XLSX), `llm_client` picture captions, text-layer PDFs until the models are downloaded; `python -m docling_rs.markitdown` for the CLI |
 
 ```text
@@ -83,7 +84,7 @@ crates/
 ├── docling-pdf/    # pdfium_backend (the page walk), textparse, render/, raster/, layout (RT-DETR/ONNX), ocr (PP-OCRv3/ONNX), assemble, mets
 ├── docling-asr/    # audio decode (symphonia), mel.rs, whisper.rs (ONNX), tokenizer.rs; nemo_mel.rs, parakeet.rs, vad.rs (Parakeet TDT, #508)
 ├── docling-onnx/   # shared ONNX Runtime EP selection (DOCLING_RS_EP, cuda/tensorrt/directml/coreml features)
-├── docling-cli/    # `--strict`, `--to md|json|html|text|dclx|chunks|latex|pandoc`, `--images …`, `--pages`, `--ocr-lang`, serve subcommand
+├── docling-cli/    # `--strict`, `--to md|json|html|text|dclx|chunks|latex|pandoc`, `--images …`, `--pages`, `--ocr-lang`, serve and mcp subcommands
 ├── docling-node/   # Node.js/Bun N-API bindings (napi-rs), published to npm as `docling.rs`
 ├── docling-py/     # PyO3 bindings (maturin), published to PyPI as `docling-rs` (strangler-fig over docling-core)
 ├── docling-rag/    # RAG layer on top of the converter (chunking, embeddings, vector search, REST API)

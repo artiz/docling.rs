@@ -1,7 +1,8 @@
 //! Minimal CLI: convert a file and print Markdown or JSON to stdout.
 //!
 //! The docling.rs counterpart of `docling.cli.main`; `docling-rs serve`
-//! (with `--features serve`) starts the HTTP conversion API.
+//! (with `--features serve`) starts the HTTP conversion API, `docling-rs mcp`
+//! (default `mcp` feature, #669) a Model Context Protocol server for agents.
 //!
 //! `--no-ocr` keeps layout + TableFormer but never runs OCR — docling's
 //! `--no-ocr` (`do_ocr=False`) since 2.0 (#611); `--skip-ocr`, its pre-2.0
@@ -298,6 +299,9 @@
 //!                      carry a value; needs the OCR models, --no-stream for
 //!                      PDFs) | keep.
 
+#[cfg(feature = "mcp")]
+mod mcp;
+
 use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
@@ -339,6 +343,9 @@ fn version_line() -> String {
     }
     if cfg!(feature = "serve") {
         features.push("serve");
+    }
+    if cfg!(feature = "mcp") {
+        features.push("mcp");
     }
     if cfg!(feature = "heif") {
         features.push("heif");
@@ -392,7 +399,7 @@ fn output_format_list() -> Vec<&'static str> {
 }
 
 /// One-line synopsis — the `usage:` prefix an argument error prints.
-const USAGE: &str = "usage: docling-rs [OPTIONS] <input-file> | - | URL\n       docling-rs [OPTIONS] --output DIR SOURCE...\n       docling-rs --input GLOB|DIR --output DIR [OPTIONS]\n       docling-rs serve [SERVE OPTIONS]";
+const USAGE: &str = "usage: docling-rs [OPTIONS] <input-file> | - | URL\n       docling-rs [OPTIONS] --output DIR SOURCE...\n       docling-rs --input GLOB|DIR --output DIR [OPTIONS]\n       docling-rs serve [SERVE OPTIONS]\n       docling-rs mcp [MCP OPTIONS]";
 
 /// `--help`: the synopsis plus every flag, grouped. Kept in sync with the
 /// module doc comment above, which carries the long-form rationale.
@@ -538,8 +545,9 @@ fn main() -> ExitCode {
     // `serve` keeps its own `--help`, so only scan the global position here.
     {
         let args: Vec<String> = std::env::args().skip(1).collect();
-        let is_serve = args.first().map(String::as_str) == Some("serve");
-        if !is_serve {
+        // `mcp` (#669) likewise answers its own `--help`.
+        let is_subcommand = matches!(args.first().map(String::as_str), Some("serve" | "mcp"));
+        if !is_subcommand {
             if args.iter().any(|a| a == "--version" || a == "-V") {
                 println!("{}", version_line());
                 return ExitCode::SUCCESS;
@@ -587,6 +595,24 @@ fn main() -> ExitCode {
             }
 
             return run_serve(args.collect());
+        }
+    }
+
+    // `docling-rs mcp …` — the Model Context Protocol server (#669): stdio for
+    // desktop agents, Streamable HTTP with `--http`. In the default build;
+    // the flags after `mcp` are its own (see `mcp.rs`).
+    {
+        let mut args = std::env::args().skip(1);
+        if args.next().as_deref() == Some("mcp") {
+            // A long-lived server holding warm ONNX sessions, like `serve`
+            // (#263): the CPU arena off unless the operator says otherwise.
+            // Measured on the warm MCP server (4 vCPU, a 9-page paper and two
+            // short PDFs in turn): 2.1 GB live with the arena, 0.55 GB — the
+            // models — without, at the same latency.
+            if std::env::var_os("DOCLING_RS_NO_ARENA").is_none() {
+                std::env::set_var("DOCLING_RS_NO_ARENA", "1");
+            }
+            return run_mcp(args.collect());
         }
     }
 
@@ -3131,6 +3157,22 @@ fn run_serve(_args: Vec<String>) -> ExitCode {
         "error: this binary was built without the HTTP server.\n\
          Rebuild with `cargo build -p docling-cli --features serve`, or use the\n\
          standalone server: `cargo run -p docling-serve --release -- --help`."
+    );
+    ExitCode::from(2)
+}
+
+#[cfg(feature = "mcp")]
+fn run_mcp(args: Vec<String>) -> ExitCode {
+    mcp::run(args)
+}
+
+/// Without the `mcp` feature the subcommand explains how to get it.
+#[cfg(not(feature = "mcp"))]
+fn run_mcp(_args: Vec<String>) -> ExitCode {
+    eprintln!(
+        "error: this binary was built without the MCP server.\n\
+         Rebuild with `cargo build -p docling-cli --features mcp` (it is in the\n\
+         default feature set)."
     );
     ExitCode::from(2)
 }

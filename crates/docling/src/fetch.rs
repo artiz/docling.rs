@@ -335,8 +335,7 @@ pub struct DataUrl {
 
 /// Parse a `data:[<media type>][;name=<file name>][;base64],<payload>` URI.
 pub fn parse_data_url(url: &str) -> Result<DataUrl, ConversionError> {
-    let rest = url
-        .strip_prefix("data:")
+    let rest = strip_data_scheme(url)
         .ok_or_else(|| ConversionError::Fetch(format!("not a data: URL: '{url}'")))?;
     let (meta, payload) = rest.split_once(',').ok_or_else(|| {
         ConversionError::Fetch("malformed data: URL: no ',' before the payload".to_string())
@@ -369,14 +368,39 @@ pub fn parse_data_url(url: &str) -> Result<DataUrl, ConversionError> {
 /// Decode a `data:` URI into a document: the payload is the bytes, the
 /// media type names the format ([`crate::InputFormat::from_mime`]); without
 /// one the bytes are sniffed. A `name=` parameter, when present, is the
-/// document's name.
+/// document's name; a `charset=` other than UTF-8
+/// (`data:text/csv;charset=shift_jis,…`) is the text encoding the
+/// converter decodes with ([`SourceDocument::with_encoding`]).
 pub fn from_data_url(url: &str) -> Result<SourceDocument, ConversionError> {
     let data = parse_data_url(url)?;
-    SourceDocument::from_named_bytes(
+    let source = SourceDocument::from_named_bytes(
         data.name.as_deref().unwrap_or("document"),
         data.bytes,
         data.media_type.as_deref(),
-    )
+    )?;
+    Ok(match data_url_charset(url) {
+        Some(label) if !label.eq_ignore_ascii_case("utf-8") => source.with_encoding(Some(label)),
+        _ => source,
+    })
+}
+
+/// `url` after its `data:` scheme — matched without regard to case, as URI
+/// schemes are (RFC 3986 §3.1: `DATA:` is the same scheme).
+fn strip_data_scheme(url: &str) -> Option<&str> {
+    url.get(..5)
+        .filter(|scheme| scheme.eq_ignore_ascii_case("data:"))
+        .map(|_| &url[5..])
+}
+
+/// The `charset=` parameter of a `data:` URI's media type, if any.
+fn data_url_charset(url: &str) -> Option<String> {
+    let meta = strip_data_scheme(url)?.split_once(',')?.0;
+    meta.split(';').skip(1).find_map(|p| {
+        let (k, v) = p.split_once('=')?;
+        k.trim()
+            .eq_ignore_ascii_case("charset")
+            .then(|| v.trim().trim_matches('"').to_string())
+    })
 }
 
 /// Percent-decoding (`%41` → `A`); a `%` not followed by two hex digits is
@@ -511,5 +535,15 @@ mod tests {
         assert!(from_data_url("data:text/plain").is_err());
         assert!(from_data_url("data:;base64,@@@").is_err());
         assert!(from_data_url("data:application/octet-stream,zzz").is_err());
+        // A non-UTF-8 charset is the text encoding; base64 may wrap.
+        let doc = from_data_url("data:text/csv;charset=shift_jis,a,b").unwrap();
+        assert_eq!(doc.encoding.as_deref(), Some("shift_jis"));
+        let doc = from_data_url("data:text/csv;charset=\"UTF-8\",a,b").unwrap();
+        assert_eq!(doc.encoding, None);
+        let doc = from_data_url("data:text/markdown;base64,IyBUaXRs\nZQ==").unwrap();
+        assert_eq!(doc.bytes, b"# Title");
+        // The scheme is case-insensitive.
+        let doc = from_data_url("DATA:text/html,%3Cp%3Ex%3C/p%3E").unwrap();
+        assert_eq!(doc.format, InputFormat::Html);
     }
 }

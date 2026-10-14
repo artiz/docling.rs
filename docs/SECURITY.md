@@ -101,6 +101,9 @@ limit — a container cgroup or `systemd` `RuntimeMaxSec` / `MemoryMax`.
 - `DOCLING_SERVE_API_KEY` (or `--api-key`) is docling-serve's own access key
   (below). Prefer the variable: a command-line flag shows up in the process
   list.
+- `DOCLING_RS_MCP_TOKEN` (or `--bearer-token`) is the bearer token
+  `docling-rs mcp --http` requires (below) — the variable for the same
+  reason.
 - A document password (`password`; CLI `--password`) is only handed to
   the decryption — never logged or echoed in an error. On a shared machine
   give the CLI `--password-file PATH` instead: `--password` shows up in the
@@ -165,6 +168,41 @@ extracted to disk, so there is no zip-slip path.
   header (401 otherwise); `/health`, `/ready`, `/metrics` and the docs page
   stay open. Without a key, bind to loopback (the default) or place an
   authenticating/policy proxy in front before exposing it.
+
+### `docling-rs mcp` (Model Context Protocol server, #669)
+
+The MCP server converts documents **on behalf of a model**, whose tool calls
+may be steered by the documents it reads (prompt injection) — so what a call
+can reach is fixed by the operator's flags, not by the call:
+
+- **Local reads are confined to `--root DIR`** (repeatable; the working
+  directory by default). A path is resolved against the first root, folded
+  lexically (`..`) and refused if it leaves every root — before the file
+  system is asked, so a probe learns nothing about what exists outside — and
+  checked again after `canonicalize`, so a symlink inside a root cannot lead
+  out. Options that name files (`xbrl_taxonomy`, a copybook path in
+  `ebcdic_layout`) are held to the same roots; `asr_model` must be a preset
+  name.
+- **URLs are off by default** (`--allow-url-fetch`). Enabled, a fetch goes
+  through `docling::fetch`: the docling-serve block-list (loopback, private,
+  link-local, unique-local, CGNAT) applied to **every redirect hop**, which
+  are followed by hand (at most 5), the 256 MiB `DOCLING_RS_MAX_FETCH_BYTES`
+  cap, and 10 s connect / 300 s overall timeouts.
+  `DOCLING_RS_ALLOW_PRIVATE_IP_FETCH=1` lifts the block-list, as above.
+  Remote images (`image_sources=remote` / `fetch_images`), a request-supplied
+  `vlm_endpoint` and the headless browser are behind the same flag, with
+  docling-serve's rules (remote images fall back to `embedded`).
+- **`--http` binds loopback** (127.0.0.1:3001) and refuses any other
+  address without `--allow-remote`. On loopback, rmcp's `Host` check stops
+  DNS rebinding and an `Origin` allow-list (localhost only; requests
+  without an `Origin` — every non-browser client — pass) stops a web page in
+  the user's browser from driving the server. A bearer token
+  (`--bearer-token` / `DOCLING_RS_MCP_TOKEN`) is compared in constant time;
+  without one, a remote bind prints a warning: whoever reaches the port can
+  read the files under the root.
+- stdio is the JSON-RPC wire: nothing in the conversion path writes to
+  stdout (diagnostics go to stderr), and child processes (ffmpeg, Tesseract)
+  run with captured output.
 
 ### `docling-rag` (retrieval API)
 
