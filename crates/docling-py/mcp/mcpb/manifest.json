@@ -1,0 +1,86 @@
+{
+  "manifest_version": "0.3",
+  "name": "docling-rs",
+  "display_name": "docling.rs",
+  "version": "0.0.0",
+  "description": "Document conversion for AI agents: PDF with layout, tables, OCR; DOCX, PPTX, XLSX, HTML → Markdown.",
+  "long_description": "docling.rs, a Rust port of IBM's docling, as an MCP server: it converts PDFs (layout analysis, table structure, OCR), Word, PowerPoint, Excel, HTML, EPUB, e-mail, images, audio and 40-odd other formats to Markdown or docling JSON, and serves MarkItDown's convert_to_markdown tool under the same name and contract. It runs the PyPI launcher with uv (`uvx docling-rs-mcp`), so uv must be installed; local paths are confined to the chosen folder. Office, HTML and e-mail need nothing else; PDFs and scans use ~720 MB of ONNX models, fetched once with `uvx docling-rs-mcp --download-models` (until then PDFs convert from their text layer). PyPI has no macOS wheel, so on a Mac the first start compiles the package (a Rust toolchain is required) — run that command in a terminal first.",
+  "author": {
+    "name": "docling.rs contributors",
+    "url": "https://github.com/docling-project/docling.rs"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/docling-project/docling.rs"
+  },
+  "homepage": "https://github.com/docling-project/docling.rs",
+  "documentation": "https://github.com/docling-project/docling.rs/blob/master/crates/docling-cli/README.md#mcp-server--docling-rs-mcp",
+  "support": "https://github.com/docling-project/docling.rs/issues",
+  "icon": "icon.png",
+  "server": {
+    "type": "python",
+    "entry_point": "docling-rs-mcp",
+    "mcp_config": {
+      "command": "uvx",
+      "args": [
+        "docling-rs-mcp@0.0.0",
+        "--root",
+        "${user_config.root}",
+        "--allow-url-fetch=${user_config.allow_url_fetch}"
+      ],
+      "env": {
+        "DOCLING_RS_OCR_LANG": "${user_config.ocr_lang}"
+      }
+    }
+  },
+  "tools": [
+    {
+      "name": "convert_to_markdown",
+      "description": "Convert a resource described by an http:, https:, file: or data: URI (or a local path) to Markdown — MarkItDown's tool of the same name."
+    },
+    {
+      "name": "convert",
+      "description": "Convert a document to Markdown, docling JSON, HTML, plain text, LaTeX, RAG chunks, WebVTT or Pandoc JSON, with docling.rs's conversion options (page ranges, OCR language and mode, passwords, …)."
+    },
+    {
+      "name": "list_input_formats",
+      "description": "The input file extensions this server converts, and whether URL inputs are enabled."
+    }
+  ],
+  "keywords": [
+    "docling",
+    "markitdown",
+    "pdf",
+    "ocr",
+    "markdown",
+    "document-conversion",
+    "docx",
+    "pptx",
+    "xlsx",
+    "rag"
+  ],
+  "license": "MIT",
+  "compatibility": {
+    "platforms": ["darwin", "win32", "linux"]
+  },
+  "user_config": {
+    "root": {
+      "type": "directory",
+      "title": "Documents folder",
+      "description": "The folder the server may read documents from; local paths and file: URIs outside it are refused.",
+      "required": true
+    },
+    "allow_url_fetch": {
+      "type": "boolean",
+      "title": "Fetch URLs",
+      "description": "Also convert http(s) URLs. Private and loopback addresses stay blocked.",
+      "default": false
+    },
+    "ocr_lang": {
+      "type": "string",
+      "title": "OCR language",
+      "description": "The language scans are read in: en, ch, or a BCP-47 tag such as zh-Hans.",
+      "default": "en"
+    }
+  }
+}

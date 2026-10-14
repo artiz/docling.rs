@@ -42,3 +42,8 @@ Issues = "https://github.com/docling-project/docling.rs/issues"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/docling_rs_mcp"]
+
+# mcpb/ is the MCP bundle mcp-registry.yml packs for Smithery, not part of
+# the Python package.
+[tool.hatch.build.targets.sdist]
+exclude = ["mcpb"]

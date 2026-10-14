@@ -490,15 +490,18 @@ jobs:
           attestations: true
           skip-existing: true
 
-  # The official MCP registry lists the launcher at this version (#669), so
-  # its entry follows a release tag's PyPI publish, not the GitHub Release.
+  # The MCP catalogs list the launcher at this version (#669) — the official
+  # registry's server.json and Smithery's bundle — so their entries follow a
+  # release tag's PyPI publish, not the GitHub Release.
   mcp-registry:
-    name: MCP registry
+    name: MCP catalogs
     needs: [mcp-launcher, publish-mcp-launcher]
     if: ${{ !cancelled() && needs.publish-mcp-launcher.result == 'success' && (startsWith(inputs.tag, 'v') || startsWith(github.ref, 'refs/tags/v')) }}
     permissions:
-      contents: read
+      contents: write # the bundle job attaches the .mcpb to the release
       id-token: write
     uses: ./.github/workflows/mcp-registry.yml
     with:
       version: ${{ needs.mcp-launcher.outputs.version }}
+    secrets:
+      SMITHERY_API_KEY: ${{ secrets.SMITHERY_API_KEY }}
