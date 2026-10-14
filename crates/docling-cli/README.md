@@ -122,8 +122,9 @@ wheel, so on a Mac uvx compiles the package on first start (a Rust toolchain
 is required) — run the `--download-models` line once before adding the
 server to a client. Each release published to PyPI is also published to
 the official MCP registry as `io.github.docling-project/docling-rs` and gets
-the MCP bundle Smithery lists (`docling-rs-mcp-<version>.mcpb`) attached;
-Glama reads `glama.json` ([`docs/MCP_REGISTRIES.md`](../../docs/MCP_REGISTRIES.md)).
+the MCP bundle Smithery lists ([`artem-kustikov/docling-rs`](https://smithery.ai/servers/artem-kustikov/docling-rs),
+`docling-rs-mcp-<version>.mcpb`) attached; Glama reads `glama.json`
+([`docs/MCP_REGISTRIES.md`](../../docs/MCP_REGISTRIES.md)).
 
 The container image has the models baked in; mount the folder at the same
 path inside so the paths the agent sees are the paths the server reads:

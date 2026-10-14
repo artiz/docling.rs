@@ -16,6 +16,10 @@ same Rust server the binary runs (`docling_rs.mcp`, built from
 `crates/docling-cli/src/mcp.rs`). Every catalog therefore runs exactly what
 `docling-rs mcp` runs.
 
+Listings: the [official MCP registry](https://registry.modelcontextprotocol.io/v0/servers?search=io.github.docling-project/docling-rs)
+(since 2.22.0) and [Smithery](https://smithery.ai/servers/artem-kustikov/docling-rs)
+(`artem-kustikov/docling-rs`, the value of `SMITHERY_SERVER`).
+
 ## What each catalog reads
 
 | Catalog | Reads | Ownership check |
