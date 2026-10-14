@@ -113,6 +113,17 @@ in [`docs/OPTIONS.md`](./docs/OPTIONS.md).
   ([Conformance](#conformance-with-python-docling)).
 - **A drop-in server for docling-serve** — Open WebUI, n8n, Dify and LangChain
   clients work unchanged ([`docling-rs serve`](#http-conversion-api--docling-rs-serve)).
+- **LangChain:** `pip install "docling-rs[langchain]"` — langchain-docling's
+  `DoclingLoader` on the Rust engine, one import to swap
+  ([details](#python-bindings)).
+- **AutoGen:** `pip install "docling-rs[autogen]"` — `DoclingIndexer` fills
+  any AutoGen memory with chunks that carry their pages, `DoclingConvertTool`
+  lets an agent read documents ([details](./crates/docling-py/README.md#autogen)).
+- **Runs where you are:** Linux x64 / arm64 / s390x and Windows prebuilt (CLI,
+  wheels, npm), macOS from source, containers for amd64 and arm64; NVIDIA
+  CUDA and TensorRT, DirectML, CoreML and WebGPU in the browser as opt-in
+  accelerators ([GPU](#gpu-execution-providers-optional-off-by-default),
+  [IBM Z](#ibm-z-s390x-and-other-targets-without-a-prebuilt-onnx-runtime--ort-load-dynamic)).
 
 Developed with **Claude Code** and _[TENET](https://github.com/artiz/tenet/tree/master)_ (minimalistic AI-driven development framework).
 
@@ -779,7 +790,9 @@ npm i docling.rs-wasm
 import { convert } from "docling.rs-wasm";          // bundlers
 // import init, { convert } from "docling.rs-wasm/web"; await init();  // no bundler
 const markdown = convert(bytes, file.name, "md");
-``` Digital PDFs convert too: the wasm build always compiles docling-pdf's
+```
+
+Digital PDFs convert too: the wasm build always compiles docling-pdf's
 pure-Rust text-layer parser (the `pdf-text` feature of the `docling` crate;
 the same extraction as `--text-layer-only`: flat paragraphs, no headings/tables/pictures),
 while scanned PDFs get a clear "needs OCR" error instead of an empty
@@ -806,6 +819,7 @@ One engine, several front doors. Every surface takes the same options
 | C, C++, C#/.NET, Go, Java, Swift, Zig, … | `docling-ffi`: `docling_convert(bytes, len, filename, options_json)` behind one `docling.h` | [release archives](https://github.com/docling-project/docling.rs/releases) `docling-ffi-<tag>-<target>` (library + header) | [C ABI](#c-abi-for-embedders--docling-ffi), [language quickstarts](./crates/docling-ffi/README.md#language-quickstarts) |
 | a RAG stack | `docling-rag`: chunk → embed → search, REST API and web UI | `cargo install docling-rag` | [RAG subsystem](#rag-subsystem) |
 | a LangChain pipeline | `docling_rs.langchain.DoclingLoader` — langchain-docling's loader (and picture descriptions) on the Rust engine | `pip install "docling-rs[langchain]"` | [Python bindings](#python-bindings), [examples](./crates/docling-py/examples/langchain/) |
+| an AutoGen agent | `docling_rs.autogen.DoclingIndexer` (documents into any AutoGen memory, chunked with page provenance) and `DoclingConvertTool` (a document-reading `FunctionTool`) | `pip install "docling-rs[autogen]"` | [AutoGen](./crates/docling-py/README.md#autogen), [example](./crates/docling-py/examples/autogen/) |
 
 Which one to pick: **Rust** when you're already in Cargo; **CLI** for scripts
 and batch jobs (the ML models load once per run); **serve** when several
@@ -1384,6 +1398,22 @@ docs = DoclingLoader(file_path=["https://arxiv.org/pdf/2408.09869"]).load()  # c
 See the [LangChain section](./crates/docling-py/README.md#langchain) and the
 [examples](./crates/docling-py/examples/langchain/) (loader basics, an agentic
 RAG with page citations, picture descriptions).
+
+**AutoGen:** `pip install "docling-rs[autogen]"` adds `docling_rs.autogen` —
+`DoclingIndexer`, which converts and chunks documents into any
+`autogen_core.memory.Memory` (`ListMemory`, Chroma, …) with `source`,
+`headings` and `pages` metadata per chunk, and `DoclingConvertTool`, a
+`FunctionTool` an `AssistantAgent` calls to read a file or URL as Markdown:
+
+```python
+from docling_rs.autogen import DoclingIndexer, DoclingConvertTool
+
+await DoclingIndexer(memory).index_documents(["https://arxiv.org/pdf/2408.09869"])
+agent = AssistantAgent("assistant", model_client=client, memory=[memory], tools=[DoclingConvertTool()])
+```
+
+See the [AutoGen section](./crates/docling-py/README.md#autogen) and the
+[example](./crates/docling-py/examples/autogen/) (a RAG agent with page citations).
 
 ## C ABI for embedders — `docling-ffi`
 

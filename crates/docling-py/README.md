@@ -457,6 +457,44 @@ applies to every input format the converter handles, not only PDF.
 Runnable examples — loader basics, an agentic RAG with page citations, picture
 descriptions — are in [`examples/langchain/`](./examples/langchain/).
 
+## AutoGen
+
+`docling_rs.autogen` puts documents in front of
+[AutoGen](https://github.com/microsoft/autogen) agents — the indexing half
+of AutoGen's RAG recipe and a document-reading tool, both on the Rust
+engine:
+
+```bash
+pip install "docling-rs[autogen]"
+```
+
+```python
+from autogen_agentchat.agents import AssistantAgent
+from autogen_core.memory import ListMemory            # or autogen-ext's ChromaDBVectorMemory, …
+from docling_rs.autogen import DoclingIndexer, DoclingConvertTool
+
+memory = ListMemory()
+await DoclingIndexer(memory).index_documents(["report.pdf", "https://arxiv.org/pdf/2408.09869"])
+agent = AssistantAgent("assistant", model_client=client, memory=[memory], tools=[DoclingConvertTool()])
+```
+
+`DoclingIndexer(memory, converter=…, chunker=…, mime_type=…, metadata=…)`
+converts each source, chunks it (the native `HybridChunker` with docling's
+defaults, or any chunker with `chunk()` / `contextualize()`) and adds one
+`MemoryContent` per chunk: the heading path plus the chunk text, and flat
+metadata a vector store accepts — `source`, `headings` (`A > B`) and `pages`
+(`3,4`) — or whatever a `metadata(source, chunk)` function returns.
+`indexer.chunks(source)` yields them without adding, for batching into a
+store yourself.
+
+`DoclingConvertTool(converter=…, max_chars=40_000)` is a `FunctionTool`
+named `convert_document(source)` that returns the document as Markdown
+(cut with a `[… N more characters]` tail past `max_chars`, so a manual does
+not flood the context); the conversion runs on a worker thread, as
+`FunctionTool` runs every synchronous function. The example in
+[`examples/autogen/`](./examples/autogen/) indexes a paper into a Chroma
+memory and answers questions with page citations.
+
 ## Not covered (yet)
 
 The *local in-process* full-VLM conversion pipeline (SmolDocling) and

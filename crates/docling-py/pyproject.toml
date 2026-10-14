@@ -47,6 +47,11 @@ dependencies = [
 langchain = [
     "langchain-core>=0.3",
 ]
+# docling_rs.autogen — DoclingIndexer (documents into an AutoGen memory) and
+# DoclingConvertTool (a document-reading FunctionTool).
+autogen = [
+    "autogen-core>=0.4",
+]
 
 [project.urls]
 Homepage = "https://github.com/docling-project/docling.rs"
