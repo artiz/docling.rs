@@ -92,6 +92,10 @@ paths:
         - { $ref: "#/components/parameters/redact_kinds" }
         - { $ref: "#/components/parameters/redact_pattern" }
         - { $ref: "#/components/parameters/redact_images" }
+        - { $ref: "#/components/parameters/redact_allow_terms" }
+        - { $ref: "#/components/parameters/redact_deny_terms" }
+        - { $ref: "#/components/parameters/redact_allow_patterns" }
+        - { $ref: "#/components/parameters/redact_ner_min_score" }
         - { $ref: "#/components/parameters/fetch_images" }
         - { $ref: "#/components/parameters/image_sources" }
         - { $ref: "#/components/parameters/image_hosts" }
@@ -179,6 +183,10 @@ paths:
                 redact_kinds: { type: string }
                 redact_pattern: { type: string }
                 redact_images: { type: string }
+                redact_allow_terms: { type: string }
+                redact_deny_terms: { type: string }
+                redact_allow_patterns: { type: string }
+                redact_ner_min_score: { type: number, minimum: 0, maximum: 1 }
                 fetch_images: { type: boolean }
                 image_sources: { $ref: "#/components/schemas/ImageSources" }
                 image_hosts: { oneOf: [{ type: array, items: { type: string } }, { type: string }] }
@@ -951,6 +959,29 @@ components:
             unread leaves the document); `box_out` OCRs each one and paints
             over the lines that carry a value (needs the OCR models; the
             streaming endpoint drops instead); `keep` leaves them.
+        redact_allow_terms:
+          type: string
+          description: >-
+            With `redact_pii` (#694): comma-separated terms never redacted
+            even when a detector flags them — `support@example.com`, the
+            company's own name.
+        redact_deny_terms:
+          type: string
+          description: >-
+            With `redact_pii`: comma-separated terms always redacted, as
+            `[REDACTED]`.
+        redact_allow_patterns:
+          type: string
+          description: >-
+            With `redact_pii` (#694): regular expressions, one per line, a
+            flagged span must not match in full to be redacted — the
+            document's own part numbers, record IDs, ticket formats.
+        redact_ner_min_score:
+          type: number
+          minimum: 0
+          maximum: 1
+          default: 0.85
+          description: With `redact_pii`: the NER detector's minimum confidence.
         ebcdic_layout:
           type: string
           description: >
@@ -1470,6 +1501,14 @@ components:
       { name: redact_pattern, in: query, schema: { type: string } }
     redact_images:
       { name: redact_images, in: query, schema: { type: string } }
+    redact_allow_terms:
+      { name: redact_allow_terms, in: query, schema: { type: string } }
+    redact_deny_terms:
+      { name: redact_deny_terms, in: query, schema: { type: string } }
+    redact_allow_patterns:
+      { name: redact_allow_patterns, in: query, schema: { type: string } }
+    redact_ner_min_score:
+      { name: redact_ner_min_score, in: query, schema: { type: number, minimum: 0, maximum: 1 } }
     fetch_images:
       { name: fetch_images, in: query, schema: { type: boolean } }
     image_sources:

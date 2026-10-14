@@ -401,3 +401,63 @@ fn invalid_custom_pattern_is_an_error() {
         .expect_err("rejected");
     assert!(err.to_string().contains("redact pattern"), "{err}");
 }
+
+/// The allow/deny/pattern/score options (#694) reach the pass through
+/// `ConvertOptions`: an allow pattern keeps the document's own number
+/// shape — here the seeded phone — while the other values go; a bad
+/// pattern or score is rejected by name.
+#[test]
+fn allow_patterns_and_terms_through_convert_options() {
+    use docling::ConvertOptions;
+    let opts = ConvertOptions {
+        redact_pii: Some(true),
+        redact_allow_patterns: Some(r"\+1 \(555\) \d{3}-\d{4}".into()),
+        redact_allow_terms: Some("john.doe@example.com, Angela Merkel".into()),
+        redact_deny_terms: Some("Project Falcon".into()),
+        redact_ner_min_score: Some(0.5),
+        ..Default::default()
+    };
+    let r = opts.redaction().unwrap().expect("on");
+    assert_eq!(
+        r.allow_patterns,
+        vec![r"\+1 \(555\) \d{3}-\d{4}".to_string()]
+    );
+    assert_eq!(
+        r.allow_terms,
+        vec!["john.doe@example.com".to_string(), "Angela Merkel".into()]
+    );
+    assert_eq!(r.deny_terms, vec!["Project Falcon".to_string()]);
+    assert_eq!(r.ner_min_score, 0.5);
+    let doc = convert(
+        opts.apply(DocumentConverter::new()).unwrap(),
+        "data/html/sources/pii_sample.html",
+    )
+    .document;
+    let md = doc.export_to_markdown();
+    assert!(
+        md.contains("+1 (555) 123-4567"),
+        "the allowed phone shape stays:\n{md}"
+    );
+    assert!(
+        md.contains("john.doe@example.com"),
+        "the allowed term stays:\n{md}"
+    );
+    assert!(
+        !md.contains("4111 1111 1111 1111") && md.contains("[CREDIT_CARD]"),
+        "{md}"
+    );
+
+    let bad = ConvertOptions {
+        redact_pii: Some(true),
+        redact_allow_patterns: Some("(".into()),
+        ..Default::default()
+    };
+    let e = bad.validate().unwrap_err().to_string();
+    assert!(e.contains("redact_allow_patterns"), "{e}");
+    let score = ConvertOptions {
+        redact_ner_min_score: Some(1.5),
+        ..Default::default()
+    };
+    let e = score.validate().unwrap_err().to_string();
+    assert!(e.contains("redact_ner_min_score"), "{e}");
+}

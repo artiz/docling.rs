@@ -228,6 +228,17 @@ pub struct ConvertOptions {
     pub redact_pattern: Option<String>,
     /// Embedded images and page renders: `drop` (default) | `box_out` | `keep`.
     pub redact_images: Option<String>,
+    /// Comma-separated terms never redacted even when a detector flags
+    /// them (#694) — `support@example.com`, the company's own name.
+    pub redact_allow_terms: Option<String>,
+    /// Comma-separated terms always redacted, as `[REDACTED]` — a project
+    /// code name, a client the NER misses.
+    pub redact_deny_terms: Option<String>,
+    /// Regexes (one per line) a flagged span must not match in full to be
+    /// redacted — a document's own number shapes: part numbers, record IDs.
+    pub redact_allow_patterns: Option<String>,
+    /// The NER detector's minimum confidence, 0–1 (default 0.85).
+    pub redact_ner_min_score: Option<f32>,
 
     // --- pipeline selection --------------------------------------------------
     /// `standard` (default) | `vlm` (#77): the remote vision model instead of
@@ -492,6 +503,13 @@ pub const OPTIONS: &[OptionInfo] = &[
     row("redact_kinds"),
     row("redact_pattern"),
     row("redact_images"),
+    row("redact_allow_terms"),
+    row("redact_deny_terms"),
+    OptionInfo {
+        cli: Some("--redact-allow-pattern"),
+        ..row("redact_allow_patterns")
+    },
+    row("redact_ner_min_score"),
     row("pipeline"),
     row("vlm_endpoint"),
     row("vlm_model"),
@@ -849,6 +867,40 @@ impl ConvertOptions {
             // Compile now: the error names the field.
             docling_core::redact::PatternDetector::new(&opts)
                 .map_err(|e| OptionsError::new("redact_pattern", e.0))?;
+        }
+        let list = |s: &Option<String>| -> Vec<String> {
+            s.as_deref()
+                .unwrap_or("")
+                .split(',')
+                .map(str::trim)
+                .filter(|t| !t.is_empty())
+                .map(str::to_string)
+                .collect()
+        };
+        opts.allow_terms = list(&self.redact_allow_terms);
+        opts.deny_terms = list(&self.redact_deny_terms);
+        if let Some(p) = self.redact_allow_patterns.as_deref() {
+            opts.allow_patterns = p
+                .lines()
+                .map(str::trim)
+                .filter(|l| !l.is_empty())
+                .map(str::to_string)
+                .collect();
+            docling_core::redact::AllowList::new(&opts).map_err(|e| {
+                OptionsError::new(
+                    "redact_allow_patterns",
+                    format!("redact_allow_patterns: {}", e.0),
+                )
+            })?;
+        }
+        if let Some(score) = self.redact_ner_min_score {
+            if !(score.is_finite() && (0.0..=1.0).contains(&score)) {
+                return Err(OptionsError::new(
+                    "redact_ner_min_score",
+                    format!("redact_ner_min_score must be a number in 0.0-1.0, got {score}"),
+                ));
+            }
+            opts.ner_min_score = score;
         }
         if let Some(i) = self
             .redact_images

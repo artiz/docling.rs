@@ -214,10 +214,18 @@ impl NerDetector {
             s.start = snap_back(chunk, s.start);
             s.end = snap_forward(chunk, s.end);
         }
+        // … and a lone all-caps token with a digit, underscore or dash in
+        // it (`TR482913`, `SETUP_FLAG`, `XY-200`): a part number or a code
+        // identifier, not an organization (#694).
         spans.retain(|s| {
             let text = &chunk[s.start..s.end];
             let letters = text.chars().filter(|c| c.is_alphabetic()).count();
-            !(text.chars().all(|c| !c.is_lowercase()) && letters <= 4 && !text.contains(' '))
+            let one_token = !text.contains(' ');
+            let no_lowercase = text.chars().all(|c| !c.is_lowercase());
+            let identifier = text
+                .chars()
+                .any(|c| c.is_ascii_digit() || c == '_' || c == '-');
+            !(no_lowercase && one_token && (letters <= 4 || identifier))
         });
         Ok(spans)
     }

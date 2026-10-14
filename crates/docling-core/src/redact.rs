@@ -281,6 +281,11 @@ pub struct RedactionOptions {
     /// Literal terms (case-insensitive) never redacted even when a detector
     /// flags them — `support@example.com`, the company's own name.
     pub allow_terms: Vec<String>,
+    /// Regexes a flagged span must not match in full to be redacted (#694)
+    /// — the escape hatch for a document's own number shapes: part numbers
+    /// (`[A-Z]{2}\d{6}`), record IDs, a ticket format. Applied to every
+    /// detector's spans, the NER's included.
+    pub allow_patterns: Vec<String>,
     /// The NER detector's minimum confidence for a span (0–1; 0.85 by
     /// default — a lone common word in a table header reads as a location
     /// at ~0.8, a real name at 0.99+).
@@ -300,6 +305,7 @@ impl Default for RedactionOptions {
             custom_patterns: Vec::new(),
             deny_terms: Vec::new(),
             allow_terms: Vec::new(),
+            allow_patterns: Vec::new(),
             ner_min_score: 0.85,
             images: ImageRedaction::Drop,
             return_mapping: false,
@@ -408,6 +414,47 @@ macro_rules! re {
     }};
 }
 
+/// What is never redacted: the allow terms (case-insensitive, the whole
+/// span) and the allow patterns (a regex the whole span matches). Built
+/// once per pass from the options and asked about every span, whichever
+/// detector produced it.
+#[derive(Debug, Default)]
+pub struct AllowList {
+    terms: Vec<String>,
+    patterns: Vec<Regex>,
+}
+
+impl AllowList {
+    /// Compile the options' allow terms and patterns; an invalid pattern is
+    /// the error.
+    pub fn new(opts: &RedactionOptions) -> Result<Self, RedactionError> {
+        let terms = opts
+            .allow_terms
+            .iter()
+            .map(|t| t.trim().to_lowercase())
+            .filter(|t| !t.is_empty())
+            .collect();
+        let mut patterns = Vec::new();
+        for p in opts
+            .allow_patterns
+            .iter()
+            .map(|p| p.trim())
+            .filter(|p| !p.is_empty())
+        {
+            let re = Regex::new(&format!("^(?:{p})$"))
+                .map_err(|e| RedactionError(format!("redact allow pattern {p:?}: {e}")))?;
+            patterns.push(re);
+        }
+        Ok(Self { terms, patterns })
+    }
+
+    /// Whether a span's text is allowed through.
+    pub fn allows(&self, text: &str) -> bool {
+        (!self.terms.is_empty() && self.terms.iter().any(|a| a == &text.to_lowercase()))
+            || self.patterns.iter().any(|re| re.is_match(text))
+    }
+}
+
 /// The built-in detector: patterns with check-digit validation where the
 /// format has one, so a random 16-digit order number is not a card and
 /// `2024-01-15` is not a phone.
@@ -415,7 +462,7 @@ pub struct PatternDetector {
     kinds: Vec<PiiKind>,
     custom: Vec<(String, Regex)>,
     deny: Vec<Regex>,
-    allow: Vec<String>,
+    allow: AllowList,
 }
 
 impl PatternDetector {
@@ -441,12 +488,7 @@ impl PatternDetector {
                 Regex::new(&format!(r"(?i)\b{}\b", regex::escape(t.trim()))).expect("escaped term")
             })
             .collect();
-        let allow = opts
-            .allow_terms
-            .iter()
-            .map(|t| t.trim().to_lowercase())
-            .filter(|t| !t.is_empty())
-            .collect();
+        let allow = AllowList::new(opts)?;
         Ok(Self {
             kinds,
             custom,
@@ -459,9 +501,10 @@ impl PatternDetector {
         self.kinds.contains(&kind)
     }
 
-    /// Whether the span's text is an allowed term.
+    /// Whether the span's text is an allowed term or matches an allow
+    /// pattern.
     pub fn allowed(&self, text: &str) -> bool {
-        !self.allow.is_empty() && self.allow.iter().any(|a| a == &text.to_lowercase())
+        self.allow.allows(text)
     }
 }
 
@@ -503,10 +546,18 @@ impl PiiDetector for PatternDetector {
                 let digits: String = m.as_str().chars().filter(|c| c.is_ascii_digit()).collect();
                 // The whole number run, not a Luhn-valid suffix of a longer
                 // one (`4111 1111 1111 1112` is not a card).
-                if !maximal_digit_run(text, m.start(), m.end()) {
+                if !maximal_digit_run(text, m.start(), m.end())
+                    || !token_bounded(text, m.start(), m.end())
+                {
                     continue;
                 }
-                if (13..=19).contains(&digits.len()) && luhn_valid(&digits) {
+                // Luhn alone passes a tenth of random digit pairs (#694):
+                // the number must also open with a brand's IIN at that
+                // brand's length, and be grouped the way cards are printed.
+                if card_brand(&digits).is_some()
+                    && card_grouping_ok(m.as_str())
+                    && luhn_valid(&digits)
+                {
                     out.push(Span::new(m.start(), m.end(), PiiKind::CreditCard));
                 }
             }
@@ -546,7 +597,9 @@ impl PiiDetector for PatternDetector {
             }
         }
         if self.wants(PiiKind::NationalId) {
-            // US SSN: AAA-GG-SSSS with the SSA's never-issued ranges excluded.
+            // US SSN: AAA-GG-SSSS with the SSA's never-issued ranges excluded
+            // — and not a legal citation (`rule 412-18-0150`, `§ 310-20-1000`,
+            // #694): a citation word right before it says what it is.
             for m in re!(r"\b\d{3}-\d{2}-\d{4}\b").find_iter(text) {
                 let s = m.as_str();
                 let area = &s[0..3];
@@ -556,23 +609,48 @@ impl PiiDetector for PatternDetector {
                 if &s[4..6] == "00" || &s[7..11] == "0000" {
                     continue;
                 }
+                if !token_bounded(text, m.start(), m.end()) || citation_before(text, m.start()) {
+                    continue;
+                }
                 out.push(Span::new(m.start(), m.end(), PiiKind::NationalId));
             }
-            // UK National Insurance number.
-            for m in re!(r"\b[A-CEGHJ-PR-TW-Z][A-CEGHJ-NPR-TW-Z] ?\d{2} ?\d{2} ?\d{2} ?[A-D]\b")
-                .find_iter(text)
+            // UK National Insurance number, written compact (`AB123456C`)
+            // or fully spaced (`AB 12 34 56 C`) — never half and half, which
+            // is how a part number and the next word line up (`TR482913 B`).
+            for m in re!(
+                r"\b[A-CEGHJ-PR-TW-Z][A-CEGHJ-NPR-TW-Z](?:\d{6}[A-D]| \d{2} \d{2} \d{2} [A-D])\b"
+            )
+            .find_iter(text)
             {
                 let prefix = &m.as_str()[0..2];
                 if ["BG", "GB", "NK", "KN", "TN", "NT", "ZZ"].contains(&prefix) {
                     continue;
                 }
+                if !token_bounded(text, m.start(), m.end()) {
+                    continue;
+                }
                 out.push(Span::new(m.start(), m.end(), PiiKind::NationalId));
             }
-            // Indian Aadhaar: 12 digits, first 2–9, Verhoeff check digit.
-            for m in re!(r"\b[2-9]\d{3}[ \-]?\d{4}[ \-]?\d{4}\b").find_iter(text) {
-                let digits: String = m.as_str().chars().filter(|c| c.is_ascii_digit()).collect();
+            // Indian Aadhaar: 12 digits, first 2–9, grouped 4-4-4 with one
+            // separator throughout (or none), the first group not a year
+            // (`2019 95753514` is a date and a record number), Verhoeff
+            // check digit.
+            for m in re!(r"\b[2-9]\d{3}([ \-]?)\d{4}([ \-]?)\d{4}\b").captures_iter(text) {
+                let whole = m.get(0).expect("match");
+                let (sep1, sep2) = (
+                    m.get(1).map_or("", |g| g.as_str()),
+                    m.get(2).map_or("", |g| g.as_str()),
+                );
+                if sep1 != sep2 || !token_bounded(text, whole.start(), whole.end()) {
+                    continue;
+                }
+                let s = whole.as_str();
+                if !sep1.is_empty() && (s.starts_with("19") || s.starts_with("20")) {
+                    continue;
+                }
+                let digits: String = s.chars().filter(|c| c.is_ascii_digit()).collect();
                 if verhoeff_valid(&digits) {
-                    out.push(Span::new(m.start(), m.end(), PiiKind::NationalId));
+                    out.push(Span::new(whole.start(), whole.end(), PiiKind::NationalId));
                 }
             }
         }
@@ -588,10 +666,21 @@ impl PiiDetector for PatternDetector {
                 if ssn_shape.is_match(s) {
                     continue;
                 }
-                // A plain `+` form or a grouped one with at least two groups
-                // or a country/area code — a lone `12345 678` number line in
-                // a table would otherwise qualify; require a separator shape
-                // phones actually use.
+                // Whole tokens only (#694): `IL 62704-1234` must not yield
+                // `2704-1234`, nor `60601 0001 12500` a run that starts
+                // inside a number.
+                if !token_bounded(text, m.start(), m.end()) {
+                    continue;
+                }
+                // Digit groups alone are not a phone — a ZIP+4, a rule
+                // number, two record IDs side by side all look like one.
+                // It takes a shape phones are written in: a `+` country
+                // code, a parenthesized area code, NANP's 3-3-4, a national
+                // number of ten or more digits in three or more groups, or
+                // a word nearby that says it is a phone.
+                if !phone_shape(s, digits) && !phone_keyword_before(text, m.start()) {
+                    continue;
+                }
                 out.push(Span::new(m.start(), m.end(), PiiKind::Phone));
             }
         }
@@ -630,6 +719,120 @@ fn maximal_digit_run(text: &str, start: usize, end: usize) -> bool {
         && matches!(bytes[end], b' ' | b'-')
         && bytes[end + 1].is_ascii_digit();
     !before && !after
+}
+
+/// Whether `text[start..end]` begins and ends at a token boundary: the
+/// character before and the one after are neither letters nor digits
+/// (#694 — no match may start or end inside a longer alphanumeric token).
+fn token_bounded(text: &str, start: usize, end: usize) -> bool {
+    let before = text[..start].chars().next_back();
+    let after = text[end..].chars().next();
+    // A match that opens with `+` or `(` is its own left edge: the runs of
+    // an inline paragraph are joined without the whitespace between them
+    // (`or` + `+1 (555) …`), and a letter before a `+` is no digit run.
+    let opens_itself = text[start..].starts_with(['+', '(']);
+    let left_ok = match before {
+        Some(c) if opens_itself => !c.is_ascii_digit(),
+        Some(c) => !c.is_alphanumeric(),
+        None => true,
+    };
+    left_ok && !after.is_some_and(|c| c.is_alphanumeric())
+}
+
+/// The shapes a phone number is written in (the digit groups alone are
+/// not one): `+` country code; `(area)`; NANP `3-3-4` or `1-3-3-4`; a
+/// national number of ten or eleven digits in three or more groups, or
+/// one with a trunk `0` of up to thirteen (`020 7946 0958`, `0151 496
+/// 0000`) — a `4-4-4` of twelve digits is a record number.
+fn phone_shape(s: &str, digits: usize) -> bool {
+    if s.starts_with('+') || s.contains('(') {
+        return true;
+    }
+    let groups: Vec<usize> = s
+        .split(|c: char| !c.is_ascii_digit())
+        .filter(|g| !g.is_empty())
+        .map(str::len)
+        .collect();
+    groups == [3, 3, 4]
+        || groups == [1, 3, 3, 4]
+        || (groups.len() >= 3
+            && ((10..=11).contains(&digits) || (s.starts_with('0') && digits <= 13)))
+}
+
+/// Whether a word that announces a phone number (`tel`, `phone`, `fax`,
+/// `mobile`, `call`, …) stands within a few words before `pos`.
+fn phone_keyword_before(text: &str, pos: usize) -> bool {
+    let head = &text[..pos];
+    let from = head.char_indices().rev().nth(30).map_or(0, |(i, _)| i);
+    re!(r"(?i)\b(?:tel|tel\.|telephone|phone|fax|mobile|cell|call|contact|whatsapp|hotline|dial|sms|text)\b[^\d]*$")
+        .is_match(&head[from..])
+}
+
+/// Whether a legal-citation word stands right before `pos`: `rule`,
+/// `section`, `sec.`, `§`, `code`, `article`, `art.`, `para.`, `clause`,
+/// `chapter`, `title`, `regulation`, `reg.`, `order`, `statute`, `part`.
+fn citation_before(text: &str, pos: usize) -> bool {
+    let head = text[..pos].trim_end();
+    let from = head.char_indices().rev().nth(16).map_or(0, |(i, _)| i);
+    re!(r"(?i)(?:\b(?:rule|rules|section|sections|sec|code|article|art|para|paragraph|clause|chapter|title|regulation|reg|order|statute|part|no|number)\.?|§+)\s*(?:no\.?\s*)?$")
+        .is_match(&head[from..])
+}
+
+/// The card brand a digit string opens with, at a length that brand issues
+/// (ISO/IEC 7812 IIN ranges): `None` for a number no brand would print.
+fn card_brand(digits: &str) -> Option<&'static str> {
+    let n = digits.len();
+    let p = |k: usize| digits[..k.min(n)].parse::<u32>().unwrap_or(0);
+    let (two, three, four) = (p(2), p(3), p(4));
+    if digits.starts_with('4') && matches!(n, 13 | 16 | 19) {
+        return Some("visa");
+    }
+    if ((51..=55).contains(&two) || (2221..=2720).contains(&four)) && n == 16 {
+        return Some("mastercard");
+    }
+    if (two == 34 || two == 37) && n == 15 {
+        return Some("amex");
+    }
+    if (four == 6011 || two == 65 || (644..=649).contains(&three)) && (16..=19).contains(&n) {
+        return Some("discover");
+    }
+    if ((300..=305).contains(&three) || two == 36 || two == 38 || two == 39)
+        && (14..=19).contains(&n)
+    {
+        return Some("diners");
+    }
+    if (3528..=3589).contains(&four) && (16..=19).contains(&n) {
+        return Some("jcb");
+    }
+    if two == 62 && (16..=19).contains(&n) {
+        return Some("unionpay");
+    }
+    if matches!(
+        four,
+        5018 | 5020 | 5038 | 5893 | 6304 | 6759 | 6761 | 6762 | 6763
+    ) && (12..=19).contains(&n)
+    {
+        return Some("maestro");
+    }
+    None
+}
+
+/// Whether a card number's separators fall where cards print them: none,
+/// groups of four (a last group of one to four), or Amex's 4-6-5 / Diners'
+/// 4-6-4. `88061052 76665755`, two record IDs, is 8-8.
+fn card_grouping_ok(s: &str) -> bool {
+    let groups: Vec<usize> = s
+        .split(|c: char| !c.is_ascii_digit())
+        .filter(|g| !g.is_empty())
+        .map(str::len)
+        .collect();
+    if groups.len() == 1 {
+        return true;
+    }
+    let (last, head) = groups.split_last().expect("non-empty");
+    (head.iter().all(|&g| g == 4) && (1..=4).contains(last))
+        || groups == [4, 6, 5]
+        || groups == [4, 6, 4]
 }
 
 /// Luhn (ISO/IEC 7812-1) check over a digit string.
@@ -766,6 +969,10 @@ fn looks_like_date_or_version(s: &str) -> bool {
 pub struct Redactor<'a> {
     opts: &'a RedactionOptions,
     detector: &'a dyn PiiDetector,
+    /// The allow terms and patterns, asked about every span whichever
+    /// detector produced it (an invalid pattern was rejected by the
+    /// options; here it is simply absent).
+    allow: AllowList,
     /// `(label, original) → number`, first-seen order per label.
     numbers: HashMap<(String, String), usize>,
     next: HashMap<String, usize>,
@@ -781,6 +988,7 @@ impl<'a> Redactor<'a> {
         Redactor {
             opts,
             detector,
+            allow: AllowList::new(opts).unwrap_or_default(),
             numbers: HashMap::new(),
             next: HashMap::new(),
             report: RedactionReport {
@@ -813,6 +1021,7 @@ impl<'a> Redactor<'a> {
             .filter(|s| text.is_char_boundary(s.start) && text.is_char_boundary(s.end))
             .filter(|s| self.opts.wants(s.kind))
             .filter(|s| !PiiKind::NER.contains(&s.kind) || s.score >= self.opts.ner_min_score)
+            .filter(|s| !self.allow.allows(&text[s.start..s.end]))
             .collect();
         spans.sort_by(|a, b| {
             a.start
@@ -1073,10 +1282,26 @@ impl<'a> Redactor<'a> {
             | Node::Located { inner, .. }
             | Node::Prov { inner, .. }
             | Node::DoclangOnly(inner) => self.redact_node(inner),
+            // A transcript cue (#694): the words are redacted once, in
+            // `cue`, and spliced into the paragraph behind its `[time: …]`
+            // prefix — the timing is never a phone number, and the value is
+            // counted once, not per representation.
             Node::Track { track, cue, inner } => {
                 self.redact_opt(&mut track.voice);
+                let original = cue.clone();
                 self.redact_text(cue);
-                self.redact_node(inner);
+                match inner.as_mut() {
+                    Node::Paragraph { text, .. } if text.ends_with(&original) => {
+                        let prefix_len = text.len() - original.len();
+                        text.truncate(prefix_len);
+                        text.push_str(cue);
+                    }
+                    other => {
+                        let counting = std::mem::replace(&mut self.counting, false);
+                        self.redact_node(other);
+                        self.counting = counting;
+                    }
+                }
             }
             Node::CommentSection { name, text, .. } => {
                 self.redact_text(name);
@@ -1365,6 +1590,217 @@ mod tests {
             ..Default::default()
         })
         .is_err());
+    }
+
+    /// #694: the nine misfires reported on real documents stay as they are
+    /// with the five pattern kinds selected; the control phone goes.
+    #[test]
+    fn postal_codes_citations_record_ids_and_part_numbers_are_not_pii() {
+        let opts = RedactionOptions {
+            kinds: vec![
+                PiiKind::Phone,
+                PiiKind::CreditCard,
+                PiiKind::Iban,
+                PiiKind::NationalId,
+                PiiKind::IpAddress,
+            ],
+            ..Default::default()
+        };
+        let d = detector(&opts);
+        let untouched = [
+            "Ship to: Example Corp, 100 Main Street, Springfield, IL 62704-1234.",
+            "Send comments to Department 55A, Mail Station 1234 5600 Elm Road.",
+            "Leave accrual is defined in rule 412-18-205 of the state code.",
+            "Leave accrual is defined in rule 412-18-0150 of the state code.",
+            "The input file contains rows such as 60601 0001 12500 00350 and 60602 0002 9800 00120.",
+            "Replace the bracket with part number TR482913 B before assembly.",
+            "/XY123456 A configuration file is required for every job.",
+            "Position created in 2019 95753514 for the regional office.",
+            "Employee 88061052 76665755 Clerk Grade 4",
+        ];
+        for text in untouched {
+            let mut s = text.to_string();
+            Redactor::new(&opts, &d).redact_text(&mut s);
+            assert_eq!(s, text);
+        }
+        let mut s = "Call the help desk at +1 555 010 0199 for assistance.".to_string();
+        Redactor::new(&opts, &d).redact_text(&mut s);
+        assert_eq!(s, "Call the help desk at [PHONE] for assistance.");
+    }
+
+    /// … while the real values keep being found, in every shape they are
+    /// written in.
+    #[test]
+    fn real_values_are_still_redacted() {
+        assert_eq!(kinds("+1 555 010 0199"), vec![PiiKind::Phone]);
+        assert_eq!(kinds("(555) 010-0199"), vec![PiiKind::Phone]);
+        assert_eq!(kinds("555-010-0199"), vec![PiiKind::Phone]);
+        assert_eq!(kinds("Tel: 020 7946 0958"), vec![PiiKind::Phone]);
+        assert_eq!(kinds("020 7946 0958"), vec![PiiKind::Phone]);
+        assert_eq!(kinds("mobile 0151 496 0000"), vec![PiiKind::Phone]);
+        assert_eq!(kinds("phone: 1234 5600"), vec![PiiKind::Phone]);
+        assert_eq!(kinds("Mail Station 1234 5600"), vec![]);
+        assert_eq!(kinds("card 4111 1111 1111 1111"), vec![PiiKind::CreditCard]);
+        assert_eq!(kinds("amex 378282246310005"), vec![PiiKind::CreditCard]);
+        assert_eq!(kinds("amex 3782 822463 10005"), vec![PiiKind::CreditCard]);
+        assert_eq!(kinds("mc 5555 5555 5555 4444"), vec![PiiKind::CreditCard]);
+        assert_eq!(kinds("mc 2223 0031 2200 3222"), vec![PiiKind::CreditCard]);
+        // Luhn-valid, no brand: an order number.
+        assert_eq!(kinds("order 8806105276665755"), vec![]);
+        // A card number split as a phone is not a card.
+        assert_eq!(
+            kinds(
+                "4111 1111 1111 1111"
+                    .replace(' ', "-")
+                    .replace("1111-1111-1111", "11111111-1111")
+                    .as_str()
+            ),
+            vec![]
+        );
+        assert_eq!(kinds("NINO AB123456C"), vec![PiiKind::NationalId]);
+        assert_eq!(kinds("NINO AB 12 34 56 C"), vec![PiiKind::NationalId]);
+        assert_eq!(kinds("NINO AB123456 C"), vec![]);
+        assert_eq!(kinds("NINO AB 123456C"), vec![]);
+        assert_eq!(kinds("SSN 123-45-6789"), vec![PiiKind::NationalId]);
+        assert_eq!(kinds("ID 412-18-0150 on file"), vec![PiiKind::NationalId]);
+        assert_eq!(kinds("see § 412-18-0150 and section 412-18-0151"), vec![]);
+        assert_eq!(
+            kinds("IBAN GB82 WEST 1234 5698 7654 32"),
+            vec![PiiKind::Iban]
+        );
+        // Aadhaar: consistent separators; a year first group is a date.
+        let base = "22345678901";
+        let ok = (0..10)
+            .map(|d| format!("{base}{d}"))
+            .find(|s| verhoeff_valid(s))
+            .unwrap();
+        let spaced = format!("{} {} {}", &ok[..4], &ok[4..8], &ok[8..]);
+        assert_eq!(
+            kinds(&format!("Aadhaar {spaced}")),
+            vec![PiiKind::NationalId]
+        );
+        assert_eq!(kinds(&format!("Aadhaar {} {}", &ok[..4], &ok[4..])), vec![]);
+        let year_base = "20199575351";
+        let year_ok = (0..10)
+            .map(|d| format!("{year_base}{d}"))
+            .find(|s| verhoeff_valid(s))
+            .unwrap();
+        assert_eq!(
+            kinds(&format!(
+                "in {} {} {}",
+                &year_ok[..4],
+                &year_ok[4..8],
+                &year_ok[8..]
+            )),
+            vec![]
+        );
+        assert_eq!(
+            kinds(&format!("Aadhaar {year_ok}")),
+            vec![PiiKind::NationalId]
+        );
+    }
+
+    /// No match starts or ends inside a longer alphanumeric token.
+    #[test]
+    fn matches_are_whole_tokens() {
+        assert_eq!(redact("IL 62704-1234 stays"), "IL 62704-1234 stays");
+        assert_eq!(
+            redact("row 60602 0002 9800 00120 stays"),
+            "row 60602 0002 9800 00120 stays"
+        );
+        assert_eq!(redact("id x555-010-0199"), "id x555-010-0199");
+        assert_eq!(redact("id 555-010-0199x"), "id 555-010-0199x");
+        assert_eq!(redact("ref 4111111111111111a"), "ref 4111111111111111a");
+        assert_eq!(redact("ref AB123456CD"), "ref AB123456CD");
+        assert_eq!(redact("call 555-010-0199."), "call [PHONE].");
+    }
+
+    /// Allow patterns: a document's own number shapes pass every detector.
+    #[test]
+    fn allow_patterns_exempt_matching_spans() {
+        let opts = RedactionOptions {
+            allow_patterns: vec![r"\+1 555 010 \d{4}".into(), r"[a-z]+@example\.com".into()],
+            ..Default::default()
+        };
+        let d = detector(&opts);
+        let mut s =
+            "+1 555 010 0199, +1 555 010 0200, +1 555 011 0200, bob@example.com, bob@example.org"
+                .to_string();
+        Redactor::new(&opts, &d).redact_text(&mut s);
+        assert_eq!(
+            s,
+            "+1 555 010 0199, +1 555 010 0200, [PHONE], bob@example.com, [EMAIL]"
+        );
+        assert!(PatternDetector::new(&RedactionOptions {
+            allow_patterns: vec!["(".into()],
+            ..Default::default()
+        })
+        .is_err());
+    }
+
+    /// A transcript (#694): the `[time: …]` prefix is never a phone number
+    /// and the cue's words are counted once; a spoken phone number is
+    /// redacted in both `cue` and the paragraph, with one pseudonym.
+    #[test]
+    fn transcript_timings_are_not_phones_and_cues_count_once() {
+        fn track(start: f64, end: f64, cue: &str) -> Node {
+            Node::Track {
+                track: crate::tree::TreeTrack {
+                    start_time: start,
+                    end_time: end,
+                    identifier: None,
+                    voice: None,
+                },
+                cue: cue.to_string(),
+                inner: Box::new(Node::Paragraph {
+                    text: format!("[time: {start}-{end}] {cue}"),
+                }),
+            }
+        }
+        let opts = RedactionOptions {
+            replacement: Replacement::Pseudonym,
+            ..Default::default()
+        };
+        let d = detector(&opts);
+        let mut doc = DoclingDocument::new("t");
+        doc.nodes = vec![
+            track(1234.5, 1240.8, "Shakespeare on scenery by Oscar Wilde."),
+            track(
+                1240.8,
+                1251.25,
+                "Call me on 555-010-0199 or 555-010-0199 again.",
+            ),
+        ];
+        let report = doc.redact(&opts, &d);
+        assert_eq!(report.counts.get("PHONE"), Some(&2));
+        assert_eq!(report.total, 2);
+        let texts: Vec<(String, String)> = doc
+            .nodes
+            .iter()
+            .map(|n| match n {
+                Node::Track { cue, inner, .. } => match inner.as_ref() {
+                    Node::Paragraph { text, .. } => (cue.clone(), text.clone()),
+                    _ => unreachable!(),
+                },
+                _ => unreachable!(),
+            })
+            .collect();
+        assert_eq!(
+            texts[0],
+            (
+                "Shakespeare on scenery by Oscar Wilde.".to_string(),
+                "[time: 1234.5-1240.8] Shakespeare on scenery by Oscar Wilde.".to_string()
+            )
+        );
+        assert_eq!(
+            texts[1],
+            (
+                "Call me on [PHONE_1] or [PHONE_1] again.".to_string(),
+                "[time: 1240.8-1251.25] Call me on [PHONE_1] or [PHONE_1] again.".to_string()
+            )
+        );
+        // The timing alone, as the ASR writes long transcripts, is no phone.
+        assert_eq!(kinds("[time: 1234.5-1240.8]"), vec![]);
     }
 
     #[test]
