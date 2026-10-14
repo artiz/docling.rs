@@ -14,8 +14,9 @@
 # called as a reusable workflow: PyPI's and npm's trusted publishers name
 # those workflow files, and a called workflow's OIDC token names the caller.
 # This run waits for every channel, then — when they all succeeded and the
-# release carries the CLI binaries — marks the release GitHub's latest
-# (install.sh downloads the CLI from the latest release). A failed channel is
+# release carries the CLI binaries — marks the release GitHub's latest (the
+# Releases page and badge; install.sh itself takes the newest release that
+# has its binary, #707). A failed channel is
 # repaired from its own run (*Re-run failed jobs*), or by running this again:
 # every channel skips or overwrites what is already published.
 name: release
@@ -178,7 +179,7 @@ jobs:
         run: |
           asset="docling-rs-$TAG-x86_64-unknown-linux-gnu.tar.gz"
           if ! gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name' | grep -qxF "$asset"; then
-            echo "::warning::$TAG has no CLI binaries ($asset), so it stays as it is: install.sh downloads the CLI from the latest release"
+            echo "::warning::$TAG has no CLI binaries ($asset), so it is not marked latest"
             exit 0
           fi
           gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --latest

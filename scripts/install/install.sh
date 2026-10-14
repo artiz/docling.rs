@@ -10,9 +10,9 @@
 #   scripts/install/install.sh
 #
 # What it does:
-#   0. Tries the prebuilt CLI binary from the latest GitHub Release first
-#      (Linux x64/arm64/s390x) — no toolchain, no build. Falls back to source on any
-#      mismatch; DOCLING_RS_FROM_SOURCE=1 skips the fast path.
+#   0. Tries the prebuilt CLI binary from the newest GitHub Release that carries
+#      one first (Linux x64/arm64/s390x) — no toolchain, no build. Falls back to
+#      source on any mismatch; DOCLING_RS_FROM_SOURCE=1 skips the fast path.
 #   1. Checks for a Rust toolchain (>= 1.82 for the PDF crate); installs one
 #      via rustup (non-interactive) if `cargo` is missing.
 #   2. Builds the CLI in release mode (`cargo build --release -p docling-cli`).
@@ -71,10 +71,16 @@ if [ "${DOCLING_RS_FROM_SOURCE:-0}" != "1" ] && [ "$(uname -s)" = "Linux" ]; the
     *) TARGET="" ;;
   esac
   if [ -n "$TARGET" ]; then
-    TAG="$(curl -fsSL "https://api.github.com/repos/docling-project/docling.rs/releases/latest" 2>/dev/null \
-      | sed -n 's/.*"tag_name": *"\([^"]*\)".*/\1/p' | head -n1 || true)"
+    # The newest release whose assets include this target's binary — not
+    # GitHub's "latest": the per-merge releases ci.yml cuts carry no binaries
+    # until release.yml publishes one, and the asset-only releases
+    # (`npm-cuda-v*`, `models-v*`) never do (#707). The API lists releases
+    # newest first; the pattern skips pre-releases (`vX.Y.Z-rc.N`).
+    ASSET="$(curl -fsSL "https://api.github.com/repos/docling-project/docling.rs/releases?per_page=50" 2>/dev/null \
+      | grep -o "\"browser_download_url\": *\"[^\"]*/docling-rs-v[0-9]*\.[0-9]*\.[0-9]*-$TARGET\.tar\.gz\"" \
+      | head -n1 | sed 's/.*"\(https:[^"]*\)"$/\1/' || true)"
+    TAG="$(printf '%s' "${ASSET:-}" | sed -n 's#.*/releases/download/\([^/]*\)/.*#\1#p')"
     if [ -n "${TAG:-}" ]; then
-      ASSET="$REPO_URL/releases/download/$TAG/docling-rs-$TAG-$TARGET.tar.gz"
       PB_DIR="$(mktemp -d)"
       if curl -fsSL "$ASSET" 2>/dev/null | tar -xz -C "$PB_DIR" 2>/dev/null \
         && [ -x "$PB_DIR/docling-rs" ]; then
@@ -93,6 +99,8 @@ if [ "${DOCLING_RS_FROM_SOURCE:-0}" != "1" ] && [ "$(uname -s)" = "Linux" ]; the
       else
         say "no prebuilt binary for $TAG/$TARGET — building from source"
       fi
+    else
+      say "no release with a prebuilt $TARGET binary found — building from source"
     fi
   fi
 fi

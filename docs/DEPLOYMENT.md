@@ -169,8 +169,8 @@ curl -fsSL https://raw.githubusercontent.com/docling-project/docling.rs/master/s
 docling-rs your.pdf > out.md
 ```
 
-It grabs the **prebuilt CLI binary** from the latest
-[GitHub Release](https://github.com/docling-project/docling.rs/releases)
+It grabs the **prebuilt CLI binary** from the newest
+[GitHub Release](https://github.com/docling-project/docling.rs/releases) that carries one
 (Linux x64/arm64; `DOCLING_RS_FROM_SOURCE=1` opts out) and only falls back to
 building from source when no matching asset exists — in that case it checks
 for a Rust toolchain (installs one via rustup if `cargo` is missing) and runs

@@ -489,8 +489,8 @@ jobs:
       # already exists (e.g. a forced re-publish), refresh its notes instead of
       # failing. Not marked latest: nothing is published to PyPI, npm, GHCR or
       # the release's assets until the maintainer runs release.yml for it, which
-      # then marks it latest — install.sh downloads the CLI from the latest
-      # release, so that must be one that has the binaries.
+      # then marks it latest (install.sh itself takes the newest release that
+      # has its binary, #707).
       - name: Create GitHub Release
         if: steps.release.outputs.released == 'true'
         env:
