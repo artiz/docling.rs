@@ -16,6 +16,10 @@ same Rust server the binary runs (`docling_rs.mcp`, built from
 `crates/docling-cli/src/mcp.rs`). Every catalog therefore runs exactly what
 `docling-rs mcp` runs.
 
+Listings: the [official MCP registry](https://registry.modelcontextprotocol.io/v0/servers?search=io.github.docling-project/docling-rs)
+(since 2.22.0) and [Smithery](https://smithery.ai/servers/artem-kustikov/docling-rs)
+(`artem-kustikov/docling-rs`, the value of `SMITHERY_SERVER`).
+
 ## What each catalog reads
 
 | Catalog | Reads | Ownership check |
@@ -49,11 +53,11 @@ substitutes only values it has), and the tools the server lists.
 
 ## On a PyPI publish
 
-PyPI publishing is manual (`gh workflow run pypi-publish.yml -f tag=vX.Y.Z`,
-crates/docling-py/README.md — a release per merge outgrew PyPI's project size
-limit), and the catalog entries follow it:
+Publishing is manual (`gh workflow run release.yml -f tag=vX.Y.Z`, which runs
+PyPI, npm, the images and the CLI binaries — a release per merge outgrew
+PyPI's project size limit), and the catalog entries follow the PyPI channel:
 
-1. `docker-publish.yml` has published the images on the GitHub Release; the
+1. `docker-publish.yml` publishes the images (in parallel); the
    CLI image carries the registry label.
 2. `pypi-publish.yml` publishes the `docling-rs` wheels, then the
    `docling-rs-mcp` launcher pinned to that version (a separate job, so a
@@ -64,10 +68,12 @@ limit), and the catalog entries follow it:
    into `server.json` (from the release tag), and publishes it with
    `mcp-publisher` — authenticated by GitHub OIDC, no secret. Its `bundle`
    job waits for the launcher alone, packs `docling-rs-mcp-<version>.mcpb`
-   (`mcpb pack` validates the manifest), publishes it to Smithery when the
-   repository has the `SMITHERY_API_KEY` secret and the `SMITHERY_SERVER`
-   variable, and attaches it to the release. Both jobs run only in
-   `docling-project/docling.rs`.
+   (`mcpb pack` validates the manifest) and attaches it to the release; when
+   the repository has the `SMITHERY_API_KEY` secret and the `SMITHERY_SERVER`
+   variable it publishes Smithery's copy of it, whose manifest carries each
+   tool's input schema as the server lists it (`scripts/ci/mcpb_smithery.py`
+   — Smithery's API requires one per tool, the MCPB schema allows none).
+   Both jobs run only in `docling-project/docling.rs`.
 
 ## One-time setup
 
@@ -123,9 +129,14 @@ jq --arg v "$v" '.version = $v | .server.mcp_config.args |= map(if startswith("d
 cp /tmp/manifest.json crates/docling-py/mcp/mcpb/manifest.json
 npx -y @anthropic-ai/mcpb@2.1.2 pack crates/docling-py/mcp/mcpb "docling-rs-mcp-$v.mcpb"
 git checkout crates/docling-py/mcp/mcpb/manifest.json
+# Smithery's copy: the tools' input schemas from the server (runs it with uvx)
+python3 scripts/ci/mcpb_smithery.py "docling-rs-mcp-$v.mcpb" "smithery-$v.mcpb"
 npx -y @smithery/cli@4.11.1 auth login   # or export SMITHERY_API_KEY
-npx -y @smithery/cli@4.11.1 mcp publish "docling-rs-mcp-$v.mcpb" -n <namespace>/docling-rs
+npx -y @smithery/cli@4.11.1 mcp publish "smithery-$v.mcpb" -n <namespace>/docling-rs
 ```
+
+Publishing the packed bundle itself fails with `400 Invalid input: expected
+object, received undefined` — once per tool, for the missing input schemas.
 
 ## Checking a release
 

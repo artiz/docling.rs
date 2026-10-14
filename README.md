@@ -342,7 +342,9 @@ claude mcp add docling -- docling-rs mcp --root ~/Documents     # Claude Code
 uvx docling-rs-mcp --root ~/Documents                           # the same server from PyPI
 ```
 
-Local reads stay under `--root`; URLs need `--allow-url-fetch`. The PyPI
+Local reads stay under `--root`; URLs need `--allow-url-fetch`. Listed in the
+[official MCP registry](https://registry.modelcontextprotocol.io/v0/servers?search=io.github.docling-project/docling-rs)
+and on [Smithery](https://smithery.ai/servers/artem-kustikov/docling-rs). The PyPI
 launcher, Docker, Streamable HTTP (`--http`), the security model and memory
 behaviour:
 [`crates/docling-cli/README.md`](./crates/docling-cli/README.md#mcp-server--docling-rs-mcp).
@@ -373,7 +375,7 @@ Details and the demo page: [`crates/docling-wasm`](./crates/docling-wasm/README.
   AutoGen integrations.
 - **C ABI** — [`docling-ffi`](./crates/docling-ffi/README.md): one library and
   one `docling.h` for C, C++, C#/.NET, Go, Java, Swift and Zig, prebuilt in
-  every release.
+  every published release.
 
 ## Deploy in a container
 

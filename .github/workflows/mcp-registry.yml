@@ -170,6 +170,20 @@ jobs:
           path: docling-rs-mcp-*.mcpb
           if-no-files-found: error
 
+      # Smithery's API wants an `inputSchema` on every tool of the card it
+      # builds from manifest.tools, which the MCPB schema `mcpb pack` checks
+      # does not allow: its copy of the bundle takes the tool definitions
+      # from the published server's own tools/list (scripts/ci/mcpb_smithery.py
+      # runs the bundle's `uvx` command, hence uv). The release keeps the
+      # bundle as packed.
+      - name: Add the tool schemas for Smithery
+        if: ${{ env.SMITHERY_API_KEY != '' && vars.SMITHERY_SERVER != '' }}
+        shell: bash
+        run: |
+          v="${{ steps.v.outputs.version }}"
+          pipx install uv
+          python3 scripts/ci/mcpb_smithery.py "docling-rs-mcp-$v.mcpb" "smithery-$v.mcpb"
+
       # Non-interactive: the key comes from the environment, and a server id
       # Smithery does not know yet is created.
       - name: Publish to Smithery
@@ -177,7 +191,7 @@ jobs:
         shell: bash
         run: |
           v="${{ steps.v.outputs.version }}"
-          npx -y @smithery/cli@4.11.1 mcp publish "docling-rs-mcp-$v.mcpb" -n "${{ vars.SMITHERY_SERVER }}"
+          npx -y @smithery/cli@4.11.1 mcp publish "smithery-$v.mcpb" -n "${{ vars.SMITHERY_SERVER }}"
 
       - name: Attach the bundle to the release
         shell: bash

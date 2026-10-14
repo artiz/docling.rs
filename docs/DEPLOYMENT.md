@@ -6,7 +6,7 @@ This guide covers running the [`docling-serve`](../crates/docling-serve) HTTP co
 
 ## Container Registry & Prebuilt Images
 
-The following container images are published on **GitHub Container Registry (GHCR)** on every release and master commit:
+The following container images are published on **GitHub Container Registry (GHCR)** for every release the maintainer publishes (`release.yml`; version tags plus `latest`):
 
 #### 📦 Distributed Images
 

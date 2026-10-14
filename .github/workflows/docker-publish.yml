@@ -25,27 +25,25 @@
 # all four images was preferred here — a CUDA-base bump is called out in the
 # release notes, and the version tags stay for anyone pinning.)
 #
-# Triggers:
-#   - Release published: tags with semantic versions (vX.Y.Z, X.Y, X) and latest, CPU and CUDA alike
-#   - Manual dispatch: tag override or dry-run testing (with optional CUDA
-#     toggle); dispatched from a branch it also tags the branch name.
-#   - Pushes to master do NOT run this workflow (nor do pull requests): every
-#     merge that changes a publishable crate is released by ci.yml minutes
-#     later, and that release publishes the same images — the former
-#     push-triggered run built each merge twice (a `master` tag first, the
-#     version tags right after) for no image the release run did not also
-#     produce. The smoke tests below still gate every publish (a failing smoke
-#     test fails the run before any push).
+# Trigger: manual dispatch only — release.yml runs it, with PyPI, npm and the
+# CLI binaries, for a release the maintainer picks (a GitHub Release is cut on
+# every merge; not every one is published):
+#   - `tag` (a release tag, e.g. v2.23.0): checks that tag out and tags the
+#     images with its semantic versions (X.Y.Z, vX.Y.Z, X.Y, X) and, unless
+#     it is a pre-release, `latest` — CPU and CUDA alike.
+#   - blank `tag`: builds the dispatched ref and tags it with the branch name
+#     (`publish=false` = build and smoke-test only).
+# Pushes to master and pull requests do not run it. The smoke tests below
+# still gate every publish (a failing smoke test fails the run before any
+# push).
 
 name: docker-publish
 
 on:
-  release:
-    types: [published]
   workflow_dispatch:
     inputs:
       tag:
-        description: "Explicit image tag to publish (e.g. v1.28.0 or latest). Blank = derive from ref/release."
+        description: "Release tag to build and publish (e.g. v2.23.0): its semver tags and latest. Blank = the dispatched ref, tagged with its branch name."
         required: false
         default: ""
       publish:
@@ -64,7 +62,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: docker-publish-${{ github.workflow }}-${{ github.ref }}
+  group: docker-publish-${{ inputs.tag || github.ref }}
   # Publishing runs are never cancelled mid-flight; a second release or
   # dispatch on the same ref simply queues behind the running one.
   cancel-in-progress: false
@@ -110,6 +108,8 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.tag || github.ref }}
 
       - name: Free disk space
         run: |
@@ -127,7 +127,7 @@ jobs:
         uses: docker/setup-buildx-action@v3
 
       - name: Log in to GitHub Container Registry
-        if: github.event_name != 'workflow_dispatch' || inputs.publish
+        if: inputs.publish
         uses: docker/login-action@v3
         with:
           registry: ${{ env.REGISTRY }}
@@ -232,7 +232,7 @@ jobs:
 
       - name: Build and push CPU serve image by digest
         id: build_serve
-        if: github.event_name != 'workflow_dispatch' || inputs.publish
+        if: inputs.publish
         uses: docker/build-push-action@v6
         with:
           context: .
@@ -246,7 +246,7 @@ jobs:
 
       - name: Build and push CPU CLI image by digest
         id: build_cli
-        if: github.event_name != 'workflow_dispatch' || inputs.publish
+        if: inputs.publish
         uses: docker/build-push-action@v6
         with:
           context: .
@@ -259,7 +259,7 @@ jobs:
           cache-to: type=gha,mode=max,scope=docling-rs-serve-${{ matrix.platform_slug }}
 
       - name: Export CPU digests
-        if: github.event_name != 'workflow_dispatch' || inputs.publish
+        if: inputs.publish
         run: |
           mkdir -p /tmp/digests/serve /tmp/digests/cli
           digest="${{ steps.build_serve.outputs.digest }}"
@@ -268,7 +268,7 @@ jobs:
           touch "/tmp/digests/cli/${digest#sha256:}"
 
       - name: Upload CPU serve digest
-        if: github.event_name != 'workflow_dispatch' || inputs.publish
+        if: inputs.publish
         uses: actions/upload-artifact@v7
         with:
           name: digests-serve-${{ matrix.platform_slug }}
@@ -277,7 +277,7 @@ jobs:
           retention-days: 1
 
       - name: Upload CPU CLI digest
-        if: github.event_name != 'workflow_dispatch' || inputs.publish
+        if: inputs.publish
         uses: actions/upload-artifact@v7
         with:
           name: digests-cli-${{ matrix.platform_slug }}
@@ -293,7 +293,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     needs: build-cpu
-    if: github.event_name != 'workflow_dispatch' || inputs.publish
+    if: inputs.publish
     permissions:
       contents: read
       packages: write
@@ -334,13 +334,11 @@ jobs:
           flavor: |
             latest=auto
           tags: |
-            type=ref,event=branch
-            type=semver,pattern={{version}}
-            type=semver,pattern=v{{version}}
-            type=semver,pattern={{major}}.{{minor}}
-            type=semver,pattern={{major}}
-            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/master' || github.event_name == 'release' }}
-            type=raw,value=${{ inputs.tag }},enable=${{ inputs.tag != '' }}
+            type=ref,event=branch,enable=${{ inputs.tag == '' }}
+            type=semver,pattern={{version}},value=${{ inputs.tag }}
+            type=semver,pattern=v{{version}},value=${{ inputs.tag }}
+            type=semver,pattern={{major}}.{{minor}},value=${{ inputs.tag }}
+            type=semver,pattern={{major}},value=${{ inputs.tag }}
           labels: |
             org.opencontainers.image.title=docling-rs-serve
             org.opencontainers.image.description=High-performance document conversion API in Rust (PDF, DOCX, PPTX, XLSX, HTML, Audio)
@@ -455,7 +453,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 60
     # Runs on pushes to master, releases, or dispatch with cuda=true
-    if: github.event_name != 'workflow_dispatch' || (inputs.publish && inputs.cuda)
+    if: inputs.publish && inputs.cuda
     permissions:
       contents: read
       packages: write
@@ -464,6 +462,8 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.tag || github.ref }}
 
       - name: Free disk space
         run: |
@@ -476,7 +476,7 @@ jobs:
 
       - name: Log in to GitHub Container Registry
         # Only log in when publishing (dispatch may opt out)
-        if: github.event_name != 'workflow_dispatch' || inputs.publish
+        if: inputs.publish
         uses: docker/login-action@v3
         with:
           registry: ${{ env.REGISTRY }}
@@ -492,13 +492,11 @@ jobs:
           flavor: |
             latest=auto
           tags: |
-            type=ref,event=branch
-            type=semver,pattern={{version}}
-            type=semver,pattern=v{{version}}
-            type=semver,pattern={{major}}.{{minor}}
-            type=semver,pattern={{major}}
-            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/master' || github.event_name == 'release' }}
-            type=raw,value=${{ inputs.tag }},enable=${{ inputs.tag != '' }}
+            type=ref,event=branch,enable=${{ inputs.tag == '' }}
+            type=semver,pattern={{version}},value=${{ inputs.tag }}
+            type=semver,pattern=v{{version}},value=${{ inputs.tag }}
+            type=semver,pattern={{major}}.{{minor}},value=${{ inputs.tag }}
+            type=semver,pattern={{major}},value=${{ inputs.tag }}
           labels: |
             org.opencontainers.image.title=docling-rs-serve-cuda
             org.opencontainers.image.description=CUDA 13 GPU document conversion API in Rust (PDF, DOCX, PPTX, XLSX, HTML, Audio)
@@ -513,13 +511,11 @@ jobs:
           flavor: |
             latest=auto
           tags: |
-            type=ref,event=branch
-            type=semver,pattern={{version}}
-            type=semver,pattern=v{{version}}
-            type=semver,pattern={{major}}.{{minor}}
-            type=semver,pattern={{major}}
-            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/master' || github.event_name == 'release' }}
-            type=raw,value=${{ inputs.tag }},enable=${{ inputs.tag != '' }}
+            type=ref,event=branch,enable=${{ inputs.tag == '' }}
+            type=semver,pattern={{version}},value=${{ inputs.tag }}
+            type=semver,pattern=v{{version}},value=${{ inputs.tag }}
+            type=semver,pattern={{major}}.{{minor}},value=${{ inputs.tag }}
+            type=semver,pattern={{major}},value=${{ inputs.tag }}
           labels: |
             org.opencontainers.image.title=docling-rs-cuda
             org.opencontainers.image.description=docling-rs CLI (CUDA 13 GPU) — document conversion to Markdown / JSON / DCLX / LaTeX
@@ -629,7 +625,7 @@ jobs:
       # Push images to GHCR (after the smoke tests above pass)
       # ------------------------------------------------------------------------
       - name: Push CUDA serve image to GHCR
-        if: github.event_name != 'workflow_dispatch' || inputs.publish
+        if: inputs.publish
         id: build_cuda_serve
         uses: docker/build-push-action@v6
         with:
@@ -643,7 +639,7 @@ jobs:
           cache-from: type=gha,scope=docling-rs-serve-cuda-linux-amd64
 
       - name: Push CUDA CLI image to GHCR
-        if: github.event_name != 'workflow_dispatch' || inputs.publish
+        if: inputs.publish
         id: build_cuda_cli
         uses: docker/build-push-action@v6
         with:
@@ -657,7 +653,7 @@ jobs:
           cache-from: type=gha,scope=docling-rs-serve-cuda-linux-amd64
 
       - name: Generate artifact attestation for docling-rs-serve-cuda
-        if: github.event_name != 'workflow_dispatch' || inputs.publish
+        if: inputs.publish
         uses: actions/attest-build-provenance@v2
         with:
           subject-name: ${{ env.REGISTRY }}/${{ env.SERVE_CUDA_IMAGE }}
@@ -665,7 +661,7 @@ jobs:
           push-to-registry: true
 
       - name: Generate artifact attestation for docling-rs-cuda
-        if: github.event_name != 'workflow_dispatch' || inputs.publish
+        if: inputs.publish
         uses: actions/attest-build-provenance@v2
         with:
           subject-name: ${{ env.REGISTRY }}/${{ env.CLI_CUDA_IMAGE }}

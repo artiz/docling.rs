@@ -1,0 +1,171 @@
+# Publish a release to every distribution channel: PyPI (`docling-rs`,
+# `docling-rs-cuda`, the `docling-rs-mcp` launcher and, after it, the MCP
+# catalogs), npm (`docling.rs`, its platform packages, `docling.rs-cuda`,
+# `docling.rs-wasm`), GHCR (the CPU and CUDA images) and the release's CLI and
+# FFI binaries. ci.yml cuts a GitHub Release (and publishes the crates) on
+# every merge — not marked latest; this publishes the releases the maintainer
+# picks:
+#
+#     gh workflow run release.yml -f tag=v2.23.0
+#
+# Each channel runs as its own workflow (pypi-publish.yml, npm-publish.yml,
+# docker-publish.yml, cli-binaries.yml), dispatched from here rather than
+# called as a reusable workflow: PyPI's and npm's trusted publishers name
+# those workflow files, and a called workflow's OIDC token names the caller.
+# This run waits for every channel, then — when they all succeeded and the
+# release carries the CLI binaries — marks the release GitHub's latest
+# (install.sh downloads the CLI from the latest release). A failed channel is
+# repaired from its own run (*Re-run failed jobs*), or by running this again:
+# every channel skips or overwrites what is already published.
+name: release
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to publish (e.g. v2.23.0) — a GitHub Release ci.yml cut."
+        required: true
+      pypi:
+        description: "PyPI: docling-rs (+ docling-rs-cuda), the docling-rs-mcp launcher, the MCP catalogs."
+        type: boolean
+        default: true
+      npm:
+        description: "npm: docling.rs + platform packages (+ docling.rs-cuda), docling.rs-wasm."
+        type: boolean
+        default: true
+      docker:
+        description: "GHCR: docling-rs-serve and docling-rs images (+ the -cuda ones)."
+        type: boolean
+        default: true
+      cli:
+        description: "The CLI and FFI binaries, attached to the GitHub Release."
+        type: boolean
+        default: true
+      cuda:
+        description: "The CUDA flavours on each channel above."
+        type: boolean
+        default: true
+      latest:
+        description: "Mark the release GitHub's latest once every channel succeeded (needs the CLI binaries on it)."
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ inputs.tag }}
+  cancel-in-progress: false
+
+jobs:
+  plan:
+    name: check the release
+    runs-on: ubuntu-latest
+    outputs:
+      channels: ${{ steps.plan.outputs.channels }}
+    steps:
+      - name: Check the tag and pick the channels
+        id: plan
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag }}
+          CUDA: ${{ inputs.cuda }}
+        run: |
+          if ! [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+([-+].+)?$ ]]; then
+            echo "::error::'$TAG' is not a v<semver> release tag"; exit 1
+          fi
+          if ! gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json tagName >/dev/null; then
+            echo "::error::there is no GitHub Release $TAG (ci.yml cuts one for every release)"; exit 1
+          fi
+          channels='[]'
+          add() {
+            channels=$(jq -c --arg name "$1" --arg workflow "$2" --arg fields "$3" \
+              '. + [{name: $name, workflow: $workflow, fields: $fields}]' <<<"$channels")
+          }
+          if [ "${{ inputs.pypi }}" = true ]; then add PyPI pypi-publish.yml "tag=$TAG cuda_wheel=$CUDA"; fi
+          if [ "${{ inputs.npm }}" = true ]; then add npm npm-publish.yml "tag=$TAG cuda=$CUDA"; fi
+          if [ "${{ inputs.docker }}" = true ]; then add GHCR docker-publish.yml "tag=$TAG publish=true cuda=$CUDA"; fi
+          if [ "${{ inputs.cli }}" = true ]; then add "CLI binaries" cli-binaries.yml "tag=$TAG"; fi
+          echo "channels=$channels" >> "$GITHUB_OUTPUT"
+          jq -r '.[] | "- \(.name): `\(.workflow)` \(.fields)"' <<<"$channels"
+
+  publish:
+    name: ${{ matrix.name }}
+    needs: plan
+    if: needs.plan.outputs.channels != '[]'
+    runs-on: ubuntu-latest
+    # The PyPI run includes the MCP registry step, which waits for the images.
+    timeout-minutes: 360
+    permissions:
+      actions: write # dispatch the channel's workflow, then follow its run
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.plan.outputs.channels) }}
+    env:
+      GH_TOKEN: ${{ github.token }}
+      WORKFLOW: ${{ matrix.workflow }}
+    steps:
+      - name: Dispatch ${{ matrix.workflow }}
+        id: run
+        env:
+          FIELDS: ${{ matrix.fields }}
+        run: |
+          args=()
+          for field in $FIELDS; do args+=(-f "$field"); done
+          since=$(date -u -d '-30 seconds' +%Y-%m-%dT%H:%M:%SZ)
+          gh workflow run "$WORKFLOW" --repo "$GITHUB_REPOSITORY" --ref "$GITHUB_REF_NAME" "${args[@]}"
+          # `gh workflow run` prints no run id: take the first dispatch run of
+          # that workflow created since.
+          id=""
+          for _ in $(seq 1 30); do
+            sleep 10
+            id=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow "$WORKFLOW" --event workflow_dispatch \
+              --limit 20 --json databaseId,createdAt \
+              --jq "[.[] | select(.createdAt >= \"$since\")] | sort_by(.createdAt) | first | .databaseId // empty")
+            if [ -n "$id" ]; then break; fi
+          done
+          if [ -z "$id" ]; then echo "::error::no $WORKFLOW run appeared"; exit 1; fi
+          url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$id"
+          echo "id=$id" >> "$GITHUB_OUTPUT"
+          echo "$WORKFLOW: $url"
+          echo "- ${{ matrix.name }}: [$WORKFLOW]($url)" >> "$GITHUB_STEP_SUMMARY"
+
+      # Once a minute: GITHUB_TOKEN's API budget is per repository, and the
+      # slowest channel runs for hours.
+      - name: Wait for the run
+        env:
+          ID: ${{ steps.run.outputs.id }}
+        run: |
+          while :; do
+            state=$(gh run view "$ID" --repo "$GITHUB_REPOSITORY" --json status,conclusion --jq '"\(.status) \(.conclusion)"')
+            if [ "${state%% *}" = completed ]; then break; fi
+            sleep 60
+          done
+          conclusion="${state#* }"
+          echo "$WORKFLOW: $conclusion"
+          if [ "$conclusion" != success ]; then
+            echo "::error::$WORKFLOW finished $conclusion — $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$ID"
+            exit 1
+          fi
+
+  latest:
+    name: mark the release latest
+    needs: publish
+    if: ${{ !cancelled() && inputs.latest && needs.publish.result == 'success' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # gh release edit
+    steps:
+      - name: Mark ${{ inputs.tag }} latest
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag }}
+        run: |
+          asset="docling-rs-$TAG-x86_64-unknown-linux-gnu.tar.gz"
+          if ! gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name' | grep -qxF "$asset"; then
+            echo "::warning::$TAG has no CLI binaries ($asset), so it stays as it is: install.sh downloads the CLI from the latest release"
+            exit 0
+          fi
+          gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --latest
+          echo "$TAG is now the latest release" >> "$GITHUB_STEP_SUMMARY"
