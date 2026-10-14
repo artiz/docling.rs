@@ -5,10 +5,10 @@
 # for, and FFI embedders (C#/Go/Java/Swift) get a lib + header instead of a
 # full clone-and-build. Runs on manual dispatch for an existing release tag —
 # release.yml runs it, with PyPI, npm and the images, for a release the
-# maintainer picks, then marks that release GitHub's latest: install.sh
-# downloads the binary from the latest release, so it only ever points at one
-# that has the assets (ci.yml cuts every merge's release with
-# `--latest=false`).
+# maintainer picks, then marks that release GitHub's latest. install.sh
+# downloads the binary from the newest release that has it, so the per-merge
+# releases ci.yml cuts (no assets, `--latest=false`) and the asset-only
+# `npm-cuda-v*` / `models-v*` releases never get in its way (#707).
 #
 # macOS prebuilds are omitted for the same reason as in npm-publish.yml:
 # GitHub-hosted macOS runners are blocked in this environment, and darwin

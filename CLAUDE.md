@@ -25,7 +25,9 @@ reproduce it byte for byte (see "Conformance & fixtures").
   (`docling.rs`, the platform packages, `docling.rs-cuda`,
   `docling.rs-wasm`), `docker-publish.yml` (GHCR) and `cli-binaries.yml` (the
   release's CLI/FFI assets), waits for them and marks the release latest
-  (install.sh downloads the CLI from it). Each also runs alone (`-f
+  (install.sh takes the newest release that has its binary; the asset-only
+  `npm-cuda-v*` / `models-v*` releases are created `--latest=false`, #707).
+  Each also runs alone (`-f
   tag=vX.Y.Z`) to repair a failed channel. A release per merge outgrew PyPI's
   10 GiB per-project limit (v2.22.0 failed half-way);
   `scripts/ci/pypi_room.py` refuses an upload that would not fit.

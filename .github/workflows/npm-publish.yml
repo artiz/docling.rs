@@ -425,10 +425,13 @@ jobs:
           if gh release view "$TAG" --repo "${{ github.repository }}" >/dev/null 2>&1; then
             gh release upload "$TAG" cuda/release-assets/* --repo "${{ github.repository }}" --clobber
           else
+            # Never GitHub's "latest": that is the vX.Y.Z release whose CLI
+            # binaries install.sh downloads (release.yml marks it, #707).
             gh release create "$TAG" cuda/release-assets/* \
               --repo "${{ github.repository }}" \
               --title "docling.rs-cuda ${{ steps.ver.outputs.version }} (npm binaries)" \
-              --notes "CUDA addon binaries for the docling.rs-cuda npm package. Downloaded by its postinstall — not for direct use."
+              --notes "CUDA addon binaries for the docling.rs-cuda npm package. Downloaded by its postinstall — not for direct use." \
+              --latest=false
           fi
 
       - name: Assemble npm package
