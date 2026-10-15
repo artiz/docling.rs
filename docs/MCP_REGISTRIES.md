@@ -129,8 +129,12 @@ jq --arg v "$v" '.version = $v | .server.mcp_config.args |= map(if startswith("d
 cp /tmp/manifest.json crates/docling-py/mcp/mcpb/manifest.json
 npx -y @anthropic-ai/mcpb@2.1.2 pack crates/docling-py/mcp/mcpb "docling-rs-mcp-$v.mcpb"
 git checkout crates/docling-py/mcp/mcpb/manifest.json
-# Smithery's copy: the tools' input schemas from the server (runs it with uvx)
-python3 scripts/ci/mcpb_smithery.py "docling-rs-mcp-$v.mcpb" "smithery-$v.mcpb"
+# Smithery's copy: the tools' input schemas from the server (runs it with uvx).
+# Right after a PyPI upload the simple index lags the JSON API by minutes:
+# wait until `uv pip install --dry-run --no-cache docling-rs-mcp==$v` resolves
+# (the launcher pins docling-rs==$v), as the workflow does, or uvx fails with
+# "no version of docling-rs==$v".
+UV_NO_CACHE=1 python3 scripts/ci/mcpb_smithery.py "docling-rs-mcp-$v.mcpb" "smithery-$v.mcpb"
 npx -y @smithery/cli@4.11.1 auth login   # or export SMITHERY_API_KEY
 npx -y @smithery/cli@4.11.1 mcp publish "smithery-$v.mcpb" -n <namespace>/docling-rs
 ```

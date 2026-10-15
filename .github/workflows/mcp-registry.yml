@@ -135,19 +135,31 @@ jobs:
           echo "version=$v" >> "$GITHUB_OUTPUT"
           echo "Bundling server version $v"
 
-      # The bundle runs `uvx docling-rs-mcp@<version>`: publish it only once
-      # that resolves.
-      - name: Wait for the PyPI launcher
+      # The bundle runs `uvx docling-rs-mcp@<version>`, which pins
+      # `docling-rs==<version>`: publish it only once uv itself resolves
+      # that pair. PyPI's JSON API answers for a package the moment it is
+      # uploaded, but the simple index uv installs from lags behind it by
+      # minutes (a CDN-cached page) — and the launcher is uploaded after
+      # the wheels, so its JSON turning 200 says nothing about docling-rs's
+      # index page. A dry-run resolution, cache bypassed, is the real test.
+      - name: Wait until uv resolves the PyPI launcher
         shell: bash
         run: |
           v="${{ steps.v.outputs.version }}"
+          pipx install uv
+          uv venv --quiet .probe
           for _ in $(seq 1 120); do
-            pypi=$(curl -sS -o /dev/null -w '%{http_code}' "https://pypi.org/pypi/docling-rs-mcp/$v/json" || true)
-            echo "pypi docling-rs-mcp==$v: $pypi"
-            if [ "$pypi" = 200 ]; then exit 0; fi
+            launcher=$(curl -sS -o /dev/null -w '%{http_code}' "https://pypi.org/pypi/docling-rs-mcp/$v/json" || true)
+            wheel=$(curl -sS -o /dev/null -w '%{http_code}' "https://pypi.org/pypi/docling-rs/$v/json" || true)
+            echo "pypi docling-rs-mcp==$v: $launcher · docling-rs==$v: $wheel"
+            if [ "$launcher" = 200 ] && [ "$wheel" = 200 ] &&
+               uv pip install --python .probe --dry-run --no-cache "docling-rs-mcp==$v"; then
+              echo "docling-rs-mcp==$v resolves"
+              exit 0
+            fi
             sleep 120
           done
-          echo "::error::docling-rs-mcp==$v never appeared on PyPI"
+          echo "::error::docling-rs-mcp==$v (with docling-rs==$v) never became resolvable on PyPI"
           exit 1
 
       # `mcpb pack` validates the manifest against the MCPB schema.
@@ -179,9 +191,13 @@ jobs:
       - name: Add the tool schemas for Smithery
         if: ${{ env.SMITHERY_API_KEY != '' && vars.SMITHERY_SERVER != '' }}
         shell: bash
+        env:
+          # The bundle's `uvx` resolves against PyPI afresh, like the probe
+          # above did — not against an index page uv cached before the
+          # version was there.
+          UV_NO_CACHE: "1"
         run: |
           v="${{ steps.v.outputs.version }}"
-          pipx install uv
           python3 scripts/ci/mcpb_smithery.py "docling-rs-mcp-$v.mcpb" "smithery-$v.mcpb"
 
       # Non-interactive: the key comes from the environment, and a server id
