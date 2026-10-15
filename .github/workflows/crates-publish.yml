@@ -1,0 +1,101 @@
+# Publish the workspace crates of a release tag to crates.io, in dependency
+# order, skipping any version already there (scripts/ci/ci_publish.sh). One
+# of the channels release.yml dispatches:
+#
+#     gh workflow run release.yml                          # every channel
+#     gh workflow run crates-publish.yml -f tag=v2.25.0    # crates.io alone
+#
+# ci.yml bumps the version and cuts the GitHub Release on every merge to
+# master but builds nothing for it; the `cargo publish` verify builds (every
+# crate compiled once more from its packaged sources, the ONNX Runtime
+# prebuilt fetched for the ML crates) and the target cache they need live
+# here, on the release the maintainer picks, instead of on every merge.
+#
+# Auth: crates.io Trusted Publishing (OIDC) — `id-token: write` lets
+# scripts/ci/crates_io_token.sh mint a 30-minute token from this job's
+# identity (repository + THIS workflow file, `crates-publish.yml`, which every
+# published crate's crates.io settings must name as its trusted publisher —
+# the settings used to name ci.yml). No CARGO_REGISTRY_TOKEN secret to
+# rotate; a manual re-publish from a laptop sets one and runs the script.
+name: crates-publish
+run-name: crates.io ${{ inputs.tag }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag whose crates to publish (e.g. v2.25.0) — a GitHub Release ci.yml cut."
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: crates-publish-${{ inputs.tag }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: publish ${{ inputs.tag }} to crates.io
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    permissions:
+      contents: read
+      id-token: write # crates.io Trusted Publishing (OIDC), see ci_publish.sh
+    env:
+      CARGO_TERM_COLOR: always
+      CARGO_INCREMENTAL: 0
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.tag }}
+
+      - name: Check the tag
+        env:
+          TAG: ${{ inputs.tag }}
+        run: |
+          if ! [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+([-+].+)?$ ]]; then
+            echo "::error::'$TAG' is not a v<semver> release tag"; exit 1
+          fi
+          version="$(grep -m1 '^version = ' Cargo.toml | sed -E 's/.*"([^"]+)".*/\1/')"
+          if [[ "v$version" != "$TAG" ]]; then
+            echo "::error::$TAG checks out workspace version $version — the tag is not a release commit"; exit 1
+          fi
+          echo "### crates.io $TAG" >> "$GITHUB_STEP_SUMMARY"
+
+      # rustup is preinstalled on GitHub-hosted runners; the org allowlists only
+      # GitHub-owned / vetted actions, so no marketplace toolchain action.
+      - name: Install Rust (stable)
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+
+      - uses: actions/cache@v6
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+            target
+            # ort-sys's extracted prebuilt ONNX Runtime (`<cache dir>/
+            # ort.pyke.io/dfbin/<target>/<hash>`): present, the build script
+            # skips the cdn.pyke.io download altogether.
+            ~/.cache/ort.pyke.io
+          key: ${{ runner.os }}-cargo-v2-publish-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-cargo-v2-publish-
+
+      # Idempotent: a crate version already on crates.io is skipped, so a
+      # re-run after a failed upload publishes only what is missing.
+      - name: Publish the crates
+        run: scripts/ci/cargo_retry_ort.sh scripts/ci/ci_publish.sh
+
+      # actions/cache saves target/ in its post-step, i.e. after this runs:
+      # drop what is cheap to recreate so the cache stays well under the
+      # runner's disk headroom.
+      - name: Trim target before cache save
+        if: always()
+        shell: bash
+        run: |
+          rm -rf target/debug/examples target/debug/incremental \
+                 target/release/examples target/release/incremental
+          find target/debug target/release -maxdepth 1 -type f ! -name '*.d' -size +5M -exec rm -f {} + 2>/dev/null || true

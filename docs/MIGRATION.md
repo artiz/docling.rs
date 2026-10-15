@@ -1180,13 +1180,21 @@ messages since the last `v*` tag (`feat:` → minor, `fix:`/`perf:` → patch, a
 `type!:`/`BREAKING CHANGE` → major; docs/chore/ci/etc → no release), bumps the
 workspace version, commits + tags it (with `[skip ci]`, via the `RELEASE_PAT`
 admin token — needed to satisfy the master ruleset — so it
-doesn't loop), and publishes the crates with `scripts/ci/ci_publish.sh` in
-dependency order — skipping any version already on crates.io. The uploads
+doesn't loop) and cuts the GitHub Release — and builds nothing: the merge-time
+job is a `cargo update --workspace` and a push, with no target cache. The
+crates reach crates.io from `crates-publish.yml`, one of the channels
+`gh workflow run release.yml` dispatches for the release the maintainer picks
+(`-f crates=false` leaves it out; `gh workflow run crates-publish.yml -f
+tag=vX.Y.Z` runs it alone): a checkout of the tag, the `cargo publish` verify
+builds under the `cargo-v2-publish` cache, and `scripts/ci/ci_publish.sh` in
+dependency order — skipping any version already on crates.io, so a re-run
+after a failed upload publishes only what is missing. The uploads
 authenticate through crates.io Trusted Publishing (OIDC: the job's
-`id-token: write` identity — `docling-project/docling.rs` + `ci.yml` — is what
-each crate's crates.io settings name as its trusted publisher; a fresh
-30-minute token is minted per crate by `scripts/ci/crates_io_token.sh`), so
-there is no registry token secret to rotate.
+`id-token: write` identity — `docling-project/docling.rs` +
+`crates-publish.yml` — is what each crate's crates.io settings name as its
+trusted publisher; a fresh 30-minute token is minted per crate by
+`scripts/ci/crates_io_token.sh`), so there is no registry token secret to
+rotate.
 
 ---
 

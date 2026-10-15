@@ -4,20 +4,20 @@
 # gates pass). Computes the next version from the commits since the last tag
 # (scripts/ci/bump_version.sh: fix:/perf:/revert:-only range -> patch, anything
 # else -> the 0.x "major"; no automatic 1.0.0); if there is one, it bumps the
-# workspace version, commits + tags it, pushes to master, publishes the changed
-# crates, and assembles the GitHub Release notes (a commit list since the
-# previous tag) for the workflow to publish. A clean no-op when nothing landed
-# since the last tag.
+# workspace version, commits + tags it, pushes to master, and assembles the
+# GitHub Release notes (a commit list since the previous tag) for the workflow
+# to cut the Release with. A clean no-op when nothing landed since the last tag.
+# Nothing is built and nothing is uploaded here: the crates go to crates.io
+# from crates-publish.yml, one of the channels release.yml dispatches for the
+# release the maintainer picks (scripts/ci/ci_publish.sh).
 #
 # The release commit is pushed with RELEASE_PAT (an admin token, so it satisfies
 # the master branch ruleset) and carries `[skip ci]`, so it does not re-trigger CI.
 #
-# Set FORCE_VERSION=X.Y.Z to (re)publish that exact version instead of computing it
+# Set FORCE_VERSION=X.Y.Z to (re)release that exact version instead of computing it
 # from the commit history — used to release a version a failed/blocked run skipped.
 #
-# Requires: push access to master, and for the publish either `id-token: write`
-# (crates.io Trusted Publishing, see scripts/ci/ci_publish.sh) or an explicit
-# CARGO_REGISTRY_TOKEN.
+# Requires: push access to master.
 # Usage: scripts/ci/release.sh
 set -euo pipefail
 cd "$(dirname "$0")/../.."
@@ -34,7 +34,7 @@ fi
 # stops a docs / CI / demo / Python-binding-only merge (now that every non-fix
 # commit is release-worthy) from minting and publishing a new version of every
 # crate with no code change. FORCE_VERSION bypasses the gate (a deliberate
-# manual (re)publish).
+# manual (re)release).
 if [[ -z "${FORCE_VERSION:-}" ]]; then
   gate_prev_tag="$(git tag --list 'v*' --sort=-version:refname | head -n1)"
   gate_range="${gate_prev_tag:+$gate_prev_tag..}HEAD"
@@ -95,20 +95,16 @@ git add Cargo.toml Cargo.lock crates/*/Cargo.toml
 # Commit only if the bump changed something — a forced re-publish of a version
 # whose manifests are already at $new has nothing to commit.
 if git diff --cached --quiet; then
-  echo ">> manifests already at v$new — re-tagging / re-publishing only"
+  echo ">> manifests already at v$new — re-tagging only"
 else
   git commit -m "chore(release): v$new [skip ci]"
 fi
-# Tag only if it doesn't already exist (idempotent for a forced re-publish).
+# Tag only if it doesn't already exist (idempotent for a forced re-release).
 if ! git rev-parse -q --verify "refs/tags/v$new" >/dev/null; then
   git tag -a "v$new" -m "v$new"
 fi
 git push origin HEAD:master
 git push origin "v$new"
-
-# Publish every crate at the new version (idempotent: skips any already on
-# crates.io), in dependency order.
-scripts/ci/ci_publish.sh
 
 # Hand the released version + notes file to the workflow, which cuts the GitHub
 # Release for the tag we just pushed. Guarded so the script still runs locally

@@ -1,18 +1,20 @@
-# Publish a release to every distribution channel: PyPI (`docling-rs`,
-# `docling-rs-cuda`, the `docling-rs-mcp` launcher and, after it, the MCP
-# catalogs), npm (`docling.rs`, its platform packages, `docling.rs-cuda`,
-# `docling.rs-wasm`), GHCR (the CPU and CUDA images) and the release's CLI and
-# FFI binaries. ci.yml cuts a GitHub Release (and publishes the crates) on
-# every merge — not marked latest; this publishes the releases the maintainer
-# picks:
+# Publish a release to every distribution channel: crates.io (the workspace
+# crates, in dependency order), PyPI (`docling-rs`, `docling-rs-cuda`, the
+# `docling-rs-mcp` launcher and, after it, the MCP catalogs), npm
+# (`docling.rs`, its platform packages, `docling.rs-cuda`, `docling.rs-wasm`),
+# GHCR (the CPU and CUDA images) and the release's CLI and FFI binaries.
+# ci.yml bumps the version, tags it and cuts a GitHub Release on every merge
+# — builds nothing, publishes nothing, not marked latest; this publishes the
+# releases the maintainer picks:
 #
 #     gh workflow run release.yml                  # the newest vX.Y.Z release
 #     gh workflow run release.yml -f tag=v2.23.0   # a given one
 #
-# Each channel runs as its own workflow (pypi-publish.yml, npm-publish.yml,
-# docker-publish.yml, cli-binaries.yml), dispatched from here rather than
-# called as a reusable workflow: PyPI's and npm's trusted publishers name
-# those workflow files, and a called workflow's OIDC token names the caller.
+# Each channel runs as its own workflow (crates-publish.yml, pypi-publish.yml,
+# npm-publish.yml, docker-publish.yml, cli-binaries.yml), dispatched from here
+# rather than called as a reusable workflow: crates.io's, PyPI's and npm's
+# trusted publishers name those workflow files, and a called workflow's OIDC
+# token names the caller.
 # This run waits for every channel, then — when they all succeeded and the
 # release carries the CLI binaries — marks the release GitHub's latest (the
 # Releases page and badge; install.sh itself takes the newest release that
@@ -29,6 +31,10 @@ on:
         description: "Release tag to publish (e.g. v2.23.0) — a GitHub Release ci.yml cut. Blank = the newest vX.Y.Z release."
         required: false
         default: ""
+      crates:
+        description: "crates.io: the workspace crates (docling-core … docling-cli), in dependency order."
+        type: boolean
+        default: true
       pypi:
         description: "PyPI: docling-rs (+ docling-rs-cuda), the docling-rs-mcp launcher, the MCP catalogs."
         type: boolean
@@ -97,6 +103,7 @@ jobs:
             channels=$(jq -c --arg name "$1" --arg workflow "$2" --arg fields "$3" \
               '. + [{name: $name, workflow: $workflow, fields: $fields}]' <<<"$channels")
           }
+          if [ "${{ inputs.crates }}" = true ]; then add crates.io crates-publish.yml "tag=$TAG"; fi
           if [ "${{ inputs.pypi }}" = true ]; then add PyPI pypi-publish.yml "tag=$TAG cuda_wheel=$CUDA"; fi
           if [ "${{ inputs.npm }}" = true ]; then add npm npm-publish.yml "tag=$TAG cuda=$CUDA"; fi
           if [ "${{ inputs.docker }}" = true ]; then add GHCR docker-publish.yml "tag=$TAG publish=true cuda=$CUDA"; fi
