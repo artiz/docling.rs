@@ -174,8 +174,12 @@ impl DeclarativeBackend for DocBackend {
         // main text, footnotes, headers, comments, endnotes, text boxes.
         let ftn_base = ccp_text;
         let hdd_base = ftn_base + fib.ccp_ftn as u64;
-        let edn_base = hdd_base + fib.ccp_hdd as u64 + fib.ccp_atn as u64;
+        let atn_base = hdd_base + fib.ccp_hdd as u64;
+        let edn_base = atn_base + fib.ccp_atn as u64;
         let txbx_base = edn_base + fib.ccp_edn as u64;
+        // The comments (#699): where each is anchored in the main text
+        // (`PlcfandRef`), for the `comments` back-references.
+        let comment_cps = comment_anchor_cps(fib.part(&table, Fib::PLCF_AND_REF), Atrd::Word97);
         let story = Story {
             format: DocFormat::Word97,
             word: &word,
@@ -194,6 +198,7 @@ impl DeclarativeBackend for DocBackend {
             placed: Default::default(),
             fonts: &fonts,
             lists: &lists,
+            comment_cps: &comment_cps,
         };
 
         // Walk the main-document text paragraph by paragraph, assembling nodes.
@@ -275,6 +280,22 @@ impl DeclarativeBackend for DocBackend {
                 });
             }
         }
+        // The comments (#699): the annotation story, each a notes-layer
+        // `comment_section` after the body, as the DOCX backend's.
+        push_comments(
+            &mut doc,
+            comment_texts(
+                &story,
+                &mut chpx_cache,
+                fib.part(&table, Fib::PLCF_AND_REF),
+                fib.part(&table, Fib::PLCF_AND_TXT),
+                fib.part(&table, Fib::GRP_XST_ATN_OWNERS),
+                fib.part(&table, Fib::ATRD_EXTRA),
+                atn_base,
+                fib.ccp_atn as u64,
+                Atrd::Word97,
+            ),
+        );
         Ok(doc)
     }
 }
@@ -299,6 +320,9 @@ struct Story<'a> {
     /// The font table (`SttbfFfn`): name per `ftc` (#588).
     fonts: &'a [String],
     lists: &'a ListTables,
+    /// The main-text CP of each comment's reference mark (#699), in
+    /// comment order — the paragraph holding it gets the back-reference.
+    comment_cps: &'a [u64],
 }
 
 impl Story<'_> {
@@ -356,6 +380,16 @@ impl Story<'_> {
     ) {
         let mut builder = NodeBuilder::new(self.lists.clone());
         let mut para = ParaAccum::default();
+        let mut para_start = from;
+        // The comments anchored in CPs `a..=b` (#699), by index.
+        let comments_in = |a: u64, b: u64| -> Vec<usize> {
+            self.comment_cps
+                .iter()
+                .enumerate()
+                .filter(|(_, c)| (a..=b).contains(c))
+                .map(|(i, _)| i)
+                .collect()
+        };
         for cp in from..to {
             let Some((ch, fc)) = self.char_at(cp) else {
                 break;
@@ -365,6 +399,8 @@ impl Story<'_> {
                     // Paragraph / cell / page mark: property lookup is by
                     // the mark's own FC.
                     let props = paragraph_props(self.word, self.bte, fc, self.format);
+                    para.comments = comments_in(para_start, cp);
+                    para_start = cp + 1;
                     para.finish(ch, props, self.stis, &mut builder, doc);
                 }
                 // Inline picture anchor: the run's CHPX locates the PICF.
@@ -398,6 +434,7 @@ impl Story<'_> {
                 ),
             }
         }
+        para.comments = comments_in(para_start, to);
         para.finish('\r', ParaProps::default(), self.stis, &mut builder, doc);
         builder.flush(doc);
     }
@@ -727,6 +764,203 @@ fn note_texts(
         .collect()
 }
 
+/// The two layouts of a comment reference's descriptor (#699): Word 97's
+/// `ATRDPre10` ([MS-DOC] 2.9.4) — `xstUsrInitl` (a 2-byte count and nine
+/// UTF-16 units, 20 bytes), `ibst`, `ak`, `grfbmc`, `lTagBkmk`, 30 bytes
+/// — and Word 6/95's, whose initials are a 10-byte 8-bit Pascal string
+/// (20 bytes).
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Atrd {
+    Word97,
+    Word6,
+}
+
+impl Atrd {
+    fn size(self) -> usize {
+        match self {
+            Atrd::Word97 => 30,
+            Atrd::Word6 => 20,
+        }
+    }
+
+    /// The reviewer's initials and the index of their name.
+    fn initials_and_owner(self, atrd: &[u8]) -> (String, Option<usize>) {
+        match self {
+            Atrd::Word97 => {
+                let cch = u16_at(atrd, 0).unwrap_or(0).min(9) as usize;
+                let units: Vec<u16> = (0..cch).filter_map(|i| u16_at(atrd, 2 + i * 2)).collect();
+                let initials = String::from_utf16_lossy(&units).trim().to_string();
+                (initials, u16_at(atrd, 20).map(usize::from))
+            }
+            Atrd::Word6 => {
+                let cb = atrd.first().copied().unwrap_or(0).min(9) as usize;
+                let initials: String = atrd
+                    .get(1..1 + cb)
+                    .unwrap_or(&[])
+                    .iter()
+                    .map(|&b| cp1252(b))
+                    .collect();
+                (
+                    initials.trim().to_string(),
+                    u16_at(atrd, 10).map(usize::from),
+                )
+            }
+        }
+    }
+
+    /// The reviewers' names: Word 97's `GrpXstAtnOwners` (XSTs — a 2-byte
+    /// count, then UTF-16 units), Word 6/95's `grpStAtnOwners` (8-bit
+    /// Pascal strings).
+    fn owners(self, grp: &[u8]) -> Vec<String> {
+        let mut out = Vec::new();
+        let mut at = 0;
+        match self {
+            Atrd::Word97 => {
+                while let Some(cch) = u16_at(grp, at) {
+                    let units: Vec<u16> = (0..cch as usize)
+                        .filter_map(|i| u16_at(grp, at + 2 + i * 2))
+                        .collect();
+                    out.push(String::from_utf16_lossy(&units).trim().to_string());
+                    at += 2 + cch as usize * 2;
+                }
+            }
+            Atrd::Word6 => {
+                while let Some(&cb) = grp.get(at) {
+                    let name: String = grp
+                        .get(at + 1..at + 1 + cb as usize)
+                        .unwrap_or(&[])
+                        .iter()
+                        .map(|&b| cp1252(b))
+                        .collect();
+                    out.push(name.trim().to_string());
+                    at += 1 + cb as usize;
+                }
+            }
+        }
+        out
+    }
+}
+
+/// One comment of the annotation story (#699): docling's note text,
+/// `[author: {name} ({initials}), time: {date}]: {text}` (the parts the
+/// file lacks left out — a Word 97/2000 file has no comment dates). Where
+/// it is anchored is [`comment_anchor_cps`]'s.
+struct Comment {
+    text: String,
+}
+
+/// The main-text CP of each comment's reference mark, from `PlcfandRef`
+/// (`n + 1` CPs, then `n` descriptors), in comment order.
+fn comment_anchor_cps(refs: &[u8], layout: Atrd) -> Vec<u64> {
+    let Some(n) = refs.len().checked_sub(4).map(|l| l / (4 + layout.size())) else {
+        return Vec::new();
+    };
+    (0..n)
+        .filter_map(|i| u32_at(refs, i * 4).map(u64::from))
+        .collect()
+}
+
+/// The comments (#699): `refs` (`PlcfandRef`) counts them and names each
+/// reviewer, `txt` (`PlcfandTxt`) gives each one's CPs in the annotation
+/// story starting at `base` (its reference mark, 0x05, is dropped with the
+/// other marks), `owners` the reviewers' names, `extra` (`AtrdExtra`, Word
+/// 2002+: 18-byte `ATRDPost10`s whose `dttm` leads) the dates. A comment's
+/// paragraphs are joined with a space, like a note's.
+#[allow(clippy::too_many_arguments)]
+fn comment_texts(
+    story: &Story,
+    cache: &mut ChpxCache,
+    refs: &[u8],
+    txt: &[u8],
+    owners: &[u8],
+    extra: &[u8],
+    base: u64,
+    len: u64,
+    layout: Atrd,
+) -> Vec<Comment> {
+    let Some(n) = refs.len().checked_sub(4).map(|l| l / (4 + layout.size())) else {
+        return Vec::new();
+    };
+    if n == 0 || len == 0 {
+        return Vec::new();
+    }
+    let owners = layout.owners(owners);
+    (0..n)
+        .filter_map(|i| {
+            let a = u32_at(txt, i * 4)? as u64;
+            let b = (u32_at(txt, i * 4 + 4)? as u64).min(len);
+            let text = if a < b {
+                story.paragraphs(cache, base + a, base + b).join(" ")
+            } else {
+                String::new()
+            };
+            let at = (n + 1) * 4 + i * layout.size();
+            let atrd = refs.get(at..at + layout.size()).unwrap_or(&[]);
+            let (initials, ibst) = layout.initials_and_owner(atrd);
+            let author = ibst
+                .and_then(|i| owners.get(i))
+                .cloned()
+                .unwrap_or_default();
+            let date = u32_at(extra, i * 18).and_then(dttm_to_iso);
+            let mut head: Vec<String> = Vec::new();
+            if !author.is_empty() {
+                head.push(if initials.is_empty() {
+                    format!("author: {author}")
+                } else {
+                    format!("author: {author} ({initials})")
+                });
+            } else if !initials.is_empty() {
+                head.push(format!("author: {initials}"));
+            }
+            if let Some(date) = date {
+                head.push(format!("time: {date}"));
+            }
+            let text = if head.is_empty() {
+                text
+            } else {
+                format!("[{}]: {text}", head.join(", "))
+            };
+            Some(Comment { text })
+        })
+        .collect()
+}
+
+/// A `DTTM` ([MS-DOC] 2.9.65) as docling writes a comment's date:
+/// `YYYY-MM-DDTHH:MM:00.000` (minutes 0–5, hours 6–10, day 11–15, month
+/// 16–19, year 20–28 from 1900). `None` for the zero value.
+fn dttm_to_iso(v: u32) -> Option<String> {
+    if v == 0 {
+        return None;
+    }
+    let minute = v & 0x3F;
+    let hour = (v >> 6) & 0x1F;
+    let day = (v >> 11) & 0x1F;
+    let month = (v >> 16) & 0x0F;
+    let year = 1900 + ((v >> 20) & 0x1FF);
+    if !(1..=12).contains(&month) || !(1..=31).contains(&day) || hour > 23 || minute > 59 {
+        return None;
+    }
+    Some(format!(
+        "{year:04}-{month:02}-{day:02}T{hour:02}:{minute:02}:00.000"
+    ))
+}
+
+/// The comments as the DOCX backend emits them (#699): a notes-layer
+/// `comment_section` group named `comment-{i}` per comment, after the
+/// body — JSON carries the group and its text (and the `comments`
+/// back-reference on the paragraph holding the reference mark), Markdown
+/// leaves the notes layer out.
+fn push_comments(doc: &mut DoclingDocument, comments: Vec<Comment>) {
+    for (i, c) in comments.into_iter().enumerate() {
+        doc.push(Node::CommentSection {
+            name: format!("comment-{i}"),
+            text: escape_text(&c.text),
+            refs_note_text: false,
+            grouped: true,
+        });
+    }
+}
+
 /// The Word 97+ FIB, located from the counts the stream declares
 /// ([MS-DOC] 2.5.1): `FibBase` (32 bytes), `csw` + `fibRgW`, `cslw` +
 /// `fibRgLw`, `cbRgFcLcb` + `fibRgFcLcbBlob`. Writers size these arrays by
@@ -754,6 +988,8 @@ impl<'a> Fib<'a> {
     const STSHF: usize = 1;
     const PLCF_FND_REF: usize = 2;
     const PLCF_FND_TXT: usize = 3;
+    const PLCF_AND_REF: usize = 4;
+    const PLCF_AND_TXT: usize = 5;
     const PLCF_SED: usize = 6;
     const PLCF_HDD: usize = 11;
     const PLCF_BTE_CHPX: usize = 12;
@@ -765,11 +1001,15 @@ impl<'a> Fib<'a> {
     const PLCF_END_REF: usize = 46;
     const PLCF_END_TXT: usize = 47;
     const DOP: usize = 31;
+    const GRP_XST_ATN_OWNERS: usize = 36;
     const DGG_INFO: usize = 50;
     const PLCF_TXBX_TXT: usize = 56;
     const PLCF_HDR_TXBX_TXT: usize = 58;
     const PLF_LST: usize = 73;
     const PLF_LFO: usize = 74;
+    /// `fcAtrdExtra` of `FibRgFcLcb2002` (Word 2002+): the comments'
+    /// dates, beyond the 93 + 15 pairs of the 97 and 2000 blocks.
+    const ATRD_EXTRA: usize = 112;
 
     fn parse(word: &'a [u8]) -> Result<Self, ConversionError> {
         let short = |what: &str, need: usize| {
@@ -913,6 +1153,7 @@ fn convert_word6(name: &str, word: &[u8], flags: u16) -> Result<DoclingDocument,
     let stis = parse_stsh(part(0x60), DocFormat::Word6);
     let lists = ListTables::default();
     let drawings = Drawings::default();
+    let comment_cps = comment_anchor_cps(part(0x78), Atrd::Word6);
     let story = Story {
         format: DocFormat::Word6,
         word,
@@ -927,6 +1168,7 @@ fn convert_word6(name: &str, word: &[u8], flags: u16) -> Result<DoclingDocument,
         placed: Default::default(),
         fonts: &[],
         lists: &lists,
+        comment_cps: &comment_cps,
     };
     let mut cache = ChpxCache::default();
     let mut doc = DoclingDocument::new(name);
@@ -965,6 +1207,24 @@ fn convert_word6(name: &str, word: &[u8], flags: u16) -> Result<DoclingDocument,
             text: escape_text(&text),
         });
     }
+    // The comments (#699): the annotation story after the headers'
+    // (`ccpMcr` between them), its PLCs at 0x78 / 0x80, the reviewers at
+    // 0x178 (`grpStAtnOwners`); no dates before Word 2002.
+    let atn_base = hdd_base + ccp_hdd + ccp(0x40);
+    push_comments(
+        &mut doc,
+        comment_texts(
+            &story,
+            &mut cache,
+            part(0x78),
+            part(0x80),
+            part(0x178),
+            &[],
+            atn_base,
+            ccp(0x44),
+            Atrd::Word6,
+        ),
+    );
     Ok(doc)
 }
 
@@ -2387,6 +2647,9 @@ struct ParaAccum {
     field_stack: Vec<bool>, // true = in result part
     /// Text boxes anchored in this paragraph, each its story's nodes (#535).
     textboxes: Vec<Vec<Node>>,
+    /// The comments anchored in this paragraph (#699), as indices into
+    /// the document's comment sections.
+    comments: Vec<usize>,
 }
 
 impl ParaAccum {
@@ -2487,9 +2750,12 @@ impl ParaAccum {
         let markdown = self.markdown();
         let pictures = std::mem::take(&mut self.pictures);
         let textboxes = std::mem::take(&mut self.textboxes);
+        let comments = std::mem::take(&mut self.comments);
         self.segments.clear();
         self.field_stack.clear();
-        builder.paragraph(plain, markdown, pictures, textboxes, mark, props, stis, doc);
+        builder.paragraph(
+            plain, markdown, pictures, textboxes, comments, mark, props, stis, doc,
+        );
     }
 }
 
@@ -2533,6 +2799,7 @@ impl NodeBuilder {
         markdown: String,
         pictures: Vec<(bool, Option<PictureImage>)>,
         textboxes: Vec<Vec<Node>>,
+        comments: Vec<usize>,
         mark: char,
         props: ParaProps,
         stis: &[StyleDef],
@@ -2626,6 +2893,7 @@ impl NodeBuilder {
             .get(props.istd as usize)
             .copied()
             .unwrap_or(StyleDef::NONE);
+        let before = doc.nodes.len();
         // The paragraph's list, its own or its style's (#641).
         let numbering = resolve_numbering(&props, stis);
         let sti = style.sti;
@@ -2765,6 +3033,16 @@ impl NodeBuilder {
             doc.push(Node::Paragraph { text });
             self.last_ilfo = None;
             self.run_base = None;
+        }
+        // The comments anchored here (#699): docling's `comments`
+        // back-references on the item, as the DOCX backend's.
+        if !comments.is_empty() && doc.nodes.len() > before {
+            if let Some(inner) = doc.nodes.pop() {
+                doc.push(Node::Commented {
+                    comments,
+                    inner: Box::new(inner),
+                });
+            }
         }
         for image in after {
             doc.push(picture_node(image));
@@ -3113,6 +3391,53 @@ mod tests {
             .collect()
     }
 
+    /// #699: the annotation story — a comment on the body paragraph (the
+    /// ticket's repro) — is a notes-layer `comment_section` group with
+    /// docling's `[author: … (initials), time: …]: text` note and a
+    /// `comments` back-reference on the paragraph, as the `.docx` twin's; the
+    /// Markdown leaves it out as before.
+    #[test]
+    fn comments_are_notes_layer_sections() {
+        let path = format!(
+            "{}/tests/data/doc/sources/doc_comment.doc",
+            env!("CARGO_MANIFEST_DIR")
+        );
+        let bytes = std::fs::read(&path).expect("fixture exists");
+        let doc = DocBackend
+            .convert(&SourceDocument::from_bytes(
+                "c.doc",
+                InputFormat::Doc,
+                bytes,
+            ))
+            .expect("converts");
+        assert_eq!(
+            doc.export_to_markdown().trim(),
+            "Body paragraph with comment."
+        );
+        let json: serde_json::Value = serde_json::from_str(&doc.export_to_json()).unwrap();
+        let groups = json["groups"].as_array().unwrap();
+        assert_eq!(groups.len(), 1, "{groups:?}");
+        assert_eq!(groups[0]["label"], "comment_section");
+        assert_eq!(groups[0]["name"], "comment-0");
+        assert_eq!(groups[0]["content_layer"], "notes");
+        let note = &json["texts"][1];
+        assert_eq!(note["parent"]["$ref"], "#/groups/0");
+        assert_eq!(note["content_layer"], "notes");
+        // The date from `AtrdExtra` (Word COM wrote a 2002+ FIB): the
+        // `.docx` twin's `2026-10-14T09:31:00.000+00:00` without the zone
+        // a DTTM does not carry.
+        assert_eq!(
+            note["text"],
+            "[author: Author Anon (AA), time: 2026-10-14T09:31:00.000]: MARK_COMMENT: This is an \
+             annotation by author."
+        );
+        assert_eq!(json["texts"][0]["comments"][0]["$ref"], "#/groups/0");
+        assert_eq!(dttm_to_iso(0).as_deref(), None);
+        // 2026-10-14 09:31: minutes 31, hour 9, day 14, month 10, year 126.
+        let v = 31 | (9 << 6) | (14 << 11) | (10 << 16) | (126 << 20);
+        assert_eq!(dttm_to_iso(v).as_deref(), Some("2026-10-14T09:31:00.000"));
+    }
+
     /// #697: a section without a title page and a document without facing
     /// pages show their default header and footer only — the first-page
     /// and even-page stories the file keeps are leftovers Word ignores,
@@ -3415,6 +3740,7 @@ mod tests {
                 builder.paragraph(
                     text.into(),
                     text.into(),
+                    Vec::new(),
                     Vec::new(),
                     Vec::new(),
                     '\r',
