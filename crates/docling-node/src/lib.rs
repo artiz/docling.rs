@@ -118,6 +118,9 @@ pub struct ConverterOptions {
     /// Unpadded `| a | b |` Markdown tables, all formats (#271; docling.rs
     /// extension). Default `false`.
     pub compact_tables: Option<bool>,
+    /// Render pictures' alt text (DOCX/PPTX/XLSX, #676) in Markdown and
+    /// HTML; `strict` implies it, JSON has it always. Default `false`.
+    pub picture_alt_text: Option<bool>,
     /// EBCDIC (#252): copybook layout as inline `EbcdicLayout` JSON or a
     /// file path; defaults to the `<stem>.layout.json` sidecar.
     pub ebcdic_layout: Option<String>,
@@ -432,6 +435,8 @@ pub struct ConvertOptions {
     pub skip_empty_cells: Option<bool>,
     /// Unpadded Markdown tables (#271). Default `false`.
     pub compact_tables: Option<bool>,
+    /// Pictures' alt text (#676) in Markdown and HTML. Default `false`.
+    pub picture_alt_text: Option<bool>,
     /// EBCDIC (#252): copybook layout as inline `EbcdicLayout` JSON or a
     /// file path; defaults to the `<stem>.layout.json` sidecar.
     pub ebcdic_layout: Option<String>,
@@ -878,6 +883,7 @@ fn run_convert(source: SourceDocument, cfg: &ConvertConfig) -> Result<RawResult>
         // they silently lapse under `pipeline: "vlm"`.
         document.strict_markdown = cfg.opts.strict.unwrap_or(false);
         document.compact_tables = cfg.opts.compact_tables.unwrap_or(false);
+        document.picture_alt_text = cfg.opts.picture_alt_text.unwrap_or(false);
         document.page_break_placeholder = cfg.page_break_placeholder.clone();
         // The PII pass (#621) lapses on this path too unless applied here.
         let redaction = build_converter(cfg)?
@@ -1374,7 +1380,8 @@ impl DocumentConverter {
                     cfg.opts.compact_tables.unwrap_or(false),
                     &cfg.artifacts_dir,
                 )
-                .with_page_break_placeholder(cfg.page_break_placeholder.clone());
+                .with_page_break_placeholder(cfg.page_break_placeholder.clone())
+                .with_picture_alt_text(cfg.opts.picture_alt_text.unwrap_or(false));
                 for chunk in [streamer.push(&doc.nodes, &doc.links), streamer.finish()] {
                     if !chunk.is_empty() {
                         callback.call(Ok(Some(chunk)), ThreadsafeFunctionCallMode::NonBlocking);
@@ -1780,7 +1787,8 @@ fn stream_pipeline(
     // so tables use the padded GitHub serializer (compact_tables = false),
     // matching the buffered path.
     let mut streamer = MarkdownStreamer::new(strict, cfg.image_mode, false)
-        .with_page_break_placeholder(cfg.page_break_placeholder.clone());
+        .with_page_break_placeholder(cfg.page_break_placeholder.clone())
+        .with_picture_alt_text(cfg.opts.picture_alt_text.unwrap_or(false));
     let emit_chunk = |chunk: String| {
         if !chunk.is_empty() {
             callback.call(Ok(Some(chunk)), ThreadsafeFunctionCallMode::NonBlocking);

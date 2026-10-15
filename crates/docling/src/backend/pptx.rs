@@ -28,7 +28,8 @@ use std::collections::{HashMap, HashSet};
 
 use docling_core::tree::{ItemTree, ListMeta, TreeKind, TreeProv};
 use docling_core::{
-    ContentLayer, DoclingDocument, Node, PictureImage, Table, TableCell, TableStructure,
+    ContentLayer, DoclingDocument, Node, PictureDescription, PictureImage, Table, TableCell,
+    TableStructure,
 };
 use rayon::prelude::*;
 use roxmltree::{Document, Node as XmlNode};
@@ -628,6 +629,10 @@ fn handle_shape(shape: XmlNode, ctx: &SlideCtx, out: &mut SlideOut) {
             });
             if let Some(rid) = embedded.filter(|rid| ctx.valid_imgs.contains(rid)) {
                 let image = ctx.images.get(&rid);
+                // The author's alt text (#676): `p:nvPicPr/p:cNvPr/@descr`.
+                let alt = descendant(shape, "cNvPr")
+                    .and_then(crate::backend::ooxml::alt_text_of)
+                    .map(PictureDescription::alt_text);
                 // docling: PIL decodes it → a picture with the image (at the
                 // file's dpi); a metafile PIL cannot → a payload-less picture;
                 // anything else undecodable → no picture at all.
@@ -639,7 +644,7 @@ fn handle_shape(shape: XmlNode, ctx: &SlideCtx, out: &mut SlideOut) {
                             captions: Vec::new(),
                             image: image.cloned(),
                             classification: None,
-                            description: None,
+                            description: alt.clone(),
                             confidence: None,
                             chart: None,
                             dpi: image.map(|img| pptx_dpi(&img.data)),
@@ -655,7 +660,7 @@ fn handle_shape(shape: XmlNode, ctx: &SlideCtx, out: &mut SlideOut) {
                         caption_href: None,
                         image: image.cloned(),
                         classification: None,
-                        description: None,
+                        description: alt,
                         caption_parent: Default::default(),
                         caption_location: None,
                     },

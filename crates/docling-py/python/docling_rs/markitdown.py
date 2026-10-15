@@ -579,7 +579,9 @@ class MarkItDown:
         self._llm_client: Any = None
         self._llm_model: Optional[str] = None
         self._llm_prompt: Optional[str] = None
-        self._docling_options: Dict[str, Any] = {}
+        # MarkItDown writes a picture's alt text (`![alt](…)`): render it
+        # (#676) unless the caller's docling_options say otherwise.
+        self._docling_options: Dict[str, Any] = {"picture_alt_text": True}
         self._converters: Dict[bool, DocumentConverter] = {}
         if enable_builtins is False:
             warnings.warn(
@@ -607,7 +609,7 @@ class MarkItDown:
         self._llm_model = kwargs.get("llm_model", self._llm_model)
         self._llm_prompt = kwargs.get("llm_prompt", self._llm_prompt)
         if "docling_options" in kwargs:
-            self._docling_options = dict(kwargs["docling_options"] or {})
+            self._docling_options = {"picture_alt_text": True, **(kwargs["docling_options"] or {})}
             self._converters.clear()
 
     def enable_plugins(self, **kwargs: Any) -> None:

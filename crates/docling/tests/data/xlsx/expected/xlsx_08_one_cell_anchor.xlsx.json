@@ -53,6 +53,12 @@
       },
       "children": [],
       "content_layer": "body",
+      "meta": {
+        "description": {
+          "created_by": "alt_text",
+          "text": "Picture"
+        }
+      },
       "label": "picture",
       "prov": [
         {
@@ -82,7 +88,13 @@
         },
         "uri": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAGQAAABQCAIAAABga0e4AAAAvklEQVR4nO3SsREAIAwDscD+O8MK+V6qXf35zLxh5y53iNV4ViBWIFYgViBWIFYgViBWIFYgViBWIFYgViBWIFYgViBWIFYgViBWIFYgViBWIFYgViBWIFYgViBWIFYgViBWIFYgViBWIFYgViBWIFYgViBWIFYgViBWIFYgViBWIFYgViBWIFYgViBWIFYgViBWIFYgViBWIFYgViBWIFYgViBWIFYgViBWIFYgViBWIFYgViBWIFYgViDW7H15OAGfth2TMAAAAABJRU5ErkJggg=="
       },
-      "annotations": []
+      "annotations": [
+        {
+          "kind": "description",
+          "text": "Picture",
+          "provenance": "alt_text"
+        }
+      ]
     }
   ],
   "tables": [

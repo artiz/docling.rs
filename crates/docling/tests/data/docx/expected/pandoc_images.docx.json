@@ -152,6 +152,12 @@
       },
       "children": [],
       "content_layer": "body",
+      "meta": {
+        "description": {
+          "created_by": "alt_text",
+          "text": "a red square"
+        }
+      },
       "label": "picture",
       "prov": [],
       "captions": [],
@@ -166,7 +172,13 @@
         },
         "uri": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAIAAABLbSncAAAAHklEQVR4nGM8ISfHgA0wMTAwmD98iCnBiE/HgEkAALX8BBD4dJ54AAAAAElFTkSuQmCC"
       },
-      "annotations": []
+      "annotations": [
+        {
+          "kind": "description",
+          "text": "a red square",
+          "provenance": "alt_text"
+        }
+      ]
     },
     {
       "self_ref": "#/pictures/1",
@@ -175,6 +187,12 @@
       },
       "children": [],
       "content_layer": "body",
+      "meta": {
+        "description": {
+          "created_by": "alt_text",
+          "text": "a green square"
+        }
+      },
       "label": "picture",
       "prov": [],
       "captions": [],
@@ -189,7 +207,13 @@
         },
         "uri": "data:image/gif;base64,R0lGODdhCAAIAIIAAACZADOZAADMAACZMzOZMzPMM////wAAACwAAAAACAAIAAAIJgAJABBIcKABggUJCiBQsEDChAAKDBxIYCGBAAIlEsRIceCAAAEBADs="
       },
-      "annotations": []
+      "annotations": [
+        {
+          "kind": "description",
+          "text": "a green square",
+          "provenance": "alt_text"
+        }
+      ]
     },
     {
       "self_ref": "#/pictures/2",
@@ -198,12 +222,24 @@
       },
       "children": [],
       "content_layer": "body",
+      "meta": {
+        "description": {
+          "created_by": "alt_text",
+          "text": "a metafile"
+        }
+      },
       "label": "picture",
       "prov": [],
       "captions": [],
       "references": [],
       "footnotes": [],
-      "annotations": []
+      "annotations": [
+        {
+          "kind": "description",
+          "text": "a metafile",
+          "provenance": "alt_text"
+        }
+      ]
     }
   ],
   "tables": [],

@@ -24,6 +24,16 @@ pub struct DoclingDocument {
     /// (its committed groundtruth corpus predates the padded serializer); DOCX/HTML
     /// leave it `false` to match current published docling.
     pub compact_tables: bool,
+    /// Render a picture's author-written alt text (#676: the `descr` /
+    /// `title` of an OOXML picture's non-visual properties, carried as a
+    /// [`PictureDescription`] whose provenance is
+    /// [`PictureDescription::ALT_TEXT`]) in the Markdown and HTML exports
+    /// (the `![alt](…)` of an image line or the line above a placeholder;
+    /// the `<img alt>` and the description text). `false` (the default)
+    /// keeps it to the JSON (and DCLX) output, so the default Markdown and
+    /// HTML stay byte-for-byte docling's; strict Markdown renders it
+    /// regardless. Set by `DocumentConverter::picture_alt_text`.
+    pub picture_alt_text: bool,
     /// Text the Markdown export inserts between two pages — docling-core's
     /// `MarkdownParams.page_break_placeholder` (e.g. `"<!-- page break -->"`).
     /// `None` (the default) omits page breaks from Markdown, as docling does.
@@ -801,6 +811,28 @@ pub struct PictureDescription {
     pub provenance: String,
 }
 
+impl PictureDescription {
+    /// The provenance of a picture's author-written alt text (#676): the
+    /// `descr` (else `title`) of an OOXML picture's non-visual properties
+    /// — what DOCX, PPTX and XLSX authors type into "Alt Text". JSON writes
+    /// it as `meta.description.created_by`; Markdown renders it under strict
+    /// Markdown or `DoclingDocument::picture_alt_text`, HTML under the latter.
+    pub const ALT_TEXT: &'static str = "alt_text";
+
+    /// An alt-text description, see [`Self::ALT_TEXT`].
+    pub fn alt_text(text: impl Into<String>) -> Self {
+        Self {
+            text: text.into(),
+            provenance: Self::ALT_TEXT.to_string(),
+        }
+    }
+
+    /// Whether this description is a picture's alt text.
+    pub fn is_alt_text(&self) -> bool {
+        self.provenance == Self::ALT_TEXT
+    }
+}
+
 /// An extracted picture's raw encoded bytes plus its mimetype and pixel size —
 /// the docling.rs analogue of docling-core's `ImageRef`.
 #[derive(Debug, Clone, PartialEq)]
@@ -1239,6 +1271,7 @@ impl DoclingDocument {
             nodes: Vec::new(),
             strict_markdown: false,
             compact_tables: false,
+            picture_alt_text: false,
             page_break_placeholder: None,
             links: Vec::new(),
             confidence: None,

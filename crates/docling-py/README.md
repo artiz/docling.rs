@@ -164,7 +164,7 @@ Office/HTML/EPUB/email backends — measured side by side in the main README's
 | `magika` / `charset_normalizer` guesses | magic bytes + container structure; `charset_normalizer` when installed (it comes with `requests`), else the engine's own detection — BOM, UTF-8, a statistical guess for a non-Latin encoding (`chardetng`, #675), else windows-1252 |
 | `exiftool_path`, `style_map`, `docintel_*`, `cu_*` | accepted, ignored with a warning (EXIF/metadata: #679) |
 | plugins, `register_converter` | not supported (#680); `enable_plugins` warns |
-| picture alt text (`![alt](…)`) | not yet (#676) |
+| picture alt text (`![alt](…)`) | kept (#676): the facade renders it — the `![alt](…)` of an image line, the text line above a `<!-- image -->` placeholder; `DocumentConverter(picture_alt_text=True)` elsewhere, and the document carries it always as the picture's description (`created_by="alt_text"`) |
 
 `MarkItDown(docling_options={...})` passes options through to
 `DocumentConverter` — `{"text_layer_only": True}` for pdfminer-speed PDFs,

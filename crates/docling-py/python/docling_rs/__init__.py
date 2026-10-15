@@ -271,6 +271,11 @@ class DocumentConverter:
       this wrapper's ``document.export_to_markdown()`` runs upstream Python
       docling-core, whose padded table style is untouched;
       ``skip_empty_cells`` is structural and carries through everywhere.
+    * ``picture_alt_text`` — render pictures' author-written alt text (the
+      ``descr``/``title`` of a DOCX, PPTX or XLSX picture, #676) in the
+      engine's Markdown and HTML; the JSON (and so ``result.document``)
+      carries it always as the picture's ``meta.description`` with
+      ``created_by="alt_text"``. Off by default; strict Markdown implies it.
       Likewise page breaks: ``document.export_to_markdown(page_break_placeholder=…)``
       is upstream docling-core's own option here and works off the items'
       ``prov.page_no`` in the engine's JSON (PDF and DjVu pages, slides, sheets); the
@@ -415,6 +420,7 @@ class DocumentConverter:
         ocr_engine: Optional[str] = None,
         skip_empty_cells: bool = False,
         compact_tables: bool = False,
+        picture_alt_text: bool = False,
         asr_model: Optional[str] = None,
         asr_lang: Optional[str] = None,
         encoding: Optional[str] = None,
@@ -675,6 +681,7 @@ class DocumentConverter:
             ocr_engine=ocr_engine,
             skip_empty_cells=skip_empty_cells,
             compact_tables=compact_tables,
+            picture_alt_text=picture_alt_text,
             asr_model=asr_model,
             asr_lang=asr_lang,
             encoding=encoding,

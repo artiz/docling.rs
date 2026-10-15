@@ -105,6 +105,7 @@ paths:
         - { $ref: "#/components/parameters/min_image_bytes" }
         - { $ref: "#/components/parameters/skip_empty_cells" }
         - { $ref: "#/components/parameters/compact_tables" }
+        - { $ref: "#/components/parameters/picture_alt_text" }
         - { $ref: "#/components/parameters/page_break_placeholder" }
         - { $ref: "#/components/parameters/md_page_break_placeholder" }
         - { $ref: "#/components/parameters/pandoc_api_version" }
@@ -197,6 +198,7 @@ paths:
                 min_image_bytes: { type: integer, minimum: 0 }
                 skip_empty_cells: { type: boolean }
                 compact_tables: { type: boolean }
+                picture_alt_text: { type: boolean }
                 list_attachments: { type: boolean }
                 ebcdic_layout: { type: string }
                 page_break_placeholder: { type: string, examples: ["<!-- page break -->"] }
@@ -1062,6 +1064,15 @@ components:
           description: >
             Render Markdown tables in the compact `| a | b |` form instead of
             the width-padded GitHub style (docling.rs extension, all formats).
+        picture_alt_text:
+          type: boolean
+          default: false
+          description: >
+            Render pictures' author-written alt text (the `descr`/`title` of a
+            DOCX, PPTX or XLSX picture, #676) in the Markdown and HTML output:
+            the `![alt](…)` of an image line, a text line above a placeholder.
+            `strict` implies it; the JSON carries it always as the picture's
+            `meta.description` (`created_by: alt_text`).
         pandoc_api_version:
           type: string
           examples: ["1.23"]
@@ -1542,6 +1553,8 @@ components:
       { name: skip_empty_cells, in: query, schema: { type: boolean } }
     compact_tables:
       { name: compact_tables, in: query, schema: { type: boolean } }
+    picture_alt_text:
+      { name: picture_alt_text, in: query, schema: { type: boolean } }
     page_break_placeholder:
       { name: page_break_placeholder, in: query, schema: { type: string } }
     md_page_break_placeholder:

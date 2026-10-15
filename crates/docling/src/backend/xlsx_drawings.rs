@@ -22,6 +22,9 @@ use roxmltree::{Document, Node as XmlNode};
 pub struct DrawingItem {
     pub bbox: (usize, usize, usize, usize),
     pub kind: DrawingKind,
+    /// The picture's alt text (#676): `xdr:nvPicPr/xdr:cNvPr/@descr`
+    /// (else `@title`); `None` for a chart or an untitled picture.
+    pub alt: Option<String>,
 }
 
 pub enum DrawingKind {
@@ -69,9 +72,16 @@ pub fn parse_drawing(xml: &str) -> Vec<DrawingItem> {
                 None => (fc, fr, fc + 1, fr + 1),
             }
         };
+        let mut alt = None;
         let kind = if let Some(blip) = anchor.descendants().find(|n| {
             n.has_tag_name("blip") && !n.ancestors().any(|a| a.has_tag_name("graphicFrame"))
         }) {
+            alt = blip
+                .ancestors()
+                .find(|a| a.has_tag_name("pic"))
+                .and_then(|p| p.children().find(|c| c.has_tag_name("nvPicPr")))
+                .and_then(|n| n.children().find(|c| c.has_tag_name("cNvPr")))
+                .and_then(super::ooxml::alt_text_of);
             match blip.attributes().find(|a| a.name() == "embed") {
                 Some(a) => DrawingKind::Image(a.value().to_string()),
                 None => continue,
@@ -84,7 +94,7 @@ pub fn parse_drawing(xml: &str) -> Vec<DrawingItem> {
         } else {
             continue;
         };
-        out.push(DrawingItem { bbox, kind });
+        out.push(DrawingItem { bbox, kind, alt });
     }
     out
 }

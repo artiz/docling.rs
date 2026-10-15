@@ -223,11 +223,13 @@ pub fn to_html(
     options: &HtmlExportOptions,
 ) -> (String, Vec<(String, Vec<u8>)>) {
     let json = doc.export_to_json_value();
+    let alt_text_meta = doc.picture_alt_text;
     // The walk recurses per nesting level (an item renders its children
     // inside itself), and an XBRL instance nests thousands deep — more than
     // a 2 MB test-thread stack holds — so it runs on a thread of its own.
     let render = || {
         let mut ser = Serializer::new(&json, options);
+        ser.alt_text_meta = alt_text_meta;
         let body = ser.serialize_body();
         let name = json.get("name").and_then(Value::as_str).unwrap_or_default();
         let title = if name.is_empty() {
@@ -388,6 +390,10 @@ struct GridCell<'a> {
 struct Serializer<'a> {
     json: &'a Value,
     image_mode: ImageMode,
+    /// Render pictures' alt text (#676: the document's `picture_alt_text`)
+    /// — the `<img alt>` and the visible meta text. Off, the HTML is
+    /// docling's byte for byte.
+    alt_text_meta: bool,
     artifacts_dir: String,
     /// The content layers rendered (`HTMLParams.layers`).
     layers: ContentLayers,
@@ -436,6 +442,7 @@ impl<'a> Serializer<'a> {
         Self {
             json,
             image_mode: options.image_mode,
+            alt_text_meta: false,
             artifacts_dir: options.artifacts_dir.clone(),
             layers: options.layers,
             artifacts: Vec::new(),
@@ -962,15 +969,22 @@ impl<'a> Serializer<'a> {
                 .get("image")
                 .and_then(|i| i.get("uri"))
                 .and_then(Value::as_str);
+            // The picture's alt text (#676) is the `<img>`'s alt — what the
+            // attribute is for — under `picture_alt_text`; off, the tag is
+            // docling's.
+            let alt = Self::alt_text(item)
+                .filter(|_| self.alt_text_meta)
+                .map(|t| format!(" alt=\"{}\"", escape(t, true)))
+                .unwrap_or_default();
             match (self.image_mode, uri) {
                 (ImageMode::Embedded, Some(uri)) if uri.starts_with("data:") => {
-                    res_parts.push(format!("<img src=\"{uri}\">"));
+                    res_parts.push(format!("<img src=\"{uri}\"{alt}>"));
                 }
                 (ImageMode::Referenced, Some(uri)) => {
                     if let Some(path) = self.reference_image(uri) {
-                        res_parts.push(format!("<img src=\"{}\">", url_quote(&path)));
+                        res_parts.push(format!("<img src=\"{}\"{alt}>", url_quote(&path)));
                     } else if !uri.starts_with("data:") {
-                        res_parts.push(format!("<img src=\"{}\">", url_quote(uri)));
+                        res_parts.push(format!("<img src=\"{}\"{alt}>", url_quote(uri)));
                     }
                 }
                 _ => {}
@@ -1007,6 +1021,17 @@ impl<'a> Serializer<'a> {
 
     /// `HTMLMetaSerializer`: the item's `meta` fields in docling's model
     /// order (`BaseMeta`, `FloatingMeta`, `PictureMeta`, then extras).
+    /// A picture's alt text (#676): its `meta.description` when that was
+    /// `created_by` the alt text, not an OCR or captioning model.
+    fn alt_text(item: &'a Value) -> Option<&'a str> {
+        let desc = item.get("meta")?.get("description")?;
+        (desc.get("created_by").and_then(Value::as_str)
+            == Some(crate::PictureDescription::ALT_TEXT))
+        .then(|| desc.get("text").and_then(Value::as_str))
+        .flatten()
+        .filter(|t| !t.is_empty())
+    }
+
     fn meta(&mut self, item: &'a Value) -> String {
         let Some(meta) = item.get("meta").and_then(Value::as_object) else {
             return String::new();
@@ -1014,6 +1039,8 @@ impl<'a> Serializer<'a> {
         if self.excluded(item) {
             return String::new();
         }
+        // Alt text (#676) renders on request only.
+        let hide_alt = !self.alt_text_meta && Self::alt_text(item).is_some();
         const ORDER: [&str; 10] = [
             "summary",
             "language",
@@ -1029,7 +1056,7 @@ impl<'a> Serializer<'a> {
         let mut names: Vec<&str> = ORDER
             .iter()
             .copied()
-            .filter(|k| meta.contains_key(*k))
+            .filter(|k| meta.contains_key(*k) && !(hide_alt && *k == "description"))
             .collect();
         names.extend(
             meta.keys()

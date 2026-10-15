@@ -81,7 +81,7 @@ fn bounded_worksheet_range<RS: std::io::Read + std::io::Seek>(
     cells.sort_by_key(|c| c.get_position());
     Some(Range::from_sparse(cells))
 }
-use docling_core::{DoclingDocument, Node, Table, TableCell};
+use docling_core::{DoclingDocument, Node, PictureDescription, Table, TableCell};
 use quick_xml::events::Event;
 use quick_xml::Reader as XmlReader;
 use rayon::prelude::*;
@@ -633,7 +633,7 @@ fn sheet_items<F: Fn(&str, &str) -> Vec<String> + Sync>(ctx: SheetCtx<'_, F>) ->
                                 caption_href: None,
                                 image: dimages.get(&rid).cloned(),
                                 classification: None,
-                                description: None,
+                                description: item.alt.map(PictureDescription::alt_text),
                                 caption_parent: Default::default(),
                                 caption_location: None,
                             },

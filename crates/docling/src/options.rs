@@ -55,6 +55,9 @@ pub struct ConvertOptions {
     pub strict: Option<bool>,
     /// Compact `| a | b |` Markdown tables instead of width padding (#271).
     pub compact_tables: Option<bool>,
+    /// Render pictures' alt text (OOXML `descr`/`title`, #676) in Markdown
+    /// and HTML; the JSON carries it always. Strict Markdown implies it.
+    pub picture_alt_text: Option<bool>,
     /// Text inserted between pages in the Markdown export (docling-core's
     /// `MarkdownParams.page_break_placeholder`); docling-serve's historical
     /// spelling `md_page_break_placeholder` is accepted as an alias.
@@ -394,6 +397,7 @@ pub const OPTIONS: &[OptionInfo] = &[
         ..row("strict")
     },
     row("compact_tables"),
+    row("picture_alt_text"),
     // Python: `export_to_markdown(page_break_placeholder=…)`, docling's own
     // signature, not a converter kwarg.
     OptionInfo {
@@ -950,6 +954,9 @@ impl ConvertOptions {
         }
         if let Some(v) = self.compact_tables {
             c = c.compact_tables(v);
+        }
+        if let Some(v) = self.picture_alt_text {
+            c = c.picture_alt_text(v);
         }
         if self.page_break_placeholder.is_some() {
             c = c.page_break_placeholder(self.page_break_placeholder.clone());
