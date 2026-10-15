@@ -34,6 +34,37 @@ pub struct MarkdownBackend {
     pub images: ImagePolicy,
 }
 
+/// Math (`ENABLE_MATH`): a display formula that is a paragraph of its own —
+/// `Start(Paragraph) DisplayMath End(Paragraph)` — stays an event for the
+/// block parser to make a formula item of; every other math event (inline
+/// `$x$`, a `$$…$$` run inside prose, a formula in a link or a cell) is
+/// folded back into a text event spelled exactly as the source — delimiters
+/// included — so the contiguity merge that follows, and every output, see
+/// the text they always did (`costs $5 and $6` is one run, not three). Used
+/// by both parsers.
+pub(super) fn fold_math_into_text<'a>(
+    raw: Vec<(Event<'a>, std::ops::Range<usize>)>,
+    text: &'a str,
+) -> Vec<(Event<'a>, std::ops::Range<usize>)> {
+    let standalone = |k: usize| {
+        matches!(
+            raw.get(k.wrapping_sub(1)),
+            Some((Event::Start(Tag::Paragraph), _))
+        ) && matches!(raw.get(k + 1), Some((Event::End(TagEnd::Paragraph), _)))
+    };
+    raw.iter()
+        .enumerate()
+        .map(|(k, (event, range))| match event {
+            Event::DisplayMath(_) if standalone(k) => (event.clone(), range.clone()),
+            Event::InlineMath(_) | Event::DisplayMath(_) => (
+                Event::Text(text.get(range.clone()).unwrap_or("").into()),
+                range.clone(),
+            ),
+            _ => (event.clone(), range.clone()),
+        })
+        .collect()
+}
+
 /// Is this trimmed line a GFM table delimiter row (`--- | :---:` …)? Every
 /// `|`-separated cell must be `-`s with optional edge colons, and at least one
 /// pipe must be present (a bare `---` is a thematic break / setext underline).
@@ -160,6 +191,7 @@ impl DeclarativeBackend for MarkdownBackend {
         let mut opts = Options::empty();
         opts.insert(Options::ENABLE_TABLES);
         opts.insert(Options::ENABLE_STRIKETHROUGH);
+        opts.insert(Options::ENABLE_MATH);
 
         // Merge only *contiguous* text events. pulldown splits both `[11]`
         // (failed link) and `2\.` (escape) into multiple text events, but the
@@ -172,6 +204,7 @@ impl DeclarativeBackend for MarkdownBackend {
         // nothing around it (docling#4313: `a\|b` is the cell `a|b`).
         let raw: Vec<(Event, std::ops::Range<usize>)> =
             Parser::new_ext(text, opts).into_offset_iter().collect();
+        let raw = fold_math_into_text(raw, text);
         let mut events: Vec<Event> = Vec::with_capacity(raw.len());
         let mut k = 0;
         let mut in_table = false;
@@ -320,6 +353,25 @@ impl MarkdownBackend {
                     );
                 }
                 Event::Start(Tag::Paragraph) => {
+                    // A paragraph that is one display formula (`$$…$$` on
+                    // its own, one line or several) is a formula item — what
+                    // a Jupyter notebook's or a README's equations are;
+                    // Markdown prints it `$$latex$$` again, JSON a `formula`
+                    // item, HTML MathML. Math inside prose stays text.
+                    if let Some(Event::DisplayMath(latex)) = events.get(*i + 1) {
+                        if matches!(events.get(*i + 2), Some(Event::End(TagEnd::Paragraph))) {
+                            let latex = latex.trim().to_string();
+                            if !latex.is_empty() {
+                                out.push(Node::Formula {
+                                    orig: latex.clone(),
+                                    latex,
+                                    location: None,
+                                });
+                            }
+                            *i += 3;
+                            continue;
+                        }
+                    }
                     // Legacy: a lone inline code span becomes a code block.
                     if !self.strict
                         && matches!(events.get(*i + 1), Some(Event::Code(_)))
@@ -1032,6 +1084,38 @@ mod tests {
             doc.export_to_markdown(),
             "Foo *emphasis* **strong** ***both***.\n"
         );
+    }
+
+    /// `$$…$$` as a paragraph of its own is a formula item; inline math,
+    /// a `$$…$$` inside prose or a link, and a price are the text they were.
+    #[test]
+    fn display_math_is_a_formula_and_inline_math_stays_text() {
+        let doc = convert(
+            "Costs $5 and $6, with $x^2$ inline and [$$E=mc^2$$](https://e.org) linked.\n\n\
+             $$\n H(y) = -\\sum_i y_i \\log y_i \n$$\n\n\
+             $$ a + b $$\n\n- item with $$c$$ inside\n",
+        );
+        let nodes: Vec<String> = doc
+            .nodes
+            .iter()
+            .map(|n| match n {
+                Node::Paragraph { text } => format!("P:{text}"),
+                Node::Formula { latex, orig, .. } => format!("F:{latex}|{orig}"),
+                Node::ListItem { text, .. } => format!("L:{text}"),
+                other => format!("{other:?}"),
+            })
+            .collect();
+        assert_eq!(
+            nodes,
+            [
+                "P:Costs $5 and $6, with $x^2$ inline and [$$E=mc^2$$](https://e.org) linked.",
+                "F:H(y) = -\\sum_i y_i \\log y_i|H(y) = -\\sum_i y_i \\log y_i",
+                "F:a + b|a + b",
+                "L:item with $$c$$ inside",
+            ]
+        );
+        let md = doc.export_to_markdown();
+        assert!(md.contains("$$H(y) = -\\sum_i y_i \\log y_i$$"), "{md}");
     }
 
     #[test]

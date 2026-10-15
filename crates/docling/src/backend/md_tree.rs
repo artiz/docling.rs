@@ -74,6 +74,9 @@ enum El {
     LineBreak {
         soft: bool,
     },
+    /// A display formula that is a paragraph of its own (`$$…$$`): a
+    /// `formula` item, as the LaTeX backend makes of a `displaymath`.
+    Formula(String),
 }
 
 impl El {
@@ -103,6 +106,7 @@ impl El {
                 | El::Image { .. }
                 | El::CodeSpan(_)
                 | El::LineBreak { .. }
+                | El::Formula(_)
         ) || matches!(self, El::Other(c) if c.is_empty())
     }
 }
@@ -112,9 +116,12 @@ fn parse(text: &str) -> El {
     // Contiguous text events merge into one `RawText`; an escape leaves an
     // offset gap (the backslash), so the pieces around it stay separate — a
     // marko `Literal` (see `markdown.rs`).
-    let raw: Vec<(Event, std::ops::Range<usize>)> = Parser::new_ext(text, Options::empty())
+    // Math on, then folded back into text except for a standalone display
+    // formula (`markdown.rs`): the text runs come out as marko's.
+    let raw: Vec<(Event, std::ops::Range<usize>)> = Parser::new_ext(text, Options::ENABLE_MATH)
         .into_offset_iter()
         .collect();
+    let raw = super::markdown::fold_math_into_text(raw, text);
     let mut events: Vec<Event> = Vec::with_capacity(raw.len());
     let mut k = 0;
     // Where the previous event's source ended: a text event starting one
@@ -211,6 +218,10 @@ fn parse_children(events: &[Event], i: &mut usize, depth: u16) -> Vec<El> {
             }
             Event::Code(t) => {
                 out.push(El::CodeSpan(t.to_string()));
+                *i += 1;
+            }
+            Event::DisplayMath(t) => {
+                out.push(El::Formula(t.trim().to_string()));
                 *i += 1;
             }
             Event::SoftBreak => {
@@ -339,6 +350,11 @@ fn only_plain_line_breaks(children: &[El]) -> bool {
 fn inline_text(el: &El, out: &mut String) {
     match el {
         El::Text(t) | El::CodeSpan(t) => out.push_str(t),
+        El::Formula(t) => {
+            out.push_str("$$");
+            out.push_str(t);
+            out.push_str("$$");
+        }
         other => other.children().iter().for_each(|c| inline_text(c, out)),
     }
 }
@@ -828,6 +844,21 @@ impl Walker<'_> {
                     self.pending_soft_break = false;
                 }
             }
+            El::Formula(latex) if !latex.is_empty() => {
+                self.close_table();
+                self.tree.add(
+                    parent,
+                    None,
+                    text_kind(
+                        "formula",
+                        latex,
+                        formatting,
+                        hyperlink.as_deref(),
+                        None,
+                        None,
+                    ),
+                );
+            }
             El::CodeSpan(code) => {
                 self.close_table();
                 let snippet = code.trim().to_string();
@@ -883,7 +914,7 @@ impl Walker<'_> {
                 self.html_blocks += 1;
                 self.close_table();
             }
-            El::Heading { .. } | El::ListItem(_) | El::CodeBlock { .. } => {}
+            El::Heading { .. } | El::ListItem(_) | El::CodeBlock { .. } | El::Formula(_) => {}
             El::Document(_) | El::Paragraph(_) | El::Other(_) => self.close_table(),
         }
 
@@ -1087,6 +1118,26 @@ mod tests {
 
     /// A raw HTML block means upstream re-converts through the HTML backend;
     /// no tree is built (the flat export stays).
+    /// A standalone display formula is a `formula` item; math inside prose
+    /// leaves the runs as they were (one text run, not three around `$`).
+    #[test]
+    fn display_math_is_a_formula_item() {
+        let t = tree("Costs $5 and $6 with $x$.\n\n$$\nE = mc^2\n$$\n\nAfter.\n");
+        let items: Vec<(String, String)> = t
+            .items
+            .iter()
+            .map(|it| (label(it), text(it).to_string()))
+            .collect();
+        assert_eq!(
+            items,
+            [
+                ("text".to_string(), "Costs $5 and $6 with $x$.".to_string()),
+                ("formula".to_string(), "E = mc^2".to_string()),
+                ("text".to_string(), "After.".to_string()),
+            ]
+        );
+    }
+
     #[test]
     fn html_blocks_yield_no_tree() {
         assert!(build_tree("para\n\n<div>hi</div>\n", &super::super::images::NoFetch).is_none());

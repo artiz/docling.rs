@@ -15,3 +15,8 @@ The rest are course notebooks contributed by the project's maintainer:
 - `vgg16.ipynb` — an image-classification assignment (long markdown cells
   with links and a fenced tree listing, a `%%time` cell, a 200-line
   stream output).
+
+`cross_entropy_notes.ipynb` is docling.rs's own: display formulas (one on
+one line, one spanning three), inline math, dollar amounts that are not
+math, a formula inside a link, and a picture linked by URL — the formula
+and remote-image cases of the in-browser demo.

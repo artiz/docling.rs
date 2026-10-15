@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8"/>
+<title>cross_entropy_notes.md</title>
+<meta name="generator" content="Docling HTML Serializer"/>
+<style>
+    html {
+        background-color: #f5f5f5;
+        font-family: Arial, sans-serif;
+        line-height: 1.6;
+    }
+    body {
+        max-width: 800px;
+        margin: 0 auto;
+        padding: 2rem;
+        background-color: white;
+        box-shadow: 0 0 10px rgba(0,0,0,0.1);
+    }
+    h1, h2, h3, h4, h5, h6 {
+        color: #333;
+        margin-top: 1.5em;
+        margin-bottom: 0.5em;
+    }
+    h1 {
+        font-size: 2em;
+        border-bottom: 1px solid #eee;
+        padding-bottom: 0.3em;
+    }
+    table {
+        border-collapse: collapse;
+        margin: 1em 0;
+        width: 100%;
+    }
+    th, td {
+        border: 1px solid #ddd;
+        padding: 8px;
+        text-align: left;
+    }
+    th {
+        background-color: #f2f2f2;
+        font-weight: bold;
+    }
+    figure {
+        margin: 1.5em 0;
+        text-align: center;
+    }
+    figcaption {
+        color: #666;
+        font-style: italic;
+        margin-top: 0.5em;
+    }
+    img {
+        max-width: 100%;
+        height: auto;
+    }
+    pre {
+        background-color: #f6f8fa;
+        border-radius: 3px;
+        padding: 1em;
+        overflow: auto;
+    }
+    code {
+        font-family: monospace;
+        background-color: #f6f8fa;
+        padding: 0.2em 0.4em;
+        border-radius: 3px;
+    }
+    pre code {
+        background-color: transparent;
+        padding: 0;
+    }
+    .formula {
+        text-align: center;
+        padding: 0.5em;
+        margin: 1em 0;
+        background-color: #f9f9f9;
+    }
+    .formula-not-decoded {
+        text-align: center;
+        padding: 0.5em;
+        margin: 1em 0;
+        background: repeating-linear-gradient(
+            45deg,
+            #f0f0f0,
+            #f0f0f0 10px,
+            #f9f9f9 10px,
+            #f9f9f9 20px
+        );
+    }
+    .page-break {
+        page-break-after: always;
+        border-top: 1px dashed #ccc;
+        margin: 2em 0;
+    }
+    .key-value-region {
+        background-color: #f9f9f9;
+        padding: 1em;
+        border-radius: 4px;
+        margin: 1em 0;
+    }
+    .key-value-region dt {
+        font-weight: bold;
+    }
+    .key-value-region dd {
+        margin-left: 1em;
+        margin-bottom: 0.5em;
+    }
+    .form-container {
+        border: 1px solid #ddd;
+        padding: 1em;
+        border-radius: 4px;
+        margin: 1em 0;
+    }
+    .form-item {
+        margin-bottom: 0.5em;
+    }
+    .image-classification {
+        font-size: 0.9em;
+        color: #666;
+        margin-top: 0.5em;
+    }
+    details.docling-meta {
+        margin: 0.5em 0;
+        font-size: 0.9em;
+        text-align: left;
+    }
+    figure details.docling-meta {
+        text-align: left;
+    }
+    details.docling-meta > summary {
+        cursor: pointer;
+        color: #555;
+        font-style: italic;
+        padding: 2px 6px;
+    }
+    .docling-meta-field {
+        background-color: #f0f0f0;
+        border-left: 3px solid #ccc;
+        padding: 6px 10px;
+        margin: 4px 0 4px 1em;
+        border-radius: 3px;
+        text-align: left;
+    }
+    .docling-meta-field-label {
+        font-weight: bold;
+        color: #444;
+    }
+    pre.docling-meta-code {
+        background-color: #1e1e1e;
+        color: #d4d4d4;
+        border-radius: 4px;
+        padding: 10px 12px;
+        margin: 6px 0;
+        overflow-x: auto;
+        font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+        font-size: 0.85em;
+        line-height: 1.45;
+        white-space: pre;
+        tab-size: 4;
+    }
+    pre.docling-meta-code code {
+        background: transparent;
+        border: none;
+        padding: 0;
+        color: inherit;
+        font-family: inherit;
+        font-size: inherit;
+        display: block;
+        white-space: pre;
+    }
+</style>
+</head>
+<body>
+<div class='page'>
+<h1>Cross entropy in one page</h1>
+<p>Shannon</p>
+<p>The entropy of a distribution $y$ is the expected number of bits under the optimal code, with $\log \frac{1}{y_i}$ bits for the $i$-th symbol:</p>
+<div><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><mrow><mi>H</mi><mo stretchy="false">&#x00028;</mo><mi>y</mi><mo stretchy="false">&#x00029;</mo><mo>&#x0003D;</mo><munder><mo>&#x02211;</mo><mi>i</mi></munder><msub><mi>y</mi><mi>i</mi></msub><mi>log</mi><mfrac><mrow><mn>1</mn></mrow><mrow><msub><mi>y</mi><mi>i</mi></msub></mrow></mfrac><mo>&#x0003D;</mo><mo>&#x02212;</mo><munder><mo>&#x02211;</mo><mi>i</mi></munder><msub><mi>y</mi><mi>i</mi></msub><mi>log</mi><msub><mi>y</mi><mi>i</mi></msub></mrow><annotation encoding="TeX">H(y) = \sum_i y_i \log \frac{1}{y_i} = -\sum_i y_i \log y_i</annotation></math></div>
+<p>Encoding symbols from $y$ with the wrong tool $\hat{y}$ costs more; the cost is $0.10 per bit and $5 per message.</p>
+<h2>KL divergence</h2>
+<div><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><mrow><mstyle displaystyle="false" scriptlevel="0"><mtext>KL</mtext></mstyle><mo stretchy="false">&#x00028;</mo><mi>y</mi><mtext>&#x000A0;</mtext><mo stretchy="false">&#x0007C;</mo><mo stretchy="false">&#x0007C;</mo><mtext>&#x000A0;</mtext><mover accent="true"><mrow><mi>y</mi></mrow><mo>&#x0005E;</mo></mover><mo stretchy="false">&#x00029;</mo><mo>&#x0003D;</mo><munder><mo>&#x02211;</mo><mi>i</mi></munder><msub><mi>y</mi><mi>i</mi></msub><mi>log</mi><mfrac><mrow><mn>1</mn></mrow><mrow><msub><mover accent="true"><mrow><mi>y</mi></mrow><mo>&#x0005E;</mo></mover><mi>i</mi></msub></mrow></mfrac><mo>&#x02212;</mo><munder><mo>&#x02211;</mo><mi>i</mi></munder><msub><mi>y</mi><mi>i</mi></msub><mi>log</mi><mfrac><mrow><mn>1</mn></mrow><mrow><msub><mi>y</mi><mi>i</mi></msub></mrow></mfrac><mo>&#x0003D;</mo><munder><mo>&#x02211;</mo><mi>i</mi></munder><msub><mi>y</mi><mi>i</mi></msub><mi>log</mi><mfrac><mrow><msub><mi>y</mi><mi>i</mi></msub></mrow><mrow><msub><mover accent="true"><mrow><mi>y</mi></mrow><mo>&#x0005E;</mo></mover><mi>i</mi></msub></mrow></mfrac></mrow><annotation encoding="TeX">\mbox{KL}(y~||~\hat{y})
+= \sum_i y_i \log \frac{1}{\hat{y}_i} - \sum_i y_i \log \frac{1}{y_i}
+= \sum_i y_i \log \frac{y_i}{\hat{y}_i}</annotation></math></div>
+<span class='inline-group'>It is never negative, and it is 0 only when $y = \hat{y}$ — see <a href="https://en.wikipedia.org/wiki/Mass%E2%80%93energy_equivalence">$$E=mc^2$$</a> for a formula that stays inline.</span>
+<pre><code>import numpy as np
+y = np.array([1.0, 0.0, 0.0]); y_hat = np.array([0.4, 0.1, 0.5])
+float(-(y * np.log(y_hat)).sum())</code></pre>
+</div>
+</body>
+</html>
