@@ -110,6 +110,9 @@ pub(crate) struct StreamSettings {
     pub compact_tables: bool,
     /// [`DoclingDocument::picture_alt_text`] for the stream (#676).
     pub picture_alt_text: bool,
+    /// Where the metadata goes (#679): read up front on the streaming
+    /// path, written as front matter ahead of the first chunk.
+    pub metadata_output: docling_core::MetadataOutput,
     /// [`DocumentConverter::document_timeout`] (#497).
     pub document_timeout: Option<std::time::Duration>,
     /// The PII pass (#621), applied to each page batch before it is
@@ -164,9 +167,10 @@ fn streamer(
     compact_tables: bool,
     picture_alt_text: bool,
     page_break_placeholder: Option<String>,
+    metadata: Option<&docling_core::DocumentMetadata>,
     options: &MarkdownExportOptions,
 ) -> MarkdownStreamer {
-    MarkdownStreamer::with_artifacts(
+    let streamer = MarkdownStreamer::with_artifacts(
         strict,
         ImageMode::Placeholder,
         compact_tables,
@@ -174,7 +178,11 @@ fn streamer(
     )
     .with_export_options(options)
     .with_page_break_placeholder(page_break_placeholder)
-    .with_picture_alt_text(picture_alt_text)
+    .with_picture_alt_text(picture_alt_text);
+    match metadata {
+        Some(m) => streamer.with_metadata(m),
+        None => streamer,
+    }
 }
 
 /// Write one push's referenced-mode images (paths are relative to the process
@@ -199,16 +207,6 @@ fn run_pdf(
     options: &MarkdownExportOptions,
     tx: &std::sync::mpsc::SyncSender<Result<String, ConversionError>>,
 ) {
-    // Tables use the padded GitHub serializer unless the converter asked for
-    // compact ones — the same knob the buffered PDF path carries on its
-    // document (`--compact-tables` used to reach only `--no-stream`).
-    let mut streamer = streamer(
-        settings.strict,
-        settings.compact_tables,
-        settings.picture_alt_text,
-        settings.page_break_placeholder.clone(),
-        options,
-    );
     // The PII pass (#621) on the streaming path: one `Redactor` across the
     // page batches, so pseudonym numbering follows document order exactly
     // as the buffered pass numbers it. `BoxOut` needs the OCR pipeline,
@@ -232,6 +230,28 @@ fn run_pdf(
         (Some(o), Some(d)) => Some(docling_core::redact::Redactor::new(o, d)),
         _ => None,
     };
+    // The file's metadata (#679) when an export shows it: redacted with the
+    // rest, written as front matter ahead of the first page.
+    let mut metadata = settings
+        .metadata_output
+        .in_json()
+        .then(|| crate::metadata::read(source, settings.password.as_deref()));
+    if let (Some(m), Some(r)) = (metadata.as_mut(), redactor.as_mut()) {
+        r.redact_metadata(m);
+    }
+    // Tables use the padded GitHub serializer unless the converter asked for
+    // compact ones — the same knob the buffered PDF path carries on its
+    // document (`--compact-tables` used to reach only `--no-stream`).
+    let mut streamer = streamer(
+        settings.strict,
+        settings.compact_tables,
+        settings.picture_alt_text,
+        settings.page_break_placeholder.clone(),
+        metadata
+            .as_ref()
+            .filter(|_| settings.metadata_output.front_matter()),
+        options,
+    );
     let mut pipeline = match docling_pdf::Pipeline::new().map(|p| {
         let p = match settings.ocr_textline_orientation {
             Some(enable) => p.ocr_textline_orientation(enable),
@@ -329,6 +349,7 @@ fn run_buffered(
         doc.compact_tables,
         settings.picture_alt_text,
         doc.page_break_placeholder.clone(),
+        doc.metadata_output.front_matter().then_some(&doc.metadata),
         options,
     );
     let chunk = streamer.push(&doc.nodes, &doc.links);

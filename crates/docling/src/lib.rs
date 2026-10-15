@@ -32,6 +32,7 @@ pub mod fetch;
 mod format;
 // Allocator housekeeping for processes that convert many documents (#669).
 pub mod memory;
+mod metadata;
 pub mod options;
 mod redact;
 mod result;
@@ -77,6 +78,7 @@ pub use docling_core::{
     HtmlExportOptions, ImageMode, MarkdownExportOptions, MarkdownStreamer, Node, PictureImage,
     QualityGrade, Table,
 };
+pub use docling_core::{DocumentMetadata, GpsPosition, MetadataOutput};
 
 // The reusable PDF/image pipeline (models loaded once, reused across documents),
 // for callers that convert many files or want a warm, startup-excluded measurement.

@@ -34,6 +34,17 @@ pub struct DoclingDocument {
     /// HTML stay byte-for-byte docling's; strict Markdown renders it
     /// regardless. Set by `DocumentConverter::picture_alt_text`.
     pub picture_alt_text: bool,
+    /// What the file says about itself (#679): an EPUB's Dublin Core, an
+    /// Office package's properties, a photo's EXIF, an audio file's tags —
+    /// see [`crate::metadata`]. Read by the converter when
+    /// [`metadata_output`](Self::metadata_output) asks for it (a document
+    /// read from docling JSON keeps the `metadata` the JSON carried).
+    pub metadata: crate::metadata::DocumentMetadata,
+    /// Where [`metadata`](Self::metadata) goes in the exports: nowhere (the
+    /// default — every export stays docling's), the JSON's `metadata`
+    /// object, or that and YAML front matter at the top of the Markdown.
+    /// Set by `DocumentConverter::metadata_output`.
+    pub metadata_output: crate::metadata::MetadataOutput,
     /// Text the Markdown export inserts between two pages — docling-core's
     /// `MarkdownParams.page_break_placeholder` (e.g. `"<!-- page break -->"`).
     /// `None` (the default) omits page breaks from Markdown, as docling does.
@@ -1272,6 +1283,8 @@ impl DoclingDocument {
             strict_markdown: false,
             compact_tables: false,
             picture_alt_text: false,
+            metadata: Default::default(),
+            metadata_output: Default::default(),
             page_break_placeholder: None,
             links: Vec::new(),
             confidence: None,

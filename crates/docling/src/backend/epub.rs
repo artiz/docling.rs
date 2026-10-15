@@ -191,7 +191,7 @@ fn extract_images(
 }
 
 /// `full-path` of the OPF package from `META-INF/container.xml`.
-fn rootfile_path(container: &str) -> Option<String> {
+pub(crate) fn rootfile_path(container: &str) -> Option<String> {
     let dom = Document::parse(container).ok()?;
     dom.descendants()
         .find(|n| n.has_tag_name("rootfile"))

@@ -100,6 +100,9 @@
 //! - `ipynb_outputs` — Jupyter notebooks (#673): `none` (default, the
 //!   notebook as written) | `text` (stream and `text/plain` results as code
 //!   blocks after their cell, image outputs as pictures)
+//! - `metadata` — document metadata (#679): `none` (default) | `json` (a
+//!   `metadata` object in the docling JSON) | `frontmatter` (YAML front
+//!   matter at the top of the Markdown as well)
 //! - `skip_empty_cells` — omit empty cells from sparse XLSX/XLS table grids
 //!   (#271; docling.rs extension, off by default)
 //! - `compact_tables` — unpadded `| a | b |` Markdown tables, all formats

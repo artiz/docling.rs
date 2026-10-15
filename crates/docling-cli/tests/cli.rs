@@ -1118,6 +1118,39 @@ fn legacy_charsets_are_guessed() {
 /// Picture alt text (#676): MarkItDown's `test.pptx` alt string is in the
 /// JSON, in Markdown under `--picture-alt-text` or `--strict`, not by
 /// default.
+/// Document metadata (#679): nothing by default; `--metadata frontmatter`
+/// opens the Markdown with the file's own; `json` puts it in the JSON; a
+/// wrong spelling is refused.
+#[test]
+fn metadata_renders_on_request() {
+    let epub = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../docling-py/tests/data/markitdown/test.epub"
+    );
+    let (code, out, stderr) = run(&[epub]);
+    assert_eq!(code, 0, "{stderr}");
+    assert!(!out.starts_with("---"), "{out}");
+    let (code, out, _) = run(&["--metadata", "frontmatter", epub]);
+    assert_eq!(code, 0);
+    assert!(
+        out.starts_with("---\ntitle: Test EPUB Document\nauthors: [Test Author]\n"),
+        "{out}"
+    );
+    assert!(out.contains("\n---\n\n"), "{out}");
+    let (code, out, _) = run(&["--metadata", "json", "--to", "json", epub]);
+    assert_eq!(code, 0);
+    assert!(
+        out.contains("\"metadata\": {") && out.contains("\"Test Author\""),
+        "{out}"
+    );
+    let (code, _, stderr) = run(&["--metadata", "yaml", epub]);
+    assert_ne!(code, 0);
+    assert!(
+        stderr.contains("--metadata must be one of none, json, frontmatter"),
+        "{stderr}"
+    );
+}
+
 #[test]
 fn picture_alt_text_renders_on_request() {
     let pptx = concat!(

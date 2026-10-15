@@ -106,6 +106,18 @@ struct PyNativeResult {
     /// per label; `None` otherwise.
     #[pyo3(get)]
     redaction: Option<std::collections::HashMap<String, usize>>,
+    /// The document's metadata (#679) as the JSON's `metadata` object, when
+    /// the converter's `metadata` mode writes it and there is any; `None`
+    /// otherwise.
+    #[pyo3(get)]
+    metadata_json: Option<String>,
+}
+
+/// The `metadata` object of `doc`'s JSON (#679), when its output mode
+/// writes one and there is any.
+fn metadata_json(doc: &docling::DoclingDocument) -> Option<String> {
+    (doc.metadata_output.in_json() && !doc.metadata.is_empty())
+        .then(|| doc.metadata.to_json().to_string())
 }
 
 fn redaction_counts(
@@ -303,6 +315,10 @@ impl PyDocumentConverter {
     /// * `ipynb_outputs` — Jupyter notebooks (#673): `"none"` (default, the
     ///   notebook as written) or `"text"` (stream and `text/plain` results
     ///   as code blocks after their cell, image outputs as pictures).
+    /// * `metadata` — document metadata (#679): `"none"` (default, nowhere),
+    ///   `"json"` (a `metadata` object in the docling JSON, and
+    ///   `result.metadata`) or `"frontmatter"` (YAML front matter at the top
+    ///   of the Markdown as well).
     /// * `pipeline` — `"standard"` (default) or `"vlm"` (#304): convert PDF /
     ///   image inputs by sending each page to a remote OpenAI-compatible
     ///   vision model instead of the local ML stack. The `vlm_*` kwargs
@@ -357,6 +373,7 @@ impl PyDocumentConverter {
         asr_lang = None,
         encoding = None,
         ipynb_outputs = None,
+        metadata = None,
         video_frames = None,
         video_scene_threshold = None,
         video_frame_max_side = None,
@@ -430,6 +447,7 @@ impl PyDocumentConverter {
         asr_lang: Option<String>,
         encoding: Option<String>,
         ipynb_outputs: Option<String>,
+        metadata: Option<String>,
         video_frames: Option<usize>,
         video_scene_threshold: Option<f32>,
         video_frame_max_side: Option<u32>,
@@ -487,6 +505,7 @@ impl PyDocumentConverter {
             ebcdic_layout,
             encoding,
             ipynb_outputs,
+            metadata,
             use_web_browser: Some(use_web_browser),
             xbrl_taxonomy: xbrl_taxonomy.map(|p| p.to_string_lossy().into_owned()),
             asr_model,
@@ -811,6 +830,7 @@ impl PyDocumentConverter {
                 Ok(PyNativeResult {
                     status: "success".to_string(),
                     input_name: src.name,
+                    metadata_json: metadata_json(&doc),
                     document_json: doc.export_to_json(),
                     errors: Vec::new(),
                     redaction: redaction_counts(redaction),
@@ -855,6 +875,7 @@ impl PyDocumentConverter {
                     }
                     .to_string(),
                     input_name: src.name,
+                    metadata_json: metadata_json(&c.document),
                     document_json: c.document.export_to_json(),
                     errors: error_tuples(errors),
                     redaction: redaction_counts(redaction),
@@ -925,6 +946,7 @@ fn native_result(r: docling::ConversionResult) -> PyNativeResult {
     PyNativeResult {
         status,
         input_name: r.input_name,
+        metadata_json: metadata_json(&r.document),
         document_json,
         errors: error_tuples(r.errors),
         redaction: redaction_counts(r.redaction),

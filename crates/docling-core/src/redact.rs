@@ -1392,8 +1392,92 @@ impl<'a> Redactor<'a> {
             self.redact_tree(tree);
         }
         self.redact_links(&mut doc.links);
+        self.redact_metadata(&mut doc.metadata);
         if self.opts.images == ImageRedaction::Drop {
             doc.page_images.clear();
+        }
+    }
+
+    /// The document's metadata (#679). The author fields — `authors`,
+    /// `last_modified_by`, EXIF's `Artist` / `XPAuthor`, an audio file's
+    /// `artist` / `album_artist` / `composer` / `performer` — are names by
+    /// definition, so each is masked whole as a `PERSON` without asking a
+    /// detector (an allow term still exempts it); the GPS position and the
+    /// `GPS*` EXIF tags are dropped, counted as `LOCATION`; every other
+    /// string goes through the detectors like a paragraph (an e-mail in a
+    /// description, a phone number in a comment). The kinds filter applies:
+    /// `kinds=email` leaves the names and the position alone.
+    pub fn redact_metadata(&mut self, m: &mut crate::metadata::DocumentMetadata) {
+        if self.opts.wants(PiiKind::Person) {
+            for a in m.authors.iter_mut() {
+                self.redact_whole(a, PiiKind::Person);
+            }
+            if let Some(by) = m.last_modified_by.as_mut() {
+                self.redact_whole(by, PiiKind::Person);
+            }
+            for key in ["Artist", "XPAuthor"] {
+                if let Some(v) = m.exif.get_mut(key) {
+                    self.redact_whole(v, PiiKind::Person);
+                }
+            }
+            for key in ["artist", "album_artist", "composer", "performer"] {
+                if let Some(v) = m.audio.get_mut(key) {
+                    self.redact_whole(v, PiiKind::Person);
+                }
+            }
+        }
+        if self.opts.wants(PiiKind::Location) {
+            let had_gps = m.gps.take().is_some();
+            let before = m.exif.len();
+            m.exif.retain(|k, _| !k.starts_with("GPS"));
+            if had_gps || m.exif.len() != before {
+                self.count(PiiKind::Location.label());
+            }
+        }
+        self.redact_opt(&mut m.title);
+        self.redact_opt(&mut m.subject);
+        self.redact_opt(&mut m.description);
+        for k in m.keywords.iter_mut() {
+            self.redact_text(k);
+        }
+        self.redact_opt(&mut m.publisher);
+        self.redact_opt(&mut m.rights);
+        self.redact_opt(&mut m.identifier);
+        self.redact_opt(&mut m.creator_tool);
+        for v in m.properties.values_mut() {
+            self.redact_text(v);
+        }
+        for (k, v) in m.exif.iter_mut() {
+            if k != "Artist" && k != "XPAuthor" {
+                self.redact_text(v);
+            }
+        }
+        for (k, v) in m.audio.iter_mut() {
+            if !matches!(
+                k.as_str(),
+                "artist" | "album_artist" | "composer" | "performer"
+            ) {
+                self.redact_text(v);
+            }
+        }
+    }
+
+    /// Replace a whole value with the placeholder of `kind` — a field that
+    /// is a name by definition. An empty value and an allowed term stay.
+    fn redact_whole(&mut self, text: &mut String, kind: PiiKind) {
+        if text.trim().is_empty() || self.allow.allows(text) {
+            return;
+        }
+        let span = Span::new(0, text.len(), kind);
+        let original = text.clone();
+        *text = self.placeholder(&span, &original);
+    }
+
+    /// Count a removal that leaves no placeholder behind.
+    fn count(&mut self, label: &str) {
+        if self.counting {
+            *self.report.counts.entry(label.to_string()).or_insert(0) += 1;
+            self.report.total += 1;
         }
     }
 }

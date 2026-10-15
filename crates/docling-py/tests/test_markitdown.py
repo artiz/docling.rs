@@ -129,8 +129,9 @@ VECTORS = [
         "test.epub",
         "application/epub+zip",
         must_include=[
-            # dropped: "**Authors:** Test Author" and the description — EPUB
-            # metadata is not emitted yet (#679).
+            "**Title:** Test EPUB Document",
+            "**Authors:** Test Author",
+            "**Description:** A test EPUB document for MarkItDown testing",
             "# Chapter 1: Test Content",
             "This is a **test** paragraph with some formatting",
             "A bullet point",  # MarkItDown: "* A bullet point"; docling: "- "

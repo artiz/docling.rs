@@ -336,6 +336,11 @@ fn build_parts(doc: &DoclingDocument, note_keys: bool) -> Parts {
     let fields = (!b.field_regions.is_empty()).then_some((b.field_regions, b.field_items));
     Parts {
         name: doc.name.clone(),
+        metadata: doc
+            .metadata_output
+            .in_json()
+            .then(|| doc.metadata.to_json())
+            .filter(|m| m.as_object().is_some_and(|o| !o.is_empty())),
         origin: json!({
             "mimetype": "text/plain",
             "binary_hash": fnv1a(&doc.name),
@@ -369,6 +374,9 @@ fn build_json(doc: &DoclingDocument, note_keys: bool) -> Value {
 /// Both produce the same keys in the same order.
 struct Parts {
     name: String,
+    /// The document's metadata (#679), after `origin`, only when the
+    /// document's output mode asks for it and there is any.
+    metadata: Option<Value>,
     origin: Value,
     furniture: Value,
     /// The body's `children`; the rest of the body object is fixed.
@@ -392,6 +400,9 @@ impl Parts {
         out.insert("version".into(), SCHEMA_VERSION.into());
         out.insert("name".into(), Value::String(self.name));
         out.insert("origin".into(), self.origin);
+        if let Some(m) = self.metadata {
+            out.insert("metadata".into(), m);
+        }
         out.insert("furniture".into(), self.furniture);
         out.insert(
             "body".into(),
@@ -433,11 +444,16 @@ impl Parts {
 impl serde::Serialize for Parts {
     fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
         use serde::ser::SerializeMap;
-        let mut m = s.serialize_map(Some(13 + 2 * usize::from(self.fields.is_some())))?;
+        let mut m = s.serialize_map(Some(
+            13 + 2 * usize::from(self.fields.is_some()) + usize::from(self.metadata.is_some()),
+        ))?;
         m.serialize_entry("schema_name", "DoclingDocument")?;
         m.serialize_entry("version", SCHEMA_VERSION)?;
         m.serialize_entry("name", &self.name)?;
         m.serialize_entry("origin", &self.origin)?;
+        if let Some(meta) = &self.metadata {
+            m.serialize_entry("metadata", meta)?;
+        }
         m.serialize_entry("furniture", &self.furniture)?;
         m.serialize_entry("body", &Body(&self.body))?;
         m.serialize_entry("groups", &self.groups)?;

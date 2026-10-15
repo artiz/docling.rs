@@ -126,6 +126,7 @@ paths:
         - { $ref: "#/components/parameters/asr_lang" }
         - { $ref: "#/components/parameters/encoding" }
         - { $ref: "#/components/parameters/ipynb_outputs" }
+        - { $ref: "#/components/parameters/metadata" }
         - { $ref: "#/components/parameters/video_frames" }
         - { $ref: "#/components/parameters/video_scene_threshold" }
         - { $ref: "#/components/parameters/video_frame_max_side" }
@@ -218,6 +219,7 @@ paths:
                 asr_lang: { type: string, examples: ["auto", "en", "de"] }
                 encoding: { type: string, examples: ["shift_jis", "koi8-r", "windows-1251"] }
                 ipynb_outputs: { $ref: "#/components/schemas/IpynbOutputs" }
+                metadata: { $ref: "#/components/schemas/MetadataOutput" }
                 video_frames: { oneOf: [{ type: integer, minimum: 0 }, { type: string, enum: ["all"] }] }
                 video_scene_threshold: { type: number, minimum: 0, maximum: 1 }
                 video_frame_max_side: { type: integer, minimum: 0 }
@@ -715,6 +717,23 @@ components:
         "Write a detailed caption for this image.", `ocr` markitdown-ocr's
         "Extract all text from this image …" — LLM-vision OCR where the local
         models read poorly.
+    MetadataOutput:
+      type: string
+      enum: [none, json, frontmatter]
+      default: none
+      description: >-
+        Document metadata (#679): where the file's own metadata — an EPUB's
+        Dublin Core, an Office package's core and application properties, an
+        ODF meta.xml, a photo's EXIF (with the GPS position decoded), an
+        audio or video file's tags, a PDF's Info dictionary — goes. `none`
+        (default) reads nothing and leaves every export as it was; `json`
+        adds a `metadata` object to the docling JSON (after `origin`: title,
+        authors, subject, description, keywords, language, publisher,
+        identifier, rights, date, created, modified, last_modified_by,
+        creator_tool, properties, gps, exif, audio — empty fields left out);
+        `frontmatter` adds YAML front matter at the top of the Markdown as
+        well. `redact_pii` masks the author fields as persons and drops the
+        GPS position.
     IpynbOutputs:
       type: string
       enum: [none, text]
@@ -1159,6 +1178,7 @@ components:
             cannot decode fail the request instead of being guessed.
           examples: ["auto", "en", "de"]
         ipynb_outputs: { $ref: "#/components/schemas/IpynbOutputs" }
+        metadata: { $ref: "#/components/schemas/MetadataOutput" }
         video_frames:
           oneOf:
             - { type: integer, minimum: 0 }
@@ -1595,6 +1615,8 @@ components:
       { name: encoding, in: query, schema: { type: string } }
     ipynb_outputs:
       { name: ipynb_outputs, in: query, schema: { $ref: "#/components/schemas/IpynbOutputs" } }
+    metadata:
+      { name: metadata, in: query, schema: { $ref: "#/components/schemas/MetadataOutput" } }
     video_frames:
       { name: video_frames, in: query, schema: { oneOf: [{ type: integer, minimum: 0 }, { type: string, enum: ["all"] }] } }
     video_scene_threshold:

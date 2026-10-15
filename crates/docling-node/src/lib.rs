@@ -49,6 +49,10 @@ pub struct ConverterOptions {
     /// `text/plain` results as code blocks after their cell, image outputs
     /// as pictures).
     pub ipynb_outputs: Option<String>,
+    /// Document metadata (#679): `"none"` (default, nowhere), `"json"` (a
+    /// `metadata` object in the docling JSON) or `"frontmatter"` (YAML
+    /// front matter at the top of the Markdown as well).
+    pub metadata: Option<String>,
     /// Max frames sampled from a video input as timestamped pictures (needs
     /// the ffmpeg binary at runtime; `0` = transcript only). Default 8.
     /// `4294967295` (`2**32 - 1`, the largest value this field takes) keeps
@@ -388,6 +392,9 @@ pub struct ConvertOptions {
     /// `text/plain` results as code blocks after their cell, image outputs
     /// as pictures).
     pub ipynb_outputs: Option<String>,
+    /// Document metadata (#679): `"none"` (default), `"json"` or
+    /// `"frontmatter"`.
+    pub metadata: Option<String>,
     /// Max frames sampled from a video input (`0` = transcript only;
     /// `4294967295` = every distinct cut, #647).
     pub video_frames: Option<u32>,
@@ -1382,6 +1389,9 @@ impl DocumentConverter {
                 )
                 .with_page_break_placeholder(cfg.page_break_placeholder.clone())
                 .with_picture_alt_text(cfg.opts.picture_alt_text.unwrap_or(false));
+                if doc.metadata_output.front_matter() {
+                    streamer = streamer.with_metadata(&doc.metadata);
+                }
                 for chunk in [streamer.push(&doc.nodes, &doc.links), streamer.finish()] {
                     if !chunk.is_empty() {
                         callback.call(Ok(Some(chunk)), ThreadsafeFunctionCallMode::NonBlocking);
@@ -1789,6 +1799,20 @@ fn stream_pipeline(
     let mut streamer = MarkdownStreamer::new(strict, cfg.image_mode, false)
         .with_page_break_placeholder(cfg.page_break_placeholder.clone())
         .with_picture_alt_text(cfg.opts.picture_alt_text.unwrap_or(false));
+    // The front matter (#679) ahead of the first page, read the way the
+    // buffered path reads it.
+    if cfg
+        .opts
+        .metadata_output()
+        .ok()
+        .flatten()
+        .is_some_and(|m| m.front_matter())
+    {
+        let metadata = docling::DocumentConverter::new()
+            .password(cfg.opts.password.clone())
+            .document_metadata(&source);
+        streamer = streamer.with_metadata(&metadata);
+    }
     let emit_chunk = |chunk: String| {
         if !chunk.is_empty() {
             callback.call(Ok(Some(chunk)), ThreadsafeFunctionCallMode::NonBlocking);

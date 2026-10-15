@@ -34,6 +34,7 @@ from __future__ import annotations
 
 import enum
 import io
+import json
 import os
 import warnings
 from dataclasses import dataclass
@@ -168,7 +169,11 @@ class ConversionResult:
     ``.input`` and ``.errors`` (non-empty exactly when the status is
     ``PARTIAL_SUCCESS``). ``.redaction`` (a docling.rs extension, #621) is
     the PII pass's counts per label — ``{"EMAIL": 2, "PHONE": 1}`` — when
-    the converter was built with ``redact_pii=True``, else ``None``."""
+    the converter was built with ``redact_pii=True``, else ``None``.
+    ``.metadata`` (#679) is the document's metadata as the JSON's
+    ``metadata`` object — ``{"title": …, "authors": [...], "exif": {...}}``
+    — when the converter was built with ``metadata="json"`` or
+    ``"frontmatter"`` and the file carries any, else ``None``."""
 
     def __init__(
         self,
@@ -177,12 +182,14 @@ class ConversionResult:
         document: DoclingDocument,
         errors: Iterable[ErrorItem] = (),
         redaction: Optional[Dict[str, int]] = None,
+        metadata: Optional[Dict[str, Any]] = None,
     ):
         self.status = ConversionStatus(status)
         self.document = document
         self.input = InputDocument(file=Path(input_name))
         self.errors = list(errors)
         self.redaction = dict(redaction) if redaction is not None else None
+        self.metadata = dict(metadata) if metadata is not None else None
 
 
 def _is_api_options(pd: Any) -> bool:
@@ -331,6 +338,13 @@ class DocumentConverter:
       the kernel's language, raw cells as code blocks) or ``"text"`` (stream
       and ``text/plain`` results as code blocks after their cell, image
       outputs as pictures).
+    * ``metadata`` — document metadata (#679): the file's own (an EPUB's
+      Dublin Core, Office properties, ODF ``meta.xml``, a photo's EXIF,
+      audio tags, a PDF's Info dictionary). ``"none"`` (default) reads
+      nothing; ``"json"`` adds a ``metadata`` object to the docling JSON and
+      sets ``result.metadata`` (a dict); ``"frontmatter"`` adds YAML front
+      matter at the top of the Markdown as well. ``redact_pii`` masks the
+      author fields and drops the GPS position.
     * ``pipeline`` — ``"standard"`` (default) or ``"vlm"`` (#304): convert
       PDF / image inputs by sending each page to a remote OpenAI-compatible
       vision model instead of the local ML stack (no models needed). The
@@ -425,6 +439,7 @@ class DocumentConverter:
         asr_lang: Optional[str] = None,
         encoding: Optional[str] = None,
         ipynb_outputs: Optional[str] = None,
+        metadata: Optional[str] = None,
         pipeline: Optional[str] = None,
         vlm_endpoint: Optional[str] = None,
         vlm_model: Optional[str] = None,
@@ -686,6 +701,7 @@ class DocumentConverter:
             asr_lang=asr_lang,
             encoding=encoding,
             ipynb_outputs=ipynb_outputs,
+            metadata=metadata,
             pipeline=pipeline,
             vlm_endpoint=vlm_endpoint,
             vlm_model=vlm_model,
@@ -1054,10 +1070,12 @@ def _wrap(native) -> ConversionResult:
     """Validate the Rust engine's JSON into a real ``DoclingDocument``."""
     document = DoclingDocument.model_validate_json(native.document_json)
     errors = [ErrorItem(*item) for item in getattr(native, "errors", ())]
+    metadata_json = getattr(native, "metadata_json", None)
     return ConversionResult(
         native.status,
         native.input_name,
         document,
         errors,
         getattr(native, "redaction", None),
+        json.loads(metadata_json) if metadata_json else None,
     )

@@ -20,7 +20,7 @@ rust-version = "1.85"
 serde_json = { version = "1", features = ["preserve_order"] }
 # `Serialize` for the export's typed items (`json::write_json` streams them
 # without building a `Value`).
-serde = "1"
+serde = { version = "1", features = ["derive"] }
 # Content hash for exported image asset names (assets/image_NNNNNN_<sha256>.png),
 # matching docling's referenced-image naming scheme.
 sha2 = "0.10"
