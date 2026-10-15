@@ -1607,8 +1607,50 @@ fn parse_piece_table(clx: &[u8], word6: Option<bool>) -> Option<Vec<Piece>> {
     }
 }
 
+/// A Word 6/95 paragraph's autonumber (#700): `sprmPAnld`'s ANLD — the
+/// number format (`nfc`: 0 arabic, 1/2 upper/lower roman, 3/4 upper/lower
+/// letter; 0xFF, like Word 97's 0x17, a bullet), the start value, and the
+/// text before and after the number (`rgchAnld`, `cxchTextBefore` +
+/// `cxchTextAfter` 8-bit characters: `.` after a number, the bullet glyph
+/// itself before nothing).
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct Anld {
+    nfc: u8,
+    start: u16,
+    before: String,
+    after: String,
+}
+
+impl Anld {
+    fn bullet(&self) -> bool {
+        self.nfc == 0xFF || self.nfc == 0x17
+    }
+
+    /// The 52-byte ANLD ([MS-DOC] 2.9.3 / the Word 6 binary format).
+    fn parse(anld: &[u8]) -> Option<Self> {
+        if anld.len() < 52 {
+            return None;
+        }
+        let (nfc, cb_before, cb_after) = (anld[0], anld[1] as usize, anld[2] as usize);
+        let rgch = &anld[20..52];
+        let text = |from: usize, to: usize| -> String {
+            rgch.get(from..to.min(32))
+                .unwrap_or(&[])
+                .iter()
+                .map(|&b| cp1252(b))
+                .collect()
+        };
+        Some(Self {
+            nfc,
+            start: u16_at(anld, 10).unwrap_or(1),
+            before: text(0, cb_before),
+            after: text(cb_before, cb_before + cb_after),
+        })
+    }
+}
+
 /// Properties of one paragraph, read from its PAPX.
-#[derive(Default, Clone, Copy)]
+#[derive(Default, Clone)]
 struct ParaProps {
     istd: u16,
     in_table: bool,
@@ -1625,6 +1667,11 @@ struct ParaProps {
     /// text). Read off *style* PAPX UPXes only — mirroring docling, which
     /// consults the style definition, never the paragraph's direct formatting.
     outline: Option<u8>,
+    /// A Word 6/95 autonumber (`sprmPAnld`, #700) and its level
+    /// (`sprmPNLvlAnm`: 1–9 an outline level, 10–12 a plain numbering,
+    /// bullet or paused one).
+    anld: Option<Anld>,
+    anld_level: Option<u8>,
 }
 
 /// The two binary layouts the FKP walks read (#640): Word 97+ ([MS-DOC])
@@ -1859,14 +1906,69 @@ fn walk_word6_sprms(mut sprms: &[u8], mut f: impl FnMut(u8, &[u8])) {
 
 /// Scan a Word 6/95 PAP grpprl for the sprms this backend reads: the style
 /// (`sprmPIstd` 2, when a UPX repeats it), `sprmPFInTable` (24) and
-/// `sprmPTtp` (25) — the table structure the flat reader lacked (#640).
+/// `sprmPTtp` (25) — the table structure the flat reader lacked (#640) —
+/// and the autonumber (`sprmPAnld` 12, a count byte then the ANLD;
+/// `sprmPNLvlAnm` 13, #700).
 fn apply_word6_pap_sprms(sprms: &[u8], props: &mut ParaProps) {
     walk_word6_sprms(sprms, |op, operand| match op {
         2 => props.istd = u16::from_le_bytes([operand[0], operand[1]]),
+        12 => props.anld = Anld::parse(&operand[1..]),
+        13 => props.anld_level = Some(operand[0]),
         24 => props.in_table = operand[0] != 0,
         25 => props.ttp = operand[0] != 0,
         _ => {}
     });
+}
+
+/// A Word 6/95 autonumber's number in its format: arabic, roman
+/// (`nfc` 1 / 2), letters (3 / 4); anything else prints arabic.
+fn anld_number(nfc: u8, n: u64) -> String {
+    match nfc {
+        1 | 2 => {
+            let mut n = n;
+            let mut out = String::new();
+            for (value, sym) in [
+                (1000, "M"),
+                (900, "CM"),
+                (500, "D"),
+                (400, "CD"),
+                (100, "C"),
+                (90, "XC"),
+                (50, "L"),
+                (40, "XL"),
+                (10, "X"),
+                (9, "IX"),
+                (5, "V"),
+                (4, "IV"),
+                (1, "I"),
+            ] {
+                while n >= value {
+                    out.push_str(sym);
+                    n -= value;
+                }
+            }
+            if nfc == 2 {
+                out.to_ascii_lowercase()
+            } else {
+                out
+            }
+        }
+        3 | 4 => {
+            let mut n = n;
+            let mut out = String::new();
+            while n > 0 {
+                let d = ((n - 1) % 26) as u8;
+                out.insert(0, (b'A' + d) as char);
+                n = (n - 1) / 26;
+            }
+            if nfc == 4 {
+                out.to_ascii_lowercase()
+            } else {
+                out
+            }
+        }
+        _ => n.to_string(),
+    }
 }
 
 /// Scan a Word 6/95 CHP grpprl: bold (85) / italic (86) — operand 0 / 1
@@ -2783,6 +2885,18 @@ struct NodeBuilder {
     /// Heading level → running number of the numbered headings (#641), the
     /// DOCX backend's `numbered_headers`.
     numbered_headers: std::collections::HashMap<u8, u64>,
+    /// The Word 6/95 autonumber run (#700): whether the previous paragraph
+    /// was an autonumbered one, and the running counter per level — a
+    /// paragraph without one ends the run, so the next list starts over.
+    in_anld_run: bool,
+    /// The previous item's kind, `(bullet, nfc)`: a change starts a new
+    /// list, as a Word 97 item with another `ilfo` does.
+    last_anld_kind: Option<(bool, u8)>,
+    anld_counters: std::collections::HashMap<u8, u64>,
+    /// Whether the current cell's previous paragraph was a list item: the
+    /// items of one list join with a single newline, as the DOCX backend's
+    /// rich cell prints them.
+    cell_prev_list: bool,
 }
 
 impl NodeBuilder {
@@ -2815,17 +2929,42 @@ impl NodeBuilder {
             }
             return;
         }
+        // A Word 6/95 autonumber (#700): its marker, counted along the run.
+        let anld_level = match props.anld_level {
+            Some(l @ 1..=9) => l - 1,
+            _ => 0,
+        };
+        let was_in_anld_run = self.in_anld_run;
+        let anld_kind = props.anld.as_ref().map(|a| (a.bullet(), a.nfc));
+        let same_anld_list = was_in_anld_run && self.last_anld_kind == anld_kind;
+        let anld_marker = props.anld.as_ref().map(|a| self.anld_marker(a, anld_level));
+        self.in_anld_run = anld_marker.is_some();
+        self.last_anld_kind = anld_kind;
         if props.in_table {
             let text = markdown.trim_end_matches('\u{0007}');
+            let text = match &anld_marker {
+                Some((marker, _)) if !text.trim().is_empty() => format!("{marker} {text}"),
+                _ => text.to_string(),
+            };
             // Multi-paragraph cells join with a blank line, matching the
             // DOCX backend's rich cells (the Markdown table serializer
             // then folds each newline into a space); an empty paragraph
             // adds nothing, as the DOCX backend's cell text skips it (#640
             // — a Word 6 cell with blank lines between its paragraphs).
+            // The items of one list join with a single newline, as the
+            // rich cell's list group prints them (#700).
             if !self.cell_text.is_empty() && !text.trim().is_empty() {
-                self.cell_text.push_str("\n\n");
+                self.cell_text
+                    .push_str(if self.cell_prev_list && anld_marker.is_some() {
+                        "\n"
+                    } else {
+                        "\n\n"
+                    });
             }
-            self.cell_text.push_str(text);
+            if !text.trim().is_empty() {
+                self.cell_prev_list = anld_marker.is_some();
+            }
+            self.cell_text.push_str(&text);
             // A text box anchored in the cell: its paragraphs are more of the
             // cell's (#535), as the DOCX backend reads the same document.
             for text in textboxes.iter().flatten().filter_map(node_text) {
@@ -2836,6 +2975,7 @@ impl NodeBuilder {
             }
             if mark == '\u{0007}' {
                 self.cells.push(std::mem::take(&mut self.cell_text));
+                self.cell_prev_list = false;
             }
             return;
         }
@@ -2926,7 +3066,8 @@ impl NodeBuilder {
             // (`## 1 Introduction`, `### 1.1 Context`), #641.
             let visibly_numbered = numbering
                 .and_then(|(ilfo, ilvl)| self.lists.level(ilfo, ilvl))
-                .is_some_and(|l| nfc_numbers_heading(l.nfc));
+                .is_some_and(|l| nfc_numbers_heading(l.nfc))
+                || props.anld.as_ref().is_some_and(|a| !a.bullet());
             let plain = if visibly_numbered && !plain.is_empty() {
                 let docling_level = level.saturating_sub(1).max(1);
                 super::docx::numbered_heading_text(
@@ -3029,6 +3170,61 @@ impl NodeBuilder {
                 });
             }
             self.last_ilfo = Some(ilfo);
+        } else if let Some((marker, number)) = anld_marker {
+            // A Word 6/95 autonumbered paragraph (#700): a list item like
+            // a Word 97 `sprmPIlfo` one — ordered on a plain `N.` marker,
+            // a bullet for a bullet, the marker as a text prefix otherwise.
+            let first_in_list = !same_anld_list;
+            let base = *self.run_base.get_or_insert(anld_level);
+            let level = anld_level.saturating_sub(base);
+            let bullet = props.anld.as_ref().is_some_and(Anld::bullet);
+            if bullet {
+                doc.push(Node::ListItem {
+                    ordered: false,
+                    number: 0,
+                    first_in_list,
+                    text,
+                    level,
+                    marker: None,
+                    location: None,
+                    dclx: None,
+                    href: None,
+                    layer: None,
+                });
+            } else if cached_regex!(r"^\d+[.)]$").is_match(&marker) {
+                doc.push(Node::ListItem {
+                    ordered: true,
+                    number,
+                    first_in_list,
+                    text,
+                    level,
+                    marker: Some(marker),
+                    location: None,
+                    dclx: None,
+                    href: None,
+                    layer: None,
+                });
+            } else {
+                let dclx = Some(docling_core::ListItemDclx {
+                    ordered: true,
+                    marker: Some(marker.clone()),
+                    text: text.clone(),
+                    runs: Vec::new(),
+                });
+                doc.push(Node::ListItem {
+                    ordered: false,
+                    number,
+                    first_in_list,
+                    text: format!("{marker} {text}"),
+                    level,
+                    marker: None,
+                    location: None,
+                    dclx,
+                    href: None,
+                    layer: None,
+                });
+            }
+            self.last_ilfo = None;
         } else {
             doc.push(Node::Paragraph { text });
             self.last_ilfo = None;
@@ -3082,6 +3278,33 @@ impl NodeBuilder {
         }));
         self.last_ilfo = None;
         self.run_base = None;
+    }
+
+    /// A Word 6/95 autonumber's marker (#700) and number: `-` for a
+    /// bullet; otherwise the text before, the number in its format
+    /// (counted per level along the run, from the ANLD's start value; a
+    /// shallower item resets the deeper levels) and the text after — `.`
+    /// when the ANLD names none, as Word shows a bare number.
+    fn anld_marker(&mut self, a: &Anld, level: u8) -> (String, u64) {
+        if !self.in_anld_run {
+            self.anld_counters.clear();
+        }
+        if a.bullet() {
+            return ("-".into(), 0);
+        }
+        let c = self
+            .anld_counters
+            .entry(level)
+            .or_insert(u64::from(a.start).saturating_sub(1));
+        *c += 1;
+        let n = *c;
+        self.anld_counters.retain(|l, _| *l <= level);
+        let after = if a.before.is_empty() && a.after.is_empty() {
+            "."
+        } else {
+            a.after.as_str()
+        };
+        (format!("{}{}{after}", a.before, anld_number(a.nfc, n)), n)
     }
 
     /// Build the item's enumeration marker from the level's `xst` template —
@@ -3389,6 +3612,109 @@ mod tests {
                 )
             })
             .collect()
+    }
+
+    /// #700: a Word 6/95 autonumber (`sprmPAnld`) makes a list item — a
+    /// numbered run counts from the ANLD's start with its text after the
+    /// number, a bullet ANLD (`nfc` 0xFF) a bullet; a paragraph without one
+    /// ends the run, so the next list starts over. The ANLD bytes are the
+    /// ticket's fixtures'.
+    #[test]
+    fn word6_autonumbers_are_list_items() {
+        // sprmPAnld operand: cb 52, nfc 0, 0 chars before, 1 after (`.`),
+        // fHang, no font, hps 0, iStartAt 1, the indent / space / flag
+        // bytes, then the 32-char rgch.
+        let mut numbered = vec![12u8, 52, 0, 0, 1, 0x08, 0, 0, 0xFF, 0xFF, 0, 0, 1, 0];
+        numbered.extend_from_slice(&[0; 8]);
+        numbered.extend_from_slice(b".");
+        numbered.extend_from_slice(&[0; 31]);
+        let mut props = ParaProps::default();
+        apply_word6_pap_sprms(&numbered, &mut props);
+        let anld = props.anld.clone().expect("decoded");
+        assert_eq!(
+            anld,
+            Anld {
+                nfc: 0,
+                start: 1,
+                before: String::new(),
+                after: ".".into()
+            }
+        );
+        let mut bullets = vec![12u8, 52, 0xFF, 1, 0, 0x08, 0, 0, 1, 0, 0, 0, 1, 0];
+        bullets.extend_from_slice(&[0; 8]);
+        bullets.extend_from_slice(&[0xB7]);
+        bullets.extend_from_slice(&[0; 31]);
+        bullets.extend_from_slice(&[13, 11]);
+        let mut bprops = ParaProps::default();
+        apply_word6_pap_sprms(&bullets, &mut bprops);
+        assert!(bprops.anld.as_ref().is_some_and(Anld::bullet));
+        assert_eq!(bprops.anld_level, Some(11));
+
+        let mut builder = NodeBuilder::new(ListTables::default());
+        let mut doc = DoclingDocument::new("w6");
+        let stis = vec![StyleDef::NONE; 16];
+        let mut para = |text: &str, props: ParaProps, doc: &mut DoclingDocument| {
+            builder.paragraph(
+                text.into(),
+                text.into(),
+                Vec::new(),
+                Vec::new(),
+                Vec::new(),
+                '\r',
+                props,
+                &stis,
+                doc,
+            );
+        };
+        para("Intro", ParaProps::default(), &mut doc);
+        for t in ["One", "Two"] {
+            para(t, props.clone(), &mut doc);
+        }
+        para("Between", ParaProps::default(), &mut doc);
+        para("Again", props.clone(), &mut doc);
+        for t in ["Dot", "Dash"] {
+            para(t, bprops.clone(), &mut doc);
+        }
+        assert_eq!(
+            doc.export_to_markdown(),
+            "Intro\n\n1. One\n2. Two\n\nBetween\n\n1. Again\n\n- Dot\n- Dash\n"
+        );
+        let json = doc.export_to_json();
+        assert!(json.contains("\"marker\": \"2.\""), "{json}");
+        assert_eq!(json.matches("\"label\": \"list_item\"").count(), 5);
+        assert_eq!(anld_number(2, 4), "iv");
+        assert_eq!(anld_number(3, 28), "AB");
+        assert_eq!(anld_number(1, 1994), "MCMXCIV");
+    }
+
+    /// #700: the ticket's fixtures — a numbered and a bulleted list inside
+    /// a table cell of a Word 6.0/95 file — print their markers in the
+    /// cell as the `.docx` twin's rich cell does (`1. … 2. …`, `- …`).
+    #[test]
+    fn word6_list_markers_reach_the_cell() {
+        let convert = |name: &str| {
+            let path = format!(
+                "{}/tests/data/doc/sources/{name}",
+                env!("CARGO_MANIFEST_DIR")
+            );
+            let bytes = std::fs::read(&path).expect("fixture exists");
+            DocBackend
+                .convert(&SourceDocument::from_bytes(name, InputFormat::Doc, bytes))
+                .expect("converts")
+                .export_to_markdown()
+        };
+        let md = convert("word6_lists.doc");
+        assert!(
+            md.contains(
+                "Alpha Bravo Charlie De  1. Echo Foxtrot Go 2. Hotel Alpha Bravo 3. Charlie \
+                 Delta Ech 4. Foxtrot G 5. Hotel Alp 6. Bravo Cha"
+            ),
+            "{md}"
+        );
+        let md = convert("word6_bullets.doc");
+        assert!(md.contains("- Golf Hotel Alpha"), "{md}");
+        assert!(md.contains("- Alpha Bravo Charlie Delta Ech"), "{md}");
+        assert!(!md.contains("1."), "{md}");
     }
 
     /// #699: the annotation story — a comment on the body paragraph (the
