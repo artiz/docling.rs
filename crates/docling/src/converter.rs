@@ -1298,7 +1298,7 @@ impl DocumentConverter {
                 ..
             } = node
             {
-                if description.is_none() {
+                if undescribed(description) {
                     *description = reader.read(img);
                 }
             }
@@ -1311,7 +1311,7 @@ impl DocumentConverter {
                     ..
                 } = &mut item.kind
                 {
-                    if description.is_none() {
+                    if undescribed(description) {
                         *description = reader.read(img);
                     }
                 }
@@ -1348,7 +1348,7 @@ impl DocumentConverter {
         let mut order: Vec<u64> = Vec::new();
         let mut images: HashMap<u64, PictureImage> = HashMap::new();
         let mut collect = |img: &PictureImage, description: &Option<PictureDescription>| {
-            if description.is_some() {
+            if !undescribed(description) {
                 return;
             }
             let key = key_of(&img.data);
@@ -1515,7 +1515,7 @@ impl DocumentConverter {
                 ..
             } = node
             {
-                if description.is_none() {
+                if undescribed(description) {
                     *description = described(img);
                 }
             }
@@ -1528,7 +1528,7 @@ impl DocumentConverter {
                     ..
                 } = &mut item.kind
                 {
-                    if description.is_none() {
+                    if undescribed(description) {
                         *description = described(img);
                     }
                 }
@@ -1664,7 +1664,7 @@ impl DocumentConverter {
                     },
                 ) = (reader.as_mut(), &mut *node)
                 {
-                    if description.is_none() {
+                    if undescribed(description) {
                         *description = reader.read(img);
                     }
                 }
@@ -2640,6 +2640,13 @@ impl DocumentConverter {
             errors,
         })
     }
+}
+
+/// A picture an enrichment pass may still describe: one without a
+/// description, or with only the alt text its file carried (#676) — the
+/// model's or the reader's answer replaces that fallback.
+fn undescribed(description: &Option<docling_core::PictureDescription>) -> bool {
+    description.as_ref().is_none_or(|d| d.is_alt_text())
 }
 
 #[cfg(test)]
