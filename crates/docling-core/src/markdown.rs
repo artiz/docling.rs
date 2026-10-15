@@ -256,10 +256,18 @@ pub fn to_markdown_with_options(
     if strict && !options.plain_text && !doc.links.is_empty() {
         body = apply_links(&body, &doc.links);
     }
-    let md = if body.is_empty() {
-        String::new()
+    // The YAML front matter (#679) opens the document when its output mode
+    // asks for it; never in the plain-text export.
+    let front = if doc.metadata_output.front_matter() && !options.plain_text {
+        doc.metadata.to_front_matter()
     } else {
-        format!("{body}\n")
+        String::new()
+    };
+    let md = match (front.is_empty(), body.is_empty()) {
+        (true, true) => String::new(),
+        (true, false) => format!("{body}\n"),
+        (false, true) => front,
+        (false, false) => format!("{front}\n{body}\n"),
     };
     (md, ctx.artifacts)
 }
@@ -373,6 +381,10 @@ pub struct MarkdownStreamer {
     compact_tables: bool,
     /// [`DoclingDocument::picture_alt_text`] (#676).
     picture_alt_text: bool,
+    /// The YAML front matter (#679) still to be written, ahead of the first
+    /// chunk — or alone, from [`finish`](Self::finish), when nothing else
+    /// comes.
+    front_matter: Option<String>,
     /// Whether any non-empty chunk has been emitted yet (drives `\n\n` joins and
     /// the trailing newline).
     emitted_any: bool,
@@ -433,6 +445,7 @@ impl MarkdownStreamer {
             images,
             compact_tables,
             picture_alt_text: false,
+            front_matter: None,
             emitted_any: false,
             links: Vec::new(),
             artifacts_dir: artifacts_dir.to_string(),
@@ -482,6 +495,17 @@ impl MarkdownStreamer {
     /// first [`push`](Self::push).
     pub fn with_picture_alt_text(mut self, on: bool) -> Self {
         self.picture_alt_text = on;
+        self
+    }
+
+    /// Open the stream with the YAML front matter of `metadata` (#679) —
+    /// what the buffered export writes for a document whose
+    /// [`DoclingDocument::metadata_output`] is `Frontmatter`. Empty
+    /// metadata writes nothing; the plain-text export never writes it.
+    pub fn with_metadata(mut self, metadata: &crate::metadata::DocumentMetadata) -> Self {
+        self.front_matter = (!self.plain)
+            .then(|| metadata.to_front_matter())
+            .filter(|f| !f.is_empty());
         self
     }
 
@@ -535,7 +559,9 @@ impl MarkdownStreamer {
         if self.strict && !self.plain && !self.links.is_empty() {
             body = apply_links_chunk(&body, &mut self.links);
         }
-        let chunk = if self.emitted_any {
+        let chunk = if let Some(front) = self.front_matter.take() {
+            format!("{front}\n{body}")
+        } else if self.emitted_any {
             format!("\n\n{body}")
         } else {
             body
@@ -547,7 +573,9 @@ impl MarkdownStreamer {
     /// Emit the trailing newline that finishes the document (empty if no content
     /// was produced). Call exactly once, after the final [`push`](Self::push).
     pub fn finish(self) -> String {
-        if self.emitted_any {
+        if let Some(front) = self.front_matter {
+            front
+        } else if self.emitted_any {
             "\n".to_string()
         } else {
             String::new()

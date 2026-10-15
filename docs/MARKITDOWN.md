@@ -110,6 +110,7 @@ with `convert`, `convert_local`, `convert_stream`, `convert_uri`,
 | XLSX `## <sheet>` headings | same |
 | ZIP: `## File:` per entry | same |
 | `markitdown FILE -o out.md` | `python -m docling_rs.markitdown FILE -o out.md` (also `-x`, `-m`, `-c`, `--keep-data-uris`, stdin) |
+| EXIF lines on an image (`ImageSize`, `Title`, `Description`, `Artist`, `DateTimeOriginal`, `GPSPosition`, … via exiftool), the audio tag lines (`Title`, `Artist`, `Album`, `Genre`, …) and `### Audio Transcript:`, the EPUB `**Title:** / **Authors:** / …` block | the same lines, from the engine's own readers (#679 — pure Rust, no exiftool; the facade converts with `metadata=json`, and `result.metadata` outside it) |
 | `exiftool_path`, `style_map`, `docintel_*`, `cu_*` | accepted, ignored with a warning |
 | plugins, `register_converter` | not supported ([#680](https://github.com/docling-project/docling.rs/issues/680)) |
 
@@ -146,8 +147,7 @@ and local speech recognition for audio and video.
 
 ## Open gaps
 
-Tracked, in roughly the order they matter to MarkItDown users:
-[#679](https://github.com/docling-project/docling.rs/issues/679) (document metadata),
+Tracked:
 [#680](https://github.com/docling-project/docling.rs/issues/680) (pluggable backends).
 
 ## Reproduce the numbers

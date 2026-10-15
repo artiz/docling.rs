@@ -47,6 +47,138 @@ pub fn decode_to_mono_16k(bytes: &[u8], name: &str) -> Result<Vec<f32>, String> 
 }
 
 /// The in-process pure-Rust decode path.
+/// The file's tags and stream facts (#679), `(name, text)` pairs with
+/// lower-case names: the standard tags symphonia recognizes under their
+/// usual names (`title`, `artist`, `album`, `album_artist`, `genre`,
+/// `track`, `date`, `composer`, `comment`, `encoder`, `copyright`,
+/// `language`, `disc`, `performer`, `publisher`, `description`), other text
+/// tags under their own key, then `duration` (seconds), `sample_rate`,
+/// `channels` and `codec` of the first audio track. Only the headers are
+/// read — no decoding. Empty when symphonia cannot open the container.
+pub fn probe_metadata(bytes: &[u8], name: &str) -> Vec<(String, String)> {
+    use symphonia::core::meta::{StandardTagKey, Value};
+
+    let cursor = std::io::Cursor::new(bytes.to_vec());
+    let mss = MediaSourceStream::new(Box::new(cursor), Default::default());
+    let mut hint = Hint::new();
+    if let Some(ext) = name.rsplit('.').next().filter(|e| *e != name) {
+        hint.with_extension(ext);
+    }
+    let Ok(mut probed) = symphonia::default::get_probe().format(
+        &hint,
+        mss,
+        &FormatOptions::default(),
+        &MetadataOptions::default(),
+    ) else {
+        return Vec::new();
+    };
+
+    let mut out: Vec<(String, String)> = Vec::new();
+    let mut push = |key: String, value: String| {
+        let value = value.trim().to_string();
+        if key.is_empty() || value.is_empty() || value.len() > 2000 {
+            return;
+        }
+        if !out.iter().any(|(k, _)| *k == key) {
+            out.push((key, value));
+        }
+    };
+    let std_name = |k: StandardTagKey| -> Option<&'static str> {
+        Some(match k {
+            StandardTagKey::TrackTitle => "title",
+            StandardTagKey::Artist => "artist",
+            StandardTagKey::Album => "album",
+            StandardTagKey::AlbumArtist => "album_artist",
+            StandardTagKey::Genre => "genre",
+            StandardTagKey::TrackNumber => "track",
+            StandardTagKey::TrackTotal => "track_total",
+            StandardTagKey::DiscNumber => "disc",
+            StandardTagKey::Date | StandardTagKey::ReleaseDate => "date",
+            StandardTagKey::OriginalDate => "original_date",
+            StandardTagKey::Composer => "composer",
+            StandardTagKey::Performer => "performer",
+            StandardTagKey::Comment => "comment",
+            StandardTagKey::Description => "description",
+            StandardTagKey::Encoder => "encoder",
+            StandardTagKey::Copyright => "copyright",
+            StandardTagKey::Language => "language",
+            StandardTagKey::Label => "publisher",
+            StandardTagKey::Lyrics => "lyrics",
+            _ => return None,
+        })
+    };
+    let text_of = |v: &Value| -> Option<String> {
+        match v {
+            Value::String(s) => Some(s.clone()),
+            Value::Boolean(b) => Some(b.to_string()),
+            Value::Float(f) => Some(f.to_string()),
+            Value::SignedInt(i) => Some(i.to_string()),
+            Value::UnsignedInt(u) => Some(u.to_string()),
+            Value::Binary(_) | Value::Flag => None,
+        }
+    };
+    // The tags the probe read ahead of the container (ID3v2 in front of an
+    // MP3) and the container's own (Vorbis comments, MP4 atoms).
+    let mut revisions = Vec::new();
+    if let Some(m) = probed.metadata.get() {
+        if let Some(r) = m.current() {
+            revisions.push(r.clone());
+        }
+    }
+    if let Some(r) = probed.format.metadata().current() {
+        revisions.push(r.clone());
+    }
+    for rev in &revisions {
+        for tag in rev.tags() {
+            let Some(text) = text_of(&tag.value) else {
+                continue;
+            };
+            let key = match tag.std_key.and_then(std_name) {
+                Some(k) => k.to_string(),
+                None => {
+                    let k = tag.key.trim().to_ascii_lowercase();
+                    if k.is_empty()
+                        || k.len() > 40
+                        || !k
+                            .chars()
+                            .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == ':')
+                    {
+                        continue;
+                    }
+                    k
+                }
+            };
+            push(key, text);
+        }
+    }
+    if let Some(track) = probed
+        .format
+        .tracks()
+        .iter()
+        .find(|t| t.codec_params.codec != CODEC_TYPE_NULL)
+    {
+        let p = &track.codec_params;
+        if let (Some(frames), Some(rate)) = (p.n_frames, p.sample_rate) {
+            if rate > 0 {
+                push(
+                    "duration".into(),
+                    format!("{:.2}", frames as f64 / rate as f64),
+                );
+            }
+        }
+        if let Some(rate) = p.sample_rate {
+            push("sample_rate".into(), rate.to_string());
+        }
+        if let Some(ch) = p.channels {
+            push("channels".into(), ch.count().to_string());
+        }
+        if let Some(desc) = symphonia::default::get_codecs().get_codec(p.codec) {
+            push("codec".into(), desc.short_name.to_string());
+        }
+    }
+    out
+}
+
 fn decode_symphonia(bytes: &[u8], name: &str) -> Result<Vec<f32>, String> {
     // symphonia has no AVI demuxer — its wav reader would reject the RIFF
     // header with an opaque "riff form is not wave"; say what's wrong instead.

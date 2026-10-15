@@ -26,6 +26,7 @@ mod labels;
 mod latex;
 mod markdown;
 mod mathml;
+pub mod metadata;
 pub mod pandoc;
 mod pixel_digest;
 pub mod redact;
@@ -43,6 +44,7 @@ pub use encryption::EncryptionError;
 pub use json::code_language_label;
 pub use labels::DocItemLabel;
 pub use markdown::{ImageMode, MarkdownStreamer};
+pub use metadata::{DocumentMetadata, GpsPosition, MetadataOutput};
 pub use redact::{
     CustomPattern, ImageRedaction, PiiDetector, PiiKind, RedactionOptions, RedactionReport,
     Replacement,

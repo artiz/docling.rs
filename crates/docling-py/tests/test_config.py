@@ -29,6 +29,26 @@ def test_ipynb_outputs_forward_and_notebooks_convert():
         DocumentConverter(ipynb_outputs="all")
 
 
+def test_metadata_reaches_the_result():
+    """#679: ``metadata="json"`` puts the file's own metadata on the result
+    (an EPUB's Dublin Core, a DOCX's core properties); the default reads
+    none; the spelling is validated by the engine."""
+    from docling_rs import DocumentConverter
+
+    epub = REPO / "crates/docling-py/tests/data/markitdown/test.epub"
+    assert DocumentConverter().convert(epub).metadata is None
+    r = DocumentConverter(metadata="json").convert(epub)
+    assert r.metadata["title"] == "Test EPUB Document"
+    assert r.metadata["authors"] == ["Test Author"]
+    assert r.metadata["language"] == "en"
+    docx = REPO / "crates/docling-py/tests/data/markitdown/test.docx"
+    m = DocumentConverter(metadata="frontmatter").convert(docx).metadata
+    assert m["authors"] == ["Adam Fourney"] and m["creator_tool"] == "Microsoft Office Word"
+    assert m["properties"]["pages"] == "2"
+    with pytest.raises(Exception, match="metadata"):
+        DocumentConverter(metadata="yaml")
+
+
 def test_detect_format_reads_the_bytes():
     """#672: ``detect_format`` names a format by its content — a path, bytes
     or a DocumentStream — and a nameless stream converts the same way."""

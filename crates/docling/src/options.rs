@@ -41,7 +41,9 @@ use std::fmt;
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 
-use docling_core::{CustomPattern, ImageRedaction, PiiKind, RedactionOptions, Replacement};
+use docling_core::{
+    CustomPattern, ImageRedaction, MetadataOutput, PiiKind, RedactionOptions, Replacement,
+};
 
 use crate::DocumentConverter;
 
@@ -105,6 +107,12 @@ pub struct ConvertOptions {
     /// `none` (default: the notebook as written) or `text` (stream and
     /// `text/plain` results as code blocks, image outputs as pictures).
     pub ipynb_outputs: Option<String>,
+    /// Document metadata (#679): where the file's own metadata (EPUB
+    /// Dublin Core, Office properties, EXIF, audio tags, PDF Info) goes —
+    /// `none` (default: nowhere, every export unchanged), `json` (a
+    /// `metadata` object in the docling JSON) or `frontmatter` (that, and
+    /// YAML front matter at the top of the Markdown).
+    pub metadata: Option<String>,
     /// Pre-render HTML with a headless browser (the `web-browser` feature).
     pub use_web_browser: Option<bool>,
     /// XBRL: the directory the instance's taxonomy is read from.
@@ -417,6 +425,7 @@ pub const OPTIONS: &[OptionInfo] = &[
     row("ebcdic_layout"),
     row("encoding"),
     row("ipynb_outputs"),
+    row("metadata"),
     // The npm addon is not built with the `web-browser` feature, so the
     // option would only ever error there.
     OptionInfo {
@@ -641,6 +650,27 @@ impl ConvertOptions {
             .transpose()
     }
 
+    /// The metadata output mode (#679): `None` unless `metadata` is set
+    /// and non-blank; a spelling other than `none`, `json`, `frontmatter`
+    /// is an error.
+    pub fn metadata_output(&self) -> Result<Option<MetadataOutput>, OptionsError> {
+        self.metadata
+            .as_deref()
+            .filter(|s| !s.trim().is_empty())
+            .map(|s| {
+                MetadataOutput::parse(s).ok_or_else(|| {
+                    OptionsError::new(
+                        "metadata",
+                        format!(
+                            "metadata must be one of {}; got {s:?}",
+                            MetadataOutput::ACCEPTED
+                        ),
+                    )
+                })
+            })
+            .transpose()
+    }
+
     /// The wire names of every field, from the struct itself (an unset
     /// option serializes as `null`), so a new field is listed without a
     /// hand-kept list — the inventory test and the unknown-key checks of the
@@ -689,6 +719,7 @@ impl ConvertOptions {
         self.page_range()?;
         self.document_timeout()?;
         self.ipynb_outputs()?;
+        self.metadata_output()?;
         if let Some(s) = self.ocr_scale {
             if !(s.is_finite() && s > 0.0) {
                 return Err(OptionsError::new(
@@ -996,6 +1027,9 @@ impl ConvertOptions {
         }
         if let Some(outputs) = self.ipynb_outputs()? {
             c = c.ipynb_outputs(outputs);
+        }
+        if let Some(mode) = self.metadata_output()? {
+            c = c.metadata_output(mode);
         }
         if let Some(v) = self.use_web_browser {
             c = c.use_web_browser(v);

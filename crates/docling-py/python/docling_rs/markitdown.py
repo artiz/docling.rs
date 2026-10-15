@@ -273,6 +273,7 @@ _TEXT_EXTENSIONS = {
     ".xhtml", ".xml", ".json", ".ipynb", ".vtt", ".adoc", ".asciidoc", ".asc", ".tex", ".latex", ".svg",
 }
 _IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".gif", ".bmp", ".tif", ".tiff", ".webp", ".heic", ".heif"}
+_AUDIO_EXTENSIONS = {".mp3", ".wav", ".m4a", ".aac", ".flac", ".ogg", ".mp4", ".mov", ".mkv", ".webm"}
 
 
 def _normalize_ext(ext: Optional[str]) -> Optional[str]:
@@ -581,7 +582,7 @@ class MarkItDown:
         self._llm_prompt: Optional[str] = None
         # MarkItDown writes a picture's alt text (`![alt](…)`): render it
         # (#676) unless the caller's docling_options say otherwise.
-        self._docling_options: Dict[str, Any] = {"picture_alt_text": True}
+        self._docling_options: Dict[str, Any] = {"picture_alt_text": True, "metadata": "json"}
         self._converters: Dict[bool, DocumentConverter] = {}
         if enable_builtins is False:
             warnings.warn(
@@ -609,7 +610,7 @@ class MarkItDown:
         self._llm_model = kwargs.get("llm_model", self._llm_model)
         self._llm_prompt = kwargs.get("llm_prompt", self._llm_prompt)
         if "docling_options" in kwargs:
-            self._docling_options = {"picture_alt_text": True, **(kwargs["docling_options"] or {})}
+            self._docling_options = {"picture_alt_text": True, "metadata": "json", **(kwargs["docling_options"] or {})}
             self._converters.clear()
 
     def enable_plugins(self, **kwargs: Any) -> None:
@@ -900,6 +901,14 @@ class MarkItDown:
             describe_pictures(document, _LlmClientDescriber(client=llm_client, model=llm_model, prompt=llm_prompt))
 
         markdown = _export(document, keep_data_uris)
+        block = _metadata_block(ext, getattr(result, "metadata", None))
+        if block:
+            if ext in _AUDIO_EXTENSIONS:
+                transcript = markdown.strip()
+                markdown = block + ("\n\n### Audio Transcript:\n" + transcript + "\n" if transcript else "\n")
+            else:
+                body = markdown.lstrip()
+                markdown = block + ("\n\n" + body if body.strip() else "\n")
         if is_image and llm_client is not None and llm_model:
             if data is None:
                 with open(path, "rb") as fh:
@@ -993,6 +1002,61 @@ def _detect_charset(data: bytes) -> Optional[str]:
 
 
 _COMPACT_TABLES: Optional[bool] = None
+
+
+def _metadata_block(ext: Optional[str], metadata: Optional[Dict[str, Any]]) -> str:
+    """MarkItDown's metadata lines for an EPUB (``**Title:** …`` from the
+    OPF), an image (exiftool's ``ImageSize``, ``Title``, ``Description``,
+    ``Keywords``, ``Artist``, ``Author``, ``DateTimeOriginal``,
+    ``CreateDate``, ``GPSPosition``) or an audio file (``Title``,
+    ``Artist``, ``Band``, ``Album``, ``Genre``, ``Track``,
+    ``DateTimeOriginal``, ``NumChannels``, ``SampleRate``) — from the
+    engine's own metadata (#679), only the fields the file has. Empty for
+    every other format, and for a file without any."""
+    if not metadata:
+        return ""
+    join = lambda items: ", ".join(items) if items else None  # noqa: E731
+    if ext == ".epub":
+        fields = [
+            ("Title", metadata.get("title")),
+            ("Authors", join(metadata.get("authors"))),
+            ("Language", metadata.get("language")),
+            ("Publisher", metadata.get("publisher")),
+            ("Date", metadata.get("date")),
+            ("Description", metadata.get("description")),
+            ("Identifier", metadata.get("identifier")),
+        ]
+        return "\n".join(f"**{k}:** {v}" for k, v in fields if v)
+    if ext in _IMAGE_EXTENSIONS:
+        exif = metadata.get("exif") or {}
+        gps = metadata.get("gps")
+        fields = [
+            ("ImageSize", (metadata.get("properties") or {}).get("image_size")),
+            ("Title", metadata.get("title")),
+            ("Description", exif.get("ImageDescription")),
+            ("Keywords", join(metadata.get("keywords"))),
+            ("Artist", exif.get("Artist")),
+            ("Author", exif.get("XPAuthor")),
+            ("DateTimeOriginal", exif.get("DateTimeOriginal")),
+            ("CreateDate", exif.get("DateTimeDigitized")),
+            ("GPSPosition", f"{gps['latitude']}, {gps['longitude']}" if gps else None),
+        ]
+        return "\n".join(f"{k}: {v}" for k, v in fields if v)
+    if ext in _AUDIO_EXTENSIONS:
+        audio = metadata.get("audio") or {}
+        fields = [
+            ("Title", audio.get("title")),
+            ("Artist", audio.get("artist")),
+            ("Band", audio.get("album_artist")),
+            ("Album", audio.get("album")),
+            ("Genre", audio.get("genre")),
+            ("Track", audio.get("track")),
+            ("DateTimeOriginal", audio.get("date")),
+            ("NumChannels", audio.get("channels")),
+            ("SampleRate", audio.get("sample_rate")),
+        ]
+        return "\n".join(f"{k}: {v}" for k, v in fields if v)
+    return ""
 
 
 def _export_options() -> Dict[str, Any]:

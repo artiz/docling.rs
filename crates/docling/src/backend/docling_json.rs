@@ -42,6 +42,10 @@ impl DeclarativeBackend for DoclingJsonBackend {
         let root = root;
         let name = root["name"].as_str().unwrap_or(&source.name).to_string();
         let mut doc = DoclingDocument::new(name);
+        // The `metadata` object (#679) a docling.rs export carried.
+        if root["metadata"].is_object() {
+            doc.metadata = docling_core::DocumentMetadata::from_json(&root["metadata"]);
+        }
         let mut guard = WalkGuard::default();
         if let Some(children) = root["body"]["children"].as_array() {
             for c in children {

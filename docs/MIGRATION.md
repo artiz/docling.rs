@@ -1128,6 +1128,19 @@ deliberate scope boundary or a cosmetic, single-fixture polish gap.
   `keep_picture_images=false`) and its file deleted before the next decode,
   so one frame is in flight whatever the count. With nothing set the
   sampling is the pre-#647 one and every default output is unchanged.
+- **Document metadata** (#679) — docling keeps a document's `origin` (file
+  name, hash) and nothing of what the file says about itself; MarkItDown
+  prints an EPUB's Dublin Core, a photo's EXIF (through exiftool) and an
+  audio file's tags. `metadata=json|frontmatter` (every surface) reads the
+  file's own metadata in pure Rust — an EPUB's OPF, an Office package's
+  `docProps/core.xml` + `app.xml`, an ODF `meta.xml`, EXIF (JPEG, PNG,
+  TIFF, WebP, HEIF; the GPS position decoded), audio/video container tags,
+  a PDF's Info dictionary — into `document.metadata`, written as a
+  `metadata` object after `origin` in the JSON (a foreign key docling's
+  pydantic model ignores on load) and, under `frontmatter`, as YAML front
+  matter at the top of the Markdown. Off by default, so every export is
+  unchanged; `redact_pii` masks the author fields and drops the position.
+  The MarkItDown facade prints MarkItDown's own metadata lines from it.
 - **PII redaction** (#621) — Python docling has no redaction stage; this is
   a docling.rs extension, off by default and inert unless asked for (the
   regression baselines are untouched). `DocumentConverter::redact_pii` /

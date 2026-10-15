@@ -263,6 +263,9 @@ pub struct DocumentConverter {
     /// Render pictures' alt text in Markdown and HTML (#676). See
     /// [`Self::picture_alt_text`].
     picture_alt_text: bool,
+    /// Where the document's metadata goes in the exports (#679). See
+    /// [`Self::metadata_output`].
+    metadata_output: docling_core::MetadataOutput,
     /// docling-core's `MarkdownParams.page_break_placeholder`: text inserted
     /// between pages in the Markdown export; `None` (default) omits breaks.
     page_break_placeholder: Option<String>,
@@ -562,6 +565,7 @@ impl Default for DocumentConverter {
             skip_empty_cells: false,
             compact_tables: false,
             picture_alt_text: false,
+            metadata_output: Default::default(),
             page_break_placeholder: None,
             ebcdic_layout: None,
             no_table_former: false,
@@ -1193,6 +1197,29 @@ impl DocumentConverter {
         self
     }
 
+    /// Where the file's own metadata goes in the exports (#679) — an
+    /// EPUB's Dublin Core, an Office package's properties, an ODF
+    /// `meta.xml`, a photo's EXIF, an audio file's tags, a PDF's Info
+    /// dictionary, read into `document.metadata`. `None` (the default)
+    /// reads nothing and leaves every export as it was; `Json` adds a
+    /// `metadata` object to the docling JSON; `Frontmatter` adds YAML front
+    /// matter at the top of the Markdown as well. The PII pass
+    /// ([`redact_pii`](Self::redact_pii)) covers the metadata: author
+    /// fields are masked as persons, the GPS position is dropped.
+    pub fn metadata_output(mut self, mode: docling_core::MetadataOutput) -> Self {
+        self.metadata_output = mode;
+        self
+    }
+
+    /// The metadata of `source` as [`metadata_output`](Self::metadata_output)
+    /// would read it, whatever the mode — for a caller that streams a
+    /// document itself and wants the front matter
+    /// (`MarkdownStreamer::with_metadata`). Reads headers only; empty for a
+    /// format that carries none.
+    pub fn document_metadata(&self, source: &SourceDocument) -> docling_core::DocumentMetadata {
+        crate::metadata::read(source, self.password.as_deref())
+    }
+
     /// Insert `placeholder` between pages in the Markdown export — docling's
     /// `export_to_markdown(page_break_placeholder=…)` (docling-core's
     /// `MarkdownParams`, docling-serve's `md_page_break_placeholder`). Where
@@ -1227,6 +1254,10 @@ impl DocumentConverter {
         // Alt text in Markdown/HTML (#676): additive like compact tables.
         if self.picture_alt_text {
             document.picture_alt_text = true;
+        }
+        // The metadata output mode (#679), likewise.
+        if self.metadata_output.in_json() {
+            document.metadata_output = self.metadata_output;
         }
         // Page-break placeholder: a serializer knob like `strict`, carried on
         // the document so every Markdown export of it agrees.
@@ -2242,6 +2273,7 @@ impl DocumentConverter {
             page_break_placeholder: self.page_break_placeholder.clone(),
             compact_tables: self.compact_tables,
             picture_alt_text: self.picture_alt_text,
+            metadata_output: self.metadata_output,
             document_timeout: self.document_timeout,
             redact: self.redact.clone(),
         }
@@ -2621,6 +2653,12 @@ impl DocumentConverter {
             }
         };
         self.enrich_pictures(&mut document, source);
+        // The file's own metadata (#679), read when an export will show it
+        // (a docling-JSON input keeps what it carried) — before the PII
+        // pass, which covers it too.
+        if self.metadata_output.in_json() && document.metadata.is_empty() {
+            document.metadata = crate::metadata::read(source, self.password.as_deref());
+        }
         // The PII pass (#621) runs on the finished model, before anything
         // reads it — after the backend, before the export-side settings.
         let redaction = self.redact(&mut document)?;

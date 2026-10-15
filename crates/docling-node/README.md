@@ -528,6 +528,10 @@ constructor; output options (`to`, `imageMode`, `artifactsDir`) are per call.
   such as `"shift_jis"` or `"koi8-r"`. Unset detects (BOM, UTF-8, a
   statistical guess for a non-Latin encoding — #675 — else windows-1252);
   bytes the named encoding cannot decode fail the conversion.
+- `metadata`: document metadata (#679) — `"none"` (default: nowhere), `"json"`
+  (a `metadata` object in the docling JSON: title, authors, dates, EXIF,
+  audio tags, …) or `"frontmatter"` (YAML front matter at the top of the
+  Markdown as well).
 - `ipynbOutputs`: Jupyter notebooks (#673) — `"none"` (default: the notebook
   as written; markdown cells, code cells as code items in the kernel's
   language, raw cells as code blocks) or `"text"` (stream and `text/plain`
