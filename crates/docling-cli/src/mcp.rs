@@ -550,7 +550,8 @@ struct ConvertArgs {
     /// {"pages": "1-5"}, {"text_layer_only": true} (digital PDFs, fastest),
     /// {"ocr_lang": "ch"}, {"force_full_page_ocr": true},
     /// {"do_picture_ocr": true} (OCR pictures inside Office files),
-    /// {"password": "…"}, {"compact_tables": false}.
+    /// {"password": "…"}, {"compact_tables": false}. A value may also be
+    /// given as text ("true", "1.5"), as a form sends it.
     #[serde(default)]
     #[schemars(transform = drop_null)]
     options: Option<serde_json::Map<String, serde_json::Value>>,
@@ -762,8 +763,9 @@ impl Request {
                         "options: unknown field `{key}` (see docs/OPTIONS.md for the list)"
                     ));
                 }
-                serde_json::from_value(serde_json::Value::Object(map))
-                    .map_err(|e| format!("options: {e}"))?
+                // Values as text too — MCP Inspector's form sends every
+                // value as a string: `{"force_full_page_ocr": "true"}`.
+                ConvertOptions::from_loose_json(map).map_err(|e| format!("options: {e}"))?
             }
         };
         Ok(Self {
@@ -1215,6 +1217,25 @@ mod tests {
         ))
         .unwrap();
         assert_eq!(r.options.pages.as_deref(), Some("1-2"));
+        // A form's text values read as the option's type.
+        let r = Request::from_args(args(serde_json::json!({
+            "uri": "a",
+            "options": {"force_full_page_ocr": "true", "ocr_scale": "1.5", "pages": "3", "video_frames": 2}
+        })))
+        .unwrap();
+        assert_eq!(r.options.force_full_page_ocr, Some(true));
+        assert_eq!(r.options.ocr_scale, Some(1.5));
+        assert_eq!(r.options.pages.as_deref(), Some("3"));
+        assert_eq!(r.options.video_frames, Some(2));
+        let err = Request::from_args(args(
+            serde_json::json!({"uri": "a", "options": {"force_full_page_ocr": "maybe"}}),
+        ))
+        .map(|_| ())
+        .unwrap_err();
+        assert!(
+            err.contains("force_full_page_ocr: cannot read \"maybe\""),
+            "{err}"
+        );
     }
 
     #[test]
