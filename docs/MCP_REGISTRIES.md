@@ -26,7 +26,7 @@ Listings: the [official MCP registry](https://registry.modelcontextprotocol.io/v
 |---|---|---|
 | [Official MCP registry](https://registry.modelcontextprotocol.io) | [`server.json`](../server.json) (schema 2025-12-11): the PyPI launcher (`uvx`) and the CLI image (OCI) | `mcp-name: io.github.docling-project/docling-rs` in the launcher's README (its PyPI description); `LABEL io.modelcontextprotocol.server.name` on the image (`crates/docling-serve/Dockerfile`); the namespace by GitHub OIDC from this repository |
 | [Smithery](https://smithery.ai) | the MCP bundle `docling-rs-mcp-<version>.mcpb`, packed from [`crates/docling-py/mcp/mcpb/`](../crates/docling-py/mcp/mcpb/manifest.json): `uvx docling-rs-mcp@<version>` with the folder, URL fetching and OCR language as settings; [`smithery.yaml`](../smithery.yaml) only names the server id | the Smithery API key of the namespace it is published under |
-| [Glama](https://glama.ai/mcp/servers) | the repository itself; [`glama.json`](../glama.json) names the maintainers | a maintainer listed there claims the entry |
+| [Glama](https://glama.ai/mcp/servers) | the repository itself: Glama clones it, builds the root [`Dockerfile`](../Dockerfile) (the PyPI launcher on a slim Python image, `docling-rs-mcp --root /data` over stdio) and probes the server for its tools; [`glama.json`](../glama.json) names the maintainers | a maintainer listed there claims the entry |
 
 Smithery publishes a server either as an HTTPS URL (a hosted endpoint —
 the *Publish an MCP Server* form on smithery.ai asks only for that) or as
@@ -97,13 +97,25 @@ PyPI's project size limit), and the catalog entries follow the PyPI channel:
    publishes hosted URLs only.
 4. **Glama** — on glama.ai, *Add MCP Server* → *Runs from source*: name
    `docling-rs-mcp`, a one- or two-sentence description, repository
-   `https://github.com/docling-project/docling.rs`. After review Glama mails
-   how to provide the Dockerfile its checks build. The server needs no
-   models to start and list its tools, so the lightest one is a Python
-   image with uv that runs `uvx docling-rs-mcp`; the CLI image
-   (`crates/docling-serve/Dockerfile`, target `cli`, `mcp --root /data`)
-   works too. A maintainer from `glama.json` claims the listing; add
-   maintainers there before they claim.
+   `https://github.com/docling-project/docling.rs`. A maintainer from
+   `glama.json` claims the listing (add maintainers there before they
+   claim; after a change to the file, claim again so Glama re-reads it).
+   The listing's *Admin* page then runs three checks, in this order:
+   - *Repository* — Glama clones the full history (ours is ~200 MiB) and
+     builds from its own copy, so nothing else runs until a commit has
+     synced: *Repository Not Ready* / *Last known commit: –* with *Sync in
+     Progress* means that clone has not landed yet. Wait, press *Sync*
+     again; a sync that stays empty for a day is Glama's to fix
+     (<https://glama.ai/discord>, <https://glama.ai/support>). A repository
+     under an organization may also need Glama's GitHub App installed on it.
+   - *Dockerfile* — Glama builds the root `Dockerfile` (or the build spec
+     entered on that page: base image, build steps, command) and runs the
+     result over stdio, expecting `initialize` and `tools/list` to answer.
+     The launcher image needs no models, keys or environment for that.
+   - *Releases* — a Glama release, not a GitHub one: once the build passes,
+     *Deploy*, then *Make Release* with the version. The quality scores
+     (tool definitions, coherence) are computed from a release, so the
+     discovery score stays low until one exists.
 
 ## Publishing by hand
 

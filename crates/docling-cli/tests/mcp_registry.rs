@@ -1,8 +1,9 @@
 //! The MCP catalog metadata (#669) holds together: `server.json` (the
 //! official registry), the PyPI launcher it lists, the image label the
 //! registry checks, the MCP bundle Smithery lists (`crates/docling-py/mcp/mcpb`,
-//! named by `smithery.yaml`) and `glama.json` name the same server, stay
-//! inside the catalogs' limits, and pass only flags the server takes. A
+//! named by `smithery.yaml`), `glama.json` and the root `Dockerfile` (the
+//! launcher image Glama builds) name the same server, stay inside the
+//! catalogs' limits, and pass only flags the server takes. A
 //! mismatch fails a catalog submission at release time, far from the change
 //! that caused it.
 
@@ -88,6 +89,11 @@ fn the_listed_packages_carry_the_ownership_markers() {
             "{stage:?} lacks the label"
         );
     }
+    // The launcher image at the root is the same server.
+    assert!(
+        read("Dockerfile").contains(&label),
+        "root Dockerfile lacks the label"
+    );
 }
 
 fn manifest() -> Value {
@@ -126,6 +132,28 @@ fn catalog_arguments_are_server_flags() {
     }
     let glama: Value = serde_json::from_str(&read("glama.json")).unwrap();
     assert!(!glama["maintainers"].as_array().unwrap().is_empty());
+
+    // The root Dockerfile installs the launcher and runs it over stdio with
+    // the server's own flags (Glama probes the built image for its tools).
+    let dockerfile = read("Dockerfile");
+    assert!(
+        dockerfile.contains("pip install --no-cache-dir \"docling-rs-mcp$"),
+        "the root Dockerfile installs the launcher"
+    );
+    let cmd = dockerfile
+        .lines()
+        .find_map(|l| l.strip_prefix("CMD "))
+        .expect("the root Dockerfile has a CMD");
+    let cmd: Vec<String> = serde_json::from_str(cmd).expect("CMD is the exec form");
+    assert_eq!(cmd[0], "docling-rs-mcp");
+    for arg in cmd.iter().filter(|a| a.starts_with("--")) {
+        let flag = arg.split_once('=').map_or(arg.as_str(), |(flag, _)| flag);
+        assert!(help.contains(flag), "the root Dockerfile passes {flag}");
+    }
+    assert!(
+        !cmd.iter().any(|a| a == "--http"),
+        "the catalogs probe stdio"
+    );
 }
 
 /// The bundle as Smithery's CLI (4.x) reads it: `smithery.yaml` names a
