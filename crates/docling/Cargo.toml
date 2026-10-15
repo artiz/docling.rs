@@ -113,6 +113,9 @@ ego-tree = "0.11"
 # `<meta charset>` / windows-1252 fallback, the way BeautifulSoup's
 # UnicodeDammit reads bytes for docling. Already in the tree via calamine.
 encoding_rs = "0.8"
+# Statistical charset detection for text inputs that are neither UTF-8 nor
+# plainly windows-1252 (#675): Firefox's detector, on top of encoding_rs.
+chardetng = "1"
 # EBCDIC copybook layouts (#252) deserialize with derive.
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

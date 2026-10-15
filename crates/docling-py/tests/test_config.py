@@ -49,6 +49,18 @@ def test_detect_format_reads_the_bytes():
     assert got == want and got.strip()
 
 
+def test_legacy_charsets_are_guessed():
+    """#675: a cp932 CSV with no hint converts with its own letters; the
+    ``encoding`` kwarg still wins."""
+    from docling_rs import DocumentConverter
+
+    csv = REPO / "crates/docling/tests/data/csv/sources/test_mskanji.csv"
+    md = DocumentConverter().convert(csv).document.export_to_markdown()
+    assert "髙橋淳" in md and "名古屋" in md and "名前" in md
+    forced = DocumentConverter(encoding="shift_jis").convert(csv).document.export_to_markdown()
+    assert forced == md
+
+
 def test_input_format_matches_docling_values():
     from docling_rs import InputFormat
 

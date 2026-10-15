@@ -1097,6 +1097,24 @@ fn nameless_and_misnamed_files_convert_by_content() {
     assert!(out.contains("quick brown fox"), "{out}");
 }
 
+/// Charset detection (#675): MarkItDown's cp932 CSV converts with its
+/// letters and a warning naming the encoding; `--encoding` wins.
+#[test]
+fn legacy_charsets_are_guessed() {
+    let csv = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../docling/tests/data/csv/sources/test_mskanji.csv"
+    );
+    let (code, out, stderr) = run(&["--compact-tables", csv]);
+    assert_eq!(code, 0, "{stderr}");
+    assert!(out.contains("| 髙橋淳 | 35 | 名古屋 |"), "{out}");
+    assert!(stderr.contains("Shift_JIS"), "{stderr}");
+    let (code, forced, stderr) = run(&["--compact-tables", "--encoding", "shift_jis", csv]);
+    assert_eq!(code, 0, "{stderr}");
+    assert_eq!(forced, out);
+    assert!(!stderr.contains("warning"), "{stderr}");
+}
+
 #[test]
 fn hints_apply_to_files_and_stdin_lands_in_output_files() {
     let scratch = Scratch::new("hints");

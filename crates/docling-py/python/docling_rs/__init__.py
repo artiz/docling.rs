@@ -317,8 +317,10 @@ class DocumentConverter:
     * ``encoding`` — character encoding of text inputs (Markdown, CSV,
       AsciiDoc, WebVTT, XML, …): docling's ``TextBackendOptions.encoding``
       (``MarkdownBackendOptions(encoding="shift_jis")``), a WHATWG label or
-      Python codec name. ``None`` (default) detects — BOM, UTF-8, then
-      windows-1252; bytes the requested encoding cannot decode raise.
+      Python codec name. ``None`` (default) detects — BOM, UTF-8, a
+      statistical guess for a non-Latin encoding (Shift_JIS, GBK, KOI8-R,
+      …; #675), else windows-1252; bytes the requested encoding cannot
+      decode raise.
     * ``ipynb_outputs`` — Jupyter notebooks (#673): ``"none"`` (default,
       the notebook as written — markdown cells, code cells as code items in
       the kernel's language, raw cells as code blocks) or ``"text"`` (stream

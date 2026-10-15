@@ -41,7 +41,8 @@ pub struct ConverterOptions {
     /// Character encoding of text inputs (Markdown, CSV, AsciiDoc, WebVTT,
     /// XML, …) — docling's `TextBackendOptions.encoding`: a WHATWG label
     /// (`"shift_jis"`, `"koi8-r"`, `"windows-1251"`). Unset = detect (BOM,
-    /// UTF-8, then windows-1252); bytes it cannot decode fail the conversion.
+    /// UTF-8, a statistical guess for a non-Latin encoding — #675 — else
+    /// windows-1252); bytes it cannot decode fail the conversion.
     pub encoding: Option<String>,
     /// Jupyter notebooks (#673): which cell outputs the document keeps —
     /// `"none"` (default, the notebook as written) or `"text"` (stream and

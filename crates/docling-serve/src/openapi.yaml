@@ -1142,7 +1142,9 @@ components:
             character encoding to decode the file with, a WHATWG label such
             as `shift_jis`, `koi8-r` or `windows-1251` (docling's
             `TextBackendOptions.encoding`). Unset detects it: byte-order
-            mark, then UTF-8, then windows-1252. Bytes the named encoding
+            mark, then UTF-8, then a statistical guess for a non-Latin
+            encoding (Shift_JIS, GBK, KOI8-R, …; #675), else windows-1252.
+            Bytes the named encoding
             cannot decode fail the request instead of being guessed.
           examples: ["auto", "en", "de"]
         ipynb_outputs: { $ref: "#/components/schemas/IpynbOutputs" }

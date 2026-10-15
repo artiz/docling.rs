@@ -205,7 +205,9 @@
 //!                      LaTeX, XML, …) with this character encoding — a WHATWG
 //!                      label such as shift_jis, koi8-r, windows-1251 or
 //!                      latin1 — instead of detecting one (BOM, UTF-8, then
-//!                      windows-1252); bytes it cannot decode fail the
+//!                      a statistical guess for a non-Latin encoding such as
+//!                      shift_jis, gbk or koi8-r, else windows-1252 — #675);
+//!                      bytes it cannot decode fail the
 //!                      conversion (docling's TextBackendOptions.encoding)
 //!   --force-full-page-ocr  OCR every PDF page even when it has a text layer
 //!                      (docling's force_full_page_ocr) — for layers that lie:
@@ -525,7 +527,8 @@ FORMAT OPTIONS
   --skip-empty-cells      omit empty cells from XLSX/XLS grids
   --ebcdic-layout JSON|PATH   EBCDIC copybook layout
   --encoding LABEL        character encoding of text inputs (shift_jis, koi8-r,
-                          windows-1251, …); default: detect (BOM, UTF-8, cp1252)
+                          windows-1251, …); default: detect (BOM, UTF-8, a guess
+                          for a non-Latin encoding, else cp1252)
   --ipynb-outputs MODE    Jupyter notebooks: none (default, the notebook as
                           written) | text (stream/text outputs as code blocks,
                           image outputs as pictures)

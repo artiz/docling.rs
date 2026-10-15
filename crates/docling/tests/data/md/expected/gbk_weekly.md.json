@@ -1,0 +1,144 @@
+{
+  "schema_name": "DoclingDocument",
+  "version": "1.10.0",
+  "name": "gbk_weekly",
+  "origin": {
+    "mimetype": "text/plain",
+    "binary_hash": 2477451480292004121,
+    "filename": "gbk_weekly"
+  },
+  "furniture": {
+    "self_ref": "#/furniture",
+    "children": [],
+    "content_layer": "furniture",
+    "name": "_root_",
+    "label": "unspecified"
+  },
+  "body": {
+    "self_ref": "#/body",
+    "children": [
+      {
+        "$ref": "#/texts/0"
+      },
+      {
+        "$ref": "#/texts/1"
+      },
+      {
+        "$ref": "#/groups/0"
+      },
+      {
+        "$ref": "#/texts/5"
+      }
+    ],
+    "content_layer": "body",
+    "name": "_root_",
+    "label": "unspecified"
+  },
+  "groups": [
+    {
+      "self_ref": "#/groups/0",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [
+        {
+          "$ref": "#/texts/2"
+        },
+        {
+          "$ref": "#/texts/3"
+        },
+        {
+          "$ref": "#/texts/4"
+        }
+      ],
+      "content_layer": "body",
+      "name": "list",
+      "label": "list"
+    }
+  ],
+  "texts": [
+    {
+      "self_ref": "#/texts/0",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "title",
+      "prov": [],
+      "orig": "项目周报",
+      "text": "项目周报"
+    },
+    {
+      "self_ref": "#/texts/1",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "本周完成了数据导入模块的开发，并与测试团队一起验证了常见的输入格式。文档转换的速度比上一个版本 提高了一倍，内存占用也有所下降。下周计划整理用户反馈，补充缺失的示例文件。",
+      "text": "本周完成了数据导入模块的开发，并与测试团队一起验证了常见的输入格式。文档转换的速度比上一个版本 提高了一倍，内存占用也有所下降。下周计划整理用户反馈，补充缺失的示例文件。"
+    },
+    {
+      "self_ref": "#/texts/2",
+      "parent": {
+        "$ref": "#/groups/0"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "list_item",
+      "prov": [],
+      "orig": "完成接口文档的修订",
+      "text": "完成接口文档的修订",
+      "enumerated": false,
+      "marker": ""
+    },
+    {
+      "self_ref": "#/texts/3",
+      "parent": {
+        "$ref": "#/groups/0"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "list_item",
+      "prov": [],
+      "orig": "复查第三季度的预算",
+      "text": "复查第三季度的预算",
+      "enumerated": false,
+      "marker": ""
+    },
+    {
+      "self_ref": "#/texts/4",
+      "parent": {
+        "$ref": "#/groups/0"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "list_item",
+      "prov": [],
+      "orig": "安排与客户的线上会议",
+      "text": "安排与客户的线上会议",
+      "enumerated": false,
+      "marker": ""
+    },
+    {
+      "self_ref": "#/texts/5",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "详细数据见附件中的表格。",
+      "text": "详细数据见附件中的表格。"
+    }
+  ],
+  "pictures": [],
+  "tables": [],
+  "key_value_items": [],
+  "form_items": [],
+  "pages": {}
+}

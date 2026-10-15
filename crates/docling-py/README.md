@@ -161,7 +161,7 @@ Office/HTML/EPUB/email backends — measured side by side in the main README's
 | `llm_client` / `llm_model` / `llm_prompt` | same request (one `chat.completions.create` per picture); every embedded picture is described, the text lands in the Markdown and in `picture.meta.description`; an image input gets MarkItDown's `# Description:` section |
 | XLSX `## <sheet>` headings | same (XLS not yet: its document carries no sheet groups) |
 | PDFs via pdfminer (text layer) | the full pipeline once `docling_rs.download_models()` ran; until then the text layer, with a one-time warning |
-| `magika` / `charset_normalizer` guesses | magic bytes + container structure; `charset_normalizer` when installed (it comes with `requests`), else BOM/UTF-8/windows-1252 (#675) |
+| `magika` / `charset_normalizer` guesses | magic bytes + container structure; `charset_normalizer` when installed (it comes with `requests`), else the engine's own detection — BOM, UTF-8, a statistical guess for a non-Latin encoding (`chardetng`, #675), else windows-1252 |
 | `exiftool_path`, `style_map`, `docintel_*`, `cu_*` | accepted, ignored with a warning (EXIF/metadata: #679) |
 | plugins, `register_converter` | not supported (#680); `enable_plugins` warns |
 | picture alt text (`![alt](…)`) | not yet (#676) |

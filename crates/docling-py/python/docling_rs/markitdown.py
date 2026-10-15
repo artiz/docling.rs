@@ -45,7 +45,9 @@ code written against MarkItDown runs unchanged. What differs, deliberately:
   ODF, EPUB, ZIP, Outlook/legacy Office, images, audio, HTML, CSV, text).
   A text input that is not UTF-8 and carries no charset hint is decoded by
   ``charset_normalizer``'s guess when it is installed (``requests`` brings
-  it); otherwise the engine's BOM/UTF-8/windows-1252 detection applies (#675).
+  it); otherwise the engine's own detection applies — BOM, UTF-8, a
+  statistical guess for a non-Latin encoding (``chardetng``, #675), else
+  windows-1252.
 * **ZIP archives** convert entry by entry under MarkItDown's ``## File:``
   headings; entries docling.rs cannot convert are skipped.
 
@@ -858,7 +860,7 @@ class MarkItDown:
         # which every text backend honors first), so any Python codec name
         # works. The charset is the hint, else — for bytes that are not UTF-8 —
         # charset_normalizer's guess when it is installed (it ships with
-        # requests; the engine's own detection is BOM/UTF-8/windows-1252, #675).
+        # requests); else the engine guesses itself (chardetng, #675).
         charset = info.charset
         if ext in _TEXT_EXTENSIONS and (charset or path is None or os.path.getsize(path) < 64 << 20):
             raw = data
