@@ -29,6 +29,26 @@ def test_ipynb_outputs_forward_and_notebooks_convert():
         DocumentConverter(ipynb_outputs="all")
 
 
+def test_detect_format_reads_the_bytes():
+    """#672: ``detect_format`` names a format by its content — a path, bytes
+    or a DocumentStream — and a nameless stream converts the same way."""
+    import io
+
+    from docling_rs import DocumentConverter, DocumentStream, InputFormat, detect_format
+
+    pptx = REPO / "tests/data/pptx/sources/powerpoint_bad_text.pptx"
+    assert detect_format(pptx) == InputFormat.PPTX
+    assert detect_format(pptx.read_bytes()) == InputFormat.PPTX
+    assert detect_format(b"%PDF-1.7\n") == InputFormat.PDF
+    assert detect_format(b"<svg xmlns='http://www.w3.org/2000/svg'></svg>") == "svg"
+    assert detect_format(b"just words") is None
+    nameless = DocumentStream(name="deck", stream=io.BytesIO(pptx.read_bytes()))
+    assert detect_format(nameless) == InputFormat.PPTX
+    got = DocumentConverter().convert(nameless).document.export_to_markdown()
+    want = DocumentConverter().convert(pptx).document.export_to_markdown()
+    assert got == want and got.strip()
+
+
 def test_input_format_matches_docling_values():
     from docling_rs import InputFormat
 

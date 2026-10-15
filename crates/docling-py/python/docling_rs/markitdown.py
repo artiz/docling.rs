@@ -74,6 +74,7 @@ from urllib.parse import unquote, unquote_to_bytes, urlparse
 from urllib.request import url2pathname
 
 from . import ConversionError, DocumentConverter
+from . import detect_format as _detect_format
 from .picture_description import PictureDescriptionBaseOptions, describe_pictures
 
 __all__ = [
@@ -256,6 +257,15 @@ _MIME_EXTENSIONS = {
     "video/mp4": ".mp4",
 }
 
+#: The extension the facade routes an engine-detected format id (#672) as.
+_ENGINE_EXTENSIONS = {
+    "pages": ".pages", "numbers": ".numbers", "keynote": ".key", "djvu": ".djvu",
+    "wordperfect": ".wpd", "abiword": ".abw", "video": ".mp4", "audio": ".mp3",
+    "vtt": ".vtt", "email": ".eml", "mhtml": ".mhtml", "latex": ".tex", "svg": ".svg",
+    "doctags": ".doctags", "ipynb": ".ipynb", "epub": ".epub", "visio": ".vsdx",
+    "odt": ".odt", "ods": ".ods", "odp": ".odp", "doc": ".doc", "xls": ".xls", "ppt": ".ppt",
+}
+
 _TEXT_EXTENSIONS = {
     ".txt", ".md", ".markdown", ".text", ".qmd", ".rmd", ".csv", ".tsv", ".html", ".htm",
     ".xhtml", ".xml", ".json", ".ipynb", ".vtt", ".adoc", ".asciidoc", ".asc", ".tex", ".latex", ".svg",
@@ -355,6 +365,11 @@ def sniff_extension(data: bytes) -> Optional[str]:
         return ".m4a" if head[8:11] == b"M4A" else ".mp4"
     if head.startswith(b"{\\rtf"):
         return ".rtf"
+    # The engine's own detection (#672) for the rest of the binary and
+    # markup signatures: iWork, DjVu, WordPerfect, video, WebVTT, a message.
+    engine = _ENGINE_EXTENSIONS.get(_detect_format(data))
+    if engine is not None:
+        return engine
     # Text: decodable as UTF-8 (BOM allowed) or at least mostly printable.
     try:
         text = head.decode("utf-8-sig")

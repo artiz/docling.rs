@@ -143,9 +143,13 @@ Developed with **Claude Code** and _[TENET](https://github.com/artiz/tenet/tree/
 
 ## Status
 
-Every format in docling's pipeline converts — plus a few docling lacks — and
-a file that fails under its extension is checked by content and converted as
-what it really is, with a warning.
+Every format in docling's pipeline converts — plus a few docling lacks. A
+file with no or an unknown extension, stdin, an upload or a `data:` URL is
+typed by its content (`InputFormat::detect`, `docling_rs.detect_format`,
+`detectFormat`: the packages, the OLE files, PDF, images, audio and video,
+iWork, XML, JSON, notebooks, messages, …), and a file that fails under its
+extension is checked by content and converted as what it really is, with a
+warning.
 
 | Category | Formats |
 |---|---|

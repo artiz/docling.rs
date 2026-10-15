@@ -1192,6 +1192,15 @@ fn pandoc_from_json<'py>(
 /// limit, or one without a payload). The limits are byte counts and default
 /// to the archive limits the converter applies (`DOCLING_RS_ZIP_MAX_*`;
 /// 10 000 attachments, 256 MiB each, 1 GiB in all).
+/// The format `data` evidently is, by its content alone (#672 —
+/// `InputFormat::detect`): the format id (`"pdf"`, `"pptx"`, `"ipynb"`,
+/// `"audio"`, …), or `None` for bytes without a signature (prose, Markdown,
+/// CSV, random bytes). Signatures only, no classifier.
+#[pyfunction]
+fn detect_format(data: Bound<'_, PyBytes>) -> Option<&'static str> {
+    docling::InputFormat::detect(data.as_bytes()).map(|f| f.as_str())
+}
+
 #[pyfunction]
 #[pyo3(signature = (data, max_entries = None, max_entry_size = None, max_total_size = None))]
 #[allow(clippy::type_complexity)]
@@ -1283,6 +1292,7 @@ fn _native(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(pyo3::wrap_pyfunction!(chunk_document, m)?)?;
     m.add_function(pyo3::wrap_pyfunction!(pandoc_from_json, m)?)?;
     m.add_function(pyo3::wrap_pyfunction!(email_attachments, m)?)?;
+    m.add_function(pyo3::wrap_pyfunction!(detect_format, m)?)?;
     m.add_function(pyo3::wrap_pyfunction!(compiled_providers, m)?)?;
     #[cfg(feature = "mcp")]
     m.add_function(pyo3::wrap_pyfunction!(mcp_main, m)?)?;

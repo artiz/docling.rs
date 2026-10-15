@@ -50,8 +50,10 @@ impl SourceDocument {
             .map(str::to_ascii_lowercase);
         let bytes = std::fs::read(path)?;
         // The extension decides; without one, or with one the table does not
-        // know, the bytes do (#671): a known signature, else text as plain
-        // text — a `Makefile`, a `.cfg` in a dialect the table lacks.
+        // know, the bytes do (#672, `InputFormat::detect`): a known signature
+        // — a PPTX renamed to nothing, a PDF saved as `.bin` — else text as
+        // plain text (#671): a `Makefile`, a `.cfg` in a dialect the table
+        // lacks.
         let format = match ext.as_deref().and_then(InputFormat::from_extension) {
             Some(f) => f,
             None => crate::sniff::detect_any(&bytes)
@@ -89,10 +91,12 @@ impl SourceDocument {
     /// Build a document from bytes that arrived with a name and, maybe, a
     /// media type — an upload, a fetched URL, an email attachment. The
     /// format comes from the name's extension, else from `media_type`
-    /// ([`InputFormat::from_mime`]), else from the bytes themselves (the
-    /// signatures the converter's content sniffing knows: PDF, OOXML/ODF/EPUB packages,
-    /// OLE, RTF, HTML, the raster image headers, DjVu). The name's stem is
-    /// the document's name, as with [`Self::from_file`].
+    /// ([`InputFormat::from_mime`]), else from the bytes themselves
+    /// ([`InputFormat::detect`]: the packages, the OLE files, PDF, RTF,
+    /// HTML, the raster image headers, DjVu, audio and video containers,
+    /// iWork, XML, JSON and notebooks, MIME messages, …; else plain text
+    /// when the bytes are text, #671). The name's stem is the document's
+    /// name, as with [`Self::from_file`].
     ///
     /// # Errors
     /// [`ConversionError::UnknownFormat`] when none of the three decides —

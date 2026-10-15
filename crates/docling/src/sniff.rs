@@ -14,6 +14,20 @@
 //! group opener, the PDF header, a ZIP package's part names (OOXML, ODF and
 //! EPUB `mimetype`), an OLE compound file's stream names, HTML markup. A
 //! file none of them recognise is left with its original error.
+//!
+//! [`detect_any`] — [`InputFormat::detect`] — is the wider set a nameless
+//! input needs (#672: stdin, an upload, a `data:` URL, an email attachment,
+//! a file with no or an unknown extension): the above plus the raster image
+//! headers, DjVu, the audio and video containers by their magic (RIFF WAVE /
+//! AVI, ID3, FLAC, Ogg, ADTS and MPEG audio frames, ISO BMFF by brand,
+//! EBML), WordPerfect's prefix, Apple iWork packages (the IWA bundle, the
+//! iWork '09 XML package), and — for text — WebVTT, DocTags, SVG, AbiWord,
+//! XML (a feed, JATS, USPTO, XBRL: the `xml` route reads the dialect), JSON
+//! (a Jupyter notebook, else the docling-JSON route that renders generic
+//! JSON too), a MIME message (`multipart/related` is MHTML, the rest email)
+//! and LaTeX. Still no classifier: plain prose, Markdown, CSV and AsciiDoc
+//! are not told apart from each other, so they are left to the extension
+//! (or the plain-text route, #671).
 
 use std::io::{Cursor, Read};
 
@@ -47,11 +61,219 @@ pub(crate) fn detect(bytes: &[u8]) -> Option<InputFormat> {
 
 /// [`detect`] plus the formats a failed conversion never needs re-routing
 /// to but a nameless input (stdin, a `data:` URL, an extensionless URL
-/// with a generic `Content-Type`) does: the raster image headers and DjVu.
+/// with a generic `Content-Type`, a file with no or an unknown extension)
+/// does — see the module docs. The public [`InputFormat::detect`].
 pub(crate) fn detect_any(bytes: &[u8]) -> Option<InputFormat> {
-    detect(bytes)
-        .or_else(|| looks_like_image(bytes).then_some(InputFormat::Image))
-        .or_else(|| crate::backend::looks_like_djvu(bytes).then_some(InputFormat::Djvu))
+    if let Some(f) = detect(bytes) {
+        return Some(f);
+    }
+    if looks_like_image(bytes) {
+        return Some(InputFormat::Image);
+    }
+    if crate::backend::looks_like_djvu(bytes) {
+        return Some(InputFormat::Djvu);
+    }
+    if let Some(f) = media_kind(bytes) {
+        return Some(f);
+    }
+    // Every WordPerfect 5.0+ file starts with `ÿWPC`.
+    if bytes.starts_with(b"\xffWPC") {
+        return Some(InputFormat::WordPerfect);
+    }
+    text_kind(bytes)
+}
+
+/// Audio and video containers by their magic. The ISO BMFF brands tell
+/// `M4A`/`M4B`/`M4P` (audio) from the rest (MP4, MOV, 3GP — video);
+/// Matroska/WebM count as video (the video route copes with an audio-only
+/// track). No decoder is opened: the magic suffices.
+fn media_kind(bytes: &[u8]) -> Option<InputFormat> {
+    if bytes.len() >= 12 && bytes.starts_with(b"RIFF") {
+        return match &bytes[8..12] {
+            b"WAVE" => Some(InputFormat::Audio),
+            b"AVI " => Some(InputFormat::Video),
+            _ => None,
+        };
+    }
+    if bytes.starts_with(b"ID3") || bytes.starts_with(b"fLaC") || bytes.starts_with(b"OggS") {
+        return Some(InputFormat::Audio);
+    }
+    if bytes.len() >= 12 && &bytes[4..8] == b"ftyp" {
+        return Some(match &bytes[8..12] {
+            // HEIF / AVIF stills share the container (#211).
+            b"heic" | b"heix" | b"hevc" | b"hevx" | b"mif1" | b"msf1" | b"avif" | b"avis" => {
+                InputFormat::Image
+            }
+            brand
+                if brand.starts_with(b"M4A")
+                    || brand.starts_with(b"M4B")
+                    || brand.starts_with(b"M4P") =>
+            {
+                InputFormat::Audio
+            }
+            _ => InputFormat::Video,
+        });
+    }
+    if bytes.starts_with(b"\x1A\x45\xDF\xA3") {
+        return Some(InputFormat::Video);
+    }
+    // An MPEG audio frame (an MP3 without an ID3 tag) or an ADTS AAC frame:
+    // the 11-bit sync word, a version and a layer that are not the reserved
+    // ones (ADTS is "MPEG-4, layer 0" in the same bits).
+    if bytes.len() >= 4
+        && bytes[0] == 0xFF
+        && (bytes[1] & 0xE0) == 0xE0
+        && (bytes[1] & 0x18) != 0x08
+    {
+        let layer = bytes[1] & 0x06;
+        let adts = layer == 0 && (bytes[1] & 0x10) == 0x10;
+        if adts || layer != 0 {
+            return Some(InputFormat::Audio);
+        }
+    }
+    None
+}
+
+/// The text formats a signature at the head tells apart — see the module
+/// docs. `None` for prose, Markdown, CSV and the like.
+fn text_kind(bytes: &[u8]) -> Option<InputFormat> {
+    let head = text_head(bytes);
+    if head.is_empty() {
+        return None;
+    }
+    if head.starts_with(b"WEBVTT") {
+        return Some(InputFormat::Vtt);
+    }
+    if head[0] == b'<' {
+        let lower = head.to_ascii_lowercase();
+        let has = |needle: &[u8]| lower.windows(needle.len()).any(|w| w == needle);
+        if has(b"<doctag") || has(b"<loc_") || has(b"<otsl>") {
+            return Some(InputFormat::DocTags);
+        }
+        if has(b"<svg") {
+            return Some(InputFormat::Svg);
+        }
+        if has(b"<abiword") {
+            return Some(InputFormat::Abiword);
+        }
+        if lower.starts_with(b"<?xml")
+            || lower.starts_with(b"<!doctype")
+            || looks_like_xml_root(&lower, bytes)
+        {
+            return Some(InputFormat::Xml);
+        }
+        return None;
+    }
+    if head[0] == b'{' || head[0] == b'[' {
+        return json_kind(bytes);
+    }
+    if head[0] == b'\\' {
+        let has = |needle: &[u8]| head.windows(needle.len()).any(|w| w == needle);
+        if has(b"\\documentclass") || has(b"\\begin{document}") {
+            return Some(InputFormat::Latex);
+        }
+        return None;
+    }
+    message_kind(head)
+}
+
+/// A bare XML document without a declaration: an element start tag at the
+/// head (`<rss `, `<feed xmlns=`, `<article>`) whose end tag closes the
+/// file — so `<b>bold</b> words` (inline markup in prose) is not one.
+/// (Markup that is HTML was taken earlier.)
+fn looks_like_xml_root(lower: &[u8], bytes: &[u8]) -> bool {
+    let name_end = lower[1..]
+        .iter()
+        .position(|&c| !(c.is_ascii_alphanumeric() || matches!(c, b'_' | b':' | b'-' | b'.')))
+        .map(|i| i + 1)
+        .unwrap_or(lower.len());
+    let name = &lower[1..name_end];
+    let starts_like_a_tag = name
+        .first()
+        .is_some_and(|c| c.is_ascii_alphabetic() || *c == b'_');
+    let delimited = matches!(
+        lower.get(name_end),
+        Some(b' ' | b'>' | b'/' | b'\n' | b'\r' | b'\t')
+    );
+    if !(starts_like_a_tag && delimited) {
+        return false;
+    }
+    let tail = &bytes[bytes.len().saturating_sub(512)..];
+    let tail = tail.to_ascii_lowercase();
+    let end = tail
+        .iter()
+        .rposition(|c| !c.is_ascii_whitespace())
+        .map_or(0, |i| i + 1);
+    let mut close = Vec::with_capacity(name.len() + 3);
+    close.extend_from_slice(b"</");
+    close.extend_from_slice(name);
+    close.push(b'>');
+    tail[..end].ends_with(&close)
+}
+
+/// Well-formed JSON: a Jupyter notebook by its keys, else the docling-JSON
+/// route, which renders a `DoclingDocument` and keeps any other JSON as a
+/// code block (#671). The whole input is validated, nothing is kept.
+fn json_kind(bytes: &[u8]) -> Option<InputFormat> {
+    let text = std::str::from_utf8(bytes.strip_prefix(b"\xEF\xBB\xBF").unwrap_or(bytes)).ok()?;
+    serde_json::from_str::<serde::de::IgnoredAny>(text).ok()?;
+    Some(if crate::backend::ipynb::looks_like_notebook(text) {
+        InputFormat::Ipynb
+    } else {
+        InputFormat::JsonDocling
+    })
+}
+
+/// A MIME message by its header block: `Name: value` lines from the first
+/// line on, at least two of them the message headers everyone writes. A
+/// `multipart/related` body is a web archive (MHTML); the rest is email.
+fn message_kind(head: &[u8]) -> Option<InputFormat> {
+    let text = String::from_utf8_lossy(head).to_ascii_lowercase();
+    fn is_header(line: &str) -> Option<&str> {
+        let (name, rest) = line.split_once(':')?;
+        (!name.is_empty()
+            && name.bytes().all(|c| c.is_ascii_alphanumeric() || c == b'-')
+            && (rest.is_empty() || rest.starts_with(' ') || rest.starts_with('\t')))
+        .then_some(name)
+    }
+    let mut lines = text.lines();
+    is_header(lines.next()?)?;
+    const KNOWN: &[&str] = &[
+        "from",
+        "to",
+        "cc",
+        "subject",
+        "date",
+        "received",
+        "return-path",
+        "message-id",
+        "mime-version",
+        "content-type",
+        "delivered-to",
+        "sender",
+        "reply-to",
+        "snapshot-content-location",
+    ];
+    let mut known = 0;
+    let mut related = false;
+    for line in text.lines().take_while(|l| !l.trim().is_empty()) {
+        if line.contains("multipart/related") {
+            related = true;
+        }
+        if let Some(name) = is_header(line) {
+            if KNOWN.contains(&name) || name.starts_with("x-") {
+                known += 1;
+            }
+        }
+    }
+    if known < 2 {
+        return None;
+    }
+    Some(if related {
+        InputFormat::Mhtml
+    } else {
+        InputFormat::Email
+    })
 }
 
 /// Whether `bytes` are text (#671): the fallback route for an unknown or
@@ -139,6 +361,9 @@ fn zip_kind(bytes: &[u8]) -> Option<InputFormat> {
     if has(&zip, "visio/document.xml") {
         return Some(InputFormat::Visio);
     }
+    if let Some(f) = iwork_kind(&mut zip) {
+        return Some(f);
+    }
     let mut mimetype = String::new();
     zip.by_name("mimetype")
         .ok()?
@@ -155,6 +380,77 @@ fn zip_kind(bytes: &[u8]) -> Option<InputFormat> {
         _ if mime.starts_with("application/vnd.oasis.opendocument.presentation") => {
             Some(InputFormat::Odp)
         }
+        _ => None,
+    }
+}
+
+/// An Apple iWork package: the IWA bundle (`Index/Document.iwa`, at the root
+/// or under a `<name>.pages/` directory, or zipped a second time into an
+/// `Index.zip`) — Keynote by its slide archives, Pages and Numbers by the
+/// root archive's message type (`TP.DocumentArchive` = 10000,
+/// `TN.DocumentArchive` = 1) — or the iWork '09 XML package (`index.xml` /
+/// `index.apxl`, by its root element).
+fn iwork_kind(zip: &mut zip::ZipArchive<Cursor<&[u8]>>) -> Option<InputFormat> {
+    let names: Vec<String> = zip.file_names().map(str::to_string).collect();
+    let is_slide = |n: &str| {
+        n.rsplit_once("Index/").is_some_and(|(_, m)| {
+            m.starts_with("Slide-") || m.starts_with("Slide.") || m.starts_with("MasterSlide")
+        })
+    };
+    let read_capped = |zip: &mut zip::ZipArchive<Cursor<&[u8]>>, name: &str, cap: u64| {
+        let mut buf = Vec::new();
+        zip.by_name(name)
+            .ok()?
+            .take(cap)
+            .read_to_end(&mut buf)
+            .ok()?;
+        Some(buf)
+    };
+    if let Some(index) = names
+        .iter()
+        .find(|n| n.ends_with("index.xml") || n.ends_with("index.apxl"))
+    {
+        let head = read_capped(zip, index, 2048)?;
+        let lower = head.to_ascii_lowercase();
+        let has = |needle: &[u8]| lower.windows(needle.len()).any(|w| w == needle);
+        return if has(b"<sl:document") {
+            Some(InputFormat::Pages)
+        } else if has(b"<ls:document") {
+            Some(InputFormat::Numbers)
+        } else if has(b"<key:presentation") {
+            Some(InputFormat::Keynote)
+        } else {
+            None
+        };
+    }
+    // The bundle's index: the members themselves, or the ones inside Index.zip.
+    let (members, document): (Vec<String>, Option<Vec<u8>>) =
+        match names.iter().find(|n| n.ends_with("Index/Document.iwa")) {
+            Some(doc) => (names.clone(), read_capped(zip, doc, 8 << 20)),
+            None => {
+                let inner = names
+                    .iter()
+                    .find(|n| *n == "Index.zip" || n.ends_with("/Index.zip"))?;
+                let bytes = read_capped(zip, inner, 64 << 20)?;
+                let mut inner = zip::ZipArchive::new(Cursor::new(bytes.as_slice())).ok()?;
+                let members: Vec<String> = inner.file_names().map(str::to_string).collect();
+                let doc = members
+                    .iter()
+                    .find(|n| n.ends_with("Index/Document.iwa"))?
+                    .clone();
+                let document = read_capped(&mut inner, &doc, 8 << 20);
+                (members, document)
+            }
+        };
+    if members.iter().any(|n| is_slide(n)) {
+        return Some(InputFormat::Keynote);
+    }
+    let stream = crate::backend::iwork::decode_iwa(&document?).ok()?;
+    let mut archives = Vec::new();
+    crate::backend::iwork::parse_archives(&stream, &mut archives, false);
+    match archives.first()?.ty {
+        10000 => Some(InputFormat::Pages),
+        1 => Some(InputFormat::Numbers),
         _ => None,
     }
 }
@@ -271,7 +567,10 @@ mod tests {
         assert_eq!(detect_any(b"{\\rtf1\\ansi x}"), Some(InputFormat::Rtf));
         assert_eq!(detect_any(b"just some words"), None);
         assert_eq!(detect_any(b""), None);
-        // A WAV file is a RIFF container too — not an image.
-        assert_eq!(detect_any(b"RIFF\0\0\0\0WAVEfmt "), None);
+        // A WAV file is a RIFF container too — audio, not an image.
+        assert_eq!(
+            detect_any(b"RIFF\0\0\0\0WAVEfmt "),
+            Some(InputFormat::Audio)
+        );
     }
 }

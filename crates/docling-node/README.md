@@ -417,6 +417,7 @@ models, #388), and `pages: 'A-B'` converts only that
 | `emailAttachments(input, options?)` | `EmailAttachment[]` | Same, over in-memory message bytes (`{ name, data }`). |
 | `supportedFormats()` | `string[]` | Supported input format ids. |
 | `formatFromName(name)` | `string \| null` | Detect a format id from a filename/extension. |
+| `detectFormat(data)` | `string \| null` | The format id a `Buffer` evidently is by its content (#672: PDF, the Office / ODF / EPUB / iWork packages, OLE files, RTF, HTML, images, DjVu, audio/video containers, WordPerfect, WebVTT, DocTags, SVG, AbiWord, XML, JSON and notebooks, MIME messages, LaTeX); `null` for text without a signature. What `convert({ name, data })` does for a name with no or an unknown extension. |
 | `checkDependencies(options?)` | `DependencyStatus` | Report which PDF/image deps are present. |
 
 `Pipeline` is the reusable warm PDF/image converter: `new Pipeline(converterOptions)`

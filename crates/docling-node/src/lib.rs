@@ -2467,6 +2467,19 @@ pub fn format_from_name(name: String) -> Option<String> {
     infer_format(&name).map(|f| f.as_str().to_string())
 }
 
+/// The format a buffer evidently is, by its content alone (#672 — the
+/// engine's `InputFormat::detect`): the format id, or `null` for bytes
+/// without a signature (prose, Markdown, CSV, random bytes). Signatures
+/// only: PDF, the Office / ODF / EPUB / iWork packages, the OLE files,
+/// RTF, HTML, the raster images, DjVu, audio and video containers,
+/// WordPerfect, WebVTT, DocTags, SVG, AbiWord, XML, JSON and Jupyter
+/// notebooks, MIME messages, LaTeX. What `convert({ name, data })` does
+/// for a name with no or an unknown extension.
+#[napi]
+pub fn detect_format(data: Buffer) -> Option<String> {
+    InputFormat::detect(&data).map(|f| f.as_str().to_string())
+}
+
 // ---------------------------------------------------------------------------
 // Non-exported helpers.
 // ---------------------------------------------------------------------------
