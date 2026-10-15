@@ -24,38 +24,61 @@
         "$ref": "#/tables/1"
       },
       {
-        "$ref": "#/texts/0"
+        "$ref": "#/groups/0"
       },
       {
-        "$ref": "#/texts/1"
-      },
-      {
-        "$ref": "#/texts/2"
-      },
-      {
-        "$ref": "#/texts/3"
-      },
-      {
-        "$ref": "#/texts/4"
-      },
-      {
-        "$ref": "#/texts/5"
+        "$ref": "#/groups/1"
       }
     ],
     "content_layer": "body",
     "name": "_root_",
     "label": "unspecified"
   },
-  "groups": [],
+  "groups": [
+    {
+      "self_ref": "#/groups/0",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [
+        {
+          "$ref": "#/texts/0"
+        },
+        {
+          "$ref": "#/texts/1"
+        },
+        {
+          "$ref": "#/texts/2"
+        }
+      ],
+      "content_layer": "furniture",
+      "name": "page header",
+      "label": "section"
+    },
+    {
+      "self_ref": "#/groups/1",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [
+        {
+          "$ref": "#/texts/3"
+        }
+      ],
+      "content_layer": "furniture",
+      "name": "page footer",
+      "label": "section"
+    }
+  ],
   "texts": [
     {
       "self_ref": "#/texts/0",
       "parent": {
-        "$ref": "#/body"
+        "$ref": "#/groups/0"
       },
       "children": [],
       "content_layer": "furniture",
-      "label": "page_header",
+      "label": "text",
       "prov": [],
       "orig": "Alpha Br",
       "text": "Alpha Br"
@@ -63,11 +86,11 @@
     {
       "self_ref": "#/texts/1",
       "parent": {
-        "$ref": "#/body"
+        "$ref": "#/groups/0"
       },
       "children": [],
       "content_layer": "furniture",
-      "label": "page_header",
+      "label": "text",
       "prov": [],
       "orig": "Charlie",
       "text": "Charlie"
@@ -75,11 +98,11 @@
     {
       "self_ref": "#/texts/2",
       "parent": {
-        "$ref": "#/body"
+        "$ref": "#/groups/0"
       },
       "children": [],
       "content_layer": "furniture",
-      "label": "page_header",
+      "label": "text",
       "prov": [],
       "orig": "Delta Echo",
       "text": "Delta Echo"
@@ -87,38 +110,14 @@
     {
       "self_ref": "#/texts/3",
       "parent": {
-        "$ref": "#/body"
+        "$ref": "#/groups/1"
       },
       "children": [],
       "content_layer": "furniture",
-      "label": "page_header",
-      "prov": [],
-      "orig": "Delta EFoxtrot Golf Hotel Alpha Bravo Charli",
-      "text": "Delta EFoxtrot Golf Hotel Alpha Bravo Charli"
-    },
-    {
-      "self_ref": "#/texts/4",
-      "parent": {
-        "$ref": "#/body"
-      },
-      "children": [],
-      "content_layer": "furniture",
-      "label": "page_footer",
+      "label": "text",
       "prov": [],
       "orig": "Foxtrot Golf Hotel Alpha Bravo Charlie D\tEcho Foxtrot Golf Hotel \tAlphaB",
       "text": "Foxtrot Golf Hotel Alpha Bravo Charlie D\tEcho Foxtrot Golf Hotel \tAlphaB"
-    },
-    {
-      "self_ref": "#/texts/5",
-      "parent": {
-        "$ref": "#/body"
-      },
-      "children": [],
-      "content_layer": "furniture",
-      "label": "page_footer",
-      "prov": [],
-      "orig": "Foxtrot Golf Hotel Alpha Bravo Charlie Delta Echo Foxt\tGolf Hotel Alpha Bravo C\tDeltaE",
-      "text": "Foxtrot Golf Hotel Alpha Bravo Charlie Delta Echo Foxt\tGolf Hotel Alpha Bravo C\tDeltaE"
     }
   ],
   "pictures": [],

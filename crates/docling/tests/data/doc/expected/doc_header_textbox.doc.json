@@ -21,14 +21,29 @@
         "$ref": "#/texts/0"
       },
       {
-        "$ref": "#/texts/1"
+        "$ref": "#/groups/0"
       }
     ],
     "content_layer": "body",
     "name": "_root_",
     "label": "unspecified"
   },
-  "groups": [],
+  "groups": [
+    {
+      "self_ref": "#/groups/0",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [
+        {
+          "$ref": "#/texts/1"
+        }
+      ],
+      "content_layer": "furniture",
+      "name": "page header",
+      "label": "section"
+    }
+  ],
   "texts": [
     {
       "self_ref": "#/texts/0",
@@ -45,11 +60,11 @@
     {
       "self_ref": "#/texts/1",
       "parent": {
-        "$ref": "#/body"
+        "$ref": "#/groups/0"
       },
       "children": [],
       "content_layer": "furniture",
-      "label": "page_header",
+      "label": "text",
       "prov": [],
       "orig": "MARK_HEADER_TEXTBOX_TEXT",
       "text": "MARK_HEADER_TEXTBOX_TEXT"

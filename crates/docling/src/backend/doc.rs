@@ -174,8 +174,12 @@ impl DeclarativeBackend for DocBackend {
         // main text, footnotes, headers, comments, endnotes, text boxes.
         let ftn_base = ccp_text;
         let hdd_base = ftn_base + fib.ccp_ftn as u64;
-        let edn_base = hdd_base + fib.ccp_hdd as u64 + fib.ccp_atn as u64;
+        let atn_base = hdd_base + fib.ccp_hdd as u64;
+        let edn_base = atn_base + fib.ccp_atn as u64;
         let txbx_base = edn_base + fib.ccp_edn as u64;
+        // The comments (#699): where each is anchored in the main text
+        // (`PlcfandRef`), for the `comments` back-references.
+        let comment_cps = comment_anchor_cps(fib.part(&table, Fib::PLCF_AND_REF), Atrd::Word97);
         let story = Story {
             format: DocFormat::Word97,
             word: &word,
@@ -194,6 +198,7 @@ impl DeclarativeBackend for DocBackend {
             placed: Default::default(),
             fonts: &fonts,
             lists: &lists,
+            comment_cps: &comment_cps,
         };
 
         // Walk the main-document text paragraph by paragraph, assembling nodes.
@@ -234,19 +239,29 @@ impl DeclarativeBackend for DocBackend {
                 fib.ccp_hdr_txbx as u64,
             ),
         };
-        for (footer, text) in header_footer_texts(
-            &story,
-            &mut chpx_cache,
-            fib.part(&table, Fib::PLCF_HDD),
-            hdd_base,
-            fib.ccp_hdd as u64,
-            &header_boxes,
-        ) {
-            doc.push(Node::FurnitureText {
-                label: if footer { "page_footer" } else { "page_header" }.into(),
-                text: escape_text(&text),
-            });
-        }
+        // Which stories Word shows (#697): the first-page pair only in a
+        // section with a title page (`sprmSFTitlePage` in its SEPX), the
+        // even pair only when the document has facing pages (the DOP).
+        let shown = StorySelection {
+            title_pages: section_title_pages(
+                &word,
+                fib.part(&table, Fib::PLCF_SED),
+                DocFormat::Word97,
+            ),
+            facing_pages: dop_facing_pages(fib.part(&table, Fib::DOP)),
+        };
+        push_furniture_stories(
+            &mut doc,
+            header_footer_texts(
+                &story,
+                &mut chpx_cache,
+                fib.part(&table, Fib::PLCF_HDD),
+                hdd_base,
+                fib.ccp_hdd as u64,
+                &header_boxes,
+                &shown,
+            ),
+        );
         for (refs, txt, base, len) in [
             (Fib::PLCF_FND_REF, Fib::PLCF_FND_TXT, ftn_base, fib.ccp_ftn),
             (Fib::PLCF_END_REF, Fib::PLCF_END_TXT, edn_base, fib.ccp_edn),
@@ -265,6 +280,22 @@ impl DeclarativeBackend for DocBackend {
                 });
             }
         }
+        // The comments (#699): the annotation story, each a notes-layer
+        // `comment_section` after the body, as the DOCX backend's.
+        push_comments(
+            &mut doc,
+            comment_texts(
+                &story,
+                &mut chpx_cache,
+                fib.part(&table, Fib::PLCF_AND_REF),
+                fib.part(&table, Fib::PLCF_AND_TXT),
+                fib.part(&table, Fib::GRP_XST_ATN_OWNERS),
+                fib.part(&table, Fib::ATRD_EXTRA),
+                atn_base,
+                fib.ccp_atn as u64,
+                Atrd::Word97,
+            ),
+        );
         Ok(doc)
     }
 }
@@ -289,6 +320,9 @@ struct Story<'a> {
     /// The font table (`SttbfFfn`): name per `ftc` (#588).
     fonts: &'a [String],
     lists: &'a ListTables,
+    /// The main-text CP of each comment's reference mark (#699), in
+    /// comment order — the paragraph holding it gets the back-reference.
+    comment_cps: &'a [u64],
 }
 
 impl Story<'_> {
@@ -346,6 +380,16 @@ impl Story<'_> {
     ) {
         let mut builder = NodeBuilder::new(self.lists.clone());
         let mut para = ParaAccum::default();
+        let mut para_start = from;
+        // The comments anchored in CPs `a..=b` (#699), by index.
+        let comments_in = |a: u64, b: u64| -> Vec<usize> {
+            self.comment_cps
+                .iter()
+                .enumerate()
+                .filter(|(_, c)| (a..=b).contains(c))
+                .map(|(i, _)| i)
+                .collect()
+        };
         for cp in from..to {
             let Some((ch, fc)) = self.char_at(cp) else {
                 break;
@@ -355,6 +399,8 @@ impl Story<'_> {
                     // Paragraph / cell / page mark: property lookup is by
                     // the mark's own FC.
                     let props = paragraph_props(self.word, self.bte, fc, self.format);
+                    para.comments = comments_in(para_start, cp);
+                    para_start = cp + 1;
                     para.finish(ch, props, self.stis, &mut builder, doc);
                 }
                 // Inline picture anchor: the run's CHPX locates the PICF.
@@ -388,6 +434,7 @@ impl Story<'_> {
                 ),
             }
         }
+        para.comments = comments_in(para_start, to);
         para.finish('\r', ParaProps::default(), self.stis, &mut builder, doc);
         builder.flush(doc);
     }
@@ -460,14 +507,140 @@ struct HeaderBoxes {
     stories: std::collections::HashMap<u32, (u64, u64)>,
 }
 
-/// Each section's header / footer text (#535): `PlcfHdd`'s CPs into the
-/// header story — six separator stories first, then per section even /
-/// odd (default) / first header and footer, as `(is_footer, paragraph)`
-/// in reading order (default, first, even — headers before footers), each
-/// distinct paragraph once. The text boxes anchored in a header or footer
-/// story (#574) come first, as the DOCX backend's `textbox` group comes
-/// before the part's own paragraphs; a box no story anchors follows as
-/// header text, so it is never lost.
+/// Which of a section's header / footer stories Word shows (#697) — the
+/// `.docx` backend's rule (`header_footer_parts`): the odd (default) pair
+/// always, the first-page pair only in a section with a title page
+/// (`sprmSFTitlePage` in its SEPX; `w:titlePg`), the even pair only when
+/// the document has facing pages (`DopBase.fFacingPages`;
+/// `w:evenAndOddHeaders`). A story a section keeps without the flag is a
+/// leftover Word ignores.
+struct StorySelection {
+    /// Per section, in `PlcfSed` order.
+    title_pages: Vec<bool>,
+    facing_pages: bool,
+}
+
+impl StorySelection {
+    fn shows(&self, section: usize, kind: StoryKind) -> bool {
+        match kind {
+            StoryKind::Default => true,
+            StoryKind::First => self.title_pages.get(section).copied().unwrap_or(false),
+            StoryKind::Even => self.facing_pages,
+        }
+    }
+}
+
+#[derive(Clone, Copy)]
+enum StoryKind {
+    First,
+    Default,
+    Even,
+}
+
+/// The stories of a section in reading order — first-page, default (odd),
+/// even; headers before footers — as `(PlcfHdd slot, is_footer, kind)`.
+/// The slots within a section are even header, odd header, even footer,
+/// odd footer, first header, first footer ([MS-DOC] 2.8.17).
+const STORY_ORDER: [(usize, bool, StoryKind); 6] = [
+    (4, false, StoryKind::First),
+    (1, false, StoryKind::Default),
+    (0, false, StoryKind::Even),
+    (5, true, StoryKind::First),
+    (3, true, StoryKind::Default),
+    (2, true, StoryKind::Even),
+];
+
+/// Each section's SEPX grpprl: `plcfsed` (`PlcfSed`, [MS-DOC] 2.8.26) is
+/// `n + 1` CPs then `n` 12-byte SEDs whose `fcSepx` (at byte 2) locates
+/// the SEPX — a 2-byte count, then the sprms — in `WordDocument`; the
+/// same layout in Word 6/95. An unreadable SEPX is an empty grpprl.
+fn section_sepxs<'a>(word: &'a [u8], plcfsed: &[u8]) -> Vec<&'a [u8]> {
+    let Some(n) = plcfsed.len().checked_sub(4).map(|l| l / 16) else {
+        return Vec::new();
+    };
+    (0..n)
+        .map(|i| {
+            let sed = (n + 1) * 4 + i * 12;
+            let Some(fc_sepx) = u32_at(plcfsed, sed + 2) else {
+                return &[][..];
+            };
+            let at = fc_sepx as usize;
+            let Some(cb) = u16_at(word, at) else {
+                return &[][..];
+            };
+            word.get(at + 2..at + 2 + cb as usize).unwrap_or(&[])
+        })
+        .collect()
+}
+
+/// Per section, whether its SEPX sets a title page (#697): Word 97's
+/// `sprmSFTitlePage` (0x300A), Word 6/95's opcode 143.
+fn section_title_pages(word: &[u8], plcfsed: &[u8], format: DocFormat) -> Vec<bool> {
+    section_sepxs(word, plcfsed)
+        .into_iter()
+        .map(|grpprl| {
+            let mut title = false;
+            match format {
+                DocFormat::Word97 => walk_sprms(grpprl, |op, operand| {
+                    if op == 0x300A {
+                        title = operand[0] != 0;
+                    }
+                }),
+                DocFormat::Word6 => walk_word6_sprms(grpprl, |op, operand| {
+                    if op == 143 {
+                        title = operand[0] != 0;
+                    }
+                }),
+            }
+            title
+        })
+        .collect()
+}
+
+/// `DopBase.fFacingPages` ([MS-DOC] 2.7.2): bit 0 of the DOP's first byte
+/// — the document distinguishes even and odd pages, so its even-page
+/// headers and footers are shown. The same bit in a Word 6/95 DOP.
+fn dop_facing_pages(dop: &[u8]) -> bool {
+    dop.first().is_some_and(|b| b & 1 != 0)
+}
+
+/// Walk a Word 97 grpprl ([MS-DOC] 2.2.5.1), handing each `(sprm,
+/// operand)` to `f`: a 2-byte sprm code whose `spra` (top 3 bits) sizes
+/// the operand — 0/1: 1 byte, 2/4/5: 2, 3: 4, 7: 3, 6: a count byte then
+/// that many (`sprmTDefTable`'s 2-byte count never meets this walk). Ends
+/// at a truncated operand.
+fn walk_sprms(mut sprms: &[u8], mut f: impl FnMut(u16, &[u8])) {
+    while sprms.len() >= 2 {
+        let sprm = u16::from_le_bytes([sprms[0], sprms[1]]);
+        sprms = &sprms[2..];
+        let len = match sprm >> 13 {
+            0 | 1 => 1,
+            2 | 4 | 5 => 2,
+            3 => 4,
+            7 => 3,
+            _ => match sprms.first() {
+                Some(&cb) => 1 + cb as usize,
+                None => return,
+            },
+        };
+        if sprms.len() < len {
+            return;
+        }
+        f(sprm, &sprms[..len]);
+        sprms = &sprms[len..];
+    }
+}
+
+/// Each shown header / footer story's paragraphs (#535, #697): `PlcfHdd`'s
+/// CPs into the header story — six separator stories first, then six per
+/// section — read in [`STORY_ORDER`] through the section's
+/// [`StorySelection`], as `(is_footer, paragraphs)` per story, a
+/// paragraph already emitted for that kind left out (the same header in
+/// every section is one header). The text boxes anchored in a story
+/// (#574) come first, as the DOCX backend's `textbox` group comes before
+/// the part's own paragraphs; a box anchored in a story Word does not
+/// show goes with it; one no story anchors follows as a header of its
+/// own, so it is never lost.
 fn header_footer_texts(
     story: &Story,
     cache: &mut ChpxCache,
@@ -475,49 +648,40 @@ fn header_footer_texts(
     base: u64,
     len: u64,
     boxes: &HeaderBoxes,
-) -> Vec<(bool, String)> {
+    shown: &StorySelection,
+) -> Vec<(bool, Vec<String>)> {
     let cps: Vec<u64> = plc
         .chunks_exact(4)
         .filter_map(|c| u32_at(c, 0).map(u64::from))
         .collect();
-    let mut out: Vec<(bool, String)> = Vec::new();
-    let push = |out: &mut Vec<(bool, String)>, footer: bool, text: String| {
-        if !out.iter().any(|(f, t)| *f == footer && *t == text) {
-            out.push((footer, text));
-        }
-    };
+    let mut out = FurnitureStories::default();
     let mut placed: std::collections::HashSet<u32> = Default::default();
     let mut section = 6;
+    let mut index = 0;
     while section + 6 < cps.len() {
-        // Story order within a section: even hdr, odd hdr, even ftr, odd
-        // ftr, first hdr, first ftr.
-        for (k, footer) in [
-            (1, false),
-            (4, false),
-            (0, false),
-            (3, true),
-            (5, true),
-            (2, true),
-        ] {
+        for (k, footer, kind) in STORY_ORDER {
             let (a, b) = (cps[section + k], cps[section + k + 1].min(len));
             if a >= b {
                 continue;
             }
+            let visible = shown.shows(index, kind);
+            let mut texts = Vec::new();
             for &(cp, spid) in &boxes.anchors {
                 let Some(&(ta, tb)) = boxes.stories.get(&spid) else {
                     continue;
                 };
-                if (a..b).contains(&cp) && placed.insert(spid) {
-                    for text in story.paragraphs(cache, ta, tb) {
-                        push(&mut out, footer, text);
-                    }
+                if (a..b).contains(&cp) && placed.insert(spid) && visible {
+                    texts.extend(story.paragraphs(cache, ta, tb));
                 }
             }
-            for text in story.paragraphs(cache, base + a, base + b) {
-                push(&mut out, footer, text);
+            if !visible {
+                continue;
             }
+            texts.extend(story.paragraphs(cache, base + a, base + b));
+            out.push(footer, texts);
         }
         section += 6;
+        index += 1;
     }
     let mut rest: Vec<(u64, u64)> = boxes
         .stories
@@ -527,11 +691,51 @@ fn header_footer_texts(
         .collect();
     rest.sort_unstable();
     for (ta, tb) in rest {
-        for text in story.paragraphs(cache, ta, tb) {
-            push(&mut out, false, text);
+        out.push(false, story.paragraphs(cache, ta, tb));
+    }
+    out.stories
+}
+
+/// The header / footer stories to emit, each distinct paragraph once per
+/// kind.
+#[derive(Default)]
+struct FurnitureStories {
+    stories: Vec<(bool, Vec<String>)>,
+    seen: std::collections::HashSet<(bool, String)>,
+}
+
+impl FurnitureStories {
+    fn push(&mut self, footer: bool, texts: Vec<String>) {
+        let texts: Vec<String> = texts
+            .into_iter()
+            .filter(|t| self.seen.insert((footer, t.clone())))
+            .collect();
+        if !texts.is_empty() {
+            self.stories.push((footer, texts));
         }
     }
-    out
+}
+
+/// The headers and footers as the DOCX backend shapes them (#697,
+/// docling's `_add_header_footer`): a furniture-layer `section` group
+/// named `page header` / `page footer` per story, holding its paragraphs
+/// as text items — so the JSON of a `.doc` and of its `.docx` twin agree,
+/// and a consumer selecting furniture by group name finds it. Markdown
+/// leaves furniture out as before.
+fn push_furniture_stories(doc: &mut DoclingDocument, stories: Vec<(bool, Vec<String>)>) {
+    for (footer, texts) in stories {
+        doc.push(Node::Group {
+            label: "section".into(),
+            name: Some(if footer { "page footer" } else { "page header" }.into()),
+            layer: Some(docling_core::ContentLayer::Furniture),
+            children: texts
+                .into_iter()
+                .map(|t| Node::Paragraph {
+                    text: escape_text(&t),
+                })
+                .collect(),
+        });
+    }
 }
 
 /// The footnote (or endnote) bodies (#535): `refs` (PlcffndRef: `n + 1`
@@ -558,6 +762,203 @@ fn note_texts(
         })
         .filter(|t| !t.is_empty())
         .collect()
+}
+
+/// The two layouts of a comment reference's descriptor (#699): Word 97's
+/// `ATRDPre10` ([MS-DOC] 2.9.4) — `xstUsrInitl` (a 2-byte count and nine
+/// UTF-16 units, 20 bytes), `ibst`, `ak`, `grfbmc`, `lTagBkmk`, 30 bytes
+/// — and Word 6/95's, whose initials are a 10-byte 8-bit Pascal string
+/// (20 bytes).
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Atrd {
+    Word97,
+    Word6,
+}
+
+impl Atrd {
+    fn size(self) -> usize {
+        match self {
+            Atrd::Word97 => 30,
+            Atrd::Word6 => 20,
+        }
+    }
+
+    /// The reviewer's initials and the index of their name.
+    fn initials_and_owner(self, atrd: &[u8]) -> (String, Option<usize>) {
+        match self {
+            Atrd::Word97 => {
+                let cch = u16_at(atrd, 0).unwrap_or(0).min(9) as usize;
+                let units: Vec<u16> = (0..cch).filter_map(|i| u16_at(atrd, 2 + i * 2)).collect();
+                let initials = String::from_utf16_lossy(&units).trim().to_string();
+                (initials, u16_at(atrd, 20).map(usize::from))
+            }
+            Atrd::Word6 => {
+                let cb = atrd.first().copied().unwrap_or(0).min(9) as usize;
+                let initials: String = atrd
+                    .get(1..1 + cb)
+                    .unwrap_or(&[])
+                    .iter()
+                    .map(|&b| cp1252(b))
+                    .collect();
+                (
+                    initials.trim().to_string(),
+                    u16_at(atrd, 10).map(usize::from),
+                )
+            }
+        }
+    }
+
+    /// The reviewers' names: Word 97's `GrpXstAtnOwners` (XSTs — a 2-byte
+    /// count, then UTF-16 units), Word 6/95's `grpStAtnOwners` (8-bit
+    /// Pascal strings).
+    fn owners(self, grp: &[u8]) -> Vec<String> {
+        let mut out = Vec::new();
+        let mut at = 0;
+        match self {
+            Atrd::Word97 => {
+                while let Some(cch) = u16_at(grp, at) {
+                    let units: Vec<u16> = (0..cch as usize)
+                        .filter_map(|i| u16_at(grp, at + 2 + i * 2))
+                        .collect();
+                    out.push(String::from_utf16_lossy(&units).trim().to_string());
+                    at += 2 + cch as usize * 2;
+                }
+            }
+            Atrd::Word6 => {
+                while let Some(&cb) = grp.get(at) {
+                    let name: String = grp
+                        .get(at + 1..at + 1 + cb as usize)
+                        .unwrap_or(&[])
+                        .iter()
+                        .map(|&b| cp1252(b))
+                        .collect();
+                    out.push(name.trim().to_string());
+                    at += 1 + cb as usize;
+                }
+            }
+        }
+        out
+    }
+}
+
+/// One comment of the annotation story (#699): docling's note text,
+/// `[author: {name} ({initials}), time: {date}]: {text}` (the parts the
+/// file lacks left out — a Word 97/2000 file has no comment dates). Where
+/// it is anchored is [`comment_anchor_cps`]'s.
+struct Comment {
+    text: String,
+}
+
+/// The main-text CP of each comment's reference mark, from `PlcfandRef`
+/// (`n + 1` CPs, then `n` descriptors), in comment order.
+fn comment_anchor_cps(refs: &[u8], layout: Atrd) -> Vec<u64> {
+    let Some(n) = refs.len().checked_sub(4).map(|l| l / (4 + layout.size())) else {
+        return Vec::new();
+    };
+    (0..n)
+        .filter_map(|i| u32_at(refs, i * 4).map(u64::from))
+        .collect()
+}
+
+/// The comments (#699): `refs` (`PlcfandRef`) counts them and names each
+/// reviewer, `txt` (`PlcfandTxt`) gives each one's CPs in the annotation
+/// story starting at `base` (its reference mark, 0x05, is dropped with the
+/// other marks), `owners` the reviewers' names, `extra` (`AtrdExtra`, Word
+/// 2002+: 18-byte `ATRDPost10`s whose `dttm` leads) the dates. A comment's
+/// paragraphs are joined with a space, like a note's.
+#[allow(clippy::too_many_arguments)]
+fn comment_texts(
+    story: &Story,
+    cache: &mut ChpxCache,
+    refs: &[u8],
+    txt: &[u8],
+    owners: &[u8],
+    extra: &[u8],
+    base: u64,
+    len: u64,
+    layout: Atrd,
+) -> Vec<Comment> {
+    let Some(n) = refs.len().checked_sub(4).map(|l| l / (4 + layout.size())) else {
+        return Vec::new();
+    };
+    if n == 0 || len == 0 {
+        return Vec::new();
+    }
+    let owners = layout.owners(owners);
+    (0..n)
+        .filter_map(|i| {
+            let a = u32_at(txt, i * 4)? as u64;
+            let b = (u32_at(txt, i * 4 + 4)? as u64).min(len);
+            let text = if a < b {
+                story.paragraphs(cache, base + a, base + b).join(" ")
+            } else {
+                String::new()
+            };
+            let at = (n + 1) * 4 + i * layout.size();
+            let atrd = refs.get(at..at + layout.size()).unwrap_or(&[]);
+            let (initials, ibst) = layout.initials_and_owner(atrd);
+            let author = ibst
+                .and_then(|i| owners.get(i))
+                .cloned()
+                .unwrap_or_default();
+            let date = u32_at(extra, i * 18).and_then(dttm_to_iso);
+            let mut head: Vec<String> = Vec::new();
+            if !author.is_empty() {
+                head.push(if initials.is_empty() {
+                    format!("author: {author}")
+                } else {
+                    format!("author: {author} ({initials})")
+                });
+            } else if !initials.is_empty() {
+                head.push(format!("author: {initials}"));
+            }
+            if let Some(date) = date {
+                head.push(format!("time: {date}"));
+            }
+            let text = if head.is_empty() {
+                text
+            } else {
+                format!("[{}]: {text}", head.join(", "))
+            };
+            Some(Comment { text })
+        })
+        .collect()
+}
+
+/// A `DTTM` ([MS-DOC] 2.9.65) as docling writes a comment's date:
+/// `YYYY-MM-DDTHH:MM:00.000` (minutes 0–5, hours 6–10, day 11–15, month
+/// 16–19, year 20–28 from 1900). `None` for the zero value.
+fn dttm_to_iso(v: u32) -> Option<String> {
+    if v == 0 {
+        return None;
+    }
+    let minute = v & 0x3F;
+    let hour = (v >> 6) & 0x1F;
+    let day = (v >> 11) & 0x1F;
+    let month = (v >> 16) & 0x0F;
+    let year = 1900 + ((v >> 20) & 0x1FF);
+    if !(1..=12).contains(&month) || !(1..=31).contains(&day) || hour > 23 || minute > 59 {
+        return None;
+    }
+    Some(format!(
+        "{year:04}-{month:02}-{day:02}T{hour:02}:{minute:02}:00.000"
+    ))
+}
+
+/// The comments as the DOCX backend emits them (#699): a notes-layer
+/// `comment_section` group named `comment-{i}` per comment, after the
+/// body — JSON carries the group and its text (and the `comments`
+/// back-reference on the paragraph holding the reference mark), Markdown
+/// leaves the notes layer out.
+fn push_comments(doc: &mut DoclingDocument, comments: Vec<Comment>) {
+    for (i, c) in comments.into_iter().enumerate() {
+        doc.push(Node::CommentSection {
+            name: format!("comment-{i}"),
+            text: escape_text(&c.text),
+            refs_note_text: false,
+            grouped: true,
+        });
+    }
 }
 
 /// The Word 97+ FIB, located from the counts the stream declares
@@ -587,6 +988,9 @@ impl<'a> Fib<'a> {
     const STSHF: usize = 1;
     const PLCF_FND_REF: usize = 2;
     const PLCF_FND_TXT: usize = 3;
+    const PLCF_AND_REF: usize = 4;
+    const PLCF_AND_TXT: usize = 5;
+    const PLCF_SED: usize = 6;
     const PLCF_HDD: usize = 11;
     const PLCF_BTE_CHPX: usize = 12;
     const PLCF_BTE_PAPX: usize = 13;
@@ -596,11 +1000,16 @@ impl<'a> Fib<'a> {
     const PLCSPA_HDR: usize = 41;
     const PLCF_END_REF: usize = 46;
     const PLCF_END_TXT: usize = 47;
+    const DOP: usize = 31;
+    const GRP_XST_ATN_OWNERS: usize = 36;
     const DGG_INFO: usize = 50;
     const PLCF_TXBX_TXT: usize = 56;
     const PLCF_HDR_TXBX_TXT: usize = 58;
     const PLF_LST: usize = 73;
     const PLF_LFO: usize = 74;
+    /// `fcAtrdExtra` of `FibRgFcLcb2002` (Word 2002+): the comments'
+    /// dates, beyond the 93 + 15 pairs of the 97 and 2000 blocks.
+    const ATRD_EXTRA: usize = 112;
 
     fn parse(word: &'a [u8]) -> Result<Self, ConversionError> {
         let short = |what: &str, need: usize| {
@@ -744,6 +1153,7 @@ fn convert_word6(name: &str, word: &[u8], flags: u16) -> Result<DoclingDocument,
     let stis = parse_stsh(part(0x60), DocFormat::Word6);
     let lists = ListTables::default();
     let drawings = Drawings::default();
+    let comment_cps = comment_anchor_cps(part(0x78), Atrd::Word6);
     let story = Story {
         format: DocFormat::Word6,
         word,
@@ -758,27 +1168,32 @@ fn convert_word6(name: &str, word: &[u8], flags: u16) -> Result<DoclingDocument,
         placed: Default::default(),
         fonts: &[],
         lists: &lists,
+        comment_cps: &comment_cps,
     };
     let mut cache = ChpxCache::default();
     let mut doc = DoclingDocument::new(name);
     story.walk(&mut cache, 0, ccp_text, false, &mut doc);
 
     // Headers / footers (furniture, after the body): a section's stories in
-    // `PlcfHdd` are the ones its `grpfIhdt` names, in bit order.
+    // `PlcfHdd` are the ones its `grpfIhdt` names, in bit order; shown by
+    // the same title-page / facing-pages rule as Word 97's (#697).
     let hdd_base = ccp_text + ccp_ftn;
-    for (footer, text) in word6_header_footer_texts(
-        &story,
-        &mut cache,
-        part(0xB0),
-        word6_section_ihdt(word, part(0x88)),
-        hdd_base,
-        ccp_hdd,
-    ) {
-        doc.push(Node::FurnitureText {
-            label: if footer { "page_footer" } else { "page_header" }.into(),
-            text: escape_text(&text),
-        });
-    }
+    let shown = StorySelection {
+        title_pages: section_title_pages(word, part(0x88), DocFormat::Word6),
+        facing_pages: dop_facing_pages(part(0x150)),
+    };
+    push_furniture_stories(
+        &mut doc,
+        word6_header_footer_texts(
+            &story,
+            &mut cache,
+            part(0xB0),
+            word6_section_ihdt(word, part(0x88)),
+            hdd_base,
+            ccp_hdd,
+            &shown,
+        ),
+    );
     for text in note_texts(
         &story,
         &mut cache,
@@ -792,6 +1207,24 @@ fn convert_word6(name: &str, word: &[u8], flags: u16) -> Result<DoclingDocument,
             text: escape_text(&text),
         });
     }
+    // The comments (#699): the annotation story after the headers'
+    // (`ccpMcr` between them), its PLCs at 0x78 / 0x80, the reviewers at
+    // 0x178 (`grpStAtnOwners`); no dates before Word 2002.
+    let atn_base = hdd_base + ccp_hdd + ccp(0x40);
+    push_comments(
+        &mut doc,
+        comment_texts(
+            &story,
+            &mut cache,
+            part(0x78),
+            part(0x80),
+            part(0x178),
+            &[],
+            atn_base,
+            ccp(0x44),
+            Atrd::Word6,
+        ),
+    );
     Ok(doc)
 }
 
@@ -802,20 +1235,9 @@ fn convert_word6(name: &str, word: &[u8], flags: u16) -> Result<DoclingDocument,
 /// then the section's sprms) in `WordDocument`; `sprmSGprfIhdt` is opcode
 /// 153. A section whose SEPX cannot be read has no stories.
 fn word6_section_ihdt(word: &[u8], plcfsed: &[u8]) -> Vec<u8> {
-    let Some(n) = plcfsed.len().checked_sub(4).map(|l| l / 16) else {
-        return Vec::new();
-    };
-    (0..n)
-        .map(|i| {
-            let sed = (n + 1) * 4 + i * 12;
-            let Some(fc_sepx) = u32_at(plcfsed, sed + 2) else {
-                return 0;
-            };
-            let at = fc_sepx as usize;
-            let Some(cb) = u16_at(word, at) else {
-                return 0;
-            };
-            let grpprl = word.get(at + 2..at + 2 + cb as usize).unwrap_or(&[]);
+    section_sepxs(word, plcfsed)
+        .into_iter()
+        .map(|grpprl| {
             let mut ihdt = 0;
             walk_word6_sprms(grpprl, |op, operand| {
                 if op == 153 {
@@ -829,9 +1251,9 @@ fn word6_section_ihdt(word: &[u8], plcfsed: &[u8]) -> Vec<u8> {
 
 /// The Word 6/95 twin of [`header_footer_texts`]: `PlcfHdd` lists, per
 /// section, only the stories its `grpfIhdt` names (no separator stories,
-/// no fixed six), so the bits say which CP range is which. Emitted in the
-/// Word 97 reader's reading order — default, first, even; headers before
-/// footers — each distinct paragraph once.
+/// no fixed six), so the bits say which CP range is which. Emitted in
+/// [`STORY_ORDER`] through the section's [`StorySelection`], each
+/// distinct paragraph once per kind.
 fn word6_header_footer_texts(
     story: &Story,
     cache: &mut ChpxCache,
@@ -839,14 +1261,15 @@ fn word6_header_footer_texts(
     ihdts: Vec<u8>,
     base: u64,
     len: u64,
-) -> Vec<(bool, String)> {
+    shown: &StorySelection,
+) -> Vec<(bool, Vec<String>)> {
     let cps: Vec<u64> = plc
         .chunks_exact(4)
         .filter_map(|c| u32_at(c, 0).map(u64::from))
         .collect();
-    let mut out: Vec<(bool, String)> = Vec::new();
+    let mut out = FurnitureStories::default();
     let mut next = 0usize;
-    for ihdt in ihdts {
+    for (section, ihdt) in ihdts.into_iter().enumerate() {
         // Story index per kind, in file order (bit order).
         let mut kinds: [Option<usize>; 6] = [None; 6];
         for (bit, slot) in kinds.iter_mut().enumerate() {
@@ -855,17 +1278,13 @@ fn word6_header_footer_texts(
                 next += 1;
             }
         }
-        for (k, footer) in [
-            (1, false),
-            (4, false),
-            (0, false),
-            (3, true),
-            (5, true),
-            (2, true),
-        ] {
+        for (k, footer, kind) in STORY_ORDER {
             let Some(i) = kinds[k] else {
                 continue;
             };
+            if !shown.shows(section, kind) {
+                continue;
+            }
             let (Some(&a), Some(&b)) = (cps.get(i), cps.get(i + 1)) else {
                 continue;
             };
@@ -873,14 +1292,10 @@ fn word6_header_footer_texts(
             if a >= b {
                 continue;
             }
-            for text in story.paragraphs(cache, base + a, base + b) {
-                if !out.iter().any(|(f, t)| *f == footer && *t == text) {
-                    out.push((footer, text));
-                }
-            }
+            out.push(footer, story.paragraphs(cache, base + a, base + b));
         }
     }
-    out
+    out.stories
 }
 
 /// Whether `data` is a flat Word for Windows 1.x / 2.0 file (#566): the
@@ -1192,8 +1607,50 @@ fn parse_piece_table(clx: &[u8], word6: Option<bool>) -> Option<Vec<Piece>> {
     }
 }
 
+/// A Word 6/95 paragraph's autonumber (#700): `sprmPAnld`'s ANLD — the
+/// number format (`nfc`: 0 arabic, 1/2 upper/lower roman, 3/4 upper/lower
+/// letter; 0xFF, like Word 97's 0x17, a bullet), the start value, and the
+/// text before and after the number (`rgchAnld`, `cxchTextBefore` +
+/// `cxchTextAfter` 8-bit characters: `.` after a number, the bullet glyph
+/// itself before nothing).
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct Anld {
+    nfc: u8,
+    start: u16,
+    before: String,
+    after: String,
+}
+
+impl Anld {
+    fn bullet(&self) -> bool {
+        self.nfc == 0xFF || self.nfc == 0x17
+    }
+
+    /// The 52-byte ANLD ([MS-DOC] 2.9.3 / the Word 6 binary format).
+    fn parse(anld: &[u8]) -> Option<Self> {
+        if anld.len() < 52 {
+            return None;
+        }
+        let (nfc, cb_before, cb_after) = (anld[0], anld[1] as usize, anld[2] as usize);
+        let rgch = &anld[20..52];
+        let text = |from: usize, to: usize| -> String {
+            rgch.get(from..to.min(32))
+                .unwrap_or(&[])
+                .iter()
+                .map(|&b| cp1252(b))
+                .collect()
+        };
+        Some(Self {
+            nfc,
+            start: u16_at(anld, 10).unwrap_or(1),
+            before: text(0, cb_before),
+            after: text(cb_before, cb_before + cb_after),
+        })
+    }
+}
+
 /// Properties of one paragraph, read from its PAPX.
-#[derive(Default, Clone, Copy)]
+#[derive(Default, Clone)]
 struct ParaProps {
     istd: u16,
     in_table: bool,
@@ -1210,6 +1667,11 @@ struct ParaProps {
     /// text). Read off *style* PAPX UPXes only — mirroring docling, which
     /// consults the style definition, never the paragraph's direct formatting.
     outline: Option<u8>,
+    /// A Word 6/95 autonumber (`sprmPAnld`, #700) and its level
+    /// (`sprmPNLvlAnm`: 1–9 an outline level, 10–12 a plain numbering,
+    /// bullet or paused one).
+    anld: Option<Anld>,
+    anld_level: Option<u8>,
 }
 
 /// The two binary layouts the FKP walks read (#640): Word 97+ ([MS-DOC])
@@ -1444,14 +1906,69 @@ fn walk_word6_sprms(mut sprms: &[u8], mut f: impl FnMut(u8, &[u8])) {
 
 /// Scan a Word 6/95 PAP grpprl for the sprms this backend reads: the style
 /// (`sprmPIstd` 2, when a UPX repeats it), `sprmPFInTable` (24) and
-/// `sprmPTtp` (25) — the table structure the flat reader lacked (#640).
+/// `sprmPTtp` (25) — the table structure the flat reader lacked (#640) —
+/// and the autonumber (`sprmPAnld` 12, a count byte then the ANLD;
+/// `sprmPNLvlAnm` 13, #700).
 fn apply_word6_pap_sprms(sprms: &[u8], props: &mut ParaProps) {
     walk_word6_sprms(sprms, |op, operand| match op {
         2 => props.istd = u16::from_le_bytes([operand[0], operand[1]]),
+        12 => props.anld = Anld::parse(&operand[1..]),
+        13 => props.anld_level = Some(operand[0]),
         24 => props.in_table = operand[0] != 0,
         25 => props.ttp = operand[0] != 0,
         _ => {}
     });
+}
+
+/// A Word 6/95 autonumber's number in its format: arabic, roman
+/// (`nfc` 1 / 2), letters (3 / 4); anything else prints arabic.
+fn anld_number(nfc: u8, n: u64) -> String {
+    match nfc {
+        1 | 2 => {
+            let mut n = n;
+            let mut out = String::new();
+            for (value, sym) in [
+                (1000, "M"),
+                (900, "CM"),
+                (500, "D"),
+                (400, "CD"),
+                (100, "C"),
+                (90, "XC"),
+                (50, "L"),
+                (40, "XL"),
+                (10, "X"),
+                (9, "IX"),
+                (5, "V"),
+                (4, "IV"),
+                (1, "I"),
+            ] {
+                while n >= value {
+                    out.push_str(sym);
+                    n -= value;
+                }
+            }
+            if nfc == 2 {
+                out.to_ascii_lowercase()
+            } else {
+                out
+            }
+        }
+        3 | 4 => {
+            let mut n = n;
+            let mut out = String::new();
+            while n > 0 {
+                let d = ((n - 1) % 26) as u8;
+                out.insert(0, (b'A' + d) as char);
+                n = (n - 1) / 26;
+            }
+            if nfc == 4 {
+                out.to_ascii_lowercase()
+            } else {
+                out
+            }
+        }
+        _ => n.to_string(),
+    }
 }
 
 /// Scan a Word 6/95 CHP grpprl: bold (85) / italic (86) — operand 0 / 1
@@ -2232,6 +2749,9 @@ struct ParaAccum {
     field_stack: Vec<bool>, // true = in result part
     /// Text boxes anchored in this paragraph, each its story's nodes (#535).
     textboxes: Vec<Vec<Node>>,
+    /// The comments anchored in this paragraph (#699), as indices into
+    /// the document's comment sections.
+    comments: Vec<usize>,
 }
 
 impl ParaAccum {
@@ -2332,9 +2852,12 @@ impl ParaAccum {
         let markdown = self.markdown();
         let pictures = std::mem::take(&mut self.pictures);
         let textboxes = std::mem::take(&mut self.textboxes);
+        let comments = std::mem::take(&mut self.comments);
         self.segments.clear();
         self.field_stack.clear();
-        builder.paragraph(plain, markdown, pictures, textboxes, mark, props, stis, doc);
+        builder.paragraph(
+            plain, markdown, pictures, textboxes, comments, mark, props, stis, doc,
+        );
     }
 }
 
@@ -2362,6 +2885,18 @@ struct NodeBuilder {
     /// Heading level → running number of the numbered headings (#641), the
     /// DOCX backend's `numbered_headers`.
     numbered_headers: std::collections::HashMap<u8, u64>,
+    /// The Word 6/95 autonumber run (#700): whether the previous paragraph
+    /// was an autonumbered one, and the running counter per level — a
+    /// paragraph without one ends the run, so the next list starts over.
+    in_anld_run: bool,
+    /// The previous item's kind, `(bullet, nfc)`: a change starts a new
+    /// list, as a Word 97 item with another `ilfo` does.
+    last_anld_kind: Option<(bool, u8)>,
+    anld_counters: std::collections::HashMap<u8, u64>,
+    /// Whether the current cell's previous paragraph was a list item: the
+    /// items of one list join with a single newline, as the DOCX backend's
+    /// rich cell prints them.
+    cell_prev_list: bool,
 }
 
 impl NodeBuilder {
@@ -2378,6 +2913,7 @@ impl NodeBuilder {
         markdown: String,
         pictures: Vec<(bool, Option<PictureImage>)>,
         textboxes: Vec<Vec<Node>>,
+        comments: Vec<usize>,
         mark: char,
         props: ParaProps,
         stis: &[StyleDef],
@@ -2393,17 +2929,42 @@ impl NodeBuilder {
             }
             return;
         }
+        // A Word 6/95 autonumber (#700): its marker, counted along the run.
+        let anld_level = match props.anld_level {
+            Some(l @ 1..=9) => l - 1,
+            _ => 0,
+        };
+        let was_in_anld_run = self.in_anld_run;
+        let anld_kind = props.anld.as_ref().map(|a| (a.bullet(), a.nfc));
+        let same_anld_list = was_in_anld_run && self.last_anld_kind == anld_kind;
+        let anld_marker = props.anld.as_ref().map(|a| self.anld_marker(a, anld_level));
+        self.in_anld_run = anld_marker.is_some();
+        self.last_anld_kind = anld_kind;
         if props.in_table {
             let text = markdown.trim_end_matches('\u{0007}');
+            let text = match &anld_marker {
+                Some((marker, _)) if !text.trim().is_empty() => format!("{marker} {text}"),
+                _ => text.to_string(),
+            };
             // Multi-paragraph cells join with a blank line, matching the
             // DOCX backend's rich cells (the Markdown table serializer
             // then folds each newline into a space); an empty paragraph
             // adds nothing, as the DOCX backend's cell text skips it (#640
             // — a Word 6 cell with blank lines between its paragraphs).
+            // The items of one list join with a single newline, as the
+            // rich cell's list group prints them (#700).
             if !self.cell_text.is_empty() && !text.trim().is_empty() {
-                self.cell_text.push_str("\n\n");
+                self.cell_text
+                    .push_str(if self.cell_prev_list && anld_marker.is_some() {
+                        "\n"
+                    } else {
+                        "\n\n"
+                    });
             }
-            self.cell_text.push_str(text);
+            if !text.trim().is_empty() {
+                self.cell_prev_list = anld_marker.is_some();
+            }
+            self.cell_text.push_str(&text);
             // A text box anchored in the cell: its paragraphs are more of the
             // cell's (#535), as the DOCX backend reads the same document.
             for text in textboxes.iter().flatten().filter_map(node_text) {
@@ -2414,6 +2975,7 @@ impl NodeBuilder {
             }
             if mark == '\u{0007}' {
                 self.cells.push(std::mem::take(&mut self.cell_text));
+                self.cell_prev_list = false;
             }
             return;
         }
@@ -2471,6 +3033,7 @@ impl NodeBuilder {
             .get(props.istd as usize)
             .copied()
             .unwrap_or(StyleDef::NONE);
+        let before = doc.nodes.len();
         // The paragraph's list, its own or its style's (#641).
         let numbering = resolve_numbering(&props, stis);
         let sti = style.sti;
@@ -2503,7 +3066,8 @@ impl NodeBuilder {
             // (`## 1 Introduction`, `### 1.1 Context`), #641.
             let visibly_numbered = numbering
                 .and_then(|(ilfo, ilvl)| self.lists.level(ilfo, ilvl))
-                .is_some_and(|l| nfc_numbers_heading(l.nfc));
+                .is_some_and(|l| nfc_numbers_heading(l.nfc))
+                || props.anld.as_ref().is_some_and(|a| !a.bullet());
             let plain = if visibly_numbered && !plain.is_empty() {
                 let docling_level = level.saturating_sub(1).max(1);
                 super::docx::numbered_heading_text(
@@ -2606,10 +3170,75 @@ impl NodeBuilder {
                 });
             }
             self.last_ilfo = Some(ilfo);
+        } else if let Some((marker, number)) = anld_marker {
+            // A Word 6/95 autonumbered paragraph (#700): a list item like
+            // a Word 97 `sprmPIlfo` one — ordered on a plain `N.` marker,
+            // a bullet for a bullet, the marker as a text prefix otherwise.
+            let first_in_list = !same_anld_list;
+            let base = *self.run_base.get_or_insert(anld_level);
+            let level = anld_level.saturating_sub(base);
+            let bullet = props.anld.as_ref().is_some_and(Anld::bullet);
+            if bullet {
+                doc.push(Node::ListItem {
+                    ordered: false,
+                    number: 0,
+                    first_in_list,
+                    text,
+                    level,
+                    marker: None,
+                    location: None,
+                    dclx: None,
+                    href: None,
+                    layer: None,
+                });
+            } else if cached_regex!(r"^\d+[.)]$").is_match(&marker) {
+                doc.push(Node::ListItem {
+                    ordered: true,
+                    number,
+                    first_in_list,
+                    text,
+                    level,
+                    marker: Some(marker),
+                    location: None,
+                    dclx: None,
+                    href: None,
+                    layer: None,
+                });
+            } else {
+                let dclx = Some(docling_core::ListItemDclx {
+                    ordered: true,
+                    marker: Some(marker.clone()),
+                    text: text.clone(),
+                    runs: Vec::new(),
+                });
+                doc.push(Node::ListItem {
+                    ordered: false,
+                    number,
+                    first_in_list,
+                    text: format!("{marker} {text}"),
+                    level,
+                    marker: None,
+                    location: None,
+                    dclx,
+                    href: None,
+                    layer: None,
+                });
+            }
+            self.last_ilfo = None;
         } else {
             doc.push(Node::Paragraph { text });
             self.last_ilfo = None;
             self.run_base = None;
+        }
+        // The comments anchored here (#699): docling's `comments`
+        // back-references on the item, as the DOCX backend's.
+        if !comments.is_empty() && doc.nodes.len() > before {
+            if let Some(inner) = doc.nodes.pop() {
+                doc.push(Node::Commented {
+                    comments,
+                    inner: Box::new(inner),
+                });
+            }
         }
         for image in after {
             doc.push(picture_node(image));
@@ -2649,6 +3278,33 @@ impl NodeBuilder {
         }));
         self.last_ilfo = None;
         self.run_base = None;
+    }
+
+    /// A Word 6/95 autonumber's marker (#700) and number: `-` for a
+    /// bullet; otherwise the text before, the number in its format
+    /// (counted per level along the run, from the ANLD's start value; a
+    /// shallower item resets the deeper levels) and the text after — `.`
+    /// when the ANLD names none, as Word shows a bare number.
+    fn anld_marker(&mut self, a: &Anld, level: u8) -> (String, u64) {
+        if !self.in_anld_run {
+            self.anld_counters.clear();
+        }
+        if a.bullet() {
+            return ("-".into(), 0);
+        }
+        let c = self
+            .anld_counters
+            .entry(level)
+            .or_insert(u64::from(a.start).saturating_sub(1));
+        *c += 1;
+        let n = *c;
+        self.anld_counters.retain(|l, _| *l <= level);
+        let after = if a.before.is_empty() && a.after.is_empty() {
+            "."
+        } else {
+            a.after.as_str()
+        };
+        (format!("{}{}{after}", a.before, anld_number(a.nfc, n)), n)
     }
 
     /// Build the item's enumeration marker from the level's `xst` template —
@@ -2888,25 +3544,17 @@ mod tests {
         // Furniture: in the JSON, not the Markdown.
         assert!(!md.contains("MARKHDR") && !md.contains("MARKFN"), "{md}");
         let json: serde_json::Value = serde_json::from_str(&doc.export_to_json()).unwrap();
-        let furniture: Vec<(String, String)> = json["texts"]
+        // The header is a furniture `page header` section of text items,
+        // the DOCX backend's shape (#697); the note a `footnote` text.
+        assert_eq!(furniture_of(&json), [("page header", "MARKHDR")]);
+        let footnotes: Vec<&str> = json["texts"]
             .as_array()
             .unwrap()
             .iter()
-            .filter(|t| t["content_layer"] == "furniture")
-            .map(|t| {
-                (
-                    t["label"].as_str().unwrap().to_string(),
-                    t["text"].as_str().unwrap().to_string(),
-                )
-            })
+            .filter(|t| t["label"] == "footnote")
+            .map(|t| t["text"].as_str().unwrap())
             .collect();
-        assert_eq!(
-            furniture,
-            vec![
-                ("page_header".to_string(), "MARKHDR".to_string()),
-                ("footnote".to_string(), "MARKFN".to_string()),
-            ]
-        );
+        assert_eq!(footnotes, ["MARKFN"]);
         // The text box sits where it is anchored: right after `debut`.
         let groups = json["groups"].as_array().unwrap();
         assert_eq!(groups[0]["name"], "textbox");
@@ -2935,14 +3583,222 @@ mod tests {
         let md = doc.export_to_markdown();
         assert_eq!(md.trim(), "Body paragraph before header test.");
         let json: serde_json::Value = serde_json::from_str(&doc.export_to_json()).unwrap();
-        let furniture: Vec<(&str, &str)> = json["texts"]
+        assert_eq!(
+            furniture_of(&json),
+            [("page header", "MARK_HEADER_TEXTBOX_TEXT")]
+        );
+    }
+
+    /// The furniture-layer texts with the name of the `page header` /
+    /// `page footer` group each sits in (`(group name, text)`), in order.
+    fn furniture_of(json: &serde_json::Value) -> Vec<(&str, &str)> {
+        let groups = json["groups"].as_array().unwrap();
+        let group_name = |parent: &str| -> &str {
+            groups
+                .iter()
+                .find(|g| g["self_ref"] == parent)
+                .and_then(|g| g["name"].as_str())
+                .unwrap_or("")
+        };
+        json["texts"]
             .as_array()
             .unwrap()
             .iter()
-            .filter(|t| t["content_layer"] == "furniture")
-            .map(|t| (t["label"].as_str().unwrap(), t["text"].as_str().unwrap()))
-            .collect();
-        assert_eq!(furniture, [("page_header", "MARK_HEADER_TEXTBOX_TEXT")]);
+            .filter(|t| t["content_layer"] == "furniture" && t["label"] == "text")
+            .map(|t| {
+                (
+                    group_name(t["parent"]["$ref"].as_str().unwrap()),
+                    t["text"].as_str().unwrap(),
+                )
+            })
+            .collect()
+    }
+
+    /// #700: a Word 6/95 autonumber (`sprmPAnld`) makes a list item — a
+    /// numbered run counts from the ANLD's start with its text after the
+    /// number, a bullet ANLD (`nfc` 0xFF) a bullet; a paragraph without one
+    /// ends the run, so the next list starts over. The ANLD bytes are the
+    /// ticket's fixtures'.
+    #[test]
+    fn word6_autonumbers_are_list_items() {
+        // sprmPAnld operand: cb 52, nfc 0, 0 chars before, 1 after (`.`),
+        // fHang, no font, hps 0, iStartAt 1, the indent / space / flag
+        // bytes, then the 32-char rgch.
+        let mut numbered = vec![12u8, 52, 0, 0, 1, 0x08, 0, 0, 0xFF, 0xFF, 0, 0, 1, 0];
+        numbered.extend_from_slice(&[0; 8]);
+        numbered.extend_from_slice(b".");
+        numbered.extend_from_slice(&[0; 31]);
+        let mut props = ParaProps::default();
+        apply_word6_pap_sprms(&numbered, &mut props);
+        let anld = props.anld.clone().expect("decoded");
+        assert_eq!(
+            anld,
+            Anld {
+                nfc: 0,
+                start: 1,
+                before: String::new(),
+                after: ".".into()
+            }
+        );
+        let mut bullets = vec![12u8, 52, 0xFF, 1, 0, 0x08, 0, 0, 1, 0, 0, 0, 1, 0];
+        bullets.extend_from_slice(&[0; 8]);
+        bullets.extend_from_slice(&[0xB7]);
+        bullets.extend_from_slice(&[0; 31]);
+        bullets.extend_from_slice(&[13, 11]);
+        let mut bprops = ParaProps::default();
+        apply_word6_pap_sprms(&bullets, &mut bprops);
+        assert!(bprops.anld.as_ref().is_some_and(Anld::bullet));
+        assert_eq!(bprops.anld_level, Some(11));
+
+        let mut builder = NodeBuilder::new(ListTables::default());
+        let mut doc = DoclingDocument::new("w6");
+        let stis = vec![StyleDef::NONE; 16];
+        let mut para = |text: &str, props: ParaProps, doc: &mut DoclingDocument| {
+            builder.paragraph(
+                text.into(),
+                text.into(),
+                Vec::new(),
+                Vec::new(),
+                Vec::new(),
+                '\r',
+                props,
+                &stis,
+                doc,
+            );
+        };
+        para("Intro", ParaProps::default(), &mut doc);
+        for t in ["One", "Two"] {
+            para(t, props.clone(), &mut doc);
+        }
+        para("Between", ParaProps::default(), &mut doc);
+        para("Again", props.clone(), &mut doc);
+        for t in ["Dot", "Dash"] {
+            para(t, bprops.clone(), &mut doc);
+        }
+        assert_eq!(
+            doc.export_to_markdown(),
+            "Intro\n\n1. One\n2. Two\n\nBetween\n\n1. Again\n\n- Dot\n- Dash\n"
+        );
+        let json = doc.export_to_json();
+        assert!(json.contains("\"marker\": \"2.\""), "{json}");
+        assert_eq!(json.matches("\"label\": \"list_item\"").count(), 5);
+        assert_eq!(anld_number(2, 4), "iv");
+        assert_eq!(anld_number(3, 28), "AB");
+        assert_eq!(anld_number(1, 1994), "MCMXCIV");
+    }
+
+    /// #700: the ticket's fixtures — a numbered and a bulleted list inside
+    /// a table cell of a Word 6.0/95 file — print their markers in the
+    /// cell as the `.docx` twin's rich cell does (`1. … 2. …`, `- …`).
+    #[test]
+    fn word6_list_markers_reach_the_cell() {
+        let convert = |name: &str| {
+            let path = format!(
+                "{}/tests/data/doc/sources/{name}",
+                env!("CARGO_MANIFEST_DIR")
+            );
+            let bytes = std::fs::read(&path).expect("fixture exists");
+            DocBackend
+                .convert(&SourceDocument::from_bytes(name, InputFormat::Doc, bytes))
+                .expect("converts")
+                .export_to_markdown()
+        };
+        let md = convert("word6_lists.doc");
+        assert!(
+            md.contains(
+                "Alpha Bravo Charlie De  1. Echo Foxtrot Go 2. Hotel Alpha Bravo 3. Charlie \
+                 Delta Ech 4. Foxtrot G 5. Hotel Alp 6. Bravo Cha"
+            ),
+            "{md}"
+        );
+        let md = convert("word6_bullets.doc");
+        assert!(md.contains("- Golf Hotel Alpha"), "{md}");
+        assert!(md.contains("- Alpha Bravo Charlie Delta Ech"), "{md}");
+        assert!(!md.contains("1."), "{md}");
+    }
+
+    /// #699: the annotation story — a comment on the body paragraph (the
+    /// ticket's repro) — is a notes-layer `comment_section` group with
+    /// docling's `[author: … (initials), time: …]: text` note and a
+    /// `comments` back-reference on the paragraph, as the `.docx` twin's; the
+    /// Markdown leaves it out as before.
+    #[test]
+    fn comments_are_notes_layer_sections() {
+        let path = format!(
+            "{}/tests/data/doc/sources/doc_comment.doc",
+            env!("CARGO_MANIFEST_DIR")
+        );
+        let bytes = std::fs::read(&path).expect("fixture exists");
+        let doc = DocBackend
+            .convert(&SourceDocument::from_bytes(
+                "c.doc",
+                InputFormat::Doc,
+                bytes,
+            ))
+            .expect("converts");
+        assert_eq!(
+            doc.export_to_markdown().trim(),
+            "Body paragraph with comment."
+        );
+        let json: serde_json::Value = serde_json::from_str(&doc.export_to_json()).unwrap();
+        let groups = json["groups"].as_array().unwrap();
+        assert_eq!(groups.len(), 1, "{groups:?}");
+        assert_eq!(groups[0]["label"], "comment_section");
+        assert_eq!(groups[0]["name"], "comment-0");
+        assert_eq!(groups[0]["content_layer"], "notes");
+        let note = &json["texts"][1];
+        assert_eq!(note["parent"]["$ref"], "#/groups/0");
+        assert_eq!(note["content_layer"], "notes");
+        // The date from `AtrdExtra` (Word COM wrote a 2002+ FIB): the
+        // `.docx` twin's `2026-10-14T09:31:00.000+00:00` without the zone
+        // a DTTM does not carry.
+        assert_eq!(
+            note["text"],
+            "[author: Author Anon (AA), time: 2026-10-14T09:31:00.000]: MARK_COMMENT: This is an \
+             annotation by author."
+        );
+        assert_eq!(json["texts"][0]["comments"][0]["$ref"], "#/groups/0");
+        assert_eq!(dttm_to_iso(0).as_deref(), None);
+        // 2026-10-14 09:31: minutes 31, hour 9, day 14, month 10, year 126.
+        let v = 31 | (9 << 6) | (14 << 11) | (10 << 16) | (126 << 20);
+        assert_eq!(dttm_to_iso(v).as_deref(), Some("2026-10-14T09:31:00.000"));
+    }
+
+    /// #697: a section without a title page and a document without facing
+    /// pages show their default header and footer only — the first-page
+    /// and even-page stories the file keeps are leftovers Word ignores,
+    /// as the `.docx` twin's `headerReference`s are without `titlePg` /
+    /// `evenAndOddHeaders`. The furniture is the DOCX backend's shape: a
+    /// `page header` and a `page footer` section of `text` items.
+    #[test]
+    fn unused_first_and_even_stories_are_not_emitted() {
+        let path = format!(
+            "{}/tests/data/doc/sources/doc_header_variants.doc",
+            env!("CARGO_MANIFEST_DIR")
+        );
+        let bytes = std::fs::read(&path).expect("fixture exists");
+        let doc = DocBackend
+            .convert(&SourceDocument::from_bytes(
+                "h.doc",
+                InputFormat::Doc,
+                bytes,
+            ))
+            .expect("converts");
+        assert_eq!(doc.export_to_markdown().trim(), "Body paragraph");
+        let json: serde_json::Value = serde_json::from_str(&doc.export_to_json()).unwrap();
+        assert_eq!(
+            furniture_of(&json),
+            [
+                ("page header", "HEADER_DEFAULT"),
+                ("page footer", "FOOTER_DEFAULT")
+            ]
+        );
+        let groups = json["groups"].as_array().unwrap();
+        assert_eq!(groups.len(), 2);
+        assert_eq!(groups[0]["label"], "section");
+        assert_eq!(groups[0]["content_layer"], "furniture");
+        assert_eq!(groups[0]["parent"]["$ref"], "#/body");
+        assert!(!doc.export_to_json().contains("UNUSED"));
     }
 
     /// #567: prose is Markdown-escaped like the DOCX backend's — `OBJ_DIR`
@@ -3210,6 +4066,7 @@ mod tests {
                 builder.paragraph(
                     text.into(),
                     text.into(),
+                    Vec::new(),
                     Vec::new(),
                     Vec::new(),
                     '\r',

@@ -21,13 +21,27 @@ fn convert(format: &str, name: &str) -> DoclingDocument {
         .document
 }
 
-/// `(label, text)` of the furniture-layer items (headers, footers, notes).
+/// `(kind, text)` of the furniture-layer items: the paragraphs of the
+/// `page header` / `page footer` sections (#697, the DOCX backend's shape)
+/// and the labelled note texts.
 fn furniture(doc: &DoclingDocument) -> Vec<(String, String)> {
     doc.nodes
         .iter()
-        .filter_map(|n| match n {
-            Node::FurnitureText { label, text } => Some((label.clone(), text.clone())),
-            _ => None,
+        .flat_map(|n| match n {
+            Node::Group {
+                name: Some(name),
+                layer: Some(docling_core::ContentLayer::Furniture),
+                children,
+                ..
+            } => children
+                .iter()
+                .filter_map(|c| match c {
+                    Node::Paragraph { text } => Some((name.clone(), text.clone())),
+                    _ => None,
+                })
+                .collect(),
+            Node::FurnitureText { label, text } => vec![(label.clone(), text.clone())],
+            _ => Vec::new(),
         })
         .collect()
 }
@@ -52,18 +66,19 @@ fn word6_tables_match_the_docx_twin() {
     let docx = convert("docx", "word6_tables.docx");
     assert_eq!(doc.export_to_markdown(), docx.export_to_markdown());
     assert_eq!(tables(&doc), vec![(3, 3), (2, 1)]);
-    // The header's three cells and its first-page variant, the footers:
-    // furniture, as Word 97's are — the field results the file stores
-    // (Word re-evaluated them for the `.docx`, so the texts differ).
+    // The header's three cells and the footer: furniture, as Word 97's
+    // are — the field results the file stores (Word re-evaluated them for
+    // the `.docx`, so the texts differ). The first-page pair the file
+    // keeps is not shown: the section has no title page (#697).
     let f = furniture(&doc);
     assert_eq!(
-        f.iter().filter(|(l, _)| l == "page_header").count(),
-        4,
+        f.iter().filter(|(l, _)| l == "page header").count(),
+        3,
         "{f:?}"
     );
     assert_eq!(
-        f.iter().filter(|(l, _)| l == "page_footer").count(),
-        2,
+        f.iter().filter(|(l, _)| l == "page footer").count(),
+        1,
         "{f:?}"
     );
     assert!(f.iter().any(|(_, t)| t == "Alpha Br"), "{f:?}");
@@ -101,12 +116,12 @@ fn word95_structures_match_the_docx_twin() {
     assert!(!md.contains("**Gol**"), "{md}");
     let f = furniture(&doc);
     assert_eq!(
-        f.iter().filter(|(l, _)| l == "page_header").count(),
+        f.iter().filter(|(l, _)| l == "page header").count(),
         3,
         "{f:?}"
     );
     assert_eq!(
-        f.iter().filter(|(l, _)| l == "page_footer").count(),
+        f.iter().filter(|(l, _)| l == "page footer").count(),
         1,
         "{f:?}"
     );
