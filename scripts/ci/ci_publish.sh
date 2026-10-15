@@ -7,12 +7,13 @@
 # Auth: in CI the job runs with `id-token: write` and each upload uses a fresh
 # Trusted Publishing token from scripts/ci/crates_io_token.sh (OIDC — no
 # long-lived secret to rotate; every published crate's crates.io settings name
-# docling-project/docling.rs + ci.yml as its trusted publisher). Minted per
-# crate because a token lives 30 minutes and a cold `cargo publish` verify
-# build of the heavier crates can eat into that. An explicit
+# docling-project/docling.rs + crates-publish.yml as its trusted publisher).
+# Minted per crate because a token lives 30 minutes and a cold `cargo publish`
+# verify build of the heavier crates can eat into that. An explicit
 # CARGO_REGISTRY_TOKEN in the environment (a manual re-publish from a laptop)
 # is used as-is instead. The existence checks need no auth.
-# Used by .github/workflows/ci.yml on master.
+# Used by .github/workflows/crates-publish.yml, which release.yml dispatches
+# for a release tag; run it from a checkout of that tag.
 #
 # Usage: scripts/ci/ci_publish.sh
 set -euo pipefail

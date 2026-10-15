@@ -6,22 +6,22 @@ on:
   pull_request:
     branches: [master]
   # Manual re-run from the Actions tab / `gh workflow run`. Left blank it runs lint
-  # + test only; set `force_version` to (re)publish that exact version — use it to
+  # + test only; set `force_version` to (re)release that exact version — use it to
   # release a version a failed/blocked run skipped (e.g. the master-ruleset reject).
   workflow_dispatch:
     inputs:
       force_version:
-        description: "Force a release at this exact version (e.g. 0.3.0). Blank = lint+test only, no publish."
+        description: "Force a release at this exact version (e.g. 0.3.0). Blank = lint+test only, no release."
         required: false
         default: ""
 
 # Least privilege for GITHUB_TOKEN: every job here only reads the checkout.
-# The one exception — `publish`, which pushes the release commit and tag —
+# The one exception — `release`, which pushes the release commit and tag —
 # raises it to `contents: write` on the job itself.
 permissions:
   contents: read
 
-# Cancel superseded PR runs, but never interrupt a master run (it may publish).
+# Cancel superseded PR runs, but never interrupt a master run (it may release).
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
@@ -426,8 +426,8 @@ jobs:
                  target/release/examples target/release/incremental
           find target/debug target/release -maxdepth 1 -type f ! -name '*.d' -size +5M -exec rm -f {} + 2>/dev/null || true
 
-  publish:
-    name: release & publish
+  release:
+    name: release
     needs: [lint, test]
     if: >-
       (github.event_name == 'push' && github.ref == 'refs/heads/master') ||
@@ -435,7 +435,6 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write # push the version-bump commit + tag
-      id-token: write # crates.io Trusted Publishing (OIDC), see ci_publish.sh
     steps:
       - uses: actions/checkout@v7
         with:
@@ -444,40 +443,22 @@ jobs:
           # `master` ruleset; the default GITHUB_TOKEN can't be granted a bypass.
           token: ${{ secrets.RELEASE_PAT }}
 
+      # cargo only re-syncs Cargo.lock with the bumped versions (`cargo update
+      # --workspace`): no build, no target cache — the `cargo publish` verify
+      # builds and their cache moved to crates-publish.yml, which release.yml
+      # dispatches for the release the maintainer picks.
       - name: Install Rust (stable)
         run: |
           rustup toolchain install stable --profile minimal
           rustup default stable
 
-      - uses: actions/cache@v6
-        with:
-          path: |
-            ~/.cargo/registry/index
-            ~/.cargo/registry/cache
-            ~/.cargo/git/db
-            target
-            # ort-sys's extracted prebuilt ONNX Runtime (`<cache dir>/
-            # ort.pyke.io/dfbin/<target>/<hash>`): present, the build script
-            # skips the cdn.pyke.io download altogether. One path per OS;
-            # actions/cache ignores the ones that do not exist.
-            ~/.cache/ort.pyke.io
-            ~/Library/Caches/ort.pyke.io
-            ~/AppData/Local/ort.pyke.io
-          key: ${{ runner.os }}-cargo-v2-publish-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: ${{ runner.os }}-cargo-v2-publish-
-
       # Decide the next version from conventional commits since the last tag (or
       # use force_version on a manual dispatch); if there is one, bump + commit +
-      # tag it, push to master, and publish the crates (in dependency order,
-      # skipping any already on crates.io). A no-op when no release-worthy commit
-      # landed. The release commit is pushed with RELEASE_PAT (an admin token, so
-      # it satisfies the master ruleset) and carries [skip ci], so it does not
-      # re-trigger CI. The crates.io uploads authenticate through Trusted
-      # Publishing: `id-token: write` above lets ci_publish.sh mint a 30-minute
-      # token from the job's OIDC identity (repository + this workflow file,
-      # which every published crate names as its trusted publisher on
-      # crates.io) — no CARGO_REGISTRY_TOKEN secret to rotate.
-      - name: Release & publish
+      # tag it and push to master. A no-op when no release-worthy commit landed.
+      # The release commit is pushed with RELEASE_PAT (an admin token, so it
+      # satisfies the master ruleset) and carries [skip ci], so it does not
+      # re-trigger CI. Nothing goes to crates.io from here.
+      - name: Release
         id: release
         env:
           FORCE_VERSION: ${{ github.event.inputs.force_version }}
@@ -486,11 +467,11 @@ jobs:
       # Cut a GitHub Release for the tag release.sh just pushed, using the commit
       # list it assembled as the description. Skipped when the release step was a
       # no-op (no release-worthy commits). Idempotent: if a release for the tag
-      # already exists (e.g. a forced re-publish), refresh its notes instead of
-      # failing. Not marked latest: nothing is published to PyPI, npm, GHCR or
-      # the release's assets until the maintainer runs release.yml for it, which
-      # then marks it latest (install.sh itself takes the newest release that
-      # has its binary, #707).
+      # already exists (e.g. a forced re-release), refresh its notes instead of
+      # failing. Not marked latest: nothing is published to crates.io, PyPI, npm,
+      # GHCR or the release's assets until the maintainer runs release.yml for
+      # it, which then marks it latest (install.sh itself takes the newest
+      # release that has its binary, #707).
       - name: Create GitHub Release
         if: steps.release.outputs.released == 'true'
         env:
@@ -503,16 +484,3 @@ jobs:
           else
             gh release create "$tag" --title "$tag" --notes-file "$notes" --verify-tag --latest=false
           fi
-
-      # actions/cache saves target/ in its post-step, i.e. after this runs:
-      # drop what is cheap to recreate (incremental data shouldn't exist with
-      # CARGO_INCREMENTAL=0; examples and final bin-crate executables relink
-      # in seconds — the compiled library deps are what's worth keeping), so
-      # the cache stays well under the runner's disk headroom.
-      - name: Trim target before cache save
-        if: always()
-        shell: bash
-        run: |
-          rm -rf target/debug/examples target/debug/incremental \
-                 target/release/examples target/release/incremental
-          find target/debug target/release -maxdepth 1 -type f ! -name '*.d' -size +5M -exec rm -f {} + 2>/dev/null || true
