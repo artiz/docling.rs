@@ -2,7 +2,7 @@
 //! official registry), the PyPI launcher it lists, the image label the
 //! registry checks, the MCP bundle Smithery lists (`crates/docling-py/mcp/mcpb`,
 //! named by `smithery.yaml`), `glama.json` and the root `Dockerfile` (the
-//! launcher image Glama builds) name the same server, stay inside the
+//! launcher image) name the same server, stay inside the
 //! catalogs' limits, and pass only flags the server takes. A
 //! mismatch fails a catalog submission at release time, far from the change
 //! that caused it.

@@ -123,8 +123,9 @@ is required) — run the `--download-models` line once before adding the
 server to a client. Each release published to PyPI is also published to
 the official MCP registry as `io.github.docling-project/docling-rs` and gets
 the MCP bundle Smithery lists ([`artem-kustikov/docling-rs`](https://smithery.ai/servers/artem-kustikov/docling-rs),
-`docling-rs-mcp-<version>.mcpb`) attached; Glama builds the root
-`Dockerfile` (the launcher on a slim Python image) and reads `glama.json`
+`docling-rs-mcp-<version>.mcpb`) attached; Glama builds the launcher
+from the build spec on its admin page and reads `glama.json`; the root
+`Dockerfile` is the launcher on a slim Python image
 ([`docs/MCP_REGISTRIES.md`](../../docs/MCP_REGISTRIES.md)).
 
 The container image has the models baked in; mount the folder at the same

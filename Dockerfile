@@ -1,8 +1,9 @@
-# The docling.rs MCP server, for the catalogs that build a repository's
-# Dockerfile and probe the result over stdio — Glama (glama.ai/mcp/servers),
-# Docker's MCP registry — and for anyone who wants the server in a container
-# without the models: the PyPI launcher (`uvx docling-rs-mcp`, the same
-# `docling_rs.mcp` that `docling-rs mcp` runs) on a slim Python image.
+# The docling.rs MCP server for the catalogs that want a Dockerfile at the
+# root (Docker's MCP registry; Glama builds the same launcher from the build
+# spec on its admin page, docs/MCP_REGISTRIES.md) and for anyone who wants
+# the server in a container without the models: the PyPI launcher
+# (`uvx docling-rs-mcp`, the same `docling_rs.mcp` that `docling-rs mcp`
+# runs) on a slim Python image.
 # Nothing of this workspace is compiled here, so the build is a pip install;
 # the full images (the CLI with the ONNX models baked in, the docling-serve
 # HTTP API, their CUDA variants) are crates/docling-serve/Dockerfile.
