@@ -1,6 +1,8 @@
 # docling.rs container images: the `docling-serve` HTTP conversion API and the
 # `docling-rs` CLI, built from one Dockerfile as multiple targets over shared
 # layers (same dependency compile, same runtime base, same ML assets).
+# The MCP server alone, from PyPI and without the models, is the root
+# Dockerfile.
 #
 # Standard CPU targets (built on Debian Trixie):
 #   docker build -f crates/docling-serve/Dockerfile --target serve -t docling-rs-serve .
