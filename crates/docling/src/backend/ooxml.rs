@@ -632,3 +632,20 @@ pub(crate) mod image_dpi_tests {
         assert!(!is_metafile(&[]));
     }
 }
+
+/// A picture's author-written alt text (#676): the `descr` (else `title`)
+/// attribute of its non-visual properties — `wp:docPr` of a DOCX drawing,
+/// `p:cNvPr` of a PPTX picture, `xdr:cNvPr` of a spreadsheet drawing —
+/// trimmed; `None` when both are missing or blank. Office writes `descr`
+/// (the "Alt Text" box; its generated captions read "… Description
+/// automatically generated") and older documents `title`.
+pub(crate) fn alt_text_of(props: roxmltree::Node) -> Option<String> {
+    ["descr", "title"].iter().find_map(|name| {
+        props
+            .attributes()
+            .find(|a| a.name() == *name)
+            .map(|a| a.value().trim())
+            .filter(|v| !v.is_empty())
+            .map(str::to_string)
+    })
+}

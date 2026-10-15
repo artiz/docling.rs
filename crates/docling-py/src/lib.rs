@@ -282,6 +282,9 @@ impl PyDocumentConverter {
     ///   (#271; docling.rs extension, off by default).
     /// * `compact_tables` — unpadded `| a | b |` Markdown tables, all
     ///   formats (#271; docling.rs extension, off by default).
+    /// * `picture_alt_text` — render pictures' alt text (DOCX/PPTX/XLSX,
+    ///   #676) in the engine's Markdown and HTML; the JSON carries it always
+    ///   as `meta.description` (`created_by: alt_text`). Off by default.
     /// * `asr_model` — audio/video speech-recognition preset: `None` /
     ///   `"whisper_tiny"` (default), the Whisper presets
     ///   (`"whisper_tiny_en"`, `"whisper_base_en"`, `"whisper_small_en"`,
@@ -372,6 +375,7 @@ impl PyDocumentConverter {
         list_attachments = false,
         skip_empty_cells = false,
         compact_tables = false,
+        picture_alt_text = false,
         ebcdic_layout = None,
         pipeline = None,
         vlm_endpoint = None,
@@ -444,6 +448,7 @@ impl PyDocumentConverter {
         list_attachments: bool,
         skip_empty_cells: bool,
         compact_tables: bool,
+        picture_alt_text: bool,
         ebcdic_layout: Option<String>,
         pipeline: Option<String>,
         vlm_endpoint: Option<String>,
@@ -478,6 +483,7 @@ impl PyDocumentConverter {
             list_attachments: Some(list_attachments),
             skip_empty_cells: Some(skip_empty_cells),
             compact_tables: Some(compact_tables),
+            picture_alt_text: Some(picture_alt_text),
             ebcdic_layout,
             encoding,
             ipynb_outputs,

@@ -19,7 +19,9 @@
 use std::borrow::Cow;
 use std::collections::HashMap;
 
-use docling_core::{DoclingDocument, InlineRun, ListItemDclx, Node, PictureImage, Script, Table};
+use docling_core::{
+    DoclingDocument, InlineRun, ListItemDclx, Node, PictureDescription, PictureImage, Script, Table,
+};
 use roxmltree::{Document, Node as XmlNode};
 
 use crate::backend::markdown::escape_text;
@@ -659,13 +661,13 @@ fn handle_paragraph_inner(
                         text: String::new(),
                     });
                 }
-                for image in drawing_images(tp, ctx, false) {
+                for (image, alt) in drawing_images(tp, ctx, false) {
                     doc.push(Node::Picture {
                         caption: None,
                         caption_href: None,
                         image,
                         classification: None,
-                        description: None,
+                        description: alt.map(PictureDescription::alt_text),
                         caption_parent: Default::default(),
                         caption_location: None,
                     });
@@ -682,13 +684,13 @@ fn handle_paragraph_inner(
     // extracted as textbox content above. Modern DrawingML (`<a:blip>`) wins
     // over legacy VML (`<v:imagedata>`), and blip-less shapes yield docling's
     // single rendered placeholder (see `drawing_images`).
-    for image in drawing_images(p, ctx, true) {
+    for (image, alt) in drawing_images(p, ctx, true) {
         doc.push(Node::Picture {
             caption: None,
             caption_href: None,
             image,
             classification: None,
-            description: None,
+            description: alt.map(PictureDescription::alt_text),
             caption_parent: Default::default(),
             caption_location: None,
         });
@@ -1066,8 +1068,13 @@ fn has_drawing(p: XmlNode) -> bool {
 /// rendering. (docling suppresses a render that comes back as an invisible
 /// spacer; no corpus fixture hits that, so no geometry heuristic here.) With
 /// `skip_textbox`, drawings nested in a textbox are excluded (they're extracted
-/// as textbox text instead).
-fn drawing_images(node: XmlNode, ctx: &Ctx, skip_textbox: bool) -> Vec<Option<PictureImage>> {
+/// as textbox text instead). Each entry carries the picture's alt text (#676,
+/// [`drawing_alt`]) when the author wrote one.
+fn drawing_images(
+    node: XmlNode,
+    ctx: &Ctx,
+    skip_textbox: bool,
+) -> Vec<(Option<PictureImage>, Option<String>)> {
     let keep = |n: XmlNode| !skip_textbox || !in_textbox(n);
     let blips: Vec<XmlNode> = node
         .descendants()
@@ -1076,13 +1083,23 @@ fn drawing_images(node: XmlNode, ctx: &Ctx, skip_textbox: bool) -> Vec<Option<Pi
     if !blips.is_empty() {
         return blips
             .iter()
-            .map(|b| attr(*b, "embed").and_then(|id| ctx.images.get(id)).cloned())
+            .map(|b| {
+                (
+                    attr(*b, "embed").and_then(|id| ctx.images.get(id)).cloned(),
+                    drawing_alt(*b),
+                )
+            })
             .collect();
     }
-    let vml: Vec<Option<PictureImage>> = node
+    let vml: Vec<(Option<PictureImage>, Option<String>)> = node
         .descendants()
         .filter(|n| n.has_tag_name("imagedata") && keep(*n))
-        .map(|d| attr(d, "id").and_then(|id| ctx.images.get(id)).cloned())
+        .map(|d| {
+            (
+                attr(d, "id").and_then(|id| ctx.images.get(id)).cloned(),
+                drawing_alt(d),
+            )
+        })
         .collect();
     if !vml.is_empty() {
         return vml;
@@ -1097,9 +1114,44 @@ fn drawing_images(node: XmlNode, ctx: &Ctx, skip_textbox: bool) -> Vec<Option<Pi
                     && attr(c, "id").is_some_and(|id| ctx.charts.contains_key(id))
             })
     }) {
-        return vec![None];
+        return vec![(None, None)];
     }
     Vec::new()
+}
+
+/// The alt text of the picture an `<a:blip>` or `<v:imagedata>` belongs to
+/// (#676): a DrawingML picture's `wp:docPr` (the drawing's document
+/// properties, where Word keeps "Alt Text"), else its `pic:cNvPr`; a VML
+/// shape's `alt` attribute.
+pub(super) fn drawing_alt(image_ref: XmlNode) -> Option<String> {
+    fn props<'a, 'input>(n: XmlNode<'a, 'input>, name: &str) -> Option<XmlNode<'a, 'input>> {
+        n.children().find(|c| c.has_tag_name(name))
+    }
+    for a in image_ref.ancestors() {
+        if a.has_tag_name("inline") || a.has_tag_name("anchor") {
+            if let Some(text) = props(a, "docPr").and_then(super::ooxml::alt_text_of) {
+                return Some(text);
+            }
+        }
+        if a.has_tag_name("pic") {
+            if let Some(text) = props(a, "nvPicPr")
+                .and_then(|n| props(n, "cNvPr"))
+                .and_then(super::ooxml::alt_text_of)
+            {
+                return Some(text);
+            }
+        }
+        if a.has_tag_name("shape") {
+            return attr(a, "alt")
+                .map(str::trim)
+                .filter(|v| !v.is_empty())
+                .map(str::to_string);
+        }
+        if a.has_tag_name("p") {
+            break;
+        }
+    }
+    None
 }
 
 /// Parse every chart part related to `part`: relationship id →

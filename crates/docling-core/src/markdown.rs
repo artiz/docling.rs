@@ -25,6 +25,9 @@ pub enum ImageMode {
 /// Serializer state threaded through the render walk.
 struct Ctx {
     strict: bool,
+    /// Render pictures' alt text (#676): strict Markdown, or the document's
+    /// `picture_alt_text`.
+    alt_text: bool,
     /// Emit compact `| a | b |` tables instead of the padded GitHub serializer.
     compact_tables: bool,
     images: ImageMode,
@@ -75,6 +78,7 @@ impl Ctx {
     fn new(doc: &DoclingDocument, strict: bool, options: &MarkdownExportOptions) -> Self {
         Ctx {
             strict,
+            alt_text: strict || doc.picture_alt_text,
             compact_tables: doc.compact_tables,
             images: options.image_mode,
             artifacts_dir: options.artifacts_dir.clone(),
@@ -367,6 +371,8 @@ pub struct MarkdownStreamer {
     strict: bool,
     images: ImageMode,
     compact_tables: bool,
+    /// [`DoclingDocument::picture_alt_text`] (#676).
+    picture_alt_text: bool,
     /// Whether any non-empty chunk has been emitted yet (drives `\n\n` joins and
     /// the trailing newline).
     emitted_any: bool,
@@ -426,6 +432,7 @@ impl MarkdownStreamer {
             strict,
             images,
             compact_tables,
+            picture_alt_text: false,
             emitted_any: false,
             links: Vec::new(),
             artifacts_dir: artifacts_dir.to_string(),
@@ -470,6 +477,14 @@ impl MarkdownStreamer {
         self
     }
 
+    /// Render pictures' alt text (#676) — [`DoclingDocument::picture_alt_text`]
+    /// for the stream; strict Markdown renders it regardless. Set before the
+    /// first [`push`](Self::push).
+    pub fn with_picture_alt_text(mut self, on: bool) -> Self {
+        self.picture_alt_text = on;
+        self
+    }
+
     /// The `(relative path, bytes)` of images rendered by pushes since the last
     /// drain ([`ImageMode::Referenced`] only — empty otherwise). Paths are
     /// relative to the Markdown file, i.e. they start with the configured
@@ -486,6 +501,7 @@ impl MarkdownStreamer {
         self.links.extend(links.iter().cloned());
         let mut ctx = Ctx {
             strict: self.strict,
+            alt_text: self.strict || self.picture_alt_text,
             compact_tables: self.compact_tables,
             images: self.images,
             artifacts_dir: std::mem::take(&mut self.artifacts_dir),
@@ -1024,6 +1040,10 @@ fn render_item(node: &Node, blocks: &mut Vec<String>, ctx: &mut Ctx) {
         // a description (the picture-OCR text, #645) prints between the
         // caption and the image placeholder — docling's
         // `MarkdownPictureSerializer` order: captions, annotations, image.
+        // Alt text (#676) is rendered only under strict Markdown or the
+        // document's `picture_alt_text`, and then where Markdown puts it: as
+        // the `![alt](…)` of an image line, or — with the placeholder, which
+        // has no alt slot — as the line a description takes.
         Node::Picture {
             caption,
             image,
@@ -1035,12 +1055,17 @@ fn render_item(node: &Node, blocks: &mut Vec<String>, ctx: &mut Ctx) {
                     blocks.push(ctx.breaks(&ctx.caption(cap)));
                 }
             }
+            let alt = description
+                .as_ref()
+                .filter(|d| d.is_alt_text() && ctx.alt_text && !d.text.is_empty());
+            let marker = picture_marker(image.as_ref(), ctx, alt.map(|d| d.text.as_str()));
             if let Some(desc) = description {
-                if !desc.text.is_empty() {
+                let shown = !desc.is_alt_text() || (ctx.alt_text && !marker.starts_with("!["));
+                if !desc.text.is_empty() && shown {
                     blocks.push(ctx.breaks(&ctx.text(&desc.text)));
                 }
             }
-            blocks.push(picture_marker(image.as_ref(), ctx));
+            blocks.push(marker);
         }
         // A chart renders as docling's picture-with-meta markdown: the caption,
         // the placeholder, the humanized classification ("line_chart" ->
@@ -1056,7 +1081,7 @@ fn render_item(node: &Node, blocks: &mut Vec<String>, ctx: &mut Ctx) {
                     blocks.push(ctx.breaks(&ctx.caption(cap)));
                 }
             }
-            blocks.push(picture_marker(None, ctx));
+            blocks.push(picture_marker(None, ctx, None));
             blocks.push(humanize_label(kind));
             let rendered = if ctx.plain {
                 render_table(&ctx.plain_table(table), false)
@@ -1170,11 +1195,29 @@ fn humanize_label(label: &str) -> String {
     }
 }
 
-fn picture_marker(image: Option<&crate::PictureImage>, ctx: &mut Ctx) -> String {
+/// The image line's alt: docling's `Image`, or the picture's alt text (#676)
+/// on one line with its `]` escaped, so it cannot close the bracket.
+fn image_alt(alt: Option<&str>) -> String {
+    match alt {
+        Some(text) => text
+            .split_whitespace()
+            .collect::<Vec<_>>()
+            .join(" ")
+            .replace('\\', "\\\\")
+            .replace(']', "\\]"),
+        None => "Image".to_string(),
+    }
+}
+
+fn picture_marker(image: Option<&crate::PictureImage>, ctx: &mut Ctx, alt: Option<&str>) -> String {
     match (ctx.images, image) {
         // docling embeds the `ImageRef`'s PNG (a JPEG re-encoded).
         (ImageMode::Embedded, Some(img)) => {
-            format!("![Image]({})", crate::pixel_digest::docling_data_uri(img).1)
+            format!(
+                "![{}]({})",
+                image_alt(alt),
+                crate::pixel_digest::docling_data_uri(img).1
+            )
         }
         (ImageMode::Referenced, Some(img)) => {
             let path = format!(
@@ -1185,7 +1228,7 @@ fn picture_marker(image: Option<&crate::PictureImage>, ctx: &mut Ctx) -> String 
             );
             ctx.pic_index += 1;
             ctx.artifacts.push((path.clone(), img.data.clone()));
-            format!("![Image]({})", escape_uri_path(&path))
+            format!("![{}]({})", image_alt(alt), escape_uri_path(&path))
         }
         // Placeholder, or any mode with no extracted image.
         _ => ctx.image_placeholder.clone(),

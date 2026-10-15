@@ -10,6 +10,10 @@
 |---------------|--------------------------|
 | Vector in emf | Test image in EMF format |
 
+A cartoon duck holding a paper
+
+Description automatically generated
+
 <!-- image -->
 
 | Name           | Objective                 |

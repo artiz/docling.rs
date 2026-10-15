@@ -260,6 +260,9 @@ pub struct DocumentConverter {
     /// Emit Markdown tables in the compact `| a | b |` form instead of the
     /// width-padded GitHub serializer (#271, opt-in docling.rs extension).
     compact_tables: bool,
+    /// Render pictures' alt text in Markdown and HTML (#676). See
+    /// [`Self::picture_alt_text`].
+    picture_alt_text: bool,
     /// docling-core's `MarkdownParams.page_break_placeholder`: text inserted
     /// between pages in the Markdown export; `None` (default) omits breaks.
     page_break_placeholder: Option<String>,
@@ -558,6 +561,7 @@ impl Default for DocumentConverter {
             list_attachments: false,
             skip_empty_cells: false,
             compact_tables: false,
+            picture_alt_text: false,
             page_break_placeholder: None,
             ebcdic_layout: None,
             no_table_former: false,
@@ -1174,6 +1178,21 @@ impl DocumentConverter {
         self
     }
 
+    /// Render pictures' author-written alt text (#676) — the `descr` /
+    /// `title` of a DOCX, PPTX or XLSX picture's non-visual properties,
+    /// which the backends keep as the picture's description with
+    /// `created_by = "alt_text"` — in the Markdown and HTML exports: the
+    /// `![alt](…)` of an image line, the line a description takes above a
+    /// placeholder, the `<img alt>` and the description text in HTML. Off
+    /// by default, so the default Markdown and HTML stay byte-for-byte
+    /// docling's; strict Markdown renders it either way, and the JSON
+    /// always carries it as `meta.description`. MarkItDown prints the alt
+    /// text.
+    pub fn picture_alt_text(mut self, on: bool) -> Self {
+        self.picture_alt_text = on;
+        self
+    }
+
     /// Insert `placeholder` between pages in the Markdown export — docling's
     /// `export_to_markdown(page_break_placeholder=…)` (docling-core's
     /// `MarkdownParams`, docling-serve's `md_page_break_placeholder`). Where
@@ -1204,6 +1223,10 @@ impl DocumentConverter {
         // on for its own corpus; never turn it back off here.
         if self.compact_tables {
             document.compact_tables = true;
+        }
+        // Alt text in Markdown/HTML (#676): additive like compact tables.
+        if self.picture_alt_text {
+            document.picture_alt_text = true;
         }
         // Page-break placeholder: a serializer knob like `strict`, carried on
         // the document so every Markdown export of it agrees.
@@ -2218,6 +2241,7 @@ impl DocumentConverter {
             images_scale: self.images_scale,
             page_break_placeholder: self.page_break_placeholder.clone(),
             compact_tables: self.compact_tables,
+            picture_alt_text: self.picture_alt_text,
             document_timeout: self.document_timeout,
             redact: self.redact.clone(),
         }

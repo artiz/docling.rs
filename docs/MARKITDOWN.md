@@ -147,9 +147,7 @@ and local speech recognition for audio and video.
 ## Open gaps
 
 Tracked, in roughly the order they matter to MarkItDown users:
-[#676](https://github.com/docling-project/docling.rs/issues/676) (picture alt text),
 [#679](https://github.com/docling-project/docling.rs/issues/679) (document metadata),
-[#675](https://github.com/docling-project/docling.rs/issues/675) (charset detection),
 [#680](https://github.com/docling-project/docling.rs/issues/680) (pluggable backends).
 
 ## Reproduce the numbers

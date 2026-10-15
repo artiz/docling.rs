@@ -4,6 +4,10 @@ Summer activities
 
 Duck
 
+A cartoon duck holding a paper
+
+Description automatically generated
+
 <!-- image -->
 
 Figure 1: This is a cute duckling

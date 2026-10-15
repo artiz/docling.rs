@@ -61,6 +61,23 @@ def test_legacy_charsets_are_guessed():
     assert forced == md
 
 
+def test_picture_alt_text_reaches_the_document():
+    """#676: a picture's alt text is on the document as its description
+    annotation (``provenance="alt_text"``) whatever the flag; the kwarg
+    reaches the engine (the facade renders it in Markdown)."""
+    from docling_rs import DocumentConverter
+
+    pptx = REPO / "crates/docling-py/tests/data/markitdown/test.pptx"
+    alt = "This phrase of the caption is Human-written."
+    for flag in (False, True):
+        doc = DocumentConverter(picture_alt_text=flag).convert(pptx).document.export_to_dict()
+        annotations = [a for p in doc["pictures"] for a in p.get("annotations", [])]
+        assert any(
+            a.get("kind") == "description" and a.get("text") == alt and a.get("provenance") == "alt_text"
+            for a in annotations
+        ), annotations
+
+
 def test_input_format_matches_docling_values():
     from docling_rs import InputFormat
 

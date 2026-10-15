@@ -1115,6 +1115,33 @@ fn legacy_charsets_are_guessed() {
     assert!(!stderr.contains("warning"), "{stderr}");
 }
 
+/// Picture alt text (#676): MarkItDown's `test.pptx` alt string is in the
+/// JSON, in Markdown under `--picture-alt-text` or `--strict`, not by
+/// default.
+#[test]
+fn picture_alt_text_renders_on_request() {
+    let pptx = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../docling-py/tests/data/markitdown/test.pptx"
+    );
+    let alt = "This phrase of the caption is Human-written.";
+    let (code, out, stderr) = run(&[pptx]);
+    assert_eq!(code, 0, "{stderr}");
+    assert!(!out.contains(alt), "{out}");
+    let (code, out, _) = run(&["--picture-alt-text", pptx]);
+    assert_eq!(code, 0);
+    assert!(out.contains(alt), "{out}");
+    let (code, out, _) = run(&["--strict", pptx]);
+    assert_eq!(code, 0);
+    assert!(out.contains(alt), "{out}");
+    let (code, out, _) = run(&["--to", "json", pptx]);
+    assert_eq!(code, 0);
+    assert!(
+        out.contains(alt) && out.contains("\"created_by\": \"alt_text\""),
+        "{out}"
+    );
+}
+
 #[test]
 fn hints_apply_to_files_and_stdin_lands_in_output_files() {
     let scratch = Scratch::new("hints");

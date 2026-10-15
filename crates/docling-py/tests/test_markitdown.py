@@ -68,8 +68,10 @@ VECTORS = [
             "AutoGen: Enabling Next-Gen LLM Applications via Multi-Agent Conversation",
             "a3f6004b-6f4f-4ea8-bee3-3741f4dc385f",  # chart title
             "2003",  # chart value
-            # dropped: "44bf7d06-…" and "![This phrase of the caption is
-            # Human-written.](Picture4.jpg)" — picture alt text (#676).
+            # Picture alt text (#676): MarkItDown's `![alt](Picture4.jpg)`
+            # is the placeholder's text line here (the file name is not kept).
+            "This phrase of the caption is Human-written.",
+            "44bf7d06-5e7a-4a",
         ],
         must_not_include=["data:image/jpeg;base64,/9j/4AAQSkZJRgABAQE"],
     ),

@@ -104,6 +104,8 @@
 //!   (#271; docling.rs extension, off by default)
 //! - `compact_tables` — unpadded `| a | b |` Markdown tables, all formats
 //!   (#271; docling.rs extension, off by default)
+//! - `picture_alt_text` — pictures' alt text (DOCX/PPTX/XLSX, #676) in the
+//!   Markdown and HTML output; `strict` implies it, JSON has it always
 //! - `pandoc_api_version` — the Pandoc API the client's `pandoc` reads (`to=pandoc`,
 //!   #515): only `1.23` is written, so another version is a 400, not a document
 //!   Pandoc would reject

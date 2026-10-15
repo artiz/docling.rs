@@ -29,7 +29,7 @@
 use std::collections::{HashMap, HashSet};
 
 use docling_core::tree::{Formatting, ItemTree, ListMeta, TreeKind, TreeNote};
-use docling_core::{ContentLayer, PictureImage, Script, Table, TableCell};
+use docling_core::{ContentLayer, PictureDescription, PictureImage, Script, Table, TableCell};
 use roxmltree::{Document, Node as XmlNode, NodeId};
 
 use super::docx::{
@@ -1422,7 +1422,7 @@ impl Walker {
                     captions: Vec::new(),
                     image: img,
                     classification: None,
-                    description: None,
+                    description: super::docx::drawing_alt(*image).map(PictureDescription::alt_text),
                     confidence: None,
                     chart: None,
                     dpi: None,

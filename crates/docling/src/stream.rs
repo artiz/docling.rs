@@ -108,6 +108,8 @@ pub(crate) struct StreamSettings {
     /// reason: the buffered PDF path sets it on the document it builds, the
     /// streaming path has no document.
     pub compact_tables: bool,
+    /// [`DoclingDocument::picture_alt_text`] for the stream (#676).
+    pub picture_alt_text: bool,
     /// [`DocumentConverter::document_timeout`] (#497).
     pub document_timeout: Option<std::time::Duration>,
     /// The PII pass (#621), applied to each page batch before it is
@@ -160,6 +162,7 @@ pub(crate) fn spawn(
 fn streamer(
     strict: bool,
     compact_tables: bool,
+    picture_alt_text: bool,
     page_break_placeholder: Option<String>,
     options: &MarkdownExportOptions,
 ) -> MarkdownStreamer {
@@ -171,6 +174,7 @@ fn streamer(
     )
     .with_export_options(options)
     .with_page_break_placeholder(page_break_placeholder)
+    .with_picture_alt_text(picture_alt_text)
 }
 
 /// Write one push's referenced-mode images (paths are relative to the process
@@ -201,6 +205,7 @@ fn run_pdf(
     let mut streamer = streamer(
         settings.strict,
         settings.compact_tables,
+        settings.picture_alt_text,
         settings.page_break_placeholder.clone(),
         options,
     );
@@ -322,6 +327,7 @@ fn run_buffered(
     let mut streamer = streamer(
         settings.strict,
         doc.compact_tables,
+        settings.picture_alt_text,
         doc.page_break_placeholder.clone(),
         options,
     );
