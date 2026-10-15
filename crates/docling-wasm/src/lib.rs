@@ -251,23 +251,15 @@ pub fn convert_with_options(
 }
 
 /// The file extensions this build can convert, as a JSON string array —
-/// handy for an `<input accept=…>` filter. PDF converts via its embedded
-/// text layer (`pdf-text`); the remaining ML formats (images, audio, METS)
-/// are excluded: they are not compiled into the wasm build.
+/// handy for an `<input accept=…>` filter: the engine's own
+/// [`InputFormat::supported_extensions`] (what `docling-rs
+/// --list-input-formats` prints), which leaves out what this build lacks —
+/// the ML formats (images, audio, video, METS), as the `asr` and full `pdf`
+/// features are not compiled in; PDF stays, converting via its text layer
+/// (`pdf-text`). A format added to the engine is listed here with no edit.
 #[wasm_bindgen]
 pub fn supported_extensions() -> String {
-    // Keep in sync with `InputFormat::from_extension` minus the ML-only
-    // formats (images, audio, video, mets tarballs).
-    let exts = [
-        "docx", "dotx", "docm", "dotm", "pptx", "potx", "ppsx", "pptm", "potm", "ppsm", "md",
-        "markdown", "txt", "text", "qmd", "rmd", "html", "htm", "xhtml", "xml", "nxml", "dclg",
-        "dclx", "adoc", "asciidoc", "asc", "csv", "tsv", "xlsx", "xlsm", "xlsb", "xltx", "xltm",
-        "odt", "ott", "ods", "ots", "odp", "otp", "sxw", "stw", "sxg", "sxc", "stc", "sxi", "sti",
-        "fodt", "fods", "fodp", "json", "sdw", "sda", "sdd", "vor", "abw", "zabw", "awt", "wpd",
-        "wp", "wp5", "wp6", "wpt", "wps", "dbf", "dif", "slk", "sylk", "wk1", "wk2", "wk3", "wk4",
-        "wks", "wrk", "123", "wq1", "wq2", "wb1", "wb2", "wb3", "qpw", "xlr", "vtt", "tex",
-        "latex", "eml", "epub", "mhtml", "mht", "rtf", "vsdx", "vsdm", "pdf", "djvu", "djv",
-    ];
+    let exts = InputFormat::supported_extensions();
     serde_json::to_string(exts.as_slice()).expect("static array serializes")
 }
 
@@ -435,8 +427,21 @@ mod tests {
     #[test]
     fn extensions_json_parses() {
         let v: Vec<String> = serde_json::from_str(&supported_extensions()).unwrap();
-        assert!(v.contains(&"docx".to_string()));
+        for ext in ["docx", "ipynb", "jsonl", "py", "log", "pages", "djvu"] {
+            assert!(v.contains(&ext.to_string()), "{ext}");
+        }
         assert!(v.contains(&"pdf".to_string()), "pdf-text is compiled in");
-        assert!(!v.contains(&"png".to_string()));
+        // The ML formats follow the features this test binary was built
+        // with: absent in the wasm build (`pdf-text` only), present when a
+        // workspace-wide `cargo test` unifies docling's default features
+        // into this crate — the list says what `is_compiled_in` says.
+        let has = |ext: &str| v.contains(&ext.to_string());
+        assert_eq!(has("png"), InputFormat::Image.is_compiled_in());
+        assert_eq!(has("mp3"), InputFormat::Audio.is_compiled_in());
+        assert_eq!(has("mp4"), InputFormat::Video.is_compiled_in());
+        assert!(
+            !has("heic"),
+            "heic needs the heif feature, which no build here has"
+        );
     }
 }

@@ -1,8 +1,9 @@
 # docling-wasm — in-browser document conversion
 
 A `wasm32-unknown-unknown` build of docling.rs's **declarative** converters
-(issue #79): DOCX, HTML, Markdown, XLSX, PPTX, CSV, AsciiDoc, EPUB, ODF,
-WebVTT, Email, MHTML, JATS, USPTO, XBRL, LaTeX, JSON, DocLang — and the
+(issue #79): DOCX, HTML, Markdown, Jupyter notebooks, XLSX, PPTX, CSV,
+AsciiDoc, EPUB, ODF, WebVTT, Email, MHTML, JATS, USPTO, XBRL, LaTeX, JSON,
+DocLang, plain text and source code — and the
 **embedded text layer of PDFs** — converted to Markdown / docling JSON /
 DocLang XML **entirely client-side** — no server, the file never leaves the
 page. Python docling cannot do this.

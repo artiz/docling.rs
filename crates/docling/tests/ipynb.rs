@@ -152,6 +152,55 @@ fn language_raw_cells_and_title_follow_the_metadata() {
     );
 }
 
+/// Display formulas are formula items — `$$latex$$` in Markdown, a
+/// `formula` item in JSON, MathML in HTML — whether on one line or three;
+/// inline math, dollar amounts and a formula inside a link stay prose.
+#[test]
+fn display_formulas_become_formula_items() {
+    let r = convert("cross_entropy_notes.ipynb");
+    let formulas: Vec<&str> = r
+        .document
+        .nodes
+        .iter()
+        .filter_map(|n| match n {
+            Node::Formula { latex, .. } => Some(latex.as_str()),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(formulas.len(), 2, "{:?}", r.document.nodes);
+    assert!(
+        formulas[0].starts_with("H(y) = \\sum_i y_i"),
+        "{}",
+        formulas[0]
+    );
+    assert!(
+        formulas[1].contains("\\mbox{KL}(y~||~\\hat{y})\n= \\sum_i"),
+        "{}",
+        formulas[1]
+    );
+
+    let md = r.document.export_to_markdown();
+    assert!(
+        md.contains("$$H(y) = \\sum_i y_i \\log \\frac{1}{y_i} = -\\sum_i y_i \\log y_i$$"),
+        "{md}"
+    );
+    assert!(md.contains("distribution $y$ is the expected"), "{md}");
+    assert!(md.contains("$0.10 per bit and $5 per message"), "{md}");
+    assert!(
+        md.contains("[$$E=mc^2$$](https://en.wikipedia.org/wiki/Mass%E2%80%93energy_equivalence)"),
+        "{md}"
+    );
+
+    let json = r.document.export_to_json();
+    assert_eq!(json.matches("\"label\": \"formula\"").count(), 2, "{json}");
+    let (html, _) = r
+        .document
+        .export_to_html_with_images(docling::ImageMode::Placeholder, "artifacts");
+    assert!(html.matches("<math").count() >= 2, "{html}");
+    assert!(html.contains("annotation encoding=\"TeX\""), "{html}");
+    assert_eq!(code_items(&r.document).len(), 1);
+}
+
 /// A UTF-8 BOM in front of the JSON, a notebook under `.json`, the media
 /// type, and the format id all reach the notebook backend.
 #[test]

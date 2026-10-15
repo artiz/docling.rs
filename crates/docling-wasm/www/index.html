@@ -154,10 +154,14 @@
 
   <h2>What converts without any setup</h2>
   <p class="hint">
-    DOCX, PPTX, XLSX, HTML, Markdown, CSV, AsciiDoc, EPUB, ODF, RTF, LaTeX, JATS,
-    email, MHTML, JSON, DocLang — and <strong>PDFs that carry a text layer</strong>
-    (the same extraction the native <code>--text-layer-only</code> flag does). These need
-    no models and no network: the converters are compiled into the wasm module.
+    DOCX, PPTX, XLSX, HTML, Markdown, Jupyter notebooks, CSV, AsciiDoc, EPUB, ODF, RTF,
+    LaTeX, JATS, email, MHTML, JSON, DocLang, plain text and source code — and
+    <strong>PDFs that carry a text layer</strong> (the same extraction the native
+    <code>--text-layer-only</code> flag does). These need no models and no network: the
+    converters are compiled into the wasm module. Pictures a Markdown, notebook or HTML
+    file links by <code>http(s)</code> URL are fetched by the page itself under
+    <em>Images: embedded</em> (where the host allows cross-origin reads); the wasm module
+    has no network of its own.
   </p>
 
   <h2>Scanned PDFs and images (optional models)</h2>
@@ -217,7 +221,7 @@ curl -fsSL https://raw.githubusercontent.com/docling-project/docling.rs/master/s
     // pays for ORT, pdf.js or any model. pdf.js rasterization stays on THIS
     // thread (in a worker it falls back to a "fake worker" that garbles the
     // raster); only the wasm OCR runs in the worker, so the UI stays live.
-    import init, { convert, supported_extensions, version } from "./pkg/docling_wasm.js";
+    import init, { convert, convert_with_options, supported_extensions, version } from "./pkg/docling_wasm.js";
 
     const SCALE = 2.0; // px per PDF point — the native pipeline's RENDER_SCALE
     const IMAGE_EXT = ["png", "jpg", "jpeg", "tif", "tiff", "webp", "bmp", "gif"];
@@ -535,6 +539,19 @@ curl -fsSL https://raw.githubusercontent.com/docling-project/docling.rs/master/s
         }
       }
       try {
+        if (images.value === "embedded") {
+          const inlined = await inlineRemoteImages(bytes, name);
+          if (inlined) {
+            // The URLs are data: URIs now: the `embedded` image tier reads
+            // them (the wasm module has no network; `image_sources=remote`
+            // would be refused).
+            const pages = pageLimit();
+            return convert_with_options(inlined, name, JSON.stringify({
+              to: to.value, images: images.value, image_sources: "embedded",
+              ...(pages ? { pages: `1-${pages}` } : {}),
+            }));
+          }
+        }
         return convert(bytes, name, to.value, images.value, pageLimit());
       } catch (e) {
         const msg = String((e && e.message) || e);
@@ -615,6 +632,45 @@ curl -fsSL https://raw.githubusercontent.com/docling-project/docling.rs/master/s
     }
 
     const fmtTime = (ms) => (ms < 1000 ? `${ms.toFixed(0)} ms` : `${(ms / 1000).toFixed(1)} s`);
+
+    // Remote pictures (`![…](https://…)`, `<img src="https://…">`) of a text
+    // input — Markdown, a Jupyter notebook, HTML — fetched here, in the page,
+    // and written back into the file as data: URIs, so the conversion embeds
+    // their pixels. The wasm module has no HTTP client, and a browser could
+    // not hand it one: this is the demo's `image_sources=remote`. A host that
+    // refuses cross-origin reads (no CORS header) keeps its URL — the picture
+    // stays a placeholder, as it would without this. Returns the rewritten
+    // bytes, or null when there was nothing to fetch or nothing succeeded.
+    const TEXT_WITH_IMAGES = /\.(md|markdown|ipynb|html|htm|xhtml|qmd|rmd)$/i;
+    async function inlineRemoteImages(bytes, name) {
+      if (!TEXT_WITH_IMAGES.test(name)) return null;
+      let text;
+      try { text = new TextDecoder("utf-8", { fatal: true }).decode(bytes); } catch { return null; }
+      const urls = new Set();
+      for (const m of text.matchAll(/!\[[^\]]*\]\((https?:\/\/[^)\s"']+)/g)) urls.add(m[1]);
+      for (const m of text.matchAll(/<img[^>]*?\ssrc\s*=\s*\\?["'](https?:\/\/[^"'\\\s>]+)/gi)) urls.add(m[1]);
+      if (!urls.size) return null;
+      status(`${name}: fetching ${urls.size} picture${urls.size > 1 ? "s" : ""} …`, true);
+      const fetched = await Promise.all([...urls].map(async (url) => {
+        try {
+          const r = await fetch(url, { mode: "cors", credentials: "omit" });
+          if (!r.ok) throw new Error(r.status);
+          const type = (r.headers.get("content-type") || "").split(";")[0].trim();
+          if (!type.startsWith("image/")) throw new Error(type || "not an image");
+          const buf = new Uint8Array(await r.arrayBuffer());
+          let bin = "";
+          for (let i = 0; i < buf.length; i += 0x8000) bin += String.fromCharCode.apply(null, buf.subarray(i, i + 0x8000));
+          return [url, `data:${type};base64,${btoa(bin)}`];
+        } catch (e) {
+          console.warn(`picture not fetched (CORS or network): ${url}`, e);
+          return null;
+        }
+      }));
+      const got = fetched.filter(Boolean);
+      if (!got.length) return null;
+      for (const [url, data] of got) text = text.split(url).join(data);
+      return new TextEncoder().encode(text);
+    }
     // The Pages control: a positive integer caps how many pages convert;
     // anything else means "all".
     function pageLimit() {

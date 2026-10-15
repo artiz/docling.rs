@@ -1,0 +1,157 @@
+{
+  "schema_name": "DoclingDocument",
+  "version": "1.10.0",
+  "name": "display_math",
+  "origin": {
+    "mimetype": "text/plain",
+    "binary_hash": 8953225234203095204,
+    "filename": "display_math"
+  },
+  "furniture": {
+    "self_ref": "#/furniture",
+    "children": [],
+    "content_layer": "furniture",
+    "name": "_root_",
+    "label": "unspecified"
+  },
+  "body": {
+    "self_ref": "#/body",
+    "children": [
+      {
+        "$ref": "#/texts/0"
+      },
+      {
+        "$ref": "#/texts/1"
+      },
+      {
+        "$ref": "#/texts/2"
+      },
+      {
+        "$ref": "#/texts/3"
+      },
+      {
+        "$ref": "#/texts/4"
+      },
+      {
+        "$ref": "#/groups/0"
+      }
+    ],
+    "content_layer": "body",
+    "name": "_root_",
+    "label": "unspecified"
+  },
+  "groups": [
+    {
+      "self_ref": "#/groups/0",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [
+        {
+          "$ref": "#/texts/5"
+        },
+        {
+          "$ref": "#/texts/6"
+        }
+      ],
+      "content_layer": "body",
+      "name": "list",
+      "label": "list"
+    }
+  ],
+  "texts": [
+    {
+      "self_ref": "#/texts/0",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "title",
+      "prov": [],
+      "orig": "Display math",
+      "text": "Display math"
+    },
+    {
+      "self_ref": "#/texts/1",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "Inline math like $E = mc^2$ and a price of $5 stay in the prose; so does\n[$$E=mc^2$$](https://en.wikipedia.org/wiki/Albert_Einstein) inside a link.",
+      "text": "Inline math like $E = mc^2$ and a price of $5 stay in the prose; so does\n[$$E=mc^2$$](https://en.wikipedia.org/wiki/Albert_Einstein) inside a link."
+    },
+    {
+      "self_ref": "#/texts/2",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "formula",
+      "prov": [],
+      "orig": "H(y) = -\\sum_i y_i \\log y_i",
+      "text": "H(y) = -\\sum_i y_i \\log y_i"
+    },
+    {
+      "self_ref": "#/texts/3",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "A one-line block:",
+      "text": "A one-line block:"
+    },
+    {
+      "self_ref": "#/texts/4",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "formula",
+      "prov": [],
+      "orig": "\\mbox{KL}(y~||~\\hat{y}) = \\sum_i y_i \\log \\frac{y_i}{\\hat{y}_i}",
+      "text": "\\mbox{KL}(y~||~\\hat{y}) = \\sum_i y_i \\log \\frac{y_i}{\\hat{y}_i}"
+    },
+    {
+      "self_ref": "#/texts/5",
+      "parent": {
+        "$ref": "#/groups/0"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "list_item",
+      "prov": [],
+      "orig": "a list item with $x^2$ inline",
+      "text": "a list item with $x^2$ inline",
+      "enumerated": false,
+      "marker": ""
+    },
+    {
+      "self_ref": "#/texts/6",
+      "parent": {
+        "$ref": "#/groups/0"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "list_item",
+      "prov": [],
+      "orig": "and a block in an item: $$a^2 + b^2 = c^2$$",
+      "text": "and a block in an item: $$a^2 + b^2 = c^2$$",
+      "enumerated": false,
+      "marker": ""
+    }
+  ],
+  "pictures": [],
+  "tables": [],
+  "key_value_items": [],
+  "form_items": [],
+  "pages": {}
+}

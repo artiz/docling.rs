@@ -1,0 +1,34 @@
+\documentclass[11pt,a4paper]{article}
+
+\usepackage[utf8]{inputenc} % allow utf-8 input
+\usepackage[T1]{fontenc}    % use 8-bit T1 fonts
+\usepackage{hyperref}       % hyperlinks
+\usepackage{url}            % simple URL typesetting
+\usepackage{booktabs}       % professional-quality tables
+\usepackage{amsfonts}       % blackboard math symbols
+\usepackage{nicefrac}       % compact symbols for 1/2, etc.
+\usepackage{microtype}      % microtypography
+\usepackage{xcolor}         % colors
+\usepackage{graphicx}       % graphics
+\usepackage[normalem]{ulem} % strikethrough
+\title{Display math}
+
+\begin{document}
+
+\maketitle
+
+Inline math like $E = mc^2$ and a price of $5 stay in the prose; so does
+[$$E=mc^2$\$](https://en.wikipedia.org/wiki/Albert\_Einstein) inside a link.
+
+$$H(y) = -\sum_i y_i \log y_i$$
+
+A one-line block:
+
+$$\mbox{KL}(y~||~\hat{y}) = \sum_i y_i \log \frac{y_i}{\hat{y}_i}$$
+
+\begin{itemize}
+\item a list item with $x^2$ inline
+\item and a block in an item: \$\$a\textasciicircum{}2 + b\textasciicircum{}2 = c\textasciicircum{}2\$\$
+\end{itemize}
+
+\end{document}
