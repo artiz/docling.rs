@@ -715,14 +715,21 @@ impl PyDocumentConverter {
         let bytes = data.as_bytes().to_vec();
         let source = match format {
             Some(id) => {
-                let format = docling::InputFormat::from_id(&id).ok_or_else(|| {
-                    PyValueError::new_err(format!("unknown input format {id:?}"))
-                })?;
+                let format = docling::InputFormat::from_id(&id)
+                    .ok_or_else(|| PyValueError::new_err(format!("unknown input format {id:?}")))?;
                 SourceDocument::from_bytes(&name, format, bytes)
             }
             // The engine's own routing (#671): the extension, else the
             // content's signature, else plain text when the bytes are text.
-            None => SourceDocument::from_named_bytes(&name, bytes, None).map_err(conversion_error)?,
+            // The name stays as given (`anchors.html`, not the stem the
+            // engine names a file by): docling reports a `DocumentStream`'s
+            // name whole, and the `format` branch above keeps it too.
+            None => {
+                let mut source = SourceDocument::from_named_bytes(&name, bytes, None)
+                    .map_err(conversion_error)?;
+                source.name = name;
+                source
+            }
         };
         self.convert_source(py, source, page_range)
     }
@@ -738,9 +745,8 @@ impl PyDocumentConverter {
         py: Python<'_>,
         source: PathLike,
     ) -> PyResult<Vec<PyNativeArchiveItem>> {
-        let bytes = std::fs::read(&source.0).map_err(|e| {
-            ConversionError::new_err(format!("{}: {e}", source.0.display()))
-        })?;
+        let bytes = std::fs::read(&source.0)
+            .map_err(|e| ConversionError::new_err(format!("{}: {e}", source.0.display())))?;
         self.convert_archive_impl(py, bytes)
     }
 
@@ -772,12 +778,8 @@ impl PyDocumentConverter {
                         docling::ArchiveOutcome::Converted(r) => {
                             ("converted", Some(native_result(*r)), None)
                         }
-                        docling::ArchiveOutcome::Skipped(reason) => {
-                            ("skipped", None, Some(reason))
-                        }
-                        docling::ArchiveOutcome::Failed(e) => {
-                            ("failed", None, Some(e.to_string()))
-                        }
+                        docling::ArchiveOutcome::Skipped(reason) => ("skipped", None, Some(reason)),
+                        docling::ArchiveOutcome::Failed(e) => ("failed", None, Some(e.to_string())),
                     };
                     PyNativeArchiveItem {
                         path: item.path,
@@ -1332,7 +1334,10 @@ fn _native(m: &Bound<'_, PyModule>) -> PyResult<()> {
         "PasswordRequiredError",
         m.py().get_type::<PasswordRequiredError>(),
     )?;
-    m.add("WrongPasswordError", m.py().get_type::<WrongPasswordError>())?;
+    m.add(
+        "WrongPasswordError",
+        m.py().get_type::<WrongPasswordError>(),
+    )?;
     m.add("__version__", env!("CARGO_PKG_VERSION"))?;
     Ok(())
 }
