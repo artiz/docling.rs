@@ -1,0 +1,2836 @@
+{
+  "schema_name": "DoclingDocument",
+  "version": "1.10.0",
+  "name": "w3c_news",
+  "origin": {
+    "mimetype": "text/plain",
+    "binary_hash": 6616986255511733386,
+    "filename": "w3c_news"
+  },
+  "furniture": {
+    "self_ref": "#/furniture",
+    "children": [],
+    "content_layer": "furniture",
+    "name": "_root_",
+    "label": "unspecified"
+  },
+  "body": {
+    "self_ref": "#/body",
+    "children": [
+      {
+        "$ref": "#/texts/0"
+      },
+      {
+        "$ref": "#/texts/1"
+      },
+      {
+        "$ref": "#/texts/2"
+      },
+      {
+        "$ref": "#/texts/3"
+      },
+      {
+        "$ref": "#/texts/4"
+      },
+      {
+        "$ref": "#/texts/5"
+      },
+      {
+        "$ref": "#/groups/0"
+      },
+      {
+        "$ref": "#/texts/11"
+      },
+      {
+        "$ref": "#/texts/12"
+      },
+      {
+        "$ref": "#/texts/13"
+      },
+      {
+        "$ref": "#/texts/14"
+      },
+      {
+        "$ref": "#/texts/15"
+      },
+      {
+        "$ref": "#/texts/16"
+      },
+      {
+        "$ref": "#/texts/17"
+      },
+      {
+        "$ref": "#/texts/18"
+      },
+      {
+        "$ref": "#/texts/19"
+      },
+      {
+        "$ref": "#/texts/20"
+      },
+      {
+        "$ref": "#/texts/21"
+      },
+      {
+        "$ref": "#/texts/22"
+      },
+      {
+        "$ref": "#/texts/23"
+      },
+      {
+        "$ref": "#/texts/24"
+      },
+      {
+        "$ref": "#/texts/25"
+      },
+      {
+        "$ref": "#/texts/26"
+      },
+      {
+        "$ref": "#/texts/27"
+      },
+      {
+        "$ref": "#/groups/1"
+      },
+      {
+        "$ref": "#/texts/35"
+      },
+      {
+        "$ref": "#/texts/36"
+      },
+      {
+        "$ref": "#/texts/37"
+      },
+      {
+        "$ref": "#/texts/38"
+      },
+      {
+        "$ref": "#/texts/39"
+      },
+      {
+        "$ref": "#/texts/40"
+      },
+      {
+        "$ref": "#/texts/41"
+      },
+      {
+        "$ref": "#/texts/42"
+      },
+      {
+        "$ref": "#/texts/43"
+      },
+      {
+        "$ref": "#/texts/44"
+      },
+      {
+        "$ref": "#/texts/45"
+      },
+      {
+        "$ref": "#/groups/2"
+      },
+      {
+        "$ref": "#/texts/55"
+      },
+      {
+        "$ref": "#/texts/56"
+      },
+      {
+        "$ref": "#/texts/57"
+      },
+      {
+        "$ref": "#/texts/58"
+      },
+      {
+        "$ref": "#/texts/59"
+      },
+      {
+        "$ref": "#/texts/60"
+      },
+      {
+        "$ref": "#/texts/61"
+      },
+      {
+        "$ref": "#/texts/62"
+      },
+      {
+        "$ref": "#/texts/63"
+      },
+      {
+        "$ref": "#/texts/64"
+      },
+      {
+        "$ref": "#/texts/65"
+      },
+      {
+        "$ref": "#/texts/66"
+      },
+      {
+        "$ref": "#/texts/67"
+      },
+      {
+        "$ref": "#/texts/68"
+      },
+      {
+        "$ref": "#/texts/69"
+      },
+      {
+        "$ref": "#/groups/3"
+      },
+      {
+        "$ref": "#/texts/72"
+      },
+      {
+        "$ref": "#/texts/73"
+      },
+      {
+        "$ref": "#/texts/74"
+      },
+      {
+        "$ref": "#/texts/75"
+      },
+      {
+        "$ref": "#/texts/76"
+      },
+      {
+        "$ref": "#/texts/77"
+      },
+      {
+        "$ref": "#/texts/78"
+      },
+      {
+        "$ref": "#/texts/79"
+      },
+      {
+        "$ref": "#/texts/80"
+      },
+      {
+        "$ref": "#/texts/81"
+      },
+      {
+        "$ref": "#/texts/82"
+      },
+      {
+        "$ref": "#/texts/83"
+      },
+      {
+        "$ref": "#/texts/84"
+      },
+      {
+        "$ref": "#/texts/85"
+      },
+      {
+        "$ref": "#/texts/86"
+      },
+      {
+        "$ref": "#/texts/87"
+      },
+      {
+        "$ref": "#/texts/88"
+      },
+      {
+        "$ref": "#/texts/89"
+      },
+      {
+        "$ref": "#/texts/90"
+      },
+      {
+        "$ref": "#/texts/91"
+      },
+      {
+        "$ref": "#/groups/4"
+      },
+      {
+        "$ref": "#/texts/100"
+      },
+      {
+        "$ref": "#/texts/101"
+      },
+      {
+        "$ref": "#/texts/102"
+      },
+      {
+        "$ref": "#/texts/103"
+      },
+      {
+        "$ref": "#/texts/104"
+      },
+      {
+        "$ref": "#/texts/105"
+      },
+      {
+        "$ref": "#/texts/106"
+      },
+      {
+        "$ref": "#/texts/107"
+      },
+      {
+        "$ref": "#/texts/108"
+      },
+      {
+        "$ref": "#/texts/109"
+      },
+      {
+        "$ref": "#/texts/110"
+      },
+      {
+        "$ref": "#/texts/111"
+      },
+      {
+        "$ref": "#/texts/112"
+      },
+      {
+        "$ref": "#/texts/113"
+      },
+      {
+        "$ref": "#/texts/114"
+      },
+      {
+        "$ref": "#/texts/115"
+      },
+      {
+        "$ref": "#/texts/116"
+      },
+      {
+        "$ref": "#/texts/117"
+      },
+      {
+        "$ref": "#/texts/118"
+      },
+      {
+        "$ref": "#/texts/119"
+      },
+      {
+        "$ref": "#/texts/120"
+      },
+      {
+        "$ref": "#/texts/121"
+      },
+      {
+        "$ref": "#/texts/122"
+      },
+      {
+        "$ref": "#/texts/123"
+      },
+      {
+        "$ref": "#/texts/124"
+      },
+      {
+        "$ref": "#/texts/125"
+      },
+      {
+        "$ref": "#/texts/126"
+      },
+      {
+        "$ref": "#/texts/127"
+      },
+      {
+        "$ref": "#/texts/128"
+      },
+      {
+        "$ref": "#/texts/129"
+      },
+      {
+        "$ref": "#/texts/130"
+      },
+      {
+        "$ref": "#/texts/131"
+      },
+      {
+        "$ref": "#/texts/132"
+      },
+      {
+        "$ref": "#/texts/133"
+      },
+      {
+        "$ref": "#/texts/134"
+      },
+      {
+        "$ref": "#/texts/135"
+      },
+      {
+        "$ref": "#/texts/136"
+      },
+      {
+        "$ref": "#/texts/137"
+      },
+      {
+        "$ref": "#/texts/138"
+      },
+      {
+        "$ref": "#/texts/139"
+      },
+      {
+        "$ref": "#/texts/140"
+      },
+      {
+        "$ref": "#/texts/141"
+      },
+      {
+        "$ref": "#/texts/142"
+      },
+      {
+        "$ref": "#/texts/143"
+      },
+      {
+        "$ref": "#/texts/144"
+      },
+      {
+        "$ref": "#/texts/145"
+      },
+      {
+        "$ref": "#/texts/146"
+      },
+      {
+        "$ref": "#/texts/147"
+      },
+      {
+        "$ref": "#/texts/148"
+      },
+      {
+        "$ref": "#/texts/149"
+      },
+      {
+        "$ref": "#/texts/150"
+      },
+      {
+        "$ref": "#/texts/151"
+      },
+      {
+        "$ref": "#/texts/152"
+      },
+      {
+        "$ref": "#/texts/153"
+      },
+      {
+        "$ref": "#/texts/154"
+      },
+      {
+        "$ref": "#/texts/155"
+      },
+      {
+        "$ref": "#/texts/156"
+      },
+      {
+        "$ref": "#/texts/157"
+      },
+      {
+        "$ref": "#/texts/158"
+      },
+      {
+        "$ref": "#/texts/159"
+      },
+      {
+        "$ref": "#/groups/7"
+      },
+      {
+        "$ref": "#/texts/163"
+      },
+      {
+        "$ref": "#/texts/164"
+      },
+      {
+        "$ref": "#/texts/165"
+      },
+      {
+        "$ref": "#/texts/166"
+      },
+      {
+        "$ref": "#/texts/167"
+      },
+      {
+        "$ref": "#/texts/168"
+      },
+      {
+        "$ref": "#/texts/169"
+      },
+      {
+        "$ref": "#/texts/170"
+      },
+      {
+        "$ref": "#/texts/171"
+      },
+      {
+        "$ref": "#/texts/172"
+      }
+    ],
+    "content_layer": "body",
+    "name": "_root_",
+    "label": "unspecified"
+  },
+  "groups": [
+    {
+      "self_ref": "#/groups/0",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [
+        {
+          "$ref": "#/texts/6"
+        },
+        {
+          "$ref": "#/texts/7"
+        },
+        {
+          "$ref": "#/texts/8"
+        },
+        {
+          "$ref": "#/texts/9"
+        },
+        {
+          "$ref": "#/texts/10"
+        }
+      ],
+      "content_layer": "body",
+      "name": "list",
+      "label": "list"
+    },
+    {
+      "self_ref": "#/groups/1",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [
+        {
+          "$ref": "#/texts/28"
+        },
+        {
+          "$ref": "#/texts/29"
+        },
+        {
+          "$ref": "#/texts/30"
+        },
+        {
+          "$ref": "#/texts/31"
+        },
+        {
+          "$ref": "#/texts/32"
+        },
+        {
+          "$ref": "#/texts/33"
+        },
+        {
+          "$ref": "#/texts/34"
+        }
+      ],
+      "content_layer": "body",
+      "name": "list",
+      "label": "list"
+    },
+    {
+      "self_ref": "#/groups/2",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [
+        {
+          "$ref": "#/texts/46"
+        },
+        {
+          "$ref": "#/texts/47"
+        },
+        {
+          "$ref": "#/texts/48"
+        },
+        {
+          "$ref": "#/texts/49"
+        },
+        {
+          "$ref": "#/texts/50"
+        },
+        {
+          "$ref": "#/texts/51"
+        },
+        {
+          "$ref": "#/texts/52"
+        },
+        {
+          "$ref": "#/texts/53"
+        },
+        {
+          "$ref": "#/texts/54"
+        }
+      ],
+      "content_layer": "body",
+      "name": "list",
+      "label": "list"
+    },
+    {
+      "self_ref": "#/groups/3",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [
+        {
+          "$ref": "#/texts/70"
+        },
+        {
+          "$ref": "#/texts/71"
+        }
+      ],
+      "content_layer": "body",
+      "name": "list",
+      "label": "list"
+    },
+    {
+      "self_ref": "#/groups/4",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [
+        {
+          "$ref": "#/texts/92"
+        },
+        {
+          "$ref": "#/texts/96"
+        }
+      ],
+      "content_layer": "body",
+      "name": "list",
+      "label": "list"
+    },
+    {
+      "self_ref": "#/groups/5",
+      "parent": {
+        "$ref": "#/texts/92"
+      },
+      "children": [
+        {
+          "$ref": "#/texts/93"
+        },
+        {
+          "$ref": "#/texts/94"
+        },
+        {
+          "$ref": "#/texts/95"
+        }
+      ],
+      "content_layer": "body",
+      "name": "list",
+      "label": "list"
+    },
+    {
+      "self_ref": "#/groups/6",
+      "parent": {
+        "$ref": "#/texts/96"
+      },
+      "children": [
+        {
+          "$ref": "#/texts/97"
+        },
+        {
+          "$ref": "#/texts/98"
+        },
+        {
+          "$ref": "#/texts/99"
+        }
+      ],
+      "content_layer": "body",
+      "name": "list",
+      "label": "list"
+    },
+    {
+      "self_ref": "#/groups/7",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [
+        {
+          "$ref": "#/texts/160"
+        },
+        {
+          "$ref": "#/texts/161"
+        },
+        {
+          "$ref": "#/texts/162"
+        }
+      ],
+      "content_layer": "body",
+      "name": "list",
+      "label": "list"
+    }
+  ],
+  "texts": [
+    {
+      "self_ref": "#/texts/0",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "title",
+      "prov": [],
+      "orig": "W3C - News",
+      "text": "W3C - News"
+    },
+    {
+      "self_ref": "#/texts/1",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "W3C News",
+      "text": "W3C News"
+    },
+    {
+      "self_ref": "#/texts/2",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "section_header",
+      "prov": [],
+      "orig": "First Draft Notes: Verifiable Credential Threat Models",
+      "text": "First Draft Notes: Verifiable Credential Threat Models",
+      "level": 1
+    },
+    {
+      "self_ref": "#/texts/3",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "Published on: Thu, 08 Oct 2026 08:32:00 +0000",
+      "text": "Published on: Thu, 08 Oct 2026 08:32:00 +0000"
+    },
+    {
+      "self_ref": "#/texts/4",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "The Verifiable Credentials Working Group has published a series of W3C Working Group Note Drafts for threat models.",
+      "text": "The Verifiable Credentials Working Group has published a series of W3C Working Group Note Drafts for threat models."
+    },
+    {
+      "self_ref": "#/texts/5",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "The [Verifiable Credentials Working Group](https://www.w3.org/groups/wg/vc) has published a series of W3C Working Group Note Drafts for threat models. All identify and analyze security and privacy threats specific to their respective recommendation-track documents:",
+      "text": "The [Verifiable Credentials Working Group](https://www.w3.org/groups/wg/vc) has published a series of W3C Working Group Note Drafts for threat models. All identify and analyze security and privacy threats specific to their respective recommendation-track documents:"
+    },
+    {
+      "self_ref": "#/texts/6",
+      "parent": {
+        "$ref": "#/groups/0"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "list_item",
+      "prov": [],
+      "orig": "[Recognized Entities Threat Model v1.0](https://www.w3.org/TR/2026/DNOTE-vc-recognized-entities-threat-model-1.0-20261008/)",
+      "text": "[Recognized Entities Threat Model v1.0](https://www.w3.org/TR/2026/DNOTE-vc-recognized-entities-threat-model-1.0-20261008/)",
+      "enumerated": false,
+      "marker": "-"
+    },
+    {
+      "self_ref": "#/texts/7",
+      "parent": {
+        "$ref": "#/groups/0"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "list_item",
+      "prov": [],
+      "orig": "[Data Integrity Threat Model v1.1](https://www.w3.org/TR/2026/DNOTE-vc-data-integrity-threat-model-1.1-20261008/)",
+      "text": "[Data Integrity Threat Model v1.1](https://www.w3.org/TR/2026/DNOTE-vc-data-integrity-threat-model-1.1-20261008/)",
+      "enumerated": false,
+      "marker": "-"
+    },
+    {
+      "self_ref": "#/texts/8",
+      "parent": {
+        "$ref": "#/groups/0"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "list_item",
+      "prov": [],
+      "orig": "[Verifiable Credential Barcodes Threat Model v1.0](https://www.w3.org/TR/2026/DNOTE-vc-barcodes-threat-model-1.0-20261008/)",
+      "text": "[Verifiable Credential Barcodes Threat Model v1.0](https://www.w3.org/TR/2026/DNOTE-vc-barcodes-threat-model-1.0-20261008/)",
+      "enumerated": false,
+      "marker": "-"
+    },
+    {
+      "self_ref": "#/texts/9",
+      "parent": {
+        "$ref": "#/groups/0"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "list_item",
+      "prov": [],
+      "orig": "[Verifiable Credentials Render Method Threat Model v1.0](https://www.w3.org/TR/2026/DNOTE-vc-render-method-threat-model-1.0-20261008/)",
+      "text": "[Verifiable Credentials Render Method Threat Model v1.0](https://www.w3.org/TR/2026/DNOTE-vc-render-method-threat-model-1.0-20261008/)",
+      "enumerated": false,
+      "marker": "-"
+    },
+    {
+      "self_ref": "#/texts/10",
+      "parent": {
+        "$ref": "#/groups/0"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "list_item",
+      "prov": [],
+      "orig": "[VCALM Threat Model v1.0](https://www.w3.org/TR/2026/DNOTE-vcalm-threat-model-1.0-20261008/)",
+      "text": "[VCALM Threat Model v1.0](https://www.w3.org/TR/2026/DNOTE-vcalm-threat-model-1.0-20261008/)",
+      "enumerated": false,
+      "marker": "-"
+    },
+    {
+      "self_ref": "#/texts/11",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "The working group welcomes comments via GitHub repository issues; the respective repository URL-s can be found in the header of each document.",
+      "text": "The working group welcomes comments via GitHub repository issues; the respective repository URL-s can be found in the header of each document."
+    },
+    {
+      "self_ref": "#/texts/12",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "section_header",
+      "prov": [],
+      "orig": "W3C issues press release about developing Verifiable Credential Barcodes",
+      "text": "W3C issues press release about developing Verifiable Credential Barcodes",
+      "level": 1
+    },
+    {
+      "self_ref": "#/texts/13",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "Published on: Wed, 07 Oct 2026 17:50:00 +0000",
+      "text": "Published on: Wed, 07 Oct 2026 17:50:00 +0000"
+    },
+    {
+      "self_ref": "#/texts/14",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "In a press release we present the concept of real-time revocation that is being developed in the W3C Verifiable Credentials Barcodes specification to protect physical documents.",
+      "text": "In a press release we present the concept of real-time revocation that is being developed in the W3C Verifiable Credentials Barcodes specification to protect physical documents."
+    },
+    {
+      "self_ref": "#/texts/15",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "Recently the data theft of approximately 160 million drivers licenses from the US and Canada was reported and unfortunately, identity thieves will use this data to impersonate victims. Real-time revocation is needed to protect individuals against identity theft. The future of physical document security is being decided as we speak. W3C Verifiable Credential Barcodes are the solution - and the technology is open and free for all to use. The Verifiable Credential Barcodes technology we are building in the W3C Verifiable Credentials Working Group is already protecting millions of people from identity theft and fraud, with the potential to protect billions more. We want to make sure that government organizations and policymakers know that there is a free and open solution to this problem that is being designed for the public good.",
+      "text": "Recently the data theft of approximately 160 million drivers licenses from the US and Canada was reported and unfortunately, identity thieves will use this data to impersonate victims. Real-time revocation is needed to protect individuals against identity theft. The future of physical document security is being decided as we speak. W3C Verifiable Credential Barcodes are the solution - and the technology is open and free for all to use. The Verifiable Credential Barcodes technology we are building in the W3C Verifiable Credentials Working Group is already protecting millions of people from identity theft and fraud, with the potential to protect billions more. We want to make sure that government organizations and policymakers know that there is a free and open solution to this problem that is being designed for the public good."
+    },
+    {
+      "self_ref": "#/texts/16",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "Learn more in our press release: [Data breaches, identity theft, and revocation: a real-world case study on why W3C is developing Verifiable Credential Barcodes](https://www.w3.org/press-releases/2026/data-breaches-identity-theft-and-revocation-a-real-world-case-study-on-why-w3c-is-developing-verifiable-credential-barcodes/) .",
+      "text": "Learn more in our press release: [Data breaches, identity theft, and revocation: a real-world case study on why W3C is developing Verifiable Credential Barcodes](https://www.w3.org/press-releases/2026/data-breaches-identity-theft-and-revocation-a-real-world-case-study-on-why-w3c-is-developing-verifiable-credential-barcodes/) ."
+    },
+    {
+      "self_ref": "#/texts/17",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "section_header",
+      "prov": [],
+      "orig": "Updated Candidate Recommendation: Scalable Vector Graphics (SVG) 2",
+      "text": "Updated Candidate Recommendation: Scalable Vector Graphics (SVG) 2",
+      "level": 1
+    },
+    {
+      "self_ref": "#/texts/18",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "Published on: Tue, 06 Oct 2026 10:21:00 +0000",
+      "text": "Published on: Tue, 06 Oct 2026 10:21:00 +0000"
+    },
+    {
+      "self_ref": "#/texts/19",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "The SVG Working Group published Scalable Vector Graphics (SVG) 2 as a Candidate Recommendation Snapshot and invites implementations.",
+      "text": "The SVG Working Group published Scalable Vector Graphics (SVG) 2 as a Candidate Recommendation Snapshot and invites implementations."
+    },
+    {
+      "self_ref": "#/texts/20",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "The [SVG Working Group](https://www.w3.org/groups/wg/svg/) invites implementations of an updated Candidate Recommendation Snapshot of [Scalable Vector Graphics (SVG) 2](https://www.w3.org/TR/2026/CR-SVG2-20261006/) .",
+      "text": "The [SVG Working Group](https://www.w3.org/groups/wg/svg/) invites implementations of an updated Candidate Recommendation Snapshot of [Scalable Vector Graphics (SVG) 2](https://www.w3.org/TR/2026/CR-SVG2-20261006/) ."
+    },
+    {
+      "self_ref": "#/texts/21",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "This is a fresh version of SVG2 with corrections, clarifications and improvements for more interoperability, in particular in implementations in web browsers.",
+      "text": "This is a fresh version of SVG2 with corrections, clarifications and improvements for more interoperability, in particular in implementations in web browsers."
+    },
+    {
+      "self_ref": "#/texts/22",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "This specification defines the features and syntax for Scalable Vector Graphics (SVG) Version 2. SVG is a language based on XML for describing two-dimensional vector and mixed vector/raster graphics. SVG content is stylable, scalable to different display resolutions, and can be viewed stand-alone, mixed with HTML content, or embedded using XML namespaces within other XML languages. SVG also supports dynamic changes; script can be used to create interactive documents, and animations can be performed using declarative animation features or by using script.",
+      "text": "This specification defines the features and syntax for Scalable Vector Graphics (SVG) Version 2. SVG is a language based on XML for describing two-dimensional vector and mixed vector/raster graphics. SVG content is stylable, scalable to different display resolutions, and can be viewed stand-alone, mixed with HTML content, or embedded using XML namespaces within other XML languages. SVG also supports dynamic changes; script can be used to create interactive documents, and animations can be performed using declarative animation features or by using script."
+    },
+    {
+      "self_ref": "#/texts/23",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "To help the group continue its work in updating this widely-used technology, comments are welcome via [Github issues](https://github.com/w3c/svgwg/issues/) by 1 **December 2026** .",
+      "text": "To help the group continue its work in updating this widely-used technology, comments are welcome via [Github issues](https://github.com/w3c/svgwg/issues/) by 1 **December 2026** ."
+    },
+    {
+      "self_ref": "#/texts/24",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "section_header",
+      "prov": [],
+      "orig": "Consortium Members elect Board of Directors",
+      "text": "Consortium Members elect Board of Directors",
+      "level": 1
+    },
+    {
+      "self_ref": "#/texts/25",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "Published on: Mon, 28 Sep 2026 12:47:00 +0000",
+      "text": "Published on: Mon, 28 Sep 2026 12:47:00 +0000"
+    },
+    {
+      "self_ref": "#/texts/26",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "World Wide Web Consortium Members have elected seven individuals to the World Wide Web Consortium, Inc. Board of Directors",
+      "text": "World Wide Web Consortium Members have elected seven individuals to the World Wide Web Consortium, Inc. Board of Directors"
+    },
+    {
+      "self_ref": "#/texts/27",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "We are pleased to announce that W3C Consortium Members have elected the following seven people, listed in alphabetical order, to the World Wide Web Consortium, Inc. [Board of Directors](https://www.w3.org/groups/other/board/) :",
+      "text": "We are pleased to announce that W3C Consortium Members have elected the following seven people, listed in alphabetical order, to the World Wide Web Consortium, Inc. [Board of Directors](https://www.w3.org/groups/other/board/) :"
+    },
+    {
+      "self_ref": "#/texts/28",
+      "parent": {
+        "$ref": "#/groups/1"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "list_item",
+      "prov": [],
+      "orig": "Koichi Moriyama",
+      "text": "Koichi Moriyama",
+      "enumerated": false,
+      "marker": "-"
+    },
+    {
+      "self_ref": "#/texts/29",
+      "parent": {
+        "$ref": "#/groups/1"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "list_item",
+      "prov": [],
+      "orig": "Chris Needham",
+      "text": "Chris Needham",
+      "enumerated": false,
+      "marker": "-"
+    },
+    {
+      "self_ref": "#/texts/30",
+      "parent": {
+        "$ref": "#/groups/1"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "list_item",
+      "prov": [],
+      "orig": "Theresa O'Connor",
+      "text": "Theresa O'Connor",
+      "enumerated": false,
+      "marker": "-"
+    },
+    {
+      "self_ref": "#/texts/31",
+      "parent": {
+        "$ref": "#/groups/1"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "list_item",
+      "prov": [],
+      "orig": "Florian Rivoal",
+      "text": "Florian Rivoal",
+      "enumerated": false,
+      "marker": "-"
+    },
+    {
+      "self_ref": "#/texts/32",
+      "parent": {
+        "$ref": "#/groups/1"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "list_item",
+      "prov": [],
+      "orig": "Avneesh Singh",
+      "text": "Avneesh Singh",
+      "enumerated": false,
+      "marker": "-"
+    },
+    {
+      "self_ref": "#/texts/33",
+      "parent": {
+        "$ref": "#/groups/1"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "list_item",
+      "prov": [],
+      "orig": "Léonie Watson",
+      "text": "Léonie Watson",
+      "enumerated": false,
+      "marker": "-"
+    },
+    {
+      "self_ref": "#/texts/34",
+      "parent": {
+        "$ref": "#/groups/1"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "list_item",
+      "prov": [],
+      "orig": "Hongru (Judy) Zhu",
+      "text": "Hongru (Judy) Zhu",
+      "enumerated": false,
+      "marker": "-"
+    },
+    {
+      "self_ref": "#/texts/35",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "They join Directors appointed by our current Partners: Dominique Hazaël-Massieux, Chunming Hu, Tatsuya Kurosaka (respectively by ERCIM, France; Beihang University, China; and WCAP, Japan); and Tim Berners-Lee who acts as a non-voting Board member.",
+      "text": "They join Directors appointed by our current Partners: Dominique Hazaël-Massieux, Chunming Hu, Tatsuya Kurosaka (respectively by ERCIM, France; Beihang University, China; and WCAP, Japan); and Tim Berners-Lee who acts as a non-voting Board member."
+    },
+    {
+      "self_ref": "#/texts/36",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "All Board terms are for two years, starting 30 September 2026 until 30 September 2028.",
+      "text": "All Board terms are for two years, starting 30 September 2026 until 30 September 2028."
+    },
+    {
+      "self_ref": "#/texts/37",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "We thank the 12 [candidates](https://www.w3.org/2026/08/bod-nominations.html) who ran in this election.",
+      "text": "We thank the 12 [candidates](https://www.w3.org/2026/08/bod-nominations.html) who ran in this election."
+    },
+    {
+      "self_ref": "#/texts/38",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "The W3C Board of Directors is the governing body of the Consortium. The Board has ultimate authority on its strategic direction, has legal obligations and fiduciary responsibility over W3C as a whole. Directors are formally responsible for the correct running of the organization; this is generally characterized in three broad \"fiduciary\" duties: (1) a duty of care (to exercise good business judgment of a reasonable person with their experience); (2) duty of loyalty (to serve the best interest of the organization); and (3) a duty of obedience (in accordance with all applicable laws and rules). W3C Board of Directors seats are non-paid positions. Learn more about the [W3C Board of Directors responsibilities](https://www.w3.org/2024/06/w3c-board-of-directors-skills-description.html) .",
+      "text": "The W3C Board of Directors is the governing body of the Consortium. The Board has ultimate authority on its strategic direction, has legal obligations and fiduciary responsibility over W3C as a whole. Directors are formally responsible for the correct running of the organization; this is generally characterized in three broad \"fiduciary\" duties: (1) a duty of care (to exercise good business judgment of a reasonable person with their experience); (2) duty of loyalty (to serve the best interest of the organization); and (3) a duty of obedience (in accordance with all applicable laws and rules). W3C Board of Directors seats are non-paid positions. Learn more about the [W3C Board of Directors responsibilities](https://www.w3.org/2024/06/w3c-board-of-directors-skills-description.html) ."
+    },
+    {
+      "self_ref": "#/texts/39",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "section_header",
+      "prov": [],
+      "orig": "W3C Workshop Report: The Future of ODRL",
+      "text": "W3C Workshop Report: The Future of ODRL",
+      "level": 1
+    },
+    {
+      "self_ref": "#/texts/40",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "Published on: Thu, 24 Sep 2026 11:13:00 +0000",
+      "text": "Published on: Thu, 24 Sep 2026 11:13:00 +0000"
+    },
+    {
+      "self_ref": "#/texts/41",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "W3C is pleased to announce the report from the W3C Workshop on the Future of ODRL, held in July 2026 in London, UK, and online.",
+      "text": "W3C is pleased to announce the report from the W3C Workshop on the Future of ODRL, held in July 2026 in London, UK, and online."
+    },
+    {
+      "self_ref": "#/texts/42",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "W3C is pleased to announce the [report](https://www.w3.org/2026/ODRLWS/report.html) from the [W3C Workshop on the Future of ODRL](https://www.w3.org/2026/ODRLWS/index.html) , held in July 2026 in London, UK, and online.",
+      "text": "W3C is pleased to announce the [report](https://www.w3.org/2026/ODRLWS/report.html) from the [W3C Workshop on the Future of ODRL](https://www.w3.org/2026/ODRLWS/index.html) , held in July 2026 in London, UK, and online."
+    },
+    {
+      "self_ref": "#/texts/43",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "Bringing together participants from standards organizations, industry, academia and the broader policy, data and rights communities, the workshop covered media, core semantics, banking and finance, data spaces, legal and regulatory applications, and new language features. It was explicitly positioned as a turning point for ODRL.",
+      "text": "Bringing together participants from standards organizations, industry, academia and the broader policy, data and rights communities, the workshop covered media, core semantics, banking and finance, data spaces, legal and regulatory applications, and new language features. It was explicitly positioned as a turning point for ODRL."
+    },
+    {
+      "self_ref": "#/texts/44",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "The emerging vision is considerably broader than simply producing another revision of the ODRL vocabulary. There was consensus to establish a new W3C ODRL Working Group set to work on ODRL 3.0 as a foundation for machine-readable, interoperable and increasingly machine-actionable policies, capable of operating across sectors and integrating with complementary standards for identity, provenance, legal information, data spaces and digital contracts.",
+      "text": "The emerging vision is considerably broader than simply producing another revision of the ODRL vocabulary. There was consensus to establish a new W3C ODRL Working Group set to work on ODRL 3.0 as a foundation for machine-readable, interoperable and increasingly machine-actionable policies, capable of operating across sectors and integrating with complementary standards for identity, provenance, legal information, data spaces and digital contracts."
+    },
+    {
+      "self_ref": "#/texts/45",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "The workshop's outcomes can be distilled into the following principal recommendations:",
+      "text": "The workshop's outcomes can be distilled into the following principal recommendations:"
+    },
+    {
+      "self_ref": "#/texts/46",
+      "parent": {
+        "$ref": "#/groups/2"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "list_item",
+      "prov": [],
+      "orig": "Establish the new W3C ODRL 3.0 Working Group",
+      "text": "Establish the new W3C ODRL 3.0 Working Group",
+      "enumerated": true,
+      "marker": "1."
+    },
+    {
+      "self_ref": "#/texts/47",
+      "parent": {
+        "$ref": "#/groups/2"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "list_item",
+      "prov": [],
+      "orig": "Start with use cases and explicit requirements",
+      "text": "Start with use cases and explicit requirements",
+      "enumerated": true,
+      "marker": "2."
+    },
+    {
+      "self_ref": "#/texts/48",
+      "parent": {
+        "$ref": "#/groups/2"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "list_item",
+      "prov": [],
+      "orig": "Strengthen the formal semantics of ODRL",
+      "text": "Strengthen the formal semantics of ODRL",
+      "enumerated": true,
+      "marker": "3."
+    },
+    {
+      "self_ref": "#/texts/49",
+      "parent": {
+        "$ref": "#/groups/2"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "list_item",
+      "prov": [],
+      "orig": "Define conformance for policy-processing software",
+      "text": "Define conformance for policy-processing software",
+      "enumerated": true,
+      "marker": "4."
+    },
+    {
+      "self_ref": "#/texts/50",
+      "parent": {
+        "$ref": "#/groups/2"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "list_item",
+      "prov": [],
+      "orig": "Develop a comprehensive conformance test suite",
+      "text": "Develop a comprehensive conformance test suite",
+      "enumerated": true,
+      "marker": "5."
+    },
+    {
+      "self_ref": "#/texts/51",
+      "parent": {
+        "$ref": "#/groups/2"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "list_item",
+      "prov": [],
+      "orig": "Adopt modular and potentially multi-level conformance",
+      "text": "Adopt modular and potentially multi-level conformance",
+      "enumerated": true,
+      "marker": "6."
+    },
+    {
+      "self_ref": "#/texts/52",
+      "parent": {
+        "$ref": "#/groups/2"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "list_item",
+      "prov": [],
+      "orig": "Improve usability",
+      "text": "Improve usability",
+      "enumerated": true,
+      "marker": "7."
+    },
+    {
+      "self_ref": "#/texts/53",
+      "parent": {
+        "$ref": "#/groups/2"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "list_item",
+      "prov": [],
+      "orig": "Position ODRL as an interoperability layer",
+      "text": "Position ODRL as an interoperability layer",
+      "enumerated": true,
+      "marker": "8."
+    },
+    {
+      "self_ref": "#/texts/54",
+      "parent": {
+        "$ref": "#/groups/2"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "list_item",
+      "prov": [],
+      "orig": "Investigate integration with complementary standards",
+      "text": "Investigate integration with complementary standards",
+      "enumerated": true,
+      "marker": "9."
+    },
+    {
+      "self_ref": "#/texts/55",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "The workshop's closing discussion confirmed that the workshop chairs would draft a Working Group charter. The intention is to socialize the charter at [TPAC 2026](https://www.w3.org/news-events/tpac/2026/) in Dublin, with the objective of moving into the next phase of ODRL 3.0 by the end of 2026.",
+      "text": "The workshop's closing discussion confirmed that the workshop chairs would draft a Working Group charter. The intention is to socialize the charter at [TPAC 2026](https://www.w3.org/news-events/tpac/2026/) in Dublin, with the objective of moving into the next phase of ODRL 3.0 by the end of 2026."
+    },
+    {
+      "self_ref": "#/texts/56",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "W3C thanks JP Morgan Chase for hosting the workshop; thanks the [Program Committee](https://www.w3.org/2026/ODRLWS/index.html#program-committee) , the [workshop speakers](https://www.w3.org/2026/ODRLWS/agenda.html) , and all participants for making this event successful.",
+      "text": "W3C thanks JP Morgan Chase for hosting the workshop; thanks the [Program Committee](https://www.w3.org/2026/ODRLWS/index.html#program-committee) , the [workshop speakers](https://www.w3.org/2026/ODRLWS/agenda.html) , and all participants for making this event successful."
+    },
+    {
+      "self_ref": "#/texts/57",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "section_header",
+      "prov": [],
+      "orig": "First Public Working Draft: Bitstring Status List v1.1",
+      "text": "First Public Working Draft: Bitstring Status List v1.1",
+      "level": 1
+    },
+    {
+      "self_ref": "#/texts/58",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "Published on: Thu, 24 Sep 2026 08:28:00 +0000",
+      "text": "Published on: Thu, 24 Sep 2026 08:28:00 +0000"
+    },
+    {
+      "self_ref": "#/texts/59",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "This specification describes a privacy-preserving, space-efficient, and high-performance mechanism for publishing status information such as suspension or revocation of Verifiable Credentials through use of bitstrings.",
+      "text": "This specification describes a privacy-preserving, space-efficient, and high-performance mechanism for publishing status information such as suspension or revocation of Verifiable Credentials through use of bitstrings."
+    },
+    {
+      "self_ref": "#/texts/60",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "The [Verifiable Credentials Working Group](https://www.w3.org/groups/wg/vc) has published a First Public Working Draft of [Bitstring Status List v1.1](https://www.w3.org/TR/2026/WD-vc-bitstring-status-list-1.1-20260924/) . This specification describes a privacy-preserving, space-efficient, and high-performance mechanism for publishing status information such as suspension or revocation of Verifiable Credentials through use of bitstrings.",
+      "text": "The [Verifiable Credentials Working Group](https://www.w3.org/groups/wg/vc) has published a First Public Working Draft of [Bitstring Status List v1.1](https://www.w3.org/TR/2026/WD-vc-bitstring-status-list-1.1-20260924/) . This specification describes a privacy-preserving, space-efficient, and high-performance mechanism for publishing status information such as suspension or revocation of Verifiable Credentials through use of bitstrings."
+    },
+    {
+      "self_ref": "#/texts/61",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "Feedback is welcome via [GitHub](https://github.com/w3c/vc-bitstring-status-list/) .",
+      "text": "Feedback is welcome via [GitHub](https://github.com/w3c/vc-bitstring-status-list/) ."
+    },
+    {
+      "self_ref": "#/texts/62",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "section_header",
+      "prov": [],
+      "orig": "Group Note Draft: Verifiable Credentials Data Model Threat Model v2.1",
+      "text": "Group Note Draft: Verifiable Credentials Data Model Threat Model v2.1",
+      "level": 1
+    },
+    {
+      "self_ref": "#/texts/63",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "Published on: Thu, 24 Sep 2026 08:12:00 +0000",
+      "text": "Published on: Thu, 24 Sep 2026 08:12:00 +0000"
+    },
+    {
+      "self_ref": "#/texts/64",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "This document describes a threat model for the Verifiable Credentials Data Model specification.",
+      "text": "This document describes a threat model for the Verifiable Credentials Data Model specification."
+    },
+    {
+      "self_ref": "#/texts/65",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "The [Verifiable Credentials Working Group](https://www.w3.org/groups/wg/vc) has published the first draft of a Group Note titled [Verifiable Credentials Data Model Threat Model v2.1](https://www.w3.org/TR/2026/DNOTE-vc-data-model-threat-model-2.1-20260924/) . This document describes a threat model for the [Verifiable Credentials Data Model specification](https://www.w3.org/TR/vc-data-model/) . It identifies and analyzes security and privacy threats specific to ecosystems in which issuers issue verifiable credentials to holders, who in turn present verifiable presentations to verifiers.",
+      "text": "The [Verifiable Credentials Working Group](https://www.w3.org/groups/wg/vc) has published the first draft of a Group Note titled [Verifiable Credentials Data Model Threat Model v2.1](https://www.w3.org/TR/2026/DNOTE-vc-data-model-threat-model-2.1-20260924/) . This document describes a threat model for the [Verifiable Credentials Data Model specification](https://www.w3.org/TR/vc-data-model/) . It identifies and analyzes security and privacy threats specific to ecosystems in which issuers issue verifiable credentials to holders, who in turn present verifiable presentations to verifiers."
+    },
+    {
+      "self_ref": "#/texts/66",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "section_header",
+      "prov": [],
+      "orig": "Authorized Translations of WCAG 2.2 and 2.1 in French updated",
+      "text": "Authorized Translations of WCAG 2.2 and 2.1 in French updated",
+      "level": 1
+    },
+    {
+      "self_ref": "#/texts/67",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "Published on: Tue, 22 Sep 2026 08:40:00 +0000",
+      "text": "Published on: Tue, 22 Sep 2026 08:40:00 +0000"
+    },
+    {
+      "self_ref": "#/texts/68",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "W3C has published the updated Authorized French Translations of Web Content Accessibility Guidelines (WCAG) 2.2 and 2.1.",
+      "text": "W3C has published the updated Authorized French Translations of Web Content Accessibility Guidelines (WCAG) 2.2 and 2.1."
+    },
+    {
+      "self_ref": "#/texts/69",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "The World Wide Web Consortium (W3C) has published updated Authorized French Translations of Web Content Accessibility Guidelines (WCAG):",
+      "text": "The World Wide Web Consortium (W3C) has published updated Authorized French Translations of Web Content Accessibility Guidelines (WCAG):"
+    },
+    {
+      "self_ref": "#/texts/70",
+      "parent": {
+        "$ref": "#/groups/3"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "list_item",
+      "prov": [],
+      "orig": "[Règles pour l'accessibilité des contenus web (WCAG) 2.2](https://www.w3.org/Translations/WCAG22-fr-20260922/)",
+      "text": "[Règles pour l'accessibilité des contenus web (WCAG) 2.2](https://www.w3.org/Translations/WCAG22-fr-20260922/)",
+      "enumerated": false,
+      "marker": "-"
+    },
+    {
+      "self_ref": "#/texts/71",
+      "parent": {
+        "$ref": "#/groups/3"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "list_item",
+      "prov": [],
+      "orig": "[Règles pour l'accessibilité des contenus web (WCAG) 2.1](https://www.w3.org/Translations/WCAG21-fr-20260922/)",
+      "text": "[Règles pour l'accessibilité des contenus web (WCAG) 2.1](https://www.w3.org/Translations/WCAG21-fr-20260922/)",
+      "enumerated": false,
+      "marker": "-"
+    },
+    {
+      "self_ref": "#/texts/72",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "The Lead Translation Organization for these authorized translations was [Access42](https://access42.net/) .",
+      "text": "The Lead Translation Organization for these authorized translations was [Access42](https://access42.net/) ."
+    },
+    {
+      "self_ref": "#/texts/73",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "Other translations of accessibility resources, including non-technical and educational resources, are listed in [All WAI Translations](https://www.w3.org/WAI/translations/) .",
+      "text": "Other translations of accessibility resources, including non-technical and educational resources, are listed in [All WAI Translations](https://www.w3.org/WAI/translations/) ."
+    },
+    {
+      "self_ref": "#/texts/74",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "W3C Web Accessibility Initiative ( [WAI](https://www.w3.org/WAI/) ) particularly encourages the development of authorized translations of WCAG 2.2 and other technical specifications to facilitate their adoption and implementation internationally. For information on developing an authorized translation, please see [Policy for Authorized W3C Translations](https://www.w3.org/2005/02/TranslationPolicy) .",
+      "text": "W3C Web Accessibility Initiative ( [WAI](https://www.w3.org/WAI/) ) particularly encourages the development of authorized translations of WCAG 2.2 and other technical specifications to facilitate their adoption and implementation internationally. For information on developing an authorized translation, please see [Policy for Authorized W3C Translations](https://www.w3.org/2005/02/TranslationPolicy) ."
+    },
+    {
+      "self_ref": "#/texts/75",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "Translations enable broader adoption of W3C resources and serve worldwide audience across languages and cultures. Explore more [W3C translations](https://www.w3.org/Translations/) and learn [how to contribute to translation efforts](https://www.w3.org/Consortium/Translation/) .",
+      "text": "Translations enable broader adoption of W3C resources and serve worldwide audience across languages and cultures. Explore more [W3C translations](https://www.w3.org/Translations/) and learn [how to contribute to translation efforts](https://www.w3.org/Consortium/Translation/) ."
+    },
+    {
+      "self_ref": "#/texts/76",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "section_header",
+      "prov": [],
+      "orig": "First Public Working Draft: SHACL 1.2 Inference Rules",
+      "text": "First Public Working Draft: SHACL 1.2 Inference Rules",
+      "level": 1
+    },
+    {
+      "self_ref": "#/texts/77",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "Published on: Thu, 17 Sep 2026 09:39:00 +0000",
+      "text": "Published on: Thu, 17 Sep 2026 09:39:00 +0000"
+    },
+    {
+      "self_ref": "#/texts/78",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "This document defines the Inference Rules support of the SHACL Shapes Constraint Language (SHACL).",
+      "text": "This document defines the Inference Rules support of the SHACL Shapes Constraint Language (SHACL)."
+    },
+    {
+      "self_ref": "#/texts/79",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "The [Data Shapes Working Group](https://www.w3.org/groups/wg/data-shapes) has published a First Public Working Draft of [SHACL 1.2 Inference Rules](https://www.w3.org/TR/2026/WD-shacl12-inference-rules-20260917/) . This document defines the Inference Rules support of the SHACL Shapes Constraint Language (SHACL). While the Core part of SHACL focuses on the basic syntax of shapes and constraint validation of data graphs, the SHACL Inference Rules cover features that can be used to infer new triples from existing triples in the data graph.",
+      "text": "The [Data Shapes Working Group](https://www.w3.org/groups/wg/data-shapes) has published a First Public Working Draft of [SHACL 1.2 Inference Rules](https://www.w3.org/TR/2026/WD-shacl12-inference-rules-20260917/) . This document defines the Inference Rules support of the SHACL Shapes Constraint Language (SHACL). While the Core part of SHACL focuses on the basic syntax of shapes and constraint validation of data graphs, the SHACL Inference Rules cover features that can be used to infer new triples from existing triples in the data graph."
+    },
+    {
+      "self_ref": "#/texts/80",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "Feedback is welcome via [GitHub](https://github.com/w3c/data-shapes/) .",
+      "text": "Feedback is welcome via [GitHub](https://github.com/w3c/data-shapes/) ."
+    },
+    {
+      "self_ref": "#/texts/81",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "section_header",
+      "prov": [],
+      "orig": "First Public Working Draft: Web Authentication: An API for accessing Public Key Credentials Level 4",
+      "text": "First Public Working Draft: Web Authentication: An API for accessing Public Key Credentials Level 4",
+      "level": 1
+    },
+    {
+      "self_ref": "#/texts/82",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "Published on: Tue, 15 Sep 2026 06:07:00 +0000",
+      "text": "Published on: Tue, 15 Sep 2026 06:07:00 +0000"
+    },
+    {
+      "self_ref": "#/texts/83",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "This specification defines an API enabling the creation and use of strong, attested, scoped, public key-based credentials by web applications, for the purpose of strongly authenticating users.",
+      "text": "This specification defines an API enabling the creation and use of strong, attested, scoped, public key-based credentials by web applications, for the purpose of strongly authenticating users."
+    },
+    {
+      "self_ref": "#/texts/84",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "The [Web Authentication Working Group](https://www.w3.org/groups/wg/webauthn/) has published a First Public Working Draft of [Web Authentication: An API for accessing Public Key Credentials Level 4](https://www.w3.org/TR/2026/WD-webauthn-4-20260915/) . This specification defines an API enabling the creation and use of strong, attested, scoped, public key-based credentials by web applications, for the purpose of strongly authenticating users. Conceptually, one or more public key credentials, each scoped to a given WebAuthn Relying Party, are created by and bound to authenticators as requested by the web application. The user agent mediates access to authenticators and their public key credentials in order to preserve user privacy. Authenticators are responsible for ensuring that no operation is performed without user consent. Authenticators provide cryptographic proof of their properties to Relying Parties via attestation. This specification also describes the functional model for WebAuthn conformant authenticators, including their signature and attestation functionality. See [changes since Web Authentication Level 3](https://www.w3.org/TR/2026/WD-webauthn-4-20260915/#changes-since-l3) .",
+      "text": "The [Web Authentication Working Group](https://www.w3.org/groups/wg/webauthn/) has published a First Public Working Draft of [Web Authentication: An API for accessing Public Key Credentials Level 4](https://www.w3.org/TR/2026/WD-webauthn-4-20260915/) . This specification defines an API enabling the creation and use of strong, attested, scoped, public key-based credentials by web applications, for the purpose of strongly authenticating users. Conceptually, one or more public key credentials, each scoped to a given WebAuthn Relying Party, are created by and bound to authenticators as requested by the web application. The user agent mediates access to authenticators and their public key credentials in order to preserve user privacy. Authenticators are responsible for ensuring that no operation is performed without user consent. Authenticators provide cryptographic proof of their properties to Relying Parties via attestation. This specification also describes the functional model for WebAuthn conformant authenticators, including their signature and attestation functionality. See [changes since Web Authentication Level 3](https://www.w3.org/TR/2026/WD-webauthn-4-20260915/#changes-since-l3) ."
+    },
+    {
+      "self_ref": "#/texts/85",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "Feedback is welcome via [GitHub issues](https://github.com/w3c/webauthn/issues) .",
+      "text": "Feedback is welcome via [GitHub issues](https://github.com/w3c/webauthn/issues) ."
+    },
+    {
+      "self_ref": "#/texts/86",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "section_header",
+      "prov": [],
+      "orig": "W3C opens 2026 community survey",
+      "text": "W3C opens 2026 community survey",
+      "level": 1
+    },
+    {
+      "self_ref": "#/texts/87",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "Published on: Fri, 04 Sep 2026 10:29:00 +0000",
+      "text": "Published on: Fri, 04 Sep 2026 10:29:00 +0000"
+    },
+    {
+      "self_ref": "#/texts/88",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "W3C opens an 8-minute survey until 30 September and seeks community-wide input to get to know our community better, investigate needs, and understand how we can improve.",
+      "text": "W3C opens an 8-minute survey until 30 September and seeks community-wide input to get to know our community better, investigate needs, and understand how we can improve."
+    },
+    {
+      "self_ref": "#/texts/89",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "Following on the success of the surveys of the W3C community over the last few years, we are conducting the W3C 2026 survey to get to know our community better, investigate needs, and understand how we can improve.",
+      "text": "Following on the success of the surveys of the W3C community over the last few years, we are conducting the W3C 2026 survey to get to know our community better, investigate needs, and understand how we can improve."
+    },
+    {
+      "self_ref": "#/texts/90",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "Further to the 2025 survey, we already implemented changes that W3C Members benefit from, such as quarterly onboarding calls and monthly newsletters, to name only a few.",
+      "text": "Further to the 2025 survey, we already implemented changes that W3C Members benefit from, such as quarterly onboarding calls and monthly newsletters, to name only a few."
+    },
+    {
+      "self_ref": "#/texts/91",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "This year's survey is being run through SurveyMonkey and should take about 8 minutes to complete. It is available to members as well as those who are part of the larger W3C community. Answers are anonymous.",
+      "text": "This year's survey is being run through SurveyMonkey and should take about 8 minutes to complete. It is available to members as well as those who are part of the larger W3C community. Answers are anonymous."
+    },
+    {
+      "self_ref": "#/texts/92",
+      "parent": {
+        "$ref": "#/groups/4"
+      },
+      "children": [
+        {
+          "$ref": "#/groups/5"
+        }
+      ],
+      "content_layer": "body",
+      "label": "list_item",
+      "prov": [],
+      "orig": "Links for W3C Members:",
+      "text": "Links for W3C Members:",
+      "enumerated": false,
+      "marker": "-"
+    },
+    {
+      "self_ref": "#/texts/93",
+      "parent": {
+        "$ref": "#/groups/5"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "list_item",
+      "prov": [],
+      "orig": "[Chinese](https://www.surveymonkey.com/r/FFXQNHL)",
+      "text": "[Chinese](https://www.surveymonkey.com/r/FFXQNHL)",
+      "enumerated": false,
+      "marker": "-"
+    },
+    {
+      "self_ref": "#/texts/94",
+      "parent": {
+        "$ref": "#/groups/5"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "list_item",
+      "prov": [],
+      "orig": "[English](https://www.surveymonkey.com/r/8F55Y7K)",
+      "text": "[English](https://www.surveymonkey.com/r/8F55Y7K)",
+      "enumerated": false,
+      "marker": "-"
+    },
+    {
+      "self_ref": "#/texts/95",
+      "parent": {
+        "$ref": "#/groups/5"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "list_item",
+      "prov": [],
+      "orig": "[Japanese](https://www.surveymonkey.com/r/7KFXNFB)",
+      "text": "[Japanese](https://www.surveymonkey.com/r/7KFXNFB)",
+      "enumerated": false,
+      "marker": "-"
+    },
+    {
+      "self_ref": "#/texts/96",
+      "parent": {
+        "$ref": "#/groups/4"
+      },
+      "children": [
+        {
+          "$ref": "#/groups/6"
+        }
+      ],
+      "content_layer": "body",
+      "label": "list_item",
+      "prov": [],
+      "orig": "Links for the larger W3C community:",
+      "text": "Links for the larger W3C community:",
+      "enumerated": false,
+      "marker": "-"
+    },
+    {
+      "self_ref": "#/texts/97",
+      "parent": {
+        "$ref": "#/groups/6"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "list_item",
+      "prov": [],
+      "orig": "[Chinese](https://www.surveymonkey.com/r/83CQVX9)",
+      "text": "[Chinese](https://www.surveymonkey.com/r/83CQVX9)",
+      "enumerated": false,
+      "marker": "-"
+    },
+    {
+      "self_ref": "#/texts/98",
+      "parent": {
+        "$ref": "#/groups/6"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "list_item",
+      "prov": [],
+      "orig": "[English](https://www.surveymonkey.com/r/FFGP6DL)",
+      "text": "[English](https://www.surveymonkey.com/r/FFGP6DL)",
+      "enumerated": false,
+      "marker": "-"
+    },
+    {
+      "self_ref": "#/texts/99",
+      "parent": {
+        "$ref": "#/groups/6"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "list_item",
+      "prov": [],
+      "orig": "[Japanese](https://www.surveymonkey.com/r/FF9V2DH)",
+      "text": "[Japanese](https://www.surveymonkey.com/r/FF9V2DH)",
+      "enumerated": false,
+      "marker": "-"
+    },
+    {
+      "self_ref": "#/texts/100",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "The survey closes on **30 September 2026** . We look forward to hearing from you!",
+      "text": "The survey closes on **30 September 2026** . We look forward to hearing from you!"
+    },
+    {
+      "self_ref": "#/texts/101",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "section_header",
+      "prov": [],
+      "orig": "Web Authentication: An API for accessing Public Key Credentials Level 3 is now a W3C Recommendation",
+      "text": "Web Authentication: An API for accessing Public Key Credentials Level 3 is now a W3C Recommendation",
+      "level": 1
+    },
+    {
+      "self_ref": "#/texts/102",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "Published on: Tue, 25 Aug 2026 06:44:00 +0000",
+      "text": "Published on: Tue, 25 Aug 2026 06:44:00 +0000"
+    },
+    {
+      "self_ref": "#/texts/103",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "This specification defines an API enabling the creation and use of strong, attested, scoped, public key-based credentials by web applications, for the purpose of strongly authenticating users.",
+      "text": "This specification defines an API enabling the creation and use of strong, attested, scoped, public key-based credentials by web applications, for the purpose of strongly authenticating users."
+    },
+    {
+      "self_ref": "#/texts/104",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "The [Web Authentication Working Group](https://www.w3.org/groups/wg/webauthn/) is pleased to publish [Web Authentication: An API for accessing Public Key Credentials Level 3](https://www.w3.org/TR/2026/REC-webauthn-3-20260825/) as a W3C Recommendation.",
+      "text": "The [Web Authentication Working Group](https://www.w3.org/groups/wg/webauthn/) is pleased to publish [Web Authentication: An API for accessing Public Key Credentials Level 3](https://www.w3.org/TR/2026/REC-webauthn-3-20260825/) as a W3C Recommendation."
+    },
+    {
+      "self_ref": "#/texts/105",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "This specification defines an API enabling the creation and use of strong, attested, scoped, public key-based credentials by web applications, for the purpose of strongly authenticating users. Conceptually, one or more public key credentials, each scoped to a given WebAuthn Relying Party, are created by and bound to authenticators as requested by the web application. The user agent mediates access to authenticators and their public key credentials in order to preserve user privacy. Authenticators are responsible for ensuring that no operation is performed without user consent. Authenticators provide cryptographic proof of their properties to Relying Parties via attestation. This specification also describes the functional model for WebAuthn conformant authenticators, including their signature and attestation functionality.",
+      "text": "This specification defines an API enabling the creation and use of strong, attested, scoped, public key-based credentials by web applications, for the purpose of strongly authenticating users. Conceptually, one or more public key credentials, each scoped to a given WebAuthn Relying Party, are created by and bound to authenticators as requested by the web application. The user agent mediates access to authenticators and their public key credentials in order to preserve user privacy. Authenticators are responsible for ensuring that no operation is performed without user consent. Authenticators provide cryptographic proof of their properties to Relying Parties via attestation. This specification also describes the functional model for WebAuthn conformant authenticators, including their signature and attestation functionality."
+    },
+    {
+      "self_ref": "#/texts/106",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "Level 3 is the successor to Web Authentication Level 2. New features will be developed in Level 4.",
+      "text": "Level 3 is the successor to Web Authentication Level 2. New features will be developed in Level 4."
+    },
+    {
+      "self_ref": "#/texts/107",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "section_header",
+      "prov": [],
+      "orig": "Patent Advisory Group recommends continuing work on Open Screen Application Protocol",
+      "text": "Patent Advisory Group recommends continuing work on Open Screen Application Protocol",
+      "level": 1
+    },
+    {
+      "self_ref": "#/texts/108",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "Published on: Mon, 24 Aug 2026 13:19:00 +0000",
+      "text": "Published on: Mon, 24 Aug 2026 13:19:00 +0000"
+    },
+    {
+      "self_ref": "#/texts/109",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "W3C launches a Patent Advisory Group (PAG) to resolve issues in the event a patent has been disclosed that may be essential, but is not available under the W3C Royalty-Free licensing terms.",
+      "text": "W3C launches a Patent Advisory Group (PAG) to resolve issues in the event a patent has been disclosed that may be essential, but is not available under the W3C Royalty-Free licensing terms."
+    },
+    {
+      "self_ref": "#/texts/110",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "The [Second Screen Working Group Patent Advisory Group](https://www.w3.org/2025/06/secondscreen-pag/) (PAG), launched in September 2025, has published a [report](https://www.w3.org/2025/06/secondscreen-pag/report.html) recommending that W3C continue work on the Open Screen Application Protocol. W3C [launches a PAG](https://www.w3.org/policies/patent-policy/#sec-Exception) to resolve issues in the event a patent has been disclosed that may be essential, but is not available under the [W3C Royalty-Free licensing terms](https://www.w3.org/policies/patent-policy/#sec-Requirements) .",
+      "text": "The [Second Screen Working Group Patent Advisory Group](https://www.w3.org/2025/06/secondscreen-pag/) (PAG), launched in September 2025, has published a [report](https://www.w3.org/2025/06/secondscreen-pag/report.html) recommending that W3C continue work on the Open Screen Application Protocol. W3C [launches a PAG](https://www.w3.org/policies/patent-policy/#sec-Exception) to resolve issues in the event a patent has been disclosed that may be essential, but is not available under the [W3C Royalty-Free licensing terms](https://www.w3.org/policies/patent-policy/#sec-Requirements) ."
+    },
+    {
+      "self_ref": "#/texts/111",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "section_header",
+      "prov": [],
+      "orig": "First Public Working Draft: The Profiles Vocabulary",
+      "text": "First Public Working Draft: The Profiles Vocabulary",
+      "level": 1
+    },
+    {
+      "self_ref": "#/texts/112",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "Published on: Thu, 20 Aug 2026 05:44:00 +0000",
+      "text": "Published on: Thu, 20 Aug 2026 05:44:00 +0000"
+    },
+    {
+      "self_ref": "#/texts/113",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "The Profiles Vocabulary is an RDF vocabulary created to allow the machine-readable description of profiles of specifications for information resources.",
+      "text": "The Profiles Vocabulary is an RDF vocabulary created to allow the machine-readable description of profiles of specifications for information resources."
+    },
+    {
+      "self_ref": "#/texts/114",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "The [Dataset Exchange Working Group](https://www.w3.org/groups/wg/dx) has published today a First Public Working Draft of [The Profiles Vocabulary](https://www.w3.org/TR/2026/WD-dx-prof-1.0-20260820/) . The Profiles Vocabulary is an RDF vocabulary created to allow the machine-readable description of profiles of specifications for information resources. It can be used to describe profile hierarchies wherein profiles of specifications may themselves have profiles indicated. It can also be used to link together multiple profile resources that make up a profile - guidelines, validation tools, schemas, term lists and so on - and it allows for those profile resources to be described with formats, roles, and digital artifacts.",
+      "text": "The [Dataset Exchange Working Group](https://www.w3.org/groups/wg/dx) has published today a First Public Working Draft of [The Profiles Vocabulary](https://www.w3.org/TR/2026/WD-dx-prof-1.0-20260820/) . The Profiles Vocabulary is an RDF vocabulary created to allow the machine-readable description of profiles of specifications for information resources. It can be used to describe profile hierarchies wherein profiles of specifications may themselves have profiles indicated. It can also be used to link together multiple profile resources that make up a profile - guidelines, validation tools, schemas, term lists and so on - and it allows for those profile resources to be described with formats, roles, and digital artifacts."
+    },
+    {
+      "self_ref": "#/texts/115",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "The namespace for PROF terms is `http://www.w3.org/ns/dx/prof/` .\nThe PROF vocabulary, defined in OWL and encoded in RDF Turtle, is available at [prof.ttl](https://www.w3.org/TR/2026/WD-dx-prof-1.0-20260820/rdf/prof.ttl) .",
+      "text": "The namespace for PROF terms is `http://www.w3.org/ns/dx/prof/` .\nThe PROF vocabulary, defined in OWL and encoded in RDF Turtle, is available at [prof.ttl](https://www.w3.org/TR/2026/WD-dx-prof-1.0-20260820/rdf/prof.ttl) ."
+    },
+    {
+      "self_ref": "#/texts/116",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "Feedback is welcome via [GitHub w3c/dx-prof](https://github.com/w3c/dx-prof/) .",
+      "text": "Feedback is welcome via [GitHub w3c/dx-prof](https://github.com/w3c/dx-prof/) ."
+    },
+    {
+      "self_ref": "#/texts/117",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "section_header",
+      "prov": [],
+      "orig": "Group Note Draft: Web Sustainability Guidelines (WSG) Impact Ratings",
+      "text": "Group Note Draft: Web Sustainability Guidelines (WSG) Impact Ratings",
+      "level": 1
+    },
+    {
+      "self_ref": "#/texts/118",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "Published on: Tue, 18 Aug 2026 07:59:00 +0000",
+      "text": "Published on: Tue, 18 Aug 2026 07:59:00 +0000"
+    },
+    {
+      "self_ref": "#/texts/119",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "This document describes the impact ratings provided alongside Web Sustainability Guidelines (WSG).",
+      "text": "This document describes the impact ratings provided alongside Web Sustainability Guidelines (WSG)."
+    },
+    {
+      "self_ref": "#/texts/120",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "The [Sustainable Web Interest Group](https://www.w3.org/groups/ig/sustainableweb) has published the first draft of a Group Note titled [Web Sustainability Guidelines (WSG) Impact Ratings](https://www.w3.org/TR/2026/DNOTE-wsg-ir-20260818/) . The Web Sustainability Guidelines ( WSG ) [Impact Measurement](https://w3c.github.io/sustainableweb-impact) resource defines a framework for assessing the impact of WSG guidelines across three categories: people, planet, and prosperity. Each guideline is assigned an impact rating (indeterminate, low, medium, or high) and a timeframe (short, medium, or long) indicating when the impact is expected to be observed.",
+      "text": "The [Sustainable Web Interest Group](https://www.w3.org/groups/ig/sustainableweb) has published the first draft of a Group Note titled [Web Sustainability Guidelines (WSG) Impact Ratings](https://www.w3.org/TR/2026/DNOTE-wsg-ir-20260818/) . The Web Sustainability Guidelines ( WSG ) [Impact Measurement](https://w3c.github.io/sustainableweb-impact) resource defines a framework for assessing the impact of WSG guidelines across three categories: people, planet, and prosperity. Each guideline is assigned an impact rating (indeterminate, low, medium, or high) and a timeframe (short, medium, or long) indicating when the impact is expected to be observed."
+    },
+    {
+      "self_ref": "#/texts/121",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "These inputs are used to calculate an impact score for each guideline. The score helps organisations compare guidelines and prioritise actions based on relative impact and timeframe. Higher scores indicate higher impact achieved over a shorter timeframe. The resulting scores are included in the resource.",
+      "text": "These inputs are used to calculate an impact score for each guideline. The score helps organisations compare guidelines and prioritise actions based on relative impact and timeframe. Higher scores indicate higher impact achieved over a shorter timeframe. The resulting scores are included in the resource."
+    },
+    {
+      "self_ref": "#/texts/122",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "Where quantitative measurement is not possible, ratings are based on available research and expert input. Each guideline includes a rationale for its ratings and timeframe, and where appropriate, suggested metrics to support evaluation.",
+      "text": "Where quantitative measurement is not possible, ratings are based on available research and expert input. Each guideline includes a rationale for its ratings and timeframe, and where appropriate, suggested metrics to support evaluation."
+    },
+    {
+      "self_ref": "#/texts/123",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "section_header",
+      "prov": [],
+      "orig": "Updated W3C Recommendation: ARIA in HTML",
+      "text": "Updated W3C Recommendation: ARIA in HTML",
+      "level": 1
+    },
+    {
+      "self_ref": "#/texts/124",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "Published on: Tue, 11 Aug 2026 15:19:00 +0000",
+      "text": "Published on: Tue, 11 Aug 2026 15:19:00 +0000"
+    },
+    {
+      "self_ref": "#/texts/125",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "This specification defines the authoring rules (author conformance requirements) for the use of Accessible Rich Internet Applications (WAI-ARIA) 1.2 and Digital Publishing WAI-ARIA Module 1.1 attributes on [HTML] elements.",
+      "text": "This specification defines the authoring rules (author conformance requirements) for the use of Accessible Rich Internet Applications (WAI-ARIA) 1.2 and Digital Publishing WAI-ARIA Module 1.1 attributes on [HTML] elements."
+    },
+    {
+      "self_ref": "#/texts/126",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "The [Accessible Rich Internet Applications Working Group](https://www.w3.org/groups/wg/aria/) has published [ARIA in HTML](https://www.w3.org/TR/2026/REC-html-aria-20260811/) as an updated W3C Recommendation. This specification defines the authoring rules (author conformance requirements) for the use of [Accessible Rich Internet Applications (WAI-ARIA) 1.2](https://www.w3.org/TR/wai-aria-1.2/) and [Digital Publishing WAI-ARIA Module 1.1](https://www.w3.org/TR/dpub-aria-1.1/) attributes on [ [HTML](https://www.w3.org/TR/2026/REC-html-aria-20260811/#bib-html) ] elements. This specification's primary objective is to define requirements for use with conformance checking tools used by authors (i.e., web developers). These requirements will aid authors in their development of web content, including custom interfaces and widgets, which make use of ARIA to complement or extend the features of the host language [ [HTML](https://www.w3.org/TR/2026/REC-html-aria-20260811/#bib-html) ].",
+      "text": "The [Accessible Rich Internet Applications Working Group](https://www.w3.org/groups/wg/aria/) has published [ARIA in HTML](https://www.w3.org/TR/2026/REC-html-aria-20260811/) as an updated W3C Recommendation. This specification defines the authoring rules (author conformance requirements) for the use of [Accessible Rich Internet Applications (WAI-ARIA) 1.2](https://www.w3.org/TR/wai-aria-1.2/) and [Digital Publishing WAI-ARIA Module 1.1](https://www.w3.org/TR/dpub-aria-1.1/) attributes on [ [HTML](https://www.w3.org/TR/2026/REC-html-aria-20260811/#bib-html) ] elements. This specification's primary objective is to define requirements for use with conformance checking tools used by authors (i.e., web developers). These requirements will aid authors in their development of web content, including custom interfaces and widgets, which make use of ARIA to complement or extend the features of the host language [ [HTML](https://www.w3.org/TR/2026/REC-html-aria-20260811/#bib-html) ]."
+    },
+    {
+      "self_ref": "#/texts/127",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "section_header",
+      "prov": [],
+      "orig": "W3C invites implementations of Decentralized Identifier Resolution (DID Resolution) v1",
+      "text": "W3C invites implementations of Decentralized Identifier Resolution (DID Resolution) v1",
+      "level": 1
+    },
+    {
+      "self_ref": "#/texts/128",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "Published on: Thu, 06 Aug 2026 09:16:00 +0000",
+      "text": "Published on: Thu, 06 Aug 2026 09:16:00 +0000"
+    },
+    {
+      "self_ref": "#/texts/129",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "This document describes the process of obtaining a DID document and accompanying metadata for a specific DID.",
+      "text": "This document describes the process of obtaining a DID document and accompanying metadata for a specific DID."
+    },
+    {
+      "self_ref": "#/texts/130",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "The [Decentralized Identifier Working Group](https://www.w3.org/groups/wg/did) has published a W3C Candidate Recommendation Snapshot of [Decentralized Identifier Resolution (DID Resolution) v1](https://www.w3.org/TR/2026/CR-did-resolution-1.0-20260806/) . Decentralized identifier (DID) resolution is the process of obtaining a DID document and accompanying metadata for a specific DID. The process takes a DID and a set of resolution options as its input and returns a DID document and associated metadata about the resolved document and the resolution request. A resolved DID document is a set of information which enables cryptographically verifiable interactions with the DID subject, including mechanisms such as cryptographic public keys.",
+      "text": "The [Decentralized Identifier Working Group](https://www.w3.org/groups/wg/did) has published a W3C Candidate Recommendation Snapshot of [Decentralized Identifier Resolution (DID Resolution) v1](https://www.w3.org/TR/2026/CR-did-resolution-1.0-20260806/) . Decentralized identifier (DID) resolution is the process of obtaining a DID document and accompanying metadata for a specific DID. The process takes a DID and a set of resolution options as its input and returns a DID document and associated metadata about the resolved document and the resolution request. A resolved DID document is a set of information which enables cryptographically verifiable interactions with the DID subject, including mechanisms such as cryptographic public keys."
+    },
+    {
+      "self_ref": "#/texts/131",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "Comments are welcome via [GitHub issues](https://github.com/w3c/did-resolution/issues/) by **3 September 2026** .",
+      "text": "Comments are welcome via [GitHub issues](https://github.com/w3c/did-resolution/issues/) by **3 September 2026** ."
+    },
+    {
+      "self_ref": "#/texts/132",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "section_header",
+      "prov": [],
+      "orig": "Group Note: Further Aligning W3C's Program of Technical Work with Human Rights",
+      "text": "Group Note: Further Aligning W3C's Program of Technical Work with Human Rights",
+      "level": 1
+    },
+    {
+      "self_ref": "#/texts/133",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "Published on: Tue, 04 Aug 2026 09:16:00 +0000",
+      "text": "Published on: Tue, 04 Aug 2026 09:16:00 +0000"
+    },
+    {
+      "self_ref": "#/texts/134",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "In this document, the Advisory Board lists examples of how human rights and technical standards setting map to each other, points to existing W3C work in this area, and provides concrete proposals to further the alignment between the W3C's technical work and human rights.",
+      "text": "In this document, the Advisory Board lists examples of how human rights and technical standards setting map to each other, points to existing W3C work in this area, and provides concrete proposals to further the alignment between the W3C's technical work and human rights."
+    },
+    {
+      "self_ref": "#/texts/135",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "The W3C [Advisory Board (AB)](https://www.w3.org/groups/other/ab) published a Group Note of [Further Aligning W3C's Program of Technical Work with Human Rights](https://www.w3.org/TR/2026/NOTE-furthering-human-rights-20260804/) . There is a clear link between human rights and technical standards setting. In this position paper, the AB lists examples of how the two map, points to existing W3C work in this area, and provides concrete proposals to further the alignment between the W3C's technical work and human rights.",
+      "text": "The W3C [Advisory Board (AB)](https://www.w3.org/groups/other/ab) published a Group Note of [Further Aligning W3C's Program of Technical Work with Human Rights](https://www.w3.org/TR/2026/NOTE-furthering-human-rights-20260804/) . There is a clear link between human rights and technical standards setting. In this position paper, the AB lists examples of how the two map, points to existing W3C work in this area, and provides concrete proposals to further the alignment between the W3C's technical work and human rights."
+    },
+    {
+      "self_ref": "#/texts/136",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "This document summarizes the AB's current thinking, as of 4 August 2026. This Group Note is endorsed by the AB, but is not endorsed by W3C itself nor its Members.",
+      "text": "This document summarizes the AB's current thinking, as of 4 August 2026. This Group Note is endorsed by the AB, but is not endorsed by W3C itself nor its Members."
+    },
+    {
+      "self_ref": "#/texts/137",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "section_header",
+      "prov": [],
+      "orig": "W3C Invites Implementations of WebTransport",
+      "text": "W3C Invites Implementations of WebTransport",
+      "level": 1
+    },
+    {
+      "self_ref": "#/texts/138",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "Published on: Thu, 30 Jul 2026 08:25:00 +0000",
+      "text": "Published on: Thu, 30 Jul 2026 08:25:00 +0000"
+    },
+    {
+      "self_ref": "#/texts/139",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "This document defines a set of ECMAScript APIs in WebIDL to allow data to be sent and received between a browser and server.",
+      "text": "This document defines a set of ECMAScript APIs in WebIDL to allow data to be sent and received between a browser and server."
+    },
+    {
+      "self_ref": "#/texts/140",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "The [WebTransport Working Group](https://www.w3.org/groups/wg/webtransport/) has published [WebTransport](https://www.w3.org/TR/2026/CR-webtransport-20260730/) as a W3C Candidate Recommendation Snapshot. This document defines a set of ECMAScript APIs in WebIDL to allow data to be sent and received between a browser and server. This specification is being developed in conjunction with protocol specifications developed by the IETF WEBTRANS Working Group.",
+      "text": "The [WebTransport Working Group](https://www.w3.org/groups/wg/webtransport/) has published [WebTransport](https://www.w3.org/TR/2026/CR-webtransport-20260730/) as a W3C Candidate Recommendation Snapshot. This document defines a set of ECMAScript APIs in WebIDL to allow data to be sent and received between a browser and server. This specification is being developed in conjunction with protocol specifications developed by the IETF WEBTRANS Working Group."
+    },
+    {
+      "self_ref": "#/texts/141",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "Comments are welcome via [Github issues](https://github.com/w3c/webtransport/issues/) by **30 October 2026** .",
+      "text": "Comments are welcome via [Github issues](https://github.com/w3c/webtransport/issues/) by **30 October 2026** ."
+    },
+    {
+      "self_ref": "#/texts/142",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "section_header",
+      "prov": [],
+      "orig": "Group Note Draft: Verifiable Credentials Overview v1.1",
+      "text": "Group Note Draft: Verifiable Credentials Overview v1.1",
+      "level": 1
+    },
+    {
+      "self_ref": "#/texts/143",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "Published on: Thu, 30 Jul 2026 08:20:00 +0000",
+      "text": "Published on: Thu, 30 Jul 2026 08:20:00 +0000"
+    },
+    {
+      "self_ref": "#/texts/144",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "The family of W3C Recommendations for Verifiable Credentials, described in this overview document, provides a mechanism to express these sorts of credentials on the Web in a way that is cryptographically secure, privacy respecting, and machine-verifiable.",
+      "text": "The family of W3C Recommendations for Verifiable Credentials, described in this overview document, provides a mechanism to express these sorts of credentials on the Web in a way that is cryptographically secure, privacy respecting, and machine-verifiable."
+    },
+    {
+      "self_ref": "#/texts/145",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "The [Verifiable Credentials Working Group](https://www.w3.org/groups/wg/vc/) has published the first draft of a Group Note titled [Verifiable Credentials Overview v1.1](https://www.w3.org/TR/2026/DNOTE-vc-overview-1.1-20260730/) . Credentials are a part of our daily lives; driver's licenses are used to assert that we are capable of operating a motor vehicle, university degrees can be used to assert our level of education, government-issued passports enable us to travel between countries, and trade authorities issue certificates containing various informations on a product. The family of W3C Recommendations for Verifiable Credentials, described in this overview document, provides a mechanism to express these sorts of credentials on the Web in a way that is cryptographically secure, privacy respecting, and machine-verifiable.",
+      "text": "The [Verifiable Credentials Working Group](https://www.w3.org/groups/wg/vc/) has published the first draft of a Group Note titled [Verifiable Credentials Overview v1.1](https://www.w3.org/TR/2026/DNOTE-vc-overview-1.1-20260730/) . Credentials are a part of our daily lives; driver's licenses are used to assert that we are capable of operating a motor vehicle, university degrees can be used to assert our level of education, government-issued passports enable us to travel between countries, and trade authorities issue certificates containing various informations on a product. The family of W3C Recommendations for Verifiable Credentials, described in this overview document, provides a mechanism to express these sorts of credentials on the Web in a way that is cryptographically secure, privacy respecting, and machine-verifiable."
+    },
+    {
+      "self_ref": "#/texts/146",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "section_header",
+      "prov": [],
+      "orig": "Group Note Draft: EPUB Accessibility 1.2 Explainer",
+      "text": "Group Note Draft: EPUB Accessibility 1.2 Explainer",
+      "level": 1
+    },
+    {
+      "self_ref": "#/texts/147",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "Published on: Thu, 30 Jul 2026 08:17:00 +0000",
+      "text": "Published on: Thu, 30 Jul 2026 08:17:00 +0000"
+    },
+    {
+      "self_ref": "#/texts/148",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "The EPUB Accessibility 1.2 Explainer provides information on how to understand and evaluate the accessible publications conformance requirements of EPUB Accessibility 1.2 against reflowable EPUB publications.",
+      "text": "The EPUB Accessibility 1.2 Explainer provides information on how to understand and evaluate the accessible publications conformance requirements of EPUB Accessibility 1.2 against reflowable EPUB publications."
+    },
+    {
+      "self_ref": "#/texts/149",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "The [Publishing Maintenance Working Group](https://www.w3.org/groups/wg/pm/) has published the first draft of a Group Note titled [EPUB Accessibility 1.2 Explainer](https://www.w3.org/TR/2026/DNOTE-epub-a11y-explain-12-20260730/) , which provides information on how to understand and evaluate the accessible publications conformance requirements of [EPUB Accessibility 1.2](https://www.w3.org/TR/epub-a11y-12/) against reflowable EPUB publications.",
+      "text": "The [Publishing Maintenance Working Group](https://www.w3.org/groups/wg/pm/) has published the first draft of a Group Note titled [EPUB Accessibility 1.2 Explainer](https://www.w3.org/TR/2026/DNOTE-epub-a11y-explain-12-20260730/) , which provides information on how to understand and evaluate the accessible publications conformance requirements of [EPUB Accessibility 1.2](https://www.w3.org/TR/epub-a11y-12/) against reflowable EPUB publications."
+    },
+    {
+      "self_ref": "#/texts/150",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "section_header",
+      "prov": [],
+      "orig": "Group Note: WCAG Evaluation Methodology (WCAG-EM) 2.0",
+      "text": "Group Note: WCAG Evaluation Methodology (WCAG-EM) 2.0",
+      "level": 1
+    },
+    {
+      "self_ref": "#/texts/151",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "Published on: Thu, 23 Jul 2026 13:08:00 +0000",
+      "text": "Published on: Thu, 23 Jul 2026 13:08:00 +0000"
+    },
+    {
+      "self_ref": "#/texts/152",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "This document describes a methodology with a step-by-step process to evaluate how well digital products conform to Web Content Accessibility Guidelines (WCAG) 2.",
+      "text": "This document describes a methodology with a step-by-step process to evaluate how well digital products conform to Web Content Accessibility Guidelines (WCAG) 2."
+    },
+    {
+      "self_ref": "#/texts/153",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "The [Accessibility Guidelines Working Group](https://www.w3.org/groups/wg/ag/) has published [WCAG Evaluation Methodology (WCAG-EM) 2.0](https://www.w3.org/TR/2026/NOTE-wcag-em-2-20260723/) as a Group Note. This document describes a methodology with a step-by-step process to evaluate how well digital products conform to [Web Content Accessibility Guidelines (WCAG) 2](https://www.w3.org/WAI/standards-guidelines/wcag/) .",
+      "text": "The [Accessibility Guidelines Working Group](https://www.w3.org/groups/wg/ag/) has published [WCAG Evaluation Methodology (WCAG-EM) 2.0](https://www.w3.org/TR/2026/NOTE-wcag-em-2-20260723/) as a Group Note. This document describes a methodology with a step-by-step process to evaluate how well digital products conform to [Web Content Accessibility Guidelines (WCAG) 2](https://www.w3.org/WAI/standards-guidelines/wcag/) ."
+    },
+    {
+      "self_ref": "#/texts/154",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "It provides technology-agnostic guidance to define the evaluation scope, explore the target product, select a representative [sample set](https://www.w3.org/TR/2026/NOTE-wcag-em-2-20260723/#dfn-sample-set) from products, evaluate the selected sample set, and report the evaluation findings. This procedure is suitable for use in different evaluation contexts, including self-assessment and third-party evaluation.",
+      "text": "It provides technology-agnostic guidance to define the evaluation scope, explore the target product, select a representative [sample set](https://www.w3.org/TR/2026/NOTE-wcag-em-2-20260723/#dfn-sample-set) from products, evaluate the selected sample set, and report the evaluation findings. This procedure is suitable for use in different evaluation contexts, including self-assessment and third-party evaluation."
+    },
+    {
+      "self_ref": "#/texts/155",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "This document does not define feature-specific instructions, as the WCAG success criteria and [supporting documents](https://www.w3.org/WAI/standards-guidelines/wcag/docs/) cover those. It also does not define additional WCAG 2 requirements, nor does it replace or supersede them in any way.",
+      "text": "This document does not define feature-specific instructions, as the WCAG success criteria and [supporting documents](https://www.w3.org/WAI/standards-guidelines/wcag/docs/) cover those. It also does not define additional WCAG 2 requirements, nor does it replace or supersede them in any way."
+    },
+    {
+      "self_ref": "#/texts/156",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "section_header",
+      "prov": [],
+      "orig": "W3C Invites Implementations of EPUB 3.4, EPUB Reading Systems 3.4 and EPUB Accessibility 1.2",
+      "text": "W3C Invites Implementations of EPUB 3.4, EPUB Reading Systems 3.4 and EPUB Accessibility 1.2",
+      "level": 1
+    },
+    {
+      "self_ref": "#/texts/157",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "Published on: Tue, 21 Jul 2026 09:26:00 +0000",
+      "text": "Published on: Tue, 21 Jul 2026 09:26:00 +0000"
+    },
+    {
+      "self_ref": "#/texts/158",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "EPUB® 3 defines a distribution and interchange format for digital publications and documents. The EPUB format provides a means of representing, packaging, and encoding structured and semantically enhanced web content - including HTML, CSS, SVG, and other resources - for distribution in a single-file container.",
+      "text": "EPUB® 3 defines a distribution and interchange format for digital publications and documents. The EPUB format provides a means of representing, packaging, and encoding structured and semantically enhanced web content - including HTML, CSS, SVG, and other resources - for distribution in a single-file container."
+    },
+    {
+      "self_ref": "#/texts/159",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "The [Publishing Maintenance Working Group](https://www.w3.org/groups/wg/pm/) invites implementations of the following three Candidate Recommendation Snapshots:",
+      "text": "The [Publishing Maintenance Working Group](https://www.w3.org/groups/wg/pm/) invites implementations of the following three Candidate Recommendation Snapshots:"
+    },
+    {
+      "self_ref": "#/texts/160",
+      "parent": {
+        "$ref": "#/groups/7"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "list_item",
+      "prov": [],
+      "orig": "[EPUB 3.4](https://www.w3.org/TR/2026/CR-epub-34-20260721/) : EPUB® 3 defines a distribution and interchange format for digital publications and documents. The EPUB format provides a means of representing, packaging, and encoding structured and semantically enhanced web content - including HTML, CSS, SVG, and other resources - for distribution in a single-file container. This specification defines the authoring requirements for EPUB publications and represents the fourth major revision of the standard.",
+      "text": "[EPUB 3.4](https://www.w3.org/TR/2026/CR-epub-34-20260721/) : EPUB® 3 defines a distribution and interchange format for digital publications and documents. The EPUB format provides a means of representing, packaging, and encoding structured and semantically enhanced web content - including HTML, CSS, SVG, and other resources - for distribution in a single-file container. This specification defines the authoring requirements for EPUB publications and represents the fourth major revision of the standard.",
+      "enumerated": false,
+      "marker": "-"
+    },
+    {
+      "self_ref": "#/texts/161",
+      "parent": {
+        "$ref": "#/groups/7"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "list_item",
+      "prov": [],
+      "orig": "[EPUB Reading Systems 3.4](https://www.w3.org/TR/2026/CR-epub-rs-34-20260721/) : This specification defines the conformance requirements for EPUB 3 reading systems - the user agents that render EPUB publications.",
+      "text": "[EPUB Reading Systems 3.4](https://www.w3.org/TR/2026/CR-epub-rs-34-20260721/) : This specification defines the conformance requirements for EPUB 3 reading systems - the user agents that render EPUB publications.",
+      "enumerated": false,
+      "marker": "-"
+    },
+    {
+      "self_ref": "#/texts/162",
+      "parent": {
+        "$ref": "#/groups/7"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "list_item",
+      "prov": [],
+      "orig": "[EPUB Accessibility 1.2](https://www.w3.org/TR/2026/CR-epub-a11y-12-20260721/) : This specification specifies content conformance requirements for verifying the accessibility of EPUB® Publications. It also specifies accessibility metadata requirements for the discoverability of EPUB publications.",
+      "text": "[EPUB Accessibility 1.2](https://www.w3.org/TR/2026/CR-epub-a11y-12-20260721/) : This specification specifies content conformance requirements for verifying the accessibility of EPUB® Publications. It also specifies accessibility metadata requirements for the discoverability of EPUB publications.",
+      "enumerated": false,
+      "marker": "-"
+    },
+    {
+      "self_ref": "#/texts/163",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "Comments are welcome via [GitHub issues](https://github.com/w3c/epub-specs/issues/) by **19 October 2026** .",
+      "text": "Comments are welcome via [GitHub issues](https://github.com/w3c/epub-specs/issues/) by **19 October 2026** ."
+    },
+    {
+      "self_ref": "#/texts/164",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "section_header",
+      "prov": [],
+      "orig": "Proposed Advancement of Web Authentication: An API for accessing Public Key Credentials Level 3 to W3C Recommendation",
+      "text": "Proposed Advancement of Web Authentication: An API for accessing Public Key Credentials Level 3 to W3C Recommendation",
+      "level": 1
+    },
+    {
+      "self_ref": "#/texts/165",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "Published on: Mon, 20 Jul 2026 15:16:00 +0000",
+      "text": "Published on: Mon, 20 Jul 2026 15:16:00 +0000"
+    },
+    {
+      "self_ref": "#/texts/166",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "This specification defines an API enabling the creation and use of strong, attested, scoped, public key-based credentials by web applications, for the purpose of strongly authenticating users.",
+      "text": "This specification defines an API enabling the creation and use of strong, attested, scoped, public key-based credentials by web applications, for the purpose of strongly authenticating users."
+    },
+    {
+      "self_ref": "#/texts/167",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "Today, the W3C Team proposed advancing [Web Authentication: An API for accessing Public Key Credentials Level 3](https://www.w3.org/TR/2026/CR-webauthn-3-20260526/) to W3C Recommendation. This specification was published by the [Web Authentication Working Group](https://www.w3.org/groups/wg/webauthn/) as a Candidate Recommendation Snapshot on 26 May 2026. This specification defines an API enabling the creation and use of strong, attested, scoped, public key-based credentials by web applications, for the purpose of strongly authenticating users. Conceptually, one or more public key credentials, each scoped to a given WebAuthn Relying Party, are created by and bound to authenticators as requested by the web application. The user agent mediates access to authenticators and their public key credentials in order to preserve user privacy. Authenticators are responsible for ensuring that no operation is performed without user consent. Authenticators provide cryptographic proof of their properties to Relying Parties via attestation. This specification also describes the functional model for WebAuthn conformant authenticators, including their signature and attestation functionality.",
+      "text": "Today, the W3C Team proposed advancing [Web Authentication: An API for accessing Public Key Credentials Level 3](https://www.w3.org/TR/2026/CR-webauthn-3-20260526/) to W3C Recommendation. This specification was published by the [Web Authentication Working Group](https://www.w3.org/groups/wg/webauthn/) as a Candidate Recommendation Snapshot on 26 May 2026. This specification defines an API enabling the creation and use of strong, attested, scoped, public key-based credentials by web applications, for the purpose of strongly authenticating users. Conceptually, one or more public key credentials, each scoped to a given WebAuthn Relying Party, are created by and bound to authenticators as requested by the web application. The user agent mediates access to authenticators and their public key credentials in order to preserve user privacy. Authenticators are responsible for ensuring that no operation is performed without user consent. Authenticators provide cryptographic proof of their properties to Relying Parties via attestation. This specification also describes the functional model for WebAuthn conformant authenticators, including their signature and attestation functionality."
+    },
+    {
+      "self_ref": "#/texts/168",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "section_header",
+      "prov": [],
+      "orig": "First Public Working Draft: Character Model for the World Wide Web: String Matching",
+      "text": "First Public Working Draft: Character Model for the World Wide Web: String Matching",
+      "level": 1
+    },
+    {
+      "self_ref": "#/texts/169",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "Published on: Thu, 16 Jul 2026 09:29:00 +0000",
+      "text": "Published on: Thu, 16 Jul 2026 09:29:00 +0000"
+    },
+    {
+      "self_ref": "#/texts/170",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "This document builds upon Character Model for the World Wide Web 1.0: Fundamentals to provide authors of specifications, software developers, and content developers a common reference on string identity matching on the World Wide Web and thereby increase interoperability.",
+      "text": "This document builds upon Character Model for the World Wide Web 1.0: Fundamentals to provide authors of specifications, software developers, and content developers a common reference on string identity matching on the World Wide Web and thereby increase interoperability."
+    },
+    {
+      "self_ref": "#/texts/171",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "The [Internationalization Working Group](https://www.w3.org/groups/wg/i18n-core/) has published today a First Public Working Draft of [Character Model for the World Wide Web: String Matching](https://www.w3.org/TR/2026/WD-charmod-norm-20260716/) . This document builds upon [Character Model for the World Wide Web 1.0: Fundamentals](https://www.w3.org/TR/charmod/) to provide authors of specifications, software developers, and content developers a common reference on string identity matching on the World Wide Web and thereby increase interoperability.",
+      "text": "The [Internationalization Working Group](https://www.w3.org/groups/wg/i18n-core/) has published today a First Public Working Draft of [Character Model for the World Wide Web: String Matching](https://www.w3.org/TR/2026/WD-charmod-norm-20260716/) . This document builds upon [Character Model for the World Wide Web 1.0: Fundamentals](https://www.w3.org/TR/charmod/) to provide authors of specifications, software developers, and content developers a common reference on string identity matching on the World Wide Web and thereby increase interoperability."
+    },
+    {
+      "self_ref": "#/texts/172",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "Comments are welcome via the [GitHub repository issues](https://github.com/w3c/charmod-norm/) .",
+      "text": "Comments are welcome via the [GitHub repository issues](https://github.com/w3c/charmod-norm/) ."
+    }
+  ],
+  "pictures": [],
+  "tables": [],
+  "key_value_items": [],
+  "form_items": [],
+  "pages": {}
+}

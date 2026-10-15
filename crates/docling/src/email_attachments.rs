@@ -436,6 +436,7 @@ fn default_extension(format: InputFormat) -> Option<&'static str> {
         InputFormat::Email => "eml",
         InputFormat::Image => "png",
         InputFormat::Audio => "mp3",
+        InputFormat::Feed => "rss",
         InputFormat::Video => "mp4",
         InputFormat::Latex => "tex",
         InputFormat::JsonDocling => "json",

@@ -1,0 +1,2155 @@
+{
+  "schema_name": "DoclingDocument",
+  "version": "1.10.0",
+  "name": "go_blog",
+  "origin": {
+    "mimetype": "text/plain",
+    "binary_hash": 14607384641736837392,
+    "filename": "go_blog"
+  },
+  "furniture": {
+    "self_ref": "#/furniture",
+    "children": [],
+    "content_layer": "furniture",
+    "name": "_root_",
+    "label": "unspecified"
+  },
+  "body": {
+    "self_ref": "#/body",
+    "children": [
+      {
+        "$ref": "#/texts/0"
+      },
+      {
+        "$ref": "#/texts/1"
+      },
+      {
+        "$ref": "#/texts/2"
+      },
+      {
+        "$ref": "#/texts/3"
+      },
+      {
+        "$ref": "#/texts/4"
+      },
+      {
+        "$ref": "#/texts/5"
+      },
+      {
+        "$ref": "#/texts/6"
+      },
+      {
+        "$ref": "#/texts/7"
+      },
+      {
+        "$ref": "#/texts/8"
+      },
+      {
+        "$ref": "#/texts/9"
+      },
+      {
+        "$ref": "#/texts/10"
+      },
+      {
+        "$ref": "#/texts/11"
+      },
+      {
+        "$ref": "#/texts/12"
+      },
+      {
+        "$ref": "#/texts/13"
+      },
+      {
+        "$ref": "#/texts/14"
+      },
+      {
+        "$ref": "#/pictures/0"
+      },
+      {
+        "$ref": "#/groups/0"
+      },
+      {
+        "$ref": "#/texts/18"
+      },
+      {
+        "$ref": "#/texts/19"
+      },
+      {
+        "$ref": "#/texts/20"
+      },
+      {
+        "$ref": "#/texts/21"
+      },
+      {
+        "$ref": "#/groups/1"
+      },
+      {
+        "$ref": "#/texts/25"
+      },
+      {
+        "$ref": "#/texts/26"
+      },
+      {
+        "$ref": "#/pictures/1"
+      },
+      {
+        "$ref": "#/texts/27"
+      },
+      {
+        "$ref": "#/texts/28"
+      },
+      {
+        "$ref": "#/texts/29"
+      },
+      {
+        "$ref": "#/texts/30"
+      },
+      {
+        "$ref": "#/texts/31"
+      },
+      {
+        "$ref": "#/texts/32"
+      },
+      {
+        "$ref": "#/texts/33"
+      },
+      {
+        "$ref": "#/texts/34"
+      },
+      {
+        "$ref": "#/texts/35"
+      },
+      {
+        "$ref": "#/texts/36"
+      },
+      {
+        "$ref": "#/texts/37"
+      },
+      {
+        "$ref": "#/texts/38"
+      },
+      {
+        "$ref": "#/texts/39"
+      },
+      {
+        "$ref": "#/texts/40"
+      },
+      {
+        "$ref": "#/texts/41"
+      },
+      {
+        "$ref": "#/texts/42"
+      },
+      {
+        "$ref": "#/texts/43"
+      },
+      {
+        "$ref": "#/texts/44"
+      },
+      {
+        "$ref": "#/texts/45"
+      },
+      {
+        "$ref": "#/texts/46"
+      },
+      {
+        "$ref": "#/texts/47"
+      },
+      {
+        "$ref": "#/texts/48"
+      },
+      {
+        "$ref": "#/texts/49"
+      },
+      {
+        "$ref": "#/texts/50"
+      },
+      {
+        "$ref": "#/texts/51"
+      },
+      {
+        "$ref": "#/texts/52"
+      },
+      {
+        "$ref": "#/texts/53"
+      },
+      {
+        "$ref": "#/texts/54"
+      },
+      {
+        "$ref": "#/texts/55"
+      },
+      {
+        "$ref": "#/texts/56"
+      },
+      {
+        "$ref": "#/texts/57"
+      },
+      {
+        "$ref": "#/texts/58"
+      },
+      {
+        "$ref": "#/texts/59"
+      },
+      {
+        "$ref": "#/texts/60"
+      },
+      {
+        "$ref": "#/texts/61"
+      },
+      {
+        "$ref": "#/texts/62"
+      },
+      {
+        "$ref": "#/groups/2"
+      },
+      {
+        "$ref": "#/texts/65"
+      },
+      {
+        "$ref": "#/texts/66"
+      },
+      {
+        "$ref": "#/texts/67"
+      },
+      {
+        "$ref": "#/texts/68"
+      },
+      {
+        "$ref": "#/texts/69"
+      },
+      {
+        "$ref": "#/texts/70"
+      },
+      {
+        "$ref": "#/texts/71"
+      },
+      {
+        "$ref": "#/texts/72"
+      },
+      {
+        "$ref": "#/texts/73"
+      },
+      {
+        "$ref": "#/texts/74"
+      },
+      {
+        "$ref": "#/texts/75"
+      },
+      {
+        "$ref": "#/texts/76"
+      },
+      {
+        "$ref": "#/texts/77"
+      },
+      {
+        "$ref": "#/texts/78"
+      },
+      {
+        "$ref": "#/groups/3"
+      },
+      {
+        "$ref": "#/texts/82"
+      },
+      {
+        "$ref": "#/groups/4"
+      },
+      {
+        "$ref": "#/texts/85"
+      },
+      {
+        "$ref": "#/texts/86"
+      },
+      {
+        "$ref": "#/texts/87"
+      },
+      {
+        "$ref": "#/texts/88"
+      },
+      {
+        "$ref": "#/groups/5"
+      },
+      {
+        "$ref": "#/texts/91"
+      },
+      {
+        "$ref": "#/texts/92"
+      },
+      {
+        "$ref": "#/groups/6"
+      },
+      {
+        "$ref": "#/texts/96"
+      },
+      {
+        "$ref": "#/texts/97"
+      },
+      {
+        "$ref": "#/texts/98"
+      },
+      {
+        "$ref": "#/texts/99"
+      },
+      {
+        "$ref": "#/texts/100"
+      },
+      {
+        "$ref": "#/texts/101"
+      },
+      {
+        "$ref": "#/texts/102"
+      },
+      {
+        "$ref": "#/texts/103"
+      },
+      {
+        "$ref": "#/texts/104"
+      },
+      {
+        "$ref": "#/texts/105"
+      },
+      {
+        "$ref": "#/texts/106"
+      },
+      {
+        "$ref": "#/groups/7"
+      },
+      {
+        "$ref": "#/texts/110"
+      },
+      {
+        "$ref": "#/groups/8"
+      },
+      {
+        "$ref": "#/texts/114"
+      },
+      {
+        "$ref": "#/texts/115"
+      },
+      {
+        "$ref": "#/texts/116"
+      },
+      {
+        "$ref": "#/texts/117"
+      },
+      {
+        "$ref": "#/texts/118"
+      },
+      {
+        "$ref": "#/texts/119"
+      },
+      {
+        "$ref": "#/texts/120"
+      },
+      {
+        "$ref": "#/texts/121"
+      },
+      {
+        "$ref": "#/texts/122"
+      }
+    ],
+    "content_layer": "body",
+    "name": "_root_",
+    "label": "unspecified"
+  },
+  "groups": [
+    {
+      "self_ref": "#/groups/0",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [
+        {
+          "$ref": "#/texts/15"
+        },
+        {
+          "$ref": "#/texts/16"
+        },
+        {
+          "$ref": "#/texts/17"
+        }
+      ],
+      "content_layer": "body",
+      "name": "list",
+      "label": "list"
+    },
+    {
+      "self_ref": "#/groups/1",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [
+        {
+          "$ref": "#/texts/22"
+        },
+        {
+          "$ref": "#/texts/23"
+        },
+        {
+          "$ref": "#/texts/24"
+        }
+      ],
+      "content_layer": "body",
+      "name": "list",
+      "label": "list"
+    },
+    {
+      "self_ref": "#/groups/2",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [
+        {
+          "$ref": "#/texts/63"
+        },
+        {
+          "$ref": "#/texts/64"
+        }
+      ],
+      "content_layer": "body",
+      "name": "list",
+      "label": "list"
+    },
+    {
+      "self_ref": "#/groups/3",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [
+        {
+          "$ref": "#/texts/79"
+        },
+        {
+          "$ref": "#/texts/80"
+        },
+        {
+          "$ref": "#/texts/81"
+        }
+      ],
+      "content_layer": "body",
+      "name": "list",
+      "label": "list"
+    },
+    {
+      "self_ref": "#/groups/4",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [
+        {
+          "$ref": "#/texts/83"
+        },
+        {
+          "$ref": "#/texts/84"
+        }
+      ],
+      "content_layer": "body",
+      "name": "list",
+      "label": "list"
+    },
+    {
+      "self_ref": "#/groups/5",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [
+        {
+          "$ref": "#/texts/89"
+        },
+        {
+          "$ref": "#/texts/90"
+        }
+      ],
+      "content_layer": "body",
+      "name": "list",
+      "label": "list"
+    },
+    {
+      "self_ref": "#/groups/6",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [
+        {
+          "$ref": "#/texts/93"
+        },
+        {
+          "$ref": "#/texts/94"
+        },
+        {
+          "$ref": "#/texts/95"
+        }
+      ],
+      "content_layer": "body",
+      "name": "list",
+      "label": "list"
+    },
+    {
+      "self_ref": "#/groups/7",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [
+        {
+          "$ref": "#/texts/107"
+        },
+        {
+          "$ref": "#/texts/108"
+        },
+        {
+          "$ref": "#/texts/109"
+        }
+      ],
+      "content_layer": "body",
+      "name": "list",
+      "label": "list"
+    },
+    {
+      "self_ref": "#/groups/8",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [
+        {
+          "$ref": "#/texts/111"
+        },
+        {
+          "$ref": "#/texts/112"
+        },
+        {
+          "$ref": "#/texts/113"
+        }
+      ],
+      "content_layer": "body",
+      "name": "list",
+      "label": "list"
+    }
+  ],
+  "texts": [
+    {
+      "self_ref": "#/texts/0",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "title",
+      "prov": [],
+      "orig": "The Go Blog",
+      "text": "The Go Blog"
+    },
+    {
+      "self_ref": "#/texts/1",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "section_header",
+      "prov": [],
+      "orig": "Better HTTP/1 connection reuse",
+      "text": "Better HTTP/1 connection reuse",
+      "level": 1
+    },
+    {
+      "self_ref": "#/texts/2",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "Updated on: 2026-10-14T00:00:00+00:00",
+      "text": "Updated on: 2026-10-14T00:00:00+00:00"
+    },
+    {
+      "self_ref": "#/texts/3",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "Go 1.27 includes a change to the HTTP client that can make programs sending many sequential HTTP/1 requests significantly faster.",
+      "text": "Go 1.27 includes a change to the HTTP client that can make programs sending many sequential HTTP/1 requests significantly faster."
+    },
+    {
+      "self_ref": "#/texts/4",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "title",
+      "prov": [],
+      "orig": "[The Go Blog](https://go.dev/blog/)",
+      "text": "[The Go Blog](https://go.dev/blog/)"
+    },
+    {
+      "self_ref": "#/texts/5",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "title",
+      "prov": [],
+      "orig": "Better HTTP/1 connection reuse",
+      "text": "Better HTTP/1 connection reuse"
+    },
+    {
+      "self_ref": "#/texts/6",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "Nicholas Husin and Damien Neil\n14 October 2026",
+      "text": "Nicholas Husin and Damien Neil\n14 October 2026"
+    },
+    {
+      "self_ref": "#/texts/7",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "Take a look at the following function:",
+      "text": "Take a look at the following function:"
+    },
+    {
+      "self_ref": "#/texts/8",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "code",
+      "prov": [],
+      "orig": "func getStatus(url string) (int, error) {\n    resp, err := http.Get(url)\n    if err != nil {\n        return 0, err\n    }\n    defer resp.Body.Close()\n    return resp.StatusCode, nil\n}",
+      "text": "func getStatus(url string) (int, error) {\n    resp, err := http.Get(url)\n    if err != nil {\n        return 0, err\n    }\n    defer resp.Body.Close()\n    return resp.StatusCode, nil\n}",
+      "captions": [],
+      "references": [],
+      "footnotes": [],
+      "code_language": "Go"
+    },
+    {
+      "self_ref": "#/texts/9",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "It sends a `GET` request to `url` and returns the HTTP status code.",
+      "text": "It sends a `GET` request to `url` and returns the HTTP status code."
+    },
+    {
+      "self_ref": "#/texts/10",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "Using HTTP/1 ( `GODEBUG=http2client=0` ), calling this function 100 times against [index.golang.org](https://index.golang.org/) takes ~710 milliseconds on Go 1.26 on my machine. On Go 1.27, the same program takes ~150 milliseconds.",
+      "text": "Using HTTP/1 ( `GODEBUG=http2client=0` ), calling this function 100 times against [index.golang.org](https://index.golang.org/) takes ~710 milliseconds on Go 1.26 on my machine. On Go 1.27, the same program takes ~150 milliseconds."
+    },
+    {
+      "self_ref": "#/texts/11",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "That is almost 5 times faster! How is such a drastic performance difference possible?",
+      "text": "That is almost 5 times faster! How is such a drastic performance difference possible?"
+    },
+    {
+      "self_ref": "#/texts/12",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "section_header",
+      "prov": [],
+      "orig": "The cost of establishing HTTP connections",
+      "text": "The cost of establishing HTTP connections",
+      "level": 1
+    },
+    {
+      "self_ref": "#/texts/13",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "To understand the difference, consider what happens on the network when we make an HTTP request.",
+      "text": "To understand the difference, consider what happens on the network when we make an HTTP request."
+    },
+    {
+      "self_ref": "#/texts/14",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "Go's [`net/http`](https://go.dev/pkg/net/http) package supports HTTP/1.0, HTTP/1.1, and HTTP/2. All three run over TCP, and usually over TLS when talking to HTTPS endpoints. Making a request over a new connection looks something like this:",
+      "text": "Go's [`net/http`](https://go.dev/pkg/net/http) package supports HTTP/1.0, HTTP/1.1, and HTTP/2. All three run over TCP, and usually over TLS when talking to HTTPS endpoints. Making a request over a new connection looks something like this:"
+    },
+    {
+      "self_ref": "#/texts/15",
+      "parent": {
+        "$ref": "#/groups/0"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "list_item",
+      "prov": [],
+      "orig": "**TCP handshake (1 RTT)** : the client sends a `SYN` packet, the server replies with `SYN-ACK` , and the client replies with `ACK` . Because the client can send the first TLS message alongside that final `ACK` , establishing the TCP connection takes 1 round-trip time (RTT).",
+      "text": "**TCP handshake (1 RTT)** : the client sends a `SYN` packet, the server replies with `SYN-ACK` , and the client replies with `ACK` . Because the client can send the first TLS message alongside that final `ACK` , establishing the TCP connection takes 1 round-trip time (RTT).",
+      "enumerated": true,
+      "marker": "1."
+    },
+    {
+      "self_ref": "#/texts/16",
+      "parent": {
+        "$ref": "#/groups/0"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "list_item",
+      "prov": [],
+      "orig": "**TLS handshake (2 RTT)** : next, a TLS handshake exchanges encryption keys and verifies the server's identity; using TLS 1.2, this takes 2 RTT.",
+      "text": "**TLS handshake (2 RTT)** : next, a TLS handshake exchanges encryption keys and verifies the server's identity; using TLS 1.2, this takes 2 RTT.",
+      "enumerated": true,
+      "marker": "2."
+    },
+    {
+      "self_ref": "#/texts/17",
+      "parent": {
+        "$ref": "#/groups/0"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "list_item",
+      "prov": [],
+      "orig": "**HTTP request** : with the keys exchanged, HTTP requests can finally be sent after a total of 3 RTT.",
+      "text": "**HTTP request** : with the keys exchanged, HTTP requests can finally be sent after a total of 3 RTT.",
+      "enumerated": true,
+      "marker": "3."
+    },
+    {
+      "self_ref": "#/texts/18",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "These round trips (plus some CPU time spent on TLS handshakes) add up quickly. In cross-region communications, one-way latencies often reach or exceed the 50 ms (100 ms RTT) shown in the diagram above. Compared to the 300 ms spent just setting up the connection, the HTTP request itself can be cheap to serve, taking only a little over 1 RTT when bandwidth is plentiful or the HTTP response is small.",
+      "text": "These round trips (plus some CPU time spent on TLS handshakes) add up quickly. In cross-region communications, one-way latencies often reach or exceed the 50 ms (100 ms RTT) shown in the diagram above. Compared to the 300 ms spent just setting up the connection, the HTTP request itself can be cheap to serve, taking only a little over 1 RTT when bandwidth is plentiful or the HTTP response is small."
+    },
+    {
+      "self_ref": "#/texts/19",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "Even in more favorable conditions, opening a new connection can still be expensive. Our opening benchmark queries [index.golang.org](https://index.golang.org/) , which is distributed worldwide and supports TLS 1.3. This means that latency is relatively low, and the TLS handshake can actually finish in just 1 RTT. Even so, the performance difference is still very noticeable.",
+      "text": "Even in more favorable conditions, opening a new connection can still be expensive. Our opening benchmark queries [index.golang.org](https://index.golang.org/) , which is distributed worldwide and supports TLS 1.3. This means that latency is relatively low, and the TLS handshake can actually finish in just 1 RTT. Even so, the performance difference is still very noticeable."
+    },
+    {
+      "self_ref": "#/texts/20",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "section_header",
+      "prov": [],
+      "orig": "Connection reuse",
+      "text": "Connection reuse",
+      "level": 1
+    },
+    {
+      "self_ref": "#/texts/21",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "To avoid paying this setup cost on every request, HTTP clients and servers try to reuse existing connections across multiple requests when possible. The mechanics of this differ based on the HTTP version:",
+      "text": "To avoid paying this setup cost on every request, HTTP clients and servers try to reuse existing connections across multiple requests when possible. The mechanics of this differ based on the HTTP version:"
+    },
+    {
+      "self_ref": "#/texts/22",
+      "parent": {
+        "$ref": "#/groups/1"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "list_item",
+      "prov": [],
+      "orig": "**HTTP/1.0** : while not part of the official specification, clients and servers often opt into connection reuse by sending a `Connection: keep-alive` header. Reuse continues until either endpoint omits the header or sends a `Connection: close` header.",
+      "text": "**HTTP/1.0** : while not part of the official specification, clients and servers often opt into connection reuse by sending a `Connection: keep-alive` header. Reuse continues until either endpoint omits the header or sends a `Connection: close` header.",
+      "enumerated": false,
+      "marker": "-"
+    },
+    {
+      "self_ref": "#/texts/23",
+      "parent": {
+        "$ref": "#/groups/1"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "list_item",
+      "prov": [],
+      "orig": "**HTTP/1.1** : connections are persistent by default, and can be reused for subsequent requests and responses unless either side declares otherwise by sending a `Connection: close` header.",
+      "text": "**HTTP/1.1** : connections are persistent by default, and can be reused for subsequent requests and responses unless either side declares otherwise by sending a `Connection: close` header.",
+      "enumerated": false,
+      "marker": "-"
+    },
+    {
+      "self_ref": "#/texts/24",
+      "parent": {
+        "$ref": "#/groups/1"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "list_item",
+      "prov": [],
+      "orig": "**HTTP/2** : multiple requests and responses can be multiplexed over a single TCP connection.",
+      "text": "**HTTP/2** : multiple requests and responses can be multiplexed over a single TCP connection.",
+      "enumerated": false,
+      "marker": "-"
+    },
+    {
+      "self_ref": "#/texts/25",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "section_header",
+      "prov": [],
+      "orig": "When connection reuse fails",
+      "text": "When connection reuse fails",
+      "level": 1
+    },
+    {
+      "self_ref": "#/texts/26",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "In HTTP/1 (both HTTP/1.0 and HTTP/1.1), multiple requests and responses on the same connection are sent sequentially on the wire. If two `GET` requests are sent to [index.golang.org](https://index.golang.org/) over the same TCP connection, the responses arrive as a single stream of bytes:",
+      "text": "In HTTP/1 (both HTTP/1.0 and HTTP/1.1), multiple requests and responses on the same connection are sent sequentially on the wire. If two `GET` requests are sent to [index.golang.org](https://index.golang.org/) over the same TCP connection, the responses arrive as a single stream of bytes:"
+    },
+    {
+      "self_ref": "#/texts/27",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "As shown in the diagram, [`net/http.Get`](https://go.dev/pkg/net/http#Get) reads and parses the status line and headers from the byte stream to populate [`net/http.Response`](https://go.dev/pkg/net/http#Response) , then returns immediately. The response body remains unread on the connection and is consumed only as the caller reads from [`net/http.Response.Body`](https://go.dev/pkg/net/http#Response.Body) .",
+      "text": "As shown in the diagram, [`net/http.Get`](https://go.dev/pkg/net/http#Get) reads and parses the status line and headers from the byte stream to populate [`net/http.Response`](https://go.dev/pkg/net/http#Response) , then returns immediately. The response body remains unread on the connection and is consumed only as the caller reads from [`net/http.Response.Body`](https://go.dev/pkg/net/http#Response.Body) ."
+    },
+    {
+      "self_ref": "#/texts/28",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "Because responses are sent back-to-back on the same stream, [`net/http`](https://go.dev/pkg/net/http) can only find the start of the next response after the current response body has been read to the very end (as determined by the `Content-Length` or `Transfer-Encoding` header).",
+      "text": "Because responses are sent back-to-back on the same stream, [`net/http`](https://go.dev/pkg/net/http) can only find the start of the next response after the current response body has been read to the very end (as determined by the `Content-Length` or `Transfer-Encoding` header)."
+    },
+    {
+      "self_ref": "#/texts/29",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "Now look back at our example program, where we never read `resp.Body` :",
+      "text": "Now look back at our example program, where we never read `resp.Body` :"
+    },
+    {
+      "self_ref": "#/texts/30",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "code",
+      "prov": [],
+      "orig": "func getStatus(url string) (int, error) {\n    resp, err := http.Get(url)\n    if err != nil {\n        return 0, err\n    }\n    defer resp.Body.Close()\n    return resp.StatusCode, nil\n}",
+      "text": "func getStatus(url string) (int, error) {\n    resp, err := http.Get(url)\n    if err != nil {\n        return 0, err\n    }\n    defer resp.Body.Close()\n    return resp.StatusCode, nil\n}",
+      "captions": [],
+      "references": [],
+      "footnotes": [],
+      "code_language": "Go"
+    },
+    {
+      "self_ref": "#/texts/31",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "Through Go 1.26, when `resp.Body.Close` is called, [`net/http`](https://go.dev/pkg/net/http) sees that there is still an unread response body. Realizing that it cannot reuse the connection, it abandons the existing connection and creates new connections for its next requests, causing it to repeatedly incur the cost of establishing new connections.",
+      "text": "Through Go 1.26, when `resp.Body.Close` is called, [`net/http`](https://go.dev/pkg/net/http) sees that there is still an unread response body. Realizing that it cannot reuse the connection, it abandons the existing connection and creates new connections for its next requests, causing it to repeatedly incur the cost of establishing new connections."
+    },
+    {
+      "self_ref": "#/texts/32",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "(HTTP/2 does not have this problem. Because it multiplexes streams of frames over a single connection rather than sending responses strictly back-to-back, an unread response body on one stream does not block other requests from sharing the connection.)",
+      "text": "(HTTP/2 does not have this problem. Because it multiplexes streams of frames over a single connection rather than sending responses strictly back-to-back, an unread response body on one stream does not block other requests from sharing the connection.)"
+    },
+    {
+      "self_ref": "#/texts/33",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "section_header",
+      "prov": [],
+      "orig": "Where failed connection reuse hurts",
+      "text": "Where failed connection reuse hurts",
+      "level": 1
+    },
+    {
+      "self_ref": "#/texts/34",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "This subtlety of HTTP/1 connection reuse can cause silent performance degradation in seemingly innocuous code.",
+      "text": "This subtlety of HTTP/1 connection reuse can cause silent performance degradation in seemingly innocuous code."
+    },
+    {
+      "self_ref": "#/texts/35",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "As in our opening example, a client might only care about an API response's status code. However, the API endpoint it is talking to might send bodies that provide more detailed but ultimately unused information, such as `{\"success\": true, \"message\": \"update processed\"}` . This will unfortunately cause connection reuse to fail.",
+      "text": "As in our opening example, a client might only care about an API response's status code. However, the API endpoint it is talking to might send bodies that provide more detailed but ultimately unused information, such as `{\"success\": true, \"message\": \"update processed\"}` . This will unfortunately cause connection reuse to fail."
+    },
+    {
+      "self_ref": "#/texts/36",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "Even programs that do read the response body can run into this issue if they stop just short of the end of the body. For example, [`encoding/json.Decoder`](https://go.dev/pkg/encoding/json#Decoder) stops reading as soon as it sees the closing `}` of a JSON object. If a server sends a JSON response terminated with a newline, decoding the JSON object will leave the newline still unread. The connection cannot be reused for a new request until that newline is consumed. Thus, a healthy connection might end up being abandoned, even though it was only a single byte away from being reusable.",
+      "text": "Even programs that do read the response body can run into this issue if they stop just short of the end of the body. For example, [`encoding/json.Decoder`](https://go.dev/pkg/encoding/json#Decoder) stops reading as soon as it sees the closing `}` of a JSON object. If a server sends a JSON response terminated with a newline, decoding the JSON object will leave the newline still unread. The connection cannot be reused for a new request until that newline is consumed. Thus, a healthy connection might end up being abandoned, even though it was only a single byte away from being reusable."
+    },
+    {
+      "self_ref": "#/texts/37",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "section_header",
+      "prov": [],
+      "orig": "The manual solution",
+      "text": "The manual solution",
+      "level": 1
+    },
+    {
+      "self_ref": "#/texts/38",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "The unread body problem has been a long-standing sharp edge. Over the years, many Go developers came up with their own workarounds. Most commonly, this is done by draining the response body prior to closing it:",
+      "text": "The unread body problem has been a long-standing sharp edge. Over the years, many Go developers came up with their own workarounds. Most commonly, this is done by draining the response body prior to closing it:"
+    },
+    {
+      "self_ref": "#/texts/39",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "code",
+      "prov": [],
+      "orig": "func getStatus(url string) (int, error) {\n    resp, err := http.Get(url)\n    if err != nil {\n        return 0, err\n    }\n    drainAndCloseBody(resp.Body)\n    return resp.StatusCode, nil\n}\n\nfunc drainAndCloseBody(body io.ReadCloser) {\n    io.Copy(io.Discard, body) // Drain the response body before closing it.\n    body.Close()\n}",
+      "text": "func getStatus(url string) (int, error) {\n    resp, err := http.Get(url)\n    if err != nil {\n        return 0, err\n    }\n    drainAndCloseBody(resp.Body)\n    return resp.StatusCode, nil\n}\n\nfunc drainAndCloseBody(body io.ReadCloser) {\n    io.Copy(io.Discard, body) // Drain the response body before closing it.\n    body.Close()\n}",
+      "captions": [],
+      "references": [],
+      "footnotes": [],
+      "code_language": "Go"
+    },
+    {
+      "self_ref": "#/texts/40",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "While this works for small responses, if the unread body is large, establishing a new TCP connection can be faster than downloading and discarding the rest of the body. A better approach is to cap the number of bytes we are willing to drain:",
+      "text": "While this works for small responses, if the unread body is large, establishing a new TCP connection can be faster than downloading and discarding the rest of the body. A better approach is to cap the number of bytes we are willing to drain:"
+    },
+    {
+      "self_ref": "#/texts/41",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "code",
+      "prov": [],
+      "orig": "func drainAndCloseBody(body io.ReadCloser) {\n    io.CopyN(io.Discard, body, 256<<10) // Only drain up to 256 KB.\n    body.Close()\n}",
+      "text": "func drainAndCloseBody(body io.ReadCloser) {\n    io.CopyN(io.Discard, body, 256<<10) // Only drain up to 256 KB.\n    body.Close()\n}",
+      "captions": [],
+      "references": [],
+      "footnotes": [],
+      "code_language": "Go"
+    },
+    {
+      "self_ref": "#/texts/42",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "However, a server might send a response body that trickles in slowly, so we also need to cap the time we spend draining:",
+      "text": "However, a server might send a response body that trickles in slowly, so we also need to cap the time we spend draining:"
+    },
+    {
+      "self_ref": "#/texts/43",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "code",
+      "prov": [],
+      "orig": "func drainAndCloseBody(body io.ReadCloser) {\n    drainDone := make(chan struct{}, 1)\n    go func() {\n        io.CopyN(io.Discard, body, 256<<10) // Only drain up to 256 KB.\n        drainDone <- struct{}{}\n    }()\n    // Only spend at most 50 ms trying to drain the response body.\n    select {\n    case <-drainDone:\n    case <-time.After(50 * time.Millisecond):\n        // If we reach the 50 ms timeout, body.Close will run and interrupt the\n        // io.CopyN, preventing goroutine leaks.\n    }\n    body.Close()\n}",
+      "text": "func drainAndCloseBody(body io.ReadCloser) {\n    drainDone := make(chan struct{}, 1)\n    go func() {\n        io.CopyN(io.Discard, body, 256<<10) // Only drain up to 256 KB.\n        drainDone <- struct{}{}\n    }()\n    // Only spend at most 50 ms trying to drain the response body.\n    select {\n    case <-drainDone:\n    case <-time.After(50 * time.Millisecond):\n        // If we reach the 50 ms timeout, body.Close will run and interrupt the\n        // io.CopyN, preventing goroutine leaks.\n    }\n    body.Close()\n}",
+      "captions": [],
+      "references": [],
+      "footnotes": [],
+      "code_language": "Go"
+    },
+    {
+      "self_ref": "#/texts/44",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "Of course, we also do not want to block for up to 50 milliseconds when closing a response body. Instead, we can drain the body asynchronously in the background and let it race against subsequent requests:",
+      "text": "Of course, we also do not want to block for up to 50 milliseconds when closing a response body. Instead, we can drain the body asynchronously in the background and let it race against subsequent requests:"
+    },
+    {
+      "self_ref": "#/texts/45",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "code",
+      "prov": [],
+      "orig": "func drainAndCloseBody(body io.ReadCloser) {\n    drainDone := make(chan struct{}, 1)\n    go func() {\n        io.CopyN(io.Discard, body, 256<<10) // Only drain up to 256 KB.\n        drainDone <- struct{}{}\n    }()\n    go func() {\n        // Only spend at most 50 ms trying to drain the response body.\n        select {\n        case <-drainDone:\n            // If the drain can finish before a new request is sent, the\n            // connection will be reused; otherwise, a new connection is\n            // created, and the current connection will be put in a pool of\n            // idle connections, potentially being reused for another future\n            // request.\n        case <-time.After(50 * time.Millisecond):\n            // If we reach the 50 ms timeout, body.Close will run and interrupt\n            // the io.CopyN, preventing goroutine leaks.\n        }\n        body.Close()\n    }()\n}",
+      "text": "func drainAndCloseBody(body io.ReadCloser) {\n    drainDone := make(chan struct{}, 1)\n    go func() {\n        io.CopyN(io.Discard, body, 256<<10) // Only drain up to 256 KB.\n        drainDone <- struct{}{}\n    }()\n    go func() {\n        // Only spend at most 50 ms trying to drain the response body.\n        select {\n        case <-drainDone:\n            // If the drain can finish before a new request is sent, the\n            // connection will be reused; otherwise, a new connection is\n            // created, and the current connection will be put in a pool of\n            // idle connections, potentially being reused for another future\n            // request.\n        case <-time.After(50 * time.Millisecond):\n            // If we reach the 50 ms timeout, body.Close will run and interrupt\n            // the io.CopyN, preventing goroutine leaks.\n        }\n        body.Close()\n    }()\n}",
+      "captions": [],
+      "references": [],
+      "footnotes": [],
+      "code_language": "Go"
+    },
+    {
+      "self_ref": "#/texts/46",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "As we can see, draining response bodies safely is surprisingly tricky and cumbersome. Worse, as the practice of draining response bodies spread, some nuances were often lost. This has led to misunderstandings such as attempting to drain response bodies for HTTP/2 connections, when doing so is unnecessary.",
+      "text": "As we can see, draining response bodies safely is surprisingly tricky and cumbersome. Worse, as the practice of draining response bodies spread, some nuances were often lost. This has led to misunderstandings such as attempting to drain response bodies for HTTP/2 connections, when doing so is unnecessary."
+    },
+    {
+      "self_ref": "#/texts/47",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "section_header",
+      "prov": [],
+      "orig": "The current state and conclusion",
+      "text": "The current state and conclusion",
+      "level": 1
+    },
+    {
+      "self_ref": "#/texts/48",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "Starting in Go 1.27, [`net/http.Transport`](https://go.dev/pkg/net/http#Transport) automatically does everything we have implemented in the code above: it will asynchronously drain an unread HTTP/1 response body for up to 50 ms or 256 KB. It also implements additional optimizations; for example, when a response contains the `Connection: close` header, draining the body is guaranteed to be wasted work, and it therefore skips doing so. Note that this behavior might evolve in future versions of Go, as other possible enhancements become apparent.",
+      "text": "Starting in Go 1.27, [`net/http.Transport`](https://go.dev/pkg/net/http#Transport) automatically does everything we have implemented in the code above: it will asynchronously drain an unread HTTP/1 response body for up to 50 ms or 256 KB. It also implements additional optimizations; for example, when a response contains the `Connection: close` header, draining the body is guaranteed to be wasted work, and it therefore skips doing so. Note that this behavior might evolve in future versions of Go, as other possible enhancements become apparent."
+    },
+    {
+      "self_ref": "#/texts/49",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "As a general best practice, we now recommend that users simply close their HTTP bodies once they no longer need them, like in our original example:",
+      "text": "As a general best practice, we now recommend that users simply close their HTTP bodies once they no longer need them, like in our original example:"
+    },
+    {
+      "self_ref": "#/texts/50",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "code",
+      "prov": [],
+      "orig": "func getStatus(url string) (int, error) {\n    resp, err := http.Get(url)\n    if err != nil {\n        return 0, err\n    }\n    defer resp.Body.Close()\n    return resp.StatusCode, nil\n}",
+      "text": "func getStatus(url string) (int, error) {\n    resp, err := http.Get(url)\n    if err != nil {\n        return 0, err\n    }\n    defer resp.Body.Close()\n    return resp.StatusCode, nil\n}",
+      "captions": [],
+      "references": [],
+      "footnotes": [],
+      "code_language": "Go"
+    },
+    {
+      "self_ref": "#/texts/51",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "Go is all about simplicity. Let your code stay clean and simple, and let [`net/http`](https://go.dev/pkg/net/http) deal with the complexities on your behalf.",
+      "text": "Go is all about simplicity. Let your code stay clean and simple, and let [`net/http`](https://go.dev/pkg/net/http) deal with the complexities on your behalf."
+    },
+    {
+      "self_ref": "#/texts/52",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "**Previous article:** [Arch-specific SIMD in Go](https://go.dev/blog/archsimd) [**Blog Index**](https://go.dev/blog/all)",
+      "text": "**Previous article:** [Arch-specific SIMD in Go](https://go.dev/blog/archsimd) [**Blog Index**](https://go.dev/blog/all)"
+    },
+    {
+      "self_ref": "#/texts/53",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "section_header",
+      "prov": [],
+      "orig": "Arch-specific SIMD in Go",
+      "text": "Arch-specific SIMD in Go",
+      "level": 1
+    },
+    {
+      "self_ref": "#/texts/54",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "Updated on: 2026-10-02T00:00:00+00:00",
+      "text": "Updated on: 2026-10-02T00:00:00+00:00"
+    },
+    {
+      "self_ref": "#/texts/55",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "Go 1.27 introduces experimental arch-specific SIMD vector APIs",
+      "text": "Go 1.27 introduces experimental arch-specific SIMD vector APIs"
+    },
+    {
+      "self_ref": "#/texts/56",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "title",
+      "prov": [],
+      "orig": "[The Go Blog](https://go.dev/blog/)",
+      "text": "[The Go Blog](https://go.dev/blog/)"
+    },
+    {
+      "self_ref": "#/texts/57",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "title",
+      "prov": [],
+      "orig": "Arch-specific SIMD in Go",
+      "text": "Arch-specific SIMD in Go"
+    },
+    {
+      "self_ref": "#/texts/58",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "Junyang Shao and David Chase\n2 October 2026",
+      "text": "Junyang Shao and David Chase\n2 October 2026"
+    },
+    {
+      "self_ref": "#/texts/59",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "Since Go 1.26, we have supported an experimental `amd64` SIMD API. Now in Go 1.27, we support two more architectures: `arm64` and `wasm` .",
+      "text": "Since Go 1.26, we have supported an experimental `amd64` SIMD API. Now in Go 1.27, we support two more architectures: `arm64` and `wasm` ."
+    },
+    {
+      "self_ref": "#/texts/60",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "The new APIs can be accessed by setting `GOEXPERIMENT=simd` when building a program. They are defined in the `simd/archsimd` package.",
+      "text": "The new APIs can be accessed by setting `GOEXPERIMENT=simd` when building a program. They are defined in the `simd/archsimd` package."
+    },
+    {
+      "self_ref": "#/texts/61",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "`archsimd` is the lower-level infrastructure that `simd` builds on, essentially the intrinsics layer in other languages. For exotic operations that only exist on a specific architecture, users can access them by transitioning from `simd` to `archsimd` (via `ToArch` and `<Types>FromArch` ). For details, please refer to the [simd blog](https://go.dev/blog/simd-experiment) post.",
+      "text": "`archsimd` is the lower-level infrastructure that `simd` builds on, essentially the intrinsics layer in other languages. For exotic operations that only exist on a specific architecture, users can access them by transitioning from `simd` to `archsimd` (via `ToArch` and `<Types>FromArch` ). For details, please refer to the [simd blog](https://go.dev/blog/simd-experiment) post."
+    },
+    {
+      "self_ref": "#/texts/62",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "For readers with prior knowledge of SIMD intrinsics in other languages, you might find that our `archsimd` API does not directly mirror the underlying hardware instructions:",
+      "text": "For readers with prior knowledge of SIMD intrinsics in other languages, you might find that our `archsimd` API does not directly mirror the underlying hardware instructions:"
+    },
+    {
+      "self_ref": "#/texts/63",
+      "parent": {
+        "$ref": "#/groups/2"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "list_item",
+      "prov": [],
+      "orig": "We give our APIs sensible names: e.g., instead of `_mm512_slli_epi64` , we just call it `ShiftAllLeft` .",
+      "text": "We give our APIs sensible names: e.g., instead of `_mm512_slli_epi64` , we just call it `ShiftAllLeft` .",
+      "enumerated": false,
+      "marker": "-"
+    },
+    {
+      "self_ref": "#/texts/64",
+      "parent": {
+        "$ref": "#/groups/2"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "list_item",
+      "prov": [],
+      "orig": "We leave some architecture details to compiler optimizations rather than exposing them in the API: e.g., instead of `_mm512_maskz_add_ps(m, x, y)` , we optimize `x.Add(y).Masked(m)` into the same instruction.",
+      "text": "We leave some architecture details to compiler optimizations rather than exposing them in the API: e.g., instead of `_mm512_maskz_add_ps(m, x, y)` , we optimize `x.Add(y).Masked(m)` into the same instruction.",
+      "enumerated": false,
+      "marker": "-"
+    },
+    {
+      "self_ref": "#/texts/65",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "These design decisions make our APIs smaller and more accessible, and they also happily make the `simd` implementation much easier.",
+      "text": "These design decisions make our APIs smaller and more accessible, and they also happily make the `simd` implementation much easier."
+    },
+    {
+      "self_ref": "#/texts/66",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "For readers without prior knowledge of SIMD intrinsics, we hope our low-level API is a natural and pleasant journey for you.",
+      "text": "For readers without prior knowledge of SIMD intrinsics, we hope our low-level API is a natural and pleasant journey for you."
+    },
+    {
+      "self_ref": "#/texts/67",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "Please share your feedback and comments. Anything about usability, performance, etc., is appreciated. The parent issue for this project is [#73787](https://go.dev/issue/73787) .",
+      "text": "Please share your feedback and comments. Anything about usability, performance, etc., is appreciated. The parent issue for this project is [#73787](https://go.dev/issue/73787) ."
+    },
+    {
+      "self_ref": "#/texts/68",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "section_header",
+      "prov": [],
+      "orig": "What is SIMD",
+      "text": "What is SIMD",
+      "level": 1
+    },
+    {
+      "self_ref": "#/texts/69",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "SIMD stands for Single Instruction, Multiple Data. SIMD instructions operate on wide registers (128-bit, 256-bit, or more) containing multiple 8- to 64-bit elements, performing operations across all elements in parallel. Wider registers and parallel execution provide a significant performance boost to algorithms that can take advantage of them.",
+      "text": "SIMD stands for Single Instruction, Multiple Data. SIMD instructions operate on wide registers (128-bit, 256-bit, or more) containing multiple 8- to 64-bit elements, performing operations across all elements in parallel. Wider registers and parallel execution provide a significant performance boost to algorithms that can take advantage of them."
+    },
+    {
+      "self_ref": "#/texts/70",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "Until now, anyone who wanted to use SIMD in Go had to endure the friction of writing assembly language. The new `archsimd` package is here to change that.",
+      "text": "Until now, anyone who wanted to use SIMD in Go had to endure the friction of writing assembly language. The new `archsimd` package is here to change that."
+    },
+    {
+      "self_ref": "#/texts/71",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "section_header",
+      "prov": [],
+      "orig": "Goals",
+      "text": "Goals",
+      "level": 1
+    },
+    {
+      "self_ref": "#/texts/72",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "The goal is to support as many SIMD instructions across different architectures as possible. Currently, we have `amd64` , `arm64` , and `wasm` available. Our `amd64` support has the largest API surface, covering AVX, AVX2, and many AVX-512 extensions. Our `arm64` support currently covers NEON, with SVE and some SVE2 already on the way. Our `wasm` support is also mostly complete, thanks to its well-defined 128-bit SIMD abstraction.",
+      "text": "The goal is to support as many SIMD instructions across different architectures as possible. Currently, we have `amd64` , `arm64` , and `wasm` available. Our `amd64` support has the largest API surface, covering AVX, AVX2, and many AVX-512 extensions. Our `arm64` support currently covers NEON, with SVE and some SVE2 already on the way. Our `wasm` support is also mostly complete, thanks to its well-defined 128-bit SIMD abstraction."
+    },
+    {
+      "self_ref": "#/texts/73",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "Some users might be interested in matrix extensions on certain architectures, such as AMX and SME. We haven't fully settled on how to represent matrices effectively in Go, so they are not yet supported, but we might support them in the future.",
+      "text": "Some users might be interested in matrix extensions on certain architectures, such as AMX and SME. We haven't fully settled on how to represent matrices effectively in Go, so they are not yet supported, but we might support them in the future."
+    },
+    {
+      "self_ref": "#/texts/74",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "section_header",
+      "prov": [],
+      "orig": "API Design and Naming",
+      "text": "API Design and Naming",
+      "level": 1
+    },
+    {
+      "self_ref": "#/texts/75",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "section_header",
+      "prov": [],
+      "orig": "Types",
+      "text": "Types",
+      "level": 2
+    },
+    {
+      "self_ref": "#/texts/76",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "The architecture-specific SIMD API is imported from `simd/archsimd` . `archsimd` uses distinct struct types, such as `Float32x4` , `Int32x8` , or `Uint8x16` , to signal the shape and element type of each vector, and defines operations as methods on those types. At this moment, `archsimd` supports only fixed-width vector extensions. Scalable vector extensions like `arm64` SVE and RVV will have different struct types to represent vectors. Mask types also come with vector-like shapes, e.g., `Mask32x4` .",
+      "text": "The architecture-specific SIMD API is imported from `simd/archsimd` . `archsimd` uses distinct struct types, such as `Float32x4` , `Int32x8` , or `Uint8x16` , to signal the shape and element type of each vector, and defines operations as methods on those types. At this moment, `archsimd` supports only fixed-width vector extensions. Scalable vector extensions like `arm64` SVE and RVV will have different struct types to represent vectors. Mask types also come with vector-like shapes, e.g., `Mask32x4` ."
+    },
+    {
+      "self_ref": "#/texts/77",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "section_header",
+      "prov": [],
+      "orig": "Methods",
+      "text": "Methods",
+      "level": 2
+    },
+    {
+      "self_ref": "#/texts/78",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "Across different vector widths, element types, and architectures, we use the same method name whenever operations are semantically identical:",
+      "text": "Across different vector widths, element types, and architectures, we use the same method name whenever operations are semantically identical:"
+    },
+    {
+      "self_ref": "#/texts/79",
+      "parent": {
+        "$ref": "#/groups/3"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "list_item",
+      "prov": [],
+      "orig": "Regardless of vector width or architecture, element-wise addition is simply `x.Add(y)` ; the type of `x` determines which instruction to emit. Instead of 18 different function names for addition, there is only one method name.",
+      "text": "Regardless of vector width or architecture, element-wise addition is simply `x.Add(y)` ; the type of `x` determines which instruction to emit. Instead of 18 different function names for addition, there is only one method name.",
+      "enumerated": false,
+      "marker": "-"
+    },
+    {
+      "self_ref": "#/texts/80",
+      "parent": {
+        "$ref": "#/groups/3"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "list_item",
+      "prov": [],
+      "orig": "When instructions on different architectures look similar at a glance but differ in edge-case behavior, we give them distinct names so differences don't silently bite you. For example, 16-byte table lookup on `amd64` ( `VPSHUFB` ) zeros the output byte when the index is negative ( `index < 0` ) and wraps modulo 16 otherwise, so we call it `PermuteOrZero` . On `arm64` NEON ( `VTBL` ) and `wasm` ( `i8x16.swizzle` ), any out-of-range index ( `index < 0 || index >= 16` ) zeros the output byte, so we call it `LookupOrZero` .",
+      "text": "When instructions on different architectures look similar at a glance but differ in edge-case behavior, we give them distinct names so differences don't silently bite you. For example, 16-byte table lookup on `amd64` ( `VPSHUFB` ) zeros the output byte when the index is negative ( `index < 0` ) and wraps modulo 16 otherwise, so we call it `PermuteOrZero` . On `arm64` NEON ( `VTBL` ) and `wasm` ( `i8x16.swizzle` ), any out-of-range index ( `index < 0 || index >= 16` ) zeros the output byte, so we call it `LookupOrZero` .",
+      "enumerated": false,
+      "marker": "-"
+    },
+    {
+      "self_ref": "#/texts/81",
+      "parent": {
+        "$ref": "#/groups/3"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "list_item",
+      "prov": [],
+      "orig": "On `amd64` , many 256-bit and 512-bit instructions operate independently within 128-bit lanes rather than across the entire register. We explicitly suffix those methods with `Grouped` (such as `InterleaveLoGrouped` or `PermuteOrZeroGrouped` ) to make the 128-bit lane boundary obvious.",
+      "text": "On `amd64` , many 256-bit and 512-bit instructions operate independently within 128-bit lanes rather than across the entire register. We explicitly suffix those methods with `Grouped` (such as `InterleaveLoGrouped` or `PermuteOrZeroGrouped` ) to make the 128-bit lane boundary obvious.",
+      "enumerated": false,
+      "marker": "-"
+    },
+    {
+      "self_ref": "#/texts/82",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "Methods require a receiver value, which doesn't work for creating a vector from memory or a scalar. For those, `archsimd` provides package-level functions named with the target vector type:",
+      "text": "Methods require a receiver value, which doesn't work for creating a vector from memory or a scalar. For those, `archsimd` provides package-level functions named with the target vector type:"
+    },
+    {
+      "self_ref": "#/texts/83",
+      "parent": {
+        "$ref": "#/groups/4"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "list_item",
+      "prov": [],
+      "orig": "**Slices (the default)** : In Go 1.27, loading and storing slices use the shortest names: `archsimd.LoadFloat32x4(s []float32) Float32x4` and `x.Store(s []float32)` . For tail elements that may be shorter than a full vector, `archsimd.LoadFloat32x4Part(s []float32) (Float32x4, int)` zero-fills the remaining lanes and returns the number of elements loaded, paired with `x.StorePart(s []float32) int` .",
+      "text": "**Slices (the default)** : In Go 1.27, loading and storing slices use the shortest names: `archsimd.LoadFloat32x4(s []float32) Float32x4` and `x.Store(s []float32)` . For tail elements that may be shorter than a full vector, `archsimd.LoadFloat32x4Part(s []float32) (Float32x4, int)` zero-fills the remaining lanes and returns the number of elements loaded, paired with `x.StorePart(s []float32) int` .",
+      "enumerated": false,
+      "marker": "-"
+    },
+    {
+      "self_ref": "#/texts/84",
+      "parent": {
+        "$ref": "#/groups/4"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "list_item",
+      "prov": [],
+      "orig": "**Arrays and Broadcasts** : Fixed-size array pointers use the `Array` suffix ( `archsimd.LoadFloat32x4Array(y *[4]float32)` and `x.StoreArray(y *[4]float32)` ), and `archsimd.BroadcastFloat32x4(v float32)` broadcasts a scalar to all lanes.",
+      "text": "**Arrays and Broadcasts** : Fixed-size array pointers use the `Array` suffix ( `archsimd.LoadFloat32x4Array(y *[4]float32)` and `x.StoreArray(y *[4]float32)` ), and `archsimd.BroadcastFloat32x4(v float32)` broadcasts a scalar to all lanes.",
+      "enumerated": false,
+      "marker": "-"
+    },
+    {
+      "self_ref": "#/texts/85",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "section_header",
+      "prov": [],
+      "orig": "Type Reinterpretation",
+      "text": "Type Reinterpretation",
+      "level": 2
+    },
+    {
+      "self_ref": "#/texts/86",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "Reinterpretations are type casts without any cost. SIMD algorithms frequently reinterpret bits across element types and widths.",
+      "text": "Reinterpretations are type casts without any cost. SIMD algorithms frequently reinterpret bits across element types and widths."
+    },
+    {
+      "self_ref": "#/texts/87",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "In the Go 1.26 experiment, we implemented this with `As<Type>` methods, which suffered from a quadratic explosion of type pairs and couldn't generalize to width-agnostic vectors in `simd` or SVE.",
+      "text": "In the Go 1.26 experiment, we implemented this with `As<Type>` methods, which suffered from a quadratic explosion of type pairs and couldn't generalize to width-agnostic vectors in `simd` or SVE."
+    },
+    {
+      "self_ref": "#/texts/88",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "In Go 1.27, we replace them with composable zero-cost conversions:",
+      "text": "In Go 1.27, we replace them with composable zero-cost conversions:"
+    },
+    {
+      "self_ref": "#/texts/89",
+      "parent": {
+        "$ref": "#/groups/5"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "list_item",
+      "prov": [],
+      "orig": "`ToBits()` reinterprets a signed integer or float vector as an unsigned integer vector of the same element width (e.g., `Int32x4.ToBits() -> Uint32x4` ), and `BitsToInt32()` / `BitsToFloat32()` converts back.",
+      "text": "`ToBits()` reinterprets a signed integer or float vector as an unsigned integer vector of the same element width (e.g., `Int32x4.ToBits() -> Uint32x4` ), and `BitsToInt32()` / `BitsToFloat32()` converts back.",
+      "enumerated": false,
+      "marker": "-"
+    },
+    {
+      "self_ref": "#/texts/90",
+      "parent": {
+        "$ref": "#/groups/5"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "list_item",
+      "prov": [],
+      "orig": "`ReshapeToUint<W>s()` on unsigned vectors changes the element width within the same register width. For example, if `x` is an `archsimd.Uint8x16` , then `x.ReshapeToUint32s().BitsToFloat32()` reinterprets the bits of `x` as an `archsimd.Float32x4` at zero runtime cost.",
+      "text": "`ReshapeToUint<W>s()` on unsigned vectors changes the element width within the same register width. For example, if `x` is an `archsimd.Uint8x16` , then `x.ReshapeToUint32s().BitsToFloat32()` reinterprets the bits of `x` as an `archsimd.Float32x4` at zero runtime cost.",
+      "enumerated": false,
+      "marker": "-"
+    },
+    {
+      "self_ref": "#/texts/91",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "section_header",
+      "prov": [],
+      "orig": "Masks",
+      "text": "Masks",
+      "level": 2
+    },
+    {
+      "self_ref": "#/texts/92",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "Different architectures encode vector masks very differently, e.g. `k` mask registers on AVX-512, full vector bitmasks on AVX/AVX2, NEON, and `wasm` , and predicate registers on SVE. To hide this hardware detail, `archsimd` provides opaque `Mask` types (such as `Mask32x4` ) matching each vector shape:",
+      "text": "Different architectures encode vector masks very differently, e.g. `k` mask registers on AVX-512, full vector bitmasks on AVX/AVX2, NEON, and `wasm` , and predicate registers on SVE. To hide this hardware detail, `archsimd` provides opaque `Mask` types (such as `Mask32x4` ) matching each vector shape:"
+    },
+    {
+      "self_ref": "#/texts/93",
+      "parent": {
+        "$ref": "#/groups/6"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "list_item",
+      "prov": [],
+      "orig": "Comparisons like `x.Greater(y)` produce a `Mask` .",
+      "text": "Comparisons like `x.Greater(y)` produce a `Mask` .",
+      "enumerated": false,
+      "marker": "-"
+    },
+    {
+      "self_ref": "#/texts/94",
+      "parent": {
+        "$ref": "#/groups/6"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "list_item",
+      "prov": [],
+      "orig": "`x.Masked(m)` zeros elements where `m` is false, and `x.IfElse(m, y)` (which replaces `Merge` from Go 1.26) selects elements from `x` where `m` is true and from `y` where `m` is false.",
+      "text": "`x.Masked(m)` zeros elements where `m` is false, and `x.IfElse(m, y)` (which replaces `Merge` from Go 1.26) selects elements from `x` where `m` is true and from `y` where `m` is false.",
+      "enumerated": false,
+      "marker": "-"
+    },
+    {
+      "self_ref": "#/texts/95",
+      "parent": {
+        "$ref": "#/groups/6"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "list_item",
+      "prov": [],
+      "orig": "The compiler peepholes mask operations with the surrounding instructions: on AVX-512, `x.Add(y).Masked(m)` or `x.Add(y).IfElse(m, z)` compiles into a single zero-masked or merge-masked `VPADD` instruction; on AVX2, NEON, or `wasm` , it lowers to the appropriate bitwise `AND` or blend/bitselect instruction.",
+      "text": "The compiler peepholes mask operations with the surrounding instructions: on AVX-512, `x.Add(y).Masked(m)` or `x.Add(y).IfElse(m, z)` compiles into a single zero-masked or merge-masked `VPADD` instruction; on AVX2, NEON, or `wasm` , it lowers to the appropriate bitwise `AND` or blend/bitselect instruction.",
+      "enumerated": false,
+      "marker": "-"
+    },
+    {
+      "self_ref": "#/texts/96",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "section_header",
+      "prov": [],
+      "orig": "Examples",
+      "text": "Examples",
+      "level": 1
+    },
+    {
+      "self_ref": "#/texts/97",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "Portable algorithms like inner product can easily be implemented using the portable `simd` package, as shown in the companion [simd blog](https://go.dev/blog/simd-experiment) post. However, we still expose `archsimd` to tap into exotic, architecture-specific instructions that do not fit into a portable intersection API, or instructions that can simply do things faster than what `simd` provides.",
+      "text": "Portable algorithms like inner product can easily be implemented using the portable `simd` package, as shown in the companion [simd blog](https://go.dev/blog/simd-experiment) post. However, we still expose `archsimd` to tap into exotic, architecture-specific instructions that do not fit into a portable intersection API, or instructions that can simply do things faster than what `simd` provides."
+    },
+    {
+      "self_ref": "#/texts/98",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "On `amd64` , the GFNI extension exposes `GaloisFieldAffineTransform` operations. Putting aside what a Galois Field is, these operations do a simple thing:",
+      "text": "On `amd64` , the GFNI extension exposes `GaloisFieldAffineTransform` operations. Putting aside what a Galois Field is, these operations do a simple thing:"
+    },
+    {
+      "self_ref": "#/texts/99",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "code",
+      "prov": [],
+      "orig": "// Each element of A is interpreted as a matrix of 8 rows of vectors of 8 bits.\n// Each element of x is interpreted as a vector of 8 bits.\n// The b argument is likewise a vector of 8 bits.\n// The result is z[i] = (A[i/8] * x[i]) + b.\n//\n// The matrix * and vector + follow the usual rules for linear algebra,\n// but based on AND and XOR for scalar * and +\n//\n// Asm: VGF2P8AFFINEQB, CPU Feature: AVX512GFNI\nfunc (x Uint8x16) GaloisFieldAffineTransform(A Uint64x2, b uint8) Uint8x16",
+      "text": "// Each element of A is interpreted as a matrix of 8 rows of vectors of 8 bits.\n// Each element of x is interpreted as a vector of 8 bits.\n// The b argument is likewise a vector of 8 bits.\n// The result is z[i] = (A[i/8] * x[i]) + b.\n//\n// The matrix * and vector + follow the usual rules for linear algebra,\n// but based on AND and XOR for scalar * and +\n//\n// Asm: VGF2P8AFFINEQB, CPU Feature: AVX512GFNI\nfunc (x Uint8x16) GaloisFieldAffineTransform(A Uint64x2, b uint8) Uint8x16",
+      "captions": [],
+      "references": [],
+      "footnotes": [],
+      "code_language": "Go"
+    },
+    {
+      "self_ref": "#/texts/100",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "Each 8x8 bit matrix `A` is packed row-by-row into a single `uint64` . Because any linear combination or permutation of the 8 bits within a byte can be written as an 8x8 bit matrix, this single instruction is a Swiss Army knife for byte-level bit manipulation.",
+      "text": "Each 8x8 bit matrix `A` is packed row-by-row into a single `uint64` . Because any linear combination or permutation of the 8 bits within a byte can be written as an 8x8 bit matrix, this single instruction is a Swiss Army knife for byte-level bit manipulation."
+    },
+    {
+      "self_ref": "#/texts/101",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "For example, reversing the bit order of every byte ( `bits.Reverse8` ) normally requires nibble lookup tables, masks, shifts, and ORs in SIMD. With `GaloisFieldAffineTransform` , we can simply multiply each byte by the 8x8 anti-diagonal identity matrix ( `0x8040201008040201` ) to reverse all 8 bits of 64 bytes at a time in a single instruction:",
+      "text": "For example, reversing the bit order of every byte ( `bits.Reverse8` ) normally requires nibble lookup tables, masks, shifts, and ORs in SIMD. With `GaloisFieldAffineTransform` , we can simply multiply each byte by the 8x8 anti-diagonal identity matrix ( `0x8040201008040201` ) to reverse all 8 bits of 64 bytes at a time in a single instruction:"
+    },
+    {
+      "self_ref": "#/texts/102",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "code",
+      "prov": [],
+      "orig": "/*\n    Anti-diagonal 8x8 bit matrix (0x8040201008040201):\n    [ 0 0 0 0 0 0 0 1 ]   [ x7 ]   [ x0 ]\n    [ 0 0 0 0 0 0 1 0 ]   [ x6 ]   [ x1 ]\n    [ 0 0 0 0 0 1 0 0 ]   [ x5 ]   [ x2 ]\n    [ 0 0 0 0 1 0 0 0 ] * [ x4 ] = [ x3 ]\n    [ 0 0 0 1 0 0 0 0 ]   [ x3 ]   [ x4 ]\n    [ 0 0 1 0 0 0 0 0 ]   [ x2 ]   [ x5 ]\n    [ 0 1 0 0 0 0 0 0 ]   [ x1 ]   [ x6 ]\n    [ 1 0 0 0 0 0 0 0 ]   [ x0 ]   [ x7 ]\n*/\nfunc ReverseBits(dst, src []uint8) {\n    if !archsimd.X86.AVX512GFNI() {\n        // A slow fallback emulation impl, details omitted.\n        slowReverseBits(dst, src)\n        return\n    }\n    if len(src) > len(dst) {\n        // Make sure src and dst are the same size\n        src = src[:len(dst)]\n    }\n    revMatrix := archsimd.BroadcastUint64x8(0x8040201008040201)\n    var v archsimd.Uint8x64\n    var i int\n    for i = 0; i < len(src)-v.Len()+1; i += v.Len() {\n        v = archsimd.LoadUint8x64(src[i : i+v.Len()])\n        v.GaloisFieldAffineTransform(revMatrix, 0).Store(dst[i : i+v.Len()])\n    }\n    if i < len(src) {\n        v, _ = archsimd.LoadUint8x64Part(src[i:])\n        v.GaloisFieldAffineTransform(revMatrix, 0).StorePart(dst[i:])\n    }\n}",
+      "text": "/*\n    Anti-diagonal 8x8 bit matrix (0x8040201008040201):\n    [ 0 0 0 0 0 0 0 1 ]   [ x7 ]   [ x0 ]\n    [ 0 0 0 0 0 0 1 0 ]   [ x6 ]   [ x1 ]\n    [ 0 0 0 0 0 1 0 0 ]   [ x5 ]   [ x2 ]\n    [ 0 0 0 0 1 0 0 0 ] * [ x4 ] = [ x3 ]\n    [ 0 0 0 1 0 0 0 0 ]   [ x3 ]   [ x4 ]\n    [ 0 0 1 0 0 0 0 0 ]   [ x2 ]   [ x5 ]\n    [ 0 1 0 0 0 0 0 0 ]   [ x1 ]   [ x6 ]\n    [ 1 0 0 0 0 0 0 0 ]   [ x0 ]   [ x7 ]\n*/\nfunc ReverseBits(dst, src []uint8) {\n    if !archsimd.X86.AVX512GFNI() {\n        // A slow fallback emulation impl, details omitted.\n        slowReverseBits(dst, src)\n        return\n    }\n    if len(src) > len(dst) {\n        // Make sure src and dst are the same size\n        src = src[:len(dst)]\n    }\n    revMatrix := archsimd.BroadcastUint64x8(0x8040201008040201)\n    var v archsimd.Uint8x64\n    var i int\n    for i = 0; i < len(src)-v.Len()+1; i += v.Len() {\n        v = archsimd.LoadUint8x64(src[i : i+v.Len()])\n        v.GaloisFieldAffineTransform(revMatrix, 0).Store(dst[i : i+v.Len()])\n    }\n    if i < len(src) {\n        v, _ = archsimd.LoadUint8x64Part(src[i:])\n        v.GaloisFieldAffineTransform(revMatrix, 0).StorePart(dst[i:])\n    }\n}",
+      "captions": [],
+      "references": [],
+      "footnotes": [],
+      "code_language": "Go"
+    },
+    {
+      "self_ref": "#/texts/103",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "Another example is matrix transpose. On `amd64` , the permutation instructions are shaped in a non-portable way, so using `simd` is cumbersome and might incur emulations. An efficient implementation can be written more directly in `archsimd` . The example below transposes an 8-by-8 matrix of 32-bit integers in registers on `amd64` using AVX2's 128-bit lane-grouped interleaves ( `InterleaveLoGrouped` , `InterleaveHiGrouped` ) and cross-lane permutations ( `ConcatPermuteScalarsGrouped` , `ConcatPermute128Scalars` ):",
+      "text": "Another example is matrix transpose. On `amd64` , the permutation instructions are shaped in a non-portable way, so using `simd` is cumbersome and might incur emulations. An efficient implementation can be written more directly in `archsimd` . The example below transposes an 8-by-8 matrix of 32-bit integers in registers on `amd64` using AVX2's 128-bit lane-grouped interleaves ( `InterleaveLoGrouped` , `InterleaveHiGrouped` ) and cross-lane permutations ( `ConcatPermuteScalarsGrouped` , `ConcatPermute128Scalars` ):"
+    },
+    {
+      "self_ref": "#/texts/104",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "code",
+      "prov": [],
+      "orig": "func Transpose8(a0, a1, a2, a3, a4, a5, a6, a7 archsimd.Int32x8) (\n    b0, b1, b2, b3, b4, b5, b6, b7 archsimd.Int32x8) {\n    if !archsimd.X86.AVX2() {\n        // A slow fallback emulation impl, details omitted.\n        return slowTranspose8(a0, a1, a2, a3, a4, a5, a6, a7)\n    }\n    /*\n            LOW  HIGH\n        a0: abcd efgh\n        a1: ijkl mnop\n        a2: qrst uvwx\n        a3: 0123 4567\n        a4: ABCD EFGH\n        a5: IJKL MNOP\n        a6: QRST UVWX\n        a7: 89yz YZ$@\n    */\n    t0 := a0.InterleaveLoGrouped(a1) // t0 = aibj emfn\n    t1 := a0.InterleaveHiGrouped(a1) // t1 = ckdl gohp\n    t2 := a2.InterleaveLoGrouped(a3) // t2 = q0r1 u4v5\n    t3 := a2.InterleaveHiGrouped(a3) // t3 = s2t3 w6x7\n    t4 := a4.InterleaveLoGrouped(a5) // t4 = AIBJ EMFN\n    t5 := a4.InterleaveHiGrouped(a5) // t5 = CKDL GOHP\n    t6 := a6.InterleaveLoGrouped(a7) // t6 = Q8R9 UYVZ\n    t7 := a6.InterleaveHiGrouped(a7) // t7 = SyTz W$X@\n\n    a0 = t0.ConcatPermuteScalarsGrouped(0, 1, 4, 5, t2) // a0 = aiq0 emu4\n    a1 = t0.ConcatPermuteScalarsGrouped(2, 3, 6, 7, t2) // a1 = bjr1 fnv5\n    a2 = t1.ConcatPermuteScalarsGrouped(0, 1, 4, 5, t3) // a2 = cks2 gow6\n    a3 = t1.ConcatPermuteScalarsGrouped(2, 3, 6, 7, t3) // a3 = dlt3 hpx7\n    a4 = t4.ConcatPermuteScalarsGrouped(0, 1, 4, 5, t6) // a4 = AIQ8 EMUY\n    a5 = t4.ConcatPermuteScalarsGrouped(2, 3, 6, 7, t6) // a5 = BJR9 FNVZ\n    a6 = t5.ConcatPermuteScalarsGrouped(0, 1, 4, 5, t7) // a6 = CKSy GOW$\n    a7 = t5.ConcatPermuteScalarsGrouped(2, 3, 6, 7, t7) // a7 = DLTz HPX@\n\n    b0 = a0.ConcatPermute128Scalars(0, 2, a4) // b0 = aiq0 AIQ8\n    b1 = a1.ConcatPermute128Scalars(0, 2, a5) // b1 = bjr1 BJR9\n    b2 = a2.ConcatPermute128Scalars(0, 2, a6) // b2 = cks2 CKSy\n    b3 = a3.ConcatPermute128Scalars(0, 2, a7) // b3 = dlt3 DLTz\n    b4 = a0.ConcatPermute128Scalars(1, 3, a4) // b4 = emu4 EMUY\n    b5 = a1.ConcatPermute128Scalars(1, 3, a5) // b5 = fnv5 FNVZ\n    b6 = a2.ConcatPermute128Scalars(1, 3, a6) // b6 = gow6 GOW$\n    b7 = a3.ConcatPermute128Scalars(1, 3, a7) // b7 = hpx7 HPX@\n\n    return\n}",
+      "text": "func Transpose8(a0, a1, a2, a3, a4, a5, a6, a7 archsimd.Int32x8) (\n    b0, b1, b2, b3, b4, b5, b6, b7 archsimd.Int32x8) {\n    if !archsimd.X86.AVX2() {\n        // A slow fallback emulation impl, details omitted.\n        return slowTranspose8(a0, a1, a2, a3, a4, a5, a6, a7)\n    }\n    /*\n            LOW  HIGH\n        a0: abcd efgh\n        a1: ijkl mnop\n        a2: qrst uvwx\n        a3: 0123 4567\n        a4: ABCD EFGH\n        a5: IJKL MNOP\n        a6: QRST UVWX\n        a7: 89yz YZ$@\n    */\n    t0 := a0.InterleaveLoGrouped(a1) // t0 = aibj emfn\n    t1 := a0.InterleaveHiGrouped(a1) // t1 = ckdl gohp\n    t2 := a2.InterleaveLoGrouped(a3) // t2 = q0r1 u4v5\n    t3 := a2.InterleaveHiGrouped(a3) // t3 = s2t3 w6x7\n    t4 := a4.InterleaveLoGrouped(a5) // t4 = AIBJ EMFN\n    t5 := a4.InterleaveHiGrouped(a5) // t5 = CKDL GOHP\n    t6 := a6.InterleaveLoGrouped(a7) // t6 = Q8R9 UYVZ\n    t7 := a6.InterleaveHiGrouped(a7) // t7 = SyTz W$X@\n\n    a0 = t0.ConcatPermuteScalarsGrouped(0, 1, 4, 5, t2) // a0 = aiq0 emu4\n    a1 = t0.ConcatPermuteScalarsGrouped(2, 3, 6, 7, t2) // a1 = bjr1 fnv5\n    a2 = t1.ConcatPermuteScalarsGrouped(0, 1, 4, 5, t3) // a2 = cks2 gow6\n    a3 = t1.ConcatPermuteScalarsGrouped(2, 3, 6, 7, t3) // a3 = dlt3 hpx7\n    a4 = t4.ConcatPermuteScalarsGrouped(0, 1, 4, 5, t6) // a4 = AIQ8 EMUY\n    a5 = t4.ConcatPermuteScalarsGrouped(2, 3, 6, 7, t6) // a5 = BJR9 FNVZ\n    a6 = t5.ConcatPermuteScalarsGrouped(0, 1, 4, 5, t7) // a6 = CKSy GOW$\n    a7 = t5.ConcatPermuteScalarsGrouped(2, 3, 6, 7, t7) // a7 = DLTz HPX@\n\n    b0 = a0.ConcatPermute128Scalars(0, 2, a4) // b0 = aiq0 AIQ8\n    b1 = a1.ConcatPermute128Scalars(0, 2, a5) // b1 = bjr1 BJR9\n    b2 = a2.ConcatPermute128Scalars(0, 2, a6) // b2 = cks2 CKSy\n    b3 = a3.ConcatPermute128Scalars(0, 2, a7) // b3 = dlt3 DLTz\n    b4 = a0.ConcatPermute128Scalars(1, 3, a4) // b4 = emu4 EMUY\n    b5 = a1.ConcatPermute128Scalars(1, 3, a5) // b5 = fnv5 FNVZ\n    b6 = a2.ConcatPermute128Scalars(1, 3, a6) // b6 = gow6 GOW$\n    b7 = a3.ConcatPermute128Scalars(1, 3, a7) // b7 = hpx7 HPX@\n\n    return\n}",
+      "captions": [],
+      "references": [],
+      "footnotes": [],
+      "code_language": "Go"
+    },
+    {
+      "self_ref": "#/texts/105",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "section_header",
+      "prov": [],
+      "orig": "Good Practices",
+      "text": "Good Practices",
+      "level": 1
+    },
+    {
+      "self_ref": "#/texts/106",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "When walking through the examples above, you might have a few questions:",
+      "text": "When walking through the examples above, you might have a few questions:"
+    },
+    {
+      "self_ref": "#/texts/107",
+      "parent": {
+        "$ref": "#/groups/7"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "list_item",
+      "prov": [],
+      "orig": "What is `archsimd.X86.AVX512GFNI()` , and can I omit it?",
+      "text": "What is `archsimd.X86.AVX512GFNI()` , and can I omit it?",
+      "enumerated": false,
+      "marker": "-"
+    },
+    {
+      "self_ref": "#/texts/108",
+      "parent": {
+        "$ref": "#/groups/7"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "list_item",
+      "prov": [],
+      "orig": "Why is the strided loop written as `i = 0; i < len(src)-v.Len()+1; i += v.Len()` , instead of `i = 0; i + v.Len() <= len(src); i += v.Len()` ?",
+      "text": "Why is the strided loop written as `i = 0; i < len(src)-v.Len()+1; i += v.Len()` , instead of `i = 0; i + v.Len() <= len(src); i += v.Len()` ?",
+      "enumerated": false,
+      "marker": "-"
+    },
+    {
+      "self_ref": "#/texts/109",
+      "parent": {
+        "$ref": "#/groups/7"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "list_item",
+      "prov": [],
+      "orig": "Why does `Transpose8` take 8 vector parameters rather than a struct or an `[8]archsimd.Int32x8` array?",
+      "text": "Why does `Transpose8` take 8 vector parameters rather than a struct or an `[8]archsimd.Int32x8` array?",
+      "enumerated": false,
+      "marker": "-"
+    },
+    {
+      "self_ref": "#/texts/110",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "At first glance these choices might look like minor stylistic preferences, but each of them is chosen for an important performance or correctness reason:",
+      "text": "At first glance these choices might look like minor stylistic preferences, but each of them is chosen for an important performance or correctness reason:"
+    },
+    {
+      "self_ref": "#/texts/111",
+      "parent": {
+        "$ref": "#/groups/8"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "list_item",
+      "prov": [],
+      "orig": "CPU feature checks ( `archsimd.X86.*` , `archsimd.ARM64.*` ) On `amd64` , we provide runtime feature checks like `archsimd.X86.AVX()` , `AVX2()` , `AVX512()` , and extension checks like `AVX512GFNI()` or `AVX512VNNI()` ; on `arm64` , NEON is always available, and we provide checks for optional extensions like `archsimd.ARM64.PMULL()` , `SVE()` , and `SVE2()` . The compiler doesn't know ahead of time whether the machine running your binary supports optional SIMD extensions. If you don't guard your SIMD code with the appropriate feature check, your program may crash with `SIGILL` on hardware that lacks the instruction. Just as importantly, CPU feature checks act as **compiler optimization hints** . For example, AVX-512 supports hardware merge-masking on instruction outputs. How the compiler lowers `x.Add(y).IfElse(m, z)` on a 128-bit or 256-bit vector depends on which CPU features are known to be available. If the code is not guarded by `archsimd.X86.AVX512()` , the compiler must conservatively emit a vector `VPADD` followed by a `VPBLEND` instruction. Inside an `if archsimd.X86.AVX512()` block, however, the compiler knows AVX-512 is available and fuses the sequence into a single merge-masked AVX-512 `VPADD` instruction.",
+      "text": "CPU feature checks ( `archsimd.X86.*` , `archsimd.ARM64.*` ) On `amd64` , we provide runtime feature checks like `archsimd.X86.AVX()` , `AVX2()` , `AVX512()` , and extension checks like `AVX512GFNI()` or `AVX512VNNI()` ; on `arm64` , NEON is always available, and we provide checks for optional extensions like `archsimd.ARM64.PMULL()` , `SVE()` , and `SVE2()` . The compiler doesn't know ahead of time whether the machine running your binary supports optional SIMD extensions. If you don't guard your SIMD code with the appropriate feature check, your program may crash with `SIGILL` on hardware that lacks the instruction. Just as importantly, CPU feature checks act as **compiler optimization hints** . For example, AVX-512 supports hardware merge-masking on instruction outputs. How the compiler lowers `x.Add(y).IfElse(m, z)` on a 128-bit or 256-bit vector depends on which CPU features are known to be available. If the code is not guarded by `archsimd.X86.AVX512()` , the compiler must conservatively emit a vector `VPADD` followed by a `VPBLEND` instruction. Inside an `if archsimd.X86.AVX512()` block, however, the compiler knows AVX-512 is available and fuses the sequence into a single merge-masked AVX-512 `VPADD` instruction.",
+      "enumerated": false,
+      "marker": "-"
+    },
+    {
+      "self_ref": "#/texts/112",
+      "parent": {
+        "$ref": "#/groups/8"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "list_item",
+      "prov": [],
+      "orig": "Bounds check elimination in strided loops How you write the loop bound determines whether the compiler's `prove` pass can eliminate slice bounds checks inside the loop. In `i + v.Len() <= len(src)` , the addition `i + v.Len()` could theoretically overflow to a negative `int` if `len(src)` were near `math.MaxInt` , which prevents the compiler from proving that `i` is always non-negative and in-bounds. Writing `i < len(src)-v.Len()+1` avoids that potential overflow, allowing the loop body to compile with zero bounds checks.",
+      "text": "Bounds check elimination in strided loops How you write the loop bound determines whether the compiler's `prove` pass can eliminate slice bounds checks inside the loop. In `i + v.Len() <= len(src)` , the addition `i + v.Len()` could theoretically overflow to a negative `int` if `len(src)` were near `math.MaxInt` , which prevents the compiler from proving that `i` is always non-negative and in-bounds. Writing `i < len(src)-v.Len()+1` avoids that potential overflow, allowing the loop body to compile with zero bounds checks.",
+      "enumerated": false,
+      "marker": "-"
+    },
+    {
+      "self_ref": "#/texts/113",
+      "parent": {
+        "$ref": "#/groups/8"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "list_item",
+      "prov": [],
+      "orig": "Keeping vectors in registers (avoiding large composite types) `Transpose8` passes 8 vector parameters rather than a struct of 8 fields or an `[8]archsimd.Int32x8` array because Go's ABI and SSA backend currently place large composite types in memory rather than in registers (a known issue tracked at [#24416](https://go.dev/issue/24416) ). Because SIMD vectors are 16 to 64 bytes each, spilling them to the stack hurts performance much more than spilling scalar values. This applies to both function parameters and local variables, so avoid wrapping SIMD vectors inside large arrays or structs in hot loops. There are ongoing efforts to promote composite memory accesses back into registers, which have not yet landed in Go 1.27.",
+      "text": "Keeping vectors in registers (avoiding large composite types) `Transpose8` passes 8 vector parameters rather than a struct of 8 fields or an `[8]archsimd.Int32x8` array because Go's ABI and SSA backend currently place large composite types in memory rather than in registers (a known issue tracked at [#24416](https://go.dev/issue/24416) ). Because SIMD vectors are 16 to 64 bytes each, spilling them to the stack hurts performance much more than spilling scalar values. This applies to both function parameters and local variables, so avoid wrapping SIMD vectors inside large arrays or structs in hot loops. There are ongoing efforts to promote composite memory accesses back into registers, which have not yet landed in Go 1.27.",
+      "enumerated": false,
+      "marker": "-"
+    },
+    {
+      "self_ref": "#/texts/114",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "section_header",
+      "prov": [],
+      "orig": "Trying it out",
+      "text": "Trying it out",
+      "level": 1
+    },
+    {
+      "self_ref": "#/texts/115",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "In Go 1.27, `GOEXPERIMENT=simd` supports `amd64` (AVX, AVX2, and AVX-512), `arm64` (NEON), and `wasm` (WebAssembly 128-bit SIMD) out of the box. Whether you are on an Intel/AMD machine, an `arm64` server or Apple Silicon Mac (M1/M2/M3/M4), or targeting WebAssembly, you can try `archsimd` natively right away:",
+      "text": "In Go 1.27, `GOEXPERIMENT=simd` supports `amd64` (AVX, AVX2, and AVX-512), `arm64` (NEON), and `wasm` (WebAssembly 128-bit SIMD) out of the box. Whether you are on an Intel/AMD machine, an `arm64` server or Apple Silicon Mac (M1/M2/M3/M4), or targeting WebAssembly, you can try `archsimd` natively right away:"
+    },
+    {
+      "self_ref": "#/texts/116",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "code",
+      "prov": [],
+      "orig": "GOEXPERIMENT=simd go test simd/archsimd/...",
+      "text": "GOEXPERIMENT=simd go test simd/archsimd/...",
+      "captions": [],
+      "references": [],
+      "footnotes": [],
+      "code_language": "unknown"
+    },
+    {
+      "self_ref": "#/texts/117",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "You can also cross-test `wasm` (or `amd64` via Rosetta emulation on Apple Silicon) by setting `GOARCH` :",
+      "text": "You can also cross-test `wasm` (or `amd64` via Rosetta emulation on Apple Silicon) by setting `GOARCH` :"
+    },
+    {
+      "self_ref": "#/texts/118",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "code",
+      "prov": [],
+      "orig": "# Run wasm SIMD tests using a WASI runtime:\nGOOS=wasip1 GOARCH=wasm GOEXPERIMENT=simd go test simd/archsimd/...\n\n# Or run amd64 AVX2 tests on Apple Silicon via Rosetta:\nGOARCH=amd64 GOEXPERIMENT=simd go test simd/archsimd/...",
+      "text": "# Run wasm SIMD tests using a WASI runtime:\nGOOS=wasip1 GOARCH=wasm GOEXPERIMENT=simd go test simd/archsimd/...\n\n# Or run amd64 AVX2 tests on Apple Silicon via Rosetta:\nGOARCH=amd64 GOEXPERIMENT=simd go test simd/archsimd/...",
+      "captions": [],
+      "references": [],
+      "footnotes": [],
+      "code_language": "unknown"
+    },
+    {
+      "self_ref": "#/texts/119",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "We're interested in all sorts of feedback! Early users have already helped us catch bugs (such as [#77582](https://go.dev/issue/77582) ) and identify places where code generation or API ergonomics could be improved. We tried hard to pick clear, consistent names and cover the most useful instructions, but `archsimd` is a massive API surface and there is always room to improve.",
+      "text": "We're interested in all sorts of feedback! Early users have already helped us catch bugs (such as [#77582](https://go.dev/issue/77582) ) and identify places where code generation or API ergonomics could be improved. We tried hard to pick clear, consistent names and cover the most useful instructions, but `archsimd` is a massive API surface and there is always room to improve."
+    },
+    {
+      "self_ref": "#/texts/120",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "section_header",
+      "prov": [],
+      "orig": "Future work",
+      "text": "Future work",
+      "level": 1
+    },
+    {
+      "self_ref": "#/texts/121",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "For Go 1.28 and beyond, we are actively working on completing `arm64` SVE and SVE2 support in `archsimd` (introducing width-agnostic scalable vector types like `archsimd.Float32s` backed directly by hardware SVE registers and predicates) and wiring it into `simd` . We also plan to expand `archsimd` to additional architectures such as `riscv64` , `ppc64` , `s390x` , and `loong64` , improve register promotion for composite types, and continue filling in instructions and compiler optimizations based on community feedback.",
+      "text": "For Go 1.28 and beyond, we are actively working on completing `arm64` SVE and SVE2 support in `archsimd` (introducing width-agnostic scalable vector types like `archsimd.Float32s` backed directly by hardware SVE registers and predicates) and wiring it into `simd` . We also plan to expand `archsimd` to additional architectures such as `riscv64` , `ppc64` , `s390x` , and `loong64` , improve register promotion for composite types, and continue filling in instructions and compiler optimizations based on community feedback."
+    },
+    {
+      "self_ref": "#/texts/122",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "**Next article:** [Better HTTP/1 connection reuse](https://go.dev/blog/http-connection-reuse) **Previous article:** [Platform-independent SIMD in Go](https://go.dev/blog/simd-experiment) [**Blog Index**](https://go.dev/blog/all)",
+      "text": "**Next article:** [Better HTTP/1 connection reuse](https://go.dev/blog/http-connection-reuse) **Previous article:** [Platform-independent SIMD in Go](https://go.dev/blog/simd-experiment) [**Blog Index**](https://go.dev/blog/all)"
+    }
+  ],
+  "pictures": [
+    {
+      "self_ref": "#/pictures/0",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "picture",
+      "prov": [],
+      "captions": [],
+      "references": [],
+      "footnotes": [],
+      "annotations": []
+    },
+    {
+      "self_ref": "#/pictures/1",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "picture",
+      "prov": [],
+      "captions": [],
+      "references": [],
+      "footnotes": [],
+      "annotations": []
+    }
+  ],
+  "tables": [],
+  "key_value_items": [],
+  "form_items": [],
+  "pages": {}
+}

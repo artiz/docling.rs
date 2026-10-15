@@ -123,14 +123,22 @@ pub enum InputFormat {
     /// renders any other JSON the same way.
     Jsonl,
     /// A bare `.xml` (#671): sniffed into the dialects docling reads — JATS,
-    /// USPTO, XBRL, DocLang — and, matching none, kept as one `xml` code
-    /// block with a warning. `.nxml` is [`XmlJats`](Self::XmlJats) outright.
+    /// USPTO, XBRL, DocLang — or a feed ([`Feed`](Self::Feed), #678), and,
+    /// matching none, kept as one `xml` code block with a warning. `.nxml`
+    /// is [`XmlJats`](Self::XmlJats) outright.
     Xml,
     /// Jupyter notebook (`.ipynb`, #673): markdown cells as Markdown, code
     /// cells as code items in the kernel's language, raw cells as code
     /// blocks; outputs under `ipynb_outputs`. A `.json` holding a notebook
     /// (`"nbformat"` + `"cells"`) takes the same route.
     Ipynb,
+    /// An RSS 2.0, Atom or RSS 1.0 (RDF) feed (`.rss`, `.atom`, `.rdf`,
+    /// `application/rss+xml`, `application/atom+xml`, or a bare `.xml`
+    /// whose root says so; #678): the feed's title, its description or
+    /// subtitle, then per item a level-2 heading, its date and its body
+    /// read through the HTML backend — MarkItDown's `_rss_converter`
+    /// shape. A docling.rs extension: docling has no feed backend.
+    Feed,
 }
 
 impl InputFormat {
@@ -188,6 +196,7 @@ impl InputFormat {
             InputFormat::Jsonl => "jsonl",
             InputFormat::Xml => "xml",
             InputFormat::Ipynb => "ipynb",
+            InputFormat::Feed => "feed",
         }
     }
 
@@ -247,6 +256,7 @@ impl InputFormat {
             "jsonl" => InputFormat::Jsonl,
             "xml" => InputFormat::Xml,
             "ipynb" => InputFormat::Ipynb,
+            "feed" => InputFormat::Feed,
             _ => return None,
         })
     }
@@ -294,6 +304,9 @@ impl InputFormat {
             }
             "application/xml" | "text/xml" => InputFormat::Xml,
             "application/x-ipynb+json" => InputFormat::Ipynb,
+            "application/rss+xml" | "application/atom+xml" | "application/rdf+xml" => {
+                InputFormat::Feed
+            }
             "message/rfc822" | "application/vnd.ms-outlook" => InputFormat::Email,
             "multipart/related" | "message/rfc822-headers" => return None,
             "image/png" | "image/jpeg" | "image/tiff" | "image/bmp" | "image/webp"
@@ -508,6 +521,9 @@ const EXTENSIONS: &[(&str, InputFormat)] = {
         ("jsonl", Jsonl),
         ("ndjson", Jsonl),
         ("ipynb", Ipynb),
+        ("rss", Feed),
+        ("atom", Feed),
+        ("rdf", Feed),
         // `.mpga` *is* MPEG audio (an mp3 stream) — symphonia probes the
         // codec from the bytes, the extension is just the alias (#208).
         ("wav", Audio),

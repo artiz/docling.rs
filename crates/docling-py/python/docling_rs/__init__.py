@@ -1022,6 +1022,8 @@ _URL_EXTENSIONS = {
     "text/markdown": ".md",
     "text/plain": ".txt",
     "text/csv": ".csv",
+    "application/rss+xml": ".rss",
+    "application/atom+xml": ".atom",
     "application/json": ".json",
     "application/xml": ".xml",
     "text/xml": ".xml",

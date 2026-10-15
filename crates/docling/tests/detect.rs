@@ -88,7 +88,7 @@ fn corpus_files_are_detected_by_content() {
         ("tests/data/jats/sources/elife-56337.xml", Xml),
         ("tests/data/jats/sources/elife-56337.nxml", Xml),
         ("tests/data/xbrl/sources/mlac-20251231.xml", Xml),
-        ("crates/docling/tests/data/text/sources/feed.xml", Xml),
+        ("crates/docling/tests/data/text/sources/settings.xml", Xml),
         (
             "crates/docling/tests/data/ipynb/sources/test_notebook.ipynb",
             Ipynb,

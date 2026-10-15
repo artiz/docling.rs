@@ -1,0 +1,10 @@
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<settings>
+  <profile name="release">
+    <property key="version">2.23.0</property>
+    <property key="runtime">ONNX Runtime 1.31</property>
+    <notes>Links ONNX Runtime 1.31 and reads plain text.</notes>
+  </profile>
+</settings>
+```

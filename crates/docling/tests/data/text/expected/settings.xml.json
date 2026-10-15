@@ -1,0 +1,52 @@
+{
+  "schema_name": "DoclingDocument",
+  "version": "1.10.0",
+  "name": "settings",
+  "origin": {
+    "mimetype": "text/plain",
+    "binary_hash": 17176567880082542056,
+    "filename": "settings"
+  },
+  "furniture": {
+    "self_ref": "#/furniture",
+    "children": [],
+    "content_layer": "furniture",
+    "name": "_root_",
+    "label": "unspecified"
+  },
+  "body": {
+    "self_ref": "#/body",
+    "children": [
+      {
+        "$ref": "#/texts/0"
+      }
+    ],
+    "content_layer": "body",
+    "name": "_root_",
+    "label": "unspecified"
+  },
+  "groups": [],
+  "texts": [
+    {
+      "self_ref": "#/texts/0",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "code",
+      "prov": [],
+      "orig": "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<settings>\n  <profile name=\"release\">\n    <property key=\"version\">2.23.0</property>\n    <property key=\"runtime\">ONNX Runtime 1.31</property>\n    <notes>Links ONNX Runtime 1.31 and reads plain text.</notes>\n  </profile>\n</settings>",
+      "text": "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<settings>\n  <profile name=\"release\">\n    <property key=\"version\">2.23.0</property>\n    <property key=\"runtime\">ONNX Runtime 1.31</property>\n    <notes>Links ONNX Runtime 1.31 and reads plain text.</notes>\n  </profile>\n</settings>",
+      "captions": [],
+      "references": [],
+      "footnotes": [],
+      "code_language": "XML"
+    }
+  ],
+  "pictures": [],
+  "tables": [],
+  "key_value_items": [],
+  "form_items": [],
+  "pages": {}
+}

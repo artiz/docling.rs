@@ -1,0 +1,1443 @@
+{
+  "schema_name": "DoclingDocument",
+  "version": "1.10.0",
+  "name": "debian_security",
+  "origin": {
+    "mimetype": "text/plain",
+    "binary_hash": 5271424032581097683,
+    "filename": "debian_security"
+  },
+  "furniture": {
+    "self_ref": "#/furniture",
+    "children": [],
+    "content_layer": "furniture",
+    "name": "_root_",
+    "label": "unspecified"
+  },
+  "body": {
+    "self_ref": "#/body",
+    "children": [
+      {
+        "$ref": "#/texts/0"
+      },
+      {
+        "$ref": "#/texts/1"
+      },
+      {
+        "$ref": "#/texts/2"
+      },
+      {
+        "$ref": "#/texts/3"
+      },
+      {
+        "$ref": "#/texts/4"
+      },
+      {
+        "$ref": "#/texts/5"
+      },
+      {
+        "$ref": "#/texts/6"
+      },
+      {
+        "$ref": "#/texts/7"
+      },
+      {
+        "$ref": "#/texts/8"
+      },
+      {
+        "$ref": "#/texts/9"
+      },
+      {
+        "$ref": "#/texts/10"
+      },
+      {
+        "$ref": "#/texts/11"
+      },
+      {
+        "$ref": "#/texts/12"
+      },
+      {
+        "$ref": "#/texts/13"
+      },
+      {
+        "$ref": "#/texts/14"
+      },
+      {
+        "$ref": "#/texts/15"
+      },
+      {
+        "$ref": "#/texts/16"
+      },
+      {
+        "$ref": "#/texts/17"
+      },
+      {
+        "$ref": "#/texts/18"
+      },
+      {
+        "$ref": "#/texts/19"
+      },
+      {
+        "$ref": "#/texts/20"
+      },
+      {
+        "$ref": "#/texts/21"
+      },
+      {
+        "$ref": "#/texts/22"
+      },
+      {
+        "$ref": "#/texts/23"
+      },
+      {
+        "$ref": "#/texts/24"
+      },
+      {
+        "$ref": "#/texts/25"
+      },
+      {
+        "$ref": "#/texts/26"
+      },
+      {
+        "$ref": "#/texts/27"
+      },
+      {
+        "$ref": "#/texts/28"
+      },
+      {
+        "$ref": "#/texts/29"
+      },
+      {
+        "$ref": "#/texts/30"
+      },
+      {
+        "$ref": "#/texts/31"
+      },
+      {
+        "$ref": "#/texts/32"
+      },
+      {
+        "$ref": "#/texts/33"
+      },
+      {
+        "$ref": "#/texts/34"
+      },
+      {
+        "$ref": "#/texts/35"
+      },
+      {
+        "$ref": "#/texts/36"
+      },
+      {
+        "$ref": "#/texts/37"
+      },
+      {
+        "$ref": "#/texts/38"
+      },
+      {
+        "$ref": "#/texts/39"
+      },
+      {
+        "$ref": "#/texts/40"
+      },
+      {
+        "$ref": "#/texts/41"
+      },
+      {
+        "$ref": "#/texts/42"
+      },
+      {
+        "$ref": "#/texts/43"
+      },
+      {
+        "$ref": "#/texts/44"
+      },
+      {
+        "$ref": "#/texts/45"
+      },
+      {
+        "$ref": "#/texts/46"
+      },
+      {
+        "$ref": "#/texts/47"
+      },
+      {
+        "$ref": "#/texts/48"
+      },
+      {
+        "$ref": "#/texts/49"
+      },
+      {
+        "$ref": "#/texts/50"
+      },
+      {
+        "$ref": "#/texts/51"
+      },
+      {
+        "$ref": "#/texts/52"
+      },
+      {
+        "$ref": "#/texts/53"
+      },
+      {
+        "$ref": "#/texts/54"
+      },
+      {
+        "$ref": "#/texts/55"
+      },
+      {
+        "$ref": "#/texts/56"
+      },
+      {
+        "$ref": "#/texts/57"
+      },
+      {
+        "$ref": "#/texts/58"
+      },
+      {
+        "$ref": "#/texts/59"
+      },
+      {
+        "$ref": "#/texts/60"
+      },
+      {
+        "$ref": "#/texts/61"
+      },
+      {
+        "$ref": "#/texts/62"
+      },
+      {
+        "$ref": "#/texts/63"
+      },
+      {
+        "$ref": "#/texts/64"
+      },
+      {
+        "$ref": "#/texts/65"
+      },
+      {
+        "$ref": "#/texts/66"
+      },
+      {
+        "$ref": "#/texts/67"
+      },
+      {
+        "$ref": "#/texts/68"
+      },
+      {
+        "$ref": "#/texts/69"
+      },
+      {
+        "$ref": "#/texts/70"
+      },
+      {
+        "$ref": "#/texts/71"
+      },
+      {
+        "$ref": "#/texts/72"
+      },
+      {
+        "$ref": "#/texts/73"
+      },
+      {
+        "$ref": "#/texts/74"
+      },
+      {
+        "$ref": "#/texts/75"
+      },
+      {
+        "$ref": "#/texts/76"
+      },
+      {
+        "$ref": "#/texts/77"
+      },
+      {
+        "$ref": "#/texts/78"
+      },
+      {
+        "$ref": "#/texts/79"
+      },
+      {
+        "$ref": "#/texts/80"
+      },
+      {
+        "$ref": "#/texts/81"
+      },
+      {
+        "$ref": "#/texts/82"
+      },
+      {
+        "$ref": "#/texts/83"
+      },
+      {
+        "$ref": "#/texts/84"
+      },
+      {
+        "$ref": "#/texts/85"
+      },
+      {
+        "$ref": "#/texts/86"
+      },
+      {
+        "$ref": "#/texts/87"
+      },
+      {
+        "$ref": "#/texts/88"
+      },
+      {
+        "$ref": "#/texts/89"
+      },
+      {
+        "$ref": "#/texts/90"
+      },
+      {
+        "$ref": "#/texts/91"
+      }
+    ],
+    "content_layer": "body",
+    "name": "_root_",
+    "label": "unspecified"
+  },
+  "groups": [],
+  "texts": [
+    {
+      "self_ref": "#/texts/0",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "title",
+      "prov": [],
+      "orig": "Debian Security",
+      "text": "Debian Security"
+    },
+    {
+      "self_ref": "#/texts/1",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "Debian Security Advisories",
+      "text": "Debian Security Advisories"
+    },
+    {
+      "self_ref": "#/texts/2",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "section_header",
+      "prov": [],
+      "orig": "DSA-6561-1 sogo - security update",
+      "text": "DSA-6561-1 sogo - security update",
+      "level": 1
+    },
+    {
+      "self_ref": "#/texts/3",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "Published on: 2026-10-14",
+      "text": "Published on: 2026-10-14"
+    },
+    {
+      "self_ref": "#/texts/4",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "[https://security-tracker.debian.org/tracker/DSA-6561-1](https://security-tracker.debian.org/tracker/DSA-6561-1)",
+      "text": "[https://security-tracker.debian.org/tracker/DSA-6561-1](https://security-tracker.debian.org/tracker/DSA-6561-1)"
+    },
+    {
+      "self_ref": "#/texts/5",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "section_header",
+      "prov": [],
+      "orig": "DSA-6560-1 firefox-esr - security update",
+      "text": "DSA-6560-1 firefox-esr - security update",
+      "level": 1
+    },
+    {
+      "self_ref": "#/texts/6",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "Published on: 2026-10-14",
+      "text": "Published on: 2026-10-14"
+    },
+    {
+      "self_ref": "#/texts/7",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "[https://security-tracker.debian.org/tracker/DSA-6560-1](https://security-tracker.debian.org/tracker/DSA-6560-1)",
+      "text": "[https://security-tracker.debian.org/tracker/DSA-6560-1](https://security-tracker.debian.org/tracker/DSA-6560-1)"
+    },
+    {
+      "self_ref": "#/texts/8",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "section_header",
+      "prov": [],
+      "orig": "DSA-6559-1 buildstream - security update",
+      "text": "DSA-6559-1 buildstream - security update",
+      "level": 1
+    },
+    {
+      "self_ref": "#/texts/9",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "Published on: 2026-10-14",
+      "text": "Published on: 2026-10-14"
+    },
+    {
+      "self_ref": "#/texts/10",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "[https://security-tracker.debian.org/tracker/DSA-6559-1](https://security-tracker.debian.org/tracker/DSA-6559-1)",
+      "text": "[https://security-tracker.debian.org/tracker/DSA-6559-1](https://security-tracker.debian.org/tracker/DSA-6559-1)"
+    },
+    {
+      "self_ref": "#/texts/11",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "section_header",
+      "prov": [],
+      "orig": "DSA-6558-1 curl - security update",
+      "text": "DSA-6558-1 curl - security update",
+      "level": 1
+    },
+    {
+      "self_ref": "#/texts/12",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "Published on: 2026-10-14",
+      "text": "Published on: 2026-10-14"
+    },
+    {
+      "self_ref": "#/texts/13",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "[https://security-tracker.debian.org/tracker/DSA-6558-1](https://security-tracker.debian.org/tracker/DSA-6558-1)",
+      "text": "[https://security-tracker.debian.org/tracker/DSA-6558-1](https://security-tracker.debian.org/tracker/DSA-6558-1)"
+    },
+    {
+      "self_ref": "#/texts/14",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "section_header",
+      "prov": [],
+      "orig": "DSA-6557-1 ntfs-3g - security update",
+      "text": "DSA-6557-1 ntfs-3g - security update",
+      "level": 1
+    },
+    {
+      "self_ref": "#/texts/15",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "Published on: 2026-10-12",
+      "text": "Published on: 2026-10-12"
+    },
+    {
+      "self_ref": "#/texts/16",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "[https://security-tracker.debian.org/tracker/DSA-6557-1](https://security-tracker.debian.org/tracker/DSA-6557-1)",
+      "text": "[https://security-tracker.debian.org/tracker/DSA-6557-1](https://security-tracker.debian.org/tracker/DSA-6557-1)"
+    },
+    {
+      "self_ref": "#/texts/17",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "section_header",
+      "prov": [],
+      "orig": "DSA-6556-1 nagios4 - security update",
+      "text": "DSA-6556-1 nagios4 - security update",
+      "level": 1
+    },
+    {
+      "self_ref": "#/texts/18",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "Published on: 2026-10-12",
+      "text": "Published on: 2026-10-12"
+    },
+    {
+      "self_ref": "#/texts/19",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "[https://security-tracker.debian.org/tracker/DSA-6556-1](https://security-tracker.debian.org/tracker/DSA-6556-1)",
+      "text": "[https://security-tracker.debian.org/tracker/DSA-6556-1](https://security-tracker.debian.org/tracker/DSA-6556-1)"
+    },
+    {
+      "self_ref": "#/texts/20",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "section_header",
+      "prov": [],
+      "orig": "DSA-6555-1 librsvg - security update",
+      "text": "DSA-6555-1 librsvg - security update",
+      "level": 1
+    },
+    {
+      "self_ref": "#/texts/21",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "Published on: 2026-10-12",
+      "text": "Published on: 2026-10-12"
+    },
+    {
+      "self_ref": "#/texts/22",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "[https://security-tracker.debian.org/tracker/DSA-6555-1](https://security-tracker.debian.org/tracker/DSA-6555-1)",
+      "text": "[https://security-tracker.debian.org/tracker/DSA-6555-1](https://security-tracker.debian.org/tracker/DSA-6555-1)"
+    },
+    {
+      "self_ref": "#/texts/23",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "section_header",
+      "prov": [],
+      "orig": "DSA-6554-1 keystone - security update",
+      "text": "DSA-6554-1 keystone - security update",
+      "level": 1
+    },
+    {
+      "self_ref": "#/texts/24",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "Published on: 2026-10-12",
+      "text": "Published on: 2026-10-12"
+    },
+    {
+      "self_ref": "#/texts/25",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "[https://security-tracker.debian.org/tracker/DSA-6554-1](https://security-tracker.debian.org/tracker/DSA-6554-1)",
+      "text": "[https://security-tracker.debian.org/tracker/DSA-6554-1](https://security-tracker.debian.org/tracker/DSA-6554-1)"
+    },
+    {
+      "self_ref": "#/texts/26",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "section_header",
+      "prov": [],
+      "orig": "DSA-6553-1 chromium - security update",
+      "text": "DSA-6553-1 chromium - security update",
+      "level": 1
+    },
+    {
+      "self_ref": "#/texts/27",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "Published on: 2026-10-12",
+      "text": "Published on: 2026-10-12"
+    },
+    {
+      "self_ref": "#/texts/28",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "[https://security-tracker.debian.org/tracker/DSA-6553-1](https://security-tracker.debian.org/tracker/DSA-6553-1)",
+      "text": "[https://security-tracker.debian.org/tracker/DSA-6553-1](https://security-tracker.debian.org/tracker/DSA-6553-1)"
+    },
+    {
+      "self_ref": "#/texts/29",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "section_header",
+      "prov": [],
+      "orig": "DSA-6552-1 vips - security update",
+      "text": "DSA-6552-1 vips - security update",
+      "level": 1
+    },
+    {
+      "self_ref": "#/texts/30",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "Published on: 2026-10-11",
+      "text": "Published on: 2026-10-11"
+    },
+    {
+      "self_ref": "#/texts/31",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "[https://security-tracker.debian.org/tracker/DSA-6552-1](https://security-tracker.debian.org/tracker/DSA-6552-1)",
+      "text": "[https://security-tracker.debian.org/tracker/DSA-6552-1](https://security-tracker.debian.org/tracker/DSA-6552-1)"
+    },
+    {
+      "self_ref": "#/texts/32",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "section_header",
+      "prov": [],
+      "orig": "DSA-6551-1 tor - security update",
+      "text": "DSA-6551-1 tor - security update",
+      "level": 1
+    },
+    {
+      "self_ref": "#/texts/33",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "Published on: 2026-10-10",
+      "text": "Published on: 2026-10-10"
+    },
+    {
+      "self_ref": "#/texts/34",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "[https://security-tracker.debian.org/tracker/DSA-6551-1](https://security-tracker.debian.org/tracker/DSA-6551-1)",
+      "text": "[https://security-tracker.debian.org/tracker/DSA-6551-1](https://security-tracker.debian.org/tracker/DSA-6551-1)"
+    },
+    {
+      "self_ref": "#/texts/35",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "section_header",
+      "prov": [],
+      "orig": "DSA-6550-1 ghostscript - security update",
+      "text": "DSA-6550-1 ghostscript - security update",
+      "level": 1
+    },
+    {
+      "self_ref": "#/texts/36",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "Published on: 2026-10-10",
+      "text": "Published on: 2026-10-10"
+    },
+    {
+      "self_ref": "#/texts/37",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "[https://security-tracker.debian.org/tracker/DSA-6550-1](https://security-tracker.debian.org/tracker/DSA-6550-1)",
+      "text": "[https://security-tracker.debian.org/tracker/DSA-6550-1](https://security-tracker.debian.org/tracker/DSA-6550-1)"
+    },
+    {
+      "self_ref": "#/texts/38",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "section_header",
+      "prov": [],
+      "orig": "DSA-6549-1 xz-utils - security update",
+      "text": "DSA-6549-1 xz-utils - security update",
+      "level": 1
+    },
+    {
+      "self_ref": "#/texts/39",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "Published on: 2026-10-07",
+      "text": "Published on: 2026-10-07"
+    },
+    {
+      "self_ref": "#/texts/40",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "[https://security-tracker.debian.org/tracker/DSA-6549-1](https://security-tracker.debian.org/tracker/DSA-6549-1)",
+      "text": "[https://security-tracker.debian.org/tracker/DSA-6549-1](https://security-tracker.debian.org/tracker/DSA-6549-1)"
+    },
+    {
+      "self_ref": "#/texts/41",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "section_header",
+      "prov": [],
+      "orig": "DSA-6548-1 node-shell-quote - security update",
+      "text": "DSA-6548-1 node-shell-quote - security update",
+      "level": 1
+    },
+    {
+      "self_ref": "#/texts/42",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "Published on: 2026-10-06",
+      "text": "Published on: 2026-10-06"
+    },
+    {
+      "self_ref": "#/texts/43",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "[https://security-tracker.debian.org/tracker/DSA-6548-1](https://security-tracker.debian.org/tracker/DSA-6548-1)",
+      "text": "[https://security-tracker.debian.org/tracker/DSA-6548-1](https://security-tracker.debian.org/tracker/DSA-6548-1)"
+    },
+    {
+      "self_ref": "#/texts/44",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "section_header",
+      "prov": [],
+      "orig": "DSA-6547-1 ruby-jwt - security update",
+      "text": "DSA-6547-1 ruby-jwt - security update",
+      "level": 1
+    },
+    {
+      "self_ref": "#/texts/45",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "Published on: 2026-10-06",
+      "text": "Published on: 2026-10-06"
+    },
+    {
+      "self_ref": "#/texts/46",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "[https://security-tracker.debian.org/tracker/DSA-6547-1](https://security-tracker.debian.org/tracker/DSA-6547-1)",
+      "text": "[https://security-tracker.debian.org/tracker/DSA-6547-1](https://security-tracker.debian.org/tracker/DSA-6547-1)"
+    },
+    {
+      "self_ref": "#/texts/47",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "section_header",
+      "prov": [],
+      "orig": "DSA-6546-1 rails - security update",
+      "text": "DSA-6546-1 rails - security update",
+      "level": 1
+    },
+    {
+      "self_ref": "#/texts/48",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "Published on: 2026-10-06",
+      "text": "Published on: 2026-10-06"
+    },
+    {
+      "self_ref": "#/texts/49",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "[https://security-tracker.debian.org/tracker/DSA-6546-1](https://security-tracker.debian.org/tracker/DSA-6546-1)",
+      "text": "[https://security-tracker.debian.org/tracker/DSA-6546-1](https://security-tracker.debian.org/tracker/DSA-6546-1)"
+    },
+    {
+      "self_ref": "#/texts/50",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "section_header",
+      "prov": [],
+      "orig": "DSA-6545-1 roundcube - security update",
+      "text": "DSA-6545-1 roundcube - security update",
+      "level": 1
+    },
+    {
+      "self_ref": "#/texts/51",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "Published on: 2026-10-06",
+      "text": "Published on: 2026-10-06"
+    },
+    {
+      "self_ref": "#/texts/52",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "[https://security-tracker.debian.org/tracker/DSA-6545-1](https://security-tracker.debian.org/tracker/DSA-6545-1)",
+      "text": "[https://security-tracker.debian.org/tracker/DSA-6545-1](https://security-tracker.debian.org/tracker/DSA-6545-1)"
+    },
+    {
+      "self_ref": "#/texts/53",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "section_header",
+      "prov": [],
+      "orig": "DSA-6544-1 sabnzbdplus - security update",
+      "text": "DSA-6544-1 sabnzbdplus - security update",
+      "level": 1
+    },
+    {
+      "self_ref": "#/texts/54",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "Published on: 2026-10-05",
+      "text": "Published on: 2026-10-05"
+    },
+    {
+      "self_ref": "#/texts/55",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "[https://security-tracker.debian.org/tracker/DSA-6544-1](https://security-tracker.debian.org/tracker/DSA-6544-1)",
+      "text": "[https://security-tracker.debian.org/tracker/DSA-6544-1](https://security-tracker.debian.org/tracker/DSA-6544-1)"
+    },
+    {
+      "self_ref": "#/texts/56",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "section_header",
+      "prov": [],
+      "orig": "DSA-6543-1 libreoffice - security update",
+      "text": "DSA-6543-1 libreoffice - security update",
+      "level": 1
+    },
+    {
+      "self_ref": "#/texts/57",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "Published on: 2026-10-05",
+      "text": "Published on: 2026-10-05"
+    },
+    {
+      "self_ref": "#/texts/58",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "[https://security-tracker.debian.org/tracker/DSA-6543-1](https://security-tracker.debian.org/tracker/DSA-6543-1)",
+      "text": "[https://security-tracker.debian.org/tracker/DSA-6543-1](https://security-tracker.debian.org/tracker/DSA-6543-1)"
+    },
+    {
+      "self_ref": "#/texts/59",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "section_header",
+      "prov": [],
+      "orig": "DSA-6542-1 ruby-rack-session - security update",
+      "text": "DSA-6542-1 ruby-rack-session - security update",
+      "level": 1
+    },
+    {
+      "self_ref": "#/texts/60",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "Published on: 2026-10-04",
+      "text": "Published on: 2026-10-04"
+    },
+    {
+      "self_ref": "#/texts/61",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "[https://security-tracker.debian.org/tracker/DSA-6542-1](https://security-tracker.debian.org/tracker/DSA-6542-1)",
+      "text": "[https://security-tracker.debian.org/tracker/DSA-6542-1](https://security-tracker.debian.org/tracker/DSA-6542-1)"
+    },
+    {
+      "self_ref": "#/texts/62",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "section_header",
+      "prov": [],
+      "orig": "DSA-6541-1 wireshark - security update",
+      "text": "DSA-6541-1 wireshark - security update",
+      "level": 1
+    },
+    {
+      "self_ref": "#/texts/63",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "Published on: 2026-10-04",
+      "text": "Published on: 2026-10-04"
+    },
+    {
+      "self_ref": "#/texts/64",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "[https://security-tracker.debian.org/tracker/DSA-6541-1](https://security-tracker.debian.org/tracker/DSA-6541-1)",
+      "text": "[https://security-tracker.debian.org/tracker/DSA-6541-1](https://security-tracker.debian.org/tracker/DSA-6541-1)"
+    },
+    {
+      "self_ref": "#/texts/65",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "section_header",
+      "prov": [],
+      "orig": "DSA-6534-2 webkit2gtk - regression update",
+      "text": "DSA-6534-2 webkit2gtk - regression update",
+      "level": 1
+    },
+    {
+      "self_ref": "#/texts/66",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "Published on: 2026-10-02",
+      "text": "Published on: 2026-10-02"
+    },
+    {
+      "self_ref": "#/texts/67",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "[https://security-tracker.debian.org/tracker/DSA-6534-2](https://security-tracker.debian.org/tracker/DSA-6534-2)",
+      "text": "[https://security-tracker.debian.org/tracker/DSA-6534-2](https://security-tracker.debian.org/tracker/DSA-6534-2)"
+    },
+    {
+      "self_ref": "#/texts/68",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "section_header",
+      "prov": [],
+      "orig": "DSA-6540-1 radsecproxy - security update",
+      "text": "DSA-6540-1 radsecproxy - security update",
+      "level": 1
+    },
+    {
+      "self_ref": "#/texts/69",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "Published on: 2026-10-02",
+      "text": "Published on: 2026-10-02"
+    },
+    {
+      "self_ref": "#/texts/70",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "[https://security-tracker.debian.org/tracker/DSA-6540-1](https://security-tracker.debian.org/tracker/DSA-6540-1)",
+      "text": "[https://security-tracker.debian.org/tracker/DSA-6540-1](https://security-tracker.debian.org/tracker/DSA-6540-1)"
+    },
+    {
+      "self_ref": "#/texts/71",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "section_header",
+      "prov": [],
+      "orig": "DSA-6539-1 php-mongodb - security update",
+      "text": "DSA-6539-1 php-mongodb - security update",
+      "level": 1
+    },
+    {
+      "self_ref": "#/texts/72",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "Published on: 2026-10-02",
+      "text": "Published on: 2026-10-02"
+    },
+    {
+      "self_ref": "#/texts/73",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "[https://security-tracker.debian.org/tracker/DSA-6539-1](https://security-tracker.debian.org/tracker/DSA-6539-1)",
+      "text": "[https://security-tracker.debian.org/tracker/DSA-6539-1](https://security-tracker.debian.org/tracker/DSA-6539-1)"
+    },
+    {
+      "self_ref": "#/texts/74",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "section_header",
+      "prov": [],
+      "orig": "DSA-6538-1 redis - security update",
+      "text": "DSA-6538-1 redis - security update",
+      "level": 1
+    },
+    {
+      "self_ref": "#/texts/75",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "Published on: 2026-10-02",
+      "text": "Published on: 2026-10-02"
+    },
+    {
+      "self_ref": "#/texts/76",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "[https://security-tracker.debian.org/tracker/DSA-6538-1](https://security-tracker.debian.org/tracker/DSA-6538-1)",
+      "text": "[https://security-tracker.debian.org/tracker/DSA-6538-1](https://security-tracker.debian.org/tracker/DSA-6538-1)"
+    },
+    {
+      "self_ref": "#/texts/77",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "section_header",
+      "prov": [],
+      "orig": "DSA-6537-1 libpng1.6 - security update",
+      "text": "DSA-6537-1 libpng1.6 - security update",
+      "level": 1
+    },
+    {
+      "self_ref": "#/texts/78",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "Published on: 2026-10-01",
+      "text": "Published on: 2026-10-01"
+    },
+    {
+      "self_ref": "#/texts/79",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "[https://security-tracker.debian.org/tracker/DSA-6537-1](https://security-tracker.debian.org/tracker/DSA-6537-1)",
+      "text": "[https://security-tracker.debian.org/tracker/DSA-6537-1](https://security-tracker.debian.org/tracker/DSA-6537-1)"
+    },
+    {
+      "self_ref": "#/texts/80",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "section_header",
+      "prov": [],
+      "orig": "DSA-6536-1 thunderbird - security update",
+      "text": "DSA-6536-1 thunderbird - security update",
+      "level": 1
+    },
+    {
+      "self_ref": "#/texts/81",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "Published on: 2026-10-01",
+      "text": "Published on: 2026-10-01"
+    },
+    {
+      "self_ref": "#/texts/82",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "[https://security-tracker.debian.org/tracker/DSA-6536-1](https://security-tracker.debian.org/tracker/DSA-6536-1)",
+      "text": "[https://security-tracker.debian.org/tracker/DSA-6536-1](https://security-tracker.debian.org/tracker/DSA-6536-1)"
+    },
+    {
+      "self_ref": "#/texts/83",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "section_header",
+      "prov": [],
+      "orig": "DSA-6535-1 chromium - security update",
+      "text": "DSA-6535-1 chromium - security update",
+      "level": 1
+    },
+    {
+      "self_ref": "#/texts/84",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "Published on: 2026-10-01",
+      "text": "Published on: 2026-10-01"
+    },
+    {
+      "self_ref": "#/texts/85",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "[https://security-tracker.debian.org/tracker/DSA-6535-1](https://security-tracker.debian.org/tracker/DSA-6535-1)",
+      "text": "[https://security-tracker.debian.org/tracker/DSA-6535-1](https://security-tracker.debian.org/tracker/DSA-6535-1)"
+    },
+    {
+      "self_ref": "#/texts/86",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "section_header",
+      "prov": [],
+      "orig": "DSA-6534-1 webkit2gtk - security update",
+      "text": "DSA-6534-1 webkit2gtk - security update",
+      "level": 1
+    },
+    {
+      "self_ref": "#/texts/87",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "Published on: 2026-10-01",
+      "text": "Published on: 2026-10-01"
+    },
+    {
+      "self_ref": "#/texts/88",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "[https://security-tracker.debian.org/tracker/DSA-6534-1](https://security-tracker.debian.org/tracker/DSA-6534-1)",
+      "text": "[https://security-tracker.debian.org/tracker/DSA-6534-1](https://security-tracker.debian.org/tracker/DSA-6534-1)"
+    },
+    {
+      "self_ref": "#/texts/89",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "section_header",
+      "prov": [],
+      "orig": "DSA-6533-1 firefox-esr - security update",
+      "text": "DSA-6533-1 firefox-esr - security update",
+      "level": 1
+    },
+    {
+      "self_ref": "#/texts/90",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "Published on: 2026-09-30",
+      "text": "Published on: 2026-09-30"
+    },
+    {
+      "self_ref": "#/texts/91",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "[https://security-tracker.debian.org/tracker/DSA-6533-1](https://security-tracker.debian.org/tracker/DSA-6533-1)",
+      "text": "[https://security-tracker.debian.org/tracker/DSA-6533-1](https://security-tracker.debian.org/tracker/DSA-6533-1)"
+    }
+  ],
+  "pictures": [],
+  "tables": [],
+  "key_value_items": [],
+  "form_items": [],
+  "pages": {}
+}

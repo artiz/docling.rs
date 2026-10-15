@@ -243,6 +243,8 @@ _MIME_EXTENSIONS = {
     "text/x-tex": ".tex",
     "application/xml": ".xml",
     "text/xml": ".xml",
+    "application/rss+xml": ".rss",
+    "application/atom+xml": ".atom",
     "application/json": ".json",
     "image/svg+xml": ".svg",
     "image/png": ".png",
@@ -271,6 +273,7 @@ _ENGINE_EXTENSIONS = {
 _TEXT_EXTENSIONS = {
     ".txt", ".md", ".markdown", ".text", ".qmd", ".rmd", ".csv", ".tsv", ".html", ".htm",
     ".xhtml", ".xml", ".json", ".ipynb", ".vtt", ".adoc", ".asciidoc", ".asc", ".tex", ".latex", ".svg",
+    ".rss", ".atom", ".rdf",
 }
 _IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".gif", ".bmp", ".tif", ".tiff", ".webp", ".heic", ".heif"}
 _AUDIO_EXTENSIONS = {".mp3", ".wav", ".m4a", ".aac", ".flac", ".ogg", ".mp4", ".mov", ".mkv", ".webm"}
