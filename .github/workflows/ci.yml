@@ -435,6 +435,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write # push the version-bump commit + tag
+      issues: write # the "Shipped in vX.Y.Z" comments on the release's issues
     steps:
       - uses: actions/checkout@v7
         with:
@@ -484,3 +485,16 @@ jobs:
           else
             gh release create "$tag" --title "$tag" --notes-file "$notes" --verify-tag --latest=false
           fi
+
+      # Tell the issues this release shipped (`Closes/Refs #NN` in the commits
+      # and the merged PRs since the previous tag) that it did: one "Shipped in
+      # vX.Y.Z" comment each, linking the Release just cut. Posted as
+      # github-actions[bot] (`issues: write` above); idempotent on a forced
+      # re-release. Upstream only — a fork's CI must not comment on issues
+      # whose numbers mean something else there. Never fails the job: the
+      # release is already tagged and cut, so the script only warns.
+      - name: Comment on the released issues
+        if: steps.release.outputs.released == 'true' && github.repository == 'docling-project/docling.rs'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: scripts/ci/release_issue_comments.sh "v${{ steps.release.outputs.version }}"
