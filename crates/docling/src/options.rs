@@ -675,6 +675,109 @@ impl ConvertOptions {
         merge_options(self, base)
     }
 
+    /// The readings of a text value, in the order a text surface tries
+    /// them: the string itself, an integer, a decimal number, then a
+    /// boolean (`1`/`true`/`yes`/`on`, `0`/`false`/`no`/`off`, any case).
+    pub fn text_candidates(text: &str) -> Vec<serde_json::Value> {
+        let trimmed = text.trim();
+        let mut candidates = vec![serde_json::Value::String(text.to_string())];
+        if let Ok(n) = trimmed.parse::<u64>() {
+            candidates.push(serde_json::Value::from(n));
+        } else if let Ok(f) = trimmed.parse::<f64>() {
+            if let Some(n) = serde_json::Number::from_f64(f) {
+                candidates.push(serde_json::Value::Number(n));
+            }
+        }
+        match trimmed.to_ascii_lowercase().as_str() {
+            "1" | "true" | "yes" | "on" => candidates.push(serde_json::Value::Bool(true)),
+            "0" | "false" | "no" | "off" => candidates.push(serde_json::Value::Bool(false)),
+            _ => {}
+        }
+        candidates
+    }
+
+    /// Set one option from its text form — a query parameter, a multipart
+    /// text part, the string an MCP client's form sends for every value.
+    /// The first reading of [`text_candidates`](Self::text_candidates) the
+    /// option accepts lands: `pages=5` stays the text `"5"`, `strict=true`
+    /// / `strict=1` / `strict=yes` set the flag, `ocr_scale=1.5` the number.
+    /// A name (or alias) that is no option is left alone (`Ok(false)`); a
+    /// value no reading accepts — `strict=maybe`, `document_timeout=soon`
+    /// — is an error naming the option.
+    pub fn set_text(&mut self, name: &str, text: &str) -> Result<bool, OptionsError> {
+        let Some(field) = OPTIONS
+            .iter()
+            .find(|o| o.name == name || o.aliases.contains(&name))
+            .map(|o| o.name)
+        else {
+            return Ok(false);
+        };
+        for value in Self::text_candidates(text) {
+            let mut patch = serde_json::Map::new();
+            patch.insert(name.to_string(), value);
+            if let Ok(parsed) =
+                serde_json::from_value::<ConvertOptions>(serde_json::Value::Object(patch))
+            {
+                *self = parsed.merge_over(std::mem::take(self));
+                return Ok(true);
+            }
+        }
+        Err(OptionsError::new(
+            field,
+            format!("{name}: cannot read {text:?} as that option's value"),
+        ))
+    }
+
+    /// A JSON object of options whose values may be text: what an MCP
+    /// client's form sends (MCP Inspector types every value as a string —
+    /// `{"force_full_page_ocr": "true", "ocr_scale": "1.5"}`), or a
+    /// hand-written call. A text value is read with
+    /// [`set_text`](Self::set_text); a typed value as the JSON it is, or,
+    /// when the option is text (`{"pages": 3}`) or the type is off
+    /// (`{"strict": 1}`), as its text; `null` leaves the option unset. An
+    /// unknown key, or a value no reading accepts, is an error naming it.
+    pub fn from_loose_json(
+        map: serde_json::Map<String, serde_json::Value>,
+    ) -> Result<Self, OptionsError> {
+        let mut out = Self::default();
+        for (name, value) in map {
+            let known = OPTIONS
+                .iter()
+                .find(|o| o.name == name || o.aliases.contains(&name.as_str()))
+                .map(|o| o.name);
+            let Some(field) = known else {
+                return Err(OptionsError::new(
+                    "options",
+                    format!("unknown field `{name}` (see docs/OPTIONS.md for the list)"),
+                ));
+            };
+            match value {
+                serde_json::Value::Null => {}
+                serde_json::Value::String(text) => {
+                    out.set_text(&name, &text)?;
+                }
+                other => {
+                    let text = match &other {
+                        serde_json::Value::Number(n) => Some(n.to_string()),
+                        serde_json::Value::Bool(b) => Some(b.to_string()),
+                        _ => None,
+                    };
+                    let mut patch = serde_json::Map::new();
+                    patch.insert(name.clone(), other);
+                    match serde_json::from_value::<ConvertOptions>(serde_json::Value::Object(patch))
+                    {
+                        Ok(parsed) => out = parsed.merge_over(out),
+                        Err(e) => match text {
+                            Some(t) if out.set_text(&name, &t).is_ok() => {}
+                            _ => return Err(OptionsError::new(field, format!("{name}: {e}"))),
+                        },
+                    }
+                }
+            }
+        }
+        Ok(out)
+    }
+
     /// Check every option that can be checked without the input document —
     /// the one set of rules all surfaces apply, before any work starts:
     /// `pages` spelling, a positive `document_timeout`, a positive
@@ -1337,6 +1440,63 @@ mod tests {
         }
         assert_eq!(cli_flag("ocr_scale"), "--ocr-scale");
         assert_eq!(cli_flag("do_code_enrichment"), "--enrich-code");
+    }
+
+    /// Text values read as the option's type (#679's follow-up: the MCP
+    /// form); a typed value for a text option as its text; the rest as is.
+    #[test]
+    fn text_values_read_as_the_options_type() {
+        let mut o = ConvertOptions::default();
+        assert!(o.set_text("strict", "true").unwrap());
+        assert!(o.set_text("compact_tables", "YES").unwrap());
+        assert!(o.set_text("ocr_scale", "1.5").unwrap());
+        assert!(o.set_text("video_frames", "4").unwrap());
+        assert!(o.set_text("pages", "5").unwrap());
+        assert!(o.set_text("pdf_password", "0").unwrap(), "an alias");
+        assert!(!o.set_text("not_an_option", "x").unwrap());
+        assert_eq!(o.strict, Some(true));
+        assert_eq!(o.compact_tables, Some(true));
+        assert_eq!(o.ocr_scale, Some(1.5));
+        assert_eq!(o.video_frames, Some(4));
+        assert_eq!(o.pages.as_deref(), Some("5"));
+        assert_eq!(o.password.as_deref(), Some("0"));
+        let e = o.set_text("strict", "maybe").unwrap_err();
+        assert_eq!(e.field, "strict");
+        assert_eq!(
+            e.cli_message(),
+            "--strict: cannot read \"maybe\" as that option's value"
+        );
+
+        let o = ConvertOptions::from_loose_json(
+            serde_json::json!({
+                "force_full_page_ocr": "true",
+                "ocr_scale": "2",
+                "pages": 3,
+                "strict": 1,
+                "text_layer_only": false,
+                "ocr_lang": null,
+                "redact_kinds": "email, phone"
+            })
+            .as_object()
+            .unwrap()
+            .clone(),
+        )
+        .unwrap();
+        assert_eq!(o.force_full_page_ocr, Some(true));
+        assert_eq!(o.ocr_scale, Some(2.0));
+        assert_eq!(o.pages.as_deref(), Some("3"));
+        assert_eq!(o.strict, Some(true));
+        assert_eq!(o.text_layer_only, Some(false));
+        assert_eq!(o.ocr_lang, None);
+        assert_eq!(o.redact_kinds.as_deref(), Some("email, phone"));
+        let bad = |v: serde_json::Value| {
+            ConvertOptions::from_loose_json(v.as_object().unwrap().clone())
+                .unwrap_err()
+                .to_string()
+        };
+        assert!(bad(serde_json::json!({"strict": "maybe"})).contains("strict: cannot read"));
+        assert!(bad(serde_json::json!({"strict": [1]})).contains("strict: invalid type"));
+        assert!(bad(serde_json::json!({"strictt": true})).contains("unknown field `strictt`"));
     }
 
     #[test]

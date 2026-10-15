@@ -186,6 +186,18 @@ fn stdio_refuses_what_the_operator_did_not_allow() {
         json!({"uri": "x.md", "options": {"not_an_option": 1}}),
     );
     assert!(is_error && text.contains("unknown field"), "{text}");
+    // A form's text values read as the option's type (MCP Inspector sends
+    // `"true"`); a value no reading accepts names the option.
+    let (text, is_error) = s.call(
+        "convert",
+        json!({"uri": "sources/duck.md", "options": {"strict": "true", "compact_tables": "1"}}),
+    );
+    assert!(!is_error, "{text}");
+    let (text, is_error) = s.call(
+        "convert",
+        json!({"uri": "sources/duck.md", "options": {"strict": "maybe"}}),
+    );
+    assert!(is_error && text.contains("strict: cannot read"), "{text}");
     // A tool error leaves the session usable.
     let (formats, is_error) = s.call("list_input_formats", json!({}));
     assert!(

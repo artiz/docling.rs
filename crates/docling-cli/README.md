@@ -79,7 +79,7 @@ image all carry it, and `uvx docling-rs-mcp` runs the same server from PyPI
 | Tool | What it returns |
 |---|---|
 | `convert_to_markdown(uri)` | Markdown of the document behind an `http:`/`https:`/`file:`/`data:` URI or a path — **MarkItDown's MCP tool, same name and contract**, so a `markitdown-mcp` setup switches by changing the command |
-| `convert(uri, to?, images?, options?)` | `to` = `md` (default), `json` (docling's `DoclingDocument`), `html`, `text`, `latex`, `chunks`, `vtt`, `pandoc`; `options` = the [shared conversion options](../../docs/OPTIONS.md) (`{"pages": "1-5"}`, `{"text_layer_only": true}`, `{"ocr_lang": "ch"}`, `{"password": "…"}`, …) |
+| `convert(uri, to?, images?, options?)` | `to` = `md` (default), `json` (docling's `DoclingDocument`), `html`, `text`, `latex`, `chunks`, `vtt`, `pandoc`; `options` = the [shared conversion options](../../docs/OPTIONS.md) (`{"pages": "1-5"}`, `{"text_layer_only": true}`, `{"ocr_lang": "ch"}`, `{"password": "…"}`, …; a value may be text — `{"text_layer_only": "true"}`, `{"ocr_scale": "1.5"}` — as MCP Inspector's form sends it) |
 | `list_input_formats()` | the extensions this server converts |
 
 Claude Desktop (`claude_desktop_config.json`) or any client that launches

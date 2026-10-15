@@ -618,28 +618,15 @@ impl ConvertOptions {
     }
 
     /// Set one option from its text form — a query parameter or a multipart
-    /// text part. The text is tried as the option's type in turn: a string,
-    /// an integer, a decimal number, then a boolean (`1`/`true`/`yes`/`on`
-    /// and `0`/`false`/`no`/`off`); the first reading the option accepts
+    /// text part. The text is tried as the option's type in turn
+    /// ([`docling::ConvertOptions::text_candidates`]: a string, an integer,
+    /// a decimal number, then a boolean — `1`/`true`/`yes`/`on` and
+    /// `0`/`false`/`no`/`off`); the first reading the option accepts
     /// lands. An unknown name is ignored (as unknown query parameters always
     /// were); a value no reading accepts — `document_timeout=soon`,
     /// `strict=maybe` — is a 400 naming the option.
     fn set_text(&mut self, name: &str, text: &str) -> Result<(), ApiError> {
-        let trimmed = text.trim();
-        let mut candidates = vec![serde_json::Value::String(text.to_string())];
-        if let Ok(n) = trimmed.parse::<u64>() {
-            candidates.push(serde_json::Value::from(n));
-        } else if let Ok(f) = trimmed.parse::<f64>() {
-            if let Some(n) = serde_json::Number::from_f64(f) {
-                candidates.push(serde_json::Value::Number(n));
-            }
-        }
-        match trimmed.to_ascii_lowercase().as_str() {
-            "1" | "true" | "yes" | "on" => candidates.push(serde_json::Value::Bool(true)),
-            "0" | "false" | "no" | "off" => candidates.push(serde_json::Value::Bool(false)),
-            _ => {}
-        }
-        for value in candidates {
+        for value in docling::ConvertOptions::text_candidates(text) {
             let mut patch = serde_json::Map::new();
             patch.insert(name.to_string(), value);
             if let Ok(parsed) =
