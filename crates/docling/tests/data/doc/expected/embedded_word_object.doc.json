@@ -22,18 +22,6 @@
       },
       {
         "$ref": "#/pictures/0"
-      },
-      {
-        "$ref": "#/texts/1"
-      },
-      {
-        "$ref": "#/texts/2"
-      },
-      {
-        "$ref": "#/texts/3"
-      },
-      {
-        "$ref": "#/texts/4"
       }
     ],
     "content_layer": "body",
@@ -54,54 +42,6 @@
       "orig": "Dog",
       "text": "Dog",
       "level": 2
-    },
-    {
-      "self_ref": "#/texts/1",
-      "parent": {
-        "$ref": "#/body"
-      },
-      "children": [],
-      "content_layer": "furniture",
-      "label": "page_header",
-      "prov": [],
-      "orig": "02/10/26",
-      "text": "02/10/26"
-    },
-    {
-      "self_ref": "#/texts/2",
-      "parent": {
-        "$ref": "#/body"
-      },
-      "children": [],
-      "content_layer": "furniture",
-      "label": "page_header",
-      "prov": [],
-      "orig": "Classe Erreur! Source du renvoi introuvable.",
-      "text": "Classe Erreur! Source du renvoi introuvable."
-    },
-    {
-      "self_ref": "#/texts/3",
-      "parent": {
-        "$ref": "#/body"
-      },
-      "children": [],
-      "content_layer": "furniture",
-      "label": "page_header",
-      "prov": [],
-      "orig": "SF_BVD01.DOC",
-      "text": "SF_BVD01.DOC"
-    },
-    {
-      "self_ref": "#/texts/4",
-      "parent": {
-        "$ref": "#/body"
-      },
-      "children": [],
-      "content_layer": "furniture",
-      "label": "page_footer",
-      "prov": [],
-      "orig": "Spécifications Fonctionelles détailles AVT-CS1        \tReproduction Interdite. \tPage 14",
-      "text": "Spécifications Fonctionelles détailles AVT-CS1        \tReproduction Interdite. \tPage 14"
     }
   ],
   "pictures": [

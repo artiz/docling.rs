@@ -30,7 +30,7 @@
         "$ref": "#/texts/2"
       },
       {
-        "$ref": "#/texts/3"
+        "$ref": "#/groups/1"
       },
       {
         "$ref": "#/texts/4"
@@ -53,6 +53,20 @@
       ],
       "content_layer": "body",
       "name": "textbox",
+      "label": "section"
+    },
+    {
+      "self_ref": "#/groups/1",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [
+        {
+          "$ref": "#/texts/3"
+        }
+      ],
+      "content_layer": "furniture",
+      "name": "page header",
       "label": "section"
     }
   ],
@@ -96,11 +110,11 @@
     {
       "self_ref": "#/texts/3",
       "parent": {
-        "$ref": "#/body"
+        "$ref": "#/groups/1"
       },
       "children": [],
       "content_layer": "furniture",
-      "label": "page_header",
+      "label": "text",
       "prov": [],
       "orig": "MARKHDR",
       "text": "MARKHDR"

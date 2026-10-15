@@ -234,19 +234,29 @@ impl DeclarativeBackend for DocBackend {
                 fib.ccp_hdr_txbx as u64,
             ),
         };
-        for (footer, text) in header_footer_texts(
-            &story,
-            &mut chpx_cache,
-            fib.part(&table, Fib::PLCF_HDD),
-            hdd_base,
-            fib.ccp_hdd as u64,
-            &header_boxes,
-        ) {
-            doc.push(Node::FurnitureText {
-                label: if footer { "page_footer" } else { "page_header" }.into(),
-                text: escape_text(&text),
-            });
-        }
+        // Which stories Word shows (#697): the first-page pair only in a
+        // section with a title page (`sprmSFTitlePage` in its SEPX), the
+        // even pair only when the document has facing pages (the DOP).
+        let shown = StorySelection {
+            title_pages: section_title_pages(
+                &word,
+                fib.part(&table, Fib::PLCF_SED),
+                DocFormat::Word97,
+            ),
+            facing_pages: dop_facing_pages(fib.part(&table, Fib::DOP)),
+        };
+        push_furniture_stories(
+            &mut doc,
+            header_footer_texts(
+                &story,
+                &mut chpx_cache,
+                fib.part(&table, Fib::PLCF_HDD),
+                hdd_base,
+                fib.ccp_hdd as u64,
+                &header_boxes,
+                &shown,
+            ),
+        );
         for (refs, txt, base, len) in [
             (Fib::PLCF_FND_REF, Fib::PLCF_FND_TXT, ftn_base, fib.ccp_ftn),
             (Fib::PLCF_END_REF, Fib::PLCF_END_TXT, edn_base, fib.ccp_edn),
@@ -460,14 +470,140 @@ struct HeaderBoxes {
     stories: std::collections::HashMap<u32, (u64, u64)>,
 }
 
-/// Each section's header / footer text (#535): `PlcfHdd`'s CPs into the
-/// header story — six separator stories first, then per section even /
-/// odd (default) / first header and footer, as `(is_footer, paragraph)`
-/// in reading order (default, first, even — headers before footers), each
-/// distinct paragraph once. The text boxes anchored in a header or footer
-/// story (#574) come first, as the DOCX backend's `textbox` group comes
-/// before the part's own paragraphs; a box no story anchors follows as
-/// header text, so it is never lost.
+/// Which of a section's header / footer stories Word shows (#697) — the
+/// `.docx` backend's rule (`header_footer_parts`): the odd (default) pair
+/// always, the first-page pair only in a section with a title page
+/// (`sprmSFTitlePage` in its SEPX; `w:titlePg`), the even pair only when
+/// the document has facing pages (`DopBase.fFacingPages`;
+/// `w:evenAndOddHeaders`). A story a section keeps without the flag is a
+/// leftover Word ignores.
+struct StorySelection {
+    /// Per section, in `PlcfSed` order.
+    title_pages: Vec<bool>,
+    facing_pages: bool,
+}
+
+impl StorySelection {
+    fn shows(&self, section: usize, kind: StoryKind) -> bool {
+        match kind {
+            StoryKind::Default => true,
+            StoryKind::First => self.title_pages.get(section).copied().unwrap_or(false),
+            StoryKind::Even => self.facing_pages,
+        }
+    }
+}
+
+#[derive(Clone, Copy)]
+enum StoryKind {
+    First,
+    Default,
+    Even,
+}
+
+/// The stories of a section in reading order — first-page, default (odd),
+/// even; headers before footers — as `(PlcfHdd slot, is_footer, kind)`.
+/// The slots within a section are even header, odd header, even footer,
+/// odd footer, first header, first footer ([MS-DOC] 2.8.17).
+const STORY_ORDER: [(usize, bool, StoryKind); 6] = [
+    (4, false, StoryKind::First),
+    (1, false, StoryKind::Default),
+    (0, false, StoryKind::Even),
+    (5, true, StoryKind::First),
+    (3, true, StoryKind::Default),
+    (2, true, StoryKind::Even),
+];
+
+/// Each section's SEPX grpprl: `plcfsed` (`PlcfSed`, [MS-DOC] 2.8.26) is
+/// `n + 1` CPs then `n` 12-byte SEDs whose `fcSepx` (at byte 2) locates
+/// the SEPX — a 2-byte count, then the sprms — in `WordDocument`; the
+/// same layout in Word 6/95. An unreadable SEPX is an empty grpprl.
+fn section_sepxs<'a>(word: &'a [u8], plcfsed: &[u8]) -> Vec<&'a [u8]> {
+    let Some(n) = plcfsed.len().checked_sub(4).map(|l| l / 16) else {
+        return Vec::new();
+    };
+    (0..n)
+        .map(|i| {
+            let sed = (n + 1) * 4 + i * 12;
+            let Some(fc_sepx) = u32_at(plcfsed, sed + 2) else {
+                return &[][..];
+            };
+            let at = fc_sepx as usize;
+            let Some(cb) = u16_at(word, at) else {
+                return &[][..];
+            };
+            word.get(at + 2..at + 2 + cb as usize).unwrap_or(&[])
+        })
+        .collect()
+}
+
+/// Per section, whether its SEPX sets a title page (#697): Word 97's
+/// `sprmSFTitlePage` (0x300A), Word 6/95's opcode 143.
+fn section_title_pages(word: &[u8], plcfsed: &[u8], format: DocFormat) -> Vec<bool> {
+    section_sepxs(word, plcfsed)
+        .into_iter()
+        .map(|grpprl| {
+            let mut title = false;
+            match format {
+                DocFormat::Word97 => walk_sprms(grpprl, |op, operand| {
+                    if op == 0x300A {
+                        title = operand[0] != 0;
+                    }
+                }),
+                DocFormat::Word6 => walk_word6_sprms(grpprl, |op, operand| {
+                    if op == 143 {
+                        title = operand[0] != 0;
+                    }
+                }),
+            }
+            title
+        })
+        .collect()
+}
+
+/// `DopBase.fFacingPages` ([MS-DOC] 2.7.2): bit 0 of the DOP's first byte
+/// — the document distinguishes even and odd pages, so its even-page
+/// headers and footers are shown. The same bit in a Word 6/95 DOP.
+fn dop_facing_pages(dop: &[u8]) -> bool {
+    dop.first().is_some_and(|b| b & 1 != 0)
+}
+
+/// Walk a Word 97 grpprl ([MS-DOC] 2.2.5.1), handing each `(sprm,
+/// operand)` to `f`: a 2-byte sprm code whose `spra` (top 3 bits) sizes
+/// the operand — 0/1: 1 byte, 2/4/5: 2, 3: 4, 7: 3, 6: a count byte then
+/// that many (`sprmTDefTable`'s 2-byte count never meets this walk). Ends
+/// at a truncated operand.
+fn walk_sprms(mut sprms: &[u8], mut f: impl FnMut(u16, &[u8])) {
+    while sprms.len() >= 2 {
+        let sprm = u16::from_le_bytes([sprms[0], sprms[1]]);
+        sprms = &sprms[2..];
+        let len = match sprm >> 13 {
+            0 | 1 => 1,
+            2 | 4 | 5 => 2,
+            3 => 4,
+            7 => 3,
+            _ => match sprms.first() {
+                Some(&cb) => 1 + cb as usize,
+                None => return,
+            },
+        };
+        if sprms.len() < len {
+            return;
+        }
+        f(sprm, &sprms[..len]);
+        sprms = &sprms[len..];
+    }
+}
+
+/// Each shown header / footer story's paragraphs (#535, #697): `PlcfHdd`'s
+/// CPs into the header story — six separator stories first, then six per
+/// section — read in [`STORY_ORDER`] through the section's
+/// [`StorySelection`], as `(is_footer, paragraphs)` per story, a
+/// paragraph already emitted for that kind left out (the same header in
+/// every section is one header). The text boxes anchored in a story
+/// (#574) come first, as the DOCX backend's `textbox` group comes before
+/// the part's own paragraphs; a box anchored in a story Word does not
+/// show goes with it; one no story anchors follows as a header of its
+/// own, so it is never lost.
 fn header_footer_texts(
     story: &Story,
     cache: &mut ChpxCache,
@@ -475,49 +611,40 @@ fn header_footer_texts(
     base: u64,
     len: u64,
     boxes: &HeaderBoxes,
-) -> Vec<(bool, String)> {
+    shown: &StorySelection,
+) -> Vec<(bool, Vec<String>)> {
     let cps: Vec<u64> = plc
         .chunks_exact(4)
         .filter_map(|c| u32_at(c, 0).map(u64::from))
         .collect();
-    let mut out: Vec<(bool, String)> = Vec::new();
-    let push = |out: &mut Vec<(bool, String)>, footer: bool, text: String| {
-        if !out.iter().any(|(f, t)| *f == footer && *t == text) {
-            out.push((footer, text));
-        }
-    };
+    let mut out = FurnitureStories::default();
     let mut placed: std::collections::HashSet<u32> = Default::default();
     let mut section = 6;
+    let mut index = 0;
     while section + 6 < cps.len() {
-        // Story order within a section: even hdr, odd hdr, even ftr, odd
-        // ftr, first hdr, first ftr.
-        for (k, footer) in [
-            (1, false),
-            (4, false),
-            (0, false),
-            (3, true),
-            (5, true),
-            (2, true),
-        ] {
+        for (k, footer, kind) in STORY_ORDER {
             let (a, b) = (cps[section + k], cps[section + k + 1].min(len));
             if a >= b {
                 continue;
             }
+            let visible = shown.shows(index, kind);
+            let mut texts = Vec::new();
             for &(cp, spid) in &boxes.anchors {
                 let Some(&(ta, tb)) = boxes.stories.get(&spid) else {
                     continue;
                 };
-                if (a..b).contains(&cp) && placed.insert(spid) {
-                    for text in story.paragraphs(cache, ta, tb) {
-                        push(&mut out, footer, text);
-                    }
+                if (a..b).contains(&cp) && placed.insert(spid) && visible {
+                    texts.extend(story.paragraphs(cache, ta, tb));
                 }
             }
-            for text in story.paragraphs(cache, base + a, base + b) {
-                push(&mut out, footer, text);
+            if !visible {
+                continue;
             }
+            texts.extend(story.paragraphs(cache, base + a, base + b));
+            out.push(footer, texts);
         }
         section += 6;
+        index += 1;
     }
     let mut rest: Vec<(u64, u64)> = boxes
         .stories
@@ -527,11 +654,51 @@ fn header_footer_texts(
         .collect();
     rest.sort_unstable();
     for (ta, tb) in rest {
-        for text in story.paragraphs(cache, ta, tb) {
-            push(&mut out, false, text);
+        out.push(false, story.paragraphs(cache, ta, tb));
+    }
+    out.stories
+}
+
+/// The header / footer stories to emit, each distinct paragraph once per
+/// kind.
+#[derive(Default)]
+struct FurnitureStories {
+    stories: Vec<(bool, Vec<String>)>,
+    seen: std::collections::HashSet<(bool, String)>,
+}
+
+impl FurnitureStories {
+    fn push(&mut self, footer: bool, texts: Vec<String>) {
+        let texts: Vec<String> = texts
+            .into_iter()
+            .filter(|t| self.seen.insert((footer, t.clone())))
+            .collect();
+        if !texts.is_empty() {
+            self.stories.push((footer, texts));
         }
     }
-    out
+}
+
+/// The headers and footers as the DOCX backend shapes them (#697,
+/// docling's `_add_header_footer`): a furniture-layer `section` group
+/// named `page header` / `page footer` per story, holding its paragraphs
+/// as text items — so the JSON of a `.doc` and of its `.docx` twin agree,
+/// and a consumer selecting furniture by group name finds it. Markdown
+/// leaves furniture out as before.
+fn push_furniture_stories(doc: &mut DoclingDocument, stories: Vec<(bool, Vec<String>)>) {
+    for (footer, texts) in stories {
+        doc.push(Node::Group {
+            label: "section".into(),
+            name: Some(if footer { "page footer" } else { "page header" }.into()),
+            layer: Some(docling_core::ContentLayer::Furniture),
+            children: texts
+                .into_iter()
+                .map(|t| Node::Paragraph {
+                    text: escape_text(&t),
+                })
+                .collect(),
+        });
+    }
 }
 
 /// The footnote (or endnote) bodies (#535): `refs` (PlcffndRef: `n + 1`
@@ -587,6 +754,7 @@ impl<'a> Fib<'a> {
     const STSHF: usize = 1;
     const PLCF_FND_REF: usize = 2;
     const PLCF_FND_TXT: usize = 3;
+    const PLCF_SED: usize = 6;
     const PLCF_HDD: usize = 11;
     const PLCF_BTE_CHPX: usize = 12;
     const PLCF_BTE_PAPX: usize = 13;
@@ -596,6 +764,7 @@ impl<'a> Fib<'a> {
     const PLCSPA_HDR: usize = 41;
     const PLCF_END_REF: usize = 46;
     const PLCF_END_TXT: usize = 47;
+    const DOP: usize = 31;
     const DGG_INFO: usize = 50;
     const PLCF_TXBX_TXT: usize = 56;
     const PLCF_HDR_TXBX_TXT: usize = 58;
@@ -764,21 +933,25 @@ fn convert_word6(name: &str, word: &[u8], flags: u16) -> Result<DoclingDocument,
     story.walk(&mut cache, 0, ccp_text, false, &mut doc);
 
     // Headers / footers (furniture, after the body): a section's stories in
-    // `PlcfHdd` are the ones its `grpfIhdt` names, in bit order.
+    // `PlcfHdd` are the ones its `grpfIhdt` names, in bit order; shown by
+    // the same title-page / facing-pages rule as Word 97's (#697).
     let hdd_base = ccp_text + ccp_ftn;
-    for (footer, text) in word6_header_footer_texts(
-        &story,
-        &mut cache,
-        part(0xB0),
-        word6_section_ihdt(word, part(0x88)),
-        hdd_base,
-        ccp_hdd,
-    ) {
-        doc.push(Node::FurnitureText {
-            label: if footer { "page_footer" } else { "page_header" }.into(),
-            text: escape_text(&text),
-        });
-    }
+    let shown = StorySelection {
+        title_pages: section_title_pages(word, part(0x88), DocFormat::Word6),
+        facing_pages: dop_facing_pages(part(0x150)),
+    };
+    push_furniture_stories(
+        &mut doc,
+        word6_header_footer_texts(
+            &story,
+            &mut cache,
+            part(0xB0),
+            word6_section_ihdt(word, part(0x88)),
+            hdd_base,
+            ccp_hdd,
+            &shown,
+        ),
+    );
     for text in note_texts(
         &story,
         &mut cache,
@@ -802,20 +975,9 @@ fn convert_word6(name: &str, word: &[u8], flags: u16) -> Result<DoclingDocument,
 /// then the section's sprms) in `WordDocument`; `sprmSGprfIhdt` is opcode
 /// 153. A section whose SEPX cannot be read has no stories.
 fn word6_section_ihdt(word: &[u8], plcfsed: &[u8]) -> Vec<u8> {
-    let Some(n) = plcfsed.len().checked_sub(4).map(|l| l / 16) else {
-        return Vec::new();
-    };
-    (0..n)
-        .map(|i| {
-            let sed = (n + 1) * 4 + i * 12;
-            let Some(fc_sepx) = u32_at(plcfsed, sed + 2) else {
-                return 0;
-            };
-            let at = fc_sepx as usize;
-            let Some(cb) = u16_at(word, at) else {
-                return 0;
-            };
-            let grpprl = word.get(at + 2..at + 2 + cb as usize).unwrap_or(&[]);
+    section_sepxs(word, plcfsed)
+        .into_iter()
+        .map(|grpprl| {
             let mut ihdt = 0;
             walk_word6_sprms(grpprl, |op, operand| {
                 if op == 153 {
@@ -829,9 +991,9 @@ fn word6_section_ihdt(word: &[u8], plcfsed: &[u8]) -> Vec<u8> {
 
 /// The Word 6/95 twin of [`header_footer_texts`]: `PlcfHdd` lists, per
 /// section, only the stories its `grpfIhdt` names (no separator stories,
-/// no fixed six), so the bits say which CP range is which. Emitted in the
-/// Word 97 reader's reading order — default, first, even; headers before
-/// footers — each distinct paragraph once.
+/// no fixed six), so the bits say which CP range is which. Emitted in
+/// [`STORY_ORDER`] through the section's [`StorySelection`], each
+/// distinct paragraph once per kind.
 fn word6_header_footer_texts(
     story: &Story,
     cache: &mut ChpxCache,
@@ -839,14 +1001,15 @@ fn word6_header_footer_texts(
     ihdts: Vec<u8>,
     base: u64,
     len: u64,
-) -> Vec<(bool, String)> {
+    shown: &StorySelection,
+) -> Vec<(bool, Vec<String>)> {
     let cps: Vec<u64> = plc
         .chunks_exact(4)
         .filter_map(|c| u32_at(c, 0).map(u64::from))
         .collect();
-    let mut out: Vec<(bool, String)> = Vec::new();
+    let mut out = FurnitureStories::default();
     let mut next = 0usize;
-    for ihdt in ihdts {
+    for (section, ihdt) in ihdts.into_iter().enumerate() {
         // Story index per kind, in file order (bit order).
         let mut kinds: [Option<usize>; 6] = [None; 6];
         for (bit, slot) in kinds.iter_mut().enumerate() {
@@ -855,17 +1018,13 @@ fn word6_header_footer_texts(
                 next += 1;
             }
         }
-        for (k, footer) in [
-            (1, false),
-            (4, false),
-            (0, false),
-            (3, true),
-            (5, true),
-            (2, true),
-        ] {
+        for (k, footer, kind) in STORY_ORDER {
             let Some(i) = kinds[k] else {
                 continue;
             };
+            if !shown.shows(section, kind) {
+                continue;
+            }
             let (Some(&a), Some(&b)) = (cps.get(i), cps.get(i + 1)) else {
                 continue;
             };
@@ -873,14 +1032,10 @@ fn word6_header_footer_texts(
             if a >= b {
                 continue;
             }
-            for text in story.paragraphs(cache, base + a, base + b) {
-                if !out.iter().any(|(f, t)| *f == footer && *t == text) {
-                    out.push((footer, text));
-                }
-            }
+            out.push(footer, story.paragraphs(cache, base + a, base + b));
         }
     }
-    out
+    out.stories
 }
 
 /// Whether `data` is a flat Word for Windows 1.x / 2.0 file (#566): the
@@ -2888,25 +3043,17 @@ mod tests {
         // Furniture: in the JSON, not the Markdown.
         assert!(!md.contains("MARKHDR") && !md.contains("MARKFN"), "{md}");
         let json: serde_json::Value = serde_json::from_str(&doc.export_to_json()).unwrap();
-        let furniture: Vec<(String, String)> = json["texts"]
+        // The header is a furniture `page header` section of text items,
+        // the DOCX backend's shape (#697); the note a `footnote` text.
+        assert_eq!(furniture_of(&json), [("page header", "MARKHDR")]);
+        let footnotes: Vec<&str> = json["texts"]
             .as_array()
             .unwrap()
             .iter()
-            .filter(|t| t["content_layer"] == "furniture")
-            .map(|t| {
-                (
-                    t["label"].as_str().unwrap().to_string(),
-                    t["text"].as_str().unwrap().to_string(),
-                )
-            })
+            .filter(|t| t["label"] == "footnote")
+            .map(|t| t["text"].as_str().unwrap())
             .collect();
-        assert_eq!(
-            furniture,
-            vec![
-                ("page_header".to_string(), "MARKHDR".to_string()),
-                ("footnote".to_string(), "MARKFN".to_string()),
-            ]
-        );
+        assert_eq!(footnotes, ["MARKFN"]);
         // The text box sits where it is anchored: right after `debut`.
         let groups = json["groups"].as_array().unwrap();
         assert_eq!(groups[0]["name"], "textbox");
@@ -2935,14 +3082,72 @@ mod tests {
         let md = doc.export_to_markdown();
         assert_eq!(md.trim(), "Body paragraph before header test.");
         let json: serde_json::Value = serde_json::from_str(&doc.export_to_json()).unwrap();
-        let furniture: Vec<(&str, &str)> = json["texts"]
+        assert_eq!(
+            furniture_of(&json),
+            [("page header", "MARK_HEADER_TEXTBOX_TEXT")]
+        );
+    }
+
+    /// The furniture-layer texts with the name of the `page header` /
+    /// `page footer` group each sits in (`(group name, text)`), in order.
+    fn furniture_of(json: &serde_json::Value) -> Vec<(&str, &str)> {
+        let groups = json["groups"].as_array().unwrap();
+        let group_name = |parent: &str| -> &str {
+            groups
+                .iter()
+                .find(|g| g["self_ref"] == parent)
+                .and_then(|g| g["name"].as_str())
+                .unwrap_or("")
+        };
+        json["texts"]
             .as_array()
             .unwrap()
             .iter()
-            .filter(|t| t["content_layer"] == "furniture")
-            .map(|t| (t["label"].as_str().unwrap(), t["text"].as_str().unwrap()))
-            .collect();
-        assert_eq!(furniture, [("page_header", "MARK_HEADER_TEXTBOX_TEXT")]);
+            .filter(|t| t["content_layer"] == "furniture" && t["label"] == "text")
+            .map(|t| {
+                (
+                    group_name(t["parent"]["$ref"].as_str().unwrap()),
+                    t["text"].as_str().unwrap(),
+                )
+            })
+            .collect()
+    }
+
+    /// #697: a section without a title page and a document without facing
+    /// pages show their default header and footer only — the first-page
+    /// and even-page stories the file keeps are leftovers Word ignores,
+    /// as the `.docx` twin's `headerReference`s are without `titlePg` /
+    /// `evenAndOddHeaders`. The furniture is the DOCX backend's shape: a
+    /// `page header` and a `page footer` section of `text` items.
+    #[test]
+    fn unused_first_and_even_stories_are_not_emitted() {
+        let path = format!(
+            "{}/tests/data/doc/sources/doc_header_variants.doc",
+            env!("CARGO_MANIFEST_DIR")
+        );
+        let bytes = std::fs::read(&path).expect("fixture exists");
+        let doc = DocBackend
+            .convert(&SourceDocument::from_bytes(
+                "h.doc",
+                InputFormat::Doc,
+                bytes,
+            ))
+            .expect("converts");
+        assert_eq!(doc.export_to_markdown().trim(), "Body paragraph");
+        let json: serde_json::Value = serde_json::from_str(&doc.export_to_json()).unwrap();
+        assert_eq!(
+            furniture_of(&json),
+            [
+                ("page header", "HEADER_DEFAULT"),
+                ("page footer", "FOOTER_DEFAULT")
+            ]
+        );
+        let groups = json["groups"].as_array().unwrap();
+        assert_eq!(groups.len(), 2);
+        assert_eq!(groups[0]["label"], "section");
+        assert_eq!(groups[0]["content_layer"], "furniture");
+        assert_eq!(groups[0]["parent"]["$ref"], "#/body");
+        assert!(!doc.export_to_json().contains("UNUSED"));
     }
 
     /// #567: prose is Markdown-escaped like the DOCX backend's — `OBJ_DIR`

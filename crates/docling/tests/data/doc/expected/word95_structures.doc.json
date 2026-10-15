@@ -72,23 +72,52 @@
         "$ref": "#/texts/14"
       },
       {
-        "$ref": "#/texts/15"
+        "$ref": "#/groups/0"
       },
       {
-        "$ref": "#/texts/16"
-      },
-      {
-        "$ref": "#/texts/17"
-      },
-      {
-        "$ref": "#/texts/18"
+        "$ref": "#/groups/1"
       }
     ],
     "content_layer": "body",
     "name": "_root_",
     "label": "unspecified"
   },
-  "groups": [],
+  "groups": [
+    {
+      "self_ref": "#/groups/0",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [
+        {
+          "$ref": "#/texts/15"
+        },
+        {
+          "$ref": "#/texts/16"
+        },
+        {
+          "$ref": "#/texts/17"
+        }
+      ],
+      "content_layer": "furniture",
+      "name": "page header",
+      "label": "section"
+    },
+    {
+      "self_ref": "#/groups/1",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [
+        {
+          "$ref": "#/texts/18"
+        }
+      ],
+      "content_layer": "furniture",
+      "name": "page footer",
+      "label": "section"
+    }
+  ],
   "texts": [
     {
       "self_ref": "#/texts/0",
@@ -277,11 +306,11 @@
     {
       "self_ref": "#/texts/15",
       "parent": {
-        "$ref": "#/body"
+        "$ref": "#/groups/0"
       },
       "children": [],
       "content_layer": "furniture",
-      "label": "page_header",
+      "label": "text",
       "prov": [],
       "orig": "Foxtrot",
       "text": "Foxtrot"
@@ -289,11 +318,11 @@
     {
       "self_ref": "#/texts/16",
       "parent": {
-        "$ref": "#/body"
+        "$ref": "#/groups/0"
       },
       "children": [],
       "content_layer": "furniture",
-      "label": "page_header",
+      "label": "text",
       "prov": [],
       "orig": "Golf H",
       "text": "Golf H"
@@ -301,11 +330,11 @@
     {
       "self_ref": "#/texts/17",
       "parent": {
-        "$ref": "#/body"
+        "$ref": "#/groups/0"
       },
       "children": [],
       "content_layer": "furniture",
-      "label": "page_header",
+      "label": "text",
       "prov": [],
       "orig": "Alpha Bravo",
       "text": "Alpha Bravo"
@@ -313,11 +342,11 @@
     {
       "self_ref": "#/texts/18",
       "parent": {
-        "$ref": "#/body"
+        "$ref": "#/groups/1"
       },
       "children": [],
       "content_layer": "furniture",
-      "label": "page_footer",
+      "label": "text",
       "prov": [],
       "orig": "Charlie Delta Echo Foxtrot Golf Hotel Alpha Bravo Charli\tDelta Echo Foxtrot Golf \tHotelA",
       "text": "Charlie Delta Echo Foxtrot Golf Hotel Alpha Bravo Charli\tDelta Echo Foxtrot Golf \tHotelA"

@@ -66,14 +66,29 @@
         "$ref": "#/texts/15"
       },
       {
-        "$ref": "#/texts/16"
+        "$ref": "#/groups/0"
       }
     ],
     "content_layer": "body",
     "name": "_root_",
     "label": "unspecified"
   },
-  "groups": [],
+  "groups": [
+    {
+      "self_ref": "#/groups/0",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [
+        {
+          "$ref": "#/texts/16"
+        }
+      ],
+      "content_layer": "furniture",
+      "name": "page footer",
+      "label": "section"
+    }
+  ],
   "texts": [
     {
       "self_ref": "#/texts/0",
@@ -270,11 +285,11 @@
     {
       "self_ref": "#/texts/16",
       "parent": {
-        "$ref": "#/body"
+        "$ref": "#/groups/0"
       },
       "children": [],
       "content_layer": "furniture",
-      "label": "page_footer",
+      "label": "text",
       "prov": [],
       "orig": "g:\\1998\\publicat\\sips\\sip10sco.doc",
       "text": "g:\\1998\\publicat\\sips\\sip10sco.doc"

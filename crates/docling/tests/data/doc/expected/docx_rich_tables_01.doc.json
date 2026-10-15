@@ -45,7 +45,7 @@
         "$ref": "#/tables/1"
       },
       {
-        "$ref": "#/texts/8"
+        "$ref": "#/groups/1"
       }
     ],
     "content_layer": "body",
@@ -69,6 +69,20 @@
       "content_layer": "body",
       "name": "list",
       "label": "list"
+    },
+    {
+      "self_ref": "#/groups/1",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [
+        {
+          "$ref": "#/texts/8"
+        }
+      ],
+      "content_layer": "furniture",
+      "name": "page header",
+      "label": "section"
     }
   ],
   "texts": [
@@ -175,11 +189,11 @@
     {
       "self_ref": "#/texts/8",
       "parent": {
-        "$ref": "#/body"
+        "$ref": "#/groups/1"
       },
       "children": [],
       "content_layer": "furniture",
-      "label": "page_header",
+      "label": "text",
       "prov": [],
       "orig": "ISO/IEC JTC 1",
       "text": "ISO/IEC JTC 1"
