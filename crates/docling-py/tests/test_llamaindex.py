@@ -81,3 +81,20 @@ def test_simple_directory_reader_file_extractor(tmp_path):
     by_name = {d.metadata["file_name"]: d for d in docs}
     assert "AutoGen" in by_name["a.docx"].text
     assert by_name["b.xlsx"].metadata["file_type"].startswith("application/")
+
+
+def test_llama_index_readers_docling_rs_package_reexports_the_reader():
+    """The `llama-index-readers-docling-rs` distribution (crates/docling-py/llamaindex)
+    is a re-export of this module under LlamaIndex's reader namespace."""
+    import importlib
+    import sys
+
+    src = Path(__file__).resolve().parents[1] / "llamaindex"
+    sys.path.insert(0, str(src))
+    try:
+        shim = importlib.import_module("llama_index.readers.docling_rs")
+    finally:
+        sys.path.remove(str(src))
+    assert shim.DoclingRsReader is DoclingReader
+    assert shim.DoclingReader is DoclingReader
+    assert set(shim.__all__) == {"DoclingRsReader", "DoclingReader"}

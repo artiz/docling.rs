@@ -442,12 +442,13 @@ Hugging Face Hub. `lazy_load()` converts and chunks one input at a time.
 — the same `DoclingReader`, on the Rust engine:
 
 ```bash
-pip install "docling-rs[llamaindex]"
+pip install "docling-rs[llamaindex]"     # or: pip install llama-index-readers-docling-rs
 ```
 
 ```python
 # was:  from llama_index.readers.docling import DoclingReader
 from docling_rs.llamaindex import DoclingReader
+# the same class under LlamaIndex's package naming: from llama_index.readers.docling_rs import DoclingRsReader
 
 reader = DoclingReader()                                    # Markdown per input (default)
 docs = reader.load_data(file_path=["https://arxiv.org/pdf/2408.09869", "notes.docx"])
@@ -470,7 +471,12 @@ docs = SimpleDirectoryReader(input_dir="docs/", file_extractor={".pdf": reader, 
 
 `load_data` / `lazy_load_data(file_path, extra_info=None)` take a path or URL
 or an iterable of them; `extra_info` becomes each document's `metadata` (a
-copy per document). `SimpleDirectoryReader` adds its own file metadata.
+copy per document). `SimpleDirectoryReader` adds its own file metadata. The
+PyPI distribution [`llama-index-readers-docling-rs`](./llamaindex/README.md)
+is the same reader under the `llama_index.readers.<name>` namespace every
+reader package uses: it pins this package's wheel and re-exports
+`docling_rs.llamaindex` (`DoclingRsReader`, and `DoclingReader` as the
+upstream name).
 
 **Picture descriptions with any LangChain chat model** — langchain-docling's
 `PictureDescriptionLangChainOptions`, set on the pipeline options as in
