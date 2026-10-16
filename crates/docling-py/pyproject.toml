@@ -47,6 +47,11 @@ dependencies = [
 langchain = [
     "langchain-core>=0.3",
 ]
+# docling_rs.llamaindex — the port of llama-index-readers-docling
+# (DoclingReader: one LlamaIndex Document per input, Markdown or docling JSON).
+llamaindex = [
+    "llama-index-core>=0.12",
+]
 # docling_rs.autogen — DoclingIndexer (documents into an AutoGen memory) and
 # DoclingConvertTool (a document-reading FunctionTool).
 autogen = [
