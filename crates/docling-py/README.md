@@ -399,12 +399,13 @@ integration — same classes, same parameters, same output — running on the
 Rust engine (no PyTorch):
 
 ```bash
-pip install "docling-rs[langchain]"
+pip install "docling-rs[langchain]"      # or: pip install langchain-docling-rs
 ```
 
 ```python
 # was:  from langchain_docling import DoclingLoader
 from docling_rs.langchain import DoclingLoader, ExportType
+# the same classes under LangChain's package naming: from langchain_docling_rs import DoclingLoader
 
 docs = DoclingLoader(file_path=["https://arxiv.org/pdf/2408.09869", "notes.docx"]).load()
 docs[0].page_content                      # heading path + chunk text, ready to embed
@@ -425,7 +426,10 @@ DoclingLoader(file_path="report.pdf", export_type=ExportType.MARKDOWN).load()  #
 | `meta_extractor` | `MetaExtractor()` | subclass `BaseMetaExtractor` to shape `metadata` |
 
 It reproduces langchain-docling's own test expectations exactly (its
-fixtures run in `tests/test_langchain.py`). The default chunker is the native
+fixtures run in `tests/test_langchain.py`). The PyPI distribution
+[`langchain-docling-rs`](./langchain/README.md) is the same loader under the
+`langchain-<provider>` name LangChain's integration listing expects: it pins
+this package's wheel and re-exports `docling_rs.langchain`. The default chunker is the native
 hybrid chunker with docling's defaults (all-MiniLM-L6-v2 tokenizer, 256
 tokens); its `tokenizer.json` (~0.5 MB) is fetched into the model cache on
 the first load when not already there — docling likewise pulls it from the

@@ -285,3 +285,26 @@ def test_picture_description_skips_small_pictures_and_needs_options():
             }
         )
     assert any("picture_description_options" in str(x.message) for x in w)
+
+
+def test_langchain_docling_rs_package_reexports_the_loader():
+    """The `langchain-docling-rs` distribution (crates/docling-py/langchain) is
+    a re-export of this module under LangChain's package naming: the same
+    objects, the public names `langchain_docling` has."""
+    import importlib
+    import sys
+
+    src = Path(__file__).resolve().parents[1] / "langchain" / "src"
+    sys.path.insert(0, str(src))
+    try:
+        shim = importlib.import_module("langchain_docling_rs")
+    finally:
+        sys.path.remove(str(src))
+    import docling_rs.langchain as native
+
+    assert shim.DoclingLoader is native.DoclingLoader
+    assert shim.ExportType is native.ExportType
+    assert shim.PictureDescriptionLangChainOptions is native.PictureDescriptionLangChainOptions
+    assert set(shim.__all__) == set(native.__all__)
+    for name in ("DoclingLoader", "ExportType", "MetaExtractor", "BaseMetaExtractor"):
+        assert name in shim.__all__

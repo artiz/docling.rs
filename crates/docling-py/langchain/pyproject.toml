@@ -1,0 +1,42 @@
+# PyPI distribution `langchain-docling-rs`: the LangChain integration under
+# the `langchain-<provider>` name LangChain's integration listing expects.
+# It has no code of its own — the loader is `docling_rs.langchain`, compiled
+# into the docling-rs wheel — so this package only pins that wheel (with its
+# `langchain` extra) and re-exports the names `langchain_docling` has.
+# pypi-publish.yml writes the release version into `version` and into the
+# docling-rs pin before building; the committed values are placeholders
+# (install locally with `pip install --no-deps`).
+[build-system]
+requires = ["hatchling>=1.24"]
+build-backend = "hatchling.build"
+
+[project]
+name = "langchain-docling-rs"
+version = "0.0.0"
+description = "LangChain document loader for docling.rs: PDF with layout, tables and OCR, DOCX, PPTX, XLSX, HTML and 40-odd formats into LangChain Documents, chunked with docling's metadata. docling in Rust, langchain-docling's API."
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.9"
+keywords = [
+    "langchain", "langchain-docling", "document-loader", "docling", "rag",
+    "pdf-to-markdown", "document-conversion", "ocr", "chunking", "llm",
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Rust",
+    "Topic :: Text Processing :: Markup :: Markdown",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+dependencies = ["docling-rs[langchain]==0.0.0"]
+
+[project.urls]
+Homepage = "https://github.com/docling-project/docling.rs"
+Repository = "https://github.com/docling-project/docling.rs"
+Documentation = "https://github.com/docling-project/docling.rs/blob/master/crates/docling-py/README.md#langchain"
+Issues = "https://github.com/docling-project/docling.rs/issues"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/langchain_docling_rs"]
