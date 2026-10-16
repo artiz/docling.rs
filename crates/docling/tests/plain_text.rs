@@ -127,16 +127,16 @@ fn jsonl_is_a_json_code_block() {
     );
 }
 
-/// An RSS feed is XML of no dialect docling reads: one `xml` code block
+/// A settings file is XML of no dialect docling reads: one `xml` code block
 /// (with a warning on stderr), not an empty JATS document; the JATS, USPTO,
-/// XBRL and DocLang sniffing of a bare `.xml` is unchanged.
+/// XBRL, DocLang and feed (#678) sniffing of a bare `.xml` is unchanged.
 #[test]
 fn unknown_xml_dialect_is_an_xml_code_block() {
-    let r = convert("feed.xml");
+    let r = convert("settings.xml");
     assert_eq!(r.format, InputFormat::Xml);
     let (lang, text) = code_block(&r.document);
     assert_eq!(lang.as_deref(), Some("xml"));
-    assert!(text.contains("<rss version=\"2.0\">") && text.contains("docling.rs 2.23.0"));
+    assert!(text.contains("<profile name=\"release\">") && text.contains("2.23.0"));
     assert!(r.document.export_to_markdown().starts_with("```\n<?xml"));
     assert!(r
         .document

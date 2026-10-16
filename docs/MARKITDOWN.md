@@ -138,8 +138,9 @@ package's [Migrating from MarkItDown](../crates/docling-py/README.md#migrating-f
 | — | Node.js (`npm i docling.rs`), the browser (`npm i docling.rs-wasm`, [live demo](https://docling-project.github.io/docling.rs/)), Rust (`docling` crate), C (`docling-ffi`) |
 
 Formats: everything MarkItDown converts except YouTube URLs — plain text
-and source code, generic JSON / JSON Lines and XML (kept as code blocks;
-an RSS feed is one `xml` block, not a rendered feed) included since #671,
+and source code, generic JSON / JSON Lines and XML (kept as code blocks)
+included since #671, RSS / Atom feeds since #678 (the `_rss_converter`
+shape — and RSS 1.0 RDF feeds, which MarkItDown rejects),
 Jupyter notebooks since #673 (and, unlike MarkItDown, with the cell
 outputs on request: `ipynb_outputs=text`) — plus ODF, RTF, legacy `.doc`/`.ppt`,
 Apple iWork, DjVu, LaTeX, AsciiDoc, WebVTT, MHTML, `.eml`, JATS/USPTO/XBRL,

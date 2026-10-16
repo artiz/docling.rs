@@ -126,6 +126,18 @@ VECTORS = [
         ],
     ),
     Vector(
+        "test_rss.xml",
+        "text/xml",
+        must_include=[
+            # MarkItDown's RSS_TEST_STRINGS: the channel title, an item's
+            # heading, its body as Markdown (#678).
+            "# The Official Microsoft Blog",
+            "## Ignite 2024: Why nearly 70% of the Fortune 500 now use Microsoft 365 Copilot",
+            "Published on: ",
+        ],
+        must_not_include=["<rss", "<item>", "```xml"],
+    ),
+    Vector(
         "test.epub",
         "application/epub+zip",
         must_include=[

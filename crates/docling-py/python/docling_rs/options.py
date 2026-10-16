@@ -58,6 +58,8 @@ class InputFormat(str, enum.Enum):
     XML = "xml"
     #: Jupyter notebooks (#673).
     IPYNB = "ipynb"
+    #: RSS / Atom / RDF feeds (#678).
+    FEED = "feed"
 
 
 class AcceleratorDevice(str, enum.Enum):

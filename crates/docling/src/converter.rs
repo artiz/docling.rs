@@ -221,6 +221,9 @@ fn sniff_xml(bytes: &[u8]) -> InputFormat {
         // A bare DocLang document saved as `.xml` (docling names them
         // `*.dclg.xml`, whose final extension is plain `xml`).
         InputFormat::XmlDoclang
+    } else if crate::backend::feed::looks_like_feed(head) {
+        // An RSS / Atom / RDF feed (#678), by its root element.
+        InputFormat::Feed
     } else if crate::backend::xbrl::looks_like_xbrl(head) {
         InputFormat::XmlXbrl
     } else {
@@ -2493,11 +2496,21 @@ impl DocumentConverter {
             InputFormat::Jsonl => crate::backend::text::convert_json_text(source)?,
             InputFormat::Text => crate::backend::TextBackend.convert(source)?,
             InputFormat::Ipynb => self.ipynb_backend().convert(source)?,
+            // RSS / Atom / RDF feeds (#678): the title, each item's heading,
+            // date and body (its HTML through the HTML backend).
+            InputFormat::Feed => crate::backend::FeedBackend {
+                images: self.image_policy(),
+            }
+            .convert(source)?,
             // A bare `.xml` (#671): the dialects docling reads by content —
             // JATS by its DOCTYPE or `<article>` root — else one xml code
             // block with a warning, never an empty document.
             InputFormat::Xml => match sniff_xml(&source.bytes) {
                 InputFormat::XmlUspto => UsptoBackend.convert(source)?,
+                InputFormat::Feed => crate::backend::FeedBackend {
+                    images: self.image_policy(),
+                }
+                .convert(source)?,
                 InputFormat::XmlXbrl => {
                     crate::backend::xbrl::convert_xbrl(source, self.xbrl_taxonomy.as_deref())?
                 }

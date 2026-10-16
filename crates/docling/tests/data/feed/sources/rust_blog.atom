@@ -1,0 +1,240 @@
+<?xml version="1.0" encoding="utf-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom" xml:lang="en">
+    <generator uri="https://blog.rust-lang.org/" version="0.1.0">Rust Blog</generator>
+    <link href="https://blog.rust-lang.org/feed.xml" rel="self" type="application/atom+xml" />
+    <link href="https://blog.rust-lang.org/" rel="alternate" type="text/html" />
+    <id>https://blog.rust-lang.org/</id>
+    <title>Rust Blog</title>
+    <subtitle>Empowering everyone to build reliable and efficient software.</subtitle>
+    <author>
+        <name>Maintained by the Rust Teams.</name>
+        <uri>https://github.com/rust-lang/blog.rust-lang.org/</uri>
+    </author>
+    <updated>2026-10-13T17:21:43+00:00</updated>
+
+    
+    <entry>
+        <title>Demoting i686 Windows targets to std-only</title>
+        <link rel="alternate" href="https://blog.rust-lang.org/2026/10/02/demoting-i686-windows-targets-to-std-only/" type="text/html" title="Demoting i686 Windows targets to std-only" />
+        <published>2026-10-02T00:00:00+00:00</published>
+        <updated>2026-10-02T00:00:00+00:00</updated>
+        <id>https://blog.rust-lang.org/2026/10/02/demoting-i686-windows-targets-to-std-only/</id>
+        <content type="html" xml:base="https://blog.rust-lang.org/2026/10/02/demoting-i686-windows-targets-to-std-only/">&lt;p&gt;With Rust 1.100.0, the following changes to 32-bit Windows targets will happen:&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;code&gt;i686-pc-windows-msvc&lt;/code&gt; Tier 1 &lt;em&gt;with&lt;/em&gt; host tools target will be demoted to Tier 1 &lt;em&gt;without&lt;/em&gt; host tools.&lt;/li&gt;
+&lt;li&gt;&lt;code&gt;i686-pc-windows-gnu&lt;/code&gt; Tier 2 &lt;em&gt;with&lt;/em&gt; host tools target will be demoted to Tier 2 &lt;em&gt;without&lt;/em&gt; host tools.&lt;/li&gt;
+&lt;/ul&gt;
+&lt;p&gt;Builds of the standard library will continue to be distributed, but host tools such as the compiler will be no longer available. &lt;code&gt;i686-pc-windows-msvc&lt;/code&gt; as a Tier 1 target still undergoes CI testing.&lt;/p&gt;
+&lt;p&gt;To build 32-bit Windows binaries, cross-compiling from a still-supported host toolchain (such as a 64-bit Windows ones) will be required from now on.&lt;/p&gt;
+&lt;h2 id&#x3D;&quot;background&quot;&gt;&lt;a class&#x3D;&quot;anchor&quot; href&#x3D;&quot;#background&quot; aria-hidden&#x3D;&quot;true&quot;&gt;&lt;/a&gt;
+Background&lt;/h2&gt;
+&lt;p&gt;Desktop and Server 32-bit only x86 CPUs are no longer sold for over 15 years, and general 32-bit Windows support has ended in October 2025. This means that the development platforms these targets are meant for hardly exist these days, and even if they do exist they typically aren&#x27;t capable enough for development.&lt;/p&gt;
+&lt;p&gt;Even on the modern x86_64 hardware, building i686 Windows toolchains has proven to be problematic. We have encountered compiler binaries crashing when built with the i686 MSVC target, and the GNU C++ toolchain failing with OOMs during LLVM build.&lt;/p&gt;
+&lt;p&gt;Considering all these things, cross-compiling these targets from a better supported one is what we have found to be the best solution forward. As part of that, we stopped producing host tools for these targets. For the time being, the prebuilt standard library is still available, and in case of &lt;code&gt;i686-pc-windows-msvc&lt;/code&gt; still tested on CI.&lt;/p&gt;
+&lt;h2 id&#x3D;&quot;what-changes&quot;&gt;&lt;a class&#x3D;&quot;anchor&quot; href&#x3D;&quot;#what-changes&quot; aria-hidden&#x3D;&quot;true&quot;&gt;&lt;/a&gt;
+What Changes?&lt;/h2&gt;
+&lt;p&gt;After Rust 1.100, it will no longer be possible to install toolchains on 32-bit Windows hosts. We recommend cross-compiling from a still-supported host (such as a 64-bit Windows toolchain) instead. Other 32-bit platforms are not impacted by this change.&lt;/p&gt;
+&lt;p&gt;For more details about these demotions, see &lt;a rel&#x3D;&quot;external&quot; href&#x3D;&quot;https://github.com/rust-lang/rfcs/blob/51783df9a76c355de7ceebeae101cba47f8ca463/text/3999-std-only-i686-msvc.md&quot;&gt;RFC 3999&lt;/a&gt; for &lt;code&gt;i686-pc-windows-msvc&lt;/code&gt; demotion, and &lt;a rel&#x3D;&quot;external&quot; href&#x3D;&quot;https://github.com/rust-lang/compiler-team/issues/1020&quot;&gt;MCP 1020&lt;/a&gt; for &lt;code&gt;i686-pc-windows-gnu&lt;/code&gt; demotion.&lt;/p&gt;
+</content>
+
+        <author>
+            <name>Mateusz Mikuła, Ralf Jung</name>
+        </author>
+    </entry>
+    <entry>
+        <title>Announcing Rust 1.99.0</title>
+        <link rel="alternate" href="https://blog.rust-lang.org/2026/10/01/Rust-1.99.0/" type="text/html" title="Announcing Rust 1.99.0" />
+        <published>2026-10-01T00:00:00+00:00</published>
+        <updated>2026-10-01T00:00:00+00:00</updated>
+        <id>https://blog.rust-lang.org/2026/10/01/Rust-1.99.0/</id>
+        <content type="html" xml:base="https://blog.rust-lang.org/2026/10/01/Rust-1.99.0/">&lt;p&gt;The Rust team is happy to announce a new version of Rust, 1.99.0. Rust is a programming language empowering everyone to build reliable and efficient software.&lt;/p&gt;
+&lt;p&gt;If you have a previous version of Rust installed via &lt;code&gt;rustup&lt;/code&gt;, you can get 1.99.0 with:&lt;/p&gt;
+&lt;pre class&#x3D;&quot;giallo z-l-code z-d-code&quot; &gt;&lt;code data-lang&#x3D;&quot;shellsession&quot;&gt;&lt;span class&#x3D;&quot;giallo-l&quot;&gt;&lt;span&gt;$&lt;/span&gt;&lt;span&gt; rustup update stable&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;
+&lt;p&gt;If you don&#x27;t have it already, you can get &lt;a rel&#x3D;&quot;external&quot; href&#x3D;&quot;https://www.rust-lang.org/install.html&quot;&gt;&lt;code&gt;rustup&lt;/code&gt;&lt;/a&gt; from the appropriate page on our website, and check out the &lt;a rel&#x3D;&quot;external&quot; href&#x3D;&quot;https://doc.rust-lang.org/stable/releases.html#version-1990-2026-10-01&quot;&gt;detailed release notes for 1.99.0&lt;/a&gt;.&lt;/p&gt;
+&lt;p&gt;If you&#x27;d like to help us out by testing future releases, you might consider updating locally to use the beta channel (&lt;code&gt;rustup default beta&lt;/code&gt;) or the nightly channel (&lt;code&gt;rustup default nightly&lt;/code&gt;). Please &lt;a rel&#x3D;&quot;external&quot; href&#x3D;&quot;https://github.com/rust-lang/rust/issues/new/choose&quot;&gt;report&lt;/a&gt; any bugs you might come across!&lt;/p&gt;
+&lt;h2 id&#x3D;&quot;what-s-in-1-99-0-stable&quot;&gt;&lt;a class&#x3D;&quot;anchor&quot; href&#x3D;&quot;#what-s-in-1-99-0-stable&quot; aria-hidden&#x3D;&quot;true&quot;&gt;&lt;/a&gt;
+What&#x27;s in 1.99.0 stable&lt;/h2&gt;
+&lt;h3 id&#x3D;&quot;extern-c-variadics&quot;&gt;&lt;a class&#x3D;&quot;anchor&quot; href&#x3D;&quot;#extern-c-variadics&quot; aria-hidden&#x3D;&quot;true&quot;&gt;&lt;/a&gt;
+extern &quot;C&quot; variadics&lt;/h3&gt;
+&lt;p&gt;Rust 1.99.0 stabilizes defining C-ABI variadic functions with &quot;C&quot; and
+&quot;C-unwind&quot; ABIs. Variadic functions defined this way use a variable argument
+list (&lt;code&gt;...&lt;/code&gt;) and accept an arbitrary number of arguments. Rust could already
+call externally-defined variadic functions (e.g., &lt;code&gt;libc::printf&lt;/code&gt;). With Rust
+1.99, these functions can now be written in Rust itself:&lt;/p&gt;
+&lt;pre class&#x3D;&quot;giallo z-l-code z-d-code&quot; &gt;&lt;code data-lang&#x3D;&quot;rust&quot;&gt;&lt;span class&#x3D;&quot;giallo-l&quot;&gt;&lt;span class&#x3D;&quot;z-l-13 z-d-7&quot;&gt;///&lt;/span&gt;&lt;span class&#x3D;&quot;z-l-13 z-d-7&quot;&gt; SAFETY: must be called with (at least) 2 i32 arguments.&lt;/span&gt;&lt;/span&gt;
+&lt;span class&#x3D;&quot;giallo-l&quot;&gt;&lt;span class&#x3D;&quot;z-l-14 z-d-4&quot;&gt;unsafe&lt;/span&gt;&lt;span class&#x3D;&quot;z-l-14 z-d-4&quot;&gt; extern&lt;/span&gt;&lt;span class&#x3D;&quot;z-l-2 z-d-13&quot;&gt; &amp;quot;&lt;/span&gt;&lt;span class&#x3D;&quot;z-l-19 z-d-13&quot;&gt;C&lt;/span&gt;&lt;span class&#x3D;&quot;z-l-2 z-d-13&quot;&gt;&amp;quot;&lt;/span&gt;&lt;span class&#x3D;&quot;z-l-14 z-d-4&quot;&gt; fn&lt;/span&gt;&lt;span class&#x3D;&quot;z-l-4 z-d-16&quot;&gt; sum&lt;/span&gt;&lt;span&gt;(&lt;/span&gt;&lt;span class&#x3D;&quot;z-l-14 z-d-4&quot;&gt;mut&lt;/span&gt;&lt;span class&#x3D;&quot;z-l-4 z-d-9&quot;&gt; args&lt;/span&gt;&lt;span class&#x3D;&quot;z-l-1&quot;&gt;:&lt;/span&gt;&lt;span class&#x3D;&quot;z-l-1&quot;&gt; ...&lt;/span&gt;&lt;span&gt;)&lt;/span&gt;&lt;span class&#x3D;&quot;z-l-1&quot;&gt; -&amp;gt;&lt;/span&gt;&lt;span class&#x3D;&quot;z-d-2&quot;&gt; i32&lt;/span&gt;&lt;span&gt; {&lt;/span&gt;&lt;/span&gt;
+&lt;span class&#x3D;&quot;giallo-l&quot;&gt;&lt;span class&#x3D;&quot;z-l-13 z-d-7&quot;&gt;    //&lt;/span&gt;&lt;span class&#x3D;&quot;z-l-12 z-d-7&quot;&gt; SAFETY: guaranteed by the caller.&lt;/span&gt;&lt;/span&gt;
+&lt;span class&#x3D;&quot;giallo-l&quot;&gt;&lt;span class&#x3D;&quot;z-l-14 z-d-4&quot;&gt;    let&lt;/span&gt;&lt;span class&#x3D;&quot;z-l-4 z-d-9&quot;&gt; a&lt;/span&gt;&lt;span class&#x3D;&quot;z-l-14&quot;&gt; &#x3D;&lt;/span&gt;&lt;span class&#x3D;&quot;z-l-14 z-d-4&quot;&gt; unsafe&lt;/span&gt;&lt;span&gt; {&lt;/span&gt;&lt;span class&#x3D;&quot;z-l-4 z-d-9&quot;&gt; args&lt;/span&gt;&lt;span class&#x3D;&quot;z-l-1&quot;&gt;.&lt;/span&gt;&lt;span class&#x3D;&quot;z-l-4 z-d-16&quot;&gt;next_arg&lt;/span&gt;&lt;span class&#x3D;&quot;z-l-1&quot;&gt;::&lt;/span&gt;&lt;span&gt;&amp;lt;&lt;/span&gt;&lt;span class&#x3D;&quot;z-d-2&quot;&gt;i32&lt;/span&gt;&lt;span&gt;&amp;gt;&lt;/span&gt;&lt;span&gt;(&lt;/span&gt;&lt;span&gt;)&lt;/span&gt;&lt;span&gt; }&lt;/span&gt;&lt;span&gt;;&lt;/span&gt;&lt;/span&gt;
+&lt;span class&#x3D;&quot;giallo-l&quot;&gt;&lt;span class&#x3D;&quot;z-l-14 z-d-4&quot;&gt;    let&lt;/span&gt;&lt;span class&#x3D;&quot;z-l-4 z-d-9&quot;&gt; b&lt;/span&gt;&lt;span class&#x3D;&quot;z-l-14&quot;&gt; &#x3D;&lt;/span&gt;&lt;span class&#x3D;&quot;z-l-14 z-d-4&quot;&gt; unsafe&lt;/span&gt;&lt;span&gt; {&lt;/span&gt;&lt;span class&#x3D;&quot;z-l-4 z-d-9&quot;&gt; args&lt;/span&gt;&lt;span class&#x3D;&quot;z-l-1&quot;&gt;.&lt;/span&gt;&lt;span class&#x3D;&quot;z-l-4 z-d-16&quot;&gt;next_arg&lt;/span&gt;&lt;span class&#x3D;&quot;z-l-1&quot;&gt;::&lt;/span&gt;&lt;span&gt;&amp;lt;&lt;/span&gt;&lt;span class&#x3D;&quot;z-d-2&quot;&gt;i32&lt;/span&gt;&lt;span&gt;&amp;gt;&lt;/span&gt;&lt;span&gt;(&lt;/span&gt;&lt;span&gt;)&lt;/span&gt;&lt;span&gt; }&lt;/span&gt;&lt;span&gt;;&lt;/span&gt;&lt;/span&gt;
+&lt;span class&#x3D;&quot;giallo-l&quot;&gt;&lt;span class&#x3D;&quot;z-l-4 z-d-9&quot;&gt;    a&lt;/span&gt;&lt;span class&#x3D;&quot;z-l-1&quot;&gt; +&lt;/span&gt;&lt;span class&#x3D;&quot;z-l-4 z-d-9&quot;&gt; b&lt;/span&gt;&lt;/span&gt;
+&lt;span class&#x3D;&quot;giallo-l&quot;&gt;&lt;span&gt;}&lt;/span&gt;&lt;/span&gt;
+&lt;span class&#x3D;&quot;giallo-l&quot;&gt;&lt;/span&gt;
+&lt;span class&#x3D;&quot;giallo-l&quot;&gt;&lt;span class&#x3D;&quot;z-l-14 z-d-4&quot;&gt;fn&lt;/span&gt;&lt;span class&#x3D;&quot;z-l-4 z-d-16&quot;&gt; foo&lt;/span&gt;&lt;span&gt;(&lt;/span&gt;&lt;span&gt;)&lt;/span&gt;&lt;span class&#x3D;&quot;z-l-1&quot;&gt; -&amp;gt;&lt;/span&gt;&lt;span class&#x3D;&quot;z-d-2&quot;&gt; i32&lt;/span&gt;&lt;span&gt; {&lt;/span&gt;&lt;/span&gt;
+&lt;span class&#x3D;&quot;giallo-l&quot;&gt;&lt;span class&#x3D;&quot;z-l-14 z-d-4&quot;&gt;    unsafe&lt;/span&gt;&lt;span&gt; {&lt;/span&gt;&lt;span class&#x3D;&quot;z-l-4 z-d-16&quot;&gt; sum&lt;/span&gt;&lt;span&gt;(&lt;/span&gt;&lt;span class&#x3D;&quot;z-l-16 z-d-10&quot;&gt;0&lt;/span&gt;&lt;span class&#x3D;&quot;z-l-16 z-d-2&quot;&gt;i32&lt;/span&gt;&lt;span&gt;,&lt;/span&gt;&lt;span class&#x3D;&quot;z-l-16 z-d-10&quot;&gt; 2&lt;/span&gt;&lt;span class&#x3D;&quot;z-l-16 z-d-2&quot;&gt;i32&lt;/span&gt;&lt;span&gt;)&lt;/span&gt;&lt;span&gt; }&lt;/span&gt;&lt;/span&gt;
+&lt;span class&#x3D;&quot;giallo-l&quot;&gt;&lt;span&gt;}&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;
+&lt;p&gt;The type of &lt;code&gt;...&lt;/code&gt; is &lt;a rel&#x3D;&quot;external&quot; href&#x3D;&quot;https://doc.rust-lang.org/std/ffi/struct.VaList.html&quot;&gt;&lt;code&gt;VaList&lt;/code&gt;&lt;/a&gt;,
+which is ABI-compatible with the C &lt;code&gt;va_list&lt;/code&gt; type across targets. What types can be read from a &lt;code&gt;VaList&lt;/code&gt; is guarded by the
+&lt;a rel&#x3D;&quot;external&quot; href&#x3D;&quot;https://doc.rust-lang.org/std/ffi/trait.VaArgSafe.html&quot;&gt;&lt;code&gt;VaArgSafe&lt;/code&gt;&lt;/a&gt; trait.&lt;/p&gt;
+&lt;p&gt;For more details on c-variadic functions, see the
+&lt;a rel&#x3D;&quot;external&quot; href&#x3D;&quot;https://doc.rust-lang.org/reference/items/functions.html#c-variadic-functions&quot;&gt;Reference&lt;/a&gt;.
+This release also stabilizes support for defining naked variadic functions with
+non-&quot;C&quot; ABIs, which must be written via inline assembly.&lt;/p&gt;
+&lt;h3 id&#x3D;&quot;layout-information-from-raw-pointers&quot;&gt;&lt;a class&#x3D;&quot;anchor&quot; href&#x3D;&quot;#layout-information-from-raw-pointers&quot; aria-hidden&#x3D;&quot;true&quot;&gt;&lt;/a&gt;
+Layout information from raw pointers&lt;/h3&gt;
+&lt;p&gt;This release settles the safety requirements for retrieving the size and
+alignment on raw pointers to both &lt;code&gt;Sized&lt;/code&gt; (trivially safe, already possible on
+stable) and non-&lt;code&gt;Sized&lt;/code&gt; types.&lt;/p&gt;
+&lt;p&gt;This is done by stabilizing three functions:&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;a rel&#x3D;&quot;external&quot; href&#x3D;&quot;https://doc.rust-lang.org/stable/core/alloc/struct.Layout.html#method.for_value_raw&quot;&gt;&lt;code&gt;Layout::for_value_raw&lt;/code&gt;&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;&lt;a rel&#x3D;&quot;external&quot; href&#x3D;&quot;https://doc.rust-lang.org/stable/core/mem/fn.size_of_val_raw.html&quot;&gt;&lt;code&gt;mem::size_of_val_raw&lt;/code&gt;&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;&lt;a rel&#x3D;&quot;external&quot; href&#x3D;&quot;https://doc.rust-lang.org/stable/core/mem/fn.align_of_val_raw.html&quot;&gt;&lt;code&gt;mem::align_of_val_raw&lt;/code&gt;&lt;/a&gt;&lt;/li&gt;
+&lt;/ul&gt;
+&lt;h3 id&#x3D;&quot;recommend-against-round-trip-unleaking-after-box-leak&quot;&gt;&lt;a class&#x3D;&quot;anchor&quot; href&#x3D;&quot;#recommend-against-round-trip-unleaking-after-box-leak&quot; aria-hidden&#x3D;&quot;true&quot;&gt;&lt;/a&gt;
+Recommend against round-trip unleaking after &lt;code&gt;Box::leak&lt;/code&gt;&lt;/h3&gt;
+&lt;p&gt;While there are no changes to the language semantics in Rust 1.99, we have
+updated the documentation on &lt;a rel&#x3D;&quot;external&quot; href&#x3D;&quot;https://doc.rust-lang.org/std/boxed/struct.Box.html#method.leak&quot;&gt;&lt;code&gt;Box::leak&lt;/code&gt;&lt;/a&gt; to recommend against patterns that
+later deallocate that memory. This was done because such code was found to have
+problematic interactions with current and future potential compiler optimizations,
+and is especially problematic with the upcoming stabilization of custom allocators.
+Instead, &lt;a rel&#x3D;&quot;external&quot; href&#x3D;&quot;https://doc.rust-lang.org/std/boxed/struct.Box.html#method.into_non_null&quot;&gt;&lt;code&gt;Box::into_non_null&lt;/code&gt;&lt;/a&gt; or &lt;a rel&#x3D;&quot;external&quot; href&#x3D;&quot;https://doc.rust-lang.org/std/boxed/struct.Box.html#method.into_raw&quot;&gt;&lt;code&gt;Box::into_raw&lt;/code&gt;&lt;/a&gt; should be preferred.&lt;/p&gt;
+&lt;p&gt;This guidance also applies to other &lt;code&gt;leak&lt;/code&gt; functions in the standard library.&lt;/p&gt;
+&lt;h3 id&#x3D;&quot;stabilized-apis&quot;&gt;&lt;a class&#x3D;&quot;anchor&quot; href&#x3D;&quot;#stabilized-apis&quot; aria-hidden&#x3D;&quot;true&quot;&gt;&lt;/a&gt;
+Stabilized APIs&lt;/h3&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;a rel&#x3D;&quot;external&quot; href&#x3D;&quot;https://doc.rust-lang.org/stable/std/iter/trait.IntoIterator.html#impl-IntoIterator-for-Box%3C%5BT;+N%5D,+A%3E&quot;&gt;&lt;code&gt;IntoIterator&lt;/code&gt; for &lt;code&gt;Box&amp;lt;[T; N]&amp;gt;&lt;/code&gt;&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;&lt;a rel&#x3D;&quot;external&quot; href&#x3D;&quot;https://doc.rust-lang.org/stable/std/iter/trait.IntoIterator.html#impl-IntoIterator-for-%26Box%3C%5BT;+N%5D,+A%3E&quot;&gt;&lt;code&gt;IntoIterator&lt;/code&gt; for &lt;code&gt;&amp;amp;Box&amp;lt;[T; N]&amp;gt;&lt;/code&gt;&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;&lt;a rel&#x3D;&quot;external&quot; href&#x3D;&quot;https://doc.rust-lang.org/stable/std/iter/trait.IntoIterator.html#impl-IntoIterator-for-%26mut+Box%3C%5BT;+N%5D,+A%3E&quot;&gt;&lt;code&gt;IntoIterator&lt;/code&gt; for &lt;code&gt;&amp;amp;mut Box&amp;lt;[T; N]&amp;gt;&lt;/code&gt;&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;&lt;a rel&#x3D;&quot;external&quot; href&#x3D;&quot;https://doc.rust-lang.org/stable/std/collections/struct.VecDeque.html#method.retain_back&quot;&gt;&lt;code&gt;VecDeque::retain_back&lt;/code&gt;&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;&lt;a rel&#x3D;&quot;external&quot; href&#x3D;&quot;https://doc.rust-lang.org/stable/core/ffi/struct.VaList.html&quot;&gt;&lt;code&gt;core::ffi::VaList&lt;/code&gt;&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;&lt;a rel&#x3D;&quot;external&quot; href&#x3D;&quot;https://doc.rust-lang.org/stable/std/boxed/struct.Box.html#method.into_non_null&quot;&gt;&lt;code&gt;Box::into_non_null&lt;/code&gt;&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;&lt;a rel&#x3D;&quot;external&quot; href&#x3D;&quot;https://doc.rust-lang.org/stable/std/boxed/struct.Box.html#method.from_non_null&quot;&gt;&lt;code&gt;Box::from_non_null&lt;/code&gt;&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;&lt;a rel&#x3D;&quot;external&quot; href&#x3D;&quot;https://doc.rust-lang.org/stable/std/vec/struct.Vec.html#method.into_parts&quot;&gt;&lt;code&gt;Vec::into_parts&lt;/code&gt;&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;&lt;a rel&#x3D;&quot;external&quot; href&#x3D;&quot;https://doc.rust-lang.org/stable/std/vec/struct.Vec.html#method.from_parts&quot;&gt;&lt;code&gt;Vec::from_parts&lt;/code&gt;&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;&lt;a rel&#x3D;&quot;external&quot; href&#x3D;&quot;https://doc.rust-lang.org/stable/core/mem/fn.size_of_val_raw.html&quot;&gt;&lt;code&gt;core::mem::size_of_val_raw&lt;/code&gt;&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;&lt;a rel&#x3D;&quot;external&quot; href&#x3D;&quot;https://doc.rust-lang.org/stable/core/mem/fn.align_of_val_raw.html&quot;&gt;&lt;code&gt;core::mem::align_of_val_raw&lt;/code&gt;&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;&lt;a rel&#x3D;&quot;external&quot; href&#x3D;&quot;https://doc.rust-lang.org/stable/core/alloc/struct.Layout.html#method.for_value_raw&quot;&gt;&lt;code&gt;core::alloc::Layout::for_value_raw&lt;/code&gt;&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;&lt;a rel&#x3D;&quot;external&quot; href&#x3D;&quot;https://doc.rust-lang.org/stable/std/string/struct.String.html#method.from_utf8_lossy_owned&quot;&gt;&lt;code&gt;String::from_utf8_lossy_owned&lt;/code&gt;&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;&lt;a rel&#x3D;&quot;external&quot; href&#x3D;&quot;https://doc.rust-lang.org/stable/std/string/struct.FromUtf8Error.html#method.into_utf8_lossy&quot;&gt;&lt;code&gt;string::FromUtf8Error::into_utf8_lossy&lt;/code&gt;&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;&lt;a rel&#x3D;&quot;external&quot; href&#x3D;&quot;https://doc.rust-lang.org/stable/std/iter/struct.StepBy.html#impl-FusedIterator-for-StepBy%3CI%3E&quot;&gt;&lt;code&gt;FusedIterator for StepBy&amp;lt;I&amp;gt;&lt;/code&gt;&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;&lt;a rel&#x3D;&quot;external&quot; href&#x3D;&quot;https://doc.rust-lang.org/stable/std/fs/fn.set_times.html&quot;&gt;&lt;code&gt;std::fs::set_times&lt;/code&gt;&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;&lt;a rel&#x3D;&quot;external&quot; href&#x3D;&quot;https://doc.rust-lang.org/stable/std/fs/fn.set_times_nofollow.html&quot;&gt;&lt;code&gt;std::fs::set_times_nofollow&lt;/code&gt;&lt;/a&gt;&lt;/li&gt;
+&lt;/ul&gt;
+&lt;h3 id&#x3D;&quot;other-changes&quot;&gt;&lt;a class&#x3D;&quot;anchor&quot; href&#x3D;&quot;#other-changes&quot; aria-hidden&#x3D;&quot;true&quot;&gt;&lt;/a&gt;
+Other changes&lt;/h3&gt;
+&lt;p&gt;Check out everything that changed in &lt;a rel&#x3D;&quot;external&quot; href&#x3D;&quot;https://github.com/rust-lang/rust/releases/tag/1.99.0&quot;&gt;Rust&lt;/a&gt;, &lt;a rel&#x3D;&quot;external&quot; href&#x3D;&quot;https://doc.rust-lang.org/nightly/cargo/CHANGELOG.html#cargo-199-2026-10-01&quot;&gt;Cargo&lt;/a&gt;, and &lt;a rel&#x3D;&quot;external&quot; href&#x3D;&quot;https://github.com/rust-lang/rust-clippy/blob/master/CHANGELOG.md#rust-199&quot;&gt;Clippy&lt;/a&gt;.&lt;/p&gt;
+&lt;h2 id&#x3D;&quot;contributors-to-1-99-0&quot;&gt;&lt;a class&#x3D;&quot;anchor&quot; href&#x3D;&quot;#contributors-to-1-99-0&quot; aria-hidden&#x3D;&quot;true&quot;&gt;&lt;/a&gt;
+Contributors to 1.99.0&lt;/h2&gt;
+&lt;p&gt;Many people came together to create Rust 1.99.0. We couldn&#x27;t have done it without all of you. &lt;a rel&#x3D;&quot;external&quot; href&#x3D;&quot;https://thanks.rust-lang.org/rust/1.99.0/&quot;&gt;Thanks!&lt;/a&gt;&lt;/p&gt;
+</content>
+
+        <author>
+            <name>The Rust Release Team</name>
+        </author>
+    </entry>
+    <entry>
+        <title>Announcing a Maintainer in Residence: Scott Schafer for the Cargo team</title>
+        <link rel="alternate" href="https://blog.rust-lang.org/2026/09/22/announcing-a-maintainer-in-residence-scott-schafer-for-the-cargo-team/" type="text/html" title="Announcing a Maintainer in Residence: Scott Schafer for the Cargo team" />
+        <published>2026-09-22T00:00:00+00:00</published>
+        <updated>2026-09-22T00:00:00+00:00</updated>
+        <id>https://blog.rust-lang.org/2026/09/22/announcing-a-maintainer-in-residence-scott-schafer-for-the-cargo-team/</id>
+        <content type="html" xml:base="https://blog.rust-lang.org/2026/09/22/announcing-a-maintainer-in-residence-scott-schafer-for-the-cargo-team/">&lt;p&gt;At the end of August, we &lt;a rel&#x3D;&quot;external&quot; href&#x3D;&quot;https://blog.rust-lang.org/2026/08/26/announcing-our-first-maintainers-in-residence/&quot;&gt;announced&lt;/a&gt; our first Maintainers in Residence, Rust Project contributors who are funded for their upstream contributions and &lt;a rel&#x3D;&quot;external&quot; href&#x3D;&quot;https://blog.rust-lang.org/inside-rust/2026/01/12/what-is-maintenance-anyway/&quot;&gt;maintenance work&lt;/a&gt; from the &lt;a rel&#x3D;&quot;external&quot; href&#x3D;&quot;https://github.com/sponsors/rustfoundation&quot;&gt;Rust Foundation Maintainers Fund&lt;/a&gt; (RFMF). Since then, the Rust Leadership Council has dedicated more funds from its Project Priorities budget to RFMF, and together with AWS also providing additional funds, this allowed us to open a new full-time Maintainer in Residence (MiR) position to support the Cargo team. We would like to thank the Rust Leadership Council, AWS, and also the Rust Foundation for providing us with this opportunity! If you would like to help us hire more maintainers to improve Rust, consider &lt;a rel&#x3D;&quot;external&quot; href&#x3D;&quot;https://github.com/sponsors/rustfoundation&quot;&gt;donating&lt;/a&gt; to RFMF.&lt;/p&gt;
+&lt;p&gt;This post explains why we chose to support the Cargo team specifically, and introduces &lt;a href&#x3D;&quot;https://blog.rust-lang.org/2026/09/22/announcing-a-maintainer-in-residence-scott-schafer-for-the-cargo-team/#introducing-scott-schafer&quot;&gt;Scott Schafer&lt;/a&gt;, the new Cargo Maintainer in Residence.&lt;/p&gt;
+&lt;h2 id&#x3D;&quot;why-cargo&quot;&gt;&lt;a class&#x3D;&quot;anchor&quot; href&#x3D;&quot;#why-cargo&quot; aria-hidden&#x3D;&quot;true&quot;&gt;&lt;/a&gt;
+Why Cargo?&lt;/h2&gt;
+&lt;p&gt;The new MiR full-time position is dedicated to helping with the maintenance of &lt;a rel&#x3D;&quot;external&quot; href&#x3D;&quot;https://github.com/rust-lang/cargo&quot;&gt;Cargo&lt;/a&gt;, our build system and package manager. The Cargo project is deeply involved in many new Rust features, improvements, and &lt;a rel&#x3D;&quot;external&quot; href&#x3D;&quot;https://goals.rust-lang.org/2026/goals.html#cargo-team&quot;&gt;Project Goals&lt;/a&gt;. Combined with its cross-cutting nature, where it has to support many different use-cases and integrate with several other tools, it takes a lot of work just to keep up with its maintenance needs, let alone support so many feature requests and proposed changes.&lt;/p&gt;
+&lt;p&gt;Because of that, the Cargo team has sometimes struggled with meeting its maintenance demands. You might remember that for several years, it actually held a &lt;a rel&#x3D;&quot;external&quot; href&#x3D;&quot;https://blog.rust-lang.org/inside-rust/2022/03/31/cargo-team-changes/&quot;&gt;feature freeze&lt;/a&gt;, to reduce Cargo&#x27;s internal tech debt, perform necessary refactorings, go through the issue and pull request backlog, and come up with scalable internal development and design processes, so that they could eventually go back to even thinking about adding new features.&lt;/p&gt;
+&lt;p&gt;Recently, some changes occurred within the team, which made it more difficult for them to meet their maintenance baseline. Some members of the team left, while others lost their dedicated funding for working on Cargo maintenance and had to scale down their involvement. The Funding team thus considered it very important to support this team, given that we had an opportunity to do so. And thus we decided to hire a full-time maintainer to work on Cargo for (at least) the next 12 months.&lt;/p&gt;
+&lt;p&gt;Even though we know that a single full-time maintainer will not completely solve the maintenance struggles of the Cargo team, we hope that it will improve the situation, and provide a bit of a relief for the team.&lt;/p&gt;
+&lt;h2 id&#x3D;&quot;introducing-scott-schafer&quot;&gt;&lt;a class&#x3D;&quot;anchor&quot; href&#x3D;&quot;#introducing-scott-schafer&quot; aria-hidden&#x3D;&quot;true&quot;&gt;&lt;/a&gt;
+Introducing Scott Schafer&lt;/h2&gt;
+&lt;aside style&#x3D;&quot;float: right; clear: both; margin-left: 10px;&quot;&gt;
+  &lt;img alt&#x3D;&quot;A photo of Scott Schafer&quot; src&#x3D;&quot;scott.jpg&quot; width&#x3D;&quot;460&quot; style&#x3D;&quot;width: 12em; border: 1px solid white;&quot; /&gt;
+&lt;/aside&gt;
+&lt;p&gt;We are very happy to welcome Scott Schafer (&lt;a rel&#x3D;&quot;external&quot; href&#x3D;&quot;https://github.com/Muscraft&quot;&gt;@muscraft&lt;/a&gt;) into the Maintainer in Residence role! Scott has joined the Cargo team &lt;a rel&#x3D;&quot;external&quot; href&#x3D;&quot;https://blog.rust-lang.org/inside-rust/2023/04/06/cargo-new-members/&quot;&gt;three years ago&lt;/a&gt;, and apart from working on Cargo, he is also the lead of the Rust &lt;a rel&#x3D;&quot;external&quot; href&#x3D;&quot;https://rust-lang.org/governance/teams/#team-docker&quot;&gt;Docker team&lt;/a&gt;, which prepares official Docker images for every Rust version.&lt;/p&gt;
+&lt;p&gt;Apart from working on general maintenance of Cargo, Scott has implemented Cargo&#x27;s &lt;a rel&#x3D;&quot;external&quot; href&#x3D;&quot;https://doc.rust-lang.org/cargo/reference/workspaces.html#the-package-table&quot;&gt;Workspace inheritance&lt;/a&gt; feature, and has also spearheaded a complex multi-year effort to switch the rendering of diagnostics in the Rust compiler to use the &lt;a rel&#x3D;&quot;external&quot; href&#x3D;&quot;https://github.com/rust-lang/annotate-snippets-rs&quot;&gt;annotate-snippets&lt;/a&gt; crate. This effort has been completed in the Rust 1.93.0 release. Thanks to it, the same diagnostics interface can now be shared between the compiler and Cargo (and also other tools), which amongst other things unblocked further development of the Cargo linting system, which has now been stabilized and will ship in the Rust 1.100.0 release.&lt;/p&gt;
+&lt;p&gt;Everyone we talked about was very excited about Scott becoming a Cargo Maintainer in Residence, and we share that feeling. We wish Scott all the best in his new role, and we are very happy that we can support his maintenance work.&lt;/p&gt;
+&lt;p&gt;Here is what Scott thinks about it:&lt;/p&gt;
+&lt;blockquote&gt;
+&lt;p&gt;I am incredibly excited to work on Cargo full-time! There have been so many things that I wish I could&#x27;ve worked on over the years, that I will now be able to get to. I hope that my efforts will bring Cargo into a more maintainable state.&lt;/p&gt;
+&lt;/blockquote&gt;
+&lt;h2 id&#x3D;&quot;conclusion&quot;&gt;&lt;a class&#x3D;&quot;anchor&quot; href&#x3D;&quot;#conclusion&quot; aria-hidden&#x3D;&quot;true&quot;&gt;&lt;/a&gt;
+Conclusion&lt;/h2&gt;
+&lt;p&gt;We are incredibly happy that we keep getting more funds for the Rust Foundation Maintainers Fund, which allows us to support Rust Project contributors. The funding team will be working with the supported maintainers, and also the funders, to ensure that they are all happy with the arrangement, so that we can secure stable funding for Rust maintenance for years to come.&lt;/p&gt;
+&lt;p&gt;If you would like to help us support more Rust maintainers, consider &lt;a rel&#x3D;&quot;external&quot; href&#x3D;&quot;https://github.com/sponsors/rustfoundation&quot;&gt;donating&lt;/a&gt; to RFMF!&lt;/p&gt;
+</content>
+
+        <author>
+            <name>Jakub Beránek</name>
+        </author>
+    </entry>
+    <entry>
+        <title>GitHub Actions leaking secrets when Miri output is cached</title>
+        <link rel="alternate" href="https://blog.rust-lang.org/2026/09/21/github-actions-leaking-secrets-when-miri-output-is-cached/" type="text/html" title="GitHub Actions leaking secrets when Miri output is cached" />
+        <published>2026-09-21T00:00:00+00:00</published>
+        <updated>2026-09-21T00:00:00+00:00</updated>
+        <id>https://blog.rust-lang.org/2026/09/21/github-actions-leaking-secrets-when-miri-output-is-cached/</id>
+        <content type="html" xml:base="https://blog.rust-lang.org/2026/09/21/github-actions-leaking-secrets-when-miri-output-is-cached/">&lt;p&gt;The Rust Security Response Team was notified that Miri stores all environment variables to &lt;code&gt;target/&lt;/code&gt;, allowing secrets to persist in caches.&lt;/p&gt;
+&lt;p&gt;While not necessary a vulnerability in and of itself, when paired with GitHub Actions caching behavior, it is possible for this to expose secrets to PRs.&lt;/p&gt;
+&lt;h2 id&#x3D;&quot;overview&quot;&gt;&lt;a class&#x3D;&quot;anchor&quot; href&#x3D;&quot;#overview&quot; aria-hidden&#x3D;&quot;true&quot;&gt;&lt;/a&gt;
+Overview&lt;/h2&gt;
+&lt;p&gt;GitHub Actions makes it possible to cache directories between runs. Typical setups allow CI runs on &lt;code&gt;main&lt;/code&gt; (and other branches) to &lt;em&gt;write&lt;/em&gt; to cache, and PRs can only &lt;em&gt;read&lt;/em&gt; from cache (preventing cache poisoning). Rust projects tend to speed up CI by caching binaries built by &lt;code&gt;cargo install&lt;/code&gt; and sometimes the contents of &lt;code&gt;target/&lt;/code&gt;.&lt;/p&gt;
+&lt;p&gt;PR CI can be triggered by anyone who can open PRs on your repository. GitHub requires maintainer approval for the &lt;em&gt;first&lt;/em&gt; PR, but future PRs will rerun CI on every push. Anyone who has previously landed a change can trigger a CI run extracting information from cached &lt;code&gt;target/&lt;/code&gt; and then cover their tracks by pushing a second commit to the PR.&lt;/p&gt;
+&lt;p&gt;GitHub sometimes hides overwritten commits in its UI, making this kind of attack harder to detect. CI run logs and overwritten commits are also deleted after a few months.&lt;/p&gt;
+&lt;p&gt;When &lt;code&gt;cargo miri&lt;/code&gt; is invoked, Miri needs to retain build-relevant environment variables between runs&lt;sup class&#x3D;&quot;footnote-reference&quot; id&#x3D;&quot;fr-1-1&quot;&gt;&lt;a href&#x3D;&quot;https://blog.rust-lang.org/2026/09/21/github-actions-leaking-secrets-when-miri-output-is-cached/#fn-1&quot;&gt;[1]&lt;/a&gt;&lt;/sup&gt;. The current code to do so achieves this by storing &lt;a rel&#x3D;&quot;external&quot; href&#x3D;&quot;https://github.com/rust-lang/miri/blob/165a9c3c96f0f4e6232278e62cb64648215bbc37/cargo-miri/src/util.rs#L40-L42&quot;&gt;all environment variables to &lt;code&gt;target/&lt;/code&gt;&lt;/a&gt;. This, of course, persists when &lt;code&gt;target/&lt;/code&gt; is cached.&lt;/p&gt;
+&lt;p&gt;If your environment contained secrets, these can now be accessed by PRs via the cache.&lt;/p&gt;
+&lt;h2 id&#x3D;&quot;our-fix&quot;&gt;&lt;a class&#x3D;&quot;anchor&quot; href&#x3D;&quot;#our-fix&quot; aria-hidden&#x3D;&quot;true&quot;&gt;&lt;/a&gt;
+Our fix&lt;/h2&gt;
+&lt;p&gt;Our &lt;a rel&#x3D;&quot;external&quot; href&#x3D;&quot;https://github.com/rust-lang/miri/pull/5337&quot;&gt;short term fix&lt;/a&gt; for this is to make Miri only preserve &lt;code&gt;CARGO_*&lt;/code&gt; environment variables (excepting &lt;code&gt;CARGO_*_TOKEN&lt;/code&gt;) and &lt;code&gt;OUT_DIR&lt;/code&gt;. In the longer term, Miri and cargo may figure out better ways to inform Miri of the relevant list of environment variables. Note that this patch may not be available on nightly yet.&lt;/p&gt;
+&lt;p&gt;We also performed an ecosystem scan of GitHub repositories and identified 1 repository with this issue and 7 repositories that do not appear to be vulnerable but should be cautious anyway. We have reached out to those maintainers.&lt;/p&gt;
+&lt;h2 id&#x3D;&quot;am-i-affected&quot;&gt;&lt;a class&#x3D;&quot;anchor&quot; href&#x3D;&quot;#am-i-affected&quot; aria-hidden&#x3D;&quot;true&quot;&gt;&lt;/a&gt;
+Am I affected?&lt;/h2&gt;
+&lt;p&gt;It is likely that our scan was imperfect, so we recommend you check your own GitHub Actions setups if you run Miri.&lt;/p&gt;
+&lt;p&gt;You are vulnerable if:&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;You run &lt;code&gt;cargo miri&lt;/code&gt; in CI&lt;/li&gt;
+&lt;li&gt;The step that runs &lt;code&gt;cargo miri&lt;/code&gt; &lt;a rel&#x3D;&quot;external&quot; href&#x3D;&quot;https://docs.github.com/en/actions/how-tos/write-workflows/choose-what-workflows-do/use-secrets#using-secrets-in-a-workflow&quot;&gt;has access to secrets&lt;/a&gt; as an environment variable:
+&lt;ul&gt;
+&lt;li&gt;By being passed in to the step itself as an environment variable&lt;/li&gt;
+&lt;li&gt;By being set in &lt;code&gt;env&lt;/code&gt; for the workflow&lt;/li&gt;
+&lt;li&gt;By being passed in to a previous step that persists it in the environment somehow&lt;/li&gt;
+&lt;/ul&gt;
+&lt;/li&gt;
+&lt;li&gt;The workflow being used caches the &lt;code&gt;target&lt;/code&gt; directory, usually done via &lt;a rel&#x3D;&quot;external&quot; href&#x3D;&quot;https://github.com/actions/cache&quot;&gt;&lt;code&gt;actions/cache&lt;/code&gt;&lt;/a&gt; or &lt;a rel&#x3D;&quot;external&quot; href&#x3D;&quot;https://github.com/swatinem/rust-cache&quot;&gt;&lt;code&gt;swatinem/rust-cache&lt;/code&gt;&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;The cache is accessible to PRs (common and often the intended use case)&lt;/li&gt;
+&lt;/ul&gt;
+&lt;p&gt;Possible quick fixes include:&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;Disabling cache for that job.&lt;/li&gt;
+&lt;li&gt;Scoping secrets to steps in that job that do not call Miri.&lt;/li&gt;
+&lt;li&gt;Temporarily disabling Miri.&lt;/li&gt;
+&lt;/ul&gt;
+&lt;p&gt;Once done, &lt;a rel&#x3D;&quot;external&quot; href&#x3D;&quot;https://docs.github.com/en/actions/how-tos/manage-workflow-runs/manage-caches#deleting-cache-entries&quot;&gt;please clear the cache&lt;/a&gt;. Consider rotating any secrets that might have leaked.&lt;/p&gt;
+&lt;p&gt;The Miri release in the upcoming nightly (2026-09-22) will no longer have this problem.&lt;/p&gt;
+&lt;p&gt;&lt;strong&gt;Even if you do not run Miri,&lt;/strong&gt; ensure jobs that can write to public caches do not have access to secrets. Many tools do not have special handling for secrets, and assume the entire environment can be written to the filesystem.&lt;/p&gt;
+&lt;h2 id&#x3D;&quot;threat-model&quot;&gt;&lt;a class&#x3D;&quot;anchor&quot; href&#x3D;&quot;#threat-model&quot; aria-hidden&#x3D;&quot;true&quot;&gt;&lt;/a&gt;
+Threat model&lt;/h2&gt;
+&lt;p&gt;We consider it bad practice to have a cache that can easily be tainted by secrets.&lt;/p&gt;
+&lt;p&gt;If caching &lt;code&gt;target/&lt;/code&gt;, it is worth making sure that the inputs to processes that create &lt;code&gt;target/&lt;/code&gt; (anything invoking &lt;code&gt;cargo&lt;/code&gt;) do not have secrets available. It is generally rare for standard &lt;code&gt;cargo&lt;/code&gt; build/test subcommands to need any secrets or tokens&lt;sup class&#x3D;&quot;footnote-reference&quot; id&#x3D;&quot;fr-2-1&quot;&gt;&lt;a href&#x3D;&quot;https://blog.rust-lang.org/2026/09/21/github-actions-leaking-secrets-when-miri-output-is-cached/#fn-2&quot;&gt;[2]&lt;/a&gt;&lt;/sup&gt;, so this is mostly a matter of being careful about having secrets exposed as environment variables to the entire job.&lt;/p&gt;
+&lt;p&gt;Cargo/Miri/Rust does not guarantee that environment variables will be safe from being copied into &lt;code&gt;target/&lt;/code&gt;. While we are treating this as a security issue and patching it out of an abundance of caution, this is not something you should rely on in general. Beyond official Rust tooling, it is possible for build scripts to be doing things that lead to the environment being stored in compilation artifacts.&lt;/p&gt;
+&lt;h2 id&#x3D;&quot;acknowledgements&quot;&gt;&lt;a class&#x3D;&quot;anchor&quot; href&#x3D;&quot;#acknowledgements&quot; aria-hidden&#x3D;&quot;true&quot;&gt;&lt;/a&gt;
+Acknowledgements&lt;/h2&gt;
+&lt;p&gt;Thanks to &lt;a rel&#x3D;&quot;external&quot; href&#x3D;&quot;https://github.com/obi1kenobi&quot;&gt;Predrag Gruevski&lt;/a&gt; of OpenAI for reporting this issue to us. Furthermore, the ecosystem scan was performed using Codex access and credits donated by OpenAI, which we also thank them for.&lt;/p&gt;
+&lt;p&gt;Issue triage and remediation was performed by Manish Goregaokar, Ralf Jung, Ben Kimock, Weihang Lo, Jacob Finkelman, Walter Pearce, Josh Stone, and Mark Rousskov.&lt;/p&gt;
+&lt;section class&#x3D;&quot;footnotes&quot;&gt;
+&lt;ol class&#x3D;&quot;footnotes-list&quot;&gt;
+&lt;li id&#x3D;&quot;fn-1&quot;&gt;
+&lt;p&gt;Miri is invoked multiple times by &lt;code&gt;cargo miri&lt;/code&gt; for complicated reasons &lt;a href&#x3D;&quot;https://blog.rust-lang.org/2026/09/21/github-actions-leaking-secrets-when-miri-output-is-cached/#fr-1-1&quot;&gt;↩&lt;/a&gt;&lt;/p&gt;
+&lt;/li&gt;
+&lt;li id&#x3D;&quot;fn-2&quot;&gt;
+&lt;p&gt;In theory it could come up with build scripts reading from the network &lt;a href&#x3D;&quot;https://blog.rust-lang.org/2026/09/21/github-actions-leaking-secrets-when-miri-output-is-cached/#fr-2-1&quot;&gt;↩&lt;/a&gt;&lt;/p&gt;
+&lt;/li&gt;
+&lt;/ol&gt;
+&lt;/section&gt;
+</content>
+
+        <author>
+            <name>Manish Goregaokar</name>
+        </author>
+    </entry>
+</feed>

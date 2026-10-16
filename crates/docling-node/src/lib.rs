@@ -2487,6 +2487,7 @@ pub fn supported_formats() -> Vec<String> {
         "jsonl",
         "xml",
         "ipynb",
+        "feed",
     ]
     .iter()
     .map(|s| s.to_string())

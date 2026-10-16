@@ -1,0 +1,223 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#" xmlns="http://purl.org/rss/1.0/" xmlns:dc="http://purl.org/dc/elements/1.1/">
+<channel rdf:about="https://www.debian.org/security/dsa.rdf">
+<title>Debian Security</title>
+<link>https://www.debian.org/security/dsa.rdf</link>
+<dc:date>2026-10-14T15:24:13Z</dc:date>
+<description>Debian Security Advisories</description>
+<items>
+<rdf:Seq>
+<rdf:li rdf:resource="https://lists.debian.org/debian-security-announce/2026/msg00474.html" />
+<rdf:li rdf:resource="https://lists.debian.org/debian-security-announce/2026/msg00475.html" />
+<rdf:li rdf:resource="https://lists.debian.org/debian-security-announce/2026/msg00473.html" />
+<rdf:li rdf:resource="https://lists.debian.org/debian-security-announce/2026/msg00472.html" />
+<rdf:li rdf:resource="https://lists.debian.org/debian-security-announce/2026/msg00471.html" />
+<rdf:li rdf:resource="https://lists.debian.org/debian-security-announce/2026/msg00470.html" />
+<rdf:li rdf:resource="https://lists.debian.org/debian-security-announce/2026/msg00469.html" />
+<rdf:li rdf:resource="https://lists.debian.org/debian-security-announce/2026/msg00468.html" />
+<rdf:li rdf:resource="https://lists.debian.org/debian-security-announce/2026/msg00467.html" />
+<rdf:li rdf:resource="https://lists.debian.org/debian-security-announce/2026/msg00466.html" />
+<rdf:li rdf:resource="https://lists.debian.org/debian-security-announce/2026/msg00465.html" />
+<rdf:li rdf:resource="https://lists.debian.org/debian-security-announce/2026/msg00464.html" />
+<rdf:li rdf:resource="https://lists.debian.org/debian-security-announce/2026/msg00463.html" />
+<rdf:li rdf:resource="https://lists.debian.org/debian-security-announce/2026/msg00462.html" />
+<rdf:li rdf:resource="https://lists.debian.org/debian-security-announce/2026/msg00461.html" />
+<rdf:li rdf:resource="https://lists.debian.org/debian-security-announce/2026/msg00460.html" />
+<rdf:li rdf:resource="https://lists.debian.org/debian-security-announce/2026/msg00459.html" />
+<rdf:li rdf:resource="https://lists.debian.org/debian-security-announce/2026/msg00458.html" />
+<rdf:li rdf:resource="https://lists.debian.org/debian-security-announce/2026/msg00457.html" />
+<rdf:li rdf:resource="https://lists.debian.org/debian-security-announce/2026/msg00456.html" />
+<rdf:li rdf:resource="https://lists.debian.org/debian-security-announce/2026/msg00455.html" />
+<rdf:li rdf:resource="https://lists.debian.org/debian-security-announce/2026/msg00454.html" />
+<rdf:li rdf:resource="https://lists.debian.org/debian-security-announce/2026/msg00453.html" />
+<rdf:li rdf:resource="https://lists.debian.org/debian-security-announce/2026/msg00452.html" />
+<rdf:li rdf:resource="https://lists.debian.org/debian-security-announce/2026/msg00451.html" />
+<rdf:li rdf:resource="https://lists.debian.org/debian-security-announce/2026/msg00450.html" />
+<rdf:li rdf:resource="https://lists.debian.org/debian-security-announce/2026/msg00449.html" />
+<rdf:li rdf:resource="https://lists.debian.org/debian-security-announce/2026/msg00448.html" />
+<rdf:li rdf:resource="https://lists.debian.org/debian-security-announce/2026/msg00447.html" />
+<rdf:li rdf:resource="https://lists.debian.org/debian-security-announce/2026/msg00446.html" />
+</rdf:Seq>
+</items>
+</channel>
+<item rdf:about="https://lists.debian.org/debian-security-announce/2026/msg00474.html">
+<title>DSA-6561-1 sogo - security update</title>
+<link>https://lists.debian.org/debian-security-announce/2026/msg00474.html</link>
+<dc:date>2026-10-14</dc:date>
+<description>&lt;a href=&quot;https://security-tracker.debian.org/tracker/DSA-6561-1&quot;&gt;https://security-tracker.debian.org/tracker/DSA-6561-1&lt;/a&gt;</description>
+</item>
+<item rdf:about="https://lists.debian.org/debian-security-announce/2026/msg00475.html">
+<title>DSA-6560-1 firefox-esr - security update</title>
+<link>https://lists.debian.org/debian-security-announce/2026/msg00475.html</link>
+<dc:date>2026-10-14</dc:date>
+<description>&lt;a href=&quot;https://security-tracker.debian.org/tracker/DSA-6560-1&quot;&gt;https://security-tracker.debian.org/tracker/DSA-6560-1&lt;/a&gt;</description>
+</item>
+<item rdf:about="https://lists.debian.org/debian-security-announce/2026/msg00473.html">
+<title>DSA-6559-1 buildstream - security update</title>
+<link>https://lists.debian.org/debian-security-announce/2026/msg00473.html</link>
+<dc:date>2026-10-14</dc:date>
+<description>&lt;a href=&quot;https://security-tracker.debian.org/tracker/DSA-6559-1&quot;&gt;https://security-tracker.debian.org/tracker/DSA-6559-1&lt;/a&gt;</description>
+</item>
+<item rdf:about="https://lists.debian.org/debian-security-announce/2026/msg00472.html">
+<title>DSA-6558-1 curl - security update</title>
+<link>https://lists.debian.org/debian-security-announce/2026/msg00472.html</link>
+<dc:date>2026-10-14</dc:date>
+<description>&lt;a href=&quot;https://security-tracker.debian.org/tracker/DSA-6558-1&quot;&gt;https://security-tracker.debian.org/tracker/DSA-6558-1&lt;/a&gt;</description>
+</item>
+<item rdf:about="https://lists.debian.org/debian-security-announce/2026/msg00471.html">
+<title>DSA-6557-1 ntfs-3g - security update</title>
+<link>https://lists.debian.org/debian-security-announce/2026/msg00471.html</link>
+<dc:date>2026-10-12</dc:date>
+<description>&lt;a href=&quot;https://security-tracker.debian.org/tracker/DSA-6557-1&quot;&gt;https://security-tracker.debian.org/tracker/DSA-6557-1&lt;/a&gt;</description>
+</item>
+<item rdf:about="https://lists.debian.org/debian-security-announce/2026/msg00470.html">
+<title>DSA-6556-1 nagios4 - security update</title>
+<link>https://lists.debian.org/debian-security-announce/2026/msg00470.html</link>
+<dc:date>2026-10-12</dc:date>
+<description>&lt;a href=&quot;https://security-tracker.debian.org/tracker/DSA-6556-1&quot;&gt;https://security-tracker.debian.org/tracker/DSA-6556-1&lt;/a&gt;</description>
+</item>
+<item rdf:about="https://lists.debian.org/debian-security-announce/2026/msg00469.html">
+<title>DSA-6555-1 librsvg - security update</title>
+<link>https://lists.debian.org/debian-security-announce/2026/msg00469.html</link>
+<dc:date>2026-10-12</dc:date>
+<description>&lt;a href=&quot;https://security-tracker.debian.org/tracker/DSA-6555-1&quot;&gt;https://security-tracker.debian.org/tracker/DSA-6555-1&lt;/a&gt;</description>
+</item>
+<item rdf:about="https://lists.debian.org/debian-security-announce/2026/msg00468.html">
+<title>DSA-6554-1 keystone - security update</title>
+<link>https://lists.debian.org/debian-security-announce/2026/msg00468.html</link>
+<dc:date>2026-10-12</dc:date>
+<description>&lt;a href=&quot;https://security-tracker.debian.org/tracker/DSA-6554-1&quot;&gt;https://security-tracker.debian.org/tracker/DSA-6554-1&lt;/a&gt;</description>
+</item>
+<item rdf:about="https://lists.debian.org/debian-security-announce/2026/msg00467.html">
+<title>DSA-6553-1 chromium - security update</title>
+<link>https://lists.debian.org/debian-security-announce/2026/msg00467.html</link>
+<dc:date>2026-10-12</dc:date>
+<description>&lt;a href=&quot;https://security-tracker.debian.org/tracker/DSA-6553-1&quot;&gt;https://security-tracker.debian.org/tracker/DSA-6553-1&lt;/a&gt;</description>
+</item>
+<item rdf:about="https://lists.debian.org/debian-security-announce/2026/msg00466.html">
+<title>DSA-6552-1 vips - security update</title>
+<link>https://lists.debian.org/debian-security-announce/2026/msg00466.html</link>
+<dc:date>2026-10-11</dc:date>
+<description>&lt;a href=&quot;https://security-tracker.debian.org/tracker/DSA-6552-1&quot;&gt;https://security-tracker.debian.org/tracker/DSA-6552-1&lt;/a&gt;</description>
+</item>
+<item rdf:about="https://lists.debian.org/debian-security-announce/2026/msg00465.html">
+<title>DSA-6551-1 tor - security update</title>
+<link>https://lists.debian.org/debian-security-announce/2026/msg00465.html</link>
+<dc:date>2026-10-10</dc:date>
+<description>&lt;a href=&quot;https://security-tracker.debian.org/tracker/DSA-6551-1&quot;&gt;https://security-tracker.debian.org/tracker/DSA-6551-1&lt;/a&gt;</description>
+</item>
+<item rdf:about="https://lists.debian.org/debian-security-announce/2026/msg00464.html">
+<title>DSA-6550-1 ghostscript - security update</title>
+<link>https://lists.debian.org/debian-security-announce/2026/msg00464.html</link>
+<dc:date>2026-10-10</dc:date>
+<description>&lt;a href=&quot;https://security-tracker.debian.org/tracker/DSA-6550-1&quot;&gt;https://security-tracker.debian.org/tracker/DSA-6550-1&lt;/a&gt;</description>
+</item>
+<item rdf:about="https://lists.debian.org/debian-security-announce/2026/msg00463.html">
+<title>DSA-6549-1 xz-utils - security update</title>
+<link>https://lists.debian.org/debian-security-announce/2026/msg00463.html</link>
+<dc:date>2026-10-07</dc:date>
+<description>&lt;a href=&quot;https://security-tracker.debian.org/tracker/DSA-6549-1&quot;&gt;https://security-tracker.debian.org/tracker/DSA-6549-1&lt;/a&gt;</description>
+</item>
+<item rdf:about="https://lists.debian.org/debian-security-announce/2026/msg00462.html">
+<title>DSA-6548-1 node-shell-quote - security update</title>
+<link>https://lists.debian.org/debian-security-announce/2026/msg00462.html</link>
+<dc:date>2026-10-06</dc:date>
+<description>&lt;a href=&quot;https://security-tracker.debian.org/tracker/DSA-6548-1&quot;&gt;https://security-tracker.debian.org/tracker/DSA-6548-1&lt;/a&gt;</description>
+</item>
+<item rdf:about="https://lists.debian.org/debian-security-announce/2026/msg00461.html">
+<title>DSA-6547-1 ruby-jwt - security update</title>
+<link>https://lists.debian.org/debian-security-announce/2026/msg00461.html</link>
+<dc:date>2026-10-06</dc:date>
+<description>&lt;a href=&quot;https://security-tracker.debian.org/tracker/DSA-6547-1&quot;&gt;https://security-tracker.debian.org/tracker/DSA-6547-1&lt;/a&gt;</description>
+</item>
+<item rdf:about="https://lists.debian.org/debian-security-announce/2026/msg00460.html">
+<title>DSA-6546-1 rails - security update</title>
+<link>https://lists.debian.org/debian-security-announce/2026/msg00460.html</link>
+<dc:date>2026-10-06</dc:date>
+<description>&lt;a href=&quot;https://security-tracker.debian.org/tracker/DSA-6546-1&quot;&gt;https://security-tracker.debian.org/tracker/DSA-6546-1&lt;/a&gt;</description>
+</item>
+<item rdf:about="https://lists.debian.org/debian-security-announce/2026/msg00459.html">
+<title>DSA-6545-1 roundcube - security update</title>
+<link>https://lists.debian.org/debian-security-announce/2026/msg00459.html</link>
+<dc:date>2026-10-06</dc:date>
+<description>&lt;a href=&quot;https://security-tracker.debian.org/tracker/DSA-6545-1&quot;&gt;https://security-tracker.debian.org/tracker/DSA-6545-1&lt;/a&gt;</description>
+</item>
+<item rdf:about="https://lists.debian.org/debian-security-announce/2026/msg00458.html">
+<title>DSA-6544-1 sabnzbdplus - security update</title>
+<link>https://lists.debian.org/debian-security-announce/2026/msg00458.html</link>
+<dc:date>2026-10-05</dc:date>
+<description>&lt;a href=&quot;https://security-tracker.debian.org/tracker/DSA-6544-1&quot;&gt;https://security-tracker.debian.org/tracker/DSA-6544-1&lt;/a&gt;</description>
+</item>
+<item rdf:about="https://lists.debian.org/debian-security-announce/2026/msg00457.html">
+<title>DSA-6543-1 libreoffice - security update</title>
+<link>https://lists.debian.org/debian-security-announce/2026/msg00457.html</link>
+<dc:date>2026-10-05</dc:date>
+<description>&lt;a href=&quot;https://security-tracker.debian.org/tracker/DSA-6543-1&quot;&gt;https://security-tracker.debian.org/tracker/DSA-6543-1&lt;/a&gt;</description>
+</item>
+<item rdf:about="https://lists.debian.org/debian-security-announce/2026/msg00456.html">
+<title>DSA-6542-1 ruby-rack-session - security update</title>
+<link>https://lists.debian.org/debian-security-announce/2026/msg00456.html</link>
+<dc:date>2026-10-04</dc:date>
+<description>&lt;a href=&quot;https://security-tracker.debian.org/tracker/DSA-6542-1&quot;&gt;https://security-tracker.debian.org/tracker/DSA-6542-1&lt;/a&gt;</description>
+</item>
+<item rdf:about="https://lists.debian.org/debian-security-announce/2026/msg00455.html">
+<title>DSA-6541-1 wireshark - security update</title>
+<link>https://lists.debian.org/debian-security-announce/2026/msg00455.html</link>
+<dc:date>2026-10-04</dc:date>
+<description>&lt;a href=&quot;https://security-tracker.debian.org/tracker/DSA-6541-1&quot;&gt;https://security-tracker.debian.org/tracker/DSA-6541-1&lt;/a&gt;</description>
+</item>
+<item rdf:about="https://lists.debian.org/debian-security-announce/2026/msg00454.html">
+<title>DSA-6534-2 webkit2gtk - regression update</title>
+<link>https://lists.debian.org/debian-security-announce/2026/msg00454.html</link>
+<dc:date>2026-10-02</dc:date>
+<description>&lt;a href=&quot;https://security-tracker.debian.org/tracker/DSA-6534-2&quot;&gt;https://security-tracker.debian.org/tracker/DSA-6534-2&lt;/a&gt;</description>
+</item>
+<item rdf:about="https://lists.debian.org/debian-security-announce/2026/msg00453.html">
+<title>DSA-6540-1 radsecproxy - security update</title>
+<link>https://lists.debian.org/debian-security-announce/2026/msg00453.html</link>
+<dc:date>2026-10-02</dc:date>
+<description>&lt;a href=&quot;https://security-tracker.debian.org/tracker/DSA-6540-1&quot;&gt;https://security-tracker.debian.org/tracker/DSA-6540-1&lt;/a&gt;</description>
+</item>
+<item rdf:about="https://lists.debian.org/debian-security-announce/2026/msg00452.html">
+<title>DSA-6539-1 php-mongodb - security update</title>
+<link>https://lists.debian.org/debian-security-announce/2026/msg00452.html</link>
+<dc:date>2026-10-02</dc:date>
+<description>&lt;a href=&quot;https://security-tracker.debian.org/tracker/DSA-6539-1&quot;&gt;https://security-tracker.debian.org/tracker/DSA-6539-1&lt;/a&gt;</description>
+</item>
+<item rdf:about="https://lists.debian.org/debian-security-announce/2026/msg00451.html">
+<title>DSA-6538-1 redis - security update</title>
+<link>https://lists.debian.org/debian-security-announce/2026/msg00451.html</link>
+<dc:date>2026-10-02</dc:date>
+<description>&lt;a href=&quot;https://security-tracker.debian.org/tracker/DSA-6538-1&quot;&gt;https://security-tracker.debian.org/tracker/DSA-6538-1&lt;/a&gt;</description>
+</item>
+<item rdf:about="https://lists.debian.org/debian-security-announce/2026/msg00450.html">
+<title>DSA-6537-1 libpng1.6 - security update</title>
+<link>https://lists.debian.org/debian-security-announce/2026/msg00450.html</link>
+<dc:date>2026-10-01</dc:date>
+<description>&lt;a href=&quot;https://security-tracker.debian.org/tracker/DSA-6537-1&quot;&gt;https://security-tracker.debian.org/tracker/DSA-6537-1&lt;/a&gt;</description>
+</item>
+<item rdf:about="https://lists.debian.org/debian-security-announce/2026/msg00449.html">
+<title>DSA-6536-1 thunderbird - security update</title>
+<link>https://lists.debian.org/debian-security-announce/2026/msg00449.html</link>
+<dc:date>2026-10-01</dc:date>
+<description>&lt;a href=&quot;https://security-tracker.debian.org/tracker/DSA-6536-1&quot;&gt;https://security-tracker.debian.org/tracker/DSA-6536-1&lt;/a&gt;</description>
+</item>
+<item rdf:about="https://lists.debian.org/debian-security-announce/2026/msg00448.html">
+<title>DSA-6535-1 chromium - security update</title>
+<link>https://lists.debian.org/debian-security-announce/2026/msg00448.html</link>
+<dc:date>2026-10-01</dc:date>
+<description>&lt;a href=&quot;https://security-tracker.debian.org/tracker/DSA-6535-1&quot;&gt;https://security-tracker.debian.org/tracker/DSA-6535-1&lt;/a&gt;</description>
+</item>
+<item rdf:about="https://lists.debian.org/debian-security-announce/2026/msg00447.html">
+<title>DSA-6534-1 webkit2gtk - security update</title>
+<link>https://lists.debian.org/debian-security-announce/2026/msg00447.html</link>
+<dc:date>2026-10-01</dc:date>
+<description>&lt;a href=&quot;https://security-tracker.debian.org/tracker/DSA-6534-1&quot;&gt;https://security-tracker.debian.org/tracker/DSA-6534-1&lt;/a&gt;</description>
+</item>
+<item rdf:about="https://lists.debian.org/debian-security-announce/2026/msg00446.html">
+<title>DSA-6533-1 firefox-esr - security update</title>
+<link>https://lists.debian.org/debian-security-announce/2026/msg00446.html</link>
+<dc:date>2026-09-30</dc:date>
+<description>&lt;a href=&quot;https://security-tracker.debian.org/tracker/DSA-6533-1&quot;&gt;https://security-tracker.debian.org/tracker/DSA-6533-1&lt;/a&gt;</description>
+</item>
+</rdf:RDF>
