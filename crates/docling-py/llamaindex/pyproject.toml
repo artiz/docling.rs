@@ -1,17 +1,19 @@
-# `llama-index-readers-docling-rs`: the LlamaIndex reader package in the shape
-# of run-llama/llama_index's `llama-index-integrations/readers/*` — prepared
-# here for the upstream PR that lists it on LlamaHub. It has no code of its
-# own: the reader is `docling_rs.llamaindex.DoclingReader`, shipped in the
-# docling-rs wheel; this package pins that wheel (with its `llamaindex`
-# extra) under the `llama_index.readers.docling_rs` namespace. The committed
-# version is a placeholder.
+# PyPI distribution `llama-index-readers-docling-rs`: the LlamaIndex reader
+# under the `llama_index.readers.<name>` namespace every reader package uses
+# (run-llama/llama_index no longer takes new integration packages into its
+# monorepo — they are published independently, as this one is). It has no
+# code of its own: the reader is `docling_rs.llamaindex.DoclingReader`,
+# shipped in the docling-rs wheel; this package pins that wheel (with its
+# `llamaindex` extra) and re-exports it. pypi-publish.yml writes the release
+# version into `version` and into the docling-rs pin before building; the
+# committed values are placeholders (install locally with `pip install --no-deps`).
 [build-system]
 requires = ["hatchling>=1.24"]
 build-backend = "hatchling.build"
 
 [project]
 name = "llama-index-readers-docling-rs"
-version = "0.1.0"
+version = "0.0.0"
 description = "LlamaIndex reader for docling.rs: PDF with layout, tables and OCR, DOCX, PPTX, XLSX, HTML and 40-odd formats into LlamaIndex Documents as Markdown or docling JSON. docling in Rust, no PyTorch."
 readme = "README.md"
 license = { text = "MIT" }
@@ -27,7 +29,7 @@ classifiers = [
 ]
 dependencies = [
     "llama-index-core>=0.12,<0.15",
-    "docling-rs[llamaindex]>=2.34",
+    "docling-rs[llamaindex]==0.0.0",
 ]
 
 [project.urls]

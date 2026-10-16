@@ -284,6 +284,7 @@ One engine, several front doors, the same options and outputs everywhere.
 | anything that speaks HTTP | [`docling-serve`](./crates/docling-serve/README.md), OpenAPI 3.1 | `ghcr.io/docling-project/docling-rs-serve` · `cargo install docling-serve` |
 | Node.js / Bun / Electron | [`docling.rs`](./crates/docling-node/README.md), an N-API addon | `npm i docling.rs` (`docling.rs-cuda`) |
 | Python | [`docling-rs`](./crates/docling-py/README.md): docling's and MarkItDown's APIs | `pip install docling-rs` (`docling-rs-cuda`) |
+| LangChain / LlamaIndex | [`DoclingLoader`](./crates/docling-py/README.md#langchain) (langchain-docling's API) · [`DoclingReader`](./crates/docling-py/README.md#llamaindex) (llama-index-readers-docling's API) | `pip install langchain-docling-rs` · `pip install llama-index-readers-docling-rs` |
 | the browser / Tauri / a PWA | [`docling.rs-wasm`](./crates/docling-wasm/README.md), fully client-side | `npm i docling.rs-wasm` |
 | C, C++, C#, Go, Java, Swift, Zig | [`docling-ffi`](./crates/docling-ffi/README.md): one `docling.h` | release archives `docling-ffi-<tag>-<target>` |
 

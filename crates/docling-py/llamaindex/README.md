@@ -1,4 +1,4 @@
-# LlamaIndex Docling.rs Reader
+# llama-index-readers-docling-rs
 
 `DoclingRsReader` turns PDF, DOCX, PPTX, XLSX, HTML, EPUB, e-mail, scans and
 40-odd other formats into LlamaIndex `Document`s with
@@ -53,3 +53,17 @@ docs = dir_reader.load_data()
 The converter is docling.rs's `DocumentConverter`; configure it as usual and
 pass it as `doc_converter` (`DoclingRsReader(doc_converter=DocumentConverter(do_ocr=False))`).
 `DoclingReader` is the same class under the upstream name.
+
+The package has no code of its own: it pins the `docling-rs` wheel (with its
+`llamaindex` extra) and re-exports
+[`docling_rs.llamaindex`](https://github.com/docling-project/docling.rs/blob/master/crates/docling-py/README.md#llamaindex),
+where the parameters are documented; `pip install "docling-rs[llamaindex]"`
+and `from docling_rs.llamaindex import DoclingReader` is the same thing under
+the engine's own name. Published from the docling.rs repository, not from
+LlamaIndex's monorepo (which no longer takes new integration packages).
+
+## License
+
+MIT. docling.rs is an independent project of the
+[docling](https://github.com/docling-project) community (LF AI & Data); not a
+LlamaIndex package.
