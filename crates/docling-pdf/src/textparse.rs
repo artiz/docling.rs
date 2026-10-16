@@ -25,9 +25,9 @@ use crate::pdfium_backend::Glyph;
 /// decompression + tokenization, embedded Type1 program scan, width tables —
 /// for **every page and every Form XObject invocation**; decoded form content
 /// streams were likewise re-inflated on every `Do`. Cached per document,
-/// keyed by the referenced object id (fonts also by resource name, which
-/// feeds the docling-parse font hash). Inline (non-reference) dicts are rare
-/// and stay uncached.
+/// keyed by the referenced object id (fonts also by resource name — the
+/// `/Font` entry a page binds the object to). Inline (non-reference) dicts
+/// are rare and stay uncached.
 #[derive(Default)]
 struct DocCaches {
     fonts: HashMap<(lopdf::ObjectId, Vec<u8>), Arc<Font>>,
@@ -185,6 +185,61 @@ fn deref<'a>(doc: &'a Document, obj: &'a Object) -> Option<&'a Object> {
     }
 }
 
+/// The font identity the line sanitizer's `enforce_same_font` compares —
+/// docling-parse's `page_font::init_font_name`: `/FontDescriptor/FontName`
+/// (the descendant CIDFont's for a Type0), else `/Name`, else `/BaseFont`
+/// (its `base_font`), else the literal `"null"`. The resource key (`/F1`,
+/// `/F2`) is deliberately **not** part of it: a producer that references one
+/// face twice — the same Helvetica under two keys, one re-encoded so a code
+/// maps to the `fi` glyph — draws one word across the two resources, and
+/// docling-parse reads both as the same font. Keyed by resource name (as
+/// this port was until #728) the `fi` ligature, which bridges fonts, glued
+/// itself to the preceding run while the font barrier then cut it off from
+/// its own word (`fi nancial`); docling's `financial` needs the two
+/// resources to compare equal.
+fn sanitizer_font_name(doc: &Document, fdict: &Dictionary, two_byte: bool) -> Vec<u8> {
+    let descriptor_font_name = |owner: &Dictionary| {
+        owner
+            .get(b"FontDescriptor")
+            .ok()
+            .and_then(|o| as_dict(doc, o))
+            .and_then(|fd| fd.get(b"FontName").ok())
+            .and_then(|o| deref(doc, o))
+            .and_then(|o| o.as_name().ok().map(<[u8]>::to_vec))
+    };
+    if let Some(n) = descriptor_font_name(fdict) {
+        return n;
+    }
+    if two_byte {
+        let descendant = fdict
+            .get(b"DescendantFonts")
+            .ok()
+            .and_then(|o| deref(doc, o))
+            .and_then(|o| match o {
+                Object::Array(a) => a.first(),
+                _ => None,
+            })
+            .and_then(|o| as_dict(doc, o));
+        if let Some(n) = descendant.and_then(descriptor_font_name) {
+            return n;
+        }
+    }
+    if let Some(n) = fdict
+        .get(b"Name")
+        .ok()
+        .and_then(|o| deref(doc, o))
+        .and_then(|o| o.as_name().ok())
+    {
+        return n.to_vec();
+    }
+    // docling-parse's `base_font` keeps the subset prefix (`ABCDEF+Helvetica`):
+    // two subsets of one face are two fonts there, and so here.
+    if let Some(n) = fdict.get(b"BaseFont").ok().and_then(|o| o.as_name().ok()) {
+        return n.to_vec();
+    }
+    b"null".to_vec()
+}
+
 /// Parse one font dictionary into a [`Font`].
 fn parse_font(doc: &Document, name: &[u8], fdict: &Dictionary) -> Font {
     let subtype: &[u8] = fdict
@@ -259,7 +314,7 @@ fn parse_font(doc: &Document, name: &[u8], fdict: &Dictionary) -> Font {
         program_encoding,
         ascent,
         descent,
-        hash: hash_name(name),
+        hash: hash_name(&sanitizer_font_name(doc, fdict, two_byte)),
         style: crate::font_style::parse_font_style(&String::from_utf8_lossy(
             &base_font_name(fdict).unwrap_or_else(|| name.to_vec()),
         )),
@@ -2738,16 +2793,29 @@ mod base14_fonts {
 
     /// A one-page A4 PDF drawing `content` with `fontdict` as `/F1`.
     fn pdf_with_content(fontdict: &[u8], content: &[u8]) -> Vec<u8> {
+        pdf_with_fonts(&[fontdict], content)
+    }
+
+    /// A one-page A4 PDF drawing `content` with `fontdicts[i]` bound as
+    /// `/F{i+1}` (objects 5, 6, …).
+    fn pdf_with_fonts(fontdicts: &[&[u8]], content: &[u8]) -> Vec<u8> {
         let stream = format!("<</Length {}>>stream\n", content.len()).into_bytes();
-        let objs: Vec<Vec<u8>> = vec![
+        let font_res: String = fontdicts
+            .iter()
+            .enumerate()
+            .map(|(i, _)| format!("/F{} {} 0 R", i + 1, i + 5))
+            .collect();
+        let mut objs: Vec<Vec<u8>> = vec![
             b"<</Type/Catalog/Pages 2 0 R>>".to_vec(),
             b"<</Type/Pages/Kids[3 0 R]/Count 1>>".to_vec(),
-            b"<</Type/Page/Parent 2 0 R/MediaBox[0 0 595 842]/Contents 4 0 R\
-               /Resources<</Font<</F1 5 0 R>>>>>>"
-                .to_vec(),
+            format!(
+                "<</Type/Page/Parent 2 0 R/MediaBox[0 0 595 842]/Contents 4 0 R\
+                 /Resources<</Font<<{font_res}>>>>>>"
+            )
+            .into_bytes(),
             [stream.as_slice(), content, b"endstream"].concat(),
-            fontdict.to_vec(),
         ];
+        objs.extend(fontdicts.iter().map(|d| d.to_vec()));
         let mut out = b"%PDF-1.4\n".to_vec();
         let mut offsets = Vec::new();
         for (i, body) in objs.iter().enumerate() {
@@ -3007,6 +3075,80 @@ mod base14_fonts {
         let cs = cells(&unknown);
         let text: String = cs.iter().map(|c| c.text.as_str()).collect();
         assert!(text.contains("Mystery"), "text still decodes: {cs:?}");
+    }
+    /// #728: one face bound under two resource keys — `/F1` Helvetica in
+    /// WinAnsi, `/F2` the same Helvetica re-encoded so code 0x81 is the `fi`
+    /// glyph — with every fi-word drawn in `/F2` right after an `/F1` run.
+    /// docling-parse names a font by `/FontDescriptor/FontName` → `/Name` →
+    /// `/BaseFont`, never by the resource key, so both resources are the same
+    /// font and the line reads `financial`. Keyed by resource key the `fi`
+    /// ligature (font-neutral in `applicable_for_merge`) joined the `/F1`
+    /// run and the font barrier then split it from `nancial`.
+    #[test]
+    fn same_face_under_two_resource_keys_is_one_font_for_the_sanitizer() {
+        let f1 = b"<</Type/Font/Subtype/Type1/BaseFont/Helvetica/Encoding/WinAnsiEncoding>>";
+        let f2 = b"<</Type/Font/Subtype/Type1/BaseFont/Helvetica/Encoding<</Type/Encoding\
+                   /BaseEncoding/WinAnsiEncoding/Differences[129/fi]>>>>";
+        let content = b"BT 12 TL 72 720 Td \
+            /F1 12 Tf (The ) Tj /F2 12 Tf (\\201nancial position) Tj \
+            /F1 12 Tf ( of the company is shown in ) Tj /F2 12 Tf (\\201gure 3) Tj \
+            /F1 12 Tf ( with the ) Tj /F2 12 Tf (\\201rst results.) Tj \
+            T* T* /F2 12 Tf (Same words in /F2 only: \\201nancial, \\201gure, \\201rst.) Tj ET\n";
+        let cs = cells(&pdf_with_fonts(&[f1, f2], content));
+        let lines: Vec<&str> = cs.iter().map(|c| c.text.as_str()).collect();
+        assert_eq!(
+            lines,
+            [
+                "The financial position of the company is shown in figure 3 with the first results.",
+                "Same words in /F2 only: financial, figure, first.",
+            ],
+            "{cs:?}"
+        );
+    }
+
+    /// The font barrier itself is untouched: two *different* faces (regular
+    /// and bold Helvetica, which docling-parse names apart) set flush against
+    /// each other stay separate line cells, as `enforce_same_font` demands.
+    #[test]
+    fn different_faces_still_keep_the_font_barrier() {
+        let f1 = b"<</Type/Font/Subtype/Type1/BaseFont/Helvetica/Encoding/WinAnsiEncoding>>";
+        let f2 = b"<</Type/Font/Subtype/Type1/BaseFont/Helvetica-Bold/Encoding/WinAnsiEncoding>>";
+        let content = b"BT 72 720 Td /F2 12 Tf (Total:) Tj /F1 12 Tf (42) Tj ET\n";
+        let cs = cells(&pdf_with_fonts(&[f1, f2], content));
+        let texts: Vec<&str> = cs.iter().map(|c| c.text.as_str()).collect();
+        assert_eq!(texts, ["Total:", "42"], "{cs:?}");
+    }
+
+    /// The identity follows docling-parse's precedence: a `/FontDescriptor/FontName`
+    /// wins over `/BaseFont`, so two dictionaries that share a `/BaseFont` but
+    /// describe different programs are two fonts, and two that share the
+    /// descriptor name are one whatever their `/BaseFont` says.
+    #[test]
+    fn sanitizer_font_name_follows_docling_parse_precedence() {
+        use lopdf::{dictionary, Document, Object};
+        let mut doc = Document::with_version("1.4");
+        let fd_a =
+            doc.add_object(dictionary! { "Type" => "FontDescriptor", "FontName" => "AAAAAA+Face" });
+        let fd_b =
+            doc.add_object(dictionary! { "Type" => "FontDescriptor", "FontName" => "BBBBBB+Face" });
+        let with = |fd: Option<lopdf::ObjectId>, base: &str| {
+            let mut d = dictionary! { "Type" => "Font", "Subtype" => "Type1", "BaseFont" => base };
+            if let Some(id) = fd {
+                d.set("FontDescriptor", Object::Reference(id));
+            }
+            d
+        };
+        let name = |d: &lopdf::Dictionary| {
+            String::from_utf8(super::sanitizer_font_name(&doc, d, false)).unwrap()
+        };
+        assert_eq!(name(&with(Some(fd_a), "Face")), "AAAAAA+Face");
+        assert_eq!(name(&with(Some(fd_b), "Face")), "BBBBBB+Face");
+        assert_eq!(name(&with(None, "ABCDEF+Face")), "ABCDEF+Face");
+        assert_eq!(
+            name(&dictionary! { "Type" => "Font", "Name" => "F7" }),
+            "F7"
+        );
+        assert_eq!(name(&dictionary! { "Type" => "Font" }), "null");
     }
 }
 
