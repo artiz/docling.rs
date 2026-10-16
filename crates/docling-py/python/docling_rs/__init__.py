@@ -70,12 +70,36 @@ from ._native import (
     EncryptionError,
     PasswordRequiredError,
     WrongPasswordError,
-    __version__,
 )
+from ._native import __version__ as _native_version
 from ._native import DocumentConverter as _NativeDocumentConverter
 from ._native import compiled_providers as _compiled_providers
 from ._native import email_attachments as _email_attachments
 from ._native import detect_format as _detect_format
+
+
+def _distribution_version() -> str:
+    """The version of the installed distribution — what PyPI shows and
+    ``pip`` installed. The release workflow writes it into
+    ``pyproject.toml`` at publish time, while the native module's
+    ``CARGO_PKG_VERSION`` is the crate's placeholder, so the metadata is the
+    truth; the native constant is the fallback for a checkout without
+    installed metadata (``docling-rs-cuda`` is the same package under
+    another distribution name)."""
+    try:
+        from importlib.metadata import PackageNotFoundError, version
+    except ImportError:  # pragma: no cover - Python < 3.8
+        return _native_version
+    for dist in ("docling-rs", "docling-rs-cuda"):
+        try:
+            return version(dist)
+        except PackageNotFoundError:
+            continue
+    return _native_version
+
+
+#: The installed package's version (``pip show docling-rs``).
+__version__ = _distribution_version()
 
 #: ``video_frames`` meaning "every distinct cut" (#647) — ``video_frames="all"``
 #: spells the same.
