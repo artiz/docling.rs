@@ -49,7 +49,9 @@ code written against MarkItDown runs unchanged. What differs, deliberately:
   statistical guess for a non-Latin encoding (``chardetng``, #675), else
   windows-1252.
 * **ZIP archives** convert entry by entry under MarkItDown's ``## File:``
-  headings; entries docling.rs cannot convert are skipped.
+  headings; entries docling.rs cannot convert are skipped. A ZIP inside the
+  archive is read when ``DOCLING_RS_ZIP_MAX_DEPTH`` allows (default 1: it
+  is skipped; at most 3), its entries as ``inner.zip/<path>`` (#677).
 
 ``MarkItDown(docling_options={...})`` (a docling.rs extension) forwards
 keyword arguments to :class:`docling_rs.DocumentConverter` — e.g.

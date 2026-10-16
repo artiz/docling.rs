@@ -368,16 +368,35 @@ models load.
   listed from the central directory before anything is inflated, nothing is
   extracted to disk, and the ones that do not convert are reported
   (`skip: bundle.zip:tool.exe: unsupported file type`) and counted:
-  unsupported types, nested archives (one level only), `__MACOSX` metadata,
+  unsupported types, nested archives beyond the depth, `__MACOSX` metadata,
   encrypted entries, `..` paths, and entries over the limits — 10 000
   entries, 256 MiB per entry, 1 GiB in all, a 200:1 compression ratio
   (`DOCLING_RS_ZIP_MAX_ENTRIES` / `_MAX_ENTRY_MB` / `_MAX_TOTAL_MB` /
   `_MAX_RATIO`, `ArchiveLimits::from_env`). A directory sweep does not open
-  archives it finds — only explicitly named ones expand — and a lone `.zip`
-  without `--output` is a usage error. Library:
+  archives it finds — only explicitly named ones expand. Library:
   `DocumentConverter::convert_archive(reader)`, a lazy iterator of
   `Converted` / `Skipped` / `Failed` outcomes (`docling::archive`); Python
   `convert_archive`, Node `convertArchiveFile` / `convertArchive`.
+- **One document per archive** (#677, `--archive-merge`). A lone `.zip` on
+  stdout (`docling-rs bundle.zip`) — and under `--output-file` — is one
+  document: per convertible entry, in archive order, a `## <entry path>`
+  heading and the entry's content, MarkItDown's `_zip_converter` shape
+  (its `## File:` prefix aside). Every `--to` format applies to it. Under
+  `--output DIR` the flag opts in (`DIR/<archive>.<ext>` instead of one
+  output per entry); `--no-archive-merge` keeps a lone `.zip` a usage
+  error. Entries that do not convert are reported on stderr (`skip:
+  bundle.zip:tool.exe: unsupported file type`, `error: bundle.zip:x.docx:
+  …`) and left out; an archive with nothing convertible fails. Library:
+  `DocumentConverter::convert_archive_merged(name, reader)` → a
+  `MergedArchive` (the document, the counts, the skipped and failed
+  entries); the entries' page markers are dropped from the merged
+  document.
+- **Nested archives** (#677). A ZIP inside the archive is read when
+  `ArchiveLimits::max_depth` allows (`DOCLING_RS_ZIP_MAX_DEPTH`; default 1
+  = nested archives skipped, at most 3), its entries listed as
+  `inner.zip/<path>` beside the outer ones — one shared entry count and
+  size budget across the levels, the nested archive's own bytes counted
+  too. tar / 7z / rar / gzip are never opened.
 - **Email attachments** (#561). An `.eml` / `.msg` converts as one document
   (headers + body, the attachment *names* with `--list-attachments`); the
   payloads are reachable from the library and bindings, not the CLI or

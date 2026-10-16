@@ -11,6 +11,7 @@ DOCLING_RS_MAX_XML_DEPTH,limit,crates/docling/src/backend/xml_depth.rs
 DOCLING_RS_MEMORY_WATERMARK_PCT,limit,crates/docling-serve/src/lib.rs
 DOCLING_RS_SHEET_MAX_CELLS,limit,crates/docling/src/backend/xlsx.rs
 DOCLING_RS_VLM_TIMEOUT,limit,crates/docling/src/vlm.rs
+DOCLING_RS_ZIP_MAX_DEPTH,limit,crates/docling/src/archive.rs
 DOCLING_RS_ZIP_MAX_ENTRIES,limit,crates/docling/src/archive.rs
 DOCLING_RS_ZIP_MAX_ENTRY_MB,limit,crates/docling/src/archive.rs
 DOCLING_RS_ZIP_MAX_RATIO,limit,crates/docling/src/archive.rs

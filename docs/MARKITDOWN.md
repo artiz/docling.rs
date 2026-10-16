@@ -108,7 +108,7 @@ with `convert`, `convert_local`, `convert_stream`, `convert_uri`,
 | markitdown-ocr plugin (`llm_prompt` for text extraction) | `picture_description_mode=ocr`: markitdown-ocr's prompt, through the same endpoint, for DOCX/PPTX/XLSX pictures and PDF figures alike — or the local, offline `--picture-ocr` |
 | `requests_session` | same |
 | XLSX `## <sheet>` headings | same |
-| ZIP: `## File:` per entry | same |
+| ZIP: `## File:` per entry, nested ZIPs recursed | same (`## File:` in the facade; the CLI's `docling-rs bundle.zip` prints `## <entry path>` sections, #677); a nested ZIP is read under `DOCLING_RS_ZIP_MAX_DEPTH` (default 1: skipped; at most 3), its entries as `inner.zip/<path>` |
 | `markitdown FILE -o out.md` | `python -m docling_rs.markitdown FILE -o out.md` (also `-x`, `-m`, `-c`, `--keep-data-uris`, stdin) |
 | EXIF lines on an image (`ImageSize`, `Title`, `Description`, `Artist`, `DateTimeOriginal`, `GPSPosition`, … via exiftool), the audio tag lines (`Title`, `Artist`, `Album`, `Genre`, …) and `### Audio Transcript:`, the EPUB `**Title:** / **Authors:** / …` block | the same lines, from the engine's own readers (#679 — pure Rust, no exiftool; the facade converts with `metadata=json`, and `result.metadata` outside it) |
 | `exiftool_path`, `style_map`, `docintel_*`, `cu_*` | accepted, ignored with a warning |

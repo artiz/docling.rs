@@ -348,6 +348,20 @@ def test_zip(md, tmp_path):
     assert "314b0a30-5b04-470b-b9f7-eed2c2bec74a" in result.markdown
     assert "6ff4173b-42a5-4784-9b19-f49caff4d93d" in result.markdown
     assert "notes.unknown" not in result.markdown
+    # MarkItDown's own `test_files.zip` vector (#677): a `## File:` section
+    # per entry; `test.jpg` needs the image models and is skipped without them.
+    result = md.convert(DATA / "test_files.zip")
+    assert result.markdown.startswith("Content from the zip file `")
+    for expected in [
+        "## File: test.docx",
+        "AutoGen: Enabling Next-Gen LLM Applications via Multi-Agent Conversation",
+        "314b0a30-5b04-470b-b9f7-eed2c2bec74a",
+        "## File: test.xlsx",
+        "6ff4173b-42a5-4784-9b19-f49caff4d93d",
+        "## File: test_wikipedia.html",
+        "Microsoft was founded by [Bill Gates](/wiki/Bill_Gates)",
+    ]:
+        assert expected in result.markdown, expected
 
 
 def test_cli(tmp_path, capsys):

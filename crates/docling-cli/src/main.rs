@@ -19,7 +19,7 @@
 //! the same name): one identifier per line, sorted, for scripts that ask the
 //! binary what it converts instead of hard-coding a list.
 //!
-//! Usage: docling-rs [--strict] [--page-break-placeholder TEXT] [--layers body|all|LIST] [--traverse-pictures] [--to md|json|html|text|dclx|chunks|images|latex|pandoc|vtt] [--pages A-B] [--scale X] [--images MODE] [--input GLOB --output DIR [--jobs N]] [--output-file PATH] [--fetch-images] [--image-sources none|embedded|local|remote] [--image-hosts LIST] [--max-images N] [--max-image-bytes N] [--max-image-total-mb N] [--min-image-bytes N] [--list-attachments] [--skip-empty-cells] [--compact-tables] [--picture-alt-text] [--ebcdic-layout JSON|PATH] [--encoding LABEL] [--ipynb-outputs none|text] [--metadata none|json|frontmatter] [--from FORMAT] [--mime-type TYPE] [--no-url-fetch] [--no-stream] [--no-table-former] [--no-ocr] [--text-layer-only] [--password PASSWORD | --password-file PATH] [--force-full-page-ocr] [--no-text-panels] [--heading-hierarchy] [--ocr-lang LANG] [--ocr-engine ppocr|tesseract] [--ocr-mode MODE] [--ocr-scale X] [--ocr-textline-orientation] [--images-scale X] [--page-images] [--chunker hierarchical|hybrid] [--chunk-tokenizer PATH] [--chunk-max-tokens N] [--no-chunk-merge-peers] [--pipeline standard|vlm] [--vlm-endpoint URL] [--vlm-model NAME] [--vlm-api-key TOKEN] [--vlm-prompt TEXT] [--vlm-max-tokens N] [--asr-model PRESET] [--asr-lang CODE] [--video-frames N|all] [--video-scene-threshold X] [--video-frame-max-side PX] [--video-frame-dedupe N] [--xbrl-taxonomy DIR] [--use-web-browser] [--enrich-picture-classes] [--enrich-code] [--enrich-formula] [--picture-ocr] [--picture-ocr-classes LABELS] [--picture-ocr-min-side N] [--picture-ocr-scale X] [--no-picture-images] [--picture-description] [--picture-description-endpoint URL] [--picture-description-model NAME] [--picture-description-api-key TOKEN] [--picture-description-prompt TEXT] [--picture-description-mode caption|ocr] [--picture-description-concurrency N] [--redact-pii] [--redact-mode label|pseudonym|fixed:TEXT] [--redact-kinds LIST] [--redact-pattern NAME=REGEX]... [--redact-images drop|box_out|keep] [--redact-allow-terms LIST] [--redact-deny-terms LIST] [--redact-allow-pattern REGEX]... [--redact-ner-min-score X] [--document-timeout SECONDS] [--abort-on-error] [--output-dirs auto|flat|mirror] <input-file> | - | URL | SOURCE...
+//! Usage: docling-rs [--strict] [--page-break-placeholder TEXT] [--layers body|all|LIST] [--traverse-pictures] [--to md|json|html|text|dclx|chunks|images|latex|pandoc|vtt] [--pages A-B] [--scale X] [--images MODE] [--input GLOB --output DIR [--jobs N]] [--output-file PATH] [--fetch-images] [--image-sources none|embedded|local|remote] [--image-hosts LIST] [--max-images N] [--max-image-bytes N] [--max-image-total-mb N] [--min-image-bytes N] [--list-attachments] [--skip-empty-cells] [--compact-tables] [--picture-alt-text] [--ebcdic-layout JSON|PATH] [--encoding LABEL] [--ipynb-outputs none|text] [--metadata none|json|frontmatter] [--from FORMAT] [--mime-type TYPE] [--no-url-fetch] [--no-stream] [--no-table-former] [--no-ocr] [--text-layer-only] [--password PASSWORD | --password-file PATH] [--force-full-page-ocr] [--no-text-panels] [--heading-hierarchy] [--ocr-lang LANG] [--ocr-engine ppocr|tesseract] [--ocr-mode MODE] [--ocr-scale X] [--ocr-textline-orientation] [--images-scale X] [--page-images] [--chunker hierarchical|hybrid] [--chunk-tokenizer PATH] [--chunk-max-tokens N] [--no-chunk-merge-peers] [--pipeline standard|vlm] [--vlm-endpoint URL] [--vlm-model NAME] [--vlm-api-key TOKEN] [--vlm-prompt TEXT] [--vlm-max-tokens N] [--asr-model PRESET] [--asr-lang CODE] [--video-frames N|all] [--video-scene-threshold X] [--video-frame-max-side PX] [--video-frame-dedupe N] [--xbrl-taxonomy DIR] [--use-web-browser] [--enrich-picture-classes] [--enrich-code] [--enrich-formula] [--picture-ocr] [--picture-ocr-classes LABELS] [--picture-ocr-min-side N] [--picture-ocr-scale X] [--no-picture-images] [--picture-description] [--picture-description-endpoint URL] [--picture-description-model NAME] [--picture-description-api-key TOKEN] [--picture-description-prompt TEXT] [--picture-description-mode caption|ocr] [--picture-description-concurrency N] [--redact-pii] [--redact-mode label|pseudonym|fixed:TEXT] [--redact-kinds LIST] [--redact-pattern NAME=REGEX]... [--redact-images drop|box_out|keep] [--redact-allow-terms LIST] [--redact-deny-terms LIST] [--redact-allow-pattern REGEX]... [--redact-ner-min-score X] [--document-timeout SECONDS] [--abort-on-error] [--output-dirs auto|flat|mirror] [--archive-merge|--no-archive-merge] <input-file> | - | URL | SOURCE...
 //!   --to FORMAT        repeatable (#491, like Python's `docling convert --to
 //!                      md --to json`): each document converts once and is
 //!                      written in every format named, `<stem>.md` +
@@ -83,6 +83,19 @@
 //!   --abort-on-error   stop the batch at the first failed file; by default a
 //!                      failed file is reported and skipped and the exit code
 //!                      is 1 at the end.
+//!   --archive-merge    a `.zip` as one document (#677): per convertible entry,
+//!                      in archive order, a `## <entry path>` heading and the
+//!                      entry's content — MarkItDown's `_zip_converter` shape.
+//!                      The default on stdout and for --output-file; under
+//!                      --output DIR every entry is its own output unless the
+//!                      flag is given (then `DIR/<archive>.<ext>`). Entries
+//!                      that do not convert are reported on stderr (`skip:` /
+//!                      `error:`) and left out; an archive with nothing
+//!                      convertible fails. A ZIP inside the archive is read
+//!                      under DOCLING_RS_ZIP_MAX_DEPTH (default 1 = shut, at
+//!                      most 3), its entries as `inner.zip/<path>`.
+//!   --no-archive-merge a lone `.zip` is a usage error without --output DIR
+//!                      (the one-output-per-entry contract, #557).
 //!   --input GLOB|DIR   batch mode (#205): convert every file the glob matches
 //!                      (`--input '/data/reports/**/*.pdf'` — quote it so the
 //!                      shell doesn't expand it) instead of one positional file.
@@ -511,6 +524,11 @@ INPUT SELECTION
   --jobs N                batch workers (default 1)
   --abort-on-error        stop the batch at the first failed file (default: skip it;
                           a timed-out document counts as failed under this flag)
+  --archive-merge         a .zip as one document (#677): `## <entry path>` then the
+                          entry's content, per convertible entry; the default on
+                          stdout and for --output-file, opt-in under --output DIR
+                          (DIR/<archive>.<ext> instead of one output per entry)
+  --no-archive-merge      a lone .zip needs --output DIR (one output per entry)
   --output-dirs MODE      where several inputs land under --output (#496): auto
                           (default: a directory/glob mirrors its tree, a plain file
                           lands by stem), flat (every output <stem>.<ext> directly in
@@ -714,6 +732,10 @@ fn main() -> ExitCode {
     // `None` = not given: placeholder, except embedded for `--to pandoc` (#537).
     let mut images: Option<String> = None;
     let mut no_stream = false;
+    // `--archive-merge` / `--no-archive-merge` (#677): `None` is the default —
+    // one document on stdout and for `--output-file`, one output per entry
+    // under `--output DIR`.
+    let mut archive_merge: Option<bool> = None;
     let mut export = ExportLayers::default();
     let mut bench_warm: Option<usize> = None;
     let mut scale: f32 = 2.0;
@@ -818,6 +840,8 @@ fn main() -> ExitCode {
                 }
             },
             "--no-stream" => no_stream = true,
+            "--archive-merge" => archive_merge = Some(true),
+            "--no-archive-merge" => archive_merge = Some(false),
             // Export-only (docling-core's `included_content_layers` /
             // `traverse_pictures`), streamed and buffered alike.
             "--layers" => match args.next().map(|v| ContentLayers::parse_list(&v)) {
@@ -1421,7 +1445,14 @@ fn main() -> ExitCode {
             chunk: chunk_opts.clone(),
             vlm,
         };
-        return write_output_file(Path::new(&target), &sources, &hints, &cfg);
+        // A `.zip` is one document here unless `--no-archive-merge` (#677).
+        return write_output_file(
+            Path::new(&target),
+            &sources,
+            &hints,
+            &cfg,
+            archive_merge != Some(false),
+        );
     }
 
     // Batch mode (#205, #489): `--input <glob>` and/or several positional
@@ -1475,7 +1506,8 @@ fn main() -> ExitCode {
         // A `.zip` source expands into its documents (#557), each named
         // `<archive minus .zip>/<entry path>` for its outputs; what it holds
         // that does not convert is reported now, before any work starts.
-        let (mut items, archive_report) = expand_archives(files);
+        // Under `--archive-merge` (#677) it is one item, `<archive>.<ext>`.
+        let (mut items, archive_report) = expand_archives(files, archive_merge == Some(true));
         items.extend(preloaded);
         let pairs: Vec<(std::path::PathBuf, std::path::PathBuf)> = items
             .iter()
@@ -1521,12 +1553,40 @@ fn main() -> ExitCode {
         return ExitCode::from(2);
     };
 
+    // A lone `.zip` on stdout is one document (#677): `## <entry path>` and
+    // the entry's content, per convertible entry — unless `--no-archive-merge`
+    // asks for the one-output-each contract, which needs `--output DIR`.
     if !is_special_source(&path) && is_zip(Path::new(&path)) {
-        eprintln!(
-            "error: '{path}' is a ZIP archive: its documents convert one output each, \
-             so it needs --output DIR"
-        );
-        return ExitCode::from(2);
+        if archive_merge == Some(false) {
+            eprintln!(
+                "error: '{path}' is a ZIP archive: its documents convert one output each, \
+                 so it needs --output DIR"
+            );
+            return ExitCode::from(2);
+        }
+        if bench_warm.is_some() || vlm.is_some() || to == "images" {
+            eprintln!(
+                "error: '{path}' is a ZIP archive: --bench-warm, --pipeline vlm and --to images \
+                 take one document; convert its entries one by one with --output DIR"
+            );
+            return ExitCode::from(2);
+        }
+        // The same `DOCLING_RS_ZIP_MAX_*` limits the batch applies.
+        let converter = match DocumentConverter::from_options(&opts) {
+            Ok(c) => c.archive_limits(docling::ArchiveLimits::from_env()),
+            Err(e) => {
+                eprintln!("error: {}", e.cli_message());
+                return ExitCode::from(2);
+            }
+        };
+        let document = match merge_archive(Path::new(&path), &converter) {
+            Ok(doc) => doc,
+            Err(e) => {
+                eprintln!("error: {e}");
+                return ExitCode::FAILURE;
+            }
+        };
+        return output_document(document, &to, image_mode, &path, &chunk_opts, export);
     }
     let source = match load_source(&path, &hints) {
         Ok(src) => src,
@@ -2179,6 +2239,7 @@ fn expand_sources<'a>(
                 base: PathBuf::new(),
                 entry: None,
                 preloaded: Some((pattern.clone(), source)),
+                merged: false,
             });
             continue;
         }
@@ -2318,6 +2379,9 @@ struct BatchItem {
     /// A source already in memory — stdin, a fetched URL, a `data:` URL
     /// (#668) — with the argument that named it, for progress lines.
     preloaded: Option<(String, SourceDocument)>,
+    /// `file` is a ZIP archive converted as one document (#677,
+    /// `--archive-merge`): `<archive>.<ext>` holds every entry.
+    merged: bool,
 }
 
 impl BatchItem {
@@ -2359,19 +2423,24 @@ fn is_zip(path: &Path) -> bool {
 /// document it holds (#557). Its entries are listed from the central
 /// directory — nothing is inflated yet — and the ones that do not convert are
 /// reported here with the reason; an archive that cannot be read is an error
-/// for that source only.
+/// for that source only. Under `merge` (#677) a `.zip` is one item instead,
+/// converted as one document when its turn comes (its skips are reported
+/// then).
 fn expand_archives(
     files: Vec<(std::path::PathBuf, std::path::PathBuf)>,
+    merge: bool,
 ) -> (Vec<BatchItem>, ArchiveReport) {
     let mut items = Vec::new();
     let mut report = ArchiveReport::default();
     for (file, base) in files {
-        if !is_zip(&file) {
+        if !is_zip(&file) || merge {
+            let merged = is_zip(&file);
             items.push(BatchItem {
                 file,
                 base,
                 entry: None,
                 preloaded: None,
+                merged,
             });
             continue;
         }
@@ -2404,10 +2473,49 @@ fn expand_archives(
                 base: base.clone(),
                 entry: Some((file.clone(), entry.index)),
                 preloaded: None,
+                merged: false,
             });
         }
     }
     (items, report)
+}
+
+/// A `.zip` as one document (#677): every convertible entry under a
+/// `## <entry path>` heading, in archive order, through the library's
+/// [`convert_archive_merged`](DocumentConverter::convert_archive_merged).
+/// What is left out is reported on stderr as the batch reports it (`skip:
+/// bundle.zip:tool.exe: unsupported file type`, `error: bundle.zip:x.docx:
+/// …`); an entry that failed leaves the others in. Errors when the archive
+/// does not open or holds nothing that converted.
+fn merge_archive(zip: &Path, converter: &DocumentConverter) -> Result<DoclingDocument, String> {
+    let name = zip
+        .file_stem()
+        .map(|s| s.to_string_lossy().into_owned())
+        .unwrap_or_else(|| "archive".into());
+    let file = std::fs::File::open(zip).map_err(|e| format!("{}: {e}", zip.display()))?;
+    let merged = converter
+        .convert_archive_merged(&name, std::io::BufReader::new(file))
+        .map_err(|e| format!("{}: {e}", zip.display()))?;
+    for (path, reason) in &merged.skipped {
+        eprintln!("skip: {}:{path}: {reason}", zip.display());
+    }
+    for (path, e) in &merged.failed {
+        eprintln!("error: {}:{path}: {e}", zip.display());
+    }
+    for e in &merged.errors {
+        eprintln!(
+            "warning: {}: partial document: {}",
+            zip.display(),
+            e.error_message
+        );
+    }
+    if merged.converted == 0 {
+        return Err(format!(
+            "{}: the archive holds no document to convert",
+            zip.display()
+        ));
+    }
+    Ok(merged.document)
 }
 
 /// The archives a batch worker has open, so each is read once per worker
@@ -2463,7 +2571,9 @@ fn batch_out_path(file: &Path, base: &Path, output: &Path, to: &str) -> std::pat
 
 /// Mirror of the single-file converter construction for batch workers.
 fn batch_converter(cfg: &BatchCfg) -> DocumentConverter {
-    DocumentConverter::from_options(&cfg.opts).expect("options validated before the batch")
+    DocumentConverter::from_options(&cfg.opts)
+        .expect("options validated before the batch")
+        .archive_limits(docling::ArchiveLimits::from_env())
 }
 
 /// The lazily-built warm PDF/image pipeline shared by every batch worker —
@@ -2554,6 +2664,33 @@ fn batch_convert_one(
 ) -> Result<BatchOutcome, String> {
     let (file, base) = (item.file.as_path(), item.base.as_path());
     let label = item.label();
+    // A merged archive (#677) has no one source: its document is the
+    // library's merge, written like any other document's.
+    if item.merged {
+        if cfg.to.iter().any(|t| t == "images") {
+            return Err(format!(
+                "--to images rasterizes PDF inputs only ({label} is an archive)"
+            ));
+        }
+        if cfg.vlm.is_some() {
+            return Err(format!(
+                "--pipeline vlm takes one document at a time ({label} is an archive): \
+                 drop --archive-merge"
+            ));
+        }
+        eprintln!("start: {label}");
+        let started = std::time::Instant::now();
+        let document = merge_archive(file, converter)?;
+        let formats: Vec<&str> = cfg.to.iter().map(String::as_str).collect();
+        let mut written = Vec::new();
+        write_batch_outputs(&document, file, base, output, cfg, &formats, &mut written)?;
+        return Ok(BatchOutcome {
+            written,
+            secs: started.elapsed().as_secs_f64(),
+            pages: None,
+            partial: Vec::new(),
+        });
+    }
     let source = match (&item.preloaded, &item.entry) {
         (Some((_, source)), _) => source.clone(),
         (None, None) => SourceDocument::from_file(file).map_err(|e| e.to_string())?,
@@ -2661,8 +2798,27 @@ fn batch_convert_one(
     }
     document.strict_markdown = cfg.opts.strict.unwrap_or(false);
     document.page_break_placeholder = cfg.opts.page_break_placeholder.clone();
+    write_batch_outputs(&document, file, base, output, cfg, &formats, &mut written)?;
+    Ok(BatchOutcome {
+        written,
+        secs: started.elapsed().as_secs_f64(),
+        pages,
+        partial,
+    })
+}
 
-    for to in formats {
+/// Write `document` under `output` in every requested format (the batch's
+/// `out/<rel>.<ext>` naming), the paths pushed onto `written`.
+fn write_batch_outputs(
+    document: &DoclingDocument,
+    file: &Path,
+    base: &Path,
+    output: &Path,
+    cfg: &BatchCfg,
+    formats: &[&str],
+    written: &mut Vec<std::path::PathBuf>,
+) -> Result<(), String> {
+    for &to in formats {
         let out = batch_out_path(file, base, output, to);
         if let Some(dir) = out.parent() {
             std::fs::create_dir_all(dir).map_err(|e| format!("creating {}: {e}", dir.display()))?;
@@ -2677,18 +2833,18 @@ fn batch_convert_one(
                     std::io::Write::flush(&mut w)
                 })
                 .map_err(|e| format!("writing {}: {e}", out.display()))?,
-            "chunks" => std::fs::write(&out, chunks_json(&document, &cfg.chunk)?)
+            "chunks" => std::fs::write(&out, chunks_json(document, &cfg.chunk)?)
                 .map_err(|e| format!("writing {}: {e}", out.display()))?,
             // #317: the upstream CLI writes the serializer's text verbatim.
             "latex" => std::fs::write(&out, document.export_to_latex())
                 .map_err(|e| format!("writing {}: {e}", out.display()))?,
             // #613: docling's `--to text` writes `export_to_text()` verbatim.
-            "text" => std::fs::write(&out, cfg.export.text(&document))
+            "text" => std::fs::write(&out, cfg.export.text(document))
                 .map_err(|e| format!("writing {}: {e}", out.display()))?,
             // #614: docling's `--to vtt` (`save_as_vtt`), verbatim.
             "vtt" => std::fs::write(&out, document.export_to_vtt())
                 .map_err(|e| format!("writing {}: {e}", out.display()))?,
-            "dclx" => docling::dclx::save_as_dclx(&document, &out).map_err(|e| e.to_string())?,
+            "dclx" => docling::dclx::save_as_dclx(document, &out).map_err(|e| e.to_string())?,
             // #515: the Pandoc AST; pictures follow `--images` like HTML,
             // embedded when it is not given (#537).
             "pandoc" => {
@@ -2697,7 +2853,7 @@ fn batch_convert_one(
                     .map(|s| s.to_string_lossy().trim_end_matches(".pandoc").to_string())
                     .unwrap_or_else(|| "document".into());
                 let (json, artifacts) = pandoc_json(
-                    &document,
+                    document,
                     cfg.pandoc_image_mode,
                     &format!("{stem}_artifacts"),
                 );
@@ -2723,7 +2879,7 @@ fn batch_convert_one(
                     .map(|s| s.to_string_lossy().into_owned())
                     .unwrap_or_else(|| "document".into());
                 let art = format!("{stem}_artifacts");
-                let (html, artifacts) = cfg.export.html(&document, cfg.image_mode, &art);
+                let (html, artifacts) = cfg.export.html(document, cfg.image_mode, &art);
                 let parent = out.parent().unwrap_or(Path::new(""));
                 for (rel, bytes) in &artifacts {
                     let target = parent.join(rel);
@@ -2739,7 +2895,7 @@ fn batch_convert_one(
             }
             _ => {
                 if cfg.image_mode == ImageMode::Placeholder {
-                    let (md, _) = cfg.export.markdown(&document, cfg.image_mode, "artifacts");
+                    let (md, _) = cfg.export.markdown(document, cfg.image_mode, "artifacts");
                     std::fs::write(&out, md)
                         .map_err(|e| format!("writing {}: {e}", out.display()))?;
                 } else {
@@ -2750,7 +2906,7 @@ fn batch_convert_one(
                         .map(|s| s.to_string_lossy().into_owned())
                         .unwrap_or_else(|| "document".into());
                     let art = format!("{stem}_artifacts");
-                    let (md, artifacts) = cfg.export.markdown(&document, cfg.image_mode, &art);
+                    let (md, artifacts) = cfg.export.markdown(document, cfg.image_mode, &art);
                     let parent = out.parent().unwrap_or(Path::new(""));
                     for (rel, bytes) in &artifacts {
                         let target = parent.join(rel);
@@ -2768,12 +2924,7 @@ fn batch_convert_one(
         }
         written.push(out);
     }
-    Ok(BatchOutcome {
-        written,
-        secs: started.elapsed().as_secs_f64(),
-        pages,
-        partial,
-    })
+    Ok(())
 }
 
 /// One batch file's result: the files written, the wall time, the page
@@ -2801,6 +2952,7 @@ fn write_output_file(
     sources: &[&String],
     hints: &SourceHints,
     cfg: &BatchCfg,
+    merge_archives: bool,
 ) -> ExitCode {
     let (files, preloaded) = match expand_sources(sources.iter().copied(), hints) {
         Ok(split) => split,
@@ -2809,7 +2961,7 @@ fn write_output_file(
             return ExitCode::from(code);
         }
     };
-    let (mut items, report) = expand_archives(files);
+    let (mut items, report) = expand_archives(files, merge_archives);
     items.extend(preloaded);
     if items.len() != 1 || report.failed + report.skipped > 0 {
         eprintln!(
