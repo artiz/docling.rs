@@ -41,7 +41,7 @@ struct Cell {
     ltr: bool,
     active: bool,
     lig_carry: bool, // last_merged_cell_was_ligature
-    font: u64,       // hash of the PDF font name+flags (for enforce_same_font)
+    font: u64,       // hash of docling-parse's font name (for enforce_same_font)
     // Cached invariants of `text` / the quad, maintained by `build_cells` and
     // `merge_with`. The contraction is quadratic in merge attempts, and
     // recomputing these per attempt (trim/char-count/ligature scans over the
