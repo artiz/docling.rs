@@ -532,7 +532,7 @@ jobs:
             v="$(grep -m1 '^version = ' ../../../Cargo.toml | sed -E 's/.*"([^"]+)".*/\1/')"
           fi
           sed -i -E "0,/^version = \".*\"/s//version = \"$v\"/" pyproject.toml
-          sed -i -E "s/\"docling-rs\[langchain\]==[^\"]*\"/\"docling-rs[langchain]==$v\"/" pyproject.toml
+          sed -i -E "s/\"docling-rs\[langchain\][^\"]*\"/\"docling-rs[langchain]==$v\"/" pyproject.toml
           grep -q "\"docling-rs\[langchain\]==$v\"" pyproject.toml
           echo "Building langchain-docling-rs $v (pins docling-rs[langchain]==$v)"
 
@@ -590,15 +590,18 @@ jobs:
         with:
           ref: ${{ inputs.tag || github.ref }}
 
+      # The directory is taken from the dispatched ref when the checked-out
+      # tag lacks it — or has it in an older, unpublishable shape (v2.35.0
+      # carries the pre-publishing skeleton without the version pin).
       - name: Package source
         shell: bash
         run: |
-          if [ ! -d crates/docling-py/llamaindex ]; then
-            echo "crates/docling-py/llamaindex is not in the checked-out ref; taking it from ${GITHUB_SHA}"
+          if ! grep -q '"docling-rs\[llamaindex\]==' crates/docling-py/llamaindex/pyproject.toml 2>/dev/null; then
+            echo "crates/docling-py/llamaindex is missing or predates publishing in the checked-out ref; taking it from ${GITHUB_SHA}"
             git fetch --depth=1 origin "${GITHUB_SHA}"
             git checkout "${GITHUB_SHA}" -- crates/docling-py/llamaindex
           fi
-          test -f crates/docling-py/llamaindex/pyproject.toml
+          grep -q '"docling-rs\[llamaindex\]==' crates/docling-py/llamaindex/pyproject.toml
 
       - name: Resolve version and pin docling-rs
         shell: bash
@@ -610,7 +613,7 @@ jobs:
             v="$(grep -m1 '^version = ' ../../../Cargo.toml | sed -E 's/.*"([^"]+)".*/\1/')"
           fi
           sed -i -E "0,/^version = \".*\"/s//version = \"$v\"/" pyproject.toml
-          sed -i -E "s/\"docling-rs\[llamaindex\]==[^\"]*\"/\"docling-rs[llamaindex]==$v\"/" pyproject.toml
+          sed -i -E "s/\"docling-rs\[llamaindex\][^\"]*\"/\"docling-rs[llamaindex]==$v\"/" pyproject.toml
           grep -q "\"docling-rs\[llamaindex\]==$v\"" pyproject.toml
           echo "Building llama-index-readers-docling-rs $v (pins docling-rs[llamaindex]==$v)"
 
