@@ -431,6 +431,43 @@ tokens); its `tokenizer.json` (~0.5 MB) is fetched into the model cache on
 the first load when not already there — docling likewise pulls it from the
 Hugging Face Hub. `lazy_load()` converts and chunks one input at a time.
 
+## LlamaIndex
+
+`docling_rs.llamaindex` is the port of LlamaIndex's
+[`llama-index-readers-docling`](https://github.com/run-llama/llama_index/tree/main/llama-index-integrations/readers/llama-index-readers-docling)
+— the same `DoclingReader`, on the Rust engine:
+
+```bash
+pip install "docling-rs[llamaindex]"
+```
+
+```python
+# was:  from llama_index.readers.docling import DoclingReader
+from docling_rs.llamaindex import DoclingReader
+
+reader = DoclingReader()                                    # Markdown per input (default)
+docs = reader.load_data(file_path=["https://arxiv.org/pdf/2408.09869", "notes.docx"])
+
+reader = DoclingReader(export_type=DoclingReader.ExportType.JSON)   # docling's native JSON, for a Docling node parser
+```
+
+```python
+from llama_index.core import SimpleDirectoryReader
+
+docs = SimpleDirectoryReader(input_dir="docs/", file_extractor={".pdf": reader, ".docx": reader}).load_data()
+```
+
+| Parameter | Default | |
+|---|---|---|
+| `export_type` | `ExportType.MARKDOWN` | one `Document` per input holding its Markdown; `ExportType.JSON` = its `DoclingDocument` as JSON |
+| `doc_converter` | `docling_rs.DocumentConverter()` | configure it as usual (`do_ocr=False`, `ocr_lang=…`, `text_layer_only=True`, …) |
+| `md_export_kwargs` | `{"image_placeholder": ""}` | kwargs for `export_to_markdown()` |
+| `id_func` | a random UUID per document | `(doc, file_path) -> str` |
+
+`load_data` / `lazy_load_data(file_path, extra_info=None)` take a path or URL
+or an iterable of them; `extra_info` becomes each document's `metadata` (a
+copy per document). `SimpleDirectoryReader` adds its own file metadata.
+
 **Picture descriptions with any LangChain chat model** — langchain-docling's
 `PictureDescriptionLangChainOptions`, set on the pipeline options as in
 docling (`do_picture_description`; `allow_external_plugins` is accepted but

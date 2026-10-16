@@ -1,0 +1,47 @@
+# `llama-index-readers-docling-rs`: the LlamaIndex reader package in the shape
+# of run-llama/llama_index's `llama-index-integrations/readers/*` — prepared
+# here for the upstream PR that lists it on LlamaHub. It has no code of its
+# own: the reader is `docling_rs.llamaindex.DoclingReader`, shipped in the
+# docling-rs wheel; this package pins that wheel (with its `llamaindex`
+# extra) under the `llama_index.readers.docling_rs` namespace. The committed
+# version is a placeholder.
+[build-system]
+requires = ["hatchling>=1.24"]
+build-backend = "hatchling.build"
+
+[project]
+name = "llama-index-readers-docling-rs"
+version = "0.1.0"
+description = "LlamaIndex reader for docling.rs: PDF with layout, tables and OCR, DOCX, PPTX, XLSX, HTML and 40-odd formats into LlamaIndex Documents as Markdown or docling JSON. docling in Rust, no PyTorch."
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.9"
+authors = [{ name = "docling.rs contributors" }]
+keywords = ["llama-index", "llamaindex", "reader", "docling", "pdf", "docx", "rag", "ocr", "document-conversion"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+dependencies = [
+    "llama-index-core>=0.12,<0.15",
+    "docling-rs[llamaindex]>=2.34",
+]
+
+[project.urls]
+Homepage = "https://github.com/docling-project/docling.rs"
+Repository = "https://github.com/docling-project/docling.rs"
+Documentation = "https://github.com/docling-project/docling.rs/blob/master/crates/docling-py/README.md#llamaindex"
+Issues = "https://github.com/docling-project/docling.rs/issues"
+
+[tool.hatch.build.targets.wheel]
+packages = ["llama_index/"]
+
+[tool.llamahub]
+contains_example = false
+import_path = "llama_index.readers.docling_rs"
+
+[tool.llamahub.class_authors]
+DoclingRsReader = "artiz"
