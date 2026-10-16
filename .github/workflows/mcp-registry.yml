@@ -109,8 +109,22 @@ jobs:
       - name: Authenticate (GitHub OIDC)
         run: ./mcp-publisher login github-oidc
 
+      # A re-run of the release workflow for a tag already in the registry
+      # (re-publishing a sibling package, say) must not fail here: the
+      # registry refuses a duplicate version, and that is the state we want.
       - name: Publish
-        run: ./mcp-publisher publish
+        shell: bash
+        run: |
+          set +e
+          out=$(./mcp-publisher publish 2>&1)
+          code=$?
+          set -e
+          echo "$out"
+          if [ "$code" -ne 0 ] && grep -q "duplicate version" <<<"$out"; then
+            echo "::notice::this version is already in the MCP registry; nothing to publish"
+            exit 0
+          fi
+          exit "$code"
 
   bundle:
     name: MCP bundle (.mcpb) → Smithery + release
