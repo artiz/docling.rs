@@ -30,7 +30,11 @@ reproduce it byte for byte (see "Conformance & fixtures").
   (install.sh takes the newest release that has its binary; the asset-only
   `npm-cuda-v*` / `models-v*` releases are created `--latest=false`, #707).
   Each also runs alone (`-f
-  tag=vX.Y.Z`) to repair a failed channel. A release per merge outgrew PyPI's
+  tag=vX.Y.Z`) to repair a failed channel. The release job also comments
+  "Shipped in vX.Y.Z" on every issue the release's commits and merged PRs
+  reference (`scripts/ci/release_issue_comments.sh`: `Closes/Refs #NN` in
+  commit messages and PR descriptions, GitHub's own PR→issue links) — one
+  more reason to put `Closes #NN` / `Refs #NN` in the commit message. A release per merge outgrew PyPI's
   10 GiB per-project limit (v2.22.0 failed half-way);
   `scripts/ci/pypi_room.py` refuses an upload that would not fit.
 - Claude Web: **Never open pull requests on `artiz/docling.rs`.** Push a `claude/<topic>`
