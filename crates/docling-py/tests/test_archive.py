@@ -51,6 +51,27 @@ def test_bytes_and_streams_convert_too():
     assert sum(i.outcome == "converted" for i in from_bytes) == 2
 
 
+def test_nested_archives_open_under_max_depth(monkeypatch):
+    """#677: a ZIP inside the archive is read under ``DOCLING_RS_ZIP_MAX_DEPTH``
+    (read when the converter is made), its entries as ``inner.zip/<path>``."""
+    inner = io.BytesIO()
+    with zipfile.ZipFile(inner, "w") as z:
+        z.writestr("doc.md", "# Inner\n")
+    outer = io.BytesIO()
+    with zipfile.ZipFile(outer, "w") as z:
+        z.writestr("a.md", "# A\n")
+        z.writestr("inner.zip", inner.getvalue())
+    shut = list(docling_rs.DocumentConverter().convert_archive(outer.getvalue()))
+    assert [(i.path, i.outcome) for i in shut] == [("a.md", "converted"), ("inner.zip", "skipped")]
+    monkeypatch.setenv("DOCLING_RS_ZIP_MAX_DEPTH", "2")
+    opened = list(docling_rs.DocumentConverter().convert_archive(outer.getvalue()))
+    assert [(i.path, i.outcome) for i in opened] == [
+        ("a.md", "converted"),
+        ("inner.zip/doc.md", "converted"),
+    ]
+    assert "# Inner" in opened[1].result.document.export_to_markdown()
+
+
 def test_not_an_archive_raises():
     with pytest.raises(docling_rs.ConversionError):
         list(docling_rs.DocumentConverter().convert_archive(b"plain text"))

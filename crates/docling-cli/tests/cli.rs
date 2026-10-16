@@ -716,8 +716,10 @@ fn images_scale_out_of_range_is_a_usage_error() {
 /// A `.zip` source expands into the documents it holds (#557): each lands
 /// under `out/<archive>/<entry path>`, what does not convert is reported and
 /// left out, nothing escapes `--output`, and a lone archive without
-/// `--output` is a usage error (it is many documents). A directory sweep
-/// still takes only convertible extensions — archives in it stay untouched.
+/// `--output` is one merged document on stdout (#677) — or, under
+/// `--no-archive-merge`, a usage error (it is many documents). A directory
+/// sweep still takes only convertible extensions — archives in it stay
+/// untouched.
 #[test]
 fn zip_sources_convert_each_document_inside() {
     let src = Scratch::new("zip");
@@ -751,7 +753,19 @@ fn zip_sources_convert_each_document_inside() {
         "stderr: {stderr}"
     );
 
-    let (code, _, stderr) = run(&[&src.path("bundle.zip")]);
+    // #677: a lone archive on stdout is one document, its skips on stderr.
+    let (code, stdout, stderr) = run(&[&src.path("bundle.zip")]);
+    assert_eq!(code, 0, "stderr: {stderr}");
+    assert_eq!(stdout, "## a.md\n\n# A\n\nalpha\n\n## sub/b.md\n\n# B\n");
+    assert!(
+        stderr.contains("skip: ") && stderr.contains("tool.exe: unsupported file type"),
+        "stderr: {stderr}"
+    );
+    assert!(
+        stderr.contains("../evil.md: unsafe path"),
+        "stderr: {stderr}"
+    );
+    let (code, _, stderr) = run(&[&src.path("bundle.zip"), "--no-archive-merge"]);
     assert_eq!(code, 2);
     assert!(stderr.contains("needs --output DIR"), "stderr: {stderr}");
 
@@ -763,6 +777,145 @@ fn zip_sources_convert_each_document_inside() {
     assert_eq!(code, 0, "stderr: {stderr}");
     assert!(swept.0.join("c.md").is_file());
     assert!(!swept.0.join("bundle").exists(), "stderr: {stderr}");
+}
+
+/// `--archive-merge` (#677) under `--output DIR` and `--output-file`: the
+/// archive is one item, `DIR/<archive>.<ext>` — every `--to` format — with
+/// no per-entry tree; a failed entry is reported and left out, an archive
+/// holding nothing convertible fails.
+#[test]
+fn archive_merge_is_one_output_per_archive() {
+    let src = Scratch::new("zip-merge");
+    let zip = docling::dclx::zip_bytes(vec![
+        ("a.md", b"# A\n\nalpha\n".as_slice()),
+        ("broken.docx", b"not a zip at all".as_slice()),
+        ("sub/b.md", b"# B\n".as_slice()),
+    ]);
+    std::fs::write(src.0.join("bundle.zip"), &zip).unwrap();
+    let out = Scratch::new("zip-merge-out");
+    let (code, stdout, stderr) = run(&[
+        &src.path("bundle.zip"),
+        "--archive-merge",
+        "--output",
+        &out.path(""),
+        "--to",
+        "md,json",
+    ]);
+    assert_eq!(code, 0, "stderr: {stderr}");
+    assert!(
+        stdout.contains("bundle.md") && stdout.contains("bundle.json"),
+        "stdout: {stdout}"
+    );
+    assert!(!out.0.join("bundle").exists());
+    let md = std::fs::read_to_string(out.0.join("bundle.md")).unwrap();
+    assert_eq!(md, "## a.md\n\n# A\n\nalpha\n\n## sub/b.md\n\n# B\n");
+    let json = std::fs::read_to_string(out.0.join("bundle.json")).unwrap();
+    assert!(
+        json.contains("\"section_header\"") && json.contains("\"sub/b.md\""),
+        "{json}"
+    );
+    assert!(
+        stderr.contains("error: ") && stderr.contains("bundle.zip:broken.docx"),
+        "stderr: {stderr}"
+    );
+    assert!(
+        stderr.contains("batch: 1 converted, 0 failed"),
+        "stderr: {stderr}"
+    );
+
+    // `--output-file` merges by default, as stdout does.
+    let target = out.path("one/bundle.markdown");
+    let (code, stdout, stderr) = run(&[&src.path("bundle.zip"), "--output-file", &target]);
+    assert_eq!(code, 0, "stderr: {stderr}");
+    assert!(stdout.is_empty(), "stdout: {stdout}");
+    assert_eq!(std::fs::read_to_string(&target).unwrap(), md);
+
+    // Nothing convertible: an error, not an empty document.
+    let empty = docling::dclx::zip_bytes(vec![("tool.exe", b"MZ".as_slice())]);
+    std::fs::write(src.0.join("empty.zip"), &empty).unwrap();
+    let (code, stdout, stderr) = run(&[&src.path("empty.zip")]);
+    assert_eq!(code, 1, "stderr: {stderr}");
+    assert!(stdout.is_empty(), "stdout: {stdout}");
+    assert!(
+        stderr.contains("holds no document to convert"),
+        "stderr: {stderr}"
+    );
+}
+
+/// #677's acceptance: MarkItDown's `test_files.zip` on stdout is one Markdown
+/// with a `## <entry>` section per entry — `test.docx`'s holding the AutoGen
+/// paper — in archive order; a nested ZIP is read under
+/// `DOCLING_RS_ZIP_MAX_DEPTH`, its entries as `inner.zip/<path>`.
+#[test]
+fn markitdown_zip_is_one_markdown_on_stdout() {
+    let zip = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../docling-py/tests/data/markitdown/test_files.zip"
+    );
+    let (code, stdout, stderr) = run(&[zip]);
+    assert_eq!(code, 0, "stderr: {stderr}");
+    let sections: Vec<&str> = stdout
+        .lines()
+        .filter(|l| l.starts_with("## test"))
+        .collect();
+    assert_eq!(
+        sections,
+        [
+            "## test.docx",
+            "## test.pptx",
+            "## test.xlsx",
+            "## test_blog.html",
+            "## test_serp.html",
+            "## test_wikipedia.html",
+        ],
+        "{sections:?}"
+    );
+    let docx = stdout.find("## test.docx\n").unwrap();
+    let pptx = stdout.find("## test.pptx\n").unwrap();
+    assert!(
+        stdout[docx..pptx]
+            .contains("AutoGen: Enabling Next-Gen LLM Applications via Multi-Agent Conversation"),
+        "{}",
+        &stdout[docx..pptx.min(docx + 400)]
+    );
+    for expected in [
+        "314b0a30-5b04-470b-b9f7-eed2c2bec74a",
+        "6ff4173b-42a5-4784-9b19-f49caff4d93d",
+        "Microsoft was founded by [Bill Gates](/wiki/Bill_Gates)",
+    ] {
+        assert!(stdout.contains(expected), "missing {expected}");
+    }
+
+    // Nested: the fixture inside another archive, read one level down.
+    let src = Scratch::new("zip-nested");
+    let outer = docling::dclx::zip_bytes(vec![
+        ("readme.md", b"# Outer\n".as_slice()),
+        (
+            "inner/test_files.zip",
+            std::fs::read(zip).unwrap().as_slice(),
+        ),
+    ]);
+    std::fs::write(src.0.join("outer.zip"), &outer).unwrap();
+    let (code, stdout, stderr) = run(&[&src.path("outer.zip")]);
+    assert_eq!(code, 0, "stderr: {stderr}");
+    assert_eq!(stdout, "## readme.md\n\n# Outer\n");
+    assert!(
+        stderr.contains("inner/test_files.zip: nested archive"),
+        "stderr: {stderr}"
+    );
+    let out = Command::new(env!("CARGO_BIN_EXE_docling-rs"))
+        .arg(src.path("outer.zip"))
+        .env("DOCLING_RS_ZIP_MAX_DEPTH", "2")
+        .output()
+        .expect("run docling-rs");
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert_eq!(out.status.code(), Some(0));
+    assert!(
+        stdout.starts_with("## readme.md\n\n# Outer\n\n## inner/test_files.zip/test.docx\n"),
+        "{}",
+        &stdout[..stdout.len().min(300)]
+    );
+    assert!(stdout.contains("## inner/test_files.zip/test_wikipedia.html\n"));
 }
 
 const PDF_FIXTURES: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../../tests/data/pdf/sources");

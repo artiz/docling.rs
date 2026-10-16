@@ -46,6 +46,8 @@ docling-rs --to md,json report.pdf --output ./converted          # report.md + r
 docling-rs --input '/data/reports/**/*.pdf' --output ./out --to json   # tree kept: out/2024/q1/a.json
 docling-rs --input /data/reports --output ./out                  # recursive sweep, convertible files only
 docling-rs bundle.zip --output out/                              # every document inside: out/bundle/<entry>.md (#557)
+docling-rs bundle.zip > bundle.md                                # one document: `## <entry path>` + each entry (#677)
+docling-rs bundle.zip --archive-merge --output out/              # the same, as out/bundle.md
 ```
 
 | Flag | Meaning |

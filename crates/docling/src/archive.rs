@@ -9,7 +9,16 @@
 //! [`SourceDocument`], never more than the size its header declared.
 //! [`DocumentConverter::convert_archive`] puts the two together as a lazy
 //! iterator of per-entry outcomes, so one broken document never fails the
-//! rest.
+//! rest; [`DocumentConverter::convert_archive_merged`] folds them into one
+//! document (#677) — MarkItDown's `_zip_converter` shape, each entry under a
+//! level-2 heading naming its path.
+//!
+//! A ZIP inside the archive is read too when [`ArchiveLimits::max_depth`]
+//! allows it (#677): its entries are listed as `inner.zip/<path>` beside the
+//! outer ones and share the outer archive's entry count and size budget, so
+//! a bomb cannot hide one level down. The default depth of 1 keeps nested
+//! archives shut, as before. Other archive types (tar, 7z, rar, gzip) are
+//! never opened.
 //!
 //! An archive is not one document, so it has no [`InputFormat`]:
 //! `InputFormat::from_extension("zip")` stays `None` and
@@ -19,9 +28,12 @@
 //! are documents, not archives, and convert as before.
 //!
 //! [`DocumentConverter::convert_archive`]: crate::DocumentConverter::convert_archive
+//! [`DocumentConverter::convert_archive_merged`]: crate::DocumentConverter::convert_archive_merged
 //! [`DocumentConverter::convert`]: crate::DocumentConverter::convert
 
-use std::io::{Read, Seek};
+use std::io::{Cursor, Read, Seek};
+
+use docling_core::{DoclingDocument, Node};
 
 use crate::error::ConversionError;
 use crate::format::InputFormat;
@@ -46,7 +58,16 @@ pub struct ArchiveLimits {
     /// Largest uncompressed : compressed ratio accepted for an entry over
     /// 1 MiB (text compresses 5–20×; a bomb, 1000× and more). Default 200.
     pub max_compression_ratio: u64,
+    /// How deep ZIP archives inside the archive are read (#677): 1 (the
+    /// default) converts the archive's own entries and skips the archives in
+    /// it, 2 reads the ZIPs it holds too, 3 the ZIPs inside those. Clamped
+    /// to `1..=3`. Every level shares the one entry count and size budget,
+    /// and a nested archive's own bytes count against it as well.
+    pub max_depth: usize,
 }
+
+/// The deepest nesting [`ArchiveLimits::max_depth`] can ask for.
+pub const MAX_ARCHIVE_DEPTH: usize = 3;
 
 impl Default for ArchiveLimits {
     fn default() -> Self {
@@ -55,14 +76,16 @@ impl Default for ArchiveLimits {
             max_entry_size: 256 << 20,
             max_total_size: 1 << 30,
             max_compression_ratio: 200,
+            max_depth: 1,
         }
     }
 }
 
 impl ArchiveLimits {
     /// The defaults with the `DOCLING_RS_ZIP_MAX_ENTRIES`,
-    /// `DOCLING_RS_ZIP_MAX_ENTRY_MB`, `DOCLING_RS_ZIP_MAX_TOTAL_MB` and
-    /// `DOCLING_RS_ZIP_MAX_RATIO` overrides — what the CLI and serve use.
+    /// `DOCLING_RS_ZIP_MAX_ENTRY_MB`, `DOCLING_RS_ZIP_MAX_TOTAL_MB`,
+    /// `DOCLING_RS_ZIP_MAX_RATIO` and `DOCLING_RS_ZIP_MAX_DEPTH` overrides —
+    /// what the CLI and serve use.
     pub fn from_env() -> Self {
         let d = Self::default();
         let mb = |name: &str, default: u64| {
@@ -75,7 +98,13 @@ impl ArchiveLimits {
             max_total_size: mb("DOCLING_RS_ZIP_MAX_TOTAL_MB", d.max_total_size),
             max_compression_ratio: docling_core::env::parse("DOCLING_RS_ZIP_MAX_RATIO")
                 .unwrap_or(d.max_compression_ratio),
+            max_depth: docling_core::env::parse("DOCLING_RS_ZIP_MAX_DEPTH").unwrap_or(d.max_depth),
         }
+    }
+
+    /// `max_depth` as applied: at least 1, at most [`MAX_ARCHIVE_DEPTH`].
+    pub fn depth(&self) -> usize {
+        self.max_depth.clamp(1, MAX_ARCHIVE_DEPTH)
     }
 }
 
@@ -86,10 +115,12 @@ const RATIO_FLOOR: u64 = 1 << 20;
 /// One file entry of an archive as listed by [`Archive::open`].
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ArchiveEntryInfo {
-    /// Position in the archive's central directory (for [`Archive::read`]).
+    /// The entry's position in [`Archive::entries`] — what
+    /// [`Archive::read`] takes.
     pub index: usize,
-    /// The entry's path inside the archive, `/`-separated. For a skipped
-    /// entry with an unsafe name, the raw name as stored.
+    /// The entry's path inside the archive, `/`-separated; inside a nested
+    /// archive, `inner.zip/<path>` (#677). For a skipped entry with an
+    /// unsafe name, the raw name as stored.
     pub path: String,
     /// The format the entry converts as (from its extension); `None` when
     /// it is skipped.
@@ -103,27 +134,61 @@ pub struct ArchiveEntryInfo {
 /// A ZIP archive opened for conversion. See the [module docs](self).
 pub struct Archive<R> {
     zip: zip::ZipArchive<R>,
+    /// The ZIP archives inside this one, opened under
+    /// [`ArchiveLimits::max_depth`] (#677), in the order met.
+    nested: Vec<Archive<Cursor<Vec<u8>>>>,
     entries: Vec<ArchiveEntryInfo>,
+    /// Where each of `entries` lives, in step with it.
+    locations: Vec<Location>,
+}
+
+/// Where an entry's bytes are: this archive's central directory, or an
+/// entry of a nested archive.
+#[derive(Debug, Clone, Copy)]
+enum Location {
+    Own(usize),
+    Nested { archive: usize, index: usize },
+}
+
+/// What the whole archive — every nesting level — has used of the limits.
+#[derive(Default)]
+struct Budget {
+    entries: usize,
+    total: u64,
 }
 
 impl<R: Read + Seek> Archive<R> {
     /// Read the archive's directory and classify every file entry. Fails only
     /// when `reader` is not a readable ZIP archive.
     pub fn open(reader: R, limits: &ArchiveLimits) -> Result<Self, ConversionError> {
+        Self::open_at(reader, limits, 1, &mut Budget::default())
+    }
+
+    /// [`open`](Self::open) at nesting level `depth` (1 = the archive itself),
+    /// drawing on the budget the outer levels share.
+    fn open_at(
+        reader: R,
+        limits: &ArchiveLimits,
+        depth: usize,
+        budget: &mut Budget,
+    ) -> Result<Self, ConversionError> {
         let mut zip = zip::ZipArchive::new(reader)
             .map_err(|e| ConversionError::Parse(format!("zip: {e}")))?;
-        let mut entries = Vec::new();
-        let mut total: u64 = 0;
+        let mut nested = Vec::new();
+        let mut entries: Vec<ArchiveEntryInfo> = Vec::new();
+        let mut locations = Vec::new();
         for index in 0..zip.len() {
             // Raw access reads the local header only — nothing is inflated.
             let Ok(file) = zip.by_index_raw(index) else {
                 entries.push(ArchiveEntryInfo {
-                    index,
+                    index: entries.len(),
                     path: format!("#{index}"),
                     format: None,
                     skipped: Some("unreadable entry header".into()),
                     size: 0,
                 });
+                locations.push(Location::Own(index));
+                budget.entries += 1;
                 continue;
             };
             if file.is_dir() {
@@ -135,46 +200,97 @@ impl<R: Read + Seek> Archive<R> {
                 .enclosed_name()
                 .map(|p| p.to_string_lossy().replace('\\', "/"));
             let path = safe.clone().unwrap_or_else(|| file.name().to_string());
+            let encrypted = file.encrypted();
+            drop(file);
             let skip = |why: &str| Some(why.to_string());
-            let mut format = None;
-            let skipped = if entries.len() >= limits.max_entries {
-                skip("over the archive's entry limit")
-            } else if safe.is_none() {
-                // An absolute path or one climbing out with `..`: never
-                // honoured, never written anywhere.
-                skip("unsafe path")
-            } else if file.encrypted() {
-                skip("encrypted")
-            } else if is_macos_metadata(&path) {
-                skip("macOS metadata")
-            } else if is_archive(&path) {
-                skip("nested archive")
-            } else if let Some(f) = extension(&path).and_then(InputFormat::from_extension) {
+            // The size checks every inflated entry passes — a document, or a
+            // nested archive (#677) whose bytes are held while it is read.
+            let over_size = |budget: &Budget| {
                 if size > limits.max_entry_size {
                     skip("larger than the per-entry size limit")
                 } else if size > RATIO_FLOOR
                     && size / compressed.max(1) > limits.max_compression_ratio
                 {
                     skip("compression ratio over the limit")
-                } else if total.saturating_add(size) > limits.max_total_size {
+                } else if budget.total.saturating_add(size) > limits.max_total_size {
                     skip("over the archive's total size limit")
                 } else {
-                    total += size;
-                    format = Some(f);
                     None
+                }
+            };
+            let mut format = None;
+            let skipped = if budget.entries >= limits.max_entries {
+                skip("over the archive's entry limit")
+            } else if safe.is_none() {
+                // An absolute path or one climbing out with `..`: never
+                // honoured, never written anywhere.
+                skip("unsafe path")
+            } else if encrypted {
+                skip("encrypted")
+            } else if is_macos_metadata(&path) {
+                skip("macOS metadata")
+            } else if is_zip_name(&path) && depth < limits.depth() {
+                match over_size(budget) {
+                    Some(why) => Some(why),
+                    None => {
+                        budget.total += size;
+                        budget.entries += 1;
+                        let inner = inflate(&mut zip, index, size, &path).and_then(|bytes| {
+                            Archive::open_at(Cursor::new(bytes), limits, depth + 1, budget)
+                        });
+                        match inner {
+                            Ok(inner) => {
+                                let slot = nested.len();
+                                for e in &inner.entries {
+                                    entries.push(ArchiveEntryInfo {
+                                        index: entries.len(),
+                                        path: format!("{path}/{}", e.path),
+                                        format: e.format,
+                                        skipped: e.skipped.clone(),
+                                        size: e.size,
+                                    });
+                                    locations.push(Location::Nested {
+                                        archive: slot,
+                                        index: e.index,
+                                    });
+                                }
+                                nested.push(inner);
+                                continue;
+                            }
+                            Err(e) => Some(format!("nested archive: {e}")),
+                        }
+                    }
+                }
+            } else if is_archive(&path) {
+                skip("nested archive")
+            } else if let Some(f) = extension(&path).and_then(InputFormat::from_extension) {
+                match over_size(budget) {
+                    Some(why) => Some(why),
+                    None => {
+                        budget.total += size;
+                        format = Some(f);
+                        None
+                    }
                 }
             } else {
                 skip("unsupported file type")
             };
             entries.push(ArchiveEntryInfo {
-                index,
+                index: entries.len(),
                 path,
                 format,
                 skipped,
                 size,
             });
+            locations.push(Location::Own(index));
+            budget.entries += 1;
         }
-        Ok(Self { zip, entries })
+        Ok(Self {
+            zip,
+            nested,
+            entries,
+            locations,
+        })
     }
 
     /// The archive's file entries in directory order, converted or skipped.
@@ -182,15 +298,14 @@ impl<R: Read + Seek> Archive<R> {
         &self.entries
     }
 
-    /// Extract the entry at directory position `index` as a source document
-    /// named after its file stem. Errors for an entry [`open`](Self::open)
-    /// skipped, one that fails to inflate, or one that turns out larger than
-    /// its header declared.
+    /// Extract the entry at position `index` of [`entries`](Self::entries) as
+    /// a source document named after its file stem. Errors for an entry
+    /// [`open`](Self::open) skipped, one that fails to inflate, or one that
+    /// turns out larger than its header declared.
     pub fn read(&mut self, index: usize) -> Result<SourceDocument, ConversionError> {
         let info = self
             .entries
-            .iter()
-            .find(|e| e.index == index)
+            .get(index)
             .ok_or_else(|| ConversionError::Parse(format!("zip: no entry #{index}")))?;
         let format = match (&info.format, &info.skipped) {
             (Some(f), None) => *f,
@@ -203,20 +318,10 @@ impl<R: Read + Seek> Archive<R> {
             }
         };
         let (path, declared) = (info.path.clone(), info.size);
-        let file = self
-            .zip
-            .by_index(index)
-            .map_err(|e| ConversionError::Parse(format!("zip: {path}: {e}")))?;
-        // Never more than the header promised (which the limits vetted).
-        let mut bytes = Vec::with_capacity(declared.min(64 << 20) as usize);
-        file.take(declared.saturating_add(1))
-            .read_to_end(&mut bytes)
-            .map_err(|e| ConversionError::Parse(format!("zip: {path}: {e}")))?;
-        if bytes.len() as u64 > declared {
-            return Err(ConversionError::Parse(format!(
-                "zip: {path}: larger than its header declares"
-            )));
-        }
+        let bytes = match self.locations[index] {
+            Location::Own(cd) => inflate(&mut self.zip, cd, declared, &path)?,
+            Location::Nested { archive, index } => return self.nested[archive].read(index),
+        };
         let name = path
             .rsplit('/')
             .next()
@@ -226,6 +331,29 @@ impl<R: Read + Seek> Archive<R> {
             .to_string();
         Ok(SourceDocument::from_bytes(name, format, bytes))
     }
+}
+
+/// Inflate the entry at central-directory position `cd` — never more than
+/// the `declared` size (which the limits vetted).
+fn inflate<R: Read + Seek>(
+    zip: &mut zip::ZipArchive<R>,
+    cd: usize,
+    declared: u64,
+    path: &str,
+) -> Result<Vec<u8>, ConversionError> {
+    let file = zip
+        .by_index(cd)
+        .map_err(|e| ConversionError::Parse(format!("zip: {path}: {e}")))?;
+    let mut bytes = Vec::with_capacity(declared.min(64 << 20) as usize);
+    file.take(declared.saturating_add(1))
+        .read_to_end(&mut bytes)
+        .map_err(|e| ConversionError::Parse(format!("zip: {path}: {e}")))?;
+    if bytes.len() as u64 > declared {
+        return Err(ConversionError::Parse(format!(
+            "zip: {path}: larger than its header declares"
+        )));
+    }
+    Ok(bytes)
 }
 
 /// What became of one archive entry.
@@ -299,13 +427,93 @@ impl DocumentConverter {
     }
 }
 
-/// Whether an entry is a ZIP/tar/7z/rar archive by its extension — never
-/// descended into (one level is the contract; a nested bomb stays shut).
+/// One document for a whole archive (#677) — what
+/// [`DocumentConverter::convert_archive_merged`] returns: per converted
+/// entry, in directory order, a level-2 heading with the entry's path and
+/// then the entry's content (MarkItDown's `_zip_converter` shape, `## File:`
+/// prefix aside); the entries not in it, and why.
+///
+/// [`DocumentConverter::convert_archive_merged`]: crate::DocumentConverter::convert_archive_merged
+#[derive(Debug)]
+pub struct MergedArchive {
+    /// The merged document, named after the archive. Page markers of the
+    /// entries are dropped (several documents' pages do not make one page
+    /// map); the rest of each entry's nodes and links follow its heading.
+    pub document: DoclingDocument,
+    /// Entries converted into the document.
+    pub converted: usize,
+    /// Entries not attempted — `(path, reason)`.
+    pub skipped: Vec<(String, String)>,
+    /// Entries that failed — `(path, error)`; the others are unaffected.
+    pub failed: Vec<(String, ConversionError)>,
+    /// Problems the converted entries survived (a spent timeout): docling's
+    /// `ConversionResult.errors`, each message prefixed with the entry's path.
+    pub errors: Vec<crate::result::ErrorItem>,
+}
+
+impl DocumentConverter {
+    /// Convert every document inside a ZIP archive into one document
+    /// (#677): `name` names it, each converted entry contributes a level-2
+    /// heading with its path and its content, in directory order. The
+    /// document carries this converter's serializer settings like any
+    /// [`convert`](Self::convert) result. Errors only when `reader` is not a
+    /// ZIP archive; an entry that fails or is skipped is reported in the
+    /// result and leaves the others alone.
+    pub fn convert_archive_merged<R: Read + Seek>(
+        &self,
+        name: &str,
+        reader: R,
+    ) -> Result<MergedArchive, ConversionError> {
+        let mut merged = MergedArchive {
+            document: DoclingDocument::new(name),
+            converted: 0,
+            skipped: Vec::new(),
+            failed: Vec::new(),
+            errors: Vec::new(),
+        };
+        for item in self.convert_archive(reader)? {
+            match item.outcome {
+                ArchiveOutcome::Converted(result) => {
+                    merged.converted += 1;
+                    merged.document.nodes.push(Node::Heading {
+                        level: 2,
+                        text: item.path.clone(),
+                    });
+                    merged.document.nodes.extend(
+                        result
+                            .document
+                            .nodes
+                            .into_iter()
+                            .filter(|n| !matches!(n, Node::PageInfo { .. })),
+                    );
+                    merged.document.links.extend(result.document.links);
+                    merged.errors.extend(result.errors.into_iter().map(|mut e| {
+                        e.error_message = format!("{}: {}", item.path, e.error_message);
+                        e
+                    }));
+                }
+                ArchiveOutcome::Skipped(reason) => merged.skipped.push((item.path, reason)),
+                ArchiveOutcome::Failed(e) => merged.failed.push((item.path, e)),
+            }
+        }
+        self.finish_document(&mut merged.document);
+        Ok(merged)
+    }
+}
+
+/// Whether an entry is a ZIP/tar/7z/rar archive by its extension. A ZIP is
+/// descended into under [`ArchiveLimits::max_depth`] (#677); the others
+/// never are.
 pub fn is_archive(path: &str) -> bool {
     matches!(
         extension(path).map(|e| e.to_ascii_lowercase()).as_deref(),
         Some("zip" | "7z" | "rar" | "tar" | "gz" | "tgz" | "bz2" | "xz" | "zst")
     )
+}
+
+/// A `.zip` entry — the one archive type read when the depth allows.
+fn is_zip_name(path: &str) -> bool {
+    extension(path).is_some_and(|e| e.eq_ignore_ascii_case("zip"))
 }
 
 /// `__MACOSX/…` resource forks and `._name` AppleDouble files: Finder's
@@ -449,6 +657,185 @@ mod tests {
         );
         assert!(archive.read(0).is_err());
         assert_eq!(archive.read(1).unwrap().bytes, b"y");
+    }
+
+    /// #677: a ZIP inside the archive opens under `max_depth` — its entries
+    /// listed as `inner.zip/<path>` and readable — and stays a skipped
+    /// "nested archive" at the default depth of 1; the depth clamps to 3;
+    /// a `.zip` that is not one is skipped with the reason; tar and the
+    /// like are never opened.
+    #[test]
+    fn nested_zips_open_under_max_depth() {
+        let deepest = zip_of(&[("deep.md", b"# Deep")]);
+        let inner = zip_of(&[
+            ("doc.md", b"# Inner"),
+            ("more/inner2.zip", &deepest),
+            ("tool.exe", b"MZ"),
+        ]);
+        let data = zip_of(&[
+            ("a.md", b"# A"),
+            ("inner.zip", &inner),
+            ("fake.zip", b"nope"),
+            ("notes.tar", b"x"),
+        ]);
+        let listed = |archive: &Archive<Cursor<Vec<u8>>>| -> Vec<(String, Option<String>)> {
+            archive
+                .entries()
+                .iter()
+                .map(|e| (e.path.clone(), e.skipped.clone()))
+                .collect()
+        };
+        let shut = Archive::open(Cursor::new(data.clone()), &ArchiveLimits::default()).unwrap();
+        assert_eq!(
+            listed(&shut),
+            [
+                ("a.md".into(), None),
+                ("inner.zip".into(), Some("nested archive".into())),
+                ("fake.zip".into(), Some("nested archive".into())),
+                ("notes.tar".into(), Some("nested archive".into())),
+            ]
+        );
+
+        let two = ArchiveLimits {
+            max_depth: 2,
+            ..ArchiveLimits::default()
+        };
+        let mut archive = Archive::open(Cursor::new(data.clone()), &two).unwrap();
+        let got = listed(&archive);
+        assert_eq!(
+            got[..4],
+            [
+                ("a.md".into(), None),
+                ("inner.zip/doc.md".into(), None),
+                (
+                    "inner.zip/more/inner2.zip".into(),
+                    Some("nested archive".into())
+                ),
+                (
+                    "inner.zip/tool.exe".into(),
+                    Some("unsupported file type".into())
+                ),
+            ]
+        );
+        assert!(
+            got[4].0 == "fake.zip" && got[4].1.as_deref().unwrap().starts_with("nested archive: "),
+            "{:?}",
+            got[4]
+        );
+        assert_eq!(got[5], ("notes.tar".into(), Some("nested archive".into())));
+        assert_eq!(got.len(), 6);
+        let doc = archive.read(1).unwrap();
+        assert_eq!(
+            (doc.name.as_str(), doc.bytes.as_slice()),
+            ("doc", &b"# Inner"[..])
+        );
+        assert!(archive.read(2).is_err());
+
+        let deep = ArchiveLimits {
+            max_depth: 9,
+            ..ArchiveLimits::default()
+        };
+        assert_eq!(deep.depth(), 3);
+        let mut archive = Archive::open(Cursor::new(data), &deep).unwrap();
+        let position = archive
+            .entries()
+            .iter()
+            .position(|e| e.path == "inner.zip/more/inner2.zip/deep.md" && e.skipped.is_none())
+            .expect("the third level is read");
+        assert_eq!(archive.read(position).unwrap().bytes, b"# Deep");
+    }
+
+    /// #677: the levels share one budget — a bomb one level down trips the
+    /// ratio, the entry count and the total size count every level, and the
+    /// nested archive's own bytes count too.
+    #[test]
+    fn nested_archives_share_the_budget() {
+        let big = vec![b'a'; 3 << 20];
+        let inner = zip_of(&[("bomb.md", &big), ("ok.md", b"fine")]);
+        let data = zip_of(&[("a.md", b"alpha"), ("inner.zip", &inner)]);
+        let two = ArchiveLimits {
+            max_depth: 2,
+            ..ArchiveLimits::default()
+        };
+        let skipped = |limits: &ArchiveLimits| -> Vec<(String, Option<String>)> {
+            Archive::open(Cursor::new(data.clone()), limits)
+                .unwrap()
+                .entries()
+                .iter()
+                .map(|e| (e.path.clone(), e.skipped.clone()))
+                .collect()
+        };
+        assert_eq!(
+            skipped(&two),
+            [
+                ("a.md".into(), None),
+                (
+                    "inner.zip/bomb.md".into(),
+                    Some("compression ratio over the limit".into())
+                ),
+                ("inner.zip/ok.md".into(), None),
+            ]
+        );
+        // Two entries in all: `a.md` and the nested archive itself.
+        assert_eq!(
+            skipped(&ArchiveLimits {
+                max_entries: 2,
+                ..two
+            }),
+            [
+                ("a.md".into(), None),
+                (
+                    "inner.zip/bomb.md".into(),
+                    Some("over the archive's entry limit".into())
+                ),
+                (
+                    "inner.zip/ok.md".into(),
+                    Some("over the archive's entry limit".into())
+                ),
+            ]
+        );
+        // The nested archive's bytes are inflated, so they are budgeted.
+        assert_eq!(
+            skipped(&ArchiveLimits {
+                max_total_size: inner.len() as u64 + 2,
+                ..two
+            }),
+            [
+                ("a.md".into(), None),
+                (
+                    "inner.zip".into(),
+                    Some("over the archive's total size limit".into())
+                ),
+            ]
+        );
+    }
+
+    /// #677: the merged document — a level-2 heading per converted entry
+    /// over its content, failures and skips reported beside it.
+    #[test]
+    fn convert_archive_merged_is_one_document() {
+        let data = zip_of(&[
+            ("a.md", b"# A\n\nalpha"),
+            ("sub/b.md", b"- one\n- two"),
+            ("broken.docx", b"not a zip at all"),
+            ("tool.exe", b"MZ"),
+        ]);
+        let merged = DocumentConverter::new()
+            .convert_archive_merged("bundle", Cursor::new(data))
+            .unwrap();
+        assert_eq!(merged.document.name, "bundle");
+        assert_eq!(merged.converted, 2);
+        assert_eq!(
+            merged.skipped,
+            [("tool.exe".to_string(), "unsupported file type".to_string())]
+        );
+        assert_eq!(merged.failed.len(), 1, "{:?}", merged.failed);
+        assert_eq!(merged.failed[0].0, "broken.docx");
+        assert!(merged.errors.is_empty());
+        assert_eq!(
+            merged.document.export_to_markdown(),
+            "## a.md\n\n# A\n\nalpha\n\n## sub/b.md\n\n- one\n- two\n"
+        );
     }
 
     #[test]
