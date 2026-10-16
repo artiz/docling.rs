@@ -32,6 +32,13 @@ tables that survive — cell recall 0.94 where MarkItDown gets 0.31
 ([numbers](#conformance-with-microsoft-markitdown),
 [method](./docs/PDF_CONFORMANCE.md#performance--review--profiling-notes)).
 
+**Coming from [MarkItDown](https://github.com/microsoft/markitdown)?**
+`pip install docling-rs`, swap one import —
+`from docling_rs.markitdown import MarkItDown` — and keep its API, every
+format it converts included, with real layout analysis, tables and OCR
+behind it: [guide](./docs/MARKITDOWN.md),
+[measured side by side](#conformance-with-microsoft-markitdown).
+
 
 ## Install
 
@@ -99,9 +106,6 @@ Same options, same outputs on every surface — every option in
 
 ## Highlights
 
-- **From MarkItDown:** `pip install docling-rs`, swap one import —
-  `from docling_rs.markitdown import MarkItDown` — and keep its API with real
-  layout, tables and OCR behind it ([guide](./docs/MARKITDOWN.md)).
 - **From Python docling:** `from docling_rs import DocumentConverter`;
   `result.document` is a genuine `DoclingDocument`
   ([migration notes](./crates/docling-py/README.md#migrating-from-python-docling)).
@@ -192,20 +196,20 @@ any OS; the docling-rs-serve Docker image ships ffmpeg preinstalled.
 
 [MarkItDown](https://github.com/microsoft/markitdown) converts the same kinds
 of documents to Markdown for LLMs. Measured side by side — MarkItDown 0.1.8
-(`markitdown[all]`) and docling.rs 2.16.0 (release build), 4 vCPU, no GPU —
+(`markitdown[all]`) and docling.rs 2.33.0 (release build), 4 vCPU, no GPU —
 on this repository's test corpus and on MarkItDown's own OCR test set
 ([`scripts/conformance/markitdown_compare.py`](./scripts/conformance/markitdown_compare.py)):
 
 | Corpus (files) | MarkItDown, warm | docling.rs, warm | Cold CLI call, MarkItDown / docling.rs | Word F1 | Table-cell recall | Heading recall |
 |---|---|---|---|---|---|---|
-| DOCX (38) | 5.04 s | **0.55 s** | 1441 / **14** ms | 0.93 / **1.00** | 0.81 / **1.00** | 0.78 / **1.00** |
-| PPTX (8) | 0.15 s | **0.02 s** | 1080 / **9** ms | 0.81 / **0.97** | 0.62 / **1.00** | 0.86 / **1.00** |
-| XLSX (14) | 1.08 s | **0.19 s** | 1085 / **11** ms | 0.60 / **0.95** | 0.78 / **0.98** | — ¹ |
-| HTML (32) | 0.40 s | **0.06 s** | 1226 / **7** ms | 0.98 / **1.00** | 0.89 / **1.00** | 0.96 / **1.00** |
-| CSV (9) | 0.04 s | **0.01 s** | 1086 / **6** ms | 1.00 / 1.00 | 0.78 / **1.00** | — |
-| EPUB (1) | 0.06 s | **0.01 s** | 1278 / **14** ms | 0.99 / **1.00** | — | 1.00 / 1.00 |
-| PDF (18), full layout + tables + OCR | **10.0 s** | 49.3 s | 1237 / 1314 ms | 0.63 / **0.997** | 0.31 / **0.94** | 0.00 / **0.91** |
-| PDF (18), text layer only (`--text-layer-only`) | 10.0 s | **0.7 s** | — | 0.63 / **0.97** | 0.31 / 0.00 | 0.00 / 0.00 |
+| DOCX (38) | 4.22 s | **0.44 s** | 1102 / **14** ms | 0.93 / **1.00** | 0.81 / **1.00** | 0.78 / **1.00** |
+| PPTX (8) | 0.30 s | **0.02 s** | 974 / **6** ms | 0.81 / **0.97** | 0.62 / **1.00** | 0.86 / **1.00** |
+| XLSX (14) | 0.87 s | **0.15 s** | 849 / **7** ms | 0.60 / **0.95** | 0.78 / **0.98** | — ¹ |
+| HTML (32) | 0.34 s | **0.05 s** | 900 / **6** ms | 0.98 / **1.00** | 0.89 / **1.00** | 0.96 / **1.00** |
+| CSV (9) | 0.04 s | **0.01 s** | 900 / **4** ms | 1.00 / 1.00 | 0.78 / **1.00** | — |
+| EPUB (1) | 0.06 s | **0.01 s** | 897 / **10** ms | 0.99 / **1.00** | — | 1.00 / 1.00 |
+| PDF (18), full layout + tables + OCR | **7.6 s** | 38.4 s | 984 / **830** ms | 0.63 / **0.997** | 0.31 / **0.94** | 0.00 / **0.91** |
+| PDF (18), text layer only (`--text-layer-only`) | 7.6 s | **0.5 s** | — | 0.63 / **0.97** | 0.31 / 0.00 | 0.00 / 0.00 |
 
 Accuracy is scored against Python docling's groundtruth, which favours
 docling.rs by construction; the timings do not depend on it. Text drawn into
