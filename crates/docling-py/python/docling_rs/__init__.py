@@ -769,7 +769,9 @@ class DocumentConverter:
         :class:`DocumentStream`. ``page_range=(first, last)`` converts only
         that 1-based inclusive PDF page window, as docling's
         ``convert(source, page_range=…)`` does (#518); ``None`` keeps the
-        constructor's window (all pages by default)."""
+        constructor's window (all pages by default). A YouTube watch URL
+        converts to the video's title, metadata and caption transcript as
+        timed items (#681), the language from ``asr_lang``."""
         return self._finish(_wrap(self._convert_native(source, page_range)))
 
     def convert_all(
@@ -792,12 +794,20 @@ class DocumentConverter:
                 yield ConversionResult("failure", name, DoclingDocument(name=Path(name).name))
 
     def convert_bytes(
-        self, name: str, data: bytes, page_range: Optional[Tuple[int, int]] = None
+        self,
+        name: str,
+        data: bytes,
+        page_range: Optional[Tuple[int, int]] = None,
+        base_url: Optional[str] = None,
     ) -> ConversionResult:
         """Convert in-memory bytes; ``name``'s extension drives format detection
         (docling's ``DocumentStream`` counterpart). ``page_range`` as in
-        :meth:`convert`."""
-        native = self._inner.convert_bytes(name, data, page_range=_page_range(page_range))
+        :meth:`convert`. ``base_url`` is the URL the bytes came from (#681):
+        relative image references resolve against it, and a YouTube watch
+        URL makes the page its transcript."""
+        native = self._inner.convert_bytes(
+            name, data, page_range=_page_range(page_range), base_url=base_url
+        )
         return self._finish(_wrap(native))
 
     def convert_archive(
@@ -836,7 +846,8 @@ class DocumentConverter:
             )
         if isinstance(source, str) and _is_url(source):
             name, data = _fetch_url(source)
-            return self._inner.convert_bytes(name, data, page_range=page_range)
+            # The URL rides along (#681): a YouTube watch page is routed by it.
+            return self._inner.convert_bytes(name, data, page_range=page_range, base_url=source)
         return self._inner.convert(source, page_range=page_range)
 
     def _finish(self, result: ConversionResult) -> ConversionResult:

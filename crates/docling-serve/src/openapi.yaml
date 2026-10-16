@@ -36,7 +36,9 @@ paths:
         Upload a file (`multipart/form-data`) or point the server at a URL
         (`application/json`). The input format is selected by the filename's
         extension — the uploaded part's filename, `file_name`, or the last
-        segment of the URL path.
+        segment of the URL path. A YouTube watch URL converts to the video's
+        title, description and caption transcript as timed items (#681; the
+        language from `asr_lang`), fetching nothing but the captions.
 
         `to=md` streams the Markdown as it converts (chunked response);
         `to=dclx` returns the archive as a download; `to=images` skips

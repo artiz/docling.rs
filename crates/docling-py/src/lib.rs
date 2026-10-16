@@ -702,7 +702,10 @@ impl PyDocumentConverter {
     /// `format` names the format outright (an `InputFormat` id such as
     /// `"pdf"`: an email attachment called `scan.bin` sent as
     /// `application/pdf`, #564). `page_range` as in [`convert`](Self::convert).
-    #[pyo3(signature = (name, data, page_range = None, format = None))]
+    /// `base_url` is the URL the bytes were fetched from (#681): relative
+    /// image references resolve against it, and a YouTube watch URL turns
+    /// the page into its title, metadata and caption transcript.
+    #[pyo3(signature = (name, data, page_range = None, format = None, base_url = None))]
     fn convert_bytes(
         &self,
         py: Python<'_>,
@@ -710,6 +713,7 @@ impl PyDocumentConverter {
         data: Bound<'_, PyBytes>,
         page_range: Option<(usize, usize)>,
         format: Option<String>,
+        base_url: Option<String>,
     ) -> PyResult<PyNativeResult> {
         let page_range = check_page_range(page_range)?;
         let bytes = data.as_bytes().to_vec();
@@ -730,6 +734,10 @@ impl PyDocumentConverter {
                 source.name = name;
                 source
             }
+        };
+        let source = match base_url {
+            Some(url) => source.with_base_url(url),
+            None => source,
         };
         self.convert_source(py, source, page_range)
     }

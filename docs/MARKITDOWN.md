@@ -109,6 +109,7 @@ with `convert`, `convert_local`, `convert_stream`, `convert_uri`,
 | `requests_session` | same |
 | XLSX `## <sheet>` headings | same |
 | ZIP: `## File:` per entry, nested ZIPs recursed | same (`## File:` in the facade; the CLI's `docling-rs bundle.zip` prints `## <entry path>` sections, #677); a nested ZIP is read under `DOCLING_RS_ZIP_MAX_DEPTH` (default 1: skipped; at most 3), its entries as `inner.zip/<path>` |
+| YouTube URL → `# YouTube`, `## title`, `### Video Metadata`, `### Description`, `### Transcript` | same (#681); the transcript is the caption cues one per line, timed in the document (`--to vtt`), where MarkItDown joins them into one line; `youtube_transcript_languages` → `asr_lang` (`docling_options={"asr_lang": "de"}`; YouTube's translation when the video has no such track); a video without captions is an error, where MarkItDown returns the metadata alone |
 | `markitdown FILE -o out.md` | `python -m docling_rs.markitdown FILE -o out.md` (also `-x`, `-m`, `-c`, `--keep-data-uris`, stdin) |
 | EXIF lines on an image (`ImageSize`, `Title`, `Description`, `Artist`, `DateTimeOriginal`, `GPSPosition`, … via exiftool), the audio tag lines (`Title`, `Artist`, `Album`, `Genre`, …) and `### Audio Transcript:`, the EPUB `**Title:** / **Authors:** / …` block | the same lines, from the engine's own readers (#679 — pure Rust, no exiftool; the facade converts with `metadata=json`, and `result.metadata` outside it) |
 | `exiftool_path`, `style_map`, `docintel_*`, `cu_*` | accepted, ignored with a warning |
@@ -137,7 +138,8 @@ package's [Migrating from MarkItDown](../crates/docling-py/README.md#migrating-f
 | a LangChain loader | `docling_rs.langchain.DoclingLoader` |
 | — | Node.js (`npm i docling.rs`), the browser (`npm i docling.rs-wasm`, [live demo](https://docling-project.github.io/docling.rs/)), Rust (`docling` crate), C (`docling-ffi`) |
 
-Formats: everything MarkItDown converts except YouTube URLs — plain text
+Formats: everything MarkItDown converts — YouTube URLs since #681 (the
+`_youtube_converter` shape, the transcript as timed cues), plain text
 and source code, generic JSON / JSON Lines and XML (kept as code blocks)
 included since #671, RSS / Atom feeds since #678 (the `_rss_converter`
 shape — and RSS 1.0 RDF feeds, which MarkItDown rejects),

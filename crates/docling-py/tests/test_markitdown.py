@@ -335,6 +335,77 @@ def test_llm_picture_captions():
     assert "a caption" not in MarkItDown(llm_client=FakeLlm()).convert(DATA / "test.docx").markdown
 
 
+def _timedtext_server(vtt_by_lang):
+    """YouTube's `timedtext` endpoint on 127.0.0.1 (#681): the WebVTT for
+    `lang=`, 404 otherwise."""
+    import http.server
+    import threading
+    from urllib.parse import parse_qs, urlparse
+
+    class Handler(http.server.BaseHTTPRequestHandler):
+        def do_GET(self):
+            query = parse_qs(urlparse(self.path).query)
+            body = None
+            if urlparse(self.path).path == "/api/timedtext" and query.get("fmt") == ["vtt"]:
+                body = vtt_by_lang.get(query.get("lang", [""])[0])
+            if body is None:
+                self.send_response(404)
+                self.end_headers()
+                return
+            data = body.encode("utf-8")
+            self.send_response(200)
+            self.send_header("Content-Type", "text/vtt; charset=utf-8")
+            self.send_header("Content-Length", str(len(data)))
+            self.end_headers()
+            self.wfile.write(data)
+
+        def log_message(self, *args):
+            pass
+
+    server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    return server, f"http://127.0.0.1:{server.server_port}"
+
+
+YOUTUBE_DATA = Path(__file__).resolve().parents[2] / "docling" / "tests" / "data" / "youtube"
+
+
+def test_youtube_url_is_title_metadata_and_transcript(md, monkeypatch):
+    """#681, MarkItDown's `_youtube_converter` shape: a YouTube watch URL
+    whose HTML is a watch page gives `# YouTube`, the title, metadata,
+    description and the caption transcript; the title is the video's."""
+    monkeypatch.setenv("DOCLING_RS_ALLOW_PRIVATE_IP_FETCH", "1")
+    server, base = _timedtext_server({
+        "en": (YOUTUBE_DATA / "captions_en.vtt").read_text(),
+        "de": (YOUTUBE_DATA / "captions_de.vtt").read_text(),
+    })
+    try:
+        page = (YOUTUBE_DATA / "watch.html").read_text().replace(
+            "https://www.youtube.com/api/timedtext", base + "/api/timedtext"
+        ).encode("utf-8")
+        info = StreamInfo(mimetype="text/html", charset="utf-8", url="https://www.youtube.com/watch?v=x7Zq9KfR2bE")
+        result = md.convert_stream(io.BytesIO(page), stream_info=info)
+        assert result.title == "Introducing docling.rs"
+        assert result.markdown.startswith(
+            "# YouTube\n\n## Introducing docling.rs\n\n### Video Metadata\n\n- **Views:** 1234\n"
+            "- **Keywords:** docling, rust, document conversion\n- **Runtime:** PT1M5S\n\n### Description\n"
+        ), result.markdown
+        assert "### Transcript\n\ndocling.rs is one binary that converts\n" in result.markdown
+        assert "ytInitialPlayerResponse" not in result.markdown
+        # The language from docling_options, as MarkItDown's youtube_transcript_languages.
+        german = MarkItDown(docling_options={"asr_lang": "de"}).convert_stream(io.BytesIO(page), stream_info=info)
+        assert "### Transcript\n\ndocling.rs ist eine Binärdatei" in german.markdown, german.markdown
+        # No captions: a clear error (MarkItDown would return the metadata alone).
+        silent = (YOUTUBE_DATA / "watch_no_captions.html").read_bytes()
+        with pytest.raises(FileConversionException, match="has no captions"):
+            md.convert_stream(io.BytesIO(silent), stream_info=StreamInfo(mimetype="text/html", url="https://www.youtube.com/watch?v=q2WkY8rPz3M"))
+        # The same page saved to disk is HTML, not a transcript.
+        plain = md.convert_stream(io.BytesIO(page), stream_info=StreamInfo(mimetype="text/html", extension=".html"))
+        assert "### Transcript" not in plain.markdown
+    finally:
+        server.shutdown()
+
+
 def test_zip(md, tmp_path):
     archive = tmp_path / "bundle.zip"
     with zipfile.ZipFile(archive, "w") as zf:

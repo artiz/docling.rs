@@ -2336,6 +2336,52 @@ impl DocumentConverter {
     }
 
     /// Convert `source` as its declared format, no retry.
+    /// Whether `source` is a YouTube watch page fetched from its URL (#681)
+    /// — HTML whose base URL names a video. Always false without the
+    /// `youtube` feature, so such a page converts as the HTML it is.
+    fn is_youtube_page(source: &SourceDocument) -> bool {
+        #[cfg(feature = "youtube")]
+        {
+            source.format == InputFormat::Html
+                && source
+                    .base_url
+                    .as_deref()
+                    .is_some_and(|url| crate::backend::youtube::video_id(url).is_some())
+        }
+        #[cfg(not(feature = "youtube"))]
+        {
+            let _ = source;
+            false
+        }
+    }
+
+    /// A YouTube watch page's conversion (#681): the title, metadata and
+    /// caption transcript, the language from `asr_lang`.
+    #[cfg(feature = "youtube")]
+    fn youtube_page(
+        &self,
+        source: &SourceDocument,
+    ) -> Result<docling_core::DoclingDocument, ConversionError> {
+        crate::backend::youtube::YoutubeBackend {
+            lang: self.asr_lang.clone(),
+            // The caption fetch follows the one hop YouTube's `timedtext`
+            // may bounce through; the SSRF guard sees each.
+            fetch: crate::fetch::FetchPolicy {
+                max_redirects: 2,
+                ..crate::fetch::FetchPolicy::default()
+            },
+        }
+        .convert(source)
+    }
+
+    #[cfg(not(feature = "youtube"))]
+    fn youtube_page(
+        &self,
+        _source: &SourceDocument,
+    ) -> Result<docling_core::DoclingDocument, ConversionError> {
+        unreachable!("is_youtube_page is false without the youtube feature")
+    }
+
     fn convert_as(&self, source: &SourceDocument) -> Result<ConversionResult, ConversionError> {
         // Problems a conversion survives (docling's `ConversionResult.errors`):
         // today the PDF pipeline's spent document budget (#497).
@@ -2393,6 +2439,10 @@ impl DocumentConverter {
             }
             .convert(source)?,
             InputFormat::Csv => CsvBackend.convert(source)?,
+            // A YouTube watch page (#681): routed by the URL it was fetched
+            // from, as MarkItDown's `accepts` does — its title, metadata and
+            // caption transcript, not the page's markup.
+            InputFormat::Html if Self::is_youtube_page(source) => self.youtube_page(source)?,
             InputFormat::Html => {
                 // Optionally resolve the CSS cascade in a headless browser first
                 // (strips computed-hidden elements); everything else stays in the

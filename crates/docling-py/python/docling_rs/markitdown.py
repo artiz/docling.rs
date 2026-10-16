@@ -52,6 +52,14 @@ code written against MarkItDown runs unchanged. What differs, deliberately:
   headings; entries docling.rs cannot convert are skipped. A ZIP inside the
   archive is read when ``DOCLING_RS_ZIP_MAX_DEPTH`` allows (default 1: it
   is skipped; at most 3), its entries as ``inner.zip/<path>`` (#677).
+* **YouTube URLs** (#681, MarkItDown's ``_youtube_converter``) come out as
+  ``# YouTube`` / ``## <title>`` / ``### Video Metadata`` / ``### Description``
+  / ``### Transcript`` — the transcript as the caption cues, one line each
+  (MarkItDown joins them into one line), in the language ``asr_lang``
+  asks for (``docling_options={"asr_lang": "de"}``; English by default,
+  YouTube's translation when the video has no such track — MarkItDown's
+  ``youtube_transcript_languages``). A video without captions is an error,
+  where MarkItDown returns the metadata alone.
 
 ``MarkItDown(docling_options={...})`` (a docling.rs extension) forwards
 keyword arguments to :class:`docling_rs.DocumentConverter` — e.g.
@@ -74,7 +82,7 @@ import zipfile
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any, BinaryIO, ClassVar, Dict, Iterable, List, Optional, Tuple, Union
-from urllib.parse import unquote, unquote_to_bytes, urlparse
+from urllib.parse import unquote, unquote_to_bytes, urlparse, parse_qs
 from urllib.request import url2pathname
 
 from . import ConversionError, DocumentConverter
@@ -927,7 +935,11 @@ class MarkItDown:
                 caption = ""
             if caption:
                 markdown = markdown.rstrip() + "\n\n# Description:\n" + caption + "\n"
-        return DocumentConverterResult(markdown, title=_title(document), document=document)
+        title = _title(document)
+        if _youtube_video_id(info.url) and title == "YouTube":
+            # MarkItDown's title is the video's, not the `# YouTube` head.
+            title = _section_after_title(document)
+        return DocumentConverterResult(markdown, title=title, document=document)
 
     def _run(self, name: str, ext: str, path: Optional[str], data: Optional[bytes], info: StreamInfo) -> Any:
         """One engine conversion, with MarkItDown's exceptions; a PDF whose
@@ -942,7 +954,7 @@ class MarkItDown:
                     if data is None:
                         with open(path, "rb") as fh:
                             data = fh.read()
-                    result = self._converter().convert_bytes(name, data)
+                    result = self._converter().convert_bytes(name, data, base_url=_http_url(info.url))
             except ConversionError as e:
                 if ext != ".pdf" or "model not found" not in str(e):
                     raise
@@ -957,7 +969,9 @@ class MarkItDown:
                 if own_name:
                     result = self._converter(text_layer_only=True).convert(path)
                 else:
-                    result = self._converter(text_layer_only=True).convert_bytes(name, data)
+                    result = self._converter(text_layer_only=True).convert_bytes(
+                        name, data, base_url=_http_url(info.url)
+                    )
         except ConversionError as e:
             message = str(e)
             if any(m in message.lower() for m in _UNSUPPORTED_MARKERS):
@@ -1109,6 +1123,45 @@ def _title(document: Any) -> Optional[str]:
         label = getattr(item, "label", None)
         if getattr(label, "value", label) == "title" and getattr(item, "text", ""):
             return item.text
+    return None
+
+
+def _section_after_title(document: Any) -> Optional[str]:
+    """The first section header after the title item (a YouTube page's
+    video title under ``# YouTube``)."""
+    seen_title = False
+    for item in getattr(document, "texts", ()):
+        label = getattr(item, "label", None)
+        label = getattr(label, "value", label)
+        if label == "title":
+            seen_title = True
+        elif seen_title and label == "section_header" and getattr(item, "text", ""):
+            return item.text
+    return None
+
+
+def _http_url(url: Optional[str]) -> Optional[str]:
+    """``url`` when it is an http(s) URL the bytes were fetched from."""
+    if url and url.lower().startswith(("http://", "https://")):
+        return url
+    return None
+
+
+def _youtube_video_id(url: Optional[str]) -> Optional[str]:
+    """MarkItDown's ``_get_video_id``: the video of a ``youtube.com/watch?v=``,
+    ``youtu.be/``, ``/shorts/``, ``/embed/`` or ``/live/`` URL."""
+    if not url:
+        return None
+    parsed = urlparse(url)
+    host = parsed.netloc.lower().rsplit("@", 1)[-1].split(":")[0]
+    parts = [p for p in parsed.path.split("/") if p]
+    if host in {"youtu.be", "www.youtu.be"}:
+        return parts[0] if parts else None
+    if host == "youtube.com" or host.endswith(".youtube.com"):
+        if parts[:1] == ["watch"]:
+            return parse_qs(parsed.query).get("v", [None])[0]
+        if parts[:1] in (["shorts"], ["embed"], ["live"]):
+            return parts[1] if len(parts) > 1 else None
     return None
 
 

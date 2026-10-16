@@ -50,7 +50,7 @@ own output options next to the shared ones.
 | `use_web_browser` | bool | false | `--use-web-browser` | `use_web_browser` | — | Pre-render HTML with a headless browser (the `web-browser` Cargo feature). Not in the npm addon (not built with the feature). |
 | `xbrl_taxonomy` | directory | unset = the instance's own directory | `--xbrl-taxonomy` | `xbrl_taxonomy` | `xbrlTaxonomy` | XBRL: the directory the instance's taxonomy is read from (docling's `XBRLBackendOptions.taxonomy`). serve: a server-local relative path without `..`. |
 | `asr_model` | preset name | unset = Whisper tiny | `--asr-model` | `asr_model` | `asrModel` | ASR preset for audio/video (`whisper_*`, `parakeet_tdt_0.6b_v3`). |
-| `asr_lang` | Whisper code \| `auto` | `auto` | `--asr-lang` | `asr_lang` | `asrLang` | Transcription language for audio/video. |
+| `asr_lang` | Whisper code \| `auto` | `auto` | `--asr-lang` | `asr_lang` | `asrLang` | Transcription language for audio/video; the caption language of a YouTube URL (#681). |
 | `video_frames` | int ≥ 0 \| `all` | 8 | `--video-frames` | `video_frames` | `videoFrames` | Max frames sampled from a video (0 = transcript only; needs ffmpeg). `all` = every distinct cut (#647) — on the JSON surfaces also any count ≥ 4294967295, which is how the npm addon (32-bit integers) asks for it; Python also takes `docling_rs.VIDEO_FRAMES_ALL`. |
 | `video_scene_threshold` | 0.0–1.0 | 0.27 (`DOCLING_RS_VIDEO_SCENE_THRESHOLD`) | `--video-scene-threshold` | `video_scene_threshold` | `videoSceneThreshold` | ffmpeg's `scene` score a frame must exceed to count as a cut (#647): a slide change scores well above the default, a fade or re-lighting around 0.5, a hard cut near 1.0 — 0.6 keeps hard cuts only. |
 | `video_frame_max_side` | int ≥ 0 px | 0 = source resolution (`DOCLING_RS_VIDEO_FRAME_MAX_SIDE`) | `--video-frame-max-side` | `video_frame_max_side` | `videoFrameMaxSide` | Downscale each sampled frame inside ffmpeg's filter chain so its longer side is at most this (#647): a 1080p recording at 640 yields 640×360 PNGs, so neither the embedded images nor the OCR input reach memory at full size. |
@@ -146,6 +146,23 @@ codec or copybook when the conversion runs.
   (exit 2) naming both flags. `--no-url-fetch` refuses http(s) sources.
   Library: `SourceDocument::from_reader`, `from_named_bytes`, `from_url`
   (with a `FetchPolicy`), `docling::fetch::from_data_url`.
+- **YouTube URLs** (#681, MarkItDown's `_youtube_converter`). A
+  `youtube.com/watch?v=…` (or `youtu.be/…`, `/shorts/`, `/embed/`, `/live/`)
+  source converts to the video, not the page: `# YouTube`, `## <title>`, a
+  `### Video Metadata` list (views, keywords, runtime), `### Description`,
+  and `### Transcript` — the caption track fetched from YouTube's
+  `timedtext` endpoint as WebVTT and read by the WebVTT backend, so the
+  cues are timed items (`--to vtt` writes them back; `--to json` carries
+  `start_time` / `end_time`). The language is `--asr-lang` (`auto` /
+  unset: English, else the video's first track; a written track over an
+  auto-generated one; a language the video has no track for is translated
+  by YouTube when it offers it). A video without captions is an error
+  naming it. Nothing but the captions is fetched — no video, no audio, no
+  playlist. The route is by the URL the page came from (as MarkItDown's
+  `accepts`): a saved watch page converts as HTML. Behind the `youtube`
+  cargo feature (default on; off in the wasm build). Library: the
+  converter routes it; `docling::backend::youtube` has the pieces
+  (`video_id`, `parse_watch_page`, `pick_track`, `transcript_document`).
   Two CLI-only export options sit beside `--images`, outside the shared
   table: `--layers body|all|LIST` (LIST from `body,furniture,notes,invisible`;
   default `body`) and `--traverse-pictures` — docling-core's

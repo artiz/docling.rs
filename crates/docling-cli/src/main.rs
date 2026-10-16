@@ -219,7 +219,8 @@
 //!                      languages detected by the model; #508) — models under
 //!                      .models/asr/<preset>/; fetch them with
 //!                      download_dependencies.sh --asr-model=<preset>
-//!   --asr-lang CODE    transcription language for audio/video input: a Whisper
+//!   --asr-lang CODE    transcription language for audio/video input — and the
+//!                      caption language of a YouTube URL (#681): a Whisper
 //!                      code (en, de, zh, ...) or auto (the default) to detect
 //!                      it from the first 30 seconds. English-only presets
 //!                      always transcribe English.
@@ -626,7 +627,8 @@ VLM PIPELINE
 AUDIO / VIDEO
   --asr-model PRESET      ASR preset for audio/video transcription (whisper_*,
                           parakeet_tdt_0.6b_v3)
-  --asr-lang CODE         force a transcription language
+  --asr-lang CODE         force a transcription language (audio/video; a YouTube
+                          URL's caption track, #681)
   --video-frames N|all    sample N key frames from a video (all = every cut)
   --video-scene-threshold X
                           scene score a frame must exceed to be a cut (0.27)

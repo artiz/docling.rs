@@ -80,6 +80,8 @@ mod staroffice5;
 pub(crate) mod svg;
 mod symbol_fonts;
 pub mod text;
+#[cfg(feature = "youtube")]
+pub mod youtube;
 // DjVu (#434): pure-Rust decode via `djvu-rs`, so it builds everywhere,
 // wasm included.
 pub(crate) mod djvu;
