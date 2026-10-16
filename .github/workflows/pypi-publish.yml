@@ -507,6 +507,21 @@ jobs:
         with:
           ref: ${{ inputs.tag || github.ref }}
 
+      # A re-run for a tag older than the package (`inputs.tag`, e.g. the
+      # release it first ships with) checks out a tree without
+      # `crates/docling-py/langchain`. The package has no code of its own —
+      # only the docling-rs pin matters — so take the directory from the ref
+      # the workflow was dispatched from (`github.sha`) in that case.
+      - name: Package source
+        shell: bash
+        run: |
+          if [ ! -d crates/docling-py/langchain ]; then
+            echo "crates/docling-py/langchain is not in the checked-out ref; taking it from ${GITHUB_SHA}"
+            git fetch --depth=1 origin "${GITHUB_SHA}"
+            git checkout "${GITHUB_SHA}" -- crates/docling-py/langchain
+          fi
+          test -f crates/docling-py/langchain/pyproject.toml
+
       - name: Resolve version and pin docling-rs
         shell: bash
         working-directory: crates/docling-py/langchain
