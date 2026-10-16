@@ -93,62 +93,66 @@ impl DeclarativeBackend for WebVttBackend {
                 tree.add(None, None, text_kind("title", title, None));
             }
         }
+        append_cues(&mut doc, &mut tree, body);
+        doc.tree = Some(tree);
+        Ok(doc)
+    }
+}
 
-        for block in blank_line_blocks(body) {
-            if block.starts_with("NOTE")
-                || block.starts_with("STYLE")
-                || block.starts_with("REGION")
-            {
+/// Append the cues of a WebVTT body (everything after the header line) to
+/// `doc` and `tree`: one paragraph per cue line, each tree item carrying the
+/// cue's `TrackSource`. Shared with the YouTube transcript (#681), which
+/// puts the video's title and description ahead of the cues.
+pub(crate) fn append_cues(doc: &mut DoclingDocument, tree: &mut ItemTree, body: &str) {
+    for block in blank_line_blocks(body) {
+        if block.starts_with("NOTE") || block.starts_with("STYLE") || block.starts_with("REGION") {
+            continue;
+        }
+        let Some(cue) = parse_cue_block(block) else {
+            continue;
+        };
+        let mut paras: Vec<Vec<Run>> = vec![Vec::new()];
+        extract_components(&cue.payload, &mut Vec::new(), &mut paras);
+        for para in &paras {
+            if para.is_empty() {
                 continue;
             }
-            let Some(cue) = parse_cue_block(block) else {
-                continue;
+            let text = para.iter().map(serialize_run).collect::<Vec<_>>().join(" ");
+            if !text.is_empty() {
+                doc.push(Node::Paragraph { text });
+            }
+            let track = |run: &Run| TreeTrack {
+                start_time: cue.start,
+                end_time: cue.end,
+                identifier: cue.identifier.clone(),
+                voice: run.meta.voice.clone().filter(|v| !v.is_empty()),
             };
-            let mut paras: Vec<Vec<Run>> = vec![Vec::new()];
-            extract_components(&cue.payload, &mut Vec::new(), &mut paras);
-            for para in &paras {
-                if para.is_empty() {
-                    continue;
-                }
-                let text = para.iter().map(serialize_run).collect::<Vec<_>>().join(" ");
-                if !text.is_empty() {
-                    doc.push(Node::Paragraph { text });
-                }
-                let track = |run: &Run| TreeTrack {
-                    start_time: cue.start,
-                    end_time: cue.end,
-                    identifier: cue.identifier.clone(),
-                    voice: run.meta.voice.clone().filter(|v| !v.is_empty()),
-                };
-                if let [run] = para.as_slice() {
+            if let [run] = para.as_slice() {
+                let id = tree.add(
+                    None,
+                    None,
+                    text_kind("text", &run.text, run.meta.formatting),
+                );
+                tree.items[id].source = Some(track(run));
+            } else {
+                let group = tree.add(
+                    None,
+                    None,
+                    TreeKind::Group {
+                        label: "inline".into(),
+                        name: "WebVTT cue span".into(),
+                    },
+                );
+                for run in para {
                     let id = tree.add(
-                        None,
+                        Some(group),
                         None,
                         text_kind("text", &run.text, run.meta.formatting),
                     );
                     tree.items[id].source = Some(track(run));
-                } else {
-                    let group = tree.add(
-                        None,
-                        None,
-                        TreeKind::Group {
-                            label: "inline".into(),
-                            name: "WebVTT cue span".into(),
-                        },
-                    );
-                    for run in para {
-                        let id = tree.add(
-                            Some(group),
-                            None,
-                            text_kind("text", &run.text, run.meta.formatting),
-                        );
-                        tree.items[id].source = Some(track(run));
-                    }
                 }
             }
         }
-        doc.tree = Some(tree);
-        Ok(doc)
     }
 }
 

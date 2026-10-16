@@ -1,0 +1,15 @@
+WEBVTT
+Kind: captions
+Language: en
+
+00:00:00.240 --> 00:00:03.120 align:start position:0%
+docling.rs is one binary that converts
+
+00:00:03.120 --> 00:00:06.480 align:start position:0%
+PDF, Office and web documents to Markdown
+
+00:00:06.480 --> 00:00:09.900 align:start position:0%
+and JSON — no Python, no models to install
+
+00:00:30.000 --> 00:00:33.500 align:start position:0%
+every format goes through the same document model

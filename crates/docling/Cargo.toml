@@ -22,7 +22,7 @@ heif = ["pdf", "docling-pdf/heif"]
 # client are feature-sliced so `--no-default-features` leaves the pure-Rust
 # declarative converters (DOCX/HTML/MD/XLSX/PPTX/… → md/json) — a set that
 # compiles for wasm32-unknown-unknown (issue #79, see crates/docling-wasm).
-default = ["pdf", "asr", "fetch-images", "fetch-url", "vlm", "ner"]
+default = ["pdf", "asr", "fetch-images", "fetch-url", "vlm", "ner", "youtube"]
 # PDF/image/METS-GBS ML pipeline (the pure-Rust renderer + ONNX Runtime via
 # docling-pdf). resvg rides along so SVG input (#212) can rasterize into the
 # same image pipeline; the non-ML SVG path (direct <text> extraction) needs
@@ -47,6 +47,11 @@ fetch-images = ["dep:ureq", "dep:url"]
 # Blocking HTTP fetch of a document by URL (`SourceDocument::from_url`, the
 # CLI's URL sources, docling-serve's URL inputs — #668), with the SSRF guard.
 fetch-url = ["dep:ureq", "dep:url"]
+# A YouTube watch URL as a document (#681, MarkItDown's `_youtube_converter`):
+# the page's title, metadata and description, then the caption transcript
+# fetched as WebVTT and read by the WebVTT backend (timed items, `--to vtt`).
+# Rides on the URL fetch; nothing is downloaded but the captions.
+youtube = ["fetch-url"]
 # Remote VLM pipeline (#77): render PDF pages (the Rust renderer) and convert them
 # through an OpenAI-compatible vision endpoint (LM Studio / Ollama / vLLM /
 # hosted), parsing the returned DocLang with the existing reader. Rides on the
