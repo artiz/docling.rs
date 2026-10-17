@@ -29,6 +29,9 @@ crates/docling-wasm/www/models
 .pdfium
 *.onnx
 .models
+.onnxruntime-build/
+onnxruntime-s390x/
+
 
 # Python bytecode cache from the comparison scripts
 __pycache__/
