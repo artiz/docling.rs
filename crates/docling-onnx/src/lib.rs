@@ -53,6 +53,11 @@
 //! for CPU kernels — on GPU they only add de-quantize traffic and were never
 //! conformance-validated there, while fp32 is (see docs/PDF_CONFORMANCE.md).
 
+// glibc 2.32/2.38 symbols the prebuilt static ONNX Runtime references,
+// defined here so the manylinux_2_28 wheels import on glibc < 2.38 (#745).
+#[cfg(all(target_os = "linux", target_env = "gnu", not(feature = "load-dynamic")))]
+mod glibc_compat;
+
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, MutexGuard, OnceLock};
 

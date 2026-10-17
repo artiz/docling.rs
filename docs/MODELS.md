@@ -584,9 +584,13 @@ GPU kernels aren't bit-exact, one heavy fixture drifts by 2 lines). Details
 + per-file table: [`PDF_CONFORMANCE.md`](PDF_CONFORMANCE.md#measured-on-real-hardware-issue-108);
 reproduce with `scripts/test/gpu_benchmark.sh`.
 
-> **Link fails with `undefined symbol: __isoc23_strtol` (Ubuntu ≤ 22.04,
-> Debian ≤ 12)?** The static ONNX Runtime binaries `ort` downloads are built
-> against glibc ≥ 2.38 (`__isoc23_*` first appears there). On an older glibc,
+> **Link fails with an undefined `…basic_string…_M_replace_cold` (Ubuntu ≤
+> 22.04, Debian ≤ 12)?** The static ONNX Runtime binaries `ort` downloads are
+> built with GCC 13's libstdc++ against glibc ≥ 2.38, and the CUDA provider
+> libraries need glibc ≥ 2.38 at run time as well. (The glibc 2.38
+> `__isoc23_strto*` parsers they call, the `undefined symbol: __isoc23_strtol`
+> of older releases, are defined by docling-onnx itself since #745.) On an
+> older glibc,
 > link dynamically against Microsoft's official release instead (built on
 > glibc 2.28, so it runs anywhere recent) — same ONNX Runtime version the
 > pinned `ort` expects:

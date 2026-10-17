@@ -54,8 +54,9 @@ jobs:
       matrix:
         include:
           # ubuntu-24.04, not 22.04: ort's prebuilt static onnxruntime is built
-          # against glibc 2.38+ (__isoc23_strtol*) and GCC-13 libstdc++
-          # (_M_replace_cold) — linking on 22.04 fails with undefined symbols.
+          # against GCC-13 libstdc++ (_M_replace_cold) — linking on 22.04 fails
+          # with an undefined symbol. (Its glibc 2.38 __isoc23_strto* references
+          # no longer matter: docling-onnx's glibc_compat defines them, #745.)
           # Consequence: the shipped binary needs glibc >= 2.38 at runtime
           # (Ubuntu 24.04+, Debian 13+, Fedora 39+); older distros build from
           # source (install.sh verifies the downloaded binary runs and falls
