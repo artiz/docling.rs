@@ -48,8 +48,8 @@
       "content_layer": "body",
       "label": "text",
       "prov": [],
-      "orig": "S1 sym Wingdings F06C: ● end",
-      "text": "S1 sym Wingdings F06C: ● end",
+      "orig": "S1 sym Wingdings F06C: ⚫ end",
+      "text": "S1 sym Wingdings F06C: ⚫ end",
       "formatting": {
         "bold": false,
         "italic": false,
@@ -86,8 +86,8 @@
       "content_layer": "body",
       "label": "text",
       "prov": [],
-      "orig": "S3 sym Wingdings F0FC (check): ✔ end",
-      "text": "S3 sym Wingdings F0FC (check): ✔ end",
+      "orig": "S3 sym Wingdings F0FC (check): ✓ end",
+      "text": "S3 sym Wingdings F0FC (check): ✓ end",
       "formatting": {
         "bold": false,
         "italic": false,
