@@ -4,13 +4,13 @@ T2 Wingdings F0A7: ▪ end
 
 T3 Wingdings F0E8: 🡺 end
 
-T4 Wingdings 8D: ❷ end
+T4 Wingdings 8D: ➋ end
 
 T5 Symbol PUA greek: αβπ end
 
 T6 Symbol ASCII greek: α β π end
 
-S1 sym Wingdings F06C: ● end
+S1 sym Wingdings F06C: ⚫ end
 
 S2 sym Symbol F061: α end
 
