@@ -48,3 +48,8 @@ ort = { version = "2.0.0-rc.14", default-features = false, features = ["std", "d
 # `load-dynamic` only: reads the loaded library's version string
 # ([`runtime_version`](crate::runtime_version)) — the same crate `ort` opens it with.
 libloading = { version = "0.8", optional = true }
+
+[dev-dependencies]
+# glibc_compat's tests compare the C23 `strtol` shims against glibc's own
+# `__isoc23_*` (dlsym on libc.so.6) where the host has them.
+libloading = "0.8"

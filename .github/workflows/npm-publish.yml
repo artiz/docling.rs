@@ -75,12 +75,25 @@ jobs:
   build:
     name: build ${{ matrix.target }}
     runs-on: ${{ matrix.host }}
+    # Empty for every entry but linux-x64: the job then runs on the runner.
+    container: ${{ matrix.container }}
     strategy:
       fail-fast: false
       matrix:
         include:
+          # Built in the manylinux_2_28 image, like the PyPI wheels: a plain
+          # runner links the addon against its own glibc and libstdc++, and
+          # ort's prebuilt static ONNX Runtime needs GCC 13's libstdc++
+          # (`_M_replace_cold`). A cdylib links with that symbol undefined, so
+          # the ubuntu-22.04 build loaded only where the *system* libstdc++ is
+          # GCC 13+ — not even on the runner that built it. The image's
+          # gcc-toolset links such newer libstdc++ symbols statically
+          # (libstdc++_nonshared.a) and links against glibc 2.28, so the addon
+          # loads on RHEL 8 / Debian 10 era systems and newer. Its glibc 2.38
+          # `__isoc23_strto*` references are defined by docling-onnx (#745).
           - target: x86_64-unknown-linux-gnu
-            host: ubuntu-22.04
+            host: ubuntu-24.04
+            container: quay.io/pypa/manylinux_2_28_x86_64
           # GitHub-hosted ARM64 Linux runner (native — avoids cross-compiling the
           # ONNX/ort build). Requires the arm64 runner image to be available.
           - target: aarch64-unknown-linux-gnu
@@ -117,9 +130,15 @@ jobs:
       # rustup is preinstalled on GitHub-hosted runners (Linux + Windows); use it
       # directly — the docling-project org allowlists only GitHub-owned / vetted
       # actions, not marketplace toolchain actions.
+      # The manylinux container has no Rust: install rustup there first.
       - name: Install Rust (stable)
         shell: bash
         run: |
+          if ! command -v rustup >/dev/null; then
+            curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain none
+            export PATH="$HOME/.cargo/bin:$PATH"
+            echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+          fi
           rustup toolchain install stable --profile minimal
           rustup default stable
           rustup target add ${{ matrix.target }}
@@ -137,6 +156,9 @@ jobs:
           sudo apt-get install -y --no-install-recommends binutils-${{ matrix.cross }}
 
       # One workspace, key the cache per target so the 5 jobs don't collide.
+      # The container build gets its own key: a `target/` restored from a
+      # runner build would carry C objects (build scripts' `cc`) compiled
+      # against the runner's newer glibc headers into the 2.28 link.
       - uses: actions/cache@v6
         with:
           path: |
@@ -144,8 +166,8 @@ jobs:
             ~/.cargo/registry/cache
             ~/.cargo/git/db
             target
-          key: ${{ runner.os }}-cargo-${{ matrix.target }}-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: ${{ runner.os }}-cargo-${{ matrix.target }}-
+          key: ${{ runner.os }}-cargo-${{ matrix.target }}${{ matrix.container && '-manylinux_2_28' || '' }}-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-cargo-${{ matrix.target }}${{ matrix.container && '-manylinux_2_28' || '' }}-
 
       - uses: actions/setup-node@v7
         with:
@@ -172,6 +194,34 @@ jobs:
           else
             npx napi build --platform --release --strip --target ${{ matrix.target }} --js native.js --dts native.d.ts ${features:+--features $features}
           fi
+
+      # Fail the build, before anything is published, when the addon would not
+      # load at its glibc floor. A cdylib links with undefined symbols, so a
+      # symbol the floor's glibc / libstdc++ lacks (GCC 13's `_M_replace_cold`,
+      # glibc 2.38's `__isoc23_strtol`, #745) otherwise only fails at the
+      # user's `require`. Such a symbol shows up unversioned; Node's own API
+      # (`napi_*`, `node_api_*`, libuv) is the only legitimate one. Then load
+      # it with LD_BIND_NOW, since Node dlopens lazily and would bind a
+      # missing function only at its first call. In the manylinux container
+      # that load runs at the floor itself (glibc 2.28, GCC 8 libstdc++).
+      # The s390x cross build is skipped: it dlopens ONNX Runtime
+      # (`ort-load-dynamic`) and is not runnable here.
+      - name: Check the glibc floor
+        if: runner.os == 'Linux' && !matrix.zig
+        shell: bash
+        run: |
+          addon="$(ls docling-rs.*.node)"
+          unresolved="$(objdump -T "$addon" \
+            | awk '/\*UND\*/ && $2 != "w" && $0 !~ /(GLIBC|GLIBCXX|CXXABI|GCC)_[0-9]/ {print $NF}' \
+            | grep -Ev '^(napi_|node_api_|uv_)' || true)"
+          if [ -n "$unresolved" ]; then
+            echo "::error::$addon has symbols no system library provides at its floor:"
+            echo "$unresolved"
+            exit 1
+          fi
+          echo "glibc floor: $(objdump -T "$addon" | grep -o 'GLIBC_[0-9.]*' | sort -uV | tail -1)"
+          echo "libstdc++ floor: $(objdump -T "$addon" | grep -o 'GLIBCXX_[0-9.]*' | sort -uV | tail -1)"
+          LD_BIND_NOW=1 node -e "require('./$addon'); console.log('loads: $addon')"
 
       - name: Build (windows)
         if: runner.os == 'Windows'

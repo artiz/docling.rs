@@ -182,6 +182,17 @@ jobs:
           # container and put cargo on PATH for the maturin build.
           CIBW_BEFORE_ALL_LINUX: "curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain stable"
           CIBW_ENVIRONMENT_LINUX: 'PATH="$HOME/.cargo/bin:$PATH"'
+          # Import the installed wheel inside the build container — on Linux
+          # that is the manylinux_2_28 image, i.e. the wheel's glibc floor.
+          # auditwheel cannot catch a symbol the floor lacks: the native module
+          # is a shared object, which links with undefined symbols, and
+          # auditwheel takes an unversioned undefined symbol for one the
+          # interpreter provides. That is how 2.35.0 shipped wheels that failed
+          # `import docling_rs` on glibc < 2.38 (`undefined symbol:
+          # __isoc23_strtol`, from the prebuilt static ONNX Runtime — now
+          # defined in docling-onnx's glibc_compat, #745). Python dlopens
+          # extension modules with RTLD_NOW, so the import binds every symbol.
+          CIBW_TEST_COMMAND: python -c "import docling_rs"
 
       - uses: actions/upload-artifact@v7
         with:
