@@ -281,6 +281,45 @@ fn streaming_with_options_matches_buffered_markdown() {
     );
 }
 
+/// Sources whose pictures are metafiles (EMF/WMF) with text in them,
+/// rasterized with the host's fonts (`backend/metafile.rs` loads the system
+/// fonts): the PNG bytes differ where the font set does — a WSL host that
+/// sees `C:\Windows\Fonts` draws the text in Arial, the fixture's host
+/// drew it in a substitute. For these the embedded PNG payloads are left out
+/// of the JSON / HTML comparison; everything else, the pictures' sizes
+/// included, still has to match.
+const HOST_FONT_PICTURES: &[&str] = &["doc/embedded_word_object.doc"];
+
+/// `text` with every `data:image/png;base64,` payload replaced by `…`.
+fn mask_png_payloads(text: &str) -> String {
+    const PREFIX: &str = "data:image/png;base64,";
+    let mut out = String::with_capacity(text.len());
+    let mut rest = text;
+    while let Some(at) = rest.find(PREFIX) {
+        out.push_str(&rest[..at + PREFIX.len()]);
+        out.push('…');
+        rest = rest[at + PREFIX.len()..].trim_start_matches(|c: char| {
+            c.is_ascii_alphanumeric() || matches!(c, '+' | '/' | '=')
+        });
+    }
+    out.push_str(rest);
+    out
+}
+
+/// The masking drops the PNG payloads and nothing else.
+#[test]
+fn png_payload_masking_keeps_the_rest() {
+    let a = r#"{"uri": "data:image/png;base64,iVBORw0+/=", "size": {"width": 2048.0}}"#;
+    let b = r#"{"uri": "data:image/png;base64,QUJD", "size": {"width": 2048.0}}"#;
+    let c = r#"{"uri": "data:image/png;base64,QUJD", "size": {"width": 1024.0}}"#;
+    assert_eq!(mask_png_payloads(a), mask_png_payloads(b));
+    assert_ne!(mask_png_payloads(b), mask_png_payloads(c));
+    assert_eq!(
+        mask_png_payloads(r#"<img src="data:image/png;base64,QUJD" width="9">"#),
+        r#"<img src="data:image/png;base64,…" width="9">"#
+    );
+}
+
 #[test]
 fn outputs_match_fixtures() {
     let regen = std::env::var_os("DOCLING_RS_REGEN").is_some();
@@ -331,6 +370,9 @@ fn outputs_match_fixtures() {
             }
             match fs::read_to_string(&path) {
                 Ok(want) if want == got => {}
+                Ok(want)
+                    if HOST_FONT_PICTURES.contains(&rel.as_str())
+                        && mask_png_payloads(&want) == mask_png_payloads(&got) => {}
                 Ok(_) => failures.push(format!(
                     "{rel}{suffix}: output changed (run DOCLING_RS_REGEN=1 to update)"
                 )),
