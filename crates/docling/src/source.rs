@@ -37,6 +37,11 @@ pub struct SourceDocument {
     /// encoding — see [`Self::text`]. Set by [`Self::with_encoding`] or, for
     /// every source a converter handles, `DocumentConverter::encoding`.
     pub encoding: Option<String>,
+    /// The media type the document arrived with (`text/html`), when one did
+    /// — an upload's or a fetched URL's `Content-Type` — so a backend
+    /// registered for it (#680, [`crate::BackendMatcher::media_types`]) still
+    /// sees it at conversion time. `None` for files and nameless bytes.
+    pub media_type: Option<String>,
 }
 
 impl SourceDocument {
@@ -44,11 +49,19 @@ impl SourceDocument {
     /// extension.
     pub fn from_file(path: impl AsRef<Path>) -> Result<Self, ConversionError> {
         let path = path.as_ref();
+        let bytes = std::fs::read(path)?;
+        Self::from_path_and_bytes(path, bytes)
+    }
+
+    /// [`Self::from_file`] for bytes already read from `path`.
+    pub(crate) fn from_path_and_bytes(
+        path: &Path,
+        bytes: Vec<u8>,
+    ) -> Result<Self, ConversionError> {
         let ext = path
             .extension()
             .and_then(|e| e.to_str())
             .map(str::to_ascii_lowercase);
-        let bytes = std::fs::read(path)?;
         // The extension decides; without one, or with one the table does not
         // know, the bytes do (#672, `InputFormat::detect`): a known signature
         // — a PPTX renamed to nothing, a PDF saved as `.bin` — else text as
@@ -85,6 +98,7 @@ impl SourceDocument {
             path: Some(path.to_path_buf()),
             base_url: None,
             encoding: None,
+            media_type: None,
         })
     }
 
@@ -135,6 +149,7 @@ impl SourceDocument {
             .to_string();
         let mut doc = Self::from_bytes(stem, format, bytes);
         doc.extension = ext.map(str::to_ascii_lowercase);
+        doc.media_type = media_type.map(str::to_string);
         Ok(doc)
     }
 
@@ -190,7 +205,15 @@ impl SourceDocument {
             path: None,
             base_url: None,
             encoding: None,
+            media_type: None,
         }
+    }
+
+    /// Record the media type the bytes arrived with (see
+    /// [`Self::media_type`]); the format is not re-resolved.
+    pub fn with_media_type(mut self, media_type: Option<String>) -> Self {
+        self.media_type = media_type;
+        self
     }
 
     /// Decode the bytes with this character encoding when read as text —

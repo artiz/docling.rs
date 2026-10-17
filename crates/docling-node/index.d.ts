@@ -6,7 +6,7 @@ import type {
   ConverterOptions,
   OutputOptions,
   ConvertOptions,
-  ConvertInput,
+  ConvertInput as NativeConvertInput,
   ConvertResult,
   ArchiveItem,
   ChunkOptions,
@@ -15,12 +15,19 @@ import type {
   EmailAttachmentOptions,
 } from './native'
 
+/**
+ * In-memory input: the native binding's, plus the media type a registered
+ * backend can claim it by (#680). The built-in formats ignore `mimeType`.
+ */
+export interface ConvertInput extends NativeConvertInput {
+  mimeType?: string
+}
+
 export type {
   ArchiveItem,
   ConverterOptions,
   OutputOptions,
   ConvertOptions,
-  ConvertInput,
   ConvertResult,
   ChunkOptions,
   Chunk,
@@ -40,6 +47,54 @@ export {
   emailAttachmentsAsync,
   emailAttachmentsFileAsync,
 } from './native'
+
+/**
+ * A backend for {@link registerBackend} (#680): a function that reads one
+ * input format, and what it claims. An input is claimed when its extension
+ * is in `extensions`, *or* its `mimeType` in `mimeTypes`, *or* `sniff`
+ * accepts its bytes.
+ */
+export interface BackendSpec {
+  /** Shown by {@link registeredBackends} and in errors; defaults to the first extension or media type. */
+  name?: string
+  /** Extensions, case-insensitive, with or without the dot (`'rtf2'`, `'.RTF2'`). */
+  extensions?: string[]
+  /** Media types, matched without parameters (`'application/x-rtf2'`). */
+  mimeTypes?: string[]
+  /** A cheap content check; runs on every input before the built-in formats. A throw counts as `false`. */
+  sniff?: (data: Buffer) => boolean
+  /**
+   * Read the input: return Markdown (a string) or a DoclingDocument (the
+   * docling-core JSON as an object). Either is converted under the caller's
+   * options. May return a promise when called through the `*Async` functions.
+   */
+  convert: (data: Buffer, name: string) => string | object | Promise<string | object>
+  /** Higher is tried first; among equals, the earlier registration. Default 0. */
+  priority?: number
+}
+
+/** What {@link registeredBackends} lists for one backend. */
+export interface RegisteredBackend {
+  name: string
+  extensions: string[]
+  mimeTypes: string[]
+  sniff: boolean
+  priority: number
+}
+
+/**
+ * Register a backend (#680) for the module-level functions (convert,
+ * chunk, streamFileMarkdown, …) and every {@link DocumentConverter} created
+ * afterwards. Registered backends are consulted before the built-in
+ * formats, so one can add a format or take one over. A claimed input's
+ * result reports its built-in format id, or `'plugin'`. Archive entries are
+ * not routed to registered backends. Returns the backend's name.
+ */
+export declare function registerBackend(spec: BackendSpec): string
+/** The module-level backends, in the order they are tried. */
+export declare function registeredBackends(): RegisteredBackend[]
+/** Remove the module-level backends of this name; whether any was removed. */
+export declare function unregisterBackend(name: string): boolean
 
 /** Callback form used by the native streaming API (prefer {@link streamFileMarkdown}). */
 export type StreamCallback = (err: Error | null, chunk: string | undefined | null) => void
@@ -101,6 +156,10 @@ export declare function chunkDocumentAsync(documentJson: string, options?: Chunk
  */
 export declare class DocumentConverter {
   constructor(options?: ConverterOptions | null)
+  /** Register a backend on this converter only (#680); see {@link registerBackend}. */
+  registerBackend(spec: BackendSpec): string
+  /** This converter's backends: the module's as of its creation, then its own. */
+  registeredBackends(): RegisteredBackend[]
   convertFile(path: string, options?: OutputOptions | null): ConvertResult
   convert(input: ConvertInput, options?: OutputOptions | null): ConvertResult
   convertFileAsync(path: string, options?: OutputOptions | null): Promise<ConvertResult>

@@ -141,8 +141,10 @@ pub(crate) fn spawn(
         // name: the buffered path converts it, retrying as its content's
         // format (#556). The header check reads the first KiB the PDF parser
         // reads anyway.
+        // A registered backend (#680) claiming the source takes it buffered.
         InputFormat::Pdf
             if !converter.heading_hierarchy_enabled()
+                && !converter.claims(&source)
                 && crate::sniff::looks_like_pdf(&source.bytes) =>
         {
             run_pdf(converter.stream_settings(), &source, &options, &tx)

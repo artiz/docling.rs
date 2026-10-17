@@ -393,6 +393,40 @@ multilingual docling-conformance model; BCP-47 tags for either language —
 models, #388), and `pages: 'A-B'` converts only that
 1-based PDF page window.
 
+### Pluggable backends
+
+Read a format docling.rs does not know — or one of its formats your way — with
+a JavaScript function (#680):
+
+```js
+import { convertFile, registerBackend } from 'docling.rs'
+
+registerBackend({
+  name: 'rtf2',
+  extensions: ['rtf2'],                       // and/or
+  mimeTypes: ['application/x-rtf2'],          // convert({ name, data, mimeType })
+  sniff: (data) => data.subarray(0, 7).toString() === '{\\rtf2}',
+  convert: (data, name) => `# ${name}\n\n${data.toString('utf8')}`,
+})
+
+const result = convertFile('notes.rtf2')   // result.format === 'plugin'
+```
+
+`convert(data, name)` returns Markdown (a string) or a DoclingDocument (the
+docling JSON as an object), which the native side converts under the call's
+options — `to`, `imageMode`, `redactPii` and the rest apply. Registered
+backends come before the built-in formats, highest `priority` first, so one
+can also take a format over (`extensions: ['csv']`; the result keeps
+`format: 'csv'`). A claimed input needs no ML models. An async `convert` works
+through the `*Async` functions; a thrown error fails the call with the
+backend's name.
+
+`registerBackend` covers the module functions (`convert*`, `chunk*`,
+`streamFileMarkdown`) and every `DocumentConverter` created afterwards;
+`converter.registerBackend(spec)` one converter. `registeredBackends()` and
+`unregisterBackend(name)` manage them. Not routed: archive entries, and the
+warm `Pipeline` (PDF/images only).
+
 ## API
 
 ### Functions
@@ -419,6 +453,8 @@ models, #388), and `pages: 'A-B'` converts only that
 | `formatFromName(name)` | `string \| null` | Detect a format id from a filename/extension. |
 | `detectFormat(data)` | `string \| null` | The format id a `Buffer` evidently is by its content (#672: PDF, the Office / ODF / EPUB / iWork packages, OLE files, RTF, HTML, images, DjVu, audio/video containers, WordPerfect, WebVTT, DocTags, SVG, AbiWord, XML, JSON and notebooks, MIME messages, LaTeX); `null` for text without a signature. What `convert({ name, data })` does for a name with no or an unknown extension. |
 | `checkDependencies(options?)` | `DependencyStatus` | Report which PDF/image deps are present. |
+| `registerBackend(spec)` | `string` | Read a format with a JavaScript function (#680): `{ name?, extensions?, mimeTypes?, sniff?, convert(data, name), priority? }`, see [Pluggable backends](#pluggable-backends). |
+| `registeredBackends()` / `unregisterBackend(name)` | `RegisteredBackend[]` / `boolean` | List / remove the module-level backends. |
 
 `Pipeline` is the reusable warm PDF/image converter: `new Pipeline(converterOptions)`
 then `convertFile` / `convert` / `convertFileAsync` / `convertAsync` /
@@ -431,7 +467,8 @@ enrichment switches and every PDF/image option (`ocrEngine`, `ocrLang`,
 
 `DocumentConverter` is the reusable form: `new DocumentConverter(converterOptions)`
 then `convert` / `convertFile` / `convertFileAsync` / `convertAsync` /
-`convertFileStreaming` / `convertArchiveFile` / `convertArchive` (+ `*Async`).
+`convertFileStreaming` / `convertArchiveFile` / `convertArchive` (+ `*Async`),
+plus `registerBackend` / `registeredBackends` for this converter's own backends.
 Converter config (`strict`, `fetchImages`,
 `allowedFormats`, `pipeline` + the `vlm*` options) is set once on the
 constructor; output options (`to`, `imageMode`, `artifactsDir`) are per call.

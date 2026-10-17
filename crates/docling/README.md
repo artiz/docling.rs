@@ -369,6 +369,42 @@ curl -F file=@deck.pptx -F password=1234 localhost:5001/v1/convert
 ```
 
 
+## Pluggable backends
+
+Add an input format, or read a built-in one your way, without forking (#680):
+any `DeclarativeBackend` registered on a converter, with a `BackendMatcher`
+for the sources it claims — by extension, media type, or a check on the
+bytes — and a priority (highest first):
+
+```rust
+use std::sync::Arc;
+use docling::{BackendMatcher, DocumentConverter};
+
+let converter = DocumentConverter::new().register_backend(
+    "rtf2",
+    BackendMatcher::new()
+        .extensions(["rtf2"])
+        .media_types(["application/x-rtf2"])
+        .sniff(|bytes| bytes.starts_with(b"{\\rtf2}")),
+    Arc::new(Rtf2Backend),
+    0,
+);
+let source = converter.load_file("notes.rtf2")?;   // InputFormat::Plugin
+let result = converter.convert(source)?;
+```
+
+Registered backends come before the built-in dispatch, so a backend can take
+over a format (`.ipynb` keeps `InputFormat::Ipynb`). `load_file` /
+`load_named_bytes` accept the formats only a registered backend knows;
+`supported_extensions()` lists them with the built-in ones. The document gets
+the converter's usual post-processing (enrichment, redaction, metadata), and
+streaming converts a claimed source buffered. A backend's error is the
+conversion's, with no retry as a built-in format. Not routed: archive entries.
+A complete example: [`examples/register_backend.rs`](./examples/register_backend.rs)
+(`cargo run -p docling --example register_backend`). Python
+(`docling_rs.register_backend`) and Node.js (`registerBackend`) register
+functions in their own language.
+
 ## License
 
 MIT, like the rest of docling.rs.

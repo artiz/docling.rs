@@ -113,7 +113,7 @@ with `convert`, `convert_local`, `convert_stream`, `convert_uri`,
 | `markitdown FILE -o out.md` | `python -m docling_rs.markitdown FILE -o out.md` (also `-x`, `-m`, `-c`, `--keep-data-uris`, stdin) |
 | EXIF lines on an image (`ImageSize`, `Title`, `Description`, `Artist`, `DateTimeOriginal`, `GPSPosition`, … via exiftool), the audio tag lines (`Title`, `Artist`, `Album`, `Genre`, …) and `### Audio Transcript:`, the EPUB `**Title:** / **Authors:** / …` block | the same lines, from the engine's own readers (#679 — pure Rust, no exiftool; the facade converts with `metadata=json`, and `result.metadata` outside it) |
 | `exiftool_path`, `style_map`, `docintel_*`, `cu_*` | accepted, ignored with a warning |
-| plugins, `register_converter` | not supported ([#680](https://github.com/docling-project/docling.rs/issues/680)) |
+| plugins (`enable_plugins`, the `markitdown.plugin` entry point), `register_converter(converter, priority=…)` | same ([#680](https://github.com/docling-project/docling.rs/issues/680)): a converter at `PRIORITY_SPECIFIC_FILE_FORMAT` or below runs before docling.rs's engine, a generic one when the engine has no format for the input or fails on it. To add a format to every surface of the Python package, not only the facade: `docling_rs.register_backend` ([pluggable backends](../crates/docling-py/README.md#pluggable-backends)) |
 
 Beyond MarkItDown: `MarkItDown(docling_options={...})` passes options to
 docling.rs's `DocumentConverter` — `{"text_layer_only": True}`,
@@ -150,8 +150,8 @@ and local speech recognition for audio and video.
 
 ## Open gaps
 
-Tracked:
-[#680](https://github.com/docling-project/docling.rs/issues/680) (pluggable backends).
+None tracked: [open an issue](https://github.com/docling-project/docling.rs/issues)
+for what you miss.
 
 ## Reproduce the numbers
 

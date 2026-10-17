@@ -27,6 +27,9 @@ import {
   formatFromName,
   detectFormat,
   Pipeline,
+  registerBackend,
+  registeredBackends,
+  unregisterBackend,
   streamChunks,
   streamDocumentChunks,
   streamFileMarkdown,
@@ -93,6 +96,105 @@ async function main() {
     assert.throws(() => convertArchive({ name: 'x.zip', data: Buffer.from('plain') }))
     // An archive is not a document: the plain converters still refuse it.
     assert.throws(() => convertFile(BUNDLE))
+  })
+
+  // Pluggable backends (#680): a JavaScript function claims inputs by
+  // extension, media type or content, ahead of the built-in formats.
+  const rtf2 = (data) => {
+    const lines = data.toString('utf8').split('\n')
+    if (lines[0] !== '{\\rtf2}') throw new Error('not rtf2')
+    return lines.slice(1).filter(Boolean).map((l) => l.replace(/^\\h1 /, '# ').replace(/^\\p /, '')).join('\n\n')
+  }
+  const RTF2 = Buffer.from('{\\rtf2}\n\\h1 Notes\n\\p Plain text, in a format of its own.\n')
+  const fsp = await import('node:fs')
+  const os = await import('node:os')
+  const { join: pjoin } = await import('node:path')
+  const scratch = fsp.mkdtempSync(pjoin(os.tmpdir(), 'docling-node-plugins-'))
+
+  await check('registerBackend adds a format: by name, media type, content (#680)', async () => {
+    // Unregistered, content detection takes it for RTF.
+    const before = convert({ name: 'notes.rtf2', data: RTF2 }).content
+    assert.ok(!before.startsWith('# Notes'), before)
+    const name = registerBackend({
+      extensions: ['.RTF2'],
+      mimeTypes: ['application/x-rtf2'],
+      sniff: (data) => data.subarray(0, 7).toString() === '{\\rtf2}',
+      convert: rtf2,
+    })
+    try {
+      assert.equal(name, 'rtf2')
+      assert.deepEqual(registeredBackends(), [
+        { name: 'rtf2', extensions: ['rtf2'], mimeTypes: ['application/x-rtf2'], sniff: true, priority: 0 },
+      ])
+      const byName = convert({ name: 'notes.rtf2', data: RTF2 })
+      assert.equal(byName.content, '# Notes\n\nPlain text, in a format of its own.\n')
+      assert.equal(byName.format, 'plugin')
+      assert.equal(byName.inputName, 'notes')
+      assert.equal(byName.status, 'success')
+      // Content alone, the media type, a file, async, JSON output, the class.
+      assert.equal(convert({ name: 'upload', data: RTF2 }).content, byName.content)
+      assert.equal(convert({ name: 'upload', data: RTF2, mimeType: 'application/x-rtf2; v=1' }).content, byName.content)
+      const file = pjoin(scratch, 'notes.rtf2')
+      fsp.writeFileSync(file, RTF2)
+      assert.equal(convertFile(file).content, byName.content)
+      assert.equal((await convertFileAsync(file)).content, byName.content)
+      assert.equal((await convertAsync({ name: 'notes.rtf2', data: RTF2 })).format, 'plugin')
+      const json = JSON.parse(convert({ name: 'notes.rtf2', data: RTF2 }, { to: 'json' }).content)
+      assert.equal(json.texts[0].label, 'title')
+      assert.equal(new DocumentConverter().convertFile(file).content, byName.content)
+      const chunks = chunk({ name: 'notes.rtf2', data: RTF2 })
+      assert.ok(chunks.some((c) => c.text.includes('Plain text')))
+      let streamed = ''
+      for await (const piece of streamFileMarkdown(file)) streamed += piece
+      assert.equal(streamed, byName.content)
+      // Other formats are untouched.
+      assert.equal(convert({ name: 'a.md', data: Buffer.from(MD) }).format, 'md')
+    } finally {
+      assert.ok(unregisterBackend('rtf2'))
+    }
+    assert.deepEqual(registeredBackends(), [])
+    assert.equal(convertFile(pjoin(scratch, 'notes.rtf2')).content, before)
+  })
+
+  await check('a backend takes over a built-in format, by priority, and may return a document (#680)', async () => {
+    const converter = new DocumentConverter()
+    converter.registerBackend({ name: 'low', extensions: ['csv'], convert: () => 'low', priority: -1 })
+    converter.registerBackend({ name: 'first', extensions: ['csv'], convert: () => 'first' })
+    converter.registerBackend({ name: 'second', extensions: ['csv'], convert: () => 'second' })
+    converter.registerBackend({
+      name: 'doc',
+      extensions: ['csv'],
+      priority: 5,
+      convert: (data, name) =>
+        JSON.parse(convert({ name: 'x.md', data: Buffer.from(`# From ${name}\n`) }, { to: 'json' }).content),
+    })
+    assert.deepEqual(
+      converter.registeredBackends().map((b) => b.name),
+      ['doc', 'first', 'second', 'low'],
+    )
+    const out = converter.convert({ name: 'table.csv', data: Buffer.from('a,b\n1,2\n') })
+    assert.equal(out.content, '# From table.csv\n')
+    assert.equal(out.format, 'csv')
+    // Registered on the instance only: the module functions read CSV as CSV.
+    const plain = convert({ name: 'table.csv', data: Buffer.from('a,b\n1,2\n') }).content
+    assert.ok(plain.startsWith('|') && !plain.includes('From'), plain)
+    assert.deepEqual(registeredBackends(), [])
+  })
+
+  await check('backend errors and bad registrations are reported (#680)', async () => {
+    const converter = new DocumentConverter()
+    converter.registerBackend({ extensions: ['bad'], convert: () => { throw new Error('nope') } })
+    converter.registerBackend({ extensions: ['num'], convert: () => 42 })
+    converter.registerBackend({ extensions: ['later'], convert: async () => '# Later\n' })
+    assert.throws(() => converter.convert({ name: 'x.bad', data: Buffer.from('x') }), /backend `bad`: nope/)
+    assert.throws(() => converter.convert({ name: 'x.num', data: Buffer.from('x') }), /returned number/)
+    assert.throws(() => converter.convert({ name: 'x.later', data: Buffer.from('x') }), /is async/)
+    assert.equal((await converter.convertAsync({ name: 'x.later', data: Buffer.from('x') })).content, '# Later\n')
+    await assert.rejects(converter.convertAsync({ name: 'x.bad', data: Buffer.from('x') }), /backend `bad`: nope/)
+    assert.throws(() => registerBackend({ extensions: ['x'] }), /convert\(data, name\)/)
+    assert.throws(() => registerBackend({ convert: () => '' }), /claims nothing/)
+    assert.throws(() => registerBackend({ extensions: 'x', convert: () => '' }), /list of strings/)
+    assert.deepEqual(registeredBackends(), [])
   })
 
   await check('supportedFormats lists md and pdf', () => {
@@ -802,6 +904,7 @@ async function main() {
   }
 }
 
-main().catch(() => {
+main().catch((err) => {
+  console.error(err)
   process.exitCode = 1
 })

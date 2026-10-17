@@ -34,6 +34,7 @@ mod format;
 pub mod memory;
 mod metadata;
 pub mod options;
+pub mod plugins;
 mod redact;
 mod result;
 mod sniff;
@@ -63,6 +64,7 @@ pub use format::{InputFormat, OUTPUT_FORMATS};
 pub use options::{
     cli_flag, merge_options, ConvertOptions, OptionInfo, OptionsError, PipelineKind, OPTIONS,
 };
+pub use plugins::{BackendMatcher, RegisteredBackend};
 pub use result::{ConversionResult, ConversionStatus, ErrorItem};
 pub use source::SourceDocument;
 #[cfg(feature = "pdf")]

@@ -378,6 +378,10 @@ pub struct DocumentConverter {
     /// [`Self::warm_pipeline`]; `None` loads the models per conversion.
     #[cfg(feature = "pdf")]
     warm: Option<WarmPipeline>,
+    /// Backends registered with [`Self::register_backend`] (#680), in the
+    /// order they are tried: highest priority first, registration order
+    /// among equals.
+    backends: std::sync::Arc<Vec<crate::plugins::RegisteredBackend>>,
 }
 
 /// The builder's overrides of [`crate::ImageLimits`] (#646): `None` = the
@@ -610,6 +614,7 @@ impl Default for DocumentConverter {
             archive_limits: crate::archive::ArchiveLimits::default(),
             #[cfg(feature = "pdf")]
             warm: None,
+            backends: std::sync::Arc::new(Vec::new()),
         }
     }
 }
@@ -920,6 +925,182 @@ impl DocumentConverter {
     pub fn archive_limits(mut self, limits: crate::archive::ArchiveLimits) -> Self {
         self.archive_limits = limits;
         self
+    }
+
+    /// Register `backend` for the sources `matcher` claims (#680), under
+    /// `name` (what format listings print). Registered backends are tried
+    /// before the built-in formats — highest `priority` first, the earliest
+    /// registration first among equals — so a backend can add a format or
+    /// take one over; its document then goes through the same
+    /// post-processing as a built-in one. An extension the built-in tables
+    /// do not know reaches a converter through [`Self::load_file`] /
+    /// [`Self::load_named_bytes`], which resolve such a source as
+    /// [`InputFormat::Plugin`]. See [`crate::plugins`].
+    ///
+    /// ```
+    /// use std::sync::Arc;
+    /// use docling::{BackendMatcher, ConversionError, DocumentConverter, SourceDocument};
+    /// use docling::backend::DeclarativeBackend;
+    /// use docling_core::{DoclingDocument, Node};
+    ///
+    /// struct Shout;
+    /// impl DeclarativeBackend for Shout {
+    ///     fn convert(&self, source: &SourceDocument) -> Result<DoclingDocument, ConversionError> {
+    ///         let mut doc = DoclingDocument::new(&source.name);
+    ///         doc.push(Node::Paragraph { text: source.text()?.to_uppercase() });
+    ///         Ok(doc)
+    ///     }
+    /// }
+    ///
+    /// let converter = DocumentConverter::new().register_backend(
+    ///     "shout",
+    ///     BackendMatcher::new().extensions(["shout"]),
+    ///     Arc::new(Shout),
+    ///     0,
+    /// );
+    /// let source = converter.load_named_bytes("note.shout", b"hello".to_vec(), None)?;
+    /// let md = converter.convert(source)?.document.export_to_markdown();
+    /// assert_eq!(md, "HELLO\n");
+    /// # Ok::<(), ConversionError>(())
+    /// ```
+    pub fn register_backend(
+        mut self,
+        name: impl Into<String>,
+        matcher: crate::plugins::BackendMatcher,
+        backend: std::sync::Arc<dyn crate::backend::DeclarativeBackend + Send + Sync>,
+        priority: i32,
+    ) -> Self {
+        let mut backends = (*self.backends).clone();
+        backends.push(crate::plugins::RegisteredBackend::new(
+            name.into(),
+            matcher,
+            backend,
+            priority,
+        ));
+        // Stable: registration order stays among equal priorities.
+        backends.sort_by_key(|b| std::cmp::Reverse(b.priority()));
+        self.backends = std::sync::Arc::new(backends);
+        self
+    }
+
+    /// The backends registered with [`Self::register_backend`], in the
+    /// order they are tried.
+    pub fn registered_backends(&self) -> &[crate::plugins::RegisteredBackend] {
+        &self.backends
+    }
+
+    /// The registered backend that claims `source`, if any.
+    fn backend_for(&self, source: &SourceDocument) -> Option<&crate::plugins::RegisteredBackend> {
+        self.backends.iter().find(|b| {
+            b.matcher().matches(
+                source.extension.as_deref(),
+                source.media_type.as_deref(),
+                &source.bytes,
+            )
+        })
+    }
+
+    /// Whether a registered backend claims `source` (the streaming path
+    /// then converts it buffered, through [`Self::convert`]).
+    pub(crate) fn claims(&self, source: &SourceDocument) -> bool {
+        self.backend_for(source).is_some()
+    }
+
+    /// [`SourceDocument::from_file`] that knows this converter's registered
+    /// backends (#680): a file a registered backend claims — by extension,
+    /// or by its bytes — loads even when the built-in tables do not know
+    /// it, as [`InputFormat::Plugin`] (a claimed file whose extension *is*
+    /// a built-in format keeps that format). Without registered backends,
+    /// exactly [`SourceDocument::from_file`].
+    pub fn load_file(
+        &self,
+        path: impl AsRef<std::path::Path>,
+    ) -> Result<SourceDocument, ConversionError> {
+        let path = path.as_ref();
+        let bytes = std::fs::read(path)?;
+        let ext = path
+            .extension()
+            .and_then(|e| e.to_str())
+            .map(str::to_ascii_lowercase);
+        if self
+            .backends
+            .iter()
+            .any(|b| b.matcher().matches(ext.as_deref(), None, &bytes))
+        {
+            let format = ext
+                .as_deref()
+                .and_then(InputFormat::from_extension)
+                .unwrap_or(InputFormat::Plugin);
+            let name = path
+                .file_stem()
+                .and_then(|s| s.to_str())
+                .unwrap_or("document")
+                .to_string();
+            let mut source = SourceDocument::from_bytes(name, format, bytes);
+            source.extension = ext;
+            source.path = Some(path.to_path_buf());
+            return Ok(source);
+        }
+        SourceDocument::from_path_and_bytes(path, bytes)
+    }
+
+    /// [`SourceDocument::from_named_bytes`] that knows this converter's
+    /// registered backends (#680), as [`Self::load_file`] does: bytes a
+    /// registered backend claims — by the name's extension, the media type
+    /// or the content — load even when the built-in tables do not know
+    /// them, as [`InputFormat::Plugin`] unless the extension or media type
+    /// names a built-in format.
+    pub fn load_named_bytes(
+        &self,
+        name: &str,
+        bytes: Vec<u8>,
+        media_type: Option<&str>,
+    ) -> Result<SourceDocument, ConversionError> {
+        let path = std::path::Path::new(name);
+        let ext = path
+            .extension()
+            .and_then(|e| e.to_str())
+            .map(str::to_ascii_lowercase);
+        if self
+            .backends
+            .iter()
+            .any(|b| b.matcher().matches(ext.as_deref(), media_type, &bytes))
+        {
+            let format = ext
+                .as_deref()
+                .and_then(InputFormat::from_extension)
+                .or_else(|| media_type.and_then(InputFormat::from_mime))
+                .unwrap_or(InputFormat::Plugin);
+            let stem = path
+                .file_stem()
+                .and_then(|s| s.to_str())
+                .filter(|s| !s.is_empty())
+                .unwrap_or("document")
+                .to_string();
+            let mut source = SourceDocument::from_bytes(stem, format, bytes);
+            source.extension = ext;
+            source.media_type = media_type.map(str::to_string);
+            return Ok(source);
+        }
+        SourceDocument::from_named_bytes(name, bytes, media_type)
+    }
+
+    /// Every input file extension this converter takes: the build's
+    /// built-in ones ([`InputFormat::supported_extensions`]) and those of
+    /// its registered backends (#680) — sorted, unique, lowercase, no dot.
+    pub fn supported_extensions(&self) -> Vec<String> {
+        let mut out: Vec<String> = InputFormat::supported_extensions()
+            .into_iter()
+            .map(str::to_string)
+            .chain(
+                self.backends
+                    .iter()
+                    .flat_map(|b| b.matcher().extension_list().iter().cloned()),
+            )
+            .collect();
+        out.sort_unstable();
+        out.dedup();
+        out
     }
 
     pub(crate) fn archive_limits_ref(&self) -> crate::archive::ArchiveLimits {
@@ -2299,6 +2480,11 @@ impl DocumentConverter {
             }
         }
         let source = self.with_encoding(source);
+        // A source a registered backend claims (#680) is that backend's:
+        // its failure is not retried as the content's built-in format.
+        if self.claims(&source) {
+            return self.convert_as(&source);
+        }
         let err = match self.convert_as(&source) {
             Ok(result) => return Ok(result),
             Err(err) => err,
@@ -2402,317 +2588,342 @@ impl DocumentConverter {
             }
             None => source,
         };
-        let mut document = match source.format {
-            // A legacy APS (Automated Patent System) plain-text patent (`PATN`
-            // first record) is reconstructed verbatim, mirroring docling.
-            InputFormat::Md if crate::backend::uspto::looks_like_aps(&source.text()?) => {
-                crate::backend::uspto::convert_aps(source)?
-            }
-            // A text/Markdown-typed file that is actually an XML document (e.g. a
-            // JATS article saved with a `.txt` extension) routes to the XML
-            // backends by content, mirroring docling's content-based detection.
-            InputFormat::Md if looks_like_xml(&source.text()?) => match sniff_xml(&source.bytes) {
-                InputFormat::XmlUspto => UsptoBackend.convert(source)?,
-                InputFormat::XmlXbrl => {
-                    crate::backend::xbrl::convert_xbrl(source, self.xbrl_taxonomy.as_deref())?
+        let registered = self.backend_for(source);
+        let mut document = if let Some(registered) = registered {
+            // A registered backend (#680) ahead of every built-in format.
+            registered.backend().convert(source)?
+        } else {
+            match source.format {
+                // A legacy APS (Automated Patent System) plain-text patent (`PATN`
+                // first record) is reconstructed verbatim, mirroring docling.
+                InputFormat::Md if crate::backend::uspto::looks_like_aps(&source.text()?) => {
+                    crate::backend::uspto::convert_aps(source)?
                 }
-                // docling's format detection reads an XML-looking `.txt` as
-                // `application/xml` and, when its DOCTYPE names a JATS DTD
-                // (`JATS-journalpublishing…` / `JATS-archive…`), converts it
-                // with the JATS backend like a real `.nxml`; any other XML
-                // saved as `.txt` is reconstructed generically
-                // (element-by-element).
-                _ if has_jats_doctype(&source.text()?) => JatsBackend {
+                // A text/Markdown-typed file that is actually an XML document (e.g. a
+                // JATS article saved with a `.txt` extension) routes to the XML
+                // backends by content, mirroring docling's content-based detection.
+                InputFormat::Md if looks_like_xml(&source.text()?) => {
+                    match sniff_xml(&source.bytes) {
+                        InputFormat::XmlUspto => UsptoBackend.convert(source)?,
+                        InputFormat::XmlXbrl => crate::backend::xbrl::convert_xbrl(
+                            source,
+                            self.xbrl_taxonomy.as_deref(),
+                        )?,
+                        // docling's format detection reads an XML-looking `.txt` as
+                        // `application/xml` and, when its DOCTYPE names a JATS DTD
+                        // (`JATS-journalpublishing…` / `JATS-archive…`), converts it
+                        // with the JATS backend like a real `.nxml`; any other XML
+                        // saved as `.txt` is reconstructed generically
+                        // (element-by-element).
+                        _ if has_jats_doctype(&source.text()?) => JatsBackend {
+                            images: self.image_policy(),
+                        }
+                        .convert(source)?,
+                        _ => crate::backend::jats::convert_generic(source)?,
+                    }
+                }
+                // DeepSeek-OCR annotated Markdown (VLM token format) is detected by
+                // its `<|ref|>…[[bbox]]` annotations and parsed separately.
+                InputFormat::Md if is_deepseek_markdown(&source.text()?) => {
+                    DeepSeekBackend.convert(source)?
+                }
+                InputFormat::Md => MarkdownBackend {
+                    strict: self.strict,
                     images: self.image_policy(),
                 }
                 .convert(source)?,
-                _ => crate::backend::jats::convert_generic(source)?,
-            },
-            // DeepSeek-OCR annotated Markdown (VLM token format) is detected by
-            // its `<|ref|>…[[bbox]]` annotations and parsed separately.
-            InputFormat::Md if is_deepseek_markdown(&source.text()?) => {
-                DeepSeekBackend.convert(source)?
-            }
-            InputFormat::Md => MarkdownBackend {
-                strict: self.strict,
-                images: self.image_policy(),
-            }
-            .convert(source)?,
-            InputFormat::Csv => CsvBackend.convert(source)?,
-            // A YouTube watch page (#681): routed by the URL it was fetched
-            // from, as MarkItDown's `accepts` does — its title, metadata and
-            // caption transcript, not the page's markup.
-            InputFormat::Html if Self::is_youtube_page(source) => self.youtube_page(source)?,
-            InputFormat::Html => {
-                // Optionally resolve the CSS cascade in a headless browser first
-                // (strips computed-hidden elements); everything else stays in the
-                // Rust HTML backend, which runs on the cleaned HTML.
-                // Bytes → text through docling's BeautifulSoup decoding order
-                // (#371): BOM, declared charset, UTF-8, windows-1252 — so a
-                // legacy windows-1252 page converts instead of failing the
-                // UTF-8 check every other text backend applies.
-                let decoded = crate::backend::decode_html_bytes(&source.bytes);
-                let html = self.maybe_prerender(&decoded)?;
-                let policy = self.image_policy();
-                if policy.sources != crate::ImageSources::None {
-                    let resolver = crate::backend::FsImageResolver::new(
-                        source.base_dir().map(|p| p.to_path_buf()),
-                        source.base_url.clone(),
-                        policy,
-                    );
-                    crate::backend::convert_html(&source.name, &html, &resolver)
-                } else {
-                    crate::backend::convert_html(&source.name, &html, &crate::backend::NoFetch)
+                InputFormat::Csv => CsvBackend.convert(source)?,
+                // A YouTube watch page (#681): routed by the URL it was fetched
+                // from, as MarkItDown's `accepts` does — its title, metadata and
+                // caption transcript, not the page's markup.
+                InputFormat::Html if Self::is_youtube_page(source) => self.youtube_page(source)?,
+                InputFormat::Html => {
+                    // Optionally resolve the CSS cascade in a headless browser first
+                    // (strips computed-hidden elements); everything else stays in the
+                    // Rust HTML backend, which runs on the cleaned HTML.
+                    // Bytes → text through docling's BeautifulSoup decoding order
+                    // (#371): BOM, declared charset, UTF-8, windows-1252 — so a
+                    // legacy windows-1252 page converts instead of failing the
+                    // UTF-8 check every other text backend applies.
+                    let decoded = crate::backend::decode_html_bytes(&source.bytes);
+                    let html = self.maybe_prerender(&decoded)?;
+                    let policy = self.image_policy();
+                    if policy.sources != crate::ImageSources::None {
+                        let resolver = crate::backend::FsImageResolver::new(
+                            source.base_dir().map(|p| p.to_path_buf()),
+                            source.base_url.clone(),
+                            policy,
+                        );
+                        crate::backend::convert_html(&source.name, &html, &resolver)
+                    } else {
+                        crate::backend::convert_html(&source.name, &html, &crate::backend::NoFetch)
+                    }
                 }
-            }
-            InputFormat::Asciidoc => AsciiDocBackend {
-                images: self.image_policy(),
-            }
-            .convert(source)?,
-            InputFormat::Xlsx => XlsxBackend {
-                skip_empty: self.skip_empty_cells,
-            }
-            .convert(source)?,
-            InputFormat::Pptx => PptxBackend.convert(source)?,
-            // RTF (#209): a docling.rs extension — docling reaches RTF only via
-            // LibreOffice; here it parses natively (hand-rolled tokenizer).
-            InputFormat::Rtf => RtfBackend.convert(source)?,
-            InputFormat::Visio => VisioBackend.convert(source)?,
-            // AbiWord (#216): docling.rs extension, native AWML parse.
-            InputFormat::Abiword => AbwBackend.convert(source)?,
-            // WordPerfect 5.x/6.x+ (#216): docling.rs extension, native parse
-            // of the ÿWPC function-code stream.
-            InputFormat::WordPerfect => WpdBackend.convert(source)?,
-            // Microsoft Works word processor (#216): docling.rs extension,
-            // native parse after libwps.
-            InputFormat::Works => WpsBackend.convert(source)?,
-            // StarOffice 5 binaries (#215): docling.rs extension, native CFB
-            // parse (docling would go through LibreOffice).
-            InputFormat::StarOffice5 => StarOffice5Backend.convert(source)?,
-            // DjVu (#434): docling.rs extension, pure-Rust decode (`djvu-rs`).
-            // The hidden text layer is the default; a scan-only DjVu falls back
-            // to rasterize + OCR when the ML pipeline is built.
-            InputFormat::Djvu => self.convert_djvu(source)?,
-            // DIF/SYLK/dBase (#216): docling.rs extensions, one content-sniffing
-            // backend for the three table relics.
-            InputFormat::Dbf | InputFormat::Dif | InputFormat::Sylk => {
-                InterchangeBackend.convert(source)?
-            }
-            // Lotus/Quattro/Works record streams (#216): one BOF-sniffing
-            // backend for the whole DOS-era family.
-            InputFormat::Lotus => LotusBackend.convert(source)?,
-            // Quattro Pro (#216): docling.rs extension, native parse after
-            // libwps (DOS/Windows record streams, QPW OLE zones).
-            InputFormat::QuattroPro => QuattroBackend.convert(source)?,
-            InputFormat::Docx => DocxBackend.convert(source)?,
-            // Legacy binary Office (issue #127): parsed natively — docling
-            // proper converts these through LibreOffice first (PR #3804).
-            InputFormat::Xls => XlsBackend {
-                skip_empty: self.skip_empty_cells,
-            }
-            .convert(source)?,
-            InputFormat::Ppt => PptBackend.convert(source)?,
-            InputFormat::Doc => DocBackend.convert(source)?,
-            InputFormat::Vtt => WebVttBackend.convert(source)?,
-            InputFormat::Ebcdic => EbcdicBackend {
-                layout: self.ebcdic_layout.clone(),
-            }
-            .convert(source)?,
-            InputFormat::Email => EmailBackend {
-                list_attachments: self.list_attachments,
-                images: self.image_policy(),
-            }
-            .convert(source)?,
-            InputFormat::Mhtml => MhtmlBackend {
-                images: self.image_policy(),
-                use_web_browser: self.use_web_browser,
-            }
-            .convert(source)?,
-            InputFormat::Epub => EpubBackend {
-                images: self.image_policy(),
-                use_web_browser: self.use_web_browser,
-            }
-            .convert(source)?,
-            // A `.json` that is a Jupyter notebook (#673) — `"nbformat"` and
-            // `"cells"` — reads as one, like MarkItDown's `application/json`
-            // sniff; any other JSON is the docling-JSON backend's.
-            InputFormat::JsonDocling => {
-                if crate::backend::ipynb::looks_like_notebook(&source.text()?) {
-                    self.ipynb_backend().convert(source)?
-                } else {
-                    DoclingJsonBackend.convert(source)?
+                InputFormat::Asciidoc => AsciiDocBackend {
+                    images: self.image_policy(),
                 }
-            }
-            InputFormat::Jsonl => crate::backend::text::convert_json_text(source)?,
-            InputFormat::Text => crate::backend::TextBackend.convert(source)?,
-            InputFormat::Ipynb => self.ipynb_backend().convert(source)?,
-            // RSS / Atom / RDF feeds (#678): the title, each item's heading,
-            // date and body (its HTML through the HTML backend).
-            InputFormat::Feed => crate::backend::FeedBackend {
-                images: self.image_policy(),
-            }
-            .convert(source)?,
-            // A bare `.xml` (#671): the dialects docling reads by content —
-            // JATS by its DOCTYPE or `<article>` root — else one xml code
-            // block with a warning, never an empty document.
-            InputFormat::Xml => match sniff_xml(&source.bytes) {
-                InputFormat::XmlUspto => UsptoBackend.convert(source)?,
+                .convert(source)?,
+                InputFormat::Xlsx => XlsxBackend {
+                    skip_empty: self.skip_empty_cells,
+                }
+                .convert(source)?,
+                InputFormat::Pptx => PptxBackend.convert(source)?,
+                // RTF (#209): a docling.rs extension — docling reaches RTF only via
+                // LibreOffice; here it parses natively (hand-rolled tokenizer).
+                InputFormat::Rtf => RtfBackend.convert(source)?,
+                InputFormat::Visio => VisioBackend.convert(source)?,
+                // AbiWord (#216): docling.rs extension, native AWML parse.
+                InputFormat::Abiword => AbwBackend.convert(source)?,
+                // WordPerfect 5.x/6.x+ (#216): docling.rs extension, native parse
+                // of the ÿWPC function-code stream.
+                InputFormat::WordPerfect => WpdBackend.convert(source)?,
+                // Microsoft Works word processor (#216): docling.rs extension,
+                // native parse after libwps.
+                InputFormat::Works => WpsBackend.convert(source)?,
+                // StarOffice 5 binaries (#215): docling.rs extension, native CFB
+                // parse (docling would go through LibreOffice).
+                InputFormat::StarOffice5 => StarOffice5Backend.convert(source)?,
+                // DjVu (#434): docling.rs extension, pure-Rust decode (`djvu-rs`).
+                // The hidden text layer is the default; a scan-only DjVu falls back
+                // to rasterize + OCR when the ML pipeline is built.
+                InputFormat::Djvu => self.convert_djvu(source)?,
+                // DIF/SYLK/dBase (#216): docling.rs extensions, one content-sniffing
+                // backend for the three table relics.
+                InputFormat::Dbf | InputFormat::Dif | InputFormat::Sylk => {
+                    InterchangeBackend.convert(source)?
+                }
+                // Lotus/Quattro/Works record streams (#216): one BOF-sniffing
+                // backend for the whole DOS-era family.
+                InputFormat::Lotus => LotusBackend.convert(source)?,
+                // Quattro Pro (#216): docling.rs extension, native parse after
+                // libwps (DOS/Windows record streams, QPW OLE zones).
+                InputFormat::QuattroPro => QuattroBackend.convert(source)?,
+                InputFormat::Docx => DocxBackend.convert(source)?,
+                // Legacy binary Office (issue #127): parsed natively — docling
+                // proper converts these through LibreOffice first (PR #3804).
+                InputFormat::Xls => XlsBackend {
+                    skip_empty: self.skip_empty_cells,
+                }
+                .convert(source)?,
+                InputFormat::Ppt => PptBackend.convert(source)?,
+                InputFormat::Doc => DocBackend.convert(source)?,
+                InputFormat::Vtt => WebVttBackend.convert(source)?,
+                InputFormat::Ebcdic => EbcdicBackend {
+                    layout: self.ebcdic_layout.clone(),
+                }
+                .convert(source)?,
+                InputFormat::Email => EmailBackend {
+                    list_attachments: self.list_attachments,
+                    images: self.image_policy(),
+                }
+                .convert(source)?,
+                InputFormat::Mhtml => MhtmlBackend {
+                    images: self.image_policy(),
+                    use_web_browser: self.use_web_browser,
+                }
+                .convert(source)?,
+                InputFormat::Epub => EpubBackend {
+                    images: self.image_policy(),
+                    use_web_browser: self.use_web_browser,
+                }
+                .convert(source)?,
+                // A `.json` that is a Jupyter notebook (#673) — `"nbformat"` and
+                // `"cells"` — reads as one, like MarkItDown's `application/json`
+                // sniff; any other JSON is the docling-JSON backend's.
+                InputFormat::JsonDocling => {
+                    if crate::backend::ipynb::looks_like_notebook(&source.text()?) {
+                        self.ipynb_backend().convert(source)?
+                    } else {
+                        DoclingJsonBackend.convert(source)?
+                    }
+                }
+                InputFormat::Jsonl => crate::backend::text::convert_json_text(source)?,
+                InputFormat::Text => crate::backend::TextBackend.convert(source)?,
+                InputFormat::Ipynb => self.ipynb_backend().convert(source)?,
+                // RSS / Atom / RDF feeds (#678): the title, each item's heading,
+                // date and body (its HTML through the HTML backend).
                 InputFormat::Feed => crate::backend::FeedBackend {
                     images: self.image_policy(),
                 }
                 .convert(source)?,
-                InputFormat::XmlXbrl => {
-                    crate::backend::xbrl::convert_xbrl(source, self.xbrl_taxonomy.as_deref())?
-                }
-                InputFormat::XmlDoclang => crate::backend::DoclangBackend.convert(source)?,
-                _ if looks_like_jats(&source.bytes) => JatsBackend {
-                    images: self.image_policy(),
-                }
-                .convert(source)?,
-                _ => crate::backend::text::convert_xml_text(source)?,
-            },
-            InputFormat::Latex => LatexBackend.convert(source)?,
-            // A bare `.xml` defaults to XmlJats; sniff the content to route to the
-            // right XML backend (docling distinguishes by DOCTYPE / root element).
-            InputFormat::XmlJats | InputFormat::XmlUspto | InputFormat::XmlXbrl => {
-                match sniff_xml(&source.bytes) {
+                // A bare `.xml` (#671): the dialects docling reads by content —
+                // JATS by its DOCTYPE or `<article>` root — else one xml code
+                // block with a warning, never an empty document.
+                InputFormat::Xml => match sniff_xml(&source.bytes) {
                     InputFormat::XmlUspto => UsptoBackend.convert(source)?,
-                    InputFormat::XmlXbrl => {
-                        crate::backend::xbrl::convert_xbrl(source, self.xbrl_taxonomy.as_deref())?
-                    }
-                    _ => JatsBackend {
+                    InputFormat::Feed => crate::backend::FeedBackend {
                         images: self.image_policy(),
                     }
                     .convert(source)?,
+                    InputFormat::XmlXbrl => {
+                        crate::backend::xbrl::convert_xbrl(source, self.xbrl_taxonomy.as_deref())?
+                    }
+                    InputFormat::XmlDoclang => crate::backend::DoclangBackend.convert(source)?,
+                    _ if looks_like_jats(&source.bytes) => JatsBackend {
+                        images: self.image_policy(),
+                    }
+                    .convert(source)?,
+                    _ => crate::backend::text::convert_xml_text(source)?,
+                },
+                InputFormat::Latex => LatexBackend.convert(source)?,
+                // A bare `.xml` defaults to XmlJats; sniff the content to route to the
+                // right XML backend (docling distinguishes by DOCTYPE / root element).
+                InputFormat::XmlJats | InputFormat::XmlUspto | InputFormat::XmlXbrl => {
+                    match sniff_xml(&source.bytes) {
+                        InputFormat::XmlUspto => UsptoBackend.convert(source)?,
+                        InputFormat::XmlXbrl => crate::backend::xbrl::convert_xbrl(
+                            source,
+                            self.xbrl_taxonomy.as_deref(),
+                        )?,
+                        _ => JatsBackend {
+                            images: self.image_policy(),
+                        }
+                        .convert(source)?,
+                    }
                 }
-            }
-            InputFormat::Odt | InputFormat::Ods | InputFormat::Odp => {
-                crate::backend::convert_odf(source, &self.image_policy())?
-            }
-            // DocLang back in: bare XML (`.dclg`/`.dclg.xml`) or the OPC
-            // archive `--to dclx` writes.
-            InputFormat::XmlDoclang | InputFormat::Dclx => {
-                crate::backend::DoclangBackend.convert(source)?
-            }
-            // Raw DocTags (VLM token markup, #152): the tolerant docling-core
-            // parser — never fails, best-effort document out.
-            InputFormat::DocTags => {
-                let mut doc = docling_core::doctags::parse(&source.text()?);
-                doc.name = source.name.clone();
-                doc
-            }
-            #[cfg(feature = "pdf")]
-            InputFormat::Pdf => {
-                let converted = self
+                InputFormat::Odt | InputFormat::Ods | InputFormat::Odp => {
+                    crate::backend::convert_odf(source, &self.image_policy())?
+                }
+                // DocLang back in: bare XML (`.dclg`/`.dclg.xml`) or the OPC
+                // archive `--to dclx` writes.
+                InputFormat::XmlDoclang | InputFormat::Dclx => {
+                    crate::backend::DoclangBackend.convert(source)?
+                }
+                // Raw DocTags (VLM token markup, #152): the tolerant docling-core
+                // parser — never fails, best-effort document out.
+                InputFormat::DocTags => {
+                    let mut doc = docling_core::doctags::parse(&source.text()?);
+                    doc.name = source.name.clone();
+                    doc
+                }
+                #[cfg(feature = "pdf")]
+                InputFormat::Pdf => {
+                    let converted = self
+                        .ml_pipeline()
+                        .and_then(|mut p| {
+                            p.set_force_full_page_ocr(self.force_full_page_ocr);
+                            p.set_pages(self.page_range);
+                            p.convert_outcome(&source.bytes, self.password.as_deref(), &source.name)
+                        })
+                        .map_err(|e| ConversionError::with_source("pdf", e))?;
+                    if let Some(message) = converted.completion.message() {
+                        errors.push(crate::ErrorItem::timeout(message));
+                    }
+                    converted.document
+                }
+                // SVG (#212), the ML route: rasterize (resvg, white-backed PNG at
+                // ~2048px long side) and ride the image pipeline. `--no-ocr` /
+                // `--text-layer-only` short-circuit to direct <text> extraction
+                // instead — the SVG carries its text natively, so skipping OCR
+                // must not mean losing it.
+                #[cfg(feature = "pdf")]
+                InputFormat::Svg if !self.text_layer_only && !self.no_ocr => {
+                    let png = crate::backend::svg::rasterize_png(&source.bytes)?;
+                    self.ml_pipeline()
+                        .and_then(|mut p| p.convert_image(&png, &source.name))
+                        .map_err(|e| ConversionError::with_source("svg", e))?
+                }
+                // SVG without the ML pipeline (pdf-text / wasm builds) or with
+                // --no-ocr / --text-layer-only: pure-Rust <text> extraction, flat
+                // paragraphs in reading order (the pdf / pdf-text split, applied
+                // to SVG) — the SVG carries its text natively, so skipping OCR
+                // must not mean losing it.
+                InputFormat::Svg => crate::backend::SvgBackend.convert(source)?,
+                // Apple iWork (#213): pure-Rust IWA text extraction, all builds.
+                InputFormat::Pages | InputFormat::Numbers | InputFormat::Keynote => {
+                    crate::backend::IworkBackend.convert(source)?
+                }
+                #[cfg(feature = "pdf")]
+                InputFormat::Image => self
+                    .ml_pipeline()
+                    .and_then(|mut p| p.convert_image(&source.bytes, &source.name))
+                    .map_err(|e| ConversionError::with_source("image", e))?,
+                #[cfg(feature = "pdf")]
+                InputFormat::MetsGbs => self
                     .ml_pipeline()
                     .and_then(|mut p| {
-                        p.set_force_full_page_ocr(self.force_full_page_ocr);
-                        p.set_pages(self.page_range);
-                        p.convert_outcome(&source.bytes, self.password.as_deref(), &source.name)
+                        docling_pdf::convert_mets_gbs_with_pipeline(
+                            &source.bytes,
+                            &source.name,
+                            &mut p,
+                        )
                     })
-                    .map_err(|e| ConversionError::with_source("pdf", e))?;
-                if let Some(message) = converted.completion.message() {
-                    errors.push(crate::ErrorItem::timeout(message));
-                }
-                converted.document
-            }
-            // SVG (#212), the ML route: rasterize (resvg, white-backed PNG at
-            // ~2048px long side) and ride the image pipeline. `--no-ocr` /
-            // `--text-layer-only` short-circuit to direct <text> extraction
-            // instead — the SVG carries its text natively, so skipping OCR
-            // must not mean losing it.
-            #[cfg(feature = "pdf")]
-            InputFormat::Svg if !self.text_layer_only && !self.no_ocr => {
-                let png = crate::backend::svg::rasterize_png(&source.bytes)?;
-                self.ml_pipeline()
-                    .and_then(|mut p| p.convert_image(&png, &source.name))
-                    .map_err(|e| ConversionError::with_source("svg", e))?
-            }
-            // SVG without the ML pipeline (pdf-text / wasm builds) or with
-            // --no-ocr / --text-layer-only: pure-Rust <text> extraction, flat
-            // paragraphs in reading order (the pdf / pdf-text split, applied
-            // to SVG) — the SVG carries its text natively, so skipping OCR
-            // must not mean losing it.
-            InputFormat::Svg => crate::backend::SvgBackend.convert(source)?,
-            // Apple iWork (#213): pure-Rust IWA text extraction, all builds.
-            InputFormat::Pages | InputFormat::Numbers | InputFormat::Keynote => {
-                crate::backend::IworkBackend.convert(source)?
-            }
-            #[cfg(feature = "pdf")]
-            InputFormat::Image => self
-                .ml_pipeline()
-                .and_then(|mut p| p.convert_image(&source.bytes, &source.name))
-                .map_err(|e| ConversionError::with_source("image", e))?,
-            #[cfg(feature = "pdf")]
-            InputFormat::MetsGbs => self
-                .ml_pipeline()
-                .and_then(|mut p| {
-                    docling_pdf::convert_mets_gbs_with_pipeline(&source.bytes, &source.name, &mut p)
-                })
-                .map_err(|e| ConversionError::with_source("mets-gbs", e))?,
-            // Audio → Whisper ASR (symphonia decode + ONNX inference); each
-            // transcribed segment becomes a `[time: start-end] text` paragraph.
-            #[cfg(feature = "asr")]
-            InputFormat::Audio => docling_asr::convert_audio_with_options(
-                &source.bytes,
-                &source.name,
-                self.asr_model.as_deref(),
-                self.asr_lang.as_deref(),
-            )
-            .map_err(|e| ConversionError::with_source(source.format.as_str(), e))?,
-            // Video (#138): the audio track transcribes through the same ASR
-            // path (Phase 1), and — when the ffmpeg binary is available —
-            // sampled frames interleave with the transcript as timestamped
-            // pictures (Phase 2). Without ffmpeg: transcript only.
-            #[cfg(feature = "asr")]
-            InputFormat::Video => self
-                .convert_video(source)
-                .map_err(|e| ConversionError::with_source(source.format.as_str(), e))?,
-            // Without the full ML pipeline, `pdf-text` still converts a PDF's
-            // embedded text layer (pure Rust — the wasm32 path), equivalent to
-            // `--text-layer-only`: flat paragraphs, no headings/tables/pictures. A
-            // scanned PDF has no text layer, so an empty document means "this
-            // needs OCR" — say so instead of returning nothing.
-            #[cfg(all(feature = "pdf-text", not(feature = "pdf")))]
-            InputFormat::Pdf => {
-                let doc = docling_pdf::convert_text_layer_pages(
+                    .map_err(|e| ConversionError::with_source("mets-gbs", e))?,
+                // Audio → Whisper ASR (symphonia decode + ONNX inference); each
+                // transcribed segment becomes a `[time: start-end] text` paragraph.
+                #[cfg(feature = "asr")]
+                InputFormat::Audio => docling_asr::convert_audio_with_options(
                     &source.bytes,
                     &source.name,
-                    self.page_range,
+                    self.asr_model.as_deref(),
+                    self.asr_lang.as_deref(),
                 )
-                .map_err(|e| ConversionError::with_source("pdf", e))?;
-                if doc.nodes.is_empty() {
-                    return Err(ConversionError::Parse(
-                        "PDF has no embedded text layer (scanned/image-only?); OCR needs a \
+                .map_err(|e| ConversionError::with_source(source.format.as_str(), e))?,
+                // Video (#138): the audio track transcribes through the same ASR
+                // path (Phase 1), and — when the ffmpeg binary is available —
+                // sampled frames interleave with the transcript as timestamped
+                // pictures (Phase 2). Without ffmpeg: transcript only.
+                #[cfg(feature = "asr")]
+                InputFormat::Video => self
+                    .convert_video(source)
+                    .map_err(|e| ConversionError::with_source(source.format.as_str(), e))?,
+                // Without the full ML pipeline, `pdf-text` still converts a PDF's
+                // embedded text layer (pure Rust — the wasm32 path), equivalent to
+                // `--text-layer-only`: flat paragraphs, no headings/tables/pictures. A
+                // scanned PDF has no text layer, so an empty document means "this
+                // needs OCR" — say so instead of returning nothing.
+                #[cfg(all(feature = "pdf-text", not(feature = "pdf")))]
+                InputFormat::Pdf => {
+                    let doc = docling_pdf::convert_text_layer_pages(
+                        &source.bytes,
+                        &source.name,
+                        self.page_range,
+                    )
+                    .map_err(|e| ConversionError::with_source("pdf", e))?;
+                    if doc.nodes.is_empty() {
+                        return Err(ConversionError::Parse(
+                            "PDF has no embedded text layer (scanned/image-only?); OCR needs a \
                          build with the `pdf` feature"
-                            .into(),
-                    ));
+                                .into(),
+                        ));
+                    }
+                    doc
                 }
-                doc
-            }
-            // Compiled without the ML pipelines: the formats stay detectable,
-            // but converting them needs a build with the matching feature.
-            #[cfg(not(any(feature = "pdf", feature = "pdf-text")))]
-            InputFormat::Pdf => {
-                return Err(ConversionError::Parse(
-                    "Pdf conversion is not compiled in (rebuild with the `pdf` feature, or \
+                // Compiled without the ML pipelines: the formats stay detectable,
+                // but converting them needs a build with the matching feature.
+                #[cfg(not(any(feature = "pdf", feature = "pdf-text")))]
+                InputFormat::Pdf => {
+                    return Err(ConversionError::Parse(
+                        "Pdf conversion is not compiled in (rebuild with the `pdf` feature, or \
                      `pdf-text` for text-layer-only extraction)"
-                        .into(),
-                ))
-            }
-            #[cfg(not(feature = "pdf"))]
-            InputFormat::Image | InputFormat::MetsGbs => {
-                return Err(ConversionError::Parse(format!(
-                    "{:?} conversion is not compiled in (rebuild with the `pdf` feature)",
-                    source.format
-                )))
-            }
-            #[cfg(not(feature = "asr"))]
-            InputFormat::Audio | InputFormat::Video => {
-                return Err(ConversionError::Parse(format!(
-                    "{} conversion is not compiled in (rebuild with the `asr` feature)",
-                    source.format.as_str()
-                )))
+                            .into(),
+                    ))
+                }
+                #[cfg(not(feature = "pdf"))]
+                InputFormat::Image | InputFormat::MetsGbs => {
+                    return Err(ConversionError::Parse(format!(
+                        "{:?} conversion is not compiled in (rebuild with the `pdf` feature)",
+                        source.format
+                    )))
+                }
+                #[cfg(not(feature = "asr"))]
+                InputFormat::Audio | InputFormat::Video => {
+                    return Err(ConversionError::Parse(format!(
+                        "{} conversion is not compiled in (rebuild with the `asr` feature)",
+                        source.format.as_str()
+                    )))
+                }
+                // Resolved for a registered backend (#680) that this converter
+                // does not have.
+                InputFormat::Plugin => {
+                    return Err(ConversionError::UnknownFormat {
+                        hint: format!(
+                            "'{}' was loaded for a registered backend, but none registered on \
+                         this converter claims it",
+                            source.name
+                        ),
+                    })
+                }
             }
         };
         self.enrich_pictures(&mut document, source);
