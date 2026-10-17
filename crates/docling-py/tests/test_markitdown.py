@@ -23,6 +23,7 @@ import pytest
 from docling_rs.markitdown import (
     DocumentConverterResult,
     FileConversionException,
+    PRIORITY_GENERIC_FILE_FORMAT,
     MarkItDown,
     StreamInfo,
     UnsupportedFormatException,
@@ -287,12 +288,120 @@ def test_options_warn():
         MarkItDown(style_map="p => h1")
     with pytest.warns(UserWarning, match="unknown MarkItDown option 'colour'"):
         MarkItDown(colour="blue")
-    with pytest.warns(UserWarning, match="plugins"):
-        MarkItDown(enable_plugins=True)
-    with pytest.raises(NotImplementedError, match="680"):
+    with pytest.raises(TypeError, match="accepts"):
         MarkItDown().register_converter(object())
     with pytest.warns(UserWarning, match="unknown MarkItDown convert"):
         MarkItDown().convert(DATA / "test.xlsx", colour="blue")
+
+
+class _Result:
+    """MarkItDown's DocumentConverterResult, duck-typed (a plugin returns one)."""
+
+    def __init__(self, markdown, title=None):
+        self.markdown = markdown
+        self.title = title
+
+
+class _Rtf2Converter:
+    """A MarkItDown DocumentConverter for a toy `.rtf2` format."""
+
+    def __init__(self, tag="rtf2"):
+        self.tag = tag
+        self.calls = []
+
+    def accepts(self, file_stream, stream_info, **kwargs):
+        return (stream_info.extension or "") == ".rtf2"
+
+    def convert(self, file_stream, stream_info, **kwargs):
+        self.calls.append(sorted(kwargs))
+        body = file_stream.read().decode("utf-8", "replace")
+        return _Result(f"# {self.tag}\n\n{body}", title=self.tag)
+
+
+def test_register_converter_runs_markitdown_converters():
+    payload = b"\x89\x00\xff\xfe\x81\x82\x83 binary payload"  # neither a signature nor text
+    info = StreamInfo(extension=".rtf2", filename="notes.rtf2")
+
+    def convert(md):
+        return md.convert_stream(io.BytesIO(payload), stream_info=info)
+
+    md = MarkItDown()
+    with pytest.raises((UnsupportedFormatException, FileConversionException)):
+        convert(md)
+
+    # A generic converter (priority 10) runs when the engine fails on it …
+    generic = _Rtf2Converter("generic")
+    md.register_converter(generic, priority=PRIORITY_GENERIC_FILE_FORMAT)
+    result = convert(md)
+    assert result.markdown.startswith("# generic") and result.title == "generic"
+    # … a specific one (priority 0) before it, and before the engine itself,
+    # the later registration first among equals.
+    first = _Rtf2Converter("first")
+    later = _Rtf2Converter("later")
+    md.register_converter(first)
+    md.register_converter(later)
+    assert convert(md).markdown.startswith("# later")
+    assert md.convert_stream(io.BytesIO(b"x"), stream_info=StreamInfo(extension=".rtf2")).title == "later"
+
+    # A specific converter takes over a format the engine reads.
+    class TakeOverCsv(_Rtf2Converter):
+        def accepts(self, file_stream, stream_info, **kwargs):
+            return stream_info.extension == ".csv"
+
+    md.register_converter(TakeOverCsv("csv"))
+    assert md.convert_stream(io.BytesIO(b"a,b\n1,2\n"), stream_info=StreamInfo(extension=".csv")).title == "csv"
+    # Other formats still go to the engine.
+    assert "AutoGen" in md.convert(DATA / "test.docx").markdown
+
+    # A converter that raises is recorded; with no other taker it fails.
+    class Broken(_Rtf2Converter):
+        def convert(self, file_stream, stream_info, **kwargs):
+            raise RuntimeError("nope")
+
+    md2 = MarkItDown()
+    md2.register_converter(Broken())
+    with pytest.raises(FileConversionException) as failure:
+        convert(md2)
+    assert failure.value.attempts and failure.value.attempts[0].converter.__class__ is Broken
+
+
+def test_enable_plugins_loads_markitdown_entry_points(monkeypatch):
+    import importlib.metadata as metadata
+
+    registered = []
+
+    class Plugin:
+        __plugin_interface_version__ = 1
+
+        @staticmethod
+        def register_converters(markitdown, **kwargs):
+            registered.append(kwargs)
+            markitdown.register_converter(_Rtf2Converter("plugin"))
+
+    class EntryPoint:
+        def __init__(self, name, target):
+            self.name, self._target = name, target
+
+        def load(self):
+            if isinstance(self._target, Exception):
+                raise self._target
+            return self._target
+
+    class EntryPoints(list):
+        def select(self, group):
+            return self if group == "markitdown.plugin" else []
+
+    monkeypatch.setattr(
+        metadata, "entry_points",
+        lambda: EntryPoints([EntryPoint("good", Plugin), EntryPoint("bad", ImportError("missing dep"))]),
+    )
+    with pytest.warns(UserWarning, match="'bad' failed to load: missing dep"):
+        md = MarkItDown(enable_plugins=True)
+    assert registered == [{}]
+    out = md.convert_stream(io.BytesIO(b"body"), stream_info=StreamInfo(extension=".rtf2"))
+    assert out.markdown == "# plugin\n\nbody"
+    with pytest.warns(UserWarning, match="already enabled"):
+        md.enable_plugins()
 
 
 class FakeLlm:

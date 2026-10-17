@@ -152,6 +152,80 @@ fn error_tuples(errors: Vec<docling::ErrorItem>) -> Vec<(String, String, String)
 /// docling's `DocumentConverter`, reduced to its processor role. Thread-safe for
 /// sequential reuse; the heavy ML models are process-wide state loaded on first
 /// PDF/image conversion.
+/// A Python callable registered as a backend (#680, see
+/// `DocumentConverter.register_backend`): called with the source's bytes and
+/// file name under the GIL; its Markdown or `DoclingDocument` becomes the
+/// document.
+struct PyBackend {
+    name: String,
+    func: Py<PyAny>,
+}
+
+impl docling::backend::DeclarativeBackend for PyBackend {
+    fn convert(
+        &self,
+        source: &SourceDocument,
+    ) -> Result<docling::DoclingDocument, docling::ConversionError> {
+        use docling::backend::{DoclingJsonBackend, MarkdownBackend};
+        let file_name = match &source.extension {
+            Some(ext) => format!("{}.{ext}", source.name),
+            None => source.name.clone(),
+        };
+        enum Answer {
+            Markdown(String),
+            Json(String),
+        }
+        let answer = Python::attach(|py| -> PyResult<Answer> {
+            let out = self
+                .func
+                .call1(py, (PyBytes::new(py, &source.bytes), file_name.as_str()))?;
+            let out = out.bind(py);
+            if let Ok(text) = out.extract::<String>() {
+                return Ok(Answer::Markdown(text));
+            }
+            // docling-core's own serialization: `export_to_dict` writes the
+            // `$ref` aliases the JSON reader follows (`model_dump_json`
+            // without `by_alias` would not).
+            let dict = if out.hasattr("export_to_dict")? {
+                Some(out.call_method0("export_to_dict")?)
+            } else if out.is_instance_of::<pyo3::types::PyDict>() {
+                Some(out.clone())
+            } else {
+                None
+            };
+            if let Some(dict) = dict {
+                let json = py.import("json")?.call_method1("dumps", (dict,))?;
+                return Ok(Answer::Json(json.extract()?));
+            }
+            Err(pyo3::exceptions::PyTypeError::new_err(format!(
+                "a backend returns Markdown (str) or a DoclingDocument, not {}",
+                out.get_type().name()?
+            )))
+        })
+        .map_err(|e| docling::ConversionError::Parse(format!("backend `{}`: {e}", self.name)))?;
+        match answer {
+            Answer::Markdown(md) => MarkdownBackend {
+                strict: false,
+                images: docling::ImagePolicy::default(),
+            }
+            .convert(&SourceDocument::from_bytes(
+                source.name.clone(),
+                docling::InputFormat::Md,
+                md.into_bytes(),
+            )),
+            Answer::Json(json) => {
+                let mut doc = DoclingJsonBackend.convert(&SourceDocument::from_bytes(
+                    source.name.clone(),
+                    docling::InputFormat::JsonDocling,
+                    json.into_bytes(),
+                ))?;
+                doc.name = source.name.clone();
+                Ok(doc)
+            }
+        }
+    }
+}
+
 #[pyclass(name = "DocumentConverter")]
 struct PyDocumentConverter {
     inner: docling::DocumentConverter,
@@ -680,6 +754,77 @@ impl PyDocumentConverter {
         })
     }
 
+    /// Register a Python callable as a backend (#680): `fn(data: bytes,
+    /// name: str)` returning Markdown (`str`, read by the Markdown backend),
+    /// a docling-core `DoclingDocument` or its dict (read by the docling-JSON
+    /// backend). It claims the sources whose extension is in `extensions`,
+    /// whose media type is in `media_types`, or whose bytes `sniff(data) ->
+    /// bool` accepts; `priority` orders it among the registered backends
+    /// (higher first), all of which come before the built-in formats. The
+    /// callable runs with the GIL held; an exception it raises fails that
+    /// conversion with its message.
+    #[pyo3(signature = (name, func, extensions = None, media_types = None, sniff = None, priority = 0))]
+    fn register_backend(
+        &mut self,
+        name: String,
+        func: Py<PyAny>,
+        extensions: Option<Vec<String>>,
+        media_types: Option<Vec<String>>,
+        sniff: Option<Py<PyAny>>,
+        priority: i32,
+    ) -> PyResult<()> {
+        let mut matcher = docling::BackendMatcher::new()
+            .extensions(extensions.unwrap_or_default())
+            .media_types(media_types.unwrap_or_default());
+        if let Some(check) = sniff {
+            matcher = matcher.sniff(move |bytes: &[u8]| {
+                Python::attach(|py| {
+                    check
+                        .call1(py, (PyBytes::new(py, bytes),))
+                        .and_then(|r| r.is_truthy(py))
+                        // A failing check claims nothing.
+                        .unwrap_or(false)
+                })
+            });
+        }
+        let backend = PyBackend {
+            name: name.clone(),
+            func,
+        };
+        self.inner = std::mem::take(&mut self.inner).register_backend(
+            name,
+            matcher,
+            std::sync::Arc::new(backend),
+            priority,
+        );
+        Ok(())
+    }
+
+    /// The registered backends, in the order they are tried:
+    /// `(name, extensions, media_types, has_sniff, priority)`.
+    #[allow(clippy::type_complexity)]
+    fn registered_backends(&self) -> Vec<(String, Vec<String>, Vec<String>, bool, i32)> {
+        self.inner
+            .registered_backends()
+            .iter()
+            .map(|b| {
+                (
+                    b.name().to_string(),
+                    b.matcher().extension_list().to_vec(),
+                    b.matcher().media_type_list().to_vec(),
+                    b.matcher().has_sniff(),
+                    b.priority(),
+                )
+            })
+            .collect()
+    }
+
+    /// Every input file extension this converter takes: the build's and the
+    /// registered backends' (#680), sorted, lowercase, no dot.
+    fn supported_extensions(&self) -> Vec<String> {
+        self.inner.supported_extensions()
+    }
+
     /// Convert a document from a filesystem path (str / os.PathLike).
     /// Runs the (potentially long) conversion off the Python thread with the
     /// GIL released, so Ctrl-C interrupts it. `page_range=(first, last)`
@@ -692,7 +837,11 @@ impl PyDocumentConverter {
         source: PathLike,
         page_range: Option<(usize, usize)>,
     ) -> PyResult<PyNativeResult> {
-        let src = SourceDocument::from_file(&source.0)
+        // The converter's loader: a file only a registered backend reads
+        // (#680) loads too.
+        let src = self
+            .inner
+            .load_file(&source.0)
             .map_err(|e| ConversionError::new_err(e.to_string()))?;
         self.convert_source(py, src, check_page_range(page_range)?)
     }
@@ -705,7 +854,8 @@ impl PyDocumentConverter {
     /// `base_url` is the URL the bytes were fetched from (#681): relative
     /// image references resolve against it, and a YouTube watch URL turns
     /// the page into its title, metadata and caption transcript.
-    #[pyo3(signature = (name, data, page_range = None, format = None, base_url = None))]
+    #[pyo3(signature = (name, data, page_range = None, format = None, base_url = None, media_type = None))]
+    #[allow(clippy::too_many_arguments)]
     fn convert_bytes(
         &self,
         py: Python<'_>,
@@ -714,6 +864,7 @@ impl PyDocumentConverter {
         page_range: Option<(usize, usize)>,
         format: Option<String>,
         base_url: Option<String>,
+        media_type: Option<String>,
     ) -> PyResult<PyNativeResult> {
         let page_range = check_page_range(page_range)?;
         let bytes = data.as_bytes().to_vec();
@@ -721,7 +872,7 @@ impl PyDocumentConverter {
             Some(id) => {
                 let format = docling::InputFormat::from_id(&id)
                     .ok_or_else(|| PyValueError::new_err(format!("unknown input format {id:?}")))?;
-                SourceDocument::from_bytes(&name, format, bytes)
+                SourceDocument::from_bytes(&name, format, bytes).with_media_type(media_type)
             }
             // The engine's own routing (#671): the extension, else the
             // content's signature, else plain text when the bytes are text.
@@ -729,7 +880,9 @@ impl PyDocumentConverter {
             // engine names a file by): docling reports a `DocumentStream`'s
             // name whole, and the `format` branch above keeps it too.
             None => {
-                let mut source = SourceDocument::from_named_bytes(&name, bytes, None)
+                let mut source = self
+                    .inner
+                    .load_named_bytes(&name, bytes, media_type.as_deref())
                     .map_err(conversion_error)?;
                 source.name = name;
                 source

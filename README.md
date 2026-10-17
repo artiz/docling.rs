@@ -136,6 +136,11 @@ Same options, same outputs on every surface — every option in
 - **AutoGen:** `pip install "docling-rs[autogen]"` — `DoclingIndexer` fills
   any AutoGen memory with chunks that carry their pages, `DoclingConvertTool`
   lets an agent read documents ([details](./crates/docling-py/README.md#autogen)).
+- **Your own formats:** register a backend for a format docling.rs does not
+  read — or to read one of its formats your way — from Rust, Python
+  (`@docling_rs.register_backend(extensions=["rtf2"])`, and MarkItDown's
+  `register_converter` and plugins) or Node.js, ahead of the built-in formats
+  ([pluggable backends](./crates/docling/README.md#pluggable-backends)).
 - **RAG:** `docling-rag` — chunk, embed and search with a REST API and a web
   UI ([RAG subsystem](#rag-subsystem)).
 - **Runs where you are:** Linux x64 / arm64 / s390x and Windows prebuilt (CLI,
@@ -308,8 +313,8 @@ println!("{}", result.document.export_to_json());     // docling DoclingDocument
 Every conversion knob is one serializable struct, `docling::ConvertOptions`,
 filled the same way by every surface ([`docs/OPTIONS.md`](./docs/OPTIONS.md)).
 The [library guide](./crates/docling/README.md) covers the output formats,
-error handling, chunking, image extraction, streaming, OCR, the PDF switches
-and the remote VLM pipeline.
+error handling, chunking, image extraction, streaming, OCR, the PDF switches,
+the remote VLM pipeline and registering your own backends (#680).
 
 ## HTTP conversion API — `docling-rs serve`
 

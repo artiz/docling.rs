@@ -163,7 +163,7 @@ Office/HTML/EPUB/email backends — measured side by side in the main README's
 | PDFs via pdfminer (text layer) | the full pipeline once `docling_rs.download_models()` ran; until then the text layer, with a one-time warning |
 | `magika` / `charset_normalizer` guesses | magic bytes + container structure; `charset_normalizer` when installed (it comes with `requests`), else the engine's own detection — BOM, UTF-8, a statistical guess for a non-Latin encoding (`chardetng`, #675), else windows-1252 |
 | `exiftool_path`, `style_map`, `docintel_*`, `cu_*` | accepted, ignored with a warning (EXIF/metadata: #679) |
-| plugins, `register_converter` | not supported (#680); `enable_plugins` warns |
+| plugins, `register_converter` | same (#680): `enable_plugins()` loads the `markitdown.plugin` entry points; a converter at `PRIORITY_SPECIFIC_FILE_FORMAT` or below runs before the engine, a generic one when the engine has no format for the input or fails on it. `docling_rs.register_backend` ([below](#pluggable-backends)) adds a format outside the facade too |
 | picture alt text (`![alt](…)`) | kept (#676): the facade renders it — the `![alt](…)` of an image line, the text line above a `<!-- image -->` placeholder; `DocumentConverter(picture_alt_text=True)` elsewhere, and the document carries it always as the picture's description (`created_by="alt_text"`) |
 
 `MarkItDown(docling_options={...})` passes options through to
@@ -310,6 +310,41 @@ a CoreML wheel converts on CPU until `DOCLING_RS_EP=coreml` is set or
 `DOCLING_RS_EP` still wins). Under a GPU provider the engine picks the fp32 models over the int8
 ones on its own: `ensure_env()` hands the model cache over as
 `DOCLING_RS_MODELS_DIR` and pins no file (#602).
+
+## Pluggable backends
+
+A format docling.rs does not read, or one you want read your way, without
+forking (#680): register a function that turns the bytes into Markdown or a
+`DoclingDocument`.
+
+```python
+import docling_rs
+from docling_rs import DocumentConverter
+
+@docling_rs.register_backend(extensions=["rtf2"], media_types=["application/x-rtf2"],
+                             sniff=lambda data: data.startswith(b"{\\rtf2}"))
+def read_rtf2(data: bytes, name: str) -> str:
+    return "# " + name + "\n\n" + data.decode().split("\n", 1)[1]
+
+result = DocumentConverter().convert("notes.rtf2")
+```
+
+- `fn(data, name)` returns Markdown (`str`, read by the engine's Markdown
+  backend) or a docling-core `DoclingDocument` (or its dict).
+- A backend claims a source by extension, media type (`convert_bytes(...,
+  media_type=)`, the facade's `StreamInfo`), *or* content (`sniff`). Registered
+  backends are tried before the built-in formats, the highest `priority`
+  first, so one can also take a format over (`extensions=["csv"]`).
+- `docling_rs.register_backend` applies to converters created afterwards;
+  `DocumentConverter().register_backend(fn, extensions=[...])` to one
+  converter. `registered_backends()` and `supported_extensions()` list them.
+- The document goes through the converter's usual steps: output options,
+  enrichment, picture descriptions, PII redaction, chunking.
+- A backend's exception fails the conversion (`ConversionError`, naming the
+  backend); it is not retried as a built-in format.
+- Not routed: entries of a `.zip` (the archive is classified by the engine's
+  extension table), and the CLI, serve and MCP binaries, which have no
+  Python to call. In Rust: `DocumentConverter::register_backend`.
 
 ## Chunking
 

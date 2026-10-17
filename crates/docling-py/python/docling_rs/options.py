@@ -60,6 +60,8 @@ class InputFormat(str, enum.Enum):
     IPYNB = "ipynb"
     #: RSS / Atom / RDF feeds (#678).
     FEED = "feed"
+    #: A format only a registered backend reads (#680, ``register_backend``).
+    PLUGIN = "plugin"
 
 
 class AcceleratorDevice(str, enum.Enum):

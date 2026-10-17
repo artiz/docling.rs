@@ -139,6 +139,15 @@ pub enum InputFormat {
     /// read through the HTML backend — MarkItDown's `_rss_converter`
     /// shape. A docling.rs extension: docling has no feed backend.
     Feed,
+    /// A format only a backend registered on the converter reads (#680,
+    /// [`DocumentConverter::register_backend`](crate::DocumentConverter::register_backend)):
+    /// what [`DocumentConverter::load_file`](crate::DocumentConverter::load_file)
+    /// and [`load_named_bytes`](crate::DocumentConverter::load_named_bytes)
+    /// resolve a source to when a registered backend claims it and the
+    /// built-in tables do not know its extension or media type. Never the
+    /// answer of an extension, media type or content check of their own; a
+    /// converter without a backend that claims the source rejects it.
+    Plugin,
 }
 
 impl InputFormat {
@@ -197,6 +206,7 @@ impl InputFormat {
             InputFormat::Xml => "xml",
             InputFormat::Ipynb => "ipynb",
             InputFormat::Feed => "feed",
+            InputFormat::Plugin => "plugin",
         }
     }
 
@@ -257,6 +267,7 @@ impl InputFormat {
             "xml" => InputFormat::Xml,
             "ipynb" => InputFormat::Ipynb,
             "feed" => InputFormat::Feed,
+            "plugin" => InputFormat::Plugin,
             _ => return None,
         })
     }

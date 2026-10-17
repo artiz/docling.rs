@@ -27,10 +27,17 @@ code written against MarkItDown runs unchanged. What differs, deliberately:
   workbook gets MarkItDown's ``## <sheet>`` heading per sheet. Byte-identical
   output is a non-goal; the content is what the ported MarkItDown test
   checks pin.
-* **No plugins.** ``enable_plugins`` warns and ``register_converter`` raises
-  (pluggable backends are #680). ``exiftool_path``, ``style_map`` and the
-  Azure ``docintel_*`` / ``cu_*`` options are accepted and ignored with a
-  warning; any other unknown keyword warns too.
+* **Plugins** (#680): ``register_converter(converter, priority=…)`` takes a
+  MarkItDown ``DocumentConverter`` (``accepts`` / ``convert``) and
+  ``enable_plugins`` loads the ``markitdown.plugin`` entry points, whose
+  ``register_converters(markitdown, **kwargs)`` registers theirs. A converter
+  at or below ``PRIORITY_SPECIFIC_FILE_FORMAT`` is tried before the engine
+  (lower first, the later registration first among equals — MarkItDown's
+  order), a generic one after the engine finds no format. Engine-level
+  backends that every surface sees are ``docling_rs.register_backend``.
+  ``exiftool_path``, ``style_map`` and the Azure ``docintel_*`` / ``cu_*``
+  options are accepted and ignored with a warning; any other unknown
+  keyword warns too.
 * **LLM image captions** — ``llm_client`` / ``llm_model`` / ``llm_prompt``
   (#670): an OpenAI-style client describes every embedded picture, the
   description lands in docling's picture metadata and in the Markdown after
@@ -597,6 +604,10 @@ class MarkItDown:
         # (#676) unless the caller's docling_options say otherwise.
         self._docling_options: Dict[str, Any] = {"picture_alt_text": True, "metadata": "json"}
         self._converters: Dict[bool, DocumentConverter] = {}
+        # MarkItDown converters registered with register_converter (#680):
+        # (priority, -registration sequence, converter).
+        self._md_converters: List[Tuple[float, int, Any]] = []
+        self._plugins_enabled = False
         if enable_builtins is False:
             warnings.warn(
                 "enable_builtins=False has no effect: docling.rs has no separate built-in "
@@ -627,19 +638,91 @@ class MarkItDown:
             self._converters.clear()
 
     def enable_plugins(self, **kwargs: Any) -> None:
-        """MarkItDown plugins are not supported (pluggable backends are #680)."""
-        warnings.warn(
-            "MarkItDown plugins are not supported by docling.rs; enable_plugins is ignored",
-            stacklevel=2,
-        )
+        """MarkItDown's ``enable_plugins`` (#680): load every installed
+        ``markitdown.plugin`` entry point and call its
+        ``register_converters(self, **kwargs)``. A plugin that fails to load
+        warns and is skipped. Once per instance, as in MarkItDown."""
+        if self._plugins_enabled:
+            warnings.warn("plugins are already enabled", stacklevel=2)
+            return
+        self._plugins_enabled = True
+        from importlib.metadata import entry_points
+
+        eps = entry_points()
+        group = eps.select(group="markitdown.plugin") if hasattr(eps, "select") else eps.get("markitdown.plugin", [])
+        for ep in group:
+            try:
+                plugin = ep.load()
+                plugin.register_converters(self, **kwargs)
+            except Exception as e:  # MarkItDown warns and goes on, too
+                warnings.warn(f"plugin {ep.name!r} failed to load: {e}", stacklevel=2)
 
     def register_converter(self, converter: Any, *, priority: float = PRIORITY_SPECIFIC_FILE_FORMAT) -> None:
-        """Not supported: docling.rs's backends are compiled in (pluggable
-        backends are #680)."""
-        raise NotImplementedError(
-            "register_converter is not supported by docling.rs's MarkItDown facade "
-            "(see https://github.com/docling-project/docling.rs/issues/680)"
-        )
+        """MarkItDown's ``register_converter`` (#680): ``converter`` has
+        ``accepts(file_stream, stream_info, **kwargs) -> bool`` and
+        ``convert(file_stream, stream_info, **kwargs)`` returning a result
+        with ``.markdown`` (and ``.title``). Lower ``priority`` is tried
+        first and the later registration first among equals; at or below
+        ``PRIORITY_SPECIFIC_FILE_FORMAT`` it runs before docling.rs's engine,
+        above it only when the engine finds no format for the input or fails
+        on it."""
+        if not (hasattr(converter, "accepts") and hasattr(converter, "convert")):
+            raise TypeError("register_converter needs an object with accepts() and convert()")
+        self._md_converters.append((float(priority), -len(self._md_converters), converter))
+        self._md_converters.sort(key=lambda entry: (entry[0], entry[1]))
+
+    def _run_converters(
+        self,
+        before_engine: bool,
+        info: StreamInfo,
+        hinted: Optional[str],
+        path: Optional[str],
+        data: Optional[bytes],
+        call_options: Dict[str, Any],
+    ) -> Optional[DocumentConverterResult]:
+        """The registered MarkItDown converters on one side of the engine:
+        the first that accepts the input and converts it wins; converters
+        that raise are recorded and the next is tried, as in MarkItDown."""
+        chosen = [c for p, _, c in self._md_converters if (p <= PRIORITY_SPECIFIC_FILE_FORMAT) == before_engine]
+        if not chosen:
+            return None
+        if data is None:
+            with open(path, "rb") as fh:
+                data = fh.read()
+        if hinted and not info.extension:
+            info = info.copy_and_update(extension=hinted)
+        kwargs = {
+            k: v
+            for k, v in {
+                "llm_client": self._llm_client,
+                "llm_model": self._llm_model,
+                "llm_prompt": self._llm_prompt,
+                **call_options,
+            }.items()
+            if v is not None
+        }
+        failures = []
+        for converter in chosen:
+            stream = io.BytesIO(data)
+            try:
+                accepted = converter.accepts(stream, info, **kwargs)
+            finally:
+                stream.seek(0)
+            if not accepted:
+                continue
+            try:
+                out = converter.convert(stream, info, **kwargs)
+            except Exception:
+                failures.append(FailedConversionAttempt(converter, sys.exc_info()))
+                continue
+            if out is not None:
+                return DocumentConverterResult(out.markdown, title=getattr(out, "title", None))
+        if failures:
+            raise FileConversionException(
+                f"{info.filename or 'stream'}: every registered converter that accepted it failed",
+                attempts=failures,
+            )
+        return None
 
     def register_page_converter(self, converter: Any) -> None:
         """MarkItDown's deprecated alias of :meth:`register_converter`."""
@@ -835,6 +918,31 @@ class MarkItDown:
             or _ext_from_url(info.url)
             or _ext_from_mime(info.mimetype)
         )
+        # Registered MarkItDown converters (#680): the specific ones first …
+        result = self._run_converters(True, info, hinted, path, data, call_options)
+        if result is not None:
+            return result
+        try:
+            return self._convert_engine(hinted, info, path, data, keep_data_uris, llm_client, llm_model, llm_prompt)
+        except (UnsupportedFormatException, FileConversionException):
+            # … the generic ones when the engine has no format for the input
+            # or fails on it, as MarkItDown goes on to its next converter.
+            result = self._run_converters(False, info, hinted, path, data, call_options)
+            if result is not None:
+                return result
+            raise
+
+    def _convert_engine(
+        self,
+        hinted: Optional[str],
+        info: StreamInfo,
+        path: Optional[str],
+        data: Optional[bytes],
+        keep_data_uris: bool,
+        llm_client: Any,
+        llm_model: Optional[str],
+        llm_prompt: Optional[str],
+    ) -> DocumentConverterResult:
         try:
             return self._convert_as(hinted, info, path, data, keep_data_uris, llm_client, llm_model, llm_prompt)
         except UnsupportedFormatException:
@@ -954,7 +1062,9 @@ class MarkItDown:
                     if data is None:
                         with open(path, "rb") as fh:
                             data = fh.read()
-                    result = self._converter().convert_bytes(name, data, base_url=_http_url(info.url))
+                    result = self._converter().convert_bytes(
+                        name, data, base_url=_http_url(info.url), media_type=info.mimetype
+                    )
             except ConversionError as e:
                 if ext != ".pdf" or "model not found" not in str(e):
                     raise
@@ -970,7 +1080,7 @@ class MarkItDown:
                     result = self._converter(text_layer_only=True).convert(path)
                 else:
                     result = self._converter(text_layer_only=True).convert_bytes(
-                        name, data, base_url=_http_url(info.url)
+                        name, data, base_url=_http_url(info.url), media_type=info.mimetype
                     )
         except ConversionError as e:
             message = str(e)

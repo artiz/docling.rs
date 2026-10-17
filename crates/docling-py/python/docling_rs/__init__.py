@@ -39,7 +39,7 @@ import os
 import warnings
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, Iterable, Iterator, List, Optional, Tuple, Union
+from typing import Any, Callable, Dict, Iterable, Iterator, List, NamedTuple, Optional, Tuple, Union
 
 from docling_core.types.doc import DoclingDocument, ImageRefMode
 
@@ -123,6 +123,10 @@ __all__ = [
     "EmailAttachment",
     "email_attachments",
     "detect_format",
+    # pluggable backends (#680)
+    "register_backend",
+    "registered_backends",
+    "BackendSpec",
     # docling-shaped configuration
     "InputFormat",
     "DocumentStream",
@@ -772,6 +776,52 @@ class DocumentConverter:
             else:
                 self._picture_description = pd
 
+        # Backends registered module-wide (#680) before this converter.
+        for spec in _BACKENDS:
+            self._register(spec)
+
+    def register_backend(
+        self,
+        fn: Optional[Callable[[bytes, str], Any]] = None,
+        *,
+        extensions: Optional[Iterable[str]] = None,
+        media_types: Optional[Iterable[str]] = None,
+        sniff: Optional[Callable[[bytes], bool]] = None,
+        priority: int = 0,
+        name: Optional[str] = None,
+    ) -> Any:
+        """Register ``fn`` as a backend of this converter (#680) — see the
+        module-level :func:`register_backend`, which registers it on every
+        converter created afterwards. Usable as a decorator."""
+        if fn is None:
+            return lambda f: self.register_backend(
+                f, extensions=extensions, media_types=media_types, sniff=sniff,
+                priority=priority, name=name,
+            )
+        self._register(_backend_spec(fn, extensions, media_types, sniff, priority, name))
+        return fn
+
+    def _register(self, spec: "BackendSpec") -> None:
+        self._inner.register_backend(
+            spec.name, spec.fn, list(spec.extensions), list(spec.media_types), spec.sniff,
+            spec.priority,
+        )
+
+    def registered_backends(self) -> List["BackendSpec"]:
+        """This converter's registered backends (#680), in the order they are
+        tried — highest priority first, the earliest registration first among
+        equals — all before the built-in formats. ``fn`` is ``None`` here:
+        the callables live in the engine."""
+        return [
+            BackendSpec(name, None, tuple(exts), tuple(mts), has_sniff, priority)
+            for name, exts, mts, has_sniff, priority in self._inner.registered_backends()
+        ]
+
+    def supported_extensions(self) -> List[str]:
+        """Every input file extension this converter takes: the engine's and
+        the registered backends' (#680), sorted, lowercase, no dot."""
+        return list(self._inner.supported_extensions())
+
     def initialize_pipeline(self, format: Optional[InputFormat] = None) -> None:
         """Eagerly load the ML models for ``format`` (docling's
         ``initialize_pipeline``), so the first PDF conversion doesn't pay the
@@ -823,14 +873,17 @@ class DocumentConverter:
         data: bytes,
         page_range: Optional[Tuple[int, int]] = None,
         base_url: Optional[str] = None,
+        media_type: Optional[str] = None,
     ) -> ConversionResult:
         """Convert in-memory bytes; ``name``'s extension drives format detection
         (docling's ``DocumentStream`` counterpart). ``page_range`` as in
         :meth:`convert`. ``base_url`` is the URL the bytes came from (#681):
         relative image references resolve against it, and a YouTube watch
-        URL makes the page its transcript."""
+        URL makes the page its transcript. ``media_type`` (``Content-Type``)
+        is what a registered backend can claim the bytes by (#680), and the
+        format when the name has no known extension."""
         native = self._inner.convert_bytes(
-            name, data, page_range=_page_range(page_range), base_url=base_url
+            name, data, page_range=_page_range(page_range), base_url=base_url, media_type=media_type
         )
         return self._finish(_wrap(native))
 
@@ -911,6 +964,86 @@ class EmailAttachment:
         if self.data is None:
             raise ValueError(f"attachment {self.name!r} has no payload ({self.skipped})")
         return DocumentStream(name=self.name, stream=io.BytesIO(self.data), format=self.format)
+
+
+class BackendSpec(NamedTuple):
+    """A registered backend (#680): what :func:`register_backend` recorded.
+    ``sniff`` is the check (or, from :meth:`DocumentConverter.registered_backends`,
+    whether there is one)."""
+
+    name: str
+    fn: Optional[Callable[[bytes, str], Any]]
+    extensions: Tuple[str, ...]
+    media_types: Tuple[str, ...]
+    sniff: Any
+    priority: int
+
+
+#: The backends registered module-wide, applied to every DocumentConverter
+#: created after them (#680).
+_BACKENDS: List[BackendSpec] = []
+
+
+def _backend_spec(fn, extensions, media_types, sniff, priority, name) -> BackendSpec:
+    if not callable(fn):
+        raise TypeError("register_backend needs a callable fn(data: bytes, name: str)")
+    if sniff is not None and not callable(sniff):
+        raise TypeError("sniff must be a callable sniff(data: bytes) -> bool")
+    if isinstance(extensions, str) or isinstance(media_types, str):
+        raise TypeError("extensions and media_types are lists of strings")
+    extensions = tuple(str(e).strip().lstrip(".").lower() for e in (extensions or ()) if str(e).strip())
+    media_types = tuple(str(m).strip().lower() for m in (media_types or ()) if str(m).strip())
+    if not (extensions or media_types or sniff):
+        raise ValueError("register_backend needs extensions, media_types or sniff to claim anything")
+    name = name or getattr(fn, "__name__", None) or "backend"
+    return BackendSpec(str(name), fn, extensions, media_types, sniff, int(priority))
+
+
+def register_backend(
+    fn: Optional[Callable[[bytes, str], Any]] = None,
+    *,
+    extensions: Optional[Iterable[str]] = None,
+    media_types: Optional[Iterable[str]] = None,
+    sniff: Optional[Callable[[bytes], bool]] = None,
+    priority: int = 0,
+    name: Optional[str] = None,
+) -> Any:
+    """Add an input format without forking (#680): register ``fn`` as a
+    backend for every :class:`DocumentConverter` created afterwards.
+
+    ``fn(data: bytes, name: str)`` gets the source's bytes and file name and
+    returns its content as Markdown (a ``str``, read by the engine's Markdown
+    backend) or as a docling-core ``DoclingDocument`` (or its dict). It
+    claims the sources whose extension is in ``extensions`` (``"rtf2"`` or
+    ``".rtf2"``), whose media type is in ``media_types``, or whose bytes
+    ``sniff(data) -> bool`` accepts. Registered backends are tried before the
+    built-in formats — the highest ``priority`` first, the earliest
+    registration first among equals — so a backend can add a format or take
+    one over; the document then goes through the converter's usual
+    post-processing (enrichment, redaction, picture descriptions). Works as a
+    decorator::
+
+        @docling_rs.register_backend(extensions=["rtf2"])
+        def read_rtf2(data: bytes, name: str) -> str:
+            return "# " + name + "\n\n" + data.decode()
+
+    Archive entries are classified by the engine's own extension table
+    before anything is inflated, so a registered format inside a ``.zip`` is
+    skipped as an unsupported type.
+    """
+    if fn is None:
+        return lambda f: register_backend(
+            f, extensions=extensions, media_types=media_types, sniff=sniff,
+            priority=priority, name=name,
+        )
+    _BACKENDS.append(_backend_spec(fn, extensions, media_types, sniff, priority, name))
+    return fn
+
+
+def registered_backends() -> List[BackendSpec]:
+    """The backends registered module-wide with :func:`register_backend`,
+    in registration order."""
+    return list(_BACKENDS)
 
 
 def detect_format(

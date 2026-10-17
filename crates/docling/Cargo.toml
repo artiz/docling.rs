@@ -164,6 +164,11 @@ path = "examples/convert.rs"
 name = "stream"
 path = "examples/stream.rs"
 
+[[example]]
+name = "register_backend"
+path = "examples/register_backend.rs"
+test = true
+
 [dev-dependencies]
 criterion = "0.5"
 

@@ -461,13 +461,15 @@ fn version_line() -> String {
 }
 
 /// `--list-input-formats` (#603): the file extensions this binary converts —
-/// the library's per-build list ([`docling::InputFormat::supported_extensions`],
-/// formats behind a missing cargo feature left out) plus `zip`, which the CLI
-/// itself expands into its documents (#557, with `--output`). Sorted, unique,
-/// lowercase, no dot: `grep -qx rtf` answers "does this binary take .rtf".
-fn input_format_list() -> Vec<&'static str> {
-    let mut list = docling::InputFormat::supported_extensions();
-    list.push("zip");
+/// the converter's list ([`docling::DocumentConverter::supported_extensions`]:
+/// the build's formats, those behind a missing cargo feature left out, and
+/// any registered backend's, #680 — a binary built on the library with its
+/// own backends lists them here) plus `zip`, which the CLI itself expands
+/// into its documents (#557, with `--output`). Sorted, unique, lowercase, no
+/// dot: `grep -qx rtf` answers "does this binary take .rtf".
+fn input_format_list() -> Vec<String> {
+    let mut list = docling::DocumentConverter::new().supported_extensions();
+    list.push("zip".to_string());
     list.sort_unstable();
     list.dedup();
     list
