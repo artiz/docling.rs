@@ -154,8 +154,8 @@
       "content_layer": "body",
       "label": "text",
       "prov": [],
-      "orig": "Charlie D\t\t\tEcho Fox",
-      "text": "Charlie D\t\t\tEcho Fox"
+      "orig": "**Charlie D\t\t\tEcho Fox**",
+      "text": "**Charlie D\t\t\tEcho Fox**"
     },
     {
       "self_ref": "#/texts/3",
@@ -178,8 +178,8 @@
       "content_layer": "body",
       "label": "text",
       "prov": [],
-      "orig": "Echo Foxt\t\t\tGolf Hot",
-      "text": "Echo Foxt\t\t\tGolf Hot"
+      "orig": "**Echo Foxt\t\t\tGolf Hot**",
+      "text": "**Echo Foxt\t\t\tGolf Hot**"
     },
     {
       "self_ref": "#/texts/5",
@@ -202,8 +202,8 @@
       "content_layer": "body",
       "label": "text",
       "prov": [],
-      "orig": "Golf Hot\t\t\tAlpha",
-      "text": "Golf Hot\t\t\tAlpha"
+      "orig": "**Golf Hot\t\t\tAlpha**",
+      "text": "**Golf Hot\t\t\tAlpha**"
     },
     {
       "self_ref": "#/texts/7",

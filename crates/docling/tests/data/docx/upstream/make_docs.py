@@ -2,7 +2,8 @@
 tests do.
 
 Each document matches a test of docling 2.140.0's tests/test_backend_msword*.py
-(named next to each builder below). Run with python-docx 1.2 and lxml from
+(named next to each builder below), except `style_bold`, docling.rs's own
+probe of the Word backend's paragraph-level bold. Run with python-docx 1.2 and lxml from
 this directory; then write each `<name>.{md,json}` with docling 2.140.0's
 Word backend (see tests/docx_upstream.rs).
 """
@@ -204,6 +205,96 @@ def caption_numbering(name):
     doc.save(f"{name}.docx")
 
 
+# --- paragraph-level bold (`_get_format_from_run`) ---------------------------
+# Not an upstream test: docling.rs's own probe of the paragraph-mark
+# (`w:pPr/w:rPr/w:b`) and style-chain bold steps of docling 2.140.0's
+# `_get_format_from_run` — which paragraph kinds print it (body text, list
+# items, rich cells, hyperlinks) and which do not (title, headings, a plain
+# cell).
+
+
+def _mark_bold(paragraph, val=None):
+    rpr = OxmlElement("w:rPr")
+    b = OxmlElement("w:b")
+    if val is not None:
+        b.set(qn("w:val"), val)
+    rpr.append(b)
+    paragraph._p.get_or_add_pPr().append(rpr)
+
+
+def _hyperlink(paragraph, url, text):
+    from docx.opc.constants import RELATIONSHIP_TYPE as RT
+
+    rid = paragraph.part.relate_to(url, RT.HYPERLINK, is_external=True)
+    link = OxmlElement("w:hyperlink")
+    link.set(qn("r:id"), rid)
+    run = OxmlElement("w:r")
+    t = OxmlElement("w:t")
+    t.text = text
+    run.append(t)
+    link.append(run)
+    paragraph._p.append(link)
+
+
+def style_bold(name):
+    doc = Document()
+    styles = doc.styles
+    base = styles.add_style("BoldBase", WD_STYLE_TYPE.PARAGRAPH)
+    base.font.bold = True
+    child = styles.add_style("BoldChild", WD_STYLE_TYPE.PARAGRAPH)
+    child.base_style = base
+    off = styles.add_style("NotBold", WD_STYLE_TYPE.PARAGRAPH)
+    off.font.bold = False
+    off.base_style = base
+
+    doc.add_paragraph("Probe title", style="Title")
+    doc.add_heading("Plain heading", 1)
+    h = doc.add_heading("", 2)
+    h.add_run("Bold").bold = True
+    h.add_run(" and ")
+    h.add_run("italic").italic = True
+    h.add_run(" heading")
+    _hyperlink(doc.add_heading("Heading with ", 2), "https://example.com/h", "a link")
+    doc.add_paragraph("A caption in the Caption style", style="Caption")
+    _mark_bold(doc.add_paragraph("Paragraph-mark bold text"))
+    _mark_bold(doc.add_paragraph("Paragraph-mark bold off"), "0")
+    p = doc.add_paragraph("Mark bold before ")
+    _mark_bold(p)
+    _hyperlink(p, "https://example.com/a", "the link")
+    p.add_run(" and after")
+    p = doc.add_paragraph("Chain bold before ", style="BoldChild")
+    _hyperlink(p, "https://example.com/b", "styled link")
+    p.add_run(" after")
+    p = doc.add_paragraph("", style="BoldChild")
+    p.add_run("explicit run bold off").bold = False
+    p.add_run(" tail")
+    doc.add_paragraph("Style bold off overrides base", style="NotBold")
+    doc.add_paragraph("", style="BoldChild").add_run("italic in bold style").italic = True
+    _mark_bold(doc.add_paragraph("Bullet with bold mark", style="List Bullet"))
+    doc.add_paragraph("Plain bullet", style="List Bullet")
+    doc.add_paragraph("Numbered one", style="List Number")
+    _mark_bold(doc.add_paragraph("Numbered bold mark", style="List Number"))
+    # A table straight after a list joins the list group upstream; a body
+    # paragraph keeps this probe about bold.
+    doc.add_paragraph("Before the table.")
+    table = doc.add_table(rows=2, cols=2)
+    cell = table.cell(0, 0)
+    cell.paragraphs[0].text = "single bold-style cell"
+    cell.paragraphs[0].style = styles["BoldChild"]
+    cell = table.cell(0, 1)
+    cell.paragraphs[0].text = "rich first"
+    cell.add_paragraph("rich bold second", style="BoldChild")
+    cell = table.cell(1, 0)
+    cell.paragraphs[0].add_run("run bold").bold = True
+    cell.paragraphs[0].add_run(" plain")
+    _mark_bold(cell.paragraphs[0])
+    cell = table.cell(1, 1)
+    cell.paragraphs[0].text = "plain"
+    _mark_bold(cell.paragraphs[0])
+    doc.add_paragraph("End.")
+    doc.save(f"{name}.docx")
+
+
 if __name__ == "__main__":
     textbox_in_cell("textbox_cell_vml_single_para", "vml_single_para", "MARKA")
     textbox_in_cell("textbox_cell_vml_multi_para", "vml_multi_para", "MARKA")
@@ -213,3 +304,4 @@ if __name__ == "__main__":
     commented_spacers("commented_spacers")
     num_style_link("num_style_link")
     caption_numbering("caption_numbering")
+    style_bold("style_bold")

@@ -37,7 +37,7 @@ use super::docx::{
     clean_checkbox_symbols, detect_code_language, footnote_texts, get_list_counter,
     header_footer_parts, in_textbox, is_code_by_font, is_code_style, is_title_style,
     numbered_heading_text, on_off, part_rels, row_cells, row_grid_offsets, run_child_text,
-    style_numbering, sync_heading_counter, t_text, Ctx, MAX_TABLE_DEPTH,
+    style_chain_bold, style_numbering, sync_heading_counter, t_text, Ctx, MAX_TABLE_DEPTH,
 };
 use super::html_tree::docling_href;
 use super::ooxml::Package;
@@ -642,10 +642,10 @@ impl Walker {
 
     /// `_get_format_from_run`. `ppr_owner` is the element python-docx's
     /// `run._parent._element` resolves to — the paragraph for a run created
-    /// against it (its paragraph-mark `pPr/rPr/b` counts), the hyperlink for
-    /// a hyperlink's run (where that xpath finds nothing), `None` for a run
-    /// checked without a paragraph (the rich-cell test). `paragraph` enables
-    /// the paragraph style chain's bold.
+    /// against it (its paragraph-mark `pPr/rPr/b` counts; docling 2.140
+    /// builds a hyperlink's runs as `Run(r_el, paragraph)` too, so the mark
+    /// reaches link text), `None` for a run checked without a paragraph (the
+    /// rich-cell test). `paragraph` enables the paragraph style chain's bold.
     fn format_from_run(
         &self,
         r: XmlNode,
@@ -680,20 +680,7 @@ impl Walker {
         if !bold {
             if let Some(p) = paragraph {
                 // Climb the paragraph style's `basedOn` chain for `font.bold`.
-                let mut sid = style_id_of(p).to_string();
-                for _ in 0..10 {
-                    if sid.is_empty() {
-                        break;
-                    }
-                    if ctx.style_bold.get(&sid) == Some(&true) {
-                        bold = true;
-                        break;
-                    }
-                    match ctx.style_based.get(&sid) {
-                        Some(b) => sid = b.clone(),
-                        None => break,
-                    }
-                }
+                bold = style_chain_bold(style_id_of(p), ctx);
             }
         }
         let italic = prop("i").is_some_and(|n| on_off(attr(n, "val")));
@@ -789,7 +776,7 @@ impl Walker {
                     let text: String = runs.iter().map(|r| run_text(*r)).collect();
                     let fmt = runs
                         .first()
-                        .map(|r| self.format_from_run(*r, Some(child), Some(p), ctx));
+                        .map(|r| self.format_from_run(*r, Some(p), Some(p), ctx));
                     parts.push(Part {
                         text,
                         fmt,
