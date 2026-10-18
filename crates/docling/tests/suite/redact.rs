@@ -353,7 +353,8 @@ fn ner_redacts_names_or_warns() {
         return;
     }
     let out = std::process::Command::new(std::env::current_exe().unwrap())
-        .args(["ner_redacts_names_or_warns", "--exact", "--nocapture"])
+        .arg(test_name("ner_redacts_names_or_warns"))
+        .args(["--exact", "--nocapture"])
         .env("DOCLING_RS_REDACT_CHILD", "1")
         .env("DOCLING_RS_NER_DIR", "/nonexistent/ner")
         .output()
@@ -460,4 +461,15 @@ fn allow_patterns_and_terms_through_convert_options() {
     };
     let e = score.validate().unwrap_err().to_string();
     assert!(e.contains("redact_ner_min_score"), "{e}");
+}
+
+/// A test's name as libtest matches it with `--exact`: its path without the
+/// crate, so `picture_ocr::…` inside the `suite` binary and the bare name in
+/// a binary of its own.
+fn test_name(name: &str) -> String {
+    let path = format!("{}::{name}", module_path!());
+    match path.split_once("::") {
+        Some((_crate, rest)) => rest.to_string(),
+        None => path,
+    }
 }

@@ -236,7 +236,8 @@ fn missing_model_warns_and_succeeds() {
         return;
     }
     let out = std::process::Command::new(std::env::current_exe().unwrap())
-        .args(["missing_model_warns_and_succeeds", "--exact", "--nocapture"])
+        .arg(test_name("missing_model_warns_and_succeeds"))
+        .args(["--exact", "--nocapture"])
         .env("DOCLING_RS_PICTURE_OCR_CHILD", "1")
         .env("DOCLING_OCR_REC_ONNX", "/nonexistent/ocr_rec.onnx")
         .env("DOCLING_OCR_DICT", "/nonexistent/dict.txt")
@@ -357,5 +358,16 @@ fn video_frames_stream_through_the_enrichment() {
             text.as_deref().is_some_and(|t| t.contains("Frame text")),
             "frame read before its bytes were dropped: {text:?}"
         );
+    }
+}
+
+/// A test's name as libtest matches it with `--exact`: its path without the
+/// crate, so `picture_ocr::…` inside the `suite` binary and the bare name in
+/// a binary of its own.
+fn test_name(name: &str) -> String {
+    let path = format!("{}::{name}", module_path!());
+    match path.split_once("::") {
+        Some((_crate, rest)) => rest.to_string(),
+        None => path,
     }
 }
