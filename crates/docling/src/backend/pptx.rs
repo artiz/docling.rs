@@ -1097,6 +1097,16 @@ fn handle_text_shape(sp: XmlNode, location: [u16; 4], ctx: &SlideCtx, out: &mut 
         return;
     }
 
+    // docling#4746: the footer, date and slide-number placeholders are slide
+    // chrome, like a PDF's page header and footer — everything the shape
+    // adds goes to the furniture layer (on a hidden slide it then moves to
+    // the invisible layer with the rest of the slide).
+    let chrome = matches!(
+        ph.and_then(|ph| ph.attribute("type")),
+        Some("dt") | Some("ftr") | Some("sldNum")
+    );
+    let mark = out.mark();
+
     // The lists still open while the frame is walked, outermost first —
     // docling's `_OpenList` stack (docling#4397, 2.130): a paragraph at a
     // deeper `a:pPr/@lvl` opens a `list` group nested under the last item of
@@ -1221,6 +1231,9 @@ fn handle_text_shape(sp: XmlNode, location: [u16; 4], ctx: &SlideCtx, out: &mut 
                 push_located(&mut out.doc, location, node);
             }
         }
+    }
+    if chrome {
+        out.move_to_layer(mark, ContentLayer::Furniture, &[None]);
     }
 }
 
