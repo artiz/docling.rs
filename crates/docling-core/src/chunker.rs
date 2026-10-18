@@ -20,7 +20,7 @@
 //! HuggingFace `tokenizers` implementation ships behind the `chunking` cargo
 //! feature as [`HuggingFaceTokenizer`].
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, VecDeque};
 
 use crate::document::{DoclingDocument, Node, Table};
 
@@ -1389,70 +1389,163 @@ impl<T: ChunkTokenizer> HybridChunker<T> {
 
     /// One step of docling's `_merge_chunks_with_matching_metadata`, streamed:
     /// extend the window with `chunk` when its headings match the window's and
-    /// the merged candidate stays within budget, otherwise flush the window to
+    /// the merged window stays within budget, otherwise flush the window to
     /// `sink` and start a new one at `chunk`. Returns `false` once the sink
     /// cancels.
+    ///
+    /// Linear, as docling-core 2.102 has it (docling-core#823, #782): each
+    /// chunk's text is counted once, the window grows on a running estimate
+    /// (text tokens, the delimiter's cost, the headings' overhead), an exact
+    /// count of the merged window runs only where the estimate overflows, and
+    /// the final window is verified exactly — shrunk back to the largest one
+    /// that fits when the estimate under-counted, the chunks it gives up
+    /// starting the next window. Rebuilding and re-tokenizing the whole window
+    /// for every chunk was quadratic in the window's length.
     fn merge_push(
         &self,
         m: &mut PeerMerger,
         chunk: DocChunk,
         sink: &mut dyn FnMut(DocChunk) -> bool,
     ) -> bool {
-        if m.window.is_empty() {
-            m.window.push(chunk);
-            return true;
-        }
-        let candidate = DocChunk {
-            text: m
-                .window
-                .iter()
-                .map(|c| c.text.as_str())
-                .chain([chunk.text.as_str()])
-                .collect::<Vec<_>>()
-                .join("\n"),
-            headings: m.window[0].headings.clone(),
-            doc_items: m
-                .window
-                .iter()
-                .flat_map(|c| c.doc_items.iter().cloned())
-                .chain(chunk.doc_items.iter().cloned())
-                .collect(),
-        };
-        if chunk.headings == m.window[0].headings
-            && self.count_chunk_tokens(&candidate) <= self.max_tokens()
-        {
-            m.window.push(chunk);
-            m.merged = Some(candidate);
-            true
-        } else {
-            let alive = self.merge_flush(m, sink);
-            m.window.push(chunk);
-            alive
-        }
+        self.merge_feed(m, VecDeque::from([(chunk, None)]), sink)
     }
 
-    /// Flush the merge window: a single chunk passes through unchanged, a
-    /// multi-chunk window emits its precomputed merge. Returns `false` once
-    /// the sink cancels.
-    fn merge_flush(&self, m: &mut PeerMerger, sink: &mut dyn FnMut(DocChunk) -> bool) -> bool {
-        let alive = if m.window.len() == 1 {
-            sink(m.window.pop().expect("single-chunk window"))
-        } else if !m.window.is_empty() {
-            m.window.clear();
-            sink(m.merged.take().expect("multi-chunk window has a merge"))
+    /// Feed chunks (with their text token count when already known) to the
+    /// merge window, closing it whenever a chunk cannot join.
+    fn merge_feed(
+        &self,
+        m: &mut PeerMerger,
+        mut pending: VecDeque<(DocChunk, Option<usize>)>,
+        sink: &mut dyn FnMut(DocChunk) -> bool,
+    ) -> bool {
+        while let Some((chunk, tokens)) = pending.pop_front() {
+            let tokens = tokens.unwrap_or_else(|| self.tokenizer.count_tokens(&chunk.text));
+            if let Err(chunk) = self.merge_extend(m, chunk, tokens) {
+                let (alive, rest) = self.merge_close(m, sink);
+                if !alive {
+                    return false;
+                }
+                pending.push_front((chunk, Some(tokens)));
+                for item in rest.into_iter().rev() {
+                    pending.push_front(item);
+                }
+            }
+        }
+        true
+    }
+
+    /// Add `chunk` (of `tokens` text tokens) to the window, or hand it back
+    /// when its headings differ or the window would overflow.
+    fn merge_extend(
+        &self,
+        m: &mut PeerMerger,
+        chunk: DocChunk,
+        tokens: usize,
+    ) -> Result<(), DocChunk> {
+        let max = self.max_tokens() as i64;
+        if m.window.is_empty() {
+            // The headings' overhead around the joined text is shared by every
+            // candidate of this window (it may be negative).
+            m.overhead = self.count_chunk_tokens(&chunk) as i64 - tokens as i64;
+            m.running = tokens as i64;
+            m.window.push((chunk, tokens));
+            return Ok(());
+        }
+        if chunk.headings != m.window[0].0.headings {
+            return Err(chunk);
+        }
+        let delim = *m.delim.get_or_insert_with(|| {
+            // `_estimate_delimiter_tokens`: what joining two texts adds.
+            let t = &self.tokenizer;
+            t.count_tokens("a\nb") as i64 - t.count_tokens("a") as i64 - t.count_tokens("b") as i64
+        });
+        m.running += tokens as i64 + delim;
+        if m.running + m.overhead > max {
+            let exact = self.count_chunk_tokens(&merged_chunk(
+                m.window.iter().map(|(c, _)| c).chain([&chunk]),
+            )) as i64;
+            if exact > max {
+                return Err(chunk);
+            }
+            // The estimate overshot; re-anchor it on the exact count.
+            m.running = exact - m.overhead;
+        }
+        m.window.push((chunk, tokens));
+        Ok(())
+    }
+
+    /// Close the window: verify it exactly, shrinking it back to the largest
+    /// prefix that fits, emit that (a single chunk unchanged), and return the
+    /// chunks given up, which start the next window.
+    fn merge_close(
+        &self,
+        m: &mut PeerMerger,
+        sink: &mut dyn FnMut(DocChunk) -> bool,
+    ) -> (bool, Vec<(DocChunk, Option<usize>)>) {
+        if m.window.is_empty() {
+            return (true, Vec::new());
+        }
+        let max = self.max_tokens();
+        let mut fit = m.window.len() - 1;
+        while fit > 0
+            && self.count_chunk_tokens(&merged_chunk(m.window[..=fit].iter().map(|(c, _)| c))) > max
+        {
+            fit -= 1;
+        }
+        let rest = m
+            .window
+            .split_off(fit + 1)
+            .into_iter()
+            .map(|(c, t)| (c, Some(t)))
+            .collect();
+        let out = if m.window.len() == 1 {
+            m.window.pop().expect("single-chunk window").0
         } else {
-            true
+            let merged = merged_chunk(m.window.iter().map(|(c, _)| c));
+            m.window.clear();
+            merged
         };
-        m.merged = None;
-        alive
+        (sink(out), rest)
+    }
+
+    /// Flush the merge window at the end of the stream (feeding back what a
+    /// shrunk window gave up). Returns `false` once the sink cancels.
+    fn merge_flush(&self, m: &mut PeerMerger, sink: &mut dyn FnMut(DocChunk) -> bool) -> bool {
+        while !m.window.is_empty() {
+            let (alive, rest) = self.merge_close(m, sink);
+            if !alive || !self.merge_feed(m, rest.into(), sink) {
+                return false;
+            }
+        }
+        true
     }
 }
 
-/// The in-flight peer-merge window of [`HybridChunker::chunk_with`].
+/// docling's merged peer chunk: the texts joined by `\n`, every chunk's doc
+/// items, the first chunk's headings.
+fn merged_chunk<'a>(chunks: impl Iterator<Item = &'a DocChunk> + Clone) -> DocChunk {
+    let mut first = chunks.clone();
+    DocChunk {
+        text: chunks
+            .clone()
+            .map(|c| c.text.as_str())
+            .collect::<Vec<_>>()
+            .join("\n"),
+        headings: first.next().and_then(|c| c.headings.clone()),
+        doc_items: chunks.flat_map(|c| c.doc_items.iter().cloned()).collect(),
+    }
+}
+
+/// The in-flight peer-merge window of [`HybridChunker::chunk_with`]: the
+/// window's chunks with their text token counts, the running token estimate
+/// of the joined text, the window's headings overhead, and the delimiter's
+/// token cost (measured once).
 #[derive(Default)]
 struct PeerMerger {
-    window: Vec<DocChunk>,
-    merged: Option<DocChunk>,
+    window: Vec<(DocChunk, usize)>,
+    running: i64,
+    overhead: i64,
+    delim: Option<i64>,
 }
 
 // ---------------------------------------------------------------------------
@@ -2358,6 +2451,163 @@ mod tests {
             ..Default::default()
         };
         assert_eq!(triplet_table_text(&single), "a = b");
+    }
+
+    /// The peer merge before docling-core#823 (#782): rebuild and re-count
+    /// the whole window for every chunk. The linear merge must give the
+    /// same chunks.
+    fn quadratic_merge<T: ChunkTokenizer>(
+        h: &HybridChunker<T>,
+        chunks: Vec<DocChunk>,
+    ) -> Vec<DocChunk> {
+        let mut out = Vec::new();
+        let mut window: Vec<DocChunk> = Vec::new();
+        let flush = |window: &mut Vec<DocChunk>, out: &mut Vec<DocChunk>| match window.len() {
+            0 => {}
+            1 => out.push(window.pop().unwrap()),
+            _ => {
+                out.push(merged_chunk(window.iter()));
+                window.clear();
+            }
+        };
+        for chunk in chunks {
+            if window.is_empty() {
+                window.push(chunk);
+                continue;
+            }
+            let candidate = merged_chunk(window.iter().chain([&chunk]));
+            if chunk.headings == window[0].headings
+                && h.count_chunk_tokens(&candidate) <= h.max_tokens()
+            {
+                window.push(chunk);
+            } else {
+                flush(&mut window, &mut out);
+                window.push(chunk);
+            }
+        }
+        flush(&mut window, &mut out);
+        out
+    }
+
+    fn linear_merge<T: ChunkTokenizer>(
+        h: &HybridChunker<T>,
+        chunks: Vec<DocChunk>,
+    ) -> Vec<DocChunk> {
+        let mut out = Vec::new();
+        let mut sink = |c| {
+            out.push(c);
+            true
+        };
+        let mut m = PeerMerger::default();
+        for c in chunks {
+            assert!(h.merge_push(&mut m, c, &mut sink));
+        }
+        assert!(h.merge_flush(&mut m, &mut sink));
+        out
+    }
+
+    /// A non-additive "tokenizer": a token per started 4 characters, so the
+    /// joined text counts differently from the sum of its parts and the
+    /// delimiter's measured cost is negative — the running estimate is
+    /// re-anchored and the final window shrunk back.
+    struct QuadCharTok(usize);
+    impl ChunkTokenizer for QuadCharTok {
+        fn count_tokens(&self, text: &str) -> usize {
+            text.chars().count().div_ceil(4)
+        }
+        fn max_tokens(&self) -> usize {
+            self.0
+        }
+    }
+
+    /// Pseudo-random chunks: short texts of 1–12 words under one of three
+    /// heading paths (runs of equal headings, as the walk yields them).
+    fn random_chunks(seed: u64, n: usize) -> Vec<DocChunk> {
+        let mut state = seed;
+        let mut next = move |m: u64| {
+            state = state
+                .wrapping_mul(6364136223846793005)
+                .wrapping_add(1442695040888963407);
+            (state >> 33) % m
+        };
+        let headings = [
+            None,
+            Some(vec!["A".to_string()]),
+            Some(vec!["A".into(), "B".into()]),
+        ];
+        let mut current = 0;
+        (0..n)
+            .map(|i| {
+                if next(4) == 0 {
+                    current = next(3) as usize;
+                }
+                let words = 1 + next(12) as usize;
+                let text = (0..words)
+                    .map(|w| ["x", "lorem", "ipsum", "dolor", "sit"][(w + i) % 5])
+                    .collect::<Vec<_>>()
+                    .join(" ");
+                DocChunk {
+                    text,
+                    headings: headings[current].clone(),
+                    doc_items: vec![ChunkItem {
+                        self_ref: format!("#/texts/{i}"),
+                        kind: ChunkItemKind::Text,
+                        text: String::new(),
+                    }],
+                }
+            })
+            .collect()
+    }
+
+    /// #782 (docling-core#823): the linear peer merge gives exactly the
+    /// chunks of the quadratic one, with an additive and a non-additive
+    /// tokenizer, over many budgets.
+    #[test]
+    fn linear_peer_merge_matches_the_quadratic_one() {
+        for seed in 0..40 {
+            let chunks = random_chunks(seed, 60);
+            for max in [3, 8, 16, 40, 200] {
+                let h = HybridChunker::new(WordTok(max));
+                assert_eq!(
+                    linear_merge(&h, chunks.clone()),
+                    quadratic_merge(&h, chunks.clone()),
+                    "words, seed {seed}, max {max}"
+                );
+                let h = HybridChunker::new(QuadCharTok(max));
+                assert_eq!(
+                    linear_merge(&h, chunks.clone()),
+                    quadratic_merge(&h, chunks.clone()),
+                    "chars/4, seed {seed}, max {max}"
+                );
+            }
+        }
+    }
+
+    /// 10k tiny paragraphs at an 8192-token budget — docling-core#823's
+    /// benchmark. `cargo test -p docling-core --release -- --ignored
+    /// peer_merge_bench --nocapture` prints both timings.
+    #[test]
+    #[ignore]
+    fn peer_merge_bench() {
+        let chunks: Vec<DocChunk> = (0..10_000)
+            .map(|i| DocChunk {
+                text: format!("Paragraph number {i} is short."),
+                headings: Some(vec!["Section".into()]),
+                doc_items: Vec::new(),
+            })
+            .collect();
+        let h = HybridChunker::new(WordTok(8192));
+        let t = std::time::Instant::now();
+        let fast = linear_merge(&h, chunks.clone());
+        let linear = t.elapsed();
+        let t = std::time::Instant::now();
+        let slow = quadratic_merge(&h, chunks);
+        let quadratic = t.elapsed();
+        assert_eq!(fast, slow);
+        println!(
+            "linear {linear:?}, quadratic {quadratic:?}, {} chunks",
+            fast.len()
+        );
     }
 
     #[test]
