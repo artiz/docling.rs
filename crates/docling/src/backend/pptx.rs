@@ -145,6 +145,9 @@ struct SlideCtx<'a> {
     metafiles: &'a HashSet<String>,
     /// Native chart parts by relationship id (#756).
     charts: &'a HashMap<String, PptxChart>,
+    /// Every relationship target of the slide part by id, as written — what
+    /// a shape's `a:hlinkClick` resolves through (#767).
+    targets: &'a HashMap<String, String>,
     slide_size: (i64, i64),
     phmap: &'a PhMap,
     /// 1-based slide number — docling's `page_no`.
@@ -237,7 +240,12 @@ fn convert_slide(
     // chart part parsed up front as python-pptx reads it, keyed by its
     // relationship id — see `pptx_chart`.
     let mut charts: HashMap<String, PptxChart> = HashMap::new();
-    for r in pkg.rels_for(part) {
+    let rels = pkg.rels_for(part);
+    let targets: HashMap<String, String> = rels
+        .iter()
+        .map(|r| (r.id.clone(), r.target.clone()))
+        .collect();
+    for r in rels {
         let p = resolve(&dir, &r.target);
         if r.rel_type.ends_with("/chart") {
             if let Some(chart) = pkg.read(&p).as_deref().and_then(pptx_chart::parse) {
@@ -284,6 +292,7 @@ fn convert_slide(
         images: &images,
         metafiles: &metafiles,
         charts: &charts,
+        targets: &targets,
         slide_size,
         phmap: &phmap,
         page_no,
@@ -436,14 +445,65 @@ fn slide_notes(pkg: &mut Package, part: &str, dir: &str, page_no: usize, out: &m
 
 /// A plain text item of the tree: docling's `add_text(label, text)`.
 fn text_kind(label: &str, text: &str) -> TreeKind {
+    linked_text_kind(label, text, None)
+}
+
+/// A text item of the tree carrying its shape's hyperlink, if any.
+fn linked_text_kind(label: &str, text: &str, hyperlink: Option<&str>) -> TreeKind {
     TreeKind::Text {
         label: label.into(),
         text: text.into(),
         orig: None,
         formatting: None,
-        hyperlink: None,
+        hyperlink: hyperlink.map(str::to_string),
         level: None,
         list: None,
+    }
+}
+
+/// The link on a whole shape — docling's `_shape_hyperlink` (docling#4787,
+/// 2.139, #767): the `a:hlinkClick` under the shape's `p:cNvPr`, resolved
+/// through the slide's relationships. Only python-pptx's `HYPERLINK` (no
+/// `action` attribute) and `OPEN_FILE` (`ppaction://hlinkfile`) actions
+/// count: a jump to another slide also carries a relationship target
+/// (`slide2.xml`), but nothing a reader can follow. A target without a
+/// scheme is kept as a path (`appendix/notes.docx`), an absolute one
+/// normalized like pydantic's `AnyUrl` and dropped when malformed — the
+/// rules the ODF backend's links follow.
+fn shape_hyperlink(shape: XmlNode, ctx: &SlideCtx) -> Option<String> {
+    let click = shape
+        .children()
+        .filter(XmlNode::is_element)
+        .flat_map(|nv| nv.children().filter(|c| c.has_tag_name("cNvPr")))
+        .find_map(|pr| pr.children().find(|c| c.has_tag_name("hlinkClick")))?;
+    if let Some(action) = click.attribute("action") {
+        // python-pptx's `action_verb`: the URL before any `?`, past its
+        // 11-character `ppaction://` prefix.
+        let verb = action
+            .split('?')
+            .next()
+            .unwrap_or("")
+            .get(11..)
+            .unwrap_or("");
+        if verb != "hlinkfile" {
+            return None;
+        }
+    }
+    let id = click
+        .attributes()
+        .find(|a| a.name() == "id")
+        .map(|a| a.value())
+        .filter(|id| !id.is_empty())?;
+    let address = ctx.targets.get(id).filter(|t| !t.is_empty())?;
+    super::odf::hyperlink_from_href(Some(address))
+}
+
+/// A flat node's text for an item carrying its shape's link: the whole text
+/// as a Markdown link, as docling-core serializes an item's `hyperlink`.
+fn linked_text(text: &str, link: Option<&str>) -> String {
+    match link {
+        Some(url) if !text.is_empty() => format!("[{text}]({url})"),
+        _ => text.to_string(),
     }
 }
 
@@ -1152,6 +1212,9 @@ fn handle_text_shape(sp: XmlNode, location: [u16; 4], ctx: &SlideCtx, out: &mut 
         Some("dt") | Some("ftr") | Some("sldNum")
     );
     let mark = out.mark();
+    // docling#4787: the shape's own link goes on every item it adds.
+    let link = shape_hyperlink(sp, ctx);
+    let link = link.as_deref();
 
     // The lists still open while the frame is walked, outermost first —
     // docling's `_OpenList` stack (docling#4397, 2.130): a paragraph at a
@@ -1211,7 +1274,7 @@ fn handle_text_shape(sp: XmlNode, location: [u16; 4], ctx: &SlideCtx, out: &mut 
                         text: text.clone(),
                         orig: None,
                         formatting: None,
-                        hyperlink: None,
+                        hyperlink: link.map(str::to_string),
                         level: None,
                         list: Some(ListMeta {
                             enumerated: numbered,
@@ -1236,12 +1299,12 @@ fn handle_text_shape(sp: XmlNode, location: [u16; 4], ctx: &SlideCtx, out: &mut 
                     ordered,
                     number,
                     first_in_list,
-                    text,
+                    text: linked_text(&text, link),
                     level: depth as u8,
                     marker,
                     location: Some(location),
                     dclx: None,
-                    href: None,
+                    href: link.map(str::to_string),
                     layer: None,
                 });
             }
@@ -1252,7 +1315,7 @@ fn handle_text_shape(sp: XmlNode, location: [u16; 4], ctx: &SlideCtx, out: &mut 
                     out.tree.add_with_prov(
                         Some(out.slide),
                         None,
-                        text_kind("formula", &latex),
+                        linked_text_kind("formula", &latex, link),
                         prov,
                     );
                     out.doc.push(Node::Formula {
@@ -1267,8 +1330,13 @@ fn handle_text_shape(sp: XmlNode, location: [u16; 4], ctx: &SlideCtx, out: &mut 
                 // docling labels a title placeholder's text `title` and any
                 // other non-list text `paragraph` (a `text` in Markdown terms).
                 let label = if is_title { "title" } else { "paragraph" };
-                out.tree
-                    .add_with_prov(Some(out.slide), None, text_kind(label, &text), prov);
+                out.tree.add_with_prov(
+                    Some(out.slide),
+                    None,
+                    linked_text_kind(label, &text, link),
+                    prov,
+                );
+                let text = linked_text(&text, link);
                 let node = if is_title {
                     Node::Heading { level: 1, text }
                 } else {

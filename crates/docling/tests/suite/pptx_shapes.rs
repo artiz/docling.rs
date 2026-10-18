@@ -1,5 +1,6 @@
 //! PPTX shape geometry and links against docling's own output: shapes
-//! inside a moved, resized, nested or flipped group (#766, docling#4859).
+//! inside a moved, resized, nested or flipped group (#766, docling#4859),
+//! a hyperlink on a whole shape (#767, docling#4787).
 //!
 //! `tests/data/pptx/shapes/<name>.{md,json}` is **not** our output: it is
 //! what docling 2.140.0's PowerPoint backend writes for `<name>.pptx`
@@ -13,7 +14,13 @@ use std::path::{Path, PathBuf};
 use docling::{DocumentConverter, SourceDocument};
 use serde_json::Value;
 
-const DECKS: &[&str] = &["group_bbox"];
+const DECKS: &[&str] = &[
+    "group_bbox",
+    "list_link",
+    "relative_link",
+    "shape_link",
+    "slide_jump",
+];
 
 fn dir() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/data/pptx/shapes")
@@ -96,4 +103,59 @@ fn a_moved_group_moves_its_shapes() {
         ],
         [4.0, 3.0, 5.0, 4.0]
     );
+}
+
+/// Each text item's link, by text.
+fn links(name: &str) -> Vec<(String, Option<String>)> {
+    let json: Value = serde_json::from_str(&convert(name).export_to_json()).unwrap();
+    json["texts"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|t| {
+            (
+                t["text"].as_str().unwrap().to_string(),
+                t["hyperlink"].as_str().map(str::to_string),
+            )
+        })
+        .collect()
+}
+
+/// docling#4787's four cases: every paragraph or list item of a linked
+/// shape carries the link, a target without a scheme stays a path, and a
+/// jump to another slide is no link.
+#[test]
+fn a_link_on_a_whole_shape_reaches_its_text() {
+    let some = |s: &str| Some(s.to_string());
+    assert_eq!(
+        links("shape_link"),
+        [
+            ("No link here".into(), None),
+            ("Watch the talk".into(), some("https://example.com/talk")),
+            ("Second line".into(), some("https://example.com/talk")),
+        ]
+    );
+    let deck = convert("shape_link");
+    assert!(deck
+        .export_to_markdown()
+        .contains("[Watch the talk](https://example.com/talk)"));
+    // DocLang: docling-core's `<href>` head, ahead of the location tokens.
+    let doclang = deck.export_to_doclang();
+    assert!(
+        doclang.contains("<text>\n    <href uri=\"https://example.com/talk\"/>\n    <location")
+            && doclang.contains("Watch the talk"),
+        "{doclang}"
+    );
+    assert_eq!(
+        links("list_link"),
+        [
+            ("First point".into(), some("https://example.com/points")),
+            ("Second point".into(), some("https://example.com/points")),
+        ]
+    );
+    assert_eq!(
+        links("relative_link"),
+        [("Open the appendix".into(), some("appendix/notes.docx"))]
+    );
+    assert_eq!(links("slide_jump"), [("Go to the next slide".into(), None)]);
 }

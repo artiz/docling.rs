@@ -1,0 +1,2 @@
+- [First point](https://example.com/points)
+- [Second point](https://example.com/points)
