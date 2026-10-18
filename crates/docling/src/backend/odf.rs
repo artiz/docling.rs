@@ -981,6 +981,12 @@ fn handle_block(
                 hide_nodes_from(doc, start);
             }
         }
+        // A frame outside a paragraph — a picture anchored straight in a
+        // table cell (#758) — is its chart or picture, as the JSON tree's
+        // `_add_odf_children` has it.
+        "frame" => {
+            emit_frame_graphic(el, styles, doc);
+        }
         _ => {}
     }
 }
@@ -1602,7 +1608,7 @@ fn rich_cell_markdown(tc: XmlNode, styles: &Styles) -> String {
                     }
                 }
             }
-            "p" | "h" => {
+            "p" | "h" | "frame" => {
                 prev_state = None;
                 handle_block(child, styles, &mut sub, 0, &mut Vec::new());
             }
@@ -1618,10 +1624,10 @@ fn rich_cell_markdown(tc: XmlNode, styles: &Styles) -> String {
 
 // ---------------------------------------------------------------- spreadsheet
 
-fn walk_spreadsheet(sheet: XmlNode, _styles: &Styles, doc: &mut DoclingDocument) {
+fn walk_spreadsheet(sheet: XmlNode, styles: &Styles, doc: &mut DoclingDocument) {
     for table in sheet.children().filter(|c| c.has_tag_name("table")) {
         let start = doc.nodes.len();
-        add_ods_sheet(table, doc);
+        add_ods_sheet(table, styles, doc);
         // A hidden sheet (`table:display="false"`) is kept on the invisible
         // layer, as the JSON tree has it (#753).
         if attr(table, "display") == Some("false") {
@@ -1660,7 +1666,7 @@ fn hide_nodes_from(doc: &mut DoclingDocument, start: usize) {
 /// `_find_data_tables_in_sheet` (strict `gap_tolerance = 0` flood fill, singleton
 /// cells kept as 1×1 tables). Numeric columns right-align via the shared table
 /// serializer.
-fn add_ods_sheet(table: XmlNode, doc: &mut DoclingDocument) {
+fn add_ods_sheet(table: XmlNode, styles: &Styles, doc: &mut DoclingDocument) {
     // Build a sparse content grid: (row, col) → cell text, expanding
     // `number-{rows,columns}-repeated` (empty repeats only advance the index, so a
     // sheet padded to millions of empty cells stays cheap).
@@ -1677,7 +1683,13 @@ fn add_ods_sheet(table: XmlNode, doc: &mut DoclingDocument) {
         {
             let crep = repeat(cell, "number-columns-repeated");
             let covered = cell.has_tag_name("covered-table-cell");
-            let text = ods_cell_text(cell);
+            // A cell holding a picture is a rich cell: its blocks, picture
+            // included, as in the JSON tree (#758).
+            let text = if cell_has_image(cell) {
+                rich_cell_markdown(cell, styles)
+            } else {
+                ods_cell_text(cell)
+            };
             if !text.is_empty() || covered {
                 row_has_content = true;
                 for c in 0..crep.min(1024) {
@@ -1696,6 +1708,18 @@ fn add_ods_sheet(table: XmlNode, doc: &mut DoclingDocument) {
         row_idx += rrep;
     }
     emit_sheet_regions(&cells, doc);
+    // `_find_images_in_sheet`: the pictures anchored to the sheet itself, in
+    // `<table:shapes>`, after its tables (#758, docling#4678).
+    for img in table
+        .children()
+        .filter(|n| n.has_tag_name("shapes"))
+        .flat_map(|shapes| shapes.descendants())
+        .filter(|n| n.has_tag_name("image"))
+    {
+        if let Some(node) = odf_picture(styles, img) {
+            doc.push(node);
+        }
+    }
 }
 
 /// Split a sparse cell grid into its disconnected data regions and emit each
@@ -2309,7 +2333,7 @@ mod tests {
         let dom = Document::parse(xml).unwrap();
         let table = dom.descendants().find(|n| n.has_tag_name("table")).unwrap();
         let mut doc = DoclingDocument::new("t");
-        add_ods_sheet(table, &mut doc);
+        add_ods_sheet(table, &parse_styles(&dom, None), &mut doc);
         let tables: Vec<&Table> = doc
             .nodes
             .iter()

@@ -1,0 +1,54 @@
+{
+  "schema_name": "DoclingDocument",
+  "version": "1.10.0",
+  "name": "sheet_vector_picture",
+  "origin": {
+    "mimetype": "application/vnd.oasis.opendocument.spreadsheet",
+    "binary_hash": 5708330207608229209,
+    "filename": "sheet_vector_picture.ods"
+  },
+  "furniture": {
+    "self_ref": "#/furniture",
+    "children": [],
+    "content_layer": "furniture",
+    "name": "_root_",
+    "label": "unspecified"
+  },
+  "body": {
+    "self_ref": "#/body",
+    "children": [
+      {
+        "$ref": "#/groups/0"
+      }
+    ],
+    "content_layer": "body",
+    "name": "_root_",
+    "label": "unspecified"
+  },
+  "groups": [
+    {
+      "self_ref": "#/groups/0",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "name": "sheet: Sheet1",
+      "label": "section"
+    }
+  ],
+  "texts": [],
+  "pictures": [],
+  "tables": [],
+  "key_value_items": [],
+  "form_items": [],
+  "pages": {
+    "1": {
+      "size": {
+        "width": 0.0,
+        "height": 0.0
+      },
+      "page_no": 1
+    }
+  }
+}

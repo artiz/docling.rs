@@ -1298,9 +1298,14 @@ impl<'s> Walker<'s> {
         } else if !cell_has_content_at_a1(table) {
             // No data at all: no tables.
         }
-        // `_find_images_in_sheet`: every image with a default (0, 0, 1, 1) box.
+        // `_find_images_in_sheet`: every picture anchored to the sheet itself
+        // (in `<table:shapes>`) with a default (0, 0, 1, 1) box. A picture
+        // anchored to a cell is added with its rich cell, once (#758,
+        // docling#4678).
         let images: Vec<XmlNode> = table
-            .descendants()
+            .children()
+            .filter(|n| n.has_tag_name("shapes"))
+            .flat_map(|shapes| shapes.descendants())
             .filter(|n| n.has_tag_name("image"))
             .collect();
         for img in images {
