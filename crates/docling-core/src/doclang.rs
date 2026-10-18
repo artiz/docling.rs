@@ -413,9 +413,25 @@ fn emit_text_element(
     // tokens are element children, then the text runs.
     if let Some(loc) = location {
         out.push(depth, format!("<{tag_open}>"));
+        let mut runs = if text.is_empty() {
+            Vec::new()
+        } else {
+            inline_runs(text)
+        };
+        // A lone `[anchor](uri)` puts its `<href uri=…/>` in the head ahead of
+        // the location, as docling-core does for an item's `hyperlink` (a
+        // PPTX shape's link, #767).
+        if let [Run::Link { anchor, uri }] = runs.as_slice() {
+            out.push(depth + 1, format!("<href uri=\"{}\"/>", attr_escape(uri)));
+            runs = if anchor.trim().is_empty() {
+                Vec::new()
+            } else {
+                inline_runs(anchor)
+            };
+        }
         push_location(out, depth + 1, loc);
-        if !text.is_empty() {
-            emit_runs(out, depth + 1, inline_runs(text));
+        if !runs.is_empty() {
+            emit_runs(out, depth + 1, runs);
         }
         out.push(depth, format!("</{tag}>"));
         return;
