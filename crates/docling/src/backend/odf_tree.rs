@@ -32,7 +32,8 @@ use super::odf::{
     is_list_tag, is_rich_cell, is_slide_title_element, level_affixes, level_is_enumerated,
     level_start, list_has_direct_text, list_has_renderable, list_items,
     list_starts_with_empty_nested, odf_item_content, ods_cell_text, para_plain_text,
-    paragraph_style_names, repeat, slide_has_visible_title, Fmt, Run, Styles,
+    paragraph_style_names, repeat, section_is_hidden, slide_has_visible_title, slide_is_hidden,
+    Fmt, Run, Styles,
 };
 
 /// The tree plus the spreadsheet pages docling adds (`page_no`, width,
@@ -128,6 +129,15 @@ pub(super) fn build_presentation(pres: XmlNode, styles: &Styles) -> Built {
             );
         }
         w.walk_slide(page, slide);
+        // `_hide_slide` (#753, docling#4767): the slide group and its body
+        // items move to the invisible layer.
+        if slide_is_hidden(page, styles) {
+            for item in &mut w.tree.items[slide..] {
+                if item.layer.is_none() {
+                    item.layer = Some(ContentLayer::Invisible);
+                }
+            }
+        }
     }
     Built {
         tree: w.tree,
@@ -841,6 +851,13 @@ impl<'s> Walker<'s> {
                 self.add_table(el, parent, layer, None, None);
             }
             "section" => {
+                // A hidden section's content goes to the invisible layer
+                // (#753, docling#4860).
+                let layer = if section_is_hidden(el) {
+                    Some(ContentLayer::Invisible)
+                } else {
+                    layer
+                };
                 self.add_children(el.children().filter(XmlNode::is_element), parent, layer)
             }
             "frame" => {

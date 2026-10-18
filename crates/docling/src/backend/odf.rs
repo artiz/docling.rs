@@ -126,6 +126,10 @@ pub(super) struct Styles {
     /// path must not turn into an arbitrary local-file read (the advisory
     /// behind #4015).
     policy: ImagePolicy,
+    /// The `drawing-page` styles that hide a slide
+    /// (`presentation:visibility="hidden"` on their
+    /// `style:drawing-page-properties`; #753, docling#4767).
+    hidden_pages: HashSet<String>,
 }
 
 impl DeclarativeBackend for OdfBackend {
@@ -293,12 +297,21 @@ pub(super) fn is_list_tag(name: &str) -> bool {
 fn parse_styles(content: &Document, styles: Option<&Document>) -> Styles {
     let mut map = HashMap::new();
     let mut lists = HashMap::new();
+    let mut hidden_pages = HashSet::new();
     for dom in [Some(content), styles].into_iter().flatten() {
         for s in dom.descendants() {
             match s.tag_name().name() {
                 "style" => {
                     if let Some(name) = attr(s, "name") {
                         map.insert(name.to_string(), style_info(s));
+                        let hides_page = attr(s, "family") == Some("drawing-page")
+                            && s.children().any(|c| {
+                                c.has_tag_name("drawing-page-properties")
+                                    && attr(c, "visibility") == Some("hidden")
+                            });
+                        if hides_page {
+                            hidden_pages.insert(name.to_string());
+                        }
                     }
                 }
                 "list-style" => {
@@ -338,7 +351,23 @@ fn parse_styles(content: &Document, styles: Option<&Document>) -> Styles {
         images: HashMap::new(),
         parts: None,
         policy: ImagePolicy::default(),
+        hidden_pages,
     }
+}
+
+/// Whether a `<draw:page>` is a hidden slide: its `draw:style-name` names a
+/// `drawing-page` style with `presentation:visibility="hidden"` — docling's
+/// `_is_slide_hidden` (#753, docling#4767). Such a slide is not presented;
+/// it is kept on the invisible layer, like a hidden ODS sheet.
+pub(super) fn slide_is_hidden(page: XmlNode, styles: &Styles) -> bool {
+    attr(page, "style-name").is_some_and(|name| styles.hidden_pages.contains(name))
+}
+
+/// Whether a `<text:section>` is hidden (`text:display="none"`, Writer's
+/// Format > Sections > Hide): its content is kept on the invisible layer
+/// (#753, docling#4860).
+pub(super) fn section_is_hidden(section: XmlNode) -> bool {
+    attr(section, "display") == Some("none")
 }
 
 /// Load every embedded chart object a `<draw:object>` references. Each object is
@@ -944,8 +973,13 @@ fn handle_block(
             // lists inside a section were silently dropped before. Recursing
             // through `walk_blocks` keeps list numbering continuing across the
             // section's own consecutive lists (`_add_odf_children`) and
-            // handles nested sections.
+            // handles nested sections. A hidden section's blocks go to the
+            // invisible layer (#753).
+            let start = doc.nodes.len();
             walk_blocks(el.children().filter(XmlNode::is_element), styles, doc);
+            if section_is_hidden(el) {
+                hide_nodes_from(doc, start);
+            }
         }
         _ => {}
     }
@@ -1586,7 +1620,38 @@ fn rich_cell_markdown(tc: XmlNode, styles: &Styles) -> String {
 
 fn walk_spreadsheet(sheet: XmlNode, _styles: &Styles, doc: &mut DoclingDocument) {
     for table in sheet.children().filter(|c| c.has_tag_name("table")) {
+        let start = doc.nodes.len();
         add_ods_sheet(table, doc);
+        // A hidden sheet (`table:display="false"`) is kept on the invisible
+        // layer, as the JSON tree has it (#753).
+        if attr(table, "display") == Some("false") {
+            hide_nodes_from(doc, start);
+        }
+    }
+}
+
+/// Move the body nodes pushed since `start` to the invisible layer: a list
+/// item through its own layer (so a list stays one list), any other body
+/// node wrapped in [`Node::Furniture`]; nodes already on another layer
+/// (footnote bodies) keep it. A hidden section, slide or sheet is kept,
+/// out of the default exports (#753).
+fn hide_nodes_from(doc: &mut DoclingDocument, start: usize) {
+    for node in &mut doc.nodes[start..] {
+        match node {
+            Node::Furniture { .. } => {}
+            Node::ListItem { layer, .. } => {
+                if layer.is_none() {
+                    *layer = Some(docling_core::ContentLayer::Invisible);
+                }
+            }
+            _ => {
+                let inner = std::mem::replace(node, Node::PageBreak);
+                *node = Node::Furniture {
+                    layer: docling_core::ContentLayer::Invisible,
+                    inner: Box::new(inner),
+                };
+            }
+        }
     }
 }
 
@@ -1747,6 +1812,7 @@ fn walk_presentation(pres: XmlNode, styles: &Styles, doc: &mut DoclingDocument) 
             .filter(|n| !n.is_empty())
             .map(str::to_string)
             .unwrap_or_else(|| format!("slide-{}", idx + 1));
+        let start = doc.nodes.len();
         if !slide_has_visible_title(page) {
             doc.push(Node::Heading {
                 level: 1,
@@ -1754,6 +1820,9 @@ fn walk_presentation(pres: XmlNode, styles: &Styles, doc: &mut DoclingDocument) 
             });
         }
         walk_slide(page, styles, doc);
+        if slide_is_hidden(page, styles) {
+            hide_nodes_from(doc, start);
+        }
     }
 }
 
