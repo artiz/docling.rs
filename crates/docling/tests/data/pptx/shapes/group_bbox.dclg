@@ -1,0 +1,58 @@
+<doclang version="0.7">
+  <text>
+    <location value="26"/>
+    <location value="34"/>
+    <location value="128"/>
+    <location value="102"/>
+    plain
+  </text>
+  <text>
+    <location value="333"/>
+    <location value="137"/>
+    <location value="384"/>
+    <location value="273"/>
+    nested
+  </text>
+  <text>
+    <location value="358"/>
+    <location value="137"/>
+    <location value="410"/>
+    <location value="273"/>
+    outer
+  </text>
+  <text>
+    <location value="205"/>
+    <location value="205"/>
+    <location value="256"/>
+    <location value="273"/>
+    moved
+  </text>
+  <text>
+    <location value="51"/>
+    <location value="341"/>
+    <location value="154"/>
+    <location value="410"/>
+    resized-a
+  </text>
+  <text>
+    <location value="154"/>
+    <location value="341"/>
+    <location value="256"/>
+    <location value="410"/>
+    resized-b
+  </text>
+  <text>
+    <location value="154"/>
+    <location value="410"/>
+    <location value="205"/>
+    <location value="478"/>
+    flip-left
+  </text>
+  <text>
+    <location value="51"/>
+    <location value="410"/>
+    <location value="102"/>
+    <location value="478"/>
+    flip-right
+  </text>
+</doclang>

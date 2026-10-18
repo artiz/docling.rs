@@ -1,0 +1,18 @@
+<doclang version="0.7">
+  <list>
+    <ldiv/>
+    <href uri="https://example.com/points"/>
+    <location value="26"/>
+    <location value="119"/>
+    <location value="486"/>
+    <location value="457"/>
+    First point
+    <ldiv/>
+    <href uri="https://example.com/points"/>
+    <location value="26"/>
+    <location value="119"/>
+    <location value="486"/>
+    <location value="457"/>
+    Second point
+  </list>
+</doclang>

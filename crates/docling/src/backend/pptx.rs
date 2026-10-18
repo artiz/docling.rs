@@ -895,25 +895,30 @@ fn slide_size(presentation: &str) -> (i64, i64) {
         .unwrap_or((9144000, 6858000))
 }
 
-/// docling's `_generate_prov`: the shape's bbox normalized to DocLang's 0–511
-/// grid. The bbox is bottom-left origin (so y is flipped). The shape's geometry
-/// is its own `<a:xfrm>` if present, else the placeholder box it inherits from
-/// the slide layout/master (python-pptx `shape.left/top/...`). A shape with no
-/// resolvable geometry — or `left == 0` (docling's `if shape.left:` truthiness)
-/// — takes the whole slide.
+/// The shape's DocLang `<location>`: its box ([`shape_box`] — own or
+/// inherited geometry mapped out of its groups, the whole slide when it has
+/// none) on DocLang's 0–511 grid, as docling-core's
+/// `_create_location_tokens_for_bbox` derives it from the provenance box:
+/// top-left origin (docling#4294 tags PPTX provenance `TOPLEFT`, so y runs
+/// down the slide), each edge `round(512 · v / size)` with Python's
+/// half-to-even rounding, clamped to `0..=511`. The location used to flip y
+/// as for a bottom-left box, which turned every shape's box upside down
+/// against docling's. A shape at x = 0 EMU keeps its own box (docling#3990,
+/// 2.120).
 fn shape_location(shape: XmlNode, (w, h): (i64, i64), phmap: &PhMap) -> [u16; 4] {
-    // A shape at x = 0 EMU keeps its own box (docling#3990, 2.120): the old
-    // `if shape.left:` truthiness test treated a zero offset like a missing
-    // one and fell back to the whole slide.
     let [left, top, right, bottom] = shape_box(shape, (w, h), phmap);
     let n = |v: f64, dim: i64| -> u16 {
         if dim == 0 {
             return 0;
         }
-        ((512.0 * v / dim as f64).round() as i64).clamp(0, 511) as u16
+        ((512.0 * v / dim as f64).round_ties_even() as i64).clamp(0, 511) as u16
     };
-    let hf = h as f64;
-    [n(left, w), n(hf - bottom, h), n(right, w), n(hf - top, h)]
+    [
+        n(left.min(right), w),
+        n(top.min(bottom), h),
+        n(left.max(right), w),
+        n(top.max(bottom), h),
+    ]
 }
 
 /// A shape's box `[left, top, right, bottom]` on the slide, in EMU: its own

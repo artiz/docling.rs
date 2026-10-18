@@ -1,11 +1,13 @@
 //! PPTX shape geometry and links against docling's own output: shapes
 //! inside a moved, resized, nested or flipped group (#766, docling#4859),
-//! a hyperlink on a whole shape (#767, docling#4787).
+//! a hyperlink on a whole shape (#767, docling#4787), and their DocLang
+//! locations on a top-left origin like docling's.
 //!
 //! `tests/data/pptx/shapes/<name>.{md,json}` is **not** our output: it is
 //! what docling 2.140.0's PowerPoint backend writes for `<name>.pptx`
 //! (`MsPowerpointDocumentBackend(...).convert()`, then `export_to_markdown()`
-//! and `export_to_dict()`). The decks are upstream's test decks, rebuilt by
+//! and `export_to_dict()`; `<name>.dclg`, where present, its
+//! `export_to_doclang()`). The decks are upstream's test decks, rebuilt by
 //! `make_decks.py` next to them. Re-create a reference with upstream's
 //! backend, never from our own output.
 use std::fs;
@@ -158,4 +160,23 @@ fn a_link_on_a_whole_shape_reaches_its_text() {
         [("Open the appendix".into(), some("appendix/notes.docx"))]
     );
     assert_eq!(links("slide_jump"), [("Go to the next slide".into(), None)]);
+}
+
+/// DocLang equals docling's for the decks with a stored `.dclg`: each
+/// shape's `<location>` measured from the slide's top-left corner, as
+/// docling-core derives it from the top-left provenance box (the y axis used
+/// to be flipped), and a linked item's `<href>` ahead of its location.
+/// (`slide_jump`'s empty second slide adds a trailing `<page_break/>` docling
+/// leaves out, so it has no `.dclg`.)
+#[test]
+fn doclang_follows_docling() {
+    let mut checked = 0;
+    for name in DECKS {
+        let Ok(want) = fs::read_to_string(dir().join(name).with_extension("dclg")) else {
+            continue;
+        };
+        checked += 1;
+        assert_eq!(convert(name).export_to_doclang(), want, "{name}");
+    }
+    assert_eq!(checked, 4);
 }
