@@ -79,6 +79,25 @@ DOCLING_RS_REGEN=1 cargo test -p docling --test regression
 # a single crate / a single test (with output)
 cargo test -p docling-core
 cargo test outputs_match_fixtures -- --nocapture
+
+# one module of docling's integration suite (each tests/suite/*.rs file)
+cargo test -p docling --test suite pptx_list_cascade::
+```
+
+Most of a test run is building, not testing: every test binary links the
+whole crate with all backends. Two things keep that short.
+
+- **One test binary**: `crates/docling`'s integration tests are modules of
+  `tests/suite/main.rs`, linked once (`--test suite`). The files that change
+  the process environment, and `regression`, stay binaries of their own —
+  add a new test to the suite unless it calls `std::env::set_var`.
+- **`--profile fasttest`**: optimized like `--release` (the PDF/ONNX tests
+  need it) but without the thin LTO the release binaries get, and with
+  incremental builds — use it instead of `--release` while iterating:
+
+```bash
+cargo test --profile fasttest --workspace
+cargo test --profile fasttest -p docling --test suite pptx_list_cascade::
 ```
 
 The ML formats (PDF, images, METS) need the ONNX models, so they are

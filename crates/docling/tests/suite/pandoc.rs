@@ -14,7 +14,7 @@
 //! Regenerate after an intentional change (the natives need Pandoc 3.x):
 //!
 //! ```bash
-//! DOCLING_RS_REGEN=1 cargo test -p docling --test pandoc
+//! DOCLING_RS_REGEN=1 cargo test -p docling --test suite pandoc::
 //! ```
 use std::fs;
 use std::io::Write;
