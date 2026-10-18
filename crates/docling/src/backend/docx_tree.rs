@@ -33,10 +33,11 @@ use docling_core::{ContentLayer, PictureDescription, PictureImage, Script, Table
 use roxmltree::{Document, Node as XmlNode, NodeId};
 
 use super::docx::{
-    attr, build_enum_marker, chart_rels, child_elements, clean_checkbox_symbols,
-    detect_code_language, footnote_texts, get_list_counter, header_footer_parts, in_textbox,
-    is_code_by_font, is_code_style, is_title_style, numbered_heading_text, on_off, part_rels,
-    row_cells, row_grid_offsets, run_child_text, style_numbering, t_text, Ctx, MAX_TABLE_DEPTH,
+    attr, build_enum_marker, caption_numbering_marker, chart_rels, child_elements,
+    clean_checkbox_symbols, detect_code_language, footnote_texts, get_list_counter,
+    header_footer_parts, in_textbox, is_code_by_font, is_code_style, is_title_style,
+    numbered_heading_text, on_off, part_rels, row_cells, row_grid_offsets, run_child_text,
+    style_numbering, sync_heading_counter, t_text, Ctx, MAX_TABLE_DEPTH,
 };
 use super::html_tree::docling_href;
 use super::ooxml::Package;
@@ -1686,7 +1687,7 @@ impl Walker {
     ) -> Vec<usize> {
         let mut refs: Vec<usize> = Vec::new();
         let content = self.iter_paragraph_content(p, ctx);
-        let elements = self.paragraph_elements(&content);
+        let mut elements = self.paragraph_elements(&content);
         let full_text: String = content.iter().map(|c| c.text.as_str()).collect();
         let (text, equations) = equations_in_text(p, &full_text);
         // Kept unstripped: code blocks preserve leading indentation.
@@ -1702,9 +1703,28 @@ impl Walker {
         let level0 = self.get_level();
         self.prev_sibling_is_code = self.is_code(self.last_child(self.parent_at(level0 - 1)));
         let (p_style_id, p_level) = self.label_and_level(p, ctx);
-        let (mut numid, ilevel) = self.num_id_and_ilvl(p, ctx);
+        let (mut numid, mut ilevel) = self.num_id_and_ilvl(p, ctx);
         if numid.as_deref() == Some("0") {
             numid = None;
+        }
+        // `_apply_caption_numbering` (#765): a heading-relative caption
+        // number goes into the first non-blank element's text, and the
+        // paragraph is no list item.
+        if let (Some(nid), Some(ilvl)) = (numid.as_deref(), ilevel) {
+            let marker = caption_numbering_marker(
+                &mut self.list_counters,
+                ctx.num_levels,
+                nid,
+                ilvl,
+                &p_style_id,
+            );
+            if let Some(marker) = marker {
+                if let Some(el) = elements.iter_mut().find(|e| !e.text.trim().is_empty()) {
+                    el.text = format!("{marker} {}", el.text);
+                }
+                numid = None;
+                ilevel = None;
+            }
         }
 
         // Lists.
@@ -1780,7 +1800,14 @@ impl Walker {
             let is_numbered_style = numid
                 .as_deref()
                 .is_some_and(|n| Self::has_visible_numbering(n, ilevel.unwrap_or(0), ctx));
-            refs.extend(self.add_heading(p_level, &text, is_numbered_style));
+            refs.extend(self.add_heading(
+                p_level,
+                &text,
+                is_numbered_style,
+                numid.as_deref(),
+                ilevel,
+                ctx,
+            ));
         } else if !equations.is_empty() {
             if py_paragraph_text(p).trim().is_empty() && !text.is_empty() {
                 // Standalone equation(s) — one formula item each.
@@ -1918,6 +1945,9 @@ impl Walker {
         curr_level: Option<i64>,
         text: &str,
         is_numbered: bool,
+        numid: Option<&str>,
+        ilevel: Option<i64>,
+        ctx: &Ctx,
     ) -> Vec<usize> {
         let mut refs = Vec::new();
         let level = self.get_level();
@@ -1943,7 +1973,20 @@ impl Walker {
             None => (self.level, self.level - 1, 1),
         };
         let text = if is_numbered {
-            numbered_heading_text(&mut self.numbered_headers, add_level as u8, text)
+            let text = numbered_heading_text(&mut self.numbered_headers, add_level as u8, text);
+            if let Some(numid) = numid {
+                sync_heading_counter(
+                    &mut self.list_counters,
+                    ctx.num_levels,
+                    self.numbered_headers[&(add_level as u8)] as i64,
+                    numid,
+                    ilevel.unwrap_or(0),
+                );
+                // The seeded counter must survive the first list item of
+                // this `numId`, which would otherwise restart it.
+                self.started_numids.insert(numid.to_string());
+            }
+            text
         } else {
             text.to_string()
         };

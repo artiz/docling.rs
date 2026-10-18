@@ -110,6 +110,100 @@ def commented_spacers(name):
     doc.save(f"{name}.docx")
 
 
+# --- #765: numbering through a linked numbering style (docling#4727) --------
+# Upstream's tests are unit tests of `_get_level_element`, `_add_heading`
+# and `_apply_caption_numbering` (test_backend_msword_lists.py:
+# test_get_level_element_follows_num_style_link; test_backend_msword.py:
+# test_numbered_heading_syncs_list_counter,
+# test_custom_caption_numbering_is_added_to_paragraph_text); these documents
+# put the same numbering definitions through a whole conversion.
+
+from docx.enum.style import WD_STYLE_TYPE  # noqa: E402
+from docx.oxml import OxmlElement  # noqa: E402
+from docx.oxml.ns import qn  # noqa: E402
+
+
+def _num(numbering, num_id, abstract_id):
+    num = OxmlElement("w:num")
+    num.set(qn("w:numId"), num_id)
+    ref = OxmlElement("w:abstractNumId")
+    ref.set(qn("w:val"), abstract_id)
+    num.append(ref)
+    numbering.append(num)
+
+
+def _lvl(ilvl, fmt, text, start="1"):
+    level = OxmlElement("w:lvl")
+    level.set(qn("w:ilvl"), str(ilvl))
+    for tag, val in (("w:start", start), ("w:numFmt", fmt), ("w:lvlText", text)):
+        el = OxmlElement(tag)
+        el.set(qn("w:val"), val)
+        level.append(el)
+    return level
+
+
+def _numbered(paragraph, num_id, ilvl):
+    ppr = paragraph._p.get_or_add_pPr()
+    numpr = OxmlElement("w:numPr")
+    for tag, val in (("w:ilvl", str(ilvl)), ("w:numId", num_id)):
+        el = OxmlElement(tag)
+        el.set(qn("w:val"), val)
+        numpr.append(el)
+    ppr.append(numpr)
+
+
+def num_style_link(name):
+    doc = Document()
+    numbering = doc.part.numbering_part.element
+    linked_abstract = OxmlElement("w:abstractNum")
+    linked_abstract.set(qn("w:abstractNumId"), "300")
+    style_link = OxmlElement("w:numStyleLink")
+    style_link.set(qn("w:val"), "LinkedNumberingStyle")
+    linked_abstract.append(style_link)
+    numbering.append(linked_abstract)
+    linked_style = doc.styles.add_style("LinkedNumberingStyle", WD_STYLE_TYPE.LIST)
+    ppr = linked_style.element.get_or_add_pPr()
+    numpr = OxmlElement("w:numPr")
+    num_id = OxmlElement("w:numId")
+    num_id.set(qn("w:val"), "401")
+    numpr.append(num_id)
+    ppr.append(numpr)
+    target_abstract = OxmlElement("w:abstractNum")
+    target_abstract.set(qn("w:abstractNumId"), "400")
+    target_abstract.append(_lvl(0, "lowerRoman", "%1)"))
+    numbering.append(target_abstract)
+    for nid, aid in (("301", "300"), ("401", "400")):
+        _num(numbering, nid, aid)
+    doc.add_paragraph("Before the list")
+    for text in ("alpha", "beta", "gamma"):
+        _numbered(doc.add_paragraph(text), "301", 0)
+    doc.add_paragraph("After the list")
+    doc.save(f"{name}.docx")
+
+
+def caption_numbering(name):
+    doc = Document()
+    numbering = doc.part.numbering_part.element
+    abstract = OxmlElement("w:abstractNum")
+    abstract.set(qn("w:abstractNumId"), "500")
+    abstract.append(_lvl(0, "decimal", "%1"))
+    for ilvl in range(1, 6):
+        abstract.append(_lvl(ilvl, "decimal", f"%1.%{ilvl + 1}"))
+    abstract.append(_lvl(6, "decimal", "Tabell %1.%7"))
+    numbering.append(abstract)
+    _num(numbering, "501", "500")
+    for chapter, captions in (
+        ("Innledning", ["Saker i tingrettene", "Saker i lagmannsrettene"]),
+        ("Mekling", ["Antall meklinger"]),
+        ("Avslutning", ["Oppsummering"]),
+    ):
+        _numbered(doc.add_paragraph(chapter, style="Heading 1"), "501", 0)
+        doc.add_paragraph("Body text of the chapter.")
+        for caption in captions:
+            _numbered(doc.add_paragraph(caption, style="Caption"), "501", 6)
+    doc.save(f"{name}.docx")
+
+
 if __name__ == "__main__":
     textbox_in_cell("textbox_cell_vml_single_para", "vml_single_para", "MARKA")
     textbox_in_cell("textbox_cell_vml_multi_para", "vml_multi_para", "MARKA")
@@ -117,3 +211,5 @@ if __name__ == "__main__":
     textbox_in_single_cell("textbox_single_cell")
     resumed_list_in_cell("resumed_list_in_cell")
     commented_spacers("commented_spacers")
+    num_style_link("num_style_link")
+    caption_numbering("caption_numbering")
