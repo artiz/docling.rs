@@ -199,7 +199,10 @@ impl<R: Read + Seek> Archive<R> {
             let safe = file
                 .enclosed_name()
                 .map(|p| p.to_string_lossy().replace('\\', "/"));
-            let path = safe.clone().unwrap_or_else(|| file.name().to_string());
+            let path = safe.clone().unwrap_or_else(|| match file.name() {
+                Ok(name) => name.into_owned(),
+                Err(_) => String::from_utf8_lossy(file.name_raw()).into_owned(),
+            });
             let encrypted = file.encrypted();
             drop(file);
             let skip = |why: &str| Some(why.to_string());

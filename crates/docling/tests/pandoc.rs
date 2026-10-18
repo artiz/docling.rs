@@ -219,7 +219,7 @@ fn a_docx_rebuilt_from_the_ast_keeps_pictures_and_notes() {
             .unwrap();
         assert!(child.wait().unwrap().success(), "pandoc -t docx failed");
         let mut zip = zip::ZipArchive::new(fs::File::open(&out).unwrap()).unwrap();
-        let names: Vec<String> = zip.file_names().map(str::to_string).collect();
+        let names: Vec<String> = zip.file_names().flatten().map(|n| n.into_owned()).collect();
         let mut parts = names.clone();
         for part in ["word/footnotes.xml", "word/document.xml"] {
             if let Ok(mut f) = zip.by_name(part) {

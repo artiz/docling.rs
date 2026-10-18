@@ -358,7 +358,7 @@ dependencies = [
  "log",
  "quick-xml",
  "serde",
- "zip",
+ "zip 8.6.0",
 ]
 
 [[package]]
@@ -387,6 +387,12 @@ name = "cfg-if"
 version = "1.0.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4e7648175b45a9a48536d676f68d918270699102aa8dab5496df06904c914600"
+
+[[package]]
+name = "cfg_aliases"
+version = "0.2.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f079e83a288787bcd14a6aea84cee5c87a67c5a3e660c30f557a3d24761b3527"
 
 [[package]]
 name = "chacha20"
@@ -568,7 +574,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d045de693cb712d0b22c6a64be5b953f67b3ce00ab5ad3dd5d8b441886ab8e1a"
 dependencies = [
  "quote",
- "syn 3.0.8",
+ "syn 2.0.119",
 ]
 
 [[package]]
@@ -878,7 +884,7 @@ dependencies = [
 
 [[package]]
 name = "docling"
-version = "2.30.1"
+version = "2.37.1"
 dependencies = [
  "aes",
  "base64 0.22.1",
@@ -911,12 +917,12 @@ dependencies = [
  "snap",
  "ureq",
  "url",
- "zip",
+ "zip 9.0.5",
 ]
 
 [[package]]
 name = "docling-asr"
-version = "2.30.1"
+version = "2.37.1"
 dependencies = [
  "docling-core",
  "docling-onnx",
@@ -927,7 +933,7 @@ dependencies = [
 
 [[package]]
 name = "docling-cli"
-version = "2.30.1"
+version = "2.37.1"
 dependencies = [
  "axum",
  "docling",
@@ -942,7 +948,7 @@ dependencies = [
 
 [[package]]
 name = "docling-core"
-version = "2.30.1"
+version = "2.37.1"
 dependencies = [
  "png 0.18.1",
  "pulldown-cmark",
@@ -955,7 +961,7 @@ dependencies = [
 
 [[package]]
 name = "docling-onnx"
-version = "2.30.1"
+version = "2.37.1"
 dependencies = [
  "docling-core",
  "libloading 0.8.9",
@@ -964,7 +970,7 @@ dependencies = [
 
 [[package]]
 name = "docling-pdf"
-version = "2.30.1"
+version = "2.37.1"
 dependencies = [
  "docling-core",
  "docling-onnx",
@@ -2253,6 +2259,18 @@ name = "new_debug_unreachable"
 version = "1.0.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "650eef8c711430f1a879fdd01d4745a7deea475becfb90269c06775983bbf086"
+
+[[package]]
+name = "nix"
+version = "0.31.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cf20d2fde8ff38632c426f1165ed7436270b44f199fc55284c38276f9db47c3d"
+dependencies = [
+ "bitflags 2.13.2",
+ "cfg-if",
+ "cfg_aliases",
+ "libc",
+]
 
 [[package]]
 name = "no_std_io2"
@@ -4705,6 +4723,20 @@ dependencies = [
  "memchr",
  "typed-path",
  "zopfli",
+]
+
+[[package]]
+name = "zip"
+version = "9.0.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6e04976da629d3b04204ba8105b396a193af8ad2583b2c79bfb3ab8af580a11e"
+dependencies = [
+ "crc32fast",
+ "flate2",
+ "indexmap",
+ "memchr",
+ "nix",
+ "typed-path",
 ]
 
 [[package]]

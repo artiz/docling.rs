@@ -348,7 +348,7 @@ fn looks_like_html(head: &[u8]) -> bool {
 /// A ZIP package by its parts: OOXML main parts, the ODF / EPUB `mimetype`.
 fn zip_kind(bytes: &[u8]) -> Option<InputFormat> {
     let mut zip = zip::ZipArchive::new(Cursor::new(bytes)).ok()?;
-    let has = |zip: &zip::ZipArchive<_>, name: &str| zip.file_names().any(|n| n == name);
+    let has = |zip: &zip::ZipArchive<_>, name: &str| zip.file_names().flatten().any(|n| n == name);
     if has(&zip, "word/document.xml") {
         return Some(InputFormat::Docx);
     }
@@ -391,7 +391,7 @@ fn zip_kind(bytes: &[u8]) -> Option<InputFormat> {
 /// `TN.DocumentArchive` = 1) — or the iWork '09 XML package (`index.xml` /
 /// `index.apxl`, by its root element).
 fn iwork_kind(zip: &mut zip::ZipArchive<Cursor<&[u8]>>) -> Option<InputFormat> {
-    let names: Vec<String> = zip.file_names().map(str::to_string).collect();
+    let names: Vec<String> = zip.file_names().flatten().map(|n| n.into_owned()).collect();
     let is_slide = |n: &str| {
         n.rsplit_once("Index/").is_some_and(|(_, m)| {
             m.starts_with("Slide-") || m.starts_with("Slide.") || m.starts_with("MasterSlide")
@@ -433,7 +433,11 @@ fn iwork_kind(zip: &mut zip::ZipArchive<Cursor<&[u8]>>) -> Option<InputFormat> {
                     .find(|n| *n == "Index.zip" || n.ends_with("/Index.zip"))?;
                 let bytes = read_capped(zip, inner, 64 << 20)?;
                 let mut inner = zip::ZipArchive::new(Cursor::new(bytes.as_slice())).ok()?;
-                let members: Vec<String> = inner.file_names().map(str::to_string).collect();
+                let members: Vec<String> = inner
+                    .file_names()
+                    .flatten()
+                    .map(|n| n.into_owned())
+                    .collect();
                 let doc = members
                     .iter()
                     .find(|n| n.ends_with("Index/Document.iwa"))?
