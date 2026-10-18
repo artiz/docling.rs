@@ -1811,18 +1811,22 @@ fn strip_spaces_around_newlines(text: &str) -> String {
 /// upstream's `AnnotatedTextList.to_single_text_element`.
 fn to_single(parts: &[Part]) -> Part {
     let mut text = String::new();
-    let mut formatting = None;
-    let mut hyperlink = None;
     let mut code = false;
+    // The single element keeps a formatting or a hyperlink only when it
+    // applies to all of its text — not the link of one word in a heading
+    // (docling#4670, #770).
+    let text_runs: Vec<&Part> = parts.iter().filter(|p| !p.text.trim().is_empty()).collect();
+    let mut formatting = text_runs.first().and_then(|p| p.formatting);
+    if text_runs.iter().any(|p| p.formatting != formatting) {
+        formatting = None;
+    }
+    let mut hyperlink = text_runs.first().and_then(|p| p.hyperlink.clone());
+    if text_runs.iter().any(|p| p.hyperlink != hyperlink) {
+        hyperlink = None;
+    }
     for p in parts {
         text.push_str(p.text.trim());
         text.push(' ');
-        if formatting.is_none() {
-            formatting = p.formatting;
-        }
-        if hyperlink.is_none() {
-            hyperlink = p.hyperlink.clone();
-        }
         code = p.code || code;
     }
     Part {

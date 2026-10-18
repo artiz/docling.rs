@@ -1659,10 +1659,10 @@ fn render_inline_fmt(elem: ElementRef, base: Fmt) -> String {
 
 /// A heading's Markdown — docling's `_handle_heading` makes the heading ONE
 /// text item with `to_single_text_element`: every part stripped and joined
-/// by single spaces, the *first* formatting and the first hyperlink found
-/// applied to the whole, code if any part is code. So
-/// `<h2>To the <i>Hibernia</i></h2>` is `## *To the Hibernia*`, not
-/// `## To the *Hibernia*`.
+/// by single spaces, code if any part is code, and a formatting or a
+/// hyperlink only when every non-blank part has it (docling#4670, #770). So
+/// `<h2>To the <i>Hibernia</i></h2>` is `## To the Hibernia`, while
+/// `<h2><i>To the</i> <i>Hibernia</i></h2>` is `## *To the Hibernia*`.
 fn render_heading(elem: ElementRef, base: Fmt) -> String {
     let mut runs = RunBuf::default();
     collect_runs(elem, base, None, &mut runs);
@@ -1676,22 +1676,38 @@ fn render_heading(elem: ElementRef, base: Fmt) -> String {
         .filter(|t| !t.is_empty())
         .collect::<Vec<_>>()
         .join(" ");
-    // docling's `formatting` is `None` for a part under no formatting tag;
-    // the first `Some` wins for the whole heading.
+    let plain = Fmt {
+        raw: base.raw,
+        ..Fmt::default()
+    };
+    let fmt = shared_formatting(&runs.parts).unwrap_or(plain);
+    let code = runs.parts.iter().any(|p| p.fmt.code);
+    let hyperlink = shared_hyperlink(&runs.parts);
+    serialize_run(&text, Fmt { code, ..fmt }, hyperlink.as_deref())
+}
+
+/// The formatting every non-blank part shares, `None` when they differ or
+/// none is formatted — `to_single_text_element`'s formatting (docling#4670).
+/// docling's `formatting` is `None` for a part under no formatting tag, and
+/// code is not part of it.
+fn shared_formatting(parts: &[TextPart]) -> Option<Fmt> {
+    let key = |f: &Fmt| (f.bold, f.italic, f.strike, f.underline, f.script);
     let styled =
         |f: &Fmt| f.bold || f.italic || f.strike || f.underline || f.script != Script::Baseline;
-    let fmt = runs
-        .parts
-        .iter()
-        .map(|p| p.fmt)
-        .find(styled)
-        .unwrap_or(Fmt {
-            raw: base.raw,
-            ..Fmt::default()
-        });
-    let code = runs.parts.iter().any(|p| p.fmt.code);
-    let hyperlink = runs.parts.iter().find_map(|p| p.hyperlink.clone());
-    serialize_run(&text, Fmt { code, ..fmt }, hyperlink.as_deref())
+    let mut text_parts = parts.iter().filter(|p| !p.text.trim().is_empty());
+    let first = text_parts.next()?.fmt;
+    (styled(&first) && text_parts.all(|p| key(&p.fmt) == key(&first))).then_some(first)
+}
+
+/// The hyperlink every non-blank part shares, `None` when they differ —
+/// `to_single_text_element`'s hyperlink (docling#4670): a link on one word
+/// of a heading or caption is not the whole item's.
+fn shared_hyperlink(parts: &[TextPart]) -> Option<String> {
+    let mut text_parts = parts.iter().filter(|p| !p.text.trim().is_empty());
+    let first = text_parts.next()?.hyperlink.clone()?;
+    text_parts
+        .all(|p| p.hyperlink.as_deref() == Some(first.as_str()))
+        .then_some(first)
 }
 
 /// Like [`render_inline_fmt`] but also returns the structured runs, for the
@@ -2439,16 +2455,17 @@ fn annotate_picture_captions(nodes: &mut [Node], href: &str) {
     }
 }
 
-/// The first `<a href>` inside a figure's `<figcaption>` — docling's caption
-/// hyperlink annotation (the caption text keeps the anchor text inline, the
-/// href rides on the caption item).
+/// The hyperlink of a figure's `<figcaption>` — docling's caption hyperlink
+/// annotation (the caption text keeps the anchor text inline, the href
+/// rides on the caption item): only a link over the whole caption text
+/// (docling#4670, #770); a link on one word is no caption hyperlink.
 fn figcaption_href(fig: ElementRef) -> Option<String> {
     let figcaption = fig.select(cached_selector!("figcaption")).next()?;
-    figcaption
-        .select(cached_selector!("a"))
-        .find_map(|a| a.value().attr("href"))
+    let mut runs = RunBuf::default();
+    collect_runs(figcaption, Fmt::default(), None, &mut runs);
+    shared_hyperlink(&runs.parts)
         .filter(|h| !h.is_empty())
-        .map(normalize_url)
+        .map(|h| normalize_url(&h))
 }
 
 /// The image URL of a `<figure>`'s first `<img>`, for image extraction.
@@ -2764,14 +2781,16 @@ mod tests {
     }
 
     /// docling's `_handle_heading` builds the heading with
-    /// `to_single_text_element`: parts stripped and joined by spaces, the
-    /// *first* formatting found applied to the whole heading.
+    /// `to_single_text_element`: parts stripped and joined by spaces, a
+    /// formatting kept only when all of the text has it (docling#4670, #770).
     #[test]
-    fn heading_takes_the_first_formatting_for_its_whole_text() {
+    fn heading_keeps_only_the_formatting_of_all_its_text() {
         let md = convert("<h2>To the <i>Hibernia</i></h2>").export_to_markdown();
-        assert!(md.contains("## *To the Hibernia*"), "{md}");
+        assert!(md.contains("## To the Hibernia"), "{md}");
         let md = convert("<h2><b>Bold</b> then <i>italic</i></h2>").export_to_markdown();
-        assert!(md.contains("## **Bold then italic**"), "{md}");
+        assert!(md.contains("## Bold then italic"), "{md}");
+        let md = convert("<h2><i>To the</i> <i>Hibernia</i></h2>").export_to_markdown();
+        assert!(md.contains("## *To the Hibernia*"), "{md}");
     }
 
     /// `simplify_text_elements`: adjacent text nodes with the same annotation
@@ -3156,13 +3175,14 @@ mod tests {
         );
     }
 
-    /// #328: an `<a href>` wrapping an image (or a link inside a figcaption)
-    /// rides as the caption's hyperlink annotation; the caption text and the
-    /// Markdown stay plain, and a bare authority is normalized like AnyUrl.
+    /// #328: an `<a href>` wrapping an image (or a link over a whole
+    /// figcaption) rides as the caption's hyperlink annotation; the caption
+    /// text and the Markdown stay plain, and a bare authority is normalized
+    /// like AnyUrl. A link on part of a figcaption is none (#770).
     #[test]
     fn caption_hyperlinks_are_annotated() {
         let doc = convert(
-            "<a href=\"https://www.example.com\"><img src=\"x.png\" alt=\"Clickable\"></a>             <figure><img src=\"y.png\" alt=\"Cap\">               <figcaption>An example <a href=\"#caption\">caption</a> here.</figcaption>             </figure>",
+            "<a href=\"https://www.example.com\"><img src=\"x.png\" alt=\"Clickable\"></a>             <figure><img src=\"y.png\" alt=\"Cap\">               <figcaption>An example <a href=\"#caption\">caption</a> here.</figcaption>             </figure>             <figure><img src=\"z.png\" alt=\"Cap\">               <figcaption><a href=\"#whole\">Linked caption</a></figcaption>             </figure>",
         );
         let hrefs: Vec<_> = doc
             .nodes
@@ -3183,15 +3203,13 @@ mod tests {
                     Some("Clickable".into()),
                     Some("https://www.example.com/".into())
                 ),
-                (
-                    Some("An example caption here.".into()),
-                    Some("#caption".into())
-                ),
+                (Some("An example caption here.".into()), None),
+                (Some("Linked caption".into()), Some("#whole".into())),
             ]
         );
         assert_eq!(
             doc.export_to_markdown(),
-            "Clickable\n\n<!-- image -->\n\nAn example caption here.\n\n<!-- image -->\n"
+            "Clickable\n\n<!-- image -->\n\nAn example caption here.\n\n<!-- image -->\n\nLinked caption\n\n<!-- image -->\n"
         );
     }
 
