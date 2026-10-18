@@ -749,6 +749,7 @@ impl Walker<'_> {
                     TreeKind::Picture {
                         captions,
                         image: self.images.resolve(dest),
+                        extra_classes: Vec::new(),
                         classification: None,
                         description: None,
                         confidence: None,

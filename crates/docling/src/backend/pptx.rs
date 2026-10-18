@@ -37,7 +37,7 @@ use roxmltree::{Document, Node as XmlNode};
 use crate::backend::ooxml::{
     content_type, image_dpi, is_metafile, picture_image, resolve, Package,
 };
-use crate::backend::xlsx_drawings;
+use crate::backend::pptx_chart::{self, PptxChart};
 use crate::backend::DeclarativeBackend;
 use crate::error::ConversionError;
 use crate::source::SourceDocument;
@@ -143,8 +143,8 @@ struct SlideCtx<'a> {
     /// The undecodable ones that are Windows metafiles: docling keeps those
     /// as payload-less pictures and drops any other undecodable image.
     metafiles: &'a HashSet<String>,
-    /// Native chart parts by relationship id: kind, title, data grid.
-    charts: &'a HashMap<String, (String, Option<String>, Table)>,
+    /// Native chart parts by relationship id (#756).
+    charts: &'a HashMap<String, PptxChart>,
     slide_size: (i64, i64),
     phmap: &'a PhMap,
     /// 1-based slide number — docling's `page_no`.
@@ -233,31 +233,15 @@ fn convert_slide(
     let mut valid_imgs: HashSet<String> = HashSet::new();
     let mut images: HashMap<String, PictureImage> = HashMap::new();
     let mut metafiles: HashSet<String> = HashSet::new();
-    // Native charts (docling PR #3794): each chart part parsed up front,
-    // keyed by its relationship id — kind classified from the plot area,
-    // data from the embedded caches.
-    let mut charts: HashMap<String, (String, Option<String>, docling_core::Table)> = HashMap::new();
+    // Native charts (docling PR #3794, every plot since docling#4773): each
+    // chart part parsed up front as python-pptx reads it, keyed by its
+    // relationship id — see `pptx_chart`.
+    let mut charts: HashMap<String, PptxChart> = HashMap::new();
     for r in pkg.rels_for(part) {
         let p = resolve(&dir, &r.target);
         if r.rel_type.ends_with("/chart") {
-            if let Some(spec) = pkg.read(&p).as_deref().and_then(xlsx_drawings::parse_chart) {
-                // python-pptx has no plot class for the 3-D chart variants
-                // (`bar3DChart`, `line3DChart`, `pie3DChart`, …): upstream's
-                // `chart.chart_type` fails there, the classification falls
-                // back to `other_chart`, and since docling#3972 (2.120) the
-                // data extraction failure is caught and the chart carries no
-                // table. The Excel backend keeps its tagname map (3-D → the
-                // 2-D family), so the override lives here, not in the parser.
-                let three_d = spec.plot_tag.ends_with("3DChart");
-                let kind = if three_d { "other_chart" } else { spec.kind };
-                let table = if three_d {
-                    Some(docling_core::Table::default())
-                } else {
-                    xlsx_drawings::chart_table_from_caches(&spec)
-                };
-                if let Some(table) = table {
-                    charts.insert(r.id.clone(), (kind.to_string(), spec.title, table));
-                }
+            if let Some(chart) = pkg.read(&p).as_deref().and_then(pptx_chart::parse) {
+                charts.insert(r.id.clone(), chart);
             }
             continue;
         }
@@ -671,14 +655,22 @@ fn handle_shape_content(shape: XmlNode, ctx: &SlideCtx, out: &mut SlideOut) {
                     }
                     push_located(&mut out.doc, location, Node::Table(table));
                 }
-            } else if let Some((kind, title, table)) = descendant(shape, "chart")
+            } else if let Some(chart) = descendant(shape, "chart")
                 .and_then(|c| c.attributes().find(|a| a.name() == "id"))
                 .and_then(|a| ctx.charts.get(a.value()))
             {
-                // A native chart frame (docling PR #3794): classified kind +
-                // the cached data grid, chart title as the caption. docling
-                // adds the caption to the slide first — with the chart's box
-                // and a charspan over the title — then the picture.
+                // A native chart frame (docling PR #3794): one prediction
+                // per plot type (the back-most plot's first) + the data grid,
+                // chart title as the caption. docling adds the caption to the
+                // slide first — with the chart's box and a charspan over the
+                // title — then the picture.
+                let PptxChart {
+                    labels,
+                    title,
+                    table,
+                } = chart;
+                let kind = labels[0].to_string();
+                let table = table.clone().unwrap_or_default();
                 let caption = title.as_deref().filter(|t| !t.is_empty()).map(|t| {
                     out.tree.add_with_prov(
                         Some(out.slide),
@@ -694,6 +686,7 @@ fn handle_shape_content(shape: XmlNode, ctx: &SlideCtx, out: &mut SlideOut) {
                         captions: caption.into_iter().collect(),
                         image: None,
                         classification: Some(kind.clone()),
+                        extra_classes: labels[1..].iter().map(|l| l.to_string()).collect(),
                         description: None,
                         confidence: None,
                         chart: Some(table.clone()),
@@ -732,6 +725,7 @@ fn handle_shape_content(shape: XmlNode, ctx: &SlideCtx, out: &mut SlideOut) {
                         TreeKind::Picture {
                             captions: Vec::new(),
                             image: image.cloned(),
+                            extra_classes: Vec::new(),
                             classification: None,
                             description: alt.clone(),
                             confidence: None,

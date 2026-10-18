@@ -74,6 +74,7 @@ mod pages_iwa;
 mod pages_xml;
 mod ppt;
 mod pptx;
+mod pptx_chart;
 mod quattro;
 mod rtf;
 mod staroffice5;

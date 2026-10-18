@@ -277,6 +277,7 @@ impl SlideOut<'_> {
                     TreeKind::Picture {
                         captions: Vec::new(),
                         image: image.clone(),
+                        extra_classes: Vec::new(),
                         classification: None,
                         description: None,
                         confidence: None,
@@ -337,6 +338,7 @@ impl SlideOut<'_> {
                     TreeKind::Picture {
                         captions: caption.into_iter().collect(),
                         image: None,
+                        extra_classes: Vec::new(),
                         classification: Some(chart.label.clone()),
                         description: None,
                         confidence: None,

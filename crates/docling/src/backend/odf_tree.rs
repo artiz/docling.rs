@@ -672,6 +672,7 @@ impl<'s> Walker<'s> {
                 TreeKind::Picture {
                     captions: Vec::new(),
                     image: None,
+                    extra_classes: Vec::new(),
                     classification: Some(info.kind),
                     description: None,
                     confidence: None,
@@ -713,6 +714,7 @@ impl<'s> Walker<'s> {
                 TreeKind::Picture {
                     captions: Vec::new(),
                     image: Some(image),
+                    extra_classes: Vec::new(),
                     classification: None,
                     description: None,
                     confidence: None,
@@ -1295,6 +1297,7 @@ impl<'s> Walker<'s> {
                 TreeKind::Picture {
                     captions: Vec::new(),
                     image: Some(image),
+                    extra_classes: Vec::new(),
                     classification: None,
                     description: None,
                     confidence: None,

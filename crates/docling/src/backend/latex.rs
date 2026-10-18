@@ -431,6 +431,7 @@ impl Builder {
             TreeKind::Picture {
                 captions: caption.into_iter().collect(),
                 image: image.clone(),
+                extra_classes: Vec::new(),
                 classification: None,
                 description: None,
                 confidence: None,
