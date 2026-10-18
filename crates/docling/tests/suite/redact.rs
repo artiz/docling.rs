@@ -339,23 +339,46 @@ fn embedded_picture_box_out() {
 }
 
 /// NER: with the model, the seeded name goes; without it, one warning and
-/// the pattern kinds still redact (run in a child process so the model-dir
-/// override never leaks into the other tests).
+/// the pattern kinds still redact. Both halves run in a child process: the
+/// NER detector is loaded once per process (and found relative to the
+/// working directory), so a test sharing this binary that redacts first
+/// would otherwise decide which half this one sees.
 #[test]
 fn ner_redacts_names_or_warns() {
-    if std::env::var_os("DOCLING_RS_REDACT_CHILD").is_some() {
-        let result = convert(redacting(), "data/html/sources/pii_sample.html");
-        assert_clean(&result.document, "html without NER");
-        assert!(result
-            .document
-            .export_to_markdown()
-            .contains("Angela Merkel"));
-        return;
+    match std::env::var("DOCLING_RS_REDACT_CHILD").as_deref() {
+        Ok("no-model") => {
+            let result = convert(redacting(), "data/html/sources/pii_sample.html");
+            assert_clean(&result.document, "html without NER");
+            assert!(result
+                .document
+                .export_to_markdown()
+                .contains("Angela Merkel"));
+            return;
+        }
+        Ok("model") => {
+            let result = convert(
+                DocumentConverter::new().redact_pii(RedactionOptions {
+                    replacement: Replacement::Pseudonym,
+                    ..Default::default()
+                }),
+                "data/html/sources/pii_sample.html",
+            );
+            let md = result.document.export_to_markdown();
+            assert!(!md.contains("Angela Merkel"), "{md}");
+            assert!(md.contains("[PERSON_1]"), "{md}");
+            assert!(result.redaction.unwrap().counts.contains_key("PERSON"));
+            return;
+        }
+        _ => {}
     }
-    let out = std::process::Command::new(std::env::current_exe().unwrap())
-        .arg(test_name("ner_redacts_names_or_warns"))
-        .args(["--exact", "--nocapture"])
-        .env("DOCLING_RS_REDACT_CHILD", "1")
+    let child = |mode: &str| {
+        let mut cmd = std::process::Command::new(std::env::current_exe().unwrap());
+        cmd.arg(test_name("ner_redacts_names_or_warns"))
+            .args(["--exact", "--nocapture"])
+            .env("DOCLING_RS_REDACT_CHILD", mode);
+        cmd
+    };
+    let out = child("no-model")
         .env("DOCLING_RS_NER_DIR", "/nonexistent/ner")
         .output()
         .expect("spawn the child test");
@@ -366,23 +389,21 @@ fn ner_redacts_names_or_warns() {
         "no warning in:\n{stderr}"
     );
 
-    if !repo_root().join(".models/ner/model.onnx").exists()
-        || std::env::set_current_dir(repo_root()).is_err()
-    {
+    if !repo_root().join(".models/ner/model.onnx").exists() {
         eprintln!("skipping the model half: NER model not found");
         return;
     }
-    let result = convert(
-        DocumentConverter::new().redact_pii(RedactionOptions {
-            replacement: Replacement::Pseudonym,
-            ..Default::default()
-        }),
-        "data/html/sources/pii_sample.html",
+    let out = child("model")
+        .current_dir(repo_root())
+        .env_remove("DOCLING_RS_NER_DIR")
+        .output()
+        .expect("spawn the child test");
+    assert!(
+        out.status.success(),
+        "model child failed:\n{}{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr)
     );
-    let md = result.document.export_to_markdown();
-    assert!(!md.contains("Angela Merkel"), "{md}");
-    assert!(md.contains("[PERSON_1]"), "{md}");
-    assert!(result.redaction.unwrap().counts.contains_key("PERSON"));
 }
 
 /// An invalid custom pattern is the caller's error, not a silent skip.
