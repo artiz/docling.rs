@@ -20,7 +20,8 @@
 # `uvx docling-rs-mcp@<version>`. Once the launcher is on PyPI the job packs
 # it with the version, publishes it to Smithery when the repository has the
 # `SMITHERY_API_KEY` secret and the `SMITHERY_SERVER` variable
-# (`<namespace>/<server id>`), and attaches it to the release.
+# (`<namespace>/<server id>`) — optional: a Smithery failure only warns — and
+# attaches it to the release.
 #
 # Manual fallback and the other catalogs: docs/MCP_REGISTRIES.md.
 name: mcp registry
@@ -203,7 +204,9 @@ jobs:
       # runs the bundle's `uvx` command, hence uv). The release keeps the
       # bundle as packed.
       - name: Add the tool schemas for Smithery
+        id: smithery_card
         if: ${{ env.SMITHERY_API_KEY != '' && vars.SMITHERY_SERVER != '' }}
+        continue-on-error: true
         shell: bash
         env:
           # The bundle's `uvx` resolves against PyPI afresh, like the probe
@@ -215,13 +218,24 @@ jobs:
           python3 scripts/ci/mcpb_smithery.py "docling-rs-mcp-$v.mcpb" "smithery-$v.mcpb"
 
       # Non-interactive: the key comes from the environment, and a server id
-      # Smithery does not know yet is created.
+      # Smithery does not know yet is created. Optional, like the step above:
+      # Smithery's registry has stopped taking updates of an existing server
+      # (403 "Updating servers has been removed", 2.37.1), so a failure here
+      # is a warning and the bundle still goes to the release.
       - name: Publish to Smithery
-        if: ${{ env.SMITHERY_API_KEY != '' && vars.SMITHERY_SERVER != '' }}
+        id: smithery
+        if: ${{ steps.smithery_card.outcome == 'success' }}
+        continue-on-error: true
         shell: bash
         run: |
           v="${{ steps.v.outputs.version }}"
           npx -y @smithery/cli@4.11.1 mcp publish "smithery-$v.mcpb" -n "${{ vars.SMITHERY_SERVER }}"
+
+      - name: Report a skipped Smithery publish
+        if: ${{ steps.smithery_card.outcome == 'failure' || steps.smithery.outcome == 'failure' }}
+        shell: bash
+        run: |
+          echo "::warning title=Smithery::the bundle was not published to Smithery (see the step above); the release still gets it — publish it by hand per docs/MCP_REGISTRIES.md if Smithery takes it again"
 
       - name: Attach the bundle to the release
         shell: bash

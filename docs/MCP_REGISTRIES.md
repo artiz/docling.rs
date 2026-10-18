@@ -73,7 +73,10 @@ PyPI's project size limit), and the catalog entries follow the PyPI channel:
    variable it publishes Smithery's copy of it, whose manifest carries each
    tool's input schema as the server lists it (`scripts/ci/mcpb_smithery.py`
    — Smithery's API requires one per tool, the MCPB schema allows none).
-   Both jobs run only in `docling-project/docling.rs`.
+   The Smithery steps are optional: since 2.37.1 Smithery's registry answers
+   an update of an existing server with 403 *Updating servers has been
+   removed*, so a failure there is a warning on the run and the release
+   still gets the bundle. Both jobs run only in `docling-project/docling.rs`.
 
 ## One-time setup
 
