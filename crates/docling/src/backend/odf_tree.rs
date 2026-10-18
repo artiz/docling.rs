@@ -29,8 +29,8 @@ use roxmltree::Node as XmlNode;
 
 use super::odf::{
     attr, cell_has_image, collect_runs, element_has_text, image_can_be_bitmap, inline_chart,
-    is_list_tag, is_rich_cell, is_slide_title_element, level_affixes, level_is_enumerated,
-    level_start, list_has_direct_text, list_has_renderable, list_items,
+    is_list_tag, is_rich_cell, is_slide_title_element, item_has_content, level_affixes,
+    level_is_enumerated, level_start, list_has_direct_text, list_has_renderable, list_items,
     list_starts_with_empty_nested, odf_item_content, ods_cell_text, para_plain_text,
     paragraph_style_names, repeat, section_is_hidden, slide_has_visible_title, slide_is_hidden,
     Fmt, Run, Styles,
@@ -950,14 +950,15 @@ impl<'s> Walker<'s> {
         };
         for item in list_items(list) {
             let (text, nested) = odf_item_content(item, styles);
+            let has_content = item_has_content(item, styles);
             let nested: Vec<XmlNode> = nested
                 .into_iter()
                 .filter(|n| list_has_renderable(*n, styles))
                 .collect();
-            if text.is_empty() && nested.is_empty() {
+            if !has_content && nested.is_empty() {
                 continue;
             }
-            if text.is_empty() {
+            if !has_content {
                 let nested_parent = previous.or(Some(group));
                 for n in nested {
                     self.add_list(n, nested_parent, layer, style_enum, level + 1, None);

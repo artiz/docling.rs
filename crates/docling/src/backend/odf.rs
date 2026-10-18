@@ -33,8 +33,8 @@ use crate::backend::DeclarativeBackend;
 use crate::error::ConversionError;
 use crate::source::SourceDocument;
 use docling_core::{
-    inline_paragraph_node, DoclingDocument, InlineRun, Node, PictureImage, Script, Table,
-    TableStructure,
+    inline_paragraph_node, DoclingDocument, InlineRun, ListItemDclx, Node, PictureImage, Script,
+    Table, TableStructure,
 };
 
 pub struct OdfBackend;
@@ -1114,6 +1114,21 @@ pub(super) fn odf_item_content<'a, 'i>(
     (parts.join(" "), nested)
 }
 
+/// Whether a list item has content of its own: text, or — in one of its
+/// direct paragraphs — an image, an embedded object (a chart) or a note.
+/// docling decides on odfdo's `text_recursive`, which renders such an
+/// element as `(href)` or the note's citation and body; the item is kept
+/// with an empty text (docling 2.139 takes the text from the runs only,
+/// docling#4693), so it keeps its number and owns its nested list (#759).
+pub(super) fn item_has_content(item: XmlNode, styles: &Styles) -> bool {
+    !odf_item_content(item, styles).0.is_empty()
+        || item
+            .children()
+            .filter(|c| c.has_tag_name("p") || c.has_tag_name("h"))
+            .flat_map(|p| p.descendants())
+            .any(|n| n.has_tag_name("image") || n.has_tag_name("object") || n.has_tag_name("note"))
+}
+
 /// Split on newlines, strip each line, drop the blanks, re-join with spaces —
 /// docling's `_clean_odf_text_lines` joined.
 pub(super) fn clean_lines(text: &str) -> String {
@@ -1127,22 +1142,23 @@ pub(super) fn clean_lines(text: &str) -> String {
 /// Whether a list renders anything (any item with text, or a renderable nested list).
 pub(super) fn list_has_renderable(list: XmlNode, styles: &Styles) -> bool {
     list_items(list).any(|item| {
-        let (text, nested) = odf_item_content(item, styles);
-        !text.is_empty() || nested.iter().any(|n| list_has_renderable(*n, styles))
+        let (_, nested) = odf_item_content(item, styles);
+        item_has_content(item, styles) || nested.iter().any(|n| list_has_renderable(*n, styles))
     })
 }
 
-/// Whether any item carries direct text (vs. only nested lists).
+/// Whether any item has content of its own (vs. only nested lists).
 pub(super) fn list_has_direct_text(list: XmlNode, styles: &Styles) -> bool {
-    list_items(list).any(|item| !odf_item_content(item, styles).0.is_empty())
+    list_items(list).any(|item| item_has_content(item, styles))
 }
 
 /// Whether the first item is empty but wraps a renderable nested list — the
 /// signal that this list continues the previous one's numbering.
 pub(super) fn list_starts_with_empty_nested(list: XmlNode, styles: &Styles) -> bool {
     if let Some(item) = list_items(list).next() {
-        let (text, nested) = odf_item_content(item, styles);
-        return text.is_empty() && nested.iter().any(|n| list_has_renderable(*n, styles));
+        let (_, nested) = odf_item_content(item, styles);
+        return !item_has_content(item, styles)
+            && nested.iter().any(|n| list_has_renderable(*n, styles));
     }
     false
 }
@@ -1238,14 +1254,15 @@ fn add_odf_list(
 
     for item in list_items(list) {
         let (text, nested) = odf_item_content(item, styles);
+        let has_content = item_has_content(item, styles);
         let nested: Vec<XmlNode> = nested
             .into_iter()
             .filter(|n| list_has_renderable(*n, styles))
             .collect();
-        if text.is_empty() && nested.is_empty() {
+        if !has_content && nested.is_empty() {
             continue;
         }
-        if text.is_empty() {
+        if !has_content {
             // Empty item: its nested list collapses under the previous item.
             for n in &nested {
                 add_odf_list(
@@ -1269,6 +1286,33 @@ fn add_odf_list(
         } else {
             (false, 0, None)
         };
+        // The item's marker in docling's model is `_odf_list_marker`: the
+        // counter and the level's `num-suffix`, `.` without one. docling-core's
+        // Markdown prints one of digits and a dot (`1.`) as a list number; any
+        // other (`1)`) is a text prefix behind a bullet (`- 1) text`,
+        // `orig_list_item_marker_mode=AUTO`, as the DOCX walk does). DocLang
+        // keeps the ordered item and its `<marker>` through `dclx`.
+        let item_marker = format!(
+            "{n}{}",
+            if suffix.is_empty() {
+                "."
+            } else {
+                suffix.as_str()
+            },
+            n = counter.max(0)
+        );
+        let (ordered, marker, text, dclx) = match marker {
+            Some(m) if !is_plain_number_marker(&item_marker) => {
+                let dclx = Some(ListItemDclx {
+                    ordered: true,
+                    marker: Some(m),
+                    text: text.clone(),
+                    runs: Vec::new(),
+                });
+                (false, None, format!("{item_marker} {text}"), dclx)
+            }
+            marker => (ordered, marker, text, None),
+        };
         doc.push(Node::ListItem {
             ordered,
             number,
@@ -1277,7 +1321,7 @@ fn add_odf_list(
             level: depth,
             marker,
             location: None,
-            dclx: None,
+            dclx,
             href: None,
             layer: None,
         });
@@ -1302,6 +1346,14 @@ fn add_odf_list(
         prefix,
         suffix,
     })
+}
+
+/// A marker of digits and a dot (`12.`), which docling-core's Markdown
+/// prints as it is (`case_already_valid`).
+fn is_plain_number_marker(marker: &str) -> bool {
+    marker
+        .strip_suffix('.')
+        .is_some_and(|d| !d.is_empty() && d.chars().all(|c| c.is_ascii_digit()))
 }
 
 // ---------------------------------------------------------------- tables
