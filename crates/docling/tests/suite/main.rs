@@ -33,6 +33,7 @@ mod ipynb;
 mod iwork;
 mod jpx_pictures;
 mod json_prov;
+mod odf_upstream;
 mod options_inventory;
 mod page_breaks;
 mod pandoc;

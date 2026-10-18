@@ -29,10 +29,11 @@ use roxmltree::Node as XmlNode;
 
 use super::odf::{
     attr, cell_has_image, collect_runs, element_has_text, image_can_be_bitmap, inline_chart,
-    is_list_tag, is_rich_cell, is_slide_title_element, level_affixes, level_is_enumerated,
-    level_start, list_has_direct_text, list_has_renderable, list_items,
+    is_list_tag, is_rich_cell, is_slide_title_element, item_has_content, level_affixes,
+    level_is_enumerated, level_start, list_has_direct_text, list_has_renderable, list_items,
     list_starts_with_empty_nested, odf_item_content, ods_cell_text, para_plain_text,
-    paragraph_style_names, repeat, slide_has_visible_title, Fmt, Run, Styles,
+    paragraph_style_names, repeat, section_is_hidden, slide_has_visible_title, slide_is_hidden,
+    Fmt, Run, Styles,
 };
 
 /// The tree plus the spreadsheet pages docling adds (`page_no`, width,
@@ -128,6 +129,15 @@ pub(super) fn build_presentation(pres: XmlNode, styles: &Styles) -> Built {
             );
         }
         w.walk_slide(page, slide);
+        // `_hide_slide` (#753, docling#4767): the slide group and its body
+        // items move to the invisible layer.
+        if slide_is_hidden(page, styles) {
+            for item in &mut w.tree.items[slide..] {
+                if item.layer.is_none() {
+                    item.layer = Some(ContentLayer::Invisible);
+                }
+            }
+        }
     }
     Built {
         tree: w.tree,
@@ -841,6 +851,13 @@ impl<'s> Walker<'s> {
                 self.add_table(el, parent, layer, None, None);
             }
             "section" => {
+                // A hidden section's content goes to the invisible layer
+                // (#753, docling#4860).
+                let layer = if section_is_hidden(el) {
+                    Some(ContentLayer::Invisible)
+                } else {
+                    layer
+                };
                 self.add_children(el.children().filter(XmlNode::is_element), parent, layer)
             }
             "frame" => {
@@ -933,14 +950,15 @@ impl<'s> Walker<'s> {
         };
         for item in list_items(list) {
             let (text, nested) = odf_item_content(item, styles);
+            let has_content = item_has_content(item, styles);
             let nested: Vec<XmlNode> = nested
                 .into_iter()
                 .filter(|n| list_has_renderable(*n, styles))
                 .collect();
-            if text.is_empty() && nested.is_empty() {
+            if !has_content && nested.is_empty() {
                 continue;
             }
-            if text.is_empty() {
+            if !has_content {
                 let nested_parent = previous.or(Some(group));
                 for n in nested {
                     self.add_list(n, nested_parent, layer, style_enum, level + 1, None);
@@ -1281,9 +1299,14 @@ impl<'s> Walker<'s> {
         } else if !cell_has_content_at_a1(table) {
             // No data at all: no tables.
         }
-        // `_find_images_in_sheet`: every image with a default (0, 0, 1, 1) box.
+        // `_find_images_in_sheet`: every picture anchored to the sheet itself
+        // (in `<table:shapes>`) with a default (0, 0, 1, 1) box. A picture
+        // anchored to a cell is added with its rich cell, once (#758,
+        // docling#4678).
         let images: Vec<XmlNode> = table
-            .descendants()
+            .children()
+            .filter(|n| n.has_tag_name("shapes"))
+            .flat_map(|shapes| shapes.descendants())
             .filter(|n| n.has_tag_name("image"))
             .collect();
         for img in images {

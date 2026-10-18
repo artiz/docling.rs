@@ -33,8 +33,8 @@ use crate::backend::DeclarativeBackend;
 use crate::error::ConversionError;
 use crate::source::SourceDocument;
 use docling_core::{
-    inline_paragraph_node, DoclingDocument, InlineRun, Node, PictureImage, Script, Table,
-    TableStructure,
+    inline_paragraph_node, DoclingDocument, InlineRun, ListItemDclx, Node, PictureImage, Script,
+    Table, TableStructure,
 };
 
 pub struct OdfBackend;
@@ -126,6 +126,10 @@ pub(super) struct Styles {
     /// path must not turn into an arbitrary local-file read (the advisory
     /// behind #4015).
     policy: ImagePolicy,
+    /// The `drawing-page` styles that hide a slide
+    /// (`presentation:visibility="hidden"` on their
+    /// `style:drawing-page-properties`; #753, docling#4767).
+    hidden_pages: HashSet<String>,
 }
 
 impl DeclarativeBackend for OdfBackend {
@@ -293,12 +297,21 @@ pub(super) fn is_list_tag(name: &str) -> bool {
 fn parse_styles(content: &Document, styles: Option<&Document>) -> Styles {
     let mut map = HashMap::new();
     let mut lists = HashMap::new();
+    let mut hidden_pages = HashSet::new();
     for dom in [Some(content), styles].into_iter().flatten() {
         for s in dom.descendants() {
             match s.tag_name().name() {
                 "style" => {
                     if let Some(name) = attr(s, "name") {
                         map.insert(name.to_string(), style_info(s));
+                        let hides_page = attr(s, "family") == Some("drawing-page")
+                            && s.children().any(|c| {
+                                c.has_tag_name("drawing-page-properties")
+                                    && attr(c, "visibility") == Some("hidden")
+                            });
+                        if hides_page {
+                            hidden_pages.insert(name.to_string());
+                        }
                     }
                 }
                 "list-style" => {
@@ -338,7 +351,23 @@ fn parse_styles(content: &Document, styles: Option<&Document>) -> Styles {
         images: HashMap::new(),
         parts: None,
         policy: ImagePolicy::default(),
+        hidden_pages,
     }
+}
+
+/// Whether a `<draw:page>` is a hidden slide: its `draw:style-name` names a
+/// `drawing-page` style with `presentation:visibility="hidden"` — docling's
+/// `_is_slide_hidden` (#753, docling#4767). Such a slide is not presented;
+/// it is kept on the invisible layer, like a hidden ODS sheet.
+pub(super) fn slide_is_hidden(page: XmlNode, styles: &Styles) -> bool {
+    attr(page, "style-name").is_some_and(|name| styles.hidden_pages.contains(name))
+}
+
+/// Whether a `<text:section>` is hidden (`text:display="none"`, Writer's
+/// Format > Sections > Hide): its content is kept on the invisible layer
+/// (#753, docling#4860).
+pub(super) fn section_is_hidden(section: XmlNode) -> bool {
+    attr(section, "display") == Some("none")
 }
 
 /// Load every embedded chart object a `<draw:object>` references. Each object is
@@ -944,8 +973,19 @@ fn handle_block(
             // lists inside a section were silently dropped before. Recursing
             // through `walk_blocks` keeps list numbering continuing across the
             // section's own consecutive lists (`_add_odf_children`) and
-            // handles nested sections.
+            // handles nested sections. A hidden section's blocks go to the
+            // invisible layer (#753).
+            let start = doc.nodes.len();
             walk_blocks(el.children().filter(XmlNode::is_element), styles, doc);
+            if section_is_hidden(el) {
+                hide_nodes_from(doc, start);
+            }
+        }
+        // A frame outside a paragraph — a picture anchored straight in a
+        // table cell (#758) — is its chart or picture, as the JSON tree's
+        // `_add_odf_children` has it.
+        "frame" => {
+            emit_frame_graphic(el, styles, doc);
         }
         _ => {}
     }
@@ -1074,6 +1114,21 @@ pub(super) fn odf_item_content<'a, 'i>(
     (parts.join(" "), nested)
 }
 
+/// Whether a list item has content of its own: text, or — in one of its
+/// direct paragraphs — an image, an embedded object (a chart) or a note.
+/// docling decides on odfdo's `text_recursive`, which renders such an
+/// element as `(href)` or the note's citation and body; the item is kept
+/// with an empty text (docling 2.139 takes the text from the runs only,
+/// docling#4693), so it keeps its number and owns its nested list (#759).
+pub(super) fn item_has_content(item: XmlNode, styles: &Styles) -> bool {
+    !odf_item_content(item, styles).0.is_empty()
+        || item
+            .children()
+            .filter(|c| c.has_tag_name("p") || c.has_tag_name("h"))
+            .flat_map(|p| p.descendants())
+            .any(|n| n.has_tag_name("image") || n.has_tag_name("object") || n.has_tag_name("note"))
+}
+
 /// Split on newlines, strip each line, drop the blanks, re-join with spaces —
 /// docling's `_clean_odf_text_lines` joined.
 pub(super) fn clean_lines(text: &str) -> String {
@@ -1087,22 +1142,23 @@ pub(super) fn clean_lines(text: &str) -> String {
 /// Whether a list renders anything (any item with text, or a renderable nested list).
 pub(super) fn list_has_renderable(list: XmlNode, styles: &Styles) -> bool {
     list_items(list).any(|item| {
-        let (text, nested) = odf_item_content(item, styles);
-        !text.is_empty() || nested.iter().any(|n| list_has_renderable(*n, styles))
+        let (_, nested) = odf_item_content(item, styles);
+        item_has_content(item, styles) || nested.iter().any(|n| list_has_renderable(*n, styles))
     })
 }
 
-/// Whether any item carries direct text (vs. only nested lists).
+/// Whether any item has content of its own (vs. only nested lists).
 pub(super) fn list_has_direct_text(list: XmlNode, styles: &Styles) -> bool {
-    list_items(list).any(|item| !odf_item_content(item, styles).0.is_empty())
+    list_items(list).any(|item| item_has_content(item, styles))
 }
 
 /// Whether the first item is empty but wraps a renderable nested list — the
 /// signal that this list continues the previous one's numbering.
 pub(super) fn list_starts_with_empty_nested(list: XmlNode, styles: &Styles) -> bool {
     if let Some(item) = list_items(list).next() {
-        let (text, nested) = odf_item_content(item, styles);
-        return text.is_empty() && nested.iter().any(|n| list_has_renderable(*n, styles));
+        let (_, nested) = odf_item_content(item, styles);
+        return !item_has_content(item, styles)
+            && nested.iter().any(|n| list_has_renderable(*n, styles));
     }
     false
 }
@@ -1198,14 +1254,15 @@ fn add_odf_list(
 
     for item in list_items(list) {
         let (text, nested) = odf_item_content(item, styles);
+        let has_content = item_has_content(item, styles);
         let nested: Vec<XmlNode> = nested
             .into_iter()
             .filter(|n| list_has_renderable(*n, styles))
             .collect();
-        if text.is_empty() && nested.is_empty() {
+        if !has_content && nested.is_empty() {
             continue;
         }
-        if text.is_empty() {
+        if !has_content {
             // Empty item: its nested list collapses under the previous item.
             for n in &nested {
                 add_odf_list(
@@ -1229,6 +1286,33 @@ fn add_odf_list(
         } else {
             (false, 0, None)
         };
+        // The item's marker in docling's model is `_odf_list_marker`: the
+        // counter and the level's `num-suffix`, `.` without one. docling-core's
+        // Markdown prints one of digits and a dot (`1.`) as a list number; any
+        // other (`1)`) is a text prefix behind a bullet (`- 1) text`,
+        // `orig_list_item_marker_mode=AUTO`, as the DOCX walk does). DocLang
+        // keeps the ordered item and its `<marker>` through `dclx`.
+        let item_marker = format!(
+            "{n}{}",
+            if suffix.is_empty() {
+                "."
+            } else {
+                suffix.as_str()
+            },
+            n = counter.max(0)
+        );
+        let (ordered, marker, text, dclx) = match marker {
+            Some(m) if !is_plain_number_marker(&item_marker) => {
+                let dclx = Some(ListItemDclx {
+                    ordered: true,
+                    marker: Some(m),
+                    text: text.clone(),
+                    runs: Vec::new(),
+                });
+                (false, None, format!("{item_marker} {text}"), dclx)
+            }
+            marker => (ordered, marker, text, None),
+        };
         doc.push(Node::ListItem {
             ordered,
             number,
@@ -1237,7 +1321,7 @@ fn add_odf_list(
             level: depth,
             marker,
             location: None,
-            dclx: None,
+            dclx,
             href: None,
             layer: None,
         });
@@ -1262,6 +1346,14 @@ fn add_odf_list(
         prefix,
         suffix,
     })
+}
+
+/// A marker of digits and a dot (`12.`), which docling-core's Markdown
+/// prints as it is (`case_already_valid`).
+fn is_plain_number_marker(marker: &str) -> bool {
+    marker
+        .strip_suffix('.')
+        .is_some_and(|d| !d.is_empty() && d.chars().all(|c| c.is_ascii_digit()))
 }
 
 // ---------------------------------------------------------------- tables
@@ -1568,7 +1660,7 @@ fn rich_cell_markdown(tc: XmlNode, styles: &Styles) -> String {
                     }
                 }
             }
-            "p" | "h" => {
+            "p" | "h" | "frame" => {
                 prev_state = None;
                 handle_block(child, styles, &mut sub, 0, &mut Vec::new());
             }
@@ -1584,9 +1676,40 @@ fn rich_cell_markdown(tc: XmlNode, styles: &Styles) -> String {
 
 // ---------------------------------------------------------------- spreadsheet
 
-fn walk_spreadsheet(sheet: XmlNode, _styles: &Styles, doc: &mut DoclingDocument) {
+fn walk_spreadsheet(sheet: XmlNode, styles: &Styles, doc: &mut DoclingDocument) {
     for table in sheet.children().filter(|c| c.has_tag_name("table")) {
-        add_ods_sheet(table, doc);
+        let start = doc.nodes.len();
+        add_ods_sheet(table, styles, doc);
+        // A hidden sheet (`table:display="false"`) is kept on the invisible
+        // layer, as the JSON tree has it (#753).
+        if attr(table, "display") == Some("false") {
+            hide_nodes_from(doc, start);
+        }
+    }
+}
+
+/// Move the body nodes pushed since `start` to the invisible layer: a list
+/// item through its own layer (so a list stays one list), any other body
+/// node wrapped in [`Node::Furniture`]; nodes already on another layer
+/// (footnote bodies) keep it. A hidden section, slide or sheet is kept,
+/// out of the default exports (#753).
+fn hide_nodes_from(doc: &mut DoclingDocument, start: usize) {
+    for node in &mut doc.nodes[start..] {
+        match node {
+            Node::Furniture { .. } => {}
+            Node::ListItem { layer, .. } => {
+                if layer.is_none() {
+                    *layer = Some(docling_core::ContentLayer::Invisible);
+                }
+            }
+            _ => {
+                let inner = std::mem::replace(node, Node::PageBreak);
+                *node = Node::Furniture {
+                    layer: docling_core::ContentLayer::Invisible,
+                    inner: Box::new(inner),
+                };
+            }
+        }
     }
 }
 
@@ -1595,7 +1718,7 @@ fn walk_spreadsheet(sheet: XmlNode, _styles: &Styles, doc: &mut DoclingDocument)
 /// `_find_data_tables_in_sheet` (strict `gap_tolerance = 0` flood fill, singleton
 /// cells kept as 1×1 tables). Numeric columns right-align via the shared table
 /// serializer.
-fn add_ods_sheet(table: XmlNode, doc: &mut DoclingDocument) {
+fn add_ods_sheet(table: XmlNode, styles: &Styles, doc: &mut DoclingDocument) {
     // Build a sparse content grid: (row, col) → cell text, expanding
     // `number-{rows,columns}-repeated` (empty repeats only advance the index, so a
     // sheet padded to millions of empty cells stays cheap).
@@ -1612,7 +1735,13 @@ fn add_ods_sheet(table: XmlNode, doc: &mut DoclingDocument) {
         {
             let crep = repeat(cell, "number-columns-repeated");
             let covered = cell.has_tag_name("covered-table-cell");
-            let text = ods_cell_text(cell);
+            // A cell holding a picture is a rich cell: its blocks, picture
+            // included, as in the JSON tree (#758).
+            let text = if cell_has_image(cell) {
+                rich_cell_markdown(cell, styles)
+            } else {
+                ods_cell_text(cell)
+            };
             if !text.is_empty() || covered {
                 row_has_content = true;
                 for c in 0..crep.min(1024) {
@@ -1631,6 +1760,18 @@ fn add_ods_sheet(table: XmlNode, doc: &mut DoclingDocument) {
         row_idx += rrep;
     }
     emit_sheet_regions(&cells, doc);
+    // `_find_images_in_sheet`: the pictures anchored to the sheet itself, in
+    // `<table:shapes>`, after its tables (#758, docling#4678).
+    for img in table
+        .children()
+        .filter(|n| n.has_tag_name("shapes"))
+        .flat_map(|shapes| shapes.descendants())
+        .filter(|n| n.has_tag_name("image"))
+    {
+        if let Some(node) = odf_picture(styles, img) {
+            doc.push(node);
+        }
+    }
 }
 
 /// Split a sparse cell grid into its disconnected data regions and emit each
@@ -1747,6 +1888,7 @@ fn walk_presentation(pres: XmlNode, styles: &Styles, doc: &mut DoclingDocument) 
             .filter(|n| !n.is_empty())
             .map(str::to_string)
             .unwrap_or_else(|| format!("slide-{}", idx + 1));
+        let start = doc.nodes.len();
         if !slide_has_visible_title(page) {
             doc.push(Node::Heading {
                 level: 1,
@@ -1754,6 +1896,9 @@ fn walk_presentation(pres: XmlNode, styles: &Styles, doc: &mut DoclingDocument) 
             });
         }
         walk_slide(page, styles, doc);
+        if slide_is_hidden(page, styles) {
+            hide_nodes_from(doc, start);
+        }
     }
 }
 
@@ -2240,7 +2385,7 @@ mod tests {
         let dom = Document::parse(xml).unwrap();
         let table = dom.descendants().find(|n| n.has_tag_name("table")).unwrap();
         let mut doc = DoclingDocument::new("t");
-        add_ods_sheet(table, &mut doc);
+        add_ods_sheet(table, &parse_styles(&dom, None), &mut doc);
         let tables: Vec<&Table> = doc
             .nodes
             .iter()
