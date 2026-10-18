@@ -11,7 +11,7 @@
 //!   the libetonyek Pages bundles). Regenerate after an intentional change with:
 //!
 //! ```bash
-//! DOCLING_RS_REGEN=1 cargo test -p docling --test iwork
+//! DOCLING_RS_REGEN=1 cargo test -p docling --test suite iwork::
 //! ```
 
 use std::fs;

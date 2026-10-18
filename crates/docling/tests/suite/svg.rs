@@ -7,7 +7,7 @@
 //! Regenerate after an intentional change with:
 //!
 //! ```bash
-//! DOCLING_RS_REGEN=1 cargo test -p docling --test svg
+//! DOCLING_RS_REGEN=1 cargo test -p docling --test suite svg::
 //! ```
 //!
 //! The rasterize→image-pipeline route runs end-to-end only when the ONNX

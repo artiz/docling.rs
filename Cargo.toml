@@ -55,3 +55,13 @@ rust-version = "1.92"
 
 [profile.release]
 lto = "thin"
+
+# Optimized code without the link-time optimization: what a test run needs.
+# `cargo test --profile fasttest` keeps the release speed the PDF/ONNX tests
+# depend on, but each test binary skips thin LTO — the bulk of a release
+# test build — and rebuilds incrementally. Release artifacts are unchanged.
+[profile.fasttest]
+inherits = "release"
+lto = false
+codegen-units = 256
+incremental = true

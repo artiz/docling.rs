@@ -3,6 +3,9 @@ name = "docling"
 description = "DocumentConverter and format backends for docling.rs (a Rust port of docling)."
 version.workspace = true
 edition.workspace = true
+# The integration tests are listed below (`[[test]]`): most are modules of
+# one binary, `tests/suite/main.rs` — one link instead of one per file.
+autotests = false
 license.workspace = true
 repository.workspace = true
 homepage.workspace = true
@@ -168,6 +171,38 @@ path = "examples/stream.rs"
 name = "register_backend"
 path = "examples/register_backend.rs"
 test = true
+
+[[test]]
+name = "suite"
+path = "tests/suite/main.rs"
+
+[[test]]
+name = "image_sources"
+path = "tests/image_sources.rs"
+
+[[test]]
+name = "no_ocr"
+path = "tests/no_ocr.rs"
+
+[[test]]
+name = "pages"
+path = "tests/pages.rs"
+
+[[test]]
+name = "picture_description"
+path = "tests/picture_description.rs"
+
+[[test]]
+name = "textline_orientation_no_model"
+path = "tests/textline_orientation_no_model.rs"
+
+[[test]]
+name = "youtube"
+path = "tests/youtube.rs"
+
+[[test]]
+name = "regression"
+path = "tests/regression.rs"
 
 [dev-dependencies]
 criterion = "0.5"
