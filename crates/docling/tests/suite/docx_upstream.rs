@@ -1,13 +1,16 @@
 //! DOCX against docling's own output, for the documents of upstream tests
 //! that docling.rs ports: text boxes in table cells (#757, docling#4757),
 //! list items resumed in a table cell (#764, docling#4674), lists numbered
-//! through a linked numbering style (#765, docling#4727).
+//! through a linked numbering style (#765, docling#4727) — plus `style_bold`,
+//! our own probe of `_get_format_from_run`'s paragraph-mark and style-chain
+//! bold, which the Markdown walk (`docx.rs`) and the item tree
+//! (`docx_tree.rs`) must both apply where docling does.
 //!
 //! `tests/data/docx/upstream/<name>.{md,json}` is **not** our output: it is
 //! what docling 2.140.0's Word backend writes for `<name>.docx`
 //! (`MsWordDocumentBackend(...).convert()`, then `export_to_markdown()` and
-//! `export_to_dict()`). The documents are upstream's test documents, rebuilt
-//! by `make_docs.py` next to them. Re-create a reference with upstream's
+//! `export_to_dict()`). The documents are upstream's test documents (and the
+//! probe), rebuilt by `make_docs.py` next to them. Re-create a reference with upstream's
 //! backend, never from our own output.
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -58,12 +61,6 @@ fn drop_alt_text(doc: &mut Value) {
 /// difference of the DrawingML path, not of the textbox handling.
 const OWN_ASSERTIONS: &[&str] = &["textbox_cell_word_mc"];
 
-/// Documents whose Markdown is compared without docling's `**` markers. The
-/// Markdown walk does not yet take bold from a paragraph's style or its
-/// paragraph mark (the JSON walk does, so the JSON stays strict):
-/// `caption_numbering`'s captions are in Word's bold Caption style.
-const MD_WITHOUT_STYLE_BOLD: &[&str] = &["caption_numbering"];
-
 fn convert(name: &str) -> docling_core::DoclingDocument {
     let path = dir().join(format!("{name}.docx"));
     DocumentConverter::new()
@@ -90,10 +87,7 @@ fn documents_follow_docling() {
     {
         let document = convert(name);
         let base = dir().join(name);
-        let mut want_md = fs::read_to_string(base.with_extension("md")).expect("reference .md");
-        if MD_WITHOUT_STYLE_BOLD.contains(&name.as_str()) {
-            want_md = want_md.replace("**", "");
-        }
+        let want_md = fs::read_to_string(base.with_extension("md")).expect("reference .md");
         let got_md = document.export_to_markdown();
         if got_md.trim_end() != want_md.trim_end() {
             failures.push(format!(

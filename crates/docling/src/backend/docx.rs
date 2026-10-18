@@ -789,6 +789,12 @@ fn handle_paragraph_inner(
         (named, _) => named,
     };
     if let Some(level) = level {
+        // A heading prints its plain text upstream, not the formatted runs.
+        let text = if has_equations {
+            text
+        } else {
+            heading_markdown(p, ctx)
+        };
         if !text.is_empty() {
             // docling#3760 (`_is_numbered_heading`): the prefix is computed only
             // when numbering.xml gives the heading's level a *visible* format —
@@ -973,9 +979,7 @@ fn handle_paragraph_inner(
                     runs: inline_equation_runs(&eq_parts),
                 })
             } else {
-                let mut tuples = Vec::new();
-                collect_run_tuples(p, Fmt::default(), None, ctx, &mut tuples);
-                let groups = run_groups(tuples);
+                let groups = run_groups(paragraph_run_tuples(p, ctx));
                 groups
                     .iter()
                     .any(|(_, f, _)| f.underline || f.strike || f.script != 0)
@@ -1026,9 +1030,7 @@ fn handle_paragraph_inner(
             // one TextItem per element, keeping its formatting): a plain segment
             // is a paragraph, a formatted one an InlineGroup whose single run
             // carries the style (`<text><underline>…</underline></text>`).
-            let mut tuples = Vec::new();
-            collect_run_tuples(p, Fmt::default(), None, ctx, &mut tuples);
-            for (t, f, l) in run_groups(tuples) {
+            for (t, f, l) in run_groups(paragraph_run_tuples(p, ctx)) {
                 let seg = serialize_run(&t, f, l.as_deref());
                 if seg.is_empty() {
                     continue;
@@ -1051,9 +1053,7 @@ fn handle_paragraph_inner(
             // heading `TextItem` and the group serializes unwrapped. A single
             // formatted hyperlink stays a text item so its `<href>` head
             // survives (the runs drop link targets).
-            let mut tuples = Vec::new();
-            collect_run_tuples(p, Fmt::default(), None, ctx, &mut tuples);
-            let groups = run_groups(tuples);
+            let groups = run_groups(paragraph_run_tuples(p, ctx));
             let lone_link = groups.len() == 1 && groups[0].2.is_some();
             if lone_link {
                 doc.push(Node::Paragraph { text });
@@ -1413,17 +1413,27 @@ pub(super) fn num_pr(p: XmlNode) -> Option<(String, i64)> {
 /// each group is stripped and wrapped in its markers, and groups are joined with
 /// single spaces — mirroring docling's `_get_paragraph_elements`.
 fn paragraph_markdown(p: XmlNode, ctx: &Ctx) -> String {
+    group_runs(paragraph_run_tuples(p, ctx))
+}
+
+/// A heading's or title's Markdown: its text without inline formatting or
+/// link targets. docling's `_add_heading` / title branch take
+/// `paragraph.text` — the runs' (hyperlinks' included) text concatenated
+/// and stripped — not the formatted paragraph elements, so neither a bold
+/// heading style (Word's Heading 1 sets `w:b`) nor a bold run puts `**` in
+/// a heading.
+fn heading_markdown(p: XmlNode, ctx: &Ctx) -> String {
     let mut runs: Vec<(String, Fmt, Option<String>)> = Vec::new();
     collect_run_tuples(p, Fmt::default(), None, ctx, &mut runs);
-    group_runs(runs)
+    let text: String = runs.iter().map(|(t, _, _)| t.as_str()).collect();
+    escape_text(text.trim())
 }
 
 /// [`paragraph_markdown`] with `prefix` and a space put before the first
 /// non-blank run, inside that run's formatting — docling's
 /// `_apply_caption_numbering` (#765).
 fn paragraph_markdown_with_prefix(p: XmlNode, ctx: &Ctx, prefix: &str) -> String {
-    let mut runs: Vec<(String, Fmt, Option<String>)> = Vec::new();
-    collect_run_tuples(p, Fmt::default(), None, ctx, &mut runs);
+    let mut runs = paragraph_run_tuples(p, ctx);
     if let Some(run) = runs.iter_mut().find(|r| !r.0.trim().is_empty()) {
         run.0 = format!("{prefix} {}", run.0.trim_start());
     }
@@ -1695,6 +1705,65 @@ impl Fmt {
             formula: false,
         }
     }
+}
+
+/// The bold a paragraph lends its runs beyond their own `rPr` — the two
+/// paragraph-level steps of docling's `_get_format_from_run` (the item tree's
+/// [`super::docx_tree`] `format_from_run`): the paragraph mark's
+/// `w:pPr/w:rPr/w:b`, then the paragraph style's `basedOn` chain. docling ORs
+/// them onto the run's own bold — an explicit `<w:b w:val="0"/>` on the run
+/// does not switch a bold style off there — so a paragraph in Word's bold
+/// Caption style prints `**…**`. A hyperlink's runs are built against the
+/// paragraph too (`Run(r_el, paragraph)` in docling 2.140), so both steps
+/// reach the link text.
+fn paragraph_bold(p: XmlNode, ctx: &Ctx) -> bool {
+    let p_pr = p.children().find(|n| n.has_tag_name("pPr"));
+    let mark = p_pr
+        .and_then(|pr| pr.children().find(|n| n.has_tag_name("rPr")))
+        .is_some_and(|rp| {
+            rp.children()
+                .any(|n| n.has_tag_name("b") && !matches!(attr(n, "val"), Some("0" | "false")))
+        });
+    mark || style_chain_bold(
+        p_pr.and_then(|pr| pr.children().find(|n| n.has_tag_name("pStyle")))
+            .and_then(|s| attr(s, "val"))
+            .unwrap_or(""),
+        ctx,
+    )
+}
+
+/// Whether a paragraph style or one of its `basedOn` ancestors sets
+/// `w:rPr/w:b` on — python-docx's `style.font.bold` climbed through
+/// `base_style`, as docling's `_get_format_from_run` does (bounded, as a
+/// `basedOn` cycle would otherwise loop).
+pub(super) fn style_chain_bold(style_id: &str, ctx: &Ctx) -> bool {
+    let mut sid = style_id;
+    for _ in 0..10 {
+        if sid.is_empty() {
+            return false;
+        }
+        if ctx.style_bold.get(sid) == Some(&true) {
+            return true;
+        }
+        match ctx.style_based.get(sid) {
+            Some(b) => sid = b,
+            None => return false,
+        }
+    }
+    false
+}
+
+/// A paragraph's `(raw text, format, hyperlink url)` tuples, its runs
+/// formatted the way docling's `_get_format_from_run` sees them (the run's
+/// own `rPr` plus [`paragraph_bold`]).
+fn paragraph_run_tuples(p: XmlNode, ctx: &Ctx) -> Vec<(String, Fmt, Option<String>)> {
+    let mut out = Vec::new();
+    let base = Fmt {
+        bold: paragraph_bold(p, ctx),
+        ..Fmt::default()
+    };
+    collect_run_tuples(p, base, None, ctx, &mut out);
+    out
 }
 
 /// Flatten a node's runs to `(raw text, format, hyperlink url)` tuples. A

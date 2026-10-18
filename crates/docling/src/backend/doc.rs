@@ -2098,6 +2098,30 @@ fn style_flag(stis: &[StyleDef], istd: u16, italic: bool) -> bool {
     flip
 }
 
+/// Whether style `istd` or a based-on ancestor sets bold on — what the
+/// `.docx` conversion docling reads a `.doc` through writes as a style's own
+/// `w:rPr/w:b`, which the Word backend's `_get_format_from_run` climbs the
+/// chain for (any ancestor's `font.bold` wins, as in
+/// `docx::style_chain_bold`). A style's own operand is resolved against its
+/// base ([`style_flag`]); a style without one says nothing. Only Word 6/95
+/// stylesheets carry the operands ([`parse_stsh`]).
+fn style_chain_bold(stis: &[StyleDef], istd: u16) -> bool {
+    let mut cur = istd;
+    for _ in 0..MAX_STYLE_CHAIN {
+        let Some(style) = stis.get(cur as usize) else {
+            return false;
+        };
+        if style.bold.is_some() && style_flag(stis, cur, false) {
+            return true;
+        }
+        if style.base == 0x0FFF || style.base == cur {
+            return false;
+        }
+        cur = style.base;
+    }
+    false
+}
+
 /// Ancestors a based-on walk follows before giving up on a malformed or
 /// cyclic chain — the DOCX backend's `MAX_STYLE_INHERITANCE_DEPTH`.
 const MAX_STYLE_CHAIN: usize = 10;
@@ -2847,6 +2871,23 @@ impl ParaAccum {
             if let Some(flip) = fmt.italic_from_style.take() {
                 fmt.italic = style_flag(stis, props.istd, true) != flip;
             }
+        }
+        // docling reads a `.doc` through its `.docx` conversion, whose Word
+        // backend ORs the paragraph style chain's bold onto every run of a
+        // body paragraph or list item (`_get_format_from_run`) — the DOCX
+        // backend's `paragraph_bold`. Headings print `plain`; table cells
+        // keep their runs' own formatting, as the twin's plain cells do.
+        if !props.in_table && style_chain_bold(stis, props.istd) {
+            for (_, fmt) in self.segments.iter_mut() {
+                fmt.bold = true;
+            }
+            self.segments.dedup_by(|next, prev| {
+                let same = next.1 == prev.1;
+                if same {
+                    prev.0.push_str(&next.0);
+                }
+                same
+            });
         }
         let plain = self.plain();
         let markdown = self.markdown();

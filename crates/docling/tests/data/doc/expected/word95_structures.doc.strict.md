@@ -16,15 +16,15 @@
 
 ### Golf	Hotel Alpha Br
 
-Charlie D			Echo Fox
+**Charlie D			Echo Fox**
 
 Golf Hotel Alpha Bravo Charlie Delta
 
-Echo Foxt			Golf Hot
+**Echo Foxt			Golf Hot**
 
 Alpha Bravo Charlie Delta Echo Foxtro
 
-Golf Hot			Alpha
+**Golf Hot			Alpha**
 
 Bravo Charlie Delta Echo
 
