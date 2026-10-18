@@ -318,8 +318,8 @@ fn decode_value(data: &[u8], f: &FieldDef, table: &[u16; 256]) -> Result<String,
             Ok(s.trim().to_string())
         }
         FieldType::Integer | FieldType::UnsignedInteger => {
-            let v = decode_int_like(data, f, table)?;
-            Ok(scale_decimal(&v.unsigned_abs().to_string(), v < 0, f.scale))
+            let (magnitude, negative) = decode_binary(data, f)?;
+            Ok(scale_decimal(&magnitude.to_string(), negative, f.scale))
         }
         FieldType::PackedDecimal => {
             // COMP-3: two digits per byte, sign in the trailing nibble.
@@ -357,21 +357,35 @@ fn decode_value(data: &[u8], f: &FieldDef, table: &[u16; 256]) -> Result<String,
     }
 }
 
+/// A big-endian binary integer as its magnitude and sign: an unsigned field
+/// as it is, a signed one in two's complement. Capped at 16 bytes — Python is
+/// unbounded, but no real copybook carries a wider COMP field. The magnitude
+/// is a `u128`, so a 16-byte unsigned value keeps its top bit (2¹²⁸−1 was
+/// read through an `i128` and came out as −1, #782) and the most negative
+/// signed one (−2¹²⁷) fits too.
+fn decode_binary(data: &[u8], f: &FieldDef) -> Result<(u128, bool), ConversionError> {
+    if data.is_empty() || data.len() > 16 {
+        return Err(decode_err(f, data));
+    }
+    let v = data.iter().fold(0u128, |v, &b| (v << 8) | u128::from(b));
+    let negative = f.kind == FieldType::Integer && data[0] & 0x80 != 0;
+    if !negative {
+        return Ok((v, false));
+    }
+    // Two's complement over the field's width: |v − 2^(8n)| = (!v & mask) + 1.
+    let mask = u128::MAX >> (128 - 8 * data.len());
+    Ok(((!v & mask) + 1, true))
+}
+
 /// Big-endian binary integers, used both for value fields and the record
-/// length prefix. Capped at 16 bytes (i128) — Python is unbounded, but no
-/// real copybook carries a wider COMP field.
+/// length prefix.
 fn decode_int_like(data: &[u8], f: &FieldDef, table: &[u16; 256]) -> Result<i128, ConversionError> {
     match f.kind {
         FieldType::Integer | FieldType::UnsignedInteger => {
-            if data.is_empty() || data.len() > 16 {
-                return Err(decode_err(f, data));
-            }
-            let negative = f.kind == FieldType::Integer && data[0] & 0x80 != 0;
-            let mut v: i128 = if negative { -1 } else { 0 };
-            for &b in data {
-                v = (v << 8) | i128::from(b);
-            }
-            Ok(v)
+            let (magnitude, negative) = decode_binary(data, f)?;
+            // A length beyond the `i128` range is no usable length either.
+            let v = i128::try_from(magnitude).map_err(|_| decode_err(f, data))?;
+            Ok(if negative { -v } else { v })
         }
         // A length prefix may also be declared as a display numeric.
         _ => decode_value(data, f, table)?
@@ -420,7 +434,7 @@ include!("ebcdic_tables.rs");
 
 #[cfg(test)]
 mod tests {
-    use super::scale_decimal;
+    use super::{decode_int_like, decode_value, scale_decimal, FieldDef, FieldType, CP037};
 
     #[test]
     fn decimal_rendering_matches_python() {
@@ -434,5 +448,54 @@ mod tests {
         assert_eq!(scale_decimal("5", true, 7), "-0.0000005");
         assert_eq!(scale_decimal("52", false, 7), "0.0000052");
         assert_eq!(scale_decimal("007", false, 1), "0.7");
+    }
+
+    fn field(kind: FieldType, size: usize, scale: u32) -> FieldDef {
+        FieldDef {
+            name: "f".into(),
+            size,
+            kind,
+            scale,
+        }
+    }
+
+    /// #782: a 16-byte unsigned field with the top bit set is a positive
+    /// number (Python's unbounded `int.from_bytes`), not a negative `i128`;
+    /// signed fields keep their two's complement down to −2¹²⁷.
+    #[test]
+    fn wide_binary_integers_decode_like_python() {
+        let value = |kind, bytes: &[u8], scale| {
+            decode_value(bytes, &field(kind, bytes.len(), scale), &CP037).unwrap()
+        };
+        let all_ones = [0xFFu8; 16];
+        let min = {
+            let mut b = [0u8; 16];
+            b[0] = 0x80;
+            b
+        };
+        use FieldType::{Integer, UnsignedInteger};
+        assert_eq!(
+            value(UnsignedInteger, &all_ones, 0),
+            "340282366920938463463374607431768211455"
+        );
+        assert_eq!(
+            value(UnsignedInteger, &all_ones, 2),
+            "3402823669209384634633746074317682114.55"
+        );
+        assert_eq!(value(Integer, &all_ones, 0), "-1");
+        assert_eq!(value(Integer, &all_ones, 2), "-0.01");
+        assert_eq!(
+            value(Integer, &min, 0),
+            "-170141183460469231731687303715884105728"
+        );
+        assert_eq!(value(UnsignedInteger, &[0xFF; 4], 0), "4294967295");
+        assert_eq!(value(Integer, &[0xFF, 0xFE], 0), "-2");
+        assert_eq!(value(Integer, &[0x01, 0x00], 1), "25.6");
+        // A record length beyond the `i128` range is a decode error, not a
+        // wrapped negative length.
+        let len = |kind, bytes: &[u8]| decode_int_like(bytes, &field(kind, bytes.len(), 0), &CP037);
+        assert_eq!(len(Integer, &[0xFF, 0xFE]).unwrap(), -2);
+        assert_eq!(len(UnsignedInteger, &[0x01, 0x00]).unwrap(), 256);
+        assert!(len(UnsignedInteger, &all_ones).is_err());
     }
 }
