@@ -198,7 +198,7 @@
 <p>Тем не менее, мы понимаем, что в силу временных ограничений курса кто-то может успеть установить TensorFlow. Поэтому мы сделали пункты 1 и 2 необязательными. На оценку они не повлияют — можете сразу переходить к третьему пункту.</p>
 <span class='inline-group'>Помимо tensorflow, потребуется библиотека <strong><code>scipy</code></strong> . Если вы уже работали с Anaconda и/или выполняли задания в нашей специализации, то она должна присутствовать.</span>
 <h2>Данные</h2>
-<p>Скачать данные нужно тут: https://yadi.sk/d/6m_KbM4HvmLfs</p>
+<span class='inline-group'>Скачать данные нужно тут: <a href="https://yadi.sk/d/6m_KbM4HvmLfs">https://yadi.sk/d/6m_KbM4HvmLfs</a></span>
 <span class='inline-group'>Данные это часть выборки <em>Cars Dataset</em> ( <a href="http://ai.stanford.edu/~jkrause/cars/car_dataset.html">link</a> ). Исходный датасет содержит 16,185 изображений автомобилей, принадлежащих к 196 классам. Данные разделены на 8,144 тренировочных и 8,041 тестовых изображений, при этом каждый класс разделён приблизительно поровну между тестом и трейном. Все классы уровня параметров <em>Марка</em> , <em>Год</em> , <em>Модель</em> и др. (например, <em>2012 Tesla Model S or 2012 BMW M3 coupe</em> ).</span>
 <span class='inline-group'>В нашем же случае в <code>train</code> 204 изображения, и в <code>test</code> — 202 изображения.</span>
 <h2>Что делать</h2>
@@ -562,7 +562,7 @@ save_answerArray("vgg16_answer2.txt",  prob_fc2[:20] )</code></pre>
 <span class='inline-group'>Воспользоваться классификатором <code>SVC</code> с <code>random_state=0</code> .</span>
 </li>
 </ul>
-<span class='inline-group'><strong>Важно!</strong> Если вам не удалось поставить <code>tensorflow</code> , то необходимо вместо использования функции <code>get_features</code> , загрузить предпосчитанные <code>X</code> , <code>Y</code> , <code>X_test</code> , <code>Y_test</code> из архива: https://yadi.sk/d/RzMOK8Fjvs6Ln и воспользоваться функцией <code>np.load</code> для их загрузки, а после этого два последних пункта.</span>
+<span class='inline-group'><strong>Важно!</strong> Если вам не удалось поставить <code>tensorflow</code> , то необходимо вместо использования функции <code>get_features</code> , загрузить предпосчитанные <code>X</code> , <code>Y</code> , <code>X_test</code> , <code>Y_test</code> из архива: <a href="https://yadi.sk/d/RzMOK8Fjvs6Ln">https://yadi.sk/d/RzMOK8Fjvs6Ln</a> и воспользоваться функцией <code>np.load</code> для их загрузки, а после этого два последних пункта.</span>
 <span class='inline-group'><strong>Задание:</strong> Сколько правильных ответов получается на валидационной выборке из папки <code>test</code> ? Запишите в файл.</span>
 <pre><code># Функция, возвращающая признаковое описание для каждого файла jpg в заданной папке
 def get_features(folder, ydict):

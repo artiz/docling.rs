@@ -57,25 +57,22 @@
         "$ref": "#/texts/37"
       },
       {
-        "$ref": "#/texts/38"
-      },
-      {
         "$ref": "#/groups/10"
       },
       {
         "$ref": "#/groups/11"
       },
       {
-        "$ref": "#/texts/57"
+        "$ref": "#/groups/12"
       },
       {
         "$ref": "#/texts/58"
       },
       {
-        "$ref": "#/groups/12"
+        "$ref": "#/texts/59"
       },
       {
-        "$ref": "#/texts/65"
+        "$ref": "#/groups/13"
       },
       {
         "$ref": "#/texts/66"
@@ -84,10 +81,10 @@
         "$ref": "#/texts/67"
       },
       {
-        "$ref": "#/groups/15"
+        "$ref": "#/texts/68"
       },
       {
-        "$ref": "#/texts/70"
+        "$ref": "#/groups/16"
       },
       {
         "$ref": "#/texts/71"
@@ -138,13 +135,13 @@
         "$ref": "#/texts/86"
       },
       {
-        "$ref": "#/groups/17"
+        "$ref": "#/texts/87"
       },
       {
         "$ref": "#/groups/18"
       },
       {
-        "$ref": "#/texts/106"
+        "$ref": "#/groups/19"
       },
       {
         "$ref": "#/texts/107"
@@ -153,13 +150,13 @@
         "$ref": "#/texts/108"
       },
       {
-        "$ref": "#/groups/20"
+        "$ref": "#/texts/109"
       },
       {
         "$ref": "#/groups/21"
       },
       {
-        "$ref": "#/texts/124"
+        "$ref": "#/groups/22"
       },
       {
         "$ref": "#/texts/125"
@@ -168,25 +165,19 @@
         "$ref": "#/texts/126"
       },
       {
-        "$ref": "#/groups/23"
+        "$ref": "#/texts/127"
       },
       {
         "$ref": "#/groups/24"
       },
       {
-        "$ref": "#/groups/28"
+        "$ref": "#/groups/25"
       },
       {
         "$ref": "#/groups/29"
       },
       {
-        "$ref": "#/texts/174"
-      },
-      {
-        "$ref": "#/texts/175"
-      },
-      {
-        "$ref": "#/texts/176"
+        "$ref": "#/groups/30"
       },
       {
         "$ref": "#/texts/177"
@@ -199,6 +190,15 @@
       },
       {
         "$ref": "#/texts/180"
+      },
+      {
+        "$ref": "#/texts/181"
+      },
+      {
+        "$ref": "#/texts/182"
+      },
+      {
+        "$ref": "#/texts/183"
       }
     ],
     "content_layer": "body",
@@ -419,8 +419,22 @@
       },
       "children": [
         {
-          "$ref": "#/texts/39"
+          "$ref": "#/texts/38"
         },
+        {
+          "$ref": "#/texts/39"
+        }
+      ],
+      "content_layer": "body",
+      "name": "group",
+      "label": "inline"
+    },
+    {
+      "self_ref": "#/groups/11",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [
         {
           "$ref": "#/texts/40"
         },
@@ -456,32 +470,9 @@
         },
         {
           "$ref": "#/texts/51"
-        }
-      ],
-      "content_layer": "body",
-      "name": "group",
-      "label": "inline"
-    },
-    {
-      "self_ref": "#/groups/11",
-      "parent": {
-        "$ref": "#/body"
-      },
-      "children": [
+        },
         {
           "$ref": "#/texts/52"
-        },
-        {
-          "$ref": "#/texts/53"
-        },
-        {
-          "$ref": "#/texts/54"
-        },
-        {
-          "$ref": "#/texts/55"
-        },
-        {
-          "$ref": "#/texts/56"
         }
       ],
       "content_layer": "body",
@@ -495,27 +486,19 @@
       },
       "children": [
         {
-          "$ref": "#/texts/59"
+          "$ref": "#/texts/53"
         },
         {
-          "$ref": "#/texts/62"
-        }
-      ],
-      "content_layer": "body",
-      "name": "list",
-      "label": "list"
-    },
-    {
-      "self_ref": "#/groups/13",
-      "parent": {
-        "$ref": "#/texts/59"
-      },
-      "children": [
-        {
-          "$ref": "#/texts/60"
+          "$ref": "#/texts/54"
         },
         {
-          "$ref": "#/texts/61"
+          "$ref": "#/texts/55"
+        },
+        {
+          "$ref": "#/texts/56"
+        },
+        {
+          "$ref": "#/texts/57"
         }
       ],
       "content_layer": "body",
@@ -523,16 +506,33 @@
       "label": "inline"
     },
     {
-      "self_ref": "#/groups/14",
+      "self_ref": "#/groups/13",
       "parent": {
-        "$ref": "#/texts/62"
+        "$ref": "#/body"
       },
       "children": [
         {
-          "$ref": "#/texts/63"
+          "$ref": "#/texts/60"
         },
         {
-          "$ref": "#/texts/64"
+          "$ref": "#/texts/63"
+        }
+      ],
+      "content_layer": "body",
+      "name": "list",
+      "label": "list"
+    },
+    {
+      "self_ref": "#/groups/14",
+      "parent": {
+        "$ref": "#/texts/60"
+      },
+      "children": [
+        {
+          "$ref": "#/texts/61"
+        },
+        {
+          "$ref": "#/texts/62"
         }
       ],
       "content_layer": "body",
@@ -542,31 +542,14 @@
     {
       "self_ref": "#/groups/15",
       "parent": {
-        "$ref": "#/body"
+        "$ref": "#/texts/63"
       },
       "children": [
         {
-          "$ref": "#/texts/68"
+          "$ref": "#/texts/64"
         },
         {
-          "$ref": "#/texts/69"
-        }
-      ],
-      "content_layer": "body",
-      "name": "list",
-      "label": "list"
-    },
-    {
-      "self_ref": "#/groups/16",
-      "parent": {
-        "$ref": "#/texts/86"
-      },
-      "children": [
-        {
-          "$ref": "#/texts/87"
-        },
-        {
-          "$ref": "#/texts/88"
+          "$ref": "#/texts/65"
         }
       ],
       "content_layer": "body",
@@ -574,14 +557,45 @@
       "label": "inline"
     },
     {
-      "self_ref": "#/groups/17",
+      "self_ref": "#/groups/16",
       "parent": {
         "$ref": "#/body"
       },
       "children": [
         {
-          "$ref": "#/texts/89"
+          "$ref": "#/texts/69"
         },
+        {
+          "$ref": "#/texts/70"
+        }
+      ],
+      "content_layer": "body",
+      "name": "list",
+      "label": "list"
+    },
+    {
+      "self_ref": "#/groups/17",
+      "parent": {
+        "$ref": "#/texts/87"
+      },
+      "children": [
+        {
+          "$ref": "#/texts/88"
+        },
+        {
+          "$ref": "#/texts/89"
+        }
+      ],
+      "content_layer": "body",
+      "name": "group",
+      "label": "inline"
+    },
+    {
+      "self_ref": "#/groups/18",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [
         {
           "$ref": "#/texts/90"
         },
@@ -617,29 +631,9 @@
         },
         {
           "$ref": "#/texts/101"
-        }
-      ],
-      "content_layer": "body",
-      "name": "group",
-      "label": "inline"
-    },
-    {
-      "self_ref": "#/groups/18",
-      "parent": {
-        "$ref": "#/body"
-      },
-      "children": [
+        },
         {
           "$ref": "#/texts/102"
-        },
-        {
-          "$ref": "#/texts/103"
-        },
-        {
-          "$ref": "#/texts/104"
-        },
-        {
-          "$ref": "#/texts/105"
         }
       ],
       "content_layer": "body",
@@ -649,14 +643,20 @@
     {
       "self_ref": "#/groups/19",
       "parent": {
-        "$ref": "#/texts/108"
+        "$ref": "#/body"
       },
       "children": [
         {
-          "$ref": "#/texts/109"
+          "$ref": "#/texts/103"
         },
         {
-          "$ref": "#/texts/110"
+          "$ref": "#/texts/104"
+        },
+        {
+          "$ref": "#/texts/105"
+        },
+        {
+          "$ref": "#/texts/106"
         }
       ],
       "content_layer": "body",
@@ -666,12 +666,26 @@
     {
       "self_ref": "#/groups/20",
       "parent": {
-        "$ref": "#/body"
+        "$ref": "#/texts/109"
       },
       "children": [
         {
-          "$ref": "#/texts/111"
+          "$ref": "#/texts/110"
         },
+        {
+          "$ref": "#/texts/111"
+        }
+      ],
+      "content_layer": "body",
+      "name": "group",
+      "label": "inline"
+    },
+    {
+      "self_ref": "#/groups/21",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [
         {
           "$ref": "#/texts/112"
         },
@@ -689,6 +703,9 @@
         },
         {
           "$ref": "#/texts/117"
+        },
+        {
+          "$ref": "#/texts/118"
         }
       ],
       "content_layer": "body",
@@ -696,14 +713,11 @@
       "label": "inline"
     },
     {
-      "self_ref": "#/groups/21",
+      "self_ref": "#/groups/22",
       "parent": {
         "$ref": "#/body"
       },
       "children": [
-        {
-          "$ref": "#/texts/118"
-        },
         {
           "$ref": "#/texts/119"
         },
@@ -718,23 +732,9 @@
         },
         {
           "$ref": "#/texts/123"
-        }
-      ],
-      "content_layer": "body",
-      "name": "group",
-      "label": "inline"
-    },
-    {
-      "self_ref": "#/groups/22",
-      "parent": {
-        "$ref": "#/texts/126"
-      },
-      "children": [
-        {
-          "$ref": "#/texts/127"
         },
         {
-          "$ref": "#/texts/128"
+          "$ref": "#/texts/124"
         }
       ],
       "content_layer": "body",
@@ -744,23 +744,14 @@
     {
       "self_ref": "#/groups/23",
       "parent": {
-        "$ref": "#/body"
+        "$ref": "#/texts/127"
       },
       "children": [
         {
+          "$ref": "#/texts/128"
+        },
+        {
           "$ref": "#/texts/129"
-        },
-        {
-          "$ref": "#/texts/130"
-        },
-        {
-          "$ref": "#/texts/131"
-        },
-        {
-          "$ref": "#/texts/132"
-        },
-        {
-          "$ref": "#/texts/133"
         }
       ],
       "content_layer": "body",
@@ -774,13 +765,39 @@
       },
       "children": [
         {
+          "$ref": "#/texts/130"
+        },
+        {
+          "$ref": "#/texts/131"
+        },
+        {
+          "$ref": "#/texts/132"
+        },
+        {
+          "$ref": "#/texts/133"
+        },
+        {
           "$ref": "#/texts/134"
+        }
+      ],
+      "content_layer": "body",
+      "name": "group",
+      "label": "inline"
+    },
+    {
+      "self_ref": "#/groups/25",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [
+        {
+          "$ref": "#/texts/135"
         },
         {
-          "$ref": "#/texts/140"
+          "$ref": "#/texts/141"
         },
         {
-          "$ref": "#/texts/148"
+          "$ref": "#/texts/149"
         }
       ],
       "content_layer": "body",
@@ -788,14 +805,11 @@
       "label": "list"
     },
     {
-      "self_ref": "#/groups/25",
+      "self_ref": "#/groups/26",
       "parent": {
-        "$ref": "#/texts/134"
+        "$ref": "#/texts/135"
       },
       "children": [
-        {
-          "$ref": "#/texts/135"
-        },
         {
           "$ref": "#/texts/136"
         },
@@ -807,6 +821,9 @@
         },
         {
           "$ref": "#/texts/139"
+        },
+        {
+          "$ref": "#/texts/140"
         }
       ],
       "content_layer": "body",
@@ -814,14 +831,11 @@
       "label": "inline"
     },
     {
-      "self_ref": "#/groups/26",
+      "self_ref": "#/groups/27",
       "parent": {
-        "$ref": "#/texts/140"
+        "$ref": "#/texts/141"
       },
       "children": [
-        {
-          "$ref": "#/texts/141"
-        },
         {
           "$ref": "#/texts/142"
         },
@@ -839,6 +853,9 @@
         },
         {
           "$ref": "#/texts/147"
+        },
+        {
+          "$ref": "#/texts/148"
         }
       ],
       "content_layer": "body",
@@ -846,14 +863,11 @@
       "label": "inline"
     },
     {
-      "self_ref": "#/groups/27",
+      "self_ref": "#/groups/28",
       "parent": {
-        "$ref": "#/texts/148"
+        "$ref": "#/texts/149"
       },
       "children": [
-        {
-          "$ref": "#/texts/149"
-        },
         {
           "$ref": "#/texts/150"
         },
@@ -865,6 +879,9 @@
         },
         {
           "$ref": "#/texts/153"
+        },
+        {
+          "$ref": "#/texts/154"
         }
       ],
       "content_layer": "body",
@@ -872,14 +889,11 @@
       "label": "inline"
     },
     {
-      "self_ref": "#/groups/28",
+      "self_ref": "#/groups/29",
       "parent": {
         "$ref": "#/body"
       },
       "children": [
-        {
-          "$ref": "#/texts/154"
-        },
         {
           "$ref": "#/texts/155"
         },
@@ -924,18 +938,7 @@
         },
         {
           "$ref": "#/texts/169"
-        }
-      ],
-      "content_layer": "body",
-      "name": "group",
-      "label": "inline"
-    },
-    {
-      "self_ref": "#/groups/29",
-      "parent": {
-        "$ref": "#/body"
-      },
-      "children": [
+        },
         {
           "$ref": "#/texts/170"
         },
@@ -944,9 +947,29 @@
         },
         {
           "$ref": "#/texts/172"
-        },
+        }
+      ],
+      "content_layer": "body",
+      "name": "group",
+      "label": "inline"
+    },
+    {
+      "self_ref": "#/groups/30",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [
         {
           "$ref": "#/texts/173"
+        },
+        {
+          "$ref": "#/texts/174"
+        },
+        {
+          "$ref": "#/texts/175"
+        },
+        {
+          "$ref": "#/texts/176"
         }
       ],
       "content_layer": "body",
@@ -1475,14 +1498,14 @@
     {
       "self_ref": "#/texts/38",
       "parent": {
-        "$ref": "#/body"
+        "$ref": "#/groups/10"
       },
       "children": [],
       "content_layer": "body",
       "label": "text",
       "prov": [],
-      "orig": "Скачать данные нужно тут: https://yadi.sk/d/6m_KbM4HvmLfs",
-      "text": "Скачать данные нужно тут: https://yadi.sk/d/6m_KbM4HvmLfs"
+      "orig": "Скачать данные нужно тут:",
+      "text": "Скачать данные нужно тут:"
     },
     {
       "self_ref": "#/texts/39",
@@ -1493,13 +1516,26 @@
       "content_layer": "body",
       "label": "text",
       "prov": [],
-      "orig": "Данные это часть выборки",
-      "text": "Данные это часть выборки"
+      "orig": "https://yadi.sk/d/6m_KbM4HvmLfs",
+      "text": "https://yadi.sk/d/6m_KbM4HvmLfs",
+      "hyperlink": "https://yadi.sk/d/6m_KbM4HvmLfs"
     },
     {
       "self_ref": "#/texts/40",
       "parent": {
-        "$ref": "#/groups/10"
+        "$ref": "#/groups/11"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "Данные это часть выборки",
+      "text": "Данные это часть выборки"
+    },
+    {
+      "self_ref": "#/texts/41",
+      "parent": {
+        "$ref": "#/groups/11"
       },
       "children": [],
       "content_layer": "body",
@@ -1516,9 +1552,9 @@
       }
     },
     {
-      "self_ref": "#/texts/41",
+      "self_ref": "#/texts/42",
       "parent": {
-        "$ref": "#/groups/10"
+        "$ref": "#/groups/11"
       },
       "children": [],
       "content_layer": "body",
@@ -1528,9 +1564,9 @@
       "text": "("
     },
     {
-      "self_ref": "#/texts/42",
+      "self_ref": "#/texts/43",
       "parent": {
-        "$ref": "#/groups/10"
+        "$ref": "#/groups/11"
       },
       "children": [],
       "content_layer": "body",
@@ -1541,9 +1577,9 @@
       "hyperlink": "http://ai.stanford.edu/~jkrause/cars/car_dataset.html"
     },
     {
-      "self_ref": "#/texts/43",
+      "self_ref": "#/texts/44",
       "parent": {
-        "$ref": "#/groups/10"
+        "$ref": "#/groups/11"
       },
       "children": [],
       "content_layer": "body",
@@ -1553,9 +1589,9 @@
       "text": "). Исходный датасет содержит 16,185 изображений автомобилей, принадлежащих к 196 классам. Данные разделены на 8,144 тренировочных и 8,041 тестовых изображений, при этом каждый класс разделён приблизительно поровну между тестом и трейном. Все классы уровня параметров"
     },
     {
-      "self_ref": "#/texts/44",
+      "self_ref": "#/texts/45",
       "parent": {
-        "$ref": "#/groups/10"
+        "$ref": "#/groups/11"
       },
       "children": [],
       "content_layer": "body",
@@ -1572,9 +1608,9 @@
       }
     },
     {
-      "self_ref": "#/texts/45",
+      "self_ref": "#/texts/46",
       "parent": {
-        "$ref": "#/groups/10"
+        "$ref": "#/groups/11"
       },
       "children": [],
       "content_layer": "body",
@@ -1584,9 +1620,9 @@
       "text": ","
     },
     {
-      "self_ref": "#/texts/46",
+      "self_ref": "#/texts/47",
       "parent": {
-        "$ref": "#/groups/10"
+        "$ref": "#/groups/11"
       },
       "children": [],
       "content_layer": "body",
@@ -1603,9 +1639,9 @@
       }
     },
     {
-      "self_ref": "#/texts/47",
+      "self_ref": "#/texts/48",
       "parent": {
-        "$ref": "#/groups/10"
+        "$ref": "#/groups/11"
       },
       "children": [],
       "content_layer": "body",
@@ -1615,9 +1651,9 @@
       "text": ","
     },
     {
-      "self_ref": "#/texts/48",
+      "self_ref": "#/texts/49",
       "parent": {
-        "$ref": "#/groups/10"
+        "$ref": "#/groups/11"
       },
       "children": [],
       "content_layer": "body",
@@ -1634,9 +1670,9 @@
       }
     },
     {
-      "self_ref": "#/texts/49",
+      "self_ref": "#/texts/50",
       "parent": {
-        "$ref": "#/groups/10"
+        "$ref": "#/groups/11"
       },
       "children": [],
       "content_layer": "body",
@@ -1646,9 +1682,9 @@
       "text": "и др. (например,"
     },
     {
-      "self_ref": "#/texts/50",
+      "self_ref": "#/texts/51",
       "parent": {
-        "$ref": "#/groups/10"
+        "$ref": "#/groups/11"
       },
       "children": [],
       "content_layer": "body",
@@ -1665,9 +1701,9 @@
       }
     },
     {
-      "self_ref": "#/texts/51",
+      "self_ref": "#/texts/52",
       "parent": {
-        "$ref": "#/groups/10"
+        "$ref": "#/groups/11"
       },
       "children": [],
       "content_layer": "body",
@@ -1677,9 +1713,9 @@
       "text": ")."
     },
     {
-      "self_ref": "#/texts/52",
+      "self_ref": "#/texts/53",
       "parent": {
-        "$ref": "#/groups/11"
+        "$ref": "#/groups/12"
       },
       "children": [],
       "content_layer": "body",
@@ -1689,9 +1725,9 @@
       "text": "В нашем же случае в"
     },
     {
-      "self_ref": "#/texts/53",
+      "self_ref": "#/texts/54",
       "parent": {
-        "$ref": "#/groups/11"
+        "$ref": "#/groups/12"
       },
       "children": [],
       "content_layer": "body",
@@ -1705,9 +1741,9 @@
       "code_language": "unknown"
     },
     {
-      "self_ref": "#/texts/54",
+      "self_ref": "#/texts/55",
       "parent": {
-        "$ref": "#/groups/11"
+        "$ref": "#/groups/12"
       },
       "children": [],
       "content_layer": "body",
@@ -1717,9 +1753,9 @@
       "text": "204 изображения, и в"
     },
     {
-      "self_ref": "#/texts/55",
+      "self_ref": "#/texts/56",
       "parent": {
-        "$ref": "#/groups/11"
+        "$ref": "#/groups/12"
       },
       "children": [],
       "content_layer": "body",
@@ -1733,9 +1769,9 @@
       "code_language": "unknown"
     },
     {
-      "self_ref": "#/texts/56",
+      "self_ref": "#/texts/57",
       "parent": {
-        "$ref": "#/groups/11"
+        "$ref": "#/groups/12"
       },
       "children": [],
       "content_layer": "body",
@@ -1745,7 +1781,7 @@
       "text": "— 202 изображения."
     },
     {
-      "self_ref": "#/texts/57",
+      "self_ref": "#/texts/58",
       "parent": {
         "$ref": "#/body"
       },
@@ -1758,7 +1794,7 @@
       "level": 1
     },
     {
-      "self_ref": "#/texts/58",
+      "self_ref": "#/texts/59",
       "parent": {
         "$ref": "#/body"
       },
@@ -1770,52 +1806,9 @@
       "text": "Помимо данных, потребуется скачать:"
     },
     {
-      "self_ref": "#/texts/59",
-      "parent": {
-        "$ref": "#/groups/12"
-      },
-      "children": [
-        {
-          "$ref": "#/groups/13"
-        }
-      ],
-      "content_layer": "body",
-      "label": "list_item",
-      "prov": [],
-      "orig": "",
-      "text": "",
-      "enumerated": false,
-      "marker": ""
-    },
-    {
       "self_ref": "#/texts/60",
       "parent": {
         "$ref": "#/groups/13"
-      },
-      "children": [],
-      "content_layer": "body",
-      "label": "text",
-      "prov": [],
-      "orig": "код",
-      "text": "код",
-      "hyperlink": "https://github.com/ton4eg/coursera_pa"
-    },
-    {
-      "self_ref": "#/texts/61",
-      "parent": {
-        "$ref": "#/groups/13"
-      },
-      "children": [],
-      "content_layer": "body",
-      "label": "text",
-      "prov": [],
-      "orig": ",",
-      "text": ","
-    },
-    {
-      "self_ref": "#/texts/62",
-      "parent": {
-        "$ref": "#/groups/12"
       },
       "children": [
         {
@@ -1831,9 +1824,52 @@
       "marker": ""
     },
     {
-      "self_ref": "#/texts/63",
+      "self_ref": "#/texts/61",
       "parent": {
         "$ref": "#/groups/14"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "код",
+      "text": "код",
+      "hyperlink": "https://github.com/ton4eg/coursera_pa"
+    },
+    {
+      "self_ref": "#/texts/62",
+      "parent": {
+        "$ref": "#/groups/14"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": ",",
+      "text": ","
+    },
+    {
+      "self_ref": "#/texts/63",
+      "parent": {
+        "$ref": "#/groups/13"
+      },
+      "children": [
+        {
+          "$ref": "#/groups/15"
+        }
+      ],
+      "content_layer": "body",
+      "label": "list_item",
+      "prov": [],
+      "orig": "",
+      "text": "",
+      "enumerated": false,
+      "marker": ""
+    },
+    {
+      "self_ref": "#/texts/64",
+      "parent": {
+        "$ref": "#/groups/15"
       },
       "children": [],
       "content_layer": "body",
@@ -1843,9 +1879,9 @@
       "text": "веса модели"
     },
     {
-      "self_ref": "#/texts/64",
+      "self_ref": "#/texts/65",
       "parent": {
-        "$ref": "#/groups/14"
+        "$ref": "#/groups/15"
       },
       "children": [],
       "content_layer": "body",
@@ -1856,7 +1892,7 @@
       "hyperlink": "https://yadi.sk/d/9-3kXyxRvnBwh"
     },
     {
-      "self_ref": "#/texts/65",
+      "self_ref": "#/texts/66",
       "parent": {
         "$ref": "#/body"
       },
@@ -1868,7 +1904,7 @@
       "text": "Положите данные, код и модель в одну папку. У вас должна получиться такая структура:"
     },
     {
-      "self_ref": "#/texts/66",
+      "self_ref": "#/texts/67",
       "parent": {
         "$ref": "#/body"
       },
@@ -1884,7 +1920,7 @@
       "code_language": "unknown"
     },
     {
-      "self_ref": "#/texts/67",
+      "self_ref": "#/texts/68",
       "parent": {
         "$ref": "#/body"
       },
@@ -1897,9 +1933,9 @@
       "level": 1
     },
     {
-      "self_ref": "#/texts/68",
+      "self_ref": "#/texts/69",
       "parent": {
-        "$ref": "#/groups/15"
+        "$ref": "#/groups/16"
       },
       "children": [],
       "content_layer": "body",
@@ -1911,9 +1947,9 @@
       "marker": ""
     },
     {
-      "self_ref": "#/texts/69",
+      "self_ref": "#/texts/70",
       "parent": {
-        "$ref": "#/groups/15"
+        "$ref": "#/groups/16"
       },
       "children": [],
       "content_layer": "body",
@@ -1925,7 +1961,7 @@
       "marker": ""
     },
     {
-      "self_ref": "#/texts/70",
+      "self_ref": "#/texts/71",
       "parent": {
         "$ref": "#/body"
       },
@@ -1937,7 +1973,7 @@
       "text": "Рекомендуется запускать докер командой"
     },
     {
-      "self_ref": "#/texts/71",
+      "self_ref": "#/texts/72",
       "parent": {
         "$ref": "#/body"
       },
@@ -1949,7 +1985,7 @@
       "text": "docker run -it -p 127.0.0.1:8888:8888 -v $PWD:/notebooks gcr.io/tensorflow/tensorflow"
     },
     {
-      "self_ref": "#/texts/72",
+      "self_ref": "#/texts/73",
       "parent": {
         "$ref": "#/body"
       },
@@ -1961,7 +1997,7 @@
       "text": "при запуске из папки, где лежит данный ноутбук и все нужные файлы, они сразу окажутся в рабочей папке Jupyter Notebook."
     },
     {
-      "self_ref": "#/texts/73",
+      "self_ref": "#/texts/74",
       "parent": {
         "$ref": "#/body"
       },
@@ -1973,7 +2009,7 @@
       "text": "Следующие две ячейки содержат команды, доустанавливающие нужные библиотеки."
     },
     {
-      "self_ref": "#/texts/74",
+      "self_ref": "#/texts/75",
       "parent": {
         "$ref": "#/body"
       },
@@ -1989,7 +2025,7 @@
       "code_language": "Python"
     },
     {
-      "self_ref": "#/texts/75",
+      "self_ref": "#/texts/76",
       "parent": {
         "$ref": "#/body"
       },
@@ -2005,7 +2041,7 @@
       "code_language": "Python"
     },
     {
-      "self_ref": "#/texts/76",
+      "self_ref": "#/texts/77",
       "parent": {
         "$ref": "#/body"
       },
@@ -2017,7 +2053,7 @@
       "text": "Импортируем всё, что нам нужно для работы."
     },
     {
-      "self_ref": "#/texts/77",
+      "self_ref": "#/texts/78",
       "parent": {
         "$ref": "#/body"
       },
@@ -2033,7 +2069,7 @@
       "code_language": "Python"
     },
     {
-      "self_ref": "#/texts/78",
+      "self_ref": "#/texts/79",
       "parent": {
         "$ref": "#/body"
       },
@@ -2045,7 +2081,7 @@
       "text": "В этом классе содержится описание модели VGG - структура, инициализация, загрузка весов. Следует помнить - пока не запущена сессия Tensorflow, никакой реальной работы не производится."
     },
     {
-      "self_ref": "#/texts/79",
+      "self_ref": "#/texts/80",
       "parent": {
         "$ref": "#/body"
       },
@@ -2061,7 +2097,7 @@
       "code_language": "Python"
     },
     {
-      "self_ref": "#/texts/80",
+      "self_ref": "#/texts/81",
       "parent": {
         "$ref": "#/body"
       },
@@ -2077,7 +2113,7 @@
       "code_language": "Python"
     },
     {
-      "self_ref": "#/texts/81",
+      "self_ref": "#/texts/82",
       "parent": {
         "$ref": "#/body"
       },
@@ -2093,7 +2129,7 @@
       "code_language": "Python"
     },
     {
-      "self_ref": "#/texts/82",
+      "self_ref": "#/texts/83",
       "parent": {
         "$ref": "#/body"
       },
@@ -2109,7 +2145,7 @@
       "code_language": "Python"
     },
     {
-      "self_ref": "#/texts/83",
+      "self_ref": "#/texts/84",
       "parent": {
         "$ref": "#/body"
       },
@@ -2125,7 +2161,7 @@
       "code_language": "Python"
     },
     {
-      "self_ref": "#/texts/84",
+      "self_ref": "#/texts/85",
       "parent": {
         "$ref": "#/body"
       },
@@ -2141,7 +2177,7 @@
       "code_language": "Python"
     },
     {
-      "self_ref": "#/texts/85",
+      "self_ref": "#/texts/86",
       "parent": {
         "$ref": "#/body"
       },
@@ -2153,13 +2189,13 @@
       "text": "Все ячейки выше не нуждаются в модификации для выполнения задания, и необходимы к исполнению только один раз, в порядке следования. Повторный запуск ячейки с инициализацией модели будет сжирать память. Вы предупреждены."
     },
     {
-      "self_ref": "#/texts/86",
+      "self_ref": "#/texts/87",
       "parent": {
         "$ref": "#/body"
       },
       "children": [
         {
-          "$ref": "#/groups/16"
+          "$ref": "#/groups/17"
         }
       ],
       "content_layer": "body",
@@ -2170,9 +2206,9 @@
       "level": 1
     },
     {
-      "self_ref": "#/texts/87",
+      "self_ref": "#/texts/88",
       "parent": {
-        "$ref": "#/groups/16"
+        "$ref": "#/groups/17"
       },
       "children": [],
       "content_layer": "body",
@@ -2180,18 +2216,6 @@
       "prov": [],
       "orig": "Задание 1",
       "text": "Задание 1"
-    },
-    {
-      "self_ref": "#/texts/88",
-      "parent": {
-        "$ref": "#/groups/16"
-      },
-      "children": [],
-      "content_layer": "body",
-      "label": "text",
-      "prov": [],
-      "orig": ".",
-      "text": "."
     },
     {
       "self_ref": "#/texts/89",
@@ -2202,13 +2226,25 @@
       "content_layer": "body",
       "label": "text",
       "prov": [],
-      "orig": "Для начала нужно запустить готовую модель",
-      "text": "Для начала нужно запустить готовую модель"
+      "orig": ".",
+      "text": "."
     },
     {
       "self_ref": "#/texts/90",
       "parent": {
-        "$ref": "#/groups/17"
+        "$ref": "#/groups/18"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "Для начала нужно запустить готовую модель",
+      "text": "Для начала нужно запустить готовую модель"
+    },
+    {
+      "self_ref": "#/texts/91",
+      "parent": {
+        "$ref": "#/groups/18"
       },
       "children": [],
       "content_layer": "body",
@@ -2222,9 +2258,9 @@
       "code_language": "unknown"
     },
     {
-      "self_ref": "#/texts/91",
+      "self_ref": "#/texts/92",
       "parent": {
-        "$ref": "#/groups/17"
+        "$ref": "#/groups/18"
       },
       "children": [],
       "content_layer": "body",
@@ -2234,9 +2270,9 @@
       "text": ", предобученную на"
     },
     {
-      "self_ref": "#/texts/92",
+      "self_ref": "#/texts/93",
       "parent": {
-        "$ref": "#/groups/17"
+        "$ref": "#/groups/18"
       },
       "children": [],
       "content_layer": "body",
@@ -2250,9 +2286,9 @@
       "code_language": "unknown"
     },
     {
-      "self_ref": "#/texts/93",
+      "self_ref": "#/texts/94",
       "parent": {
-        "$ref": "#/groups/17"
+        "$ref": "#/groups/18"
       },
       "children": [],
       "content_layer": "body",
@@ -2262,9 +2298,9 @@
       "text": ". Модель обучена с помощью"
     },
     {
-      "self_ref": "#/texts/94",
+      "self_ref": "#/texts/95",
       "parent": {
-        "$ref": "#/groups/17"
+        "$ref": "#/groups/18"
       },
       "children": [],
       "content_layer": "body",
@@ -2278,9 +2314,9 @@
       "code_language": "unknown"
     },
     {
-      "self_ref": "#/texts/95",
+      "self_ref": "#/texts/96",
       "parent": {
-        "$ref": "#/groups/17"
+        "$ref": "#/groups/18"
       },
       "children": [],
       "content_layer": "body",
@@ -2290,9 +2326,9 @@
       "text": "и сконвертирована в формат"
     },
     {
-      "self_ref": "#/texts/96",
+      "self_ref": "#/texts/97",
       "parent": {
-        "$ref": "#/groups/17"
+        "$ref": "#/groups/18"
       },
       "children": [],
       "content_layer": "body",
@@ -2306,9 +2342,9 @@
       "code_language": "unknown"
     },
     {
-      "self_ref": "#/texts/97",
+      "self_ref": "#/texts/98",
       "parent": {
-        "$ref": "#/groups/17"
+        "$ref": "#/groups/18"
       },
       "children": [],
       "content_layer": "body",
@@ -2318,9 +2354,9 @@
       "text": "-"
     },
     {
-      "self_ref": "#/texts/98",
+      "self_ref": "#/texts/99",
       "parent": {
-        "$ref": "#/groups/17"
+        "$ref": "#/groups/18"
       },
       "children": [],
       "content_layer": "body",
@@ -2334,9 +2370,9 @@
       "code_language": "unknown"
     },
     {
-      "self_ref": "#/texts/99",
+      "self_ref": "#/texts/100",
       "parent": {
-        "$ref": "#/groups/17"
+        "$ref": "#/groups/18"
       },
       "children": [],
       "content_layer": "body",
@@ -2346,9 +2382,9 @@
       "text": ". Скрипт, иллюстрирующий применение этой модели к изображению, возвращает топ-5 классов из"
     },
     {
-      "self_ref": "#/texts/100",
+      "self_ref": "#/texts/101",
       "parent": {
-        "$ref": "#/groups/17"
+        "$ref": "#/groups/18"
       },
       "children": [],
       "content_layer": "body",
@@ -2362,9 +2398,9 @@
       "code_language": "unknown"
     },
     {
-      "self_ref": "#/texts/101",
+      "self_ref": "#/texts/102",
       "parent": {
-        "$ref": "#/groups/17"
+        "$ref": "#/groups/18"
       },
       "children": [],
       "content_layer": "body",
@@ -2374,9 +2410,9 @@
       "text": "и уверенность в этих классах."
     },
     {
-      "self_ref": "#/texts/102",
+      "self_ref": "#/texts/103",
       "parent": {
-        "$ref": "#/groups/18"
+        "$ref": "#/groups/19"
       },
       "children": [],
       "content_layer": "body",
@@ -2393,9 +2429,9 @@
       }
     },
     {
-      "self_ref": "#/texts/103",
+      "self_ref": "#/texts/104",
       "parent": {
-        "$ref": "#/groups/18"
+        "$ref": "#/groups/19"
       },
       "children": [],
       "content_layer": "body",
@@ -2405,9 +2441,9 @@
       "text": "Загрузите уверенность для первого класса для изображения"
     },
     {
-      "self_ref": "#/texts/104",
+      "self_ref": "#/texts/105",
       "parent": {
-        "$ref": "#/groups/18"
+        "$ref": "#/groups/19"
       },
       "children": [],
       "content_layer": "body",
@@ -2421,9 +2457,9 @@
       "code_language": "unknown"
     },
     {
-      "self_ref": "#/texts/105",
+      "self_ref": "#/texts/106",
       "parent": {
-        "$ref": "#/groups/18"
+        "$ref": "#/groups/19"
       },
       "children": [],
       "content_layer": "body",
@@ -2433,7 +2469,7 @@
       "text": "с точностью до 1 знака после запятой в файл с ответом."
     },
     {
-      "self_ref": "#/texts/106",
+      "self_ref": "#/texts/107",
       "parent": {
         "$ref": "#/body"
       },
@@ -2449,7 +2485,7 @@
       "code_language": "Python"
     },
     {
-      "self_ref": "#/texts/107",
+      "self_ref": "#/texts/108",
       "parent": {
         "$ref": "#/body"
       },
@@ -2465,13 +2501,13 @@
       "code_language": "Python"
     },
     {
-      "self_ref": "#/texts/108",
+      "self_ref": "#/texts/109",
       "parent": {
         "$ref": "#/body"
       },
       "children": [
         {
-          "$ref": "#/groups/19"
+          "$ref": "#/groups/20"
         }
       ],
       "content_layer": "body",
@@ -2482,9 +2518,9 @@
       "level": 1
     },
     {
-      "self_ref": "#/texts/109",
+      "self_ref": "#/texts/110",
       "parent": {
-        "$ref": "#/groups/19"
+        "$ref": "#/groups/20"
       },
       "children": [],
       "content_layer": "body",
@@ -2492,18 +2528,6 @@
       "prov": [],
       "orig": "Задание 2",
       "text": "Задание 2"
-    },
-    {
-      "self_ref": "#/texts/110",
-      "parent": {
-        "$ref": "#/groups/19"
-      },
-      "children": [],
-      "content_layer": "body",
-      "label": "text",
-      "prov": [],
-      "orig": ".",
-      "text": "."
     },
     {
       "self_ref": "#/texts/111",
@@ -2514,13 +2538,25 @@
       "content_layer": "body",
       "label": "text",
       "prov": [],
-      "orig": "Научитесь извлекать",
-      "text": "Научитесь извлекать"
+      "orig": ".",
+      "text": "."
     },
     {
       "self_ref": "#/texts/112",
       "parent": {
-        "$ref": "#/groups/20"
+        "$ref": "#/groups/21"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "Научитесь извлекать",
+      "text": "Научитесь извлекать"
+    },
+    {
+      "self_ref": "#/texts/113",
+      "parent": {
+        "$ref": "#/groups/21"
       },
       "children": [],
       "content_layer": "body",
@@ -2534,9 +2570,9 @@
       "code_language": "unknown"
     },
     {
-      "self_ref": "#/texts/113",
+      "self_ref": "#/texts/114",
       "parent": {
-        "$ref": "#/groups/20"
+        "$ref": "#/groups/21"
       },
       "children": [],
       "content_layer": "body",
@@ -2546,9 +2582,9 @@
       "text": "слой. Возьмите за основу код"
     },
     {
-      "self_ref": "#/texts/114",
+      "self_ref": "#/texts/115",
       "parent": {
-        "$ref": "#/groups/20"
+        "$ref": "#/groups/21"
       },
       "children": [],
       "content_layer": "body",
@@ -2562,9 +2598,9 @@
       "code_language": "unknown"
     },
     {
-      "self_ref": "#/texts/115",
+      "self_ref": "#/texts/116",
       "parent": {
-        "$ref": "#/groups/20"
+        "$ref": "#/groups/21"
       },
       "children": [],
       "content_layer": "body",
@@ -2574,9 +2610,9 @@
       "text": ", и модифицируйте, чтобы вместо последнего слоя извлекались выходы"
     },
     {
-      "self_ref": "#/texts/116",
+      "self_ref": "#/texts/117",
       "parent": {
-        "$ref": "#/groups/20"
+        "$ref": "#/groups/21"
       },
       "children": [],
       "content_layer": "body",
@@ -2590,9 +2626,9 @@
       "code_language": "unknown"
     },
     {
-      "self_ref": "#/texts/117",
+      "self_ref": "#/texts/118",
       "parent": {
-        "$ref": "#/groups/20"
+        "$ref": "#/groups/21"
       },
       "children": [],
       "content_layer": "body",
@@ -2602,9 +2638,9 @@
       "text": "."
     },
     {
-      "self_ref": "#/texts/118",
+      "self_ref": "#/texts/119",
       "parent": {
-        "$ref": "#/groups/21"
+        "$ref": "#/groups/22"
       },
       "children": [],
       "content_layer": "body",
@@ -2621,9 +2657,9 @@
       }
     },
     {
-      "self_ref": "#/texts/119",
+      "self_ref": "#/texts/120",
       "parent": {
-        "$ref": "#/groups/21"
+        "$ref": "#/groups/22"
       },
       "children": [],
       "content_layer": "body",
@@ -2633,9 +2669,9 @@
       "text": "Посчитайте"
     },
     {
-      "self_ref": "#/texts/120",
+      "self_ref": "#/texts/121",
       "parent": {
-        "$ref": "#/groups/21"
+        "$ref": "#/groups/22"
       },
       "children": [],
       "content_layer": "body",
@@ -2649,9 +2685,9 @@
       "code_language": "unknown"
     },
     {
-      "self_ref": "#/texts/121",
+      "self_ref": "#/texts/122",
       "parent": {
-        "$ref": "#/groups/21"
+        "$ref": "#/groups/22"
       },
       "children": [],
       "content_layer": "body",
@@ -2661,9 +2697,9 @@
       "text": "для картинки"
     },
     {
-      "self_ref": "#/texts/122",
+      "self_ref": "#/texts/123",
       "parent": {
-        "$ref": "#/groups/21"
+        "$ref": "#/groups/22"
       },
       "children": [],
       "content_layer": "body",
@@ -2677,9 +2713,9 @@
       "code_language": "unknown"
     },
     {
-      "self_ref": "#/texts/123",
+      "self_ref": "#/texts/124",
       "parent": {
-        "$ref": "#/groups/21"
+        "$ref": "#/groups/22"
       },
       "children": [],
       "content_layer": "body",
@@ -2689,7 +2725,7 @@
       "text": ".  Запишите первые 20 компонент."
     },
     {
-      "self_ref": "#/texts/124",
+      "self_ref": "#/texts/125",
       "parent": {
         "$ref": "#/body"
       },
@@ -2705,7 +2741,7 @@
       "code_language": "Python"
     },
     {
-      "self_ref": "#/texts/125",
+      "self_ref": "#/texts/126",
       "parent": {
         "$ref": "#/body"
       },
@@ -2721,13 +2757,13 @@
       "code_language": "Python"
     },
     {
-      "self_ref": "#/texts/126",
+      "self_ref": "#/texts/127",
       "parent": {
         "$ref": "#/body"
       },
       "children": [
         {
-          "$ref": "#/groups/22"
+          "$ref": "#/groups/23"
         }
       ],
       "content_layer": "body",
@@ -2738,9 +2774,9 @@
       "level": 1
     },
     {
-      "self_ref": "#/texts/127",
+      "self_ref": "#/texts/128",
       "parent": {
-        "$ref": "#/groups/22"
+        "$ref": "#/groups/23"
       },
       "children": [],
       "content_layer": "body",
@@ -2748,18 +2784,6 @@
       "prov": [],
       "orig": "Задание 3",
       "text": "Задание 3"
-    },
-    {
-      "self_ref": "#/texts/128",
-      "parent": {
-        "$ref": "#/groups/22"
-      },
-      "children": [],
-      "content_layer": "body",
-      "label": "text",
-      "prov": [],
-      "orig": ".",
-      "text": "."
     },
     {
       "self_ref": "#/texts/129",
@@ -2770,13 +2794,25 @@
       "content_layer": "body",
       "label": "text",
       "prov": [],
-      "orig": "Теперь необходимо дообучить классификатор на нашей базе. В качестве бейзлайна предлагается воспользоваться классификатором",
-      "text": "Теперь необходимо дообучить классификатор на нашей базе. В качестве бейзлайна предлагается воспользоваться классификатором"
+      "orig": ".",
+      "text": "."
     },
     {
       "self_ref": "#/texts/130",
       "parent": {
-        "$ref": "#/groups/23"
+        "$ref": "#/groups/24"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "Теперь необходимо дообучить классификатор на нашей базе. В качестве бейзлайна предлагается воспользоваться классификатором",
+      "text": "Теперь необходимо дообучить классификатор на нашей базе. В качестве бейзлайна предлагается воспользоваться классификатором"
+    },
+    {
+      "self_ref": "#/texts/131",
+      "parent": {
+        "$ref": "#/groups/24"
       },
       "children": [],
       "content_layer": "body",
@@ -2790,9 +2826,9 @@
       "code_language": "unknown"
     },
     {
-      "self_ref": "#/texts/131",
+      "self_ref": "#/texts/132",
       "parent": {
-        "$ref": "#/groups/23"
+        "$ref": "#/groups/24"
       },
       "children": [],
       "content_layer": "body",
@@ -2802,9 +2838,9 @@
       "text": "из пакета"
     },
     {
-      "self_ref": "#/texts/132",
+      "self_ref": "#/texts/133",
       "parent": {
-        "$ref": "#/groups/23"
+        "$ref": "#/groups/24"
       },
       "children": [],
       "content_layer": "body",
@@ -2818,9 +2854,9 @@
       "code_language": "unknown"
     },
     {
-      "self_ref": "#/texts/133",
+      "self_ref": "#/texts/134",
       "parent": {
-        "$ref": "#/groups/23"
+        "$ref": "#/groups/24"
       },
       "children": [],
       "content_layer": "body",
@@ -2830,95 +2866,9 @@
       "text": "."
     },
     {
-      "self_ref": "#/texts/134",
-      "parent": {
-        "$ref": "#/groups/24"
-      },
-      "children": [
-        {
-          "$ref": "#/groups/25"
-        }
-      ],
-      "content_layer": "body",
-      "label": "list_item",
-      "prov": [],
-      "orig": "",
-      "text": "",
-      "enumerated": false,
-      "marker": ""
-    },
-    {
       "self_ref": "#/texts/135",
       "parent": {
         "$ref": "#/groups/25"
-      },
-      "children": [],
-      "content_layer": "body",
-      "label": "text",
-      "prov": [],
-      "orig": "Модифицировать функцию",
-      "text": "Модифицировать функцию"
-    },
-    {
-      "self_ref": "#/texts/136",
-      "parent": {
-        "$ref": "#/groups/25"
-      },
-      "children": [],
-      "content_layer": "body",
-      "label": "code",
-      "prov": [],
-      "orig": "get_features",
-      "text": "get_features",
-      "captions": [],
-      "references": [],
-      "footnotes": [],
-      "code_language": "unknown"
-    },
-    {
-      "self_ref": "#/texts/137",
-      "parent": {
-        "$ref": "#/groups/25"
-      },
-      "children": [],
-      "content_layer": "body",
-      "label": "text",
-      "prov": [],
-      "orig": "и добавить возможность вычислять",
-      "text": "и добавить возможность вычислять"
-    },
-    {
-      "self_ref": "#/texts/138",
-      "parent": {
-        "$ref": "#/groups/25"
-      },
-      "children": [],
-      "content_layer": "body",
-      "label": "code",
-      "prov": [],
-      "orig": "fc2",
-      "text": "fc2",
-      "captions": [],
-      "references": [],
-      "footnotes": [],
-      "code_language": "unknown"
-    },
-    {
-      "self_ref": "#/texts/139",
-      "parent": {
-        "$ref": "#/groups/25"
-      },
-      "children": [],
-      "content_layer": "body",
-      "label": "text",
-      "prov": [],
-      "orig": ". (Аналогично второму заданию).",
-      "text": ". (Аналогично второму заданию)."
-    },
-    {
-      "self_ref": "#/texts/140",
-      "parent": {
-        "$ref": "#/groups/24"
       },
       "children": [
         {
@@ -2934,105 +2884,77 @@
       "marker": ""
     },
     {
+      "self_ref": "#/texts/136",
+      "parent": {
+        "$ref": "#/groups/26"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "Модифицировать функцию",
+      "text": "Модифицировать функцию"
+    },
+    {
+      "self_ref": "#/texts/137",
+      "parent": {
+        "$ref": "#/groups/26"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "code",
+      "prov": [],
+      "orig": "get_features",
+      "text": "get_features",
+      "captions": [],
+      "references": [],
+      "footnotes": [],
+      "code_language": "unknown"
+    },
+    {
+      "self_ref": "#/texts/138",
+      "parent": {
+        "$ref": "#/groups/26"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "и добавить возможность вычислять",
+      "text": "и добавить возможность вычислять"
+    },
+    {
+      "self_ref": "#/texts/139",
+      "parent": {
+        "$ref": "#/groups/26"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "code",
+      "prov": [],
+      "orig": "fc2",
+      "text": "fc2",
+      "captions": [],
+      "references": [],
+      "footnotes": [],
+      "code_language": "unknown"
+    },
+    {
+      "self_ref": "#/texts/140",
+      "parent": {
+        "$ref": "#/groups/26"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": ". (Аналогично второму заданию).",
+      "text": ". (Аналогично второму заданию)."
+    },
+    {
       "self_ref": "#/texts/141",
       "parent": {
-        "$ref": "#/groups/26"
-      },
-      "children": [],
-      "content_layer": "body",
-      "label": "text",
-      "prov": [],
-      "orig": "Применить",
-      "text": "Применить"
-    },
-    {
-      "self_ref": "#/texts/142",
-      "parent": {
-        "$ref": "#/groups/26"
-      },
-      "children": [],
-      "content_layer": "body",
-      "label": "code",
-      "prov": [],
-      "orig": "get_feautures",
-      "text": "get_feautures",
-      "captions": [],
-      "references": [],
-      "footnotes": [],
-      "code_language": "unknown"
-    },
-    {
-      "self_ref": "#/texts/143",
-      "parent": {
-        "$ref": "#/groups/26"
-      },
-      "children": [],
-      "content_layer": "body",
-      "label": "text",
-      "prov": [],
-      "orig": ", чтобы получить",
-      "text": ", чтобы получить"
-    },
-    {
-      "self_ref": "#/texts/144",
-      "parent": {
-        "$ref": "#/groups/26"
-      },
-      "children": [],
-      "content_layer": "body",
-      "label": "code",
-      "prov": [],
-      "orig": "X_test",
-      "text": "X_test",
-      "captions": [],
-      "references": [],
-      "footnotes": [],
-      "code_language": "unknown"
-    },
-    {
-      "self_ref": "#/texts/145",
-      "parent": {
-        "$ref": "#/groups/26"
-      },
-      "children": [],
-      "content_layer": "body",
-      "label": "text",
-      "prov": [],
-      "orig": "и",
-      "text": "и"
-    },
-    {
-      "self_ref": "#/texts/146",
-      "parent": {
-        "$ref": "#/groups/26"
-      },
-      "children": [],
-      "content_layer": "body",
-      "label": "code",
-      "prov": [],
-      "orig": "Y_test",
-      "text": "Y_test",
-      "captions": [],
-      "references": [],
-      "footnotes": [],
-      "code_language": "unknown"
-    },
-    {
-      "self_ref": "#/texts/147",
-      "parent": {
-        "$ref": "#/groups/26"
-      },
-      "children": [],
-      "content_layer": "body",
-      "label": "text",
-      "prov": [],
-      "orig": ".",
-      "text": "."
-    },
-    {
-      "self_ref": "#/texts/148",
-      "parent": {
-        "$ref": "#/groups/24"
+        "$ref": "#/groups/25"
       },
       "children": [
         {
@@ -3048,9 +2970,123 @@
       "marker": ""
     },
     {
-      "self_ref": "#/texts/149",
+      "self_ref": "#/texts/142",
       "parent": {
         "$ref": "#/groups/27"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "Применить",
+      "text": "Применить"
+    },
+    {
+      "self_ref": "#/texts/143",
+      "parent": {
+        "$ref": "#/groups/27"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "code",
+      "prov": [],
+      "orig": "get_feautures",
+      "text": "get_feautures",
+      "captions": [],
+      "references": [],
+      "footnotes": [],
+      "code_language": "unknown"
+    },
+    {
+      "self_ref": "#/texts/144",
+      "parent": {
+        "$ref": "#/groups/27"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": ", чтобы получить",
+      "text": ", чтобы получить"
+    },
+    {
+      "self_ref": "#/texts/145",
+      "parent": {
+        "$ref": "#/groups/27"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "code",
+      "prov": [],
+      "orig": "X_test",
+      "text": "X_test",
+      "captions": [],
+      "references": [],
+      "footnotes": [],
+      "code_language": "unknown"
+    },
+    {
+      "self_ref": "#/texts/146",
+      "parent": {
+        "$ref": "#/groups/27"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "и",
+      "text": "и"
+    },
+    {
+      "self_ref": "#/texts/147",
+      "parent": {
+        "$ref": "#/groups/27"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "code",
+      "prov": [],
+      "orig": "Y_test",
+      "text": "Y_test",
+      "captions": [],
+      "references": [],
+      "footnotes": [],
+      "code_language": "unknown"
+    },
+    {
+      "self_ref": "#/texts/148",
+      "parent": {
+        "$ref": "#/groups/27"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": ".",
+      "text": "."
+    },
+    {
+      "self_ref": "#/texts/149",
+      "parent": {
+        "$ref": "#/groups/25"
+      },
+      "children": [
+        {
+          "$ref": "#/groups/28"
+        }
+      ],
+      "content_layer": "body",
+      "label": "list_item",
+      "prov": [],
+      "orig": "",
+      "text": "",
+      "enumerated": false,
+      "marker": ""
+    },
+    {
+      "self_ref": "#/texts/150",
+      "parent": {
+        "$ref": "#/groups/28"
       },
       "children": [],
       "content_layer": "body",
@@ -3060,9 +3096,9 @@
       "text": "Воспользоваться классификатором"
     },
     {
-      "self_ref": "#/texts/150",
+      "self_ref": "#/texts/151",
       "parent": {
-        "$ref": "#/groups/27"
+        "$ref": "#/groups/28"
       },
       "children": [],
       "content_layer": "body",
@@ -3076,9 +3112,9 @@
       "code_language": "unknown"
     },
     {
-      "self_ref": "#/texts/151",
+      "self_ref": "#/texts/152",
       "parent": {
-        "$ref": "#/groups/27"
+        "$ref": "#/groups/28"
       },
       "children": [],
       "content_layer": "body",
@@ -3088,9 +3124,9 @@
       "text": "с"
     },
     {
-      "self_ref": "#/texts/152",
+      "self_ref": "#/texts/153",
       "parent": {
-        "$ref": "#/groups/27"
+        "$ref": "#/groups/28"
       },
       "children": [],
       "content_layer": "body",
@@ -3104,9 +3140,9 @@
       "code_language": "unknown"
     },
     {
-      "self_ref": "#/texts/153",
+      "self_ref": "#/texts/154",
       "parent": {
-        "$ref": "#/groups/27"
+        "$ref": "#/groups/28"
       },
       "children": [],
       "content_layer": "body",
@@ -3116,9 +3152,9 @@
       "text": "."
     },
     {
-      "self_ref": "#/texts/154",
+      "self_ref": "#/texts/155",
       "parent": {
-        "$ref": "#/groups/28"
+        "$ref": "#/groups/29"
       },
       "children": [],
       "content_layer": "body",
@@ -3135,9 +3171,9 @@
       }
     },
     {
-      "self_ref": "#/texts/155",
+      "self_ref": "#/texts/156",
       "parent": {
-        "$ref": "#/groups/28"
+        "$ref": "#/groups/29"
       },
       "children": [],
       "content_layer": "body",
@@ -3147,9 +3183,9 @@
       "text": "Если вам не удалось поставить"
     },
     {
-      "self_ref": "#/texts/156",
+      "self_ref": "#/texts/157",
       "parent": {
-        "$ref": "#/groups/28"
+        "$ref": "#/groups/29"
       },
       "children": [],
       "content_layer": "body",
@@ -3163,9 +3199,9 @@
       "code_language": "unknown"
     },
     {
-      "self_ref": "#/texts/157",
+      "self_ref": "#/texts/158",
       "parent": {
-        "$ref": "#/groups/28"
+        "$ref": "#/groups/29"
       },
       "children": [],
       "content_layer": "body",
@@ -3175,9 +3211,9 @@
       "text": ", то необходимо вместо использования функции"
     },
     {
-      "self_ref": "#/texts/158",
+      "self_ref": "#/texts/159",
       "parent": {
-        "$ref": "#/groups/28"
+        "$ref": "#/groups/29"
       },
       "children": [],
       "content_layer": "body",
@@ -3191,9 +3227,9 @@
       "code_language": "unknown"
     },
     {
-      "self_ref": "#/texts/159",
+      "self_ref": "#/texts/160",
       "parent": {
-        "$ref": "#/groups/28"
+        "$ref": "#/groups/29"
       },
       "children": [],
       "content_layer": "body",
@@ -3203,9 +3239,9 @@
       "text": ", загрузить предпосчитанные"
     },
     {
-      "self_ref": "#/texts/160",
+      "self_ref": "#/texts/161",
       "parent": {
-        "$ref": "#/groups/28"
+        "$ref": "#/groups/29"
       },
       "children": [],
       "content_layer": "body",
@@ -3219,9 +3255,9 @@
       "code_language": "unknown"
     },
     {
-      "self_ref": "#/texts/161",
+      "self_ref": "#/texts/162",
       "parent": {
-        "$ref": "#/groups/28"
+        "$ref": "#/groups/29"
       },
       "children": [],
       "content_layer": "body",
@@ -3231,9 +3267,9 @@
       "text": ","
     },
     {
-      "self_ref": "#/texts/162",
+      "self_ref": "#/texts/163",
       "parent": {
-        "$ref": "#/groups/28"
+        "$ref": "#/groups/29"
       },
       "children": [],
       "content_layer": "body",
@@ -3247,9 +3283,9 @@
       "code_language": "unknown"
     },
     {
-      "self_ref": "#/texts/163",
+      "self_ref": "#/texts/164",
       "parent": {
-        "$ref": "#/groups/28"
+        "$ref": "#/groups/29"
       },
       "children": [],
       "content_layer": "body",
@@ -3259,9 +3295,9 @@
       "text": ","
     },
     {
-      "self_ref": "#/texts/164",
+      "self_ref": "#/texts/165",
       "parent": {
-        "$ref": "#/groups/28"
+        "$ref": "#/groups/29"
       },
       "children": [],
       "content_layer": "body",
@@ -3275,9 +3311,9 @@
       "code_language": "unknown"
     },
     {
-      "self_ref": "#/texts/165",
+      "self_ref": "#/texts/166",
       "parent": {
-        "$ref": "#/groups/28"
+        "$ref": "#/groups/29"
       },
       "children": [],
       "content_layer": "body",
@@ -3287,9 +3323,9 @@
       "text": ","
     },
     {
-      "self_ref": "#/texts/166",
+      "self_ref": "#/texts/167",
       "parent": {
-        "$ref": "#/groups/28"
+        "$ref": "#/groups/29"
       },
       "children": [],
       "content_layer": "body",
@@ -3303,21 +3339,46 @@
       "code_language": "unknown"
     },
     {
-      "self_ref": "#/texts/167",
+      "self_ref": "#/texts/168",
       "parent": {
-        "$ref": "#/groups/28"
+        "$ref": "#/groups/29"
       },
       "children": [],
       "content_layer": "body",
       "label": "text",
       "prov": [],
-      "orig": "из архива: https://yadi.sk/d/RzMOK8Fjvs6Ln и воспользоваться функцией",
-      "text": "из архива: https://yadi.sk/d/RzMOK8Fjvs6Ln и воспользоваться функцией"
+      "orig": "из архива:",
+      "text": "из архива:"
     },
     {
-      "self_ref": "#/texts/168",
+      "self_ref": "#/texts/169",
       "parent": {
-        "$ref": "#/groups/28"
+        "$ref": "#/groups/29"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "https://yadi.sk/d/RzMOK8Fjvs6Ln",
+      "text": "https://yadi.sk/d/RzMOK8Fjvs6Ln",
+      "hyperlink": "https://yadi.sk/d/RzMOK8Fjvs6Ln"
+    },
+    {
+      "self_ref": "#/texts/170",
+      "parent": {
+        "$ref": "#/groups/29"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "и воспользоваться функцией",
+      "text": "и воспользоваться функцией"
+    },
+    {
+      "self_ref": "#/texts/171",
+      "parent": {
+        "$ref": "#/groups/29"
       },
       "children": [],
       "content_layer": "body",
@@ -3331,9 +3392,9 @@
       "code_language": "unknown"
     },
     {
-      "self_ref": "#/texts/169",
+      "self_ref": "#/texts/172",
       "parent": {
-        "$ref": "#/groups/28"
+        "$ref": "#/groups/29"
       },
       "children": [],
       "content_layer": "body",
@@ -3343,9 +3404,9 @@
       "text": "для их загрузки, а после этого два последних пункта."
     },
     {
-      "self_ref": "#/texts/170",
+      "self_ref": "#/texts/173",
       "parent": {
-        "$ref": "#/groups/29"
+        "$ref": "#/groups/30"
       },
       "children": [],
       "content_layer": "body",
@@ -3362,9 +3423,9 @@
       }
     },
     {
-      "self_ref": "#/texts/171",
+      "self_ref": "#/texts/174",
       "parent": {
-        "$ref": "#/groups/29"
+        "$ref": "#/groups/30"
       },
       "children": [],
       "content_layer": "body",
@@ -3374,9 +3435,9 @@
       "text": "Сколько правильных ответов получается на валидационной выборке из папки"
     },
     {
-      "self_ref": "#/texts/172",
+      "self_ref": "#/texts/175",
       "parent": {
-        "$ref": "#/groups/29"
+        "$ref": "#/groups/30"
       },
       "children": [],
       "content_layer": "body",
@@ -3390,9 +3451,9 @@
       "code_language": "unknown"
     },
     {
-      "self_ref": "#/texts/173",
+      "self_ref": "#/texts/176",
       "parent": {
-        "$ref": "#/groups/29"
+        "$ref": "#/groups/30"
       },
       "children": [],
       "content_layer": "body",
@@ -3402,7 +3463,7 @@
       "text": "? Запишите в файл."
     },
     {
-      "self_ref": "#/texts/174",
+      "self_ref": "#/texts/177",
       "parent": {
         "$ref": "#/body"
       },
@@ -3418,7 +3479,7 @@
       "code_language": "Python"
     },
     {
-      "self_ref": "#/texts/175",
+      "self_ref": "#/texts/178",
       "parent": {
         "$ref": "#/body"
       },
@@ -3434,7 +3495,7 @@
       "code_language": "Python"
     },
     {
-      "self_ref": "#/texts/176",
+      "self_ref": "#/texts/179",
       "parent": {
         "$ref": "#/body"
       },
@@ -3450,7 +3511,7 @@
       "code_language": "Python"
     },
     {
-      "self_ref": "#/texts/177",
+      "self_ref": "#/texts/180",
       "parent": {
         "$ref": "#/body"
       },
@@ -3466,7 +3527,7 @@
       "code_language": "Python"
     },
     {
-      "self_ref": "#/texts/178",
+      "self_ref": "#/texts/181",
       "parent": {
         "$ref": "#/body"
       },
@@ -3482,7 +3543,7 @@
       "code_language": "Python"
     },
     {
-      "self_ref": "#/texts/179",
+      "self_ref": "#/texts/182",
       "parent": {
         "$ref": "#/body"
       },
@@ -3498,7 +3559,7 @@
       "code_language": "Python"
     },
     {
-      "self_ref": "#/texts/180",
+      "self_ref": "#/texts/183",
       "parent": {
         "$ref": "#/body"
       },
