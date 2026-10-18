@@ -79,8 +79,41 @@ def textbox_in_single_cell(name):
     document.save(f"{name}.docx")
 
 
+# --- #764: blank paragraphs before a resumed list item (docling#4674) --------
+# test_backend_msword_spacer.py:
+# test_spacers_before_a_resumed_list_item_in_a_table_cell_keep_the_table,
+# test_text_after_a_resumed_list_keeps_only_its_own_comment
+
+
+def resumed_list_in_cell(name):
+    doc = Document()
+    table = doc.add_table(rows=3, cols=1)
+    table.cell(0, 0).paragraphs[0].text = "row zero"
+    cell = table.cell(1, 0)
+    cell.paragraphs[0].text = "steps"
+    for text in ("first", "second", "", "", "third"):
+        cell.add_paragraph(text, style="List Number" if text else None)
+    table.cell(2, 0).paragraphs[0].text = "row two"
+    doc.add_paragraph("after the table")
+    doc.save(f"{name}.docx")
+
+
+def commented_spacers(name):
+    doc = Document()
+    doc.add_paragraph("first", style="List Number")
+    spacer_runs = [doc.add_paragraph().add_run("") for _ in range(2)]
+    doc.add_paragraph("second", style="List Number")
+    note = doc.add_paragraph("note")
+    for run in spacer_runs:
+        doc.add_comment(run, text="on a spacer")
+    doc.add_comment(note.runs, text="on the note")
+    doc.save(f"{name}.docx")
+
+
 if __name__ == "__main__":
     textbox_in_cell("textbox_cell_vml_single_para", "vml_single_para", "MARKA")
     textbox_in_cell("textbox_cell_vml_multi_para", "vml_multi_para", "MARKA")
     textbox_in_cell("textbox_cell_word_mc", "word_mc_alternate", "MARKW")
     textbox_in_single_cell("textbox_single_cell")
+    resumed_list_in_cell("resumed_list_in_cell")
+    commented_spacers("commented_spacers")

@@ -111,6 +111,7 @@ impl DeclarativeBackend for DocxBackend {
                 }
             }
         }
+        drop_resumed_list_spacers(&mut doc.nodes);
         // Section headers/footers follow the body as furniture-layer content
         // (docling's `_add_header_footer`): the first section always
         // contributes, later sections only when they define a distinct first
@@ -2136,15 +2137,10 @@ fn run_has_format(r: XmlNode) -> bool {
 fn rich_cell_markdown(tc: XmlNode, ctx: &Ctx) -> String {
     let mut sub = DoclingDocument::new("");
     let mut state = ListState::default();
-    // The node range each child element rendered to, for the regrouping
-    // below.
-    let mut spans: Vec<(roxmltree::NodeId, std::ops::Range<usize>)> = Vec::new();
     for child in child_elements(tc) {
-        let start = sub.nodes.len();
         cell_block(child, ctx, &mut state, &mut sub, true);
-        spans.push((child.id(), start..sub.nodes.len()));
     }
-    regroup_rich_cell(tc, ctx, &mut sub.nodes, &spans);
+    drop_resumed_list_spacers(&mut sub.nodes);
     // In-cell rendering: a heading inside the cell is plain text
     // (docling-core#540).
     sub.export_to_table_cell_markdown().trim().to_string()
@@ -2196,66 +2192,38 @@ fn cell_block(
     }
 }
 
-/// A blank spacer between items of one list makes docling regroup a rich
-/// cell (#527): rearrange the cell's rendered `nodes` (`spans` = the node
-/// range each child element produced) into its block layout when it has one.
-fn regroup_rich_cell(
-    tc: XmlNode,
-    ctx: &Ctx,
-    nodes: &mut Vec<Node>,
-    spans: &[(roxmltree::NodeId, std::ops::Range<usize>)],
-) {
-    let blanks: std::collections::HashSet<roxmltree::NodeId> = child_elements(tc)
-        .filter(|c| c.has_tag_name("p") && plain_paragraph_text(*c).trim().is_empty())
-        .map(|c| c.id())
-        .collect();
-    if blanks.is_empty() {
-        return;
-    }
-    if let Some(layout) = super::docx_tree::rich_cell_layout(tc, ctx) {
-        if let Some(regrouped) = regroup_cell_nodes(nodes, spans, &layout, &blanks) {
-            *nodes = regrouped;
+/// docling's list reuse after blank spacers (docling#4305), which deletes the
+/// blanks once the walk ends (docling#4674, #764): the empty paragraphs —
+/// commented ones included — between a list item and the item that resumes
+/// its list are dropped, so the list renders as one.
+fn drop_resumed_list_spacers(nodes: &mut Vec<Node>) {
+    fn bare(node: &Node) -> &Node {
+        match node {
+            Node::Commented { inner, .. } => bare(inner),
+            other => other,
         }
     }
-}
-
-/// `nodes` rearranged into `layout`'s blocks (see
-/// [`super::docx_tree::rich_cell_layout`]): each block's elements' nodes in
-/// order, a list item opening a new list exactly at the start of a block.
-/// A blank paragraph the layout leaves out was deleted upstream and is
-/// dropped; `None` when any other element that rendered something is
-/// missing — the cell then keeps its own order.
-fn regroup_cell_nodes(
-    nodes: &[Node],
-    spans: &[(roxmltree::NodeId, std::ops::Range<usize>)],
-    layout: &[Vec<roxmltree::NodeId>],
-    blanks: &std::collections::HashSet<roxmltree::NodeId>,
-) -> Option<Vec<Node>> {
-    let placed: std::collections::HashSet<_> = layout.iter().flatten().collect();
-    if spans
-        .iter()
-        .any(|(id, range)| !range.is_empty() && !placed.contains(id) && !blanks.contains(id))
-    {
-        return None;
-    }
-    let mut out = Vec::with_capacity(nodes.len());
-    for block in layout {
-        let mut first = true;
-        for id in block {
-            let Some((_, range)) = spans.iter().find(|(s, _)| s == id) else {
-                continue;
-            };
-            for node in &nodes[range.clone()] {
-                let mut node = node.clone();
-                if let Node::ListItem { first_in_list, .. } = &mut node {
-                    *first_in_list = first;
-                }
-                first = false;
-                out.push(node);
+    let empty = |n: &Node| matches!(bare(n), Node::Paragraph { text } if text.trim().is_empty());
+    let mut i = 0;
+    while i < nodes.len() {
+        if matches!(
+            bare(&nodes[i]),
+            Node::ListItem {
+                first_in_list: false,
+                ..
+            }
+        ) {
+            let mut j = i;
+            while j > 0 && empty(&nodes[j - 1]) {
+                j -= 1;
+            }
+            if j < i && j > 0 && matches!(bare(&nodes[j - 1]), Node::ListItem { .. }) {
+                nodes.drain(j..i);
+                i = j;
             }
         }
+        i += 1;
     }
-    Some(out)
 }
 
 /// A rich cell's DocLang block content — the structured counterpart of
@@ -2269,13 +2237,10 @@ fn cell_blocks_of(tc: XmlNode, ctx: &Ctx) -> Vec<Node> {
     }
     let mut sub = DoclingDocument::new("");
     let mut state = ListState::default();
-    let mut spans: Vec<(roxmltree::NodeId, std::ops::Range<usize>)> = Vec::new();
     for child in child_elements(tc) {
-        let start = sub.nodes.len();
         cell_block(child, ctx, &mut state, &mut sub, false);
-        spans.push((child.id(), start..sub.nodes.len()));
     }
-    regroup_rich_cell(tc, ctx, &mut sub.nodes, &spans);
+    drop_resumed_list_spacers(&mut sub.nodes);
     sub.nodes
 }
 
