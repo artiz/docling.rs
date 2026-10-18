@@ -397,6 +397,31 @@ fn tc_pr<'a, 'i>(tc: XmlNode<'a, 'i>, name: &str) -> Option<XmlNode<'a, 'i>> {
 }
 
 /// Upstream's `_has_blip`: a child holding a blip or a drawing anywhere.
+/// docling's `_has_textbox`: `.//w:txbxContent | .//v:textbox//w:p |
+/// .//wps:txbx//w:p | .//w10:wrap//w:p | .//a:bodyPr/ancestor::*//a:t |
+/// .//a:txBody//a:t`. The `ancestor::*` alternative reaches the document
+/// root, so an `a:bodyPr` in the element counts as soon as the document has
+/// any `a:t`.
+fn has_textbox(el: XmlNode) -> bool {
+    let below = |n: XmlNode, names: &[&str]| {
+        n.ancestors()
+            .skip(1)
+            .take_while(|a| a.id() != el.id())
+            .any(|a| names.contains(&a.tag_name().name()))
+    };
+    let is_a = |n: XmlNode, name: &str| n.tag_name().name() == name && is_dml(n);
+    let any_a_t = || el.document().root().descendants().any(|n| is_a(n, "t"));
+    el.descendants().skip(1).any(|n| {
+        n.has_tag_name("txbxContent")
+            || (n.has_tag_name("p") && below(n, &["textbox", "txbx", "wrap"]))
+            || (is_a(n, "t")
+                && n.ancestors()
+                    .skip(1)
+                    .take_while(|a| a.id() != el.id())
+                    .any(|a| is_a(a, "txBody")))
+    }) || (el.descendants().skip(1).any(|n| is_a(n, "bodyPr")) && any_a_t())
+}
+
 fn has_blip(el: XmlNode) -> bool {
     child_elements(el).any(|item| {
         item.descendants()
@@ -1150,15 +1175,29 @@ impl Walker {
                 .filter(|n| n.has_tag_name("imagedata") && !in_textbox(*n))
                 .collect();
             let key = self.key(element);
-            if !self.processed_textbox.contains(&key) {
-                let textboxes = Self::textbox_elements(element);
-                if textboxes.is_empty() {
+            // docling#4757: a table or content control walks its children
+            // itself, so scanning it for textboxes here would emit a
+            // textbox anchored in a cell before the table and again inside
+            // the cell. Textboxes (and their paragraphs) already emitted are
+            // left out, so a nested walk does not repeat them either.
+            if !matches!(tag, "tbl" | "sdt") && !self.processed_textbox.contains(&key) {
+                let raw = Self::textbox_elements(element);
+                if raw.is_empty() {
                     self.shape_text(element, &mut added);
-                } else {
+                }
+                let textboxes: Vec<XmlNode> = raw
+                    .into_iter()
+                    .filter(|tb| !self.processed_textbox.contains(&self.key(*tb)))
+                    .collect();
+                if !textboxes.is_empty() {
                     self.processed_textbox.insert(key);
                     for tb in &textboxes {
                         let k = self.key(*tb);
                         self.processed_textbox.insert(k);
+                        for p in tb.descendants().filter(|n| n.has_tag_name("p")) {
+                            let k = self.key(p);
+                            self.processed_textbox.insert(k);
+                        }
                     }
                     added.extend(self.handle_textbox_content(&textboxes, ctx));
                 }
@@ -1264,12 +1303,21 @@ impl Walker {
         for tx in element.descendants().skip(1).filter(|n| is_a(*n, "txBody")) {
             texts.extend(tx.descendants().skip(1).filter(|n| is_a(*n, "t")));
         }
-        if texts.is_empty() {
-            return;
-        }
         // An XPath union: node-set semantics, document order.
         texts.sort_by_key(|n| n.id().get());
         texts.dedup_by_key(|n| n.id().get());
+        // docling#4757: text already emitted from another element is not
+        // emitted again; what is emitted now is marked.
+        texts.retain(|t| !self.processed_textbox.contains(&self.key(*t)));
+        if texts.is_empty() {
+            return;
+        }
+        let key = self.key(element);
+        self.processed_textbox.insert(key);
+        for t in &texts {
+            let k = self.key(*t);
+            self.processed_textbox.insert(k);
+        }
         let content = texts
             .iter()
             .filter_map(|t| t.text())
@@ -1501,7 +1549,9 @@ impl Walker {
         if child_elements(tc).any(|c| !matches!(c.tag_name().name(), "p" | "tcPr")) {
             return true;
         }
-        if has_blip(tc) {
+        // docling#4757: a cell holding a textbox (or shape text) is rich, so
+        // the textbox is walked inside the cell.
+        if has_blip(tc) || has_textbox(tc) {
             return true;
         }
         for p in &paras {
