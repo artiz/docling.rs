@@ -521,19 +521,24 @@ fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
 
 #[derive(Deserialize, schemars::JsonSchema)]
 struct ConvertToMarkdownArgs {
-    /// The document: an http: or https: URL, a file: URI, a data: URI, or
-    /// a path (relative paths resolve against the server's root).
+    /// The document to read: an http: or https: URL (only when the server
+    /// allows URL fetching — see list_input_formats), a file: URI, a data:
+    /// URI, or a file path. Relative paths resolve against the server's
+    /// root; files outside it are refused.
     uri: String,
 }
 
 #[derive(Deserialize, schemars::JsonSchema)]
 struct ConvertArgs {
-    /// The document: an http: or https: URL, a file: URI, a data: URI, or
-    /// a path (relative paths resolve against the server's root).
+    /// The document to read: an http: or https: URL (only when the server
+    /// allows URL fetching — see list_input_formats), a file: URI, a data:
+    /// URI, or a file path. Relative paths resolve against the server's
+    /// root; files outside it are refused.
     uri: String,
-    /// Output format: md (default), json (docling's DoclingDocument),
-    /// html, text, latex, chunks (RAG chunk records as JSON), vtt, pandoc
-    /// (Pandoc's JSON AST).
+    /// Output format: md (Markdown, the default), json (docling's
+    /// DoclingDocument: structure, tables and page provenance), html, text,
+    /// latex, chunks (RAG-ready chunk records as JSON), vtt (WebVTT, for
+    /// audio/video transcripts) or pandoc (Pandoc's JSON AST).
     // Optional parameters are single-typed in the schema and left out of
     // `required` — a `["string", "null"]` type union is what some clients'
     // function-calling dialects reject (MCP Inspector's portability check);
@@ -541,8 +546,8 @@ struct ConvertArgs {
     #[serde(default)]
     #[schemars(transform = drop_null)]
     to: Option<String>,
-    /// Pictures in md/html/pandoc output: placeholder (default) or
-    /// embedded (data: URIs).
+    /// Pictures in md, html or pandoc output: placeholder (the default, an
+    /// `<!-- image -->` marker) or embedded (the image as a data: URI).
     #[serde(default)]
     #[schemars(transform = drop_null)]
     images: Option<String>,
@@ -638,10 +643,16 @@ impl DoclingMcp {
 
 #[tool_router]
 impl DoclingMcp {
-    /// Convert a resource described by an http:, https:, file: or data: URI
-    /// (or a local path) to Markdown — PDFs with layout analysis, table
-    /// structure and OCR; Word, PowerPoint, Excel, HTML, EPUB, e-mail,
-    /// images, audio and more. MarkItDown's tool of the same name.
+    /// Read a document as Markdown, with default settings, and return the
+    /// Markdown text. Handles PDF (layout analysis, tables, OCR for scans),
+    /// Word, PowerPoint, Excel, HTML, EPUB, e-mail, images, audio and more.
+    /// Use this whenever Markdown is all you need. Use `convert` instead for
+    /// another output format (docling JSON, HTML, RAG chunks, …), embedded
+    /// images, or options such as a page range, OCR language or password.
+    /// Fails with a message when the document is missing, outside the
+    /// server's root, of an unsupported type (see `list_input_formats`), or
+    /// a URL while URL fetching is off. Read-only. Same name and contract as
+    /// MarkItDown's MCP tool.
     #[tool(annotations(
         title = "Convert to Markdown",
         read_only_hint = true,
@@ -661,12 +672,18 @@ impl DoclingMcp {
         self.run_conversion(request, &ctx).await
     }
 
-    /// Convert a document (URI or path, as convert_to_markdown) to Markdown,
-    /// docling JSON, HTML, plain text, LaTeX, RAG chunks, WebVTT or Pandoc
-    /// JSON, with docling.rs's conversion options (page ranges, OCR
-    /// language and mode, text-layer-only PDFs, passwords, picture OCR, …).
+    /// Convert a document to a chosen output format, with conversion
+    /// options, and return the result as text. `to` picks the format
+    /// (Markdown, docling JSON with structure and page provenance, HTML,
+    /// plain text, LaTeX, RAG chunks, WebVTT, Pandoc JSON); `images` embeds
+    /// pictures instead of placeholders; `options` sets page ranges, OCR
+    /// language and mode, text-layer-only PDFs, passwords and the rest.
+    /// For plain Markdown with default settings, `convert_to_markdown` is
+    /// the simpler call. Inputs and errors as for `convert_to_markdown`;
+    /// an unknown `to`, `images` value or option key is an error that says
+    /// what is accepted. Read-only.
     #[tool(annotations(
-        title = "Convert document",
+        title = "Convert to a chosen format",
         read_only_hint = true,
         open_world_hint = true
     ))]
@@ -679,8 +696,11 @@ impl DoclingMcp {
         self.run_conversion(request, &ctx).await
     }
 
-    /// The input file extensions this server converts, one per line, and
-    /// whether URL inputs are enabled.
+    /// List the file extensions this server can convert, one per line, and
+    /// whether it accepts http(s) URLs. Takes no arguments and converts
+    /// nothing. Call it before `convert_to_markdown` or `convert` when
+    /// unsure whether a file type is supported, or to learn why a URL was
+    /// refused.
     #[tool(annotations(title = "List input formats", read_only_hint = true))]
     async fn list_input_formats(&self) -> String {
         let mut out = InputFormat::supported_extensions().join("\n");
@@ -704,8 +724,9 @@ impl ServerHandler for DoclingMcp {
             .with_instructions(format!(
                 "Converts documents to Markdown or docling JSON for reading: PDF (layout, \
                  tables, OCR), DOCX, PPTX, XLSX, HTML, EPUB, e-mail, images, audio and more. \
-                 Use convert_to_markdown for text; convert for other formats or options \
-                 (e.g. {{\"pages\": \"1-5\"}}). Local files: paths under {}. URLs: {}.",
+                 Tools: convert_to_markdown for Markdown with default settings; convert for \
+                 any other output format or for options (e.g. {{\"pages\": \"1-5\"}}); \
+                 list_input_formats to check what this server accepts. Local files: paths under {}. URLs: {}.",
                 self.state.roots_display(),
                 if self.state.allow_url_fetch {
                     "enabled"

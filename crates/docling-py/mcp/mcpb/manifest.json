@@ -36,15 +36,15 @@
   "tools": [
     {
       "name": "convert_to_markdown",
-      "description": "Convert a resource described by an http:, https:, file: or data: URI (or a local path) to Markdown — MarkItDown's tool of the same name."
+      "description": "Read a document (URL, file: or data: URI, or path) as Markdown with default settings — MarkItDown's tool of the same name. For other formats or options use convert."
     },
     {
       "name": "convert",
-      "description": "Convert a document to Markdown, docling JSON, HTML, plain text, LaTeX, RAG chunks, WebVTT or Pandoc JSON, with docling.rs's conversion options (page ranges, OCR language and mode, passwords, …)."
+      "description": "Convert a document to a chosen format (Markdown, docling JSON, HTML, text, LaTeX, RAG chunks, WebVTT, Pandoc JSON) with options such as page ranges, OCR language or a password."
     },
     {
       "name": "list_input_formats",
-      "description": "The input file extensions this server converts, and whether URL inputs are enabled."
+      "description": "List the file extensions this server converts and whether it accepts http(s) URLs; converts nothing."
     }
   ],
   "keywords": [
