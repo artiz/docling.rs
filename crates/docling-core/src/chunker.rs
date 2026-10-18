@@ -800,24 +800,10 @@ fn triplet_table_text(t: &Table) -> String {
             .unwrap_or("")
     };
 
-    // The header block is the leading run of rows on which a column-header
-    // cell *starts* (docling-core#756): the grid replicates a spanning header
-    // into every row it covers, and the rows beneath it are data, not more
-    // header. Unlike the Markdown serializer there is no "no flags -> row 0"
-    // fallback here: pandas then gets integer column names.
-    let num_headers = {
-        let derived;
-        let cells: &[crate::TableCell] = match &t.cells {
-            Some(c) if !c.is_empty() => c,
-            _ => {
-                derived = t.derive_cells();
-                &derived
-            }
-        };
-        (0..num_rows)
-            .take_while(|&r| cells.iter().any(|c| c.column_header && c.start_row == r))
-            .count()
-    };
+    // The header block is the one the Markdown serializer uses
+    // (`Table::column_header_row_count`, docling-core#767), without its
+    // "no flags -> row 0" fallback: pandas then gets integer column names.
+    let num_headers = t.column_header_row_count().min(num_rows);
 
     // Column names: header-row texts joined per column with '.', or the integer
     // positions when there are no header rows.
@@ -2608,6 +2594,169 @@ mod tests {
             "linear {linear:?}, quadratic {quadratic:?}, {} chunks",
             fast.len()
         );
+    }
+
+    /// A table from first-class cells `(text, row, col, row_span,
+    /// column_header)`, its grid repeating a spanning cell's text.
+    fn cell_table(
+        num_rows: usize,
+        num_cols: usize,
+        cells: &[(&str, usize, usize, usize, bool)],
+    ) -> Table {
+        let mut rows = vec![vec![String::new(); num_cols]; num_rows];
+        for &(text, r, c, span, _) in cells {
+            for row in rows.iter_mut().skip(r).take(span) {
+                row[c] = text.into();
+            }
+        }
+        Table {
+            rows,
+            cells: Some(
+                cells
+                    .iter()
+                    .map(|&(text, r, c, span, ched)| crate::TableCell {
+                        text: text.into(),
+                        bbox: None,
+                        start_row: r,
+                        start_col: c,
+                        row_span: span,
+                        col_span: 1,
+                        column_header: ched,
+                        row_header: false,
+                        row_section: false,
+                    })
+                    .collect(),
+            ),
+            ..Default::default()
+        }
+    }
+
+    /// #778 (docling-core#767, 2.102): the Markdown table and the triplet
+    /// chunk agree on the header rows — upstream's parametrized
+    /// `test_table_header_rows_in_markdown_and_dataframe`, plus the issue's
+    /// two tables. Expected texts are docling-core 2.102.0's (compact
+    /// Markdown, `HierarchicalChunker` chunk text).
+    #[test]
+    fn markdown_and_triplets_share_the_header_rows() {
+        type Case<'a> = (
+            &'a str,
+            usize,
+            usize,
+            Vec<(&'a str, usize, usize, usize, bool)>,
+            &'a str,
+            &'a str,
+        );
+        let cases: Vec<Case> = vec![
+            (
+                "rows under a row-spanning header stay in the body",
+                2,
+                2,
+                vec![("Price", 0, 0, 1, true), ("Category", 0, 1, 2, true), ("10.00", 1, 0, 1, false)],
+                "| Price | Category |\n| - | - |\n| 10.00 | Category |",
+                "10.00, Category = Category",
+            ),
+            (
+                "a row header flagged as column header stays in the body",
+                3,
+                3,
+                vec![
+                    ("Year", 0, 0, 1, true),
+                    ("Month", 0, 1, 1, true),
+                    ("Revenue", 0, 2, 1, true),
+                    ("2025", 1, 0, 2, true),
+                    ("January", 1, 1, 1, false),
+                    ("$134", 1, 2, 1, false),
+                    ("February", 2, 1, 1, false),
+                    ("$150", 2, 2, 1, false),
+                ],
+                "| Year | Month | Revenue |\n| - | - | - |\n| 2025 | January | $134 |\n| 2025 | February | $150 |",
+                "2025, Month = January. 2025, Revenue = $134. 2025, Month = February. 2025, Revenue = $150",
+            ),
+            (
+                "stacked header with an unmarked row label",
+                3,
+                3,
+                vec![
+                    ("", 0, 0, 1, true),
+                    ("% of Total", 0, 1, 1, true),
+                    ("% of Total", 0, 2, 1, true),
+                    ("class label", 1, 0, 1, false),
+                    ("Train", 1, 1, 1, true),
+                    ("Test", 1, 2, 1, true),
+                    ("Caption", 2, 0, 1, false),
+                    ("2.5", 2, 1, 1, false),
+                    ("2.4", 2, 2, 1, false),
+                ],
+                "| class label | % of Total - Train | % of Total - Test |\n| - | - | - |\n| Caption | 2.5 | 2.4 |",
+                "Caption, % of Total.Train = 2.5. Caption, % of Total.Test = 2.4",
+            ),
+            (
+                "a partially flagged first row stays the header",
+                2,
+                2,
+                vec![("Name", 0, 0, 1, true), ("Value", 0, 1, 1, false), ("A", 1, 0, 1, false), ("1", 1, 1, 1, false)],
+                "| Name | Value |\n| - | - |\n| A | 1 |",
+                "A, Value = 1",
+            ),
+            (
+                "no flags: Markdown promotes row 0, triplets do not",
+                2,
+                2,
+                vec![("Name", 0, 0, 1, false), ("Value", 0, 1, 1, false), ("A", 1, 0, 1, false), ("1", 1, 1, 1, false)],
+                "| Name | Value |\n| - | - |\n| A | 1 |",
+                "Name, 1 = Value. A, 1 = 1",
+            ),
+            (
+                "row headers flagged as column headers stay in the body",
+                2,
+                2,
+                vec![("2025", 0, 0, 1, true), ("$134", 0, 1, 1, false), ("2026", 1, 0, 1, true), ("$150", 1, 1, 1, false)],
+                "|  |  |\n| - | - |\n| 2025 | $134 |\n| 2026 | $150 |",
+                "2025, 1 = $134. 2026, 1 = $150",
+            ),
+            (
+                "a form with flagged first-column labels is all data",
+                3,
+                2,
+                vec![
+                    ("Name", 0, 0, 1, true),
+                    ("Bob", 0, 1, 1, false),
+                    ("Age", 1, 0, 1, true),
+                    ("42", 1, 1, 1, false),
+                    ("City", 2, 0, 1, true),
+                    ("Paris", 2, 1, 1, false),
+                ],
+                "|  |  |\n| - | - |\n| Name | Bob |\n| Age | 42 |\n| City | Paris |",
+                "Name, 1 = Bob. Age, 1 = 42. City, 1 = Paris",
+            ),
+            (
+                "a partly flagged row 0 above a stacked header row",
+                3,
+                3,
+                vec![
+                    ("Region", 0, 0, 1, true),
+                    ("2025", 0, 1, 1, false),
+                    ("", 0, 2, 1, false),
+                    ("", 1, 0, 1, false),
+                    ("Q1", 1, 1, 1, true),
+                    ("Q2", 1, 2, 1, true),
+                    ("North", 2, 0, 1, false),
+                    ("1", 2, 1, 1, false),
+                    ("2", 2, 2, 1, false),
+                ],
+                "| Region | 2025 - Q1 | Q2 |\n| - | - | - |\n| North | 1 | 2 |",
+                "North, 2025.Q1 = 1. North, Q2 = 2",
+            ),
+        ];
+        for (name, rows, cols, cells, md, triplets) in cases {
+            let t = cell_table(rows, cols, &cells);
+            assert_eq!(
+                crate::markdown::render_table(&t, true),
+                md,
+                "{name}: markdown"
+            );
+            assert_eq!(triplet_table_text(&t), triplets, "{name}: triplets");
+        }
     }
 
     #[test]
