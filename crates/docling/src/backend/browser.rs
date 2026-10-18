@@ -53,7 +53,14 @@ pub fn render_visible_html(html: &str) -> Result<String, String> {
         .suffix(".html")
         .tempfile()
         .map_err(|e| format!("browser: temp page: {e}"))?;
-    file.write_all(html.as_bytes())
+    // The HTML is already decoded, but its `<meta charset>` (or
+    // `http-equiv` Content-Type) still names the source encoding, and
+    // Chromium decodes a `file://` page by it — a `windows-1251` page came
+    // back as mojibake. A UTF-8 byte-order mark takes precedence over any
+    // declaration in the markup, so the page is read as the UTF-8 it is
+    // (docling#4468, #772).
+    file.write_all(b"\xEF\xBB\xBF")
+        .and_then(|()| file.write_all(html.as_bytes()))
         .map_err(|e| format!("browser: writing temp page: {e}"))?;
     file.flush()
         .map_err(|e| format!("browser: writing temp page: {e}"))?;
@@ -128,5 +135,24 @@ mod tests {
             !rendered.contains("HIDDEN"),
             "stylesheet-hidden element should be stripped: {rendered}"
         );
+    }
+
+    /// #772 (docling#4468): the HTML handed over is already decoded, but a
+    /// page that declares another charset (`windows-1251`) kept its
+    /// `<meta charset>`, and Chromium decoded the UTF-8 temp file by it —
+    /// `Привет, мир` came back as `РџСЂРёРІРµС‚, РјРёСЂ`. Skips without Chromium.
+    #[test]
+    fn a_declared_charset_does_not_garble_the_text() {
+        for head in [
+            r#"<meta charset="windows-1251">"#,
+            r#"<meta http-equiv="Content-Type" content="text/html; charset=windows-1251">"#,
+        ] {
+            let html = format!("<html><head>{head}</head><body><p>Привет, мир</p></body></html>");
+            let rendered = match render_visible_html(&html) {
+                Ok(r) => r,
+                Err(_) => return, // no browser in this environment
+            };
+            assert!(rendered.contains("Привет, мир"), "{head}: {rendered}");
+        }
     }
 }
