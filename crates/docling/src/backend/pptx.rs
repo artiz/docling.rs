@@ -764,11 +764,7 @@ fn handle_shape_content(shape: XmlNode, ctx: &SlideCtx, out: &mut SlideOut) {
 /// `BOTTOMLEFT`, which read the tuple as `(l, b, r, t)` and swapped the
 /// vertical edges. `charspan` covers `char_len` characters.
 fn shape_prov(shape: XmlNode, ctx: &SlideCtx, char_len: usize) -> TreeProv {
-    let (w, h) = ctx.slide_size;
-    let [x, y, cx, cy] = xfrm_geom(shape)
-        .or_else(|| inherited_geom(shape, ctx.phmap))
-        .unwrap_or([0, 0, w, h]);
-    let (mut l, mut t, mut r, mut b) = (x, y, x + cx, y + cy);
+    let [mut l, mut t, mut r, mut b] = shape_box(shape, ctx.slide_size, ctx.phmap);
     // `from_tuple`'s normalization: `l <= r`, and for a top-left box `t <= b`.
     if r < l {
         std::mem::swap(&mut l, &mut r);
@@ -778,7 +774,7 @@ fn shape_prov(shape: XmlNode, ctx: &SlideCtx, char_len: usize) -> TreeProv {
     }
     TreeProv {
         page_no: ctx.page_no,
-        bbox: [l as f64, t as f64, r as f64, b as f64],
+        bbox: [l, t, r, b],
         bottom_left: false,
         charspan: [0, char_len],
     }
@@ -846,26 +842,82 @@ fn slide_size(presentation: &str) -> (i64, i64) {
 /// resolvable geometry — or `left == 0` (docling's `if shape.left:` truthiness)
 /// — takes the whole slide.
 fn shape_location(shape: XmlNode, (w, h): (i64, i64), phmap: &PhMap) -> [u16; 4] {
-    let geom = xfrm_geom(shape).or_else(|| inherited_geom(shape, phmap));
     // A shape at x = 0 EMU keeps its own box (docling#3990, 2.120): the old
     // `if shape.left:` truthiness test treated a zero offset like a missing
     // one and fell back to the whole slide.
-    let (left, top, cw, ch) = match geom {
-        Some([x, y, cx, cy]) => (x, y, cx, cy),
-        None => (0, 0, w, h),
-    };
-    let n = |v: i64, dim: i64| -> u16 {
+    let [left, top, right, bottom] = shape_box(shape, (w, h), phmap);
+    let n = |v: f64, dim: i64| -> u16 {
         if dim == 0 {
             return 0;
         }
-        ((512.0 * v as f64 / dim as f64).round() as i64).clamp(0, 511) as u16
+        ((512.0 * v / dim as f64).round() as i64).clamp(0, 511) as u16
     };
-    [
-        n(left, w),
-        n(h - (top + ch), h),
-        n(left + cw, w),
-        n(h - top, h),
-    ]
+    let hf = h as f64;
+    [n(left, w), n(hf - bottom, h), n(right, w), n(hf - top, h)]
+}
+
+/// A shape's box `[left, top, right, bottom]` on the slide, in EMU: its own
+/// or inherited geometry ([`xfrm_geom`], [`inherited_geom`]) mapped out of
+/// every enclosing group ([`group_to_slide`]), the whole slide when it has
+/// none.
+fn shape_box(shape: XmlNode, (w, h): (i64, i64), phmap: &PhMap) -> [f64; 4] {
+    match xfrm_geom(shape).or_else(|| inherited_geom(shape, phmap)) {
+        Some([x, y, cx, cy]) => {
+            let [x, y, cx, cy] = [x, y, cx, cy].map(|v| v as f64);
+            group_to_slide(shape, [x, y, x + cx, y + cy])
+        }
+        None => [0.0, 0.0, w as f64, h as f64],
+    }
+}
+
+/// Map a grouped shape's box from its group's child coordinates to the
+/// slide — docling's `_to_slide_coordinates` (docling#4859, 2.140, #766). A
+/// shape inside a `p:grpSp` is positioned in the group's child space
+/// (`a:chOff`/`a:chExt`), which matches the slide only until the group is
+/// moved, resized or flipped; each enclosing group maps that space onto its
+/// own box (`a:off`/`a:ext`), innermost first: `off + (v − chOff) · ext /
+/// chExt` (scale 1 for a zero `chExt`), `flipH`/`flipV` mirroring within
+/// `off..off + ext`. Group rotation is not applied, and a group whose
+/// transform is incomplete or unparsable is skipped.
+fn group_to_slide(shape: XmlNode, [mut l, mut t, mut r, mut b]: [f64; 4]) -> [f64; 4] {
+    let mut parent = shape.parent_element();
+    while let Some(group) = parent.filter(|p| p.has_tag_name("grpSp")) {
+        parent = group.parent_element();
+        let Some(xfrm) = group
+            .children()
+            .find(|n| n.has_tag_name("grpSpPr"))
+            .and_then(|pr| pr.children().find(|n| n.has_tag_name("xfrm")))
+        else {
+            continue;
+        };
+        let pair = |tag: &str, a: &str, b: &str| -> Option<(f64, f64)> {
+            let n = xfrm.children().find(|n| n.has_tag_name(tag))?;
+            let v = |k: &str| n.attribute(k)?.parse::<i64>().ok().map(|v| v as f64);
+            Some((v(a)?, v(b)?))
+        };
+        let (Some((off_x, off_y)), Some((ext_x, ext_y)), Some((ch_x, ch_y)), Some((ch_cx, ch_cy))) = (
+            pair("off", "x", "y"),
+            pair("ext", "cx", "cy"),
+            pair("chOff", "x", "y"),
+            pair("chExt", "cx", "cy"),
+        ) else {
+            continue;
+        };
+        let scale_x = if ch_cx != 0.0 { ext_x / ch_cx } else { 1.0 };
+        let scale_y = if ch_cy != 0.0 { ext_y / ch_cy } else { 1.0 };
+        l = off_x + (l - ch_x) * scale_x;
+        r = off_x + (r - ch_x) * scale_x;
+        t = off_y + (t - ch_y) * scale_y;
+        b = off_y + (b - ch_y) * scale_y;
+        let flag = |k: &str| matches!(xfrm.attribute(k), Some("1") | Some("true"));
+        if flag("flipH") {
+            (l, r) = (2.0 * off_x + ext_x - r, 2.0 * off_x + ext_x - l);
+        }
+        if flag("flipV") {
+            (t, b) = (2.0 * off_y + ext_y - b, 2.0 * off_y + ext_y - t);
+        }
+    }
+    [l, t, r, b]
 }
 
 /// A shape/placeholder's own transform `[x, y, cx, cy]` in EMU, from its
