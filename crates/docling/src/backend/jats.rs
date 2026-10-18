@@ -1187,6 +1187,7 @@ fn add_figure(out: &mut Out, parent: Option<usize>, node: XmlNode, fig_base: Opt
         TreeKind::Picture {
             captions,
             image,
+            extra_classes: Vec::new(),
             classification: None,
             description: None,
             confidence: None,

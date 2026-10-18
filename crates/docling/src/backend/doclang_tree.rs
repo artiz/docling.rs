@@ -1253,6 +1253,7 @@ impl Builder<'_> {
             TreeKind::Picture {
                 captions,
                 image,
+                extra_classes: Vec::new(),
                 classification,
                 description: None,
                 // `PictureClassificationPrediction(class_name, confidence=1.0)`.

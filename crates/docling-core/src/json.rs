@@ -1474,6 +1474,7 @@ impl Builder {
                     captions,
                     image,
                     classification,
+                    extra_classes,
                     description,
                     confidence,
                     chart,
@@ -1489,7 +1490,9 @@ impl Builder {
                             pred.insert("confidence".into(), json!(conf));
                         }
                         pred.insert("class_name".into(), json!(c));
-                        json!({ "classification": { "predictions": [pred] } })
+                        let mut preds = vec![Value::Object(pred)];
+                        preds.extend(extra_classes.iter().map(|c| json!({ "class_name": c })));
+                        json!({ "classification": { "predictions": preds } })
                     });
                     if let (Some(m), Some(t)) = (meta.as_mut(), chart) {
                         if !t.rows.is_empty() {
@@ -3286,6 +3289,7 @@ mod tests {
             TreeKind::Picture {
                 captions: Vec::new(),
                 image: None,
+                extra_classes: Vec::new(),
                 classification: Some("bar_chart".into()),
                 description: None,
                 confidence: None,
@@ -3391,6 +3395,7 @@ mod tests {
                     height: 2,
                     data: vec![0],
                 }),
+                extra_classes: Vec::new(),
                 classification: None,
                 description: None,
                 confidence: None,

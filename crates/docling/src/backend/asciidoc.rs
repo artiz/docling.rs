@@ -617,6 +617,7 @@ impl Parser<'_> {
             TreeKind::Picture {
                 captions,
                 image: image.clone(),
+                extra_classes: Vec::new(),
                 classification: None,
                 description: None,
                 confidence: None,

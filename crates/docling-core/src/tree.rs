@@ -91,6 +91,9 @@ pub enum TreeKind {
         captions: Vec<usize>,
         image: Option<PictureImage>,
         classification: Option<String>,
+        /// Further predictions after `classification`, in order: the other
+        /// plot types of a PPTX combination chart (docling#4773).
+        extra_classes: Vec<String>,
         /// The picture-OCR enrichment's text (#645), serialized like the flat
         /// node's: `meta.description` + the `description` annotation.
         description: Option<crate::PictureDescription>,
@@ -679,6 +682,7 @@ mod tests {
             TreeKind::Picture {
                 captions: vec![cap],
                 image: None,
+                extra_classes: Vec::new(),
                 classification: Some("bar_chart".into()),
                 description: None,
                 confidence: None,

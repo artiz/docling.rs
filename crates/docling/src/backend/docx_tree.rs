@@ -1421,6 +1421,7 @@ impl Walker {
                 TreeKind::Picture {
                     captions: Vec::new(),
                     image: img,
+                    extra_classes: Vec::new(),
                     classification: None,
                     description: super::docx::drawing_alt(*image).map(PictureDescription::alt_text),
                     confidence: None,
@@ -1443,6 +1444,7 @@ impl Walker {
             TreeKind::Picture {
                 captions: Vec::new(),
                 image: None,
+                extra_classes: Vec::new(),
                 classification: None,
                 description: None,
                 confidence: None,
@@ -1478,6 +1480,7 @@ impl Walker {
             TreeKind::Picture {
                 captions: caption.into_iter().collect(),
                 image: None,
+                extra_classes: Vec::new(),
                 classification: spec.map(|(kind, _, _)| kind.clone()),
                 description: None,
                 confidence: None,
