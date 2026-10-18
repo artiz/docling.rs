@@ -27,19 +27,25 @@
         "$ref": "#/texts/2"
       },
       {
+        "$ref": "#/pictures/0"
+      },
+      {
         "$ref": "#/texts/3"
       },
       {
         "$ref": "#/texts/4"
       },
       {
-        "$ref": "#/pictures/0"
-      },
-      {
         "$ref": "#/texts/5"
       },
       {
+        "$ref": "#/pictures/1"
+      },
+      {
         "$ref": "#/texts/6"
+      },
+      {
+        "$ref": "#/texts/7"
       }
     ],
     "content_layer": "body",
@@ -79,13 +85,25 @@
       },
       "children": [],
       "content_layer": "body",
-      "label": "text",
+      "label": "caption",
       "prov": [],
-      "orig": "![A red box](data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABgAAAAQCAIAAACDRijCAAAAHElEQVR4nGO8IyfHQA3ARBVTRg0aNWjUoBFsEABJ6QE4U1cKUgAAAABJRU5ErkJggg==)",
-      "text": "![A red box](data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABgAAAAQCAIAAACDRijCAAAAHElEQVR4nGO8IyfHQA3ARBVTRg0aNWjUoBFsEABJ6QE4U1cKUgAAAABJRU5ErkJggg==)"
+      "orig": "Red box",
+      "text": "Red box"
     },
     {
       "self_ref": "#/texts/3",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "A red box",
+      "text": "A red box"
+    },
+    {
+      "self_ref": "#/texts/4",
       "parent": {
         "$ref": "#/body"
       },
@@ -97,7 +115,7 @@
       "text": "An HTML `<img>` tag goes through the same policy:"
     },
     {
-      "self_ref": "#/texts/4",
+      "self_ref": "#/texts/5",
       "parent": {
         "$ref": "#/body"
       },
@@ -109,7 +127,7 @@
       "text": "A blue box"
     },
     {
-      "self_ref": "#/texts/5",
+      "self_ref": "#/texts/6",
       "parent": {
         "$ref": "#/body"
       },
@@ -121,7 +139,7 @@
       "text": "A relative path never resolves without the `local` tier: ![missing](img/not-here.png)"
     },
     {
-      "self_ref": "#/texts/6",
+      "self_ref": "#/texts/7",
       "parent": {
         "$ref": "#/body"
       },
@@ -145,7 +163,25 @@
       "prov": [],
       "captions": [
         {
-          "$ref": "#/texts/4"
+          "$ref": "#/texts/2"
+        }
+      ],
+      "references": [],
+      "footnotes": [],
+      "annotations": []
+    },
+    {
+      "self_ref": "#/pictures/1",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "picture",
+      "prov": [],
+      "captions": [
+        {
+          "$ref": "#/texts/5"
         }
       ],
       "references": [],

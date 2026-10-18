@@ -665,16 +665,15 @@ impl MarkdownBackend {
                         continue;
                     }
                     *i += 1;
-                    // A paragraph that is one image whose destination the
-                    // policy resolves (#646) is a picture with its bytes —
-                    // the flat chain's counterpart of the tree's
-                    // `TreeKind::Picture`, so `--images embedded` Markdown
-                    // shows it. Anything else (the default tier included)
-                    // stays the `![alt](dest)` text it always was.
-                    if let Some(node) = self.lone_image_picture(events, *i, images) {
+                    // A paragraph that is one image is a picture — the flat
+                    // chain's counterpart of the tree's `TreeKind::Picture`
+                    // (#760, docling#4777): its title the caption, its bytes
+                    // when the policy resolves the destination (#646), its
+                    // alt text a paragraph after it.
+                    if let Some(nodes) = self.lone_image_picture(events, *i, images) {
                         skip_subtree(events, i); // the image
                         consume_end(events, i); // the paragraph
-                        out.push(node);
+                        out.extend(nodes);
                         continue;
                     }
                     let runs = self.collect_inline(events, i, false);
@@ -777,16 +776,23 @@ impl MarkdownBackend {
         }
     }
 
-    /// The picture for a paragraph whose only content is an image at
-    /// `events[start]` and whose destination `images` resolves; `None`
-    /// otherwise (the paragraph is parsed as text).
+    /// The nodes for a paragraph whose only content is an image at
+    /// `events[start]`, as docling's `_iterate_elements` builds them (and
+    /// keeps through its HTML round trip since docling#4777, #760): a picture
+    /// captioned by the image's title — a caption item created ahead of it —
+    /// carrying the bytes when `images` resolves the destination, then the
+    /// alt text as a paragraph. `None` when the paragraph holds more than the
+    /// image (it is parsed as text).
     fn lone_image_picture(
         &self,
         events: &[Event],
         start: usize,
         images: &dyn ImageResolver,
-    ) -> Option<Node> {
-        let Some(Event::Start(Tag::Image { dest_url, .. })) = events.get(start) else {
+    ) -> Option<Vec<Node>> {
+        let Some(Event::Start(Tag::Image {
+            dest_url, title, ..
+        })) = events.get(start)
+        else {
             return None;
         };
         let mut end = start;
@@ -794,18 +800,21 @@ impl MarkdownBackend {
         if !matches!(events.get(end), Some(Event::End(TagEnd::Paragraph))) {
             return None;
         }
-        let image = images.resolve(dest_url)?;
         let mut j = start + 1;
         let alt = self.join_runs(&self.collect_inline(events, &mut j, false), false);
-        Some(Node::Picture {
-            caption: Some(alt).filter(|a| !a.is_empty()),
+        let mut nodes = vec![Node::Picture {
+            caption: Some(escape_text(title)).filter(|t| !t.is_empty()),
             caption_href: None,
-            image: Some(image),
+            image: images.resolve(dest_url),
             classification: None,
             description: None,
-            caption_parent: Default::default(),
+            caption_parent: docling_core::CaptionParent::Container,
             caption_location: None,
-        })
+        }];
+        if !alt.is_empty() {
+            nodes.push(Node::Paragraph { text: alt });
+        }
+        Some(nodes)
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -1014,13 +1023,23 @@ impl MarkdownBackend {
                     // `[label](url)` in a cell).
                     runs.push(format!("[{inner}]({url})"));
                 }
-                Event::Start(Tag::Image { dest_url, .. }) => {
+                Event::Start(Tag::Image {
+                    dest_url, title, ..
+                }) => {
                     let url = dest_url.to_string();
                     *i += 1;
                     let alt = self.join_runs(&self.collect_inline(events, i, table), table);
                     consume_end(events, i);
                     runs.push(if table {
-                        alt
+                        // A picture in a table cell (#760, docling#4777):
+                        // docling's rich cell prints it with its title
+                        // caption ahead of the placeholder; the alt text is
+                        // not part of it.
+                        if title.is_empty() {
+                            "<!-- image -->".to_string()
+                        } else {
+                            format!("{title}  <!-- image -->")
+                        }
                     } else {
                         format!("![{alt}]({url})")
                     });

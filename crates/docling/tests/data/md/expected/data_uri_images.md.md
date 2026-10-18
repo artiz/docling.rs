@@ -2,7 +2,11 @@
 
 A paragraph before the picture.
 
-![A red box](data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABgAAAAQCAIAAACDRijCAAAAHElEQVR4nGO8IyfHQA3ARBVTRg0aNWjUoBFsEABJ6QE4U1cKUgAAAABJRU5ErkJggg==)
+Red box
+
+<!-- image -->
+
+A red box
 
 An HTML `<img>` tag goes through the same policy:
 
