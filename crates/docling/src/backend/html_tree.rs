@@ -1088,12 +1088,10 @@ impl<'a> Walker<'a> {
         let is_ordered = name == "ol";
         let is_description = name == "dl";
         let start: Option<usize> = if is_ordered {
-            tag.value().attr("start").and_then(|s| {
-                s.chars()
-                    .all(|c| c.is_ascii_digit())
-                    .then(|| s.parse().ok())
-                    .flatten()
-            })
+            tag.value()
+                .attr("start")
+                .and_then(super::html::parse_ol_start)
+                .map(|s| s as usize)
         } else {
             None
         };

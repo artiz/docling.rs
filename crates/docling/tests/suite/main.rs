@@ -27,6 +27,7 @@ mod encrypted;
 mod feed;
 mod heif;
 mod html_export;
+mod html_upstream;
 mod image_output;
 mod input_robustness;
 mod ipynb;

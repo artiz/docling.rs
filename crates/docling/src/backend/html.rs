@@ -1105,13 +1105,40 @@ fn parse_kvp_id(id: &str) -> Option<(u32, KvpKind)> {
     }
 }
 
+/// An `<ol start>` by the HTML rules for parsing integers — docling's
+/// `_parse_ol_start` (docling#4713, #771): leading ASCII whitespace, an
+/// optional `+`, then ASCII digits; what follows them is ignored (`3.5` → 3).
+/// No digits (`-5`, `foo`, non-ASCII digits) or a value above 2³¹−1 is no
+/// start, as in browsers.
+pub(super) fn parse_ol_start(value: &str) -> Option<u64> {
+    const MAX: u64 = (1 << 31) - 1;
+    let rest = value.trim_start_matches([' ', '\t', '\n', '\x0c', '\r']);
+    let rest = rest.strip_prefix('+').unwrap_or(rest);
+    let digits = &rest[..rest
+        .find(|c: char| !c.is_ascii_digit())
+        .unwrap_or(rest.len())];
+    if digits.is_empty() {
+        return None;
+    }
+    let digits = digits.trim_start_matches('0');
+    if digits.len() > 10 {
+        return None;
+    }
+    let start = if digits.is_empty() {
+        0
+    } else {
+        digits.parse().ok()?
+    };
+    (start <= MAX).then_some(start)
+}
+
 /// Emit one `ListItem` per `<li>`, recursing into nested `<ul>`/`<ol>` at a
 /// deeper level. Ordered items are numbered from the list's `start` attribute.
 fn walk_list(list: ElementRef, ordered: bool, nodes: &mut Vec<Node>, level: u8, base: Fmt) {
     let start = list
         .value()
         .attr("start")
-        .and_then(|s| s.trim().parse().ok())
+        .and_then(parse_ol_start)
         .filter(|_| ordered);
     // docling emits an enumeration `<marker>` only for an ordered list with an
     // explicit `start` attribute; a plain `<ol>` carries no marker.
