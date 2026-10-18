@@ -159,6 +159,55 @@ struct SlideOut {
     slide: usize,
 }
 
+impl SlideOut {
+    /// How much has been written so far — the tree items and the flat nodes
+    /// — for [`move_to_layer`](Self::move_to_layer).
+    fn mark(&self) -> (usize, usize) {
+        (self.tree.items.len(), self.doc.nodes.len())
+    }
+
+    /// Move what was written since `mark` from the layers in `from` (`None`
+    /// = body) to `layer`, as docling re-tags `item.content_layer`: each tree
+    /// item, and each flat node — a list item through its own layer (so a
+    /// list stays one list), a furniture node by re-tagging it, any other
+    /// body node by wrapping it in [`Node::Furniture`]. Items on a layer not
+    /// in `from` (speaker notes, comments) keep it.
+    fn move_to_layer(
+        &mut self,
+        (items, nodes): (usize, usize),
+        layer: ContentLayer,
+        from: &[Option<ContentLayer>],
+    ) {
+        for item in &mut self.tree.items[items..] {
+            if from.contains(&item.layer) {
+                item.layer = Some(layer);
+            }
+        }
+        for node in &mut self.doc.nodes[nodes..] {
+            match node {
+                Node::Furniture { layer: l, .. } => {
+                    if from.contains(&Some(*l)) {
+                        *l = layer;
+                    }
+                }
+                Node::ListItem { layer: l, .. } => {
+                    if from.contains(l) {
+                        *l = Some(layer);
+                    }
+                }
+                _ if from.contains(&None) => {
+                    let inner = std::mem::replace(node, Node::PageBreak);
+                    *node = Node::Furniture {
+                        layer,
+                        inner: Box::new(inner),
+                    };
+                }
+                _ => {}
+            }
+        }
+    }
+}
+
 /// Convert one slide part, or `None` when the part is absent or not parsable
 /// XML (such a slide contributes nothing — not even a page break).
 fn convert_slide(
@@ -277,6 +326,21 @@ fn convert_slide(
     // Speaker notes are slide content (docling gives them a zero-bbox
     // provenance on the slide's page), so they precede the page break.
     slide_notes(&mut pkg, part, &dir, page_no, &mut out);
+    // docling#4647: PowerPoint does not present a slide marked `show="0"`
+    // (Hide Slide), so its content — the slide's chapter group, its body and
+    // its furniture — moves to the invisible layer, like a hidden Excel
+    // sheet: available, but out of the default exports. Speaker notes keep
+    // the notes layer.
+    if matches!(
+        slide.root_element().attribute("show"),
+        Some("0") | Some("false")
+    ) {
+        out.move_to_layer(
+            (0, 0),
+            ContentLayer::Invisible,
+            &[None, Some(ContentLayer::Furniture)],
+        );
+    }
     let mut comments = DoclingDocument::new("comments");
     slide_comments(
         &mut pkg,
@@ -547,6 +611,31 @@ fn shapes_by_position<'a>(tree: XmlNode<'a, 'a>, phmap: &PhMap) -> Vec<XmlNode<'
 }
 
 fn handle_shape(shape: XmlNode, ctx: &SlideCtx, out: &mut SlideOut) {
+    if !is_hidden_shape(shape) {
+        handle_shape_content(shape, ctx, out);
+        return;
+    }
+    // docling#4733: PowerPoint does not present a shape hidden in the
+    // Selection Pane. It still goes through the normal handlers, so nothing
+    // is lost; whatever they add for it — for a group, for every shape inside
+    // it — moves from the body to the invisible layer.
+    let mark = out.mark();
+    handle_shape_content(shape, ctx, out);
+    out.move_to_layer(mark, ContentLayer::Invisible, &[None]);
+}
+
+/// Whether PowerPoint's Selection Pane hides the shape — docling's
+/// `_is_hidden_shape`: `hidden` = `1`/`true` on the `p:cNvPr` that every
+/// shape kind carries under its non-visual properties (`./*/p:cNvPr`).
+fn is_hidden_shape(shape: XmlNode) -> bool {
+    shape.children().filter(XmlNode::is_element).any(|nv| {
+        nv.children().any(|c| {
+            c.has_tag_name("cNvPr") && matches!(c.attribute("hidden"), Some("1") | Some("true"))
+        })
+    })
+}
+
+fn handle_shape_content(shape: XmlNode, ctx: &SlideCtx, out: &mut SlideOut) {
     let location = shape_location(shape, ctx.slide_size, ctx.phmap);
     match shape.tag_name().name() {
         "grpSp" => {
