@@ -594,23 +594,38 @@ fn render_figure(caption: Option<&str>, class: Option<&str>) -> String {
 /// The `table` environment over a `|l|…|l|` tabular of the JSON grid: with
 /// first-class cells a spanning cell's text repeats over every position it
 /// covers (holes are empty); otherwise the padded row grid.
-fn render_table(t: &Table) -> String {
+pub(crate) fn render_table(t: &Table) -> String {
     let num_rows = t.rows.len();
     let num_cols = t.rows.iter().map(Vec::len).max().unwrap_or(0);
     let mut grid: Vec<Vec<String>> = Vec::with_capacity(num_rows);
     // A rich cell renders its block content through the document serializer
-    // (upstream's `RichTableCell` path), otherwise the flat text.
-    let cell = |r: usize, c: usize, flat: &str| -> String {
+    // (upstream's `RichTableCell` path), otherwise the flat text. Its blocks
+    // live on its anchor; every position it covers repeats them, rendered
+    // once per table (docling-core#857, #777).
+    let anchors = t.span_anchors();
+    let mut rich: std::collections::HashMap<(usize, usize), String> =
+        std::collections::HashMap::new();
+    let mut cell = |r: usize, c: usize, flat: &str| -> String {
+        let anchor = anchors
+            .get(r)
+            .and_then(|row| row.get(c))
+            .copied()
+            .unwrap_or((r, c));
         match t
             .cell_blocks
             .as_ref()
-            .and_then(|b| b.get(r))
-            .and_then(|row| row.get(c))
+            .and_then(|b| b.get(anchor.0))
+            .and_then(|row| row.get(anchor.1))
             .filter(|b| !b.is_empty())
         {
-            Some(blocks) => render_nodes(blocks, 1, false)
-                .join("\n\n")
-                .replace('\n', " "),
+            Some(blocks) => rich
+                .entry(anchor)
+                .or_insert_with(|| {
+                    render_nodes(blocks, 1, false)
+                        .join("\n\n")
+                        .replace('\n', " ")
+                })
+                .clone(),
             None => cell_text(flat),
         }
     };
@@ -618,38 +633,19 @@ fn render_table(t: &Table) -> String {
         Some(cells) => {
             let mut by_pos: std::collections::HashMap<(usize, usize), &str> =
                 std::collections::HashMap::new();
-            // A rich cell is serialized through its group, whose items are
-            // then visited: upstream writes its content at the first grid
-            // position only and leaves the rest of a merge empty (#527); a
-            // plain merged cell repeats its text.
-            let mut rich_cover: std::collections::HashSet<(usize, usize)> =
-                std::collections::HashSet::new();
+            // A merged cell repeats in every position it covers, plain or
+            // rich (a rich one used to be left empty beyond its first, #527).
             for c in cells {
-                let rich = t
-                    .cell_blocks
-                    .as_ref()
-                    .and_then(|b| b.get(c.start_row))
-                    .and_then(|row| row.get(c.start_col))
-                    .is_some_and(|b| !b.is_empty());
                 for r in c.start_row..(c.start_row + c.row_span).min(num_rows) {
                     for k in c.start_col..(c.start_col + c.col_span).min(num_cols) {
                         by_pos.insert((r, k), c.text.as_str());
-                        if rich && (r, k) != (c.start_row, c.start_col) {
-                            rich_cover.insert((r, k));
-                        }
                     }
                 }
             }
             for r in 0..num_rows {
                 grid.push(
                     (0..num_cols)
-                        .map(|c| {
-                            if rich_cover.contains(&(r, c)) {
-                                String::new()
-                            } else {
-                                cell(r, c, by_pos.get(&(r, c)).copied().unwrap_or(""))
-                            }
-                        })
+                        .map(|c| cell(r, c, by_pos.get(&(r, c)).copied().unwrap_or("")))
                         .collect(),
                 );
             }

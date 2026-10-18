@@ -1,7 +1,7 @@
-| Alph                                             | Bravo Charl   | Delta E   |
-|--------------------------------------------------|---------------|-----------|
-| Foxtrot Golf Hotel                               | **Alp**       | **Bravo** |
-| Charlie Del  Echo Foxtrot Golf Hotel Alpha Bravo |               |           |
+| Alph                                             | Bravo Charl                                      | Delta E                                          |
+|--------------------------------------------------|--------------------------------------------------|--------------------------------------------------|
+| Foxtrot Golf Hotel                               | **Alp**                                          | **Bravo**                                        |
+| Charlie Del  Echo Foxtrot Golf Hotel Alpha Bravo | Charlie Del  Echo Foxtrot Golf Hotel Alpha Bravo | Charlie Del  Echo Foxtrot Golf Hotel Alpha Bravo |
 
 | Charlie Delta Echo Fox  Golf Hotel Alpha Bravo   Charlie Delta Echo Foxtrot Go                                                       |
 |--------------------------------------------------------------------------------------------------------------------------------------|

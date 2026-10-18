@@ -782,11 +782,16 @@ fn humanize_label(label: &str) -> String {
 /// is then rendered as `row, column = value` sentences (with the header-only /
 /// single-column special cases and the plain-text flatten fallback).
 fn triplet_table_text(t: &Table) -> String {
+    let anchors = t.span_anchors();
     let rows: Vec<Vec<String>> = t
         .rows
         .iter()
         .enumerate()
-        .map(|(ri, r)| (0..r.len()).map(|ci| cell_chunk_text(t, ri, ci)).collect())
+        .map(|(ri, r)| {
+            (0..r.len())
+                .map(|ci| cell_chunk_text(t, &anchors, ri, ci))
+                .collect()
+        })
         .collect();
     let num_rows = rows.len();
     let num_cols = rows.iter().map(Vec::len).max().unwrap_or(0);
@@ -1107,12 +1112,19 @@ fn split_plain_by_runs(segment: &str, runs: &[crate::InlineRun]) -> Option<Vec<S
 /// sentences, pictures as an empty placeholder. Plain cells use the flat text
 /// with the markdown image placeholder stripped (the chunking serializer's
 /// `image_placeholder` is empty).
-fn cell_chunk_text(t: &Table, r: usize, c: usize) -> String {
+fn cell_chunk_text(t: &Table, anchors: &[Vec<(usize, usize)>], r: usize, c: usize) -> String {
+    // A rich cell's blocks live on its anchor; every position it covers
+    // reads them (docling-core#857, #777).
+    let (ar, ac) = anchors
+        .get(r)
+        .and_then(|row| row.get(c))
+        .copied()
+        .unwrap_or((r, c));
     if let Some(blocks) = t
         .cell_blocks
         .as_ref()
-        .and_then(|b| b.get(r))
-        .and_then(|row| row.get(c))
+        .and_then(|b| b.get(ar))
+        .and_then(|row| row.get(ac))
         .filter(|b| !b.is_empty())
     {
         let mut parts: Vec<String> = Vec::new();
@@ -2757,6 +2769,52 @@ mod tests {
             );
             assert_eq!(triplet_table_text(&t), triplets, "{name}: triplets");
         }
+    }
+
+    /// #777 (docling-core#857, 2.102): a rich header cell spanning two
+    /// columns repeats in both — upstream's `col_span_rich_table_doc`. Its
+    /// blocks sit on the anchor only and the covered position's flat text is
+    /// blank, so LaTeX and the triplets must resolve the anchor themselves.
+    #[test]
+    fn a_column_spanning_rich_cell_repeats_in_every_column() {
+        let mut t = cell_table(
+            2,
+            3,
+            &[
+                ("", 0, 0, 1, true),
+                ("Partner", 0, 1, 1, true),
+                ("Status", 1, 0, 1, false),
+                ("Done", 1, 1, 1, false),
+                ("Open", 1, 2, 1, false),
+            ],
+        );
+        if let Some(cells) = t.cells.as_mut() {
+            cells[1].col_span = 2;
+        }
+        let mut blocks = vec![vec![Vec::new(); 3]; 2];
+        blocks[0][1] = vec![Node::Paragraph {
+            text: "Partner".into(),
+        }];
+        t.cell_blocks = Some(blocks);
+        assert_eq!(
+            t.rows[0][2], "",
+            "the covered position carries no text of its own"
+        );
+        assert_eq!(
+            triplet_table_text(&t),
+            "Status, Partner = Done. Status, Partner = Open"
+        );
+        let latex = crate::latex::render_table(&t);
+        assert!(
+            latex.contains(" & Partner & Partner \\\\ \\hline\nStatus & Done & Open \\\\ \\hline"),
+            "{latex}"
+        );
+        // Markdown reads the flat text, which the backends now fill.
+        t.rows[0][2] = "Partner".into();
+        assert_eq!(
+            crate::markdown::render_table(&t, true),
+            "|  | Partner | Partner |\n| - | - | - |\n| Status | Done | Open |"
+        );
     }
 
     #[test]
