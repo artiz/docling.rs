@@ -1,6 +1,8 @@
 # Cross entropy in one page
 
-![Shannon](https://upload.wikimedia.org/wikipedia/commons/9/99/ClaudeShannon_MFO3807.jpg)
+<!-- image -->
+
+Shannon
 
 The entropy of a distribution $y$ is the expected number of bits under the optimal code, with $\log \frac{1}{y_i}$ bits for the $i$-th symbol:
 

@@ -2104,7 +2104,7 @@ fn flatten_nested_table(table: ElementRef) -> String {
         // extraction (`" ".join(text.split())`), so a still-deeper table's
         // line breaks and indentation no longer survive as space runs.
         let out = out.split_whitespace().collect::<Vec<_>>().join(" ");
-        (out, false, Vec::new())
+        (out, Vec::new())
     })
     .map(|t| {
         t.rows
@@ -2174,7 +2174,7 @@ pub(super) fn subtree_text(elem: ElementRef, out: &mut String) {
 /// [`Table::cell_blocks`] (empty otherwise).
 fn parse_table_cells(
     table: ElementRef,
-    render_cell: impl Fn(ElementRef) -> (String, bool, Vec<Node>),
+    render_cell: impl Fn(ElementRef) -> (String, Vec<Node>),
 ) -> Option<Table> {
     // Collect this table's own rows without descending into nested tables (a
     // recursive `select` would pull a nested table's cells into the outer grid).
@@ -2266,7 +2266,7 @@ fn parse_table_cells(
             while col < num_cols && base < num_rows && grid[base][col].is_some() {
                 col += 1;
             }
-            let (text, rich, cell_nodes) = render_cell(cell);
+            let (text, cell_nodes) = render_cell(cell);
             // docling#4216: a row-header row's cells label the rows they span
             // into, so they are *row* headers — flagging them `column_header`
             // (as docling did until 2.126) made docling-core 2.96 fold the
@@ -2280,19 +2280,14 @@ fn parse_table_cells(
                 for dc in 0..colspan {
                     let gc = col + dc;
                     if gr < num_rows && gc < num_cols {
-                        // A rich cell renders only at its anchor slot; the rest
-                        // of its span stays empty (docling serializes the same
-                        // RichTableCell once — the `visited` set blanks every
-                        // later grid occurrence). Plain cells replicate.
-                        grid[gr][gc] = Some(if rich && anchor_filled {
-                            String::new()
-                        } else {
-                            text.clone()
-                        });
+                        // Every position of the span repeats the cell's text,
+                        // a rich cell's too (docling-core#857, #777: the
+                        // serializers resolve a `RichTableCell` once and
+                        // repeat it).
+                        grid[gr][gc] = Some(text.clone());
                         // The blocks live on the anchor slot only: a covered
-                        // position is a continuation token in DocLang and
-                        // repeats nothing, matching how a rich cell's *text*
-                        // is serialized once (the visited set blanks the rest).
+                        // position is a continuation token in DocLang, and
+                        // LaTeX and the chunker resolve it to its anchor.
                         if !anchor_filled && !cell_nodes.is_empty() {
                             blocks[gr][gc] = cell_nodes.clone();
                         }
@@ -2392,8 +2387,8 @@ pub(super) fn span_value(raw: Option<&str>, limit: usize) -> usize {
 /// Either way inline text is left unescaped; the table serializer flattens
 /// newlines to spaces.
 /// One table cell: its flat Markdown text (what `rows` — and so Markdown and
-/// JSON — carry), whether it is *rich*, and a rich cell's structured blocks
-/// for [`Table::cell_blocks`] (#328).
+/// JSON — carry) and a rich cell's structured blocks for
+/// [`Table::cell_blocks`] (#328; empty for a plain cell).
 ///
 /// The two are produced by *separate* walks on purpose. The text walk is `raw`
 /// (no Markdown escaping, nested tables flattened to their joined cell text) so
@@ -2401,13 +2396,13 @@ pub(super) fn span_value(raw: Option<&str>, limit: usize) -> usize {
 /// ordinary one: a nested `<table>` stays a real [`Node::Table`], a list stays
 /// list items, a heading stays a heading — which is what the DocLang and LaTeX
 /// serializers render, matching upstream's `RichTableCell`.
-fn render_cell(cell: ElementRef) -> (String, bool, Vec<Node>) {
+fn render_cell(cell: ElementRef) -> (String, Vec<Node>) {
     let raw = Fmt {
         raw: true,
         ..Fmt::default()
     };
     if !is_rich_cell(cell) {
-        return (render_inline_fmt(cell, raw), false, Vec::new());
+        return (render_inline_fmt(cell, raw), Vec::new());
     }
     let mut nodes: Vec<Node> = Vec::new();
     // Images inside table cells stay placeholders (they fold into cell text).
@@ -2421,7 +2416,7 @@ fn render_cell(cell: ElementRef) -> (String, bool, Vec<Node>) {
     let mut blocks: Vec<Node> = Vec::new();
     walk_block(cell, &mut blocks, 0, Fmt::default(), &NoFetch);
     wrap_cell_inline_groups(&mut blocks);
-    (text, true, blocks)
+    (text, blocks)
 }
 
 /// Inside a table cell an inline group is always `<text>`-wrapped: docling

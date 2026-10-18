@@ -1169,6 +1169,38 @@ impl Table {
         }
     }
 
+    /// For every grid position, the position of the cell that covers it — its
+    /// anchor (top-left start): itself for an unmerged position, the merge's
+    /// start for one a spanning cell covers. Uses the first-class
+    /// [`Self::cells`] when present, else the cells derived from the
+    /// structure overlay. A rich cell's blocks ([`Self::cell_blocks`]) live on
+    /// its anchor only, so a serializer that repeats a merged cell in every
+    /// position it covers (docling-core#857) reads them through this.
+    pub fn span_anchors(&self) -> Vec<Vec<(usize, usize)>> {
+        let num_cols = self.rows.iter().map(Vec::len).max().unwrap_or(0);
+        let mut anchors: Vec<Vec<(usize, usize)>> = (0..self.rows.len())
+            .map(|r| (0..num_cols).map(|c| (r, c)).collect())
+            .collect();
+        let derived;
+        let cells: &[TableCell] = match &self.cells {
+            Some(c) if !c.is_empty() => c,
+            _ => {
+                derived = self.derive_cells();
+                &derived
+            }
+        };
+        for cell in cells {
+            let rows = cell.start_row..cell.start_row + cell.row_span.max(1);
+            for row in anchors.iter_mut().take(rows.end).skip(rows.start) {
+                let cols = cell.start_col..cell.start_col + cell.col_span.max(1);
+                for pos in row.iter_mut().take(cols.end).skip(cols.start) {
+                    *pos = (cell.start_row, cell.start_col);
+                }
+            }
+        }
+        anchors
+    }
+
     /// The first-class cell covering a grid position, if any.
     pub fn cell_at(&self, row: usize, col: usize) -> Option<&TableCell> {
         self.cells.as_ref()?.iter().find(|c| {

@@ -1,0 +1,238 @@
+{
+  "schema_name": "DoclingDocument",
+  "version": "1.10.0",
+  "name": "pictures_html_no_caption",
+  "origin": {
+    "mimetype": "text/html",
+    "binary_hash": 10552154931903162115,
+    "filename": "pictures_html_no_caption.md"
+  },
+  "furniture": {
+    "self_ref": "#/furniture",
+    "children": [],
+    "content_layer": "furniture",
+    "name": "_root_",
+    "label": "unspecified"
+  },
+  "body": {
+    "self_ref": "#/body",
+    "children": [
+      {
+        "$ref": "#/texts/0"
+      },
+      {
+        "$ref": "#/texts/5"
+      }
+    ],
+    "content_layer": "body",
+    "name": "_root_",
+    "label": "unspecified"
+  },
+  "groups": [
+    {
+      "self_ref": "#/groups/0",
+      "parent": {
+        "$ref": "#/texts/0"
+      },
+      "children": [
+        {
+          "$ref": "#/groups/1"
+        }
+      ],
+      "content_layer": "body",
+      "name": "header-2",
+      "label": "section"
+    },
+    {
+      "self_ref": "#/groups/1",
+      "parent": {
+        "$ref": "#/groups/0"
+      },
+      "children": [
+        {
+          "$ref": "#/groups/2"
+        }
+      ],
+      "content_layer": "body",
+      "name": "header-3",
+      "label": "section"
+    },
+    {
+      "self_ref": "#/groups/2",
+      "parent": {
+        "$ref": "#/groups/1"
+      },
+      "children": [
+        {
+          "$ref": "#/texts/1"
+        }
+      ],
+      "content_layer": "body",
+      "name": "header-4",
+      "label": "section"
+    }
+  ],
+  "texts": [
+    {
+      "self_ref": "#/texts/0",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [
+        {
+          "$ref": "#/groups/0"
+        }
+      ],
+      "content_layer": "body",
+      "label": "title",
+      "prov": [],
+      "orig": "Title",
+      "text": "Title"
+    },
+    {
+      "self_ref": "#/texts/1",
+      "parent": {
+        "$ref": "#/groups/2"
+      },
+      "children": [
+        {
+          "$ref": "#/texts/2"
+        },
+        {
+          "$ref": "#/pictures/0"
+        },
+        {
+          "$ref": "#/texts/3"
+        },
+        {
+          "$ref": "#/texts/4"
+        },
+        {
+          "$ref": "#/pictures/1"
+        },
+        {
+          "$ref": "#/texts/6"
+        },
+        {
+          "$ref": "#/texts/7"
+        }
+      ],
+      "content_layer": "body",
+      "label": "section_header",
+      "prov": [],
+      "orig": "HTML heading",
+      "text": "HTML heading",
+      "level": 4
+    },
+    {
+      "self_ref": "#/texts/2",
+      "parent": {
+        "$ref": "#/texts/1"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "Before picture.",
+      "text": "Before picture."
+    },
+    {
+      "self_ref": "#/texts/3",
+      "parent": {
+        "$ref": "#/texts/1"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "alt",
+      "text": "alt"
+    },
+    {
+      "self_ref": "#/texts/4",
+      "parent": {
+        "$ref": "#/texts/1"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "Between pictures.",
+      "text": "Between pictures."
+    },
+    {
+      "self_ref": "#/texts/5",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "caption",
+      "prov": [],
+      "orig": "Second picture",
+      "text": "Second picture"
+    },
+    {
+      "self_ref": "#/texts/6",
+      "parent": {
+        "$ref": "#/texts/1"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "alt",
+      "text": "alt"
+    },
+    {
+      "self_ref": "#/texts/7",
+      "parent": {
+        "$ref": "#/texts/1"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "After picture.",
+      "text": "After picture."
+    }
+  ],
+  "pictures": [
+    {
+      "self_ref": "#/pictures/0",
+      "parent": {
+        "$ref": "#/texts/1"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "picture",
+      "prov": [],
+      "captions": [],
+      "references": [],
+      "footnotes": [],
+      "annotations": []
+    },
+    {
+      "self_ref": "#/pictures/1",
+      "parent": {
+        "$ref": "#/texts/1"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "picture",
+      "prov": [],
+      "captions": [
+        {
+          "$ref": "#/texts/5"
+        }
+      ],
+      "references": [],
+      "footnotes": [],
+      "annotations": []
+    }
+  ],
+  "tables": [],
+  "key_value_items": [],
+  "form_items": [],
+  "pages": {}
+}

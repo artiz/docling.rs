@@ -1864,10 +1864,20 @@ fn emit_list(out: &mut Out, depth: i32, nodes: &[Node], i: &mut usize, level: u8
                     }
                     None => out.push(depth + 1, "<ldiv/>".to_string()),
                 }
+                // docling emits an `<href>` head only when the item's whole
+                // content is a lone link (`[anchor](uri)`); a mixed item
+                // (`text [anchor](uri) …`) keeps the anchor inline with no
+                // head. A non-body layer always rides in the head.
+                let stripped = strip_lone_link(text);
+                let eff_href = href
+                    .as_deref()
+                    .filter(|_| matches!(stripped, Cow::Owned(_)));
+                let head = dclx.is_none() && (eff_href.is_some() || layer.is_some());
                 // Layout provenance (PPTX shapes): the four `<location>` tokens
                 // follow the `<ldiv>` and precede the item's content, matching
-                // docling's element head inside the list.
-                if let Some(loc) = location {
+                // docling's element head inside the list — after an `<href>`
+                // or `<layer>` token when the item has one.
+                if let Some(loc) = location.as_ref().filter(|_| !head) {
                     push_location(out, depth + 1, loc);
                 }
                 match dclx {
@@ -1888,15 +1898,7 @@ fn emit_list(out: &mut Out, depth: i32, nodes: &[Node], i: &mut usize, level: u8
                     // a normal item but from the overlay's text.
                     Some(d) => emit_list_item_content(out, depth + 1, &d.text, has_nested),
                     None => {
-                        // docling emits an `<href>` head only when the item's whole
-                        // content is a lone link (`[anchor](uri)`); a mixed item
-                        // (`text [anchor](uri) …`) keeps the anchor inline with no
-                        // head. A non-body layer always rides in the head.
-                        let stripped = strip_lone_link(text);
-                        let eff_href = href
-                            .as_deref()
-                            .filter(|_| matches!(stripped, Cow::Owned(_)));
-                        if eff_href.is_some() || layer.is_some() {
+                        if head {
                             let content: &str = if eff_href.is_some() {
                                 stripped.as_ref()
                             } else {
@@ -1909,6 +1911,7 @@ fn emit_list(out: &mut Out, depth: i32, nodes: &[Node], i: &mut usize, level: u8
                                 has_nested,
                                 eff_href,
                                 *layer,
+                                location.as_ref(),
                             );
                         } else {
                             emit_list_item_content(out, depth + 1, text, has_nested);
@@ -1958,13 +1961,18 @@ fn emit_list_item_with_head(
     has_nested: bool,
     href: Option<&str>,
     layer: Option<ContentLayer>,
+    location: Option<&[u16; 4]>,
 ) {
+    // docling's head order: the link, the layer, then the location.
     let head = |out: &mut Out, d: i32| {
         if let Some(uri) = href {
             out.push(d, format!("<href uri=\"{}\"/>", attr_escape(uri)));
         }
         if let Some(l) = layer {
             out.push(d, format!("<layer value=\"{}\"/>", l.value()));
+        }
+        if let Some(loc) = location {
+            push_location(out, d, loc);
         }
     };
     if has_nested {

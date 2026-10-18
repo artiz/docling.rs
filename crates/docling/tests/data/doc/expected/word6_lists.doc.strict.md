@@ -1,7 +1,7 @@
-| Alph                                    | Bravo Charl   | Delta E   |
-|-----------------------------------------|---------------|-----------|
-| Foxtrot Gol                             | **Hot**       | **Alpha** |
-| Bravo Charl  Delta Echo Foxtrot Golf Ho |               |           |
+| Alph                                    | Bravo Charl                             | Delta E                                 |
+|-----------------------------------------|-----------------------------------------|-----------------------------------------|
+| Foxtrot Gol                             | **Hot**                                 | **Alpha**                               |
+| Bravo Charl  Delta Echo Foxtrot Golf Ho | Bravo Charl  Delta Echo Foxtrot Golf Ho | Bravo Charl  Delta Echo Foxtrot Golf Ho |
 
 | Alpha Bravo Charlie De  1. Echo Foxtrot Go 2. Hotel Alpha Bravo 3. Charlie Delta Ech 4. Foxtrot G 5. Hotel Alp 6. Bravo Cha     |
 |---------------------------------------------------------------------------------------------------------------------------------|

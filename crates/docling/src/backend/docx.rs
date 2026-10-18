@@ -1913,13 +1913,10 @@ fn parse_table_inner(tbl: XmlNode, ctx: &Ctx, nested: bool) -> Option<Table> {
     let mut col_cont = vec![vec![false; num_cols]; rows.len()];
     let mut row_cont = vec![vec![false; num_cols]; rows.len()];
     let mut any_span = false;
-    // Positions a *rich* merged cell covers beyond its first (#527). docling
-    // writes a rich cell through its group ref and marks the items visited,
-    // so the Markdown table shows its content once — at the top-left grid
-    // position, the first the row-major walk reaches — and the rest of the
-    // merge empty; a plain merged cell repeats its text everywhere.
-    let mut rich_at = vec![vec![false; num_cols]; rows.len()];
-    let mut rich_cover = vec![vec![false; num_cols]; rows.len()];
+    // A merged cell's text fills every grid position it covers, a rich cell's
+    // as much as a plain one's (docling-core#857, 2.102, #777: the
+    // serializers resolve a `RichTableCell` once per table and repeat it, where
+    // they used to leave the rest of the merge empty).
     // Counted for the outermost table only: a nested table's rich cells are
     // part of the outer cell's walk.
     let top_level = !nested && ctx.table_depth.get() == 1;
@@ -1968,19 +1965,8 @@ fn parse_table_inner(tbl: XmlNode, ctx: &Ctx, nested: bool) -> Option<Table> {
             for cell in grid[ri].iter_mut().take(col_end).skip(ci) {
                 *cell = text.clone();
             }
-            if !nested && ci < col_end {
-                let rich = if v_continue && ri > 0 {
-                    rich_at[ri - 1][ci]
-                } else {
-                    is_rich_cell(tc)
-                };
-                if top_level && rich && !(v_continue && ri > 0) {
-                    orphans += super::docx_tree::rich_cell_orphan_groups(tc, ctx);
-                }
-                for c in ci..col_end {
-                    rich_at[ri][c] = rich;
-                    rich_cover[ri][c] = rich && (c > ci || (v_continue && ri > 0));
-                }
+            if top_level && ci < col_end && !(v_continue && ri > 0) && is_rich_cell(tc) {
+                orphans += super::docx_tree::rich_cell_orphan_groups(tc, ctx);
             }
             for c in col_cont[ri].iter_mut().take(col_end).skip(ci + 1) {
                 *c = true;
@@ -1997,13 +1983,6 @@ fn parse_table_inner(tbl: XmlNode, ctx: &Ctx, nested: bool) -> Option<Table> {
     }
     if top_level {
         ctx.orphan_inline_groups.set(orphans);
-    }
-    for (row, cover) in grid.iter_mut().zip(&rich_cover) {
-        for (cell, &covered) in row.iter_mut().zip(cover) {
-            if covered {
-                cell.clear();
-            }
-        }
     }
     let structure = any_span.then(|| {
         let mut header_row = vec![false; rows.len()];

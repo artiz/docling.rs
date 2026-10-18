@@ -1401,8 +1401,8 @@ fn parse_table(table: XmlNode, styles: &Styles) -> Option<Table> {
     // (`number-columns-spanned`/`number-rows-spanned`) and emits an explicit
     // `covered-table-cell` at every covered position; we mark the anchor's
     // rectangle so a covered cell becomes `<lcel/>` (horizontal), `<ucel/>`
-    // (vertical) or `<xcel/>` (both). Text stays on the anchor only, so
-    // Markdown/JSON are unchanged.
+    // (vertical) or `<xcel/>` (both). The anchor's text also fills every
+    // covered position, as docling's grid does.
     let nrows = tr_rows.len();
     let mut grid = vec![vec![String::new(); num_cols]; nrows];
     let mut col_cont = vec![vec![false; num_cols]; nrows];
@@ -1442,16 +1442,12 @@ fn parse_table(table: XmlNode, styles: &Styles) -> Option<Table> {
                         if rr == ri && cc == ci {
                             continue;
                         }
-                        // docling's `TableData.grid` repeats a *plain* anchor's
-                        // text into every covered position (visible in
-                        // Markdown/JSON). A rich cell dedups instead: its
-                        // covered occurrences serialize empty (the visited-set
-                        // suppresses the repeated `RichTableCell` content).
-                        // DocLang ignores either way — continuation cells are
+                        // docling's `TableData.grid` repeats the anchor's text
+                        // into every covered position (visible in
+                        // Markdown/JSON), a rich cell's too (docling-core#857,
+                        // #777). DocLang ignores it — continuation cells are
                         // token-only.
-                        if cell_nodes.is_empty() {
-                            grid[rr][cc] = text.clone();
-                        }
+                        grid[rr][cc] = text.clone();
                         col_cont[rr][cc] |= cc > ci;
                         row_cont[rr][cc] |= rr > ri;
                     }
@@ -2618,8 +2614,10 @@ mod tests {
         assert!(!image_can_be_bitmap(imgs[1], ""), "SVM magic");
     }
 
+    /// A merged cell's text repeats into the positions it covers, a rich
+    /// cell's too (docling-core#857, #777).
     #[test]
-    fn merged_cells_leave_covered_columns_blank() {
+    fn merged_cells_repeat_into_covered_columns() {
         let xml = r#"<root xmlns:table="t" xmlns:text="x">
           <table:table>
             <table:table-row>
@@ -2634,7 +2632,7 @@ mod tests {
             </table:table-row>
           </table:table></root>"#;
         let t = table_of(xml);
-        assert_eq!(t.rows[0], vec!["Wide", "", "C"]);
+        assert_eq!(t.rows[0], vec!["Wide", "Wide", "C"]);
         assert_eq!(t.rows[1], vec!["x", "y", "z"]);
     }
 }

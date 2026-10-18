@@ -209,7 +209,9 @@ fn html_remote_honours_the_host_allow_list() {
 /// Acceptance 4: a Markdown `![…](data:…)` image and an inline
 /// `<img src="data:…">` in an HTML paragraph become pictures with bytes
 /// under `Embedded`; the relative path stays a placeholder; under `None`
-/// the pictures carry nothing and the flat Markdown is the text it was.
+/// the pictures carry nothing and print as placeholders. A lone image is
+/// captioned by its title, its alt text a paragraph after it (#760,
+/// docling#4777).
 #[test]
 fn markdown_data_images_resolve_under_embedded() {
     let source = SourceDocument::from_file(fixture("md", "data_uri_images.md")).unwrap();
@@ -223,8 +225,9 @@ fn markdown_data_images_resolve_under_embedded() {
     assert_eq!(pictures(&doc), [Some((24, 16)), Some((16, 24))]);
     assert!(matches!(
         &doc.nodes[2],
-        Node::Picture { caption: Some(c), .. } if c == "A red box"
+        Node::Picture { caption: Some(c), .. } if c == "Red box"
     ));
+    assert!(matches!(&doc.nodes[3], Node::Paragraph { text } if text == "A red box"));
     let json = json_pictures(&doc);
     assert_eq!(json.iter().filter(|(has, _)| *has).count(), 2, "{json:?}");
     assert!(json.iter().any(|(_, s)| *s == Some((24, 16))));
@@ -232,9 +235,13 @@ fn markdown_data_images_resolve_under_embedded() {
     let source = SourceDocument::from_file(fixture("md", "data_uri_images.md")).unwrap();
     let plain = DocumentConverter::new().convert(source).unwrap().document;
     assert!(json_pictures(&plain).iter().all(|(has, _)| !has));
+    assert!(pictures(&plain).iter().all(Option::is_none));
     let md = plain.export_to_markdown();
-    assert!(md.contains("![A red box](data:image/png;base64,"), "{md}");
-    assert!(!md.contains("<!-- image -->") || pictures(&plain).iter().all(Option::is_none));
+    assert!(
+        md.contains("Red box\n\n<!-- image -->\n\nA red box"),
+        "{md}"
+    );
+    assert!(!md.contains("data:image/png;base64,"), "{md}");
 }
 
 /// Acceptance 5: an `.eml` whose HTML body references two `cid:` parts

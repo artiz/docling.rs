@@ -34,6 +34,279 @@ pub struct MarkdownBackend {
     pub images: ImagePolicy,
 }
 
+/// What a GFM bare URL links to: marko's `gfm_el.Url` (an `AutoLink`).
+#[derive(Clone, Copy, PartialEq)]
+enum BareUrl {
+    /// `http(s)://` or `ftp://`, linked as written.
+    Url,
+    /// `www.…`, linked with an `http://` prefix.
+    Www,
+    /// An e-mail address, a `mailto:` link.
+    Email,
+}
+
+/// marko's GFM `Url.find` over the source text of one run of contiguous text
+/// events (`run`, a byte range of `text`): the bare URLs it links, as
+/// `(start, end, kind)` byte ranges of `text` (docling#4791, #773).
+///
+/// marko matches over the paragraph's whole inline source, so a match may
+/// run past the text into the delimiters after it: `[^<\s]*` takes a closing
+/// `*` or `**` along, and only one trailing `?!.,:*_~` is trimmed. A URL
+/// whose trimmed end still overlaps that markup loses to the emphasis
+/// (`**https://x.y/z**` and `*https://x.y/z*.` are not linked,
+/// `*https://x.y/z* b` is), which here is a match ending past the run.
+fn find_bare_urls(
+    text: &str,
+    run: std::ops::Range<usize>,
+    in_table: bool,
+) -> Vec<(usize, usize, BareUrl)> {
+    let url = cached_regex!(r"(?:https?|ftp)://([\w.\-]*?\.[\w.\-]+)[^<\s]*");
+    let www = cached_regex!(r"www\.([\w.\-]*?\.[\w.\-]+)[^<\s]*");
+    let email = cached_regex!(r"[\w.\-+]+@[\w.\-]*?\.[\w.\-]*[a-zA-Z0-9]");
+    let email_whole = cached_regex!(r"^[\w.\-+]+@[\w.\-]*?\.[\w.\-]*[a-zA-Z0-9]$");
+    let entity_tail = cached_regex!(r"&[a-zA-Z]+;$");
+    // A URL holds no whitespace: nothing past the next one can be part of a
+    // match that starts inside the run.
+    let hay_end = text[run.end..]
+        .find(|c: char| c.is_whitespace() || c == '<')
+        .map_or(text.len(), |k| run.end + k);
+    // The lookbehind `(?:^|(?<=[\s*_~(\uff00-\uffef]))`; a table cell's text
+    // starts after its `|`.
+    let starts_ok = |at: usize| match text[..at].chars().next_back() {
+        // A link destination (`](https://…`) is no bare URL: marko reads the
+        // link whole, which pulldown's math pass can keep it from seeing
+        // (`[$$x$$](url)`).
+        Some('(') if text[..at - 1].ends_with(']') => false,
+        None => true,
+        Some(c) => {
+            c.is_whitespace()
+                || matches!(c, '*' | '_' | '~' | '(')
+                || ('\u{ff00}'..='\u{ffef}').contains(&c)
+                || (in_table && c == '|')
+        }
+    };
+    // The email alternative's lookahead `(?=[\s.<]|\Z)`, backtracking to a
+    // shorter address as Python's regex engine would.
+    let email_end = |start: usize, end: usize| -> Option<usize> {
+        (start + 1..=end).rev().find(|&e| {
+            text.is_char_boundary(e)
+                && email_whole.is_match(&text[start..e])
+                && text[e..]
+                    .chars()
+                    .next()
+                    .is_none_or(|c| c.is_whitespace() || c == '.' || c == '<')
+        })
+    };
+    let domain_ok = |domain: &str| {
+        let parts: Vec<&str> = domain.split('.').collect();
+        parts.len() >= 2 && !parts[parts.len() - 2..].iter().any(|p| p.contains('_'))
+    };
+    let mut found = Vec::new();
+    let mut pos = run.start;
+    while pos < run.end {
+        let hay = &text[pos..hay_end];
+        // The leftmost candidate of the three patterns (an `http` URL before
+        // an address at the same spot, as the alternation orders them).
+        let candidates = [
+            url.captures(hay).map(|c| {
+                (
+                    c.get(0).unwrap(),
+                    c.get(1).map(|d| d.as_str()),
+                    BareUrl::Url,
+                )
+            }),
+            www.captures(hay).map(|c| {
+                (
+                    c.get(0).unwrap(),
+                    c.get(1).map(|d| d.as_str()),
+                    BareUrl::Www,
+                )
+            }),
+            email.find(hay).map(|m| (m, None, BareUrl::Email)),
+        ];
+        let Some((m, domain, kind)) = candidates
+            .into_iter()
+            .flatten()
+            .min_by_key(|(m, _, kind)| (m.start(), *kind != BareUrl::Url))
+        else {
+            break;
+        };
+        let start = pos + m.start();
+        if start >= run.end {
+            break;
+        }
+        let next = |at: usize| at + text[at..].chars().next().map_or(1, char::len_utf8);
+        if !starts_ok(start) {
+            // Python's `finditer` retries one character on.
+            pos = next(start);
+            continue;
+        }
+        let mut full_end = pos + m.end();
+        if kind == BareUrl::Email {
+            match email_end(start, full_end) {
+                Some(e) => full_end = e,
+                None => {
+                    pos = next(start);
+                    continue;
+                }
+            }
+        }
+        pos = full_end;
+        if domain.is_some_and(|d| !domain_ok(d)) {
+            continue;
+        }
+        // The trailing trim: one `?!.,:*_~`, unbalanced `)`s, or an entity.
+        let link = &text[start..full_end];
+        let mut end = full_end;
+        if link.ends_with(['?', '!', '.', ',', ':', '*', '_', '~']) {
+            end -= 1;
+        } else if link.ends_with(')') && link.matches(')').count() > link.matches('(').count() {
+            end -= link.matches(')').count() - link.matches('(').count();
+        } else if let Some(m) = entity_tail.find(link) {
+            end -= m.len();
+        }
+        if end <= run.end && end > start {
+            found.push((start, end, kind));
+        }
+    }
+    found
+}
+
+/// Link the GFM bare URLs (`https://…`, `www.…`, an address) of the text
+/// runs, as marko's `gfm_el.Url` does and docling keeps since docling#4791
+/// (#773): each becomes a link around its text — `Autolink` to the URL
+/// (`http://` before a `www.`), or `Email` to the address. Text inside a
+/// link, an image, a code or HTML block is left alone; a run is the
+/// contiguous text events the parsers merge, so an escape (whose backslash
+/// leaves a gap) ends one. Used by both parsers, after
+/// [`fold_math_into_text`].
+pub(super) fn link_bare_urls<'a>(
+    raw: Vec<(Event<'a>, std::ops::Range<usize>)>,
+    text: &'a str,
+) -> Vec<(Event<'a>, std::ops::Range<usize>)> {
+    let mut out = Vec::with_capacity(raw.len());
+    let mut opaque = 0usize;
+    let mut in_table = false;
+    let mut k = 0;
+    while k < raw.len() {
+        match &raw[k].0 {
+            Event::Start(
+                Tag::Link { .. }
+                | Tag::Image { .. }
+                | Tag::CodeBlock(_)
+                | Tag::HtmlBlock
+                | Tag::MetadataBlock(_),
+            ) => opaque += 1,
+            Event::End(
+                TagEnd::Link
+                | TagEnd::Image
+                | TagEnd::CodeBlock
+                | TagEnd::HtmlBlock
+                | TagEnd::MetadataBlock(_),
+            ) => opaque = opaque.saturating_sub(1),
+            Event::Start(Tag::Table(_)) => in_table = true,
+            Event::End(TagEnd::Table) => in_table = false,
+            _ => {}
+        }
+        if opaque > 0 || !matches!(raw[k].0, Event::Text(_)) {
+            out.push(raw[k].clone());
+            k += 1;
+            continue;
+        }
+        let first = k;
+        let mut run_end = raw[k].1.start;
+        while let Some((Event::Text(_), r)) = raw.get(k) {
+            if r.start != run_end {
+                break;
+            }
+            run_end = r.end;
+            k += 1;
+        }
+        let run = &raw[first..k];
+        let urls = find_bare_urls(text, run[0].1.start..run_end, in_table);
+        // A span must not cut through a resolved reference (`&amp;`), whose
+        // text is not its source.
+        let plain = |t: &str, r: &std::ops::Range<usize>| text.get(r.clone()) == Some(t);
+        let urls: Vec<_> = urls
+            .into_iter()
+            .filter(|&(s, e, _)| {
+                run.iter().all(|(ev, r)| match ev {
+                    Event::Text(t) if !plain(t, r) => {
+                        let inside = |c: usize| r.start < c && c < r.end;
+                        !inside(s) && !inside(e)
+                    }
+                    _ => true,
+                })
+            })
+            .collect();
+        if urls.is_empty() {
+            out.extend(run.iter().cloned());
+            continue;
+        }
+        // Re-emit the run, cut at the spans' edges.
+        let mut pieces: Vec<(String, std::ops::Range<usize>)> = Vec::new();
+        for (ev, r) in run {
+            let Event::Text(t) = ev else { continue };
+            if !plain(t, r) {
+                pieces.push((t.to_string(), r.clone()));
+                continue;
+            }
+            let mut cuts: Vec<usize> = urls
+                .iter()
+                .flat_map(|&(s, e, _)| [s, e])
+                .filter(|&c| r.start < c && c < r.end)
+                .collect();
+            cuts.sort_unstable();
+            let mut at = r.start;
+            for c in cuts.into_iter().chain([r.end]) {
+                if c > at {
+                    pieces.push((text[at..c].to_string(), at..c));
+                }
+                at = c;
+            }
+        }
+        let mut p = 0;
+        for &(s, e, kind) in &urls {
+            while p < pieces.len() && pieces[p].1.end <= s {
+                out.push((Event::Text(pieces[p].0.clone().into()), pieces[p].1.clone()));
+                p += 1;
+            }
+            let inner: Vec<_> = pieces[p..]
+                .iter()
+                .take_while(|(_, r)| r.end <= e)
+                .cloned()
+                .collect();
+            p += inner.len();
+            let label: String = inner.iter().map(|(t, _)| t.as_str()).collect();
+            let (link_type, dest) = match kind {
+                BareUrl::Url => (pulldown_cmark::LinkType::Autolink, label.clone()),
+                BareUrl::Www => (
+                    pulldown_cmark::LinkType::Autolink,
+                    format!("http://{label}"),
+                ),
+                BareUrl::Email => (pulldown_cmark::LinkType::Email, label.clone()),
+            };
+            out.push((
+                Event::Start(Tag::Link {
+                    link_type,
+                    dest_url: dest.into(),
+                    title: "".into(),
+                    id: "".into(),
+                }),
+                s..e,
+            ));
+            for (t, r) in inner {
+                out.push((Event::Text(t.into()), r));
+            }
+            out.push((Event::End(TagEnd::Link), s..e));
+        }
+        for (t, r) in &pieces[p..] {
+            out.push((Event::Text(t.clone().into()), r.clone()));
+        }
+    }
+    out
+}
+
 /// Math (`ENABLE_MATH`): a display formula that is a paragraph of its own —
 /// `Start(Paragraph) DisplayMath End(Paragraph)` — stays an event for the
 /// block parser to make a formula item of; every other math event (inline
@@ -204,7 +477,7 @@ impl DeclarativeBackend for MarkdownBackend {
         // nothing around it (docling#4313: `a\|b` is the cell `a|b`).
         let raw: Vec<(Event, std::ops::Range<usize>)> =
             Parser::new_ext(text, opts).into_offset_iter().collect();
-        let raw = fold_math_into_text(raw, text);
+        let raw = link_bare_urls(fold_math_into_text(raw, text), text);
         let mut events: Vec<Event> = Vec::with_capacity(raw.len());
         let mut k = 0;
         let mut in_table = false;
@@ -392,16 +665,15 @@ impl MarkdownBackend {
                         continue;
                     }
                     *i += 1;
-                    // A paragraph that is one image whose destination the
-                    // policy resolves (#646) is a picture with its bytes —
-                    // the flat chain's counterpart of the tree's
-                    // `TreeKind::Picture`, so `--images embedded` Markdown
-                    // shows it. Anything else (the default tier included)
-                    // stays the `![alt](dest)` text it always was.
-                    if let Some(node) = self.lone_image_picture(events, *i, images) {
+                    // A paragraph that is one image is a picture — the flat
+                    // chain's counterpart of the tree's `TreeKind::Picture`
+                    // (#760, docling#4777): its title the caption, its bytes
+                    // when the policy resolves the destination (#646), its
+                    // alt text a paragraph after it.
+                    if let Some(nodes) = self.lone_image_picture(events, *i, images) {
                         skip_subtree(events, i); // the image
                         consume_end(events, i); // the paragraph
-                        out.push(node);
+                        out.extend(nodes);
                         continue;
                     }
                     let runs = self.collect_inline(events, i, false);
@@ -504,16 +776,23 @@ impl MarkdownBackend {
         }
     }
 
-    /// The picture for a paragraph whose only content is an image at
-    /// `events[start]` and whose destination `images` resolves; `None`
-    /// otherwise (the paragraph is parsed as text).
+    /// The nodes for a paragraph whose only content is an image at
+    /// `events[start]`, as docling's `_iterate_elements` builds them (and
+    /// keeps through its HTML round trip since docling#4777, #760): a picture
+    /// captioned by the image's title — a caption item created ahead of it —
+    /// carrying the bytes when `images` resolves the destination, then the
+    /// alt text as a paragraph. `None` when the paragraph holds more than the
+    /// image (it is parsed as text).
     fn lone_image_picture(
         &self,
         events: &[Event],
         start: usize,
         images: &dyn ImageResolver,
-    ) -> Option<Node> {
-        let Some(Event::Start(Tag::Image { dest_url, .. })) = events.get(start) else {
+    ) -> Option<Vec<Node>> {
+        let Some(Event::Start(Tag::Image {
+            dest_url, title, ..
+        })) = events.get(start)
+        else {
             return None;
         };
         let mut end = start;
@@ -521,18 +800,21 @@ impl MarkdownBackend {
         if !matches!(events.get(end), Some(Event::End(TagEnd::Paragraph))) {
             return None;
         }
-        let image = images.resolve(dest_url)?;
         let mut j = start + 1;
         let alt = self.join_runs(&self.collect_inline(events, &mut j, false), false);
-        Some(Node::Picture {
-            caption: Some(alt).filter(|a| !a.is_empty()),
+        let mut nodes = vec![Node::Picture {
+            caption: Some(escape_text(title)).filter(|t| !t.is_empty()),
             caption_href: None,
-            image: Some(image),
+            image: images.resolve(dest_url),
             classification: None,
             description: None,
-            caption_parent: Default::default(),
+            caption_parent: docling_core::CaptionParent::Container,
             caption_location: None,
-        })
+        }];
+        if !alt.is_empty() {
+            nodes.push(Node::Paragraph { text: alt });
+        }
+        Some(nodes)
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -728,24 +1010,36 @@ impl MarkdownBackend {
                     runs.push(self.wrap_inline(events, i, table, "~~"));
                     self.apply_break(&mut runs, pending.take(), table);
                 }
-                Event::Start(Tag::Link { dest_url, .. }) => {
-                    let url = dest_url.to_string();
+                Event::Start(Tag::Link {
+                    link_type,
+                    dest_url,
+                    ..
+                }) => {
+                    let url = link_dest(*link_type, dest_url);
                     *i += 1;
                     let inner = self.join_runs(&self.collect_inline(events, i, table), table);
                     consume_end(events, i);
-                    runs.push(if table {
-                        inner
-                    } else {
-                        format!("[{inner}]({url})")
-                    });
+                    // A table cell keeps its links too (docling 2.140 prints
+                    // `[label](url)` in a cell).
+                    runs.push(format!("[{inner}]({url})"));
                 }
-                Event::Start(Tag::Image { dest_url, .. }) => {
+                Event::Start(Tag::Image {
+                    dest_url, title, ..
+                }) => {
                     let url = dest_url.to_string();
                     *i += 1;
                     let alt = self.join_runs(&self.collect_inline(events, i, table), table);
                     consume_end(events, i);
                     runs.push(if table {
-                        alt
+                        // A picture in a table cell (#760, docling#4777):
+                        // docling's rich cell prints it with its title
+                        // caption ahead of the placeholder; the alt text is
+                        // not part of it.
+                        if title.is_empty() {
+                            "<!-- image -->".to_string()
+                        } else {
+                            format!("{title}  <!-- image -->")
+                        }
                     } else {
                         format!("![{alt}]({url})")
                     });
@@ -886,6 +1180,15 @@ fn consume_end(events: &[Event], i: &mut usize) {
 enum Break {
     Soft,
     Hard,
+}
+
+/// A link's target: an e-mail autolink (`<me@x.y>`, a bare address) is a
+/// `mailto:` link, as marko's `AutoLink` makes it.
+pub(super) fn link_dest(link_type: pulldown_cmark::LinkType, dest: &str) -> String {
+    match link_type {
+        pulldown_cmark::LinkType::Email => format!("mailto:{dest}"),
+        _ => dest.to_string(),
+    }
 }
 
 fn is_inline_start(event: &Event) -> bool {

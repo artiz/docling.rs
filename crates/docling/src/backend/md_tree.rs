@@ -121,7 +121,8 @@ fn parse(text: &str) -> El {
     let raw: Vec<(Event, std::ops::Range<usize>)> = Parser::new_ext(text, Options::ENABLE_MATH)
         .into_offset_iter()
         .collect();
-    let raw = super::markdown::fold_math_into_text(raw, text);
+    let raw =
+        super::markdown::link_bare_urls(super::markdown::fold_math_into_text(raw, text), text);
     let mut events: Vec<Event> = Vec::with_capacity(raw.len());
     let mut k = 0;
     // Where the previous event's source ended: a text event starting one
@@ -304,14 +305,14 @@ fn parse_container(tag: Tag, events: &[Event], i: &mut usize, depth: u16) -> El 
         }
         Tag::Emphasis => El::Emphasis(parse_children(events, i, depth)),
         Tag::Strong => El::Strong(parse_children(events, i, depth)),
-        // marko's `AutoLink` (`<https://…>`) is not a `Link`: no hyperlink,
-        // its text is an ordinary run.
+        // marko's `AutoLink` (`<https://…>`, `<me@x.y>`, a GFM bare URL) is a
+        // link like any other since docling#4791 (#773).
         Tag::Link {
-            link_type: pulldown_cmark::LinkType::Autolink | pulldown_cmark::LinkType::Email,
+            link_type,
+            dest_url,
             ..
-        } => El::Other(parse_children(events, i, depth)),
-        Tag::Link { dest_url, .. } => El::Link {
-            dest: dest_url.to_string(),
+        } => El::Link {
+            dest: super::markdown::link_dest(link_type, &dest_url),
             children: parse_children(events, i, depth),
         },
         Tag::Image {

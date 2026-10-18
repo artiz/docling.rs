@@ -1672,6 +1672,23 @@ struct ParaProps {
     /// bullet or paused one).
     anld: Option<Anld>,
     anld_level: Option<u8>,
+    /// A row end's cell boundaries (`rgdxaCenter` of `sprmTDefTable`, in
+    /// twips): `itcMac + 1` edges for the row's `itcMac` cells.
+    cell_bounds: Option<Vec<i16>>,
+}
+
+/// The cell boundaries of a `sprmTDefTable` operand that starts at its
+/// 2-byte `cb`: `itcMac`, then `itcMac + 1` signed `rgdxaCenter` edges —
+/// the same leading layout in Word 6/95 and Word 97.
+fn tdef_cell_bounds(operand: &[u8]) -> Option<Vec<i16>> {
+    let itc_mac = *operand.get(2)? as usize;
+    let edges = operand.get(3..3 + 2 * (itc_mac + 1))?;
+    Some(
+        edges
+            .chunks_exact(2)
+            .map(|b| i16::from_le_bytes([b[0], b[1]]))
+            .collect(),
+    )
 }
 
 /// The two binary layouts the FKP walks read (#640): Word 97+ ([MS-DOC])
@@ -1916,6 +1933,8 @@ fn apply_word6_pap_sprms(sprms: &[u8], props: &mut ParaProps) {
         13 => props.anld_level = Some(operand[0]),
         24 => props.in_table = operand[0] != 0,
         25 => props.ttp = operand[0] != 0,
+        // sprmTDefTable10 / sprmTDefTable: the row's cell boundaries.
+        188 | 190 => props.cell_bounds = tdef_cell_bounds(operand),
         _ => {}
     });
 }
@@ -2010,9 +2029,14 @@ fn apply_pap_sprms(mut sprms: &[u8], props: &mut ParaProps) {
             2 | 4 | 5 => 2,
             3 => 4,
             7 => 3,
+            // sprmTDefTable: a 16-bit `cb` counting the rest of the operand
+            // plus one ([MS-DOC] TDefTableOperand).
+            _ if sprm == 0xD608 => match sprms.get(..2) {
+                Some(cb) => 1 + u16::from_le_bytes([cb[0], cb[1]]) as usize,
+                None => return,
+            },
             _ => {
-                // Variable: first byte is the operand size (sprmTDefTable uses
-                // a 16-bit size; it never appears in a PAP grpprl we scan).
+                // Variable: first byte is the operand size.
                 match sprms.first() {
                     Some(&cb) => 1 + cb as usize,
                     None => return,
@@ -2028,6 +2052,7 @@ fn apply_pap_sprms(mut sprms: &[u8], props: &mut ParaProps) {
             0x460B => props.ilfo = Some(u16::from_le_bytes([sprms[0], sprms[1]])), // sprmPIlfo
             0x260A => props.ilvl = Some(sprms[0]),    // sprmPIlvl
             0x2640 => props.outline = Some(sprms[0]), // sprmPOutLvl
+            0xD608 => props.cell_bounds = tdef_cell_bounds(&sprms[..operand_len]), // sprmTDefTable
             _ => {}
         }
         sprms = &sprms[operand_len..];
@@ -2902,12 +2927,61 @@ impl ParaAccum {
     }
 }
 
+/// A table's rows on its column grid, from each row's cell boundaries: the
+/// columns are the distinct edges of every row (the `w:gridCol`s Word writes
+/// when it saves the table as `.docx`), and a cell's text fills every column
+/// between its edges — a merged cell repeats in each position it covers, as
+/// docling's grid does (docling-core#857, #777). Alongside, which positions
+/// continue the cell to their left (the OTSL `lcel` overlay the DOCX
+/// backend writes for a `gridSpan`). `None` when a row lacks boundaries for
+/// its cells; the caller then pads the ragged rows.
+#[allow(clippy::type_complexity)]
+fn spanned_rows(
+    rows: &[Vec<String>],
+    bounds: &[Option<Vec<i16>>],
+) -> Option<(Vec<Vec<String>>, Vec<Vec<bool>>)> {
+    if bounds.len() != rows.len() {
+        return None;
+    }
+    let mut edges: Vec<i16> = Vec::new();
+    for (row, b) in rows.iter().zip(bounds) {
+        let b = b.as_ref()?;
+        if b.len() != row.len() + 1 || b.windows(2).any(|w| w[0] >= w[1]) {
+            return None;
+        }
+        edges.extend_from_slice(b);
+    }
+    edges.sort_unstable();
+    edges.dedup();
+    let width = edges.len().saturating_sub(1);
+    let col = |x: i16| edges.binary_search(&x).unwrap_or_else(|i| i);
+    let mut grid = Vec::with_capacity(rows.len());
+    let mut cont = Vec::with_capacity(rows.len());
+    for (row, b) in rows.iter().zip(bounds) {
+        let b = b.as_ref().expect("checked above");
+        let mut out = vec![String::new(); width];
+        let mut continues = vec![false; width];
+        for (k, text) in row.iter().enumerate() {
+            let (first, end) = (col(b[k]), col(b[k + 1]).min(width));
+            for c in first..end {
+                out[c] = text.clone();
+                continues[c] = c > first;
+            }
+        }
+        grid.push(out);
+        cont.push(continues);
+    }
+    Some((grid, cont))
+}
+
 /// Turns the classified paragraph stream into nodes, assembling table runs.
 #[derive(Default)]
 struct NodeBuilder {
     /// In-progress table rows, current row's cells, and the current cell's
     /// accumulated paragraphs (a cell may span several).
     rows: Vec<Vec<String>>,
+    /// Each finished row's cell boundaries, when its row end carried them.
+    row_bounds: Vec<Option<Vec<i16>>>,
     cells: Vec<String>,
     cell_text: String,
     /// The `ilfo` of the most recent list item — a new item starts a new list
@@ -2967,6 +3041,7 @@ impl NodeBuilder {
             }
             if !self.cells.is_empty() {
                 self.rows.push(std::mem::take(&mut self.cells));
+                self.row_bounds.push(props.cell_bounds.clone());
             }
             return;
         }
@@ -3298,19 +3373,43 @@ impl NodeBuilder {
             return;
         }
         let rows = std::mem::take(&mut self.rows);
-        // Rectangularize (rows may have ragged cell counts).
-        let width = rows.iter().map(|r| r.len()).max().unwrap_or(0);
-        let rows: Vec<Vec<String>> = rows
-            .into_iter()
-            .map(|mut r| {
-                r.resize(width, String::new());
-                r
-            })
-            .collect();
+        let bounds = std::mem::take(&mut self.row_bounds);
+        let (rows, structure) = match spanned_rows(&rows, &bounds) {
+            Some((rows, col_continuation)) => {
+                // A span is marked the way the DOCX backend marks a
+                // `gridSpan`, so the JSON carries one spanning cell.
+                let structure = col_continuation.iter().flatten().any(|&c| c).then(|| {
+                    let mut header_row = vec![false; rows.len()];
+                    if let Some(h) = header_row.first_mut() {
+                        *h = true;
+                    }
+                    docling_core::TableStructure {
+                        header_row,
+                        col_continuation,
+                        row_continuation: Vec::new(),
+                        row_header: Vec::new(),
+                        col_header: Vec::new(),
+                    }
+                });
+                (rows, structure)
+            }
+            None => {
+                // Rectangularize (rows may have ragged cell counts).
+                let width = rows.iter().map(|r| r.len()).max().unwrap_or(0);
+                let rows = rows
+                    .into_iter()
+                    .map(|mut r| {
+                        r.resize(width, String::new());
+                        r
+                    })
+                    .collect();
+                (rows, None)
+            }
+        };
         doc.push(Node::Table(Table {
             rows,
             location: None,
-            structure: None,
+            structure,
             cell_blocks: None,
             cells: None,
             caption: None,

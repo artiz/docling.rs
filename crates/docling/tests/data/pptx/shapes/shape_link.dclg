@@ -1,0 +1,25 @@
+<doclang version="0.7">
+  <text>
+    <location value="51"/>
+    <location value="68"/>
+    <location value="358"/>
+    <location value="137"/>
+    No link here
+  </text>
+  <text>
+    <href uri="https://example.com/talk"/>
+    <location value="51"/>
+    <location value="205"/>
+    <location value="256"/>
+    <location value="273"/>
+    Watch the talk
+  </text>
+  <text>
+    <href uri="https://example.com/talk"/>
+    <location value="51"/>
+    <location value="205"/>
+    <location value="256"/>
+    <location value="273"/>
+    Second line
+  </text>
+</doclang>
