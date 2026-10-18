@@ -124,7 +124,7 @@ fn picture_assets_are_packaged_and_read_back() {
     }
     let bytes = docling::dclx::to_dclx_bytes(&doc);
     let mut zip = zip::ZipArchive::new(std::io::Cursor::new(&bytes)).unwrap();
-    let names: Vec<String> = zip.file_names().map(str::to_string).collect();
+    let names: Vec<String> = zip.file_names().flatten().map(|n| n.into_owned()).collect();
     let mut sorted = names.clone();
     sorted.sort();
     assert_eq!(names, sorted, "lexicographic part order");

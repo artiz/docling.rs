@@ -28,18 +28,26 @@ pub(crate) fn max_part_bytes() -> u64 {
 #[derive(Clone)]
 pub struct Package {
     zip: ZipArchive<Cursor<std::sync::Arc<[u8]>>>,
+    /// The member paths, decoded once: zip 9 decodes a name on every
+    /// `file_names()` call and hands it back as a `Result`.
+    names: std::sync::Arc<[String]>,
 }
 
 impl Package {
     pub fn open(bytes: &[u8]) -> Option<Self> {
-        ZipArchive::new(Cursor::new(std::sync::Arc::from(bytes)))
-            .ok()
-            .map(|zip| Self { zip })
+        let zip = ZipArchive::new(Cursor::new(std::sync::Arc::from(bytes))).ok()?;
+        let names = zip
+            .file_names()
+            .filter_map(Result::ok)
+            .map(|n| n.into_owned())
+            .collect();
+        Some(Self { zip, names })
     }
 
-    /// The package's member paths, in central-directory order.
+    /// The package's member paths, in central-directory order (a name that
+    /// is neither UTF-8 nor CP437 is left out).
     pub fn names(&self) -> impl Iterator<Item = &str> {
-        self.zip.file_names()
+        self.names.iter().map(String::as_str)
     }
 
     /// Whether any member cannot be read because it is encrypted — docling's
@@ -452,7 +460,7 @@ mod zip_bomb_tests {
         let mut buf = std::io::Cursor::new(Vec::new());
         {
             let mut zw = zip::ZipWriter::new(&mut buf);
-            let opts: zip::write::FileOptions<'_, ()> = zip::write::FileOptions::default()
+            let opts = zip::write::SimpleFileOptions::default()
                 .compression_method(zip::CompressionMethod::Deflated);
             zw.start_file(name, opts).unwrap();
             zw.write_all(&vec![b'a'; part_len]).unwrap();

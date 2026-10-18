@@ -381,8 +381,9 @@ impl TaxonomyPackage {
         let mut archive = ZipArchive::new(Cursor::new(bytes)).ok()?;
         let catalogs: Vec<String> = archive
             .file_names()
+            .flatten()
             .filter(|n| n.ends_with("META-INF/catalog.xml"))
-            .map(str::to_string)
+            .map(|n| n.into_owned())
             .collect();
         let mut rewrites = Vec::new();
         for name in catalogs {

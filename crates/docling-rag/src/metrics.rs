@@ -132,6 +132,7 @@ fn zip_entry_count(bytes: &[u8], prefix: &str, suffix: &str) -> Option<usize> {
     let archive = zip::ZipArchive::new(std::io::Cursor::new(bytes)).ok()?;
     let n = archive
         .file_names()
+        .flatten()
         .filter(|name| name.starts_with(prefix) && name.ends_with(suffix))
         .count();
     (n > 0).then_some(n)

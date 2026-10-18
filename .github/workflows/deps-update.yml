@@ -42,7 +42,12 @@ env:
   #   RUSTSEC-2026-0194 / -0195: quick-xml DoS, reachable only via calamine's
   #     transitive 0.31 pin (XLSX). Our direct quick-xml is >=0.41 (patched).
   #     Remove when calamine bumps quick-xml.
-  AUDIT_IGNORES: --ignore RUSTSEC-2026-0194 --ignore RUSTSEC-2026-0195
+  #   RUSTSEC-2026-0367 / -0368 / -0369: zip 8.x symlink/permission handling
+  #     in ZipArchive::extract / ZipStreamReader::extract, reachable only via
+  #     calamine's transitive `zip ^8.6` pin, and neither calamine nor docling
+  #     calls either extract (#749). Our direct zip is 9 (patched). Remove
+  #     when calamine moves to zip 9 (tafia/calamine#746).
+  AUDIT_IGNORES: --ignore RUSTSEC-2026-0194 --ignore RUSTSEC-2026-0195 --ignore RUSTSEC-2026-0367 --ignore RUSTSEC-2026-0368 --ignore RUSTSEC-2026-0369
 
 jobs:
   # Weekly known-CVE scan of the committed lockfiles. Runs unconditionally

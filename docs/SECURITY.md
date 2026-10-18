@@ -252,6 +252,14 @@ fields.
   (single-document DoS, not RCE); mitigate by not exposing XLSX conversion to
   untrusted callers without a per-request resource bound, or run conversions
   in a resource-limited sandbox.
+- **`zip` 8.x advisories (RUSTSEC-2026-0367 / -0368 / -0369) via `calamine`.**
+  They concern symlink and permission handling when `ZipArchive::extract` /
+  `ZipStreamReader::extract` write an archive to disk. Our direct `zip` is 9
+  (patched, #749); `calamine` still requires `zip ^8.6`, so 8.6 stays in the
+  tree beside it until `calamine` upstream bumps (tafia/calamine#746). Not
+  reachable: neither `calamine` nor docling calls either `extract` — every
+  ZIP-based format and archive input is read in memory, entry by entry, and
+  nothing is extracted to disk.
 
 ## Running the audit
 
