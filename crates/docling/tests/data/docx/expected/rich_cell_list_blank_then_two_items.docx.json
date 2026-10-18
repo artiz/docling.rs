@@ -24,7 +24,7 @@
         "$ref": "#/tables/0"
       },
       {
-        "$ref": "#/texts/3"
+        "$ref": "#/texts/4"
       }
     ],
     "content_layer": "body",
@@ -43,6 +43,9 @@
         },
         {
           "$ref": "#/texts/2"
+        },
+        {
+          "$ref": "#/texts/3"
         }
       ],
       "content_layer": "body",
@@ -57,28 +60,11 @@
       "children": [
         {
           "$ref": "#/groups/0"
-        },
-        {
-          "$ref": "#/groups/2"
         }
       ],
       "content_layer": "body",
       "name": "rich_cell_group_1_1_1",
       "label": "unspecified"
-    },
-    {
-      "self_ref": "#/groups/2",
-      "parent": {
-        "$ref": "#/groups/1"
-      },
-      "children": [
-        {
-          "$ref": "#/texts/4"
-        }
-      ],
-      "content_layer": "body",
-      "name": "group",
-      "label": "list"
     }
   ],
   "texts": [
@@ -131,6 +117,27 @@
       "content_layer": "body",
       "label": "list_item",
       "prov": [],
+      "orig": "Second",
+      "text": "Second",
+      "formatting": {
+        "bold": false,
+        "italic": false,
+        "underline": false,
+        "strikethrough": false,
+        "script": "baseline"
+      },
+      "enumerated": false,
+      "marker": ""
+    },
+    {
+      "self_ref": "#/texts/3",
+      "parent": {
+        "$ref": "#/groups/0"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "list_item",
+      "prov": [],
       "orig": "Third",
       "text": "Third",
       "formatting": {
@@ -144,7 +151,7 @@
       "marker": ""
     },
     {
-      "self_ref": "#/texts/3",
+      "self_ref": "#/texts/4",
       "parent": {
         "$ref": "#/body"
       },
@@ -161,27 +168,6 @@
         "strikethrough": false,
         "script": "baseline"
       }
-    },
-    {
-      "self_ref": "#/texts/4",
-      "parent": {
-        "$ref": "#/groups/2"
-      },
-      "children": [],
-      "content_layer": "body",
-      "label": "list_item",
-      "prov": [],
-      "orig": "Second",
-      "text": "Second",
-      "formatting": {
-        "bold": false,
-        "italic": false,
-        "underline": false,
-        "strikethrough": false,
-        "script": "baseline"
-      },
-      "enumerated": false,
-      "marker": ""
     }
   ],
   "pictures": [],

@@ -22,6 +22,7 @@ mod detect;
 mod djvu_prov;
 mod document_metadata;
 mod document_timeout;
+mod docx_upstream;
 mod encrypted;
 mod feed;
 mod heif;

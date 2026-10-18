@@ -33,10 +33,11 @@ use docling_core::{ContentLayer, PictureDescription, PictureImage, Script, Table
 use roxmltree::{Document, Node as XmlNode, NodeId};
 
 use super::docx::{
-    attr, build_enum_marker, chart_rels, child_elements, clean_checkbox_symbols,
-    detect_code_language, footnote_texts, get_list_counter, header_footer_parts, in_textbox,
-    is_code_by_font, is_code_style, is_title_style, numbered_heading_text, on_off, part_rels,
-    row_cells, row_grid_offsets, run_child_text, style_numbering, t_text, Ctx, MAX_TABLE_DEPTH,
+    attr, build_enum_marker, caption_numbering_marker, chart_rels, child_elements,
+    clean_checkbox_symbols, detect_code_language, footnote_texts, get_list_counter,
+    header_footer_parts, in_textbox, is_code_by_font, is_code_style, is_title_style,
+    numbered_heading_text, on_off, part_rels, row_cells, row_grid_offsets, run_child_text,
+    style_numbering, sync_heading_counter, t_text, Ctx, MAX_TABLE_DEPTH,
 };
 use super::html_tree::docling_href;
 use super::ooxml::Package;
@@ -117,61 +118,16 @@ struct Walker {
     pending_code_blank_lines: usize,
     /// `paragraph_to_items`: the items each paragraph produced.
     para_items: HashMap<Key, Vec<usize>>,
-    /// The `#/texts/N` index each deleted blank spacer had when it was
-    /// created — the stale ref a rich cell's `provs_in_cell` still holds for
-    /// it (#527, see [`Walker::resolve_cell_provs`]).
-    stale: HashMap<usize, usize>,
-    /// The body element (paragraph, table, …) each item was created for —
-    /// the innermost one, for [`rich_cell_layout`].
-    item_src: HashMap<usize, Key>,
+    /// Blank paragraphs before a resumed list item, deleted once the whole
+    /// document is walked (docling#4674, #764): deleting them mid-walk would
+    /// renumber the item refs a rich table cell or a comment still holds.
+    deferred_blanks: Vec<usize>,
     /// Footnote / endnote references met in the body, anchored to the text
     /// item that holds them (#538) — resolved to the note bodies once those
     /// are read.
     note_calls: Vec<NoteCall>,
     /// `paragraph_comment_map`, in insertion order.
     para_comments: Vec<(Key, Vec<String>)>,
-}
-
-/// The block layout docling's Markdown gives a rich table cell when it
-/// differs from the cell's paragraph order (#527): each block is the body
-/// elements of one top-level item of the cell group, in group order — a
-/// list group's items, or a single paragraph / nested table. Upstream's
-/// stale `provs_in_cell` refs ([`Walker::resolve_cell_provs`]) pull the list
-/// item after a deleted blank spacer out of its list to where the blank
-/// stood: `- First item` / blank / `- Second item` becomes two lists, and
-/// with a third item directly after the second, that third one stays in the
-/// first list ahead of the second. Walks the cell on its own, as upstream's
-/// `_isolated_list_context` does; `None` when no blank was deleted (the
-/// cell's own order holds) or when an item cannot be traced to exactly one
-/// element (the caller keeps its rendering).
-pub(super) fn rich_cell_layout(tc: XmlNode, ctx: &Ctx) -> Option<Vec<Vec<NodeId>>> {
-    let mut w = Walker::new();
-    let provs = w.walk_linear(tc, ctx);
-    if !provs.iter().any(|&p| w.tree.items[p].deleted) {
-        return None;
-    }
-    let g = w.add(None, None, group_kind("unspecified", "rich_cell"));
-    for p in w.resolve_cell_provs(&provs) {
-        w.tree.reparent(p, Some(g));
-    }
-    let src = |id: usize| w.item_src.get(&id).map(|k| k.1);
-    let mut seen = HashSet::new();
-    let mut blocks = Vec::new();
-    for &c in &w.tree.items[g].children {
-        let block: Vec<NodeId> = match &w.tree.items[c].kind {
-            TreeKind::Group { label, .. } if label == "list" => w.tree.items[c]
-                .children
-                .iter()
-                .map(|&i| src(i))
-                .collect::<Option<_>>()?,
-            _ => vec![src(c)?],
-        };
-        if !block.iter().all(|n| seen.insert(*n)) {
-            return None;
-        }
-        blocks.push(block);
-    }
-    Some(blocks)
 }
 
 /// How many empty inline groups a rich table cell leaves behind on the body
@@ -186,7 +142,7 @@ pub(super) fn rich_cell_orphan_groups(tc: XmlNode, ctx: &Ctx) -> usize {
     let mut w = Walker::new();
     let provs = w.walk_linear(tc, ctx);
     let g = w.add(None, None, group_kind("unspecified", "rich_cell"));
-    for p in w.resolve_cell_provs(&provs) {
+    for p in provs {
         w.tree.reparent(p, Some(g));
     }
     w.tree
@@ -235,6 +191,11 @@ pub(super) fn build_tree(
             });
             w.tree.items[*body].note_body = true;
         }
+    }
+    // docling#4674 (#764): the blank paragraphs before resumed list items go
+    // last, once every ref collected during the walk has been resolved.
+    for blank in std::mem::take(&mut w.deferred_blanks) {
+        w.tree.delete(blank);
     }
     w.tree
 }
@@ -397,6 +358,31 @@ fn tc_pr<'a, 'i>(tc: XmlNode<'a, 'i>, name: &str) -> Option<XmlNode<'a, 'i>> {
 }
 
 /// Upstream's `_has_blip`: a child holding a blip or a drawing anywhere.
+/// docling's `_has_textbox`: `.//w:txbxContent | .//v:textbox//w:p |
+/// .//wps:txbx//w:p | .//w10:wrap//w:p | .//a:bodyPr/ancestor::*//a:t |
+/// .//a:txBody//a:t`. The `ancestor::*` alternative reaches the document
+/// root, so an `a:bodyPr` in the element counts as soon as the document has
+/// any `a:t`.
+fn has_textbox(el: XmlNode) -> bool {
+    let below = |n: XmlNode, names: &[&str]| {
+        n.ancestors()
+            .skip(1)
+            .take_while(|a| a.id() != el.id())
+            .any(|a| names.contains(&a.tag_name().name()))
+    };
+    let is_a = |n: XmlNode, name: &str| n.tag_name().name() == name && is_dml(n);
+    let any_a_t = || el.document().root().descendants().any(|n| is_a(n, "t"));
+    el.descendants().skip(1).any(|n| {
+        n.has_tag_name("txbxContent")
+            || (n.has_tag_name("p") && below(n, &["textbox", "txbx", "wrap"]))
+            || (is_a(n, "t")
+                && n.ancestors()
+                    .skip(1)
+                    .take_while(|a| a.id() != el.id())
+                    .any(|a| is_a(a, "txBody")))
+    }) || (el.descendants().skip(1).any(|n| is_a(n, "bodyPr")) && any_a_t())
+}
+
 fn has_blip(el: XmlNode) -> bool {
     child_elements(el).any(|item| {
         item.descendants()
@@ -485,8 +471,7 @@ impl Walker {
             pending_code_blank_lines: 0,
             para_items: HashMap::new(),
             para_comments: Vec::new(),
-            stale: HashMap::new(),
-            item_src: HashMap::new(),
+            deferred_blanks: Vec::new(),
             note_calls: Vec::new(),
         }
     }
@@ -611,14 +596,12 @@ impl Walker {
                     continue;
                 }
                 if id == group {
-                    // `delete_items` takes the whole batch at once: every
-                    // blank's index is the one it was created with.
-                    for &blank in &trailing_empty {
-                        let at = self.tree.bucket_index(blank);
-                        self.stale.insert(blank, at);
-                    }
+                    // Deleted at the end of the walk (`delete_deferred_blanks`):
+                    // a later resume finds the same blanks again.
                     for blank in trailing_empty {
-                        self.tree.delete(blank);
+                        if !self.deferred_blanks.contains(&blank) {
+                            self.deferred_blanks.push(blank);
+                        }
                     }
                     return group;
                 }
@@ -1100,42 +1083,12 @@ impl Walker {
         })
     }
 
-    /// What each of a rich cell's `provs_in_cell` refs points at by the time
-    /// `_group_cell_elements` resolves them (#527). Upstream collects the refs
-    /// as the cell is walked, but a list resumed after blank spacer
-    /// paragraphs deletes those blanks (`delete_items`), which renumbers
-    /// `doc.texts`: the blank's ref, `#/texts/K`, now resolves to whatever
-    /// text item took index K — the list item that followed it. That item is
-    /// pulled out of its list group into the cell group at the blank's
-    /// position (and later wrapped in a list group of its own by docling-core,
-    /// [`ItemTree::wrap_misplaced_list_items`]). A stale index past the end
-    /// resolves to nothing — upstream would fail the conversion there.
-    fn resolve_cell_provs(&self, provs: &[usize]) -> Vec<usize> {
-        provs
-            .iter()
-            .filter_map(|&p| {
-                if !self.tree.items[p].deleted {
-                    return Some(p);
-                }
-                let k = *self.stale.get(&p)?;
-                (0..self.tree.items.len())
-                    .filter(|&i| {
-                        let it = &self.tree.items[i];
-                        !it.deleted
-                            && matches!(it.kind, TreeKind::Text { .. } | TreeKind::Code { .. })
-                    })
-                    .nth(k)
-            })
-            .collect()
-    }
-
     // ----- the walk -----------------------------------------------------------
 
     /// `_walk_linear` over a container's element children.
     fn walk_linear(&mut self, container: XmlNode, ctx: &Ctx) -> Vec<usize> {
         let mut added: Vec<usize> = Vec::new();
         for element in child_elements(container) {
-            let first_new = self.tree.items.len();
             let tag = element.tag_name().name();
             let blips: Vec<XmlNode> = element
                 .descendants()
@@ -1150,15 +1103,29 @@ impl Walker {
                 .filter(|n| n.has_tag_name("imagedata") && !in_textbox(*n))
                 .collect();
             let key = self.key(element);
-            if !self.processed_textbox.contains(&key) {
-                let textboxes = Self::textbox_elements(element);
-                if textboxes.is_empty() {
+            // docling#4757: a table or content control walks its children
+            // itself, so scanning it for textboxes here would emit a
+            // textbox anchored in a cell before the table and again inside
+            // the cell. Textboxes (and their paragraphs) already emitted are
+            // left out, so a nested walk does not repeat them either.
+            if !matches!(tag, "tbl" | "sdt") && !self.processed_textbox.contains(&key) {
+                let raw = Self::textbox_elements(element);
+                if raw.is_empty() {
                     self.shape_text(element, &mut added);
-                } else {
+                }
+                let textboxes: Vec<XmlNode> = raw
+                    .into_iter()
+                    .filter(|tb| !self.processed_textbox.contains(&self.key(*tb)))
+                    .collect();
+                if !textboxes.is_empty() {
                     self.processed_textbox.insert(key);
                     for tb in &textboxes {
                         let k = self.key(*tb);
                         self.processed_textbox.insert(k);
+                        for p in tb.descendants().filter(|n| n.has_tag_name("p")) {
+                            let k = self.key(p);
+                            self.processed_textbox.insert(k);
+                        }
                     }
                     added.extend(self.handle_textbox_content(&textboxes, ctx));
                 }
@@ -1206,9 +1173,6 @@ impl Walker {
                 }
             } else if tag == "p" {
                 added.extend(self.handle_text_elements(element, ctx, false));
-            }
-            for id in first_new..self.tree.items.len() {
-                self.item_src.entry(id).or_insert(key);
             }
         }
         added
@@ -1264,12 +1228,21 @@ impl Walker {
         for tx in element.descendants().skip(1).filter(|n| is_a(*n, "txBody")) {
             texts.extend(tx.descendants().skip(1).filter(|n| is_a(*n, "t")));
         }
-        if texts.is_empty() {
-            return;
-        }
         // An XPath union: node-set semantics, document order.
         texts.sort_by_key(|n| n.id().get());
         texts.dedup_by_key(|n| n.id().get());
+        // docling#4757: text already emitted from another element is not
+        // emitted again; what is emitted now is marked.
+        texts.retain(|t| !self.processed_textbox.contains(&self.key(*t)));
+        if texts.is_empty() {
+            return;
+        }
+        let key = self.key(element);
+        self.processed_textbox.insert(key);
+        for t in &texts {
+            let k = self.key(*t);
+            self.processed_textbox.insert(k);
+        }
         let content = texts
             .iter()
             .filter_map(|t| t.text())
@@ -1501,7 +1474,9 @@ impl Walker {
         if child_elements(tc).any(|c| !matches!(c.tag_name().name(), "p" | "tcPr")) {
             return true;
         }
-        if has_blip(tc) {
+        // docling#4757: a cell holding a textbox (or shape text) is rich, so
+        // the textbox is walked inside the cell.
+        if has_blip(tc) || has_textbox(tc) {
             return true;
         }
         for p in &paras {
@@ -1611,7 +1586,7 @@ impl Walker {
                         row_idx
                     );
                     let g = self.add(Some(table_id), self.layer, group_kind("unspecified", &name));
-                    for p in self.resolve_cell_provs(&provs) {
+                    for &p in &provs {
                         self.tree.reparent(p, Some(g));
                     }
                     group = Some(g);
@@ -1712,7 +1687,7 @@ impl Walker {
     ) -> Vec<usize> {
         let mut refs: Vec<usize> = Vec::new();
         let content = self.iter_paragraph_content(p, ctx);
-        let elements = self.paragraph_elements(&content);
+        let mut elements = self.paragraph_elements(&content);
         let full_text: String = content.iter().map(|c| c.text.as_str()).collect();
         let (text, equations) = equations_in_text(p, &full_text);
         // Kept unstripped: code blocks preserve leading indentation.
@@ -1728,9 +1703,28 @@ impl Walker {
         let level0 = self.get_level();
         self.prev_sibling_is_code = self.is_code(self.last_child(self.parent_at(level0 - 1)));
         let (p_style_id, p_level) = self.label_and_level(p, ctx);
-        let (mut numid, ilevel) = self.num_id_and_ilvl(p, ctx);
+        let (mut numid, mut ilevel) = self.num_id_and_ilvl(p, ctx);
         if numid.as_deref() == Some("0") {
             numid = None;
+        }
+        // `_apply_caption_numbering` (#765): a heading-relative caption
+        // number goes into the first non-blank element's text, and the
+        // paragraph is no list item.
+        if let (Some(nid), Some(ilvl)) = (numid.as_deref(), ilevel) {
+            let marker = caption_numbering_marker(
+                &mut self.list_counters,
+                ctx.num_levels,
+                nid,
+                ilvl,
+                &p_style_id,
+            );
+            if let Some(marker) = marker {
+                if let Some(el) = elements.iter_mut().find(|e| !e.text.trim().is_empty()) {
+                    el.text = format!("{marker} {}", el.text);
+                }
+                numid = None;
+                ilevel = None;
+            }
         }
 
         // Lists.
@@ -1806,7 +1800,14 @@ impl Walker {
             let is_numbered_style = numid
                 .as_deref()
                 .is_some_and(|n| Self::has_visible_numbering(n, ilevel.unwrap_or(0), ctx));
-            refs.extend(self.add_heading(p_level, &text, is_numbered_style));
+            refs.extend(self.add_heading(
+                p_level,
+                &text,
+                is_numbered_style,
+                numid.as_deref(),
+                ilevel,
+                ctx,
+            ));
         } else if !equations.is_empty() {
             if py_paragraph_text(p).trim().is_empty() && !text.is_empty() {
                 // Standalone equation(s) — one formula item each.
@@ -1944,6 +1945,9 @@ impl Walker {
         curr_level: Option<i64>,
         text: &str,
         is_numbered: bool,
+        numid: Option<&str>,
+        ilevel: Option<i64>,
+        ctx: &Ctx,
     ) -> Vec<usize> {
         let mut refs = Vec::new();
         let level = self.get_level();
@@ -1969,7 +1973,20 @@ impl Walker {
             None => (self.level, self.level - 1, 1),
         };
         let text = if is_numbered {
-            numbered_heading_text(&mut self.numbered_headers, add_level as u8, text)
+            let text = numbered_heading_text(&mut self.numbered_headers, add_level as u8, text);
+            if let Some(numid) = numid {
+                sync_heading_counter(
+                    &mut self.list_counters,
+                    ctx.num_levels,
+                    self.numbered_headers[&(add_level as u8)] as i64,
+                    numid,
+                    ilevel.unwrap_or(0),
+                );
+                // The seeded counter must survive the first list item of
+                // this `numId`, which would otherwise restart it.
+                self.started_numids.insert(numid.to_string());
+            }
+            text
         } else {
             text.to_string()
         };

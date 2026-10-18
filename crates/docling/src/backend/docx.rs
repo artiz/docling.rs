@@ -17,7 +17,7 @@
 //! `<!-- image -->` placeholder.
 
 use std::borrow::Cow;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use docling_core::{
     DoclingDocument, InlineRun, ListItemDclx, Node, PictureDescription, PictureImage, Script, Table,
@@ -51,7 +51,7 @@ impl DeclarativeBackend for DocxBackend {
         let charts = chart_rels(&mut pkg, "word/document.xml");
 
         let sm = parse_styles(&styles);
-        let num_levels = parse_numbering(&numbering);
+        let num_levels = parse_numbering(&numbering, &sm.nums);
 
         // Settle every `mc:AlternateContent` on the chosen branch first
         // (#572), so the walks below see one document without alternatives.
@@ -111,6 +111,7 @@ impl DeclarativeBackend for DocxBackend {
                 }
             }
         }
+        drop_resumed_list_spacers(&mut doc.nodes);
         // Section headers/footers follow the body as furniture-layer content
         // (docling's `_add_header_footer`): the first section always
         // contributes, later sections only when they define a distinct first
@@ -800,7 +801,17 @@ fn handle_paragraph_inner(
             });
             let text = if visibly_numbered {
                 let docling_level = level.saturating_sub(1).max(1);
-                numbered_heading_text(&mut state.numbered_headers, docling_level, &text)
+                let text = numbered_heading_text(&mut state.numbered_headers, docling_level, &text);
+                if let Some((num_id, ilvl)) = &numbering {
+                    sync_heading_counter(
+                        &mut state.counters,
+                        ctx.num_levels,
+                        state.numbered_headers[&docling_level] as i64,
+                        num_id,
+                        *ilvl,
+                    );
+                }
+                text
             } else {
                 text
             };
@@ -841,6 +852,27 @@ fn handle_paragraph_inner(
         }
         return;
     }
+
+    // A caption numbered through a heading-relative template (`Tabell %1.%7`)
+    // carries its number in its text and is no list item (#765).
+    let caption_marker = numbering.as_ref().and_then(|(num_id, ilvl)| {
+        caption_numbering_marker(
+            &mut state.counters,
+            ctx.num_levels,
+            num_id,
+            *ilvl,
+            if style_id.is_empty() {
+                "Normal"
+            } else {
+                style_id
+            },
+        )
+    });
+    let (numbering, text) = match caption_marker {
+        Some(marker) if !has_equations => (None, paragraph_markdown_with_prefix(p, ctx, &marker)),
+        Some(_) => (None, text),
+        None => (numbering, text),
+    };
 
     if let Some((num_id, ilvl)) = numbering {
         let numbered = ctx
@@ -1383,6 +1415,18 @@ pub(super) fn num_pr(p: XmlNode) -> Option<(String, i64)> {
 fn paragraph_markdown(p: XmlNode, ctx: &Ctx) -> String {
     let mut runs: Vec<(String, Fmt, Option<String>)> = Vec::new();
     collect_run_tuples(p, Fmt::default(), None, ctx, &mut runs);
+    group_runs(runs)
+}
+
+/// [`paragraph_markdown`] with `prefix` and a space put before the first
+/// non-blank run, inside that run's formatting — docling's
+/// `_apply_caption_numbering` (#765).
+fn paragraph_markdown_with_prefix(p: XmlNode, ctx: &Ctx, prefix: &str) -> String {
+    let mut runs: Vec<(String, Fmt, Option<String>)> = Vec::new();
+    collect_run_tuples(p, Fmt::default(), None, ctx, &mut runs);
+    if let Some(run) = runs.iter_mut().find(|r| !r.0.trim().is_empty()) {
+        run.0 = format!("{prefix} {}", run.0.trim_start());
+    }
     group_runs(runs)
 }
 
@@ -2136,15 +2180,10 @@ fn run_has_format(r: XmlNode) -> bool {
 fn rich_cell_markdown(tc: XmlNode, ctx: &Ctx) -> String {
     let mut sub = DoclingDocument::new("");
     let mut state = ListState::default();
-    // The node range each child element rendered to, for the regrouping
-    // below.
-    let mut spans: Vec<(roxmltree::NodeId, std::ops::Range<usize>)> = Vec::new();
     for child in child_elements(tc) {
-        let start = sub.nodes.len();
         cell_block(child, ctx, &mut state, &mut sub, true);
-        spans.push((child.id(), start..sub.nodes.len()));
     }
-    regroup_rich_cell(tc, ctx, &mut sub.nodes, &spans);
+    drop_resumed_list_spacers(&mut sub.nodes);
     // In-cell rendering: a heading inside the cell is plain text
     // (docling-core#540).
     sub.export_to_table_cell_markdown().trim().to_string()
@@ -2196,66 +2235,38 @@ fn cell_block(
     }
 }
 
-/// A blank spacer between items of one list makes docling regroup a rich
-/// cell (#527): rearrange the cell's rendered `nodes` (`spans` = the node
-/// range each child element produced) into its block layout when it has one.
-fn regroup_rich_cell(
-    tc: XmlNode,
-    ctx: &Ctx,
-    nodes: &mut Vec<Node>,
-    spans: &[(roxmltree::NodeId, std::ops::Range<usize>)],
-) {
-    let blanks: std::collections::HashSet<roxmltree::NodeId> = child_elements(tc)
-        .filter(|c| c.has_tag_name("p") && plain_paragraph_text(*c).trim().is_empty())
-        .map(|c| c.id())
-        .collect();
-    if blanks.is_empty() {
-        return;
-    }
-    if let Some(layout) = super::docx_tree::rich_cell_layout(tc, ctx) {
-        if let Some(regrouped) = regroup_cell_nodes(nodes, spans, &layout, &blanks) {
-            *nodes = regrouped;
+/// docling's list reuse after blank spacers (docling#4305), which deletes the
+/// blanks once the walk ends (docling#4674, #764): the empty paragraphs —
+/// commented ones included — between a list item and the item that resumes
+/// its list are dropped, so the list renders as one.
+fn drop_resumed_list_spacers(nodes: &mut Vec<Node>) {
+    fn bare(node: &Node) -> &Node {
+        match node {
+            Node::Commented { inner, .. } => bare(inner),
+            other => other,
         }
     }
-}
-
-/// `nodes` rearranged into `layout`'s blocks (see
-/// [`super::docx_tree::rich_cell_layout`]): each block's elements' nodes in
-/// order, a list item opening a new list exactly at the start of a block.
-/// A blank paragraph the layout leaves out was deleted upstream and is
-/// dropped; `None` when any other element that rendered something is
-/// missing — the cell then keeps its own order.
-fn regroup_cell_nodes(
-    nodes: &[Node],
-    spans: &[(roxmltree::NodeId, std::ops::Range<usize>)],
-    layout: &[Vec<roxmltree::NodeId>],
-    blanks: &std::collections::HashSet<roxmltree::NodeId>,
-) -> Option<Vec<Node>> {
-    let placed: std::collections::HashSet<_> = layout.iter().flatten().collect();
-    if spans
-        .iter()
-        .any(|(id, range)| !range.is_empty() && !placed.contains(id) && !blanks.contains(id))
-    {
-        return None;
-    }
-    let mut out = Vec::with_capacity(nodes.len());
-    for block in layout {
-        let mut first = true;
-        for id in block {
-            let Some((_, range)) = spans.iter().find(|(s, _)| s == id) else {
-                continue;
-            };
-            for node in &nodes[range.clone()] {
-                let mut node = node.clone();
-                if let Node::ListItem { first_in_list, .. } = &mut node {
-                    *first_in_list = first;
-                }
-                first = false;
-                out.push(node);
+    let empty = |n: &Node| matches!(bare(n), Node::Paragraph { text } if text.trim().is_empty());
+    let mut i = 0;
+    while i < nodes.len() {
+        if matches!(
+            bare(&nodes[i]),
+            Node::ListItem {
+                first_in_list: false,
+                ..
+            }
+        ) {
+            let mut j = i;
+            while j > 0 && empty(&nodes[j - 1]) {
+                j -= 1;
+            }
+            if j < i && j > 0 && matches!(bare(&nodes[j - 1]), Node::ListItem { .. }) {
+                nodes.drain(j..i);
+                i = j;
             }
         }
+        i += 1;
     }
-    Some(out)
 }
 
 /// A rich cell's DocLang block content — the structured counterpart of
@@ -2269,13 +2280,10 @@ fn cell_blocks_of(tc: XmlNode, ctx: &Ctx) -> Vec<Node> {
     }
     let mut sub = DoclingDocument::new("");
     let mut state = ListState::default();
-    let mut spans: Vec<(roxmltree::NodeId, std::ops::Range<usize>)> = Vec::new();
     for child in child_elements(tc) {
-        let start = sub.nodes.len();
         cell_block(child, ctx, &mut state, &mut sub, false);
-        spans.push((child.id(), start..sub.nodes.len()));
     }
-    regroup_rich_cell(tc, ctx, &mut sub.nodes, &spans);
+    drop_resumed_list_spacers(&mut sub.nodes);
     sub.nodes
 }
 
@@ -2892,7 +2900,16 @@ fn cjk_counter(counter: i64, num_fmt: &str) -> Option<String> {
 
 /// Map `(numId, ilvl)` → its level properties, resolved through `numbering.xml`'s
 /// `num` → `abstractNum` → level (`numFmt`, `start`, `lvlText`).
-fn parse_numbering(numbering_xml: &str) -> HashMap<(String, i64), NumLevel> {
+///
+/// An `abstractNum` without the level that carries a `w:numStyleLink` borrows
+/// it from the numbering style it names: that style's `numId` → its `num` →
+/// its `abstractNum`, followed up to [`MAX_STYLE_INHERITANCE_DEPTH`] hops and
+/// never through the same `abstractNum` twice (docling's `_get_level_element`,
+/// docling#4727, #765). `style_nums` is the styles' own `numPr`.
+fn parse_numbering(
+    numbering_xml: &str,
+    style_nums: &HashMap<String, (Option<String>, Option<i64>)>,
+) -> HashMap<(String, i64), NumLevel> {
     let mut out = HashMap::new();
     let Ok(dom) = Document::parse(numbering_xml) else {
         return out;
@@ -2911,10 +2928,20 @@ fn parse_numbering(numbering_xml: &str) -> HashMap<(String, i64), NumLevel> {
     }
     // abstractNumId -> { ilvl -> NumLevel }
     let mut abstract_levels: HashMap<String, HashMap<i64, NumLevel>> = HashMap::new();
+    // abstractNumId -> the numbering style its `numStyleLink` names
+    let mut style_links: HashMap<String, String> = HashMap::new();
     for abs in dom.descendants().filter(|n| n.has_tag_name("abstractNum")) {
         let Some(abs_id) = attr(abs, "abstractNumId") else {
             continue;
         };
+        if let Some(style) = abs
+            .children()
+            .find(|n| n.has_tag_name("numStyleLink"))
+            .and_then(|n| attr(n, "val"))
+            .filter(|v| !v.is_empty())
+        {
+            style_links.insert(abs_id.to_string(), style.to_string());
+        }
         let mut levels = HashMap::new();
         for lvl in abs.children().filter(|n| n.has_tag_name("lvl")) {
             let ilvl: i64 = attr(lvl, "ilvl").and_then(|v| v.parse().ok()).unwrap_or(0);
@@ -2949,10 +2976,30 @@ fn parse_numbering(numbering_xml: &str) -> HashMap<(String, i64), NumLevel> {
         }
         abstract_levels.insert(abs_id.to_string(), levels);
     }
-    for (num_id, abs_id) in num_to_abstract {
-        if let Some(levels) = abstract_levels.get(&abs_id) {
-            for (ilvl, lvl) in levels {
-                out.insert((num_id.clone(), *ilvl), lvl.clone());
+    let ilvls: std::collections::BTreeSet<i64> = abstract_levels
+        .values()
+        .flat_map(|levels| levels.keys().copied())
+        .collect();
+    let resolve = |abs_id: &str, ilvl: i64| -> Option<&NumLevel> {
+        let mut abs_id = abs_id.to_string();
+        let mut visited: HashSet<String> = HashSet::new();
+        for _ in 0..MAX_STYLE_INHERITANCE_DEPTH {
+            if !visited.insert(abs_id.clone()) {
+                return None;
+            }
+            if let Some(level) = abstract_levels.get(&abs_id)?.get(&ilvl) {
+                return Some(level);
+            }
+            let style = style_links.get(&abs_id)?;
+            let linked_num = style_nums.get(style)?.0.as_ref()?;
+            abs_id = num_to_abstract.get(linked_num)?.clone();
+        }
+        None
+    };
+    for (num_id, abs_id) in &num_to_abstract {
+        for &ilvl in &ilvls {
+            if let Some(level) = resolve(abs_id, ilvl) {
+                out.insert((num_id.clone(), ilvl), level.clone());
             }
         }
     }
@@ -3106,6 +3153,77 @@ pub(super) fn build_enum_marker(
         .map(|lvl| format_enum_counter(counter_at(lvl), fmt_at(lvl)))
         .collect();
     parts.join(".") + "."
+}
+
+/// The numbering marker of a caption-like paragraph (`Tabell 1.2`), which
+/// belongs in its text rather than making it a list item — docling's
+/// `_get_caption_numbering_marker` (docling#4727, #765). It applies to a
+/// paragraph outside the Title / Heading / Code / `List…` / `Normal…`
+/// styles whose level template references a shallower level (`%1` in
+/// `Tabell %1.%7`, typically a heading counter) and has a letter in its
+/// literal part. The counter is advanced and the marker built like a list
+/// item's; `None` leaves the paragraph to the list handling.
+pub(super) fn caption_numbering_marker(
+    counters: &mut HashMap<(String, i64), i64>,
+    num_levels: &HashMap<(String, i64), NumLevel>,
+    num_id: &str,
+    ilvl: i64,
+    style_id: &str,
+) -> Option<String> {
+    let lower = style_id.to_lowercase();
+    if matches!(style_id, "Title" | "Heading" | "Code")
+        || lower.starts_with("list")
+        || lower.starts_with("normal")
+    {
+        return None;
+    }
+    let lvl_text = num_levels
+        .get(&(num_id.to_string(), ilvl))
+        .map(|l| l.lvl_text.as_str())
+        .filter(|t| !t.is_empty())?;
+    let re_placeholder = cached_regex!(r"%(\d+)");
+    let refers_up = re_placeholder
+        .captures_iter(lvl_text)
+        .filter_map(|c| c[1].parse::<i64>().ok())
+        .any(|n| n - 1 < ilvl);
+    let literal = re_placeholder.replace_all(lvl_text, "");
+    if !refers_up || !literal.chars().any(char::is_alphabetic) {
+        return None;
+    }
+    get_list_counter(counters, num_levels, num_id, ilvl);
+    Some(build_enum_marker(counters, num_levels, num_id, ilvl))
+}
+
+/// Hand a numbered heading's number to the list counters of its `numId`, so
+/// a template on the same numbering (`Tabell %1.%7`) counts within it —
+/// docling's `_add_heading` (docling#4727, #765). The heading's level
+/// counter takes the heading number; a deeper counter of the same `numId`
+/// whose template references this level (`%{ilvl+1}`) restarts, while
+/// unrelated deeper counters keep their state.
+pub(super) fn sync_heading_counter(
+    counters: &mut HashMap<(String, i64), i64>,
+    num_levels: &HashMap<(String, i64), NumLevel>,
+    heading_number: i64,
+    num_id: &str,
+    ilvl: i64,
+) {
+    counters.insert((num_id.to_string(), ilvl), heading_number);
+    let placeholder = format!("%{}", ilvl + 1);
+    let references_heading = |lvl_text: &str| {
+        lvl_text
+            .match_indices(&placeholder)
+            .any(|(at, m)| !lvl_text[at + m.len()..].starts_with(|c: char| c.is_ascii_digit()))
+    };
+    for (key, counter) in counters.iter_mut() {
+        if key.0 == num_id
+            && key.1 > ilvl
+            && num_levels
+                .get(key)
+                .is_some_and(|l| references_heading(&l.lvl_text))
+        {
+            *counter = 0;
+        }
+    }
 }
 
 #[cfg(test)]

@@ -34,6 +34,9 @@
       "children": [
         {
           "$ref": "#/texts/0"
+        },
+        {
+          "$ref": "#/texts/4"
         }
       ],
       "content_layer": "body",
@@ -63,17 +66,17 @@
     {
       "self_ref": "#/groups/2",
       "parent": {
-        "$ref": "#/texts/7"
+        "$ref": "#/texts/4"
       },
       "children": [
-        {
-          "$ref": "#/texts/4"
-        },
         {
           "$ref": "#/texts/5"
         },
         {
           "$ref": "#/texts/6"
+        },
+        {
+          "$ref": "#/texts/7"
         }
       ],
       "content_layer": "body",
@@ -88,28 +91,11 @@
       "children": [
         {
           "$ref": "#/groups/0"
-        },
-        {
-          "$ref": "#/groups/4"
         }
       ],
       "content_layer": "body",
       "name": "rich_cell_group_1_0_1",
       "label": "unspecified"
-    },
-    {
-      "self_ref": "#/groups/4",
-      "parent": {
-        "$ref": "#/groups/3"
-      },
-      "children": [
-        {
-          "$ref": "#/texts/7"
-        }
-      ],
-      "content_layer": "body",
-      "name": "group",
-      "label": "list"
     }
   ],
   "texts": [
@@ -191,6 +177,24 @@
     {
       "self_ref": "#/texts/4",
       "parent": {
+        "$ref": "#/groups/0"
+      },
+      "children": [
+        {
+          "$ref": "#/groups/2"
+        }
+      ],
+      "content_layer": "body",
+      "label": "list_item",
+      "prov": [],
+      "orig": "",
+      "text": "",
+      "enumerated": false,
+      "marker": ""
+    },
+    {
+      "self_ref": "#/texts/5",
+      "parent": {
         "$ref": "#/groups/2"
       },
       "children": [],
@@ -208,7 +212,7 @@
       }
     },
     {
-      "self_ref": "#/texts/5",
+      "self_ref": "#/texts/6",
       "parent": {
         "$ref": "#/groups/2"
       },
@@ -227,7 +231,7 @@
       }
     },
     {
-      "self_ref": "#/texts/6",
+      "self_ref": "#/texts/7",
       "parent": {
         "$ref": "#/groups/2"
       },
@@ -244,24 +248,6 @@
         "strikethrough": false,
         "script": "baseline"
       }
-    },
-    {
-      "self_ref": "#/texts/7",
-      "parent": {
-        "$ref": "#/groups/4"
-      },
-      "children": [
-        {
-          "$ref": "#/groups/2"
-        }
-      ],
-      "content_layer": "body",
-      "label": "list_item",
-      "prov": [],
-      "orig": "",
-      "text": "",
-      "enumerated": false,
-      "marker": ""
     }
   ],
   "pictures": [],
