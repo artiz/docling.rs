@@ -1277,7 +1277,7 @@ fn task_list_checkboxes(li: ElementRef) -> Option<Vec<(bool, String)>> {
     {
         return None;
     }
-    let li_text = normalize_ws(&li.text().collect::<String>());
+    let li_text = normalize_ws(&text_with_breaks(li));
     Some(
         inputs
             .iter()
@@ -1373,6 +1373,10 @@ fn append_li_blocks<'a>(
 /// level deeper, recursing into nested `<dl>`/`<ul>`/`<ol>` (docling's rendering).
 fn walk_dl(dl: ElementRef, nodes: &mut Vec<Node>, level: u8, base: Fmt) {
     let bold = Fmt { bold: true, ..base };
+    // A top-level `<dl>` is its own docling list group, like a `<ul>`: its
+    // first term opens a new list, so the Markdown blank-separates it from
+    // a list right before it.
+    let mut first = level == 0;
     for child in dl.children() {
         let Some(c) = ElementRef::wrap(child) else {
             continue;
@@ -1384,8 +1388,7 @@ fn walk_dl(dl: ElementRef, nodes: &mut Vec<Node>, level: u8, base: Fmt) {
                     nodes.push(Node::ListItem {
                         ordered: false,
                         number: 1,
-                        // docling does not blank-separate description lists.
-                        first_in_list: false,
+                        first_in_list: std::mem::take(&mut first),
                         text,
                         level,
                         marker: None,
@@ -1720,6 +1723,57 @@ fn render_inline(elem: ElementRef, base: Fmt) -> (String, Vec<InlineRun>) {
 
 /// docling represents a `<br>` with a sentinel that the serializer rewrites.
 const BR_SENTINEL: &str = "\u{e000}";
+const BR_CHAR: char = '\u{e000}';
+
+/// A `<pre>` part's text: each `<br>` sentinel with at most one space on
+/// either side (` ?SENT ?`) is a newline; the ends are trimmed (#769).
+pub(super) fn pre_line_breaks(text: &str) -> String {
+    let chars: Vec<char> = text.chars().collect();
+    let mut out = String::with_capacity(text.len());
+    let mut i = 0;
+    while i < chars.len() {
+        let space_br = chars[i] == ' ' && chars.get(i + 1) == Some(&BR_CHAR);
+        if chars[i] == BR_CHAR || space_br {
+            i += if space_br { 2 } else { 1 };
+            if chars.get(i) == Some(&' ') {
+                i += 1;
+            }
+            out.push('\n');
+        } else {
+            out.push(chars[i]);
+            i += 1;
+        }
+    }
+    out.trim().to_string()
+}
+
+/// upstream's `_resolve_line_breaks` (docling#4675, #769): in text that is
+/// one paragraph — a heading, a caption, a list item — every `<br>`
+/// sentinel with the spaces before it and the spaces and sentinels after it
+/// (` *SENT[ SENT]*`) is one line break; the ends are trimmed.
+pub(super) fn resolve_line_breaks(text: &str) -> String {
+    let chars: Vec<char> = text.chars().collect();
+    let mut out = String::with_capacity(text.len());
+    let mut i = 0;
+    while i < chars.len() {
+        let mut j = i;
+        while j < chars.len() && chars[j] == ' ' {
+            j += 1;
+        }
+        if j < chars.len() && chars[j] == BR_CHAR {
+            j += 1;
+            while j < chars.len() && (chars[j] == ' ' || chars[j] == BR_CHAR) {
+                j += 1;
+            }
+            out.push('\n');
+            i = j;
+        } else {
+            out.extend(&chars[i..j.max(i + 1)]);
+            i = j.max(i + 1);
+        }
+    }
+    out.trim().to_string()
+}
 
 /// Join runs with single spaces, then turn `<br>` sentinels into newlines,
 /// stripping the spaces the join inserted around them.
@@ -2004,7 +2058,19 @@ fn extract_pre(pre: ElementRef) -> (Option<String>, String) {
     if language.is_none() {
         language = pre.value().attr("class").and_then(lang_from_class);
     }
-    let text = pre.text().collect::<String>();
+    // Each `<br>` is a newline (#769), with at most one space around it
+    // taken along.
+    let mut text = String::new();
+    for node in pre.descendants() {
+        match node.value() {
+            HtmlNode::Text(t) => text.push_str(t),
+            HtmlNode::Element(e) if e.name() == "br" => text.push(BR_CHAR),
+            _ => {}
+        }
+    }
+    if text.contains(BR_CHAR) {
+        text = pre_line_breaks(&text);
+    }
     (language, text.trim_matches('\n').to_string())
 }
 
@@ -2600,14 +2666,21 @@ fn caption_text(cap: ElementRef) -> Option<String> {
     // each fragment is stripped and the fragments are joined with single
     // spaces — so tag boundaries always yield a space ("a b ." for
     // `a <a>b</a>.`, "[ 49 ]" for a cite's `[`/`49`/`]` spans).
+    // A `<br>` is a line break (`_resolve_line_breaks`, #769).
     let mut parts: Vec<String> = Vec::new();
-    for t in cap.text() {
-        let frag = normalize_ws(t);
-        if !frag.is_empty() {
-            parts.push(frag);
+    for node in cap.descendants() {
+        match node.value() {
+            HtmlNode::Text(t) => {
+                let frag = normalize_ws(t);
+                if !frag.is_empty() {
+                    parts.push(frag);
+                }
+            }
+            HtmlNode::Element(e) if e.name() == "br" => parts.push(BR_SENTINEL.to_string()),
+            _ => {}
         }
     }
-    let text = parts.join(" ");
+    let text = resolve_line_breaks(&parts.join(" "));
     (!text.is_empty()).then_some(text)
 }
 
@@ -2648,13 +2721,29 @@ pub(super) fn normalize_ws(s: &str) -> String {
 
 /// The text for a checkbox `<input>`: the joined text of every `<label>` bound
 /// to it (`for=` its id, or a wrapping label), else its `aria-label`.
+/// An element's text with each `<br>` read as a line break — the text of a
+/// checkbox (upstream's `_extract`, which turns the `<br>` sentinel into
+/// `\n`), which then collapses to one line: `Task<br>line` is `Task line`,
+/// not `Taskline` (docling#4675, #769).
+pub(super) fn text_with_breaks(el: ElementRef) -> String {
+    let mut out = String::new();
+    for node in el.descendants() {
+        match node.value() {
+            scraper::Node::Text(t) => out.push_str(t),
+            scraper::Node::Element(e) if e.name() == "br" => out.push('\n'),
+            _ => {}
+        }
+    }
+    out
+}
+
 pub(super) fn checkbox_label_text(input: ElementRef) -> String {
     let mut texts: Vec<String> = Vec::new();
     if let Some(id) = input.value().attr("id").filter(|i| !i.is_empty()) {
         let root = root_of(input);
         for label in root.select(cached_selector!("label")) {
             if label.value().attr("for") == Some(id) {
-                let t = normalize_ws(&label.text().collect::<String>());
+                let t = normalize_ws(&text_with_breaks(label));
                 if !t.is_empty() {
                     texts.push(t);
                 }
@@ -2667,7 +2756,7 @@ pub(super) fn checkbox_label_text(input: ElementRef) -> String {
         while let Some(node) = cur {
             if let Some(el) = ElementRef::wrap(node) {
                 if el.value().name() == "label" {
-                    let t = normalize_ws(&el.text().collect::<String>());
+                    let t = normalize_ws(&text_with_breaks(el));
                     if !t.is_empty() {
                         texts.push(t);
                     }
@@ -2778,6 +2867,25 @@ mod tests {
     fn convert_bytes(html: &[u8]) -> DoclingDocument {
         let src = SourceDocument::from_bytes("t", InputFormat::Html, html.to_vec());
         HtmlBackend.convert(&src).unwrap()
+    }
+
+    /// #769 (docling#4675): one-paragraph text turns each run of `<br>`
+    /// sentinels, with the spaces around them, into one line break; `<pre>`
+    /// text turns each sentinel (with one space either side) into one.
+    #[test]
+    fn br_sentinels_resolve_to_line_breaks() {
+        let b = BR_CHAR;
+        assert_eq!(
+            resolve_line_breaks(&format!("Title {b} line")),
+            "Title\nline"
+        );
+        assert_eq!(
+            resolve_line_breaks(&format!("a {b} {b}{b} b  c")),
+            "a\nb  c"
+        );
+        assert_eq!(resolve_line_breaks(&format!(" {b} ")), "");
+        assert_eq!(pre_line_breaks(&format!("Code{b}line")), "Code\nline");
+        assert_eq!(pre_line_breaks(&format!("a  {b}  b{b}{b}c")), "a \n b\n\nc");
     }
 
     /// docling's `_handle_heading` builds the heading with

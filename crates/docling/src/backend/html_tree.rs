@@ -39,7 +39,8 @@ use scraper::{ElementRef, Html, Node as HtmlNode, Selector};
 
 use super::html::{
     checkbox_label_text, detect_field_region, is_hidden, is_rich_cell, lang_from_class,
-    normalize_url, normalize_ws, subtree_text,
+    normalize_url, normalize_ws, pre_line_breaks, resolve_line_breaks, subtree_text,
+    text_with_breaks,
 };
 use super::images::ImageResolver;
 
@@ -976,7 +977,12 @@ impl<'a> Walker<'a> {
                 let hint = code_language_hint(tag);
                 let group = self.open_inline_group(&parts, false);
                 for part in &parts {
-                    let text = clean_unicode(part.text.trim());
+                    // In preformatted text each `<br>` is a newline (#769).
+                    let text = pre_line_breaks(&part.text);
+                    if text.is_empty() {
+                        continue;
+                    }
+                    let text = clean_unicode(&text);
                     let language = hint.clone().or_else(|| detect_code_language(&text));
                     let r = self.add_code(text, language, part.formatting, part.hyperlink.clone());
                     if group.is_none() {
@@ -1296,7 +1302,7 @@ impl<'a> Walker<'a> {
         let parts = self.extract(*tag, true, true, false);
         let min_parts = simplify(parts);
         let joined: String = min_parts.iter().map(|p| p.text.as_str()).collect();
-        let item_text = squash_ws(&joined);
+        let item_text = resolve_line_breaks(&squash_ws(&joined));
         if item_text.is_empty() {
             return None;
         }
@@ -1329,7 +1335,11 @@ impl<'a> Walker<'a> {
             self.level += 1;
             let group = self.open_inline_group(&min_parts, false);
             for part in &min_parts {
-                let text = clean_unicode(&squash_ws(&part.text));
+                let text = clean_unicode(&resolve_line_breaks(&squash_ws(&part.text)));
+                if text.is_empty() {
+                    // The part only held `<br>` tags.
+                    continue;
+                }
                 self.emit_part(part, text, with_extra(part.formatting));
             }
             self.close_inline_group(group);
@@ -1338,7 +1348,7 @@ impl<'a> Walker<'a> {
             Some(item)
         } else {
             let part = &min_parts[0];
-            let text = squash_ws(&part.text);
+            let text = resolve_line_breaks(&squash_ws(&part.text));
             let clean = clean_unicode(&text);
             let orig = (text != clean).then_some(text);
             Some(self.tree.add(
@@ -1671,7 +1681,7 @@ impl<'a> Walker<'a> {
                 // nested blocks cannot leak into the label.
                 if let Some(li) = input.parent().and_then(ElementRef::wrap) {
                     if li.value().name() == "li" && !has_block_descendant(li) {
-                        text = normalize_checkbox_text(&li.text().collect::<String>());
+                        text = normalize_checkbox_text(&text_with_breaks(li));
                     }
                 }
             }
@@ -1830,7 +1840,7 @@ fn to_single(parts: &[Part]) -> Part {
         code = p.code || code;
     }
     Part {
-        text: text.trim().to_string(),
+        text: resolve_line_breaks(&text),
         hyperlink,
         formatting,
         code,
