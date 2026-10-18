@@ -726,7 +726,9 @@ fn closing_bracket(chars: &[char], open: usize) -> Option<usize> {
 /// inside an item's text becomes a GFM hard line break (`"  \n"`, two trailing
 /// spaces) so renderers honour it; a blank line (`\n\n`) is a paragraph break
 /// and stays as is — the document scope already joins blocks with `\n\n`.
-/// Applied to body text, list items and captions, never to code/formulas.
+/// Applied to body text, list items and standalone caption items, never to
+/// code/formulas, nor to the captions a table or picture carries: docling-core's
+/// `serialize_captions` prints those as they are (#769).
 fn md_line_breaks(text: &str) -> String {
     if !text.contains('\n') {
         return text.to_string();
@@ -1052,7 +1054,7 @@ fn render_item(node: &Node, blocks: &mut Vec<String>, ctx: &mut Ctx) {
             // `caption` is already escaped (backend convention), like a paragraph.
             if let Some(cap) = &table.caption {
                 if !cap.is_empty() {
-                    blocks.push(ctx.breaks(&ctx.text(cap)));
+                    blocks.push(ctx.text(cap));
                 }
             }
             let rendered = if ctx.plain {
@@ -1080,7 +1082,7 @@ fn render_item(node: &Node, blocks: &mut Vec<String>, ctx: &mut Ctx) {
         } => {
             if let Some(cap) = caption {
                 if !cap.is_empty() {
-                    blocks.push(ctx.breaks(&ctx.caption(cap)));
+                    blocks.push(ctx.caption(cap));
                 }
             }
             let alt = description
@@ -1106,7 +1108,7 @@ fn render_item(node: &Node, blocks: &mut Vec<String>, ctx: &mut Ctx) {
         } => {
             if let Some(cap) = caption {
                 if !cap.is_empty() {
-                    blocks.push(ctx.breaks(&ctx.caption(cap)));
+                    blocks.push(ctx.caption(cap));
                 }
             }
             blocks.push(picture_marker(None, ctx, None));
