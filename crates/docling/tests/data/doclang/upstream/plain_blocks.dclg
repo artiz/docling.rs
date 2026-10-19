@@ -1,0 +1,13 @@
+<doclang version="0.7">
+  <text>Intro</text>
+  <footnote>Plain note</footnote>
+  <page_header>Plain header</page_header>
+  <page_footer><layer value="furniture"/>Plain footer</page_footer>
+  <caption>Lone caption</caption>
+  <caption>Lone <bold>mixed</bold> caption</caption>
+  <text><layer value="furniture"/>Furn <bold>mixed</bold> text</text>
+  <footnote>
+    <location value="1"/><location value="2"/><location value="3"/><location value="4"/>
+    Located <italic>note</italic>
+  </footnote>
+</doclang>

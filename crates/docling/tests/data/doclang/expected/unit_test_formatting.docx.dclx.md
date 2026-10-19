@@ -21,5 +21,3 @@ on the same line
 The second page of the document with same header and footer
 
 The third page of the document with different header and footer
-
-Another **header** in bold

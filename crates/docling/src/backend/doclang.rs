@@ -90,14 +90,10 @@ fn walk_body(parent: XmlNode, out: &mut Vec<Node>) {
                 );
             }
             "text" => {
-                let mut inline = parse_inline(el);
-                // An inline-group-shaped `<text>` (several runs) comes back on
-                // the body layer even when its runs carry `<layer>` heads —
-                // docling stamps the layer per child, and the group itself
-                // defaults to body.
-                if is_inline_group(el) {
-                    inline.layer = None;
-                }
+                // A mixed `<text>` keeps its `<layer>`: docling-core 2.102
+                // puts the inline group and its runs on the element's layer
+                // (docling-core#865; it used to leave the group on the body).
+                let inline = parse_inline(el);
                 let node = if let Some(checked) = inline.checkbox {
                     Node::CheckboxItem {
                         checked,
@@ -114,6 +110,22 @@ fn walk_body(parent: XmlNode, out: &mut Vec<Node>) {
                     Node::Paragraph { text: inline.text }
                 };
                 push_with_layer(out, inline.layer, node);
+            }
+            // docling-core#865: a footnote, a page header/footer and a lone
+            // caption are text items of their own label — a mixed one a host
+            // over its inline group — which docling's Markdown prints like
+            // body text (a furniture-layer one not at all).
+            "footnote" | "page_header" | "page_footer" | "caption" => {
+                let inline = parse_inline(el);
+                if !inline.text.trim().is_empty() {
+                    push_with_layer(
+                        out,
+                        inline.layer,
+                        Node::Paragraph {
+                            text: inline.text.trim().to_string(),
+                        },
+                    );
+                }
             }
             "formula" => {
                 let text = raw_text(el);
@@ -140,7 +152,15 @@ fn walk_body(parent: XmlNode, out: &mut Vec<Node>) {
                     .children()
                     .find(|c| c.has_tag_name("layer"))
                     .and_then(parse_layer);
-                if let Some(table) = parse_table(el) {
+                if let Some(mut table) = parse_table(el) {
+                    // The caption, its runs kept as inline Markdown
+                    // (`Table **1** : results`, docling-core#865) — it used to
+                    // be dropped.
+                    table.caption = el
+                        .children()
+                        .find(|c| c.has_tag_name("caption"))
+                        .map(|c| parse_inline(c).text.trim().to_string())
+                        .filter(|s| !s.is_empty());
                     push_with_layer(out, layer, Node::Table(table));
                 }
             }
@@ -385,26 +405,6 @@ fn collapse_ws(s: &str) -> String {
 /// up from its styled runs (docling's list items carry plain text only).
 fn strip_md_markers(s: &str) -> String {
     s.replace("**", "").replace(['*'], "").replace("~~", "")
-}
-
-/// Whether a `<text>` element holds an inline group — two or more content
-/// fragments (styled runs / plain text nodes / formulas), as opposed to one
-/// plain or uniformly-styled run.
-fn is_inline_group(el: XmlNode) -> bool {
-    let mut fragments = 0;
-    for child in el.children() {
-        match child.node_type() {
-            NodeType::Element => match child.tag_name().name() {
-                "layer" | "location" | "href" | "checkbox" => {}
-                _ => fragments += 1,
-            },
-            NodeType::Text if !child.text().unwrap_or("").trim().is_empty() => {
-                fragments += 1;
-            }
-            _ => {}
-        }
-    }
-    fragments >= 2
 }
 
 /// Whether a `<text>` wrap holds exactly one styled run and no plain text —
@@ -961,7 +961,7 @@ mod tests {
 
     /// The JSON is docling-core's `DocLangDocDeserializer` tree: a mixed
     /// `<text>` is an `inline` group of per-run items (an empty `<text/>` an
-    /// empty one), a `<location>` quartet is the item's `prov` on the 512
+    /// empty text item), a `<location>` quartet is the item's `prov` on the 512
     /// page grid with `charspan = (0, len)`, a `<page_break>` opens another
     /// 512×512 page, list items carry `marker: ""` unless the `<ldiv>` says
     /// otherwise, and a CDATA code body is read the way minidom splits it —
@@ -1001,24 +1001,26 @@ mod tests {
         assert_eq!(groups[0]["children"].as_array().unwrap().len(), 3);
         assert_eq!(texts[2]["text"], "strong");
         assert_eq!(texts[2]["formatting"]["bold"], true);
-        // The empty `<text/>` is an empty inline group.
-        assert_eq!(groups[1]["label"], "inline");
-        assert!(groups[1]["children"].as_array().unwrap().is_empty());
+        // The empty `<text/>` is an empty text item (docling-core 2.102's
+        // `_is_empty_text_block`), not an empty inline group.
+        assert_eq!(texts[4]["label"], "text");
+        assert_eq!(texts[4]["text"], "");
+        assert_eq!(texts[4]["parent"]["$ref"], "#/body");
         // The list: `a)` marker kept, virtual text with a styled run → an
         // empty item holding an inline group; the wrapped item keeps its
         // text and parents the nested list.
-        assert_eq!(groups[2]["label"], "list");
-        assert_eq!(groups[2]["name"], "group");
-        assert_eq!(texts[4]["label"], "list_item");
-        assert_eq!(texts[4]["text"], "");
-        assert_eq!(texts[4]["marker"], "a)");
-        assert_eq!(texts[4]["enumerated"], true);
-        assert_eq!(texts[4]["children"][0]["$ref"], "#/groups/3");
-        assert_eq!(texts[7]["text"], "wrapped");
-        assert_eq!(texts[7]["marker"], "");
-        assert_eq!(texts[7]["children"][0]["$ref"], "#/groups/4");
-        assert_eq!(texts[8]["text"], "nested");
-        assert_eq!(texts[8]["parent"]["$ref"], "#/groups/4");
+        assert_eq!(groups[1]["label"], "list");
+        assert_eq!(groups[1]["name"], "group");
+        assert_eq!(texts[5]["label"], "list_item");
+        assert_eq!(texts[5]["text"], "");
+        assert_eq!(texts[5]["marker"], "a)");
+        assert_eq!(texts[5]["enumerated"], true);
+        assert_eq!(texts[5]["children"][0]["$ref"], "#/groups/2");
+        assert_eq!(texts[8]["text"], "wrapped");
+        assert_eq!(texts[8]["marker"], "");
+        assert_eq!(texts[8]["children"][0]["$ref"], "#/groups/3");
+        assert_eq!(texts[9]["text"], "nested");
+        assert_eq!(texts[9]["parent"]["$ref"], "#/groups/3");
         // The code block: label → language, CDATA verbatim, whitespace gone.
         let code = texts.last().unwrap();
         assert_eq!(code["label"], "code");

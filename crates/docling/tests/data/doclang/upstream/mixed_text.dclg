@@ -1,0 +1,17 @@
+<doclang version="0.7">
+  <text>
+    <location value="10"/>
+    <location value="20"/>
+    <location value="300"/>
+    <location value="40"/>
+    Before <bold>bold</bold> after
+  </text>
+  <text>Plain <italic>unlocated</italic> run</text>
+  <footnote>Note <bold>1</bold> here</footnote>
+  <page_header><layer value="furniture"/>Head <italic>er</italic></page_header>
+  <page_footer>
+    <layer value="furniture"/>
+    <location value="10"/><location value="480"/><location value="300"/><location value="500"/>
+    Page <bold>2</bold>
+  </page_footer>
+</doclang>

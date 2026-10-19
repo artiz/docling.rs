@@ -21,19 +21,10 @@
         "$ref": "#/texts/0"
       },
       {
-        "$ref": "#/groups/0"
+        "$ref": "#/texts/1"
       },
       {
         "$ref": "#/tables/0"
-      },
-      {
-        "$ref": "#/groups/4"
-      },
-      {
-        "$ref": "#/texts/13"
-      },
-      {
-        "$ref": "#/groups/5"
       },
       {
         "$ref": "#/texts/14"
@@ -48,7 +39,16 @@
         "$ref": "#/texts/17"
       },
       {
-        "$ref": "#/groups/6"
+        "$ref": "#/texts/18"
+      },
+      {
+        "$ref": "#/texts/19"
+      },
+      {
+        "$ref": "#/texts/20"
+      },
+      {
+        "$ref": "#/texts/21"
       }
     ],
     "content_layer": "body",
@@ -59,21 +59,11 @@
     {
       "self_ref": "#/groups/0",
       "parent": {
-        "$ref": "#/body"
-      },
-      "children": [],
-      "content_layer": "body",
-      "name": "group",
-      "label": "inline"
-    },
-    {
-      "self_ref": "#/groups/1",
-      "parent": {
         "$ref": "#/tables/0"
       },
       "children": [
         {
-          "$ref": "#/texts/1"
+          "$ref": "#/texts/2"
         }
       ],
       "content_layer": "body",
@@ -81,14 +71,11 @@
       "label": "unspecified"
     },
     {
-      "self_ref": "#/groups/2",
+      "self_ref": "#/groups/1",
       "parent": {
         "$ref": "#/tables/0"
       },
       "children": [
-        {
-          "$ref": "#/texts/2"
-        },
         {
           "$ref": "#/texts/3"
         },
@@ -103,6 +90,9 @@
         },
         {
           "$ref": "#/texts/7"
+        },
+        {
+          "$ref": "#/texts/8"
         }
       ],
       "content_layer": "body",
@@ -110,14 +100,11 @@
       "label": "unspecified"
     },
     {
-      "self_ref": "#/groups/3",
+      "self_ref": "#/groups/2",
       "parent": {
         "$ref": "#/tables/0"
       },
       "children": [
-        {
-          "$ref": "#/texts/8"
-        },
         {
           "$ref": "#/texts/9"
         },
@@ -129,41 +116,14 @@
         },
         {
           "$ref": "#/texts/12"
+        },
+        {
+          "$ref": "#/texts/13"
         }
       ],
       "content_layer": "body",
       "name": "group",
       "label": "unspecified"
-    },
-    {
-      "self_ref": "#/groups/4",
-      "parent": {
-        "$ref": "#/body"
-      },
-      "children": [],
-      "content_layer": "body",
-      "name": "group",
-      "label": "inline"
-    },
-    {
-      "self_ref": "#/groups/5",
-      "parent": {
-        "$ref": "#/body"
-      },
-      "children": [],
-      "content_layer": "body",
-      "name": "group",
-      "label": "inline"
-    },
-    {
-      "self_ref": "#/groups/6",
-      "parent": {
-        "$ref": "#/body"
-      },
-      "children": [],
-      "content_layer": "body",
-      "name": "group",
-      "label": "inline"
     }
   ],
   "texts": [
@@ -183,7 +143,19 @@
     {
       "self_ref": "#/texts/1",
       "parent": {
-        "$ref": "#/groups/1"
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "",
+      "text": ""
+    },
+    {
+      "self_ref": "#/texts/2",
+      "parent": {
+        "$ref": "#/groups/0"
       },
       "children": [],
       "content_layer": "body",
@@ -200,9 +172,9 @@
       }
     },
     {
-      "self_ref": "#/texts/2",
+      "self_ref": "#/texts/3",
       "parent": {
-        "$ref": "#/groups/2"
+        "$ref": "#/groups/1"
       },
       "children": [],
       "content_layer": "body",
@@ -212,9 +184,9 @@
       "text": "Choose as many as you like:"
     },
     {
-      "self_ref": "#/texts/3",
+      "self_ref": "#/texts/4",
       "parent": {
-        "$ref": "#/groups/2"
+        "$ref": "#/groups/1"
       },
       "children": [],
       "content_layer": "body",
@@ -224,9 +196,9 @@
       "text": "Orange juice"
     },
     {
-      "self_ref": "#/texts/4",
+      "self_ref": "#/texts/5",
       "parent": {
-        "$ref": "#/groups/2"
+        "$ref": "#/groups/1"
       },
       "children": [],
       "content_layer": "body",
@@ -236,9 +208,9 @@
       "text": "Tea"
     },
     {
-      "self_ref": "#/texts/5",
+      "self_ref": "#/texts/6",
       "parent": {
-        "$ref": "#/groups/2"
+        "$ref": "#/groups/1"
       },
       "children": [],
       "content_layer": "body",
@@ -248,9 +220,9 @@
       "text": "Coffee"
     },
     {
-      "self_ref": "#/texts/6",
+      "self_ref": "#/texts/7",
       "parent": {
-        "$ref": "#/groups/2"
+        "$ref": "#/groups/1"
       },
       "children": [],
       "content_layer": "body",
@@ -260,9 +232,9 @@
       "text": "Milk"
     },
     {
-      "self_ref": "#/texts/7",
+      "self_ref": "#/texts/8",
       "parent": {
-        "$ref": "#/groups/2"
+        "$ref": "#/groups/1"
       },
       "children": [],
       "content_layer": "body",
@@ -272,9 +244,9 @@
       "text": "Water"
     },
     {
-      "self_ref": "#/texts/8",
+      "self_ref": "#/texts/9",
       "parent": {
-        "$ref": "#/groups/3"
+        "$ref": "#/groups/2"
       },
       "children": [],
       "content_layer": "body",
@@ -284,9 +256,9 @@
       "text": "Choose as many as you like:"
     },
     {
-      "self_ref": "#/texts/9",
+      "self_ref": "#/texts/10",
       "parent": {
-        "$ref": "#/groups/3"
+        "$ref": "#/groups/2"
       },
       "children": [],
       "content_layer": "body",
@@ -296,9 +268,9 @@
       "text": "Scramble eggs"
     },
     {
-      "self_ref": "#/texts/10",
+      "self_ref": "#/texts/11",
       "parent": {
-        "$ref": "#/groups/3"
+        "$ref": "#/groups/2"
       },
       "children": [],
       "content_layer": "body",
@@ -308,9 +280,9 @@
       "text": "Porridge"
     },
     {
-      "self_ref": "#/texts/11",
+      "self_ref": "#/texts/12",
       "parent": {
-        "$ref": "#/groups/3"
+        "$ref": "#/groups/2"
       },
       "children": [],
       "content_layer": "body",
@@ -320,9 +292,9 @@
       "text": "Bread"
     },
     {
-      "self_ref": "#/texts/12",
+      "self_ref": "#/texts/13",
       "parent": {
-        "$ref": "#/groups/3"
+        "$ref": "#/groups/2"
       },
       "children": [],
       "content_layer": "body",
@@ -332,7 +304,19 @@
       "text": "Croissant"
     },
     {
-      "self_ref": "#/texts/13",
+      "self_ref": "#/texts/14",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "",
+      "text": ""
+    },
+    {
+      "self_ref": "#/texts/15",
       "parent": {
         "$ref": "#/body"
       },
@@ -345,7 +329,19 @@
       "level": 2
     },
     {
-      "self_ref": "#/texts/14",
+      "self_ref": "#/texts/16",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "",
+      "text": ""
+    },
+    {
+      "self_ref": "#/texts/17",
       "parent": {
         "$ref": "#/body"
       },
@@ -357,7 +353,7 @@
       "text": "Tasks before release:"
     },
     {
-      "self_ref": "#/texts/15",
+      "self_ref": "#/texts/18",
       "parent": {
         "$ref": "#/body"
       },
@@ -369,7 +365,7 @@
       "text": "Design"
     },
     {
-      "self_ref": "#/texts/16",
+      "self_ref": "#/texts/19",
       "parent": {
         "$ref": "#/body"
       },
@@ -381,7 +377,7 @@
       "text": "Implementation"
     },
     {
-      "self_ref": "#/texts/17",
+      "self_ref": "#/texts/20",
       "parent": {
         "$ref": "#/body"
       },
@@ -391,6 +387,18 @@
       "prov": [],
       "orig": "Documentation of the task with a very long text that goes beyond the maximum length of a single line.",
       "text": "Documentation of the task with a very long text that goes beyond the maximum length of a single line."
+    },
+    {
+      "self_ref": "#/texts/21",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "",
+      "text": ""
     }
   ],
   "pictures": [],
@@ -402,13 +410,13 @@
       },
       "children": [
         {
+          "$ref": "#/groups/0"
+        },
+        {
           "$ref": "#/groups/1"
         },
         {
           "$ref": "#/groups/2"
-        },
-        {
-          "$ref": "#/groups/3"
         }
       ],
       "content_layer": "body",
@@ -432,7 +440,7 @@
             "row_section": false,
             "fillable": false,
             "ref": {
-              "$ref": "#/groups/1"
+              "$ref": "#/groups/0"
             }
           },
           {
@@ -461,7 +469,7 @@
             "row_section": false,
             "fillable": false,
             "ref": {
-              "$ref": "#/groups/2"
+              "$ref": "#/groups/1"
             }
           },
           {
@@ -477,7 +485,7 @@
             "row_section": false,
             "fillable": false,
             "ref": {
-              "$ref": "#/groups/3"
+              "$ref": "#/groups/2"
             }
           }
         ],

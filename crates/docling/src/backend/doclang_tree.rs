@@ -6,7 +6,9 @@
 //! The flat walk in [`super::doclang`] keeps producing the Markdown-tuned
 //! node stream; this module rebuilds, on the same DOM, the exact parent/child
 //! structure and creation order the JSON export must show: an inline group
-//! for every mixed `<text>` (an *empty* `<text/>` included), one text item
+//! for every mixed `<text>` (an empty `<text/>` is an empty text item), a
+//! host item over that group for a located `<text>` and any mixed caption,
+//! footnote or page header/footer (docling-core#865), one text item
 //! per styled run with its `Formatting`, list items whose body is a
 //! `<text>` wrap vs. bare *virtual text*, rich table cells parented to an
 //! `unspecified` group under the table, captions and footnotes on the body,
@@ -191,10 +193,22 @@ fn get_text(el: XmlNode) -> String {
     out
 }
 
+/// `_is_empty_text_block`: no text and no children but element-head tokens.
+fn is_empty_text_block(el: XmlNode) -> bool {
+    el.children().all(|n| {
+        if n.is_element() {
+            is_head_tag(n.tag_name().name())
+        } else {
+            !n.is_text() || pieces(n).iter().all(|d| d.trim().is_empty())
+        }
+    })
+}
+
 /// `_get_children_simple_text_block`: the one text run a "simple" text
-/// element holds — `None` once a second run or a non-inline child appears
-/// (the element is then an inline group). Note that a styled run *replaces*
-/// the plain text found before it: `foo <bold>bar</bold>` reads `bar`.
+/// element holds — `None` once a second run (plain or styled), a non-inline
+/// child, or a styled child that is itself mixed appears: the element is
+/// then an inline group (docling-core 2.102 — `foo <bold>bar</bold>` used to
+/// read `bar`, the styled run replacing the text before it).
 fn simple_text_block(el: XmlNode) -> Option<String> {
     let mut result: Option<String> = None;
     for n in el.children() {
@@ -222,8 +236,15 @@ fn simple_text_block(el: XmlNode) -> Option<String> {
             ) {
                 return None;
             }
-            if let Some(tmp) = simple_text_block(n).filter(|t| !t.is_empty()) {
-                result = Some(tmp);
+            match simple_text_block(n).filter(|t| !t.is_empty()) {
+                Some(tmp) => {
+                    if result.is_some() {
+                        return None;
+                    }
+                    result = Some(tmp);
+                }
+                None if !get_text(n).trim().is_empty() => return None,
+                None => {}
             }
         } else if n.is_text() {
             for data in pieces(n) {
@@ -570,14 +591,31 @@ impl Builder<'_> {
             .filter(|c| c.is_element() && !is_head_tag(c.tag_name().name()))
             .collect();
         let simple = simple_text_block(el);
-        if element_children.len() > 1 || simple.is_none() {
-            self.inline_group(el, parent, None);
+        // An element without any content is an empty item, not a childless
+        // inline group (docling-core 2.102's `_is_empty_text_block`).
+        let is_empty = simple.is_none() && is_empty_text_block(el);
+        if !is_empty && (element_children.len() > 1 || simple.is_none()) {
+            // `_parse_mixed_text_like` (docling-core#865): a mixed caption,
+            // footnote or page header/footer — or a `<text>` with a location
+            // — is a host item of its own label, provenance and layer over
+            // an inline group; any other mixed element is the bare group,
+            // its runs on the element's layer.
+            if matches!(name, "caption" | "footnote" | "page_header" | "page_footer")
+                || (name == "text" && !self.provenance(el).is_empty())
+            {
+                self.inline_host(el, parent, name);
+            } else {
+                let group = self.inline_group(el, parent, None);
+                if let Some(layer) = layer_of(el) {
+                    self.set_layer_below(group, layer);
+                }
+            }
             return;
         }
         let provs = self.provenance(el);
         let layer = layer_of(el);
         let (text, mut formatting) = text_with_formatting(el);
-        if text.is_empty() {
+        if text.is_empty() && !is_empty {
             return;
         }
         match name {
@@ -910,7 +948,12 @@ impl Builder<'_> {
     /// element and per non-blank text node. `nodes` overrides the
     /// element's children (a list item's virtual-text body); an empty
     /// override falls back to the children, as upstream's `nodes or …` does.
-    fn inline_group(&mut self, el: XmlNode, parent: Option<usize>, nodes: Option<Vec<XmlNode>>) {
+    fn inline_group(
+        &mut self,
+        el: XmlNode,
+        parent: Option<usize>,
+        nodes: Option<Vec<XmlNode>>,
+    ) -> usize {
         let g = self.tree.add(
             parent,
             None,
@@ -936,6 +979,41 @@ impl Builder<'_> {
                 }
             }
         }
+        g
+    }
+
+    /// `_parse_inline_host` (docling-core#865): a labeled text-like element
+    /// with mixed content is an empty item of that label — its provenance
+    /// (charspan `[0, 0]`) and layer kept — holding an inline group of the
+    /// body's runs, which take the host's layer. The serializer writes that
+    /// shape back as `<footnote>…runs…</footnote>`, so nothing is lost in a
+    /// round trip.
+    fn inline_host(&mut self, el: XmlNode, parent: Option<usize>, label: &str) -> usize {
+        let provs = self.provenance(el);
+        let layer = layer_of(el);
+        let host = self.add_text_item(
+            parent,
+            layer,
+            Self::text_kind(label, "", None),
+            provs,
+            Some(0),
+        );
+        let (_, body) = split_head_body(el);
+        self.inline_group(el, Some(host), Some(body));
+        if let Some(layer) = layer {
+            self.set_layer_below(host, layer);
+        }
+        host
+    }
+
+    /// Put `id` and everything under it on `layer` — upstream's
+    /// `iterate_items(root=…)` loop setting `content_layer`.
+    fn set_layer_below(&mut self, id: usize, layer: ContentLayer) {
+        let mut stack = vec![id];
+        while let Some(i) = stack.pop() {
+            self.tree.items[i].layer = Some(layer);
+            stack.extend(self.tree.items[i].children.iter().copied());
+        }
     }
 
     // ------------- floating items -------------
@@ -949,10 +1027,18 @@ impl Builder<'_> {
         if text.is_empty() {
             return None;
         }
+        // A caption with formatting runs keeps them (docling-core#865): an
+        // empty `caption` host over an inline group, not the runs' text
+        // glued together.
+        if simple_text_block(cap).is_none() {
+            return Some(self.inline_host(cap, None, "caption"));
+        }
         let provs = self.provenance(cap);
+        // The caption's own `<layer>` head (a furniture logo's alt-text
+        // caption), as upstream's `content_layer=_extract_layer(cap_el)`.
         Some(self.add_text_item(
             None,
-            None,
+            layer_of(cap),
             Self::text_kind("caption", &text, None),
             provs,
             None,

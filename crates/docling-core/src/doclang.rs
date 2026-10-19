@@ -480,6 +480,18 @@ fn emit_text_element(
     out.push(depth, format!("</{tag}>"));
 }
 
+/// Whether `text` (Markdown) holds a bold, italic or code run — a mixed
+/// caption or furniture text, written with its runs; plain text keeps its
+/// established form.
+fn has_styled_runs(text: &str) -> bool {
+    inline_runs(text).iter().any(|r| {
+        matches!(
+            r,
+            Run::Bold(_) | Run::Italic(_) | Run::BoldItalic(_) | Run::Code(_)
+        )
+    })
+}
+
 fn emit_runs(out: &mut Out, depth: i32, runs: Vec<Run>) {
     for run in runs {
         match run {
@@ -729,9 +741,16 @@ fn emit_table(out: &mut Out, depth: i32, table: &Table) {
         push_location(out, depth + 1, loc);
     }
     if let Some(cap) = &table.caption {
-        // `caption` arrives already escaped (backend convention), so it is
-        // emitted verbatim.
-        out.push(depth + 1, format!("<caption>{cap}</caption>"));
+        if has_styled_runs(cap) {
+            // A mixed caption (docling-core#865) keeps its runs.
+            out.push(depth + 1, "<caption>".to_string());
+            emit_runs(out, depth + 2, inline_runs(cap));
+            out.push(depth + 1, "</caption>".to_string());
+        } else {
+            // `caption` arrives already escaped (backend convention), so it
+            // is emitted verbatim.
+            out.push(depth + 1, format!("<caption>{cap}</caption>"));
+        }
     }
     emit_table_rows(out, depth, table);
     out.push(depth, "</table>".to_string());
@@ -1535,7 +1554,13 @@ fn emit_furniture(out: &mut Out, depth: i32, layer: ContentLayer, inner: &Node) 
                 }
                 None => {
                     out.push(depth + 1, token);
-                    out.push(depth + 1, escape_text(text));
+                    if has_styled_runs(text) {
+                        // A mixed furniture text (a page header with a bold
+                        // run) keeps its runs, as a body text does.
+                        emit_runs(out, depth + 1, inline_runs(text));
+                    } else {
+                        out.push(depth + 1, escape_text(text));
+                    }
                 }
             }
             out.push(depth, "</text>".to_string());
@@ -1752,6 +1777,13 @@ fn emit_caption(out: &mut Out, depth: i32, text: &str, href: Option<&str>) {
             out.push(depth, "</caption>".to_string());
             return;
         }
+    }
+    if has_styled_runs(text) {
+        // A mixed caption (docling-core#865) keeps its runs.
+        out.push(depth, "<caption>".to_string());
+        emit_runs(out, depth + 1, inline_runs(text));
+        out.push(depth, "</caption>".to_string());
+        return;
     }
     out.push(depth, format!("<caption>{}</caption>", escape_text(text)));
 }
