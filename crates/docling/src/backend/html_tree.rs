@@ -531,6 +531,7 @@ impl<'a> Walker<'a> {
                 language,
                 formatting,
                 hyperlink,
+                captions: Vec::new(),
             },
         )
     }

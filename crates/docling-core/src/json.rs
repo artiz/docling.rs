@@ -1388,6 +1388,7 @@ impl Builder {
                     language,
                     formatting,
                     hyperlink,
+                    captions,
                 } => {
                     let r = format!("#/texts/{}", self.texts.len());
                     let prov = self.take_prov(text.chars().count());
@@ -1419,7 +1420,7 @@ impl Builder {
                     merge(
                         &mut item_json,
                         json!({
-                            "captions": [],
+                            "captions": captions.iter().map(|&c| ref_of(c)).collect::<Vec<_>>(),
                             "references": [],
                             "footnotes": [],
                             "code_language": code_language(language.as_deref()),
@@ -3678,6 +3679,7 @@ mod tests {
                 language: Some("python".into()),
                 formatting: None,
                 hyperlink: None,
+                captions: Vec::new(),
             },
         );
         let sub = t.add(

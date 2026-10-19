@@ -1,0 +1,11 @@
+= Installation Guide
+
+== Steps
+
+. Download the archive
+. Unpack it
+. Run the installer
+
+== Troubleshooting
+
+If the installer fails, check the log file.

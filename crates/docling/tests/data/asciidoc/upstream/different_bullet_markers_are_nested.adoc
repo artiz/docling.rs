@@ -1,0 +1,11 @@
+- a
+* b
+** c
+- d
+
+Separate paragraph.
+
+. one
+* two
+- three
+. four

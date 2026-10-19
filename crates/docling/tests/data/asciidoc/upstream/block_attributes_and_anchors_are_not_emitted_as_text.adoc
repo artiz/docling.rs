@@ -1,0 +1,11 @@
+:_mod-docs-content-type: PROCEDURE
+:experimental:
+[[table-id]]
+[cols="2"]
+|===
+| a | b
+| c | d
+|===
+
+[NOTE]
+This is a caveat.

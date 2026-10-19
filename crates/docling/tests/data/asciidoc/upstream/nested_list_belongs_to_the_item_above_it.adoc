@@ -1,0 +1,3 @@
+. Download the archive
+.. Pick the file for your platform
+. Run the installer

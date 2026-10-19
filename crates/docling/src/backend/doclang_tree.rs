@@ -596,6 +596,7 @@ impl Builder<'_> {
                         language: lang,
                         formatting: None,
                         hyperlink: None,
+                        captions: Vec::new(),
                     },
                     provs,
                     Some(len),

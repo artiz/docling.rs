@@ -1,0 +1,12 @@
+. one
+. two
+
+* a
+** b
+
+Separate paragraph.
+
+. x
+* y
+** y2
+. z

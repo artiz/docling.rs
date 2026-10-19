@@ -1,23 +1,27 @@
 //! AsciiDoc backend.
 //!
-//! A line-oriented port of docling's `AsciiDocBackend._parse`: titles (`= `),
-//! section headers (`== `…), bullet/numbered lists (with `+` continuation and
-//! literal-block/image children), `....`-delimited literal blocks, bare and
-//! `|===`-delimited tables (with cell-format-specifier stripping), images and
-//! captions, and multi-line paragraphs.
+//! A line-oriented port of docling's `AsciiDocBackend._parse` (as of 2.140):
+//! titles (`= `), section headers (`== `…), bullet/numbered lists (with `+`
+//! continuation and literal-block/image children), `....`/`----`-delimited
+//! literal and listing blocks, bare and `|===`-delimited tables (with
+//! cell-format-specifier stripping), images and captions, and multi-line
+//! paragraphs with `*bold*`, `_italic_` and `` `mono` `` marks. Comments,
+//! block attributes and anchors are skipped.
 //!
 //! Alongside the flat nodes the parser builds docling's item tree for the
 //! JSON export, mirroring `_parse`'s `parents` / `indents` bookkeeping: the
 //! title is the root the sections hang off, a heading is parented to the
 //! nearest present ancestor level, every list opens a `list` group at the
-//! next level (a deeper indent nests another group, a dedent pops levels
-//! while an outer group exists), items are children of the innermost group,
-//! a `+`-continued picture or literal block is a child of the open list item,
-//! block titles become body-level `caption` items that tables / pictures /
-//! code reference — or a bold paragraph when they precede a list.
+//! next level and a nested list (a deeper indent, or another marker kind)
+//! a group under the item above it, items are children of the innermost
+//! group, a `+`-continued picture or literal block is a child of the open
+//! list item, block titles become body-level `caption` items that tables /
+//! pictures / code reference — or a bold paragraph before anything else. The
+//! flat list nodes take their depth and numbers from that tree, so the
+//! Markdown nests and numbers exactly as docling-core serializes it.
 
 use docling_core::tree::{Formatting, ItemTree, ListMeta, TreeKind};
-use docling_core::{DoclingDocument, Node, Table, TableCell};
+use docling_core::{DoclingDocument, InlineRun, Node, Table, TableCell};
 
 use crate::backend::images::{FsImageResolver, ImagePolicy, ImageResolver, ImageSources, NoFetch};
 use crate::backend::markdown::escape_text;
@@ -33,11 +37,13 @@ use crate::source::SourceDocument;
 /// matching.
 const CELL_SPEC: &str = r"(?:(?:\d+(?:\.\d+)?|\.\d+)[*+])*[<^>]?(?:\.[<^>])?[adehlms]?";
 
-/// docling's `_LIST_ITEM_PATTERN` (docling#4118, docling#4403): besides `*`,
-/// `-` and `1.`, AsciiDoc's dotted (`.`, `..`, `...`) and lettered/roman
-/// (`a.`, `i.`) ordered markers open list items, and a run of `*`s nests a
-/// bullet the way a run of `.`s nests a number.
-const LIST_ITEM: &str = r"^(\s*)(\*+|-|\.+|\d+\.|\w+\.)\s+(.*)";
+/// docling's `_LIST_ITEM_PATTERN` (docling#4118, docling#4403, docling#4827):
+/// besides `*`, `-` and `1.`, AsciiDoc's dotted (`.`, `..`, `...`) and
+/// one-letter (`a.`, `B.`) ordered markers open list items, and a run of
+/// `*`s nests a bullet the way a run of `.`s nests a number. One letter
+/// only, so a line that starts with an abbreviation (`Dr.`, `Fig.`) stays
+/// text.
+const LIST_ITEM: &str = r"^(\s*)(\*+|-|\.+|\d+\.|[a-zA-Z]\.)\s+(.*)";
 
 /// The delimiter opening and closing a literal block.
 const LITERAL_FENCE: &str = "....";
@@ -45,10 +51,13 @@ const LITERAL_FENCE: &str = "....";
 /// literal block, optionally labelled by a `[source,lang]` attribute line
 /// right before it (docling#4400).
 const LISTING_FENCE: &str = "----";
+/// `////` opens and closes a comment block; `//` starts a line comment.
+const COMMENT_BLOCK: &str = "////";
 /// Example, sidebar, quote, open and passthrough block delimiters: consumed
-/// (when a matching closer exists) so they do not leak into the text, their
-/// content re-emitted as ordinary lines.
-const CONTENT_BLOCK_DELIMITERS: &[&str] = &["====", "****", "____", "--", "+++"];
+/// so they do not leak into the text — with a matching closer the content
+/// is re-emitted as ordinary lines, without one the delimiter only breaks the
+/// paragraph (docling#4662).
+const CONTENT_BLOCK_DELIMITERS: &[&str] = &["====", "****", "____", "--", "++++"];
 /// `[source]` / `[source,python]` / `[source, java, linenums]`: the optional
 /// language is the first attribute after `source`.
 const SOURCE_ATTR: &str = r"^\[source(?:,\s*([\w+#.-]+))?[^\]]*\]$";
@@ -85,10 +94,9 @@ fn parse(text: &str, name: &str, images: &dyn ImageResolver) -> DoclingDocument 
         images: Some(images),
         parents: vec![None; LEVELS],
         indents: vec![None; LEVELS],
+        list_kinds: vec![None; LEVELS],
         ..Parser::default()
     };
-    // Iterate raw lines, preserving them as docling does (it never strips the
-    // trailing newline-only state machine differently from `str::lines`).
     for block in blocks(text) {
         match block {
             Block::Line(line) => p.feed(line, &mut doc),
@@ -116,18 +124,24 @@ enum Block<'a> {
 /// docling's `_iter_blocks`: fold each `....`- or `----`-delimited run of
 /// lines into a single code block — only the matching closer ends it, and a
 /// `[source,lang]` attribute line consumed right before a `----` labels the
-/// listing's language. An example / sidebar / quote / open / passthrough
-/// block's delimiter lines are dropped (only when a closer follows, so a
-/// stray `--` separator cannot swallow the rest of the document) and its
-/// inner lines pass through unchanged. An unterminated block still yields
-/// its body at EOF.
+/// listing's language. Comments go: a `//` line and everything between two
+/// `////` lines (docling#4431). An example / sidebar / quote / open /
+/// passthrough block's delimiter lines are dropped and its inner lines pass
+/// through unchanged, followed by a blank line so the text after it starts a
+/// fresh paragraph; a delimiter with no closer (a stray `--` separator) is a
+/// blank line, so it breaks the paragraph without swallowing the rest of the
+/// document or reaching the text (docling#4662). An unterminated literal
+/// block still yields its body at EOF.
 fn blocks(text: &str) -> Vec<Block<'_>> {
     let lines: Vec<&str> = text.lines().collect();
     let source_attr = cached_regex!(SOURCE_ATTR);
     let mut out = Vec::new();
+    let mut in_comment_block = false;
     let mut i = 0;
     while i < lines.len() {
         let stripped = lines[i].trim();
+        // A fence opens a block even inside a comment block, as upstream
+        // checks it first.
         if stripped == LITERAL_FENCE || stripped == LISTING_FENCE {
             let (body, next) = delimited_body(&lines, i + 1, stripped);
             out.push(Block::Literal {
@@ -137,14 +151,29 @@ fn blocks(text: &str) -> Vec<Block<'_>> {
             i = next;
             continue;
         }
-        if CONTENT_BLOCK_DELIMITERS.contains(&stripped)
-            && lines[i + 1..].iter().any(|l| l.trim() == stripped)
-        {
+        if in_comment_block {
+            in_comment_block = stripped != COMMENT_BLOCK;
             i += 1;
-            while i < lines.len() && lines[i].trim() != stripped {
-                out.push(Block::Line(lines[i]));
+            continue;
+        }
+        if stripped == COMMENT_BLOCK {
+            in_comment_block = true;
+            i += 1;
+            continue;
+        }
+        if lines[i].starts_with("//") {
+            i += 1;
+            continue;
+        }
+        if CONTENT_BLOCK_DELIMITERS.contains(&stripped) {
+            if lines[i + 1..].iter().any(|l| l.trim() == stripped) {
                 i += 1;
+                while i < lines.len() && lines[i].trim() != stripped {
+                    out.push(Block::Line(lines[i]));
+                    i += 1;
+                }
             }
+            out.push(Block::Line(""));
             i += 1;
             continue;
         }
@@ -178,21 +207,6 @@ fn delimited_body(lines: &[&str], start: usize, delimiter: &str) -> (String, usi
     (body.join("\n"), (i + 1).min(lines.len()))
 }
 
-/// One open list level — docling's `parents`/`indents` pair for a `ListGroup`.
-struct ListLevel {
-    /// The indent width of the items that opened this level.
-    indent: usize,
-    /// How many children the group holds so far. docling-core numbers an
-    /// enumerated item by its *position among the group's children*, and a
-    /// nested list is a child of the group (not of the preceding item), so it
-    /// takes a slot too: `. a` / `.. b` / `. c` renders `1.`, `1.`, `3.`.
-    slots: u64,
-    /// docling-core renders a group's items as numbers only when the group's
-    /// *first* item is enumerated; otherwise every item gets a `-`, whatever
-    /// its own marker was.
-    enumerated: bool,
-}
-
 #[derive(Default)]
 struct Parser<'r> {
     text_data: Vec<String>,
@@ -200,8 +214,9 @@ struct Parser<'r> {
     table_data: Vec<Vec<String>>,
     in_list: bool,
     in_table: bool,
-    /// The currently-open list levels, outermost first.
-    levels: Vec<ListLevel>,
+    /// A `|===` table is open: a blank line only separates its rows and a
+    /// line without a leading `|` continues the cell above (docling#4761).
+    in_delimited_table: bool,
     /// Whether the next emitted item starts a fresh list (for the serializer).
     fresh_list: bool,
     /// Index in `doc.nodes` of the most recent list item, so a continuation
@@ -217,8 +232,12 @@ struct Parser<'r> {
     /// headings at their level, list groups at the level after their parent.
     parents: Vec<Option<usize>>,
     /// docling's `indents`: the indent width that opened the list group at a
-    /// level (never cleared when a list closes, exactly like upstream).
+    /// level (left in place when a list closes, exactly like upstream).
     indents: Vec<Option<usize>>,
+    /// docling's `list_kinds`: the marker kind of the list group at each
+    /// level (`.` for every ordered marker, else the bullet character), for
+    /// the list being parsed (docling#4822).
+    list_kinds: Vec<Option<char>>,
     /// The tree id of the most recent list item — docling's `last_list_item`.
     last_item_tree: Option<usize>,
     /// The unescaped text of the caption [`Self::take_caption`] last returned.
@@ -248,6 +267,10 @@ impl Parser<'_> {
             .and_then(|k| self.parents[k - 1])
     }
 
+    fn is_list_group(&self, id: usize) -> bool {
+        matches!(&self.tree.items[id].kind, TreeKind::Group { label, .. } if label == "list")
+    }
+
     /// A text item in the tree (`add_text` / `add_heading` / `add_list_item`).
     fn add_tree_text(
         &mut self,
@@ -273,14 +296,15 @@ impl Parser<'_> {
         )
     }
 
-    /// docling: `parents[level + 1] = add_group(parent=parents[level],
-    /// name="list", label=LIST)`, `indents[level + 1] = indent`.
-    fn open_list_group(&mut self, level: usize, indent: usize) {
+    /// docling: `parents[level + 1] = add_group(parent=…, name="list",
+    /// label=LIST)`, `indents[level + 1] = indent`,
+    /// `list_kinds[level + 1] = kind`.
+    fn open_list_group(&mut self, level: usize, parent: Option<usize>, indent: usize, kind: char) {
         if level + 1 >= LEVELS {
             return;
         }
         let g = self.tree.add(
-            self.parents[level],
+            parent,
             None,
             TreeKind::Group {
                 label: "list".into(),
@@ -289,6 +313,7 @@ impl Parser<'_> {
         );
         self.parents[level + 1] = Some(g);
         self.indents[level + 1] = Some(indent);
+        self.list_kinds[level + 1] = Some(kind);
     }
 
     /// A block title claimed by a table / picture / code block: docling adds
@@ -300,8 +325,10 @@ impl Parser<'_> {
 
     /// docling's `_close_list_if_needed`: anything that is not a list item, a
     /// blank line, a `+`, or a continuation block claimed by a preceding `+`
-    /// ends the open list. Unlike docling ≤ 2.124 the line is *not* swallowed —
-    /// it goes on to be parsed as a heading/table/picture/text.
+    /// ends the open list — every level of it, so the text after a nested
+    /// list is not added to the outer list group (docling#4721). The line is
+    /// *not* swallowed: it goes on to be parsed as a heading/table/picture/
+    /// text.
     fn close_list_if_needed(&mut self, trigger: Trigger) {
         if !self.in_list {
             return;
@@ -317,10 +344,12 @@ impl Parser<'_> {
             }
         };
         if !keep {
-            // docling: `parents[level] = None` for the current level only —
-            // the indent stays recorded.
-            let level = self.current_level();
-            self.parents[level] = None;
+            // The indents stay recorded, as upstream leaves them.
+            let mut level = self.current_level();
+            while level > 0 && self.parents[level].is_some_and(|g| self.is_list_group(g)) {
+                self.parents[level] = None;
+                level -= 1;
+            }
             self.end_list();
         }
     }
@@ -352,7 +381,9 @@ impl Parser<'_> {
         } else {
             self.current_parent()
         };
-        let code_id = self.tree.add(
+        // docling's `add_code(caption=…)`: the code item references the
+        // body-level caption in its `captions`.
+        self.tree.add(
             parent,
             None,
             TreeKind::Code {
@@ -361,13 +392,9 @@ impl Parser<'_> {
                 language: language.clone(),
                 formatting: None,
                 hyperlink: None,
+                captions: tree_caption.into_iter().collect(),
             },
         );
-        // docling's `add_code(caption=…)`: the caption is a child reference
-        // on the code item.
-        if let Some(c) = tree_caption {
-            self.tree.items[code_id].children.push(c);
-        }
         if !(self.in_list && self.fold_child(doc, &format!("```\n{code}\n```"))) {
             doc.push(Node::Code {
                 language,
@@ -383,7 +410,22 @@ impl Parser<'_> {
     }
 
     fn feed(&mut self, line: &str, doc: &mut DoclingDocument) {
+        let stripped = line.trim();
+        if self.in_delimited_table && self.continue_table(line) {
+            return;
+        }
         self.close_list_if_needed(Trigger::Line(line));
+
+        // Block attributes, anchors and entry attributes (`[cols="2,1"]`,
+        // `[NOTE]`, `[[some-id]]`, `:experimental:`) are metadata for the
+        // block that follows or the document, never body content
+        // (docling#4431). An empty `[]` is not one.
+        if cached_regex!(r"^\[\[.+\]\]$").is_match(stripped)
+            || cached_regex!(r"^\[[^\[\]]+\]$").is_match(stripped)
+            || cached_regex!(r"^:[\w.-]+:(\s.*)?$").is_match(stripped)
+        {
+            return;
+        }
 
         // Title: `= ` — the root of the section tree.
         if let Some(rest) = is_title(line) {
@@ -436,29 +478,32 @@ impl Parser<'_> {
         }
         // A lone `+` inside a list: the next literal block or image belongs to
         // the open item.
-        if self.in_list && line.trim() == "+" {
+        if self.in_list && stripped == "+" {
             self.list_continuation = true;
             return;
         }
 
-        // Table start delimiter `|===`
-        if line.trim() == "|===" && !self.in_table {
-            self.in_table = true;
+        // `|===` opens or closes a delimited table.
+        if stripped == "|===" {
+            if self.in_table {
+                self.flush_table(doc);
+            } else {
+                self.in_table = true;
+                self.in_delimited_table = true;
+            }
             return;
         }
-        // A table row
+        // A table row: one cell per line is enough (docling#4431, the
+        // vertical layout).
         if is_table_line(line) {
             self.in_table = true;
             self.table_data.push(parse_table_line(line));
             return;
         }
-        // End of a table (any non-row line, including the closing `|===`)
+        // Any other line ends a bare table. Unlike docling, which drops that
+        // line, it goes on to be parsed as text/caption/etc.
         if self.in_table {
             self.flush_table(doc);
-            // fall through: the line may still be text/caption/etc., except `|===`.
-            if line.trim() == "|===" {
-                return;
-            }
         }
 
         // Picture
@@ -476,49 +521,93 @@ impl Parser<'_> {
             }
         }
         // Continuation of a multi-line caption
-        if !line.trim().is_empty() && !self.caption_data.is_empty() {
-            self.caption_data.push(line.trim().to_string());
+        if !stripped.is_empty() && !self.caption_data.is_empty() {
+            self.caption_data.push(stripped.to_string());
             return;
         }
 
-        // Plain text: blank line flushes the accumulated paragraph
-        if line.trim().is_empty() {
+        if stripped.is_empty() {
+            // docling's `_flush_blank_line`: the paragraph, then a block title
+            // no floating item claimed, as a bold paragraph (docling#4431 — it
+            // used to absorb every line after it).
             self.flush_text(doc);
+            self.flush_caption_as_paragraph(doc);
         } else {
-            self.text_data.push(line.trim().to_string());
+            self.text_data.push(stripped.to_string());
         }
+    }
+
+    /// docling's `_continue_table`: inside `|===`, a blank line only
+    /// separates rows and a line without a leading `|` continues the cell
+    /// above it (docling#4761). `false` for any other line — the closer, a
+    /// row, or text before the first row.
+    fn continue_table(&mut self, line: &str) -> bool {
+        let stripped = line.trim();
+        if stripped == "|===" || is_table_line(line) {
+            return false;
+        }
+        if stripped.is_empty() {
+            return true;
+        }
+        let Some(cell) = self.table_data.last_mut().and_then(|row| row.last_mut()) else {
+            return false;
+        };
+        *cell = format!("{cell} {stripped}").trim_start().to_string();
+        true
+    }
+
+    /// A pending block title that no picture, table or code block claimed:
+    /// docling's `_flush_caption_as_paragraph`, a bold paragraph under `parent`
+    /// (a list group has no caption slot either).
+    fn flush_caption_as_paragraph_under(
+        &mut self,
+        parent: Option<usize>,
+        doc: &mut DoclingDocument,
+    ) {
+        if let Some(text) = self.take_caption() {
+            doc.push(Node::Paragraph {
+                text: format!("**{text}**"),
+            });
+            let raw = self.raw_caption.clone();
+            self.add_tree_text(
+                parent,
+                "paragraph",
+                &raw,
+                Some(Formatting {
+                    bold: true,
+                    ..Formatting::default()
+                }),
+                None,
+                None,
+            );
+        }
+    }
+
+    fn flush_caption_as_paragraph(&mut self, doc: &mut DoclingDocument) {
+        let parent = self.current_parent();
+        self.flush_caption_as_paragraph_under(parent, doc);
     }
 
     fn push_list_item(&mut self, item: ListItem<'_>, doc: &mut DoclingDocument) {
         // docling's `parents` / `indents` bookkeeping for the tree.
         let mut level = self.current_level();
+        let kind = item.kind();
         if !self.in_list {
             self.in_list = true;
             // A block title pending in front of a list (the `.Procedure` /
-            // `.Verification` lead-ins): a list group has no caption slot, so
-            // docling ≥ 2.127 emits it as a *bold* paragraph right before the
-            // list (2.126 wrote it as a plain caption text).
-            if let Some(text) = self.take_caption() {
-                doc.push(Node::Paragraph {
-                    text: format!("**{text}**"),
-                });
-                let raw = self.raw_caption.clone();
-                let parent = self.parents[level];
-                self.add_tree_text(
-                    parent,
-                    "paragraph",
-                    &raw,
-                    Some(Formatting {
-                        bold: true,
-                        ..Formatting::default()
-                    }),
-                    None,
-                    None,
-                );
-            }
-            self.open_list_group(level, item.indent);
+            // `.Verification` lead-ins): docling ≥ 2.127 emits it as a *bold*
+            // paragraph right before the list.
+            let parent = self.parents[level];
+            self.flush_caption_as_paragraph_under(parent, doc);
+            self.list_kinds = vec![None; LEVELS];
+            self.open_list_group(level, parent, item.indent, kind);
+            self.fresh_list = true;
         } else if item.indent > self.indents[level].unwrap_or(0) {
-            self.open_list_group(level, item.indent);
+            // A nested list belongs to the item above it (docling#4721): as a
+            // sibling of the items it would count as an item of the outer
+            // list, numbering the next ordered item one too high.
+            let parent = self.last_item_tree;
+            self.open_list_group(level, parent, item.indent, kind);
         } else if item.indent < self.indents[level].unwrap_or(0) {
             while level > 0 && item.indent < self.indents[level].unwrap_or(0) {
                 // Only pop while an outer group exists to fall back to;
@@ -531,9 +620,11 @@ impl Parser<'_> {
                 level -= 1;
             }
         }
+        self.match_list_kind(&item, kind);
+
         let tree_parent = self.current_parent();
-        let tree_marker =
-            numeric_marker(item.marker).map_or(String::new(), |_| item.marker.to_string());
+        let explicit = numeric_marker(item.marker);
+        let tree_marker = explicit.map_or(String::new(), |_| item.marker.to_string());
         let id = self.add_tree_text(
             tree_parent,
             "list_item",
@@ -546,45 +637,24 @@ impl Parser<'_> {
             }),
         );
         self.last_item_tree = Some(id);
-        // The flat path's own list state (`levels`): what the Markdown
-        // serializer needs to number and indent the items.
-        if self.levels.is_empty() {
-            self.levels = vec![ListLevel {
-                indent: item.indent,
-                slots: 0,
-                enumerated: item.numbered,
-            }];
-            self.fresh_list = true;
-        } else if item.indent > self.levels.last().unwrap().indent {
-            // The nested group itself occupies a slot in its parent group.
-            self.levels.last_mut().unwrap().slots += 1;
-            self.levels.push(ListLevel {
-                indent: item.indent,
-                slots: 0,
-                enumerated: item.numbered,
-            });
-        } else {
-            while self.levels.len() > 1 && item.indent < self.levels.last().unwrap().indent {
-                self.levels.pop();
-            }
-        }
-        let level = (self.levels.len() - 1) as u8;
-        let group = self.levels.last_mut().unwrap();
-        group.slots += 1;
-        // An explicit numeric marker (`1.`, `12.`) is printed verbatim by
-        // docling-core, whatever the item's position; every other enumerated
-        // item is numbered by that position.
-        let (ordered, number) = match numeric_marker(item.marker) {
+
+        // The flat node takes what docling-core's list serializer reads off
+        // the tree: the depth of list groups around the item, and its number
+        // — an explicit `12.` printed verbatim, else the item's position in
+        // its group when the group's *first* item is enumerated (a bullet
+        // `-` otherwise, whatever the item's own marker).
+        let (depth, position, group_enumerated) = self.list_position(id);
+        let (ordered, number) = match explicit {
             Some(n) => (true, n),
-            None => (group.enumerated, group.slots),
+            None => (group_enumerated, position),
         };
         doc.push(Node::ListItem {
             ordered,
             number,
             first_in_list: self.fresh_list,
             text: escape_text(item.text.trim()),
-            level,
-            marker: numeric_marker(item.marker).map(|_| item.marker.to_string()),
+            level: depth,
+            marker: explicit.map(|_| item.marker.to_string()),
             location: None,
             dclx: None,
             href: None,
@@ -593,6 +663,63 @@ impl Parser<'_> {
         self.last_item = Some(doc.nodes.len() - 1);
         self.fresh_list = false;
         self.list_continuation = false;
+    }
+
+    /// docling's `_match_list_kind`: AsciiDoc nests lists by marker, not by
+    /// indentation (docling#4822). An item of another kind than its group
+    /// returns to the closest enclosing list of its kind at the same indent,
+    /// or else opens a nested list under the item above it.
+    fn match_list_kind(&mut self, item: &ListItem<'_>, kind: char) {
+        let level = self.current_level();
+        if self.list_kinds[level] == Some(kind) {
+            return;
+        }
+        let mut outer = level;
+        while outer > 0 {
+            outer -= 1;
+            let Some(outer_kind) = self.list_kinds[outer] else {
+                break;
+            };
+            if self.indents[outer] != Some(item.indent) {
+                break;
+            }
+            if outer_kind == kind {
+                for closed in outer + 1..=level {
+                    self.parents[closed] = None;
+                    self.indents[closed] = None;
+                }
+                return;
+            }
+        }
+        let parent = self.last_item_tree;
+        self.open_list_group(level, parent, item.indent, kind);
+    }
+
+    /// For a list item of the tree: how many list groups enclose it below
+    /// the outermost (its Markdown depth), its 1-based position among its
+    /// group's children, and whether that group's first child is enumerated.
+    fn list_position(&self, id: usize) -> (u8, u64, bool) {
+        let group = self.tree.items[id].parent;
+        let mut depth = 0u8;
+        let mut at = group.and_then(|g| self.tree.items[g].parent);
+        while let Some(a) = at {
+            if self.is_list_group(a) {
+                depth += 1;
+            }
+            at = self.tree.items[a].parent;
+        }
+        let Some(group) = group else {
+            return (depth, 1, false);
+        };
+        let children = &self.tree.items[group].children;
+        let position = children.iter().position(|&c| c == id).map_or(1, |p| p + 1) as u64;
+        let first_enumerated = children.first().is_some_and(|&c| {
+            matches!(
+                &self.tree.items[c].kind,
+                TreeKind::Text { list: Some(l), .. } if l.enumerated
+            )
+        });
+        (depth, position, first_enumerated)
     }
 
     fn push_picture(&mut self, uri: &str, doc: &mut DoclingDocument) {
@@ -679,7 +806,6 @@ impl Parser<'_> {
 
     fn end_list(&mut self) {
         self.in_list = false;
-        self.levels.clear();
         self.last_item = None;
         self.last_item_tree = None;
         self.list_continuation = false;
@@ -698,16 +824,86 @@ impl Parser<'_> {
         Some(escape_text(&cap))
     }
 
+    /// docling's `_flush_text_data`: the accumulated lines as one paragraph —
+    /// or, when `*bold*`, `_italic_` or `` `mono` `` marks style part of it
+    /// (docling#4824), an `inline` group of one item per run: a text with its
+    /// bold/italic formatting, a monospace run a `code` item.
     fn flush_text(&mut self, doc: &mut DoclingDocument) {
-        if !self.text_data.is_empty() {
-            let text = self.text_data.join(" ");
-            self.text_data.clear();
+        if self.text_data.is_empty() {
+            return;
+        }
+        let text = self.text_data.join(" ");
+        self.text_data.clear();
+        let parent = self.current_parent();
+        let runs = parse_inline(&text, false, false);
+        if !runs.iter().any(|r| r.bold || r.italic || r.code) {
             doc.push(Node::Paragraph {
                 text: escape_text(&text),
             });
-            let parent = self.current_parent();
             self.add_tree_text(parent, "paragraph", &text, None, None, None);
+            return;
         }
+        let group = self.tree.add(
+            parent,
+            None,
+            TreeKind::Group {
+                label: "inline".into(),
+                name: "group".into(),
+            },
+        );
+        let mut md = Vec::new();
+        let mut node_runs = Vec::new();
+        for run in runs {
+            let t = run.text.trim();
+            if t.is_empty() {
+                continue;
+            }
+            if run.code {
+                self.tree.add(
+                    Some(group),
+                    None,
+                    TreeKind::Code {
+                        text: t.to_string(),
+                        orig: None,
+                        language: None,
+                        formatting: None,
+                        hyperlink: None,
+                        captions: Vec::new(),
+                    },
+                );
+                md.push(format!("`{t}`"));
+            } else {
+                let formatting = (run.bold || run.italic).then(|| Formatting {
+                    bold: run.bold,
+                    italic: run.italic,
+                    ..Formatting::default()
+                });
+                self.add_tree_text(Some(group), "text", t, formatting, None, None);
+                let escaped = escape_text(t);
+                md.push(match (run.bold, run.italic) {
+                    (true, true) => format!("***{escaped}***"),
+                    (true, false) => format!("**{escaped}**"),
+                    (false, true) => format!("*{escaped}*"),
+                    (false, false) => escaped,
+                });
+            }
+            node_runs.push(InlineRun {
+                text: t.to_string(),
+                bold: run.bold,
+                italic: run.italic,
+                code: run.code,
+                ..InlineRun::default()
+            });
+        }
+        // Under a heading the group is the heading's child, which DocLang
+        // writes without an enclosing `<text>`.
+        let unwrapped =
+            parent.is_some_and(|p| matches!(self.tree.items[p].kind, TreeKind::Text { .. }));
+        doc.push(Node::InlineGroup {
+            unwrapped,
+            runs: node_runs,
+            md_text: md.join(" "),
+        });
     }
 
     fn flush_table(&mut self, doc: &mut DoclingDocument) {
@@ -776,15 +972,130 @@ impl Parser<'_> {
             doc.push(Node::Table(table));
         }
         self.in_table = false;
+        self.in_delimited_table = false;
         self.table_data.clear();
     }
 
     fn finish(&mut self, doc: &mut DoclingDocument) {
         self.flush_text(doc);
         if self.in_table {
+            // An unclosed table still consumes its pending caption.
             self.flush_table(doc);
+        } else {
+            // A block title never followed by a floating element still
+            // reaches the document.
+            self.flush_caption_as_paragraph(doc);
         }
     }
+}
+
+/// One run of a paragraph's text — docling's `_InlineRun`.
+struct Run {
+    text: String,
+    bold: bool,
+    italic: bool,
+    code: bool,
+}
+
+/// Python's `\w` for one character.
+fn is_word(c: char) -> bool {
+    c.is_alphanumeric() || c == '_'
+}
+
+/// One alternative of docling's `_INLINE_FORMAT_RE` tried at `at`: the end of
+/// the match and the inner text's range, or `None`. Doubled marks
+/// (unconstrained) take the shortest non-empty run up to the closing pair;
+/// a single mark (constrained) needs no word character before it, a
+/// non-space right inside each end, and no word character after it.
+fn match_mark(
+    chars: &[char],
+    at: usize,
+    mark: char,
+    doubled: bool,
+) -> Option<(usize, std::ops::Range<usize>)> {
+    if doubled {
+        if chars.get(at) != Some(&mark) || chars.get(at + 1) != Some(&mark) {
+            return None;
+        }
+        let start = at + 2;
+        // `.+?`: at least one character, then the closing pair.
+        (start + 1..chars.len().saturating_sub(1))
+            .find(|&e| chars[e] == mark && chars[e + 1] == mark)
+            .map(|e| (e + 2, start..e))
+    } else {
+        if chars.get(at) != Some(&mark) || (at > 0 && is_word(chars[at - 1])) {
+            return None;
+        }
+        let start = at + 1;
+        if chars.get(start).is_none_or(|c| c.is_whitespace()) {
+            return None;
+        }
+        (start + 1..chars.len())
+            .find(|&e| {
+                chars[e] == mark
+                    && !chars[e - 1].is_whitespace()
+                    && chars.get(e + 1).is_none_or(|&c| !is_word(c))
+            })
+            .map(|e| (e + 1, start..e))
+    }
+}
+
+/// docling's `_parse_inline`: split text into plain, bold, italic and
+/// monospace runs by `_INLINE_FORMAT_RE`, unconstrained marks (` `` `,
+/// `**`, `__`) before constrained ones (`` ` ``, `*`, `_`) at each position,
+/// so `snake_case_name` and `2*3*4` stay plain. A bold or italic run's inner
+/// text is parsed again with that style on (`*_both_*`); a monospace run is
+/// literal.
+fn parse_inline(text: &str, bold: bool, italic: bool) -> Vec<Run> {
+    let chars: Vec<char> = text.chars().collect();
+    let mut runs = Vec::new();
+    let plain = |from: usize, to: usize| Run {
+        text: chars[from..to].iter().collect(),
+        bold,
+        italic,
+        code: false,
+    };
+    let mut position = 0;
+    let mut at = 0;
+    while at < chars.len() {
+        // (mark, doubled, kind): 0 = mono, 1 = bold, 2 = italic.
+        let found = [
+            ('`', true, 0),
+            ('*', true, 1),
+            ('_', true, 2),
+            ('`', false, 0),
+            ('*', false, 1),
+            ('_', false, 2),
+        ]
+        .into_iter()
+        .find_map(|(mark, doubled, kind)| {
+            match_mark(&chars, at, mark, doubled).map(|(end, inner)| (end, inner, kind))
+        });
+        let Some((end, inner, kind)) = found else {
+            at += 1;
+            continue;
+        };
+        if at > position {
+            runs.push(plain(position, at));
+        }
+        let inner_text: String = chars[inner].iter().collect();
+        match kind {
+            0 => runs.push(Run {
+                text: inner_text,
+                bold: false,
+                italic: false,
+                code: true,
+            }),
+            1 => runs.extend(parse_inline(&inner_text, true, italic)),
+            _ => runs.extend(parse_inline(&inner_text, bold, true)),
+        }
+        position = end;
+        at = end;
+    }
+    if position < chars.len() {
+        runs.push(plain(position, chars.len()));
+    }
+    runs
 }
 
 fn is_title(line: &str) -> Option<&str> {
@@ -803,13 +1114,25 @@ fn section_header(line: &str) -> Option<(u8, String)> {
 
 /// A parsed list item, docling's `_parse_list_item`.
 struct ListItem<'a> {
-    /// docling's `indent`: the leading whitespace, plus one per extra `.` — a
-    /// dotted marker encodes its depth in the marker itself (`..` nests under
-    /// `.`), not in the indentation.
+    /// docling's `indent`: the leading whitespace, plus one per extra `.` or
+    /// `*` — such a marker encodes its depth in itself (`..` nests under `.`),
+    /// not in the indentation.
     indent: usize,
     marker: &'a str,
     numbered: bool,
     text: &'a str,
+}
+
+impl ListItem<'_> {
+    /// docling's `_list_kind`: every ordered marker is one kind (`.`); a
+    /// bullet's kind is its marker character, so `*` and `-` lists nest.
+    fn kind(&self) -> char {
+        if self.numbered {
+            '.'
+        } else {
+            self.marker.chars().next().unwrap_or('-')
+        }
+    }
 }
 
 fn list_item(line: &str) -> Option<ListItem<'_>> {
@@ -839,16 +1162,33 @@ fn numeric_marker(marker: &str) -> Option<u64> {
     digits.parse().ok()
 }
 
+/// docling's `_is_table_line`: a cell delimiter right after an optional cell
+/// specifier — a cell may be the only one on its line (docling#4431).
 fn is_table_line(line: &str) -> bool {
-    cached_regex!(&format!(r"^{CELL_SPEC}\|.*\|")).is_match(line)
+    cached_regex!(&format!(r"^{CELL_SPEC}\|")).is_match(line)
 }
 
-/// Strip cell specifiers glued before a `|`, split on `|`, drop the leading
-/// empty field, and trim — exactly as docling's `_parse_table_line`.
+/// docling's `_parse_table_line`: strip cell specifiers glued before a `|`,
+/// split on every `|` not escaped as `\|` (which is a pipe in the cell text,
+/// docling#4378), drop the leading empty field, and trim.
 fn parse_table_line(line: &str) -> Vec<String> {
     let cleaned = cached_regex!(&format!(r"(^|\s){CELL_SPEC}(\|)")).replace_all(line, "$1$2");
-    cleaned
-        .split('|')
+    let mut cells = Vec::new();
+    let mut cell = String::new();
+    let mut chars = cleaned.chars().peekable();
+    while let Some(c) = chars.next() {
+        match c {
+            '\\' if chars.peek() == Some(&'|') => {
+                cell.push('|');
+                chars.next();
+            }
+            '|' => cells.push(std::mem::take(&mut cell)),
+            _ => cell.push(c),
+        }
+    }
+    cells.push(cell);
+    cells
+        .into_iter()
         .skip(1)
         .map(|c| c.trim().to_string())
         .collect()
@@ -915,12 +1255,12 @@ mod tests {
         assert_eq!(by(2), ("section_header", "#/texts/0"));
         assert_eq!(texts[2]["level"], 1);
         // `* a` opens groups/0 under the section; `  * b` nests groups/1
-        // inside it; `* c` dedents back to groups/0.
+        // under the item `a` (docling#4721); `* c` dedents back to groups/0.
         assert_eq!(by(3), ("list_item", "#/groups/0"));
         assert_eq!(by(4), ("list_item", "#/groups/1"));
         assert_eq!(by(5), ("list_item", "#/groups/0"));
         assert_eq!(v["groups"][0]["parent"]["$ref"], "#/texts/2");
-        assert_eq!(v["groups"][1]["parent"]["$ref"], "#/groups/0");
+        assert_eq!(v["groups"][1]["parent"]["$ref"], "#/texts/3");
         assert_eq!(texts[3]["marker"], "");
         assert_eq!(texts[3]["enumerated"], false);
         // `===` under `==`: level 2, parented to the level-1 heading.
@@ -1015,11 +1355,12 @@ mod tests {
     #[test]
     fn dotted_and_lettered_markers_open_ordered_items() {
         // docling#4118 widened the marker set; a dotted marker carries its own
-        // depth (`..` nests under `.`), and the nested group takes a position in
-        // the parent group, so the item after it is numbered past the gap.
+        // depth (`..` nests under `.`), and the nested group hangs off the
+        // item above it (docling#4721) — it no longer takes a position in the
+        // outer group, so the numbering runs on without a gap.
         assert_eq!(
             md(". one\n. two\n.. nested\n. three\na. lettered\n"),
-            "1. one\n2. two\n    1. nested\n4. three\n5. lettered\n"
+            "1. one\n2. two\n    1. nested\n3. three\n4. lettered\n"
         );
     }
 
@@ -1031,9 +1372,9 @@ mod tests {
             md("1. one\n2. two\n.. sub\n"),
             "1. one\n2. two\n    1. sub\n"
         );
-        // A group whose *first* item is a bullet renders every positional item
-        // as a bullet, whatever its own marker was.
-        assert_eq!(md("* bullet\n. dotted\n"), "- bullet\n- dotted\n");
+        // An item of another marker kind opens a list nested under the item
+        // above it, as Asciidoctor nests by marker (docling#4822).
+        assert_eq!(md("* bullet\n. dotted\n"), "- bullet\n    1. dotted\n");
     }
 
     #[test]
@@ -1043,10 +1384,11 @@ mod tests {
         // Markdown serializer used to read the jump as a new list and insert a
         // blank line (a deviation documented until the boundary guesses went).
         assert_eq!(md("1. one\n5. five\n"), "1. one\n5. five\n");
-        // Mixed markers in one group are one list too.
+        // An ordered item between bullets nests under the bullet above it;
+        // the next bullet returns to the outer list (docling#4822).
         assert_eq!(
             md("* bullet one\n1. explicit one\n* bullet two\n"),
-            "- bullet one\n1. explicit one\n- bullet two\n"
+            "- bullet one\n    1. explicit one\n- bullet two\n"
         );
     }
 
@@ -1121,14 +1463,70 @@ mod tests {
 
     #[test]
     fn a_lone_word_and_period_stays_a_paragraph() {
-        // `\w+\.` + `\s+` matches a bare "Intro." only when the line still
-        // carries its newline, which is how docling reads a *file* but not a
-        // stream — where it agrees with us and keeps the paragraph.
+        // A marker needs whitespace after it, so a bare "Intro." is text.
         assert_eq!(md("= T\n\nIntro.\n"), "# T\n\nIntro.\n");
-        // A first word ending in a period *does* open an item, as docling's own
-        // widened pattern does on either input — and it is enumerated, so the
-        // group numbers it.
-        assert_eq!(md("Fig. 1 shows the result\n"), "1. 1 shows the result\n");
+        // A line starting with an abbreviation is text: a lettered marker has
+        // one letter only (docling#4827).
+        assert_eq!(md("Fig. 1 shows the result\n"), "Fig. 1 shows the result\n");
+        assert_eq!(md("b. option\n"), "1. option\n");
+    }
+
+    /// docling's `_parse_inline` (docling#4824): doubled marks anywhere,
+    /// single ones at word boundaries only; bold and italic nest, monospace
+    /// is literal.
+    #[test]
+    fn inline_marks_split_runs() {
+        let runs = |t: &str| -> Vec<(String, u8)> {
+            parse_inline(t, false, false)
+                .into_iter()
+                .map(|r| {
+                    let k = u8::from(r.bold) | u8::from(r.italic) << 1 | u8::from(r.code) << 2;
+                    (r.text, k)
+                })
+                .collect()
+        };
+        assert_eq!(
+            runs("a *b* _c_ `d` **e**f"),
+            [
+                ("a ".into(), 0),
+                ("b".into(), 1),
+                (" ".into(), 0),
+                ("c".into(), 2),
+                (" ".into(), 0),
+                ("d".into(), 4),
+                (" ".into(), 0),
+                ("e".into(), 1),
+                ("f".into(), 0),
+            ]
+        );
+        assert_eq!(runs("*_both_*"), [("both".into(), 3)]);
+        // No mark at a word boundary: plain text.
+        assert_eq!(
+            runs("snake_case_name 2*3*4 a* b*"),
+            [("snake_case_name 2*3*4 a* b*".into(), 0)]
+        );
+        // Under a heading the paragraph is an inline group of formatted items.
+        assert_eq!(
+            md("= T\n\nSome *bold* and `x`.\n"),
+            "# T\n\nSome **bold** and `x` .\n"
+        );
+    }
+
+    /// docling#4761 / #4378 / #4662: a `|===` table stays one table across a
+    /// blank line, a wrapped line continues its cell, `\|` is a pipe in the
+    /// cell, and a delimiter with no closer only breaks the paragraph.
+    #[test]
+    fn tables_and_stray_delimiters_follow_docling() {
+        assert_eq!(
+            md("|===\n|A |B\n\n|a\\|b |c\nwrapped\n|===\n"),
+            "| A        | B         |\n|----------|-----------|\n| a&#124;b | c wrapped |\n"
+        );
+        assert_eq!(md("before\n====\nafter\n"), "before\n\nafter\n");
+        // Comments and attribute lines are no content.
+        assert_eq!(
+            md("// note\n[NOTE]\n////\nhidden\n////\n:attr: x\ntext\n"),
+            "text\n"
+        );
     }
 
     #[test]

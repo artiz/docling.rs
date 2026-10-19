@@ -1,0 +1,6 @@
+Formats
+
+| Format   | Extension   |
+|----------|-------------|
+| Markdown | .md         |
+| JSON     | .json       |
