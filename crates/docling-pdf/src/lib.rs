@@ -223,7 +223,7 @@ pub struct PageProgress {
 
 /// The per-page progress hook: shared with the parallel workers, so it must
 /// be cheap and thread-safe.
-pub type PageProgressHook = Arc<dyn Fn(PageProgress) + Send + Sync>;
+pub type PageProgressHook = std::sync::Arc<dyn Fn(PageProgress) + Send + Sync>;
 
 impl Completion {
     pub fn timed_out(&self) -> bool {

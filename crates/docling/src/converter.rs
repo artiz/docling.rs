@@ -799,6 +799,9 @@ impl DocumentConverter {
     /// text layer on any selected page) falls back to rasterize + OCR when the
     /// ML pipeline is built and OCR is not disabled, otherwise it degrades to
     /// an empty document with a warning. See [`crate::backend::djvu`].
+    // Without the `pdf` feature there is no OCR fallback for the reporter
+    // to observe.
+    #[cfg_attr(not(feature = "pdf"), allow(unused_variables))]
     fn convert_djvu(
         &self,
         source: &SourceDocument,
