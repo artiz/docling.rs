@@ -7,16 +7,17 @@
 //! first text run arrives, a paragraph of several inline runs is an `inline`
 //! group of one text item per run (each with `formatting` / `hyperlink`), a
 //! code span is a `code` item, a nested list hangs off the previous item of
-//! the outer list, a pipe table is recognised from the paragraph *text* (marko
-//! has no table syntax) and always sits on the body, hard/soft line breaks
-//! merge the following run into the previous text item, and every item is
-//! numbered in creation order.
+//! the outer list, a GFM table sits under the current parent with a
+//! `RichTableCell` for every formatted cell, hard/soft line breaks merge the
+//! following run into the previous text item, and every item is numbered in
+//! creation order.
 //!
-//! This module reproduces that walk. It parses the text once more as plain
-//! CommonMark (no tables, no strikethrough — what marko sees, so `~~x~~`
-//! stays text and a pipe table is a paragraph of `|` lines), rebuilds marko's
-//! element tree from the events, and ports `_iterate_elements` call for call
-//! into a [`docling_core::tree::ItemTree`].
+//! This module reproduces that walk. It parses the text once more with
+//! marko's GFM extension as docling configures it (docling#4488, 2.135):
+//! tables, `~~strikethrough~~` and bare URLs, no task lists or footnotes;
+//! rebuilds marko's element tree from the events, and ports
+//! `_iterate_elements` call for call into a
+//! [`docling_core::tree::ItemTree`].
 //!
 //! Not reproduced: a document with a raw HTML block. Upstream then exports
 //! the parsed document to HTML and re-converts it with the HTML backend, so
@@ -47,9 +48,12 @@ enum El {
         items: Vec<El>,
     },
     ListItem(Vec<El>),
-    /// `Quote`, `ThematicBreak`, `AutoLink`, `LinkRefDef`, inline HTML, …:
-    /// "some other element" — closes a pending table, children walked.
+    /// `Quote`, `ThematicBreak`, `LinkRefDef`, inline HTML, …: "some other
+    /// element", children walked.
     Other(Vec<El>),
+    /// marko's GFM `Table`: rows of cells, each cell its inline children.
+    /// Row 0 is the header; the delimiter row is not one.
+    Table(Vec<Vec<Vec<El>>>),
     CodeBlock {
         lang: Option<String>,
         text: String,
@@ -57,8 +61,12 @@ enum El {
     HtmlBlock,
     /// `RawText` or `Literal` (an escaped character is a node of its own).
     Text(String),
+    /// `InlineHTML`: walked as nothing, but part of a table cell's text.
+    InlineHtml(String),
     Emphasis(Vec<El>),
     Strong(Vec<El>),
+    /// docling's `_GfmStrikethrough` (`~~text~~`).
+    Strike(Vec<El>),
     Link {
         dest: String,
         children: Vec<El>,
@@ -87,7 +95,8 @@ impl El {
             | El::ListItem(c)
             | El::Other(c)
             | El::Emphasis(c)
-            | El::Strong(c) => c,
+            | El::Strong(c)
+            | El::Strike(c) => c,
             El::Heading { children, .. }
             | El::Link { children, .. }
             | El::Image { children, .. } => children,
@@ -96,17 +105,25 @@ impl El {
         }
     }
 
+    /// A marko `BlockElement`: everything but inline content. An `Other`
+    /// without children may be inline HTML, so it is not taken for one.
+    fn is_block(&self) -> bool {
+        !self.is_inline()
+    }
+
     fn is_inline(&self) -> bool {
         matches!(
             self,
             El::Text(_)
                 | El::Emphasis(_)
                 | El::Strong(_)
+                | El::Strike(_)
                 | El::Link { .. }
                 | El::Image { .. }
                 | El::CodeSpan(_)
                 | El::LineBreak { .. }
                 | El::Formula(_)
+                | El::InlineHtml(_)
         ) || matches!(self, El::Other(c) if c.is_empty())
     }
 }
@@ -118,9 +135,10 @@ fn parse(text: &str) -> El {
     // marko `Literal` (see `markdown.rs`).
     // Math on, then folded back into text except for a standalone display
     // formula (`markdown.rs`): the text runs come out as marko's.
-    let raw: Vec<(Event, std::ops::Range<usize>)> = Parser::new_ext(text, Options::ENABLE_MATH)
-        .into_offset_iter()
-        .collect();
+    let options = Options::ENABLE_MATH | Options::ENABLE_TABLES | Options::ENABLE_STRIKETHROUGH;
+    let raw: Vec<(Event, std::ops::Range<usize>)> =
+        Parser::new_ext(text, options).into_offset_iter().collect();
+    let raw = super::markdown::marko_strikethrough(raw, text);
     let raw =
         super::markdown::link_bare_urls(super::markdown::fold_math_into_text(raw, text), text);
     let mut events: Vec<Event> = Vec::with_capacity(raw.len());
@@ -138,22 +156,11 @@ fn parse(text: &str) -> El {
             if run_escaped {
                 // pulldown hands the escaped character over glued to the text
                 // that follows it; marko keeps it as a `Literal` node of its
-                // own, so it is split off here. An escaped `|` is content the
-                // row buffer could not tell from a cell delimiter: like
-                // docling's `_escape_pipes` (docling#4313) it is carried as
-                // `&#124;` and decoded once the cell is split off (or the run
-                // turns out to be text).
+                // own, so it is split off here.
                 if let Some((Event::Text(t), range)) = raw.get(k) {
                     let mut chars = t.chars();
                     if let Some(first) = chars.next() {
-                        events.push(Event::Text(
-                            if first == '|' {
-                                "&#124;".to_string()
-                            } else {
-                                first.to_string()
-                            }
-                            .into(),
-                        ));
+                        events.push(Event::Text(first.to_string().into()));
                         merged.push_str(chars.as_str());
                         end = range.end;
                         k += 1;
@@ -164,16 +171,7 @@ fn parse(text: &str) -> El {
                 if range.start != end {
                     break;
                 }
-                // A character reference pulldown resolved (its source is not
-                // its text) spelling a `|` — `&#x7C;`, `&verbar;` — is content
-                // too (docling#4371, `_unescape_except_pipe`): carried encoded
-                // like the escaped pipe above.
-                let reference = text.get(range.clone()).is_some_and(|src| src != &**t);
-                if reference && t.contains('|') {
-                    merged.push_str(&t.replace('|', "&#124;"));
-                } else {
-                    merged.push_str(t);
-                }
+                merged.push_str(t);
                 end = range.end;
                 k += 1;
             }
@@ -233,8 +231,12 @@ fn parse_children(events: &[Event], i: &mut usize, depth: u16) -> Vec<El> {
                 out.push(El::LineBreak { soft: false });
                 *i += 1;
             }
-            // Inline HTML, a thematic break, a footnote/task marker: marko's
-            // "other" elements, with no children docling would walk.
+            Event::InlineHtml(t) => {
+                out.push(El::InlineHtml(t.to_string()));
+                *i += 1;
+            }
+            // A thematic break, a footnote/task marker: marko's "other"
+            // elements, with no children docling would walk.
             _ => {
                 out.push(El::Other(Vec::new()));
                 *i += 1;
@@ -305,6 +307,33 @@ fn parse_container(tag: Tag, events: &[Event], i: &mut usize, depth: u16) -> El 
         }
         Tag::Emphasis => El::Emphasis(parse_children(events, i, depth)),
         Tag::Strong => El::Strong(parse_children(events, i, depth)),
+        Tag::Strikethrough => El::Strike(parse_children(events, i, depth)),
+        // pulldown's GFM rows already hold the header's width of cells, a
+        // short row padded and a long one cut, as marko's `TableRow.parse`.
+        Tag::Table(_) => {
+            let mut rows: Vec<Vec<Vec<El>>> = Vec::new();
+            while *i < events.len() {
+                match &events[*i] {
+                    Event::Start(Tag::TableHead | Tag::TableRow) => {
+                        rows.push(Vec::new());
+                        *i += 1;
+                    }
+                    Event::Start(Tag::TableCell) => {
+                        *i += 1;
+                        let cell = parse_children(events, i, depth);
+                        if let Some(row) = rows.last_mut() {
+                            row.push(cell);
+                        }
+                    }
+                    Event::End(TagEnd::Table) => {
+                        *i += 1;
+                        break;
+                    }
+                    _ => *i += 1,
+                }
+            }
+            El::Table(rows)
+        }
         // marko's `AutoLink` (`<https://…>`, `<me@x.y>`, a GFM bare URL) is a
         // link like any other since docling#4791 (#773).
         Tag::Link {
@@ -347,81 +376,36 @@ fn only_plain_line_breaks(children: &[El]) -> bool {
             .all(|c| matches!(c, El::Text(_) | El::LineBreak { .. }))
 }
 
-/// `_inline_text`: an inline node's text with its markers dropped.
-fn inline_text(el: &El, out: &mut String) {
+/// `_cell_plain_text`: a cell's text with its markers dropped — a code
+/// span literal, other text unescaped, a link's or an image's text kept.
+fn cell_plain_text(el: &El, out: &mut String) {
     match el {
-        El::Text(t) | El::CodeSpan(t) => out.push_str(t),
+        El::Text(t) | El::InlineHtml(t) => out.push_str(&unescape_entities(t)),
+        El::CodeSpan(t) => out.push_str(t),
         El::Formula(t) => {
             out.push_str("$$");
             out.push_str(t);
             out.push_str("$$");
         }
-        other => other.children().iter().for_each(|c| inline_text(c, out)),
+        other => other
+            .children()
+            .iter()
+            .for_each(|c| cell_plain_text(c, out)),
     }
 }
 
-/// `_split_table_row`: an empty edge field comes from an edge pipe and is dropped.
-/// docling's `_unescape_except_pipe`: character references decode, except
-/// every spelling of `|`, which stays encoded so it is not taken for a cell
-/// delimiter.
-fn unescape_except_pipe(text: &str) -> String {
-    cached_regex!(r"&#?\w+;")
-        .replace_all(text, |caps: &regex::Captures| {
-            let entity = &caps[0];
-            let decoded = unescape_entities(entity);
-            if decoded == "|" {
-                entity.to_string()
-            } else {
-                decoded
-            }
-        })
-        .into_owned()
-}
-
-fn split_table_row(row: &str) -> Vec<String> {
-    let mut cells: Vec<&str> = row.split('|').collect();
-    if cells.first().is_some_and(|c| c.trim().is_empty()) {
-        cells.remove(0);
-    }
-    if cells.last().is_some_and(|c| c.trim().is_empty()) {
-        cells.pop();
-    }
-    cells.into_iter().map(|c| c.trim().to_string()).collect()
-}
-
-/// `_is_delimiter_row`: every cell is `:?-+:?`.
-fn is_delimiter_row(row: &str) -> bool {
-    let cells = split_table_row(row);
-    !cells.is_empty()
-        && cells.iter().all(|c| {
-            let body = c.strip_prefix(':').unwrap_or(c);
-            let body = body.strip_suffix(':').unwrap_or(body);
-            !body.is_empty() && body.bytes().all(|b| b == b'-')
-        })
-}
-
-/// `_starts_pipeless_table`: a paragraph whose first line holds pipes but no
-/// leading one and whose second line is a delimiter row of the same width.
-fn starts_pipeless_table(children: &[El]) -> bool {
-    let mut lines: Vec<String> = vec![String::new()];
-    for child in children {
-        if matches!(child, El::LineBreak { .. }) {
-            if lines.len() == 2 {
-                break;
-            }
-            lines.push(String::new());
-        } else {
-            let last = lines.last_mut().expect("one line");
-            inline_text(child, last);
-        }
-    }
-    if lines.len() < 2 || lines[0].trim_start().starts_with('|') {
-        return false;
-    }
-    if !lines[0].contains('|') || !is_delimiter_row(&lines[1]) {
-        return false;
-    }
-    split_table_row(&lines[0]).len() == split_table_row(&lines[1]).len()
+/// `_cell_has_rich_content`: the cell holds emphasis, a code span, a link,
+/// an image or a strikethrough, at any depth.
+fn is_rich(el: &El) -> bool {
+    matches!(
+        el,
+        El::Strong(_)
+            | El::Emphasis(_)
+            | El::CodeSpan(_)
+            | El::Link { .. }
+            | El::Image { .. }
+            | El::Strike(_)
+    ) || el.children().iter().any(is_rich)
 }
 
 /// A lazily created container, made when its first text run arrives.
@@ -434,9 +418,6 @@ struct Walker<'a> {
     /// Resolves an image's destination to its bytes (#646).
     images: &'a dyn super::images::ImageResolver,
     tree: ItemTree,
-    in_table: bool,
-    in_pipeless_table: bool,
-    table_buffer: Vec<String>,
     pending_hard_break: bool,
     pending_soft_break: bool,
     html_blocks: usize,
@@ -457,9 +438,6 @@ pub(super) fn build_tree(
     let mut w = Walker {
         images,
         tree: ItemTree::default(),
-        in_table: false,
-        in_pipeless_table: false,
-        table_buffer: Vec::new(),
         pending_hard_break: false,
         pending_soft_break: false,
         html_blocks: 0,
@@ -470,7 +448,6 @@ pub(super) fn build_tree(
         list_last_item: HashMap::new(),
     };
     w.iterate(&root, None, None, None);
-    w.close_table();
     (w.html_blocks == 0).then_some(w.tree)
 }
 
@@ -494,30 +471,65 @@ fn text_kind(
 }
 
 impl Walker<'_> {
-    /// `_close_table`: the buffered `|` lines become one table on the body —
-    /// row 0 the header, row 1 (the delimiter) skipped, the rest the body,
-    /// every row cut or padded to the header's width (GFM), cells unescaped.
-    fn close_table(&mut self) {
-        self.in_pipeless_table = false;
-        if !self.in_table {
+    /// `_parse_gfm_table`: the table under the current parent, then its
+    /// cells row by row — row 0 the column header, each cell's text its
+    /// stripped plain text. A formatted cell is a `RichTableCell`: its runs
+    /// are walked into an `inline` group under a `rich_cell_group_*` group of
+    /// the table, both dropped again when no item came of them.
+    fn table(&mut self, rows: &[Vec<Vec<El>>], parent: Option<usize>) {
+        let Some(width) = rows.first().map(Vec::len) else {
             return;
-        }
-        let mut result: Vec<Vec<String>> = Vec::new();
-        for (n, row) in self.table_buffer.iter().enumerate() {
-            if n != 1 {
-                result.push(split_table_row(row));
-            }
-        }
-        if let Some(width) = result.first().map(Vec::len) {
-            for row in &mut result {
-                row.resize(width, String::new());
-            }
-        }
+        };
+        let table_id = self.tree.add(
+            parent,
+            None,
+            TreeKind::Table {
+                table: Table::default(),
+                rich_cells: Vec::new(),
+                captions: Vec::new(),
+            },
+        );
+        let index = self.tree.table_count() - 1;
+        let mut grid: Vec<Vec<String>> = Vec::with_capacity(rows.len());
         let mut cells = Vec::new();
-        for (r, row) in result.iter().enumerate() {
-            for (c, value) in row.iter().enumerate() {
+        let mut rich = Vec::new();
+        for (r, row) in rows.iter().enumerate() {
+            let mut texts = Vec::with_capacity(width);
+            for c in 0..width {
+                let content = row.get(c).map(Vec::as_slice).unwrap_or_default();
+                let mut text = String::new();
+                content.iter().for_each(|el| cell_plain_text(el, &mut text));
+                let text = text.trim().to_string();
+                if content.iter().any(is_rich) {
+                    let group = self.tree.add(
+                        Some(table_id),
+                        None,
+                        TreeKind::Group {
+                            label: "unspecified".into(),
+                            name: format!("rich_cell_group_{index}_{c}_{r}"),
+                        },
+                    );
+                    let inline = self.tree.add(
+                        Some(group),
+                        None,
+                        TreeKind::Group {
+                            label: "inline".into(),
+                            name: "group".into(),
+                        },
+                    );
+                    let mut items = 0;
+                    for el in content {
+                        self.cell_inline(el, inline, &mut items, None, None);
+                    }
+                    if items > 0 {
+                        rich.push((r, c, group));
+                    } else {
+                        self.tree.delete(inline);
+                        self.tree.delete(group);
+                    }
+                }
                 cells.push(TableCell {
-                    text: unescape_entities(value.trim()),
+                    text: text.clone(),
                     bbox: None,
                     start_row: r,
                     start_col: c,
@@ -527,28 +539,104 @@ impl Walker<'_> {
                     row_header: false,
                     row_section: false,
                 });
+                texts.push(text);
             }
+            grid.push(texts);
         }
-        self.in_table = false;
-        self.table_buffer.clear();
-        if !cells.is_empty() {
-            let rows: Vec<Vec<String>> = result
-                .iter()
-                .map(|row| row.iter().map(|v| unescape_entities(v.trim())).collect())
-                .collect();
-            self.tree.add(
-                None,
-                None,
-                TreeKind::Table {
-                    table: Table {
-                        rows,
-                        cells: Some(cells),
-                        ..Table::default()
+        if let TreeKind::Table {
+            table, rich_cells, ..
+        } = &mut self.tree.items[table_id].kind
+        {
+            *table = Table {
+                rows: grid,
+                cells: Some(cells),
+                ..Table::default()
+            };
+            *rich_cells = rich;
+        }
+    }
+
+    /// `_iterate_cell_inline`: one inline node of a rich cell, as items of
+    /// the cell's `inline` group — every run its own text (no line-break
+    /// merging), a code span a `code` item, an image a picture whose title
+    /// is a body-level caption (its alt text is not walked). `items` counts
+    /// what was made.
+    fn cell_inline(
+        &mut self,
+        el: &El,
+        parent: usize,
+        items: &mut usize,
+        mut formatting: Option<Formatting>,
+        mut hyperlink: Option<String>,
+    ) {
+        match el {
+            El::Text(raw) | El::Formula(raw) => {
+                let text = match el {
+                    El::Formula(_) => format!("$${}$$", raw.trim()),
+                    _ => unescape_entities(raw.trim()),
+                };
+                if !text.is_empty() {
+                    let kind =
+                        text_kind("text", &text, formatting, hyperlink.as_deref(), None, None);
+                    self.tree.add(Some(parent), None, kind);
+                    *items += 1;
+                }
+                return;
+            }
+            El::CodeSpan(code) => {
+                let text = code.trim();
+                if !text.is_empty() {
+                    self.tree.add(
+                        Some(parent),
+                        None,
+                        TreeKind::Code {
+                            text: text.to_string(),
+                            orig: None,
+                            language: None,
+                            formatting,
+                            hyperlink,
+                        },
+                    );
+                    *items += 1;
+                }
+                return;
+            }
+            El::Image { title, dest, .. } => {
+                let mut captions = Vec::new();
+                if !title.is_empty() {
+                    let kind =
+                        text_kind("caption", &unescape_entities(title), None, None, None, None);
+                    captions.push(self.tree.add(None, None, kind));
+                }
+                self.tree.add(
+                    Some(parent),
+                    None,
+                    TreeKind::Picture {
+                        captions,
+                        image: self.images.resolve(dest),
+                        extra_classes: Vec::new(),
+                        classification: None,
+                        description: None,
+                        confidence: None,
+                        chart: None,
+                        dpi: None,
                     },
-                    rich_cells: Vec::new(),
-                    captions: Vec::new(),
-                },
-            );
+                );
+                *items += 1;
+                return;
+            }
+            El::Strong(_) => formatting.get_or_insert_with(Formatting::default).bold = true,
+            El::Emphasis(_) => formatting.get_or_insert_with(Formatting::default).italic = true,
+            El::Strike(_) => {
+                formatting
+                    .get_or_insert_with(Formatting::default)
+                    .strikethrough = true
+            }
+            El::Link { dest, .. } => hyperlink = Some(docling_href(dest)),
+            _ => {}
+        }
+        for child in el.children() {
+            self.cell_inline(child, parent, items, formatting, hyperlink.clone());
         }
     }
 
@@ -643,9 +731,14 @@ impl Walker<'_> {
         mut formatting: Option<Formatting>,
         mut hyperlink: Option<String>,
     ) {
+        // A line break only joins runs of the same paragraph (docling#4525):
+        // no break pending at a block survives into it.
+        if el.is_block() {
+            self.pending_hard_break = false;
+            self.pending_soft_break = false;
+        }
         match el {
             El::Heading { level, children } if !children.is_empty() => {
-                self.close_table();
                 if children.len() > 1 {
                     // The inline group is created further down, under it.
                     parent = Some(self.create_heading_item(
@@ -667,7 +760,6 @@ impl Walker<'_> {
                 let has_non_empty = items
                     .iter()
                     .any(|i| matches!(i, El::ListItem(c) if !c.is_empty()));
-                self.close_table();
                 if has_non_empty {
                     let group = self.tree.add(
                         parent,
@@ -686,7 +778,6 @@ impl Walker<'_> {
             }
             El::ListItem(children) if matches!(children.first(), Some(El::Paragraph(c)) if !c.is_empty()) =>
             {
-                self.close_table();
                 let enumerated = parent
                     .and_then(|p| self.list_ordered.get(&p).copied())
                     .unwrap_or(false);
@@ -722,7 +813,6 @@ impl Walker<'_> {
                 }
             }
             El::Image { title, dest, .. } => {
-                self.close_table();
                 // The `"title"` is the caption (on the body, like every
                 // `add_text` without a parent); the alt text runs are walked
                 // as the picture's children afterwards. The payload is what
@@ -769,35 +859,17 @@ impl Walker<'_> {
                 f.bold = true;
                 formatting = Some(f);
             }
+            El::Strike(_) => {
+                let mut f = formatting.unwrap_or_default();
+                f.strikethrough = true;
+                formatting = Some(f);
+            }
             El::Link { dest, .. } => {
                 hyperlink = Some(docling_href(dest));
             }
             El::Text(original) => {
                 let snippet = unescape_entities(original.trim());
-                // Any spelling of `|` — `\|`, `&#x7c;`, `&verbar;` — stays
-                // encoded while deciding whether the run is a table row
-                // (`_unescape_except_pipe`, docling#4371), so it cannot open
-                // a table or add a column; the cell is unescaped once split.
-                let except_pipe = unescape_except_pipe(original.trim());
-                let is_table_row = !snippet.is_empty()
-                    && (self.in_pipeless_table
-                        || (except_pipe.contains('|')
-                            && (self.in_table || original.trim_start().starts_with('|'))));
-                if is_table_row {
-                    self.in_table = true;
-                }
-                if self.in_table && !original.is_empty() {
-                    // Formatted cell content arrives as separate runs, each
-                    // appended to the row being buffered *unstripped*
-                    // (docling#4318): the space between `**C**` and `Cadre`
-                    // belongs to the cell, which is trimmed once split.
-                    let table_text = original.to_string();
-                    match self.table_buffer.last_mut() {
-                        Some(last) => last.push_str(&table_text),
-                        None => self.table_buffer.push(table_text),
-                    }
-                } else if !snippet.is_empty() {
-                    self.close_table();
+                if !snippet.is_empty() {
                     if !self.creation_stack.is_empty() {
                         parent = self.flush_creation_stack(
                             &snippet,
@@ -847,7 +919,6 @@ impl Walker<'_> {
                 }
             }
             El::Formula(latex) if !latex.is_empty() => {
-                self.close_table();
                 self.tree.add(
                     parent,
                     None,
@@ -862,7 +933,6 @@ impl Walker<'_> {
                 );
             }
             El::CodeSpan(code) => {
-                self.close_table();
                 let snippet = code.trim().to_string();
                 if !self.creation_stack.is_empty() && !snippet.is_empty() {
                     // The span is the container's own text; no separate code item.
@@ -882,7 +952,6 @@ impl Walker<'_> {
                 );
             }
             El::CodeBlock { lang, text } if !text.trim().is_empty() => {
-                self.close_table();
                 let snippet = text.trim().to_string();
                 // `detect_code_language(text, hint=lang)`: a known hint wins,
                 // else the content's own markers.
@@ -904,9 +973,7 @@ impl Walker<'_> {
                 );
             }
             El::LineBreak { soft } => {
-                if self.in_table {
-                    self.table_buffer.push(String::new());
-                } else if *soft {
+                if *soft {
                     self.pending_soft_break = true;
                 } else {
                     self.pending_hard_break = true;
@@ -914,16 +981,20 @@ impl Walker<'_> {
             }
             El::HtmlBlock => {
                 self.html_blocks += 1;
-                self.close_table();
             }
-            El::Heading { .. } | El::ListItem(_) | El::CodeBlock { .. } | El::Formula(_) => {}
-            El::Document(_) | El::Paragraph(_) | El::Other(_) => self.close_table(),
-        }
-
-        if let El::Paragraph(children) = el {
-            // Read by the text branch above while descending; `close_table`
-            // clears it.
-            self.in_pipeless_table = starts_pipeless_table(children);
+            El::Table(rows) => {
+                // Its cells are walked by `table`, not below.
+                self.table(rows, parent);
+                return;
+            }
+            El::Heading { .. }
+            | El::ListItem(_)
+            | El::CodeBlock { .. }
+            | El::Formula(_)
+            | El::Document(_)
+            | El::Paragraph(_)
+            | El::Other(_)
+            | El::InlineHtml(_) => {}
         }
 
         let children = el.children();
@@ -1089,22 +1160,41 @@ mod tests {
         ));
     }
 
-    /// A pipe table is read from the paragraph text (marko has no table
-    /// syntax) and always sits on the body; formatted header cells lose their
-    /// markers; a hard break merges the next run into the previous text.
+    /// A GFM table sits under the current parent (docling#4488): a
+    /// formatted cell is a rich cell whose runs are items of an `inline`
+    /// group under a `rich_cell_group_*` group of the table, a plain one only
+    /// its text; a table can interrupt a paragraph, and a hard break merges
+    /// the next run into the previous text.
     #[test]
-    fn tables_sit_on_the_body_and_breaks_merge() {
-        let t = tree("- item\n\n| **A** | B |\n|---|---|\n| 1 | 2 |\n\nline one  \nline two\n");
+    fn gfm_tables_carry_rich_cells() {
+        let t = tree(
+            "- item\n\n  | **A** | B |\n  |---|---|\n  | `1` |\nintro\n| c |\n|---|\n\nline one  \nline two\n",
+        );
         let labels: Vec<String> = t.items.iter().map(label).collect();
-        // The table paragraph has several runs, so upstream opens an inline
-        // group for it too — left empty once the runs turn out to be rows.
         assert_eq!(
             labels,
-            ["list:list", "list_item", "inline:group", "table", "text"]
+            [
+                "list:list",
+                "list_item",
+                "table",
+                "unspecified:rich_cell_group_0_0_0",
+                "inline:group",
+                "text",
+                "unspecified:rich_cell_group_0_0_1",
+                "inline:group",
+                "code",
+                "text",
+                "table",
+                "text",
+            ]
         );
-        assert!(t.items[2].children.is_empty());
-        assert_eq!(t.items[3].parent, None);
-        let TreeKind::Table { table, .. } = &t.items[3].kind else {
+        // A list item is made lazily, from its first run, so the table after
+        // that run is a child of the list, as in docling.
+        assert_eq!(t.items[2].parent, Some(0));
+        let TreeKind::Table {
+            table, rich_cells, ..
+        } = &t.items[2].kind
+        else {
             panic!()
         };
         let cells = table.cells.as_ref().unwrap();
@@ -1113,9 +1203,44 @@ mod tests {
                 .iter()
                 .map(|c| (c.text.as_str(), c.column_header))
                 .collect::<Vec<_>>(),
-            [("A", true), ("B", true), ("1", false), ("2", false)]
+            // The short row is padded to the header's width.
+            [("A", true), ("B", true), ("1", false), ("", false)]
         );
-        assert_eq!(text(&t.items[4]), "line one\nline two");
+        assert_eq!(rich_cells, &[(0, 0, 3), (1, 0, 6)]);
+        let TreeKind::Text { formatting, .. } = &t.items[5].kind else {
+            panic!()
+        };
+        assert!(formatting.is_some_and(|f| f.bold));
+        assert_eq!(text(&t.items[9]), "intro");
+        assert_eq!(t.items[10].parent, None);
+        assert_eq!(text(&t.items[11]), "line one\nline two");
+    }
+
+    /// docling's `_GfmStrikethrough`: `~~x~~` with no tilde inside or around,
+    /// flanking or not; a single tilde is text.
+    #[test]
+    fn strikethrough_follows_marko() {
+        let t = tree("a ~~b~~ c ~d~ e ~~ f ~~ g\n");
+        let runs: Vec<(String, bool)> = t
+            .items
+            .iter()
+            .filter_map(|it| match &it.kind {
+                TreeKind::Text {
+                    text, formatting, ..
+                } => Some((text.clone(), formatting.is_some_and(|f| f.strikethrough))),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(
+            runs,
+            [
+                ("a".into(), false),
+                ("b".into(), true),
+                ("c ~d~ e".into(), false),
+                ("f".into(), true),
+                ("g".into(), false),
+            ]
+        );
     }
 
     /// A raw HTML block means upstream re-converts through the HTML backend;
