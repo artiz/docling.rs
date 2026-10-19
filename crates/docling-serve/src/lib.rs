@@ -1679,12 +1679,16 @@ fn run_conversion_to_put(
     url: &str,
 ) -> Result<StoredResponse, ApiError> {
     check_outbound_url(url)?;
-    let agent: ureq::Agent = ureq::Agent::config_builder()
-        .max_redirects(0)
-        .timeout_connect(Some(std::time::Duration::from_secs(10)))
-        .timeout_global(Some(std::time::Duration::from_secs(300)))
-        .build()
-        .into();
+    // The upload connects only to the addresses validated at connect time,
+    // so a rebinding DNS answer cannot point it inward (#752).
+    let agent = docling::fetch::guarded_agent(
+        ureq::Agent::config_builder()
+            .max_redirects(0)
+            .timeout_connect(Some(std::time::Duration::from_secs(10)))
+            .timeout_global(Some(std::time::Duration::from_secs(300)))
+            .build(),
+        false,
+    );
     let mut names = OutputNames::new(to);
     let items: Vec<serde_json::Value> = sources
         .into_iter()

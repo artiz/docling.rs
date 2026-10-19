@@ -8,42 +8,109 @@
 //! policy is explicit ([`FetchPolicy`]): a server refuses redirects and keeps
 //! the private-address block on, a CLI run on a developer's laptop follows a
 //! few redirects and may be pointed at `localhost`.
+//!
+//! Every fetch connects through [`guarded_agent`]: the host is resolved once,
+//! refused when any address it maps to is not globally routable, and the
+//! connection goes to the addresses validated in that same resolution — so a
+//! DNS-rebinding server cannot answer the pre-flight check with a public
+//! address and the connect with `127.0.0.1` (#752, docling-core#846).
 
-use std::net::IpAddr;
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 
 use crate::error::ConversionError;
 use crate::source::SourceDocument;
 
-/// Whether a resolved IP points back at the local host or private
-/// infrastructure — the SSRF block-list behind every URL docling fetches on
+/// Whether a resolved IP may not be fetched: anything that is not a globally
+/// routable unicast address — docling-core's `_is_address_safe` (`is_global`
+/// and not private, loopback, link-local, reserved, multicast or
+/// unspecified), the SSRF block-list behind every URL docling fetches on
 /// someone else's behalf (docling-serve's URL inputs and `vlm_endpoint`, the
 /// `<img src>` fetch, the CLI's URL sources). Without it a request for
 /// `http://169.254.169.254/…` or `http://127.0.0.1:…` reaches cloud metadata
-/// and internal services from the converter's network position.
+/// and internal services from the converter's network position. An
+/// IPv4-mapped IPv6 address (`::ffff:a.b.c.d`) is judged as its IPv4 address.
 pub fn is_blocked_ip(ip: IpAddr) -> bool {
     match ip {
-        IpAddr::V4(v4) => {
-            v4.is_loopback()
-                || v4.is_private()
-                || v4.is_link_local()
-                || v4.is_unspecified()
-                || v4.is_broadcast()
-                || v4.is_documentation()
-                // Carrier-grade NAT 100.64.0.0/10.
-                || (v4.octets()[0] == 100 && (v4.octets()[1] & 0xc0) == 64)
-        }
-        IpAddr::V6(v6) => {
-            v6.is_loopback()
-                || v6.is_unspecified()
-                // Unique-local fc00::/7 and link-local fe80::/10.
-                || (v6.segments()[0] & 0xfe00) == 0xfc00
-                || (v6.segments()[0] & 0xffc0) == 0xfe80
-                // IPv4-mapped (::ffff:a.b.c.d): re-check the embedded v4.
-                || v6
-                    .to_ipv4_mapped()
-                    .is_some_and(|v4| is_blocked_ip(IpAddr::V4(v4)))
-        }
+        IpAddr::V4(v4) => !is_global_v4(v4),
+        IpAddr::V6(v6) => match v6.to_ipv4_mapped() {
+            Some(v4) => !is_global_v4(v4),
+            None => !is_global_v6(v6),
+        },
     }
+}
+
+/// Python's `IPv4Address.is_global` (its `_private_networks` and the shared
+/// 100.64.0.0/10), with multicast added as docling-core does.
+fn is_global_v4(ip: Ipv4Addr) -> bool {
+    let n = u32::from(ip);
+    let within = |net: [u8; 4], prefix: u32| {
+        let mask = if prefix == 0 {
+            0
+        } else {
+            u32::MAX << (32 - prefix)
+        };
+        n & mask == u32::from(Ipv4Addr::from(net)) & mask
+    };
+    // 192.0.0.9 and 192.0.0.10 (PCP / TURN anycast) are global inside the
+    // otherwise non-global 192.0.0.0/29.
+    if n == u32::from(Ipv4Addr::new(192, 0, 0, 9)) || n == u32::from(Ipv4Addr::new(192, 0, 0, 10)) {
+        return true;
+    }
+    const NON_GLOBAL: &[([u8; 4], u32)] = &[
+        ([0, 0, 0, 0], 8),       // "this network", incl. 0.0.0.0
+        ([10, 0, 0, 0], 8),      // private
+        ([100, 64, 0, 0], 10),   // carrier-grade NAT (shared)
+        ([127, 0, 0, 0], 8),     // loopback
+        ([169, 254, 0, 0], 16),  // link-local, cloud metadata
+        ([172, 16, 0, 0], 12),   // private
+        ([192, 0, 0, 0], 29),    // IETF protocol assignments
+        ([192, 0, 0, 170], 31),  // NAT64 discovery
+        ([192, 0, 2, 0], 24),    // TEST-NET-1
+        ([192, 168, 0, 0], 16),  // private
+        ([198, 18, 0, 0], 15),   // benchmarking
+        ([198, 51, 100, 0], 24), // TEST-NET-2
+        ([203, 0, 113, 0], 24),  // TEST-NET-3
+        ([224, 0, 0, 0], 4),     // multicast
+        ([240, 0, 0, 0], 4),     // reserved, incl. 255.255.255.255
+    ];
+    !NON_GLOBAL.iter().any(|&(net, prefix)| within(net, prefix))
+}
+
+/// Python's `IPv6Address.is_global` with docling-core's extra exclusions:
+/// only the global unicast block 2000::/3 can be routable (everything else is
+/// loopback, unspecified, reserved — the IPv4-compatible and NAT64
+/// `64:ff9b::/96` forms included —, unique-local, link-local or
+/// multicast), minus its non-global parts: the IETF protocol assignments
+/// 2001::/23 (but for the global anycast and AMT/ORCHIDv2 ranges in it),
+/// documentation 2001:db8::/32 and 6to4 2002::/16.
+fn is_global_v6(ip: Ipv6Addr) -> bool {
+    let n = u128::from(ip);
+    let within = |net: Ipv6Addr, prefix: u32| {
+        let mask = if prefix == 0 {
+            0
+        } else {
+            u128::MAX << (128 - prefix)
+        };
+        n & mask == u128::from(net) & mask
+    };
+    if !within(Ipv6Addr::new(0x2000, 0, 0, 0, 0, 0, 0, 0), 3) {
+        return false;
+    }
+    const GLOBAL_IN_2001: &[(Ipv6Addr, u32)] = &[
+        (Ipv6Addr::new(0x2001, 1, 0, 0, 0, 0, 0, 1), 128),
+        (Ipv6Addr::new(0x2001, 1, 0, 0, 0, 0, 0, 2), 128),
+        (Ipv6Addr::new(0x2001, 3, 0, 0, 0, 0, 0, 0), 32),
+        (Ipv6Addr::new(0x2001, 4, 0x112, 0, 0, 0, 0, 0), 48),
+        (Ipv6Addr::new(0x2001, 0x20, 0, 0, 0, 0, 0, 0), 28),
+        (Ipv6Addr::new(0x2001, 0x30, 0, 0, 0, 0, 0, 0), 28),
+    ];
+    if within(Ipv6Addr::new(0x2001, 0, 0, 0, 0, 0, 0, 0), 23) {
+        return GLOBAL_IN_2001
+            .iter()
+            .any(|&(net, prefix)| within(net, prefix));
+    }
+    !(within(Ipv6Addr::new(0x2001, 0xdb8, 0, 0, 0, 0, 0, 0), 32)
+        || within(Ipv6Addr::new(0x2002, 0, 0, 0, 0, 0, 0, 0), 16))
 }
 
 /// Operator opt-out of the private-address block for local development
@@ -59,10 +126,10 @@ pub fn allow_private_ip_fetch() -> bool {
 /// a private / loopback / link-local address — unless `allow_private` (or
 /// the `DOCLING_RS_ALLOW_PRIVATE_IP_FETCH` opt-out) lifts the block. A
 /// fetch that follows redirects must re-run this on every hop: a public URL
-/// can 30x-bounce onto an internal target. Best effort — a DNS-rebinding
-/// race between this resolution and the connect remains possible; the
-/// deployment-level control is to keep URL fetch off on untrusted networks.
-/// Blocking (DNS).
+/// can 30x-bounce onto an internal target. A pre-flight check: the connect
+/// itself goes through [`guarded_agent`], which validates the addresses it
+/// connects to in the same resolution, so a rebinding DNS answer between this
+/// check and the connect is refused there. Blocking (DNS).
 #[cfg(feature = "fetch-url")]
 pub fn check_outbound_url(url: &str, allow_private: bool) -> Result<(), String> {
     use std::net::ToSocketAddrs;
@@ -92,6 +159,88 @@ pub fn check_outbound_url(url: &str, allow_private: bool) -> Result<(), String> 
         }
     }
     Ok(())
+}
+
+/// The `ureq` resolver every guarded fetch connects through — docling-core's
+/// `_SafeConnectionAdapter` (docling-core#846): the host is resolved once and
+/// the request refused when any address is blocked ([`is_blocked_ip`]);
+/// otherwise `ureq` connects to exactly those validated addresses, never
+/// resolving the name again. A proxy's own address is resolved as usual: the
+/// proxy resolves the target itself, so a proxied request relies on the
+/// pre-flight [`check_outbound_url`] (as upstream's does).
+#[cfg(any(feature = "fetch-url", feature = "fetch-images"))]
+#[derive(Debug)]
+pub struct GuardedResolver<R = ureq::unversioned::resolver::DefaultResolver> {
+    inner: R,
+    allow_private: bool,
+}
+
+#[cfg(any(feature = "fetch-url", feature = "fetch-images"))]
+impl GuardedResolver {
+    /// The system resolver behind the guard; `allow_private` (or the
+    /// `DOCLING_RS_ALLOW_PRIVATE_IP_FETCH` opt-out) lifts the block.
+    pub fn new(allow_private: bool) -> Self {
+        Self::with_inner(Default::default(), allow_private)
+    }
+}
+
+#[cfg(any(feature = "fetch-url", feature = "fetch-images"))]
+impl<R> GuardedResolver<R> {
+    pub fn with_inner(inner: R, allow_private: bool) -> Self {
+        Self {
+            inner,
+            allow_private: allow_private || allow_private_ip_fetch(),
+        }
+    }
+}
+
+#[cfg(any(feature = "fetch-url", feature = "fetch-images"))]
+impl<R: ureq::unversioned::resolver::Resolver> ureq::unversioned::resolver::Resolver
+    for GuardedResolver<R>
+{
+    fn resolve(
+        &self,
+        uri: &ureq::http::Uri,
+        config: &ureq::config::Config,
+        timeout: ureq::unversioned::transport::NextTimeout,
+    ) -> Result<ureq::unversioned::resolver::ResolvedSocketAddrs, ureq::Error> {
+        let addrs = self.inner.resolve(uri, config, timeout)?;
+        let is_proxy = config.proxy().is_some_and(|p| {
+            uri.host() == Some(p.host())
+                && uri.port_u16().or(match uri.scheme_str() {
+                    Some("https") => Some(443),
+                    Some("http") => Some(80),
+                    _ => None,
+                }) == Some(p.port())
+        });
+        if self.allow_private || is_proxy {
+            return Ok(addrs);
+        }
+        if let Some(blocked) = addrs.iter().find(|a| is_blocked_ip(a.ip())) {
+            return Err(ureq::Error::Io(std::io::Error::new(
+                std::io::ErrorKind::PermissionDenied,
+                format!(
+                    "refusing to connect to {}: resolves to a non-public address {} \
+                     (set DOCLING_RS_ALLOW_PRIVATE_IP_FETCH=1 for local development)",
+                    uri.host().unwrap_or_default(),
+                    blocked.ip()
+                ),
+            )));
+        }
+        Ok(addrs)
+    }
+}
+
+/// A `ureq` agent with `config` that connects only through
+/// [`GuardedResolver`] — the agent for every fetch made on someone else's
+/// behalf.
+#[cfg(any(feature = "fetch-url", feature = "fetch-images"))]
+pub fn guarded_agent(config: ureq::config::Config, allow_private: bool) -> ureq::Agent {
+    ureq::Agent::with_parts(
+        config,
+        ureq::unversioned::transport::DefaultConnector::new(),
+        GuardedResolver::new(allow_private),
+    )
 }
 
 /// Largest URL-fetch response accepted by default (256 MiB): `read_to_end`
@@ -162,12 +311,14 @@ pub struct Fetched {
 #[cfg(feature = "fetch-url")]
 pub fn fetch(url: &str, policy: &FetchPolicy) -> Result<Fetched, ConversionError> {
     use std::io::Read;
-    let agent: ureq::Agent = ureq::Agent::config_builder()
-        .max_redirects(0)
-        .timeout_connect(Some(policy.connect_timeout))
-        .timeout_global(Some(policy.timeout))
-        .build()
-        .into();
+    let agent = guarded_agent(
+        ureq::Agent::config_builder()
+            .max_redirects(0)
+            .timeout_connect(Some(policy.connect_timeout))
+            .timeout_global(Some(policy.timeout))
+            .build(),
+        policy.allow_private,
+    );
     let mut target = url.to_string();
     let mut hops = 0;
     loop {
@@ -462,6 +613,117 @@ mod tests {
         ] {
             assert!(is_blocked_ip(ip(s)), "{s} should be blocked");
         }
+    }
+
+    /// #752 (docling-core#846): every address Python's `is_global` rejects —
+    /// multicast, reserved, "this network", benchmarking, the protocol
+    /// assignments, NAT64, 6to4, documentation, site-local — is blocked too.
+    #[test]
+    fn blocks_every_non_global_range() {
+        for s in [
+            "0.1.2.3",         // 0.0.0.0/8
+            "224.0.0.1",       // multicast
+            "239.255.255.250", // SSDP multicast
+            "240.0.0.1",       // reserved
+            "255.255.255.255", // broadcast
+            "198.18.0.1",      // benchmarking
+            "198.19.255.255",
+            "192.0.0.1", // IETF protocol assignments
+            "192.0.0.171",
+            "192.0.2.1",    // TEST-NET-1
+            "198.51.100.7", // TEST-NET-2
+            "203.0.113.9",  // TEST-NET-3
+            "ff02::1",      // multicast
+            "ff0e::1",
+            "64:ff9b::7f00:1", // NAT64 of 127.0.0.1
+            "64:ff9b:1::1",    // local-use NAT64
+            "2002:7f00:1::1",  // 6to4 of 127.0.0.1
+            "2001:db8::1",     // documentation
+            "2001::1",         // Teredo / protocol assignments
+            "fec0::1",         // deprecated site-local
+            "::7f00:1",        // IPv4-compatible
+            "100::1",          // discard-only
+            "::ffff:224.0.0.1",
+        ] {
+            assert!(is_blocked_ip(ip(s)), "{s} should be blocked");
+        }
+        // Global anycast inside the non-global blocks stays reachable.
+        for s in ["192.0.0.9", "192.0.0.10", "2001:4:112::1", "2001:20::1"] {
+            assert!(!is_blocked_ip(ip(s)), "{s} should be allowed");
+        }
+    }
+
+    /// A resolver stub answering with fixed addresses.
+    #[cfg(any(feature = "fetch-url", feature = "fetch-images"))]
+    #[derive(Debug)]
+    struct Fixed(Vec<std::net::SocketAddr>);
+
+    #[cfg(any(feature = "fetch-url", feature = "fetch-images"))]
+    impl ureq::unversioned::resolver::Resolver for Fixed {
+        fn resolve(
+            &self,
+            _uri: &ureq::http::Uri,
+            _config: &ureq::config::Config,
+            _timeout: ureq::unversioned::transport::NextTimeout,
+        ) -> Result<ureq::unversioned::resolver::ResolvedSocketAddrs, ureq::Error> {
+            let mut out = self.empty();
+            for a in &self.0 {
+                out.push(*a);
+            }
+            Ok(out)
+        }
+    }
+
+    /// The connect-time guard (#752): one resolution, refused when any of
+    /// its addresses is blocked — a public answer first and a private one
+    /// second is still refused — and otherwise handed to the connector as it
+    /// came, so no second lookup can rebind the host. The opt-out lifts it.
+    #[cfg(any(feature = "fetch-url", feature = "fetch-images"))]
+    #[test]
+    fn guarded_resolver_validates_the_addresses_it_connects_to() {
+        use ureq::unversioned::resolver::Resolver;
+        let guard = |addrs: &[&str], allow_private: bool| GuardedResolver {
+            inner: Fixed(addrs.iter().map(|a| a.parse().unwrap()).collect()),
+            allow_private,
+        };
+        let uri: ureq::http::Uri = "http://rebind.example/doc.pdf".parse().unwrap();
+        let config = ureq::config::Config::default();
+        let resolve = |g: &GuardedResolver<Fixed>| {
+            let timeout = ureq::unversioned::transport::NextTimeout {
+                after: ureq::unversioned::transport::time::Duration::NotHappening,
+                reason: ureq::Timeout::Resolve,
+            };
+            g.resolve(&uri, &config, timeout)
+                .map(|a| a.iter().map(|a| a.ip().to_string()).collect::<Vec<_>>())
+        };
+        let err = resolve(&guard(&["93.184.216.34:80", "127.0.0.1:80"], false)).unwrap_err();
+        assert!(err.to_string().contains("127.0.0.1"), "{err}");
+        assert!(resolve(&guard(&["169.254.169.254:80"], false)).is_err());
+        assert_eq!(
+            resolve(&guard(&["93.184.216.34:80", "8.8.8.8:80"], false)).unwrap(),
+            ["93.184.216.34", "8.8.8.8"]
+        );
+        assert_eq!(
+            resolve(&guard(&["127.0.0.1:80"], true)).unwrap(),
+            ["127.0.0.1"]
+        );
+    }
+
+    /// A guarded agent refuses an internal target at connect time, with no
+    /// pre-flight check in front of it.
+    #[cfg(any(feature = "fetch-url", feature = "fetch-images"))]
+    #[test]
+    fn guarded_agent_refuses_internal_targets() {
+        let agent = ureq::Agent::with_parts(
+            ureq::Agent::config_builder().build(),
+            ureq::unversioned::transport::DefaultConnector::new(),
+            GuardedResolver {
+                inner: ureq::unversioned::resolver::DefaultResolver::default(),
+                allow_private: false,
+            },
+        );
+        let err = agent.get("http://127.0.0.1:9/").call().unwrap_err();
+        assert!(err.to_string().contains("non-public address"), "{err}");
     }
 
     #[test]
