@@ -34,6 +34,125 @@ pub struct MarkdownBackend {
     pub images: ImagePolicy,
 }
 
+/// docling's `_GfmStrikethrough`, `(?<!~)~~([^~]+)~~(?!~)`: two tildes on
+/// each side, none inside or around, with no flanking rule. pulldown's GFM
+/// strikethrough also takes one (`~x~`) and a run with a tilde inside; such
+/// a span goes back to the text it was, its tildes contiguous with the runs
+/// around them. The other way round, a run of plain text holding the
+/// pattern where pulldown saw no delimiters (`~~ spaced ~~`) is struck.
+/// Used by both parsers, ahead of [`fold_math_into_text`].
+pub(super) fn marko_strikethrough<'a>(
+    raw: Vec<(Event<'a>, std::ops::Range<usize>)>,
+    text: &'a str,
+) -> Vec<(Event<'a>, std::ops::Range<usize>)> {
+    let mut kept: Vec<bool> = Vec::new();
+    let tildes = |r: std::ops::Range<usize>| (Event::Text(text[r.clone()].into()), r);
+    let raw: Vec<_> = raw
+        .into_iter()
+        .map(|(event, range)| match event {
+            Event::Start(Tag::Strikethrough) => {
+                let src = &text[range.clone()];
+                let keep = src.len() > 4
+                    && src.starts_with("~~")
+                    && src.ends_with("~~")
+                    && !src[2..src.len() - 2].contains('~')
+                    && !text[..range.start].ends_with('~')
+                    && !text[range.end..].starts_with('~');
+                kept.push(keep);
+                if keep {
+                    (event, range)
+                } else {
+                    let n = src.len() - src.trim_start_matches('~').len();
+                    tildes(range.start..range.start + n)
+                }
+            }
+            Event::End(TagEnd::Strikethrough) => {
+                if kept.pop().unwrap_or(true) {
+                    (event, range)
+                } else {
+                    let src = &text[range.clone()];
+                    let n = src.len() - src.trim_end_matches('~').len();
+                    tildes(range.end - n..range.end)
+                }
+            }
+            _ => (event, range),
+        })
+        .collect();
+
+    let bytes = text.as_bytes();
+    let mut out = Vec::with_capacity(raw.len());
+    let mut opaque = 0usize;
+    let mut k = 0;
+    while k < raw.len() {
+        match &raw[k].0 {
+            Event::Start(Tag::CodeBlock(_) | Tag::HtmlBlock | Tag::MetadataBlock(_)) => opaque += 1,
+            Event::End(TagEnd::CodeBlock | TagEnd::HtmlBlock | TagEnd::MetadataBlock(_)) => {
+                opaque = opaque.saturating_sub(1)
+            }
+            _ => {}
+        }
+        if opaque > 0 || !matches!(raw[k].0, Event::Text(_)) {
+            out.push(raw[k].clone());
+            k += 1;
+            continue;
+        }
+        // A run of contiguous text whose source is its text: no escape or
+        // resolved reference for a span to cut through.
+        let (start, mut end, first) = (raw[k].1.start, raw[k].1.start, k);
+        while let Some((Event::Text(t), r)) = raw.get(k) {
+            if r.start != end || text.get(r.clone()) != Some(&**t) {
+                break;
+            }
+            end = r.end;
+            k += 1;
+        }
+        if k == first {
+            out.push(raw[k].clone());
+            k += 1;
+            continue;
+        }
+        let mut spans = Vec::new();
+        let mut i = start;
+        while i + 1 < end {
+            if bytes[i] == b'~' && bytes[i + 1] == b'~' && (i == 0 || bytes[i - 1] != b'~') {
+                let mut j = i + 2;
+                while j < end && bytes[j] != b'~' {
+                    j += 1;
+                }
+                if j > i + 2
+                    && j + 1 < end
+                    && bytes[j + 1] == b'~'
+                    && bytes.get(j + 2) != Some(&b'~')
+                {
+                    spans.push((i, j + 2));
+                    i = j + 2;
+                    continue;
+                }
+            }
+            i += 1;
+        }
+        if spans.is_empty() {
+            out.extend(raw[first..k].iter().cloned());
+            continue;
+        }
+        let piece = |r: std::ops::Range<usize>| (Event::Text(text[r.clone()].into()), r);
+        let mut at = start;
+        for (s, e) in spans {
+            if s > at {
+                out.push(piece(at..s));
+            }
+            out.push((Event::Start(Tag::Strikethrough), s..e));
+            out.push(piece(s + 2..e - 2));
+            out.push((Event::End(TagEnd::Strikethrough), s..e));
+            at = e;
+        }
+        if end > at {
+            out.push(piece(at..end));
+        }
+    }
+    out
+}
+
 /// What a GFM bare URL links to: marko's `gfm_el.Url` (an `AutoLink`).
 #[derive(Clone, Copy, PartialEq)]
 enum BareUrl {
@@ -471,12 +590,13 @@ impl DeclarativeBackend for MarkdownBackend {
         // escape leaves an offset gap (the backslash). marko keeps `[11]` as one
         // run yet treats the escaped `.` as a separate run — so merging the
         // contiguous pieces and leaving gapped ones split reproduces both.
-        // Inside a table the gap rule does not apply: docling rebuilds a cell
-        // from the raw source line (`_close_table` splits it on `|`), so a
-        // backslash-escaped `\|` — or any other escape — is cell content with
-        // nothing around it (docling#4313: `a\|b` is the cell `a|b`).
+        // Inside a table the gap rule does not apply: a cell's text is its
+        // plain text as a whole (`_cell_plain_text`), so a backslash-escaped
+        // `\|` — or any other escape — is cell content with nothing around it
+        // (docling#4313: `a\|b` is the cell `a|b`).
         let raw: Vec<(Event, std::ops::Range<usize>)> =
             Parser::new_ext(text, opts).into_offset_iter().collect();
+        let raw = marko_strikethrough(raw, text);
         let raw = link_bare_urls(fold_math_into_text(raw, text), text);
         let mut events: Vec<Event> = Vec::with_capacity(raw.len());
         let mut k = 0;

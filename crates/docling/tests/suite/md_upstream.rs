@@ -1,7 +1,8 @@
 //! Markdown against docling's own output, for the documents of upstream
 //! tests that docling.rs ports: autolinks and GFM bare URLs keep their
 //! hyperlink (#773, docling#4791); pictures survive a raw HTML block in the
-//! same document (#760, docling#4777).
+//! same document (#760, docling#4777); GFM tables with rich cells and
+//! `~~strikethrough~~` (docling#4488).
 //!
 //! `tests/data/md/upstream/<name>.{expected.md,json}` is **not** our output:
 //! it is what docling 2.140.0's `MarkdownDocumentBackend` writes for
@@ -10,8 +11,11 @@
 //! `test_autolinks_outside_table_cells` document, the `autolinks_*` others
 //! probe the edges of marko's GFM URL rule, and the `pictures_*` documents
 //! are `test_mixed_html_keeps_markdown_pictures`' (with upstream's red PNG
-//! data URIs). Re-create a reference with upstream's backend, never from our
-//! own output.
+//! data URIs). `inline_and_formatting.md` is upstream's corpus document as of
+//! 2.140 (its table of formatted cells), the `tables_*` documents probe where
+//! marko's GFM tables start, end and sit and what makes a cell rich, and
+//! `strikethrough.md` the edges of docling's `~~` rule. Re-create a reference
+//! with upstream's backend, never from our own output.
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -24,7 +28,17 @@ use serde_json::Value;
 /// group as its own item (`*see* [*https://x.y/w*](https://x.y/w) *now*`),
 /// the flat path keeps the emphasis whole around the link, for an ordinary
 /// `[label](url)` as much as for an autolink.
-const MARKDOWN_KNOWN_DIFFERENCE: &[&str] = &["autolinks_emphasis.md"];
+///
+/// And three of the flat path's tables: a formatted cell prints its plain
+/// text, where docling serializes the rich cell's runs (`**C** Cadre`,
+/// `` `c` ``, `~~s~~`, a link's URL normalized); a table inside a list item
+/// is not printed at all.
+const MARKDOWN_KNOWN_DIFFERENCE: &[&str] = &[
+    "autolinks_emphasis.md",
+    "inline_and_formatting.md",
+    "tables_nested.md",
+    "tables_rich.md",
+];
 
 /// Documents with a raw HTML block, whose Markdown matches docling's but
 /// whose JSON does not as a whole: docling converts such a document through

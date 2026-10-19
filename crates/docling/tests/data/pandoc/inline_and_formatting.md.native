@@ -203,13 +203,15 @@
                AlignDefault
                (RowSpan 1)
                (ColSpan 1)
-               [ Plain [ Str "Bold" , Space , Str "Heading" ] ]
+               [ Para [ Strong [ Str "Bold" , Space , Str "Heading" ] ]
+               ]
            , Cell
                ( "" , [] , [] )
                AlignDefault
                (RowSpan 1)
                (ColSpan 1)
-               [ Plain [ Str "Italic" , Space , Str "Heading" ] ]
+               [ Para [ Emph [ Str "Italic" , Space , Str "Heading" ] ]
+               ]
            ]
        ])
     [ TableBody
