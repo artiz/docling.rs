@@ -37,6 +37,22 @@ fn webvtt_round_trips_like_docling() {
     }
 }
 
+/// docling-core#875 (2.102, #761): spans still open at the end of a cue are
+/// closed there, a stray end tag is ignored, a misnested cue is rejected.
+/// `unclosed_spans.cli.vtt` is the cues as docling-core 2.102's
+/// `WebVTTCueBlock.parse(…).format(omit_voice_end=True)` writes them.
+#[test]
+fn unclosed_spans_keep_their_text() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let dir = root.join("tests/data/webvtt");
+    let doc = DocumentConverter::new()
+        .convert(SourceDocument::from_file(dir.join("sources/unclosed_spans.vtt")).unwrap())
+        .unwrap()
+        .document;
+    let want = std::fs::read_to_string(dir.join("vtt_out/unclosed_spans.cli.vtt")).unwrap();
+    assert_eq!(doc.export_to_vtt(), want);
+}
+
 /// A `.vtt` round-trips: the exported file converts back to the same cues.
 #[test]
 fn exported_webvtt_converts_back_to_itself() {
