@@ -717,11 +717,20 @@ fn push_location(out: &mut Out, depth: i32, loc: &[u16; 4]) {
     }
 }
 
+/// A `<table>`: the element head — the location block, then the caption —
+/// and the cells after it, the DocLang 0.7 schema's `element_head` order
+/// (docling-core writes it so too). The caption used to come first, ahead
+/// of the location, which the schema rejects (#797).
 fn emit_table(out: &mut Out, depth: i32, table: &Table) {
     out.push(depth, "<table>".to_string());
+    // Layout provenance (PDF/spreadsheet/slide backends): the four
+    // `<location>` tokens (x0,y0,x1,y1).
+    if let Some(loc) = &table.location {
+        push_location(out, depth + 1, loc);
+    }
     if let Some(cap) = &table.caption {
         // `caption` arrives already escaped (backend convention), so it is
-        // emitted verbatim as the table's first child.
+        // emitted verbatim.
         out.push(depth + 1, format!("<caption>{cap}</caption>"));
     }
     emit_table_rows(out, depth, table);
@@ -761,13 +770,9 @@ fn emit_chart(
 }
 
 /// Emit a grid's cells (the shared body of `<table>` and a chart's `<tabular>`):
-/// the location head, then each row's OTSL cell tokens at `depth + 1`.
+/// each row's OTSL cell tokens at `depth + 1`. The element head (location,
+/// caption) is the caller's.
 fn emit_table_rows(out: &mut Out, depth: i32, table: &Table) {
-    // Layout provenance (spreadsheet/slide backends): four `<location>` tokens
-    // (x0,y0,x1,y1) precede the cells, matching docling's element head.
-    if let Some(loc) = &table.location {
-        push_location(out, depth + 1, loc);
-    }
     for (ri, row) in table.rows.iter().enumerate() {
         for (ci, cell) in row.iter().enumerate() {
             // A span continuation is a token-only cell (no text child):
@@ -1582,10 +1587,11 @@ fn emit_furniture(out: &mut Out, depth: i32, layer: ContentLayer, inner: &Node) 
             out.push(depth, "</text>".to_string());
         }
         // A furniture picture (site-chrome logo/banner, header/footer image):
-        // the layer token, an embedded-image `<src>` when the picture carries
-        // pixels (docling's referenced-asset conversion skips furniture, so the
-        // image stays a base64 data URI), then a caption that carries its own
-        // `<href>`/`<layer>` head when the caption is a link.
+        // the layer token, a caption that carries its own `<href>`/`<layer>`
+        // head when the caption is a link, then an embedded-image `<src>` when
+        // the picture carries pixels (docling's referenced-asset conversion
+        // skips furniture, so the image stays a base64 data URI) — head before
+        // body, as the schema orders them (#797).
         Node::Picture {
             caption,
             caption_href,
@@ -1595,12 +1601,6 @@ fn emit_furniture(out: &mut Out, depth: i32, layer: ContentLayer, inner: &Node) 
             let caption = caption.as_deref().filter(|c| !c.trim().is_empty());
             out.push(depth, "<picture>".to_string());
             out.push(depth + 1, token.clone());
-            if let Some(img) = image {
-                // docling embeds the PIL-re-encoded PNG; a JPEG is re-encoded
-                // here too, any other source keeps its own type in the URI.
-                let (_, uri) = crate::pixel_digest::docling_data_uri(img);
-                out.push(depth + 1, format!("<src uri=\"{uri}\"/>"));
-            }
             if let Some(c) = caption {
                 out.push(depth + 1, "<caption>".to_string());
                 // The caption's link travels either as its own `caption_href`
@@ -1623,6 +1623,13 @@ fn emit_furniture(out: &mut Out, depth: i32, layer: ContentLayer, inner: &Node) 
                 }
                 out.push(depth + 1, "</caption>".to_string());
             }
+            // The `<src>` is the picture's body: after the head's caption.
+            if let Some(img) = image {
+                // docling embeds the PIL-re-encoded PNG; a JPEG is re-encoded
+                // here too, any other source keeps its own type in the URI.
+                let (_, uri) = crate::pixel_digest::docling_data_uri(img);
+                out.push(depth + 1, format!("<src uri=\"{uri}\"/>"));
+            }
             out.push(depth, "</picture>".to_string());
         }
         // An invisible-layer table (a hidden spreadsheet sheet): the layer
@@ -1630,6 +1637,9 @@ fn emit_furniture(out: &mut Out, depth: i32, layer: ContentLayer, inner: &Node) 
         Node::Table(table) => {
             out.push(depth, "<table>".to_string());
             out.push(depth + 1, token);
+            if let Some(loc) = &table.location {
+                push_location(out, depth + 1, loc);
+            }
             emit_table_rows(out, depth, table);
             out.push(depth, "</table>".to_string());
         }
@@ -1677,15 +1687,18 @@ fn emit_picture(
         out.push(depth, "<picture></picture>".to_string());
         return;
     }
+    // The element head (location, caption), then the body's `<src>` — the
+    // DocLang 0.7 schema's order, and docling-core's; the caption used to
+    // follow the `<src>` (#797).
     out.push(depth, "<picture>".to_string());
     if let Some(loc) = location {
         push_location(out, depth + 1, loc);
     }
-    if let Some(s) = src {
-        out.push(depth + 1, format!("<src uri=\"{}\"/>", attr_escape(&s)));
-    }
     if let Some(c) = caption {
         emit_caption(out, depth + 1, c, caption_href);
+    }
+    if let Some(s) = src {
+        out.push(depth + 1, format!("<src uri=\"{}\"/>", attr_escape(&s)));
     }
     out.push(depth, "</picture>".to_string());
 }
@@ -2081,6 +2094,93 @@ mod tests {
             doclang.contains("<heading level=\"6\">Deeper</heading>"),
             "got:\n{doclang}"
         );
+    }
+
+    fn red_pixel() -> crate::document::PictureImage {
+        crate::document::PictureImage {
+            mimetype: "image/png".into(),
+            width: 1,
+            height: 1,
+            data: crate::base64::decode(
+                "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGP4z8AAAAMBAQDJ/pLvAAAAAElFTkSuQmCC",
+            )
+            .unwrap(),
+            dpi: 72,
+        }
+    }
+
+    /// The position of each needle in `hay`, in the order given.
+    fn positions(hay: &str, needles: &[&str]) -> Vec<usize> {
+        needles
+            .iter()
+            .map(|n| hay.find(n).unwrap_or_else(|| panic!("{n:?} in:\n{hay}")))
+            .collect()
+    }
+
+    /// #797: the DocLang 0.7 schema's `element_head` is the location block,
+    /// then `caption`; the element's content (a table's cells, a picture's
+    /// `<src>`) follows the head. docling-core writes it in that order too.
+    #[test]
+    fn captions_follow_the_location_and_precede_the_content() {
+        let table = Table {
+            rows: vec![vec!["a".into(), "b".into()]],
+            caption: Some("Table 1. Caption".into()),
+            ..Default::default()
+        };
+        let doclang = export_to_doclang(&[Node::Located {
+            location: [54, 205, 247, 308],
+            inner: Box::new(Node::Table(table)),
+        }]);
+        let p = positions(
+            &doclang,
+            &[
+                "<table>",
+                "<location value=\"308\"/>",
+                "<caption>Table 1. Caption</caption>",
+                "<ched/>",
+            ],
+        );
+        assert!(p.windows(2).all(|w| w[0] < w[1]), "{doclang}");
+
+        let picture = |caption: &str| Node::Picture {
+            caption: Some(caption.into()),
+            caption_href: None,
+            image: Some(red_pixel()),
+            classification: None,
+            description: None,
+            caption_parent: Default::default(),
+            caption_location: None,
+        };
+        let doclang = export_to_doclang(&[Node::Located {
+            location: [61, 351, 267, 460],
+            inner: Box::new(picture("Figure 7-26. Self-locking nuts.")),
+        }]);
+        let p = positions(
+            &doclang,
+            &[
+                "<picture>",
+                "<location value=\"460\"/>",
+                "<caption>Figure 7-26.",
+                "<src uri=",
+            ],
+        );
+        assert!(p.windows(2).all(|w| w[0] < w[1]), "{doclang}");
+
+        // A furniture picture: the layer token, the caption, then the `<src>`.
+        let doclang = export_to_doclang(&[Node::Furniture {
+            layer: ContentLayer::Furniture,
+            inner: Box::new(picture("Logo")),
+        }]);
+        let p = positions(
+            &doclang,
+            &[
+                "<picture>",
+                "<layer value=\"furniture\"/>",
+                "<caption>",
+                "<src uri=",
+            ],
+        );
+        assert!(p.windows(2).all(|w| w[0] < w[1]), "{doclang}");
     }
 
     #[test]
