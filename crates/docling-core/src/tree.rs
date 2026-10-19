@@ -70,6 +70,9 @@ pub enum TreeKind {
         language: Option<String>,
         formatting: Option<Formatting>,
         hyperlink: Option<String>,
+        /// Caption text items in the tree — docling's `add_code(caption=…)`
+        /// (an AsciiDoc block title in front of a literal block).
+        captions: Vec<usize>,
     },
     /// A `GroupItem`: `label` is docling's `GroupLabel` value (`inline`,
     /// `list`, `section`, `unspecified`, …), `name` its name (`group`, `list`,
@@ -342,7 +345,7 @@ impl ItemTree {
                         *c = shift(*c);
                     }
                 }
-                TreeKind::Picture { captions, .. } => {
+                TreeKind::Picture { captions, .. } | TreeKind::Code { captions, .. } => {
                     for c in captions.iter_mut() {
                         *c = shift(*c);
                     }
@@ -419,7 +422,9 @@ impl ItemTree {
                     });
                     remap(captions);
                 }
-                TreeKind::Picture { captions, .. } => remap(captions),
+                TreeKind::Picture { captions, .. } | TreeKind::Code { captions, .. } => {
+                    remap(captions)
+                }
                 _ => {}
             }
             self.items.push(item);
@@ -625,6 +630,7 @@ mod tests {
                 language: None,
                 formatting: None,
                 hyperlink: None,
+                captions: Vec::new(),
             },
         );
         assert_eq!(t.bucket_index(code), 3, "title, a, b precede it in `texts`");

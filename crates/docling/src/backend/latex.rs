@@ -350,6 +350,7 @@ impl Builder {
                 language: None,
                 formatting: None,
                 hyperlink: None,
+                captions: Vec::new(),
             },
         );
         self.flat.push(Some(Node::Code {

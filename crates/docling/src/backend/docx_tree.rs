@@ -1875,6 +1875,7 @@ impl Walker {
                         language,
                         formatting: None,
                         hyperlink: None,
+                        captions: Vec::new(),
                     },
                 );
                 refs.push(code);

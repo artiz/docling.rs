@@ -19,9 +19,6 @@
     "children": [
       {
         "$ref": "#/texts/0"
-      },
-      {
-        "$ref": "#/texts/1"
       }
     ],
     "content_layer": "body",
@@ -32,20 +29,20 @@
     {
       "self_ref": "#/groups/0",
       "parent": {
-        "$ref": "#/texts/1"
+        "$ref": "#/texts/0"
       },
       "children": [
+        {
+          "$ref": "#/texts/4"
+        },
+        {
+          "$ref": "#/texts/5"
+        },
         {
           "$ref": "#/texts/6"
         },
         {
           "$ref": "#/texts/7"
-        },
-        {
-          "$ref": "#/texts/8"
-        },
-        {
-          "$ref": "#/texts/9"
         }
       ],
       "content_layer": "body",
@@ -55,11 +52,11 @@
     {
       "self_ref": "#/groups/1",
       "parent": {
-        "$ref": "#/texts/1"
+        "$ref": "#/texts/0"
       },
       "children": [
         {
-          "$ref": "#/texts/11"
+          "$ref": "#/texts/9"
         }
       ],
       "content_layer": "body",
@@ -73,19 +70,10 @@
       "parent": {
         "$ref": "#/body"
       },
-      "children": [],
-      "content_layer": "body",
-      "label": "paragraph",
-      "prov": [],
-      "orig": ":_mod-docs-content-type: PROCEDURE :experimental:",
-      "text": ":_mod-docs-content-type: PROCEDURE :experimental:"
-    },
-    {
-      "self_ref": "#/texts/1",
-      "parent": {
-        "$ref": "#/body"
-      },
       "children": [
+        {
+          "$ref": "#/texts/1"
+        },
         {
           "$ref": "#/texts/2"
         },
@@ -93,16 +81,10 @@
           "$ref": "#/texts/3"
         },
         {
-          "$ref": "#/texts/4"
-        },
-        {
-          "$ref": "#/texts/5"
-        },
-        {
           "$ref": "#/groups/0"
         },
         {
-          "$ref": "#/texts/10"
+          "$ref": "#/texts/8"
         },
         {
           "$ref": "#/groups/1"
@@ -115,21 +97,9 @@
       "text": "Renaming a bookmark"
     },
     {
-      "self_ref": "#/texts/2",
+      "self_ref": "#/texts/1",
       "parent": {
-        "$ref": "#/texts/1"
-      },
-      "children": [],
-      "content_layer": "body",
-      "label": "paragraph",
-      "prov": [],
-      "orig": "[id=\"renaming-a-bookmark_{context}\"]",
-      "text": "[id=\"renaming-a-bookmark_{context}\"]"
-    },
-    {
-      "self_ref": "#/texts/3",
-      "parent": {
-        "$ref": "#/texts/1"
+        "$ref": "#/texts/0"
       },
       "children": [],
       "content_layer": "body",
@@ -139,9 +109,9 @@
       "text": "You can rename a bookmark to distinguish it from other bookmarks. If you have bookmarks to several folders that all share the same name, you can tell the bookmarks apart if you rename them."
     },
     {
-      "self_ref": "#/texts/4",
+      "self_ref": "#/texts/2",
       "parent": {
-        "$ref": "#/texts/1"
+        "$ref": "#/texts/0"
       },
       "children": [],
       "content_layer": "body",
@@ -151,9 +121,9 @@
       "text": "Renaming the bookmark does not rename the folder."
     },
     {
-      "self_ref": "#/texts/5",
+      "self_ref": "#/texts/3",
       "parent": {
-        "$ref": "#/texts/1"
+        "$ref": "#/texts/0"
       },
       "children": [],
       "content_layer": "body",
@@ -170,7 +140,7 @@
       }
     },
     {
-      "self_ref": "#/texts/6",
+      "self_ref": "#/texts/4",
       "parent": {
         "$ref": "#/groups/0"
       },
@@ -184,7 +154,7 @@
       "marker": ""
     },
     {
-      "self_ref": "#/texts/7",
+      "self_ref": "#/texts/5",
       "parent": {
         "$ref": "#/groups/0"
       },
@@ -202,7 +172,7 @@
       "marker": ""
     },
     {
-      "self_ref": "#/texts/8",
+      "self_ref": "#/texts/6",
       "parent": {
         "$ref": "#/groups/0"
       },
@@ -220,7 +190,7 @@
       "marker": ""
     },
     {
-      "self_ref": "#/texts/9",
+      "self_ref": "#/texts/7",
       "parent": {
         "$ref": "#/groups/0"
       },
@@ -234,9 +204,9 @@
       "marker": ""
     },
     {
-      "self_ref": "#/texts/10",
+      "self_ref": "#/texts/8",
       "parent": {
-        "$ref": "#/texts/1"
+        "$ref": "#/texts/0"
       },
       "children": [],
       "content_layer": "body",
@@ -253,7 +223,7 @@
       }
     },
     {
-      "self_ref": "#/texts/11",
+      "self_ref": "#/texts/9",
       "parent": {
         "$ref": "#/groups/1"
       },
@@ -275,7 +245,7 @@
     {
       "self_ref": "#/pictures/0",
       "parent": {
-        "$ref": "#/texts/7"
+        "$ref": "#/texts/5"
       },
       "children": [],
       "content_layer": "body",
@@ -289,7 +259,7 @@
     {
       "self_ref": "#/pictures/1",
       "parent": {
-        "$ref": "#/texts/8"
+        "$ref": "#/texts/6"
       },
       "children": [],
       "content_layer": "body",
@@ -303,7 +273,7 @@
     {
       "self_ref": "#/pictures/2",
       "parent": {
-        "$ref": "#/texts/11"
+        "$ref": "#/texts/9"
       },
       "children": [],
       "content_layer": "body",

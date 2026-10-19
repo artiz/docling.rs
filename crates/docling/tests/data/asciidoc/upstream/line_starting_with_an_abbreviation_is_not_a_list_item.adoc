@@ -1,0 +1,9 @@
+= Review
+
+The report was reviewed.
+Dr. Smith approved it on Monday.
+
+Fig. 2 shows the architecture.
+
+a. First option
+b. Second option

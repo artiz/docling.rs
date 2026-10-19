@@ -1,0 +1,5 @@
+Some *bold*, _italic_ and `mono` text, with **st**rong.
+
+*_both_* and snake_case_name and 2*3*4.
+
+No marks here.

@@ -1,0 +1,6 @@
+| Format   | Extension               |
+|----------|-------------------------|
+| Markdown | .md or (also .markdown) |
+| JSON     | .json                   |
+
+After.

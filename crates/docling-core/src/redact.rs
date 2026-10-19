@@ -1212,6 +1212,7 @@ impl<'a> Redactor<'a> {
         match node {
             Node::Heading { text, .. }
             | Node::Paragraph { text }
+            | Node::ListText { text, .. }
             | Node::CheckboxItem { text, .. }
             | Node::PageFurniture { text, .. }
             | Node::FurnitureText { text, .. }

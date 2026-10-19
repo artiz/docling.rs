@@ -1,0 +1,6 @@
+| a | b |
+| 1 | 2 |
+directly under
+next line
+
+after

@@ -371,17 +371,17 @@
       "parent": {
         "$ref": "#/texts/15"
       },
-      "children": [
-        {
-          "$ref": "#/texts/17"
-        }
-      ],
+      "children": [],
       "content_layer": "body",
       "label": "code",
       "prov": [],
       "orig": "{ \"status\": \"active\" }",
       "text": "{ \"status\": \"active\" }",
-      "captions": [],
+      "captions": [
+        {
+          "$ref": "#/texts/17"
+        }
+      ],
       "references": [],
       "footnotes": [],
       "code_language": "unknown"

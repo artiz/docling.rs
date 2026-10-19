@@ -1,0 +1,7 @@
+= Title
+
+Intro text.
+
+image::diagram.png[Architecture, width=50%, height=auto]
+
+Text after the image.

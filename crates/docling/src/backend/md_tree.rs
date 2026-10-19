@@ -595,6 +595,7 @@ impl Walker<'_> {
                             language: None,
                             formatting,
                             hyperlink,
+                            captions: Vec::new(),
                         },
                     );
                     *items += 1;
@@ -948,6 +949,7 @@ impl Walker<'_> {
                         language: None,
                         formatting,
                         hyperlink: hyperlink.clone(),
+                        captions: Vec::new(),
                     },
                 );
             }
@@ -969,6 +971,7 @@ impl Walker<'_> {
                         language,
                         formatting,
                         hyperlink: hyperlink.clone(),
+                        captions: Vec::new(),
                     },
                 );
             }
