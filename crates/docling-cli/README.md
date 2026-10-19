@@ -23,6 +23,7 @@ docling-rs recording.mp3                         # Whisper transcript; --asr-mod
 cat report.docx | docling-rs --from docx -       # stdin (#668)
 docling-rs https://example.com/whitepaper.pdf    # a URL; --mime-type when it has no extension
 docling-rs "data:text/html;base64,PGgxPkhpPC9oMT4="
+docling-rs --progress report.pdf > report.md     # progress bars on stderr (#783; the default on a terminal, --no-progress hides them)
 docling-rs --help                                # every flag; --version lists the compiled-in features
 docling-rs --list-input-formats                  # what this build converts, one per line
 ```

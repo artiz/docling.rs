@@ -204,6 +204,27 @@ pub enum Completion {
     },
 }
 
+/// One finished page, as the per-page progress hook
+/// ([`Pipeline::set_progress`]) reports it — docling's `PageCompletedProgress`
+/// minus the document fields the caller adds (#783).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PageProgress {
+    /// The page's 1-based number in the document: a page window keeps the
+    /// source numbering, so a `2-3` window reports pages 2 and 3.
+    pub page_no: usize,
+    /// Pages finished so far in this conversion, this one included. On the
+    /// parallel walks pages finish out of order, so this — not `page_no` —
+    /// drives a progress bar.
+    pub pages_done: usize,
+    /// Pages the conversion selected: the window's size, else the whole
+    /// document.
+    pub pages_selected: usize,
+}
+
+/// The per-page progress hook: shared with the parallel workers, so it must
+/// be cheap and thread-safe.
+pub type PageProgressHook = std::sync::Arc<dyn Fn(PageProgress) + Send + Sync>;
+
 impl Completion {
     pub fn timed_out(&self) -> bool {
         matches!(self, Completion::TimedOut { .. })
@@ -2245,10 +2266,11 @@ pub struct Pipeline {
     images: ImageOutput,
     /// Heading-level inference (#302). See [`Pipeline::heading_hierarchy`].
     heading_hierarchy: HeadingHierarchyOptions,
-    /// Optional per-page progress hook `(done, selected_total)`, invoked after
-    /// each page finishes on both the serial and parallel buffered paths. Set
-    /// by the CLI batch mode for dot-progress; `None` costs nothing.
-    progress: Option<Arc<dyn Fn(usize, usize) + Send + Sync>>,
+    /// Optional per-page progress hook, invoked after each page finishes on
+    /// every walk — the serial and parallel buffered paths, both streaming
+    /// paths and the pre-rendered page path (images, METS). The converter
+    /// turns it into its progress events (#783); `None` costs nothing.
+    progress: Option<PageProgressHook>,
     /// Per-document wall-clock budget (docling's `document_timeout`, #497).
     /// See [`Pipeline::document_timeout`].
     document_timeout: Option<std::time::Duration>,
@@ -2372,11 +2394,15 @@ impl Pipeline {
         heading_hierarchy::apply(nodes, &outline, &styles, opts);
     }
 
-    /// Install (or clear) the per-page progress hook: called with
-    /// `(pages_done, pages_selected)` after each page completes during
-    /// [`convert`](Self::convert). Shared with the parallel workers, so the
-    /// callback must be cheap and thread-safe.
-    pub fn set_progress(&mut self, cb: Option<Arc<dyn Fn(usize, usize) + Send + Sync>>) {
+    /// Install (or clear) the per-page progress hook: called with a
+    /// [`PageProgress`] after each page completes, on every conversion entry
+    /// point ([`convert`](Self::convert), the streaming variants,
+    /// [`convert_image`](Self::convert_image), [`process_pages`](Self::process_pages)).
+    /// Shared with the parallel workers, so the callback must be cheap and
+    /// thread-safe. A page the budget cut off is never reported here — the
+    /// walk's [`Completion`] says how many were; the converter reports those
+    /// as failed pages (#783).
+    pub fn set_progress(&mut self, cb: Option<PageProgressHook>) {
         self.progress = cb;
     }
 
@@ -2907,7 +2933,11 @@ impl Pipeline {
                 confs.insert(n + 1, conf);
                 done += 1;
                 if let Some(cb) = &progress {
-                    cb(done, selected);
+                    cb(PageProgress {
+                        page_no: n + 1,
+                        pages_done: done,
+                        pages_selected: selected,
+                    });
                 }
                 Ok(())
             },
@@ -3037,7 +3067,11 @@ impl Pipeline {
                                     .fetch_add(1, std::sync::atomic::Ordering::Relaxed)
                                     + 1;
                                 if let Some(cb) = &progress {
-                                    cb(d, selected);
+                                    cb(PageProgress {
+                                        page_no: idx + 1,
+                                        pages_done: d,
+                                        pages_selected: selected,
+                                    });
                                 }
                             }
                             // The budget ran out before this page's turn: the
@@ -3167,7 +3201,7 @@ impl Pipeline {
         let r = if self.target_workers >= 2 && selected >= self.parallel_min {
             self.convert_streaming_parallel(bytes, password, range, deadline, selected, emit)
         } else {
-            self.convert_streaming_serial(bytes, password, range, deadline, emit)
+            self.convert_streaming_serial(bytes, password, range, deadline, selected, emit)
         };
         timing::report();
         let (done, timed_out) = r?;
@@ -3182,6 +3216,7 @@ impl Pipeline {
         password: Option<&str>,
         range: Option<(usize, usize)>,
         deadline: Option<std::time::Instant>,
+        selected: usize,
         mut emit: F,
     ) -> Result<(usize, bool), PdfError>
     where
@@ -3190,6 +3225,7 @@ impl Pipeline {
         let mut asm = assemble::StreamAssembler::new();
         let render_image = !self.no_ocr;
         let extract_text = self.extract_text_layer();
+        let progress = self.progress.clone();
         let worker = self.primary()?;
         let mut done = 0usize;
         let timed_out = Self::render_ahead(
@@ -3205,6 +3241,13 @@ impl Pipeline {
                 // page-by-page emission — buffered `convert` carries it.
                 let (nodes, links, _conf, _page_image) = worker.process(n, &mut page)?;
                 done += 1;
+                if let Some(cb) = &progress {
+                    cb(PageProgress {
+                        page_no: n + 1,
+                        pages_done: done,
+                        pages_selected: selected,
+                    });
+                }
                 emit(asm.push(nodes), links)
             },
         )?;
@@ -3234,6 +3277,7 @@ impl Pipeline {
         let n_workers = self.pool.len();
         let render_image = !self.no_ocr;
         let extract_text = self.extract_text_layer();
+        let progress = self.progress.clone();
         let layout_batch = pdf_layout_batch();
         // Bound sized so every worker can accumulate a full layout batch while
         // rendering stays ahead (and never below the pre-#73 render-ahead of
@@ -3325,6 +3369,15 @@ impl Pipeline {
                             }
                             next += 1;
                             done += 1;
+                            // Reported in document order, as emitted: a page
+                            // that finished early counts once it is emitted.
+                            if let Some(cb) = &progress {
+                                cb(PageProgress {
+                                    page_no: next,
+                                    pages_done: done,
+                                    pages_selected: selected,
+                                });
+                            }
                         }
                     }
                 }
@@ -3448,6 +3501,8 @@ impl Pipeline {
     ) -> Result<DoclingDocument, PdfError> {
         let mut doc = DoclingDocument::new(name);
         let mut confs = std::collections::BTreeMap::new();
+        let progress = self.progress.clone();
+        let total = pages.len();
         let worker = self.primary()?;
         for (n, page) in pages.iter_mut().enumerate() {
             let (mut nodes, links, conf, page_image) = worker.process(n, page)?;
@@ -3458,6 +3513,13 @@ impl Pipeline {
             doc.nodes.extend(nodes);
             doc.links.extend(links);
             confs.insert(n + 1, conf);
+            if let Some(cb) = &progress {
+                cb(PageProgress {
+                    page_no: n + 1,
+                    pages_done: n + 1,
+                    pages_selected: total,
+                });
+            }
         }
         assemble::merge_continuations(&mut doc.nodes);
         // No PDF behind these pages (images, METS): the heading-hierarchy

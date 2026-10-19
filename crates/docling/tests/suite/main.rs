@@ -49,6 +49,7 @@ mod pptx_charts;
 mod pptx_hidden_layers;
 mod pptx_list_cascade;
 mod pptx_shapes;
+mod progress;
 mod redact;
 mod scanned;
 mod security_doc;

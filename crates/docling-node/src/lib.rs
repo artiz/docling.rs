@@ -80,6 +80,12 @@ pub struct ConverterOptions {
     /// once spent, the pages done so far are the document, `status` is
     /// `"partial_success"` and `errors` says why.
     pub document_timeout: Option<f64>,
+    /// Print progress to stderr (#783, docling's `show_progress`): a line
+    /// per document, a bar for its pages and each enrichment pass, drawn in
+    /// place on a terminal. Default `false`. For your own UI pass a
+    /// `progressCallback` to the async conversions instead.
+    #[serde(skip_serializing)]
+    pub show_progress: Option<bool>,
     /// OCR recognition language for scanned PDF/image pages: `"en"` (default;
     /// proper Latin word spacing) or `"ch"` (the multilingual
     /// docling-conformance model), or a BCP-47 tag for either language —
@@ -412,6 +418,12 @@ pub struct ConvertOptions {
     /// Per-document budget in seconds (docling's `document_timeout`, #497);
     /// see `ConverterOptions.documentTimeout`.
     pub document_timeout: Option<f64>,
+    /// Print progress to stderr (#783, docling's `show_progress`): a line
+    /// per document, a bar for its pages and each enrichment pass, drawn in
+    /// place on a terminal. Default `false`. For your own UI pass a
+    /// `progressCallback` to the async conversions instead.
+    #[serde(skip_serializing)]
+    pub show_progress: Option<bool>,
     /// OCR recognition language for scanned pages: `"en"` (default) | `"ch"`,
     /// or a BCP-47 tag for either (`"en-US"`, `"zh-Hans"`, #388).
     pub ocr_lang: Option<String>,
@@ -686,6 +698,11 @@ struct ConvertConfig {
     /// *output* option on this surface — `OutputOptions` — so it overrides
     /// whatever the converter options carry).
     page_break_placeholder: Option<String>,
+    /// `showProgress` (#783): the engine's stderr printer.
+    show_progress: bool,
+    /// The call's `progressCallback` (#783), bridged from its threadsafe
+    /// function: every event of the conversion, as JSON.
+    progress: Option<docling::ProgressCallback>,
 }
 
 #[derive(Clone, Copy, PartialEq)]
@@ -807,6 +824,8 @@ fn build_config(o: ConvertOptions) -> Result<ConvertConfig> {
         image_mode: parse_image_mode(o.image_mode.as_deref(), to)?,
         artifacts_dir: o.artifacts_dir.unwrap_or_else(|| "artifacts".to_string()),
         page_break_placeholder: o.page_break_placeholder,
+        show_progress: o.show_progress.unwrap_or(false),
+        progress: None,
     })
 }
 
@@ -821,7 +840,38 @@ fn build_converter(cfg: &ConvertConfig) -> Result<RsConverter> {
     }
     // The library's mapping onto the builder (#577); `opts` was validated
     // when the config was built, so this cannot fail.
-    o.apply(base).map_err(option_err)
+    let converter = o
+        .apply(base)
+        .map_err(option_err)?
+        .show_progress(cfg.show_progress);
+    Ok(match &cfg.progress {
+        Some(callback) => converter.progress_callback(Arc::clone(callback)),
+        None => converter,
+    })
+}
+
+/// The first page of a `pages` window (`"A-B"` or `"N"`), for the failed
+/// page numbers a spent budget reports (#783).
+fn first_page(pages: &str) -> Option<usize> {
+    docling::parse_page_range(pages)
+        .ok()
+        .map(|(first, _)| first)
+}
+
+/// A JS progress callback (#783), bridged: each event goes to the JS thread
+/// as its JSON text (`(err, json)` — the wrapper parses it and calls the
+/// user's `(event) => void`), without blocking the converting thread. The
+/// events of a sync conversion would only run after it returned, which is
+/// why the callback is taken by the async conversions alone.
+fn progress_bridge(
+    callback: ThreadsafeFunction<String, ErrorStrategy::CalleeHandled>,
+) -> docling::ProgressCallback {
+    Arc::new(move |event: &docling::ProgressEvent| {
+        callback.call(
+            Ok(event.to_json().to_string()),
+            ThreadsafeFunctionCallMode::NonBlocking,
+        );
+    })
 }
 
 /// Render an already-converted document to Markdown/JSON per the config. The
@@ -1021,9 +1071,11 @@ pub fn convert(input: ConvertInput, options: Option<ConvertOptions>) -> Result<C
 pub fn convert_file_async(
     path: String,
     options: Option<ConvertOptions>,
+    progress: Option<ThreadsafeFunction<String, ErrorStrategy::CalleeHandled>>,
 ) -> Result<AsyncTask<ConvertFileTask>> {
     let o = options.unwrap_or_default();
-    let cfg = build_config(o)?;
+    let mut cfg = build_config(o)?;
+    cfg.progress = progress.map(progress_bridge);
     Ok(AsyncTask::new(ConvertFileTask { path, cfg }))
 }
 
@@ -1032,9 +1084,11 @@ pub fn convert_file_async(
 pub fn convert_async(
     input: ConvertInput,
     options: Option<ConvertOptions>,
+    progress: Option<ThreadsafeFunction<String, ErrorStrategy::CalleeHandled>>,
 ) -> Result<AsyncTask<ConvertBytesTask>> {
     let o = options.unwrap_or_default();
-    let cfg = build_config(o)?;
+    let mut cfg = build_config(o)?;
+    cfg.progress = progress.map(progress_bridge);
     let source = source_from_input(input)?;
     Ok(AsyncTask::new(ConvertBytesTask {
         source: Some(source),
@@ -1189,6 +1243,8 @@ pub struct DocumentConverter {
     // other option is.
     vlm: Option<docling::vlm::VlmOptions>,
     allowed_formats: Option<Vec<InputFormat>>,
+    /// The constructor's `showProgress` (#783), for every conversion.
+    show_progress: bool,
 }
 
 #[napi]
@@ -1196,6 +1252,7 @@ impl DocumentConverter {
     #[napi(constructor)]
     pub fn new(options: Option<ConverterOptions>) -> Result<Self> {
         let o = options.unwrap_or_default();
+        let show_progress = o.show_progress.unwrap_or(false);
         let allowed = match &o.allowed_formats {
             Some(list) => Some(
                 list.iter()
@@ -1211,6 +1268,7 @@ impl DocumentConverter {
             opts,
             vlm,
             allowed_formats: allowed,
+            show_progress,
         })
     }
 
@@ -1225,6 +1283,8 @@ impl DocumentConverter {
             image_mode: parse_image_mode(out.image_mode.as_deref(), to)?,
             artifacts_dir: out.artifacts_dir.unwrap_or_else(|| "artifacts".to_string()),
             page_break_placeholder: out.page_break_placeholder,
+            show_progress: self.show_progress,
+            progress: None,
         })
     }
 
@@ -1258,8 +1318,10 @@ impl DocumentConverter {
         &self,
         path: String,
         options: Option<OutputOptions>,
+        progress: Option<ThreadsafeFunction<String, ErrorStrategy::CalleeHandled>>,
     ) -> Result<AsyncTask<ConvertFileTask>> {
-        let cfg = self.config(options)?;
+        let mut cfg = self.config(options)?;
+        cfg.progress = progress.map(progress_bridge);
         Ok(AsyncTask::new(ConvertFileTask { path, cfg }))
     }
 
@@ -1269,8 +1331,10 @@ impl DocumentConverter {
         &self,
         input: ConvertInput,
         options: Option<OutputOptions>,
+        progress: Option<ThreadsafeFunction<String, ErrorStrategy::CalleeHandled>>,
     ) -> Result<AsyncTask<ConvertBytesTask>> {
-        let cfg = self.config(options)?;
+        let mut cfg = self.config(options)?;
+        cfg.progress = progress.map(progress_bridge);
         let source = source_from_input(input)?;
         Ok(AsyncTask::new(ConvertBytesTask {
             source: Some(source),
@@ -1466,6 +1530,8 @@ pub struct Pipeline {
     strict: bool,
     /// The constructor's `password` (#611, #625), for every conversion.
     password: Option<String>,
+    /// The constructor's `showProgress` (#783), for every conversion.
+    show_progress: bool,
 }
 
 /// The PDF/image options of a [`ConverterOptions`] resolved into the typed
@@ -1555,6 +1621,7 @@ impl Pipeline {
     #[napi(constructor)]
     pub fn new(options: Option<ConverterOptions>) -> Result<Self> {
         let options = options.unwrap_or_default();
+        let show_progress = options.show_progress.unwrap_or(false);
         // This class exists to keep the ONNX models warm across calls. The VLM
         // pipeline loads no models, so there is nothing to keep warm and no
         // reuse to gain — refuse rather than quietly converting through the
@@ -1608,6 +1675,7 @@ impl Pipeline {
             inner: Arc::new(Mutex::new(pipeline)),
             strict,
             password: warm.password,
+            show_progress,
         })
     }
 
@@ -1644,8 +1712,10 @@ impl Pipeline {
         &self,
         path: String,
         options: Option<OutputOptions>,
+        progress: Option<ThreadsafeFunction<String, ErrorStrategy::CalleeHandled>>,
     ) -> Result<AsyncTask<PipelineFileTask>> {
-        let cfg = self.output_cfg(options)?;
+        let mut cfg = self.output_cfg(options)?;
+        cfg.progress = progress.map(progress_bridge);
         Ok(AsyncTask::new(PipelineFileTask {
             pipe: Arc::clone(&self.inner),
             strict: self.strict,
@@ -1660,8 +1730,10 @@ impl Pipeline {
         &self,
         input: ConvertInput,
         options: Option<OutputOptions>,
+        progress: Option<ThreadsafeFunction<String, ErrorStrategy::CalleeHandled>>,
     ) -> Result<AsyncTask<PipelineBytesTask>> {
-        let cfg = self.output_cfg(options)?;
+        let mut cfg = self.output_cfg(options)?;
+        cfg.progress = progress.map(progress_bridge);
         let source = source_from_input(input)?;
         Ok(AsyncTask::new(PipelineBytesTask {
             pipe: Arc::clone(&self.inner),
@@ -1710,6 +1782,7 @@ impl Pipeline {
     fn output_cfg(&self, options: Option<OutputOptions>) -> Result<ConvertConfig> {
         let mut cfg = output_config(options, self.strict)?;
         cfg.opts.password = self.password.clone();
+        cfg.show_progress = self.show_progress;
         Ok(cfg)
     }
 }
@@ -1728,37 +1801,57 @@ fn run_pipeline(
             "pipeline poisoned by an earlier panic",
         )
     })?;
+    if !matches!(source.format, InputFormat::Pdf | InputFormat::Image) {
+        return Err(Error::new(
+            Status::InvalidArg,
+            format!(
+                "Pipeline handles pdf and image inputs (the ML pipeline); got '{}'. \
+                 Use convertFile / convert for other formats.",
+                source.format.as_str()
+            ),
+        ));
+    }
+    // The warm pipeline bypasses `DocumentConverter::convert`: the converter
+    // here carries the serializer knobs, the PII pass (#621) and the
+    // progress events (#783), whose reporter brackets the conversion as
+    // `convert` would.
+    let converter = build_converter(cfg)?;
+    let reporter = Arc::new(converter.reporter(1, &source.name, None));
+    reporter.document_started();
+    pipe.set_progress(reporter.page_hook());
     // docling's PARTIAL_SUCCESS (#497): a spent budget leaves the pages done.
     let mut errors: Vec<docling::ErrorItem> = Vec::new();
-    let mut doc = match source.format {
-        InputFormat::Pdf => {
-            let c = pipe
-                .convert_outcome(&source.bytes, cfg.opts.password.as_deref(), &source.name)
-                .map_err(convert_err)?;
-            errors.extend(c.completion.message().map(docling::ErrorItem::timeout));
-            c.document
-        }
-        InputFormat::Image => pipe
-            .convert_image(&source.bytes, &source.name)
-            .map_err(convert_err)?,
-        other => {
-            return Err(Error::new(
-                Status::InvalidArg,
-                format!(
-                    "Pipeline handles pdf and image inputs (the ML pipeline); got '{}'. \
-                     Use convertFile / convert for other formats.",
-                    other.as_str()
-                ),
-            ))
+    let converted = match source.format {
+        InputFormat::Pdf => pipe
+            .convert_outcome(&source.bytes, cfg.opts.password.as_deref(), &source.name)
+            .map(|c| {
+                if let docling::Completion::TimedOut { pages_selected, .. } = &c.completion {
+                    reporter.fail_pages_cut_off(
+                        cfg.opts.pages.as_deref().and_then(first_page).unwrap_or(1),
+                        *pages_selected,
+                    );
+                }
+                errors.extend(c.completion.message().map(docling::ErrorItem::timeout));
+                c.document
+            }),
+        _ => pipe.convert_image(&source.bytes, &source.name),
+    };
+    pipe.set_progress(None);
+    let mut doc = match converted {
+        Ok(doc) => doc,
+        Err(e) => {
+            reporter.document_completed(docling::ConversionStatus::Failure);
+            return Err(convert_err(e));
         }
     };
+    reporter.document_completed(if errors.is_empty() {
+        docling::ConversionStatus::Success
+    } else {
+        docling::ConversionStatus::PartialSuccess
+    });
     doc.strict_markdown = strict;
     doc.page_break_placeholder = cfg.page_break_placeholder.clone();
-    // The warm pipeline bypasses `DocumentConverter::convert`: the PII pass
-    // (#621) is applied here, like the serializer knobs above.
-    let redaction = build_converter(cfg)?
-        .redact(&mut doc)
-        .map_err(convert_err)?;
+    let redaction = converter.redact(&mut doc).map_err(convert_err)?;
     let status = if errors.is_empty() {
         "success"
     } else {
@@ -1925,6 +2018,8 @@ fn output_config(out: Option<OutputOptions>, strict: bool) -> Result<ConvertConf
         )?,
         artifacts_dir: out.artifacts_dir.unwrap_or_else(|| "artifacts".to_string()),
         page_break_placeholder: out.page_break_placeholder,
+        show_progress: false,
+        progress: None,
     })
 }
 

@@ -248,6 +248,27 @@ budget in seconds for the PDF pipeline, checked between pages: once spent, the
 pages done so far are the document, `result.status` is `PARTIAL_SUCCESS` and
 `result.errors` holds the reason as docling's `ErrorItem`.
 
+`progress_callback=` / `show_progress=True` are docling's conversion
+progress events (docling 2.139, #783): the callback receives every
+conversion's events — document start and end, one `PageCompletedProgress`
+per PDF / image page with `completed_pages` / `total_pages` (a page the
+budget cut off comes with `success=False`), the picture passes'
+`EnrichmentProgress` — as the `docling_rs.progress` classes, docling's
+names; `convert` / `convert_all` take a per-call `progress_callback` too,
+`convert_all` numbering the events' `document_index`. `show_progress=True`
+prints the engine's progress bars to stderr with no code:
+
+```python
+from docling_rs import DocumentConverter
+from docling_rs.progress import PageCompletedProgress   # was: docling.datamodel.progress
+
+def on_progress(event):
+    if isinstance(event, PageCompletedProgress):
+        print(f"{event.document_name}: page {event.completed_pages}/{event.total_pages}")
+
+DocumentConverter(progress_callback=on_progress).convert("report.pdf")
+```
+
 For scanned pages, `ocr_lang="en"|"ch"` picks the OCR recognition model (`en`
 is the default — proper Latin word spacing; `ch` is the multilingual
 docling-conformance model). BCP-47 tags for either language resolve to the

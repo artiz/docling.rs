@@ -19,7 +19,7 @@
 //! the same name): one identifier per line, sorted, for scripts that ask the
 //! binary what it converts instead of hard-coding a list.
 //!
-//! Usage: docling-rs [--strict] [--page-break-placeholder TEXT] [--layers body|all|LIST] [--traverse-pictures] [--to md|json|html|text|dclx|chunks|images|latex|pandoc|vtt] [--pages A-B] [--scale X] [--images MODE] [--input GLOB --output DIR [--jobs N]] [--output-file PATH] [--fetch-images] [--image-sources none|embedded|local|remote] [--image-hosts LIST] [--max-images N] [--max-image-bytes N] [--max-image-total-mb N] [--min-image-bytes N] [--list-attachments] [--skip-empty-cells] [--compact-tables] [--picture-alt-text] [--ebcdic-layout JSON|PATH] [--encoding LABEL] [--ipynb-outputs none|text] [--metadata none|json|frontmatter] [--from FORMAT] [--mime-type TYPE] [--no-url-fetch] [--no-stream] [--no-table-former] [--no-ocr] [--text-layer-only] [--password PASSWORD | --password-file PATH] [--force-full-page-ocr] [--no-text-panels] [--heading-hierarchy] [--ocr-lang LANG] [--ocr-engine ppocr|tesseract] [--ocr-mode MODE] [--ocr-scale X] [--ocr-textline-orientation] [--images-scale X] [--page-images] [--chunker hierarchical|hybrid] [--chunk-tokenizer PATH] [--chunk-max-tokens N] [--no-chunk-merge-peers] [--pipeline standard|vlm] [--vlm-endpoint URL] [--vlm-model NAME] [--vlm-api-key TOKEN] [--vlm-prompt TEXT] [--vlm-max-tokens N] [--asr-model PRESET] [--asr-lang CODE] [--video-frames N|all] [--video-scene-threshold X] [--video-frame-max-side PX] [--video-frame-dedupe N] [--xbrl-taxonomy DIR] [--use-web-browser] [--enrich-picture-classes] [--enrich-code] [--enrich-formula] [--picture-ocr] [--picture-ocr-classes LABELS] [--picture-ocr-min-side N] [--picture-ocr-scale X] [--no-picture-images] [--picture-description] [--picture-description-endpoint URL] [--picture-description-model NAME] [--picture-description-api-key TOKEN] [--picture-description-prompt TEXT] [--picture-description-mode caption|ocr] [--picture-description-concurrency N] [--redact-pii] [--redact-mode label|pseudonym|fixed:TEXT] [--redact-kinds LIST] [--redact-pattern NAME=REGEX]... [--redact-images drop|box_out|keep] [--redact-allow-terms LIST] [--redact-deny-terms LIST] [--redact-allow-pattern REGEX]... [--redact-ner-min-score X] [--document-timeout SECONDS] [--abort-on-error] [--output-dirs auto|flat|mirror] [--archive-merge|--no-archive-merge] <input-file> | - | URL | SOURCE...
+//! Usage: docling-rs [--strict] [--page-break-placeholder TEXT] [--layers body|all|LIST] [--traverse-pictures] [--to md|json|html|text|dclx|chunks|images|latex|pandoc|vtt] [--pages A-B] [--scale X] [--images MODE] [--input GLOB --output DIR [--jobs N]] [--output-file PATH] [--fetch-images] [--image-sources none|embedded|local|remote] [--image-hosts LIST] [--max-images N] [--max-image-bytes N] [--max-image-total-mb N] [--min-image-bytes N] [--list-attachments] [--skip-empty-cells] [--compact-tables] [--picture-alt-text] [--ebcdic-layout JSON|PATH] [--encoding LABEL] [--ipynb-outputs none|text] [--metadata none|json|frontmatter] [--from FORMAT] [--mime-type TYPE] [--no-url-fetch] [--no-stream] [--progress|--no-progress] [--no-table-former] [--no-ocr] [--text-layer-only] [--password PASSWORD | --password-file PATH] [--force-full-page-ocr] [--no-text-panels] [--heading-hierarchy] [--ocr-lang LANG] [--ocr-engine ppocr|tesseract] [--ocr-mode MODE] [--ocr-scale X] [--ocr-textline-orientation] [--images-scale X] [--page-images] [--chunker hierarchical|hybrid] [--chunk-tokenizer PATH] [--chunk-max-tokens N] [--no-chunk-merge-peers] [--pipeline standard|vlm] [--vlm-endpoint URL] [--vlm-model NAME] [--vlm-api-key TOKEN] [--vlm-prompt TEXT] [--vlm-max-tokens N] [--asr-model PRESET] [--asr-lang CODE] [--video-frames N|all] [--video-scene-threshold X] [--video-frame-max-side PX] [--video-frame-dedupe N] [--xbrl-taxonomy DIR] [--use-web-browser] [--enrich-picture-classes] [--enrich-code] [--enrich-formula] [--picture-ocr] [--picture-ocr-classes LABELS] [--picture-ocr-min-side N] [--picture-ocr-scale X] [--no-picture-images] [--picture-description] [--picture-description-endpoint URL] [--picture-description-model NAME] [--picture-description-api-key TOKEN] [--picture-description-prompt TEXT] [--picture-description-mode caption|ocr] [--picture-description-concurrency N] [--redact-pii] [--redact-mode label|pseudonym|fixed:TEXT] [--redact-kinds LIST] [--redact-pattern NAME=REGEX]... [--redact-images drop|box_out|keep] [--redact-allow-terms LIST] [--redact-deny-terms LIST] [--redact-allow-pattern REGEX]... [--redact-ner-min-score X] [--document-timeout SECONDS] [--abort-on-error] [--output-dirs auto|flat|mirror] [--archive-merge|--no-archive-merge] <input-file> | - | URL | SOURCE...
 //!   --to FORMAT        repeatable (#491, like Python's `docling convert --to
 //!                      md --to json`): each document converts once and is
 //!                      written in every format named, `<stem>.md` +
@@ -185,6 +185,13 @@
 //!                      of streaming it page by page. Streaming is the default for
 //!                      Markdown (placeholder/embedded images); JSON and referenced
 //!                      images always use the buffered path.
+//!   --progress         progress on stderr (#783, docling's flags): a line per
+//!   --no-progress      document, a bar for its pages and each enrichment pass,
+//!                      drawn in place on a terminal. The default is --progress
+//!                      when stderr is a terminal, --no-progress otherwise (a
+//!                      pipe, a log); --progress forces the plain `done/total`
+//!                      counts there. A batch logs its `start:` / `ok:` lines
+//!                      as before and shows the bars between them.
 //!   --no-table-former  skip loading/running the TableFormer table-structure
 //!                      model for PDF/image input; tables fall back to simple
 //!                      geometric reconstruction from cell positions. Faster
@@ -508,6 +515,8 @@ OUTPUT
   --picture-alt-text      render pictures' alt text (DOCX/PPTX/XLSX, #676) in
                           Markdown and HTML; --strict implies it, JSON has it always
   --no-stream             build the whole document before printing
+  --progress              progress on stderr: a bar for the pages and each
+  --no-progress           enrichment pass (default: on when stderr is a terminal)
 
 INPUT SELECTION
   SOURCE...               one file converts to stdout; several files, directories
@@ -736,6 +745,9 @@ fn main() -> ExitCode {
     // `None` = not given: placeholder, except embedded for `--to pandoc` (#537).
     let mut images: Option<String> = None;
     let mut no_stream = false;
+    // `--progress` / `--no-progress` (#783, docling's flags): `None` = on
+    // when stderr is a terminal.
+    let mut progress: Option<bool> = None;
     // `--archive-merge` / `--no-archive-merge` (#677): `None` is the default —
     // one document on stdout and for `--output-file`, one output per entry
     // under `--output DIR`.
@@ -844,6 +856,8 @@ fn main() -> ExitCode {
                 }
             },
             "--no-stream" => no_stream = true,
+            "--progress" => progress = Some(true),
+            "--no-progress" => progress = Some(false),
             "--archive-merge" => archive_merge = Some(true),
             "--no-archive-merge" => archive_merge = Some(false),
             // Export-only (docling-core's `included_content_layers` /
@@ -1445,6 +1459,7 @@ fn main() -> ExitCode {
             pandoc_image_mode,
             opts,
             pages,
+            progress: progress.unwrap_or_else(docling::ProgressPrinter::is_terminal),
             scale,
             chunk: chunk_opts.clone(),
             vlm,
@@ -1528,6 +1543,7 @@ fn main() -> ExitCode {
             pandoc_image_mode,
             opts,
             pages,
+            progress: progress.unwrap_or_else(docling::ProgressPrinter::is_terminal),
             scale,
             chunk: chunk_opts.clone(),
             vlm,
@@ -1577,7 +1593,9 @@ fn main() -> ExitCode {
         }
         // The same `DOCLING_RS_ZIP_MAX_*` limits the batch applies.
         let converter = match DocumentConverter::from_options(&opts) {
-            Ok(c) => c.archive_limits(docling::ArchiveLimits::from_env()),
+            Ok(c) => c
+                .archive_limits(docling::ArchiveLimits::from_env())
+                .show_progress(progress.unwrap_or_else(docling::ProgressPrinter::is_terminal)),
             Err(e) => {
                 eprintln!("error: {}", e.cli_message());
                 return ExitCode::from(2);
@@ -1702,7 +1720,9 @@ fn main() -> ExitCode {
     // Validated above, so this cannot fail; the mapping onto the builder is
     // the library's, shared with every other surface (#577).
     let converter = match DocumentConverter::from_options(&opts) {
-        Ok(c) => c,
+        // `--progress` (#783): the built-in stderr printer, on by default
+        // on a terminal.
+        Ok(c) => c.show_progress(progress.unwrap_or_else(docling::ProgressPrinter::is_terminal)),
         Err(e) => {
             eprintln!("error: {}", e.cli_message());
             return ExitCode::from(2);
@@ -1935,6 +1955,9 @@ struct BatchCfg {
     opts: docling::ConvertOptions,
     /// `opts.pages` parsed — the PDF page window.
     pages: Option<(usize, usize)>,
+    /// `--progress` (#783): the stderr bars for the pages and enrichment
+    /// passes of every document.
+    progress: bool,
     /// `--to images` render scale (pixels per PDF point, #243).
     scale: f32,
     /// Per-run `--to chunks` configuration (#256).
@@ -2582,10 +2605,32 @@ fn batch_out_path(file: &Path, base: &Path, output: &Path, to: &str) -> std::pat
 }
 
 /// Mirror of the single-file converter construction for batch workers.
-fn batch_converter(cfg: &BatchCfg) -> DocumentConverter {
-    DocumentConverter::from_options(&cfg.opts)
+fn batch_converter(
+    cfg: &BatchCfg,
+    progress: Option<docling::ProgressCallback>,
+) -> DocumentConverter {
+    let converter = DocumentConverter::from_options(&cfg.opts)
         .expect("options validated before the batch")
-        .archive_limits(docling::ArchiveLimits::from_env())
+        .archive_limits(docling::ArchiveLimits::from_env());
+    match progress {
+        Some(callback) => converter.progress_callback(callback),
+        None => converter,
+    }
+}
+
+/// The batch's one stderr printer (#783), shared by every worker so the bars
+/// of documents converting at once share the terminal line; `None` without
+/// `--progress`. The batch logs its own `start:` / `ok:` lines per document,
+/// so the printer draws the bars alone.
+fn batch_printer(cfg: &BatchCfg, total_documents: usize) -> Option<docling::ProgressCallback> {
+    cfg.progress.then(|| {
+        std::sync::Arc::new(
+            docling::ProgressPrinter::new()
+                .with_total_documents(total_documents)
+                .with_document_lines(false),
+        )
+        .callback()
+    })
 }
 
 /// The lazily-built warm PDF/image pipeline shared by every batch worker —
@@ -2625,18 +2670,8 @@ fn batch_pipeline<'a>(
         p.set_pages(cfg.pages);
         p.set_ocr_lang(o.ocr_lang().map_err(err)?);
         p.set_ocr_textline_orientation(o.ocr_textline_orientation);
-        // Dot-progress on stderr: one dot per 10 finished pages, newline when
-        // the document completes (only if any dots were printed).
-        p.set_progress(Some(std::sync::Arc::new(|done: usize, total: usize| {
-            use std::io::Write;
-            if done.is_multiple_of(10) {
-                eprint!(".");
-                let _ = std::io::stderr().flush();
-            }
-            if done == total && total >= 10 {
-                eprintln!();
-            }
-        })));
+        // Progress (#783) is per document: `batch_convert_one` installs each
+        // document's reporter as the hook (the pre-#783 dot progress is gone).
         *slot = Some(p);
     }
     Ok(slot.as_mut().expect("just filled"))
@@ -2673,6 +2708,7 @@ fn batch_convert_one(
     converter: &DocumentConverter,
     pipe: &std::sync::Mutex<Option<Pipeline>>,
     archives: &mut ArchiveCache,
+    document_index: usize,
 ) -> Result<BatchOutcome, String> {
     let (file, base) = (item.file.as_path(), item.base.as_path());
     let label = item.label();
@@ -2709,7 +2745,7 @@ fn batch_convert_one(
         (None, Some((zip, index))) => archives.read(zip, *index)?,
     };
     // Announce the document up front — with its page count for PDFs, so long
-    // conversions are attributable while the dots tick.
+    // conversions are attributable while the bars fill.
     let pages = (source.format == InputFormat::Pdf)
         .then(|| docling::pdf_page_count(&source.bytes, cfg.opts.password.as_deref()).ok())
         .flatten()
@@ -2787,20 +2823,46 @@ fn batch_convert_one(
         // keep converting in parallel around it.
         let mut guard = pipe.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
         let p = batch_pipeline(&mut guard, cfg)?;
-        match source.format {
-            InputFormat::Pdf => {
-                let c = p
-                    .convert_outcome(&source.bytes, cfg.opts.password.as_deref(), &source.name)
-                    .map_err(|e| e.to_string())?;
-                partial.extend(c.completion.message());
-                c.document
+        // The document's progress events (#783) on the batch's own warm
+        // pipeline: this document's reporter is the pipeline's hook for the
+        // conversion, as `DocumentConverter::convert` would install it.
+        let reporter = std::sync::Arc::new(converter.reporter(document_index, &source.name, None));
+        reporter.document_started();
+        p.set_progress(reporter.page_hook());
+        let converted = match source.format {
+            InputFormat::Pdf => p
+                .convert_outcome(&source.bytes, cfg.opts.password.as_deref(), &source.name)
+                .map(|c| {
+                    if let docling::Completion::TimedOut { pages_selected, .. } = &c.completion {
+                        reporter.fail_pages_cut_off(
+                            cfg.pages.map_or(1, |(first, _)| first),
+                            *pages_selected,
+                        );
+                    }
+                    partial.extend(c.completion.message());
+                    c.document
+                }),
+            _ => p.convert_image(&source.bytes, &source.name),
+        };
+        p.set_progress(None);
+        match converted {
+            Ok(document) => {
+                reporter.document_completed(if partial.is_empty() {
+                    docling::ConversionStatus::Success
+                } else {
+                    docling::ConversionStatus::PartialSuccess
+                });
+                document
             }
-            _ => p
-                .convert_image(&source.bytes, &source.name)
-                .map_err(|e| e.to_string())?,
+            Err(e) => {
+                reporter.document_completed(docling::ConversionStatus::Failure);
+                return Err(e.to_string());
+            }
         }
     } else {
-        let result = converter.convert(source).map_err(|e| e.to_string())?;
+        let result = converter
+            .convert_with_progress(source, document_index, None)
+            .map_err(|e| e.to_string())?;
         partial.extend(result.errors.iter().map(docling::ErrorItem::describe));
         redaction = result.redaction;
         result.document
@@ -3003,10 +3065,10 @@ fn write_output_file(
     }
     let scratch = dir.join(format!(".docling-rs-{}.tmp", std::process::id()));
     let _ = std::fs::remove_dir_all(&scratch);
-    let converter = batch_converter(cfg);
+    let converter = batch_converter(cfg, batch_printer(cfg, 1));
     let pipe = std::sync::Mutex::new(None);
     let mut archives = ArchiveCache::default();
-    let result = batch_convert_one(&item, &scratch, cfg, &converter, &pipe, &mut archives)
+    let result = batch_convert_one(&item, &scratch, cfg, &converter, &pipe, &mut archives, 1)
         .and_then(|outcome| {
             let written = outcome
                 .written
@@ -3089,12 +3151,13 @@ fn run_batch(
     let abort = AtomicBool::new(false);
     let pipe: std::sync::Mutex<Option<Pipeline>> = std::sync::Mutex::new(None);
     let workers = jobs.min(files.len()).max(1);
+    let printer = batch_printer(cfg, files.len());
     std::thread::scope(|scope| {
         for _ in 0..workers {
             scope.spawn(|| {
                 // Converter construction is cheap configuration; one per
                 // worker keeps the loop borrow-free.
-                let converter = batch_converter(cfg);
+                let converter = batch_converter(cfg, printer.clone());
                 // Archives this worker has opened, kept for their next entry.
                 let mut archives = ArchiveCache::default();
                 loop {
@@ -3115,7 +3178,15 @@ fn run_batch(
                     // poisoned by such a panic, and the per-worker converter
                     // is plain configuration, so the next file starts clean.
                     let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                        batch_convert_one(item, output, cfg, &converter, &pipe, &mut archives)
+                        batch_convert_one(
+                            item,
+                            output,
+                            cfg,
+                            &converter,
+                            &pipe,
+                            &mut archives,
+                            i + 1,
+                        )
                     }))
                     .unwrap_or_else(|_| {
                         Err("the conversion panicked (its message and backtrace are above)".into())

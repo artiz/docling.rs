@@ -1657,3 +1657,41 @@ fn plain_text_and_code_inputs_convert() {
         assert!(listed.contains(&e), "{e} not listed");
     }
 }
+
+/// #783: `--progress` prints the document's progress to stderr — off a
+/// terminal, the plain lines and counts; the default off a terminal is
+/// silence, `--no-progress` likewise.
+#[test]
+fn progress_flag_prints_the_pages_to_stderr() {
+    let pdf = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../tests/data/pdf/sources/skipped_1page.pdf"
+    );
+    let (code, _, err) = run(&["--progress", "--text-layer-only", "--pages", "2-3", pdf]);
+    assert_eq!(code, 0, "{err}");
+    assert_eq!(
+        err,
+        "[1] Converting skipped_1page\n  pages 2/2\nFinished skipped_1page: success\n"
+    );
+
+    // A spent budget: the cut-off pages still count, the status says partial.
+    let (code, _, err) = run(&[
+        "--progress",
+        "--text-layer-only",
+        "--document-timeout",
+        "0.000000001",
+        pdf,
+    ]);
+    assert_eq!(code, 0, "{err}");
+    assert!(
+        err.contains("  pages 3/3\nFinished skipped_1page: partial_success\n"),
+        "{err}"
+    );
+
+    // Off a terminal the default is quiet, and so is --no-progress.
+    let (code, _, err) = run(&["--text-layer-only", pdf]);
+    assert_eq!(code, 0, "{err}");
+    assert_eq!(err, "");
+    let (_, _, err) = run(&["--progress", "--no-progress", "--text-layer-only", pdf]);
+    assert_eq!(err, "");
+}

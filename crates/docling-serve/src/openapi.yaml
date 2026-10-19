@@ -1380,6 +1380,30 @@ components:
         task_status:
           type: string
           enum: [pending, started, success, failure]
+        progress:
+          type: object
+          description: >
+            Where the conversion stands (#783), once the job started; a finished
+            job keeps its last counts. `documents_started` of `documents_total`
+            (a batch converts several); the document under way (`document_index`,
+            `document_name`) with its `completed_pages` of `total_pages` (PDF and
+            image conversions; a page the `document_timeout` cut off counts as
+            completed) and, while a picture pass runs, `enrichment`
+            (`step`, `label`, `completed_items`, `total_items`).
+          properties:
+            documents_started: { type: integer }
+            documents_total: { type: integer }
+            document_index: { type: integer }
+            document_name: { type: string }
+            completed_pages: { type: integer }
+            total_pages: { type: integer }
+            enrichment:
+              type: object
+              properties:
+                step: { type: string }
+                label: { type: string }
+                completed_items: { type: integer }
+                total_items: { type: integer }
         error:
           type: string
           description: Present when `task_status` is `failure`.

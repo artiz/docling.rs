@@ -100,6 +100,44 @@ export declare function unregisterBackend(name: string): boolean
 export type StreamCallback = (err: Error | null, chunk: string | undefined | null) => void
 
 /**
+ * A conversion progress event (#783; docling's `docling.datamodel.progress`), as the
+ * async conversions' `progress` callback receives it: `document_started`, one
+ * `page_completed` per PDF / image page (`completed_pages` counts up to `total_pages`,
+ * the pages `pages` selected; a page the `documentTimeout` cut off comes with
+ * `success: false`), `enrichment_progress` for the picture passes, and last
+ * `document_completed` with the result's `status`.
+ */
+export type ProgressEvent =
+  | { kind: 'document_started'; document_index: number; document_name: string }
+  | {
+      kind: 'page_completed'
+      document_index: number
+      document_name: string
+      page_no: number
+      success: boolean
+      completed_pages: number
+      total_pages: number
+    }
+  | {
+      kind: 'enrichment_progress'
+      document_index: number
+      document_name: string
+      step: 'code_formula' | 'picture_classification' | 'picture_description' | 'chart_extraction' | 'other'
+      label: string
+      completed_items: number
+      total_items: number
+    }
+  | {
+      kind: 'document_completed'
+      document_index: number
+      document_name: string
+      status: 'success' | 'partial_success' | 'failure'
+    }
+
+/** The async conversions' progress callback (#783): called with each {@link ProgressEvent} as it happens. */
+export type ProgressCallback = (event: ProgressEvent) => void
+
+/**
  * Convert a file on disk (format detected from the extension). Throws for
  * PDF/image/METS if deps aren't installed — except under `pipeline: 'vlm'`,
  * which loads no ONNX models and needs nothing on disk.
@@ -108,9 +146,9 @@ export declare function convertFile(path: string, options?: ConvertOptions | nul
 /** Convert in-memory bytes. Throws for PDF/image/METS if deps aren't installed (see {@link convertFile}). */
 export declare function convert(input: ConvertInput, options?: ConvertOptions | null): ConvertResult
 /** Async (Promise) file conversion, off the event loop. Rejects for PDF/image/METS if deps aren't installed (see {@link convertFile}). */
-export declare function convertFileAsync(path: string, options?: ConvertOptions | null): Promise<ConvertResult>
+export declare function convertFileAsync(path: string, options?: ConvertOptions | null, progress?: ProgressCallback | null): Promise<ConvertResult>
 /** Async (Promise) bytes conversion, off the event loop. Rejects for PDF/image/METS if deps aren't installed (see {@link convertFile}). */
-export declare function convertAsync(input: ConvertInput, options?: ConvertOptions | null): Promise<ConvertResult>
+export declare function convertAsync(input: ConvertInput, options?: ConvertOptions | null, progress?: ProgressCallback | null): Promise<ConvertResult>
 
 /**
  * Convert every document inside a ZIP archive on disk (#557): one
@@ -162,8 +200,8 @@ export declare class DocumentConverter {
   registeredBackends(): RegisteredBackend[]
   convertFile(path: string, options?: OutputOptions | null): ConvertResult
   convert(input: ConvertInput, options?: OutputOptions | null): ConvertResult
-  convertFileAsync(path: string, options?: OutputOptions | null): Promise<ConvertResult>
-  convertAsync(input: ConvertInput, options?: OutputOptions | null): Promise<ConvertResult>
+  convertFileAsync(path: string, options?: OutputOptions | null, progress?: ProgressCallback | null): Promise<ConvertResult>
+  convertAsync(input: ConvertInput, options?: OutputOptions | null, progress?: ProgressCallback | null): Promise<ConvertResult>
   convertFileStreaming(path: string, callback: StreamCallback, options?: OutputOptions | null): void
   /** {@link convertArchiveFile} with this converter's config per entry. */
   convertArchiveFile(path: string, options?: OutputOptions | null): Array<ArchiveItem>
@@ -197,9 +235,9 @@ export declare class Pipeline {
   convertFile(path: string, options?: OutputOptions | null): ConvertResult
   convert(input: ConvertInput, options?: OutputOptions | null): ConvertResult
   /** Async (Promise) file conversion on the warm pipeline, off the event loop. */
-  convertFileAsync(path: string, options?: OutputOptions | null): Promise<ConvertResult>
+  convertFileAsync(path: string, options?: OutputOptions | null, progress?: ProgressCallback | null): Promise<ConvertResult>
   /** Async (Promise) bytes conversion on the warm pipeline, off the event loop. */
-  convertAsync(input: ConvertInput, options?: OutputOptions | null): Promise<ConvertResult>
+  convertAsync(input: ConvertInput, options?: OutputOptions | null, progress?: ProgressCallback | null): Promise<ConvertResult>
   /** Callback-form streaming (prefer {@link Pipeline.streamFileMarkdown}). */
   convertFileStreaming(path: string, callback: StreamCallback, options?: OutputOptions | null): void
   /**

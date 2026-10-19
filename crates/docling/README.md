@@ -231,6 +231,36 @@ image files under `artifacts_dir` as that page is emitted and drops the
 bytes. Streaming is Markdown-only — JSON needs every node up front. The CLI
 streams by default (`--no-stream` buffers; `--to json` always does).
 
+## Progress events
+
+docling's conversion progress events (docling 2.139, #783): a callback on
+the converter hears every conversion's events, from the threads that
+convert — the document's start and end, one event per PDF / image page
+with the completed count (a page the `document_timeout` cut off is
+reported as failed, so the count still reaches the total), and the picture
+passes' item counts. `show_progress(true)` prints the built-in stderr
+bars instead (what the CLI's `--progress` shows):
+
+```rust
+use std::sync::Arc;
+use docling::{DocumentConverter, ProgressKind, SourceDocument};
+
+let converter = DocumentConverter::new().progress_callback(Arc::new(|e| {
+    if let ProgressKind::PageCompleted { completed_pages, total_pages, .. } = e.kind {
+        eprintln!("{}: page {completed_pages}/{total_pages}", e.document_name);
+    }
+}));
+converter.convert(SourceDocument::from_file("input.pdf").unwrap()).unwrap();
+// a batch: convert_with_progress(source, document_index, per_call_callback)
+```
+
+`docling::progress` has the types; a conversion with no callback costs
+nothing. Every surface carries it: `--progress` / `--no-progress` on the CLI
+(on by default on a terminal), `progress_callback` / `show_progress` in
+Python, `progressCallback` / `showProgress` in Node, a `progress` object on
+serve's `GET /v1/status/{id}`, and `docling_convert_with_progress` in the C
+ABI.
+
 ## PDF pipeline switches
 
 All on every surface (library builder, CLI, serve, Python, Node) — values

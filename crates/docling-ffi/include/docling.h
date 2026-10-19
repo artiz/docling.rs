@@ -16,6 +16,20 @@
 // so textual formats read as C strings.
 typedef struct DoclingResult DoclingResult;
 
+// The C progress callback of [`docling_convert_with_progress`] (#783):
+// called with each progress event as a JSON object — docling's event shape,
+// `{"kind": "page_completed", "document_index": 1, "document_name": …,
+// "page_no": 3, "success": true, "completed_pages": 3, "total_pages": 9}`;
+// `document_started` and `document_completed` (`"status"`), and
+// `enrichment_progress` (`"step"`, `"label"`, `"completed_items"`,
+// `"total_items"`) — as a NUL-terminated string valid for the duration of
+// the call, and the `user_data` pointer the caller passed through.
+//
+// The callback runs on the threads that convert — a parallel PDF walk
+// reports its pages from its workers, several at a time — so it must be
+// thread-safe, and it must not call back into docling on the same handle.
+typedef void (*DoclingProgressCallback)(const char *event_json, void *user_data);
+
 #ifdef __cplusplus
 extern "C" {
 #endif // __cplusplus
@@ -38,9 +52,27 @@ struct DoclingResult *docling_convert(const uint8_t *bytes,
                                       const char *filename,
                                       const char *options_json);
 
+// [`docling_convert`] that reports progress (#783): `callback`, when not
+// NULL, receives every progress event of the conversion as JSON (see
+// [`DoclingProgressCallback`]) with `user_data` passed through — the
+// document's start and end, one event per PDF / image page with the
+// completed count (a page the `document_timeout` cut off reported with
+// `"success": false`), the picture passes' item counts.
+//
+// # Safety
+//
+// As [`docling_convert`]; `callback` must be safe to call from any thread
+// for as long as this call runs, with `user_data` valid for that long.
+struct DoclingResult *docling_convert_with_progress(const uint8_t *bytes,
+                                                    uintptr_t len,
+                                                    const char *filename,
+                                                    const char *options_json,
+                                                    DoclingProgressCallback callback,
+                                                    void *user_data);
+
 // The converted output, or NULL when the conversion failed. NUL-terminated
-// (readable as a C string for `to` = `md` / `json` / `latex` / `html` /
-// `pandoc`); for binary output
+// (readable as a C string for `to` = `md` / `json` / `text` / `latex` / `html` /
+// `pandoc` / `vtt`); for binary output
 // (`dclx`) pair it with [`docling_result_output_len`]. Owned by the result —
 // valid until [`docling_result_free`].
 //

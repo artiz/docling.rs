@@ -13,6 +13,18 @@ pub enum ConversionStatus {
     Failure,
 }
 
+impl ConversionStatus {
+    /// docling's spelling: `success`, `partial_success`, `failure` — what
+    /// the bindings, serve and the progress events (#783) report.
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Success => "success",
+            Self::PartialSuccess => "partial_success",
+            Self::Failure => "failure",
+        }
+    }
+}
+
 /// One recorded problem of a conversion that still produced a document —
 /// docling's `ErrorItem` (`component_type`, `module_name`, `error_message`).
 /// A result with any of these is a [`ConversionStatus::PartialSuccess`].
