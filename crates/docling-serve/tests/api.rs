@@ -982,6 +982,69 @@ async fn batch_upload_returns_results_array() {
 /// Async job lifecycle (#182): submit returns a task id, status reaches
 /// `success`, and the result endpoint replays the sync response (here: the
 /// converted Markdown). Unknown ids 404.
+/// #783: a job's status carries the conversion's progress — the document
+/// under way and its page counts — and a finished job keeps the last ones.
+#[tokio::test]
+async fn async_job_status_reports_progress() {
+    let app = app();
+    let pdf = std::fs::read(
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../tests/data/pdf/sources/skipped_1page.pdf"),
+    )
+    .expect("3-page PDF fixture");
+    let (ct, body) = multipart("skipped_1page.pdf", &pdf, &[("text_layer_only", "true")]);
+    let response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/v1/convert/async")
+                .header(header::CONTENT_TYPE, ct)
+                .body(Body::from(body))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::ACCEPTED);
+    let v: serde_json::Value = serde_json::from_str(&body_string(response).await).unwrap();
+    let id = v["task_id"].as_str().expect("task id").to_string();
+    // Pending: nothing has started, so no progress yet.
+    assert!(v.get("progress").is_none(), "{v}");
+
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
+    let status = loop {
+        let response = app
+            .clone()
+            .oneshot(
+                Request::get(format!("/v1/status/{id}"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let v: serde_json::Value = serde_json::from_str(&body_string(response).await).unwrap();
+        match v["task_status"].as_str().unwrap() {
+            "success" => break v,
+            "failure" => panic!("job failed: {v}"),
+            _ if std::time::Instant::now() > deadline => panic!("job never finished"),
+            _ => tokio::time::sleep(std::time::Duration::from_millis(10)).await,
+        }
+    };
+    let progress = &status["progress"];
+    assert_eq!(progress["documents_started"], 1, "{status}");
+    assert_eq!(progress["documents_total"], 1, "{status}");
+    assert_eq!(progress["document_index"], 1, "{status}");
+    assert!(
+        progress["document_name"]
+            .as_str()
+            .is_some_and(|n| n.starts_with("skipped_1page")),
+        "{status}"
+    );
+    assert_eq!(progress["completed_pages"], 3, "{status}");
+    assert_eq!(progress["total_pages"], 3, "{status}");
+    assert!(progress.get("enrichment").is_none(), "{status}");
+}
+
 #[tokio::test]
 async fn async_job_roundtrip() {
     let app = app();

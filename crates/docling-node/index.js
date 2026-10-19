@@ -286,19 +286,30 @@ function convert(input, options) {
   return native.convert(input, options)
 }
 
+// A progress callback (#783) as the native layer takes it: the engine hands
+// each event up as JSON text through a threadsafe `(err, json)` function;
+// the user's `(event) => void` gets the parsed event.
+function progressBridge(progress) {
+  if (progress == null) return undefined
+  if (typeof progress !== 'function') throw new TypeError('progress must be a function')
+  return (err, json) => {
+    if (!err) progress(JSON.parse(json))
+  }
+}
+
 // async so a guard failure surfaces as a rejected promise, not a sync throw.
-async function convertFileAsync(path, options) {
+async function convertFileAsync(path, options, progress) {
   const claimed = fileClaim(globalBackends, path)
   if (claimed) return runClaimedAsync(claimed, (input) => native.convertAsync(input, options))
   assertMlReady(mlFormatOf(path), undefined, options)
-  return native.convertFileAsync(path, options)
+  return native.convertFileAsync(path, options, progressBridge(progress))
 }
 
-async function convertAsync(input, options) {
+async function convertAsync(input, options, progress) {
   const claimed = inputClaim(globalBackends, input)
   if (claimed) return runClaimedAsync(claimed, (input) => native.convertAsync(input, options))
   assertMlReady(mlFormatOf(input && input.name, input && input.format), undefined, options)
-  return native.convertAsync(input, options)
+  return native.convertAsync(input, options, progressBridge(progress))
 }
 
 // --- archives (#557) --------------------------------------------------------
@@ -424,20 +435,20 @@ class DocumentConverter {
     return this._inner.convert(input, options)
   }
 
-  async convertFileAsync(path, options) {
+  async convertFileAsync(path, options, progress) {
     const claimed = fileClaim(this._backends, path)
     if (claimed) return runClaimedAsync(claimed, (input) => this._inner.convertAsync(input, options))
     assertMlReady(mlFormatOf(path), undefined, { pipeline: this._pipeline })
-    return this._inner.convertFileAsync(path, options)
+    return this._inner.convertFileAsync(path, options, progressBridge(progress))
   }
 
-  async convertAsync(input, options) {
+  async convertAsync(input, options, progress) {
     const claimed = inputClaim(this._backends, input)
     if (claimed) return runClaimedAsync(claimed, (input) => this._inner.convertAsync(input, options))
     assertMlReady(mlFormatOf(input && input.name, input && input.format), undefined, {
       pipeline: this._pipeline,
     })
-    return this._inner.convertAsync(input, options)
+    return this._inner.convertAsync(input, options, progressBridge(progress))
   }
 
   // A claimed file arrives as one chunk, the way a VLM conversion does.
@@ -492,14 +503,14 @@ class Pipeline {
   }
 
   // async so a guard failure surfaces as a rejected promise, not a sync throw.
-  async convertFileAsync(path, options) {
+  async convertFileAsync(path, options, progress) {
     assertMlReady(mlFormatOf(path))
-    return this._inner.convertFileAsync(path, options)
+    return this._inner.convertFileAsync(path, options, progressBridge(progress))
   }
 
-  async convertAsync(input, options) {
+  async convertAsync(input, options, progress) {
     assertMlReady(mlFormatOf(input && input.name, input && input.format))
-    return this._inner.convertAsync(input, options)
+    return this._inner.convertAsync(input, options, progressBridge(progress))
   }
 
   convertFileStreaming(path, callback, options) {

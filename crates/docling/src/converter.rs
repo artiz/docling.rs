@@ -232,6 +232,9 @@ fn sniff_xml(bytes: &[u8]) -> InputFormat {
 }
 use crate::error::ConversionError;
 use crate::format::InputFormat;
+use crate::progress::{
+    Callbacks, EnrichmentStep, ProgressCallback, ProgressPrinter, ProgressReporter,
+};
 use crate::result::{ConversionResult, ConversionStatus};
 use crate::source::SourceDocument;
 #[cfg(feature = "pdf")]
@@ -378,6 +381,11 @@ pub struct DocumentConverter {
     /// [`Self::warm_pipeline`]; `None` loads the models per conversion.
     #[cfg(feature = "pdf")]
     warm: Option<WarmPipeline>,
+    /// Progress callbacks (#783): every conversion's events reach each of
+    /// them. See [`Self::progress_callback`].
+    progress: Callbacks,
+    /// The stderr printer [`Self::show_progress`] attaches.
+    progress_printer: Option<std::sync::Arc<ProgressPrinter>>,
     /// Backends registered with [`Self::register_backend`] (#680), in the
     /// order they are tried: highest priority first, registration order
     /// among equals.
@@ -614,6 +622,8 @@ impl Default for DocumentConverter {
             archive_limits: crate::archive::ArchiveLimits::default(),
             #[cfg(feature = "pdf")]
             warm: None,
+            progress: Callbacks::default(),
+            progress_printer: None,
             backends: std::sync::Arc::new(Vec::new()),
         }
     }
@@ -665,6 +675,48 @@ impl DocumentConverter {
         self
     }
 
+    /// Receive the progress events of every conversion this converter runs
+    /// (#783; docling's `DocumentConverter(progress_callback=…)`): the
+    /// document's start and end, a page event per PDF / image page with the
+    /// completed count (a page the budget cut off reported as failed), the
+    /// picture passes' item counts — see [`crate::progress`]. Called from
+    /// the converting threads, so the callback must be cheap and
+    /// thread-safe; several may be added, each gets every event. A
+    /// conversion with no callback costs nothing extra.
+    pub fn progress_callback(mut self, callback: ProgressCallback) -> Self {
+        self.progress.0.push(callback);
+        self
+    }
+
+    /// Print progress to stderr with the built-in [`ProgressPrinter`]
+    /// (docling's `show_progress`): a line per document, a bar for its
+    /// pages and each enrichment pass, drawn in place on a terminal. Can be
+    /// combined with [`Self::progress_callback`].
+    pub fn show_progress(mut self, enable: bool) -> Self {
+        self.progress_printer = enable.then(|| std::sync::Arc::new(ProgressPrinter::new()));
+        self
+    }
+
+    /// The reporter of one document: this converter's callbacks, the
+    /// printer and `callback`, for `document_index` named `document_name`.
+    /// For callers that drive the PDF [`Pipeline`](docling_pdf::Pipeline)
+    /// themselves (serve's warm pipeline, the CLI batch, the bindings) and
+    /// bracket the conversion with its `document_started` /
+    /// `document_completed`; [`Self::convert`] does this itself.
+    pub fn reporter(
+        &self,
+        document_index: usize,
+        document_name: &str,
+        callback: Option<ProgressCallback>,
+    ) -> ProgressReporter {
+        let mut callbacks = self.progress.0.clone();
+        if let Some(printer) = &self.progress_printer {
+            callbacks.push(std::sync::Arc::clone(printer).callback());
+        }
+        callbacks.extend(callback);
+        ProgressReporter::new(callbacks, document_index, document_name)
+    }
+
     /// OCR recognition language for scanned PDF/image pages: `"en"` (the
     /// default — English PP-OCRv3, proper Latin word spacing) or `"ch"` (the
     /// multilingual model docling conformance is measured with — glues Latin
@@ -699,20 +751,30 @@ impl DocumentConverter {
     /// converter was lent. Both are configured by the same setters, so the
     /// warm path cannot drift from the cold one.
     #[cfg(feature = "pdf")]
-    fn ml_pipeline(&self) -> Result<PipelineLease<'_>, docling_pdf::PdfError> {
+    fn ml_pipeline(
+        &self,
+        progress: Option<docling_pdf::PageProgressHook>,
+    ) -> Result<PipelineLease<'_>, docling_pdf::PdfError> {
         let switches = PipelineSwitches::of(self);
         let mut lease = match &self.warm {
             None => PipelineLease::Fresh(Box::new(switches.build()?)),
             Some(warm) => PipelineLease::Warm(warm.lease(switches)?),
         };
-        self.configure_pipeline(&mut lease);
+        self.configure_pipeline(&mut lease, progress);
         Ok(lease)
     }
 
     /// Every per-conversion setting, set unconditionally — on a warm
-    /// pipeline a setting left alone would be the previous conversion's.
+    /// pipeline a setting left alone would be the previous conversion's
+    /// (its progress hook included: a lent pipeline must not report this
+    /// document's pages to the last document's observer).
     #[cfg(feature = "pdf")]
-    fn configure_pipeline(&self, p: &mut docling_pdf::Pipeline) {
+    fn configure_pipeline(
+        &self,
+        p: &mut docling_pdf::Pipeline,
+        progress: Option<docling_pdf::PageProgressHook>,
+    ) {
+        p.set_progress(progress);
         p.set_ocr_textline_orientation(self.ocr_textline_orientation);
         p.set_ocr_lang(self.ocr_lang_choice());
         p.set_ocr_engine(self.ocr_engine_choice());
@@ -740,6 +802,7 @@ impl DocumentConverter {
     fn convert_djvu(
         &self,
         source: &SourceDocument,
+        reporter: &std::sync::Arc<ProgressReporter>,
     ) -> Result<docling_core::DoclingDocument, ConversionError> {
         use crate::backend::djvu;
         let text = djvu::convert_text_layer(source, self.page_range)?;
@@ -751,7 +814,7 @@ impl DocumentConverter {
         if !self.text_layer_only && !self.no_ocr {
             let pngs = djvu::rasterize_pages(&source.bytes, self.page_range)?;
             let mut pipeline = self
-                .ml_pipeline()
+                .ml_pipeline(reporter.page_hook())
                 .map_err(|e| ConversionError::with_source("djvu", e))?;
             let mut doc = docling_core::DoclingDocument::new(&source.name);
             for (i, (page_no, png)) in pngs.iter().enumerate() {
@@ -1472,14 +1535,15 @@ impl DocumentConverter {
         &self,
         document: &mut docling_core::DoclingDocument,
         source: &SourceDocument,
+        reporter: &ProgressReporter,
     ) {
         let format = source.format;
         #[cfg(feature = "vlm")]
         if let Some(opts) = &self.picture_description {
-            self.describe_pictures(document, source, opts);
+            self.describe_pictures(document, source, opts, reporter);
         }
         if self.picture_ocr {
-            self.ocr_pictures(document, format);
+            self.ocr_pictures(document, format, reporter);
         }
         if !self.keep_picture_images {
             strip_picture_images(document);
@@ -1494,7 +1558,12 @@ impl DocumentConverter {
     /// says why. The same image embedded twice — a DOCX walked into both
     /// the flat nodes and the item tree, a slide master's logo on every
     /// slide — is read once (cached by its bytes).
-    fn ocr_pictures(&self, document: &mut docling_core::DoclingDocument, format: InputFormat) {
+    fn ocr_pictures(
+        &self,
+        document: &mut docling_core::DoclingDocument,
+        format: InputFormat,
+        reporter: &ProgressReporter,
+    ) {
         use docling_core::{tree::TreeKind, Node};
 
         if matches!(
@@ -1506,6 +1575,36 @@ impl DocumentConverter {
         let Some(mut reader) = self.picture_reader() else {
             return;
         };
+        // The pass's item count (#783): every picture it will read.
+        let mut total = 0usize;
+        document.for_each_picture_mut(&mut |node| {
+            if let Node::Picture {
+                image: Some(_),
+                description,
+                ..
+            } = node
+            {
+                total += usize::from(undescribed(description));
+            }
+        });
+        if let Some(tree) = document.tree.as_ref() {
+            for item in &tree.items {
+                if let TreeKind::Picture {
+                    image: Some(_),
+                    description,
+                    ..
+                } = &item.kind
+                {
+                    total += usize::from(undescribed(description));
+                }
+            }
+        }
+        if total == 0 {
+            return;
+        }
+        const LABEL: &str = "picture OCR";
+        reporter.enrichment_progress(EnrichmentStep::PictureDescription, LABEL, 0, total);
+        let mut done = 0usize;
         document.for_each_picture_mut(&mut |node| {
             if let Node::Picture {
                 image: Some(img),
@@ -1515,6 +1614,13 @@ impl DocumentConverter {
             {
                 if undescribed(description) {
                     *description = reader.read(img);
+                    done += 1;
+                    reporter.enrichment_progress(
+                        EnrichmentStep::PictureDescription,
+                        LABEL,
+                        done,
+                        total,
+                    );
                 }
             }
         });
@@ -1528,6 +1634,13 @@ impl DocumentConverter {
                 {
                     if undescribed(description) {
                         *description = reader.read(img);
+                        done += 1;
+                        reporter.enrichment_progress(
+                            EnrichmentStep::PictureDescription,
+                            LABEL,
+                            done,
+                            total,
+                        );
                     }
                 }
             }
@@ -1547,6 +1660,7 @@ impl DocumentConverter {
         document: &mut docling_core::DoclingDocument,
         source: &SourceDocument,
         opts: &crate::vlm::PictureDescriptionOptions,
+        reporter: &ProgressReporter,
     ) {
         use std::collections::HashMap;
         use std::hash::{Hash, Hasher};
@@ -1677,6 +1791,13 @@ impl DocumentConverter {
         let stop = std::sync::atomic::AtomicBool::new(false);
         let answers: std::sync::Mutex<HashMap<u64, String>> = std::sync::Mutex::new(HashMap::new());
         let workers = opts.concurrency.max(1).min(jobs.len());
+        // The pass's item count (#783): `0` first, one event per answered
+        // request from the worker that got it, the total once the pass is
+        // over — also when an unreachable endpoint stopped it early.
+        const LABEL: &str = "picture description";
+        let total = jobs.len();
+        reporter.enrichment_progress(EnrichmentStep::PictureDescription, LABEL, 0, total);
+        let finished = std::sync::atomic::AtomicUsize::new(0);
         std::thread::scope(|scope| {
             for _ in 0..workers {
                 scope.spawn(|| loop {
@@ -1687,7 +1808,15 @@ impl DocumentConverter {
                     let Some((key, mimetype, bytes)) = jobs.get(i) else {
                         break;
                     };
-                    match opts.describe(&agent, mimetype, bytes) {
+                    let outcome = opts.describe(&agent, mimetype, bytes);
+                    let done = finished.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1;
+                    reporter.enrichment_progress(
+                        EnrichmentStep::PictureDescription,
+                        LABEL,
+                        done.min(total),
+                        total,
+                    );
+                    match outcome {
                         Ok(Some(text)) => {
                             answers.lock().unwrap().insert(*key, text);
                         }
@@ -1708,6 +1837,7 @@ impl DocumentConverter {
                 });
             }
         });
+        reporter.enrichment_progress(EnrichmentStep::PictureDescription, LABEL, total, total);
         let answers = answers.into_inner().unwrap();
         if answers.is_empty() {
             return;
@@ -2474,6 +2604,36 @@ impl DocumentConverter {
     /// declared is never inspected; when the retry fails too, or nothing is
     /// recognised, the first attempt's error stands.
     pub fn convert(&self, source: SourceDocument) -> Result<ConversionResult, ConversionError> {
+        self.convert_with_progress(source, 1, None)
+    }
+
+    /// [`convert`](Self::convert) as document `document_index` of a batch
+    /// (1-based; what the progress events carry — docling's `convert_all`
+    /// numbering), with `callback` receiving this conversion's events on top
+    /// of the converter's own ([`Self::progress_callback`]) — docling's
+    /// `convert(source, progress_callback=…)`, for one converter serving
+    /// several callers (#783).
+    pub fn convert_with_progress(
+        &self,
+        source: SourceDocument,
+        document_index: usize,
+        callback: Option<ProgressCallback>,
+    ) -> Result<ConversionResult, ConversionError> {
+        let reporter = std::sync::Arc::new(self.reporter(document_index, &source.name, callback));
+        reporter.document_started();
+        let result = self.convert_reporting(source, &reporter);
+        reporter.document_completed(match &result {
+            Ok(result) => result.status,
+            Err(_) => ConversionStatus::Failure,
+        });
+        result
+    }
+
+    fn convert_reporting(
+        &self,
+        source: SourceDocument,
+        reporter: &std::sync::Arc<ProgressReporter>,
+    ) -> Result<ConversionResult, ConversionError> {
         if let Some(allowed) = &self.allowed_formats {
             if !allowed.contains(&source.format) {
                 return Err(ConversionError::UnsupportedFormat(source.format));
@@ -2483,9 +2643,9 @@ impl DocumentConverter {
         // A source a registered backend claims (#680) is that backend's:
         // its failure is not retried as the content's built-in format.
         if self.claims(&source) {
-            return self.convert_as(&source);
+            return self.convert_as(&source, reporter);
         }
-        let err = match self.convert_as(&source) {
+        let err = match self.convert_as(&source, reporter) {
             Ok(result) => return Ok(result),
             Err(err) => err,
         };
@@ -2503,7 +2663,7 @@ impl DocumentConverter {
         // The retry's error replaces the first one only when it says the
         // file is encrypted (#624) — an encrypted `.ppt` named `.pptx` is
         // better reported as encrypted than as a bad ZIP.
-        let result = self.convert_as(&retry).map_err(|e| {
+        let result = self.convert_as(&retry, reporter).map_err(|e| {
             if crate::backend::offcrypto::is_encryption_error(&e) {
                 e
             } else {
@@ -2568,7 +2728,11 @@ impl DocumentConverter {
         unreachable!("is_youtube_page is false without the youtube feature")
     }
 
-    fn convert_as(&self, source: &SourceDocument) -> Result<ConversionResult, ConversionError> {
+    fn convert_as(
+        &self,
+        source: &SourceDocument,
+        reporter: &std::sync::Arc<ProgressReporter>,
+    ) -> Result<ConversionResult, ConversionError> {
         // Problems a conversion survives (docling's `ConversionResult.errors`):
         // today the PDF pipeline's spent document budget (#497).
         #[cfg_attr(not(feature = "pdf"), allow(unused_mut))]
@@ -2686,7 +2850,7 @@ impl DocumentConverter {
                 // DjVu (#434): docling.rs extension, pure-Rust decode (`djvu-rs`).
                 // The hidden text layer is the default; a scan-only DjVu falls back
                 // to rasterize + OCR when the ML pipeline is built.
-                InputFormat::Djvu => self.convert_djvu(source)?,
+                InputFormat::Djvu => self.convert_djvu(source, reporter)?,
                 // DIF/SYLK/dBase (#216): docling.rs extensions, one content-sniffing
                 // backend for the three table relics.
                 InputFormat::Dbf | InputFormat::Dif | InputFormat::Sylk => {
@@ -2799,13 +2963,23 @@ impl DocumentConverter {
                 #[cfg(feature = "pdf")]
                 InputFormat::Pdf => {
                     let converted = self
-                        .ml_pipeline()
+                        .ml_pipeline(reporter.page_hook())
                         .and_then(|mut p| {
                             p.set_force_full_page_ocr(self.force_full_page_ocr);
                             p.set_pages(self.page_range);
                             p.convert_outcome(&source.bytes, self.password.as_deref(), &source.name)
                         })
                         .map_err(|e| ConversionError::with_source("pdf", e))?;
+                    // The pages the budget left out are reported as failed
+                    // pages (#783), so the count reaches the total.
+                    if let docling_pdf::Completion::TimedOut { pages_selected, .. } =
+                        &converted.completion
+                    {
+                        reporter.fail_pages_cut_off(
+                            self.page_range.map_or(1, |(first, _)| first),
+                            *pages_selected,
+                        );
+                    }
                     if let Some(message) = converted.completion.message() {
                         errors.push(crate::ErrorItem::timeout(message));
                     }
@@ -2819,7 +2993,7 @@ impl DocumentConverter {
                 #[cfg(feature = "pdf")]
                 InputFormat::Svg if !self.text_layer_only && !self.no_ocr => {
                     let png = crate::backend::svg::rasterize_png(&source.bytes)?;
-                    self.ml_pipeline()
+                    self.ml_pipeline(reporter.page_hook())
                         .and_then(|mut p| p.convert_image(&png, &source.name))
                         .map_err(|e| ConversionError::with_source("svg", e))?
                 }
@@ -2835,12 +3009,12 @@ impl DocumentConverter {
                 }
                 #[cfg(feature = "pdf")]
                 InputFormat::Image => self
-                    .ml_pipeline()
+                    .ml_pipeline(reporter.page_hook())
                     .and_then(|mut p| p.convert_image(&source.bytes, &source.name))
                     .map_err(|e| ConversionError::with_source("image", e))?,
                 #[cfg(feature = "pdf")]
                 InputFormat::MetsGbs => self
-                    .ml_pipeline()
+                    .ml_pipeline(reporter.page_hook())
                     .and_then(|mut p| {
                         docling_pdf::convert_mets_gbs_with_pipeline(
                             &source.bytes,
@@ -2926,7 +3100,7 @@ impl DocumentConverter {
                 }
             }
         };
-        self.enrich_pictures(&mut document, source);
+        self.enrich_pictures(&mut document, source, reporter);
         // The file's own metadata (#679), read when an export will show it
         // (a docling-JSON input keeps what it carried) — before the PII
         // pass, which covers it too.
@@ -2982,7 +3156,7 @@ mod tests {
         assert_eq!(built(&warm), Some(text));
         // Converters share the handle.
         let converter = DocumentConverter::new().warm_pipeline(&warm);
-        drop(converter.ml_pipeline().unwrap());
+        drop(converter.ml_pipeline(None).unwrap());
         assert_eq!(built(&warm), Some(full));
     }
 

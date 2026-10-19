@@ -46,7 +46,12 @@ parts in one request convert as a batch with per-item status. PDF/image
 responses carry a conversion-confidence report (docling-serve v1.25 parity):
 an `X-Docling-Confidence` summary header (grades `poor`/`fair`/`good`/
 `excellent` + layout/OCR/parse scores) on every format, and the full per-page
-report under a top-level `confidence` key in `to=json` bodies.
+report under a top-level `confidence` key in `to=json` bodies. A started
+job's `/v1/status/{id}` carries a `progress` object (#783): the document
+under way (`document_index` of `documents_total`, `document_name`), its
+`completed_pages` / `total_pages` and, during a picture pass, `enrichment`
+counts — the converter's progress events, folded; a finished job keeps its
+last counts.
 
 ## Routes
 

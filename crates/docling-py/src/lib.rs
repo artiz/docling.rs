@@ -481,6 +481,8 @@ impl PyDocumentConverter {
         document_timeout = None,
         password = None,
         pdf_password = None,
+        progress_callback = None,
+        show_progress = false,
     ))]
     #[allow(clippy::too_many_arguments)]
     fn new(
@@ -555,6 +557,8 @@ impl PyDocumentConverter {
         document_timeout: Option<f64>,
         password: Option<String>,
         pdf_password: Option<String>,
+        progress_callback: Option<Py<PyAny>>,
+        show_progress: bool,
     ) -> PyResult<Self> {
         let password = password.or(pdf_password);
         // A malformed window (0-based, reversed) raises here instead of
@@ -661,9 +665,16 @@ impl PyDocumentConverter {
         };
         // ZIP inputs (#557): the same `DOCLING_RS_ZIP_MAX_*` bounds the CLI
         // and serve apply.
-        let inner = opts
+        let mut inner = opts
             .apply(base.archive_limits(docling::ArchiveLimits::from_env()))
-            .map_err(value_err)?;
+            .map_err(value_err)?
+            // docling's `show_progress` (#783): the engine's stderr printer.
+            .show_progress(show_progress);
+        // docling's `progress_callback`: every conversion's events, as the
+        // flat event objects `docling_rs.progress.event_from_dict` types.
+        if let Some(callback) = progress_callback {
+            inner = inner.progress_callback(py_progress_callback(callback));
+        }
         Ok(Self {
             inner,
             pdf_pipeline: std::sync::Arc::new(std::sync::Mutex::new(None)),
@@ -834,12 +845,14 @@ impl PyDocumentConverter {
     /// GIL released, so Ctrl-C interrupts it. `page_range=(first, last)`
     /// overrides the constructor's window for this call only — docling's
     /// `convert(source, page_range=…)` (#518).
-    #[pyo3(signature = (source, page_range = None))]
+    #[pyo3(signature = (source, page_range = None, progress_callback = None, document_index = 1))]
     fn convert(
         &self,
         py: Python<'_>,
         source: PathLike,
         page_range: Option<(usize, usize)>,
+        progress_callback: Option<Py<PyAny>>,
+        document_index: usize,
     ) -> PyResult<PyNativeResult> {
         // The converter's loader: a file only a registered backend reads
         // (#680) loads too.
@@ -847,7 +860,13 @@ impl PyDocumentConverter {
             .inner
             .load_file(&source.0)
             .map_err(|e| ConversionError::new_err(e.to_string()))?;
-        self.convert_source(py, src, check_page_range(page_range)?)
+        self.convert_source(
+            py,
+            src,
+            check_page_range(page_range)?,
+            progress_callback,
+            document_index,
+        )
     }
 
     /// Convert in-memory bytes; `name` (with extension) drives format detection,
@@ -858,7 +877,7 @@ impl PyDocumentConverter {
     /// `base_url` is the URL the bytes were fetched from (#681): relative
     /// image references resolve against it, and a YouTube watch URL turns
     /// the page into its title, metadata and caption transcript.
-    #[pyo3(signature = (name, data, page_range = None, format = None, base_url = None, media_type = None))]
+    #[pyo3(signature = (name, data, page_range = None, format = None, base_url = None, media_type = None, progress_callback = None, document_index = 1))]
     #[allow(clippy::too_many_arguments)]
     fn convert_bytes(
         &self,
@@ -869,6 +888,8 @@ impl PyDocumentConverter {
         format: Option<String>,
         base_url: Option<String>,
         media_type: Option<String>,
+        progress_callback: Option<Py<PyAny>>,
+        document_index: usize,
     ) -> PyResult<PyNativeResult> {
         let page_range = check_page_range(page_range)?;
         let bytes = data.as_bytes().to_vec();
@@ -896,7 +917,7 @@ impl PyDocumentConverter {
             Some(url) => source.with_base_url(url),
             None => source,
         };
-        self.convert_source(py, source, page_range)
+        self.convert_source(py, source, page_range, progress_callback, document_index)
     }
 
     /// Convert every document inside a ZIP archive on disk (#557): one item
@@ -980,7 +1001,12 @@ impl PyDocumentConverter {
         py: Python<'_>,
         src: SourceDocument,
         page_range: Option<(usize, usize)>,
+        progress_callback: Option<Py<PyAny>>,
+        document_index: usize,
     ) -> PyResult<PyNativeResult> {
+        // This call's own progress callback (#783), on top of the
+        // constructor's — docling's `convert(source, progress_callback=…)`.
+        let call_progress = progress_callback.map(py_progress_callback);
         // `pipeline="vlm"` (#304) is a sibling path: the remote model does the
         // reading, so neither the warm pipeline nor the declarative converter
         // applies. A conversion failure raises `ConversionError`, docling's
@@ -991,14 +1017,24 @@ impl PyDocumentConverter {
             }
             let converter = self.inner.clone();
             return run_interruptible(py, move || {
+                // The VLM pipeline has no page hook: its events are the
+                // document's start and end.
+                let reporter = converter.reporter(document_index, &src.name, call_progress);
+                reporter.document_started();
                 // A failed or cut-off page (#762, #763) is a
                 // `partial_success` with its page error.
-                let mut result =
-                    docling::vlm::convert_vlm_result(&src, &vlm).map_err(conversion_error)?;
+                let mut result = match docling::vlm::convert_vlm_result(&src, &vlm) {
+                    Ok(result) => result,
+                    Err(e) => {
+                        reporter.document_completed(docling::ConversionStatus::Failure);
+                        return Err(conversion_error(e));
+                    }
+                };
                 // The PII pass (#621) on the VLM path too.
                 result.redaction = converter
                     .redact(&mut result.document)
                     .map_err(conversion_error)?;
+                reporter.document_completed(result.status);
                 Ok(native_result(result))
             });
         }
@@ -1014,19 +1050,43 @@ impl PyDocumentConverter {
                     .as_mut()
                     .ok_or_else(|| ConversionError::new_err("PDF pipeline not initialized"))?;
                 // The warm pipeline is shared across calls: apply this call's
-                // window and put the constructor's back afterwards.
+                // window and put the constructor's back afterwards. Its
+                // progress events (#783) bracket the conversion here, as
+                // `DocumentConverter::convert` would report them.
+                let reporter = std::sync::Arc::new(converter.reporter(
+                    document_index,
+                    &src.name,
+                    call_progress,
+                ));
+                reporter.document_started();
                 pipeline.set_pages(window);
+                pipeline.set_progress(reporter.page_hook());
                 let outcome = pipeline.convert_outcome(&src.bytes, password.as_deref(), &src.name);
+                pipeline.set_progress(None);
                 pipeline.set_pages(default_window);
                 // docling's PARTIAL_SUCCESS (#497): a spent budget leaves the
                 // pages done so far and says so in `errors`.
-                let mut c = outcome.map_err(pdf_error)?;
+                let mut c = match outcome {
+                    Ok(c) => c,
+                    Err(e) => {
+                        reporter.document_completed(docling::ConversionStatus::Failure);
+                        return Err(pdf_error(e));
+                    }
+                };
+                if let docling::Completion::TimedOut { pages_selected, .. } = &c.completion {
+                    reporter.fail_pages_cut_off(window.map_or(1, |(first, _)| first), *pages_selected);
+                }
                 let errors: Vec<docling::ErrorItem> = c
                     .completion
                     .message()
                     .map(docling::ErrorItem::timeout)
                     .into_iter()
                     .collect();
+                reporter.document_completed(if errors.is_empty() {
+                    docling::ConversionStatus::Success
+                } else {
+                    docling::ConversionStatus::PartialSuccess
+                });
                 // The warm pipeline bypasses `DocumentConverter::convert`:
                 // the PII pass (#621) is applied here.
                 let redaction = converter
@@ -1052,10 +1112,52 @@ impl PyDocumentConverter {
             None => self.inner.clone(),
         };
         run_interruptible(py, move || {
-            let result = converter.convert(src).map_err(conversion_error)?;
+            let result = converter
+                .convert_with_progress(src, document_index, call_progress)
+                .map_err(conversion_error)?;
             Ok(native_result(result))
         })
     }
+}
+
+/// A Python callable as the engine's progress callback (#783): called with
+/// the event as a flat `dict` (docling's event fields; `kind` names the
+/// event) from the converting threads — attached to the interpreter for the
+/// call, so the GIL serializes the callbacks like any Python code. An
+/// exception the callable raises is printed and swallowed, as docling's
+/// reporter logs it: an observer must not break the conversion.
+fn py_progress_callback(callback: Py<PyAny>) -> docling::ProgressCallback {
+    std::sync::Arc::new(move |event: &docling::ProgressEvent| {
+        Python::attach(|py| {
+            let outcome = progress_event_dict(py, event)
+                .and_then(|dict| callback.call1(py, (dict,)).map(|_| ()));
+            if let Err(e) = outcome {
+                eprintln!("docling: warning: progress callback raised; ignored");
+                e.print(py);
+            }
+        })
+    })
+}
+
+/// The event's flat fields as a `dict`.
+fn progress_event_dict(py: Python<'_>, event: &docling::ProgressEvent) -> PyResult<Py<PyAny>> {
+    use pyo3::types::PyDict;
+    let dict = PyDict::new(py);
+    let serde_json::Value::Object(fields) = event.to_json() else {
+        unreachable!("an event is a JSON object");
+    };
+    for (key, value) in &fields {
+        match value {
+            serde_json::Value::Bool(b) => dict.set_item(key, *b)?,
+            serde_json::Value::Number(n) => match n.as_u64() {
+                Some(u) => dict.set_item(key, u)?,
+                None => dict.set_item(key, n.as_f64().unwrap_or_default())?,
+            },
+            serde_json::Value::String(s) => dict.set_item(key, s.as_str())?,
+            other => dict.set_item(key, other.to_string())?,
+        }
+    }
+    Ok(dict.into_any().unbind())
 }
 
 /// Map a docling `InputFormat` string value (as in `docling_rs.InputFormat`,

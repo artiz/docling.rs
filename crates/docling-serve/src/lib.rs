@@ -1105,6 +1105,117 @@ struct Job {
     state: JobState,
     /// When the job left the queue (finished or failed) — drives TTL eviction.
     done_at: Option<std::time::Instant>,
+    /// The job's conversion progress (#783), written by the converting
+    /// thread, read by `GET /v1/status/{id}`.
+    progress: Arc<Mutex<JobProgress>>,
+}
+
+/// Where an async job's conversion stands (#783): the document it is on and
+/// its pages / enrichment counts, from the converter's progress events. A
+/// finished job keeps its last counts.
+#[derive(Clone, Debug, Default, Serialize)]
+struct JobProgress {
+    /// Documents the job has started on, of `documents_total` (a batch
+    /// request converts several).
+    documents_started: usize,
+    documents_total: usize,
+    /// The document being converted: its 1-based index in the request and
+    /// its name.
+    document_index: usize,
+    document_name: String,
+    /// Pages finished of the pages selected — the PDF / image pipeline's.
+    completed_pages: usize,
+    total_pages: usize,
+    /// The enrichment pass under way (the picture passes), if any.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    enrichment: Option<EnrichmentProgress>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+struct EnrichmentProgress {
+    step: &'static str,
+    label: &'static str,
+    completed_items: usize,
+    total_items: usize,
+}
+
+impl JobProgress {
+    /// Fold one progress event in. A job converts its documents one after
+    /// another, each reported as document 1 by the conversion functions it
+    /// shares with the sync endpoints, so the position in the request is
+    /// counted here.
+    fn record(&mut self, event: &docling::ProgressEvent) {
+        use docling::ProgressKind;
+        match &event.kind {
+            ProgressKind::DocumentStarted => {
+                self.documents_started += 1;
+                self.document_index = self.documents_started;
+                self.document_name = event.document_name.clone();
+                self.completed_pages = 0;
+                self.total_pages = 0;
+                self.enrichment = None;
+            }
+            ProgressKind::PageCompleted {
+                completed_pages,
+                total_pages,
+                ..
+            } => {
+                self.completed_pages = *completed_pages;
+                self.total_pages = *total_pages;
+            }
+            ProgressKind::EnrichmentProgress {
+                step,
+                label,
+                completed_items,
+                total_items,
+            } => {
+                self.enrichment = Some(EnrichmentProgress {
+                    step: step.name(),
+                    label,
+                    completed_items: *completed_items,
+                    total_items: *total_items,
+                });
+            }
+            _ => {}
+        }
+    }
+}
+
+thread_local! {
+    /// The progress slot of the async job running on this blocking thread
+    /// (#783), set by `submit_job` around the job's work: the conversion
+    /// functions are shared with the sync endpoints, where there is no
+    /// job, so the job reaches them through the thread rather than every
+    /// signature between.
+    static JOB_PROGRESS: std::cell::RefCell<Option<Arc<Mutex<JobProgress>>>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+/// Sets this thread's job progress slot for a job's work and clears it on
+/// drop — also when the work panics, so a pooled thread never carries a
+/// finished job's slot into the next request it serves.
+struct JobProgressScope;
+
+impl JobProgressScope {
+    fn enter(progress: Arc<Mutex<JobProgress>>) -> Self {
+        JOB_PROGRESS.with(|s| *s.borrow_mut() = Some(progress));
+        Self
+    }
+}
+
+impl Drop for JobProgressScope {
+    fn drop(&mut self) {
+        JOB_PROGRESS.with(|s| *s.borrow_mut() = None);
+    }
+}
+
+/// This thread's job progress slot as a progress callback, `None` on a
+/// sync request.
+fn job_progress_callback() -> Option<docling::ProgressCallback> {
+    let slot = JOB_PROGRESS.with(|s| s.borrow().clone())?;
+    Some(Arc::new(move |event: &docling::ProgressEvent| {
+        slot.lock().unwrap_or_else(|p| p.into_inner()).record(event);
+    }))
 }
 
 enum JobState {
@@ -1182,7 +1293,8 @@ async fn convert_async(
         return Err(e);
     }
 
-    let id = submit_job(&state, move |st, rt| {
+    let documents_total = sources.len();
+    let id = submit_job(&state, documents_total, move |st, rt| {
         run_conversion(st, sources, &options, &to, image_mode, target.as_ref(), rt)
     })?;
 
@@ -1199,7 +1311,7 @@ async fn convert_async(
 /// for `/v1/result/{id}` until the TTL evicts it. Refused with 429 when the
 /// job map is full. Shared by `/v1/convert/async` and the upstream-shaped
 /// async routes (#615).
-fn submit_job<F>(state: &Arc<AppState>, work: F) -> Result<String, ApiError>
+fn submit_job<F>(state: &Arc<AppState>, documents_total: usize, work: F) -> Result<String, ApiError>
 where
     F: FnOnce(&AppState, &tokio::runtime::Handle) -> Result<StoredResponse, ApiError>
         + Send
@@ -1223,6 +1335,10 @@ where
             Job {
                 state: JobState::Pending,
                 done_at: None,
+                progress: Arc::new(Mutex::new(JobProgress {
+                    documents_total,
+                    ..JobProgress::default()
+                })),
             },
         );
     }
@@ -1236,15 +1352,20 @@ where
         let Ok(permit) = st.permits.clone().acquire_owned().await else {
             return;
         };
-        if let Some(job) = st.jobs.lock().unwrap().get_mut(&job_id) {
+        let progress = if let Some(job) = st.jobs.lock().unwrap().get_mut(&job_id) {
             job.state = JobState::Started;
+            Arc::clone(&job.progress)
         } else {
             return; // evicted while queued (TTL abuse would need days)
-        }
+        };
         let stx = st.clone();
         let rt = tokio::runtime::Handle::current();
         let outcome = tokio::task::spawn_blocking(move || {
+            // The job's progress slot (#783) for the conversions `work`
+            // runs on this thread, cleared when the scope ends.
+            let scope = JobProgressScope::enter(progress);
             let out = work(&stx, &rt);
+            drop(scope);
             trim_heap();
             out
         })
@@ -1282,6 +1403,11 @@ async fn job_status(
             .into_response(),
         Some(job) => {
             let mut body = json!({ "task_id": id, "task_status": job.state.as_str() });
+            // Where the conversion stands (#783), once it started.
+            if !matches!(job.state, JobState::Pending) {
+                let progress = job.progress.lock().unwrap_or_else(|p| p.into_inner());
+                body["progress"] = json!(*progress);
+            }
             if let JobState::Failure(_, msg, code) = &job.state {
                 body["error"] = json!(msg);
                 if let Some(code) = code {
@@ -2504,18 +2630,33 @@ fn convert_document_inner(
                 o.heading_hierarchy.unwrap_or(false),
             ));
             pipeline.set_document_timeout(o.document_timeout().map_err(bad)?);
-            let mut converted = match source.format {
+            // The document's progress events (#783) — an async job's status
+            // reads them; the warm pipeline bypasses `convert`, so the
+            // reporter brackets the conversion here.
+            let reporter = Arc::new(finish.reporter(1, &source.name, None));
+            reporter.document_started();
+            pipeline.set_progress(reporter.page_hook());
+            let converted = match source.format {
                 InputFormat::Pdf => pipeline
                     .convert_outcome(&source.bytes, o.password.as_deref(), &source.name)
-                    .map(|c| Converted {
-                        errors: c
-                            .completion
-                            .message()
-                            .map(docling::ErrorItem::timeout)
-                            .into_iter()
-                            .collect(),
-                        document: c.document,
-                        redaction: None,
+                    .map(|c| {
+                        if let docling::Completion::TimedOut { pages_selected, .. } = &c.completion
+                        {
+                            reporter.fail_pages_cut_off(
+                                o.page_range().ok().flatten().map_or(1, |(first, _)| first),
+                                *pages_selected,
+                            );
+                        }
+                        Converted {
+                            errors: c
+                                .completion
+                                .message()
+                                .map(docling::ErrorItem::timeout)
+                                .into_iter()
+                                .collect(),
+                            document: c.document,
+                            redaction: None,
+                        }
                     }),
                 _ => pipeline
                     .convert_image(&source.bytes, &source.name)
@@ -2524,10 +2665,16 @@ fn convert_document_inner(
                         errors: Vec::new(),
                         redaction: None,
                     }),
-            }
+            };
+            pipeline.set_progress(None);
+            reporter.document_completed(match &converted {
+                Ok(c) if c.errors.is_empty() => docling::ConversionStatus::Success,
+                Ok(_) => docling::ConversionStatus::PartialSuccess,
+                Err(_) => docling::ConversionStatus::Failure,
+            });
             // An encrypted PDF is the client's to fix (422 + `code`, #636);
             // anything else the warm pipeline fails on keeps its status.
-            .map_err(|e| pdf_api_error(&e, ApiError::Internal))?;
+            let mut converted = converted.map_err(|e| pdf_api_error(&e, ApiError::Internal))?;
             finish.finish_document(&mut converted.document);
             // The warm pipeline bypasses `DocumentConverter::convert`, so the
             // PII pass (#621) is applied here, like the serializer knobs.
@@ -2671,6 +2818,12 @@ fn request_converter(
     }
     o.apply(DocumentConverter::new().strict(state.cfg.strict))
         .map_err(bad)
+        // An async job's progress (#783) follows the converter: the job's
+        // slot, when this thread runs one, hears every event.
+        .map(|converter| match job_progress_callback() {
+            Some(callback) => converter.progress_callback(callback),
+            None => converter,
+        })
 }
 
 /// Markdown response: converted through the streaming serializer, body sent

@@ -33,7 +33,7 @@
 //! allocations owned by the caller until `docling_result_free`. Panics never
 //! unwind across the FFI boundary — they surface as an error result.
 
-use std::ffi::{c_char, CStr, CString};
+use std::ffi::{c_char, c_void, CStr, CString};
 use std::panic::{catch_unwind, AssertUnwindSafe};
 
 use docling::{ConvertOptions, DocumentConverter, ImageMode, InputFormat, SourceDocument};
@@ -89,7 +89,49 @@ fn err_result(message: String) -> *mut DoclingResult {
     }))
 }
 
-fn convert_impl(bytes: &[u8], filename: &str, options_json: &str) -> Result<Vec<u8>, String> {
+/// The C progress callback of [`docling_convert_with_progress`] (#783):
+/// called with each progress event as a JSON object — docling's event shape,
+/// `{"kind": "page_completed", "document_index": 1, "document_name": …,
+/// "page_no": 3, "success": true, "completed_pages": 3, "total_pages": 9}`;
+/// `document_started` and `document_completed` (`"status"`), and
+/// `enrichment_progress` (`"step"`, `"label"`, `"completed_items"`,
+/// `"total_items"`) — as a NUL-terminated string valid for the duration of
+/// the call, and the `user_data` pointer the caller passed through.
+///
+/// The callback runs on the threads that convert — a parallel PDF walk
+/// reports its pages from its workers, several at a time — so it must be
+/// thread-safe, and it must not call back into docling on the same handle.
+pub type DoclingProgressCallback =
+    Option<unsafe extern "C" fn(event_json: *const c_char, user_data: *mut c_void)>;
+
+/// The C callback and its `user_data`, carried into the converter's
+/// `Send + Sync` callback: the embedder promised (the function's contract)
+/// that both may be used from any thread.
+struct ProgressBridge {
+    callback: unsafe extern "C" fn(*const c_char, *mut c_void),
+    user_data: *mut c_void,
+}
+
+// SAFETY: see `ProgressBridge` — the embedder's callback contract.
+unsafe impl Send for ProgressBridge {}
+unsafe impl Sync for ProgressBridge {}
+
+impl ProgressBridge {
+    fn call(&self, event: &docling::ProgressEvent) {
+        let Ok(json) = CString::new(event.to_json().to_string()) else {
+            return;
+        };
+        // SAFETY: the pointer outlives the call, per the callback's contract.
+        unsafe { (self.callback)(json.as_ptr(), self.user_data) }
+    }
+}
+
+fn convert_impl(
+    bytes: &[u8],
+    filename: &str,
+    options_json: &str,
+    progress: Option<ProgressBridge>,
+) -> Result<Vec<u8>, String> {
     let options = parse_options(options_json)?;
 
     let ext = filename.rsplit('.').next().unwrap_or_default();
@@ -99,10 +141,13 @@ fn convert_impl(bytes: &[u8], filename: &str, options_json: &str) -> Result<Vec<
 
     // The shared validation + builder mapping (#577): the same rejections
     // and the same defaults as every other surface.
-    let converter = options
+    let mut converter = options
         .convert
         .apply(DocumentConverter::new())
         .map_err(|e| e.to_string())?;
+    if let Some(bridge) = progress {
+        converter = converter.progress_callback(std::sync::Arc::new(move |e| bridge.call(e)));
+    }
 
     let result = converter.convert(source).map_err(|e| e.to_string())?;
     let document = result.document;
@@ -185,6 +230,40 @@ pub unsafe extern "C" fn docling_convert(
     filename: *const c_char,
     options_json: *const c_char,
 ) -> *mut DoclingResult {
+    docling_convert_with_progress(
+        bytes,
+        len,
+        filename,
+        options_json,
+        None,
+        std::ptr::null_mut(),
+    )
+}
+
+/// [`docling_convert`] that reports progress (#783): `callback`, when not
+/// NULL, receives every progress event of the conversion as JSON (see
+/// [`DoclingProgressCallback`]) with `user_data` passed through — the
+/// document's start and end, one event per PDF / image page with the
+/// completed count (a page the `document_timeout` cut off reported with
+/// `"success": false`), the picture passes' item counts.
+///
+/// # Safety
+///
+/// As [`docling_convert`]; `callback` must be safe to call from any thread
+/// for as long as this call runs, with `user_data` valid for that long.
+#[no_mangle]
+pub unsafe extern "C" fn docling_convert_with_progress(
+    bytes: *const u8,
+    len: usize,
+    filename: *const c_char,
+    options_json: *const c_char,
+    callback: DoclingProgressCallback,
+    user_data: *mut c_void,
+) -> *mut DoclingResult {
+    let progress = callback.map(|callback| ProgressBridge {
+        callback,
+        user_data,
+    });
     let outcome = catch_unwind(AssertUnwindSafe(|| {
         let data: &[u8] = if bytes.is_null() {
             if len != 0 {
@@ -205,7 +284,7 @@ pub unsafe extern "C" fn docling_convert(
                 None => return err_result("options_json must be valid UTF-8".into()),
             }
         };
-        match convert_impl(data, filename, options) {
+        match convert_impl(data, filename, options, progress) {
             Ok(mut output) => {
                 // Trailing NUL so textual outputs read as C strings; not
                 // counted by docling_result_output_len.

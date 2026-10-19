@@ -185,6 +185,38 @@ subclasses `PasswordRequiredError`, `WrongPasswordError` and, for the
 rest, `EncryptionError` (`docling_rs.exceptions`); the CLI message and exit
 code are unchanged, as is the Node binding's error (a reason string).
 
+### Conversion progress events (#783)
+
+docling 2.139's `progress_callback` / `show_progress` (docling#4560) are
+ported as `docling::progress`: a `ProgressCallback` on `DocumentConverter`
+(`progress_callback`, every conversion; `convert_with_progress(source,
+document_index, callback)` for one call and a batch position) receives
+docling's event sequence per document — `document_started`, a
+`page_completed` per PDF / image page with `page_no`, `success`,
+`completed_pages`, `total_pages` (the page window's count; a page the
+`document_timeout` cut off is reported with `success: false` once the walk
+ended, so the count reaches the total, docling's `fail_unfinished_pages`),
+`enrichment_progress` for the passes the converter runs on the assembled
+document (picture description, picture OCR), and `document_completed` with
+the result's status. The events come from the converting threads, as
+docling's do; a panicking callback is caught and warned about, as docling
+swallows a raising one. `docling_pdf::Pipeline::set_progress` is the
+per-page hook underneath (`PageProgress` with the page number, on every
+walk — buffered, streaming, images). Every surface carries it: `--progress`
+/ `--no-progress` on the CLI (docling's flags; on by default when stderr is
+a terminal, the pre-#783 batch dot progress replaced by the bars),
+`progress_callback` / `show_progress` and the `docling_rs.progress` classes
+in Python (docling's names, `convert_all` numbering `document_index`),
+`progressCallback` on the async Node conversions and `showProgress`, a
+`progress` object on serve's `GET /v1/status/{id}`, and
+`docling_convert_with_progress` in the C ABI (events as JSON). Deliberate
+differences: docling's `phase_started` events are not emitted — the
+pipeline has no separate build / assemble / enrich phases to time — and the
+per-page enrichments (code/formula, picture classification) run inside the
+page walk, so they report through the page events, not as enrichment steps;
+`show_progress` is a process-local display switch, not a `ConvertOptions`
+field, so it has no serve / FFI option (serve reports the counts instead).
+
 ## 2. Format coverage
 
 Conformance is measured against the latest **published** docling (installed from

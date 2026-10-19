@@ -35,6 +35,7 @@ pub mod memory;
 mod metadata;
 pub mod options;
 pub mod plugins;
+pub mod progress;
 mod redact;
 mod result;
 mod sniff;
@@ -65,6 +66,10 @@ pub use options::{
     cli_flag, merge_options, ConvertOptions, OptionInfo, OptionsError, PipelineKind, OPTIONS,
 };
 pub use plugins::{BackendMatcher, RegisteredBackend};
+pub use progress::{
+    EnrichmentStep, ProgressCallback, ProgressEvent, ProgressKind, ProgressPrinter,
+    ProgressReporter,
+};
 pub use result::{ConversionResult, ConversionStatus, ErrorItem};
 pub use source::SourceDocument;
 #[cfg(feature = "pdf")]
@@ -87,8 +92,9 @@ pub use docling_core::{DocumentMetadata, GpsPosition, MetadataOutput};
 #[cfg(feature = "pdf")]
 pub use docling_pdf::{
     model_inventory, page_count as pdf_page_count, render_pages as render_pdf_pages,
-    tesseract_lang_arg, EnrichmentOptions, HeadingHierarchyOptions, ImageOutput, ModelEntry,
-    OcrEngine, OcrLang, OcrMode, PdfError, Pipeline, RenderedPage,
+    tesseract_lang_arg, Completion, EnrichmentOptions, HeadingHierarchyOptions, ImageOutput,
+    ModelEntry, OcrEngine, OcrLang, OcrMode, PageProgress, PageProgressHook, PdfError, Pipeline,
+    RenderedPage,
 };
 // The pure-Rust text-layer extraction (no pdfium, no models) — compiled with
 // either PDF feature. The CLI uses it as the `--text-layer-only` fallback when the

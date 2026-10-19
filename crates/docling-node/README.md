@@ -309,7 +309,8 @@ never OCR, keep layout and tables; `skipOcr` is its pre-2.0 name),
 `images_scale` / `generate_page_images`, #520), `documentTimeout` (a per-document
 budget in seconds, docling's `document_timeout`: once spent, the pages done so
 far are the document, `status` is `"partial_success"` and `errors` says why,
-#497) and the enrichment switches — and
+#497), `showProgress` (progress bars on stderr, #783) and the enrichment
+switches — and
 applies them to every conversion on that instance, e.g.
 `new Pipeline({ ocrEngine: 'tesseract', ocrLang: 'por+eng' })` for Portuguese
 scans. They are validated on `new` exactly as `DocumentConverter` validates
@@ -438,8 +439,8 @@ warm `Pipeline` (PDF/images only).
 | --- | --- | --- |
 | `convertFile(path, options?)` | `ConvertResult` | Detects format from the extension. |
 | `convert(input, options?)` | `ConvertResult` | In-memory bytes (`{ name, data, format? }`). |
-| `convertFileAsync(path, options?)` | `Promise<ConvertResult>` | Off the event loop. |
-| `convertAsync(input, options?)` | `Promise<ConvertResult>` | Off the event loop. |
+| `convertFileAsync(path, options?, progress?)` | `Promise<ConvertResult>` | Off the event loop; `progress` hears the conversion's events (#783, below). |
+| `convertAsync(input, options?, progress?)` | `Promise<ConvertResult>` | Off the event loop; `progress` as above. |
 | `convertArchiveFile(path, options?)` | `ArchiveItem[]` | Every document inside a ZIP (#557): per entry `outcome` `converted` (`result`) / `skipped` (`error` = the reason) / `failed` (`error`); one broken document fails only itself. |
 | `convertArchive(input, options?)` | `ArchiveItem[]` | Same, over in-memory bytes (`format` ignored). |
 | `convertArchiveFileAsync` / `convertArchiveAsync` | `Promise<ArchiveItem[]>` | Off the event loop. |
@@ -615,6 +616,32 @@ interface ConvertResult {
 ```
 
 Full TypeScript types are generated into `index.d.ts` / `native.d.ts`.
+
+### Progress
+
+docling's conversion progress events (docling 2.139, #783): the async
+conversions — the module-level `convertFileAsync` / `convertAsync` and the
+same methods of `DocumentConverter` and `Pipeline` — take a third
+`progress` argument, a `(event) => void` called with every event of that
+conversion as it happens: `document_started`, one `page_completed` per PDF
+/ image page (`completedPages` counts up to `totalPages`, the pages `pages`
+selected; a page the `documentTimeout` cut off comes with `success: false`,
+so the count still reaches the total), `enrichment_progress` for the picture
+passes, and last `document_completed` with the result's `status`. The
+events arrive on the event loop, so a sync conversion would deliver them
+only after it returned — which is why the sync calls take none.
+`showProgress: true` in the options prints the engine's progress bars to
+stderr instead.
+
+```js
+import { convertFileAsync } from 'docling.rs'
+
+const { content } = await convertFileAsync('report.pdf', { to: 'markdown' }, (event) => {
+  if (event.kind === 'page_completed') {
+    console.error(`${event.document_name}: page ${event.completed_pages}/${event.total_pages}`)
+  }
+})
+```
 
 ## Examples
 

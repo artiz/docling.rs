@@ -57,6 +57,7 @@ from .options import (
     TableStructureOptions,
 )
 from . import chunking
+from . import progress
 
 # GPU wheels (PyPI ``docling-rs-cuda``) bundle ONNX Runtime's CUDA provider
 # libraries next to `_native` in this package directory; the native module is
@@ -107,6 +108,7 @@ VIDEO_FRAMES_ALL = 2**64 - 1
 
 __all__ = [
     "DocumentConverter",
+    "progress",
     "VIDEO_FRAMES_ALL",
     "ConversionResult",
     "ArchiveItem",
@@ -227,6 +229,19 @@ def _is_api_options(pd: Any) -> bool:
     """docling's ``PictureDescriptionApiOptions`` (ours, or docling's own):
     anything with a ``url`` and no Python-side describer."""
     return pd is not None and hasattr(pd, "url") and not hasattr(pd, "_annotate_images")
+
+
+def _progress_bridge(callback):
+    """The native layer hands each progress event up as a flat ``dict``
+    (#783); the user's callback gets the typed :mod:`docling_rs.progress`
+    event."""
+    if callback is None:
+        return None
+
+    def bridge(event):
+        callback(progress.event_from_dict(event))
+
+    return bridge
 
 
 class DocumentConverter:
@@ -391,6 +406,13 @@ class DocumentConverter:
       the result is a ``PARTIAL_SUCCESS`` whose ``.errors`` says why. ``None``
       (default) is unlimited. Also accepted docling-shaped, via
       ``pipeline_options.document_timeout``.
+    * ``progress_callback`` — docling's (#783, docling 2.139): a callable
+      receiving the progress events of every conversion — document start
+      and end, one per PDF / image page with the completed count, the
+      picture passes' item counts — as the :mod:`docling_rs.progress`
+      classes, from the converting threads. ``show_progress=True`` prints
+      progress bars to stderr instead (or as well); ``convert`` /
+      ``convert_all`` also take a per-call ``progress_callback``.
     * ``password`` — the password of an encrypted PDF (#611; docling's
       ``--pdf-password``) or Office document — ``.docx``/``.xlsx``/
       ``.pptx``/``.doc``/``.xls``/``.ppt`` (#625, beyond docling, which
@@ -480,6 +502,8 @@ class DocumentConverter:
         document_timeout: Optional[float] = None,
         password: Optional[str] = None,
         pdf_password: Optional[str] = None,
+        progress_callback: Optional["progress.ProgressCallback"] = None,
+        show_progress: bool = False,
         page_range: Optional[Tuple[int, int]] = None,
         images_scale: Optional[float] = None,
         generate_page_images: bool = False,
@@ -741,6 +765,8 @@ class DocumentConverter:
             vlm_max_tokens=vlm_max_tokens,
             document_timeout=document_timeout,
             password=password,
+            progress_callback=_progress_bridge(progress_callback),
+            show_progress=show_progress,
             page_range=_page_range(page_range),
             images_scale=images_scale,
             generate_page_images=generate_page_images,
@@ -840,6 +866,7 @@ class DocumentConverter:
         self,
         source: Union[str, os.PathLike, DocumentStream],
         page_range: Optional[Tuple[int, int]] = None,
+        progress_callback: Optional["progress.ProgressCallback"] = None,
     ) -> ConversionResult:
         """Convert a filesystem path (str / pathlib.Path), an ``http(s)://``
         URL (downloaded first, as docling does) or an in-memory
@@ -848,22 +875,28 @@ class DocumentConverter:
         ``convert(source, page_range=…)`` does (#518); ``None`` keeps the
         constructor's window (all pages by default). A YouTube watch URL
         converts to the video's title, metadata and caption transcript as
-        timed items (#681), the language from ``asr_lang``."""
-        return self._finish(_wrap(self._convert_native(source, page_range)))
+        timed items (#681), the language from ``asr_lang``.
+        ``progress_callback`` receives this call's progress events (#783)
+        on top of the constructor's callback — see :mod:`docling_rs.progress`."""
+        return self._finish(_wrap(self._convert_native(source, page_range, progress_callback)))
 
     def convert_all(
         self,
         sources: Iterable[Union[str, os.PathLike, DocumentStream]],
         raises_on_error: bool = True,
         page_range: Optional[Tuple[int, int]] = None,
+        progress_callback: Optional["progress.ProgressCallback"] = None,
     ) -> Iterator[ConversionResult]:
         """Convert many sources, yielding a :class:`ConversionResult` each
         (docling's ``convert_all``). With ``raises_on_error=False`` a failing
         source yields a ``failure`` result (empty document) instead of raising.
-        ``page_range`` as in :meth:`convert`."""
-        for source in sources:
+        ``page_range`` and ``progress_callback`` as in :meth:`convert`; the
+        events' ``document_index`` is the source's 1-based position here."""
+        for index, source in enumerate(sources, start=1):
             try:
-                yield self._finish(_wrap(self._convert_native(source, page_range)))
+                yield self._finish(
+                    _wrap(self._convert_native(source, page_range, progress_callback, index))
+                )
             except Exception:
                 if raises_on_error:
                     raise
@@ -877,16 +910,23 @@ class DocumentConverter:
         page_range: Optional[Tuple[int, int]] = None,
         base_url: Optional[str] = None,
         media_type: Optional[str] = None,
+        progress_callback: Optional["progress.ProgressCallback"] = None,
     ) -> ConversionResult:
         """Convert in-memory bytes; ``name``'s extension drives format detection
-        (docling's ``DocumentStream`` counterpart). ``page_range`` as in
-        :meth:`convert`. ``base_url`` is the URL the bytes came from (#681):
-        relative image references resolve against it, and a YouTube watch
-        URL makes the page its transcript. ``media_type`` (``Content-Type``)
-        is what a registered backend can claim the bytes by (#680), and the
-        format when the name has no known extension."""
+        (docling's ``DocumentStream`` counterpart). ``page_range`` and
+        ``progress_callback`` as in :meth:`convert`. ``base_url`` is the URL
+        the bytes came from (#681): relative image references resolve
+        against it, and a YouTube watch URL makes the page its transcript.
+        ``media_type`` (``Content-Type``) is what a registered backend can
+        claim the bytes by (#680), and the format when the name has no known
+        extension."""
         native = self._inner.convert_bytes(
-            name, data, page_range=_page_range(page_range), base_url=base_url, media_type=media_type
+            name,
+            data,
+            page_range=_page_range(page_range),
+            base_url=base_url,
+            media_type=media_type,
+            progress_callback=_progress_bridge(progress_callback),
         )
         return self._finish(_wrap(native))
 
@@ -914,8 +954,9 @@ class DocumentConverter:
                 result = self._finish(_wrap(item.result))
             yield ArchiveItem(item.path, item.outcome, result, item.error)
 
-    def _convert_native(self, source, page_range=None):
+    def _convert_native(self, source, page_range=None, progress_callback=None, document_index=1):
         page_range = _page_range(page_range)
+        callback = _progress_bridge(progress_callback)
         if isinstance(source, DocumentStream):
             fmt = getattr(source, "format", None)
             return self._inner.convert_bytes(
@@ -923,12 +964,26 @@ class DocumentConverter:
                 _stream_bytes(source.stream),
                 page_range=page_range,
                 format=InputFormat(fmt).value if fmt is not None else None,
+                progress_callback=callback,
+                document_index=document_index,
             )
         if isinstance(source, str) and _is_url(source):
             name, data = _fetch_url(source)
             # The URL rides along (#681): a YouTube watch page is routed by it.
-            return self._inner.convert_bytes(name, data, page_range=page_range, base_url=source)
-        return self._inner.convert(source, page_range=page_range)
+            return self._inner.convert_bytes(
+                name,
+                data,
+                page_range=page_range,
+                base_url=source,
+                progress_callback=callback,
+                document_index=document_index,
+            )
+        return self._inner.convert(
+            source,
+            page_range=page_range,
+            progress_callback=callback,
+            document_index=document_index,
+        )
 
     def _finish(self, result: ConversionResult) -> ConversionResult:
         if self._picture_description is not None and result.status != "failure":

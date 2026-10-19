@@ -147,7 +147,16 @@ pub(crate) fn spawn(
                 && !converter.claims(&source)
                 && crate::sniff::looks_like_pdf(&source.bytes) =>
         {
-            run_pdf(converter.stream_settings(), &source, &options, &tx)
+            // The stream's progress events (#783): the converter's
+            // callbacks, as document 1, bracketing the page walk below.
+            let reporter = std::sync::Arc::new(converter.reporter(1, &source.name, None));
+            run_pdf(
+                converter.stream_settings(),
+                &source,
+                &options,
+                &tx,
+                &reporter,
+            )
         }
         // Every other backend builds the whole `DoclingDocument` synchronously, so
         // there is no latency to stream away; serialize it through the same chunk
@@ -208,7 +217,9 @@ fn run_pdf(
     source: &SourceDocument,
     options: &MarkdownExportOptions,
     tx: &std::sync::mpsc::SyncSender<Result<String, ConversionError>>,
+    reporter: &std::sync::Arc<crate::progress::ProgressReporter>,
 ) {
+    reporter.document_started();
     // The PII pass (#621) on the streaming path: one `Redactor` across the
     // page batches, so pseudonym numbering follows document order exactly
     // as the buffered pass numbers it. `BoxOut` needs the OCR pipeline,
@@ -277,10 +288,12 @@ fn run_pdf(
     }) {
         Ok(p) => p,
         Err(e) => {
+            reporter.document_completed(crate::ConversionStatus::Failure);
             let _ = tx.send(Err(ConversionError::Parse(e.to_string())));
             return;
         }
     };
+    pipeline.set_progress(reporter.page_hook());
 
     let result = pipeline.convert_streaming_outcome(
         &source.bytes,
@@ -314,12 +327,22 @@ fn run_pdf(
             if !tail.is_empty() {
                 let _ = tx.send(Ok(tail));
             }
+            // The pages the budget left out are failed pages (#783).
+            if let docling_pdf::Completion::TimedOut { pages_selected, .. } = &completion {
+                reporter.fail_pages_cut_off(
+                    settings.page_range.map_or(1, |(first, _)| first),
+                    *pages_selected,
+                );
+            }
             // A spent document budget (#497) is the stream's last item, after
             // every chunk of the partial document: the consumer has the pages
             // that fit and learns the document was cut — docling's
             // PARTIAL_SUCCESS, which a chunk stream has no status field for.
             if let Some(message) = completion.message() {
+                reporter.document_completed(crate::ConversionStatus::PartialSuccess);
                 let _ = tx.send(Err(ConversionError::Timeout(message)));
+            } else {
+                reporter.document_completed(crate::ConversionStatus::Success);
             }
         }
         // A consumer-drop abort and a real parse error both end here; the send below
@@ -327,6 +350,7 @@ fn run_pdf(
         // The `PdfError` stays on the chain (same text: it names `pdf:` itself), so
         // an encrypted PDF is typed on the streaming path too (#636).
         Err(e) => {
+            reporter.document_completed(crate::ConversionStatus::Failure);
             let _ = tx.send(Err(ConversionError::with_source("pdf", e)));
         }
     }
