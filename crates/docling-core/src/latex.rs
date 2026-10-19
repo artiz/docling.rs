@@ -492,19 +492,46 @@ fn render_one(node: &Node, list_level: usize, inline: bool, parts: &mut Vec<Stri
             }
         }
         Node::Table(t) => push(parts, render_table(t)),
+        // The picture's meta as comments in the figure, docling-core's
+        // `LaTeXMetaSerializer` order (docling-core#871): the main
+        // classification, then the description — an alt-text description
+        // (#676, which docling does not have) is left out, as the default
+        // Markdown and HTML leave it out.
         Node::Picture {
             caption,
             classification,
+            description,
             ..
         } => {
-            let class = classification
-                .as_deref()
-                .and_then(|c| c.first())
-                .map(|c| c.class_name.replace('_', " "));
-            push(parts, render_figure(caption.as_deref(), class.as_deref()));
+            let mut comments = Vec::new();
+            if let Some(class) = classification.as_deref().and_then(|c| c.first()) {
+                comments.extend(annotation_comment(
+                    "classification",
+                    &class.class_name.replace('_', " "),
+                ));
+            }
+            if let Some(d) = description.as_ref().filter(|d| !d.is_alt_text()) {
+                comments.extend(annotation_comment("description", &d.text));
+            }
+            push(parts, render_figure(caption.as_deref(), &comments));
         }
-        // A chart is a picture item without image payload in the JSON.
-        Node::Chart { caption, .. } => push(parts, render_figure(caption.as_deref(), None)),
+        // A chart is a picture item classified as its chart kind and carrying
+        // the chart's data: the figure with that classification, then the
+        // data grid as a `table` after it (`enable_chart_tables`,
+        // docling-core#871).
+        Node::Chart {
+            kind,
+            table,
+            caption,
+            ..
+        } => {
+            let comments: Vec<String> =
+                annotation_comment("classification", &kind.replace('_', " "))
+                    .into_iter()
+                    .collect();
+            push(parts, render_figure(caption.as_deref(), &comments));
+            push(parts, render_table(table));
+        }
         // Upstream's fallback on a group joins its children with blank lines;
         // an `inline` group is docling's InlineGroup, joined with spaces in
         // inline scope.
@@ -576,7 +603,9 @@ fn render_field_region(items: &[FieldItem], parts: &mut Vec<String>) {
     }
 }
 
-fn render_figure(caption: Option<&str>, class: Option<&str>) -> String {
+/// A picture's `figure`: the image placeholder, the caption, then its meta
+/// comments.
+fn render_figure(caption: Option<&str>, comments: &[String]) -> String {
     let mut lines = vec![
         "\\begin{figure}[h]".to_string(),
         IMAGE_PLACEHOLDER.to_string(),
@@ -584,11 +613,25 @@ fn render_figure(caption: Option<&str>, class: Option<&str>) -> String {
     if let Some(cap) = caption.filter(|c| !c.is_empty()) {
         lines.push(format!("\\caption{{{}}}", text_item(cap)));
     }
-    if let Some(class) = class {
-        lines.push(format!("% annotation[classification]: {class}"));
-    }
+    lines.extend(comments.iter().cloned());
     lines.push("\\end{figure}".to_string());
     lines.join("\n")
+}
+
+/// docling-core's `_to_latex_comment`: `% annotation[kind]: first line`, each
+/// further line as `% line`; nothing for blank text.
+fn annotation_comment(kind: &str, text: &str) -> Option<String> {
+    if text.trim().is_empty() {
+        return None;
+    }
+    let mut lines = text.lines();
+    let first = lines.next().unwrap_or("");
+    let mut out = format!("% annotation[{kind}]: {first}");
+    for line in lines {
+        out.push_str("\n% ");
+        out.push_str(line);
+    }
+    Some(out)
 }
 
 /// The `table` environment over a `|l|…|l|` tabular of the JSON grid: with
@@ -971,6 +1014,39 @@ mod tests {
             ),
             "{tex}"
         );
+    }
+
+    #[test]
+    fn picture_meta_becomes_figure_comments() {
+        // docling-core#871: classification, then description, after the
+        // caption; continuation lines get a bare `% `.
+        let picture = |description| Node::Picture {
+            caption: Some("Fig".into()),
+            caption_href: None,
+            image: None,
+            classification: Some(vec![crate::document::PictureClass {
+                class_name: "bar_chart".into(),
+                confidence: 0.9,
+            }]),
+            description,
+            caption_parent: Default::default(),
+            caption_location: None,
+        };
+        let mut doc = DoclingDocument::new("t");
+        doc.push(picture(Some(crate::document::PictureDescription {
+            text: "two\nlines".into(),
+            provenance: "picture_ocr".into(),
+        })));
+        assert!(to_latex(&doc).contains(
+            "\\caption{Fig}\n% annotation[classification]: bar chart\n\
+             % annotation[description]: two\n% lines\n\\end{figure}"
+        ));
+        // Alt text is a docling.rs addition, off like in Markdown and HTML.
+        let mut doc = DoclingDocument::new("t");
+        doc.push(picture(Some(
+            crate::document::PictureDescription::alt_text("alt"),
+        )));
+        assert!(!to_latex(&doc).contains("annotation[description]"));
     }
 
     #[test]
