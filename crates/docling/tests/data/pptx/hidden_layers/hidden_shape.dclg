@@ -1,0 +1,24 @@
+<doclang version="0.7">
+  <text>
+    <location value="51"/>
+    <location value="68"/>
+    <location value="358"/>
+    <location value="137"/>
+    Shown shape text
+  </text>
+  <text>
+    <layer value="invisible"/>
+    <location value="51"/>
+    <location value="205"/>
+    <location value="358"/>
+    <location value="273"/>
+    Hidden shape text
+  </text>
+  <text>
+    <location value="51"/>
+    <location value="341"/>
+    <location value="358"/>
+    <location value="410"/>
+    Explicitly shown text
+  </text>
+</doclang>

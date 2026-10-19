@@ -1,0 +1,66 @@
+<doclang version="0.7">
+  <text>
+    <location value="51"/>
+    <location value="68"/>
+    <location value="256"/>
+    <location value="137"/>
+    Presented text
+  </text>
+  <text>
+    <layer value="furniture"/>
+    <location value="26"/>
+    <location value="475"/>
+    <location value="145"/>
+    <location value="502"/>
+    10 October 2026
+  </text>
+  <text>
+    <layer value="furniture"/>
+    <location value="175"/>
+    <location value="475"/>
+    <location value="337"/>
+    <location value="502"/>
+    Confidential
+  </text>
+  <text>
+    <layer value="furniture"/>
+    <location value="367"/>
+    <location value="475"/>
+    <location value="486"/>
+    <location value="502"/>
+    1
+  </text>
+  <text>
+    <layer value="invisible"/>
+    <location value="51"/>
+    <location value="68"/>
+    <location value="256"/>
+    <location value="137"/>
+    Backup text
+  </text>
+  <text>
+    <layer value="invisible"/>
+    <location value="26"/>
+    <location value="475"/>
+    <location value="145"/>
+    <location value="502"/>
+    10 October 2026
+  </text>
+  <text>
+    <layer value="invisible"/>
+    <location value="175"/>
+    <location value="475"/>
+    <location value="337"/>
+    <location value="502"/>
+    Confidential
+  </text>
+  <text>
+    <layer value="invisible"/>
+    <location value="367"/>
+    <location value="475"/>
+    <location value="486"/>
+    <location value="502"/>
+    1
+  </text>
+  <page_break/>
+</doclang>

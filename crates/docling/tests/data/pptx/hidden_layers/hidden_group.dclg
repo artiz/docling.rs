@@ -1,0 +1,33 @@
+<doclang version="0.7">
+  <text>
+    <layer value="invisible"/>
+    <location value="51"/>
+    <location value="68"/>
+    <location value="256"/>
+    <location value="102"/>
+    Hidden group first
+  </text>
+  <text>
+    <layer value="invisible"/>
+    <location value="51"/>
+    <location value="137"/>
+    <location value="256"/>
+    <location value="171"/>
+    Hidden group second
+  </text>
+  <text>
+    <location value="51"/>
+    <location value="273"/>
+    <location value="256"/>
+    <location value="307"/>
+    Shown group kept
+  </text>
+  <text>
+    <layer value="invisible"/>
+    <location value="51"/>
+    <location value="341"/>
+    <location value="256"/>
+    <location value="375"/>
+    Shown group hidden member
+  </text>
+</doclang>

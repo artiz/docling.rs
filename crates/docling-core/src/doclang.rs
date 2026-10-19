@@ -1561,9 +1561,38 @@ fn emit_furniture(out: &mut Out, depth: i32, layer: ContentLayer, inner: &Node) 
                 push_location(out, depth + 1, location);
                 out.push(depth + 1, escape_text(text));
                 out.push(depth, "</text>".to_string());
+            } else if let Node::Picture { .. } = &**inner {
+                // A located picture on a layer (a hidden PPTX picture): the
+                // layer's picture — its image a data URI, as docling's archive
+                // keeps every picture off the body — with the location after
+                // the layer token.
+                let start = out.lines.len();
+                emit_furniture(out, depth, layer, inner);
+                let at = out.lines[start..]
+                    .iter()
+                    .position(|(d, line, _)| *d == depth + 1 && *line == token)
+                    .map_or(start + 1, |p| start + p + 1);
+                for (k, v) in location.iter().enumerate() {
+                    out.lines.insert(
+                        at + k,
+                        (depth + 1, format!("<location value=\"{v}\"/>"), true),
+                    );
+                }
             } else {
-                let mut i = 0usize;
-                emit_nodes(out, depth, std::slice::from_ref(inner.as_ref()), &mut i, 0);
+                // A located heading or table (a hidden PPTX slide's title, a
+                // table hidden in the Selection Pane): rendered as the body
+                // renders it, the layer token entering its head just ahead of
+                // the location — the schema's `element_head` order, after an
+                // `<href>`.
+                let start = out.lines.len();
+                emit_located(out, depth, location, inner);
+                if out.lines.len() > start {
+                    let at = out.lines[start..]
+                        .iter()
+                        .position(|(d, line, _)| *d == depth + 1 && line.starts_with("<location "))
+                        .map_or(start + 1, |p| start + p);
+                    out.lines.insert(at, (depth + 1, token, true));
+                }
             }
         }
         // A furniture inline group (a mixed-formatting header/footer paragraph):
@@ -2318,6 +2347,45 @@ mod tests {
         assert_eq!(
             out,
             "<doclang version=\"0.7\">\n  <heading>\n    <layer value=\"furniture\"/>\n    Anchor Links Test\n  </heading>\n</doclang>"
+        );
+    }
+
+    /// A hidden PPTX slide's title, table and picture: the layer token heads
+    /// the element ahead of its location, as docling-core writes them.
+    #[test]
+    fn located_furniture_keeps_layer_and_location() {
+        let hidden = |inner: Node| Node::Furniture {
+            layer: ContentLayer::Invisible,
+            inner: Box::new(Node::Located {
+                location: [1, 2, 3, 4],
+                inner: Box::new(inner),
+            }),
+        };
+        let out = export_to_doclang(&[
+            hidden(Node::Heading {
+                level: 1,
+                text: "Hidden slide".into(),
+            }),
+            hidden(Node::Table(Table {
+                rows: vec![vec!["a".into()]],
+                ..Table::default()
+            })),
+            hidden(Node::Picture {
+                caption: None,
+                caption_href: None,
+                image: None,
+                classification: None,
+                description: None,
+                caption_parent: Default::default(),
+                caption_location: None,
+            }),
+        ]);
+        let head = "    <layer value=\"invisible\"/>\n    <location value=\"1\"/>\n    <location value=\"2\"/>\n    <location value=\"3\"/>\n    <location value=\"4\"/>\n";
+        assert_eq!(
+            out,
+            format!(
+                "<doclang version=\"0.7\">\n  <heading>\n{head}    Hidden slide\n  </heading>\n  <table>\n{head}    <ched/>\n    a\n    <nl/>\n  </table>\n  <picture>\n{head}  </picture>\n</doclang>"
+            )
         );
     }
 

@@ -1,0 +1,29 @@
+<doclang version="0.7">
+  <table>
+    <layer value="invisible"/>
+    <location value="51"/>
+    <location value="68"/>
+    <location value="256"/>
+    <location value="137"/>
+    <ched/>
+    Hidden cell
+    <ched/>
+    Other cell
+    <nl/>
+  </table>
+  <picture>
+    <layer value="invisible"/>
+    <location value="51"/>
+    <location value="205"/>
+    <location value="80"/>
+    <location value="224"/>
+    <src uri="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACgAAAAUCAIAAABwJOjsAAAAJElEQVR4nO3NMQEAAAgDILV/5xljDxRgMx1XesVisVgsFosLHjCnASdq4S4eAAAAAElFTkSuQmCC"/>
+  </picture>
+  <text>
+    <location value="51"/>
+    <location value="341"/>
+    <location value="256"/>
+    <location value="410"/>
+    Shown text
+  </text>
+</doclang>

@@ -51,9 +51,6 @@
         "$ref": "#/texts/48"
       },
       {
-        "$ref": "#/groups/13"
-      },
-      {
         "$ref": "#/tables/0"
       }
     ],
@@ -337,9 +334,55 @@
     {
       "self_ref": "#/groups/13",
       "parent": {
-        "$ref": "#/body"
+        "$ref": "#/tables/0"
       },
-      "children": [],
+      "children": [
+        {
+          "$ref": "#/groups/14"
+        }
+      ],
+      "content_layer": "body",
+      "name": "rich_cell_group_0_0_0",
+      "label": "unspecified"
+    },
+    {
+      "self_ref": "#/groups/14",
+      "parent": {
+        "$ref": "#/groups/13"
+      },
+      "children": [
+        {
+          "$ref": "#/texts/49"
+        }
+      ],
+      "content_layer": "body",
+      "name": "group",
+      "label": "inline"
+    },
+    {
+      "self_ref": "#/groups/15",
+      "parent": {
+        "$ref": "#/tables/0"
+      },
+      "children": [
+        {
+          "$ref": "#/groups/16"
+        }
+      ],
+      "content_layer": "body",
+      "name": "rich_cell_group_0_1_0",
+      "label": "unspecified"
+    },
+    {
+      "self_ref": "#/groups/16",
+      "parent": {
+        "$ref": "#/groups/15"
+      },
+      "children": [
+        {
+          "$ref": "#/texts/50"
+        }
+      ],
       "content_layer": "body",
       "name": "group",
       "label": "inline"
@@ -1092,6 +1135,44 @@
       "orig": "Table Heading",
       "text": "Table Heading",
       "level": 1
+    },
+    {
+      "self_ref": "#/texts/49",
+      "parent": {
+        "$ref": "#/groups/14"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "Bold Heading",
+      "text": "Bold Heading",
+      "formatting": {
+        "bold": true,
+        "italic": false,
+        "underline": false,
+        "strikethrough": false,
+        "script": "baseline"
+      }
+    },
+    {
+      "self_ref": "#/texts/50",
+      "parent": {
+        "$ref": "#/groups/16"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "Italic Heading",
+      "text": "Italic Heading",
+      "formatting": {
+        "bold": false,
+        "italic": true,
+        "underline": false,
+        "strikethrough": false,
+        "script": "baseline"
+      }
     }
   ],
   "pictures": [],
@@ -1101,7 +1182,14 @@
       "parent": {
         "$ref": "#/body"
       },
-      "children": [],
+      "children": [
+        {
+          "$ref": "#/groups/13"
+        },
+        {
+          "$ref": "#/groups/15"
+        }
+      ],
       "content_layer": "body",
       "label": "table",
       "prov": [],
@@ -1121,7 +1209,10 @@
             "column_header": true,
             "row_header": false,
             "row_section": false,
-            "fillable": false
+            "fillable": false,
+            "ref": {
+              "$ref": "#/groups/13"
+            }
           },
           {
             "row_span": 1,
@@ -1134,7 +1225,10 @@
             "column_header": true,
             "row_header": false,
             "row_section": false,
-            "fillable": false
+            "fillable": false,
+            "ref": {
+              "$ref": "#/groups/15"
+            }
           },
           {
             "row_span": 1,
