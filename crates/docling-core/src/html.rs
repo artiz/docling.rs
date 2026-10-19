@@ -401,6 +401,10 @@ struct Serializer<'a> {
     /// rendered by that item, empty when met on their own.
     captions_of_some_item: std::collections::HashSet<String>,
     footnotes_of_some_item: std::collections::HashSet<String>,
+    /// Upstream's `_satellite_descendants` (docling-core#865): everything
+    /// under such a caption — a mixed caption's inline group and runs —
+    /// which the caption renders inside itself, so the outer walk skips it.
+    satellite_descendants: std::collections::HashSet<String>,
 }
 
 impl<'a> Serializer<'a> {
@@ -434,6 +438,21 @@ impl<'a> Serializer<'a> {
                 }
             }
         }
+        let mut satellite_descendants = std::collections::HashSet::new();
+        let resolve = |cref: &str| -> Option<&'a Value> {
+            let (bucket, idx) = cref.strip_prefix("#/")?.split_once('/')?;
+            json.get(bucket)?.get(idx.parse::<usize>().ok()?)
+        };
+        for cap in &captions {
+            let mut stack: Vec<&str> = resolve(cap).map(Self::children).unwrap_or_default();
+            while let Some(r) = stack.pop() {
+                if satellite_descendants.insert(r.to_string()) {
+                    if let Some(child) = resolve(r) {
+                        stack.extend(Self::children(child));
+                    }
+                }
+            }
+        }
         Self {
             json,
             image_mode: options.image_mode,
@@ -445,6 +464,7 @@ impl<'a> Serializer<'a> {
             visited: std::collections::HashSet::new(),
             captions_of_some_item: captions,
             footnotes_of_some_item: footnotes,
+            satellite_descendants,
         }
     }
 
@@ -536,10 +556,17 @@ impl<'a> Serializer<'a> {
     fn parts(&mut self, item: &'a Value, inline: bool) -> Vec<String> {
         let mut nodes = Vec::new();
         self.descendants(item, &mut nodes);
+        // `_skip_in_walk`: a caption's content is skipped unless the walk
+        // starts inside that caption.
+        let root = Self::self_ref(item);
+        let inside_satellite =
+            self.satellite_descendants.contains(root) || self.captions_of_some_item.contains(root);
         let mut out = Vec::new();
         for node in nodes {
             let r = Self::self_ref(node).to_string();
-            if self.visited.contains(&r) {
+            if self.visited.contains(&r)
+                || (!inside_satellite && self.satellite_descendants.contains(&r))
+            {
                 continue;
             }
             self.visited.insert(r);
@@ -798,8 +825,10 @@ impl<'a> Serializer<'a> {
     }
 
     /// Upstream's `serialize_captions`: each caption text item as
-    /// `<div class="caption">`, joined by a space, inside `tag`.
-    fn captions(&self, item: &Value, tag: &str) -> String {
+    /// `<div class="caption">` — its own text and, for a mixed caption
+    /// (docling-core#865), its inline group's parts, joined by a space —
+    /// the captions joined by a space, inside `tag`.
+    fn captions(&mut self, item: &'a Value, tag: &str) -> String {
         let mut results: Vec<String> = Vec::new();
         for r in item
             .get("captions")
@@ -818,15 +847,26 @@ impl<'a> Serializer<'a> {
                 continue;
             }
             let text = Self::text(cap);
-            let dir = if text_direction(text) == "rtl" {
+            let mut parts = vec![escape(text, true)];
+            parts.extend(self.parts(cap, true));
+            let content = parts
+                .into_iter()
+                .filter(|p| !p.is_empty())
+                .collect::<Vec<_>>()
+                .join(" ");
+            // `_get_plain_text`: the item's text and its descendants'.
+            let mut plain = text.to_string();
+            let mut nodes = Vec::new();
+            self.descendants(cap, &mut nodes);
+            for n in nodes {
+                plain.push_str(Self::text(n));
+            }
+            let dir = if text_direction(&plain) == "rtl" {
                 " dir=\"rtl\""
             } else {
                 ""
             };
-            results.push(format!(
-                "<div class=\"caption\"{dir}>{}</div>",
-                escape(text, true)
-            ));
+            results.push(format!("<div class=\"caption\"{dir}>{content}</div>"));
         }
         if results.is_empty() {
             String::new()

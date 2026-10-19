@@ -1,0 +1,22 @@
+<doclang version="0.7">
+  <table>
+    <location value="10"/><location value="20"/><location value="300"/><location value="100"/>
+    <caption>Table <bold>1</bold>: results</caption>
+    <ched/>A<ched/>B<nl/>
+    <fcel/>1<fcel/>2<nl/>
+  </table>
+  <picture>
+    <location value="10"/><location value="120"/><location value="300"/><location value="200"/>
+    <caption>Figure <italic>2</italic>: chart</caption>
+  </picture>
+  <table>
+    <caption>Plain caption</caption>
+    <ched/>C<nl/>
+  </table>
+  <picture>
+    <caption>
+      <location value="10"/><location value="210"/><location value="300"/><location value="220"/>
+      Located <bold>figure</bold> caption
+    </caption>
+  </picture>
+</doclang>

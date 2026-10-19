@@ -39,7 +39,7 @@
         "$ref": "#/body"
       },
       "children": [],
-      "content_layer": "body",
+      "content_layer": "furniture",
       "label": "caption",
       "prov": [],
       "orig": "Image alt text",

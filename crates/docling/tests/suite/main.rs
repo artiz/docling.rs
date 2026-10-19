@@ -21,6 +21,7 @@ mod charset;
 mod dclx_roundtrip;
 mod detect;
 mod djvu_prov;
+mod doclang_upstream;
 mod document_metadata;
 mod document_timeout;
 mod docx_upstream;
