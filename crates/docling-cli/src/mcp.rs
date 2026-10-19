@@ -813,6 +813,21 @@ fn convert(state: &State, request: &Request) -> Result<String, String> {
     render(&document, &request.to, request.images)
 }
 
+/// The tools answer with the document alone, so the problems a partial
+/// result survived (docling's `PARTIAL_SUCCESS`: a spent document budget, a
+/// failed or cut-off VLM page, #762/#763) go to the server's stderr — the
+/// client's log — instead of disappearing.
+fn warn_partial(state: &State, source: &SourceDocument, errors: &[docling::ErrorItem]) {
+    for e in errors {
+        eprintln!(
+            "{}: {}: partial document: {}",
+            state.command,
+            source.name,
+            e.describe()
+        );
+    }
+}
+
 fn convert_document(
     state: &State,
     source: &SourceDocument,
@@ -823,12 +838,17 @@ fn convert_document(
         .map_err(|e| e.to_string())?;
     // The remote VLM pipeline (#304) is a sibling path, as in docling-serve.
     if let Some(vlm) = options.vlm_options().map_err(|e| e.to_string())? {
-        let mut document = docling::vlm::convert_vlm(source, &vlm).map_err(|e| e.to_string())?;
+        let result = docling::vlm::convert_vlm_result(source, &vlm).map_err(|e| e.to_string())?;
+        warn_partial(state, source, &result.errors);
+        let mut document = result.document;
         converter.finish_document(&mut document);
         return Ok(document);
     }
     match converter.convert(source.clone()) {
-        Ok(result) => Ok(result.document),
+        Ok(result) => {
+            warn_partial(state, source, &result.errors);
+            Ok(result.document)
+        }
         // No layout model on this machine (the release binaries ship none):
         // a digital PDF still has its text layer, which is what MarkItDown
         // reads — convert that rather than fail, and say once how to get the

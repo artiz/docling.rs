@@ -607,6 +607,8 @@ interface ConvertResult {
   content: string          // Markdown or JSON, per `to`
   format: string           // detected input format id
   status: string           // "success" | "partial_success" | "failure"
+  errors: { componentType: string; moduleName: string; errorMessage: string; pageNo?: number }[]
+                           // non-empty exactly for "partial_success"
   inputName: string
   images: { path: string; data: Buffer }[] // for the `referenced` image mode
 }

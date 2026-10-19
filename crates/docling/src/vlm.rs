@@ -15,8 +15,11 @@
 //! (`fetch-images` pulls the same one, keeping a single HTTP stack in the
 //! graph — the converter is synchronous, so an async client would only add a
 //! runtime). Transient failures (transport errors, 408/429, 5xx) retry with
-//! exponential backoff; anything else fails the conversion loudly — a VLM
-//! conversion with silently dropped pages would be worse than an error.
+//! exponential backoff. A page whose request still fails, or whose answer was
+//! cut off (`finish_reason` `length` / `content_filter`), is recorded as a
+//! page error and the result is a `PartialSuccess` — docling's
+//! `VlmPipeline._determine_status` (docling#4561, docling#4778; #762, #763);
+//! only a document where no page produced output fails.
 
 use std::io::Cursor;
 use std::time::Duration;
@@ -27,6 +30,7 @@ use crate::backend::doclang::DoclangBackend;
 use crate::backend::DeclarativeBackend;
 use crate::error::ConversionError;
 use crate::format::InputFormat;
+use crate::result::{ConversionResult, ConversionStatus, ErrorItem};
 use crate::source::SourceDocument;
 
 /// Configuration for the remote VLM conversion. Everything has an env-var
@@ -244,7 +248,9 @@ impl PictureDescriptionOptions {
             max_tokens: None,
             keep_special: false,
         };
-        let text = request_image(agent, &req, mimetype, image)?;
+        // A cut-off description is still the model's best answer about the
+        // picture; only the page pipeline reports `finish_reason`.
+        let text = request_image(agent, &req, mimetype, image)?.text;
         let text = text.trim();
         Ok((!text.is_empty()).then(|| text.to_string()))
     }
@@ -285,15 +291,36 @@ fn chat_url(endpoint: &str) -> String {
     }
 }
 
-/// Convert a PDF or image through the remote VLM. PDF pages render via
-/// pdfium at the ML pipeline's scale; a standalone image is sent as-is (it is
-/// its own page). Every page must convert — a failed page fails the document.
+/// Convert a PDF or image through the remote VLM: the document alone, see
+/// [`convert_vlm_result`] for the pages that failed or came back cut off.
 pub fn convert_vlm(
     source: &SourceDocument,
     opts: &VlmOptions,
 ) -> Result<DoclingDocument, ConversionError> {
+    convert_vlm_result(source, opts).map(|r| r.document)
+}
+
+/// Convert a PDF or image through the remote VLM. PDF pages render via
+/// pdfium at the ML pipeline's scale; a standalone image is sent as-is (it is
+/// its own page).
+///
+/// A page whose request fails (a 4xx, retries exhausted, our timeout) is left
+/// out and recorded as `VLM inference failed: …`; a page the server cut off
+/// (`finish_reason` `length` — `max_tokens` — or `content_filter`) keeps its
+/// partial text and is recorded as `VLM output incomplete (stop_reason=…)`.
+/// Either makes the result a [`ConversionStatus::PartialSuccess`] whose
+/// errors carry the page numbers — docling's `VlmPipeline._determine_status`
+/// (docling#4561, docling#4778). Only when every page failed is it an error.
+pub fn convert_vlm_result(
+    source: &SourceDocument,
+    opts: &VlmOptions,
+) -> Result<ConversionResult, ConversionError> {
     let agent = agent();
     let mut fragments: Vec<String> = Vec::new();
+    let mut errors: Vec<ErrorItem> = Vec::new();
+    // (page, reason) of the pages that produced no output.
+    let mut failed: Vec<(usize, String)> = Vec::new();
+    let mut pages = 0usize;
     match source.format {
         InputFormat::Pdf => {
             // 1-based window → 0-based inclusive, validated like Pipeline::pages.
@@ -315,48 +342,47 @@ pub fn convert_vlm(
                 }
                 None => None,
             };
-            // `for_each_page`'s error type must implement From<PdfError>,
-            // which ConversionError doesn't — so VLM/encode failures park
-            // their message in `vlm_err` and abort the walk with a sentinel;
-            // only genuine PDF errors surface through PdfError itself.
-            let mut vlm_err: Option<String> = None;
-            let walk = docling_pdf::pdfium_backend::for_each_page::<docling_pdf::PdfError, _>(
+            // A page that fails is recorded and the walk goes on: the pages
+            // around it are as good as they were (docling#4561).
+            docling_pdf::pdfium_backend::for_each_page::<docling_pdf::PdfError, _>(
                 &source.bytes,
                 None,
                 true,  // render page images — they are the whole input here
                 false, // the text layer never reaches the model: skip its decode
                 range,
                 |i, _total, page| {
+                    pages += 1;
                     let step =
                         encode_png(&page.image).and_then(|png| request_page(&agent, opts, &png));
-                    match step {
-                        Ok(markup) => {
-                            fragments.push(strip_wrappers(&markup));
-                            Ok(())
-                        }
-                        Err(e) => {
-                            vlm_err = Some(format!("page {}: {e}", i + 1));
-                            Err(docling_pdf::PdfError::Pdfium("vlm abort".into()))
-                        }
-                    }
+                    take_page(i + 1, step, &mut fragments, &mut errors, &mut failed);
+                    Ok(())
                 },
-            );
-            if let Some(msg) = vlm_err {
-                return Err(ConversionError::Parse(format!("vlm: {msg}")));
-            }
-            walk.map_err(pdf_err)?;
+            )
+            .map_err(pdf_err)?;
         }
         InputFormat::Image => {
             // The image file is already the page; no re-encode, no pdfium.
-            let markup = request_page(&agent, opts, &source.bytes)
-                .map_err(|e| ConversionError::Parse(format!("vlm: {e}")))?;
-            fragments.push(strip_wrappers(&markup));
+            pages = 1;
+            let step = request_page(&agent, opts, &source.bytes);
+            take_page(1, step, &mut fragments, &mut errors, &mut failed);
         }
         other => {
             return Err(ConversionError::Parse(format!(
                 "vlm pipeline converts PDF and image inputs (got {other:?})"
             )));
         }
+    }
+    // No page produced output: a failed conversion, not a partial result
+    // (docling's `ConversionStatus.FAILURE`).
+    if pages > 0 && failed.len() == pages {
+        let (page, reason) = &failed[0];
+        let more = match pages {
+            1 => String::new(),
+            n => format!(" (all {n} pages failed)"),
+        };
+        return Err(ConversionError::Parse(format!(
+            "vlm: page {page}: {reason}{more}"
+        )));
     }
     // Two grammars come back from the wire. DocTags (granite-docling-class
     // models: loc tokens, unclosed OTSL markers) goes to docling-core's
@@ -395,7 +421,7 @@ pub fn convert_vlm(
         parse_doclang_fragments(&source.name, &fragments)
     };
     if doc.nodes.is_empty() {
-        // The request loop succeeded, so this is a content problem, not a
+        // Some request succeeded, so this is a content problem, not a
         // transport one: the model answered with nothing our reader keeps.
         // An empty stdout with exit 0 buried that; say it loudly instead.
         return Err(ConversionError::Parse(
@@ -406,7 +432,48 @@ pub fn convert_vlm(
                 .into(),
         ));
     }
-    Ok(doc)
+    let status = if errors.is_empty() {
+        ConversionStatus::Success
+    } else {
+        ConversionStatus::PartialSuccess
+    };
+    Ok(ConversionResult {
+        document: doc,
+        status,
+        input_name: source.name.clone(),
+        format: source.format,
+        errors,
+        redaction: None,
+    })
+}
+
+/// File one page's answer: its markup into `fragments`, a cut-off answer
+/// also as a page error, a failed request as a page error and in `failed`.
+fn take_page(
+    page_no: usize,
+    step: Result<Completion, String>,
+    fragments: &mut Vec<String>,
+    errors: &mut Vec<ErrorItem>,
+    failed: &mut Vec<(usize, String)>,
+) {
+    match step {
+        Ok(completion) => {
+            if let Some(reason) = completion.incomplete() {
+                errors.push(ErrorItem::vlm_page(
+                    page_no,
+                    format!("VLM output incomplete (stop_reason={reason})."),
+                ));
+            }
+            fragments.push(strip_wrappers(&completion.text));
+        }
+        Err(e) => {
+            errors.push(ErrorItem::vlm_page(
+                page_no,
+                format!("VLM inference failed: {e}."),
+            ));
+            failed.push((page_no, e));
+        }
+    }
 }
 
 fn pdf_err(e: docling_pdf::PdfError) -> ConversionError {
@@ -430,10 +497,14 @@ pub(crate) fn agent() -> ureq::Agent {
         .into()
 }
 
-/// POST one page image, return the model's text. Retries transport errors,
+/// POST one page image, return the model's answer. Retries transport errors,
 /// 408/429 and 5xx with exponential backoff (2s/4s/8s); other statuses and a
 /// malformed body fail immediately.
-fn request_page(agent: &ureq::Agent, opts: &VlmOptions, image: &[u8]) -> Result<String, String> {
+fn request_page(
+    agent: &ureq::Agent,
+    opts: &VlmOptions,
+    image: &[u8],
+) -> Result<Completion, String> {
     // Unlimited-OCR's grounding markers are special tokens: without this vLLM
     // extension flag the server strips them from the completion and the page
     // comes back as flat text (docling#3944's api_overrides).
@@ -451,6 +522,25 @@ fn request_page(agent: &ureq::Agent, opts: &VlmOptions, image: &[u8]) -> Result<
     request_image(agent, &req, "image/png", image).map_err(String::from)
 }
 
+/// A model's answer: `choices[0].message.content` and the choice's
+/// `finish_reason`.
+#[derive(Debug)]
+struct Completion {
+    text: String,
+    finish_reason: Option<String>,
+}
+
+impl Completion {
+    /// The stop reason of an answer the server cut off — docling's
+    /// `_map_stop_reason`: `length` (`max_tokens` reached) and
+    /// `content_filter`; every other reason is a complete answer.
+    fn incomplete(&self) -> Option<&str> {
+        self.finish_reason
+            .as_deref()
+            .filter(|r| matches!(*r, "length" | "content_filter"))
+    }
+}
+
 /// One image in, one completion out — what the page loop and the picture
 /// description pass both send.
 struct ImageRequest<'a> {
@@ -466,7 +556,7 @@ struct ImageRequest<'a> {
 }
 
 /// POST `image` (a data URI of `mimetype`) with the request's prompt and
-/// return `choices[0].message.content`. Transport errors, 408/429 and 5xx
+/// return `choices[0]`'s content and finish reason. Transport errors, 408/429 and 5xx
 /// retry with exponential backoff (2s/4s/8s) and come back as
 /// [`RequestError::Unavailable`] once exhausted; other statuses and a
 /// malformed body are [`RequestError::Rejected`] at once.
@@ -475,7 +565,7 @@ fn request_image(
     req: &ImageRequest<'_>,
     mimetype: &str,
     image: &[u8],
-) -> Result<String, RequestError> {
+) -> Result<Completion, RequestError> {
     let data_uri = format!(
         "data:{mimetype};base64,{}",
         docling_core::base64::encode(image)
@@ -572,15 +662,23 @@ fn request_image(
                             "{url}: no choices[0].message.content in response"
                         ))
                     });
+                let finish_reason = parsed["choices"][0]["finish_reason"]
+                    .as_str()
+                    .map(str::to_string);
                 if docling_core::env::flag("DOCLING_RS_VLM_DEBUG") {
                     match &content {
-                        Ok(c) => {
-                            eprintln!("vlm: raw model response ({} chars):\n{c}\n---", c.len())
-                        }
+                        Ok(c) => eprintln!(
+                            "vlm: raw model response ({} chars, finish_reason {}):\n{c}\n---",
+                            c.len(),
+                            finish_reason.as_deref().unwrap_or("unset")
+                        ),
                         Err(_) => eprintln!("vlm: raw endpoint body:\n{text}\n---"),
                     }
                 }
-                return content;
+                return content.map(|text| Completion {
+                    text,
+                    finish_reason,
+                });
             }
             // Our own timeout is not retryable: the model is deterministic,
             // so the same page grinds to the same timeout again — and against

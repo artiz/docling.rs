@@ -183,12 +183,15 @@ class InputDocument:
 class ErrorItem:
     """docling's ``ErrorItem``: one recorded problem of a conversion that still
     produced a document (``component_type``, ``module_name``,
-    ``error_message``). Today the one recorded problem is a spent
-    ``document_timeout`` (#497)."""
+    ``error_message``, ``page_no``): a spent ``document_timeout`` (#497), or
+    a VLM page that failed or came back cut off (#762, #763). ``page_no`` is
+    the 1-based page the problem belongs to, ``None`` when it is
+    document-scoped."""
 
     component_type: str
     module_name: str
     error_message: str
+    page_no: Optional[int] = None
 
 
 class ConversionResult:

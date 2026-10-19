@@ -319,6 +319,9 @@ docling's `VlmPipeline` on the same granite-docling endpoint: 87.7 % mean
 similarity over 18 fixtures, 3 byte-exact
 ([docs/PDF_CONFORMANCE.md](../../docs/PDF_CONFORMANCE.md)). Flags, env
 fallbacks, timeouts, retries and prompts: [`docs/OPTIONS.md` § VLM](../../docs/OPTIONS.md#vlm-pipeline).
+A page whose request fails or whose answer was cut off (`max_tokens`, a
+content filter) makes the result a `PartialSuccess` with that page's error
+(`vlm::convert_vlm_result`; #762, #763) — the other pages are kept.
 
 ## Headless-browser HTML pre-render (optional)
 

@@ -302,10 +302,17 @@ models load.
   request for slow, e.g. CPU-served, endpoints; `DOCLING_RS_VLM_EXTRA_BODY`
   merges extra JSON into every request; `DOCLING_RS_VLM_DEBUG` logs the
   exchange.
-- Transient failures (timeouts, 408/429, 5xx) retry with exponential
-  backoff; a page that still fails fails the conversion — no silently
-  dropped pages. On serve a VLM failure (unreachable endpoint, non-200,
-  unparseable answer) fails that request only.
+- Transient failures (transport errors, 408/429, 5xx) retry with
+  exponential backoff. A page that still fails (a 4xx, retries exhausted,
+  the timeout) is left out and recorded as `VLM inference failed: …`; a page
+  the server cut off (`finish_reason` `length` — raise `vlm_max_tokens` —
+  or `content_filter`) keeps its text and is recorded as `VLM output
+  incomplete (stop_reason=…)`. Either makes the result docling's
+  `partial_success`, each error carrying its `page_no` (docling#4561,
+  docling#4778; #762, #763): the CLI writes the document and warns on
+  stderr, serve answers `X-Docling-Status: partial_success`, Python/Node
+  return the status and `errors`. Only a document where no page produced
+  output fails — on serve, that request only.
 - `pages` composes (only the window is rendered and sent); `to` and
   `strict` work as usual.
 - Answer grammars are detected per response (#322): DocTags
