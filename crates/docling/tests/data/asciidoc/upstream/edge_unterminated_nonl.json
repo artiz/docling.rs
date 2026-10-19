@@ -1,0 +1,52 @@
+{
+  "schema_name": "DoclingDocument",
+  "version": "1.10.0",
+  "name": "edge_unterminated_nonl",
+  "origin": {
+    "mimetype": "text/asciidoc",
+    "binary_hash": 16240164491682899581,
+    "filename": "edge_unterminated_nonl.adoc"
+  },
+  "furniture": {
+    "self_ref": "#/furniture",
+    "children": [],
+    "content_layer": "furniture",
+    "name": "_root_",
+    "label": "unspecified"
+  },
+  "body": {
+    "self_ref": "#/body",
+    "children": [
+      {
+        "$ref": "#/texts/0"
+      }
+    ],
+    "content_layer": "body",
+    "name": "_root_",
+    "label": "unspecified"
+  },
+  "groups": [],
+  "texts": [
+    {
+      "self_ref": "#/texts/0",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "code",
+      "prov": [],
+      "orig": "no close",
+      "text": "no close",
+      "captions": [],
+      "references": [],
+      "footnotes": [],
+      "code_language": "unknown"
+    }
+  ],
+  "pictures": [],
+  "tables": [],
+  "key_value_items": [],
+  "form_items": [],
+  "pages": {}
+}

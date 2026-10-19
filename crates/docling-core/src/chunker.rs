@@ -442,7 +442,7 @@ impl Walker<'_> {
                     );
                 }
             }
-            Node::Paragraph { text } => {
+            Node::Paragraph { text } | Node::ListText { text, .. } => {
                 let t = text.trim();
                 let self_ref = self.alloc.text();
                 // A whole-paragraph display equation is a formula item; docling's
@@ -1151,7 +1151,7 @@ fn cell_chunk_text(t: &Table, anchors: &[Vec<(usize, usize)>], r: usize, c: usiz
 /// One block of a rich cell, serialized for chunking.
 fn block_chunk_text(node: &Node) -> String {
     match node {
-        Node::Paragraph { text } => unescape_text(text),
+        Node::Paragraph { text } | Node::ListText { text, .. } => unescape_text(text),
         Node::LabeledText { .. } => block_chunk_text(&node.labeled_as_paragraph()),
         Node::InlineGroup { md_text, .. } => unescape_text(md_text),
         Node::Code { text, .. } => format!("```\n{}\n```", unescape_text(text)),

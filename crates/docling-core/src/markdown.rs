@@ -783,7 +783,7 @@ fn render(nodes: &[Node], blocks: &mut Vec<String>, ctx: &mut Ctx) {
                 i += 1;
                 loop {
                     match nodes.get(i) {
-                        Some(Node::ListItem { .. }) => i += 1,
+                        Some(Node::ListItem { .. } | Node::ListText { .. }) => i += 1,
                         // An empty paragraph between two list items is absorbed
                         // into the run — docling keeps such a ListGroup
                         // contiguous rather than splitting it.
@@ -842,6 +842,14 @@ fn render_list_run(items: &[Node], blocks: &mut Vec<String>, ctx: &Ctx) {
     let mut any_top = false;
 
     for item in items {
+        if let Node::ListText { level, text, glue } = item {
+            let text = ctx.text(text);
+            match lines.last_mut() {
+                Some(last) if *glue => last.push_str(&text),
+                _ => lines.push(format!("{}{text}", "    ".repeat(*level as usize))),
+            }
+            continue;
+        }
         let Node::ListItem {
             ordered,
             number,
@@ -1209,6 +1217,9 @@ fn render_item(node: &Node, blocks: &mut Vec<String>, ctx: &mut Ctx) {
         // still renders as its own one-item list instead of panicking —
         // `nodes` is public API, so every representable tree must serialize.
         Node::ListItem { .. } => render_list_run(std::slice::from_ref(node), blocks, ctx),
+        // Outside a list run (a hand-built document): a paragraph.
+        Node::ListText { text, .. } if text.is_empty() => {}
+        Node::ListText { text, .. } => blocks.push(ctx.breaks(&ctx.text(text))),
     }
 }
 

@@ -13,8 +13,12 @@
 //! `<name>.adoc` (`.convert()`, then `export_to_markdown()` and
 //! `export_to_dict()`). Each `<name>` is the upstream test that converts the
 //! document (`_2`, `_3`… for a test's further documents); upstream's corpus
-//! files are mirrored in `tests/data/asciidoc/sources/` instead. Re-create a
-//! reference with upstream's backend, never from our own output.
+//! files are mirrored in `tests/data/asciidoc/sources/` instead. The
+//! `edge_*` documents are our own probes of where docling.rs used to differ:
+//! the line under a bare table (dropped), a paragraph pending when a list
+//! opens (a line of the list, an inline one glued to the item), and an
+//! unterminated literal block (it keeps the file's last, empty line). Re-create
+//! a reference with upstream's backend, never from our own output.
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -48,7 +52,7 @@ fn documents_follow_docling() {
         .filter(|p| p.extension().is_some_and(|e| e == "adoc"))
         .collect();
     docs.sort();
-    assert_eq!(docs.len(), 42);
+    assert_eq!(docs.len(), 56);
     let mut failures = Vec::new();
     for path in &docs {
         let name = path.file_stem().unwrap().to_str().unwrap();

@@ -903,7 +903,7 @@ fn emit_nodes(out: &mut Out, depth: i32, nodes: &[Node], i: &mut usize, level: u
                 emit_text_element(out, depth, &open, "heading", text, None);
                 *i += 1;
             }
-            Node::Paragraph { text } => {
+            Node::Paragraph { text } | Node::ListText { text, .. } => {
                 // A standalone display equation (docling's block `FormulaItem`) is
                 // stored as a `$$…$$` paragraph so Markdown/JSON render the fenced
                 // math; DocLang emits it as a `<formula>` element.

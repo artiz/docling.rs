@@ -1585,7 +1585,7 @@ impl Builder {
                 };
                 Some(self.add_text(label, text, parent, extra))
             }
-            Node::Paragraph { text } => {
+            Node::Paragraph { text } | Node::ListText { text, .. } => {
                 // A whole-paragraph display equation is a formula item (docling
                 // wraps it in `$$…$$` and, unlike a text item, never escapes it).
                 let t = text.trim();

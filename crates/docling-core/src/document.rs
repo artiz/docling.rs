@@ -391,6 +391,14 @@ pub enum Node {
     /// `<page_break/>`; Markdown and JSON omit it (matching docling's default
     /// exports, which carry page breaks only in the document model).
     PageBreak,
+    /// A text item docling hangs in a *list group*, after the item before it
+    /// (an AsciiDoc paragraph still pending when a list opened is flushed into
+    /// the list's group): docling-core's list serializer prints it as one more
+    /// line of the list, indented to the group's depth `level` — or, `glue`,
+    /// when it is an inline group, appended to the line before it with no
+    /// separator at all. `text` is Markdown, like a paragraph's. Every other
+    /// serializer reads it as a paragraph.
+    ListText { level: u8, text: String, glue: bool },
     /// An invisible page marker — the first node of every page the PDF paths
     /// assemble: the 1-based page number and the page size in PDF points. It
     /// carries exactly what the JSON export needs to populate docling's

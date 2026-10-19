@@ -76,6 +76,7 @@ fn node_words(node: &Node, into: &mut Words) {
     match node {
         Node::Heading { text, .. }
         | Node::Paragraph { text }
+        | Node::ListText { text, .. }
         | Node::CheckboxItem { text, .. }
         | Node::Caption { text, .. }
         | Node::LabeledText { text, .. }

@@ -133,7 +133,12 @@ enum Block<'a> {
 /// document or reaching the text (docling#4662). An unterminated literal
 /// block still yields its body at EOF.
 fn blocks(text: &str) -> Vec<Block<'_>> {
-    let lines: Vec<&str> = text.lines().collect();
+    // Python's `split("\n")`: a trailing newline leaves an empty last line,
+    // which an unterminated literal block keeps (`no close\n`).
+    let lines: Vec<&str> = text
+        .split('\n')
+        .map(|l| l.strip_suffix('\r').unwrap_or(l))
+        .collect();
     let source_attr = cached_regex!(SOURCE_ATTR);
     let mut out = Vec::new();
     let mut in_comment_block = false;
@@ -500,10 +505,11 @@ impl Parser<'_> {
             self.table_data.push(parse_table_line(line));
             return;
         }
-        // Any other line ends a bare table. Unlike docling, which drops that
-        // line, it goes on to be parsed as text/caption/etc.
+        // Any other line ends a bare table — and goes with it, as docling's
+        // `elif in_table` arm consumes it.
         if self.in_table {
             self.flush_table(doc);
+            return;
         }
 
         // Picture
@@ -695,6 +701,19 @@ impl Parser<'_> {
         self.open_list_group(level, parent, item.indent, kind);
     }
 
+    /// How many list groups enclose `group` — its items' Markdown depth.
+    fn group_depth(&self, group: usize) -> u8 {
+        let mut depth = 0u8;
+        let mut at = self.tree.items[group].parent;
+        while let Some(a) = at {
+            if self.is_list_group(a) {
+                depth += 1;
+            }
+            at = self.tree.items[a].parent;
+        }
+        depth
+    }
+
     /// For a list item of the tree: how many list groups enclose it below
     /// the outermost (its Markdown depth), its 1-based position among its
     /// group's children, and whether that group's first child is enumerated.
@@ -835,10 +854,24 @@ impl Parser<'_> {
         let text = self.text_data.join(" ");
         self.text_data.clear();
         let parent = self.current_parent();
+        // Text still pending when a list opened is flushed into the list group
+        // (docling's `parent=_get_current_parent(parents)`), which
+        // docling-core's list serializer prints as one more line of the list,
+        // right after the item before it — an inline group glued onto that
+        // line (see `Node::ListText`).
+        let list_level = parent
+            .filter(|&p| self.is_list_group(p))
+            .map(|g| self.group_depth(g));
         let runs = parse_inline(&text, false, false);
         if !runs.iter().any(|r| r.bold || r.italic || r.code) {
-            doc.push(Node::Paragraph {
-                text: escape_text(&text),
+            let escaped = escape_text(&text);
+            doc.push(match list_level {
+                Some(level) => Node::ListText {
+                    level,
+                    text: escaped,
+                    glue: false,
+                },
+                None => Node::Paragraph { text: escaped },
             });
             self.add_tree_text(parent, "paragraph", &text, None, None, None);
             return;
@@ -897,12 +930,21 @@ impl Parser<'_> {
         }
         // Under a heading the group is the heading's child, which DocLang
         // writes without an enclosing `<text>`.
+        let md_text = md.join(" ");
+        if let Some(level) = list_level {
+            doc.push(Node::ListText {
+                level,
+                text: md_text,
+                glue: true,
+            });
+            return;
+        }
         let unwrapped =
             parent.is_some_and(|p| matches!(self.tree.items[p].kind, TreeKind::Text { .. }));
         doc.push(Node::InlineGroup {
             unwrapped,
             runs: node_runs,
-            md_text: md.join(" "),
+            md_text,
         });
     }
 
@@ -1313,8 +1355,10 @@ mod tests {
             "# T\n\npara\n\n```\nraw literal\n  indented\n```\n\nafter\n"
         );
         // An unterminated block still yields its body (docling's `_iter_blocks`
-        // flushes what it has at EOF).
-        assert_eq!(md("....\nno close\n"), "```\nno close\n```\n");
+        // flushes what it has at EOF) — with the empty line Python's
+        // `split("\n")` leaves after the file's last newline.
+        assert_eq!(md("....\nno close\n"), "```\nno close\n\n```\n");
+        assert_eq!(md("....\nno close"), "```\nno close\n```\n");
         // A block title in front of a literal block is the code item's
         // caption, which docling-core renders after the block (2.127+).
         assert_eq!(
@@ -1527,6 +1571,22 @@ mod tests {
             md("// note\n[NOTE]\n////\nhidden\n////\n:attr: x\ntext\n"),
             "text\n"
         );
+    }
+
+    /// docling's `elif in_table` arm consumes the line that ends a bare
+    /// table; a paragraph pending when a list opens is flushed into the list
+    /// group, one more line of the list (an inline group glued to the item).
+    #[test]
+    fn table_ends_and_pending_paragraphs_follow_docling() {
+        assert_eq!(
+            md("|a|b\n|c|d\ngone\nkept\n"),
+            "| a   | b   |\n|-----|-----|\n| c   | d   |\n\nkept\n"
+        );
+        assert_eq!(md("para\n* a\n\n* b\n"), "- a\npara\n- b\n");
+        assert_eq!(md("some *x*\n. one\n"), "1. onesome **x**\n");
+        let v = json("para\n* a\n");
+        assert_eq!(v["texts"][1]["label"], "paragraph");
+        assert_eq!(v["texts"][1]["parent"]["$ref"], "#/groups/0");
     }
 
     #[test]
