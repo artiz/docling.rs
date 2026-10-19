@@ -212,11 +212,9 @@ fn parse_cue_block(block: &str) -> Option<Cue> {
     if end <= start {
         return None;
     }
-    let mut cue_text = cue_lines.join("\n").trim().to_string();
-    // A voice span may omit its end tag when it spans the whole cue.
-    if cue_text.starts_with("<v") && !cue_text.contains("</v>") {
-        cue_text.push_str("</v>");
-    }
+    // A voice span that omits its end tag (it spans the whole cue) is closed
+    // with every other span left open at the end of the cue.
+    let cue_text = cue_lines.join("\n").trim().to_string();
     Some(Cue {
         start,
         end,
@@ -265,8 +263,10 @@ fn is_timestamp_tag(tag: &str) -> bool {
 /// Tokenize the cue text into nested components, docling-core's
 /// `_pattern_tag` walk: `<i|b|c|u|v|lang[.class…][ annotation]>` open and
 /// `</…>` close; text between tags splits into one component per line, each
-/// but the last carrying a line terminator. Text inside a span that is never
-/// closed is dropped, as upstream never appends the open span.
+/// but the last carrying a line terminator. A span still open at the end of
+/// the cue is closed there and keeps its text, a stray end tag is ignored and
+/// a misnested one rejects the cue (docling-core#875, 2.102: `He said <i>stop`
+/// is `He said <i>stop</i>`).
 fn parse_components(cue_text: &str) -> Vec<Comp> {
     // Open spans: the tag (`None` past `MAX_SPAN_DEPTH`), its annotation and
     // the components parsed so far inside it.
@@ -315,20 +315,13 @@ fn parse_components(cue_text: &str) -> Vec<Comp> {
         flush(&mut buf, stack.last_mut().map_or(&mut root, |s| &mut s.2));
         rest = after;
         if closing {
-            if let Some((t, annotation, children)) = stack.pop() {
-                let target = stack.last_mut().map_or(&mut root, |s| &mut s.2);
-                match t {
-                    Some(t) if t != kind => {
-                        // Mismatched end tag: upstream rejects the cue block.
-                        return Vec::new();
-                    }
-                    Some(tag) => target.push(Comp::Span {
-                        tag,
-                        annotation,
-                        children,
-                    }),
-                    None => target.extend(children),
+            // A stray end tag (nothing open) is ignored.
+            if let Some(open) = stack.pop() {
+                if open.0.is_some_and(|t| t != kind) {
+                    // Mismatched end tag: upstream rejects the cue block.
+                    return Vec::new();
                 }
+                close_span(open, stack.last_mut().map_or(&mut root, |s| &mut s.2));
             }
         } else {
             let tag = (stack.len() < MAX_SPAN_DEPTH).then_some(kind);
@@ -337,7 +330,23 @@ fn parse_components(cue_text: &str) -> Vec<Comp> {
     }
     buf.push_str(rest);
     flush(&mut buf, stack.last_mut().map_or(&mut root, |s| &mut s.2));
+    while let Some(open) = stack.pop() {
+        close_span(open, stack.last_mut().map_or(&mut root, |s| &mut s.2));
+    }
     root
+}
+
+/// Append a closed span to its parent's components; one past
+/// `MAX_SPAN_DEPTH` (no tag) hands its children up instead.
+fn close_span(open: (Option<Tag>, Option<String>, Vec<Comp>), target: &mut Vec<Comp>) {
+    match open {
+        (Some(tag), annotation, children) => target.push(Comp::Span {
+            tag,
+            annotation,
+            children,
+        }),
+        (None, _, children) => target.extend(children),
+    }
 }
 
 /// `(/?)(i|b|c|u|v|lang)((?:\.[^\t\n\r &<>.]+)*)(?:[ \t]([^\n\r&>]*))?` on the
@@ -547,6 +556,27 @@ mod tests {
         assert_eq!(texts[3]["parent"]["$ref"], "#/groups/0");
         assert!(texts[3]["source"][0].get("voice").is_none());
         assert_eq!(v["body"]["children"].as_array().unwrap().len(), 2);
+    }
+
+    /// docling-core#875 (2.102): a span still open at the end of the cue is
+    /// closed there, keeping its text; a stray end tag is ignored; a
+    /// misnested one still rejects the cue.
+    #[test]
+    fn unclosed_spans_close_at_the_end_of_the_cue() {
+        let cue = |text: &str| md(&format!("WEBVTT\n\n00:01.000 --> 00:02.000\n{text}\n"));
+        assert_eq!(cue("<i>I'm thinking about").trim(), "*I'm thinking about*");
+        assert_eq!(cue("what she said</i>").trim(), "what she said");
+        assert_eq!(cue("He said <i>stop").trim(), "He said  *stop*");
+        assert_eq!(cue("<v Bob>Hi <b>there").trim(), "Hi  **there**");
+        assert_eq!(cue("<i>a <b>b</i></b>").trim(), "");
+        let v: serde_json::Value = serde_json::from_str(
+            &convert("WEBVTT\n\n00:01.000 --> 00:02.000\n<v Bob>Hi <b>there\n").export_to_json(),
+        )
+        .unwrap();
+        let texts = v["texts"].as_array().unwrap();
+        assert_eq!(texts[1]["text"], "there");
+        assert_eq!(texts[1]["formatting"]["bold"], true);
+        assert_eq!(texts[1]["source"][0]["voice"], "Bob");
     }
 
     /// A block without valid timings is dropped like upstream; cue settings
