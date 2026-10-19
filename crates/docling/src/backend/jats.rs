@@ -21,8 +21,8 @@ use crate::error::ConversionError;
 use crate::source::SourceDocument;
 use docling_core::tree::{Formatting, ItemTree, ListMeta, TreeKind};
 use docling_core::{
-    inline_paragraph_node, DoclingDocument, InlineRun, Node, PictureImage, Script, Table,
-    TableStructure,
+    inline_paragraph_node, DoclingDocument, InlineRun, ListItemDclx, Node, PictureImage, Script,
+    Table, TableStructure,
 };
 
 /// JATS backend. `images` at `Local` or above is docling's `JatsBackendOptions.fetch_images`
@@ -111,6 +111,16 @@ const DEFAULT_HEADER_ACKNOWLEDGMENTS: &str = "Acknowledgments";
 const DEFAULT_HEADER_FOOTNOTES: &str = "Footnotes";
 const DEFAULT_HEADER_REFERENCES: &str = "References";
 const DEFAULT_TEXT_ETAL: &str = "et al.";
+/// `list-type` values that number the items, from the JATS 1.3 tag library —
+/// docling's `_ORDERED_LIST_TYPES` (docling#4770). Every other value
+/// (`bullet`, `simple`, `none`, unknown, absent) is a bullet list.
+const ORDERED_LIST_TYPES: &[&str] = &[
+    "order",
+    "alpha-lower",
+    "alpha-upper",
+    "roman-lower",
+    "roman-upper",
+];
 
 /// The two outputs the walk fills side by side: the flat nodes (Markdown /
 /// DocLang / LaTeX) and docling's item tree (JSON), the latter mirroring
@@ -188,6 +198,12 @@ impl Out<'_> {
             None,
             Some(ListMeta::default()),
         )
+    }
+
+    /// `add_list_item(text, enumerated=…, marker=…, parent)` — a JATS
+    /// `<list-item>` with its list's numbering and its `<label>` (docling#4770).
+    fn list_item_meta(&mut self, parent: Option<usize>, text: &str, meta: ListMeta) -> usize {
+        self.text(parent, "list_item", text, None, None, None, Some(meta))
     }
 
     /// Whether `parent` is a `list` group — docling's `_add_citation` test.
@@ -802,10 +818,10 @@ fn walk_linear(
                 new_parent = Some(out.group(parent, "list", "list"));
             }
             "list-item" => {
-                // docling PR #3619: a nested <list> inside the item is real
-                // structure, not part of the item's text — the item's text
-                // comes from its non-list children only, and the nested
-                // list's items follow one level deeper (recursively).
+                // The item's text is its `<p>` children, its `<label>` the
+                // marker and its list's `list-type` the numbering
+                // (docling#4770); a nested <list> is real structure whose
+                // items follow one level deeper (docling PR #3619).
                 add_list_item(out, parent, child, 0);
                 stop_walk = true;
             }
@@ -1080,51 +1096,153 @@ fn seg_markdown(s: &Seg) -> String {
     out
 }
 
-/// A `<list-item>` at `level`: its text (from every child except nested
-/// `<list>` elements) becomes the item, then each nested `<list>`'s items
-/// emit one level deeper — docling PR #3619 (nested list structure was
-/// previously flattened into the parent item's text). In the tree the item
-/// hangs off `parent` (its `list` group) and every nested `<list>` is a new
-/// `list` group under the item, exactly as `_walk_linear` builds it.
+/// A `<list-item>` at `level` — docling's `list-item` branch of
+/// `_walk_linear`. The item's text joins its `<p>` children (each
+/// `_get_text(p).strip()`), so a `<label>`, loose text or other block content
+/// stays out of it; each nested `<list>` emits its items one level deeper
+/// (docling PR #3619) under a new `list` group hung off the item. Since
+/// docling#4770 the item is `enumerated` when its own list's `list-type`
+/// numbers the items ([`ORDERED_LIST_TYPES`]; a nested list goes by its own
+/// attribute) and its `<label>` is the item `marker` instead of text.
+///
+/// The flat Markdown node is shaped so the serializer prints what
+/// docling-core's list serializer does with that marker
+/// ([`markdown_shape`]); the DocLang overlay keeps the clean
+/// marker/text split and the list kind, which is what DocLang shows.
 fn add_list_item(out: &mut Out, parent: Option<usize>, item: XmlNode, level: u8) {
+    let list = item.parent_element();
+    let enumerated = list.is_some_and(is_enumerated_list);
+    // docling numbers an enumerated item by its position in the list group.
+    let number = list.map_or(1, |l| {
+        l.children()
+            .filter(|c| c.has_tag_name("list-item"))
+            .position(|c| c == item)
+            .unwrap_or(0) as u64
+            + 1
+    });
+    let label = item_label(item);
     let mut text = String::new();
-    for part in item.children() {
-        if part.has_tag_name("list") {
-            continue;
-        }
-        let t = if part.is_text() {
-            normalize(part.text().unwrap_or(""))
-        } else {
-            norm_text(part)
-        };
-        if t.trim().is_empty() {
+    for p in item.children().filter(|c| c.has_tag_name("p")) {
+        let t = norm_text(p);
+        if t.is_empty() {
             continue;
         }
         if !text.is_empty() {
             text.push(' ');
         }
-        text.push_str(t.trim());
+        text.push_str(&t);
     }
-    if !text.is_empty() {
+    if !text.is_empty() || !label.is_empty() {
+        let shape = markdown_shape(enumerated, &label, &text);
         out.doc.push(Node::ListItem {
-            ordered: false,
-            number: 0,
-            first_in_list: false,
-            text: escape_text(&text),
+            ordered: shape.ordered,
+            number,
+            first_in_list: number == 1,
+            text: escape_text(&shape.text),
             level,
-            marker: None,
+            marker: shape.marker,
             location: None,
-            dclx: None,
+            dclx: shape.dclx.then(|| ListItemDclx {
+                ordered: enumerated,
+                marker: (!label.is_empty()).then(|| label.clone()),
+                text: escape_text(&text),
+                runs: Vec::new(),
+            }),
             href: None,
             layer: None,
         });
     }
     // docling adds the item whatever its text (an empty one too).
-    let item_id = Some(out.list_item(parent, &text));
+    let item_id = Some(out.list_item_meta(
+        parent,
+        &text,
+        ListMeta {
+            enumerated,
+            marker: label,
+        },
+    ));
     for nested in item.children().filter(|c| c.has_tag_name("list")) {
         let group = Some(out.group(item_id, "list", "list"));
         for sub in nested.children().filter(|c| c.has_tag_name("list-item")) {
             add_list_item(out, group, sub, level.saturating_add(1));
+        }
+    }
+}
+
+/// Whether a `<list>` numbers its items: its `list-type`, trimmed and
+/// lower-cased, is one of [`ORDERED_LIST_TYPES`] (docling#4770).
+fn is_enumerated_list(list: XmlNode) -> bool {
+    list.attribute("list-type")
+        .is_some_and(|t| ORDERED_LIST_TYPES.contains(&t.trim().to_lowercase().as_str()))
+}
+
+/// docling's `_get_label`: the text of the item's `<label>` child, stripped
+/// (`""` without one).
+fn item_label(item: XmlNode) -> String {
+    item.children()
+        .find(|c| c.has_tag_name("label"))
+        .map(|l| get_text(l).trim().to_string())
+        .unwrap_or_default()
+}
+
+/// The flat Markdown fields of a list item.
+struct MarkdownShape {
+    ordered: bool,
+    marker: Option<String>,
+    /// The item text the Markdown line carries after the serializer's own
+    /// `-` / `N.` (the label joined in front when docling prints it there).
+    text: String,
+    /// Whether DocLang needs the [`ListItemDclx`] overlay: the flat fields
+    /// above differ from the item's real list kind / marker / text.
+    dclx: bool,
+}
+
+/// docling-core's Markdown list-item rule (default
+/// `orig_list_item_marker_mode=AUTO`, `ensure_valid_list_item_marker=True`)
+/// for a JATS item, mapped onto the flat fields the shared serializer reads
+/// (it prints `N.` / a verbatim `\d+.` marker for an ordered item and `-`
+/// otherwise):
+///
+/// * no label — `N. text` when enumerated, else `- text`;
+/// * a valid label (`\d+.`) — printed verbatim, `1. text`, whatever the list;
+/// * a label with a letter or digit (`(a)`, `ii`) — `- (a) text`, enumerated
+///   or not;
+/// * any other label (`•`) — dropped: `- text`.
+///
+/// docling-core also keeps a label of `*` / `+` verbatim as the bullet; the
+/// serializer always bullets with `-`, so such an item reads `- text` here —
+/// a cosmetic difference for a label JATS does not use in practice.
+fn markdown_shape(enumerated: bool, label: &str, text: &str) -> MarkdownShape {
+    let digits_dot = label
+        .strip_suffix('.')
+        .is_some_and(|d| !d.is_empty() && d.chars().all(char::is_numeric));
+    if label.is_empty() {
+        MarkdownShape {
+            ordered: enumerated,
+            marker: None,
+            text: text.to_string(),
+            dclx: false,
+        }
+    } else if digits_dot {
+        MarkdownShape {
+            ordered: true,
+            marker: Some(label.to_string()),
+            text: text.to_string(),
+            dclx: !enumerated,
+        }
+    } else if label.chars().any(char::is_alphanumeric) {
+        MarkdownShape {
+            ordered: false,
+            marker: None,
+            text: format!("{label} {text}"),
+            dclx: true,
+        }
+    } else {
+        MarkdownShape {
+            ordered: false,
+            marker: None,
+            text: text.to_string(),
+            dclx: true,
         }
     }
 }
@@ -1759,6 +1877,216 @@ mod tests {
     use super::*;
     use crate::backend::images::ImageSources;
     use crate::format::InputFormat;
+
+    /// A JATS article whose body is `body`, converted — docling's
+    /// `convert_jats_body` test helper.
+    fn body_doc(body: &str) -> DoclingDocument {
+        let xml = format!(
+            "<article><front><article-meta><title-group><article-title>Body Test\
+             </article-title></title-group></article-meta></front><body>{body}</body></article>"
+        );
+        let src = SourceDocument::from_bytes("b", InputFormat::XmlJats, xml.into_bytes());
+        JatsBackend::default().convert(&src).unwrap()
+    }
+
+    /// The `(text, enumerated, marker)` of every list item in the JSON export.
+    fn json_list_items(doc: &DoclingDocument) -> Vec<(String, bool, String)> {
+        let v: serde_json::Value = serde_json::from_str(&doc.export_to_json()).unwrap();
+        v["texts"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|t| t["label"] == "list_item")
+            .map(|t| {
+                (
+                    t["text"].as_str().unwrap().to_string(),
+                    t["enumerated"].as_bool().unwrap(),
+                    t["marker"].as_str().unwrap().to_string(),
+                )
+            })
+            .collect()
+    }
+
+    fn two_items(list_attr: &str) -> String {
+        format!(
+            "<sec><title>Steps</title><list{list_attr}>\
+             <list-item><p>first</p></list-item><list-item><p>second</p></list-item>\
+             </list></sec>"
+        )
+    }
+
+    /// docling#4770 `test_jats_list_type_sets_enumerated`: the numbering
+    /// `list-type`s (trimmed, any case) enumerate the items; `bullet`,
+    /// `simple`, `none`, an unknown value or none at all bullet them.
+    #[test]
+    fn list_type_sets_enumerated() {
+        let cases = [
+            (Some("order"), true),
+            (Some("alpha-lower"), true),
+            (Some("alpha-upper"), true),
+            (Some("roman-lower"), true),
+            (Some("roman-upper"), true),
+            (Some(" Order "), true),
+            (Some("ROMAN-UPPER"), true),
+            (Some("bullet"), false),
+            (Some("simple"), false),
+            (Some("none"), false),
+            (Some("bogus"), false),
+            (None, false),
+        ];
+        for (list_type, enumerated) in cases {
+            let attr = list_type.map_or(String::new(), |t| format!(" list-type=\"{t}\""));
+            let doc = body_doc(&two_items(&attr));
+            assert_eq!(
+                json_list_items(&doc),
+                vec![
+                    ("first".to_string(), enumerated, String::new()),
+                    ("second".to_string(), enumerated, String::new()),
+                ],
+                "{list_type:?}"
+            );
+            let want = if enumerated {
+                "1. first\n2. second"
+            } else {
+                "- first\n- second"
+            };
+            let md = doc.export_to_markdown();
+            assert!(md.contains(want), "{list_type:?}: {md}");
+            let dclx = doc.export_to_doclang();
+            assert_eq!(
+                dclx.contains("<list class=\"ordered\">"),
+                enumerated,
+                "{list_type:?}: {dclx}"
+            );
+        }
+    }
+
+    /// docling#4770 `test_jats_nested_list_takes_its_own_list_type`, and the
+    /// converse: a nested list without `list-type` is a bullet list inside a
+    /// numbered one.
+    #[test]
+    fn nested_list_takes_its_own_list_type() {
+        let doc = body_doc(
+            "<sec><title>Steps</title><list list-type=\"bullet\"><list-item><p>outer</p>\
+             <list list-type=\"order\"><list-item><p>inner one</p></list-item>\
+             <list-item><p>inner two</p></list-item></list></list-item></list></sec>",
+        );
+        let enumerated: Vec<(String, bool)> = json_list_items(&doc)
+            .into_iter()
+            .map(|(t, e, _)| (t, e))
+            .collect();
+        assert_eq!(
+            enumerated,
+            vec![
+                ("outer".into(), false),
+                ("inner one".into(), true),
+                ("inner two".into(), true),
+            ]
+        );
+        assert!(
+            doc.export_to_markdown()
+                .contains("- outer\n    1. inner one\n    2. inner two"),
+            "{}",
+            doc.export_to_markdown()
+        );
+
+        let doc = body_doc(
+            "<sec><title>Steps</title><list list-type=\"order\"><list-item><p>outer</p>\
+             <list><list-item><p>inner one</p></list-item><list-item><p>inner two</p></list-item>\
+             </list></list-item><list-item><p>outer two</p></list-item></list></sec>",
+        );
+        assert!(
+            doc.export_to_markdown()
+                .contains("1. outer\n    - inner one\n    - inner two\n2. outer two"),
+            "{}",
+            doc.export_to_markdown()
+        );
+    }
+
+    /// docling#4770 `test_jats_list_item_label_becomes_marker`: the `<label>`
+    /// is the item's marker, not part of its text. docling-core prints an
+    /// alphanumeric marker behind a `-` bullet, and DocLang carries it in the
+    /// item's `<ldiv>`.
+    #[test]
+    fn list_item_label_becomes_marker() {
+        let doc = body_doc(
+            "<sec><title>Conditions</title><list list-type=\"simple\">\
+             <list-item><label>(a)</label><p>first</p></list-item>\
+             <list-item><label>(b)</label><p>second</p></list-item></list></sec>",
+        );
+        assert_eq!(
+            json_list_items(&doc),
+            vec![
+                ("first".to_string(), false, "(a)".to_string()),
+                ("second".to_string(), false, "(b)".to_string()),
+            ]
+        );
+        assert!(
+            doc.export_to_markdown()
+                .contains("- (a) first\n- (b) second"),
+            "{}",
+            doc.export_to_markdown()
+        );
+        let dclx = doc.export_to_doclang();
+        assert!(
+            dclx.contains(
+                "<list>\n    <ldiv>\n      <marker>(a)</marker>\n    </ldiv>\n    first\n"
+            ),
+            "{dclx}"
+        );
+    }
+
+    /// docling-core's marker rule in a numbered list (checked against docling
+    /// 2.138.0): a `\\d+.` label prints verbatim, any other alphanumeric label
+    /// falls back to `- label`, and an unlabelled item keeps its position
+    /// number. DocLang keeps the list ordered with each label as its marker.
+    #[test]
+    fn labels_in_a_numbered_list() {
+        let doc = body_doc(
+            "<sec><title>C</title><list list-type=\"order\">\
+             <list-item><label>1.</label><p>first</p></list-item>\
+             <list-item><label>(ii)</label><p>second</p></list-item>\
+             <list-item><p>third</p></list-item></list></sec>",
+        );
+        assert_eq!(
+            json_list_items(&doc),
+            vec![
+                ("first".to_string(), true, "1.".to_string()),
+                ("second".to_string(), true, "(ii)".to_string()),
+                ("third".to_string(), true, String::new()),
+            ]
+        );
+        let md = doc.export_to_markdown();
+        assert!(md.contains("1. first\n- (ii) second\n3. third"), "{md}");
+        let dclx = doc.export_to_doclang();
+        assert!(
+            dclx.contains(
+                "<list class=\"ordered\">\n    <ldiv>\n      <marker>1.</marker>\n    </ldiv>\n    first\n    <ldiv>\n      <marker>(ii)</marker>\n    </ldiv>\n    second\n    <ldiv/>\n    third\n  </list>"
+            ),
+            "{dclx}"
+        );
+    }
+
+    /// The item text is its `<p>` children only (docling's `text_parts`):
+    /// loose text beside them is not part of it, and a label-only item is an
+    /// empty item carrying its marker (`- x ` in docling's Markdown).
+    #[test]
+    fn list_item_text_is_its_paragraphs() {
+        let doc = body_doc(
+            "<sec><title>C</title><list list-type=\"bullet\">\
+             <list-item>loose text<p>para one</p><p>para two</p></list-item>\
+             <list-item><label>x</label></list-item></list></sec>",
+        );
+        assert_eq!(
+            json_list_items(&doc),
+            vec![
+                ("para one para two".to_string(), false, String::new()),
+                (String::new(), false, "x".to_string()),
+            ]
+        );
+        let md = doc.export_to_markdown();
+        assert!(md.contains("- para one para two\n- x \n"), "{md:?}");
+    }
 
     /// docling#4029: `<ext-link xlink:href>` makes its runs hyperlinks —
     /// rendered `[text](url)` and never coalesced with the unlinked text
