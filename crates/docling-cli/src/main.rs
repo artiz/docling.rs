@@ -1679,8 +1679,16 @@ fn main() -> ExitCode {
     // then fall through to the regular output selection (md/json/dclx/chunks
     // all work; there is no page-streaming, the endpoint is the bottleneck).
     if let Some(vlm) = &vlm {
-        let mut document = match docling::vlm::convert_vlm(&source, vlm) {
-            Ok(doc) => doc,
+        let mut document = match docling::vlm::convert_vlm_result(&source, vlm) {
+            // A page that failed or came back cut off (#762, #763): the
+            // document is written, the pages go to stderr, exit 0 — like the
+            // standard pipeline's partial results below.
+            Ok(result) => {
+                for problem in &result.errors {
+                    eprintln!("warning: partial document: {}", problem.describe());
+                }
+                result.document
+            }
             Err(e) => {
                 eprintln!("error: {e}");
                 return ExitCode::FAILURE;
@@ -1796,7 +1804,7 @@ fn main() -> ExitCode {
             // docling's PARTIAL_SUCCESS (#497): the document is written, the
             // reason goes to stderr, the exit code stays 0.
             for problem in &result.errors {
-                eprintln!("warning: partial document: {}", problem.error_message);
+                eprintln!("warning: partial document: {}", problem.describe());
             }
             if let Some(report) = &result.redaction {
                 eprintln!("redacted: {}", redaction_summary(report));
@@ -2510,7 +2518,7 @@ fn merge_archive(zip: &Path, converter: &DocumentConverter) -> Result<DoclingDoc
         eprintln!(
             "warning: {}: partial document: {}",
             zip.display(),
-            e.error_message
+            e.describe()
         );
     }
     if merged.converted == 0 {
@@ -2760,7 +2768,8 @@ fn batch_convert_one(
         });
     }
     // Problems the conversion survived — docling's `ConversionResult.errors`:
-    // a spent `--document-timeout` (#497) leaves the pages done so far.
+    // a spent `--document-timeout` (#497) leaves the pages done so far, a
+    // failed or cut-off VLM page (#762, #763) the pages around it.
     let mut partial: Vec<String> = Vec::new();
     // The PII pass's report (#621): the converter branch runs the pass
     // itself; the VLM and warm-pipeline branches bypass `convert`, so it
@@ -2769,7 +2778,9 @@ fn batch_convert_one(
     let bypasses_converter =
         cfg.vlm.is_some() || matches!(source.format, InputFormat::Pdf | InputFormat::Image);
     let mut document = if let Some(vlm) = &cfg.vlm {
-        docling::vlm::convert_vlm(&source, vlm).map_err(|e| e.to_string())?
+        let result = docling::vlm::convert_vlm_result(&source, vlm).map_err(|e| e.to_string())?;
+        partial.extend(result.errors.iter().map(docling::ErrorItem::describe));
+        result.document
     } else if matches!(source.format, InputFormat::Pdf | InputFormat::Image) {
         // One warm pipeline for the whole run: workers serialize on it (its
         // internal page workers already use the machine), declarative files
@@ -2790,7 +2801,7 @@ fn batch_convert_one(
         }
     } else {
         let result = converter.convert(source).map_err(|e| e.to_string())?;
-        partial.extend(result.errors.into_iter().map(|e| e.error_message));
+        partial.extend(result.errors.iter().map(docling::ErrorItem::describe));
         redaction = result.redaction;
         result.document
     };

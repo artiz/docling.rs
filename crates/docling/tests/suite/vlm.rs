@@ -14,23 +14,46 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 
-use docling::vlm::{convert_vlm, VlmOptions};
-use docling::{InputFormat, SourceDocument};
+use docling::vlm::{convert_vlm, convert_vlm_result, VlmOptions};
+use docling::{ConversionStatus, InputFormat, SourceDocument};
 
 fn repo_root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../..")
+}
+
+/// One canned answer of [`mock_replies`]: an HTTP status, and for a 200 the
+/// completion's `content` and `finish_reason`.
+struct Reply {
+    status: u16,
+    content: String,
+    finish_reason: &'static str,
+}
+
+impl Reply {
+    fn ok(content: impl Into<String>) -> Self {
+        Reply {
+            status: 200,
+            content: content.into(),
+            finish_reason: "stop",
+        }
+    }
 }
 
 /// Minimal HTTP/1.1 server: for each expected request, read head + body,
 /// run the assertions, respond with a canned chat completion whose `content`
 /// comes from `answers`. Returns (base_url, served-count handle, join handle).
 fn mock_openai(answers: Vec<String>) -> (String, Arc<AtomicUsize>, std::thread::JoinHandle<()>) {
+    mock_replies(answers.into_iter().map(Reply::ok).collect())
+}
+
+/// [`mock_openai`] with a status and finish reason per answer.
+fn mock_replies(replies: Vec<Reply>) -> (String, Arc<AtomicUsize>, std::thread::JoinHandle<()>) {
     let listener = TcpListener::bind("127.0.0.1:0").expect("bind mock server");
     let addr = listener.local_addr().unwrap();
     let served = Arc::new(AtomicUsize::new(0));
     let count = Arc::clone(&served);
     let handle = std::thread::spawn(move || {
-        for answer in answers {
+        for reply in replies {
             let (mut conn, _) = listener.accept().expect("accept");
             let mut buf = Vec::new();
             let mut tmp = [0u8; 4096];
@@ -68,12 +91,20 @@ fn mock_openai(answers: Vec<String>) -> (String, Arc<AtomicUsize>, std::thread::
                 body.contains("data:image/png;base64,"),
                 "page image missing"
             );
-            let payload = serde_json::json!({
-                "choices": [{ "message": { "role": "assistant", "content": answer } }]
-            })
-            .to_string();
+            let payload = if reply.status == 200 {
+                serde_json::json!({
+                    "choices": [{
+                        "message": { "role": "assistant", "content": reply.content },
+                        "finish_reason": reply.finish_reason,
+                    }]
+                })
+                .to_string()
+            } else {
+                serde_json::json!({ "error": { "message": "bad page" } }).to_string()
+            };
             let resp = format!(
-                "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{}",
+                "HTTP/1.1 {} X\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{}",
+                reply.status,
                 payload.len(),
                 payload
             );
@@ -119,6 +150,121 @@ fn vlm_converts_pdf_pages_through_the_endpoint() {
     assert!(md.contains("# Page One"), "markdown: {md:?}");
     assert!(md.contains("First body."), "markdown: {md:?}");
     assert!(md.contains("Second body."), "markdown: {md:?}");
+}
+
+/// #762 (docling#4561): a page whose request fails is recorded and left
+/// out; the pages around it are kept and the result is a partial success.
+#[test]
+fn vlm_failed_page_is_a_page_error() {
+    let (endpoint, served, handle) = mock_replies(vec![
+        Reply::ok("<text>First body.</text>"),
+        Reply {
+            status: 400,
+            content: String::new(),
+            finish_reason: "stop",
+        },
+        Reply::ok("<text>Third body.</text>"),
+    ]);
+    let source =
+        SourceDocument::from_file(repo_root().join("tests/data/pdf/sources/2206.01062.pdf"))
+            .expect("pdf fixture");
+    let mut o = opts(endpoint);
+    o.page_range = Some((1, 3));
+    let result = convert_vlm_result(&source, &o).expect("partial vlm conversion");
+    handle.join().expect("mock server");
+    // A 4xx is not retried: one request per page.
+    assert_eq!(served.load(Ordering::SeqCst), 3);
+    assert_eq!(result.status, ConversionStatus::PartialSuccess);
+    let md = result.document.export_to_markdown();
+    assert!(md.contains("First body."), "markdown: {md:?}");
+    assert!(md.contains("Third body."), "markdown: {md:?}");
+    assert_eq!(result.errors.len(), 1, "{:?}", result.errors);
+    let e = &result.errors[0];
+    assert_eq!(e.page_no, Some(2));
+    assert_eq!(
+        (e.component_type.as_str(), e.module_name.as_str()),
+        ("pipeline", "VlmPipeline")
+    );
+    assert!(
+        e.error_message.starts_with("VLM inference failed: ")
+            && e.error_message.contains("HTTP 400"),
+        "{}",
+        e.error_message
+    );
+}
+
+/// Only a document where no page produced output fails.
+#[test]
+fn vlm_every_page_failed_is_an_error() {
+    let (endpoint, _, handle) = mock_replies(vec![Reply {
+        status: 400,
+        content: String::new(),
+        finish_reason: "stop",
+    }]);
+    let source = SourceDocument::from_bytes("page.png", InputFormat::Image, image_bytes());
+    let err = convert_vlm_result(&source, &opts(endpoint)).unwrap_err();
+    handle.join().expect("mock server");
+    assert!(
+        err.to_string().contains("page 1: ") && err.to_string().contains("HTTP 400"),
+        "{err}"
+    );
+}
+
+/// #763 (docling#4778): an answer cut off at `max_tokens` (or by a content
+/// filter) keeps its text and is recorded as incomplete.
+#[test]
+fn vlm_truncated_page_is_a_page_error() {
+    let (endpoint, _, handle) = mock_replies(vec![
+        Reply {
+            status: 200,
+            content: "<text>Cut off mid</text>".into(),
+            finish_reason: "length",
+        },
+        Reply {
+            status: 200,
+            content: "<text>Filtered</text>".into(),
+            finish_reason: "content_filter",
+        },
+    ]);
+    let source =
+        SourceDocument::from_file(repo_root().join("tests/data/pdf/sources/2206.01062.pdf"))
+            .expect("pdf fixture");
+    let mut o = opts(endpoint);
+    o.page_range = Some((1, 2));
+    let result = convert_vlm_result(&source, &o).expect("vlm conversion");
+    handle.join().expect("mock server");
+    assert_eq!(result.status, ConversionStatus::PartialSuccess);
+    let md = result.document.export_to_markdown();
+    assert!(
+        md.contains("Cut off mid") && md.contains("Filtered"),
+        "markdown: {md:?}"
+    );
+    let got: Vec<_> = result
+        .errors
+        .iter()
+        .map(|e| (e.page_no, e.error_message.as_str()))
+        .collect();
+    assert_eq!(
+        got,
+        [
+            (Some(1), "VLM output incomplete (stop_reason=length)."),
+            (
+                Some(2),
+                "VLM output incomplete (stop_reason=content_filter)."
+            ),
+        ]
+    );
+}
+
+/// A complete answer is a plain success.
+#[test]
+fn vlm_complete_answer_is_a_success() {
+    let (endpoint, _, handle) = mock_openai(vec!["<text>Whole page.</text>".into()]);
+    let source = SourceDocument::from_bytes("page.png", InputFormat::Image, image_bytes());
+    let result = convert_vlm_result(&source, &opts(endpoint)).expect("vlm conversion");
+    handle.join().expect("mock server");
+    assert_eq!(result.status, ConversionStatus::Success);
+    assert!(result.errors.is_empty());
 }
 
 /// #322: a Chandra-grammar answer routes to the layout-HTML parser — blocks,

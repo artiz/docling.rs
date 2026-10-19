@@ -591,7 +591,8 @@ pub struct ConvertResult {
     pub images: Vec<ImageArtifact>,
     /// The problems the conversion survived — docling's
     /// `ConversionResult.errors`; non-empty exactly when `status` is
-    /// `"partial_success"` (today: a spent `documentTimeout`, #497).
+    /// `"partial_success"` (a spent `documentTimeout`, #497; a VLM page
+    /// that failed or came back cut off, #762/#763).
     pub errors: Vec<ConversionErrorItem>,
     /// What the PII pass redacted (#621) when `redactPii` was on: counts
     /// per label (`{ EMAIL: 2, PHONE: 1 }`); absent otherwise.
@@ -602,11 +603,16 @@ pub struct ConvertResult {
 /// produced a document.
 #[napi(object)]
 pub struct ConversionErrorItem {
-    /// `"document_backend"`, `"model"`, `"doc_assembler"`, `"user_input"`.
+    /// `"document_backend"`, `"model"`, `"doc_assembler"`, `"user_input"`,
+    /// `"pipeline"`.
     pub component_type: String,
-    /// The stage that recorded it (`"pipeline"` for the document budget).
+    /// The stage that recorded it (`"pipeline"` for the document budget,
+    /// `"VlmPipeline"` for a VLM page).
     pub module_name: String,
     pub error_message: String,
+    /// The 1-based page the problem belongs to; absent when it is
+    /// document-scoped.
+    pub page_no: Option<u32>,
 }
 
 fn error_items(errors: Vec<docling::ErrorItem>) -> Vec<ConversionErrorItem> {
@@ -616,6 +622,7 @@ fn error_items(errors: Vec<docling::ErrorItem>) -> Vec<ConversionErrorItem> {
             component_type: e.component_type,
             module_name: e.module_name,
             error_message: e.error_message,
+            page_no: e.page_no.map(|p| p as u32),
         })
         .collect()
 }
@@ -879,12 +886,14 @@ fn check_allowed(source: &SourceDocument, cfg: &ConvertConfig) -> Result<()> {
 fn run_convert(source: SourceDocument, cfg: &ConvertConfig) -> Result<RawResult> {
     // #77: the remote VLM replaces the entire ML stack — no ONNX model is
     // loaded, and every other converter knob (OCR, TableFormer, text panels)
-    // has nothing to act on. `convert_vlm` fails the whole document if a single
-    // page fails, so there is no partial_success to report here.
+    // has nothing to act on. A page that failed or came back cut off
+    // (#762, #763) makes it a `partial_success` with that page's error.
     if let Some(vlm) = &cfg.vlm {
         check_allowed(&source, cfg)?;
         let format = source.format.as_str().to_string();
-        let mut document = docling::vlm::convert_vlm(&source, vlm).map_err(convert_err)?;
+        let result = docling::vlm::convert_vlm_result(&source, vlm).map_err(convert_err)?;
+        let status = status_str(result.status);
+        let mut document = result.document;
         // The serializer knobs `DocumentConverter::convert` would have applied
         // (converter.rs) — this path never reaches it, so they are set here or
         // they silently lapse under `pipeline: "vlm"`.
@@ -901,8 +910,8 @@ fn run_convert(source: SourceDocument, cfg: &ConvertConfig) -> Result<RawResult>
             cfg,
             source.name,
             format,
-            "success".to_string(),
-            Vec::new(),
+            status,
+            result.errors,
             redaction,
         ));
     }

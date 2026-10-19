@@ -99,9 +99,10 @@ struct PyNativeResult {
     #[pyo3(get)]
     document_json: String,
     /// docling's `ConversionResult.errors` as `(component_type, module_name,
-    /// error_message)` tuples; non-empty exactly for `partial_success`.
+    /// error_message, page_no)` tuples; non-empty exactly for
+    /// `partial_success`.
     #[pyo3(get)]
-    errors: Vec<(String, String, String)>,
+    errors: Vec<ErrorTuple>,
     /// What the PII pass redacted (#621) when `redact_pii` was on: counts
     /// per label; `None` otherwise.
     #[pyo3(get)]
@@ -142,10 +143,13 @@ struct PyNativeArchiveItem {
     error: Option<String>,
 }
 
-fn error_tuples(errors: Vec<docling::ErrorItem>) -> Vec<(String, String, String)> {
+/// One `ErrorItem` as the Python layer unpacks it.
+type ErrorTuple = (String, String, String, Option<usize>);
+
+fn error_tuples(errors: Vec<docling::ErrorItem>) -> Vec<ErrorTuple> {
     errors
         .into_iter()
-        .map(|e| (e.component_type, e.module_name, e.error_message))
+        .map(|e| (e.component_type, e.module_name, e.error_message, e.page_no))
         .collect()
 }
 
@@ -987,17 +991,15 @@ impl PyDocumentConverter {
             }
             let converter = self.inner.clone();
             return run_interruptible(py, move || {
-                let mut doc = docling::vlm::convert_vlm(&src, &vlm).map_err(conversion_error)?;
+                // A failed or cut-off page (#762, #763) is a
+                // `partial_success` with its page error.
+                let mut result =
+                    docling::vlm::convert_vlm_result(&src, &vlm).map_err(conversion_error)?;
                 // The PII pass (#621) on the VLM path too.
-                let redaction = converter.redact(&mut doc).map_err(conversion_error)?;
-                Ok(PyNativeResult {
-                    status: "success".to_string(),
-                    input_name: src.name,
-                    metadata_json: metadata_json(&doc),
-                    document_json: doc.export_to_json(),
-                    errors: Vec::new(),
-                    redaction: redaction_counts(redaction),
-                })
+                result.redaction = converter
+                    .redact(&mut result.document)
+                    .map_err(conversion_error)?;
+                Ok(native_result(result))
             });
         }
         if src.format == docling::InputFormat::Pdf && self.pdf_pipeline.lock().unwrap().is_some() {

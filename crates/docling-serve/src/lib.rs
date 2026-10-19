@@ -2353,6 +2353,7 @@ impl Converted {
                 "component_type": e.component_type,
                 "module_name": e.module_name,
                 "error_message": e.error_message,
+                "page_no": e.page_no,
             }))
             .collect::<Vec<_>>())
     }
@@ -2443,9 +2444,12 @@ fn convert_document_inner(
     check_picture_description(state, options, true)?;
     if let Some(vlm) = resolve_vlm_options(state, options, true)? {
         let finish = request_converter(state, options)?;
-        return docling::vlm::convert_vlm(&source, &vlm)
+        // A failed or cut-off page (#762, #763) is a `partial_success`
+        // with its page error, the pages around it kept.
+        return docling::vlm::convert_vlm_result(&source, &vlm)
             .map_err(|e| conversion_api_error(&e))
-            .and_then(|mut document| {
+            .and_then(|result| {
+                let mut document = result.document;
                 finish.finish_document(&mut document);
                 // The PII pass (#621) on the VLM path too.
                 let redaction = finish
@@ -2453,7 +2457,7 @@ fn convert_document_inner(
                     .map_err(|e| conversion_api_error(&e))?;
                 Ok(Converted {
                     document,
-                    errors: Vec::new(),
+                    errors: result.errors,
                     redaction,
                 })
             });
@@ -2718,7 +2722,7 @@ async fn stream_markdown(
                     // A partial document (#497) streams like a whole one; the
                     // body is already on its way, so the reason is only logged.
                     for e in &converted.errors {
-                        eprintln!("docling-serve: partial document: {}", e.error_message);
+                        eprintln!("docling-serve: partial document: {}", e.describe());
                     }
                     let mut doc = converted.document;
                     doc.strict_markdown = options.convert.strict.unwrap_or(st.cfg.strict);

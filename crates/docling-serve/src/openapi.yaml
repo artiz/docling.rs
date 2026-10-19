@@ -1444,6 +1444,7 @@ components:
               component_type: { type: string }
               module_name: { type: string }
               error_message: { type: string }
+              page_no: { type: ["null", integer], description: "1-based page the error belongs to (a failed or cut-off VLM page); null when document-scoped" }
         processing_time: { type: number }
         timings: { type: object }
         confidence: { type: object, description: PDF/image conversions only }

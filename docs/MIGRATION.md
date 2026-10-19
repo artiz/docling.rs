@@ -956,7 +956,14 @@ deliberate scope boundary or a cosmetic, single-fixture polish gap.
   server-side via `DOCLING_RS_VLM_*`). Measured against Python docling's
   `VlmPipeline` on the same granite-docling endpoint: **87.7% mean
   similarity over the 18-fixture PDF corpus, 3 byte-exact** (#311; drift is
-  mostly render-scale-induced — see PDF_CONFORMANCE.md). (**Audio/ASR is now done** — see §2; Opus and AVI,
+  mostly render-scale-induced — see PDF_CONFORMANCE.md). Per-page outcomes
+  follow docling 2.139's `VlmPipeline._determine_status` (docling#4561,
+  docling#4778; #762, #763): a failed request (`VLM inference failed: …`)
+  or a cut-off answer (`VLM output incomplete (stop_reason=length|content_filter)`,
+  text kept) is a `pipeline`/`VlmPipeline` error item with its `page_no`
+  and a `partial_success`; only a document with no page output fails.
+  `ErrorItem.page_no` is exposed on every surface (serve JSON `page_no`,
+  Node `pageNo`, Python `ErrorItem.page_no`). (**Audio/ASR is now done** — see §2; Opus and AVI,
   which symphonia cannot decode, use the optional ffmpeg fallback. The **enrichment
   models are now done** too: DocumentFigureClassifier-v2.5 for
   `do_picture_classification` and CodeFormulaV2 — an Idefics3-class VLM,
