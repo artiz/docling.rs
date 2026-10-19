@@ -2,10 +2,12 @@
 //! hidden shapes (#754, docling#4647/#4733), footer placeholders (#755,
 //! docling#4746).
 //!
-//! `tests/data/pptx/hidden_layers/<name>.{md,json}` is **not** our output: it
-//! is what docling 2.140.0's PowerPoint backend writes for `<name>.pptx`
-//! (`MsPowerpointDocumentBackend(...).convert()`, then `export_to_markdown()`
-//! and `export_to_dict()`). The decks are upstream's test decks, rebuilt by
+//! `tests/data/pptx/hidden_layers/<name>.{md,json,dclg}` is **not** our
+//! output: it is what docling 2.140.0's PowerPoint backend writes for
+//! `<name>.pptx` (`MsPowerpointDocumentBackend(...).convert()`, then
+//! `export_to_markdown()`, `export_to_dict()` and the `document.xml` of
+//! docling-core 2.102's `save_as_doclang_archive()`, the DocLang that
+//! `export_to_doclang()` here mirrors). The decks are upstream's test decks, rebuilt by
 //! `make_decks.py` next to them. Re-create a reference with upstream's
 //! backend, never from our own output.
 use std::fs;
@@ -91,6 +93,26 @@ fn hidden_and_furniture_layers_follow_docling() {
         }
     }
     assert!(failures.is_empty(), "{}", failures.join("\n\n"));
+}
+
+/// Every deck's DocLang equals docling's: a hidden slide's title and a
+/// hidden table or picture keep their location, the `<layer>` token ahead
+/// of it, as hidden text always did; a hidden picture's image stays a data
+/// URI, as docling's archive keeps every picture off the body.
+#[test]
+fn doclang_follows_docling() {
+    let mut checked = 0;
+    for entry in fs::read_dir(dir()).expect("hidden_layers fixtures") {
+        let path = entry.expect("entry").path();
+        if path.extension().is_none_or(|e| e != "dclg") {
+            continue;
+        }
+        let name = path.file_stem().unwrap().to_str().unwrap();
+        let want = fs::read_to_string(&path).unwrap();
+        assert_eq!(convert(name).export_to_doclang(), want, "{name}");
+        checked += 1;
+    }
+    assert_eq!(checked, 5);
 }
 
 /// The hidden content is kept, on the invisible layer: an export that asks

@@ -1,0 +1,49 @@
+<doclang version="0.7">
+  <heading>
+    <location value="26"/>
+    <location value="21"/>
+    <location value="486"/>
+    <location value="106"/>
+    Visible slide
+  </heading>
+  <text>
+    <location value="51"/>
+    <location value="137"/>
+    <location value="256"/>
+    <location value="205"/>
+    Presented text
+  </text>
+  <text>
+    <layer value="notes"/>
+    <location value="0"/>
+    <location value="0"/>
+    <location value="0"/>
+    <location value="0"/>
+    Notes for Visible slide
+  </text>
+  <heading>
+    <layer value="invisible"/>
+    <location value="26"/>
+    <location value="21"/>
+    <location value="486"/>
+    <location value="106"/>
+    Hidden slide
+  </heading>
+  <text>
+    <layer value="invisible"/>
+    <location value="51"/>
+    <location value="137"/>
+    <location value="256"/>
+    <location value="205"/>
+    Backup text
+  </text>
+  <text>
+    <layer value="notes"/>
+    <location value="0"/>
+    <location value="0"/>
+    <location value="0"/>
+    <location value="0"/>
+    Notes for Hidden slide
+  </text>
+  <page_break/>
+</doclang>
