@@ -326,7 +326,7 @@ Set `OTEL_EXPORTER_OTLP_ENDPOINT` to stream distributed tracing spans over gRPC:
 ## Security Considerations
 
 1. **URL Fetching & SSRF Protection**:
-   URL inputs (`{"url": "..."}`) are **disabled by default**. Passing `--allow-url-fetch` enables them. Even when enabled, requests to private, loopback, link-local, and cloud metadata addresses (`169.254.169.254`, `127.0.0.1`, `10.0.0.0/8`, etc.) are blocked, and redirects are forbidden.
+   URL inputs (`{"url": "..."}`) are **disabled by default**. Passing `--allow-url-fetch` enables them. Even when enabled, requests to any address that is not globally routable — private, loopback, link-local, cloud metadata (`169.254.169.254`, `127.0.0.1`, `10.0.0.0/8`, multicast, reserved, NAT64, etc.) — are blocked at connect time, so DNS rebinding cannot get around the check (#752), and redirects are forbidden.
 
 2. **Authentication**:
    `docling-serve` does not provide built-in authentication. Always bind to `127.0.0.1` or front the container with a reverse proxy (such as Caddy, NGINX, Traefik, or an API gateway) with authentication before exposing it publicly.

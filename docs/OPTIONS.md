@@ -137,7 +137,8 @@ codec or copybook when the conversion runs.
   last segment, and typed by that name's extension, else the `Content-Type`,
   else the bytes' signature (PDF, OOXML/ODF/EPUB, OLE, RTF, HTML, the raster
   images, DjVu); redirects are followed (5) and every hop passes the SSRF
-  guard docling-serve uses — a private/loopback address needs
+  guard docling-serve uses, enforced at connect time (#752) — a private,
+  loopback or other non-global address needs
   `DOCLING_RS_ALLOW_PRIVATE_IP_FETCH=1`, the body is capped by
   `DOCLING_RS_MAX_FETCH_BYTES`. `--from FORMAT` (an identifier from
   `--list-input-formats`) names the format outright, for stdin, a bare URL

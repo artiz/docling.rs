@@ -144,9 +144,17 @@ extracted to disk, so there is no zip-slip path.
 ### `docling-serve` (HTTP conversion API)
 
 - **URL fetch is off by default** (`--allow-url-fetch` to enable). When
-  enabled, the target host is resolved and refused if it maps to a
-  loopback / private / link-local / unique-local / CGNAT address (blocks
-  `169.254.169.254` cloud metadata and internal services); HTTP redirects
+  enabled, the target host is resolved and refused if any address it maps to
+  is not globally routable — loopback, private, link-local, unique-local,
+  CGNAT, multicast, reserved, `0.0.0.0/8`, benchmarking `198.18/15`, the
+  documentation and IETF ranges, NAT64 `64:ff9b::/96` and 6to4 (docling-core's
+  `is_global` rule; blocks `169.254.169.254` cloud metadata and internal
+  services). The check is enforced **at connect time** (#752): the connection
+  goes only to the addresses validated in the same resolution, so a
+  DNS-rebinding server cannot pass the check with a public answer and then
+  point the connect at `127.0.0.1`. Behind an HTTP proxy (`HTTPS_PROXY`…) the
+  proxy resolves the target, so a proxied request relies on the pre-flight
+  check alone, as docling's does. HTTP redirects
   are disabled (no public→internal bounce); and the fetched response is size-
   capped (256 MiB, `DOCLING_RS_MAX_FETCH_BYTES`). For local development,
   `DOCLING_RS_ALLOW_PRIVATE_IP_FETCH=1` disables the IP block-list so a
@@ -167,8 +175,9 @@ extracted to disk, so there is no zip-slip path.
   flag off (the default) the request is held to `embedded` (pictures that
   need the network stay placeholders) and the web UI greys the checkbox; and
   `local` is refused (400) unless the operator started the server with
-  `--allow-local-images`. A remote fetch carries the same SSRF guard — a host
-  resolving to a private/loopback/link-local address is skipped — plus an
+  `--allow-local-images`. A remote fetch carries the same SSRF guard,
+  enforced at connect time — a host resolving to any non-global address is
+  skipped — plus an
   optional **host allow-list** (`image_hosts`: exact names or `*.suffix`)
   that every redirect hop is held to, a connect/overall timeout (5 s / 20 s)
   and a redirect cap, so one slow or hostile image can't hang the conversion
@@ -181,7 +190,10 @@ extracted to disk, so there is no zip-slip path.
   document the same way — points the server's outbound traffic (page images
   included) wherever the caller says, so it sits behind the **same
   `--allow-url-fetch` gate** and the same resolve-and-refuse
-  private-address check as URL inputs. The safer
+  private-address check as URL inputs — as a pre-flight check only: the VLM
+  client does not pin the connection to the validated addresses, so a
+  rebinding DNS answer for a caller-supplied endpoint is not caught at
+  connect time. The safer
   deployment is the operator-pinned mode: set `DOCLING_RS_VLM_ENDPOINT` /
   `DOCLING_RS_VLM_MODEL` on the server and let requests send only
   `pipeline=vlm` — the pinned endpoint is the operator's own choice, so it
@@ -213,8 +225,8 @@ the container image.
   `ebcdic_layout`) are held to the same roots; `asr_model` must be a preset
   name.
 - **URLs are off by default** (`--allow-url-fetch`). Enabled, a fetch goes
-  through `docling::fetch`: the docling-serve block-list (loopback, private,
-  link-local, unique-local, CGNAT) applied to **every redirect hop**, which
+  through `docling::fetch`: the docling-serve block-list (every non-global
+  address, enforced at connect time) applied to **every redirect hop**, which
   are followed by hand (at most 5), the 256 MiB `DOCLING_RS_MAX_FETCH_BYTES`
   cap, and 10 s connect / 300 s overall timeouts.
   `DOCLING_RS_ALLOW_PRIVATE_IP_FETCH=1` lifts the block-list, as above.
