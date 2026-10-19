@@ -991,6 +991,48 @@ fn docling_flag_spellings_match_ours() {
     assert_eq!(a.1, b.1);
 }
 
+/// #781 (docling-core#772): a referenced picture's HTML `src` is the
+/// Markdown destination, HTML-escaped — `&`, `,` and `+` in the document's
+/// name stay as they are instead of `%26`, `%2C`, `%2B`.
+#[test]
+fn referenced_image_src_is_encoded_like_markdown() {
+    let dir = std::env::temp_dir().join(format!("docling-rs-781-{}", std::process::id()));
+    let out = dir.join("out");
+    std::fs::create_dir_all(&out).unwrap();
+    let doc = dir.join("Q&A, v2+final.docx");
+    std::fs::copy(
+        concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../tests/data/docx/sources/word_image_anchors.docx"
+        ),
+        &doc,
+    )
+    .unwrap();
+    let (code, _, stderr) = run(&[
+        doc.to_str().unwrap(),
+        "--to",
+        "html",
+        "--to",
+        "md",
+        "--images",
+        "referenced",
+        "--output",
+        out.to_str().unwrap(),
+    ]);
+    assert_eq!(code, 0, "stderr: {stderr}");
+    let html = std::fs::read_to_string(out.join("Q&A, v2+final.html")).unwrap();
+    let md = std::fs::read_to_string(out.join("Q&A, v2+final.md")).unwrap();
+    assert!(
+        html.contains("<img src=\"Q&amp;A,%20v2+final_artifacts/image_000000.png\""),
+        "{html}"
+    );
+    assert!(
+        md.contains("](Q&A,%20v2+final_artifacts/image_000000.png)"),
+        "{md}"
+    );
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
 /// #611: an encrypted PDF converts with docling's `--pdf-password` (or
 /// `--password`, the spelling PDF_CONFORMANCE.md used); without one it fails
 /// with docling's message. (Text-layer path: no models needed.)

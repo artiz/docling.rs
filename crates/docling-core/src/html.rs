@@ -319,19 +319,14 @@ fn is_rtl_letter(c: char) -> bool {
         | 0x10800..=0x10FFF | 0x1E800..=0x1EFFF)
 }
 
-/// Python's `urllib.parse.quote` with its default `safe="/"`: unreserved
-/// characters and `/` pass, everything else is percent-encoded per UTF-8 byte.
-fn url_quote(s: &str) -> String {
-    let mut out = String::with_capacity(s.len());
-    for b in s.bytes() {
-        match b {
-            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'_' | b'.' | b'-' | b'~' | b'/' => {
-                out.push(b as char)
-            }
-            _ => out.push_str(&format!("%{b:02X}")),
-        }
-    }
-    out
+/// A referenced image's `src`: docling-core's `html.escape(_escape_uri_path(uri))`
+/// (docling-core#772, 2.102) — the destination encoded exactly as the Markdown
+/// export encodes it (a URL keeps its scheme and delimiters, `%` escapes are
+/// not encoded twice, `&`, `,`, `+` stay), then escaped for the attribute.
+/// Python's plain `quote` used to turn `Q&A, v2+final` into `Q%26A%2C…` and
+/// `https://` into `https%3A//`.
+fn img_src(uri: &str) -> String {
+    escape(&crate::markdown::escape_uri_path(uri), true)
 }
 
 /// Python's `str.capitalize()` after `_` → space: the first character
@@ -982,9 +977,9 @@ impl<'a> Serializer<'a> {
                 }
                 (ImageMode::Referenced, Some(uri)) => {
                     if let Some(path) = self.reference_image(uri) {
-                        res_parts.push(format!("<img src=\"{}\"{alt}>", url_quote(&path)));
+                        res_parts.push(format!("<img src=\"{}\"{alt}>", img_src(&path)));
                     } else if !uri.starts_with("data:") {
-                        res_parts.push(format!("<img src=\"{}\"{alt}>", url_quote(uri)));
+                        res_parts.push(format!("<img src=\"{}\"{alt}>", img_src(uri)));
                     }
                 }
                 _ => {}
@@ -1385,10 +1380,22 @@ mod tests {
         assert_eq!(text_direction("abc ש"), "ltr");
     }
 
+    /// #781 (docling-core#772): a referenced `src` is encoded like the
+    /// Markdown destination, then HTML-escaped — `&`, `,`, `+` and a URL's
+    /// `:` stay, a `%` escape is not encoded twice.
     #[test]
-    fn url_quote_is_pythons_default_quote() {
-        assert_eq!(url_quote("a b/c_d.png"), "a%20b/c_d.png");
-        assert_eq!(url_quote("ü"), "%C3%BC");
+    fn img_src_encodes_like_markdown() {
+        assert_eq!(
+            img_src("Q&A, v2+final_artifacts/image_000000.png"),
+            "Q&amp;A,%20v2+final_artifacts/image_000000.png"
+        );
+        assert_eq!(
+            img_src("https://e.x/a b.png?x=1&y=2"),
+            "https://e.x/a%20b.png?x=1&amp;y=2"
+        );
+        assert_eq!(img_src("dir/a%20b.png"), "dir/a%20b.png");
+        assert_eq!(img_src("ü.png"), "%C3%BC.png");
+        assert_eq!(img_src("it's \"q\".png"), "it&#x27;s%20%22q%22.png");
     }
 
     #[test]
