@@ -2758,6 +2758,45 @@ fn pair_graphic_captions(regions: &[Region]) -> Vec<Option<usize>> {
             matched = next;
         }
     }
+    // Side-by-side figures (a docling.rs extension, `docs/PDF_CONFORMANCE.md`):
+    // a row of pictures reads as a run of graphics followed (or preceded) by
+    // the run of their captions, and upstream's run rule serves only the
+    // first caption — for the others the caption before them breaks the run,
+    // and docling leaves them loose. A caption still loose whose only
+    // separation from a graphic run is other captions takes the nearest
+    // unclaimed graphic of that run it sits under or over (horizontal
+    // overlap, within three line heights — the old geometric rule).
+    for (pos, &ci) in body.iter().enumerate() {
+        let is_caption = |i: &usize| regions[*i].label == "caption";
+        if !is_caption(&ci) || matched.contains(&Some(ci)) {
+            continue;
+        }
+        let c = &regions[ci];
+        let line_h = (c.b - c.t).abs().max(1.0);
+        let graphic = |i: &usize| is_graphic(regions[*i].label);
+        let before = body[..pos]
+            .iter()
+            .rev()
+            .skip_while(|i| is_caption(i))
+            .take_while(|i| graphic(i));
+        let after = body[pos + 1..]
+            .iter()
+            .skip_while(|i| is_caption(i))
+            .take_while(|i| graphic(i));
+        let best = before
+            .chain(after)
+            .filter(|&&g| matched[g].is_none())
+            .filter_map(|&g| {
+                let p = &regions[g];
+                let h_overlap = p.r.min(c.r) - p.l.max(c.l);
+                let gap = (c.t - p.b).max(p.t - c.b); // below or above the graphic
+                (h_overlap > 0.0 && gap > -line_h && gap < line_h * 3.0).then_some((g, gap))
+            })
+            .min_by(|a, b| a.1.total_cmp(&b.1));
+        if let Some((g, _)) = best {
+            matched[g] = Some(ci);
+        }
+    }
     matched
 }
 
@@ -4161,6 +4200,37 @@ mod tests {
         ];
         let pairs = super::pair_graphic_captions(&regions);
         assert_eq!(pairs, vec![None, Some(0), None]);
+    }
+
+    /// Side-by-side figures (`tests/snapshots/latex/…/swa.pdf`): three
+    /// pictures in a row, their three captions in a row under them. docling's
+    /// run rule binds only the first caption (the one before each other
+    /// caption breaks its run); the extension gives the other two the
+    /// unclaimed picture each sits under. A caption whose run is broken by
+    /// *text* (2206.01062's Figure 4 behind a hash line) stays loose, as
+    /// docling leaves it.
+    #[test]
+    fn side_by_side_figure_captions_bind_their_own_picture() {
+        let regions = vec![
+            region("picture", 0.8, 9.0, 2.0, 367.0, 347.0),   // 0
+            region("picture", 0.7, 423.0, 3.0, 718.0, 346.0), // 1
+            region("picture", 0.7, 756.0, 13.0, 1040.0, 341.0), // 2
+            region("caption", 0.6, 128.0, 371.0, 315.0, 392.0), // 3 ← under 0
+            region("caption", 0.6, 425.0, 371.0, 713.0, 396.0), // 4 ← under 1
+            region("caption", 0.6, 785.0, 371.0, 1069.0, 397.0), // 5 ← under 2
+        ];
+        let pairs = super::pair_graphic_captions(&regions);
+        assert_eq!(pairs[..3], [Some(3), Some(4), Some(5)]);
+
+        let regions = vec![
+            region("picture", 0.9, 316.0, 82.0, 564.0, 459.0),
+            region("text", 0.9, 400.0, 458.0, 476.0, 461.0), // a hash line
+            region("caption", 0.9, 318.0, 473.0, 559.0, 504.0),
+        ];
+        assert_eq!(
+            super::pair_graphic_captions(&regions),
+            vec![None, None, None]
+        );
     }
 
     /// A colored terms-and-conditions panel detected as `picture` demotes into
