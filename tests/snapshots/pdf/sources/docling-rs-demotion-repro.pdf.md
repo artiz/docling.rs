@@ -2,9 +2,9 @@
 
 Project readiness indicator  actual placements tracked against the baseline schedule for the reporting period (cubic metres).
 
-Table 1. Pour volume by month (m3)
-
 <!-- image -->
+
+Table 1. Pour volume by month (m3)
 
 | Month   |   Planned |   Actual | Variance   |
 |---------|-----------|----------|------------|

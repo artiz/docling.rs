@@ -24,13 +24,15 @@ older, pypdfium2-era docling's and the pipeline was scored with OCR on.
 
 ## Current state
 
-**9 / 18 strict** · **10 / 18 whitespace-normalized** against upstream's
+**10 / 18 strict** · **11 / 18 whitespace-normalized** against upstream's
 current groundtruth (docling ≥ 2.123: docling-parse render, `do_ocr=False`,
 `compact_tables=True`; 18 fixtures — `table_misidentified_as_form`
-(docling#4064) joined the corpus with this refresh). Total 342 diff lines with
+(docling#4064) joined the corpus with this refresh). Total 330 diff lines with
 the docling-parse renderer the baselines are measured with (374 before #528
 recovered redp5110's rotated table headers, 346 before #609 kept glyphs stacked
-at one x apart); the default build's pure-Rust
+at one x apart, 342 before #813 ported docling's caption matcher — 2203.01017v2
+19 → 17 and 2206.01062 14 → 10, the captions docling leaves loose now stay
+loose here too, and `right_to_left_03` reads exact); the default build's pure-Rust
 renderer scored 454 on the same files before that change ("The PDF stack"
 below). (The two Korean image-only pages `skipped_1page` /
 `skipped_2pages` carry no text groundtruth and are not scored.)
@@ -45,11 +47,11 @@ below). (The two Korean image-only pages `skipped_1page` /
 | base14_fonts_rot90 / _rot180 / _rot270 | **exact** | — (`/Rotate` display-frame normalization, docling#4008; our own fixtures, groundtruth = the unrotated upstream file) |
 | code_and_formula | **exact** | — (flat legacy code, line-preserving `pretty` in strict) |
 | amt_handbook_sample | 2 *(ws-ok)* | docling's spurious fraction double space — ours is more faithful |
-| right_to_left_03 | 2 | one RTL heading line (bidi run order) |
+| right_to_left_03 | **exact** | — (bidi run order of a numbered heading) |
 | 2305.03393v1 | 4 | one author-block cluster (model-borderline) |
 | normal_4pages | 12 | docling folds the page-number glyph into the heading cluster (`## 들어가며 1`) where we emit it as its own item, and the `※` footnotes order |
-| 2203.01017v2 | 19 | caption vs enumerated-list order around Figure 1, accent spacing in the references (`Herv´e D´ejean`) |
-| 2206.01062 | 14 | author-block cluster splits (model-borderline) |
+| 2203.01017v2 | 17 | the `c. Structure predicted by TableFormer:` item's slot under Figure 1, accent spacing in the references (`Herv´e D´ejean`) |
+| 2206.01062 | 10 | author-block cluster splits (model-borderline), Table 5's merged first column |
 | table_misidentified_as_form | 48 | the form container's nested table / picture (docling#4064): docling nests them inside the form region and keeps the heading, we flatten the region |
 | table_mislabeled_as_picture | 85 | the survey over-detected as tables; docling keeps a cell's leading indentation (`\|   They work in parallel…`) |
 | redp5110_sampled | 152 | TOC: docling's cell matching puts the dot leaders into the page-number column (`. . . . . . . vii`), ours keeps them with the title (`. vii`); cover-page ordering |
@@ -267,7 +269,7 @@ diff history of each port lives in the git log of these files).
 | `_sort_cells` (docling-parse index order), `PageAssembleModel.sanitize_text` (docling#4052) | a region's cells serialize in source order; lines join with a space except after an *attached* dash, which fuses the wrapped word; a detached dash is kept | `assemble::cells_text` |
 | `predict_merges` (docling#3888) | cross-column / cross-page paragraph continuations (a hard hyphen before a lowercase continuation joins without it; the head test accepts a trailing comma; tables are in the skip set) | `assemble::merge_continuations` |
 | `_init_l2r_map` / `_init_ud_map` (docling#4093, 2.124) | two elements consecutive in assembly order, left strictly of right on one row (vertical IoU > 0.8), are linked left→right and a row is read through before the paragraph below it; the assembly rank is the region's first source cell (a table's or picture's first *interior* cell) | `reading_order::init_l2r` / `init_ud`, `assemble::cluster_cids` |
-| `_find_to_captions` (table arm, #265) | a `caption` binds to the table / `document_index` immediately adjacent in reading order, never across intervening text; caption text is markdown-escaped on every arm | `assemble` caption attachment |
+| `_find_to_captions` — `_rank_caption_candidates` + `_match_caption` (#265, #813) | a `caption` reaches the graphics (`picture`, `table` / `document_index`, `code`) in the unbroken run on either side of it in reading order — above *and* below, never across intervening text or the gutter — ranked by the shortest box gap (ties to the preceding graphic), and the graphics are matched by augmenting paths, a caption with a second choice yielding to one with none; #813 was the picture arm only looking *below* its figure, so a `Figure N:` label printed above never bound. Caption text is markdown-escaped on every arm | `assemble::pair_graphic_captions` |
 | `form` / `key_value_region` containers (docling#4064) | everything > 80 % inside is a child, ordered among itself and emitted as one block where the container sits (ordering only — the children stay top-level items, no `form_area` group node) | `assemble::order_with_containers` |
 | a picture ≥ 80 % inside a TableFormer table (docling#3906) | nested in the cell covering it: the cell reads `text  <!-- image -->`, the JSON grid keeps the text | `assemble::match_table_pictures` |
 | `ListItemMarkerProcessor` | a leading `-` / bullet / `N.` / `a)` marker is split off the item text; a compound `3.a.` rides in the text | `docling-core` list-item processing |
@@ -303,6 +305,16 @@ diff lines and recovers content docling drops):
 * **Picture-in-table captions**: a picture inside a table that pairs with a
   caption stays a standalone figure (upstream nests it and loses the
   caption).
+* **Side-by-side figure captions** (#813): a row of pictures reads as a run
+  of graphics followed by the run of their captions, and docling's
+  `_find_to_captions` serves only the first caption — for the others the
+  caption before them breaks the run, so they stay loose text under the row.
+  A caption still loose after the upstream matching, whose only separation
+  from a graphic run is other captions, takes the nearest unclaimed graphic
+  of that run it sits under or over (horizontal overlap, within three line
+  heights; `assemble::pair_graphic_captions`). A run broken by *text* stays
+  loose as upstream leaves it (2206.01062's Figure 4 behind its hash line is
+  in the groundtruth that way).
 * **DocLang picture children** are not printed (upstream's DocLang picture
   serializer prints them).
 
