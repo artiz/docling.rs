@@ -88,7 +88,10 @@ cargo test -p docling-pdf --features pdfium --lib raster:: pdfium_backend::  # t
   When "No space left on device" hits, delete `target/debug/examples`,
   `target/debug/incremental`, oldest `target/debug/deps` files — deletes work
   even at 0 free. `CARGO_INCREMENTAL=0` helps. Old rustup toolchains and
-  `~/.cargo/registry/cache` are also safe to drop.
+  `~/.cargo/registry/cache` are also safe to drop. Every `cargo test` rebuild
+  leaves the previous test binary behind as a differently-hashed
+  `target/debug/deps/<crate>-<hash>` (500–650 MB each for the ML crates); only
+  the newest hash per stem is live, the rest is the first thing to delete.
 - Tests run with CWD = the crate dir, but shared fixtures and runtime assets
   live at the **repo root**. Resolve fixtures via
   `Path::new(env!("CARGO_MANIFEST_DIR")).join("../..")` and gate asset-needing
