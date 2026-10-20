@@ -29,15 +29,12 @@ fn find_pdfs(dir: &Path, out: &mut Vec<PathBuf>) {
     for p in entries {
         if p.is_dir() {
             // Skip `large/` — big perf-test inputs with no conformance baseline —
-            // `pdf_password/` — the encrypted fixture the typed-error tests open
-            // with its password; the pipeline is given none here, so it only
-            // ever produced an `ERROR:` snapshot that no baseline carries — and
-            // `*_artifacts/` — gitignored by-products of `--images referenced`
+            // and `*_artifacts/` — gitignored by-products of `--images referenced`
             // / dclx conversions that would otherwise be swept in as image inputs
             // and mint snapshots that don't exist on a clean checkout.
-            if p.file_name().is_some_and(|n| {
-                n == "large" || n == "pdf_password" || n.to_string_lossy().ends_with("_artifacts")
-            }) {
+            if p.file_name()
+                .is_some_and(|n| n == "large" || n.to_string_lossy().ends_with("_artifacts"))
+            {
                 continue;
             }
             find_pdfs(&p, out);
@@ -45,6 +42,19 @@ fn find_pdfs(dir: &Path, out: &mut Vec<PathBuf>) {
             out.push(p);
         }
     }
+}
+
+/// The password of an encrypted fixture: `tests/data/pdf_password/` holds
+/// the documents the typed-encryption tests open, locked with the opening
+/// password its README states. Without it the pipeline raised its
+/// password-required error and the snapshot was that error text — a baseline
+/// that pinned nothing; with it the decrypted page goes through the full
+/// pipeline like any other fixture.
+fn fixture_password(rel: &Path) -> Option<&'static str> {
+    rel.components()
+        .next()
+        .is_some_and(|c| c.as_os_str() == "pdf_password")
+        .then_some("1234")
 }
 
 fn main() {
@@ -69,7 +79,7 @@ fn main() {
                 } else if IMAGE_EXTS.contains(&ext) {
                     pipeline.convert_image(&bytes, &name)
                 } else {
-                    pipeline.convert(&bytes, None, &name)
+                    pipeline.convert(&bytes, fixture_password(rel), &name)
                 };
                 result
                     .map(|d| d.export_to_markdown())
