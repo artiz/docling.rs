@@ -947,7 +947,7 @@ impl<'a> Decoder<'a> {
             };
         }
         let ids = [self.comps[0].id, self.comps[1].id, self.comps[2].id];
-        if ids == [b'R', b'G', b'B'] {
+        if ids == *b"RGB" {
             ColorSpace::Rgb
         } else {
             ColorSpace::YCbCr

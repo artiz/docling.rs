@@ -39,8 +39,15 @@ if [ "$DOCLING_RS_RENDERER" = docling-parse ]; then
   done
 fi
 
-tmp=$(mktemp -d)
-trap 'rm -rf "$tmp"' EXIT
+# PDF_CONFORMANCE_OUT keeps the regenerated tree (CI uploads it as the
+# artifact a maintainer refreshes tests/snapshots from); unset, it is scratch.
+if [ -n "${PDF_CONFORMANCE_OUT:-}" ]; then
+  tmp="$PDF_CONFORMANCE_OUT"
+  mkdir -p "$tmp"
+else
+  tmp=$(mktemp -d)
+  trap 'rm -rf "$tmp"' EXIT
+fi
 echo "regenerating PDF output ..."
 cargo run --release -q -p docling-pdf --example snapshot -- tests/data "$tmp" 1>&2
 

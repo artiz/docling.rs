@@ -249,7 +249,7 @@ fn parse_font(doc: &Document, name: &[u8], fdict: &Dictionary) -> Font {
         .unwrap_or(&[]);
     let two_byte = subtype == b"Type0".as_slice();
 
-    let to_unicode = fdict
+    let mut to_unicode = fdict
         .get(b"ToUnicode")
         .ok()
         .and_then(|o| deref(doc, o))
@@ -257,6 +257,11 @@ fn parse_font(doc: &Document, name: &[u8], fdict: &Dictionary) -> Font {
         .and_then(|s| s.decompressed_content().ok())
         .map(|data| parse_tounicode(&data))
         .unwrap_or_default();
+    if !two_byte {
+        if let Some(diffs) = differences_array(doc, fdict) {
+            reconcile_stale_tounicode(&mut to_unicode, &diffs);
+        }
+    }
 
     let (mut widths, mut default_width) = if two_byte {
         cid_widths(doc, fdict)
@@ -318,6 +323,47 @@ fn parse_font(doc: &Document, name: &[u8], fdict: &Dictionary) -> Font {
         style: crate::font_style::parse_font_style(&String::from_utf8_lossy(
             &base_font_name(fdict).unwrap_or_else(|| name.to_vec()),
         )),
+    }
+}
+
+/// A simple font's `/Encoding` `/Differences` array, dereferenced.
+fn differences_array(doc: &Document, fdict: &Dictionary) -> Option<Vec<Object>> {
+    let enc = fdict.get(b"Encoding").ok().and_then(|o| deref(doc, o))?;
+    let diffs = enc.as_dict().ok()?.get(b"Differences").ok()?;
+    match deref(doc, diffs)? {
+        Object::Array(a) => Some(a.clone()),
+        _ => None,
+    }
+}
+
+/// A ToUnicode CMap copied from the *original* font while the glyphs were
+/// re-encoded: the encrypted `2206.01062_pg3` fixture (a Quartz re-save of
+/// pdfTeX output) keeps the T1-encoding CMap, keyed on the old codes, next
+/// to a `/Differences [33 /f_f_i /f_i /f_f /f_l]` that names the ligatures at
+/// new ones, so the CMap maps code 33 to `!` — its own identity — and
+/// `difficulties` read `di ! culties`, in docling's pdfium chain too. A
+/// ToUnicode entry that is the code's identity, for a code whose
+/// `/Differences` name resolves to something else, is that stale copy: the
+/// name wins. A CMap that disagrees any other way is left alone — ToUnicode
+/// is the producer's word on what the glyph means.
+fn reconcile_stale_tounicode(to_unicode: &mut HashMap<u32, String>, diffs: &[Object]) {
+    let mut code = 0u8;
+    for el in diffs {
+        match el {
+            Object::Integer(i) => code = *i as u8,
+            Object::Name(name) => {
+                if let Some(ch) = glyph_name_to_char(name) {
+                    let identity = (code as char).to_string();
+                    if ch.to_string() != identity
+                        && to_unicode.get(&u32::from(code)) == Some(&identity)
+                    {
+                        to_unicode.insert(u32::from(code), ch.to_string());
+                    }
+                }
+                code = code.wrapping_add(1);
+            }
+            _ => {}
+        }
     }
 }
 
@@ -2247,6 +2293,235 @@ fn tex_math_builtin(fdict: &Dictionary) -> Option<HashMap<u8, char>> {
     )
 }
 
+/// The Adobe Glyph List's names for Latin-1 Supplement and Latin Extended-A
+/// (plus `Euro`, `florin`, the comma-accent pairs): what a Type1 font's
+/// `/Differences` or builtin encoding calls an accented or stroked letter.
+/// 2203.01017v2 names `Ł` as `/Lslash` in a NimbusRomNo9L subset with no
+/// ToUnicode, and the resolver, which knew only the ASCII, ligature and symbol
+/// names, dropped the glyph outright (`Ł ukasz Kaiser` read `ukasz Kaiser`).
+/// Sorted by name for the binary search in [`glyph_name_to_char`].
+const AGL_LATIN: &[(&str, char)] = &[
+    ("AE", '\u{00C6}'),
+    ("Aacute", '\u{00C1}'),
+    ("Abreve", '\u{0102}'),
+    ("Acircumflex", '\u{00C2}'),
+    ("Adieresis", '\u{00C4}'),
+    ("Agrave", '\u{00C0}'),
+    ("Amacron", '\u{0100}'),
+    ("Aogonek", '\u{0104}'),
+    ("Aring", '\u{00C5}'),
+    ("Atilde", '\u{00C3}'),
+    ("Cacute", '\u{0106}'),
+    ("Ccaron", '\u{010C}'),
+    ("Ccedilla", '\u{00C7}'),
+    ("Ccircumflex", '\u{0108}'),
+    ("Cdotaccent", '\u{010A}'),
+    ("Dcaron", '\u{010E}'),
+    ("Dcroat", '\u{0110}'),
+    ("Eacute", '\u{00C9}'),
+    ("Ebreve", '\u{0114}'),
+    ("Ecaron", '\u{011A}'),
+    ("Ecircumflex", '\u{00CA}'),
+    ("Edieresis", '\u{00CB}'),
+    ("Edotaccent", '\u{0116}'),
+    ("Egrave", '\u{00C8}'),
+    ("Emacron", '\u{0112}'),
+    ("Eng", '\u{014A}'),
+    ("Eogonek", '\u{0118}'),
+    ("Eth", '\u{00D0}'),
+    ("Euro", '\u{20AC}'),
+    ("Gbreve", '\u{011E}'),
+    ("Gcircumflex", '\u{011C}'),
+    ("Gcommaaccent", '\u{0122}'),
+    ("Gdotaccent", '\u{0120}'),
+    ("Hbar", '\u{0126}'),
+    ("Hcircumflex", '\u{0124}'),
+    ("IJ", '\u{0132}'),
+    ("Iacute", '\u{00CD}'),
+    ("Ibreve", '\u{012C}'),
+    ("Icircumflex", '\u{00CE}'),
+    ("Idieresis", '\u{00CF}'),
+    ("Idotaccent", '\u{0130}'),
+    ("Igrave", '\u{00CC}'),
+    ("Imacron", '\u{012A}'),
+    ("Iogonek", '\u{012E}'),
+    ("Itilde", '\u{0128}'),
+    ("Jcircumflex", '\u{0134}'),
+    ("Kcommaaccent", '\u{0136}'),
+    ("Lacute", '\u{0139}'),
+    ("Lcaron", '\u{013D}'),
+    ("Lcommaaccent", '\u{013B}'),
+    ("Ldot", '\u{013F}'),
+    ("Lslash", '\u{0141}'),
+    ("Nacute", '\u{0143}'),
+    ("Ncaron", '\u{0147}'),
+    ("Ncommaaccent", '\u{0145}'),
+    ("Ntilde", '\u{00D1}'),
+    ("OE", '\u{0152}'),
+    ("Oacute", '\u{00D3}'),
+    ("Obreve", '\u{014E}'),
+    ("Ocircumflex", '\u{00D4}'),
+    ("Odieresis", '\u{00D6}'),
+    ("Ograve", '\u{00D2}'),
+    ("Ohungarumlaut", '\u{0150}'),
+    ("Omacron", '\u{014C}'),
+    ("Oslash", '\u{00D8}'),
+    ("Otilde", '\u{00D5}'),
+    ("Racute", '\u{0154}'),
+    ("Rcaron", '\u{0158}'),
+    ("Rcommaaccent", '\u{0156}'),
+    ("Sacute", '\u{015A}'),
+    ("Scaron", '\u{0160}'),
+    ("Scedilla", '\u{015E}'),
+    ("Scircumflex", '\u{015C}'),
+    ("Scommaaccent", '\u{0218}'),
+    ("Tbar", '\u{0166}'),
+    ("Tcaron", '\u{0164}'),
+    ("Tcommaaccent", '\u{0162}'),
+    ("Thorn", '\u{00DE}'),
+    ("Uacute", '\u{00DA}'),
+    ("Ubreve", '\u{016C}'),
+    ("Ucircumflex", '\u{00DB}'),
+    ("Udieresis", '\u{00DC}'),
+    ("Ugrave", '\u{00D9}'),
+    ("Uhungarumlaut", '\u{0170}'),
+    ("Umacron", '\u{016A}'),
+    ("Uogonek", '\u{0172}'),
+    ("Uring", '\u{016E}'),
+    ("Utilde", '\u{0168}'),
+    ("Wcircumflex", '\u{0174}'),
+    ("Yacute", '\u{00DD}'),
+    ("Ycircumflex", '\u{0176}'),
+    ("Ydieresis", '\u{0178}'),
+    ("Zacute", '\u{0179}'),
+    ("Zcaron", '\u{017D}'),
+    ("Zdotaccent", '\u{017B}'),
+    ("aacute", '\u{00E1}'),
+    ("abreve", '\u{0103}'),
+    ("acircumflex", '\u{00E2}'),
+    ("acute", '\u{00B4}'),
+    ("adieresis", '\u{00E4}'),
+    ("ae", '\u{00E6}'),
+    ("agrave", '\u{00E0}'),
+    ("amacron", '\u{0101}'),
+    ("aogonek", '\u{0105}'),
+    ("aring", '\u{00E5}'),
+    ("atilde", '\u{00E3}'),
+    ("brokenbar", '\u{00A6}'),
+    ("cacute", '\u{0107}'),
+    ("ccaron", '\u{010D}'),
+    ("ccedilla", '\u{00E7}'),
+    ("ccircumflex", '\u{0109}'),
+    ("cdotaccent", '\u{010B}'),
+    ("cedilla", '\u{00B8}'),
+    ("cent", '\u{00A2}'),
+    ("currency", '\u{00A4}'),
+    ("dcaron", '\u{010F}'),
+    ("dcroat", '\u{0111}'),
+    ("dieresis", '\u{00A8}'),
+    ("dotlessi", '\u{0131}'),
+    ("eacute", '\u{00E9}'),
+    ("ebreve", '\u{0115}'),
+    ("ecaron", '\u{011B}'),
+    ("ecircumflex", '\u{00EA}'),
+    ("edieresis", '\u{00EB}'),
+    ("edotaccent", '\u{0117}'),
+    ("egrave", '\u{00E8}'),
+    ("emacron", '\u{0113}'),
+    ("eng", '\u{014B}'),
+    ("eogonek", '\u{0119}'),
+    ("eth", '\u{00F0}'),
+    ("exclamdown", '\u{00A1}'),
+    ("florin", '\u{0192}'),
+    ("gbreve", '\u{011F}'),
+    ("gcircumflex", '\u{011D}'),
+    ("gcommaaccent", '\u{0123}'),
+    ("gdotaccent", '\u{0121}'),
+    ("germandbls", '\u{00DF}'),
+    ("guillemotleft", '\u{00AB}'),
+    ("guillemotright", '\u{00BB}'),
+    ("hbar", '\u{0127}'),
+    ("hcircumflex", '\u{0125}'),
+    ("iacute", '\u{00ED}'),
+    ("ibreve", '\u{012D}'),
+    ("icircumflex", '\u{00EE}'),
+    ("idieresis", '\u{00EF}'),
+    ("igrave", '\u{00EC}'),
+    ("ij", '\u{0133}'),
+    ("imacron", '\u{012B}'),
+    ("iogonek", '\u{012F}'),
+    ("itilde", '\u{0129}'),
+    ("jcircumflex", '\u{0135}'),
+    ("kcommaaccent", '\u{0137}'),
+    ("kgreenlandic", '\u{0138}'),
+    ("lacute", '\u{013A}'),
+    ("lcaron", '\u{013E}'),
+    ("lcommaaccent", '\u{013C}'),
+    ("ldot", '\u{0140}'),
+    ("logicalnot", '\u{00AC}'),
+    ("longs", '\u{017F}'),
+    ("lslash", '\u{0142}'),
+    ("macron", '\u{00AF}'),
+    ("nacute", '\u{0144}'),
+    ("napostrophe", '\u{0149}'),
+    ("ncaron", '\u{0148}'),
+    ("ncommaaccent", '\u{0146}'),
+    ("ntilde", '\u{00F1}'),
+    ("oacute", '\u{00F3}'),
+    ("obreve", '\u{014F}'),
+    ("ocircumflex", '\u{00F4}'),
+    ("odieresis", '\u{00F6}'),
+    ("oe", '\u{0153}'),
+    ("ograve", '\u{00F2}'),
+    ("ohungarumlaut", '\u{0151}'),
+    ("omacron", '\u{014D}'),
+    ("onehalf", '\u{00BD}'),
+    ("onequarter", '\u{00BC}'),
+    ("onesuperior", '\u{00B9}'),
+    ("ordfeminine", '\u{00AA}'),
+    ("ordmasculine", '\u{00BA}'),
+    ("oslash", '\u{00F8}'),
+    ("otilde", '\u{00F5}'),
+    ("paragraph", '\u{00B6}'),
+    ("questiondown", '\u{00BF}'),
+    ("racute", '\u{0155}'),
+    ("rcaron", '\u{0159}'),
+    ("rcommaaccent", '\u{0157}'),
+    ("sacute", '\u{015B}'),
+    ("scaron", '\u{0161}'),
+    ("scedilla", '\u{015F}'),
+    ("scircumflex", '\u{015D}'),
+    ("scommaaccent", '\u{0219}'),
+    ("section", '\u{00A7}'),
+    ("sfthyphen", '\u{00AD}'),
+    ("sterling", '\u{00A3}'),
+    ("tbar", '\u{0167}'),
+    ("tcaron", '\u{0165}'),
+    ("tcommaaccent", '\u{0163}'),
+    ("thorn", '\u{00FE}'),
+    ("threequarters", '\u{00BE}'),
+    ("threesuperior", '\u{00B3}'),
+    ("twosuperior", '\u{00B2}'),
+    ("uacute", '\u{00FA}'),
+    ("ubreve", '\u{016D}'),
+    ("ucircumflex", '\u{00FB}'),
+    ("udieresis", '\u{00FC}'),
+    ("ugrave", '\u{00F9}'),
+    ("uhungarumlaut", '\u{0171}'),
+    ("umacron", '\u{016B}'),
+    ("uogonek", '\u{0173}'),
+    ("uring", '\u{016F}'),
+    ("utilde", '\u{0169}'),
+    ("wcircumflex", '\u{0175}'),
+    ("yacute", '\u{00FD}'),
+    ("ycircumflex", '\u{0177}'),
+    ("ydieresis", '\u{00FF}'),
+    ("yen", '\u{00A5}'),
+    ("zacute", '\u{017A}'),
+    ("zcaron", '\u{017E}'),
+    ("zdotaccent", '\u{017C}'),
+];
+
 /// Resolve an Adobe glyph name to Unicode: `uniXXXX`, single ASCII letters, the
 /// digit/punctuation names from the Adobe Glyph List, and common typographic
 /// names. A `.suffix` (`one.taboldstyle`, `a.sc`) is stripped and the base name
@@ -2410,10 +2685,22 @@ pub(crate) fn glyph_name_to_char(name: &[u8]) -> Option<char> {
         "dotmath" => '\u{22C5}',
         "asteriskmath" => '\u{2217}',
         _ => {
+            if let Ok(i) = AGL_LATIN.binary_search_by_key(&s, |(n, _)| n) {
+                return Some(AGL_LATIN[i].1);
+            }
             // Strip an AGL `.suffix` (oldstyle/small-cap variant) and retry.
             if let Some((base, _)) = s.split_once('.') {
                 if !base.is_empty() {
                     return glyph_name_to_char(base.as_bytes());
+                }
+            }
+            // An AGL ligature name joins its components with `_` (`f_f_i`,
+            // `f_l` — what a re-encoded Libertine subset calls them); joined,
+            // the presentation-form arms above resolve them.
+            if s.contains('_') {
+                let joined: String = s.chars().filter(|&c| c != '_').collect();
+                if !joined.is_empty() && joined.len() < s.len() {
+                    return glyph_name_to_char(joined.as_bytes());
                 }
             }
             return None;
@@ -2485,6 +2772,74 @@ fn macroman_table() -> HashMap<u8, char> {
         }
     }
     m
+}
+
+#[cfg(test)]
+mod glyph_names {
+    /// `/Lslash` and the other Latin-1 / Latin Extended-A glyph names a Type1
+    /// `/Differences` uses resolve (2203.01017v2's `Łukasz`); the table the
+    /// lookup bisects is sorted and the ligature / symbol arms still win.
+    #[test]
+    fn latin_glyph_names_resolve() {
+        for w in super::AGL_LATIN.windows(2) {
+            assert!(
+                w[0].0 < w[1].0,
+                "AGL_LATIN not sorted at {:?} / {:?}",
+                w[0].0,
+                w[1].0
+            );
+        }
+        for (name, ch) in [
+            ("Lslash", 'Ł'),
+            ("lslash", 'ł'),
+            ("Aacute", 'Á'),
+            ("aacute", 'á'),
+            ("Scaron", 'Š'),
+            ("germandbls", 'ß'),
+            ("oe", 'œ'),
+            ("Ydieresis", 'Ÿ'),
+            ("Euro", '€'),
+            ("Lslash.sc", 'Ł'),
+            ("fi", '\u{FB01}'),
+            ("Omega", '\u{03A9}'),
+        ] {
+            assert_eq!(
+                super::glyph_name_to_char(name.as_bytes()),
+                Some(ch),
+                "{name}"
+            );
+        }
+        assert_eq!(super::glyph_name_to_char(b"g123"), None);
+        // AGL ligature names: components joined with `_`.
+        assert_eq!(super::glyph_name_to_char(b"f_f_i"), Some('\u{FB03}'));
+        assert_eq!(super::glyph_name_to_char(b"f_l"), Some('\u{FB02}'));
+        assert_eq!(super::glyph_name_to_char(b"a_b"), None);
+    }
+
+    /// The stale-CMap case: ToUnicode maps a code to its own identity while
+    /// `/Differences` names a ligature there — the name wins; a CMap that
+    /// maps the code anywhere else, or a code with no entry, is untouched.
+    #[test]
+    fn a_stale_tounicode_yields_to_differences() {
+        use lopdf::Object;
+        use std::collections::HashMap;
+        let mut tu: HashMap<u32, String> = HashMap::new();
+        tu.insert(33, "!".into()); // identity — stale
+        tu.insert(34, "x".into()); // the producer meant it
+        let diffs = vec![
+            Object::Integer(33),
+            Object::Name(b"f_f_i".to_vec()),
+            Object::Name(b"f_i".to_vec()),
+            Object::Name(b"f_f".to_vec()),
+            Object::Integer(65),
+            Object::Name(b"A".to_vec()), // identity on both sides: nothing to do
+        ];
+        super::reconcile_stale_tounicode(&mut tu, &diffs);
+        assert_eq!(tu.get(&33).map(String::as_str), Some("\u{FB03}"));
+        assert_eq!(tu.get(&34).map(String::as_str), Some("x"));
+        assert_eq!(tu.get(&35), None);
+        assert_eq!(tu.get(&65), None);
+    }
 }
 
 #[cfg(test)]

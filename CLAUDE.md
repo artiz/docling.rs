@@ -88,7 +88,10 @@ cargo test -p docling-pdf --features pdfium --lib raster:: pdfium_backend::  # t
   When "No space left on device" hits, delete `target/debug/examples`,
   `target/debug/incremental`, oldest `target/debug/deps` files — deletes work
   even at 0 free. `CARGO_INCREMENTAL=0` helps. Old rustup toolchains and
-  `~/.cargo/registry/cache` are also safe to drop.
+  `~/.cargo/registry/cache` are also safe to drop. Every `cargo test` rebuild
+  leaves the previous test binary behind as a differently-hashed
+  `target/debug/deps/<crate>-<hash>` (500–650 MB each for the ML crates); only
+  the newest hash per stem is live, the rest is the first thing to delete.
 - Tests run with CWD = the crate dir, but shared fixtures and runtime assets
   live at the **repo root**. Resolve fixtures via
   `Path::new(env!("CARGO_MANIFEST_DIR")).join("../..")` and gate asset-needing
@@ -254,13 +257,18 @@ cargo test -p docling-pdf --features pdfium --lib raster:: pdfium_backend::  # t
   that exists in both.
 - When touching serializers, keep the streaming and buffered paths
   byte-identical — `MarkdownStreamer` tests assert exactly that.
-- A `docling-core` serializer change reaches the **PDF** baselines too, and
-  neither runs in CI (both need the models + the docling-parse shim): re-run
-  `scripts/conformance/pdf_conformance.sh` (snapshots) and
-  `scripts/conformance/pdf_groundtruth.sh` in the same PR, or the next person
-  reads the stale baseline as a pipeline regression. The groundtruth `.md` is a
-  serialization of the committed `groundtruth/*.json`, so a serializer-only
-  change is refreshed by re-exporting that JSON — no new docling run needed.
+- A `docling-core` serializer change reaches the **PDF** baselines too. The
+  main CI jobs never run them (both need the models + the docling-parse shim);
+  `pdf-conformance.yml` does, on every PR that touches the PDF stack, the
+  serializers, the fixtures or the baselines — it fails on snapshot drift and
+  uploads the regenerated tree to refresh `tests/snapshots/` from. Still
+  re-run `scripts/conformance/pdf_conformance.sh` (snapshots) and
+  `scripts/conformance/pdf_groundtruth.sh` locally in the same PR when you
+  can, and keep `docs/PDF_CONFORMANCE.md`'s numbers honest (the job only
+  warns when its strict count disagrees with the doc's headline). The
+  groundtruth `.md` is a serialization of the committed `groundtruth/*.json`,
+  so a serializer-only change is refreshed by re-exporting that JSON — no new
+  docling run needed.
 
 ## Conventions that keep recurring
 

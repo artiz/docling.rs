@@ -21,18 +21,29 @@ older, pypdfium2-era docling's and the pipeline was scored with OCR on.
 > docling and diffs against it). Both report two metrics: **strict** (byte-for-byte)
 > and **whitespace-normalized** (spacing-only diffs ignored). Diff = changed lines
 > vs the groundtruth (one changed line counts as 2).
+>
+> CI runs both too (`.github/workflows/pdf-conformance.yml`): on every PR that
+> touches the PDF stack, the serializers, the fixtures or the baselines, it
+> fetches the models and the docling-parse shim, regenerates `tests/snapshots/`
+> and fails on drift — the regenerated tree is the run's artifact, so a
+> baseline is refreshed from it without a local model setup — and prints the
+> groundtruth numbers, warning when the strict count no longer matches the
+> headline above. Before it, a change that moved the output could land with a
+> stale snapshot (#814 found `right_to_left_03`'s that way).
 
 ## Current state
 
 **10 / 18 strict** · **11 / 18 whitespace-normalized** against upstream's
 current groundtruth (docling ≥ 2.123: docling-parse render, `do_ocr=False`,
 `compact_tables=True`; 18 fixtures — `table_misidentified_as_form`
-(docling#4064) joined the corpus with this refresh). Total 330 diff lines with
+(docling#4064) joined the corpus with this refresh). Total 328 diff lines with
 the docling-parse renderer the baselines are measured with (374 before #528
 recovered redp5110's rotated table headers, 346 before #609 kept glyphs stacked
 at one x apart, 342 before #813 ported docling's caption matcher — 2203.01017v2
 19 → 17 and 2206.01062 14 → 10, the captions docling leaves loose now stay
-loose here too, and `right_to_left_03` reads exact); the default build's pure-Rust
+loose here too, and `right_to_left_03` reads exact; 330 before the text
+parser learnt the Adobe Glyph List's Latin names — 2203.01017v2's `/Lslash`
+reference author, 17 → 15); the default build's pure-Rust
 renderer scored 454 on the same files before that change ("The PDF stack"
 below). (The two Korean image-only pages `skipped_1page` /
 `skipped_2pages` carry no text groundtruth and are not scored.)
@@ -50,7 +61,7 @@ below). (The two Korean image-only pages `skipped_1page` /
 | right_to_left_03 | **exact** | — (bidi run order of a numbered heading) |
 | 2305.03393v1 | 4 | one author-block cluster (model-borderline) |
 | normal_4pages | 12 | docling folds the page-number glyph into the heading cluster (`## 들어가며 1`) where we emit it as its own item, and the `※` footnotes order |
-| 2203.01017v2 | 17 | the `c. Structure predicted by TableFormer:` item's slot under Figure 1, accent spacing in the references (`Herv´e D´ejean`) |
+| 2203.01017v2 | 15 | the `c. Structure predicted by TableFormer:` item's slot under Figure 1, accent spacing in the references (`Herv´e D´ejean`) |
 | 2206.01062 | 10 | author-block cluster splits (model-borderline), Table 5's merged first column |
 | table_misidentified_as_form | 48 | the form container's nested table / picture (docling#4064): docling nests them inside the form region and keeps the heading, we flatten the region |
 | table_mislabeled_as_picture | 85 | the survey over-detected as tables; docling keeps a cell's leading indentation (`\|   They work in parallel…`) |
@@ -315,6 +326,17 @@ diff lines and recovers content docling drops):
   heights; `assemble::pair_graphic_captions`). A run broken by *text* stays
   loose as upstream leaves it (2206.01062's Figure 4 behind its hash line is
   in the groundtruth that way).
+* **A caption the model called `text`**: a `text` region whose words are a
+  caption label — `Table 5:`, `Figure 2.1.`, `Fig. 3:`, `Listing 4:` (the
+  word, a number, then `:` or `.`; `Table 5 shows…` is prose) — next to a
+  graphic in reading order, overlapping it horizontally within 25 pt, is
+  relabelled `caption` before the matcher runs
+  (`assemble::promote_labelled_captions`). The layout model labels a long
+  caption block `text` now and then (2206.01062's four-line Table 5 caption,
+  `text` at 0.99), and the table then went uncaptioned in JSON / DocLang
+  while the paragraph stayed loose. docling has no such rule — its own run
+  of that page folds the caption into the preceding paragraph — so the
+  Markdown is unchanged there and the gain is the `captions` ref.
 * **DocLang picture children** are not printed (upstream's DocLang picture
   serializer prints them).
 

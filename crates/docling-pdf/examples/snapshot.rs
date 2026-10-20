@@ -44,6 +44,19 @@ fn find_pdfs(dir: &Path, out: &mut Vec<PathBuf>) {
     }
 }
 
+/// The password of an encrypted fixture: `tests/data/pdf_password/` holds
+/// the documents the typed-encryption tests open, locked with the opening
+/// password its README states. Without it the pipeline raised its
+/// password-required error and the snapshot was that error text — a baseline
+/// that pinned nothing; with it the decrypted page goes through the full
+/// pipeline like any other fixture.
+fn fixture_password(rel: &Path) -> Option<&'static str> {
+    rel.components()
+        .next()
+        .is_some_and(|c| c.as_os_str() == "pdf_password")
+        .then_some("1234")
+}
+
 fn main() {
     let mut args = std::env::args().skip(1);
     let root = PathBuf::from(args.next().expect("usage: snapshot <root> <outdir>"));
@@ -66,7 +79,7 @@ fn main() {
                 } else if IMAGE_EXTS.contains(&ext) {
                     pipeline.convert_image(&bytes, &name)
                 } else {
-                    pipeline.convert(&bytes, None, &name)
+                    pipeline.convert(&bytes, fixture_password(rel), &name)
                 };
                 result
                     .map(|d| d.export_to_markdown())
