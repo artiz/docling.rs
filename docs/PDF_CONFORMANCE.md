@@ -21,6 +21,15 @@ older, pypdfium2-era docling's and the pipeline was scored with OCR on.
 > docling and diffs against it). Both report two metrics: **strict** (byte-for-byte)
 > and **whitespace-normalized** (spacing-only diffs ignored). Diff = changed lines
 > vs the groundtruth (one changed line counts as 2).
+>
+> CI runs both too (`.github/workflows/pdf-conformance.yml`): on every PR that
+> touches the PDF stack, the serializers, the fixtures or the baselines, it
+> fetches the models and the docling-parse shim, regenerates `tests/snapshots/`
+> and fails on drift — the regenerated tree is the run's artifact, so a
+> baseline is refreshed from it without a local model setup — and prints the
+> groundtruth numbers, warning when the strict count no longer matches the
+> headline above. Before it, a change that moved the output could land with a
+> stale snapshot (#814 found `right_to_left_03`'s that way).
 
 ## Current state
 

@@ -1,0 +1,146 @@
+name: PDF conformance
+
+# The PDF baselines — `tests/snapshots/` (every fixture's Markdown through the
+# full ML pipeline) and the docling groundtruth table in
+# `docs/PDF_CONFORMANCE.md` — need the models and the docling-parse renderer
+# shim, so the main CI never ran them: a change that moved the output (the
+# bidi run-order fix; #814 found `right_to_left_03` stale) landed with a
+# snapshot nobody could see was stale until the next person regenerated
+# locally and read it as a pipeline regression. This job regenerates the
+# snapshots on every PR that can move them and fails on drift, uploading the
+# regenerated tree so the baseline can be refreshed from the artifact without
+# a local model setup; the groundtruth numbers are printed and checked
+# against the doc's headline.
+#
+# Determinism: the scripts pin the scalar resize (`DOCLING_RS_SLOW_RESIZE=1`)
+# and the fp32 models, and ONNX Runtime's CPU kernels agree across x86_64
+# runners. Should this job ever drift on master alone — a borderline table
+# cell flipping with the runner's CPU, not with any PR — refresh the baseline
+# from the artifact, or mark the job `continue-on-error` until it settles.
+
+on:
+  pull_request:
+    paths:
+      - "crates/docling-pdf/**"
+      - "crates/docling-core/src/**"
+      - "crates/docling-onnx/**"
+      - "tests/snapshots/**"
+      - "tests/data/**"
+      - "scripts/conformance/**"
+      - "scripts/install/download_dependencies.sh"
+      - "Cargo.lock"
+      - ".github/workflows/pdf-conformance.yml"
+  push:
+    branches: [master]
+    paths:
+      - "crates/docling-pdf/**"
+      - "crates/docling-core/src/**"
+      - "crates/docling-onnx/**"
+      - "tests/snapshots/**"
+      - "tests/data/**"
+      - "scripts/conformance/**"
+      - "scripts/install/download_dependencies.sh"
+      - "Cargo.lock"
+      - ".github/workflows/pdf-conformance.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: pdf-conformance-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: 0
+
+jobs:
+  snapshots:
+    name: snapshots · groundtruth
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v7
+
+      # rustup is preinstalled on GitHub-hosted runners; use it directly rather
+      # than a marketplace toolchain action (the docling-project org allowlists
+      # only GitHub-owned / vetted actions).
+      - name: Install Rust (stable)
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+
+      - uses: actions/cache@v6
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+            target
+            # ort-sys's extracted prebuilt ONNX Runtime (`<cache dir>/
+            # ort.pyke.io/dfbin/<target>/<hash>`): present, the build script
+            # skips the cdn.pyke.io download altogether.
+            ~/.cache/ort.pyke.io
+          key: ${{ runner.os }}-cargo-v2-conformance-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-cargo-v2-conformance-
+
+      # ~750 MB from the models release (layout, OCR, TableFormer, the
+      # classifier) plus the docling-parse renderer plugin; cached on the
+      # downloader script, which names every asset it fetches.
+      - name: Cache the models and the docling-parse renderer
+        id: models
+        uses: actions/cache@v6
+        with:
+          path: |
+            .models
+            .docling-parse
+          key: pdf-conformance-models-${{ hashFiles('scripts/install/download_dependencies.sh') }}
+
+      - name: Fetch the models and the docling-parse renderer
+        if: steps.models.outputs.cache-hit != 'true'
+        run: scripts/install/download_dependencies.sh --no-asr --no-chunk --with-docling-parse
+
+      - name: Build
+        shell: bash
+        run: |
+          scripts/ci/cargo_retry_ort.sh cargo build --release --locked -p docling-pdf --example snapshot
+          scripts/ci/cargo_retry_ort.sh cargo build --release --locked -p docling-cli
+
+      - name: Snapshot conformance
+        env:
+          PDF_CONFORMANCE_OUT: ${{ runner.temp }}/snapshots
+        run: scripts/conformance/pdf_conformance.sh
+
+      # The regenerated tree, drift or not: a maintainer refreshes
+      # `tests/snapshots/` from it — the layout is the same.
+      - name: Upload the regenerated snapshots
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: pdf-snapshots-${{ github.sha }}
+          path: ${{ runner.temp }}/snapshots
+          retention-days: 14
+          if-no-files-found: ignore
+
+      # Informational: the numbers the doc's "Current state" table quotes. A
+      # strict count that no longer matches the doc's headline is a warning,
+      # not a failure — the table is refreshed by hand, with the reasons.
+      - name: Groundtruth
+        if: always()
+        shell: bash
+        run: |
+          scripts/conformance/pdf_groundtruth.sh | tee groundtruth.txt
+          got=$(sed -nE 's/^Fully conformant \(strict\): +([0-9]+) \/ ([0-9]+)$/\1 \/ \2/p' groundtruth.txt)
+          doc=$(grep -oE '^\*\*[0-9]+ / [0-9]+ strict\*\*' docs/PDF_CONFORMANCE.md | head -1 | tr -d '*' | sed 's/ strict//')
+          if [ -n "$got" ] && [ "$got" != "$doc" ]; then
+            echo "::warning file=docs/PDF_CONFORMANCE.md::groundtruth reads $got strict, the doc's headline says $doc — refresh the Current state table"
+          fi
+
+      # actions/cache saves target/ in its post-step, i.e. after this runs:
+      # drop what is cheap to recreate so the cache stays under the runner's
+      # disk headroom (the compiled library deps are what's worth keeping).
+      - name: Trim target before cache save
+        if: always()
+        shell: bash
+        run: |
+          rm -rf target/debug/examples target/debug/incremental \
+                 target/release/examples target/release/incremental
+          find target/debug target/release -maxdepth 1 -type f ! -name '*.d' -size +5M -exec rm -f {} + 2>/dev/null || true

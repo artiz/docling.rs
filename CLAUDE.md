@@ -257,13 +257,18 @@ cargo test -p docling-pdf --features pdfium --lib raster:: pdfium_backend::  # t
   that exists in both.
 - When touching serializers, keep the streaming and buffered paths
   byte-identical — `MarkdownStreamer` tests assert exactly that.
-- A `docling-core` serializer change reaches the **PDF** baselines too, and
-  neither runs in CI (both need the models + the docling-parse shim): re-run
-  `scripts/conformance/pdf_conformance.sh` (snapshots) and
-  `scripts/conformance/pdf_groundtruth.sh` in the same PR, or the next person
-  reads the stale baseline as a pipeline regression. The groundtruth `.md` is a
-  serialization of the committed `groundtruth/*.json`, so a serializer-only
-  change is refreshed by re-exporting that JSON — no new docling run needed.
+- A `docling-core` serializer change reaches the **PDF** baselines too. The
+  main CI jobs never run them (both need the models + the docling-parse shim);
+  `pdf-conformance.yml` does, on every PR that touches the PDF stack, the
+  serializers, the fixtures or the baselines — it fails on snapshot drift and
+  uploads the regenerated tree to refresh `tests/snapshots/` from. Still
+  re-run `scripts/conformance/pdf_conformance.sh` (snapshots) and
+  `scripts/conformance/pdf_groundtruth.sh` locally in the same PR when you
+  can, and keep `docs/PDF_CONFORMANCE.md`'s numbers honest (the job only
+  warns when its strict count disagrees with the doc's headline). The
+  groundtruth `.md` is a serialization of the committed `groundtruth/*.json`,
+  so a serializer-only change is refreshed by re-exporting that JSON — no new
+  docling run needed.
 
 ## Conventions that keep recurring
 
