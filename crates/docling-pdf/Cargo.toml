@@ -53,6 +53,7 @@ ml = [
     "dep:tiny-skia",
     "dep:ttf-parser",
     "dep:hayro-jpeg2000",
+    "dep:hayro-jbig2",
 ]
 # GPU execution providers (#74). Each feature makes `ort` link/download an
 # ONNX Runtime binary that contains that provider; which provider actually
@@ -118,6 +119,14 @@ tiny-skia = { version = "0.12", default-features = false, features = ["std", "si
 # Memory-safe (`forbid(unsafe_code)`), within ±1 of OpenJPEG on the NASA
 # scans; the `image` feature (its own PNG/ICC glue) is not needed.
 hayro-jpeg2000 = { version = "0.4.1", default-features = false, features = ["simd"], optional = true }
+# `JBIG2Decode` images for the page renderer and the scan raster
+# (`render/jbig2.rs`, #811): the text of a scanned page is often a JBIG2
+# stencil over a JPEG background, and without a decoder such a page rendered
+# blank (a stencil drew nothing, not even the placeholder). The same
+# project's decoder as the JPEG 2000 one, memory-safe (`forbid(unsafe_code)`
+# in the crate; `simd` only speeds up halftone regions), its `image` glue not
+# needed.
+hayro-jbig2 = { version = "0.3.1", default-features = false, features = ["std", "simd"], optional = true }
 ttf-parser = { version = "0.25", default-features = false, features = ["std", "glyph-names", "opentype-layout"], optional = true }
 # CodeFormula enrichment decodes its VLM output with the HF tokenizer
 # (.models/code_formula/tokenizer.json) — same crate/features as docling-core's

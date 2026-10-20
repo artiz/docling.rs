@@ -3,9 +3,10 @@
 //! `/Decode` ranges, stencil masks painted in the fill colour, `/SMask` soft
 //! masks, stencil and colour-key `/Mask`s. The sample data comes through the
 //! raster's filter chain, its libjpeg-exact JPEG decoder and its CCITT
-//! decoder, and JPEG 2000 through [`super::jpx`] (#598); JBIG2 has no
-//! decoder here and comes out as a mid-gray block (the picture the layout
-//! model should see is "a picture").
+//! decoder, JPEG 2000 through [`super::jpx`] (#598) and JBIG2 through
+//! [`super::jbig2`] (#811). An image no decoder can read comes out as a
+//! mid-gray block (the picture the layout model should see is "a
+//! picture") — a stencil mask too, which used to draw nothing at all.
 //!
 //! Loading ([`load`]: filters, codec, colour space, alpha plane) is separate
 //! from rasterizing ([`rasterize`]: the RGBA pixmap for one destination
@@ -21,8 +22,8 @@ use lopdf::{Dictionary, Document, Object};
 use tiny_skia::Pixmap;
 
 use super::color::{to_u8, CmykCache, ColorSpace};
-use super::jpx;
 use super::objects::{as_stream, get2, get_bool, get_bool2, get_int, get_int2, nums};
+use super::{jbig2, jpx};
 use crate::raster::{fax, filters, jpeg};
 
 pub struct DecodedImage {
@@ -301,22 +302,32 @@ pub fn rasterize(
             .decode_arr
             .as_ref()
             .is_some_and(|v| v.first().is_some_and(|x| *x >= 0.5));
-        if let Loaded::Samples(s) = &img.samples {
-            let px = pixmap.pixels_mut();
-            for oy in 0..out_h {
-                for ox in 0..out_w {
-                    let mut cov = 0u32;
-                    let mut n = 0u32;
-                    for y in oy * fy..((oy + 1) * fy).min(h) {
-                        for x in ox * fx..((ox + 1) * fx).min(w) {
-                            let v = s.get(x, y, 0);
-                            let on = (v != 0) == paint_on_one;
-                            cov += u32::from(on);
-                            n += 1;
+        match &img.samples {
+            Loaded::Samples(s) => {
+                let px = pixmap.pixels_mut();
+                for oy in 0..out_h {
+                    for ox in 0..out_w {
+                        let mut cov = 0u32;
+                        let mut n = 0u32;
+                        for y in oy * fy..((oy + 1) * fy).min(h) {
+                            for x in ox * fx..((ox + 1) * fx).min(w) {
+                                let v = s.get(x, y, 0);
+                                let on = (v != 0) == paint_on_one;
+                                cov += u32::from(on);
+                                n += 1;
+                            }
                         }
+                        let a = (cov * 255).checked_div(n).unwrap_or(0) as u8;
+                        px[oy * out_w + ox] = premul(fill, a);
                     }
-                    let a = (cov * 255).checked_div(n).unwrap_or(0) as u8;
-                    px[oy * out_w + ox] = premul(fill, a);
+                }
+            }
+            // An undecodable stencil (#811): the same neutral block an
+            // undecodable image gets, so the page shows *something* where
+            // the scan's text was instead of nothing at all.
+            Loaded::Placeholder => {
+                for p in pixmap.pixels_mut() {
+                    *p = premul([128, 128, 128], 255);
                 }
             }
         }
@@ -324,7 +335,7 @@ pub fn rasterize(
     }
 
     let (Loaded::Samples(s), Some(cs)) = (&img.samples, &img.cs) else {
-        // JPX / JBIG2 / undecodable: a neutral block the size of the image.
+        // Undecodable (a codec failure): a neutral block the size of the image.
         for p in pixmap.pixels_mut() {
             *p = premul([128, 128, 128], 255);
         }
@@ -479,7 +490,8 @@ fn premul(rgb: [u8; 3], a: u8) -> tiny_skia::PremultipliedColorU8 {
         .unwrap_or(tiny_skia::PremultipliedColorU8::TRANSPARENT)
 }
 
-/// Run the filter chain and the image codec; `Placeholder` for JPX/JBIG2.
+/// Run the filter chain and the image codec; `Placeholder` for an image
+/// its codec cannot decode.
 fn load_samples(
     doc: &Document,
     stream: &lopdf::Stream,
@@ -627,6 +639,43 @@ fn load_samples(
                 })),
                 Err(e) => {
                     docling_core::debug_log!("docling-pdf render: JPX not decoded ({e})");
+                    Ok(Loaded::Placeholder)
+                }
+            }
+        }
+        Some(codec) if codec.name == "JBIG2Decode" => {
+            // 7.4.7: `/JBIG2Globals` is a stream of segments shared by the
+            // document's images, decoded ahead of this one's.
+            let globals = codec
+                .parms
+                .as_ref()
+                .and_then(|p| p.get(b"JBIG2Globals").ok())
+                .and_then(|o| as_stream(doc, o))
+                .and_then(|g| {
+                    let chain = filters::filters(doc, &g.dict);
+                    match filters::apply(doc, &g.content, &chain) {
+                        Ok((bytes, None)) => Some(bytes),
+                        _ => {
+                            docling_core::debug_log!(
+                                "docling-pdf render: JBIG2Globals not decoded, ignored"
+                            );
+                            None
+                        }
+                    }
+                });
+            match jbig2::decode(&data, globals.as_deref(), w, h) {
+                Ok(img) => Ok(Loaded::Samples(Samples {
+                    width: w,
+                    height: h,
+                    bpc: 1,
+                    ncomp: 1,
+                    stride: img.stride,
+                    adobe: false,
+                    inline_alpha: None,
+                    data: img.data,
+                })),
+                Err(e) => {
+                    docling_core::debug_log!("docling-pdf render: JBIG2 not decoded ({e})");
                     Ok(Loaded::Placeholder)
                 }
             }

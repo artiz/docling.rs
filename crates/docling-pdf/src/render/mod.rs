@@ -21,6 +21,7 @@ pub mod font;
 pub mod function;
 pub mod geom;
 pub mod image;
+pub mod jbig2;
 pub mod jpx;
 pub mod objects;
 pub mod prepass;
@@ -987,6 +988,192 @@ mod synthetic {
                     "SMaskInData {smask_in_data}: {p:?}"
                 );
             }
+        }
+    }
+
+    /// A JBIG2 fixture (`tests/data/jbig2`) and its reference bitmap as the
+    /// packed 1-bit samples the filter would output (0 = black).
+    fn jbig2_fixture(name: &str) -> Vec<u8> {
+        std::fs::read(
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("tests/data/jbig2")
+                .join(name),
+        )
+        .unwrap()
+    }
+
+    fn jbig2_reference(name: &str) -> (usize, usize, Vec<u8>) {
+        let img = ::image::load_from_memory(&jbig2_fixture(name))
+            .unwrap()
+            .to_luma8();
+        let (w, h) = (img.width() as usize, img.height() as usize);
+        let stride = w.div_ceil(8);
+        let mut out = vec![0xffu8; stride * h];
+        for (y, row) in img.rows().enumerate() {
+            for (x, p) in row.enumerate() {
+                if p.0[0] < 128 {
+                    out[y * stride + x / 8] &= !(0x80 >> (x % 8));
+                }
+            }
+        }
+        (w, h, out)
+    }
+
+    /// One page drawing `image` (an image XObject stream) over the whole of
+    /// a 440 × 180 pt page, at `scale` px/pt.
+    fn page_with_image(stream: Stream, content: &str) -> RgbImage {
+        let mut doc = Document::with_version("1.5");
+        let im = doc.add_object(stream);
+        let bytes = synth(
+            &mut doc,
+            [0.0, 0.0, 440.0, 180.0],
+            Dictionary::new(),
+            dictionary! { "XObject" => dictionary! { "Im0" => Object::Reference(im) } },
+            content,
+        );
+        render(&bytes)
+    }
+
+    fn non_white_share(img: &RgbImage) -> f64 {
+        let n = img.pixels().filter(|p| p.0 != WHITE).count();
+        n as f64 / (img.width() as f64 * img.height() as f64)
+    }
+
+    /// #811: a JBIG2 `/ImageMask` stencil draws its pixels — the same page
+    /// as the Flate and CCITT G4 (`/K -1`, the very same T.6 bytes)
+    /// controls, pixel for pixel — where it used to draw nothing at all,
+    /// leaving a scanned page's text out of the render.
+    #[test]
+    fn jbig2_stencil_renders_like_its_flate_and_ccitt_twins() {
+        let (w, h, bits) = jbig2_reference("generic_mmr.png");
+        let content = "q 0 0 0 rg 326 0 0 218 57 -19 cm /Im0 Do Q";
+        let mask = |filter: Dictionary, data: Vec<u8>| {
+            let mut d = dictionary! {
+                "Type" => "XObject", "Subtype" => "Image",
+                "Width" => w as i64, "Height" => h as i64,
+                "ImageMask" => true,
+            };
+            for (k, v) in filter.into_iter() {
+                d.set(k, v);
+            }
+            Stream::new(d, data)
+        };
+        let flate = page_with_image(mask(Dictionary::new(), bits.clone()), content);
+        let jbig2 = page_with_image(
+            mask(
+                dictionary! { "Filter" => "JBIG2Decode" },
+                jbig2_fixture("generic_mmr.jbig2"),
+            ),
+            content,
+        );
+        let ccitt = page_with_image(
+            mask(
+                dictionary! {
+                    "Filter" => "CCITTFaxDecode",
+                    "DecodeParms" => dictionary! { "K" => -1, "Columns" => w as i64, "Rows" => h as i64 },
+                },
+                jbig2_fixture("generic_mmr.g4"),
+            ),
+            content,
+        );
+        let share = non_white_share(&flate);
+        assert!(share > 0.05 && share < 0.95, "control share {share}");
+        assert_eq!(jbig2.as_raw(), flate.as_raw(), "JBIG2 stencil vs Flate");
+        assert_eq!(ccitt.as_raw(), flate.as_raw(), "CCITT stencil vs Flate");
+    }
+
+    /// A 1-bit `DeviceGray` JBIG2 image (not a stencil) and one whose
+    /// symbol dictionary sits in `/JBIG2Globals` both draw their pixels,
+    /// pixel-identical to the Flate image of the reference bitmap.
+    #[test]
+    fn jbig2_gray_image_and_globals_render_their_pixels() {
+        let content = "q 326 0 0 218 57 -19 cm /Im0 Do Q";
+        let gray = |w: usize, h: usize, extra: Dictionary, data: Vec<u8>| {
+            let mut d = dictionary! {
+                "Type" => "XObject", "Subtype" => "Image",
+                "Width" => w as i64, "Height" => h as i64,
+                "ColorSpace" => "DeviceGray", "BitsPerComponent" => 1,
+            };
+            for (k, v) in extra.into_iter() {
+                d.set(k, v);
+            }
+            Stream::new(d, data)
+        };
+        let (w, h, bits) = jbig2_reference("generic_mmr.png");
+        let flate = page_with_image(gray(w, h, Dictionary::new(), bits), content);
+        let jbig2 = page_with_image(
+            gray(
+                w,
+                h,
+                dictionary! { "Filter" => "JBIG2Decode" },
+                jbig2_fixture("generic_mmr.jbig2"),
+            ),
+            content,
+        );
+        assert!(non_white_share(&flate) > 0.05);
+        assert_eq!(jbig2.as_raw(), flate.as_raw(), "JBIG2 gray vs Flate");
+
+        // The text region's symbols come from the globals stream.
+        let (w, h, bits) = jbig2_reference("symbol_global.png");
+        let flate = page_with_image(gray(w, h, Dictionary::new(), bits), content);
+        let mut doc = Document::with_version("1.5");
+        let globals = doc.add_object(Stream::new(
+            Dictionary::new(),
+            jbig2_fixture("symbol_global.globals.jbig2"),
+        ));
+        let im = doc.add_object(gray(
+            w,
+            h,
+            dictionary! {
+                "Filter" => "JBIG2Decode",
+                "DecodeParms" => dictionary! { "JBIG2Globals" => Object::Reference(globals) },
+            },
+            jbig2_fixture("symbol_global.jbig2"),
+        ));
+        let bytes = synth(
+            &mut doc,
+            [0.0, 0.0, 440.0, 180.0],
+            Dictionary::new(),
+            dictionary! { "XObject" => dictionary! { "Im0" => Object::Reference(im) } },
+            content,
+        );
+        let with_globals = render(&bytes);
+        assert!(non_white_share(&flate) > 0.02);
+        assert_eq!(
+            with_globals.as_raw(),
+            flate.as_raw(),
+            "JBIG2 + globals vs Flate"
+        );
+    }
+
+    /// A JBIG2 stream no decoder can read draws the documented mid-gray
+    /// placeholder — for a stencil too (#811: a stencil used to draw
+    /// nothing, so the page gave no sign that an image was missing).
+    #[test]
+    fn undecodable_jbig2_draws_the_placeholder_even_as_a_stencil() {
+        let content = "q 0 0 0 rg 200 0 0 100 120 40 cm /Im0 Do Q";
+        for is_mask in [true, false] {
+            let mut d = dictionary! {
+                "Type" => "XObject", "Subtype" => "Image",
+                "Width" => 20, "Height" => 10, "Filter" => "JBIG2Decode",
+            };
+            if is_mask {
+                d.set("ImageMask", true);
+            } else {
+                d.set("ColorSpace", "DeviceGray");
+                d.set("BitsPerComponent", 1);
+            }
+            let img = page_with_image(Stream::new(d, b"not a JBIG2 stream".to_vec()), content);
+            let inside = px(&img, 220, 90);
+            assert!(
+                near(inside, [128, 128, 128], 2),
+                "mask {is_mask}: inside the image {inside:?}"
+            );
+            assert_eq!(
+                px(&img, 50, 90),
+                WHITE,
+                "mask {is_mask}: outside stays white"
+            );
         }
     }
 }

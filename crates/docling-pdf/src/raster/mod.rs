@@ -18,8 +18,9 @@
 //!   `/ImageMask` stencil, without `/SMask`/`/Mask`, in a filter chain this
 //!   module decodes (Flate/LZW/RunLength/ASCII with predictors, `DCTDecode`
 //!   through [`jpeg`] — at pdfium's reduced DCT scale when the image is at
-//!   least twice the bitmap — and `CCITTFaxDecode` through [`fax`]); JPX,
-//!   JBIG2, CMYK/Lab/Separation and non-sRGB ICC images stay with pdfium;
+//!   least twice the bitmap — `CCITTFaxDecode` through [`fax`] and
+//!   `JBIG2Decode` through the renderer's decoder, #811); JPX,
+//!   CMYK/Lab/Separation and non-sRGB ICC images stay with pdfium;
 //! * the image matrix is axis-aligned or a 90° rotation — pdfium's
 //!   `CFX_AggImageRenderer` stretch paths, both ported in [`stretch`]; a
 //!   general affine placement (its `CFX_ImageTransformer`) declines.
@@ -1039,6 +1040,30 @@ fn decode_image(
             }
             Rows::Fax(fax::decode(&data, &params, h))
         }
+        // JBIG2 (#811): the filter's packed 1-bit output, 0 = black, as
+        // pdfium's `JBig2` module hands `CPDF_DIB` the bitmap (inverted
+        // from JBIG2's 1 = black); `/JBIG2Globals` decoded ahead of it.
+        Some(codec) if codec.name == "JBIG2Decode" => {
+            let globals = codec
+                .parms
+                .as_ref()
+                .and_then(|p| p.get(b"JBIG2Globals").ok())
+                .map(|o| deref(doc, o))
+                .and_then(|o| o.as_stream().ok())
+                .and_then(|g| {
+                    let chain = filters::filters(doc, &g.dict);
+                    match filters::apply(doc, &g.content, &chain) {
+                        Ok((bytes, None)) => Some(bytes),
+                        _ => None,
+                    }
+                });
+            let img = crate::render::jbig2::decode(&data, globals.as_deref(), w, h)
+                .map_err(|e| format!("JBIG2 {e}"))?;
+            Rows::Packed {
+                data: img.data,
+                bpc: 1,
+            }
+        }
         Some(codec) => return Err(format!("codec {}", codec.name)),
         None => {
             let bpc = if is_mask {
@@ -1826,6 +1851,75 @@ mod tests {
             }
         }
         (w, h, out)
+    }
+
+    /// The JBIG2 fixture's reference bitmap as packed 1-bit rows (1 = white).
+    fn jbig2_reference_bits() -> (usize, usize, Vec<u8>) {
+        let img = image::load_from_memory(&crate_fixture("tests/data/jbig2/generic_mmr.png"))
+            .unwrap()
+            .to_luma8();
+        let (w, h) = (img.width() as usize, img.height() as usize);
+        let stride = w.div_ceil(8);
+        let mut out = vec![0u8; stride * h];
+        for y in 0..h {
+            for x in 0..w {
+                if img.get_pixel(x as u32, y as u32)[0] >= 128 {
+                    out[y * stride + x / 8] |= 1 << (7 - x % 8);
+                }
+            }
+        }
+        (w, h, out)
+    }
+
+    /// #811: an image-only page whose scan is a `JBIG2Decode` stream — as a
+    /// 1-bit gray image and as a stencil — renders byte for byte like the
+    /// same page with the bitmap stored as Flate, which the pdfium oracle
+    /// above pins; so a JBIG2 scan takes this path instead of being
+    /// declined (and drawn blank by the page renderer, before the fix).
+    #[test]
+    fn jbig2_scan_matches_its_flate_twin() {
+        let (w, h, bits) = jbig2_reference_bits();
+        let (wf, hf) = (w as f32, h as f32);
+        let jbig2 = crate_fixture("tests/data/jbig2/generic_mmr.jbig2");
+        let page =
+            |stream: Stream| synth_pdf((wf, hf), 0, &full_page(wf, hf), vec![("Im0", stream)]);
+        let gray = |extra: Dictionary, data: Vec<u8>| {
+            let mut d = dictionary! { "ColorSpace" => "DeviceGray", "BitsPerComponent" => 1 };
+            for (k, v) in extra.into_iter() {
+                d.set(k, v);
+            }
+            image_stream(w, h, d, data)
+        };
+        let stencil = |extra: Dictionary, data: Vec<u8>| {
+            let mut d = dictionary! { "ImageMask" => true };
+            for (k, v) in extra.into_iter() {
+                d.set(k, v);
+            }
+            image_stream(w, h, d, data)
+        };
+        let jb = || dictionary! { "Filter" => "JBIG2Decode" };
+        for (label, flate_pdf, jbig2_pdf) in [
+            (
+                "gray",
+                page(gray(Dictionary::new(), bits.clone())),
+                page(gray(jb(), jbig2.clone())),
+            ),
+            (
+                "stencil",
+                page(stencil(Dictionary::new(), bits.clone())),
+                page(stencil(jb(), jbig2.clone())),
+            ),
+        ] {
+            for (dw, dh) in [(w as u32, h as u32), (2 * w as u32, 2 * h as u32)] {
+                let flate = render(&PdfMeta::open(&flate_pdf).unwrap(), 0, dw, dh)
+                    .unwrap_or_else(|| panic!("{label}: the Flate twin is declined"));
+                let jbig2 = render(&PdfMeta::open(&jbig2_pdf).unwrap(), 0, dw, dh)
+                    .unwrap_or_else(|| panic!("{label}: the JBIG2 page is declined"));
+                assert_eq!(jbig2.as_raw(), flate.as_raw(), "{label} at {dw}x{dh}");
+                let black = flate.pixels().filter(|p| p.0 == [0, 0, 0]).count();
+                assert!(black > 500, "{label}: {black} black pixels");
+            }
+        }
     }
 
     /// Deterministic sample bytes.
