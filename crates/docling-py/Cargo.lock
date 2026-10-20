@@ -976,6 +976,7 @@ dependencies = [
  "docling-onnx",
  "fast_image_resize",
  "flate2",
+ "hayro-jbig2",
  "hayro-jpeg2000",
  "image",
  "libloading 0.8.9",
@@ -1470,6 +1471,22 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.119",
+]
+
+[[package]]
+name = "hayro-ccitt"
+version = "0.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2866f0d976e76497480b853d5e258dab6e4b89ecfe991124e08f15dfa8fd03ad"
+
+[[package]]
+name = "hayro-jbig2"
+version = "0.3.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "000e025850f4592ddcaee85640db70704151f2bafd43b6f431aa5b6a2c6a35a9"
+dependencies = [
+ "fearless_simd",
+ "hayro-ccitt",
 ]
 
 [[package]]

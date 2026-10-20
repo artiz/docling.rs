@@ -1,9 +1,10 @@
 //! The standard (non-image) stream filters an image XObject may wrap its
 //! samples in — `FlateDecode`, `LZWDecode`, `RunLengthDecode`,
 //! `ASCII85Decode`, `ASCIIHexDecode` — with the PNG and TIFF predictors of
-//! `/DecodeParms`. The image codecs (`DCTDecode` → [`super::jpeg`];
-//! `JPXDecode`, `JBIG2Decode`, `CCITTFaxDecode` → pdfium) are reported to the
-//! caller as the remaining filter rather than applied here.
+//! `/DecodeParms`. The image codecs (`DCTDecode` → [`super::jpeg`],
+//! `CCITTFaxDecode` → [`super::fax`], `JBIG2Decode` → the renderer's
+//! `jbig2` (#811), `JPXDecode` → its `jpx`) are reported to the caller as the
+//! remaining filter rather than applied here.
 //!
 //! Written out rather than borrowed from lopdf's `Stream::decompressed_content`
 //! because that one sizes the PNG predictor's rows for 8-bit samples only
