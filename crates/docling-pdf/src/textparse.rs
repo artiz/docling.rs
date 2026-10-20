@@ -249,7 +249,7 @@ fn parse_font(doc: &Document, name: &[u8], fdict: &Dictionary) -> Font {
         .unwrap_or(&[]);
     let two_byte = subtype == b"Type0".as_slice();
 
-    let to_unicode = fdict
+    let mut to_unicode = fdict
         .get(b"ToUnicode")
         .ok()
         .and_then(|o| deref(doc, o))
@@ -257,6 +257,11 @@ fn parse_font(doc: &Document, name: &[u8], fdict: &Dictionary) -> Font {
         .and_then(|s| s.decompressed_content().ok())
         .map(|data| parse_tounicode(&data))
         .unwrap_or_default();
+    if !two_byte {
+        if let Some(diffs) = differences_array(doc, fdict) {
+            reconcile_stale_tounicode(&mut to_unicode, &diffs);
+        }
+    }
 
     let (mut widths, mut default_width) = if two_byte {
         cid_widths(doc, fdict)
@@ -318,6 +323,47 @@ fn parse_font(doc: &Document, name: &[u8], fdict: &Dictionary) -> Font {
         style: crate::font_style::parse_font_style(&String::from_utf8_lossy(
             &base_font_name(fdict).unwrap_or_else(|| name.to_vec()),
         )),
+    }
+}
+
+/// A simple font's `/Encoding` `/Differences` array, dereferenced.
+fn differences_array(doc: &Document, fdict: &Dictionary) -> Option<Vec<Object>> {
+    let enc = fdict.get(b"Encoding").ok().and_then(|o| deref(doc, o))?;
+    let diffs = enc.as_dict().ok()?.get(b"Differences").ok()?;
+    match deref(doc, diffs)? {
+        Object::Array(a) => Some(a.clone()),
+        _ => None,
+    }
+}
+
+/// A ToUnicode CMap copied from the *original* font while the glyphs were
+/// re-encoded: the encrypted `2206.01062_pg3` fixture (a Quartz re-save of
+/// pdfTeX output) keeps the T1-encoding CMap, keyed on the old codes, next
+/// to a `/Differences [33 /f_f_i /f_i /f_f /f_l]` that names the ligatures at
+/// new ones, so the CMap maps code 33 to `!` — its own identity — and
+/// `difficulties` read `di ! culties`, in docling's pdfium chain too. A
+/// ToUnicode entry that is the code's identity, for a code whose
+/// `/Differences` name resolves to something else, is that stale copy: the
+/// name wins. A CMap that disagrees any other way is left alone — ToUnicode
+/// is the producer's word on what the glyph means.
+fn reconcile_stale_tounicode(to_unicode: &mut HashMap<u32, String>, diffs: &[Object]) {
+    let mut code = 0u8;
+    for el in diffs {
+        match el {
+            Object::Integer(i) => code = *i as u8,
+            Object::Name(name) => {
+                if let Some(ch) = glyph_name_to_char(name) {
+                    let identity = (code as char).to_string();
+                    if ch.to_string() != identity
+                        && to_unicode.get(&u32::from(code)) == Some(&identity)
+                    {
+                        to_unicode.insert(u32::from(code), ch.to_string());
+                    }
+                }
+                code = code.wrapping_add(1);
+            }
+            _ => {}
+        }
     }
 }
 
@@ -2648,6 +2694,15 @@ pub(crate) fn glyph_name_to_char(name: &[u8]) -> Option<char> {
                     return glyph_name_to_char(base.as_bytes());
                 }
             }
+            // An AGL ligature name joins its components with `_` (`f_f_i`,
+            // `f_l` — what a re-encoded Libertine subset calls them); joined,
+            // the presentation-form arms above resolve them.
+            if s.contains('_') {
+                let joined: String = s.chars().filter(|&c| c != '_').collect();
+                if !joined.is_empty() && joined.len() < s.len() {
+                    return glyph_name_to_char(joined.as_bytes());
+                }
+            }
             return None;
         }
     };
@@ -2755,6 +2810,35 @@ mod glyph_names {
             );
         }
         assert_eq!(super::glyph_name_to_char(b"g123"), None);
+        // AGL ligature names: components joined with `_`.
+        assert_eq!(super::glyph_name_to_char(b"f_f_i"), Some('\u{FB03}'));
+        assert_eq!(super::glyph_name_to_char(b"f_l"), Some('\u{FB02}'));
+        assert_eq!(super::glyph_name_to_char(b"a_b"), None);
+    }
+
+    /// The stale-CMap case: ToUnicode maps a code to its own identity while
+    /// `/Differences` names a ligature there — the name wins; a CMap that
+    /// maps the code anywhere else, or a code with no entry, is untouched.
+    #[test]
+    fn a_stale_tounicode_yields_to_differences() {
+        use lopdf::Object;
+        use std::collections::HashMap;
+        let mut tu: HashMap<u32, String> = HashMap::new();
+        tu.insert(33, "!".into()); // identity — stale
+        tu.insert(34, "x".into()); // the producer meant it
+        let diffs = vec![
+            Object::Integer(33),
+            Object::Name(b"f_f_i".to_vec()),
+            Object::Name(b"f_i".to_vec()),
+            Object::Name(b"f_f".to_vec()),
+            Object::Integer(65),
+            Object::Name(b"A".to_vec()), // identity on both sides: nothing to do
+        ];
+        super::reconcile_stale_tounicode(&mut tu, &diffs);
+        assert_eq!(tu.get(&33).map(String::as_str), Some("\u{FB03}"));
+        assert_eq!(tu.get(&34).map(String::as_str), Some("x"));
+        assert_eq!(tu.get(&35), None);
+        assert_eq!(tu.get(&65), None);
     }
 }
 
