@@ -1035,13 +1035,11 @@ fn graph_cache_dir() -> Option<PathBuf> {
             PathBuf::from(d)
         } else if let Some(x) = docling_core::env::nonempty("XDG_CACHE_HOME") {
             PathBuf::from(x).join("docling-rs").join("graphs")
-        } else if let Some(home) = docling_core::env::nonempty("HOME") {
-            PathBuf::from(home)
+        } else {
+            PathBuf::from(docling_core::env::nonempty("HOME")?)
                 .join(".cache")
                 .join("docling-rs")
                 .join("graphs")
-        } else {
-            return None;
         };
         std::fs::create_dir_all(&dir).ok()?;
         // Writable? A read-only cache (a baked container layer) still serves hits.
