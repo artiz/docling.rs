@@ -2687,6 +2687,74 @@ fn crop_region(page: &PdfPage, region: &Region, scale: Option<f32>) -> Option<Pi
     }
 }
 
+/// A `text` region that *says* it is a caption — `Table 5: …`, `Figure 2.
+/// …`, `Fig. 3: …` — and sits right next to a graphic in reading order is one
+/// (a docling.rs extension, `docs/PDF_CONFORMANCE.md`): the layout model
+/// labels a long caption block `text` now and then (2206.01062's four-line
+/// Table 5 caption: `text` 0.99 here, `caption` in docling's own run), and a
+/// mislabelled caption stays a loose paragraph while its table goes
+/// uncaptioned. The gate is the label's own pattern — the word, a number,
+/// then `:` or `.` — so a paragraph that merely opens with `Table 5 shows`
+/// is left alone, plus the geometry docling's matcher wants: the graphic is
+/// the region's neighbour in reading order, overlaps it horizontally and
+/// stands within 25 pt above or below. Relabelling before
+/// [`pair_graphic_captions`] lets the regular matcher bind it.
+fn promote_labelled_captions(regions: &mut [Region], cells: &[TextCell]) {
+    let body: Vec<usize> = (0..regions.len())
+        .filter(|&i| !is_skipped(regions[i].label))
+        .collect();
+    let mut promote = Vec::new();
+    for (pos, &i) in body.iter().enumerate() {
+        let r = &regions[i];
+        if r.label != "text" || !is_caption_label(&region_text(r, cells)) {
+            continue;
+        }
+        let beside = |g: &Region| {
+            is_graphic(g.label) && g.r.min(r.r) - g.l.max(r.l) > 0.0 && {
+                let gap = if r.t >= g.b {
+                    r.t - g.b
+                } else if g.t >= r.b {
+                    g.t - r.b
+                } else {
+                    f32::MAX
+                };
+                gap <= 25.0
+            }
+        };
+        let prev = pos.checked_sub(1).map(|p| &regions[body[p]]);
+        let next = body.get(pos + 1).map(|&n| &regions[n]);
+        if prev.is_some_and(beside) || next.is_some_and(beside) {
+            promote.push(i);
+        }
+    }
+    for i in promote {
+        regions[i].label = "caption";
+    }
+}
+
+/// `Table 5:`, `Figure 2.1.`, `Fig. 3:`, `Listing 4:` — a caption label: the
+/// word, whitespace, a number (dotted or lettered: `2.1`, `3a`), then `:` or
+/// `.`, as the publishers' styles print it. Case-sensitive on purpose.
+fn is_caption_label(text: &str) -> bool {
+    let t = text.trim_start();
+    let Some(rest) = ["Table", "Figure", "Fig.", "Listing"]
+        .iter()
+        .find_map(|w| t.strip_prefix(w))
+    else {
+        return false;
+    };
+    let rest = rest.trim_start();
+    if !rest.starts_with(|c: char| c.is_ascii_digit()) {
+        return false;
+    }
+    let num_end = rest
+        .find(|c: char| !(c.is_ascii_alphanumeric() || c == '.'))
+        .unwrap_or(rest.len());
+    let num = rest[..num_end].trim_end_matches('.');
+    let after = &rest[num.len()..];
+    after.starts_with(':') || after.starts_with('.')
+}
+
 /// docling's `GRAPHIC_LABELS` (`reading_order_rb.py`): the elements a
 /// `caption` can be attached to. `document_index` rides along as table-like
 /// (#265) so an index's title binds the way a table's does.
@@ -3128,7 +3196,8 @@ pub fn assemble_page(
         .iter_mut()
         .map(|it| std::mem::take(&mut it.3))
         .collect();
-    let regions: Vec<Region> = items.into_iter().map(|(r, _, _, _)| r).collect();
+    let mut regions: Vec<Region> = items.into_iter().map(|(r, _, _, _)| r).collect();
+    promote_labelled_captions(&mut regions, &page.cells);
     // Children in docling's `_sort_clusters(mode="id")` order: first source
     // cell, then top, then left.
     for kids in picture_children.iter_mut().filter(|k| k.len() > 1) {
@@ -4200,6 +4269,75 @@ mod tests {
         ];
         let pairs = super::pair_graphic_captions(&regions);
         assert_eq!(pairs, vec![None, Some(0), None]);
+    }
+
+    #[test]
+    fn caption_labels_are_recognized() {
+        for t in [
+            "Table 5: Prediction Performance",
+            "Figure 2.1: Surveyed MSMEs",
+            "Fig. 3: Overview",
+            "Table 1. Pour volume by month (m3)",
+            "  Figure 12a. Left panel",
+            "Listing 4: main.rs",
+        ] {
+            assert!(super::is_caption_label(t), "{t}");
+        }
+        for t in [
+            "Table 5 shows the results",
+            "Tables 5: and 6:",
+            "Figure",
+            "Figure: no number",
+            "table 5: lowercase",
+            "Table : no number",
+        ] {
+            assert!(!super::is_caption_label(t), "{t}");
+        }
+    }
+
+    /// 2206.01062's Table 5 caption: a four-line `text` block the model did
+    /// not call `caption`, 22 pt above its table, becomes one; the same block
+    /// with a paragraph between it and the table, or without the label's
+    /// punctuation, stays text.
+    #[test]
+    fn a_labelled_text_block_beside_a_graphic_becomes_a_caption() {
+        let cells = vec![
+            cell(
+                "Table 5: Prediction Performance of a network",
+                54.0,
+                87.0,
+                296.0,
+                100.0,
+            ),
+            cell("across the datasets.", 54.0, 100.0, 200.0, 113.0),
+            cell("In this section we discuss", 54.0, 400.0, 296.0, 412.0),
+        ];
+        let mut regions = vec![
+            region("text", 0.99, 54.0, 87.0, 296.0, 150.0),
+            region("table", 0.99, 73.0, 172.0, 275.0, 340.0),
+            region("text", 0.99, 54.0, 400.0, 296.0, 500.0),
+        ];
+        super::promote_labelled_captions(&mut regions, &cells);
+        assert_eq!(regions[0].label, "caption");
+        assert_eq!(regions[2].label, "text");
+
+        // A paragraph between the label and the table breaks the adjacency.
+        let mut regions = vec![
+            region("text", 0.99, 54.0, 87.0, 296.0, 150.0),
+            region("text", 0.99, 54.0, 152.0, 296.0, 170.0),
+            region("table", 0.99, 73.0, 172.0, 275.0, 340.0),
+        ];
+        super::promote_labelled_captions(&mut regions, &cells);
+        assert_eq!(regions[0].label, "text");
+
+        // `Table 5 shows …` is prose.
+        let cells = vec![cell("Table 5 shows the results", 54.0, 87.0, 296.0, 100.0)];
+        let mut regions = vec![
+            region("text", 0.99, 54.0, 87.0, 296.0, 150.0),
+            region("table", 0.99, 73.0, 172.0, 275.0, 340.0),
+        ];
+        super::promote_labelled_captions(&mut regions, &cells);
+        assert_eq!(regions[0].label, "text");
     }
 
     /// Side-by-side figures (`tests/snapshots/latex/…/swa.pdf`): three

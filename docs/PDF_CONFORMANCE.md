@@ -315,6 +315,17 @@ diff lines and recovers content docling drops):
   heights; `assemble::pair_graphic_captions`). A run broken by *text* stays
   loose as upstream leaves it (2206.01062's Figure 4 behind its hash line is
   in the groundtruth that way).
+* **A caption the model called `text`**: a `text` region whose words are a
+  caption label — `Table 5:`, `Figure 2.1.`, `Fig. 3:`, `Listing 4:` (the
+  word, a number, then `:` or `.`; `Table 5 shows…` is prose) — next to a
+  graphic in reading order, overlapping it horizontally within 25 pt, is
+  relabelled `caption` before the matcher runs
+  (`assemble::promote_labelled_captions`). The layout model labels a long
+  caption block `text` now and then (2206.01062's four-line Table 5 caption,
+  `text` at 0.99), and the table then went uncaptioned in JSON / DocLang
+  while the paragraph stayed loose. docling has no such rule — its own run
+  of that page folds the caption into the preceding paragraph — so the
+  Markdown is unchanged there and the gain is the `captions` ref.
 * **DocLang picture children** are not printed (upstream's DocLang picture
   serializer prints them).
 
