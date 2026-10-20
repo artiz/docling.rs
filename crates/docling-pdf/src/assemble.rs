@@ -2687,120 +2687,123 @@ fn crop_region(page: &PdfPage, region: &Region, scale: Option<f32>) -> Option<Pi
     }
 }
 
-/// For each `picture` region, find the `caption` region closest below it (and
-/// horizontally overlapping); docling pairs them and emits the caption first.
-/// Each caption is claimed by at most one picture.
-fn pair_captions(regions: &[Region]) -> Vec<Option<usize>> {
-    let mut pairs = vec![None; regions.len()];
-    let mut taken = vec![false; regions.len()];
-    for (pi, p) in regions.iter().enumerate() {
-        if p.label != "picture" {
-            continue;
-        }
-        let mut best: Option<(usize, f32)> = None;
-        for (ci, c) in regions.iter().enumerate() {
-            if c.label != "caption" || taken[ci] {
-                continue;
-            }
-            let line_h = (c.b - c.t).abs().max(1.0);
-            let gap = c.t - p.b; // caption sits below the picture
-            let h_overlap = (p.r.min(c.r) - p.l.max(c.l)).max(0.0);
-            if gap > -line_h && gap < line_h * 3.0 && h_overlap > 0.0 {
-                let dist = gap.abs();
-                if best.is_none_or(|(_, bd)| dist < bd) {
-                    best = Some((ci, dist));
-                }
-            }
-        }
-        if let Some((ci, _)) = best {
-            pairs[pi] = Some(ci);
-            taken[ci] = true;
-        }
-    }
-    pairs
+/// docling's `GRAPHIC_LABELS` (`reading_order_rb.py`): the elements a
+/// `caption` can be attached to. `document_index` rides along as table-like
+/// (#265) so an index's title binds the way a table's does.
+fn is_graphic(label: &str) -> bool {
+    is_table_like(label) || matches!(label, "picture" | "code")
 }
 
-/// Pair each `code` region with the `caption` region just **above** it (a
-/// `Listing N:` label). docling renders the code block first, then its caption,
-/// so the caption is consumed from its own (earlier) reading-order slot and
-/// re-emitted after the code.
-fn pair_code_captions(regions: &[Region]) -> Vec<Option<usize>> {
-    let mut pairs = vec![None; regions.len()];
-    let mut taken = vec![false; regions.len()];
-    for (pi, p) in regions.iter().enumerate() {
-        if p.label != "code" {
-            continue;
-        }
-        let mut best: Option<(usize, f32)> = None;
-        for (ci, c) in regions.iter().enumerate() {
-            if c.label != "caption" || taken[ci] {
-                continue;
-            }
-            let line_h = (c.b - c.t).abs().max(1.0);
-            let gap = p.t - c.b; // caption sits above the code
-            let h_overlap = (p.r.min(c.r) - p.l.max(c.l)).max(0.0);
-            if gap > -line_h && gap < line_h * 3.0 && h_overlap > 0.0 {
-                let dist = gap.abs();
-                if best.is_none_or(|(_, bd)| dist < bd) {
-                    best = Some((ci, dist));
-                }
-            }
-        }
-        if let Some((ci, _)) = best {
-            pairs[pi] = Some(ci);
-            taken[ci] = true;
-        }
-    }
-    pairs
+/// docling's `_shortest_box_gap`: the shortest distance between two boxes,
+/// 0 once they touch or overlap — along either axis whatever the union has
+/// left over once both boxes are laid down, combined as the hypotenuse.
+fn shortest_box_gap(a: &Region, b: &Region) -> f32 {
+    let dx = ((a.r.max(b.r) - a.l.min(b.l)) - (a.r - a.l) - (b.r - b.l)).max(0.0);
+    let dy = ((a.b.max(b.b) - a.t.min(b.t)) - (a.b - a.t) - (b.b - b.t)).max(0.0);
+    dx.hypot(dy)
 }
 
-/// Pair each `table`/`document_index` region with its `caption` (#265) the way
-/// docling's `ReadingOrderPredictor._find_to_captions` does: by **reading-order
-/// adjacency**, not geometry. A caption claims the media element
-/// (table/picture/code) immediately next to it in the ordered region sequence,
-/// and only when exactly one side holds one — a caption sandwiched between two
-/// media elements stays unattached, and a text paragraph between caption and
-/// table breaks the bond. This is what lets a flush-left "Table 3: …" label
-/// bind a centered grid it doesn't horizontally overlap, while a caption in
-/// the neighbouring column of a two-column page — geometrically close — never
-/// pairs across the gutter. Runs after the picture and code pairings (the
-/// picture/code arms of the same upstream matcher), so a caption they claimed
-/// stays claimed. docling attaches these as `TableItem.captions` refs; the
-/// paired caption is consumed from its own reading-order slot and rides on the
-/// table node instead.
-fn pair_table_captions(regions: &[Region], taken: &mut [bool]) -> Vec<Option<usize>> {
-    let is_media = |label: &str| is_table_like(label) || matches!(label, "picture" | "code");
-    let mut pairs: Vec<Option<usize>> = vec![None; regions.len()];
-    for ci in 0..regions.len() {
-        if regions[ci].label != "caption" || taken[ci] {
+/// Pair each graphic (`picture`, `table`/`document_index`, `code`) with its
+/// `caption` region (#265, #813): a port of docling's
+/// `ReadingOrderPredictor._find_to_captions` — `_rank_caption_candidates` +
+/// `_match_caption` — over the page's regions in reading order. Returns, per
+/// region, the index of the caption it owns.
+///
+/// A caption reaches the graphics in the **unbroken run** of graphics on
+/// either side of it in reading order — above *and* below (#813: the
+/// geometric predecessor only looked below a picture, so a `Figure N:` label
+/// printed above its figure never bound), never across intervening text, and
+/// never across the gutter of a two-column page however close the boxes are.
+/// The candidates rank by the gap each leaves on the page (nearest first,
+/// equal gaps to the preceding graphic), not by position in the run.
+/// Graphics are then matched to captions by augmenting paths rather than
+/// best-first: a caption with a second choice gives way to one that has none,
+/// so a figure between two captions and a figure with one do not end up
+/// sharing the former while the latter stays orphaned.
+///
+/// Furniture (page headers/footers, form chrome) is not part of docling's
+/// body-element sequence here, so it neither bonds nor breaks a run. The
+/// matched caption is consumed from its own reading-order slot and rides on
+/// its graphic — docling's `captions` ref: Markdown prints it before a
+/// picture or table and after a code block, JSON emits the `$ref`, DocLang
+/// the `<caption>`.
+fn pair_graphic_captions(regions: &[Region]) -> Vec<Option<usize>> {
+    let body: Vec<usize> = (0..regions.len())
+        .filter(|&i| !is_skipped(regions[i].label))
+        .collect();
+    // `_rank_caption_candidates`: caption index → its graphics, nearest first.
+    let mut captions: Vec<usize> = Vec::new();
+    let mut preferred: Vec<Vec<usize>> = vec![Vec::new(); regions.len()];
+    for (pos, &ci) in body.iter().enumerate() {
+        if regions[ci].label != "caption" {
             continue;
         }
-        // Furniture (headers/footers, form chrome) is not part of docling's
-        // body-element sequence, so it neither bonds nor blocks.
-        let prev = regions[..ci].iter().rposition(|r| !is_skipped(r.label));
-        let next = regions[ci + 1..]
-            .iter()
-            .position(|r| !is_skipped(r.label))
-            .map(|off| ci + 1 + off);
-        let prev_media = prev.is_some_and(|j| is_media(regions[j].label));
-        let next_media = next.is_some_and(|j| is_media(regions[j].label));
-        let target = match (prev_media, next_media) {
-            (true, false) => prev,
-            (false, true) => next,
-            // Ambiguous (media on both sides) or no media at all: leave the
-            // caption in its own reading-order slot, as docling does.
-            _ => None,
+        let graphic = |&&i: &&usize| is_graphic(regions[i].label);
+        let preceding = body[..pos].iter().rev().take_while(graphic);
+        let following = body[pos + 1..].iter().take_while(graphic);
+        // Tagged 0 preceding / 1 following so equal gaps go to the graphic
+        // above; a stable sort keeps run order among equals on one side.
+        let mut ranked: Vec<(f32, u8, usize)> = preceding
+            .map(|&g| (shortest_box_gap(&regions[ci], &regions[g]), 0, g))
+            .chain(following.map(|&g| (shortest_box_gap(&regions[ci], &regions[g]), 1, g)))
+            .collect();
+        ranked.sort_by(|a, b| a.0.total_cmp(&b.0).then(a.1.cmp(&b.1)));
+        preferred[ci] = ranked.into_iter().map(|(_, _, g)| g).collect();
+        captions.push(ci);
+    }
+    // `_match_caption`, caption by caption in reading order: graphic → caption.
+    let mut matched: Vec<Option<usize>> = vec![None; regions.len()];
+    for &caption in &captions {
+        if let Some(next) = augment_caption_match(caption, &preferred, &matched) {
+            matched = next;
+        }
+    }
+    matched
+}
+
+/// docling's `_match_caption`: a new matching in which `caption` owns one of
+/// its graphics, displacing an earlier caption when that one can rehouse
+/// itself; `None` when no graphic can be freed up. The displacement chain is
+/// walked on an explicit stack (it can grow as long as the page): each frame
+/// is a claimant and the graphics it has left to try, and the moves in
+/// `chain` take effect only once it reaches a graphic nobody holds. `seen`
+/// keeps a chain from revisiting a graphic.
+fn augment_caption_match(
+    caption: usize,
+    preferred: &[Vec<usize>],
+    matched: &[Option<usize>],
+) -> Option<Vec<Option<usize>>> {
+    let mut seen = vec![false; matched.len()];
+    // (claimant, next candidate to try) frames; (graphic, claimant) moves.
+    let mut stack: Vec<(usize, usize)> = vec![(caption, 0)];
+    let mut chain: Vec<(usize, usize)> = Vec::new();
+    while let Some(frame) = stack.last_mut() {
+        let (claimant, cursor) = *frame;
+        let candidates = &preferred[claimant];
+        let Some(off) = candidates[cursor..].iter().position(|&g| !seen[g]) else {
+            // Out of options: undo the move that got here and let the
+            // caption below resume its own search.
+            stack.pop();
+            chain.pop();
+            continue;
         };
-        if let Some(ti) = target {
-            // A first claim wins (a table with captions above *and* below
-            // keeps the earlier one — docling's nearest-first tiebreak).
-            if is_table_like(regions[ti].label) && pairs[ti].is_none() {
-                pairs[ti] = Some(ci);
-                taken[ci] = true;
+        let graphic = candidates[cursor + off];
+        frame.1 = cursor + off + 1;
+        seen[graphic] = true;
+        chain.push((graphic, claimant));
+        match matched[graphic] {
+            None => {
+                let mut next = matched.to_vec();
+                for &(g, c) in &chain {
+                    next[g] = Some(c);
+                }
+                return Some(next);
             }
+            // The graphic is taken; let its caption look for another one.
+            Some(holder) => stack.push((holder, 0)),
         }
     }
-    pairs
+    None
 }
 
 /// Assemble one page from its (already overlap-resolved) layout regions and
@@ -3095,22 +3098,23 @@ pub fn assemble_page(
         ranked.sort_by_key(|(k, _)| *k);
         kids.extend(ranked.into_iter().map(|(_, r)| r));
     }
-    // docling emits a figure's caption *before* the image marker. Pair each
-    // picture with the caption region nearest below it and consume that caption,
-    // so it isn't also emitted in its own (lower) reading-order position.
-    let caption_for = pair_captions(&regions);
-    let code_caption_for = pair_code_captions(&regions);
+    // docling's `_find_to_captions` (#265, #813): each graphic claims its
+    // caption by reading-order adjacency and gap; the caption is consumed
+    // from its own slot and re-emitted with the graphic (before a picture or
+    // table, after a code block, as docling renders a `captions` ref).
+    let graphic_caption_for = pair_graphic_captions(&regions);
+    let only = |pred: fn(&str) -> bool| -> Vec<Option<usize>> {
+        regions
+            .iter()
+            .zip(&graphic_caption_for)
+            .map(|(r, c)| c.filter(|_| pred(r.label)))
+            .collect()
+    };
+    let caption_for = only(|l| l == "picture");
+    let code_caption_for = only(|l| l == "code");
+    let table_caption_for = only(is_table_like);
     let mut consumed = vec![false; regions.len()];
-    for ci in caption_for.iter().flatten() {
-        consumed[*ci] = true;
-    }
-    for ci in code_caption_for.iter().flatten() {
-        consumed[*ci] = true;
-    }
-    // Table captions (#265) claim from what the picture/code pairings left.
-    let mut caption_taken = consumed.clone();
-    let table_caption_for = pair_table_captions(&regions, &mut caption_taken);
-    for ci in table_caption_for.iter().flatten() {
+    for ci in graphic_caption_for.iter().flatten() {
         consumed[*ci] = true;
     }
     // Pictures inside a table become rich-cell content (docling#3906, 2.118.1):
@@ -4050,15 +4054,15 @@ mod tests {
         );
     }
 
-    /// Table–caption pairing (#265) is reading-order adjacency, docling's
-    /// `_find_to_captions`: a caption binds the table directly next to it in
-    /// the region sequence — above-caption and below-caption both work, and
-    /// geometry is irrelevant (a same-page caption in the other column of a
-    /// two-column layout is *not* adjacent, however close its box is). A
-    /// caption with media on both sides, or separated from the table by a
-    /// text paragraph, stays unattached.
+    /// Caption pairing (#265, #813) is docling's `_find_to_captions`: a
+    /// caption binds a graphic in the unbroken run next to it in the region
+    /// sequence — above-caption and below-caption both work, and geometry
+    /// only ranks (a same-page caption in the other column of a two-column
+    /// layout is *not* adjacent, however close its box is). A caption
+    /// separated from its graphic by a text paragraph stays unattached; one
+    /// between two graphics goes to the nearer, a tie to the one above.
     #[test]
-    fn table_captions_pair_by_reading_order_adjacency() {
+    fn captions_pair_by_reading_order_adjacency() {
         // caption → table (above-caption), then table → caption (below-caption),
         // then a caption fenced off by a paragraph, then one between two tables.
         let regions = vec![
@@ -4070,23 +4074,93 @@ mod tests {
             region("text", 0.9, 0.0, 130.0, 100.0, 140.0), // 5 body text
             region("caption", 0.9, 0.0, 142.0, 60.0, 150.0), // 6 fenced by 5/7
             region("text", 0.9, 0.0, 152.0, 100.0, 162.0), // 7 body text
-            region("table", 0.9, 0.0, 170.0, 100.0, 200.0), // 8 unpaired
-            region("caption", 0.9, 0.0, 202.0, 60.0, 210.0), // 9 ambiguous
+            region("table", 0.9, 0.0, 170.0, 100.0, 200.0), // 8 ← tie, above wins
+            region("caption", 0.9, 0.0, 202.0, 60.0, 210.0), // 9 2 pt from both
             region("table", 0.9, 0.0, 212.0, 100.0, 240.0), // 10 unpaired
+            region("page_footer", 0.9, 0.0, 250.0, 100.0, 260.0), // 11 furniture
         ];
-        let mut taken = vec![false; regions.len()];
-        let pairs = super::pair_table_captions(&regions, &mut taken);
+        let pairs = super::pair_graphic_captions(&regions);
         assert_eq!(pairs[2], Some(1), "caption directly above its table pairs");
         assert_eq!(pairs[3], Some(4), "caption directly below its table pairs");
-        assert_eq!(
-            pairs[8], None,
+        assert!(
+            !pairs.contains(&Some(6)),
             "a text paragraph between caption and table breaks the bond"
         );
-        assert_eq!(
-            pairs[10], None,
-            "a caption between two tables is ambiguous and stays loose"
+        assert_eq!(pairs[8], Some(9), "equal gaps go to the preceding graphic");
+        assert_eq!(pairs[10], None);
+        assert!(
+            pairs.iter().filter(|p| p.is_some()).count() == 3,
+            "{pairs:?}"
         );
-        assert!(taken[1] && taken[4] && !taken[6] && !taken[9]);
+    }
+
+    /// #813: a `Figure N:` label printed *above* its figure (DP-Bench
+    /// 01030000000036: caption [40,255,287,266] over picture [118,277,423,469])
+    /// binds the picture; the old geometric matcher only looked below. A
+    /// caption below a code block binds too (docling's run is label-blind).
+    #[test]
+    fn a_caption_above_its_picture_binds() {
+        let regions = vec![
+            region("section_header", 0.9, 40.0, 200.0, 300.0, 215.0),
+            region("text", 0.9, 40.0, 220.0, 500.0, 250.0),
+            region("caption", 0.93, 40.0, 255.0, 287.0, 266.0), // 2
+            region("picture", 0.98, 118.0, 277.0, 423.0, 469.0), // 3 ← 2
+            region("text", 0.9, 40.0, 480.0, 500.0, 520.0),
+            region("code", 0.9, 40.0, 530.0, 500.0, 600.0), // 5 ← 6
+            region("caption", 0.9, 40.0, 604.0, 300.0, 614.0), // 6
+        ];
+        let pairs = super::pair_graphic_captions(&regions);
+        assert_eq!(pairs[3], Some(2));
+        assert_eq!(pairs[5], Some(6));
+    }
+
+    /// Within a run the *nearest* graphic wins, not the adjacent one in the
+    /// sequence; and the matching augments: a caption whose first choice is
+    /// held by a caption that can rehouse itself displaces it, so no figure
+    /// ends up orphaned while another holds a caption it did not need.
+    #[test]
+    fn captions_rank_by_gap_and_displace_rehousable_claims() {
+        // P1 and P2 are an unbroken run; C1 under it sits right below P2
+        // (gap 2) and far from P1 (gap 62), so it takes P2, not the run's
+        // first graphic.
+        let regions = vec![
+            region("picture", 0.9, 0.0, 0.0, 100.0, 50.0),   // 0 P1
+            region("picture", 0.9, 0.0, 60.0, 100.0, 110.0), // 1 P2
+            region("caption", 0.9, 0.0, 112.0, 100.0, 120.0), // 2 C1: P2 (2) < P1 (62)
+        ];
+        let pairs = super::pair_graphic_captions(&regions);
+        assert_eq!(pairs, vec![None, Some(2), None]);
+
+        // C1 above the run prefers P1 (gap 2) over P2 (62); C2 below the run
+        // reaches P2 (2) then P1 (62). Each gets its nearest.
+        let regions = vec![
+            region("caption", 0.9, 0.0, 0.0, 100.0, 8.0),     // 0 C1
+            region("picture", 0.9, 0.0, 10.0, 100.0, 50.0),   // 1 P1
+            region("picture", 0.9, 0.0, 60.0, 100.0, 110.0),  // 2 P2
+            region("caption", 0.9, 0.0, 112.0, 100.0, 120.0), // 3 C2
+        ];
+        let pairs = super::pair_graphic_captions(&regions);
+        assert_eq!(pairs, vec![None, Some(0), Some(3), None]);
+
+        // Augmenting path: C1 (between P1 and P2, nearer P2) takes P2 first;
+        // C2 below reaches only P2 and displaces C1, which rehouses on P1.
+        let regions = vec![
+            region("picture", 0.9, 0.0, 0.0, 100.0, 50.0),   // 0 P1
+            region("caption", 0.9, 0.0, 70.0, 100.0, 78.0),  // 1 C1: P2 (2) < P1 (20)
+            region("picture", 0.9, 0.0, 80.0, 100.0, 120.0), // 2 P2
+            region("caption", 0.9, 0.0, 122.0, 100.0, 130.0), // 3 C2: P2 only
+        ];
+        let pairs = super::pair_graphic_captions(&regions);
+        assert_eq!(pairs, vec![Some(1), None, Some(3), None]);
+
+        // No graphic can be freed: the first claim stands, the second stays loose.
+        let regions = vec![
+            region("caption", 0.9, 0.0, 0.0, 100.0, 8.0),   // 0 C1
+            region("picture", 0.9, 0.0, 10.0, 100.0, 50.0), // 1 P1
+            region("caption", 0.9, 0.0, 52.0, 100.0, 60.0), // 2 C2
+        ];
+        let pairs = super::pair_graphic_captions(&regions);
+        assert_eq!(pairs, vec![None, Some(0), None]);
     }
 
     /// A colored terms-and-conditions panel detected as `picture` demotes into
