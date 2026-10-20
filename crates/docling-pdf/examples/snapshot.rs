@@ -29,12 +29,15 @@ fn find_pdfs(dir: &Path, out: &mut Vec<PathBuf>) {
     for p in entries {
         if p.is_dir() {
             // Skip `large/` — big perf-test inputs with no conformance baseline —
-            // and `*_artifacts/` — gitignored by-products of `--images referenced`
+            // `pdf_password/` — the encrypted fixture the typed-error tests open
+            // with its password; the pipeline is given none here, so it only
+            // ever produced an `ERROR:` snapshot that no baseline carries — and
+            // `*_artifacts/` — gitignored by-products of `--images referenced`
             // / dclx conversions that would otherwise be swept in as image inputs
             // and mint snapshots that don't exist on a clean checkout.
-            if p.file_name()
-                .is_some_and(|n| n == "large" || n.to_string_lossy().ends_with("_artifacts"))
-            {
+            if p.file_name().is_some_and(|n| {
+                n == "large" || n == "pdf_password" || n.to_string_lossy().ends_with("_artifacts")
+            }) {
                 continue;
             }
             find_pdfs(&p, out);
