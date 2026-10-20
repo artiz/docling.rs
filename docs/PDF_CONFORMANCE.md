@@ -36,12 +36,14 @@ older, pypdfium2-era docling's and the pipeline was scored with OCR on.
 **10 / 18 strict** · **11 / 18 whitespace-normalized** against upstream's
 current groundtruth (docling ≥ 2.123: docling-parse render, `do_ocr=False`,
 `compact_tables=True`; 18 fixtures — `table_misidentified_as_form`
-(docling#4064) joined the corpus with this refresh). Total 330 diff lines with
+(docling#4064) joined the corpus with this refresh). Total 328 diff lines with
 the docling-parse renderer the baselines are measured with (374 before #528
 recovered redp5110's rotated table headers, 346 before #609 kept glyphs stacked
 at one x apart, 342 before #813 ported docling's caption matcher — 2203.01017v2
 19 → 17 and 2206.01062 14 → 10, the captions docling leaves loose now stay
-loose here too, and `right_to_left_03` reads exact); the default build's pure-Rust
+loose here too, and `right_to_left_03` reads exact; 330 before the text
+parser learnt the Adobe Glyph List's Latin names — 2203.01017v2's `/Lslash`
+reference author, 17 → 15); the default build's pure-Rust
 renderer scored 454 on the same files before that change ("The PDF stack"
 below). (The two Korean image-only pages `skipped_1page` /
 `skipped_2pages` carry no text groundtruth and are not scored.)
@@ -59,7 +61,7 @@ below). (The two Korean image-only pages `skipped_1page` /
 | right_to_left_03 | **exact** | — (bidi run order of a numbered heading) |
 | 2305.03393v1 | 4 | one author-block cluster (model-borderline) |
 | normal_4pages | 12 | docling folds the page-number glyph into the heading cluster (`## 들어가며 1`) where we emit it as its own item, and the `※` footnotes order |
-| 2203.01017v2 | 17 | the `c. Structure predicted by TableFormer:` item's slot under Figure 1, accent spacing in the references (`Herv´e D´ejean`) |
+| 2203.01017v2 | 15 | the `c. Structure predicted by TableFormer:` item's slot under Figure 1, accent spacing in the references (`Herv´e D´ejean`) |
 | 2206.01062 | 10 | author-block cluster splits (model-borderline), Table 5's merged first column |
 | table_misidentified_as_form | 48 | the form container's nested table / picture (docling#4064): docling nests them inside the form region and keeps the heading, we flatten the region |
 | table_mislabeled_as_picture | 85 | the survey over-detected as tables; docling keeps a cell's leading indentation (`\|   They work in parallel…`) |
