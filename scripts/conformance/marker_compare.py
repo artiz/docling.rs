@@ -78,7 +78,19 @@ for f in files:
     times[f] = time.perf_counter() - t
     with open(os.path.join(out, os.path.splitext(os.path.basename(f))[0] + ".md"), "w", encoding="utf-8") as fh:
         fh.write(text)
-json.dump({"load": load, "times": times}, open(os.path.join(out, "_report.json"), "w"))
+# The inference servers Marker spawned: their peak RSS while they are still
+# alive (the llama.cpp OCR server is killed when this process exits).
+servers = 0
+import glob
+for path in glob.glob(os.path.expanduser("~/.cache/datalab/surya/*_server.json")):
+    try:
+        pid = int(json.load(open(path))["pid"])
+        for line in open(f"/proc/{pid}/status"):
+            if line.startswith("VmHWM:"):
+                servers += int(line.split()[1]) // 1024
+    except Exception:
+        pass
+json.dump({"load": load, "times": times, "servers_mb": servers}, open(os.path.join(out, "_report.json"), "w"))
 """
 
 
@@ -204,6 +216,7 @@ def marker_warm(files, config):
         if os.path.exists(report_path):
             report = json.load(open(report_path))
             times, load = report["times"], report["load"]
+            rss["servers_mb"] = max(rss["servers_mb"] or 0, report.get("servers_mb") or 0) or None
         else:
             # The worker died (an OOM kill leaves no traceback): one worker
             # per file, so each file gets its own verdict and the batch is
@@ -221,6 +234,7 @@ def marker_warm(files, config):
                     rep = json.load(open(r))
                     times[f] = rep["times"][f]
                     load = load or rep["load"]
+                    rss["servers_mb"] = max(rss["servers_mb"] or 0, rep.get("servers_mb") or 0) or None
                     os.replace(os.path.join(one, stem), os.path.join(out, stem))
                     os.remove(r)
                 else:
