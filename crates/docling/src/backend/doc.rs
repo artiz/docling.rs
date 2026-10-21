@@ -2151,6 +2151,42 @@ fn style_chain_bold(stis: &[StyleDef], istd: u16) -> bool {
 /// cyclic chain — the DOCX backend's `MAX_STYLE_INHERITANCE_DEPTH`.
 const MAX_STYLE_CHAIN: usize = 10;
 
+/// The heading level (docling's Markdown level) paragraph style `istd`
+/// gives, or `None` for body text. Mirrors the DOCX backend: Title (`sti`
+/// 62) is level 1, "heading N" level N + 1, and a style that is neither can
+/// still be a heading through its outline level (docling#3961 / #270 —
+/// LibreOffice-converted legacy documents carry localized user styles,
+/// "Επικεφαλίδα 2", whose only heading marker is `sprmPOutLvl`): 0–8 are
+/// heading levels 1–9. A style saying none of this is asked about its
+/// based-on chain (#824): a corporate "SectionTitleL1" based on Heading 1
+/// — the `w:basedOn` the `.docx` twin carries, which that backend's style
+/// chain reads — is a heading, through as many hops as the chain has
+/// (`MAX_STYLE_CHAIN` bounds a cyclic one). Outline level 9 is Word's
+/// explicit "body text" and ends the walk: a style that opts out of the
+/// outline is not a heading whatever it is based on.
+fn style_heading_level(stis: &[StyleDef], istd: u16) -> Option<u8> {
+    let mut cur = istd;
+    for _ in 0..MAX_STYLE_CHAIN {
+        let style = stis.get(cur as usize)?;
+        if style.sti == 62 {
+            return Some(1);
+        }
+        if (1..=9).contains(&style.sti) {
+            return Some(style.sti as u8 + 1);
+        }
+        match style.outline {
+            Some(l) if l <= 8 => return Some(l + 2),
+            Some(_) => return None,
+            None => {}
+        }
+        if style.base == 0x0FFF || style.base == cur {
+            return None;
+        }
+        cur = style.base;
+    }
+    None
+}
+
 /// The effective list reference of a paragraph, `(ilfo, ilvl)` — `None` when
 /// it is in no list. The paragraph's own sprms win (an explicit `sprmPIlfo`
 /// of 0 is "no list", like a `.docx` paragraph's `numId` 0); what the PAPX
@@ -3145,33 +3181,10 @@ impl NodeBuilder {
             .filter(|(before, _)| !before)
             .map(|(_, image)| image)
             .collect();
-        let style = stis
-            .get(props.istd as usize)
-            .copied()
-            .unwrap_or(StyleDef::NONE);
         let before = doc.nodes.len();
         // The paragraph's list, its own or its style's (#641).
         let numbering = resolve_numbering(&props, stis);
-        let sti = style.sti;
-        // A style that is not one of the built-in Heading/Title styles can
-        // still be a heading through its outline level (docling#3961 / #270):
-        // LibreOffice-converted legacy documents carry localized user styles
-        // ("Επικεφαλίδα 2") whose only heading marker is `sprmPOutLvl`. 0-8
-        // are heading levels 1-9; 9 is the "body text" sentinel.
-        let outline_heading = (!(1..=9).contains(&sti) && sti != 62)
-            .then_some(style.outline)
-            .flatten()
-            .filter(|l| *l <= 8);
-        if (1..=9).contains(&sti) || sti == 62 || outline_heading.is_some() {
-            // Mirrors the DOCX backend: docling renders "heading N" at
-            // Markdown level N+1 and Title (sti 62) at level 1.
-            let level = if sti == 62 {
-                1
-            } else if let Some(l) = outline_heading {
-                l + 2
-            } else {
-                sti as u8 + 1
-            };
+        if let Some(level) = style_heading_level(stis, props.istd) {
             // A heading style wins over a list: a numbered heading gets a
             // computed `1.2` prefix rather than becoming a list item — the
             // DOCX backend's rule, and docling's `_is_numbered_heading`
@@ -3855,6 +3868,79 @@ mod tests {
         assert!(md.contains("- Golf Hotel Alpha"), "{md}");
         assert!(md.contains("- Alpha Bravo Charlie Delta Ech"), "{md}");
         assert!(!md.contains("1."), "{md}");
+    }
+
+    /// A `tests/data/doc/sources` fixture converted through the backend.
+    fn converted(name: &str) -> DoclingDocument {
+        let path = format!(
+            "{}/tests/data/doc/sources/{name}",
+            env!("CARGO_MANIFEST_DIR")
+        );
+        let bytes = std::fs::read(&path).expect("fixture exists");
+        DocBackend
+            .convert(&SourceDocument::from_bytes(name, InputFormat::Doc, bytes))
+            .expect("converts")
+    }
+
+    /// #824: a custom paragraph style based on a built-in heading style —
+    /// the ticket's "SectionTitleL1" on Heading 1, "SectionTitleL2" on
+    /// Heading 2 and "SubSectionTitleL2" two hops up — is a heading of that
+    /// level, as the `.docx` twin's `w:basedOn` makes it there; the body
+    /// paragraphs under them stay text. The two-hop style is a heading here
+    /// where the `.docx` backend (one hop, docling's) prints bold text.
+    #[test]
+    fn heading_styles_inherit_through_the_based_on_chain() {
+        let doc = converted("doc_inherited_heading_styles.doc");
+        let headings: Vec<(u8, &str)> = doc
+            .nodes
+            .iter()
+            .filter_map(|n| match n {
+                Node::Heading { level, text } => Some((*level, text.as_str())),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(
+            headings,
+            [
+                (2, "1. Main Specification Section"),
+                (3, "1.1. Architecture Subsection"),
+                (3, "1.2. Two-Hop Inherited Subsection"),
+            ]
+        );
+        let md = doc.export_to_markdown();
+        assert!(
+            md.starts_with("## 1. Main Specification Section\n\nFirst body"),
+            "{md}"
+        );
+        assert_eq!(md.matches("\n### 1.").count(), 2, "{md}");
+        // A chain that never reaches a heading, or opts out with outline
+        // level 9, is body text; a cyclic one ends at the hop limit.
+        let mut stis = vec![StyleDef::NONE; 6];
+        stis[1] = StyleDef {
+            sti: 1,
+            ..StyleDef::NONE
+        };
+        stis[2] = StyleDef {
+            base: 1,
+            ..StyleDef::NONE
+        };
+        stis[3] = StyleDef {
+            base: 2,
+            ..StyleDef::NONE
+        };
+        stis[4] = StyleDef {
+            base: 1,
+            outline: Some(9),
+            ..StyleDef::NONE
+        };
+        stis[5] = StyleDef {
+            base: 5,
+            ..StyleDef::NONE
+        };
+        assert_eq!(style_heading_level(&stis, 3), Some(2));
+        assert_eq!(style_heading_level(&stis, 4), None);
+        assert_eq!(style_heading_level(&stis, 5), None);
+        assert_eq!(style_heading_level(&stis, 0), None);
     }
 
     /// #699: the annotation story — a comment on the body paragraph (the
