@@ -33,8 +33,8 @@ use super::odf::{
     item_has_content, item_headings, level_affixes, level_is_enumerated, level_start,
     list_has_direct_text, list_has_renderable, list_items, list_starts_with_empty_nested,
     odf_item_content, ods_cell_text, para_plain_text, paragraph_list_style, paragraph_style_names,
-    repeat, section_is_hidden, slide_has_visible_title, slide_is_hidden, Annotation, Fmt, Run,
-    Styles,
+    repeat, section_is_hidden, slide_has_visible_title, slide_is_hidden, Annotation, Fmt,
+    MasterPart, Run, Styles,
 };
 
 /// The tree plus the spreadsheet pages docling adds (`page_no`, width,
@@ -84,7 +84,12 @@ struct Walker<'s> {
 }
 
 /// `<office:text>` body children.
-pub(super) fn build_text(body: XmlNode, styles: &Styles, annotations: &[Annotation]) -> Built {
+pub(super) fn build_text(
+    body: XmlNode,
+    styles: &Styles,
+    annotations: &[Annotation],
+    furniture: &[MasterPart],
+) -> Built {
     let mut w = Walker::new(styles);
     // `_detach_annotations` (docling#4436, #829): the comments and their
     // threads, attached as `comment_section` groups right after the item
@@ -99,6 +104,28 @@ pub(super) fn build_text(body: XmlNode, styles: &Styles, annotations: &[Annotati
         })
         .collect();
     w.add_children(body.children().filter(XmlNode::is_element), None, None);
+    // The master pages' headers and footers (#830): the DOCX backend's
+    // `_add_header_footer` shape — a furniture-layer `page header` /
+    // `page footer` section per part, holding the part's blocks.
+    for part in furniture {
+        let group = w.tree.add(
+            None,
+            Some(ContentLayer::Furniture),
+            TreeKind::Group {
+                label: "section".into(),
+                name: if part.footer {
+                    "page footer".into()
+                } else {
+                    "page header".into()
+                },
+            },
+        );
+        w.add_children(
+            part.el.children().filter(XmlNode::is_element),
+            Some(group),
+            Some(ContentLayer::Furniture),
+        );
+    }
     // `_add_footnotes` (docling#4375): each note body a furniture `footnote`
     // text on the body, after the whole walk.
     let mut bodies = std::collections::HashMap::new();
@@ -1942,6 +1969,46 @@ mod tests {
         );
         let json = doc.export_to_json();
         assert!(json.contains("\"comment_section\""), "{json}");
+    }
+
+    /// #830: a furniture-layer `page header` / `page footer` section per
+    /// master page part after the body, its paragraphs and tables inside —
+    /// the DOCX backend's tree shape.
+    #[test]
+    fn master_page_parts_are_furniture_sections() {
+        let xml = format!(
+            r#"<office:document {NS}>
+            <office:master-styles><style:master-page style:name="Standard">
+              <style:header><text:p>Head</text:p><table:table><table:table-row><table:table-cell office:value-type="string"><text:p>V</text:p></table:table-cell></table:table-row></table:table></style:header>
+              <style:footer><text:p>Foot</text:p></style:footer>
+            </style:master-page></office:master-styles>
+            <office:body><office:text><text:p>Body.</text:p></office:text></office:body></office:document>"#
+        );
+        let doc = convert(&xml, InputFormat::Odt);
+        let t: &ItemTree = doc.tree.as_ref().expect("tree");
+        let items: Vec<(
+            String,
+            String,
+            Option<usize>,
+            Option<docling_core::ContentLayer>,
+        )> = t
+            .items
+            .iter()
+            .map(|it| (label(it), text(it).to_string(), it.parent, it.layer))
+            .collect();
+        let f = Some(docling_core::ContentLayer::Furniture);
+        assert_eq!(
+            items,
+            [
+                ("text".to_string(), "Body.".to_string(), None, None),
+                ("section:page header".to_string(), String::new(), None, f),
+                ("text".to_string(), "Head".to_string(), Some(1), f),
+                ("table".to_string(), String::new(), Some(1), f),
+                ("section:page footer".to_string(), String::new(), None, f),
+                ("text".to_string(), "Foot".to_string(), Some(4), f),
+            ]
+        );
+        assert_eq!(doc.export_to_markdown(), "Body.\n");
     }
 
     /// A presentation: a `chapter` group per slide named `slide-{0-based}`,

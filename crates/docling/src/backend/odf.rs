@@ -248,10 +248,14 @@ pub(crate) fn convert_odf(
                 "text" => {
                     let comments = annotations(office);
                     styles.comment_slots = comment_slots(&comments);
+                    let furniture = master_page_parts(&content_dom, styles_dom.as_ref());
                     walk_text(office, &styles, &mut doc);
+                    push_master_page_furniture(&furniture, &styles, &mut doc);
                     push_note_furniture(office, &mut doc);
                     push_comment_sections(&comments, &mut doc);
-                    built = Some(super::odf_tree::build_text(office, &styles, &comments));
+                    built = Some(super::odf_tree::build_text(
+                        office, &styles, &comments, &furniture,
+                    ));
                 }
                 "spreadsheet" => {
                     walk_spreadsheet(office, &styles, &mut doc);
@@ -279,10 +283,14 @@ pub(crate) fn convert_odf(
             } else {
                 let comments = annotations(body);
                 styles.comment_slots = comment_slots(&comments);
+                let furniture = master_page_parts(&content_dom, styles_dom.as_ref());
                 walk_text(body, &styles, &mut doc);
+                push_master_page_furniture(&furniture, &styles, &mut doc);
                 push_note_furniture(body, &mut doc);
                 push_comment_sections(&comments, &mut doc);
-                built = Some(super::odf_tree::build_text(body, &styles, &comments));
+                built = Some(super::odf_tree::build_text(
+                    body, &styles, &comments, &furniture,
+                ));
             }
         }
         if let Some(built) = built {
@@ -808,6 +816,83 @@ pub(super) fn note_calls(el: XmlNode) -> (String, Vec<(usize, roxmltree::NodeId)
         walk(el, &mut text, &mut out);
     }
     (text, out)
+}
+
+// ---------------------------------------------------------------- page furniture
+
+/// A page header or footer (#830): one `<style:header>` / `<style:footer>`
+/// (or the `-left` / `-first` variant) of a `<style:master-page>`.
+pub(super) struct MasterPart<'a, 'i> {
+    pub(super) footer: bool,
+    pub(super) el: XmlNode<'a, 'i>,
+}
+
+/// The page headers and footers of every master page (#830): ODT keeps
+/// them in `styles.xml`'s `<office:master-styles>` (a flat file's sits in
+/// the one DOM), which the stylesheet reader only read text and list
+/// styles from, so none reached the furniture layer where the DOCX and
+/// `.doc` backends put theirs (the reporter's corpus: 6 223 paragraphs and
+/// 1 557 tables in 623 files). Master page by master page in file order,
+/// headers before footers, each variant that is shown (`style:display`
+/// not `false` — LibreOffice writes the unused left/first variants hidden)
+/// and has content. Python docling reads none of them (its DOCX backend
+/// does); the shape is the DOCX one, so the twin documents match.
+pub(super) fn master_page_parts<'a, 'i>(
+    content: &'a Document<'i>,
+    styles: Option<&'a Document<'i>>,
+) -> Vec<MasterPart<'a, 'i>> {
+    let dom = styles.unwrap_or(content);
+    let Some(master) = dom
+        .root_element()
+        .children()
+        .find(|c| c.has_tag_name("master-styles"))
+    else {
+        return Vec::new();
+    };
+    let mut out = Vec::new();
+    for page in master.children().filter(|c| c.has_tag_name("master-page")) {
+        for (footer, tags) in [
+            (false, ["header", "header-left", "header-first"]),
+            (true, ["footer", "footer-left", "footer-first"]),
+        ] {
+            for el in page
+                .children()
+                .filter(|c| tags.contains(&c.tag_name().name()))
+            {
+                let shown = attr(el, "display") != Some("false");
+                let has_content = el.descendants().any(|n| {
+                    n.has_tag_name("image")
+                        || n.has_tag_name("object")
+                        || n.is_text() && !n.text().unwrap_or("").trim().is_empty()
+                });
+                if shown && has_content {
+                    out.push(MasterPart { footer, el });
+                }
+            }
+        }
+    }
+    out
+}
+
+/// The page headers and footers as furniture after the body (#830): each
+/// part's blocks — paragraphs, tables, lists — walked like body blocks and
+/// wrapped on the furniture layer, the DOCX backend's flat shape (DocLang
+/// stamps each with its `<layer>`; Markdown and LaTeX leave them out).
+fn push_master_page_furniture(parts: &[MasterPart], styles: &Styles, doc: &mut DoclingDocument) {
+    for part in parts {
+        let mut sub = DoclingDocument::new("");
+        walk_blocks(
+            part.el.children().filter(XmlNode::is_element),
+            styles,
+            &mut sub,
+        );
+        for n in sub.nodes {
+            doc.nodes.push(Node::Furniture {
+                layer: docling_core::ContentLayer::Furniture,
+                inner: Box::new(n),
+            });
+        }
+    }
 }
 
 /// Footnote/endnote bodies as furniture paragraphs after the body walk.
@@ -2952,6 +3037,49 @@ mod tests {
         assert_eq!(sections[2].0, "comment-2");
         assert_eq!(sections[3].0, "comment-3");
         assert!(sections[1].1.ends_with("Agreed"));
+    }
+
+    /// #830: the master pages' headers and footers are furniture after the
+    /// body — their paragraphs and tables walked as blocks, headers before
+    /// footers — out of the Markdown; a hidden variant and an empty one
+    /// are not.
+    #[test]
+    fn master_page_headers_and_footers_are_furniture() {
+        let xml = r#"<office:document xmlns:office="o" xmlns:text="x" xmlns:style="s" xmlns:table="t">
+            <office:master-styles>
+              <style:master-page style:name="Standard">
+                <style:header><text:p>Head <text:page-number>1</text:page-number></text:p>
+                  <table:table><table:table-row><table:table-cell><text:p>Version</text:p></table:table-cell></table:table-row></table:table>
+                </style:header>
+                <style:header-left style:display="false"><text:p>Unused</text:p></style:header-left>
+                <style:footer><text:p>Foot</text:p></style:footer>
+              </style:master-page>
+              <style:master-page style:name="Endnote"><style:header/><style:footer><text:p> </text:p></style:footer></style:master-page>
+            </office:master-styles>
+            <office:body><office:text><text:p>Body.</text:p></office:text></office:body></office:document>"#;
+        let dom = Document::parse(xml).unwrap();
+        let parts = master_page_parts(&dom, None);
+        assert_eq!(
+            parts.iter().map(|p| p.footer).collect::<Vec<_>>(),
+            [false, true]
+        );
+        let styles = parse_styles(&dom, None);
+        let mut doc = DoclingDocument::new("s");
+        push_master_page_furniture(&parts, &styles, &mut doc);
+        let furniture: Vec<String> = doc
+            .nodes
+            .iter()
+            .map(|n| match n {
+                Node::Furniture { inner, .. } => match &**inner {
+                    Node::Paragraph { text } => text.clone(),
+                    Node::Table(t) => format!("table {}", t.rows[0].join("|")),
+                    other => format!("{other:?}"),
+                },
+                other => format!("body {other:?}"),
+            })
+            .collect();
+        assert_eq!(furniture, ["Head 1", "table Version", "Foot"]);
+        assert_eq!(doc.export_to_markdown(), "");
     }
 
     #[test]
