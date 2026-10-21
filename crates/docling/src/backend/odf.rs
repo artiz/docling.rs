@@ -738,6 +738,10 @@ fn collect_runs_linked(
                 // sentence's; they become a notes-layer comment, see
                 // [`annotations`]. `annotation-end` carries no text.
                 "annotation" | "annotation-end" => {}
+                // A `<draw:text-box>` (#831) holds blocks of its own —
+                // paragraphs, lists, tables — not this paragraph's text;
+                // the walkers emit them after it, see [`text_boxes`].
+                "text-box" => {}
                 // docling's `_odf_text_runs` recurses into every child, so an
                 // image's `<svg:desc>`/`<svg:title>` text is picked up too.
                 _ => collect_runs_linked(child, styles, base, href, out),
@@ -800,7 +804,7 @@ pub(super) fn note_calls(el: XmlNode) -> (String, Vec<(usize, roxmltree::NodeId)
                 }
                 "object" | "binary-data" => {}
                 "note" => out.push((text.chars().count(), child.id())),
-                "annotation" | "annotation-end" => {}
+                "annotation" | "annotation-end" | "text-box" => {}
                 _ => walk(child, text, out),
             }
         }
@@ -1336,6 +1340,7 @@ fn add_style_list_paragraph(
         fresh,
     );
     wrap_last_commented(doc, comment_slots_in(std::iter::once(el), styles));
+    walk_text_boxes(el, styles, doc);
 }
 
 fn handle_block(
@@ -1365,6 +1370,7 @@ fn handle_block(
                 });
                 wrap_last_commented(doc, comment_slots_in(std::iter::once(el), styles));
             }
+            walk_text_boxes(el, styles, doc);
         }
         "p" => {
             // docling's `_add_odf_paragraph` emits a paragraph's pictures before
@@ -1375,6 +1381,9 @@ fn handle_block(
             collect_runs(el, styles, Fmt::default(), &mut runs);
             let text = runs_to_text(runs.clone());
             if text.is_empty() {
+                // A paragraph that only anchors a text box still yields the
+                // box's blocks (#831).
+                walk_text_boxes(el, styles, doc);
                 return;
             }
             if names.iter().any(|n| n == "Title") {
@@ -1388,6 +1397,7 @@ fn handle_block(
                 doc.push(inline_paragraph_node(text, runs_to_inline(runs), false));
             }
             wrap_last_commented(doc, comment_slots_in(std::iter::once(el), styles));
+            walk_text_boxes(el, styles, doc);
         }
         n if is_list_tag(n) => {
             add_odf_list(el, styles, doc, list_level, 1, false, None);
@@ -1417,8 +1427,43 @@ fn handle_block(
         // `_add_odf_children` has it.
         "frame" => {
             emit_frame_graphic(el, styles, doc);
+            walk_text_boxes(el, styles, doc);
         }
         _ => {}
+    }
+}
+
+/// Whether `n` sits inside a `<draw:text-box>` below `root` (#831): such a
+/// node belongs to the box's blocks, which walk on their own.
+pub(super) fn in_text_box(n: XmlNode, root: XmlNode) -> bool {
+    n.ancestors()
+        .skip(1)
+        .take_while(|a| *a != root)
+        .any(|a| a.has_tag_name("text-box"))
+}
+
+/// The text boxes a paragraph, heading or frame anchors (#831): every
+/// `<draw:text-box>` below `el` that is not inside another one — a box in
+/// a box walks with the paragraph of the outer box. Writer anchors a text
+/// box as `<draw:frame><draw:text-box>…</draw:text-box></draw:frame>`
+/// inside the paragraph; the run collectors read the box's paragraphs,
+/// list items and table cells as the anchoring paragraph's own text, run
+/// together with no separator (`Anchor paragraph text.First textbox
+/// paragraph.Second…`), and a block-level frame's box was dropped (the
+/// reporter's corpus: 187 of 632 files). Its blocks now walk as blocks
+/// after the anchoring paragraph, as the DOCX backend emits a
+/// `w:txbxContent`'s — a table in a box stays a table here, where that
+/// backend flattens it to its cells' paragraphs (docling's `.//w:p`).
+pub(super) fn text_boxes<'a, 'i>(el: XmlNode<'a, 'i>) -> Vec<XmlNode<'a, 'i>> {
+    el.descendants()
+        .filter(|n| n.has_tag_name("text-box") && !in_text_box(*n, el))
+        .collect()
+}
+
+/// The blocks of the text boxes `el` anchors (#831), after it.
+fn walk_text_boxes(el: XmlNode, styles: &Styles, doc: &mut DoclingDocument) {
+    for tb in text_boxes(el) {
+        walk_blocks(tb.children().filter(XmlNode::is_element), styles, doc);
     }
 }
 
@@ -1426,7 +1471,11 @@ fn handle_block(
 /// node. OO1.x anchors `<draw:image>` directly — without a frame wrapper —
 /// so frameless bitmaps yield a picture each too (#215).
 fn emit_paragraph_images(el: XmlNode, styles: &Styles, doc: &mut DoclingDocument) {
-    for frame in el.descendants().filter(|n| n.has_tag_name("frame")) {
+    // A frame inside a text box belongs to the box's own blocks (#831).
+    for frame in el
+        .descendants()
+        .filter(|n| n.has_tag_name("frame") && !in_text_box(*n, el))
+    {
         emit_frame_graphic(frame, styles, doc);
     }
     for img in el
@@ -1751,6 +1800,9 @@ fn add_odf_list(
             doc,
             comment_slots_in(item.children().filter(|c| c.has_tag_name("p")), styles),
         );
+        for p in item.children().filter(|c| c.has_tag_name("p")) {
+            walk_text_boxes(p, styles, doc);
+        }
         has_last = true;
         for n in &nested {
             add_odf_list(
@@ -2116,6 +2168,8 @@ fn para_plain_into(el: XmlNode, out: &mut String) {
                 // A reviewer comment's metadata and text (#829), see
                 // [`annotations`].
                 "annotation" | "annotation-end" => {}
+                // A text box's blocks (#831) are their own items.
+                "text-box" => {}
                 _ => para_plain_into(child, out),
             }
         }
@@ -3080,6 +3134,30 @@ mod tests {
             .collect();
         assert_eq!(furniture, ["Head 1", "table Version", "Foot"]);
         assert_eq!(doc.export_to_markdown(), "");
+    }
+
+    /// #831: a `<draw:text-box>`'s paragraphs, list and table are blocks
+    /// after the anchoring paragraph, not its text; a paragraph that only
+    /// anchors a box still yields the box; a box inside a box walks with
+    /// the outer box's paragraph; a block-level frame's box walks too.
+    #[test]
+    fn text_box_blocks_are_separate_items() {
+        let xml = r#"<root xmlns:text="x" xmlns:draw="d" xmlns:table="t">
+            <text:p>Anchor.<draw:frame><draw:text-box><text:p>First.</text:p><text:list><text:list-item><text:p>item</text:p></text:list-item></text:list><table:table><table:table-row><table:table-cell><text:p>Cell</text:p></table:table-cell></table:table-row></table:table></draw:text-box></draw:frame> tail.</text:p>
+            <text:p><draw:frame><draw:text-box><text:p>Only a box.<draw:frame><draw:text-box><text:p>Inner.</text:p></draw:text-box></draw:frame></text:p></draw:text-box></draw:frame></text:p>
+            <draw:frame><draw:text-box><text:h text:outline-level="1">Boxed heading</text:h></draw:text-box></draw:frame>
+            <text:p>After.</text:p></root>"#;
+        let dom = Document::parse(xml).unwrap();
+        let styles = parse_styles(&dom, None);
+        let mut doc = DoclingDocument::new("s");
+        walk_text(dom.root_element(), &styles, &mut doc);
+        assert_eq!(
+            doc.export_to_markdown(),
+            "Anchor. tail.\n\nFirst.\n\n- item\n\n| Cell   |\n|--------|\n\nOnly a box.\n\nInner.\n\n## Boxed heading\n\nAfter.\n"
+        );
+        let p = dom.root_element().first_element_child().unwrap();
+        assert_eq!(text_boxes(p).len(), 1);
+        assert_eq!(para_plain_text(p), "Anchor. tail.");
     }
 
     #[test]

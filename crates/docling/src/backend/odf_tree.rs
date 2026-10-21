@@ -29,12 +29,12 @@ use roxmltree::Node as XmlNode;
 
 use super::odf::{
     attr, cell_has_image, collect_runs, comment_threads, element_has_text, image_can_be_bitmap,
-    inline_chart, is_list_tag, is_rich_cell, is_slide_title_element, is_transparent_container,
-    item_has_content, item_headings, level_affixes, level_is_enumerated, level_start,
-    list_has_direct_text, list_has_renderable, list_items, list_starts_with_empty_nested,
-    odf_item_content, ods_cell_text, para_plain_text, paragraph_list_style, paragraph_style_names,
-    repeat, section_is_hidden, slide_has_visible_title, slide_is_hidden, Annotation, Fmt,
-    MasterPart, Run, Styles,
+    in_text_box, inline_chart, is_list_tag, is_rich_cell, is_slide_title_element,
+    is_transparent_container, item_has_content, item_headings, level_affixes, level_is_enumerated,
+    level_start, list_has_direct_text, list_has_renderable, list_items,
+    list_starts_with_empty_nested, odf_item_content, ods_cell_text, para_plain_text,
+    paragraph_list_style, paragraph_style_names, repeat, section_is_hidden,
+    slide_has_visible_title, slide_is_hidden, text_boxes, Annotation, Fmt, MasterPart, Run, Styles,
 };
 
 /// The tree plus the spreadsheet pages docling adds (`page_no`, width,
@@ -800,9 +800,10 @@ impl<'s> Walker<'s> {
         if el.has_tag_name("frame") {
             frames.push(el);
         }
+        // A frame inside a text box is the box's own block (#831).
         frames.extend(
             el.descendants()
-                .filter(|n| n.has_tag_name("frame") && *n != el),
+                .filter(|n| n.has_tag_name("frame") && *n != el && !in_text_box(*n, el)),
         );
         let mut count = 0;
         for frame in frames {
@@ -895,7 +896,7 @@ impl<'s> Walker<'s> {
         let chart_count = self.add_charts(el, parent, layer);
         let images: Vec<XmlNode> = el
             .descendants()
-            .filter(|n| n.has_tag_name("image"))
+            .filter(|n| n.has_tag_name("image") && !in_text_box(*n, el))
             .collect();
         let image_count = self.add_images(&images, parent, layer, chart_count > 0);
         let mut runs = runs_of(el, self.styles);
@@ -1029,6 +1030,28 @@ impl<'s> Walker<'s> {
         let item = self.add_list_item(group, layer, &runs, &text, meta);
         self.anchor_notes(el, first_new);
         self.attach_comments(std::iter::once(el.id()), Some(item));
+        self.add_text_boxes(el, parent, layer);
+    }
+
+    /// The text boxes `el` anchors (#831), each a `textbox` section group of
+    /// its blocks after the anchoring item — the DOCX backend's
+    /// `_handle_textbox_content` shape.
+    fn add_text_boxes(&mut self, el: XmlNode, parent: Option<usize>, layer: Option<ContentLayer>) {
+        for tb in text_boxes(el) {
+            let group = self.tree.add(
+                parent,
+                layer,
+                TreeKind::Group {
+                    label: "section".into(),
+                    name: "textbox".into(),
+                },
+            );
+            self.add_children(
+                tb.children().filter(XmlNode::is_element),
+                Some(group),
+                layer,
+            );
+        }
     }
 
     /// The `<text:note>` calls in `el` (a paragraph, heading or list item
@@ -1057,6 +1080,7 @@ impl<'s> Walker<'s> {
                 self.anchor_notes(el, first_new);
                 let holder = self.block_item(first_new, parent);
                 self.attach_comments(std::iter::once(el.id()), holder);
+                self.add_text_boxes(el, parent, layer);
             }
             "p" => {
                 self.add_paragraph(el, parent, layer);
@@ -1066,6 +1090,7 @@ impl<'s> Walker<'s> {
                 if let Some(holder) = self.block_item(first_new, parent) {
                     self.attach_comments(std::iter::once(el.id()), Some(holder));
                 }
+                self.add_text_boxes(el, parent, layer);
             }
             n if is_list_tag(n) => {
                 self.add_list(el, parent, layer, false, 1, None);
@@ -1088,9 +1113,10 @@ impl<'s> Walker<'s> {
                 let charts = self.add_charts(el, parent, layer);
                 let images: Vec<XmlNode> = el
                     .descendants()
-                    .filter(|n| n.has_tag_name("image"))
+                    .filter(|n| n.has_tag_name("image") && !in_text_box(*n, el))
                     .collect();
                 self.add_images(&images, parent, layer, charts > 0);
+                self.add_text_boxes(el, parent, layer);
             }
             _ => {
                 // Any other element with images (a `draw:custom-shape`, …).
@@ -1297,6 +1323,9 @@ impl<'s> Walker<'s> {
                     .map(|c| c.id()),
                 Some(item_id),
             );
+            for p in item.children().filter(|c| c.has_tag_name("p")) {
+                self.add_text_boxes(p, Some(item_id), layer);
+            }
             previous = Some(item_id);
             for n in nested {
                 self.add_list(n, Some(item_id), layer, style_enum, level + 1, None);
@@ -2009,6 +2038,38 @@ mod tests {
             ]
         );
         assert_eq!(doc.export_to_markdown(), "Body.\n");
+    }
+
+    /// #831: a text box is a `textbox` section group after the anchoring
+    /// paragraph's item, its paragraphs, list and table inside — the DOCX
+    /// backend's shape; the anchoring paragraph keeps its own text only.
+    #[test]
+    fn text_boxes_are_textbox_sections() {
+        let xml = format!(
+            r#"<office:document {NS}><office:body><office:text>
+              <text:p>Anchor.<draw:frame><draw:text-box><text:p>First.</text:p><text:list><text:list-item><text:p>item</text:p></text:list-item></text:list><table:table><table:table-row><table:table-cell office:value-type="string"><text:p>Cell</text:p></table:table-cell></table:table-row></table:table></draw:text-box></draw:frame></text:p>
+              <text:p>After.</text:p>
+            </office:text></office:body></office:document>"#
+        );
+        let doc = convert(&xml, InputFormat::Odt);
+        let t: &ItemTree = doc.tree.as_ref().expect("tree");
+        let items: Vec<(String, String, Option<usize>)> = t
+            .items
+            .iter()
+            .map(|it| (label(it), text(it).to_string(), it.parent))
+            .collect();
+        assert_eq!(
+            items,
+            [
+                ("text".to_string(), "Anchor.".to_string(), None),
+                ("section:textbox".to_string(), String::new(), None),
+                ("text".to_string(), "First.".to_string(), Some(1)),
+                ("list:list".to_string(), String::new(), Some(1)),
+                ("list_item".to_string(), "item".to_string(), Some(3)),
+                ("table".to_string(), String::new(), Some(1)),
+                ("text".to_string(), "After.".to_string(), None),
+            ]
+        );
     }
 
     /// A presentation: a `chapter` group per slide named `slide-{0-based}`,
