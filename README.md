@@ -39,6 +39,14 @@ format it converts included, with real layout analysis, tables and OCR
 behind it: [guide](./docs/MARKITDOWN.md),
 [measured side by side](#conformance-with-microsoft-markitdown).
 
+**Coming from [Marker](https://github.com/datalab-to/marker)?**
+`pip install docling-rs`, swap the imports —
+`from docling_rs.marker.converters.pdf import PdfConverter` — and keep its
+API: `create_model_dict`, `text_from_rendered`, the JSON block tree, chunks,
+`marker_single`'s CLI and output layout, with docling's layout analysis,
+TableFormer and OCR behind it and no PyTorch or inference server:
+[guide](./docs/MARKER.md), [measured side by side](#conformance-with-marker).
+
 
 ## Install
 
@@ -51,7 +59,7 @@ docling-rs example.pdf          # Markdown on stdout
 cargo install docling-cli
 curl -fsSL https://raw.githubusercontent.com/docling-project/docling.rs/master/scripts/install/download_dependencies.sh | sh -s -- --cli
 
-pip install docling-rs          # Python — drop-in for docling's and MarkItDown's APIs
+pip install docling-rs          # Python — drop-in for docling's, MarkItDown's and Marker's APIs
 npm install docling.rs          # Node.js / Bun
 cargo add docling               # Rust library
 
@@ -223,6 +231,40 @@ images (MarkItDown's own OCR test set) reads at 1.00 with docling.rs' local
 OCR, against 0.00–0.33 for MarkItDown without an LLM. Method, caveats and the full
 OCR comparison: [`docs/MARKITDOWN.md`](./docs/MARKITDOWN.md#how-the-comparison-is-scored).
 
+## Conformance with Marker
+
+[Marker](https://github.com/datalab-to/marker) (datalab's `marker-pdf`)
+converts PDFs and, through a PDF render, Office files to Markdown for LLMs
+with a layout model and OCR. Measured side by side — Marker 2.0.0
+(`marker-pdf[full]`, its CPU default `fast` mode, llama.cpp for its OCR) and
+docling.rs 2.46.2 (release build), 4 vCPU, no GPU — on this repository's test corpus
+([`scripts/conformance/marker_compare.py`](./scripts/conformance/marker_compare.py)):
+
+| Corpus (files) | Marker, warm | docling.rs, warm | Cold CLI call, Marker / docling.rs | Peak RSS, Marker (client + servers) / docling.rs | Word F1 | Table-cell recall | Heading recall |
+|---|---|---|---|---|---|---|---|
+| PDF (18), full layout + tables + OCR | 1312 s | **41 s** | 22.0 s / **1.0 s** | 10.5 GB / **3.1 GB** | 0.93 / **0.997** | 0.41 / **0.94** | 0.66 / **0.91** |
+| PDF (18), text layer only (`--text-layer-only`) | 1312 s | **0.44 s** | — | — / 79 MB | 0.93 / **0.97** | 0.41 / 0.00 | 0.66 / 0.00 |
+| DOCX (38) | 654 s (1 failed) | **0.56 s** | 23.4 s / **15 ms** | 8.6 GB / **41 MB** | 0.89 / **1.00** | 0.57 / **1.00** | 0.73 / **1.00** |
+| PPTX (8) | 3.4 s (3 failed) | **0.02 s** | 21.8 s / **9 ms** | 2.6 GB / **20 MB** | 0.49 / **0.97** | 0.41 / **1.00** | 0.43 / **1.00** |
+| XLSX (14) | 164 s (2 failed) | **0.24 s** | 22.8 s / **10 ms** | 12.9 GB / **53 MB** | 0.64 / **0.95** | 0.57 / **0.98** | — ¹ |
+| HTML (32) | 1514 s | **0.06 s** | 29 min ² / **8 ms** | 8.8 GB / **21 MB** | 0.94 / **1.00** | 0.50 / **1.00** | 0.84 / **1.00** |
+| EPUB (1) | 10.5 s | **0.02 s** | 60.7 s / **13 ms** | 6.8 GB / **19 MB** | 0.98 / **1.00** | — | 1.00 / 1.00 |
+
+A failed file scores 0. ¹ Only one XLSX groundtruth carries a heading.
+² The median HTML file needs OCR in Marker: a cold call starts its llama.cpp
+server and loads the 1.2 GB OCR model first.
+
+Accuracy is scored against Python docling's groundtruth, which favours
+docling.rs by construction; the timings and memory do not depend on it.
+Marker reads Office files, HTML and EPUB by rendering them to PDF and
+running its vision models on the render; on CPU every page its text check
+flags goes through a 1.2 GB vision-language OCR model in a llama.cpp server
+that `pip install marker-pdf` does not bring (without it 4 PDFs, 9 DOCX, 10
+HTML and the EPUB fail outright). Peak RSS counts Marker's client and its
+inference servers. Marker's `balanced` mode (its published benchmarks) needs
+a GPU. Method, caveats and the API map:
+[`docs/MARKER.md`](./docs/MARKER.md#how-the-comparison-is-scored).
+
 ## Conformance with Python docling
 
 Every declarative format is compared against the live library — Markdown
@@ -288,7 +330,7 @@ One engine, several front doors, the same options and outputs everywhere.
 | a shell / CI job | the [`docling-rs` CLI](./crates/docling-cli/README.md), batch mode included | release binaries · `cargo install docling-cli` · `ghcr.io/docling-project/docling-rs` |
 | anything that speaks HTTP | [`docling-serve`](./crates/docling-serve/README.md), OpenAPI 3.1 | `ghcr.io/docling-project/docling-rs-serve` · `cargo install docling-serve` |
 | Node.js / Bun / Electron | [`docling.rs`](./crates/docling-node/README.md), an N-API addon | `npm i docling.rs` (`docling.rs-cuda`) |
-| Python | [`docling-rs`](./crates/docling-py/README.md): docling's and MarkItDown's APIs | `pip install docling-rs` (`docling-rs-cuda`) |
+| Python | [`docling-rs`](./crates/docling-py/README.md): docling's, MarkItDown's and Marker's APIs | `pip install docling-rs` (`docling-rs-cuda`) |
 | LangChain / LlamaIndex | [`DoclingLoader`](./crates/docling-py/README.md#langchain) (langchain-docling's API) · [`DoclingReader`](./crates/docling-py/README.md#llamaindex) (llama-index-readers-docling's API) | `pip install langchain-docling-rs` · `pip install llama-index-readers-docling-rs` |
 | the browser / Tauri / a PWA | [`docling.rs-wasm`](./crates/docling-wasm/README.md), fully client-side | `npm i docling.rs-wasm` |
 | C, C++, C#, Go, Java, Swift, Zig | [`docling-ffi`](./crates/docling-ffi/README.md): one `docling.h` | release archives `docling-ffi-<tag>-<target>` |
