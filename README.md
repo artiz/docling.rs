@@ -47,6 +47,14 @@ API: `create_model_dict`, `text_from_rendered`, the JSON block tree, chunks,
 TableFormer and OCR behind it and no PyTorch or inference server:
 [guide](./docs/MARKER.md), [measured side by side](#conformance-with-marker).
 
+**Coming from [MinerU](https://github.com/opendatalab/MinerU)?**
+`pip install docling-rs`, swap the imports —
+`from docling_rs.mineru.parser import parse` — and keep MinerU 4's SDK:
+`ParseResult`, `markdown()`, the Middle JSON, Content Lists and Structured
+Content, `save()`'s layout and `mineru-kit parse`, with docling's layout
+analysis, TableFormer and OCR behind it and no DocVortex or llama.cpp:
+[guide](./docs/MINERU.md), [measured side by side](#conformance-with-mineru).
+
 
 ## Install
 
@@ -59,7 +67,7 @@ docling-rs example.pdf          # Markdown on stdout
 cargo install docling-cli
 curl -fsSL https://raw.githubusercontent.com/docling-project/docling.rs/master/scripts/install/download_dependencies.sh | sh -s -- --cli
 
-pip install docling-rs          # Python — drop-in for docling's, MarkItDown's and Marker's APIs
+pip install docling-rs          # Python — drop-in for docling's, MarkItDown's, Marker's and MinerU's APIs
 npm install docling.rs          # Node.js / Bun
 cargo add docling               # Rust library
 
@@ -266,6 +274,34 @@ inference servers. Marker's `balanced` mode (its published benchmarks) needs
 a GPU. Method, caveats and the API map:
 [`docs/MARKER.md`](./docs/MARKER.md#how-the-comparison-is-scored).
 
+## Conformance with MinerU
+
+[MinerU](https://github.com/opendatalab/MinerU) (OpenDataLab) converts PDFs,
+images and Office files to Markdown and JSON for LLMs in four tiers — `flash`
+(text layer, no models), `basic` (ONNX layout / table / OCR models),
+`standard` and `advanced` (a vision-language model through llama.cpp).
+Measured side by side — MinerU 4.0.12 and docling.rs 2.46.2 (release build),
+4 vCPU, no GPU — on this repository's test corpus
+([`scripts/conformance/mineru_compare.py`](./scripts/conformance/mineru_compare.py)):
+
+| Corpus (files) | MinerU `flash`, warm | MinerU `basic`, warm | docling.rs, warm | Cold CLI call, MinerU `flash` / `basic` / docling.rs | Peak RSS, MinerU `flash` / `basic` / docling.rs | Word F1 (`flash` / `basic` / docling.rs) | Table-cell recall | Heading recall |
+|---|---|---|---|---|---|---|---|---|
+| PDF (18), full layout + tables + OCR | 22.3 s | 123 s (+ 67 s model load) | **44.0 s** | 3.6 s / 6.5 s / **1.2 s** | 1.4 GB / 4.6 GB / 3.1 GB | 0.87 / 0.74 / **0.997** | 0.28 / 0.44 / **0.94** | 0.57 / 0.58 / **0.91** |
+| PDF (18), text layer only (`--text-layer-only`) | 22.3 s | — | **0.69 s** | — / — / — | — / — / 80 MB | 0.87 / — / **0.97** | 0.28 / — / 0.00 | 0.57 / — / 0.00 |
+| DOCX (38) | 6.36 s | flash only | **0.59 s** | 2355 ms / — / **15 ms** | 179 MB / — / **41 MB** | 0.97 / — / **1.00** | 0.82 / — / **1.00** | 0.96 / — / **1.00** |
+| PPTX (8) | 0.21 s (1 failed) | flash only | **0.05 s** | 2199 ms / — / **9 ms** | 122 MB / — / **20 MB** | 0.79 / — / **0.97** | 0.91 / — / **1.00** | 1.00 / — / 1.00 |
+| XLSX (14) | 0.68 s | flash only | **0.19 s** | 978 ms / — / **14 ms** | 140 MB / — / **55 MB** | 0.83 / — / **0.95** | 0.77 / — / **0.98** | — ¹ |
+| HTML (32) | 0.89 s | flash only | **0.10 s** | 2015 ms / — / **10 ms** | 157 MB / — / **21 MB** | 0.94 / — / **1.00** | 0.81 / — / **1.00** | 0.96 / — / **1.00** |
+| EPUB (1) | 0.09 s | flash only | **0.02 s** | 1909 ms / — / **16 ms** | 99 MB / — / **19 MB** | 1.00 / 1.00 | — | 1.00 / 1.00 |
+
+A failed file scores 0. ¹ Only one XLSX groundtruth carries a heading.
+
+Accuracy is scored against Python docling's groundtruth, which favours
+docling.rs by construction; the timings and memory do not depend on it.
+MinerU parses Office files, HTML and EPUB at `flash` only; `basic` is its
+model tier on CPU; its `standard` tier (a 1.2 B vision-language model through llama.cpp) took 138 s for one page on this CPU and is not in the table. Method, caveats and the API map:
+[`docs/MINERU.md`](./docs/MINERU.md#how-the-comparison-is-scored).
+
 ## Conformance with Python docling
 
 Every declarative format is compared against the live library — Markdown
@@ -331,7 +367,7 @@ One engine, several front doors, the same options and outputs everywhere.
 | a shell / CI job | the [`docling-rs` CLI](./crates/docling-cli/README.md), batch mode included | release binaries · `cargo install docling-cli` · `ghcr.io/docling-project/docling-rs` |
 | anything that speaks HTTP | [`docling-serve`](./crates/docling-serve/README.md), OpenAPI 3.1 | `ghcr.io/docling-project/docling-rs-serve` · `cargo install docling-serve` |
 | Node.js / Bun / Electron | [`docling.rs`](./crates/docling-node/README.md), an N-API addon | `npm i docling.rs` (`docling.rs-cuda`) |
-| Python | [`docling-rs`](./crates/docling-py/README.md): docling's, MarkItDown's and Marker's APIs | `pip install docling-rs` (`docling-rs-cuda`) |
+| Python | [`docling-rs`](./crates/docling-py/README.md): docling's, MarkItDown's, Marker's and MinerU's APIs | `pip install docling-rs` (`docling-rs-cuda`) |
 | LangChain / LlamaIndex | [`DoclingLoader`](./crates/docling-py/README.md#langchain) (langchain-docling's API) · [`DoclingReader`](./crates/docling-py/README.md#llamaindex) (llama-index-readers-docling's API) | `pip install langchain-docling-rs` · `pip install llama-index-readers-docling-rs` |
 | the browser / Tauri / a PWA | [`docling.rs-wasm`](./crates/docling-wasm/README.md), fully client-side | `npm i docling.rs-wasm` |
 | C, C++, C#, Go, Java, Swift, Zig | [`docling-ffi`](./crates/docling-ffi/README.md): one `docling.h` | release archives `docling-ffi-<tag>-<target>` |
