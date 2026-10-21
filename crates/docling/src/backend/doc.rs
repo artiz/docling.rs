@@ -398,7 +398,7 @@ impl Story<'_> {
                 '\r' | '\u{0007}' | '\u{000C}' => {
                     // Paragraph / cell / page mark: property lookup is by
                     // the mark's own FC.
-                    let props = paragraph_props(self.word, self.bte, fc, self.format);
+                    let props = paragraph_props(self.word, self.bte, self.data, fc, self.format);
                     para.comments = comments_in(para_start, cp);
                     para_start = cp + 1;
                     para.finish(ch, props, self.stis, &mut builder, doc);
@@ -1161,7 +1161,8 @@ fn convert_word6(name: &str, word: &[u8], flags: u16) -> Result<DoclingDocument,
         bte: part(0xC0),
         btec: part(0xB8),
         stis: &stis,
-        data: &[],
+        // A Word 6 file has no Data stream: `fcPic` points into WordDocument.
+        data: word,
         spa: &[],
         drawings: &drawings,
         textboxes: Default::default(),
@@ -1743,7 +1744,7 @@ fn bin_table_page(bte: &[u8], fc: u64, format: DocFormat) -> Option<u32> {
 
 /// Look up the PAPX for the paragraph containing byte offset `fc`:
 /// PlcfBtePapx → FKP page (512 bytes in the WordDocument stream) → PapxInFkp.
-fn paragraph_props(word: &[u8], bte: &[u8], fc: u64, format: DocFormat) -> ParaProps {
+fn paragraph_props(word: &[u8], bte: &[u8], data: &[u8], fc: u64, format: DocFormat) -> ParaProps {
     let mut props = ParaProps::default();
     let Some(pn) = bin_table_page(bte, fc, format) else {
         return props;
@@ -1797,7 +1798,7 @@ fn paragraph_props(word: &[u8], bte: &[u8], fc: u64, format: DocFormat) -> ParaP
     }
     props.istd = u16::from_le_bytes([grpprl[0], grpprl[1]]);
     match format {
-        DocFormat::Word97 => apply_pap_sprms(&grpprl[2..], &mut props),
+        DocFormat::Word97 => apply_pap_sprms(&grpprl[2..], &mut props, data),
         DocFormat::Word6 => apply_word6_pap_sprms(&grpprl[2..], &mut props),
     }
     props
@@ -1839,7 +1840,9 @@ fn word6_sprm_len(op: u8, operand: &[u8]) -> Option<usize> {
         53..=55 => 1,
         // CHP.
         65..=67 => 1,
-        68 => 4,
+        // sprmCPicLocation: a count byte (4) then `fcPic` (#832) — Word
+        // writes `44 04 <fc>`, not the bare long the 6.0 table lists it as.
+        68 => return var_byte(),
         69 => 2,
         70 => 4,
         71 => 1,
@@ -1993,9 +1996,9 @@ fn anld_number(nfc: u8, n: u64) -> String {
 /// Scan a Word 6/95 CHP grpprl: bold (85) / italic (86) — operand 0 / 1
 /// absolute, 0x80 / 0x81 relative to the paragraph style (resolved at the
 /// paragraph's end, see [`CharFmt::bold_from_style`]) — the run's font
-/// (`sprmCFtc` 93) and a picture anchor's PICF offset
-/// (`sprmCPicLocation` 68; the Word 6 PICF itself is not decoded, so the
-/// anchor stays a placeholder picture).
+/// (`sprmCFtc` 93) and a picture anchor's PICF offset (`sprmCPicLocation`
+/// 68, #832: the PICF sits in the WordDocument stream, a Word 6 file
+/// having no Data stream).
 fn apply_word6_chp_sprms(sprms: &[u8], fmt: &mut CharFmt) {
     walk_word6_sprms(sprms, |op, operand| match op {
         85 => match operand[0] {
@@ -2010,16 +2013,25 @@ fn apply_word6_chp_sprms(sprms: &[u8], fmt: &mut CharFmt) {
         },
         93 => fmt.ftc_ascii = Some(u16::from_le_bytes([operand[0], operand[1]])),
         68 => {
-            fmt.pic_fc = Some(u32::from_le_bytes([
-                operand[0], operand[1], operand[2], operand[3],
-            ]))
+            if let Some(fc) = operand.get(1..5) {
+                fmt.pic_fc = Some(u32::from_le_bytes([fc[0], fc[1], fc[2], fc[3]]));
+            }
         }
         _ => {}
     });
 }
 
-/// Scan a PAP grpprl for the sprms this backend cares about.
-fn apply_pap_sprms(mut sprms: &[u8], props: &mut ParaProps) {
+/// Scan a PAP grpprl for the sprms this backend cares about. `data` is the
+/// Data stream, for `sprmPHugePapx` (#825): a cell or row-end paragraph
+/// whose grpprl outgrows its 512-byte FKP page (a `sprmTDefTable` of many
+/// columns does it) keeps only `0x6646` in the page, whose operand is the
+/// offset of a `PrcData` — `cbGrpprl` then the real sprms — in `Data`;
+/// `0x6645` is the Word 97 spelling. Without following it the paragraph
+/// lost `sprmPFInTable`, so one row's cells fell out of the table as text
+/// and the rows around them became tables of their own. The nested grpprl
+/// is read with no Data stream: one hop, a huge PAPX cannot point at
+/// another.
+fn apply_pap_sprms(mut sprms: &[u8], props: &mut ParaProps, data: &[u8]) {
     while sprms.len() >= 2 {
         let sprm = u16::from_le_bytes([sprms[0], sprms[1]]);
         sprms = &sprms[2..];
@@ -2053,6 +2065,15 @@ fn apply_pap_sprms(mut sprms: &[u8], props: &mut ParaProps) {
             0x260A => props.ilvl = Some(sprms[0]),    // sprmPIlvl
             0x2640 => props.outline = Some(sprms[0]), // sprmPOutLvl
             0xD608 => props.cell_bounds = tdef_cell_bounds(&sprms[..operand_len]), // sprmTDefTable
+            0x6645 | 0x6646 => {
+                // sprmPHugePapx: the grpprl lives in the Data stream.
+                let fc = u32::from_le_bytes([sprms[0], sprms[1], sprms[2], sprms[3]]) as usize;
+                if let Some(cb) = u16_at(data, fc) {
+                    if let Some(huge) = data.get(fc + 2..fc + 2 + cb as usize) {
+                        apply_pap_sprms(huge, props, &[]);
+                    }
+                }
+            }
             _ => {}
         }
         sprms = &sprms[operand_len..];
@@ -2071,7 +2092,7 @@ fn apply_pap_sprms(mut sprms: &[u8], props: &mut ParaProps) {
 /// heading's list to the Heading style (`sprmPIlfo` + `sprmPIlvl` there,
 /// the paragraphs holding only `istd`), as `w:numPr` in a `.docx` style
 /// does; `base` is the STD's `istdBase`, through which both inherit.
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 struct StyleDef {
     sti: u16,
     outline: Option<u8>,
@@ -2084,6 +2105,11 @@ struct StyleDef {
     /// `None` = not set (the base style's). A run's 0x81 toggles *this*.
     bold: Option<u8>,
     italic: Option<u8>,
+    /// A Word 6/95 style's autonumber (#828): the `sprmPAnld` / `sprmPNLvlAnm`
+    /// of its PAPX UPX — "List Bullet" and the like carry the list here,
+    /// their paragraphs only the `istd`.
+    anld: Option<Anld>,
+    anld_level: Option<u8>,
 }
 
 impl StyleDef {
@@ -2095,7 +2121,29 @@ impl StyleDef {
         base: 0x0FFF,
         bold: None,
         italic: None,
+        anld: None,
+        anld_level: None,
     };
+}
+
+/// The autonumber paragraph style `istd` gives a Word 6/95 paragraph that
+/// carries none of its own (#828): the first `sprmPAnld` up the based-on
+/// chain, with the `sprmPNLvlAnm` of the same style. `resolve_numbering`
+/// does this for Word 97's list references; Word 6 keeps the list in the
+/// style's PAPX as the ANLD itself.
+fn style_anld(stis: &[StyleDef], istd: u16) -> Option<(Anld, Option<u8>)> {
+    let mut cur = istd;
+    for _ in 0..MAX_STYLE_CHAIN {
+        let style = stis.get(cur as usize)?;
+        if let Some(anld) = &style.anld {
+            return Some((anld.clone(), style.anld_level));
+        }
+        if style.base == 0x0FFF || style.base == cur {
+            return None;
+        }
+        cur = style.base;
+    }
+    None
 }
 
 /// Whether style `istd` is bold (or italic) once its based-on chain is
@@ -2150,6 +2198,42 @@ fn style_chain_bold(stis: &[StyleDef], istd: u16) -> bool {
 /// Ancestors a based-on walk follows before giving up on a malformed or
 /// cyclic chain — the DOCX backend's `MAX_STYLE_INHERITANCE_DEPTH`.
 const MAX_STYLE_CHAIN: usize = 10;
+
+/// The heading level (docling's Markdown level) paragraph style `istd`
+/// gives, or `None` for body text. Mirrors the DOCX backend: Title (`sti`
+/// 62) is level 1, "heading N" level N + 1, and a style that is neither can
+/// still be a heading through its outline level (docling#3961 / #270 —
+/// LibreOffice-converted legacy documents carry localized user styles,
+/// "Επικεφαλίδα 2", whose only heading marker is `sprmPOutLvl`): 0–8 are
+/// heading levels 1–9. A style saying none of this is asked about its
+/// based-on chain (#824): a corporate "SectionTitleL1" based on Heading 1
+/// — the `w:basedOn` the `.docx` twin carries, which that backend's style
+/// chain reads — is a heading, through as many hops as the chain has
+/// (`MAX_STYLE_CHAIN` bounds a cyclic one). Outline level 9 is Word's
+/// explicit "body text" and ends the walk: a style that opts out of the
+/// outline is not a heading whatever it is based on.
+fn style_heading_level(stis: &[StyleDef], istd: u16) -> Option<u8> {
+    let mut cur = istd;
+    for _ in 0..MAX_STYLE_CHAIN {
+        let style = stis.get(cur as usize)?;
+        if style.sti == 62 {
+            return Some(1);
+        }
+        if (1..=9).contains(&style.sti) {
+            return Some(style.sti as u8 + 1);
+        }
+        match style.outline {
+            Some(l) if l <= 8 => return Some(l + 2),
+            Some(_) => return None,
+            None => {}
+        }
+        if style.base == 0x0FFF || style.base == cur {
+            return None;
+        }
+        cur = style.base;
+    }
+    None
+}
 
 /// The effective list reference of a paragraph, `(ilfo, ilvl)` — `None` when
 /// it is in no list. The paragraph's own sprms win (an explicit `sprmPIlfo`
@@ -2233,7 +2317,7 @@ fn parse_stsh(stsh: &[u8], format: DocFormat) -> Vec<StyleDef> {
         };
         pos += 2;
         // Empty slot: cbStd == 0.
-        let mut def = none;
+        let mut def = none.clone();
         if cb_std >= 2 {
             let std = stsh.get(pos..pos + cb_std as usize).unwrap_or(&[]);
             def.sti = u16_at(std, 0).map(|w| w & 0x0FFF).unwrap_or(0x0FFF);
@@ -2254,7 +2338,7 @@ fn parse_stsh(stsh: &[u8], format: DocFormat) -> Vec<StyleDef> {
                                 let g = std.get(upx + 2..upx + 2 + cb_upx as usize).unwrap_or(&[]);
                                 if g.len() >= 2 {
                                     let mut props = ParaProps::default();
-                                    apply_pap_sprms(&g[2..], &mut props);
+                                    apply_pap_sprms(&g[2..], &mut props, &[]);
                                     def.outline = props.outline;
                                     def.ilfo = props.ilfo;
                                     def.ilvl = props.ilvl;
@@ -2262,13 +2346,38 @@ fn parse_stsh(stsh: &[u8], format: DocFormat) -> Vec<StyleDef> {
                             }
                         }
                     }
-                    // Word 6: an 8-bit Pascal name, then UPX[0] (PAPX) and
-                    // UPX[1] (CHPX) — the style's bold / italic operands.
+                    // Word 6: an 8-bit Pascal name, then UPX[0] (PAPX) —
+                    // the style's autonumber, #828 — and UPX[1] (CHPX), the
+                    // style's bold / italic operands.
                     DocFormat::Word6 => {
                         if let Some(&cch) = std.get(cb_std_base) {
-                            let mut upx = cb_std_base + 1 + cch as usize + 1;
-                            upx += upx & 1;
+                            // The name's terminating null, then 2-byte
+                            // alignment, locate UPX[0] (Word's layout). A
+                            // writer that drops the null — the #828
+                            // reproducer's generator — puts UPX[0] right
+                            // after the name; the layout whose UPX[0]
+                            // opens with this style's own `istd` is the one.
+                            let name_end = cb_std_base + 1 + cch as usize;
+                            let istd = styles.len() as u16;
+                            let upx = [name_end + 1, name_end]
+                                .into_iter()
+                                .map(|o| o + (o & 1))
+                                .find(|&o| {
+                                    u16_at(std, o).is_some_and(|cb| {
+                                        cb >= 2
+                                            && o + 2 + cb as usize <= std.len()
+                                            && u16_at(std, o + 2) == Some(istd)
+                                    })
+                                })
+                                .unwrap_or(name_end + 1 + ((name_end + 1) & 1));
                             if let Some(cb_upx0) = u16_at(std, upx) {
+                                let g = std.get(upx + 2..upx + 2 + cb_upx0 as usize).unwrap_or(&[]);
+                                if g.len() >= 2 {
+                                    let mut props = ParaProps::default();
+                                    apply_word6_pap_sprms(&g[2..], &mut props);
+                                    def.anld = props.anld;
+                                    def.anld_level = props.anld_level;
+                                }
                                 let mut chpx = upx + 2 + cb_upx0 as usize;
                                 chpx += chpx & 1;
                                 if let Some(cb_upx1) = u16_at(std, chpx) {
@@ -2443,7 +2552,20 @@ fn inline_picture(data: &[u8], pic_fc: u32) -> Option<PictureImage> {
         start += 1 + cch;
     }
     let body = data.get(start..base + lcb.max(cb_header))?;
-    officeart::first_blip(body, 0)
+    officeart::first_blip(body, 0).or_else(|| {
+        // No OfficeArt in the PICF: Word 6/95 (and a Word 97 file keeping
+        // one) stores the metafile bits themselves after the header (#832
+        // — `mm` 8, MM_ANISOTROPIC). `dxaGoal` / `dyaGoal` (twips) size a
+        // WMF whose placeable header is absent.
+        let twips = |at: usize| {
+            u16::from_le_bytes([data[base + at], data[base + at + 1]]) as f64 / 1440.0 * 96.0
+        };
+        let hint = (cb_header >= 32).then(|| (twips(28), twips(30)));
+        let hint = hint.filter(|(w, h)| *w > 0.0 && *h > 0.0);
+        (super::metafile::is_wmf(body) || super::metafile::is_emf(body))
+            .then(|| super::metafile::render(body, hint))
+            .flatten()
+    })
 }
 
 /// The font table ([MS-DOC] 2.9.272 `SttbfFfn`, #588): an STTB whose
@@ -3046,6 +3168,14 @@ impl NodeBuilder {
             return;
         }
         // A Word 6/95 autonumber (#700): its marker, counted along the run.
+        // A paragraph without one takes its style's (#828).
+        let mut props = props;
+        if props.anld.is_none() {
+            if let Some((anld, level)) = style_anld(stis, props.istd) {
+                props.anld = Some(anld);
+                props.anld_level = props.anld_level.or(level);
+            }
+        }
         let anld_level = match props.anld_level {
             Some(l @ 1..=9) => l - 1,
             _ => 0,
@@ -3145,33 +3275,10 @@ impl NodeBuilder {
             .filter(|(before, _)| !before)
             .map(|(_, image)| image)
             .collect();
-        let style = stis
-            .get(props.istd as usize)
-            .copied()
-            .unwrap_or(StyleDef::NONE);
         let before = doc.nodes.len();
         // The paragraph's list, its own or its style's (#641).
         let numbering = resolve_numbering(&props, stis);
-        let sti = style.sti;
-        // A style that is not one of the built-in Heading/Title styles can
-        // still be a heading through its outline level (docling#3961 / #270):
-        // LibreOffice-converted legacy documents carry localized user styles
-        // ("Επικεφαλίδα 2") whose only heading marker is `sprmPOutLvl`. 0-8
-        // are heading levels 1-9; 9 is the "body text" sentinel.
-        let outline_heading = (!(1..=9).contains(&sti) && sti != 62)
-            .then_some(style.outline)
-            .flatten()
-            .filter(|l| *l <= 8);
-        if (1..=9).contains(&sti) || sti == 62 || outline_heading.is_some() {
-            // Mirrors the DOCX backend: docling renders "heading N" at
-            // Markdown level N+1 and Title (sti 62) at level 1.
-            let level = if sti == 62 {
-                1
-            } else if let Some(l) = outline_heading {
-                l + 2
-            } else {
-                sti as u8 + 1
-            };
+        if let Some(level) = style_heading_level(stis, props.istd) {
             // A heading style wins over a list: a numbered heading gets a
             // computed `1.2` prefix rather than becoming a list item — the
             // DOCX backend's rule, and docling's `_is_numbered_heading`
@@ -3855,6 +3962,199 @@ mod tests {
         assert!(md.contains("- Golf Hotel Alpha"), "{md}");
         assert!(md.contains("- Alpha Bravo Charlie Delta Ech"), "{md}");
         assert!(!md.contains("1."), "{md}");
+    }
+
+    /// A `tests/data/doc/sources` fixture converted through the backend.
+    fn converted(name: &str) -> DoclingDocument {
+        let path = format!(
+            "{}/tests/data/doc/sources/{name}",
+            env!("CARGO_MANIFEST_DIR")
+        );
+        let bytes = std::fs::read(&path).expect("fixture exists");
+        DocBackend
+            .convert(&SourceDocument::from_bytes(name, InputFormat::Doc, bytes))
+            .expect("converts")
+    }
+
+    /// #824: a custom paragraph style based on a built-in heading style —
+    /// the ticket's "SectionTitleL1" on Heading 1, "SectionTitleL2" on
+    /// Heading 2 and "SubSectionTitleL2" two hops up — is a heading of that
+    /// level, as the `.docx` twin's `w:basedOn` makes it there; the body
+    /// paragraphs under them stay text. The two-hop style is a heading here
+    /// where the `.docx` backend (one hop, docling's) prints bold text.
+    #[test]
+    fn heading_styles_inherit_through_the_based_on_chain() {
+        let doc = converted("doc_inherited_heading_styles.doc");
+        let headings: Vec<(u8, &str)> = doc
+            .nodes
+            .iter()
+            .filter_map(|n| match n {
+                Node::Heading { level, text } => Some((*level, text.as_str())),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(
+            headings,
+            [
+                (2, "1. Main Specification Section"),
+                (3, "1.1. Architecture Subsection"),
+                (3, "1.2. Two-Hop Inherited Subsection"),
+            ]
+        );
+        let md = doc.export_to_markdown();
+        assert!(
+            md.starts_with("## 1. Main Specification Section\n\nFirst body"),
+            "{md}"
+        );
+        assert_eq!(md.matches("\n### 1.").count(), 2, "{md}");
+        // A chain that never reaches a heading, or opts out with outline
+        // level 9, is body text; a cyclic one ends at the hop limit.
+        let mut stis = vec![StyleDef::NONE; 6];
+        stis[1] = StyleDef {
+            sti: 1,
+            ..StyleDef::NONE
+        };
+        stis[2] = StyleDef {
+            base: 1,
+            ..StyleDef::NONE
+        };
+        stis[3] = StyleDef {
+            base: 2,
+            ..StyleDef::NONE
+        };
+        stis[4] = StyleDef {
+            base: 1,
+            outline: Some(9),
+            ..StyleDef::NONE
+        };
+        stis[5] = StyleDef {
+            base: 5,
+            ..StyleDef::NONE
+        };
+        assert_eq!(style_heading_level(&stis, 3), Some(2));
+        assert_eq!(style_heading_level(&stis, 4), None);
+        assert_eq!(style_heading_level(&stis, 5), None);
+        assert_eq!(style_heading_level(&stis, 0), None);
+    }
+
+    /// #825: cells whose PAPX is a `sprmPHugePapx` into the Data stream —
+    /// the ticket's 3×2 table with row 2 stored that way — stay in their
+    /// table: one table and one paragraph, as the `.docx` twin has; before,
+    /// row 2's cells fell out as text between two one-row tables. The rows
+    /// are the file's own: its generator gave row 1's end mark `fInTable`
+    /// without `fTtp`, which by Word's rules is an empty cell, so rows 1
+    /// and 2 read as one five-cell row (LibreOffice garbles the same file).
+    #[test]
+    fn huge_papx_keeps_the_row_in_its_table() {
+        let doc = converted("doc_huge_papx_table.doc");
+        let tables: Vec<Vec<Vec<String>>> = doc
+            .nodes
+            .iter()
+            .filter_map(|n| match n {
+                Node::Table(t) => Some(t.rows.iter().map(|r| r.to_vec()).collect()),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(tables.len(), 1, "{tables:?}");
+        let cells: Vec<&str> = tables[0]
+            .iter()
+            .flatten()
+            .map(String::as_str)
+            .filter(|c| !c.is_empty())
+            .collect();
+        assert_eq!(
+            cells,
+            [
+                "Row 1 Col 1",
+                "Row 1 Col 2",
+                "Row 2 Col 1",
+                "Row 2 Col 2",
+                "Row 3 Col 1",
+                "Row 3 Col 2"
+            ]
+        );
+        assert_eq!(tables[0].len(), 2, "{tables:?}");
+        let texts = doc
+            .nodes
+            .iter()
+            .filter(|n| matches!(n, Node::Paragraph { .. }))
+            .count();
+        assert_eq!(texts, 1);
+        // The sprm itself: a PrcData in `data` carrying `sprmPFInTable`.
+        let data = [0u8, 0, 6, 0, 0x16, 0x24, 1, 0x17, 0x24, 1];
+        let grpprl = [0x46u8, 0x66, 2, 0, 0, 0];
+        let mut props = ParaProps::default();
+        apply_pap_sprms(&grpprl, &mut props, &data);
+        assert!(props.in_table && props.ttp);
+        // An offset outside the stream reads nothing.
+        let mut props = ParaProps::default();
+        apply_pap_sprms(&[0x46u8, 0x66, 0xFF, 0, 0, 0], &mut props, &data);
+        assert!(!props.in_table);
+    }
+
+    /// #828: a Word 6.0 "List Bullet"-style list — the `sprmPAnld` in the
+    /// style's PAPX UPX, the paragraphs carrying only the `istd` — prints
+    /// its items as the `.docx` twin's bullets, not as body text.
+    #[test]
+    fn word6_style_defined_lists_are_list_items() {
+        let doc = converted("word6_style_lists.doc");
+        assert_eq!(
+            doc.export_to_markdown(),
+            "Style-defined bullet list:\n\n- First style bullet item\n- Second style bullet item\n- \
+             Third style bullet item\n"
+        );
+        let json = doc.export_to_json();
+        assert_eq!(json.matches("\"label\": \"list_item\"").count(), 3);
+        // The style chain: a paragraph of a style based on the list style
+        // inherits the autonumber; its own level wins over the style's.
+        let mut bullets = vec![12u8, 52, 0xFF, 1, 0, 0x08, 0, 0, 1, 0, 0, 0, 1, 0];
+        bullets.extend_from_slice(&[0; 8]);
+        bullets.extend_from_slice(&[0xB7]);
+        bullets.extend_from_slice(&[0; 31]);
+        let mut props = ParaProps::default();
+        apply_word6_pap_sprms(&bullets, &mut props);
+        let mut stis = vec![StyleDef::NONE; 4];
+        stis[1] = StyleDef {
+            anld: props.anld.clone(),
+            anld_level: Some(2),
+            ..StyleDef::NONE
+        };
+        stis[2] = StyleDef {
+            base: 1,
+            ..StyleDef::NONE
+        };
+        let (anld, level) = style_anld(&stis, 2).expect("inherited");
+        assert!(anld.bullet());
+        assert_eq!(level, Some(2));
+        assert!(style_anld(&stis, 3).is_none());
+    }
+
+    /// #832: a Word 6.0 inline picture — `sprmCPicLocation` with its count
+    /// byte, the PICF in the WordDocument stream, a bare WMF after the
+    /// header — comes out with its image, as the `.docx` twin's PNG does.
+    #[test]
+    fn word6_inline_pictures_keep_their_image() {
+        let doc = converted("word6_inline_picture.doc");
+        let pictures: Vec<bool> = doc
+            .nodes
+            .iter()
+            .filter_map(|n| match n {
+                Node::Picture { image, .. } => Some(image.is_some()),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(pictures, [true]);
+        let json = doc.export_to_json();
+        assert!(json.contains("data:image/png;base64,"), "{json}");
+        assert_eq!(
+            doc.export_to_markdown(),
+            "Paragraph before inline picture.\n\n<!-- image -->\n\nParagraph after inline picture.\n"
+        );
+        // The CHPX of the ticket's anchor run: sprmCFSpec, then
+        // sprmCPicLocation `44 04 00 0a 00 00` — fc 0xa00.
+        let mut fmt = CharFmt::default();
+        apply_word6_chp_sprms(&[0x75, 1, 0x44, 4, 0, 0x0a, 0, 0], &mut fmt);
+        assert_eq!(fmt.pic_fc, Some(0xa00));
     }
 
     /// #699: the annotation story — a comment on the body paragraph (the
