@@ -29,23 +29,37 @@ if [[ -z "$new" ]]; then
 fi
 [[ -n "${FORCE_VERSION:-}" ]] && echo ">> forced release of v$new"
 
-# Commits alone are not enough: only cut a new crates.io version when a
-# *publishable* crate's actual source changed since the last tag. This is what
-# stops a docs / CI / demo / Python-binding-only merge (now that every non-fix
-# commit is release-worthy) from minting and publishing a new version of every
-# crate with no code change. FORCE_VERSION bypasses the gate (a deliberate
+# Commits alone are not enough: only cut a new version when something that a
+# release channel publishes actually changed since the last tag. This is what
+# stops a docs / CI / demo-only merge (now that every non-fix commit is
+# release-worthy) from minting a version with no code change. The channels
+# are all dispatched by hand from release.yml, so a tag publishes nothing by
+# itself — the maintainer picks crates.io, PyPI, npm, Docker, the binaries —
+# which is why the bindings count too: a Python- or Node-only merge (a new
+# facade in docling_rs, a napi option) is a PyPI / npm release even though no
+# crate on crates.io changed. FORCE_VERSION bypasses the gate (a deliberate
 # manual (re)release).
 if [[ -z "${FORCE_VERSION:-}" ]]; then
   gate_prev_tag="$(git tag --list 'v*' --sort=-version:refname | head -n1)"
   gate_range="${gate_prev_tag:+$gate_prev_tag..}HEAD"
-  # Publishable crates — MUST match scripts/ci/ci_publish.sh. A release fires only
-  # if one of these crates' Rust source or manifest changed (root Cargo.toml too,
-  # for workspace-wide dependency/config changes).
+  # Publishable crates — MUST match scripts/ci/ci_publish.sh. A release fires if
+  # one of these crates' Rust source or manifest changed (root Cargo.toml too,
+  # for workspace-wide dependency/config changes) …
   gate_crates=(docling-core docling-onnx docling-pdf docling-asr docling docling-serve docling-rag docling-cli)
   gate_paths=(Cargo.toml)
   for c in "${gate_crates[@]}"; do
     gate_paths+=("crates/$c/src" "crates/$c/Cargo.toml" "crates/$c/build.rs")
   done
+  # … or a binding package's: the PyPI wheel (pypi-publish.yml), the npm
+  # packages (npm-publish.yml) and the C header of the release binaries
+  # (cli-binaries.yml). Their tests, READMEs and examples do not count.
+  gate_paths+=(
+    crates/docling-py/src crates/docling-py/python crates/docling-py/Cargo.toml crates/docling-py/pyproject.toml
+    crates/docling-py/mcp/src crates/docling-py/mcp/pyproject.toml
+    crates/docling-node/src crates/docling-node/Cargo.toml crates/docling-node/package.json crates/docling-node/index.js crates/docling-node/index.d.ts
+    crates/docling-wasm/src crates/docling-wasm/Cargo.toml crates/docling-wasm/npm
+    crates/docling-ffi/src crates/docling-ffi/Cargo.toml crates/docling-ffi/include
+  )
   if [[ -z "$(git diff --name-only "$gate_range" -- "${gate_paths[@]}")" ]]; then
     echo "Commits since the last tag, but no publishable crate source changed" \
       "since ${gate_prev_tag:-the start of history} — skipping release."

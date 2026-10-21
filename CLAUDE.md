@@ -15,7 +15,9 @@ reproduce it byte for byte (see "Conformance & fixtures").
   commit** — whatever its prefix — bumps the 0.x "major" (0.49.0 → 0.50.0).
   So prefix bug fixes `fix(scope): …` and don't worry about the rest.
   Docs/CI-only merges still release nothing (release.sh only fires when a
-  publishable crate's source changed). No automatic semver-major: majors are
+  publishable crate's source changed — the bindings included: docling-py's
+  `python/` and `src/`, docling-node's, docling-wasm's, docling-ffi's, since
+  PyPI / npm / the binaries publish them from the tag). No automatic semver-major: majors are
   cut by hand (`force_version` dispatch input) — v1.0.0 marks the breaking
   `.models/` asset-dir rename. ci.yml bumps the version, tags it and cuts
   the GitHub Release (not marked latest) and builds nothing; **everything
