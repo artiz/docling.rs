@@ -36,11 +36,10 @@ local, so it is the bundle; the old `smithery.yaml` keys (`startCommand`,
 `commandFunction`) are no longer read. A server id is 3–39 letters, digits,
 `-` or `_`, starting with a letter: `docling-rs`, not `docling.rs`.
 
-PyPI has no macOS wheel of `docling-rs` (no hosted macOS runners in the
-release workflow), so on a Mac the uvx routes, the bundle included,
-compile the package on first start and need a Rust toolchain; run
-`uvx docling-rs-mcp --download-models` in a terminal once before adding
-the server to a client.
+PyPI's macOS wheel of `docling-rs` is Apple Silicon only (#816), so on an
+Intel mac the uvx routes, the bundle included, compile the package on first
+start and need a Rust toolchain; run `uvx docling-rs-mcp --download-models`
+in a terminal once before adding the server to a client.
 
 `crates/docling-cli/tests/mcp_registry.rs` keeps these files consistent: the
 same name everywhere, the registry's 100-character caps, the ownership

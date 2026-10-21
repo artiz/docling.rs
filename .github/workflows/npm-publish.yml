@@ -98,13 +98,22 @@ jobs:
           # ONNX/ort build). Requires the arm64 runner image to be available.
           - target: aarch64-unknown-linux-gnu
             host: ubuntu-24.04-arm
-          # macOS (darwin) prebuilds are omitted: GitHub-hosted macOS runners are
-          # blocked in this environment, and darwin can't be cross-compiled on
-          # Linux (needs the Apple SDK). macOS users build from source. To re-add
-          # when macOS runners are available, add the darwin targets back here AND
-          # to `napi.triples.additional` in package.json:
-          #   - { target: aarch64-apple-darwin, host: macos-14 }
-          #   - { target: x86_64-apple-darwin,  host: macos-14 }  # cross via --target
+          # Apple Silicon (#816), native on the hosted `macos-14` runner —
+          # the same runner ci.yml's coreml check job uses; the "macOS runners
+          # are blocked" note this matrix carried dated from the repository's
+          # previous home. The triple is also listed in package.json's
+          # `napi.triples.additional`: that is where `napi build --platform`
+          # takes the loader's platform branches from and `napi
+          # create-npm-dir` the platform packages (`docling.rs-darwin-arm64` —
+          # a NEW package: its first publish needs the placeholder + trusted
+          # publisher dance the header describes, else ENEEDAUTH).
+          # Intel macs are not prebuilt (the x86_64 hosted runners are being
+          # retired; see cli-binaries.yml's header) — to add them, put
+          # `{ target: x86_64-apple-darwin, host: macos-14 }` here (napi
+          # cross-builds with `--target`, the Apple SDK is universal) and the
+          # triple in package.json.
+          - target: aarch64-apple-darwin
+            host: macos-14
           - target: x86_64-pc-windows-msvc
             host: windows-latest
           # IBM Z (#504): cross-compiled with cargo-zigbuild against glibc
@@ -127,9 +136,9 @@ jobs:
         with:
           ref: ${{ inputs.tag || github.ref }}
 
-      # rustup is preinstalled on GitHub-hosted runners (Linux + Windows); use it
-      # directly — the docling-project org allowlists only GitHub-owned / vetted
-      # actions, not marketplace toolchain actions.
+      # rustup is preinstalled on GitHub-hosted runners (Linux, macOS, Windows);
+      # use it directly — the docling-project org allowlists only GitHub-owned /
+      # vetted actions, not marketplace toolchain actions.
       # The manylinux container has no Rust: install rustup there first.
       - name: Install Rust (stable)
         shell: bash
@@ -177,8 +186,9 @@ jobs:
         run: npm install
 
       # Native addon + the JS loader / d.ts. `--strip` keeps the (ONNX-linked)
-      # binary as small as possible; strip isn't available under MSVC, so the
-      # Windows build omits it.
+      # binary as small as possible (on macOS napi runs `strip -x`, which keeps
+      # the exported symbols a Mach-O dylib needs); strip isn't available
+      # under MSVC, so the Windows build omits it.
       # `--strip` runs the host `strip` on the cross-built s390x addon, which
       # cannot read it: the cross build strips with the target's binutils
       # afterwards.

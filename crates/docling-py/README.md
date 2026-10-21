@@ -658,8 +658,8 @@ gh workflow run pypi-publish.yml                                    # the dispat
 No secrets: it publishes via PyPI **Trusted Publishing** (OIDC), like
 docling-core — no API token is stored or rotated (the trusted publisher is
 registered on PyPI; manage it at *Project → Manage → Publishing*). Re-runs are
-idempotent (`skip-existing`). macOS wheels are omitted (no hosted runners here);
-macOS users install the sdist, which compiles from source. The ONNX runtime is
+idempotent (`skip-existing`). The macOS wheel is Apple Silicon only (arm64,
+macOS 11+; #816); Intel macs install the sdist, which compiles from source. The ONNX runtime is
 bundled in the wheel; the ONNX models are fetched at runtime by `download_models()`.
 
 **PyPI's size limit.** PyPI caps the total of all files a project keeps at

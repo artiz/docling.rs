@@ -43,7 +43,7 @@ behind it: [guide](./docs/MARKITDOWN.md),
 ## Install
 
 ```bash
-# CLI + models (Linux x64/arm64 prebuilt; builds from source elsewhere)
+# CLI + models (Linux x64/arm64/s390x + macOS arm64 prebuilt; builds from source elsewhere)
 curl -fsSL https://raw.githubusercontent.com/docling-project/docling.rs/master/scripts/install/install.sh | bash
 docling-rs example.pdf          # Markdown on stdout
 
@@ -143,8 +143,9 @@ Same options, same outputs on every surface — every option in
   ([pluggable backends](./crates/docling/README.md#pluggable-backends)).
 - **RAG:** `docling-rag` — chunk, embed and search with a REST API and a web
   UI ([RAG subsystem](#rag-subsystem)).
-- **Runs where you are:** Linux x64 / arm64 / s390x and Windows prebuilt (CLI,
-  wheels, npm), macOS from source, containers for amd64 and arm64; NVIDIA
+- **Runs where you are:** Linux x64 / arm64 / s390x, macOS (Apple Silicon)
+  and Windows prebuilt (CLI, wheels, npm), Intel macs from source, containers
+  for amd64 and arm64; NVIDIA
   CUDA and TensorRT, DirectML, CoreML and WebGPU in the browser as opt-in
   accelerators ([GPU](./docs/MODELS.md#gpu-execution-providers-optional-off-by-default),
   [IBM Z](./docs/IBMZ.md)).
