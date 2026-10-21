@@ -398,7 +398,7 @@ impl Story<'_> {
                 '\r' | '\u{0007}' | '\u{000C}' => {
                     // Paragraph / cell / page mark: property lookup is by
                     // the mark's own FC.
-                    let props = paragraph_props(self.word, self.bte, fc, self.format);
+                    let props = paragraph_props(self.word, self.bte, self.data, fc, self.format);
                     para.comments = comments_in(para_start, cp);
                     para_start = cp + 1;
                     para.finish(ch, props, self.stis, &mut builder, doc);
@@ -1743,7 +1743,7 @@ fn bin_table_page(bte: &[u8], fc: u64, format: DocFormat) -> Option<u32> {
 
 /// Look up the PAPX for the paragraph containing byte offset `fc`:
 /// PlcfBtePapx → FKP page (512 bytes in the WordDocument stream) → PapxInFkp.
-fn paragraph_props(word: &[u8], bte: &[u8], fc: u64, format: DocFormat) -> ParaProps {
+fn paragraph_props(word: &[u8], bte: &[u8], data: &[u8], fc: u64, format: DocFormat) -> ParaProps {
     let mut props = ParaProps::default();
     let Some(pn) = bin_table_page(bte, fc, format) else {
         return props;
@@ -1797,7 +1797,7 @@ fn paragraph_props(word: &[u8], bte: &[u8], fc: u64, format: DocFormat) -> ParaP
     }
     props.istd = u16::from_le_bytes([grpprl[0], grpprl[1]]);
     match format {
-        DocFormat::Word97 => apply_pap_sprms(&grpprl[2..], &mut props),
+        DocFormat::Word97 => apply_pap_sprms(&grpprl[2..], &mut props, data),
         DocFormat::Word6 => apply_word6_pap_sprms(&grpprl[2..], &mut props),
     }
     props
@@ -2018,8 +2018,17 @@ fn apply_word6_chp_sprms(sprms: &[u8], fmt: &mut CharFmt) {
     });
 }
 
-/// Scan a PAP grpprl for the sprms this backend cares about.
-fn apply_pap_sprms(mut sprms: &[u8], props: &mut ParaProps) {
+/// Scan a PAP grpprl for the sprms this backend cares about. `data` is the
+/// Data stream, for `sprmPHugePapx` (#825): a cell or row-end paragraph
+/// whose grpprl outgrows its 512-byte FKP page (a `sprmTDefTable` of many
+/// columns does it) keeps only `0x6646` in the page, whose operand is the
+/// offset of a `PrcData` — `cbGrpprl` then the real sprms — in `Data`;
+/// `0x6645` is the Word 97 spelling. Without following it the paragraph
+/// lost `sprmPFInTable`, so one row's cells fell out of the table as text
+/// and the rows around them became tables of their own. The nested grpprl
+/// is read with no Data stream: one hop, a huge PAPX cannot point at
+/// another.
+fn apply_pap_sprms(mut sprms: &[u8], props: &mut ParaProps, data: &[u8]) {
     while sprms.len() >= 2 {
         let sprm = u16::from_le_bytes([sprms[0], sprms[1]]);
         sprms = &sprms[2..];
@@ -2053,6 +2062,15 @@ fn apply_pap_sprms(mut sprms: &[u8], props: &mut ParaProps) {
             0x260A => props.ilvl = Some(sprms[0]),    // sprmPIlvl
             0x2640 => props.outline = Some(sprms[0]), // sprmPOutLvl
             0xD608 => props.cell_bounds = tdef_cell_bounds(&sprms[..operand_len]), // sprmTDefTable
+            0x6645 | 0x6646 => {
+                // sprmPHugePapx: the grpprl lives in the Data stream.
+                let fc = u32::from_le_bytes([sprms[0], sprms[1], sprms[2], sprms[3]]) as usize;
+                if let Some(cb) = u16_at(data, fc) {
+                    if let Some(huge) = data.get(fc + 2..fc + 2 + cb as usize) {
+                        apply_pap_sprms(huge, props, &[]);
+                    }
+                }
+            }
             _ => {}
         }
         sprms = &sprms[operand_len..];
@@ -2290,7 +2308,7 @@ fn parse_stsh(stsh: &[u8], format: DocFormat) -> Vec<StyleDef> {
                                 let g = std.get(upx + 2..upx + 2 + cb_upx as usize).unwrap_or(&[]);
                                 if g.len() >= 2 {
                                     let mut props = ParaProps::default();
-                                    apply_pap_sprms(&g[2..], &mut props);
+                                    apply_pap_sprms(&g[2..], &mut props, &[]);
                                     def.outline = props.outline;
                                     def.ilfo = props.ilfo;
                                     def.ilvl = props.ilvl;
@@ -3941,6 +3959,61 @@ mod tests {
         assert_eq!(style_heading_level(&stis, 4), None);
         assert_eq!(style_heading_level(&stis, 5), None);
         assert_eq!(style_heading_level(&stis, 0), None);
+    }
+
+    /// #825: cells whose PAPX is a `sprmPHugePapx` into the Data stream —
+    /// the ticket's 3×2 table with row 2 stored that way — stay in their
+    /// table: one table and one paragraph, as the `.docx` twin has; before,
+    /// row 2's cells fell out as text between two one-row tables. The rows
+    /// are the file's own: its generator gave row 1's end mark `fInTable`
+    /// without `fTtp`, which by Word's rules is an empty cell, so rows 1
+    /// and 2 read as one five-cell row (LibreOffice garbles the same file).
+    #[test]
+    fn huge_papx_keeps_the_row_in_its_table() {
+        let doc = converted("doc_huge_papx_table.doc");
+        let tables: Vec<Vec<Vec<String>>> = doc
+            .nodes
+            .iter()
+            .filter_map(|n| match n {
+                Node::Table(t) => Some(t.rows.iter().map(|r| r.to_vec()).collect()),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(tables.len(), 1, "{tables:?}");
+        let cells: Vec<&str> = tables[0]
+            .iter()
+            .flatten()
+            .map(String::as_str)
+            .filter(|c| !c.is_empty())
+            .collect();
+        assert_eq!(
+            cells,
+            [
+                "Row 1 Col 1",
+                "Row 1 Col 2",
+                "Row 2 Col 1",
+                "Row 2 Col 2",
+                "Row 3 Col 1",
+                "Row 3 Col 2"
+            ]
+        );
+        assert_eq!(tables[0].len(), 2, "{tables:?}");
+        let texts = doc
+            .nodes
+            .iter()
+            .filter(|n| matches!(n, Node::Paragraph { .. }))
+            .count();
+        assert_eq!(texts, 1);
+        // The sprm itself: a PrcData in `data` carrying `sprmPFInTable`.
+        let data = [0u8, 0, 6, 0, 0x16, 0x24, 1, 0x17, 0x24, 1];
+        let grpprl = [0x46u8, 0x66, 2, 0, 0, 0];
+        let mut props = ParaProps::default();
+        apply_pap_sprms(&grpprl, &mut props, &data);
+        assert!(props.in_table && props.ttp);
+        // An offset outside the stream reads nothing.
+        let mut props = ParaProps::default();
+        apply_pap_sprms(&[0x46u8, 0x66, 0xFF, 0, 0, 0], &mut props, &data);
+        assert!(!props.in_table);
     }
 
     /// #699: the annotation story — a comment on the body paragraph (the
