@@ -201,14 +201,36 @@ def marker_warm(files, config):
         m = measured([sys.executable, "-c", _MARKER_WORKER, json.dumps(files), out, json.dumps(config)])
         rss = {"client_mb": m.get("maxrss_mb"), "servers_mb": marker_server_peak_mb()}
         report_path = os.path.join(out, "_report.json")
-        if not os.path.exists(report_path):
-            return None, rss, None, {f: "ERROR: marker did not finish: " + m.get("stderr", "") for f in files}
-        report = json.load(open(report_path))
+        if os.path.exists(report_path):
+            report = json.load(open(report_path))
+            times, load = report["times"], report["load"]
+        else:
+            # The worker died (an OOM kill leaves no traceback): one worker
+            # per file, so each file gets its own verdict and the batch is
+            # not written off for the one that killed it.
+            times, load = {}, None
+            for f in files:
+                one = os.path.join(out, "one")
+                os.makedirs(one, exist_ok=True)
+                mf = measured([sys.executable, "-c", _MARKER_WORKER, json.dumps([f]), one, json.dumps(config)])
+                rss["client_mb"] = max(rss["client_mb"] or 0, mf.get("maxrss_mb") or 0)
+                rss["servers_mb"] = max(rss["servers_mb"] or 0, marker_server_peak_mb() or 0)
+                r = os.path.join(one, "_report.json")
+                stem = os.path.splitext(os.path.basename(f))[0] + ".md"
+                if os.path.exists(r):
+                    rep = json.load(open(r))
+                    times[f] = rep["times"][f]
+                    load = load or rep["load"]
+                    os.replace(os.path.join(one, stem), os.path.join(out, stem))
+                    os.remove(r)
+                else:
+                    with open(os.path.join(out, stem), "w", encoding="utf-8") as fh:
+                        fh.write(f"ERROR: marker worker died (exit {mf.get('returncode')}, peak RSS {mf.get('maxrss_mb')} MB)")
         texts = {}
         for f in files:
             path = os.path.join(out, os.path.splitext(os.path.basename(f))[0] + ".md")
             texts[f] = open(path, encoding="utf-8").read() if os.path.exists(path) else "ERROR: no output"
-        return sum(report["times"].values()), rss, report["load"], texts
+        return sum(times.values()), rss, load, texts
 
 
 def docling_batch(files, extra, jobs=1):
