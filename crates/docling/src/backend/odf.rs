@@ -292,6 +292,33 @@ pub(super) fn is_list_tag(name: &str) -> bool {
     matches!(name, "list" | "ordered-list" | "unordered-list")
 }
 
+/// Whether an element is a transparent block container the walkers descend
+/// into as if its children were body blocks: a `<text:section>`, or (#823,
+/// docling#4750) an index — `<text:table-of-content>`, the alphabetical /
+/// illustration / table / object / user indexes and a bibliography — and
+/// the `<text:index-body>` / `<text:index-title>` it holds. The index's
+/// `*-source` child is configuration (its `index-title-template` is not
+/// rendered text) and is not a block tag, so the walk never reads it. The
+/// index body's entries are the TOC lines docling keeps for a `.docx`; and
+/// LibreOffice, converting a Word file whose TOC field is never closed,
+/// wraps the rest of the document — headings, paragraphs, tables — inside
+/// the index body, where every one of them used to vanish.
+pub(super) fn is_transparent_container(name: &str) -> bool {
+    matches!(
+        name,
+        "section"
+            | "table-of-content"
+            | "alphabetical-index"
+            | "illustration-index"
+            | "table-index"
+            | "object-index"
+            | "user-index"
+            | "bibliography"
+            | "index-body"
+            | "index-title"
+    )
+}
+
 // ---------------------------------------------------------------- styles
 
 fn parse_styles(content: &Document, styles: Option<&Document>) -> Styles {
@@ -363,9 +390,9 @@ pub(super) fn slide_is_hidden(page: XmlNode, styles: &Styles) -> bool {
     attr(page, "style-name").is_some_and(|name| styles.hidden_pages.contains(name))
 }
 
-/// Whether a `<text:section>` is hidden (`text:display="none"`, Writer's
-/// Format > Sections > Hide): its content is kept on the invisible layer
-/// (#753, docling#4860).
+/// Whether a `<text:section>` (or an index, #823) is hidden
+/// (`text:display="none"`, Writer's Format > Sections > Hide): its content
+/// is kept on the invisible layer (#753, docling#4860).
 pub(super) fn section_is_hidden(section: XmlNode) -> bool {
     attr(section, "display") == Some("none")
 }
@@ -967,11 +994,12 @@ fn handle_block(
                 doc.push(Node::Table(table));
             }
         }
-        "section" => {
+        n if is_transparent_container(n) => {
             // docling walks a `<text:section>`'s children as ordinary body
             // blocks (docling#3852 / #178) — headings, paragraphs, tables and
-            // lists inside a section were silently dropped before. Recursing
-            // through `walk_blocks` keeps list numbering continuing across the
+            // lists inside a section were silently dropped before — and,
+            // since docling#4750 (#823), an index's too. Recursing through
+            // `walk_blocks` keeps list numbering continuing across the
             // section's own consecutive lists (`_add_odf_children`) and
             // handles nested sections. A hidden section's blocks go to the
             // invisible layer (#753).
@@ -2360,6 +2388,59 @@ mod tests {
             md.contains("Nested paragraph."),
             "nested section content:\n{md}"
         );
+    }
+
+    /// #823 (docling#4750): a table of contents — and every other index —
+    /// is transparent like a section: its title and entries, and whatever
+    /// LibreOffice put inside the index body (an unclosed Word TOC field
+    /// swallows the following headings, paragraphs and tables), walk as
+    /// body blocks; the `*-source` template is not content; a hidden index
+    /// goes to the invisible layer.
+    #[test]
+    fn index_body_content_is_walked() {
+        let xml = r#"<root xmlns:text="x" xmlns:table="t">
+            <text:p>Intro.</text:p>
+            <text:table-of-content text:name="TOC">
+              <text:table-of-content-source text:outline-level="10">
+                <text:index-title-template>Template title</text:index-title-template>
+              </text:table-of-content-source>
+              <text:index-body>
+                <text:index-title text:name="TOC_Head"><text:p>Contents</text:p></text:index-title>
+                <text:p>Chapter One<text:tab/>1</text:p>
+                <text:h text:outline-level="1">Chapter One</text:h>
+                <table:table><table:table-row>
+                  <table:table-cell><text:p>Cell</text:p></table:table-cell>
+                </table:table-row></table:table>
+              </text:index-body>
+            </text:table-of-content>
+            <text:alphabetical-index text:name="Idx" text:display="none">
+              <text:index-body><text:p>Hidden entry</text:p></text:index-body>
+            </text:alphabetical-index>
+            <text:p>Outro.</text:p></root>"#;
+        let dom = Document::parse(xml).unwrap();
+        let styles = parse_styles(&dom, None);
+        let mut doc = DoclingDocument::new("s");
+        walk_text(dom.root_element(), &styles, &mut doc);
+        assert_eq!(
+            doc.export_to_markdown(),
+            "Intro.\n\nContents\n\nChapter One\t1\n\n## Chapter One\n\n| Cell   |\n|--------|\n\nOutro.\n"
+        );
+        assert!(doc.nodes.iter().any(|n| matches!(
+            n,
+            Node::Furniture {
+                layer: docling_core::ContentLayer::Invisible,
+                ..
+            }
+        )));
+        for container in [
+            "table-of-content",
+            "user-index",
+            "bibliography",
+            "index-body",
+        ] {
+            assert!(is_transparent_container(container));
+        }
+        assert!(!is_transparent_container("table-of-content-source"));
     }
 
     #[test]

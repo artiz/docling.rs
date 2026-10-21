@@ -29,9 +29,9 @@ use roxmltree::Node as XmlNode;
 
 use super::odf::{
     attr, cell_has_image, collect_runs, element_has_text, image_can_be_bitmap, inline_chart,
-    is_list_tag, is_rich_cell, is_slide_title_element, item_has_content, level_affixes,
-    level_is_enumerated, level_start, list_has_direct_text, list_has_renderable, list_items,
-    list_starts_with_empty_nested, odf_item_content, ods_cell_text, para_plain_text,
+    is_list_tag, is_rich_cell, is_slide_title_element, is_transparent_container, item_has_content,
+    level_affixes, level_is_enumerated, level_start, list_has_direct_text, list_has_renderable,
+    list_items, list_starts_with_empty_nested, odf_item_content, ods_cell_text, para_plain_text,
     paragraph_style_names, repeat, section_is_hidden, slide_has_visible_title, slide_is_hidden,
     Fmt, Run, Styles,
 };
@@ -850,9 +850,10 @@ impl<'s> Walker<'s> {
             "table" => {
                 self.add_table(el, parent, layer, None, None);
             }
-            "section" => {
-                // A hidden section's content goes to the invisible layer
-                // (#753, docling#4860).
+            n if is_transparent_container(n) => {
+                // A section or an index (#823, docling#4750) is transparent;
+                // a hidden one's content goes to the invisible layer (#753,
+                // docling#4860).
                 let layer = if section_is_hidden(el) {
                     Some(ContentLayer::Invisible)
                 } else {
@@ -1460,6 +1461,47 @@ mod tests {
         );
         assert_eq!(t.items[13].parent, Some(12));
         assert_eq!(t.items[14].parent, Some(13));
+    }
+
+    /// #823: an index body's title, entries and the blocks inside it are
+    /// items in document order, between the surrounding paragraphs, with
+    /// no group of their own — docling#4750's shape.
+    #[test]
+    fn index_body_items_are_body_items() {
+        let xml = format!(
+            r#"<office:document {NS}><office:body><office:text>
+              <text:p>Intro.</text:p>
+              <text:table-of-content text:name="TOC">
+                <text:table-of-content-source><text:index-title-template>T</text:index-title-template></text:table-of-content-source>
+                <text:index-body>
+                  <text:index-title><text:p>Contents</text:p></text:index-title>
+                  <text:p>Chapter One</text:p>
+                  <text:h text:outline-level="1">Chapter One</text:h>
+                  <table:table><table:table-row><table:table-cell office:value-type="string"><text:p>Cell</text:p></table:table-cell></table:table-row></table:table>
+                </text:index-body>
+              </text:table-of-content>
+              <text:p>Outro.</text:p>
+            </office:text></office:body></office:document>"#
+        );
+        let doc = convert(&xml, InputFormat::Odt);
+        let t: &ItemTree = doc.tree.as_ref().expect("tree");
+        let items: Vec<(String, String)> = t
+            .items
+            .iter()
+            .map(|it| (label(it), text(it).to_string()))
+            .collect();
+        assert_eq!(
+            items,
+            [
+                ("text".to_string(), "Intro.".to_string()),
+                ("text".to_string(), "Contents".to_string()),
+                ("text".to_string(), "Chapter One".to_string()),
+                ("section_header".to_string(), "Chapter One".to_string()),
+                ("table".to_string(), String::new()),
+                ("text".to_string(), "Outro.".to_string()),
+            ]
+        );
+        assert!(t.items.iter().all(|it| it.parent.is_none()));
     }
 
     /// A presentation: a `chapter` group per slide named `slide-{0-based}`,
