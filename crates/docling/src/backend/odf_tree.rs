@@ -30,10 +30,10 @@ use roxmltree::Node as XmlNode;
 use super::odf::{
     attr, cell_has_image, collect_runs, element_has_text, image_can_be_bitmap, inline_chart,
     is_list_tag, is_rich_cell, is_slide_title_element, is_transparent_container, item_has_content,
-    level_affixes, level_is_enumerated, level_start, list_has_direct_text, list_has_renderable,
-    list_items, list_starts_with_empty_nested, odf_item_content, ods_cell_text, para_plain_text,
-    paragraph_list_style, paragraph_style_names, repeat, section_is_hidden,
-    slide_has_visible_title, slide_is_hidden, Fmt, Run, Styles,
+    item_headings, level_affixes, level_is_enumerated, level_start, list_has_direct_text,
+    list_has_renderable, list_items, list_starts_with_empty_nested, odf_item_content,
+    ods_cell_text, para_plain_text, paragraph_list_style, paragraph_style_names, repeat,
+    section_is_hidden, slide_has_visible_title, slide_is_hidden, Fmt, Run, Styles,
 };
 
 /// The tree plus the spreadsheet pages docling adds (`page_no`, width,
@@ -970,12 +970,12 @@ impl<'s> Walker<'s> {
         for child in item.children().filter(XmlNode::is_element) {
             match child.tag_name().name() {
                 n if is_list_tag(n) => has_nested = true,
-                "p" | "h" => collect_runs(child, self.styles, Fmt::default(), &mut runs),
+                "p" => collect_runs(child, self.styles, Fmt::default(), &mut runs),
                 _ => {}
             }
         }
         let mut runs = normalize_runs(runs);
-        if runs.is_empty() && !has_nested {
+        if runs.is_empty() && !has_nested && item_headings(item).next().is_none() {
             let text = text_from_runs(&runs_of(item, self.styles));
             if !text.is_empty() {
                 runs.push(Run {
@@ -1048,6 +1048,20 @@ impl<'s> Walker<'s> {
         }
     }
 
+    /// A list item's `<text:h>` children (#827) as headings under `parent`.
+    fn add_item_headings(
+        &mut self,
+        item: XmlNode,
+        parent: Option<usize>,
+        layer: Option<ContentLayer>,
+    ) {
+        for h in item_headings(item) {
+            let first_new = self.tree.items.len();
+            self.add_heading(h, parent, layer);
+            self.anchor_notes(h, first_new);
+        }
+    }
+
     /// `_add_odf_list`.
     fn add_list(
         &mut self,
@@ -1068,6 +1082,7 @@ impl<'s> Walker<'s> {
         if !should_continue && !list_has_direct_text(list, styles) {
             for item in list_items(list) {
                 let (_, nested) = odf_item_content(item, styles);
+                self.add_item_headings(item, parent, layer);
                 for n in nested {
                     self.add_list(n, parent, layer, style_enum, level + 1, None);
                 }
@@ -1097,6 +1112,9 @@ impl<'s> Walker<'s> {
                 .into_iter()
                 .filter(|n| list_has_renderable(*n, styles))
                 .collect();
+            // The item's headings (#827) are `section_header`s of the list's
+            // parent, created before the item.
+            self.add_item_headings(item, parent, layer);
             if !has_content && nested.is_empty() {
                 continue;
             }
@@ -1646,6 +1664,50 @@ mod tests {
         assert!(
             matches!(&t.items[6].kind, TreeKind::Text { list: Some(l), .. } if l.marker == "2.")
         );
+    }
+
+    /// #827: headings inside list items are `section_header`s with their
+    /// outline level, body-level siblings like every ODT heading; a list of
+    /// headings alone opens no `list` group.
+    #[test]
+    fn headings_inside_list_items_are_section_headers() {
+        let xml = format!(
+            r#"<office:document {NS}><office:body><office:text>
+              <text:list><text:list-item>
+                <text:h text:outline-level="1">Context</text:h>
+                <text:list><text:list-item><text:h text:outline-level="2">Background</text:h></text:list-item></text:list>
+              </text:list-item></text:list>
+              <text:p>Body.</text:p>
+              <text:list><text:list-item><text:list><text:list-item><text:h text:outline-level="2">Target</text:h></text:list-item></text:list></text:list-item></text:list>
+            </office:text></office:body></office:document>"#
+        );
+        let doc = convert(&xml, InputFormat::Odt);
+        let t: &ItemTree = doc.tree.as_ref().expect("tree");
+        let items: Vec<(String, String, Option<u8>)> = t
+            .items
+            .iter()
+            .map(|it| {
+                let level = match &it.kind {
+                    TreeKind::Text { level, .. } => *level,
+                    _ => None,
+                };
+                (label(it), text(it).to_string(), level)
+            })
+            .collect();
+        assert_eq!(
+            items,
+            [
+                ("section_header".to_string(), "Context".to_string(), Some(1)),
+                (
+                    "section_header".to_string(),
+                    "Background".to_string(),
+                    Some(2)
+                ),
+                ("text".to_string(), "Body.".to_string(), None),
+                ("section_header".to_string(), "Target".to_string(), Some(2)),
+            ]
+        );
+        assert!(t.items.iter().all(|it| it.parent.is_none()));
     }
 
     /// A presentation: a `chapter` group per slide named `slide-{0-based}`,

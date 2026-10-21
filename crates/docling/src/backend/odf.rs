@@ -782,10 +782,8 @@ pub(super) fn note_calls(el: XmlNode) -> (String, Vec<(usize, roxmltree::NodeId)
     let mut text = String::new();
     let mut out = Vec::new();
     if el.has_tag_name("list-item") || el.has_tag_name("list-header") {
-        for c in el
-            .children()
-            .filter(|c| c.has_tag_name("p") || c.has_tag_name("h"))
-        {
+        // An item's headings are their own text items (#827), anchored apart.
+        for c in el.children().filter(|c| c.has_tag_name("p")) {
             walk(c, &mut text, &mut out);
         }
     } else {
@@ -1218,7 +1216,9 @@ pub(super) fn list_items<'a, 'i>(list: XmlNode<'a, 'i>) -> impl Iterator<Item = 
 
 /// An item's rendered text (its direct paragraphs' runs, cleaned to single lines)
 /// and its directly-nested `<text:list>` elements. Mirrors docling's
-/// `_odf_list_item_content` with `flatten_nested_text=False`.
+/// `_odf_list_item_content` with `flatten_nested_text=False` — bar its
+/// `<text:h>` children, which are headings, not item text (#827, see
+/// [`item_headings`]).
 pub(super) fn odf_item_content<'a, 'i>(
     item: XmlNode<'a, 'i>,
     styles: &Styles,
@@ -1228,7 +1228,7 @@ pub(super) fn odf_item_content<'a, 'i>(
     for child in item.children().filter(XmlNode::is_element) {
         match child.tag_name().name() {
             n if is_list_tag(n) => nested.push(child),
-            "p" | "h" => {
+            "p" => {
                 let mut runs = Vec::new();
                 collect_runs(child, styles, Fmt::default(), &mut runs);
                 let text = clean_lines(&runs_to_text(runs));
@@ -1252,9 +1252,27 @@ pub(super) fn item_has_content(item: XmlNode, styles: &Styles) -> bool {
     !odf_item_content(item, styles).0.is_empty()
         || item
             .children()
-            .filter(|c| c.has_tag_name("p") || c.has_tag_name("h"))
+            .filter(|c| c.has_tag_name("p"))
             .flat_map(|p| p.descendants())
             .any(|n| n.has_tag_name("image") || n.has_tag_name("object") || n.has_tag_name("note"))
+}
+
+/// A list item's direct `<text:h>` children (#827). Writer's outline
+/// numbering — and a Word document's numbered headings, once LibreOffice
+/// has written them — wraps chapter headings in `<text:list>` /
+/// `<text:list-item>`, one nested list per outline level; docling's
+/// `_odf_list_item_content` reads the heading as the item's text, so every
+/// such heading became a `list_item` (the reporter's corpus: 515 of them,
+/// all demoted) and the section hierarchy was gone. The walkers emit these
+/// as headings with their `outline-level`, outside the list, as the `.docx`
+/// backend emits the same document's; an item made of headings alone is no
+/// list item at all (a list of them opens no list group), and the number
+/// the outline list would print is not added, as the DOCX backend prints
+/// none for the twin.
+pub(super) fn item_headings<'a, 'i>(
+    item: XmlNode<'a, 'i>,
+) -> impl Iterator<Item = XmlNode<'a, 'i>> {
+    item.children().filter(|c| c.has_tag_name("h"))
 }
 
 /// Split on newlines, strip each line, drop the blanks, re-join with spaces —
@@ -1271,7 +1289,9 @@ pub(super) fn clean_lines(text: &str) -> String {
 pub(super) fn list_has_renderable(list: XmlNode, styles: &Styles) -> bool {
     list_items(list).any(|item| {
         let (_, nested) = odf_item_content(item, styles);
-        item_has_content(item, styles) || nested.iter().any(|n| list_has_renderable(*n, styles))
+        item_has_content(item, styles)
+            || item_headings(item).next().is_some()
+            || nested.iter().any(|n| list_has_renderable(*n, styles))
     })
 }
 
@@ -1360,6 +1380,7 @@ fn add_odf_list(
     if !should_continue && !list_has_direct_text(list, styles) {
         for item in list_items(list) {
             let (_text, nested) = odf_item_content(item, styles);
+            emit_item_headings(item, styles, doc);
             for n in nested {
                 add_odf_list(n, styles, doc, depth, style_level + 1, style_enum, None);
             }
@@ -1390,6 +1411,8 @@ fn add_odf_list(
             .into_iter()
             .filter(|n| list_has_renderable(*n, styles))
             .collect();
+        // The item's headings (#827) come out before its text, outside the list.
+        emit_item_headings(item, styles, doc);
         if !has_content && nested.is_empty() {
             continue;
         }
@@ -1499,6 +1522,13 @@ fn push_odf_list_item(
         href: None,
         layer: None,
     });
+}
+
+/// A list item's `<text:h>` children as headings (#827), at the top level.
+fn emit_item_headings(item: XmlNode, styles: &Styles, doc: &mut DoclingDocument) {
+    for h in item_headings(item) {
+        handle_block(h, styles, doc, 0, &mut Vec::new());
+    }
 }
 
 /// A marker of digits and a dot (`12.`), which docling-core's Markdown
@@ -2605,6 +2635,36 @@ mod tests {
         assert_eq!(
             doc.export_to_markdown(),
             "Intro:\n\n- one\n- two\n- three\n\n- 3) four\n- 4) five\n\nplain again\n"
+        );
+    }
+
+    /// #827: a `<text:h>` inside a list item is a heading of its outline
+    /// level, not a list item — a list of headings alone prints no list,
+    /// and a heading item among bullet items keeps the bullets a list.
+    #[test]
+    fn headings_inside_list_items_are_headings() {
+        let xml = r#"<root xmlns:text="x">
+            <text:list text:style-name="Outline">
+              <text:list-item>
+                <text:h text:outline-level="1">Context</text:h>
+                <text:list><text:list-item><text:h text:outline-level="2">Background</text:h></text:list-item></text:list>
+              </text:list-item>
+            </text:list>
+            <text:p>Body one.</text:p>
+            <text:list text:style-name="Outline" text:continue-numbering="true">
+              <text:list-item><text:list><text:list-item><text:h text:outline-level="2">Target</text:h></text:list-item></text:list></text:list-item>
+            </text:list>
+            <text:list>
+              <text:list-item><text:h text:outline-level="3">Inside bullets</text:h></text:list-item>
+              <text:list-item><text:p>bullet</text:p></text:list-item>
+            </text:list></root>"#;
+        let dom = Document::parse(xml).unwrap();
+        let styles = parse_styles(&dom, None);
+        let mut doc = DoclingDocument::new("s");
+        walk_text(dom.root_element(), &styles, &mut doc);
+        assert_eq!(
+            doc.export_to_markdown(),
+            "## Context\n\n### Background\n\nBody one.\n\n### Target\n\n#### Inside bullets\n\n- bullet\n"
         );
     }
 
