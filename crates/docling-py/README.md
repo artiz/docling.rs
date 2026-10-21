@@ -29,6 +29,24 @@ calls: PDF table-cell recall 0.31 → 0.94, Office/HTML 5–10× faster
 ([measured](https://github.com/docling-project/docling.rs/blob/master/docs/MARKITDOWN.md);
 [migration notes](#migrating-from-markitdown)).
 
+**Coming from [Marker](https://github.com/datalab-to/marker)?** Same thing —
+swap the imports, keep the code:
+
+```python
+# was:  from marker.converters.pdf import PdfConverter
+#       from marker.models import create_model_dict
+#       from marker.output import text_from_rendered
+from docling_rs.marker.converters.pdf import PdfConverter
+from docling_rs.marker.models import create_model_dict
+from docling_rs.marker.output import text_from_rendered
+
+text, _, images = text_from_rendered(PdfConverter(artifact_dict=create_model_dict())("paper.pdf"))
+```
+
+No PyTorch, no inference server, every format natively
+([measured](https://github.com/docling-project/docling.rs/blob/master/docs/MARKER.md);
+[migration notes](#migrating-from-marker)).
+
 **Only the document processor is Rust.** The engine parses the input and returns
 docling-core's JSON wire format; this package validates it into a genuine
 [`docling_core.types.doc.DoclingDocument`](https://github.com/docling-project/docling-core).
@@ -170,6 +188,60 @@ Office/HTML/EPUB/email backends — measured side by side in the main README's
 `DocumentConverter` — `{"text_layer_only": True}` for pdfminer-speed PDFs,
 `{"ocr_lang": "ch"}`, `{"do_picture_ocr": True}` — and `result.document` is
 the converted `DoclingDocument` for anything Markdown cannot carry.
+
+## Migrating from Marker
+
+[Marker](https://github.com/datalab-to/marker) code moves over by changing
+the imports — `docling_rs.marker` mirrors Marker 2.0's module layout:
+
+```python
+# was:  from marker.converters.pdf import PdfConverter
+#       from marker.config.parser import ConfigParser
+#       from marker.models import create_model_dict
+#       from marker.output import text_from_rendered, save_output
+from docling_rs.marker.converters.pdf import PdfConverter
+from docling_rs.marker.config.parser import ConfigParser
+from docling_rs.marker.models import create_model_dict
+from docling_rs.marker.output import text_from_rendered, save_output
+
+config_parser = ConfigParser({"output_format": "json", "page_range": "0-4", "paginate_output": True})
+converter = PdfConverter(
+    config=config_parser.generate_config_dict(),
+    artifact_dict=create_model_dict(),
+    processor_list=config_parser.get_processors(),
+    renderer=config_parser.get_renderer(),
+    llm_service=config_parser.get_llm_service(),
+)
+rendered = converter("report.pdf")            # or any DOCX / PPTX / XLSX / HTML / EPUB …
+text, ext, images = text_from_rendered(rendered)
+save_output(rendered, "out/report", "report")  # report.json + report_meta.json + the images
+```
+
+`PdfConverter` / `TableConverter` / `OCRConverter`, `create_model_dict`,
+`ConfigParser`, the renderers and their output models (`MarkdownOutput`,
+`HTMLOutput`, `JSONOutput`, `ChunkOutput`, `OCRJSONOutput`),
+`text_from_rendered` / `save_output` / `output_exists`, `BlockTypes` and
+`settings` behave as Marker's do; `python -m docling_rs.marker FILE|FOLDER`
+stands in for `marker_single` and `marker` with the same options and output
+layout. The full table of what is honoured, mapped and ignored is in
+[docs/MARKER.md](https://github.com/docling-project/docling.rs/blob/master/docs/MARKER.md#the-api);
+the numbers in the main README's
+[Marker comparison](../../README.md#conformance-with-marker). What differs:
+
+| Marker | docling.rs facade |
+|---|---|
+| Surya layout + OCR on PyTorch, a resident inference server per model, `fast` / `balanced` modes | docling's layout model, TableFormer and PP-OCR on ONNX Runtime in one process; `mode` accepted and ignored |
+| LLM post-processing (`use_llm`, `llm_service`, …) | accepted, ignored with a warning: no LLM runs |
+| Office / HTML / EPUB rendered to PDF (WeasyPrint) and OCR'd | parsed natively — real headings, tables, lists, no models needed |
+| its own Markdown dialect | docling's Markdown; `![](_page_0_Picture_3.jpeg)` references and the `{page}----` separators as Marker writes them; byte-identical output is a non-goal |
+| JSON block tree | same shape: Marker's ids, polygons in PDF points from the top-left, `section_hierarchy`, `<content-ref>` placeholders, base64 picture images; a figure with a caption is a `PictureGroup`, a table with one a `TableGroup` |
+| `OCRConverter`: lines and characters | one `Line` per text block, no characters |
+| `create_model_dict()` downloads Surya's models | downloads docling.rs's (~700 MB, once) when they are missing |
+
+`PdfConverter(config={"docling_options": {...}})` passes options through to
+`DocumentConverter` — `{"text_layer_only": True}` for Marker's
+`--disable_ocr` speed class, `{"ocr_lang": "ch"}` — and `rendered.document`
+is the converted `DoclingDocument` for anything the Marker shapes cannot carry.
 
 ## Try it locally
 
