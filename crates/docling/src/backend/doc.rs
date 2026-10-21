@@ -2089,7 +2089,7 @@ fn apply_pap_sprms(mut sprms: &[u8], props: &mut ParaProps, data: &[u8]) {
 /// heading's list to the Heading style (`sprmPIlfo` + `sprmPIlvl` there,
 /// the paragraphs holding only `istd`), as `w:numPr` in a `.docx` style
 /// does; `base` is the STD's `istdBase`, through which both inherit.
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 struct StyleDef {
     sti: u16,
     outline: Option<u8>,
@@ -2102,6 +2102,11 @@ struct StyleDef {
     /// `None` = not set (the base style's). A run's 0x81 toggles *this*.
     bold: Option<u8>,
     italic: Option<u8>,
+    /// A Word 6/95 style's autonumber (#828): the `sprmPAnld` / `sprmPNLvlAnm`
+    /// of its PAPX UPX — "List Bullet" and the like carry the list here,
+    /// their paragraphs only the `istd`.
+    anld: Option<Anld>,
+    anld_level: Option<u8>,
 }
 
 impl StyleDef {
@@ -2113,7 +2118,29 @@ impl StyleDef {
         base: 0x0FFF,
         bold: None,
         italic: None,
+        anld: None,
+        anld_level: None,
     };
+}
+
+/// The autonumber paragraph style `istd` gives a Word 6/95 paragraph that
+/// carries none of its own (#828): the first `sprmPAnld` up the based-on
+/// chain, with the `sprmPNLvlAnm` of the same style. `resolve_numbering`
+/// does this for Word 97's list references; Word 6 keeps the list in the
+/// style's PAPX as the ANLD itself.
+fn style_anld(stis: &[StyleDef], istd: u16) -> Option<(Anld, Option<u8>)> {
+    let mut cur = istd;
+    for _ in 0..MAX_STYLE_CHAIN {
+        let style = stis.get(cur as usize)?;
+        if let Some(anld) = &style.anld {
+            return Some((anld.clone(), style.anld_level));
+        }
+        if style.base == 0x0FFF || style.base == cur {
+            return None;
+        }
+        cur = style.base;
+    }
+    None
 }
 
 /// Whether style `istd` is bold (or italic) once its based-on chain is
@@ -2287,7 +2314,7 @@ fn parse_stsh(stsh: &[u8], format: DocFormat) -> Vec<StyleDef> {
         };
         pos += 2;
         // Empty slot: cbStd == 0.
-        let mut def = none;
+        let mut def = none.clone();
         if cb_std >= 2 {
             let std = stsh.get(pos..pos + cb_std as usize).unwrap_or(&[]);
             def.sti = u16_at(std, 0).map(|w| w & 0x0FFF).unwrap_or(0x0FFF);
@@ -2316,13 +2343,38 @@ fn parse_stsh(stsh: &[u8], format: DocFormat) -> Vec<StyleDef> {
                             }
                         }
                     }
-                    // Word 6: an 8-bit Pascal name, then UPX[0] (PAPX) and
-                    // UPX[1] (CHPX) — the style's bold / italic operands.
+                    // Word 6: an 8-bit Pascal name, then UPX[0] (PAPX) —
+                    // the style's autonumber, #828 — and UPX[1] (CHPX), the
+                    // style's bold / italic operands.
                     DocFormat::Word6 => {
                         if let Some(&cch) = std.get(cb_std_base) {
-                            let mut upx = cb_std_base + 1 + cch as usize + 1;
-                            upx += upx & 1;
+                            // The name's terminating null, then 2-byte
+                            // alignment, locate UPX[0] (Word's layout). A
+                            // writer that drops the null — the #828
+                            // reproducer's generator — puts UPX[0] right
+                            // after the name; the layout whose UPX[0]
+                            // opens with this style's own `istd` is the one.
+                            let name_end = cb_std_base + 1 + cch as usize;
+                            let istd = styles.len() as u16;
+                            let upx = [name_end + 1, name_end]
+                                .into_iter()
+                                .map(|o| o + (o & 1))
+                                .find(|&o| {
+                                    u16_at(std, o).is_some_and(|cb| {
+                                        cb >= 2
+                                            && o + 2 + cb as usize <= std.len()
+                                            && u16_at(std, o + 2) == Some(istd)
+                                    })
+                                })
+                                .unwrap_or(name_end + 1 + ((name_end + 1) & 1));
                             if let Some(cb_upx0) = u16_at(std, upx) {
+                                let g = std.get(upx + 2..upx + 2 + cb_upx0 as usize).unwrap_or(&[]);
+                                if g.len() >= 2 {
+                                    let mut props = ParaProps::default();
+                                    apply_word6_pap_sprms(&g[2..], &mut props);
+                                    def.anld = props.anld;
+                                    def.anld_level = props.anld_level;
+                                }
                                 let mut chpx = upx + 2 + cb_upx0 as usize;
                                 chpx += chpx & 1;
                                 if let Some(cb_upx1) = u16_at(std, chpx) {
@@ -3100,6 +3152,14 @@ impl NodeBuilder {
             return;
         }
         // A Word 6/95 autonumber (#700): its marker, counted along the run.
+        // A paragraph without one takes its style's (#828).
+        let mut props = props;
+        if props.anld.is_none() {
+            if let Some((anld, level)) = style_anld(stis, props.istd) {
+                props.anld = Some(anld);
+                props.anld_level = props.anld_level.or(level);
+            }
+        }
         let anld_level = match props.anld_level {
             Some(l @ 1..=9) => l - 1,
             _ => 0,
@@ -4014,6 +4074,43 @@ mod tests {
         let mut props = ParaProps::default();
         apply_pap_sprms(&[0x46u8, 0x66, 0xFF, 0, 0, 0], &mut props, &data);
         assert!(!props.in_table);
+    }
+
+    /// #828: a Word 6.0 "List Bullet"-style list — the `sprmPAnld` in the
+    /// style's PAPX UPX, the paragraphs carrying only the `istd` — prints
+    /// its items as the `.docx` twin's bullets, not as body text.
+    #[test]
+    fn word6_style_defined_lists_are_list_items() {
+        let doc = converted("word6_style_lists.doc");
+        assert_eq!(
+            doc.export_to_markdown(),
+            "Style-defined bullet list:\n\n- First style bullet item\n- Second style bullet item\n- \
+             Third style bullet item\n"
+        );
+        let json = doc.export_to_json();
+        assert_eq!(json.matches("\"label\": \"list_item\"").count(), 3);
+        // The style chain: a paragraph of a style based on the list style
+        // inherits the autonumber; its own level wins over the style's.
+        let mut bullets = vec![12u8, 52, 0xFF, 1, 0, 0x08, 0, 0, 1, 0, 0, 0, 1, 0];
+        bullets.extend_from_slice(&[0; 8]);
+        bullets.extend_from_slice(&[0xB7]);
+        bullets.extend_from_slice(&[0; 31]);
+        let mut props = ParaProps::default();
+        apply_word6_pap_sprms(&bullets, &mut props);
+        let mut stis = vec![StyleDef::NONE; 4];
+        stis[1] = StyleDef {
+            anld: props.anld.clone(),
+            anld_level: Some(2),
+            ..StyleDef::NONE
+        };
+        stis[2] = StyleDef {
+            base: 1,
+            ..StyleDef::NONE
+        };
+        let (anld, level) = style_anld(&stis, 2).expect("inherited");
+        assert!(anld.bullet());
+        assert_eq!(level, Some(2));
+        assert!(style_anld(&stis, 3).is_none());
     }
 
     /// #699: the annotation story — a comment on the body paragraph (the
