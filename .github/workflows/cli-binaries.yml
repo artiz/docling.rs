@@ -15,13 +15,19 @@
 # job and docling-parse-render.yml's `build mac-arm64` job already run on.
 # (The "macOS runners are blocked" note this matrix carried until #816 dated
 # from the repository's previous home, where the Intel-mac job hung waiting
-# for a runner; it never applied to docling-project.) Intel macs are not
-# prebuilt: the x86_64 hosted runners are being retired (`macos-13` is gone,
-# `macos-15-intel` lasts to 2027) and the user base is Apple Silicon — add
-# `{ target: x86_64-apple-darwin, host: macos-15-intel }` (native) or
-# `host: macos-14` (cross via `--target`; the Apple SDK is universal) to the
-# matrix if that changes; install.sh has the matching `x86_64` arm of its
-# Darwin case commented out. Until then `cargo install docling-cli`.
+# for a runner; it never applied to docling-project.) pyke's only
+# `aarch64-apple-darwin` ONNX Runtime is the CoreML-enabled build, whose
+# Objective-C `@available` checks need clang's compiler-rt builtins
+# (`___isPlatformVersionAtLeast`); docling-onnx's build.rs links them, else
+# the thin-LTO release link fails on that symbol. The binaries declare
+# macOS 13 (`MACOSX_DEPLOYMENT_TARGET` below): the prebuilt ONNX Runtime
+# objects are compiled for 13.4. Intel macs are not prebuilt: pyke ships no
+# `x86_64-apple-darwin` ONNX Runtime at all (ort-sys's dist.tsv), so an Intel
+# build is an `ort-load-dynamic` one like s390x — `dlopen`ing a
+# `libonnxruntime.dylib` fetched separately — and the x86_64 hosted runners
+# are being retired (`macos-13` is gone, `macos-15-intel` lasts to 2027);
+# install.sh has the matching `x86_64` arm of its Darwin case commented out.
+# Until then Intel macs `cargo install docling-cli`.
 #
 # The binaries are the *default* build (CPU; ONNX Runtime statically linked by
 # ort's download-binaries, same as every other build of this workspace). The
@@ -76,6 +82,7 @@ jobs:
           # Apple Silicon, native (see the header for Intel).
           - target: aarch64-apple-darwin
             host: macos-14
+            macos_min: "13.0"
           # IBM Z: no native runner, cross-compiled with cargo-zigbuild (see
           # the header). `cross` is the binutils prefix used to strip.
           - target: s390x-unknown-linux-gnu
@@ -85,6 +92,9 @@ jobs:
             features: ort-load-dynamic
     env:
       TAG: ${{ inputs.tag }}
+      # rustc and clang read it on Apple targets (the Mach-O's minimum OS
+      # version); unset on the other hosts.
+      MACOSX_DEPLOYMENT_TARGET: ${{ matrix.macos_min }}
     steps:
       - uses: actions/checkout@v7
         with:
