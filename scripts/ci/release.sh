@@ -22,6 +22,15 @@
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 
+# A forced version is a bare X.Y.Z; a leading "v" (the tag spelling,
+# `-f force_version=v2.48.0`) is dropped rather than written into Cargo.toml
+# as an invalid "v2.48.0" and tagged "vv2.48.0". Anything else is refused
+# before a commit is made.
+FORCE_VERSION="${FORCE_VERSION#v}"
+if [[ -n "${FORCE_VERSION:-}" && ! "$FORCE_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+  echo "FORCE_VERSION must be X.Y.Z (got '$FORCE_VERSION')" >&2
+  exit 1
+fi
 new="${FORCE_VERSION:-$(scripts/ci/bump_version.sh)}"
 if [[ -z "$new" ]]; then
   echo "No commits since the last tag — nothing to release."
