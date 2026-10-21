@@ -47,6 +47,21 @@ No PyTorch, no inference server, every format natively
 ([measured](https://github.com/docling-project/docling.rs/blob/master/docs/MARKER.md);
 [migration notes](#migrating-from-marker)).
 
+**Coming from [MinerU](https://github.com/opendatalab/MinerU)?** Same thing —
+swap the imports, keep MinerU 4's SDK:
+
+```python
+# was:  from mineru.parser import parse
+from docling_rs.mineru.parser import parse
+
+result = parse("paper.pdf", tier="standard", page_range="1-3")
+print(result.markdown())                        # or result.to_json(), result.structured_content()
+```
+
+No DocVortex, no llama.cpp, every format at every tier
+([measured](https://github.com/docling-project/docling.rs/blob/master/docs/MINERU.md);
+[migration notes](#migrating-from-mineru)).
+
 **Only the document processor is Rust.** The engine parses the input and returns
 docling-core's JSON wire format; this package validates it into a genuine
 [`docling_core.types.doc.DoclingDocument`](https://github.com/docling-project/docling-core).
@@ -242,6 +257,51 @@ the numbers in the main README's
 `DocumentConverter` — `{"text_layer_only": True}` for Marker's
 `--disable_ocr` speed class, `{"ocr_lang": "ch"}` — and `rendered.document`
 is the converted `DoclingDocument` for anything the Marker shapes cannot carry.
+
+## Migrating from MinerU
+
+[MinerU 4](https://github.com/opendatalab/MinerU) code moves over by changing
+the imports — `docling_rs.mineru` mirrors its `mineru.parser` / `mineru.render`
+/ `mineru.types` modules:
+
+```python
+# was:  from mineru.parser import parse, ParseResult
+#       from mineru.parser.writer import FileBasedDataWriter
+#       from mineru.render import render, RenderFormat
+from docling_rs.mineru.parser import parse, ParseResult
+from docling_rs.mineru.parser.writer import FileBasedDataWriter
+from docling_rs.mineru.render import render, RenderFormat
+
+result = parse("report.pdf", tier="standard", ocr_mode="auto", page_range="1-5,r1")
+md = result.markdown(add_markers=True)              # MinerU's Markdown, `---` between pages
+content_list = render(result.middle_json, RenderFormat.CONTENT_LIST)
+result.save(FileBasedDataWriter("out/report"))      # markdown.md, middle_json.json, structured_content.json, images/
+restored = ParseResult.from_json(result.to_json())
+```
+
+`parse` / `parse_async`, `ParseResult`, `MinerUParser`, the writers, the
+page-range grammar (`'1-5,8'`, `'r3-r1'`, `'all'`), the `render` targets
+with their option classes, `BlockType` / `MiddleJson` / `PageInfo` and
+`python -m docling_rs.mineru parse` (for `mineru-kit parse`) behave as
+MinerU's do. The full map of what is honoured, mapped and left out is in
+[docs/MINERU.md](https://github.com/docling-project/docling.rs/blob/master/docs/MINERU.md#the-api);
+the numbers in the main README's
+[MinerU comparison](../../README.md#conformance-with-mineru). What differs:
+
+| MinerU | docling.rs facade |
+|---|---|
+| four tiers: `flash` (text layer), `basic` (ONNX small models), `standard` / `advanced` (+ a 1.2 B VLM through llama.cpp) | `flash` = the text layer; the other three = docling's one pipeline (layout, TableFormer, PP-OCR on ONNX Runtime), no VLM |
+| Office / HTML / EPUB at `flash` only | every format at any tier, parsed natively |
+| DocVortex's Middle JSON, validated strictly | the same shape (`docvortex.middle` 2.0: pages, indexed blocks, normalized boxes, inline spans, visual parents with body / caption / footnote children), producer `docling.rs`; round-trips through `from_dict` / `to_dict`, no strict validator |
+| its own Markdown | the same conventions (`#` titles, HTML tables, `$$` equations, fenced code, `![](images/…)`, `---` pages in `FULL`); byte-identical output is a non-goal |
+| LaTeX / DOCX / EPUB / PDF renders | `NotImplementedError` — `docling-rs --to` has docling's formats |
+| `MinerUApiParser`, `mineru server`, the document library (`scan`, `search`, `read`) | not provided; the service is docling-serve, the MCP server `docling-rs mcp` |
+| `basic` / `standard` models from Hugging Face or ModelScope on first use | docling.rs's models (~700 MB, once) — `docling_rs.download_models()`; a PDF converts from its text layer until then |
+
+`parse(..., docling_options={...})` passes options through to
+`DocumentConverter` — `{"ocr_lang": "ch"}`, `{"do_picture_ocr": True}` —
+and `result.document` is the converted `DoclingDocument` for anything the
+Middle JSON cannot carry.
 
 ## Try it locally
 
