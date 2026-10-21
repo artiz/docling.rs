@@ -79,16 +79,21 @@ struct StyleInfo {
     strike: Option<bool>,
     underline: Option<bool>,
     script: Option<u8>,
+    /// A paragraph style's `style:list-style-name` (#826): the list its
+    /// paragraphs are numbered with, no `<text:list>` around them; `Some("")`
+    /// cancels an inherited one. `list_level` is ODF 1.3's `style:list-level`.
+    list_style: Option<String>,
+    list_level: Option<i64>,
 }
 
 /// One list level's rendering: bullet vs numbered, its `start-value`, and the
 /// prefix/suffix wrapping an enumerated marker (`num-prefix`/`num-suffix`).
 #[derive(Default, Clone)]
-struct OdfLevel {
-    numbered: bool,
-    start: i64,
-    prefix: String,
-    suffix: String,
+pub(super) struct OdfLevel {
+    pub(super) numbered: bool,
+    pub(super) start: i64,
+    pub(super) prefix: String,
+    pub(super) suffix: String,
 }
 
 /// List style name → level (1-based) → level rendering.
@@ -466,6 +471,8 @@ fn style_info(s: XmlNode) -> StyleInfo {
     let mut info = StyleInfo {
         parent: attr(s, "parent-style-name").map(str::to_string),
         display_name: attr(s, "display-name").map(str::to_string),
+        list_style: attr(s, "list-style-name").map(str::to_string),
+        list_level: attr(s, "list-level").and_then(|v| v.parse().ok()),
         ..Default::default()
     };
     // OO1.x (#215) folds everything into one `<style:properties>` element.
@@ -536,6 +543,34 @@ pub(super) fn resolve_fmt(styles: &Styles, name: Option<&str>, base: Fmt) -> Fmt
         }
     }
     fmt
+}
+
+/// The list a paragraph is numbered with through its *paragraph style*
+/// (#826): the `style:list-style-name` of the style, or of the nearest
+/// ancestor style setting one (an empty value cancels the inheritance), and
+/// the 1-based level (`style:list-level`, 1 without it). That is how Writer
+/// numbers a "List Bullet" paragraph that no `<text:list>` wraps — the way
+/// Word keeps a list in the style's `w:numPr`, which docling's DOCX backend
+/// reads; the ODT one only knew `<text:list>` and printed such paragraphs
+/// as body text (the reporter's corpus: two thirds of its ODT files, every
+/// one of their 26 627 list items).
+pub(super) fn paragraph_list_style(styles: &Styles, name: Option<&str>) -> Option<(String, i64)> {
+    let mut cur = name.map(str::to_string);
+    let mut seen = HashSet::new();
+    while let Some(n) = cur {
+        if !seen.insert(n.clone()) {
+            break;
+        }
+        let info = styles.map.get(&n)?;
+        if let Some(list) = &info.list_style {
+            if list.is_empty() {
+                return None;
+            }
+            return Some((list.clone(), info.list_level.unwrap_or(1).max(1)));
+        }
+        cur = info.parent.clone();
+    }
+    None
 }
 
 /// The set of style names a paragraph resolves to (own, parent, display).
@@ -927,14 +962,79 @@ fn walk_blocks<'a, 'i: 'a>(
     doc: &mut DoclingDocument,
 ) {
     let mut prev_state: Option<ListCont> = None;
+    let mut style_run: Option<StyleListRun> = None;
     for el in els {
         if is_list_tag(el.tag_name().name()) {
+            style_run = None;
             prev_state = add_odf_list(el, styles, doc, 0, 1, false, prev_state.take());
+        } else if let Some((style, level)) = el
+            .has_tag_name("p")
+            .then(|| paragraph_list_style(styles, attr(el, "style-name")))
+            .flatten()
+        {
+            prev_state = None;
+            add_style_list_paragraph(el, style, level, styles, doc, &mut style_run);
         } else {
             prev_state = None;
+            style_run = None;
             handle_block(el, styles, doc, 0, &mut Vec::new());
         }
     }
+}
+
+/// The list a run of consecutive style-numbered paragraphs (#826) forms: a
+/// change of list style opens a new one, as Writer starts a new list.
+struct StyleListRun {
+    style: String,
+    enumerated: bool,
+    counter: i64,
+    prefix: String,
+    suffix: String,
+}
+
+/// A `<text:p>` whose paragraph style names a list style (#826): one item of
+/// the list the run of such paragraphs builds, numbered along it.
+fn add_style_list_paragraph(
+    el: XmlNode,
+    style: String,
+    level: i64,
+    styles: &Styles,
+    doc: &mut DoclingDocument,
+    run: &mut Option<StyleListRun>,
+) {
+    emit_paragraph_images(el, styles, doc);
+    let mut runs = Vec::new();
+    collect_runs(el, styles, Fmt::default(), &mut runs);
+    let text = clean_lines(&runs_to_text(runs));
+    if text.is_empty() {
+        return;
+    }
+    let fresh = run.as_ref().is_none_or(|r| r.style != style);
+    if fresh {
+        let lv = list_level(styles, Some(&style), level);
+        *run = Some(StyleListRun {
+            style,
+            enumerated: lv.is_some_and(|l| l.numbered),
+            counter: lv.map_or(0, |l| l.start - 1),
+            prefix: lv.map(|l| l.prefix.clone()).unwrap_or_default(),
+            suffix: lv.map(|l| l.suffix.clone()).unwrap_or_default(),
+        });
+    }
+    let Some(r) = run.as_mut() else {
+        return;
+    };
+    r.counter += 1;
+    let depth = (level - 1).clamp(0, u8::MAX as i64) as u8;
+    push_odf_list_item(
+        doc,
+        text,
+        depth,
+        r.enumerated,
+        r.counter,
+        &r.prefix,
+        &r.suffix,
+        fresh,
+    );
 }
 
 fn handle_block(
@@ -1201,9 +1301,7 @@ pub(super) fn level_is_enumerated(
     level: i64,
     fallback: bool,
 ) -> bool {
-    attr(list, "style-name")
-        .and_then(|name| styles.lists.get(name))
-        .and_then(|levels| levels.get(&level))
+    list_level(styles, attr(list, "style-name"), level)
         .map(|lv| lv.numbered)
         .unwrap_or_else(|| match list.tag_name().name() {
             "ordered-list" => true,
@@ -1214,19 +1312,24 @@ pub(super) fn level_is_enumerated(
 
 /// A list level's `start-value` (default 1).
 pub(super) fn level_start(styles: &Styles, list: XmlNode, level: i64) -> i64 {
-    attr(list, "style-name")
-        .and_then(|name| styles.lists.get(name))
-        .and_then(|levels| levels.get(&level))
+    list_level(styles, attr(list, "style-name"), level)
         .map(|lv| lv.start)
         .unwrap_or(1)
+}
+
+/// One level of a named list style, when the style defines it.
+pub(super) fn list_level<'a>(
+    styles: &'a Styles,
+    name: Option<&str>,
+    level: i64,
+) -> Option<&'a OdfLevel> {
+    styles.lists.get(name?)?.get(&level)
 }
 
 /// A level's `num-prefix`/`num-suffix` — the affixes wrapping an enumerated
 /// marker (e.g. `"" / "."` → `1.`).
 pub(super) fn level_affixes(styles: &Styles, list: XmlNode, level: i64) -> (String, String) {
-    attr(list, "style-name")
-        .and_then(|name| styles.lists.get(name))
-        .and_then(|levels| levels.get(&level))
+    list_level(styles, attr(list, "style-name"), level)
         .map(|lv| (lv.prefix.clone(), lv.suffix.clone()))
         .unwrap_or_default()
 }
@@ -1306,53 +1409,16 @@ fn add_odf_list(
             continue;
         }
         counter += 1;
-        let (ordered, number, marker) = if current_enum {
-            let n = counter.max(0) as u64;
-            // docling renders an enumerated marker inside the `<ldiv>`:
-            // `<marker>{prefix}{n}{suffix}</marker>` (e.g. `1.`).
-            (true, n, Some(format!("{prefix}{n}{suffix}")))
-        } else {
-            (false, 0, None)
-        };
-        // The item's marker in docling's model is `_odf_list_marker`: the
-        // counter and the level's `num-suffix`, `.` without one. docling-core's
-        // Markdown prints one of digits and a dot (`1.`) as a list number; any
-        // other (`1)`) is a text prefix behind a bullet (`- 1) text`,
-        // `orig_list_item_marker_mode=AUTO`, as the DOCX walk does). DocLang
-        // keeps the ordered item and its `<marker>` through `dclx`.
-        let item_marker = format!(
-            "{n}{}",
-            if suffix.is_empty() {
-                "."
-            } else {
-                suffix.as_str()
-            },
-            n = counter.max(0)
-        );
-        let (ordered, marker, text, dclx) = match marker {
-            Some(m) if !is_plain_number_marker(&item_marker) => {
-                let dclx = Some(ListItemDclx {
-                    ordered: true,
-                    marker: Some(m),
-                    text: text.clone(),
-                    runs: Vec::new(),
-                });
-                (false, None, format!("{item_marker} {text}"), dclx)
-            }
-            marker => (ordered, marker, text, None),
-        };
-        doc.push(Node::ListItem {
-            ordered,
-            number,
-            first_in_list: std::mem::take(&mut first),
+        push_odf_list_item(
+            doc,
             text,
-            level: depth,
-            marker,
-            location: None,
-            dclx,
-            href: None,
-            layer: None,
-        });
+            depth,
+            current_enum,
+            counter,
+            &prefix,
+            &suffix,
+            std::mem::take(&mut first),
+        );
         has_last = true;
         for n in &nested {
             add_odf_list(
@@ -1374,6 +1440,65 @@ fn add_odf_list(
         prefix,
         suffix,
     })
+}
+
+/// Push one flat list item: the `counter`-th of a list at Markdown `depth`,
+/// `enumerated` with the level's `prefix` / `suffix` around its number (an
+/// `<ldiv>` marker) or bulleted; `first` opens a fresh docling ListGroup.
+#[allow(clippy::too_many_arguments)]
+fn push_odf_list_item(
+    doc: &mut DoclingDocument,
+    text: String,
+    depth: u8,
+    enumerated: bool,
+    counter: i64,
+    prefix: &str,
+    suffix: &str,
+    first: bool,
+) {
+    let (ordered, number, marker) = if enumerated {
+        let n = counter.max(0) as u64;
+        // docling renders an enumerated marker inside the `<ldiv>`:
+        // `<marker>{prefix}{n}{suffix}</marker>` (e.g. `1.`).
+        (true, n, Some(format!("{prefix}{n}{suffix}")))
+    } else {
+        (false, 0, None)
+    };
+    // The item's marker in docling's model is `_odf_list_marker`: the
+    // counter and the level's `num-suffix`, `.` without one. docling-core's
+    // Markdown prints one of digits and a dot (`1.`) as a list number; any
+    // other (`1)`) is a text prefix behind a bullet (`- 1) text`,
+    // `orig_list_item_marker_mode=AUTO`, as the DOCX walk does). DocLang
+    // keeps the ordered item and its `<marker>` through `dclx`.
+    let item_marker = format!(
+        "{n}{}",
+        if suffix.is_empty() { "." } else { suffix },
+        n = counter.max(0)
+    );
+    let (ordered, marker, text, dclx) = match marker {
+        Some(m) if !is_plain_number_marker(&item_marker) => {
+            let dclx = Some(ListItemDclx {
+                ordered: true,
+                marker: Some(m),
+                text: text.clone(),
+                runs: Vec::new(),
+            });
+            (false, None, format!("{item_marker} {text}"), dclx)
+        }
+        marker => (ordered, marker, text, None),
+    };
+    doc.push(Node::ListItem {
+        ordered,
+        number,
+        first_in_list: first,
+        text,
+        level: depth,
+        marker,
+        location: None,
+        dclx,
+        href: None,
+        layer: None,
+    });
 }
 
 /// A marker of digits and a dot (`12.`), which docling-core's Markdown
@@ -2441,6 +2566,46 @@ mod tests {
             assert!(is_transparent_container(container));
         }
         assert!(!is_transparent_container("table-of-content-source"));
+    }
+
+    /// #826: paragraphs numbered through their paragraph style's
+    /// `style:list-style-name` — no `<text:list>` — are list items: a run of
+    /// them is one list, a change of list style a new one, the style
+    /// inherited through `parent-style-name` and an automatic style; the
+    /// numbered level's `start-value` and `num-suffix` apply.
+    #[test]
+    fn style_list_name_paragraphs_are_list_items() {
+        let xml = r#"<root xmlns:text="x" xmlns:style="s">
+            <office:styles xmlns:office="o">
+              <text:list-style style:name="LB"><text:list-level-style-bullet text:level="1" text:bullet-char="•"/></text:list-style>
+              <text:list-style style:name="LN"><text:list-level-style-number text:level="1" style:num-format="1" style:num-suffix=")" text:start-value="3"/></text:list-style>
+              <style:style style:name="Bul" style:family="paragraph" style:list-style-name="LB"/>
+              <style:style style:name="Inh" style:family="paragraph" style:parent-style-name="Bul"/>
+              <style:style style:name="P1" style:family="paragraph" style:parent-style-name="Inh"/>
+              <style:style style:name="Num" style:family="paragraph" style:list-style-name="LN"/>
+              <style:style style:name="Off" style:family="paragraph" style:parent-style-name="Num" style:list-style-name=""/>
+            </office:styles>
+            <text:p>Intro:</text:p>
+            <text:p text:style-name="Bul">one</text:p>
+            <text:p text:style-name="Inh">two</text:p>
+            <text:p text:style-name="P1">three</text:p>
+            <text:p text:style-name="Num">four</text:p>
+            <text:p text:style-name="Num">five</text:p>
+            <text:p text:style-name="Off">plain again</text:p></root>"#;
+        let dom = Document::parse(xml).unwrap();
+        let styles = parse_styles(&dom, None);
+        assert_eq!(
+            paragraph_list_style(&styles, Some("P1")),
+            Some(("LB".to_string(), 1))
+        );
+        assert_eq!(paragraph_list_style(&styles, Some("Off")), None);
+        assert_eq!(paragraph_list_style(&styles, Some("nope")), None);
+        let mut doc = DoclingDocument::new("s");
+        walk_text(dom.root_element(), &styles, &mut doc);
+        assert_eq!(
+            doc.export_to_markdown(),
+            "Intro:\n\n- one\n- two\n- three\n\n- 3) four\n- 4) five\n\nplain again\n"
+        );
     }
 
     #[test]

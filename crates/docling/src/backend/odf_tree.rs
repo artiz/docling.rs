@@ -32,8 +32,8 @@ use super::odf::{
     is_list_tag, is_rich_cell, is_slide_title_element, is_transparent_container, item_has_content,
     level_affixes, level_is_enumerated, level_start, list_has_direct_text, list_has_renderable,
     list_items, list_starts_with_empty_nested, odf_item_content, ods_cell_text, para_plain_text,
-    paragraph_style_names, repeat, section_is_hidden, slide_has_visible_title, slide_is_hidden,
-    Fmt, Run, Styles,
+    paragraph_list_style, paragraph_style_names, repeat, section_is_hidden,
+    slide_has_visible_title, slide_is_hidden, Fmt, Run, Styles,
 };
 
 /// The tree plus the spreadsheet pages docling adds (`page_no`, width,
@@ -51,6 +51,15 @@ struct ListState {
     last_item: Option<usize>,
     enumerated: bool,
     counter: i64,
+}
+
+/// The `list` group a run of style-numbered paragraphs (#826) shares.
+struct StyleListGroup {
+    style: String,
+    group: usize,
+    enumerated: bool,
+    counter: i64,
+    suffix: String,
 }
 
 struct Walker<'s> {
@@ -805,14 +814,86 @@ impl<'s> Walker<'s> {
         layer: Option<ContentLayer>,
     ) {
         let mut prev: Option<ListState> = None;
+        let mut style_run: Option<StyleListGroup> = None;
         for el in els {
             if is_list_tag(el.tag_name().name()) {
+                style_run = None;
                 prev = self.add_list(el, parent, layer, false, 1, prev);
+            } else if let Some((style, level)) = el
+                .has_tag_name("p")
+                .then(|| paragraph_list_style(self.styles, attr(el, "style-name")))
+                .flatten()
+            {
+                prev = None;
+                self.add_style_list_paragraph(el, style, level, parent, layer, &mut style_run);
             } else {
                 prev = None;
+                style_run = None;
                 self.add_child(el, parent, layer);
             }
         }
+    }
+
+    /// A `<text:p>` numbered through its paragraph style (#826): an item of
+    /// the `list` group the run of such paragraphs shares — a new group when
+    /// the list style changes — with the marker `add_list` would give it.
+    fn add_style_list_paragraph(
+        &mut self,
+        el: XmlNode,
+        style: String,
+        level: i64,
+        parent: Option<usize>,
+        layer: Option<ContentLayer>,
+        run: &mut Option<StyleListGroup>,
+    ) {
+        let runs = runs_of(el, self.styles);
+        let text = text_from_runs(&runs);
+        if text.is_empty() {
+            return;
+        }
+        if run.as_ref().is_none_or(|r| r.style != style) {
+            let lv = super::odf::list_level(self.styles, Some(&style), level);
+            let group = self.tree.add(
+                parent,
+                layer,
+                TreeKind::Group {
+                    label: "list".into(),
+                    name: "list".into(),
+                },
+            );
+            *run = Some(StyleListGroup {
+                style,
+                group,
+                enumerated: lv.is_some_and(|l| l.numbered),
+                counter: lv.map_or(0, |l| l.start - 1),
+                suffix: lv.map(|l| l.suffix.clone()).unwrap_or_default(),
+            });
+        }
+        let Some(r) = run.as_mut() else {
+            return;
+        };
+        r.counter += 1;
+        let marker = if r.enumerated {
+            format!(
+                "{}{}",
+                r.counter,
+                if r.suffix.is_empty() {
+                    "."
+                } else {
+                    r.suffix.as_str()
+                }
+            )
+        } else {
+            String::new()
+        };
+        let meta = ListMeta {
+            enumerated: r.enumerated,
+            marker,
+        };
+        let group = r.group;
+        let first_new = self.tree.items.len();
+        self.add_list_item(group, layer, &runs, &text, meta);
+        self.anchor_notes(el, first_new);
     }
 
     /// The `<text:note>` calls in `el` (a paragraph, heading or list item
@@ -907,6 +988,66 @@ impl<'s> Walker<'s> {
         runs
     }
 
+    /// One `list_item` of `group`: a single run is the item itself, several
+    /// an empty item over an `inline` group of `text` runs; `text` is the
+    /// fallback for an item without runs.
+    fn add_list_item(
+        &mut self,
+        group: usize,
+        layer: Option<ContentLayer>,
+        runs: &[Run],
+        text: &str,
+        meta: ListMeta,
+    ) -> usize {
+        if runs.len() <= 1 {
+            let (t, f, h) = match runs.first() {
+                Some(r) => (r.text.clone(), formatting_of(r.fmt), r.href.clone()),
+                None => (text.to_string(), None, None),
+            };
+            self.tree.add(
+                Some(group),
+                layer,
+                TreeKind::Text {
+                    label: "list_item".into(),
+                    text: t,
+                    orig: None,
+                    formatting: f,
+                    hyperlink: h,
+                    level: None,
+                    list: Some(meta),
+                },
+            )
+        } else {
+            let id = self.tree.add(
+                Some(group),
+                layer,
+                TreeKind::Text {
+                    label: "list_item".into(),
+                    text: String::new(),
+                    orig: None,
+                    formatting: None,
+                    hyperlink: None,
+                    level: None,
+                    list: Some(meta),
+                },
+            );
+            let inline = self.inline_group(Some(id), layer);
+            for run in runs {
+                self.tree.add(
+                    Some(inline),
+                    layer,
+                    text_kind(
+                        "text",
+                        &run.text,
+                        formatting_of(run.fmt),
+                        run.href.as_deref(),
+                    ),
+                );
+            }
+            id
+        }
+    }
+
     /// `_add_odf_list`.
     fn add_list(
         &mut self,
@@ -988,53 +1129,7 @@ impl<'s> Walker<'s> {
                 enumerated: current_enum,
                 marker,
             };
-            let item_id = if runs.len() <= 1 {
-                let (t, f, h) = match runs.first() {
-                    Some(r) => (r.text.clone(), formatting_of(r.fmt), r.href.clone()),
-                    None => (text.clone(), None, None),
-                };
-                self.tree.add(
-                    Some(group),
-                    layer,
-                    TreeKind::Text {
-                        label: "list_item".into(),
-                        text: t,
-                        orig: None,
-                        formatting: f,
-                        hyperlink: h,
-                        level: None,
-                        list: Some(meta),
-                    },
-                )
-            } else {
-                let id = self.tree.add(
-                    Some(group),
-                    layer,
-                    TreeKind::Text {
-                        label: "list_item".into(),
-                        text: String::new(),
-                        orig: None,
-                        formatting: None,
-                        hyperlink: None,
-                        level: None,
-                        list: Some(meta),
-                    },
-                );
-                let inline = self.inline_group(Some(id), layer);
-                for run in &runs {
-                    self.tree.add(
-                        Some(inline),
-                        layer,
-                        text_kind(
-                            "text",
-                            &run.text,
-                            formatting_of(run.fmt),
-                            run.href.as_deref(),
-                        ),
-                    );
-                }
-                id
-            };
+            let item_id = self.add_list_item(group, layer, &runs, &text, meta);
             self.anchor_notes(item, first_new);
             previous = Some(item_id);
             for n in nested {
@@ -1502,6 +1597,55 @@ mod tests {
             ]
         );
         assert!(t.items.iter().all(|it| it.parent.is_none()));
+    }
+
+    /// #826: style-numbered paragraphs are `list` groups of `list_item`s —
+    /// one group per run of the same list style, markers along the run — the
+    /// DOCX backend's shape for the same document.
+    #[test]
+    fn style_list_name_paragraphs_form_list_groups() {
+        let xml = format!(
+            r#"<office:document {NS}>
+            <office:styles>
+              <text:list-style style:name="LB"><text:list-level-style-bullet text:level="1" text:bullet-char="•"/></text:list-style>
+              <text:list-style style:name="LN"><text:list-level-style-number text:level="1" style:num-format="1"/></text:list-style>
+              <style:style style:name="Bul" style:family="paragraph" style:list-style-name="LB"/>
+              <style:style style:name="Num" style:family="paragraph" style:list-style-name="LN"/>
+            </office:styles>
+            <office:body><office:text>
+              <text:p>Intro:</text:p>
+              <text:p text:style-name="Bul">one</text:p>
+              <text:p text:style-name="Bul">two</text:p>
+              <text:p text:style-name="Num">three</text:p>
+              <text:p text:style-name="Num">four</text:p>
+            </office:text></office:body></office:document>"#
+        );
+        let doc = convert(&xml, InputFormat::Odt);
+        let t: &ItemTree = doc.tree.as_ref().expect("tree");
+        let labels: Vec<String> = t.items.iter().map(label).collect();
+        assert_eq!(
+            labels,
+            [
+                "text",
+                "list:list",
+                "list_item",
+                "list_item",
+                "list:list",
+                "list_item",
+                "list_item"
+            ]
+        );
+        assert_eq!(t.items[2].parent, Some(1));
+        assert_eq!(t.items[5].parent, Some(4));
+        assert!(
+            matches!(&t.items[2].kind, TreeKind::Text { list: Some(l), .. } if !l.enumerated && l.marker.is_empty())
+        );
+        assert!(
+            matches!(&t.items[5].kind, TreeKind::Text { list: Some(l), .. } if l.enumerated && l.marker == "1.")
+        );
+        assert!(
+            matches!(&t.items[6].kind, TreeKind::Text { list: Some(l), .. } if l.marker == "2.")
+        );
     }
 
     /// A presentation: a `chapter` group per slide named `slide-{0-based}`,
