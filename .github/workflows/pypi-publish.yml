@@ -131,10 +131,11 @@ jobs:
           # Apple Silicon (#816), native on the hosted `macos-14` runner (the
           # one ci.yml's coreml check job uses; the "macOS runners are blocked"
           # note this matrix carried dated from the repository's previous
-          # home). Intel macs install the sdist, which builds from source —
-          # the x86_64 hosted runners are being retired (cli-binaries.yml's
-          # header); to add them, `{ host: macos-15-intel, arch: x86_64 }`
-          # builds and tests natively.
+          # home). Intel macs install the sdist, which builds from source
+          # and, pyke shipping no `x86_64-apple-darwin` ONNX Runtime, only as
+          # an `ort-load-dynamic` build (cli-binaries.yml's header).
+          # docling-onnx's build.rs links the compiler-rt builtins the
+          # CoreML-enabled ONNX Runtime needs under docling-py's thin LTO.
           - host: macos-14
             arch: arm64
     steps:
@@ -191,10 +192,11 @@ jobs:
           # rustup + stable.)
           CIBW_BEFORE_ALL_LINUX: "curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain stable"
           CIBW_ENVIRONMENT_LINUX: 'PATH="$HOME/.cargo/bin:$PATH"'
-          # macOS: cibuildwheel's default deployment target for arm64 is 11.0
-          # (the first macOS on Apple Silicon); pinned so the wheel's tag does
-          # not drift with the runner image.
-          CIBW_ENVIRONMENT_MACOS: 'MACOSX_DEPLOYMENT_TARGET=11.0'
+          # macOS: the wheel's platform tag (macosx_13_0_arm64). cibuildwheel
+          # would default to 11.0, the first macOS on Apple Silicon, but pyke's
+          # prebuilt ONNX Runtime objects are compiled for 13.4 — on an older
+          # macOS pip takes the sdist instead of a wheel that may not run.
+          CIBW_ENVIRONMENT_MACOS: 'MACOSX_DEPLOYMENT_TARGET=13.0'
           # Import the installed wheel inside the build container — on Linux
           # that is the manylinux_2_28 image, i.e. the wheel's glibc floor.
           # auditwheel cannot catch a symbol the floor lacks: the native module

@@ -107,13 +107,15 @@ jobs:
           # create-npm-dir` the platform packages (`docling.rs-darwin-arm64` —
           # a NEW package: its first publish needs the placeholder + trusted
           # publisher dance the header describes, else ENEEDAUTH).
-          # Intel macs are not prebuilt (the x86_64 hosted runners are being
-          # retired; see cli-binaries.yml's header) — to add them, put
-          # `{ target: x86_64-apple-darwin, host: macos-14 }` here (napi
-          # cross-builds with `--target`, the Apple SDK is universal) and the
-          # triple in package.json.
+          # Intel macs are not prebuilt: pyke ships no `x86_64-apple-darwin`
+          # ONNX Runtime, so an Intel addon is an `ort-load-dynamic` build like
+          # s390x (see cli-binaries.yml's header). The addon declares macOS 13
+          # (`macos_min`), what the prebuilt ONNX Runtime objects are compiled
+          # for; docling-onnx's build.rs links the compiler-rt builtins the
+          # CoreML-enabled ONNX Runtime needs under thin LTO.
           - target: aarch64-apple-darwin
             host: macos-14
+            macos_min: "13.0"
           - target: x86_64-pc-windows-msvc
             host: windows-latest
           # IBM Z (#504): cross-compiled with cargo-zigbuild against glibc
@@ -131,6 +133,10 @@ jobs:
             cross: s390x-linux-gnu
             zig: true
             features: ort-load-dynamic
+    env:
+      # rustc, clang and napi read it on Apple targets (the addon's minimum
+      # macOS version); unset on the other hosts.
+      MACOSX_DEPLOYMENT_TARGET: ${{ matrix.macos_min }}
     steps:
       - uses: actions/checkout@v7
         with:
