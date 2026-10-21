@@ -128,8 +128,15 @@ jobs:
             arch: aarch64
           - host: windows-latest
             arch: AMD64
-          # macOS wheels are omitted: GitHub-hosted macOS runners are blocked in
-          # this environment. macOS users install the sdist (builds from source).
+          # Apple Silicon (#816), native on the hosted `macos-14` runner (the
+          # one ci.yml's coreml check job uses; the "macOS runners are blocked"
+          # note this matrix carried dated from the repository's previous
+          # home). Intel macs install the sdist, which builds from source —
+          # the x86_64 hosted runners are being retired (cli-binaries.yml's
+          # header); to add them, `{ host: macos-15-intel, arch: x86_64 }`
+          # builds and tests natively.
+          - host: macos-14
+            arch: arm64
     steps:
       - name: Download sdist
         uses: actions/download-artifact@v8
@@ -179,9 +186,15 @@ jobs:
           CIBW_MANYLINUX_X86_64_IMAGE: manylinux_2_28
           CIBW_MANYLINUX_AARCH64_IMAGE: manylinux_2_28
           # The manylinux containers have no Rust — install the toolchain once per
-          # container and put cargo on PATH for the maturin build.
+          # container and put cargo on PATH for the maturin build. (The macOS
+          # and Windows builds run on the runner itself, whose image ships
+          # rustup + stable.)
           CIBW_BEFORE_ALL_LINUX: "curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain stable"
           CIBW_ENVIRONMENT_LINUX: 'PATH="$HOME/.cargo/bin:$PATH"'
+          # macOS: cibuildwheel's default deployment target for arm64 is 11.0
+          # (the first macOS on Apple Silicon); pinned so the wheel's tag does
+          # not drift with the runner image.
+          CIBW_ENVIRONMENT_MACOS: 'MACOSX_DEPLOYMENT_TARGET=11.0'
           # Import the installed wheel inside the build container — on Linux
           # that is the manylinux_2_28 image, i.e. the wheel's glibc floor.
           # auditwheel cannot catch a symbol the floor lacks: the native module

@@ -90,11 +90,12 @@ silently does nothing.
 |---|---|---|
 | `x86_64-unknown-linux-gnu` | `libdocling_ffi.so` + `docling.h` | needs glibc ≥ 2.38 (Ubuntu 24.04+, Debian 13+, Fedora 39+) |
 | `aarch64-unknown-linux-gnu` | `libdocling_ffi.so` + `docling.h` | same glibc floor |
+| `s390x-unknown-linux-gnu` | `libdocling_ffi.so` + `docling.h` | loads ONNX Runtime at run time (#504, [IBM Z](../../docs/IBMZ.md)) |
+| `aarch64-apple-darwin` | `libdocling_ffi.dylib` + `docling.h` | Apple Silicon, macOS 11+ (#816) |
 | `x86_64-pc-windows-msvc` | `docling_ffi.dll` + `docling_ffi.dll.lib` + `docling.h` | |
 
-macOS and older-glibc Linux build from source (GitHub-hosted macOS runners
-are unavailable to this repo's CI). The static library is also
-source-build-only — it inlines the whole ONNX runtime.
+Intel macs and older-glibc Linux build from source. The static library is
+also source-build-only — it inlines the whole ONNX runtime.
 
 **From source:**
 

@@ -10,13 +10,18 @@
 # releases ci.yml cuts (no assets, `--latest=false`) and the asset-only
 # `npm-cuda-v*` / `models-v*` releases never get in its way (#707).
 #
-# macOS prebuilds are omitted for the same reason as in npm-publish.yml:
-# GitHub-hosted macOS runners are blocked in this environment, and darwin
-# can't be cross-compiled from Linux (needs the Apple SDK) — macOS users
-# `cargo install docling-cli` or build from source. To re-add when macOS
-# runners become available:
-#   - { target: aarch64-apple-darwin, host: macos-14 }
-#   - { target: x86_64-apple-darwin,  host: macos-14 }
+# macOS (#816): Apple Silicon is built natively on the GitHub-hosted
+# `macos-14` runner, the same one ci.yml's `check (coreml, macos-latest)`
+# job and docling-parse-render.yml's `build mac-arm64` job already run on.
+# (The "macOS runners are blocked" note this matrix carried until #816 dated
+# from the repository's previous home, where the Intel-mac job hung waiting
+# for a runner; it never applied to docling-project.) Intel macs are not
+# prebuilt: the x86_64 hosted runners are being retired (`macos-13` is gone,
+# `macos-15-intel` lasts to 2027) and the user base is Apple Silicon — add
+# `{ target: x86_64-apple-darwin, host: macos-15-intel }` (native) or
+# `host: macos-14` (cross via `--target`; the Apple SDK is universal) to the
+# matrix if that changes; install.sh has the matching `x86_64` arm of its
+# Darwin case commented out. Until then `cargo install docling-cli`.
 #
 # The binaries are the *default* build (CPU; ONNX Runtime statically linked by
 # ort's download-binaries, same as every other build of this workspace). The
@@ -68,6 +73,9 @@ jobs:
             host: ubuntu-24.04-arm
           - target: x86_64-pc-windows-msvc
             host: windows-latest
+          # Apple Silicon, native (see the header for Intel).
+          - target: aarch64-apple-darwin
+            host: macos-14
           # IBM Z: no native runner, cross-compiled with cargo-zigbuild (see
           # the header). `cross` is the binutils prefix used to strip.
           - target: s390x-unknown-linux-gnu
@@ -134,12 +142,20 @@ jobs:
           tar -czf "docling-rs-$TAG-${{ matrix.target }}.tar.gz" -C "$(dirname "$bin")" docling-rs
           # FFI: the cdylib + the committed cbindgen header. The staticlib is
           # not shipped (it inlines the whole ONNX runtime; static embedders
-          # build from source).
-          lib="target/${{ matrix.target }}/release/libdocling_ffi.so"
-          "$strip" "$lib"
+          # build from source). A cdylib is `.so` on Linux, `.dylib` on
+          # macOS — where a bare `strip` would also remove the exported
+          # symbols (Mach-O strips everything not kept with `-x`: local
+          # symbols only, the way napi-rs strips its addons).
+          if [ "$RUNNER_OS" = "macOS" ]; then
+            libname="libdocling_ffi.dylib"; strip="strip -x"
+          else
+            libname="libdocling_ffi.so"
+          fi
+          lib="target/${{ matrix.target }}/release/$libname"
+          $strip "$lib"
           staging=$(mktemp -d)
           cp "$lib" crates/docling-ffi/include/docling.h "$staging/"
-          tar -czf "docling-ffi-$TAG-${{ matrix.target }}.tar.gz" -C "$staging" libdocling_ffi.so docling.h
+          tar -czf "docling-ffi-$TAG-${{ matrix.target }}.tar.gz" -C "$staging" "$libname" docling.h
 
       - name: Package (windows)
         if: runner.os == 'Windows'

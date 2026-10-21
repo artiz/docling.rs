@@ -120,10 +120,10 @@ models (~720 MB) into the docling.rs cache once (`=all` adds the code/formula
 enrichment models); the launcher finds them there from any directory. With
 the `docling-rs` package installed the server is also
 `python -m docling_rs.mcp`, and on NVIDIA GPUs
-`uv run --with docling-rs-cuda python -m docling_rs.mcp`. PyPI has no macOS
-wheel, so on a Mac uvx compiles the package on first start (a Rust toolchain
-is required) — run the `--download-models` line once before adding the
-server to a client. Each release published to PyPI is also published to
+`uv run --with docling-rs-cuda python -m docling_rs.mcp`. PyPI's macOS wheel
+is Apple Silicon only, so on an Intel mac uvx compiles the package on first
+start (a Rust toolchain is required) — run the `--download-models` line once
+before adding the server to a client. Each release published to PyPI is also published to
 the official MCP registry as `io.github.docling-project/docling-rs` and gets
 the MCP bundle Smithery lists ([`artem-kustikov/docling-rs`](https://smithery.ai/servers/artem-kustikov/docling-rs),
 `docling-rs-mcp-<version>.mcpb`) attached; Glama builds the launcher

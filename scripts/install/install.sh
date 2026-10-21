@@ -11,8 +11,9 @@
 #
 # What it does:
 #   0. Tries the prebuilt CLI binary from the newest GitHub Release that carries
-#      one first (Linux x64/arm64/s390x) — no toolchain, no build. Falls back to
-#      source on any mismatch; DOCLING_RS_FROM_SOURCE=1 skips the fast path.
+#      one first (Linux x64/arm64/s390x, macOS arm64) — no toolchain, no build.
+#      Falls back to source on any mismatch; DOCLING_RS_FROM_SOURCE=1 skips the
+#      fast path.
 #   1. Checks for a Rust toolchain (>= 1.82 for the PDF crate); installs one
 #      via rustup (non-interactive) if `cargo` is missing.
 #   2. Builds the CLI in release mode (`cargo build --release -p docling-cli`).
@@ -55,20 +56,24 @@ fi
 
 # --- 0. Prebuilt binary (fast path) -------------------------------------------
 # GitHub Releases carry prebuilt CLI binaries (.github/workflows/cli-binaries.yml)
-# for Linux x64/arm64/s390x and Windows x64 — downloading one skips the Rust toolchain
-# and the multi-minute source build entirely. Any failure (no matching asset,
-# old release, no network to the API) quietly falls back to building from
-# source. DOCLING_RS_FROM_SOURCE=1 forces the source build.
+# for Linux x64/arm64/s390x, macOS arm64 (#816) and Windows x64 — downloading
+# one skips the Rust toolchain and the multi-minute source build entirely. Any
+# failure (no matching asset, old release, no network to the API) quietly falls
+# back to building from source. DOCLING_RS_FROM_SOURCE=1 forces the source build.
 PREBUILT_BIN=""
-if [ "${DOCLING_RS_FROM_SOURCE:-0}" != "1" ] && [ "$(uname -s)" = "Linux" ]; then
-  case "$(uname -m)" in
-    x86_64) TARGET="x86_64-unknown-linux-gnu" ;;
-    aarch64 | arm64) TARGET="aarch64-unknown-linux-gnu" ;;
+TARGET=""
+if [ "${DOCLING_RS_FROM_SOURCE:-0}" != "1" ]; then
+  case "$(uname -s)/$(uname -m)" in
+    Linux/x86_64) TARGET="x86_64-unknown-linux-gnu" ;;
+    Linux/aarch64 | Linux/arm64) TARGET="aarch64-unknown-linux-gnu" ;;
     # IBM Z (#504): the binary loads ONNX Runtime at run time (ORT_DYLIB_PATH
     # or .models/onnxruntime/libonnxruntime.so); without it the ML stages are
     # unavailable, every other format converts.
-    s390x) TARGET="s390x-unknown-linux-gnu" ;;
-    *) TARGET="" ;;
+    Linux/s390x) TARGET="s390x-unknown-linux-gnu" ;;
+    # Apple Silicon. Intel macs build from source until cli-binaries.yml
+    # grows an x86_64-apple-darwin job (see its header):
+    #   Darwin/x86_64) TARGET="x86_64-apple-darwin" ;;
+    Darwin/arm64) TARGET="aarch64-apple-darwin" ;;
   esac
   if [ -n "$TARGET" ]; then
     # The newest release whose assets include this target's binary — not
@@ -85,8 +90,9 @@ if [ "${DOCLING_RS_FROM_SOURCE:-0}" != "1" ] && [ "$(uname -s)" = "Linux" ]; the
       if curl -fsSL "$ASSET" 2>/dev/null | tar -xz -C "$PB_DIR" 2>/dev/null \
         && [ -x "$PB_DIR/docling-rs" ]; then
         # Verify the binary actually runs *on this system* before trusting it:
-        # the release binaries link ort's static onnxruntime, which needs
-        # glibc >= 2.38 — on an older distro the dynamic loader rejects it.
+        # the Linux release binaries link ort's static onnxruntime, which
+        # needs glibc >= 2.38 — on an older distro the dynamic loader rejects
+        # it (on macOS the same probe catches a too-old OS for the Mach-O).
         # No-args is the cheapest full load: the CLI prints usage and exits 2.
         rc=0
         "$PB_DIR/docling-rs" >/dev/null 2>&1 || rc=$?
@@ -94,7 +100,11 @@ if [ "${DOCLING_RS_FROM_SOURCE:-0}" != "1" ] && [ "$(uname -s)" = "Linux" ]; the
           PREBUILT_BIN="$PB_DIR/docling-rs"
           say "using the prebuilt $TAG binary for $TARGET (set DOCLING_RS_FROM_SOURCE=1 to build instead)"
         else
-          say "the prebuilt $TAG binary does not run here (glibc older than 2.38?) — building from source"
+          case "$(uname -s)" in
+            Darwin) why="macOS too old for the release binary?" ;;
+            *) why="glibc older than 2.38?" ;;
+          esac
+          say "the prebuilt $TAG binary does not run here ($why) — building from source"
         fi
       else
         say "no prebuilt binary for $TAG/$TARGET — building from source"
