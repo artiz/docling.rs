@@ -28,12 +28,13 @@ use docling_core::{ContentLayer, PictureImage, Script, Table, TableCell};
 use roxmltree::Node as XmlNode;
 
 use super::odf::{
-    attr, cell_has_image, collect_runs, element_has_text, image_can_be_bitmap, inline_chart,
-    is_list_tag, is_rich_cell, is_slide_title_element, is_transparent_container, item_has_content,
-    item_headings, level_affixes, level_is_enumerated, level_start, list_has_direct_text,
-    list_has_renderable, list_items, list_starts_with_empty_nested, odf_item_content,
-    ods_cell_text, para_plain_text, paragraph_list_style, paragraph_style_names, repeat,
-    section_is_hidden, slide_has_visible_title, slide_is_hidden, Fmt, Run, Styles,
+    attr, cell_has_image, collect_runs, comment_threads, element_has_text, image_can_be_bitmap,
+    inline_chart, is_list_tag, is_rich_cell, is_slide_title_element, is_transparent_container,
+    item_has_content, item_headings, level_affixes, level_is_enumerated, level_start,
+    list_has_direct_text, list_has_renderable, list_items, list_starts_with_empty_nested,
+    odf_item_content, ods_cell_text, para_plain_text, paragraph_list_style, paragraph_style_names,
+    repeat, section_is_hidden, slide_has_visible_title, slide_is_hidden, Annotation, Fmt, Run,
+    Styles,
 };
 
 /// The tree plus the spreadsheet pages docling adds (`page_no`, width,
@@ -62,6 +63,14 @@ struct StyleListGroup {
     suffix: String,
 }
 
+/// A comment thread (#829): its first comment's holding `<text:p>` /
+/// `<text:h>`, the comments, and whether its group exists yet.
+struct CommentThread {
+    anchor: Option<roxmltree::NodeId>,
+    comments: Vec<usize>,
+    attached: bool,
+}
+
 struct Walker<'s> {
     tree: ItemTree,
     styles: &'s Styles,
@@ -69,11 +78,26 @@ struct Walker<'s> {
     /// `<text:note>` calls placed in text items: `(item, offset, note)` —
     /// hung on the items once the note bodies exist (#538).
     note_calls: Vec<(usize, usize, roxmltree::NodeId)>,
+    /// The body's reviewer comments and their threads (#829).
+    annotations: Vec<Annotation>,
+    threads: Vec<CommentThread>,
 }
 
 /// `<office:text>` body children.
-pub(super) fn build_text(body: XmlNode, styles: &Styles) -> Built {
+pub(super) fn build_text(body: XmlNode, styles: &Styles, annotations: &[Annotation]) -> Built {
     let mut w = Walker::new(styles);
+    // `_detach_annotations` (docling#4436, #829): the comments and their
+    // threads, attached as `comment_section` groups right after the item
+    // holding each thread's first comment is created.
+    w.annotations = annotations.to_vec();
+    w.threads = comment_threads(annotations)
+        .into_iter()
+        .map(|comments| CommentThread {
+            anchor: annotations[comments[0]].anchor,
+            comments,
+            attached: false,
+        })
+        .collect();
     w.add_children(body.children().filter(XmlNode::is_element), None, None);
     // `_add_footnotes` (docling#4375): each note body a furniture `footnote`
     // text on the body, after the whole walk.
@@ -92,6 +116,15 @@ pub(super) fn build_text(body: XmlNode, styles: &Styles) -> Built {
                 list: None,
             },
         );
+        // A comment in the note's body hangs on the footnote item.
+        let note_el = body.document().get_node(note).expect("note node");
+        w.attach_comments(
+            note_el
+                .descendants()
+                .filter(|n| n.has_tag_name("p") || n.has_tag_name("h"))
+                .map(|n| n.id()),
+            Some(id),
+        );
         bodies.insert(note, (id, text));
     }
     // #538: each note on the text item that calls it, for the Pandoc AST.
@@ -102,6 +135,13 @@ pub(super) fn build_text(body: XmlNode, styles: &Styles) -> Built {
                 text: text.clone(),
             });
             w.tree.items[*body_id].note_body = true;
+        }
+    }
+    // `attach_rest`: a thread whose anchor made no item — an empty
+    // paragraph, a plain table cell's — goes under the root, last.
+    for t in 0..w.threads.len() {
+        if !w.threads[t].attached {
+            w.attach_thread(t, None);
         }
     }
     Built {
@@ -543,7 +583,74 @@ impl<'s> Walker<'s> {
             styles,
             tables: 0,
             note_calls: Vec::new(),
+            annotations: Vec::new(),
+            threads: Vec::new(),
         }
+    }
+
+    /// `_OdfComments.attach` (#829): the threads anchored on one of the
+    /// `anchors` elements get their `comment_section` group under `holder`.
+    fn attach_comments(
+        &mut self,
+        anchors: impl Iterator<Item = roxmltree::NodeId>,
+        holder: Option<usize>,
+    ) {
+        let anchors: Vec<roxmltree::NodeId> = anchors.collect();
+        if anchors.is_empty() {
+            return;
+        }
+        for t in 0..self.threads.len() {
+            let thread = &self.threads[t];
+            if !thread.attached && thread.anchor.is_some_and(|a| anchors.contains(&a)) {
+                self.attach_thread(t, holder);
+            }
+        }
+    }
+
+    /// `_OdfComments._add_group`: a notes-layer `comment_section` group named
+    /// `comment-{thread}` under `holder` (the root without one), one `text`
+    /// per comment of the thread, and — when the holder is a document item,
+    /// not an `inline` group — the group's ref in the holder's `comments`.
+    fn attach_thread(&mut self, t: usize, holder: Option<usize>) {
+        self.threads[t].attached = true;
+        let group = self.tree.add(
+            holder,
+            Some(ContentLayer::Notes),
+            TreeKind::Group {
+                label: "comment_section".into(),
+                name: format!("comment-{}", t + 1),
+            },
+        );
+        for c in self.threads[t].comments.clone() {
+            let text = self.annotations[c].text.clone();
+            self.tree.add(
+                Some(group),
+                Some(ContentLayer::Notes),
+                TreeKind::Text {
+                    label: "text".into(),
+                    text,
+                    orig: None,
+                    formatting: None,
+                    hyperlink: None,
+                    level: None,
+                    list: None,
+                },
+            );
+        }
+        if let Some(h) = holder {
+            if !matches!(self.tree.items[h].kind, TreeKind::Group { .. }) {
+                self.tree.items[h].comments.push(group);
+            }
+        }
+    }
+
+    /// The item a paragraph-like block made at `parent`'s level since
+    /// `first_new`: the last one, a heading over its inline group included
+    /// — the comment holder.
+    fn block_item(&self, first_new: usize, parent: Option<usize>) -> Option<usize> {
+        (first_new..self.tree.items.len())
+            .rev()
+            .find(|&i| self.tree.items[i].parent == parent && !self.tree.items[i].deleted)
     }
 
     /// `_add_odf_text_runs`: one run is the item, several an `inline` group of
@@ -892,8 +999,9 @@ impl<'s> Walker<'s> {
         };
         let group = r.group;
         let first_new = self.tree.items.len();
-        self.add_list_item(group, layer, &runs, &text, meta);
+        let item = self.add_list_item(group, layer, &runs, &text, meta);
         self.anchor_notes(el, first_new);
+        self.attach_comments(std::iter::once(el.id()), Some(item));
     }
 
     /// The `<text:note>` calls in `el` (a paragraph, heading or list item
@@ -920,10 +1028,17 @@ impl<'s> Walker<'s> {
             "h" => {
                 self.add_heading(el, parent, layer);
                 self.anchor_notes(el, first_new);
+                let holder = self.block_item(first_new, parent);
+                self.attach_comments(std::iter::once(el.id()), holder);
             }
             "p" => {
                 self.add_paragraph(el, parent, layer);
                 self.anchor_notes(el, first_new);
+                // A comment on a paragraph that made no item (an empty one)
+                // waits for `attach_rest`, as upstream's does.
+                if let Some(holder) = self.block_item(first_new, parent) {
+                    self.attach_comments(std::iter::once(el.id()), Some(holder));
+                }
             }
             n if is_list_tag(n) => {
                 self.add_list(el, parent, layer, false, 1, None);
@@ -1149,6 +1264,12 @@ impl<'s> Walker<'s> {
             };
             let item_id = self.add_list_item(group, layer, &runs, &text, meta);
             self.anchor_notes(item, first_new);
+            self.attach_comments(
+                item.children()
+                    .filter(|c| c.has_tag_name("p"))
+                    .map(|c| c.id()),
+                Some(item_id),
+            );
             previous = Some(item_id);
             for n in nested {
                 self.add_list(n, Some(item_id), layer, style_enum, level + 1, None);
@@ -1225,6 +1346,44 @@ impl<'s> Walker<'s> {
                     self.add_child(child, Some(group), layer);
                 }
                 rich.push((ar, ac, group));
+            } else {
+                // A comment in a plain cell: its group under the table, no
+                // back-reference (the cell is no item).
+                let anchors: Vec<roxmltree::NodeId> = cell
+                    .descendants()
+                    .filter(|n| n.has_tag_name("p") || n.has_tag_name("h"))
+                    .map(|n| n.id())
+                    .collect();
+                for t in 0..self.threads.len() {
+                    let thread = &self.threads[t];
+                    if !thread.attached && thread.anchor.is_some_and(|a| anchors.contains(&a)) {
+                        self.threads[t].attached = true;
+                        let group = self.tree.add(
+                            Some(table_id),
+                            Some(ContentLayer::Notes),
+                            TreeKind::Group {
+                                label: "comment_section".into(),
+                                name: format!("comment-{}", t + 1),
+                            },
+                        );
+                        for c in self.threads[t].comments.clone() {
+                            let text = self.annotations[c].text.clone();
+                            self.tree.add(
+                                Some(group),
+                                Some(ContentLayer::Notes),
+                                TreeKind::Text {
+                                    label: "text".into(),
+                                    text,
+                                    orig: None,
+                                    formatting: None,
+                                    hyperlink: None,
+                                    level: None,
+                                    list: None,
+                                },
+                            );
+                        }
+                    }
+                }
             }
             cells.push(TableCell {
                 text,
@@ -1708,6 +1867,81 @@ mod tests {
             ]
         );
         assert!(t.items.iter().all(|it| it.parent.is_none()));
+    }
+
+    /// #829: each comment thread is a notes-layer `comment_section` group
+    /// right after the item holding its first comment, that item's
+    /// `comments` pointing at it; a reply's text joins the thread; a
+    /// comment in a plain cell hangs on the table, one on an empty
+    /// paragraph on the root at the end — docling#4436's shape.
+    #[test]
+    fn annotations_become_comment_sections() {
+        let xml = format!(
+            r#"<office:document {NS} xmlns:dc="dc" xmlns:loext="lo"><office:body><office:text>
+              <text:h text:outline-level="1">Budget<office:annotation office:name="c1"><dc:creator>Alpha</dc:creator><text:p>Rename</text:p></office:annotation></text:h>
+              <text:p>Total <office:annotation loext:parent-name="c1"><dc:creator>Bravo</dc:creator><text:p>Agreed</text:p></office:annotation>500.</text:p>
+              <text:list><text:list-item><text:p>Item<office:annotation><text:p>Scope</text:p></office:annotation></text:p></text:list-item></text:list>
+              <table:table><table:table-row><table:table-cell office:value-type="string"><text:p>Cell<office:annotation><text:p>In cell</text:p></office:annotation></text:p></table:table-cell></table:table-row></table:table>
+              <text:p><office:annotation><text:p>Orphan</text:p></office:annotation></text:p>
+            </office:text></office:body></office:document>"#
+        );
+        let doc = convert(&xml, InputFormat::Odt);
+        let t: &ItemTree = doc.tree.as_ref().expect("tree");
+        let items: Vec<(String, String, Option<usize>)> = t
+            .items
+            .iter()
+            .map(|it| (label(it), text(it).to_string(), it.parent))
+            .collect();
+        assert_eq!(
+            items,
+            [
+                ("section_header".to_string(), "Budget".to_string(), None),
+                (
+                    "comment_section:comment-1".to_string(),
+                    String::new(),
+                    Some(0)
+                ),
+                (
+                    "text".to_string(),
+                    "[author: Alpha]: Rename".to_string(),
+                    Some(1)
+                ),
+                (
+                    "text".to_string(),
+                    "[author: Bravo]: Agreed".to_string(),
+                    Some(1)
+                ),
+                ("text".to_string(), "Total 500.".to_string(), None),
+                ("list:list".to_string(), String::new(), None),
+                ("list_item".to_string(), "Item".to_string(), Some(5)),
+                (
+                    "comment_section:comment-2".to_string(),
+                    String::new(),
+                    Some(6)
+                ),
+                ("text".to_string(), "Scope".to_string(), Some(7)),
+                ("table".to_string(), String::new(), None),
+                (
+                    "comment_section:comment-3".to_string(),
+                    String::new(),
+                    Some(9)
+                ),
+                ("text".to_string(), "In cell".to_string(), Some(10)),
+                ("comment_section:comment-4".to_string(), String::new(), None),
+                ("text".to_string(), "Orphan".to_string(), Some(12)),
+            ]
+        );
+        assert_eq!(t.items[0].comments, [1]);
+        assert_eq!(t.items[6].comments, [7]);
+        assert!(t.items[9].comments.is_empty());
+        assert_eq!(t.items[1].layer, Some(docling_core::ContentLayer::Notes));
+        assert_eq!(t.items[2].layer, Some(docling_core::ContentLayer::Notes));
+        assert_eq!(
+            doc.export_to_markdown(),
+            "## Budget\n\nTotal 500.\n\n- Item\n\n| Cell   |\n|--------|\n"
+        );
+        let json = doc.export_to_json();
+        assert!(json.contains("\"comment_section\""), "{json}");
     }
 
     /// A presentation: a `chapter` group per slide named `slide-{0-based}`,

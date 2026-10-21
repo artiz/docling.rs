@@ -135,6 +135,11 @@ pub(super) struct Styles {
     /// (`presentation:visibility="hidden"` on their
     /// `style:drawing-page-properties`; #753, docling#4767).
     hidden_pages: HashSet<String>,
+    /// The body's reviewer comments (#829) by their `<office:annotation>`
+    /// node, each the index of its [`Node::CommentSection`] in the flat
+    /// stream — what a [`Node::Commented`] wrapper on the annotated node
+    /// points at. Set per `<office:text>` before its walk; empty otherwise.
+    comment_slots: HashMap<roxmltree::NodeId, usize>,
 }
 
 impl DeclarativeBackend for OdfBackend {
@@ -241,9 +246,12 @@ pub(crate) fn convert_odf(
         for office in body.children().filter(XmlNode::is_element) {
             match office.tag_name().name() {
                 "text" => {
+                    let comments = annotations(office);
+                    styles.comment_slots = comment_slots(&comments);
                     walk_text(office, &styles, &mut doc);
                     push_note_furniture(office, &mut doc);
-                    built = Some(super::odf_tree::build_text(office, &styles));
+                    push_comment_sections(&comments, &mut doc);
+                    built = Some(super::odf_tree::build_text(office, &styles, &comments));
                 }
                 "spreadsheet" => {
                     walk_spreadsheet(office, &styles, &mut doc);
@@ -269,9 +277,12 @@ pub(crate) fn convert_odf(
                 walk_spreadsheet(body, &styles, &mut doc);
                 built = Some(super::odf_tree::build_spreadsheet(body, &styles));
             } else {
+                let comments = annotations(body);
+                styles.comment_slots = comment_slots(&comments);
                 walk_text(body, &styles, &mut doc);
                 push_note_furniture(body, &mut doc);
-                built = Some(super::odf_tree::build_text(body, &styles));
+                push_comment_sections(&comments, &mut doc);
+                built = Some(super::odf_tree::build_text(body, &styles, &comments));
             }
         }
         if let Some(built) = built {
@@ -384,6 +395,7 @@ fn parse_styles(content: &Document, styles: Option<&Document>) -> Styles {
         parts: None,
         policy: ImagePolicy::default(),
         hidden_pages,
+        comment_slots: HashMap::new(),
     }
 }
 
@@ -713,6 +725,11 @@ fn collect_runs_linked(
                 // body is recovered separately as a furniture item, see
                 // [`note_texts`].
                 "note" => {}
+                // A reviewer comment sits inline in the element it annotates
+                // (#829, docling#4436): its author, date and text are not the
+                // sentence's; they become a notes-layer comment, see
+                // [`annotations`]. `annotation-end` carries no text.
+                "annotation" | "annotation-end" => {}
                 // docling's `_odf_text_runs` recurses into every child, so an
                 // image's `<svg:desc>`/`<svg:title>` text is picked up too.
                 _ => collect_runs_linked(child, styles, base, href, out),
@@ -775,6 +792,7 @@ pub(super) fn note_calls(el: XmlNode) -> (String, Vec<(usize, roxmltree::NodeId)
                 }
                 "object" | "binary-data" => {}
                 "note" => out.push((text.chars().count(), child.id())),
+                "annotation" | "annotation-end" => {}
                 _ => walk(child, text, out),
             }
         }
@@ -801,6 +819,205 @@ fn push_note_furniture(body: XmlNode, doc: &mut DoclingDocument) {
                 text: super::markdown::escape_html(&super::markdown::escape_underscores(&text)),
             }),
         });
+    }
+}
+
+// ---------------------------------------------------------------- comments
+
+/// A reviewer comment — an `<office:annotation>` (#829, docling#4436). Writer
+/// writes it *inline* in the paragraph, heading or list item it annotates,
+/// with its `dc:creator`, `dc:date`, initials and `<text:p>` body as
+/// children, so the run collectors used to splice all four into the body
+/// text (`Project BudgetReviewer Alpha2026-01-15T10:00:00RARename this
+/// heading`) and nothing reached the notes layer (the reporter's corpus:
+/// 795 comments in 113 files). They are now skipped there and collected
+/// here, docling's DOCX note shape: `[author: Name (initials), time: date]:
+/// text` — the head without a part it lacks, the bare text without any
+/// head, nothing when both are empty. A comment inside a tracked-change
+/// deletion is dropped with the text, as docling drops it.
+#[derive(Clone, Debug)]
+pub(super) struct Annotation {
+    id: roxmltree::NodeId,
+    /// The `<text:p>` / `<text:h>` holding the comment — the item the
+    /// thread hangs on; `None` for one outside any (a bare cell).
+    pub(super) anchor: Option<roxmltree::NodeId>,
+    /// `office:name`, what a reply's `loext:parent-name` refers to.
+    name: Option<String>,
+    parent: Option<String>,
+    pub(super) text: String,
+}
+
+/// Every annotation below `body`, in document order.
+pub(super) fn annotations(body: XmlNode) -> Vec<Annotation> {
+    body.descendants()
+        .filter(|n| n.has_tag_name("annotation"))
+        .filter(|a| !a.ancestors().any(|x| x.has_tag_name("tracked-changes")))
+        .filter_map(|a| {
+            let child_text = |tag: &str| {
+                a.children()
+                    .find(|c| c.has_tag_name(tag))
+                    .map(|c| {
+                        c.descendants()
+                            .filter(|n| n.is_text())
+                            .filter_map(|n| n.text())
+                            .collect::<String>()
+                            .trim()
+                            .to_string()
+                    })
+                    .filter(|t| !t.is_empty())
+            };
+            let mut head: Vec<String> = Vec::new();
+            if let Some(creator) = child_text("creator") {
+                // `meta:creator-initials` (ODF 1.3) or LibreOffice's
+                // `loext:sender-initials`.
+                match child_text("creator-initials").or_else(|| child_text("sender-initials")) {
+                    Some(initials) => head.push(format!("author: {creator} ({initials})")),
+                    None => head.push(format!("author: {creator}")),
+                }
+            }
+            if let Some(date) = child_text("date") {
+                head.push(format!("time: {date}"));
+            }
+            let body: String = a
+                .children()
+                .filter(|c| c.has_tag_name("p"))
+                .map(|p| para_plain_text(p).trim().to_string())
+                .filter(|t| !t.is_empty())
+                .collect::<Vec<_>>()
+                .join("\n");
+            let text = match (head.is_empty(), body.is_empty()) {
+                (true, true) => return None,
+                (false, true) => format!("[{}]", head.join(", ")),
+                (true, false) => body,
+                (false, false) => format!("[{}]: {body}", head.join(", ")),
+            };
+            Some(Annotation {
+                id: a.id(),
+                anchor: a
+                    .ancestors()
+                    .skip(1)
+                    .find(|x| x.has_tag_name("p") || x.has_tag_name("h"))
+                    .map(|x| x.id()),
+                name: attr(a, "name").map(str::to_string),
+                parent: attr(a, "parent-name").map(str::to_string),
+                text,
+            })
+        })
+        .collect()
+}
+
+/// The comment threads (#829): each a root comment and, depth first, the
+/// replies naming it through `loext:parent-name` — a reply joins its
+/// parent's thread wherever the file puts it. A comment without a parent,
+/// naming itself or an unknown one is a root; a cycle of replies, which no
+/// root reaches, becomes a thread from its first comment. Threads are
+/// numbered from 1, `comment-{n}`, in this order.
+pub(super) fn comment_threads(annotations: &[Annotation]) -> Vec<Vec<usize>> {
+    let by_name: HashMap<&str, usize> = annotations
+        .iter()
+        .enumerate()
+        .filter_map(|(i, a)| a.name.as_deref().map(|n| (n, i)))
+        .collect();
+    let mut replies: Vec<Vec<usize>> = vec![Vec::new(); annotations.len()];
+    let mut is_reply = vec![false; annotations.len()];
+    for (i, a) in annotations.iter().enumerate() {
+        if let Some(parent) = a.parent.as_deref().and_then(|p| by_name.get(p)) {
+            if *parent != i {
+                replies[*parent].push(i);
+                is_reply[i] = true;
+            }
+        }
+    }
+    let mut seen = vec![false; annotations.len()];
+    let mut threads = Vec::new();
+    for start in (0..annotations.len())
+        .filter(|&i| !is_reply[i])
+        .chain(0..annotations.len())
+    {
+        if seen[start] {
+            continue;
+        }
+        let mut thread = Vec::new();
+        let mut stack = vec![start];
+        while let Some(i) = stack.pop() {
+            if std::mem::replace(&mut seen[i], true) {
+                continue;
+            }
+            thread.push(i);
+            stack.extend(replies[i].iter().rev());
+        }
+        threads.push(thread);
+    }
+    threads
+}
+
+/// Each comment's index among the flat [`Node::CommentSection`]s, which
+/// [`push_comment_sections`] writes in thread order.
+fn comment_slots(annotations: &[Annotation]) -> HashMap<roxmltree::NodeId, usize> {
+    comment_threads(annotations)
+        .into_iter()
+        .flatten()
+        .enumerate()
+        .map(|(slot, i)| (annotations[i].id, slot))
+        .collect()
+}
+
+/// The comments after the body as notes-layer sections (#829): one per
+/// comment, in thread order, named by thread as the item tree names its
+/// groups — the DOCX backend's flat shape (DocLang writes each as a
+/// `<layer value="notes"/>` text; Markdown and LaTeX leave them out).
+fn push_comment_sections(annotations: &[Annotation], doc: &mut DoclingDocument) {
+    for (t, thread) in comment_threads(annotations).iter().enumerate() {
+        for &i in thread {
+            doc.nodes.push(Node::CommentSection {
+                name: format!("comment-{}", t + 1),
+                text: annotations[i].text.clone(),
+                refs_note_text: false,
+                grouped: true,
+            });
+        }
+    }
+}
+
+/// The flat comment slots of the comments the paragraph-like elements in
+/// `els` hold directly (an annotation in a nested list item, text box or
+/// note belongs to the paragraph there).
+fn comment_slots_in<'a, 'i: 'a>(
+    els: impl Iterator<Item = XmlNode<'a, 'i>>,
+    styles: &Styles,
+) -> Vec<usize> {
+    let mut slots = Vec::new();
+    for el in els {
+        for a in el
+            .descendants()
+            .filter(|n| n.has_tag_name("annotation"))
+            .filter(|a| {
+                a.ancestors()
+                    .skip(1)
+                    .find(|x| x.has_tag_name("p") || x.has_tag_name("h"))
+                    .is_some_and(|x| x.id() == el.id())
+            })
+        {
+            if let Some(&slot) = styles.comment_slots.get(&a.id()) {
+                slots.push(slot);
+            }
+        }
+    }
+    slots
+}
+
+/// Wrap the node just pushed — the text node of an annotated paragraph,
+/// heading or list item (#829) — in [`Node::Commented`] with `slots`.
+fn wrap_last_commented(doc: &mut DoclingDocument, slots: Vec<usize>) {
+    if slots.is_empty() {
+        return;
+    }
+    if let Some(last) = doc.nodes.last_mut() {
+        let inner = std::mem::replace(last, Node::PageBreak);
+        *last = Node::Commented {
+            comments: slots,
+            inner: Box::new(inner),
+        };
     }
 }
 
@@ -1033,6 +1250,7 @@ fn add_style_list_paragraph(
         &r.suffix,
         fresh,
     );
+    wrap_last_commented(doc, comment_slots_in(std::iter::once(el), styles));
 }
 
 fn handle_block(
@@ -1060,6 +1278,7 @@ fn handle_block(
                     level: (level + 1) as u8,
                     text,
                 });
+                wrap_last_commented(doc, comment_slots_in(std::iter::once(el), styles));
             }
         }
         "p" => {
@@ -1083,6 +1302,7 @@ fn handle_block(
                 // paragraph collapses back to `Node::Paragraph`.
                 doc.push(inline_paragraph_node(text, runs_to_inline(runs), false));
             }
+            wrap_last_commented(doc, comment_slots_in(std::iter::once(el), styles));
         }
         n if is_list_tag(n) => {
             add_odf_list(el, styles, doc, list_level, 1, false, None);
@@ -1441,6 +1661,10 @@ fn add_odf_list(
             &prefix,
             &suffix,
             std::mem::take(&mut first),
+        );
+        wrap_last_commented(
+            doc,
+            comment_slots_in(item.children().filter(|c| c.has_tag_name("p")), styles),
         );
         has_last = true;
         for n in &nested {
@@ -1804,6 +2028,9 @@ fn para_plain_into(el: XmlNode, out: &mut String) {
                 // body is recovered separately as a furniture item, see
                 // [`note_texts`].
                 "note" => {}
+                // A reviewer comment's metadata and text (#829), see
+                // [`annotations`].
+                "annotation" | "annotation-end" => {}
                 _ => para_plain_into(child, out),
             }
         }
@@ -2666,6 +2893,65 @@ mod tests {
             doc.export_to_markdown(),
             "## Context\n\n### Background\n\nBody one.\n\n### Target\n\n#### Inside bullets\n\n- bullet\n"
         );
+    }
+
+    /// #829 (docling#4436): a comment's author, date, initials and text
+    /// stay out of the annotated heading, paragraph and list item; each
+    /// becomes a notes-layer `comment_section` with docling's note text,
+    /// a reply joining its parent's thread, and the annotated node carries
+    /// the back-references.
+    #[test]
+    fn annotations_are_notes_not_body_text() {
+        let xml = r#"<root xmlns:text="x" xmlns:office="o" xmlns:dc="d" xmlns:loext="l">
+            <text:h text:outline-level="1">Budget<office:annotation office:name="c1"><dc:creator>Alpha</dc:creator><dc:date>2026-01-15T10:00:00</dc:date><loext:sender-initials>RA</loext:sender-initials><text:p>Rename</text:p></office:annotation></text:h>
+            <text:p>Total is <office:annotation office:name="c2"><dc:creator>Alpha</dc:creator><text:p>Verify</text:p><text:p>twice</text:p></office:annotation>500 EUR.<office:annotation-end office:name="c2"/></text:p>
+            <text:p>Reply first: <office:annotation loext:parent-name="c1"><dc:creator>Bravo</dc:creator><dc:date>2026-01-16T09:00:00</dc:date><text:p>Agreed</text:p></office:annotation>text.</text:p>
+            <text:list><text:list-item><text:p>Item<office:annotation><text:p>Bare</text:p></office:annotation></text:p></text:list-item></text:list></root>"#;
+        let dom = Document::parse(xml).unwrap();
+        let comments = annotations(dom.root_element());
+        assert_eq!(
+            comments.iter().map(|c| c.text.as_str()).collect::<Vec<_>>(),
+            [
+                "[author: Alpha (RA), time: 2026-01-15T10:00:00]: Rename",
+                "[author: Alpha]: Verify\ntwice",
+                "[author: Bravo, time: 2026-01-16T09:00:00]: Agreed",
+                "Bare",
+            ]
+        );
+        assert_eq!(comment_threads(&comments), [vec![0, 2], vec![1], vec![3]]);
+        let mut styles = parse_styles(&dom, None);
+        styles.comment_slots = comment_slots(&comments);
+        let mut doc = DoclingDocument::new("s");
+        walk_text(dom.root_element(), &styles, &mut doc);
+        push_comment_sections(&comments, &mut doc);
+        assert_eq!(
+            doc.export_to_markdown(),
+            "## Budget\n\nTotal is 500 EUR.\n\nReply first: text.\n\n- Item\n"
+        );
+        let wrapped: Vec<Vec<usize>> = doc
+            .nodes
+            .iter()
+            .filter_map(|n| match n {
+                Node::Commented { comments, .. } => Some(comments.clone()),
+                _ => None,
+            })
+            .collect();
+        // Slots are positions in thread order: c1 0, its reply 1, c2 2, Bare 3.
+        assert_eq!(wrapped, [vec![0], vec![2], vec![1], vec![3]]);
+        let sections: Vec<(String, String)> = doc
+            .nodes
+            .iter()
+            .filter_map(|n| match n {
+                Node::CommentSection { name, text, .. } => Some((name.clone(), text.clone())),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(sections.len(), 4);
+        assert_eq!(sections[0].0, "comment-1");
+        assert_eq!(sections[1].0, "comment-1");
+        assert_eq!(sections[2].0, "comment-2");
+        assert_eq!(sections[3].0, "comment-3");
+        assert!(sections[1].1.ends_with("Agreed"));
     }
 
     #[test]
