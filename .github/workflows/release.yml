@@ -36,7 +36,7 @@ on:
         type: boolean
         default: true
       pypi:
-        description: "PyPI: docling-rs (+ docling-rs-cuda), the docling-rs-mcp launcher, the MCP catalogs."
+        description: "PyPI: docling-rs (+ docling-rs-cuda), the docling-rs-mcp launcher, the MCP catalogs (the catalog entry also needs the docling-rs image — tick GHCR)."
         type: boolean
         default: true
       npm:
@@ -44,7 +44,7 @@ on:
         type: boolean
         default: true
       docker:
-        description: "GHCR: docling-rs-serve and docling-rs images (+ the -cuda ones)."
+        description: "GHCR: docling-rs-serve and docling-rs images (+ the -cuda ones). The MCP catalog step of the PyPI channel waits for docling-rs:<version>: without this, PyPI's run polls for it for 5 h and fails."
         type: boolean
         default: true
       cli:
