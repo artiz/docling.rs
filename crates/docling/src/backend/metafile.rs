@@ -1333,6 +1333,17 @@ fn wmf_to_svg(data: &[u8], size_hint: Option<(f64, f64)>) -> Option<Svg> {
     };
     let header_words = u16_at(data, start + 2)? as usize;
     let mut off = start + header_words * 2;
+    // A writer that declares the 18-byte header (9 words) but omits
+    // `mtNoParameters` — the #832 reproducer's Word 6 generator — puts the
+    // first record two bytes early. Take it from there when the declared
+    // offset holds no record but that one does (LibreOffice reads it too).
+    let record_at = |o: usize| {
+        u32_at(data, o).is_some_and(|w| w >= 3 && o + w as usize * 2 <= data.len())
+            && u16_at(data, o + 4).is_some_and(|f| f != 0)
+    };
+    if off >= 2 && !record_at(off) && record_at(off - 2) {
+        off -= 2;
+    }
 
     let mut g = Gdi::new(true, (96.0 / 25.4, 96.0 / 25.4));
     if let Some((b, _)) = placeable {

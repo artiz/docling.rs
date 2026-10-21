@@ -1,0 +1,90 @@
+{
+  "schema_name": "DoclingDocument",
+  "version": "1.10.0",
+  "name": "word6_inline_picture",
+  "origin": {
+    "mimetype": "text/plain",
+    "binary_hash": 6398575230026328506,
+    "filename": "word6_inline_picture"
+  },
+  "furniture": {
+    "self_ref": "#/furniture",
+    "children": [],
+    "content_layer": "furniture",
+    "name": "_root_",
+    "label": "unspecified"
+  },
+  "body": {
+    "self_ref": "#/body",
+    "children": [
+      {
+        "$ref": "#/texts/0"
+      },
+      {
+        "$ref": "#/pictures/0"
+      },
+      {
+        "$ref": "#/texts/1"
+      }
+    ],
+    "content_layer": "body",
+    "name": "_root_",
+    "label": "unspecified"
+  },
+  "groups": [],
+  "texts": [
+    {
+      "self_ref": "#/texts/0",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "Paragraph before inline picture.",
+      "text": "Paragraph before inline picture."
+    },
+    {
+      "self_ref": "#/texts/1",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "orig": "Paragraph after inline picture.",
+      "text": "Paragraph after inline picture."
+    }
+  ],
+  "pictures": [
+    {
+      "self_ref": "#/pictures/0",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "picture",
+      "prov": [],
+      "captions": [],
+      "references": [],
+      "footnotes": [],
+      "image": {
+        "mimetype": "image/png",
+        "dpi": 72,
+        "size": {
+          "width": 96.0,
+          "height": 48.0
+        },
+        "uri": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAGAAAAAwCAYAAADuFn/PAAABBklEQVR4nO3bsW2EQBQA0W8LKoIQkZPRCnRCIdSARHhkJBSDEBbOzFkXnRkLzQs3YbXDaqOf7Pu+hzCf3KdlgH/AGwBLzgvDMETXdZGmKbOjm1rXNdq2jbIsf6x/nB/huq4jy7LI8/zqPd7a4/GIeZ6j7/vXN+D484/Dr6rqyv3d3rZtsSzL07pvAMwAMAPADAAzAMwAMAPADAAzAMwAMAPADAAzAMwAMAPADAAzAMwAMAPADAAzAMwAMAPADAAzAMwAMAPADAAzAMwAMAPADAAzAMwAMAPAkt+m+Y6BsmOmSe8zTdP32Z49TUmO4+iY6h84Dr9pmiiK4nUAXcs3AGYAmAGC9QWTrD/wL90pkwAAAABJRU5ErkJggg=="
+      },
+      "annotations": []
+    }
+  ],
+  "tables": [],
+  "key_value_items": [],
+  "form_items": [],
+  "pages": {}
+}

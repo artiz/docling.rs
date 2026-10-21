@@ -1161,7 +1161,8 @@ fn convert_word6(name: &str, word: &[u8], flags: u16) -> Result<DoclingDocument,
         bte: part(0xC0),
         btec: part(0xB8),
         stis: &stis,
-        data: &[],
+        // A Word 6 file has no Data stream: `fcPic` points into WordDocument.
+        data: word,
         spa: &[],
         drawings: &drawings,
         textboxes: Default::default(),
@@ -1839,7 +1840,9 @@ fn word6_sprm_len(op: u8, operand: &[u8]) -> Option<usize> {
         53..=55 => 1,
         // CHP.
         65..=67 => 1,
-        68 => 4,
+        // sprmCPicLocation: a count byte (4) then `fcPic` (#832) — Word
+        // writes `44 04 <fc>`, not the bare long the 6.0 table lists it as.
+        68 => return var_byte(),
         69 => 2,
         70 => 4,
         71 => 1,
@@ -1993,9 +1996,9 @@ fn anld_number(nfc: u8, n: u64) -> String {
 /// Scan a Word 6/95 CHP grpprl: bold (85) / italic (86) — operand 0 / 1
 /// absolute, 0x80 / 0x81 relative to the paragraph style (resolved at the
 /// paragraph's end, see [`CharFmt::bold_from_style`]) — the run's font
-/// (`sprmCFtc` 93) and a picture anchor's PICF offset
-/// (`sprmCPicLocation` 68; the Word 6 PICF itself is not decoded, so the
-/// anchor stays a placeholder picture).
+/// (`sprmCFtc` 93) and a picture anchor's PICF offset (`sprmCPicLocation`
+/// 68, #832: the PICF sits in the WordDocument stream, a Word 6 file
+/// having no Data stream).
 fn apply_word6_chp_sprms(sprms: &[u8], fmt: &mut CharFmt) {
     walk_word6_sprms(sprms, |op, operand| match op {
         85 => match operand[0] {
@@ -2010,9 +2013,9 @@ fn apply_word6_chp_sprms(sprms: &[u8], fmt: &mut CharFmt) {
         },
         93 => fmt.ftc_ascii = Some(u16::from_le_bytes([operand[0], operand[1]])),
         68 => {
-            fmt.pic_fc = Some(u32::from_le_bytes([
-                operand[0], operand[1], operand[2], operand[3],
-            ]))
+            if let Some(fc) = operand.get(1..5) {
+                fmt.pic_fc = Some(u32::from_le_bytes([fc[0], fc[1], fc[2], fc[3]]));
+            }
         }
         _ => {}
     });
@@ -2549,7 +2552,20 @@ fn inline_picture(data: &[u8], pic_fc: u32) -> Option<PictureImage> {
         start += 1 + cch;
     }
     let body = data.get(start..base + lcb.max(cb_header))?;
-    officeart::first_blip(body, 0)
+    officeart::first_blip(body, 0).or_else(|| {
+        // No OfficeArt in the PICF: Word 6/95 (and a Word 97 file keeping
+        // one) stores the metafile bits themselves after the header (#832
+        // — `mm` 8, MM_ANISOTROPIC). `dxaGoal` / `dyaGoal` (twips) size a
+        // WMF whose placeable header is absent.
+        let twips = |at: usize| {
+            u16::from_le_bytes([data[base + at], data[base + at + 1]]) as f64 / 1440.0 * 96.0
+        };
+        let hint = (cb_header >= 32).then(|| (twips(28), twips(30)));
+        let hint = hint.filter(|(w, h)| *w > 0.0 && *h > 0.0);
+        (super::metafile::is_wmf(body) || super::metafile::is_emf(body))
+            .then(|| super::metafile::render(body, hint))
+            .flatten()
+    })
 }
 
 /// The font table ([MS-DOC] 2.9.272 `SttbfFfn`, #588): an STTB whose
@@ -4111,6 +4127,34 @@ mod tests {
         assert!(anld.bullet());
         assert_eq!(level, Some(2));
         assert!(style_anld(&stis, 3).is_none());
+    }
+
+    /// #832: a Word 6.0 inline picture — `sprmCPicLocation` with its count
+    /// byte, the PICF in the WordDocument stream, a bare WMF after the
+    /// header — comes out with its image, as the `.docx` twin's PNG does.
+    #[test]
+    fn word6_inline_pictures_keep_their_image() {
+        let doc = converted("word6_inline_picture.doc");
+        let pictures: Vec<bool> = doc
+            .nodes
+            .iter()
+            .filter_map(|n| match n {
+                Node::Picture { image, .. } => Some(image.is_some()),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(pictures, [true]);
+        let json = doc.export_to_json();
+        assert!(json.contains("data:image/png;base64,"), "{json}");
+        assert_eq!(
+            doc.export_to_markdown(),
+            "Paragraph before inline picture.\n\n<!-- image -->\n\nParagraph after inline picture.\n"
+        );
+        // The CHPX of the ticket's anchor run: sprmCFSpec, then
+        // sprmCPicLocation `44 04 00 0a 00 00` — fc 0xa00.
+        let mut fmt = CharFmt::default();
+        apply_word6_chp_sprms(&[0x75, 1, 0x44, 4, 0, 0x0a, 0, 0], &mut fmt);
+        assert_eq!(fmt.pic_fc, Some(0xa00));
     }
 
     /// #699: the annotation story — a comment on the body paragraph (the
