@@ -35,11 +35,14 @@
 //! | key-value / form graph | `Div .key-value-region` / `.form-container` holding a `DefinitionList` (or the nested `BulletList` of a hierarchical graph) |
 //! | form `field_region` | `Div .field-region` holding a `DefinitionList`: `marker` + `field_key` as the term, each `field_value` a definition |
 //! | any other text label (`caption` without an owner, `footnote` without one, `reference`, `handwritten_text`, `page_header`, …) | `Div .docling-<label> [Para]` |
+//! | the document's metadata (#836) | `meta`: `title`, `subject`, `description`, `date` (the document's own, else its creation date), `publisher`, `rights`, `identifier` as `MetaInlines`, `author` and `keywords` as `MetaList`s of `MetaInlines`, `lang` as `MetaString` |
+//! | a reviewer comment on an item (#836) | Pandoc's docx reader's `--track-changes=all` shape: a `Span .comment-start` with `comment-id`, `author` and `date` holding the comment's text before the item's inlines, and an empty `Span .comment-end` with the `comment-id` after them; a thread's replies follow as further pairs |
 //!
 //! No Pandoc equivalent, so not written: provenance (pages, bounding boxes),
-//! confidence and classification meta, comments' authorship, form field
-//! geometry; furniture (headers/footers) and notes are off unless their
-//! [`ContentLayers`] are asked for, exactly as in the HTML export. Images
+//! confidence and classification meta, form field geometry; furniture
+//! (headers/footers) is off unless its [`ContentLayers`] are asked for,
+//! exactly as in the HTML export, and the notes layer's comment sections
+//! are written as the spans above, never as blocks. Images
 //! are targets, not bytes, in Pandoc: the default [`ImageMode::Embedded`]
 //! writes `data:` URIs, so the AST is self-contained and `pandoc -f json -t
 //! docx` embeds every picture (#537); [`ImageMode::Referenced`] links files
@@ -183,7 +186,7 @@ pub fn from_docling_json(
     let render = || {
         let mut ser = Serializer::new(json, options);
         let blocks = ser.body();
-        let doc = ast::document(blocks);
+        let doc = ast::document_with_meta(meta_of(json), blocks);
         (
             serde_json::to_string(&doc).expect("Pandoc JSON is always serializable"),
             ser.artifacts,
@@ -215,7 +218,25 @@ pub mod ast {
     use super::PANDOC_API_VERSION;
 
     pub fn document(blocks: Vec<Value>) -> Value {
-        json!({ "pandoc-api-version": PANDOC_API_VERSION, "meta": {}, "blocks": blocks })
+        document_with_meta(json!({}), blocks)
+    }
+    /// A document with its `Meta` (#836).
+    pub fn document_with_meta(meta: Value, blocks: Vec<Value>) -> Value {
+        json!({ "pandoc-api-version": PANDOC_API_VERSION, "meta": meta, "blocks": blocks })
+    }
+    pub fn meta_inlines(inlines: Vec<Value>) -> Value {
+        node("MetaInlines", json!(inlines))
+    }
+    pub fn meta_string(s: &str) -> Value {
+        node("MetaString", json!(s))
+    }
+    pub fn meta_list(items: Vec<Value>) -> Value {
+        node("MetaList", json!(items))
+    }
+    /// `Span Attr [Inline]` with key-value attributes.
+    pub fn span(classes: &[&str], attrs: &[(String, String)], inlines: Vec<Value>) -> Value {
+        let kv: Vec<Value> = attrs.iter().map(|(k, v)| json!([k, v])).collect();
+        node("Span", json!([["", classes, kv], inlines]))
     }
 
     /// `Attr`: identifier, classes, key-value pairs.
@@ -461,6 +482,90 @@ fn join_inlines(parts: Vec<Vec<Value>>) -> Vec<Value> {
         out.extend(part);
     }
     out
+}
+
+/// Pandoc's `Meta` from the document's `metadata` (#836, the JSON export's
+/// `--metadata json` object; Python docling's JSON has none): `title`,
+/// `subject`, `description`, `publisher`, `rights`, `identifier` and `date`
+/// — the document's own date, else when it was created — as `MetaInlines`,
+/// `author` and `keywords` as `MetaList`s of `MetaInlines` (Pandoc's own
+/// shape for several authors), `lang` as `MetaString`, so `pandoc -t docx`
+/// sets the title and author and the templates see them. Empty when the
+/// document has none.
+fn meta_of(json: &Value) -> Value {
+    let mut meta = serde_json::Map::new();
+    let Some(m) = json.get("metadata").and_then(Value::as_object) else {
+        return Value::Object(meta);
+    };
+    let text = |key: &str| {
+        m.get(key)
+            .and_then(Value::as_str)
+            .map(text_inlines)
+            .filter(|t| !t.is_empty())
+    };
+    let list = |key: &str| -> Vec<Value> {
+        m.get(key)
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+            .filter_map(Value::as_str)
+            .map(text_inlines)
+            .filter(|t| !t.is_empty())
+            .map(ast::meta_inlines)
+            .collect()
+    };
+    for (key, field) in [
+        ("title", "title"),
+        ("subject", "subject"),
+        ("description", "description"),
+        ("publisher", "publisher"),
+        ("rights", "rights"),
+        ("identifier", "identifier"),
+    ] {
+        if let Some(t) = text(field) {
+            meta.insert(key.into(), ast::meta_inlines(t));
+        }
+    }
+    let authors = list("authors");
+    if !authors.is_empty() {
+        meta.insert("author".into(), ast::meta_list(authors));
+    }
+    if let Some(date) = text("date").or_else(|| text("created")) {
+        meta.insert("date".into(), ast::meta_inlines(date));
+    }
+    let keywords = list("keywords");
+    if !keywords.is_empty() {
+        meta.insert("keywords".into(), ast::meta_list(keywords));
+    }
+    if let Some(lang) = m.get("language").and_then(Value::as_str).map(str::trim) {
+        if !lang.is_empty() {
+            meta.insert("lang".into(), ast::meta_string(lang));
+        }
+    }
+    Value::Object(meta)
+}
+
+/// A docling comment note — `[author: Name (initials), time: date]: text`,
+/// the DOCX, `.doc`, ODT and XLSX backends' shape — split into its author,
+/// date and text; a note without the head is all text.
+fn split_comment(note: &str) -> (Option<String>, Option<String>, String) {
+    let Some(rest) = note.strip_prefix('[') else {
+        return (None, None, note.to_string());
+    };
+    let Some((head, body)) = rest.split_once(']') else {
+        return (None, None, note.to_string());
+    };
+    let body = body.strip_prefix(':').unwrap_or(body).trim().to_string();
+    let mut author = None;
+    let mut date = None;
+    for part in head.split(", ") {
+        if let Some(a) = part.strip_prefix("author: ") {
+            author = Some(a.trim().to_string());
+        } else if let Some(t) = part.strip_prefix("time: ") {
+            date = Some(t.trim().to_string());
+        }
+    }
+    (author, date, body)
 }
 
 /// A length in inches as Pandoc's readers write it: `2.5in`, `1.25in` —
@@ -755,6 +860,10 @@ impl<'a> Serializer<'a> {
         let sref = Self::self_ref(item);
         if Self::is_group(item) {
             return match Self::label(item) {
+                // A comment thread is written as spans on the item it
+                // annotates (#836), never as blocks; one no item refers to
+                // (a plain cell's, an orphan's) has no place in the AST.
+                "comment_section" => Vec::new(),
                 "list" => self.list_group(item),
                 "inline" => {
                     let (inlines, mut rest) = self.inline_group(item);
@@ -905,6 +1014,74 @@ impl<'a> Serializer<'a> {
         (self.formatted(item), Vec::new(), false)
     }
 
+    /// `inlines` between the comment spans of the item's reviewer comments
+    /// (#836): for each `comment_section` group the item's `comments` refer
+    /// to, one `Span .comment-start` per comment text — `comment-id` (the
+    /// group's number, `-n` for a thread's replies), `author`, `date` from
+    /// docling's note head, the comment's text inside — before the inlines
+    /// and an empty `Span .comment-end` after them, Pandoc's docx reader's
+    /// `--track-changes=all` shape. The groups are then visited, so a notes
+    /// layer that is on does not write them again as blocks.
+    fn with_comments(&mut self, item: &'a Value, inlines: Vec<Value>) -> Vec<Value> {
+        let refs = Self::refs(item.get("comments"));
+        if refs.is_empty() {
+            return inlines;
+        }
+        let mut starts = Vec::new();
+        let mut ends = Vec::new();
+        for cref in refs {
+            let Some(group) = self.resolve(cref) else {
+                continue;
+            };
+            if !Self::is_group(group) || Self::label(group) != "comment_section" {
+                continue;
+            }
+            self.visited.insert(cref.to_string());
+            let id = group
+                .get("name")
+                .and_then(Value::as_str)
+                .and_then(|n| n.strip_prefix("comment-"))
+                .unwrap_or("0")
+                .to_string();
+            // The group's texts sit on the notes layer, which the layer
+            // filter would drop: read the children directly.
+            let mut k = 0;
+            for r in Self::children(group) {
+                self.visited.insert(r.to_string());
+                let Some(node) = self.resolve(r).filter(|_| r.starts_with("#/texts/")) else {
+                    continue;
+                };
+                let (author, date, text) = split_comment(Self::text(node));
+                let comment_id = if k == 0 {
+                    id.clone()
+                } else {
+                    format!("{id}-{k}")
+                };
+                k += 1;
+                let mut attrs = vec![("comment-id".to_string(), comment_id.clone())];
+                if let Some(a) = author {
+                    attrs.push(("author".to_string(), a));
+                }
+                if let Some(d) = date {
+                    attrs.push(("date".to_string(), d));
+                }
+                starts.push(ast::span(&["comment-start"], &attrs, text_inlines(&text)));
+                ends.push(ast::span(
+                    &["comment-end"],
+                    &[("comment-id".to_string(), comment_id)],
+                    Vec::new(),
+                ));
+            }
+        }
+        if starts.is_empty() {
+            return inlines;
+        }
+        let mut out = starts;
+        out.extend(inlines);
+        out.extend(ends);
+        out
+    }
+
     /// The item's text with its formatting and hyperlink applied, and the
     /// notes it calls as `Note`s at their call sites (#538).
     fn formatted(&self, item: &Value) -> Vec<Value> {
@@ -1019,7 +1196,8 @@ impl<'a> Serializer<'a> {
                 }
             }
             _ => {
-                let (mut inlines, rest, _) = self.own_inlines(item);
+                let (inlines, rest, _) = self.own_inlines(item);
+                let mut inlines = self.with_comments(item, inlines);
                 match label {
                     "title" | "section_header" => {
                         let level = if label == "title" {
@@ -1069,6 +1247,7 @@ impl<'a> Serializer<'a> {
     /// nested under it (sub-lists, paragraphs).
     fn list_item_blocks(&mut self, item: &'a Value) -> Vec<Value> {
         let (inlines, rest, _) = self.own_inlines(item);
+        let inlines = self.with_comments(item, inlines);
         let mut blocks = Vec::new();
         if !inlines.is_empty() {
             blocks.push(ast::plain(inlines));
@@ -1851,6 +2030,107 @@ mod tests {
             b[0]["c"][0],
             json!([3, {"t": "Decimal"}, {"t": "TwoParens"}])
         );
+    }
+
+    /// #836: the document's metadata is Pandoc's `meta`; a reviewer
+    /// comment is a `comment-start` / `comment-end` span pair around the
+    /// annotated item's inlines, with its author and date, a reply a
+    /// further pair; the notes-layer groups never come out as blocks.
+    #[test]
+    fn metadata_and_comments_reach_the_ast() {
+        let mut j = doc(
+            &["#/texts/0", "#/groups/0"],
+            json!([
+                text(
+                    0,
+                    "text",
+                    "The timeout is 30 s.",
+                    json!({"comments": [{"$ref": "#/groups/0"}]})
+                ),
+                text(
+                    1,
+                    "text",
+                    "[author: Reviewer (SR), time: 2026-01-15T12:00:00Z]: Verify it.",
+                    json!({"content_layer": "notes"})
+                ),
+                text(2, "text", "Agreed", json!({"content_layer": "notes"})),
+            ]),
+            json!([{"self_ref": "#/groups/0", "children": [{"$ref": "#/texts/1"}, {"$ref": "#/texts/2"}], "label": "comment_section", "name": "comment-3", "content_layer": "notes"}]),
+            json!([]),
+        );
+        j["metadata"] = json!({
+            "title": "Synthetic Spec", "authors": ["A. Author", "B. Author"], "keywords": ["architecture", "protocol"],
+            "language": "en-US", "created": "2026-01-15T10:00:00Z", "subject": "Gateways"
+        });
+        let (s, _) = from_docling_json(&j, &PandocExportOptions::default()).unwrap();
+        let v: Value = serde_json::from_str(&s).unwrap();
+        assert_eq!(
+            v["meta"]["title"],
+            ast::meta_inlines(vec![
+                ast::str_("Synthetic"),
+                ast::space(),
+                ast::str_("Spec")
+            ])
+        );
+        assert_eq!(v["meta"]["author"]["t"], "MetaList");
+        assert_eq!(v["meta"]["author"]["c"].as_array().unwrap().len(), 2);
+        assert_eq!(
+            v["meta"]["keywords"]["c"][1],
+            ast::meta_inlines(vec![ast::str_("protocol")])
+        );
+        assert_eq!(v["meta"]["lang"], ast::meta_string("en-US"));
+        assert_eq!(
+            v["meta"]["date"],
+            ast::meta_inlines(vec![ast::str_("2026-01-15T10:00:00Z")])
+        );
+        assert_eq!(v["meta"]["subject"]["t"], "MetaInlines");
+        let b = v["blocks"].as_array().unwrap();
+        assert_eq!(b.len(), 1, "{b:?}");
+        let inl = b[0]["c"].as_array().unwrap();
+        assert_eq!(inl[0]["t"], "Span");
+        assert_eq!(
+            inl[0]["c"][0],
+            json!([
+                "",
+                ["comment-start"],
+                [
+                    ["comment-id", "3"],
+                    ["author", "Reviewer (SR)"],
+                    ["date", "2026-01-15T12:00:00Z"]
+                ]
+            ])
+        );
+        assert_eq!(
+            inl[0]["c"][1],
+            json!([ast::str_("Verify"), ast::space(), ast::str_("it.")])
+        );
+        assert_eq!(
+            inl[1]["c"][0],
+            json!(["", ["comment-start"], [["comment-id", "3-1"]]])
+        );
+        assert_eq!(inl[2], ast::str_("The"));
+        let last = inl.last().unwrap();
+        assert_eq!(
+            last["c"][0],
+            json!(["", ["comment-end"], [["comment-id", "3-1"]]])
+        );
+        assert_eq!(
+            inl[inl.len() - 2]["c"][0],
+            json!(["", ["comment-end"], [["comment-id", "3"]]])
+        );
+        // With the notes layer on, the comment texts are still not blocks.
+        let opts = PandocExportOptions {
+            layers: ContentLayers::ALL,
+            ..Default::default()
+        };
+        let (s, _) = from_docling_json(&j, &opts).unwrap();
+        assert_eq!(s.matches("Verify").count(), 1, "{s}");
+        assert_eq!(
+            split_comment("[time: t]: x"),
+            (None, Some("t".into()), "x".into())
+        );
+        assert_eq!(split_comment("bare"), (None, None, "bare".into()));
+        assert_eq!(meta_of(&json!({})), json!({}));
     }
 
     #[test]

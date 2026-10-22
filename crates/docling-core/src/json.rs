@@ -266,8 +266,9 @@ pub fn to_json(doc: &DoclingDocument) -> Value {
 /// item calling footnotes carries `"_notes": [[offset, text], …]`, a
 /// footnote item that is such a note's body `"_note_body": true` (#538),
 /// a picture's image its displayed size `"_display": [width, height]` in
-/// inches (#834). The Pandoc writer reads these; nothing is ever exported
-/// with them.
+/// inches (#834), and the document's `metadata` whether or not the JSON
+/// export was asked for it (#836). The Pandoc writer reads these; nothing
+/// is ever exported with them.
 pub(crate) fn to_json_with_notes(doc: &DoclingDocument) -> Value {
     build_json(doc, true)
 }
@@ -338,9 +339,9 @@ fn build_parts(doc: &DoclingDocument, note_keys: bool) -> Parts {
     let fields = (!b.field_regions.is_empty()).then_some((b.field_regions, b.field_items));
     Parts {
         name: doc.name.clone(),
-        metadata: doc
-            .metadata_output
-            .in_json()
+        // The Pandoc writer (`note_keys`) always gets the metadata, for
+        // its `meta` (#836); the JSON export only when asked.
+        metadata: (doc.metadata_output.in_json() || note_keys)
             .then(|| doc.metadata.to_json())
             .filter(|m| m.as_object().is_some_and(|o| !o.is_empty())),
         origin: json!({
