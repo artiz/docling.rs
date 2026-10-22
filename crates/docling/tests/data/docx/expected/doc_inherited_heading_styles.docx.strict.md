@@ -6,6 +6,6 @@ First body paragraph under the main section.
 
 Second body paragraph under the subsection.
 
-**1.2. Two-Hop Inherited Subsection**
+### 1.2. Two-Hop Inherited Subsection
 
 Third body paragraph under the two-hop subsection.

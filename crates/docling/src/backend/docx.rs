@@ -774,11 +774,7 @@ fn handle_paragraph_inner(
     // keeps its own branch (level 1) either way, and outlineLvl 9 is OOXML's
     // "body text" sentinel, not a heading.
     let named = named_heading_level(style_id, &style_name, ctx);
-    let outline = ctx
-        .style_outline
-        .get(style_id)
-        .copied()
-        .filter(|l| (1..=9).contains(l));
+    let outline = inherited_outline(style_id, ctx).filter(|l| (1..=9).contains(l));
     let level = match (named, outline) {
         (Some(1), _) => Some(1), // Title
         (Some(_), Some(out)) => Some(out + 1),
@@ -1284,11 +1280,75 @@ pub(super) fn numbered_heading_text(
     out
 }
 
+/// A paragraph style and its `basedOn` ancestors, nearest first — bounded
+/// by [`MAX_STYLE_DEPTH`], a cycle or a dangling reference ending the walk.
+pub(super) fn style_chain<'a>(style_id: &'a str, ctx: &'a Ctx) -> Vec<&'a str> {
+    let mut chain = Vec::new();
+    let mut sid = style_id;
+    while !sid.is_empty() && chain.len() < MAX_STYLE_DEPTH && !chain.contains(&sid) {
+        chain.push(sid);
+        match ctx.style_based.get(sid) {
+            Some(parent) => sid = parent,
+            None => break,
+        }
+    }
+    chain
+}
+
+/// The labels heading detection reads for a style (#841): its id and
+/// display name, then each `basedOn` ancestor's, nearest first — docling's
+/// `_get_label_and_level` stops after one hop, so a corporate
+/// "SubSectionTitleL2" based on "SectionTitleL2" based on Heading 2 was body
+/// text for it (the `.doc` backend walks the whole chain since #824; the
+/// two formats now read the same document alike).
+pub(super) fn heading_labels<'a>(
+    style_id: &'a str,
+    style_name: &'a str,
+    ctx: &'a Ctx,
+) -> Vec<&'a str> {
+    let mut labels = Vec::new();
+    for (i, sid) in style_chain(style_id, ctx).into_iter().enumerate() {
+        // An explicit body-text outline (`w:outlineLvl` 9, stored as 10)
+        // ends the climb: the style itself keeps docling's name check (a
+        // built-in "heading 2" opted out of the outline is still named so),
+        // but a style that opts out is not a heading through what it is
+        // based on, and nothing above it is read — the `.doc` backend's rule.
+        let body_text = ctx.style_outline.get(sid) == Some(&10);
+        if i > 0 && body_text {
+            break;
+        }
+        labels.push(sid);
+        let name = if i == 0 {
+            Some(style_name)
+        } else {
+            ctx.style_names.get(sid).map(String::as_str)
+        };
+        labels.extend(name);
+        if body_text {
+            break;
+        }
+    }
+    labels
+}
+
+/// The 1-indexed `w:outlineLvl` a style resolves to: its own, else the
+/// nearest `basedOn` ancestor's (#841 — docling reads the style's own only;
+/// the `.doc` backend inherits it since #824). An explicit level on the way
+/// up, OOXML's body-text 9 included (stored as 10 here, outside the heading
+/// range the callers keep), ends the walk: a style that opts out of the
+/// outline is body text whatever it is based on.
+pub(super) fn inherited_outline(style_id: &str, ctx: &Ctx) -> Option<u8> {
+    style_chain(style_id, ctx)
+        .into_iter()
+        .find_map(|sid| ctx.style_outline.get(sid).copied())
+}
+
 /// Markdown heading level from a paragraph style, by name — the name path of
 /// docling's `_get_label_and_level` (#270 tail: custom styles without
-/// `w:outlineLvl`). The style *id*, its display name, and their one-hop
-/// `basedOn` counterparts are checked in that order for a "heading" substring
-/// (docling's `is_heading`), and the FIRST label containing it decides alone —
+/// `w:outlineLvl`). The style *id*, its display name, and their `basedOn`
+/// counterparts up the chain ([`heading_labels`]; docling stops at one hop,
+/// #841) are checked in that order for a "heading" substring (docling's
+/// `is_heading`), and the FIRST label containing it decides alone —
 /// upstream returns straight out of `_get_heading_and_level`, so later labels
 /// never rescue an unparseable one. That is what promotes a custom style whose
 /// only heading marker is its ancestry ("MyStyle" based on "Heading 2") or its
@@ -1300,15 +1360,7 @@ fn named_heading_level(style_id: &str, style_name: &str, ctx: &Ctx) -> Option<u8
     if style_name.eq_ignore_ascii_case("title") {
         return Some(1);
     }
-    let base = ctx.style_based.get(style_id).map(String::as_str);
-    let labels = [
-        Some(style_id),
-        Some(style_name),
-        base,
-        base.and_then(|b| ctx.style_names.get(b))
-            .map(String::as_str),
-    ];
-    for label in labels.into_iter().flatten() {
+    for label in heading_labels(style_id, style_name, ctx) {
         if label.to_ascii_lowercase().contains("heading") {
             return heading_label_level(label);
         }
@@ -3645,6 +3697,100 @@ mod tests {
         assert_eq!(heading_label_level("HeadingCustom"), Some(2));
         assert_eq!(heading_label_level("Heading 1a2"), Some(2));
         assert_eq!(heading_label_level("my heading"), None);
+    }
+}
+
+#[cfg(test)]
+mod inherited_heading_tests {
+    use std::io::Write;
+
+    use crate::backend::DeclarativeBackend;
+    use crate::{InputFormat, SourceDocument};
+
+    /// A DOCX of `styles` (`<w:style>` elements) and `body` (`<w:body>`
+    /// children), with the numbering of a single decimal list.
+    fn docx(styles: &str, body: &str) -> crate::DoclingDocument {
+        const W: &str = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
+        let document = format!(r#"<w:document xmlns:w="{W}"><w:body>{body}</w:body></w:document>"#);
+        let styles = format!(r#"<w:styles xmlns:w="{W}">{styles}</w:styles>"#);
+        let numbering = format!(
+            r#"<w:numbering xmlns:w="{W}"><w:abstractNum w:abstractNumId="0"><w:lvl w:ilvl="0"><w:start w:val="1"/><w:numFmt w:val="decimal"/><w:lvlText w:val="%1."/></w:lvl></w:abstractNum><w:num w:numId="1"><w:abstractNumId w:val="0"/></w:num></w:numbering>"#
+        );
+        let mut zw = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
+        let opts = zip::write::SimpleFileOptions::default()
+            .compression_method(zip::CompressionMethod::Stored);
+        for (name, content) in [
+            ("word/document.xml", document.as_str()),
+            ("word/styles.xml", styles.as_str()),
+            ("word/numbering.xml", numbering.as_str()),
+        ] {
+            zw.start_file(name, opts).unwrap();
+            zw.write_all(content.as_bytes()).unwrap();
+        }
+        let bytes = zw.finish().unwrap().into_inner();
+        let src = SourceDocument::from_bytes("t.docx", InputFormat::Docx, bytes);
+        super::DocxBackend.convert(&src).unwrap()
+    }
+
+    fn style(id: &str, based_on: Option<&str>, outline: Option<u8>) -> String {
+        let based = based_on
+            .map(|b| format!(r#"<w:basedOn w:val="{b}"/>"#))
+            .unwrap_or_default();
+        let ppr = outline
+            .map(|o| format!(r#"<w:pPr><w:outlineLvl w:val="{o}"/></w:pPr>"#))
+            .unwrap_or_default();
+        format!(
+            r#"<w:style w:type="paragraph" w:styleId="{id}"><w:name w:val="{id}"/>{based}{ppr}</w:style>"#
+        )
+    }
+
+    fn para(style: &str, text: &str, numbered: bool) -> String {
+        let num = if numbered {
+            r#"<w:numPr><w:ilvl w:val="0"/><w:numId w:val="1"/></w:numPr>"#
+        } else {
+            ""
+        };
+        format!(
+            r#"<w:p><w:pPr><w:pStyle w:val="{style}"/>{num}</w:pPr><w:r><w:t>{text}</w:t></w:r></w:p>"#
+        )
+    }
+
+    /// #841: a style two (or more) `basedOn` hops from Heading 2 is a level-2
+    /// heading, a numbered one too (not a list item); a custom style's own
+    /// `w:outlineLvl` promotes it through the chain as well; an explicit
+    /// body-text outline (9) on the way up is not a heading whatever it is
+    /// based on; a cyclic chain terminates as body text.
+    #[test]
+    fn heading_styles_inherit_through_the_whole_based_on_chain() {
+        let styles = [
+            style("Heading2", Some("Normal"), Some(1)),
+            style("SectionTitleL2", Some("Heading2"), None),
+            style("SubSectionTitleL2", Some("SectionTitleL2"), None),
+            style("Deep", Some("SubSectionTitleL2"), None),
+            style("Outlined", Some("Normal"), Some(2)),
+            style("ViaOutline", Some("Outlined"), None),
+            style("BodyOptOut", Some("SectionTitleL2"), Some(9)),
+            style("LoopA", Some("LoopB"), None),
+            style("LoopB", Some("LoopA"), None),
+        ]
+        .concat();
+        let body = [
+            para("SubSectionTitleL2", "Two hops", false),
+            para("Deep", "Three hops numbered", true),
+            para("ViaOutline", "Outline two hops", false),
+            para("BodyOptOut", "Opted out", false),
+            para("LoopA", "Cyclic", false),
+            para("Normal", "Body.", false),
+        ]
+        .concat();
+        let doc = docx(&styles, &body);
+        assert_eq!(
+            doc.export_to_markdown(),
+            "### Two hops\n\n### 1 Three hops numbered\n\n#### Outline two hops\n\nOpted out\n\nCyclic\n\nBody.\n"
+        );
+        let json = doc.export_to_json();
+        assert_eq!(json.matches("\"section_header\"").count(), 3, "{json}");
+        assert!(!json.contains("\"list_item\""), "{json}");
     }
 }
 

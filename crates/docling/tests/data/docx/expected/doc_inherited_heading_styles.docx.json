@@ -53,6 +53,9 @@
         },
         {
           "$ref": "#/texts/2"
+        },
+        {
+          "$ref": "#/texts/4"
         }
       ],
       "content_layer": "body",
@@ -89,12 +92,6 @@
       "children": [
         {
           "$ref": "#/texts/3"
-        },
-        {
-          "$ref": "#/texts/4"
-        },
-        {
-          "$ref": "#/texts/5"
         }
       ],
       "content_layer": "body",
@@ -126,26 +123,24 @@
     {
       "self_ref": "#/texts/4",
       "parent": {
-        "$ref": "#/texts/2"
+        "$ref": "#/texts/0"
       },
-      "children": [],
+      "children": [
+        {
+          "$ref": "#/texts/5"
+        }
+      ],
       "content_layer": "body",
-      "label": "text",
+      "label": "section_header",
       "prov": [],
       "orig": "1.2. Two-Hop Inherited Subsection",
       "text": "1.2. Two-Hop Inherited Subsection",
-      "formatting": {
-        "bold": true,
-        "italic": false,
-        "underline": false,
-        "strikethrough": false,
-        "script": "baseline"
-      }
+      "level": 2
     },
     {
       "self_ref": "#/texts/5",
       "parent": {
-        "$ref": "#/texts/2"
+        "$ref": "#/texts/4"
       },
       "children": [],
       "content_layer": "body",
