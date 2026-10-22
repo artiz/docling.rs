@@ -28,12 +28,13 @@ use docling_core::{ContentLayer, PictureImage, Script, Table, TableCell};
 use roxmltree::Node as XmlNode;
 
 use super::odf::{
-    attr, cell_has_image, collect_runs, element_has_text, image_can_be_bitmap, inline_chart,
-    is_list_tag, is_rich_cell, is_slide_title_element, item_has_content, level_affixes,
-    level_is_enumerated, level_start, list_has_direct_text, list_has_renderable, list_items,
+    attr, cell_has_image, collect_runs, comment_threads, element_has_text, image_can_be_bitmap,
+    in_text_box, inline_chart, is_list_tag, is_rich_cell, is_slide_title_element,
+    is_transparent_container, item_has_content, item_headings, level_affixes, level_is_enumerated,
+    level_start, list_has_direct_text, list_has_renderable, list_items,
     list_starts_with_empty_nested, odf_item_content, ods_cell_text, para_plain_text,
-    paragraph_style_names, repeat, section_is_hidden, slide_has_visible_title, slide_is_hidden,
-    Fmt, Run, Styles,
+    paragraph_list_style, paragraph_style_names, repeat, section_is_hidden,
+    slide_has_visible_title, slide_is_hidden, text_boxes, Annotation, Fmt, MasterPart, Run, Styles,
 };
 
 /// The tree plus the spreadsheet pages docling adds (`page_no`, width,
@@ -53,6 +54,23 @@ struct ListState {
     counter: i64,
 }
 
+/// The `list` group a run of style-numbered paragraphs (#826) shares.
+struct StyleListGroup {
+    style: String,
+    group: usize,
+    enumerated: bool,
+    counter: i64,
+    suffix: String,
+}
+
+/// A comment thread (#829): its first comment's holding `<text:p>` /
+/// `<text:h>`, the comments, and whether its group exists yet.
+struct CommentThread {
+    anchor: Option<roxmltree::NodeId>,
+    comments: Vec<usize>,
+    attached: bool,
+}
+
 struct Walker<'s> {
     tree: ItemTree,
     styles: &'s Styles,
@@ -60,12 +78,54 @@ struct Walker<'s> {
     /// `<text:note>` calls placed in text items: `(item, offset, note)` —
     /// hung on the items once the note bodies exist (#538).
     note_calls: Vec<(usize, usize, roxmltree::NodeId)>,
+    /// The body's reviewer comments and their threads (#829).
+    annotations: Vec<Annotation>,
+    threads: Vec<CommentThread>,
 }
 
 /// `<office:text>` body children.
-pub(super) fn build_text(body: XmlNode, styles: &Styles) -> Built {
+pub(super) fn build_text(
+    body: XmlNode,
+    styles: &Styles,
+    annotations: &[Annotation],
+    furniture: &[MasterPart],
+) -> Built {
     let mut w = Walker::new(styles);
+    // `_detach_annotations` (docling#4436, #829): the comments and their
+    // threads, attached as `comment_section` groups right after the item
+    // holding each thread's first comment is created.
+    w.annotations = annotations.to_vec();
+    w.threads = comment_threads(annotations)
+        .into_iter()
+        .map(|comments| CommentThread {
+            anchor: annotations[comments[0]].anchor,
+            comments,
+            attached: false,
+        })
+        .collect();
     w.add_children(body.children().filter(XmlNode::is_element), None, None);
+    // The master pages' headers and footers (#830): the DOCX backend's
+    // `_add_header_footer` shape — a furniture-layer `page header` /
+    // `page footer` section per part, holding the part's blocks.
+    for part in furniture {
+        let group = w.tree.add(
+            None,
+            Some(ContentLayer::Furniture),
+            TreeKind::Group {
+                label: "section".into(),
+                name: if part.footer {
+                    "page footer".into()
+                } else {
+                    "page header".into()
+                },
+            },
+        );
+        w.add_children(
+            part.el.children().filter(XmlNode::is_element),
+            Some(group),
+            Some(ContentLayer::Furniture),
+        );
+    }
     // `_add_footnotes` (docling#4375): each note body a furniture `footnote`
     // text on the body, after the whole walk.
     let mut bodies = std::collections::HashMap::new();
@@ -83,6 +143,15 @@ pub(super) fn build_text(body: XmlNode, styles: &Styles) -> Built {
                 list: None,
             },
         );
+        // A comment in the note's body hangs on the footnote item.
+        let note_el = body.document().get_node(note).expect("note node");
+        w.attach_comments(
+            note_el
+                .descendants()
+                .filter(|n| n.has_tag_name("p") || n.has_tag_name("h"))
+                .map(|n| n.id()),
+            Some(id),
+        );
         bodies.insert(note, (id, text));
     }
     // #538: each note on the text item that calls it, for the Pandoc AST.
@@ -93,6 +162,13 @@ pub(super) fn build_text(body: XmlNode, styles: &Styles) -> Built {
                 text: text.clone(),
             });
             w.tree.items[*body_id].note_body = true;
+        }
+    }
+    // `attach_rest`: a thread whose anchor made no item — an empty
+    // paragraph, a plain table cell's — goes under the root, last.
+    for t in 0..w.threads.len() {
+        if !w.threads[t].attached {
+            w.attach_thread(t, None);
         }
     }
     Built {
@@ -534,7 +610,74 @@ impl<'s> Walker<'s> {
             styles,
             tables: 0,
             note_calls: Vec::new(),
+            annotations: Vec::new(),
+            threads: Vec::new(),
         }
+    }
+
+    /// `_OdfComments.attach` (#829): the threads anchored on one of the
+    /// `anchors` elements get their `comment_section` group under `holder`.
+    fn attach_comments(
+        &mut self,
+        anchors: impl Iterator<Item = roxmltree::NodeId>,
+        holder: Option<usize>,
+    ) {
+        let anchors: Vec<roxmltree::NodeId> = anchors.collect();
+        if anchors.is_empty() {
+            return;
+        }
+        for t in 0..self.threads.len() {
+            let thread = &self.threads[t];
+            if !thread.attached && thread.anchor.is_some_and(|a| anchors.contains(&a)) {
+                self.attach_thread(t, holder);
+            }
+        }
+    }
+
+    /// `_OdfComments._add_group`: a notes-layer `comment_section` group named
+    /// `comment-{thread}` under `holder` (the root without one), one `text`
+    /// per comment of the thread, and — when the holder is a document item,
+    /// not an `inline` group — the group's ref in the holder's `comments`.
+    fn attach_thread(&mut self, t: usize, holder: Option<usize>) {
+        self.threads[t].attached = true;
+        let group = self.tree.add(
+            holder,
+            Some(ContentLayer::Notes),
+            TreeKind::Group {
+                label: "comment_section".into(),
+                name: format!("comment-{}", t + 1),
+            },
+        );
+        for c in self.threads[t].comments.clone() {
+            let text = self.annotations[c].text.clone();
+            self.tree.add(
+                Some(group),
+                Some(ContentLayer::Notes),
+                TreeKind::Text {
+                    label: "text".into(),
+                    text,
+                    orig: None,
+                    formatting: None,
+                    hyperlink: None,
+                    level: None,
+                    list: None,
+                },
+            );
+        }
+        if let Some(h) = holder {
+            if !matches!(self.tree.items[h].kind, TreeKind::Group { .. }) {
+                self.tree.items[h].comments.push(group);
+            }
+        }
+    }
+
+    /// The item a paragraph-like block made at `parent`'s level since
+    /// `first_new`: the last one, a heading over its inline group included
+    /// — the comment holder.
+    fn block_item(&self, first_new: usize, parent: Option<usize>) -> Option<usize> {
+        (first_new..self.tree.items.len())
+            .rev()
+            .find(|&i| self.tree.items[i].parent == parent && !self.tree.items[i].deleted)
     }
 
     /// `_add_odf_text_runs`: one run is the item, several an `inline` group of
@@ -657,9 +800,10 @@ impl<'s> Walker<'s> {
         if el.has_tag_name("frame") {
             frames.push(el);
         }
+        // A frame inside a text box is the box's own block (#831).
         frames.extend(
             el.descendants()
-                .filter(|n| n.has_tag_name("frame") && *n != el),
+                .filter(|n| n.has_tag_name("frame") && *n != el && !in_text_box(*n, el)),
         );
         let mut count = 0;
         for frame in frames {
@@ -752,7 +896,7 @@ impl<'s> Walker<'s> {
         let chart_count = self.add_charts(el, parent, layer);
         let images: Vec<XmlNode> = el
             .descendants()
-            .filter(|n| n.has_tag_name("image"))
+            .filter(|n| n.has_tag_name("image") && !in_text_box(*n, el))
             .collect();
         let image_count = self.add_images(&images, parent, layer, chart_count > 0);
         let mut runs = runs_of(el, self.styles);
@@ -805,13 +949,108 @@ impl<'s> Walker<'s> {
         layer: Option<ContentLayer>,
     ) {
         let mut prev: Option<ListState> = None;
+        let mut style_run: Option<StyleListGroup> = None;
         for el in els {
             if is_list_tag(el.tag_name().name()) {
+                style_run = None;
                 prev = self.add_list(el, parent, layer, false, 1, prev);
+            } else if let Some((style, level)) = el
+                .has_tag_name("p")
+                .then(|| paragraph_list_style(self.styles, attr(el, "style-name")))
+                .flatten()
+            {
+                prev = None;
+                self.add_style_list_paragraph(el, style, level, parent, layer, &mut style_run);
             } else {
                 prev = None;
+                style_run = None;
                 self.add_child(el, parent, layer);
             }
+        }
+    }
+
+    /// A `<text:p>` numbered through its paragraph style (#826): an item of
+    /// the `list` group the run of such paragraphs shares — a new group when
+    /// the list style changes — with the marker `add_list` would give it.
+    fn add_style_list_paragraph(
+        &mut self,
+        el: XmlNode,
+        style: String,
+        level: i64,
+        parent: Option<usize>,
+        layer: Option<ContentLayer>,
+        run: &mut Option<StyleListGroup>,
+    ) {
+        let runs = runs_of(el, self.styles);
+        let text = text_from_runs(&runs);
+        if text.is_empty() {
+            return;
+        }
+        if run.as_ref().is_none_or(|r| r.style != style) {
+            let lv = super::odf::list_level(self.styles, Some(&style), level);
+            let group = self.tree.add(
+                parent,
+                layer,
+                TreeKind::Group {
+                    label: "list".into(),
+                    name: "list".into(),
+                },
+            );
+            *run = Some(StyleListGroup {
+                style,
+                group,
+                enumerated: lv.is_some_and(|l| l.numbered),
+                counter: lv.map_or(0, |l| l.start - 1),
+                suffix: lv.map(|l| l.suffix.clone()).unwrap_or_default(),
+            });
+        }
+        let Some(r) = run.as_mut() else {
+            return;
+        };
+        r.counter += 1;
+        let marker = if r.enumerated {
+            format!(
+                "{}{}",
+                r.counter,
+                if r.suffix.is_empty() {
+                    "."
+                } else {
+                    r.suffix.as_str()
+                }
+            )
+        } else {
+            String::new()
+        };
+        let meta = ListMeta {
+            enumerated: r.enumerated,
+            marker,
+        };
+        let group = r.group;
+        let first_new = self.tree.items.len();
+        let item = self.add_list_item(group, layer, &runs, &text, meta);
+        self.anchor_notes(el, first_new);
+        self.attach_comments(std::iter::once(el.id()), Some(item));
+        self.add_text_boxes(el, parent, layer);
+    }
+
+    /// The text boxes `el` anchors (#831), each a `textbox` section group of
+    /// its blocks after the anchoring item — the DOCX backend's
+    /// `_handle_textbox_content` shape.
+    fn add_text_boxes(&mut self, el: XmlNode, parent: Option<usize>, layer: Option<ContentLayer>) {
+        for tb in text_boxes(el) {
+            let group = self.tree.add(
+                parent,
+                layer,
+                TreeKind::Group {
+                    label: "section".into(),
+                    name: "textbox".into(),
+                },
+            );
+            self.add_children(
+                tb.children().filter(XmlNode::is_element),
+                Some(group),
+                layer,
+            );
         }
     }
 
@@ -839,10 +1078,19 @@ impl<'s> Walker<'s> {
             "h" => {
                 self.add_heading(el, parent, layer);
                 self.anchor_notes(el, first_new);
+                let holder = self.block_item(first_new, parent);
+                self.attach_comments(std::iter::once(el.id()), holder);
+                self.add_text_boxes(el, parent, layer);
             }
             "p" => {
                 self.add_paragraph(el, parent, layer);
                 self.anchor_notes(el, first_new);
+                // A comment on a paragraph that made no item (an empty one)
+                // waits for `attach_rest`, as upstream's does.
+                if let Some(holder) = self.block_item(first_new, parent) {
+                    self.attach_comments(std::iter::once(el.id()), Some(holder));
+                }
+                self.add_text_boxes(el, parent, layer);
             }
             n if is_list_tag(n) => {
                 self.add_list(el, parent, layer, false, 1, None);
@@ -850,9 +1098,10 @@ impl<'s> Walker<'s> {
             "table" => {
                 self.add_table(el, parent, layer, None, None);
             }
-            "section" => {
-                // A hidden section's content goes to the invisible layer
-                // (#753, docling#4860).
+            n if is_transparent_container(n) => {
+                // A section or an index (#823, docling#4750) is transparent;
+                // a hidden one's content goes to the invisible layer (#753,
+                // docling#4860).
                 let layer = if section_is_hidden(el) {
                     Some(ContentLayer::Invisible)
                 } else {
@@ -864,9 +1113,10 @@ impl<'s> Walker<'s> {
                 let charts = self.add_charts(el, parent, layer);
                 let images: Vec<XmlNode> = el
                     .descendants()
-                    .filter(|n| n.has_tag_name("image"))
+                    .filter(|n| n.has_tag_name("image") && !in_text_box(*n, el))
                     .collect();
                 self.add_images(&images, parent, layer, charts > 0);
+                self.add_text_boxes(el, parent, layer);
             }
             _ => {
                 // Any other element with images (a `draw:custom-shape`, …).
@@ -888,12 +1138,12 @@ impl<'s> Walker<'s> {
         for child in item.children().filter(XmlNode::is_element) {
             match child.tag_name().name() {
                 n if is_list_tag(n) => has_nested = true,
-                "p" | "h" => collect_runs(child, self.styles, Fmt::default(), &mut runs),
+                "p" => collect_runs(child, self.styles, Fmt::default(), &mut runs),
                 _ => {}
             }
         }
         let mut runs = normalize_runs(runs);
-        if runs.is_empty() && !has_nested {
+        if runs.is_empty() && !has_nested && item_headings(item).next().is_none() {
             let text = text_from_runs(&runs_of(item, self.styles));
             if !text.is_empty() {
                 runs.push(Run {
@@ -904,6 +1154,80 @@ impl<'s> Walker<'s> {
             }
         }
         runs
+    }
+
+    /// One `list_item` of `group`: a single run is the item itself, several
+    /// an empty item over an `inline` group of `text` runs; `text` is the
+    /// fallback for an item without runs.
+    fn add_list_item(
+        &mut self,
+        group: usize,
+        layer: Option<ContentLayer>,
+        runs: &[Run],
+        text: &str,
+        meta: ListMeta,
+    ) -> usize {
+        if runs.len() <= 1 {
+            let (t, f, h) = match runs.first() {
+                Some(r) => (r.text.clone(), formatting_of(r.fmt), r.href.clone()),
+                None => (text.to_string(), None, None),
+            };
+            self.tree.add(
+                Some(group),
+                layer,
+                TreeKind::Text {
+                    label: "list_item".into(),
+                    text: t,
+                    orig: None,
+                    formatting: f,
+                    hyperlink: h,
+                    level: None,
+                    list: Some(meta),
+                },
+            )
+        } else {
+            let id = self.tree.add(
+                Some(group),
+                layer,
+                TreeKind::Text {
+                    label: "list_item".into(),
+                    text: String::new(),
+                    orig: None,
+                    formatting: None,
+                    hyperlink: None,
+                    level: None,
+                    list: Some(meta),
+                },
+            );
+            let inline = self.inline_group(Some(id), layer);
+            for run in runs {
+                self.tree.add(
+                    Some(inline),
+                    layer,
+                    text_kind(
+                        "text",
+                        &run.text,
+                        formatting_of(run.fmt),
+                        run.href.as_deref(),
+                    ),
+                );
+            }
+            id
+        }
+    }
+
+    /// A list item's `<text:h>` children (#827) as headings under `parent`.
+    fn add_item_headings(
+        &mut self,
+        item: XmlNode,
+        parent: Option<usize>,
+        layer: Option<ContentLayer>,
+    ) {
+        for h in item_headings(item) {
+            let first_new = self.tree.items.len();
+            self.add_heading(h, parent, layer);
+            self.anchor_notes(h, first_new);
+        }
     }
 
     /// `_add_odf_list`.
@@ -926,6 +1250,7 @@ impl<'s> Walker<'s> {
         if !should_continue && !list_has_direct_text(list, styles) {
             for item in list_items(list) {
                 let (_, nested) = odf_item_content(item, styles);
+                self.add_item_headings(item, parent, layer);
                 for n in nested {
                     self.add_list(n, parent, layer, style_enum, level + 1, None);
                 }
@@ -955,6 +1280,9 @@ impl<'s> Walker<'s> {
                 .into_iter()
                 .filter(|n| list_has_renderable(*n, styles))
                 .collect();
+            // The item's headings (#827) are `section_header`s of the list's
+            // parent, created before the item.
+            self.add_item_headings(item, parent, layer);
             if !has_content && nested.is_empty() {
                 continue;
             }
@@ -987,54 +1315,17 @@ impl<'s> Walker<'s> {
                 enumerated: current_enum,
                 marker,
             };
-            let item_id = if runs.len() <= 1 {
-                let (t, f, h) = match runs.first() {
-                    Some(r) => (r.text.clone(), formatting_of(r.fmt), r.href.clone()),
-                    None => (text.clone(), None, None),
-                };
-                self.tree.add(
-                    Some(group),
-                    layer,
-                    TreeKind::Text {
-                        label: "list_item".into(),
-                        text: t,
-                        orig: None,
-                        formatting: f,
-                        hyperlink: h,
-                        level: None,
-                        list: Some(meta),
-                    },
-                )
-            } else {
-                let id = self.tree.add(
-                    Some(group),
-                    layer,
-                    TreeKind::Text {
-                        label: "list_item".into(),
-                        text: String::new(),
-                        orig: None,
-                        formatting: None,
-                        hyperlink: None,
-                        level: None,
-                        list: Some(meta),
-                    },
-                );
-                let inline = self.inline_group(Some(id), layer);
-                for run in &runs {
-                    self.tree.add(
-                        Some(inline),
-                        layer,
-                        text_kind(
-                            "text",
-                            &run.text,
-                            formatting_of(run.fmt),
-                            run.href.as_deref(),
-                        ),
-                    );
-                }
-                id
-            };
+            let item_id = self.add_list_item(group, layer, &runs, &text, meta);
             self.anchor_notes(item, first_new);
+            self.attach_comments(
+                item.children()
+                    .filter(|c| c.has_tag_name("p"))
+                    .map(|c| c.id()),
+                Some(item_id),
+            );
+            for p in item.children().filter(|c| c.has_tag_name("p")) {
+                self.add_text_boxes(p, Some(item_id), layer);
+            }
             previous = Some(item_id);
             for n in nested {
                 self.add_list(n, Some(item_id), layer, style_enum, level + 1, None);
@@ -1111,6 +1402,44 @@ impl<'s> Walker<'s> {
                     self.add_child(child, Some(group), layer);
                 }
                 rich.push((ar, ac, group));
+            } else {
+                // A comment in a plain cell: its group under the table, no
+                // back-reference (the cell is no item).
+                let anchors: Vec<roxmltree::NodeId> = cell
+                    .descendants()
+                    .filter(|n| n.has_tag_name("p") || n.has_tag_name("h"))
+                    .map(|n| n.id())
+                    .collect();
+                for t in 0..self.threads.len() {
+                    let thread = &self.threads[t];
+                    if !thread.attached && thread.anchor.is_some_and(|a| anchors.contains(&a)) {
+                        self.threads[t].attached = true;
+                        let group = self.tree.add(
+                            Some(table_id),
+                            Some(ContentLayer::Notes),
+                            TreeKind::Group {
+                                label: "comment_section".into(),
+                                name: format!("comment-{}", t + 1),
+                            },
+                        );
+                        for c in self.threads[t].comments.clone() {
+                            let text = self.annotations[c].text.clone();
+                            self.tree.add(
+                                Some(group),
+                                Some(ContentLayer::Notes),
+                                TreeKind::Text {
+                                    label: "text".into(),
+                                    text,
+                                    orig: None,
+                                    formatting: None,
+                                    hyperlink: None,
+                                    level: None,
+                                    list: None,
+                                },
+                            );
+                        }
+                    }
+                }
             }
             cells.push(TableCell {
                 text,
@@ -1460,6 +1789,287 @@ mod tests {
         );
         assert_eq!(t.items[13].parent, Some(12));
         assert_eq!(t.items[14].parent, Some(13));
+    }
+
+    /// #823: an index body's title, entries and the blocks inside it are
+    /// items in document order, between the surrounding paragraphs, with
+    /// no group of their own — docling#4750's shape.
+    #[test]
+    fn index_body_items_are_body_items() {
+        let xml = format!(
+            r#"<office:document {NS}><office:body><office:text>
+              <text:p>Intro.</text:p>
+              <text:table-of-content text:name="TOC">
+                <text:table-of-content-source><text:index-title-template>T</text:index-title-template></text:table-of-content-source>
+                <text:index-body>
+                  <text:index-title><text:p>Contents</text:p></text:index-title>
+                  <text:p>Chapter One</text:p>
+                  <text:h text:outline-level="1">Chapter One</text:h>
+                  <table:table><table:table-row><table:table-cell office:value-type="string"><text:p>Cell</text:p></table:table-cell></table:table-row></table:table>
+                </text:index-body>
+              </text:table-of-content>
+              <text:p>Outro.</text:p>
+            </office:text></office:body></office:document>"#
+        );
+        let doc = convert(&xml, InputFormat::Odt);
+        let t: &ItemTree = doc.tree.as_ref().expect("tree");
+        let items: Vec<(String, String)> = t
+            .items
+            .iter()
+            .map(|it| (label(it), text(it).to_string()))
+            .collect();
+        assert_eq!(
+            items,
+            [
+                ("text".to_string(), "Intro.".to_string()),
+                ("text".to_string(), "Contents".to_string()),
+                ("text".to_string(), "Chapter One".to_string()),
+                ("section_header".to_string(), "Chapter One".to_string()),
+                ("table".to_string(), String::new()),
+                ("text".to_string(), "Outro.".to_string()),
+            ]
+        );
+        assert!(t.items.iter().all(|it| it.parent.is_none()));
+    }
+
+    /// #826: style-numbered paragraphs are `list` groups of `list_item`s —
+    /// one group per run of the same list style, markers along the run — the
+    /// DOCX backend's shape for the same document.
+    #[test]
+    fn style_list_name_paragraphs_form_list_groups() {
+        let xml = format!(
+            r#"<office:document {NS}>
+            <office:styles>
+              <text:list-style style:name="LB"><text:list-level-style-bullet text:level="1" text:bullet-char="•"/></text:list-style>
+              <text:list-style style:name="LN"><text:list-level-style-number text:level="1" style:num-format="1"/></text:list-style>
+              <style:style style:name="Bul" style:family="paragraph" style:list-style-name="LB"/>
+              <style:style style:name="Num" style:family="paragraph" style:list-style-name="LN"/>
+            </office:styles>
+            <office:body><office:text>
+              <text:p>Intro:</text:p>
+              <text:p text:style-name="Bul">one</text:p>
+              <text:p text:style-name="Bul">two</text:p>
+              <text:p text:style-name="Num">three</text:p>
+              <text:p text:style-name="Num">four</text:p>
+            </office:text></office:body></office:document>"#
+        );
+        let doc = convert(&xml, InputFormat::Odt);
+        let t: &ItemTree = doc.tree.as_ref().expect("tree");
+        let labels: Vec<String> = t.items.iter().map(label).collect();
+        assert_eq!(
+            labels,
+            [
+                "text",
+                "list:list",
+                "list_item",
+                "list_item",
+                "list:list",
+                "list_item",
+                "list_item"
+            ]
+        );
+        assert_eq!(t.items[2].parent, Some(1));
+        assert_eq!(t.items[5].parent, Some(4));
+        assert!(
+            matches!(&t.items[2].kind, TreeKind::Text { list: Some(l), .. } if !l.enumerated && l.marker.is_empty())
+        );
+        assert!(
+            matches!(&t.items[5].kind, TreeKind::Text { list: Some(l), .. } if l.enumerated && l.marker == "1.")
+        );
+        assert!(
+            matches!(&t.items[6].kind, TreeKind::Text { list: Some(l), .. } if l.marker == "2.")
+        );
+    }
+
+    /// #827: headings inside list items are `section_header`s with their
+    /// outline level, body-level siblings like every ODT heading; a list of
+    /// headings alone opens no `list` group.
+    #[test]
+    fn headings_inside_list_items_are_section_headers() {
+        let xml = format!(
+            r#"<office:document {NS}><office:body><office:text>
+              <text:list><text:list-item>
+                <text:h text:outline-level="1">Context</text:h>
+                <text:list><text:list-item><text:h text:outline-level="2">Background</text:h></text:list-item></text:list>
+              </text:list-item></text:list>
+              <text:p>Body.</text:p>
+              <text:list><text:list-item><text:list><text:list-item><text:h text:outline-level="2">Target</text:h></text:list-item></text:list></text:list-item></text:list>
+            </office:text></office:body></office:document>"#
+        );
+        let doc = convert(&xml, InputFormat::Odt);
+        let t: &ItemTree = doc.tree.as_ref().expect("tree");
+        let items: Vec<(String, String, Option<u8>)> = t
+            .items
+            .iter()
+            .map(|it| {
+                let level = match &it.kind {
+                    TreeKind::Text { level, .. } => *level,
+                    _ => None,
+                };
+                (label(it), text(it).to_string(), level)
+            })
+            .collect();
+        assert_eq!(
+            items,
+            [
+                ("section_header".to_string(), "Context".to_string(), Some(1)),
+                (
+                    "section_header".to_string(),
+                    "Background".to_string(),
+                    Some(2)
+                ),
+                ("text".to_string(), "Body.".to_string(), None),
+                ("section_header".to_string(), "Target".to_string(), Some(2)),
+            ]
+        );
+        assert!(t.items.iter().all(|it| it.parent.is_none()));
+    }
+
+    /// #829: each comment thread is a notes-layer `comment_section` group
+    /// right after the item holding its first comment, that item's
+    /// `comments` pointing at it; a reply's text joins the thread; a
+    /// comment in a plain cell hangs on the table, one on an empty
+    /// paragraph on the root at the end — docling#4436's shape.
+    #[test]
+    fn annotations_become_comment_sections() {
+        let xml = format!(
+            r#"<office:document {NS} xmlns:dc="dc" xmlns:loext="lo"><office:body><office:text>
+              <text:h text:outline-level="1">Budget<office:annotation office:name="c1"><dc:creator>Alpha</dc:creator><text:p>Rename</text:p></office:annotation></text:h>
+              <text:p>Total <office:annotation loext:parent-name="c1"><dc:creator>Bravo</dc:creator><text:p>Agreed</text:p></office:annotation>500.</text:p>
+              <text:list><text:list-item><text:p>Item<office:annotation><text:p>Scope</text:p></office:annotation></text:p></text:list-item></text:list>
+              <table:table><table:table-row><table:table-cell office:value-type="string"><text:p>Cell<office:annotation><text:p>In cell</text:p></office:annotation></text:p></table:table-cell></table:table-row></table:table>
+              <text:p><office:annotation><text:p>Orphan</text:p></office:annotation></text:p>
+            </office:text></office:body></office:document>"#
+        );
+        let doc = convert(&xml, InputFormat::Odt);
+        let t: &ItemTree = doc.tree.as_ref().expect("tree");
+        let items: Vec<(String, String, Option<usize>)> = t
+            .items
+            .iter()
+            .map(|it| (label(it), text(it).to_string(), it.parent))
+            .collect();
+        assert_eq!(
+            items,
+            [
+                ("section_header".to_string(), "Budget".to_string(), None),
+                (
+                    "comment_section:comment-1".to_string(),
+                    String::new(),
+                    Some(0)
+                ),
+                (
+                    "text".to_string(),
+                    "[author: Alpha]: Rename".to_string(),
+                    Some(1)
+                ),
+                (
+                    "text".to_string(),
+                    "[author: Bravo]: Agreed".to_string(),
+                    Some(1)
+                ),
+                ("text".to_string(), "Total 500.".to_string(), None),
+                ("list:list".to_string(), String::new(), None),
+                ("list_item".to_string(), "Item".to_string(), Some(5)),
+                (
+                    "comment_section:comment-2".to_string(),
+                    String::new(),
+                    Some(6)
+                ),
+                ("text".to_string(), "Scope".to_string(), Some(7)),
+                ("table".to_string(), String::new(), None),
+                (
+                    "comment_section:comment-3".to_string(),
+                    String::new(),
+                    Some(9)
+                ),
+                ("text".to_string(), "In cell".to_string(), Some(10)),
+                ("comment_section:comment-4".to_string(), String::new(), None),
+                ("text".to_string(), "Orphan".to_string(), Some(12)),
+            ]
+        );
+        assert_eq!(t.items[0].comments, [1]);
+        assert_eq!(t.items[6].comments, [7]);
+        assert!(t.items[9].comments.is_empty());
+        assert_eq!(t.items[1].layer, Some(docling_core::ContentLayer::Notes));
+        assert_eq!(t.items[2].layer, Some(docling_core::ContentLayer::Notes));
+        assert_eq!(
+            doc.export_to_markdown(),
+            "## Budget\n\nTotal 500.\n\n- Item\n\n| Cell   |\n|--------|\n"
+        );
+        let json = doc.export_to_json();
+        assert!(json.contains("\"comment_section\""), "{json}");
+    }
+
+    /// #830: a furniture-layer `page header` / `page footer` section per
+    /// master page part after the body, its paragraphs and tables inside —
+    /// the DOCX backend's tree shape.
+    #[test]
+    fn master_page_parts_are_furniture_sections() {
+        let xml = format!(
+            r#"<office:document {NS}>
+            <office:master-styles><style:master-page style:name="Standard">
+              <style:header><text:p>Head</text:p><table:table><table:table-row><table:table-cell office:value-type="string"><text:p>V</text:p></table:table-cell></table:table-row></table:table></style:header>
+              <style:footer><text:p>Foot</text:p></style:footer>
+            </style:master-page></office:master-styles>
+            <office:body><office:text><text:p>Body.</text:p></office:text></office:body></office:document>"#
+        );
+        let doc = convert(&xml, InputFormat::Odt);
+        let t: &ItemTree = doc.tree.as_ref().expect("tree");
+        let items: Vec<(
+            String,
+            String,
+            Option<usize>,
+            Option<docling_core::ContentLayer>,
+        )> = t
+            .items
+            .iter()
+            .map(|it| (label(it), text(it).to_string(), it.parent, it.layer))
+            .collect();
+        let f = Some(docling_core::ContentLayer::Furniture);
+        assert_eq!(
+            items,
+            [
+                ("text".to_string(), "Body.".to_string(), None, None),
+                ("section:page header".to_string(), String::new(), None, f),
+                ("text".to_string(), "Head".to_string(), Some(1), f),
+                ("table".to_string(), String::new(), Some(1), f),
+                ("section:page footer".to_string(), String::new(), None, f),
+                ("text".to_string(), "Foot".to_string(), Some(4), f),
+            ]
+        );
+        assert_eq!(doc.export_to_markdown(), "Body.\n");
+    }
+
+    /// #831: a text box is a `textbox` section group after the anchoring
+    /// paragraph's item, its paragraphs, list and table inside — the DOCX
+    /// backend's shape; the anchoring paragraph keeps its own text only.
+    #[test]
+    fn text_boxes_are_textbox_sections() {
+        let xml = format!(
+            r#"<office:document {NS}><office:body><office:text>
+              <text:p>Anchor.<draw:frame><draw:text-box><text:p>First.</text:p><text:list><text:list-item><text:p>item</text:p></text:list-item></text:list><table:table><table:table-row><table:table-cell office:value-type="string"><text:p>Cell</text:p></table:table-cell></table:table-row></table:table></draw:text-box></draw:frame></text:p>
+              <text:p>After.</text:p>
+            </office:text></office:body></office:document>"#
+        );
+        let doc = convert(&xml, InputFormat::Odt);
+        let t: &ItemTree = doc.tree.as_ref().expect("tree");
+        let items: Vec<(String, String, Option<usize>)> = t
+            .items
+            .iter()
+            .map(|it| (label(it), text(it).to_string(), it.parent))
+            .collect();
+        assert_eq!(
+            items,
+            [
+                ("text".to_string(), "Anchor.".to_string(), None),
+                ("section:textbox".to_string(), String::new(), None),
+                ("text".to_string(), "First.".to_string(), Some(1)),
+                ("list:list".to_string(), String::new(), Some(1)),
+                ("list_item".to_string(), "item".to_string(), Some(3)),
+                ("table".to_string(), String::new(), Some(1)),
+                ("text".to_string(), "After.".to_string(), None),
+            ]
+        );
     }
 
     /// A presentation: a `chapter` group per slide named `slide-{0-based}`,

@@ -79,16 +79,21 @@ struct StyleInfo {
     strike: Option<bool>,
     underline: Option<bool>,
     script: Option<u8>,
+    /// A paragraph style's `style:list-style-name` (#826): the list its
+    /// paragraphs are numbered with, no `<text:list>` around them; `Some("")`
+    /// cancels an inherited one. `list_level` is ODF 1.3's `style:list-level`.
+    list_style: Option<String>,
+    list_level: Option<i64>,
 }
 
 /// One list level's rendering: bullet vs numbered, its `start-value`, and the
 /// prefix/suffix wrapping an enumerated marker (`num-prefix`/`num-suffix`).
 #[derive(Default, Clone)]
-struct OdfLevel {
-    numbered: bool,
-    start: i64,
-    prefix: String,
-    suffix: String,
+pub(super) struct OdfLevel {
+    pub(super) numbered: bool,
+    pub(super) start: i64,
+    pub(super) prefix: String,
+    pub(super) suffix: String,
 }
 
 /// List style name → level (1-based) → level rendering.
@@ -130,6 +135,11 @@ pub(super) struct Styles {
     /// (`presentation:visibility="hidden"` on their
     /// `style:drawing-page-properties`; #753, docling#4767).
     hidden_pages: HashSet<String>,
+    /// The body's reviewer comments (#829) by their `<office:annotation>`
+    /// node, each the index of its [`Node::CommentSection`] in the flat
+    /// stream — what a [`Node::Commented`] wrapper on the annotated node
+    /// points at. Set per `<office:text>` before its walk; empty otherwise.
+    comment_slots: HashMap<roxmltree::NodeId, usize>,
 }
 
 impl DeclarativeBackend for OdfBackend {
@@ -236,9 +246,16 @@ pub(crate) fn convert_odf(
         for office in body.children().filter(XmlNode::is_element) {
             match office.tag_name().name() {
                 "text" => {
+                    let comments = annotations(office);
+                    styles.comment_slots = comment_slots(&comments);
+                    let furniture = master_page_parts(&content_dom, styles_dom.as_ref());
                     walk_text(office, &styles, &mut doc);
+                    push_master_page_furniture(&furniture, &styles, &mut doc);
                     push_note_furniture(office, &mut doc);
-                    built = Some(super::odf_tree::build_text(office, &styles));
+                    push_comment_sections(&comments, &mut doc);
+                    built = Some(super::odf_tree::build_text(
+                        office, &styles, &comments, &furniture,
+                    ));
                 }
                 "spreadsheet" => {
                     walk_spreadsheet(office, &styles, &mut doc);
@@ -264,9 +281,16 @@ pub(crate) fn convert_odf(
                 walk_spreadsheet(body, &styles, &mut doc);
                 built = Some(super::odf_tree::build_spreadsheet(body, &styles));
             } else {
+                let comments = annotations(body);
+                styles.comment_slots = comment_slots(&comments);
+                let furniture = master_page_parts(&content_dom, styles_dom.as_ref());
                 walk_text(body, &styles, &mut doc);
+                push_master_page_furniture(&furniture, &styles, &mut doc);
                 push_note_furniture(body, &mut doc);
-                built = Some(super::odf_tree::build_text(body, &styles));
+                push_comment_sections(&comments, &mut doc);
+                built = Some(super::odf_tree::build_text(
+                    body, &styles, &comments, &furniture,
+                ));
             }
         }
         if let Some(built) = built {
@@ -290,6 +314,33 @@ pub(crate) fn convert_odf(
 /// 1.x's `<text:ordered-list>` / `<text:unordered-list>` (#215).
 pub(super) fn is_list_tag(name: &str) -> bool {
     matches!(name, "list" | "ordered-list" | "unordered-list")
+}
+
+/// Whether an element is a transparent block container the walkers descend
+/// into as if its children were body blocks: a `<text:section>`, or (#823,
+/// docling#4750) an index — `<text:table-of-content>`, the alphabetical /
+/// illustration / table / object / user indexes and a bibliography — and
+/// the `<text:index-body>` / `<text:index-title>` it holds. The index's
+/// `*-source` child is configuration (its `index-title-template` is not
+/// rendered text) and is not a block tag, so the walk never reads it. The
+/// index body's entries are the TOC lines docling keeps for a `.docx`; and
+/// LibreOffice, converting a Word file whose TOC field is never closed,
+/// wraps the rest of the document — headings, paragraphs, tables — inside
+/// the index body, where every one of them used to vanish.
+pub(super) fn is_transparent_container(name: &str) -> bool {
+    matches!(
+        name,
+        "section"
+            | "table-of-content"
+            | "alphabetical-index"
+            | "illustration-index"
+            | "table-index"
+            | "object-index"
+            | "user-index"
+            | "bibliography"
+            | "index-body"
+            | "index-title"
+    )
 }
 
 // ---------------------------------------------------------------- styles
@@ -352,6 +403,7 @@ fn parse_styles(content: &Document, styles: Option<&Document>) -> Styles {
         parts: None,
         policy: ImagePolicy::default(),
         hidden_pages,
+        comment_slots: HashMap::new(),
     }
 }
 
@@ -363,9 +415,9 @@ pub(super) fn slide_is_hidden(page: XmlNode, styles: &Styles) -> bool {
     attr(page, "style-name").is_some_and(|name| styles.hidden_pages.contains(name))
 }
 
-/// Whether a `<text:section>` is hidden (`text:display="none"`, Writer's
-/// Format > Sections > Hide): its content is kept on the invisible layer
-/// (#753, docling#4860).
+/// Whether a `<text:section>` (or an index, #823) is hidden
+/// (`text:display="none"`, Writer's Format > Sections > Hide): its content
+/// is kept on the invisible layer (#753, docling#4860).
 pub(super) fn section_is_hidden(section: XmlNode) -> bool {
     attr(section, "display") == Some("none")
 }
@@ -439,6 +491,8 @@ fn style_info(s: XmlNode) -> StyleInfo {
     let mut info = StyleInfo {
         parent: attr(s, "parent-style-name").map(str::to_string),
         display_name: attr(s, "display-name").map(str::to_string),
+        list_style: attr(s, "list-style-name").map(str::to_string),
+        list_level: attr(s, "list-level").and_then(|v| v.parse().ok()),
         ..Default::default()
     };
     // OO1.x (#215) folds everything into one `<style:properties>` element.
@@ -509,6 +563,34 @@ pub(super) fn resolve_fmt(styles: &Styles, name: Option<&str>, base: Fmt) -> Fmt
         }
     }
     fmt
+}
+
+/// The list a paragraph is numbered with through its *paragraph style*
+/// (#826): the `style:list-style-name` of the style, or of the nearest
+/// ancestor style setting one (an empty value cancels the inheritance), and
+/// the 1-based level (`style:list-level`, 1 without it). That is how Writer
+/// numbers a "List Bullet" paragraph that no `<text:list>` wraps — the way
+/// Word keeps a list in the style's `w:numPr`, which docling's DOCX backend
+/// reads; the ODT one only knew `<text:list>` and printed such paragraphs
+/// as body text (the reporter's corpus: two thirds of its ODT files, every
+/// one of their 26 627 list items).
+pub(super) fn paragraph_list_style(styles: &Styles, name: Option<&str>) -> Option<(String, i64)> {
+    let mut cur = name.map(str::to_string);
+    let mut seen = HashSet::new();
+    while let Some(n) = cur {
+        if !seen.insert(n.clone()) {
+            break;
+        }
+        let info = styles.map.get(&n)?;
+        if let Some(list) = &info.list_style {
+            if list.is_empty() {
+                return None;
+            }
+            return Some((list.clone(), info.list_level.unwrap_or(1).max(1)));
+        }
+        cur = info.parent.clone();
+    }
+    None
 }
 
 /// The set of style names a paragraph resolves to (own, parent, display).
@@ -651,6 +733,15 @@ fn collect_runs_linked(
                 // body is recovered separately as a furniture item, see
                 // [`note_texts`].
                 "note" => {}
+                // A reviewer comment sits inline in the element it annotates
+                // (#829, docling#4436): its author, date and text are not the
+                // sentence's; they become a notes-layer comment, see
+                // [`annotations`]. `annotation-end` carries no text.
+                "annotation" | "annotation-end" => {}
+                // A `<draw:text-box>` (#831) holds blocks of its own —
+                // paragraphs, lists, tables — not this paragraph's text;
+                // the walkers emit them after it, see [`text_boxes`].
+                "text-box" => {}
                 // docling's `_odf_text_runs` recurses into every child, so an
                 // image's `<svg:desc>`/`<svg:title>` text is picked up too.
                 _ => collect_runs_linked(child, styles, base, href, out),
@@ -713,6 +804,7 @@ pub(super) fn note_calls(el: XmlNode) -> (String, Vec<(usize, roxmltree::NodeId)
                 }
                 "object" | "binary-data" => {}
                 "note" => out.push((text.chars().count(), child.id())),
+                "annotation" | "annotation-end" | "text-box" => {}
                 _ => walk(child, text, out),
             }
         }
@@ -720,16 +812,91 @@ pub(super) fn note_calls(el: XmlNode) -> (String, Vec<(usize, roxmltree::NodeId)
     let mut text = String::new();
     let mut out = Vec::new();
     if el.has_tag_name("list-item") || el.has_tag_name("list-header") {
-        for c in el
-            .children()
-            .filter(|c| c.has_tag_name("p") || c.has_tag_name("h"))
-        {
+        // An item's headings are their own text items (#827), anchored apart.
+        for c in el.children().filter(|c| c.has_tag_name("p")) {
             walk(c, &mut text, &mut out);
         }
     } else {
         walk(el, &mut text, &mut out);
     }
     (text, out)
+}
+
+// ---------------------------------------------------------------- page furniture
+
+/// A page header or footer (#830): one `<style:header>` / `<style:footer>`
+/// (or the `-left` / `-first` variant) of a `<style:master-page>`.
+pub(super) struct MasterPart<'a, 'i> {
+    pub(super) footer: bool,
+    pub(super) el: XmlNode<'a, 'i>,
+}
+
+/// The page headers and footers of every master page (#830): ODT keeps
+/// them in `styles.xml`'s `<office:master-styles>` (a flat file's sits in
+/// the one DOM), which the stylesheet reader only read text and list
+/// styles from, so none reached the furniture layer where the DOCX and
+/// `.doc` backends put theirs (the reporter's corpus: 6 223 paragraphs and
+/// 1 557 tables in 623 files). Master page by master page in file order,
+/// headers before footers, each variant that is shown (`style:display`
+/// not `false` — LibreOffice writes the unused left/first variants hidden)
+/// and has content. Python docling reads none of them (its DOCX backend
+/// does); the shape is the DOCX one, so the twin documents match.
+pub(super) fn master_page_parts<'a, 'i>(
+    content: &'a Document<'i>,
+    styles: Option<&'a Document<'i>>,
+) -> Vec<MasterPart<'a, 'i>> {
+    let dom = styles.unwrap_or(content);
+    let Some(master) = dom
+        .root_element()
+        .children()
+        .find(|c| c.has_tag_name("master-styles"))
+    else {
+        return Vec::new();
+    };
+    let mut out = Vec::new();
+    for page in master.children().filter(|c| c.has_tag_name("master-page")) {
+        for (footer, tags) in [
+            (false, ["header", "header-left", "header-first"]),
+            (true, ["footer", "footer-left", "footer-first"]),
+        ] {
+            for el in page
+                .children()
+                .filter(|c| tags.contains(&c.tag_name().name()))
+            {
+                let shown = attr(el, "display") != Some("false");
+                let has_content = el.descendants().any(|n| {
+                    n.has_tag_name("image")
+                        || n.has_tag_name("object")
+                        || n.is_text() && !n.text().unwrap_or("").trim().is_empty()
+                });
+                if shown && has_content {
+                    out.push(MasterPart { footer, el });
+                }
+            }
+        }
+    }
+    out
+}
+
+/// The page headers and footers as furniture after the body (#830): each
+/// part's blocks — paragraphs, tables, lists — walked like body blocks and
+/// wrapped on the furniture layer, the DOCX backend's flat shape (DocLang
+/// stamps each with its `<layer>`; Markdown and LaTeX leave them out).
+fn push_master_page_furniture(parts: &[MasterPart], styles: &Styles, doc: &mut DoclingDocument) {
+    for part in parts {
+        let mut sub = DoclingDocument::new("");
+        walk_blocks(
+            part.el.children().filter(XmlNode::is_element),
+            styles,
+            &mut sub,
+        );
+        for n in sub.nodes {
+            doc.nodes.push(Node::Furniture {
+                layer: docling_core::ContentLayer::Furniture,
+                inner: Box::new(n),
+            });
+        }
+    }
 }
 
 /// Footnote/endnote bodies as furniture paragraphs after the body walk.
@@ -741,6 +908,205 @@ fn push_note_furniture(body: XmlNode, doc: &mut DoclingDocument) {
                 text: super::markdown::escape_html(&super::markdown::escape_underscores(&text)),
             }),
         });
+    }
+}
+
+// ---------------------------------------------------------------- comments
+
+/// A reviewer comment — an `<office:annotation>` (#829, docling#4436). Writer
+/// writes it *inline* in the paragraph, heading or list item it annotates,
+/// with its `dc:creator`, `dc:date`, initials and `<text:p>` body as
+/// children, so the run collectors used to splice all four into the body
+/// text (`Project BudgetReviewer Alpha2026-01-15T10:00:00RARename this
+/// heading`) and nothing reached the notes layer (the reporter's corpus:
+/// 795 comments in 113 files). They are now skipped there and collected
+/// here, docling's DOCX note shape: `[author: Name (initials), time: date]:
+/// text` — the head without a part it lacks, the bare text without any
+/// head, nothing when both are empty. A comment inside a tracked-change
+/// deletion is dropped with the text, as docling drops it.
+#[derive(Clone, Debug)]
+pub(super) struct Annotation {
+    id: roxmltree::NodeId,
+    /// The `<text:p>` / `<text:h>` holding the comment — the item the
+    /// thread hangs on; `None` for one outside any (a bare cell).
+    pub(super) anchor: Option<roxmltree::NodeId>,
+    /// `office:name`, what a reply's `loext:parent-name` refers to.
+    name: Option<String>,
+    parent: Option<String>,
+    pub(super) text: String,
+}
+
+/// Every annotation below `body`, in document order.
+pub(super) fn annotations(body: XmlNode) -> Vec<Annotation> {
+    body.descendants()
+        .filter(|n| n.has_tag_name("annotation"))
+        .filter(|a| !a.ancestors().any(|x| x.has_tag_name("tracked-changes")))
+        .filter_map(|a| {
+            let child_text = |tag: &str| {
+                a.children()
+                    .find(|c| c.has_tag_name(tag))
+                    .map(|c| {
+                        c.descendants()
+                            .filter(|n| n.is_text())
+                            .filter_map(|n| n.text())
+                            .collect::<String>()
+                            .trim()
+                            .to_string()
+                    })
+                    .filter(|t| !t.is_empty())
+            };
+            let mut head: Vec<String> = Vec::new();
+            if let Some(creator) = child_text("creator") {
+                // `meta:creator-initials` (ODF 1.3) or LibreOffice's
+                // `loext:sender-initials`.
+                match child_text("creator-initials").or_else(|| child_text("sender-initials")) {
+                    Some(initials) => head.push(format!("author: {creator} ({initials})")),
+                    None => head.push(format!("author: {creator}")),
+                }
+            }
+            if let Some(date) = child_text("date") {
+                head.push(format!("time: {date}"));
+            }
+            let body: String = a
+                .children()
+                .filter(|c| c.has_tag_name("p"))
+                .map(|p| para_plain_text(p).trim().to_string())
+                .filter(|t| !t.is_empty())
+                .collect::<Vec<_>>()
+                .join("\n");
+            let text = match (head.is_empty(), body.is_empty()) {
+                (true, true) => return None,
+                (false, true) => format!("[{}]", head.join(", ")),
+                (true, false) => body,
+                (false, false) => format!("[{}]: {body}", head.join(", ")),
+            };
+            Some(Annotation {
+                id: a.id(),
+                anchor: a
+                    .ancestors()
+                    .skip(1)
+                    .find(|x| x.has_tag_name("p") || x.has_tag_name("h"))
+                    .map(|x| x.id()),
+                name: attr(a, "name").map(str::to_string),
+                parent: attr(a, "parent-name").map(str::to_string),
+                text,
+            })
+        })
+        .collect()
+}
+
+/// The comment threads (#829): each a root comment and, depth first, the
+/// replies naming it through `loext:parent-name` — a reply joins its
+/// parent's thread wherever the file puts it. A comment without a parent,
+/// naming itself or an unknown one is a root; a cycle of replies, which no
+/// root reaches, becomes a thread from its first comment. Threads are
+/// numbered from 1, `comment-{n}`, in this order.
+pub(super) fn comment_threads(annotations: &[Annotation]) -> Vec<Vec<usize>> {
+    let by_name: HashMap<&str, usize> = annotations
+        .iter()
+        .enumerate()
+        .filter_map(|(i, a)| a.name.as_deref().map(|n| (n, i)))
+        .collect();
+    let mut replies: Vec<Vec<usize>> = vec![Vec::new(); annotations.len()];
+    let mut is_reply = vec![false; annotations.len()];
+    for (i, a) in annotations.iter().enumerate() {
+        if let Some(parent) = a.parent.as_deref().and_then(|p| by_name.get(p)) {
+            if *parent != i {
+                replies[*parent].push(i);
+                is_reply[i] = true;
+            }
+        }
+    }
+    let mut seen = vec![false; annotations.len()];
+    let mut threads = Vec::new();
+    for start in (0..annotations.len())
+        .filter(|&i| !is_reply[i])
+        .chain(0..annotations.len())
+    {
+        if seen[start] {
+            continue;
+        }
+        let mut thread = Vec::new();
+        let mut stack = vec![start];
+        while let Some(i) = stack.pop() {
+            if std::mem::replace(&mut seen[i], true) {
+                continue;
+            }
+            thread.push(i);
+            stack.extend(replies[i].iter().rev());
+        }
+        threads.push(thread);
+    }
+    threads
+}
+
+/// Each comment's index among the flat [`Node::CommentSection`]s, which
+/// [`push_comment_sections`] writes in thread order.
+fn comment_slots(annotations: &[Annotation]) -> HashMap<roxmltree::NodeId, usize> {
+    comment_threads(annotations)
+        .into_iter()
+        .flatten()
+        .enumerate()
+        .map(|(slot, i)| (annotations[i].id, slot))
+        .collect()
+}
+
+/// The comments after the body as notes-layer sections (#829): one per
+/// comment, in thread order, named by thread as the item tree names its
+/// groups — the DOCX backend's flat shape (DocLang writes each as a
+/// `<layer value="notes"/>` text; Markdown and LaTeX leave them out).
+fn push_comment_sections(annotations: &[Annotation], doc: &mut DoclingDocument) {
+    for (t, thread) in comment_threads(annotations).iter().enumerate() {
+        for &i in thread {
+            doc.nodes.push(Node::CommentSection {
+                name: format!("comment-{}", t + 1),
+                text: annotations[i].text.clone(),
+                refs_note_text: false,
+                grouped: true,
+            });
+        }
+    }
+}
+
+/// The flat comment slots of the comments the paragraph-like elements in
+/// `els` hold directly (an annotation in a nested list item, text box or
+/// note belongs to the paragraph there).
+fn comment_slots_in<'a, 'i: 'a>(
+    els: impl Iterator<Item = XmlNode<'a, 'i>>,
+    styles: &Styles,
+) -> Vec<usize> {
+    let mut slots = Vec::new();
+    for el in els {
+        for a in el
+            .descendants()
+            .filter(|n| n.has_tag_name("annotation"))
+            .filter(|a| {
+                a.ancestors()
+                    .skip(1)
+                    .find(|x| x.has_tag_name("p") || x.has_tag_name("h"))
+                    .is_some_and(|x| x.id() == el.id())
+            })
+        {
+            if let Some(&slot) = styles.comment_slots.get(&a.id()) {
+                slots.push(slot);
+            }
+        }
+    }
+    slots
+}
+
+/// Wrap the node just pushed — the text node of an annotated paragraph,
+/// heading or list item (#829) — in [`Node::Commented`] with `slots`.
+fn wrap_last_commented(doc: &mut DoclingDocument, slots: Vec<usize>) {
+    if slots.is_empty() {
+        return;
+    }
+    if let Some(last) = doc.nodes.last_mut() {
+        let inner = std::mem::replace(last, Node::PageBreak);
+        *last = Node::Commented {
+            comments: slots,
+            inner: Box::new(inner),
+        };
     }
 }
 
@@ -900,14 +1266,81 @@ fn walk_blocks<'a, 'i: 'a>(
     doc: &mut DoclingDocument,
 ) {
     let mut prev_state: Option<ListCont> = None;
+    let mut style_run: Option<StyleListRun> = None;
     for el in els {
         if is_list_tag(el.tag_name().name()) {
+            style_run = None;
             prev_state = add_odf_list(el, styles, doc, 0, 1, false, prev_state.take());
+        } else if let Some((style, level)) = el
+            .has_tag_name("p")
+            .then(|| paragraph_list_style(styles, attr(el, "style-name")))
+            .flatten()
+        {
+            prev_state = None;
+            add_style_list_paragraph(el, style, level, styles, doc, &mut style_run);
         } else {
             prev_state = None;
+            style_run = None;
             handle_block(el, styles, doc, 0, &mut Vec::new());
         }
     }
+}
+
+/// The list a run of consecutive style-numbered paragraphs (#826) forms: a
+/// change of list style opens a new one, as Writer starts a new list.
+struct StyleListRun {
+    style: String,
+    enumerated: bool,
+    counter: i64,
+    prefix: String,
+    suffix: String,
+}
+
+/// A `<text:p>` whose paragraph style names a list style (#826): one item of
+/// the list the run of such paragraphs builds, numbered along it.
+fn add_style_list_paragraph(
+    el: XmlNode,
+    style: String,
+    level: i64,
+    styles: &Styles,
+    doc: &mut DoclingDocument,
+    run: &mut Option<StyleListRun>,
+) {
+    emit_paragraph_images(el, styles, doc);
+    let mut runs = Vec::new();
+    collect_runs(el, styles, Fmt::default(), &mut runs);
+    let text = clean_lines(&runs_to_text(runs));
+    if text.is_empty() {
+        return;
+    }
+    let fresh = run.as_ref().is_none_or(|r| r.style != style);
+    if fresh {
+        let lv = list_level(styles, Some(&style), level);
+        *run = Some(StyleListRun {
+            style,
+            enumerated: lv.is_some_and(|l| l.numbered),
+            counter: lv.map_or(0, |l| l.start - 1),
+            prefix: lv.map(|l| l.prefix.clone()).unwrap_or_default(),
+            suffix: lv.map(|l| l.suffix.clone()).unwrap_or_default(),
+        });
+    }
+    let Some(r) = run.as_mut() else {
+        return;
+    };
+    r.counter += 1;
+    let depth = (level - 1).clamp(0, u8::MAX as i64) as u8;
+    push_odf_list_item(
+        doc,
+        text,
+        depth,
+        r.enumerated,
+        r.counter,
+        &r.prefix,
+        &r.suffix,
+        fresh,
+    );
+    wrap_last_commented(doc, comment_slots_in(std::iter::once(el), styles));
+    walk_text_boxes(el, styles, doc);
 }
 
 fn handle_block(
@@ -935,7 +1368,9 @@ fn handle_block(
                     level: (level + 1) as u8,
                     text,
                 });
+                wrap_last_commented(doc, comment_slots_in(std::iter::once(el), styles));
             }
+            walk_text_boxes(el, styles, doc);
         }
         "p" => {
             // docling's `_add_odf_paragraph` emits a paragraph's pictures before
@@ -946,6 +1381,9 @@ fn handle_block(
             collect_runs(el, styles, Fmt::default(), &mut runs);
             let text = runs_to_text(runs.clone());
             if text.is_empty() {
+                // A paragraph that only anchors a text box still yields the
+                // box's blocks (#831).
+                walk_text_boxes(el, styles, doc);
                 return;
             }
             if names.iter().any(|n| n == "Title") {
@@ -958,6 +1396,8 @@ fn handle_block(
                 // paragraph collapses back to `Node::Paragraph`.
                 doc.push(inline_paragraph_node(text, runs_to_inline(runs), false));
             }
+            wrap_last_commented(doc, comment_slots_in(std::iter::once(el), styles));
+            walk_text_boxes(el, styles, doc);
         }
         n if is_list_tag(n) => {
             add_odf_list(el, styles, doc, list_level, 1, false, None);
@@ -967,11 +1407,12 @@ fn handle_block(
                 doc.push(Node::Table(table));
             }
         }
-        "section" => {
+        n if is_transparent_container(n) => {
             // docling walks a `<text:section>`'s children as ordinary body
             // blocks (docling#3852 / #178) — headings, paragraphs, tables and
-            // lists inside a section were silently dropped before. Recursing
-            // through `walk_blocks` keeps list numbering continuing across the
+            // lists inside a section were silently dropped before — and,
+            // since docling#4750 (#823), an index's too. Recursing through
+            // `walk_blocks` keeps list numbering continuing across the
             // section's own consecutive lists (`_add_odf_children`) and
             // handles nested sections. A hidden section's blocks go to the
             // invisible layer (#753).
@@ -986,8 +1427,43 @@ fn handle_block(
         // `_add_odf_children` has it.
         "frame" => {
             emit_frame_graphic(el, styles, doc);
+            walk_text_boxes(el, styles, doc);
         }
         _ => {}
+    }
+}
+
+/// Whether `n` sits inside a `<draw:text-box>` below `root` (#831): such a
+/// node belongs to the box's blocks, which walk on their own.
+pub(super) fn in_text_box(n: XmlNode, root: XmlNode) -> bool {
+    n.ancestors()
+        .skip(1)
+        .take_while(|a| *a != root)
+        .any(|a| a.has_tag_name("text-box"))
+}
+
+/// The text boxes a paragraph, heading or frame anchors (#831): every
+/// `<draw:text-box>` below `el` that is not inside another one — a box in
+/// a box walks with the paragraph of the outer box. Writer anchors a text
+/// box as `<draw:frame><draw:text-box>…</draw:text-box></draw:frame>`
+/// inside the paragraph; the run collectors read the box's paragraphs,
+/// list items and table cells as the anchoring paragraph's own text, run
+/// together with no separator (`Anchor paragraph text.First textbox
+/// paragraph.Second…`), and a block-level frame's box was dropped (the
+/// reporter's corpus: 187 of 632 files). Its blocks now walk as blocks
+/// after the anchoring paragraph, as the DOCX backend emits a
+/// `w:txbxContent`'s — a table in a box stays a table here, where that
+/// backend flattens it to its cells' paragraphs (docling's `.//w:p`).
+pub(super) fn text_boxes<'a, 'i>(el: XmlNode<'a, 'i>) -> Vec<XmlNode<'a, 'i>> {
+    el.descendants()
+        .filter(|n| n.has_tag_name("text-box") && !in_text_box(*n, el))
+        .collect()
+}
+
+/// The blocks of the text boxes `el` anchors (#831), after it.
+fn walk_text_boxes(el: XmlNode, styles: &Styles, doc: &mut DoclingDocument) {
+    for tb in text_boxes(el) {
+        walk_blocks(tb.children().filter(XmlNode::is_element), styles, doc);
     }
 }
 
@@ -995,7 +1471,11 @@ fn handle_block(
 /// node. OO1.x anchors `<draw:image>` directly — without a frame wrapper —
 /// so frameless bitmaps yield a picture each too (#215).
 fn emit_paragraph_images(el: XmlNode, styles: &Styles, doc: &mut DoclingDocument) {
-    for frame in el.descendants().filter(|n| n.has_tag_name("frame")) {
+    // A frame inside a text box belongs to the box's own blocks (#831).
+    for frame in el
+        .descendants()
+        .filter(|n| n.has_tag_name("frame") && !in_text_box(*n, el))
+    {
         emit_frame_graphic(frame, styles, doc);
     }
     for img in el
@@ -1090,7 +1570,9 @@ pub(super) fn list_items<'a, 'i>(list: XmlNode<'a, 'i>) -> impl Iterator<Item = 
 
 /// An item's rendered text (its direct paragraphs' runs, cleaned to single lines)
 /// and its directly-nested `<text:list>` elements. Mirrors docling's
-/// `_odf_list_item_content` with `flatten_nested_text=False`.
+/// `_odf_list_item_content` with `flatten_nested_text=False` — bar its
+/// `<text:h>` children, which are headings, not item text (#827, see
+/// [`item_headings`]).
 pub(super) fn odf_item_content<'a, 'i>(
     item: XmlNode<'a, 'i>,
     styles: &Styles,
@@ -1100,7 +1582,7 @@ pub(super) fn odf_item_content<'a, 'i>(
     for child in item.children().filter(XmlNode::is_element) {
         match child.tag_name().name() {
             n if is_list_tag(n) => nested.push(child),
-            "p" | "h" => {
+            "p" => {
                 let mut runs = Vec::new();
                 collect_runs(child, styles, Fmt::default(), &mut runs);
                 let text = clean_lines(&runs_to_text(runs));
@@ -1124,9 +1606,27 @@ pub(super) fn item_has_content(item: XmlNode, styles: &Styles) -> bool {
     !odf_item_content(item, styles).0.is_empty()
         || item
             .children()
-            .filter(|c| c.has_tag_name("p") || c.has_tag_name("h"))
+            .filter(|c| c.has_tag_name("p"))
             .flat_map(|p| p.descendants())
             .any(|n| n.has_tag_name("image") || n.has_tag_name("object") || n.has_tag_name("note"))
+}
+
+/// A list item's direct `<text:h>` children (#827). Writer's outline
+/// numbering — and a Word document's numbered headings, once LibreOffice
+/// has written them — wraps chapter headings in `<text:list>` /
+/// `<text:list-item>`, one nested list per outline level; docling's
+/// `_odf_list_item_content` reads the heading as the item's text, so every
+/// such heading became a `list_item` (the reporter's corpus: 515 of them,
+/// all demoted) and the section hierarchy was gone. The walkers emit these
+/// as headings with their `outline-level`, outside the list, as the `.docx`
+/// backend emits the same document's; an item made of headings alone is no
+/// list item at all (a list of them opens no list group), and the number
+/// the outline list would print is not added, as the DOCX backend prints
+/// none for the twin.
+pub(super) fn item_headings<'a, 'i>(
+    item: XmlNode<'a, 'i>,
+) -> impl Iterator<Item = XmlNode<'a, 'i>> {
+    item.children().filter(|c| c.has_tag_name("h"))
 }
 
 /// Split on newlines, strip each line, drop the blanks, re-join with spaces —
@@ -1143,7 +1643,9 @@ pub(super) fn clean_lines(text: &str) -> String {
 pub(super) fn list_has_renderable(list: XmlNode, styles: &Styles) -> bool {
     list_items(list).any(|item| {
         let (_, nested) = odf_item_content(item, styles);
-        item_has_content(item, styles) || nested.iter().any(|n| list_has_renderable(*n, styles))
+        item_has_content(item, styles)
+            || item_headings(item).next().is_some()
+            || nested.iter().any(|n| list_has_renderable(*n, styles))
     })
 }
 
@@ -1173,9 +1675,7 @@ pub(super) fn level_is_enumerated(
     level: i64,
     fallback: bool,
 ) -> bool {
-    attr(list, "style-name")
-        .and_then(|name| styles.lists.get(name))
-        .and_then(|levels| levels.get(&level))
+    list_level(styles, attr(list, "style-name"), level)
         .map(|lv| lv.numbered)
         .unwrap_or_else(|| match list.tag_name().name() {
             "ordered-list" => true,
@@ -1186,19 +1686,24 @@ pub(super) fn level_is_enumerated(
 
 /// A list level's `start-value` (default 1).
 pub(super) fn level_start(styles: &Styles, list: XmlNode, level: i64) -> i64 {
-    attr(list, "style-name")
-        .and_then(|name| styles.lists.get(name))
-        .and_then(|levels| levels.get(&level))
+    list_level(styles, attr(list, "style-name"), level)
         .map(|lv| lv.start)
         .unwrap_or(1)
+}
+
+/// One level of a named list style, when the style defines it.
+pub(super) fn list_level<'a>(
+    styles: &'a Styles,
+    name: Option<&str>,
+    level: i64,
+) -> Option<&'a OdfLevel> {
+    styles.lists.get(name?)?.get(&level)
 }
 
 /// A level's `num-prefix`/`num-suffix` — the affixes wrapping an enumerated
 /// marker (e.g. `"" / "."` → `1.`).
 pub(super) fn level_affixes(styles: &Styles, list: XmlNode, level: i64) -> (String, String) {
-    attr(list, "style-name")
-        .and_then(|name| styles.lists.get(name))
-        .and_then(|levels| levels.get(&level))
+    list_level(styles, attr(list, "style-name"), level)
         .map(|lv| (lv.prefix.clone(), lv.suffix.clone()))
         .unwrap_or_default()
 }
@@ -1229,6 +1734,7 @@ fn add_odf_list(
     if !should_continue && !list_has_direct_text(list, styles) {
         for item in list_items(list) {
             let (_text, nested) = odf_item_content(item, styles);
+            emit_item_headings(item, styles, doc);
             for n in nested {
                 add_odf_list(n, styles, doc, depth, style_level + 1, style_enum, None);
             }
@@ -1259,6 +1765,8 @@ fn add_odf_list(
             .into_iter()
             .filter(|n| list_has_renderable(*n, styles))
             .collect();
+        // The item's headings (#827) come out before its text, outside the list.
+        emit_item_headings(item, styles, doc);
         if !has_content && nested.is_empty() {
             continue;
         }
@@ -1278,53 +1786,23 @@ fn add_odf_list(
             continue;
         }
         counter += 1;
-        let (ordered, number, marker) = if current_enum {
-            let n = counter.max(0) as u64;
-            // docling renders an enumerated marker inside the `<ldiv>`:
-            // `<marker>{prefix}{n}{suffix}</marker>` (e.g. `1.`).
-            (true, n, Some(format!("{prefix}{n}{suffix}")))
-        } else {
-            (false, 0, None)
-        };
-        // The item's marker in docling's model is `_odf_list_marker`: the
-        // counter and the level's `num-suffix`, `.` without one. docling-core's
-        // Markdown prints one of digits and a dot (`1.`) as a list number; any
-        // other (`1)`) is a text prefix behind a bullet (`- 1) text`,
-        // `orig_list_item_marker_mode=AUTO`, as the DOCX walk does). DocLang
-        // keeps the ordered item and its `<marker>` through `dclx`.
-        let item_marker = format!(
-            "{n}{}",
-            if suffix.is_empty() {
-                "."
-            } else {
-                suffix.as_str()
-            },
-            n = counter.max(0)
-        );
-        let (ordered, marker, text, dclx) = match marker {
-            Some(m) if !is_plain_number_marker(&item_marker) => {
-                let dclx = Some(ListItemDclx {
-                    ordered: true,
-                    marker: Some(m),
-                    text: text.clone(),
-                    runs: Vec::new(),
-                });
-                (false, None, format!("{item_marker} {text}"), dclx)
-            }
-            marker => (ordered, marker, text, None),
-        };
-        doc.push(Node::ListItem {
-            ordered,
-            number,
-            first_in_list: std::mem::take(&mut first),
+        push_odf_list_item(
+            doc,
             text,
-            level: depth,
-            marker,
-            location: None,
-            dclx,
-            href: None,
-            layer: None,
-        });
+            depth,
+            current_enum,
+            counter,
+            &prefix,
+            &suffix,
+            std::mem::take(&mut first),
+        );
+        wrap_last_commented(
+            doc,
+            comment_slots_in(item.children().filter(|c| c.has_tag_name("p")), styles),
+        );
+        for p in item.children().filter(|c| c.has_tag_name("p")) {
+            walk_text_boxes(p, styles, doc);
+        }
         has_last = true;
         for n in &nested {
             add_odf_list(
@@ -1346,6 +1824,72 @@ fn add_odf_list(
         prefix,
         suffix,
     })
+}
+
+/// Push one flat list item: the `counter`-th of a list at Markdown `depth`,
+/// `enumerated` with the level's `prefix` / `suffix` around its number (an
+/// `<ldiv>` marker) or bulleted; `first` opens a fresh docling ListGroup.
+#[allow(clippy::too_many_arguments)]
+fn push_odf_list_item(
+    doc: &mut DoclingDocument,
+    text: String,
+    depth: u8,
+    enumerated: bool,
+    counter: i64,
+    prefix: &str,
+    suffix: &str,
+    first: bool,
+) {
+    let (ordered, number, marker) = if enumerated {
+        let n = counter.max(0) as u64;
+        // docling renders an enumerated marker inside the `<ldiv>`:
+        // `<marker>{prefix}{n}{suffix}</marker>` (e.g. `1.`).
+        (true, n, Some(format!("{prefix}{n}{suffix}")))
+    } else {
+        (false, 0, None)
+    };
+    // The item's marker in docling's model is `_odf_list_marker`: the
+    // counter and the level's `num-suffix`, `.` without one. docling-core's
+    // Markdown prints one of digits and a dot (`1.`) as a list number; any
+    // other (`1)`) is a text prefix behind a bullet (`- 1) text`,
+    // `orig_list_item_marker_mode=AUTO`, as the DOCX walk does). DocLang
+    // keeps the ordered item and its `<marker>` through `dclx`.
+    let item_marker = format!(
+        "{n}{}",
+        if suffix.is_empty() { "." } else { suffix },
+        n = counter.max(0)
+    );
+    let (ordered, marker, text, dclx) = match marker {
+        Some(m) if !is_plain_number_marker(&item_marker) => {
+            let dclx = Some(ListItemDclx {
+                ordered: true,
+                marker: Some(m),
+                text: text.clone(),
+                runs: Vec::new(),
+            });
+            (false, None, format!("{item_marker} {text}"), dclx)
+        }
+        marker => (ordered, marker, text, None),
+    };
+    doc.push(Node::ListItem {
+        ordered,
+        number,
+        first_in_list: first,
+        text,
+        level: depth,
+        marker,
+        location: None,
+        dclx,
+        href: None,
+        layer: None,
+    });
+}
+
+/// A list item's `<text:h>` children as headings (#827), at the top level.
+fn emit_item_headings(item: XmlNode, styles: &Styles, doc: &mut DoclingDocument) {
+    for h in item_headings(item) {
+        handle_block(h, styles, doc, 0, &mut Vec::new());
+    }
 }
 
 /// A marker of digits and a dot (`12.`), which docling-core's Markdown
@@ -1621,6 +2165,11 @@ fn para_plain_into(el: XmlNode, out: &mut String) {
                 // body is recovered separately as a furniture item, see
                 // [`note_texts`].
                 "note" => {}
+                // A reviewer comment's metadata and text (#829), see
+                // [`annotations`].
+                "annotation" | "annotation-end" => {}
+                // A text box's blocks (#831) are their own items.
+                "text-box" => {}
                 _ => para_plain_into(child, out),
             }
         }
@@ -2360,6 +2909,255 @@ mod tests {
             md.contains("Nested paragraph."),
             "nested section content:\n{md}"
         );
+    }
+
+    /// #823 (docling#4750): a table of contents — and every other index —
+    /// is transparent like a section: its title and entries, and whatever
+    /// LibreOffice put inside the index body (an unclosed Word TOC field
+    /// swallows the following headings, paragraphs and tables), walk as
+    /// body blocks; the `*-source` template is not content; a hidden index
+    /// goes to the invisible layer.
+    #[test]
+    fn index_body_content_is_walked() {
+        let xml = r#"<root xmlns:text="x" xmlns:table="t">
+            <text:p>Intro.</text:p>
+            <text:table-of-content text:name="TOC">
+              <text:table-of-content-source text:outline-level="10">
+                <text:index-title-template>Template title</text:index-title-template>
+              </text:table-of-content-source>
+              <text:index-body>
+                <text:index-title text:name="TOC_Head"><text:p>Contents</text:p></text:index-title>
+                <text:p>Chapter One<text:tab/>1</text:p>
+                <text:h text:outline-level="1">Chapter One</text:h>
+                <table:table><table:table-row>
+                  <table:table-cell><text:p>Cell</text:p></table:table-cell>
+                </table:table-row></table:table>
+              </text:index-body>
+            </text:table-of-content>
+            <text:alphabetical-index text:name="Idx" text:display="none">
+              <text:index-body><text:p>Hidden entry</text:p></text:index-body>
+            </text:alphabetical-index>
+            <text:p>Outro.</text:p></root>"#;
+        let dom = Document::parse(xml).unwrap();
+        let styles = parse_styles(&dom, None);
+        let mut doc = DoclingDocument::new("s");
+        walk_text(dom.root_element(), &styles, &mut doc);
+        assert_eq!(
+            doc.export_to_markdown(),
+            "Intro.\n\nContents\n\nChapter One\t1\n\n## Chapter One\n\n| Cell   |\n|--------|\n\nOutro.\n"
+        );
+        assert!(doc.nodes.iter().any(|n| matches!(
+            n,
+            Node::Furniture {
+                layer: docling_core::ContentLayer::Invisible,
+                ..
+            }
+        )));
+        for container in [
+            "table-of-content",
+            "user-index",
+            "bibliography",
+            "index-body",
+        ] {
+            assert!(is_transparent_container(container));
+        }
+        assert!(!is_transparent_container("table-of-content-source"));
+    }
+
+    /// #826: paragraphs numbered through their paragraph style's
+    /// `style:list-style-name` — no `<text:list>` — are list items: a run of
+    /// them is one list, a change of list style a new one, the style
+    /// inherited through `parent-style-name` and an automatic style; the
+    /// numbered level's `start-value` and `num-suffix` apply.
+    #[test]
+    fn style_list_name_paragraphs_are_list_items() {
+        let xml = r#"<root xmlns:text="x" xmlns:style="s">
+            <office:styles xmlns:office="o">
+              <text:list-style style:name="LB"><text:list-level-style-bullet text:level="1" text:bullet-char="•"/></text:list-style>
+              <text:list-style style:name="LN"><text:list-level-style-number text:level="1" style:num-format="1" style:num-suffix=")" text:start-value="3"/></text:list-style>
+              <style:style style:name="Bul" style:family="paragraph" style:list-style-name="LB"/>
+              <style:style style:name="Inh" style:family="paragraph" style:parent-style-name="Bul"/>
+              <style:style style:name="P1" style:family="paragraph" style:parent-style-name="Inh"/>
+              <style:style style:name="Num" style:family="paragraph" style:list-style-name="LN"/>
+              <style:style style:name="Off" style:family="paragraph" style:parent-style-name="Num" style:list-style-name=""/>
+            </office:styles>
+            <text:p>Intro:</text:p>
+            <text:p text:style-name="Bul">one</text:p>
+            <text:p text:style-name="Inh">two</text:p>
+            <text:p text:style-name="P1">three</text:p>
+            <text:p text:style-name="Num">four</text:p>
+            <text:p text:style-name="Num">five</text:p>
+            <text:p text:style-name="Off">plain again</text:p></root>"#;
+        let dom = Document::parse(xml).unwrap();
+        let styles = parse_styles(&dom, None);
+        assert_eq!(
+            paragraph_list_style(&styles, Some("P1")),
+            Some(("LB".to_string(), 1))
+        );
+        assert_eq!(paragraph_list_style(&styles, Some("Off")), None);
+        assert_eq!(paragraph_list_style(&styles, Some("nope")), None);
+        let mut doc = DoclingDocument::new("s");
+        walk_text(dom.root_element(), &styles, &mut doc);
+        assert_eq!(
+            doc.export_to_markdown(),
+            "Intro:\n\n- one\n- two\n- three\n\n- 3) four\n- 4) five\n\nplain again\n"
+        );
+    }
+
+    /// #827: a `<text:h>` inside a list item is a heading of its outline
+    /// level, not a list item — a list of headings alone prints no list,
+    /// and a heading item among bullet items keeps the bullets a list.
+    #[test]
+    fn headings_inside_list_items_are_headings() {
+        let xml = r#"<root xmlns:text="x">
+            <text:list text:style-name="Outline">
+              <text:list-item>
+                <text:h text:outline-level="1">Context</text:h>
+                <text:list><text:list-item><text:h text:outline-level="2">Background</text:h></text:list-item></text:list>
+              </text:list-item>
+            </text:list>
+            <text:p>Body one.</text:p>
+            <text:list text:style-name="Outline" text:continue-numbering="true">
+              <text:list-item><text:list><text:list-item><text:h text:outline-level="2">Target</text:h></text:list-item></text:list></text:list-item>
+            </text:list>
+            <text:list>
+              <text:list-item><text:h text:outline-level="3">Inside bullets</text:h></text:list-item>
+              <text:list-item><text:p>bullet</text:p></text:list-item>
+            </text:list></root>"#;
+        let dom = Document::parse(xml).unwrap();
+        let styles = parse_styles(&dom, None);
+        let mut doc = DoclingDocument::new("s");
+        walk_text(dom.root_element(), &styles, &mut doc);
+        assert_eq!(
+            doc.export_to_markdown(),
+            "## Context\n\n### Background\n\nBody one.\n\n### Target\n\n#### Inside bullets\n\n- bullet\n"
+        );
+    }
+
+    /// #829 (docling#4436): a comment's author, date, initials and text
+    /// stay out of the annotated heading, paragraph and list item; each
+    /// becomes a notes-layer `comment_section` with docling's note text,
+    /// a reply joining its parent's thread, and the annotated node carries
+    /// the back-references.
+    #[test]
+    fn annotations_are_notes_not_body_text() {
+        let xml = r#"<root xmlns:text="x" xmlns:office="o" xmlns:dc="d" xmlns:loext="l">
+            <text:h text:outline-level="1">Budget<office:annotation office:name="c1"><dc:creator>Alpha</dc:creator><dc:date>2026-01-15T10:00:00</dc:date><loext:sender-initials>RA</loext:sender-initials><text:p>Rename</text:p></office:annotation></text:h>
+            <text:p>Total is <office:annotation office:name="c2"><dc:creator>Alpha</dc:creator><text:p>Verify</text:p><text:p>twice</text:p></office:annotation>500 EUR.<office:annotation-end office:name="c2"/></text:p>
+            <text:p>Reply first: <office:annotation loext:parent-name="c1"><dc:creator>Bravo</dc:creator><dc:date>2026-01-16T09:00:00</dc:date><text:p>Agreed</text:p></office:annotation>text.</text:p>
+            <text:list><text:list-item><text:p>Item<office:annotation><text:p>Bare</text:p></office:annotation></text:p></text:list-item></text:list></root>"#;
+        let dom = Document::parse(xml).unwrap();
+        let comments = annotations(dom.root_element());
+        assert_eq!(
+            comments.iter().map(|c| c.text.as_str()).collect::<Vec<_>>(),
+            [
+                "[author: Alpha (RA), time: 2026-01-15T10:00:00]: Rename",
+                "[author: Alpha]: Verify\ntwice",
+                "[author: Bravo, time: 2026-01-16T09:00:00]: Agreed",
+                "Bare",
+            ]
+        );
+        assert_eq!(comment_threads(&comments), [vec![0, 2], vec![1], vec![3]]);
+        let mut styles = parse_styles(&dom, None);
+        styles.comment_slots = comment_slots(&comments);
+        let mut doc = DoclingDocument::new("s");
+        walk_text(dom.root_element(), &styles, &mut doc);
+        push_comment_sections(&comments, &mut doc);
+        assert_eq!(
+            doc.export_to_markdown(),
+            "## Budget\n\nTotal is 500 EUR.\n\nReply first: text.\n\n- Item\n"
+        );
+        let wrapped: Vec<Vec<usize>> = doc
+            .nodes
+            .iter()
+            .filter_map(|n| match n {
+                Node::Commented { comments, .. } => Some(comments.clone()),
+                _ => None,
+            })
+            .collect();
+        // Slots are positions in thread order: c1 0, its reply 1, c2 2, Bare 3.
+        assert_eq!(wrapped, [vec![0], vec![2], vec![1], vec![3]]);
+        let sections: Vec<(String, String)> = doc
+            .nodes
+            .iter()
+            .filter_map(|n| match n {
+                Node::CommentSection { name, text, .. } => Some((name.clone(), text.clone())),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(sections.len(), 4);
+        assert_eq!(sections[0].0, "comment-1");
+        assert_eq!(sections[1].0, "comment-1");
+        assert_eq!(sections[2].0, "comment-2");
+        assert_eq!(sections[3].0, "comment-3");
+        assert!(sections[1].1.ends_with("Agreed"));
+    }
+
+    /// #830: the master pages' headers and footers are furniture after the
+    /// body — their paragraphs and tables walked as blocks, headers before
+    /// footers — out of the Markdown; a hidden variant and an empty one
+    /// are not.
+    #[test]
+    fn master_page_headers_and_footers_are_furniture() {
+        let xml = r#"<office:document xmlns:office="o" xmlns:text="x" xmlns:style="s" xmlns:table="t">
+            <office:master-styles>
+              <style:master-page style:name="Standard">
+                <style:header><text:p>Head <text:page-number>1</text:page-number></text:p>
+                  <table:table><table:table-row><table:table-cell><text:p>Version</text:p></table:table-cell></table:table-row></table:table>
+                </style:header>
+                <style:header-left style:display="false"><text:p>Unused</text:p></style:header-left>
+                <style:footer><text:p>Foot</text:p></style:footer>
+              </style:master-page>
+              <style:master-page style:name="Endnote"><style:header/><style:footer><text:p> </text:p></style:footer></style:master-page>
+            </office:master-styles>
+            <office:body><office:text><text:p>Body.</text:p></office:text></office:body></office:document>"#;
+        let dom = Document::parse(xml).unwrap();
+        let parts = master_page_parts(&dom, None);
+        assert_eq!(
+            parts.iter().map(|p| p.footer).collect::<Vec<_>>(),
+            [false, true]
+        );
+        let styles = parse_styles(&dom, None);
+        let mut doc = DoclingDocument::new("s");
+        push_master_page_furniture(&parts, &styles, &mut doc);
+        let furniture: Vec<String> = doc
+            .nodes
+            .iter()
+            .map(|n| match n {
+                Node::Furniture { inner, .. } => match &**inner {
+                    Node::Paragraph { text } => text.clone(),
+                    Node::Table(t) => format!("table {}", t.rows[0].join("|")),
+                    other => format!("{other:?}"),
+                },
+                other => format!("body {other:?}"),
+            })
+            .collect();
+        assert_eq!(furniture, ["Head 1", "table Version", "Foot"]);
+        assert_eq!(doc.export_to_markdown(), "");
+    }
+
+    /// #831: a `<draw:text-box>`'s paragraphs, list and table are blocks
+    /// after the anchoring paragraph, not its text; a paragraph that only
+    /// anchors a box still yields the box; a box inside a box walks with
+    /// the outer box's paragraph; a block-level frame's box walks too.
+    #[test]
+    fn text_box_blocks_are_separate_items() {
+        let xml = r#"<root xmlns:text="x" xmlns:draw="d" xmlns:table="t">
+            <text:p>Anchor.<draw:frame><draw:text-box><text:p>First.</text:p><text:list><text:list-item><text:p>item</text:p></text:list-item></text:list><table:table><table:table-row><table:table-cell><text:p>Cell</text:p></table:table-cell></table:table-row></table:table></draw:text-box></draw:frame> tail.</text:p>
+            <text:p><draw:frame><draw:text-box><text:p>Only a box.<draw:frame><draw:text-box><text:p>Inner.</text:p></draw:text-box></draw:frame></text:p></draw:text-box></draw:frame></text:p>
+            <draw:frame><draw:text-box><text:h text:outline-level="1">Boxed heading</text:h></draw:text-box></draw:frame>
+            <text:p>After.</text:p></root>"#;
+        let dom = Document::parse(xml).unwrap();
+        let styles = parse_styles(&dom, None);
+        let mut doc = DoclingDocument::new("s");
+        walk_text(dom.root_element(), &styles, &mut doc);
+        assert_eq!(
+            doc.export_to_markdown(),
+            "Anchor. tail.\n\nFirst.\n\n- item\n\n| Cell   |\n|--------|\n\nOnly a box.\n\nInner.\n\n## Boxed heading\n\nAfter.\n"
+        );
+        let p = dom.root_element().first_element_child().unwrap();
+        assert_eq!(text_boxes(p).len(), 1);
+        assert_eq!(para_plain_text(p), "Anchor. tail.");
     }
 
     #[test]

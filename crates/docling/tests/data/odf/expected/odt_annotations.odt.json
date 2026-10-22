@@ -1,0 +1,201 @@
+{
+  "schema_name": "DoclingDocument",
+  "version": "1.10.0",
+  "name": "odt_annotations",
+  "origin": {
+    "mimetype": "text/plain",
+    "binary_hash": 9464840936515396067,
+    "filename": "odt_annotations"
+  },
+  "furniture": {
+    "self_ref": "#/furniture",
+    "children": [],
+    "content_layer": "furniture",
+    "name": "_root_",
+    "label": "unspecified"
+  },
+  "body": {
+    "self_ref": "#/body",
+    "children": [
+      {
+        "$ref": "#/texts/0"
+      },
+      {
+        "$ref": "#/texts/2"
+      },
+      {
+        "$ref": "#/groups/2"
+      }
+    ],
+    "content_layer": "body",
+    "name": "_root_",
+    "label": "unspecified"
+  },
+  "groups": [
+    {
+      "self_ref": "#/groups/0",
+      "parent": {
+        "$ref": "#/texts/0"
+      },
+      "children": [
+        {
+          "$ref": "#/texts/1"
+        }
+      ],
+      "content_layer": "notes",
+      "name": "comment-1",
+      "label": "comment_section"
+    },
+    {
+      "self_ref": "#/groups/1",
+      "parent": {
+        "$ref": "#/texts/2"
+      },
+      "children": [
+        {
+          "$ref": "#/texts/3"
+        }
+      ],
+      "content_layer": "notes",
+      "name": "comment-2",
+      "label": "comment_section"
+    },
+    {
+      "self_ref": "#/groups/2",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [
+        {
+          "$ref": "#/texts/4"
+        }
+      ],
+      "content_layer": "body",
+      "name": "list",
+      "label": "list"
+    },
+    {
+      "self_ref": "#/groups/3",
+      "parent": {
+        "$ref": "#/texts/4"
+      },
+      "children": [
+        {
+          "$ref": "#/texts/5"
+        }
+      ],
+      "content_layer": "notes",
+      "name": "comment-3",
+      "label": "comment_section"
+    }
+  ],
+  "texts": [
+    {
+      "self_ref": "#/texts/0",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [
+        {
+          "$ref": "#/groups/0"
+        }
+      ],
+      "content_layer": "body",
+      "label": "section_header",
+      "prov": [],
+      "comments": [
+        {
+          "$ref": "#/groups/0"
+        }
+      ],
+      "orig": "Project Budget",
+      "text": "Project Budget",
+      "level": 1
+    },
+    {
+      "self_ref": "#/texts/1",
+      "parent": {
+        "$ref": "#/groups/0"
+      },
+      "children": [],
+      "content_layer": "notes",
+      "label": "text",
+      "prov": [],
+      "orig": "[author: Reviewer Alpha (RA), time: 2026-01-15T10:00:00]: Rename this heading",
+      "text": "[author: Reviewer Alpha (RA), time: 2026-01-15T10:00:00]: Rename this heading"
+    },
+    {
+      "self_ref": "#/texts/2",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [
+        {
+          "$ref": "#/groups/1"
+        }
+      ],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [],
+      "comments": [
+        {
+          "$ref": "#/groups/1"
+        }
+      ],
+      "orig": "The total allocation is 500 EUR.",
+      "text": "The total allocation is 500 EUR."
+    },
+    {
+      "self_ref": "#/texts/3",
+      "parent": {
+        "$ref": "#/groups/1"
+      },
+      "children": [],
+      "content_layer": "notes",
+      "label": "text",
+      "prov": [],
+      "orig": "[author: Reviewer Alpha (RA), time: 2026-01-15T10:05:00]: Verify amount",
+      "text": "[author: Reviewer Alpha (RA), time: 2026-01-15T10:05:00]: Verify amount"
+    },
+    {
+      "self_ref": "#/texts/4",
+      "parent": {
+        "$ref": "#/groups/2"
+      },
+      "children": [
+        {
+          "$ref": "#/groups/3"
+        }
+      ],
+      "content_layer": "body",
+      "label": "list_item",
+      "prov": [],
+      "comments": [
+        {
+          "$ref": "#/groups/3"
+        }
+      ],
+      "orig": "First deliverable",
+      "text": "First deliverable",
+      "enumerated": false,
+      "marker": ""
+    },
+    {
+      "self_ref": "#/texts/5",
+      "parent": {
+        "$ref": "#/groups/3"
+      },
+      "children": [],
+      "content_layer": "notes",
+      "label": "text",
+      "prov": [],
+      "orig": "[author: Reviewer Bravo (RB), time: 2026-01-15T10:10:00]: Clarify scope",
+      "text": "[author: Reviewer Bravo (RB), time: 2026-01-15T10:10:00]: Clarify scope"
+    }
+  ],
+  "pictures": [],
+  "tables": [],
+  "key_value_items": [],
+  "form_items": [],
+  "pages": {}
+}

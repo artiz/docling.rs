@@ -1,0 +1,19 @@
+# ODF (OpenDocument) fixtures
+
+`mirror.txt` lists the `.odt` / `.ods` / `.odp` files taken from the
+repository-root corpus; the files below are this suite's own, and
+`upstream/` holds the documents `odf_upstream` checks against Python
+docling's output. Each ODT reproducer has a `.docx` twin in
+`../docx/sources/` with the same content, the reference for what the
+Markdown should read like. Regenerate after an intentional change with
+`DOCLING_RS_REGEN=1 cargo test -p docling --test regression`.
+
+| File | Origin | Pins |
+| --- | --- | --- |
+| `sources/footnotes.odt` | own (#466) | a `text:note`'s citation and body stay out of the citing sentence; the body is a furniture `footnote` |
+| `sources/odt_toc_index_body.odt` | `min_odt_toc_with_table.odt` attached to #823 (synthetic ODF 1.2; the twin is `../docx/sources/odt_toc_index_body.docx`) | a `<text:table-of-content>` is transparent: its index title, its entries and the heading, paragraph and table LibreOffice left inside the `<text:index-body>` walk as body blocks, between the surrounding paragraphs — the twin's Markdown byte for byte; the `*-source` template is not content |
+| `sources/odt_style_list_name.odt` | `min_style_list_name.odt` attached to #826 (synthetic ODF 1.2; the twin is `../docx/sources/odt_style_list_name.docx`) | paragraphs numbered through their paragraph style's `style:list-style-name` — set on the style, inherited from a parent style, through an automatic style — with no `<text:list>` around them are list items: one list per run of the same list style, bullets then `1.` `2.` — the twin's Markdown byte for byte |
+| `sources/odt_headings_in_list.odt` | `min_headings_in_list.odt` attached to #827 (synthetic ODF 1.2; the twin is `../docx/sources/odt_headings_in_list.docx`) | `<text:h>` headings inside `<text:list-item>`s — Writer's outline numbering — are `##` / `###` headings of their `outline-level`, outside any list, the second list continuing the first's numbering: the twin's Markdown byte for byte |
+| `sources/odt_annotations.odt` | `min_odt_annotations.odt` attached to #829 (synthetic ODF 1.2; the twin is `../docx/sources/odt_annotations.docx`) | three `<office:annotation>`s — on a heading, inside a paragraph, on a list item — stay out of the body text (the twin's Markdown byte for byte) and are notes-layer `comment_section` groups `comment-1`…`comment-3` under the annotated items, each with docling's `[author: Name (initials), time: date]: text` note and the item's `comments` back-reference (docling#4436's shape) |
+| `sources/odt_master_page_header_footer.odt` | `min_odt_headers_footers.odt` attached to #830 (synthetic ODF 1.2; the twin is `../docx/sources/odt_master_page_header_footer.docx`) | the `Standard` master page's header (a paragraph and a table) and footer in `styles.xml` are furniture after the body — a `page header` and a `page footer` section of furniture-layer items in the JSON, out of the Markdown — the twin's shape (its Markdown byte for byte) |
+| `sources/odt_text_box.odt` | `min_odt_textbox.odt` attached to #831 (synthetic ODF 1.2; the twin is `../docx/sources/odt_text_box.docx`) | a `<draw:text-box>` anchored in a paragraph: the box's two paragraphs, list and table are blocks after the anchoring paragraph (a `textbox` section in the JSON), no longer run into its text — the twin's Markdown but for the box's table, which stays a table here where the DOCX backend flattens a text box's table to its cells' paragraphs (docling's `.//w:p`) |
