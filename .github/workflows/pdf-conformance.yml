@@ -44,6 +44,13 @@ on:
       - ".github/workflows/pdf-conformance.yml"
   workflow_dispatch:
 
+# Least privilege (CodeQL `actions/missing-workflow-permissions`): the job
+# reads the checkout, builds and uploads an artifact — the artifact and
+# cache actions use the runner's own token, not GITHUB_TOKEN — so read-only
+# is all it needs; nothing here comments, pushes or releases.
+permissions:
+  contents: read
+
 concurrency:
   group: pdf-conformance-${{ github.ref }}
   cancel-in-progress: true
