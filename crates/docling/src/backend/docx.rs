@@ -3096,7 +3096,7 @@ fn is_non_decimal_format(num_fmt: Option<&str>) -> bool {
 /// (docling#4336), `lowerLetter`/`upperLetter` run a…z, aa…zz (the letter
 /// repeated), roman numerals, `decimalZero` pads to two digits, and
 /// everything else (including no format) is the plain decimal.
-fn format_enum_counter(counter: i64, num_fmt: Option<&str>) -> String {
+pub(super) fn format_enum_counter(counter: i64, num_fmt: Option<&str>) -> String {
     if counter >= 0 {
         if let Some(cjk) = num_fmt.and_then(|f| cjk_counter(counter, f)) {
             return cjk;
@@ -3185,7 +3185,10 @@ pub(super) fn get_list_counter(
 /// its `%N` placeholders substituted; so does one on a letter / roman /
 /// `decimalZero` level even when it holds only placeholders and punctuation
 /// (`%2)` → `a)`, docling#4087 — before that guard such levels fell through
-/// to `1.a.`). A bare numeric template (`%1.%2.`) on a decimal level falls
+/// to `1.a.`), and — beyond docling, #835 — a decimal one whose punctuation
+/// is a parenthesis (`(%1)` → `(3)`, `%1)` → `3)`): docling folds those into
+/// `3.` too, and the Pandoc export then cannot tell `TwoParens` from
+/// `Period`. A bare numeric template (`%1.%2.`) on a decimal level falls
 /// back to the hierarchical `1.2.` form joining `counter[0..=ilvl]`; every
 /// counter is rendered with its own level's `numFmt`.
 pub(super) fn build_enum_marker(
@@ -3212,7 +3215,7 @@ pub(super) fn build_enum_marker(
     let re_placeholder = cached_regex!(r"%(\d+)");
     if re_placeholder.is_match(lvl_text) {
         let stripped: String = re_placeholder.replace_all(lvl_text, "").into_owned();
-        let stripped = stripped.trim_matches(|c: char| " .)(:[]".contains(c));
+        let stripped = stripped.trim_matches(|c: char| " .:[]".contains(c));
         if !stripped.is_empty() || is_non_decimal_format(fmt_at(ilvl)) {
             return re_placeholder
                 .replace_all(lvl_text, |caps: &regex::Captures| {

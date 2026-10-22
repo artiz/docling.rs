@@ -52,6 +52,9 @@ const CASES: &[&str] = &[
     // #834: a picture's alt text and displayed size, DOCX and ODT.
     "docx/pandoc_picture_alt_dim.docx",
     "odf/pandoc_picture_alt_dim.odt",
+    // #835: ordered lists with a letter, Roman and parenthesized numbering.
+    "docx/pandoc_ordered_lists.docx",
+    "odf/pandoc_ordered_lists.odt",
 ];
 
 fn root() -> PathBuf {

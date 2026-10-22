@@ -94,6 +94,35 @@ pub(super) struct OdfLevel {
     pub(super) start: i64,
     pub(super) prefix: String,
     pub(super) suffix: String,
+    /// `style:num-format` (#835): `1`, `a`, `A`, `i`, `I` (or empty).
+    pub(super) format: String,
+}
+
+/// An ODT list item's marker for the item tree — docling's
+/// `_odf_list_marker` with the level's number format and prefix (#835):
+/// `{num-prefix}{counter in num-format}{num-suffix}`, `.` after a bare
+/// counter — `a)`, `iii.`, `(3)`. docling writes the decimal counter and
+/// the suffix alone, so `iii.` was `3.` and `(3)` was `3)`, and the Pandoc
+/// export could not tell a Roman list from a decimal one; the DOCX backend
+/// renders the same lists through their `numFmt` and `lvlText`, so this is
+/// the twin's marker. The flat Markdown keeps docling's counter.
+pub(super) fn odf_marker(counter: i64, level: Option<&OdfLevel>) -> String {
+    let (prefix, suffix, format) = level
+        .map(|l| (l.prefix.as_str(), l.suffix.as_str(), l.format.as_str()))
+        .unwrap_or_default();
+    let num_fmt = match format {
+        "a" => Some("lowerLetter"),
+        "A" => Some("upperLetter"),
+        "i" => Some("lowerRoman"),
+        "I" => Some("upperRoman"),
+        _ => None,
+    };
+    let n = super::docx::format_enum_counter(counter, num_fmt);
+    if prefix.is_empty() && suffix.is_empty() {
+        format!("{n}.")
+    } else {
+        format!("{prefix}{n}{suffix}")
+    }
 }
 
 /// List style name → level (1-based) → level rendering.
@@ -378,6 +407,7 @@ fn parse_styles(content: &Document, styles: Option<&Document>) -> Styles {
                                 .unwrap_or(1);
                             let prefix = attr(lv, "num-prefix").unwrap_or("").to_string();
                             let suffix = attr(lv, "num-suffix").unwrap_or("").to_string();
+                            let format = attr(lv, "num-format").unwrap_or("").to_string();
                             levels.insert(
                                 level,
                                 OdfLevel {
@@ -385,6 +415,7 @@ fn parse_styles(content: &Document, styles: Option<&Document>) -> Styles {
                                     start,
                                     prefix,
                                     suffix,
+                                    format,
                                 },
                             );
                         }
@@ -3256,6 +3287,26 @@ mod tests {
         assert_eq!(odf_length_in("72pt"), Some(1.0));
         assert_eq!(odf_length_in("96px"), Some(1.0));
         assert_eq!(odf_length_in("10%"), None);
+    }
+
+    /// #835: the tree marker carries the level's number format, prefix and
+    /// suffix.
+    #[test]
+    fn odf_markers_follow_num_format_and_affixes() {
+        let level = |format: &str, prefix: &str, suffix: &str| OdfLevel {
+            numbered: true,
+            start: 1,
+            prefix: prefix.into(),
+            suffix: suffix.into(),
+            format: format.into(),
+        };
+        assert_eq!(odf_marker(1, Some(&level("a", "", ")"))), "a)");
+        assert_eq!(odf_marker(3, Some(&level("i", "", "."))), "iii.");
+        assert_eq!(odf_marker(4, Some(&level("I", "", ""))), "IV.");
+        assert_eq!(odf_marker(3, Some(&level("1", "(", ")"))), "(3)");
+        assert_eq!(odf_marker(27, Some(&level("A", "", "."))), "AA.");
+        assert_eq!(odf_marker(2, Some(&level("", "", ""))), "2.");
+        assert_eq!(odf_marker(2, None), "2.");
     }
 
     #[test]

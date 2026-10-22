@@ -1,0 +1,91 @@
+[ Para
+    [ Str "List"
+    , Space
+    , Str "1:"
+    , Space
+    , Str "LowerAlpha"
+    , Space
+    , Str "with"
+    , Space
+    , Str "OneParen"
+    , Space
+    , Str "(a),"
+    , Space
+    , Str "b)):"
+    ]
+, OrderedList
+    ( 1 , LowerAlpha , OneParen )
+    [ [ Plain
+          [ Str "First" , Space , Str "alpha" , Space , Str "item" ]
+      ]
+    , [ Plain
+          [ Str "Second" , Space , Str "alpha" , Space , Str "item" ]
+      ]
+    ]
+, Para
+    [ Str "List"
+    , Space
+    , Str "2:"
+    , Space
+    , Str "LowerRoman"
+    , Space
+    , Str "starting"
+    , Space
+    , Str "at"
+    , Space
+    , Str "3"
+    , Space
+    , Str "(iii.,"
+    , Space
+    , Str "iv.):"
+    ]
+, OrderedList
+    ( 3 , LowerRoman , Period )
+    [ [ Plain
+          [ Str "Third" , Space , Str "roman" , Space , Str "item" ]
+      ]
+    , [ Plain
+          [ Str "Fourth" , Space , Str "roman" , Space , Str "item" ]
+      ]
+    ]
+, Para
+    [ Str "List"
+    , Space
+    , Str "3:"
+    , Space
+    , Str "Decimal"
+    , Space
+    , Str "with"
+    , Space
+    , Str "TwoParens"
+    , Space
+    , Str "starting"
+    , Space
+    , Str "at"
+    , Space
+    , Str "3"
+    , Space
+    , Str "((3),"
+    , Space
+    , Str "(4)):"
+    ]
+, OrderedList
+    ( 3 , Decimal , TwoParens )
+    [ [ Plain
+          [ Str "Third"
+          , Space
+          , Str "parenthesized"
+          , Space
+          , Str "item"
+          ]
+      ]
+    , [ Plain
+          [ Str "Fourth"
+          , Space
+          , Str "parenthesized"
+          , Space
+          , Str "item"
+          ]
+      ]
+    ]
+]

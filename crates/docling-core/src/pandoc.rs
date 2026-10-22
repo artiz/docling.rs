@@ -25,7 +25,7 @@
 //! | `text`, `paragraph` | `Para` (`Plain` inside lists and table cells) |
 //! | `inline` group | the runs' inlines joined by `Space` |
 //! | formatting / hyperlink | `Strong`, `Emph`, `Underline`, `Strikeout`, `Subscript`, `Superscript`, then `Link` around it all |
-//! | `list` group | `OrderedList` (first item enumerated; start from an `N.` marker) / `BulletList`, nested lists inside their item |
+//! | `list` group | `OrderedList` (first item enumerated; start, number style and delimiter from the items' markers — `a)` LowerAlpha OneParen, `iii.` LowerRoman from 3, `(3)` Decimal TwoParens, #835) / `BulletList`, nested lists inside their item |
 //! | `code` | `CodeBlock` with the language as its class (`Code` inline) |
 //! | `formula` | `Para [Math DisplayMath]` (`Math InlineMath` inline) |
 //! | `checkbox_selected` / `_unselected` | the text after `☒` / `☐` — Pandoc's own task-list convention |
@@ -245,10 +245,13 @@ pub mod ast {
     pub fn bullet_list(items: Vec<Vec<Value>>) -> Value {
         node("BulletList", json!(items))
     }
-    pub fn ordered_list(start: u64, items: Vec<Vec<Value>>) -> Value {
+    /// `OrderedList ListAttributes [[Block]]`: `style` a `ListNumberStyle`
+    /// (`Decimal`, `LowerAlpha`, `UpperRoman`, …), `delim` a
+    /// `ListNumberDelim` (`Period`, `OneParen`, `TwoParens`, `DefaultDelim`).
+    pub fn ordered_list(start: u64, style: &str, delim: &str, items: Vec<Vec<Value>>) -> Value {
         node(
             "OrderedList",
-            json!([[start, { "t": "Decimal" }, { "t": "Period" }], items]),
+            json!([[start, { "t": style }, { "t": delim }], items]),
         )
     }
     pub fn definition_list(entries: Vec<(Vec<Value>, Vec<Vec<Value>>)>) -> Value {
@@ -468,13 +471,98 @@ fn inches(v: f64) -> String {
     format!("{}in", if s.is_empty() { "0" } else { s })
 }
 
-/// An `N.` / `N)` list marker's number (an ordered list's `start`).
-fn marker_start(marker: &str) -> Option<u64> {
-    marker
-        .trim()
-        .trim_end_matches(['.', ')'])
-        .parse::<u64>()
-        .ok()
+/// Pandoc's `ListAttributes` — start, number style, delimiter — from a
+/// list's item markers (#835): `a)` → `(1, LowerAlpha, OneParen)`, `iii.` →
+/// `(3, LowerRoman, Period)`, `(3)` → `(3, Decimal, TwoParens)`, a bare
+/// `12` → `DefaultDelim`. Every list used to be `Decimal` / `Period`, and a
+/// non-decimal start fell back to 1. A single letter reads as Roman only
+/// when the list does — `i` / `I` (what Pandoc's Markdown reader assumes),
+/// or another item's marker a multi-letter numeral — else as alpha, so a
+/// list starting at `c)` is the third letter, not 100. Letters repeat past
+/// `z` (`aa` = 27, Pandoc's own extension). A marker nothing parses
+/// (`1.2.`) keeps the old `(1, Decimal, Period)`.
+fn list_attributes(markers: &[&str]) -> (u64, &'static str, &'static str) {
+    fn split(marker: &str) -> (&str, &'static str) {
+        let m = marker.trim();
+        if let Some(inner) = m.strip_prefix('(').and_then(|r| r.strip_suffix(')')) {
+            return (inner.trim(), "TwoParens");
+        }
+        if let Some(inner) = m.strip_suffix(')') {
+            return (inner.trim(), "OneParen");
+        }
+        if let Some(inner) = m.strip_suffix('.') {
+            return (inner.trim(), "Period");
+        }
+        (m, "DefaultDelim")
+    }
+    fn roman(token: &str) -> Option<u64> {
+        let value = |c: char| match c.to_ascii_lowercase() {
+            'i' => Some(1),
+            'v' => Some(5),
+            'x' => Some(10),
+            'l' => Some(50),
+            'c' => Some(100),
+            'd' => Some(500),
+            'm' => Some(1000),
+            _ => None,
+        };
+        let values: Vec<i64> = token.chars().map(value).collect::<Option<_>>()?;
+        if values.is_empty() {
+            return None;
+        }
+        let mut total = 0i64;
+        for (i, &v) in values.iter().enumerate() {
+            // Subtractive notation: `IV` is 5 − 1.
+            if values.get(i + 1).is_some_and(|&next| next > v) {
+                total -= v;
+            } else {
+                total += v;
+            }
+        }
+        (total > 0).then_some(total as u64)
+    }
+    fn alpha(token: &str) -> Option<u64> {
+        let first = token.chars().next()?;
+        if !first.is_ascii_alphabetic() || !token.chars().all(|c| c == first) {
+            return None;
+        }
+        let ordinal = (first.to_ascii_lowercase() as u64) - ('a' as u64) + 1;
+        Some((token.chars().count() as u64 - 1) * 26 + ordinal)
+    }
+    const DEFAULT: (u64, &str, &str) = (1, "Decimal", "Period");
+    let Some(first) = markers.first() else {
+        return DEFAULT;
+    };
+    let (token, delim) = split(first);
+    if token.is_empty() {
+        return DEFAULT;
+    }
+    if token.chars().all(|c| c.is_ascii_digit()) {
+        return token
+            .parse()
+            .map(|n| (n, "Decimal", delim))
+            .unwrap_or(DEFAULT);
+    }
+    if !token.chars().all(|c| c.is_ascii_alphabetic()) {
+        return DEFAULT;
+    }
+    let upper = token.chars().next().is_some_and(|c| c.is_ascii_uppercase());
+    let letters = |t: &str| t.chars().all(|c| c.is_ascii_alphabetic());
+    let reads_roman = roman(token).is_some()
+        && (token.len() > 1
+            || token.eq_ignore_ascii_case("i")
+            || markers[1..].iter().any(|m| {
+                let (t, _) = split(m);
+                t.len() > 1 && letters(t) && roman(t).is_some()
+            }));
+    if reads_roman {
+        let style = if upper { "UpperRoman" } else { "LowerRoman" };
+        return (roman(token).unwrap_or(1), style, delim);
+    }
+    match alpha(token) {
+        Some(n) => (n, if upper { "UpperAlpha" } else { "LowerAlpha" }, delim),
+        None => DEFAULT,
+    }
 }
 
 struct GridCell<'a> {
@@ -1000,10 +1088,15 @@ impl<'a> Serializer<'a> {
                 .and_then(Value::as_bool)
                 .unwrap_or(false)
         });
-        let start = first
-            .and_then(|c| c.get("marker").and_then(Value::as_str))
-            .and_then(marker_start)
-            .unwrap_or(1);
+        // The items' markers decide the list's start, number style and
+        // delimiter (#835).
+        let markers: Vec<&str> = Self::children(group)
+            .iter()
+            .filter_map(|r| self.resolve(r))
+            .filter(|c| Self::label(c) == "list_item")
+            .filter_map(|c| c.get("marker").and_then(Value::as_str))
+            .collect();
+        let (start, style, delim) = list_attributes(&markers);
 
         let mut nodes = Vec::new();
         self.descendants(group, &mut nodes);
@@ -1036,7 +1129,7 @@ impl<'a> Serializer<'a> {
             return Vec::new();
         }
         if enumerated {
-            vec![ast::ordered_list(start, items)]
+            vec![ast::ordered_list(start, style, delim, items)]
         } else {
             vec![ast::bullet_list(items)]
         }
@@ -1703,6 +1796,61 @@ mod tests {
         assert_eq!(inches(2.5), "2.5in");
         assert_eq!(inches(1.0), "1in");
         assert_eq!(inches(0.33333), "0.3333in");
+    }
+
+    /// #835: the markers' number style, delimiter and start.
+    #[test]
+    fn list_attributes_follow_the_markers() {
+        assert_eq!(
+            list_attributes(&["a)", "b)"]),
+            (1, "LowerAlpha", "OneParen")
+        );
+        assert_eq!(
+            list_attributes(&["iii.", "iv."]),
+            (3, "LowerRoman", "Period")
+        );
+        assert_eq!(
+            list_attributes(&["(3)", "(4)"]),
+            (3, "Decimal", "TwoParens")
+        );
+        assert_eq!(
+            list_attributes(&["c)", "d)"]),
+            (3, "LowerAlpha", "OneParen")
+        );
+        assert_eq!(list_attributes(&["i."]), (1, "LowerRoman", "Period"));
+        assert_eq!(list_attributes(&["v.", "vi."]), (5, "LowerRoman", "Period"));
+        assert_eq!(list_attributes(&["x.", "y."]), (24, "LowerAlpha", "Period"));
+        assert_eq!(list_attributes(&["B."]), (2, "UpperAlpha", "Period"));
+        assert_eq!(list_attributes(&["IV)"]), (4, "UpperRoman", "OneParen"));
+        assert_eq!(list_attributes(&["aa)"]), (27, "LowerAlpha", "OneParen"));
+        assert_eq!(list_attributes(&["12"]), (12, "Decimal", "DefaultDelim"));
+        assert_eq!(list_attributes(&["3."]), (3, "Decimal", "Period"));
+        assert_eq!(list_attributes(&["1.2."]), (1, "Decimal", "Period"));
+        assert_eq!(list_attributes(&[]), (1, "Decimal", "Period"));
+        let j = doc(
+            &["#/groups/0"],
+            json!([
+                text(
+                    0,
+                    "list_item",
+                    "third",
+                    json!({"enumerated": true, "marker": "(3)"})
+                ),
+                text(
+                    1,
+                    "list_item",
+                    "fourth",
+                    json!({"enumerated": true, "marker": "(4)"})
+                ),
+            ]),
+            json!([{"self_ref": "#/groups/0", "children": [{"$ref": "#/texts/0"}, {"$ref": "#/texts/1"}], "label": "list", "name": "list"}]),
+            json!([]),
+        );
+        let b = blocks(&j);
+        assert_eq!(
+            b[0]["c"][0],
+            json!([3, {"t": "Decimal"}, {"t": "TwoParens"}])
+        );
     }
 
     #[test]
