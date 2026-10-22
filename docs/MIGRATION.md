@@ -1171,6 +1171,11 @@ deliberate scope boundary or a cosmetic, single-fixture polish gap.
   `keep_picture_images=false`) and its file deleted before the next decode,
   so one frame is in flight whatever the count. With nothing set the
   sampling is the pre-#647 one and every default output is unchanged.
+  #853: the scene scan maps the video stream alone (`-an -sn -dn`) — the
+  null muxer's default `pcm_s16le` encoder had every scan decode and
+  re-encode the soundtrack, and a decode-only ffmpeg build without it
+  failed the scan, so a video with audio lost its keyframes; the README
+  lists the ffmpeg components the frame sampling needs.
 - **Document metadata** (#679) — docling keeps a document's `origin` (file
   name, hash) and nothing of what the file says about itself; MarkItDown
   prints an EPUB's Dublin Core, a photo's EXIF (through exiftool) and an
