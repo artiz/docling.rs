@@ -132,6 +132,12 @@ jobs:
           fi
           gh release upload "$TAG" release-assets/* --repo "${{ github.repository }}" --clobber
 
+      # The SHA256SUMS download_dependencies.sh verifies the tarball against,
+      # regenerated from the whole release (scripts/ci/models_manifest.sh).
+      - name: Regenerate SHA256SUMS
+        if: inputs.publish
+        run: scripts/ci/models_manifest.sh "$TAG"
+
       - uses: actions/upload-artifact@v7
         with:
           name: onnxruntime-linux-s390x

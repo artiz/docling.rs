@@ -44,7 +44,7 @@ from typing import Any, Callable, Dict, Iterable, Iterator, List, NamedTuple, Op
 from docling_core.types.doc import DoclingDocument, ImageRefMode
 
 from . import models
-from .models import cache_dir, download_models, ensure_env
+from .models import IntegrityError, cache_dir, download_models, ensure_env
 from .options import (
     AcceleratorDevice,
     AcceleratorOptions,
@@ -142,6 +142,7 @@ __all__ = [
     "chunking",
     # model / env helpers
     "download_models",
+    "IntegrityError",
     "ensure_env",
     "cache_dir",
     "models",

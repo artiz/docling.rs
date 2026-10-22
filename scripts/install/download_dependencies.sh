@@ -105,6 +105,11 @@
 # the working directory.
 #
 # Idempotent: skips files already on disk. Pass --force to re-fetch everything.
+#
+# Integrity: every asset fetched from the release is checked against its
+# SHA256SUMS (scripts/ci/models_manifest.sh writes it after each upload)
+# before it is moved into place — see "integrity" below and
+# DOCLING_RS_MODELS_VERIFY (auto | require | off).
 set -eu
 
 BASE_URL="${DOCLING_RS_MODELS_URL:-https://github.com/docling-project/docling.rs/releases/download/models-v1}"
@@ -197,6 +202,91 @@ fi
 # fallbacks rely on for the sidecars a release does not host.
 CURL_TIMEOUTS="--connect-timeout 30 --speed-limit 1024 --speed-time 60 --retry 8"
 
+# --- integrity ----------------------------------------------------------------
+# Every asset fetched from $BASE_URL is checked against the release's
+# SHA256SUMS (the `sha256sum` format; scripts/ci/models_manifest.sh regenerates
+# it after every upload into the release) before it is moved into place: a
+# truncated transfer, a tampered mirror behind DOCLING_RS_MODELS_URL or a
+# swapped asset fails here, not at run time — libpdfium.so and
+# libonnxruntime.so are code the process loads. The upstream fallback hosts
+# (Hugging Face, RapidOCR's hub, the font packages) are outside the
+# manifest and stay unchecked. A file already on disk is not re-hashed
+# (--force re-fetches and checks it).
+# DOCLING_RS_MODELS_VERIFY: `auto` (default) checks what the manifest lists
+# and warns about a release without one or an asset missing from it (a tag
+# that predates the manifest, an asset uploaded by hand since); `require`
+# fails on either; `off` skips the check.
+VERIFY="${DOCLING_RS_MODELS_VERIFY:-auto}"
+MANIFEST=
+case "$VERIFY" in
+  off) ;;
+  auto | require)
+    MANIFEST="$(mktemp)"
+    # shellcheck disable=SC2086
+    if ! curl -fsSL $CURL_TIMEOUTS -o "$MANIFEST" "$BASE_URL/SHA256SUMS" 2>/dev/null; then
+      rm -f "$MANIFEST"
+      MANIFEST=
+      if [ "$VERIFY" = require ]; then
+        echo "error: $BASE_URL/SHA256SUMS unavailable and DOCLING_RS_MODELS_VERIFY=require" >&2
+        exit 1
+      fi
+      echo "  ! $BASE_URL hosts no SHA256SUMS — downloads from it are not integrity-checked" >&2
+    fi
+    ;;
+  *)
+    echo "error: DOCLING_RS_MODELS_VERIFY must be auto, require or off (got '$VERIFY')" >&2
+    exit 2
+    ;;
+esac
+cleanup() { if [ -n "$MANIFEST" ]; then rm -f "$MANIFEST"; fi; }
+trap cleanup EXIT
+
+sha256_of() { # <file> → the hex digest, or nothing when no tool can compute it
+  if command -v sha256sum >/dev/null 2>&1; then
+    sha256sum "$1" | cut -d' ' -f1
+  elif command -v shasum >/dev/null 2>&1; then
+    shasum -a 256 "$1" | cut -d' ' -f1
+  elif command -v openssl >/dev/null 2>&1; then
+    openssl dgst -sha256 -r "$1" | cut -d' ' -f1
+  fi
+}
+
+verify() { # <url> <downloaded-file> — a release asset against SHA256SUMS; a mismatch ends the run
+  case "$1" in
+    "$BASE_URL"/*) ;;
+    *) return 0 ;; # an upstream fallback host: outside the manifest
+  esac
+  if [ -z "$MANIFEST" ]; then
+    return 0
+  fi
+  name="${1#"$BASE_URL"/}"
+  want="$(awk -v n="$name" '$2 == n { print $1; exit }' "$MANIFEST")"
+  if [ -z "$want" ]; then
+    if [ "$VERIFY" = require ]; then
+      rm -f "$2"
+      echo "error: $name is not listed in $BASE_URL/SHA256SUMS (DOCLING_RS_MODELS_VERIFY=require)" >&2
+      exit 1
+    fi
+    echo "  ! $name is not listed in SHA256SUMS — not integrity-checked" >&2
+    return 0
+  fi
+  got="$(sha256_of "$2")"
+  if [ -z "$got" ]; then
+    if [ "$VERIFY" = require ]; then
+      rm -f "$2"
+      echo "error: no sha256sum, shasum or openssl on PATH to check $name (DOCLING_RS_MODELS_VERIFY=require)" >&2
+      exit 1
+    fi
+    echo "  ! no sha256sum, shasum or openssl on PATH — $name not integrity-checked" >&2
+    return 0
+  fi
+  if [ "$got" != "$want" ]; then
+    rm -f "$2"
+    echo "error: $name: sha256 mismatch (expected $want, got $got) — a corrupted download or a tampered mirror; re-run, and only if it repeats set DOCLING_RS_MODELS_VERIFY=off to bypass the check at your own risk" >&2
+    exit 1
+  fi
+}
+
 fetch() { # <url> <dest>
   if [ "$FORCE" = false ] && [ -f "$2" ]; then
     echo "  = $2 (already present)"
@@ -205,6 +295,7 @@ fetch() { # <url> <dest>
   echo "  > $2"
   # shellcheck disable=SC2086 # CURL_TIMEOUTS is a flag list, splitting intended
   curl -fsSL $CURL_TIMEOUTS -o "$2.download" "$1"
+  verify "$1" "$2.download"
   mv "$2.download" "$2"
 }
 
@@ -215,6 +306,7 @@ fetch_optional() { # <url> <dest> — ignore a missing/failed asset (sidecar fil
   fi
   # shellcheck disable=SC2086
   if curl -fsSL $CURL_TIMEOUTS -o "$2.download" "$1" 2>/dev/null; then
+    verify "$1" "$2.download"
     mv "$2.download" "$2"
     echo "  > $2"
   else
@@ -235,6 +327,7 @@ fetch_mirrored() { # <dest> <url>... — first URL that lands wins
     [ -n "$url" ] || continue
     # shellcheck disable=SC2086
     if curl -fsSL $CURL_TIMEOUTS -o "$dest.download" "$url"; then
+      verify "$url" "$dest.download"
       mv "$dest.download" "$dest"
       echo "  > $dest"
       return 0
@@ -276,6 +369,7 @@ if [ "$WITH_DPARSE" = true ]; then
       mkdir -p .docling-parse
       # shellcheck disable=SC2086
       if curl -fsSL $CURL_TIMEOUTS -o .docling-parse/plugin.tgz "$BASE_URL/$DPR_ASSET" 2>/dev/null; then
+        verify "$BASE_URL/$DPR_ASSET" .docling-parse/plugin.tgz
         tar xzf .docling-parse/plugin.tgz -C .docling-parse
         rm -f .docling-parse/plugin.tgz
         echo "  > .docling-parse/lib + pdf_resources ($DPR_ASSET)"
@@ -305,6 +399,7 @@ if [ "$WITH_ORT" = true ]; then
         mkdir -p .models/onnxruntime
         # shellcheck disable=SC2086
         if curl -fsSL $CURL_TIMEOUTS -o .models/onnxruntime/ort.tgz "$BASE_URL/$ORT_ASSET" 2>/dev/null; then
+          verify "$BASE_URL/$ORT_ASSET" .models/onnxruntime/ort.tgz
           tar xzf .models/onnxruntime/ort.tgz -C .models/onnxruntime
           rm -f .models/onnxruntime/ort.tgz
           echo "  > .models/onnxruntime/libonnxruntime.so ($ORT_ASSET, ONNX Runtime $(cat .models/onnxruntime/VERSION 2>/dev/null))"
