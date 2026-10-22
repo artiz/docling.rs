@@ -193,6 +193,12 @@ pub struct TreeItem {
     /// calls (it travels in that item's [`Self::notes`]); the Pandoc AST then
     /// leaves it out as a standalone block.
     pub note_body: bool,
+    /// Link destinations at this item (#849): the identifiers a document's
+    /// internal links (`hyperlink: "#id"`) point at — a DOCX bookmark in
+    /// a heading, say. docling's model has no slot for them, so the JSON
+    /// shows them only on the Pandoc path (`_anchors`), where a heading's
+    /// first one is its `Header` id and the rest empty `Span .anchor`s.
+    pub anchors: Vec<String>,
 }
 
 /// A note call inside a text item ([`TreeItem::notes`]).
@@ -296,6 +302,7 @@ impl ItemTree {
             deleted: false,
             notes: Vec::new(),
             note_body: false,
+            anchors: Vec::new(),
         });
         match parent {
             Some(p) => self.items[p].children.push(id),

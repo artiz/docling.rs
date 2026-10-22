@@ -72,12 +72,16 @@ impl DeclarativeBackend for DocxBackend {
             even_and_odd_headers,
             table_depth: std::cell::Cell::new(0),
             orphan_inline_groups: std::cell::Cell::new(0),
+            bookmarks: &HashMap::new(),
         };
 
         let mut doc = DoclingDocument::new(&source.name);
         let Some(body) = dom.descendants().find(|n| n.has_tag_name("body")) else {
             return Ok(doc);
         };
+        // The bookmarks' destinations (#849), for both walks' internal links.
+        let bookmarks = bookmark_targets(body, &ctx);
+        let ctx = ctx.with_bookmarks(&bookmarks);
         let mut state = ListState::default();
         // Reviewer comments, by docx `w:id` in `word/comments.xml` order — the
         // order they become `comment_section` groups below, which is the order
@@ -500,6 +504,9 @@ pub(super) struct Ctx<'a> {
     /// the body (see [`super::docx_tree::rich_cell_orphan_groups`]) — taken
     /// by the caller that pushes the table.
     pub(super) orphan_inline_groups: std::cell::Cell<usize>,
+    /// Bookmark name → the link destination's identifier (#849), from
+    /// [`bookmark_targets`]: what a `w:hyperlink w:anchor` resolves to.
+    pub(super) bookmarks: &'a HashMap<String, String>,
 }
 
 impl<'a> Ctx<'a> {
@@ -525,6 +532,175 @@ impl<'a> Ctx<'a> {
             even_and_odd_headers: self.even_and_odd_headers,
             table_depth: std::cell::Cell::new(0),
             orphan_inline_groups: std::cell::Cell::new(0),
+            bookmarks: self.bookmarks,
+        }
+    }
+
+    /// This context with the document's bookmarks resolved (#849) — they
+    /// need the style maps to tell a heading's bookmark from a body one, so
+    /// the map is built from a context without them first.
+    pub(super) fn with_bookmarks(&self, bookmarks: &'a HashMap<String, String>) -> Ctx<'a> {
+        Ctx {
+            bookmarks,
+            ..self.for_part(self.rels, self.images, self.charts)
+        }
+    }
+}
+
+/// Word's bookmark at the cursor (`_GoBack`): never a link target.
+const DUMMY_BOOKMARKS: [&str; 1] = ["_GoBack"];
+
+/// Is `p` a heading or title paragraph — the style checks both walks make,
+/// without the numbering / text they add.
+pub(super) fn is_heading_paragraph(p: XmlNode, ctx: &Ctx) -> bool {
+    let style_id = p
+        .children()
+        .find(|n| n.has_tag_name("pPr"))
+        .and_then(|pr| pr.children().find(|n| n.has_tag_name("pStyle")))
+        .and_then(|s| attr(s, "val"))
+        .unwrap_or("");
+    let style_name = ctx
+        .style_names
+        .get(style_id)
+        .map(String::as_str)
+        .unwrap_or(style_id);
+    named_heading_level(style_id, style_name, ctx).is_some()
+        || inherited_outline(style_id, ctx).is_some_and(|l| (1..=9).contains(&l))
+        || is_title_style(style_id, style_name, ctx)
+}
+
+/// The paragraph a bookmark start belongs to (#849): the one it sits in,
+/// else — Word writes a bookmark around a whole table or paragraph at the
+/// body level — the next paragraph in document order.
+fn bookmark_paragraph<'a, 'i>(start: XmlNode<'a, 'i>) -> Option<XmlNode<'a, 'i>> {
+    if let Some(p) = start.ancestors().find(|n| n.has_tag_name("p")) {
+        return Some(p);
+    }
+    start
+        .next_siblings()
+        .skip(1)
+        .filter(XmlNode::is_element)
+        .find_map(|n| {
+            if n.has_tag_name("p") {
+                Some(n)
+            } else {
+                n.descendants().find(|d| d.has_tag_name("p"))
+            }
+        })
+}
+
+/// Every bookmark of the document, name → the identifier its destination
+/// is written with (#849). A bookmark in a heading takes the heading's
+/// Pandoc auto-identifier (`Target section` → `target-section`), so
+/// `pandoc -f json` and `pandoc -f docx` agree on the link; one in body
+/// text or a table cell keeps its own name (Pandoc's choice, too), its
+/// characters outside letters, digits, `_`, `-`, `.` replaced by `-`. Two
+/// bookmarks on one heading share its identifier; an identifier a second
+/// destination would repeat gets `-1`, `-2`, … (Pandoc's rule), so every
+/// identifier names exactly one destination. `_GoBack` is skipped.
+pub(super) fn bookmark_targets(body: XmlNode, ctx: &Ctx) -> HashMap<String, String> {
+    let mut by_name = HashMap::new();
+    let mut taken: HashSet<String> = HashSet::new();
+    let mut heading_ids: HashMap<roxmltree::NodeId, String> = HashMap::new();
+    for start in body
+        .descendants()
+        .filter(|n| n.has_tag_name("bookmarkStart"))
+    {
+        let Some(name) = attr(start, "name").filter(|n| !n.is_empty()) else {
+            continue;
+        };
+        if DUMMY_BOOKMARKS.contains(&name) || by_name.contains_key(name) {
+            continue;
+        }
+        let Some(p) = bookmark_paragraph(start) else {
+            continue;
+        };
+        if is_heading_paragraph(p, ctx) {
+            if let Some(id) = heading_ids.get(&p.id()) {
+                by_name.insert(name.to_string(), id.clone());
+                continue;
+            }
+        }
+        let base = if is_heading_paragraph(p, ctx) {
+            docling_core::pandoc::auto_identifier(&plain_paragraph_text(p))
+        } else {
+            name.chars()
+                .map(|c| {
+                    if c.is_alphanumeric() || matches!(c, '_' | '-' | '.') {
+                        c
+                    } else {
+                        '-'
+                    }
+                })
+                .collect()
+        };
+        let mut id = base.clone();
+        let mut n = 0;
+        while taken.contains(&id) {
+            n += 1;
+            id = format!("{base}-{n}");
+        }
+        taken.insert(id.clone());
+        if is_heading_paragraph(p, ctx) {
+            heading_ids.insert(p.id(), id.clone());
+        }
+        by_name.insert(name.to_string(), id);
+    }
+    by_name
+}
+
+/// The identifiers of the bookmarks that start in `p` — inside it, or just
+/// before it at the body / cell level (see [`bookmark_paragraph`]) — in
+/// document order, each once (#849).
+pub(super) fn paragraph_anchors(p: XmlNode, ctx: &Ctx) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    let mut push = |start: XmlNode| {
+        if let Some(id) = attr(start, "name").and_then(|n| ctx.bookmarks.get(n)) {
+            if !out.contains(id) {
+                out.push(id.clone());
+            }
+        }
+    };
+    // Body-level bookmarks between the previous paragraph and this one.
+    let before: Vec<XmlNode> = p
+        .prev_siblings()
+        .filter(XmlNode::is_element)
+        .take_while(|n| {
+            matches!(
+                n.tag_name().name(),
+                "bookmarkStart" | "bookmarkEnd" | "proofErr" | "permStart" | "permEnd"
+            )
+        })
+        .filter(|n| n.has_tag_name("bookmarkStart"))
+        .collect();
+    for start in before.into_iter().rev() {
+        push(start);
+    }
+    for start in p.descendants().filter(|n| n.has_tag_name("bookmarkStart")) {
+        push(start);
+    }
+    out
+}
+
+/// A `w:hyperlink`'s target (#849): the relationship `r:id` names when it
+/// resolves; else the bookmark `w:anchor` names, as `#id`. A relationship
+/// the part lacks and a bookmark the document lacks are diagnosed under
+/// `DOCLING_RS_DEBUG` and leave the text unlinked — never a failed
+/// conversion. `r:id` wins when both are present (Word writes both for a
+/// link into another file's bookmark; the file is the destination).
+pub(super) fn hyperlink_target(h: XmlNode, ctx: &Ctx) -> Option<String> {
+    if let Some(id) = attr(h, "id") {
+        match ctx.rels.get(id).filter(|t| !t.is_empty()) {
+            Some(target) => return Some(target.clone()),
+            None => docling_core::debug_log!("docx: hyperlink relationship {id} is missing"),
+        }
+    }
+    let anchor = attr(h, "anchor").filter(|a| !a.is_empty())?;
+    match ctx.bookmarks.get(anchor) {
+        Some(id) => Some(format!("#{id}")),
+        None => {
+            docling_core::debug_log!("docx: hyperlink anchor {anchor:?} names no bookmark");
+            None
         }
     }
 }
@@ -1878,7 +2054,7 @@ fn collect_one(
             }
         }
         "hyperlink" => {
-            let url = attr(child, "id").and_then(|id| ctx.rels.get(id)).cloned();
+            let url = hyperlink_target(child, ctx);
             let mut inner = Vec::new();
             collect_run_tuples(child, fmt, None, ctx, &mut inner);
             let text: String = inner.iter().map(|(t, _, _)| t.as_str()).collect();

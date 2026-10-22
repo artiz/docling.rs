@@ -35,10 +35,10 @@ use roxmltree::{Document, Node as XmlNode, NodeId};
 use super::docx::{
     attr, build_enum_marker, caption_numbering_marker, chart_rels, child_elements,
     clean_checkbox_symbols, detect_code_language, footnote_texts, get_list_counter,
-    header_footer_parts, heading_labels, in_textbox, inherited_outline, is_code_by_font,
-    is_code_style, is_title_style, numbered_heading_text, on_off, part_rels, row_cells,
-    row_grid_offsets, run_child_text, style_chain_bold, style_numbering, sync_heading_counter,
-    t_text, Ctx, MAX_TABLE_DEPTH,
+    header_footer_parts, heading_labels, hyperlink_target, in_textbox, inherited_outline,
+    is_code_by_font, is_code_style, is_title_style, numbered_heading_text, on_off,
+    paragraph_anchors, part_rels, row_cells, row_grid_offsets, run_child_text, style_chain_bold,
+    style_numbering, sync_heading_counter, t_text, Ctx, MAX_TABLE_DEPTH,
 };
 use super::html_tree::docling_href;
 use super::ooxml::Package;
@@ -703,13 +703,14 @@ impl Walker {
     }
 
     /// `_get_hyperlink_target`: the relationship's target as docling
-    /// serializes it (`AnyUrl` with a scheme, `Path` without).
+    /// serializes it (`AnyUrl` with a scheme, `Path` without) — or, past
+    /// docling, a bookmark's `#id` (#849, [`hyperlink_target`]).
     fn hyperlink_target(&self, h: XmlNode, ctx: &Ctx) -> Option<String> {
-        let address = attr(h, "id").and_then(|id| ctx.rels.get(id))?;
-        if address.is_empty() {
-            return None;
+        let address = hyperlink_target(h, ctx)?;
+        if address.starts_with('#') {
+            return Some(address);
         }
-        Some(docling_href(address))
+        Some(docling_href(&address))
     }
 
     /// `_iter_paragraph_content`: one part per run, hyperlink or content
@@ -1632,6 +1633,20 @@ impl Walker {
         let calls = note_references(p);
         let first_new = self.tree.items.len();
         let refs = self.handle_text_elements_inner(p, ctx, skip_empty_text);
+        // The bookmarks starting in this paragraph land on its first text
+        // item (#849): the heading, the list item, the first run of a
+        // formatted paragraph.
+        if !ctx.bookmarks.is_empty() {
+            let anchors = paragraph_anchors(p, ctx);
+            if !anchors.is_empty() {
+                if let Some(&item) = refs
+                    .iter()
+                    .find(|&&i| matches!(self.tree.items[i].kind, TreeKind::Text { .. }))
+                {
+                    self.tree.items[item].anchors = anchors;
+                }
+            }
+        }
         if !calls.is_empty() {
             let full_text: String = self
                 .iter_paragraph_content(p, ctx)

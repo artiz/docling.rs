@@ -24,7 +24,8 @@
 //! | `section_header` (level *n*) | `Header (n+1)`, capped at 6 — docling's title-reserving depth; under [`HeadingDepth::Source`] (#848) `Header n`, the depth the DOCX / ODT author wrote |
 //! | `text`, `paragraph` | `Para` (`Plain` inside lists and table cells) |
 //! | `inline` group | the runs' inlines joined by `Space` |
-//! | formatting / hyperlink | `Strong`, `Emph`, `Underline`, `Strikeout`, `Subscript`, `Superscript`, then `Link` around it all |
+//! | formatting / hyperlink | `Strong`, `Emph`, `Underline`, `Strikeout`, `Subscript`, `Superscript`, then `Link` around it all — an internal link's target is `#id` (#849) |
+//! | a link destination (#849: a DOCX bookmark, `_anchors`) | on a heading, its `Header` identifier (Pandoc's own auto-identifier of the heading text, `target-section`, so `#target-section` resolves as it does from `pandoc -f docx`); anywhere else an empty `Span` with the identifier and the class `anchor`, Pandoc's docx reader's shape, at the start of the item's inlines |
 //! | `list` group | `OrderedList` (first item enumerated; start, number style and delimiter from the items' markers — `a)` LowerAlpha OneParen, `iii.` LowerRoman from 3, `(3)` Decimal TwoParens, #835) / `BulletList`, nested lists inside their item |
 //! | `code` | `CodeBlock` with the language as its class (`Code` inline) |
 //! | `formula` | `Para [Math DisplayMath]` (`Math InlineMath` inline) |
@@ -263,6 +264,27 @@ pub fn from_docling_json(
     }
 }
 
+/// Pandoc's auto-identifier of a heading (`Text.Pandoc.Shared.
+/// stringToIdentifier`, the default `auto_identifiers` rule, #849): the
+/// text lower-cased, everything but letters, digits, `_`, `-`, `.` and
+/// spaces removed, the words joined by `-`, anything up to the first letter
+/// dropped; `section` when nothing is left. `Target section` →
+/// `target-section`, `2026 Results` → `results`.
+pub fn auto_identifier(text: &str) -> String {
+    let kept: String = text
+        .chars()
+        .filter(|c| c.is_alphanumeric() || c.is_whitespace() || matches!(c, '_' | '-' | '.'))
+        .flat_map(char::to_lowercase)
+        .collect();
+    let joined = kept.split_whitespace().collect::<Vec<_>>().join("-");
+    let id = joined.trim_start_matches(|c: char| !c.is_alphabetic());
+    if id.is_empty() {
+        "section".to_string()
+    } else {
+        id.to_string()
+    }
+}
+
 /// The Pandoc AST constructors (`Text.Pandoc.Definition`, JSON per
 /// `Text.Pandoc.JSON`): every node this module writes is built here.
 pub mod ast {
@@ -311,6 +333,15 @@ pub mod ast {
     }
     pub fn header(level: usize, inlines: Vec<Value>) -> Value {
         node("Header", json!([level, attr(&[]), inlines]))
+    }
+    /// A `Header` with an identifier (#849: a bookmarked heading).
+    pub fn header_with_id(level: usize, id: &str, inlines: Vec<Value>) -> Value {
+        node("Header", json!([level, [id, [], []], inlines]))
+    }
+    /// An empty `Span` carrying an identifier and the class `anchor` — the
+    /// link destination Pandoc's docx reader writes for a bookmark (#849).
+    pub fn anchor(id: &str) -> Value {
+        node("Span", json!([[id, ["anchor"], []], []]))
     }
     pub fn code_block(language: Option<&str>, text: &str) -> Value {
         let classes: Vec<&str> = language.into_iter().collect();
@@ -819,6 +850,19 @@ impl<'a> Serializer<'a> {
         item.get("text").and_then(Value::as_str).unwrap_or("")
     }
 
+    /// The item's link destinations (`_anchors`, #849).
+    fn anchors(item: &Value) -> Vec<String> {
+        item.get("_anchors")
+            .and_then(Value::as_array)
+            .map(|a| {
+                a.iter()
+                    .filter_map(Value::as_str)
+                    .map(str::to_string)
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
     fn is_group(item: &Value) -> bool {
         Self::self_ref(item).starts_with("#/groups/")
     }
@@ -1210,7 +1254,12 @@ impl<'a> Serializer<'a> {
                 {
                     continue;
                 }
-                runs.push(self.formatted(node));
+                let mut run: Vec<Value> = Self::anchors(node)
+                    .iter()
+                    .map(|id| ast::anchor(id))
+                    .collect();
+                run.append(&mut self.formatted(node));
+                runs.push(run);
                 continue;
             }
             if Self::is_group(node) && Self::label(node) == "inline" {
@@ -1253,6 +1302,22 @@ impl<'a> Serializer<'a> {
             _ => {
                 let (inlines, rest, _) = self.own_inlines(item);
                 let mut inlines = self.with_comments(item, inlines);
+                // The item's link destinations (#849): a heading takes
+                // the first as its identifier, the rest open its inlines
+                // as anchor spans; any other item opens with them all.
+                let mut anchors = Self::anchors(item);
+                let header_id =
+                    if matches!(label, "title" | "section_header") && !anchors.is_empty() {
+                        Some(anchors.remove(0))
+                    } else {
+                        None
+                    };
+                if !anchors.is_empty() && (header_id.is_some() || !inlines.is_empty()) {
+                    let mut with_anchors: Vec<Value> =
+                        anchors.iter().map(|id| ast::anchor(id)).collect();
+                    with_anchors.append(&mut inlines);
+                    inlines = with_anchors;
+                }
                 match label {
                     "title" | "section_header" => {
                         let level = if label == "title" {
@@ -1270,7 +1335,10 @@ impl<'a> Serializer<'a> {
                             }
                         };
                         if !inlines.is_empty() {
-                            out.push(ast::header(level, inlines));
+                            out.push(match &header_id {
+                                Some(id) => ast::header_with_id(level, id, inlines),
+                                None => ast::header(level, inlines),
+                            });
                         }
                     }
                     "text" | "paragraph" => {
@@ -2306,6 +2374,59 @@ mod tests {
         assert_eq!(depths(HeadingDepth::Source), [1, 1, 2, 5, 6, 1, 1, 6]);
         assert_eq!("Source".parse::<HeadingDepth>(), Ok(HeadingDepth::Source));
         assert!("deep".parse::<HeadingDepth>().is_err());
+    }
+
+    /// #849: a bookmarked heading carries its identifier, a bookmark in
+    /// body text an empty anchor span, and an internal link's `#id` target
+    /// is written as is.
+    #[test]
+    fn anchors_become_header_ids_and_anchor_spans() {
+        let j = doc(
+            &["#/texts/0", "#/texts/1", "#/texts/2"],
+            json!([
+                text(
+                    0,
+                    "section_header",
+                    "Target section",
+                    json!({"level": 1, "_anchors": ["target-section", "Alias"]})
+                ),
+                text(1, "text", "Jump", json!({"hyperlink": "#target-section"})),
+                text(2, "text", "Body mark", json!({"_anchors": ["BodyMark"]})),
+            ]),
+            json!([]),
+            json!([]),
+        );
+        let b = blocks(&j);
+        assert_eq!(
+            b[0],
+            ast::header_with_id(
+                2,
+                "target-section",
+                vec![
+                    ast::anchor("Alias"),
+                    ast::str_("Target"),
+                    ast::space(),
+                    ast::str_("section")
+                ]
+            )
+        );
+        assert_eq!(
+            b[1],
+            ast::para(vec![ast::link(vec![ast::str_("Jump")], "#target-section")])
+        );
+        assert_eq!(
+            b[2],
+            ast::para(vec![
+                ast::anchor("BodyMark"),
+                ast::str_("Body"),
+                ast::space(),
+                ast::str_("mark")
+            ])
+        );
+        assert_eq!(auto_identifier("Target section"), "target-section");
+        assert_eq!(auto_identifier("2026 Results"), "results");
+        assert_eq!(auto_identifier("1.1 Été & hiver!"), "été-hiver");
+        assert_eq!(auto_identifier("***"), "section");
     }
 
     #[test]
