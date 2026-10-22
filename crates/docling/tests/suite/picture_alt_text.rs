@@ -139,6 +139,7 @@ fn image_line_alt_is_one_safe_line() {
                 0xFE, 0xA3, 0x4A, 0x4E, 0x1C, 0, 0, 0, 0, 0x49, 0x45, 0x4E, 0x44, 0xAE, 0x42, 0x60,
                 0x82,
             ],
+            display_size: None,
         }),
         classification: None,
         description: Some(PictureDescription::alt_text("Owner [avatar]\n\nline two")),

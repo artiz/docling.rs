@@ -118,6 +118,7 @@ fn rasterize(svg: &Svg) -> Option<PictureImage> {
         width: pw,
         height: ph,
         data,
+        display_size: None,
     })
 }
 

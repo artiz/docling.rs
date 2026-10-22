@@ -1366,9 +1366,12 @@ impl Walker {
             ))
         };
         for image in images {
-            let img = attr(*image, rel_attr)
-                .and_then(|id| ctx.images.get(id))
-                .cloned();
+            let img = super::docx::with_extent(
+                attr(*image, rel_attr)
+                    .and_then(|id| ctx.images.get(id))
+                    .cloned(),
+                *image,
+            );
             let spacer = img.as_ref().is_some_and(is_invisible_spacer);
             let layer = if spacer {
                 Some(ContentLayer::Invisible)

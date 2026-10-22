@@ -1723,6 +1723,7 @@ impl DocumentConverter {
                 height: 0,
                 data: source.bytes.clone(),
                 dpi: PictureImage::DEFAULT_DPI,
+                display_size: None,
             });
         if let Some(img) = &whole {
             collect(img, &None);

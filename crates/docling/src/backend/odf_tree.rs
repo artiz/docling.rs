@@ -24,7 +24,7 @@
 use std::collections::{HashMap, HashSet, VecDeque};
 
 use docling_core::tree::{Formatting, ItemTree, ListMeta, TreeKind, TreeNote, TreeProv};
-use docling_core::{ContentLayer, PictureImage, Script, Table, TableCell};
+use docling_core::{ContentLayer, PictureDescription, PictureImage, Script, Table, TableCell};
 use roxmltree::Node as XmlNode;
 
 use super::odf::{
@@ -862,15 +862,16 @@ impl<'s> Walker<'s> {
             let Some(image) = self.image_payload(*img, href) else {
                 continue;
             };
+            // The frame's alt text and displayed size (#834).
             self.tree.add(
                 parent,
                 layer,
                 TreeKind::Picture {
                     captions: Vec::new(),
-                    image: Some(image),
+                    image: super::odf::with_frame_display(Some(image), *img),
                     extra_classes: Vec::new(),
                     classification: None,
-                    description: None,
+                    description: super::odf::frame_alt(*img).map(PictureDescription::alt_text),
                     confidence: None,
                     chart: None,
                     dpi: None,

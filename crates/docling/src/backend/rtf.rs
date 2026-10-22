@@ -615,6 +615,7 @@ impl<'a> Parser<'a> {
                 width,
                 height,
                 data,
+                display_size: None,
             }),
             classification: None,
             description: None,

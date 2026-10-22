@@ -155,6 +155,7 @@ fn picture_node(frame: VideoFrame) -> Node {
             width,
             height,
             data: frame.png,
+            display_size: None,
         }),
         classification: None,
         description: None,

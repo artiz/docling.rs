@@ -516,6 +516,7 @@ fn picture_image(item: &Value) -> Option<PictureImage> {
         height,
         data,
         dpi,
+        display_size: None,
     })
 }
 

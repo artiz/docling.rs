@@ -2167,6 +2167,7 @@ mod tests {
             )
             .unwrap(),
             dpi: 72,
+            display_size: None,
         }
     }
 

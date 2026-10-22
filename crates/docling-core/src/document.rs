@@ -869,6 +869,15 @@ pub struct PictureImage {
     /// office file has no render scale and keeps docling's `72`
     /// ([`Self::DEFAULT_DPI`]).
     pub dpi: u32,
+    /// The size the picture is *displayed* at in its document, in inches
+    /// (`[width, height]`, #834): a DOCX drawing's `wp:extent`, an ODT
+    /// frame's `svg:width` / `svg:height` — not the bitmap's pixel size
+    /// above, which docling's `ImageRef.size` carries. `None` when the
+    /// format has no such extent (a PDF crop, a standalone image). The
+    /// Pandoc export writes it as the `Image`'s `width` / `height`
+    /// attributes, as Pandoc's own readers do; docling's JSON has no field
+    /// for it, so the JSON export leaves it out.
+    pub display_size: Option<[f32; 2]>,
 }
 
 impl PictureImage {

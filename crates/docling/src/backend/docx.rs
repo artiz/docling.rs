@@ -1117,7 +1117,10 @@ fn drawing_images(
             .iter()
             .map(|b| {
                 (
-                    attr(*b, "embed").and_then(|id| ctx.images.get(id)).cloned(),
+                    with_extent(
+                        attr(*b, "embed").and_then(|id| ctx.images.get(id)).cloned(),
+                        *b,
+                    ),
                     drawing_alt(*b),
                 )
             })
@@ -1184,6 +1187,28 @@ pub(super) fn drawing_alt(image_ref: XmlNode) -> Option<String> {
         }
     }
     None
+}
+
+/// The size a DrawingML picture is displayed at (#834): the `wp:extent` of
+/// the `wp:inline` / `wp:anchor` an `<a:blip>` sits in, EMU → inches
+/// (914 400 EMU to the inch). `None` for VML and for a drawing without one.
+pub(super) fn drawing_extent(image_ref: XmlNode) -> Option<[f32; 2]> {
+    let holder = image_ref
+        .ancestors()
+        .take_while(|a| !a.has_tag_name("p"))
+        .find(|a| a.has_tag_name("inline") || a.has_tag_name("anchor"))?;
+    let extent = holder.children().find(|c| c.has_tag_name("extent"))?;
+    let emu = |name: &str| attr(extent, name)?.parse::<f64>().ok();
+    let (cx, cy) = (emu("cx")?, emu("cy")?);
+    (cx > 0.0 && cy > 0.0).then(|| [(cx / 914_400.0) as f32, (cy / 914_400.0) as f32])
+}
+
+/// `image` with the display size of the drawing `image_ref` belongs to.
+pub(super) fn with_extent(image: Option<PictureImage>, image_ref: XmlNode) -> Option<PictureImage> {
+    image.map(|mut img| {
+        img.display_size = drawing_extent(image_ref);
+        img
+    })
 }
 
 /// Parse every chart part related to `part`: relationship id →

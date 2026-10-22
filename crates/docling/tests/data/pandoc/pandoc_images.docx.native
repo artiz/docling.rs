@@ -2,8 +2,8 @@
 , Para [ Str "P_img.png" ]
 , Para
     [ Image
-        ( "" , [] , [] )
-        []
+        ( "" , [] , [ ( "width" , "1in" ) , ( "height" , "1in" ) ] )
+        [ Str "a" , Space , Str "red" , Space , Str "square" ]
         ( "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAIAAABLbSncAAAAHklEQVR4nGM8ISfHgA0wMTAwmD98iCnBiE/HgEkAALX8BBD4dJ54AAAAAElFTkSuQmCC"
         , ""
         )
@@ -11,8 +11,8 @@
 , Para [ Str "P_img.gif" ]
 , Para
     [ Image
-        ( "" , [] , [] )
-        []
+        ( "" , [] , [ ( "width" , "1in" ) , ( "height" , "1in" ) ] )
+        [ Str "a" , Space , Str "green" , Space , Str "square" ]
         ( "data:image/gif;base64,R0lGODdhCAAIAIIAAACZADOZAADMAACZMzOZMzPMM////wAAACwAAAAACAAIAAAIJgAJABBIcKABggUJCiBQsEDChAAKDBxIYCGBAAIlEsRIceCAAAEBADs="
         , ""
         )
@@ -20,7 +20,9 @@
 , Para [ Str "P_img.emf" ]
 , Para
     [ Image
-        ( "" , [ "docling-placeholder" ] , [] ) [] ( "" , "" )
+        ( "" , [ "docling-placeholder" ] , [] )
+        [ Str "a" , Space , Str "metafile" ]
+        ( "" , "" )
     ]
 , Para [ Str "after" ]
 ]

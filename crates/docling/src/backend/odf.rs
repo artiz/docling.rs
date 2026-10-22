@@ -33,8 +33,8 @@ use crate::backend::DeclarativeBackend;
 use crate::error::ConversionError;
 use crate::source::SourceDocument;
 use docling_core::{
-    inline_paragraph_node, DoclingDocument, InlineRun, ListItemDclx, Node, PictureImage, Script,
-    Table, TableStructure,
+    inline_paragraph_node, DoclingDocument, InlineRun, ListItemDclx, Node, PictureDescription,
+    PictureImage, Script, Table, TableStructure,
 };
 
 pub struct OdfBackend;
@@ -743,7 +743,10 @@ fn collect_runs_linked(
                 // the walkers emit them after it, see [`text_boxes`].
                 "text-box" => {}
                 // docling's `_odf_text_runs` recurses into every child, so an
-                // image's `<svg:desc>`/`<svg:title>` text is picked up too.
+                // image's `<svg:desc>`/`<svg:title>` text is picked up too —
+                // kept for parity (docling's groundtruth has it in the
+                // paragraph); the same text is the picture's description
+                // since #834, see [`frame_alt`].
                 _ => collect_runs_linked(child, styles, base, href, out),
             }
         }
@@ -1194,6 +1197,77 @@ fn serialize_run(text: &str, fmt: Fmt, href: Option<&str>) -> String {
     s
 }
 
+/// Whether an element is SVG-namespaced (`svg:title`, `svg:desc`), not
+/// ODF's own `text:title` field.
+pub(super) fn is_svg(el: XmlNode) -> bool {
+    el.tag_name()
+        .namespace()
+        .is_some_and(|ns| ns.contains("svg"))
+}
+
+/// A picture's alt text (#834): the `<svg:title>` (Writer's "Text
+/// Alternative"), else the `<svg:desc>` (its "Description"), of the
+/// `<draw:frame>` the image sits in — the OOXML `descr` of a DOCX / PPTX
+/// picture, which the backends read since #676. The text also stays in
+/// the anchoring paragraph's runs, as docling's `_odf_text_runs` reads it
+/// (its groundtruth keeps it there); stripping it would cost that parity.
+pub(super) fn frame_alt(img: XmlNode) -> Option<String> {
+    let frame = img.parent().filter(|p| p.has_tag_name("frame"))?;
+    ["title", "desc"].into_iter().find_map(|tag| {
+        frame
+            .children()
+            .find(|c| c.has_tag_name(tag) && is_svg(*c))
+            .map(|c| {
+                c.descendants()
+                    .filter(|n| n.is_text())
+                    .filter_map(|n| n.text())
+                    .collect::<String>()
+                    .trim()
+                    .to_string()
+            })
+            .filter(|t| !t.is_empty())
+    })
+}
+
+/// The size a picture is displayed at (#834): its `<draw:frame>`'s
+/// `svg:width` / `svg:height`, in inches.
+pub(super) fn frame_display(img: XmlNode) -> Option<[f32; 2]> {
+    let frame = img.parent().filter(|p| p.has_tag_name("frame"))?;
+    let w = odf_length_in(attr(frame, "width")?)?;
+    let h = odf_length_in(attr(frame, "height")?)?;
+    (w > 0.0 && h > 0.0).then_some([w, h])
+}
+
+/// An ODF length (`2.5in`, `6.35cm`, `180pt`, `96px`, …) in inches.
+pub(super) fn odf_length_in(s: &str) -> Option<f32> {
+    let s = s.trim();
+    let split = s
+        .find(|c: char| c.is_ascii_alphabetic() || c == '%')
+        .unwrap_or(s.len());
+    let value: f32 = s[..split].trim().parse().ok()?;
+    let per_inch = match s[split..].trim() {
+        "in" | "" => 1.0,
+        "cm" => 2.54,
+        "mm" => 25.4,
+        "pt" => 72.0,
+        "pc" => 6.0,
+        "px" => 96.0,
+        _ => return None,
+    };
+    Some(value / per_inch)
+}
+
+/// `image` with the display size of the frame `img` sits in.
+pub(super) fn with_frame_display(
+    image: Option<PictureImage>,
+    img: XmlNode,
+) -> Option<PictureImage> {
+    image.map(|mut i| {
+        i.display_size = frame_display(img);
+        i
+    })
+}
+
 /// The picture node for a `<draw:image>`, or `None` when docling emits no
 /// `PictureItem` for it (docling#4015, 2.120.3):
 ///
@@ -1213,9 +1287,9 @@ fn odf_picture(styles: &Styles, img: XmlNode) -> Option<Node> {
         Some(Node::Picture {
             caption: None,
             caption_href: None,
-            image,
+            image: with_frame_display(image, img),
             classification: None,
-            description: None,
+            description: frame_alt(img).map(PictureDescription::alt_text),
             caption_parent: Default::default(),
             caption_location: None,
         })
@@ -3158,6 +3232,30 @@ mod tests {
         let p = dom.root_element().first_element_child().unwrap();
         assert_eq!(text_boxes(p).len(), 1);
         assert_eq!(para_plain_text(p), "Anchor. tail.");
+    }
+
+    /// #834: a frame's `<svg:title>` / `<svg:desc>` is the picture's alt
+    /// text (and, for parity with docling's reading, still paragraph
+    /// text); its `svg:width` / `svg:height` the display size in inches.
+    #[test]
+    fn frame_title_is_the_pictures_alt_text() {
+        let xml = r#"<root xmlns:text="x" xmlns:draw="d" xmlns:svg="urn:oasis:names:tc:opendocument:xmlns:svg-compatible:1.0" xmlns:xlink="l">
+            <text:p>Before <draw:frame draw:name="I" svg:width="2.5in" svg:height="3.175cm"><draw:image xlink:href="Pictures/x.png"/><svg:title>A gateway</svg:title><svg:desc>Longer</svg:desc></draw:frame> after.<text:title>Doc title</text:title></text:p></root>"#;
+        let dom = Document::parse(xml).unwrap();
+        let p = dom.root_element().first_element_child().unwrap();
+        assert_eq!(para_plain_text(p), "Before A gatewayLonger after.Doc title");
+        assert!(is_svg(
+            p.descendants()
+                .find(|n| n.has_tag_name("title") && n.tag_name().namespace().is_some())
+                .unwrap()
+        ));
+        let img = p.descendants().find(|n| n.has_tag_name("image")).unwrap();
+        assert_eq!(frame_alt(img).as_deref(), Some("A gateway"));
+        let [w, h] = frame_display(img).unwrap();
+        assert!((w - 2.5).abs() < 1e-5 && (h - 1.25).abs() < 1e-5, "{w} {h}");
+        assert_eq!(odf_length_in("72pt"), Some(1.0));
+        assert_eq!(odf_length_in("96px"), Some(1.0));
+        assert_eq!(odf_length_in("10%"), None);
     }
 
     #[test]

@@ -30,7 +30,7 @@
 //! | `formula` | `Para [Math DisplayMath]` (`Math InlineMath` inline) |
 //! | `checkbox_selected` / `_unselected` | the text after `☒` / `☐` — Pandoc's own task-list convention |
 //! | `table` | `Table`: leading all-header rows as `TableHead`, `rowspan` / `colspan`, rich cells as their blocks, captions as the caption |
-//! | `picture` | `Para [Image]` (Pandoc's readers' shape), or a `Figure` holding it when there is a caption (also the `Image`'s alt text) or a tabular chart's data `Table`; the target per [`ImageMode`] |
+//! | `picture` | `Para [Image]` (Pandoc's readers' shape), or a `Figure` holding it when there is a caption or a tabular chart's data `Table`; the `Image`'s alt text is the picture's description — the alt text a DOCX / PPTX / XLSX / ODT author typed (#834) — else its caption; its `width` / `height` attributes the size the document displays it at; the target per [`ImageMode`] |
 //! | footnotes of a table / picture | `Note` at the end of its caption (the float is the call site) |
 //! | key-value / form graph | `Div .key-value-region` / `.form-container` holding a `DefinitionList` (or the nested `BulletList` of a hierarchical graph) |
 //! | form `field_region` | `Div .field-region` holding a `DefinitionList`: `marker` + `field_key` as the term, each `field_value` a definition |
@@ -328,7 +328,17 @@ pub mod ast {
         node("Link", json!([attr(&[]), inlines, [url, ""]]))
     }
     pub fn image(classes: &[&str], alt: Vec<Value>, src: &str) -> Value {
-        node("Image", json!([attr(classes), alt, [src, ""]]))
+        image_sized(classes, &[], alt, src)
+    }
+    /// An `Image` with key-value attributes (`width` / `height`, #834).
+    pub fn image_sized(
+        classes: &[&str],
+        attrs: &[(String, String)],
+        alt: Vec<Value>,
+        src: &str,
+    ) -> Value {
+        let kv: Vec<Value> = attrs.iter().map(|(k, v)| json!([k, v])).collect();
+        node("Image", json!([["", classes, kv], alt, [src, ""]]))
     }
     pub fn note(blocks: Vec<Value>) -> Value {
         node("Note", json!(blocks))
@@ -448,6 +458,14 @@ fn join_inlines(parts: Vec<Vec<Value>>) -> Vec<Value> {
         out.extend(part);
     }
     out
+}
+
+/// A length in inches as Pandoc's readers write it: `2.5in`, `1.25in` —
+/// up to four decimals, trailing zeros dropped.
+fn inches(v: f64) -> String {
+    let s = format!("{v:.4}");
+    let s = s.trim_end_matches('0').trim_end_matches('.');
+    format!("{}in", if s.is_empty() { "0" } else { s })
 }
 
 /// An `N.` / `N)` list marker's number (an ordered list's `start`).
@@ -1196,10 +1214,37 @@ impl<'a> Serializer<'a> {
         // (placeholder mode, or a payload docling could not decode: EMF/WMF)
         // carries the `docling-placeholder` class and an empty target, which
         // a writer reports as a missing resource and renders as the alt text.
-        let alt = self.caption_text(item);
+        // The alt text is the author's (`meta.description`, #834) — what
+        // Pandoc's docx reader takes from `wp:docPr descr` — and only
+        // without one the caption, as before.
+        let description = item
+            .get("meta")
+            .and_then(|m| m.get("description"))
+            .and_then(|d| d.get("text"))
+            .and_then(Value::as_str)
+            .map(text_inlines)
+            .filter(|t| !t.is_empty());
+        let alt = match description {
+            Some(alt) => alt,
+            None => self.caption_text(item),
+        };
+        // The displayed size (`_display`, inches) as `width` / `height`
+        // attributes, Pandoc's readers' shape for a sized image (#834).
+        let attrs: Vec<(String, String)> = item
+            .get("image")
+            .and_then(|i| i.get("_display"))
+            .and_then(Value::as_array)
+            .and_then(|d| Some((d.first()?.as_f64()?, d.get(1)?.as_f64()?)))
+            .map(|(w, h)| {
+                vec![
+                    ("width".to_string(), inches(w)),
+                    ("height".to_string(), inches(h)),
+                ]
+            })
+            .unwrap_or_default();
         let image = match &src {
-            Some(src) => ast::image(&[], alt, src),
-            None => ast::image(&["docling-placeholder"], alt, ""),
+            Some(src) => ast::image_sized(&[], &attrs, alt, src),
+            None => ast::image_sized(&["docling-placeholder"], &attrs, alt, ""),
         };
         // A native chart's data grid (`meta.tabular_chart.chart_data`).
         let chart = item
@@ -1614,6 +1659,50 @@ mod tests {
         assert_eq!(item[0]["t"], "Plain");
         assert_eq!(item[0]["c"][0]["t"], "Strong");
         assert_eq!(item[1]["t"], "BulletList");
+    }
+
+    /// #834: the `Image`'s alt text is the picture's description (the
+    /// author's alt text) when it has one, the caption only without; the
+    /// displayed size (`_display`, inches) becomes `width` / `height`.
+    #[test]
+    fn pictures_carry_alt_text_and_display_size() {
+        let mut j = doc(
+            &["#/pictures/0", "#/pictures/1"],
+            json!([text(0, "caption", "A duck", json!({})),]),
+            json!([]),
+            json!([]),
+        );
+        j["pictures"] = json!([
+            {"self_ref": "#/pictures/0", "children": [], "label": "picture", "content_layer": "body",
+             "meta": {"description": {"text": "Architecture diagram", "created_by": "alt_text"}},
+             "image": {"uri": "data:image/png;base64,AAAA", "_display": [2.5, 1.25]}, "captions": [{"$ref": "#/texts/0"}]},
+            {"self_ref": "#/pictures/1", "children": [], "label": "picture", "content_layer": "body",
+             "image": {"uri": "data:image/png;base64,BBBB"}, "captions": [{"$ref": "#/texts/0"}]},
+        ]);
+        let b = blocks(&j);
+        let image = &b[0]["c"][2][0]["c"][0];
+        assert_eq!(image["t"], "Image");
+        assert_eq!(
+            image["c"][0],
+            json!(["", [], [["width", "2.5in"], ["height", "1.25in"]]])
+        );
+        assert_eq!(
+            image["c"][1],
+            json!([
+                ast::str_("Architecture"),
+                ast::space(),
+                ast::str_("diagram")
+            ])
+        );
+        let image = &b[1]["c"][2][0]["c"][0];
+        assert_eq!(image["c"][0], json!(["", [], []]));
+        assert_eq!(
+            image["c"][1],
+            json!([ast::str_("A"), ast::space(), ast::str_("duck")])
+        );
+        assert_eq!(inches(2.5), "2.5in");
+        assert_eq!(inches(1.0), "1in");
+        assert_eq!(inches(0.33333), "0.3333in");
     }
 
     #[test]

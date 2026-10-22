@@ -726,6 +726,7 @@ pub(crate) fn build_picture(mimetype: impl Into<String>, data: Vec<u8>) -> Optio
         width,
         height,
         data,
+        display_size: None,
     })
 }
 

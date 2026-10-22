@@ -49,6 +49,9 @@ const CASES: &[&str] = &[
     "html/pandoc_inlines.html",
     "docx/pandoc_table_cell_hyperlink.docx",
     "json_docling/pandoc_caption_heading_inline.json",
+    // #834: a picture's alt text and displayed size, DOCX and ODT.
+    "docx/pandoc_picture_alt_dim.docx",
+    "odf/pandoc_picture_alt_dim.odt",
 ];
 
 fn root() -> PathBuf {

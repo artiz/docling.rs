@@ -1969,6 +1969,7 @@ mod tests {
                 height: 1,
                 data: vec![1],
                 dpi: 72,
+                display_size: None,
             }),
             classification: None,
             description: Some(crate::PictureDescription {
@@ -2007,6 +2008,7 @@ mod tests {
                 height: 1,
                 data: vec![1],
                 dpi: 72,
+                display_size: None,
             },
         );
 
@@ -2037,6 +2039,7 @@ mod tests {
                 height: 1,
                 data: vec![1],
                 dpi: 72,
+                display_size: None,
             },
         );
         let opts = RedactionOptions {
