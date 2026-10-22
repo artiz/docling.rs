@@ -35,9 +35,10 @@ use roxmltree::{Document, Node as XmlNode, NodeId};
 use super::docx::{
     attr, build_enum_marker, caption_numbering_marker, chart_rels, child_elements,
     clean_checkbox_symbols, detect_code_language, footnote_texts, get_list_counter,
-    header_footer_parts, in_textbox, is_code_by_font, is_code_style, is_title_style,
-    numbered_heading_text, on_off, part_rels, row_cells, row_grid_offsets, run_child_text,
-    style_chain_bold, style_numbering, sync_heading_counter, t_text, Ctx, MAX_TABLE_DEPTH,
+    header_footer_parts, heading_labels, in_textbox, inherited_outline, is_code_by_font,
+    is_code_style, is_title_style, numbered_heading_text, on_off, part_rels, row_cells,
+    row_grid_offsets, run_child_text, style_chain_bold, style_numbering, sync_heading_counter,
+    t_text, Ctx, MAX_TABLE_DEPTH,
 };
 use super::html_tree::docling_href;
 use super::ooxml::Package;
@@ -980,35 +981,24 @@ impl Walker {
             style_id
         };
         let name = ctx.style_names.get(label).map(String::as_str).unwrap_or("");
-        let base_label = ctx.style_based.get(label).map(String::as_str);
-        let base_name = base_label
-            .and_then(|b| ctx.style_names.get(b))
-            .map(String::as_str);
         if label.contains(':') {
             let parts: Vec<&str> = label.split(':').collect();
             if parts.len() == 2 {
                 return (parts[0].to_string(), parts[1].parse().ok());
             }
         }
-        let labels = [Some(label), Some(name), base_label, base_name];
-        let is_heading = labels
-            .iter()
-            .flatten()
-            .any(|l: &&str| l.to_lowercase().contains("heading"));
-        let outline = ctx
-            .style_outline
-            .get(label)
-            .map(|&l| l as i64)
+        // The id, name and `basedOn` ancestors up the whole chain (#841;
+        // docling stops at one hop), the outline level inherited likewise.
+        let labels = heading_labels(label, name, ctx);
+        let is_heading = labels.iter().any(|l| l.to_lowercase().contains("heading"));
+        let outline = inherited_outline(label, ctx)
+            .map(|l| l as i64)
             .filter(|l| (1..=9).contains(l));
         if is_heading {
             if let Some(o) = outline {
                 return ("Heading".into(), Some(o));
             }
-            if let Some(l) = labels
-                .iter()
-                .flatten()
-                .find(|l: &&&str| l.to_lowercase().contains("heading"))
-            {
+            if let Some(l) = labels.iter().find(|l| l.to_lowercase().contains("heading")) {
                 return Self::heading_and_level(l);
             }
         }
