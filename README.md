@@ -213,6 +213,18 @@ parses its output, so no dev headers/libraries are needed.
 
 Check with `ffmpeg -version`. `DOCLING_FFMPEG` overrides the binary used on
 any OS; the docling-rs-serve Docker image ships ffmpeg preinstalled.
+
+A trimmed, decode-only build (`--disable-everything --enable-…`) works too
+(#853); docling.rs needs only: the `file` protocol; the demuxers of your
+containers (`mov` for mp4/mov/m4v, `matroska` for mkv/webm, `avi`, `mpeg`);
+the video decoders of your tracks (`h264`, `hevc`, `vp8`, `vp9`, `av1`,
+`mpeg4`, `mpeg2video`, …) with their parsers; the filters `select`,
+`metadata`, `fps`, `scale`, `showinfo`; the encoders `png` and
+`wrapped_avframe`; the muxers `image2` and `null`. No audio component is
+used — the transcript is decoded in Rust — and the scene scan maps the
+video stream alone. Missing a component, ffmpeg fails the scene scan
+(`Encoder not found`, `Invalid argument`) and the video converts as
+transcript only; `DOCLING_RS_DEBUG=1` shows the message.
 </details>
 
 ## Conformance with Microsoft MarkItDown

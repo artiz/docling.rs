@@ -398,11 +398,17 @@ fn choose_timestamps(cuts: &[(f64, f64)], duration: Option<f64>, max_frames: usi
 /// every frame sharper than the threshold, in order, nothing written (`-f
 /// null`). `select` tags each kept frame with `lavfi.scene_score`, which
 /// `metadata=print` logs as a `pts_time:` line followed by the score line.
+/// The video stream alone is mapped (`-an -sn -dn`, #853): the null muxer
+/// has a default audio encoder (`pcm_s16le`), so without it ffmpeg decoded
+/// and re-encoded the whole soundtrack for nothing — and a decode-only
+/// build without that encoder, an audio decoder or libswresample failed
+/// the scan (`Encoder not found`), leaving every video with audio
+/// transcript-only.
 fn scene_cuts(input: &Path, threshold: f32) -> Result<Vec<(f64, f64)>, String> {
     let out = Command::new(ffmpeg_bin())
         .args(["-hide_banner", "-nostats", "-i"])
         .arg(input)
-        .arg("-vf")
+        .args(["-an", "-sn", "-dn", "-vf"])
         .arg(format!(
             "select='gt(scene,{threshold})',metadata=print:key=lavfi.scene_score"
         ))
