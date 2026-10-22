@@ -5,8 +5,8 @@
 #     gh workflow run release.yml                          # every channel
 #     gh workflow run crates-publish.yml -f tag=v2.25.0    # crates.io alone
 #
-# ci.yml bumps the version and cuts the GitHub Release on every merge to
-# master but builds nothing for it; the `cargo publish` verify builds (every
+# ci.yml bumps the version and tags it on every merge to master but builds
+# nothing for it; the `cargo publish` verify builds (every
 # crate compiled once more from its packaged sources, the ONNX Runtime
 # prebuilt fetched for the ML crates) and the target cache they need live
 # here, on the release the maintainer picks, instead of on every merge.
@@ -24,7 +24,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: "Release tag whose crates to publish (e.g. v2.25.0) — a GitHub Release ci.yml cut."
+        description: "Version tag whose crates to publish (e.g. v2.25.0) — a vX.Y.Z tag ci.yml pushed."
         required: true
 
 permissions:

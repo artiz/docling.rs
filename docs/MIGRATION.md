@@ -2424,8 +2424,9 @@ messages since the last `v*` tag (`feat:` → minor, `fix:`/`perf:` → patch, a
 `type!:`/`BREAKING CHANGE` → major; docs/chore/ci/etc → no release), bumps the
 workspace version, commits + tags it (with `[skip ci]`, via the `RELEASE_PAT`
 admin token — needed to satisfy the master ruleset — so it
-doesn't loop) and cuts the GitHub Release — and builds nothing: the merge-time
-job is a `cargo update --workspace` and a push, with no target cache. The
+doesn't loop) — and builds nothing, and cuts no GitHub Release: the merge-time
+job is a `cargo update --workspace` and a push, with no target cache; the
+Release is cut by `release.yml` for the tags the maintainer publishes. The
 crates reach crates.io from `crates-publish.yml`, one of the channels
 `gh workflow run release.yml` dispatches for the release the maintainer picks
 (`-f crates=false` leaves it out; `gh workflow run crates-publish.yml -f

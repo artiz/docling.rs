@@ -3,11 +3,14 @@
 # `docling-rs-mcp` launcher and, after it, the MCP catalogs), npm
 # (`docling.rs`, its platform packages, `docling.rs-cuda`, `docling.rs-wasm`),
 # GHCR (the CPU and CUDA images) and the release's CLI and FFI binaries.
-# ci.yml bumps the version, tags it and cuts a GitHub Release on every merge
-# — builds nothing, publishes nothing, not marked latest; this publishes the
-# releases the maintainer picks:
+# ci.yml bumps the version and tags it on every merge — builds nothing,
+# publishes nothing, cuts no Release; this cuts the GitHub Release for the
+# tag (`cut` below: notes from the tags, scripts/ci/release_notes.sh; not
+# marked latest until every channel succeeded) and publishes it, for the
+# tags the maintainer picks — so the Releases page lists what was published,
+# not every merge (v2.48.x went up to six Releases a day):
 #
-#     gh workflow run release.yml                  # the newest vX.Y.Z release
+#     gh workflow run release.yml                  # the newest vX.Y.Z tag
 #     gh workflow run release.yml -f tag=v2.23.0   # a given one
 #
 # Each channel runs as its own workflow (crates-publish.yml, pypi-publish.yml,
@@ -28,7 +31,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: "Release tag to publish (e.g. v2.23.0) — a GitHub Release ci.yml cut. Blank = the newest vX.Y.Z release."
+        description: "Version tag to release (e.g. v2.23.0) — a vX.Y.Z tag ci.yml pushed. Blank = the newest."
         required: false
         default: ""
       crates:
@@ -56,7 +59,7 @@ on:
         type: boolean
         default: true
       latest:
-        description: "Mark the release GitHub's latest once every channel succeeded (needs the CLI binaries on it)."
+        description: "Mark the GitHub Release latest once every channel succeeded (needs the CLI binaries on it)."
         type: boolean
         default: true
 
@@ -82,21 +85,23 @@ jobs:
           TAG: ${{ inputs.tag }}
           CUDA: ${{ inputs.cuda }}
         run: |
-          # Blank: the newest final release ci.yml cut (the `npm-cuda-v*` and
-          # `models-v*` asset releases and pre-releases do not count).
+          # Blank: the newest final version tag ci.yml pushed (the
+          # `npm-cuda-v*` / `models-v*` asset tags and pre-releases do not
+          # count). From the tags, not the Releases: a Release exists only
+          # once this workflow cut it.
           if [ -z "$TAG" ]; then
-            TAG=$(gh release list --repo "$GITHUB_REPOSITORY" --exclude-drafts --limit 100 \
-              --json tagName --jq '.[].tagName' | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -n1 || true)
-            if [ -z "$TAG" ]; then echo "::error::no vX.Y.Z GitHub Release found"; exit 1; fi
-            echo "No tag given: publishing the newest release, $TAG"
+            TAG=$(gh api --paginate "repos/$GITHUB_REPOSITORY/git/matching-refs/tags/v" \
+              --jq '.[].ref | sub("^refs/tags/"; "")' | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -n1 || true)
+            if [ -z "$TAG" ]; then echo "::error::no vX.Y.Z tag found"; exit 1; fi
+            echo "No tag given: releasing the newest tag, $TAG"
           fi
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
-          echo "### Publishing $TAG" >> "$GITHUB_STEP_SUMMARY"
+          echo "### Releasing $TAG" >> "$GITHUB_STEP_SUMMARY"
           if ! [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+([-+].+)?$ ]]; then
             echo "::error::'$TAG' is not a v<semver> release tag"; exit 1
           fi
-          if ! gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json tagName >/dev/null; then
-            echo "::error::there is no GitHub Release $TAG (ci.yml cuts one for every release)"; exit 1
+          if ! gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$TAG" --jq .ref >/dev/null; then
+            echo "::error::there is no tag $TAG (ci.yml tags every release-worthy merge)"; exit 1
           fi
           channels='[]'
           add() {
@@ -111,9 +116,42 @@ jobs:
           echo "channels=$channels" >> "$GITHUB_OUTPUT"
           jq -r '.[] | "- \(.name): `\(.workflow)` \(.fields)"' <<<"$channels"
 
+  # The GitHub Release for the tag, before any channel runs: cli-binaries.yml
+  # and the MCP bundle upload attach assets to it. Notes are the tag's commits
+  # (scripts/ci/release_notes.sh). Idempotent: an existing Release (a re-run,
+  # a repaired channel, a Release cut by hand) keeps its assets and gets its
+  # notes refreshed. Not marked latest here — `latest` below does that once
+  # every channel succeeded (install.sh takes the newest Release that has its
+  # binary, #707).
+  cut:
+    name: cut the GitHub Release
+    needs: plan
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # gh release create / edit
+    env:
+      GH_TOKEN: ${{ github.token }}
+      TAG: ${{ needs.plan.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.plan.outputs.tag }}
+          fetch-depth: 0 # every tag, for the previous release and the commit range
+      - name: Create or refresh the Release
+        run: |
+          scripts/ci/release_notes.sh "$TAG" release-notes.md
+          cat release-notes.md
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --title "$TAG" --notes-file release-notes.md
+            echo "Release $TAG exists — notes refreshed" >> "$GITHUB_STEP_SUMMARY"
+          else
+            gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --title "$TAG" --notes-file release-notes.md --verify-tag --latest=false
+            echo "Release $TAG created" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
   publish:
     name: ${{ matrix.name }}
-    needs: plan
+    needs: [plan, cut]
     if: needs.plan.outputs.channels != '[]'
     runs-on: ubuntu-latest
     # The PyPI run includes the MCP registry step, which waits for the images.
@@ -173,7 +211,7 @@ jobs:
 
   latest:
     name: mark the release latest
-    needs: [plan, publish]
+    needs: [plan, cut, publish]
     if: ${{ !cancelled() && inputs.latest && needs.publish.result == 'success' }}
     runs-on: ubuntu-latest
     permissions:

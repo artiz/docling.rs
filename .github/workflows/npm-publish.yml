@@ -5,8 +5,8 @@
 # package plus per-platform `optionalDependencies` (docling.rs-<triple>) via
 # napi-rs and publishes them all.
 #
-# Trigger: manual dispatch only. Like pypi-publish.yml, a GitHub Release
-# (cut on every merge) does NOT publish to npm; the maintainer picks the
+# Trigger: manual dispatch only. Like pypi-publish.yml, a version tag (one
+# per merge) does NOT publish to npm; the maintainer picks the
 # releases worth publishing — release.yml runs this with PyPI, the images and
 # the CLI binaries; alone, it repairs a failed npm channel:
 #
