@@ -24,10 +24,23 @@ like the Rust CLI. Re-published release assets are picked up with
 ``download_models(force=True)`` — the cache has no version stamp. (The
 cache's *internal* layout keeps the plain ``models/`` folder name — it lives
 under the docling-owned cache root, so nothing collides.)
+
+Integrity: every asset fetched from the release is checked against the
+release's ``SHA256SUMS`` (``scripts/ci/models_manifest.sh`` regenerates it
+after each upload) before it lands in the cache — a truncated transfer, a
+tampered mirror behind ``$DOCLING_RS_MODELS_URL`` or a swapped asset raises
+:class:`IntegrityError` instead of loading (``libonnxruntime.so`` on IBM Z
+is code the process loads). The upstream fallback hosts (Hugging Face,
+RapidOCR's hub) are outside the manifest. ``$DOCLING_RS_MODELS_VERIFY``:
+``auto`` (default) checks what the manifest lists and warns, once, about a
+release without one or an asset missing from it; ``require`` raises on
+either; ``off`` skips the check — the same knob
+``download_dependencies.sh`` reads.
 """
 
 from __future__ import annotations
 
+import hashlib
 import os
 import platform
 import sys
@@ -207,19 +220,106 @@ def cache_dir() -> Path:
     return Path(os.environ.get("XDG_CACHE_HOME", Path.home() / ".cache")) / "docling.rs"
 
 
+class IntegrityError(RuntimeError):
+    """A release asset's sha256 does not match the release's ``SHA256SUMS``
+    (or, under ``DOCLING_RS_MODELS_VERIFY=require``, cannot be checked). Never
+    swallowed as an "optional asset missing": a tampered or corrupted
+    download must not fall through to the upstream fallback host."""
+
+
+_MANIFEST_NAME = "SHA256SUMS"
+# base URL -> {asset name: sha256 hex}, or None for a release without a
+# manifest (looked up once per process; the warning is printed once too).
+_manifests: "dict[str, dict[str, str] | None]" = {}
+
+
+def _verify_mode() -> str:
+    mode = os.environ.get("DOCLING_RS_MODELS_VERIFY", "auto").strip().lower() or "auto"
+    if mode not in ("auto", "require", "off"):
+        raise ValueError(f"DOCLING_RS_MODELS_VERIFY must be auto, require or off (got {mode!r})")
+    return mode
+
+
+def _manifest(base_url: str) -> "dict[str, str] | None":
+    """The release's ``SHA256SUMS`` as ``{name: hex}`` — ``sha256sum``'s
+    ``<hex>  <name>`` lines — or ``None`` when the release hosts none."""
+    if base_url in _manifests:
+        return _manifests[base_url]
+    entries: "dict[str, str] | None" = None
+    try:
+        with urllib.request.urlopen(f"{base_url}/{_MANIFEST_NAME}") as r:
+            text = r.read().decode("utf-8", "replace")
+        entries = {}
+        for line in text.splitlines():
+            parts = line.split()
+            if len(parts) >= 2 and len(parts[0]) == 64:
+                entries[parts[-1].lstrip("*")] = parts[0].lower()
+    except Exception:
+        entries = None
+    if entries is None:
+        if _verify_mode() == "require":
+            raise IntegrityError(
+                f"{base_url}/{_MANIFEST_NAME} unavailable and DOCLING_RS_MODELS_VERIFY=require"
+            )
+        print(
+            f"docling.rs: {base_url} hosts no {_MANIFEST_NAME} — downloads from it are not "
+            "integrity-checked",
+            file=sys.stderr,
+            flush=True,
+        )
+    _manifests[base_url] = entries
+    return entries
+
+
+def _expected_sha256(url: str) -> "str | None":
+    """The manifest digest a download from the release must match, or
+    ``None`` when the URL is outside the release (an upstream fallback host),
+    the check is off, or the release/manifest does not cover it."""
+    if _verify_mode() == "off" or not url.startswith(BASE_URL + "/"):
+        return None
+    name = url[len(BASE_URL) + 1 :]
+    entries = _manifest(BASE_URL)
+    if entries is None:
+        return None
+    want = entries.get(name)
+    if want is None:
+        if _verify_mode() == "require":
+            raise IntegrityError(
+                f"{name} is not listed in {BASE_URL}/{_MANIFEST_NAME} (DOCLING_RS_MODELS_VERIFY=require)"
+            )
+        print(
+            f"docling.rs: {name} is not listed in {_MANIFEST_NAME} — not integrity-checked",
+            file=sys.stderr,
+            flush=True,
+        )
+    return want
+
+
 def _fetch(url: str, dest: Path, optional: bool, progress: bool, force: bool = False) -> bool:
     if dest.exists() and not force:
         return True
+    want = _expected_sha256(url)
     dest.parent.mkdir(parents=True, exist_ok=True)
     tmp = dest.with_suffix(dest.suffix + ".download")
     try:
         if progress:
             print(f"  > {dest}", file=sys.stderr, flush=True)
+        digest = hashlib.sha256()
         with urllib.request.urlopen(url) as r, open(tmp, "wb") as f:
             while chunk := r.read(1 << 20):
+                digest.update(chunk)
                 f.write(chunk)
+        if want is not None and digest.hexdigest() != want:
+            raise IntegrityError(
+                f"{url}: sha256 mismatch (expected {want}, got {digest.hexdigest()}) — a corrupted "
+                "download or a tampered mirror; retry, and only if it repeats set "
+                "DOCLING_RS_MODELS_VERIFY=off to bypass the check at your own risk"
+            )
         tmp.rename(dest)
         return True
+    except IntegrityError:
+        tmp.unlink(missing_ok=True)
+        raise
     except Exception:
         tmp.unlink(missing_ok=True)
         if optional:

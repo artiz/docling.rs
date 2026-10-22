@@ -16,6 +16,9 @@ rem %CARGO_HOME%, else %USERPROFILE%\.cargo) instead of the repo root: its
 rem bin\ is where `cargo install docling-cli` puts docling-rs.exe, which looks
 rem for .models\ next to itself and one level up, from any directory.
 rem Needs curl.exe and tar.exe (both ship with Windows 10 1803+).
+rem Integrity: every asset fetched from the release is checked with certutil
+rem against its SHA256SUMS before it is moved into place, as the .sh does;
+rem DOCLING_RS_MODELS_VERIFY=auto (default) | require | off, see there.
 setlocal enabledelayedexpansion
 
 set "BASE_URL=https://github.com/docling-project/docling.rs/releases/download/models-v1"
@@ -65,6 +68,27 @@ rem fixed delay bunches every attempt into a few seconds, which is useless
 rem against the per-IP 429 the third-party hosts answer shared CI/office
 rem egress with - curl's default doubling spreads them out (as in the .sh).
 set "CURL_TIMEOUTS=--connect-timeout 30 --speed-limit 1024 --speed-time 60 --retry 5"
+
+rem The release's SHA256SUMS (scripts/ci/models_manifest.sh), fetched once;
+rem :verify checks each release asset against it. Without one (a tag that
+rem predates the manifest, a mirror without it) downloads go unchecked with a
+rem note - or fail under DOCLING_RS_MODELS_VERIFY=require.
+set "VERIFY=%DOCLING_RS_MODELS_VERIFY%"
+if "%VERIFY%"=="" set "VERIFY=auto"
+set "MANIFEST="
+if /i not "%VERIFY%"=="off" (
+  set "MANIFEST=%TEMP%\docling-rs-SHA256SUMS.%RANDOM%.txt"
+  curl -fsSL %CURL_TIMEOUTS% -o "!MANIFEST!" "%BASE_URL%/SHA256SUMS" >nul 2>nul
+  if errorlevel 1 (
+    del "!MANIFEST!" 2>nul
+    set "MANIFEST="
+    if /i "!VERIFY!"=="require" (
+      echo error: %BASE_URL%/SHA256SUMS unavailable and DOCLING_RS_MODELS_VERIFY=require
+      exit /b 1
+    )
+    echo   ! %BASE_URL% hosts no SHA256SUMS - downloads from it are not integrity-checked
+  )
+)
 
 if not exist .models\tableformer mkdir .models\tableformer
 if not exist .models\asr mkdir .models\asr
@@ -141,6 +165,7 @@ if %WITH_INT8%==1 (
   if exist .models\layout_heron_int8.onnx echo int8 models present - used by default (DOCLING_RS_FP32=1 forces full precision)
 )
 
+if not "%MANIFEST%"=="" del "%MANIFEST%" 2>nul
 echo done - .models\ populated in %CD%
 exit /b 0
 
@@ -151,8 +176,11 @@ echo   = %~2 (already present)
 exit /b 0
 :fetch_dl
 echo   ^> %~2
-curl -fsSL %CURL_TIMEOUTS% -o "%~2" "%~1"
-exit /b %errorlevel%
+curl -fsSL %CURL_TIMEOUTS% -o "%~2.download" "%~1"
+if errorlevel 1 (del "%~2.download" 2>nul & exit /b 1)
+call :verify "%~1" "%~2.download" || exit /b 1
+move /y "%~2.download" "%~2" >nul
+exit /b 0
 
 :fetch_opt
 if %FORCE%==1 goto :fetch_opt_dl
@@ -160,8 +188,40 @@ if not exist "%~2" goto :fetch_opt_dl
 echo   = %~2 (already present)
 exit /b 0
 :fetch_opt_dl
-curl -fsSL %CURL_TIMEOUTS% -o "%~2" "%~1" >nul 2>nul
-if %errorlevel%==0 (echo   ^> %~2) else (del "%~2" 2>nul)
+curl -fsSL %CURL_TIMEOUTS% -o "%~2.download" "%~1" >nul 2>nul
+if errorlevel 1 (del "%~2.download" 2>nul & exit /b 0)
+rem A hash mismatch on an optional asset is as fatal as on a required one.
+call :verify "%~1" "%~2.download" || exit /b 1
+move /y "%~2.download" "%~2" >nul
+echo   ^> %~2
+exit /b 0
+
+rem :verify <url> <downloaded-file> - a release asset against SHA256SUMS.
+rem A URL outside %BASE_URL% (an upstream fallback host) is not covered.
+:verify
+if "%MANIFEST%"=="" exit /b 0
+set "VURL=%~1"
+set "VNAME=!VURL:%BASE_URL%/=!"
+if "!VNAME!"=="!VURL!" exit /b 0
+set "WANT="
+for /f "tokens=1,2" %%h in ('findstr /e /c:"  !VNAME!" "%MANIFEST%"') do if "%%i"=="!VNAME!" set "WANT=%%h"
+if "!WANT!"=="" (
+  if /i "%VERIFY%"=="require" (
+    del "%~2" 2>nul
+    echo error: !VNAME! is not listed in %BASE_URL%/SHA256SUMS ^(DOCLING_RS_MODELS_VERIFY=require^)
+    exit /b 1
+  )
+  echo   ! !VNAME! is not listed in SHA256SUMS - not integrity-checked
+  exit /b 0
+)
+set "GOT="
+for /f "skip=1 tokens=*" %%h in ('certutil -hashfile "%~2" SHA256') do if not defined GOT set "GOT=%%h"
+set "GOT=!GOT: =!"
+if /i not "!GOT!"=="!WANT!" (
+  del "%~2" 2>nul
+  echo error: !VNAME!: sha256 mismatch ^(expected !WANT!, got !GOT!^) - a corrupted download or a tampered mirror; re-run, and only if it repeats set DOCLING_RS_MODELS_VERIFY=off to bypass the check at your own risk
+  exit /b 1
+)
 exit /b 0
 
 :fail

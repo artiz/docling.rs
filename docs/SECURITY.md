@@ -84,6 +84,25 @@ multi-gigabyte bitmap, which a few-hundred-byte crafted `MediaBox` otherwise
 forces (the `image` crate *panics* rather than erroring when that allocation
 fails).
 
+### Downloaded assets
+
+The models, pdfium and the s390x ONNX Runtime come from this repository's
+`models-v*` GitHub release, and two of them are shared libraries the process
+loads. Every downloader (`scripts/install/download_dependencies.sh` / `.bat`,
+the Python `download_models()`) verifies each asset it fetches from the
+release against the release's `SHA256SUMS` before moving it into place; a
+mismatch deletes the file and fails the run — never a silent fallback to an
+upstream host. `DOCLING_RS_MODELS_VERIFY=require` (default `auto`, which
+only warns about a release or asset without a digest) makes a missing
+manifest fatal too, for a build that must not fetch anything unverified. The
+manifest travels over the same TLS connection as the assets: it catches a
+corrupted or truncated transfer, a tampered mirror behind
+`DOCLING_RS_MODELS_URL` and a swapped release asset, not a peer able to
+forge the certificate of both (that is the TLS stack's job: the bundled
+Mozilla roots in `webpki-roots`, the distrusted-key list in `rustls-webpki`,
+both pinned in `Cargo.lock` and bumped on a root-program incident). The `docling.rs-cuda` npm package
+verifies its binaries the same way (`manifest.json` of its release).
+
 ### External programs
 
 Some inputs and options run a program the converter does not ship, on

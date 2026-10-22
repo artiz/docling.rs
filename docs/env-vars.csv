@@ -104,3 +104,5 @@ DOCLING_RS_VIDEO_SCENE_THRESHOLD,operational,crates/docling/src/converter.rs
 DOCLING_RS_VIDEO_FRAME_MAX_SIDE,operational,crates/docling/src/converter.rs
 DOCLING_RS_VIDEO_FRAME_DEDUPE,operational,crates/docling/src/converter.rs
 DOCLING_RS_NER_DIR,model path,crates/docling-pdf/src/ner.rs
+DOCLING_RS_MODELS_URL,network,crates/docling-py/python/docling_rs/models.py
+DOCLING_RS_MODELS_VERIFY,network,crates/docling-py/python/docling_rs/models.py

@@ -297,10 +297,17 @@ jobs:
             # (v1.98.0, after a re-run of this workflow). Keep the patterns in
             # sync with every workflow that uploads into $TAG.
             case "$asset" in
-              docling-parse-render-*|onnxruntime-linux-*) continue ;;
+              docling-parse-render-*|onnxruntime-linux-*|SHA256SUMS) continue ;;
             esac
             if [ ! -f "release-assets/$asset" ]; then
               echo "pruning stale asset: $asset"
               gh release delete-asset "$TAG" "$asset" --repo "${{ github.repository }}" --yes
             fi
           done
+
+      # Last: the SHA256SUMS the downloaders verify every asset against,
+      # regenerated from the release as it stands after the upload and the
+      # prune (scripts/ci/models_manifest.sh — also the last step of the
+      # other workflows that upload into this release).
+      - name: Regenerate SHA256SUMS
+        run: scripts/ci/models_manifest.sh "$TAG"

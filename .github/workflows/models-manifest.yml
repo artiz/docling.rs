@@ -1,0 +1,32 @@
+# Regenerate the SHA256SUMS asset of a models release from what it hosts
+# (scripts/ci/models_manifest.sh): for a release that predates the manifest,
+# or after assets were uploaded by hand. The workflows that upload into the
+# release (publish-models.yml, docling-parse-render.yml,
+# onnxruntime-s390x.yml) regenerate it themselves as their last step.
+#
+#   gh workflow run models-manifest.yml                    # tag = models-v1
+#   gh workflow run models-manifest.yml -f tag=models-v2
+
+name: models manifest
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Models release tag whose SHA256SUMS to regenerate."
+        required: false
+        default: "models-v1"
+
+permissions:
+  contents: write # gh release upload
+
+jobs:
+  manifest:
+    name: SHA256SUMS of ${{ inputs.tag }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v7
+      - run: scripts/ci/models_manifest.sh "${{ inputs.tag }}"

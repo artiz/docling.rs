@@ -92,3 +92,18 @@ jobs:
             exit 1
           fi
           gh release upload "$TAG" release-assets/* --repo "${{ github.repository }}" --clobber
+
+  # After every platform's upload: the SHA256SUMS the downloaders verify the
+  # tarballs against, regenerated from the whole release
+  # (scripts/ci/models_manifest.sh). One job after the matrix, not a step in
+  # each — three concurrent regenerations would race on the last writer.
+  manifest:
+    name: SHA256SUMS of ${{ inputs.tag }}
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v7
+      - run: scripts/ci/models_manifest.sh "${{ inputs.tag }}"
