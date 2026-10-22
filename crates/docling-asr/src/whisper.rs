@@ -434,9 +434,7 @@ impl Transcriber {
     fn encode(&mut self, window: &[f32]) -> Result<(Vec<f32>, Vec<usize>), String> {
         let input = Tensor::from_array(([1usize, crate::mel::N_MELS, N_FRAMES], window.to_vec()))
             .map_err(|e| format!("asr: mel tensor: {e}"))?;
-        let outputs = self
-            .encoder
-            .run(ort::inputs!["input_features" => input])
+        let outputs = docling_onnx::run(&mut self.encoder, ort::inputs!["input_features" => input])
             .map_err(|e| format!("asr: encoder: {e}"))?;
         let (shape, data) = outputs[0]
             .try_extract_tensor::<f32>()
@@ -498,10 +496,11 @@ impl Transcriber {
             .map_err(|e| format!("asr: ids tensor: {e}"))?;
         let hid_t = TensorRef::from_array_view((hidden.1.as_slice(), hidden.0.as_slice()))
             .map_err(|e| format!("asr: hidden tensor: {e}"))?;
-        let outputs = self
-            .decoder
-            .run(ort::inputs!["input_ids" => ids_t, "encoder_hidden_states" => hid_t])
-            .map_err(|e| format!("asr: decoder: {e}"))?;
+        let outputs = docling_onnx::run(
+            &mut self.decoder,
+            ort::inputs!["input_ids" => ids_t, "encoder_hidden_states" => hid_t],
+        )
+        .map_err(|e| format!("asr: decoder: {e}"))?;
         let (_, data) = outputs[0]
             .try_extract_tensor::<f32>()
             .map_err(|e| format!("asr: decoder output: {e}"))?;

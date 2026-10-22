@@ -331,8 +331,7 @@ impl LayoutModel {
         }
         let input = Tensor::from_array(([batch, 3, SIDE as usize, SIDE as usize], data))
             .map_err(|e| format!("layout: input tensor: {e}"))?;
-        let outputs = session
-            .run(ort::inputs!["pixel_values" => input])
+        let outputs = docling_onnx::run(session, ort::inputs!["pixel_values" => input])
             .map_err(|e| format!("layout: inference: {e}"))?;
         let (lshape, logits) = outputs["logits"]
             .try_extract_tensor::<f32>()

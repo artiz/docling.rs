@@ -109,10 +109,9 @@ mod session {
                 let input =
                     Tensor::from_array(([batch.len(), 3, CLS_H as usize, CLS_W as usize], data))
                         .map_err(|e| format!("ocr-cls: input: {e}"))?;
-                let outputs = self
-                    .session
-                    .run(ort::inputs![name.as_str() => input])
-                    .map_err(|e| format!("ocr-cls: run: {e}"))?;
+                let outputs =
+                    docling_onnx::run(&mut self.session, ort::inputs![name.as_str() => input])
+                        .map_err(|e| format!("ocr-cls: run: {e}"))?;
                 let (shape, probs) = outputs[0]
                     .try_extract_tensor::<f32>()
                     .map_err(|e| format!("ocr-cls: output: {e}"))?;

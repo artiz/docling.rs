@@ -364,12 +364,18 @@ impl OcrModel {
     /// sessions recognise disjoint same-width batches concurrently — each
     /// line still sees exactly the single-thread kernel path, results are
     /// placed by index, and the output is byte-identical to one lane.
-    /// `DOCLING_RS_OCR_SESSIONS` overrides the caller's lane count.
+    /// `DOCLING_RS_OCR_SESSIONS` overrides the caller's lane count; under a
+    /// CUDA-class provider the default is one lane (#842) — the lanes exist
+    /// to use idle CPU cores, and on one GPU each is another session's arena.
     pub fn load_with(lang: OcrLang, lanes: usize) -> Result<Self, String> {
         let (rec_path, dict_path) = resolve_rec_pair(lang);
         let lanes = docling_core::env::parse::<usize>("DOCLING_RS_OCR_SESSIONS")
             .filter(|&n| n > 0)
-            .unwrap_or(lanes)
+            .unwrap_or(if docling_onnx::prefers_single_worker() {
+                1
+            } else {
+                lanes
+            })
             .clamp(1, 8);
         let open = || -> Result<Session, String> {
             let builder = docling_onnx::session_builder()
@@ -654,8 +660,7 @@ fn recognize_batch(
     let data = batch_input(w, chunk, lines);
     let input = Tensor::from_array(([n, 3, REC_HEIGHT as usize, w], data))
         .map_err(|e| format!("ocr: input tensor: {e}"))?;
-    let outputs = rec
-        .run(ort::inputs!["x" => input])
+    let outputs = docling_onnx::run(rec, ort::inputs!["x" => input])
         .map_err(|e| format!("ocr: rec inference: {e}"))?;
     let (shape, probs) = outputs[0]
         .try_extract_tensor::<f32>()

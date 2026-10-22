@@ -81,10 +81,11 @@ impl Vad {
             .map_err(|e| format!("vad: state: {e}"))?;
         let sr = Tensor::from_array(((), vec![SAMPLE_RATE as i64]))
             .map_err(|e| format!("vad: sr: {e}"))?;
-        let outputs = self
-            .session
-            .run(ort::inputs!["input" => input, "state" => st, "sr" => sr])
-            .map_err(|e| format!("vad: run: {e}"))?;
+        let outputs = docling_onnx::run(
+            &mut self.session,
+            ort::inputs!["input" => input, "state" => st, "sr" => sr],
+        )
+        .map_err(|e| format!("vad: run: {e}"))?;
         let (_, p) = outputs["output"]
             .try_extract_tensor::<f32>()
             .map_err(|e| format!("vad: output: {e}"))?;

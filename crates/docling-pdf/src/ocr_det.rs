@@ -651,8 +651,7 @@ mod session {
                 .map_err(|e| format!("ocr-det: input: {e}"))?;
             let name = self.session.inputs()[0].name().to_string();
             let outputs = crate::timing::timed("ocr.det.net", || {
-                self.session
-                    .run(ort::inputs![name.as_str() => input])
+                docling_onnx::run(&mut self.session, ort::inputs![name.as_str() => input])
                     .map_err(|e| format!("ocr-det: run: {e}"))
             })?;
             let (shape, prob) = outputs[0]

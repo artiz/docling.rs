@@ -2147,6 +2147,12 @@ fn pdf_worker_count() -> usize {
     if let Some(n) = env::parse::<usize>("DOCLING_RS_PDF_WORKERS").filter(|&n| n > 0) {
         return n;
     }
+    // One GPU behind every worker (#842): the pool multiplies the sessions,
+    // and on the device that is memory, not speed — the serial primary's
+    // render-ahead already overlaps rasterization with inference.
+    if docling_onnx::prefers_single_worker() {
+        return 1;
+    }
     (intra_threads() / pdf_intra()).clamp(1, 16)
 }
 

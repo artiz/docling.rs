@@ -158,7 +158,17 @@ cargo test -p docling-pdf --features pdfium --lib raster:: pdfium_backend::  # t
   keeps every distinct cut), `DOCLING_RS_PDF_WORKERS/_THREADS/_INTRA`, `DOCLING_RS_TF_INTRA` (#262),
   `DOCLING_RS_NO_ARENA` (#263; serve and `docling-rs mcp` default it on —
   both also pin glibc's mmap threshold and trim after each conversion,
-  `docling::memory`, #669),
+  `docling::memory`, #669), the CUDA arena knobs (#842: `DOCLING_RS_CUDA_DEVICE`,
+  `DOCLING_RS_CUDA_MEM_LIMIT_MB`, `DOCLING_RS_CUDA_ARENA_EXTEND`
+  `next_power_of_two`|`same_as_requested`, `DOCLING_RS_CUDA_ARENA_SHRINK` —
+  on: every run hands its arena growth back, `docling_onnx::run` /
+  `run_options`, which every session run goes through —
+  `DOCLING_RS_CUDA_CONV_ALGO_SEARCH`, `DOCLING_RS_CUDA_CONV_MAX_WORKSPACE`;
+  under a CUDA-class provider the page-worker pool and the OCR lanes default
+  to one, `docling_onnx::prefers_single_worker`, decided by a probe session
+  so an `auto` build without a device keeps its CPU defaults) and serve's
+  `--idle-unload-secs` / `DOCLING_RS_IDLE_UNLOAD_SECS` (drops the warm
+  pipeline, GPU memory included, after N idle seconds),
   `DOCLING_RS_GRAPH_CACHE_DIR` / `DOCLING_RS_NO_GRAPH_CACHE` (ONNX Runtime
   optimized-graph cache, CPU provider only), `DOCLING_RS_OCR_SESSIONS`
   (parallel single-thread OCR lanes; byte-identical output),

@@ -96,6 +96,7 @@ and `errors`); `redact_pii` reports its counts in `X-Docling-Redaction`.
 | `--max-body-mb N` | 256 | upload cap |
 | `--queue-size N` · `--result-ttl SECS` | 16 · 600 | async jobs queued or unfetched at once (429 beyond) · how long a finished result stays fetchable |
 | `--warmup` | off | load the PDF/image models at startup; `/ready` is 503 until they are |
+| `--idle-unload-secs N` | 0 = never (`DOCLING_RS_IDLE_UNLOAD_SECS`) | drop the warm PDF/image pipeline — its ONNX sessions and, on a GPU, their device memory — after N seconds without a PDF/image conversion (#842); the next one reloads it (~1 s on a GPU), `/ready` says `models: lazy` meanwhile |
 | `--allow-url-fetch` | off | URL inputs, remote images, caller-supplied VLM endpoints, `put` targets. Private/loopback targets stay blocked (`DOCLING_RS_ALLOW_PRIVATE_IP_FETCH=1` opts out) and downloads are capped (`DOCLING_RS_MAX_FETCH_BYTES`) |
 | `--allow-local-images` | off | accept `image_sources=local` (#646) |
 | `--strict` | off | strict Markdown for requests that don't say |
