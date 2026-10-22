@@ -1,0 +1,38 @@
+[ Para
+    [ Span
+        ( ""
+        , [ "comment-start" ]
+        , [ ( "comment-id" , "1" )
+          , ( "author" , "Synthetic Reviewer (SR)" )
+          , ( "date" , "2026-01-15T12:00:00Z" )
+          ]
+        )
+        [ Str "Verify"
+        , Space
+        , Str "timeout"
+        , Space
+        , Str "threshold"
+        , Space
+        , Str "before"
+        , Space
+        , Str "release."
+        ]
+    , Str "The"
+    , Space
+    , Str "gateway"
+    , Space
+    , Str "timeout"
+    , Space
+    , Str "is"
+    , Space
+    , Str "set"
+    , Space
+    , Str "to"
+    , Space
+    , Str "30"
+    , Space
+    , Str "seconds."
+    , Span
+        ( "" , [ "comment-end" ] , [ ( "comment-id" , "1" ) ] ) []
+    ]
+]

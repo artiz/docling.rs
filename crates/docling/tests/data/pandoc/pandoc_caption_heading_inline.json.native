@@ -1,0 +1,64 @@
+[ Para
+    [ Str "**Table"
+    , Space
+    , Str "1:**"
+    , Space
+    , Str "[Multi-run"
+    , Space
+    , Str "caption"
+    , Space
+    , Str "text](https://example.org/caption)"
+    ]
+, Table
+    ( "" , [] , [] )
+    (Caption Nothing [])
+    [ ( AlignDefault , ColWidthDefault ) ]
+    (TableHead
+       ( "" , [] , [] )
+       [ Row
+           ( "" , [] , [] )
+           [ Cell
+               ( "" , [] , [] )
+               AlignDefault
+               (RowSpan 1)
+               (ColSpan 1)
+               [ Plain [ Str "Header" ] ]
+           ]
+       ])
+    [ TableBody
+        ( "" , [] , [] )
+        (RowHeadColumns 0)
+        []
+        [ Row
+            ( "" , [] , [] )
+            [ Cell
+                ( "" , [] , [] )
+                AlignDefault
+                (RowSpan 1)
+                (ColSpan 1)
+                [ Plain [ Str "Value" ] ]
+            ]
+        ]
+    ]
+    (TableFoot ( "" , [] , [] ) [])
+, Para
+    [ Str "**1.1**"
+    , Space
+    , Str "Formatted"
+    , Space
+    , Str "Section"
+    , Space
+    , Str "Header"
+    ]
+, Para
+    [ Str "Body"
+    , Space
+    , Str "paragraph"
+    , Space
+    , Str "under"
+    , Space
+    , Str "section"
+    , Space
+    , Str "header."
+    ]
+]

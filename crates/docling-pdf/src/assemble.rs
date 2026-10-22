@@ -2641,6 +2641,7 @@ fn png_image(img: &RgbImage, scale: f32) -> Option<PictureImage> {
         height: img.height(),
         data: buf.into_inner(),
         dpi: PictureImage::dpi_for_scale(scale),
+        display_size: None,
     })
 }
 

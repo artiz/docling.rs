@@ -1394,6 +1394,7 @@ impl Builder<'_> {
             width,
             height,
             data,
+            display_size: None,
         })
     }
 }

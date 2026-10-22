@@ -1723,6 +1723,7 @@ impl DocumentConverter {
                 height: 0,
                 data: source.bytes.clone(),
                 dpi: PictureImage::DEFAULT_DPI,
+                display_size: None,
             });
         if let Some(img) = &whole {
             collect(img, &None);
@@ -3104,10 +3105,12 @@ impl DocumentConverter {
             }
         };
         self.enrich_pictures(&mut document, source, reporter);
-        // The file's own metadata (#679), read when an export will show it
-        // (a docling-JSON input keeps what it carried) — before the PII
-        // pass, which covers it too.
-        if self.metadata_output.in_json() && document.metadata.is_empty() {
+        // The file's own metadata (#679) — headers only, cheap — read for
+        // every conversion since the Pandoc export writes it as `meta`
+        // (#836) whatever `metadata_output` says; the JSON and Markdown
+        // exports still show it only when asked. A docling-JSON input keeps
+        // what it carried. Before the PII pass, which covers it too.
+        if document.metadata.is_empty() {
             document.metadata = crate::metadata::read(source, self.password.as_deref());
         }
         // The PII pass (#621) runs on the finished model, before anything

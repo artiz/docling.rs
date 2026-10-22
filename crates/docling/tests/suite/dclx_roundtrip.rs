@@ -115,6 +115,7 @@ fn picture_assets_are_packaged_and_read_back() {
                 height: img.height(),
                 data,
                 dpi: docling_core::PictureImage::DEFAULT_DPI,
+                display_size: None,
             }),
             classification: None,
             description: None,

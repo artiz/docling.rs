@@ -1,8 +1,10 @@
 //! Document metadata (#679): the file's own — an EPUB's Dublin Core, an
 //! Office package's properties, an ODF `meta.xml`, a photo's EXIF, an
-//! audio file's tags, a PDF's Info dictionary — read on request into the
-//! document, written as the JSON's `metadata` object or as YAML front
-//! matter; nothing by default; covered by the PII pass.
+//! audio file's tags, a PDF's Info dictionary — read into the document
+//! (for every conversion since #836: the Pandoc export writes it as
+//! `meta`), written as the JSON's `metadata` object or as YAML front
+//! matter only on request; nothing in those by default; covered by the
+//! PII pass.
 
 use std::path::{Path, PathBuf};
 
@@ -31,7 +33,9 @@ fn epub_front_matter_names_the_author_and_the_default_is_unchanged() {
         .convert(source(EPUB))
         .unwrap()
         .document;
-    assert!(plain.metadata.is_empty());
+    // Read for every conversion (#836, the Pandoc `meta`), shown by the
+    // JSON and Markdown exports only on request.
+    assert_eq!(plain.metadata.title.as_deref(), Some("Test EPUB Document"));
     let md = plain.export_to_markdown();
     assert!(!md.starts_with("---"), "{md}");
     assert!(!plain.export_to_json().contains("\"metadata\""));

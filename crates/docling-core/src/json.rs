@@ -264,8 +264,11 @@ pub fn to_json(doc: &DoclingDocument) -> Value {
 
 /// [`to_json`] plus the note calls docling's model cannot express: a text
 /// item calling footnotes carries `"_notes": [[offset, text], …]`, a
-/// footnote item that is such a note's body `"_note_body": true` (#538).
-/// The Pandoc writer reads these; nothing is ever exported with them.
+/// footnote item that is such a note's body `"_note_body": true` (#538),
+/// a picture's image its displayed size `"_display": [width, height]` in
+/// inches (#834), and the document's `metadata` whether or not the JSON
+/// export was asked for it (#836). The Pandoc writer reads these; nothing
+/// is ever exported with them.
 pub(crate) fn to_json_with_notes(doc: &DoclingDocument) -> Value {
     build_json(doc, true)
 }
@@ -336,9 +339,9 @@ fn build_parts(doc: &DoclingDocument, note_keys: bool) -> Parts {
     let fields = (!b.field_regions.is_empty()).then_some((b.field_regions, b.field_items));
     Parts {
         name: doc.name.clone(),
-        metadata: doc
-            .metadata_output
-            .in_json()
+        // The Pandoc writer (`note_keys`) always gets the metadata, for
+        // its `meta` (#836); the JSON export only when asked.
+        metadata: (doc.metadata_output.in_json() || note_keys)
             .then(|| doc.metadata.to_json())
             .filter(|m| m.as_object().is_some_and(|o| !o.is_empty())),
         origin: json!({
@@ -2361,7 +2364,14 @@ impl Builder {
         // field order, which `preserve_order` lets us reproduce by rebuilding
         // the tail.
         if let Some(img) = image {
-            let image = image_ref_json(img);
+            let mut image = image_ref_json(img);
+            // The displayed size, for the Pandoc writer only (#834):
+            // docling's `ImageRef` has no field for it.
+            if self.note_keys {
+                if let Some([w, h]) = img.display_size {
+                    image["_display"] = json!([w, h]);
+                }
+            }
             if let Some(obj) = item.as_object_mut() {
                 let annotations = obj.remove("annotations").unwrap_or_else(|| json!([]));
                 obj.insert("image".into(), image);
@@ -2661,6 +2671,7 @@ mod tests {
                 width: 4,
                 height: 2,
                 data: b"foobar".to_vec(),
+                display_size: None,
             }),
             classification: None,
             description: None,
@@ -3395,6 +3406,7 @@ mod tests {
                     width: 2,
                     height: 2,
                     data: vec![0],
+                    display_size: None,
                 }),
                 extra_classes: Vec::new(),
                 classification: None,

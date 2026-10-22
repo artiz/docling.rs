@@ -1117,7 +1117,10 @@ fn drawing_images(
             .iter()
             .map(|b| {
                 (
-                    attr(*b, "embed").and_then(|id| ctx.images.get(id)).cloned(),
+                    with_extent(
+                        attr(*b, "embed").and_then(|id| ctx.images.get(id)).cloned(),
+                        *b,
+                    ),
                     drawing_alt(*b),
                 )
             })
@@ -1184,6 +1187,28 @@ pub(super) fn drawing_alt(image_ref: XmlNode) -> Option<String> {
         }
     }
     None
+}
+
+/// The size a DrawingML picture is displayed at (#834): the `wp:extent` of
+/// the `wp:inline` / `wp:anchor` an `<a:blip>` sits in, EMU → inches
+/// (914 400 EMU to the inch). `None` for VML and for a drawing without one.
+pub(super) fn drawing_extent(image_ref: XmlNode) -> Option<[f32; 2]> {
+    let holder = image_ref
+        .ancestors()
+        .take_while(|a| !a.has_tag_name("p"))
+        .find(|a| a.has_tag_name("inline") || a.has_tag_name("anchor"))?;
+    let extent = holder.children().find(|c| c.has_tag_name("extent"))?;
+    let emu = |name: &str| attr(extent, name)?.parse::<f64>().ok();
+    let (cx, cy) = (emu("cx")?, emu("cy")?);
+    (cx > 0.0 && cy > 0.0).then(|| [(cx / 914_400.0) as f32, (cy / 914_400.0) as f32])
+}
+
+/// `image` with the display size of the drawing `image_ref` belongs to.
+pub(super) fn with_extent(image: Option<PictureImage>, image_ref: XmlNode) -> Option<PictureImage> {
+    image.map(|mut img| {
+        img.display_size = drawing_extent(image_ref);
+        img
+    })
 }
 
 /// Parse every chart part related to `part`: relationship id →
@@ -3071,7 +3096,7 @@ fn is_non_decimal_format(num_fmt: Option<&str>) -> bool {
 /// (docling#4336), `lowerLetter`/`upperLetter` run a…z, aa…zz (the letter
 /// repeated), roman numerals, `decimalZero` pads to two digits, and
 /// everything else (including no format) is the plain decimal.
-fn format_enum_counter(counter: i64, num_fmt: Option<&str>) -> String {
+pub(super) fn format_enum_counter(counter: i64, num_fmt: Option<&str>) -> String {
     if counter >= 0 {
         if let Some(cjk) = num_fmt.and_then(|f| cjk_counter(counter, f)) {
             return cjk;
@@ -3160,7 +3185,10 @@ pub(super) fn get_list_counter(
 /// its `%N` placeholders substituted; so does one on a letter / roman /
 /// `decimalZero` level even when it holds only placeholders and punctuation
 /// (`%2)` → `a)`, docling#4087 — before that guard such levels fell through
-/// to `1.a.`). A bare numeric template (`%1.%2.`) on a decimal level falls
+/// to `1.a.`), and — beyond docling, #835 — a decimal one whose punctuation
+/// is a parenthesis (`(%1)` → `(3)`, `%1)` → `3)`): docling folds those into
+/// `3.` too, and the Pandoc export then cannot tell `TwoParens` from
+/// `Period`. A bare numeric template (`%1.%2.`) on a decimal level falls
 /// back to the hierarchical `1.2.` form joining `counter[0..=ilvl]`; every
 /// counter is rendered with its own level's `numFmt`.
 pub(super) fn build_enum_marker(
@@ -3187,7 +3215,7 @@ pub(super) fn build_enum_marker(
     let re_placeholder = cached_regex!(r"%(\d+)");
     if re_placeholder.is_match(lvl_text) {
         let stripped: String = re_placeholder.replace_all(lvl_text, "").into_owned();
-        let stripped = stripped.trim_matches(|c: char| " .)(:[]".contains(c));
+        let stripped = stripped.trim_matches(|c: char| " .:[]".contains(c));
         if !stripped.is_empty() || is_non_decimal_format(fmt_at(ilvl)) {
             return re_placeholder
                 .replace_all(lvl_text, |caps: &regex::Captures| {

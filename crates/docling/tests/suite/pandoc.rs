@@ -43,6 +43,22 @@ const CASES: &[&str] = &[
     "docx/pandoc_images.docx",
     "docx/pandoc_footnotes.docx",
     "odf/footnotes.odt",
+    // #833: a formatted, linked caption and a multi-run list item with a
+    // nested list; a hyperlink in a one-paragraph table cell (plain, as
+    // docling reads it: the link's text without the link); a multi-run
+    // caption and heading from a docling JSON document.
+    "html/pandoc_inlines.html",
+    "docx/pandoc_table_cell_hyperlink.docx",
+    "json_docling/pandoc_caption_heading_inline.json",
+    // #834: a picture's alt text and displayed size, DOCX and ODT.
+    "docx/pandoc_picture_alt_dim.docx",
+    "odf/pandoc_picture_alt_dim.odt",
+    // #835: ordered lists with a letter, Roman and parenthesized numbering.
+    "docx/pandoc_ordered_lists.docx",
+    "odf/pandoc_ordered_lists.odt",
+    // #836: document metadata as `meta`, a reviewer comment as spans.
+    "docx/pandoc_meta_and_comments.docx",
+    "odf/pandoc_meta_and_comments.odt",
 ];
 
 fn root() -> PathBuf {

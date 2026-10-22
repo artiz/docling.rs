@@ -1,0 +1,37 @@
+[ Para [ Str "Diagram" , Space , Str "below:" ]
+, Para
+    [ Image
+        ( ""
+        , []
+        , [ ( "width" , "2.5in" ) , ( "height" , "1.25in" ) ]
+        )
+        [ Str "Architecture"
+        , Space
+        , Str "diagram"
+        , Space
+        , Str "of"
+        , Space
+        , Str "gateway"
+        ]
+        ( "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAPAAAAB4CAIAAABD1OhwAAABXElEQVR4nO3SUQkAIBTAQKMZzWgvmiUEYRxcgH1s7TOQsb4XwEOGJsXQpBiaFEOTYmhSDE2KoUkxNCmGJsXQpBiaFEOTYmhSDE2KoUkxNCmGJsXQpBiaFEOTYmhSDE2KoUkxNCmGJsXQpBiaFEOTYmhSDE2KoUkxNCmGJsXQpBiaFEOTYmhSDE2KoUkxNCmGJsXQpBiaFEOTYmhSDE2KoUkxNCmGJsXQpBiaFEOTYmhSDE2KoUkxNCmGJsXQpBiaFEOTYmhSDE2KoUkxNCmGJsXQpBiaFEOTYmhSDE2KoUkxNCmGJsXQpBiaFEOTYmhSDE2KoUkxNCmGJsXQpBiaFEOTYmhSDE2KoUkxNCmGJsXQpBiaFEOTYmhSDE2KoUkxNCmGJsXQpBiaFEOTYmhSDE2KoUkxNCmGJsXQpBiaFEOTYmhSDE2KoUkxNCmGJsXQpBiaFEOTYmhSDM2UXE5bydnOfyFAAAAAAElFTkSuQmCC"
+        , ""
+        )
+    ]
+, Para
+    [ Str "Architecture"
+    , Space
+    , Str "diagram"
+    , Space
+    , Str "of"
+    , Space
+    , Str "gateway"
+    , LineBreak
+    , Str "Architecture"
+    , Space
+    , Str "diagram"
+    , Space
+    , Str "of"
+    , Space
+    , Str "gateway"
+    ]
+]

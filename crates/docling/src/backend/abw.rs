@@ -162,6 +162,7 @@ fn emit_paragraph(
                     width,
                     height,
                     data: bytes.clone(),
+                    display_size: None,
                 }
             });
         doc.push(Node::Picture {

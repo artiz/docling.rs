@@ -235,6 +235,7 @@ pub fn picture_image(path: &str, data: Vec<u8>) -> Option<PictureImage> {
         width,
         height,
         data,
+        display_size: None,
     })
 }
 

@@ -24,17 +24,18 @@
 use std::collections::{HashMap, HashSet, VecDeque};
 
 use docling_core::tree::{Formatting, ItemTree, ListMeta, TreeKind, TreeNote, TreeProv};
-use docling_core::{ContentLayer, PictureImage, Script, Table, TableCell};
+use docling_core::{ContentLayer, PictureDescription, PictureImage, Script, Table, TableCell};
 use roxmltree::Node as XmlNode;
 
 use super::odf::{
     attr, cell_has_image, collect_runs, comment_threads, element_has_text, image_can_be_bitmap,
     in_text_box, inline_chart, is_list_tag, is_rich_cell, is_slide_title_element,
-    is_transparent_container, item_has_content, item_headings, level_affixes, level_is_enumerated,
-    level_start, list_has_direct_text, list_has_renderable, list_items,
-    list_starts_with_empty_nested, odf_item_content, ods_cell_text, para_plain_text,
+    is_transparent_container, item_has_content, item_headings, level_is_enumerated, level_start,
+    list_has_direct_text, list_has_renderable, list_items, list_level,
+    list_starts_with_empty_nested, odf_item_content, odf_marker, ods_cell_text, para_plain_text,
     paragraph_list_style, paragraph_style_names, repeat, section_is_hidden,
-    slide_has_visible_title, slide_is_hidden, text_boxes, Annotation, Fmt, MasterPart, Run, Styles,
+    slide_has_visible_title, slide_is_hidden, text_boxes, Annotation, Fmt, MasterPart, OdfLevel,
+    Run, Styles,
 };
 
 /// The tree plus the spreadsheet pages docling adds (`page_no`, width,
@@ -60,7 +61,7 @@ struct StyleListGroup {
     group: usize,
     enumerated: bool,
     counter: i64,
-    suffix: String,
+    level: Option<OdfLevel>,
 }
 
 /// A comment thread (#829): its first comment's holding `<text:p>` /
@@ -862,15 +863,16 @@ impl<'s> Walker<'s> {
             let Some(image) = self.image_payload(*img, href) else {
                 continue;
             };
+            // The frame's alt text and displayed size (#834).
             self.tree.add(
                 parent,
                 layer,
                 TreeKind::Picture {
                     captions: Vec::new(),
-                    image: Some(image),
+                    image: super::odf::with_frame_display(Some(image), *img),
                     extra_classes: Vec::new(),
                     classification: None,
-                    description: None,
+                    description: super::odf::frame_alt(*img).map(PictureDescription::alt_text),
                     confidence: None,
                     chart: None,
                     dpi: None,
@@ -1001,7 +1003,7 @@ impl<'s> Walker<'s> {
                 group,
                 enumerated: lv.is_some_and(|l| l.numbered),
                 counter: lv.map_or(0, |l| l.start - 1),
-                suffix: lv.map(|l| l.suffix.clone()).unwrap_or_default(),
+                level: lv.cloned(),
             });
         }
         let Some(r) = run.as_mut() else {
@@ -1009,15 +1011,7 @@ impl<'s> Walker<'s> {
         };
         r.counter += 1;
         let marker = if r.enumerated {
-            format!(
-                "{}{}",
-                r.counter,
-                if r.suffix.is_empty() {
-                    "."
-                } else {
-                    r.suffix.as_str()
-                }
-            )
+            odf_marker(r.counter, r.level.as_ref())
         } else {
             String::new()
         };
@@ -1294,18 +1288,10 @@ impl<'s> Walker<'s> {
                 continue;
             }
             counter += 1;
-            // `_odf_list_marker`: the counter and the level style's
-            // `num-suffix` (`.` when the style has none).
+            // `_odf_list_marker` with the level's number format and affixes
+            // (#835): `a)`, `iii.`, `(3)`.
             let marker = if current_enum {
-                let (_, suffix) = level_affixes(styles, list, level);
-                format!(
-                    "{counter}{}",
-                    if suffix.is_empty() {
-                        "."
-                    } else {
-                        suffix.as_str()
-                    }
-                )
+                odf_marker(counter, list_level(styles, attr(list, "style-name"), level))
             } else {
                 String::new()
             };

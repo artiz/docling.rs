@@ -1017,6 +1017,7 @@ impl Converter {
                 width: decoded.width(),
                 height: decoded.height(),
                 data: png.into_inner(),
+                display_size: None,
             }),
             Some(dpi),
         )

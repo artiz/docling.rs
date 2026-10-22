@@ -598,21 +598,33 @@
                     (Caption
                        Nothing
                        [ Plain
-                           [ Str "White-headed"
-                           , Space
-                           , Str "duck"
-                           , Space
-                           , Str "thumbnail"
+                           [ Link
+                               ( "" , [] , [] )
+                               [ Str "White-headed"
+                               , Space
+                               , Str "duck"
+                               , Space
+                               , Str "thumbnail"
+                               ]
+                               ( "https://upload.wikimedia.org/wikipedia/commons/thumb/a/ab/Witkopeend_-_white-headed_duck_-_Oxyura_leucocephala_3.tif/lossy-page1-1920px-Witkopeend_-_white-headed_duck_-_Oxyura_leucocephala_3.tif.jpg"
+                               , ""
+                               )
                            ]
                        ])
                     [ Plain
                         [ Image
                             ( "" , [ "docling-placeholder" ] , [] )
-                            [ Str "White-headed"
-                            , Space
-                            , Str "duck"
-                            , Space
-                            , Str "thumbnail"
+                            [ Link
+                                ( "" , [] , [] )
+                                [ Str "White-headed"
+                                , Space
+                                , Str "duck"
+                                , Space
+                                , Str "thumbnail"
+                                ]
+                                ( "https://upload.wikimedia.org/wikipedia/commons/thumb/a/ab/Witkopeend_-_white-headed_duck_-_Oxyura_leucocephala_3.tif/lossy-page1-1920px-Witkopeend_-_white-headed_duck_-_Oxyura_leucocephala_3.tif.jpg"
+                                , ""
+                                )
                             ]
                             ( "" , "" )
                         ]
