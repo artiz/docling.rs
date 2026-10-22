@@ -267,7 +267,8 @@ pub fn to_json(doc: &DoclingDocument) -> Value {
 /// footnote item that is such a note's body `"_note_body": true` (#538),
 /// a text item that is a link destination `"_anchors": ["id", …]` (#849),
 /// a heading whose text opens with generated numbering `"_number": "1.2"`
-/// (#850),
+/// (#850), a run kept as a tracked change `"_revision": {"kind":
+/// "insertion" | "deletion", "author", "date"}` (#851),
 /// a picture's image its displayed size `"_display": [width, height]` in
 /// inches (#834), and the document's `metadata` whether or not the JSON
 /// export was asked for it (#836). The Pandoc writer reads these; nothing
@@ -1389,6 +1390,17 @@ impl Builder {
                         }
                         if let Some(number) = &item.number {
                             item_json["_number"] = json!(number);
+                        }
+                        if let Some(rev) = &item.revision {
+                            let mut r = serde_json::Map::new();
+                            r.insert("kind".into(), json!(rev.kind.as_str()));
+                            if let Some(a) = &rev.author {
+                                r.insert("author".into(), json!(a));
+                            }
+                            if let Some(d) = &rev.date {
+                                r.insert("date".into(), json!(d));
+                            }
+                            item_json["_revision"] = Value::Object(r);
                         }
                     }
                     self.texts.push(Item::json(item_json));

@@ -368,6 +368,9 @@ pub struct DocumentConverter {
     /// Which Jupyter notebook outputs the document keeps (#673). See
     /// [`Self::ipynb_outputs`].
     ipynb_outputs: crate::IpynbOutputs,
+    /// How Office tracked changes are read (#851). See
+    /// [`Self::track_changes`].
+    track_changes: Option<crate::TrackChanges>,
     /// Directory referenced-mode streaming writes images into (#80).
     /// See [`Self::artifacts_dir`].
     artifacts_dir: String,
@@ -617,6 +620,7 @@ impl Default for DocumentConverter {
             ocr_lang: None,
             encoding: None,
             ipynb_outputs: crate::IpynbOutputs::None,
+            track_changes: None,
             artifacts_dir: "artifacts".to_string(),
             document_timeout: None,
             archive_limits: crate::archive::ArchiveLimits::default(),
@@ -979,6 +983,25 @@ impl DocumentConverter {
     /// outputs as pictures. The CLI's `--ipynb-outputs none|text`.
     pub fn ipynb_outputs(mut self, outputs: crate::IpynbOutputs) -> Self {
         self.ipynb_outputs = outputs;
+        self
+    }
+
+    /// How tracked changes in DOCX, DOC and ODT documents are read (#851),
+    /// Pandoc's `--track-changes`: [`TrackChanges::Accept`](crate::TrackChanges::Accept)
+    /// shows insertions and leaves deletions out,
+    /// [`Reject`](crate::TrackChanges::Reject) the reverse,
+    /// [`All`](crate::TrackChanges::All) keeps both as typed revisions
+    /// (author, date) the Pandoc AST writes as `Span .insertion` /
+    /// `.deletion`, and the reviewer comments with them. `None` (the
+    /// default) is each reader's own view — DOCX and ODT accept, and the
+    /// reviewer comments reach the Pandoc AST either way; an explicit
+    /// `accept` / `reject` leaves them out, as Pandoc does. What each reader
+    /// implements (DOCX: all three; DOC: accept and reject; ODT: accept) is
+    /// in `docs/OPTIONS.md`; a mode a reader lacks is refused with
+    /// [`ConversionError::UnsupportedOption`](crate::ConversionError::UnsupportedOption).
+    /// The CLI's `--track-changes accept|reject|all`.
+    pub fn track_changes(mut self, policy: Option<crate::TrackChanges>) -> Self {
+        self.track_changes = policy;
         self
     }
 
@@ -2866,7 +2889,10 @@ impl DocumentConverter {
                 // Quattro Pro (#216): docling.rs extension, native parse after
                 // libwps (DOS/Windows record streams, QPW OLE zones).
                 InputFormat::QuattroPro => QuattroBackend.convert(source)?,
-                InputFormat::Docx => DocxBackend.convert(source)?,
+                InputFormat::Docx => DocxBackend {
+                    track_changes: self.track_changes,
+                }
+                .convert(source)?,
                 // Legacy binary Office (issue #127): parsed natively — docling
                 // proper converts these through LibreOffice first (PR #3804).
                 InputFormat::Xls => XlsBackend {
@@ -2874,7 +2900,10 @@ impl DocumentConverter {
                 }
                 .convert(source)?,
                 InputFormat::Ppt => PptBackend.convert(source)?,
-                InputFormat::Doc => DocBackend.convert(source)?,
+                InputFormat::Doc => DocBackend {
+                    track_changes: self.track_changes,
+                }
+                .convert(source)?,
                 InputFormat::Vtt => WebVttBackend.convert(source)?,
                 InputFormat::Ebcdic => EbcdicBackend {
                     layout: self.ebcdic_layout.clone(),
@@ -2950,7 +2979,7 @@ impl DocumentConverter {
                     }
                 }
                 InputFormat::Odt | InputFormat::Ods | InputFormat::Odp => {
-                    crate::backend::convert_odf(source, &self.image_policy())?
+                    crate::backend::convert_odf(source, &self.image_policy(), self.track_changes)?
                 }
                 // DocLang back in: bare XML (`.dclg`/`.dclg.xml`) or the OPC
                 // archive `--to dclx` writes.

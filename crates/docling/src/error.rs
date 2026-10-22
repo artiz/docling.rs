@@ -22,6 +22,10 @@ pub enum ConversionError {
     /// it, the transfer failed or overran its bounds, or a `data:` URL is
     /// malformed.
     Fetch(String),
+    /// An option the caller set names a reading the input's backend has not
+    /// implemented (#851: `track_changes=all` on a `.doc`, `reject` on an
+    /// ODT): refused before any output, never answered with another view.
+    UnsupportedOption(String),
     /// The requested streaming conversion is not supported (e.g. JSON, or the
     /// referenced image mode, which both need the whole document up front).
     Streaming(String),
@@ -137,6 +141,7 @@ impl fmt::Display for ConversionError {
         match self {
             ConversionError::Io(e) => write!(f, "i/o error: {e}"),
             ConversionError::Fetch(msg) => write!(f, "{msg}"),
+            ConversionError::UnsupportedOption(msg) => write!(f, "unsupported option: {msg}"),
             ConversionError::UnknownFormat { hint } => {
                 write!(f, "could not determine input format (hint: {hint})")
             }

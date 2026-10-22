@@ -130,6 +130,7 @@ paths:
         - { $ref: "#/components/parameters/encoding" }
         - { $ref: "#/components/parameters/ipynb_outputs" }
         - { $ref: "#/components/parameters/metadata" }
+        - { $ref: "#/components/parameters/track_changes" }
         - { $ref: "#/components/parameters/video_frames" }
         - { $ref: "#/components/parameters/video_scene_threshold" }
         - { $ref: "#/components/parameters/video_frame_max_side" }
@@ -224,6 +225,8 @@ paths:
                 encoding: { type: string, examples: ["shift_jis", "koi8-r", "windows-1251"] }
                 ipynb_outputs: { $ref: "#/components/schemas/IpynbOutputs" }
                 metadata: { $ref: "#/components/schemas/MetadataOutput" }
+        track_changes: { $ref: "#/components/schemas/TrackChanges" }
+                track_changes: { $ref: "#/components/schemas/TrackChanges" }
                 video_frames: { oneOf: [{ type: integer, minimum: 0 }, { type: string, enum: ["all"] }] }
                 video_scene_threshold: { type: number, minimum: 0, maximum: 1 }
                 video_frame_max_side: { type: integer, minimum: 0 }
@@ -721,6 +724,18 @@ components:
         "Write a detailed caption for this image.", `ocr` markitdown-ocr's
         "Extract all text from this image …" — LLM-vision OCR where the local
         models read poorly.
+    TrackChanges:
+      type: string
+      enum: [accept, reject, all]
+      description: >-
+        Tracked changes in DOCX / DOC / ODT documents (#851, Pandoc's
+        `--track-changes`): `accept` shows insertions and leaves deletions
+        out, `reject` the reverse, `all` keeps both as typed revisions with
+        author and date (`Span .insertion` / `.deletion` in the Pandoc
+        AST, with the reviewer comments). Unset: each reader's own view
+        (DOCX and ODT accept; the `.doc` reader's text before #851) and,
+        for `to=pandoc`, the comments written. DOCX reads all three, DOC
+        accept and reject, ODT accept; a mode a reader lacks is a 400.
     MetadataOutput:
       type: string
       enum: [none, json, frontmatter]
@@ -1192,6 +1207,7 @@ components:
           examples: ["auto", "en", "de"]
         ipynb_outputs: { $ref: "#/components/schemas/IpynbOutputs" }
         metadata: { $ref: "#/components/schemas/MetadataOutput" }
+        track_changes: { $ref: "#/components/schemas/TrackChanges" }
         video_frames:
           oneOf:
             - { type: integer, minimum: 0 }
@@ -1655,6 +1671,8 @@ components:
       { name: ipynb_outputs, in: query, schema: { $ref: "#/components/schemas/IpynbOutputs" } }
     metadata:
       { name: metadata, in: query, schema: { $ref: "#/components/schemas/MetadataOutput" } }
+    track_changes:
+      { name: track_changes, in: query, schema: { $ref: "#/components/schemas/TrackChanges" } }
     video_frames:
       { name: video_frames, in: query, schema: { oneOf: [{ type: integer, minimum: 0 }, { type: string, enum: ["all"] }] } }
     video_scene_threshold:

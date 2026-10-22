@@ -193,7 +193,7 @@ fn tree_words(tree: &ItemTree) -> Words {
 /// Words one chain has and the other lacks: `(flat_only, tree_only)`.
 fn chain_divergence(bytes: Vec<u8>, name: &str) -> (Words, Words) {
     let src = SourceDocument::from_bytes(name, InputFormat::Docx, bytes);
-    let doc = super::DocxBackend
+    let doc = super::DocxBackend::default()
         .convert(&src)
         .unwrap_or_else(|e| panic!("{name}: {e}"));
     let flat = flat_words(&doc);

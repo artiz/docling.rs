@@ -20,7 +20,8 @@ use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
 
 use docling_core::{
-    DoclingDocument, InlineRun, ListItemDclx, Node, PictureDescription, PictureImage, Script, Table,
+    DoclingDocument, InlineRun, ListItemDclx, Node, PictureDescription, PictureImage, Revision,
+    RevisionKind, Script, Table, TrackChanges,
 };
 use roxmltree::{Document, Node as XmlNode};
 
@@ -31,7 +32,12 @@ use crate::backend::DeclarativeBackend;
 use crate::error::ConversionError;
 use crate::source::SourceDocument;
 
-pub struct DocxBackend;
+#[derive(Debug, Clone, Copy, Default)]
+pub struct DocxBackend {
+    /// How tracked changes are read (#851); `None` = docling's reading
+    /// (insertions shown, deletions left out, every table row kept).
+    pub track_changes: Option<TrackChanges>,
+}
 
 impl DeclarativeBackend for DocxBackend {
     fn convert(&self, source: &SourceDocument) -> Result<DoclingDocument, ConversionError> {
@@ -73,6 +79,7 @@ impl DeclarativeBackend for DocxBackend {
             table_depth: std::cell::Cell::new(0),
             orphan_inline_groups: std::cell::Cell::new(0),
             bookmarks: &HashMap::new(),
+            track_changes: self.track_changes,
         };
 
         let mut doc = DoclingDocument::new(&source.name);
@@ -507,6 +514,8 @@ pub(super) struct Ctx<'a> {
     /// Bookmark name → the link destination's identifier (#849), from
     /// [`bookmark_targets`]: what a `w:hyperlink w:anchor` resolves to.
     pub(super) bookmarks: &'a HashMap<String, String>,
+    /// The tracked-changes policy (#851); `None` = docling's reading.
+    pub(super) track_changes: Option<TrackChanges>,
 }
 
 impl<'a> Ctx<'a> {
@@ -533,7 +542,14 @@ impl<'a> Ctx<'a> {
             table_depth: std::cell::Cell::new(0),
             orphan_inline_groups: std::cell::Cell::new(0),
             bookmarks: self.bookmarks,
+            track_changes: self.track_changes,
         }
+    }
+
+    /// The view the runs are read in (#851): `accept` unless asked
+    /// otherwise — docling's reading.
+    pub(super) fn policy(&self) -> TrackChanges {
+        self.track_changes.unwrap_or_default()
     }
 
     /// This context with the document's bookmarks resolved (#849) — they
@@ -544,6 +560,36 @@ impl<'a> Ctx<'a> {
             bookmarks,
             ..self.for_part(self.rels, self.images, self.charts)
         }
+    }
+}
+
+/// Whether a table row stays under the tracked-changes policy (#851): a
+/// row Word marks inserted (`w:trPr/w:ins`) goes under `reject`, one marked
+/// deleted (`w:trPr/w:del`) under an explicit `accept`; without a policy
+/// every row stays, as docling reads it.
+pub(super) fn row_kept(tr: XmlNode, ctx: &Ctx) -> bool {
+    let Some(policy) = ctx.track_changes else {
+        return true;
+    };
+    let marked = |tag: &str| {
+        tr.children()
+            .find(|n| n.has_tag_name("trPr"))
+            .is_some_and(|pr| pr.children().any(|n| n.has_tag_name(tag)))
+    };
+    match policy {
+        TrackChanges::Accept => !marked("del"),
+        TrackChanges::Reject => !marked("ins"),
+        TrackChanges::All => true,
+    }
+}
+
+/// The revision a `w:ins` / `w:del` / `w:moveTo` / `w:moveFrom` wrapper
+/// marks its runs with (#851): the kind, the reviewer and the date.
+pub(super) fn revision_of(wrapper: XmlNode, kind: RevisionKind) -> Revision {
+    Revision {
+        kind,
+        author: attr(wrapper, "author").map(str::to_string),
+        date: attr(wrapper, "date").map(str::to_string),
     }
 }
 
@@ -738,7 +784,10 @@ fn process_block(node: XmlNode, ctx: &Ctx, state: &mut ListState, doc: &mut Docl
         "tbl" => {
             // A 1×1 table is treated as furniture: its single cell's content is
             // processed as document-body blocks (docling unwraps it).
-            let rows: Vec<XmlNode> = node.children().filter(|n| n.has_tag_name("tr")).collect();
+            let rows: Vec<XmlNode> = node
+                .children()
+                .filter(|n| n.has_tag_name("tr") && row_kept(*n, ctx))
+                .collect();
             let num_cols = rows
                 .iter()
                 .map(|r| row_cells(*r).into_iter().map(grid_span).sum::<usize>())
@@ -2067,9 +2116,33 @@ fn collect_one(
         // inside a custom XML markup element is ordinary text to Word,
         // python-docx and the JSON walk alike, and the Markdown used to drop
         // it (`Prefix text.  Suffix text.`).
-        "smartTag" | "customXml" | "ins" | "moveTo" | "fldSimple" | "sdt" | "sdtContent" => {
+        "smartTag" | "customXml" | "fldSimple" | "sdt" | "sdtContent" => {
             collect_run_tuples(child, fmt, link, ctx, out)
         }
+        // Tracked changes (#851): an insertion (or a move's destination)
+        // shows unless the view rejects it; a deletion (or a move's
+        // source) shows under `reject`, and under `all` as struck text —
+        // the Markdown's only way to show what Pandoc's `Span .deletion`
+        // types (the item tree carries the typed revision).
+        "ins" | "moveTo" => {
+            if ctx.policy() != TrackChanges::Reject {
+                collect_run_tuples(child, fmt, link, ctx, out)
+            }
+        }
+        "del" | "moveFrom" => match ctx.policy() {
+            TrackChanges::Accept => {}
+            TrackChanges::Reject => collect_run_tuples(child, fmt, link, ctx, out),
+            TrackChanges::All => collect_run_tuples(
+                child,
+                Fmt {
+                    strike: true,
+                    ..fmt
+                },
+                link,
+                ctx,
+                out,
+            ),
+        },
         _ => {}
     }
 }
@@ -2139,7 +2212,10 @@ fn parse_table_with(tbl: XmlNode, ctx: &Ctx, nested: bool) -> Option<Table> {
 }
 
 fn parse_table_inner(tbl: XmlNode, ctx: &Ctx, nested: bool) -> Option<Table> {
-    let rows: Vec<XmlNode> = tbl.children().filter(|n| n.has_tag_name("tr")).collect();
+    let rows: Vec<XmlNode> = tbl
+        .children()
+        .filter(|n| n.has_tag_name("tr") && row_kept(*n, ctx))
+        .collect();
     // A row's width in grid columns includes the leading/trailing skipped
     // columns (`w:gridBefore`/`w:gridAfter`) — a row that starts late still
     // spans the full grid.
@@ -2341,6 +2417,9 @@ pub(super) fn sym_text(n: XmlNode) -> String {
 pub(super) fn run_child_text(n: XmlNode) -> String {
     match n.tag_name().name() {
         "t" => t_text(n).into_owned(),
+        // A deleted run's text (#851): read only when its `w:del` wrapper
+        // is walked — under `reject` or `all`.
+        "delText" => n.text().unwrap_or("").to_string(),
         "sym" => sym_text(n),
         // A *line* break is a newline; a page or column break has no text
         // equivalent at all.
@@ -3753,7 +3832,9 @@ mod tests {
                 crate::format::InputFormat::Docx,
                 bytes,
             );
-            super::DocxBackend.convert(&src).expect("converts")
+            super::DocxBackend::default()
+                .convert(&src)
+                .expect("converts")
         };
         let flags = |doc: &docling_core::DoclingDocument| -> Vec<(String, bool)> {
             doc.nodes
@@ -3905,7 +3986,7 @@ mod inherited_heading_tests {
         }
         let bytes = zw.finish().unwrap().into_inner();
         let src = SourceDocument::from_bytes("t.docx", InputFormat::Docx, bytes);
-        super::DocxBackend.convert(&src).unwrap()
+        super::DocxBackend::default().convert(&src).unwrap()
     }
 
     fn style(id: &str, based_on: Option<&str>, outline: Option<u8>) -> String {
@@ -3998,7 +4079,7 @@ mod fragment_rels_tests {
         }
         let bytes = zw.finish().unwrap().into_inner();
         let src = SourceDocument::from_bytes("t.docx", InputFormat::Docx, bytes);
-        let md = super::DocxBackend
+        let md = super::DocxBackend::default()
             .convert(&src)
             .unwrap()
             .export_to_markdown();

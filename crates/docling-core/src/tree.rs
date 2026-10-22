@@ -207,6 +207,11 @@ pub struct TreeItem {
     /// numbers sections itself (`--number-sections`) and its docx reader
     /// never writes the number into the `Header`.
     pub number: Option<String>,
+    /// The tracked change this run carries under
+    /// [`TrackChanges::All`](crate::TrackChanges::All) (#851): the Pandoc
+    /// AST wraps the run in `Span .insertion` / `.deletion` (`_revision`
+    /// on that path); docling's JSON has no field for it.
+    pub revision: Option<crate::Revision>,
 }
 
 /// A note call inside a text item ([`TreeItem::notes`]).
@@ -312,6 +317,7 @@ impl ItemTree {
             note_body: false,
             anchors: Vec::new(),
             number: None,
+            revision: None,
         });
         match parent {
             Some(p) => self.items[p].children.push(id),

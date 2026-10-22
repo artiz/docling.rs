@@ -19,7 +19,7 @@
 //! the same name): one identifier per line, sorted, for scripts that ask the
 //! binary what it converts instead of hard-coding a list.
 //!
-//! Usage: docling-rs [--strict] [--page-break-placeholder TEXT] [--layers body|all|LIST] [--traverse-pictures] [--to md|json|html|text|dclx|chunks|images|latex|pandoc|vtt] [--pages A-B] [--scale X] [--images MODE] [--input GLOB --output DIR [--jobs N]] [--output-file PATH] [--fetch-images] [--image-sources none|embedded|local|remote] [--image-hosts LIST] [--max-images N] [--max-image-bytes N] [--max-image-total-mb N] [--min-image-bytes N] [--list-attachments] [--skip-empty-cells] [--compact-tables] [--picture-alt-text] [--ebcdic-layout JSON|PATH] [--encoding LABEL] [--ipynb-outputs none|text] [--metadata none|json|frontmatter] [--from FORMAT] [--mime-type TYPE] [--no-url-fetch] [--no-stream] [--progress|--no-progress] [--no-table-former] [--no-ocr] [--text-layer-only] [--password PASSWORD | --password-file PATH] [--force-full-page-ocr] [--no-text-panels] [--heading-hierarchy] [--ocr-lang LANG] [--ocr-engine ppocr|tesseract] [--ocr-mode MODE] [--ocr-scale X] [--ocr-textline-orientation] [--images-scale X] [--page-images] [--chunker hierarchical|hybrid] [--chunk-tokenizer PATH] [--chunk-max-tokens N] [--no-chunk-merge-peers] [--pipeline standard|vlm] [--vlm-endpoint URL] [--vlm-model NAME] [--vlm-api-key TOKEN] [--vlm-prompt TEXT] [--vlm-max-tokens N] [--asr-model PRESET] [--asr-lang CODE] [--video-frames N|all] [--video-scene-threshold X] [--video-frame-max-side PX] [--video-frame-dedupe N] [--xbrl-taxonomy DIR] [--use-web-browser] [--enrich-picture-classes] [--enrich-code] [--enrich-formula] [--picture-ocr] [--picture-ocr-classes LABELS] [--picture-ocr-min-side N] [--picture-ocr-scale X] [--no-picture-images] [--picture-description] [--picture-description-endpoint URL] [--picture-description-model NAME] [--picture-description-api-key TOKEN] [--picture-description-prompt TEXT] [--picture-description-mode caption|ocr] [--picture-description-concurrency N] [--redact-pii] [--redact-mode label|pseudonym|fixed:TEXT] [--redact-kinds LIST] [--redact-pattern NAME=REGEX]... [--redact-images drop|box_out|keep] [--redact-allow-terms LIST] [--redact-deny-terms LIST] [--redact-allow-pattern REGEX]... [--redact-ner-min-score X] [--document-timeout SECONDS] [--abort-on-error] [--output-dirs auto|flat|mirror] [--archive-merge|--no-archive-merge] <input-file> | - | URL | SOURCE...
+//! Usage: docling-rs [--strict] [--page-break-placeholder TEXT] [--layers body|all|LIST] [--traverse-pictures] [--to md|json|html|text|dclx|chunks|images|latex|pandoc|vtt] [--pages A-B] [--scale X] [--images MODE] [--input GLOB --output DIR [--jobs N]] [--output-file PATH] [--fetch-images] [--image-sources none|embedded|local|remote] [--image-hosts LIST] [--max-images N] [--max-image-bytes N] [--max-image-total-mb N] [--min-image-bytes N] [--list-attachments] [--skip-empty-cells] [--compact-tables] [--picture-alt-text] [--ebcdic-layout JSON|PATH] [--encoding LABEL] [--ipynb-outputs none|text] [--metadata none|json|frontmatter] [--track-changes accept|reject|all] [--from FORMAT] [--mime-type TYPE] [--no-url-fetch] [--no-stream] [--progress|--no-progress] [--no-table-former] [--no-ocr] [--text-layer-only] [--password PASSWORD | --password-file PATH] [--force-full-page-ocr] [--no-text-panels] [--heading-hierarchy] [--ocr-lang LANG] [--ocr-engine ppocr|tesseract] [--ocr-mode MODE] [--ocr-scale X] [--ocr-textline-orientation] [--images-scale X] [--page-images] [--chunker hierarchical|hybrid] [--chunk-tokenizer PATH] [--chunk-max-tokens N] [--no-chunk-merge-peers] [--pipeline standard|vlm] [--vlm-endpoint URL] [--vlm-model NAME] [--vlm-api-key TOKEN] [--vlm-prompt TEXT] [--vlm-max-tokens N] [--asr-model PRESET] [--asr-lang CODE] [--video-frames N|all] [--video-scene-threshold X] [--video-frame-max-side PX] [--video-frame-dedupe N] [--xbrl-taxonomy DIR] [--use-web-browser] [--enrich-picture-classes] [--enrich-code] [--enrich-formula] [--picture-ocr] [--picture-ocr-classes LABELS] [--picture-ocr-min-side N] [--picture-ocr-scale X] [--no-picture-images] [--picture-description] [--picture-description-endpoint URL] [--picture-description-model NAME] [--picture-description-api-key TOKEN] [--picture-description-prompt TEXT] [--picture-description-mode caption|ocr] [--picture-description-concurrency N] [--redact-pii] [--redact-mode label|pseudonym|fixed:TEXT] [--redact-kinds LIST] [--redact-pattern NAME=REGEX]... [--redact-images drop|box_out|keep] [--redact-allow-terms LIST] [--redact-deny-terms LIST] [--redact-allow-pattern REGEX]... [--redact-ner-min-score X] [--document-timeout SECONDS] [--abort-on-error] [--output-dirs auto|flat|mirror] [--archive-merge|--no-archive-merge] <input-file> | - | URL | SOURCE...
 //!   --to FORMAT        repeatable (#491, like Python's `docling convert --to
 //!                      md --to json`): each document converts once and is
 //!                      written in every format named, `<stem>.md` +
@@ -53,6 +53,7 @@
 //!                      text (stream and text/plain results as code blocks
 //!                      after their cell, image outputs as pictures).
 //!   --metadata none|json|frontmatter
+//!   --track-changes accept|reject|all
 //!                      Document metadata (#679): the file's own (an EPUB's
 //!                      Dublin Core, Office properties, ODF meta.xml, a
 //!                      photo's EXIF, audio tags, a PDF's Info dictionary)
@@ -579,6 +580,10 @@ FORMAT OPTIONS
                           audio tags, PDF Info): none (default) | json (a
                           `metadata` object in the JSON) | frontmatter (YAML
                           front matter at the top of the Markdown as well)
+  --track-changes MODE    tracked changes in DOCX/DOC/ODT (Pandoc's --track-changes):
+                          accept (insertions shown, deletions left out) | reject (the
+                          reverse) | all (both, typed with author/date in the Pandoc AST);
+                          unset = each reader's own view; a mode a reader lacks is an error
   --use-web-browser       pre-render HTML with a headless browser (feature `web-browser`)
 
 PDF / IMAGE PIPELINE
@@ -1123,6 +1128,15 @@ fn main() -> ExitCode {
                     std::process::exit(2);
                 }
             },
+            // Tracked changes (#851); the spelling is validated with the
+            // other options.
+            "--track-changes" => match args.next() {
+                Some(v) => opts.track_changes = Some(v),
+                None => {
+                    eprintln!("error: --track-changes needs accept, reject or all");
+                    std::process::exit(2);
+                }
+            },
             // Input format hint (#668): an identifier from --list-input-formats
             // (`docx`, `pdf`, `html`, `md`…). It overrides whatever the name,
             // the media type or the content would have said.
@@ -1413,6 +1427,8 @@ fn main() -> ExitCode {
     // the engine it will drive (whichever order the two flags came in),
     // `--pipeline`, `--vlm-max-tokens` — reported with the CLI's flag
     // spelling, before any file is touched.
+    // The Pandoc AST's comment handling follows the policy (#851).
+    export.track_changes = opts.track_changes().ok().flatten();
     if let Err(e) = opts.validate() {
         eprintln!("error: {}", e.cli_message());
         return ExitCode::from(2);
@@ -1908,6 +1924,9 @@ struct ExportLayers {
     /// `--pandoc-heading-depth` (#848): the `Header` depth a section
     /// heading gets in the Pandoc AST.
     pandoc_heading_depth: docling::pandoc::HeadingDepth,
+    /// `--track-changes` (#851): an explicit accept / reject view leaves
+    /// the reviewer comments out of the Pandoc AST.
+    track_changes: Option<docling::TrackChanges>,
 }
 
 type Rendered = (String, Vec<(String, Vec<u8>)>);
@@ -2946,7 +2965,7 @@ fn write_batch_outputs(
                     document,
                     cfg.pandoc_image_mode,
                     &format!("{stem}_artifacts"),
-                    cfg.export.pandoc_heading_depth,
+                    cfg.export,
                 );
                 let parent = out.parent().unwrap_or(Path::new(""));
                 for (rel, bytes) in &artifacts {
@@ -3320,13 +3339,14 @@ fn pandoc_json(
     document: &docling::DoclingDocument,
     image_mode: ImageMode,
     artifacts_dir: &str,
-    heading_depth: docling::pandoc::HeadingDepth,
+    export: ExportLayers,
 ) -> (String, Vec<(String, Vec<u8>)>) {
     document
         .export_to_pandoc_json_with(&docling::pandoc::PandocExportOptions {
             image_mode,
             artifacts_dir: artifacts_dir.to_string(),
-            heading_depth,
+            heading_depth: export.pandoc_heading_depth,
+            track_changes: export.track_changes,
             ..Default::default()
         })
         .expect("the default Pandoc API version is always supported")
@@ -3380,12 +3400,7 @@ fn output_document(
     // #515: the Pandoc AST as JSON on stdout, for `| pandoc -f json -t …`;
     // `--images referenced` writes the pictures under ./artifacts/.
     if to == "pandoc" {
-        let (json, artifacts) = pandoc_json(
-            &document,
-            image_mode,
-            "artifacts",
-            export.pandoc_heading_depth,
-        );
+        let (json, artifacts) = pandoc_json(&document, image_mode, "artifacts", export);
         for (rel, bytes) in &artifacts {
             let target = Path::new(rel);
             if let Some(dir) = target.parent() {

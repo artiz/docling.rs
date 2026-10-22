@@ -34,7 +34,7 @@ use crate::error::ConversionError;
 use crate::source::SourceDocument;
 use docling_core::{
     inline_paragraph_node, DoclingDocument, InlineRun, ListItemDclx, Node, PictureDescription,
-    PictureImage, Script, Table, TableStructure,
+    PictureImage, Script, Table, TableStructure, TrackChanges,
 };
 
 pub struct OdfBackend;
@@ -173,7 +173,7 @@ pub(super) struct Styles {
 
 impl DeclarativeBackend for OdfBackend {
     fn convert(&self, source: &SourceDocument) -> Result<DoclingDocument, ConversionError> {
-        convert_odf(source, &ImagePolicy::default())
+        convert_odf(source, &ImagePolicy::default(), None)
     }
 }
 
@@ -198,7 +198,19 @@ fn manifest_encrypts_content(manifest: &str) -> bool {
 pub(crate) fn convert_odf(
     source: &SourceDocument,
     policy: &ImagePolicy,
+    track_changes: Option<TrackChanges>,
 ) -> Result<DoclingDocument, ConversionError> {
+    // The ODF reader gives the accepted view (#851): the text as the
+    // document shows it with its `text:tracked-changes` region skipped —
+    // insertions in place, deletions (kept out of line in that region)
+    // left out. The other views are not read, and are refused rather than
+    // answered with this one.
+    if let Some(mode @ (TrackChanges::Reject | TrackChanges::All)) = track_changes {
+        return Err(ConversionError::UnsupportedOption(format!(
+            "odf: track_changes={mode} is not implemented by the ODF reader (its text is the \
+             accepted view); accept is"
+        )));
+    }
     {
         let mut pkg = Package::open(&source.bytes);
         // A password-protected ODF package keeps its manifest in the clear

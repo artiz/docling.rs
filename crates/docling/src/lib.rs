@@ -86,6 +86,7 @@ pub use docling_core::{
     QualityGrade, Table,
 };
 pub use docling_core::{DocumentMetadata, GpsPosition, MetadataOutput};
+pub use docling_core::{Revision, RevisionKind, TrackChanges};
 
 // The reusable PDF/image pipeline (models loaded once, reused across documents),
 // for callers that convert many files or want a warm, startup-excluded measurement.

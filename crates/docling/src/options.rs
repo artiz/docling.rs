@@ -43,6 +43,7 @@ use serde::{Deserialize, Serialize};
 
 use docling_core::{
     CustomPattern, ImageRedaction, MetadataOutput, PiiKind, RedactionOptions, Replacement,
+    TrackChanges,
 };
 
 use crate::DocumentConverter;
@@ -113,6 +114,14 @@ pub struct ConvertOptions {
     /// `metadata` object in the docling JSON) or `frontmatter` (that, and
     /// YAML front matter at the top of the Markdown).
     pub metadata: Option<String>,
+    /// Tracked changes in Office documents (#851, Pandoc's
+    /// `--track-changes`): `accept` (insertions shown, deletions left out),
+    /// `reject` (the reverse) or `all` (both kept as typed revisions with
+    /// author and date — the Pandoc AST's `Span .insertion` / `.deletion`).
+    /// Unset: the readers' own view (DOCX and ODT accept; the `.doc`
+    /// reader's text before #851). A mode a reader has not implemented is
+    /// refused (`ConversionError::UnsupportedOption`).
+    pub track_changes: Option<String>,
     /// Pre-render HTML with a headless browser (the `web-browser` feature).
     pub use_web_browser: Option<bool>,
     /// XBRL: the directory the instance's taxonomy is read from.
@@ -426,6 +435,7 @@ pub const OPTIONS: &[OptionInfo] = &[
     row("encoding"),
     row("ipynb_outputs"),
     row("metadata"),
+    row("track_changes"),
     // The npm addon is not built with the `web-browser` feature, so the
     // option would only ever error there.
     OptionInfo {
@@ -650,6 +660,20 @@ impl ConvertOptions {
             .transpose()
     }
 
+    /// The tracked-changes policy (#851): `None` unless `track_changes` is
+    /// set and non-blank; a spelling other than `accept`, `reject`, `all`
+    /// is an error.
+    pub fn track_changes(&self) -> Result<Option<TrackChanges>, OptionsError> {
+        self.track_changes
+            .as_deref()
+            .filter(|s| !s.trim().is_empty())
+            .map(|s| {
+                s.parse::<TrackChanges>()
+                    .map_err(|e| OptionsError::new("track_changes", e))
+            })
+            .transpose()
+    }
+
     /// The metadata output mode (#679): `None` unless `metadata` is set
     /// and non-blank; a spelling other than `none`, `json`, `frontmatter`
     /// is an error.
@@ -822,6 +846,7 @@ impl ConvertOptions {
         self.page_range()?;
         self.document_timeout()?;
         self.ipynb_outputs()?;
+        self.track_changes()?;
         self.metadata_output()?;
         if let Some(s) = self.ocr_scale {
             if !(s.is_finite() && s > 0.0) {
@@ -1133,6 +1158,9 @@ impl ConvertOptions {
         }
         if let Some(mode) = self.metadata_output()? {
             c = c.metadata_output(mode);
+        }
+        if let Some(policy) = self.track_changes()? {
+            c = c.track_changes(Some(policy));
         }
         if let Some(v) = self.use_web_browser {
             c = c.use_web_browser(v);

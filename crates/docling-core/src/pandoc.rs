@@ -38,6 +38,7 @@
 //! | form `field_region` | `Div .field-region` holding a `DefinitionList`: `marker` + `field_key` as the term, each `field_value` a definition |
 //! | any other text label (`caption` without an owner, `footnote` without one, `reference`, `handwritten_text`, `page_header`, …) | `Div .docling-<label> [Para]` |
 //! | the document's metadata (#836) | `meta`: `title`, `subject`, `description`, `date` (the document's own, else its creation date), `publisher`, `rights`, `identifier` as `MetaInlines`, `author` and `keywords` as `MetaList`s of `MetaInlines`, `lang` as `MetaString` |
+//! | a tracked change kept under `track_changes=all` (#851: a DOCX `w:ins` / `w:del` / `w:moveTo` / `w:moveFrom` run, `_revision`) | `Span .insertion` / `Span .deletion` with `author` and `date` around the run's inlines — Pandoc's docx reader's `--track-changes=all` shape; under an explicit `accept` / `reject` the document holds that view's text alone and the comments below are left out, as Pandoc leaves them |
 //! | a reviewer comment on an item (#836) | Pandoc's docx reader's `--track-changes=all` shape: a `Span .comment-start` with `comment-id`, `author` and `date` holding the comment's text before the item's inlines, and an empty `Span .comment-end` with the `comment-id` after them; a thread's replies follow as further pairs |
 //!
 //! No Pandoc equivalent, so not written: provenance (pages, bounding boxes),
@@ -69,6 +70,7 @@ use serde_json::Value;
 
 use crate::document::{ContentLayers, DoclingDocument};
 use crate::markdown::ImageMode;
+use crate::TrackChanges;
 
 /// The `pandoc-api-version` written — `pandoc-types` 1.23.1.1 (Pandoc 3.x).
 pub const PANDOC_API_VERSION: [u32; 4] = [1, 23, 1, 1];
@@ -143,6 +145,12 @@ pub struct PandocExportOptions {
     /// The `Header` depth of a `section_header` (#848): docling's
     /// title-reserving `n + 1` by default, or the source's own `n`.
     pub heading_depth: HeadingDepth,
+    /// The tracked-changes policy the document was read under (#851).
+    /// `None` (no policy asked for) and `Some(All)` write the reviewer
+    /// comments as `Span .comment-start` / `.comment-end` pairs; an
+    /// explicit `Accept` / `Reject` leaves them out, as Pandoc's
+    /// `--track-changes=accept|reject` do.
+    pub track_changes: Option<TrackChanges>,
 }
 
 impl Default for PandocExportOptions {
@@ -153,6 +161,7 @@ impl Default for PandocExportOptions {
             layers: ContentLayers::BODY,
             api_version: None,
             heading_depth: HeadingDepth::Docling,
+            track_changes: None,
         }
     }
 }
@@ -769,6 +778,7 @@ struct Serializer<'a> {
     artifacts_dir: String,
     layers: ContentLayers,
     heading_depth: HeadingDepth,
+    track_changes: Option<TrackChanges>,
     artifacts: Vec<(String, Vec<u8>)>,
     pic_index: usize,
     visited: HashSet<String>,
@@ -808,6 +818,7 @@ impl<'a> Serializer<'a> {
             artifacts_dir: options.artifacts_dir.clone(),
             layers: options.layers,
             heading_depth: options.heading_depth,
+            track_changes: options.track_changes,
             artifacts: Vec::new(),
             pic_index: 0,
             visited: HashSet::new(),
@@ -1127,6 +1138,14 @@ impl<'a> Serializer<'a> {
         if refs.is_empty() {
             return inlines;
         }
+        // An explicit accept / reject view carries no comments (#851),
+        // as Pandoc's `--track-changes=accept|reject` write none.
+        if matches!(
+            self.track_changes,
+            Some(TrackChanges::Accept | TrackChanges::Reject)
+        ) {
+            return inlines;
+        }
         let mut starts = Vec::new();
         let mut ends = Vec::new();
         for cref in refs {
@@ -1262,6 +1281,19 @@ impl<'a> Serializer<'a> {
         }
         if let Some(url) = item.get("hyperlink").and_then(Value::as_str) {
             inlines = vec![ast::link(inlines, url)];
+        }
+        // A tracked change kept under `all` (#851): Pandoc's docx reader's
+        // span, outermost.
+        if let Some(rev) = item.get("_revision") {
+            if let Some(kind) = rev.get("kind").and_then(Value::as_str) {
+                let mut attrs = Vec::new();
+                for key in ["author", "date"] {
+                    if let Some(v) = rev.get(key).and_then(Value::as_str) {
+                        attrs.push((key.to_string(), v.to_string()));
+                    }
+                }
+                inlines = vec![ast::span(&[kind], &attrs, inlines)];
+            }
         }
         inlines
     }
@@ -2407,6 +2439,60 @@ mod tests {
         assert_eq!(depths(HeadingDepth::Source), [1, 1, 2, 5, 6, 1, 1, 6]);
         assert_eq!("Source".parse::<HeadingDepth>(), Ok(HeadingDepth::Source));
         assert!("deep".parse::<HeadingDepth>().is_err());
+    }
+
+    /// #851: a run's `_revision` is Pandoc's insertion / deletion span,
+    /// and an explicit accept / reject view drops the comment spans.
+    #[test]
+    fn revisions_become_spans_and_views_drop_comments() {
+        let j = doc(
+            &["#/texts/0", "#/texts/1"],
+            json!([
+                text(
+                    0,
+                    "text",
+                    "old",
+                    json!({"_revision": {"kind": "deletion", "author": "Fixture", "date": "2025-01-01T00:00:00Z"}})
+                ),
+                text(
+                    1,
+                    "text",
+                    "Commented",
+                    json!({"comments": [{"$ref": "#/groups/0"}]})
+                ),
+                text(
+                    2,
+                    "text",
+                    "[author: Fixture, time: 2025-01-01T00:00:00Z]: Review note",
+                    json!({"content_layer": "notes"})
+                ),
+            ]),
+            json!([{"self_ref": "#/groups/0", "children": [{"$ref": "#/texts/2"}], "label": "comment_section", "name": "comment-3", "content_layer": "notes"}]),
+            json!([]),
+        );
+        let b = blocks(&j);
+        assert_eq!(
+            b[0],
+            ast::para(vec![ast::span(
+                &["deletion"],
+                &[
+                    ("author".into(), "Fixture".into()),
+                    ("date".into(), "2025-01-01T00:00:00Z".into())
+                ],
+                vec![ast::str_("old")]
+            )])
+        );
+        assert_eq!(
+            b[1]["c"][0]["t"], "Span",
+            "comments written without a policy"
+        );
+        let accept = PandocExportOptions {
+            track_changes: Some(TrackChanges::Accept),
+            ..Default::default()
+        };
+        let (s, _) = from_docling_json(&j, &accept).unwrap();
+        let v: Value = serde_json::from_str(&s).unwrap();
+        assert_eq!(v["blocks"][1], ast::para(vec![ast::str_("Commented")]));
     }
 
     /// #850: a heading numbered by the backend (`_number`) writes its

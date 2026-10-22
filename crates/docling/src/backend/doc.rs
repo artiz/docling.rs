@@ -70,7 +70,7 @@
 //! such a file converts to; pictures and fast-saved (`fComplex`) files are
 //! not read.
 
-use docling_core::{DoclingDocument, Node, PictureImage, Table};
+use docling_core::{DoclingDocument, Node, PictureImage, Table, TrackChanges};
 
 use crate::backend::cfb::CompoundFile;
 use crate::backend::markdown::escape_text;
@@ -80,10 +80,25 @@ use crate::backend::DeclarativeBackend;
 use crate::error::ConversionError;
 use crate::source::SourceDocument;
 
-pub struct DocBackend;
+#[derive(Debug, Clone, Copy, Default)]
+pub struct DocBackend {
+    /// How tracked changes are read (#851): `accept` leaves the deleted runs
+    /// out, `reject` the inserted ones (`sprmCFRMarkDel` / `sprmCFRMark`);
+    /// `None` keeps every run's text, as this reader did before #851.
+    /// `all` is refused: the typed revisions it asks for are not read.
+    pub track_changes: Option<TrackChanges>,
+}
 
 impl DeclarativeBackend for DocBackend {
     fn convert(&self, source: &SourceDocument) -> Result<DoclingDocument, ConversionError> {
+        if self.track_changes == Some(TrackChanges::All) {
+            return Err(ConversionError::UnsupportedOption(
+                "doc: track_changes=all is not implemented by the .doc reader (the typed \
+                 revisions it asks for are not read); accept and reject are"
+                    .into(),
+            ));
+        }
+        let policy = self.track_changes;
         // A Word for Windows 1.x / 2.0 file is flat — no container to open.
         if is_word2(&source.bytes) {
             return convert_word2(&source.name, &source.bytes);
@@ -107,7 +122,7 @@ impl DeclarativeBackend for DocBackend {
         }
         if w_ident != 0xA5EC {
             if (101..=105).contains(&n_fib) {
-                return convert_word6(&source.name, &word, flags);
+                return convert_word6(&source.name, &word, flags, policy);
             }
             return Err(ConversionError::Parse(format!(
                 "doc: unsupported Word binary format (wIdent {w_ident:#06X}, nFib {n_fib}); \
@@ -199,6 +214,7 @@ impl DeclarativeBackend for DocBackend {
             fonts: &fonts,
             lists: &lists,
             comment_cps: &comment_cps,
+            track_changes: policy,
         };
 
         // Walk the main-document text paragraph by paragraph, assembling nodes.
@@ -323,6 +339,9 @@ struct Story<'a> {
     /// The main-text CP of each comment's reference mark (#699), in
     /// comment order — the paragraph holding it gets the back-reference.
     comment_cps: &'a [u64],
+    /// The tracked-changes view (#851): `accept` drops a run marked deleted,
+    /// `reject` one marked inserted; `None` keeps both (the pre-#851 text).
+    track_changes: Option<TrackChanges>,
 }
 
 impl Story<'_> {
@@ -342,6 +361,15 @@ impl Story<'_> {
     /// and symbol-font runs. A font the table does not name, or a code with
     /// no glyph, leaves the character as it was.
     fn push_char(&self, para: &mut ParaAccum, ch: char, fmt: CharFmt) {
+        // A run the view leaves out (#851) — field marks still pair up.
+        let hidden = match self.track_changes {
+            Some(TrackChanges::Accept) => fmt.deleted,
+            Some(TrackChanges::Reject) => fmt.inserted,
+            _ => false,
+        };
+        if hidden && !matches!(ch, '\u{0013}' | '\u{0014}' | '\u{0015}') {
+            return;
+        }
         let font = |ftc: u16| {
             self.fonts
                 .get(ftc as usize)
@@ -1094,7 +1122,12 @@ impl<'a> Fib<'a> {
 /// read: pictures (a Word 6 PICF holds a WMF / DIB the Word 97 decoder does
 /// not take — the anchor is a placeholder picture), text boxes, autonumber
 /// lists (`sprmPAnld`), endnotes.
-fn convert_word6(name: &str, word: &[u8], flags: u16) -> Result<DoclingDocument, ConversionError> {
+fn convert_word6(
+    name: &str,
+    word: &[u8],
+    flags: u16,
+    policy: Option<TrackChanges>,
+) -> Result<DoclingDocument, ConversionError> {
     let field = |o: usize, what: &str| {
         u32_at(word, o).map(|v| v as usize).ok_or_else(|| {
             ConversionError::Parse(format!(
@@ -1170,6 +1203,7 @@ fn convert_word6(name: &str, word: &[u8], flags: u16) -> Result<DoclingDocument,
         fonts: &[],
         lists: &lists,
         comment_cps: &comment_cps,
+        track_changes: policy,
     };
     let mut cache = ChpxCache::default();
     let mut doc = DoclingDocument::new(name);
@@ -2012,6 +2046,9 @@ fn apply_word6_chp_sprms(sprms: &[u8], fmt: &mut CharFmt) {
             v => fmt.italic = v == 1,
         },
         93 => fmt.ftc_ascii = Some(u16::from_le_bytes([operand[0], operand[1]])),
+        // sprmCFRMarkDel / sprmCFRMark (#851).
+        65 => fmt.deleted = operand[0] == 1,
+        66 => fmt.inserted = operand[0] == 1,
         68 => {
             if let Some(fc) = operand.get(1..5) {
                 fmt.pic_fc = Some(u32::from_le_bytes([fc[0], fc[1], fc[2], fc[3]]));
@@ -2410,6 +2447,10 @@ fn parse_stsh(stsh: &[u8], format: DocFormat) -> Vec<StyleDef> {
 struct CharFmt {
     bold: bool,
     italic: bool,
+    /// `sprmCFRMark` / `sprmCFRMarkDel` (#851): the run is a tracked
+    /// insertion / deletion.
+    inserted: bool,
+    deleted: bool,
     /// Word 6/95 (#640): the run's bold / italic is the *opposite of its
     /// paragraph style's* (operand 0x81) or the style's own (0x80) —
     /// resolved against the style when the paragraph ends
@@ -2517,6 +2558,8 @@ fn apply_chp_sprms(mut sprms: &[u8], fmt: &mut CharFmt) {
         match sprm {
             0x0835 => fmt.bold = sprms[0] == 1 || sprms[0] == 0x81, // sprmCFBold
             0x0836 => fmt.italic = sprms[0] == 1 || sprms[0] == 0x81, // sprmCFItalic
+            0x0800 => fmt.deleted = sprms[0] == 1,                  // sprmCFRMarkDel
+            0x0801 => fmt.inserted = sprms[0] == 1,                 // sprmCFRMark
             0x4A4F => fmt.ftc_ascii = Some(u16::from_le_bytes([sprms[0], sprms[1]])), // sprmCRgFtc0
             0x4A51 => fmt.ftc_other = Some(u16::from_le_bytes([sprms[0], sprms[1]])), // sprmCRgFtc2
             // sprmCSymbol: the font and the glyph code of an inserted symbol.
@@ -3745,7 +3788,7 @@ mod tests {
             .expect("FIB sector");
         data[at..at + 4].copy_from_slice(&[0x34, 0x12, 0x40, 0x00]);
         let src = SourceDocument::from_bytes("x.doc", InputFormat::Doc, data);
-        let Err(err) = DocBackend.convert(&src) else {
+        let Err(err) = DocBackend::default().convert(&src) else {
             panic!("an unknown Word version must be rejected");
         };
         let err = err.to_string();
@@ -3777,7 +3820,7 @@ mod tests {
             env!("CARGO_MANIFEST_DIR")
         );
         let bytes = std::fs::read(&path).expect("fixture exists");
-        let doc = DocBackend
+        let doc = DocBackend::default()
             .convert(&SourceDocument::from_bytes(
                 "doc_textbox_header_footnote.doc",
                 InputFormat::Doc,
@@ -3820,7 +3863,7 @@ mod tests {
             env!("CARGO_MANIFEST_DIR")
         );
         let bytes = std::fs::read(&path).expect("fixture exists");
-        let doc = DocBackend
+        let doc = DocBackend::default()
             .convert(&SourceDocument::from_bytes(
                 "h.doc",
                 InputFormat::Doc,
@@ -3945,7 +3988,7 @@ mod tests {
                 env!("CARGO_MANIFEST_DIR")
             );
             let bytes = std::fs::read(&path).expect("fixture exists");
-            DocBackend
+            DocBackend::default()
                 .convert(&SourceDocument::from_bytes(name, InputFormat::Doc, bytes))
                 .expect("converts")
                 .export_to_markdown()
@@ -3971,7 +4014,7 @@ mod tests {
             env!("CARGO_MANIFEST_DIR")
         );
         let bytes = std::fs::read(&path).expect("fixture exists");
-        DocBackend
+        DocBackend::default()
             .convert(&SourceDocument::from_bytes(name, InputFormat::Doc, bytes))
             .expect("converts")
     }
@@ -4169,7 +4212,7 @@ mod tests {
             env!("CARGO_MANIFEST_DIR")
         );
         let bytes = std::fs::read(&path).expect("fixture exists");
-        let doc = DocBackend
+        let doc = DocBackend::default()
             .convert(&SourceDocument::from_bytes(
                 "c.doc",
                 InputFormat::Doc,
@@ -4217,7 +4260,7 @@ mod tests {
             env!("CARGO_MANIFEST_DIR")
         );
         let bytes = std::fs::read(&path).expect("fixture exists");
-        let doc = DocBackend
+        let doc = DocBackend::default()
             .convert(&SourceDocument::from_bytes(
                 "h.doc",
                 InputFormat::Doc,
@@ -4250,7 +4293,7 @@ mod tests {
             .join("tests/data/doc/sources/doc_underscores.doc");
         let bytes = std::fs::read(path).expect("fixture");
         let src = SourceDocument::from_bytes("u", InputFormat::Doc, bytes);
-        let doc = DocBackend.convert(&src).expect("converts");
+        let doc = DocBackend::default().convert(&src).expect("converts");
         assert_eq!(
             doc.export_to_markdown(),
             "Identifiers: OBJ\\_DIR, MER\\_BAX, LO\\_SNO02, plain text.\n"
@@ -4265,12 +4308,12 @@ mod tests {
     #[test]
     fn garbage_is_an_error_not_a_panic() {
         let src = SourceDocument::from_bytes("x.doc", InputFormat::Doc, vec![0u8; 128]);
-        assert!(DocBackend.convert(&src).is_err());
+        assert!(DocBackend::default().convert(&src).is_err());
     }
 
     #[test]
     fn extracts_inline_and_floating_images_with_bytes() {
-        let doc = DocBackend
+        let doc = DocBackend::default()
             .convert(&fixture("docx_grouped_images.doc"))
             .expect("converts");
         let images: Vec<_> = doc
@@ -4304,7 +4347,7 @@ mod tests {
         assert!(is_word2(&bytes));
         assert_eq!(crate::sniff::detect(&bytes), Some(InputFormat::Doc));
         let src = SourceDocument::from_bytes("word2", InputFormat::Doc, bytes.clone());
-        let doc = DocBackend.convert(&src).expect("converts");
+        let doc = DocBackend::default().convert(&src).expect("converts");
         let md = doc.export_to_markdown();
         assert_eq!(
             md.trim_end(),
@@ -4319,7 +4362,7 @@ mod tests {
         // A fast-saved file is refused with a reason, not a container error.
         let mut complex = bytes;
         complex[0x0A] |= 0x04;
-        let err = DocBackend
+        let err = DocBackend::default()
             .convert(&SourceDocument::from_bytes("c", InputFormat::Doc, complex))
             .unwrap_err()
             .to_string();
@@ -4344,7 +4387,7 @@ mod tests {
             assert_eq!(styles[stc as usize].sti, 0x0FFF, "stc {stc}");
         }
         let src = SourceDocument::from_bytes("w2", InputFormat::Doc, bytes);
-        let md = DocBackend
+        let md = DocBackend::default()
             .convert(&src)
             .expect("converts")
             .export_to_markdown();

@@ -53,6 +53,13 @@ pub struct ConverterOptions {
     /// `metadata` object in the docling JSON) or `"frontmatter"` (YAML
     /// front matter at the top of the Markdown as well).
     pub metadata: Option<String>,
+    /// Tracked changes in DOCX / DOC / ODT (#851, Pandoc's
+    /// `--track-changes`): `"accept"` (insertions shown, deletions left
+    /// out), `"reject"` (the reverse) or `"all"` (both, typed with author
+    /// and date in the Pandoc AST). Unset: each reader's own view. DOCX
+    /// reads all three, DOC accept and reject, ODT accept; a mode a reader
+    /// lacks is an error.
+    pub track_changes: Option<String>,
     /// Max frames sampled from a video input as timestamped pictures (needs
     /// the ffmpeg binary at runtime; `0` = transcript only). Default 8.
     /// `4294967295` (`2**32 - 1`, the largest value this field takes) keeps
@@ -407,6 +414,9 @@ pub struct ConvertOptions {
     /// Document metadata (#679): `"none"` (default), `"json"` or
     /// `"frontmatter"`.
     pub metadata: Option<String>,
+    /// Tracked changes (#851): `"accept"` | `"reject"` | `"all"`; see
+    /// [`ConverterOptions::track_changes`].
+    pub track_changes: Option<String>,
     /// Max frames sampled from a video input (`0` = transcript only;
     /// `4294967295` = every distinct cut, #647).
     pub video_frames: Option<u32>,
@@ -910,6 +920,7 @@ fn render_doc(
                 image_mode: cfg.image_mode,
                 artifacts_dir: cfg.artifacts_dir.clone(),
                 heading_depth: cfg.pandoc_heading_depth,
+                track_changes: cfg.opts.track_changes().ok().flatten(),
                 ..Default::default()
             })
             // Only an explicit `api_version` can fail, and none is set.

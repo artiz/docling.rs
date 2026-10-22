@@ -2449,6 +2449,8 @@ fn pandoc_string(
             image_mode,
             // Validated by `validate_output`.
             heading_depth: pandoc_heading_depth(options).unwrap_or_default(),
+            // Validated with the conversion options (#851).
+            track_changes: options.convert.track_changes().ok().flatten(),
             ..Default::default()
         })
         .expect("the Pandoc API version was validated")
